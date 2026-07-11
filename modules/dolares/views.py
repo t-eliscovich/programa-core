@@ -107,6 +107,14 @@ def lista():
     for c in cuentas:
         c["nombre"] = nombres.get(c["cta"]) or ""
 
+    # Marcar cada anticipo con el tipo de su proveedor para que la barra de
+    # selección muestre la acción correcta: Q → "Cargar químicos", U
+    # (maquinaria) → sin conversión (va por "Activar máquina"), resto →
+    # "Convertir a compra". Una sola query, no N+1. TMT 2026-07-11.
+    tipos_prov = queries.tipos_por_cuenta([f.get("cta") for f in filas])
+    for f in filas:
+        f["tipo_prov"] = tipos_prov.get((f.get("cta") or "").strip().upper(), "")
+
     if request.args.get("export") == "csv":
         return csv_response(
             filas,
@@ -154,19 +162,43 @@ def convertir_seleccion():
     if not codigo_prov or not ids:
         flash("Seleccioná anticipos de una sola importación para convertir.", "warn")
         return redirect(request.referrer or url_for("dolares.lista"))
+    # El tipo de compra lo decide el PROVEEDOR (server-side, no el frente):
+    #   · tipo 'U' (maquinaria) → NO se convierte a compra, va por "Activar
+    #     máquina" (crea activo + posdats). Rechazamos acá por si alguien
+    #     fuerza el POST.
+    #   · tipo 'Q' (químicos)   → compra tipo Q.
+    #   · resto (hilado)        → compra tipo H.
+    tipo_prov = queries.tipos_por_cuenta([codigo_prov]).get(codigo_prov)
+    if tipo_prov == "U":
+        flash(
+            "Los anticipos de maquinaria se cargan desde «Activar máquina», "
+            "no como compra.",
+            "warn",
+        )
+        return redirect(request.referrer or url_for("dolares.lista"))
+    tipo_compra = "Q" if tipo_prov == "Q" else "H"
+    es_quimico = tipo_compra == "Q"
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.convertir_a_compra(
             codigo_prov=codigo_prov, ids_anticipos=ids,
-            concepto=concepto, tipo_compra="H", kg=None,
+            concepto=concepto, tipo_compra=tipo_compra, kg=None,
             motivo=motivo, usuario=usuario,
         )
-        flash(
-            f"BAP: {r['n_anticipos']} anticipo(s) de {codigo_prov} → compra "
-            f"N° {r['numero_compra']} ({r['comprobante']}) por $ {r['importe_total']:.2f}. "
-            f"Los kg quedan en el stock de la importación.",
-            "ok",
-        )
+        if es_quimico:
+            flash(
+                f"Químicos: {r['n_anticipos']} anticipo(s) de {codigo_prov} "
+                f"cargados como compra N° {r['numero_compra']} "
+                f"({r['comprobante']}) por $ {r['importe_total']:.2f}.",
+                "ok",
+            )
+        else:
+            flash(
+                f"BAP: {r['n_anticipos']} anticipo(s) de {codigo_prov} → compra "
+                f"N° {r['numero_compra']} ({r['comprobante']}) por $ {r['importe_total']:.2f}. "
+                f"Los kg quedan en el stock de la importación.",
+                "ok",
+            )
         return redirect(url_for("compras.lista", q=codigo_prov))
     except ValueError as e:
         flash(str(e), "warn")

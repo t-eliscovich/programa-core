@@ -179,17 +179,11 @@
           Nuevo anticipo
         </button>
       {% endif %}
-      {% if tiene_permiso('compras.crear') %}
-        {# Botón "Convertir a compra (hilado)" removido — la conversión ahora se
-           hace desde la barra de selección al pie (seleccionar anticipos →
-           "Convertir a compra"). Deja el flujo en un solo lugar. TMT 2026-07-11. #}
-        <a href="{{ url_for('dolares.cargar_quimicos') }}"
-           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
-           title="Convertir anticipos de químicos (tipo Q) a compra — baja anticipo, sube stock, reversible">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v6l-4 8a2 2 0 0 0 2 3h8a2 2 0 0 0 2-3l-4-8V2M8 2h8"/></svg>
-          Cargar químicos
-        </a>
-      {% endif %}
+      {# Botones "Convertir a compra (hilado)" y "Cargar químicos" removidos del
+         toolbar — ambas conversiones ahora se hacen desde la barra de selección
+         al pie (tildar anticipos → el botón se adapta al tipo del proveedor:
+         "Convertir a compra" para hilado, "Cargar químicos" para químicos).
+         Deja el flujo en un solo lugar. TMT 2026-07-11. #}
       {% if tiene_permiso('activos.crear') %}
         <a href="{{ url_for('activos.activar_maquinaria') }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 shadow-sm"
@@ -432,6 +426,7 @@
               <input type="checkbox" class="sel-ant rounded border-slate-300 dark:border-slate-600"
                      value="{{ d.id_dolares }}"
                      data-cta="{{ d.cta }}"
+                     data-tipo="{{ d.tipo_prov or '' }}"
                      data-ref="{{ d.ref if d.ref is not none else '' }}"
                      data-importe="{{ d.importe }}"
                      data-im="{{ d.im_numero or '' }}"
@@ -501,10 +496,13 @@
           Seleccioná anticipos de una sola importación (mismo código)
         </span>
       </div>
+      <span id="sel-maq-hint" style="display:none;font-size:13px;color:rgb(153 27 27);">
+        Los anticipos de maquinaria se cargan desde «Activar máquina», no como compra.
+      </span>
       <button type="button" id="sel-convertir"
               class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-        Convertir a compra
+        <span id="sel-convertir-label">Convertir a compra</span>
       </button>
     </div>
   </div>
@@ -517,7 +515,7 @@
                 border:1px solid rgb(226 232 240);background:rgb(255 255 255);
                 box-shadow:0 10px 30px rgb(15 23 42 / 0.25);">
       <div style="padding:16px 18px;">
-        <h3 style="font-size:15px;font-weight:600;color:rgb(15 23 42);margin-bottom:8px;">Convertir a compra</h3>
+        <h3 id="sel-modal-title" style="font-size:15px;font-weight:600;color:rgb(15 23 42);margin-bottom:8px;">Convertir a compra</h3>
         <p id="sel-modal-msg" style="font-size:14px;color:rgb(51 65 85);line-height:1.5;"></p>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 18px;
@@ -618,9 +616,18 @@ document.addEventListener('click', function (ev) {
   const elWarn   = document.getElementById('sel-warn');
   const elMsg    = document.getElementById('sel-modal-msg');
   const btnConv  = document.getElementById('sel-convertir');
+  const btnLabel = document.getElementById('sel-convertir-label');
+  const modalTit = document.getElementById('sel-modal-title');
+  const maqHint  = document.getElementById('sel-maq-hint');
   const btnOk    = document.getElementById('sel-confirmar');
   const btnCanc  = document.getElementById('sel-cancelar');
   const backdrop = document.getElementById('sel-modal-backdrop');
+
+  // Tipo de proveedor de la selección (misma cta forzada): 'Q' químicos,
+  // 'U' maquinaria, '' resto (hilado). Decide la etiqueta/acción del botón.
+  function tipoSel(sel) {
+    return sel.length ? (sel[0].dataset.tipo || '').toUpperCase() : '';
+  }
 
   function boxes() { return Array.prototype.slice.call(document.querySelectorAll('.sel-ant')); }
   function checked() { return boxes().filter(b => b.checked); }
@@ -641,6 +648,20 @@ document.addEventListener('click', function (ev) {
       elWarn.style.display = (ctas.size > 1 || refs.size > 1) ? '' : 'none';
     } else {
       elWarn.style.display = 'none';
+    }
+    // Acción según el tipo del proveedor: Q → "Cargar químicos"; U
+    // (maquinaria) → sin conversión (va por "Activar máquina"); resto →
+    // "Convertir a compra".
+    const tipo = tipoSel(sel);
+    if (tipo === 'U') {
+      btnConv.style.display = 'none';
+      if (maqHint) maqHint.style.display = '';
+    } else {
+      btnConv.style.display = '';
+      if (maqHint) maqHint.style.display = 'none';
+      const esQ = tipo === 'Q';
+      if (btnLabel) btnLabel.textContent = esQ ? 'Cargar químicos' : 'Convertir a compra';
+      if (modalTit) modalTit.textContent = esQ ? 'Cargar químicos' : 'Convertir a compra';
     }
     // estado del select-all
     if (selAll) {
@@ -668,6 +689,8 @@ document.addEventListener('click', function (ev) {
   btnConv.addEventListener('click', function () {
     const sel = checked();
     if (!sel.length) return;
+    const tipo = tipoSel(sel);
+    if (tipo === 'U') return; // maquinaria no se convierte a compra
     const ctas = new Set(sel.map(b => b.dataset.cta));
     const refs = new Set(sel.map(b => b.dataset.ref));
     if (ctas.size > 1 || refs.size > 1) { elWarn.style.display = ''; return; }
@@ -675,14 +698,20 @@ document.addEventListener('click', function (ev) {
     const cta = sel[0].dataset.cta;
     const ref = sel[0].dataset.ref;
     const suma = sel.reduce((a, b) => a + (parseFloat(b.dataset.importe) || 0), 0);
-    // kg / im opcional del primer seleccionado con dato
-    let kgTxt = '';
-    const conKg = sel.find(b => b.dataset.kg);
-    if (conKg) {
-      kgTxt = ' · ' + Number(conKg.dataset.kg).toLocaleString('es-EC') + ' kg';
+    if (tipo === 'Q') {
+      // Químicos: no hay importación que conciliar — es directo anticipo → compra.
+      elMsg.textContent = 'Estos ' + sel.length + ' anticipos (US$ ' + fmt(suma)
+        + ') se cargan como compra de químicos del proveedor ' + cta + '. ¿Confirmar?';
+    } else {
+      // kg / im opcional del primer seleccionado con dato
+      let kgTxt = '';
+      const conKg = sel.find(b => b.dataset.kg);
+      if (conKg) {
+        kgTxt = ' · ' + Number(conKg.dataset.kg).toLocaleString('es-EC') + ' kg';
+      }
+      elMsg.textContent = 'Estos ' + sel.length + ' anticipos (US$ ' + fmt(suma)
+        + ') pasan a compra de la importación Asinfo ' + cta + ' ' + ref + kgTxt + '. ¿Confirmar?';
     }
-    elMsg.textContent = 'Estos ' + sel.length + ' anticipos (US$ ' + fmt(suma)
-      + ') pasan a compra de la importación Asinfo ' + cta + ' ' + ref + kgTxt + '. ¿Confirmar?';
     openModal();
   });
 

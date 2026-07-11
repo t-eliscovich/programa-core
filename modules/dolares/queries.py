@@ -252,6 +252,38 @@ def anticipos_vivos(tipos_filter: list[str] | None = None) -> list[dict]:
     ) or []
 
 
+def tipos_por_cuenta(codigos: list[str]) -> dict[str, str]:
+    """Mapa cuenta (codigo_prov) → tipo de proveedor, en una sola query.
+
+    Se usa para marcar en la lista de anticipos qué cuentas son de químicos
+    (`tipo='Q'`) sin un N+1. Las cuentas sin proveedor quedan fuera del mapa.
+    """
+    codigos = sorted({(c or "").strip().upper() for c in codigos if c and c.strip()})
+    if not codigos:
+        return {}
+    rows = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(codigo_prov))            AS cta,
+               UPPER(TRIM(COALESCE(tipo, '')))     AS tipo
+          FROM scintela.proveedor
+         WHERE UPPER(TRIM(codigo_prov)) = ANY(%s)
+        """,
+        (codigos,),
+    ) or []
+    return {r["cta"]: r["tipo"] for r in rows if r.get("cta")}
+
+
+def es_proveedor_quimico(codigo_prov: str) -> bool:
+    """True si el proveedor es de químicos (`scintela.proveedor.tipo='Q'`).
+
+    Fuente de verdad para tipar la compra (Q vs H) en la conversión desde la
+    barra de selección — NO se confía en el frente para decidir el tipo.
+    """
+    if not codigo_prov or not codigo_prov.strip():
+        return False
+    return tipos_por_cuenta([codigo_prov]).get(codigo_prov.strip().upper()) == "Q"
+
+
 def convertir_a_compra(
     *,
     codigo_prov: str,
