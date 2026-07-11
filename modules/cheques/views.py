@@ -3149,7 +3149,9 @@ def lista():
         conteos=conteos_por_bucket,
         # TMT 2026-05-19 — pasamos el mapping de transiciones para que el
         # template arme el dropdown de "Editar estado" por fila.
-        transiciones_legales=queries.TRANSICIONES_LEGALES,
+        # TMT 2026-07-11 (dueña): mapa EXPANDIDO — cada estado ofrece todos los
+        # estados sin movimiento (además de las transiciones con efecto).
+        transiciones_legales=queries.transiciones_map(),
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
         hoy_iso=today_ec().isoformat(),
