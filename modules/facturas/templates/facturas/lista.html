@@ -124,15 +124,16 @@
     {% endfor %}
   </div>
 
-  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  <form class="no-print flex flex-wrap items-end gap-2 mb-4 px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <input type="hidden" name="vista" value="{{ vista }}">
 
     {# Grupo 1: Cliente (3 letras = match exacto) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cliente</label>
-      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras (ej: PUE)"
+      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="PUE"
              maxlength="20" autocomplete="off" style="text-transform:uppercase"
-             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+             title="Código del cliente (3 letras = match exacto)"
+             class="w-20 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm uppercase">
     </div>
 
     {# TMT 2026-05-19 v8 — filtro de Estado multi-checkbox (pedido dueña:
@@ -167,29 +168,25 @@
       </div>
     </div>
     {% endif %}
-    {# Grupo 2: Monto USD (desde — hasta) #}
+    {# Grupo 2: Monto (un solo campo, dueña 2026-07-11). Entero → dólar entero
+       (729 trae 729,00–729,99); con centavos → exacto (729,51 sólo esa). #}
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Monto USD desde</label>
-      <input type="number" step="0.01" name="monto_min" value="{{ monto_min if monto_min is not none else '' }}"
-             placeholder="0"
-             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
-    </div>
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Monto USD hasta</label>
-      <input type="number" step="0.01" name="monto_max" value="{{ monto_max if monto_max is not none else '' }}"
-             placeholder="∞"
-             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      <label class="block text-xs text-slate-500 mb-1">Monto</label>
+      <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
+             placeholder="729 · 729,51"
+             title="Entero = el dólar entero (729 → 729,00–729,99). Con centavos = exacto (729,51)."
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# Grupo 3: Fecha (desde — hasta) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha desde</label>
       <input type="date" name="desde" id="fecha-desde-input" value="{{ desde or '' }}"
-             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha hasta</label>
       <input type="date" name="hasta" id="fecha-hasta-input" value="{{ hasta or '' }}"
-             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# TMT 2026-05-26 dueña: shortcut "Hoy" para filtrar el día actual sin
        tipear fechas. Setea ambos campos = hoy y dispara filtrar. #}
@@ -204,12 +201,14 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
       <input type="text" name="q" value="{{ q }}" placeholder="N° factura, nombre…"
-             class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="w-36 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
-    {# TMT 2026-05-22 dueña: filtro por tipo AI (F/D/N/NC) #}
+    {# Filtro por tipo de documento (F/D/N/NC). Siempre visible — pedido dueña
+       2026-07-11 ("que tipo esté siempre"). La fuente sigue siendo el tipo de
+       Asinfo hasta que se retire. #}
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Tipo AI</label>
-      <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+      <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
         <option value="F" {% if tipo_ai_filtro == 'F' %}selected{% endif %}>F · Factura</option>
         <option value="D" {% if tipo_ai_filtro == 'D' %}selected{% endif %}>D · Devolución</option>
@@ -246,7 +245,23 @@
         📥 Asinfo sin cargar en PC
       </a>
     {% endif %}
+    {# Toggle de conciliación Asinfo: esconde/muestra Kg AI, USD AI y el filtro
+       Tipo AI. Por defecto oculto (vista limpia con una sola columna de Kg e
+       Importe). Reversible — nada se borra. TMT 2026-07-11 (dueña). #}
+    <button type="button" id="toggle-asinfo"
+            class="ml-auto inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 text-slate-600 dark:text-slate-300 text-xs"
+            title="Muestra/oculta las columnas de conciliación con Asinfo (Kg AI, USD AI, Tipo AI)">
+      <span id="toggle-asinfo-label">Ver conciliación Asinfo</span>
+    </button>
   </div>
+
+  <style>
+    /* Columnas/filtros de conciliación Asinfo — ocultos por defecto, visibles
+       con el toggle. `revert` restaura el display natural (table-column /
+       table-cell / block según el elemento). */
+    .asinfo-col { display: none; }
+    html.show-asinfo .asinfo-col { display: revert; }
+  </style>
 
   {% if error %}
     <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
@@ -263,17 +278,21 @@
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-xs sortable table-fixed">
       <colgroup>
+        {# Anchos pensados para la vista LIMPIA (AI oculto): suman 100% sin las
+           columnas Kg AI / USD AI. Cuando se muestran (toggle), el total pasa a
+           115% y table-fixed comprime todo un poco. Cliente muestra sólo el
+           código de 3 letras → no necesita ancho de sobra. TMT 2026-07-11. #}
         <col style="width: 8%">    <!-- N° -->
-        <col style="width: 8%">    <!-- Fecha -->
-        <col>                       <!-- Cliente: resto -->
-        <col style="width: 7%">    <!-- Kg -->
-        <col style="width: 7%">    <!-- Kg AI -->
-        <col style="width: 9%">    <!-- Importe -->
-        <col style="width: 8%">    <!-- USD AI -->
-        <col style="width: 4%">    <!-- Tipo AI -->
-        <col style="width: 9%">    <!-- Abonado -->
-        <col style="width: 10%">   <!-- Saldo -->
-        <col style="width: 9%">    <!-- Acum -->
+        <col style="width: 9%">    <!-- Fecha -->
+        <col style="width: 10%">   <!-- Cliente -->
+        <col style="width: 10%">   <!-- Kg -->
+        <col style="width: 7%" class="asinfo-col">    <!-- Kg AI -->
+        <col style="width: 13%">   <!-- Importe -->
+        <col style="width: 8%" class="asinfo-col">    <!-- USD AI -->
+        <col style="width: 6%">    <!-- Tipo -->
+        <col style="width: 13%">   <!-- Abonado -->
+        <col style="width: 13%">   <!-- Saldo -->
+        <col style="width: 13%">   <!-- Acum -->
         <col style="width: 5%">    <!-- Stat -->
       </colgroup>
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
@@ -282,9 +301,9 @@
           <th class="px-2 py-2 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
           <th class="px-2 py-2 text-left font-medium">Cliente</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Kg</th>
-          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Kg según Asinfo. Rojo si difiere de PC.">Kg AI</th>
+          <th class="px-2 py-2 text-right font-medium asinfo-col" data-sort-type="number" title="Kg según Asinfo. Rojo si difiere de PC.">Kg AI</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Importe USD según Asinfo. Rojo si difiere de PC.">USD AI</th>
+          <th class="px-2 py-2 text-right font-medium asinfo-col" data-sort-type="number" title="Importe USD según Asinfo. Rojo si difiere de PC.">USD AI</th>
           <th class="px-2 py-2 text-center font-medium" title="Tipo de documento en Asinfo: F=Factura, D=Devolución">Tipo</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
@@ -369,7 +388,7 @@
           {% set _ai_kg = f.asinfo_kg if f.asinfo_kg is defined else none %}
           {% set _ai_dkg = f.asinfo_diff_kg if f.asinfo_diff_kg is defined else none %}
           {% set _ai_pre = f.asinfo_pre_cutoff if f.asinfo_pre_cutoff is defined else false %}
-          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_pre %}Asinfo solo tiene data desde 2025-01-01. Facturas anteriores no están allá.{% elif _ai_kg is none %}sin match en Asinfo{% elif _ai_dkg %}Δ={{ '%+.2f' % _ai_dkg }} vs PC{% else %}coincide con PC{% endif %}">
+          <td class="px-2 py-1.5 text-right text-mono asinfo-col" title="{% if _ai_pre %}Asinfo solo tiene data desde 2025-01-01. Facturas anteriores no están allá.{% elif _ai_kg is none %}sin match en Asinfo{% elif _ai_dkg %}Δ={{ '%+.2f' % _ai_dkg }} vs PC{% else %}coincide con PC{% endif %}">
             {% if _ai_pre %}
               <span class="text-slate-300 text-[10px]">ant. 25</span>
             {% elif _ai_kg is none %}
@@ -396,7 +415,7 @@
           {# USD AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_usd = f.asinfo_usd if f.asinfo_usd is defined else none %}
           {% set _ai_dusd = f.asinfo_diff_usd if f.asinfo_diff_usd is defined else none %}
-          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_pre %}Asinfo solo tiene data desde 2025-01-01.{% elif _ai_usd is none %}sin match en Asinfo{% elif _ai_dusd %}Δ={{ '%+.2f' % _ai_dusd }} vs PC{% else %}coincide con PC{% endif %}">
+          <td class="px-2 py-1.5 text-right text-mono asinfo-col" title="{% if _ai_pre %}Asinfo solo tiene data desde 2025-01-01.{% elif _ai_usd is none %}sin match en Asinfo{% elif _ai_dusd %}Δ={{ '%+.2f' % _ai_dusd }} vs PC{% else %}coincide con PC{% endif %}">
             {% if _ai_pre %}
               <span class="text-slate-300 text-[10px]">ant. 25</span>
             {% elif _ai_usd is none %}
@@ -677,6 +696,26 @@
     if (!cell) return;
     if (e.key === 'Enter') { e.preventDefault(); ecGuardar(cell); }
     else if (e.key === 'Escape') { e.preventDefault(); ecToView(cell); }
+  });
+})();
+</script>
+
+{# Toggle de conciliación Asinfo — persiste la preferencia en localStorage. #}
+<script>
+(function () {
+  var KEY = 'facturas_show_asinfo';
+  var btn = document.getElementById('toggle-asinfo');
+  var label = document.getElementById('toggle-asinfo-label');
+  if (!btn) return;
+  function apply(on) {
+    document.documentElement.classList.toggle('show-asinfo', on);
+    if (label) label.textContent = on ? 'Ocultar conciliación Asinfo' : 'Ver conciliación Asinfo';
+  }
+  apply(localStorage.getItem(KEY) === '1');
+  btn.addEventListener('click', function () {
+    var on = !document.documentElement.classList.contains('show-asinfo');
+    localStorage.setItem(KEY, on ? '1' : '0');
+    apply(on);
   });
 })();
 </script>
