@@ -133,7 +133,6 @@ def run():
 
 
 def _run(filas: list[dict], aplicar: bool):
-    import db
     from modules.proveedores import queries as q
 
     def line(m=""):

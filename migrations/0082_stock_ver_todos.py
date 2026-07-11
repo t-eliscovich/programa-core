@@ -19,7 +19,6 @@ Idempotente: ON CONFLICT DO NOTHING en (id_rol, nombre_opcion).
 """
 from __future__ import annotations
 
-
 ROLES = (
     "Gerente",
     "Contabilidad",

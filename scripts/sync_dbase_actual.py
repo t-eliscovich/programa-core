@@ -554,7 +554,6 @@ def verificar_no_regresion_bancos(src: Path, force: bool = False) -> tuple[bool,
 
     Devuelve (ok, lineas). ok=False ⇒ abortar el sync (salvo force).
     """
-    import db as _db
 
     lineas: list[str] = []
     ok = True
@@ -862,8 +861,8 @@ def main():
         print()
         print("─── RECOMPUTE SALDOS POST-SYNC ────────────────────────────────")
         try:
-            import db as _db_mod
             import bank_helpers as _bh
+            import db as _db_mod
             # Bancos que tienen PC-only rows (insertadas via insert_movimiento_bancario).
             bancos_pc = _db_mod.fetch_all(
                 """

@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import sys
+
 _REPO_ROOT = "/tmp/pc0706"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
-from tests.test_fuzz2_bug_cobranza import _wire, _mk, _post, CAPT
+from tests.test_fuzz2_bug_cobranza import CAPT, _mk, _post, _wire
 from tests.test_repro_bug_cobranza import _login
+
 
 def test_dos_centavos_semantica(client, fake_db, monkeypatch):
     CAPT.clear()

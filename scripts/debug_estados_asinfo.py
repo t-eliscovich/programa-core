@@ -8,7 +8,9 @@
      - NTEN-10460 (sabemos: Contabilizado) -> int de contabilizado
 4) Buscar tabla 'dbo.estado' o similar que tenga el nombre del estado"""
 from __future__ import annotations
-import os, sys
+
+import os
+import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)

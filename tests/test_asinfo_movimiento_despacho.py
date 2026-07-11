@@ -17,7 +17,6 @@ from unittest.mock import patch
 from modules._lib import metabase_client
 from modules.asinfo import service
 
-
 # ---------------------------------------------------------------------------
 # despacho_fisico_mes
 # ---------------------------------------------------------------------------

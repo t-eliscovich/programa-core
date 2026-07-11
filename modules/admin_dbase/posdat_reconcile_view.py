@@ -184,7 +184,7 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
             else:
                 need_align.append(pr)
         free = [dd for j, dd in enumerate(matched_dbf) if not used[j]]
-        for pr, dd in zip(need_align, free):
+        for pr, dd in zip(need_align, free, strict=False):
             aligns.append({"id": pr["id_posdat"],
                            "concepto": (dd.get("concepto") or "").strip(),
                            "fechad": dd.get("fechad"),
@@ -279,7 +279,6 @@ def run():
 def _run(aplicar: bool):
     import shutil
 
-    import db
 
     def line(m=""):
         return m.rstrip("\n") + "\n"
@@ -387,6 +386,7 @@ def fechad_sync():
 
 def _run_fechad(aplicar: bool):
     import shutil
+
     import db
 
     def line(m=""):
@@ -419,7 +419,6 @@ def _run_fechad(aplicar: bool):
     #   exact = (prov, importe, concepto)  ·  loose = (prov, importe)
     # Los posdat de importación de PC (andres) tienen concepto NULL → no
     # matchean por concepto; el 2do pase por (prov,importe) los alcanza.
-    import itertools as _it
     dbf_recs = [{"prov": d["prov"], "importe": d["importe"],
                  "concepto": d["concepto"], "fechad": d["fechad"], "used": False}
                 for d in dbf]
@@ -640,8 +639,9 @@ def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def pc_dump():
-    import db
     from flask import jsonify
+
+    import db
     rows = db.fetch_all(
         """
         SELECT id_posdat, COALESCE(num,0) AS num, COALESCE(prov,'') AS prov,
@@ -675,6 +675,7 @@ def apply_fechad():
     """Aplica un mapa exacto {id_posdat: 'YYYY-MM-DD' | null} a fechad. SOLO fechad."""
     import json as _json
     from datetime import date as _date
+
     import db
     raw = request.form.get("mapa") or "{}"
     try:
@@ -828,7 +829,7 @@ def full_sync():
 
 def _run_full(aplicar: bool):
     import shutil
-    import db
+
 
     def line(m=""):
         return m.rstrip("\n") + "\n"
@@ -909,6 +910,7 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
     evitar diferencias de parseo dbfread entre plataformas.
     """
     from collections import Counter as _Counter
+
     import db
 
     def line(m=""):

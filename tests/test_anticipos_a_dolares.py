@@ -75,6 +75,7 @@ def _patch_anticipo_deps(monkeypatch):
     dentro de db.tx(). Mockeamos esas dependencias para el test unitario y
     capturamos el INSERT (que ahora va por execute_returning)."""
     import contextlib
+
     import bank_helpers
     import db as dbmod
     import mov_doble as _md
@@ -133,6 +134,7 @@ def test_alta_anticipo_sin_permiso_escritura_404(app, fake_db):
 
 def test_cancelar_anticipo_vive_en_dolares(app, fake_db, monkeypatch):
     import contextlib
+
     import db as dbmod
     c = _login(app, fake_db, ["facturas.crear"])
     ejecutados: list[tuple] = []

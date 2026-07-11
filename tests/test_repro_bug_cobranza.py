@@ -124,8 +124,8 @@ CAPTURADAS = []
 
 def _wire(monkeypatch, fake_db, facturas):
     import db
-    import mov_doble
     import error_messages
+    import mov_doble
     from modules.cheques import queries as cq
 
     store = Store(facturas, fake_db)

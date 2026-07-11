@@ -1,15 +1,20 @@
 from __future__ import annotations
+
 import sys
+
 _REPO_ROOT = "/tmp/pc0706"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
-from tests.test_repro_bug_cobranza import Store, _login
 import re
+
+from tests.test_repro_bug_cobranza import Store, _login
 
 CAPT = []
 
 def _wire(monkeypatch, fake_db, facturas, stub_movdoble=True):
-    import db, mov_doble, error_messages
+    import db
+    import error_messages
+    import mov_doble
     from modules.cheques import queries as cq
     store = Store(facturas, fake_db)
     for name in ("fetch_one","fetch_all","execute","execute_returning","tx"):

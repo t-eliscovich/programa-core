@@ -4,8 +4,10 @@ Caso de origen (conciliación de Alex, 2026-06-04): 150 pendientes →
 146 reales (164.247,95) + 4 cargos (−99,84). Validado contra su hoja.
 """
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

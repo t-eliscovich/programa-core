@@ -18,9 +18,9 @@ import os
 import sys
 from datetime import date, timedelta
 
-from filters import today_ec
-
 import pytest
+
+from filters import today_ec
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:

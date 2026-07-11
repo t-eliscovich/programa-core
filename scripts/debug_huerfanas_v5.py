@@ -3,7 +3,10 @@
 + buscar directo numf=175639 en la tabla factura_cliente para confirmar que
 existe en Asinfo Y ver su estado."""
 from __future__ import annotations
-import os, sys, json
+
+import json
+import os
+import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -15,8 +18,9 @@ for _env in (".env.prod", ".env"):
         except ImportError: pass
         break
 
-from modules._lib import metabase_client as mc
 import requests
+
+from modules._lib import metabase_client as mc
 
 
 def main():

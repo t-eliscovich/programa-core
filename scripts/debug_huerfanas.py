@@ -28,6 +28,7 @@ for _env in (".env.prod", ".env"):
         break
 
 import db
+
 db.init_pool()
 
 from modules.asinfo import service as asinfo_service

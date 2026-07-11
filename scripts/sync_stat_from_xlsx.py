@@ -23,8 +23,9 @@ from dotenv import load_dotenv
 # Carga del .env contiguo (C:\programa-core\.env en prod)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-import db  # noqa: E402  — usa la conexión de la app
 from openpyxl import load_workbook  # noqa: E402
+
+import db  # noqa: E402  — usa la conexión de la app
 
 
 def _key(fecha, doc, importe, saldo):

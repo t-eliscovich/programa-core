@@ -23,8 +23,6 @@ el valor del DBF (el dBase manda). Sirve para ver el rastro completo ahora.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
 from flask import Blueprint, render_template_string, request
 
 from auth import requiere_login, requiere_permiso

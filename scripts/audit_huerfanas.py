@@ -59,7 +59,6 @@ for _env_name in (".env.prod", ".env"):
 import psycopg2
 import psycopg2.extras
 
-
 ASINFO_CUTOFF = date(2025, 1, 1)
 
 

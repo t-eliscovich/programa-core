@@ -598,8 +598,8 @@ def test_resolver_guard_numf_libre_crea_normal(monkeypatch):
 # ─── cliente_ficha desde Asinfo (TMT 2026-06-10) ───────────────────────────
 
 def test_cliente_ficha_sanitiza_codigos_y_mapea(monkeypatch):
-    from modules.asinfo import service as svc
     from modules._lib import metabase_client as mc
+    from modules.asinfo import service as svc
     capturas = []
 
     def fake_fetch_dataset(db_id, sql, max_results=None):
@@ -617,7 +617,7 @@ def test_cliente_ficha_sanitiza_codigos_y_mapea(monkeypatch):
 
 
 def test_cliente_ficha_sin_metabase_devuelve_vacio(monkeypatch):
-    from modules.asinfo import service as svc
     from modules._lib import metabase_client as mc
+    from modules.asinfo import service as svc
     monkeypatch.setattr(mc, "disponible", lambda: False)
     assert svc.cliente_ficha(["AQN"]) == {}

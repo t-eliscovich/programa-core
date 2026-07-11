@@ -1088,7 +1088,7 @@ def matchear_extracto_banco(
             # Match grupal arbitrario (FIFO por fecha cercana)
             reals_sorted = sorted(reals_grupo, key=lambda m: m.fecha or date.min)
             bks_sorted = sorted(bks_grupo, key=lambda b: b.fecha or date.min)
-            for real, bk in zip(reals_sorted, bks_sorted):
+            for real, bk in zip(reals_sorted, bks_sorted, strict=False):
                 diff_dias = abs((real.fecha - bk.fecha).days) if (real.fecha and bk.fecha) else 0
                 razon = f"P4·grupo {key[0]} ${key[1]} ({len(reals_grupo)} pares) · BANCSIS #{bk.id_transaccion}"
                 res.matches.append(Match(real=real, bancsis=bk, score=diff_dias + 300, razon=razon))

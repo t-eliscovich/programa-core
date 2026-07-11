@@ -9,7 +9,9 @@ Estrategia:
      b) fecha exacta + cliente.codigo o cliente.nombre LIKE prefix PC
   3) Reportar coincidencias y diferencias"""
 from __future__ import annotations
-import os, sys
+
+import os
+import sys
 from collections import defaultdict
 from datetime import date
 
@@ -24,8 +26,8 @@ for _env in (".env.prod", ".env"):
         break
 
 import db; db.init_pool()
-from modules.asinfo import service as asinfo_service
 from modules._lib import metabase_client as mc
+from modules.asinfo import service as asinfo_service
 
 
 def _norm(s): return (s or "").strip().upper()
@@ -135,7 +137,7 @@ def main():
                 """
             rows = mc.fetch_dataset(2, sql_b)
             if rows:
-                print(f"  match con +/-2 dias:")
+                print("  match con +/-2 dias:")
         if not rows:
             # Probar por cliente (codigo o nombre LIKE) + fecha sola
             sql_c = f"""
@@ -149,9 +151,9 @@ def main():
                 """
             rows = mc.fetch_dataset(2, sql_c)
             if rows:
-                print(f"  match SOLO por cliente+fecha (total distinto):")
+                print("  match SOLO por cliente+fecha (total distinto):")
         if not rows:
-            print(f"  >>> NADA encontrado en Asinfo <<<")
+            print("  >>> NADA encontrado en Asinfo <<<")
         else:
             for r in rows[:5]:
                 print(f"    -> Asinfo num={r.get('numero')} fecha={str(r.get('fecha'))[:10]} "

@@ -247,7 +247,6 @@ def cancelar_anticipo(id_dolares: int):
     # banco — compensa con una NC(+) del mismo importe (paper trail) y marca el
     # mov_doble reversado. Atómico. Espejo de importaciones/pago.deshacer.
     import bank_helpers
-    import mov_doble as _md
     from periodo_guard import asegurar_fecha_abierta
     usuario = (getattr(g, "user", None) or {}).get("username", "web")
     try:

@@ -10,9 +10,11 @@ Para cada huérfana real (las que el view marca como sin match), mostramos:
 Esto debería decirnos por qué el filtro `abs(usd - pc_imp) < 0.5` rechaza el match.
 """
 from __future__ import annotations
-import os, sys
+
+import os
+import sys
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -28,6 +30,7 @@ for _env in (".env.prod", ".env"):
         break
 
 import db
+
 db.init_pool()
 
 from modules.asinfo import service as asinfo_service
@@ -162,8 +165,8 @@ def main():
             print(f"\nRatio Asinfo_usd / PC_importe (n={len(ratios)}):")
             print(f"  mediana={statistics.median(ratios):.4f}")
             print(f"  min={min(ratios):.4f}  max={max(ratios):.4f}")
-            print(f"  Si mediana ≈ 0.870 (=1/1.15) → PC tiene IVA, Asinfo no.")
-            print(f"  Si mediana ≈ 1.0 → mismo nivel, problema de redondeo.")
+            print("  Si mediana ≈ 0.870 (=1/1.15) → PC tiene IVA, Asinfo no.")
+            print("  Si mediana ≈ 1.0 → mismo nivel, problema de redondeo.")
 
 
 if __name__ == "__main__":

@@ -78,9 +78,8 @@ for _env in (".env.prod", ".env"):
 
 
 import db
-from modules.asinfo import service as asinfo_service
 from modules.asinfo import aliases as cli_aliases
-
+from modules.asinfo import service as asinfo_service
 
 ASINFO_CUTOFF = date(2025, 1, 1)
 MARKER = "asinfo-backfill"
@@ -233,7 +232,7 @@ def backfill(*, dry_run: bool, desde: date, hasta: date, limit: int) -> dict:
         return {"asinfo": 0, "ya_estaban": 0, "insertadas": 0, "saltadas_sin_cli": 0,
                 "saltadas_sin_importe": 0, "errores": 0}
 
-    print(f"-> Cargando PC existentes (rango)", flush=True)
+    print("-> Cargando PC existentes (rango)", flush=True)
     by_nfc, by_tripla, max_numf_pc = cargar_pc_existentes(desde, hasta)
     print(f"   PC tiene {len(by_nfc)} numf_completo + {len(by_tripla)} triplas. MAX(numf)={max_numf_pc}", flush=True)
 
@@ -316,7 +315,7 @@ def backfill(*, dry_run: bool, desde: date, hasta: date, limit: int) -> dict:
     print(f"   Ya estaban (skip): {ya_estaban}", flush=True)
     print(f"   Sin codigo_cli mapeable: {saltadas_sin_cli}", flush=True)
     print(f"   Sin importe/kg/numf útiles: {saltadas_sin_importe}", flush=True)
-    print(f"   Distribución por tipo Asinfo:", flush=True)
+    print("   Distribución por tipo Asinfo:", flush=True)
     for t, n in por_tipo.most_common():
         print(f"     {t:18s} {n}", flush=True)
 

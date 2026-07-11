@@ -3,8 +3,9 @@
 'Rechazado por el SRI' o anulada. Query directo a la tabla factura_cliente
 de Asinfo via Metabase fetch_dataset (database_id=2)."""
 from __future__ import annotations
-import os, sys
-from datetime import date
+
+import os
+import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -65,7 +66,10 @@ def main():
     print("SQL DE LA CARD 199 (la que PC usa via service.facturas_periodo)")
     print("=" * 80)
     try:
-        import requests, os
+        import os
+
+        import requests
+
         from modules._lib import metabase_client as mc
         url = os.environ.get("METABASE_URL", "").strip().rstrip("/")
         tok = mc._session_token or mc._login(requests)

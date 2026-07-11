@@ -6,10 +6,9 @@ from datetime import date, timedelta
 
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
-from filters import today_ec
-
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
+from filters import today_ec
 from modules.conciliacion import queries
 from modules.conciliacion.matcher import matchear
 from modules.conciliacion.matcher_banco import (
@@ -39,6 +38,7 @@ from modules.conciliacion.matcher_depositos import (
 from modules.conciliacion.parser import parse_csv
 from modules.conciliacion.parser_banco import parse_banco_xlsx
 from modules.conciliacion.parser_xlsx import parse_xlsx
+
 
 def _usuario_actual() -> str:
     """Username del user logueado, fallback 'conciliacion' si no hay g.user.

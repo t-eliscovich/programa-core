@@ -44,7 +44,6 @@ for _env in (".env.prod", ".env"):
 import db
 from modules.facturas import audit_asinfo
 
-
 # (id_a_marcar, id_ganador_real, motivo)
 DUPS_OBVIAS = [
     (3937, 3936, "175377-CLR-ajuste-kg0"),
@@ -198,7 +197,7 @@ def main():
         """
     )
     b = breakdown[0]
-    print(f"  Breakdown post-cleanup:")
+    print("  Breakdown post-cleanup:")
     print(f"    Marcadas como dup:    {b['dups']}")
     print(f"    Marcadas sin Asinfo:  {b['sin_ai']}")
     print(f"    Con match real:       {b['matcheadas']}")

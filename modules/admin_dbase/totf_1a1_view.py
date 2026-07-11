@@ -286,8 +286,9 @@ def _run():
         return
 
     try:
-        from modules.admin_dbase.facturas_reconcile_view import _map_factura_real
         import dbfread
+
+        from modules.admin_dbase.facturas_reconcile_view import _map_factura_real
         mapper = _map_factura_real()
         dbf_rows = []
         for rec in dbfread.DBF(str(miembro), char_decode_errors="replace", load=False):

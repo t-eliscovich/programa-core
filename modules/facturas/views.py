@@ -1128,6 +1128,7 @@ def _resolver_cliente_asinfo(
         (codigo_pc_a_usar, cliente_creado)
     """
     import re as _re
+
     from modules.asinfo import aliases as _aliases
     codigo_cli = (codigo_cli or "").strip().upper()
     cli_pc = _aliases.to_pc(codigo_cli)
@@ -1473,6 +1474,7 @@ def preview_retenciones_asinfo():
     entra), sin mutar nada. Read-only; los botones Aplicar/Deshacer siguen en la
     pantalla de origen."""
     from datetime import date as _date
+
     from modules.retenciones import queries as ret_q
     hoy = today_ec()
     desde = _parse_date(request.args.get("desde") or "") or hoy.replace(day=1)
