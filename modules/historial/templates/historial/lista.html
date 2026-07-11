@@ -313,11 +313,10 @@
                      aceptar postea y volvés acá. Reemplaza el confirm() nativo
                      y la página-wizard aparte. #}
                   <button type="button"
-                          class="js-reverso text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                          class="js-reverso inline-flex items-center justify-center w-6 h-6 rounded text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30 leading-none"
                           data-reverso-id="{{ r.id_mov_doble }}"
-                          title="Reversar este movimiento">
-                    ↺ reversar
-                  </button>
+                          title="Reversar este movimiento"
+                          aria-label="Reversar">↺</button>
                 {% else %}
                   <span class="text-xs text-slate-300">—</span>
                 {% endif %}
