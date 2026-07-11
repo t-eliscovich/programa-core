@@ -97,7 +97,7 @@ que falten. No pisa datos ya cargados. Corre en <b>DRY-RUN</b> salvo que marques
 Aplicar.</p>
 <form method=post action="/admin/clientes-import/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <label><input type=checkbox name=apply value=1> Aplicar (escribe en producción)</label><br><br>
   <button type=submit>Correr</button>
 </form></div>

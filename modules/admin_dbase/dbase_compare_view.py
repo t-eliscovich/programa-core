@@ -1189,7 +1189,7 @@ la regla del PRG y lo compara con el balance live de PC, cerrando con la
 identidad de utilidad (residuo 0 = toda diferencia explicada).</p>
 <form method=post action="/admin/dbase-compare/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <label>Detalle de movimientos de banco de los últimos
     <input type=number name=dias value=30 min=7 max=120 style="width:60px"> días</label><br><br>
   <button type=submit>Comparar</button>

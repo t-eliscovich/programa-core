@@ -240,7 +240,7 @@ FORM = """
 <b>DRY-RUN</b> (no toca nada) salvo que marques Aplicar.</p>
 <form method=post action="/admin/posdat-reconcile/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <label><input type=checkbox name=apply value=1> Aplicar (escribe en producción)</label><br><br>
   <button type=submit>Correr</button>
 </form></div>
@@ -356,7 +356,7 @@ columna <code>fechad</code> (banc 0 y 9) pareando por prov+importe+concepto.
 No inserta ni borra. Corre en <b>DRY-RUN</b> salvo que marques Aplicar.</p>
 <form method=post action="/admin/posdat-reconcile/fechad-sync" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <label><input type=checkbox name=apply value=1> Aplicar (escribe en producci&oacute;n)</label><br><br>
   <button type=submit>Correr</button>
 </form></div>
@@ -740,7 +740,7 @@ completo. <b>Preserva</b> los PC-creados (andres/tamara/OP y los que tengan link
 DRY-RUN salvo que marques Aplicar.</p>
 <form method=post action="/admin/posdat-reconcile/full-sync" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <label><input type=checkbox name=apply value=1> Aplicar (escribe en producci&oacute;n)</label><br><br>
   <button type=submit>Correr</button>
 </form></div>

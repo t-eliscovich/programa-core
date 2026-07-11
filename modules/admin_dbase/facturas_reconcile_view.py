@@ -300,7 +300,7 @@ FORM = """
 ¿PC tiene todo lo del dBase? ¿lo extra de PC es legítimo?</p>
 <form method=post action="/admin/facturas-reconcile/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <button type=submit>Correr dry-run</button>
 </form></div>
 """

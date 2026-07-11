@@ -227,7 +227,7 @@ FORM = """
 N° SRI sin truncar, con cross-check de backfill y stats del otro lado.</p>
 <form method=post action="/admin/totf-1a1/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
   <button type=submit>Correr (dry-run)</button>
 </form></div>
 """
