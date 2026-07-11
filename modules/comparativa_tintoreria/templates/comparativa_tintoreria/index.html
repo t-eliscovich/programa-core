@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Comparativa Tintorería · PC vs Form{% endblock %}
+{% block title %}Tintorería · Fórmulas App{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
-  <strong>Comparativa Tintorería</strong>
+  <strong>Tintorería</strong>
 {% endblock %}
 
 {% block head_extra %}
@@ -18,20 +18,7 @@
   .ct tr.det td { background: rgb(248 250 252); font-size: 11px;
                   color: rgb(71 85 105); padding: 4px 10px 4px 28px; }
   .ct tr.det td.num { font-family: ui-monospace, Menlo, monospace; }
-  .ct .pill { display: inline-block; padding: 1px 8px; border-radius: 9999px;
-              font-size: 10px; font-weight: 600; text-transform: uppercase;
-              letter-spacing: 0.04em; }
-  .ct .pill-ok    { background: rgb(220 252 231); color: rgb(22 101 52); }
-  .ct .pill-warn  { background: rgb(254 243 199); color: rgb(133 77 14); }
-  .ct .pill-bad   { background: rgb(254 226 226); color: rgb(153 27 27); }
-  .ct .pill-info  { background: rgb(219 234 254); color: rgb(30 64 175); }
-  .ct .delta-pos  { color: rgb(180 83 9); }
-  .ct .delta-neg  { color: rgb(153 27 27); }
-  .ct .delta-zero { color: rgb(100 116 139); }
-  .ct details summary { cursor: pointer; user-select: none; list-style: none; }
-  .ct details summary::-webkit-details-marker { display: none; }
-  .ct .caret { display: inline-block; width: 12px; transition: transform 0.15s; }
-  .ct details[open] .caret { transform: rotate(90deg); }
+  .ct .caret { display: inline-block; width: 12px; }
   .ct tr.total td { background: rgb(15 23 42); color: white; font-weight: 700;
                     border-bottom: none; }
 </style>
@@ -42,10 +29,10 @@
 
   <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
     <div>
-      <h1 class="text-xl font-semibold">Comparativa Tintorería</h1>
+      <h1 class="text-xl font-semibold">Tintorería</h1>
       <p class="text-xs text-slate-500">
-        kg/día — Programa Core (<code>scintela.tinto</code>) vs Formulas App
-        (<code>ordenes.tela_terminada_kg</code>)
+        kg tinturados por día — fuente <strong>Fórmulas App</strong>
+        (<code>ordenes.tela_terminada_kg</code>). Sólo consulta.
       </p>
     </div>
     <form method="get" class="flex items-end gap-2">
@@ -76,313 +63,128 @@
     </div>
   {% endif %}
 
-  {# KPI fila — totales del rango. TMT 2026-05-27 dueña: 'podes hacer que
-     los numeros esten debajo del titulo y no corrido a la izquierda?'
-     → text-center en cada card. #}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  {# KPIs del rango — todo Fórmulas App. #}
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
     <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wide">PC kg</div>
-      <div class="text-xl font-semibold mt-1">{{ '%s' % (tot_pc_kg | round(0, 'common') | int) | num_es(0) if tot_pc_kg else '—' }}</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide">OTs</div>
+      <div class="text-xl font-semibold mt-1">{{ tot_ots if tot_ots else '—' }}</div>
     </div>
     <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wide">Form kg</div>
-      <div class="text-xl font-semibold mt-1">{{ '%s' % (tot_form_kg | round(0, 'common') | int) | num_es(0) if tot_form_kg else '—' }}</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Kg crudo</div>
+      <div class="text-xl font-semibold mt-1">{{ tot_cruda | num_es(0) if tot_cruda else '—' }}</div>
     </div>
     <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wide">Δ kg</div>
-      <div class="text-xl font-semibold mt-1
-                  {% if tot_diff_kg > 0 %}delta-pos{% elif tot_diff_kg < 0 %}delta-neg{% else %}delta-zero{% endif %}">
-        {{ tot_diff_kg | num_es(0) }}
-        {% if tot_diff_pct is not none %}
-          <span class="text-xs font-normal text-slate-500">({{ '%.1f' % tot_diff_pct }}%)</span>
-        {% endif %}
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Kg terminado</div>
+      <div class="text-xl font-semibold mt-1">{{ tot_term | num_es(0) if tot_term else '—' }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Desperdicio</div>
+      <div class="text-xl font-semibold mt-1">
+        {% if tot_desperdicio_pct is not none %}{{ '%.1f' % tot_desperdicio_pct }}%{% else %}—{% endif %}
       </div>
     </div>
     <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wide">Importe PC (US)</div>
-      <div class="text-xl font-semibold mt-1">$ {{ tot_pc_us | num_es(0) }}</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide">$/kg</div>
+      <div class="text-xl font-semibold mt-1">
+        {% if tot_costo_kg is not none and tot_costo_kg > 0 %}$ {{ '%.3f' % tot_costo_kg }}{% else %}—{% endif %}
+      </div>
     </div>
   </div>
 
-  {# TMT 2026-05-26 dueña: toggle vista — Por código (default, fila por
-     fecha+cod) vs Por día (resumen sumando códigos del día). Mismas
-     7 columnas en ambas. #}
-  {# TMT 2026-05-26 dueña: 'primera tab solo por dia'. Default = dia. #}
-  <div class="mb-3 flex items-center gap-2 text-sm">
-    <span class="text-xs text-slate-500">Vista:</span>
-    <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=dia"
-       class="px-3 py-1 rounded-md border {% if vista == 'dia' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
-      Solo por día
-    </a>
-    <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=codigo"
-       class="px-3 py-1 rounded-md border {% if vista == 'codigo' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
-      Por código + día
-    </a>
-  </div>
-
-  {# Tabla final — 7 columnas exactas, encolumnadas.
-     TMT 2026-05-26 dueña: orden — fecha, código, kg dbase, kg crudo
-     formulas (AL LADO de dbase), kg terminado formulas, cambio, desperdicio.
-     Widths fijos en px para alineación pixel-perfect (no en %). #}
-  {# TMT 2026-05-26 dueña: agregada columna costo $/kg (por color en
-     vista código; promedio del día en vista día). #}
+  {# Tabla por día. Click en la fila despliega el detalle por código de fórmula. #}
   <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto">
-    <table class="text-sm tabular-nums" style="table-layout: fixed; width: 100%; min-width: {% if vista == 'codigo' %}1080{% else %}920{% endif %}px;">
+    <table class="text-sm tabular-nums" style="table-layout: fixed; width: 100%; min-width: 820px;">
       <colgroup>
-        <col style="width: 130px">
-        {% if vista == 'codigo' %}<col style="width: 120px">{% endif %}
+        <col style="width: 150px">
+        <col style="width: 90px">
         <col style="width: 140px">
         <col style="width: 140px">
         <col style="width: 130px">
-        <col style="width: 140px">
         <col style="width: 120px">
         <col style="width: 110px">
       </colgroup>
-      {# TMT 2026-05-27 dueña: 'los numeros esten debajo del titulo y no
-         corrido a la izquierda' — headers de columnas numéricas centrados
-         + valores centrados así titulo y número visualmente alineados. #}
       <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th class="px-3 py-2 text-left">Fecha terminado</th>
-          {% if vista == 'codigo' %}<th class="px-3 py-2 text-left">Código color</th>{% endif %}
-          <th class="px-3 py-2 text-center">Kg dbase</th>
-          <th class="px-3 py-2 text-center">Kg crudo formulas</th>
-          <th class="px-3 py-2 text-center" title="dbase - crudo formulas — deberían ser iguales (ambos INPUT)">Cambio</th>
-          <th class="px-3 py-2 text-center">Kg terminado formulas</th>
+          <th class="px-3 py-2 text-center">OTs</th>
+          <th class="px-3 py-2 text-center">Kg crudo</th>
+          <th class="px-3 py-2 text-center">Kg terminado</th>
           <th class="px-3 py-2 text-center">Desperdicio</th>
-          <th class="px-3 py-2 text-center" title="{% if vista == 'codigo' %}Costo por color (importe/kg){% else %}Costo promedio del día (suma importes / suma kg){% endif %}">$/kg</th>
+          <th class="px-3 py-2 text-center" title="Costo de colorantes + auxiliares consumidos">Costo $</th>
+          <th class="px-3 py-2 text-center" title="Costo / kg terminado">$/kg</th>
         </tr>
       </thead>
       <tbody>
-        {% set _rows = filas_dia if vista == 'dia' else filas_codigo %}
-        {% set _ncols = 7 if vista == 'codigo' else 6 %}
-        {% for r in _rows %}
-        <tr class="border-t border-slate-100 hover:bg-slate-50">
-          <td class="px-3 py-1.5 whitespace-nowrap">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
-          {% if vista == 'codigo' %}<td class="px-3 py-1.5 font-mono whitespace-nowrap">{{ r.cod or '—' }}</td>{% endif %}
-          <td class="px-3 py-1.5 text-center whitespace-nowrap">
-            {# TMT 2026-06-09 dueña: 'Dejame editar kg dbase, asi podemos
-               cargar aca para probar' — click en el valor (vista día) abre
-               prompt y setea el total vía fila de ajuste manual. #}
-            {% if vista == 'dia' and r.fecha and tiene_permiso('tintura.registrar') %}
-              <button type="button" class="kg-edit underline decoration-dotted decoration-slate-400 hover:text-blue-700"
-                      data-fecha="{{ r.fecha.isoformat() }}"
-                      data-kg="{{ '%.1f' % (r.kg_dbase or 0) }}"
-                      title="Editar KG dbase del día">
-                {% if r.kg_dbase is not none %}{{ r.kg_dbase | num_es(1) }}{% else %}0,0{% endif %} <span class="text-slate-400">✎</span>
-              </button>
-            {% elif r.kg_dbase is not none %}{{ r.kg_dbase | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-center whitespace-nowrap">
-            {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-center whitespace-nowrap">
-            {% if r.cambio is not none %}
-              {% set _abs = r.cambio if r.cambio >= 0 else -r.cambio %}
-              <span class="{% if _abs > 0.5 %}{% if r.cambio > 0 %}text-emerald-700{% else %}text-rose-700{% endif %} font-medium{% else %}text-slate-500{% endif %}">{{ r.cambio | num_es(1) }}</span>
-            {% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-center whitespace-nowrap">
-            {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-center whitespace-nowrap">
-            {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-center whitespace-nowrap">
-            {% if r.costo_kg is not none and r.costo_kg > 0 %}<span class="text-slate-700">$ {{ '%.3f' % r.costo_kg }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ _ncols + 1 }}" class="px-3 py-8 text-center text-slate-500">Sin datos en el rango seleccionado.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  {# === Tabla vieja preservada abajo como histórico colapsable === #}
-  <details class="mt-6">
-    <summary class="cursor-pointer text-xs text-slate-500 uppercase tracking-wide select-none hover:text-slate-700">
-      ▶ Ver tabla histórica (resumen por día con totales)
-    </summary>
-  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden mt-2">
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 14%">Fecha</th>
-          <th class="text-right" style="width: 14%">PC kg</th>
-          <th class="text-right" style="width: 14%">Form kg</th>
-          <th class="text-right" style="width: 12%">Δ kg</th>
-          <th class="text-right" style="width: 10%">Δ %</th>
-          <th class="text-right" style="width: 16%">Importe PC (US)</th>
-          <th class="text-right" style="width: 8%">OTs Form</th>
-          <th class="text-center" style="width: 12%">Estado</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for fila in filas %}
-          {% set _fecha_iso = fila.fecha.isoformat() %}
-          {# TMT 2026-05-26 dueña: detail rows colapsadas por default,
-             click en la fila padre las muestra (chevron ▶/▼). #}
-          <tr class="row-fecha" data-fecha="{{ _fecha_iso }}" style="cursor: pointer">
-            <td>
+        {% for r in filas %}
+          {% set _fecha_iso = r.fecha.isoformat() %}
+          <tr class="row-fecha border-t border-slate-100 hover:bg-slate-50" data-fecha="{{ _fecha_iso }}" style="cursor: pointer">
+            <td class="px-3 py-1.5 whitespace-nowrap">
               <span class="caret" data-caret-fecha="{{ _fecha_iso }}">▶</span>
-              <strong>{{ fila.fecha.strftime('%d/%m/%Y') }}</strong>
+              <strong>{{ r.fecha.strftime('%d/%m/%Y') }}</strong>
             </td>
-            <td class="num">{{ fila.pc_kg | num_es(1) }}</td>
-            <td class="num">{{ fila.form_kg | num_es(1) }}</td>
-            <td class="num {% if fila.diff_kg > 0 %}delta-pos{% elif fila.diff_kg < 0 %}delta-neg{% else %}delta-zero{% endif %}">
-              {{ fila.diff_kg | num_es(1) }}
+            <td class="px-3 py-1.5 text-center">{{ r.n_ots }}</td>
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">{{ r.cruda | num_es(1) }}</td>
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">{{ r.term | num_es(1) }}</td>
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+              {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
-            <td class="num">
-              {% if fila.diff_pct is not none %}{{ '%.1f' % fila.diff_pct }}%{% else %}—{% endif %}
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+              {% if r.costo and r.costo > 0 %}$ {{ r.costo | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
-            <td class="num">{{ '$ ' ~ (fila.pc_us | num_es(0)) if fila.pc_us else '—' }}</td>
-            <td class="num">{{ fila.form_ots if fila.form_ots else '—' }}</td>
-            <td class="text-center">
-              {% if fila.estado == 'ok' %}
-                <span class="pill pill-ok">OK</span>
-              {% elif fila.estado == 'discrepancia' %}
-                <span class="pill pill-bad">Discrepancia</span>
-              {% elif fila.estado == 'solo_pc' %}
-                <span class="pill pill-warn">Solo PC</span>
-              {% elif fila.estado == 'solo_form' %}
-                <span class="pill pill-info">Solo Form</span>
-              {% endif %}
+            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+              {% if r.costo_kg is not none and r.costo_kg > 0 %}$ {{ '%.3f' % r.costo_kg }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
           </tr>
-          {# Filas hijas: PC por color enriquecido con datos formulas_app
-             (suma kg crudo/terminado, % desperdicio, fecha terminado) +
-             OTs de form — hidden por default.
-             TMT 2026-05-26 dueña: 'matchea en codigo de tres letras el
-             programa'. Las líneas PC ahora traen las columnas form_*
-             llenas si hay match por (fecha, cod). #}
-          {% if fila.detalle_color or fila.detalle_ots %}
-            {% for c in fila.detalle_color %}
-              <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
-                <td>
-                  · PC <strong>{{ c.cod }}</strong>
-                  {% if c.form_n_ots and c.form_n_ots > 0 %}
-                    <span class="text-xs text-emerald-600" title="Matcheado con {{ c.form_n_ots }} OT(s) de formulas_app">✓ form ({{ c.form_n_ots }} OT)</span>
-                  {% else %}
-                    <span class="text-xs text-slate-400" title="Sin match en formulas_app por (fecha, código)">— sin form</span>
-                  {% endif %}
-                </td>
-                <td class="num">{{ c.kg | num_es(1) }}</td>
-                <td class="num">
-                  {% if c.form_terminada_kg is not none %}{{ c.form_terminada_kg | num_es(1) }}{% else %}—{% endif %}
-                </td>
-                <td class="num">
-                  {# Δ kg PC vs formulas_app terminada #}
-                  {% if c.form_terminada_kg is not none %}{{ (c.kg - c.form_terminada_kg) | num_es(1) }}{% endif %}
-                </td>
-                <td class="num">
-                  {# % Desperdicio formulas (cruda - terminada) / cruda * 100 #}
-                  {% if c.form_desperdicio_pct is not none %}{{ '%.1f' % c.form_desperdicio_pct }}%{% endif %}
-                </td>
-                <td class="num">{{ '$ ' ~ (c.importe | num_es(0)) if c.importe else '' }}</td>
-                <td class="num text-xs">
-                  {% if c.form_cruda_kg is not none %}
-                    cruda <strong>{{ c.form_cruda_kg | num_es(1) }}</strong> kg
-                  {% else %}
-                    {{ c.n_lineas }} línea{{ 's' if c.n_lineas != 1 else '' }}
-                  {% endif %}
-                </td>
-                <td class="text-center text-xs">
-                  {% if c.form_fecha_terminado %}
-                    <span class="text-emerald-700">{{ c.form_fecha_terminado.strftime('%d/%m') }}</span>
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-            {% for o in fila.detalle_ots %}
-              <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
-                <td>· OT #{{ o.numero }} <span class="text-slate-400">({{ o.color or '—' }}) — cod <strong>{{ o.formula_cod or '?' }}</strong></span></td>
-                <td></td>
-                <td class="num">{{ (o.tela_terminada_kg or 0) | num_es(1) }}</td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td class="text-xs">
-                  {% if o.tela_cruda_kg %}cruda {{ o.tela_cruda_kg | num_es(1) }} kg{% endif %}
-                </td>
-                <td>
-                  {% if o.es_reproceso %}<span class="pill pill-warn">Reproceso</span>{% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          {% endif %}
+          {% for c in r.detalle_cod %}
+            <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
+              <td class="whitespace-nowrap">· <strong>{{ c.cod }}</strong></td>
+              <td class="text-center">{{ c.n_ots }}</td>
+              <td class="num">{{ c.cruda | num_es(1) }}</td>
+              <td class="num">{{ c.term | num_es(1) }}</td>
+              <td class="num">{% if c.desperdicio_pct is not none %}{{ '%.1f' % c.desperdicio_pct }}%{% endif %}</td>
+              <td class="num">{% if c.costo and c.costo > 0 %}$ {{ c.costo | num_es(0) }}{% endif %}</td>
+              <td class="num">{% if c.costo_kg is not none and c.costo_kg > 0 %}$ {{ '%.3f' % c.costo_kg }}{% endif %}</td>
+            </tr>
+          {% endfor %}
         {% else %}
-          <tr><td colspan="8" class="text-center py-8 text-slate-500">
-            Sin datos en el rango seleccionado.
-          </td></tr>
+          <tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">Sin datos en el rango seleccionado.</td></tr>
         {% endfor %}
         {% if filas %}
           <tr class="total">
             <td>TOTAL</td>
-            <td class="num">{{ tot_pc_kg | num_es(1) }}</td>
-            <td class="num">{{ tot_form_kg | num_es(1) }}</td>
-            <td class="num">{{ tot_diff_kg | num_es(1) }}</td>
-            <td class="num">
-              {% if tot_diff_pct is not none %}{{ '%.1f' % tot_diff_pct }}%{% else %}—{% endif %}
-            </td>
-            <td class="num">$ {{ tot_pc_us | num_es(0) }}</td>
-            <td></td>
-            <td></td>
+            <td class="text-center">{{ tot_ots }}</td>
+            <td class="num">{{ tot_cruda | num_es(1) }}</td>
+            <td class="num">{{ tot_term | num_es(1) }}</td>
+            <td class="num">{% if tot_desperdicio_pct is not none %}{{ '%.1f' % tot_desperdicio_pct }}%{% endif %}</td>
+            <td class="num">$ {{ tot_costo | num_es(0) }}</td>
+            <td class="num">{% if tot_costo_kg is not none and tot_costo_kg > 0 %}$ {{ '%.3f' % tot_costo_kg }}{% endif %}</td>
           </tr>
         {% endif %}
       </tbody>
     </table>
   </div>
-  </details>
 
   <p class="text-xs text-slate-500 mt-3">
-    <strong>Nota:</strong> el cruce es por <code>(fecha, código de 3 letras)</code>:
-    PC <code>tinto.cod</code> vs Form <code>ordenes.formula_cod</code> y mismo
-    día de terminado. Si una línea PC no matchea (— en columnas form), no hay
-    OTs con ese código + fecha. Reprocesos / drift de fecha pueden explicar
-    diferencias en columna Cambio.
+    <strong>Nota:</strong> los datos salen de Fórmulas App por
+    <code>fecha_terminado</code>. El histórico anterior al 7/7/2026 queda
+    congelado en el balance con los valores del dBase; esta pantalla es de
+    consulta y no lo modifica.
   </p>
 </div>
 
 <script>
 (function() {
-  // TMT 2026-05-26 dueña: detail rows colapsadas — click en la fila de
-  // fecha alterna visibilidad de los hijos.
+  // Click en la fila de fecha alterna el detalle por código.
   document.querySelectorAll('tr.row-fecha').forEach(tr => {
-    tr.addEventListener('click', (e) => {
+    tr.addEventListener('click', () => {
       const fecha = tr.dataset.fecha;
       if (!fecha) return;
       const caret = tr.querySelector('.caret');
-      const detalles = document.querySelectorAll(
-        `tr.det[data-fecha-parent="${fecha}"]`
-      );
+      const detalles = document.querySelectorAll(`tr.det[data-fecha-parent="${fecha}"]`);
       let abrir = false;
-      detalles.forEach(d => {
-        if (d.hidden) abrir = true;
-      });
+      detalles.forEach(d => { if (d.hidden) abrir = true; });
       detalles.forEach(d => { d.hidden = !abrir; });
       if (caret) caret.textContent = abrir ? '▼' : '▶';
-    });
-  });
-
-  // TMT 2026-06-09 dueña: editar KG dbase inline (vista día) — prompt +
-  // POST a editar-kg. El backend inserta una fila de ajuste manual en
-  // scintela.tinto para que el total del día quede en el valor ingresado.
-  document.querySelectorAll('.kg-edit').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const fecha = btn.dataset.fecha;
-      const val = window.prompt('Total KG dbase para ' + fecha + ':', btn.dataset.kg);
-      if (val === null || !val.trim()) return;
-      fetch('{{ url_for("comparativa_tintoreria.editar_kg_dbase") }}', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json',
-                  'X-CSRFToken': '{{ csrf_token() }}'},
-        body: JSON.stringify({fecha: fecha, kg: val.trim()})
-      }).then(r => r.json()).then(j => {
-        if (j.ok) { location.reload(); }
-        else { alert(j.error || 'No se pudo guardar.'); }
-      }).catch(err => alert('Error: ' + err));
     });
   });
 })();
