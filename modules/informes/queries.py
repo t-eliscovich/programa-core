@@ -3557,10 +3557,14 @@ def resultados_costos_tabla(
          "ayuda": ("Subtotal +4.5% + Administracion. "
                    "U$ = kg vendidos * Costo Total.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
-         "clase": "key",
-         "ayuda": ("(PATR − PATANT) + URET — delta del patrimonio + dividendos "
-                   "del mes. Cuenta económica completa (incluye revalúo de "
-                   "stock, cambios de cartera, etc.).")},
+         "clase": "key", "parcial": True, "parcial_dias": dia_actual,
+         "ayuda": (
+             "(PATR − PATANT) + URET — delta del patrimonio + dividendos "
+             "del mes. Cuenta económica completa (incluye revalúo de "
+             "stock, cambios de cartera, etc.). ⚠ Cifra del mes EN CURSO "
+             f"(día {dia_actual}): PATR−PATANT sólo cuadra al CIERRE de mes; "
+             "a principio de mes puede salir negativa — es parcial, no la "
+             "utilidad final.")},
         {"label": "Utilidad Proyectada", "kg": up_kg, "ukg": up_ukg,
          "us": up_us, "clase": "dato",
          "ayuda": ("Réplica dBase (UT.PROY): utilidad real del mes (PATR−PATANT) "

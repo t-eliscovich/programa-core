@@ -11,6 +11,7 @@ No tocan Postgres. Reglas verificadas:
 """
 from __future__ import annotations
 
+import contextlib
 from datetime import date
 from typing import Any
 
@@ -50,6 +51,15 @@ class _FakeFacturaDB:
         monkeypatch.setattr(db_mod, "fetch_all", self.fetch_all)
         monkeypatch.setattr(db_mod, "execute", self.execute)
         monkeypatch.setattr(db_mod, "execute_returning", self.execute_returning)
+        # editar() abre `with db.tx() as conn:`. Sin stub, tx() intenta abrir
+        # un pool real y falla sin Postgres (estos tests NO tocan Postgres).
+        # Devolvemos un conn dummy: los helpers están stubbeados e ignoran el
+        # conn, así que un objeto vacío alcanza. TMT 2026-07-11.
+        @contextlib.contextmanager
+        def _fake_tx(*_a, **_k):
+            yield object()
+
+        monkeypatch.setattr(db_mod, "tx", _fake_tx)
 
 
 @pytest.fixture(autouse=True)
