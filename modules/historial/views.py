@@ -492,23 +492,20 @@ def reverso_preview(id_mov_doble: int):
         ) or {}
         numf = (fac.get("numf") or "").strip() or f"#{r['destino_id']}"
         # Sólo las aplicaciones de ESTE cheque a ESTA factura (lo que desaplica
-        # el POST), no todas las del cheque.
+        # el POST). Se suman en UNA línea — un cheque puede aplicarse en partes
+        # a la misma factura (no hay UNIQUE(cheque, factura)).
         apps = db.fetch_all(
-            "SELECT id_fact, importe, fechaing FROM scintela.chequesxfact "
-            "WHERE id_cheque = %s AND id_fact = %s ORDER BY id_fact",
+            "SELECT importe, fechaing FROM scintela.chequesxfact "
+            "WHERE id_cheque = %s AND id_fact = %s",
             (r["origen_id"], r["destino_id"]),
         ) or []
-        movimientos = [
-            {
-                "texto": f"Factura {numf}",
-                "importe": float(a.get("importe") or 0),
-                "detalle": (a["fechaing"].strftime("%d/%m/%Y") if a.get("fechaing") else ""),
-            }
-            for a in apps
-        ]
-        # Detalle acorde a lo que realmente se desaplica (esta factura), no el
-        # importe total del mov — evita el desfase 660 (mov) vs 600 (factura).
-        _monto_desaplica = sum(m["importe"] for m in movimientos)
+        _monto_desaplica = sum(float(a.get("importe") or 0) for a in apps)
+        _fecha = max((a["fechaing"] for a in apps if a.get("fechaing")), default=None)
+        movimientos = [{
+            "texto": f"Factura {numf}",
+            "importe": _monto_desaplica,
+            "detalle": (_fecha.strftime("%d/%m/%Y") if _fecha else ""),
+        }] if apps else []
         detalle = {
             "Cheque": f"N° {no_ch}",
             "Factura": numf,
@@ -519,8 +516,8 @@ def reverso_preview(id_mov_doble: int):
         titulo = f"Desaplicar cheque {no_ch}"
         mensaje = (
             f"Se deshace la aplicación a la factura {numf}: vuelve a cartera. "
-            "Es lo mismo que 'Desaplicar' en la ficha — no toca al cliente ni "
-            "el estado del cheque."
+            "Equivale a 'Desaplicar' en la ficha del cheque; no afecta al "
+            "cliente ni cambia el estado del cheque."
         )
 
     # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto

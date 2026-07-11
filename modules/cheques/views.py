@@ -1533,13 +1533,50 @@ def aplicar(id_cheque: int):
         ), 500
 
 
+def _facturas_que_vuelven(id_cheque: int) -> list[dict]:
+    """Facturas que este cheque cubría, UNA línea por factura (suma las
+    aplicaciones parciales — un cheque puede aplicarse en partes a la misma
+    factura, no hay UNIQUE(cheque, factura)). Muestra el N° de factura real.
+    TMT 2026-07-11 (dueña: 'porque están repetidas las facturas')."""
+    apps = db.fetch_all(
+        "SELECT id_fact, importe, fechaing "
+        "FROM scintela.chequesxfact WHERE id_cheque = %s",
+        (id_cheque,),
+    ) or []
+    agg: dict = {}
+    for a in apps:
+        fid = a.get("id_fact")
+        slot = agg.setdefault(fid, {"importe": 0.0, "fecha": None})
+        slot["importe"] += float(a.get("importe") or 0)
+        fch = a.get("fechaing")
+        if fch and (slot["fecha"] is None or fch > slot["fecha"]):
+            slot["fecha"] = fch
+    numf: dict = {}
+    if agg:
+        ph = ",".join(["%s"] * len(agg))
+        for rf in db.fetch_all(
+            f"SELECT id_factura, COALESCE(numf::text, '') AS numf "
+            f"FROM scintela.factura WHERE id_factura IN ({ph})",
+            tuple(agg),
+        ) or []:
+            numf[rf["id_factura"]] = (rf.get("numf") or "").strip()
+    return [
+        {
+            "texto": f"Factura {numf.get(fid) or ('#' + str(fid))}",
+            "importe": slot["importe"],
+            "detalle": (slot["fecha"].strftime("%d/%m/%Y") if slot["fecha"] else ""),
+        }
+        for fid, slot in sorted(agg.items(), key=lambda kv: str(kv[0]))
+    ]
+
+
 def _reverso_preview_cheque(id_cheque: int) -> dict | None:
     """Construye el preview del reverso de un cheque (compartido por la
     página HTML de confirmación y el endpoint JSON del modal in-page).
 
     Devuelve None si el cheque no existe o ya está reversado. Distingue por
-    stat: B/A/1/2 → SIN FONDOS (rebote real, evento malo); Z/D/P/V → REVERSAR
-    (undo administrativo, no toca al cliente). TMT 2026-05-24 (dueña).
+    stat: B/A/1/2 → sin fondos (rebote real); Z/D/P/V → reversión
+    administrativa (no afecta al cliente). TMT 2026-05-24 (dueña).
     """
     ch = queries.por_id(id_cheque)
     if not ch or ch.get("stat") == "R":
@@ -1559,32 +1596,21 @@ def _reverso_preview_cheque(id_cheque: int) -> dict | None:
     if es_rebote:
         titulo = f"Sin fondos — cheque {no_ch}"
         mensaje = (
-            f"El cheque rebotó. Se anota el rebote en el cliente {cliente} y las "
+            f"El cheque rebotó. Se registra el rebote en el cliente {cliente} y las "
             "facturas que cubría vuelven a cartera."
         )
         confirm_label = "Marcar sin fondos"
     else:
         titulo = f"Reversar cheque {no_ch}"
         mensaje = (
-            "Undo administrativo: las facturas que cubría vuelven a cartera. "
-            "No se toca al cliente."
+            "Reversión administrativa: las facturas que cubría vuelven a cartera. "
+            "No afecta al cliente."
         )
         confirm_label = "Reversar"
-    # Detalle adaptativo: listamos las facturas que este cheque cubría (vuelven
-    # a cartera al reversar). Muchas aplicaciones → lista larga; una → una línea.
-    _apps = db.fetch_all(
-        "SELECT id_fact, importe, fechaing "
-        "FROM scintela.chequesxfact WHERE id_cheque = %s ORDER BY id_fact",
-        (id_cheque,),
-    ) or []
-    movimientos = [
-        {
-            "texto": f"Factura #{a.get('id_fact')}",
-            "importe": float(a.get("importe") or 0),
-            "detalle": (a["fechaing"].strftime("%d/%m/%Y") if a.get("fechaing") else ""),
-        }
-        for a in _apps
-    ]
+    # Detalle adaptativo: una línea por factura (sumando las aplicaciones
+    # parciales del mismo cheque a la misma factura — no hay UNIQUE(cheque,
+    # factura), pueden ser varias). TMT 2026-07-11 (dueña).
+    movimientos = _facturas_que_vuelven(id_cheque)
     return {
         "titulo": titulo,
         "mensaje": mensaje,
@@ -1657,15 +1683,15 @@ def reversar(id_cheque: int):
         n_aplic = r["reversadas"]
         if r.get("es_rebote_real"):
             base = (
-                f"Cheque marcado como SIN FONDOS. Se anotó el rebote en "
+                f"Cheque marcado como sin fondos. Se registró el rebote en "
                 f"la observación del cliente {r['codigo_cli']}. "
                 f"Se restauraron {n_aplic} factura(s) a cartera."
             )
         else:
             base = (
-                f"Cheque REVERSADO (undo administrativo). "
+                f"Cheque reversado (reversión administrativa). "
                 f"Se restauraron {n_aplic} factura(s) a cartera. "
-                "No se tocó al cliente."
+                "No afecta al cliente."
             )
         flash(base, "ok")
     except ValueError as e:
