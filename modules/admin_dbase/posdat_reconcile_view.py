@@ -69,6 +69,7 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
     updates: list[dict] = []
     deletes: list[dict] = []
     inserts: list[dict] = []
+    aligns: list[dict] = []
 
     def is_yy_like(p):
         # RT (IVA) acumula display-time igual que YY → mismo tratamiento.
@@ -148,18 +149,52 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
     for r in pc_banc0:
         if not is_yy_like(r["prov"]):
             pc_n[(_norm(r["prov"]), round(float(r["importe"]), 2))].append(r)
+    # TMT 2026-07-11 (dueña "que el sync tome esos datos"): las primeras n filas
+    # matchean por (prov, importe). Antes era no-op → concepto y fechad quedaban
+    # VIEJOS (el dBase renumera el documento y posterga vencimientos con el mismo
+    # importe → PC no lo veía; p.ej. SY "58028"→"22132" y 15 fechas de junio sin
+    # actualizar). Ahora, para las filas que ORIGINAN en el dBase
+    # (usuario_crea dbf-import/reconcile-dbf), alineamos concepto+fechad al dBase
+    # IN-PLACE (preserva id_posdat → mov_doble intacto). Las creadas/editadas en
+    # PC (otro usuario_crea) NO se tocan. Emparejamos minimizando cambios: las que
+    # ya coinciden (concepto+fechad) consumen su par y no generan update.
+    DBF_ORIGIN = ("DBF-IMPORT", "RECONCILE-DBF")
+
+    def _fd(x):
+        return x.isoformat() if hasattr(x, "isoformat") else (str(x) if x else "")
+
     for key in sorted(set(list(dbf_n) + list(pc_n))):
         prov, amt = key
         d = dbf_n.get(key, [])
         p = pc_n.get(key, [])
         n = min(len(d), len(p))
-        # Las primeras n filas matchean por (prov, importe) → no-op.
+        # ── alinear concepto+fechad de las filas dbf-origin en la región matcheada ──
+        matched_dbf = list(d[:n])
+        used = [False] * len(matched_dbf)
+        need_align = []
+        for pr in p[:n]:
+            if _norm(pr.get("usuario_crea")) not in DBF_ORIGIN:
+                continue  # PC-creada / editada a mano → no se pisa
+            cur = (_norm(pr.get("concepto")), _fd(pr.get("fechad")))
+            hit = next((j for j, dd in enumerate(matched_dbf)
+                        if not used[j]
+                        and (_norm(dd.get("concepto")), _fd(dd.get("fechad"))) == cur), None)
+            if hit is not None:
+                used[hit] = True  # ya alineada → no-op
+            else:
+                need_align.append(pr)
+        free = [dd for j, dd in enumerate(matched_dbf) if not used[j]]
+        for pr, dd in zip(need_align, free):
+            aligns.append({"id": pr["id_posdat"],
+                           "concepto": (dd.get("concepto") or "").strip(),
+                           "fechad": dd.get("fechad"),
+                           "que": f"{prov} {amt:.2f}"})
         for i in range(n, len(p)):  # PC tiene de más → borrar
             deletes.append({"id": p[i]["id_posdat"], "prov": prov, "importe": amt,
                             "concepto": p[i].get("concepto"), "linked": bool(p[i].get("linked"))})
         for i in range(n, len(d)):  # dBase tiene de más → insertar (cheque nuevo)
             inserts.append({"prov": prov, "importe": amt, "concepto": d[i].get("concepto")})
-    return {"updates": updates, "deletes": deletes, "inserts": inserts}
+    return {"updates": updates, "deletes": deletes, "inserts": inserts, "aligns": aligns}
 
 
 def _leer_dbf_banc0(dbf_path: Path) -> list[dict]:
@@ -178,7 +213,8 @@ def _leer_pc_banc0() -> list[dict]:
     import db
     rows = db.fetch_all(
         """
-        SELECT p.id_posdat, p.prov, p.importe, p.concepto,
+        SELECT p.id_posdat, p.prov, p.importe, p.concepto, p.fechad,
+               COALESCE(p.usuario_crea, '') AS usuario_crea,
                EXISTS (
                    SELECT 1 FROM scintela.mov_doble m
                     WHERE m.estado = 'activo'
@@ -192,7 +228,8 @@ def _leer_pc_banc0() -> list[dict]:
     ) or []
     return [{"id_posdat": r["id_posdat"], "prov": r["prov"],
              "importe": round(float(r["importe"] or 0), 2),
-             "concepto": r["concepto"], "linked": bool(r["linked"])} for r in rows]
+             "concepto": r["concepto"], "fechad": r["fechad"],
+             "usuario_crea": r["usuario_crea"], "linked": bool(r["linked"])} for r in rows]
 
 
 FORM = """
@@ -881,7 +918,8 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
         dbf = [d for d in dbf_rows if int(d.get("num") or 0) != 9999]
     else:
         dbf = _leer_dbf_full(dbf_path)
-    dbf_b0 = [{"prov": d["prov"], "importe": d["importe"], "concepto": d["concepto"]}
+    dbf_b0 = [{"prov": d["prov"], "importe": d["importe"], "concepto": d["concepto"],
+               "fechad": d["fechad"]}
               for d in dbf if int(d["banc"]) == 0]
     dbf_b9 = [d for d in dbf if int(d["banc"]) == 9]
     origen = "JSON" if dbf_rows is not None else "POSDAT.DBF"
@@ -905,6 +943,7 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
         return
     plan = reconciliar_posdat_plan(dbf_b0, pc_b0)
     ups, dels, ins = plan["updates"], plan["deletes"], plan["inserts"]
+    aligns = plan.get("aligns", [])
 
     proj_b0 = sum(x["importe"] for x in pc_b0)
     for u in ups:
@@ -953,7 +992,7 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
             ins9.append(d)
 
     # ── REPORTE ──
-    yield line(f"[posdat-reconcile] BANC=0 plan: {len(ups)} UPDATE · {len(dels)} DEL/ANULA · {len(ins)} INSERT")
+    yield line(f"[posdat-reconcile] BANC=0 plan: {len(ups)} UPDATE · {len(dels)} DEL/ANULA · {len(ins)} INSERT · {len(aligns)} ALIGN(concepto+fechad)")
     yield line(f"[posdat-reconcile] >>> PASIVO banc=0 proyectado ≈ {proj_b0:,.2f}  |  dBase {dbf_b0_sum:,.2f}  |  diff {proj_b0 - dbf_b0_sum:,.2f}")
     yield line(f"[posdat-reconcile] BANC=9: borrar {len(borrar9_ids)} · insertar {len(ins9)} de {len(dbf_b9)}")
 
@@ -971,6 +1010,11 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
                 else:
                     db.execute("UPDATE scintela.posdat SET importe=%s WHERE id_posdat=%s",
                                (u["importe"], u["id"]), conn=conn)
+            for a in aligns:
+                # alinea concepto+fechad de la fila dbf-origin al dBase (in-place,
+                # preserva id_posdat/link). TMT 2026-07-11.
+                db.execute("UPDATE scintela.posdat SET concepto=%s, fechad=%s WHERE id_posdat=%s",
+                           (a["concepto"], a["fechad"], a["id"]), conn=conn)
             for d in dels:
                 if soft_delete or d["linked"]:
                     db.execute("UPDATE scintela.posdat SET anulada=TRUE, motivo_anulacion=%s, "
@@ -995,7 +1039,7 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
                            (d["fecha"], d["fechad"], d["prov"], d["num"], d["importe"],
                             d["concepto"], d["banc"], d["clave"]), conn=conn)
         nuevo = _leer_pc_banc0()
-        yield line(f">>> APLICADO ✓ banc=0: {len(ups)}U/{len(dels)}D/{len(ins)}I → suma {sum(x['importe'] for x in nuevo):,.2f} (dBase {dbf_b0_sum:,.2f})")
+        yield line(f">>> APLICADO ✓ banc=0: {len(ups)}U/{len(dels)}D/{len(ins)}I/{len(aligns)}Align → suma {sum(x['importe'] for x in nuevo):,.2f} (dBase {dbf_b0_sum:,.2f})")
         yield line(f">>> APLICADO ✓ banc=9: -{len(borrar9_ids)} +{len(ins9)}")
     except Exception as exc:  # noqa: BLE001
         yield line(f"[ERROR posdat-reconcile rollback] {exc!r}")
