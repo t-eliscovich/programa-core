@@ -603,12 +603,15 @@
              como opción de estado dentro del detalle del cheque. #}
           <td class="px-1 py-1.5 text-right no-print">
             {% if s in ('Z', 'D', 'P', 'V') and tiene_permiso('cheques.anular') %}
-              <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
+              {# TMT 2026-07-11 (dueña): reverso in-page (modal), no otra página.
+                 Al aceptar vuelve acá con los filtros intactos. #}
+              <button type="button"
                  data-stop="1"
-                 class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                 class="js-reverso inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                 data-reverso-preview="{{ url_for('cheques.reverso_preview', id_cheque=c.id_cheque) }}"
                  title="Me confundí — undo administrativo sin afectar al cliente">
                 ↺ <span class="hidden md:inline">reversar</span>
-              </a>
+              </button>
             {% endif %}
           </td>
         </tr>
@@ -894,4 +897,7 @@
   </script>
   {% endif %}
 </div>
+
+{# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
+{% include "_reverso_modal.html" %}
 {% endblock %}

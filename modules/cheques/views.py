@@ -1533,25 +1533,17 @@ def aplicar(id_cheque: int):
         ), 500
 
 
-@cheques_bp.route("/cheques/<int:id_cheque>/confirmar-reverso", methods=["GET"])
-@requiere_login
-@requiere_permiso("cheques.anular")
-def confirmar_reverso(id_cheque: int):
-    """Paso 1 del 2-step: confirmar 'Sin fondos' o 'Reversar (me confundí)'.
+def _reverso_preview_cheque(id_cheque: int) -> dict | None:
+    """Construye el preview del reverso de un cheque (compartido por la
+    página HTML de confirmación y el endpoint JSON del modal in-page).
 
-    TMT 2026-05-24 — Dueña: 'no es lo mismo reversar que rebote'. La
-    distinción es por stat actual:
-      - B/A/1/2 → SIN FONDOS (el cheque ya estuvo en circulación bancaria
-                  y rebotó). Evento malo, queda anotado en cliente.
-      - Z/D/P/V → REVERSAR (te confundiste al cargar). Admin undo, sin
-                  afectar al cliente.
+    Devuelve None si el cheque no existe o ya está reversado. Distingue por
+    stat: B/A/1/2 → SIN FONDOS (rebote real, evento malo); Z/D/P/V → REVERSAR
+    (undo administrativo, no toca al cliente). TMT 2026-05-24 (dueña).
     """
     ch = queries.por_id(id_cheque)
-    if not ch:
-        abort(404)
-    if ch.get("stat") == "R":
-        flash("El cheque ya está reversado.", "warn")
-        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+    if not ch or ch.get("stat") == "R":
+        return None
     stat_prev = ch.get("stat") or ""
     es_rebote = stat_prev in queries.STATS_REBOTE_REAL
     no_ch = ch.get("no_cheque") or f"#{id_cheque}"
@@ -1605,17 +1597,61 @@ def confirmar_reverso(id_cheque: int):
         }
         for a in _apps
     ]
+    return {
+        "titulo": titulo,
+        "mensaje": mensaje,
+        "detalle": detalle,
+        "movimientos": movimientos,
+        "titulo_movimientos": "Facturas que cubría (vuelven a cartera)",
+        "confirm_label": confirm_label,
+    }
+
+
+@cheques_bp.route("/cheques/<int:id_cheque>/reverso-preview", methods=["GET"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def reverso_preview(id_cheque: int):
+    """JSON para el modal in-page de reverso (mismo shape que historial).
+
+    El partial _reverso_modal.html lo consume: dibuja el cartel sin salir de
+    la pantalla y, al aceptar, postea a `accion_url` con `next` = la URL
+    actual (con filtros) → volvés donde estabas. TMT 2026-07-11 (dueña).
+    """
+    data = _reverso_preview_cheque(id_cheque)
+    if not data:
+        return jsonify({"ok": False, "error": "El cheque no existe o ya está reversado."})
+    data["ok"] = True
+    data["accion_url"] = url_for("cheques.reversar", id_cheque=id_cheque)
+    return jsonify(data)
+
+
+@cheques_bp.route("/cheques/<int:id_cheque>/confirmar-reverso", methods=["GET"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def confirmar_reverso(id_cheque: int):
+    """Paso 1 del 2-step: confirmar 'Sin fondos' o 'Reversar (me confundí)'.
+
+    Fallback HTML (para links directos / no-JS). El flujo normal desde la
+    lista usa el modal in-page (ver reverso_preview). TMT 2026-05-24 dueña.
+    """
+    ch = queries.por_id(id_cheque)
+    if not ch:
+        abort(404)
+    if ch.get("stat") == "R":
+        flash("El cheque ya está reversado.", "warn")
+        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+    data = _reverso_preview_cheque(id_cheque)
     return render_template(
         "_confirmar_accion.html",
-        titulo=titulo,
-        mensaje=mensaje,
-        detalle_registro=detalle,
-        movimientos=movimientos,
-        titulo_movimientos="Facturas que cubría (vuelven a cartera)",
+        titulo=data["titulo"],
+        mensaje=data["mensaje"],
+        detalle_registro=data["detalle"],
+        movimientos=data["movimientos"],
+        titulo_movimientos=data["titulo_movimientos"],
         accion_url=url_for("cheques.reversar", id_cheque=id_cheque),
         volver_url=url_for("cheques.detalle", id_cheque=id_cheque),
         motivo_requerido=True,
-        confirm_label=confirm_label,
+        confirm_label=data["confirm_label"],
     )
 
 
@@ -1648,6 +1684,11 @@ def reversar(id_cheque: int):
         flash(str(e), "error")
     except Exception as e:
         flash_exc("No pude reversar el cheque", e)
+    # TMT 2026-07-11 (dueña): si vino del modal in-page, volver a la pantalla
+    # anterior con sus filtros (`next`), sino a la ficha del cheque.
+    nxt = (request.form.get("next") or "").strip()
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
