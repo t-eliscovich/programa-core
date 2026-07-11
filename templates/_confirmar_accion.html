@@ -52,6 +52,31 @@ Variables:
         </dl>
       {% endif %}
 
+      {# Lista de movimientos afectados por el reverso — detalle ADAPTATIVO:
+         se muestra la lista concreta (con contador), así "muchos movs" trae
+         mucho detalle y "uno solo" trae poco. Cada item:
+           {texto, importe (opc), detalle (opc)}.  TMT 2026-07-11 (dueña). #}
+      {% if movimientos %}
+        <div class="mb-5">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">
+            {{ titulo_movimientos or "Movimientos afectados" }}
+            <span class="text-slate-400">· {{ movimientos | length }}</span>
+          </div>
+          <ul class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded text-sm max-h-64 overflow-y-auto">
+            {% for m in movimientos %}
+              <li class="flex items-center justify-between gap-3 px-3 py-1.5">
+                <span class="text-slate-700 dark:text-slate-200">
+                  {{ m.texto }}{% if m.detalle %} <span class="text-xs text-slate-400">· {{ m.detalle }}</span>{% endif %}
+                </span>
+                {% if m.importe is defined and m.importe is not none %}
+                  <span class="font-mono text-slate-500 whitespace-nowrap">$ {{ "%.2f"|format(m.importe|float) }}</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
       {# Saldo proyectado — opcional. Acepta dict (un banco) o list (varios). #}
       {% if saldo_preview %}
         {% set _previews = saldo_preview if saldo_preview is iterable and saldo_preview is not mapping else [saldo_preview] %}

@@ -1590,11 +1590,28 @@ def confirmar_reverso(id_cheque: int):
             f"(3) NO se toca al cliente {cliente} — no es un rebote."
         )
         confirm_label = "Confirmar REVERSAR"
+    # Detalle adaptativo: listamos las facturas que este cheque cubría (vuelven
+    # a cartera al reversar). Muchas aplicaciones → lista larga; una → una línea.
+    _apps = db.fetch_all(
+        "SELECT id_fact, importe, fechaing "
+        "FROM scintela.chequesxfact WHERE id_cheque = %s ORDER BY id_fact",
+        (id_cheque,),
+    ) or []
+    movimientos = [
+        {
+            "texto": f"Factura #{a.get('id_fact')}",
+            "importe": float(a.get("importe") or 0),
+            "detalle": (a["fechaing"].strftime("%d/%m/%Y") if a.get("fechaing") else ""),
+        }
+        for a in _apps
+    ]
     return render_template(
         "_confirmar_accion.html",
         titulo=titulo,
         mensaje=mensaje,
         detalle_registro=detalle,
+        movimientos=movimientos,
+        titulo_movimientos="Facturas que cubría (vuelven a cartera)",
         accion_url=url_for("cheques.reversar", id_cheque=id_cheque),
         volver_url=url_for("cheques.detalle", id_cheque=id_cheque),
         motivo_requerido=True,
