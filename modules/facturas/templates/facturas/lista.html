@@ -130,9 +130,10 @@
     {# Grupo 1: Cliente (3 letras = match exacto) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cliente</label>
-      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras: PUE"
+      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="PUE"
              maxlength="20" autocomplete="off" style="text-transform:uppercase"
-             class="w-36 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+             title="Código del cliente (3 letras = match exacto)"
+             class="w-20 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm uppercase">
     </div>
 
     {# TMT 2026-05-19 v8 — filtro de Estado multi-checkbox (pedido dueña:
@@ -202,11 +203,12 @@
       <input type="text" name="q" value="{{ q }}" placeholder="N° factura, nombre…"
              class="w-36 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
-    {# Filtro por tipo AI (F/D/N/NC) — parte de la conciliación Asinfo, oculto
-       por defecto y visible con el toggle "Ver conciliación Asinfo". TMT 2026-07-11. #}
-    <div class="asinfo-col">
-      <label class="block text-xs text-slate-500 mb-1">Tipo AI</label>
-      <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    {# Filtro por tipo de documento (F/D/N/NC). Siempre visible — pedido dueña
+       2026-07-11 ("que tipo esté siempre"). La fuente sigue siendo el tipo de
+       Asinfo hasta que se retire. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+      <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
         <option value="F" {% if tipo_ai_filtro == 'F' %}selected{% endif %}>F · Factura</option>
         <option value="D" {% if tipo_ai_filtro == 'D' %}selected{% endif %}>D · Devolución</option>
@@ -276,17 +278,21 @@
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-xs sortable table-fixed">
       <colgroup>
+        {# Anchos pensados para la vista LIMPIA (AI oculto): suman 100% sin las
+           columnas Kg AI / USD AI. Cuando se muestran (toggle), el total pasa a
+           115% y table-fixed comprime todo un poco. Cliente muestra sólo el
+           código de 3 letras → no necesita ancho de sobra. TMT 2026-07-11. #}
         <col style="width: 8%">    <!-- N° -->
-        <col style="width: 8%">    <!-- Fecha -->
-        <col>                       <!-- Cliente: resto -->
-        <col style="width: 7%">    <!-- Kg -->
+        <col style="width: 9%">    <!-- Fecha -->
+        <col style="width: 10%">   <!-- Cliente -->
+        <col style="width: 10%">   <!-- Kg -->
         <col style="width: 7%" class="asinfo-col">    <!-- Kg AI -->
-        <col style="width: 9%">    <!-- Importe -->
+        <col style="width: 13%">   <!-- Importe -->
         <col style="width: 8%" class="asinfo-col">    <!-- USD AI -->
-        <col style="width: 4%">    <!-- Tipo AI -->
-        <col style="width: 9%">    <!-- Abonado -->
-        <col style="width: 10%">   <!-- Saldo -->
-        <col style="width: 9%">    <!-- Acum -->
+        <col style="width: 6%">    <!-- Tipo -->
+        <col style="width: 13%">   <!-- Abonado -->
+        <col style="width: 13%">   <!-- Saldo -->
+        <col style="width: 13%">   <!-- Acum -->
         <col style="width: 5%">    <!-- Stat -->
       </colgroup>
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
