@@ -124,7 +124,7 @@
     {% endfor %}
   </div>
 
-  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  <form class="no-print flex flex-wrap items-end gap-2 mb-4 px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <input type="hidden" name="vista" value="{{ vista }}">
 
     {# Grupo 1: Cliente (3 letras = match exacto) #}
@@ -174,18 +174,18 @@
       <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
              placeholder="729 · 729,51"
              title="Entero = el dólar entero (729 → 729,00–729,99). Con centavos = exacto (729,51)."
-             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# Grupo 3: Fecha (desde — hasta) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha desde</label>
       <input type="date" name="desde" id="fecha-desde-input" value="{{ desde or '' }}"
-             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha hasta</label>
       <input type="date" name="hasta" id="fecha-hasta-input" value="{{ hasta or '' }}"
-             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# TMT 2026-05-26 dueña: shortcut "Hoy" para filtrar el día actual sin
        tipear fechas. Setea ambos campos = hoy y dispara filtrar. #}
@@ -200,7 +200,7 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
       <input type="text" name="q" value="{{ q }}" placeholder="N° factura, nombre…"
-             class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="w-36 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# Filtro por tipo AI (F/D/N/NC) — parte de la conciliación Asinfo, oculto
        por defecto y visible con el toggle "Ver conciliación Asinfo". TMT 2026-07-11. #}
