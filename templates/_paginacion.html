@@ -1,0 +1,33 @@
+{# Paginación reutilizable con flechitas — TMT 2026-07-11 (dueña).
+
+Uso en cualquier lista paginada:
+    {% include "_paginacion.html" %}
+
+Requiere en el contexto de render:
+  · `pagina`  → nº de página actual (1-based)
+  · `hay_mas` → bool, True si hay una página siguiente
+
+Preserva TODOS los filtros actuales (request.args): sólo cambia `pagina`,
+así la flechita avanza sin perder monto/tipo/fechas/etc. #}
+{% if pagina and (pagina > 1 or hay_mas) %}
+<nav class="flex items-center justify-center gap-3 mt-4 no-print" aria-label="Paginación">
+  {% set _base = request.args.to_dict() %}
+  {% if pagina > 1 %}
+    {% set _prev = _base.copy() %}{% set _ = _prev.update({'pagina': pagina - 1}) %}
+    <a href="{{ request.path }}?{{ _prev|urlencode }}"
+       class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+       aria-label="Página anterior">← Anteriores</a>
+  {% else %}
+    <span class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded border border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-700 cursor-default select-none">← Anteriores</span>
+  {% endif %}
+  <span class="text-xs text-slate-500">Página {{ pagina }}</span>
+  {% if hay_mas %}
+    {% set _next = _base.copy() %}{% set _ = _next.update({'pagina': pagina + 1}) %}
+    <a href="{{ request.path }}?{{ _next|urlencode }}"
+       class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+       aria-label="Página siguiente">Siguientes →</a>
+  {% else %}
+    <span class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded border border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-700 cursor-default select-none">Siguientes →</span>
+  {% endif %}
+</nav>
+{% endif %}

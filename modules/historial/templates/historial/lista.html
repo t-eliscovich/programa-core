@@ -70,29 +70,29 @@
   </div>
 
   {# Filtros #}
-  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-3 bg-white border border-slate-200 rounded">
+  <form class="no-print flex flex-wrap items-end gap-2 mb-4 px-3 py-2.5 bg-white border border-slate-200 rounded">
     {# TMT 2026-07-07 (dueña): preservar mis_origenes al filtrar/paginar — sin
        esto, Alex (que ve /mi-historial sin informes.ver) al filtrar perdía el
        flag y el gate le daba 404. #}
     {% if mis_origenes %}<input type="hidden" name="mis_origenes" value="1">{% endif %}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo, usuario…"
-             class="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo…"
+             class="w-40 rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
       <input type="date" name="desde" value="{{ desde or '' }}"
-             class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Hasta</label>
       <input type="date" name="hasta" value="{{ hasta or '' }}"
-             class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Tipo</label>
-      <select name="tipo" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="tipo" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
         <option value="">— Todos —</option>
         {% for t in kpis.por_tipo %}
           <option value="{{ t.tipo }}" {% if tipo == t.tipo %}selected{% endif %}>
@@ -103,7 +103,7 @@
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Estado</label>
-      <select name="estado" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="estado" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
         <option value="activo"    {% if estado == 'activo' %}selected{% endif %}>Activos</option>
         <option value="reverso"   {% if estado == 'reverso' %}selected{% endif %}>Reversos</option>
@@ -112,7 +112,7 @@
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Filas</label>
-      <select name="limite" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="limite" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
         {% for n in [25, 50, 100, 200] %}
           <option value="{{ n }}" {% if limite == n %}selected{% endif %}>{{ n }}</option>
         {% endfor %}
@@ -314,7 +314,7 @@
                      y la página-wizard aparte. #}
                   <button type="button"
                           class="js-reverso inline-flex items-center justify-center w-6 h-6 rounded text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30 leading-none"
-                          data-reverso-id="{{ r.id_mov_doble }}"
+                          data-reverso-preview="{{ url_for('historial.reverso_preview', id_mov_doble=r.id_mov_doble) }}"
                           title="Reversar este movimiento"
                           aria-label="Reversar">↺</button>
                 {% else %}
@@ -334,11 +334,8 @@
     </table>
   </div>
 
-  {% if filas | length >= 1000 %}
-    <p class="text-xs text-slate-500 mt-2">
-      Mostrando las 1.000 filas más recientes. Acotá las fechas para ver más viejas.
-    </p>
-  {% endif %}
+  {# TMT 2026-07-11 (dueña): flechita para avanzar/retroceder de a `limite`. #}
+  {% include "_paginacion.html" %}
 </div>
 
 {# TMT 2026-05-16: el toggle expand/collapse se removió — los batches ahora
@@ -359,84 +356,6 @@
 })();
 </script>
 
-{# ── Modal de reverso in-page (TMT 2026-07-11, dueña) ───────────────────── #}
-<div id="reverso-modal" class="no-print" style="display:none;position:fixed;inset:0;z-index:60;">
-  <div id="reverso-backdrop" style="position:absolute;inset:0;background:rgb(15 23 42 / 0.45);"></div>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
-       style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-              width:min(94vw,480px);max-height:88vh;overflow:auto;border-radius:12px;
-              box-shadow:0 12px 40px rgb(15 23 42 / 0.3);">
-    <div class="flex items-center gap-2 px-5 py-3 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/30">
-      <span class="text-rose-600 dark:text-rose-400">↺</span>
-      <h3 id="reverso-titulo" class="text-sm font-semibold text-rose-800 dark:text-rose-200">Reversar</h3>
-    </div>
-    <div class="px-5 py-4">
-      <p id="reverso-mensaje" class="text-sm text-slate-600 dark:text-slate-300 mb-3">Cargando…</p>
-      <dl id="reverso-detalle" class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm mb-3 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 rounded"></dl>
-      <div id="reverso-movs-wrap" class="mb-3" style="display:none;">
-        <div id="reverso-movs-titulo" class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5"></div>
-        <ul id="reverso-movs" class="border border-slate-200 dark:border-slate-800 rounded text-sm overflow-auto" style="max-height:200px;"></ul>
-      </div>
-      <form id="reverso-form" method="POST" action="">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="next" value="{{ request.full_path }}">
-        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">Motivo <span class="normal-case text-slate-400">(opcional)</span></label>
-        <input type="text" name="motivo" maxlength="200" placeholder="p.ej. error de carga"
-               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-950">
-        <div class="flex items-center justify-end gap-2 mt-4">
-          <button type="button" id="reverso-cancelar"
-                  class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
-          <button type="submit" id="reverso-confirmar"
-                  class="text-sm px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium disabled:opacity-50">Reversar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  var modal = document.getElementById('reverso-modal');
-  if (!modal) return;
-  var form = document.getElementById('reverso-form');
-  var elT = document.getElementById('reverso-titulo');
-  var elM = document.getElementById('reverso-mensaje');
-  var elD = document.getElementById('reverso-detalle');
-  var wrap = document.getElementById('reverso-movs-wrap');
-  var mT = document.getElementById('reverso-movs-titulo');
-  var mUl = document.getElementById('reverso-movs');
-  var btn = document.getElementById('reverso-confirmar');
-  function openM(){ modal.style.display='block'; }
-  function closeM(){ modal.style.display='none'; }
-  function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':s); return d.innerHTML; }
-  function fmt(n){ return Number(n||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  document.addEventListener('click', function(e){
-    var b = e.target.closest('.js-reverso');
-    if (b){
-      e.preventDefault();
-      var id = b.getAttribute('data-reverso-id');
-      elM.textContent='Cargando…'; elD.innerHTML=''; mUl.innerHTML=''; wrap.style.display='none'; btn.disabled=true;
-      openM();
-      fetch('/historial/'+id+'/reverso-preview',{headers:{'Accept':'application/json'}})
-        .then(function(r){return r.json();})
-        .then(function(d){
-          if(!d.ok){ elM.textContent=d.error||'No se puede reversar.'; return; }
-          elT.textContent=d.titulo||'Reversar';
-          elM.textContent=d.mensaje||'';
-          var dl=''; Object.keys(d.detalle||{}).forEach(function(k){ dl+='<dt class="text-slate-500">'+esc(k)+'</dt><dd class="text-slate-800 dark:text-slate-200 font-medium">'+esc(d.detalle[k])+'</dd>'; });
-          elD.innerHTML=dl;
-          if(d.movimientos&&d.movimientos.length){
-            mT.textContent=(d.titulo_movimientos||'Movimientos afectados')+' · '+d.movimientos.length;
-            mUl.innerHTML=d.movimientos.map(function(m){ return '<li class="flex items-center justify-between gap-3 px-3 py-1.5 border-t border-slate-100 dark:border-slate-800 first:border-t-0"><span class="text-slate-700 dark:text-slate-200">'+esc(m.texto)+(m.detalle?' <span class="text-xs text-slate-400">· '+esc(m.detalle)+'</span>':'')+'</span>'+(m.importe!=null?'<span class="font-mono text-slate-500 whitespace-nowrap">$ '+fmt(m.importe)+'</span>':'')+'</li>'; }).join('');
-            wrap.style.display='';
-          }
-          form.action=d.accion_url; btn.textContent=d.confirm_label||'Reversar'; btn.disabled=false;
-        })
-        .catch(function(){ elM.textContent='Error cargando la confirmación.'; });
-      return;
-    }
-    if(e.target.id==='reverso-cancelar'||e.target.id==='reverso-backdrop'){ closeM(); }
-  });
-})();
-</script>
+{# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
+{% include "_reverso_modal.html" %}
 {% endblock %}

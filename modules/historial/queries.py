@@ -117,6 +117,7 @@ def listar(
     usuario: str | None = None,
     origenes_permitidos: list[str] | None = None,
     limite: int = 500,
+    offset: int = 0,
 ) -> list[dict]:
     """Lista unificada de movimientos para el historial.
 
@@ -264,7 +265,7 @@ def listar(
                 )
            )
          ORDER BY u.fecha_operacion DESC, u.id_mov_doble DESC
-         LIMIT %(limite)s
+         LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
             "desde": desde or None, "hasta": hasta or None,
@@ -274,6 +275,7 @@ def listar(
             "usuario": usuario or None,
             "origenes_permitidos": list(origenes_permitidos) if origenes_permitidos else None,
             "limite": int(limite),
+            "offset": max(0, int(offset)),
         },
     ) or []
 

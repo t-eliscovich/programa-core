@@ -123,6 +123,15 @@ def lista():
     except (TypeError, ValueError):
         limite = 25
 
+    # TMT 2026-07-11 (dueña): paginación con flechita. `pagina` es 1-based.
+    # Pedimos `limite+1` filas para saber si hay una página siguiente sin un
+    # COUNT extra. Si vuelven más de `limite`, recortamos y marcamos hay_mas.
+    try:
+        pagina = max(1, int(request.args.get("pagina") or "1"))
+    except (TypeError, ValueError):
+        pagina = 1
+    offset = (pagina - 1) * limite
+
     try:
         filas = queries.listar(
             desde=desde,
@@ -131,8 +140,11 @@ def lista():
             estado=estado,
             q=q,
             origenes_permitidos=origenes_permitidos,
-            limite=limite,
+            limite=limite + 1,
+            offset=offset,
         )
+        hay_mas = len(filas) > limite
+        filas = filas[:limite]
         kpis = queries.conteos(desde=desde, hasta=hasta)
         error = None
     except Exception as e:
@@ -146,7 +158,7 @@ def lista():
             )
         else:
             error = str(e)
-        filas, kpis = [], {}
+        filas, kpis, hay_mas = [], {}, False
 
     # Enriquecer filas con label + links para el template.
     # TMT 2026-05-15: batch-lookup de no_cheque (scintela.cheque) y numf
@@ -376,6 +388,9 @@ def lista():
         q=q or "",
         error=error,
         limite=limite,
+        # TMT 2026-07-11 (dueña): paginación con flechita al pie.
+        pagina=pagina,
+        hay_mas=hay_mas,
         # TMT 2026-07-07 (dueña): pasar mis_origenes al template para que el
         # form de filtro y los links lo preserven → Alex puede filtrar/paginar
         # su historial sin perder el flag (sin él el gate lo bloqueaba).
