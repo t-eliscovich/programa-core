@@ -1587,6 +1587,26 @@ def lista():
         return float(m) if m is not None else None
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
+    # TMT 2026-07-11 (dueña) — filtro de monto UNIFICADO en un solo campo:
+    #   · entero "729"          → trae el dólar entero 729.00–729.99 (bucket).
+    #   · con centavos "729,51" → match exacto (banda ±medio centavo por floats).
+    # Si viene `monto`, pisa monto_min/monto_max. Detecta "centavos tipeados"
+    # mirando si hay dígitos después del separador decimal (mismo criterio de
+    # separador que parse_monto: en ES la coma es decimal, en US el punto).
+    monto_raw = (request.args.get("monto") or "").strip()
+    if monto_raw:
+        _mval = _parse_num(monto_raw)
+        if _mval is not None:
+            _lc, _ld = monto_raw.rfind(","), monto_raw.rfind(".")
+            _dec_pos = max(_lc, _ld) if (_lc > -1 or _ld > -1) else -1
+            _tiene_centavos = _dec_pos > -1 and monto_raw[_dec_pos + 1:_dec_pos + 2].isdigit()
+            if _tiene_centavos:
+                monto_min = _mval - 0.005
+                monto_max = _mval + 0.005
+            else:
+                _base = float(int(_mval))
+                monto_min = _base
+                monto_max = _base + 0.999999
     solo_abiertas = request.args.get("abiertas") == "1"
     # TMT 2026-05-22 — modo auditoría: muestra solo las facturas que
     # PC tiene pero Asinfo NO matchea (excluyendo legacy y NC kg=0).
@@ -1978,6 +1998,7 @@ def lista():
         "facturas/lista.html",
         filas=filas, q=q, desde=desde, hasta=hasta,
         cliente=cliente, monto_min=monto_min, monto_max=monto_max,
+        monto=monto_raw,
         solo_abiertas=solo_abiertas,
         vista=vista, conteos=conteos,
         estado=estado_filtro,
