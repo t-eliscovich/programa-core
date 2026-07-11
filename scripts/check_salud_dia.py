@@ -516,6 +516,120 @@ def check_provisiones(verbose: bool = False) -> None:
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# 9) CHEQUESXFACT — aplicaciones de cheque consistentes
+# ───────────────────────────────────────────────────────────────────────────
+def check_chequesxfact(verbose: bool = False) -> None:
+    _seccion("9) CHEQUESXFACT — aplicaciones consistentes")
+    tol = 0.01
+    sobre_cheque = db.fetch_all(
+        """
+        SELECT cf.id_cheque, COALESCE(c.importe, 0) AS cheque_importe,
+               SUM(COALESCE(cf.importe, 0)) AS aplicado, COUNT(*) AS n
+          FROM scintela.chequesxfact cf
+          JOIN scintela.cheque c ON c.id_cheque = cf.id_cheque
+         GROUP BY cf.id_cheque, c.importe
+        HAVING SUM(COALESCE(cf.importe, 0)) > COALESCE(c.importe, 0) + %(t)s
+         ORDER BY SUM(COALESCE(cf.importe, 0)) - COALESCE(c.importe, 0) DESC
+         LIMIT 20
+        """, {"t": tol}) or []
+    sobre_fact = db.fetch_all(
+        """
+        SELECT cf.id_fact, COALESCE(f.importe, 0) AS fact_importe,
+               SUM(COALESCE(cf.importe, 0)) AS aplicado, COUNT(*) AS n
+          FROM scintela.chequesxfact cf
+          JOIN scintela.factura f ON f.id_factura = cf.id_fact
+         GROUP BY cf.id_fact, f.importe
+        HAVING SUM(COALESCE(cf.importe, 0)) > COALESCE(f.importe, 0) + %(t)s
+         ORDER BY SUM(COALESCE(cf.importe, 0)) - COALESCE(f.importe, 0) DESC
+         LIMIT 20
+        """, {"t": tol}) or []
+    dups = db.fetch_all(
+        """
+        SELECT id_cheque, id_fact, COALESCE(importe, 0) AS importe,
+               fechaing, COUNT(*) AS n
+          FROM scintela.chequesxfact
+         GROUP BY id_cheque, id_fact, COALESCE(importe, 0), fechaing
+        HAVING COUNT(*) > 1
+         ORDER BY COUNT(*) DESC
+         LIMIT 20
+        """) or []
+    if sobre_cheque:
+        _reporte("CHEQUESXFACT", ERROR,
+                 f"{len(sobre_cheque)} cheque(s) sobre-aplicados "
+                 "(Σ aplicado > importe del cheque).")
+    if sobre_fact:
+        _reporte("CHEQUESXFACT", ERROR,
+                 f"{len(sobre_fact)} factura(s) sobre-abonadas por cheques "
+                 "(Σ aplicado > importe).")
+    if dups:
+        _reporte("CHEQUESXFACT", WARN,
+                 f"{len(dups)} fila(s) exactamente duplicadas "
+                 "(cheque+factura+importe+fecha) — posible doble-INSERT.")
+    if not (sobre_cheque or sobre_fact or dups):
+        _reporte("CHEQUESXFACT", OK,
+                 "sin sobre-aplicaciones ni duplicados exactos.")
+    if verbose:
+        for r in (sobre_cheque[:5] + sobre_fact[:5] + dups[:5]):
+            print("     ", dict(r))
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# 10) REVERSIBILIDAD — todo mov_doble activo tiene un reverso posible
+# ───────────────────────────────────────────────────────────────────────────
+def check_reversibilidad(verbose: bool = False) -> None:
+    _seccion("10) REVERSIBILIDAD — todo mov tiene reverso")
+    try:
+        from modules.historial.views import (
+            _REVERSO_BLOQUEADO,
+            _REVERSO_DISPATCH,
+        )
+    except Exception as e:  # noqa: BLE001
+        _reporte("REVERSIBILIDAD", WARN,
+                 f"no pude importar el dispatcher de reverso: {e}")
+        return
+    conocidos = set(_REVERSO_DISPATCH) | set(_REVERSO_BLOQUEADO)
+
+    def _es_terminal(tipo: str) -> bool:
+        # Mismos excluidos que validar_reversos.py: las entradas 'reverso_*'
+        # son el deshacer de algo (no se re-reversan), y los movimientos
+        # directos de caja/banco no pasan por el dispatcher.
+        tipo = tipo or ""
+        return (
+            tipo.startswith("reverso_")
+            or (tipo.startswith("caja_") and tipo.endswith("_directo"))
+            or (tipo.startswith("banco_") and tipo.endswith("_directo"))
+        )
+
+    rows = db.fetch_all(
+        """
+        SELECT tipo, COUNT(*) AS n
+          FROM scintela.mov_doble
+         WHERE estado = 'activo'
+         GROUP BY tipo
+         ORDER BY COUNT(*) DESC
+        """) or []
+    huerfanos = [
+        r for r in rows
+        if (r.get("tipo") or "") not in conocidos
+        and not _es_terminal(r.get("tipo") or "")
+    ]
+    if huerfanos:
+        total = sum(int(r["n"] or 0) for r in huerfanos)
+        tipos = ", ".join(str(r["tipo"]) for r in huerfanos[:8])
+        _reporte("REVERSIBILIDAD", ERROR,
+                 f"{len(huerfanos)} tipo(s) de mov SIN reverso ({total} movs "
+                 f"activos): {tipos}.")
+    else:
+        _reporte("REVERSIBILIDAD", OK,
+                 f"todos los mov activos son reversables "
+                 f"({len(_REVERSO_DISPATCH)} tipos con handler, "
+                 f"0 sin cobertura).")
+    if verbose and huerfanos:
+        for r in huerfanos:
+            print(f"     tipo={r['tipo']}  n={r['n']}")
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Entry
 # ───────────────────────────────────────────────────────────────────────────
 ALL_CHECKS = {
@@ -527,6 +641,8 @@ ALL_CHECKS = {
     "facturas":     check_facturas,
     "posdat":       check_posdat,
     "provisiones":  check_provisiones,
+    "chequesxfact": check_chequesxfact,
+    "reversibilidad": check_reversibilidad,
 }
 
 
