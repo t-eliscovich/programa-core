@@ -66,7 +66,6 @@ def lista():
     facturas+caja+bancos pero NO retiros. Sino exigir informes.ver
     como antes.
     """
-    from flask import abort
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     tipo = request.args.get("tipo") or None
@@ -95,18 +94,23 @@ def lista():
         "activos": "activos.ver",
     }
 
-    origenes_permitidos = None
-    if mis_origenes:
-        from auth import tiene_permiso
+    # TMT 2026-07-11 (dueña): historial UNIFICADO — una sola página para todos.
+    # Antes había /historial (exigía informes.ver) y /mi-historial
+    # (=/historial?mis_origenes=1, filtrado por permisos). Ahora TODO usuario
+    # logueado entra, pero:
+    #   · con informes.ver (dueña/admin) → ve TODO (sin filtro).
+    #   · sin informes.ver → ve sólo las secciones donde tiene .ver
+    #     (ej. Alex: cheques+facturas+caja+bancos, NO retiros/capital).
+    # El parámetro `mis_origenes` queda como no-op (compat con links viejos).
+    from auth import tiene_permiso
+    _ = mis_origenes  # retro-compat: ya no cambia el comportamiento
+    if tiene_permiso("informes.ver"):
+        origenes_permitidos = None
+    else:
         origenes_permitidos = [
             origen for origen, perm in _ORIGEN_PERMISO.items()
             if tiene_permiso(perm)
         ]
-    else:
-        # Gating clásico: exige informes.ver para ver todo.
-        from auth import tiene_permiso
-        if not tiene_permiso("informes.ver"):
-            abort(404)  # estilo del proyecto
     # TMT 2026-05-24 — Pedido dueña: "no scroll vertical". Default 25 filas
     # (entran en viewport); el usuario expande con ?limite=50/100/200/todo
     # desde el selector "Filas" en el form de filtros.

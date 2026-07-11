@@ -879,19 +879,12 @@
       </details>
       {% endif %}
 
-      {# TMT 2026-05-20 v2 — Historial movimientos al pie del sidebar
-         (pedido dueña: "La tab historial de moviemientos podemos ponerlo
-         debajo de recientes?"). #}
-      {% if tiene_permiso('informes.ver') %}
+      {# Historial UNIFICADO (TMT 2026-07-11, dueña) — UNA sola entrada para
+         TODOS los usuarios. /historial ahora filtra por permisos: la dueña/
+         admin ven todo, el resto sólo sus secciones. Se retiró 'Mi historial'
+         (redirige acá). #}
       <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-        {{ nav_link('historial.lista', 'Historial movimientos', 'history') }}
-      </div>
-      {% endif %}
-      {# TMT 2026-05-26 dueña: 'Mi historial' visible para TODOS los users
-         logueados — muestra solo sus propias acciones (Alex ve lo que Alex
-         hizo, no lo del resto). No requiere permiso. #}
-      <div class="mt-1">
-        {{ nav_link('bitacora.mi_historial', 'Mi historial', 'user') }}
+        {{ nav_link('historial.lista', 'Historial', 'history') }}
       </div>
     </nav>
 

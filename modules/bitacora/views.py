@@ -1,5 +1,5 @@
 """Bitácora — visor de auditoría global."""
-from flask import Blueprint, g, render_template, request
+from flask import Blueprint, render_template, request
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
@@ -24,11 +24,10 @@ def mi_historial():
     Es un redirect a /historial?mis_origenes=1 para que /historial
     resuelva los origen_tables según permisos del user logueado.
     """
+    # Historial unificado (TMT 2026-07-11): /mi-historial ahora sólo redirige
+    # al /historial único, que ya filtra por permisos del usuario.
     from flask import redirect, url_for
-    username = (g.user or {}).get("username") if g.user else None
-    if not username:
-        return redirect(url_for("auth.login"))
-    return redirect(url_for("historial.lista", mis_origenes="1"))
+    return redirect(url_for("historial.lista"))
 
 
 @bitacora_bp.route("/bitacora")
