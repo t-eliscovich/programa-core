@@ -94,14 +94,8 @@
   {# TMT 2026-05-22 — pestañas Compras/Producción removidas: ahora son dos
      páginas separadas, cada una con su item en el menú principal. #}
 
-  {# Strip de contexto de la vista actual — sigue siendo útil para ver
-     kg + importe filtrados sin tener que sumar a mano. #}
-  <div class="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-    <div>{{ filas | length }} fila(s) en pantalla</div>
-    <div>Importe <span class="text-slate-700 dark:text-slate-300 font-medium tabular-nums">$ {{ total_importe | num_es(0) }}</span></div>
-    <div>Kg <span class="text-slate-700 dark:text-slate-300 font-medium tabular-nums">{{ total_kg | num_es(0) }}</span></div>
-  </div>
-
+  {# Strip de contexto removido — duplicaba el hero, que desde 2026-05-21 ya
+     muestra importe + filas + kg del filtro activo. TMT 2026-07-11. #}
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
