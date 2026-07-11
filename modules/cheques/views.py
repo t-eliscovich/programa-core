@@ -1623,7 +1623,6 @@ def _reverso_preview_cheque(id_cheque: int) -> dict | None:
 
 @cheques_bp.route("/cheques/<int:id_cheque>/reverso-preview", methods=["GET"])
 @requiere_login
-@requiere_permiso("cheques.anular")
 def reverso_preview(id_cheque: int):
     """JSON para el modal in-page de reverso (mismo shape que historial).
 
@@ -1641,7 +1640,6 @@ def reverso_preview(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/confirmar-reverso", methods=["GET"])
 @requiere_login
-@requiere_permiso("cheques.anular")
 def confirmar_reverso(id_cheque: int):
     """Paso 1 del 2-step: confirmar 'Sin fondos' o 'Reversar (me confundí)'.
 
@@ -1671,7 +1669,6 @@ def confirmar_reverso(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/reversar", methods=["POST"])
 @requiere_login
-@requiere_permiso("cheques.anular")
 def reversar(id_cheque: int):
     motivo = (request.form.get("motivo") or "").strip()
     # TMT 2026-05-21 dueña: motivo opcional sin requerir.
@@ -1708,7 +1705,6 @@ def reversar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/deshacer-deposito", methods=["GET", "POST"])
 @requiere_login
-@requiere_permiso("cheques.transicionar")
 def deshacer_deposito(id_cheque: int):
     """Devuelve UN cheque depositado a cartera (Z) porque al final no se
     depositó. Ajusta el depósito de banco 'dep.N ch.' (baja el importe por el
@@ -1889,7 +1885,6 @@ def postergar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/desaplicar/<int:id_factura>", methods=["GET"])
 @requiere_login
-@requiere_permiso("cheques.aplicar")
 def confirmar_desaplicar(id_cheque: int, id_factura: int):
     """Wizard para deshacer la aplicación de un cheque a una factura específica.
 
@@ -1948,7 +1943,6 @@ def confirmar_desaplicar(id_cheque: int, id_factura: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/desaplicar/<int:id_factura>", methods=["POST"])
 @requiere_login
-@requiere_permiso("cheques.aplicar")
 def desaplicar(id_cheque: int, id_factura: int):
     motivo = (request.form.get("motivo") or "").strip()
     try:
@@ -2404,6 +2398,9 @@ def detalle(id_cheque: int):
         hijos=hijos,
         # TMT 2026-06-11 dueña: 'dejame en cheques editar banco emisor'.
         bancos=_bancos(),
+        # TMT 2026-07-11 (dueña): dropdown de estado UNIFICADO con la lista —
+        # mismas transiciones consistentes (transiciones_para).
+        transiciones=queries.transiciones_para(ch.get("stat") or ""),
     )
 
 
@@ -2529,7 +2526,6 @@ def actualizar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/confirmar-rebote", methods=["GET"])
 @requiere_login
-@requiere_permiso("cheques.transicionar")
 def confirmar_rebote(id_cheque: int):
     """Wizard de 2 pasos para marcar rebote: muestra detalle + pide motivo.
 
@@ -2571,9 +2567,12 @@ def confirmar_rebote(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/transicionar", methods=["POST"])
 @requiere_login
-@requiere_permiso("cheques.transicionar")
 def transicionar(id_cheque: int):
     """Cambia el stat del cheque, aplicando los side-effects automáticamente.
+
+    TMT 2026-07-11 (dueña: "all users can do it"): cambiar el estado del cheque
+    lo puede hacer cualquier usuario logueado (sin exigir cheques.transicionar).
+    El backend igual valida que la transición sea legal y consistente.
 
     POST `stat_destino`: B (deposito Pichincha) / I (deposito Inter) /
     C (cobrado caja) / 9 (rebotado) / X (anulado) / P (postergado) / D (Daniela).
@@ -2642,7 +2641,6 @@ def transicionar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/anular-error-carga", methods=["GET", "POST"])
 @requiere_login
-@requiere_permiso("cheques.anular")
 def anular_error_carga(id_cheque: int):
     """Anular un cheque mal cargado, con compensaciones automáticas.
 

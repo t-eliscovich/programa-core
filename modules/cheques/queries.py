@@ -2079,7 +2079,16 @@ def transiciones_para(stat: str) -> list[dict]:
             "kind": "POST",
             "endpoint": "cheques.transicionar",
         })
-    # 3) Eliminar (X) → siempre por el wizard de anulación (reversa aplicaciones).
+    # 3) Rebote / sin fondos (9) → wizard de reverso (compensa banco si estaba
+    #    depositado). Se ofrece siempre que el backend lo permita y no esté ya.
+    if "9" in permit and "9" not in ya:
+        base.append({
+            "stat_destino": "9",
+            "label": "Sin fondos (rebotó)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.confirmar_reverso",
+        })
+    # 4) Eliminar (X) → siempre por el wizard de anulación (reversa aplicaciones).
     if "X" in permit and "X" not in ya:
         base.append({
             "stat_destino": "X",
