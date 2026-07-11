@@ -180,12 +180,9 @@
         </button>
       {% endif %}
       {% if tiene_permiso('compras.crear') %}
-        <a href="{{ url_for('dolares.convertir_lote') }}"
-           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-           title="Convertir anticipos a compra (BAP) — caso típico: hilado que llegó">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-          Convertir a compra (hilado)
-        </a>
+        {# Botón "Convertir a compra (hilado)" removido — la conversión ahora se
+           hace desde la barra de selección al pie (seleccionar anticipos →
+           "Convertir a compra"). Deja el flujo en un solo lugar. TMT 2026-07-11. #}
         <a href="{{ url_for('dolares.cargar_quimicos') }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
            title="Convertir anticipos de químicos (tipo Q) a compra — baja anticipo, sube stock, reversible">

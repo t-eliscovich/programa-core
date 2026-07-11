@@ -62,15 +62,21 @@ def lista():
     cta   = (request.args.get("cta") or "").strip() or None
     q     = (request.args.get("q") or "").strip() or None
     solo_vivos = request.args.get("solo_vivos", "1") != "0"
-    # Filtro por código en UN solo campo: "AC 31" → cuenta AC + concepto 31.
-    # Si viene `codigo`, pisa cuenta/concepto (atajo de la dueña 2026-07-10).
+    # Filtro por código en UN solo campo (atajo de la dueña 2026-07-10).
+    # Búsqueda flexible: toma las letras (2-3) como CUENTA y los dígitos como
+    # CONCEPTO, en cualquier orden y con o sin espacio. Acepta:
+    #   "AC 15" → cuenta AC + concepto 15
+    #   "AC"    → sólo cuenta AC
+    #   "15"    → sólo concepto 15   (TMT 2026-07-11)
     codigo = (request.args.get("codigo") or "").strip()
     if codigo:
         import re as _re_cod
-        mcod = _re_cod.match(r"^\s*([A-Za-z]{2,3})\s*0*(\d{1,6})?", codigo)
-        if mcod:
-            cta = mcod.group(1).upper()
-            q = mcod.group(2) if mcod.group(2) else q
+        m_cta = _re_cod.search(r"[A-Za-z]{2,3}", codigo)
+        m_num = _re_cod.search(r"\d{1,6}", codigo)
+        if m_cta:
+            cta = m_cta.group(0).upper()
+        if m_num:
+            q = m_num.group(0).lstrip("0") or m_num.group(0)
     # Mes de recibido (la fecha de recepción se cuelga de Asinfo, se filtra en
     # Python porque no vive en scintela.dolares).
     recibido_mes = (request.args.get("recibido_mes") or "").strip() or None
