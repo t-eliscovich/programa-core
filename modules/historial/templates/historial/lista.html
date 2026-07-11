@@ -307,7 +307,7 @@
                    mov_doble → el reverso abortaba 404 (Alex lo reportó). Solo ofrecemos
                    "reversar" cuando hay un mov_doble real (id positivo). Los depósitos
                    legacy se reversan desde la ficha del cheque o "reversar todo el batch". #}
-                {% if r.estado == 'activo' and r.id_mov_doble and r.id_mov_doble > 0 %}
+                {% if r.estado == 'activo' and r.id_mov_doble and r.id_mov_doble > 0 and not r.es_terminal %}
                   {# Reverso con MODAL in-page (TMT 2026-07-11, dueña): un cartel
                      muestra el detalle + la lista de movimientos afectados;
                      aceptar postea y volvés acá. Reemplaza el confirm() nativo

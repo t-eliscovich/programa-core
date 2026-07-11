@@ -80,9 +80,11 @@ def test_facturas_anular_sin_motivo_ejecuta(app, fake_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_cheques_confirmar_reverso_get_200(app, fake_db, monkeypatch):
-    # stat B = "sin fondos" (rebote real) → la página de confirmación menciona
-    # el STOP al cliente. (stat D/Z/P/V serían "reversar/me confundí", sin STOP
-    # — TMT 2026-05-24 dueña: "no es lo mismo reversar que rebote".)
+    # stat B = "sin fondos" (rebote real) → la confirmación menciona el impacto
+    # en el CLIENTE (se anota el rebote). (stat D/Z/P/V serían "reversar/me
+    # confundí", sin tocar al cliente — TMT 2026-05-24 dueña: "no es lo mismo
+    # reversar que rebote".) TMT 2026-07-11: se acortó el palabrerío (antes
+    # decía "STOP"/"EVENTO MALO"); la distinción rebote→cliente se conserva.
     from modules.cheques import queries as cq
     monkeypatch.setattr(cq, "por_id", lambda _id: {
         "id_cheque": 7, "no_cheque": "C-42", "fecha": None,
@@ -91,7 +93,7 @@ def test_cheques_confirmar_reverso_get_200(app, fake_db, monkeypatch):
     c = _login_as_dueno(app, fake_db)
     r = c.get("/cheques/7/confirmar-reverso")
     assert r.status_code == 200
-    assert b"STOP" in r.data
+    assert b"rebote" in r.data and b"cliente" in r.data
 
 
 def test_cheques_reversar_sin_motivo_ejecuta(app, fake_db, monkeypatch):

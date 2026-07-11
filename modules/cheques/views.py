@@ -1557,31 +1557,19 @@ def _reverso_preview_cheque(id_cheque: int) -> dict | None:
         "Estado actual": stat_prev,
     }
     if es_rebote:
-        stat_destino = "3" if stat_prev in ("1", "2") else "1"
-        titulo = f"Marcar SIN FONDOS — cheque {no_ch}"
+        titulo = f"Sin fondos — cheque {no_ch}"
         mensaje = (
-            f"El cheque N° {no_ch} por $ {importe} REBOTÓ — el cliente no "
-            "tenía fondos. Esto es un EVENTO MALO."
+            f"El cheque rebotó. Se anota el rebote en el cliente {cliente} y las "
+            "facturas que cubría vuelven a cartera."
         )
-        detalle["Qué va a pasar"] = (
-            f"(1) Cheque pasa stat '{stat_prev}' → '{stat_destino}' (rebotado). "
-            "(2) Se restauran las facturas que cubría — vuelven a cartera. "
-            f"(3) Se anota [REBOTE] en la observación del cliente {cliente} "
-            "(el STOP lo decidís vos)."
-        )
-        confirm_label = "Confirmar SIN FONDOS"
+        confirm_label = "Marcar sin fondos"
     else:
-        titulo = f"Reversar (me confundí) — cheque {no_ch}"
+        titulo = f"Reversar cheque {no_ch}"
         mensaje = (
-            f"Te equivocaste cargando este cheque N° {no_ch} por $ {importe}. "
-            "Esto es un UNDO administrativo — no afecta al cliente."
+            "Undo administrativo: las facturas que cubría vuelven a cartera. "
+            "No se toca al cliente."
         )
-        detalle["Qué va a pasar"] = (
-            f"(1) Cheque pasa stat '{stat_prev}' → 'X' (eliminado por error). "
-            "(2) Se restauran las facturas que cubría — vuelven a cartera. "
-            f"(3) NO se toca al cliente {cliente} — no es un rebote."
-        )
-        confirm_label = "Confirmar REVERSAR"
+        confirm_label = "Reversar"
     # Detalle adaptativo: listamos las facturas que este cheque cubría (vuelven
     # a cartera al reversar). Muchas aplicaciones → lista larga; una → una línea.
     _apps = db.fetch_all(

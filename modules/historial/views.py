@@ -263,6 +263,9 @@ def lista():
     }
     for r in filas:
         r["label"] = queries.label(r.get("tipo") or "")
+        # TMT 2026-07-11 (dueña): no ofrecer "reversar" sobre un reverso (mov
+        # terminal) — mostraba un modal que prometía facturas y no había.
+        r["es_terminal"] = _es_terminal(r.get("tipo") or "")
         u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos)
         r["origen_url"] = u
         r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
@@ -408,6 +411,20 @@ def lista():
 # =====================================================================
 
 
+def _es_terminal(tipo: str) -> bool:
+    """Un mov es 'terminal' cuando NO se puede volver a reversar: los
+    'reverso_*' ya SON el deshacer de algo (reversar un reverso no tiene
+    sentido) y los movimientos directos de caja/banco no pasan por el
+    dispatcher. Mismos excluidos que check_salud_dia.py / validar_reversos.py.
+    TMT 2026-07-11 (dueña): 'reversar un reverso' mostraba un modal vacío."""
+    tipo = tipo or ""
+    return (
+        tipo.startswith("reverso_")
+        or (tipo.startswith("caja_") and tipo.endswith("_directo"))
+        or (tipo.startswith("banco_") and tipo.endswith("_directo"))
+    )
+
+
 def _row_md(id_mov_doble: int) -> dict | None:
     return db.fetch_one(
         """
@@ -436,6 +453,11 @@ def reverso_preview(id_mov_doble: int):
         return jsonify({"ok": False, "error": "Movimiento no encontrado."}), 404
     if r["estado"] in ("reverso", "reversado"):
         return jsonify({"ok": False, "error": f"Ya está {r['estado']}."}), 409
+    if _es_terminal(r.get("tipo") or ""):
+        return jsonify({
+            "ok": False,
+            "error": "Este movimiento ya es un reverso — no se reversa de nuevo.",
+        }), 409
 
     tipo = r.get("tipo") or ""
     importe = float(r.get("importe") or 0)
@@ -450,42 +472,56 @@ def reverso_preview(id_mov_doble: int):
     mensaje = ("Se crea el movimiento opuesto que lo compensa; "
                "el original queda en la historia.")
 
-    # Lista adaptativa: para cheques, las facturas que cubría. Además el título/
-    # mensaje distingue REBOTE (cheque depositado → marca al cliente) de UNDO
-    # administrativo (cheque en cartera → no toca al cliente). NO son lo mismo.
+    # Lista adaptativa. El ÚNICO reverso inline de cheques desde el historial
+    # es 'cheque_aplicado_a_factura' → DESAPLICAR esa aplicación (idéntico al
+    # botón "Desaplicar" de la ficha): esa factura vuelve a cartera, sin tocar
+    # al cliente ni el estado del cheque. NO es un rebote. El cartel describe
+    # EXACTAMENTE lo que hace el POST (antes prometía rebote y listaba de más).
+    # TMT 2026-07-11 (dueña, quality check).
     movimientos: list[dict] = []
     titulo_movs = None
-    if r.get("origen_table") == "cheque" and r.get("origen_id"):
-        from modules.cheques.queries import STATS_REBOTE_REAL
+    if r.get("tipo") == "cheque_aplicado_a_factura" and r.get("origen_id") and r.get("destino_id"):
         ch = db.fetch_one(
-            "SELECT stat, no_cheque FROM scintela.cheque WHERE id_cheque = %s",
+            "SELECT no_cheque FROM scintela.cheque WHERE id_cheque = %s",
             (r["origen_id"],),
         ) or {}
         no_ch = ch.get("no_cheque") or f"#{r['origen_id']}"
-        es_rebote = (ch.get("stat") or "").strip() in STATS_REBOTE_REAL
+        fac = db.fetch_one(
+            "SELECT COALESCE(numf::text, '') AS numf FROM scintela.factura WHERE id_factura = %s",
+            (r["destino_id"],),
+        ) or {}
+        numf = (fac.get("numf") or "").strip() or f"#{r['destino_id']}"
+        # Sólo las aplicaciones de ESTE cheque a ESTA factura (lo que desaplica
+        # el POST), no todas las del cheque.
         apps = db.fetch_all(
             "SELECT id_fact, importe, fechaing FROM scintela.chequesxfact "
-            "WHERE id_cheque = %s ORDER BY id_fact",
-            (r["origen_id"],),
+            "WHERE id_cheque = %s AND id_fact = %s ORDER BY id_fact",
+            (r["origen_id"], r["destino_id"]),
         ) or []
         movimientos = [
             {
-                "texto": f"Factura #{a.get('id_fact')}",
+                "texto": f"Factura {numf}",
                 "importe": float(a.get("importe") or 0),
                 "detalle": (a["fechaing"].strftime("%d/%m/%Y") if a.get("fechaing") else ""),
             }
             for a in apps
         ]
+        # Detalle acorde a lo que realmente se desaplica (esta factura), no el
+        # importe total del mov — evita el desfase 660 (mov) vs 600 (factura).
+        _monto_desaplica = sum(m["importe"] for m in movimientos)
+        detalle = {
+            "Cheque": f"N° {no_ch}",
+            "Factura": numf,
+            "Vuelve a cartera": f"$ {_monto_desaplica:,.2f}",
+        }
         if movimientos:
-            titulo_movs = "Facturas que cubría (vuelven a cartera)"
-        if es_rebote:
-            titulo = f"Marcar SIN FONDOS — cheque {no_ch}"
-            mensaje = ("El cheque REBOTÓ (sin fondos). Las facturas vuelven a "
-                       "cartera y se le anota [REBOTE] al cliente.")
-        else:
-            titulo = f"Reversar cheque {no_ch} — me confundí"
-            mensaje = ("Undo administrativo: se saca la aplicación y las facturas "
-                       "vuelven a cartera. NO se toca al cliente.")
+            titulo_movs = "Vuelve a cartera"
+        titulo = f"Desaplicar cheque {no_ch}"
+        mensaje = (
+            f"Se deshace la aplicación a la factura {numf}: vuelve a cartera. "
+            "Es lo mismo que 'Desaplicar' en la ficha — no toca al cliente ni "
+            "el estado del cheque."
+        )
 
     # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto
     # y, para los complejos, redirige al wizard de siempre (fallback graceful).

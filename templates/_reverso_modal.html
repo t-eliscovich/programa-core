@@ -12,36 +12,43 @@ titulo_movimientos, accion_url, confirm_label}. Al aceptar, el form postea a
 `accion_url` con `next` = la URL actual (con filtros) → volvés donde estabas. #}
 <div id="reverso-modal" class="no-print" style="display:none;position:fixed;inset:0;z-index:60;">
   <div id="reverso-backdrop" style="position:absolute;inset:0;background:rgb(15 23 42 / 0.45);"></div>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+  {# Panel en columna: header y botones fijos, sólo el medio scrollea → el
+     botón Reversar siempre queda visible sin scrollear. TMT 2026-07-11 (dueña). #}
+  <form id="reverso-form" method="POST" action=""
+       class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
        style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-              width:min(94vw,480px);max-height:88vh;overflow:auto;border-radius:12px;
-              box-shadow:0 12px 40px rgb(15 23 42 / 0.3);">
-    <div class="flex items-center gap-2 px-5 py-3 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/30">
+              width:min(94vw,460px);max-height:88vh;display:flex;flex-direction:column;
+              border-radius:12px;box-shadow:0 12px 40px rgb(15 23 42 / 0.3);overflow:hidden;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    {# Header fijo #}
+    <div class="flex items-center gap-2 px-5 py-3 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/30"
+         style="flex:0 0 auto;">
       <span class="text-rose-600 dark:text-rose-400">↺</span>
       <h3 id="reverso-titulo" class="text-sm font-semibold text-rose-800 dark:text-rose-200">Reversar</h3>
     </div>
-    <div class="px-5 py-4">
+    {# Cuerpo scrollable (mensaje + detalle + lista de movimientos) #}
+    <div class="px-5 py-4" style="flex:1 1 auto;overflow:auto;">
       <p id="reverso-mensaje" class="text-sm text-slate-600 dark:text-slate-300 mb-3">Cargando…</p>
       <dl id="reverso-detalle" class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm mb-3 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 rounded"></dl>
-      <div id="reverso-movs-wrap" class="mb-3" style="display:none;">
+      <div id="reverso-movs-wrap" style="display:none;">
         <div id="reverso-movs-titulo" class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5"></div>
-        <ul id="reverso-movs" class="border border-slate-200 dark:border-slate-800 rounded text-sm overflow-auto" style="max-height:200px;"></ul>
+        <ul id="reverso-movs" class="border border-slate-200 dark:border-slate-800 rounded text-sm"></ul>
       </div>
-      <form id="reverso-form" method="POST" action="">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="next" value="{{ request.full_path }}">
-        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">Motivo <span class="normal-case text-slate-400">(opcional)</span></label>
-        <input type="text" name="motivo" maxlength="200" placeholder="p.ej. error de carga"
-               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-950">
-        <div class="flex items-center justify-end gap-2 mt-4">
-          <button type="button" id="reverso-cancelar"
-                  class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
-          <button type="submit" id="reverso-confirmar"
-                  class="text-sm px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium disabled:opacity-50">Reversar</button>
-        </div>
-      </form>
     </div>
-  </div>
+    {# Footer fijo: motivo + botones (siempre visibles, sin scroll) #}
+    <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+         style="flex:0 0 auto;">
+      <input type="text" name="motivo" maxlength="200" placeholder="Motivo (opcional)"
+             class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-950 mb-3">
+      <div class="flex items-center justify-end gap-2">
+        <button type="button" id="reverso-cancelar"
+                class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+        <button type="submit" id="reverso-confirmar"
+                class="text-sm px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium disabled:opacity-50">Reversar</button>
+      </div>
+    </div>
+  </form>
 </div>
 
 <script>
