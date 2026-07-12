@@ -4147,18 +4147,54 @@ def informe_balance() -> dict:
     h_uf = h_uk + 1.7
 
     # ─── DISPLAY del panel STOCK ──────────────────────────────────────
-    # Filas: kg × tarifa (full float precision).
-    # TOTAL = suma de las filas. Cuadra con el dBase a ±2 USD; con
-    # historia.ustock NO necesariamente cuadra porque historia es un
-    # snapshot stale que no refleja mutaciones PC.
-    val_hilado = h_hilado * h_um
-    val_tejido = h_tejido_kg * h_uk
-    val_terminado = h_terminado_kg * h_uf
-    stock_total_kg = h_hilado + h_tejido_kg + h_terminado_kg
+    # kg × tarifa (full float precision). Las tarifas (h_um/h_uk/h_uf) se
+    # calculan ARRIBA desde el HILADO DBASE y NO cambian acá — solo se elige
+    # la FUENTE de los kg.
+    #
+    # TMT 2026-07-12 (spec dueña): opción de tomar los kg de stock de ASINFO
+    # (bodegas 51/52/53) en vez del cálculo dBase, detrás del flag
+    # BALANCE_STOCK_SOURCE (env) o ?stock_source= (query, para A/B en vivo sin
+    # redeploy). Default 'dbase' → comportamiento IDÉNTICO al de hoy. Fail-soft:
+    # si Asinfo no está disponible, cae al dBase (nunca rompe el balance).
+    # Los kg de Asinfo se valúan con la MISMA tarifa dBase (spec: no tocar tarifas).
+    import os as _os_bal
+    _stock_src = _os_bal.environ.get("BALANCE_STOCK_SOURCE", "dbase")
+    try:
+        from flask import has_request_context as _hrc, request as _rq_bal
+        if _hrc():
+            _stock_src = _rq_bal.args.get("stock_source") or _stock_src
+    except Exception:  # noqa: BLE001
+        pass
+    _stock_src = (_stock_src or "dbase").strip().lower()
+
+    # kg dBase = base de la UTILIDAD y fallback del display.
+    kg_hilado_db, kg_tejido_db, kg_term_db = h_hilado, h_tejido_kg, h_terminado_kg
+    kg_hilado, kg_tejido, kg_term = kg_hilado_db, kg_tejido_db, kg_term_db
+    _stock_fuente = "dbase"
+    if _stock_src == "asinfo":
+        try:
+            from modules.asinfo import service as _asinfo_svc
+            _inv = _asinfo_svc.inventario_por_etapa()
+            if _inv.get("disponible"):
+                kg_hilado = float(_inv["hilo"])         # bodega 51
+                kg_tejido = float(_inv["tela_cruda"])   # bodega 52
+                kg_term = float(_inv["terminada"])      # bodega 53
+                _stock_fuente = "asinfo"
+        except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+            pass
+
+    val_hilado = kg_hilado * h_um
+    val_tejido = kg_tejido * h_uk
+    val_terminado = kg_term * h_uf
+    stock_total_kg = kg_hilado + kg_tejido + kg_term
     stock_total_us = val_hilado + val_tejido + val_terminado
     stock_ukg_prom = _safe_div(stock_total_us, stock_total_kg)
 
-    # ─── VSTO del balance = TOTAL del panel STOCK izquierdo ───
+    # VSTO base DBASE — para la utilidad (que la re-valuación por cambio de
+    # fuente NO se cuente como ganancia). Con fuente dBase == vsto exacto.
+    vsto_dbase = kg_hilado_db * h_um + kg_tejido_db * h_uk + kg_term_db * h_uf
+
+    # ─── VSTO del balance = TOTAL del panel STOCK izquierdo (display) ───
     # Para que panel ACTIVO derecho "STOCK MP+PROD." muestre el MISMO
     # número que el TOTAL del panel STOCK izquierdo.
     vsto = stock_total_us
@@ -4194,8 +4230,14 @@ def informe_balance() -> dict:
     #          = b.patr - patant
     totl = subt + vsto + vqx + activos["umaq"] + activos["uact"] + _uret_calc + _antic
     patr = totl - posdats["totp"]
-    utilidad = patr - patant
-    patr_para_utilidad = patr  # mismo que patr — exposed para el panel debug
+    # UTILIDAD sobre la base DBASE del stock: cambiar la fuente a Asinfo mueve
+    # el PATRIMONIO mostrado (patr) pero NO infla la utilidad — la re-valuación
+    # de stock por cambio de fuente no es ganancia económica. Con fuente dBase,
+    # vsto_dbase == vsto → utilidad idéntica a la de siempre.
+    _totl_util = subt + vsto_dbase + vqx + activos["umaq"] + activos["uact"] + _uret_calc + _antic
+    _patr_util = _totl_util - posdats["totp"]
+    utilidad = _patr_util - patant
+    patr_para_utilidad = _patr_util  # base dBase, coherente con PATANT
 
     # ─── SYNC del diagnostico tras el override de vsto ───
     # El diagnostico se construyó ~300 líneas arriba con vsto=0 (placeholder)
@@ -4266,7 +4308,7 @@ def informe_balance() -> dict:
         venta_kg=h_kvent,
         venta_us=h_uvent,
         dia_actual=today_ec().day,
-        mp_ukg=_mp_ukg_flujo,
+        mp_ukg=h_um,   # spec dueña 2026-07-12: Materia Prima = tarifa Hilado
         v1=gxg["v1"],
         v2=gxg["v2"],
         v3=gxg["v3"],
@@ -4513,6 +4555,9 @@ def informe_balance() -> dict:
         "ventas_anio": _ventas_anio,
         "totp": posdats["totp"],
         "vsto": vsto,
+        "stock_fuente": _stock_fuente,          # 'dbase' | 'asinfo'
+        "vsto_dbase": vsto_dbase,               # base de la utilidad
+        "stock_revaluacion": vsto - vsto_dbase,  # +$ que suma el patrimonio por usar Asinfo
         "vqx": vqx,
         "cart": cart,
         "subt": subt,

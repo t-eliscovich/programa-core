@@ -240,13 +240,14 @@
             {% if ff is not none %}
             {% set aj = qm.ajuste %}
             {% set aj_abs = (aj if aj >= 0 else -aj) %}
+            {% set aj_pct = (aj_abs / qm.final_prog * 100) if qm.final_prog else 0 %}
             <div class="px-4 py-2.5 border-l border-slate-100 dark:border-slate-800">
               <div class="text-[10px] uppercase tracking-wide text-slate-400">Físico <span class="normal-case text-slate-300 dark:text-slate-500">· formulas hoy</span></div>
               <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</div>
             </div>
             <div class="px-4 py-2.5 border-l border-slate-100 dark:border-slate-800 bg-amber-50/60 dark:bg-amber-950/20">
-              <div class="text-[10px] uppercase tracking-wide text-amber-600/90 dark:text-amber-500/90">Ajuste <span class="normal-case">· físico − libro</span></div>
-              <div class="mt-0.5 text-[15px] font-bold tabular-nums text-amber-700 dark:text-amber-400">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</div>
+              <div class="text-[10px] uppercase tracking-wide text-amber-600/90 dark:text-amber-500/90">Diferencia <span class="normal-case">· físico − libro</span></div>
+              <div class="mt-0.5 text-[15px] font-bold tabular-nums text-amber-700 dark:text-amber-400">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }} <span class="text-[11px] font-medium text-amber-600/80">({{ aj_pct | num_es(1) }}%)</span></div>
             </div>
             {% endif %}
           </div>
