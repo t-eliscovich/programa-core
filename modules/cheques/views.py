@@ -2988,6 +2988,24 @@ def lista():
 
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
+    # TMT 2026-07-12 (dueña) — filtro de monto UNIFICADO en un solo campo
+    # (igual que facturas):
+    #   · entero "500"          → trae el dólar entero 500.00–500.99 (bucket).
+    #   · con centavos "500,51" → match exacto (banda ±medio centavo).
+    monto_raw = (request.args.get("monto") or "").strip()
+    if monto_raw:
+        _mval = _parse_num(monto_raw)
+        if _mval is not None:
+            _lc, _ld = monto_raw.rfind(","), monto_raw.rfind(".")
+            _dec_pos = max(_lc, _ld) if (_lc > -1 or _ld > -1) else -1
+            _tiene_centavos = _dec_pos > -1 and monto_raw[_dec_pos + 1:_dec_pos + 2].isdigit()
+            if _tiene_centavos:
+                monto_min = _mval - 0.005
+                monto_max = _mval + 0.005
+            else:
+                _base = float(int(_mval))
+                monto_min = _base
+                monto_max = _base + 0.999999
     # Show all (default 100k) — antes era 2000. Pedido TMT 2026-05-14.
     try:
         limite = int(request.args.get("limite") or 100000)
@@ -3141,6 +3159,7 @@ def lista():
         cliente=cliente,
         monto_min=monto_min,
         monto_max=monto_max,
+        monto=monto_raw,
         total=total,
         n_total=n_total,
         error=error,

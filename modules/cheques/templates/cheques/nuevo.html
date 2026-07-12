@@ -802,14 +802,33 @@
           return;
         }
         if (e.target.checked) {
-          inp.value = saldo.toFixed(2);
+          // TMT 2026-07-12 (dueña, BUG GRAVE): al tildar NO aplicar más que lo
+          // que queda del cheque. Antes ponía el saldo ENTERO de la factura
+          // (ej. cheque $500 tildaba una factura de $3.202,90 → sobre-aplicado,
+          // Restante negativo). Topeamos con `disponible` igual que el botón Max.
+          const totalCheques = sumaImporteCheques();
+          let aplicadoOtros = 0;
+          tbody.querySelectorAll('input.aplic-input').forEach(o => {
+            if (o.dataset.id !== id) aplicadoOtros += parseMonto(o.value) || 0;
+          });
+          const disponible = totalCheques - aplicadoOtros;
+          const toApply = saldo > 0 ? Math.max(0, Math.min(saldo, disponible)) : saldo;
+          inp.value = toApply.toFixed(2);
+          inp.dataset.userEdited = '1';
+          manualValues[id] = toApply;
+          // Si no alcanzó a cubrir el saldo entero, es una aplicación PARCIAL:
+          // el check queda en estado intermedio (rayita), no lleno.
+          if (Math.abs(toApply - saldo) >= 0.01) {
+            e.target.checked = false;
+            e.target.indeterminate = true;
+          }
         } else {
           inp.value = '';
+          inp.dataset.userEdited = '1';
+          // TMT 2026-07-06: persistir la decisión (0 = destildada, queda fuera
+          // del FIFO en los próximos renders — antes se re-tildaba sola).
+          manualValues[id] = 0;
         }
-        inp.dataset.userEdited = '1';
-        // TMT 2026-07-06: persistir la decisión (0 = destildada, queda fuera
-        // del FIFO en los próximos renders — antes se re-tildaba sola).
-        manualValues[id] = e.target.checked ? saldo : 0;
         // TMT 2026-07-02 (Alex): tildar/destildar redistribuye la sugerencia
         // FIFO del resto de las filas (las editadas a mano no se tocan).
         // Caso típico: tildo una NC → la plata liberada cubre más facturas.
@@ -954,12 +973,19 @@
           } else {
             const elegido = (manualStat[id] === 'T' || manualStat[id] === 'A')
               ? manualStat[id] : sug;
-            qcell.innerHTML = ['T', 'A'].map(st => `
-              <label class="inline-flex items-center gap-0.5 text-[11px] font-bold ${st === 'T' ? 'text-emerald-700' : 'text-amber-700'} cursor-pointer" title="${st === 'T' ? 'T = totalizada (cancelada, olvida el saldo restante)' : 'A = abonada (el saldo restante queda vivo)'}">
-                <input type="radio" class="stat-final-radio" data-id="${id}"
-                       name="stat_final[${id}]" value="${st}"
-                       ${elegido === st ? 'checked' : ''}>${st}
-              </label>`).join(' ');
+            // TMT 2026-07-12 (dueña: "no veo bien A y T"): botoncitos T/A
+            // visibles (chip resaltado el elegido) en vez de radios chiquitos.
+            qcell.innerHTML = ['T', 'A'].map(st => {
+              const on = elegido === st;
+              const cls = on
+                ? (st === 'T' ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                              : 'bg-amber-100 border-amber-400 text-amber-800')
+                : 'border-slate-300 text-slate-400 hover:bg-slate-50';
+              return `<label class="inline-flex items-center justify-center w-6 h-6 rounded border text-xs font-bold cursor-pointer ${cls}" title="${st === 'T' ? 'T = totalizada (se cancela, se olvida el saldo restante)' : 'A = abonada (el saldo restante queda vivo)'}">
+                <input type="radio" class="stat-final-radio sr-only" data-id="${id}"
+                       name="stat_final[${id}]" value="${st}" ${on ? 'checked' : ''}>${st}
+              </label>`;
+            }).join(' ');
           }
         }
       }

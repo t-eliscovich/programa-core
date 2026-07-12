@@ -106,12 +106,12 @@
       <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th class="px-3 py-2 text-left">Fecha terminado</th>
-          <th class="px-3 py-2 text-center">OTs</th>
-          <th class="px-3 py-2 text-center">Kg crudo</th>
-          <th class="px-3 py-2 text-center">Kg terminado</th>
-          <th class="px-3 py-2 text-center">Desperdicio</th>
-          <th class="px-3 py-2 text-center" title="Costo de colorantes + auxiliares consumidos">Costo $</th>
-          <th class="px-3 py-2 text-center" title="Costo / kg terminado">$/kg</th>
+          <th class="px-3 py-2 text-right">OTs</th>
+          <th class="px-3 py-2 text-right">Kg crudo</th>
+          <th class="px-3 py-2 text-right">Kg terminado</th>
+          <th class="px-3 py-2 text-right">Desperdicio</th>
+          <th class="px-3 py-2 text-right" title="Costo de colorantes + auxiliares consumidos">Costo $</th>
+          <th class="px-3 py-2 text-right" title="Costo / kg terminado">$/kg</th>
         </tr>
       </thead>
       <tbody>
@@ -122,28 +122,30 @@
               <span class="caret" data-caret-fecha="{{ _fecha_iso }}">▶</span>
               <strong>{{ r.fecha.strftime('%d/%m/%Y') }}</strong>
             </td>
-            <td class="px-3 py-1.5 text-center">{{ r.n_ots }}</td>
-            <td class="px-3 py-1.5 text-center whitespace-nowrap">{{ r.cruda | num_es(1) }}</td>
-            <td class="px-3 py-1.5 text-center whitespace-nowrap">{{ r.term | num_es(1) }}</td>
-            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ r.n_ots }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ r.cruda | num_es(1) }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ r.term | num_es(1) }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">
               {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
-            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+            <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">
               {% if r.costo and r.costo > 0 %}$ {{ r.costo | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
-            <td class="px-3 py-1.5 text-center whitespace-nowrap">
+            <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">
               {% if r.costo_kg is not none and r.costo_kg > 0 %}$ {{ '%.3f' % r.costo_kg }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
           </tr>
           {% for c in r.detalle_cod %}
-            <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
-              <td class="whitespace-nowrap">· <strong>{{ c.cod }}</strong></td>
-              <td class="text-center">{{ c.n_ots }}</td>
-              <td class="num">{{ c.cruda | num_es(1) }}</td>
-              <td class="num">{{ c.term | num_es(1) }}</td>
-              <td class="num">{% if c.desperdicio_pct is not none %}{{ '%.1f' % c.desperdicio_pct }}%{% endif %}</td>
-              <td class="num">{% if c.costo and c.costo > 0 %}$ {{ c.costo | num_es(0) }}{% endif %}</td>
-              <td class="num">{% if c.costo_kg is not none and c.costo_kg > 0 %}$ {{ '%.3f' % c.costo_kg }}{% endif %}</td>
+            {# TMT 2026-07-12 (dueña): mismas clases que la fila de día (px-3 +
+               text-right) para que las columnas del detalle ALINEEN con el día. #}
+            <tr class="det bg-slate-50 dark:bg-slate-800/40" data-fecha-parent="{{ _fecha_iso }}" hidden>
+              <td class="pl-8 pr-3 py-1 text-left whitespace-nowrap text-slate-600 dark:text-slate-300">· <strong>{{ c.cod }}</strong></td>
+              <td class="px-3 py-1 text-right tabular-nums">{{ c.n_ots }}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">{{ c.cruda | num_es(1) }}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">{{ c.term | num_es(1) }}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">{% if c.desperdicio_pct is not none %}{{ '%.1f' % c.desperdicio_pct }}%{% endif %}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">{% if c.costo and c.costo > 0 %}$ {{ c.costo | num_es(0) }}{% endif %}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">{% if c.costo_kg is not none and c.costo_kg > 0 %}$ {{ '%.3f' % c.costo_kg }}{% endif %}</td>
             </tr>
           {% endfor %}
         {% else %}
@@ -151,13 +153,13 @@
         {% endfor %}
         {% if filas %}
           <tr class="total">
-            <td>TOTAL</td>
-            <td class="text-center">{{ tot_ots }}</td>
-            <td class="num">{{ tot_cruda | num_es(1) }}</td>
-            <td class="num">{{ tot_term | num_es(1) }}</td>
-            <td class="num">{% if tot_desperdicio_pct is not none %}{{ '%.1f' % tot_desperdicio_pct }}%{% endif %}</td>
-            <td class="num">$ {{ tot_costo | num_es(0) }}</td>
-            <td class="num">{% if tot_costo_kg is not none and tot_costo_kg > 0 %}$ {{ '%.3f' % tot_costo_kg }}{% endif %}</td>
+            <td class="px-3 py-1.5">TOTAL</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ tot_ots }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ tot_cruda | num_es(1) }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ tot_term | num_es(1) }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{% if tot_desperdicio_pct is not none %}{{ '%.1f' % tot_desperdicio_pct }}%{% endif %}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">$ {{ tot_costo | num_es(0) }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{% if tot_costo_kg is not none and tot_costo_kg > 0 %}$ {{ '%.3f' % tot_costo_kg }}{% endif %}</td>
           </tr>
         {% endif %}
       </tbody>
