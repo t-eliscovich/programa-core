@@ -9055,3 +9055,110 @@ def factura_cambiar_stat_a_t(
             f"La factura #{id_factura} está en stat='{stat_prev}' — solo se "
             "cierra/reabre desde estados Z/A/T."
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CHECK GENERAL DE FUENTES DEL BALANCE  (read-only, TMT 2026-07-12)
+# ─────────────────────────────────────────────────────────────────────────
+# Pedido dueña: "quiero ver de dónde sale cada valor del balance, y algo que
+# ya no debería alimentarlo (como stock)". Antes de apagar el dBase, esto
+# confirma que ningún número quede sin origen y marca los riesgos de doble
+# fuente. NO escribe nada — solo lee los mismos componentes que arma el
+# balance para que los valores coincidan.
+
+# Cómo se carga HOY cada tabla de Postgres (verificado contra scripts/import_dbf.py).
+_CARGA_META = {
+    "dbase":    {"label": "dBase (sync)",  "nivel": "carga"},
+    "formulas": {"label": "Fórmulas App",  "nivel": "ok"},
+    "asinfo":   {"label": "Asinfo",        "nivel": "ok"},
+    "programa": {"label": "Programa",      "nivel": "carga"},
+    "cierre":   {"label": "Cierre propio", "nivel": "cierre"},
+    "derivado": {"label": "Derivado",      "nivel": "derivado"},
+}
+
+
+def fuentes_balance_check() -> dict:
+    """Mapa read-only: de dónde sale cada línea del balance HOY + valor vivo.
+
+    Devuelve ``{"filas": [...], "resumen": {...}}``. Cada fila trae:
+    ``seccion, linea, valor, tabla, carga, nivel, nota``. Los valores salen
+    de los mismos componentes que usa ``informe_balance`` (totf/totc/salcaj/
+    posdat/activos/anticipos/…), así que coinciden con el balance real.
+    Es puramente lectura — pensado para decidir la migración a Asinfo +
+    Fórmulas sin perder ningún número.
+    """
+    def _v(fn, default=0.0):
+        try:
+            return fn()
+        except Exception:  # noqa: BLE001 — una línea que falle no rompe el check
+            return default
+
+    _totf = float(_v(totf) or 0)
+    _totc = float(_v(totc) or 0)
+    _bancos = _v(saldo_bancos, []) or []
+    _salcaj = float(_v(salcaj) or 0)
+    _pos = _v(posdat_totales, {}) or {}
+    _act = _v(activos_totales, {}) or {}
+    _antic = float(_v(anticipos) or 0)
+    _uret_mes = float(_v(uret_mes_corriente) or 0)
+    _uret_anio = float(_v(retiros_total_anual) or 0)
+    _ventas_anio = float(_v(ventas_anio_en_curso) or 0)
+    _snap = _v(historia_ultimo_snapshot, {}) or {}
+    _cierre = _v(historia_ultimo_mes, {}) or {}
+
+    total_bancos = sum(float(b.get("saldo") or 0) for b in _bancos)
+    salbanc = total_bancos + float(_pos.get("pos1") or 0) + float(_pos.get("pos2") or 0)
+
+    def fila(seccion, linea, valor, tabla, carga, nota):
+        meta = _CARGA_META.get(carga, _CARGA_META["dbase"])
+        return {
+            "seccion": seccion, "linea": linea, "valor": float(valor or 0),
+            "tabla": tabla, "carga": carga, "carga_label": meta["label"],
+            "nivel": meta["nivel"], "nota": nota,
+        }
+
+    filas = [
+        # ACTIVO — disponible
+        fila("Activo", "Caja", _salcaj, "scintela.caja", "dbase",
+             "Saldo de caja. Asinfo no lo trae → se carga en el programa."),
+        fila("Activo", "Bancos", salbanc, "scintela.transacciones_bancarias + posdat", "dbase",
+             "Saldos bancarios + posdatados a depositar. Se mantienen en el programa."),
+        # ACTIVO — cartera
+        fila("Cartera", "Cheques (cartera)", _totc, "scintela.cheque", "dbase",
+             "Cheques vivos (Z/1/2/3/P/D). Sin fuente Asinfo → carga en el programa."),
+        fila("Cartera", "Facturas (cartera)", _totf, "scintela.factura", "dbase",
+             "Saldo por cobrar NETO. Asinfo da el facturado, no el saldo vivo → carga en el programa."),
+        fila("Cartera", "Anticipos", _antic, "scintela.dolares", "dbase",
+             "Anticipos vivos del cliente. Sin equivalente Asinfo → carga en el programa."),
+        # ACTIVO — stock (RIESGO de doble fuente)
+        fila("Stock", "Stock Químicos", float(_snap.get("uqui") or 0), "scintela.historia (snapshot)", "dbase",
+             "⚠ Doble fuente: Fórmulas ya trae el consumo de químicos. Hoy el balance usa el snapshot — confirmar que no diverjan."),
+        # ACTIVO — fijo
+        fila("Activo fijo", "Maquinaria / Equipo", float(_act.get("umaq") or 0), "scintela.activos", "dbase",
+             "Activos M/C/K prorrateados. No están en Asinfo → se cargan en el programa."),
+        fila("Activo fijo", "Terrenos / Edificios", float(_act.get("uact") or 0), "scintela.activos", "dbase",
+             "Activos tipo I. No están en Asinfo → se cargan en el programa."),
+        # PASIVO
+        fila("Pasivo", "Pasivos", float(_pos.get("totp") or 0), "scintela.posdat", "dbase",
+             "Deuda viva + provisiones. Las provisiones diarias ya se acumulan solas en el programa."),
+        # PATRIMONIO / CIERRE
+        fila("Cierre", "Patrimonio último cierre", float(_cierre.get("patrimonio") or 0), "scintela.historia", "cierre",
+             "Patrimonio del cierre. El programa YA lo fotografía en historia (snapshot propio); hoy conviven con el dBase."),
+        # MOVIMIENTOS
+        fila("Movimientos", "Retiros del mes", _uret_mes, "scintela.retiros", "dbase",
+             "Dividendos/retiros del mes. No están en Asinfo → carga en el programa."),
+        fila("Movimientos", "Retiros del año", _uret_anio, "scintela.retiros", "dbase",
+             "Dividendos/retiros del año. No están en Asinfo → carga en el programa."),
+        fila("Movimientos", "Ventas del año", _ventas_anio, "scintela.historia + factura", "dbase",
+             "Meses cerrados de historia + mes en curso. El mes en curso puede salir de Asinfo (facturado)."),
+    ]
+
+    # Resumen: cuántas líneas dependen de cada nivel.
+    resumen = {"dbase": 0, "carga": 0, "cierre": 0, "ok": 0, "derivado": 0, "total": len(filas)}
+    for f in filas:
+        # a nivel migración: dbase → hoy depende del dBase (hay que resolverlo)
+        if f["carga"] == "dbase":
+            resumen["dbase"] += 1
+        resumen[f["nivel"]] = resumen.get(f["nivel"], 0) + 1
+
+    return {"filas": filas, "resumen": resumen}

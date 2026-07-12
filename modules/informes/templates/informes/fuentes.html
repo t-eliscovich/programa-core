@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, nav_resultados %}
+{% from "_informes_design.html" import informes_styles %}
+{% block title %}Fuentes del balance{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Fuentes del balance</strong>{% endblock %}
+
+{% block head_extra %}
+{{ informes_styles() }}
+<style>
+  .fuentes-page .badge {
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
+    padding:2px 8px; border-radius:999px; border:1px solid; white-space:nowrap;
+  }
+  .fuentes-page .badge .d { width:7px; height:7px; border-radius:50%; background:currentColor; }
+  /* niveles de migración */
+  .lvl-carga  { color:#9a6410; background:#fbf1dd; border-color:#e6d4a6; }
+  .lvl-ok     { color:#1f7a4d; background:#e5f4ec; border-color:#b7e0c8; }
+  .lvl-cierre { color:#2b6a8f; background:#e7f1f6; border-color:#bcdae6; }
+  .dark .lvl-carga  { color:#e6bd6f; background:#3a2f1633; border-color:#5c4a24; }
+  .dark .lvl-ok     { color:#6fd6a0; background:#14312333; border-color:#2c5a41; }
+  .dark .lvl-cierre { color:#63b7d1; background:#16323b55; border-color:#2c5262; }
+  .fuentes-page .num { font-variant-numeric: tabular-nums; }
+  .fuentes-page tbody tr:hover td { background: rgb(248 250 252); }
+  .dark .fuentes-page tbody tr:hover td { background: rgb(30 41 59 / .3); }
+  .fuentes-page .sec-row td {
+    font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700;
+    color:#8592a2; padding-top:14px; padding-bottom:4px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-full info-page fuentes-page">
+  {{ nav_resultados('fuentes') }}
+
+  <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
+    {{ page_hero('Fuentes del balance', descripcion='De dónde sale cada línea HOY y cómo se carga — para migrar a Asinfo + Fórmulas sin perder ningún número. Solo lectura, no modifica nada.') }}
+    <div class="no-print text-sm text-slate-500">{{ hoy | fecha_es }}</div>
+  </div>
+
+  {% if error %}
+  <div class="rounded border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-800 text-red-800 dark:text-red-300 p-3 text-sm mb-4">
+    No pude armar el check: {{ error }}
+  </div>
+  {% endif %}
+
+  {% set r = d.resumen or {} %}
+  {# Resumen: cuántas líneas dependen del dBase hoy #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div class="text-2xl font-bold num text-amber-700 dark:text-amber-400">{{ r.dbase or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-1">líneas que hoy <strong>dependen del dBase</strong></div>
+    </div>
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div class="text-2xl font-bold num text-emerald-700 dark:text-emerald-400">{{ r.ok or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-1">ya las dan <strong>Asinfo / Fórmulas</strong></div>
+    </div>
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div class="text-2xl font-bold num text-sky-700 dark:text-sky-400">{{ r.cierre or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-1">las arma el <strong>cierre propio</strong></div>
+    </div>
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div class="text-2xl font-bold num text-slate-700 dark:text-slate-200">{{ r.total or 0 }}</div>
+      <div class="text-xs text-slate-500 mt-1">líneas revisadas en total</div>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide text-slate-400 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40">
+            <th class="text-left font-medium px-4 py-2.5">Línea</th>
+            <th class="text-right font-medium px-4 py-2.5">Valor hoy</th>
+            <th class="text-left font-medium px-4 py-2.5">Tabla de origen</th>
+            <th class="text-left font-medium px-4 py-2.5">Se carga</th>
+            <th class="text-left font-medium px-4 py-2.5">Nota / Riesgo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(sec='') %}
+          {% for f in d.filas %}
+            {% if f.seccion != ns.sec %}
+            <tr class="sec-row"><td colspan="5">{{ f.seccion }}</td></tr>
+            {% set ns.sec = f.seccion %}
+            {% endif %}
+            <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td class="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">{{ f.linea }}</td>
+              <td class="px-4 py-2.5 text-right num text-slate-700 dark:text-slate-200 whitespace-nowrap">{{ f.valor | money_es }}</td>
+              <td class="px-4 py-2.5 text-slate-500"><code class="text-xs">{{ f.tabla }}</code></td>
+              <td class="px-4 py-2.5">
+                <span class="badge lvl-{{ f.nivel }}"><span class="d"></span>{{ f.carga_label }}</span>
+              </td>
+              <td class="px-4 py-2.5 text-slate-500 text-[13px]">{{ f.nota }}</td>
+            </tr>
+          {% endfor %}
+          {% if not d.filas %}
+          <tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">Sin datos.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3 text-[13px] text-slate-600 dark:text-slate-300">
+    <strong>Cómo leer esto:</strong> cada número es el valor real de tu base ahora mismo.
+    <span class="badge lvl-carga"><span class="d"></span>dBase (sync)</span> / <span class="badge lvl-carga"><span class="d"></span>Programa</span>
+    = hoy vive en el dBase; al migrar se carga y mantiene en el programa.
+    <span class="badge lvl-ok"><span class="d"></span>Asinfo</span> / <span class="badge lvl-ok"><span class="d"></span>Fórmulas App</span>
+    = ya hay reemplazo automático. <span class="badge lvl-cierre"><span class="d"></span>Cierre propio</span>
+    = lo arma el cierre mensual del programa. El ⚠ en Stock Químicos marca una <strong>doble fuente</strong> a vigilar.
+  </div>
+</div>
+{% endblock %}
