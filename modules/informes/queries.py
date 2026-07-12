@@ -4525,9 +4525,9 @@ def informe_balance() -> dict:
             "usuti_historia": h_usuti,
         },
         "stock": {
-            "hilado": {"kg": h_hilado, "ukg": h_um, "us": val_hilado},
-            "tejido": {"kg": h_tejido_kg, "ukg": h_uk, "us": val_tejido},
-            "terminado": {"kg": h_terminado_kg, "ukg": h_uf, "us": val_terminado},
+            "hilado": {"kg": kg_hilado, "ukg": h_um, "us": val_hilado},
+            "tejido": {"kg": kg_tejido, "ukg": h_uk, "us": val_tejido},
+            "terminado": {"kg": kg_term, "ukg": h_uf, "us": val_terminado},
             "total": {"kg": stock_total_kg, "ukg": stock_ukg_prom, "us": stock_total_us},
         },
         "tabla": tabla_resultados,
