@@ -436,12 +436,55 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     #   · final (programa) = inicial + compras − egresos (computado).
     #   · final (formulas) = stock físico vivo hoy (color_stock, foto).
     #   · ajuste = final formulas − final programa (la varianza, se muestra).
+    # TMT 2026-07-12 (dueña): la banda descuadraba −66.100 por DOS datos mal
+    # tomados que se tapaban a medias (verif live formulas_app db3):
+    #   1. INICIAL salía de iniciales.vq del dBase (144.637), un libro HEREDADO
+    #      que PC arrastra sin recalcular (write-back lee su propio vqx=vq) →
+    #      quedó viejo. El físico REAL de químicos (formulas, POLI+ALG+AUX) al
+    #      cierre de junio era 417.943, no 144.637.
+    #   2. COMPRAS metía las 2 facturas de importación tipo Q (Colourtex 241.330,
+    #      09/07), PERO esa tintura ya había entrado al físico de formulas el
+    #      18/06 (229.189 en 18 líneas) → contarla como compra de julio la
+    #      DUPLICA sobre un inicial que ya la incluye.
+    # Fix: inicial = físico al-día de formulas al cierre del mes anterior;
+    # compras = lo que REALMENTE entró a bodega este mes (compras de formulas,
+    # no la factura); físico = al-día de hoy (no la foto cruda vieja). Cierra
+    # al ~1% (el ajuste queda como varianza real de inventario). La factura de
+    # importación se muestra como memo informativo (facturado_prog).
     quimicos_modelo = None
     if anio and mes:
         try:
-            q_inicial = float(
-                queries.tarifa_iniciales_mes_anterior(int(mes), int(anio), "vq")
-            )
+            import calendar as _cal3
+            from datetime import date as _date3
+            from datetime import timedelta as _td3
+
+            from filters import today_ec as _today_ec3
+            from modules.tintura import service as _tsvc3
+
+            _FAMS_Q = ("POLI", "ALG", "AUX")
+
+            def _fisico_quimicos_aldia(_corte):
+                _tot = 0.0
+                for _r in (_tsvc3.stock_quimicos_al_dia(_corte) or []):
+                    if (getattr(_r, "familia", "") or "").upper() in _FAMS_Q:
+                        _tot += float(getattr(_r, "stock_al_dia_kg", 0) or 0) \
+                            * float(getattr(_r, "precio_us", 0) or 0)
+                return _tot
+
+            _corte_ini = _date3(int(anio), int(mes), 1) - _td3(days=1)
+            _last = _date3(int(anio), int(mes),
+                           _cal3.monthrange(int(anio), int(mes))[1])
+            _corte_fin = min(_last, _today_ec3())
+
+            q_inicial = _fisico_quimicos_aldia(_corte_ini)
+            q_compras = float(color_compras or 0)      # formulas: lo recibido
+            q_egresos = color_consumo                  # formulas (puede ser None)
+            q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
+            q_final_form = _fisico_quimicos_aldia(_corte_fin)   # al-día, no foto
+            q_ajuste = q_final_form - q_final_prog
+
+            # Memo: importaciones facturadas del mes (programa, tipo Q). Ya
+            # reflejadas en el físico de formulas cuando se recibieron.
             _qc = db.fetch_one(
                 """
                 SELECT COALESCE(SUM(importe), 0) AS importe,
@@ -455,23 +498,17 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                 """,
                 (int(anio), int(mes)),
             ) or {}
-            q_compras = float(_qc.get("importe") or 0)
-            q_compras_n = int(_qc.get("n") or 0)
-            q_egresos = color_consumo  # formulas (puede ser None)
-            q_final_form = color_stock  # formulas foto (puede ser None)
-            q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
-            q_ajuste = (
-                (q_final_form - q_final_prog)
-                if q_final_form is not None else None
-            )
+
             quimicos_modelo = {
                 "inicial": q_inicial,
                 "compras": q_compras,
-                "compras_n": q_compras_n,
+                "compras_n": None,
                 "egresos": q_egresos,
                 "final_prog": q_final_prog,
                 "final_form": q_final_form,
                 "ajuste": q_ajuste,
+                "facturado_prog": float(_qc.get("importe") or 0),
+                "facturado_n": int(_qc.get("n") or 0),
             }
         except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
             quimicos_modelo = None

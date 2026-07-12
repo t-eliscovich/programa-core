@@ -209,24 +209,24 @@
       {% set qm = mov_asinfo.quimicos_modelo %}
       {% if qm %}
       {% set ff = qm.final_form %}
-      <div class="fp-quim mt-4" data-no-sort-table title="inicial (dBase) + compras (botón Cargar químicos) − egresos (formulas) = final del programa. El ajuste es la varianza contra el físico — se muestra, no se postea.">
+      <div class="fp-quim mt-4" data-no-sort-table title="inicial (físico de formulas al cierre del mes anterior) + compras recibidas (formulas) − egresos (formulas) = final del programa. El ajuste es la varianza contra el físico de hoy — se muestra, no se postea.">
         <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
 
           {# header full-width #}
           <div class="px-4 py-2 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
             <h3 class="text-[12px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Stock de químicos · {{ '%02d/%d' % (mes, anio) }}</h3>
-            <span class="text-[10px] text-slate-400">Libro del programa vs. físico de formulas · USD</span>
+            <span class="text-[10px] text-slate-400">Libro vs. físico de formulas · USD</span>
           </div>
 
           {# franja horizontal — una fila de celdas KPI (al ancho del resto) #}
           {% set _cols = 6 if ff is not none else 4 %}
           <div style="display:grid;grid-template-columns:repeat({{ _cols }},minmax(0,1fr))">
             <div class="px-4 py-2.5">
-              <div class="text-[10px] uppercase tracking-wide text-slate-400">Inicial <span class="normal-case text-slate-300 dark:text-slate-500">· dBase</span></div>
+              <div class="text-[10px] uppercase tracking-wide text-slate-400">Inicial <span class="normal-case text-slate-300 dark:text-slate-500">· físico formulas</span></div>
               <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</div>
             </div>
             <div class="px-4 py-2.5 border-l border-slate-100 dark:border-slate-800">
-              <div class="text-[10px] uppercase tracking-wide text-slate-400">+ Compras <span class="normal-case text-slate-300 dark:text-slate-500">· tipo Q{% if qm.compras_n %} ({{ qm.compras_n }}){% endif %}</span></div>
+              <div class="text-[10px] uppercase tracking-wide text-slate-400">+ Compras <span class="normal-case text-slate-300 dark:text-slate-500">· recibidas formulas{% if qm.compras_n %} ({{ qm.compras_n }}){% endif %}</span></div>
               <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{{ qm.compras | num_es(0) }}</div>
             </div>
             <div class="px-4 py-2.5 border-l border-slate-100 dark:border-slate-800">
@@ -250,6 +250,14 @@
             </div>
             {% endif %}
           </div>
+
+          {% if qm.facturado_prog %}
+          <div class="px-4 py-1.5 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400">
+            Importaciones facturadas del mes <span class="text-slate-300 dark:text-slate-500">(programa · tipo Q{% if qm.facturado_n %} · {{ qm.facturado_n }} fact.{% endif %})</span>:
+            <span class="tabular-nums font-medium text-slate-500 dark:text-slate-300">{{ qm.facturado_prog | num_es(0) }}</span>
+            — ya reflejadas en el físico de formulas cuando se recibieron (no se suman de nuevo acá).
+          </div>
+          {% endif %}
         </div>
       </div>
       {% endif %}
