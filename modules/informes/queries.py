@@ -4191,6 +4191,18 @@ def informe_balance() -> dict:
     kg_term_db = _mov_stock_kg("terminado", h_terminado_kg)
     kg_hilado, kg_tejido, kg_term = kg_hilado_db, kg_tejido_db, kg_term_db
     _stock_fuente = "dbase"
+
+    # COHERENCIA químicos (dueña 2026-07-12): el "Stock Quí." del balance venía
+    # del snapshot diario de PC (hist_live.uqui = 296.416) y NO coincidía con el
+    # dBase / la tabla del flujo (VQ = 311.953). Tomarlo del MISMO header de
+    # movimientos_mes_dbase (colorantes stock_act_us) para que sea una sola verdad.
+    try:
+        _vqx_mov = float((((mov or {}).get("header") or {}).get("colorantes") or {})
+                         .get("stock_act_us"))
+        if _vqx_mov > 0:
+            vqx = _vqx_mov
+    except (TypeError, ValueError):
+        pass
     if _stock_src == "asinfo":
         try:
             from modules.asinfo import service as _asinfo_svc
