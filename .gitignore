@@ -38,3 +38,4 @@ secrets/
 .gh_pat
 .claude_push.json
 .secret_key
+.claude/worktrees/
