@@ -4167,8 +4167,28 @@ def informe_balance() -> dict:
         pass
     _stock_src = (_stock_src or "dbase").strip().lower()
 
-    # kg dBase = base de la UTILIDAD y fallback del display.
-    kg_hilado_db, kg_tejido_db, kg_term_db = h_hilado, h_tejido_kg, h_terminado_kg
+    # COHERENCIA (dueña 2026-07-12, verificado contra INICIALE.DBF): el stock del
+    # balance TIENE que ser el MISMO que la tabla MOVIMIENTOS DEL MES (= el dBase).
+    # El balance recalculaba tejido/terminado por su cuenta (325.646 / 265.360) y
+    # subvaluaba el stock ~82k contra el dBase, que tiene 266.957 / 320.595
+    # (= INICIALE.DBF fila julio; HISTORIA.DBF USTOCK 7.848.860). Ahora hilado/
+    # tejido/terminado en kg salen del header de `movimientos_mes_dbase` — UNA sola
+    # fuente que la tabla y el balance comparten. Fallback al cálculo viejo si mov
+    # no está disponible. Las tarifas (h_um/h_uk/h_uf) NO cambian (ya son las de
+    # INICIALE.DBF). Base de la UTILIDAD también → el balance deja de subvaluar.
+    mov = _try_movimientos_mes()
+
+    def _mov_stock_kg(_et, _fallback):
+        try:
+            _v = float((((mov or {}).get("header") or {}).get(_et) or {})
+                       .get("stock_act_kg"))
+            return _v if _v > 0 else float(_fallback)
+        except (TypeError, ValueError):
+            return float(_fallback)
+
+    kg_hilado_db = _mov_stock_kg("hilado", h_hilado)
+    kg_tejido_db = _mov_stock_kg("tejido", h_tejido_kg)
+    kg_term_db = _mov_stock_kg("terminado", h_terminado_kg)
     kg_hilado, kg_tejido, kg_term = kg_hilado_db, kg_tejido_db, kg_term_db
     _stock_fuente = "dbase"
     if _stock_src == "asinfo":
@@ -4267,7 +4287,7 @@ def informe_balance() -> dict:
     # Prima sale de `mov` (flujo de producción, HILADO egresos $/kg). Las
     # claves viejas del dict resultados se siguen calculando para no romper
     # /informes/utilidad_debug ni otros consumidores.
-    mov = _try_movimientos_mes()
+    # `mov` ya se computó arriba (bloque de coherencia del stock) — reusar.
     try:
         _mp_ukg_flujo = float(
             ((mov or {}).get("header") or {}).get("hilado", {}).get("egresos_ukg")
