@@ -4176,8 +4176,12 @@ def informe_balance() -> dict:
             from modules.asinfo import service as _asinfo_svc
             _inv = _asinfo_svc.inventario_por_etapa()
             if _inv.get("disponible"):
-                kg_hilado = float(_inv["hilo"])         # bodega 51
-                kg_tejido = float(_inv["tela_cruda"])   # bodega 52
+                # Con MATERIAL EN PROCESO (WIP), igual que la vista de Stock y
+                # que el dBase: Hilado = bodega 51 + hilo despachado a tejeduría;
+                # Crudo = bodega 52 + crudo despachado a tintura; Terminado = 53.
+                # Sin el WIP, hilado/crudo quedan subvaluados (dueña 2026-07-12).
+                kg_hilado = float(_inv["hilo_total"])   # 51 + en proceso TC
+                kg_tejido = float(_inv["cruda_total"])  # 52 + en proceso PT
                 kg_term = float(_inv["terminada"])      # bodega 53
                 _stock_fuente = "asinfo"
         except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
