@@ -220,14 +220,20 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     #   · Stock act $ = apertura $ + ingreso $ − egreso $  → la columna CIERRA, y el
     #     ingreso barato BAJA el $/kg (antes el egreso/act tomaban el $/kg del dBase
     #     y por eso no daba la cuenta).
-    _open_ukg = None
-    try:
-        from modules.importaciones import service as _impsvc2
-        _open_ukg = _impsvc2.promedio_hilado_usd_kg()
-    except Exception:  # noqa: BLE001 -- fail-soft
-        _open_ukg = None
+    # TMT 2026-07-12 (dueña): valuar el inicial al COSTO DEL STOCK (≈ dBase), no
+    # al promedio de importaciones. Ese promedio corría ALTO (2,986 vs 2,951 del
+    # dBase) porque valuaba TODO el stock viejo al precio de las importaciones
+    # recientes → inflaba ~119k. Con el costo del stock que ya carga el dBase/
+    # cierre (stock_act_ukg ≈ 2,951) + las compras del mes al promedio, la tarifa
+    # queda ≈ 2,954, pegada al dBase (decisión dueña: "dejá el 2954 estamos ok").
+    # El promedio de importaciones queda de FALLBACK si no hay costo de stock.
+    _open_ukg = _f(hl, "stock_act_ukg") or _f(hl, "stock_inic_ukg")
     if not _open_ukg:
-        _open_ukg = _f(hl, "stock_inic_ukg")   # semilla: último $/kg conocido
+        try:
+            from modules.importaciones import service as _impsvc2
+            _open_ukg = _impsvc2.promedio_hilado_usd_kg()
+        except Exception:  # noqa: BLE001 -- fail-soft
+            _open_ukg = None
     # KG: ingreso/egreso = MOVIMIENTO REAL de bodega 51 → cierra por telescopía
     #   inicial + ingreso + en máquinas − egreso = stock actual (kg).
     # El ingreso real de bodega (ing_hilo) = importaciones (compras) + reingresos
