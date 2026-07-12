@@ -918,6 +918,7 @@ def total_buscar(
     vista: str = "todas",
     kg_filter: str | None = None,
     tipo: str | None = None,
+    numero: int | None = None,
 ) -> dict:
     """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
 
@@ -939,6 +940,8 @@ def total_buscar(
           AND COALESCE(c.stat, '') <> 'Y'
           AND (%(q)s IS NULL
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
+          -- Filtro por NÚMERO de compra (dígitos del campo flexible) — dueña 2026-07-11
+          AND (%(numero)s::int IS NULL OR c.numero = %(numero)s::int)
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           AND (%(tipo)s IS NULL OR UPPER(TRIM(COALESCE(c.tipo, ''))) = %(tipo)s)
@@ -972,6 +975,7 @@ def total_buscar(
             "vista": (vista or "todas").lower(),
             "kg_filter": kg_filter,
             "tipo": ((tipo or "").upper().strip() or None),
+            "numero": numero,
         },
     )
     return {
@@ -990,6 +994,7 @@ def buscar(
     vista: str = "todas",
     kg_filter: str | None = None,
     tipo: str | None = None,
+    numero: int | None = None,
 ) -> list[dict]:
     """Histórico de compras filtrable por proveedor/concepto/comprobante + fecha.
 
@@ -1029,6 +1034,8 @@ def buscar(
         WHERE (%(incluir_anuladas)s OR COALESCE(c.stat, '') <> 'Y')
           AND (%(q)s IS NULL
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
+          -- Filtro por NÚMERO de compra (dígitos del campo flexible) — dueña 2026-07-11
+          AND (%(numero)s::int IS NULL OR c.numero = %(numero)s::int)
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           -- Filtro por TIPO (H/K/Q/C/A/I) — dueña 2026-07-09
@@ -1068,6 +1075,7 @@ def buscar(
                 "vista": vista,
                 "kg_filter": (kg_filter or None),
                 "tipo": ((tipo or "").upper().strip() or None),
+                "numero": numero,
             },
         )
         or []
@@ -1081,48 +1089,6 @@ def buscar(
         acum += float(r.get("importe") or 0)
         r["saldo_acumulado"] = acum
     return list(reversed(rows_asc))
-
-
-def proveedores_para_filtro(vista: str = "compras") -> list[dict]:
-    """Proveedores para el datalist (sugerencias) del campo Proveedor,
-    filtrado según la pantalla:
-      - vista 'produccion': solo los que proveen tejido — compras tipo K
-        con kg distinto de 0.
-      - vista 'compras': el resto (todo lo que no es esa producción).
-    Compras de los últimos 3 meses; cada fila {codigo, nombre}, ordenada
-    alfabéticamente por nombre. Federico 2026-05-22.
-    """
-    if vista == "produccion":
-        cond = ("UPPER(COALESCE(c.tipo, '')) = 'K' "
-                "AND ABS(COALESCE(c.kg, 0)) > 0.01")
-    else:
-        # Compras = proveedores que NO son de tejido: ningún proveedor que
-        # aparezca en una compra tipo K con kg. Federico 2026-05-22.
-        cond = ("NOT EXISTS (SELECT 1 FROM scintela.compra k "
-                "WHERE UPPER(TRIM(COALESCE(k.codigo_prov, ''))) = "
-                "UPPER(TRIM(COALESCE(c.codigo_prov, ''))) "
-                "AND UPPER(COALESCE(k.tipo, '')) = 'K' "
-                "AND ABS(COALESCE(k.kg, 0)) > 0.01)")
-    rows = (
-        db.fetch_all(
-            f"""
-        SELECT DISTINCT
-               c.codigo_prov          AS codigo,
-               COALESCE(p.nombre, '') AS nombre
-        FROM scintela.compra c
-        LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
-        WHERE COALESCE(c.codigo_prov, '') <> ''
-          AND c.fecha >= CURRENT_DATE - INTERVAL '3 months'
-          AND {cond}
-        """
-        )
-        or []
-    )
-    out = [{"codigo": r["codigo"], "nombre": r["nombre"]} for r in rows]
-    # Orden alfabético por nombre; los que no tienen nombre van al final.
-    out.sort(key=lambda r: (not r["nombre"], (r["nombre"] or "").upper(),
-                            r["codigo"]))
-    return out
 
 
 def conteos_por_vista(

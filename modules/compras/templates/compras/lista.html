@@ -2,7 +2,7 @@
 {% from "_ui.html" import empty_row, page_hero, kpi_card %}
 {% block title %}{{ titulo }}{% endblock %}
 {% block breadcrumb %}
-  {% if q or desde or hasta %}
+  {% if q or codigo or desde or hasta %}
     <a href="{{ url_for(endpoint_actual) }}" class="hover:underline">{{ titulo }}</a> /
     <strong>Filtro activo</strong>
   {% else %}
@@ -28,7 +28,7 @@
     ) }}
 
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if q or desde or hasta %}
+      {% if q or codigo or desde or hasta %}
         <a href="{{ url_for(endpoint_actual) }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
            title="Volver al listado completo, sin filtros">
@@ -98,17 +98,16 @@
      muestra importe + filas + kg del filtro activo. TMT 2026-07-11. #}
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
-      {# Federico 2026-05-22 — <select> en vez de datalist: la flechita
-         siempre despliega la lista completa de proveedores, aunque ya
-         haya uno elegido (el datalist nativo no hacía eso). #}
-      <select name="q"
-              class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
-        <option value="">— Todos los proveedores —</option>
-        {% for pr in proveedores %}
-          <option value="{{ pr.codigo }}"{% if q == pr.codigo %} selected{% endif %}>{{ pr.codigo }} - {{ pr.nombre }}</option>
-        {% endfor %}
-      </select>
+      {# TMT 2026-07-11 (dueña) — se reemplaza el dropdown de Proveedor por un
+         único campo de búsqueda flexible, igual al de /dolares y /anticipos:
+         las letras (2-3) se toman como código de PROVEEDOR y los dígitos como
+         NÚMERO de compra, en cualquier orden y con o sin espacio.
+           "AC 15" → proveedor AC + compra Nº 15
+           "AC"    → sólo proveedor AC
+           "15"    → sólo compra Nº 15 #}
+      <label class="block text-xs text-slate-500 mb-1">Buscar <span class="font-normal text-slate-400">(proveedor + Nº)</span></label>
+      <input type="text" name="codigo" value="{{ codigo or q or '' }}" placeholder="AC 15"
+             class="w-56 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase font-mono">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
@@ -136,7 +135,7 @@
     {% set _hoy = g.now.date() if g.now else None %}
     {% if _hoy %}
       <a href="{{ url_for(endpoint_actual,
-                          q=q,
+                          codigo=(codigo or q or None),
                           tipo=tipo or None,
                           desde=_hoy.replace(day=1).isoformat(),
                           hasta=_hoy.isoformat(),
@@ -147,7 +146,7 @@
     {# Federico 2026-05-22 - boton rapido: solo produccion propia de INTELA
        (KK). Solo se muestra en la pantalla Producción Tejeduría. #}
     {% if vista == 'produccion' %}
-    <a href="{{ url_for(endpoint_actual, q=(none if q == 'KK' else 'KK'), desde=desde, hasta=hasta, anuladas='1' if incluir_anuladas else None) }}"
+    <a href="{{ url_for(endpoint_actual, codigo=(none if q == 'KK' else 'KK'), desde=desde, hasta=hasta, anuladas='1' if incluir_anuladas else None) }}"
        class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium{% if q == 'KK' %} bg-sky-100 dark:bg-sky-900/30{% endif %}"
        title="Muestra solo la produccion de tejido propia de INTELA (proveedor KK).">Solo INTELA</a>
     {% endif %}
