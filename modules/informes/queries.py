@@ -4214,6 +4214,23 @@ def informe_balance() -> dict:
         except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
             pass
 
+    # COHERENCIA $/kg HILADO (dueña 2026-07-12): el precio del hilado del balance
+    # TIENE que ser el MISMO que la tabla MOVIMIENTOS (stock_act_ukg = um_act,
+    # promedio ponderado apertura+compras = 2.951), NO el "forward" recomputado
+    # arriba (h_um = 2.953). Difieren por la fórmula: el balance tomaba los kg de
+    # la tabla pero el precio lo recalculaba por su cuenta → mostraba 2.953 vs el
+    # 2.951 de la tabla. Ahora el balance toma el $/kg de la MISMA tabla; uk/uf
+    # derivan de él (um+0,5 / um+2,2). Fallback al forward si mov no está.
+    try:
+        _mov_hil_ukg = float((((mov or {}).get("header") or {}).get("hilado") or {})
+                             .get("stock_act_ukg"))
+        if _mov_hil_ukg > 0:
+            h_um = _mov_hil_ukg
+            h_uk = h_um + 0.5
+            h_uf = h_uk + 1.7
+    except (TypeError, ValueError):
+        pass
+
     val_hilado = kg_hilado * h_um
     val_tejido = kg_tejido * h_uk
     val_terminado = kg_term * h_uf
