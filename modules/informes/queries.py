@@ -4249,18 +4249,24 @@ def informe_balance() -> dict:
         vqx = round(_vq0_prev + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
     # si no hay iniciales del mes anterior, queda el fallback del snapshot
 
-    # COHERENCIA químicos (dueña 2026-07-12): el "Stock Quí." del balance tiene
-    # que ser el MISMO que la tabla MOVIMIENTOS DEL MES (= el dBase, VQ julio
-    # 311.953), no el VQX vivo de arriba (VQ0 junio 144.637 + compras Q − ITIN =
-    # 296.416, que arrastra el VQ heredado de junio). Se toma del header de
-    # movimientos_mes_dbase (colorantes stock_act_us) — una sola verdad. Va
-    # DESPUÉS del recálculo vivo para no ser pisado. Fallback: deja el valor previo.
+    # QUÍMICO = COLORANTE FÍSICO REAL de formulas (dueña 2026-07-12). Decisión:
+    # el "Stock Quí." se mide como el físico de COLORANTE (familias POLI+ALG) de
+    # formulas, NO el VQ del dBase (que subvalúa) ni el VQX vivo (VQ0 junio +
+    # compras Q − ITIN). Se excluyen los AUXILIARES (AUX): son un stock a granel
+    # de ~55k que se da vuelta solo (compras≈consumo) y que el dBase no valúa —
+    # al sacarlos, el colorante físico (~338.614) queda a solo +26k del dBase
+    # (311.953), no +82k. El VQX vivo de arriba queda como fallback si formulas
+    # no está disponible.
     try:
-        _vqx_mov = float((((mov or {}).get("header") or {}).get("colorantes") or {})
-                         .get("stock_act_us"))
-        if _vqx_mov > 0:
-            vqx = _vqx_mov
-    except (TypeError, ValueError):
+        from modules.tintura import service as _tsvc_q
+        _vqx_col = 0.0
+        for _r in (_tsvc_q.stock_quimicos_al_dia(today_ec()) or []):
+            if (getattr(_r, "familia", "") or "").upper() in ("POLI", "ALG"):
+                _vqx_col += float(getattr(_r, "stock_al_dia_kg", 0) or 0) \
+                    * float(getattr(_r, "precio_us", 0) or 0)
+        if _vqx_col > 0:
+            vqx = _vqx_col
+    except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
         pass
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
