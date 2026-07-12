@@ -150,24 +150,26 @@
              backend (mismas reglas: secuencia devuelto 1→2→3, depositados sólo
              salen por rebote/anulación, etc.). Cada opción se renderiza según
              su destino/kind. #}
-          {% set _clase = 'w-full text-left px-4 py-2 text-sm border-b border-slate-100 dark:border-slate-800' %}
+          {# TMT 2026-07-12 (dueña): CÓDIGO de estado (letrita) + etiqueta corta —
+             sin el texto largo ("depositar en Pichincha (hoy)" etc). El código
+             manda; el hover/title tiene el detalle. #}
+          {% set _clase = 'flex items-center gap-2 w-full text-left px-4 py-1.5 text-sm border-b border-slate-100 dark:border-slate-800' %}
+          {% set _corto = {'B':'Depositar','C':'Caja','P':'Postergar','D':'Daniela','1':'Devuelto','2':'Devuelto 2°','3':'Rechazo 3°','Z':'Cartera','V':'Re-depositar','X':'Anular','9':'Sin fondos','E':'Endosar'} %}
+          {% macro chip(code) %}<span class="inline-flex items-center justify-center w-5 h-5 shrink-0 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-mono font-semibold text-slate-600 dark:text-slate-300">{{ code }}</span>{% endmacro %}
           {% for t in transiciones %}
             {% if t.stat_destino == '9' %}
-              {# Rebote / sin fondos: modal in-page (mejor UX que el wizard). #}
-              <button type="button"
-                 class="js-reverso block {{ _clase }} hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300"
+              <button type="button" title="{{ t.label }}"
+                 class="js-reverso {{ _clase }} hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300"
                  data-reverso-preview="{{ url_for('cheques.reverso_preview', id_cheque=ch.id_cheque) }}">
-                ⚠ Sin fondos (rebotó)…
+                {{ chip('9') }}<span>Sin fondos</span>
               </button>
             {% elif t.kind == 'POSTERGAR' %}
-              <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}"
-                 class="block {{ _clase }} hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-700 dark:text-amber-300">{{ t.label }}…</a>
+              <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}" title="{{ t.label }}"
+                 class="{{ _clase }} hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-700 dark:text-amber-300">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></a>
             {% elif t.kind == 'WIZARD' %}
-              <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}"
-                 class="block {{ _clase }} hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">{{ t.label }}…</a>
+              <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}" title="{{ t.label }}"
+                 class="{{ _clase }} hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></a>
             {% else %}
-              {# POST directo a transicionar. Depositar (B) y caja (C) piden
-                 confirmación porque crean movimiento de banco/caja. #}
               <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=ch.id_cheque) }}"
                     {% if t.stat_destino == 'B' %}onsubmit="return confirm('Depositar en Pichincha por $ {{ ch.importe }}? (crea el movimiento de banco)');"
                     {% elif t.stat_destino == 'C' %}onsubmit="return confirm('Cobrar en caja por $ {{ ch.importe }}? (crea la entrada de caja)');"{% endif %}>
@@ -178,31 +180,23 @@
                                 else ('text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20' if t.stat_destino == 'C'
                                 else ('text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20' if t.stat_destino in ('1','2','3')
                                 else 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800')) %}
-                <button type="submit" class="{{ _clase }} {{ _color }}">{{ t.label }}</button>
+                <button type="submit" title="{{ t.label }}" class="{{ _clase }} {{ _color }}">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></button>
               </form>
             {% endif %}
           {% endfor %}
-          {# Operaciones que NO son un simple cambio de stat (van a su propio
-             wizard) — se mantienen aparte del listado de estados. #}
           {% if puede_endosar %}
-            <a href="{{ url_for('cheques.endosar', id_cheque=ch.id_cheque) }}"
-               class="block {{ _clase }} hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300">
-              Endosar a proveedor…
-            </a>
+            <a href="{{ url_for('cheques.endosar', id_cheque=ch.id_cheque) }}" title="Endosar a proveedor"
+               class="{{ _clase }} hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300">{{ chip('E') }}<span>Endosar</span></a>
           {% endif %}
           {% if puede_reemplazar %}
             {# Cheque XX reemplazo — replica BANCOS.PRG:266-305. El cliente
                trae un cheque nuevo y el viejo queda anulado. TMT 2026-05-15 (#7). #}
-            <a href="{{ url_for('cheques.reemplazar', id_cheque=ch.id_cheque) }}"
-               class="block {{ _clase }} hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
-              Reemplazar por nuevo cheque…
-            </a>
+            <a href="{{ url_for('cheques.reemplazar', id_cheque=ch.id_cheque) }}" title="Reemplazar por nuevo cheque"
+               class="{{ _clase }} hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">{{ chip('XX') }}<span>Reemplazar</span></a>
           {% endif %}
           {% if puede_reversar_endoso %}
-            <a href="{{ url_for('cheques.confirmar_reverso_endoso', id_cheque=ch.id_cheque) }}"
-               class="block {{ _clase }} hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300">
-              Reversar endoso…
-            </a>
+            <a href="{{ url_for('cheques.confirmar_reverso_endoso', id_cheque=ch.id_cheque) }}" title="Reversar endoso"
+               class="{{ _clase }} hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300">{{ chip('↺') }}<span>Reversar endoso</span></a>
           {% endif %}
         </div>
       </details>
