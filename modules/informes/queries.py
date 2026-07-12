@@ -4158,7 +4158,13 @@ def informe_balance() -> dict:
     # si Asinfo no está disponible, cae al dBase (nunca rompe el balance).
     # Los kg de Asinfo se valúan con la MISMA tarifa dBase (spec: no tocar tarifas).
     import os as _os_bal
-    _stock_src = _os_bal.environ.get("BALANCE_STOCK_SOURCE", "dbase")
+    # TMT 2026-07-12 (dueña dio OK): el DEFAULT del stock del balance pasa a
+    # ASINFO para julio en adelante. Sigue siendo reversible: env
+    # BALANCE_STOCK_SOURCE=dbase o ?stock_source=dbase vuelve al dBase sin
+    # redeploy. Junio y meses cerrados no pasan por acá (son el cierre HISTORIA),
+    # así que este cambio SOLO afecta el mes en curso. Fail-soft: si Asinfo no
+    # responde, cae al dBase y nunca rompe el balance.
+    _stock_src = _os_bal.environ.get("BALANCE_STOCK_SOURCE", "asinfo")
     try:
         from flask import has_request_context as _hrc, request as _rq_bal
         if _hrc():
