@@ -1,4 +1,5 @@
 """Listado y alta de compras (facturas de proveedor)."""
+import re
 from datetime import datetime
 
 from flask import (
@@ -21,6 +22,28 @@ from parsers import parse_bool, parse_date, parse_int, parse_monto
 from . import queries
 
 compras_bp = Blueprint("compras", __name__, template_folder="templates")
+
+
+def parse_codigo_compra(codigo: str) -> tuple[str | None, int | None]:
+    """Parser del campo de búsqueda flexible de Compras (atajo dueña 2026-07-11).
+
+    Mismo patrón que /dolares y /anticipos: de lo tipeado, las LETRAS (2-3) se
+    toman como código de PROVEEDOR y los DÍGITOS como NÚMERO de compra, en
+    cualquier orden y con o sin espacio. Acepta:
+        "AC 15" → proveedor AC + compra Nº 15
+        "AC"    → sólo proveedor AC
+        "15"    → sólo compra Nº 15
+
+    Devuelve (codigo_prov, numero) — cualquiera de los dos puede ser None.
+    """
+    codigo = (codigo or "").strip()
+    if not codigo:
+        return None, None
+    m_letras = re.search(r"[A-Za-z]{2,3}", codigo)
+    m_num = re.search(r"\d{1,6}", codigo)
+    codigo_prov = m_letras.group(0).upper() if m_letras else None
+    numero = int(m_num.group(0)) if m_num else None
+    return codigo_prov, numero
 
 
 def _bancos() -> list[dict]:
@@ -395,7 +418,18 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
     esta misma pantalla, para que el form y los botones apunten acá.
     Federico 2026-05-22.
     """
+    # Búsqueda flexible en UN solo campo (atajo dueña 2026-07-11): las letras
+    # (2-3) son el código de PROVEEDOR y los dígitos el NÚMERO de compra. Se
+    # sigue aceptando `q` suelto por compatibilidad: /dolares y otros flujos
+    # redirigen con url_for("compras.lista", q=CODIGO_PROV), y el botón "Solo
+    # INTELA" usa q=KK.
     q = request.args.get("q", "").strip()
+    codigo = request.args.get("codigo", "").strip()
+    numero = None
+    if codigo:
+        codigo_prov_cod, numero = parse_codigo_compra(codigo)
+        if codigo_prov_cod:
+            q = codigo_prov_cod
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     tipo = (request.args.get("tipo") or "").strip().upper() or None
@@ -411,6 +445,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
             incluir_anuladas=incluir_anuladas,
             vista=vista,
             tipo=tipo,
+            numero=numero,
         )
         error = None
     except Exception as e:
@@ -453,6 +488,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
             q, desde, hasta,
             incluir_anuladas=incluir_anuladas, vista=vista,
             tipo=tipo,
+            numero=numero,
         )
         total_importe = agg["total"]
         total_kg = agg["total_kg"]
@@ -461,22 +497,15 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
                             if (r.get("stat") or "").upper() != "Y")
         total_kg = sum(float(r["kg"] or 0) for r in filas
                        if (r.get("stat") or "").upper() != "Y")
-    # Federico 2026-05-22 - proveedores para el datalist (sugerencias)
-    # del campo Proveedor del filtro de /compras.
-    try:
-        proveedores = queries.proveedores_para_filtro(vista)
-    except Exception:
-        proveedores = []
-
     return render_template(
         "compras/lista.html",
-        filas=filas, q=q, desde=desde, hasta=hasta, tipo=tipo,
+        filas=filas, q=q, codigo=codigo or None,
+        desde=desde, hasta=hasta, tipo=tipo,
         total_importe=total_importe, total_kg=total_kg,
         incluir_anuladas=incluir_anuladas,
         vista=vista,
         titulo=titulo,
         endpoint_actual=endpoint_actual,
-        proveedores=proveedores,
         error=error,
     )
 
