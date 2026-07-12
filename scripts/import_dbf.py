@@ -1090,14 +1090,20 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         if pg_table == "scintela.retiros" and _retiros_pc:
             restaurados = 0
             for fecha, nb, ret, de, concepto, clave, idtx, usr in _retiros_pc:
+                # TMT 2026-07-12 (dueña "dBase manda"): el guard usaba fecha
+                # EXACTA, así que cuando el mismo retiro OP se carga en el dBase
+                # con la fecha corrida un día (ej. banco USA 06/07 en PC vs
+                # AC B.1 07/07 en el dBase) NO lo reconocía como gemela y lo
+                # duplicaba (dividendos +51.366). Ahora la gemela del DBF absorbe
+                # al retiro PC por de+monto dentro de ±15 días → el dBase gana.
                 cur.execute(
                     "SELECT 1 FROM scintela.retiros "
                     " WHERE COALESCE(usuario_crea,'') = 'dbf-import' "
-                    "   AND fecha IS NOT DISTINCT FROM %s "
                     "   AND UPPER(TRIM(COALESCE(de,''))) = UPPER(TRIM(COALESCE(%s,''))) "
                     "   AND ABS(COALESCE(ret,0) - %s) < 0.01 "
+                    "   AND (%s::date IS NULL OR ABS(fecha - %s::date) <= 15) "
                     " LIMIT 1",
-                    (fecha, de, float(ret or 0)),
+                    (de, float(ret or 0), fecha, fecha),
                 )
                 if cur.fetchone():
                     continue  # el DBF ya lo trae → no duplicar
