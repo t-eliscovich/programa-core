@@ -657,18 +657,6 @@ def balance():
     )
 
 
-# Check general de fuentes del balance (read-only, TMT 2026-07-12).
-# Pedido dueña: ver de dónde sale cada valor del balance HOY para decidir la
-# migración a Asinfo + Fórmulas sin perder ningún número. NO escribe nada.
-@informes_bp.route("/fuentes")
-@requiere_login
-@requiere_permiso("informes.ver")
-def fuentes():
-    """Pantalla read-only: cada línea del balance con su valor vivo + origen."""
-    data, error = _safe(queries.fuentes_balance_check, {"filas": [], "resumen": {}})
-    return render_template("informes/fuentes.html", d=data, error=error, hoy=today_ec())
-
-
 # Feature A — tab Compras en /informes/balance (TMT 2026-05-19 v6).
 @informes_bp.route("/balance/compras")
 @requiere_login
