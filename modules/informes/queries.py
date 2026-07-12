@@ -3409,6 +3409,11 @@ def resultados_costos_tabla(
     # los usamos tal cual. Si None, cae a la aprox Subtotal+4.5% + Admin.
     costo_total_ukg: float | None = None,
     costo_total_us: float | None = None,
+    # TMT 2026-07-12 (dueña): mostrar Materia Prima en kg y $ (antes solo $/kg).
+    # = hilado consumido del mes (egresos del cuadro MOVIMIENTOS: ktej × um_act).
+    # Es el costo más grande y estaba oculto. Si None, la fila queda solo con $/kg.
+    mp_kg: float | None = None,
+    mp_us: float | None = None,
 ) -> list[dict]:
     """Tabla RESULTADOS del /informes/balance — rediseno Federico 2026-05-21.
 
@@ -3465,7 +3470,13 @@ def resultados_costos_tabla(
     col_kg = float(ktint_colorantes) if ktint_colorantes else ktint
     col_ukg = _div(col_us, col_kg)
 
-    sub_ukg = 1.045 * (mp_ukg + tej_ukg + tin_ukg + col_ukg)
+    # +4.5% (merma) SOLO sobre materiales (Materia Prima + Colorantes) — igual que
+    # el COSTUNI del dBase (INFORMES.PRG L406: factor × (UMX + ITIN/KR)). La mano de
+    # obra y gastos de Tejeduría/Tintorería NO llevan recargo de merma. Antes PC
+    # aplicaba 1.045 a las 4 filas → inflaba el subtotal y no cerraba contra el
+    # Costo Total (COSTUNI). Dueña 2026-07-12: "el 4.5% que hace el dBase, hagámoslo".
+    _fac_merma = float(factor_desperdicio or 1.045)
+    sub_ukg = tej_ukg + tin_ukg + _fac_merma * (mp_ukg + col_ukg)
 
     adm_us = (float(v7 or 0) + float(v8 or 0) + float(v9 or 0)
               + float(deprcar or 0))
@@ -3528,10 +3539,14 @@ def resultados_costos_tabla(
          "ayuda": ("Meta del mes (KPROG de Iniciales) × precio promedio — "
                    "igual que la PROYECCIÓN del dBase (INFORMES.PRG).")},
         {"label": "COSTOS", "clase": "seccion"},
-        {"label": "Materia Prima", "kg": None, "ukg": mp_ukg, "us": None,
+        {"label": "Materia Prima",
+         "kg": (float(mp_kg) if mp_kg else None),
+         "ukg": mp_ukg,
+         "us": (float(mp_us) if mp_us else None),
          "clase": "dato",
-         "ayuda": ("Costo unitario del hilado consumido — sale del cuadro "
-                   "Flujo de produccion (HILADO, egresos $/kg).")},
+         "ayuda": ("Hilado consumido del mes = egresos del cuadro MOVIMIENTOS "
+                   "(HILADO): kg × $/kg ponderado. Es el costo mas grande; "
+                   "antes solo se mostraba el $/kg.")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
          "proy": (float(pretej or 0) or None), "clase": "dato",
          "ayuda": ("Costo total = V1+V2+V3 + depreciacion de tejeduria. "
@@ -3546,16 +3561,20 @@ def resultados_costos_tabla(
                    "mes (TINT). U$/kg = importe / kg tinturados live.")},
         {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": None,
          "clase": "subtotal",
-         "ayuda": ("1.045 * (Materia Prima + Tejeduria + Tintoreria + "
-                   "Colorantes).")},
+         "ayuda": ("Tejeduria + Tintoreria + merma*(Materia Prima + Colorantes). "
+                   "El +4.5% (merma) aplica SOLO a materiales, igual que el dBase "
+                   "(COSTUNI). La mano de obra/gastos no llevan recargo.")},
         {"label": "Administración", "kg": None, "ukg": adm_ukg, "us": adm_us,
          "proy": (float(preadm or 0) or None), "clase": "dato",
          "ayuda": ("Costo total = V7+V8+V9 + depreciacion de administracion. "
                    "U$/kg = costo total / kg vendidos.")},
         {"label": "Costo Total", "kg": None, "ukg": ct_ukg, "us": ct_us,
          "proy": (float(pretot or 0) or None), "clase": "total",
-         "ayuda": ("Subtotal +4.5% + Administracion. "
-                   "U$ = kg vendidos * Costo Total.")},
+         "ayuda": ("Replica EXACTA del dBase. $/kg = COSTUNI = merma*(MP+ITIN/KR) "
+                   "+ Tejeduria + Tintoreria + Admin (= Subtotal + Admin). "
+                   "U$ = CSVTATOT = costo estandarizado de los kg vendidos "
+                   "(KV*1.04*costo_unitario incl. hilado + gastos); por eso NO es "
+                   "la suma lineal de las filas.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
          "clase": "key", "parcial": True, "parcial_dias": dia_actual,
          "ayuda": (
@@ -4417,6 +4436,10 @@ def informe_balance() -> dict:
         utilidad_econ=float(utilidad or 0),
         costo_total_ukg=_costuni,
         costo_total_us=_csvtatot,
+        # Materia Prima en kg y $ = egresos del HILADO en la tabla MOVIMIENTOS
+        # (hilado consumido del mes). MISMA fuente que la tabla → coherente.
+        mp_kg=(((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_kg"),
+        mp_us=(((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_us"),
     )
 
     resultados = {
