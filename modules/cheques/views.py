@@ -1533,25 +1533,54 @@ def aplicar(id_cheque: int):
         ), 500
 
 
-@cheques_bp.route("/cheques/<int:id_cheque>/confirmar-reverso", methods=["GET"])
-@requiere_login
-@requiere_permiso("cheques.anular")
-def confirmar_reverso(id_cheque: int):
-    """Paso 1 del 2-step: confirmar 'Sin fondos' o 'Reversar (me confundí)'.
+def _facturas_que_vuelven(id_cheque: int) -> list[dict]:
+    """Facturas que este cheque cubría, UNA línea por factura (suma las
+    aplicaciones parciales — un cheque puede aplicarse en partes a la misma
+    factura, no hay UNIQUE(cheque, factura)). Muestra el N° de factura real.
+    TMT 2026-07-11 (dueña: 'porque están repetidas las facturas')."""
+    apps = db.fetch_all(
+        "SELECT id_fact, importe, fechaing "
+        "FROM scintela.chequesxfact WHERE id_cheque = %s",
+        (id_cheque,),
+    ) or []
+    agg: dict = {}
+    for a in apps:
+        fid = a.get("id_fact")
+        slot = agg.setdefault(fid, {"importe": 0.0, "fecha": None})
+        slot["importe"] += float(a.get("importe") or 0)
+        fch = a.get("fechaing")
+        if fch and (slot["fecha"] is None or fch > slot["fecha"]):
+            slot["fecha"] = fch
+    numf: dict = {}
+    if agg:
+        ph = ",".join(["%s"] * len(agg))
+        for rf in db.fetch_all(
+            f"SELECT id_factura, COALESCE(numf::text, '') AS numf "
+            f"FROM scintela.factura WHERE id_factura IN ({ph})",
+            tuple(agg),
+        ) or []:
+            numf[rf["id_factura"]] = (rf.get("numf") or "").strip()
+    return [
+        {
+            "texto": f"Factura {numf.get(fid) or ('#' + str(fid))}",
+            "importe": slot["importe"],
+            "detalle": (slot["fecha"].strftime("%d/%m/%Y") if slot["fecha"] else ""),
+        }
+        for fid, slot in sorted(agg.items(), key=lambda kv: str(kv[0]))
+    ]
 
-    TMT 2026-05-24 — Dueña: 'no es lo mismo reversar que rebote'. La
-    distinción es por stat actual:
-      - B/A/1/2 → SIN FONDOS (el cheque ya estuvo en circulación bancaria
-                  y rebotó). Evento malo, queda anotado en cliente.
-      - Z/D/P/V → REVERSAR (te confundiste al cargar). Admin undo, sin
-                  afectar al cliente.
+
+def _reverso_preview_cheque(id_cheque: int) -> dict | None:
+    """Construye el preview del reverso de un cheque (compartido por la
+    página HTML de confirmación y el endpoint JSON del modal in-page).
+
+    Devuelve None si el cheque no existe o ya está reversado. Distingue por
+    stat: B/A/1/2 → sin fondos (rebote real); Z/D/P/V → reversión
+    administrativa (no afecta al cliente). TMT 2026-05-24 (dueña).
     """
     ch = queries.por_id(id_cheque)
-    if not ch:
-        abort(404)
-    if ch.get("stat") == "R":
-        flash("El cheque ya está reversado.", "warn")
-        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+    if not ch or ch.get("stat") == "R":
+        return None
     stat_prev = ch.get("stat") or ""
     es_rebote = stat_prev in queries.STATS_REBOTE_REAL
     no_ch = ch.get("no_cheque") or f"#{id_cheque}"
@@ -1565,46 +1594,81 @@ def confirmar_reverso(id_cheque: int):
         "Estado actual": stat_prev,
     }
     if es_rebote:
-        stat_destino = "3" if stat_prev in ("1", "2") else "1"
-        titulo = f"Marcar SIN FONDOS — cheque {no_ch}"
+        titulo = f"Sin fondos — cheque {no_ch}"
         mensaje = (
-            f"El cheque N° {no_ch} por $ {importe} REBOTÓ — el cliente no "
-            "tenía fondos. Esto es un EVENTO MALO."
+            f"El cheque rebotó. Se registra el rebote en el cliente {cliente} y las "
+            "facturas que cubría vuelven a cartera."
         )
-        detalle["Qué va a pasar"] = (
-            f"(1) Cheque pasa stat '{stat_prev}' → '{stat_destino}' (rebotado). "
-            "(2) Se restauran las facturas que cubría — vuelven a cartera. "
-            f"(3) Se anota [REBOTE] en la observación del cliente {cliente} "
-            "(el STOP lo decidís vos)."
-        )
-        confirm_label = "Confirmar SIN FONDOS"
+        confirm_label = "Marcar sin fondos"
     else:
-        titulo = f"Reversar (me confundí) — cheque {no_ch}"
+        titulo = f"Reversar cheque {no_ch}"
         mensaje = (
-            f"Te equivocaste cargando este cheque N° {no_ch} por $ {importe}. "
-            "Esto es un UNDO administrativo — no afecta al cliente."
+            "Reversión administrativa: las facturas que cubría vuelven a cartera. "
+            "No afecta al cliente."
         )
-        detalle["Qué va a pasar"] = (
-            f"(1) Cheque pasa stat '{stat_prev}' → 'X' (eliminado por error). "
-            "(2) Se restauran las facturas que cubría — vuelven a cartera. "
-            f"(3) NO se toca al cliente {cliente} — no es un rebote."
-        )
-        confirm_label = "Confirmar REVERSAR"
+        confirm_label = "Reversar"
+    # Detalle adaptativo: una línea por factura (sumando las aplicaciones
+    # parciales del mismo cheque a la misma factura — no hay UNIQUE(cheque,
+    # factura), pueden ser varias). TMT 2026-07-11 (dueña).
+    movimientos = _facturas_que_vuelven(id_cheque)
+    return {
+        "titulo": titulo,
+        "mensaje": mensaje,
+        "detalle": detalle,
+        "movimientos": movimientos,
+        "titulo_movimientos": "Facturas que cubría (vuelven a cartera)",
+        "confirm_label": confirm_label,
+    }
+
+
+@cheques_bp.route("/cheques/<int:id_cheque>/reverso-preview", methods=["GET"])
+@requiere_login
+def reverso_preview(id_cheque: int):
+    """JSON para el modal in-page de reverso (mismo shape que historial).
+
+    El partial _reverso_modal.html lo consume: dibuja el cartel sin salir de
+    la pantalla y, al aceptar, postea a `accion_url` con `next` = la URL
+    actual (con filtros) → volvés donde estabas. TMT 2026-07-11 (dueña).
+    """
+    data = _reverso_preview_cheque(id_cheque)
+    if not data:
+        return jsonify({"ok": False, "error": "El cheque no existe o ya está reversado."})
+    data["ok"] = True
+    data["accion_url"] = url_for("cheques.reversar", id_cheque=id_cheque)
+    return jsonify(data)
+
+
+@cheques_bp.route("/cheques/<int:id_cheque>/confirmar-reverso", methods=["GET"])
+@requiere_login
+def confirmar_reverso(id_cheque: int):
+    """Paso 1 del 2-step: confirmar 'Sin fondos' o 'Reversar (me confundí)'.
+
+    Fallback HTML (para links directos / no-JS). El flujo normal desde la
+    lista usa el modal in-page (ver reverso_preview). TMT 2026-05-24 dueña.
+    """
+    ch = queries.por_id(id_cheque)
+    if not ch:
+        abort(404)
+    if ch.get("stat") == "R":
+        flash("El cheque ya está reversado.", "warn")
+        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+    data = _reverso_preview_cheque(id_cheque)
     return render_template(
         "_confirmar_accion.html",
-        titulo=titulo,
-        mensaje=mensaje,
-        detalle_registro=detalle,
+        titulo=data["titulo"],
+        mensaje=data["mensaje"],
+        detalle_registro=data["detalle"],
+        movimientos=data["movimientos"],
+        titulo_movimientos=data["titulo_movimientos"],
         accion_url=url_for("cheques.reversar", id_cheque=id_cheque),
         volver_url=url_for("cheques.detalle", id_cheque=id_cheque),
         motivo_requerido=True,
-        confirm_label=confirm_label,
+        confirm_label=data["confirm_label"],
     )
 
 
 @cheques_bp.route("/cheques/<int:id_cheque>/reversar", methods=["POST"])
 @requiere_login
-@requiere_permiso("cheques.anular")
 def reversar(id_cheque: int):
     motivo = (request.form.get("motivo") or "").strip()
     # TMT 2026-05-21 dueña: motivo opcional sin requerir.
@@ -1616,27 +1680,31 @@ def reversar(id_cheque: int):
         n_aplic = r["reversadas"]
         if r.get("es_rebote_real"):
             base = (
-                f"Cheque marcado como SIN FONDOS. Se anotó el rebote en "
+                f"Cheque marcado como sin fondos. Se registró el rebote en "
                 f"la observación del cliente {r['codigo_cli']}. "
                 f"Se restauraron {n_aplic} factura(s) a cartera."
             )
         else:
             base = (
-                f"Cheque REVERSADO (undo administrativo). "
+                f"Cheque reversado (reversión administrativa). "
                 f"Se restauraron {n_aplic} factura(s) a cartera. "
-                "No se tocó al cliente."
+                "No afecta al cliente."
             )
         flash(base, "ok")
     except ValueError as e:
         flash(str(e), "error")
     except Exception as e:
         flash_exc("No pude reversar el cheque", e)
+    # TMT 2026-07-11 (dueña): si vino del modal in-page, volver a la pantalla
+    # anterior con sus filtros (`next`), sino a la ficha del cheque.
+    nxt = (request.form.get("next") or "").strip()
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
 @cheques_bp.route("/cheques/<int:id_cheque>/deshacer-deposito", methods=["GET", "POST"])
 @requiere_login
-@requiere_permiso("cheques.transicionar")
 def deshacer_deposito(id_cheque: int):
     """Devuelve UN cheque depositado a cartera (Z) porque al final no se
     depositó. Ajusta el depósito de banco 'dep.N ch.' (baja el importe por el
@@ -1817,7 +1885,6 @@ def postergar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/desaplicar/<int:id_factura>", methods=["GET"])
 @requiere_login
-@requiere_permiso("cheques.aplicar")
 def confirmar_desaplicar(id_cheque: int, id_factura: int):
     """Wizard para deshacer la aplicación de un cheque a una factura específica.
 
@@ -1876,7 +1943,6 @@ def confirmar_desaplicar(id_cheque: int, id_factura: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/desaplicar/<int:id_factura>", methods=["POST"])
 @requiere_login
-@requiere_permiso("cheques.aplicar")
 def desaplicar(id_cheque: int, id_factura: int):
     motivo = (request.form.get("motivo") or "").strip()
     try:
@@ -2332,6 +2398,9 @@ def detalle(id_cheque: int):
         hijos=hijos,
         # TMT 2026-06-11 dueña: 'dejame en cheques editar banco emisor'.
         bancos=_bancos(),
+        # TMT 2026-07-11 (dueña): dropdown de estado UNIFICADO con la lista —
+        # mismas transiciones consistentes (transiciones_para).
+        transiciones=queries.transiciones_para(ch.get("stat") or ""),
     )
 
 
@@ -2457,7 +2526,6 @@ def actualizar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/confirmar-rebote", methods=["GET"])
 @requiere_login
-@requiere_permiso("cheques.transicionar")
 def confirmar_rebote(id_cheque: int):
     """Wizard de 2 pasos para marcar rebote: muestra detalle + pide motivo.
 
@@ -2499,9 +2567,12 @@ def confirmar_rebote(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/transicionar", methods=["POST"])
 @requiere_login
-@requiere_permiso("cheques.transicionar")
 def transicionar(id_cheque: int):
     """Cambia el stat del cheque, aplicando los side-effects automáticamente.
+
+    TMT 2026-07-11 (dueña: "all users can do it"): cambiar el estado del cheque
+    lo puede hacer cualquier usuario logueado (sin exigir cheques.transicionar).
+    El backend igual valida que la transición sea legal y consistente.
 
     POST `stat_destino`: B (deposito Pichincha) / I (deposito Inter) /
     C (cobrado caja) / 9 (rebotado) / X (anulado) / P (postergado) / D (Daniela).
@@ -2570,7 +2641,6 @@ def transicionar(id_cheque: int):
 
 @cheques_bp.route("/cheques/<int:id_cheque>/anular-error-carga", methods=["GET", "POST"])
 @requiere_login
-@requiere_permiso("cheques.anular")
 def anular_error_carga(id_cheque: int):
     """Anular un cheque mal cargado, con compensaciones automáticas.
 
@@ -3077,7 +3147,9 @@ def lista():
         conteos=conteos_por_bucket,
         # TMT 2026-05-19 — pasamos el mapping de transiciones para que el
         # template arme el dropdown de "Editar estado" por fila.
-        transiciones_legales=queries.TRANSICIONES_LEGALES,
+        # TMT 2026-07-11 (dueña): mapa EXPANDIDO — cada estado ofrece todos los
+        # estados sin movimiento (además de las transiciones con efecto).
+        transiciones_legales=queries.transiciones_map(),
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
         hoy_iso=today_ec().isoformat(),

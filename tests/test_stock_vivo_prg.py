@@ -90,16 +90,21 @@ def test_sync_tinto_preserva_manual_kg_edit_mes_corriente():
     assert "manual-kg-edit" in src, "falta el dBase-gana por fecha para los ajustes"
 
 
-def test_editar_kg_fetch_manda_csrf():
-    """El POST de editar-KG debe mandar X-CSRFToken (sin eso: 400 silencioso,
-    el ajuste nunca se guarda — bug encontrado 2026-06-10)."""
+def test_pantalla_tintoreria_es_solo_formulas():
+    """TMT 2026-07-11 (dueña): la pantalla de Tintorería
+    (/informes/comparativa-tintoreria) pasó a ser SOLO Fórmulas App — se
+    retiró la comparación PC vs Form y el editor inline de KG dBase (que
+    servía para cargar data dBase de prueba). El histórico pre-corte queda
+    congelado en el balance; esta pantalla es solo de consulta. El endpoint
+    editar_kg_dbase sigue existiendo (lo cubre otro test), pero ya no se
+    invoca desde este template."""
     from pathlib import Path
     tpl = (Path(__file__).resolve().parents[1] / "modules" / "comparativa_tintoreria"
            / "templates" / "comparativa_tintoreria" / "index.html").read_text()
-    i = tpl.find("editar_kg_dbase")
-    assert i > 0 and "X-CSRFToken" in tpl[i:i+600], (
-        "el fetch de editar-kg no manda CSRF token"
+    assert "editar_kg_dbase" not in tpl, (
+        "la pantalla de tintorería debe ser solo Fórmulas App (sin editor KG dBase)"
     )
+    assert "PC vs Form" not in tpl, "se retiró la comparación PC vs Form"
 
 
 def test_vqx_vivo_formula_prg():

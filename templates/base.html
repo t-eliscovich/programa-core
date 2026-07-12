@@ -816,16 +816,9 @@
         {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
         {# TMT 2026-07-09 (dueña): Stock químicos movido a Stock (última posición) desde Tintorería. #}
         {% if tiene_permiso('tintura.ver') %}{{ nav_link('stock_asinfo.quimicos', 'Stock químicos', 'shopping') }}{% endif %}
-      </details>
-      {% endif %}
-
-      {# TMT 2026-05-26 dueña: nueva sección Tintorería visible para todos los
-         roles con `tintura.ver` (Accionista, Administrador, Gerente,
-         Contabilidad, Alex, QC). Trae data de formulas_app + DBF tinto. #}
-      {% if tiene_permiso('tintura.ver') %}
-      <details class="sidebar-section" data-key="tintoreria" open>
-        <summary>Tintorería</summary>
-        {{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Comparativa PC vs Form', 'trend') }}
+        {# TMT 2026-07-11 (dueña): Tintorería (Fórmulas App) entra DENTRO de Stock
+           y se llama simplemente "Tintorería". Antes era su propia sección. #}
+        {% if tiene_permiso('tintura.ver') %}{{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Tintorería', 'trend') }}{% endif %}
       </details>
       {% endif %}
 
@@ -879,19 +872,12 @@
       </details>
       {% endif %}
 
-      {# TMT 2026-05-20 v2 — Historial movimientos al pie del sidebar
-         (pedido dueña: "La tab historial de moviemientos podemos ponerlo
-         debajo de recientes?"). #}
-      {% if tiene_permiso('informes.ver') %}
+      {# Historial UNIFICADO (TMT 2026-07-11, dueña) — UNA sola entrada para
+         TODOS los usuarios. /historial ahora filtra por permisos: la dueña/
+         admin ven todo, el resto sólo sus secciones. Se retiró 'Mi historial'
+         (redirige acá). #}
       <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-        {{ nav_link('historial.lista', 'Historial movimientos', 'history') }}
-      </div>
-      {% endif %}
-      {# TMT 2026-05-26 dueña: 'Mi historial' visible para TODOS los users
-         logueados — muestra solo sus propias acciones (Alex ve lo que Alex
-         hizo, no lo del resto). No requiere permiso. #}
-      <div class="mt-1">
-        {{ nav_link('bitacora.mi_historial', 'Mi historial', 'user') }}
+        {{ nav_link('historial.lista', 'Historial', 'history') }}
       </div>
     </nav>
 

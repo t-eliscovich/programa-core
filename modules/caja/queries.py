@@ -29,6 +29,7 @@ def movimientos(
     hasta: str | None = None,
     q: str = "",
     limite: int = 500,
+    offset: int = 0,
 ) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -47,12 +48,12 @@ def movimientos(
                OR UPPER(COALESCE(c.concepto,'')) LIKE UPPER(%(like)s)
                OR UPPER(COALESCE(c.tipo,'')) LIKE UPPER(%(like)s))
         ORDER BY c.fecha DESC, c.id_caja DESC
-        LIMIT %(limite)s
+        LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
             "desde": desde or None, "hasta": hasta or None,
             "q": q or None, "like": like,
-            "limite": limite,
+            "limite": limite, "offset": max(0, int(offset)),
         },
     )
 

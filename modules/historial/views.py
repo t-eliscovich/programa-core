@@ -66,7 +66,6 @@ def lista():
     facturas+caja+bancos pero NO retiros. Sino exigir informes.ver
     como antes.
     """
-    from flask import abort
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     tipo = request.args.get("tipo") or None
@@ -95,18 +94,23 @@ def lista():
         "activos": "activos.ver",
     }
 
-    origenes_permitidos = None
-    if mis_origenes:
-        from auth import tiene_permiso
+    # TMT 2026-07-11 (dueña): historial UNIFICADO — una sola página para todos.
+    # Antes había /historial (exigía informes.ver) y /mi-historial
+    # (=/historial?mis_origenes=1, filtrado por permisos). Ahora TODO usuario
+    # logueado entra, pero:
+    #   · con informes.ver (dueña/admin) → ve TODO (sin filtro).
+    #   · sin informes.ver → ve sólo las secciones donde tiene .ver
+    #     (ej. Alex: cheques+facturas+caja+bancos, NO retiros/capital).
+    # El parámetro `mis_origenes` queda como no-op (compat con links viejos).
+    from auth import tiene_permiso
+    _ = mis_origenes  # retro-compat: ya no cambia el comportamiento
+    if tiene_permiso("informes.ver"):
+        origenes_permitidos = None
+    else:
         origenes_permitidos = [
             origen for origen, perm in _ORIGEN_PERMISO.items()
             if tiene_permiso(perm)
         ]
-    else:
-        # Gating clásico: exige informes.ver para ver todo.
-        from auth import tiene_permiso
-        if not tiene_permiso("informes.ver"):
-            abort(404)  # estilo del proyecto
     # TMT 2026-05-24 — Pedido dueña: "no scroll vertical". Default 25 filas
     # (entran en viewport); el usuario expande con ?limite=50/100/200/todo
     # desde el selector "Filas" en el form de filtros.
@@ -119,6 +123,15 @@ def lista():
     except (TypeError, ValueError):
         limite = 25
 
+    # TMT 2026-07-11 (dueña): paginación con flechita. `pagina` es 1-based.
+    # Pedimos `limite+1` filas para saber si hay una página siguiente sin un
+    # COUNT extra. Si vuelven más de `limite`, recortamos y marcamos hay_mas.
+    try:
+        pagina = max(1, int(request.args.get("pagina") or "1"))
+    except (TypeError, ValueError):
+        pagina = 1
+    offset = (pagina - 1) * limite
+
     try:
         filas = queries.listar(
             desde=desde,
@@ -127,8 +140,11 @@ def lista():
             estado=estado,
             q=q,
             origenes_permitidos=origenes_permitidos,
-            limite=limite,
+            limite=limite + 1,
+            offset=offset,
         )
+        hay_mas = len(filas) > limite
+        filas = filas[:limite]
         kpis = queries.conteos(desde=desde, hasta=hasta)
         error = None
     except Exception as e:
@@ -142,7 +158,7 @@ def lista():
             )
         else:
             error = str(e)
-        filas, kpis = [], {}
+        filas, kpis, hay_mas = [], {}, False
 
     # Enriquecer filas con label + links para el template.
     # TMT 2026-05-15: batch-lookup de no_cheque (scintela.cheque) y numf
@@ -247,6 +263,9 @@ def lista():
     }
     for r in filas:
         r["label"] = queries.label(r.get("tipo") or "")
+        # TMT 2026-07-11 (dueña): no ofrecer "reversar" sobre un reverso (mov
+        # terminal) — mostraba un modal que prometía facturas y no había.
+        r["es_terminal"] = _es_terminal(r.get("tipo") or "")
         u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos)
         r["origen_url"] = u
         r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
@@ -372,6 +391,9 @@ def lista():
         q=q or "",
         error=error,
         limite=limite,
+        # TMT 2026-07-11 (dueña): paginación con flechita al pie.
+        pagina=pagina,
+        hay_mas=hay_mas,
         # TMT 2026-07-07 (dueña): pasar mis_origenes al template para que el
         # form de filtro y los links lo preserven → Alex puede filtrar/paginar
         # su historial sin perder el flag (sin él el gate lo bloqueaba).
@@ -389,6 +411,20 @@ def lista():
 # =====================================================================
 
 
+def _es_terminal(tipo: str) -> bool:
+    """Un mov es 'terminal' cuando NO se puede volver a reversar: los
+    'reverso_*' ya SON el deshacer de algo (reversar un reverso no tiene
+    sentido) y los movimientos directos de caja/banco no pasan por el
+    dispatcher. Mismos excluidos que check_salud_dia.py / validar_reversos.py.
+    TMT 2026-07-11 (dueña): 'reversar un reverso' mostraba un modal vacío."""
+    tipo = tipo or ""
+    return (
+        tipo.startswith("reverso_")
+        or (tipo.startswith("caja_") and tipo.endswith("_directo"))
+        or (tipo.startswith("banco_") and tipo.endswith("_directo"))
+    )
+
+
 def _row_md(id_mov_doble: int) -> dict | None:
     return db.fetch_one(
         """
@@ -400,6 +436,104 @@ def _row_md(id_mov_doble: int) -> dict | None:
         """,
         (id_mov_doble,),
     )
+
+
+@historial_bp.route("/historial/<int:id_mov_doble>/reverso-preview", methods=["GET"])
+@requiere_login
+def reverso_preview(id_mov_doble: int):
+    """Contenido de la confirmación de reverso en JSON, para el modal in-page.
+
+    Texto corto + lista ADAPTATIVA de movimientos afectados. Reemplaza al
+    `confirm()` nativo y a la página-wizard: el frente abre un cartel, y al
+    aceptar postea a `accion_url` volviendo a la misma página. TMT 2026-07-11.
+    """
+    from flask import jsonify
+    r = _row_md(id_mov_doble)
+    if not r or id_mov_doble <= 0:
+        return jsonify({"ok": False, "error": "Movimiento no encontrado."}), 404
+    if r["estado"] in ("reverso", "reversado"):
+        return jsonify({"ok": False, "error": f"Ya está {r['estado']}."}), 409
+    if _es_terminal(r.get("tipo") or ""):
+        return jsonify({
+            "ok": False,
+            "error": "Este movimiento ya es un reverso — no se reversa de nuevo.",
+        }), 409
+
+    tipo = r.get("tipo") or ""
+    importe = float(r.get("importe") or 0)
+    concepto = (r.get("concepto") or "").strip()
+    label = concepto or tipo.replace("_", " ")
+
+    detalle = {"Importe": f"$ {importe:,.2f}"}
+    if concepto:
+        detalle["Concepto"] = concepto
+
+    titulo = f"Reversar — {label[:60]}"
+    mensaje = ("Se crea el movimiento opuesto que lo compensa; "
+               "el original queda en la historia.")
+
+    # Lista adaptativa. El ÚNICO reverso inline de cheques desde el historial
+    # es 'cheque_aplicado_a_factura' → DESAPLICAR esa aplicación (idéntico al
+    # botón "Desaplicar" de la ficha): esa factura vuelve a cartera, sin tocar
+    # al cliente ni el estado del cheque. NO es un rebote. El cartel describe
+    # EXACTAMENTE lo que hace el POST (antes prometía rebote y listaba de más).
+    # TMT 2026-07-11 (dueña, quality check).
+    movimientos: list[dict] = []
+    titulo_movs = None
+    if r.get("tipo") == "cheque_aplicado_a_factura" and r.get("origen_id") and r.get("destino_id"):
+        ch = db.fetch_one(
+            "SELECT no_cheque FROM scintela.cheque WHERE id_cheque = %s",
+            (r["origen_id"],),
+        ) or {}
+        no_ch = ch.get("no_cheque") or f"#{r['origen_id']}"
+        fac = db.fetch_one(
+            "SELECT COALESCE(numf::text, '') AS numf FROM scintela.factura WHERE id_factura = %s",
+            (r["destino_id"],),
+        ) or {}
+        numf = (fac.get("numf") or "").strip() or f"#{r['destino_id']}"
+        # Sólo las aplicaciones de ESTE cheque a ESTA factura (lo que desaplica
+        # el POST). Se suman en UNA línea — un cheque puede aplicarse en partes
+        # a la misma factura (no hay UNIQUE(cheque, factura)).
+        apps = db.fetch_all(
+            "SELECT importe, fechaing FROM scintela.chequesxfact "
+            "WHERE id_cheque = %s AND id_fact = %s",
+            (r["origen_id"], r["destino_id"]),
+        ) or []
+        _monto_desaplica = sum(float(a.get("importe") or 0) for a in apps)
+        _fecha = max((a["fechaing"] for a in apps if a.get("fechaing")), default=None)
+        movimientos = [{
+            "texto": f"Factura {numf}",
+            "importe": _monto_desaplica,
+            "detalle": (_fecha.strftime("%d/%m/%Y") if _fecha else ""),
+        }] if apps else []
+        detalle = {
+            "Cheque": f"N° {no_ch}",
+            "Factura": numf,
+            "Vuelve a cartera": f"$ {_monto_desaplica:,.2f}",
+        }
+        if movimientos:
+            titulo_movs = "Vuelve a cartera"
+        titulo = f"Desaplicar cheque {no_ch}"
+        mensaje = (
+            f"Se deshace la aplicación a la factura {numf}: vuelve a cartera. "
+            "Equivale a 'Desaplicar' en la ficha del cheque; no afecta al "
+            "cliente ni cambia el estado del cheque."
+        )
+
+    # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto
+    # y, para los complejos, redirige al wizard de siempre (fallback graceful).
+    accion_url = url_for("historial.reversar_mov_inline", id_mov_doble=id_mov_doble)
+
+    return jsonify({
+        "ok": True,
+        "titulo": titulo,
+        "mensaje": mensaje,
+        "detalle": detalle,
+        "movimientos": movimientos,
+        "titulo_movimientos": titulo_movs,
+        "accion_url": accion_url,
+        "confirm_label": "Reversar",
+    })
 
 
 # Mapeo tipo → (endpoint_de_confirmacion, kwargs builder).

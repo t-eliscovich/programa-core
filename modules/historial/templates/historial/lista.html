@@ -70,29 +70,29 @@
   </div>
 
   {# Filtros #}
-  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-3 bg-white border border-slate-200 rounded">
+  <form class="no-print flex flex-wrap items-end gap-2 mb-4 px-3 py-2.5 bg-white border border-slate-200 rounded">
     {# TMT 2026-07-07 (dueña): preservar mis_origenes al filtrar/paginar — sin
        esto, Alex (que ve /mi-historial sin informes.ver) al filtrar perdía el
        flag y el gate le daba 404. #}
     {% if mis_origenes %}<input type="hidden" name="mis_origenes" value="1">{% endif %}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo, usuario…"
-             class="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo…"
+             class="w-40 rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
       <input type="date" name="desde" value="{{ desde or '' }}"
-             class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Hasta</label>
       <input type="date" name="hasta" value="{{ hasta or '' }}"
-             class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Tipo</label>
-      <select name="tipo" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="tipo" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
         <option value="">— Todos —</option>
         {% for t in kpis.por_tipo %}
           <option value="{{ t.tipo }}" {% if tipo == t.tipo %}selected{% endif %}>
@@ -103,7 +103,7 @@
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Estado</label>
-      <select name="estado" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="estado" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
         <option value="activo"    {% if estado == 'activo' %}selected{% endif %}>Activos</option>
         <option value="reverso"   {% if estado == 'reverso' %}selected{% endif %}>Reversos</option>
@@ -112,7 +112,7 @@
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Filas</label>
-      <select name="limite" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="limite" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
         {% for n in [25, 50, 100, 200] %}
           <option value="{{ n }}" {% if limite == n %}selected{% endif %}>{{ n }}</option>
         {% endfor %}
@@ -307,29 +307,16 @@
                    mov_doble → el reverso abortaba 404 (Alex lo reportó). Solo ofrecemos
                    "reversar" cuando hay un mov_doble real (id positivo). Los depósitos
                    legacy se reversan desde la ficha del cheque o "reversar todo el batch". #}
-                {% if r.estado == 'activo' and r.id_mov_doble and r.id_mov_doble > 0 %}
-                  {% if r.tipo in tipos_inline %}
-                    {# TMT 2026-07-01 (dueña): reverso INLINE — POST directo, sin
-                       ir a otra pantalla. Confirmación con confirm() y vuelve acá. #}
-                    <form method="POST"
-                          action="{{ url_for('historial.reversar_mov_inline', id_mov_doble=r.id_mov_doble) }}"
-                          class="inline"
-                          onsubmit="return confirm('¿Reversar este movimiento?\n\n{{ (r.concepto or '')|replace("'", "") }}');">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="next" value="{{ request.full_path }}">
-                      <button type="submit"
-                              class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
-                              title="Reversar acá mismo (no te lleva a otra pantalla)">
-                        ↺ reversar
-                      </button>
-                    </form>
-                  {% else %}
-                    <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
-                       class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
-                       title="Reversar este movimiento (te lleva al wizard correspondiente con motivo)">
-                      ↺ reversar
-                    </a>
-                  {% endif %}
+                {% if r.estado == 'activo' and r.id_mov_doble and r.id_mov_doble > 0 and not r.es_terminal %}
+                  {# Reverso con MODAL in-page (TMT 2026-07-11, dueña): un cartel
+                     muestra el detalle + la lista de movimientos afectados;
+                     aceptar postea y volvés acá. Reemplaza el confirm() nativo
+                     y la página-wizard aparte. #}
+                  <button type="button"
+                          class="js-reverso inline-flex items-center justify-center w-6 h-6 rounded text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30 leading-none"
+                          data-reverso-preview="{{ url_for('historial.reverso_preview', id_mov_doble=r.id_mov_doble) }}"
+                          title="Reversar este movimiento"
+                          aria-label="Reversar">↺</button>
                 {% else %}
                   <span class="text-xs text-slate-300">—</span>
                 {% endif %}
@@ -347,11 +334,8 @@
     </table>
   </div>
 
-  {% if filas | length >= 1000 %}
-    <p class="text-xs text-slate-500 mt-2">
-      Mostrando las 1.000 filas más recientes. Acotá las fechas para ver más viejas.
-    </p>
-  {% endif %}
+  {# TMT 2026-07-11 (dueña): flechita para avanzar/retroceder de a `limite`. #}
+  {% include "_paginacion.html" %}
 </div>
 
 {# TMT 2026-05-16: el toggle expand/collapse se removió — los batches ahora
@@ -371,4 +355,7 @@
   });
 })();
 </script>
+
+{# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
+{% include "_reverso_modal.html" %}
 {% endblock %}

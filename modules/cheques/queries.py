@@ -455,22 +455,42 @@ def editar(
 # DEPRECADO como destino. No aparece en ninguna lista — intentarlo
 # levanta ValueError abajo. Filas históricas con stat='V' se respetan,
 # pero no se generan nuevas.
+# Estados SIN movimiento contable (sólo etiqueta): moverse entre los permitidos
+# NO toca banco ni caja → consistente. PERO siguen valiendo reglas de negocio:
+#   · Cartera (Z, P, D): "el cheque está en nuestras manos, sin resolver" →
+#     intercambiables libremente entre sí.
+#   · Devuelto (1→2→3): es una SECUENCIA. A "2" sólo se llega desde "1"; a "3"
+#     sólo desde "2". No se puede saltar de cartera directo a "2"/"3"
+#     (dueña 2026-07-11: "only 1 can go to 2, some rules still apply").
+#   · Eliminado (X): se llega desde cualquiera; restaurar sólo a cartera.
+STATS_NEUTROS = {"Z", "P", "D", "1", "2", "3", "X"}
+_CARTERA = {"Z", "P", "D"}  # sin resolver — intercambiables
+
+# TMT 2026-07-11 (dueña: "dejar pasar a cualquier estado, que la contabilidad
+# quede consistente"). Regla general:
+#   · Entrar a un estado CON movimiento (B/I depósito, C caja, 9 rebote) dispara
+#     su efecto contable (lo hace transicionar_stat).
+#   · Salir de un estado CON movimiento (B/I/A depositado) sólo por rebote (9) o
+#     anulación (X), que compensan el banco — nunca por un cambio de etiqueta
+#     pelado (dejaría el depósito colgado). Para volver a cartera se usa
+#     "deshacer depósito".
 TRANSICIONES_VALIDAS = {
-    "Z": {"B", "C", "9", "X", "P", "D", "I", "1", "2"},  # TMT 2026-06-16: marcar devuelto (el dropdown ya lo ofrecía)
-    # TMT 2026-05-19 v4 audit — agregadas D/P como salida desde
-    # rebotados (1/2) y desde D/P entre sí. El UI dropdown
-    # (TRANSICIONES_LEGALES) ya las ofrecía pero el backend rechazaba.
-    # Casos operativos:
-    #   1 → D: el cheque rebotó y pasamos a Daniela a cobrar.
-    #   1 → P: el cheque rebotó y postergamos a otra fecha.
-    #   D → P: Daniela trajo el cheque, queremos posdatarlo.
-    #   P → D: el postergado lo manda a Daniela.
-    "P": {"B", "C", "X", "I", "D", "1", "2"},  # TMT 2026-06-16 dueña: desde postergado poder marcar DEVUELTO
-    "D": {"B", "C", "X", "I", "P"},
+    # Cartera → dentro de cartera, marcar devuelto 1° (inicio de la secuencia),
+    # eliminar, o entrar a estados con movimiento.
+    "Z": {"P", "D", "1", "X"} | {"B", "C", "9", "I"},
+    "P": {"Z", "D", "1", "X"} | {"B", "C", "I"},
+    "D": {"Z", "P", "1", "X"} | {"B", "C", "I"},
+    # Devuelto 1°: escalar a 2°, volver a cartera, re-depositar (V), rebote, eliminar.
+    "1": {"2", "Z", "P", "D", "V", "X"} | {"9"},
+    # Devuelto 2°: escalar a 3°, volver a cartera, rebote, eliminar. (NO vuelve a 1°.)
+    "2": {"3", "Z", "P", "D", "X"} | {"9"},
+    # Devuelto 3° (segundo rechazo): volver a cartera para gestión, o eliminar.
+    "3": {"Z", "P", "D", "X"},
+    # Eliminado: restaurar sólo a cartera (los movimientos ya se compensaron al anular).
+    "X": {"Z", "P", "D"},
+    # Estados CON movimiento: salida sólo por rebote/anulación (compensan banco).
     "B": {"9", "X"},
     "I": {"9", "X"},
-    "1": {"9", "X", "P", "D", "V"},  # V = protestado vuelto a depositar (dueña 2026-06-30)
-    "2": {"9", "X", "P", "D"},
     "A": {"9", "X"},
 }
 
@@ -2020,10 +2040,70 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
 }
 
 
+# Etiquetas legibles por estado destino (para las opciones auto-generadas del
+# dropdown). Los estados con movimiento tienen su propia entrada curada arriba.
+_LABEL_ESTADO_DEST = {
+    "Z": "En cartera",
+    "P": "Postergado",
+    "D": "En gestión Daniela",
+    "1": "Devuelto",
+    "2": "Devuelto (2°)",
+    "3": "Segundo rechazo",
+    "X": "Eliminar",
+}
+
+
 def transiciones_para(stat: str) -> list[dict]:
-    """Devuelve la lista de transiciones legales desde un stat actual."""
+    """Transiciones que se ofrecen en el dropdown desde `stat`.
+
+    Garantiza que el dropdown NUNCA ofrezca algo que el backend rechace: filtra
+    las entradas curadas a las permitidas por TRANSICIONES_VALIDAS y auto-genera
+    las de estados SIN movimiento que falten (respetando la secuencia 1→2→3).
+    'Eliminar' (X) va SIEMPRE por el wizard de anulación, que reversa las
+    aplicaciones a facturas (un cambio de etiqueta pelado las dejaría colgadas).
+    TMT 2026-07-11 (dueña: "confirm every move makes sense, some rules apply").
+    """
     s = (stat or "").upper().strip()
-    return TRANSICIONES_LEGALES.get(s, [])
+    permit = TRANSICIONES_VALIDAS.get(s, set())
+    # 1) Entradas curadas (depósito, postergar, rebote, re-depositar…) que el
+    #    backend efectivamente permite — descarta las obsoletas (ej. Z→2).
+    base = [o for o in TRANSICIONES_LEGALES.get(s, []) if o["stat_destino"] in permit]
+    ya = {o["stat_destino"] for o in base}
+    # 2) Auto-generar los estados sin movimiento permitidos (menos X).
+    for dest in sorted((permit & STATS_NEUTROS) - {"X"}):
+        if dest in ya:
+            continue
+        base.append({
+            "stat_destino": dest,
+            "label": _LABEL_ESTADO_DEST.get(dest, dest),
+            "kind": "POST",
+            "endpoint": "cheques.transicionar",
+        })
+    # 3) Rebote / sin fondos (9) → wizard de reverso (compensa banco si estaba
+    #    depositado). Se ofrece siempre que el backend lo permita y no esté ya.
+    if "9" in permit and "9" not in ya:
+        base.append({
+            "stat_destino": "9",
+            "label": "Sin fondos (rebotó)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.confirmar_reverso",
+        })
+    # 4) Eliminar (X) → siempre por el wizard de anulación (reversa aplicaciones).
+    if "X" in permit and "X" not in ya:
+        base.append({
+            "stat_destino": "X",
+            "label": "Eliminar",
+            "kind": "WIZARD",
+            "endpoint": "cheques.anular_error_carga",
+        })
+    return base
+
+
+def transiciones_map() -> dict[str, list[dict]]:
+    """{stat: transiciones_para(stat)} para todos los estados conocidos —
+    para pasarle al template el mapa ya expandido."""
+    estados = set(TRANSICIONES_VALIDAS) | set(TRANSICIONES_LEGALES)
+    return {s: transiciones_para(s) for s in estados}
 
 
 # Stats que pueden iniciar un depósito a banco. Z (cartera) es el flujo

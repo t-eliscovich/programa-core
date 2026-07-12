@@ -506,14 +506,66 @@ def test_pasada1_resumen_meta():
     assert len(tests) >= 18, f"Esperaba ≥18 tests, encontré {len(tests)}"
 
 
-def test_transicion_postergado_a_devuelto_permitida():
-    """TMT 2026-06-16 dueña: desde Postergado (P) se puede marcar DEVUELTO (1/2)
-    — antes la matriz lo rechazaba y el dropdown no lo ofrecía."""
+def test_dropdown_nunca_ofrece_transicion_invalida():
+    """El dropdown SIEMPRE es consistente con el backend: cada opción ofrecida
+    está permitida por TRANSICIONES_VALIDAS (así no se 'ofrece pero rechaza').
+    TMT 2026-07-11 (dueña: "confirm every move makes sense")."""
     from modules.cheques import queries as q
+    for stat, permit in q.TRANSICIONES_VALIDAS.items():
+        for opt in q.transiciones_para(stat):
+            assert opt["stat_destino"] in permit, (
+                f"dropdown de {stat} ofrece {opt['stat_destino']} que el backend rechaza"
+            )
+
+
+def test_estados_con_movimiento_no_salen_por_etiqueta():
+    """Un cheque DEPOSITADO (B/A) no puede volver a cartera con un cambio de
+    etiqueta pelado (dejaría el depósito colgado en el banco). Sólo sale por
+    rebote (9) o anulación (X), que compensan el banco. TMT 2026-07-11 (dueña:
+    "que la contabilidad quede consistente")."""
+    from modules.cheques import queries as q
+    for dep in ("B", "A"):
+        assert q.TRANSICIONES_VALIDAS[dep] == {"9", "X"}, (
+            f"{dep} no debe poder ir a cartera por etiqueta"
+        )
+        # 'X' desde un depositado va por el wizard de anulación (compensa banco).
+        x_opt = next(o for o in q.transiciones_para(dep) if o["stat_destino"] == "X")
+        assert x_opt["kind"] == "WIZARD" and "anular" in x_opt["endpoint"]
+
+
+def test_eliminar_siempre_por_wizard_de_anulacion():
+    """'Eliminar' (X) SIEMPRE se ofrece por el wizard de anulación, nunca como
+    cambio de etiqueta pelado — porque anular reversa las aplicaciones a
+    facturas. TMT 2026-07-11 (dueña)."""
+    from modules.cheques import queries as q
+    for stat, permit in q.TRANSICIONES_VALIDAS.items():
+        if "X" not in permit:
+            continue
+        x_opts = [o for o in q.transiciones_para(stat) if o["stat_destino"] == "X"]
+        assert x_opts, f"{stat} permite X pero el dropdown no lo ofrece"
+        assert all(o["kind"] == "WIZARD" for o in x_opts), (
+            f"{stat}: 'Eliminar' debe ir por wizard de anulación, no POST pelado"
+        )
+
+
+def test_transicion_postergado_a_devuelto_permitida():
+    """Desde Postergado (P) se puede marcar DEVUELTO 1° (inicio de la secuencia).
+
+    TMT 2026-07-11 dueña ("only 1 can go to 2, some rules apply"): el contador
+    de devuelto es una SECUENCIA 1→2→3. Desde cartera (Z/P/D) sólo se entra a
+    "1"; a "2" sólo se llega desde "1", y a "3" sólo desde "2". No se puede
+    saltar de Postergado directo a "2".
+    """
+    from modules.cheques import queries as q
+    # P puede marcar devuelto 1°, pero NO saltar a 2° (hay que pasar por 1°).
     assert "1" in q.TRANSICIONES_VALIDAS["P"]
-    assert "2" in q.TRANSICIONES_VALIDAS["P"]
-    # y el dropdown de P ahora incluye "Devuelto".
+    assert "2" not in q.TRANSICIONES_VALIDAS["P"]
+    # La secuencia sí avanza 1→2 y 2→3.
+    assert "2" in q.TRANSICIONES_VALIDAS["1"]
+    assert "3" in q.TRANSICIONES_VALIDAS["2"]
+    assert "3" not in q.TRANSICIONES_VALIDAS["1"]  # no se saltea el 2°
+    # y el dropdown de P incluye "Devuelto" (1°) pero no "2°".
     destinos = [t["stat_destino"] for t in q.transiciones_para("P")]
-    assert "1" in destinos
-    # Z (que ya ofrecía Devuelto en el UI) ahora también lo permite en backend.
-    assert "1" in q.TRANSICIONES_VALIDAS["Z"]
+    assert "1" in destinos and "2" not in destinos
+    # Z también permite marcar devuelto 1° en backend.
+    assert "1" in q.TRANSICIONES_VALIDAS["Z"] and "2" not in q.TRANSICIONES_VALIDAS["Z"]

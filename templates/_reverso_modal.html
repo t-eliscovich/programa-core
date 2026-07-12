@@ -1,0 +1,100 @@
+{# Modal de reverso in-page reutilizable — TMT 2026-07-11 (dueña).
+
+Incluí este partial en cualquier pantalla que tenga botones de reverso:
+    {% include "_reverso_modal.html" %}
+
+Y poné el disparador así (el botón dice de dónde sacar el preview JSON):
+    <button type="button" class="js-reverso ..."
+            data-reverso-preview="{{ url_for('historial.reverso_preview', id_mov_doble=r.id_mov_doble) }}">↺</button>
+
+El endpoint de preview devuelve {ok, titulo, mensaje, detalle, movimientos,
+titulo_movimientos, accion_url, confirm_label}. Al aceptar, el form postea a
+`accion_url` con `next` = la URL actual (con filtros) → volvés donde estabas. #}
+<div id="reverso-modal" class="no-print" style="display:none;position:fixed;inset:0;z-index:60;">
+  <div id="reverso-backdrop" style="position:absolute;inset:0;background:rgb(15 23 42 / 0.45);"></div>
+  {# Panel en columna: header y botones fijos, sólo el medio scrollea → el
+     botón Reversar siempre queda visible sin scrollear. TMT 2026-07-11 (dueña). #}
+  <form id="reverso-form" method="POST" action=""
+       class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+       style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+              width:min(94vw,460px);max-height:88vh;display:flex;flex-direction:column;
+              border-radius:12px;box-shadow:0 12px 40px rgb(15 23 42 / 0.3);overflow:hidden;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    {# Header fijo #}
+    <div class="flex items-center gap-2 px-5 py-3 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/30"
+         style="flex:0 0 auto;">
+      <span class="text-rose-600 dark:text-rose-400">↺</span>
+      <h3 id="reverso-titulo" class="text-sm font-semibold text-rose-800 dark:text-rose-200">Reversar</h3>
+    </div>
+    {# Cuerpo scrollable (mensaje + detalle + lista de movimientos) #}
+    <div class="px-5 py-4" style="flex:1 1 auto;overflow:auto;">
+      <p id="reverso-mensaje" class="text-sm text-slate-600 dark:text-slate-300 mb-3">Cargando…</p>
+      <dl id="reverso-detalle" class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm mb-3 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 rounded"></dl>
+      <div id="reverso-movs-wrap" style="display:none;">
+        <div id="reverso-movs-titulo" class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5"></div>
+        <ul id="reverso-movs" class="border border-slate-200 dark:border-slate-800 rounded text-sm"></ul>
+      </div>
+    </div>
+    {# Footer fijo: motivo + botones (siempre visibles, sin scroll) #}
+    <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+         style="flex:0 0 auto;">
+      <input type="text" name="motivo" maxlength="200" placeholder="Motivo (opcional)"
+             class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-950 mb-3">
+      <div class="flex items-center justify-end gap-2">
+        <button type="button" id="reverso-cancelar"
+                class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+        <button type="submit" id="reverso-confirmar"
+                class="text-sm px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium disabled:opacity-50">Reversar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  var modal = document.getElementById('reverso-modal');
+  if (!modal || modal.dataset.wired) return;
+  modal.dataset.wired = '1';
+  var form = document.getElementById('reverso-form');
+  var elT = document.getElementById('reverso-titulo');
+  var elM = document.getElementById('reverso-mensaje');
+  var elD = document.getElementById('reverso-detalle');
+  var wrap = document.getElementById('reverso-movs-wrap');
+  var mT = document.getElementById('reverso-movs-titulo');
+  var mUl = document.getElementById('reverso-movs');
+  var btn = document.getElementById('reverso-confirmar');
+  function openM(){ modal.style.display='block'; }
+  function closeM(){ modal.style.display='none'; }
+  function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':s); return d.innerHTML; }
+  function fmt(n){ return Number(n||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('.js-reverso');
+    if (b){
+      e.preventDefault();
+      var url = b.getAttribute('data-reverso-preview');
+      if (!url) return;
+      elM.textContent='Cargando…'; elD.innerHTML=''; mUl.innerHTML=''; wrap.style.display='none'; btn.disabled=true;
+      openM();
+      fetch(url, {headers:{'Accept':'application/json'}})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(!d.ok){ elM.textContent=d.error||'No se puede reversar.'; return; }
+          elT.textContent=d.titulo||'Reversar';
+          elM.textContent=d.mensaje||'';
+          var dl=''; Object.keys(d.detalle||{}).forEach(function(k){ dl+='<dt class="text-slate-500">'+esc(k)+'</dt><dd class="text-slate-800 dark:text-slate-200 font-medium">'+esc(d.detalle[k])+'</dd>'; });
+          elD.innerHTML=dl;
+          if(d.movimientos&&d.movimientos.length){
+            mT.textContent=(d.titulo_movimientos||'Movimientos afectados')+' · '+d.movimientos.length;
+            mUl.innerHTML=d.movimientos.map(function(m){ return '<li class="flex items-center justify-between gap-3 px-3 py-1.5 border-t border-slate-100 dark:border-slate-800 first:border-t-0"><span class="text-slate-700 dark:text-slate-200">'+esc(m.texto)+(m.detalle?' <span class="text-xs text-slate-400">· '+esc(m.detalle)+'</span>':'')+'</span>'+(m.importe!=null?'<span class="font-mono text-slate-500 whitespace-nowrap">$ '+fmt(m.importe)+'</span>':'')+'</li>'; }).join('');
+            wrap.style.display='';
+          }
+          form.action=d.accion_url; btn.textContent=d.confirm_label||'Reversar'; btn.disabled=false;
+        })
+        .catch(function(){ elM.textContent='Error cargando la confirmación.'; });
+      return;
+    }
+    if(e.target.id==='reverso-cancelar'||e.target.id==='reverso-backdrop'){ closeM(); }
+  });
+})();
+</script>
