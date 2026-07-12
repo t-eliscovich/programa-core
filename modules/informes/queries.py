@@ -4192,17 +4192,6 @@ def informe_balance() -> dict:
     kg_hilado, kg_tejido, kg_term = kg_hilado_db, kg_tejido_db, kg_term_db
     _stock_fuente = "dbase"
 
-    # COHERENCIA químicos (dueña 2026-07-12): el "Stock Quí." del balance venía
-    # del snapshot diario de PC (hist_live.uqui = 296.416) y NO coincidía con el
-    # dBase / la tabla del flujo (VQ = 311.953). Tomarlo del MISMO header de
-    # movimientos_mes_dbase (colorantes stock_act_us) para que sea una sola verdad.
-    try:
-        _vqx_mov = float((((mov or {}).get("header") or {}).get("colorantes") or {})
-                         .get("stock_act_us"))
-        if _vqx_mov > 0:
-            vqx = _vqx_mov
-    except (TypeError, ValueError):
-        pass
     if _stock_src == "asinfo":
         try:
             from modules.asinfo import service as _asinfo_svc
@@ -4259,6 +4248,20 @@ def informe_balance() -> dict:
     if _vq0_prev:
         vqx = round(_vq0_prev + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
     # si no hay iniciales del mes anterior, queda el fallback del snapshot
+
+    # COHERENCIA químicos (dueña 2026-07-12): el "Stock Quí." del balance tiene
+    # que ser el MISMO que la tabla MOVIMIENTOS DEL MES (= el dBase, VQ julio
+    # 311.953), no el VQX vivo de arriba (VQ0 junio 144.637 + compras Q − ITIN =
+    # 296.416, que arrastra el VQ heredado de junio). Se toma del header de
+    # movimientos_mes_dbase (colorantes stock_act_us) — una sola verdad. Va
+    # DESPUÉS del recálculo vivo para no ser pisado. Fallback: deja el valor previo.
+    try:
+        _vqx_mov = float((((mov or {}).get("header") or {}).get("colorantes") or {})
+                         .get("stock_act_us"))
+        if _vqx_mov > 0:
+            vqx = _vqx_mov
+    except (TypeError, ValueError):
+        pass
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
