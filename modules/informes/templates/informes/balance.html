@@ -430,22 +430,6 @@
 
   </div>{# fin grid 2 cols #}
 
-  {# ─── CHECK DE COHERENCIA (dueña 2026-07-13) — marca si los números que
-     TIENEN que ser iguales across el cuadro lo son. Verde = cierran; rojo =
-     se despegaron (con la diferencia). ─── #}
-  {% if b.coherencia %}
-  <div class="px-4 py-2 border-t border-slate-100 dark:border-slate-800"
-       style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px">
-    {% for c in b.coherencia %}
-    <span style="display:inline-flex;align-items:center;gap:6px;color:{{ '#059669' if c.ok else '#dc2626' }}">
-      <span style="font-weight:700">{{ '✓' if c.ok else '✗' }}</span>
-      <span>{{ c.label }}</span>
-      {% if not c.ok %}<span style="font-weight:600">(dif {{ c.diff | num_es(0) }})</span>{% endif %}
-    </span>
-    {% endfor %}
-  </div>
-  {% endif %}
-
   </div>{# fin marco #}
 
   {# TMT 2026-05-19 — bloque "Kilos y movimientos — último cierre" removido
