@@ -570,6 +570,28 @@ def _row_to_stock_al_dia(r: dict) -> StockProductoAlDia:
 # el `importe` viniera con IVA, se multiplica por IVA_FACTOR acá.
 
 
+# Familias que cuentan como STOCK DE COLORANTE valuado. Dueña 2026-07-13:
+# quedó en POLI+ALG (colorantes), SIN auxiliares (AUX se da vuelta solo, ~55k, y
+# no lo valuamos). Antes se incluía AUX → 393.915; ahora POLI+ALG → 338.
+COLORANTE_FAMILIAS = ("POLI", "ALG")
+
+
+def stock_colorante_fisico(fecha: date | None = None) -> float:
+    """Físico de COLORANTE (familias POLI+ALG, SIN auxiliares) valuado al $/kg
+    vivo, a la fecha dada (default hoy).
+
+    UNA sola variable para el BALANCE (Stock Quí. = vqx) y el FLUJO (banda STOCK
+    DE QUÍMICOS + columna COLOR $ de MOVIMIENTOS). Que salga de acá y no se
+    recalcule en cada lado → el número (≈ 338) es idéntico en todos. Dueña
+    2026-07-13: "stock quimicos idem que hilado, la variable igual del flujo"."""
+    _tot = 0.0
+    for _r in (stock_quimicos_al_dia(fecha) or []):
+        if (getattr(_r, "familia", "") or "").upper() in COLORANTE_FAMILIAS:
+            _tot += float(getattr(_r, "stock_al_dia_kg", 0) or 0) \
+                * float(getattr(_r, "precio_us", 0) or 0)
+    return _tot
+
+
 @dataclass(frozen=True)
 class TintoEquivOrden:
     """Una orden de formulas_app expresada como si fuera una fila de

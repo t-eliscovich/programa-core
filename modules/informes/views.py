@@ -369,7 +369,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     #   · STOCK actual = valor de colorantes hoy (última lectura POLI+ALG).
     #   · STOCK inicial = actual + consumo − compras (para que cierre, como el dBase).
     # Todo de formulas_app vía formulas_db (fail-soft).
-    _COLOR_FAMS = ("POLI", "ALG", "AUX")   # dueña: auxiliares SÍ entran
+    _COLOR_FAMS = ("POLI", "ALG")   # dueña 2026-07-13: colorantes SIN auxiliares (338, no 393)
     color_consumo = color_compras = color_stock = None
     color_ordenes = None
     if anio and mes:
@@ -388,7 +388,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                   FROM orden_lineas ol
                   JOIN ordenes o   ON o.id  = ol.orden_id
                   JOIN productos p ON p.num = ol.producto_num
-                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
                    AND o.fecha_terminado IS NOT NULL
                    AND o.fecha_terminado >= %(d1)s
                    AND o.fecha_terminado <= %(d2)s
@@ -403,7 +403,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                          * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)), 0) AS us
                   FROM compras c
                   JOIN productos p ON p.num = c.producto_num
-                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
                    AND c.fecha >= %(d1)s AND c.fecha <= %(d2)s
                 """,
                 {"d1": _d1, "d2": _d2},
@@ -477,15 +477,12 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
             from filters import today_ec as _today_ec3
             from modules.tintura import service as _tsvc3
 
-            _FAMS_Q = ("POLI", "ALG", "AUX")
-
+            # FÍSICO de colorante = MISMA variable que el balance (POLI+ALG, sin
+            # AUX) → tintura_service.stock_colorante_fisico. NO recalcular acá
+            # (dueña 2026-07-13: "stock quimicos idem que hilado, la variable del
+            # flujo"). El balance (vqx) llama a la misma función → 338 único.
             def _fisico_quimicos_aldia(_corte):
-                _tot = 0.0
-                for _r in (_tsvc3.stock_quimicos_al_dia(_corte) or []):
-                    if (getattr(_r, "familia", "") or "").upper() in _FAMS_Q:
-                        _tot += float(getattr(_r, "stock_al_dia_kg", 0) or 0) \
-                            * float(getattr(_r, "precio_us", 0) or 0)
-                return _tot
+                return float(_tsvc3.stock_colorante_fisico(_corte) or 0)
 
             _corte_ini = _date3(int(anio), int(mes), 1) - _td3(days=1)
             _last = _date3(int(anio), int(mes),

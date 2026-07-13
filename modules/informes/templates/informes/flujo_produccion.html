@@ -59,6 +59,9 @@
   /* dos titulos lado a lado: el 2do arranca en la col 5 (~49%) */
   .fp .hil-titles { display: flex; }
   .fp .hil-titles > .blk-title:first-child { width: 49%; }
+  /* STOCK DE QUÍMICOS: altura pareja de los labels (algunos se parten en 2
+     líneas, ej. "recibidas formulas") → los números quedan alineados. */
+  .qm-kpis > div > div:first-child { min-height: 2.4em; }
 </style>
 {% endblock %}
 
@@ -220,7 +223,7 @@
 
           {# franja horizontal — una fila de celdas KPI (al ancho del resto) #}
           {% set _cols = 6 if ff is not none else 4 %}
-          <div style="display:grid;grid-template-columns:repeat({{ _cols }},minmax(0,1fr))">
+          <div class="qm-kpis" style="display:grid;grid-template-columns:repeat({{ _cols }},minmax(0,1fr))">
             <div class="px-4 py-2.5">
               <div class="text-[10px] uppercase tracking-wide text-slate-400">Inicial <span class="normal-case text-slate-300 dark:text-slate-500">· físico formulas</span></div>
               <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</div>

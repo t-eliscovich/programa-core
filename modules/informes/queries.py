@@ -4321,13 +4321,13 @@ def informe_balance() -> dict:
     # al sacarlos, el colorante físico (~338.614) queda a solo +26k del dBase
     # (311.953), no +82k. El VQX vivo de arriba queda como fallback si formulas
     # no está disponible.
+    # MISMA variable que el FLUJO (banda STOCK DE QUÍMICOS + tabla COLOR $):
+    # tintura_service.stock_colorante_fisico (POLI+ALG, sin AUX, ≈ 338). Que
+    # salga de acá y no se recalcule → el químico es idéntico en balance y flujo.
+    # Dueña 2026-07-13: "stock quimicos idem que hilado, la variable del flujo".
     try:
         from modules.tintura import service as _tsvc_q
-        _vqx_col = 0.0
-        for _r in (_tsvc_q.stock_quimicos_al_dia(today_ec()) or []):
-            if (getattr(_r, "familia", "") or "").upper() in ("POLI", "ALG"):
-                _vqx_col += float(getattr(_r, "stock_al_dia_kg", 0) or 0) \
-                    * float(getattr(_r, "precio_us", 0) or 0)
+        _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
         if _vqx_col > 0:
             vqx = _vqx_col
     except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
