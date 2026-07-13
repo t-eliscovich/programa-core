@@ -3489,12 +3489,22 @@ def resultados_costos_tabla(
         ct_ukg = float(costo_total_ukg)
         ct_us = float(costo_total_us) if costo_total_us is not None else venta_kg * ct_ukg
     else:
+        # Dueña 2026-07-12: el Costo Total DEBE ser la suma de los renglones, no
+        # las fórmulas COSTUNI/CSVTATOT del dBase. Cada columna suma de arriba a
+        # abajo: $/kg = Subtotal + Admin; $ = suma de los $ reales de las filas
+        # (MP + Tejeduría + Tintorería + Colorantes + Admin). OJO: $/kg y $ son
+        # dos lentes distintos (costo estándar por kg vs plata gastada) sobre kg
+        # base distintos por fila, así que $/kg × kg ≠ $ — es estructura del
+        # cuadro, no un descuadre. NO pretender que cruzan.
         ct_ukg = sub_ukg + adm_ukg
-        ct_us = venta_kg * ct_ukg
+        ct_us = float(mp_us or 0) + tej_us + tin_us + col_us + adm_us
 
-    # Utilidad NO ESTANDARIZADA = Venta − Costo Total (operativa pura).
-    ue_ukg = precio - ct_ukg
-    ue_us = venta_kg * ue_ukg
+    # Utilidad NO ESTANDARIZADA = Venta − Costo Total (operativa pura), en $
+    # REALES. Coherente con el Costo Total que ahora es la suma de los renglones
+    # ($ gastados). Antes usaba (precio − ct_ukg)×kg con el $/kg estándar, que
+    # daba un negativo enorme y engañoso. $/kg = $ / kg vendidos. Dueña 2026-07-12.
+    ue_us = float(venta_us or 0) - ct_us
+    ue_ukg = _div(ue_us, venta_kg)
 
     # Utilidad REAL — fórmula original: ur = (patr - patant) + uret
     # = delta patrimonio + dividendos del mes (la cuenta económica completa
@@ -4434,8 +4444,11 @@ def informe_balance() -> dict:
         factor_desperdicio=_factor_desp,
         provision_pendiente=provision_pendiente_us,
         utilidad_econ=float(utilidad or 0),
-        costo_total_ukg=_costuni,
-        costo_total_us=_csvtatot,
+        # Dueña 2026-07-12: el Costo Total ya NO usa las fórmulas del dBase
+        # (COSTUNI/CSVTATOT). Se pasa None → la tabla lo calcula como la SUMA de
+        # los renglones (cada columna suma de arriba a abajo). Ver else-branch.
+        costo_total_ukg=None,
+        costo_total_us=None,
         # Materia Prima en kg y $ = egresos del HILADO en la tabla MOVIMIENTOS
         # (hilado consumido del mes). MISMA fuente que la tabla → coherente.
         mp_kg=(((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_kg"),
