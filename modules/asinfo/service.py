@@ -1166,6 +1166,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     from datetime import date as _date
     _open = float(open_ukg or 0)
     _fallback = {
+        "disponible": False,
         "stock_act_kg": 0.0, "stock_act_us": 0.0,
         "stock_act_ukg": _open, "avg_ukg": _open,
         "hi0": 0.0, "hi1": 0.0, "maq": 0.0, "compras": 0.0, "compras_us": 0.0,
@@ -1197,6 +1198,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     act_us = hi1 * avg + maq * _open
     act_ukg = (act_us / act_kg) if act_kg else avg
     return {
+        "disponible": True,
         "stock_act_kg": act_kg, "stock_act_us": act_us, "stock_act_ukg": act_ukg,
         "avg_ukg": avg, "hi0": hi0, "hi1": hi1, "maq": maq,
         "compras": compras, "compras_us": compras_us,

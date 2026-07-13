@@ -252,10 +252,11 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
             _hv_hil = _asvc_hv.mov_hilado_valuacion(int(anio), int(mes), _open_ukg) or {}
     except Exception:  # noqa: BLE001 -- fail-soft
         _hv_hil = {}
-    _avg_ukg = float(_hv_hil.get("avg_ukg") or (
+    _hv_ok = bool(_hv_hil.get("disponible"))  # solo usar la func si Asinfo respondió
+    _avg_ukg = float(_hv_hil["avg_ukg"]) if _hv_ok else (
         (hi0 * _open_ukg + compras_us) / (hi0 + compras)
         if (hi0 + compras) else _open_ukg
-    ))
+    )
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_ukg"] = _open_ukg
     hl["stock_inic_us"] = hi0 * _open_ukg
@@ -273,8 +274,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     hl["egresos_us"] = egr_hilo * _avg_ukg
     # En máquinas (WIP) al $/kg de apertura; suma al stock actual (es stock nuestro).
     _maq_us = maq_hilado * _open_ukg
-    hl["stock_act_kg"] = float(_hv_hil.get("stock_act_kg") or (hi1 + maq_hilado))
-    hl["stock_act_us"] = float(_hv_hil.get("stock_act_us") or (hi1 * _avg_ukg + _maq_us))
+    hl["stock_act_kg"] = float(_hv_hil["stock_act_kg"]) if _hv_ok else (hi1 + maq_hilado)
+    hl["stock_act_us"] = float(_hv_hil["stock_act_us"]) if _hv_ok else (hi1 * _avg_ukg + _maq_us)
     hl["stock_act_ukg"] = (
         hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
     )

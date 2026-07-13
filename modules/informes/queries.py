@@ -4265,7 +4265,7 @@ def informe_balance() -> dict:
             from modules.asinfo import service as _asvc_hval
             _hval = _asvc_hval.mov_hilado_valuacion(
                 _hoy_ec_bal.year, _hoy_ec_bal.month, _mov_hil_ukg or h_um)
-            if float(_hval.get("stock_act_ukg") or 0) > 0:
+            if _hval.get("disponible") and float(_hval.get("stock_act_ukg") or 0) > 0:
                 h_um = float(_hval["stock_act_ukg"])  # = variable del FLUJO (2,954)
         except Exception:  # noqa: BLE001 -- fail-soft, deja la tarifa del mov
             pass
