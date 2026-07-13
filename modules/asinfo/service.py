@@ -1143,6 +1143,66 @@ def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
     return out
 
 
+def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
+    """$/kg y $ del HILADO del cuadro FLUJO — promedio ponderado apertura+compras.
+
+    UNA sola fuente para el flujo (`_build_mov_asinfo`) y el balance
+    (`informe_balance`), para que el $/kg del hilado (≈ 2,954) sea IDÉNTICO en los
+    dos y no se pueda desincronizar. Dueña 2026-07-13: "el 2954 directamente = a
+    la variable del flujo".
+
+    `open_ukg` = costo $/kg de APERTURA del stock (del cierre / mov). El ingreso
+    (compras/importaciones del mes) al costo real diluye/sube el promedio.
+
+    Devuelve dict:
+      stock_act_kg  = hilo actual (bodega) + en máquinas (WIP)
+      stock_act_us  = valuación de ese stock al promedio ponderado
+      stock_act_ukg = stock_act_us / stock_act_kg  ← el $/kg del hilado (2,954)
+      avg_ukg       = promedio ponderado apertura+compras (para egresos)
+      hi0, hi1, maq, compras, compras_us  = insumos (para trazabilidad)
+
+    Fail-soft: si Asinfo no está disponible devuelve stock_act_ukg = open_ukg
+    (nunca lanza, nunca rompe el balance ni el flujo)."""
+    from datetime import date as _date
+    _open = float(open_ukg or 0)
+    _fallback = {
+        "stock_act_kg": 0.0, "stock_act_us": 0.0,
+        "stock_act_ukg": _open, "avg_ukg": _open,
+        "hi0": 0.0, "hi1": 0.0, "maq": 0.0, "compras": 0.0, "compras_us": 0.0,
+    }
+    try:
+        inv_inic = inventario_por_etapa_a_fecha(_date(int(yy), int(mm), 1))
+        inv_act = inventario_por_etapa()
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return _fallback
+    hi0 = float(inv_inic.get("hilo") or 0)
+    hi1 = float(inv_act.get("hilo") or 0)
+    maq = float(inv_act.get("en_proceso_tc") or 0)
+    if (hi0 + hi1) <= 0:
+        return _fallback
+    try:
+        compras = float(hilado_recibido_mes(int(yy), int(mm)) or 0)
+    except Exception:  # noqa: BLE001
+        compras = 0.0
+    compras_us = 0.0
+    try:
+        from modules.importaciones import service as _impsvc
+        compras_us = float(
+            (_impsvc.costo_hilado_recibido_mes(int(yy), int(mm)) or {}).get("us") or 0
+        )
+    except Exception:  # noqa: BLE001
+        compras_us = 0.0
+    avg = ((hi0 * _open + compras_us) / (hi0 + compras)) if (hi0 + compras) else _open
+    act_kg = hi1 + maq
+    act_us = hi1 * avg + maq * _open
+    act_ukg = (act_us / act_kg) if act_kg else avg
+    return {
+        "stock_act_kg": act_kg, "stock_act_us": act_us, "stock_act_ukg": act_ukg,
+        "avg_ukg": avg, "hi0": hi0, "hi1": hi1, "maq": maq,
+        "compras": compras, "compras_us": compras_us,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Importaciones de Asinfo (para cruzar contra compras/anticipos del programa)
 # ---------------------------------------------------------------------------

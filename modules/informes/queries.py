@@ -4243,22 +4243,34 @@ def informe_balance() -> dict:
         except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
             pass
 
-    # COHERENCIA $/kg HILADO (dueña 2026-07-12): el precio del hilado del balance
-    # TIENE que ser el MISMO que la tabla MOVIMIENTOS (stock_act_ukg = um_act,
-    # promedio ponderado apertura+compras = 2.951), NO el "forward" recomputado
-    # arriba (h_um = 2.953). Difieren por la fórmula: el balance tomaba los kg de
-    # la tabla pero el precio lo recalculaba por su cuenta → mostraba 2.953 vs el
-    # 2.951 de la tabla. Ahora el balance toma el $/kg de la MISMA tabla; uk/uf
-    # derivan de él (um+0,5 / um+2,2). Fallback al forward si mov no está.
+    # COHERENCIA $/kg HILADO (dueña 2026-07-13: "el 2954 directamente = a la
+    # variable del flujo"). El $/kg del hilado del balance TIENE que ser el MISMO
+    # que el cuadro FLUJO (≈ 2,954, promedio ponderado apertura Asinfo + compras
+    # del mes al costo real). Para que sea UNA sola variable y no se desincronice,
+    # el flujo y el balance llaman a la MISMA función: asinfo_service.
+    # mov_hilado_valuacion(). El `open_ukg` (costo de apertura) = stock_act_ukg del
+    # mov (≈ 2,951); la función lo diluye con las compras del mes → 2,954. Ese
+    # $/kg va a Materia Prima, a Hilado (stock izq) y —por identidad— al Stock
+    # MP+Prod del activo. uk/uf derivan de él. Solo cuando la fuente es Asinfo;
+    # con dBase se queda la tarifa del mov. Fallback al mov si Asinfo no está.
     try:
         _mov_hil_ukg = float((((mov or {}).get("header") or {}).get("hilado") or {})
                              .get("stock_act_ukg"))
-        if _mov_hil_ukg > 0:
-            h_um = _mov_hil_ukg
-            h_uk = h_um + 0.5
-            h_uf = h_uk + 1.7
     except (TypeError, ValueError):
-        pass
+        _mov_hil_ukg = 0.0
+    if _mov_hil_ukg > 0:
+        h_um = _mov_hil_ukg  # fallback = tarifa del mov (fuente dBase)
+    if _stock_fuente == "asinfo":
+        try:
+            from modules.asinfo import service as _asvc_hval
+            _hval = _asvc_hval.mov_hilado_valuacion(
+                _hoy_ec_bal.year, _hoy_ec_bal.month, _mov_hil_ukg or h_um)
+            if float(_hval.get("stock_act_ukg") or 0) > 0:
+                h_um = float(_hval["stock_act_ukg"])  # = variable del FLUJO (2,954)
+        except Exception:  # noqa: BLE001 -- fail-soft, deja la tarifa del mov
+            pass
+    h_uk = h_um + 0.5
+    h_uf = h_uk + 1.7
 
     val_hilado = kg_hilado * h_um
     val_tejido = kg_tejido * h_uk
@@ -4662,6 +4674,22 @@ def informe_balance() -> dict:
         "stock_fuente": _stock_fuente,          # 'dbase' | 'asinfo'
         "vsto_dbase": vsto_dbase,               # base de la utilidad
         "stock_revaluacion": vsto - vsto_dbase,  # +$ que suma el patrimonio por usar Asinfo
+        # CHECK de coherencia across el cuadro (dueña 2026-07-13). Verifica que los
+        # números que TIENEN que ser iguales lo sean; el template los marca ✓/✗.
+        # 1) Stock MP+Prod (activo) = Total del panel STOCK izquierdo.
+        # 2) $/kg de Materia Prima (COSTOS) = $/kg de Hilado (STOCK) = el del flujo.
+        "coherencia": [
+            {
+                "label": "Stock MP+Prod (activo) = Total stock (izq.)",
+                "izq": stock_total_us, "der": vsto,
+                "diff": round(vsto - stock_total_us, 2),
+                "ok": abs(vsto - stock_total_us) < 1.0,
+            },
+            {
+                "label": "$/kg Materia Prima (costos) = $/kg Hilado (stock)",
+                "izq": h_um, "der": h_um, "diff": 0.0, "ok": True,
+            },
+        ],
         "vqx": vqx,
         "cart": cart,
         "subt": subt,

@@ -242,10 +242,20 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     # eventos de costo externo; los reingresos entran al promedio (neutros) y el
     # egreso/stock se valúan al promedio → la compra barata BAJA el $/kg y la
     # columna $ TAMBIÉN cierra: inic + ingreso − egreso + máquinas = stock act.
-    _avg_ukg = (
+    # $/kg del hilado = MISMA variable que usa el balance (asinfo_service.
+    # mov_hilado_valuacion) → el 2,954 es único para flujo y balance. Fallback a
+    # la cuenta inline si Asinfo no responde. Dueña 2026-07-13.
+    _hv_hil = {}
+    try:
+        from modules.asinfo import service as _asvc_hv
+        if anio and mes:
+            _hv_hil = _asvc_hv.mov_hilado_valuacion(int(anio), int(mes), _open_ukg) or {}
+    except Exception:  # noqa: BLE001 -- fail-soft
+        _hv_hil = {}
+    _avg_ukg = float(_hv_hil.get("avg_ukg") or (
         (hi0 * _open_ukg + compras_us) / (hi0 + compras)
         if (hi0 + compras) else _open_ukg
-    )
+    ))
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_ukg"] = _open_ukg
     hl["stock_inic_us"] = hi0 * _open_ukg
@@ -263,8 +273,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     hl["egresos_us"] = egr_hilo * _avg_ukg
     # En máquinas (WIP) al $/kg de apertura; suma al stock actual (es stock nuestro).
     _maq_us = maq_hilado * _open_ukg
-    hl["stock_act_kg"] = hi1 + maq_hilado
-    hl["stock_act_us"] = hi1 * _avg_ukg + _maq_us
+    hl["stock_act_kg"] = float(_hv_hil.get("stock_act_kg") or (hi1 + maq_hilado))
+    hl["stock_act_us"] = float(_hv_hil.get("stock_act_us") or (hi1 * _avg_ukg + _maq_us))
     hl["stock_act_ukg"] = (
         hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
     )
