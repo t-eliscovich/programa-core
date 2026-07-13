@@ -86,37 +86,45 @@ def test_tintoreria_y_colorantes_sobre_ktint():
     assert abs(col["ukg"] - 120000.0 / 197000.0) < 1e-9
 
 
-def test_subtotal_aplica_4_5_pct():
-    """Subtotal = 1.045 * (MP + Tejeduria + Tintoreria + Colorantes)."""
-    tab = _tabla()
+def test_subtotal_45_solo_materiales():
+    """Subtotal = Tejeduria + Tintoreria + merma*(MP + Colorantes). El +4.5%
+    (merma) aplica SOLO a materiales (MP+Col), como el dBase (COSTUNI); la mano
+    de obra de tejeduria/tintoreria NO lleva recargo. TMT 2026-07-12 (dueña)."""
+    tab = _tabla(factor_desperdicio=1.045)
     mp = _row(tab, "Materia Prima")["ukg"]
     tej = _row(tab, "Tejeduría")["ukg"]
     tin = _row(tab, "Tintorería")["ukg"]
     col = _row(tab, "Colorantes/Quím.")["ukg"]
     sub = _row(tab, "Subtotal +4.5%")
-    assert abs(sub["ukg"] - 1.045 * (mp + tej + tin + col)) < 1e-9
+    assert abs(sub["ukg"] - (tej + tin + 1.045 * (mp + col))) < 1e-9
     assert sub["kg"] is None and sub["us"] is None
 
 
-def test_costo_total_subtotal_mas_admin():
-    """Costo Total u$/kg = Subtotal + Administracion."""
-    tab = _tabla()
+def test_costo_total_suma_de_renglones():
+    """Costo Total = SUMA de los renglones (ya NO las formulas COSTUNI/CSVTATOT
+    del dBase). $/kg = Subtotal + Admin; $ = MP + Tej + Tint + Col + Admin (en
+    este fixture MP $ = None → 0). TMT 2026-07-12 (dueña)."""
+    tab = _tabla(factor_desperdicio=1.045)
     sub = _row(tab, "Subtotal +4.5%")["ukg"]
     adm = _row(tab, "Administración")
+    tej = _row(tab, "Tejeduría")
+    tin = _row(tab, "Tintorería")
+    col = _row(tab, "Colorantes/Quím.")
     ct = _row(tab, "Costo Total")
     assert abs(adm["ukg"] - 28000.0 / 200000.0) < 1e-9
     assert abs(ct["ukg"] - (sub + adm["ukg"])) < 1e-9
-    assert abs(ct["us"] - 200000.0 * ct["ukg"]) < 1e-6
+    assert abs(ct["us"] - (tej["us"] + tin["us"] + col["us"] + adm["us"])) < 1e-6
     assert ct["kg"] is None
 
 
-def test_utilidad_no_estandarizada_precio_menos_costo():
-    """Utilidad no estandarizada u$/kg = precio - Costo Total."""
-    tab = _tabla()
-    ct = _row(tab, "Costo Total")["ukg"]
+def test_utilidad_no_estandarizada_venta_menos_costo():
+    """Utilidad no estandarizada = Venta$ − CostoTotal$ (en $ reales, coherente
+    con el Costo Total que ahora es la suma). $/kg = $ / kg vendidos."""
+    tab = _tabla(factor_desperdicio=1.045)
+    ct_us = _row(tab, "Costo Total")["us"]
     ue = _row(tab, "Utilidad no estandarizada")
-    assert abs(ue["ukg"] - (5.0 - ct)) < 1e-9
-    assert abs(ue["us"] - 200000.0 * ue["ukg"]) < 1e-6
+    assert abs(ue["us"] - (1000000.0 - ct_us)) < 1e-6
+    assert abs(ue["ukg"] - (1000000.0 - ct_us) / 200000.0) < 1e-9
 
 
 def test_utilidad_real_delta_patrimonio_mas_dividendos():
