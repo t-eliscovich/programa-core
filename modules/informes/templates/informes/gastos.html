@@ -38,14 +38,17 @@
   }
   /* Celda V: código a la izquierda (encolumnado) y número a la derecha. */
   .gastos-matriz td.cell a.cell-link {
-    display: flex; align-items: baseline; justify-content: space-between;
-    gap: 10px;
+    display: flex; align-items: baseline; justify-content: flex-end;
+    gap: 6px;
   }
   .gastos-matriz td.cell .vcode {
     font-size: 9px; color: rgb(148 163 184);
     font-weight: 600; letter-spacing: 0.05em;
   }
-  .gastos-matriz td.cell .cell-val { font-variant-numeric: tabular-nums; }
+  .gastos-matriz td.cell .cell-val {
+    font-variant-numeric: tabular-nums;
+    min-width: 72px; text-align: right;
+  }
   .gastos-matriz tr.subtotal td {
     background: rgb(241 245 249); color: rgb(15 23 42);
     font-weight: 600; border-top: 1px solid rgb(203 213 225);
