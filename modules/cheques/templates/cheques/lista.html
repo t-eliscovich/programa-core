@@ -898,9 +898,13 @@
           sel.forEach(cb => {
             const imp = parseFloat(cb.dataset.importe) || 0;
             total += imp;
+            // N°: si no hay no_cheque cargado, cae al id interno (#id) para que
+            // NO quede en blanco (dueña 2026-07-14 "a muchos les falta el número").
+            const nro = (cb.dataset.no && cb.dataset.no.trim())
+              ? cb.dataset.no : ('#' + cb.value);
             filas += '<tr><td>' + (cb.dataset.fecha || '') + '</td><td>' +
                      (cb.dataset.cli || '') + '</td><td class="c">' +
-                     (cb.dataset.no || '') + '</td><td class="r">' + fmt(imp) +
+                     nro + '</td><td class="r">' + fmt(imp) +
                      '</td></tr>';
           });
           const html =
