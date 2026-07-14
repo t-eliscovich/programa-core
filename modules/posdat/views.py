@@ -581,6 +581,12 @@ def lista():
                     # TMT 2026-07-14 dueña ("no veo cuál era el inicial"): el
                     # crédito ORIGINAL de la línea = restante + todo lo retirado.
                     _f["op_inicial"] = round(_f["op_restante"] + _ret_sum, 2)
+                    # TMT 2026-07-14 dueña ("quiero la fecha que fue hecha el
+                    # retiro", NO el vencimiento): las filas OP nacen con
+                    # fecha=NULL. La columna FECHA muestra la fecha del retiro
+                    # MÁS RECIENTE de esta línea (o — si todavía no hubo retiro).
+                    _fechas_imp = [i.get("fecha") for i in _imps if i.get("fecha")]
+                    _f["op_fecha_hecha"] = max(_fechas_imp) if _fechas_imp else None
         except Exception:  # noqa: BLE001
             pass
 
