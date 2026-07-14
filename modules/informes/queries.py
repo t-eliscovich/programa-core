@@ -8103,6 +8103,27 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
     comp = (bal.get("diagnostico") or {}).get("componentes") or {}
     kg = bal.get("kg") or {}
 
+    # TMT 2026-07-14 — BUG VENTAS kg / precio del mes ANTERIOR en la foto diaria.
+    # Las llaves kvent/uvent del bloque `kg` de informe_balance() son las "kg del
+    # ÚLTIMO CIERRE" (panel F9), leídas de historia_ultimo_mes() = el snapshot del
+    # mes PREVIO — NO las ventas del mes en curso. La foto diaria las persistía
+    # tal cual, así que la columna "previa" del Historial quedaba con las ventas
+    # de junio (335.700 kg · 8,52 U$/kg) mientras la columna "en vivo" mostraba
+    # julio real (128.510) → Δ fantasma −207.190. Tomamos kvent/uvent del MISMO
+    # cálculo que alimenta la columna "en vivo" (calcular_kpis, vía
+    # _snap_live_mes_actual) para que previa y en-vivo coincidan cuando no hubo
+    # cambios reales. [[coherencia_numeros_una_fuente]]
+    _live_kpis = _snap_live_mes_actual(hoy)
+    if _live_kpis:
+        _kvent_live = float(_live_kpis.get("kvent") or 0)
+        _uvent_live = float(_live_kpis.get("uvent") or 0)
+    else:
+        # Fallback defensivo (calcular_kpis falló): ventas live del mes en curso
+        # — nunca el kvent stale del último cierre.
+        _vm_live = ventas_mes_corriente_resultado()
+        _kvent_live = float(_vm_live.get("kg") or 0)
+        _uvent_live = float(_vm_live.get("importe") or 0)
+
     def _c(k, default=0.0):
         return float(comp.get(k) or default)
 
@@ -8115,8 +8136,8 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
         "ktin": float(kg.get("ktin") or 0),
         "ustock": float(bal.get("vsto") or _c("vsto")),
         "uqui": _c("vqx"),
-        "kvent": float(kg.get("kvent") or 0),
-        "uvent": float(kg.get("uvent") or 0),
+        "kvent": _kvent_live,
+        "uvent": _uvent_live,
         "costo": float(kg.get("costo_mes") or 0),
         "ucom": float(kg.get("ucom") or 0),
         "utej": float(kg.get("utej") or 0),
