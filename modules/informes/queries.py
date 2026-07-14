@@ -2617,6 +2617,43 @@ def ventas_anio_en_curso() -> float:
     return uvent_cerrados + uvent_mes
 
 
+def utilidades_anio_en_curso(utilidad_mes_live: float = 0.0) -> float:
+    """Utilidades del año calendario en curso: SUM(historia.usuti) de meses
+    cerrados + la utilidad live del mes en curso (PATR−PATANT).
+
+    Análoga a ventas_anio_en_curso(). Pedido Federico 2026-07-14: mostrar
+    'Utilidades <año>' en el panel MOVIMIENTOS, encolumnado con Ventas del año.
+    scintela.historia tiene una fila por mes cerrado con usuti definitivo
+    (utilidad del cierre = PATR−PATANT de ese mes). Para el mes en curso, que
+    todavía no tiene snapshot, usamos la utilidad live que ya calcula
+    informe_balance (PATR−PATANT).
+
+    Si historia falla, cae a 0 para los cerrados y devuelve sólo el mes live.
+    """
+    hoy = today_ec()
+    yy = hoy.year
+    mm = hoy.month
+
+    try:
+        row_hist = (
+            db.fetch_one(
+                """
+            SELECT COALESCE(SUM(usuti), 0) AS total
+              FROM scintela.historia
+             WHERE EXTRACT(YEAR FROM fecha)  = %s
+               AND EXTRACT(MONTH FROM fecha) < %s
+            """,
+                (yy, mm),
+            )
+            or {}
+        )
+        usuti_cerrados = float(row_hist.get("total") or 0)
+    except Exception:
+        usuti_cerrados = 0.0
+
+    return usuti_cerrados + float(utilidad_mes_live or 0)
+
+
 def venta_anual_kg_y_us() -> dict:
     """Ventas acumuladas últimos 12 meses (para CART/VENTANUAL*360 = días cobranza).
 
@@ -4669,6 +4706,11 @@ def informe_balance() -> dict:
         "uret_calc": _uret_calc,
         "uret_anio": _uret_anio,
         "ventas_anio": _ventas_anio,
+        # Federico 2026-07-14: utilidades acumuladas del año (meses cerrados
+        # via historia.usuti + utilidad live del mes en curso) y el año en
+        # curso para rotular las filas nuevas del panel MOVIMIENTOS.
+        "utilidades_anio": utilidades_anio_en_curso(utilidad),
+        "anio_actual": today_ec().year,
         "totp": posdats["totp"],
         "vsto": vsto,
         "stock_fuente": _stock_fuente,          # 'dbase' | 'asinfo'
