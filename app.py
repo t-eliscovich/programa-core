@@ -297,6 +297,10 @@ def create_app() -> Flask:
 
     app.register_blueprint(compras_bp)
 
+    from modules.tejeduria_asinfo.views import tejeduria_asinfo_bp
+
+    app.register_blueprint(tejeduria_asinfo_bp)
+
     from modules.stock.views import stock_bp
 
     app.register_blueprint(stock_bp)

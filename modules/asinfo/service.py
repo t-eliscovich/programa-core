@@ -1738,3 +1738,130 @@ def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
         return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(zero)
+
+
+# ---------------------------------------------------------------------------
+# Producción de tejeduría (bodega 52 = TELA CRUDA) por Asinfo — reemplaza la
+# carga MANUAL del dBase (alguien tipeaba las compras tipo K a mano).
+#
+# Cada `orden_fabricacion` HOJA CERRADA de bodega 52 produce tela cruda:
+# `cantidad_fabricada` = kg producidos, `fecha_cierre` = día. El TEJEDOR sale
+# del inicio de `descripcion`:
+#   · "MQ<nn> ..."  → INTELA (máquina propia, autoproducción) → cod KK
+#   · "M REYES ..." → tercerizado (maquila) → cod RY
+#   · "A PONCE ..." → tercerizado → cod AP
+# Verificado en vivo 2026-07-14: julio = INTELA 96.786 / AP 2.644 / RY 1.633 kg.
+# Consumido por la tab /produccion-tejeduria-asinfo (match contra compras K).
+# ---------------------------------------------------------------------------
+_PROD_TEJ_TTL_SECS = 600  # 10 minutos
+_PROD_TEJ_CACHE: dict = {}
+
+INTELA_COD = "KK"
+# Nombre en la descripción de la OF → codigo_prov de scintela.compra. Extender
+# acá cuando aparezca un tejedor tercerizado nuevo (la tab marca los
+# "desconocido" con cod vacío para que se agreguen).
+TEJEDOR_TERCERIZADO_MAP = {
+    "PONCE": "AP",
+    "REYES": "RY",
+}
+
+
+def _clasificar_tejedor(descripcion: str) -> tuple[str, str, bool]:
+    """(codigo_prov, label, es_intela) desde orden_fabricacion.descripcion.
+
+    INTELA si arranca con 'MQ' + dígito (máquina propia). Si no, tercerizado:
+    se mapea el nombre → codigo_prov. Un tejedor no mapeado devuelve cod=''
+    (la tab lo muestra como 'desconocido' para agregarlo al mapa).
+    """
+    import re as _re
+    d = (descripcion or "").strip()
+    du = d.upper()
+    if _re.match(r"^MQ\d", du):
+        return (INTELA_COD, "INTELA", True)
+    for nombre, cod in TEJEDOR_TERCERIZADO_MAP.items():
+        if nombre in du:
+            return (cod, nombre.capitalize(), False)
+    label = " ".join(d.split()[:2]) or "?"
+    return ("", label, False)
+
+
+def produccion_tejeduria_mes(anio: int, mes: int) -> dict:
+    """Producción de tela cruda (bodega 52) del mes, por OF, día y tejedor,
+    desde Asinfo. Reemplaza la carga manual del dBase.
+
+    Solo OFs HOJA CERRADAS (estado_produccion=5) con `fecha_cierre` en el mes.
+
+    Devuelve (fail-soft):
+        {disponible, anio, mes,
+         ofs:[{numero, dia 'YYYY-MM-DD', kg, descripcion, cod, label, es_intela}],
+         por_tejedor:[{cod, label, es_intela, ofs, kg}],
+         total_kg}
+    Si Asinfo cae o no hay datos → disponible=False, listas vacías.
+    """
+    vacio = {"disponible": False, "anio": anio, "mes": mes,
+             "ofs": [], "por_tejedor": [], "total_kg": 0.0}
+    try:
+        anio = int(anio)
+        mes = int(mes)
+    except (TypeError, ValueError):
+        return dict(vacio)
+    cache_key = (anio, mes)
+    now = _time.time()
+    cached = _PROD_TEJ_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _PROD_TEJ_TTL_SECS:
+        return cached[1]
+    d1 = f"{anio:04d}-{mes:02d}-01"
+    ny, nm = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+    d2 = f"{ny:04d}-{nm:02d}-01"
+    sql = f"""
+        SELECT numero,
+               CONVERT(varchar(10), fecha_cierre, 23) AS dia,
+               ISNULL(cantidad_fabricada, 0)          AS kg,
+               descripcion
+          FROM orden_fabricacion
+         WHERE id_bodega = 52
+           AND indicador_hoja = 1
+           AND estado_produccion = 5
+           AND fecha_cierre >= '{d1}' AND fecha_cierre < '{d2}'
+         ORDER BY fecha_cierre
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=2000)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return dict(vacio)
+    if not rows:
+        return dict(vacio)
+    ofs = []
+    agg: dict = {}
+    total = 0.0
+    for r in rows:
+        kg = float(r.get("kg") or 0.0)
+        desc = str(r.get("descripcion") or "")
+        cod, label, es_intela = _clasificar_tejedor(desc)
+        ofs.append({
+            "numero": str(r.get("numero") or "").strip(),
+            "dia": str(r.get("dia") or "")[:10],
+            "kg": round(kg, 2),
+            "descripcion": desc.strip(),
+            "cod": cod,
+            "label": label,
+            "es_intela": es_intela,
+        })
+        k = cod or ("?" + label)
+        a = agg.setdefault(k, {"cod": cod, "label": label,
+                               "es_intela": es_intela, "ofs": 0, "kg": 0.0})
+        a["ofs"] += 1
+        a["kg"] += kg
+        total += kg
+    por_tejedor = sorted(agg.values(), key=lambda x: -x["kg"])
+    for a in por_tejedor:
+        a["kg"] = round(a["kg"], 2)
+    out = {"disponible": True, "anio": anio, "mes": mes,
+           "ofs": ofs, "por_tejedor": por_tejedor, "total_kg": round(total, 2)}
+    _PROD_TEJ_CACHE[cache_key] = (now, out)
+    return out
+
+
+def reset_prod_tejeduria_cache() -> None:
+    """Vaciar el cache de produccion_tejeduria_mes (tests / deploy)."""
+    _PROD_TEJ_CACHE.clear()

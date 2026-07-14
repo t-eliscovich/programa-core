@@ -776,6 +776,7 @@
         {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Factura Proforma', 'file') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
+        {% if tiene_permiso('compras.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
         {# TMT 2026-06-11 dueña: anticipos (DOLARES) se cargan directo en PC.
            TMT 2026-07-06 (dueña): "/anticipos/ borrar, tiene que ser /dolares"

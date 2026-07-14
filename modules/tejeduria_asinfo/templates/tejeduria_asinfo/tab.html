@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Producción Tejeduría Asinfo {{ '%02d/%d' % (mes, anio) }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('compras.produccion_tejeduria') }}" class="hover:underline">Producción Tejeduría</a> /
+  <strong>Asinfo</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .ta table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 14px}
+  .ta th,.ta td{padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right}
+  .ta th:first-child,.ta td:first-child{text-align:left}
+  .ta thead th{background:#f8fafc;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .ta tr.tot td{font-weight:700;background:#f8fafc}
+  .ta .muted{color:#94a3b8}
+  .ta .intela{color:#0284c7}
+  .ta .terc{color:#7c3aed}
+  .ta .falta{color:#b91c1c;font-weight:600}
+  .ta .ok{color:#16a34a}
+  .ta .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}
+  .ta .kpi{flex:1;min-width:150px;border:1px solid #e5e7eb;border-radius:10px;padding:10px 14px;background:#fff}
+  .ta .kpi .l{font-size:11px;text-transform:uppercase;color:#64748b}
+  .ta .kpi .v{font-size:21px;font-weight:700}
+  .ta .sel{display:flex;gap:8px;align-items:end;margin:4px 0 8px}
+  .ta .sel input{width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px}
+  .ta .btn{display:inline-block;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border-radius:6px;padding:4px 10px;text-decoration:none}
+  .ta .note{color:#64748b;font-size:12px;margin:2px 0 10px}
+  .ta .warnbox{border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px}
+  .ta h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin:22px 0 4px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ta">
+
+  <form class="sel" method="get">
+    <div><label class="muted" style="font-size:11px">Mes</label><br><input type="number" name="mes" min="1" max="12" value="{{ mes }}"></div>
+    <div><label class="muted" style="font-size:11px">Año</label><br><input type="number" name="anio" value="{{ anio }}"></div>
+    <button class="btn" style="background:#334155">Ver</button>
+  </form>
+
+  {% if not data.disponible %}
+    <div class="warnbox">Asinfo no está disponible en este momento — no se pudo traer la producción de tejeduría. (La pantalla no rompe; reintentá en un rato.)</div>
+  {% else %}
+
+    {% set terc_kg = data.tejedores | selectattr('es_intela', 'equalto', false) | sum(attribute='kg') %}
+    {% set intela_kg = data.tejedores | selectattr('es_intela', 'equalto', true) | sum(attribute='kg') %}
+    <div class="kpis">
+      <div class="kpi"><div class="l">Total tela cruda</div><div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
+      <div class="kpi"><div class="l intela">INTELA · autoprod.</div><div class="v">{{ intela_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
+      <div class="kpi"><div class="l terc">Tercerizados</div><div class="v">{{ terc_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
+    </div>
+
+    <h2>Match por tejedor · producido (Asinfo) vs cargado (compras K)</h2>
+    <p class="note">El match viejo es aproximado por tejedor/mes — las fechas no calzan exacto. Lo nuevo (cargado desde acá) matchea fino por OFT.</p>
+    <table>
+      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>OF</th><th>Cargado (compras K)</th><th>$ cargado</th><th>Falta cargar</th></tr></thead>
+      <tbody>
+        {% for t in data.tejedores %}
+          <tr>
+            <td class="{{ 'intela' if t.es_intela else 'terc' }}">
+              {{ t.label }}{% if t.cod %} <span class="muted">· {{ t.cod }}</span>{% else %} <span class="muted">· desconocido</span>{% endif %}
+            </td>
+            <td>{{ t.kg|num_es }}</td>
+            <td class="muted">{{ t.ofs }}</td>
+            <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
+            <td>{% if t.es_intela %}<span class="muted">—</span>{% else %}{{ t.compra_importe|num_es }}{% endif %}</td>
+            <td>
+              {% if t.es_intela %}<span class="muted">—</span>
+              {% elif t.falta_kg > 1 %}<span class="falta">{{ t.falta_kg|num_es }} kg</span>
+              {% else %}<span class="ok">ok</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>Resumen diario (kg por tejedor)</h2>
+    <table>
+      <thead>
+        <tr><th>Día</th>
+          {% for t in data.tejedores %}<th class="{{ 'intela' if t.es_intela else 'terc' }}">{{ t.label }}</th>{% endfor %}
+          <th>Total día</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in data.por_dia %}
+          <tr>
+            <td>{{ d.dia }}</td>
+            {% for t in data.tejedores %}
+              <td>{% if d.kg.get(t.key) %}{{ d.kg.get(t.key)|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            {% endfor %}
+            <td>{{ d.total|num_es }}</td>
+          </tr>
+        {% endfor %}
+        <tr class="tot">
+          <td>TOTAL {{ '%02d/%d' % (mes, anio) }}</td>
+          {% for t in data.tejedores %}<td>{{ t.kg|num_es }}</td>{% endfor %}
+          <td>{{ data.total_kg|num_es }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Pendientes de cargar · OFs tercerizadas sin compra ({{ data.pendientes|length }})</h2>
+    <p class="note">Cada botón abre la carga de compra con proveedor, kg y OFT precargados — vos ponés el $ (tarifa manual). El OFT queda estampado en el concepto para el match fino.</p>
+    {% if data.pendientes %}
+    <table>
+      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th></th></tr></thead>
+      <tbody>
+        {% for of in data.pendientes %}
+          <tr>
+            <td>{{ of.numero }}</td>
+            <td class="muted">{{ of.dia }}</td>
+            <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
+            <td class="muted">{{ of.descripcion }}</td>
+            <td>{{ of.kg|num_es }}</td>
+            <td>
+              <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K', concepto=of.numero ~ ' ' ~ of.descripcion) }}">Cargar $</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="note ok">Todo lo tercerizado del mes ya tiene su compra cargada. 🎉</p>
+    {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}
