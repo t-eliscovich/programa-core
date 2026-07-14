@@ -112,8 +112,8 @@
           <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="3">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
-          <td class="px-4 py-3 text-right text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo > 0 else '' }}">{{ t.saldo | money_es }}</td>
-          <td class="px-4 py-3 text-right text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo > 0 else '' }}">{{ t.saldo | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono text-slate-900 dark:text-slate-100">{{ t.saldo | money_es }}</td>
+          <td></td>
           <td></td>
         </tr>
       </tfoot>
