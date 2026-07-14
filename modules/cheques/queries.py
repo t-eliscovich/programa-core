@@ -2106,7 +2106,10 @@ def transiciones_para(stat: str) -> list[dict]:
             try:
                 _d, _es_reb = _stat_destino_reversa(s)
                 if _es_reb:
-                    o["stat_destino"] = _d
+                    # `destino_real` es SOLO para el display del dropdown; el
+                    # stat_destino (9) se mantiene = la ACCIÓN válida del backend
+                    # (el wizard de reverso decide el estado final vía reversar).
+                    o["destino_real"] = _d
             except Exception:  # noqa: BLE001
                 pass
     return base

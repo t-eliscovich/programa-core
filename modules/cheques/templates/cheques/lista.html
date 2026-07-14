@@ -633,14 +633,15 @@
                       title="Cambiar estado">
                 <option value="" selected>{{ s or '—' }}</option>
                 {% for t in transs %}
+                  {% set _disp = t.destino_real if t.destino_real else t.stat_destino %}
                   {% if t.kind == 'WIZARD' %}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
-                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">→{{ t.stat_destino }}</option>
+                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">→{{ _disp }}</option>
                     {% else %}
-                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}" title="{{ t.label }}">→{{ t.stat_destino }}</option>
+                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}" title="{{ t.label }}">→{{ _disp }}</option>
                     {% endif %}
                   {% else %}
-                    <option value="{{ t.stat_destino }}" title="{{ t.label }}">→{{ t.stat_destino }}</option>
+                    <option value="{{ t.stat_destino }}" title="{{ t.label }}">→{{ _disp }}</option>
                   {% endif %}
                 {% endfor %}
               </select>
