@@ -1935,6 +1935,29 @@ def _grupo_concepto(concepto: str | None) -> str:
     return token or "(otros)"
 
 
+def _dedup_key(fecha, prov, concepto, importe) -> tuple:
+    """Clave para detectar el MISMO movimiento cargado en xgast Y en compra.
+
+    TMT 2026-07-14 — pedido dueña: "no quiero repeticiones en los gastos".
+    Un gasto (ej. KK SU MORALES) puede estar cargado a la vez en `xgast` y
+    en `compra` (tipo mapeado al mismo rubro). Sin dedup se cuenta dos veces
+    (el drill-down mostraba 50.398,12 en vez de 25.199,06). Priorizamos la
+    categoría (xgast); si la compra tiene un gemelo exacto en xgast del mismo
+    rubro/mes, no se vuelve a sumar. Las compras SIN gemelo (servicios que
+    sólo viven en `compra`) siguen apareciendo.
+
+    Clave = (fecha ISO, prov normalizado, concepto normalizado, importe a 2 dec).
+    """
+    f = fecha.isoformat() if hasattr(fecha, "isoformat") else str(fecha or "")
+    p = (prov or "").upper().strip()
+    c = " ".join((concepto or "").upper().split())
+    try:
+        imp = round(float(importe or 0), 2)
+    except (TypeError, ValueError):
+        imp = 0.0
+    return (f, p, c, imp)
+
+
 def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     """Drill-down de una categoría V1..V9 — PRG INFORMES.PRG L1266-1334.
 
@@ -2013,13 +2036,20 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     """
     filas_compras = db.fetch_all(sql_c, (n,)) or []
 
-    # Agrupar por concepto via _grupo_concepto.
+    # Agrupar por concepto via _grupo_concepto. Guardamos las claves de xgast
+    # para deduplicar las compras que sean el mismo movimiento (ver _dedup_key).
     buckets: dict[str, dict] = {}
     total = 0.0
+    xgast_keys: set[tuple] = set()
+    n_incluidas = 0
     for r in filas:
         grupo = _grupo_concepto(r.get("concepto"))
         importe = float(r.get("importe") or 0)
         total += importe
+        n_incluidas += 1
+        xgast_keys.add(
+            _dedup_key(r.get("fecha"), r.get("prov"), r.get("concepto"), importe)
+        )
         if grupo not in buckets:
             buckets[grupo] = {"grupo": grupo, "filas": [], "subtotal": 0.0}
         buckets[grupo]["filas"].append(
@@ -2036,13 +2066,21 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         )
         buckets[grupo]["subtotal"] += importe
 
-    # Bucket separado para compras (mejor UX que mezclarlas con conceptos
-    # de xgast — tienen distinta estructura, distinto reverso).
+    # Compras del mes mapeadas a este rubro. TMT 2026-07-14 — "no repeticiones":
+    #   (1) se saltea la compra si ya existe el mismo movimiento en xgast
+    #       (prioriza la categoría), y
+    #   (2) las compras que SÍ entran se agrupan por su concepto (misma
+    #       categoría que xgast, badge `compra`), no en un bucket aparte
+    #       "Compras (tipo X)" — pedido dueña: "solo mantené categorías acá".
     for r in filas_compras:
-        tipo_c = (r.get("tipo") or "").upper().strip()
-        grupo = f"Compras (tipo {tipo_c})"
         importe = float(r.get("importe") or 0)
+        key = _dedup_key(r.get("fecha"), r.get("prov"), r.get("concepto"), importe)
+        if key in xgast_keys:
+            continue  # ya contado en xgast — no repetir
+        tipo_c = (r.get("tipo") or "").upper().strip()
+        grupo = _grupo_concepto(r.get("concepto"))
         total += importe
+        n_incluidas += 1
         if grupo not in buckets:
             buckets[grupo] = {"grupo": grupo, "filas": [], "subtotal": 0.0}
         buckets[grupo]["filas"].append(
@@ -2068,7 +2106,7 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         "label": GASTOS_NUM_LABELS.get(n, f"V{n}"),
         "grupos": grupos,
         "total": total,
-        "n_filas": len(filas),
+        "n_filas": n_incluidas,
     }
 
 
@@ -2199,42 +2237,58 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
     # mostrar xgast anulados (legacy). Federico reportó que un $500 no
     # aparecía en V9 — verificar si el xgast no quedó stat='X' por algún
     # reverse no sincronizado.
+    # TMT 2026-07-14 — a nivel FILA (no SUM) para poder deduplicar contra
+    # compras (pedido dueña: "no repeticiones"). Guardamos la clave de cada
+    # xgast por rubro; una compra con gemelo exacto en su mismo rubro no se
+    # vuelve a sumar. Mismo criterio que el drill-down (`gastos_detalle_categoria`)
+    # → la card de Gastos y el detalle cuadran.
     rows_xgast = (
         db.fetch_all(
             """
-        SELECT COALESCE(num, 0) AS num,
-               COALESCE(SUM(importe), 0) AS total
+        SELECT COALESCE(num, 0) AS num, fecha, prov, concepto, importe
         FROM scintela.xgast
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-        GROUP BY 1
         """
         )
         or []
     )
-    v = {int(r.get("num") or 0): float(r.get("total") or 0) for r in rows_xgast}
+    v: dict[int, float] = {}
+    xgast_keys_por_num: dict[int, set] = {}
+    for r in rows_xgast:
+        num = int(r.get("num") or 0)
+        importe = float(r.get("importe") or 0)
+        v[num] = v.get(num, 0.0) + importe
+        xgast_keys_por_num.setdefault(num, set()).add(
+            _dedup_key(r.get("fecha"), r.get("prov"), r.get("concepto"), importe)
+        )
 
-    # Sumar compras del mes mapeadas por la cascada dBase (tipo + concepto
-    # + codigo_prov). Excluye anuladas, materia prima (H), anticipos (A/I)
-    # y producción (K con kg>0). Mapping completo en `_SQL_COMPRA_NUM_CASE`.
+    # Compras del mes mapeadas por la cascada dBase (tipo + concepto +
+    # codigo_prov). Excluye anuladas, materia prima (H), anticipos (A/I) y
+    # producción (K con kg>0). Mapping completo en `_SQL_COMPRA_NUM_CASE`.
+    # Se saltea la compra si ya existe el mismo movimiento en xgast del rubro.
     sql_compras = f"""
         SELECT ({_SQL_COMPRA_NUM_CASE}) AS num,
-               COALESCE(SUM(c.importe), 0) AS total
+               c.fecha, c.codigo_prov AS prov, c.concepto, c.importe
           FROM scintela.compra c
          WHERE c.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
            AND c.fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
            AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
-         GROUP BY 1
     """
     rows_compras = db.fetch_all(sql_compras) or []
     for r in rows_compras:
         num = r.get("num")
         if not num:
             continue
-        v[int(num)] = v.get(int(num), 0.0) + float(r.get("total") or 0)
+        num = int(num)
+        importe = float(r.get("importe") or 0)
+        key = _dedup_key(r.get("fecha"), r.get("prov"), r.get("concepto"), importe)
+        if key in xgast_keys_por_num.get(num, ()):
+            continue  # ya contado en xgast — no repetir
+        v[num] = v.get(num, 0.0) + importe
 
     return {
         "v1": v.get(1, 0.0),
