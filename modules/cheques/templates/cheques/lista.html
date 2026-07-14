@@ -421,7 +421,8 @@
                 <input type="checkbox" class="cheque-pick" value="{{ c.id_cheque }}"
                        data-importe="{{ c.importe or 0 }}"
                        data-no="{{ c.no_cheque or '' }}"
-                       data-cli="{{ c.codigo_cli or '' }}">
+                       data-cli="{{ c.codigo_cli or '' }}"
+                       data-fecha="{{ (c.fechad | fecha_es) if c.fechad else ((c.fecha | fecha_es) if c.fecha else '') }}">
               {% endif %}
             </td>
           {% endif %}
@@ -698,6 +699,12 @@
       <input type="date" id="dep-fecha" value="{{ hoy_iso or '' }}"
              class="text-xs text-slate-900 rounded px-2 py-1 border-0"
              title="Fecha de depósito">
+      {# TMT 2026-07-14 (dueña): imprimir el resumen del depósito del día
+         (fecha · cliente · N° · valor) ANTES de depositar. #}
+      <button type="button" id="dep-print"
+              class="text-sm px-3 py-1.5 rounded bg-emerald-700 text-white hover:bg-emerald-800 font-medium border border-emerald-300">
+        Imprimir
+      </button>
       <button type="button" id="dep-btn"
               class="text-sm px-3 py-1.5 rounded bg-white text-emerald-700 hover:bg-emerald-50 font-medium">
         Depositar lote en Pichincha
@@ -849,6 +856,60 @@
         btnCancel.addEventListener('click', () => {
           document.querySelectorAll('.cheque-pick').forEach(cb => cb.checked = false);
           actualizarBarra();
+        });
+      }
+
+      // Imprimir el resumen del depósito del día (dueña 2026-07-14): abre una
+      // ventana con Fecha · Cliente · N° · Valor de los cheques seleccionados
+      // + total, y dispara el print. Es un resumen para depositar, no toca nada.
+      const btnPrint = document.getElementById('dep-print');
+      if (btnPrint) {
+        btnPrint.addEventListener('click', () => {
+          const sel = getSeleccionados();
+          if (!sel.length) return;
+          const raw = (fechaEl && fechaEl.value) ? fechaEl.value : hoyEC();
+          const p = String(raw).split('-');
+          const fechaFmt = (p.length === 3) ? (p[2] + '/' + p[1] + '/' + p[0]) : raw;
+          let total = 0, filas = '';
+          sel.forEach(cb => {
+            const imp = parseFloat(cb.dataset.importe) || 0;
+            total += imp;
+            filas += '<tr><td>' + (cb.dataset.fecha || '') + '</td><td>' +
+                     (cb.dataset.cli || '') + '</td><td class="c">' +
+                     (cb.dataset.no || '') + '</td><td class="r">' + fmt(imp) +
+                     '</td></tr>';
+          });
+          const html =
+            '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">' +
+            '<title>Depósito ' + fechaFmt + '</title><style>' +
+            '*{font-family:-apple-system,Arial,sans-serif}body{margin:24px;color:#111}' +
+            'h1{font-size:18px;margin:0 0 2px}.sub{color:#555;font-size:12px;margin:0 0 16px}' +
+            'table{width:100%;border-collapse:collapse;font-size:13px}' +
+            'th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}' +
+            'th{border-bottom:2px solid #333;font-size:11px;text-transform:uppercase;color:#555}' +
+            'td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}' +
+            'td.c,th.c{color:#666}' +
+            'tfoot td{border-top:2px solid #333;border-bottom:none;font-weight:700;font-size:14px;padding-top:10px}' +
+            '@media print{body{margin:0}}</style></head><body>' +
+            '<h1>Depósito del día — Pichincha</h1>' +
+            '<p class="sub">Fecha de depósito: ' + fechaFmt + ' · ' + sel.length + ' cheques</p>' +
+            '<table><thead><tr><th>Fecha</th><th>Cliente</th><th class="c">N°</th>' +
+            '<th class="r">Valor</th></tr></thead><tbody>' + filas + '</tbody>' +
+            '<tfoot><tr><td colspan="3">TOTAL — ' + sel.length + ' cheques</td>' +
+            '<td class="r">$ ' + fmt(total) + '</td></tr></tfoot></table></body></html>';
+          const w = window.open('', '_blank');
+          if (!w) {
+            if (banner) {
+              banner.textContent = 'Habilitá los pop-ups del navegador para imprimir el resumen.';
+              banner.classList.remove('hidden');
+              setTimeout(() => banner.classList.add('hidden'), 4000);
+            }
+            return;
+          }
+          w.document.write(html);
+          w.document.close();
+          w.focus();
+          setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
         });
       }
 
