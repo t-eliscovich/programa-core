@@ -2075,6 +2075,54 @@ def flujo_produccion():
         inv_asinfo_inic = {}
     mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo, anio=anio, mes=mes)
 
+    # TMT 2026-07-14 (dueña): "estos datos vienen del dBase, van a tener que
+    # venir de nuestra nueva pantalla. Dejemos la tabla dBase y la de Asinfo a
+    # ver en cuánto difieren." Comparación PRODUCCIÓN TEJIDO (kg) dBase vs
+    # Asinfo (produccion_tejeduria_mes, por tejedor cod KK/AP/RY). Fail-soft.
+    prod_tej_asinfo, _e_pt = _safe(
+        lambda: asinfo_service.produccion_tejeduria_mes(anio, mes), {}
+    )
+    comp_tejido = None
+    try:
+        _db_rows = {
+            (r.get("prov") or "").upper(): float(r.get("kg") or 0)
+            for r in (data.get("produc_tejido") or [])
+        }
+        _as_rows = {
+            (t.get("cod") or "").upper(): {
+                "kg": float(t.get("kg") or 0), "label": t.get("label"),
+            }
+            for t in ((prod_tej_asinfo or {}).get("por_tejedor") or [])
+        }
+        _provs = []
+        for _k in list(_db_rows.keys()) + list(_as_rows.keys()):
+            if _k and _k not in _provs:
+                _provs.append(_k)
+        _filas = []
+        _tdb = _tas = 0.0
+        for _p in _provs:
+            _kdb = _db_rows.get(_p, 0.0)
+            _kas = _as_rows.get(_p, {}).get("kg", 0.0)
+            _label = _as_rows.get(_p, {}).get("label") or (
+                "INTELA" if _p == "KK" else _p
+            )
+            _filas.append({
+                "prov": _label, "kg_dbase": _kdb, "kg_asinfo": _kas,
+                "delta": round(_kdb - _kas, 2),
+            })
+            _tdb += _kdb
+            _tas += _kas
+        if _filas:
+            comp_tejido = {
+                "disponible": bool((prod_tej_asinfo or {}).get("disponible")),
+                "filas": _filas,
+                "tot_dbase": round(_tdb, 2),
+                "tot_asinfo": round(_tas, 2),
+                "tot_delta": round(_tdb - _tas, 2),
+            }
+    except Exception:  # noqa: BLE001 -- comparación es best-effort
+        comp_tejido = None
+
     return render_template(
         "informes/flujo_produccion.html",
         data=data,
@@ -2083,6 +2131,7 @@ def flujo_produccion():
         error=error,
         inv_asinfo=inv_asinfo,
         mov_asinfo=mov_asinfo,
+        comp_tejido=comp_tejido,
     )
 
 

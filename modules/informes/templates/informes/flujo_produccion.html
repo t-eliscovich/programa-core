@@ -415,6 +415,44 @@
       </table>
     </div>
 
+    {# ─── Comparación PRODUCCIÓN TEJIDO: dBase vs Asinfo (provisoria) ─────
+       TMT 2026-07-14 (dueña): "estos datos vienen del dBase, van a tener que
+       venir de nuestra nueva pantalla. Dejemos las dos a ver en cuánto
+       difieren." Se mantiene la tabla dBase de arriba y acá se compara kg
+       producido (dBase compra tipo K) vs Asinfo (produccion_tejeduria_mes). #}
+    {% if comp_tejido and comp_tejido.filas %}
+    <div class="blk mb-2">
+      <div class="blk-title">Producción tejido · dBase vs Asinfo (kg){% if not comp_tejido.disponible %} — Asinfo no disponible ahora{% endif %}</div>
+      <table class="w-full" data-no-sort-table style="font-size:12px;border-collapse:collapse">
+        <thead>
+          <tr style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #e5e7eb">
+            <th style="text-align:left;padding:4px 8px">Prov</th>
+            <th style="text-align:right;padding:4px 8px">Kg dBase</th>
+            <th style="text-align:right;padding:4px 8px">Kg Asinfo</th>
+            <th style="text-align:right;padding:4px 8px">Δ (dBase − Asinfo)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in comp_tejido.filas %}
+          <tr style="border-bottom:1px solid #f1f5f9">
+            <td style="padding:4px 8px;font-weight:600">{{ r.prov }}</td>
+            <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ r.kg_dbase | num_es(0) }}</td>
+            <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ r.kg_asinfo | num_es(0) }}</td>
+            <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums;color:{{ '#b45309' if (r.delta|abs) > 1 else '#94a3b8' }};font-weight:600">{{ r.delta | num_es(0) }}</td>
+          </tr>
+          {% endfor %}
+          <tr style="font-weight:700;background:#f8fafc;border-top:2px solid #e5e7eb">
+            <td style="padding:5px 8px">TOTAL</td>
+            <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ comp_tejido.tot_dbase | num_es(0) }}</td>
+            <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ comp_tejido.tot_asinfo | num_es(0) }}</td>
+            <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums;color:{{ '#b45309' if (comp_tejido.tot_delta|abs) > 1 else '#334155' }}">{{ comp_tejido.tot_delta | num_es(0) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500" style="margin-top:4px">Provisorio: el dBase se reemplaza por la pantalla de Producción Tejeduría (Asinfo). Se muestran las dos para ver la diferencia. El $ va por las compras tipo K cargadas desde esa pantalla.</p>
+    </div>
+    {% endif %}
+
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
     {# Bloque "Costos de tintorería" (mes en curso) removido 2026-07-07 — era
        redundante con "COSTOS DE TINTORERÍA · ÚLTIMOS N MESES" de abajo, que
