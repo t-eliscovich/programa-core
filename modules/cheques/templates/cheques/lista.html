@@ -254,7 +254,11 @@
     {% endfor %}
   </div>
 
-  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  <form class="no-print flex items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    {# TMT 2026-07-14 (dueña "que el filtrar no quede abajo"): los campos van en
+       un contenedor flex-wrap que CRECE (flex:1); el botón Filtrar queda como
+       hermano fijo a la derecha → nunca cae a una fila propia debajo. #}
+    <div class="flex flex-wrap items-end gap-3" style="flex:1 1 auto">
     {# Grupo 0: Estado (dropdown) — TMT 2026-07-14 (dueña). Antes era un hidden
        manejado por las pestañas; ahora es un filtro visible. Al dejarlo en
        "Cartera total" (default) y filtrar un cliente se muestran TODOS sus
@@ -322,8 +326,10 @@
       <input type="text" name="q" value="{{ q }}" placeholder="N° cheque, nombre…"
              class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
+    </div>{# /campos #}
 
-    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+    <button style="flex:0 0 auto"
+            class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 whitespace-nowrap">Filtrar</button>
   </form>
 
 
