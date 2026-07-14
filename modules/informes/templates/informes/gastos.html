@@ -20,7 +20,7 @@
   .gastos-matriz thead th {
     background: rgb(241 245 249); color: rgb(71 85 105);
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
-    font-weight: 600;
+    font-weight: 700;
   }
   .dark .gastos-matriz thead th { background: rgb(30 41 59 / 0.6); color: rgb(148 163 184); }
   .gastos-matriz td.row-label {
@@ -36,11 +36,16 @@
     background: rgb(15 23 42); color: rgb(241 245 249);
     border-bottom-color: rgb(30 41 59);
   }
-  .gastos-matriz td.cell .vcode {
-    display: inline-block; font-size: 9px; color: rgb(148 163 184);
-    margin-right: 6px; font-weight: 600; letter-spacing: 0.05em;
-    vertical-align: middle;
+  /* Celda V: código a la izquierda (encolumnado) y número a la derecha. */
+  .gastos-matriz td.cell a.cell-link {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px;
   }
+  .gastos-matriz td.cell .vcode {
+    font-size: 9px; color: rgb(148 163 184);
+    font-weight: 600; letter-spacing: 0.05em;
+  }
+  .gastos-matriz td.cell .cell-val { font-variant-numeric: tabular-nums; }
   .gastos-matriz tr.subtotal td {
     background: rgb(241 245 249); color: rgb(15 23 42);
     font-weight: 600; border-top: 1px solid rgb(203 213 225);
@@ -192,18 +197,18 @@
         <tr>
           <td class="row-label">{{ label }}</td>
           <td class="cell num">
-            <a href="{{ url_for('informes.gastos_detalle', num=num_tej) }}" class="hover:underline hover:text-blue-600" title="Ver detalle {{ v_tej }}">
-              <span class="vcode">{{ v_tej }}</span>{{ matriz[tipo].tej | num_es(0) }}
+            <a href="{{ url_for('informes.gastos_detalle', num=num_tej) }}" class="cell-link hover:text-blue-600" title="Ver detalle {{ v_tej }}">
+              <span class="vcode">{{ v_tej }}</span><span class="cell-val hover:underline">{{ matriz[tipo].tej | num_es(0) }}</span>
             </a>
           </td>
           <td class="cell num">
-            <a href="{{ url_for('informes.gastos_detalle', num=num_tin) }}" class="hover:underline hover:text-blue-600" title="Ver detalle {{ v_tin }}">
-              <span class="vcode">{{ v_tin }}</span>{{ matriz[tipo].tin | num_es(0) }}
+            <a href="{{ url_for('informes.gastos_detalle', num=num_tin) }}" class="cell-link hover:text-blue-600" title="Ver detalle {{ v_tin }}">
+              <span class="vcode">{{ v_tin }}</span><span class="cell-val hover:underline">{{ matriz[tipo].tin | num_es(0) }}</span>
             </a>
           </td>
           <td class="cell num">
-            <a href="{{ url_for('informes.gastos_detalle', num=num_adm) }}" class="hover:underline hover:text-blue-600" title="Ver detalle {{ v_adm }}">
-              <span class="vcode">{{ v_adm }}</span>{{ matriz[tipo].adm | num_es(0) }}
+            <a href="{{ url_for('informes.gastos_detalle', num=num_adm) }}" class="cell-link hover:text-blue-600" title="Ver detalle {{ v_adm }}">
+              <span class="vcode">{{ v_adm }}</span><span class="cell-val hover:underline">{{ matriz[tipo].adm | num_es(0) }}</span>
             </a>
           </td>
           <td class="total-col num">{{ fil_total[tipo] | num_es(0) }}</td>
@@ -222,9 +227,9 @@
         {# Amortizaciones por rubro #}
         <tr class="amort">
           <td class="row-label" style="font-style:italic">+ Amortización</td>
-          <td class="num">DTJ {{ col_amort.tej | num_es(0) }}</td>
-          <td class="num">DCC {{ col_amort.tin | num_es(0) }}</td>
-          <td class="num">DEPRCAR {{ col_amort.adm | num_es(0) }}</td>
+          <td class="num">{{ col_amort.tej | num_es(0) }}</td>
+          <td class="num">{{ col_amort.tin | num_es(0) }}</td>
+          <td class="num">{{ col_amort.adm | num_es(0) }}</td>
           <td class="num">{{ suma_amort_total | num_es(0) }}</td>
         </tr>
 
@@ -238,14 +243,6 @@
         </tr>
       </tbody>
     </table>
-    <div class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800">
-      <strong>Cómo se lee:</strong> cada celda es la suma del mes para esa combinación rubro × tipo
-      (ej: <code class="font-mono">V5 = Tintorería · Servicios</code>).
-      La fila <em>Subtotal V1..V9</em> es la suma directa de XGAST.
-      <em>Amortización</em> agrega la cuota mensual de los activos de esa área
-      (PRG líneas 211-213). El <em>Total con amort.</em> es lo que entra al
-      panel COSTOS de Resultados como <code class="font-mono">GTEJ / GTIN / GGF</code>.
-    </div>
   </div>
 
   {# TMT 2026-05-19 — bloque "Movimientos bancarios del mes" removido
