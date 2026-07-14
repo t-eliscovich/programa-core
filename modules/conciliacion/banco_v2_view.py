@@ -168,6 +168,29 @@ def asignar_banco_a_programa(banco_firmados, prog_firmados, tol=0.50, cap=18):
     return asign, sobrantes
 
 
+def reconciliacion_completa(asign, sobrantes, prog_ids):
+    """Decisión ATÓMICA todo-o-nada (dueña 2026-07-14).
+
+    Una selección se confirma SOLO si se reconcilia COMPLETA:
+      - no quedan banco sobrantes (`sobrantes` vacío), Y
+      - ningún mov de programa quedó sin contraparte de banco (todo pc_id de
+        `prog_ids` está en `asign`).
+    Si algo no cierra → incompleta → no se confirma NADA (queda todo pendiente).
+
+    Args:
+      asign:     dict[pc_id -> [banco_ids]]  (salida de asignar_banco_a_programa)
+      sobrantes: list[banco_id]               (idem)
+      prog_ids:  iterable de los pc_id que la dueña seleccionó.
+
+    Returns:
+      (completa: bool, pcs_sin_banco: list[pc_id])
+    """
+    asignados = set(asign.keys())
+    pcs_sin_banco = [p for p in prog_ids if p not in asignados]
+    completa = (not sobrantes) and (not pcs_sin_banco)
+    return completa, pcs_sin_banco
+
+
 # ── Defensas contra corrupción de saldo running ──────────────────────
 # TMT 2026-05-29: el "BUG #2" reportado durante el E2E (saldo bajó $43K
 # al anular tx de $29) en realidad reveló una cadena previamente corrupta.
@@ -1385,32 +1408,17 @@ def banco_manual_confirmar():
     # TMT 2026-06-03 dueña: 'batch id, cuando selecciono junto'. Cada vez
     # que aprieta Conciliar, los items seleccionados forman un batch nuevo.
     # Si después quiere mover items entre batches, usa "Sacar al grupo nuevo".
-    import uuid as _uuid
-    batch_id = _uuid.uuid4().hex
     # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
-    # ser distinto'. Aceptamos cualquier N:M:
+    # ser distinto'. Aceptamos cualquier N:M.
     #
-    # Estrategia unificada:
-    #   1. Min(N, M) pares 1:1 ordenados por monto desc (biggest↔biggest).
-    #   2. Si sobran banco rows (N > M): quedan PENDIENTES (NO se atan al
-    #      primer PC — eso creaba conciliaciones falsas). El usuario los
-    #      empareja bien, o agrupa impuestos por su endpoint propio.
-    #   3. Si sobran PC rows (M > N): se marcan stat='*' directamente
-    #      (sin record en banco_conciliacion_match porque la firma real_*
-    #      ya está tomada). Quedan conciliados visualmente.
+    # TMT 2026-07-14 (dueña, TODO-O-NADA): la conciliación de una selección es
+    # ATÓMICA. Se calcula la asignación por monto (asignar_banco_a_programa) y
+    # SOLO se confirma si la selección se reconcilia COMPLETA (ningún banco
+    # sobrante Y ningún PC sin contraparte). Si algo no cierra → no se confirma
+    # NADA y queda todo pendiente. Un confirm_batch_id por grupo PC (N:1).
     #
-    # Esto cubre 1:1, N:1, 1:N, y N:M arbitrario.
-    # TMT 2026-06-03 FIX BUG GIGANTE: el bloque de historicos matcheaba
-    # TODOS los historicos contra bancsis_ids[0], ignorando los demas movs
-    # de programa seleccionados (N historicos -> 1 PC). Ahora unificamos el
-    # lado banco (reales del extracto + historicos) en UNA lista ordenada y
-    # la pareamos 1:1 contra el lado programa ordenado POR MONTO (antes el
-    # programa se ordenaba por id, lo que tampoco correspondia por importe).
-    #
-    # Reglas N:M:
-    #   1. min(N, M) pares 1:1 por monto desc (biggest<->biggest).
-    #   2. Banco extras (N > M): quedan PENDIENTES (no se fuerzan contra PC[0]).
-    #   3. PC extras (M > N): INSERT stat-only (firma real_* ya tomada).
+    # TMT 2026-06-03: el lado banco unifica reales del extracto + históricos en
+    # UNA lista; el lado programa se resuelve por monto firmado, no por id.
     from decimal import Decimal as _D_cf
 
     import bank_helpers as _bh_confirm
@@ -1484,16 +1492,20 @@ def banco_manual_confirmar():
 
     n_hist = 0
     sobrantes_banco = 0
+    incompleto = False
+    incompleto_msg: str | None = None
     if banco_movs and bancsis_ids:
-        # TMT 2026-07-14 (dueña): "debería funcionar en cualquier caso".
-        # Reemplazamos el viejo pareo 1:1-por-posición (que forzaba pares aun
-        # cuando el monto NO cuadraba, inventando diferencias) por la
-        # asignación PURA por monto `asignar_banco_a_programa`:
-        #   - un PC que cuadra con UN banco exacto → par 1:1;
-        #   - un PC que cuadra con la SUMA de varios banco → grupo N:1;
-        #   - varios PC a la vez → cada uno recibe el/los banco cuya suma
-        #     firmada le cuadra (|Δ|≤0.50);
-        #   - lo que NO cuadra limpio queda PENDIENTE (protección 2026-06-18).
+        # TMT 2026-07-14 (dueña): "debería funcionar en cualquier caso" +
+        # corrección: "deberías dejar TODO pendiente si no se puede matchear,
+        # no aprobar la una de las partes". La conciliación de una selección es
+        # ATÓMICA (todo-o-nada). Calculamos la asignación ANTES de tocar la DB
+        # con `asignar_banco_a_programa` (1:1 exacto, N:1 depósito partido,
+        # multi-PC) y SOLO confirmamos si la selección se reconcilia COMPLETA:
+        #   - NO quedan banco sobrantes, Y
+        #   - NO queda ningún mov de programa sin su contraparte de banco
+        #     (nada de stat-only "PC internos" de a una pata).
+        # Si algo no cierra → NO se confirma NINGÚN match (ni los pares que sí
+        # cerraban): queda TODO pendiente. Mejor pendiente que medio-conciliado.
         # Cada banco se indexa por posición para mapear de vuelta a (mov, metodo).
         banco_firmados = [(i, _signed_banco(m)) for i, (m, _md) in enumerate(banco_movs)]
         prog_firmados = [(int(b), _signed_prog(b)) for b in bancsis_ids]
@@ -1501,89 +1513,42 @@ def banco_manual_confirmar():
         asign, sobrantes_idx = asignar_banco_a_programa(
             banco_firmados, prog_firmados, tol=0.50,
         )
+        completa, pcs_sin_banco = reconciliacion_completa(
+            asign, sobrantes_idx, bancsis_ids,
+        )
 
-        # 1+2) Confirmar cada grupo PC → [banco]. Un confirm_batch_id POR
-        # grupo, para que un N:1 (depósito partido) quede como un solo grupo
-        # y los distintos PC no se mezclen en un mismo batch.
-        import uuid as _uuid_grp
-        for pc_id, banco_idxs in asign.items():
-            grupo_batch = _uuid_grp.uuid4().hex
-            for idx in banco_idxs:
-                mov_i, metodo_i = banco_movs[idx]
-                try:
-                    confirmar_match(_BANCO_PICHINCHA, mov_i, pc_id,
-                                    usuario=usuario, metodo=metodo_i,
-                                    confirm_batch_id=grupo_batch)
-                    if metodo_i == "matched_historico":
-                        n_hist += 1
-                    else:
-                        n_matches += 1
-                except Exception as e:
-                    _LOG.warning("manual confirm PC %s idx %s fallo: %s", pc_id, idx, e)
-                    if err_msg is None:
-                        err_msg = str(e)
-
-        sobrantes_banco = len(sobrantes_idx)
-
-        # 3) PC extras internos (M > N): INSERT stat-only. Solo aplica a los PC
-        # que NO recibieron banco Y cuando NO quedó ningún banco sobrante — un
-        # PC sin banco cuya contraparte quedó pendiente NO se marca conciliado
-        # (sería inventar el otro lado). Con todos los banco colocados, los PC
-        # que sobran son movimientos internos sin línea en el extracto.
-        asignados_pc = set(int(k) for k in asign.keys())
-        pcs_sin_banco = [int(b) for b in bancsis_ids if int(b) not in asignados_pc]
-        if pcs_sin_banco and not sobrantes_idx:
-            extras = pcs_sin_banco
-            tiene_metodo = False
-            try:
-                row = _db.fetch_one(
-                    """
-                    SELECT 1 FROM information_schema.columns
-                     WHERE table_schema='scintela'
-                       AND table_name='banco_conciliacion_match'
-                       AND column_name='metodo'
-                    """,
-                )
-                tiene_metodo = bool(row)
-            except Exception:
-                pass
-            for bk_id in extras:
-                try:
-                    if tiene_metodo:
-                        _db.execute(
-                            """
-                            INSERT INTO scintela.banco_conciliacion_match (
-                                no_banco, estado, metodo,
-                                id_transaccion, tx_firma, confirm_batch_id, usuario
-                            ) VALUES (%s, %s, %s, %s,
-                                      scintela.compute_tx_firma(%s), %s, %s)
-                            """,
-                            (_BANCO_PICHINCHA, 'matched', 'matched_manual',
-                             bk_id, bk_id, batch_id, usuario),
-                        )
-                    else:
-                        _db.execute(
-                            """
-                            INSERT INTO scintela.banco_conciliacion_match (
-                                no_banco, estado, id_transaccion, tx_firma, confirm_batch_id, usuario
-                            ) VALUES (%s, %s, %s,
-                                      scintela.compute_tx_firma(%s), %s, %s)
-                            """,
-                            (_BANCO_PICHINCHA, 'matched', bk_id, bk_id, batch_id, usuario),
-                        )
-                    _db.execute(
-                        """
-                        UPDATE scintela.transacciones_bancarias
-                           SET stat = '*'
-                         WHERE id_transaccion = %s AND no_banco = %s
-                        """,
-                        (bk_id, _BANCO_PICHINCHA),
-                    )
-                    n_matches += 1
-                except Exception as e:
-                    _LOG.warning("manual confirm match PC extra %s fallo: %s", bk_id, e)
-                    if err_msg is None:
-                        err_msg = str(e)
+        if not completa:
+            # TODO-O-NADA: no confirmar nada. Todo queda pendiente.
+            sobrantes_banco = len(sobrantes_idx)
+            incompleto = True
+            incompleto_msg = (
+                f"No se concilió nada: no se pudieron emparejar TODOS los "
+                f"movimientos de la selección (quedaban {len(sobrantes_idx)} de "
+                f"banco sin match / {len(pcs_sin_banco)} de programa sin "
+                f"contraparte). La conciliación es todo-o-nada: no se aprueba una "
+                f"sola pata. Quedó todo PENDIENTE — revisá los montos."
+            )
+        else:
+            # Reconciliación COMPLETA → confirmar cada grupo PC → [banco]. Un
+            # confirm_batch_id POR grupo, para que un N:1 (depósito partido)
+            # quede como un solo grupo y los distintos PC no se mezclen.
+            import uuid as _uuid_grp
+            for pc_id, banco_idxs in asign.items():
+                grupo_batch = _uuid_grp.uuid4().hex
+                for idx in banco_idxs:
+                    mov_i, metodo_i = banco_movs[idx]
+                    try:
+                        confirmar_match(_BANCO_PICHINCHA, mov_i, pc_id,
+                                        usuario=usuario, metodo=metodo_i,
+                                        confirm_batch_id=grupo_batch)
+                        if metodo_i == "matched_historico":
+                            n_hist += 1
+                        else:
+                            n_matches += 1
+                    except Exception as e:
+                        _LOG.warning("manual confirm PC %s idx %s fallo: %s", pc_id, idx, e)
+                        if err_msg is None:
+                            err_msg = str(e)
     elif hist_ids and not bancsis_ids:
         flash(
             "Para conciliar historicos hay que seleccionar al menos un "
@@ -1592,20 +1557,16 @@ def banco_manual_confirmar():
         )
     total = n_matches + n_hist
     _sesion.incrementar_matches(sesion_id, total)
-    if sobrantes_banco > 0:
-        flash(
-            f"⚠ {sobrantes_banco} mov(s) de banco quedaron PENDIENTES: no "
-            f"encontré un mov de programa (ni una suma de programa) cuyo monto "
-            f"les cuadre dentro de ±0,50. No se atan a ninguno para no inventar "
-            f"diferencias — revisá el importe o emparejalos a mano (o usá el "
-            f"agrupado de impuestos si son una sola contraparte).",
-            "warn",
-        )
+    if incompleto and incompleto_msg:
+        flash("⚠ " + incompleto_msg, "warn")
     parts = []
     if n_matches: parts.append(f"{n_matches} match(es) del extracto")
     if n_hist: parts.append(f"{n_hist} histórico(s)")
     if parts:
         flash(" + ".join(parts) + " conciliado(s).", "ok")
+    elif incompleto:
+        # Ya flasheamos el mensaje todo-o-nada arriba; no duplicar diagnóstico.
+        pass
     else:
         # Diagnóstico verboso: si no hubo movs, decir EXACTO por qué para
         # que la dueña pueda reaccionar (no más "Sin cambios" silencioso).

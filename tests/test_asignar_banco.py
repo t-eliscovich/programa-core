@@ -14,6 +14,7 @@ from __future__ import annotations
 from modules.conciliacion.banco_v2_view import (
     _subset_para_target,
     asignar_banco_a_programa,
+    reconciliacion_completa,
 )
 
 
@@ -131,6 +132,59 @@ def test_greedy_overshoot_descarta_pc():
 def test_subset_helper_devuelve_none_si_no_cuadra():
     avail = [("b1", 100.0), ("b2", 200.0)]
     assert _subset_para_target(avail, 999.0, 0.50, 18) is None
+
+
+# ── TODO-O-NADA (dueña 2026-07-14): la conciliación es ATÓMICA ──────────
+# "deberías dejar TODO pendiente si no se puede matchear, no aprobar la una
+# de las partes". La decisión de confirmar se toma ANTES de tocar la DB con
+# reconciliacion_completa(); si NO es completa → no se confirma nada.
+
+
+def test_todo_o_nada_parcial_no_confirma():
+    # Selección que matchea PARCIAL (sobra 1 banco) → incompleta → NADA.
+    banco = [("b1", 5000.0), ("b2", 4200.0), ("b3", 777.0)]  # b3 no cuadra
+    prog = [("p1", 5000.0), ("p2", 4200.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert completa is False          # ← el view NO entra al loop de confirmar
+    assert sobrantes == ["b3"]
+    assert pcs_sin_banco == []
+
+
+def test_todo_o_nada_pc_sin_contraparte_no_confirma():
+    # M > N: un PC sin banco (contraparte) → incompleta → NADA (ni stat-only).
+    banco = [("b1", 5000.0)]
+    prog = [("p1", 5000.0), ("p2", 3000.0)]  # p2 no tiene banco
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert completa is False
+    assert sobrantes == []
+    assert pcs_sin_banco == ["p2"]    # el mov de programa queda PENDIENTE
+
+
+def test_todo_o_nada_completa_si_confirma():
+    # Selección que cierra COMPLETA (todo banco atado, todo PC con contraparte).
+    banco = [("b1", 5000.0), ("b2", 1000.0), ("b3", 3200.0)]
+    prog = [("p1", 5000.0), ("p2", 4200.0)]  # p2 = b2+b3
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert completa is True
+    assert sobrantes == []
+    assert pcs_sin_banco == []
+
+
+def test_todo_o_nada_multi_pc_uno_no_cierra_bloquea_todo():
+    # Aunque UN PC cierre perfecto, si el otro no cierra la selección entera
+    # queda pendiente (no se aprueba la pata que sí cerraba).
+    banco = [("b1", 5000.0), ("b2", 3000.0)]
+    prog = [("p1", 5000.0), ("p2", 9999.0)]  # p2 no cuadra con nada
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert completa is False
+    # b1 cerraría con p1, pero como p2 no cierra, el view no confirma NADA.
+    assert "p1" in asign            # la asignación existe...
+    assert sobrantes == ["b2"]      # ...pero hay sobrante → incompleta
+    assert pcs_sin_banco == ["p2"]
 
 
 def test_subset_helper_prefiere_mas_chico():
