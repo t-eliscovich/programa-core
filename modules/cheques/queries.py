@@ -2096,6 +2096,19 @@ def transiciones_para(stat: str) -> list[dict]:
             "kind": "WIZARD",
             "endpoint": "cheques.anular_error_carga",
         })
+    # TMT 2026-07-14 (dueña "que pueda seleccionar 1"): el rebote (wizard de
+    # reverso) muestra "→9" pero el estado RESULTANTE lo decide
+    # _stat_destino_reversa (depositado B/A → 1 primer rebote; 1/2 → 3). Mostramos
+    # el destino REAL en el dropdown en vez del confuso "9". Solo para rebote real
+    # (B/A/1/2); Z/D/P/V es reversa administrativa (→X) y queda como está.
+    for o in base:
+        if o.get("endpoint") == "cheques.confirmar_reverso":
+            try:
+                _d, _es_reb = _stat_destino_reversa(s)
+                if _es_reb:
+                    o["stat_destino"] = _d
+            except Exception:  # noqa: BLE001
+                pass
     return base
 
 
