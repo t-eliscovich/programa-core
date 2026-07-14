@@ -139,6 +139,10 @@
      "hay que imprimir un informe, no la pantalla". #}
   <style>
     .print-report-head { display: none; }
+    /* TMT 2026-07-14 — resumen del depósito imprimible SIN abrir ventana nueva.
+       El área vive oculta; al imprimir con body.printing-deposito se muestra
+       SOLO ella (el resto de la página queda invisible). */
+    #dep-print-area { display: none; }
     @media print {
       .print-report-head { display: block !important; margin-bottom: 8pt; }
       .print-report-head .prh-top { display: flex !important; justify-content: space-between;
@@ -146,6 +150,23 @@
       .print-report-head .prh-title { font-size: 15pt; font-weight: bold; }
       .print-report-head .prh-meta  { font-size: 8pt; color: #000; font-weight: normal; }
       .print-report-head .prh-sub   { font-size: 9pt; margin-top: 2pt; color: #000; }
+
+      /* Modo "imprimir depósito": ocultar todo menos el resumen. */
+      body.printing-deposito * { visibility: hidden !important; }
+      body.printing-deposito #dep-print-area,
+      body.printing-deposito #dep-print-area * { visibility: visible !important; }
+      body.printing-deposito #dep-print-area {
+        display: block !important; position: absolute; left: 0; top: 0; width: 100%;
+        margin: 0; padding: 4pt 6pt; color: #111;
+      }
+      #dep-print-area h1 { font-size: 15pt; font-weight: bold; margin: 0 0 2pt; }
+      #dep-print-area .sub { font-size: 9pt; color: #333; margin: 0 0 10pt; }
+      #dep-print-area table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+      #dep-print-area th, #dep-print-area td { padding: 3pt 5pt; border-bottom: 0.5pt solid #ccc; text-align: left; }
+      #dep-print-area th { border-bottom: 1.2pt solid #333; font-size: 8pt; text-transform: uppercase; color: #333; }
+      #dep-print-area td.r, #dep-print-area th.r { text-align: right; }
+      #dep-print-area td.c, #dep-print-area th.c { color: #555; }
+      #dep-print-area tfoot td { border-top: 1.2pt solid #333; border-bottom: none; font-weight: bold; font-size: 10pt; padding-top: 6pt; }
     }
   </style>
   <div class="print-report-head">
@@ -719,6 +740,9 @@
                 max-w-2xl px-4 py-3 rounded-lg shadow-lg text-sm
                 bg-emerald-50 border border-emerald-300 text-emerald-900">
     </div>
+    {# Resumen del depósito imprimible in-place (sin ventana nueva). Se llena
+       al tocar Imprimir y solo se ve en @media print con body.printing-deposito. #}
+    <div id="dep-print-area" aria-hidden="true"></div>
   {% endif %}
 
   {# Filas clickeables: navegar a la URL en data-href cuando se hace click,
@@ -880,36 +904,25 @@
                      '</td></tr>';
           });
           const html =
-            '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">' +
-            '<title>Depósito ' + fechaFmt + '</title><style>' +
-            '*{font-family:-apple-system,Arial,sans-serif}body{margin:24px;color:#111}' +
-            'h1{font-size:18px;margin:0 0 2px}.sub{color:#555;font-size:12px;margin:0 0 16px}' +
-            'table{width:100%;border-collapse:collapse;font-size:13px}' +
-            'th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}' +
-            'th{border-bottom:2px solid #333;font-size:11px;text-transform:uppercase;color:#555}' +
-            'td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}' +
-            'td.c,th.c{color:#666}' +
-            'tfoot td{border-top:2px solid #333;border-bottom:none;font-weight:700;font-size:14px;padding-top:10px}' +
-            '@media print{body{margin:0}}</style></head><body>' +
             '<h1>Depósito del día — Pichincha</h1>' +
             '<p class="sub">Fecha de depósito: ' + fechaFmt + ' · ' + sel.length + ' cheques</p>' +
             '<table><thead><tr><th>Fecha</th><th>Cliente</th><th class="c">N°</th>' +
             '<th class="r">Valor</th></tr></thead><tbody>' + filas + '</tbody>' +
             '<tfoot><tr><td colspan="3">TOTAL — ' + sel.length + ' cheques</td>' +
-            '<td class="r">$ ' + fmt(total) + '</td></tr></tfoot></table></body></html>';
-          const w = window.open('', '_blank');
-          if (!w) {
-            if (banner) {
-              banner.textContent = 'Habilitá los pop-ups del navegador para imprimir el resumen.';
-              banner.classList.remove('hidden');
-              setTimeout(() => banner.classList.add('hidden'), 4000);
-            }
-            return;
-          }
-          w.document.write(html);
-          w.document.close();
-          w.focus();
-          setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
+            '<td class="r">$ ' + fmt(total) + '</td></tr></tfoot></table>';
+          const area = document.getElementById('dep-print-area');
+          if (!area) return;
+          area.innerHTML = html;
+          // Imprimir SOLO el resumen desde la misma página (sin ventana nueva):
+          // body.printing-deposito oculta todo lo demás vía @media print.
+          const cleanup = () => {
+            document.body.classList.remove('printing-deposito');
+            window.removeEventListener('afterprint', cleanup);
+          };
+          window.addEventListener('afterprint', cleanup);
+          document.body.classList.add('printing-deposito');
+          window.print();
+          setTimeout(cleanup, 1500);   // fallback si afterprint no dispara
         });
       }
 
