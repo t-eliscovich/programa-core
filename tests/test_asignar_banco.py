@@ -12,6 +12,7 @@ al 100%, pero blindan la lógica que toca plata.
 from __future__ import annotations
 
 from modules.conciliacion.banco_v2_view import (
+    _proponer_movimiento_diferencia,
     _subset_para_target,
     asignar_banco_a_programa,
     reconciliacion_completa,
@@ -196,3 +197,86 @@ def test_subset_helper_prefiere_mas_chico():
     assert idxs is not None
     assert len(idxs) == 2
     assert abs(sum(avail[i][1] for i in idxs) - 400.0) <= 0.50
+
+
+# ── AGREGAR MOVIMIENTO POR LA DIFERENCIA (dueña 2026-07-14) ──────────────
+# Cuando la selección NO cierra SOLO porque el banco tiene un residuo limpio
+# (todo PC matcheó, hay sobrantes, |dif|>tol), se ofrece crear el mov faltante.
+# `_proponer_movimiento_diferencia` es PURA: decide si/qué se propone.
+
+
+def test_diferencia_residuo_credito_propone_NC():
+    # (i) Residuo limpio de banco >0.50: banco tiene crédito de más → NC.
+    # banco: p1 cierra con b1; b2 (crédito 40) queda sobrante (< $300).
+    banco = [("b1", 5000.0), ("b2", 40.0)]
+    prog = [("p1", 5000.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert completa is False
+    prop = _proponer_movimiento_diferencia(banco, prog, sobrantes, pcs_sin_banco)
+    assert prop is not None
+    assert prop["documento"] == "NC"
+    assert prop["sentido"] == "crédito"
+    assert prop["importe"] == 40.0
+    assert prop["diferencia"] == 40.0
+    assert prop["requiere_confirmar"] is False
+
+
+def test_diferencia_residuo_debito_propone_ND():
+    # Banco con débito de más (residuo negativo) → ND.
+    banco = [("b1", 5000.0), ("b2", -120.0)]
+    prog = [("p1", 5000.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    prop = _proponer_movimiento_diferencia(banco, prog, sobrantes, pcs_sin_banco)
+    assert prop is not None
+    assert prop["documento"] == "ND"
+    assert prop["sentido"] == "débito"
+    assert prop["importe"] == 120.0
+    assert prop["diferencia"] == -120.0
+
+
+def test_diferencia_pcs_sin_banco_no_propone():
+    # (ii) Si algún PC quedó sin contraparte → NO se propone (no es residuo
+    # limpio de banco, es un faltante de programa sin matchear).
+    banco = [("b1", 5000.0)]
+    prog = [("p1", 5000.0), ("p2", 3000.0)]  # p2 sin banco
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert pcs_sin_banco == ["p2"]
+    prop = _proponer_movimiento_diferencia(banco, prog, sobrantes, pcs_sin_banco)
+    assert prop is None
+
+
+def test_diferencia_sin_sobrantes_no_propone():
+    # (iii) Sin sobrantes de banco → nada que ajustar → None.
+    banco = [("b1", 5000.0)]
+    prog = [("p1", 5000.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    assert sobrantes == []
+    prop = _proponer_movimiento_diferencia(banco, prog, sobrantes, pcs_sin_banco)
+    assert prop is None
+
+
+def test_diferencia_menor_a_tol_no_propone():
+    # (iv) |dif|<=0.50 ya lo absorbe la tolerancia → None. Fabricamos un
+    # sobrante chico artificial (pasando sobrantes/pcs_sin_banco explícitos).
+    banco = [("b1", 5000.0), ("b2", 0.40)]
+    prog = [("p1", 5000.0)]
+    # b2 no cuadra con nada → sobrante; dif total = 0.40 <= 0.50.
+    prop = _proponer_movimiento_diferencia(banco, prog, ["b2"], [])
+    assert prop is None
+
+
+def test_diferencia_mayor_a_300_requiere_confirmar():
+    # (v) |dif|>300 → requiere_confirmar True.
+    banco = [("b1", 5000.0), ("b2", 500.0)]
+    prog = [("p1", 5000.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog)
+    completa, pcs_sin_banco = reconciliacion_completa(asign, sobrantes, [p for p, _ in prog])
+    prop = _proponer_movimiento_diferencia(banco, prog, sobrantes, pcs_sin_banco)
+    assert prop is not None
+    assert prop["importe"] == 500.0
+    assert prop["requiere_confirmar"] is True
+    assert prop["umbral_confirmar"] == 300.0

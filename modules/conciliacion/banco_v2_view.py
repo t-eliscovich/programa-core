@@ -191,6 +191,59 @@ def reconciliacion_completa(asign, sobrantes, prog_ids):
     return completa, pcs_sin_banco
 
 
+def _proponer_movimiento_diferencia(
+    banco_firmados,
+    prog_firmados,
+    sobrantes_idx,
+    pcs_sin_banco,
+    umbral=0.50,
+    umbral_confirmar=300.0,
+):
+    """Propone crear el movimiento de programa que falta para cerrar una
+    selección que NO reconcilia completa PERO cuyo único faltante es un
+    residuo del lado BANCO (TMT 2026-07-14, dueña: "Agregar movimiento en
+    el programa").
+
+    Aplica SOLO si:
+      - `pcs_sin_banco` está vacío (todo mov de programa seleccionado matcheó), Y
+      - `sobrantes_idx` es NO vacío (quedó banco sin contraparte), Y
+      - |dif| > umbral (por debajo ya auto-matchea la tolerancia; nunca se
+        inventa una diferencia que no existe).
+
+    `dif = round(Σ signed banco − Σ signed programa, 2)`.
+      dif > 0 → banco tiene CRÉDITO de más → crear crédito en programa → 'NC'.
+      dif < 0 → banco tiene DÉBITO de más  → crear débito  en programa → 'ND'.
+    `importe = abs(dif)`. Si |dif| > umbral_confirmar → requiere_confirmar.
+
+    Función PURA (testeable). Devuelve None cuando NO aplica, o el dict con la
+    propuesta.
+    """
+    if pcs_sin_banco:
+        return None
+    if not sobrantes_idx:
+        return None
+    dif = round(
+        sum(s for _bid, s in banco_firmados) - sum(s for _pid, s in prog_firmados),
+        2,
+    )
+    if abs(dif) <= umbral:
+        return None
+    if dif > 0:
+        documento = "NC"
+        sentido = "crédito"
+    else:
+        documento = "ND"
+        sentido = "débito"
+    return {
+        "diferencia": dif,
+        "importe": round(abs(dif), 2),
+        "documento": documento,
+        "sentido": sentido,
+        "requiere_confirmar": abs(dif) > umbral_confirmar,
+        "umbral_confirmar": umbral_confirmar,
+    }
+
+
 # ── Defensas contra corrupción de saldo running ──────────────────────
 # TMT 2026-05-29: el "BUG #2" reportado durante el E2E (saldo bajó $43K
 # al anular tx de $29) en realidad reveló una cadena previamente corrupta.
@@ -1323,36 +1376,67 @@ def banco_descartar_programa():
 # ─── Endpoint Tab Manual: confirmar pares marcados ────────────────────
 
 
-@conciliacion_bp.route("/banco-v2/manual/confirmar", methods=["POST"])
-@requiere_login
-@requiere_permiso("bancos.conciliar")
-def banco_manual_confirmar():
-    """Confirma N matches manuales. Por ahora hace N:N por suma — si los
-    montos cuadran, mapea 1:1 ordenado por monto; sino acepta el primer
-    bancsis como representativo y los demás como sus pares por orden.
-    """
-    sesion_id = int(request.form.get("sesion_id") or 0)
-    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
-    if not sesion or sesion.get("cerrada_en"):
-        flash("Sesión inválida o cerrada.", "error")
-        return redirect(url_for("conciliacion.hub"))
+def _seleccion_firmada(sesion, form):
+    """Núcleo COMPARTIDO de parsing de la selección manual (banco+programa) y
+    construcción de los firmados. Lo usan `banco_manual_confirmar` y
+    `banco_diferencia_confirmar` para partir del MISMO estado.
 
-    real_ids_csv = (request.form.get("real_ids") or "").strip()
-    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
-    hist_ids_csv = (request.form.get("hist_ids") or "").strip()
-    bancsis_ids_csv = (request.form.get("bancsis_ids") or "").strip()
+    NO hace flashes ni redirects — devuelve un dict con TODO lo que ambos
+    endpoints necesitan + `error` (None | "ids_invalidos" | "faltan_movs") para
+    que cada endpoint decida su propio flash/redirect. Así el comportamiento
+    observable de `banco_manual_confirmar` (flashes/confirms/todo-o-nada) queda
+    IDÉNTICO al de antes de esta extracción.
+
+    Devuelve dict con:
+      error, real_ids_csv, real_sigs_csv, hist_ids_csv, bancsis_ids_csv,
+      real_idxs, hist_ids, bancsis_ids, real_sigs, real_subset, banco_movs,
+      banco_firmados, prog_firmados, metodo_resolucion, prog_meta.
+    """
+    from decimal import Decimal as _D_cf
+
+    import bank_helpers as _bh_confirm
+    from modules.conciliacion.parser_banco import MovBanco as _MB_cf
+
+    real_ids_csv = (form.get("real_ids") or "").strip()
+    real_sigs_csv = (form.get("real_sigs") or "").strip()
+    hist_ids_csv = (form.get("hist_ids") or "").strip()
+    bancsis_ids_csv = (form.get("bancsis_ids") or "").strip()
+
+    base = {
+        "error": None,
+        "real_ids_csv": real_ids_csv,
+        "real_sigs_csv": real_sigs_csv,
+        "hist_ids_csv": hist_ids_csv,
+        "bancsis_ids_csv": bancsis_ids_csv,
+        "real_idxs": [],
+        "hist_ids": [],
+        "bancsis_ids": [],
+        "real_sigs": [],
+        "real_subset": [],
+        "banco_movs": [],
+        "banco_firmados": [],
+        "prog_firmados": [],
+        "metodo_resolucion": "n/a",
+        "prog_meta": {},
+    }
+
     try:
         real_idxs = [int(x) for x in real_ids_csv.split(",") if x.strip()]
         hist_ids = [int(x) for x in hist_ids_csv.split(",") if x.strip()]
         bancsis_ids = [int(x) for x in bancsis_ids_csv.split(",") if x.strip()]
     except ValueError:
-        flash("IDs inválidos.", "error")
-        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+        base["error"] = "ids_invalidos"
+        return base
     real_sigs = [s for s in real_sigs_csv.split("||") if s.strip()]
 
+    base.update(
+        real_idxs=real_idxs, hist_ids=hist_ids, bancsis_ids=bancsis_ids,
+        real_sigs=real_sigs,
+    )
+
     if (not real_idxs and not hist_ids) or not bancsis_ids:
-        flash("Marcá al menos un mov de cada lado.", "warn")
-        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+        base["error"] = "faltan_movs"
+        return base
 
     # TMT 2026-05-29 dueña: 'manual me aparece el mensaje vas a conciliar y
     # cuando pongo ok dice sin cambios. ARREGLALO YA'.
@@ -1401,28 +1485,6 @@ def banco_manual_confirmar():
         len(real_idxs), len(real_sigs), len(hist_ids), len(bancsis_ids),
         metodo_resolucion, len(real_subset),
     )
-
-    n_matches = 0
-    err_msg: str | None = None
-    usuario = _usuario_actual()
-    # TMT 2026-06-03 dueña: 'batch id, cuando selecciono junto'. Cada vez
-    # que aprieta Conciliar, los items seleccionados forman un batch nuevo.
-    # Si después quiere mover items entre batches, usa "Sacar al grupo nuevo".
-    # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
-    # ser distinto'. Aceptamos cualquier N:M.
-    #
-    # TMT 2026-07-14 (dueña, TODO-O-NADA): la conciliación de una selección es
-    # ATÓMICA. Se calcula la asignación por monto (asignar_banco_a_programa) y
-    # SOLO se confirma si la selección se reconcilia COMPLETA (ningún banco
-    # sobrante Y ningún PC sin contraparte). Si algo no cierra → no se confirma
-    # NADA y queda todo pendiente. Un confirm_batch_id por grupo PC (N:1).
-    #
-    # TMT 2026-06-03: el lado banco unifica reales del extracto + históricos en
-    # UNA lista; el lado programa se resuelve por monto firmado, no por id.
-    from decimal import Decimal as _D_cf
-
-    import bank_helpers as _bh_confirm
-    from modules.conciliacion.parser_banco import MovBanco as _MB_cf
 
     banco_movs: list[tuple] = []
     for _m in real_subset:
@@ -1490,6 +1552,68 @@ def banco_manual_confirmar():
         except Exception:
             return float(r.get("importe") or 0)
 
+    banco_firmados = [(i, _signed_banco(m)) for i, (m, _md) in enumerate(banco_movs)]
+    prog_firmados = [(int(b), _signed_prog(b)) for b in bancsis_ids]
+
+    base.update(
+        real_subset=real_subset,
+        banco_movs=banco_movs,
+        banco_firmados=banco_firmados,
+        prog_firmados=prog_firmados,
+        metodo_resolucion=metodo_resolucion,
+        prog_meta=prog_meta,
+    )
+    return base
+
+
+@conciliacion_bp.route("/banco-v2/manual/confirmar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_manual_confirmar():
+    """Confirma N matches manuales. Por ahora hace N:N por suma — si los
+    montos cuadran, mapea 1:1 ordenado por monto; sino acepta el primer
+    bancsis como representativo y los demás como sus pares por orden.
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion or sesion.get("cerrada_en"):
+        flash("Sesión inválida o cerrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    sel = _seleccion_firmada(sesion, request.form)
+    if sel["error"] == "ids_invalidos":
+        flash("IDs inválidos.", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+    if sel["error"] == "faltan_movs":
+        flash("Marcá al menos un mov de cada lado.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    real_idxs = sel["real_idxs"]
+    hist_ids = sel["hist_ids"]
+    bancsis_ids = sel["bancsis_ids"]
+    real_sigs = sel["real_sigs"]
+    real_subset = sel["real_subset"]
+    metodo_resolucion = sel["metodo_resolucion"]
+    banco_movs = sel["banco_movs"]
+
+    n_matches = 0
+    err_msg: str | None = None
+    usuario = _usuario_actual()
+    # TMT 2026-06-03 dueña: 'batch id, cuando selecciono junto'. Cada vez
+    # que aprieta Conciliar, los items seleccionados forman un batch nuevo.
+    # Si después quiere mover items entre batches, usa "Sacar al grupo nuevo".
+    # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
+    # ser distinto'. Aceptamos cualquier N:M.
+    #
+    # TMT 2026-07-14 (dueña, TODO-O-NADA): la conciliación de una selección es
+    # ATÓMICA. Se calcula la asignación por monto (asignar_banco_a_programa) y
+    # SOLO se confirma si la selección se reconcilia COMPLETA (ningún banco
+    # sobrante Y ningún PC sin contraparte). Si algo no cierra → no se confirma
+    # NADA y queda todo pendiente. Un confirm_batch_id por grupo PC (N:1).
+    #
+    # TMT 2026-06-03: el lado banco unifica reales del extracto + históricos en
+    # UNA lista; el lado programa se resuelve por monto firmado, no por id.
+
     n_hist = 0
     sobrantes_banco = 0
     incompleto = False
@@ -1507,8 +1631,8 @@ def banco_manual_confirmar():
         # Si algo no cierra → NO se confirma NINGÚN match (ni los pares que sí
         # cerraban): queda TODO pendiente. Mejor pendiente que medio-conciliado.
         # Cada banco se indexa por posición para mapear de vuelta a (mov, metodo).
-        banco_firmados = [(i, _signed_banco(m)) for i, (m, _md) in enumerate(banco_movs)]
-        prog_firmados = [(int(b), _signed_prog(b)) for b in bancsis_ids]
+        banco_firmados = sel["banco_firmados"]
+        prog_firmados = sel["prog_firmados"]
 
         asign, sobrantes_idx = asignar_banco_a_programa(
             banco_firmados, prog_firmados, tol=0.50,
@@ -1518,6 +1642,26 @@ def banco_manual_confirmar():
         )
 
         if not completa:
+            # TMT 2026-07-14 (dueña, "Agregar movimiento en el programa"): si
+            # lo ÚNICO que impide cerrar es un residuo del lado BANCO (todo PC
+            # matcheó → pcs_sin_banco vacío, pero hay sobrantes) y la diferencia
+            # supera la tolerancia, ofrecemos crear el mov de programa faltante.
+            # El preview NO muta nada; la creación va por banco_diferencia_confirmar.
+            prop = _proponer_movimiento_diferencia(
+                banco_firmados, prog_firmados, sobrantes_idx, pcs_sin_banco,
+            )
+            if prop:
+                return render_template(
+                    "conciliacion/banco_v2_diferencia_preview.html",
+                    sesion=sesion,
+                    prop=prop,
+                    real_ids_csv=sel["real_ids_csv"],
+                    real_sigs_csv=sel["real_sigs_csv"],
+                    hist_ids_csv=sel["hist_ids_csv"],
+                    bancsis_ids_csv=sel["bancsis_ids_csv"],
+                    n_banco=len(banco_movs),
+                    n_prog=len(bancsis_ids),
+                )
             # TODO-O-NADA: no confirmar nada. Todo queda pendiente.
             sobrantes_banco = len(sobrantes_idx)
             incompleto = True
@@ -1609,6 +1753,206 @@ def banco_manual_confirmar():
         else:
             flash(f"Sin cambios. [{diag}]", "warn")
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
+
+
+# ─── Endpoint: Agregar movimiento en el programa por la diferencia ────
+# TMT 2026-07-14 (dueña): cuando una selección manual NO cierra SOLO porque
+# el banco tiene un residuo (todo PC matcheó), se ofrece crear el mov de
+# programa faltante (NC si el banco tiene crédito de más, ND si débito) para
+# que la diferencia cierre y se concilie todo. Patrón preview→confirm (mirror
+# del flujo de impuestos). El preview lo renderiza banco_manual_confirmar; acá
+# se re-valida y SOLO se crea si la simulación cierra completa (anti-huérfano).
+
+
+def _fecha_diferencia(banco_movs, sobrantes_idx):
+    """Fecha del mov a crear: la MÁS RECIENTE de las líneas sobrantes del
+    banco; si no hay, la máxima fecha de toda la selección; fallback hoy (EC).
+    """
+    from filters import today_ec
+
+    def _fecha_de(idx):
+        try:
+            return banco_movs[idx][0].fecha
+        except Exception:
+            return None
+
+    fechas_sobr = [f for f in (_fecha_de(i) for i in sobrantes_idx) if f]
+    if fechas_sobr:
+        return max(fechas_sobr)
+    fechas_all = [m.fecha for (m, _md) in banco_movs if getattr(m, "fecha", None)]
+    if fechas_all:
+        return max(fechas_all)
+    return today_ec()
+
+
+@conciliacion_bp.route("/banco-v2/diferencia/confirmar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_diferencia_confirmar():
+    """Crea el movimiento de programa que cierra la diferencia de una selección
+    manual con residuo LIMPIO del lado banco, y luego concilia todo.
+
+    Guardas (dinero-crítico):
+      - re-valida que la selección siga siendo un residuo limpio (estado pudo
+        cambiar entre el preview y el submit) → si no, NO crea nada.
+      - gate >$300: exige el checkbox de confirmación.
+      - SIMULATE-FIRST: simula agregar el mov y solo crea si la simulación
+        reconcilia COMPLETA (evita movimientos huérfanos).
+    """
+    import bank_helpers as _bh_dif
+
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion or sesion.get("cerrada_en"):
+        flash("Sesión inválida o cerrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    _volver = redirect(url_for("conciliacion.banco_post_procesar",
+                               sesion_id=sesion_id, tab="manual"))
+
+    # (b) Re-parsear la selección con el mismo núcleo que el manual.
+    sel = _seleccion_firmada(sesion, request.form)
+    if sel["error"] or not sel["banco_movs"] or not sel["bancsis_ids"]:
+        flash("No pude recuperar la selección — recargá y volvé a intentar.", "error")
+        return _volver
+
+    banco_firmados = sel["banco_firmados"]
+    prog_firmados = sel["prog_firmados"]
+    banco_movs = sel["banco_movs"]
+    bancsis_ids = list(sel["bancsis_ids"])
+
+    # (c) Re-correr asignación/reconciliación y re-validar la propuesta.
+    asign, sobrantes_idx = asignar_banco_a_programa(
+        banco_firmados, prog_firmados, tol=0.50,
+    )
+    completa, pcs_sin_banco = reconciliacion_completa(
+        asign, sobrantes_idx, bancsis_ids,
+    )
+    if completa:
+        # Ya cierra sin agregar nada (estado cambió). No crear.
+        flash("La selección ya cierra sola — no hace falta agregar nada. "
+              "Volvé a conciliar normalmente.", "warn")
+        return _volver
+    prop = _proponer_movimiento_diferencia(
+        banco_firmados, prog_firmados, sobrantes_idx, pcs_sin_banco,
+    )
+    if not prop:
+        flash("La selección ya no es una diferencia limpia de banco (algo "
+              "cambió). No se creó ningún movimiento — revisá la selección.",
+              "warn")
+        return _volver
+
+    dif = prop["diferencia"]
+    documento = prop["documento"]
+    importe = prop["importe"]
+
+    # (d) Gate >$300: exige el checkbox.
+    if prop["requiere_confirmar"]:
+        chk = (request.form.get("confirmar_grande") or "").strip().lower()
+        if chk not in ("on", "1", "true", "yes"):
+            flash(
+                f"Marcá la casilla de confirmación (la diferencia es "
+                f"${importe:,.2f} > ${prop['umbral_confirmar']:,.0f}).",
+                "warn",
+            )
+            return _volver
+
+    # (e) Concepto obligatorio.
+    concepto = (request.form.get("concepto") or "").strip()
+    prov = (request.form.get("prov") or "").strip() or None
+    if not concepto:
+        flash("Escribí un concepto para el movimiento a crear.", "warn")
+        return _volver
+
+    # (f) SIMULATE-FIRST: signed del mov nuevo = dif (NC:+, ND:−). Simulamos
+    # agregarlo al lado programa; solo seguimos si la simulación cierra.
+    sim_prog = list(prog_firmados) + [("__NEW__", dif)]
+    sim_asign, sim_sobr = asignar_banco_a_programa(
+        banco_firmados, sim_prog, tol=0.50,
+    )
+    sim_completa, _sim_pcs = reconciliacion_completa(
+        sim_asign, sim_sobr, [pid for pid, _s in sim_prog],
+    )
+    if not sim_completa:
+        flash("No cierra ni agregando el movimiento — revisá la selección. "
+              "No se creó nada.", "error")
+        return _volver
+
+    # (g) Crear el movimiento por Bancos normal (puede tener side effects).
+    from modules.bancos.queries import crear_movimiento_simple
+
+    fecha_mov = _fecha_diferencia(banco_movs, sobrantes_idx)
+    try:
+        result = crear_movimiento_simple(
+            no_banco=_BANCO_PICHINCHA,
+            documento=documento,
+            importe=importe,
+            fecha=fecha_mov,
+            concepto=concepto,
+            prov=prov,
+            usuario=_usuario_actual(),
+        )
+    except Exception as e:
+        _LOG.exception("diferencia: crear_movimiento_simple falló: %s", e)
+        flash(f"No pude crear el movimiento: {e}", "error")
+        return _volver
+
+    new_id = result.get("id_transaccion")
+    side = result.get("side_effect") or result.get("side")
+    if not new_id:
+        _LOG.critical("diferencia: crear_movimiento_simple sin id_transaccion: %r", result)
+        flash("Se intentó crear el movimiento pero no devolvió id — revisá "
+              "Bancos antes de reintentar.", "error")
+        return _volver
+
+    # (h) Reconstruir con el mov nuevo incluido y conciliar todo.
+    try:
+        signed_new = float(_bh_dif._signed_delta(documento, importe, _usuario_actual()))
+    except Exception:
+        signed_new = dif
+    bancsis_ids.append(int(new_id))
+    prog_firmados_2 = list(prog_firmados) + [(int(new_id), signed_new)]
+
+    asign2, sobr2 = asignar_banco_a_programa(
+        banco_firmados, prog_firmados_2, tol=0.50,
+    )
+    completa2, _pcs2 = reconciliacion_completa(asign2, sobr2, bancsis_ids)
+
+    usuario = _usuario_actual()
+    doc_txt = "NC" if documento == "NC" else "ND"
+    if completa2:
+        import uuid as _uuid_dif
+        n_ok = 0
+        for pc_id, banco_idxs in asign2.items():
+            grupo_batch = _uuid_dif.uuid4().hex
+            for idx in banco_idxs:
+                mov_i, metodo_i = banco_movs[idx]
+                try:
+                    confirmar_match(_BANCO_PICHINCHA, mov_i, pc_id,
+                                    usuario=usuario, metodo=metodo_i,
+                                    confirm_batch_id=grupo_batch)
+                    n_ok += 1
+                except Exception as e:
+                    _LOG.warning("diferencia confirm PC %s idx %s fallo: %s", pc_id, idx, e)
+        _sesion.incrementar_matches(sesion_id, n_ok)
+        msg = (f"Creé el movimiento de ${importe:,.2f} ({doc_txt}) y concilié "
+               f"todo ({n_ok} match(es)).")
+        if side:
+            msg += f" {side}"
+        flash(msg, "ok")
+    else:
+        # No debería pasar (la simulación cerró) — pero el mov YA se creó.
+        _LOG.critical(
+            "diferencia: mov %s creado pero la reconciliación NO cerró "
+            "(sobr=%d). Requiere revisión manual.", new_id, len(sobr2),
+        )
+        flash(
+            f"⚠ Creé el movimiento de ${importe:,.2f} ({doc_txt}, id {new_id}) "
+            f"pero la conciliación NO cerró como se esperaba — revisá el match "
+            f"a mano en Manual.",
+            "error",
+        )
+    return _volver
 
 
 # ─── Endpoint Tab Impuestos ───────────────────────────────────────────
