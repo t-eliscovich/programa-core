@@ -171,8 +171,8 @@
           <th class="px-2 py-1">Venc.</th>
           <th class="px-2 py-1">Prov</th>
           <th class="px-2 py-1">Concepto</th>
-          <th class="px-2 py-1" title="Detalle de la cuenta (retiros OP)">Detalle</th>
           <th class="px-2 py-1 text-right" title="Importe acumulado del día — fracción de la cuota mensual cuando es provisión">Importe</th>
+          <th class="px-2 py-1" title="Detalle de la cuenta (retiros OP)">Detalle</th>
           {% if _show_mensual %}
             <th class="px-2 py-1 text-right" title="Cuota diaria de la provisión origen (se suma a la posdat YY cada L-V) — editable inline">Cuota diaria</th>
           {% endif %}
@@ -257,6 +257,47 @@
               </span>
             {% endif %}
           </td>
+          <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">
+            {# TMT 2026-05-20 — Importe (total) editable inline. La dueña
+               quiere poder ingresar el total directo sin abrir el form
+               de editar. Postea a /posdat/_api/<id>/editar.
+               TMT 2026-05-28 (migración 0061): para YY el importe
+               mostrado = importe_base + cuota_diaria × dias_offset.
+               El tooltip elaborado anterior rompía Jinja en algunos
+               casos edge (filas non-YY con campos undefined) — uso
+               tooltip simple. #}
+            {# TMT 2026-07-06 v2 (dueña, "bajar la deuda OP de verdad"): el
+               retiro ahora EDITA el importe real del posdat OP → esta celda
+               vuelve a mostrar el importe real (que ya viene bajado) y sigue
+               editable. El neteado display de la v1 quedó obsoleto. #}
+            {% if tiene_permiso('posdat.editar') %}
+              <input type="number" step="0.01"
+                     class="posdat-importe-edit w-32 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums {% if es_ajuste %}text-violet-700{% endif %}"
+                     value="{{ f.importe }}"
+                     data-orig="{{ f.importe }}"
+                     title="Total del posdat — editable directo en la lista">
+            {% else %}
+              {{ f.importe | num_es }}
+            {% endif %}
+            {# TMT 2026-07-08 dueña: botón "Registrar banco" al lado del monto.
+               Manda a debitar ESTE posdatado a Pichincha (ND) → sale de
+               Pasivos. Solo en la tab Posdatados, filas reales (no OP, no
+               ajuste ≤0) y con permiso de banco. Abre un mini-modal para
+               confirmar fecha + N° de cheque opcional. #}
+            {% if tab != 'yy' and not f.op_line_key and not es_ajuste and tiene_permiso('bancos.conciliar') %}
+              <button type="button"
+                      class="posdat-registrar-banco no-print ml-1 align-middle"
+                      style="background:#1d4ed8;color:#ffffff;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;"
+                      data-id-posdat="{{ f.id_posdat }}"
+                      data-importe="{{ f.importe }}"
+                      data-importe-fmt="{{ f.importe | money_es }}"
+                      data-prov="{{ f.prov or '' }}"
+                      data-concepto="{{ f.concepto or '' }}"
+                      title="Mandar a debitar este posdatado a Pichincha (sale de Pasivos)">
+                Registrar banco
+              </button>
+            {% endif %}
+          </td>
           {# TMT 2026-07-14 (dueña "quedó gigante"): la cuenta corriente del
              retiro OP se mueve a su propia columna DETALLE (antes vivía debajo
              del Concepto y estiraba la fila). Concepto = solo el nombre; acá va
@@ -318,47 +359,6 @@
               </form>
               {% endif %}
             </div>
-            {% endif %}
-          </td>
-          <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">
-            {# TMT 2026-05-20 — Importe (total) editable inline. La dueña
-               quiere poder ingresar el total directo sin abrir el form
-               de editar. Postea a /posdat/_api/<id>/editar.
-               TMT 2026-05-28 (migración 0061): para YY el importe
-               mostrado = importe_base + cuota_diaria × dias_offset.
-               El tooltip elaborado anterior rompía Jinja en algunos
-               casos edge (filas non-YY con campos undefined) — uso
-               tooltip simple. #}
-            {# TMT 2026-07-06 v2 (dueña, "bajar la deuda OP de verdad"): el
-               retiro ahora EDITA el importe real del posdat OP → esta celda
-               vuelve a mostrar el importe real (que ya viene bajado) y sigue
-               editable. El neteado display de la v1 quedó obsoleto. #}
-            {% if tiene_permiso('posdat.editar') %}
-              <input type="number" step="0.01"
-                     class="posdat-importe-edit w-32 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums {% if es_ajuste %}text-violet-700{% endif %}"
-                     value="{{ f.importe }}"
-                     data-orig="{{ f.importe }}"
-                     title="Total del posdat — editable directo en la lista">
-            {% else %}
-              {{ f.importe | num_es }}
-            {% endif %}
-            {# TMT 2026-07-08 dueña: botón "Registrar banco" al lado del monto.
-               Manda a debitar ESTE posdatado a Pichincha (ND) → sale de
-               Pasivos. Solo en la tab Posdatados, filas reales (no OP, no
-               ajuste ≤0) y con permiso de banco. Abre un mini-modal para
-               confirmar fecha + N° de cheque opcional. #}
-            {% if tab != 'yy' and not f.op_line_key and not es_ajuste and tiene_permiso('bancos.conciliar') %}
-              <button type="button"
-                      class="posdat-registrar-banco no-print ml-1 align-middle"
-                      style="background:#1d4ed8;color:#ffffff;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;"
-                      data-id-posdat="{{ f.id_posdat }}"
-                      data-importe="{{ f.importe }}"
-                      data-importe-fmt="{{ f.importe | money_es }}"
-                      data-prov="{{ f.prov or '' }}"
-                      data-concepto="{{ f.concepto or '' }}"
-                      title="Mandar a debitar este posdatado a Pichincha (sale de Pasivos)">
-                Registrar banco
-              </button>
             {% endif %}
           </td>
           {% if _show_mensual %}
@@ -450,9 +450,11 @@
       {% endif %}
       <tfoot class="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
-          {# 5 columnas iniciales (Fecha, Venc., Prov, Concepto, Detalle) ocupadas por el label. #}
-          <td colspan="5" class="px-2 py-2 text-right uppercase tracking-wider text-xs text-slate-700 dark:text-slate-200">Total</td>
+          {# 4 columnas iniciales (Fecha, Venc., Prov, Concepto) ocupadas por el label. #}
+          <td colspan="4" class="px-2 py-2 text-right uppercase tracking-wider text-xs text-slate-700 dark:text-slate-200">Total</td>
           <td class="px-2 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">{{ _suma_importe | num_es }}</td>
+          {# Detalle (después de Importe) — sin total #}
+          <td class="px-2 py-2"></td>
           {% if _show_mensual %}
             <td class="px-2 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">{{ _suma_cuota | num_es }}</td>
           {% endif %}
