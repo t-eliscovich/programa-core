@@ -279,12 +279,12 @@ def lista():
         # (p.ej. "6 anticipo(s) → compra"), traer cada uno para poder
         # desplegarlos uno por uno en el historial.
         r["detalle"] = queries.detalle_consolidado(r.get("metadata"))
-        # TMT 2026-07-14 (dueña): mostrar la 2ª pata de los movimientos de
-        # doble asiento cuyo mov_doble es auto-referencia (retiro OP →
-        # imputación a la línea OP; gasto a crédito → deuda posdat). El ↺ ya
-        # revierte ambas — acá las hacemos VISIBLES. Lookup por origen_id, así
-        # también aparece en las filas históricas.
-        r["segunda_pata"] = queries.segunda_pata(r)
+        # TMT 2026-07-14 (dueña "bastaba con que diga origen OP destino retiro"):
+        # el mov_doble del retiro OP es self-ref sobre `retiros`, así que ambas
+        # columnas salían "Retiro #N". Forzamos el ORIGEN a "OP" → se lee como
+        # doble asiento OP → Retiro, sin bloque de explicación extra.
+        if (r.get("tipo") or "") == "retiro_op":
+            r["origen_label"] = "OP"
 
     # ──────────────────────────────────────────────────────────────────
     # Construir `items` — una lista de "tarjetas" para el template.
@@ -526,30 +526,10 @@ def reverso_preview(id_mov_doble: int):
             "cliente ni cambia el estado del cheque."
         )
 
-    # TMT 2026-07-14 (dueña): el retiro OP tiene DOS patas — (1) el retiro a
-    # accionistas y (2) la imputación a la línea OP. El ↺ revierte AMBAS. El
-    # cartel lo dice explícito y lista las dos, para que no quede la duda de
-    # que "sólo se ve el retiro". Reusa el resolver del historial (queries).
+    # TMT 2026-07-14 (dueña "sin 100 explicaciones"): reverso simple del retiro OP.
     if tipo == "retiro_op":
-        sp = queries.segunda_pata(r)
-        movimientos = [{
-            "texto": "Retiro a accionistas (banco USA)",
-            "importe": importe,
-            "detalle": concepto or "",
-        }]
-        for d in (sp or {}).get("lineas", []):
-            movimientos.append({
-                "texto": f"{d.get('etiqueta', '')} {d.get('ref', '')}".strip(),
-                "importe": d.get("importe"),
-                "detalle": d.get("concepto") or "",
-            })
-        titulo_movs = "Se revierten las 2 patas"
         titulo = "Reversar retiro OP"
-        mensaje = (
-            "Se revierten LAS DOS patas: (1) el retiro a accionistas (banco "
-            "USA) y (2) la imputación a la línea OP — la línea vuelve a subir "
-            "su restante. El retiro se borra de /retiros."
-        )
+        mensaje = "Se borra el retiro y la línea OP vuelve a subir su restante."
 
     # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto
     # y, para los complejos, redirige al wizard de siempre (fallback graceful).
