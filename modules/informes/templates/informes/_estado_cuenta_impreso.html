@@ -224,7 +224,7 @@
   {% set _total_con_cheques = (_saldo_neto or 0) + (t.cheques_cartera or 0) %}
   <div class="mb-8 flex justify-end">
     <div class="text-right border-t-2 border-slate-400 dark:border-slate-600 pt-2">
-      <span class="text-xs uppercase tracking-wider text-slate-500">Total (saldo + cheques)</span>
+      <span class="text-xs uppercase tracking-wider text-slate-500">Total saldo facturas + cheques</span>
       <span class="ml-3 text-xl font-semibold text-mono">$ {{ _total_con_cheques | money_es }}</span>
     </div>
   </div>
