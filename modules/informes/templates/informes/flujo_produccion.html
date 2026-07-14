@@ -73,19 +73,26 @@
       <h1 class="text-2xl font-semibold">Flujo producción · Costos unitarios</h1>
       <p class="text-xs text-slate-500">Mes {{ '%02d/%d' % (mes, anio) }} · réplica TINT.BAT</p>
     </div>
+    {# TMT 2026-07-14 — alinear controles: altura fija 30px + inline-flex
+       centrado para que año/mes/Ver/Imprimir queden a la misma línea (los
+       <input>/<select> nativos rendian más altos que los <button>). #}
     <div class="flex items-center gap-1">
-      <form method="get" class="flex items-end gap-1">
+      <form method="get" class="flex items-center gap-1">
         <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
-               title="Año" class="border rounded px-2 py-1 font-mono text-xs w-20">
-        <select name="mes" title="Mes" class="border rounded px-2 py-1 text-xs bg-white w-16">
+               title="Año" class="border rounded px-2 font-mono text-xs w-20"
+               style="height:30px;box-sizing:border-box">
+        <select name="mes" title="Mes" class="border rounded px-2 text-xs bg-white w-16"
+                style="height:30px;box-sizing:border-box">
           {% for m in range(1, 13) %}
             <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ '%02d' % m }}</option>
           {% endfor %}
         </select>
-        <button class="text-xs px-2 py-1 rounded bg-slate-900 text-white">Ver</button>
+        <button class="text-xs px-2 rounded bg-slate-900 text-white"
+                style="height:30px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">Ver</button>
       </form>
       <button onclick="window.print()"
-              class="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
+              class="text-xs px-2 rounded border border-slate-300 hover:bg-slate-100"
+              style="height:30px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center">Imprimir</button>
     </div>
   </div>
 
