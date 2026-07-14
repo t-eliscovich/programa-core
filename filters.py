@@ -66,14 +66,19 @@ def money_es(value) -> str:
 def fecha_es(value) -> str:
     """Render date as dd/mm/yyyy.
 
-    Acepta `date` o `datetime`. Si recibe un datetime, descarta la hora
-    (usar `fecha_hora_es` si querés ver el time).
+    Acepta `date`, `datetime` o un string ISO 'YYYY-MM-DD' (p.ej. las fechas
+    que Asinfo devuelve ya formateadas como texto). Si recibe un datetime,
+    descarta la hora (usar `fecha_hora_es` si querés ver el time). Si el string
+    no parsea como fecha ISO, lo devuelve tal cual.
     """
     if value is None or value == "":
         return ""
     if isinstance(value, datetime | date):
         return value.strftime("%d/%m/%Y")
-    return str(value)
+    try:
+        return date.fromisoformat(str(value)[:10]).strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        return str(value)
 
 
 def dias_desde(value) -> str:

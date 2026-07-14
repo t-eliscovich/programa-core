@@ -86,7 +86,7 @@
       <tbody>
         {% for d in data.por_dia %}
           <tr>
-            <td>{{ d.dia }}</td>
+            <td>{{ d.dia|fecha_es }}</td>
             {% for t in data.tejedores %}
               <td>{% if d.kg.get(t.key) %}{{ d.kg.get(t.key)|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             {% endfor %}
@@ -110,7 +110,7 @@
         {% for of in data.pendientes %}
           <tr>
             <td>{{ of.numero }}</td>
-            <td class="muted">{{ of.dia }}</td>
+            <td class="muted">{{ of.dia|fecha_es }}</td>
             <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
             <td class="muted">{{ of.descripcion }}</td>
             <td>{{ of.kg|num_es }}</td>
