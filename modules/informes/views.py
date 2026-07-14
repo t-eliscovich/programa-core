@@ -2075,53 +2075,39 @@ def flujo_produccion():
         inv_asinfo_inic = {}
     mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo, anio=anio, mes=mes)
 
-    # TMT 2026-07-14 (dueña): "estos datos vienen del dBase, van a tener que
-    # venir de nuestra nueva pantalla. Dejemos la tabla dBase y la de Asinfo a
-    # ver en cuánto difieren." Comparación PRODUCCIÓN TEJIDO (kg) dBase vs
-    # Asinfo (produccion_tejeduria_mes, por tejedor cod KK/AP/RY). Fail-soft.
-    prod_tej_asinfo, _e_pt = _safe(
-        lambda: asinfo_service.produccion_tejeduria_mes(anio, mes), {}
-    )
-    comp_tejido = None
+    # TMT 2026-07-14 (dueña): "tengo que tener EXACTAMENTE la misma tabla, copiá
+    # la segunda igual a la primera". La tabla PRODUCCIÓN TEJIDO de Asinfo tiene
+    # el MISMO formato que la del dBase (Prov | Kg | $/Kg | $), no un comparativo.
+    # Kg = ingreso real a bodega 52 (= "Ingresos crudo", cierra con el stock); $ =
+    # costo (tercerizados = compra cargada; INTELA autoprod = kg × (hilo + 0,5)).
+    # Los números salen de tejeduria_asinfo.resumen_mes (misma fuente que la tab).
+    prod_tej_asinfo = None
     try:
-        _db_rows = {
-            (r.get("prov") or "").upper(): float(r.get("kg") or 0)
-            for r in (data.get("produc_tejido") or [])
-        }
-        _as_rows = {
-            (t.get("cod") or "").upper(): {
-                "kg": float(t.get("kg") or 0), "label": t.get("label"),
+        from modules.tejeduria_asinfo import service as _tej_svc
+        _res = _tej_svc.resumen_mes(anio, mes)
+        if _res and _res.get("disponible"):
+            _rows = []
+            for _t in _res.get("tejedores", []):
+                _prov = "INTELA" if _t.get("es_intela") else (
+                    _t.get("cod") or _t.get("label"))
+                _rows.append({
+                    "prov": _prov,
+                    "kg": float(_t.get("kg") or 0),
+                    "ukg": float(_t.get("costo_kg") or 0),
+                    "importe": float(_t.get("costo") or 0),
+                })
+            _tot_kg = float(_res.get("total_kg") or 0)
+            _tot_imp = float(_res.get("total_costo") or 0)
+            prod_tej_asinfo = {
+                "filas": _rows,
+                "total": {
+                    "kg": _tot_kg,
+                    "importe": _tot_imp,
+                    "ukg": (_tot_imp / _tot_kg if _tot_kg else 0),
+                },
             }
-            for t in ((prod_tej_asinfo or {}).get("por_tejedor") or [])
-        }
-        _provs = []
-        for _k in list(_db_rows.keys()) + list(_as_rows.keys()):
-            if _k and _k not in _provs:
-                _provs.append(_k)
-        _filas = []
-        _tdb = _tas = 0.0
-        for _p in _provs:
-            _kdb = _db_rows.get(_p, 0.0)
-            _kas = _as_rows.get(_p, {}).get("kg", 0.0)
-            _label = _as_rows.get(_p, {}).get("label") or (
-                "INTELA" if _p == "KK" else _p
-            )
-            _filas.append({
-                "prov": _label, "kg_dbase": _kdb, "kg_asinfo": _kas,
-                "delta": round(_kdb - _kas, 2),
-            })
-            _tdb += _kdb
-            _tas += _kas
-        if _filas:
-            comp_tejido = {
-                "disponible": bool((prod_tej_asinfo or {}).get("disponible")),
-                "filas": _filas,
-                "tot_dbase": round(_tdb, 2),
-                "tot_asinfo": round(_tas, 2),
-                "tot_delta": round(_tdb - _tas, 2),
-            }
-    except Exception:  # noqa: BLE001 -- comparación es best-effort
-        comp_tejido = None
+    except Exception:  # noqa: BLE001 -- best-effort, la vista no rompe
+        prod_tej_asinfo = None
 
     return render_template(
         "informes/flujo_produccion.html",
@@ -2131,7 +2117,7 @@ def flujo_produccion():
         error=error,
         inv_asinfo=inv_asinfo,
         mov_asinfo=mov_asinfo,
-        comp_tejido=comp_tejido,
+        prod_tej_asinfo=prod_tej_asinfo,
     )
 
 

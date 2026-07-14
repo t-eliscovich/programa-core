@@ -415,41 +415,46 @@
       </table>
     </div>
 
-    {# ─── Comparación PRODUCCIÓN TEJIDO: dBase vs Asinfo (provisoria) ─────
-       TMT 2026-07-14 (dueña): "estos datos vienen del dBase, van a tener que
-       venir de nuestra nueva pantalla. Dejemos las dos a ver en cuánto
-       difieren." Se mantiene la tabla dBase de arriba y acá se compara kg
-       producido (dBase compra tipo K) vs Asinfo (produccion_tejeduria_mes). #}
-    {% if comp_tejido and comp_tejido.filas %}
+    {# ─── PRODUCCIÓN TEJIDO · Asinfo — MISMO formato que la del dBase de arriba
+       TMT 2026-07-14 (dueña): "tengo que tener exactamente la misma tabla,
+       copiá la segunda igual a la primera". Mismas columnas (Prov | Kg | $/Kg |
+       $). Kg = ingreso real a bodega 52 (= "Ingresos crudo"); $ = costo
+       (tercerizados = compra; INTELA = kg × (hilo + 0,5)). Provisorio hasta
+       reemplazar del todo la de arriba. #}
+    {% if prod_tej_asinfo and prod_tej_asinfo.filas %}
     <div class="blk mb-2">
-      <div class="blk-title">Producción tejido · dBase vs Asinfo (kg){% if not comp_tejido.disponible %} — Asinfo no disponible ahora{% endif %}</div>
-      <table class="w-full" data-no-sort-table style="font-size:12px;border-collapse:collapse">
+      <div class="hil-titles"><span class="blk-title">Compras hilado · Asinfo</span><span class="blk-title">Producción tejido · Asinfo</span></div>
+      <table class="hil-table" data-no-sort-table>
+        <colgroup>
+          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
+        </colgroup>
         <thead>
-          <tr style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #e5e7eb">
-            <th style="text-align:left;padding:4px 8px">Prov</th>
-            <th style="text-align:right;padding:4px 8px">Kg dBase</th>
-            <th style="text-align:right;padding:4px 8px">Kg Asinfo</th>
-            <th style="text-align:right;padding:4px 8px">Δ (dBase − Asinfo)</th>
+          <tr>
+            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
+            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
           </tr>
         </thead>
         <tbody>
-          {% for r in comp_tejido.filas %}
-          <tr style="border-bottom:1px solid #f1f5f9">
-            <td style="padding:4px 8px;font-weight:600">{{ r.prov }}</td>
-            <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ r.kg_dbase | num_es(0) }}</td>
-            <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ r.kg_asinfo | num_es(0) }}</td>
-            <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums;color:{{ '#b45309' if (r.delta|abs) > 1 else '#94a3b8' }};font-weight:600">{{ r.delta | num_es(0) }}</td>
-          </tr>
+          {% for r in prod_tej_asinfo.filas %}
+            <tr>
+              {# Compras hilado Asinfo: pendiente (aún no migrado) → vacío #}
+              <td></td><td></td><td></td><td></td>
+              <td class="prov">{{ r.prov }}</td>
+              <td class="num">{{ r.kg | num_es(0) }}</td>
+              <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
+              <td class="num">{{ r.importe | num_es(0) }}</td>
+            </tr>
           {% endfor %}
-          <tr style="font-weight:700;background:#f8fafc;border-top:2px solid #e5e7eb">
-            <td style="padding:5px 8px">TOTAL</td>
-            <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ comp_tejido.tot_dbase | num_es(0) }}</td>
-            <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">{{ comp_tejido.tot_asinfo | num_es(0) }}</td>
-            <td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums;color:{{ '#b45309' if (comp_tejido.tot_delta|abs) > 1 else '#334155' }}">{{ comp_tejido.tot_delta | num_es(0) }}</td>
+          <tr class="total">
+            <td class="lbl">TOTAL</td><td></td><td></td><td></td>
+            <td class="lbl">TOTAL</td>
+            <td class="num">{{ prod_tej_asinfo.total.kg | num_es(0) }}</td>
+            <td class="num">{{ '%.3f' % (prod_tej_asinfo.total.ukg or 0) }}</td>
+            <td class="num">{{ prod_tej_asinfo.total.importe | num_es(0) }}</td>
           </tr>
         </tbody>
       </table>
-      <p class="text-xs text-slate-500" style="margin-top:4px">Provisorio: el dBase se reemplaza por la pantalla de Producción Tejeduría (Asinfo). Se muestran las dos para ver la diferencia. El $ va por las compras tipo K cargadas desde esa pantalla.</p>
+      <p class="text-xs text-slate-500" style="margin-top:4px">Mismo formato que la tabla de arriba, con datos de Asinfo. Kg = ingreso real a bodega 52 (= «Ingresos crudo»). $: tercerizados = compra cargada; INTELA = kg × (hilo + 0,5). Compras hilado · Asinfo queda pendiente de migrar.</p>
     </div>
     {% endif %}
 
