@@ -254,11 +254,11 @@
     {% endfor %}
   </div>
 
-  <form class="no-print flex items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  <form class="no-print flex items-end gap-2 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     {# TMT 2026-07-14 (dueña "que el filtrar no quede abajo"): los campos van en
        un contenedor flex-wrap que CRECE (flex:1); el botón Filtrar queda como
        hermano fijo a la derecha → nunca cae a una fila propia debajo. #}
-    <div class="flex flex-wrap items-end gap-3" style="flex:1 1 auto">
+    <div class="flex flex-wrap items-end gap-2" style="flex:1 1 auto">
     {# Grupo 0: Estado (dropdown) — TMT 2026-07-14 (dueña). Antes era un hidden
        manejado por las pestañas; ahora es un filtro visible. Al dejarlo en
        "Cartera total" (default) y filtrar un cliente se muestran TODOS sus
@@ -288,7 +288,7 @@
       <label class="block text-xs text-slate-500 mb-1">Cliente</label>
       <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras: PUE"
              maxlength="20" autocomplete="off" style="text-transform:uppercase"
-             class="w-36 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
     </div>
     {# Grupo 2: Monto (un solo campo, dueña 2026-07-12 — igual que facturas).
        Entero (500) → el dólar entero 500,00–500,99. Con centavos (500,51) → exacto. #}
@@ -297,7 +297,7 @@
       <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
              placeholder="500 ó 500,51"
              title="Entero = el dólar entero (500 → 500,00–500,99). Con centavos = exacto (500,51)."
-             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     {# Grupo 3: Fecha de depósito #}
     <div>
@@ -320,11 +320,13 @@
         Hoy
       </button>
     </div>
-    {# Búsqueda libre — N° cheque o nombre cliente/prov endoso #}
+    {# TMT 2026-07-14 (dueña): "Buscar (libre)" → "Cheque", más chico, para que
+       toda la barra entre en UNA fila. El name sigue siendo q (busca por N° de
+       cheque; también matchea nombre, pero el uso es el número). #}
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="N° cheque, nombre…"
-             class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      <label class="block text-xs text-slate-500 mb-1">Cheque</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="N° cheque"
+             class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     </div>{# /campos #}
 
