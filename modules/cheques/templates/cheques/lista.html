@@ -489,10 +489,14 @@
               {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">{{ c.id_cheque }}</span>{% endif %}
             {% endif %}
           </td>
-          {# TMT 2026-05-17: fechad_original NULL = no fue postergado → la
-             fechad actual ES la original. NOT NULL = fue postergado y
-             fechad_original guarda la 1ra. #}
-          {% set fechad_original = c.fechad_original or c.fechad %}
+          {# F. DEP. = fecha ORIGINAL de depósito. Prioridad:
+             (1) fechad_original si PC la snapshoteó al postergar por la app;
+             (2) si no, c.fecha del dBase (= FECHA del cheque, la original antes
+                 de mover FECHAD). TMT 2026-07-14 (dueña): así se ven los días
+                 postergados (F.DEP original vs POSTERGADA=fechad actual). Los
+                 anticipos postdatados a años muestran gap grande — no importan
+                 para este uso (son cheques, no anticipos). #}
+          {% set fechad_original = c.fechad_original or c.fecha or c.fechad %}
           <td class="px-1.5 py-1.5" style="white-space: nowrap;">{{ fechad_original | fecha_es if fechad_original else '—' }}</td>
           {# TMT 2026-05-19 v8 — dueña: "inline edit a la fecha postergado".
              Si el cheque está en stat que permite postergar (Z, P, 1, 2, D),
