@@ -206,6 +206,15 @@ def reset_facturas_cache() -> None:
     _FACTURAS_CACHE.clear()
 
 
+def reset_flujo_caches() -> None:
+    """Vaciar los caches del flujo de producción: fabricacion_flujo_mes,
+    despacho_fisico_mes y movimiento_bodega_mes. Útil para tests o tras un
+    deploy que invalidó la fuente. Ver /informes/flujo-produccion."""
+    _FABRICACION_FLUJO_CACHE.clear()
+    _DESPACHO_CACHE.clear()
+    _MOVIMIENTO_BODEGA_CACHE.clear()
+
+
 # ID de la card Metabase con la retención (IVA+Fuente) por factura. Se puede
 # rotar por env ASINFO_CARD_RETENCIONES; default = 202 (creada 2026-07-09).
 _ASINFO_CARD_RETENCIONES_DEFAULT = "202"
@@ -1533,6 +1542,10 @@ def hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> float:
     return total
 
 
+_FABRICACION_FLUJO_TTL_SECS = 600  # 10 minutos
+_FABRICACION_FLUJO_CACHE: dict = {}
+
+
 def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
     """Consumo y producción de una bodega (52 Tejeduría → Tela Cruda /
     53 Tintorería → Terminado) para las órdenes CERRADAS en el mes.
@@ -1557,6 +1570,11 @@ def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
         mm = int(mm)
     except (TypeError, ValueError):
         return dict(zero)
+    cache_key = (int(id_bodega), yy, mm)
+    now = _time.time()
+    cached = _FABRICACION_FLUJO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _FABRICACION_FLUJO_TTL_SECS:
+        return cached[1]
     d1 = f"{yy:04d}-{mm:02d}-01"
     ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
     d2 = f"{ny:04d}-{nm:02d}-01"
@@ -1593,12 +1611,19 @@ def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=10)
         r = (rows or [{}])[0]
-        return {
+        out = {
             "issued": float(r.get("issued") or 0.0),
             "fab": float(r.get("fab") or 0.0),
         }
+        if rows:  # no congelar un [] por error de red (idéntico a facturas)
+            _FABRICACION_FLUJO_CACHE[cache_key] = (now, out)
+        return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(zero)
+
+
+_DESPACHO_TTL_SECS = 600  # 10 minutos
+_DESPACHO_CACHE: dict = {}
 
 
 def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
@@ -1620,6 +1645,11 @@ def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
         mm = int(mm)
     except (TypeError, ValueError):
         return 0.0
+    cache_key = (yy, mm, int(id_bodega))
+    now = _time.time()
+    cached = _DESPACHO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _DESPACHO_TTL_SECS:
+        return cached[1]
     d1 = f"{yy:04d}-{mm:02d}-01"
     ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
     d2 = f"{ny:04d}-{nm:02d}-01"
@@ -1635,9 +1665,16 @@ def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=10)
         r = (rows or [{}])[0]
-        return round(float(r.get("kg") or 0.0), 3)
+        out = round(float(r.get("kg") or 0.0), 3)
+        if rows:  # no congelar un [] por error de red
+            _DESPACHO_CACHE[cache_key] = (now, out)
+        return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return 0.0
+
+
+_MOVIMIENTO_BODEGA_TTL_SECS = 600  # 10 minutos
+_MOVIMIENTO_BODEGA_CACHE: dict = {}
 
 
 def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
@@ -1664,6 +1701,11 @@ def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
     import re as _re
     if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", corte):
         return dict(zero)
+    cache_key = (int(id_bodega), corte)
+    now = _time.time()
+    cached = _MOVIMIENTO_BODEGA_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _MOVIMIENTO_BODEGA_TTL_SECS:
+        return cached[1]
     sql = f"""
         WITH d AS (
             SELECT saldo,
@@ -1687,9 +1729,12 @@ def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=10)
         r = (rows or [{}])[0]
-        return {
+        out = {
             "ingreso": round(float(r.get("ingreso") or 0.0), 3),
             "egreso": round(float(r.get("egreso") or 0.0), 3),
         }
+        if rows:  # no congelar un [] por error de red
+            _MOVIMIENTO_BODEGA_CACHE[cache_key] = (now, out)
+        return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(zero)

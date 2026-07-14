@@ -14,8 +14,21 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from modules._lib import metabase_client
 from modules.asinfo import service
+
+
+@pytest.fixture(autouse=True)
+def _limpiar_cache_flujo():
+    """Ambas funciones cachean por (bodega, mes/corte) con TTL 600s. Sin
+    limpiar entre tests, un resultado mockeado se filtraría al test siguiente
+    que usa la misma key con otro mock."""
+    service.reset_flujo_caches()
+    yield
+    service.reset_flujo_caches()
+
 
 # ---------------------------------------------------------------------------
 # despacho_fisico_mes
@@ -131,3 +144,56 @@ def test_movimiento_bodega_mes_error_es_cero():
             "ingreso": 0.0,
             "egreso": 0.0,
         }
+
+
+# ---------------------------------------------------------------------------
+# cache (perf): las 3 funciones de flujo cachean 600s por su key y se
+# reusan sin volver a pegarle a Metabase — reduce ~6 llamadas por render.
+# ---------------------------------------------------------------------------
+
+
+def test_despacho_fisico_mes_cachea_segunda_llamada():
+    with patch.object(
+        metabase_client, "fetch_dataset", return_value=[{"kg": 5.0}]
+    ) as m:
+        a = service.despacho_fisico_mes(2026, 7)
+        b = service.despacho_fisico_mes(2026, 7)  # cache hit → sin fetch
+    assert a == b == 5.0
+    assert m.call_count == 1
+
+
+def test_despacho_fisico_mes_vacio_no_cachea():
+    # [] = probable error de red → no congelar 0.0 por 10 min.
+    with patch.object(metabase_client, "fetch_dataset", return_value=[]) as m:
+        service.despacho_fisico_mes(2026, 7)
+        service.despacho_fisico_mes(2026, 7)
+    assert m.call_count == 2
+
+
+def test_movimiento_bodega_mes_cachea_por_bodega_y_corte():
+    with patch.object(
+        metabase_client, "fetch_dataset", return_value=[{"ingreso": 1.0, "egreso": 2.0}]
+    ) as m:
+        service.movimiento_bodega_mes(53, "2026-07-01")  # miss
+        service.movimiento_bodega_mes(53, "2026-07-01")  # hit
+        service.movimiento_bodega_mes(52, "2026-07-01")  # otra bodega → miss
+    assert m.call_count == 2
+
+
+def test_fabricacion_flujo_mes_cachea():
+    with patch.object(
+        metabase_client, "fetch_dataset", return_value=[{"issued": 10.0, "fab": 8.0}]
+    ) as m:
+        service.fabricacion_flujo_mes(52, 2026, 7)
+        service.fabricacion_flujo_mes(52, 2026, 7)  # hit
+    assert m.call_count == 1
+
+
+def test_reset_flujo_caches_fuerza_refetch():
+    with patch.object(
+        metabase_client, "fetch_dataset", return_value=[{"kg": 5.0}]
+    ) as m:
+        service.despacho_fisico_mes(2026, 7)
+        service.reset_flujo_caches()
+        service.despacho_fisico_mes(2026, 7)  # cache vaciado → refetch
+    assert m.call_count == 2
