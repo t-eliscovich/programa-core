@@ -255,7 +255,30 @@
   </div>
 
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-    <input type="hidden" name="estado" value="{{ estado }}">
+    {# Grupo 0: Estado (dropdown) — TMT 2026-07-14 (dueña). Antes era un hidden
+       manejado por las pestañas; ahora es un filtro visible. Al dejarlo en
+       "Cartera total" (default) y filtrar un cliente se muestran TODOS sus
+       cheques; elegí un estado puntual para acotar. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Estado</label>
+      {% set estado_opciones = [
+        ('cartera_total', 'Cartera total'),
+        ('cartera',       'Cartera'),
+        ('postergados',   'Postergados'),
+        ('daniela',       'Daniela'),
+        ('devueltos',     'Devueltos'),
+        ('depositados',   'Depositados'),
+        ('endosados',     'Endosados'),
+        ('eliminados',    'Eliminados'),
+        ('todos',         'Todos los estados'),
+      ] %}
+      <select name="estado"
+              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        {% for val, lbl in estado_opciones %}
+          <option value="{{ val }}" {% if (estado_barra or estado) == val %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
     {# Grupo 1: Cliente (3 letras = match exacto) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cliente</label>

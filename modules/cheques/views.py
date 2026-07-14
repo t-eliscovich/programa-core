@@ -2975,7 +2975,18 @@ def lista():
     # depositados, endosados y reversados — para que el cheque aparezca
     # esté donde esté. La pestaña activa sigue mostrándose para contexto,
     # pero el query corre sobre el universo completo.
-    estado_efectivo = "todos" if q else estado
+    #
+    # TMT 2026-07-14 (dueña): al filtrar un CLIENTE mostrar TODOS sus cheques
+    # (cartera, postergados/P, Daniela/D, depositados, etc.) por defecto —
+    # "que aparezcan todos los de ese cliente, ya sea algo de P, Daniela...".
+    # El dropdown Estado de la barra ACOTA: si elige un estado != cartera_total
+    # (el default), se respeta ese estado; si lo deja en el default, ve todo.
+    if q:
+        estado_efectivo = "todos"
+    elif cliente and estado == "cartera_total":
+        estado_efectivo = "todos"
+    else:
+        estado_efectivo = estado
     ver_eliminados_arg = request.args.get("ver_eliminados") in ("1", "true", "yes")
     ver_eliminados = True if q else ver_eliminados_arg
 
@@ -3154,6 +3165,9 @@ def lista():
         filas=filas,
         q=q,
         estado=estado,
+        # Estado que realmente se está mostrando (para el dropdown de la barra):
+        # si al filtrar un cliente se expandió a 'todos', el dropdown lo refleja.
+        estado_barra=estado_efectivo,
         desde=desde,
         hasta=hasta,
         cliente=cliente,
