@@ -261,6 +261,12 @@ def lista():
         for k, v in cheque_labels.items()
         if v and not v.startswith("#")
     }
+    # TMT 2026-07-14 (dueña "en origen podría decir de qué cuenta de OP"): batch
+    # de las cuentas OP de los retiros presentes, para que el origen del retiro
+    # OP diga "OP · <cuenta>" (ej "OP · AC 17-35") en vez de sólo "OP".
+    _op_cuentas = queries.op_cuenta_por_retiro(
+        [r.get("origen_id") for r in filas if (r.get("tipo") or "") == "retiro_op"]
+    )
     for r in filas:
         r["label"] = queries.label(r.get("tipo") or "")
         # TMT 2026-07-11 (dueña): no ofrecer "reversar" sobre un reverso (mov
@@ -284,7 +290,8 @@ def lista():
         # columnas salían "Retiro #N". Forzamos el ORIGEN a "OP" → se lee como
         # doble asiento OP → Retiro, sin bloque de explicación extra.
         if (r.get("tipo") or "") == "retiro_op":
-            r["origen_label"] = "OP"
+            _cta = _op_cuentas.get(int(r["origen_id"])) if r.get("origen_id") else ""
+            r["origen_label"] = ("OP · " + _cta) if _cta else "OP"
 
     # ──────────────────────────────────────────────────────────────────
     # Construir `items` — una lista de "tarjetas" para el template.

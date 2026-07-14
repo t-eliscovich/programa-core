@@ -415,6 +415,33 @@ def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict 
     )
 
 
+def op_cuenta_por_retiro(ids) -> dict:
+    """id_retiro → concepto de la LÍNEA OP de la que salió el retiro, para que el
+    origen del historial diga "OP · <cuenta>" (dueña 2026-07-14). Batch (1 query).
+    """
+    _ids = list({int(i) for i in (ids or []) if i})
+    if not _ids:
+        return {}
+    try:
+        rows = db.fetch_all(
+            "SELECT id_retiro, line_key, concepto "
+            "  FROM scintela.op_retiro_linea WHERE id_retiro = ANY(%s)",
+            (_ids,),
+        ) or []
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict = {}
+    for x in rows:
+        c = (x.get("concepto") or "").strip()
+        lk = x.get("line_key") or ""
+        if not c and lk.startswith("P|"):
+            p = lk.split("|", 2)
+            c = (p[2] if len(p) == 3 else "").strip()
+        if x.get("id_retiro") is not None:
+            out[int(x["id_retiro"])] = c
+    return out
+
+
 # =====================================================================
 # Detalle "uno por uno" de los movimientos consolidados.
 # TMT 2026-07-09 (pedido dueña): un mov_doble puede consolidar VARIOS
