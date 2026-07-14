@@ -578,6 +578,9 @@ def lista():
                     _f["op_retirado"] = _ret_sum
                     _f["op_restante"] = round(_cred - _ret_viejo, 2)
                     _f["op_imputaciones"] = _imps
+                    # TMT 2026-07-14 dueña ("no veo cuál era el inicial"): el
+                    # crédito ORIGINAL de la línea = restante + todo lo retirado.
+                    _f["op_inicial"] = round(_f["op_restante"] + _ret_sum, 2)
         except Exception:  # noqa: BLE001
             pass
 

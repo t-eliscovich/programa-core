@@ -252,7 +252,14 @@
                va a /retiros). El ✕ deshace (revierte balance + sube la fila). #}
             {% if f.op_line_key %}
             <div class="mt-1 flex flex-wrap items-center gap-1.5 no-print" data-stop="1">
-              <span class="text-[10px] uppercase tracking-wider text-slate-400">Retiro OP · restante</span>
+              <span class="text-[10px] uppercase tracking-wider text-slate-400">Retiro OP ·</span>
+              {% if f.op_inicial is defined and f.op_inicial != f.op_restante %}
+              <span class="text-[10px] uppercase tracking-wider text-slate-400">inicial</span>
+              <span class="text-[11px] font-mono text-slate-500" title="Crédito original de la línea (restante + todo lo retirado)">{{ f.op_inicial | money_es }}</span>
+              <span class="text-[10px] uppercase tracking-wider text-slate-400">· restante</span>
+              {% else %}
+              <span class="text-[10px] uppercase tracking-wider text-slate-400">restante</span>
+              {% endif %}
               <span class="text-[11px] font-mono font-semibold {{ 'text-amber-600' if f.op_restante < 0 }}">{{ f.op_restante | money_es }}</span>
               {% if tiene_permiso('posdat.editar') %}
               <form method="post" action="{{ url_for('posdat.retiro_op') }}" class="inline-flex items-center gap-1">
