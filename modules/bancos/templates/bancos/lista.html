@@ -159,19 +159,20 @@
         {% else %}
         {{ empty_row(3, 'Sin bancos cargados.') }}
         {% endfor %}
-      </tbody>
-      {# TMT 2026-07-14 (Federico): fila TOTAL BANCOS al pie de los saldos. #}
-      {% if filas %}
-      <tfoot>
-        <tr class="border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
-          <td class="px-5 py-2 font-semibold">TOTAL BANCOS</td>
-          <td class="px-5 py-2 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100" data-no-sort>
+        {# TMT 2026-07-14 (Federico): fila TOTAL BANCOS al pie de los saldos.
+           Va DENTRO del tbody con class="no-sort" (queda fija al final aun al
+           ordenar) y usa EXACTAMENTE las mismas clases de celda que las filas
+           de banco, para misma tipografia y misma columna que los saldos. #}
+        {% if filas %}
+        <tr class="no-sort border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
+          <td class="px-5 py-2">TOTAL BANCOS</td>
+          <td class="px-5 py-2 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100">
             $ {{ total_bancos | num_es(2) }}
           </td>
-          <td class="px-5 py-2" data-no-sort></td>
+          <td class="px-5 py-2 text-right"></td>
         </tr>
-      </tfoot>
-      {% endif %}
+        {% endif %}
+      </tbody>
     </table>
   </div>
 </div>
