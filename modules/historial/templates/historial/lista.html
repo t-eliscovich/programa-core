@@ -28,6 +28,30 @@
     </tr>
   {% endif %}
 {% endmacro %}
+
+{# TMT 2026-07-14 (dueña): 2ª pata de los movimientos de doble asiento cuyo
+   mov_doble es auto-referencia (retiro OP → imputación línea OP que baja el
+   restante; gasto a crédito → deuda posdat). Antes se veía UNA sola pata; acá
+   la mostramos explícita, con la nota de que el ↺ revierte AMBAS. Solo clases
+   ya presentes en el CSS congelado (slate/tabular/mono) + estilos inline. #}
+{% macro segunda_pata_bloque(r) %}
+  {% if r.segunda_pata %}
+    <tr class="no-print" style="background:#fffbeb;">
+      <td colspan="8" style="padding:3px 8px 6px 34px;font-size:12px;">
+        <div style="display:flex;flex-wrap:wrap;gap:3px 14px;align-items:baseline;">
+          <span title="El ↺ revierte ambas patas"
+                style="font-weight:600;color:#92400e;white-space:nowrap;">↺ 2ª pata</span>
+          {% for d in r.segunda_pata.lineas %}
+            <span class="text-slate-700" style="font-weight:500;white-space:nowrap;">{{ d.etiqueta }} {{ d.ref }}</span>
+            <span class="tabular-nums font-mono" style="white-space:nowrap;">{{ d.importe | money_es }}</span>
+            <span class="text-slate-500">{% if d.extra %}<span class="text-slate-400">{{ d.extra }}</span>&nbsp;{% endif %}{{ d.concepto }}</span>
+          {% endfor %}
+          <span class="text-slate-400" style="flex-basis:100%;">{{ r.segunda_pata.nota }}</span>
+        </div>
+      </td>
+    </tr>
+  {% endif %}
+{% endmacro %}
 {% block breadcrumb %}<strong>Historial</strong>{% endblock %}
 
 {% block content %}
@@ -256,6 +280,7 @@
                 </td>
               </tr>
               {{ detalle_expandible(r) }}
+              {{ segunda_pata_bloque(r) }}
             {% endfor %}
           </tbody>
         {% else %}
@@ -316,6 +341,7 @@
               </td>
             </tr>
             {{ detalle_expandible(r) }}
+            {{ segunda_pata_bloque(r) }}
           </tbody>
         {% endif %}
       {% else %}

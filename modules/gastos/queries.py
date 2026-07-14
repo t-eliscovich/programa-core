@@ -676,15 +676,36 @@ def crear(
                     },
                 )
             else:
-                # Gasto a crédito (no pagado) — sigue creando un xgast→xgast
-                # self-loop + posdat aparte (lógica original sin cambios).
+                # Gasto a crédito (no pagado) — la 2ª pata es la deuda posdat.
+                # TMT 2026-07-14 (dueña, "mostrar las 2 patas"): si YA existe
+                # la posdat hermana (prov+num) al momento de crear, linkeamos
+                # destino a ella igual que compra_a_posdat (compras/queries.py)
+                # → el historial pinta las dos patas en las columnas
+                # origen/destino. En el legacy típico el xgast es
+                # auto-contenido y la posdat la crea el reconcile DESPUÉS: en
+                # ese caso caemos al self-loop xgast→xgast (nunca destino=None,
+                # que rompería el registro) y el historial igual muestra la 2ª
+                # pata por lookup (queries.segunda_pata).
+                _dest_table, _dest_id = "xgast", row["id_xgast"]
+                _prov_norm = (prov or None) and prov[:5].upper()
+                if _prov_norm and num is not None:
+                    _posd = db.fetch_one(
+                        "SELECT id_posdat FROM scintela.posdat "
+                        "WHERE prov = %s AND num = %s "
+                        "  AND (anulada IS NOT TRUE OR anulada IS NULL) "
+                        "ORDER BY id_posdat LIMIT 1",
+                        (_prov_norm, num),
+                        conn=conn,
+                    )
+                    if _posd and _posd.get("id_posdat"):
+                        _dest_table, _dest_id = "posdat", _posd["id_posdat"]
                 _md.registrar(
                     conn=conn,
                     tipo="gasto_a_posdat",
                     origen_table="xgast",
                     origen_id=row["id_xgast"],
-                    destino_table="xgast",
-                    destino_id=row["id_xgast"],
+                    destino_table=_dest_table,
+                    destino_id=_dest_id,
                     importe=importe_num,
                     fecha=fecha,
                     concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:200],

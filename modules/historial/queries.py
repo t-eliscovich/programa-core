@@ -515,3 +515,150 @@ def detalle_consolidado(metadata) -> list[dict]:
                     }
                 )
     return items
+
+
+# =====================================================================
+# Segunda pata (doble asiento) — TMT 2026-07-14 (dueña).
+# Algunos movimientos tienen DOS efectos reales pero su mov_doble es una
+# AUTO-REFERENCIA (origen == destino), así que el historial mostraba una
+# sola pata. Ej. arquetípico: un RETIRO OP (1) crea el retiro a accionistas
+# (banco USA) Y (2) imputa a la línea OP bajando su restante (posdat OP). El
+# ↺ ya revierte AMBAS — sólo faltaba VERLAS.
+#
+# Este resolver hace lookup por origen_id contra la tabla del efecto
+# secundario (así funciona también con las filas HISTÓRICAS, sin depender de
+# metadata nueva) y devuelve la 2ª pata para mostrarla en el historial y en
+# el cartel de reverso. Best-effort: nunca levanta (defensivo a migraciones
+# sin correr / tablas PC-only ausentes).
+# =====================================================================
+
+
+def _segunda_pata_retiro_op(row) -> dict | None:
+    """2ª pata de un retiro OP: la imputación a la línea OP (op_retiro_linea)
+    que baja el restante — y, si es del esquema nuevo, sube el posdat OP."""
+    id_retiro = row.get("origen_id")
+    if not id_retiro:
+        return None
+    imp = None
+    try:
+        imp = db.fetch_one(
+            "SELECT id_op_retiro_linea, line_key, monto, "
+            "       COALESCE(bajo_posdat, FALSE) AS bajo_posdat, fecha "
+            "  FROM scintela.op_retiro_linea "
+            " WHERE id_retiro = %s "
+            " ORDER BY id_op_retiro_linea DESC LIMIT 1",
+            (int(id_retiro),),
+        )
+    except Exception:  # noqa: BLE001
+        # columna bajo_posdat puede no existir (mig 0111 sin correr).
+        try:
+            imp = db.fetch_one(
+                "SELECT id_op_retiro_linea, line_key, monto, fecha "
+                "  FROM scintela.op_retiro_linea "
+                " WHERE id_retiro = %s "
+                " ORDER BY id_op_retiro_linea DESC LIMIT 1",
+                (int(id_retiro),),
+            )
+        except Exception:  # noqa: BLE001
+            return None
+    if not imp:
+        return None
+    monto = round(float(imp.get("monto") or 0), 2)
+    line_key = imp.get("line_key") or ""
+    ref, concepto_op = "", ""
+    # line_key = 'P|num|concepto' → mostrar algo legible.
+    if line_key.startswith("P|"):
+        parts = line_key.split("|", 2)
+        if len(parts) == 3:
+            ref = f"OP #{parts[1]}"
+            concepto_op = parts[2]
+    concepto = "baja el restante de la línea OP"
+    if imp.get("bajo_posdat"):
+        concepto += " (sube el posdat OP → baja el crédito)"
+    if concepto_op:
+        concepto += f" — {concepto_op}"
+    return {
+        "nota": ("Este movimiento tiene 2 patas — el ↺ revierte AMBAS: borra "
+                 "el retiro y la imputación (la línea OP vuelve a subir su "
+                 "restante)."),
+        "lineas": [
+            {
+                "etiqueta": "Imputado a línea",
+                "ref": ref or (line_key[:24] if line_key else "OP"),
+                "concepto": concepto,
+                "importe": monto,
+                "extra": "",
+            }
+        ],
+    }
+
+
+def _segunda_pata_gasto_a_posdat(row) -> dict | None:
+    """2ª pata de un gasto a crédito: la línea de crédito posdat (el pasivo).
+    En el legacy el xgast suele ser auto-contenido (la posdat la crea el
+    reconcile después); igual explicamos la deuda para que se vean las dos."""
+    id_xgast = row.get("origen_id")
+    if not id_xgast:
+        return None
+    try:
+        g = db.fetch_one(
+            "SELECT prov, num, importe, "
+            "       COALESCE(to_char(fechad,'DD/MM/YYYY'), '') AS fechad "
+            "  FROM scintela.xgast WHERE id_xgast = %s",
+            (int(id_xgast),),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if not g:
+        return None
+    importe = round(float(g.get("importe") or 0), 2)
+    fechad = g.get("fechad") or ""
+    ref = ""
+    if (g.get("prov") or "").strip() and g.get("num") is not None:
+        try:
+            posd = db.fetch_one(
+                "SELECT num FROM scintela.posdat "
+                " WHERE prov = %s AND num = %s "
+                "   AND (anulada IS NOT TRUE OR anulada IS NULL) "
+                " ORDER BY id_posdat LIMIT 1",
+                (g["prov"], g["num"]),
+            )
+        except Exception:  # noqa: BLE001
+            posd = None
+        if posd and posd.get("num") is not None:
+            ref = f"#{posd['num']}"
+    return {
+        "nota": ("Este movimiento tiene 2 patas — el ↺ revierte AMBAS: anula "
+                 "el gasto y su deuda posdat."),
+        "lineas": [
+            {
+                "etiqueta": "Línea de crédito posdat",
+                "ref": ref or "(pendiente)",
+                "concepto": "deuda posdat (pasivo) — el gasto queda pendiente de pago",
+                "importe": importe,
+                "extra": (f"vence {fechad}" if fechad else ""),
+            }
+        ],
+    }
+
+
+# tipo → resolver del efecto secundario (self-ref con 2ª pata invisible).
+_SEGUNDA_PATA = {
+    "retiro_op": _segunda_pata_retiro_op,
+    "gasto_a_posdat": _segunda_pata_gasto_a_posdat,
+}
+
+
+def segunda_pata(row) -> dict | None:
+    """Devuelve la 2ª pata (efecto secundario) de un movimiento cuyo
+    mov_doble es auto-referencia, o None si no aplica.
+
+    Estructura: {"nota": str, "lineas": [{etiqueta, ref, concepto, importe,
+    extra}, ...]}. Best-effort: nunca levanta."""
+    fn = _SEGUNDA_PATA.get((row or {}).get("tipo") or "")
+    if not fn:
+        return None
+    try:
+        return fn(row)
+    except Exception:  # noqa: BLE001
+        return None
