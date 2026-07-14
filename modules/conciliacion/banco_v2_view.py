@@ -52,6 +52,122 @@ from modules.conciliacion.views import (
 
 _LOG = logging.getLogger("programa_core.conciliacion.banco_v2")
 
+
+# ── Asignación multi-PC (N banco → M programa) ────────────────────────
+# TMT 2026-07-14 (dueña): "debería funcionar en cualquier caso". Cuando se
+# seleccionan N movs de banco y M de programa, hay que auto-asignar cada
+# banco (o grupo de banco) al mov de programa cuyo MONTO firmado le cuadra,
+# soportando 1:1, N:1 (depósito partido) y multi-PC a la vez.
+#
+# REGLA DE ORO (no negociable): NUNCA inventar diferencias. Solo se ata un
+# banco (o grupo) a un PC si la suma firmada cuadra con ese PC dentro de
+# |Δ|≤tol. Lo que no logra asignarse limpio queda PENDIENTE (se preserva la
+# protección 2026-06-18 contra atar al primer PC e inventar diferencias).
+#
+# Función PURA y testeable (los tests viven en tests/test_asignar_banco.py).
+def _subset_para_target(avail, target, tol, cap):
+    """Devuelve la lista de índices (en `avail`) cuyo signed sum cuadra con
+    `target` dentro de `tol`, o None si no hay subconjunto que cuadre.
+
+    `avail` = list[(banco_id, signed)]. Prefiere el subconjunto MÁS CHICO y,
+    a igual tamaño, el de menor |Δ|. Para N chico enumera combinaciones
+    exactas; si len(avail) > cap cae a un greedy en la dirección del target.
+    Tamaño 1 (par 1:1) lo resuelve el llamador antes de invocar esto, así
+    que acá se arranca en tamaño 2.
+    """
+    from itertools import combinations
+
+    n = len(avail)
+    if n < 2:
+        return None
+    if n > cap:
+        # Greedy: acumular de mayor a menor SOLO los que empujan hacia el
+        # target (mismo signo). Si nos pasamos sin cuadrar → descartar el PC.
+        pos = target >= 0
+        order = sorted(
+            (i for i in range(n) if (avail[i][1] >= 0) == pos and avail[i][1] != 0),
+            key=lambda i: abs(avail[i][1]),
+            reverse=True,
+        )
+        acc = 0.0
+        picked = []
+        for i in order:
+            picked.append(i)
+            acc += avail[i][1]
+            if abs(acc - target) <= tol:
+                return picked
+            if (pos and acc > target + tol) or (not pos and acc < target - tol):
+                return None
+        return None
+    # Enumeración exacta por tamaño creciente: primer tamaño con match gana
+    # (subconjunto más chico); a igual tamaño, el de menor |Δ|.
+    vals = [avail[i][1] for i in range(n)]
+    for size in range(2, n + 1):
+        best = None
+        best_d = None
+        for combo in combinations(range(n), size):
+            s = sum(vals[i] for i in combo)
+            d = abs(s - target)
+            if d <= tol and (best_d is None or d < best_d):
+                best_d = d
+                best = combo
+        if best is not None:
+            return list(best)
+    return None
+
+
+def asignar_banco_a_programa(banco_firmados, prog_firmados, tol=0.50, cap=18):
+    """Asigna movimientos de banco a movimientos de programa por MONTO firmado.
+
+    Args:
+      banco_firmados: list[(banco_id, signed)]  — signed = +monto si crédito,
+                      −monto si débito. `banco_id` es una clave opaca (índice).
+      prog_firmados:  list[(pc_id, signed)]     — signed = delta firmado del PC.
+      tol: tolerancia |Δ| para considerar que "cuadra" (default 0.50).
+      cap: si un PC enfrenta más de `cap` banco disponibles, se usa greedy.
+
+    Returns:
+      (asignaciones, sobrantes) donde
+        asignaciones: dict[pc_id -> list[banco_id]]  (grupo por PC; N:1 = lista)
+        sobrantes:    list[banco_id]  — banco que NO se asignó limpio → PENDIENTE.
+
+    Garantías:
+      - Un banco no se reutiliza en dos PC.
+      - Se prefiere el match EXACTO 1:1 (un banco suelto) antes de armar grupos.
+      - Un PC se atiende SOLO si algún banco/grupo cuadra con él dentro de tol;
+        si no, el PC no recibe nada (y sus banco potenciales quedan sobrantes).
+      - PC grandes (|monto| desc) se sirven primero para que se queden con su
+        match obvio antes que uno chico se "coma" un banco ambiguo.
+    """
+    asign: dict = {}
+    avail = list(banco_firmados)  # list[(banco_id, signed)]
+    pcs = sorted(prog_firmados, key=lambda t: abs(t[1]), reverse=True)
+
+    for pc_id, target in pcs:
+        # a) Par 1:1 exacto: un banco suelto que cuadre. El más cercano gana.
+        best_i = None
+        best_d = None
+        for i, (_bid, sval) in enumerate(avail):
+            d = abs(sval - target)
+            if d <= tol and (best_d is None or d < best_d):
+                best_d = d
+                best_i = i
+        if best_i is not None:
+            bid, _sv = avail.pop(best_i)
+            asign.setdefault(pc_id, []).append(bid)
+            continue
+        # b) Grupo N:1: subconjunto de banco cuya suma firmada cuadre.
+        chosen = _subset_para_target(avail, target, tol, cap)
+        if chosen:
+            for idx in sorted(chosen, reverse=True):
+                bid, _sv = avail.pop(idx)
+                asign.setdefault(pc_id, []).append(bid)
+        # c) Si no cuadró nada, el PC queda sin banco (no se inventa nada).
+
+    sobrantes = [bid for bid, _sv in avail]
+    return asign, sobrantes
+
+
 # ── Defensas contra corrupción de saldo running ──────────────────────
 # TMT 2026-05-29: el "BUG #2" reportado durante el E2E (saldo bajó $43K
 # al anular tx de $29) en realidad reveló una cadena previamente corrupta.
@@ -1369,64 +1485,55 @@ def banco_manual_confirmar():
     n_hist = 0
     sobrantes_banco = 0
     if banco_movs and bancsis_ids:
-        banco_sorted = sorted(banco_movs, key=lambda t: _signed_banco(t[0]), reverse=True)
-        bk_sorted = sorted(bancsis_ids, key=_signed_prog, reverse=True)
-        n_pair = min(len(banco_sorted), len(bk_sorted))
+        # TMT 2026-07-14 (dueña): "debería funcionar en cualquier caso".
+        # Reemplazamos el viejo pareo 1:1-por-posición (que forzaba pares aun
+        # cuando el monto NO cuadraba, inventando diferencias) por la
+        # asignación PURA por monto `asignar_banco_a_programa`:
+        #   - un PC que cuadra con UN banco exacto → par 1:1;
+        #   - un PC que cuadra con la SUMA de varios banco → grupo N:1;
+        #   - varios PC a la vez → cada uno recibe el/los banco cuya suma
+        #     firmada le cuadra (|Δ|≤0.50);
+        #   - lo que NO cuadra limpio queda PENDIENTE (protección 2026-06-18).
+        # Cada banco se indexa por posición para mapear de vuelta a (mov, metodo).
+        banco_firmados = [(i, _signed_banco(m)) for i, (m, _md) in enumerate(banco_movs)]
+        prog_firmados = [(int(b), _signed_prog(b)) for b in bancsis_ids]
 
-        # 1) Pares 1:1 por monto.
-        for i in range(n_pair):
-            mov_i, metodo_i = banco_sorted[i]
-            try:
-                confirmar_match(_BANCO_PICHINCHA, mov_i, bk_sorted[i],
-                                usuario=usuario, metodo=metodo_i,
-                                confirm_batch_id=batch_id)
-                if metodo_i == "matched_historico":
-                    n_hist += 1
-                else:
-                    n_matches += 1
-            except Exception as e:
-                _LOG.warning("manual confirm par %d fallo: %s", i, e)
-                if err_msg is None:
-                    err_msg = str(e)
+        asign, sobrantes_idx = asignar_banco_a_programa(
+            banco_firmados, prog_firmados, tol=0.50,
+        )
 
-        # 2) Banco extras (N > M). TMT 2026-06-18 (dueña): antes ataba CADA
-        # banco sobrante al PRIMER mov PC → grupos con "diferencia" inventada
-        # (ej. 17 banco → 2 PC, +22.053) que ensuciaban Conciliados. Por eso,
-        # con VARIOS PC seleccionados, los sobrantes quedan PENDIENTES.
-        #
-        # TMT 2026-06-29 (dueña): PERO el caso N banco → 1 PC es legítimo y
-        # frecuente: un depósito que el banco parte en N créditos (ej.
-        # "dep.30 ch." = 30 líneas en el extracto) contra UN solo mov de
-        # programa. Si hay EXACTAMENTE 1 PC seleccionado y la SUMA firmada de
-        # TODO el banco cuadra con el PC (Δ≈0), atamos TODOS los movs de banco
-        # a ese PC (mismo batch_id → N:1 legítimo, lo permite confirmar_match).
-        # Si no cuadra, quedan pendientes como antes (la dueña ve el faltante).
-        sobrantes = banco_sorted[n_pair:]
-        sobrantes_banco = len(sobrantes)
-        if sobrantes and len(bk_sorted) == 1:
-            pc_id = bk_sorted[0]
-            suma_banco = sum(_signed_banco(t[0]) for t in banco_sorted)
-            target = _signed_prog(pc_id)
-            if abs(suma_banco - target) <= 0.50:
-                # Depósito agrupado N:1 — atar los sobrantes al único PC.
-                for mov_i, metodo_i in sobrantes:
-                    try:
-                        confirmar_match(_BANCO_PICHINCHA, mov_i, pc_id,
-                                        usuario=usuario, metodo=metodo_i,
-                                        confirm_batch_id=batch_id)
-                        if metodo_i == "matched_historico":
-                            n_hist += 1
-                        else:
-                            n_matches += 1
-                    except Exception as e:
-                        _LOG.warning("manual confirm N:1 sobrante fallo: %s", e)
-                        if err_msg is None:
-                            err_msg = str(e)
-                sobrantes_banco = 0
+        # 1+2) Confirmar cada grupo PC → [banco]. Un confirm_batch_id POR
+        # grupo, para que un N:1 (depósito partido) quede como un solo grupo
+        # y los distintos PC no se mezclen en un mismo batch.
+        import uuid as _uuid_grp
+        for pc_id, banco_idxs in asign.items():
+            grupo_batch = _uuid_grp.uuid4().hex
+            for idx in banco_idxs:
+                mov_i, metodo_i = banco_movs[idx]
+                try:
+                    confirmar_match(_BANCO_PICHINCHA, mov_i, pc_id,
+                                    usuario=usuario, metodo=metodo_i,
+                                    confirm_batch_id=grupo_batch)
+                    if metodo_i == "matched_historico":
+                        n_hist += 1
+                    else:
+                        n_matches += 1
+                except Exception as e:
+                    _LOG.warning("manual confirm PC %s idx %s fallo: %s", pc_id, idx, e)
+                    if err_msg is None:
+                        err_msg = str(e)
 
-        # 3) PC extras (M > N): INSERT stat-only.
-        if len(bk_sorted) > n_pair:
-            extras = [int(b) for b in bk_sorted[n_pair:]]
+        sobrantes_banco = len(sobrantes_idx)
+
+        # 3) PC extras internos (M > N): INSERT stat-only. Solo aplica a los PC
+        # que NO recibieron banco Y cuando NO quedó ningún banco sobrante — un
+        # PC sin banco cuya contraparte quedó pendiente NO se marca conciliado
+        # (sería inventar el otro lado). Con todos los banco colocados, los PC
+        # que sobran son movimientos internos sin línea en el extracto.
+        asignados_pc = set(int(k) for k in asign.keys())
+        pcs_sin_banco = [int(b) for b in bancsis_ids if int(b) not in asignados_pc]
+        if pcs_sin_banco and not sobrantes_idx:
+            extras = pcs_sin_banco
             tiene_metodo = False
             try:
                 row = _db.fetch_one(
@@ -1487,11 +1594,11 @@ def banco_manual_confirmar():
     _sesion.incrementar_matches(sesion_id, total)
     if sobrantes_banco > 0:
         flash(
-            f"⚠ {sobrantes_banco} mov(s) de banco quedaron PENDIENTES: "
-            f"seleccionaste más movimientos de banco que de programa. Emparejá "
-            f"cada uno con su mov de programa (o usá el agrupado de impuestos si "
-            f"son una sola contraparte). Antes se ataban al primer mov de "
-            f"programa y ensuciaban los Conciliados.",
+            f"⚠ {sobrantes_banco} mov(s) de banco quedaron PENDIENTES: no "
+            f"encontré un mov de programa (ni una suma de programa) cuyo monto "
+            f"les cuadre dentro de ±0,50. No se atan a ninguno para no inventar "
+            f"diferencias — revisá el importe o emparejalos a mano (o usá el "
+            f"agrupado de impuestos si son una sola contraparte).",
             "warn",
         )
     parts = []
