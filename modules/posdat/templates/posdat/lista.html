@@ -171,6 +171,7 @@
           <th class="px-2 py-1">Venc.</th>
           <th class="px-2 py-1">Prov</th>
           <th class="px-2 py-1">Concepto</th>
+          <th class="px-2 py-1" title="Detalle de la cuenta (retiros OP)">Detalle</th>
           <th class="px-2 py-1 text-right" title="Importe acumulado del día — fracción de la cuota mensual cuando es provisión">Importe</th>
           {% if _show_mensual %}
             <th class="px-2 py-1 text-right" title="Cuota diaria de la provisión origen (se suma a la posdat YY cada L-V) — editable inline">Cuota diaria</th>
@@ -255,19 +256,16 @@
                 anual
               </span>
             {% endif %}
-            {# TMT 2026-06-30 dueña: el retiro a accionistas (OP) se carga AQUÍ,
-               en la propia fila OP. Restante = crédito − Σ retirado de esta
-               línea; baja al retirar. El balance pega una sola vez (el retiro
-               va a /retiros). El ✕ deshace (revierte balance + sube la fila). #}
+          </td>
+          {# TMT 2026-07-14 (dueña "quedó gigante"): la cuenta corriente del
+             retiro OP se mueve a su propia columna DETALLE (antes vivía debajo
+             del Concepto y estiraba la fila). Concepto = solo el nombre; acá va
+             la cuenta (Total, cada retiro con su fecha, Restante/Sobrante).
+             Sin el título "Cuenta del retiro OP" para ocupar menos. #}
+          <td class="px-2 py-1 align-top">
             {% if f.op_line_key %}
-            {# TMT 2026-07-14 (dueña "que el usuario pueda seguir la cuenta"):
-               cuenta corriente del retiro OP — Total (crédito original), cada
-               retiro con su FECHA e importe (✕ deshace), y al final Restante
-               (o Sobrante en naranja si se retiró de más). CSS congelado (gap-*
-               no renderiza) → layout con estilos inline. #}
-            <div class="mt-1.5 no-print" data-stop="1"
+            <div class="no-print" data-stop="1"
                  style="border-left:2px solid #cbd5e1; padding-left:9px; max-width:340px;">
-              <div style="font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:#64748b; font-weight:700; margin-bottom:3px;">Cuenta del retiro OP</div>
               {# Total = crédito original de la línea #}
               <div style="display:flex; align-items:center; font-size:11px; line-height:1.85; border-bottom:1px dashed #e2e8f0; padding-bottom:2px; margin-bottom:2px;">
                 <span style="flex:1; font-weight:700; color:#0f172a;">Total</span>
@@ -437,7 +435,7 @@
           {# colspan = Fecha/Venc/Prov/Concepto/Importe (5) + columnas
              condicionales (mensual/diaria/acum) + delete.
              N° eliminada TMT 2026-05-20 v4. #}
-          {% set _colspan_empty = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
+          {% set _colspan_empty = 6 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
           {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
@@ -452,8 +450,8 @@
       {% endif %}
       <tfoot class="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
-          {# 4 columnas iniciales (Fecha, Venc., Prov, Concepto) ocupadas por el label. #}
-          <td colspan="4" class="px-2 py-2 text-right uppercase tracking-wider text-xs text-slate-700 dark:text-slate-200">Total</td>
+          {# 5 columnas iniciales (Fecha, Venc., Prov, Concepto, Detalle) ocupadas por el label. #}
+          <td colspan="5" class="px-2 py-2 text-right uppercase tracking-wider text-xs text-slate-700 dark:text-slate-200">Total</td>
           <td class="px-2 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">{{ _suma_importe | num_es }}</td>
           {% if _show_mensual %}
             <td class="px-2 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">{{ _suma_cuota | num_es }}</td>
@@ -478,7 +476,7 @@
       {% if tiene_permiso('posdat.crear') %}
       <tfoot class="no-print bg-slate-50 dark:bg-slate-800/40 border-t-2 border-slate-200 dark:border-slate-700">
         <tr>
-          {% set _colspan_add = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
+          {% set _colspan_add = 6 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
           <td colspan="{{ _colspan_add }}" class="px-3 py-2 text-left">
             {% if tab == 'yy' %}
               <button type="button" id="yy-add-line"
