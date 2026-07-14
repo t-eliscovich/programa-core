@@ -251,39 +251,39 @@
                línea; baja al retirar. El balance pega una sola vez (el retiro
                va a /retiros). El ✕ deshace (revierte balance + sube la fila). #}
             {% if f.op_line_key %}
-            {# TMT 2026-07-14 (dueña "ordenar mejor / más formal"): resumen
-               (Inicial · Retirado · Restante) en una línea arriba, y la acción
-               (retirar + retiros ya hechos) en otra abajo, con borde sutil. #}
+            {# TMT 2026-07-14 (dueña): las clases gap-* de Tailwind NO renderizan
+               (CSS congelado) → los labels salían pegados. Uso separadores '·' y
+               márgenes inline. Resumen arriba, acción abajo, borde sutil. #}
             <div class="mt-1.5 no-print" data-stop="1"
                  style="border-left:2px solid #cbd5e1; padding-left:8px;">
-              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Retiro OP</span>
+              <div class="text-[10px] text-slate-400" style="line-height:1.7;">
+                <span class="uppercase tracking-wider font-semibold text-slate-500">Retiro OP</span>
                 {% if f.op_inicial is defined and f.op_inicial != f.op_restante %}
-                <span><span class="text-[10px] uppercase tracking-wider text-slate-400">Inicial</span>
-                  <span class="text-[11px] font-mono text-slate-600 ml-1" title="Crédito original de la línea">{{ f.op_inicial | money_es }}</span></span>
-                <span><span class="text-[10px] uppercase tracking-wider text-slate-400">Retirado</span>
-                  <span class="text-[11px] font-mono text-slate-600 ml-1">{{ f.op_retirado | money_es }}</span></span>
+                &nbsp;·&nbsp;<span class="uppercase tracking-wider">Inicial</span>
+                <span class="text-[11px] font-mono text-slate-600">{{ f.op_inicial | money_es }}</span>
+                &nbsp;·&nbsp;<span class="uppercase tracking-wider">Retirado</span>
+                <span class="text-[11px] font-mono text-slate-600">{{ f.op_retirado | money_es }}</span>
                 {% endif %}
-                <span><span class="text-[10px] uppercase tracking-wider text-slate-400">Restante</span>
-                  <span class="text-[11px] font-mono font-semibold ml-1 {{ 'text-amber-600' if f.op_restante < 0 }}">{{ f.op_restante | money_es }}</span></span>
+                &nbsp;·&nbsp;<span class="uppercase tracking-wider">Restante</span>
+                <span class="text-[11px] font-mono font-semibold {{ 'text-amber-600' if f.op_restante < 0 }}">{{ f.op_restante | money_es }}</span>
               </div>
               {% if tiene_permiso('posdat.editar') %}
-              <div class="flex flex-wrap items-center gap-1.5 mt-1">
-                <form method="post" action="{{ url_for('posdat.retiro_op') }}" class="inline-flex items-center gap-1">
+              <div class="mt-1">
+                <form method="post" action="{{ url_for('posdat.retiro_op') }}" style="display:inline-flex; align-items:center;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="line_key" value="{{ f.op_line_key }}">
                   <input type="hidden" name="line_concepto" value="{{ f.concepto or '' }}">
                   <input type="hidden" name="de" value="OP">
                   <input type="hidden" name="fecha" value="{{ today_iso }}">
                   <input type="text" name="monto" required placeholder="0,00"
-                         class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right">
+                         class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right" style="margin-right:6px;">
                   <button type="submit" style="background:#059669;color:#ffffff;"
                           class="text-[11px] px-2 py-0.5 rounded font-medium">Retirar</button>
                 </form>
                 {% if f.op_imputaciones %}
-                <span class="text-[10px] uppercase tracking-wider text-slate-400 ml-1">Retiros</span>
+                <span class="text-[10px] uppercase tracking-wider text-slate-400" style="margin-left:12px;">Retiros:</span>
                 {% for imp in f.op_imputaciones %}
-                <form method="post" action="{{ url_for('posdat.deshacer_retiro_op') }}" class="inline">
+                <form method="post" action="{{ url_for('posdat.deshacer_retiro_op') }}" style="display:inline; margin-left:5px;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="id_op_retiro_linea" value="{{ imp.id }}">
                   <button type="submit" title="Deshacer este retiro (la línea vuelve a subir)"
