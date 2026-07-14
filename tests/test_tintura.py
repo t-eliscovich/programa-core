@@ -635,3 +635,29 @@ def test_tinto_equiv_orden_to_dict_serializa_fechas():
     d2 = o2.to_dict()
     assert d2["fecha"] is None
     assert d2["fecha_terminado"] is None
+
+
+# ─── stock_colorante_fisico ──────────────────────────────────────────────
+# TMT 2026-07-14 — cubre el branch de COLORANTE_FAMILIAS (POLI+ALG) que dejaba
+# el gate de cobertura en 99.54% (líneas 589-590 sin ejercitar). La función
+# valúa SÓLO colorante (POLI+ALG), ignora auxiliares, y es la única fuente del
+# número que usan el balance y el flujo (banda STOCK DE QUÍMICOS / COLOR $).
+def test_stock_colorante_fisico_suma_solo_poli_y_alg():
+    """POLI+ALG se valúan (kg × $/kg); otras familias se ignoran; robusto a nulls."""
+    from types import SimpleNamespace
+
+    rows = [
+        SimpleNamespace(familia="POLI", stock_al_dia_kg=100.0, precio_us=2.0),  # 200
+        SimpleNamespace(familia="alg", stock_al_dia_kg=50.0, precio_us=3.0),    # 150 (case-insensitive)
+        SimpleNamespace(familia="AUX", stock_al_dia_kg=999.0, precio_us=9.0),   # ignorado
+        SimpleNamespace(familia=None, stock_al_dia_kg="", precio_us=None),      # robusto a nulls
+    ]
+    with patch("modules.tintura.service.stock_quimicos_al_dia", return_value=rows):
+        total = service.stock_colorante_fisico()
+    assert total == pytest.approx(350.0)
+
+
+def test_stock_colorante_fisico_bridge_vacio_es_cero():
+    """Sin filas (bridge caído) devuelve 0.0 sin romper."""
+    with patch("modules.tintura.service.stock_quimicos_al_dia", return_value=[]):
+        assert service.stock_colorante_fisico() == 0.0
