@@ -203,7 +203,7 @@
        el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
     {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo cliente</div>
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo facturas</div>
       <div class="mt-0.5 text-lg font-semibold text-mono">
         {{ _saldo_neto | money_es }}
       </div>
@@ -305,7 +305,7 @@
       </tfoot>
     </table>
     <div class="no-print px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500">
-      El saldo a favor se aplica automáticamente a futuras facturas y ya está descontado del “Saldo cliente” de arriba.
+      El saldo a favor se aplica automáticamente a futuras facturas y ya está descontado del “Saldo facturas” de arriba.
     </div>
   </div>
   {% endif %}
