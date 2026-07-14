@@ -57,20 +57,6 @@
     background: rgb(30 41 59 / 0.6); color: rgb(241 245 249);
     border-top-color: rgb(71 85 105);
   }
-  .gastos-matriz tr.amort td {
-    color: rgb(100 116 139); font-style: italic; font-size: 12px;
-    border-bottom: 1px solid rgb(226 232 240);
-  }
-  .dark .gastos-matriz tr.amort td {
-    color: rgb(148 163 184); border-bottom-color: rgb(51 65 85);
-  }
-  .gastos-matriz tr.grand td {
-    background: rgb(186 230 253); color: rgb(12 74 110);
-    font-weight: 700; font-size: 14px;
-  }
-  .dark .gastos-matriz tr.grand td {
-    background: rgb(241 245 249); color: rgb(15 23 42);
-  }
   .gastos-matriz td.total-col {
     background: rgb(248 250 252); color: rgb(15 23 42);
     font-weight: 600;
@@ -227,18 +213,19 @@
           <td class="num">{{ suma_v_total | num_es(0) }}</td>
         </tr>
 
-        {# Amortizaciones por rubro #}
-        <tr class="amort">
-          <td class="row-label" style="font-style:italic">+ Amortización</td>
-          <td class="num">{{ col_amort.tej | num_es(0) }}</td>
-          <td class="num">{{ col_amort.tin | num_es(0) }}</td>
-          <td class="num">{{ col_amort.adm | num_es(0) }}</td>
-          <td class="num">{{ suma_amort_total | num_es(0) }}</td>
+        {# Amortizaciones por rubro — mismo formato que las filas de datos. #}
+        <tr>
+          <td class="row-label">+ Amortización</td>
+          <td class="cell num">{{ col_amort.tej | num_es(0) }}</td>
+          <td class="cell num">{{ col_amort.tin | num_es(0) }}</td>
+          <td class="cell num">{{ col_amort.adm | num_es(0) }}</td>
+          <td class="total-col num">{{ suma_amort_total | num_es(0) }}</td>
         </tr>
 
-        {# GRAND TOTAL — los GTEJ/GTIN/GGF que terminan en el panel Resultados #}
-        <tr class="grand">
-          <td class="row-label" style="text-transform:uppercase">Total con amort.</td>
+        {# GRAND TOTAL — los GTEJ/GTIN/GGF que terminan en el panel Resultados.
+           Mismo formato que la fila Subtotal (pedido Federico 2026-07-14). #}
+        <tr class="subtotal">
+          <td class="row-label">Total con amort.</td>
           <td class="num">{{ col_total.tej | num_es(0) }}</td>
           <td class="num">{{ col_total.tin | num_es(0) }}</td>
           <td class="num">{{ col_total.adm | num_es(0) }}</td>
