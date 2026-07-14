@@ -415,19 +415,12 @@
           <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
           <td class="num-cell">{{ b.ventas_anio | num_es(0) }}</td>
         </tr>
-        {# Federico 2026-07-14: "Dividendos" con del mes + acumulado del año,
-           y "Utilidades <año>" encolumnado con Ventas del año. #}
+        {# Federico 2026-07-14: "Dividendos" en un solo renglón — mes: y año:
+           en la misma fila, con el acumulado del año encolumnado (num-cell,
+           right-aligned) con las Utilidades del año de abajo. #}
         <tr class="fila-dato">
-          <td class="label-cell">Dividendos</td>
-          <td class="num-cell"></td>
-        </tr>
-        <tr class="fila-dato">
-          <td class="label-cell pl-6"><a href="{{ url_for('informes.retiros', tab='mes') }}" class="hover:text-blue-600 hover:underline">↳ del mes</a></td>
-          <td class="num-cell">{{ b.uret | num_es(0) }}</td>
-        </tr>
-        <tr class="fila-dato">
-          <td class="label-cell pl-6"><a href="{{ url_for('informes.retiros', tab='anio') }}" class="hover:text-blue-600 hover:underline">↳ acumulado {{ b.anio_actual }}</a></td>
-          <td class="num-cell">{{ b.uret_anio | num_es(0) }}</td>
+          <td class="label-cell">Dividendos<span class="text-slate-500" style="margin-left:1.5em">mes:</span> <a href="{{ url_for('informes.retiros', tab='mes') }}" class="hover:text-blue-600 hover:underline">{{ b.uret | num_es(0) }}</a></td>
+          <td class="num-cell"><span class="text-slate-500">año:</span> <a href="{{ url_for('informes.retiros', tab='anio') }}" class="hover:text-blue-600 hover:underline">{{ b.uret_anio | num_es(0) }}</a></td>
         </tr>
         <tr class="fila-dato">
           <td class="label-cell">Utilidades {{ b.anio_actual }}</td>
