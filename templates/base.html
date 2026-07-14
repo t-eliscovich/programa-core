@@ -747,8 +747,7 @@
            PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
            menú — su contenido se mergea con /posdat (decisión Tamara). #}
         {{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}
-        {# TMT 2026-07-09 (dueña): Costos mensuales colorantes movido a Informes (última posición) desde Tintorería. #}
-        {% if tiene_permiso('tintura.ver') %}{{ nav_link('comparativa_tintoreria.tintoreria_detalle', 'Costos mensuales colorantes', 'report') }}{% endif %}
+        {# TMT 2026-07-14 (dueña): "eliminá el tab" — Costos mensuales colorantes ya NO es un tab. La tabla vive al final de /informes/flujo-produccion (COSTOS DE TINTORERÍA); la ruta /tintoreria redirige allá. #}
         {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
            (pedido dueña: "para retiros tenemos demasiadas pantallas.
            Este borralo: /capital"). Los dividendos se ven desde

@@ -175,6 +175,10 @@ def tintoreria_detalle():
         % kg sobre el total del mes, kg, $/kg promedio, $
     Y al final una fila PROMEDIO mensual.
     """
+    # TMT 2026-07-14 (dueña): "eliminá el tab" — Costos mensuales colorantes ya
+    # vive al final de /informes/flujo-produccion (tabla COSTOS DE TINTORERÍA).
+    # Esta pantalla se retira; la ruta redirige allá (no rompe links viejos).
+    return redirect(url_for("informes.flujo_produccion"))
     hoy = today_ec()
     # Default: últimos 12 meses completos hasta hoy.
     default_desde = (hoy.replace(day=1) - timedelta(days=365)).replace(day=1)

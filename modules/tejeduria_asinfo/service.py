@@ -152,20 +152,23 @@ def resumen_mes(anio: int, mes: int) -> dict:
             hilo_ukg = 0.0
     crudo_intela_ukg = round(hilo_ukg + 0.5, 4) if hilo_ukg else 0.0
 
-    terc_kg_of = round(sum(t["kg_of"] for t in tejedores if not t["es_intela"]), 2)
     ajustado = ingreso_bodega > 0
+    # INTELA (autoprod) NO factura → no se mide contra una compra: es el RESIDUO.
+    # Todo el crudo que entró a bodega 52 (= Ingresos crudo del panorama) menos
+    # lo que trajeron los maquileros ES producción de INTELA. Así el total ata
+    # al panorama/stock y los tercerizados quedan con sus kg (para matchear la
+    # factura). Las OFs cerradas (kg_of) son solo el detalle diario (subconjunto).
+    terc_kg = round(sum(t["kg"] for t in tejedores if not t["es_intela"]), 2)
     for t in tejedores:
         if t["es_intela"] and ajustado:
-            # INTELA = ingreso de bodega − tercerizados (plug que ata al total).
-            t["kg"] = round(max(ingreso_bodega - terc_kg_of, 0.0), 2)
-        # Costo del crudo por tejedor.
+            t["kg"] = round(max(ingreso_bodega - terc_kg, 0.0), 2)
+        # Costo: INTELA = kg × (hilo + 0,5); tercerizado = lo facturado ($/kg
+        # sobre los kg mostrados para que $/kg × kg = $ en la fila).
         if t["es_intela"]:
             t["costo_kg"] = crudo_intela_ukg or None
             t["costo"] = (round(t["kg"] * crudo_intela_ukg, 2)
                           if crudo_intela_ukg else None)
         else:
-            # tercerizado: costo = lo facturado en la compra; $/kg sobre los kg
-            # MOSTRADOS (producido Asinfo) para que $/kg × kg = $ en la fila.
             t["costo"] = round(t["compra_importe"], 2)
             t["costo_kg"] = (round(t["costo"] / t["kg"], 4)
                              if t["kg"] else None)

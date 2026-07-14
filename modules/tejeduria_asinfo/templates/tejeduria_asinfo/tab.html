@@ -49,14 +49,9 @@
       <div class="kpi"><div class="l">Total tela cruda</div><div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
       <div class="kpi"><div class="l intela">INTELA · autoprod.</div><div class="v">{{ intela_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
       <div class="kpi"><div class="l terc">Tercerizados</div><div class="v">{{ terc_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
-      {% if data.total_costo %}<div class="kpi"><div class="l">Costo tela cruda</div><div class="v">{{ data.total_costo|num_es(0) }} <span class="muted" style="font-size:12px">$</span></div></div>{% endif %}
     </div>
-    {% if data.ajustado_a_bodega %}
-    <p class="note">El total (<strong>{{ data.total_kg|num_es(0) }} kg</strong>) es el <strong>ingreso real a bodega 52</strong> — el mismo «Ingresos crudo» del Flujo de producción, que cierra con el stock. Los tercerizados van con sus kg de OF (para matchear la compra que facturan); <strong>INTELA</strong> es el resto, valuado a <strong>hilo + 0,5 = {{ data.crudo_intela_ukg|num_es }} $/kg</strong> (hilo {{ data.hilo_ukg|num_es }}).</p>
-    {% endif %}
 
-    <h2>Match por tejedor · producido (Asinfo) vs cargado (compras K) + costo</h2>
-    <p class="note">El match viejo es aproximado por tejedor/mes — las fechas no calzan exacto. Lo nuevo (cargado desde acá) matchea fino por OFT. Costo: tercerizados = lo facturado en la compra; INTELA (autoprod) = kg × (hilo + 0,5).</p>
+    <h2>Por tejedor · producido vs cargado + costo</h2>
     <table>
       <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>OF</th><th>Cargado (compras K)</th><th>Falta cargar</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
       <tbody>
@@ -65,7 +60,7 @@
             <td class="{{ 'intela' if t.es_intela else 'terc' }}">
               {{ t.label }}{% if t.cod %} <span class="muted">· {{ t.cod }}</span>{% else %} <span class="muted">· desconocido</span>{% endif %}
             </td>
-            <td>{{ t.kg|num_es }}{% if t.es_intela and t.kg_of and (t.kg_of != t.kg) %} <span class="muted" style="font-size:11px">(OF cerr. {{ t.kg_of|num_es(0) }})</span>{% endif %}</td>
+            <td>{{ t.kg|num_es }}</td>
             <td class="muted">{{ t.ofs }}</td>
             <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
             <td>
@@ -86,8 +81,7 @@
       </tbody>
     </table>
 
-    <h2>Resumen diario (kg por tejedor)</h2>
-    <p class="note">Detalle por OFs <strong>cerradas</strong> en el mes (suma {{ data.total_kg_of|num_es(0) }} kg). El total de arriba ({{ data.total_kg|num_es(0) }} kg) es el ingreso real a bodega e incluye producción que ya entró pero cuya OF aún no cerró.</p>
+    <h2>Diario · OFs cerradas (kg)</h2>
     <table>
       <thead>
         <tr><th>Día</th>
@@ -113,8 +107,7 @@
       </tbody>
     </table>
 
-    <h2>Pendientes de cargar · OFs tercerizadas sin compra ({{ data.pendientes|length }})</h2>
-    <p class="note">Cada botón abre la carga de compra con proveedor, kg y OFT precargados — vos ponés el $ (tarifa manual). El OFT queda estampado en el concepto para el match fino.</p>
+    <h2>Pendientes de cargar ({{ data.pendientes|length }})</h2>
     {% if data.pendientes %}
     <table>
       <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th></th></tr></thead>
