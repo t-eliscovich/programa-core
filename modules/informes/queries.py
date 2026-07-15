@@ -4453,6 +4453,7 @@ def informe_balance() -> dict:
         _comp = (diagnostico or {}).get("componentes")
         if isinstance(_comp, dict):
             _comp["vsto"] = vsto
+            _comp["vqx"] = vqx   # TMT 2026-07-15: faltaba — quedaba el vqx VIEJO
             _comp["totl"] = totl
             _comp["patr"] = patr
             _comp["utilidad"] = utilidad
@@ -8137,7 +8138,10 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
         "ktej": float(kg.get("ktej") or 0),
         "ktin": float(kg.get("ktin") or 0),
         "ustock": float(bal.get("vsto") or _c("vsto")),
-        "uqui": _c("vqx"),
+        # TMT 2026-07-15: uqui del top-level (químico final, POLI+ALG físico ~338k),
+        # NO componentes["vqx"] (viejo ~279k) — igual que ustock/patrimonio/usuti,
+        # así la fila de historia cumple ACTIVO−PASIVO=PATRIMONIO. [[coherencia]]
+        "uqui": float(bal.get("vqx") or _c("vqx")),
         "kvent": _kvent_live,
         "uvent": _uvent_live,
         "costo": float(kg.get("costo_mes") or 0),
