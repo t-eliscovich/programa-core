@@ -541,7 +541,14 @@ def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
     if pd.get("anulada") is True:
         raise ValueError("La posdat ya está anulada.")
     banc = int(pd.get("banc") or 0)
-    if banc != 0:
+    # TMT 2026-07-15 (dueña: "los gastos forzados no los puedo eliminar"):
+    # banc=9 son GASTOS FORZADOS / compras futuras de hilado (proyecciones
+    # internas importadas del dBase, prov AC/AI/CL) — NO tienen cheque ni
+    # partida bancaria PC que reversar. Los cheques modernos con movimiento
+    # bancario real son banc=10/32 (ver bancos.queries.posdat_abiertas_de).
+    # Por eso banc=9 SÍ se puede anular (soft-delete, reversible). Seguimos
+    # bloqueando solo los que tienen cheque/banco real (banc ∉ {0, 9}).
+    if banc not in (0, 9):
         raise ValueError(
             f"Posdat ya pagada con cheque (banc={banc}). Reversá el "
             f"cheque emitido primero desde /bancos o /cheques antes de "
