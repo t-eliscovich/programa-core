@@ -2691,49 +2691,115 @@ def banco_borrar_sesion():
 
     try:
         with _db.tx() as conn:
-            # 1. Ids de txs creadas por conciliación dentro de esta sesión.
-            ids_rows = _db.fetch_all(
+            # 1. Firmas del extracto de ESTA sesión = identidad real de sus
+            # movimientos de banco (fecha+doc+monto+tipo). Solo tocaremos los
+            # matches cuyo lado real pertenece a ESTA sesión.
+            #
+            # TMT 2026-07-15 (dueña + Alex — bug importación INV30405): BUG DE
+            # RAÍZ. Antes el borrado de matches iba por VENTANA DE TIEMPO
+            # (creado_en entre abierta y cerrada). Como los matches NO guardan a
+            # qué sesión pertenecen, borrar UNA sesión se llevaba puestos TODOS
+            # los matches creados en esa ventana — incluidos los de OTRAS
+            # conciliaciones legítimas (ej. un cruce multi-PC hecho por Alex
+            # desaparecía entero, sin rastro). Y era HARD DELETE: no quedaba ni
+            # el `deshecho` para auditar, por eso los movimientos reaparecían
+            # como pendientes sin explicación. Ahora: (a) atamos el borrado por
+            # FIRMA del extracto de la sesión (no por tiempo), y (b) usamos
+            # SOFT-DELETE (deshecho_en) para que sea REVERSIBLE y quede rastro
+            # de qué sesión lo quitó.
+            movs_sesion = _sesion.cargar_movs(sesion) or []
+            firmas_sesion: set = set()
+            for _mv in movs_sesion:
+                _doc = (getattr(_mv, "documento", "") or "").strip().upper()
+                if not _doc:
+                    continue
+                try:
+                    _mo = f"{abs(float(getattr(_mv, 'monto', 0) or 0)):.2f}"
+                except (TypeError, ValueError):
+                    continue
+                _fe = getattr(_mv, "fecha", None)
+                _fe = _fe.isoformat() if hasattr(_fe, "isoformat") else str(_fe or "")
+                _ti = (getattr(_mv, "tipo", "") or "").strip().upper()[:1]
+                firmas_sesion.add((_fe, _doc, _mo, _ti))
+            if not firmas_sesion:
+                _LOG.warning(
+                    "borrar-sesion #%s: extracto sin firmas recuperables — no se "
+                    "tocan matches (conservador, evita borrar de otras sesiones).",
+                    sesion_id,
+                )
+
+            # 2. Candidatos: matches ACTIVOS creados en la ventana de la sesión.
+            # De esos, SOLO los que además tienen firma real EN el extracto de
+            # esta sesión son realmente de esta sesión (la ventana sola no basta
+            # — ese era el bug). Separamos: matches contra tx PC real (soft-
+            # delete, recuperable) vs. matches de tx fabricada por conciliación
+            # (hard-delete, porque la tx se borra en el paso 4).
+            cand_matches = _db.fetch_all(
                 """
-                SELECT DISTINCT t.id_transaccion
-                  FROM scintela.transacciones_bancarias t
-                  JOIN scintela.banco_conciliacion_match m
-                       ON m.id_transaccion = t.id_transaccion
-                 WHERE t.no_banco = %s
-                   AND m.metodo IN ('created_from_real','created_from_real_grouped')
-                   AND m.creado_en BETWEEN %s AND %s
+                SELECT id, id_transaccion, real_fecha, real_documento,
+                       real_monto, real_tipo, COALESCE(metodo, '') AS metodo
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s
+                   AND deshecho_en IS NULL
+                   AND creado_en >= %s - interval '5 seconds'
+                   AND creado_en <= %s + interval '60 seconds'
                 """,
                 (_BANCO_PICHINCHA, abierta, cerrada),
                 conn=conn,
             ) or []
-            ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
+            match_ids_soft: list = []
+            match_ids_hard: list = []
+            ids_bancsis_sesion: list = []
+            ids_grupales: list = []
+            _seen_bancsis: set = set()
+            _seen_grup: set = set()
+            for _m in cand_matches:
+                _doc = (_m.get("real_documento") or "").strip().upper()
+                if not _doc:
+                    # Sin firma real (p.ej. bancsis_only_ok): no lo podemos atar
+                    # a esta sesión con certeza → NO lo tocamos (conservador).
+                    continue
+                try:
+                    _mo = f"{abs(float(_m.get('real_monto') or 0)):.2f}"
+                except (TypeError, ValueError):
+                    continue
+                _fe = str(_m.get("real_fecha"))[:10]
+                _ti = (_m.get("real_tipo") or "").strip().upper()[:1]
+                if (_fe, _doc, _mo, _ti) not in firmas_sesion:
+                    continue  # el mov de banco NO es de esta sesión → no tocar
+                _met = _m.get("metodo") or ""
+                _idtx = _m.get("id_transaccion")
+                if _met in ("created_from_real", "created_from_real_grouped"):
+                    match_ids_hard.append(int(_m["id"]))
+                    if _idtx and int(_idtx) not in _seen_grup:
+                        _seen_grup.add(int(_idtx))
+                        ids_grupales.append(int(_idtx))
+                else:
+                    match_ids_soft.append(int(_m["id"]))
+                    if _idtx and int(_idtx) not in _seen_bancsis:
+                        _seen_bancsis.add(int(_idtx))
+                        ids_bancsis_sesion.append(int(_idtx))
+            _match_ids_todos = match_ids_soft + match_ids_hard
 
-            # 2a. PRIMERO reset histos QUE FUERON conciliados en este rango.
-            # TMT 2026-06-03 dueña: 'borramos pero todo se rompió, no tiene
-            # sentido, hay que re armarlo'. Bug del orden: cuando un histo
-            # de fuente='sesion:N' fue conciliado en la MISMA sesión, tenía
-            # conciliado_en NOT NULL y el DELETE de 2b (con filtro IS NULL)
-            # lo saltaba. Después el UPDATE lo reseteaba a NULL — quedaba
-            # huérfano forever, aparece en pendientes después de borrar.
-            # Fix: resetear PRIMERO; así el delete de abajo lo atrapa.
-            counts["historicos_reset"] = _db.execute(
-                """
-                UPDATE scintela.banco_historicos_pendientes
-                   SET conciliado_en = NULL,
-                       conciliado_por = NULL,
-                       conciliado_match_id = NULL
-                 WHERE no_banco = %s
-                   AND conciliado_en BETWEEN %s AND %s
-                """,
-                (_BANCO_PICHINCHA, abierta, cerrada),
-                conn=conn,
-            ) or 0
+            # 3a. Reset históricos conciliados POR ESTOS matches (por
+            # conciliado_match_id), no por ventana de tiempo. Vuelven a
+            # pendientes solo los históricos que ESTA sesión cruzó.
+            counts["historicos_reset"] = 0
+            if _match_ids_todos:
+                counts["historicos_reset"] = _db.execute(
+                    """
+                    UPDATE scintela.banco_historicos_pendientes
+                       SET conciliado_en = NULL,
+                           conciliado_por = NULL,
+                           conciliado_match_id = NULL
+                     WHERE no_banco = %s
+                       AND conciliado_match_id = ANY(%s)
+                    """,
+                    (_BANCO_PICHINCHA, _match_ids_todos),
+                    conn=conn,
+                ) or 0
 
-            # 2b. Borrar histos que ESTA sesión auto-promovió.
-            # Después del reset de 2a, los histos sesion:N conciliados-en-esta-sesión
-            # ya tienen conciliado_en IS NULL y caen acá. Histos sesion:N que
-            # fueron conciliados en OTRA sesión (conciliado_en fuera del rango)
-            # conservan su conciliado_en y NO son borrados — el rastro de su
-            # match legítimo se preserva.
+            # 3b. Borrar histos que ESTA sesión auto-promovió (fuente=sesion:N).
             counts["historicos_promovidos_borrados"] = _db.execute(
                 """
                 DELETE FROM scintela.banco_historicos_pendientes
@@ -2745,42 +2811,32 @@ def banco_borrar_sesion():
                 conn=conn,
             ) or 0
 
-            # 3. Borrar matches creados durante esta sesión.
-            # TMT 2026-05-29 dueña: 'si borro la conciliacion no se borraron
-            # los matches'. Bug: el BETWEEN era estricto y a veces los
-            # microsegundos de cerrada_en no atrapaban los últimos matches.
-            # Fix: ventana ampliada con margen + capturar los id_transaccion
-            # antes de borrar para resetear stat='*' del BANCSIS explícito
-            # (incluso si vino de dbf-import).
-            ids_bancsis_match = _db.fetch_all(
-                """
-                SELECT DISTINCT id_transaccion
-                  FROM scintela.banco_conciliacion_match
-                 WHERE no_banco = %s
-                   AND creado_en >= %s - interval '5 seconds'
-                   AND creado_en <= %s + interval '60 seconds'
-                   AND id_transaccion IS NOT NULL
-                """,
-                (_BANCO_PICHINCHA, abierta, cerrada),
-                conn=conn,
-            ) or []
-            ids_bancsis_sesion = [
-                int(r["id_transaccion"]) for r in ids_bancsis_match
-                if r.get("id_transaccion") is not None
-            ]
-            counts["matches"] = _db.execute(
-                """
-                DELETE FROM scintela.banco_conciliacion_match
-                 WHERE no_banco = %s
-                   AND creado_en >= %s - interval '5 seconds'
-                   AND creado_en <= %s + interval '60 seconds'
-                """,
-                (_BANCO_PICHINCHA, abierta, cerrada),
-                conn=conn,
-            ) or 0
-            # Reset stat='*' explícito para los BANCSIS que matcheaban con
-            # esta sesión, sin importar el usuario_crea. La conciliación
-            # fue borrada explícitamente — la marca tiene que irse también.
+            # 3c. Soft-delete (REVERSIBLE) los matches contra tx PC real de esta
+            # sesión; hard-delete solo los de tx fabricada (la tx se borra en el
+            # paso 4). `deshecho_por` deja el rastro de qué sesión los quitó, así
+            # nunca más desaparece un match sin explicación.
+            counts["matches"] = 0
+            _des_por = (f"borrar-sesion:{sesion_id}")[:50]
+            if match_ids_soft:
+                counts["matches"] += _db.execute(
+                    """
+                    UPDATE scintela.banco_conciliacion_match
+                       SET deshecho_en = CURRENT_TIMESTAMP,
+                           deshecho_por = %s
+                     WHERE id = ANY(%s) AND deshecho_en IS NULL
+                    """,
+                    (_des_por, match_ids_soft),
+                    conn=conn,
+                ) or 0
+            if match_ids_hard:
+                counts["matches"] += _db.execute(
+                    "DELETE FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)",
+                    (match_ids_hard,),
+                    conn=conn,
+                ) or 0
+
+            # 3d. Reset stat='*' de los BANCSIS que matcheaban con esta sesión,
+            # salvo que tengan OTRO match activo (no romper otra conciliación).
             counts["bancsis_stat_reset"] = 0
             if ids_bancsis_sesion:
                 counts["bancsis_stat_reset"] = _db.execute(
