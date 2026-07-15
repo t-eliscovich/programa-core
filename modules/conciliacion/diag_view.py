@@ -53,6 +53,13 @@ def inspeccionar_mov():
     docs = [d.strip() for d in (request.args.get("docs") or request.args.get("doc") or "").split(",") if d.strip()]
     out: dict = {}
     montos: list = []
+    for _m in (request.args.get("montos") or "").split(","):
+        _m = _m.strip()
+        if _m:
+            try:
+                montos.append(round(abs(float(_m)), 2))
+            except ValueError:
+                pass
     for doc in docs:
         histos = _db.fetch_all(
             "SELECT id, no_banco, fecha, documento, monto, tipo, conciliado_en, conciliado_por, conciliado_match_id "
@@ -78,8 +85,14 @@ def inspeccionar_mov():
             matches_por_tx = _db.fetch_all(
                 "SELECT id, id_transaccion, real_fecha, real_documento, real_monto, deshecho_en "
                 "FROM scintela.banco_conciliacion_match WHERE id_transaccion = ANY(%s) ORDER BY id", (ids,)) or []
+    histos_monto = []
+    if montos:
+        histos_monto = _db.fetch_all(
+            "SELECT id, no_banco, fecha, documento, monto, tipo, conciliado_en, conciliado_por "
+            "FROM scintela.banco_historicos_pendientes WHERE ROUND(ABS(monto),2) = ANY(%s) ORDER BY fecha", (montos,)) or []
     out["_tx_por_monto"] = _clean(tx)
     out["_matches_de_esas_tx"] = _clean(matches_por_tx)
+    out["_histos_por_monto"] = _clean(histos_monto)
     return jsonify(out)
 
 
