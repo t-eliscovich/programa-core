@@ -763,10 +763,33 @@
             return m[3] + '/' + m[2] + '/' + m[1];
           }
 
+          // dd/mm/aaaa → ISO (YYYY-MM-DD). null si no matchea.
+          function _ddmmToIso(s) {
+            s = (s || '').trim();
+            const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (!m) return null;
+            const d = m[1].padStart(2, '0'), mo = m[2].padStart(2, '0');
+            const mm = parseInt(mo, 10), dd = parseInt(d, 10);
+            if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+            return m[3] + '-' + mo + '-' + d;
+          }
+          function _isoToDdmm(iso) {
+            const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+            return m ? (m[3] + '/' + m[2] + '/' + m[1]) : '';
+          }
+          // Estilo de input igual al de las filas banc=9 (borde transparente,
+          // se resalta al hover/focus vía las clases gf-edit-*).
+          const _inpBase = 'font-size:12px;border:1px solid transparent;background:transparent;'
+                         + 'padding:2px 4px;border-radius:3px;color:var(--text);';
+
+          // TMT 2026-07-15 (dueña: "todas son manual, no se deberían ver distinto
+          // que los anteriores — y tienen que tener la x para poder cancelarlos"):
+          // las filas manuales (scintela.gasto_forzado) ahora se renderizan IGUAL
+          // que las banc=9 — mismos inputs editables inline + la × roja para
+          // borrarlas. Sin etiqueta MANUAL ni fondo amarillo.
           window.gfInjectManualTabla = function() {
             const tbody = document.getElementById('gf-tabla-body');
             if (!tbody) return;
-            // Borrar filas MANUAL previas y reinyectar desde la cache.
             tbody.querySelectorAll('tr[data-gf-id]').forEach(tr => tr.remove());
             const items = (typeof gfLoad === 'function') ? gfLoad() : [];
             let manualTotal = 0;
@@ -774,18 +797,74 @@
               .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
               .forEach(it => {
                 manualTotal += Number(it.importe || 0);
+                const ver = Number(it.version || 1);
                 const tr = document.createElement('tr');
                 tr.setAttribute('data-gf-id', it.id);
                 tr.style.borderBottom = '1px dotted var(--grid)';
-                tr.style.background = 'rgba(254,249,195,0.30)';
-                tr.innerHTML =
-                  '<td style="padding:4px 10px;font-size:10px;">'
-                    + '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-family:ui-monospace,monospace;">MANUAL</span>'
-                  + '</td>'
-                  + '<td style="padding:4px 10px;font-family:ui-monospace,monospace;">' + fmtFecha(it.fecha) + '</td>'
-                  + '<td style="padding:4px 10px;color:var(--muted);">—</td>'
-                  + '<td style="padding:4px 10px;color:var(--text);">' + (it.concepto || '—') + '</td>'
-                  + '<td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">' + fmtMoney(it.importe) + '</td>';
+
+                // Fecha (dd/mm/aaaa, editable)
+                const tdF = document.createElement('td'); tdF.style.padding = '4px 10px';
+                const inF = document.createElement('input');
+                inF.type = 'text'; inF.inputMode = 'numeric'; inF.placeholder = 'dd/mm/aaaa';
+                inF.className = 'gf-edit-fechad';
+                inF.value = _isoToDdmm(it.fecha);
+                inF.dataset.orig = inF.value;
+                inF.style.cssText = _inpBase + 'font-family:ui-monospace,monospace;width:100px;';
+                inF.addEventListener('change', () => {
+                  const iso = _ddmmToIso(inF.value);
+                  if (!iso) { alert('Fecha inválida (usá dd/mm/aaaa).'); inF.value = inF.dataset.orig; return; }
+                  _gfSaveCampo(it.id, 'fecha', iso, ver);
+                });
+                tdF.appendChild(inF); tr.appendChild(tdF);
+
+                // PR — los manuales no tienen proveedor: celda vacía (—) no editable.
+                const tdP = document.createElement('td'); tdP.style.padding = '4px 10px';
+                const inP = document.createElement('input');
+                inP.type = 'text'; inP.readOnly = true; inP.tabIndex = -1; inP.value = '';
+                inP.placeholder = '—';
+                inP.style.cssText = _inpBase + 'font-family:ui-monospace,monospace;width:60px;color:var(--muted);cursor:default;';
+                tdP.appendChild(inP); tr.appendChild(tdP);
+
+                // Concepto (editable)
+                const tdC = document.createElement('td'); tdC.style.padding = '4px 10px';
+                const inC = document.createElement('input');
+                inC.type = 'text'; inC.maxLength = 100; inC.placeholder = '—';
+                inC.className = 'gf-edit-concepto';
+                inC.value = it.concepto || '';
+                inC.dataset.orig = inC.value;
+                inC.style.cssText = _inpBase + 'width:100%;';
+                inC.addEventListener('change', () => _gfSaveCampo(it.id, 'concepto', inC.value, ver));
+                tdC.appendChild(inC); tr.appendChild(tdC);
+
+                // Importe (editable)
+                const tdI = document.createElement('td'); tdI.style.padding = '4px 10px'; tdI.style.textAlign = 'right';
+                const inI = document.createElement('input');
+                inI.type = 'number'; inI.step = '0.01'; inI.min = '0.01';
+                inI.className = 'gf-edit-importe';
+                inI.value = Number(it.importe || 0).toFixed(2);
+                inI.dataset.orig = inI.value;
+                inI.style.cssText = _inpBase + 'font-family:ui-monospace,monospace;text-align:right;width:110px;';
+                inI.addEventListener('change', () => _gfSaveCampo(it.id, 'importe', inI.value, ver));
+                tdI.appendChild(inI); tr.appendChild(tdI);
+
+                // × — cancelar/borrar el gasto forzado
+                const tdX = document.createElement('td'); tdX.style.padding = '4px 6px'; tdX.style.textAlign = 'center';
+                const btn = document.createElement('button');
+                btn.type = 'button'; btn.textContent = '×';
+                btn.title = 'Cancelar este gasto forzado';
+                btn.style.cssText = 'background:transparent;border:none;color:rgb(220 38 38);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:3px;';
+                btn.addEventListener('mouseover', () => btn.style.background = 'rgba(220,38,38,0.1)');
+                btn.addEventListener('mouseout', () => btn.style.background = 'transparent');
+                btn.addEventListener('click', async () => {
+                  if (!confirm('¿Cancelar "' + (it.concepto || '(sin concepto)') + '" ($ ' + fmtMoney(it.importe) + ')?')) return;
+                  const ok = await gfApiDelete(it.id);
+                  if (!ok) { alert('No se pudo cancelar (verificá permisos o si ya fue borrado).'); return; }
+                  await gfFetchAll();
+                  gfRender();
+                  if (typeof gfRebuildChart === 'function') gfRebuildChart();
+                });
+                tdX.appendChild(btn); tr.appendChild(tdX);
+
                 tbody.appendChild(tr);
               });
             // Total general del panel = banc=9 (server) + manuales.
