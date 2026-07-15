@@ -3024,7 +3024,7 @@ def gastos_forzados_crear():
 
 
 @informes_bp.route(
-    "/informes/flujo/gastos-forzados/<int:id_gasto>",
+    "/flujo/gastos-forzados/<int:id_gasto>",
     methods=["PUT", "PATCH"],
 )
 @requiere_login
@@ -3060,7 +3060,7 @@ def gastos_forzados_actualizar(id_gasto: int):
 
 
 @informes_bp.route(
-    "/informes/flujo/gastos-forzados/<int:id_gasto>",
+    "/flujo/gastos-forzados/<int:id_gasto>",
     methods=["DELETE"],
 )
 @requiere_login

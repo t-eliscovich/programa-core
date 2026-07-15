@@ -8736,8 +8736,15 @@ def gasto_forzado_crear(
     concepto: str = "",
     usuario: str = "web",
 ) -> dict:
-    """Crea un nuevo gasto forzado. Devuelve el item con id y version=1."""
-    row = db.fetch_one(
+    """Crea un nuevo gasto forzado. Devuelve el item con id y version=1.
+
+    TMT 2026-07-15 (dueña: "no se pueden crear gastos forzados o no se ven"):
+    usaba db.fetch_one() para el INSERT ... RETURNING, que NO commitea — el
+    write se rollbackeaba al devolver la conexión al pool, así que el 201 traía
+    el id pero la fila nunca persistía y el listar salía siempre vacío. Va con
+    db.execute_returning() (commitea). Idem actualizar/eliminar abajo.
+    """
+    row = db.execute_returning(
         """
         INSERT INTO scintela.gasto_forzado
             (fecha, importe, concepto, version, creado_por,
@@ -8798,7 +8805,7 @@ def gasto_forzado_actualizar(
     nueva_fecha = fecha if fecha is not None else actual["fecha"]
     nuevo_importe = importe if importe is not None else float(actual["importe"] or 0)
     nuevo_concepto = concepto if concepto is not None else (actual["concepto"] or "")
-    row = db.fetch_one(
+    row = db.execute_returning(
         """
         UPDATE scintela.gasto_forzado
            SET fecha           = %s,
@@ -8830,7 +8837,7 @@ def gasto_forzado_actualizar(
 
 def gasto_forzado_eliminar(id_gasto_forzado: int) -> bool:
     """Borra un gasto forzado. Devuelve True si se borró."""
-    row = db.fetch_one(
+    row = db.execute_returning(
         """
         DELETE FROM scintela.gasto_forzado
          WHERE id_gasto_forzado = %s
