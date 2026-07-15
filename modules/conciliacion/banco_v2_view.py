@@ -518,6 +518,24 @@ def banco_post_procesar():
         else:
             m["diff"] = None  # un lado falta → no aplica diferencia
 
+        # TMT 2026-07-15 (dueña: "volvé a poner cuanto venía de programa"). SOLO
+        # DISPLAY: si el vínculo al programa se rompió (el relink viejo lo nuleó)
+        # pero el match 'matched' conserva su tx_firma, exponemos el importe del
+        # programa que quedó GUARDADO en la firma (fecha|documento|importe|...).
+        # NO toca has_programa/monto_prog_signed/diff ni los totales ni el
+        # matcher ni el cálculo de pendientes — es puro adorno del historial.
+        m["tiene_prog_firma"] = False
+        m["prog_firma_signed"] = 0.0
+        if (not m["has_programa"]) and (m.get("estado") == "matched"):
+            _fp = (m.get("tx_firma") or "").split("|")
+            if len(_fp) >= 3:
+                try:
+                    m["prog_firma_signed"] = _signed_delta(
+                        (_fp[1] or "").upper(), float(_fp[2]), "")
+                    m["tiene_prog_firma"] = True
+                except (TypeError, ValueError):
+                    pass
+
     # Totales agregados por lado.
     # TMT 2026-06-03 dueña: 'mira los totales'. Bug: el agrupado de impuestos
     # crea 12 matches que apuntan a la MISMA tx PC (-$69.01). Sumar

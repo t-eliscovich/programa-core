@@ -212,7 +212,7 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
         SELECT CASE WHEN h.id IS NOT NULL THEN 'historico' ELSE 'match' END AS tipo,
                m.id, m.estado, m.creado_en, m.usuario, m.confirm_batch_id,
                m.real_fecha, m.real_documento, m.real_monto, m.real_tipo, m.real_concepto,
-               m.id_transaccion,
+               m.id_transaccion, m.tx_firma,
                tb.fecha       AS tb_fecha,
                tb.documento   AS tb_documento,
                tb.importe     AS tb_importe,

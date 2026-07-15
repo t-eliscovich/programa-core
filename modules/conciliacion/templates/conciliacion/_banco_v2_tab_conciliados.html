@@ -138,15 +138,25 @@
                apuntan al MISMO mov PC de -69.01 → sum = -828.12 vs real -69.01).
                Fix: dedupar por id_transaccion antes de sumar — solo cuento
                cada tx PC una vez. #}
-            {% set _bs_ns = namespace(seen=[], total=0.0) %}
+            {% set _bs_ns = namespace(seen=[], total=0.0, has_prog=false, firma_seen=[], firma_total=0.0, any_firma=false) %}
             {% for _bi in _batch_items %}
+              {% if _bi.has_programa %}{% set _bs_ns.has_prog = true %}{% endif %}
               {% if _bi.id_transaccion not in _bs_ns.seen %}
                 {% set _ = _bs_ns.seen.append(_bi.id_transaccion) %}
                 {% set _bs_ns.total = _bs_ns.total + (_bi.monto_prog_signed|default(0)|float) %}
               {% endif %}
+              {# TMT 2026-07-15: si el vínculo al programa se rompió, sumamos el
+                 valor guardado en la firma (deduplicado por tx_firma). Solo display. #}
+              {% if _bi.tiene_prog_firma and _bi.tx_firma not in _bs_ns.firma_seen %}
+                {% set _ = _bs_ns.firma_seen.append(_bi.tx_firma) %}
+                {% set _bs_ns.firma_total = _bs_ns.firma_total + (_bi.prog_firma_signed|default(0)|float) %}
+                {% set _bs_ns.any_firma = true %}
+              {% endif %}
             {% endfor %}
             {% set _bs_prog = _bs_ns.total %}
-            {% set _bs_diff = (_bs_banco - _bs_prog)|round(2) %}
+            {% set _bs_desde_firma = (not _bs_ns.has_prog) and _bs_ns.any_firma %}
+            {% set _bs_prog_eff = _bs_ns.firma_total if _bs_desde_firma else _bs_prog %}
+            {% set _bs_diff = (_bs_banco - _bs_prog_eff)|round(2) %}
             <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10 cursor-pointer batch-summary"
                 data-batch="{{ m.confirm_batch_id }}"
                 title="Click para ver/ocultar los {{ _batch_items|length }} items del grupo">
@@ -160,8 +170,8 @@
               <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_banco > 0 %}text-emerald-700{% elif _bs_banco < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
                 Σ {{ '{:+,.2f}'.format(_bs_banco) }}
               </td>
-              <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_prog > 0 %}text-emerald-700{% elif _bs_prog < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-                {{ '{:+,.2f}'.format(_bs_prog) }}
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_prog_eff > 0 %}text-emerald-700{% elif _bs_prog_eff < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+                {% if _bs_desde_firma %}<span style="font-style:italic" title="Valor del programa guardado en el match. El vínculo se rompió en un sync (en reparación) — no afecta pendientes.">≈ {{ '{:+,.2f}'.format(_bs_prog_eff) }}</span>{% else %}{{ '{:+,.2f}'.format(_bs_prog_eff) }}{% endif %}
               </td>
               <td class="px-1.5 py-0.5 text-right font-mono">
                 {% if _bs_diff|abs < 0.01 %}
@@ -210,7 +220,7 @@
               {% if m.has_banco %}{{ '{:+,.2f}'.format(_mb) }}{% else %}—{% endif %}
             </td>
             <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mp > 0 %}text-emerald-700{% elif _mp < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-              {% if m.has_programa %}{{ '{:+,.2f}'.format(_mp) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+              {% if m.has_programa %}{{ '{:+,.2f}'.format(_mp) }}{% elif m.tiene_prog_firma %}<span class="text-slate-400" style="font-style:italic" title="Valor del programa guardado en el match (vínculo roto por un sync — en reparación)">≈ {{ '{:+,.2f}'.format(m.prog_firma_signed|float) }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
             <td class="px-1.5 py-0.5 text-right font-mono">
               {# TMT 2026-06-03 dueña: 'la diferencia no hace falta'. En filas
