@@ -167,8 +167,8 @@
               <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}" title="{{ t.label }}"
                  class="{{ _clase }} hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-700 dark:text-amber-300">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></a>
             {% elif t.kind == 'WIZARD' %}
-              <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}" title="{{ t.label }}"
-                 class="{{ _clase }} hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></a>
+              <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque, **(t.url_args or {})) }}" title="{{ t.label }}"
+                 class="{{ _clase }} hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">{{ chip(t.stat_destino) }}<span>{{ t.corto if t.corto else _corto.get(t.stat_destino, t.label) }}</span></a>
             {% else %}
               <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=ch.id_cheque) }}"
                     {% if t.stat_destino == 'B' %}onsubmit="return confirm('Depositar en Pichincha por $ {{ ch.importe }}? (crea el movimiento de banco)');"

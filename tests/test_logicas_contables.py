@@ -507,12 +507,20 @@ def test_pasada1_resumen_meta():
 
 
 def test_dropdown_nunca_ofrece_transicion_invalida():
-    """El dropdown SIEMPRE es consistente con el backend: cada opción ofrecida
-    está permitida por TRANSICIONES_VALIDAS (así no se 'ofrece pero rechaza').
-    TMT 2026-07-11 (dueña: "confirm every move makes sense")."""
+    """El dropdown SIEMPRE es consistente con el backend: cada opción que va por
+    `cheques.transicionar` (POST plano a transicionar_stat) está permitida por
+    TRANSICIONES_VALIDAS (así no se 'ofrece pero rechaza').
+    TMT 2026-07-11 (dueña: "confirm every move makes sense").
+
+    Los WIZARD (deshacer_deposito, reverso, anulación) NO pasan por
+    transicionar_stat — validan por su cuenta —, así que no se gatean contra
+    TRANSICIONES_VALIDAS. Ej.: B→P (volver a postdatado, TMT 2026-07-15) es un
+    wizard que reversa el depósito de banco, no un relabel plano."""
     from modules.cheques import queries as q
     for stat, permit in q.TRANSICIONES_VALIDAS.items():
         for opt in q.transiciones_para(stat):
+            if opt.get("endpoint") != "cheques.transicionar":
+                continue  # wizard: valida en su propio endpoint
             assert opt["stat_destino"] in permit, (
                 f"dropdown de {stat} ofrece {opt['stat_destino']} que el backend rechaza"
             )

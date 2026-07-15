@@ -1717,6 +1717,12 @@ def deshacer_deposito(id_cheque: int):
         abort(404)
     stat = (ch.get("stat") or "").upper()
     next_url = request.values.get("next") or url_for("cheques.detalle", id_cheque=id_cheque)
+    # TMT 2026-07-15 (dueña): ?destino=P devuelve el cheque a POSTDATADO (P) en
+    # vez de a cartera (Z). Mismo reverso de banco, distinto estado final.
+    destino = (request.values.get("destino") or "Z").upper().strip()
+    if destino not in ("Z", "P"):
+        destino = "Z"
+    dest_label = "postdatado (P)" if destino == "P" else "cartera (Z)"
     if stat not in queries.STATS_DEPOSITADO:
         flash(f"El cheque no está depositado (estado {stat}); no hay depósito que deshacer.", "warn")
         return redirect(next_url)
@@ -1725,10 +1731,11 @@ def deshacer_deposito(id_cheque: int):
         try:
             usuario = (g.user or {}).get("username", "web")
             r = queries.deshacer_deposito_cheque(
-                id_cheque=int(ch["id_cheque"]), usuario=usuario, motivo=motivo
+                id_cheque=int(ch["id_cheque"]), usuario=usuario, motivo=motivo,
+                stat_destino=destino,
             )
             flash(
-                f"Cheque {r['no_cheque'] or '#' + str(r['id_cheque'])} devuelto a cartera (Z). "
+                f"Cheque {r['no_cheque'] or '#' + str(r['id_cheque'])} devuelto a {dest_label}. "
                 f"Ajusté el depósito del banco por $ {float(r['importe']):,.2f}"
                 + (f" ({r['movs_tocados']} depósito(s) tocado(s))." if r.get("movs_tocados") else "."),
                 "ok",
@@ -1736,34 +1743,39 @@ def deshacer_deposito(id_cheque: int):
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:
-            flash_exc("No pude devolver el cheque a cartera", e)
+            flash_exc(f"No pude devolver el cheque a {dest_label}", e)
         return redirect(request.form.get("next") or next_url)
     no_ch = ch.get("no_cheque") or f"#{id_cheque}"
     importe = ch.get("importe") or 0
+    _paso1 = (
+        f"(1) El cheque vuelve a {dest_label}."
+        if destino == "P"
+        else "(1) El cheque vuelve a cartera (Z)."
+    )
     detalle = {
         "N° cheque": no_ch,
         "Cliente": ch.get("codigo_cli", ""),
         "Importe": f"$ {importe}",
         "Estado actual": f"{stat} (depositado)",
         "Qué va a pasar": (
-            f"(1) El cheque vuelve a cartera (Z). (2) El depósito del banco baja "
+            f"{_paso1} (2) El depósito del banco baja "
             f"$ {float(importe or 0):,.2f} (si era el único cheque, se elimina el "
             "movimiento). (3) NO se toca al cliente — no es un rebote."
         ),
     }
     return render_template(
         "_confirmar_accion.html",
-        titulo=f"Volver a cartera — cheque {no_ch}",
+        titulo=f"Volver a {dest_label} — cheque {no_ch}",
         mensaje=(
-            "Marcaste este cheque como depositado pero al final no se depositó. Lo "
-            "devolvemos a cartera y ajustamos el depósito del banco. Es reversible: "
+            f"Marcaste este cheque como depositado pero al final no se depositó. Lo "
+            f"devolvemos a {dest_label} y ajustamos el depósito del banco. Es reversible: "
             "podés volver a depositarlo cuando quieras."
         ),
         detalle_registro=detalle,
-        accion_url=url_for("cheques.deshacer_deposito", id_cheque=id_cheque, next=next_url),
+        accion_url=url_for("cheques.deshacer_deposito", id_cheque=id_cheque, next=next_url, destino=destino),
         volver_url=next_url,
         motivo_requerido=False,
-        confirm_label="Devolver a cartera",
+        confirm_label=f"Devolver a {dest_label}",
     )
 
 
@@ -2968,6 +2980,8 @@ def lista():
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     cliente = request.args.get("cliente", "").strip()
+    # TMT 2026-07-15 (dueña): filtro por vendedor (dropdown arriba del listado).
+    vendedor = request.args.get("vendedor", "").strip().upper()
 
     # TMT 2026-05-29 (pedido dueña): "el filtro del cheque no funciona si no
     # esta en la pagina, me tiene que buscar todos". Cuando hay búsqueda
@@ -3057,6 +3071,7 @@ def lista():
             ver_eliminados=ver_eliminados,
             offset=page_offset,
             orden=(request.args.get("orden") or ""),
+            vendedor=vendedor,
         )
         error = None
     except Exception as e:
@@ -3071,6 +3086,7 @@ def lista():
                 ("fechad", "F. depósito"),
                 ("codigo_cli", "Cliente"),
                 ("cliente", "Nombre"),
+                ("vendedor", "Vendedor"),
                 ("banco", "Banco"),
                 ("importe", "Importe"),
                 ("stat", "Stat"),
@@ -3154,6 +3170,7 @@ def lista():
             cliente=cliente,
             monto_min=monto_min,
             monto_max=monto_max,
+            vendedor=vendedor,
         )
         total = agg["total"]
         n_total = agg["n"]
@@ -3171,6 +3188,8 @@ def lista():
         desde=desde,
         hasta=hasta,
         cliente=cliente,
+        vendedor=vendedor,
+        vendedores=queries.vendedores_para_filtro(),
         monto_min=monto_min,
         monto_max=monto_max,
         monto=monto_raw,

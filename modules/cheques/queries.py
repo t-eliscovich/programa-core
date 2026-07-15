@@ -1935,6 +1935,23 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "kind": "WIZARD",
             "endpoint": "cheques.deshacer_deposito",
         },
+        # TMT 2026-07-15 (dueña): "que cheques de estado B se puedan pasar a P".
+        # El cheque era postdatado, se marcó depositado por error → lo devolvemos
+        # a postdatado (P). Va por el wizard deshacer_deposito con destino=P: NO
+        # es un relabel plano (dejaría el depósito de banco colgado), REVIERTE el
+        # movimiento de banco igual que "Volver a cartera" y deja el cheque en P.
+        # `siempre` = mostrarlo en el dropdown aunque P no esté en
+        # TRANSICIONES_VALIDAS['B'] (el wizard valida por su cuenta; la
+        # transición plana B→P sigue bloqueada en transicionar_stat).
+        {
+            "stat_destino": "P",
+            "label": "Volver a postdatado (no se depositó)",
+            "corto": "A postdatado",
+            "kind": "WIZARD",
+            "endpoint": "cheques.deshacer_deposito",
+            "url_args": {"destino": "P"},
+            "siempre": True,
+        },
         {
             "stat_destino": "9",
             "label": "Marcar como rebotado",
@@ -2067,7 +2084,13 @@ def transiciones_para(stat: str) -> list[dict]:
     permit = TRANSICIONES_VALIDAS.get(s, set())
     # 1) Entradas curadas (depósito, postergar, rebote, re-depositar…) que el
     #    backend efectivamente permite — descarta las obsoletas (ej. Z→2).
-    base = [o for o in TRANSICIONES_LEGALES.get(s, []) if o["stat_destino"] in permit]
+    #    Excepción: entradas con `siempre` (wizards que validan por su cuenta,
+    #    ej. B→P por deshacer_deposito) se muestran aunque el destino no esté en
+    #    TRANSICIONES_VALIDAS. TMT 2026-07-15.
+    base = [
+        o for o in TRANSICIONES_LEGALES.get(s, [])
+        if o.get("siempre") or o["stat_destino"] in permit
+    ]
     ya = {o["stat_destino"] for o in base}
     # 2) Auto-generar los estados sin movimiento permitidos (menos X).
     for dest in sorted((permit & STATS_NEUTROS) - {"X"}):
@@ -2153,12 +2176,18 @@ def _relabel_dep_concepto(concepto: str, n: int) -> str:
     return _re.sub(r"dep\.\s*\d+\s*ch\.", f"dep.{n} ch.", c, flags=_re.IGNORECASE)[:50]
 
 
-def deshacer_deposito_cheque(*, id_cheque: int, usuario: str = "web", motivo: str = "") -> dict:
-    """Saca UN cheque de su depósito y lo devuelve a cartera (Z).
+def deshacer_deposito_cheque(
+    *, id_cheque: int, usuario: str = "web", motivo: str = "", stat_destino: str = "Z"
+) -> dict:
+    """Saca UN cheque de su depósito y lo devuelve a cartera (Z) o postdatado (P).
 
     TMT 2026-07-07 dueña: "si hay un cheque que marcamos depositado y al final
     no lo depositamos, cómo lo devolvemos". NO es rebote (no toca al cliente)
     ni anulación (el cheque sigue vivo) — simplemente deshace el depósito.
+
+    TMT 2026-07-15 dueña: `stat_destino` permite devolverlo a cartera ('Z',
+    default) o a postdatado ('P') — mismo reverso de banco, distinto estado
+    final. El cheque queda vivo con su fechad intacta (re-postergable desde P).
 
     Lado banco: el depósito consolidado 'dep.N ch.' baja su importe por el
     cheque y su contador N→N-1; si el cheque era el único (o el mov queda en
@@ -2169,6 +2198,9 @@ def deshacer_deposito_cheque(*, id_cheque: int, usuario: str = "web", motivo: st
     cheques.transicionar (Alex, Andres, etc.), no solo la dueña.
     """
     import bank_helpers
+    stat_destino = (stat_destino or "Z").upper().strip()
+    if stat_destino not in ("Z", "P"):
+        raise ValueError("Sólo se puede devolver a cartera (Z) o a postdatado (P).")
     ch = db.fetch_one(
         "SELECT id_cheque, no_cheque, codigo_cli, importe, stat "
         "FROM scintela.cheque WHERE id_cheque = %s",
@@ -2236,10 +2268,10 @@ def deshacer_deposito_cheque(*, id_cheque: int, usuario: str = "web", motivo: st
             n_movs += 1
         db.execute(
             "UPDATE scintela.cheque "
-            "   SET stat = 'Z', fechaing = NULL, "
+            "   SET stat = %s, fechaing = NULL, "
             "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
             " WHERE id_cheque = %s",
-            (usuario, id_cheque), conn=conn,
+            (stat_destino, usuario, id_cheque), conn=conn,
         )
         for nb in bancos_recompute:
             anc = db.fetch_one(
@@ -2255,7 +2287,7 @@ def deshacer_deposito_cheque(*, id_cheque: int, usuario: str = "web", motivo: st
         "id_cheque": id_cheque,
         "no_cheque": ch.get("no_cheque"),
         "stat_previo": stat_prev,
-        "stat_nuevo": "Z",
+        "stat_nuevo": stat_destino,
         "importe": imp_ch,
         "movs_tocados": n_movs,
     }
@@ -3949,6 +3981,7 @@ def total_buscar(
     cliente: str | None = None,
     monto_min: float | None = None,
     monto_max: float | None = None,
+    vendedor: str | None = None,
 ) -> dict:
     """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
 
@@ -3992,6 +4025,12 @@ def total_buscar(
           -- recibe cliente/monto_min/monto_max para que el hero KPI
           -- refleje el subset real cuando se filtra por cliente.
           AND (%(cliente)s::text IS NULL OR UPPER(COALESCE(c.codigo_cli, '')) = UPPER(%(cliente)s))
+          -- Filtro por VENDEDOR — mismo criterio que buscar(). TMT 2026-07-15 dueña.
+          AND (%(vendedor)s::text IS NULL OR EXISTS (
+                  SELECT 1 FROM scintela.cliente cli_v
+                   WHERE cli_v.codigo_cli = c.codigo_cli
+                     AND UPPER(TRIM(COALESCE(cli_v.vend, ''))) = UPPER(%(vendedor)s)
+                ))
           AND (%(monto_min)s::numeric IS NULL OR COALESCE(c.importe, 0) >= %(monto_min)s)
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(c.importe, 0) <= %(monto_max)s)
           -- Excluir reversados del total. Pedido TMT 2026-05-14.
@@ -4004,6 +4043,7 @@ def total_buscar(
             "hasta": hasta or None,
             "stats": list(stats) if stats else None,
             "cliente": (cliente or None),
+            "vendedor": (vendedor or None),
             "monto_min": monto_min,
             "monto_max": monto_max,
         },
@@ -4012,6 +4052,31 @@ def total_buscar(
         "n": int(row["n"] or 0) if row else 0,
         "total": float(row["total"] or 0) if row else 0.0,
     }
+
+
+def vendedores_para_filtro() -> list[dict]:
+    """Vendedores presentes en los clientes de los cheques — para el dropdown
+    de filtro del listado. TMT 2026-07-15 (dueña: "un filtro por vendedor").
+
+    Trae los códigos distintos de cliente.vend que tengan al menos un cheque
+    vivo (stat != 'X'), con el nombre del vendedor (scintela.vendedor) si existe.
+    Ordenados por nombre para que el dropdown sea legible.
+    """
+    return db.fetch_all(
+        """
+        SELECT sub.codigo,
+               COALESCE(NULLIF(TRIM(v.nombre), ''), sub.codigo) AS nombre
+          FROM (
+            SELECT DISTINCT UPPER(TRIM(cli.vend)) AS codigo
+              FROM scintela.cheque c
+              JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
+             WHERE cli.vend IS NOT NULL AND TRIM(cli.vend) <> ''
+               AND COALESCE(c.stat, '') <> 'X'
+          ) sub
+          LEFT JOIN scintela.vendedor v ON UPPER(TRIM(v.codigo)) = sub.codigo
+         ORDER BY nombre, sub.codigo
+        """
+    ) or []
 
 
 def buscar(
@@ -4026,6 +4091,7 @@ def buscar(
     ver_eliminados: bool = False,
     offset: int = 0,
     orden: str = "",
+    vendedor: str = "",
 ) -> list[dict]:
     """Filtros (mismas reglas que /facturas):
     cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
@@ -4047,6 +4113,9 @@ def buscar(
     cliente = (cliente or "").strip().upper()
     es_cli_codigo_exacto = bool(cliente) and len(cliente) == 3 and cliente.replace("_", "").isalnum()
     cliente_like = f"%{cliente}%" if cliente else None
+    # TMT 2026-07-15 (dueña): filtro por VENDEDOR (código en cliente.vend). Match
+    # exacto sobre el código del vendedor asignado al cliente del cheque.
+    vendedor = (vendedor or "").strip().upper()
     # Qué columna de fecha aplica el filtro desde/hasta. Para los estados que
     # ya pasaron por el banco (depositados/devueltos/daniela), filtramos por
     # `fechaing` (cuándo se ingresó al banco / rebotó / pasó a Daniela). Para
@@ -4139,6 +4208,16 @@ def buscar(
              OR (NOT %(cli_codigo_exacto)s
                  AND UPPER(COALESCE(c.codigo_cli, '')) LIKE UPPER(%(cliente_like)s))
               )
+          -- Filtro por VENDEDOR: clientes cuyo cliente.vend == código elegido.
+          -- TMT 2026-07-15 (dueña): dropdown de vendedor arriba del listado.
+          AND (
+                %(vendedor)s IS NULL
+             OR EXISTS (
+                  SELECT 1 FROM scintela.cliente cli_v
+                   WHERE cli_v.codigo_cli = c.codigo_cli
+                     AND UPPER(TRIM(COALESCE(cli_v.vend, ''))) = %(vendedor)s
+                )
+              )
           -- Filtro por monto USD.
           AND (%(monto_min)s::numeric IS NULL OR COALESCE(c.importe, 0) >= %(monto_min)s::numeric)
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(c.importe, 0) <= %(monto_max)s::numeric)
@@ -4177,6 +4256,7 @@ def buscar(
                 "cliente": cliente or None,
                 "cliente_like": cliente_like,
                 "cli_codigo_exacto": es_cli_codigo_exacto,
+                "vendedor": vendedor or None,
                 "monto_min": monto_min,
                 "monto_max": monto_max,
                 "desde": desde or None,

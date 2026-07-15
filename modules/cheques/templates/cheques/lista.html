@@ -279,7 +279,10 @@
     {# TMT 2026-07-14 (dueña "que el filtrar no quede abajo"): los campos van en
        un contenedor flex-wrap que CRECE (flex:1); el botón Filtrar queda como
        hermano fijo a la derecha → nunca cae a una fila propia debajo. #}
-    <div class="flex flex-wrap items-end gap-2" style="flex:1 1 auto">
+    {# TMT 2026-07-15 (dueña "que la fila de los filtros y el filtrar ocupe solo
+       una linea"): nowrap + overflow-x auto → nunca cae a un segundo renglón;
+       si no entra, scrollea horizontal en vez de apilar. #}
+    <div class="flex items-end gap-2" style="flex:1 1 auto; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
     {# Grupo 0: Estado (dropdown) — TMT 2026-07-14 (dueña). Antes era un hidden
        manejado por las pestañas; ahora es un filtro visible. Al dejarlo en
        "Cartera total" (default) y filtrar un cliente se muestran TODOS sus
@@ -308,28 +311,41 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cliente</label>
       <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras: PUE"
-             maxlength="20" autocomplete="off" style="text-transform:uppercase"
-             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+             maxlength="20" autocomplete="off" style="text-transform:uppercase; width:96px;"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+    </div>
+    {# Grupo 1b: Vendedor (dropdown) — TMT 2026-07-15 (dueña "un filtro por
+       vendedor"). Lista los vendedores con cheques; "" = todos. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Vendedor</label>
+      <select name="vendedor"
+              style="width:130px;"
+              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
+        <option value="">Todos</option>
+        {% for v in (vendedores or []) %}
+          <option value="{{ v.codigo }}" {% if (vendedor or '') == v.codigo %}selected{% endif %}>{{ v.nombre }}</option>
+        {% endfor %}
+      </select>
     </div>
     {# Grupo 2: Monto (un solo campo, dueña 2026-07-12 — igual que facturas).
        Entero (500) → el dólar entero 500,00–500,99. Con centavos (500,51) → exacto. #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Monto USD</label>
       <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
-             placeholder="500 ó 500,51"
+             placeholder="500 ó 500,51" style="width:104px;"
              title="Entero = el dólar entero (500 → 500,00–500,99). Con centavos = exacto (500,51)."
-             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     {# Grupo 3: Fecha de depósito #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">F. depósito desde</label>
-      <input type="date" name="desde" value="{{ desde or '' }}"
-             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      <input type="date" name="desde" value="{{ desde or '' }}" style="width:140px;"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">F. depósito hasta</label>
-      <input type="date" name="hasta" value="{{ hasta or '' }}"
-             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      <input type="date" name="hasta" value="{{ hasta or '' }}" style="width:140px;"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# TMT 2026-05-20 — atajo "Hoy" (pedido dueña: agilizar depósitos).
        Setea desde=hasta=hoy y submitea. Visualmente queda como un chip
@@ -394,6 +410,9 @@
           {% endif %}
           <th class="px-2 py-1 text-left font-medium" title="Día en que cargué el cheque" data-sort-type="date">Cargado</th>
           <th class="px-2 py-1 text-left font-medium">Cliente</th>
+          {# TMT 2026-07-15 (dueña): vendedor en columna propia (antes iba en
+             chico bajo el cliente). #}
+          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Vendedor asignado al cliente (cliente.vend)">Vend.</th>
           <th class="px-2 py-1 text-left font-medium">N°</th>
           <th class="px-2 py-1 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. dep.</th>
           <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
@@ -453,11 +472,11 @@
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
                data-stop="1"
                class="font-mono text-xs hover:text-blue-600 hover:underline">{{ c.codigo_cli }}</a>
-            {# TMT 2026-07-15 (dueña): nombre completo del cliente + código de
-               vendedor asignado, en chico debajo del código. #}
-            {% if c.cliente or c.vendedor %}
+            {# TMT 2026-07-15 (dueña): nombre completo del cliente en chico debajo
+               del código. El vendedor se movió a su propia columna. #}
+            {% if c.cliente %}
               <div class="text-[11px] text-slate-500" style="line-height:1.2; white-space:normal; margin-top:2px;">
-                {{ c.cliente }}{% if c.vendedor %} <span class="font-mono text-slate-400">· vend {{ c.vendedor }}</span>{% endif %}
+                {{ c.cliente }}
               </div>
             {% endif %}
             {% endif %}
@@ -467,6 +486,10 @@
                 <span class="font-mono text-slate-500">{{ c.endoso_prov }}</span>
               </div>
             {% endif %}
+          </td>
+          {# TMT 2026-07-15 (dueña): columna Vendedor. #}
+          <td class="px-1.5 py-1.5 chq-print-hide">
+            {% if c.vendedor %}<span class="font-mono text-xs text-slate-500">{{ c.vendedor }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
           {# TMT 2026-05-27 dueña: 'tambien se tiene que ver el numero de
              documento y poder editar este'. Inline edit del no_cheque.
@@ -644,7 +667,7 @@
                     {% if t.endpoint == 'cheques.depositar_lote' %}
                       <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">→{{ _disp }}</option>
                     {% else %}
-                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}" title="{{ t.label }}">→{{ _disp }}</option>
+                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque, **(t.url_args or {})) }}" title="{{ t.label }}">→{{ _disp }}</option>
                     {% endif %}
                   {% else %}
                     <option value="{{ t.stat_destino }}" title="{{ t.label }}">→{{ _disp }}</option>
@@ -677,7 +700,7 @@
         </tr>
         {% else %}
         {# TMT 2026-05-20 — colspan +1 cuando hay permiso de aplicar (col checkbox extra). #}
-        {{ empty_row((12 if tiene_permiso('cheques.aplicar') else 11), 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
+        {{ empty_row((13 if tiene_permiso('cheques.aplicar') else 12), 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
         {% endfor %}
       </tbody>
     </table>
