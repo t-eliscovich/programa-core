@@ -4430,14 +4430,16 @@ def informe_balance() -> dict:
     #          = b.patr - patant
     totl = subt + vsto + vqx + activos["umaq"] + activos["uact"] + _uret_calc + _antic
     patr = totl - posdats["totp"]
-    # UTILIDAD sobre la base DBASE del stock: cambiar la fuente a Asinfo mueve
-    # el PATRIMONIO mostrado (patr) pero NO infla la utilidad — la re-valuación
-    # de stock por cambio de fuente no es ganancia económica. Con fuente dBase,
-    # vsto_dbase == vsto → utilidad idéntica a la de siempre.
-    _totl_util = subt + vsto_dbase + vqx + activos["umaq"] + activos["uact"] + _uret_calc + _antic
-    _patr_util = _totl_util - posdats["totp"]
-    utilidad = _patr_util - patant
-    patr_para_utilidad = _patr_util  # base dBase, coherente con PATANT
+    # UTILIDAD = PATR − PATANT usando el MISMO stock que muestra el balance
+    # (vsto), NO una base aparte. TMT 2026-07-15 (dueña: "que tome lo que se ve
+    # en el balance de stock; no tengamos múltiples variables de lo mismo" —
+    # regla general de coherencia). Antes usaba `vsto_dbase` (base dBase
+    # separada) que quedaba subvaluado ~119k cuando la bodega de hilo de Asinfo
+    # estaba frenada → hundía la utilidad (mostraba 54.853 en vez de ~174k).
+    # Con una sola fuente de stock, patrimonio y utilidad quedan coherentes.
+    # (vsto_dbase se sigue calculando sólo para el diagnóstico stock_revaluacion.)
+    utilidad = patr - patant
+    patr_para_utilidad = patr
 
     # ─── SYNC del diagnostico tras el override de vsto ───
     # El diagnostico se construyó ~300 líneas arriba con vsto=0 (placeholder)
