@@ -108,6 +108,47 @@ def inspeccionar_mov():
     return jsonify(out)
 
 
+@bp.route("/estado-sesion-dump", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def estado_sesion_dump():
+    """Read-only: dumpea los buckets de estado_sesion(sesion) filtrando por texto
+    en el concepto — para ver en qué bucket cae un mov y si está cruzado."""
+    from modules.conciliacion import sesion as _s
+    sid = int(request.args.get("sesion_id") or 0)
+    filtro = (request.args.get("filtro") or "").upper()
+    ses = _s.sesion_por_id(sid) if sid else None
+    if not ses:
+        return jsonify({"error": "sesion no encontrada", "sesion_id": sid}), 404
+    no_banco = ses.get("no_banco")
+    try:
+        est = _s.estado_sesion(ses, no_banco)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"estado_sesion fallo: {e!r}"}), 500
+    out = {"sesion_id": sid, "no_banco": no_banco, "buckets": {}}
+    for bname in ("manual_banco", "impuestos", "manual_programa", "transferencias"):
+        rows = []
+        for it in (est.get(bname) or []):
+            mv = it.get("mov")
+            if mv is None:
+                continue
+            concepto = str(getattr(mv, "concepto", "") or "")
+            if filtro and filtro not in concepto.upper():
+                continue
+            rows.append({
+                "fecha": str(getattr(mv, "fecha", None)),
+                "documento": str(getattr(mv, "documento", "") or ""),
+                "monto": str(getattr(mv, "monto", 0) or 0),
+                "tipo": str(getattr(mv, "tipo", "") or ""),
+                "concepto": concepto[:70],
+                "es_historico": bool(it.get("es_historico")),
+                "cruzado": str(it.get("cruzado") or it.get("match") or it.get("programa") or ""),
+                "keys": [k for k in it.keys()],
+            })
+        out["buckets"][bname] = rows
+    return jsonify(out)
+
+
 @bp.route("/e2e-cleanup", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
