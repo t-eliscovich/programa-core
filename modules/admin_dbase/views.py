@@ -266,14 +266,14 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
             yield line("")
             yield line("[chequeo cruces conciliación]")
             if _chk["n_mal_atados"] == 0:
-                yield line(f"  ✓ {_chk['n_programas_revisados']} cruces OK — todos cuadran")
+                yield line(f"  ✓ {_chk['n_grupos_revisados']} grupos OK — todos cuadran")
             else:
                 yield line(
                     f"  ⚠ {_chk['n_mal_atados']} grupo(s) mal atados detectados — "
                     f"auto-corrigiendo por monto exacto…")
                 for _m in _chk["mal_atados"][:8]:
                     yield line(
-                        f"    tx {_m['id_transaccion']} ({_m['concepto']}): "
+                        f"    grupo {str(_m['batch'])[:12]} ({_m['n_items']} items): "
                         f"banco {_m['suma_banco']:,.2f} vs programa {_m['programa']:,.2f} "
                         f"-> diff {_m['diff']:,.2f}")
                 # AUTO-HEAL: re-ata por monto exacto (seguro, nunca nulea).

@@ -453,36 +453,69 @@ def restaurar_contraparte():
 
 
 def _chequeo_cruces(no_banco: int) -> dict:
-    """RED DE SEGURIDAD (TMT 2026-07-15): detecta grupos MAL ATADOS — movimientos
-    del programa cuyos matches del banco NO suman su importe (más de 0.50). Caza
-    los cruces "corridos" (banco atado al programa equivocado) apenas aparecen,
-    sin importar de dónde vengan. Corre solo después de cada sync + a pedido."""
+    """RED DE SEGURIDAD (TMT 2026-07-15): detecta grupos MAL ATADOS a nivel GRUPO
+    — donde el total del banco NO cuadra con el total del programa del grupo
+    (más de 0.50). Chequea por batch (no por movimiento) para NO dar falsas
+    alarmas en importaciones N:M legítimas (ej. EXT+ISD del banco contra varios
+    anticipos del programa que suman lo mismo). Corre post-sync + a pedido."""
     import bank_helpers as _bh
+    from collections import defaultdict
     rows = _db.fetch_all(
         """
-        SELECT tb.id_transaccion, tb.documento, tb.importe,
-               COALESCE(tb.usuario_crea, '') AS uc, LEFT(tb.concepto, 40) AS concepto,
-               COUNT(*) AS n_banco,
-               SUM(CASE WHEN UPPER(COALESCE(m.real_tipo, 'C')) = 'C'
-                        THEN m.real_monto ELSE -m.real_monto END) AS suma_banco
+        SELECT m.id, m.confirm_batch_id, m.real_monto, m.real_tipo,
+               m.id_transaccion, m.tx_firma
           FROM scintela.banco_conciliacion_match m
-          JOIN scintela.transacciones_bancarias tb ON tb.id_transaccion = m.id_transaccion
-         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
-           AND m.id_transaccion IS NOT NULL AND m.estado = 'matched'
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL AND m.estado = 'matched'
            AND m.real_monto IS NOT NULL
-         GROUP BY tb.id_transaccion, tb.documento, tb.importe, tb.usuario_crea, tb.concepto
         """, (no_banco,)) or []
-    mal = []
+    ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+    tx_map = {}
+    if ids:
+        for t in _db.fetch_all(
+            "SELECT id_transaccion, importe, documento, COALESCE(usuario_crea,'') AS uc "
+            "FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,)) or []:
+            tx_map[int(t["id_transaccion"])] = t
+
+    def _bsign(tipo, monto):
+        m = float(monto or 0)
+        return m if (tipo or "").upper() == "C" else -m
+
+    def _fsign(firma):
+        p = (firma or "").split("|")
+        if len(p) < 3:
+            return None
+        try:
+            return float(_bh._signed_delta((p[1] or "").upper(), float(p[2]), ""))
+        except ValueError:
+            return None
+
+    grupos = defaultdict(list)
     for r in rows:
-        prog = float(_bh._signed_delta((r["documento"] or "").upper(), float(r["importe"] or 0), r["uc"]))
-        suma = float(r["suma_banco"] or 0)
-        diff = round(suma - prog, 2)
+        grupos[r.get("confirm_batch_id") or f"solo:{r['id']}"].append(r)
+
+    mal = []
+    for key, gr in grupos.items():
+        bank_total = sum(_bsign(r["real_tipo"], r["real_monto"]) for r in gr)
+        seen_id, seen_f, prog_total = set(), set(), 0.0
+        for r in gr:
+            idtx = r.get("id_transaccion")
+            if idtx is not None and int(idtx) in tx_map:
+                if int(idtx) not in seen_id:
+                    seen_id.add(int(idtx))
+                    t = tx_map[int(idtx)]
+                    prog_total += float(_bh._signed_delta((t["documento"] or "").upper(), float(t["importe"] or 0), t["uc"]))
+            else:
+                fv = _fsign(r.get("tx_firma"))
+                if fv is not None and r.get("tx_firma") not in seen_f:
+                    seen_f.add(r.get("tx_firma"))
+                    prog_total += fv
+        diff = round(bank_total - prog_total, 2)
         if abs(diff) > 0.50:
-            mal.append({"id_transaccion": r["id_transaccion"], "programa": round(prog, 2),
-                        "suma_banco": round(suma, 2), "diff": diff,
-                        "n_banco": int(r["n_banco"]), "concepto": r["concepto"]})
+            mal.append({"batch": key, "n_items": len(gr),
+                        "suma_banco": round(bank_total, 2),
+                        "programa": round(prog_total, 2), "diff": diff})
     mal.sort(key=lambda x: abs(x["diff"]), reverse=True)
-    return {"no_banco": no_banco, "n_programas_revisados": len(rows),
+    return {"no_banco": no_banco, "n_grupos_revisados": len(grupos),
             "n_mal_atados": len(mal), "suma_diff": round(sum(x["diff"] for x in mal), 2),
             "mal_atados": mal}
 
@@ -549,14 +582,12 @@ def _reatar_mal_atados(no_banco: int, aplicar: bool = False) -> dict:
     re-ata por monto exacto. SEGURO: nunca nulea, solo re-apunta a programas
     reales del mismo monto. Usado post-sync (auto-heal) y a pedido."""
     chk = _chequeo_cruces(no_banco)
-    mal_txs = [m["id_transaccion"] for m in chk.get("mal_atados", []) if m.get("id_transaccion")]
-    if not mal_txs:
+    # Solo batches reales (los grupos "solo:ID" son matches sueltos 1:1 sin
+    # alternativa dentro del grupo → no se pueden re-atar por swap).
+    batches = [m["batch"] for m in chk.get("mal_atados", [])
+               if m.get("batch") and not str(m["batch"]).startswith("solo:")]
+    if not batches:
         return {"n_grupos": 0, "aplicados_total": 0, "resultados": []}
-    br = _db.fetch_all(
-        "SELECT DISTINCT confirm_batch_id FROM scintela.banco_conciliacion_match "
-        "WHERE no_banco=%s AND deshecho_en IS NULL AND id_transaccion = ANY(%s) "
-        "AND confirm_batch_id IS NOT NULL", (no_banco, mal_txs)) or []
-    batches = [r["confirm_batch_id"] for r in br if r.get("confirm_batch_id")]
     resultados = [_reatar_batch(no_banco, b, aplicar) for b in batches]
     return {"n_grupos": len(batches), "aplicados_total": sum(r["aplicados"] for r in resultados),
             "n_cambios_total": sum(r["n_cambios"] for r in resultados), "resultados": resultados}
