@@ -248,6 +248,115 @@ def recruzar_perdidos():
     })
 
 
+@bp.route("/auditar-sin-programa", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def auditar_sin_programa():
+    """AUDITORÍA (solo lectura, TMT 2026-07-15): lista todas las conciliaciones
+    ACTIVAS que NO tienen movimiento del programa atado (id_transaccion IS NULL).
+    Son las que en la pantalla de matches muestran PROGRAMA = 0.00: se aceptó el
+    lado banco sin cruzarlo contra un mov del programa.
+
+    Separa por 'estado':
+      - real_only_ok  → aceptación deliberada (banco sin equivalente en el
+        programa; ej. comisiones, o importaciones cargadas como anticipo). OK.
+      - matched       → dice 'cruzado' pero SIN contraparte del programa. Estas
+        son las conciliaciones 'a medias' a revisar (ej. el grupo de la
+        importación de −297.215,46 del 03/07).
+
+    Agrupa por confirm_batch_id (cada grupo que la dueña armó de una) y ordena
+    por magnitud del monto.
+    """
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    rows = _db.fetch_all(
+        """
+        SELECT COALESCE(confirm_batch_id, '(sin batch)') AS batch,
+               estado,
+               COALESCE(metodo, '') AS metodo,
+               COUNT(*) AS n_items,
+               MIN(real_fecha)::TEXT AS desde,
+               MAX(real_fecha)::TEXT AS hasta,
+               ROUND(SUM(CASE WHEN UPPER(COALESCE(real_tipo,'C'))='C'
+                              THEN real_monto ELSE -real_monto END), 2) AS suma_signada,
+               MIN(real_concepto) AS ejemplo,
+               MIN(creado_en)::TEXT AS creado,
+               MIN(usuario) AS usuario
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s
+           AND deshecho_en IS NULL
+           AND id_transaccion IS NULL
+         GROUP BY confirm_batch_id, estado, COALESCE(metodo, '')
+         ORDER BY ABS(SUM(CASE WHEN UPPER(COALESCE(real_tipo,'C'))='C'
+                               THEN real_monto ELSE -real_monto END)) DESC
+        """,
+        (no_banco,),
+    ) or []
+    def _clean(r):
+        return {k: (float(v) if hasattr(v, "is_finite") else v) for k, v in r.items()}
+    grupos = [_clean(r) for r in rows]
+
+    # HUÉRFANOS: matches que SÍ tienen id_transaccion pero apuntan a un mov del
+    # programa que YA NO EXISTE. Estos son los que 'se cruzaron contra algo' y
+    # despues el mov del programa se borró (típicamente el sync dBase re-numera
+    # transacciones_bancarias y el relink por tx_firma no lo recuperó). En la
+    # pantalla de matches se ven con PROGRAMA=0.00 aunque antes cuadraban.
+    huerfanos = _db.fetch_all(
+        """
+        SELECT COALESCE(m.confirm_batch_id, '(sin batch)') AS batch,
+               m.estado,
+               COALESCE(m.metodo, '') AS metodo,
+               COUNT(*) AS n_items,
+               MIN(m.real_fecha)::TEXT AS desde,
+               MAX(m.real_fecha)::TEXT AS hasta,
+               ROUND(SUM(CASE WHEN UPPER(COALESCE(m.real_tipo,'C'))='C'
+                              THEN m.real_monto ELSE -m.real_monto END), 2) AS suma_signada,
+               MIN(m.real_concepto) AS ejemplo,
+               MIN(m.tx_firma) AS tx_firma_ej,
+               MIN(m.creado_en)::TEXT AS creado,
+               MIN(m.usuario) AS usuario
+          FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s
+           AND m.deshecho_en IS NULL
+           AND m.id_transaccion IS NOT NULL
+           AND NOT EXISTS (
+                 SELECT 1 FROM scintela.transacciones_bancarias t
+                  WHERE t.id_transaccion = m.id_transaccion
+           )
+         GROUP BY m.confirm_batch_id, m.estado, COALESCE(m.metodo, '')
+         ORDER BY ABS(SUM(CASE WHEN UPPER(COALESCE(m.real_tipo,'C'))='C'
+                               THEN m.real_monto ELSE -m.real_monto END)) DESC
+        """,
+        (no_banco,),
+    ) or []
+    huerfanos = [_clean(r) for r in huerfanos]
+
+    def _resumir(lst):
+        res: dict = {}
+        for r in lst:
+            est = r.get("estado") or "?"
+            d = res.setdefault(est, {"grupos": 0, "items": 0, "suma_signada": 0.0})
+            d["grupos"] += 1
+            d["items"] += int(r.get("n_items") or 0)
+            d["suma_signada"] = round(d["suma_signada"] + float(r.get("suma_signada") or 0), 2)
+        return res
+
+    return jsonify({
+        "no_banco": no_banco,
+        "sin_programa": {
+            "descripcion": "id_transaccion NULL — aceptados sin cruzar contra el programa",
+            "total_grupos": len(grupos),
+            "resumen_por_estado": _resumir(grupos),
+            "grupos": grupos,
+        },
+        "huerfanos": {
+            "descripcion": "cruzados contra un mov del programa que YA NO EXISTE (se borró por debajo, ej. sync dBase) — ESTOS son el 'algo raro'",
+            "total_grupos": len(huerfanos),
+            "resumen_por_estado": _resumir(huerfanos),
+            "grupos": huerfanos,
+        },
+    })
+
+
 @bp.route("/e2e-cleanup", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
