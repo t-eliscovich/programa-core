@@ -741,7 +741,14 @@
         </div>
       </section>
 
-      {# Inyectar filas manuales en la misma tabla. #}
+      {# Inyectar filas manuales (scintela.gasto_forzado) en la MISMA tabla de
+         gastos forzados banc=9. TMT 2026-07-15 (dueña "no se ven"): antes esto
+         envolvía window.gfRender, pero el `function gfRender()` del <script> de
+         más abajo se HOISTEA y pisa esa asignación (están en bloques <script>
+         distintos, el segundo corre después), así que el wrapper nunca corría y
+         las filas manuales nunca aparecían en la tabla. Ahora exponemos un
+         helper con nombre propio — no lo pisa ninguna function declaration — y
+         el gfRender real lo llama al final de cada render. #}
       <script>
         (function() {
           const POSDAT_TOTAL = {{ _total_pd | tojson }};
@@ -756,43 +763,35 @@
             return m[3] + '/' + m[2] + '/' + m[1];
           }
 
-          // Espera a que gfFetchAll exista (definido más abajo) y se hidrate.
-          const _origRender = window.gfRender;
-          window.gfRender = function() {
-            if (typeof _origRender === 'function') {
-              try { _origRender(); } catch (e) { console.warn(e); }
-            }
-            // Borrar filas previas MANUAL y reinyectar.
+          window.gfInjectManualTabla = function() {
             const tbody = document.getElementById('gf-tabla-body');
             if (!tbody) return;
+            // Borrar filas MANUAL previas y reinyectar desde la cache.
             tbody.querySelectorAll('tr[data-gf-id]').forEach(tr => tr.remove());
             const items = (typeof gfLoad === 'function') ? gfLoad() : [];
             let manualTotal = 0;
-            items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
-            items.forEach(it => {
-              manualTotal += Number(it.importe || 0);
-              const tr = document.createElement('tr');
-              tr.setAttribute('data-gf-id', it.id);
-              tr.style.borderBottom = '1px dotted var(--grid)';
-              tr.style.background = 'rgba(254,249,195,0.30)';
-              tr.innerHTML =
-                '<td style="padding:4px 10px;font-size:10px;">'
-                  + '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-family:ui-monospace,monospace;">MANUAL</span>'
-                + '</td>'
-                + '<td style="padding:4px 10px;font-family:ui-monospace,monospace;">' + fmtFecha(it.fecha) + '</td>'
-                + '<td style="padding:4px 10px;color:var(--muted);">—</td>'
-                + '<td style="padding:4px 10px;color:var(--text);">' + (it.concepto || '—') + '</td>'
-                + '<td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">' + fmtMoney(it.importe) + '</td>';
-              tbody.appendChild(tr);
-            });
-            // Update total general (posdat + manual).
+            items.slice()
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+              .forEach(it => {
+                manualTotal += Number(it.importe || 0);
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-gf-id', it.id);
+                tr.style.borderBottom = '1px dotted var(--grid)';
+                tr.style.background = 'rgba(254,249,195,0.30)';
+                tr.innerHTML =
+                  '<td style="padding:4px 10px;font-size:10px;">'
+                    + '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-family:ui-monospace,monospace;">MANUAL</span>'
+                  + '</td>'
+                  + '<td style="padding:4px 10px;font-family:ui-monospace,monospace;">' + fmtFecha(it.fecha) + '</td>'
+                  + '<td style="padding:4px 10px;color:var(--muted);">—</td>'
+                  + '<td style="padding:4px 10px;color:var(--text);">' + (it.concepto || '—') + '</td>'
+                  + '<td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">' + fmtMoney(it.importe) + '</td>';
+                tbody.appendChild(tr);
+              });
+            // Total general del panel = banc=9 (server) + manuales.
             const totalEl = document.getElementById('gf-total');
             if (totalEl) totalEl.textContent = '$ ' + fmtMoney(POSDAT_TOTAL + manualTotal);
           };
-          // Trigger inicial cuando termine la carga de gastos forzados.
-          document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(window.gfRender, 200);
-          });
         })();
       </script>
     {% endif %}
@@ -1354,6 +1353,10 @@ function gfRender() {
   }
   const sum = items.reduce((acc, it) => acc + Number(it.importe || 0), 0);
   total.textContent = '$ ' + fmt(sum);
+  // TMT 2026-07-15: inyectar las filas manuales en la tabla banc=9 y fijar el
+  // total combinado. El helper vive en otro <script> con nombre propio para que
+  // el hoisting de esta función no lo pise (bug "no se ven los gastos forzados").
+  if (typeof window.gfInjectManualTabla === 'function') window.gfInjectManualTabla();
 }
 
 async function _gfSaveCampo(id, campo, valor, expectedVersion) {
