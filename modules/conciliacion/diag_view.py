@@ -452,6 +452,77 @@ def restaurar_contraparte():
     })
 
 
+@bp.route("/quitar-del-extracto", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def quitar_del_extracto():
+    """REPARACIÓN (TMT 2026-07-15): saca del extracto de una sesión movimientos
+    DUPLICADOS y deshace sus matches. Caso: la importación INV30405 ya la
+    concilió Alex por el backlog (grupo −297.215) y se volvió a contar por el
+    extracto (débitos −297.929,09 + −14.896,45) → doble conteo. Esto los quita
+    del payload (NO vuelven a pendientes) y soft-deshace cualquier match de esos
+    documentos. Dry-run por defecto; &confirm=SI aplica. Devuelve las filas
+    removidas para poder reponerlas si hiciera falta.
+    """
+    import json as _json
+    from modules.conciliacion import sesion as _s
+    sid = int(request.args.get("sesion_id") or 0)
+    docs = [d.strip() for d in (request.args.get("docs") or "").split(",") if d.strip()]
+    ses = _s.sesion_por_id(sid) if sid else None
+    if not ses:
+        return jsonify({"error": "sesion no encontrada", "sesion_id": sid}), 404
+    if not docs:
+        return jsonify({"error": "faltan docs (?docs=...)"}), 400
+    no_banco = ses.get("no_banco") or _BANCO_PICHINCHA
+    confirmar = (request.args.get("confirm") or "").strip().upper() == "SI"
+
+    payload = ses.get("extracto_payload") or []
+    if isinstance(payload, str):
+        try:
+            payload = _json.loads(payload)
+        except Exception:  # noqa: BLE001
+            payload = []
+    docset = set(docs)
+    removidas = [r for r in payload if str(r.get("documento") or "").strip() in docset]
+    quedan = [r for r in payload if str(r.get("documento") or "").strip() not in docset]
+
+    matches = _db.fetch_all(
+        "SELECT id, real_documento, real_monto, estado, COALESCE(metodo,'') AS metodo "
+        "FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco = %s AND deshecho_en IS NULL AND real_documento = ANY(%s)",
+        (no_banco, docs),
+    ) or []
+
+    out = {
+        "sesion_id": sid, "no_banco": no_banco, "confirmado": confirmar, "docs": docs,
+        "payload_antes": len(payload), "payload_despues": len(quedan),
+        "filas_removidas": [{"documento": r.get("documento"), "fecha": r.get("fecha"),
+                             "monto": r.get("monto"), "tipo": r.get("tipo"),
+                             "concepto": str(r.get("concepto") or "")[:60]} for r in removidas],
+        "matches_a_deshacer": [{"id": m["id"], "doc": m["real_documento"],
+                                "monto": str(m["real_monto"]), "estado": m["estado"],
+                                "metodo": m["metodo"]} for m in matches],
+    }
+    if confirmar:
+        _db.execute(
+            "UPDATE scintela.banco_conciliacion_sesion SET extracto_payload = %s::jsonb WHERE id = %s",
+            (_json.dumps(quedan), sid),
+        )
+        n = 0
+        if matches:
+            n = _db.execute(
+                "UPDATE scintela.banco_conciliacion_match "
+                "SET deshecho_en = CURRENT_TIMESTAMP, deshecho_por = %s "
+                "WHERE no_banco = %s AND deshecho_en IS NULL AND real_documento = ANY(%s)",
+                ("quitar-duplicado", no_banco, docs),
+            ) or 0
+        out["matches_deshechos"] = n
+        out["nota"] = "APLICADO — removidos del extracto y matches deshechos"
+    else:
+        out["nota"] = "dry-run: agregá &confirm=SI para aplicar"
+    return jsonify(out)
+
+
 @bp.route("/e2e-cleanup", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
