@@ -2250,28 +2250,42 @@ def _relink_py(no_banco: int) -> dict:
         """,
         (no_banco,),
     ) or {}
+    # TMT 2026-07-15 (dueña + Alex — bug "PROGRAMA 0.00 / algo raro"): ANTES este
+    # UPDATE hacía `SET id_transaccion = (subconsulta)`. Cuando la subconsulta NO
+    # encontraba el mov nuevo por tx_firma devolvía NULL → y el UPDATE ponía
+    # id_transaccion = NULL, BORRANDO la contraparte del programa de un match que
+    # antes cuadraba (DIFF=0). Por eso reaparecían conciliaciones "a medias" con
+    # PROGRAMA 0.00 tras cada sync. FIX: solo re-atar cuando SÍ se encuentra el
+    # mov nuevo (sub.new_id IS NOT NULL). Si no se encuentra, se DEJA el match
+    # como estaba (queda huérfano, recuperable en el próximo sync) — NUNCA se
+    # pisa con NULL. Ver /auditar-sin-programa (sección huerfanos).
     n_relinked = _db.execute(
         """
         UPDATE scintela.banco_conciliacion_match m
-           SET id_transaccion = (
-             SELECT t.id_transaccion
-               FROM scintela.transacciones_bancarias t
-              WHERE t.no_banco = m.no_banco
-                AND (COALESCE(t.fecha::TEXT, '') || '|'
-                  || COALESCE(t.documento, '') || '|'
-                  || COALESCE(t.importe::TEXT, '0') || '|'
-                  || COALESCE(t.numreferencia::TEXT, '') || '|'
-                  || COALESCE(LEFT(t.concepto, 40), '')) = m.tx_firma
-              ORDER BY t.id_transaccion ASC LIMIT 1
-           )
-         WHERE m.no_banco = %s
-           AND m.deshecho_en IS NULL
-           AND m.tx_firma IS NOT NULL
-           AND m.id_transaccion IS NOT NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM scintela.transacciones_bancarias t2
-              WHERE t2.id_transaccion = m.id_transaccion
-           )
+           SET id_transaccion = sub.new_id
+          FROM (
+            SELECT m2.id AS mid,
+                   (SELECT t.id_transaccion
+                      FROM scintela.transacciones_bancarias t
+                     WHERE t.no_banco = m2.no_banco
+                       AND (COALESCE(t.fecha::TEXT, '') || '|'
+                         || COALESCE(t.documento, '') || '|'
+                         || COALESCE(t.importe::TEXT, '0') || '|'
+                         || COALESCE(t.numreferencia::TEXT, '') || '|'
+                         || COALESCE(LEFT(t.concepto, 40), '')) = m2.tx_firma
+                     ORDER BY t.id_transaccion ASC LIMIT 1) AS new_id
+              FROM scintela.banco_conciliacion_match m2
+             WHERE m2.no_banco = %s
+               AND m2.deshecho_en IS NULL
+               AND m2.tx_firma IS NOT NULL
+               AND m2.id_transaccion IS NOT NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM scintela.transacciones_bancarias t2
+                  WHERE t2.id_transaccion = m2.id_transaccion
+               )
+          ) sub
+         WHERE m.id = sub.mid
+           AND sub.new_id IS NOT NULL
         """,
         (no_banco,),
     ) or 0
