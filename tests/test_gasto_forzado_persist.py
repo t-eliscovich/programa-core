@@ -48,11 +48,12 @@ def test_crear_usa_execute_returning_commit(stub):
     from modules.informes import queries as q
     stub.execute_returning_responses = [
         {"id_gasto_forzado": 7, "fecha": None, "importe": 500.0,
-         "concepto": "hilado", "version": 1}
+         "concepto": "hilado", "prov": "AC", "version": 1}
     ]
     item = q.gasto_forzado_crear(fecha="2026-08-01", importe=500.0,
-                                 concepto="hilado", usuario="tamara")
+                                 concepto="hilado", prov="AC", usuario="tamara")
     assert item["id"] == 7
+    assert item["prov"] == "AC"
     assert len(stub.execute_returning_calls) == 1, \
         "el INSERT debe correr por execute_returning (commitea)"
     assert "INSERT INTO scintela.gasto_forzado" in stub.execute_returning_calls[0][0]
@@ -77,12 +78,12 @@ def test_actualizar_usa_execute_returning_para_el_update(stub):
     # 1) SELECT del actual (read) → fetch_one
     stub.fetch_one_responses = [
         {"id_gasto_forzado": 7, "fecha": None, "importe": 500.0,
-         "concepto": "hilado", "version": 1}
+         "concepto": "hilado", "prov": "AC", "version": 1}
     ]
     # 2) UPDATE ... RETURNING → execute_returning
     stub.execute_returning_responses = [
         {"id_gasto_forzado": 7, "fecha": None, "importe": 900.0,
-         "concepto": "hilado", "version": 2}
+         "concepto": "hilado", "prov": "AC", "version": 2}
     ]
     r = q.gasto_forzado_actualizar(id_gasto_forzado=7, expected_version=1,
                                    importe=900.0, usuario="tamara")

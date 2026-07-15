@@ -683,6 +683,8 @@
         {# Form ALTA — agrega a scintela.gasto_forzado. #}
         <form id="gf-form" class="gf-form-inline" onsubmit="return false">
           <input type="date" id="gf-fecha" required title="Fecha">
+          <input type="text" id="gf-prov" maxlength="5" placeholder="PR" title="Proveedor / PR (opcional)"
+                 oninput="this.value=this.value.toUpperCase()" style="width:70px;text-transform:uppercase;">
           <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
           <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia, alquiler)">
           <button type="submit" id="gf-add">+ Agregar</button>
@@ -817,12 +819,16 @@
                 });
                 tdF.appendChild(inF); tr.appendChild(tdF);
 
-                // PR — los manuales no tienen proveedor: celda vacía (—) no editable.
+                // PR (proveedor, editable — hasta 5 chars, mayúsculas)
                 const tdP = document.createElement('td'); tdP.style.padding = '4px 10px';
                 const inP = document.createElement('input');
-                inP.type = 'text'; inP.readOnly = true; inP.tabIndex = -1; inP.value = '';
-                inP.placeholder = '—';
-                inP.style.cssText = _inpBase + 'font-family:ui-monospace,monospace;width:60px;color:var(--muted);cursor:default;';
+                inP.type = 'text'; inP.maxLength = 5; inP.placeholder = '—';
+                inP.className = 'gf-edit-concepto';
+                inP.value = it.prov || '';
+                inP.dataset.orig = inP.value;
+                inP.style.cssText = _inpBase + 'font-family:ui-monospace,monospace;width:60px;text-transform:uppercase;';
+                inP.addEventListener('input', () => { inP.value = inP.value.toUpperCase(); });
+                inP.addEventListener('change', () => _gfSaveCampo(it.id, 'prov', inP.value, ver));
                 tdP.appendChild(inP); tr.appendChild(tdP);
 
                 // Concepto (editable)
@@ -1290,12 +1296,12 @@ function _csrfToken() {
   return inp ? inp.value : '';
 }
 
-async function gfApiCreate({ fecha, importe, concepto }) {
+async function gfApiCreate({ fecha, importe, concepto, prov }) {
   const r = await fetch(GF_API_BASE, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _csrfToken() },
-    body: JSON.stringify({ fecha, importe, concepto }),
+    body: JSON.stringify({ fecha, importe, concepto, prov }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
@@ -1332,7 +1338,7 @@ async function gfUpdateItemOptimistic(id, expectedVersion, updater) {
   const before = (GF_CACHE.find(x => x.id === id)) || {};
   const after = updater({ ...before });
   const patch = {};
-  for (const k of ['fecha', 'importe', 'concepto']) {
+  for (const k of ['fecha', 'importe', 'concepto', 'prov']) {
     if (after[k] !== before[k]) patch[k] = after[k];
   }
   const { status, body } = await gfApiUpdate(id, expectedVersion, patch);
@@ -1459,6 +1465,8 @@ async function _gfSaveCampo(id, campo, valor, expectedVersion) {
     }
   } else if (campo === 'concepto') {
     parsed = (valor || '').trim();
+  } else if (campo === 'prov') {
+    parsed = (valor || '').trim().toUpperCase().slice(0, 5);
   }
 
   const result = await gfUpdateItemOptimistic(id, expectedVersion, (item) => ({
@@ -1538,9 +1546,10 @@ document.getElementById('gf-form').addEventListener('submit', async (ev) => {
   const fecha = document.getElementById('gf-fecha').value;
   const importe = parseFloat(document.getElementById('gf-importe').value);
   const concepto = (document.getElementById('gf-concepto').value || '').trim();
+  const prov = (document.getElementById('gf-prov').value || '').trim().toUpperCase();
   if (!fecha || !importe || importe <= 0) return;
   try {
-    await gfApiCreate({ fecha, importe, concepto });
+    await gfApiCreate({ fecha, importe, concepto, prov });
   } catch (e) {
     alert('No se pudo agregar el gasto forzado: ' + e.message);
     return;
@@ -1548,6 +1557,7 @@ document.getElementById('gf-form').addEventListener('submit', async (ev) => {
   await gfFetchAll();
   document.getElementById('gf-importe').value = '';
   document.getElementById('gf-concepto').value = '';
+  document.getElementById('gf-prov').value = '';
   gfRender();
   gfRebuildChart();
 });

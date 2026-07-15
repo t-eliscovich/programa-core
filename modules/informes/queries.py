@@ -8708,7 +8708,7 @@ def gastos_forzados_listar() -> list[dict]:
     rows = (
         db.fetch_all(
             """
-        SELECT id_gasto_forzado, fecha, importe, concepto, version,
+        SELECT id_gasto_forzado, fecha, importe, concepto, prov, version,
                creado_por, creado_en, actualizado_en, actualizado_por
           FROM scintela.gasto_forzado
          ORDER BY fecha ASC, id_gasto_forzado ASC
@@ -8724,6 +8724,7 @@ def gastos_forzados_listar() -> list[dict]:
                 "fecha": r["fecha"].isoformat() if r["fecha"] else None,
                 "importe": float(r["importe"] or 0),
                 "concepto": r["concepto"] or "",
+                "prov": r["prov"] or "",
                 "version": int(r["version"] or 1),
             }
         )
@@ -8734,6 +8735,7 @@ def gasto_forzado_crear(
     fecha,
     importe: float,
     concepto: str = "",
+    prov: str = "",
     usuario: str = "web",
 ) -> dict:
     """Crea un nuevo gasto forzado. Devuelve el item con id y version=1.
@@ -8747,12 +8749,12 @@ def gasto_forzado_crear(
     row = db.execute_returning(
         """
         INSERT INTO scintela.gasto_forzado
-            (fecha, importe, concepto, version, creado_por,
+            (fecha, importe, concepto, prov, version, creado_por,
              actualizado_en, actualizado_por)
-        VALUES (%s, %s, %s, 1, %s, CURRENT_TIMESTAMP, %s)
-        RETURNING id_gasto_forzado, fecha, importe, concepto, version
+        VALUES (%s, %s, %s, %s, 1, %s, CURRENT_TIMESTAMP, %s)
+        RETURNING id_gasto_forzado, fecha, importe, concepto, prov, version
         """,
-        (fecha, importe, concepto or None, usuario, usuario),
+        (fecha, importe, concepto or None, prov or None, usuario, usuario),
     )
     if not row:
         raise RuntimeError("INSERT gasto_forzado no devolvió fila")
@@ -8761,6 +8763,7 @@ def gasto_forzado_crear(
         "fecha": row["fecha"].isoformat() if row["fecha"] else None,
         "importe": float(row["importe"] or 0),
         "concepto": row["concepto"] or "",
+        "prov": row["prov"] or "",
         "version": int(row["version"] or 1),
     }
 
@@ -8771,6 +8774,7 @@ def gasto_forzado_actualizar(
     fecha=None,
     importe: float | None = None,
     concepto: str | None = None,
+    prov: str | None = None,
     usuario: str = "web",
 ) -> dict:
     """Update con optimistic lock — rechaza si la versión actual no coincide.
@@ -8780,7 +8784,7 @@ def gasto_forzado_actualizar(
     # Cargar el item actual
     actual = db.fetch_one(
         """
-        SELECT id_gasto_forzado, fecha, importe, concepto, version
+        SELECT id_gasto_forzado, fecha, importe, concepto, prov, version
           FROM scintela.gasto_forzado
          WHERE id_gasto_forzado = %s
         """,
@@ -8798,6 +8802,7 @@ def gasto_forzado_actualizar(
                 "fecha": actual["fecha"].isoformat() if actual["fecha"] else None,
                 "importe": float(actual["importe"] or 0),
                 "concepto": actual["concepto"] or "",
+                "prov": actual["prov"] or "",
                 "version": actual_v,
             },
         }
@@ -8805,20 +8810,23 @@ def gasto_forzado_actualizar(
     nueva_fecha = fecha if fecha is not None else actual["fecha"]
     nuevo_importe = importe if importe is not None else float(actual["importe"] or 0)
     nuevo_concepto = concepto if concepto is not None else (actual["concepto"] or "")
+    nuevo_prov = prov if prov is not None else (actual["prov"] or "")
     row = db.execute_returning(
         """
         UPDATE scintela.gasto_forzado
            SET fecha           = %s,
                importe         = %s,
                concepto        = %s,
+               prov            = %s,
                version         = version + 1,
                actualizado_en  = CURRENT_TIMESTAMP,
                actualizado_por = %s
          WHERE id_gasto_forzado = %s
            AND version = %s
-        RETURNING id_gasto_forzado, fecha, importe, concepto, version
+        RETURNING id_gasto_forzado, fecha, importe, concepto, prov, version
         """,
-        (nueva_fecha, nuevo_importe, nuevo_concepto or None, usuario, id_gasto_forzado, expected_version),
+        (nueva_fecha, nuevo_importe, nuevo_concepto or None, nuevo_prov or None,
+         usuario, id_gasto_forzado, expected_version),
     )
     if not row:
         # Race: otra tx ganó entre nuestro SELECT y nuestro UPDATE
@@ -8830,6 +8838,7 @@ def gasto_forzado_actualizar(
             "fecha": row["fecha"].isoformat() if row["fecha"] else None,
             "importe": float(row["importe"] or 0),
             "concepto": row["concepto"] or "",
+            "prov": row["prov"] or "",
             "version": int(row["version"] or 1),
         },
     }
@@ -8877,7 +8886,7 @@ def gastos_forzados_importar_bulk(items: list[dict], usuario: str = "web") -> di
         if existe:
             saltados += 1
             continue
-        gasto_forzado_crear(fecha, importe, concepto, usuario)
+        gasto_forzado_crear(fecha, importe, concepto, usuario=usuario)
         insertados += 1
     return {"insertados": insertados, "saltados": saltados}
 

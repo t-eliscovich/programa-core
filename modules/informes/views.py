@@ -3003,6 +3003,7 @@ def gastos_forzados_crear():
     fecha = _parse_fecha_iso(payload.get("fecha"))
     importe = _parse_importe_payload(payload.get("importe"))
     concepto = (payload.get("concepto") or "").strip()[:80]
+    prov = (payload.get("prov") or "").strip().upper()[:5]
     if not fecha or importe is None or importe <= 0:
         return jsonify(
             {
@@ -3016,6 +3017,7 @@ def gastos_forzados_crear():
             fecha=fecha,
             importe=importe,
             concepto=concepto,
+            prov=prov,
             usuario=usuario,
         )
         return jsonify({"ok": True, "item": item}), 201
@@ -3041,6 +3043,7 @@ def gastos_forzados_actualizar(id_gasto: int):
     fecha = _parse_fecha_iso(payload.get("fecha")) if "fecha" in payload else None
     importe = _parse_importe_payload(payload.get("importe")) if "importe" in payload else None
     concepto = (payload.get("concepto") or "").strip()[:80] if "concepto" in payload else None
+    prov = (payload.get("prov") or "").strip().upper()[:5] if "prov" in payload else None
     usuario = (g.user or {}).get("username", "web")
     try:
         r = queries.gasto_forzado_actualizar(
@@ -3049,6 +3052,7 @@ def gastos_forzados_actualizar(id_gasto: int):
             fecha=fecha,
             importe=importe,
             concepto=concepto,
+            prov=prov,
             usuario=usuario,
         )
     except Exception as e:  # noqa: BLE001
