@@ -357,6 +357,95 @@ def auditar_sin_programa():
     })
 
 
+@bp.route("/restaurar-contraparte", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def restaurar_contraparte():
+    """REPARACIÓN (TMT 2026-07-15): vuelve a atar la contraparte del programa de
+    los matches que el relink viejo dejó en NULL (o apuntando a un id muerto).
+
+    El match conserva su `tx_firma` = identidad del mov del programa original
+    (fecha|documento|importe|numref|concepto). Aunque la firma EXACTA ya no
+    resuelva (cambió numref/concepto tras re-importar), la identidad
+    fecha+documento+importe SÍ alcanza para reencontrar el mismo movimiento en
+    transacciones_bancarias. Solo restaura cuando hay UN ÚNICO candidato exacto
+    (no ambiguo). Dry-run por defecto; &confirm=SI aplica.
+
+    Así la columna PROGRAMA vuelve a mostrar cuánto venía del programa y el DIFF
+    vuelve a cuadrar, sin re-conciliar nada a mano.
+    """
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    confirmar = (request.args.get("confirm") or "").strip().upper() == "SI"
+    rotos = _db.fetch_all(
+        """
+        SELECT m.id, m.id_transaccion, m.tx_firma
+          FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+           AND m.tx_firma IS NOT NULL AND m.tx_firma <> ''
+           AND (m.id_transaccion IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM scintela.transacciones_bancarias t
+                  WHERE t.id_transaccion = m.id_transaccion))
+        """,
+        (no_banco,),
+    ) or []
+    plan = []
+    aplicados = 0
+    ambiguos = 0
+    sin_candidato = 0
+    for r in rotos:
+        firma = r.get("tx_firma") or ""
+        parts = firma.split("|")
+        if len(parts) < 3:
+            continue
+        f_fecha, f_doc, f_imp = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        try:
+            imp = round(float(f_imp), 2)
+        except (ValueError, TypeError):
+            continue
+        cands = _db.fetch_all(
+            """
+            SELECT id_transaccion
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+               AND fecha::TEXT = %s
+               AND COALESCE(documento, '') = %s
+               AND ROUND(importe, 2) = %s
+            """,
+            (no_banco, f_fecha, f_doc, imp),
+        ) or []
+        info = {"match_id": r["id"], "firma": firma[:70],
+                "id_actual": r.get("id_transaccion"), "candidatos": len(cands)}
+        if len(cands) == 1:
+            nid = cands[0]["id_transaccion"]
+            info["nuevo_id_transaccion"] = nid
+            plan.append(info)
+            if confirmar:
+                _db.execute(
+                    "UPDATE scintela.banco_conciliacion_match "
+                    "SET id_transaccion = %s WHERE id = %s AND deshecho_en IS NULL",
+                    (nid, r["id"]),
+                )
+                aplicados += 1
+        elif len(cands) == 0:
+            sin_candidato += 1
+        else:
+            ambiguos += 1
+            info["nota"] = "AMBIGUO (varios candidatos) — no se toca"
+            plan.append(info)
+    return jsonify({
+        "no_banco": no_banco,
+        "confirmado": confirmar,
+        "rotos_con_firma": len(rotos),
+        "restaurables_unicos": len([p for p in plan if p.get("nuevo_id_transaccion")]),
+        "ambiguos": ambiguos,
+        "sin_candidato": sin_candidato,
+        "aplicados": aplicados,
+        "plan": plan[:200],
+        "nota": ("dry-run: agregá &confirm=SI para aplicar"
+                 if not confirmar else "APLICADO — la columna PROGRAMA vuelve a mostrar el valor"),
+    })
+
+
 @bp.route("/e2e-cleanup", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
