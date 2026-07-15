@@ -1160,9 +1160,25 @@ FORM = """
     <div style="margin:2px 0;color:#475569;">Muchas diferencias son de <b>tiempo</b>: el dBase es una foto de un día y PC siguió cargando movimientos después.</div>
   </div>
 
+  {% if snap %}
+  <div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:10px;padding:16px;margin-bottom:16px;">
+    <div style="font-size:14px;">Última foto del dBase guardada: <b>{{ snap.strftime('%d/%m/%Y %H:%M') }}</b></div>
+    <a href="/admin/dbase-compare/vivo"
+       style="display:inline-block;margin-top:10px;padding:9px 18px;border-radius:6px;background:#16a34a;color:#fff;text-decoration:none;font-size:14px;font-weight:600;">Ver qué falta ahora</a>
+    <div style="color:#475569;font-size:12px;margin-top:10px;line-height:1.5;">
+      Compara esta foto contra el programa <b>en vivo</b>: a medida que vas
+      cargando lo que falta (una caja, una factura, un cheque&hellip;), desaparece
+      solo de la lista. No hace falta volver a subir el archivo.
+    </div>
+  </div>
+  {% endif %}
+
   <form method=post action="/admin/dbase-compare/run" enctype="multipart/form-data"
         style="border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:16px;">
     <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#334155;">
+      {% if snap %}Actualizar la foto del dBase{% else %}Subir la foto del dBase{% endif %}
+    </div>
     <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;">
       Archivo del dBase <span style="font-weight:400;color:#64748b;">(dbf-fresh.tar.gz)</span>
     </label>
@@ -1187,7 +1203,33 @@ FORM = """
 @bp.route("/", methods=["GET"])
 @requiere_login
 def form():
-    return render_template_string(FORM)
+    snap = None
+    try:
+        if TARBALL_PATH.exists():
+            snap = (datetime.utcfromtimestamp(TARBALL_PATH.stat().st_mtime)
+                    - timedelta(hours=5))
+    except Exception:  # noqa: BLE001
+        snap = None
+    return render_template_string(FORM, snap=snap)
+
+
+@bp.route("/vivo", methods=["GET"])
+@requiere_login
+def vivo():
+    """Re-corre la comparación contra la ÚLTIMA foto del dBase ya subida (sin
+    resubir el tarball) y PC EN VIVO — así la lista de faltantes se achica sola
+    a medida que se cargan las cosas en PC. TMT 2026-07-15 (dueña)."""
+    if not TARBALL_PATH.exists():
+        return Response(
+            "Todavía no hay ninguna foto del dBase guardada.\n"
+            "Subí el archivo una vez en /admin/dbase-compare/ y después esta\n"
+            "comparación se puede volver a ver acá sin resubir nada.\n",
+            mimetype="text/plain")
+    try:
+        dias = max(7, min(120, int(request.args.get("dias") or 30)))
+    except (TypeError, ValueError):
+        dias = 30
+    return Response(stream_with_context(_run(dias)), mimetype="text/plain")
 
 
 @bp.route("/run", methods=["POST"])
