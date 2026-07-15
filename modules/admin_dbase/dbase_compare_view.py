@@ -51,7 +51,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, render_template_string, request, stream_with_context
 
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login
 
 bp = Blueprint("dbase_compare", __name__, url_prefix="/admin/dbase-compare")
 
@@ -1150,14 +1150,12 @@ identidad de utilidad (residuo 0 = toda diferencia explicada).</p>
 
 @bp.route("/", methods=["GET"])
 @requiere_login
-@requiere_permiso("usuarios.admin")
 def form():
     return render_template_string(FORM)
 
 
 @bp.route("/run", methods=["POST"])
 @requiere_login
-@requiere_permiso("usuarios.admin")
 def run():
     f = request.files.get("tarball")
     if not f or not f.filename:

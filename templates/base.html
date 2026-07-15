@@ -759,6 +759,14 @@
       </details>
       {% endif %}
 
+      {# TMT 2026-07-15 (dueña: "sync compare visible para todos"): el comparador
+         PC vs dBase en su propia sección, SIN gate de permiso (requiere_login
+         solamente) para que lo vean TODOS los usuarios, no solo admin. #}
+      <details class="sidebar-section" data-key="comparacion" open>
+        <summary>Comparación</summary>
+        {{ nav_link('dbase_compare.form', 'Comparación con dBase', 'report') }}
+      </details>
+
       {# TMT 2026-07-08 dueña: "Ventas (factura)" y "Nueva compra" salen del menú
          (no se usan desde acá). Nueva compra se entra desde la pantalla de
          Compras (botón). Ventas/factura sigue viva por URL (facturas.nueva). #}
