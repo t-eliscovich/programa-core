@@ -783,6 +783,30 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     except Exception:  # noqa: BLE001 -- Asinfo caído → queda el kg de la compra
         pass
 
+    # dueña 2026-07-15: en el Flujo de PRODUCCIÓN "Compras hilado" muestra el hilo
+    # RECIBIDO (físico) del mes, no el facturado, para que cuadre con "Ingresos" de
+    # Movimientos. AC (ARIESCOPE) es el único importador de hilo → una sola fila.
+    try:
+        from modules.importaciones import service as _imp_rec
+
+        _rec = _imp_rec.costo_hilado_recibido_mes(yy, mm)
+        if _rec and _rec.get("kg"):
+            _prov_lbl = (compras_hilado[0].get("prov") if compras_hilado else None) or "AC"
+            compras_hilado = [
+                {
+                    "prov": _prov_lbl,
+                    "kg": _rec["kg"],
+                    "importe": _rec["us"],
+                    "ukg": (
+                        _rec["usd_kg"]
+                        if _rec.get("usd_kg") is not None
+                        else _safe_div(_rec["us"], _rec["kg"])
+                    ),
+                }
+            ]
+    except Exception:  # noqa: BLE001 -- fail-soft: queda el facturado
+        pass
+
     produc_tejido = (
         db.fetch_all(
             f"""
