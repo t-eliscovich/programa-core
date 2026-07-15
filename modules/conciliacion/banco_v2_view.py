@@ -544,13 +544,25 @@ def banco_post_procesar():
     tot_banco_c = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "C")
     tot_banco_d = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "D")
     _seen_tx = set()
+    _seen_firma = set()
     _prog_dedup = []
     for m in matches_sesion:
         tx_id = m.get("id_transaccion")
-        if tx_id is None or tx_id in _seen_tx:
-            continue
-        _seen_tx.add(tx_id)
-        _prog_dedup.append(m["monto_prog_signed"])
+        if tx_id is not None:
+            if tx_id in _seen_tx:
+                continue
+            _seen_tx.add(tx_id)
+            _prog_dedup.append(m["monto_prog_signed"])
+        elif m.get("tiene_prog_firma"):
+            # TMT 2026-07-15 (dueña: el TOTAL PROGRAMA quedaba raro / DIFERENCIA
+            # inflada). Los cruces cuyo vínculo al programa se rompió (relink
+            # viejo) no sumaban al total → la diferencia mostraba el hueco como
+            # si fuera descuadre. Usamos el valor GUARDADO en la firma (dedup por
+            # tx_firma). Solo display del header — no toca datos ni pendientes.
+            _f = m.get("tx_firma") or ""
+            if _f and _f not in _seen_firma:
+                _seen_firma.add(_f)
+                _prog_dedup.append(m.get("prog_firma_signed") or 0.0)
     tot_prog_c = sum(v for v in _prog_dedup if v > 0)
     tot_prog_d = sum(-v for v in _prog_dedup if v < 0)
     conciliados_totales = {
