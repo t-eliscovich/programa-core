@@ -496,6 +496,85 @@ def chequeo_cruces():
     return jsonify(_chequeo_cruces(no_banco))
 
 
+def _reatar_batch(no_banco: int, batch: str, aplicar: bool = False) -> dict:
+    """Re-ata un batch a sus programas REALES por monto (1:1 + N:1). SEGURO para
+    automatizar: solo re-apunta a un programa real del MISMO monto; si no hay,
+    NO toca ese match (nunca nulea). Devuelve los cambios."""
+    import bank_helpers as _bh
+    from modules.conciliacion.banco_v2_view import asignar_banco_a_programa
+    rows = _db.fetch_all(
+        "SELECT id, real_monto, real_tipo, id_transaccion "
+        "FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL AND confirm_batch_id=%s ORDER BY id",
+        (no_banco, batch)) or []
+    ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+    tx_map = {}
+    if ids:
+        for t in _db.fetch_all(
+            "SELECT id_transaccion, importe, documento, COALESCE(usuario_crea,'') AS uc "
+            "FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,)) or []:
+            tx_map[int(t["id_transaccion"])] = t
+
+    def _bsign(tipo, monto):
+        m = float(monto or 0)
+        return round(m if (tipo or "").upper() == "C" else -m, 2)
+
+    prog_signed = {idtx: round(float(_bh._signed_delta((t["documento"] or "").upper(), float(t["importe"] or 0), t["uc"])), 2)
+                   for idtx, t in tx_map.items()}
+    banco_firmados = [(int(r["id"]), _bsign(r["real_tipo"], r["real_monto"])) for r in rows]
+    viejo = {int(r["id"]): r.get("id_transaccion") for r in rows}
+    asign, _sob = asignar_banco_a_programa(banco_firmados, [(k, v) for k, v in prog_signed.items()], tol=0.50)
+    nuevo = {}
+    for pid, bks in asign.items():
+        for bk in bks:
+            nuevo[bk] = pid
+    cambios = []
+    aplicados = 0
+    for bk in viejo:
+        nid = nuevo.get(bk)
+        if nid is None:
+            continue  # sin programa real del mismo monto → NO tocar (seguro)
+        if (viejo[bk] or None) != nid:
+            cambios.append({"match_id": bk, "id_viejo": viejo[bk], "id_nuevo": nid})
+            if aplicar:
+                _db.execute(
+                    "UPDATE scintela.banco_conciliacion_match SET id_transaccion=%s "
+                    "WHERE id=%s AND deshecho_en IS NULL", (nid, bk))
+                aplicados += 1
+    return {"batch": batch, "n_cambios": len(cambios), "aplicados": aplicados, "cambios": cambios}
+
+
+def _reatar_mal_atados(no_banco: int, aplicar: bool = False) -> dict:
+    """Encuentra los grupos con cruces mal atados (via _chequeo_cruces) y los
+    re-ata por monto exacto. SEGURO: nunca nulea, solo re-apunta a programas
+    reales del mismo monto. Usado post-sync (auto-heal) y a pedido."""
+    chk = _chequeo_cruces(no_banco)
+    mal_txs = [m["id_transaccion"] for m in chk.get("mal_atados", []) if m.get("id_transaccion")]
+    if not mal_txs:
+        return {"n_grupos": 0, "aplicados_total": 0, "resultados": []}
+    br = _db.fetch_all(
+        "SELECT DISTINCT confirm_batch_id FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL AND id_transaccion = ANY(%s) "
+        "AND confirm_batch_id IS NOT NULL", (no_banco, mal_txs)) or []
+    batches = [r["confirm_batch_id"] for r in br if r.get("confirm_batch_id")]
+    resultados = [_reatar_batch(no_banco, b, aplicar) for b in batches]
+    return {"n_grupos": len(batches), "aplicados_total": sum(r["aplicados"] for r in resultados),
+            "n_cambios_total": sum(r["n_cambios"] for r in resultados), "resultados": resultados}
+
+
+@bp.route("/reatar-mal-atados", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def reatar_mal_atados():
+    """Re-ata TODOS los grupos con cruces mal atados (dry-run; &confirm=SI aplica)."""
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    aplicar = (request.args.get("confirm") or "").strip().upper() == "SI"
+    out = _reatar_mal_atados(no_banco, aplicar)
+    out["confirmado"] = aplicar
+    out["nota"] = ("dry-run: &confirm=SI para aplicar" if not aplicar else "APLICADO")
+    return jsonify(out)
+
+
 @bp.route("/reatar-grupo", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")

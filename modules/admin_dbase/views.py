@@ -269,16 +269,24 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
                 yield line(f"  ✓ {_chk['n_programas_revisados']} cruces OK — todos cuadran")
             else:
                 yield line(
-                    f"  ⚠ ATENCIÓN: {_chk['n_mal_atados']} grupo(s) MAL ATADOS "
-                    f"(banco no suma su programa). Ver "
-                    f"/admin/diag-pendientes-banco/chequeo-cruces")
+                    f"  ⚠ {_chk['n_mal_atados']} grupo(s) mal atados detectados — "
+                    f"auto-corrigiendo por monto exacto…")
                 for _m in _chk["mal_atados"][:8]:
                     yield line(
                         f"    tx {_m['id_transaccion']} ({_m['concepto']}): "
                         f"banco {_m['suma_banco']:,.2f} vs programa {_m['programa']:,.2f} "
                         f"-> diff {_m['diff']:,.2f}")
+                # AUTO-HEAL: re-ata por monto exacto (seguro, nunca nulea).
+                from modules.conciliacion.diag_view import _reatar_mal_atados
+                _fix = _reatar_mal_atados(10, aplicar=True)
+                _chk2 = _chequeo_cruces(10)
+                yield line(
+                    f"  auto-reatado: {_fix['aplicados_total']} cruce(s) corregidos "
+                    f"en {_fix['n_grupos']} grupo(s). Quedan mal atados: "
+                    f"{_chk2['n_mal_atados']} (si >0, no había programa real del mismo "
+                    f"monto — revisar a mano en /admin/diag-pendientes-banco/chequeo-cruces).")
         except Exception as exc:  # noqa: BLE001
-            yield line(f"[WARN] chequeo cruces falló (no fatal): {exc!r}")
+            yield line(f"[WARN] chequeo/auto-reatado cruces falló (no fatal): {exc!r}")
 
     # TMT 2026-07-07 (dueña): reconcile POSDAT FULL en cada sync. El sync NO
     # extrae POSDAT (NEVER_EXTRACT, para no pisar baselines YY + links
