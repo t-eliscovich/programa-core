@@ -2247,6 +2247,53 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     except Exception as e:
         _LOG.warning("xlsx historicos query falló: %s", e)
 
+    # TMT 2026-07-15 (dueña: "muestra valores que ya fueron conciliados"):
+    # excluir los históricos que YA están conciliados por un match ACTIVO
+    # (banco_conciliacion_match, deshecho_en IS NULL) aunque su conciliado_en no
+    # se haya marcado — pasa cuando una sesión nueva re-incluye un histórico
+    # viejo cuyo match sigue vivo. Así el export coincide con lo que la pantalla
+    # muestra como conciliado (mismo criterio que balance_pichincha). Clave por
+    # (fecha, documento, |monto|) — el documento del banco es único por mov.
+    _match_firmas: set = set()
+    try:
+        _mr = _db.fetch_all(
+            """
+            SELECT real_fecha, real_documento, real_monto
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s AND deshecho_en IS NULL
+               AND real_documento IS NOT NULL AND real_documento <> ''
+            """,
+            (no_banco,),
+        ) or []
+        for _m in _mr:
+            _doc = (_m.get("real_documento") or "").strip()
+            if not _doc:
+                continue
+            try:
+                _mo = round(abs(float(_m.get("real_monto") or 0)), 2)
+            except (TypeError, ValueError):
+                _mo = None
+            _match_firmas.add((str(_m.get("real_fecha"))[:10], _doc, _mo))
+    except Exception as _e_mf:  # noqa: BLE001
+        _LOG.warning("xlsx: no pude cargar match_firmas: %s", _e_mf)
+
+    def _ya_conciliado_por_match(r) -> bool:
+        _doc = str(r.get("documento") or "").strip()
+        if not _doc:
+            return False
+        try:
+            _mo = round(abs(float(r.get("monto") or 0)), 2)
+        except (TypeError, ValueError):
+            _mo = None
+        return (str(r.get("fecha"))[:10], _doc, _mo) in _match_firmas
+
+    if _match_firmas:
+        _antes = len(rows)
+        rows = [r for r in rows if not _ya_conciliado_por_match(r)]
+        if len(rows) != _antes:
+            _LOG.info("xlsx pendientes: excluidos %d histos ya conciliados por match activo",
+                      _antes - len(rows))
+
     # TMT 2026-06-04: el export ya NO incluye el extracto crudo de la sesión
     # (era la misma inflación que sacamos del balance). Pendientes = la hoja
     # (banco_historicos_pendientes); el extracto se usa para cruzar en pantalla.
