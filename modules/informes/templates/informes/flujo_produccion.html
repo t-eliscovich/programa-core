@@ -192,7 +192,7 @@
           </tr>
           {% if aco.get('ajuste_us') is not none %}
           <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Egreso por ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro</span></td>
+            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">físico formulas − libro programa</span></td>
             <td class="num">—</td>
             <td class="num">—</td>
             <td class="num">—</td>
@@ -423,7 +423,7 @@
        reemplazar del todo la de arriba. #}
     {% if prod_tej_asinfo and prod_tej_asinfo.filas %}
     <div class="blk mb-2">
-      <div class="hil-titles"><span class="blk-title">Compras hilado · Asinfo</span><span class="blk-title">Producción tejido · Asinfo</span></div>
+      <div class="hil-titles"><span class="blk-title">Compras hilado</span><span class="blk-title">Producción tejido · Asinfo</span></div>
       <table class="hil-table" data-no-sort-table>
         <colgroup>
           <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
@@ -435,18 +435,34 @@
           </tr>
         </thead>
         <tbody>
-          {% for r in prod_tej_asinfo.filas %}
+          {# Compras hilado = del PROGRAMA (AC), no hay fuente Asinfo aparte →
+             mismas filas que la tabla de arriba, pareadas con Producción tejido. #}
+          {% set ch = data.compras_hilado or [] %}
+          {% set pt = prod_tej_asinfo.filas or [] %}
+          {% set nrows = [ch|length, pt|length]|max %}
+          {% for i in range(nrows) %}
             <tr>
-              {# Compras hilado Asinfo: pendiente (aún no migrado) → vacío #}
-              <td></td><td></td><td></td><td></td>
-              <td class="prov">{{ r.prov }}</td>
-              <td class="num">{{ r.kg | num_es(0) }}</td>
-              <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
-              <td class="num">{{ r.importe | num_es(0) }}</td>
+              {% if i < ch|length %}{% set c = ch[i] %}
+                <td class="prov">{{ c.prov }}</td>
+                <td class="num">{{ c.kg | num_es(0) }}</td>
+                <td class="num">{{ '%.3f' % (c.ukg or 0) }}</td>
+                <td class="num">{{ c.importe | num_es(0) }}</td>
+              {% else %}<td></td><td></td><td></td><td></td>{% endif %}
+              {% if i < pt|length %}{% set r = pt[i] %}
+                <td class="prov">{{ r.prov }}</td>
+                <td class="num">{{ r.kg | num_es(0) }}</td>
+                <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
+                <td class="num">{{ r.importe | num_es(0) }}</td>
+              {% else %}<td></td><td></td><td></td><td></td>{% endif %}
             </tr>
           {% endfor %}
           <tr class="total">
-            <td class="lbl">TOTAL</td><td></td><td></td><td></td>
+            {% if data.compras_hilado %}{% set tot = data.compras_hilado_total %}
+              <td class="lbl">TOTAL</td>
+              <td class="num">{{ tot.kg | num_es(0) }}</td>
+              <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
+              <td class="num">{{ tot.importe | num_es(0) }}</td>
+            {% else %}<td class="lbl">TOTAL</td><td></td><td></td><td></td>{% endif %}
             <td class="lbl">TOTAL</td>
             <td class="num">{{ prod_tej_asinfo.total.kg | num_es(0) }}</td>
             <td class="num">{{ '%.3f' % (prod_tej_asinfo.total.ukg or 0) }}</td>

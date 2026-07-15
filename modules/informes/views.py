@@ -531,14 +531,16 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     # que el panel: inicial (dBase) + compras (programa tipo Q) − egresos
     # (formulas) = final libro, y el AJUSTE (físico − libro) como egreso extra
     # que cierra contra el stock físico de formulas. Dueña 2026-07-09.
-    if quimicos_modelo:
-        co["stock_inic_us"] = quimicos_modelo["inicial"]
-        co["ingresos_us"] = quimicos_modelo["compras"]
-        if quimicos_modelo["egresos"] is not None:
-            co["egresos_us"] = quimicos_modelo["egresos"]
-        if quimicos_modelo["final_form"] is not None:
-            co["stock_act_us"] = quimicos_modelo["final_form"]
-        co["ajuste_us"] = quimicos_modelo["ajuste"]
+    # TMT 2026-07-14 (dueña): la columna COLOR usa los valores del PROGRAMA
+    # (libro: inicial + compras tipo Q − egresos, ya en `co` desde el header);
+    # formulas queda SOLO en la banda de abajo como comparativa. El Stock act. se
+    # iguala al FÍSICO de formulas y el AJUSTE cierra el libro contra ese físico
+    # (ajuste = físico − libro). "nos igualamos con formulas".
+    if quimicos_modelo and quimicos_modelo.get("final_form") is not None:
+        _libro = float(co.get("stock_act_us") or 0)          # programa: inic + compras Q − egresos
+        _fisico = float(quimicos_modelo["final_form"] or 0)  # formulas: físico real
+        co["ajuste_us"] = round(_fisico - _libro, 0)         # cierra el libro del programa al físico
+        co["stock_act_us"] = round(_fisico, 0)               # Stock act = físico → nos igualamos con formulas
 
     return {
         "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
