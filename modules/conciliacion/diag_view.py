@@ -452,6 +452,110 @@ def restaurar_contraparte():
     })
 
 
+@bp.route("/rematch-grupo", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def rematch_grupo():
+    """RE-EMPAREJADOR (dry-run, TMT 2026-07-15): dado un grupo (?doc= o ?batch=),
+    re-arma la combinación CORRECTA banco↔programa por monto usando la MISMA
+    lógica del sistema (asignar_banco_a_programa: 1:1 exacto + N:1 por suma, ej.
+    1.500+1.500=3.000). Muestra qué ataría con qué y qué queda realmente suelto.
+    SOLO LECTURA — no toca nada. Sirve para ver el desorden real de un grupo
+    corrido antes de decidir."""
+    import bank_helpers as _bh
+    from modules.conciliacion.banco_v2_view import asignar_banco_a_programa
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    batch = (request.args.get("batch") or "").strip()
+    doc = (request.args.get("doc") or "").strip()
+    if not batch and doc:
+        r = _db.fetch_one(
+            "SELECT confirm_batch_id FROM scintela.banco_conciliacion_match "
+            "WHERE no_banco=%s AND deshecho_en IS NULL AND real_documento=%s "
+            "AND confirm_batch_id IS NOT NULL ORDER BY id DESC LIMIT 1", (no_banco, doc))
+        batch = (r or {}).get("confirm_batch_id") or ""
+    if not batch:
+        return jsonify({"error": "no encontré batch (pasá ?batch= o ?doc=)"}), 400
+    rows = _db.fetch_all(
+        "SELECT id, real_documento, real_monto, real_tipo, real_concepto, "
+        "id_transaccion, tx_firma FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL AND confirm_batch_id=%s ORDER BY id",
+        (no_banco, batch)) or []
+    ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+    tx_map = {}
+    if ids:
+        for t in _db.fetch_all(
+            "SELECT id_transaccion, importe, documento, COALESCE(usuario_crea,'') AS uc "
+            "FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,)) or []:
+            tx_map[int(t["id_transaccion"])] = t
+
+    def _bsign(tipo, monto):
+        m = float(monto or 0)
+        return m if (tipo or "").upper() == "C" else -m
+
+    def _fparse(firma):
+        p = (firma or "").split("|")
+        if len(p) < 3:
+            return None
+        try:
+            return float(_bh._signed_delta((p[1] or "").upper(), float(p[2]), ""))
+        except ValueError:
+            return None
+
+    banco_firmados = []
+    banco_info = {}
+    prog_signed = {}   # key -> signed
+    prog_info = {}
+    for r in rows:
+        bkey = f"b{r['id']}"
+        bsig = round(_bsign(r["real_tipo"], r["real_monto"]), 2)
+        banco_firmados.append((bkey, bsig))
+        banco_info[bkey] = {"monto": bsig, "doc": r["real_documento"],
+                            "concepto": str(r.get("real_concepto") or "")[:40]}
+        idtx = r.get("id_transaccion")
+        if idtx is not None and int(idtx) in tx_map:
+            t = tx_map[int(idtx)]
+            psig = round(float(_bh._signed_delta((t["documento"] or "").upper(), float(t["importe"] or 0), t["uc"])), 2)
+            pkey = f"live:{int(idtx)}"
+        else:
+            ps = _fparse(r.get("tx_firma"))
+            if ps is None:
+                continue
+            psig = round(ps, 2)
+            pkey = f"firma:{r.get('tx_firma')}"
+        if pkey not in prog_signed:
+            prog_signed[pkey] = psig
+            prog_info[pkey] = {"monto": psig}
+
+    prog_firmados = [(k, v) for k, v in prog_signed.items()]
+    asign, sobrantes = asignar_banco_a_programa(banco_firmados, prog_firmados, tol=0.50)
+
+    pares = []
+    banco_usados = set()
+    for pkey, bkeys in asign.items():
+        suma = round(sum(banco_info[b]["monto"] for b in bkeys), 2)
+        banco_usados.update(bkeys)
+        pares.append({
+            "programa": prog_info[pkey]["monto"],
+            "banco_items": [banco_info[b] for b in bkeys],
+            "suma_banco": suma,
+            "cuadra": abs(suma - prog_info[pkey]["monto"]) <= 0.50,
+        })
+    prog_sin_banco = [{"monto": prog_info[k]["monto"]} for k in prog_signed if k not in asign]
+    banco_sobrantes = [banco_info[b] for b in sobrantes]
+
+    return jsonify({
+        "batch": batch,
+        "n_banco": len(banco_firmados), "n_programa": len(prog_firmados),
+        "n_pares_ok": sum(1 for p in pares if p["cuadra"]),
+        "n_pares_desiguales": sum(1 for p in pares if not p["cuadra"]),
+        "banco_sin_par": banco_sobrantes,
+        "programa_sin_par": prog_sin_banco,
+        "suma_banco_sobrante": round(sum(x["monto"] for x in banco_sobrantes), 2),
+        "suma_programa_sobrante": round(sum(x["monto"] for x in prog_sin_banco), 2),
+        "pares": pares,
+    })
+
+
 @bp.route("/diagnosticar-grupo", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
