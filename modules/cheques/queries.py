@@ -4078,6 +4078,13 @@ def buscar(
                    WHERE cli.codigo_cli = c.codigo_cli LIMIT 1),
                  ''
                ) AS cliente,
+               -- TMT 2026-07-15 (dueña): código del vendedor asignado, para
+               -- mostrarlo en chico en la lista de cheques (cliente.vend).
+               COALESCE(
+                 (SELECT UPPER(TRIM(cli.vend)) FROM scintela.cliente cli
+                   WHERE cli.codigo_cli = c.codigo_cli LIMIT 1),
+                 ''
+               ) AS vendedor,
                c.importe, c.stat,
                -- TMT 2026-05-27 dueña: doc_banco editable inline en lista.
                -- Es el N° de comprobante/depósito (varchar(40)) — separado

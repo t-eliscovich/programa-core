@@ -449,11 +449,17 @@
           {% endif %}
           <td class="px-1.5 py-1.5" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
           <td class="px-1.5 py-1.5">
-            {# TMT 2026-05-19 — solo código (pedido dueña, sin nombre). #}
             {% if c.codigo_cli %}
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
                data-stop="1"
                class="font-mono text-xs hover:text-blue-600 hover:underline">{{ c.codigo_cli }}</a>
+            {# TMT 2026-07-15 (dueña): nombre completo del cliente + código de
+               vendedor asignado, en chico debajo del código. #}
+            {% if c.cliente or c.vendedor %}
+              <div class="text-[11px] text-slate-500" style="line-height:1.2; white-space:normal; margin-top:2px;">
+                {{ c.cliente }}{% if c.vendedor %} <span class="font-mono text-slate-400">· vend {{ c.vendedor }}</span>{% endif %}
+              </div>
+            {% endif %}
             {% endif %}
             {% if (c.stat or '') == 'E' and c.endoso_prov %}
               <div class="text-[11px] text-slate-500 mt-0.5">
