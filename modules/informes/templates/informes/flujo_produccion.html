@@ -283,83 +283,8 @@
       <p class="text-amber-700 mt-1 text-xs">Probá con el selector arriba.</p>
     </div>
   {% else %}
-    {% set h = data.header or {} %}
-    {% set hl = h.get('hilado', {}) %}
-    {% set tj = h.get('tejido', {}) %}
-    {% set te = h.get('terminado', {}) %}
-    {% set co = h.get('colorantes', {}) %}
-
-    {# ─── MOVIMIENTOS MES — una tabla densa con todas las columnas ─── #}
-    <div class="blk mb-2">
-      <div class="blk-title">Movimientos del mes</div>
-      {# TMT 2026-05-19 v8 — replica TINT.BAT: HILADO con KG+$/KG+$,
-         CRUDO y TERM sólo KG (con % en ingresos), COLOR sólo $. #}
-      <table class="mov-table" data-no-sort-table>
-        <colgroup>
-          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
-        </colgroup>
-        <thead>
-          <tr>
-            <th class="lbl"></th>
-            <th>HILADO KG</th>
-            <th>$/KG</th>
-            <th>$</th>
-            <th></th>
-            <th>CRUDO KG</th>
-            <th>TERM. KG</th>
-            <th>COLOR. $</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="lbl">Stock inic.</td>
-            <td class="num">{{ hl.get('stock_inic_kg') | num_es(0) if hl.get('stock_inic_kg') else '—' }}</td>
-            <td class="num">{{ '%.3f' % (hl.get('stock_inic_ukg') or 0) if hl.get('stock_inic_ukg') else '—' }}</td>
-            <td class="num">{{ hl.get('stock_inic_us') | num_es(0) if hl.get('stock_inic_us') else '—' }}</td>
-            <td></td>
-            <td class="num">{{ tj.get('stock_inic_kg') | num_es(0) if tj.get('stock_inic_kg') else '—' }}</td>
-            <td class="num">{{ te.get('stock_inic_kg') | num_es(0) if te.get('stock_inic_kg') else '—' }}</td>
-            <td class="num">{{ co.get('stock_inic_us') | num_es(0) if co.get('stock_inic_us') else '—' }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Ingresos</td>
-            <td class="num">{{ hl.get('ingresos_kg') | num_es(0) if hl.get('ingresos_kg') else '—' }}</td>
-            <td class="num">{{ '%.3f' % (hl.get('ingresos_ukg') or 0) if hl.get('ingresos_ukg') else '—' }}</td>
-            <td class="num">{{ hl.get('ingresos_us') | num_es(0) if hl.get('ingresos_us') else '—' }}</td>
-            <td></td>
-            <td class="num">
-              {{ tj.get('ingresos_kg') | num_es(0) if tj.get('ingresos_kg') else '—' }}
-              {% if tj.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % tj.ingresos_pct }}%</span>{% endif %}
-            </td>
-            <td class="num">
-              {{ te.get('ingresos_kg') | num_es(0) if te.get('ingresos_kg') else '—' }}
-              {% if te.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % te.ingresos_pct }}%</span>{% endif %}
-            </td>
-            <td class="num">{{ co.get('ingresos_us') | num_es(0) if co.get('ingresos_us') else '—' }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Egresos</td>
-            <td class="num">{{ hl.get('egresos_kg') | num_es(0) if hl.get('egresos_kg') else '—' }}</td>
-            <td class="num">{{ '%.3f' % (hl.get('egresos_ukg') or 0) if hl.get('egresos_ukg') else '—' }}</td>
-            <td class="num">{{ hl.get('egresos_us') | num_es(0) if hl.get('egresos_us') else '—' }}</td>
-            <td></td>
-            <td class="num">{{ tj.get('egresos_kg') | num_es(0) if tj.get('egresos_kg') else '—' }}</td>
-            <td class="num">{{ te.get('egresos_kg') | num_es(0) if te.get('egresos_kg') else '—' }}</td>
-            <td class="num">{{ co.get('egresos_us') | num_es(0) if co.get('egresos_us') else '—' }}</td>
-          </tr>
-          <tr class="total">
-            <td class="lbl">Stock act.</td>
-            <td class="num">{{ hl.get('stock_act_kg') | num_es(0) if hl.get('stock_act_kg') else '—' }}</td>
-            <td class="num">{{ '%.3f' % (hl.get('stock_act_ukg') or 0) if hl.get('stock_act_ukg') else '—' }}</td>
-            <td class="num">{{ hl.get('stock_act_us') | num_es(0) if hl.get('stock_act_us') else '—' }}</td>
-            <td></td>
-            <td class="num">{{ tj.get('stock_act_kg') | num_es(0) if tj.get('stock_act_kg') else '—' }}</td>
-            <td class="num">{{ te.get('stock_act_kg') | num_es(0) if te.get('stock_act_kg') else '—' }}</td>
-            <td class="num">{{ co.get('stock_act_us') | num_es(0) if co.get('stock_act_us') else '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    {# TMT 2026-07-15 (dueña): banda 'Movimientos del mes' del dBase
+       removida — la de arriba (inicial Asinfo) es la única. #}
 
     {# ─── COMPRAS HILADO + PRODUCCIÓN TEJIDO — lado a lado en UNA grilla
          de 8 columnas compartida con MOVIMIENTOS: COMPRAS bajo HILADO
@@ -423,31 +348,23 @@
        reemplazar del todo la de arriba. #}
     {% if prod_tej_asinfo and prod_tej_asinfo.filas %}
     <div class="blk mb-2">
-      <div class="hil-titles"><span class="blk-title">Compras hilado</span><span class="blk-title">Producción tejido · Asinfo</span></div>
+      <div class="hil-titles"><span class="blk-title"></span><span class="blk-title">Producción tejido · Asinfo</span></div>
       <table class="hil-table" data-no-sort-table>
         <colgroup>
           <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
         </colgroup>
         <thead>
           <tr>
-            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
+            <th></th><th></th><th></th><th></th>
             <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
           </tr>
         </thead>
         <tbody>
-          {# Compras hilado = del PROGRAMA (AC), no hay fuente Asinfo aparte →
-             mismas filas que la tabla de arriba, pareadas con Producción tejido. #}
-          {% set ch = data.compras_hilado or [] %}
           {% set pt = prod_tej_asinfo.filas or [] %}
-          {% set nrows = [ch|length, pt|length]|max %}
+          {% set nrows = pt|length %}
           {% for i in range(nrows) %}
             <tr>
-              {% if i < ch|length %}{% set c = ch[i] %}
-                <td class="prov">{{ c.prov }}</td>
-                <td class="num">{{ c.kg | num_es(0) }}</td>
-                <td class="num">{{ '%.3f' % (c.ukg or 0) }}</td>
-                <td class="num">{{ c.importe | num_es(0) }}</td>
-              {% else %}<td></td><td></td><td></td><td></td>{% endif %}
+              <td></td><td></td><td></td><td></td>
               {% if i < pt|length %}{% set r = pt[i] %}
                 <td class="prov">{{ r.prov }}</td>
                 <td class="num">{{ r.kg | num_es(0) }}</td>
@@ -457,12 +374,7 @@
             </tr>
           {% endfor %}
           <tr class="total">
-            {% if data.compras_hilado %}{% set tot = data.compras_hilado_total %}
-              <td class="lbl">TOTAL</td>
-              <td class="num">{{ tot.kg | num_es(0) }}</td>
-              <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
-              <td class="num">{{ tot.importe | num_es(0) }}</td>
-            {% else %}<td class="lbl">TOTAL</td><td></td><td></td><td></td>{% endif %}
+            <td></td><td></td><td></td><td></td>
             <td class="lbl">TOTAL</td>
             <td class="num">{{ prod_tej_asinfo.total.kg | num_es(0) }}</td>
             <td class="num">{{ '%.3f' % (prod_tej_asinfo.total.ukg or 0) }}</td>
