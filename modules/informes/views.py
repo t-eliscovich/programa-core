@@ -2144,18 +2144,36 @@ def flujo_produccion():
         from modules.tejeduria_asinfo import service as _tej_svc
         _res = _tej_svc.resumen_mes(anio, mes)
         if _res and _res.get("disponible"):
+            # $ INTELA (autoprod) = GASTO DE TEJEDURÍA (V1+V2+V3 + DTJ) prorrateado,
+            # NO hilo+0,5: el hilo ya está en Compras hilado, valuarlo a hilo+0,5
+            # lo contaría dos veces (por eso saltaba de ~55k a ~410k). Dueña
+            # 2026-07-15. Tercerizados = lo facturado (su maquila ya es el costo).
+            try:
+                _gxg = queries.gastos_xgast_v1_a_v9_mes()
+                _amort = queries.amortizaciones_mensuales()
+                _gs_tej = (float((_gxg or {}).get("gtej_sin_dtj") or 0)
+                           + float((_amort or {}).get("dtj") or 0))
+            except Exception:  # noqa: BLE001 -- fail-soft
+                _gs_tej = 0.0
+            _kg_intela = sum(float(_t.get("kg") or 0)
+                             for _t in _res.get("tejedores", []) if _t.get("es_intela"))
             _rows = []
             for _t in _res.get("tejedores", []):
-                _prov = "INTELA" if _t.get("es_intela") else (
-                    _t.get("cod") or _t.get("label"))
+                _es_intela = bool(_t.get("es_intela"))
+                _prov = "INTELA" if _es_intela else (_t.get("cod") or _t.get("label"))
+                _kg = float(_t.get("kg") or 0)
+                if _es_intela:
+                    _imp = _gs_tej * (_kg / _kg_intela) if _kg_intela else 0.0
+                else:
+                    _imp = float(_t.get("costo") or 0)
                 _rows.append({
                     "prov": _prov,
-                    "kg": float(_t.get("kg") or 0),
-                    "ukg": float(_t.get("costo_kg") or 0),
-                    "importe": float(_t.get("costo") or 0),
+                    "kg": _kg,
+                    "importe": _imp,
+                    "ukg": (_imp / _kg if _kg else 0.0),
                 })
             _tot_kg = float(_res.get("total_kg") or 0)
-            _tot_imp = float(_res.get("total_costo") or 0)
+            _tot_imp = sum(r["importe"] for r in _rows)
             prod_tej_asinfo = {
                 "filas": _rows,
                 "total": {

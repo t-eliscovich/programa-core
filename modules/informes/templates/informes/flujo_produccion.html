@@ -102,44 +102,7 @@
     </div>
   {% endif %}
 
-  {# ─── CHEQUEO DE COHERENCIA — dueña 2026-07-15: detectar descuadres entre
-       bandas automáticamente (no a ojo). Verde = cuadra, rojo = descuadre. #}
-  {% if coherencia %}
-    {% set _warns = coherencia | selectattr('estado', 'equalto', 'warn') | list %}
-    <div class="blk mb-2" style="border-color: {{ '#fca5a5' if _warns else '#86efac' }};">
-      <div class="blk-title" style="color: {{ '#dc2626' if _warns else '#16a34a' }};">
-        Chequeo de coherencia
-        {% if _warns %}· {{ _warns | length }} descuadre{{ 's' if _warns | length != 1 else '' }}{% else %}· todo cuadra{% endif %}
-      </div>
-      <table class="mov-table" data-no-sort-table>
-        <colgroup>
-          <col style="width:4%"><col style="width:32%"><col style="width:24%"><col style="width:24%"><col style="width:8%"><col style="width:8%">
-        </colgroup>
-        <thead>
-          <tr>
-            <th class="lbl"></th><th class="lbl">Chequeo</th>
-            <th class="lbl"></th><th class="lbl"></th><th>Δ</th><th>%</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for c in coherencia %}
-            {% set _col = '#16a34a' if c.estado == 'ok' else ('#dc2626' if c.estado == 'warn' else '#94a3b8') %}
-            <tr>
-              <td class="lbl" style="text-align:center;color:{{ _col }};font-weight:700">
-                {{ '✓' if c.estado == 'ok' else ('⚠' if c.estado == 'warn' else ('≈' if c.estado == 'info' else '–')) }}
-              </td>
-              <td class="lbl">{{ c.etiqueta }}</td>
-              <td class="num">{{ c.a_lbl }}: {% if c.a is not none %}{{ c.a | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num">{{ c.b_lbl }}: {% if c.b is not none %}{{ c.b | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num" style="color:{{ '#dc2626' if c.estado == 'warn' else 'inherit' }}">{% if c.delta is not none %}{{ c.delta | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num" style="color:{{ '#dc2626' if c.estado == 'warn' else 'inherit' }}">{% if c.pct is not none %}{{ '%.1f' % c.pct }}%{% else %}—{% endif %}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado (químicos, físico vs libro). ⚠ = descuadre &gt; 1%.</p>
-    </div>
-  {% endif %}
+  {# Chequeo de coherencia: movido al FINAL de la página (dueña 2026-07-15). #}
 
   {# ─── TABLA: MOVIMIENTOS DEL MES (inicial Asinfo) ───────────────
        TMT 2026-07-08 (dueña): clon de MOVIMIENTOS DEL MES (abajo) pero con el
@@ -383,7 +346,7 @@
        manda": la tabla de arriba ya usa data.produc_tejido = Asinfo (override en
        la view). Antes había acá una 2ª tabla "· Asinfo" duplicada — removida. #}
     {% if data.produc_tejido %}
-      <p class="text-xs text-slate-500" style="margin-top:-2px;margin-bottom:8px">Producción tejido = ingreso físico a bodega 52 (Asinfo). $ INTELA = hilo + 0,5. Lo pendiente de cargar por tejedor está en <strong>Tejeduría Asinfo</strong>.</p>
+      <p class="text-xs text-slate-500" style="margin-top:-2px;margin-bottom:8px">Producción tejido = ingreso físico a bodega 52 (Asinfo). $ INTELA = gasto de tejeduría prorrateado (no incluye el hilo, que ya está en Compras hilado). Lo pendiente de cargar por tejedor está en <strong>Tejeduría Asinfo</strong>.</p>
     {% endif %}
 
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
@@ -465,6 +428,45 @@
         <strong>TINTORERÍA TOTAL CON AMORT</strong> de /informes/gastos.
         % sobre kg del mes. $/kg ponderado.
       </p>
+    </div>
+  {% endif %}
+
+  {# ─── CHEQUEO DE COHERENCIA — al FINAL (dueña 2026-07-15). Detecta descuadres
+       entre bandas automáticamente (no a ojo). Verde = cuadra, rojo = descuadre. #}
+  {% if coherencia %}
+    {% set _warns = coherencia | selectattr('estado', 'equalto', 'warn') | list %}
+    <div class="blk mb-2" style="border-color: {{ '#fca5a5' if _warns else '#86efac' }};">
+      <div class="blk-title" style="color: {{ '#dc2626' if _warns else '#16a34a' }};">
+        Chequeo de coherencia
+        {% if _warns %}· {{ _warns | length }} descuadre{{ 's' if _warns | length != 1 else '' }}{% else %}· todo cuadra{% endif %}
+      </div>
+      <table class="mov-table" data-no-sort-table>
+        <colgroup>
+          <col style="width:4%"><col style="width:32%"><col style="width:24%"><col style="width:24%"><col style="width:8%"><col style="width:8%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="lbl"></th><th class="lbl">Chequeo</th>
+            <th class="lbl"></th><th class="lbl"></th><th>Δ</th><th>%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in coherencia %}
+            {% set _col = '#16a34a' if c.estado == 'ok' else ('#dc2626' if c.estado == 'warn' else '#94a3b8') %}
+            <tr>
+              <td class="lbl" style="text-align:center;color:{{ _col }};font-weight:700">
+                {{ '✓' if c.estado == 'ok' else ('⚠' if c.estado == 'warn' else ('≈' if c.estado == 'info' else '–')) }}
+              </td>
+              <td class="lbl">{{ c.etiqueta }}</td>
+              <td class="num">{{ c.a_lbl }}: {% if c.a is not none %}{{ c.a | num_es(0) }}{% else %}—{% endif %}</td>
+              <td class="num">{{ c.b_lbl }}: {% if c.b is not none %}{{ c.b | num_es(0) }}{% else %}—{% endif %}</td>
+              <td class="num" style="color:{{ '#dc2626' if c.estado == 'warn' else 'inherit' }}">{% if c.delta is not none %}{{ c.delta | num_es(0) }}{% else %}—{% endif %}</td>
+              <td class="num" style="color:{{ '#dc2626' if c.estado == 'warn' else 'inherit' }}">{% if c.pct is not none %}{{ '%.1f' % c.pct }}%{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado (químicos, físico vs libro). ⚠ = descuadre &gt; 1%.</p>
     </div>
   {% endif %}
 </div>
