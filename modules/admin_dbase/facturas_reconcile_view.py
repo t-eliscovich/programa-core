@@ -69,6 +69,56 @@ def _r2(x) -> float:
     return round(float(x or 0), 2)
 
 
+def _fecha_cmp(r):
+    """Fecha de la fila como date (o None si no se puede) para comparar corte."""
+    from datetime import date as _date
+    f = r.get("fecha")
+    if isinstance(f, _date):
+        return f
+    if isinstance(f, str) and len(f) >= 10:
+        try:
+            y, m, d = f[:10].split("-")
+            return _date(int(y), int(m), int(d))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _corte_ultimo_sync():
+    """Fecha frontera del último sync dBase→PC = MAX(fecha) de las facturas que
+    PC ya importó del dBase (usuario_crea='dbf-import'). Todo lo del dBase con
+    fecha < corte ya debería estar en PC; si aparece como 'faltante' es ruido de
+    pareo, no algo nuevo. None si PC no tiene dbf-import → no filtra.
+    TMT 2026-07-15 (dueña: 'no me muestres nada de antes del sync')."""
+    import db
+    row = db.fetch_one(
+        "SELECT MAX(fecha) AS corte FROM scintela.factura "
+        "WHERE COALESCE(usuario_crea,'') = 'dbf-import'"
+    ) or {}
+    c = row.get("corte")
+    from datetime import date as _date
+    if isinstance(c, _date):
+        return c
+    if isinstance(c, str) and len(c) >= 10:
+        try:
+            y, m, d = c[:10].split("-")
+            return _date(int(y), int(m), int(d))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _partir_por_corte(filas, corte):
+    """(post_sync, pre_sync). Fecha desconocida → post_sync (se muestra)."""
+    if not corte:
+        return list(filas), []
+    post, pre = [], []
+    for r in filas:
+        fr = _fecha_cmp(r)
+        (pre if (fr is not None and fr < corte) else post).append(r)
+    return post, pre
+
+
 def _firma(r) -> tuple:
     """Identidad económica exacta de la fila (para cancelar matches)."""
     return (_norm_stat(r.get("stat")), _r2(r.get("importe")),
@@ -243,8 +293,16 @@ def reporte_desde_dbf(dbf_path: Path):
     yield line(f"Matches exactos: {plan['match']}")
     yield line()
 
-    yield from _seccion("[A] SOLO dBASE — el próximo /admin/dbase-sync las trae",
-                        plan["solo_dbase"])
+    # Corte por último sync: lo anterior ya debería estar en PC (ruido de pareo).
+    corte = _corte_ultimo_sync()
+    a_post, a_pre = _partir_por_corte(plan["solo_dbase"], corte)
+    if corte:
+        yield line(f"[A] corte último sync (máx fecha dbf-import en PC) = {corte}")
+        if a_pre:
+            yield line(f"    {len(a_pre)} filas pre-sync OCULTAS "
+                       f"(saldo ZA {sum(_saldo_za(r) for r in a_pre):,.2f}) — ya deberían estar en PC")
+    yield from _seccion("[A] SOLO dBASE post-sync — el próximo /admin/dbase-sync las trae",
+                        a_post)
     yield from _seccion("[B1] SOLO PC — backfill Asinfo automático (NO cuenta en "
                         "cartera; el sync la preserva)",
                         plan["solo_pc_backfill"])

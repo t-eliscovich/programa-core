@@ -706,7 +706,9 @@ def reporte(dias_banco: int = 30):
         _leer_pc as _leer_fact_pc,
     )
     from modules.admin_dbase.facturas_reconcile_view import (
+        _corte_ultimo_sync,
         _map_factura_real,
+        _partir_por_corte,
         _saldo_za,
         reconciliar_facturas_plan,
     )
@@ -875,11 +877,18 @@ def reporte(dias_banco: int = 30):
         yield line("  (detalle completo: /admin/facturas-reconcile)")
         try:
             sri = diff_facturas_sri(fact_dbf, _pc_facturas_sri())
-            s_db = round(sum(_saldo_za(r) for r in sri["solo_dbase"]), 2)
+            # Corte último sync: lo anterior ya debería estar en PC (ruido).
+            _corte = _corte_ultimo_sync()
+            _db_post, _db_pre = _partir_por_corte(sri["solo_dbase"], _corte)
+            s_db = round(sum(_saldo_za(r) for r in _db_post), 2)
             s_pc = round(sum(_saldo_za(r) for r in sri["solo_pc"]), 2)
             yield line("  pareo por N° SRI (vivas, NUMF dBase vs numf_completo PC):")
-            yield line(f"  vivas dBASE sin par en PC: {len(sri['solo_dbase'])} ({s_db:,.2f})")
-            for r in sorted(sri["solo_dbase"],
+            yield line(f"  vivas dBASE sin par en PC post-sync (corte {_corte}): "
+                       f"{len(_db_post)} ({s_db:,.2f})")
+            if _corte and _db_pre:
+                yield line(f"    (+{len(_db_pre)} pre-sync ocultas, saldo "
+                           f"{sum(_saldo_za(r) for r in _db_pre):,.2f} — ya deberían estar en PC)")
+            for r in sorted(_db_post,
                             key=lambda x: int(x.get("numf") or 0))[-MAX_LISTADO_FACT:]:
                 yield line(f"    {str(r.get('fecha') or ''):10} numf={int(r.get('numf') or 0):<7} "
                            f"{(r.get('codigo_cli') or '').strip():5} "
