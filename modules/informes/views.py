@@ -2078,10 +2078,6 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
         _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
-    if prod_tej_asinfo:
-        add("tejido_asinfo", "Tejido Asinfo = crudo ingresado",
-            _g(prod_tej_asinfo, "total", "kg"), "Tejido · Asinfo",
-            _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
     qm = _g(mov, "quimicos_modelo")
     if qm:
         add("quimicos", "Químicos: físico vs libro",
@@ -2170,6 +2166,14 @@ def flujo_produccion():
             }
     except Exception:  # noqa: BLE001 -- best-effort, la vista no rompe
         prod_tej_asinfo = None
+
+    # dueña 2026-07-15: "Asinfo manda". "Producción tejido" = FÍSICO de bodega 52
+    # (resumen_mes), NO las compras tipo K — que estaban viejas del match del 13/07
+    # y ni aparecen en /compras. Unifica la variable con "Ingresos crudo" y con la
+    # pantalla Tejeduría Asinfo. Fail-soft: si Asinfo no está, queda el tipo K.
+    if isinstance(data, dict) and prod_tej_asinfo and prod_tej_asinfo.get("filas"):
+        data["produc_tejido"] = prod_tej_asinfo["filas"]
+        data["produc_tejido_total"] = prod_tej_asinfo["total"]
 
     coherencia, _e_coh = _safe(
         lambda: _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo),

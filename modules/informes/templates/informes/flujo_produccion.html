@@ -379,50 +379,11 @@
       </table>
     </div>
 
-    {# ─── PRODUCCIÓN TEJIDO · Asinfo — MISMO formato que la del dBase de arriba
-       TMT 2026-07-14 (dueña): "tengo que tener exactamente la misma tabla,
-       copiá la segunda igual a la primera". Mismas columnas (Prov | Kg | $/Kg |
-       $). Kg = ingreso real a bodega 52 (= "Ingresos crudo"); $ = costo
-       (tercerizados = compra; INTELA = kg × (hilo + 0,5)). Provisorio hasta
-       reemplazar del todo la de arriba. #}
-    {% if prod_tej_asinfo and prod_tej_asinfo.filas %}
-    <div class="blk mb-2">
-      <div class="hil-titles"><span class="blk-title"></span><span class="blk-title">Producción tejido · Asinfo</span></div>
-      <table class="hil-table" data-no-sort-table>
-        <colgroup>
-          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
-        </colgroup>
-        <thead>
-          <tr>
-            <th></th><th></th><th></th><th></th>
-            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% set pt = prod_tej_asinfo.filas or [] %}
-          {% set nrows = pt|length %}
-          {% for i in range(nrows) %}
-            <tr>
-              <td></td><td></td><td></td><td></td>
-              {% if i < pt|length %}{% set r = pt[i] %}
-                <td class="prov">{{ r.prov }}</td>
-                <td class="num">{{ r.kg | num_es(0) }}</td>
-                <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
-                <td class="num">{{ r.importe | num_es(0) }}</td>
-              {% else %}<td></td><td></td><td></td><td></td>{% endif %}
-            </tr>
-          {% endfor %}
-          <tr class="total">
-            <td></td><td></td><td></td><td></td>
-            <td class="lbl">TOTAL</td>
-            <td class="num">{{ prod_tej_asinfo.total.kg | num_es(0) }}</td>
-            <td class="num">{{ '%.3f' % (prod_tej_asinfo.total.ukg or 0) }}</td>
-            <td class="num">{{ prod_tej_asinfo.total.importe | num_es(0) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="text-xs text-slate-500" style="margin-top:4px">Kg = ingreso a bodega 52. $ INTELA = hilo + 0,5.</p>
-    </div>
+    {# Producción tejido = FÍSICO de Asinfo (bodega 52). Dueña 2026-07-15 "Asinfo
+       manda": la tabla de arriba ya usa data.produc_tejido = Asinfo (override en
+       la view). Antes había acá una 2ª tabla "· Asinfo" duplicada — removida. #}
+    {% if data.produc_tejido %}
+      <p class="text-xs text-slate-500" style="margin-top:-2px;margin-bottom:8px">Producción tejido = ingreso físico a bodega 52 (Asinfo). $ INTELA = hilo + 0,5. Lo pendiente de cargar por tejedor está en <strong>Tejeduría Asinfo</strong>.</p>
     {% endif %}
 
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
