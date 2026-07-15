@@ -40,6 +40,49 @@ bp = Blueprint(
 )
 
 
+@bp.route("/inspeccionar-mov", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def inspeccionar_mov():
+    """Diag puntual (read-only): dado uno o más documentos del banco, muestra el
+    estado del histórico (conciliado_en/match), los matches por documento, y las
+    transacciones PC con ese |monto| (stat). Para entender por qué un mov ya
+    conciliado sigue apareciendo pendiente. ?docs=28481473,28481477"""
+    def _clean(rows):
+        return [{k: (str(v) if v is not None else None) for k, v in r.items()} for r in rows]
+    docs = [d.strip() for d in (request.args.get("docs") or request.args.get("doc") or "").split(",") if d.strip()]
+    out: dict = {}
+    montos: list = []
+    for doc in docs:
+        histos = _db.fetch_all(
+            "SELECT id, no_banco, fecha, documento, monto, tipo, conciliado_en, conciliado_por, conciliado_match_id "
+            "FROM scintela.banco_historicos_pendientes WHERE documento = %s ORDER BY id", (doc,)) or []
+        matches = _db.fetch_all(
+            "SELECT id, id_transaccion, real_fecha, real_documento, real_monto, real_tipo, deshecho_en, no_banco "
+            "FROM scintela.banco_conciliacion_match WHERE real_documento = %s ORDER BY id", (doc,)) or []
+        for h in histos:
+            try:
+                montos.append(round(abs(float(h["monto"])), 2))
+            except (TypeError, ValueError):
+                pass
+        out[doc] = {"histos": _clean(histos), "matches_por_doc": _clean(matches)}
+    tx = []
+    if montos:
+        tx = _db.fetch_all(
+            "SELECT id_transaccion, fecha, documento, importe, stat, no_banco "
+            "FROM scintela.transacciones_bancarias WHERE ROUND(ABS(importe),2) = ANY(%s) ORDER BY fecha", (montos,)) or []
+    matches_por_tx = []
+    if tx:
+        ids = [r["id_transaccion"] for r in tx if r.get("id_transaccion") is not None]
+        if ids:
+            matches_por_tx = _db.fetch_all(
+                "SELECT id, id_transaccion, real_fecha, real_documento, real_monto, deshecho_en "
+                "FROM scintela.banco_conciliacion_match WHERE id_transaccion = ANY(%s) ORDER BY id", (ids,)) or []
+    out["_tx_por_monto"] = _clean(tx)
+    out["_matches_de_esas_tx"] = _clean(matches_por_tx)
+    return jsonify(out)
+
+
 @bp.route("/e2e-cleanup", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
