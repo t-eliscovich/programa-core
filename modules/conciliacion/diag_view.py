@@ -452,6 +452,102 @@ def restaurar_contraparte():
     })
 
 
+@bp.route("/reatar-grupo", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def reatar_grupo():
+    """RE-ATA un grupo corrido (TMT 2026-07-15). Re-asigna cada match del grupo a
+    su movimiento del programa del MISMO monto usando asignar_banco_a_programa
+    (1:1 + N:1), pero SOLO contra los movimientos del programa REALES que ya están
+    en el grupo (no sale a buscar afuera → bounded y seguro; mismo batch → sin
+    conflicto single-claim; los programas siguen conciliados). Los matches que no
+    consiguen un programa real de su monto quedan con id_transaccion NULL (muestran
+    el valor de la firma). Dry-run por defecto; &confirm=SI aplica. Devuelve los
+    enlaces viejos para revertir."""
+    import bank_helpers as _bh
+    from modules.conciliacion.banco_v2_view import asignar_banco_a_programa
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    batch = (request.args.get("batch") or "").strip()
+    doc = (request.args.get("doc") or "").strip()
+    confirmar = (request.args.get("confirm") or "").strip().upper() == "SI"
+    if not batch and doc:
+        r = _db.fetch_one(
+            "SELECT confirm_batch_id FROM scintela.banco_conciliacion_match "
+            "WHERE no_banco=%s AND deshecho_en IS NULL AND real_documento=%s "
+            "AND confirm_batch_id IS NOT NULL ORDER BY id DESC LIMIT 1", (no_banco, doc))
+        batch = (r or {}).get("confirm_batch_id") or ""
+    if not batch:
+        return jsonify({"error": "no encontré batch (pasá ?batch= o ?doc=)"}), 400
+    rows = _db.fetch_all(
+        "SELECT id, real_documento, real_monto, real_tipo, real_concepto, id_transaccion "
+        "FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL AND confirm_batch_id=%s ORDER BY id",
+        (no_banco, batch)) or []
+    ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+    tx_map = {}
+    if ids:
+        for t in _db.fetch_all(
+            "SELECT id_transaccion, importe, documento, COALESCE(usuario_crea,'') AS uc "
+            "FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,)) or []:
+            tx_map[int(t["id_transaccion"])] = t
+
+    def _bsign(tipo, monto):
+        m = float(monto or 0)
+        return round(m if (tipo or "").upper() == "C" else -m, 2)
+
+    # Pool de programa = movimientos REALES ya en el grupo (id_transaccion vivo).
+    prog_signed = {}
+    for idtx, t in tx_map.items():
+        prog_signed[idtx] = round(float(_bh._signed_delta((t["documento"] or "").upper(), float(t["importe"] or 0), t["uc"])), 2)
+
+    banco_firmados = []
+    binfo = {}
+    for r in rows:
+        bkey = int(r["id"])
+        bsig = _bsign(r["real_tipo"], r["real_monto"])
+        banco_firmados.append((bkey, bsig))
+        binfo[bkey] = {"monto": bsig, "doc": r["real_documento"],
+                       "concepto": str(r.get("real_concepto") or "")[:38],
+                       "id_transaccion_viejo": r.get("id_transaccion")}
+
+    prog_firmados = [(k, v) for k, v in prog_signed.items()]
+    asign, sobrantes = asignar_banco_a_programa(banco_firmados, prog_firmados, tol=0.50)
+
+    # Nuevo id_transaccion por match.
+    nuevo = {}
+    for pid, bkeys in asign.items():
+        for bk in bkeys:
+            nuevo[bk] = pid
+    cambios = []
+    for bk, info in binfo.items():
+        viejo = info["id_transaccion_viejo"]
+        nid = nuevo.get(bk)  # None → queda sin programa (firma)
+        if (viejo or None) != (nid or None):
+            cambios.append({"match_id": bk, "monto": info["monto"], "doc": info["doc"],
+                            "concepto": info["concepto"],
+                            "id_viejo": viejo, "id_nuevo": nid,
+                            "prog_nuevo_monto": (prog_signed.get(nid) if nid else None)})
+
+    aplicados = 0
+    if confirmar and cambios:
+        for c in cambios:
+            _db.execute(
+                "UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s "
+                "WHERE id = %s AND deshecho_en IS NULL",
+                (c["id_nuevo"], c["match_id"]),
+            )
+            aplicados += 1
+
+    return jsonify({
+        "batch": batch, "n_matches": len(rows), "n_programa_real": len(prog_signed),
+        "confirmado": confirmar, "n_cambios": len(cambios), "aplicados": aplicados,
+        "sobrantes_sin_programa_real": len(sobrantes),
+        "cambios": cambios,
+        "nota": ("dry-run: agregá &confirm=SI para aplicar (guardá este JSON para revertir con id_viejo)"
+                 if not confirmar else "APLICADO — reversible con los id_viejo de este JSON"),
+    })
+
+
 @bp.route("/rematch-grupo", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
