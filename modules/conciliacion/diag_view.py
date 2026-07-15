@@ -149,6 +149,105 @@ def estado_sesion_dump():
     return jsonify(out)
 
 
+@bp.route("/recruzar-perdidos", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def recruzar_perdidos():
+    """REPARACIÓN puntual (TMT 2026-07-15): reconstruye matches de banco que se
+    PERDIERON cuando borrar-sesion los borró en duro por ventana de tiempo. El
+    programa quedó marcado conciliado (stat='*') pero el banco sin el cruce → los
+    movimientos reaparecían en el export de pendientes (caso importación INV30405
+    + cheques 15542/15543 que Alex ya había cruzado).
+
+    Recrea el match usando el mov REAL del extracto de la sesión (por documento),
+    con la MISMA firma (fecha+doc+monto+tipo) → el matcher los excluye de
+    pendientes igual que si se volvieran a cruzar en la pantalla. Reversible desde
+    'Deshacer conciliados'. Idempotente (ON CONFLICT DO NOTHING).
+
+    Params (GET o POST):
+      sesion_id : de qué sesión tomar los movs del extracto.
+      match     : pares doc:id_transaccion separados por coma (banco↔programa).
+      accept    : docs a aceptar como real_only (banco sin contraparte de banco
+                  en el programa — ej. importaciones cargadas como anticipo).
+      confirm   : 'SI' para ejecutar. Sin eso = dry-run (muestra el plan).
+    """
+    from modules.conciliacion import sesion as _s
+    from modules.conciliacion.matcher_banco import confirmar_match, confirmar_real_only
+
+    sid = int(request.values.get("sesion_id") or 0)
+    ses = _s.sesion_por_id(sid) if sid else None
+    if not ses:
+        return jsonify({"error": "sesion no encontrada", "sesion_id": sid}), 404
+    no_banco = ses.get("no_banco") or _BANCO_PICHINCHA
+    confirmar = (request.values.get("confirm") or "").strip().upper() == "SI"
+    usuario = _usuario_actual()
+
+    movs = _s.cargar_movs(ses) or []
+    por_doc: dict = {}
+    for mv in movs:
+        d = (getattr(mv, "documento", "") or "").strip()
+        if d:
+            por_doc.setdefault(d, mv)
+
+    pares = []
+    for tok in (request.values.get("match") or "").split(","):
+        tok = tok.strip()
+        if not tok or ":" not in tok:
+            continue
+        d, _, idtx = tok.partition(":")
+        try:
+            pares.append((d.strip(), int(idtx.strip())))
+        except ValueError:
+            pass
+    accepts = [d.strip() for d in (request.values.get("accept") or "").split(",") if d.strip()]
+
+    def _movinfo(mv):
+        return {"fecha": str(getattr(mv, "fecha", "")),
+                "monto": str(getattr(mv, "monto", "")),
+                "tipo": getattr(mv, "tipo", ""),
+                "concepto": str(getattr(mv, "concepto", ""))[:60]}
+
+    plan = []
+    resultados = []
+    for d, idtx in pares:
+        mv = por_doc.get(d)
+        if not mv:
+            plan.append({"doc": d, "accion": "match", "id_transaccion": idtx,
+                         "estado": "MOV_NO_ENCONTRADO_EN_EXTRACTO"})
+            continue
+        info = {"doc": d, "accion": "match", "id_transaccion": idtx, **_movinfo(mv)}
+        plan.append(info)
+        if confirmar:
+            try:
+                n = confirmar_match(no_banco, mv, idtx, estado="matched",
+                                    usuario=usuario, metodo="reparacion_match_perdido")
+                resultados.append({**info, "insertado": int(n or 0)})
+            except Exception as e:  # noqa: BLE001
+                resultados.append({**info, "error": str(e)})
+    for d in accepts:
+        mv = por_doc.get(d)
+        if not mv:
+            plan.append({"doc": d, "accion": "accept",
+                         "estado": "MOV_NO_ENCONTRADO_EN_EXTRACTO"})
+            continue
+        info = {"doc": d, "accion": "accept(real_only)", **_movinfo(mv)}
+        plan.append(info)
+        if confirmar:
+            try:
+                n = confirmar_real_only(no_banco, mv, usuario=usuario)
+                resultados.append({**info, "insertado": int(n or 0)})
+            except Exception as e:  # noqa: BLE001
+                resultados.append({**info, "error": str(e)})
+
+    return jsonify({
+        "sesion_id": sid, "no_banco": no_banco, "confirmado": confirmar,
+        "movs_en_extracto": len(por_doc),
+        "plan": plan, "resultados": resultados,
+        "nota": ("dry-run: agregá &confirm=SI para ejecutar"
+                 if not confirmar else "EJECUTADO — reversible desde Deshacer conciliados"),
+    })
+
+
 @bp.route("/e2e-cleanup", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
