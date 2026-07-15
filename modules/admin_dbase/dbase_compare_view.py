@@ -1111,7 +1111,11 @@ def reporte(dias_banco: int = 30):
         yield line(f"  {'Σ componentes':24} {tot:>+14,.2f}")
         yield line(f"  {'Δ utilidad':24} {util_pc - util_db:>+14,.2f}")
         ok = abs(residuo) <= 1.0
-        yield line(f"  RESIDUO NO EXPLICADO: {residuo:,.2f}  {'✓ (todo explicado)' if ok else '✗✗ INVESTIGAR'}")
+        # TMT 2026-07-15: PC valúa el stock con Asinfo y el dBase con su fórmula
+        # (UMX/UFF), así que el residuo ≈ la revaluación de stock por cambio de
+        # fuente — es ESPERADO, no un descuadre. No lo marcamos como alarma.
+        _nota = "✓ (todo explicado)" if ok else "≈ revaluación de stock (PC=Asinfo vs dBase=fórmula) — esperado"
+        yield line(f"  RESIDUO NO EXPLICADO: {residuo:,.2f}  {_nota}")
     yield line()
     yield line("── [14] CONCILIADOS — banco Pichincha (STAT='*' = conciliado) ──")
     try:

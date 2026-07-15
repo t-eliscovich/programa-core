@@ -7853,7 +7853,16 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
             "razon": f"Ya existe snapshot de cierre ({fecha_snap}) para {periodo_clave}.",
         }
 
-    bal = informe_balance_as_of(fecha_snap)
+    # TMT 2026-07-15: si cerramos el mes EN CURSO y ya llegó (o pasó) el último
+    # día, usar el balance LIVE — la MISMA cadena Asinfo que la foto diaria — para
+    # que el cierre valúe el stock igual y no divergir el PATANT del mes siguiente
+    # (misma familia del bug utilidad 54k vs 179k). Meses pasados = as_of (no hay
+    # stock Asinfo histórico; se lee de historia). [[coherencia_numeros_una_fuente]]
+    _hoy_cierre = today_ec()
+    if anio == _hoy_cierre.year and mes == _hoy_cierre.month and _hoy_cierre >= fecha_snap:
+        bal = informe_balance()
+    else:
+        bal = informe_balance_as_of(fecha_snap)
     if not bal or bal.get("error"):
         return {
             "aplicado": False,
@@ -8131,9 +8140,13 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
         return float(comp.get(k) or default)
 
     banco = _c("salbanc_total") + _c("salcaj")  # bancos + caja
+    # TMT 2026-07-15: kg de stock de HOY (mismo panel STOCK que valúa ustock),
+    # NO kg["stock_kg"] (= kg del cierre anterior) — así la fila de historia
+    # tiene kg y $ coherentes (misma foto). Fallback al viejo si falta. [[coherencia]]
+    _stock_kg_hoy = float(((bal.get("stock") or {}).get("total") or {}).get("kg") or 0)
     row = {
         "fecha": hoy,
-        "stock": float(kg.get("stock_kg") or 0),
+        "stock": _stock_kg_hoy or float(kg.get("stock_kg") or 0),
         "kcom": float(kg.get("kcom") or 0),
         "ktej": float(kg.get("ktej") or 0),
         "ktin": float(kg.get("ktin") or 0),
