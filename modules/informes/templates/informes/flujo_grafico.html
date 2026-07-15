@@ -469,8 +469,14 @@
         </div>
 
         {# Tabla GRANDE — sólo posdat.banc=9 (gastos forzados) + manuales legacy. #}
-        {% set _total_pd = 0 %}
-        {% for e in _gf_filas %}{% set _total_pd = _total_pd + e.importe %}{% endfor %}
+        {# TMT 2026-07-15 (dueña): el total del encabezado contaba SÓLO los
+           manuales. Bug de scoping de Jinja: un {% set %} adentro de un {% for %}
+           NO persiste afuera del loop, así que _total_pd quedaba en 0 y el JS
+           mostraba sólo manualTotal. Con namespace la suma sí persiste; el JS
+           hace POSDAT_TOTAL (banc=9) + manuales. #}
+        {% set _ns_gf = namespace(total=0) %}
+        {% for e in _gf_filas %}{% set _ns_gf.total = _ns_gf.total + (e.importe or 0) %}{% endfor %}
+        {% set _total_pd = _ns_gf.total %}
         {# TMT 2026-05-19 v8 — dueña: "borra columna forzado y dejame editar
            fechas y montos. elimina vencido y saca el color rojo".
            Tabla con date/number inputs inline (onchange → POST
