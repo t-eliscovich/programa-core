@@ -398,6 +398,11 @@ def restaurar_contraparte():
         if len(parts) < 3:
             continue
         f_fecha, f_doc, f_imp = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        # parts[3]=numreferencia (el campo MÁS volátil tras re-importar — NO lo
+        # usamos), parts[4]=LEFT(concepto,40). Incluimos el concepto para NO
+        # atar por error dos movimientos del mismo monto/fecha (ej. varios
+        # cheques de $1.000 el mismo día) — el concepto los distingue.
+        f_concepto = parts[4] if len(parts) >= 5 else ""
         try:
             imp = round(float(f_imp), 2)
         except (ValueError, TypeError):
@@ -410,8 +415,9 @@ def restaurar_contraparte():
                AND fecha::TEXT = %s
                AND COALESCE(documento, '') = %s
                AND ROUND(importe, 2) = %s
+               AND COALESCE(LEFT(concepto, 40), '') = %s
             """,
-            (no_banco, f_fecha, f_doc, imp),
+            (no_banco, f_fecha, f_doc, imp, f_concepto),
         ) or []
         info = {"match_id": r["id"], "firma": firma[:70],
                 "id_actual": r.get("id_transaccion"), "candidatos": len(cands)}
