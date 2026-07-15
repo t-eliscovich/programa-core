@@ -466,7 +466,6 @@ def _chequeo_cruces(no_banco: int) -> dict:
                m.id_transaccion, m.tx_firma
           FROM scintela.banco_conciliacion_match m
          WHERE m.no_banco = %s AND m.deshecho_en IS NULL AND m.estado = 'matched'
-           AND m.real_monto IS NOT NULL
         """, (no_banco,)) or []
     ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
     tx_map = {}
