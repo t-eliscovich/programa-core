@@ -269,7 +269,7 @@
   }
   .flujo-wrap .gf-panel.gf-full .gf-head h3 { margin: 0; }
   .flujo-wrap .gf-panel.gf-full .gf-form-inline {
-    display: grid; grid-template-columns: 150px 150px 1fr 100px; gap: 8px; margin-bottom: 16px;
+    display: grid; grid-template-columns: 150px 90px 1fr 130px 100px; gap: 8px; margin-bottom: 16px;
   }
 
   /* TMT 2026-05-19 v8 — overrides compactos para que el chart entre en
@@ -316,7 +316,7 @@
 
   /* Form de alta CHICO debajo de la tabla. */
   .flujo-wrap .gf-panel.gf-full .gf-form-inline {
-    grid-template-columns: 140px 130px 1fr 90px;
+    grid-template-columns: 140px 80px 1fr 120px 90px;
     margin-top: 8px; margin-bottom: 0;
     padding: 6px; background: var(--panel-hi);
     border: 1px solid var(--grid); border-radius: 6px;
@@ -681,12 +681,14 @@
         </script>
 
         {# Form ALTA — agrega a scintela.gasto_forzado. #}
+        {# Orden de los campos = orden de las columnas de la tabla:
+           FECHA · PR · CONCEPTO · IMPORTE. #}
         <form id="gf-form" class="gf-form-inline" onsubmit="return false">
           <input type="date" id="gf-fecha" required title="Fecha">
           <input type="text" id="gf-prov" maxlength="5" placeholder="PR" title="Proveedor / PR (opcional)"
-                 oninput="this.value=this.value.toUpperCase()" style="width:70px;text-transform:uppercase;">
-          <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
+                 oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;">
           <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia, alquiler)">
+          <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
           <button type="submit" id="gf-add">+ Agregar</button>
         </form>
 
