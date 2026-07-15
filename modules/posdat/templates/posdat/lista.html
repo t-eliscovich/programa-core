@@ -851,7 +851,7 @@
           const importeStr = prompt('Importe:', '0');
           if (importeStr === null) return;
           const importe = parseFloat(importeStr.replace(',', '.')) || 0;
-          if (importe <= 0) { alert('Importe debe ser > 0.'); return; }
+          if (importe === 0) { alert('Importe no puede ser cero.'); return; }  // OP/NC pueden ser negativos
           btnPosdat.disabled = true; btnPosdat.textContent = '⏳ Creando…';
           fetch('/posdat/_api/nuevo', {
             method: 'POST', credentials: 'same-origin',

@@ -288,8 +288,16 @@ def crear(
     # inicio y la dueña los completa inline. No requiere FK a
     # scintela.proveedor ni concepto obligatorio.
     es_yy = prov == "YY"
-    if importe is None or (float(importe) <= 0 and not es_yy):
-        raise ValueError("Importe debe ser mayor que cero.")
+    # OP (aporte accionista / over-price) y las notas de crédito son NEGATIVOS
+    # a propósito: reducen el pasivo. Igual que las dos pantallas que llaman
+    # acá (posdat.nueva y el alta inline), sólo bloqueamos el CERO — un
+    # negativo es un movimiento válido. YY además puede nacer en 0 (provisión
+    # que la dueña completa inline después). TMT 2026-07-15 (dueña: "OP son
+    # todas negativas, no entiendo por qué pide mayor a 0").
+    if importe is None:
+        raise ValueError("Importe requerido.")
+    if float(importe) == 0 and not es_yy:
+        raise ValueError("Importe no puede ser cero.")
     if not concepto and not es_yy:
         raise ValueError("Concepto requerido.")
     if not es_yy and not db.fetch_one(
