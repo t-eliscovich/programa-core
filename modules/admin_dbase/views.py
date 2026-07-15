@@ -254,6 +254,32 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         except Exception as exc:
             yield line(f"[WARN] relink falló (no fatal): {exc}")
 
+    # TMT 2026-07-15 (dueña: "arreglalo para futuro" / red de seguridad): después
+    # de cada sync, chequear que TODOS los cruces de conciliación cuadren (que los
+    # movimientos del banco atados a cada mov del programa sumen su importe). Si
+    # algo quedó "corrido" (banco atado al programa equivocado), lo AVISA acá
+    # mismo — así se caza el mismo día, no meses después.
+    if rc == 0:
+        try:
+            from modules.conciliacion.diag_view import _chequeo_cruces
+            _chk = _chequeo_cruces(10)
+            yield line("")
+            yield line("[chequeo cruces conciliación]")
+            if _chk["n_mal_atados"] == 0:
+                yield line(f"  ✓ {_chk['n_programas_revisados']} cruces OK — todos cuadran")
+            else:
+                yield line(
+                    f"  ⚠ ATENCIÓN: {_chk['n_mal_atados']} grupo(s) MAL ATADOS "
+                    f"(banco no suma su programa). Ver "
+                    f"/admin/diag-pendientes-banco/chequeo-cruces")
+                for _m in _chk["mal_atados"][:8]:
+                    yield line(
+                        f"    tx {_m['id_transaccion']} ({_m['concepto']}): "
+                        f"banco {_m['suma_banco']:,.2f} vs programa {_m['programa']:,.2f} "
+                        f"-> diff {_m['diff']:,.2f}")
+        except Exception as exc:  # noqa: BLE001
+            yield line(f"[WARN] chequeo cruces falló (no fatal): {exc!r}")
+
     # TMT 2026-07-07 (dueña): reconcile POSDAT FULL en cada sync. El sync NO
     # extrae POSDAT (NEVER_EXTRACT, para no pisar baselines YY + links
     # mov_doble), pero el archivo SIGUE en el tarball. Acá lo sacamos y

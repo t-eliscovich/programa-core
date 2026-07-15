@@ -452,6 +452,50 @@ def restaurar_contraparte():
     })
 
 
+def _chequeo_cruces(no_banco: int) -> dict:
+    """RED DE SEGURIDAD (TMT 2026-07-15): detecta grupos MAL ATADOS — movimientos
+    del programa cuyos matches del banco NO suman su importe (más de 0.50). Caza
+    los cruces "corridos" (banco atado al programa equivocado) apenas aparecen,
+    sin importar de dónde vengan. Corre solo después de cada sync + a pedido."""
+    import bank_helpers as _bh
+    rows = _db.fetch_all(
+        """
+        SELECT tb.id_transaccion, tb.documento, tb.importe,
+               COALESCE(tb.usuario_crea, '') AS uc, LEFT(tb.concepto, 40) AS concepto,
+               COUNT(*) AS n_banco,
+               SUM(CASE WHEN UPPER(COALESCE(m.real_tipo, 'C')) = 'C'
+                        THEN m.real_monto ELSE -m.real_monto END) AS suma_banco
+          FROM scintela.banco_conciliacion_match m
+          JOIN scintela.transacciones_bancarias tb ON tb.id_transaccion = m.id_transaccion
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+           AND m.id_transaccion IS NOT NULL AND m.estado = 'matched'
+           AND m.real_monto IS NOT NULL
+         GROUP BY tb.id_transaccion, tb.documento, tb.importe, tb.usuario_crea, tb.concepto
+        """, (no_banco,)) or []
+    mal = []
+    for r in rows:
+        prog = float(_bh._signed_delta((r["documento"] or "").upper(), float(r["importe"] or 0), r["uc"]))
+        suma = float(r["suma_banco"] or 0)
+        diff = round(suma - prog, 2)
+        if abs(diff) > 0.50:
+            mal.append({"id_transaccion": r["id_transaccion"], "programa": round(prog, 2),
+                        "suma_banco": round(suma, 2), "diff": diff,
+                        "n_banco": int(r["n_banco"]), "concepto": r["concepto"]})
+    mal.sort(key=lambda x: abs(x["diff"]), reverse=True)
+    return {"no_banco": no_banco, "n_programas_revisados": len(rows),
+            "n_mal_atados": len(mal), "suma_diff": round(sum(x["diff"] for x in mal), 2),
+            "mal_atados": mal}
+
+
+@bp.route("/chequeo-cruces", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def chequeo_cruces():
+    """A pedido: lista los grupos mal atados (banco no suma su programa)."""
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    return jsonify(_chequeo_cruces(no_banco))
+
+
 @bp.route("/reatar-grupo", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
