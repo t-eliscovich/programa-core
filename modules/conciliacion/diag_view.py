@@ -452,6 +452,107 @@ def restaurar_contraparte():
     })
 
 
+@bp.route("/diagnosticar-grupo", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def diagnosticar_grupo():
+    """DEEP DIVE de un grupo (confirm_batch_id). Dado ?doc= (un documento de
+    banco del grupo) o ?batch=, dumpea TODOS los items con: monto banco firmado,
+    si el mov PC vive, su importe firmado, la firma, y la diferencia por item.
+    Calcula total banco vs total programa con la MISMA lógica de la pantalla
+    (live dedup por id_transaccion + roto dedup por tx_firma) y desglosa de dónde
+    sale la diferencia. Solo lectura."""
+    import bank_helpers as _bh
+    no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    batch = (request.args.get("batch") or "").strip()
+    doc = (request.args.get("doc") or "").strip()
+    if not batch and doc:
+        r = _db.fetch_one(
+            "SELECT confirm_batch_id FROM scintela.banco_conciliacion_match "
+            "WHERE no_banco=%s AND deshecho_en IS NULL AND real_documento=%s "
+            "AND confirm_batch_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+            (no_banco, doc))
+        batch = (r or {}).get("confirm_batch_id") or ""
+    if not batch:
+        return jsonify({"error": "no encontré batch (pasá ?batch= o ?doc=)"}), 400
+    rows = _db.fetch_all(
+        "SELECT id, real_fecha::TEXT AS real_fecha, real_documento, real_monto, real_tipo, "
+        "real_concepto, id_transaccion, tx_firma, estado, COALESCE(metodo,'') AS metodo "
+        "FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL AND confirm_batch_id=%s ORDER BY id",
+        (no_banco, batch)) or []
+    ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+    tx_map = {}
+    if ids:
+        for t in _db.fetch_all(
+            "SELECT id_transaccion, importe, documento, COALESCE(usuario_crea,'') AS uc "
+            "FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,)) or []:
+            tx_map[int(t["id_transaccion"])] = t
+
+    def _bsign(tipo, monto):
+        m = float(monto or 0)
+        return m if (tipo or "").upper() == "C" else -m
+
+    def _fparse(firma):
+        p = (firma or "").split("|")
+        if len(p) < 3:
+            return None, None
+        try:
+            return (p[1] or "").upper(), float(p[2])
+        except ValueError:
+            return None, None
+
+    items = []
+    suma_banco = 0.0
+    prog_total = 0.0
+    seen_id = set()
+    seen_firma = set()
+    for r in rows:
+        b = _bsign(r["real_tipo"], r["real_monto"])
+        suma_banco += b
+        idtx = r.get("id_transaccion")
+        vive = idtx is not None and int(idtx) in tx_map
+        prog_live = None
+        if vive:
+            t = tx_map[int(idtx)]
+            prog_live = float(_bh._signed_delta((t["documento"] or "").upper(), float(t["importe"] or 0), t["uc"]))
+        fd, fi = _fparse(r.get("tx_firma"))
+        prog_firma = float(_bh._signed_delta(fd, fi, "")) if fd is not None else None
+        aporte = 0.0
+        fuente = "—(ya contado o sin prog)"
+        if vive:
+            if int(idtx) not in seen_id:
+                seen_id.add(int(idtx))
+                aporte = prog_live
+                fuente = "live"
+        elif prog_firma is not None:
+            if r.get("tx_firma") not in seen_firma:
+                seen_firma.add(r.get("tx_firma"))
+                aporte = prog_firma
+                fuente = "firma"
+        prog_total += aporte
+        _prog_item = prog_live if vive else prog_firma
+        items.append({
+            "doc": r["real_documento"], "fecha": r["real_fecha"], "tipo": r["real_tipo"],
+            "banco": round(b, 2), "id_tx": idtx, "vive": vive,
+            "prog_live": (round(prog_live, 2) if prog_live is not None else None),
+            "prog_firma": (round(prog_firma, 2) if prog_firma is not None else None),
+            "aporte_prog": round(aporte, 2), "fuente_prog": fuente,
+            "diff_item": round(b - (_prog_item or 0), 2),
+            "concepto": str(r.get("real_concepto") or "")[:50],
+        })
+    items_con_diff = [it for it in items if abs(it["diff_item"]) > 0.01]
+    return jsonify({
+        "batch": batch, "n_items": len(rows),
+        "suma_banco": round(suma_banco, 2),
+        "prog_total_pantalla": round(prog_total, 2),
+        "diferencia": round(suma_banco - prog_total, 2),
+        "n_movs_pc_vivos": len(seen_id), "n_por_firma": len(seen_firma),
+        "items_con_diferencia": items_con_diff,
+        "items": items,
+    })
+
+
 @bp.route("/quitar-del-extracto", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
