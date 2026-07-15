@@ -32,9 +32,10 @@ Secciones:
         que PC acumuló después del tarball) — ambas cifras a la vista
   [7] Activos         TIPO='I' / TIPO$'MCK' (L47-48)   vs uact/umaq (+sin tipo)
   [8] Retiros         RETIROS mes / año (L37-38)       vs uret/uret_anio
-  [9] Producción      KM/VM/KK/KTINT/KR/ITIN/KV del mes vs panel COSTOS
- [10] Stock etapas    HI/TJ/PF + UMX/UKK/UFF + VSTO (L313-345) vs panel STOCK
+ [9c] Compras mes    tipo H/K/Q/C 1 a 1 (fecha+prov+kg+importe)
+[10b] KV vendidos    factura x factura (fecha+kg)
  [11] Stock químicos  VQX = VQ0+VQQ−ITIN (L322)        vs vqx
+      ([9] Producción y [10] Stock por etapa removidas: ruido de migración Asinfo)
  [12] PATANT          HISTORIA mes anterior            vs patant
  [13] UTILIDAD        (TOTL−TOTP)−PATANT (L380)        vs utilidad
       + IDENTIDAD: Δutilidad == Σ Δcomponentes (residuo 0,00 = el reporte
@@ -980,60 +981,14 @@ def reporte(dias_banco: int = 30):
     yield _linea_cmp("Retiros año", d.get("uret_anio"), _f(pc.get("uret_anio")))
     yield line()
 
-    yield line("── [9] PRODUCCIÓN DEL MES (COMPRAS + TINTO, PRG L228-267) ──")
-    res = pc.get("resultados") or {}
-    tabla = {r.get("label"): r for r in (res.get("costos") or [])}
-
-    def _kg(lbl):
-        return _f((tabla.get(lbl) or {}).get("kg"))
-    yield _linea_cmp("KM compras hilado kg", d.get("KM"), _kg("MAT.PR."), tol=1)
-    yield _linea_cmp("KK tejido kg", d.get("KK"), _kg("TEJIDO"), tol=1)
-    yield _linea_cmp("KTINT tinturado kg", d.get("KTINT"), _kg("COL.QUI."), tol=1)
-    yield _linea_cmp("KR a terminado kg", d.get("KR"), _kg("GS.PROC."), tol=1)
-    yield _linea_cmp("ITIN colorantes U$", d.get("ITIN"),
-                     _f((tabla.get("COL.QUI.") or {}).get("us")), tol=1)
-    yield line("  (difieren = movimientos tipeados en dBase después del último sync,")
-    yield line("   o cargas PC (planilla/ajuste) que el dBase aún no tiene)")
-    yield line()
-
+    # [9] PRODUCCIÓN DEL MES y [9b] TINTO POR CÓDIGO removidas del reporte
+    # — TMT 2026-07-15: divergen por la migración del flujo a Asinfo (ruido
+    # esperado, no un descuadre real). Se conserva pc_tin porque [11] químicos
+    # lo usa para el ITIN.
     try:
-        yield line("── [9b] TINTO del mes POR CÓDIGO (dBase | PC) — 1 a 1 ──")
         pc_tin = _pc_tinto_mes()
-        db_tin = d.get("tinto_rows") or []
-
-        def _agg_tin(rows):
-            acc: dict = {}
-            for r in rows:
-                a = acc.setdefault(r["cod"], [0.0, 0.0, 0.0, 0])
-                a[0] += _f(r["kg"]); a[1] += _f(r["kgn"])
-                a[2] += _f(r["importe"]); a[3] += 1
-            return acc
-        A, B = _agg_tin(db_tin), _agg_tin(pc_tin)
-        itin_db = sum(v[2] for v in A.values())
-        itin_pc = sum(v[2] for v in B.values())
-        yield line(f"  ITIN dBase={itin_db:,.2f} ({sum(v[3] for v in A.values())} filas)  "
-                   f"PC={itin_pc:,.2f} ({sum(v[3] for v in B.values())} filas)  "
-                   f"Δ={itin_pc - itin_db:+,.2f}")
-        difs = []
-        for c in sorted(set(A) | set(B)):
-            a = A.get(c, [0.0, 0.0, 0.0, 0]); b = B.get(c, [0.0, 0.0, 0.0, 0])
-            if any(abs(a[i] - b[i]) > 0.01 for i in (0, 1, 2)):
-                difs.append((c, a, b))
-        yield line(f"  códigos con diferencia: {len(difs)} (kg dBase|PC, kgn, U$, Δ U$)")
-        for c, a, b in difs[:90]:
-            yield line(f"    {c:5} kg {a[0]:>8,.0f}|{b[0]:>8,.0f}  kgn {a[1]:>8,.0f}|{b[1]:>8,.0f}  "
-                       f"U$ {a[2]:>9,.2f}|{b[2]:>9,.2f}  ΔU$={b[2] - a[2]:>+10,.2f}  (n {a[3]}|{b[3]})")
-        por_u: dict = {}
-        for r in pc_tin:
-            u = r.get("usuario") or "dbf-import"
-            x = por_u.setdefault(u, [0.0, 0.0, 0])
-            x[0] += _f(r["kg"]); x[1] += _f(r["importe"]); x[2] += 1
-        yield line("  PC por usuario_crea: " + " ; ".join(
-            f"{u or 'dbf-import'}: kg={v[0]:,.0f} U$={v[1]:,.2f} ({v[2]}f)"
-            for u, v in sorted(por_u.items())))
-    except Exception as exc:  # noqa: BLE001
-        yield line(f"  [detalle tinto no disponible: {exc!r}]")
-    yield line()
+    except Exception:  # noqa: BLE001
+        pc_tin = None
 
     try:
         yield line("── [9c] COMPRAS del mes 1 a 1 (fecha+tipo+prov+kg+importe) ──")
@@ -1068,28 +1023,9 @@ def reporte(dias_banco: int = 30):
         yield line(f"  [detalle compras no disponible: {exc!r}]")
     yield line()
 
-    stock = (res.get("stock") or {})
-    yield line("── [10] STOCK POR ETAPA (PRG L313-345) ──")
-    yield _linea_cmp("Hilado kg", d.get("HI"), _f((stock.get("hilado") or {}).get("kg")), tol=1)
-    yield _linea_cmp("Tejido kg", d.get("TJ"), _f((stock.get("tejido") or {}).get("kg")), tol=1)
-    yield _linea_cmp("Terminado kg", d.get("PF"), _f((stock.get("terminado") or {}).get("kg")), tol=1)
-    yield cmp_acum("VSTO U$", d.get("VSTO"), _f(pc.get("vsto")))
-    try:
-        ip = _pc_iniciales_prev()
-        yield line("  insumos de la fórmula (dBase | PC):")
-        yield "  " + _linea_cmp("HI0 inic hilado kg", d.get("HI0"), ip["hilado"], tol=1)
-        yield "  " + _linea_cmp("TJ0 inic tejido kg", d.get("TJ0"), ip["tejido"], tol=1)
-        yield "  " + _linea_cmp("PF0 inic termin kg", d.get("PF0"), ip["terminado"], tol=1)
-        yield "  " + _linea_cmp("UM0 tarifa prev", d.get("UM0"), ip["um"], tol=0.001)
-        yield "  " + _linea_cmp("UMX tarifa live", d.get("UMX"),
-                                _f((stock.get("hilado") or {}).get("ukg")), tol=0.001)
-        kv_fis = iq.ventas_mes_corriente_kg_fisico()
-        yield "  " + _linea_cmp("KV vendidos kg", d.get("KV"), _f(kv_fis), tol=1)
-        yield "  " + _linea_cmp("KSTI servicios kg", d.get("KSTI"),
-                                _f(iq.tinto_kg_servicios_mes()), tol=1)
-    except Exception as exc:  # noqa: BLE001
-        yield line(f"  [insumos VSTO no disponibles: {exc!r}]")
-    yield line()
+    # [10] STOCK POR ETAPA removida del reporte — TMT 2026-07-15:
+    # Hilado/Tejido/Terminado divergen por la migración del flujo a Asinfo
+    # (ruido esperado). El detalle de VSTO/insumos queda fuera.
 
     try:
         yield line("── [10b] KV kg vendidos del mes — factura x factura (fecha+kg) ──")
@@ -1127,7 +1063,7 @@ def reporte(dias_banco: int = 30):
         yield "  " + _linea_cmp("VQQ compras Q mes", d.get("VQQ"), vqq_pc)
         itin_pc2 = sum(_f(r["importe"]) for r in (pc_tin if isinstance(pc_tin, list) else []))
         yield "  " + _linea_cmp("ITIN tinto mes", d.get("ITIN"), itin_pc2)
-        yield line("  (Δ VQX = ΔVQ0 + ΔVQQ − ΔITIN — el detalle por código está en [9b])")
+        yield line("  (Δ VQX = ΔVQ0 + ΔVQQ − ΔITIN)")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [insumos VQX no disponibles: {exc!r}]")
     yield line()

@@ -241,6 +241,7 @@ FORM = """
 <form method=post action="/admin/posdat-reconcile/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
   <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
+  <label><input type=checkbox name=soft value=1 checked> Anular en vez de borrar (recuperable)</label><br>
   <label><input type=checkbox name=apply value=1> Aplicar (escribe en producción)</label><br><br>
   <button type=submit>Correr</button>
 </form></div>
@@ -264,6 +265,10 @@ def run():
     if not f.filename.lower().endswith((".tar.gz", ".tgz")):
         return Response("ERROR: esperaba .tar.gz / .tgz.\n", mimetype="text/plain", status=400)
     aplicar = request.form.get("apply") in ("1", "true", "on")
+    # TMT 2026-07-15: por defecto ANULA (recuperable) en vez de DELETE, para
+    # no perder registros PC-only (p.ej. los que cargó andres) de forma
+    # irreversible. Destildar el checkbox → DELETE real de las no-linkeadas.
+    soft = request.form.get("soft") in ("1", "true", "on")
 
     TARBALL_PATH.parent.mkdir(parents=True, exist_ok=True)
     if TARBALL_PATH.exists():
@@ -273,17 +278,18 @@ def run():
         TARBALL_PATH.unlink(missing_ok=True)
         return Response("ERROR: tarball muy grande.\n", mimetype="text/plain", status=400)
 
-    return Response(stream_with_context(_run(aplicar)), mimetype="text/plain")
+    return Response(stream_with_context(_run(aplicar, soft)), mimetype="text/plain")
 
 
-def _run(aplicar: bool):
+def _run(aplicar: bool, soft: bool = False):
     import shutil
 
 
     def line(m=""):
         return m.rstrip("\n") + "\n"
 
-    yield line(f"=== Reconciliar POSDAT — {'APLICAR' if aplicar else 'DRY-RUN'} ===")
+    yield line(f"=== Reconciliar POSDAT — {'APLICAR' if aplicar else 'DRY-RUN'}"
+               f" — {'ANULA (recuperable)' if soft else 'DELETE'} ===")
 
     # Extraer SOLO POSDAT.DBF.
     try:
@@ -305,7 +311,7 @@ def _run(aplicar: bool):
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
 
-    yield from reconcile_desde_dbf(miembro, aplicar, soft_delete=False)
+    yield from reconcile_desde_dbf(miembro, aplicar, soft_delete=soft)
 
 
 # ─────────────────────────────────────────────────────────────────────
