@@ -2031,6 +2031,66 @@ def ventas_anio():
     )
 
 
+def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
+    """Chequeos de coherencia entre bandas del flujo (dueña 2026-07-15): detectar
+    descuadres automáticamente en vez de a ojo. Cada chequeo compara dos números
+    que TIENEN que coincidir; marca 'warn' si el desvío supera tol_pct. Los de
+    tipo 'ajuste' (químicos: físico vs libro) son informativos, nunca 'warn'.
+    Fail-soft: si falta un dato queda 'nd' (no disponible)."""
+    data = data or {}
+    mov = mov_asinfo or {}
+
+    def _g(d, *ks):
+        for k in ks:
+            if not isinstance(d, dict):
+                return None
+            d = d.get(k)
+        return d
+
+    checks = []
+
+    def add(clave, etiqueta, a, a_lbl, b, b_lbl, unidad, tipo="cuadre"):
+        try:
+            a = None if a is None else float(a)
+            b = None if b is None else float(b)
+        except (TypeError, ValueError):
+            a = b = None
+        if a is None or b is None:
+            estado, delta, pct = "nd", None, None
+        else:
+            delta = a - b
+            pct = (delta / b * 100.0) if b else None
+            if tipo == "ajuste":
+                estado = "info"
+            elif pct is None:
+                estado = "warn" if delta else "ok"
+            else:
+                estado = "ok" if abs(pct) <= tol_pct else "warn"
+        checks.append({
+            "clave": clave, "etiqueta": etiqueta, "unidad": unidad, "tipo": tipo,
+            "a": a, "a_lbl": a_lbl, "b": b, "b_lbl": b_lbl,
+            "delta": delta, "pct": pct, "estado": estado,
+        })
+
+    add("hilo", "Hilo comprado = ingresado",
+        _g(data, "compras_hilado_total", "kg"), "Compras hilado",
+        _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado", "kg")
+    add("tejido", "Tejido producido = crudo ingresado",
+        _g(data, "produc_tejido_total", "kg"), "Producción tejido",
+        _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
+    if prod_tej_asinfo:
+        add("tejido_asinfo", "Tejido Asinfo = crudo ingresado",
+            _g(prod_tej_asinfo, "total", "kg"), "Tejido · Asinfo",
+            _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
+    qm = _g(mov, "quimicos_modelo")
+    if qm:
+        add("quimicos", "Químicos: físico vs libro",
+            _g(qm, "final_form"), "Físico formulas",
+            _g(qm, "final_prog"), "Libro programa", "US$", tipo="ajuste")
+
+    return checks
+
+
 @informes_bp.route("/flujo-produccion")
 @requiere_login
 @requiere_permiso("informes.ver")
@@ -2111,6 +2171,11 @@ def flujo_produccion():
     except Exception:  # noqa: BLE001 -- best-effort, la vista no rompe
         prod_tej_asinfo = None
 
+    coherencia, _e_coh = _safe(
+        lambda: _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo),
+        [],
+    )
+
     return render_template(
         "informes/flujo_produccion.html",
         data=data,
@@ -2120,6 +2185,7 @@ def flujo_produccion():
         inv_asinfo=inv_asinfo,
         mov_asinfo=mov_asinfo,
         prod_tej_asinfo=prod_tej_asinfo,
+        coherencia=coherencia,
     )
 
 
