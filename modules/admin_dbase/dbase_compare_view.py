@@ -691,7 +691,15 @@ def reporte(dias_banco: int = 30):
     def line(m=""):
         return m.rstrip("\n") + "\n"
 
-    yield line(f"=== dBase-compare — {_hoy_ec()} — SOLO LECTURA (sin sync, sin escribir) ===")
+    yield line(f"=== COMPARACIÓN PROGRAMA (PC) vs SISTEMA VIEJO (dBase) — {_hoy_ec()} — SOLO LECTURA ===")
+    yield line("")
+    yield line("Compara área por área (caja, bancos, cheques, facturas, pasivos, stock).")
+    yield line("Cómo leerlo:")
+    yield line("   ✓ = el área CUADRA (PC y dBase dan lo mismo)")
+    yield line("   ✗ = hay DIFERENCIA; al lado va cuánto (Δ = PC menos dBase)")
+    yield line("   Muchas diferencias son de TIEMPO: el dBase es una foto de un día,")
+    yield line("   y PC siguió cargando movimientos después de esa foto.")
+    yield line("")
     d = lado_dbase()
     if d.get("faltantes"):
         yield line(f"⚠ DBF faltantes en el tarball: {', '.join(d['faltantes'])}")
@@ -1131,20 +1139,48 @@ def reporte(dias_banco: int = 30):
 
 
 FORM = """
-<!doctype html><meta charset=utf-8><title>dBase-compare</title>
-<div style="max-width:680px;margin:2rem auto;font-family:system-ui">
-<h2>Comparar PC vs dBase (sin sync, solo lectura)</h2>
-<p>Subí el tarball con los DBF frescos (el mismo <code>dbf-fresh.tar.gz</code>
-del sync — acá <b>no se importa nada</b>). El reporte calcula cada valor con
-la regla del PRG y lo compara con el balance live de PC, cerrando con la
-identidad de utilidad (residuo 0 = toda diferencia explicada).</p>
-<form method=post action="/admin/dbase-compare/run" enctype="multipart/form-data">
-  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
-  <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required><br><br>
-  <label>Detalle de movimientos de banco de los últimos
-    <input type=number name=dias value=30 min=7 max=120 style="width:60px"> días</label><br><br>
-  <button type=submit>Comparar</button>
-</form></div>
+<!doctype html><html lang=es><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>Comparación con dBase — Programa Core</title>
+<body style="margin:0;background:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;">
+<div style="max-width:820px;margin:0 auto;padding:1.5rem 1rem;">
+  <a href="/" style="font-size:13px;color:#2563eb;text-decoration:none;">&larr; Volver al menú</a>
+  <h1 style="font-size:22px;font-weight:600;margin:10px 0 6px;">Comparación con el sistema viejo (dBase)</h1>
+  <p style="color:#475569;font-size:14px;margin:0 0 16px;line-height:1.5;">
+    Compara, área por área, los números del <b>programa nuevo (PC)</b> contra el
+    <b>sistema viejo (dBase)</b> &mdash; caja, bancos, cheques, facturas, pasivos y
+    stock &mdash; para verificar que todo cuadre. <b>No cambia ni importa nada:</b>
+    es solo lectura.
+  </p>
+
+  <div style="border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:14px 16px;margin-bottom:16px;font-size:14px;line-height:1.55;">
+    <div style="font-weight:600;margin-bottom:6px;">Cómo leer el reporte</div>
+    <div style="margin:2px 0;"><b style="color:#16a34a;">&#10003;</b> el área <b>cuadra</b> (PC y dBase dan lo mismo).</div>
+    <div style="margin:2px 0;"><b style="color:#dc2626;">&#10007;</b> hay <b>diferencia</b>; al lado se muestra cuánto (&Delta; = PC menos dBase).</div>
+    <div style="margin:2px 0;color:#475569;">Muchas diferencias son de <b>tiempo</b>: el dBase es una foto de un día y PC siguió cargando movimientos después.</div>
+  </div>
+
+  <form method=post action="/admin/dbase-compare/run" enctype="multipart/form-data"
+        style="border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:16px;">
+    <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;">
+      Archivo del dBase <span style="font-weight:400;color:#64748b;">(dbf-fresh.tar.gz)</span>
+    </label>
+    <input type=file name=tarball accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar" required
+           style="display:block;margin-bottom:12px;font-size:14px;">
+    <label style="font-size:13px;color:#334155;">Detalle de banco de los últimos
+      <input type=number name=dias value=30 min=7 max=120 style="width:60px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 4px;"> días
+    </label>
+    <div style="margin-top:14px;">
+      <button type=submit style="padding:8px 16px;border-radius:6px;background:#0f172a;color:#fff;border:0;font-size:14px;cursor:pointer;">Comparar</button>
+    </div>
+    <p style="color:#64748b;font-size:12px;margin:10px 0 0;line-height:1.5;">
+      El archivo del dBase lo pasa administración (es el mismo del sync). Sin ese
+      archivo no se puede correr la comparación &mdash; si no lo tenés, pedilo.
+    </p>
+  </form>
+</div>
+</body></html>
 """
 
 
