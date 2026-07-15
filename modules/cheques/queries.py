@@ -2734,9 +2734,9 @@ def postergar(
       - Tracking (migración 0014):
           fecha_postergacion = CURRENT_DATE  (cuándo se decidió postergar)
           fechad_original    = COALESCE(prev, fechad)  (snapshot 1ra vez)
-      - Append al `posdat` ya existente: actualiza la fecha si había una
-        fila banc=0; si no había, la crea (cheques que originalmente eran
-        Z ahora pasan a vivir en el flujo de "cheques futuros").
+      - NO toca `scintela.posdat` (TMT 2026-07-15): postergar un cheque de
+        CLIENTE no debe crear un Pasivo. El cheque futuro se ve desde
+        scintela.cheque (stat 'P'); posdat es sólo para pagos a proveedores.
     """
     asegurar_fecha_abierta(today_ec())
 
@@ -2789,32 +2789,15 @@ def postergar(
             (nuevo_stat, nueva_fechad, usuario, id_cheque),
             conn=conn,
         )
-        # Sincroniza posdat: upsert manual.
-        db.execute(
-            """
-            INSERT INTO scintela.posdat (fecha, prov, num, importe, banc, usuario_crea)
-            SELECT %s, %s, %s, %s, 0, %s
-            WHERE NOT EXISTS (
-                SELECT 1 FROM scintela.posdat
-                 WHERE COALESCE(banc, 0) = 0 AND num = %s AND prov = %s
-            )
-            """,
-            (
-                nueva_fechad,
-                ch["codigo_cli"],
-                id_cheque,
-                float(ch["importe"] or 0),
-                usuario,
-                id_cheque,
-                ch["codigo_cli"],
-            ),
-            conn=conn,
-        )
-        db.execute(
-            "UPDATE scintela.posdat SET fecha=%s, usuario_modifica=%s WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
-            (nueva_fechad, usuario, id_cheque, ch["codigo_cli"]),
-            conn=conn,
-        )
+        # TMT 2026-07-15 (dueña: "que no se sigan creando esos posdatados cuando
+        # se posterga un cheque"). ANTES acá se hacía un upsert a scintela.posdat
+        # con prov=código de CLIENTE y banc=0. Eso metía un cheque de cliente
+        # (cuenta por COBRAR) dentro de Pasivos: TOTP = Σ posdat banc<>9 lo
+        # contaba como PASIVO e inflaba la deuda con plata que en realidad nos
+        # deben (divergía del dBase, que no pone cheques de cliente en POSDAT).
+        # El flujo de cheques futuros / cartera lee de scintela.cheque (stat 'P'),
+        # así que no se pierde nada al no crear el posdat hermano. Los hermanos
+        # viejos se siguen limpiando en anular/reversar (DELETE banc=0 num=id_cheque).
 
     return {
         "id_cheque": id_cheque,
