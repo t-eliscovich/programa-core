@@ -1935,18 +1935,20 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "kind": "WIZARD",
             "endpoint": "cheques.deshacer_deposito",
         },
-        # TMT 2026-07-15 (dueña): "que cheques de estado B se puedan pasar a P".
-        # El cheque era postdatado, se marcó depositado por error → lo devolvemos
-        # a postdatado (P). Va por el wizard deshacer_deposito con destino=P: NO
-        # es un relabel plano (dejaría el depósito de banco colgado), REVIERTE el
-        # movimiento de banco igual que "Volver a cartera" y deja el cheque en P.
-        # `siempre` = mostrarlo en el dropdown aunque P no esté en
-        # TRANSICIONES_VALIDAS['B'] (el wizard valida por su cuenta; la
-        # transición plana B→P sigue bloqueada en transicionar_stat).
+        # TMT 2026-07-15 (dueña): "que cheques de estado B se puedan pasar a P" y
+        # "cuando pongo P me tiene que hacer seleccionar la fecha a la que lo
+        # postergo". P en la app = POSTERGADO (tab Postergados), no "postdatado".
+        # El cheque se marcó depositado por error → lo devolvemos a POSTERGADO,
+        # pidiendo la nueva fecha de depósito. Va por el wizard deshacer_deposito
+        # con destino=P: NO es un relabel plano (dejaría el depósito de banco
+        # colgado), REVIERTE el movimiento de banco igual que "Volver a cartera"
+        # y deja el cheque en P con la fechad elegida. `siempre` = mostrarlo en el
+        # dropdown aunque P no esté en TRANSICIONES_VALIDAS['B'] (el wizard valida
+        # por su cuenta; la transición plana B→P sigue bloqueada en transicionar_stat).
         {
             "stat_destino": "P",
-            "label": "Volver a postdatado (no se depositó)",
-            "corto": "A postdatado",
+            "label": "Volver a postergado (elegí la nueva fecha)",
+            "corto": "A postergado",
             "kind": "WIZARD",
             "endpoint": "cheques.deshacer_deposito",
             "url_args": {"destino": "P"},
@@ -2177,17 +2179,20 @@ def _relabel_dep_concepto(concepto: str, n: int) -> str:
 
 
 def deshacer_deposito_cheque(
-    *, id_cheque: int, usuario: str = "web", motivo: str = "", stat_destino: str = "Z"
+    *, id_cheque: int, usuario: str = "web", motivo: str = "", stat_destino: str = "Z",
+    nueva_fechad: date | None = None,
 ) -> dict:
-    """Saca UN cheque de su depósito y lo devuelve a cartera (Z) o postdatado (P).
+    """Saca UN cheque de su depósito y lo devuelve a cartera (Z) o postergado (P).
 
     TMT 2026-07-07 dueña: "si hay un cheque que marcamos depositado y al final
     no lo depositamos, cómo lo devolvemos". NO es rebote (no toca al cliente)
     ni anulación (el cheque sigue vivo) — simplemente deshace el depósito.
 
     TMT 2026-07-15 dueña: `stat_destino` permite devolverlo a cartera ('Z',
-    default) o a postdatado ('P') — mismo reverso de banco, distinto estado
-    final. El cheque queda vivo con su fechad intacta (re-postergable desde P).
+    default) o a POSTERGADO ('P') — mismo reverso de banco, distinto estado
+    final. Cuando va a 'P' se pide `nueva_fechad` (la fecha a la que se posterga
+    el depósito) y se registra la postergación igual que postergar() —
+    fecha_postergacion + snapshot de fechad_original.
 
     Lado banco: el depósito consolidado 'dep.N ch.' baja su importe por el
     cheque y su contador N→N-1; si el cheque era el único (o el mov queda en
@@ -2200,7 +2205,9 @@ def deshacer_deposito_cheque(
     import bank_helpers
     stat_destino = (stat_destino or "Z").upper().strip()
     if stat_destino not in ("Z", "P"):
-        raise ValueError("Sólo se puede devolver a cartera (Z) o a postdatado (P).")
+        raise ValueError("Sólo se puede devolver a cartera (Z) o a postergado (P).")
+    if stat_destino == "P" and nueva_fechad is None:
+        raise ValueError("Para volver a postergado (P) hay que elegir la nueva fecha de depósito.")
     ch = db.fetch_one(
         "SELECT id_cheque, no_cheque, codigo_cli, importe, stat "
         "FROM scintela.cheque WHERE id_cheque = %s",
@@ -2266,12 +2273,61 @@ def deshacer_deposito_cheque(
                 )
             bancos_recompute.add(no_banco)
             n_movs += 1
-        db.execute(
-            "UPDATE scintela.cheque "
-            "   SET stat = %s, fechaing = NULL, "
-            "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
-            " WHERE id_cheque = %s",
-            (stat_destino, usuario, id_cheque), conn=conn,
+        if stat_destino == "P":
+            # Postergar: fija la nueva fechad y registra la postergación (igual
+            # que postergar()). fechad_original = snapshot de la fechad previa.
+            db.execute(
+                "UPDATE scintela.cheque "
+                "   SET stat = 'P', fechaing = NULL, fechad = %s, "
+                "       fecha_postergacion = CURRENT_DATE, "
+                "       fechad_original = COALESCE(fechad_original, fechad), "
+                "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
+                " WHERE id_cheque = %s",
+                (nueva_fechad, usuario, id_cheque), conn=conn,
+            )
+        else:
+            db.execute(
+                "UPDATE scintela.cheque "
+                "   SET stat = %s, fechaing = NULL, "
+                "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
+                " WHERE id_cheque = %s",
+                (stat_destino, usuario, id_cheque), conn=conn,
+            )
+        # TMT 2026-07-15 (dueña "me debería aparecer acá el movimiento que hice"):
+        # dejar traza en /historial. Marca el mov_doble del depósito original
+        # ('cheque_depositado') como reversado y crea la línea 'reverso_cheque_
+        # depositado'. Si el depósito fue individual (sin mov_doble, aparece como
+        # banco directo), igual registramos la línea de reverso (sin id_original)
+        # para que la acción sea visible. Es audit-only: NO afecta flujo/balance.
+        import mov_doble as _md
+        _orig_md = db.fetch_one(
+            "SELECT id_mov_doble FROM scintela.mov_doble "
+            " WHERE tipo = 'cheque_depositado' AND origen_table = 'cheque' "
+            "   AND origen_id = %s AND COALESCE(estado, 'activo') <> 'reversado' "
+            " ORDER BY id_mov_doble DESC LIMIT 1",
+            (id_cheque,), conn=conn,
+        )
+        _dest_txt = "postergado (P)" if stat_destino == "P" else "cartera (Z)"
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_cheque_depositado",
+            origen_table="cheque",
+            origen_id=id_cheque,
+            destino_table="cheque",
+            destino_id=id_cheque,
+            importe=imp_ch,
+            fecha=today_ec(),
+            concepto=(
+                f"Depósito deshecho — cheque "
+                f"{ch.get('no_cheque') or '#' + str(id_cheque)} → {_dest_txt}"
+            )[:200],
+            usuario=usuario,
+            id_original=(_orig_md.get("id_mov_doble") if _orig_md else None),
+            metadata={
+                "id_cheque": id_cheque,
+                "stat_destino": stat_destino,
+                "motivo": (motivo or "")[:200],
+            },
         )
         for nb in bancos_recompute:
             anc = db.fetch_one(
@@ -2290,6 +2346,7 @@ def deshacer_deposito_cheque(
         "stat_nuevo": stat_destino,
         "importe": imp_ch,
         "movs_tocados": n_movs,
+        "nueva_fechad": nueva_fechad if stat_destino == "P" else None,
     }
 
 

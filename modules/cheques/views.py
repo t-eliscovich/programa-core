@@ -1717,25 +1717,40 @@ def deshacer_deposito(id_cheque: int):
         abort(404)
     stat = (ch.get("stat") or "").upper()
     next_url = request.values.get("next") or url_for("cheques.detalle", id_cheque=id_cheque)
-    # TMT 2026-07-15 (dueña): ?destino=P devuelve el cheque a POSTDATADO (P) en
-    # vez de a cartera (Z). Mismo reverso de banco, distinto estado final.
+    # TMT 2026-07-15 (dueña): ?destino=P devuelve el cheque a POSTERGADO (P) —
+    # el bucket "Postergados" — en vez de a cartera (Z). Mismo reverso de banco,
+    # distinto estado final. Al postergar se pide la NUEVA fecha de depósito.
     destino = (request.values.get("destino") or "Z").upper().strip()
     if destino not in ("Z", "P"):
         destino = "Z"
-    dest_label = "postdatado (P)" if destino == "P" else "cartera (Z)"
+    es_postergar = destino == "P"
+    dest_label = "postergado (P)" if es_postergar else "cartera (Z)"
     if stat not in queries.STATS_DEPOSITADO:
         flash(f"El cheque no está depositado (estado {stat}); no hay depósito que deshacer.", "warn")
         return redirect(next_url)
     if request.method == "POST":
         motivo = (request.form.get("motivo") or "").strip()
+        # Parsear la nueva fecha SOLO cuando postergamos (destino=P).
+        nueva_fechad = None
+        if es_postergar:
+            try:
+                nueva_fechad = parse_date(request.form.get("nueva_fechad"))
+            except Exception:
+                nueva_fechad = None
+            if nueva_fechad is None:
+                flash("Elegí la fecha a la que postergás el cheque.", "warn")
+                return redirect(url_for("cheques.deshacer_deposito", id_cheque=id_cheque, next=next_url, destino=destino))
         try:
             usuario = (g.user or {}).get("username", "web")
             r = queries.deshacer_deposito_cheque(
                 id_cheque=int(ch["id_cheque"]), usuario=usuario, motivo=motivo,
-                stat_destino=destino,
+                stat_destino=destino, nueva_fechad=nueva_fechad,
             )
+            _fecha_txt = ""
+            if es_postergar and r.get("nueva_fechad"):
+                _fecha_txt = f", a depositar el {r['nueva_fechad'].strftime('%d/%m/%Y')}"
             flash(
-                f"Cheque {r['no_cheque'] or '#' + str(r['id_cheque'])} devuelto a {dest_label}. "
+                f"Cheque {r['no_cheque'] or '#' + str(r['id_cheque'])} devuelto a {dest_label}{_fecha_txt}. "
                 f"Ajusté el depósito del banco por $ {float(r['importe']):,.2f}"
                 + (f" ({r['movs_tocados']} depósito(s) tocado(s))." if r.get("movs_tocados") else "."),
                 "ok",
@@ -1748,8 +1763,8 @@ def deshacer_deposito(id_cheque: int):
     no_ch = ch.get("no_cheque") or f"#{id_cheque}"
     importe = ch.get("importe") or 0
     _paso1 = (
-        f"(1) El cheque vuelve a {dest_label}."
-        if destino == "P"
+        "(1) El cheque vuelve a postergado (P) con la nueva fecha de depósito."
+        if es_postergar
         else "(1) El cheque vuelve a cartera (Z)."
     )
     detalle = {
@@ -1763,6 +1778,20 @@ def deshacer_deposito(id_cheque: int):
             "movimiento). (3) NO se toca al cliente — no es un rebote."
         ),
     }
+    # Campo de fecha para postergar (destino=P). Prefill: la fechad actual si es
+    # futura, si no hoy. TMT 2026-07-15 (dueña: "que me haga elegir la fecha").
+    fecha_field = None
+    if es_postergar:
+        _hoy = today_ec()
+        _fd = ch.get("fechad") or ch.get("fecha")
+        _pre = _fd if (_fd and _fd > _hoy) else _hoy
+        fecha_field = {
+            "name": "nueva_fechad",
+            "label": "Nueva fecha de depósito",
+            "value": _pre.isoformat() if hasattr(_pre, "isoformat") else "",
+            "required": True,
+            "help": "¿Para cuándo se posterga el depósito de este cheque?",
+        }
     return render_template(
         "_confirmar_accion.html",
         titulo=f"Volver a {dest_label} — cheque {no_ch}",
@@ -1772,6 +1801,7 @@ def deshacer_deposito(id_cheque: int):
             "podés volver a depositarlo cuando quieras."
         ),
         detalle_registro=detalle,
+        fecha_field=fecha_field,
         accion_url=url_for("cheques.deshacer_deposito", id_cheque=id_cheque, next=next_url, destino=destino),
         volver_url=next_url,
         motivo_requerido=False,

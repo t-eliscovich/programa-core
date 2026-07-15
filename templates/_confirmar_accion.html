@@ -117,6 +117,21 @@ Variables:
           {% endfor %}
         {% endif %}
 
+        {# Campo de fecha opcional — p.ej. B→P (volver a postergado) pide la
+           nueva fecha de depósito. fecha_field = {name,label,value,help,required}.
+           TMT 2026-07-15 (dueña). #}
+        {% if fecha_field %}
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+              {{ fecha_field.label or "Nueva fecha" }}{% if fecha_field.required %} <span class="text-red-500">*</span>{% endif %}
+            </label>
+            <input type="date" name="{{ fecha_field.name }}" value="{{ fecha_field.value or '' }}"
+                   {% if fecha_field.required %}required{% endif %}
+                   class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 focus:outline-none focus:border-slate-500">
+            {% if fecha_field.help %}<p class="text-xs text-slate-400 mt-1">{{ fecha_field.help }}</p>{% endif %}
+          </div>
+        {% endif %}
+
         {% if motivo_requerido is not defined or motivo_requerido %}
           <div>
             <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
