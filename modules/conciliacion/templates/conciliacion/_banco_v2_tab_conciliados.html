@@ -138,24 +138,28 @@
                apuntan al MISMO mov PC de -69.01 → sum = -828.12 vs real -69.01).
                Fix: dedupar por id_transaccion antes de sumar — solo cuento
                cada tx PC una vez. #}
-            {% set _bs_ns = namespace(seen=[], total=0.0, has_prog=false, firma_seen=[], firma_total=0.0, any_firma=false) %}
+            {# TMT 2026-07-15 (dueña "volvé a poner cuanto venía de programa"):
+               total efectivo del lado programa = por cada item, el valor VIVO si
+               el vínculo existe (deduplicado por id_transaccion), o el valor
+               GUARDADO en la firma si el vínculo se rompió (deduplicado por
+               tx_firma). Así los grupos mixtos (parte viva, parte rota) también
+               cuadran. Solo display — no toca datos ni pendientes. #}
+            {% set _bs_ns = namespace(seen=[], firma_seen=[], eff_total=0.0, has_prog=false, any_firma=false) %}
             {% for _bi in _batch_items %}
-              {% if _bi.has_programa %}{% set _bs_ns.has_prog = true %}{% endif %}
-              {% if _bi.id_transaccion not in _bs_ns.seen %}
-                {% set _ = _bs_ns.seen.append(_bi.id_transaccion) %}
-                {% set _bs_ns.total = _bs_ns.total + (_bi.monto_prog_signed|default(0)|float) %}
-              {% endif %}
-              {# TMT 2026-07-15: si el vínculo al programa se rompió, sumamos el
-                 valor guardado en la firma (deduplicado por tx_firma). Solo display. #}
-              {% if _bi.tiene_prog_firma and _bi.tx_firma not in _bs_ns.firma_seen %}
+              {% if _bi.has_programa %}
+                {% set _bs_ns.has_prog = true %}
+                {% if _bi.id_transaccion not in _bs_ns.seen %}
+                  {% set _ = _bs_ns.seen.append(_bi.id_transaccion) %}
+                  {% set _bs_ns.eff_total = _bs_ns.eff_total + (_bi.monto_prog_signed|default(0)|float) %}
+                {% endif %}
+              {% elif _bi.tiene_prog_firma and _bi.tx_firma not in _bs_ns.firma_seen %}
                 {% set _ = _bs_ns.firma_seen.append(_bi.tx_firma) %}
-                {% set _bs_ns.firma_total = _bs_ns.firma_total + (_bi.prog_firma_signed|default(0)|float) %}
+                {% set _bs_ns.eff_total = _bs_ns.eff_total + (_bi.prog_firma_signed|default(0)|float) %}
                 {% set _bs_ns.any_firma = true %}
               {% endif %}
             {% endfor %}
-            {% set _bs_prog = _bs_ns.total %}
-            {% set _bs_desde_firma = (not _bs_ns.has_prog) and _bs_ns.any_firma %}
-            {% set _bs_prog_eff = _bs_ns.firma_total if _bs_desde_firma else _bs_prog %}
+            {% set _bs_prog_eff = _bs_ns.eff_total %}
+            {% set _bs_desde_firma = _bs_ns.any_firma %}
             {% set _bs_diff = (_bs_banco - _bs_prog_eff)|round(2) %}
             <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10 cursor-pointer batch-summary"
                 data-batch="{{ m.confirm_batch_id }}"
