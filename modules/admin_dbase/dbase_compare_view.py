@@ -1233,7 +1233,8 @@ def vivo():
         dias = max(7, min(120, int(request.args.get("dias") or 30)))
     except (TypeError, ValueError):
         dias = 30
-    return Response(stream_with_context(_run(dias)), mimetype="text/plain")
+    return Response(stream_with_context(_run(dias, reextraer=False)),
+                    mimetype="text/plain")
 
 
 @bp.route("/run", methods=["POST"])
@@ -1260,23 +1261,58 @@ def run():
     return Response(stream_with_context(_run(dias)), mimetype="text/plain")
 
 
-def _run(dias: int):
-    import shutil
+def _rmtree_robusto(path: Path) -> None:
+    """rmtree que en Windows tolera archivos de SOLO-LECTURA.
 
+    Los DBF salen del tarball con el bit de solo-lectura puesto; shutil.rmtree
+    en Windows falla con PermissionError(13, 'Access is denied') al querer
+    borrarlos. El handler limpia el atributo y reintenta. Ese era el bug de
+    /vivo: la 1ra subida (dir vacío) andaba, pero el 2do "volver a ver" no
+    podía borrar los DBF de solo-lectura para re-extraer.
+    """
+    import os
+    import shutil
+    import stat
+
+    def _on_error(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+
+    shutil.rmtree(path, onerror=_on_error)
+
+
+def _dbfs_presentes() -> bool:
+    """True si EXTRACT_DIR ya tiene DBF extraídos de una subida previa."""
+    return EXTRACT_DIR.exists() and any((EXTRACT_DIR / n).exists() for n in DBFS)
+
+
+def _extraer() -> None:
+    """Borra lo anterior y extrae los DBF del tarball a EXTRACT_DIR."""
+    if EXTRACT_DIR.exists():
+        _rmtree_robusto(EXTRACT_DIR)
+    EXTRACT_DIR.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(TARBALL_PATH, "r:gz") as tar:
+        quiero = set(DBFS)
+        for m in tar.getmembers():
+            nombre = Path(m.name).name.upper()
+            if m.isfile() and nombre in quiero:
+                m.name = nombre
+                tar.extract(m, EXTRACT_DIR)
+
+
+def _run(dias: int, reextraer: bool = True):
     def line(m=""):
         return m.rstrip("\n") + "\n"
 
     try:
-        if EXTRACT_DIR.exists():
-            shutil.rmtree(EXTRACT_DIR)
-        EXTRACT_DIR.mkdir(parents=True)
-        with tarfile.open(TARBALL_PATH, "r:gz") as tar:
-            quiero = set(DBFS)
-            for m in tar.getmembers():
-                nombre = Path(m.name).name.upper()
-                if m.isfile() and nombre in quiero:
-                    m.name = nombre
-                    tar.extract(m, EXTRACT_DIR)
+        # /vivo (reextraer=False) re-usa los DBF ya extraídos si están: no
+        # toca el disco, así ni siquiera puede chocar con el lock de Windows.
+        # /run (reextraer=True) siempre re-extrae porque trae tarball fresco.
+        if reextraer or not _dbfs_presentes():
+            _extraer()
     except Exception as exc:  # noqa: BLE001
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
