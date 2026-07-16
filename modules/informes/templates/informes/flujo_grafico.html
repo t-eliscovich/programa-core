@@ -1621,6 +1621,12 @@ async function gfOfrecerImportarLocalStorage() {
 (async () => {
   await gfFetchAll();
   gfRender();
+  // TMT 2026-07-16 (dueña "el flujo está todo verde"): el buildChart(3) de
+  // abajo corre SINCRÓNICO, antes de que gfFetchAll resuelva → el chart se
+  // pintaba SIN los gastos forzados (GF_CACHE vacío) y nunca se repintaba →
+  // siempre verde aunque hubiera pagos forzados que hunden el saldo. Rebuild
+  // acá, ya con GF_CACHE cargado, para que la proyección los aplique.
+  gfRebuildChart();
   await gfOfrecerImportarLocalStorage();
 })();
 
