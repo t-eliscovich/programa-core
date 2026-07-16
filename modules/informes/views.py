@@ -519,26 +519,52 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
 
             # Consumo del mes = tinturado diario de formulas, TODO el químico
             # (POLI+ALG+AUX) por fecha de tinturado (ordenes.fecha 'DD/MM/YYYY').
+            # DESGLOSE para reconciliar con la tintorería de abajo — que solo
+            # costea el teñido con kg de tela cargado y sin lavados:
+            #   costeado = teñido con kg de tela (= Total de COSTOS DE TINTORERÍA)
+            #   proceso  = teñido sin cerrar la tela (sin kg) → trabajo en proceso
+            #   lavado   = órdenes de lavado
+            # total = costeado + proceso + lavado = egreso de químico del mes.
             _consumo_prog = None
+            _egr_cost = _egr_proc = _egr_lav = 0.0
             try:
                 from modules._lib import formulas_db as _fdb2
                 _d1q = _date3(int(anio), int(mes), 1).isoformat()
                 _d2q = _date3(int(anio), int(mes),
                               _cal3.monthrange(int(anio), int(mes))[1]).isoformat()
-                _cq = _fdb2.fetch_one(
+                _cq = _fdb2.fetch_all(
                     """
-                    SELECT COALESCE(SUM(ol.cantidad_kg
+                    SELECT CASE
+                             WHEN (COALESCE(f.categoria, '') ILIKE '%%lavado%%'
+                                   OR COALESCE(f.color, '') ILIKE 'LAV%%'
+                                   OR UPPER(TRIM(COALESCE(o.codigo, ''))) = 'LAV')
+                                  THEN 'lavado'
+                             WHEN COALESCE(o.tela_cruda_kg, 0) > 0 THEN 'costeado'
+                             ELSE 'proceso'
+                           END AS clase,
+                           COALESCE(SUM(ol.cantidad_kg
                              * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)), 0) AS us
                       FROM orden_lineas ol
                       JOIN ordenes   o ON o.id  = ol.orden_id
                       JOIN productos p ON p.num = ol.producto_num
+                      LEFT JOIN formulas f ON f.cod = o.codigo
                      WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
                        AND TO_DATE(o.fecha, 'DD/MM/YYYY') >= %(d1)s
                        AND TO_DATE(o.fecha, 'DD/MM/YYYY') <= %(d2)s
+                     GROUP BY 1
                     """,
                     {"d1": _d1q, "d2": _d2q},
-                ) or {}
-                _consumo_prog = float(_cq.get("us") or 0)
+                ) or []
+                for _r in _cq:
+                    _u = float(_r.get("us") or 0)
+                    _cl = _r.get("clase")
+                    if _cl == "costeado":
+                        _egr_cost = _u
+                    elif _cl == "proceso":
+                        _egr_proc = _u
+                    elif _cl == "lavado":
+                        _egr_lav = _u
+                _consumo_prog = _egr_cost + _egr_proc + _egr_lav
             except Exception:  # noqa: BLE001 -- fail-soft
                 _consumo_prog = None
 
@@ -559,6 +585,10 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                 "ajuste": q_ajuste,
                 "facturado_prog": _compras_prog,
                 "facturado_n": int(_qc.get("n") or 0),
+                # desglose del egreso para reconciliar con la tintorería
+                "egr_costeado": _egr_cost,
+                "egr_proceso": _egr_proc,
+                "egr_lavado": _egr_lav,
             }
 
             # BANDA "stock de químicos" = SOLO formulas (físico colorante),
@@ -2139,6 +2169,14 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
         add("quimicos", "Químicos: físico vs libro",
             _g(qm, "final_form"), "Físico formulas",
             _g(qm, "final_prog"), "Libro formulas", "US$", tipo="ajuste")
+
+    # Químico consumido (stock, por tinturado) vs costeado en tintura. La dif =
+    # trabajo en proceso (teñido sin cerrar la tela) + lavados. Informativo.
+    qmod = _g(mov, "quimicos_modelo")
+    if qmod and _g(qmod, "egr_costeado") is not None:
+        add("quim_tint", "Químico consumido vs costeado en tintura",
+            _g(qmod, "egresos"), "Consumido",
+            _g(qmod, "egr_costeado"), "Costeado tintura", "US$", tipo="ajuste")
 
     return checks
 

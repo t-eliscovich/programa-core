@@ -421,6 +421,23 @@
           {% endif %}
         </tbody>
       </table>
+      {# Reconciliación: la tintorería SOLO costea el teñido con kg de tela y sin
+         lavados; el resto (WIP + lavados) explica el gap contra el químico
+         consumido total del mes (Egresos QUÍM.$). Todo por fecha de tinturado. #}
+      {% set _qm = mov_asinfo.quimicos_modelo if mov_asinfo else None %}
+      {% if _qm and _qm.egr_costeado is not none %}
+      <div class="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[11px] leading-5">
+        <span class="font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Reconciliación del químico</span>
+        <span class="text-slate-500 dark:text-slate-300">Costeado en tintura <b class="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{{ _qm.egr_costeado | num_es(0) }}</b></span>
+        <span class="text-slate-300 dark:text-slate-600">+</span>
+        <span class="text-slate-500 dark:text-slate-300">En proceso <span class="text-slate-400">(teñido sin cerrar)</span> <b class="tabular-nums font-semibold text-amber-700 dark:text-amber-400">{{ _qm.egr_proceso | num_es(0) }}</b></span>
+        <span class="text-slate-300 dark:text-slate-600">+</span>
+        <span class="text-slate-500 dark:text-slate-300">Lavados <b class="tabular-nums font-semibold text-slate-600 dark:text-slate-300">{{ _qm.egr_lavado | num_es(0) }}</b></span>
+        <span class="text-slate-300 dark:text-slate-600">=</span>
+        <span class="text-slate-600 dark:text-slate-200">Consumido <b class="tabular-nums font-bold text-slate-900 dark:text-white">{{ _qm.egresos | num_es(0) }}</b></span>
+        <span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">= Egresos QUÍM.$ de la tabla de movimientos · por tinturado</span>
+      </div>
+      {% endif %}
       <p class="mt-2 text-[10px] text-slate-500">
         <strong>Origen de los datos:</strong> los Kg y $ de Bajos/Fuertes
         salen directo del programa de tintorería (cada batch que registra
@@ -469,7 +486,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado (químicos, físico vs libro). ⚠ = descuadre &gt; 1%.</p>
+      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro = revaluación. Consumido vs costeado en tintura: la diferencia es el teñido en proceso (sin cerrar tela) + lavados. ⚠ = descuadre &gt; 1%.</p>
     </div>
   {% endif %}
 </div>
