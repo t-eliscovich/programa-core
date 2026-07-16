@@ -468,7 +468,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     # no la factura); físico = al-día de hoy (no la foto cruda vieja). Cierra
     # al ~1% (el ajuste queda como varianza real de inventario). La factura de
     # importación se muestra como memo informativo (facturado_prog).
-    quimicos_modelo = None
+    quimicos_modelo = None   # COLUMNA QUÍM.$ (modelo A / programa)
+    quimicos_banda = None    # BANDA (solo formulas / físico colorante)
     if anio and mes:
         try:
             import calendar as _cal3
@@ -559,22 +560,34 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                 "facturado_prog": _compras_prog,
                 "facturado_n": int(_qc.get("n") or 0),
             }
+
+            # BANDA "stock de químicos" = SOLO formulas (físico colorante),
+            # decoplada de la columna QUÍM.$ (modelo A / programa). Dueña
+            # 2026-07-16: la tabla es contable (programa), la banda es física
+            # (formulas). inicial = físico colorante al cierre del mes anterior,
+            # compras = colorante recibido en formulas (POLI+ALG), consumo =
+            # colorante por fecha_terminado. Ajuste = físico − libro ≈ +3.846.
+            _qb_ini = _fisico_quimicos_aldia(_corte_ini)
+            _qb_com = float(color_compras or 0)
+            _qb_egr = color_consumo
+            _qb_libro = _qb_ini + _qb_com - float(_qb_egr or 0)
+            quimicos_banda = {
+                "inicial": _qb_ini,
+                "compras": _qb_com,
+                "egresos": _qb_egr,
+                "final_prog": _qb_libro,
+                "final_form": q_final_form,
+                "ajuste": q_final_form - _qb_libro,
+            }
         except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
             quimicos_modelo = None
+            quimicos_banda = None
 
-    # HISTÓRICO (2026-07-09/14): la columna COLOR $ replicaba un libro dBase
-    # (inicial dBase + compras tipo Q − egresos) y forzaba el físico con un
-    # ajuste = físico − ese libro. Eso producía el −45.093 porque sumaba las
-    # importaciones tipo Q que YA estaban en el físico. SUPERSEDED abajo.
-    # TMT 2026-07-16 (dueña): mes de corte dBase → programa. El FÍSICO de
-    # formulas-app es la verdad; el programa lo adopta, así que la columna
-    # COLOR $ ESPEJA la banda (mismo mundo formulas) en vez de reconstruir un
-    # libro contable dBase — que este mes no se puede recalcular en vivo porque
-    # el tinto consumido aún está incompleto (74k vs 114k del dBase, la revisión
-    # de colorantes pendiente). Columna y banda dicen lo MISMO: inicial/compras/
-    # egresos de formulas, ajuste = físico − libro-formulas (+3.846), stock act =
-    # físico. Se elimina el −45.093 que mezclaba el libro dBase (inflado por las
-    # importaciones tipo Q ya contenidas en el físico) contra ese físico.
+    # COLUMNA QUÍM.$ de la tabla de movimientos = MODELO A (contable / programa):
+    # inicial VQ0 + compras tipo Q − consumo (tinturado diario, todo el químico),
+    # ajuste = físico − libro. Dueña 2026-07-16: "la primera tabla es modelo A".
+    # La BANDA de abajo (quimicos_banda) va SOLO de formulas (físico colorante) y
+    # queda decoplada de esta columna — son dos mundos distintos a propósito.
     if quimicos_modelo and quimicos_modelo.get("final_form") is not None:
         co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
@@ -585,6 +598,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     return {
         "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
         "cmp": cmp, "quimicos_modelo": quimicos_modelo,
+        "quimicos_banda": quimicos_banda,
         "maquinas": {
             "hilado": maq_hilado, "crudo": maq_crudo,
             "hilado_ukg": hl.get("stock_inic_ukg") or 0,          # WIP al $/kg de apertura
@@ -2118,11 +2132,13 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
         _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
-    qm = _g(mov, "quimicos_modelo")
+    # El chequeo usa la BANDA (formulas, físico colorante) — su ajuste es el
+    # esperado chico (~+3.846). La columna QUÍM.$ es modelo A/programa aparte.
+    qm = _g(mov, "quimicos_banda") or _g(mov, "quimicos_modelo")
     if qm:
         add("quimicos", "Químicos: físico vs libro",
             _g(qm, "final_form"), "Físico formulas",
-            _g(qm, "final_prog"), "Libro programa", "US$", tipo="ajuste")
+            _g(qm, "final_prog"), "Libro formulas", "US$", tipo="ajuste")
 
     return checks
 
