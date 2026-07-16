@@ -476,7 +476,10 @@ def editar(
                     destino_table="posdat",
                     destino_id=id_posdat,
                     importe=round(importe_nuevo - importe_prev, 2),
-                    fecha=actual.get("fecha") or today_ec(),
+                    # fecha_operacion = HOY (cuándo se editó), no la fecha del
+                    # posdatado. Si no, en el historial la edición sale con la
+                    # fecha (a veces futura) del posdat y queda siempre arriba.
+                    fecha=today_ec(),
                     concepto=(
                         f"Edit importe posdat #{actual.get('num') or id_posdat} "
                         f"{importe_prev:.2f} → {importe_nuevo:.2f}"
@@ -597,7 +600,10 @@ def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
                 destino_table="posdat",
                 destino_id=id_posdat,
                 importe=float(pd.get("importe") or 0),
-                fecha=pd.get("fecha") or today_ec(),
+                # fecha_operacion = HOY (cuándo se anuló), no la fecha del
+                # posdatado. Si no, en el historial la anulación sale con la
+                # fecha (a veces futura) del posdat y queda siempre arriba.
+                fecha=today_ec(),
                 concepto=(
                     f"ANULACION posdat #{pd.get('num') or id_posdat} "
                     f"{pd.get('prov') or ''}"
