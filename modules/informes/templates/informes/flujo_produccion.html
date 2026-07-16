@@ -338,21 +338,21 @@
       <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}</div>
       <table data-no-sort-table>
         <colgroup>
-          <col style="width:8%"><col style="width:12%">
-          <col style="width:6%"><col style="width:11%"><col style="width:9%"><col style="width:11%">
-          <col style="width:6%"><col style="width:11%"><col style="width:9%"><col style="width:11%">
+          <col style="width:9%"><col style="width:13%">
+          <col style="width:6%"><col style="width:12%"><col style="width:10%"><col style="width:12%">
+          <col style="width:7%"><col style="width:15%"><col style="width:16%">
         </colgroup>
         <thead>
           <tr>
             <th class="lbl"></th><th class="lbl"></th>
             <th colspan="4" style="text-align:center;background:#f1f5f9;color:#334155;letter-spacing:.04em">TERMINADO ACTUAL</th>
-            <th colspan="4" style="text-align:center;background:#ecfeff;color:#0e7490;letter-spacing:.04em">PROYECTADO <span style="font-weight:400;font-size:9px;text-transform:none">(+ en proceso)</span></th>
+            <th colspan="3" style="text-align:center;background:#ecfeff;color:#0e7490;letter-spacing:.04em">PROYECTADO <span style="font-weight:400;font-size:9px;text-transform:none">(+ en proceso)</span></th>
           </tr>
           <tr>
             <th class="lbl">MES</th>
             <th class="lbl">COLORANTES Y AUXILIARES</th>
             <th>%</th><th>KG</th><th>$/KG</th><th>$</th>
-            <th style="background:#ecfeff">%</th><th style="background:#ecfeff">KG</th><th style="background:#ecfeff">$/KG</th><th style="background:#ecfeff">$</th>
+            <th style="background:#ecfeff">%</th><th style="background:#ecfeff">KG</th><th style="background:#ecfeff">$</th>
           </tr>
         </thead>
         <tbody>
@@ -367,7 +367,6 @@
               <td class="num">{{ f.b_imp | num_es(0) }}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ '%.1f' % p.b_pct }}{% else %}—{% endif %}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ p.b_kg | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num" style="background:#ecfeff">{% if p and p.b_ukg is not none %}{{ '%.3f' % p.b_ukg }}{% else %}—{% endif %}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ p.b_imp | num_es(0) }}{% else %}—{% endif %}</td>
             </tr>
             <tr>
@@ -378,7 +377,6 @@
               <td class="num">{{ f.f_imp | num_es(0) }}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ '%.1f' % p.f_pct }}{% else %}—{% endif %}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ p.f_kg | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num" style="background:#ecfeff">{% if p and p.f_ukg is not none %}{{ '%.3f' % p.f_ukg }}{% else %}—{% endif %}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ p.f_imp | num_es(0) }}{% else %}—{% endif %}</td>
             </tr>
             <tr class="total">
@@ -389,7 +387,6 @@
               <td class="num">{{ f.t_imp | num_es(0) }}</td>
               <td class="num" style="background:#cffafe">{% if p %}100.0{% else %}—{% endif %}</td>
               <td class="num" style="background:#cffafe">{% if p %}{{ p.t_kg | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num" style="background:#cffafe">{% if p and p.t_ukg is not none %}{{ '%.3f' % p.t_ukg }}{% else %}—{% endif %}</td>
               <td class="num" style="background:#cffafe">{% if p %}{{ p.t_imp | num_es(0) }}{% else %}—{% endif %}</td>
             </tr>
             <tr>
@@ -400,7 +397,6 @@
               <td class="num">{{ f.gp_imp | num_es(0) }}</td>
               <td class="num" style="background:#ecfeff">—</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ p.gp_kg | num_es(0) }}{% else %}—{% endif %}</td>
-              <td class="num" style="background:#ecfeff">{% if p and p.gp_ukg is not none %}{{ '%.3f' % p.gp_ukg }}{% else %}—{% endif %}</td>
               <td class="num" style="background:#ecfeff">{% if p %}{{ p.gp_imp | num_es(0) }}{% else %}—{% endif %}</td>
             </tr>
           {% endfor %}
@@ -413,7 +409,7 @@
               <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_kg | num_es(0) }}</td>
               <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.b_ukg is not none %}{{ '%.3f' % pm.b_ukg }}{% else %}—{% endif %}</td>
               <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_imp | num_es(0) }}</td>
-              <td colspan="4" rowspan="4" class="num" style="border-top:2px solid #cbd5e1;background:#ecfeff;color:#94a3b8;text-align:center;font-size:10px;vertical-align:middle">el proyectado aplica<br>solo al mes en curso</td>
+              <td colspan="3" rowspan="4" class="num" style="border-top:2px solid #cbd5e1;background:#ecfeff;color:#94a3b8;text-align:center;font-size:10px;vertical-align:middle">el proyectado aplica<br>solo al mes en curso</td>
             </tr>
             <tr>
               <td class="lbl">Fuertes</td>
