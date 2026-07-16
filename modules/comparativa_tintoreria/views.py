@@ -122,6 +122,71 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
     # acá filtramos las FILAS mostradas al mes seleccionado.
     filas_mes = [x for x in filas if x["yy"] == anio and x["mm"] == mes]
 
+    # ── PROYECTADO del mes en curso (dueña 2026-07-16) ───────────────────────
+    # La tintorería costea SOLO lo terminado (con kg de tela). Las órdenes EN
+    # PROCESO (ya teñidas, sin cerrar la tela) tienen el químico ya consumido y
+    # el kg empezado (ordenes.kil). Proyectamos su kg terminado con la merma
+    # REAL del mes (terminada/kil de lo ya cerrado) y sumamos: Proyectado =
+    # actual + proceso. Solo para el mes seleccionado, todo de formulas.
+    try:
+        from modules._lib import formulas_db as _fdb
+        _pr = _fdb.fetch_all(
+            """
+            WITH ord AS (
+                SELECT o.id, COALESCE(o.tela_cruda_kg, 0)     AS cruda,
+                       COALESCE(o.tela_terminada_kg, 0)       AS term,
+                       COALESCE(o.kil, 0)                     AS kil,
+                       SUM(ol.cantidad_kg
+                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)) AS imp
+                  FROM ordenes o
+                  JOIN orden_lineas ol ON ol.orden_id = o.id
+                  JOIN productos p    ON p.num = ol.producto_num
+                  LEFT JOIN formulas f ON f.cod = o.codigo
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
+                   AND TO_DATE(o.fecha, 'DD/MM/YYYY') >= %(d1)s
+                   AND TO_DATE(o.fecha, 'DD/MM/YYYY') <= %(d2)s
+                   AND COALESCE(f.categoria, '') NOT ILIKE '%%lavado%%'
+                   AND COALESCE(f.color, '')     NOT ILIKE 'LAV%%'
+                   AND UPPER(TRIM(COALESCE(o.codigo, ''))) <> 'LAV'
+                 GROUP BY o.id, o.tela_cruda_kg, o.tela_terminada_kg, o.kil
+            )
+            SELECT (cruda > 0) AS fin,
+                   CASE WHEN imp / NULLIF(CASE WHEN cruda > 0 THEN cruda ELSE kil END, 0)
+                             <= %(lim)s THEN 'Bajos' ELSE 'Fuertes' END AS tipo,
+                   COALESCE(SUM(imp), 0)  AS imp,
+                   COALESCE(SUM(term), 0) AS term,
+                   COALESCE(SUM(kil), 0)  AS kil
+              FROM ord GROUP BY 1, 2
+            """,
+            {"d1": date(anio, mes, 1), "d2": hasta, "lim": limite_bajos},
+        ) or []
+        _fin_term = _fin_kil = 0.0
+        _pb_imp = _pb_kil = _pf_imp = _pf_kil = 0.0
+        for _r in _pr:
+            _imp, _term, _kil = (float(_r.get("imp") or 0),
+                                 float(_r.get("term") or 0),
+                                 float(_r.get("kil") or 0))
+            if _r.get("fin"):
+                _fin_term += _term
+                _fin_kil += _kil
+            elif _r.get("tipo") == "Bajos":
+                _pb_imp += _imp; _pb_kil += _kil
+            else:
+                _pf_imp += _imp; _pf_kil += _kil
+        _merma = (_fin_term / _fin_kil) if _fin_kil else 0.0
+        _cur = next((x for x in filas_mes
+                     if x["yy"] == anio and x["mm"] == mes), None)
+        if _cur and _merma > 0 and (_pb_imp or _pf_imp):
+            _b_kg = float(_cur["b_kg"]) + _pb_kil * _merma
+            _b_imp = float(_cur["b_imp"]) + _pb_imp
+            _f_kg = float(_cur["f_kg"]) + _pf_kil * _merma
+            _f_imp = float(_cur["f_imp"]) + _pf_imp
+            _cur["proy"] = _calc(_b_kg, _b_imp, _f_kg, _f_imp,
+                                 float(_cur.get("gp_imp") or 0))
+            _cur["proy_kg_empez"] = round(_pb_kil + _pf_kil, 0)
+    except Exception:  # noqa: BLE001 -- fail-soft, la tabla igual renderiza
+        pass
+
     return {
         "filas": filas_mes,
         "promedio": promedio,
