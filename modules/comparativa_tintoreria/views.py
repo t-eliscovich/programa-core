@@ -128,6 +128,7 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
     # el kg empezado (ordenes.kil). Proyectamos su kg terminado con la merma
     # REAL del mes (terminada/kil de lo ya cerrado) y sumamos: Proyectado =
     # actual + proceso. Solo para el mes seleccionado, todo de formulas.
+    _proy_err = None
     try:
         from modules._lib import formulas_db as _fdb
         _pr = _fdb.fetch_all(
@@ -158,7 +159,8 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
                    COALESCE(SUM(kil), 0)  AS kil
               FROM ord GROUP BY 1, 2
             """,
-            {"d1": date(anio, mes, 1), "d2": hasta, "lim": limite_bajos},
+            {"d1": date(anio, mes, 1).isoformat(),
+             "d2": hasta.isoformat(), "lim": float(limite_bajos)},
         ) or []
         _fin_term = _fin_kil = 0.0
         _pb_imp = _pb_kil = _pf_imp = _pf_kil = 0.0
@@ -184,11 +186,12 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
             _cur["proy"] = _calc(_b_kg, _b_imp, _f_kg, _f_imp,
                                  float(_cur.get("gp_imp") or 0))
             _cur["proy_kg_empez"] = round(_pb_kil + _pf_kil, 0)
-    except Exception:  # noqa: BLE001 -- fail-soft, la tabla igual renderiza
-        pass
+    except Exception as _e:  # noqa: BLE001 -- fail-soft, la tabla igual renderiza
+        _proy_err = repr(_e)
 
     return {
         "filas": filas_mes,
+        "proy_err": _proy_err,
         "promedio": promedio,
         "total": total,
         "anio": anio,

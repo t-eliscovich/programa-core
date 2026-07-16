@@ -336,6 +336,7 @@
   {% if _show_historial %}
     <div class="blk">
       <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}</div>
+      {% if tintoreria_mensual.proy_err %}<div style="color:#dc2626;font-size:10px">PROY ERR: {{ tintoreria_mensual.proy_err }}</div>{% endif %}
       <table data-no-sort-table>
         <colgroup>
           <col style="width:8%"><col style="width:12%">
