@@ -36,7 +36,7 @@ def movimientos(
     return db.fetch_all(
         """
         SELECT c.id_caja, c.fecha, c.tipo, c.importe, c.concepto, c.saldo,
-               c.clave, c.id_cheque,
+               UPPER(TRIM(COALESCE(c.clave, ''))) AS clave, c.id_cheque,
                ch.no_cheque, ch.codigo_cli,
                COALESCE(cli.nombre, '') AS cliente
         FROM scintela.caja c
@@ -271,7 +271,7 @@ def crear(
             """,
             (
                 fecha, tipo, importe, (concepto or "")[:80],
-                saldo_nuevo, (clave or None) and clave[:3],
+                saldo_nuevo, (clave or None) and clave[:3].upper(),
                 id_cheque, usuario,
             ),
             conn=conn,

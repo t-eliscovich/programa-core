@@ -113,7 +113,7 @@ def insert_movimiento_caja(
             importe_abs,
             (concepto or "").strip()[:100],
             saldo_nuevo,
-            (clave or None) and clave[:3],
+            (clave or None) and clave[:3].upper(),
             id_cheque,
             usuario[:50],
         ),

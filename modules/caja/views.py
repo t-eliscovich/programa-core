@@ -145,20 +145,9 @@ def nuevo():
         msg = f"Movimiento de caja registrado (id {r.get('id_caja')})."
         if r.get("clasif_gasto"):
             msg += f" Clasificado como gasto V{xgast_num} (atómico)."
-        # Si el movimiento quedó con fecha ATRASADA (no es el último por
-        # fecha), el running `saldo` de las filas posteriores no se
-        # recalculó al insertar → reflotamos toda la caja en orden
-        # cronológico para que el arqueo cierre. Best-effort: si falla, el
-        # alta ya quedó y el usuario puede usar el botón "Recalcular saldos".
-        try:
-            ultima = (queries.resumen() or {}).get("ultima_fecha")
-            if ultima and fecha < ultima:
-                rr = queries.recomputar_saldos()
-                if rr.get("cambios"):
-                    msg += (f" Saldos recalculados ({rr['cambios']} fila/s) "
-                            "por carga con fecha atrasada.")
-        except Exception:
-            pass
+        # El running `saldo` se reflota SOLO al entrar a /caja (lista()
+        # llama recomputar_saldos si detecta drift) — cubre las cargas con
+        # fecha atrasada sin que el usuario tenga que hacer nada.
         flash(msg, "ok")
         return redirect(url_for("caja.lista"))
     except ValueError as e:
@@ -169,29 +158,6 @@ def nuevo():
         return render_template("caja/nuevo.html", form=form, errores=errores), 500
 
 
-@caja_bp.route("/caja/recalcular-saldos", methods=["POST"])
-@requiere_login
-@requiere_permiso("caja.crear")
-def recalcular_saldos():
-    """Reflota el running `saldo` de la caja en orden cronológico.
-
-    Cierra el drift de arqueo que aparece cuando se carga (o reversa) un
-    movimiento con fecha atrasada: el `saldo` de las filas posteriores no
-    se recalcula solo. Idempotente — no toca importes ni tipos.
-    """
-    try:
-        r = queries.recomputar_saldos()
-        if r.get("cambios"):
-            flash(
-                f"Saldos recalculados: {r['cambios']} fila(s) actualizada(s). "
-                f"Saldo final: $ {r['saldo_final']:,.2f}.",
-                "ok",
-            )
-        else:
-            flash("Los saldos ya estaban al día — no hubo cambios.", "ok")
-    except Exception as e:  # noqa: BLE001
-        flash(f"No pude recalcular los saldos: {e}", "warn")
-    return redirect(url_for("caja.lista"))
 
 
 def _reverso_preview_caja(id_caja: int) -> dict | None:
@@ -319,6 +285,19 @@ def lista():
     limite = 100000 if es_export else POR_PAGINA
     offset = 0 if es_export else (pagina - 1) * POR_PAGINA
     try:
+        # Self-heal del running `saldo`: si el arqueo tiene drift (típico
+        # tras cargar un movimiento con fecha atrasada — el saldo de las
+        # filas posteriores no se recalcula al insertar), lo reflotamos
+        # solo, en orden cronológico. Idempotente y sin botón: "se hace
+        # solo" (pedido dueña 2026-07-16). Sólo escribe si hay drift.
+        try:
+            _rs = queries.resumen() or {}
+            _su = float(_rs.get("saldo_ultimo") or 0)
+            _sa = queries.saldo_actual()
+            if abs(_su - _sa) > 0.01:
+                queries.recomputar_saldos()
+        except Exception:
+            pass
         filas = queries.movimientos(desde, hasta, q, limite=limite + 1, offset=offset)
         hay_mas = (not es_export) and len(filas) > limite
         if hay_mas:
