@@ -185,11 +185,18 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
         _merma_f = (_ff_term / _ff_kil) if _ff_kil else _merma_all
         _cur = next((x for x in filas_mes
                      if x["yy"] == anio and x["mm"] == mes), None)
-        if _cur and _merma_all > 0 and (_pb_imp or _pf_imp):
+        if _cur and _merma_all > 0 and (_pb_kil or _pf_kil):
+            # kg proyectado = actual + proceso (empezado × merma del grupo).
             _b_kg = float(_cur["b_kg"]) + _pb_kil * _merma_b
-            _b_imp = float(_cur["b_imp"]) + _pb_imp
             _f_kg = float(_cur["f_kg"]) + _pf_kil * _merma_f
-            _f_imp = float(_cur["f_imp"]) + _pf_imp
+            # $ proyectado = kg proyectado × $/kg ACTUAL de cada grupo (dueña
+            # 2026-07-16: proyectar al mismo $/kg → el $/kg no cambia).
+            _b_ukg = (float(_cur["b_imp"]) / float(_cur["b_kg"])
+                      if _cur["b_kg"] else 0.0)
+            _f_ukg = (float(_cur["f_imp"]) / float(_cur["f_kg"])
+                      if _cur["f_kg"] else 0.0)
+            _b_imp = _b_kg * _b_ukg
+            _f_imp = _f_kg * _f_ukg
             _cur["proy"] = _calc(_b_kg, _b_imp, _f_kg, _f_imp,
                                  float(_cur.get("gp_imp") or 0))
             _cur["proy_kg_empez"] = round(_pb_kil + _pf_kil, 0)
