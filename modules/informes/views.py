@@ -490,15 +490,17 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                            _cal3.monthrange(int(anio), int(mes))[1])
             _corte_fin = min(_last, _today_ec3())
 
-            q_inicial = _fisico_quimicos_aldia(_corte_ini)
-            q_compras = float(color_compras or 0)      # formulas: lo recibido
-            q_egresos = color_consumo                  # formulas (puede ser None)
-            q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
-            q_final_form = _fisico_quimicos_aldia(_corte_fin)   # al-día, no foto
-            q_ajuste = q_final_form - q_final_prog
+            # MODELO A (dueña 2026-07-16): LIBRO CONTABLE del programa
+            # reconciliado al físico. El inicial (VQ0) y las compras (tipo Q =
+            # TODO el químico facturado) las pone el PROGRAMA; el consumo sale
+            # del TINTURADO DIARIO de formulas — TODO el químico (POLI+ALG+AUX)
+            # por fecha de tinturado, que coincide con el ITIN del dBase (~114k),
+            # NO el color_consumo de arriba (solo colorante por fecha_terminado,
+            # subcuenta ~40k). El ajuste = físico − libro es la revaluación real
+            # (~+20k). "Copiamos lo que tiene el programa y el ajuste nos ajusta
+            # al físico."
+            _vq0 = float((header.get("colorantes") or {}).get("stock_inic_us") or 0)
 
-            # Memo: importaciones facturadas del mes (programa, tipo Q). Ya
-            # reflejadas en el físico de formulas cuando se recibieron.
             _qc = db.fetch_one(
                 """
                 SELECT COALESCE(SUM(importe), 0) AS importe,
@@ -512,16 +514,49 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                 """,
                 (int(anio), int(mes)),
             ) or {}
+            _compras_prog = float(_qc.get("importe") or 0)
+
+            # Consumo del mes = tinturado diario de formulas, TODO el químico
+            # (POLI+ALG+AUX) por fecha de tinturado (ordenes.fecha 'DD/MM/YYYY').
+            _consumo_prog = None
+            try:
+                from modules._lib import formulas_db as _fdb2
+                _d1q = _date3(int(anio), int(mes), 1).isoformat()
+                _d2q = _date3(int(anio), int(mes),
+                              _cal3.monthrange(int(anio), int(mes))[1]).isoformat()
+                _cq = _fdb2.fetch_one(
+                    """
+                    SELECT COALESCE(SUM(ol.cantidad_kg
+                             * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)), 0) AS us
+                      FROM orden_lineas ol
+                      JOIN ordenes   o ON o.id  = ol.orden_id
+                      JOIN productos p ON p.num = ol.producto_num
+                     WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
+                       AND TO_DATE(o.fecha, 'DD/MM/YYYY') >= %(d1)s
+                       AND TO_DATE(o.fecha, 'DD/MM/YYYY') <= %(d2)s
+                    """,
+                    {"d1": _d1q, "d2": _d2q},
+                ) or {}
+                _consumo_prog = float(_cq.get("us") or 0)
+            except Exception:  # noqa: BLE001 -- fail-soft
+                _consumo_prog = None
+
+            q_inicial = _vq0
+            q_compras = _compras_prog
+            q_egresos = _consumo_prog
+            q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
+            q_final_form = _fisico_quimicos_aldia(_corte_fin)   # físico formulas
+            q_ajuste = q_final_form - q_final_prog               # revaluación
 
             quimicos_modelo = {
                 "inicial": q_inicial,
                 "compras": q_compras,
-                "compras_n": None,
+                "compras_n": int(_qc.get("n") or 0),
                 "egresos": q_egresos,
                 "final_prog": q_final_prog,
                 "final_form": q_final_form,
                 "ajuste": q_ajuste,
-                "facturado_prog": float(_qc.get("importe") or 0),
+                "facturado_prog": _compras_prog,
                 "facturado_n": int(_qc.get("n") or 0),
             }
         except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
@@ -2087,7 +2122,7 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     if qm:
         add("quimicos", "Químicos: físico vs libro",
             _g(qm, "final_form"), "Físico formulas",
-            _g(qm, "final_prog"), "Libro formulas", "US$", tipo="ajuste")
+            _g(qm, "final_prog"), "Libro programa", "US$", tipo="ajuste")
 
     return checks
 
