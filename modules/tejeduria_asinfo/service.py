@@ -20,6 +20,12 @@ from modules.asinfo import service as asinfo_service
 
 _OFT_RE = re.compile(r"OFT-\d+", re.IGNORECASE)
 
+# Tercerizados válidos (pedido dueña 2026-07-16): en la tab SOLO mostramos
+# Reyes (RY) y Ponce (AP). Cualquier otro no-INTELA (R UNDA, GENERICA PRUEBAS,
+# OFs sin código que salen como "?") se excluye — no sabemos qué son / son
+# tests. Para sumar un tercerizado nuevo, agregá su código de proveedor acá.
+TERCERIZADOS_VALIDOS = {"RY", "AP"}
+
 
 def _compras_k_por_prov(anio: int, mes: int) -> dict:
     """{codigo_prov: {kg, importe, n}} de scintela.compra tipo K del mes
@@ -93,6 +99,25 @@ def resumen_mes(anio: int, mes: int) -> dict:
     prod = asinfo_service.produccion_tejeduria_mes(anio, mes)
     disponible = bool(prod.get("disponible"))
     ofs = prod.get("ofs", [])
+
+    # TMT 2026-07-16 (dueña): en tercerizados SOLO Reyes (RY) y Ponce (AP).
+    # Cualquier otro no-INTELA (R UNDA, GENERICA PRUEBAS, OFs sin código "?")
+    # NO se muestra aparte: se SUMA a INTELA (KK) — su kg queda como autoprod.
+    # Copiamos el of antes de tocarlo (prod puede venir del cache de Asinfo).
+    _intela_ref = next((o for o in ofs if o.get("es_intela")), None)
+    _int_cod = (_intela_ref or {}).get("cod") or "KK"
+    _int_label = (_intela_ref or {}).get("label") or "INTELA"
+
+    def _a_intela_si_desconocido(o: dict) -> dict:
+        if (not o.get("es_intela")
+                and (o.get("cod") or "").strip().upper() not in TERCERIZADOS_VALIDOS):
+            o = dict(o)
+            o["es_intela"] = True
+            o["cod"] = _int_cod
+            o["label"] = _int_label
+        return o
+
+    ofs = [_a_intela_si_desconocido(o) for o in ofs]
     compras = _compras_k_por_prov(anio, mes) if disponible else {}
     estampadas = _ofts_estampadas() if disponible else set()
 
@@ -199,10 +224,18 @@ def resumen_mes(anio: int, mes: int) -> dict:
         d["total"] = round(d["total"] + of["kg"], 2)
     por_dia = sorted(dias.values(), key=lambda x: x["dia"], reverse=True)
 
-    # pendientes de cargar = OFs tercerizadas sin OFT estampado en una compra
+    # pendientes de cargar = OFs tercerizadas SIN OFT estampado Y cuyo tejedor
+    # todavía tiene falta (falta_kg > 0). Si el tejedor ya está cubierto —
+    # cargó la compra a la vieja, sin estampar el OFT, y da "ok" — sus OFs NO
+    # son pendientes (sino "Cargar $" duplicaría). Pedido dueña 2026-07-16:
+    # "el cargar compra debería ser para cuando no hay match".
+    falta_por_cod = {t["cod"]: (t.get("falta_kg") or 0.0)
+                     for t in tejedores if t.get("cod")}
     pendientes = [
         of for of in ofs
-        if not of["es_intela"] and of["numero"].upper() not in estampadas
+        if not of["es_intela"]
+        and of["numero"].upper() not in estampadas
+        and falta_por_cod.get(of["cod"], 0.0) > 0.01
     ]
 
     return {
