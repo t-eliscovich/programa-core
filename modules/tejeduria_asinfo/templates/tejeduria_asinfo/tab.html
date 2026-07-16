@@ -43,6 +43,36 @@
     <div class="warnbox">Asinfo no está disponible en este momento — no se pudo traer la producción de tejeduría. (La pantalla no rompe; reintentá en un rato.)</div>
   {% else %}
 
+    <h2>Tercerizado por OF · Reyes / Ponce
+        ({{ data.pendientes|length }} para cargar)</h2>
+    {% if data.tercerizado_ofs %}
+    <table>
+      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Compra $</th></tr></thead>
+      <tbody>
+        {% for of in data.tercerizado_ofs %}
+          <tr>
+            <td>{{ of.numero }}</td>
+            <td class="muted">{{ of.dia|fecha_es }}</td>
+            <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
+            <td class="muted">{{ of.descripcion }}</td>
+            <td>{{ of.kg|num_es }}</td>
+            <td>
+              {% if of.estado == 'compra' %}
+                <span class="ok">$ {{ of.compra_monto|num_es(2) }}</span>
+              {% elif of.estado == 'pendiente' %}
+                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K', concepto=of.numero ~ ' ' ~ of.descripcion) }}">Cargar $</a>
+              {% else %}
+                <span class="muted">cargado</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="note ok">No hay producción tercerizada (Reyes/Ponce) este mes.</p>
+    {% endif %}
+
     {% set terc_kg = data.tejedores | selectattr('es_intela', 'equalto', false) | sum(attribute='kg') %}
     {% set intela_kg = data.tejedores | selectattr('es_intela', 'equalto', true) | sum(attribute='kg') %}
     <div class="kpis">
@@ -106,36 +136,6 @@
         </tr>
       </tbody>
     </table>
-
-    <h2>Tercerizado por OF · Reyes / Ponce
-        ({{ data.pendientes|length }} para cargar)</h2>
-    {% if data.tercerizado_ofs %}
-    <table>
-      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Compra $</th></tr></thead>
-      <tbody>
-        {% for of in data.tercerizado_ofs %}
-          <tr>
-            <td>{{ of.numero }}</td>
-            <td class="muted">{{ of.dia|fecha_es }}</td>
-            <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
-            <td class="muted">{{ of.descripcion }}</td>
-            <td>{{ of.kg|num_es }}</td>
-            <td>
-              {% if of.estado == 'compra' %}
-                <span class="ok">$ {{ of.compra_monto|num_es(2) }}</span>
-              {% elif of.estado == 'pendiente' %}
-                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K', concepto=of.numero ~ ' ' ~ of.descripcion) }}">Cargar $</a>
-              {% else %}
-                <span class="muted">cargado</span>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-      <p class="note ok">No hay producción tercerizada (Reyes/Ponce) este mes.</p>
-    {% endif %}
 
   {% endif %}
 </div>
