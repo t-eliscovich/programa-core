@@ -86,6 +86,60 @@ def saldo_actual() -> float:
     return float(row["saldo"]) if row else 0.0
 
 
+def recomputar_saldos() -> dict:
+    """Reflota el running `saldo` de TODA la caja en orden CRONOLÓGICO.
+
+    El `saldo` se persiste al insertar como `saldo_prev + delta`, tomando
+    `saldo_prev` de la fila con MAX(id_caja) (orden de inserción), no de
+    fecha. Un movimiento cargado con fecha ATRASADA deja los saldos de las
+    filas posteriores sin recalcular → drift en el arqueo (ver resumen()).
+
+    Esta función recorre todas las filas en orden (fecha, id_caja), arranca
+    del opening (saldo de la 1ra fila − su propio movimiento firmado) y
+    reescribe cada `saldo`. Es idempotente: si ya está todo cronológico no
+    cambia nada. NO cambia importes ni tipos — sólo la columna `saldo`.
+    """
+    with db.tx() as conn:
+        # Mismo advisory lock que crear() — serializa contra inserts.
+        try:
+            db.execute(
+                "SELECT pg_advisory_xact_lock(hashtext('scintela.caja.running'))",
+                (), conn=conn,
+            )
+        except (AttributeError, TypeError):
+            pass
+        filas = db.fetch_all(
+            """
+            SELECT id_caja, tipo, importe, saldo
+              FROM scintela.caja
+             ORDER BY fecha ASC, id_caja ASC
+            """,
+            (), conn=conn,
+        ) or []
+        if not filas:
+            return {"filas": 0, "saldo_final": 0.0, "cambios": 0}
+
+        def _signed(r) -> float:
+            imp = abs(float(r.get("importe") or 0))
+            t = (r.get("tipo") or "").strip().upper()
+            return imp if t == "E" else (-imp if t == "S" else imp)
+
+        opening = float(filas[0].get("saldo") or 0) - _signed(filas[0])
+        running = opening
+        cambios = 0
+        for r in filas:
+            running += _signed(r)
+            nuevo = round(running, 2)
+            if abs(float(r.get("saldo") or 0) - nuevo) > 0.005:
+                db.execute(
+                    "UPDATE scintela.caja SET saldo=%s WHERE id_caja=%s",
+                    (nuevo, r["id_caja"]), conn=conn,
+                )
+                cambios += 1
+        return {"filas": len(filas), "saldo_final": round(running, 2),
+                "cambios": cambios}
+
+
 def crear(
     *,
     fecha: date,

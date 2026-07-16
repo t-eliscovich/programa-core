@@ -85,7 +85,16 @@
         <strong>$ {{ saldo_actual | num_es(2) }}</strong> (lo que muestra el hero).
         La diferencia de <strong>$ {{ drift | num_es(2) }}</strong> sugiere que hay
         alguna fila con `saldo` recalculable (running balance editado a mano sin
-        recomputar las posteriores).
+        recomputar las posteriores) — típico al cargar un movimiento con fecha
+        atrasada. El botón de abajo lo recalcula en orden cronológico.
+        <form method="post" action="{{ url_for('caja.recalcular_saldos') }}" class="mt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit"
+                  style="background:#d97706;color:#fff"
+                  class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition hover:opacity-90">
+            Recalcular saldos
+          </button>
+        </form>
       </div>
     </details>
     {% endif %}
