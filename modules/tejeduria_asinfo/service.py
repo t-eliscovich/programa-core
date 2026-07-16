@@ -129,7 +129,7 @@ def resumen_mes(anio: int, mes: int) -> dict:
 
     ofs = [_a_intela_si_desconocido(o) for o in ofs]
     compras = _compras_k_por_prov(anio, mes) if disponible else {}
-    estampadas = _ofts_estampadas() if disponible else set()
+    estampadas = _ofts_estampadas() if disponible else {}
 
     # tejedores = columnas + match, ordenados por kg desc
     tej: dict = {}

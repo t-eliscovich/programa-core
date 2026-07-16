@@ -114,9 +114,14 @@ _PROD = {
 
 
 def _run_resumen(compras, estampadas):
+    # today_ec fijo en julio 2026 → mes 7 es "el mes actual" (no pasado), así
+    # el gate "meses viejos = todo cargado" no dispara y los tests son
+    # deterministas (resumen_mes importa today_ec desde filters en runtime).
+    import datetime as _dt
     with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
          patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
-         patch.object(tsvc, "_ofts_estampadas", return_value=estampadas):
+         patch.object(tsvc, "_ofts_estampadas", return_value=estampadas), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
         return tsvc.resumen_mes(2026, 7)
 
 
@@ -124,7 +129,7 @@ def test_match_marca_falta_y_cargado():
     # AP ya tiene 1600 cargado (falta ~21); RY no tiene nada (falta 811).
     out = _run_resumen(
         compras={"AP": {"kg": 1600.0, "importe": 1656.0, "n": 1}},
-        estampadas=set(),
+        estampadas={},
     )
     tj = {t["cod"]: t for t in out["tejedores"]}
     assert tj["AP"]["compra_kg"] == 1600.0
@@ -134,15 +139,21 @@ def test_match_marca_falta_y_cargado():
 
 
 def test_pendientes_solo_tercerizadas_sin_oft_estampado():
-    # OFT-2 (AP) ya estampado en una compra → NO pendiente. OFT-4 (RY) sí.
-    out = _run_resumen(compras={}, estampadas={"OFT-2"})
+    # OFT-2 (AP) ya estampado (con $) → NO pendiente (estado 'compra'). OFT-4
+    # (RY) sin estampar y con falta → pendiente. OFT-1 es INTELA (no se lista).
+    out = _run_resumen(compras={}, estampadas={"OFT-2": 1656.0})
     nums = {of["numero"] for of in out["pendientes"]}
-    assert nums == {"OFT-4"}           # OFT-2 estampado, OFT-1 es INTELA
+    assert nums == {"OFT-4"}
     assert all(not of["es_intela"] for of in out["pendientes"])
+    # la OFT-2 estampada aparece en la lista por OF con su monto de compra
+    porof = {of["numero"]: of for of in out["tercerizado_ofs"]}
+    assert porof["OFT-2"]["estado"] == "compra"
+    assert porof["OFT-2"]["compra_monto"] == pytest.approx(1656.0)
+    assert porof["OFT-4"]["estado"] == "pendiente"
 
 
 def test_resumen_diario_pivotea_por_tejedor():
-    out = _run_resumen(compras={}, estampadas=set())
+    out = _run_resumen(compras={}, estampadas={})
     dias = {d["dia"]: d for d in out["por_dia"]}
     assert dias["2026-07-08"]["kg"]["AP"] == pytest.approx(1621.25)
     assert dias["2026-07-08"]["kg"]["RY"] == pytest.approx(811.45)
