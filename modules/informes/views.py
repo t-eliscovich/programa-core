@@ -527,20 +527,25 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
             quimicos_modelo = None
 
-    # La columna COLOR $ de la tabla usa el MISMO modelo del programa (libro)
-    # que el panel: inicial (dBase) + compras (programa tipo Q) − egresos
-    # (formulas) = final libro, y el AJUSTE (físico − libro) como egreso extra
-    # que cierra contra el stock físico de formulas. Dueña 2026-07-09.
-    # TMT 2026-07-14 (dueña): la columna COLOR usa los valores del PROGRAMA
-    # (libro: inicial + compras tipo Q − egresos, ya en `co` desde el header);
-    # formulas queda SOLO en la banda de abajo como comparativa. El Stock act. se
-    # iguala al FÍSICO de formulas y el AJUSTE cierra el libro contra ese físico
-    # (ajuste = físico − libro). "nos igualamos con formulas".
+    # HISTÓRICO (2026-07-09/14): la columna COLOR $ replicaba un libro dBase
+    # (inicial dBase + compras tipo Q − egresos) y forzaba el físico con un
+    # ajuste = físico − ese libro. Eso producía el −45.093 porque sumaba las
+    # importaciones tipo Q que YA estaban en el físico. SUPERSEDED abajo.
+    # TMT 2026-07-16 (dueña): mes de corte dBase → programa. El FÍSICO de
+    # formulas-app es la verdad; el programa lo adopta, así que la columna
+    # COLOR $ ESPEJA la banda (mismo mundo formulas) en vez de reconstruir un
+    # libro contable dBase — que este mes no se puede recalcular en vivo porque
+    # el tinto consumido aún está incompleto (74k vs 114k del dBase, la revisión
+    # de colorantes pendiente). Columna y banda dicen lo MISMO: inicial/compras/
+    # egresos de formulas, ajuste = físico − libro-formulas (+3.846), stock act =
+    # físico. Se elimina el −45.093 que mezclaba el libro dBase (inflado por las
+    # importaciones tipo Q ya contenidas en el físico) contra ese físico.
     if quimicos_modelo and quimicos_modelo.get("final_form") is not None:
-        _libro = float(co.get("stock_act_us") or 0)          # programa: inic + compras Q − egresos
-        _fisico = float(quimicos_modelo["final_form"] or 0)  # formulas: físico real
-        co["ajuste_us"] = round(_fisico - _libro, 0)         # cierra el libro del programa al físico
-        co["stock_act_us"] = round(_fisico, 0)               # Stock act = físico → nos igualamos con formulas
+        co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
+        co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
+        co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
+        co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)   # físico − libro formulas
+        co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
 
     return {
         "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
@@ -2082,7 +2087,7 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     if qm:
         add("quimicos", "Químicos: físico vs libro",
             _g(qm, "final_form"), "Físico formulas",
-            _g(qm, "final_prog"), "Libro programa", "US$", tipo="ajuste")
+            _g(qm, "final_prog"), "Libro formulas", "US$", tipo="ajuste")
 
     return checks
 
