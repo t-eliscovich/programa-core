@@ -53,10 +53,16 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
 
     Excluye stat X (eliminados) e Y (anulados) como el resto del módulo.
     """
-    # CORTE tintura 2026-07-07: los lotes ANTERIORES al corte salen del dBase
+    # CORTE tintura 2026-07-07: los lotes ANTERIORES al corte salían del dBase
     # (scintela.tinto); del corte en adelante, de formulas_app. Se mergea en
     # Python porque formulas_app vive en otra base (no se puede UNION en SQL).
+    # TMT 2026-07-16 (dueña): el dBase dejó de cargar el tinto en el cutover, así
+    # que su parte del MES de corte (01–06/07) quedó vacía → se perdía la primera
+    # semana (~48k). Ahora el split es el PRIMER DÍA DEL MES de corte: el mes de
+    # corte en adelante sale ENTERO de formulas (que sí tiene el mes completo);
+    # el dBase solo aporta meses estrictamente anteriores.
     from modules.informes.queries import CORTE_TINTURA
+    _corte_mes = date(CORTE_TINTURA.year, CORTE_TINTURA.month, 1)
 
     rows = db.fetch_all(
         """
@@ -82,7 +88,7 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
          GROUP BY yy, mm, tipo
          ORDER BY yy, mm, tipo
         """,
-        (limite_bajos, desde, hasta, CORTE_TINTURA),
+        (limite_bajos, desde, hasta, _corte_mes),
     ) or []
 
     agg: dict = {}
@@ -92,8 +98,8 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
             "kg": float(r["kg"] or 0), "importe": float(r["importe"] or 0),
         }
 
-    # formulas_app: del corte en adelante, misma regla Bajos/Fuertes (imp/kg).
-    f_desde = max(desde, CORTE_TINTURA)
+    # formulas_app: del MES de corte en adelante, misma regla Bajos/Fuertes.
+    f_desde = max(desde, _corte_mes)
     if f_desde <= hasta:
         try:
             from modules.tintura import service as _tint_svc
