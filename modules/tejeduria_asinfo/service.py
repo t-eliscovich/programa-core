@@ -177,6 +177,19 @@ def resumen_mes(anio: int, mes: int) -> dict:
                          else round(sum(t["kg"] for t in tejedores), 2))
     total_costo = round(sum((t.get("costo") or 0.0) for t in tejedores), 2)
 
+    # TMT 2026-07-16 (dueña): "poné las que faltan por cargar arriba de todo".
+    # Re-orden: primero los tercerizados con falta_kg > 0 (los que hay que
+    # cargar), mayor falta arriba; después el resto (INTELA autoprod y los ya
+    # cargados) por kg desc. es_intela NUNCA es "pendiente" (autoprod, no
+    # factura → su falta_kg no cuenta).
+    def _orden_falta(t):
+        falta = t.get("falta_kg") or 0.0
+        pendiente = (not t["es_intela"]) and falta > 0.01
+        return (0 if pendiente else 1,
+                -(falta if pendiente else 0.0),
+                -(t.get("kg") or 0.0))
+    tejedores.sort(key=_orden_falta)
+
     # resumen diario (pivote por tejedor)
     dias: dict = {}
     for of in ofs:
