@@ -881,6 +881,21 @@
 
                 tbody.appendChild(tr);
               });
+            // TMT 2026-07-16 (dueña "ordenar los gs. forzados por fecha"): las
+            // filas banc=9 (render server) y las manuales (inyectadas acá)
+            // quedaban en dos bloques separados. Reordenar TODA la tabla por
+            // fecha ASC leyendo el input dd/mm/aaaa de la 1ª celda (mismo campo
+            // en ambos tipos de fila).
+            (function _gfSortByFecha() {
+              const filas = Array.from(tbody.querySelectorAll('tr'))
+                .filter(tr => tr.querySelector('.gf-edit-fechad'));
+              filas.sort((a, b) => {
+                const fa = _ddmmToIso((a.querySelector('.gf-edit-fechad') || {}).value) || '';
+                const fb = _ddmmToIso((b.querySelector('.gf-edit-fechad') || {}).value) || '';
+                return fa.localeCompare(fb);
+              });
+              filas.forEach(tr => tbody.appendChild(tr));
+            })();
             // Total general del panel = banc=9 (server) + manuales.
             const totalEl = document.getElementById('gf-total');
             if (totalEl) totalEl.textContent = '$ ' + fmtMoney(POSDAT_TOTAL + manualTotal);
