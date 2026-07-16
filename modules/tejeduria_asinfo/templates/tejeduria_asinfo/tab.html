@@ -107,12 +107,13 @@
       </tbody>
     </table>
 
-    <h2>Pendientes de cargar ({{ data.pendientes|length }})</h2>
-    {% if data.pendientes %}
+    <h2>Tercerizado por OF · Reyes / Ponce
+        ({{ data.pendientes|length }} para cargar)</h2>
+    {% if data.tercerizado_ofs %}
     <table>
-      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th></th></tr></thead>
+      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Compra $</th></tr></thead>
       <tbody>
-        {% for of in data.pendientes %}
+        {% for of in data.tercerizado_ofs %}
           <tr>
             <td>{{ of.numero }}</td>
             <td class="muted">{{ of.dia|fecha_es }}</td>
@@ -120,14 +121,20 @@
             <td class="muted">{{ of.descripcion }}</td>
             <td>{{ of.kg|num_es }}</td>
             <td>
-              <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K', concepto=of.numero ~ ' ' ~ of.descripcion) }}">Cargar $</a>
+              {% if of.estado == 'compra' %}
+                <span class="ok">$ {{ of.compra_monto|num_es(2) }}</span>
+              {% elif of.estado == 'pendiente' %}
+                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K', concepto=of.numero ~ ' ' ~ of.descripcion) }}">Cargar $</a>
+              {% else %}
+                <span class="muted">cargado</span>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
     {% else %}
-      <p class="note ok">Todo lo tercerizado del mes ya tiene su compra cargada. 🎉</p>
+      <p class="note ok">No hay producción tercerizada (Reyes/Ponce) este mes.</p>
     {% endif %}
 
   {% endif %}

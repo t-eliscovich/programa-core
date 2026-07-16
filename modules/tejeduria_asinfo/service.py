@@ -59,13 +59,19 @@ def _compras_k_por_prov(anio: int, mes: int) -> dict:
     }
 
 
-def _ofts_estampadas() -> set:
-    """OFT que ya figuran en el concepto de alguna compra tipo K (match fino:
-    las cargadas desde esta tab)."""
+def _ofts_estampadas() -> dict:
+    """{OFT: $ compra} — OFT que figuran en el concepto de alguna compra tipo K
+    (match fino: las cargadas desde esta tab), con el IMPORTE de la compra.
+
+    Si una compra estampa varios OFT, se reparte el importe en partes iguales
+    (en la práctica la tab crea 1 compra por OFT, así que es el importe entero).
+    Sirve para mostrar la columna 'Compra $' en la lista por OF. Membership
+    (`oft in estampadas`) sigue andando igual que antes (chequea las claves).
+    """
     try:
         rows = db.fetch_all(
             """
-            SELECT concepto
+            SELECT concepto, COALESCE(importe, 0) AS importe
               FROM scintela.compra
              WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
                AND COALESCE(stat, '') <> 'Y'
@@ -73,11 +79,15 @@ def _ofts_estampadas() -> set:
             """,
         ) or []
     except Exception:  # noqa: BLE001 -- fail-soft
-        return set()
-    out: set = set()
+        return {}
+    out: dict = {}
     for r in rows:
-        for m in _OFT_RE.findall(r.get("concepto") or ""):
-            out.add(m.upper())
+        ofts = [m.upper() for m in _OFT_RE.findall(r.get("concepto") or "")]
+        if not ofts:
+            continue
+        parte = float(r.get("importe") or 0) / len(ofts)
+        for k in ofts:
+            out[k] = round(out.get(k, 0.0) + parte, 2)
     return out
 
 
@@ -224,19 +234,36 @@ def resumen_mes(anio: int, mes: int) -> dict:
         d["total"] = round(d["total"] + of["kg"], 2)
     por_dia = sorted(dias.values(), key=lambda x: x["dia"], reverse=True)
 
-    # pendientes de cargar = OFs tercerizadas SIN OFT estampado Y cuyo tejedor
-    # todavía tiene falta (falta_kg > 0). Si el tejedor ya está cubierto —
-    # cargó la compra a la vieja, sin estampar el OFT, y da "ok" — sus OFs NO
-    # son pendientes (sino "Cargar $" duplicaría). Pedido dueña 2026-07-16:
-    # "el cargar compra debería ser para cuando no hay match".
+    # ── Lista tercerizada POR OF (Reyes/Ponce) con estado + compra $ ──
+    # Pedido dueña 2026-07-16:
+    #  · columna "Compra $" que trae el importe de la compra cuando la
+    #    encontramos (OFT estampado = match fino).
+    #  · el botón "Cargar $" SOLO cuando no encontramos la compra.
+    #  · meses PASADOS: todo "cargado" (no volvemos atrás a cargar junio).
+    #  · tejedor ya cubierto (falta_kg<=0, cargó a la vieja sin estampar) →
+    #    "cargado", sin botón (sino duplicaría).
+    from filters import today_ec as _today_ec
+    _hoy = _today_ec()
+    es_mes_pasado = (int(anio), int(mes)) < (_hoy.year, _hoy.month)
     falta_por_cod = {t["cod"]: (t.get("falta_kg") or 0.0)
                      for t in tejedores if t.get("cod")}
-    pendientes = [
-        of for of in ofs
-        if not of["es_intela"]
-        and of["numero"].upper() not in estampadas
-        and falta_por_cod.get(of["cod"], 0.0) > 0.01
-    ]
+    tercerizado_ofs = []
+    for of in ofs:
+        if of["es_intela"]:
+            continue
+        numero = (of.get("numero") or "").upper()
+        monto = estampadas.get(numero)  # $ de la compra si hay match fino
+        if monto is not None:
+            estado = "compra"          # encontrada → muestra $
+        elif es_mes_pasado:
+            estado = "cargado"         # mes viejo → no se recarga
+        elif falta_por_cod.get(of.get("cod"), 0.0) > 0.01:
+            estado = "pendiente"       # falta y sin match → botón Cargar
+        else:
+            estado = "cargado"         # cubierto por match viejo del tejedor
+        tercerizado_ofs.append({**of, "compra_monto": monto, "estado": estado})
+    tercerizado_ofs.sort(key=lambda o: ((o.get("cod") or ""), str(o.get("dia") or "")))
+    pendientes = [o for o in tercerizado_ofs if o["estado"] == "pendiente"]
 
     return {
         "disponible": disponible,
@@ -254,4 +281,5 @@ def resumen_mes(anio: int, mes: int) -> dict:
         "tejedores": tejedores,
         "por_dia": por_dia,
         "pendientes": pendientes,
+        "tercerizado_ofs": tercerizado_ofs,
     }
