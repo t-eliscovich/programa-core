@@ -386,6 +386,38 @@
               <td class="num">{{ f.gp_imp | num_es(0) }}</td>
             </tr>
           {% endfor %}
+          {% set pm = tintoreria_mensual.promedio %}
+          {% if pm %}
+            <tr>
+              <td class="lbl" rowspan="4" style="font-weight:700;background:#f8fafc;border-top:2px solid #cbd5e1">PROMEDIO <span style="font-weight:400;color:#94a3b8;font-size:10px">· {{ tintoreria_mensual.anio }} mensual</span></td>
+              <td class="lbl" style="border-top:2px solid #cbd5e1">Bajos</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ '%.1f' % pm.b_pct }}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_kg | num_es(0) }}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.b_ukg is not none %}{{ '%.3f' % pm.b_ukg }}{% else %}—{% endif %}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_imp | num_es(0) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Fuertes</td>
+              <td class="num">{{ '%.1f' % pm.f_pct }}</td>
+              <td class="num">{{ pm.f_kg | num_es(0) }}</td>
+              <td class="num">{% if pm.f_ukg is not none %}{{ '%.3f' % pm.f_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ pm.f_imp | num_es(0) }}</td>
+            </tr>
+            <tr class="total">
+              <td class="lbl">Total</td>
+              <td class="num">100.0</td>
+              <td class="num">{{ pm.t_kg | num_es(0) }}</td>
+              <td class="num">{% if pm.t_ukg is not none %}{{ '%.3f' % pm.t_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ pm.t_imp | num_es(0) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Gs. Producción</td>
+              <td class="num">—</td>
+              <td class="num">{{ pm.gp_kg | num_es(0) }}</td>
+              <td class="num">{% if pm.gp_ukg is not none %}{{ '%.3f' % pm.gp_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ pm.gp_imp | num_es(0) }}</td>
+            </tr>
+          {% endif %}
         </tbody>
       </table>
       <p class="mt-2 text-[10px] text-slate-500">
