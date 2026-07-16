@@ -224,6 +224,13 @@ def _inject_tintoreria_mensual():
     if request.endpoint != "informes.flujo_produccion":
         return {}
     try:
+        # La vista flujo_produccion ya calcula el mensual (para usar el
+        # proyectado como consumo de químico) y lo deja en g. Reusarlo evita
+        # recalcular (2 round-trips a formulas). Dueña 2026-07-16.
+        from flask import g
+        _cached = getattr(g, "_tint_mensual", None)
+        if _cached is not None:
+            return {"tintoreria_mensual": _cached}
         hoy = today_ec()
         anio = int(request.args.get("anio") or hoy.year)
         mes = max(1, min(12, int(request.args.get("mes") or hoy.month)))

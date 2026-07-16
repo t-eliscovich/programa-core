@@ -194,7 +194,7 @@
           </tr>
           {% if aco.get('ajuste_us') is not none %}
           <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro</span></td>
+            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">de arranque</span></td>
             <td class="num">—</td>
             <td class="num">—</td>
             <td class="num">—</td>
@@ -217,16 +217,16 @@
         </tbody>
       </table>
 
-      {# ─── STOCK DE QUÍMICOS — SOLO formulas (físico colorante), decoplada de
-           la columna QUÍM.$ que es modelo A/programa (dueña 2026-07-16).
-           Franja fina, mismo diseño que la tabla. #}
+      {# ─── STOCK DE QUÍMICOS — repite la columna QUÍM.$ (mismo número, dueña
+           2026-07-16): Inicial + Compras − Consumo (proyectado de tintura) =
+           Libro · Físico · Ajuste (de arranque). Franja fina. #}
       {% set qm = mov_asinfo.quimicos_banda %}
       {% if qm %}
       {% set ff = qm.final_form %}
       {% set aj = qm.ajuste %}
       {% set aj_abs = (aj if aj >= 0 else -aj) %}
       {% set aj_pct = (aj_abs / qm.final_prog * 100) if qm.final_prog else 0 %}
-      <div class="fp-quim mt-2" title="Stock de colorante 100% de formulas (físico): inicial = físico al cierre del mes anterior + compras recibidas (colorante) − consumo (colorante, por fecha de terminado). El ajuste = físico de hoy − libro es la varianza real de inventario; se muestra, no se postea.">
+      <div class="fp-quim mt-2" title="Stock de químicos: Inicial + Compras del mes − Consumo (= el proyectado de tintura, el mismo número de la tabla de abajo) = Libro. El ajuste = Físico de hoy − Libro es de arranque (cambio de sistema dBase→programa) este mes; se muestra, no se postea. Es el mismo cálculo que la columna QUÍM.$ de arriba.">
         <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[11px] leading-5">
           <span class="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Stock de químicos</span>
           <span class="text-slate-400 dark:text-slate-500">Inicial <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</b></span>
@@ -239,9 +239,9 @@
           {% if ff is not none %}
           <span class="text-slate-300 dark:text-slate-600">·</span>
           <span class="text-slate-400 dark:text-slate-500">Físico <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</b></span>
-          <span class="rounded bg-amber-50 dark:bg-amber-950/30 px-1.5 text-amber-700 dark:text-amber-400">Ajuste <b class="tabular-nums font-bold">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</b> <span class="text-[10px]">({{ aj_pct | num_es(1) }}%)</span></span>
+          <span class="rounded bg-amber-50 dark:bg-amber-950/30 px-1.5 text-amber-700 dark:text-amber-400">Ajuste de arranque <b class="tabular-nums font-bold">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</b> <span class="text-[10px]">({{ aj_pct | num_es(1) }}%)</span></span>
           {% endif %}
-          <span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">solo formulas · físico colorante · USD</span>
+          <span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">consumo = proyectado de tintura · USD</span>
         </div>
       </div>
       {% endif %}
@@ -423,23 +423,6 @@
           {% endif %}
         </tbody>
       </table>
-      {# Reconciliación: la tintorería SOLO costea el teñido con kg de tela y sin
-         lavados; el resto (WIP + lavados) explica el gap contra el químico
-         consumido total del mes (Egresos QUÍM.$). Todo por fecha de tinturado. #}
-      {% set _qm = mov_asinfo.quimicos_modelo if mov_asinfo else None %}
-      {% if _qm and _qm.egr_costeado is not none %}
-      <div class="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[11px] leading-5">
-        <span class="font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Reconciliación del químico</span>
-        <span class="text-slate-500 dark:text-slate-300">Costeado en tintura <b class="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{{ _qm.egr_costeado | num_es(0) }}</b></span>
-        <span class="text-slate-300 dark:text-slate-600">+</span>
-        <span class="text-slate-500 dark:text-slate-300">En proceso <span class="text-slate-400">(teñido sin cerrar)</span> <b class="tabular-nums font-semibold text-amber-700 dark:text-amber-400">{{ _qm.egr_proceso | num_es(0) }}</b></span>
-        <span class="text-slate-300 dark:text-slate-600">+</span>
-        <span class="text-slate-500 dark:text-slate-300">Lavados <b class="tabular-nums font-semibold text-slate-600 dark:text-slate-300">{{ _qm.egr_lavado | num_es(0) }}</b></span>
-        <span class="text-slate-300 dark:text-slate-600">=</span>
-        <span class="text-slate-600 dark:text-slate-200">Consumido <b class="tabular-nums font-bold text-slate-900 dark:text-white">{{ _qm.egresos | num_es(0) }}</b></span>
-        <span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">= Egresos QUÍM.$ de la tabla de movimientos · por tinturado</span>
-      </div>
-      {% endif %}
       <p class="mt-2 text-[10px] text-slate-500">
         <strong>Origen de los datos:</strong> los Kg y $ de Bajos/Fuertes
         salen directo del programa de tintorería (cada batch que registra
@@ -488,7 +471,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro = revaluación. Consumido vs costeado en tintura: la diferencia es el teñido en proceso (sin cerrar tela) + lavados. ⚠ = descuadre &gt; 1%.</p>
+      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el proyectado de tintura y el ajuste de este mes es de arranque (cambio de sistema). ⚠ = descuadre &gt; 1%.</p>
     </div>
   {% endif %}
 </div>

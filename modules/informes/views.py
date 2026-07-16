@@ -42,7 +42,8 @@ def _safe(fn, default):
         return default, str(e)
 
 
-def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | None:
+def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
+                      proy_quimico=None) -> dict | None:
     """Tabla 'movimientos del mes' con la MISMA lógica del dBase/TINT.BAT pero
     con los datos viniendo de Asinfo (no de scintela.iniciales/historia).
 
@@ -570,10 +571,15 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
 
             q_inicial = _vq0
             q_compras = _compras_prog
-            q_egresos = _consumo_prog
+            # Consumo del mes = PROYECTADO de tintura (mismo número que la tabla
+            # de abajo). Dueña 2026-07-16: un solo número de químico en toda la
+            # pantalla, sin lavados ni desglose. Si formulas no dio proyectado,
+            # cae al tinturado total del programa (_consumo_prog) de respaldo.
+            q_egresos = (float(proy_quimico) if proy_quimico is not None
+                         else _consumo_prog)
             q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
             q_final_form = _fisico_quimicos_aldia(_corte_fin)   # físico formulas
-            q_ajuste = q_final_form - q_final_prog               # revaluación
+            q_ajuste = q_final_form - q_final_prog               # de arranque (cutover)
 
             quimicos_modelo = {
                 "inicial": q_inicial,
@@ -585,44 +591,25 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                 "ajuste": q_ajuste,
                 "facturado_prog": _compras_prog,
                 "facturado_n": int(_qc.get("n") or 0),
-                # desglose del egreso para reconciliar con la tintorería
-                "egr_costeado": _egr_cost,
-                "egr_proceso": _egr_proc,
-                "egr_lavado": _egr_lav,
             }
 
-            # BANDA "stock de químicos" = SOLO formulas (físico colorante),
-            # decoplada de la columna QUÍM.$ (modelo A / programa). Dueña
-            # 2026-07-16: la tabla es contable (programa), la banda es física
-            # (formulas). inicial = físico colorante al cierre del mes anterior,
-            # compras = colorante recibido en formulas (POLI+ALG), consumo =
-            # colorante por fecha_terminado. Ajuste = físico − libro ≈ +3.846.
-            _qb_ini = _fisico_quimicos_aldia(_corte_ini)
-            _qb_com = float(color_compras or 0)
-            _qb_egr = color_consumo
-            _qb_libro = _qb_ini + _qb_com - float(_qb_egr or 0)
-            quimicos_banda = {
-                "inicial": _qb_ini,
-                "compras": _qb_com,
-                "egresos": _qb_egr,
-                "final_prog": _qb_libro,
-                "final_form": q_final_form,
-                "ajuste": q_final_form - _qb_libro,
-            }
+            # BANDA "stock de químicos" = MISMO número que la columna QUÍM.$.
+            # Dueña 2026-07-16: unificar — un solo consumo (proyectado) y un
+            # solo ajuste (de arranque, cutover dBase→programa) arriba y abajo.
+            quimicos_banda = dict(quimicos_modelo)
         except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
             quimicos_modelo = None
             quimicos_banda = None
 
-    # COLUMNA QUÍM.$ de la tabla de movimientos = MODELO A (contable / programa):
-    # inicial VQ0 + compras tipo Q − consumo (tinturado diario, todo el químico),
-    # ajuste = físico − libro. Dueña 2026-07-16: "la primera tabla es modelo A".
-    # La BANDA de abajo (quimicos_banda) va SOLO de formulas (físico colorante) y
-    # queda decoplada de esta columna — son dos mundos distintos a propósito.
+    # COLUMNA QUÍM.$ de la tabla de movimientos: inicial VQ0 + compras tipo Q −
+    # consumo (= PROYECTADO de tintura, el mismo número que la tabla de abajo),
+    # ajuste = físico − libro. Dueña 2026-07-16: un solo número de químico y un
+    # solo ajuste (de arranque) en toda la pantalla; la banda de abajo lo repite.
     if quimicos_modelo and quimicos_modelo.get("final_form") is not None:
         co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
-        co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)   # físico − libro formulas
+        co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)   # físico − libro (de arranque)
         co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
 
     return {
@@ -2162,21 +2149,14 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
         _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
-    # El chequeo usa la BANDA (formulas, físico colorante) — su ajuste es el
-    # esperado chico (~+3.846). La columna QUÍM.$ es modelo A/programa aparte.
+    # Químicos: físico vs libro. El consumo = proyectado de tintura y el ajuste
+    # este mes es de arranque (cutover dBase→programa); tipo="ajuste" → informa,
+    # no marca descuadre. La banda y la columna QUÍM.$ muestran lo mismo.
     qm = _g(mov, "quimicos_banda") or _g(mov, "quimicos_modelo")
     if qm:
         add("quimicos", "Químicos: físico vs libro",
-            _g(qm, "final_form"), "Físico formulas",
-            _g(qm, "final_prog"), "Libro formulas", "US$", tipo="ajuste")
-
-    # Químico consumido (stock, por tinturado) vs costeado en tintura. La dif =
-    # trabajo en proceso (teñido sin cerrar la tela) + lavados. Informativo.
-    qmod = _g(mov, "quimicos_modelo")
-    if qmod and _g(qmod, "egr_costeado") is not None:
-        add("quim_tint", "Químico consumido vs costeado en tintura",
-            _g(qmod, "egresos"), "Consumido",
-            _g(qmod, "egr_costeado"), "Costeado tintura", "US$", tipo="ajuste")
+            _g(qm, "final_form"), "Físico",
+            _g(qm, "final_prog"), "Libro", "US$", tipo="ajuste")
 
     return checks
 
@@ -2225,7 +2205,28 @@ def flujo_produccion():
     )
     if not isinstance(inv_asinfo_inic, dict):
         inv_asinfo_inic = {}
-    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo, anio=anio, mes=mes)
+
+    # Proyectado de tintura (mismo número que la tabla de abajo) = consumo de
+    # químico de la columna QUÍM.$ y de la banda. Se calcula UNA vez acá y se
+    # deja en g para que el context-processor de comparativa_tintoreria lo
+    # reuse (no recalcular). Dueña 2026-07-16: un solo número en la pantalla.
+    _tint_mensual = None
+    _proy_quimico = None
+    try:
+        from modules.comparativa_tintoreria.views import _build_tintoreria_mensual
+        _tint_mensual, _e_tint = _safe(
+            lambda: _build_tintoreria_mensual(anio, mes), None)
+        g._tint_mensual = _tint_mensual
+        _filas_t = (_tint_mensual or {}).get("filas") or []
+        if _filas_t:
+            _proy = (_filas_t[0] or {}).get("proy") or {}
+            _proy_quimico = _proy.get("t_imp")
+    except Exception:  # noqa: BLE001 -- fail-soft: si falla, cae al respaldo
+        _tint_mensual = None
+        _proy_quimico = None
+
+    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo,
+                                   anio=anio, mes=mes, proy_quimico=_proy_quimico)
 
     # TMT 2026-07-14 (dueña): "tengo que tener EXACTAMENTE la misma tabla, copiá
     # la segunda igual a la primera". La tabla PRODUCCIÓN TEJIDO de Asinfo tiene
