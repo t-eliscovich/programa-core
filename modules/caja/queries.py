@@ -120,7 +120,11 @@ def recomputar_saldos() -> dict:
             return {"filas": 0, "saldo_final": 0.0, "cambios": 0}
 
         def _signed(r) -> float:
-            imp = abs(float(r.get("importe") or 0))
+            # IMPORTE CRUDO (NO abs) — idéntico al CASE de saldo_actual().
+            # Las filas legacy Apr 17→30 traen importe<0 (ver docstring del
+            # módulo); con abs() el running divergía de saldo_actual y dejaba
+            # saldos negativos. El running debe cerrar en saldo_actual().
+            imp = float(r.get("importe") or 0)
             t = (r.get("tipo") or "").strip().upper()
             return imp if t == "E" else (-imp if t == "S" else imp)
 
