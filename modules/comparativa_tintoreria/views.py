@@ -161,26 +161,34 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
             {"d1": date(anio, mes, 1).isoformat(),
              "d2": hasta.isoformat(), "lim": 0.4},  # 0.4 = umbral Bajos/Fuertes
         ) or []
-        _fin_term = _fin_kil = 0.0
+        # Merma (terminada/kil) POR GRUPO — Bajos y Fuertes tienen merma distinta
+        # (dueña 2026-07-16), así que cada uno proyecta con la suya.
+        _fb_term = _fb_kil = _ff_term = _ff_kil = 0.0
         _pb_imp = _pb_kil = _pf_imp = _pf_kil = 0.0
         for _r in _pr:
             _imp, _term, _kil = (float(_r.get("imp") or 0),
                                  float(_r.get("term") or 0),
                                  float(_r.get("kil") or 0))
+            _es_bajo = (_r.get("tipo") == "Bajos")
             if _r.get("fin"):
-                _fin_term += _term
-                _fin_kil += _kil
-            elif _r.get("tipo") == "Bajos":
+                if _es_bajo:
+                    _fb_term += _term; _fb_kil += _kil
+                else:
+                    _ff_term += _term; _ff_kil += _kil
+            elif _es_bajo:
                 _pb_imp += _imp; _pb_kil += _kil
             else:
                 _pf_imp += _imp; _pf_kil += _kil
-        _merma = (_fin_term / _fin_kil) if _fin_kil else 0.0
+        _merma_all = ((_fb_term + _ff_term) / (_fb_kil + _ff_kil)
+                      if (_fb_kil + _ff_kil) else 0.0)
+        _merma_b = (_fb_term / _fb_kil) if _fb_kil else _merma_all
+        _merma_f = (_ff_term / _ff_kil) if _ff_kil else _merma_all
         _cur = next((x for x in filas_mes
                      if x["yy"] == anio and x["mm"] == mes), None)
-        if _cur and _merma > 0 and (_pb_imp or _pf_imp):
-            _b_kg = float(_cur["b_kg"]) + _pb_kil * _merma
+        if _cur and _merma_all > 0 and (_pb_imp or _pf_imp):
+            _b_kg = float(_cur["b_kg"]) + _pb_kil * _merma_b
             _b_imp = float(_cur["b_imp"]) + _pb_imp
-            _f_kg = float(_cur["f_kg"]) + _pf_kil * _merma
+            _f_kg = float(_cur["f_kg"]) + _pf_kil * _merma_f
             _f_imp = float(_cur["f_imp"]) + _pf_imp
             _cur["proy"] = _calc(_b_kg, _b_imp, _f_kg, _f_imp,
                                  float(_cur.get("gp_imp") or 0))
