@@ -69,8 +69,12 @@
      TEJIDO (cols 5-8): la col 5 (separadora / PROV de tejido) se ensancha para
      correr todo el bloque de tejido hacia la derecha. El 2do título arranca en
      la col 5 (~44%). */
-  .fp .hil-titles { display: flex; max-width: 780px; }
-  .fp .hil-titles > .blk-title:first-child { width: 44%; }
+  .fp .hil-titles { display: grid; max-width: 780px;
+    grid-template-columns: 13% 11% 9% 11% 21% 11% 9% 15%; }
+  /* "Compras hilado" sobre las cols 1-4; "Producción tejido" sobre la col 5
+     (la de proveedores), alineado a la derecha para caer arriba de RY/AP. */
+  .fp .hil-titles > .blk-title:first-child { grid-column: 1 / 5; }
+  .fp .hil-titles > .blk-title:last-child { grid-column: 5 / 6; text-align: right; white-space: nowrap; }
   /* STOCK DE QUÍMICOS: altura pareja de los labels (algunos se parten en 2
      líneas, ej. "recibidas formulas") → los números quedan alineados. */
   .qm-kpis > div > div:first-child { min-height: 2.4em; }
@@ -284,7 +288,8 @@
         <thead>
           <tr>
             <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
-            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
+            {# Federico 2026-07-17: PROV de tejido alineado a la derecha, sobre la columna de proveedores (RY/AP/INTELA). #}
+            <th class="lbl" style="text-align:right">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
           </tr>
         </thead>
         <tbody>
@@ -315,11 +320,12 @@
               <td class="num">{{ tot.importe | num_es(0) }}</td>
             {% else %}<td class="lbl">TOTAL</td><td></td><td></td><td></td>{% endif %}
             {% if data.produc_tejido %}{% set tot = data.produc_tejido_total %}
-              <td class="lbl">TOTAL</td>
+              {# Federico 2026-07-17: TOTAL de tejido a la derecha, sobre la columna de proveedores. #}
+              <td class="lbl" style="text-align:right">TOTAL</td>
               <td class="num">{{ tot.kg | num_es(0) }}</td>
               <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
               <td class="num">{{ tot.importe | num_es(0) }}</td>
-            {% else %}<td class="lbl">TOTAL</td><td></td><td></td><td></td>{% endif %}
+            {% else %}<td class="lbl" style="text-align:right">TOTAL</td><td></td><td></td><td></td>{% endif %}
           </tr>
         </tbody>
       </table>
