@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero %}
+{% block title %}Histórico de compras{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('compras.lista') }}" class="hover:underline text-slate-500">Compras</a> /
+  <strong>Histórico</strong>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full">
+  <div class="flex items-start justify-between gap-6 mb-4 flex-wrap">
+    {{ page_hero(
+        'Histórico de compras',
+        kpi_valor=('$ ' ~ (total_importe | num_es(0))) if filas is not none else '',
+        kpi_extra=('· ' ~ (filas | length | string) ~ ' compras · ' ~ (total_kg | num_es(0)) ~ ' kg') if filas is not none else 'réplica del comando 4B del dBase'
+    ) }}
+    <div class="no-print flex items-center gap-2 shrink-0">
+      <a href="{{ url_for('compras.lista') }}"
+         class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+        ← Compras
+      </a>
+      {% if filas %}
+        <a href="{{ url_for('compras.historico', prov=prov, desde=desde, export='csv') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+          Exportar CSV
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-3 px-3 py-2 rounded bg-red-100 text-red-800 text-xs">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# ── Filtro estilo 4B: PROVEEDOR + DESDE ─────────────────────────── #}
+  <form method="get" class="flex flex-wrap items-end gap-3 mb-4 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+    <label class="flex flex-col">
+      <span class="text-xs text-slate-600">Proveedor</span>
+      <input type="text" name="prov" value="{{ prov or '' }}"
+             list="proveedores-list" autocomplete="off" maxlength="3"
+             placeholder="cód. (o XX / QQ)"
+             oninput="this.value=this.value.toUpperCase()"
+             class="border rounded px-2 py-1 mt-0.5 font-mono text-sm uppercase w-40">
+      {% if proveedores_datalist %}
+        <datalist id="proveedores-list">
+          {% for p in proveedores_datalist %}<option value="{{ p.codigo_prov }}">{{ p.nombre }}</option>{% endfor %}
+        </datalist>
+      {% endif %}
+    </label>
+    <label class="flex flex-col">
+      <span class="text-xs text-slate-600">Desde</span>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="border rounded px-2 py-1 mt-0.5 text-sm">
+    </label>
+    <button class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium">Ver</button>
+    <div class="flex items-center gap-1.5 text-xs">
+      <a href="{{ url_for('compras.historico', prov='XX', desde=desde) }}"
+         class="px-2 py-1 rounded border {{ 'bg-slate-800 text-white border-slate-800' if prov == 'XX' else 'border-slate-300 text-slate-600 hover:bg-slate-100' }}">Todos</a>
+      <a href="{{ url_for('compras.historico', prov='QQ', desde=desde) }}"
+         class="px-2 py-1 rounded border {{ 'bg-slate-800 text-white border-slate-800' if prov == 'QQ' else 'border-slate-300 text-slate-600 hover:bg-slate-100' }}">Químicos</a>
+    </div>
+  </form>
+
+  {% if filas is none %}
+    <div class="text-sm text-slate-500 px-1 py-8 text-center">
+      Elegí un <strong>proveedor</strong> (o <strong>Todos</strong> / <strong>Químicos</strong>)
+      y opcionalmente una fecha <strong>Desde</strong> para ver su histórico de compras.
+    </div>
+  {% else %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300">
+            <th class="px-2 py-2">Fecha</th>
+            <th class="px-2 py-2">Prov</th>
+            <th class="px-2 py-2 text-right">Kg</th>
+            <th class="px-2 py-2">Concepto</th>
+            <th class="px-2 py-2 text-right">Importe</th>
+            <th class="px-2 py-2">Banco</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+            <tr class="border-b border-slate-100 dark:border-slate-800 {{ 'opacity-50 line-through' if (f.stat or '')|upper == 'Y' else '' }}">
+              <td class="px-2 py-1 whitespace-nowrap font-mono">{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '' }}</td>
+              <td class="px-2 py-1 font-mono font-semibold">{{ f.codigo_prov }}</td>
+              <td class="px-2 py-1 text-right tabular-nums">{{ f.kg | num_es(0) if f.kg else '' }}</td>
+              <td class="px-2 py-1">{{ f.concepto or '' }}</td>
+              <td class="px-2 py-1 text-right tabular-nums">{{ f.importe | num_es(2) }}</td>
+              <td class="px-2 py-1 text-slate-500">{{ f.banco or '' }}</td>
+            </tr>
+          {% else %}
+            {{ empty_row(6, 'Sin compras para ese filtro.') }}
+          {% endfor %}
+        </tbody>
+        {% if filas %}
+        <tfoot>
+          <tr class="border-t-2 border-slate-300 font-bold">
+            <td class="px-2 py-2" colspan="2">TOTAL · {{ filas | length }} compras</td>
+            <td class="px-2 py-2 text-right tabular-nums">{{ total_kg | num_es(0) }}</td>
+            <td></td>
+            <td class="px-2 py-2 text-right tabular-nums">{{ total_importe | num_es(2) }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+    {% if filas | length >= 2000 %}
+      <p class="text-[11px] text-amber-600 mt-2">Mostrando las primeras 2.000 compras. Afiná el filtro (proveedor / desde) para ver menos.</p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

@@ -35,6 +35,16 @@
           ← Volver
         </a>
       {% endif %}
+      {% if vista == 'compras' %}
+        {# TMT 2026-07-17 (dueña): acceso al Histórico estilo dBase 4B
+           (proveedor + desde). #}
+        <a href="{{ url_for('compras.historico') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+           title="Histórico de compras por proveedor — réplica del comando 4B del dBase">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+          Histórico
+        </a>
+      {% endif %}
       {% if tiene_permiso('compras.crear') %}
         <a href="{{ url_for('compras.nueva') }}"
            class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">

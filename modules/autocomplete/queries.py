@@ -33,7 +33,8 @@ def clientes_para_datalist() -> list[dict]:
 def proveedores_para_datalist() -> list[dict]:
     return db.fetch_all(
         """
-        SELECT codigo_prov, COALESCE(nombre, '') AS nombre
+        SELECT codigo_prov, COALESCE(nombre, '') AS nombre,
+               UPPER(TRIM(COALESCE(tipo, ''))) AS tipo
           FROM scintela.proveedor
          WHERE COALESCE(activo, '1') <> '0'
          ORDER BY codigo_prov

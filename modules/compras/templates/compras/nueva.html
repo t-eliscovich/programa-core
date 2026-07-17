@@ -44,18 +44,22 @@
         {% endif %}
       </label>
 
-      <label class="flex flex-col">
-        {# TMT 2026-07-06 (dueña): "cuando creo una compra, por ej un OP no
-           es necesario tipo" — deja de ser obligatorio (el backend ya
-           aceptaba tipo NULL). #}
-        <span class="text-xs text-slate-600">Tipo <span class="text-slate-400 text-[10px]">(opcional)</span></span>
-        {# TMT 2026-05-19 (Tamara): mostrar el código LC2 (2 letras) en la
-           etiqueta para que coincida con el vocabulario que usa la dueña
-           ("KK", "CC", "HH"…). El value sigue siendo el char único de la
-           DB para no romper el schema. Agregado I (IN) = Anticipo máquinas
-           y corregido C = Tintorería. #}
-        <select name="tipo"
-                class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900">
+      <div class="flex flex-col">
+        {# TMT 2026-07-17 (dueña): "los proveedores o son de hilo o son de
+           químicos → cuando cargo una compra ya no hace falta preguntar el
+           tipo". El tipo se auto-completa del tipo del proveedor (H=hilado,
+           Q=químicos, K=tejido). El <select> queda oculto y solo aparece con
+           "cambiar" para los casos raros (anticipo, servicios, tintorería) o
+           si el proveedor no tiene tipo cargado. #}
+        <span class="text-xs text-slate-600">Tipo
+          <span class="text-slate-400 text-[10px]">(auto del proveedor)</span></span>
+        <div id="tipo-auto-wrap" class="mt-0.5 flex items-center gap-2" style="min-height:34px">
+          <span id="tipo-auto-label" class="text-sm font-medium text-slate-800 dark:text-slate-100">—</span>
+          <button type="button" id="tipo-cambiar"
+                  class="text-xs text-sky-600 hover:underline">cambiar</button>
+        </div>
+        <select name="tipo" id="tipo-select"
+                class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 hidden">
           <option value="">— elegir —</option>
           {% for k in ['K', 'H', 'Q', 'C', 'A', 'I'] %}
             <option value="{{ k }}" {% if form.tipo and form.tipo|upper == k %}selected{% endif %}
@@ -64,7 +68,7 @@
             </option>
           {% endfor %}
         </select>
-      </label>
+      </div>
 
       <label class="flex flex-col">
         <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
@@ -226,6 +230,63 @@
     clearTimeout(timer); timer = setTimeout(cargar, 450);
   }));
   if (prov.value) cargar();
+
+  // ── Auto-tipo desde el proveedor (dueña 2026-07-17) ─────────────────
+  // El tipo del proveedor (H/Q/K…) define el tipo de la compra sin preguntar.
+  // Mapeo proveedor→compra: H=hilado, Q=químicos, K=tejido. Los demás
+  // (U=máquina, Y=otro, B=bancos, sin tipo) no tienen equivalencia directa →
+  // se muestra el select para elegir a mano.
+  const PROV_TIPO = {
+    {% for p in proveedores_datalist %}{% if p.tipo %}"{{ p.codigo_prov }}":"{{ p.tipo }}",{% endif %}{% endfor %}
+  };
+  const sel = document.getElementById('tipo-select');
+  const lbl = document.getElementById('tipo-auto-label');
+  const btnCambiar = document.getElementById('tipo-cambiar');
+  if (sel && lbl) {
+    // Etiquetas legibles tomadas del propio <select> (LC2 — Nombre).
+    const LABELS = {};
+    Array.from(sel.options).forEach(o => { if (o.value) LABELS[o.value] = o.textContent.trim(); });
+    const mapProvACompra = t => ({H:'H', Q:'Q', K:'K'})[(t||'').toUpperCase()] || '';
+    let manual = false;  // true cuando la usuaria tocó "cambiar"
+
+    function pintarLabel(origen) {
+      const v = sel.value;
+      if (v) {
+        lbl.innerHTML = (LABELS[v] || v) +
+          ' <span class="text-slate-400 text-[10px]">(' + origen + ')</span>';
+      } else {
+        lbl.innerHTML = '<span class="text-slate-400">sin tipo</span>';
+      }
+    }
+    function mostrarSelect() {
+      sel.classList.remove('hidden');
+      btnCambiar.classList.add('hidden');
+    }
+    function aplicarDesdeProveedor() {
+      if (manual) return;  // no pisar lo que eligió a mano
+      const cod = (prov.value || '').trim().toUpperCase();
+      const compra = mapProvACompra(PROV_TIPO[cod]);
+      if (compra) {
+        sel.value = compra;
+        sel.classList.add('hidden');
+        btnCambiar.classList.remove('hidden');
+        pintarLabel('del proveedor');
+      } else {
+        // Proveedor sin tipo mapeable → que elija a mano.
+        mostrarSelect();
+        pintarLabel('elegí');
+      }
+    }
+    btnCambiar.addEventListener('click', () => { manual = true; mostrarSelect(); sel.focus(); });
+    sel.addEventListener('change', () => { manual = true; pintarLabel('manual'); });
+    ['input', 'change', 'blur'].forEach(ev => prov.addEventListener(ev, aplicarDesdeProveedor));
+
+    // Estado inicial: si ya venía un tipo (volvimos de un error / alta de
+    // proveedor), respetarlo; si no, derivarlo del proveedor si hay uno.
+    if (sel.value) { pintarLabel('cargado'); manual = true; }
+    else if (prov.value) aplicarDesdeProveedor();
+    else pintarLabel('elegí');
+  }
 })();
 </script>
 {% endblock %}
