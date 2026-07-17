@@ -42,6 +42,29 @@ def _safe(fn, default):
         return default, str(e)
 
 
+# ── Cache de la pantalla /flujo-produccion ──────────────────────────────────
+# Federico 2026-07-17: armar esta pantalla dispara ~12 consultas externas
+# (dBase + Asinfo/Metabase + formulas). Las de Asinfo ya están cacheadas en su
+# service (5–10 min), pero las de dBase/formulas (movimientos del mes, tintorería
+# mensual del AÑO entero, gastos, químicos) se re-ejecutaban en CADA carga → entrar
+# y salir de la pantalla tardaba lo mismo siempre. Cacheamos el contexto ya armado
+# por (anio, mes) unos minutos: la primera carga sigue costando, pero las repetidas
+# (mismo mes, cualquier usuario — los datos NO dependen del usuario) salen
+# instantáneas. TTL corto (2 min) para no servir números viejos; solo se cachean
+# cargas exitosas (con data), nunca un Asinfo caído o un mes vacío.
+import logging as _logging_fp
+import time as _time_fp
+
+_LOG_FP = _logging_fp.getLogger(__name__)
+_FLUJO_PROD_CACHE: dict = {}
+_FLUJO_PROD_TTL_SECS = 120  # 2 min
+
+
+def reset_flujo_produccion_cache() -> None:
+    """Vaciar el cache de la pantalla /flujo-produccion (tests / tras deploy)."""
+    _FLUJO_PROD_CACHE.clear()
+
+
 def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
                       proy_quimico=None) -> dict | None:
     """Tabla 'movimientos del mes' con la MISMA lógica del dBase/TINT.BAT pero
@@ -2182,6 +2205,20 @@ def flujo_produccion():
     except (TypeError, ValueError):
         mes = hoy.month
     mes = max(1, min(mes, 12))
+
+    # Cache-hit: contexto ya armado para este (anio, mes) dentro del TTL. Los
+    # datos no dependen del usuario, así que se comparte entre usuarios.
+    _ck = (anio, mes)
+    _now_fp = _time_fp.time()
+    _t0_fp = _time_fp.perf_counter()
+    _cached_fp = _FLUJO_PROD_CACHE.get(_ck)
+    if _cached_fp and (_now_fp - _cached_fp[0]) < _FLUJO_PROD_TTL_SECS:
+        _ctx = _cached_fp[1]
+        # el context-processor de comparativa_tintoreria lee g._tint_mensual
+        g._tint_mensual = _ctx.get("_tint_mensual")
+        _LOG_FP.info("flujo_produccion %s/%s cache HIT", mes, anio)
+        return render_template("informes/flujo_produccion.html", **_ctx["render"])
+
     data, error = _safe(
         lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes),
         {},
@@ -2293,8 +2330,7 @@ def flujo_produccion():
         [],
     )
 
-    return render_template(
-        "informes/flujo_produccion.html",
+    _render_kw = dict(
         data=data,
         anio=anio,
         mes=mes,
@@ -2304,6 +2340,14 @@ def flujo_produccion():
         prod_tej_asinfo=prod_tej_asinfo,
         coherencia=coherencia,
     )
+    # Guardar en cache SOLO cargas buenas: sin error y con data del mes. Así un
+    # Asinfo caído o un mes vacío no queda "pegado" el TTL entero.
+    if not error and isinstance(data, dict) and data.get("header"):
+        _FLUJO_PROD_CACHE[_ck] = (
+            _now_fp, {"_tint_mensual": _tint_mensual, "render": _render_kw})
+    _LOG_FP.info("flujo_produccion %s/%s cache MISS armado en %.2fs",
+                 mes, anio, _time_fp.perf_counter() - _t0_fp)
+    return render_template("informes/flujo_produccion.html", **_render_kw)
 
 
 @informes_bp.route("/gastos")

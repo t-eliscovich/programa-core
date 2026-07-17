@@ -244,7 +244,7 @@
       {% set aj_abs = (aj if aj >= 0 else -aj) %}
       {% set aj_pct = (aj_abs / qm.final_prog * 100) if qm.final_prog else 0 %}
       <div class="fp-quim mt-2" title="Stock de químicos: Inicial + Compras del mes − Consumo (= el proyectado de tintura, el mismo número de la tabla de abajo) = Libro. El ajuste = Físico de hoy − Libro es de arranque (cambio de sistema dBase→programa) este mes; se muestra, no se postea. Es el mismo cálculo que la columna QUÍM.$ de arriba.">
-        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[12px] leading-5">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[11px] leading-4">
           <span class="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Stock de químicos</span>
           <span class="text-slate-400 dark:text-slate-500">Inicial <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</b></span>
           <span class="text-slate-300 dark:text-slate-600">+</span>
@@ -256,9 +256,9 @@
           {% if ff is not none %}
           <span class="text-slate-300 dark:text-slate-600">·</span>
           <span class="text-slate-400 dark:text-slate-500">Físico <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</b></span>
-          <span class="rounded bg-amber-50 dark:bg-amber-950/30 px-1.5 text-amber-700 dark:text-amber-400">Ajuste de arranque <b class="tabular-nums font-bold">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</b> <span class="text-[11px]">({{ aj_pct | num_es(1) }}%)</span></span>
+          <span class="rounded bg-amber-50 dark:bg-amber-950/30 px-1.5 text-amber-700 dark:text-amber-400">Ajuste de arranque <b class="tabular-nums font-bold">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</b> <span class="text-[10px]">({{ aj_pct | num_es(1) }}%)</span></span>
           {% endif %}
-          <span class="ml-auto text-[11px] text-slate-400 dark:text-slate-500">consumo = proyectado de tintura · USD</span>
+          <span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">consumo = proyectado de tintura · USD</span>
         </div>
       </div>
       {% endif %}
