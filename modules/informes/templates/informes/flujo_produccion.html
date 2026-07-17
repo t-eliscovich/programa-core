@@ -63,11 +63,14 @@
      ancho de estas tablas para que las columnas queden juntas, y achicamos
      la columna separadora del medio (col 5). Ambas tablas comparten el mismo
      max-width y grilla → siguen alineadas entre sí. */
-  .fp .mov-table, .fp .hil-table { table-layout: fixed; max-width: 660px; }
+  .fp .mov-table, .fp .hil-table { table-layout: fixed; max-width: 780px; }
   .fp .hil-table th, .fp .hil-table td { white-space: nowrap; }
-  /* dos titulos lado a lado: el 2do arranca en la col 5 (~49%) */
-  .fp .hil-titles { display: flex; max-width: 660px; }
-  .fp .hil-titles > .blk-title:first-child { width: 53%; }
+  /* Federico 2026-07-17 — separar el bloque HILADO (cols 1-4) del bloque
+     TEJIDO (cols 5-8): la col 5 (separadora / PROV de tejido) se ensancha para
+     correr todo el bloque de tejido hacia la derecha. El 2do título arranca en
+     la col 5 (~44%). */
+  .fp .hil-titles { display: flex; max-width: 780px; }
+  .fp .hil-titles > .blk-title:first-child { width: 44%; }
   /* STOCK DE QUÍMICOS: altura pareja de los labels (algunos se parten en 2
      líneas, ej. "recibidas formulas") → los números quedan alineados. */
   .qm-kpis > div > div:first-child { min-height: 2.4em; }
@@ -131,7 +134,7 @@
       {% set _maq = mov_asinfo.get('maquinas', {}) %}
       <table class="mov-table" data-no-sort-table>
         <colgroup>
-          <col style="width:16%"><col style="width:13%"><col style="width:11%"><col style="width:13%"><col style="width:8%"><col style="width:13%"><col style="width:12%"><col style="width:14%">
+          <col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:21%"><col style="width:11%"><col style="width:9%"><col style="width:15%">
         </colgroup>
         <thead>
           <tr>
@@ -276,7 +279,7 @@
       <div class="hil-titles"><span class="blk-title">Compras hilado</span><span class="blk-title">Producción tejido</span></div>
       <table class="hil-table" data-no-sort-table>
         <colgroup>
-          <col style="width:16%"><col style="width:13%"><col style="width:11%"><col style="width:13%"><col style="width:8%"><col style="width:13%"><col style="width:12%"><col style="width:14%">
+          <col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:21%"><col style="width:11%"><col style="width:9%"><col style="width:15%">
         </colgroup>
         <thead>
           <tr>
