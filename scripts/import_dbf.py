@@ -915,6 +915,25 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             )
             _retiros_pc = cur.fetchall()
 
+        # TMT 2026-07-17: preservar las compras del PUENTE formulas
+        # (usuario_crea LIKE 'formulas-%': el cron usa 'formulas-auto' y la
+        # pantalla 'formulas-<user>'). Nacen en PC desde formulas_app y NO
+        # están (todavía) en COMPRAS.DBF → el TRUNCATE las borraría y el
+        # pasivo (posdat) quedaría huérfano. Snapshot antes del truncate;
+        # se restauran después SOLO si el DBF no trajo una gemela (mismo
+        # proveedor + importe + mes) — si la cargaron a mano en el dBase,
+        # dBase gana y la copia del puente se absorbe (sin duplicar).
+        _compras_formulas = []
+        if pg_table == "scintela.compra":
+            cur.execute(
+                "SELECT fecha, id_proveedor, codigo_prov, tipo, comprobante, "
+                "       kg, importe, numero, fecha_ing, fechad, concepto, "
+                "       clave, no_banco, usuario_crea, cuenta_pagada, stat "
+                "  FROM scintela.compra "
+                " WHERE COALESCE(usuario_crea, '') LIKE 'formulas-%'"
+            )
+            _compras_formulas = cur.fetchall()
+
         # Estrategia de limpieza pre-load:
         # - Default: TRUNCATE total (tabla 1:1 con DBF).
         # - delete_where: tabla compartida entre múltiples DBFs (caso
@@ -1118,6 +1137,41 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             if restaurados:
                 print(f"   [PC gana] {restaurados} retiros de origen PC restaurados "
                       f"(no están en el DBF, ej. retiro OP banco USA)")
+
+        # Restaurar las compras del puente formulas (ver snapshot arriba).
+        # Anti-duplicado: si el DBF trajo una gemela (mismo proveedor +
+        # importe ±0.01 + mismo mes), dBase gana → la copia del puente NO
+        # se restaura (su posdat lo matchea el posdat-reconcile normal).
+        if pg_table == "scintela.compra" and _compras_formulas:
+            _restauradas = 0
+            for (_fec, _idp, _cprov, _tip, _comp, _kg, _imp, _num, _fing,
+                 _fd, _conc, _cla, _nb, _usr, _cpag, _st) in _compras_formulas:
+                if (_st or "").upper() != "Y":
+                    cur.execute(
+                        "SELECT 1 FROM scintela.compra "
+                        " WHERE UPPER(TRIM(COALESCE(codigo_prov,''))) = "
+                        "       UPPER(TRIM(COALESCE(%s,''))) "
+                        "   AND ABS(COALESCE(importe,0) - %s) < 0.01 "
+                        "   AND date_trunc('month', fecha) = date_trunc('month', %s::date) "
+                        " LIMIT 1",
+                        (_cprov, float(_imp or 0), _fec),
+                    )
+                    if cur.fetchone():
+                        continue  # el DBF ya la trae → dBase gana, no duplicar
+                cur.execute(
+                    "INSERT INTO scintela.compra "
+                    "(fecha, id_proveedor, codigo_prov, tipo, comprobante, "
+                    " kg, importe, numero, fecha_ing, fechad, concepto, "
+                    " clave, no_banco, usuario_crea, cuenta_pagada, stat) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                    "        %s, %s, %s, %s, %s)",
+                    (_fec, _idp, _cprov, _tip, _comp, _kg, _imp, _num,
+                     _fing, _fd, _conc, _cla, _nb, _usr, _cpag, _st),
+                )
+                _restauradas += 1
+            if _restauradas:
+                print(f"   [PC gana] {_restauradas} compras del puente formulas "
+                      f"restauradas (no están en el DBF)")
 
         # Restaurar las ediciones PC de gastos proyectados (ver snapshot arriba).
         if pg_table == "scintela.iniciales" and _ini_overrides:

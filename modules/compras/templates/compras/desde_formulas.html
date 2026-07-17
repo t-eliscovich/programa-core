@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Compras — Desde formulas{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('compras.lista') }}" class="hover:underline text-slate-500">Compras</a> / <strong>Desde formulas</strong>{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--xl">
+  <header class="page-header">
+    <h1 class="page-title">Compras de químicos desde formulas</h1>
+    <p class="text-sm text-slate-500">
+      Lo que formulas registró al recibir, contra lo cargado en el programa.
+      Cada carga genera su pasivo (posdatados) automáticamente.
+      {% if autosync %}
+        <span class="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-800">automático diario: ON</span>
+      {% else %}
+        <span class="inline-block px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-600">automático diario: OFF</span>
+      {% endif %}
+    </p>
+  </header>
+
+  <div class="page-card mb-4">
+    <div class="flex items-end gap-3 flex-wrap">
+      <form method="get" class="flex items-end gap-3">
+        <label class="flex flex-col text-sm">
+          <span class="text-slate-500 mb-1">Mes</span>
+          <input type="month" name="mes" value="{{ mes_str }}" class="compact-input">
+        </label>
+        <button type="submit" class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Ver</button>
+      </form>
+      {% if est.disponible and est.pendientes > 0 and tiene_permiso('compras.crear') %}
+        <form method="post" action="{{ url_for('compras.desde_formulas_sincronizar', mes=mes_str) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit"
+                  class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+            Cargar las {{ est.pendientes }} pendientes ({{ est.total_pendiente | money_es }})
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not est.disponible %}
+    <div class="page-card">
+      <p class="text-slate-500">El puente a formulas no está disponible en este momento
+      (formulas caído o bridge sin configurar). Reintentá más tarde.</p>
+    </div>
+  {% else %}
+    <div class="page-card overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-500 border-b border-slate-200">
+            <th class="py-2 pr-3">FECHA</th>
+            <th class="py-2 pr-3">PROV FORMULAS</th>
+            <th class="py-2 pr-3">PROV PC</th>
+            <th class="py-2 pr-3">FACTURA</th>
+            <th class="py-2 pr-3 text-right">KG</th>
+            <th class="py-2 pr-3 text-right">S/IVA</th>
+            <th class="py-2 pr-3 text-right">IVA</th>
+            <th class="py-2 pr-3 text-right">C/IVA</th>
+            <th class="py-2 pr-3">ESTADO</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in est.filas %}
+          <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% endif %}">
+            <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
+            <td class="py-1.5 pr-3">{{ f.proveedor_formulas }}</td>
+            <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or '—' }}</td>
+            <td class="py-1.5 pr-3">{{ f.factura_pc or f.factura_formulas }}
+              {% if f.factura_pc and f.factura_pc != f.factura_formulas %}
+                <span class="text-xs text-slate-400">(formulas: {{ f.factura_formulas }})</span>
+              {% endif %}
+            </td>
+            <td class="py-1.5 pr-3 text-right">{{ f.kg | num_es }}</td>
+            <td class="py-1.5 pr-3 text-right">{{ f.importe_siva | money_es }}</td>
+            <td class="py-1.5 pr-3 text-right">{{ (f.iva_pct * 100) | int }}%</td>
+            <td class="py-1.5 pr-3 text-right font-medium">{{ f.importe_con_iva | money_es }}</td>
+            <td class="py-1.5 pr-3">
+              {% if f.estado == 'cargada' %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-800"
+                      title="{{ f.detalle_match or '' }}">✓ cargada</span>
+              {% elif f.estado == 'pendiente' %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800">pendiente</span>
+              {% elif f.estado == 'excluida' %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-600"
+                      title="{{ f.detalle_match or '' }}">excluida</span>
+              {% else %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-rose-100 text-rose-800"
+                      title="{{ f.detalle_match or '' }}">sin mapear</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="py-4 text-slate-500">Sin compras en formulas para este mes.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500 mt-3">
+      El importe C/IVA usa 15% (0% para la sal / ES). Si una factura mezcla ítems con y sin
+      IVA, cargá igual y corregí el importe con Editar en /compras — el pasivo se ajusta solo.
+      COLOURTEX (COLO) queda excluido: es importación y entra por su circuito (banc 9).
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

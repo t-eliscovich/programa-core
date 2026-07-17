@@ -346,6 +346,32 @@ def main(argv: list[str] | None = None) -> int:
         log.exception("tareas diarias (rollover/writeback/foto) fallaron")
         print(f"  [ER]  tareas diarias (rollover/foto): {type(_exc).__name__}: {_exc}")
 
+    # ── Puente compras de químicos formulas_app → PC (TMT 2026-07-17,
+    #    pedido dueña: "automático total"). Idempotente y fail-soft: carga
+    #    solo las facturas del mes que faltan en scintela.compra; cada una
+    #    genera su posdat banc=0 (pasivo). Apagable con
+    #    FORMULAS_COMPRAS_AUTOSYNC=0. NO afecta el exit code. ──
+    try:
+        from modules._lib import formulas_db as _fdb
+        _fdb.init_pool()  # idempotente; no-op si ya está
+        from modules.compras import formulas_bridge as _fb
+        _rep = _fb.sincronizar_mes_actual()
+        if _rep.get("apagado"):
+            print("  [--]  puente formulas: apagado por env")
+        elif not _rep.get("disponible"):
+            print("  [--]  puente formulas: bridge no disponible")
+        else:
+            _n, _e = len(_rep.get("creadas") or []), len(_rep.get("errores") or [])
+            print(f"  [OK]  puente formulas: {_n} compras cargadas, "
+                  f"{_rep.get('ya_cargadas', 0)} ya estaban, {_e} errores")
+            for _c in (_rep.get("creadas") or []):
+                print(f"        + {_c['proveedor']} {_c['factura']} {_c['importe']:.2f}")
+            for _x in (_rep.get("errores") or []):
+                print(f"        ! {_x.get('proveedor')} {_x.get('factura')}: {_x.get('error')}")
+    except Exception as _exc:  # noqa: BLE001
+        log.exception("puente formulas falló")
+        print(f"  [ER]  puente formulas: {type(_exc).__name__}: {_exc}")
+
     # Resumen legible en stdout para el log del scheduler.
     print()
     print(f"  periodo: {periodo}")

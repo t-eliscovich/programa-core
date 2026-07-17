@@ -560,3 +560,66 @@ def cargar_csv():
             result=result, cols=COMPRAS_CSV_COLS,
         )
     return render_template("compras/cargar_csv.html", cols=COMPRAS_CSV_COLS)
+
+
+# =====================================================================
+# Puente formulas_app → compras (colorantes/químicos). TMT 2026-07-17.
+# La carga AUTOMÁTICA corre a diario desde procesa_provisiones_mensual
+# (cron); esta pantalla muestra el estado y permite sincronizar ya.
+# =====================================================================
+
+
+def _mes_arg():
+    """Lee ?mes=YYYY-MM (default: mes actual EC). Devuelve (anio, mes)."""
+    from filters import today_ec
+
+    arg = (request.args.get("mes") or "").strip()
+    if arg:
+        try:
+            dt = datetime.strptime(arg, "%Y-%m")
+            return dt.year, dt.month
+        except ValueError:
+            pass
+    h = today_ec()
+    return h.year, h.month
+
+
+@compras_bp.route("/compras/desde-formulas")
+@requiere_login
+@requiere_permiso("compras.ver")
+def desde_formulas():
+    from modules.compras import formulas_bridge
+
+    anio, mes = _mes_arg()
+    est = formulas_bridge.estado_mes(anio, mes)
+    return render_template(
+        "compras/desde_formulas.html",
+        est=est,
+        anio=anio,
+        mes=mes,
+        mes_str=f"{anio:04d}-{mes:02d}",
+        autosync=formulas_bridge.autosync_habilitado(),
+    )
+
+
+@compras_bp.route("/compras/desde-formulas/sincronizar", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def desde_formulas_sincronizar():
+    from modules.compras import formulas_bridge
+
+    anio, mes = _mes_arg()
+    usuario = (g.user or {}).get("username", "web")
+    rep = formulas_bridge.sincronizar_mes(anio, mes, usuario=f"formulas-{usuario}")
+    if not rep.get("disponible"):
+        flash("El puente a formulas no está disponible en este momento.", "warn")
+    else:
+        n, e = len(rep["creadas"]), len(rep["errores"])
+        tono = "ok" if e == 0 else "warn"
+        msg = f"Cargadas {n} compras de formulas (pasivo generado)."
+        if e:
+            msg += f" {e} con error: " + "; ".join(
+                f"{x['proveedor']} {x['factura']}: {x['error']}" for x in rep["errores"][:3]
+            )
+        flash(msg, tono)
+    return redirect(url_for("compras.desde_formulas", mes=request.args.get("mes")))

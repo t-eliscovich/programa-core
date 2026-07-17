@@ -64,6 +64,11 @@
               <div class="font-medium">Descargar plantilla CSV</div>
             </a>
           {% endif %}
+          <a href="{{ url_for('compras.desde_formulas') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Desde formulas (químicos)</div>
+            <div class="text-xs text-slate-500">Puente automático de colorantes</div>
+          </a>
           <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta,
                                anuladas=('0' if incluir_anuladas else '1')) }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
