@@ -280,3 +280,55 @@ def test_diferencia_mayor_a_300_requiere_confirmar():
     assert prop["importe"] == 500.0
     assert prop["requiere_confirmar"] is True
     assert prop["umbral_confirmar"] == 300.0
+
+
+# ── forzar_asignacion_completa (dueña 2026-07-17: aceptar diferencia) ──
+# La vista previa ya advirtió la diferencia; si la dueña confirma igual,
+# la asignación se cierra a la fuerza por cercanía de monto (gap asumido).
+
+def test_forzar_1a1_con_diferencia_de_1():
+    # El caso reportado: DEPOSITO 16.795,76 vs DE CAJA 16.796,76 (Δ=1.00 > tol).
+    from modules.conciliacion.banco_v2_view import forzar_asignacion_completa
+    banco = [(0, 16795.76)]
+    prog = [("p1", 16796.76)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog, tol=0.50)
+    completa, _pcs = reconciliacion_completa(asign, sobrantes, ["p1"])
+    assert not completa  # sin aceptar_diferencia sigue fallando (regresión)
+    asign2, sobr2 = forzar_asignacion_completa(asign, sobrantes, banco, prog)
+    completa2, pcs2 = reconciliacion_completa(asign2, sobr2, ["p1"])
+    assert completa2
+    assert asign2 == {"p1": [0]} and sobr2 == []
+
+
+def test_forzar_elige_el_mas_cercano():
+    # Dos PC sueltos, dos banco sobrantes → cada uno toma el más cercano.
+    from modules.conciliacion.banco_v2_view import forzar_asignacion_completa
+    banco = [(0, 100.0), (1, 5000.0)]
+    prog = [("chico", 103.0), ("grande", 4990.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog, tol=0.50)
+    asign2, sobr2 = forzar_asignacion_completa(asign, sobrantes, banco, prog)
+    assert asign2 == {"grande": [1], "chico": [0]}
+    assert sobr2 == []
+
+
+def test_forzar_sobrante_extra_va_al_grupo_mas_cercano():
+    # 2 banco → 1 PC: el que cuadra matchea solo; el sobrante se suma al grupo.
+    from modules.conciliacion.banco_v2_view import forzar_asignacion_completa
+    banco = [(0, 100.0), (1, 7.0)]
+    prog = [("p1", 100.0)]
+    asign, sobrantes = asignar_banco_a_programa(banco, prog, tol=0.50)
+    assert asign == {"p1": [0]} and sobrantes == [1]
+    asign2, sobr2 = forzar_asignacion_completa(asign, sobrantes, banco, prog)
+    assert asign2 == {"p1": [0, 1]} and sobr2 == []
+
+
+def test_forzar_no_muta_entrada_y_sin_pcs_no_inventa():
+    # Sin ningún PC no hay a quién atar → sobrantes quedan (no inventa nada).
+    from modules.conciliacion.banco_v2_view import forzar_asignacion_completa
+    asign_in = {}
+    asign2, sobr2 = forzar_asignacion_completa(asign_in, [0], [(0, 9.0)], [])
+    assert sobr2 == [0] and asign2 == {}
+    # Y no muta el dict de entrada cuando sí hay PCs.
+    asign_in = {"p1": [0]}
+    forzada, _ = forzar_asignacion_completa(asign_in, [1], [(0, 1.0), (1, 2.0)], [("p1", 1.0)])
+    assert asign_in == {"p1": [0]} and forzada == {"p1": [0, 1]}

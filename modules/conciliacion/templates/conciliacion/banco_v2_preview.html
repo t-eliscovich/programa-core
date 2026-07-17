@@ -146,6 +146,9 @@
     <input type="hidden" name="real_sigs" value="{{ real_sigs_csv }}">
     <input type="hidden" name="hist_ids" value="{{ hist_ids_csv }}">
     <input type="hidden" name="bancsis_ids" value="{{ bancsis_ids_csv }}">
+    {# dueña 2026-07-17: la vista previa ya mostró la diferencia (si la hay);
+       confirmar acá = aceptarla. El backend cierra el match con gap asumido. #}
+    <input type="hidden" name="aceptar_diferencia" value="1">
     <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=sesion.id, tab='manual') }}"
        class="px-5 py-2 rounded text-sm font-medium border border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
       Cancelar

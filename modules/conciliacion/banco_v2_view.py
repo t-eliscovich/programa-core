@@ -191,6 +191,42 @@ def reconciliacion_completa(asign, sobrantes, prog_ids):
     return completa, pcs_sin_banco
 
 
+def forzar_asignacion_completa(asign, sobrantes_idx, banco_firmados, prog_firmados):
+    """Cierra a la fuerza una asignación que quedó incompleta por diferencia
+    de montos (dueña 2026-07-17: "cuando hay diferencia que re pregunte pero
+    que deje igual"). Se usa SOLO cuando la dueña ya vio la advertencia de
+    diferencia en la vista previa y confirmó igual (aceptar_diferencia=1).
+
+    Empareja por cercanía de monto lo que quedó suelto:
+      1) cada PC sin banco toma el banco sobrante de monto más cercano;
+      2) los banco sobrantes restantes van al grupo del PC más cercano.
+    La diferencia queda como gap asumido (visible en /banco-v2/auditar).
+
+    Función PURA. Devuelve (asign, sobrantes). `sobrantes` solo queda no-vacío
+    si no hay ningún PC al que atarlos (selección sin lado programa).
+    """
+    asign = {p: list(b) for p, b in asign.items()}
+    banco_val = dict(banco_firmados)
+    prog_val = dict(prog_firmados)
+    rem = list(sobrantes_idx)
+    pcs_sueltos = [p for p, _t in prog_firmados if p not in asign]
+    for pc_id in pcs_sueltos:
+        if not rem:
+            break
+        target = prog_val.get(pc_id, 0.0)
+        best = min(rem, key=lambda i: abs(banco_val.get(i, 0.0) - target))
+        rem.remove(best)
+        asign[pc_id] = [best]
+    for i in list(rem):
+        if not asign:
+            break
+        sval = banco_val.get(i, 0.0)
+        pc_best = min(asign.keys(), key=lambda p: abs(prog_val.get(p, 0.0) - sval))
+        asign[pc_best].append(i)
+        rem.remove(i)
+    return asign, rem
+
+
 def _proponer_movimiento_diferencia(
     banco_firmados,
     prog_firmados,
@@ -802,14 +838,12 @@ def banco_preview():
         if signo_banco != signo_prog:
             warnings.append(
                 f"Signos opuestos — banco {'+' if signo_banco > 0 else '−'} vs "
-                f"programa {'+' if signo_prog > 0 else '−'}. Conciliar entradas con "
-                f"salidas crea diferencia."
+                f"programa {'+' if signo_prog > 0 else '−'}."
             )
             can_confirm = False
     if abs(diff_total) > 0.01:
         warnings.append(
-            f"Montos no cuadran — diferencia ${diff_total:+,.2f}. "
-            f"Si lo confirmás igual, esa diferencia queda como gap permanente."
+            f"Diferencia ${diff_total:+,.2f}. Si confirmás, queda asumida."
         )
 
     # Cálculo del balance ANTES y DESPUÉS.
@@ -1692,15 +1726,26 @@ def banco_manual_confirmar():
                     n_banco=len(banco_movs),
                     n_prog=len(bancsis_ids),
                 )
+            # dueña 2026-07-17: "cuando hay diferencia que re pregunte pero
+            # que deje igual". La vista previa YA mostró la advertencia de
+            # diferencia y la dueña confirmó igual → cerrar la asignación a la
+            # fuerza (por cercanía de monto) y conciliar con el gap asumido.
+            # Antes esto fallaba todo-o-nada cuando |dif| > tol=0.50 (ej. $1).
+            if (request.form.get("aceptar_diferencia") or "") == "1":
+                asign, sobrantes_idx = forzar_asignacion_completa(
+                    asign, sobrantes_idx, banco_firmados, prog_firmados,
+                )
+                completa, pcs_sin_banco = reconciliacion_completa(
+                    asign, sobrantes_idx, bancsis_ids,
+                )
+        if not completa:
             # TODO-O-NADA: no confirmar nada. Todo queda pendiente.
             sobrantes_banco = len(sobrantes_idx)
             incompleto = True
             incompleto_msg = (
-                f"No se concilió nada: no se pudieron emparejar TODOS los "
-                f"movimientos de la selección (quedaban {len(sobrantes_idx)} de "
-                f"banco sin match / {len(pcs_sin_banco)} de programa sin "
-                f"contraparte). La conciliación es todo-o-nada: no se aprueba una "
-                f"sola pata. Quedó todo PENDIENTE — revisá los montos."
+                f"No se concilió nada: {len(sobrantes_idx)} de banco / "
+                f"{len(pcs_sin_banco)} de programa sin match. "
+                f"Quedó todo pendiente."
             )
         else:
             # Reconciliación COMPLETA → confirmar cada grupo PC → [banco]. Un
@@ -1742,46 +1787,36 @@ def banco_manual_confirmar():
         # Ya flasheamos el mensaje todo-o-nada arriba; no duplicar diagnóstico.
         pass
     else:
-        # Diagnóstico verboso: si no hubo movs, decir EXACTO por qué para
-        # que la dueña pueda reaccionar (no más "Sin cambios" silencioso).
+        # Diagnóstico corto (dueña 2026-07-17: "saca los mensajes muy wordies").
+        # El detalle largo va al log, no al flash.
         diag = (
             f"banco enviado={len(real_idxs)}+{len(hist_ids)}hist, "
             f"programa enviado={len(bancsis_ids)}, "
             f"resolución={metodo_resolucion}"
         )
+        _LOG.warning("manual confirm sin cambios: %s err=%s", diag, err_msg)
         if real_subset and bancsis_ids and not n_matches:
             # Llegó al confirm_match pero todos fallaron (raro).
             flash(
-                f"Se intentaron {len(real_subset)} match(es) pero todos "
-                f"fallaron. {('Error: ' + err_msg) if err_msg else 'Sin error claro.'} "
-                f"[{diag}]",
+                f"Los {len(real_subset)} match(es) fallaron."
+                f"{(' ' + err_msg) if err_msg else ''}",
                 "error",
             )
         elif real_idxs and not real_subset and not real_sigs:
             # Cliente viejo: idxs mandados sin firmas. Hard-refresh requerido.
-            flash(
-                f"Tu pantalla está vieja — recargá con Ctrl+Shift+R (o Cmd+Shift+R) "
-                f"para que el form mande las firmas que el backend necesita. "
-                f"[{diag}]",
-                "error",
-            )
+            flash("Pantalla desactualizada — recargá con Ctrl+Shift+R.", "error")
         elif (real_idxs or real_sigs) and not real_subset:
             flash(
-                f"No pude ubicar los {max(len(real_idxs), len(real_sigs))} mov(s) "
-                f"del banco que seleccionaste — quizá ya estaban conciliados o el "
-                f"matcher los re-clasificó. Recargá la página. [{diag}]",
+                "No encontré los movs de banco seleccionados (¿ya conciliados?). "
+                "Recargá la página.",
                 "error",
             )
         elif hist_ids and not n_hist:
-            flash(
-                f"Los {len(hist_ids)} histórico(s) seleccionado(s) no se "
-                f"encontraron en la tabla (¿ids inválidos?). [{diag}]",
-                "error",
-            )
+            flash("Históricos no encontrados. Recargá la página.", "error")
         elif err_msg:
-            flash(f"No pude conciliar: {err_msg}. [{diag}]", "error")
+            flash(f"No se pudo conciliar: {err_msg}", "error")
         else:
-            flash(f"Sin cambios. [{diag}]", "warn")
+            flash("Sin cambios.", "warn")
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
 
 
