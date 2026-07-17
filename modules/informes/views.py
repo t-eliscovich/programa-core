@@ -2219,10 +2219,15 @@ def flujo_produccion():
         _LOG_FP.info("flujo_produccion %s/%s cache HIT", mes, anio)
         return render_template("informes/flujo_produccion.html", **_ctx["render"])
 
+    # Federico 2026-07-17 — instrumentación temporal para ver qué consulta domina
+    # la primera carga (se expone en un comentario HTML al final de la página).
+    _timings = {}
+    _s = _time_fp.perf_counter()
     data, error = _safe(
         lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes),
         {},
     )
+    _timings["movimientos_dbase"] = round(_time_fp.perf_counter() - _s, 3)
 
     # TMT 2026-07-08 (dueña): tabla live de Asinfo por etapa (kg) al tope, y
     # un segundo cuadro "MOVIMIENTOS DEL MES (inicial Asinfo)" — clon del de
@@ -2230,16 +2235,20 @@ def flujo_produccion():
     # del mes. Ambas fail-soft: si Asinfo está caído la vista igual renderiza.
     from modules.asinfo import service as asinfo_service
 
+    _s = _time_fp.perf_counter()
     inv_asinfo, _e_inv = _safe(asinfo_service.inventario_por_etapa, {})
+    _timings["asinfo_inventario"] = round(_time_fp.perf_counter() - _s, 3)
     if not isinstance(inv_asinfo, dict):
         inv_asinfo = {}
 
     # Stock inicial as-of = inventario de Asinfo a la fecha de inicio del mes.
     fecha_corte = date(anio, mes, 1)
+    _s = _time_fp.perf_counter()
     inv_asinfo_inic, _e_inic = _safe(
         lambda: asinfo_service.inventario_por_etapa_a_fecha(fecha_corte),
         {},
     )
+    _timings["asinfo_inventario_asof"] = round(_time_fp.perf_counter() - _s, 3)
     if not isinstance(inv_asinfo_inic, dict):
         inv_asinfo_inic = {}
 
@@ -2251,8 +2260,10 @@ def flujo_produccion():
     _proy_quimico = None
     try:
         from modules.comparativa_tintoreria.views import _build_tintoreria_mensual
+        _s = _time_fp.perf_counter()
         _tint_mensual, _e_tint = _safe(
             lambda: _build_tintoreria_mensual(anio, mes), None)
+        _timings["tintoreria_mensual"] = round(_time_fp.perf_counter() - _s, 3)
         g._tint_mensual = _tint_mensual
         _filas_t = (_tint_mensual or {}).get("filas") or []
         if _filas_t:
@@ -2262,8 +2273,10 @@ def flujo_produccion():
         _tint_mensual = None
         _proy_quimico = None
 
+    _s = _time_fp.perf_counter()
     mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo,
                                    anio=anio, mes=mes, proy_quimico=_proy_quimico)
+    _timings["mov_asinfo_quimicos"] = round(_time_fp.perf_counter() - _s, 3)
 
     # TMT 2026-07-14 (dueña): "tengo que tener EXACTAMENTE la misma tabla, copiá
     # la segunda igual a la primera". La tabla PRODUCCIÓN TEJIDO de Asinfo tiene
@@ -2272,6 +2285,7 @@ def flujo_produccion():
     # costo (tercerizados = compra cargada; INTELA autoprod = kg × (hilo + 0,5)).
     # Los números salen de tejeduria_asinfo.resumen_mes (misma fuente que la tab).
     prod_tej_asinfo = None
+    _s = _time_fp.perf_counter()
     try:
         from modules.tejeduria_asinfo import service as _tej_svc
         _res = _tej_svc.resumen_mes(anio, mes)
@@ -2316,6 +2330,7 @@ def flujo_produccion():
             }
     except Exception:  # noqa: BLE001 -- best-effort, la vista no rompe
         prod_tej_asinfo = None
+    _timings["prod_tejido_asinfo"] = round(_time_fp.perf_counter() - _s, 3)
 
     # dueña 2026-07-15: "Asinfo manda". "Producción tejido" = FÍSICO de bodega 52
     # (resumen_mes), NO las compras tipo K — que estaban viejas del match del 13/07
@@ -2325,10 +2340,13 @@ def flujo_produccion():
         data["produc_tejido"] = prod_tej_asinfo["filas"]
         data["produc_tejido_total"] = prod_tej_asinfo["total"]
 
+    _s = _time_fp.perf_counter()
     coherencia, _e_coh = _safe(
         lambda: _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo),
         [],
     )
+    _timings["coherencia"] = round(_time_fp.perf_counter() - _s, 3)
+    _timings["TOTAL"] = round(_time_fp.perf_counter() - _t0_fp, 3)
 
     _render_kw = dict(
         data=data,
@@ -2344,10 +2362,11 @@ def flujo_produccion():
     # Asinfo caído o un mes vacío no queda "pegado" el TTL entero.
     if not error and isinstance(data, dict) and data.get("header"):
         _FLUJO_PROD_CACHE[_ck] = (
-            _now_fp, {"_tint_mensual": _tint_mensual, "render": _render_kw})
-    _LOG_FP.info("flujo_produccion %s/%s cache MISS armado en %.2fs",
-                 mes, anio, _time_fp.perf_counter() - _t0_fp)
-    return render_template("informes/flujo_produccion.html", **_render_kw)
+            _now_fp, {"_tint_mensual": _tint_mensual, "render": dict(_render_kw)})
+    _LOG_FP.info("flujo_produccion %s/%s cache MISS %ss %s",
+                 mes, anio, _timings.get("TOTAL"), _timings)
+    # _perf va SOLO en la respuesta viva (no en el cache) → comentario HTML.
+    return render_template("informes/flujo_produccion.html", _perf=_timings, **_render_kw)
 
 
 @informes_bp.route("/gastos")
