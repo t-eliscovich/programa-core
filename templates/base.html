@@ -735,9 +735,8 @@
       <details class="sidebar-section" data-key="informes" open>
         <summary>Informes</summary>
         {{ nav_link('informes.balance', 'Resultados', 'report') }}
-        {# TMT 2026-07-09 (dueña): acceso a Flujo de producción en el menú, entre
-           Resultados y Flujo de fondos (se sacó de la barra nav de Resultados). #}
-        {{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}
+        {# TMT 2026-07-17 (Federico): "Flujo de producción" movido a la sección
+           "Producción y stocks" (antes "Stock"). #}
         {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
         {# TMT 2026-05-20 PASADA 6 (Federico #9): "Check totales" sacado
            del menú principal. Accesible vía URL /informes/check-totales y
@@ -782,7 +781,8 @@
         {# TMT 2026-07-09 (dueña): Factura Proforma (ex "Nuevo pedido") movida a Modificar, debajo de Facturas. #}
         {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Factura Proforma', 'file') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
-        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
+        {# TMT 2026-07-17 (Federico): "Producción Tejeduría" movido a la sección
+           "Producción y stocks". #}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
         {# TMT 2026-06-11 dueña: anticipos (DOLARES) se cargan directo en PC.
@@ -812,7 +812,13 @@
          concedido a todos los roles en config/roles.py. #}
       {% if tiene_permiso('stock.ver') %}
       <details class="sidebar-section" data-key="stock" open>
-        <summary>Stock</summary>
+        <summary>Producción y stocks</summary>
+        {# TMT 2026-07-17 (Federico): sección "Stock" renombrada a "Producción y
+           stocks". "Flujo de producción" (venía de Resultados/Informes, gate
+           informes.ver) y "Producción Tejeduría" (venía de Modificar, gate
+           compras.ver) movidos acá arriba — producción primero, luego stocks. #}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}{% endif %}
+        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
         {# TMT 2026-06-10 dueña: Stock = 2 tabs réplica del Excel de la nube
            (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
            e importaciones siguen vivas por URL y linkeadas DENTRO de estas
