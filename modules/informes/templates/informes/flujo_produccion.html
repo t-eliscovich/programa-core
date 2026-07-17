@@ -22,17 +22,17 @@
      tamaño — cuerpo 14px (text-sm) y encabezados 12px (text-xs). Antes era la
      réplica compacta TINT.BAT (9–10.5px + números monoespaciados). */
   .fp { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
-  .fp table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  .fp table { border-collapse: collapse; width: 100%; font-size: 16px; }
   .fp .blk { background: white; border: 1px solid rgb(203 213 225);
              border-radius: 6px; padding: 5px 8px; }
   .fp .blk-title { color: rgb(220 38 38); font-weight: 700;
-                   font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase;
+                   font-size: 14px; letter-spacing: 0.05em; text-transform: uppercase;
                    margin-bottom: 2px; }
   .fp th { color: rgb(220 38 38); font-weight: 700; text-transform: uppercase;
-           text-align: right; padding: 3px 6px; font-size: 13px;
+           text-align: right; padding: 3px 6px; font-size: 14px;
            border-bottom: 1px solid rgb(148 163 184); }
   .fp th.lbl { text-align: left; }
-  .fp td { padding: 3px 6px; font-size: 15px; line-height: 1.35; }
+  .fp td { padding: 3px 6px; font-size: 16px; line-height: 1.35; }
   .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
   /* Federico 2026-06-30 — réplica TINT.BAT: los códigos de proveedor van
      alineados a la derecha (como en el programa viejo); la fila TOTAL
@@ -43,7 +43,7 @@
                     color: rgb(30 64 175); padding-top: 2px; }
   /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
      número principal, no al costado, para encolumnar correctamente. */
-  .fp .pct { color: rgb(100 116 139); font-size: 13px; display: block;
+  .fp .pct { color: rgb(100 116 139); font-size: 14px; display: block;
              line-height: 1.1; margin-top: 2px; }
   .fp .nd  { color: rgb(148 163 184); font-style: italic; }
   .fp .blk-cs th, .fp .blk-cs td.lbl { color: rgb(30 64 175); }
@@ -63,13 +63,13 @@
      ancho de estas tablas para que las columnas queden juntas, y achicamos
      la columna separadora del medio (col 5). Ambas tablas comparten el mismo
      max-width y grilla → siguen alineadas entre sí. */
-  .fp .mov-table, .fp .hil-table { table-layout: fixed; max-width: 780px; }
+  .fp .mov-table, .fp .hil-table { table-layout: fixed; max-width: 820px; }
   .fp .hil-table th, .fp .hil-table td { white-space: nowrap; }
   /* Federico 2026-07-17 — separar el bloque HILADO (cols 1-4) del bloque
      TEJIDO (cols 5-8): la col 5 (separadora / PROV de tejido) se ensancha para
      correr todo el bloque de tejido hacia la derecha. El 2do título arranca en
      la col 5 (~44%). */
-  .fp .hil-titles { display: grid; max-width: 780px;
+  .fp .hil-titles { display: grid; max-width: 820px;
     grid-template-columns: 13% 11% 9% 11% 21% 11% 9% 15%; }
   /* "Compras hilado" sobre las cols 1-4; "Producción tejido" sobre la col 5
      (la de proveedores), alineado a la derecha para caer arriba de RY/AP. */
@@ -88,7 +88,7 @@
   <div class="flex items-center justify-between mb-2 no-print flex-wrap gap-2">
     <div>
       <h1 class="text-2xl font-semibold">Flujo producción · Costos unitarios</h1>
-      <p class="text-xs text-slate-500">Mes {{ '%02d/%d' % (mes, anio) }} · réplica TINT.BAT</p>
+      <p class="text-[13px] text-slate-500">Mes {{ '%02d/%d' % (mes, anio) }} · réplica TINT.BAT</p>
     </div>
     {# TMT 2026-07-14 — alinear controles: altura fija 30px + inline-flex
        centrado para que año/mes/Ver/Imprimir queden a la misma línea (los
@@ -189,7 +189,7 @@
           {% endif %}
           {% if _maq.get('hilado') or _maq.get('crudo') %}
           <tr>
-            <td class="lbl" style="font-size:12px;color:rgb(100 116 139);">En máquinas</td>
+            <td class="lbl" style="font-size:13px;color:rgb(100 116 139);">En máquinas</td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ '%.3f' % (_maq.get('hilado_ukg') or 0) if _maq.get('hilado_us') else '—' }}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado_us') | num_es(0) if _maq.get('hilado_us') else '—' }}</td>
@@ -211,7 +211,7 @@
           </tr>
           {% if aco.get('ajuste_us') is not none %}
           <tr>
-            <td class="lbl" style="font-size:12px;color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">de arranque</span></td>
+            <td class="lbl" style="font-size:13px;color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">de arranque</span></td>
             <td class="num">—</td>
             <td class="num">—</td>
             <td class="num">—</td>
@@ -244,7 +244,7 @@
       {% set aj_abs = (aj if aj >= 0 else -aj) %}
       {% set aj_pct = (aj_abs / qm.final_prog * 100) if qm.final_prog else 0 %}
       <div class="fp-quim mt-2" title="Stock de químicos: Inicial + Compras del mes − Consumo (= el proyectado de tintura, el mismo número de la tabla de abajo) = Libro. El ajuste = Físico de hoy − Libro es de arranque (cambio de sistema dBase→programa) este mes; se muestra, no se postea. Es el mismo cálculo que la columna QUÍM.$ de arriba.">
-        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[11px] leading-4">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-1 text-[12px] leading-4">
           <span class="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Stock de químicos</span>
           <span class="text-slate-400 dark:text-slate-500">Inicial <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</b></span>
           <span class="text-slate-300 dark:text-slate-600">+</span>
@@ -256,21 +256,21 @@
           {% if ff is not none %}
           <span class="text-slate-300 dark:text-slate-600">·</span>
           <span class="text-slate-400 dark:text-slate-500">Físico <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</b></span>
-          <span class="rounded bg-amber-50 dark:bg-amber-950/30 px-1.5 text-amber-700 dark:text-amber-400">Ajuste de arranque <b class="tabular-nums font-bold">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</b> <span class="text-[10px]">({{ aj_pct | num_es(1) }}%)</span></span>
+          <span class="rounded bg-amber-50 dark:bg-amber-950/30 px-1.5 text-amber-700 dark:text-amber-400">Ajuste de arranque <b class="tabular-nums font-bold">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</b> <span class="text-[11px]">({{ aj_pct | num_es(1) }}%)</span></span>
           {% endif %}
-          <span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">consumo = proyectado de tintura · USD</span>
+          <span class="ml-auto text-[11px] text-slate-400 dark:text-slate-500">consumo = proyectado de tintura · USD</span>
         </div>
       </div>
       {% endif %}
     {% else %}
-      <p class="nd" style="font-size: 12px;">Asinfo no disponible</p>
+      <p class="nd" style="font-size: 13px;">Asinfo no disponible</p>
     {% endif %}
   </div>
 
   {% if not data or not data.header %}
     <div class="bg-amber-50 border border-amber-300 rounded p-4 text-sm">
       <p class="font-medium text-amber-800">Sin datos para {{ '%02d/%d' % (mes, anio) }}.</p>
-      <p class="text-amber-700 mt-1 text-xs">Probá con el selector arriba.</p>
+      <p class="text-amber-700 mt-1 text-[13px]">Probá con el selector arriba.</p>
     </div>
   {% else %}
     {# TMT 2026-07-15 (dueña): banda 'Movimientos del mes' del dBase
@@ -336,7 +336,7 @@
        manda": la tabla de arriba ya usa data.produc_tejido = Asinfo (override en
        la view). Antes había acá una 2ª tabla "· Asinfo" duplicada — removida. #}
     {% if data.produc_tejido %}
-      <p class="text-xs text-slate-500" style="margin-top:-2px;margin-bottom:8px">Producción tejido = ingreso físico a bodega 52 (Asinfo). $ INTELA = gasto de tejeduría prorrateado (no incluye el hilo, que ya está en Compras hilado). Lo pendiente de cargar por tejedor está en <strong>Tejeduría Asinfo</strong>.</p>
+      <p class="text-[13px] text-slate-500" style="margin-top:-2px;margin-bottom:8px">Producción tejido = ingreso físico a bodega 52 (Asinfo). $ INTELA = gasto de tejeduría prorrateado (no incluye el hilo, que ya está en Compras hilado). Lo pendiente de cargar por tejedor está en <strong>Tejeduría Asinfo</strong>.</p>
     {% endif %}
 
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
@@ -442,7 +442,7 @@
           {% endif %}
         </tbody>
       </table>
-      <p class="mt-2 text-[11px] text-slate-500">
+      <p class="mt-2 text-[12px] text-slate-500">
         <strong>Origen de los datos:</strong> los Kg y $ de Bajos/Fuertes
         salen directo del programa de tintorería (cada batch que registra
         la planta queda en <code>scintela.tinto</code>). Bajos: $/kg ≤ 0.40
@@ -490,7 +490,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[11px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el proyectado de tintura y el ajuste de este mes es de arranque (cambio de sistema). ⚠ = descuadre &gt; 1%.</p>
+      <p class="text-[12px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el proyectado de tintura y el ajuste de este mes es de arranque (cambio de sistema). ⚠ = descuadre &gt; 1%.</p>
     </div>
   {% endif %}
 </div>
