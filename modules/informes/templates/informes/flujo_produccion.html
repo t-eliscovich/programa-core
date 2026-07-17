@@ -365,18 +365,18 @@
       <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}</div>
       <table data-no-sort-table>
         <colgroup>
-          <col style="width:12%"><col style="width:30%">
-          <col style="width:20%"><col style="width:16%"><col style="width:22%">
+          <col style="width:10%"><col style="width:24%">
+          <col style="width:12%"><col style="width:20%"><col style="width:14%"><col style="width:20%">
         </colgroup>
         <thead>
           <tr>
             <th class="lbl"></th><th class="lbl"></th>
-            <th colspan="3" style="text-align:center;background:#f1f5f9;color:#334155;letter-spacing:.04em">TERMINADO ACTUAL</th>
+            <th colspan="4" style="text-align:center;background:#f1f5f9;color:#334155;letter-spacing:.04em">TERMINADO ACTUAL</th>
           </tr>
           <tr>
             <th class="lbl">MES</th>
             <th class="lbl">COLORANTES Y AUXILIARES</th>
-            <th>KG</th><th>$/KG</th><th>$</th>
+            <th>%</th><th>KG</th><th>$/KG</th><th>$</th>
           </tr>
         </thead>
         <tbody>
@@ -384,24 +384,28 @@
             <tr>
               <td class="lbl" rowspan="4">{{ f.label }}</td>
               <td class="lbl">Bajos</td>
+              <td class="num">{% if f.b_pct is not none %}{{ '%.0f' % f.b_pct }}%{% endif %}</td>
               <td class="num">{{ f.b_kg | num_es(0) }}</td>
               <td class="num">{% if f.b_ukg is not none %}{{ '%.3f' % f.b_ukg }}{% else %}—{% endif %}</td>
               <td class="num">{{ f.b_imp | num_es(0) }}</td>
             </tr>
             <tr>
               <td class="lbl">Fuertes</td>
+              <td class="num">{% if f.f_pct is not none %}{{ '%.0f' % f.f_pct }}%{% endif %}</td>
               <td class="num">{{ f.f_kg | num_es(0) }}</td>
               <td class="num">{% if f.f_ukg is not none %}{{ '%.3f' % f.f_ukg }}{% else %}—{% endif %}</td>
               <td class="num">{{ f.f_imp | num_es(0) }}</td>
             </tr>
             <tr class="total">
               <td class="lbl">Total</td>
+              <td class="num"></td>
               <td class="num">{{ f.t_kg | num_es(0) }}</td>
               <td class="num">{% if f.t_ukg is not none %}{{ '%.3f' % f.t_ukg }}{% else %}—{% endif %}</td>
               <td class="num">{{ f.t_imp | num_es(0) }}</td>
             </tr>
             <tr>
               <td class="lbl">Gs. Producción</td>
+              <td class="num"></td>
               <td class="num">{{ f.gp_kg | num_es(0) }}</td>
               <td class="num">{% if f.gp_ukg is not none %}{{ '%.3f' % f.gp_ukg }}{% else %}—{% endif %}</td>
               <td class="num">{{ f.gp_imp | num_es(0) }}</td>
@@ -409,27 +413,19 @@
           {% endfor %}
           {% set pm = tintoreria_mensual.promedio %}
           {% if pm %}
-            <tr>
-              <td class="lbl" rowspan="4" style="font-weight:700;background:#f8fafc;border-top:2px solid #cbd5e1">PROMEDIO <span style="font-weight:400;color:#94a3b8;font-size:10px">· {{ tintoreria_mensual.anio }} mensual</span></td>
-              <td class="lbl" style="border-top:2px solid #cbd5e1">Bajos</td>
-              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_kg | num_es(0) }}</td>
-              <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.b_ukg is not none %}{{ '%.3f' % pm.b_ukg }}{% else %}—{% endif %}</td>
-              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_imp | num_es(0) }}</td>
-            </tr>
-            <tr>
-              <td class="lbl">Fuertes</td>
-              <td class="num">{{ pm.f_kg | num_es(0) }}</td>
-              <td class="num">{% if pm.f_ukg is not none %}{{ '%.3f' % pm.f_ukg }}{% else %}—{% endif %}</td>
-              <td class="num">{{ pm.f_imp | num_es(0) }}</td>
-            </tr>
+            {# Federico 2026-07-17: PROMEDIO deja SOLO Total y Gs. Producción
+               (se sacaron Bajos/Fuertes del promedio). #}
             <tr class="total">
-              <td class="lbl">Total</td>
-              <td class="num">{{ pm.t_kg | num_es(0) }}</td>
-              <td class="num">{% if pm.t_ukg is not none %}{{ '%.3f' % pm.t_ukg }}{% else %}—{% endif %}</td>
-              <td class="num">{{ pm.t_imp | num_es(0) }}</td>
+              <td class="lbl" rowspan="2" style="font-weight:700;background:#f8fafc;border-top:2px solid #cbd5e1">PROMEDIO <span style="font-weight:400;color:#94a3b8;font-size:10px">· {{ tintoreria_mensual.anio }} mensual</span></td>
+              <td class="lbl" style="border-top:2px solid #cbd5e1">Total</td>
+              <td class="num" style="border-top:2px solid #cbd5e1"></td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.t_kg | num_es(0) }}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.t_ukg is not none %}{{ '%.3f' % pm.t_ukg }}{% else %}—{% endif %}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.t_imp | num_es(0) }}</td>
             </tr>
             <tr>
               <td class="lbl">Gs. Producción</td>
+              <td class="num"></td>
               <td class="num">{{ pm.gp_kg | num_es(0) }}</td>
               <td class="num">{% if pm.gp_ukg is not none %}{{ '%.3f' % pm.gp_ukg }}{% else %}—{% endif %}</td>
               <td class="num">{{ pm.gp_imp | num_es(0) }}</td>
