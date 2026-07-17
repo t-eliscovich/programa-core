@@ -594,20 +594,19 @@
       padding-top: 2px !important;
       padding-bottom: 2px !important;
     }
-    /* Flujo producción (.fp): Federico 2026-07-17 — la quiere con letra grande y
-       legible, NO compacta. El tamaño va ACÁ (no en flujo_produccion.html) porque
-       este selector `main .fp table tbody td` (especificidad 0,1,4) le gana a
-       cualquier `.fp td` del template. Antes estaba en el grupo compacto de arriba
-       (11px / 9.5px) y por eso subir la letra en el template no hacía NADA. */
+    /* Flujo producción (.fp): Federico 2026-07-17 — v2: la quiere COMPACTA para
+       que entre TODO en una pantalla sin scroll. El tamaño va ACÁ (no en
+       flujo_produccion.html) porque este selector `main .fp table tbody td`
+       (especificidad 0,1,4) le gana a cualquier `.fp td` del template. */
     main .fp table tbody td {
-      font-size: 15px !important;
-      padding-top: 4px !important;
-      padding-bottom: 4px !important;
+      font-size: 11px !important;
+      padding-top: 1px !important;
+      padding-bottom: 1px !important;
     }
     main .fp table thead th {
-      font-size: 13px !important;
-      padding-top: 5px !important;
-      padding-bottom: 5px !important;
+      font-size: 10px !important;
+      padding-top: 1px !important;
+      padding-bottom: 1px !important;
     }
   </style>
   {# Child templates can add extra <link>/<script>/<style> tags here. #}

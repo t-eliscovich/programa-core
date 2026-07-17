@@ -13,7 +13,7 @@
   /* TMT 2026-05-22 dueña: alinear diseño con Resultados/Historial */
   .fp.info-page { padding-top: 4px; }
   /* TMT 2026-05-24 — h1 unificado via base.html (24px). */
-  .fp > .mb-2 { margin-bottom: 4px !important; }
+  .fp > .mb-2 { margin-bottom: 2px !important; }
   /* TMT 2026-05-19 v8 — réplica visual de TINT.BAT (dBase) compactada
      para que entre TODO en una pantalla sin scroll. */
   /* Federico 2026-07-17 — igualar tipo y tamaño de letra con la pantalla
@@ -27,17 +27,19 @@
      = 12.5px). Eso pisaba todo lo de .fp → las tablas nunca cambiaban de tamaño.
      Acá lo forzamos con !important (la clase .fp gana en especificidad) y
      achicamos el padding horizontal para que los números más grandes entren. */
-  .fp table { border-collapse: collapse; width: 100%; font-size: 15px !important; }
+  /* Federico 2026-07-17 v2 — COMPACTO para entrar sin scroll en una pantalla. */
+  .fp h1 { font-size: 16px !important; line-height: 1.1 !important; }
+  .fp table { border-collapse: collapse; width: 100%; font-size: 11px !important; }
   .fp .blk { background: white; border: 1px solid rgb(203 213 225);
-             border-radius: 6px; padding: 5px 8px; }
+             border-radius: 5px; padding: 2px 6px; }
   .fp .blk-title { color: rgb(220 38 38); font-weight: 700;
-                   font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase;
-                   margin-bottom: 2px; }
+                   font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
+                   margin-bottom: 1px; }
   .fp th { color: rgb(220 38 38); font-weight: 700; text-transform: uppercase;
-           text-align: right; padding: 4px 6px !important; font-size: 13px !important;
+           text-align: right; padding: 1px 6px !important; font-size: 10px !important;
            border-bottom: 1px solid rgb(148 163 184); }
   .fp th.lbl { text-align: left; }
-  .fp td { padding: 4px 6px !important; font-size: 15px !important; line-height: 1.35; }
+  .fp td { padding: 1px 6px !important; font-size: 11px !important; line-height: 1.15; }
   .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
   /* Federico 2026-06-30 — réplica TINT.BAT: los códigos de proveedor van
      alineados a la derecha (como en el programa viejo); la fila TOTAL
@@ -48,7 +50,7 @@
                     color: rgb(30 64 175); padding-top: 2px; }
   /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
      número principal, no al costado, para encolumnar correctamente. */
-  .fp .pct { color: rgb(100 116 139); font-size: 13px; display: block;
+  .fp .pct { color: rgb(100 116 139); font-size: 10px; display: block;
              line-height: 1.1; margin-top: 2px; }
   .fp .nd  { color: rgb(148 163 184); font-style: italic; }
   .fp .blk-cs th, .fp .blk-cs td.lbl { color: rgb(30 64 175); }
@@ -93,7 +95,7 @@
   <div class="flex items-center justify-between mb-2 no-print flex-wrap gap-2">
     <div>
       <h1 class="text-2xl font-semibold">Flujo producción · Costos unitarios</h1>
-      <p class="text-[13px] text-slate-500">Mes {{ '%02d/%d' % (mes, anio) }} · réplica TINT.BAT</p>
+      <p class="text-[10px] text-slate-500">Mes {{ '%02d/%d' % (mes, anio) }} · réplica TINT.BAT</p>
     </div>
     {# TMT 2026-07-14 — alinear controles: altura fija 30px + inline-flex
        centrado para que año/mes/Ver/Imprimir queden a la misma línea (los
