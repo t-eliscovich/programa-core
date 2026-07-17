@@ -57,7 +57,8 @@ import time as _time_fp
 
 _LOG_FP = _logging_fp.getLogger(__name__)
 _FLUJO_PROD_CACHE: dict = {}
-_FLUJO_PROD_TTL_SECS = 120  # 2 min
+_FLUJO_PROD_TTL_SECS = 600  # 10 min — la carga fría cuesta ~15-18s; alineado con
+# el cache del inventario Asinfo (mismo orden de frescura). Federico 2026-07-17.
 
 
 def reset_flujo_produccion_cache() -> None:
@@ -2222,12 +2223,6 @@ def flujo_produccion():
     # Federico 2026-07-17 — instrumentación temporal para ver qué consulta domina
     # la primera carga (se expone en un comentario HTML al final de la página).
     _timings = {}
-    _s = _time_fp.perf_counter()
-    data, error = _safe(
-        lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes),
-        {},
-    )
-    _timings["movimientos_dbase"] = round(_time_fp.perf_counter() - _s, 3)
 
     # TMT 2026-07-08 (dueña): tabla live de Asinfo por etapa (kg) al tope, y
     # un segundo cuadro "MOVIMIENTOS DEL MES (inicial Asinfo)" — clon del de
@@ -2235,20 +2230,28 @@ def flujo_produccion():
     # del mes. Ambas fail-soft: si Asinfo está caído la vista igual renderiza.
     from modules.asinfo import service as asinfo_service
 
+    fecha_corte = date(anio, mes, 1)  # arranque del mes = corte del as-of
+
+    # Federico 2026-07-17 — PERF: estas 3 consultas son INDEPENDIENTES entre sí y
+    # sus backends son thread-safe (dBase = ThreadedConnectionPool; Asinfo = HTTP
+    # con requests). En serie sumaban ~9s; en paralelo bajan a ~la más lenta (~4s).
+    # NO se paraleliza formulas_db (SimpleConnectionPool, NO thread-safe) ni la
+    # lógica de químicos. Cada tarea va envuelta en _safe → fail-soft por separado.
+    from concurrent.futures import ThreadPoolExecutor
     _s = _time_fp.perf_counter()
-    inv_asinfo, _e_inv = _safe(asinfo_service.inventario_por_etapa, {})
-    _timings["asinfo_inventario"] = round(_time_fp.perf_counter() - _s, 3)
+    with ThreadPoolExecutor(max_workers=3) as _ex:
+        _f_data = _ex.submit(
+            _safe, lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes), {})
+        _f_inv = _ex.submit(_safe, asinfo_service.inventario_por_etapa, {})
+        _f_inv_asof = _ex.submit(
+            _safe, lambda: asinfo_service.inventario_por_etapa_a_fecha(fecha_corte), {})
+        data, error = _f_data.result()
+        inv_asinfo, _e_inv = _f_inv.result()
+        inv_asinfo_inic, _e_inic = _f_inv_asof.result()
+    _timings["fetch_paralelo_3"] = round(_time_fp.perf_counter() - _s, 3)
+
     if not isinstance(inv_asinfo, dict):
         inv_asinfo = {}
-
-    # Stock inicial as-of = inventario de Asinfo a la fecha de inicio del mes.
-    fecha_corte = date(anio, mes, 1)
-    _s = _time_fp.perf_counter()
-    inv_asinfo_inic, _e_inic = _safe(
-        lambda: asinfo_service.inventario_por_etapa_a_fecha(fecha_corte),
-        {},
-    )
-    _timings["asinfo_inventario_asof"] = round(_time_fp.perf_counter() - _s, 3)
     if not isinstance(inv_asinfo_inic, dict):
         inv_asinfo_inic = {}
 
