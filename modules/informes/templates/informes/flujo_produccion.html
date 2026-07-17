@@ -419,9 +419,10 @@
               <td class="lbl" style="border-top:2px solid #cbd5e1"><span style="font-weight:400;color:#94a3b8;font-size:10px">{{ tintoreria_mensual.anio }} mensual</span></td>
               <td class="lbl" style="border-top:2px solid #cbd5e1">Promedio</td>
               <td class="num" style="border-top:2px solid #cbd5e1"></td>
-              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.t_kg | num_es(0) }}</td>
+              {# Federico 2026-07-17: en la fila Promedio solo se muestra el $/kg. #}
+              <td class="num" style="border-top:2px solid #cbd5e1"></td>
               <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.t_ukg is not none %}{{ '%.3f' % pm.t_ukg }}{% else %}—{% endif %}</td>
-              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.t_imp | num_es(0) }}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1"></td>
             </tr>
           {% endif %}
         </tbody>
