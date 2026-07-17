@@ -413,22 +413,15 @@
           {% endfor %}
           {% set pm = tintoreria_mensual.promedio %}
           {% if pm %}
-            {# Federico 2026-07-17: PROMEDIO deja SOLO Total y Gs. Producción
-               (se sacaron Bajos/Fuertes del promedio). #}
+            {# Federico 2026-07-17: PROMEDIO = UNA sola fila. Se sacó Gs. Producción
+               y la palabra "PROMEDIO" de la izquierda; el label pasó a "Promedio". #}
             <tr class="total">
-              <td class="lbl" rowspan="2" style="font-weight:700;background:#f8fafc;border-top:2px solid #cbd5e1">PROMEDIO <span style="font-weight:400;color:#94a3b8;font-size:10px">· {{ tintoreria_mensual.anio }} mensual</span></td>
-              <td class="lbl" style="border-top:2px solid #cbd5e1">Total</td>
+              <td class="lbl" style="border-top:2px solid #cbd5e1"><span style="font-weight:400;color:#94a3b8;font-size:10px">{{ tintoreria_mensual.anio }} mensual</span></td>
+              <td class="lbl" style="border-top:2px solid #cbd5e1">Promedio</td>
               <td class="num" style="border-top:2px solid #cbd5e1"></td>
               <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.t_kg | num_es(0) }}</td>
               <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.t_ukg is not none %}{{ '%.3f' % pm.t_ukg }}{% else %}—{% endif %}</td>
               <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.t_imp | num_es(0) }}</td>
-            </tr>
-            <tr>
-              <td class="lbl">Gs. Producción</td>
-              <td class="num"></td>
-              <td class="num">{{ pm.gp_kg | num_es(0) }}</td>
-              <td class="num">{% if pm.gp_ukg is not none %}{{ '%.3f' % pm.gp_ukg }}{% else %}—{% endif %}</td>
-              <td class="num">{{ pm.gp_imp | num_es(0) }}</td>
             </tr>
           {% endif %}
         </tbody>
