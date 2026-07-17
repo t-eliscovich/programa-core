@@ -22,17 +22,22 @@
      tamaño — cuerpo 14px (text-sm) y encabezados 12px (text-xs). Antes era la
      réplica compacta TINT.BAT (9–10.5px + números monoespaciados). */
   .fp { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
-  .fp table { border-collapse: collapse; width: 100%; font-size: 16px; }
+  /* Federico 2026-07-17 — base.html fija font-size con !important a TODAS las
+     tablas dentro de <main> (`main table tbody td` = 14px, `main table thead th`
+     = 12.5px). Eso pisaba todo lo de .fp → las tablas nunca cambiaban de tamaño.
+     Acá lo forzamos con !important (la clase .fp gana en especificidad) y
+     achicamos el padding horizontal para que los números más grandes entren. */
+  .fp table { border-collapse: collapse; width: 100%; font-size: 16px !important; }
   .fp .blk { background: white; border: 1px solid rgb(203 213 225);
              border-radius: 6px; padding: 5px 8px; }
   .fp .blk-title { color: rgb(220 38 38); font-weight: 700;
                    font-size: 14px; letter-spacing: 0.05em; text-transform: uppercase;
                    margin-bottom: 2px; }
   .fp th { color: rgb(220 38 38); font-weight: 700; text-transform: uppercase;
-           text-align: right; padding: 3px 6px; font-size: 14px;
+           text-align: right; padding: 4px 6px !important; font-size: 14px !important;
            border-bottom: 1px solid rgb(148 163 184); }
   .fp th.lbl { text-align: left; }
-  .fp td { padding: 3px 6px; font-size: 16px; line-height: 1.35; }
+  .fp td { padding: 4px 6px !important; font-size: 16px !important; line-height: 1.35; }
   .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
   /* Federico 2026-06-30 — réplica TINT.BAT: los códigos de proveedor van
      alineados a la derecha (como en el programa viejo); la fila TOTAL
@@ -442,7 +447,7 @@
           {% endif %}
         </tbody>
       </table>
-      <p class="mt-2 text-[12px] text-slate-500">
+      <p class="mt-2 text-[10px] text-slate-500">
         <strong>Origen de los datos:</strong> los Kg y $ de Bajos/Fuertes
         salen directo del programa de tintorería (cada batch que registra
         la planta queda en <code>scintela.tinto</code>). Bajos: $/kg ≤ 0.40
