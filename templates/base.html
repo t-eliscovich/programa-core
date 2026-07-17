@@ -781,9 +781,8 @@
         {# TMT 2026-07-09 (dueña): Factura Proforma (ex "Nuevo pedido") movida a Modificar, debajo de Facturas. #}
         {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Factura Proforma', 'file') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
-        {# TMT 2026-07-17 (Federico): "Producción Tejeduría" movido a la sección
-           "Producción y stocks". #}
-        {% if tiene_permiso('compras.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
+        {# TMT 2026-07-17 (Federico): "Producción Tejeduría" y "Tejeduría Asinfo"
+           movidos a la sección "Producción y stocks". #}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
         {# TMT 2026-06-11 dueña: anticipos (DOLARES) se cargan directo en PC.
            TMT 2026-07-06 (dueña): "/anticipos/ borrar, tiene que ser /dolares"
@@ -819,6 +818,7 @@
            compras.ver) movidos acá arriba — producción primero, luego stocks. #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
+        {% if tiene_permiso('compras.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
         {# TMT 2026-06-10 dueña: Stock = 2 tabs réplica del Excel de la nube
            (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
            e importaciones siguen vivas por URL y linkeadas DENTRO de estas
