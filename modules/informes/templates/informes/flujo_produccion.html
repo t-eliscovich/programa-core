@@ -357,9 +357,98 @@
      Fuertes / Total) con columnas % | KG | $/KG | $.
      TMT 2026-05-24 — solo mostramos si hay >1 mes, porque con 1 sólo mes
      es 100% redundante con la tabla "Costos de tintorería" de arriba. #}
-  {# COSTOS DE TINTORERÍA — cuadro eliminado a pedido de Federico 2026-07-17. El
-     cálculo de _build_tintoreria_mensual se mantiene en la vista porque el
-     proyectado de químico alimenta la banda "Stock de químicos". #}
+  {# COSTOS DE TINTORERÍA — Federico 2026-07-17: se removió SOLO el cuadro derecho
+     "PROYECTADO (+ en proceso)". La tabla de colorantes (Bajos/Fuertes/Total/
+     Gs. Producción, TERMINADO ACTUAL) se mantiene. #}
+  {% if _show_historial %}
+    <div class="blk">
+      <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}</div>
+      <table data-no-sort-table>
+        <colgroup>
+          <col style="width:12%"><col style="width:30%">
+          <col style="width:20%"><col style="width:16%"><col style="width:22%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="lbl"></th><th class="lbl"></th>
+            <th colspan="3" style="text-align:center;background:#f1f5f9;color:#334155;letter-spacing:.04em">TERMINADO ACTUAL</th>
+          </tr>
+          <tr>
+            <th class="lbl">MES</th>
+            <th class="lbl">COLORANTES Y AUXILIARES</th>
+            <th>KG</th><th>$/KG</th><th>$</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in tintoreria_mensual.filas %}
+            <tr>
+              <td class="lbl" rowspan="4">{{ f.label }}</td>
+              <td class="lbl">Bajos</td>
+              <td class="num">{{ f.b_kg | num_es(0) }}</td>
+              <td class="num">{% if f.b_ukg is not none %}{{ '%.3f' % f.b_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.b_imp | num_es(0) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Fuertes</td>
+              <td class="num">{{ f.f_kg | num_es(0) }}</td>
+              <td class="num">{% if f.f_ukg is not none %}{{ '%.3f' % f.f_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.f_imp | num_es(0) }}</td>
+            </tr>
+            <tr class="total">
+              <td class="lbl">Total</td>
+              <td class="num">{{ f.t_kg | num_es(0) }}</td>
+              <td class="num">{% if f.t_ukg is not none %}{{ '%.3f' % f.t_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.t_imp | num_es(0) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Gs. Producción</td>
+              <td class="num">{{ f.gp_kg | num_es(0) }}</td>
+              <td class="num">{% if f.gp_ukg is not none %}{{ '%.3f' % f.gp_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.gp_imp | num_es(0) }}</td>
+            </tr>
+          {% endfor %}
+          {% set pm = tintoreria_mensual.promedio %}
+          {% if pm %}
+            <tr>
+              <td class="lbl" rowspan="4" style="font-weight:700;background:#f8fafc;border-top:2px solid #cbd5e1">PROMEDIO <span style="font-weight:400;color:#94a3b8;font-size:10px">· {{ tintoreria_mensual.anio }} mensual</span></td>
+              <td class="lbl" style="border-top:2px solid #cbd5e1">Bajos</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_kg | num_es(0) }}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{% if pm.b_ukg is not none %}{{ '%.3f' % pm.b_ukg }}{% else %}—{% endif %}</td>
+              <td class="num" style="border-top:2px solid #cbd5e1">{{ pm.b_imp | num_es(0) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Fuertes</td>
+              <td class="num">{{ pm.f_kg | num_es(0) }}</td>
+              <td class="num">{% if pm.f_ukg is not none %}{{ '%.3f' % pm.f_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ pm.f_imp | num_es(0) }}</td>
+            </tr>
+            <tr class="total">
+              <td class="lbl">Total</td>
+              <td class="num">{{ pm.t_kg | num_es(0) }}</td>
+              <td class="num">{% if pm.t_ukg is not none %}{{ '%.3f' % pm.t_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ pm.t_imp | num_es(0) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Gs. Producción</td>
+              <td class="num">{{ pm.gp_kg | num_es(0) }}</td>
+              <td class="num">{% if pm.gp_ukg is not none %}{{ '%.3f' % pm.gp_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ pm.gp_imp | num_es(0) }}</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+      <p class="mt-2 text-[10px] text-slate-500">
+        <strong>Origen de los datos:</strong> los Kg y $ de Bajos/Fuertes
+        salen directo del programa de tintorería (cada batch que registra
+        la planta queda en <code>scintela.tinto</code>). Bajos: $/kg ≤ 0.40
+        · Fuertes: el resto. Gs. Producción Tintorería: V4+V5+V6 de
+        <code>xgast</code> + amortización DCC (cuota mensual de activos
+        tipo M y 50% de tipo I) — mismo número que
+        <strong>TINTORERÍA TOTAL CON AMORT</strong> de /informes/gastos.
+        % sobre kg del mes. $/kg ponderado.
+      </p>
+    </div>
+  {% endif %}
 
   {# ─── CHEQUEO DE COHERENCIA — al FINAL (dueña 2026-07-15). Detecta descuadres
        entre bandas automáticamente (no a ojo). Verde = cuadra, rojo = descuadre. #}
