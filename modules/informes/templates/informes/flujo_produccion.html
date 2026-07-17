@@ -27,17 +27,17 @@
      = 12.5px). Eso pisaba todo lo de .fp → las tablas nunca cambiaban de tamaño.
      Acá lo forzamos con !important (la clase .fp gana en especificidad) y
      achicamos el padding horizontal para que los números más grandes entren. */
-  .fp table { border-collapse: collapse; width: 100%; font-size: 16px !important; }
+  .fp table { border-collapse: collapse; width: 100%; font-size: 15px !important; }
   .fp .blk { background: white; border: 1px solid rgb(203 213 225);
              border-radius: 6px; padding: 5px 8px; }
   .fp .blk-title { color: rgb(220 38 38); font-weight: 700;
-                   font-size: 14px; letter-spacing: 0.05em; text-transform: uppercase;
+                   font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase;
                    margin-bottom: 2px; }
   .fp th { color: rgb(220 38 38); font-weight: 700; text-transform: uppercase;
-           text-align: right; padding: 4px 6px !important; font-size: 14px !important;
+           text-align: right; padding: 4px 6px !important; font-size: 13px !important;
            border-bottom: 1px solid rgb(148 163 184); }
   .fp th.lbl { text-align: left; }
-  .fp td { padding: 4px 6px !important; font-size: 16px !important; line-height: 1.35; }
+  .fp td { padding: 4px 6px !important; font-size: 15px !important; line-height: 1.35; }
   .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
   /* Federico 2026-06-30 — réplica TINT.BAT: los códigos de proveedor van
      alineados a la derecha (como en el programa viejo); la fila TOTAL
@@ -48,7 +48,7 @@
                     color: rgb(30 64 175); padding-top: 2px; }
   /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
      número principal, no al costado, para encolumnar correctamente. */
-  .fp .pct { color: rgb(100 116 139); font-size: 14px; display: block;
+  .fp .pct { color: rgb(100 116 139); font-size: 13px; display: block;
              line-height: 1.1; margin-top: 2px; }
   .fp .nd  { color: rgb(148 163 184); font-style: italic; }
   .fp .blk-cs th, .fp .blk-cs td.lbl { color: rgb(30 64 175); }
@@ -495,7 +495,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[12px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el proyectado de tintura y el ajuste de este mes es de arranque (cambio de sistema). ⚠ = descuadre &gt; 1%.</p>
+      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el proyectado de tintura y el ajuste de este mes es de arranque (cambio de sistema). ⚠ = descuadre &gt; 1%.</p>
     </div>
   {% endif %}
 </div>
