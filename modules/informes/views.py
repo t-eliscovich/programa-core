@@ -379,7 +379,11 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
         from modules.tintura import service as _tsvc
         for x in (_tsvc.stock_quimicos() or []):
             _fam = (getattr(x, "familia", "") or "?").strip().upper()
-            _val = float(getattr(x, "stock_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
+            # IVA dueña 2026-07-17: el programa valúa c/IVA (sal 0%).
+            from modules.tintura import service as _tsvc_iva
+            _val = (float(getattr(x, "stock_kg", 0) or 0)
+                    * float(getattr(x, "precio_us", 0) or 0)
+                    * _tsvc_iva.factor_iva_producto(getattr(x, "num", None)))
             color_familias[_fam] = color_familias.get(_fam, 0.0) + _val
         color_formulas = sum(color_familias.values()) if color_familias else None
     except Exception:  # noqa: BLE001 -- fail-soft
@@ -409,7 +413,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             _cons = _fdb.fetch_one(
                 """
                 SELECT COALESCE(SUM(ol.cantidad_kg
-                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)), 0) AS us,
+                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                         * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
                        COUNT(DISTINCT o.id) AS n_ordenes
                   FROM orden_lineas ol
                   JOIN ordenes o   ON o.id  = ol.orden_id
@@ -426,7 +431,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             _comp = _fdb.fetch_one(
                 """
                 SELECT COALESCE(SUM(c.cantidad
-                         * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)), 0) AS us
+                         * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)
+                         * (CASE WHEN c.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
                   FROM compras c
                   JOIN productos p ON p.num = c.producto_num
                  WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
@@ -568,7 +574,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
                              ELSE 'proceso'
                            END AS clase,
                            COALESCE(SUM(ol.cantidad_kg
-                             * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)), 0) AS us
+                             * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                             * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
                       FROM orden_lineas ol
                       JOIN ordenes   o ON o.id  = ol.orden_id
                       JOIN productos p ON p.num = ol.producto_num

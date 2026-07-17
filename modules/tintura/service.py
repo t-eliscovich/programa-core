@@ -564,10 +564,40 @@ def _row_to_stock_al_dia(r: dict) -> StockProductoAlDia:
 #
 # Se prefiere el precio capturado en la línea (precio_us del momento del
 # tinturado); si esa línea no lo trae, se cae al precio catálogo del
-# producto (productos.us, promedio ponderado). Precio SIN IVA — igual que
-# `productos.us` se guarda sin IVA en formulas_app; el balance de Programa
-# Core trabaja con costos internos sin IVA. Si al verificar contra el dBase
-# el `importe` viniera con IVA, se multiplica por IVA_FACTOR acá.
+# producto (productos.us, promedio ponderado). formulas guarda precios SIN
+# IVA, pero el PROGRAMA valúa TODO c/IVA (dueña 2026-07-17) → el costo se
+# multiplica por factor_iva_producto/sql_factor_iva (15%, sal 0%), misma
+# base que compras/pasivos y que el catálogo histórico del dBase.
+
+
+# ── IVA de químicos (dueña 2026-07-17) ─────────────────────────────────────
+# El PROGRAMA valúa TODO con IVA: pasivos, compras (/compras carga el total de
+# factura) y el libro histórico del dBase siempre fueron c/IVA. formulas guarda
+# precios SIN IVA y NO se toca — el factor se aplica acá, del lado del
+# programa, producto por producto ("si no estamos sumando peras con manzanas").
+# Único producto 0% en formulas: la SAL (num=12, familia aux).
+# OJO mantenimiento: modules/informes/views.py replica el CASE literal en 3
+# queries (color_consumo, color_compras, tinturado diario) — si cambia el IVA
+# o los exentos, actualizar allá también.
+IVA_QUIMICOS = 0.15
+PRODUCTOS_IVA_CERO = frozenset({12})
+
+
+def factor_iva_producto(num) -> float:
+    """1.0 para exentos (sal); 1 + IVA para el resto de los químicos."""
+    try:
+        if int(num) in PRODUCTOS_IVA_CERO:
+            return 1.0
+    except (TypeError, ValueError):
+        pass
+    return 1.0 + IVA_QUIMICOS
+
+
+def sql_factor_iva(col: str) -> str:
+    """Mismo factor como fragmento SQL, para las queries que suman $ de
+    formulas (consumo / compras). `col` = columna con el producto_num."""
+    exentos = ", ".join(str(n) for n in sorted(PRODUCTOS_IVA_CERO))
+    return f"(CASE WHEN {col} IN ({exentos}) THEN 1.0 ELSE {1.0 + IVA_QUIMICOS} END)"
 
 
 # Familias que cuentan como STOCK DE COLORANTE valuado. Dueña 2026-07-13:
@@ -588,7 +618,8 @@ def stock_colorante_fisico(fecha: date | None = None) -> float:
     for _r in (stock_quimicos_al_dia(fecha) or []):
         if (getattr(_r, "familia", "") or "").upper() in COLORANTE_FAMILIAS:
             _tot += float(getattr(_r, "stock_al_dia_kg", 0) or 0) \
-                * float(getattr(_r, "precio_us", 0) or 0)
+                * float(getattr(_r, "precio_us", 0) or 0) \
+                * factor_iva_producto(getattr(_r, "num", None))
     return _tot
 
 
@@ -655,12 +686,14 @@ def costo_por_orden(
         where.append("o.fecha_terminado <= %s")
         params.append(terminado_hasta.isoformat())
 
+    factor = sql_factor_iva("ol.producto_num")
     rows = formulas_db.fetch_all(
         f"""
         SELECT o.numero,
                COALESCE(SUM(
                    ol.cantidad_kg
                    * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                   * {factor}
                ), 0) AS costo_us
           FROM ordenes o
           JOIN orden_lineas ol ON ol.orden_id = o.id
@@ -706,6 +739,7 @@ def tinto_equiv_formulas(
             "AND UPPER(TRIM(COALESCE(o.codigo, ''))) <> 'LAV'"
         )
 
+    factor = sql_factor_iva("ol.producto_num")
     rows = formulas_db.fetch_all(
         f"""
         WITH costos AS (
@@ -713,6 +747,7 @@ def tinto_equiv_formulas(
                    COALESCE(SUM(
                        ol.cantidad_kg
                        * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                       * {factor}
                    ), 0) AS costo_us
               FROM orden_lineas ol
               LEFT JOIN productos p ON p.num = ol.producto_num

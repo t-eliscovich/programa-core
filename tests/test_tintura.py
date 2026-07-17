@@ -647,17 +647,43 @@ def test_stock_colorante_fisico_suma_solo_poli_y_alg():
     from types import SimpleNamespace
 
     rows = [
-        SimpleNamespace(familia="POLI", stock_al_dia_kg=100.0, precio_us=2.0),  # 200
-        SimpleNamespace(familia="alg", stock_al_dia_kg=50.0, precio_us=3.0),    # 150 (case-insensitive)
-        SimpleNamespace(familia="AUX", stock_al_dia_kg=999.0, precio_us=9.0),   # ignorado
-        SimpleNamespace(familia=None, stock_al_dia_kg="", precio_us=None),      # robusto a nulls
+        SimpleNamespace(num=100, familia="POLI", stock_al_dia_kg=100.0, precio_us=2.0),  # 200 × 1.15
+        SimpleNamespace(num=101, familia="alg", stock_al_dia_kg=50.0, precio_us=3.0),    # 150 × 1.15 (case-insensitive)
+        SimpleNamespace(num=102, familia="AUX", stock_al_dia_kg=999.0, precio_us=9.0),   # ignorado
+        SimpleNamespace(num=None, familia=None, stock_al_dia_kg="", precio_us=None),     # robusto a nulls
     ]
     with patch("modules.tintura.service.stock_quimicos_al_dia", return_value=rows):
         total = service.stock_colorante_fisico()
-    assert total == pytest.approx(350.0)
+    # IVA dueña 2026-07-17: el programa valúa c/IVA → (200+150) × 1.15
+    assert total == pytest.approx(350.0 * 1.15)
 
 
 def test_stock_colorante_fisico_bridge_vacio_es_cero():
     """Sin filas (bridge caído) devuelve 0.0 sin romper."""
     with patch("modules.tintura.service.stock_quimicos_al_dia", return_value=[]):
         assert service.stock_colorante_fisico() == 0.0
+
+
+# ─── IVA de químicos (dueña 2026-07-17: el programa valúa c/IVA) ─────────
+def test_factor_iva_producto():
+    """Sal (num 12) exenta; el resto 1.15; robusto a basura."""
+    assert service.factor_iva_producto(12) == pytest.approx(1.0)
+    assert service.factor_iva_producto("12") == pytest.approx(1.0)
+    assert service.factor_iva_producto(99) == pytest.approx(1.15)
+    assert service.factor_iva_producto(None) == pytest.approx(1.15)
+    assert service.factor_iva_producto("x") == pytest.approx(1.15)
+
+
+def test_sql_factor_iva_fragmento():
+    frag = service.sql_factor_iva("ol.producto_num")
+    assert "ol.producto_num IN (12)" in frag
+    assert "1.15" in frag
+
+
+def test_stock_colorante_fisico_sal_exenta_no_lleva_iva():
+    """Si un exento cayera en POLI/ALG, se valúa sin IVA (factor 1.0)."""
+    from types import SimpleNamespace
+
+    rows = [SimpleNamespace(num=12, familia="POLI", stock_al_dia_kg=10.0, precio_us=1.0)]
+    with patch("modules.tintura.service.stock_quimicos_al_dia", return_value=rows):
+        assert service.stock_colorante_fisico() == pytest.approx(10.0)
