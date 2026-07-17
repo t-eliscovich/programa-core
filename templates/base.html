@@ -581,20 +581,33 @@
     main .informe-balance tr.fila-key td   { font-size: 18px !important;
                                              padding-top: 6px !important;
                                              padding-bottom: 6px !important; }
-    /* Flujo producción + Historico-12m + tablas .table-compact siguen densas. */
-    main .fp table tbody td,
+    /* Historico-12m + tablas .table-compact siguen densas. */
     main .h12-page table tbody td,
     main .table-compact table tbody td {
       font-size: 11px !important;
       padding-top: 1px !important;
       padding-bottom: 1px !important;
     }
-    main .fp table thead th,
     main .h12-page table thead th,
     main .table-compact table thead th {
       font-size: 9.5px !important;
       padding-top: 2px !important;
       padding-bottom: 2px !important;
+    }
+    /* Flujo producción (.fp): Federico 2026-07-17 — la quiere con letra grande y
+       legible, NO compacta. El tamaño va ACÁ (no en flujo_produccion.html) porque
+       este selector `main .fp table tbody td` (especificidad 0,1,4) le gana a
+       cualquier `.fp td` del template. Antes estaba en el grupo compacto de arriba
+       (11px / 9.5px) y por eso subir la letra en el template no hacía NADA. */
+    main .fp table tbody td {
+      font-size: 16px !important;
+      padding-top: 4px !important;
+      padding-bottom: 4px !important;
+    }
+    main .fp table thead th {
+      font-size: 14px !important;
+      padding-top: 5px !important;
+      padding-bottom: 5px !important;
     }
   </style>
   {# Child templates can add extra <link>/<script>/<style> tags here. #}
