@@ -55,8 +55,6 @@
           <span class="text-slate-400 text-[10px]">(auto del proveedor)</span></span>
         <div id="tipo-auto-wrap" class="mt-0.5 flex items-center gap-2" style="min-height:34px">
           <span id="tipo-auto-label" class="text-sm font-medium text-slate-800 dark:text-slate-100">—</span>
-          <button type="button" id="tipo-cambiar"
-                  class="text-xs text-sky-600 hover:underline">cambiar</button>
         </div>
         <select name="tipo" id="tipo-select"
                 class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 hidden">
@@ -232,60 +230,40 @@
   if (prov.value) cargar();
 
   // ── Auto-tipo desde el proveedor (dueña 2026-07-17) ─────────────────
-  // El tipo del proveedor (H/Q/K…) define el tipo de la compra sin preguntar.
-  // Mapeo proveedor→compra: H=hilado, Q=químicos, K=tejido. Los demás
-  // (U=máquina, Y=otro, B=bancos, sin tipo) no tienen equivalencia directa →
-  // se muestra el select para elegir a mano.
+  // El tipo del proveedor (H/Q/K…) DEFINE el tipo de la compra: no se pregunta
+  // ni se puede elegir. Mapeo proveedor→compra: H=hilado, Q=químicos,
+  // K=tejido. Solo si el proveedor NO tiene un tipo mapeable (U=máquina,
+  // Y=otro, B=bancos, o sin tipo cargado) aparece el select para poder cargarlo.
   const PROV_TIPO = {
     {% for p in proveedores_datalist %}{% if p.tipo %}"{{ p.codigo_prov }}":"{{ p.tipo }}",{% endif %}{% endfor %}
   };
   const sel = document.getElementById('tipo-select');
   const lbl = document.getElementById('tipo-auto-label');
-  const btnCambiar = document.getElementById('tipo-cambiar');
   if (sel && lbl) {
-    // Etiquetas legibles tomadas del propio <select> (LC2 — Nombre).
     const LABELS = {};
     Array.from(sel.options).forEach(o => { if (o.value) LABELS[o.value] = o.textContent.trim(); });
     const mapProvACompra = t => ({H:'H', Q:'Q', K:'K'})[(t||'').toUpperCase()] || '';
-    let manual = false;  // true cuando la usuaria tocó "cambiar"
 
-    function pintarLabel(origen) {
-      const v = sel.value;
-      if (v) {
-        lbl.innerHTML = (LABELS[v] || v) +
-          ' <span class="text-slate-400 text-[10px]">(' + origen + ')</span>';
-      } else {
-        lbl.innerHTML = '<span class="text-slate-400">sin tipo</span>';
-      }
-    }
-    function mostrarSelect() {
-      sel.classList.remove('hidden');
-      btnCambiar.classList.add('hidden');
-    }
     function aplicarDesdeProveedor() {
-      if (manual) return;  // no pisar lo que eligió a mano
       const cod = (prov.value || '').trim().toUpperCase();
       const compra = mapProvACompra(PROV_TIPO[cod]);
       if (compra) {
+        // Proveedor de hilo/químico/tejido → tipo fijo, sin elegir.
         sel.value = compra;
         sel.classList.add('hidden');
-        btnCambiar.classList.remove('hidden');
-        pintarLabel('del proveedor');
+        lbl.innerHTML = (LABELS[compra] || compra) +
+          ' <span class="text-slate-400 text-[10px]">(del proveedor)</span>';
+      } else if (cod) {
+        // Proveedor sin tipo mapeable → único caso en que hay que cargarlo.
+        sel.classList.remove('hidden');
+        lbl.innerHTML = '<span class="text-slate-400 text-[10px]">proveedor sin tipo — cargalo:</span>';
       } else {
-        // Proveedor sin tipo mapeable → que elija a mano.
-        mostrarSelect();
-        pintarLabel('elegí');
+        sel.classList.add('hidden');
+        lbl.innerHTML = '<span class="text-slate-400">—</span>';
       }
     }
-    btnCambiar.addEventListener('click', () => { manual = true; mostrarSelect(); sel.focus(); });
-    sel.addEventListener('change', () => { manual = true; pintarLabel('manual'); });
     ['input', 'change', 'blur'].forEach(ev => prov.addEventListener(ev, aplicarDesdeProveedor));
-
-    // Estado inicial: si ya venía un tipo (volvimos de un error / alta de
-    // proveedor), respetarlo; si no, derivarlo del proveedor si hay uno.
-    if (sel.value) { pintarLabel('cargado'); manual = true; }
-    else if (prov.value) aplicarDesdeProveedor();
-    else pintarLabel('elegí');
+    aplicarDesdeProveedor();
   }
 })();
 </script>
