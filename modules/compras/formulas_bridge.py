@@ -282,15 +282,23 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
     se reconoce por el matching y no se duplica. Cada fila se crea en su
     propia transacción — un error en una no frena las demás.
     """
+    from filters import today_ec
     from modules.compras import queries as compras_queries
 
     est = estado_mes(anio, mes)
     if not est.get("disponible"):
         return {"disponible": False, "creadas": [], "errores": [],
                 "ya_cargadas": 0}
-    creadas, errores = [], []
+    hoy = today_ec()
+    creadas, errores, dejadas_hoy = [], [], 0
     for f in est["filas"]:
         if f.estado != "pendiente":
+            continue
+        # Las facturas de HOY no se cargan todavía: en formulas pueden estar
+        # a medio tipear (visto en vivo 17/07: la 0133 creció de 3.779 a
+        # 9.930 mientras se sincronizaba). Entran mañana, ya completas.
+        if f.fecha and f.fecha >= hoy:
+            dejadas_hoy += 1
             continue
         try:
             res = compras_queries.crear(
@@ -325,6 +333,7 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
         "creadas": creadas,
         "errores": errores,
         "ya_cargadas": sum(1 for f in est["filas"] if f.estado == "cargada"),
+        "dejadas_para_manana": dejadas_hoy,
     }
 
 

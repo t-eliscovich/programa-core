@@ -617,6 +617,9 @@ def desde_formulas_sincronizar():
         n, e = len(rep["creadas"]), len(rep["errores"])
         tono = "ok" if e == 0 else "warn"
         msg = f"Cargadas {n} compras de formulas (pasivo generado)."
+        if rep.get("dejadas_para_manana"):
+            msg += (f" {rep['dejadas_para_manana']} de HOY quedan para mañana"
+                    " (pueden estar a medio cargar en formulas).")
         if e:
             msg += f" {e} con error: " + "; ".join(
                 f"{x['proveedor']} {x['factura']}: {x['error']}" for x in rep["errores"][:3]

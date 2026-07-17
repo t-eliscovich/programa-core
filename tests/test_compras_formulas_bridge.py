@@ -213,6 +213,30 @@ def test_sincronizar_sin_bridge_no_crea():
     crear_mock.assert_not_called()
 
 
+def test_sincronizar_no_carga_facturas_de_hoy():
+    """Regresión 2026-07-17: la 0133 creció de 3.779 a 9.930 mientras se
+    sincronizaba — en formulas la estaban tipeando. Las facturas de HOY
+    quedan para mañana."""
+    llamadas = []
+
+    def _crear(**kw):
+        llamadas.append(kw)
+        return {"id_compra": 1, "numero": 1}
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=GRUPOS), \
+         patch.object(fb.db, "fetch_all", return_value=COMPRAS_PC), \
+         patch("filters.today_ec", return_value=date(2026, 7, 14)), \
+         patch("modules.compras.queries.crear", side_effect=_crear):
+        rep = fb.sincronizar_mes(2026, 7)
+
+    # AVQ 0127 es del 14/07 (= hoy simulado) → NO se carga
+    assert all(k["codigo_prov"] != "AQ" or k["fecha"] != date(2026, 7, 14)
+               for k in llamadas)
+    assert rep["dejadas_para_manana"] == 1
+    assert len(rep["creadas"]) == 1  # solo EMP 7197 (07/07)
+
+
 # ── autosync / hook del cron ────────────────────────────────────────────────
 
 def test_autosync_habilitado_default_on(monkeypatch):
