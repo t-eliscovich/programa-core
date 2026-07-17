@@ -58,11 +58,16 @@
      caigan exactamente bajo las columnas de arriba. Por eso van apiladas a
      ancho completo (no lado a lado) y las 3 columnas de la derecha quedan
      vacías en esas dos tablas. */
-  .fp .mov-table, .fp .hil-table { table-layout: fixed; }
+  /* Federico 2026-07-17 — las columnas numéricas quedaban muy separadas en
+     pantallas anchas (la tabla se estiraba a todo el ancho). Limitamos el
+     ancho de estas tablas para que las columnas queden juntas, y achicamos
+     la columna separadora del medio (col 5). Ambas tablas comparten el mismo
+     max-width y grilla → siguen alineadas entre sí. */
+  .fp .mov-table, .fp .hil-table { table-layout: fixed; max-width: 660px; }
   .fp .hil-table th, .fp .hil-table td { white-space: nowrap; }
   /* dos titulos lado a lado: el 2do arranca en la col 5 (~49%) */
-  .fp .hil-titles { display: flex; }
-  .fp .hil-titles > .blk-title:first-child { width: 49%; }
+  .fp .hil-titles { display: flex; max-width: 660px; }
+  .fp .hil-titles > .blk-title:first-child { width: 53%; }
   /* STOCK DE QUÍMICOS: altura pareja de los labels (algunos se parten en 2
      líneas, ej. "recibidas formulas") → los números quedan alineados. */
   .qm-kpis > div > div:first-child { min-height: 2.4em; }
@@ -126,7 +131,7 @@
       {% set _maq = mov_asinfo.get('maquinas', {}) %}
       <table class="mov-table" data-no-sort-table>
         <colgroup>
-          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
+          <col style="width:16%"><col style="width:13%"><col style="width:11%"><col style="width:13%"><col style="width:8%"><col style="width:13%"><col style="width:12%"><col style="width:14%">
         </colgroup>
         <thead>
           <tr>
@@ -271,7 +276,7 @@
       <div class="hil-titles"><span class="blk-title">Compras hilado</span><span class="blk-title">Producción tejido</span></div>
       <table class="hil-table" data-no-sort-table>
         <colgroup>
-          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
+          <col style="width:16%"><col style="width:13%"><col style="width:11%"><col style="width:13%"><col style="width:8%"><col style="width:13%"><col style="width:12%"><col style="width:14%">
         </colgroup>
         <thead>
           <tr>
