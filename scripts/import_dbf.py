@@ -1147,16 +1147,25 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             for (_fec, _idp, _cprov, _tip, _comp, _kg, _imp, _num, _fing,
                  _fd, _conc, _cla, _nb, _usr, _cpag, _st) in _compras_formulas:
                 if (_st or "").upper() != "Y":
+                    # Gemela = mismo proveedor + importe (±0.05 por redondeo
+                    # de IVA) + mes + MISMO Nº de factura (primer token del
+                    # concepto, o relación sufijo). El Nº es obligatorio:
+                    # las compras recurrentes repiten monto exacto con
+                    # facturas distintas (sal 5.000, SOFTER 3.680) y sin el
+                    # Nº se absorbería una factura que el DBF NO trae.
+                    _tok = (str(_conc or "").strip().split(" ")[0] or "").upper()
                     cur.execute(
                         "SELECT 1 FROM scintela.compra "
                         " WHERE UPPER(TRIM(COALESCE(codigo_prov,''))) = "
                         "       UPPER(TRIM(COALESCE(%s,''))) "
-                        "   AND ABS(COALESCE(importe,0) - %s) < 0.01 "
+                        "   AND ABS(COALESCE(importe,0) - %s) < 0.05 "
                         "   AND date_trunc('month', fecha) = date_trunc('month', %s::date) "
+                        "   AND (UPPER(split_part(TRIM(COALESCE(concepto,'')), ' ', 1)) = %s "
+                        "        OR UPPER(split_part(TRIM(COALESCE(concepto,'')), ' ', 1)) LIKE %s) "
                         " LIMIT 1",
-                        (_cprov, float(_imp or 0), _fec),
+                        (_cprov, float(_imp or 0), _fec, _tok, "%" + _tok),
                     )
-                    if cur.fetchone():
+                    if _tok and cur.fetchone():
                         continue  # el DBF ya la trae → dBase gana, no duplicar
                 cur.execute(
                     "INSERT INTO scintela.compra "

@@ -193,7 +193,12 @@ def _buscar_match(compras_pc: list[dict], prov_pc: str, factura_pc: str,
     1. Mismo proveedor + mismo número (primer token del concepto).
     2. Mismo proveedor + número sufijo/prefijo + importe en [s/IVA, c/IVA]
        (cargas manuales con IVA mixto o número escrito distinto).
-    3. Mismo proveedor + importe igual al c/IVA o s/IVA calculado (±0.5).
+
+    IMPORTANTE: NO se matchea por importe solo. Las compras recurrentes
+    repiten el monto exacto con facturas distintas (SOFTER FRESH 3.680,
+    sal 5.000) y un match por monto marcaría "cargada" una factura que NO
+    está → pasivo faltante. Verificado en vivo 2026-07-17 (SY 22521 vs
+    22385, ES 7197 vs 7052, SY 22458 vs 21981).
     """
     candidatos = [c for c in compras_pc
                   if (c.get("codigo_prov") or "").strip().upper() == prov_pc]
@@ -210,10 +215,6 @@ def _buscar_match(compras_pc: list[dict], prov_pc: str, factura_pc: str,
                 and (tok.endswith(factura_pc) or factura_pc.endswith(tok))
                 and lo <= imp <= hi):
             return f"factura ~{tok} + importe {imp:.2f} (id {c.get('id_compra')})"
-    for c in candidatos:
-        imp = float(c.get("importe") or 0)
-        if abs(imp - civa) <= _TOL_ABS or abs(imp - siva) <= _TOL_ABS:
-            return f"importe {imp:.2f} (id {c.get('id_compra')})"
     return None
 
 

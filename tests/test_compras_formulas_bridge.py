@@ -117,6 +117,31 @@ def test_estado_mes_pendientes_y_total():
     assert est["total_pendiente"] == pytest.approx(6200.17 + 5000.0, abs=0.02)
 
 
+def test_estado_mes_no_matchea_por_importe_solo():
+    """Regresión 2026-07-17: compras recurrentes repiten el monto exacto con
+    facturas distintas (SOFTER FRESH 3.680, sal 5.000). Un match por importe
+    solo marcaba 'cargada' una factura que NO estaba → pasivo faltante."""
+    grupos = [
+        # formulas 2521 (=22521), mismo monto que la 22385 ya cargada
+        {"proveedor": "SEY", "factura": "2521", "fecha": "2026-07-14",
+         "kg": 1000, "importe_siva": 3200.0},
+        # sal: mismo monto 5000 que la 7052 ya cargada, factura distinta
+        {"proveedor": "EMP", "factura": "7197", "fecha": "2026-07-07",
+         "kg": 25000, "importe_siva": 5000.0},
+    ]
+    pc = [
+        {"id_compra": 1, "codigo_prov": "SY", "importe": 3680.0,
+         "concepto": "22385        26"},
+        {"id_compra": 2, "codigo_prov": "ES", "importe": 5000.0,
+         "concepto": "7052         25"},
+    ]
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=grupos), \
+         patch.object(fb.db, "fetch_all", return_value=pc):
+        est = fb.estado_mes(2026, 7)
+    assert all(f.estado == "pendiente" for f in est["filas"])
+
+
 def test_estado_mes_sin_bridge():
     with patch.object(fb.formulas_db, "disponible", return_value=False):
         est = fb.estado_mes(2026, 7)
