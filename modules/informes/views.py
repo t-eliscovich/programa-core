@@ -2174,9 +2174,28 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
             "delta": delta, "pct": pct, "estado": estado,
         })
 
+    # Hilo: comparar compras contra las IMPORTACIONES RECIBIDAS (ref_import_kg),
+    # no contra el ingreso total de bodega — el ingreso real de bodega 51
+    # incluye REINGRESOS de lote (hilo que vuelve de tejeduría, correcciones)
+    # que NO son compra. Dueña 2026-07-17: el ⚠ 70.354 vs 75.483 era eso
+    # (3 importaciones = 70.354 + reingresos 5.129) → falsa alarma. Los
+    # reingresos se muestran aparte como línea informativa, nunca 'warn'.
     add("hilo", "Hilo comprado = ingresado",
         _g(data, "compras_hilado_total", "kg"), "Compras hilado",
-        _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado", "kg")
+        _g(mov, "hilado", "ref_import_kg"), "Importaciones recibidas", "kg")
+    _ing_h = _g(mov, "hilado", "ingresos_kg")
+    _imp_h = _g(mov, "hilado", "ref_import_kg")
+    try:
+        _tiene_reingreso = (
+            _ing_h is not None and _imp_h is not None
+            and abs(float(_ing_h) - float(_imp_h)) > 0.005
+        )
+    except (TypeError, ValueError):
+        _tiene_reingreso = False
+    if _tiene_reingreso:
+        add("hilo_reingresos", "Hilo: ingreso bodega incluye reingresos de lote",
+            _ing_h, "Ingreso bodega 51",
+            _imp_h, "Importaciones recibidas", "kg", tipo="ajuste")
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
         _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")

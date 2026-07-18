@@ -4357,9 +4357,17 @@ def informe_balance() -> dict:
     # (mov.hilado_kg_importacion). Si alguna NO matchea, o Asinfo no
     # contesta, el $/kg del hilado queda INFLADO y arrastra TODO el stock
     # (tejido=+0,50, terminado=+2,20) → utilidad falsa. Acá se avisa fuerte.
+    # Umbral (dueña 2026-07-17: "no pongas una advertencia inútil"): una
+    # compra chica sin kg (p.ej. QC 833,75 — que además puede ser un TIPO mal
+    # puesto, no hilo) mueve la tarifa en decimales; solo alertar cuando el
+    # importe sin kg puede distorsionar en serio el ponderado.
+    _HILADO_SIN_KG_UMBRAL_US = 5_000.0
     try:
         _hkimp = (mov or {}).get("hilado_kg_importacion") or {}
         _hk_sin_match = _hkimp.get("sin_match") or []
+        _hk_total_us = sum(float(c.get("importe") or 0) for c in _hk_sin_match)
+        if _hk_total_us < _HILADO_SIN_KG_UMBRAL_US:
+            _hk_sin_match = []
         if _hk_sin_match and not _hkimp.get("disponible"):
             advertencias.append(
                 f"⚠ HILADO: hay {len(_hk_sin_match)} compra(s) del mes con importe pero SIN kg "
@@ -4376,7 +4384,8 @@ def informe_balance() -> dict:
                 f"⚠ HILADO: {len(_hk_sin_match)} compra(s) del mes con importe pero SIN kg — "
                 f"ni en la compra ni en su importación: {_det}. "
                 "Sin esos kg el $/kg del hilado queda inflado y revalúa todo el stock. "
-                "Completar el kg (o el N° de importación en el concepto) para que cierre."
+                "Completar el kg (o el N° de importación en el concepto); si la compra "
+                "no es hilo, corregirle el TIPO desde Editar."
             )
     except Exception:  # noqa: BLE001 -- la alarma nunca rompe el balance
         pass
