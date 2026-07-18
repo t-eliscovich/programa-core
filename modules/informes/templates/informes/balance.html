@@ -210,6 +210,15 @@
      mid-mes (PATR-PATANT fluctuando con cada cobranza) confundía más de lo
      que ayudaba. Si en el futuro hace falta mostrar diagnóstico, viene en
      `b.diagnostico.advertencias`. #}
+  {# EXCEPCIÓN (dueña 2026-07-17: "si pasa tenemos que agarrar el error"):
+     las alarmas de HILADO sin kg SÍ se muestran — una compra H con $ y sin
+     kg infla la tarifa y revalúa TODO el stock (+83k de utilidad falsa el
+     16-17/07). Solo las que arrancan con "⚠ HILADO". #}
+  {% for _adv in (b.diagnostico.advertencias or []) if _adv.startswith('⚠ HILADO') %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>{{ _adv }}</strong>
+    </div>
+  {% endfor %}
   {# Frame único, plano. Sin gradientes ni "TV ochentosa". #}
   <div class="border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 overflow-hidden">
 
