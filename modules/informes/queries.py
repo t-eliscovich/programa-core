@@ -3693,9 +3693,10 @@ def resultados_costos_tabla(
          "ukg": mp_ukg,
          "us": (float(mp_us) if mp_us else None),
          "clase": "dato",
-         "ayuda": ("Hilado consumido del mes = egresos del cuadro MOVIMIENTOS "
-                   "(HILADO): kg × $/kg ponderado. Es el costo mas grande; "
-                   "antes solo se mostraba el $/kg.")},
+         "ayuda": ("Hilado consumido del mes = fila EGRESOS (HILADO) del cuadro "
+                   "MOVIMIENTOS DEL MES (INICIAL ASINFO) del Flujo de producción "
+                   "— mismo número (salidas de bodega 51 netas de reingresos), "
+                   "× la tarifa del hilado del STOCK.")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
          "proy": (float(pretej or 0) or None), "clase": "dato",
          "ayuda": ("Costo total = V1+V2+V3 + depreciacion de tejeduria. "
@@ -4449,6 +4450,24 @@ def informe_balance() -> dict:
     h_uk = h_um + 0.5
     h_uf = h_uk + 1.7
 
+    # ── Materia Prima (COSTOS) = EGRESOS del cuadro MOVIMIENTOS (INICIAL
+    # ASINFO) del flujo — dueña 2026-07-17: "tiene que salir del cuadro de
+    # movimientos asinfo, no de cualquier lado; el usuario tiene que poder ver
+    # de dónde viene". Fórmula compartida: asinfo_service.hilado_egresos_mes
+    # (salidas bodega 51 − reingresos de lote). $ = kg × h_um (la tarifa
+    # visible en STOCK y en el cuadro). Fallback (Asinfo caído): egresos del
+    # mov estilo dBase, como antes.
+    _mp_kg_balance = (((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_kg")
+    _mp_us_balance = (((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_us")
+    try:
+        from modules.asinfo import service as _asvc_mp
+        _hegr_bal = _asvc_mp.hilado_egresos_mes(_hoy_ec_bal.year, _hoy_ec_bal.month)
+        if _hegr_bal.get("disponible") and float(_hegr_bal.get("egresos_kg") or 0) > 0:
+            _mp_kg_balance = float(_hegr_bal["egresos_kg"])
+            _mp_us_balance = _mp_kg_balance * float(h_um or 0)
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+        pass
+
     val_hilado = kg_hilado * h_um
     val_tejido = kg_tejido * h_uk
     val_terminado = kg_term * h_uf
@@ -4641,10 +4660,16 @@ def informe_balance() -> dict:
         # los renglones (cada columna suma de arriba a abajo). Ver else-branch.
         costo_total_ukg=None,
         costo_total_us=None,
-        # Materia Prima en kg y $ = egresos del HILADO en la tabla MOVIMIENTOS
-        # (hilado consumido del mes). MISMA fuente que la tabla → coherente.
-        mp_kg=(((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_kg"),
-        mp_us=(((mov or {}).get("header") or {}).get("hilado") or {}).get("egresos_us"),
+        # Materia Prima = EGRESOS del cuadro "MOVIMIENTOS DEL MES (INICIAL
+        # ASINFO)" del Flujo de producción (dueña 2026-07-17: "tiene que salir
+        # del cuadro de movimientos asinfo, no de cualquier lado — el usuario
+        # tiene que poder ver de dónde viene"). MISMA función compartida:
+        # asinfo_service.hilado_egresos_mes (salidas de bodega 51 netas de
+        # reingresos). $ = kg × tarifa del hilado (h_um, la misma del STOCK y
+        # del cuadro). Fail-soft: si Asinfo no responde, quedan los egresos
+        # del mov estilo dBase (comportamiento anterior).
+        mp_kg=_mp_kg_balance,
+        mp_us=_mp_us_balance,
     )
 
     resultados = {

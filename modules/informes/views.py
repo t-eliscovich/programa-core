@@ -291,7 +291,16 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     # correcciones = ing_hilo − compras) NO son ingreso: se NETEAN contra el
     # egreso (consumo real = salidas − reingresos). La telescopía kg y $ se
     # preserva (se resta lo mismo del ingreso y del egreso, al promedio).
-    _reingresos_kg = max(ing_hilo - compras, 0.0)
+    # La fórmula del egreso vive en asinfo_service.hilado_egresos_mes — LA
+    # MISMA que usa el balance para Materia Prima (dueña: "el usuario tiene
+    # que poder ver de dónde viene"). Acá le pasamos los datos ya consultados.
+    from modules.asinfo import service as _asvc_egr
+    _hegr = _asvc_egr.hilado_egresos_mes(
+        anio or 0, mes or 0,
+        mov={"ingreso": ing_hilo, "egreso": egr_hilo},
+        importaciones_kg=compras,
+    )
+    _reingresos_kg = float(_hegr.get("reingresos_kg") or 0.0)
     hl["ingresos_kg"] = compras
     hl["ingresos_us"] = compras_us
     hl["ingresos_ukg"] = (compras_us / compras) if compras else 0.0
@@ -302,7 +311,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     hl["ref_bodega_ing_kg"] = ing_hilo     # ingreso bruto real de bodega 51
     hl["ref_reingresos_kg"] = _reingresos_kg
     hl["ref_tejer_kg"] = hilo_consumido    # lo que se fue a tejer (órdenes)
-    hl["egresos_kg"] = max(egr_hilo - _reingresos_kg, 0.0)
+    hl["egresos_kg"] = float(_hegr.get("egresos_kg") or 0.0) if _hegr.get("disponible") \
+        else max(egr_hilo - _reingresos_kg, 0.0)
     hl["egresos_ukg"] = _avg_ukg
     hl["egresos_us"] = hl["egresos_kg"] * _avg_ukg
     # En máquinas (WIP) al $/kg de apertura; suma al stock actual (es stock nuestro).

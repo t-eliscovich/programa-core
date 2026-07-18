@@ -1542,6 +1542,51 @@ def hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> float:
     return total
 
 
+def hilado_egresos_mes(yy: int, mm: int, *, mov: dict | None = None,
+                       importaciones_kg: float | None = None) -> dict:
+    """EGRESOS de HILADO del mes — LA variable del cuadro "MOVIMIENTOS DEL MES
+    (INICIAL ASINFO)" del Flujo de producción, compartida con el balance
+    (fila Materia Prima). Dueña 2026-07-17: "tiene que salir del cuadro de
+    movimientos asinfo, no de cualquier lado — el usuario tiene que poder ver
+    de dónde viene". UNA sola fórmula, un solo lugar ([[coherencia]]).
+
+        egresos = salidas reales de bodega 51 del mes
+                  − reingresos de lote (ingreso bruto − importaciones recibidas)
+
+    `mov` / `importaciones_kg`: valores ya calculados (el flujo los pasa para
+    no repetir queries); si faltan se consultan acá. Fail-soft:
+    disponible=False si Asinfo no da el movimiento de bodega.
+    """
+    from datetime import date as _date
+    out = {"disponible": False, "egresos_kg": 0.0, "reingresos_kg": 0.0,
+           "bruto_egr_kg": 0.0, "ingreso_bodega_kg": 0.0,
+           "importaciones_kg": 0.0}
+    try:
+        if mov is None:
+            mov = movimiento_bodega_mes(51, _date(int(yy), int(mm), 1)) or {}
+        ing = float(mov.get("ingreso") or 0.0)
+        egr = float(mov.get("egreso") or 0.0)
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista
+        return out
+    if not ing and not egr:
+        return out  # bodega sin movimiento visible → mejor fallback que un 0
+    if importaciones_kg is None:
+        try:
+            importaciones_kg = float(hilado_recibido_mes(int(yy), int(mm)) or 0.0)
+        except Exception:  # noqa: BLE001
+            importaciones_kg = 0.0
+    rein = max(ing - float(importaciones_kg or 0.0), 0.0)
+    out.update({
+        "disponible": True,
+        "egresos_kg": max(egr - rein, 0.0),
+        "reingresos_kg": rein,
+        "bruto_egr_kg": egr,
+        "ingreso_bodega_kg": ing,
+        "importaciones_kg": float(importaciones_kg or 0.0),
+    })
+    return out
+
+
 _FABRICACION_FLUJO_TTL_SECS = 600  # 10 minutos
 _FABRICACION_FLUJO_CACHE: dict = {}
 
