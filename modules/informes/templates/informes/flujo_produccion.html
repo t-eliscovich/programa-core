@@ -197,13 +197,14 @@
           {% if _maq.get('hilado') or _maq.get('crudo') %}
           <tr>
             <td class="lbl" style="font-size:13px;color:rgb(100 116 139);">En máquinas</td>
-            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
+            {# dueña 2026-07-17: mostrar si SUMA (+) o RESTA (paréntesis) en cada columna #}
+            <td class="num" style="color:rgb(100 116 139);">{% if _maq.get('hilado') %}+{{ _maq.get('hilado') | num_es(0) }}{% else %}—{% endif %}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ '%.3f' % (_maq.get('hilado_ukg') or 0) if _maq.get('hilado_us') else '—' }}</td>
-            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado_us') | num_es(0) if _maq.get('hilado_us') else '—' }}</td>
+            <td class="num" style="color:rgb(100 116 139);">{% if _maq.get('hilado_us') %}+{{ _maq.get('hilado_us') | num_es(0) }}{% else %}—{% endif %}</td>
             <td></td>
-            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
+            <td class="num" style="color:rgb(100 116 139);">{% if _maq.get('crudo') %}+{{ _maq.get('crudo') | num_es(0) }}{% else %}—{% endif %}</td>
             <td class="num">—</td>
-            <td class="num" style="color:rgb(100 116 139);" title="Químico dosificado en órdenes sin cerrar la tela — restado en la cuenta (todavía no está costeado en la tabla de tintorería)">{{ aco.get('maquinas_us') | num_es(0) if aco.get('maquinas_us') else '—' }}</td>
+            <td class="num" style="color:rgb(100 116 139);" title="Químico dosificado en órdenes sin cerrar la tela — RESTA en la cuenta (todavía no está costeado en la tabla de tintorería); el hilado/crudo en máquinas SUMA (sigue siendo stock)">{% if aco.get('maquinas_us') %}({{ aco.get('maquinas_us') | num_es(0) }}){% else %}—{% endif %}</td>
           </tr>
           {% endif %}
           <tr>
@@ -260,7 +261,7 @@
           <span class="text-slate-400 dark:text-slate-500">Consumo <b class="tabular-nums font-semibold text-rose-500 dark:text-rose-400">{% if qm.egresos is not none %}{{ qm.egresos | num_es(0) }}{% else %}s/d{% endif %}</b></span>
           {% if qm.en_maquinas %}
           <span class="text-slate-300 dark:text-slate-600">−</span>
-          <span class="text-slate-400 dark:text-slate-500">En máquinas <b class="tabular-nums font-semibold" style="color:rgb(100 116 139)">{{ qm.en_maquinas | num_es(0) }}</b></span>
+          <span class="text-slate-400 dark:text-slate-500">En máquinas <b class="tabular-nums font-semibold" style="color:rgb(100 116 139)">({{ qm.en_maquinas | num_es(0) }})</b></span>
           {% endif %}
           <span class="text-slate-300 dark:text-slate-600">=</span>
           <span class="text-slate-500 dark:text-slate-300">Libro <b class="tabular-nums font-bold text-slate-900 dark:text-white">{{ qm.final_prog | num_es(0) }}</b></span>
