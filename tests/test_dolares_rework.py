@@ -162,6 +162,57 @@ def test_kg_stock_por_compra_dedup_por_importacion():
     assert out == {"AC": 24494.0}  # kg del stock, contado una sola vez
 
 
+# ── kg_hilado_faltantes_mes: completa los kg de las BAP (kg=0) — bug 17/07 ──
+_IMPS_99 = [{"im_numero": "IM-601", "fecha": "2026-05-02",
+             "fecha_recepcion": "2026-07-15", "recibida": True,
+             "nota": "ACMT/EXP/2026-30/78100 ( AC 99)"}]
+
+
+def test_kg_hilado_faltantes_completa_bap_sin_kg():
+    compras = [
+        {"prov": "AC", "ref": 99, "fecha": date(2026, 7, 16), "kg": 0, "importe": 69437.10},
+        {"prov": "AC", "ref": 31, "fecha": date(2026, 7, 9), "kg": 24494.0, "importe": 75522.70},
+    ]
+    with patch.object(isvc.asinfo_service, "importaciones_asinfo", return_value=_IMPS_99), \
+         patch.object(isvc.asinfo_service, "importaciones_kg", return_value={"IM-601": 22992.64}):
+        out = isvc.kg_hilado_faltantes_mes(compras)
+    assert out["disponible"] is True
+    assert out["kg"] == 22992.64          # el kg de la importación entra al kcom
+    assert out["sin_match"] == []
+
+
+def test_kg_hilado_faltantes_no_dobla_si_otra_compra_ya_trae_kg():
+    # SALDO/CAE kg=0 de una importación cuya compra principal YA tiene kg.
+    compras = [
+        {"prov": "AC", "ref": 99, "fecha": date(2026, 7, 16), "kg": 22992.64, "importe": 69437.10},
+        {"prov": "AC", "ref": 99, "fecha": date(2026, 7, 16), "kg": 0, "importe": 2241.70},
+    ]
+    with patch.object(isvc.asinfo_service, "importaciones_asinfo", return_value=_IMPS_99), \
+         patch.object(isvc.asinfo_service, "importaciones_kg", return_value={"IM-601": 22992.64}):
+        out = isvc.kg_hilado_faltantes_mes(compras)
+    assert out["kg"] == 0.0               # no se cuenta dos veces
+    assert out["sin_match"] == []         # y tampoco es un error
+
+
+def test_kg_hilado_faltantes_sin_match_avisa():
+    compras = [{"prov": "QC", "ref": 219729, "fecha": date(2026, 7, 1), "kg": 0, "importe": 833.75}]
+    with patch.object(isvc.asinfo_service, "importaciones_asinfo", return_value=_IMPS_99), \
+         patch.object(isvc.asinfo_service, "importaciones_kg", return_value={"IM-601": 22992.64}):
+        out = isvc.kg_hilado_faltantes_mes(compras)
+    assert out["disponible"] is True
+    assert out["kg"] == 0.0
+    assert len(out["sin_match"]) == 1     # la compra sin kg NI importación se reporta
+
+
+def test_kg_hilado_faltantes_asinfo_caido_fail_soft():
+    compras = [{"prov": "AC", "ref": 99, "fecha": date(2026, 7, 16), "kg": 0, "importe": 69437.10}]
+    with patch.object(isvc.asinfo_service, "importaciones_asinfo", side_effect=RuntimeError("down")):
+        out = isvc.kg_hilado_faltantes_mes(compras)
+    assert out["disponible"] is False     # el balance advierte "Asinfo no contestó"
+    assert out["kg"] == 0.0
+    assert len(out["sin_match"]) == 1
+
+
 # ── adjuntar_kg_asinfo_a_compras: mostrar kg del stock en /compras ───────────
 def test_adjuntar_kg_asinfo_a_compras():
     compras = [

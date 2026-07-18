@@ -629,12 +629,16 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # sino el promedio $/kg sale distinto al "COMPRAS HILADO TOTAL" que
     # filtra por tipo. Bug reportado por dueña 2026-05-21: vio 2.913 en
     # Ingresos vs 2.863 en Compras Hilado.
+    _hil_kg_importacion = {"kg": 0.0, "sin_match": [], "disponible": False}
     try:
-        _h_row = (
-            db.fetch_one(
+        _h_rows = (
+            db.fetch_all(
                 f"""
-            SELECT COALESCE(SUM(kg), 0)      AS kg,
-                   COALESCE(SUM(importe), 0) AS importe
+            SELECT codigo_prov AS prov,
+                   NULLIF(regexp_replace(COALESCE(concepto,''),'[^0-9]','','g'),'')::bigint AS ref,
+                   fecha,
+                   COALESCE(kg, 0)      AS kg,
+                   COALESCE(importe, 0) AS importe
               FROM scintela.compra
              WHERE UPPER(COALESCE(tipo, '')) = 'H'
                AND COALESCE(stat, '') <> 'Y'
@@ -644,10 +648,27 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
             """,
                 (yy, mm),
             )
-            or {}
+            or []
         )
-        kcom = float(_h_row.get("kg") or 0)
-        ucom = float(_h_row.get("importe") or 0)
+        kcom = sum(float(r.get("kg") or 0) for r in _h_rows)
+        ucom = sum(float(r.get("importe") or 0) for r in _h_rows)
+        # TMT 2026-07-17 — las compras de importación CONVERTIDAS EN PC (BAP)
+        # quedan con kg=0 a propósito: el kg vive en la IMPORTACIÓN (regla
+        # dueña 2026-07-10; /compras lo muestra en gris "de referencia").
+        # El dBase graba KG+IMPORTE en la compra, así que este SUM solo veía
+        # los kg de las compras sincronizadas → el ponderado um_act se
+        # inflaba y revaluaba TODO el stock (compra AC 22.992 kg en 0 →
+        # tarifa 2,991 vs 2,955 → utilidad +83k). Completamos los kg desde
+        # la MISMA fuente que /compras (la importación, una vez por
+        # importación). Fail-soft: Asinfo caído → igual que antes, y el
+        # balance lo ADVIERTE (hilado_kg_importacion.sin_match/disponible).
+        try:
+            from modules.importaciones import service as _imp_kg_svc
+
+            _hil_kg_importacion = _imp_kg_svc.kg_hilado_faltantes_mes(_h_rows)
+            kcom += float(_hil_kg_importacion.get("kg") or 0)
+        except Exception:  # noqa: BLE001 -- nunca romper el mov por Asinfo
+            pass
     except Exception:
         kcom = float(hist.get("kcom") or 0)
         ucom = float(hist.get("ucom") or 0)
@@ -1151,6 +1172,9 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         "anio": yy,
         "mes": mm,
         "header": header,
+        # kg completados desde la importación (BAP kg=0) + compras sin kg
+        # que NO matchearon — el balance los usa para ADVERTIR. TMT 2026-07-17.
+        "hilado_kg_importacion": _hil_kg_importacion,
         "compras_hilado": [dict(r) for r in compras_hilado],
         "compras_hilado_total": {
             "kg": sum(float(r.get("kg") or 0) for r in compras_hilado),
@@ -4327,6 +4351,35 @@ def informe_balance() -> dict:
     # no está disponible. Las tarifas (h_um/h_uk/h_uf) NO cambian (ya son las de
     # INICIALE.DBF). Base de la UTILIDAD también → el balance deja de subvaluar.
     mov = _try_movimientos_mes()
+
+    # ── ALARMA kg de hilado (dueña 2026-07-17: "si pasa tenemos que agarrar
+    # el error"). Las compras H con kg=0 se completan desde su IMPORTACIÓN
+    # (mov.hilado_kg_importacion). Si alguna NO matchea, o Asinfo no
+    # contesta, el $/kg del hilado queda INFLADO y arrastra TODO el stock
+    # (tejido=+0,50, terminado=+2,20) → utilidad falsa. Acá se avisa fuerte.
+    try:
+        _hkimp = (mov or {}).get("hilado_kg_importacion") or {}
+        _hk_sin_match = _hkimp.get("sin_match") or []
+        if _hk_sin_match and not _hkimp.get("disponible"):
+            advertencias.append(
+                f"⚠ HILADO: hay {len(_hk_sin_match)} compra(s) del mes con importe pero SIN kg "
+                "y Asinfo no contestó para completarlos desde la importación. "
+                "El $/kg del hilado (y todo el stock) puede estar INFLADO — recargar la página "
+                "o revisar Asinfo antes de leer la utilidad."
+            )
+        elif _hk_sin_match:
+            _det = "; ".join(
+                f"{str(c.get('prov') or '?').strip()} {float(c.get('importe') or 0):,.2f} ({c.get('fecha')})"
+                for c in _hk_sin_match[:5]
+            )
+            advertencias.append(
+                f"⚠ HILADO: {len(_hk_sin_match)} compra(s) del mes con importe pero SIN kg — "
+                f"ni en la compra ni en su importación: {_det}. "
+                "Sin esos kg el $/kg del hilado queda inflado y revalúa todo el stock. "
+                "Completar el kg (o el N° de importación en el concepto) para que cierre."
+            )
+    except Exception:  # noqa: BLE001 -- la alarma nunca rompe el balance
+        pass
 
     def _mov_stock_kg(_et, _fallback):
         try:

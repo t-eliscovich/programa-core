@@ -507,6 +507,76 @@ def kg_stock_por_compra(compras: list[dict], limite: int = 400) -> dict[str, flo
     return por_prov
 
 
+def kg_hilado_faltantes_mes(compras: list[dict], limite: int = 400) -> dict:
+    """kg de hilado que FALTAN en las compras H del mes porque viven en la
+    IMPORTACIÓN (las BAP convertidas en PC quedan con kg=0 a propósito —
+    regla dueña 2026-07-10: "el kg no vive en la compra"). El dBase en
+    cambio graba KG+IMPORTE en la misma compra, así que cualquier cálculo
+    que sume `compra.kg` (p.ej. el ponderado um_act del balance) queda
+    CIEGO a estos kg y se infla (bug 2026-07-17: compra AC de 22.992 kg
+    convertida en PC → tarifa hilado +0,036 → utilidad +83k).
+
+    `compras`: filas {prov, ref, fecha, kg} de TODAS las compras H del mes
+    (ref = parte numérica del concepto, como en /compras).
+
+    Devuelve dict:
+      kg         = total de kg a completar (desde las importaciones)
+      sin_match  = filas con kg=0 que NO matchearon una importación con kg
+                   (para advertir en el balance — "agarrar el error")
+      disponible = False si Asinfo no contestó (fail-soft: kg=0)
+
+    Reglas:
+      · el kg de una importación se cuenta UNA sola vez;
+      · si otra compra del mes YA trae kg>0 de esa importación (la
+        principal, sincronizada del dBase), sus gemelas SALDO/CAE/seguro
+        con kg=0 NO vuelven a sumar.
+    """
+    sin_kg = [c for c in (compras or []) if not float(c.get("kg") or 0)]
+    out = {"kg": 0.0, "sin_match": list(sin_kg), "disponible": False}
+    if not sin_kg:
+        out["disponible"] = True
+        return out
+    index = _index_importaciones_por_codigo(limite=limite)
+    if not index:
+        return out
+    out["disponible"] = True
+
+    def _im_de(c: dict):
+        prov = str(c.get("prov") or "").strip().upper()
+        ref = c.get("ref")
+        if not prov or ref is None:
+            return None
+        cands = index.get((prov, int(ref)))
+        if not cands:
+            return None
+        return _nearest_import(cands, c.get("fecha"))
+
+    # Importaciones que ya están representadas por una compra CON kg.
+    vistos: set = set()
+    for c in compras or []:
+        if float(c.get("kg") or 0) > 0:
+            im = _im_de(c)
+            if im is not None:
+                vistos.add(im.get("im_numero"))
+
+    kg_total = 0.0
+    sin_match: list[dict] = []
+    for c in sin_kg:
+        im = _im_de(c)
+        im_kg = float((im or {}).get("kg") or 0)
+        if im is None or im_kg <= 0:
+            sin_match.append(c)
+            continue
+        imn = im.get("im_numero")
+        if imn in vistos:  # muchas compras → un stock: el kg una sola vez
+            continue
+        vistos.add(imn)
+        kg_total += im_kg
+    out["kg"] = round(kg_total, 2)
+    out["sin_match"] = sin_match
+    return out
+
+
 def adjuntar_kg_asinfo_a_compras(compras: list[dict], limite: int = 400) -> None:
     """Muta cada compra agregando `kg_asinfo`: el kg de su importación de Asinfo
     (match por codigo_prov + concepto-numérico + fecha más cercana).
