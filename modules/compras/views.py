@@ -339,6 +339,7 @@ def editar(id_compra: int):
         "fechad": c.get("fechad").strftime("%d/%m/%Y") if c.get("fechad") else "",
         "importe": str(c.get("importe") or 0),
         "observacion": "",
+        "tipo": (c.get("tipo") or "").upper().strip(),
     }
     if request.method == "POST":
         concepto = (request.form.get("concepto") or "").strip()[:200] or None
@@ -347,9 +348,12 @@ def editar(id_compra: int):
         importe_str = request.form.get("importe")
         importe = parse_monto(importe_str)
         observacion = (request.form.get("observacion") or "").strip() or None
+        tipo_form = (request.form.get("tipo") or "").strip().upper() or None
 
         if importe is None:
             errores.append("Importe inválido.")
+        if tipo_form and tipo_form not in queries.TIPOS_VALIDOS:
+            errores.append("Tipo inválido.")
 
         form.update({
             "concepto": concepto or "",
@@ -357,12 +361,14 @@ def editar(id_compra: int):
             "fechad": request.form.get("fechad") or "",
             "importe": importe_str,
             "observacion": observacion or "",
+            "tipo": tipo_form or "",
         })
 
         if errores:
             return render_template(
                 "compras/editar.html",
                 compra=c, form=form, errores=errores, pagada=pagada,
+                tipos_label=queries.TIPOS_LABEL,
             ), 400
 
         try:
@@ -374,6 +380,7 @@ def editar(id_compra: int):
                 fechad=fechad,
                 importe=float(importe) if importe is not None else None,
                 observacion=observacion,
+                tipo=tipo_form,
                 usuario=usuario,
             )
             flash(
@@ -387,10 +394,12 @@ def editar(id_compra: int):
             return render_template(
                 "compras/editar.html",
                 compra=c, form=form, errores=errores, pagada=pagada,
+                tipos_label=queries.TIPOS_LABEL,
             ), 400
 
     return render_template(
         "compras/editar.html", compra=c, form=form, errores=errores, pagada=pagada,
+        tipos_label=queries.TIPOS_LABEL,
     )
 
 

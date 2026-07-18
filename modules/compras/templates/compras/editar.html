@@ -31,7 +31,7 @@
       <div class="text-xs">{{ compra.proveedor or '' }}</div>
     </div>
     <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
-      <div class="text-xs text-slate-500">Tipo</div>
+      <div class="text-xs text-slate-500">Tipo actual</div>
       <div class="font-mono">{{ compra.tipo or '—' }}</div>
     </div>
     <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
@@ -45,6 +45,15 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+        <select name="tipo"
+                class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+          {% for k, lbl in tipos_label.items() %}
+            <option value="{{ k }}" {% if form.tipo == k %}selected{% endif %}>{{ k }} · {{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div>
         <label class="block text-xs text-slate-500 mb-1">
           Importe {% if pagada %}<span class="text-amber-600">(lockeada)</span>{% endif %}

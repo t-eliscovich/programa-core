@@ -341,3 +341,47 @@ def test_crear_pagada_cuenta_invalida_falla(monkeypatch):
             pagada=True, cuenta="bitcoin",  # inválida
             usuario="tmt",
         )
+
+
+# ─── edición de TIPO (TMT 2026-07-17: reclasificar NC/QI de Q a C) ───────
+def test_editar_tipo_invalido_raise(monkeypatch):
+    from modules.compras import queries as q
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: {
+        "id_compra": 1, "fecha": None, "codigo_prov": "NC", "numero": 9,
+        "importe": 100.0, "fechad": None, "tipo": "Q", "concepto": "x",
+        "comprobante": None, "stat": None, "id_transaccion": None,
+    })
+    with pytest.raises(ValueError, match="Tipo inválido"):
+        q.editar(1, tipo="Z")
+
+
+def test_editar_cambia_tipo_a_c(monkeypatch):
+    """Cambiar tipo Q→C actualiza la compra; es clasificación (no toca monto)."""
+    from modules.compras import queries as q
+
+    fetches = iter([
+        {"id_compra": 1, "fecha": None, "codigo_prov": "NC", "numero": 9,
+         "importe": 100.0, "fechad": None, "tipo": "Q", "concepto": "x",
+         "comprobante": None, "stat": None, "id_transaccion": None},
+        None,  # mov_doble parcial
+    ])
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: next(fetches, None))
+    ejecutados = []
+
+    class _Tx:
+        def __enter__(self):
+            return object()
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(q.db, "tx", lambda: _Tx())
+    monkeypatch.setattr(
+        q.db, "execute",
+        lambda sql, params=(), conn=None: ejecutados.append((sql, params)),
+    )
+    monkeypatch.setattr(q, "asegurar_fecha_abierta", lambda f: None)
+    q.editar(1, tipo="c", usuario="test")
+    upd = next(s for s, p in ejecutados if "UPDATE scintela.compra" in s)
+    par = next(p for s, p in ejecutados if "UPDATE scintela.compra" in s)
+    assert "tipo=%s" in upd
+    assert "C" in par

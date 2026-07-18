@@ -441,6 +441,7 @@ def editar(
     fechad: date | None = None,
     observacion: str | None = None,
     importe=None,
+    tipo: str | None = None,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de una compra existente.
@@ -451,6 +452,8 @@ def editar(
       - Si tiene posdat hermana abierta (banc=0): los cambios de importe/
         fechad se propagan automáticamente al posdat.
       - `concepto`, `comprobante`, `observacion`: edición libre.
+      - `tipo`: edición libre (TMT 2026-07-17, dueña: reclasificar NC/QI de
+        Q a C — es clasificación, no toca importe ni posdat).
       - `asegurar_fecha_abierta(compra.fecha)` — el período original.
     """
     compra = db.fetch_one(
@@ -509,6 +512,14 @@ def editar(
             raise ValueError("Compra ya pagada — la fecha de vencimiento no se puede editar.")
         nuevo_fechad = fechad
 
+    nuevo_tipo = None
+    if tipo is not None:
+        tipo_norm = tipo.upper().strip()
+        if tipo_norm not in TIPOS_VALIDOS:
+            raise ValueError(f"Tipo inválido: {tipo!r}. Debe ser uno de: {', '.join(TIPOS_VALIDOS)}.")
+        if tipo_norm != (compra.get("tipo") or "").upper().strip():
+            nuevo_tipo = tipo_norm
+
     obs_marca = f"[E] {observacion[:120]}" if observacion else None
 
     with db.tx() as conn:
@@ -520,6 +531,9 @@ def editar(
         if comprobante is not None:
             sql_set.append("comprobante=%s")
             params.append(comprobante or None)
+        if nuevo_tipo is not None:
+            sql_set.append("tipo=%s")
+            params.append(nuevo_tipo)
         if obs_marca:
             sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
             params.append(obs_marca)
