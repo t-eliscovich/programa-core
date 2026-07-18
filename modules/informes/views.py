@@ -608,6 +608,41 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             except Exception:  # noqa: BLE001 -- fail-soft
                 _consumo_prog = None
 
+            # "En máquinas" de químico (dueña 2026-07-17: "me encantó el en
+            # máquinas"): químico YA dosificado en órdenes del mes SIN marcar
+            # terminadas. El consumo lo descuenta el día del tinturado pero el
+            # físico recién al terminar la orden → este monto viaja en tránsito
+            # (igual que el hilado en máquinas) y antes quedaba embebido en el
+            # ajuste, que subía y bajaba con el ritmo de la tintorería.
+            _q_maquinas = 0.0
+            try:
+                from modules._lib import formulas_db as _fdb4
+                _d1m = _date3(int(anio), int(mes), 1).isoformat()
+                _d2m = _date3(int(anio), int(mes),
+                              _cal3.monthrange(int(anio), int(mes))[1]).isoformat()
+                _rm = _fdb4.fetch_one(
+                    """
+                    SELECT COALESCE(SUM(ol.cantidad_kg
+                             * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                             * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+                      FROM orden_lineas ol
+                      JOIN ordenes   o ON o.id  = ol.orden_id
+                      JOIN productos p ON p.num = ol.producto_num
+                     WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
+                       -- fin de mes (dueña): mirando un mes CERRADO, cuenta lo
+                       -- que estaba en máquinas AL CIERRE (sin terminar a esa
+                       -- fecha, aunque después se haya terminado). En el mes
+                       -- corriente equivale a fecha_terminado IS NULL.
+                       AND (o.fecha_terminado IS NULL OR o.fecha_terminado > %(d2)s)
+                       AND TO_DATE(o.fecha, 'DD/MM/YYYY') >= %(d1)s
+                       AND TO_DATE(o.fecha, 'DD/MM/YYYY') <= %(d2)s
+                    """,
+                    {"d1": _d1m, "d2": _d2m},
+                ) or {}
+                _q_maquinas = float(_rm.get("us") or 0)
+            except Exception:  # noqa: BLE001 -- fail-soft
+                _q_maquinas = 0.0
+
             q_inicial = _vq0
             q_compras = _compras_prog
             # Consumo del mes = PROYECTADO de tintura (mismo número que la tabla
@@ -630,6 +665,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
                 "ajuste": q_ajuste,
                 "facturado_prog": _compras_prog,
                 "facturado_n": int(_qc.get("n") or 0),
+                "en_maquinas": _q_maquinas,
             }
 
             # BANDA "stock de químicos" = MISMO número que la columna QUÍM.$.
@@ -649,6 +685,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
         co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)   # físico − libro (de arranque)
+        co["maquinas_us"] = round(float(quimicos_modelo.get("en_maquinas") or 0), 0)
         co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
 
     return {

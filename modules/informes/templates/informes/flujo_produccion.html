@@ -203,7 +203,7 @@
             <td></td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
             <td class="num">—</td>
-            <td class="num">—</td>
+            <td class="num" style="color:rgb(100 116 139);" title="Químico dosificado en órdenes del mes sin marcar terminadas — el físico lo descuenta recién al terminar">{{ aco.get('maquinas_us') | num_es(0) if aco.get('maquinas_us') else '—' }}</td>
           </tr>
           {% endif %}
           <tr>
