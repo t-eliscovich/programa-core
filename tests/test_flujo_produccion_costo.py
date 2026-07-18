@@ -76,8 +76,14 @@ def test_hilado_cierra_por_movimiento_de_bodega_y_baja_ukg():
         mov = _build_mov_asinfo(data, inic, act, anio=2026, mes=7)
     hl = mov["hilado"]
     maq = mov["maquinas"]
-    assert hl["ingresos_kg"] == 100.0        # movimiento real de bodega, no las 80 importadas
-    assert hl["egresos_kg"] == 60.0          # movimiento real de bodega, no 'a tejer'
+    # Dueña 2026-07-17 "que los 3 sean iguales": Ingresos = importaciones
+    # recibidas (80); los reingresos de bodega (100−80=20) se netean del
+    # egreso (60−20=40). La telescopía kg/$ sigue cerrando.
+    assert hl["ingresos_kg"] == 80.0         # importaciones recibidas, no el bruto de bodega
+    assert hl["ingresos_us"] == 160.0        # al costo real de las importaciones
+    assert hl["egresos_kg"] == 40.0          # 60 de bodega − 20 de reingresos
+    assert hl["ref_bodega_ing_kg"] == 100.0  # bruto de bodega = referencia
+    assert hl["ref_reingresos_kg"] == 20.0   # reingresos de lote = referencia
     assert hl["ref_import_kg"] == 80.0       # importaciones = referencia
     assert hl["ref_tejer_kg"] == 50.0        # a tejer = referencia
     assert round(hl["stock_inic_us"], 2) == 3000.0
