@@ -285,18 +285,26 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_ukg"] = _open_ukg
     hl["stock_inic_us"] = hi0 * _open_ukg
-    hl["ingresos_kg"] = ing_hilo
-    # $ del ingreso = costo real de las importaciones + reingresos al promedio.
-    hl["ingresos_us"] = compras_us + (ing_hilo - compras) * _avg_ukg
-    hl["ingresos_ukg"] = (hl["ingresos_us"] / ing_hilo) if ing_hilo else 0.0
-    # Referencias (parte del ingreso/egreso real, se muestran al lado):
+    # Dueña 2026-07-17: "Ingresos" de la banda = IMPORTACIONES RECIBIDAS — el
+    # MISMO número que COMPRAS HILADO y que el chequeo ("que los 3 sean
+    # iguales"). Los reingresos de lote (hilo que vuelve de tejeduría,
+    # correcciones = ing_hilo − compras) NO son ingreso: se NETEAN contra el
+    # egreso (consumo real = salidas − reingresos). La telescopía kg y $ se
+    # preserva (se resta lo mismo del ingreso y del egreso, al promedio).
+    _reingresos_kg = max(ing_hilo - compras, 0.0)
+    hl["ingresos_kg"] = compras
+    hl["ingresos_us"] = compras_us
+    hl["ingresos_ukg"] = (compras_us / compras) if compras else 0.0
+    # Referencias (trazabilidad; se muestran al lado / en el chequeo):
     hl["ref_import_kg"] = compras          # importaciones recibidas del mes
     hl["ref_import_us"] = compras_us       # lo que pagamos por ellas
     hl["ref_import_ukg"] = (compras_us / compras) if compras else 0.0
+    hl["ref_bodega_ing_kg"] = ing_hilo     # ingreso bruto real de bodega 51
+    hl["ref_reingresos_kg"] = _reingresos_kg
     hl["ref_tejer_kg"] = hilo_consumido    # lo que se fue a tejer (órdenes)
-    hl["egresos_kg"] = egr_hilo
+    hl["egresos_kg"] = max(egr_hilo - _reingresos_kg, 0.0)
     hl["egresos_ukg"] = _avg_ukg
-    hl["egresos_us"] = egr_hilo * _avg_ukg
+    hl["egresos_us"] = hl["egresos_kg"] * _avg_ukg
     # En máquinas (WIP) al $/kg de apertura; suma al stock actual (es stock nuestro).
     _maq_us = maq_hilado * _open_ukg
     hl["stock_act_kg"] = float(_hv_hil["stock_act_kg"]) if _hv_ok else (hi1 + maq_hilado)
@@ -2174,27 +2182,29 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
             "delta": delta, "pct": pct, "estado": estado,
         })
 
-    # Hilo: comparar compras contra las IMPORTACIONES RECIBIDAS (ref_import_kg),
-    # no contra el ingreso total de bodega — el ingreso real de bodega 51
-    # incluye REINGRESOS de lote (hilo que vuelve de tejeduría, correcciones)
-    # que NO son compra. Dueña 2026-07-17: el ⚠ 70.354 vs 75.483 era eso
-    # (3 importaciones = 70.354 + reingresos 5.129) → falsa alarma. Los
-    # reingresos se muestran aparte como línea informativa, nunca 'warn'.
+    # Hilo (dueña 2026-07-17: "que los 3 sean iguales"): Compras hilado =
+    # Ingresos de la banda MOVIMIENTOS = Importaciones recibidas. La banda ya
+    # muestra las importaciones recibidas como Ingresos (los reingresos de
+    # lote van neteados en el egreso), así que acá se chequean los 3 números
+    # de a pares: si cualquiera difiere, algún par marca ⚠.
     add("hilo", "Hilo comprado = ingresado",
         _g(data, "compras_hilado_total", "kg"), "Compras hilado",
+        _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado", "kg")
+    add("hilo_import", "Hilo ingresado = importaciones recibidas",
+        _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado",
         _g(mov, "hilado", "ref_import_kg"), "Importaciones recibidas", "kg")
-    _ing_h = _g(mov, "hilado", "ingresos_kg")
+    _bod_h = _g(mov, "hilado", "ref_bodega_ing_kg")
     _imp_h = _g(mov, "hilado", "ref_import_kg")
     try:
         _tiene_reingreso = (
-            _ing_h is not None and _imp_h is not None
-            and abs(float(_ing_h) - float(_imp_h)) > 0.005
+            _bod_h is not None and _imp_h is not None
+            and abs(float(_bod_h) - float(_imp_h)) > 0.005
         )
     except (TypeError, ValueError):
         _tiene_reingreso = False
     if _tiene_reingreso:
-        add("hilo_reingresos", "Hilo: ingreso bodega incluye reingresos de lote",
-            _ing_h, "Ingreso bodega 51",
+        add("hilo_reingresos", "Hilo: reingresos de lote (neteados en egresos)",
+            _bod_h, "Ingreso bodega 51",
             _imp_h, "Importaciones recibidas", "kg", tipo="ajuste")
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
