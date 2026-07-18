@@ -2307,8 +2307,12 @@ def flujo_produccion():
         g._tint_mensual = _tint_mensual
         _filas_t = (_tint_mensual or {}).get("filas") or []
         if _filas_t:
-            _proy = (_filas_t[0] or {}).get("proy") or {}
-            _proy_quimico = _proy.get("t_imp")
+            # Dueña 2026-07-17: usar el TOTAL ACTUAL de la tabla (lo costeado,
+            # tela cerrada) — NO el proyectado. Así el consumo de la banda es
+            # exactamente el mismo 90k de COSTOS DE TINTORERÍA, y no respira
+            # con las órdenes en proceso (que no descuentan de ningún lado
+            # hasta cerrarse).
+            _proy_quimico = (_filas_t[0] or {}).get("t_imp")
     except Exception:  # noqa: BLE001 -- fail-soft: si falla, cae al respaldo
         _tint_mensual = None
         _proy_quimico = None
