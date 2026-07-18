@@ -22,6 +22,8 @@
   .imp .kpi--recib .kpi-val { color: rgb(5 150 105); }
   .imp .kpi--ant { border-left-color: rgb(2 132 199); }
   .imp .kpi--ant .kpi-val { color: rgb(2 132 199); }
+  .imp .kpi--kg { border-left-color: rgb(217 119 6); }
+  .imp .kpi--kg .kpi-val { color: rgb(180 83 9); }
   .dark .imp .kpi { background: rgb(15 23 42); border-color: rgb(51 65 85); }
   .dark .imp .kpi-val { color: rgb(241 245 249); }
 
@@ -121,10 +123,13 @@
     </div>
   {% endif %}
 
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="kpi kpi--total"><div class="kpi-label">Importaciones</div><div class="kpi-val">{{ total }}</div></div>
     <div class="kpi kpi--recib"><div class="kpi-label">Recibidas</div><div class="kpi-val">{{ recibidas }}</div>
       <div class="text-[11px] text-slate-400 mt-0.5">{{ pendientes }} en tránsito</div></div>
+    <div class="kpi kpi--kg"><div class="kpi-label">Σ Kg (del filtro)</div>
+      <div class="kpi-val">{{ kg_total | num_es(0) }}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">kg recibidos de las filas en pantalla</div></div>
     <div class="kpi kpi--ant"><div class="kpi-label">Σ Anticipos (valor stock)</div>
       <div class="kpi-val">$ {{ anticipos_total | num_es(0) }}</div>
       <div class="text-[11px] text-slate-400 mt-0.5">el restante se carga por /compras</div></div>

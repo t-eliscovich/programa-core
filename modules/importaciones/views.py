@@ -86,6 +86,10 @@ def lista():
     importe_programa = sum(
         r["importe_programa"] for r in rows if r.get("importe_programa")
     )
+    # Σ kg del filtro (dueña 2026-07-17: "la suma de los kg en KPIs así
+    # cuando filtro sé cuánto es") — suma los kg recibidos de las filas
+    # que quedaron después de aplicar los filtros.
+    kg_total = round(sum(float(r["kg"]) for r in rows if r.get("kg")), 2)
     # TMT 2026-07-06 v3 (dueña: "ordená anticipos y compras, fijate que
     # sumen bien"): el ANTICIPO TOTAL de una importación = anticipos USD
     # matcheados de /dolares (r.anticipo.importe_total) + movimientos
@@ -182,6 +186,7 @@ def lista():
         pendientes=pendientes,
         importe_programa=importe_programa,
         anticipos_total=anticipos_total,
+        kg_total=kg_total,
         q=q,
         estado=estado,
         recep=recep,
