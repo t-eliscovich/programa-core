@@ -2203,19 +2203,10 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     add("hilo_import", "Hilo ingresado = importaciones recibidas",
         _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado",
         _g(mov, "hilado", "ref_import_kg"), "Importaciones recibidas", "kg")
-    _bod_h = _g(mov, "hilado", "ref_bodega_ing_kg")
-    _imp_h = _g(mov, "hilado", "ref_import_kg")
-    try:
-        _tiene_reingreso = (
-            _bod_h is not None and _imp_h is not None
-            and abs(float(_bod_h) - float(_imp_h)) > 0.005
-        )
-    except (TypeError, ValueError):
-        _tiene_reingreso = False
-    if _tiene_reingreso:
-        add("hilo_reingresos", "Hilo: reingresos de lote (neteados en egresos)",
-            _bod_h, "Ingreso bodega 51",
-            _imp_h, "Importaciones recibidas", "kg", tipo="ajuste")
+    # (La línea "reingresos de lote / ingreso bodega 75k" se SACÓ — dueña
+    # 2026-07-17: "el check sigue diciendo 75k", confundía. Los reingresos ya
+    # van neteados en el egreso; la trazabilidad queda en
+    # mov.hilado.ref_bodega_ing_kg / ref_reingresos_kg si hace falta auditar.)
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
         _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")

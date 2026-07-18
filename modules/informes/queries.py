@@ -3699,16 +3699,22 @@ def resultados_costos_tabla(
                    "× la tarifa del hilado del STOCK.")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
          "proy": (float(pretej or 0) or None), "clase": "dato",
-         "ayuda": ("Costo total = V1+V2+V3 + depreciacion de tejeduria. "
-                   "U$/kg = costo total / kg tejidos.")},
+         "ayuda": ("kg = Ingresos de CRUDO (= Producción tejido) del cuadro "
+                   "MOVIMIENTOS DEL MES (INICIAL ASINFO) del Flujo de "
+                   "producción. Costo = compras tipo K + depreciación de "
+                   "tejeduría; U$/kg = costo / esos kg.")},
         {"label": "Tintorería", "kg": ktint, "ukg": tin_ukg, "us": tin_us,
          "proy": (float(pretin or 0) or None), "clase": "dato",
-         "ayuda": ("Proceso de tintoreria = V4+V5+V6 + depreciacion de "
-                   "tintoreria. U$/kg = costo total / KTINT.")},
+         "ayuda": ("kg = Ingresos de TERMINADO del cuadro MOVIMIENTOS DEL MES "
+                   "(INICIAL ASINFO) del Flujo de producción (lo producido "
+                   "por tintorería). Costo = V4+V5+V6 + depreciación de "
+                   "tintorería; U$/kg = costo / esos kg.")},
         {"label": "Colorantes/Quím.", "kg": col_kg, "ukg": col_ukg,
          "us": col_us, "clase": "dato",
-         "ayuda": ("Suma de importes de todas las ordenes de tintura del "
-                   "mes (TINT). U$/kg = importe / kg tinturados live.")},
+         "ayuda": ("kg = Ingresos de TERMINADO del cuadro MOVIMIENTOS DEL MES "
+                   "(INICIAL ASINFO), igual que Tintorería. $ = consumo de "
+                   "colorantes/químicos de las órdenes de tintura del mes; "
+                   "U$/kg = $ / esos kg.")},
         {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": None,
          "clase": "subtotal",
          "ayuda": ("Tejeduria + Tintoreria + merma*(Materia Prima + Colorantes). "
@@ -4468,6 +4474,42 @@ def informe_balance() -> dict:
     except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
         pass
 
+    # ── Tejeduría (COSTOS): kg = INGRESOS de CRUDO del mismo cuadro (bodega
+    # 52 = Producción tejido = Ingresos crudo, los números que el chequeo ata
+    # en verde). Antes usaba las compras K facturadas (subcontaba: kg de
+    # RY/AP sin cargar). El $ sigue siendo el costo real facturado (compras K
+    # + amortización) → el $/kg se abarata al repartirse sobre los kg físicos.
+    # Fail-soft: sin Asinfo quedan las compras K, como antes.
+    _tej_kg_balance = float(tej.get("kg_total") or 0)
+    try:
+        from datetime import date as _date_tejb
+
+        from modules.asinfo import service as _asvc_tejb
+        _mov52_bal = _asvc_tejb.movimiento_bodega_mes(
+            52, _date_tejb(_hoy_ec_bal.year, _hoy_ec_bal.month, 1)) or {}
+        _ing_crudo_bal = float(_mov52_bal.get("ingreso") or 0)
+        if _ing_crudo_bal > 0:
+            _tej_kg_balance = _ing_crudo_bal
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+        pass
+
+    # ── Tintorería y Colorantes (COSTOS): kg = INGRESOS de TERMINADO del
+    # mismo cuadro (bodega 53 = lo producido por tintorería). Igual que MP y
+    # Tejeduría: la fila del balance dice lo MISMO que la columna TERM. del
+    # cuadro MOVIMIENTOS (INICIAL ASINFO). Los $ no cambian (gastos reales de
+    # tintorería / consumo de químicos) → el $/kg se reparte sobre los kg
+    # físicos. Fallback: kg de tinto/formulas (comportamiento anterior).
+    _tin_kg_balance = 0.0
+    try:
+        from datetime import date as _date_tinb
+
+        from modules.asinfo import service as _asvc_tinb
+        _mov53_bal = _asvc_tinb.movimiento_bodega_mes(
+            53, _date_tinb(_hoy_ec_bal.year, _hoy_ec_bal.month, 1)) or {}
+        _tin_kg_balance = float(_mov53_bal.get("ingreso") or 0)
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+        _tin_kg_balance = 0.0
+
     val_hilado = kg_hilado * h_um
     val_tejido = kg_tejido * h_uk
     val_terminado = kg_term * h_uf
@@ -4622,17 +4664,21 @@ def informe_balance() -> dict:
         v3=gxg["v3"],
         dtj=amort["dtj"],
         tej_base_us=float(tej.get("us_total") or 0),
-        kg_tejidos=float(tej.get("kg_total") or 0),
+        # kg tejidos = Ingresos de CRUDO del cuadro MOVIMIENTOS (INICIAL
+        # ASINFO) — misma fuente visible que Producción tejido (dueña
+        # 2026-07-17). Fallback: compras K (comportamiento anterior).
+        kg_tejidos=_tej_kg_balance,
         v4=gxg["v4"],
         v5=gxg["v5"],
         v6=gxg["v6"],
         dcc=amort["dcc"],
         itin=float(tin.get("itin") or 0),
-        ktint=float(tin.get("kr") or 0),
-        # TMT 2026-05-29: para la fila Colorantes pasamos ktint LIVE
-        # del mes (= scintela.tinto.ktint), no kr ni historia. dBase
-        # mostraba 312.903 kg vs PC 300.012 — diferencia ahora resuelta.
-        ktint_colorantes=float(tin.get("ktint") or 0),
+        # Tintorería/Colorantes kg = INGRESOS de TERMINADO del cuadro
+        # MOVIMIENTOS (INICIAL ASINFO) — dueña 2026-07-17: todas las filas
+        # de COSTOS salen del cuadro visible. Fallback: kr/ktint de
+        # tinto/formulas si Asinfo no respondió.
+        ktint=(_tin_kg_balance or float(tin.get("kr") or 0)),
+        ktint_colorantes=(_tin_kg_balance or float(tin.get("ktint") or 0)),
         v7=gxg["v7"],
         v8=gxg["v8"],
         v9=gxg["v9"],
