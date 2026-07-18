@@ -626,7 +626,15 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             # cae al tinturado total del programa (_consumo_prog) de respaldo.
             q_egresos = (float(proy_quimico) if proy_quimico is not None
                          else _consumo_prog)
-            q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
+            # En máquinas (dueña 2026-07-17): químico ya dosificado en órdenes
+            # SIN cerrar la tela (_egr_proc del desglose de arriba). Con el
+            # consumo = costeado (tela cerrada), este monto ya salió del
+            # estante pero el consumo no lo descuenta → se resta en la cuenta,
+            # a la vista, y el ajuste queda midiendo solo arranque + merma.
+            # En meses cerrados tiende a 0 solo (la tela se va cerrando).
+            q_en_maquinas = float(_egr_proc or 0) if _consumo_prog is not None else 0.0
+            q_final_prog = (q_inicial + q_compras - float(q_egresos or 0)
+                            - q_en_maquinas)
             q_final_form = _fisico_quimicos_aldia(_corte_fin)   # físico formulas
             q_ajuste = q_final_form - q_final_prog               # de arranque (cutover)
 
@@ -635,6 +643,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
                 "compras": q_compras,
                 "compras_n": int(_qc.get("n") or 0),
                 "egresos": q_egresos,
+                "en_maquinas": q_en_maquinas,
                 "final_prog": q_final_prog,
                 "final_form": q_final_form,
                 "ajuste": q_ajuste,
@@ -659,6 +668,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
         co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)   # físico − libro (de arranque)
+        co["maquinas_us"] = round(float(quimicos_modelo.get("en_maquinas") or 0), 0)
         co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
 
     return {

@@ -203,7 +203,7 @@
             <td></td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
             <td class="num">—</td>
-            <td class="num">—</td>
+            <td class="num" style="color:rgb(100 116 139);" title="Químico dosificado en órdenes sin cerrar la tela — restado en la cuenta (todavía no está costeado en la tabla de tintorería)">{{ aco.get('maquinas_us') | num_es(0) if aco.get('maquinas_us') else '—' }}</td>
           </tr>
           {% endif %}
           <tr>
@@ -250,7 +250,7 @@
       {% set aj = qm.ajuste %}
       {% set aj_abs = (aj if aj >= 0 else -aj) %}
       {% set aj_pct = (aj_abs / qm.final_prog * 100) if qm.final_prog else 0 %}
-      <div class="fp-quim mt-2" title="Stock de químicos: Inicial + Compras del mes − Consumo (= el Total ACTUAL de COSTOS DE TINTORERÍA, tela cerrada — el mismo número de la tabla de abajo) = Libro. El ajuste = Físico de hoy − Libro: este mes es de arranque e incluye el químico de las órdenes en proceso (aún no costeadas). Se muestra, no se postea.">
+      <div class="fp-quim mt-2" title="Stock de químicos: Inicial + Compras del mes − Consumo (= Total ACTUAL de COSTOS DE TINTORERÍA, tela cerrada) − En máquinas (dosificado en órdenes sin cerrar) = Libro. El ajuste = Físico de hoy − Libro: queda midiendo arranque + merma. Cuando las órdenes cierran, En máquinas migra a Consumo solo. Se muestra, no se postea.">
         <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-0.5 text-[10px] leading-4">
           <span class="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Stock de químicos</span>
           <span class="text-slate-400 dark:text-slate-500">Inicial <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</b></span>
@@ -258,6 +258,10 @@
           <span class="text-slate-400 dark:text-slate-500">Compras{% if qm.compras_n %} ({{ qm.compras_n }}){% endif %} <b class="tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">{{ qm.compras | num_es(0) }}</b></span>
           <span class="text-slate-300 dark:text-slate-600">−</span>
           <span class="text-slate-400 dark:text-slate-500">Consumo <b class="tabular-nums font-semibold text-rose-500 dark:text-rose-400">{% if qm.egresos is not none %}{{ qm.egresos | num_es(0) }}{% else %}s/d{% endif %}</b></span>
+          {% if qm.en_maquinas %}
+          <span class="text-slate-300 dark:text-slate-600">−</span>
+          <span class="text-slate-400 dark:text-slate-500">En máquinas <b class="tabular-nums font-semibold" style="color:rgb(100 116 139)">{{ qm.en_maquinas | num_es(0) }}</b></span>
+          {% endif %}
           <span class="text-slate-300 dark:text-slate-600">=</span>
           <span class="text-slate-500 dark:text-slate-300">Libro <b class="tabular-nums font-bold text-slate-900 dark:text-white">{{ qm.final_prog | num_es(0) }}</b></span>
           {% if ff is not none %}
@@ -477,7 +481,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el Total de tintorería (tela cerrada) y el ajuste de este mes es de arranque + órdenes en proceso. ⚠ = descuadre &gt; 1%.</p>
+      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el Total de tintorería (tela cerrada), En máquinas es lo dosificado sin cerrar, y el ajuste de este mes es de arranque. ⚠ = descuadre &gt; 1%.</p>
     </div>
   {% endif %}
 </div>
