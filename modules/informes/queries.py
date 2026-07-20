@@ -6104,7 +6104,16 @@ def retiros_del_mes_actual() -> list[dict]:
     return db.fetch_all(
         """
         SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
-               b.nombre AS banco
+               b.nombre AS banco,
+               -- TMT 2026-07-20 (duena): "no deja cancelar retiros" desde
+               -- Dividendos. Enriquecemos cada fila con su via de reverso:
+               (SELECT ol.id_op_retiro_linea FROM scintela.op_retiro_linea ol
+                 WHERE ol.id_retiro = r.id_retiro
+                 ORDER BY ol.id_op_retiro_linea DESC LIMIT 1) AS id_op_linea,
+               (SELECT md.id_mov_doble FROM scintela.mov_doble md
+                 WHERE md.origen_table = 'retiros' AND md.origen_id = r.id_retiro
+                   AND md.tipo LIKE 'retiro_socio_%%' AND md.estado = 'activo'
+                 ORDER BY md.id_mov_doble DESC LIMIT 1) AS md_socio
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
         WHERE EXTRACT(YEAR FROM r.fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -6119,7 +6128,16 @@ def retiros_del_anio_actual() -> list[dict]:
     return db.fetch_all(
         """
         SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
-               b.nombre AS banco
+               b.nombre AS banco,
+               -- TMT 2026-07-20 (duena): "no deja cancelar retiros" desde
+               -- Dividendos. Enriquecemos cada fila con su via de reverso:
+               (SELECT ol.id_op_retiro_linea FROM scintela.op_retiro_linea ol
+                 WHERE ol.id_retiro = r.id_retiro
+                 ORDER BY ol.id_op_retiro_linea DESC LIMIT 1) AS id_op_linea,
+               (SELECT md.id_mov_doble FROM scintela.mov_doble md
+                 WHERE md.origen_table = 'retiros' AND md.origen_id = r.id_retiro
+                   AND md.tipo LIKE 'retiro_socio_%%' AND md.estado = 'activo'
+                 ORDER BY md.id_mov_doble DESC LIMIT 1) AS md_socio
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
         WHERE EXTRACT(YEAR FROM r.fecha) = EXTRACT(YEAR FROM CURRENT_DATE)

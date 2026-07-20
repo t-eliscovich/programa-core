@@ -66,6 +66,7 @@
           <th style="white-space: nowrap;">Fecha</th>
           <th>Concepto</th>
           <th class="num">Importe</th>
+          <th class="no-print" style="width:36px;"></th>
         </tr>
       </thead>
       <tbody>
@@ -74,9 +75,28 @@
           <td style="white-space: nowrap;">{{ r.fecha | fecha_es }}</td>
           <td>{{ r.concepto | cleanstr }}</td>
           <td class="num">{{ r.ret | money_es }}</td>
+          {# TMT 2026-07-20 (dueña): "no deja cancelar retiros" — ↺ por fila.
+             Gateado por operación (Andrés/Accionistas/Contabilidad la tienen). #}
+          <td class="no-print" style="text-align:right;">
+            {% if r.id_op_linea and tiene_permiso('posdat.editar') %}
+              <form method="post" action="{{ url_for('posdat.deshacer_retiro_op') }}" style="display:inline; margin:0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="id_op_retiro_linea" value="{{ r.id_op_linea }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" title="Cancelar este retiro OP (la línea OP vuelve a subir)"
+                        style="font-size:11px; padding:0 6px; border:1px solid #e2e8f0; border-radius:4px; color:#b45309; background:#ffffff; cursor:pointer;">↺</button>
+              </form>
+            {% elif r.md_socio and tiene_permiso('capital.crear') %}
+              <a href="{{ url_for('capital.reversar_retiro', id_retiro=r.id_retiro) }}"
+                 title="Cancelar este retiro/aporte (compensa la cuenta de donde salió)"
+                 style="font-size:11px; padding:0 6px; border:1px solid #e2e8f0; border-radius:4px; color:#b45309; text-decoration:none;">↺</a>
+            {% else %}
+              <span class="text-slate-300" title="Cargado en el dBase — sin rastro en el programa; se cancela allá (o entra por el sync).">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="info-empty">Sin retiros en el período.</td></tr>
+        <tr><td colspan="4" class="info-empty">Sin retiros en el período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

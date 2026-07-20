@@ -397,6 +397,10 @@ def deshacer_retiro_op():
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude deshacer el retiro OP", e)
+    # TMT 2026-07-20: si vino de Dividendos (next local), volver ahi.
+    _next = (request.form.get("next") or "").strip()
+    if _next.startswith("/") and not _next.startswith("//") and "://" not in _next:
+        return redirect(_next)
     return redirect(url_for("posdat.lista"))
 
 
