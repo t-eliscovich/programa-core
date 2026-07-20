@@ -130,7 +130,7 @@ def _cargar_lados():
 
 _TPL = """
 {% extends 'base.html' %}
-{% block contenido %}
+{% block content %}
 <div class="max-w-4xl mx-auto p-4">
   <h1 class="text-xl font-bold mb-1">Fechas de depósito desde el dBase</h1>
   <p class="text-sm text-slate-500 mb-4">
