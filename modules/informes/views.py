@@ -392,18 +392,18 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     # OJO: esto es el stock ACTUAL (foto), no el movimiento inic/consumo/act del
     # mes; el número final de colorantes se arma con la familia correcta + el
     # inicial/consumo (siguiente iteración). Dueña 2026-07-09.
+    # 2026-07-18: el loop (stock_quimicos + factor_iva por producto) vive en
+    # quimicos_flujo.color_familias_valuadas — caché 240s + warmup (era parte
+    # de los 7,4s de mov_asinfo_quimicos). Mismo cálculo, mismo resultado.
     color_formulas = None
     color_familias: dict = {}
     try:
-        from modules.tintura import service as _tsvc
-        for x in (_tsvc.stock_quimicos() or []):
-            _fam = (getattr(x, "familia", "") or "?").strip().upper()
-            # IVA dueña 2026-07-17: el programa valúa c/IVA (sal 0%).
-            from modules.tintura import service as _tsvc_iva
-            _val = (float(getattr(x, "stock_kg", 0) or 0)
-                    * float(getattr(x, "precio_us", 0) or 0)
-                    * _tsvc_iva.factor_iva_producto(getattr(x, "num", None)))
-            color_familias[_fam] = color_familias.get(_fam, 0.0) + _val
+        from modules.informes.quimicos_flujo import (
+            color_familias_valuadas as _q_familias,
+            color_movimiento_mes as _q_color_mov,
+        )
+        _fams = _q_familias()
+        color_familias = dict(_fams) if _fams else {}
         color_formulas = sum(color_familias.values()) if color_familias else None
     except Exception:  # noqa: BLE001 -- fail-soft
         color_formulas = None
@@ -419,47 +419,17 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     #   · STOCK inicial = actual + consumo − compras (para que cierre, como el dBase).
     # Todo de formulas_app vía formulas_db (fail-soft).
     _COLOR_FAMS = ("POLI", "ALG")   # dueña 2026-07-13: colorantes SIN auxiliares (338, no 393)
+    # 2026-07-18: las 2 queries viven en quimicos_flujo.color_movimiento_mes
+    # (caché 240s + warmup). Misma SQL, mismo resultado, mismo fail-soft.
     color_consumo = color_compras = color_stock = None
     color_ordenes = None
     if anio and mes:
         try:
-            import calendar as _cal2
-            from datetime import date as _date2
-
-            from modules._lib import formulas_db as _fdb
-            _d1 = _date2(int(anio), int(mes), 1).isoformat()
-            _d2 = _date2(int(anio), int(mes), _cal2.monthrange(int(anio), int(mes))[1]).isoformat()
-            _cons = _fdb.fetch_one(
-                """
-                SELECT COALESCE(SUM(ol.cantidad_kg
-                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                         * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
-                       COUNT(DISTINCT o.id) AS n_ordenes
-                  FROM orden_lineas ol
-                  JOIN ordenes o   ON o.id  = ol.orden_id
-                  JOIN productos p ON p.num = ol.producto_num
-                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
-                   AND o.fecha_terminado IS NOT NULL
-                   AND o.fecha_terminado >= %(d1)s
-                   AND o.fecha_terminado <= %(d2)s
-                """,
-                {"d1": _d1, "d2": _d2},
-            ) or {}
-            color_consumo = float(_cons.get("us") or 0)
-            color_ordenes = int(_cons.get("n_ordenes") or 0)
-            _comp = _fdb.fetch_one(
-                """
-                SELECT COALESCE(SUM(c.cantidad
-                         * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)
-                         * (CASE WHEN c.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
-                  FROM compras c
-                  JOIN productos p ON p.num = c.producto_num
-                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
-                   AND c.fecha >= %(d1)s AND c.fecha <= %(d2)s
-                """,
-                {"d1": _d1, "d2": _d2},
-            ) or {}
-            color_compras = float(_comp.get("us") or 0)
+            _cmov = _q_color_mov(int(anio), int(mes))
+            if _cmov is not None:
+                color_consumo = float(_cmov.get("consumo_us") or 0)
+                color_ordenes = int(_cmov.get("n_ordenes") or 0)
+                color_compras = float(_cmov.get("compras_us") or 0)
         except Exception:  # noqa: BLE001 -- fail-soft
             color_consumo = color_compras = None
     # Stock actual de colorantes (POLI+ALG) = suma del stock foto de hoy.

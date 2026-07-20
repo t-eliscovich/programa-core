@@ -76,6 +76,8 @@ def _warm_once() -> None:
             ("quimicos_desglose", lambda: _qf.consumo_quimico_desglose(yy, mm)),
             ("quimicos_fisico_fin", lambda: _qf.fisico_colorante_al_dia(_corte_fin)),
             ("quimicos_fisico_ini", lambda: _qf.fisico_colorante_al_dia(_corte_ini)),
+            ("quimicos_familias", lambda: _qf.color_familias_valuadas()),
+            ("quimicos_color_mov", lambda: _qf.color_movimiento_mes(yy, mm)),
         ]
     except Exception as e:  # noqa: BLE001 -- fail-soft
         _LOG.warning("warmup quimicos setup: %s", e)

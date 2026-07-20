@@ -106,6 +106,88 @@ def consumo_quimico_desglose(anio: int, mes: int) -> dict | None:
         return None
 
 
+def color_familias_valuadas() -> dict | None:
+    """{FAMILIA: US$} del stock FOTO de químicos de formulas, valuado c/IVA
+    por producto (sal num=12 exenta) — el loop que antes corría inline en
+    _build_mov_asinfo (stock_quimicos() + factor_iva_producto por ítem).
+    None si formulas no está (fail-soft, sin cachear)."""
+    key = ("familias",)
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from modules.tintura import service as _tsvc
+        fams: dict = {}
+        for x in (_tsvc.stock_quimicos() or []):
+            fam = (getattr(x, "familia", "") or "?").strip().upper()
+            val = (float(getattr(x, "stock_kg", 0) or 0)
+                   * float(getattr(x, "precio_us", 0) or 0)
+                   * _tsvc.factor_iva_producto(getattr(x, "num", None)))
+            fams[fam] = fams.get(fam, 0.0) + val
+        if not fams:
+            return None
+        _cache_put(key, fams)
+        return fams
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("color_familias_valuadas: %s", e)
+        return None
+
+
+def color_movimiento_mes(anio: int, mes: int) -> dict | None:
+    """CONSUMO y COMPRAS de colorante (POLI+ALG) del mes desde formulas —
+    las 2 queries de la banda COLORANTES de _build_mov_asinfo, con caché.
+    {"consumo_us", "n_ordenes", "compras_us"}. None si formulas no está."""
+    key = ("color_mov", int(anio), int(mes))
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from modules._lib import formulas_db as _fdb
+        d1 = date(int(anio), int(mes), 1).isoformat()
+        d2 = date(int(anio), int(mes),
+                  calendar.monthrange(int(anio), int(mes))[1]).isoformat()
+        cons = _fdb.fetch_one(
+            """
+            SELECT COALESCE(SUM(ol.cantidad_kg
+                     * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
+                   COUNT(DISTINCT o.id) AS n_ordenes
+              FROM orden_lineas ol
+              JOIN ordenes o   ON o.id  = ol.orden_id
+              JOIN productos p ON p.num = ol.producto_num
+             WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
+               AND o.fecha_terminado IS NOT NULL
+               AND o.fecha_terminado >= %(d1)s
+               AND o.fecha_terminado <= %(d2)s
+            """,
+            {"d1": d1, "d2": d2},
+        )
+        if cons is None:
+            return None
+        comp = _fdb.fetch_one(
+            """
+            SELECT COALESCE(SUM(c.cantidad
+                     * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)
+                     * (CASE WHEN c.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+              FROM compras c
+              JOIN productos p ON p.num = c.producto_num
+             WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
+               AND c.fecha >= %(d1)s AND c.fecha <= %(d2)s
+            """,
+            {"d1": d1, "d2": d2},
+        ) or {}
+        out = {
+            "consumo_us": float((cons or {}).get("us") or 0),
+            "n_ordenes": int((cons or {}).get("n_ordenes") or 0),
+            "compras_us": float(comp.get("us") or 0),
+        }
+        _cache_put(key, out)
+        return out
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("color_movimiento_mes %s/%s: %s", mes, anio, e)
+        return None
+
+
 def fisico_colorante_al_dia(corte: date) -> float | None:
     """Físico de colorante (POLI+ALG) al `corte` — LA variable compartida con
     el balance (tintura_service.stock_colorante_fisico), acá con caché.
