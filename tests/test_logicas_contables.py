@@ -577,3 +577,15 @@ def test_transicion_postergado_a_devuelto_permitida():
     assert "1" in destinos and "2" not in destinos
     # Z también permite marcar devuelto 1° en backend.
     assert "1" in q.TRANSICIONES_VALIDAS["Z"] and "2" not in q.TRANSICIONES_VALIDAS["Z"]
+
+
+def test_transicion_v_protestado_de_nuevo_a_1():
+    """V (protestado vuelto a depositar) → 1 cuando el banco lo protesta otra
+    vez. TMT 2026-07-20 (dueña: cheque CG3 en V no dejaba pasar a 1). Etiqueta
+    plana — la V nueva no tiene mov de banco en la app. NO se permite ningún
+    otro relabel plano desde V."""
+    from modules.cheques import queries as q
+    assert q.TRANSICIONES_VALIDAS["V"] == {"1"}
+    opts = q.transiciones_para("V")
+    uno = [o for o in opts if o["stat_destino"] == "1"]
+    assert uno and uno[0]["kind"] == "POST" and uno[0]["endpoint"] == "cheques.transicionar"

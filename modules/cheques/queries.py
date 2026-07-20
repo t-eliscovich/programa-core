@@ -486,6 +486,11 @@ TRANSICIONES_VALIDAS = {
     "2": {"3", "Z", "P", "D", "X"} | {"9"},
     # Devuelto 3° (segundo rechazo): volver a cartera para gestión, o eliminar.
     "3": {"Z", "P", "D", "X"},
+    # V = protestado vuelto a depositar (dueña 2026-06-30). Si el banco lo
+    # protesta OTRA vez → vuelve a "1" (dueña 2026-07-20: "el cheque de CG3
+    # necesito colocar en estado 1"). Cambio de etiqueta plano: la V nueva no
+    # tiene mov de banco en la app (depósito/protesto reales llegan por el sync).
+    "V": {"1"},
     # Eliminado: restaurar sólo a cartera (los movimientos ya se compensaron al anular).
     "X": {"Z", "P", "D"},
     # Estados CON movimiento: salida sólo por rebote/anulación (compensan banco).
@@ -1976,6 +1981,9 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
         },
     ],
     "V": [
+        # TMT 2026-07-20 (dueña): el re-depósito se protestó otra vez → vuelve
+        # a "1". Etiqueta plana (la V nueva no tiene mov de banco en la app).
+        {"stat_destino": "1", "label": "Protestado de nuevo", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             "stat_destino": "Z",
             "label": "Volver a cartera (no se depositó)",
