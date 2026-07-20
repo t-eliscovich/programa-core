@@ -199,20 +199,28 @@ def forzar_asignacion_completa(asign, sobrantes_idx, banco_firmados, prog_firmad
 
     Empareja por cercanía de monto lo que quedó suelto:
       1) cada PC sin banco toma el banco sobrante de monto más cercano;
-      2) los banco sobrantes restantes van al grupo del PC más cercano.
+      2) los banco sobrantes restantes van al grupo del PC más cercano;
+      3) TMT 2026-07-20 (dueña: "deja seleccionar cualquier N de cada lado",
+         caso 2 banco ↔ 4 programa): si el banco se agota y quedan PCs
+         sueltos, esos PCs van a `pcs_internos` — se concilian como INTERNOS
+         (match sin contraparte de banco, mismo mecanismo que
+         /banco-v2/descartar-programa), reversibles igual.
     La diferencia queda como gap asumido (visible en /banco-v2/auditar).
 
-    Función PURA. Devuelve (asign, sobrantes). `sobrantes` solo queda no-vacío
-    si no hay ningún PC al que atarlos (selección sin lado programa).
+    Función PURA. Devuelve (asign, sobrantes, pcs_internos). `sobrantes` solo
+    queda no-vacío si no hay ningún PC al que atarlos (selección sin lado
+    programa).
     """
     asign = {p: list(b) for p, b in asign.items()}
     banco_val = dict(banco_firmados)
     prog_val = dict(prog_firmados)
     rem = list(sobrantes_idx)
+    pcs_internos: list = []
     pcs_sueltos = [p for p, _t in prog_firmados if p not in asign]
     for pc_id in pcs_sueltos:
         if not rem:
-            break
+            pcs_internos.append(pc_id)
+            continue
         target = prog_val.get(pc_id, 0.0)
         best = min(rem, key=lambda i: abs(banco_val.get(i, 0.0) - target))
         rem.remove(best)
@@ -224,7 +232,50 @@ def forzar_asignacion_completa(asign, sobrantes_idx, banco_firmados, prog_firmad
         pc_best = min(asign.keys(), key=lambda p: abs(prog_val.get(p, 0.0) - sval))
         asign[pc_best].append(i)
         rem.remove(i)
-    return asign, rem
+    return asign, rem, pcs_internos
+
+
+def _conciliar_pc_interno(pc_id: int, batch_id: str, usuario: str,
+                          metodo: str = "interno:aceptar_diferencia",
+                          conn=None) -> None:
+    """Concilia UN mov de programa como INTERNO (sin contraparte de banco):
+    match estado='matched' sin real_* + stat='*'. Mismo mecanismo que
+    /banco-v2/descartar-programa → auditable y reversible desde deshacer.
+    TMT 2026-07-20 (dueña: "deja seleccionar cualquier N de cada lado")."""
+    try:
+        _db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match (
+                no_banco, estado, metodo,
+                id_transaccion, tx_firma, confirm_batch_id, usuario
+            ) VALUES (%s, 'matched', %s, %s,
+                      scintela.compute_tx_firma(%s), %s, %s)
+            """,
+            (_BANCO_PICHINCHA, metodo[:40], int(pc_id), int(pc_id),
+             batch_id, usuario),
+            conn=conn,
+        )
+    except Exception:
+        # Schema viejo sin columna `metodo` (pre-mig 0047).
+        _db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match (
+                no_banco, estado, id_transaccion, tx_firma,
+                confirm_batch_id, usuario
+            ) VALUES (%s, 'matched', %s, scintela.compute_tx_firma(%s), %s, %s)
+            """,
+            (_BANCO_PICHINCHA, int(pc_id), int(pc_id), batch_id, usuario),
+            conn=conn,
+        )
+    _db.execute(
+        """
+        UPDATE scintela.transacciones_bancarias
+           SET stat = '*'
+         WHERE id_transaccion = %s AND no_banco = %s
+        """,
+        (int(pc_id), _BANCO_PICHINCHA),
+        conn=conn,
+    )
 
 
 def _proponer_movimiento_diferencia(
@@ -1680,6 +1731,7 @@ def banco_manual_confirmar():
 
     n_hist = 0
     sobrantes_banco = 0
+    pcs_internos: list = []
     incompleto = False
     incompleto_msg: str | None = None
     if banco_movs and bancsis_ids:
@@ -1732,11 +1784,15 @@ def banco_manual_confirmar():
             # fuerza (por cercanía de monto) y conciliar con el gap asumido.
             # Antes esto fallaba todo-o-nada cuando |dif| > tol=0.50 (ej. $1).
             if (request.form.get("aceptar_diferencia") or "") == "1":
-                asign, sobrantes_idx = forzar_asignacion_completa(
+                asign, sobrantes_idx, pcs_internos = forzar_asignacion_completa(
                     asign, sobrantes_idx, banco_firmados, prog_firmados,
                 )
+                # Los PCs que quedaron sin banco se concilian como INTERNOS
+                # abajo — para el todo-o-nada ya están resueltos.
+                _internos_set = set(pcs_internos)
                 completa, pcs_sin_banco = reconciliacion_completa(
-                    asign, sobrantes_idx, bancsis_ids,
+                    asign, sobrantes_idx,
+                    [b for b in bancsis_ids if b not in _internos_set],
                 )
         if not completa:
             # TODO-O-NADA: no confirmar nada. Todo queda pendiente.
@@ -1768,6 +1824,16 @@ def banco_manual_confirmar():
                         _LOG.warning("manual confirm PC %s idx %s fallo: %s", pc_id, idx, e)
                         if err_msg is None:
                             err_msg = str(e)
+            # PCs sin banco disponible (selección N:M aceptada con diferencia)
+            # → conciliados como INTERNOS, un batch por PC (reversibles).
+            for pc_id in pcs_internos:
+                try:
+                    _conciliar_pc_interno(pc_id, _uuid_grp.uuid4().hex, usuario)
+                    n_matches += 1
+                except Exception as e:
+                    _LOG.warning("confirm interno PC %s fallo: %s", pc_id, e)
+                    if err_msg is None:
+                        err_msg = str(e)
     elif hist_ids and not bancsis_ids:
         flash(
             "Para conciliar historicos hay que seleccionar al menos un "
