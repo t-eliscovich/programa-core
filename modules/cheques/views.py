@@ -2624,6 +2624,10 @@ def transicionar(id_cheque: int):
     motivo = (request.form.get("motivo") or "").strip()
     fecha_str = (request.form.get("fecha") or "").strip()
     fecha = parse_date(fecha_str) if fecha_str else None
+    # TMT 2026-07-20 (dueña): al pasar a 1 (protestado) el dropdown pregunta la
+    # nueva fecha de cobro — va a fechad (POSTERGADA), F.DEP queda la original.
+    fecha_post_str = (request.form.get("fecha_postergada") or "").strip()
+    nueva_fechad = parse_date(fecha_post_str) if fecha_post_str else None
 
     # TMT 2026-05-21 dueña: motivo opcional. Si está vacío, usa default.
     if stat_destino == "9" and not motivo:
@@ -2657,6 +2661,7 @@ def transicionar(id_cheque: int):
             fecha=fecha,
             motivo=motivo,
             usuario=usuario,
+            nueva_fechad=nueva_fechad,
         )
         nombres = {
             "B": "Depositado en Pichincha",

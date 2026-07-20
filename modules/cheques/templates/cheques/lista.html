@@ -449,7 +449,9 @@
           {# TMT 2026-05-18 — fecha en col 1, cliente en col 2 #}
           {% set fecha_cargado = c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
           {% set stat_u = (c.stat or '').upper() %}
-          {% set ya_depositado = stat_u in ('B','A','1','2','3','R') %}
+          {# TMT 2026-07-20 (dueña): un devuelto (1/2/3/R) NO muestra fecha en
+             Depositado — el depósito rebotó, ya no está en el banco. #}
+          {% set ya_depositado = stat_u in ('B','A') %}
           {% set fechaing_real = c.fechaing if ya_depositado else None %}
           {# TMT 2026-05-20 — checkbox: sólo habilitado para cheques en
              estados depositables (Z cartera, P postdatado/postergado).
@@ -638,6 +640,13 @@
                   class="inline ch-trans-form" style="margin:0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="next" value="{{ request.full_path }}">
+              {# TMT 2026-07-20 (dueña): pasar a 1 (protestado) pregunta la
+                 nueva fecha de cobro (hoy o futura) — se guarda en POSTERGADA
+                 sin pisar F.DEP. Input oculto hasta que se elige →1. #}
+              <input type="date" name="fecha_postergada" value=""
+                     class="hidden font-mono text-xs border border-amber-400 rounded px-0.5 py-0 mt-0.5"
+                     style="width:118px"
+                     title="Nueva fecha de cobro del protestado">
               {# TMT 2026-05-20 — dropdown compacto: solo letras en las
                  options (no labels largos). Ancho ~36px en vez de ~140px.
                  El title del select muestra el label completo del stat
@@ -655,6 +664,24 @@
                         if (v === 'B' && !confirm('¿Depositar este cheque en Pichincha con fecha de hoy?')) {
                           sel.value = '';
                           return;
+                        }
+                        // TMT 2026-07-20 (dueña): →1 pregunta la nueva fecha de
+                        // cobro (hoy o futura) antes de mandar.
+                        if (v === '1') {
+                          const inp = sel.form.querySelector('input[name=fecha_postergada]');
+                          if (inp && !inp.value) {
+                            const d = new Date();
+                            d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                            inp.min = d.toISOString().slice(0, 10);
+                            inp.classList.remove('hidden');
+                            inp.focus();
+                            try { if (inp.showPicker) inp.showPicker(); } catch (e) {}
+                            inp.onchange = function () { if (inp.value) sel.form.submit(); };
+                            inp.onkeydown = function (ev) {
+                              if (ev.key === 'Escape') { inp.classList.add('hidden'); sel.value = ''; }
+                            };
+                            return;
+                          }
                         }
                         sel.form.submit();
                       })(this)"

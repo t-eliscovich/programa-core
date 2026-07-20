@@ -508,6 +508,7 @@ def transicionar_stat(
     fecha: date | None = None,
     motivo: str = "",
     usuario: str = "web",
+    nueva_fechad: date | None = None,
 ) -> dict:
     """Mueve un cheque de un stat a otro, aplicando los side-effects.
 
@@ -731,12 +732,29 @@ def transicionar_stat(
 
         # --- anulado, postdat, daniela: sólo UPDATE ---
         else:
+            # TMT 2026-07-20 (dueña): al pasar a 1 (protestado) se pregunta la
+            # NUEVA fecha de cobro (hoy o futura). Se guarda en fechad (columna
+            # POSTERGADA) preservando fechad_original (F.DEP = la original),
+            # igual que postergar().
+            set_fecha = ""
+            params: list = [stat_destino]
+            if stat_destino == "1" and nueva_fechad:
+                if nueva_fechad < today_ec():
+                    raise ValueError(
+                        "La nueva fecha del protestado debe ser hoy o futura."
+                    )
+                set_fecha = (
+                    ", fechad=%s, fecha_postergacion=CURRENT_DATE, "
+                    "fechad_original=COALESCE(fechad_original, fechad)"
+                )
+                params.append(nueva_fechad)
+            params += [usuario, id_cheque]
             db.execute(
                 "UPDATE scintela.cheque "
-                "SET stat=%s, "
+                "SET stat=%s" + set_fecha + ", "
                 "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
                 "WHERE id_cheque=%s",
-                (stat_destino, usuario, id_cheque),
+                tuple(params),
                 conn=conn,
             )
 

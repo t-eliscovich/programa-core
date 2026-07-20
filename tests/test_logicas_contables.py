@@ -589,3 +589,55 @@ def test_transicion_v_protestado_de_nuevo_a_1():
     opts = q.transiciones_para("V")
     uno = [o for o in opts if o["stat_destino"] == "1"]
     assert uno and uno[0]["kind"] == "POST" and uno[0]["endpoint"] == "cheques.transicionar"
+
+
+def test_transicionar_v_a_1_con_nueva_fechad(stub):
+    """V→1 con fecha nueva (dueña 2026-07-20): guarda fechad=nueva (POSTERGADA),
+    preserva fechad_original (F.DEP) con COALESCE, y setea fecha_postergacion."""
+    from modules.cheques import queries as q
+    stub.fetch_one_responses.append({
+        "id_cheque": 10002, "no_cheque": "10002", "stat": "V",
+        "codigo_cli": "CG3", "importe": 1133.62, "no_banco": None,
+        "banco": "MACHALA", "fechad": date(2026, 7, 6), "doc_banco": None,
+    })
+    manana = today_ec() + timedelta(days=1)
+    r = q.transicionar_stat(10002, stat_destino="1", nueva_fechad=manana, usuario="t")
+    assert r["stat_nuevo"] == "1"
+    sql = _sql_text(stub.executes)
+    assert "fechad=%s" in sql
+    assert "coalesce(fechad_original, fechad)" in sql
+    assert "fecha_postergacion = current_date" in sql or "fecha_postergacion=current_date" in sql
+    # la fecha nueva viaja en los params del UPDATE
+    upd = next(e for e in stub.executes if "fechad=%s" in e[0].lower())
+    assert manana in upd[1]
+
+
+def test_transicionar_v_a_1_fecha_pasada_rechaza(stub):
+    """La nueva fecha del protestado no puede ser pasada (dueña 2026-07-20:
+    'una fecha en el futuro no en el pasado')."""
+    from modules.cheques import queries as q
+    stub.fetch_one_responses.append({
+        "id_cheque": 10002, "no_cheque": "10002", "stat": "V",
+        "codigo_cli": "CG3", "importe": 1133.62, "no_banco": None,
+        "banco": "MACHALA", "fechad": date(2026, 7, 6), "doc_banco": None,
+    })
+    with pytest.raises(ValueError, match="hoy o futura"):
+        q.transicionar_stat(
+            10002, stat_destino="1",
+            nueva_fechad=today_ec() - timedelta(days=1), usuario="t",
+        )
+
+
+def test_transicionar_v_a_1_sin_fecha_sigue_andando(stub):
+    """Sin nueva_fechad el V→1 es el relabel plano de siempre (compat: otros
+    callers de transicionar_stat no mandan fecha)."""
+    from modules.cheques import queries as q
+    stub.fetch_one_responses.append({
+        "id_cheque": 10002, "no_cheque": "10002", "stat": "V",
+        "codigo_cli": "CG3", "importe": 1133.62, "no_banco": None,
+        "banco": "MACHALA", "fechad": date(2026, 7, 6), "doc_banco": None,
+    })
+    r = q.transicionar_stat(10002, stat_destino="1", usuario="t")
+    assert r["stat_nuevo"] == "1"
+    sql = _sql_text(stub.executes)
+    assert "fechad=%s" not in sql
