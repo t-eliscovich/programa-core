@@ -589,6 +589,19 @@ def reversar_retiro(
     # (ret = -ret, concepto ANULACION), auditada en mov_doble. El sync no la
     # pisa (marcador pc-capital + guard en import_dbf).
     if not md_orig:
+        if (ret_orig.get("usuario_crea") or "") != "dbf-import":
+            raise ValueError(
+                f"Retiro id={id_retiro} no tiene rastro activo en el programa "
+                "(¿ya fue reversado?)."
+            )
+        _pref = f"ANULACION retiro dBase id={id_retiro}"
+        _ya = db.fetch_one(
+            "SELECT 1 AS ok FROM scintela.retiros "
+            " WHERE concepto = %s OR concepto LIKE %s",
+            (_pref, _pref + " %"),
+        )
+        if _ya:
+            raise ValueError(f"Retiro id={id_retiro} ya tiene una ANULACION.")
         with db.tx() as conn:
             ret_rev = db.execute_returning(
                 """

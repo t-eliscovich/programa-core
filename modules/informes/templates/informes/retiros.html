@@ -91,6 +91,7 @@
                  title="Cancelar este retiro/aporte (compensa la cuenta de donde salió)"
                  style="font-size:11px; padding:0 6px; border:1px solid #e2e8f0; border-radius:4px; color:#b45309; text-decoration:none;">↺</a>
             {% elif r.id_retiro and tiene_permiso('capital.crear')
+                  and r.usuario_crea == 'dbf-import' and not r.anulada
                   and (r.clave or '')|trim|upper != 'REV'
                   and not ((r.concepto or '')|upper).startswith('REVERSO')
                   and not ((r.concepto or '')|upper).startswith('ANULACION') %}

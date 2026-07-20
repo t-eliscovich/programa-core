@@ -6113,7 +6113,12 @@ def retiros_del_mes_actual() -> list[dict]:
                (SELECT md.id_mov_doble FROM scintela.mov_doble md
                  WHERE md.origen_table = 'retiros' AND md.origen_id = r.id_retiro
                    AND md.tipo LIKE 'retiro_socio_%%' AND md.estado = 'activo'
-                 ORDER BY md.id_mov_doble DESC LIMIT 1) AS md_socio
+                 ORDER BY md.id_mov_doble DESC LIMIT 1) AS md_socio,
+               COALESCE(r.usuario_crea, '') AS usuario_crea,
+               EXISTS (SELECT 1 FROM scintela.retiros a
+                        WHERE a.concepto = 'ANULACION retiro dBase id=' || r.id_retiro
+                           OR a.concepto LIKE 'ANULACION retiro dBase id=' || r.id_retiro || ' %%'
+                      ) AS anulada
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
         WHERE EXTRACT(YEAR FROM r.fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -6137,7 +6142,12 @@ def retiros_del_anio_actual() -> list[dict]:
                (SELECT md.id_mov_doble FROM scintela.mov_doble md
                  WHERE md.origen_table = 'retiros' AND md.origen_id = r.id_retiro
                    AND md.tipo LIKE 'retiro_socio_%%' AND md.estado = 'activo'
-                 ORDER BY md.id_mov_doble DESC LIMIT 1) AS md_socio
+                 ORDER BY md.id_mov_doble DESC LIMIT 1) AS md_socio,
+               COALESCE(r.usuario_crea, '') AS usuario_crea,
+               EXISTS (SELECT 1 FROM scintela.retiros a
+                        WHERE a.concepto = 'ANULACION retiro dBase id=' || r.id_retiro
+                           OR a.concepto LIKE 'ANULACION retiro dBase id=' || r.id_retiro || ' %%'
+                      ) AS anulada
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
         WHERE EXTRACT(YEAR FROM r.fecha) = EXTRACT(YEAR FROM CURRENT_DATE)

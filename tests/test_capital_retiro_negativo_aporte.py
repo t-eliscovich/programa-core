@@ -98,6 +98,7 @@ def test_reversar_retiro_dbase_sin_movdoble_compensa_sin_banco(stub, caja_spy):
         "usuario_crea": "dbf-import",
     })
     stub.fetch_one_responses.append(None)  # sin mov_doble activo
+    stub.fetch_one_responses.append(None)  # sin ANULACION previa
     stub.execute_returning_results.append({"id_retiro": 901})
     r = q.reversar_retiro(id_retiro=900, usuario="t")
     assert r["id_retiro_compensacion"] == 901
@@ -117,3 +118,32 @@ def test_reversar_compensacion_rechaza(stub):
     })
     with pytest.raises(ValueError, match="compensaci"):
         q.reversar_retiro(id_retiro=901, usuario="t")
+
+
+
+def test_reversar_dbase_dos_veces_rechaza(stub):
+    """Segunda anulación del mismo retiro dBase → error (guard ANULACION)."""
+    from modules.capital import queries as q
+    stub.fetch_one_responses.append({
+        "id_retiro": 900, "fecha": date(2026, 7, 8), "ret": -32104.25,
+        "de": "RR", "nb": None, "concepto": "RR DEP AMAZONAS", "clave": "R",
+        "usuario_crea": "dbf-import",
+    })
+    stub.fetch_one_responses.append(None)          # sin mov_doble
+    stub.fetch_one_responses.append({"ok": 1})     # ya hay ANULACION
+    with pytest.raises(ValueError, match="ANULACION"):
+        q.reversar_retiro(id_retiro=900, usuario="t")
+
+
+def test_reversar_pc_sin_movdoble_activo_rechaza(stub):
+    """Un retiro PC (no dbf-import) sin mov_doble activo NO cae al camino
+    dBase — probablemente ya fue reversado."""
+    from modules.capital import queries as q
+    stub.fetch_one_responses.append({
+        "id_retiro": 700, "fecha": date(2026, 7, 20), "ret": 100.0,
+        "de": "TM", "nb": None, "concepto": "RETIRO TM", "clave": "TM",
+        "usuario_crea": "pc-capital:t",
+    })
+    stub.fetch_one_responses.append(None)  # sin mov_doble activo
+    with pytest.raises(ValueError, match="rastro"):
+        q.reversar_retiro(id_retiro=700, usuario="t")
