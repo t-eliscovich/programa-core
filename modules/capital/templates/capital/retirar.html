@@ -96,12 +96,21 @@
                     focus:outline-none focus:ring-2 focus:ring-rose-500">
     </div>
 
+    {% if modo == 'aporte' %}
+    {% set info %}
+      Se registra en una sola transacción: fila de <strong>retiro en negativo</strong>
+      (aporte) + <strong>entrada</strong> por el mismo importe a la cuenta elegida.
+      Queda en el historial con la opción de reversar.
+    {% endset %}
+    {{ wizard_info('emerald', info) }}
+    {% else %}
     {% set info %}
       Se registra en una sola transacción: fila de <strong>retiro</strong> + salida
       por el mismo importe de la cuenta elegida. Queda en el historial con la
       opción de reversar.
     {% endset %}
     {{ wizard_info('rose', info) }}
+    {% endif %}
 
     {% if modo == 'aporte' %}
       {{ wizard_footer(url_for('informes.retiros'), 'Registrar aporte →', 'emerald') }}
