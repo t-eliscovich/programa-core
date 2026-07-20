@@ -38,12 +38,11 @@ _DBF_STATS_DEPOSITADO = {"B", "V", "A", "W", "I", "J", "K"}
 _PC_STATS = ("B", "A")
 
 
-def _clave(cli, imp, banco) -> tuple:
-    return (
-        (cli or "").strip().upper(),
-        round(float(imp or 0), 2),
-        (banco or "").strip().upper(),
-    )
+def _clave(cli, imp) -> tuple:
+    # (cliente, importe). OJO: el `banco` texto de scintela.cheque suele venir
+    # VACÍO (la lista muestra el nombre por no_banco) → no sirve de clave dura.
+    # El banco entra como DESEMPATE: NB == no_banco, o texto si no hay NB.
+    return ((cli or "").strip().upper(), round(float(imp or 0), 2))
 
 
 def _leer_dbf_cheques() -> tuple[list[dict], str | None, str | None]:
@@ -79,13 +78,13 @@ def calcular_propuestas(pc_rows: list[dict], dbf_rows: list[dict]) -> dict:
         if stat not in _DBF_STATS_DEPOSITADO or not isinstance(feching, date):
             continue
         dbf_por_clave.setdefault(
-            _clave(r.get("CLIENTE"), r.get("IMPORTE"), r.get("BANCO")), []
+            _clave(r.get("CLIENTE"), r.get("IMPORTE")), []
         ).append(r)
 
     pc_por_clave: dict[tuple, list[dict]] = {}
     for c in pc_rows:
         pc_por_clave.setdefault(
-            _clave(c.get("codigo_cli"), c.get("importe"), c.get("banco")), []
+            _clave(c.get("codigo_cli"), c.get("importe")), []
         ).append(c)
 
     propuestas, salteados = [], []
@@ -100,14 +99,22 @@ def calcular_propuestas(pc_rows: list[dict], dbf_rows: list[dict]) -> dict:
                 salteados.append((c, f"{len(pcs)} cheques PC iguales (ambiguo)"))
             continue
         c = pcs[0]
-        if len(cands) > 1:
-            # Desempate por NB == no_banco.
-            nb = c.get("no_banco")
-            cands_nb = [r for r in cands if nb is not None and int(r.get("NB") or 0) == int(nb)]
-            if len(cands_nb) != 1:
-                salteados.append((c, f"{len(cands)} filas del DBF matchean (ambiguo)"))
-                continue
-            cands = cands_nb
+        # Desempate por banco: NB == no_banco (código, autoritativo) o, si PC
+        # no tiene no_banco, por el texto BANCO. Si el filtro deja candidatos,
+        # se usa; si no deja ninguno, se mantienen todos y decide la unicidad.
+        nb = c.get("no_banco")
+        if nb is not None:
+            cands_nb = [r for r in cands if int(r.get("NB") or 0) == int(nb)]
+            if cands_nb:
+                cands = cands_nb
+        elif (c.get("banco") or "").strip():
+            txt = (c.get("banco") or "").strip().upper()
+            cands_txt = [r for r in cands if (str(r.get("BANCO") or "")).strip().upper() == txt]
+            if cands_txt:
+                cands = cands_txt
+        if len(cands) != 1:
+            salteados.append((c, f"{len(cands)} filas del DBF matchean (ambiguo)"))
+            continue
         propuestas.append((c, cands[0].get("FECHING")))
     return {"propuestas": propuestas, "salteados": salteados}
 

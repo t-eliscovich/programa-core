@@ -36,10 +36,18 @@ def test_dbf_sin_feching_o_no_depositado_no_cuenta():
     assert r["salteados"][0][1].startswith("sin fila")
 
 
-def test_mismo_importe_otro_banco_no_matchea():
-    # NUNCA por importe solo: banco distinto = otra clave.
-    r = calcular_propuestas([_pc()], [_dbf(BANCO="GUAYAQUIL")])
-    assert not r["propuestas"] and len(r["salteados"]) == 1
+def test_pc_sin_banco_texto_matchea_igual():
+    # El banco texto de PC suele venir vacío — clave = cliente+importe,
+    # banco solo desempata. Un candidato único matchea igual.
+    r = calcular_propuestas([_pc(banco=None)], [_dbf()])
+    assert len(r["propuestas"]) == 1
+
+
+def test_nb_distinto_con_candidato_unico_matchea():
+    # NB no coincide pero es LA única fila depositada de ese cliente+importe
+    # → se propone igual (el NB solo desempata entre varias).
+    r = calcular_propuestas([_pc(no_banco=99)], [_dbf(NB=32)])
+    assert len(r["propuestas"]) == 1
 
 
 def test_ambiguo_en_dbf_desempata_por_nb():
