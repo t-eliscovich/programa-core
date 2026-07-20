@@ -533,8 +533,18 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             # AUX) → tintura_service.stock_colorante_fisico. NO recalcular acá
             # (dueña 2026-07-13: "stock quimicos idem que hilado, la variable del
             # flujo"). El balance (vqx) llama a la misma función → 338 único.
+            # 2026-07-18: vía quimicos_flujo (caché 240s + warmup) — era parte
+            # de los 7,4s de mov_asinfo_quimicos.
+            from modules.informes.quimicos_flujo import (
+                consumo_quimico_desglose as _q_desglose,
+                fisico_colorante_al_dia as _q_fisico,
+            )
+
             def _fisico_quimicos_aldia(_corte):
-                return float(_tsvc3.stock_colorante_fisico(_corte) or 0)
+                _v = _q_fisico(_corte)
+                if _v is None:  # fallback directo si el caché/módulo falló
+                    _v = _tsvc3.stock_colorante_fisico(_corte)
+                return float(_v or 0)
 
             _corte_ini = _date3(int(anio), int(mes), 1) - _td3(days=1)
             _last = _date3(int(anio), int(mes),
@@ -575,49 +585,18 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             #   proceso  = teñido sin cerrar la tela (sin kg) → trabajo en proceso
             #   lavado   = órdenes de lavado
             # total = costeado + proceso + lavado = egreso de químico del mes.
+            # 2026-07-18: el desglose vive en quimicos_flujo (caché 240s +
+            # warmup) — la query sobre orden_lineas (TO_DATE sobre texto) era
+            # el grueso de los 7,4s de mov_asinfo_quimicos. Misma SQL, mismo
+            # resultado; fail-soft idéntico (None → respaldo).
             _consumo_prog = None
             _egr_cost = _egr_proc = _egr_lav = 0.0
-            try:
-                from modules._lib import formulas_db as _fdb2
-                _d1q = _date3(int(anio), int(mes), 1).isoformat()
-                _d2q = _date3(int(anio), int(mes),
-                              _cal3.monthrange(int(anio), int(mes))[1]).isoformat()
-                _cq = _fdb2.fetch_all(
-                    """
-                    SELECT CASE
-                             WHEN (COALESCE(f.categoria, '') ILIKE '%%lavado%%'
-                                   OR COALESCE(f.color, '') ILIKE 'LAV%%'
-                                   OR UPPER(TRIM(COALESCE(o.codigo, ''))) = 'LAV')
-                                  THEN 'lavado'
-                             WHEN COALESCE(o.tela_cruda_kg, 0) > 0 THEN 'costeado'
-                             ELSE 'proceso'
-                           END AS clase,
-                           COALESCE(SUM(ol.cantidad_kg
-                             * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                             * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
-                      FROM orden_lineas ol
-                      JOIN ordenes   o ON o.id  = ol.orden_id
-                      JOIN productos p ON p.num = ol.producto_num
-                      LEFT JOIN formulas f ON f.cod = o.codigo
-                     WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
-                       AND TO_DATE(o.fecha, 'DD/MM/YYYY') >= %(d1)s
-                       AND TO_DATE(o.fecha, 'DD/MM/YYYY') <= %(d2)s
-                     GROUP BY 1
-                    """,
-                    {"d1": _d1q, "d2": _d2q},
-                ) or []
-                for _r in _cq:
-                    _u = float(_r.get("us") or 0)
-                    _cl = _r.get("clase")
-                    if _cl == "costeado":
-                        _egr_cost = _u
-                    elif _cl == "proceso":
-                        _egr_proc = _u
-                    elif _cl == "lavado":
-                        _egr_lav = _u
+            _desg = _q_desglose(int(anio), int(mes))
+            if _desg is not None:
+                _egr_cost = float(_desg.get("costeado") or 0)
+                _egr_proc = float(_desg.get("proceso") or 0)
+                _egr_lav = float(_desg.get("lavado") or 0)
                 _consumo_prog = _egr_cost + _egr_proc + _egr_lav
-            except Exception:  # noqa: BLE001 -- fail-soft
-                _consumo_prog = None
 
             q_inicial = _vq0
             q_compras = _compras_prog

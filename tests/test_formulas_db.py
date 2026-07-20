@@ -9,7 +9,7 @@ Cubre:
     - fetch_all / fetch_one ante excepción devuelven [] / None (fail-soft).
     - healthcheck() para visibilidad en /healthz.
 
-Diseño: nunca abrimos una DB real. Mockeamos psycopg2.pool.SimpleConnectionPool
+Diseño: nunca abrimos una DB real. Mockeamos psycopg2.pool.ThreadedConnectionPool
 y el módulo `_pool` directamente para simular los dos estados (deshabilitado
 y abierto).
 """
@@ -50,10 +50,10 @@ def test_init_pool_con_env_var_vacia_no_abre_pool(monkeypatch):
 
 
 def test_init_pool_con_url_invalida_degrada_sin_levantar(monkeypatch):
-    """Si SimpleConnectionPool levanta, init_pool() loguea y deja _pool=None."""
+    """Si ThreadedConnectionPool levanta, init_pool() loguea y deja _pool=None."""
     monkeypatch.setenv("FORMULAS_DATABASE_URL", "postgresql://invalid:5432/x")
     with patch(
-        "modules._lib.formulas_db.pool.SimpleConnectionPool",
+        "modules._lib.formulas_db.pool.ThreadedConnectionPool",
         side_effect=Exception("conexión rechazada"),
     ):
         formulas_db.init_pool()
@@ -67,7 +67,7 @@ def test_init_pool_con_url_valida_abre_pool(monkeypatch):
     monkeypatch.setenv("FORMULAS_POOL_MIN", "2")
     monkeypatch.setenv("FORMULAS_POOL_MAX", "5")
 
-    with patch("modules._lib.formulas_db.pool.SimpleConnectionPool", return_value=fake_pool) as ctor:
+    with patch("modules._lib.formulas_db.pool.ThreadedConnectionPool", return_value=fake_pool) as ctor:
         formulas_db.init_pool()
 
     ctor.assert_called_once_with(

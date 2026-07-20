@@ -10,10 +10,12 @@ Este hilo daemon refresca las funciones caras de Asinfo al ARRANCAR la app
 los TTL de 300s. Así el request de un usuario siempre encuentra la caché
 caliente.
 
-Alcance deliberado:
-  · SOLO Asinfo (Metabase vía requests — thread-safe). formulas_app NO se
-    calienta acá: su pool Postgres (SimpleConnectionPool) NO es thread-safe
-    y además es rápido (~300ms medido).
+Alcance:
+  · Asinfo (Metabase vía requests — thread-safe).
+  · Químicos del flujo (2026-07-18): las 2 consultas lentas a formulas
+    (modules/informes/quimicos_flujo, medidas en 7,4s) — el pool de
+    formulas ya es ThreadedConnectionPool, así que se pueden refrescar
+    desde este hilo.
   · Fail-soft total: cualquier excepción se loguea y se sigue; el hilo no
     puede tirar la app.
   · Apagable con WARMUP_ASINFO=0. No corre bajo pytest (PYTEST_CURRENT_TEST).
@@ -56,6 +58,22 @@ def _warm_once() -> None:
         ("importaciones_kg", lambda: asvc.importaciones_kg()),
         ("produccion_tejeduria", lambda: asvc.produccion_tejeduria_mes(yy, mm)),
     ]
+    # Químicos del flujo (formulas) — los 7,4s medidos de mov_asinfo_quimicos.
+    try:
+        import calendar as _cal
+        from datetime import timedelta
+
+        from modules.informes import quimicos_flujo as _qf
+        _last = date(yy, mm, _cal.monthrange(yy, mm)[1])
+        _corte_fin = min(_last, hoy)
+        _corte_ini = date(yy, mm, 1) - timedelta(days=1)
+        pasos += [
+            ("quimicos_desglose", lambda: _qf.consumo_quimico_desglose(yy, mm)),
+            ("quimicos_fisico_fin", lambda: _qf.fisico_colorante_al_dia(_corte_fin)),
+            ("quimicos_fisico_ini", lambda: _qf.fisico_colorante_al_dia(_corte_ini)),
+        ]
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("warmup quimicos setup: %s", e)
     for nombre, fn in pasos:
         try:
             fn()

@@ -31,7 +31,9 @@ from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
 _log = logging.getLogger("programa_core.formulas_db")
-_pool: pool.SimpleConnectionPool | None = None
+# ThreadedConnectionPool (2026-07-18): el warmup y los ThreadPool de las
+# vistas pueden tocar formulas desde hilos — Simple NO era thread-safe.
+_pool: pool.ThreadedConnectionPool | None = None
 
 
 def init_pool() -> None:
@@ -48,7 +50,7 @@ def init_pool() -> None:
         _log.info("FORMULAS_DATABASE_URL vacío — bridge a formulas_app deshabilitado")
         return
     try:
-        _pool = pool.SimpleConnectionPool(
+        _pool = pool.ThreadedConnectionPool(
             minconn=int(os.environ.get("FORMULAS_POOL_MIN", "1")),
             maxconn=int(os.environ.get("FORMULAS_POOL_MAX", "4")),
             dsn=url,
