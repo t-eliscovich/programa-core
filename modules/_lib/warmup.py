@@ -29,9 +29,14 @@ import time
 
 _LOG = logging.getLogger(__name__)
 
-# TTLs de asinfo/service = 300s → refrescar a los 240s deja margen para que
-# el ciclo termine antes del vencimiento (un ciclo completo tarda ~15-20s).
-_INTERVALO_SECS = 240
+# CADA 60s — no cada "casi el TTL". Las funciones refrescan SOLO si su caché
+# venció (si está viva, la llamada es un cache-HIT gratis, sin I/O). Con un
+# intervalo cercano al TTL quedaban VENTANAS FRÍAS de minutos entre el
+# vencimiento (300s) y el próximo ciclo (medido 18/07: flujo 17s de nuevo).
+# Con 60s, cada caché se refresca como mucho 60s después de vencer, y un
+# usuario que caiga justo en la ventana paga 1-2 funciones (1-4s), no la
+# carga fría entera.
+_INTERVALO_SECS = 60
 _started = False
 
 
