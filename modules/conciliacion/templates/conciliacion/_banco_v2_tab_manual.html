@@ -88,6 +88,16 @@
       <div class="text-xs text-slate-500 flex items-baseline gap-3">
         <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
+        {# TMT 2026-07-20 (dueña): "conciliación interna también en el lado del
+           banco" — espejo del botón del panel Programa. Usa el flujo
+           descartar-banco de siempre (queda conciliado sin contraparte PC,
+           auditable y reversible desde deshacer). #}
+        <button type="button" id="descartar-banco-btn" disabled
+                onclick="descartarBancoSeleccionados()"
+                title="Conciliar los movs de banco seleccionados como internos (sin contraparte en el programa). Para cargos/movimientos del banco que no van al libro."
+                class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
+          Conciliar interno
+        </button>
       </div>
     </header>
 
@@ -273,11 +283,12 @@
     if (btn){
       btn.disabled = !(b.count > 0 && p.count > 0);
     }
-    // TMT 2026-06-02: botón Descartar se habilita con cualquier mov banco
-    // seleccionado (no necesita lado programa).
+    // TMT 2026-07-20 (dueña): "Conciliar interno" del lado banco — se
+    // habilita con movs SOLO del banco y ninguno del programa (si hay
+    // programa seleccionado, lo que querés es un match normal).
     var dbtn = document.getElementById('descartar-banco-btn');
     if (dbtn){
-      dbtn.disabled = (b.count === 0);
+      dbtn.disabled = !(b.count > 0 && p.count === 0);
     }
     // 2026-06-19: "Conciliar interno" (programa sin contraparte banco) se
     // habilita con movs SOLO del lado programa y NINGUNO del banco — si hay
