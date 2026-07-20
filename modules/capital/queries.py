@@ -285,7 +285,10 @@ def retirar(
             """,
             (
                 fecha, importe_f, socio[:5], no_banco,
-                concepto_full, (clave or socio[:3])[:3], usuario[:50],
+                concepto_full, (clave or socio[:3])[:3],
+                # TMT 2026-07-20: marcador pc-capital → el sync dBase lo
+                # preserva (antes el TRUNCATE+INSERT lo borraba).
+                f"pc-capital:{usuario}"[:50],
             ),
             conn=conn,
         ) or {}
@@ -545,7 +548,8 @@ def reversar_retiro(
 
     ret_orig = db.fetch_one(
         """
-        SELECT id_retiro, fecha, ret, de, nb, concepto
+        SELECT id_retiro, fecha, ret, de, nb, concepto, clave,
+               COALESCE(usuario_crea, '') AS usuario_crea
           FROM scintela.retiros
          WHERE id_retiro = %s
         """,
@@ -553,6 +557,12 @@ def reversar_retiro(
     )
     if not ret_orig:
         raise ValueError(f"Retiro id={id_retiro} no existe.")
+    _conc_u = (ret_orig.get("concepto") or "").upper()
+    if (ret_orig.get("clave") or "").strip().upper() == "REV" or \
+            _conc_u.startswith(("REVERSO", "ANULACION")):
+        raise ValueError(
+            f"Retiro id={id_retiro} es una compensación/reverso — no se reversa."
+        )
     importe_f = float(ret_orig.get("ret") or 0)
     # TMT 2026-07-20: negativo = APORTE (tambien reversable). Solo 0 no tiene
     # nada que reversar; las filas de compensacion no tienen mov_doble
@@ -573,10 +583,53 @@ def reversar_retiro(
         """,
         (id_retiro,),
     )
+    # TMT 2026-07-20 (dueña: cancelar "RR DEP AMAZONAS"): un retiro/aporte que
+    # vino del dBase NO tiene mov_doble ni pata de banco/caja en el programa
+    # (esa pata vive en el dBase) → se anula con una fila COMPENSATORIA sola
+    # (ret = -ret, concepto ANULACION), auditada en mov_doble. El sync no la
+    # pisa (marcador pc-capital + guard en import_dbf).
     if not md_orig:
-        raise ValueError(
-            f"No encuentro mov_doble activo de retiro id={id_retiro}."
-        )
+        with db.tx() as conn:
+            ret_rev = db.execute_returning(
+                """
+                INSERT INTO scintela.retiros
+                    (fecha, ret, de, nb, concepto, clave, usuario_crea)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id_retiro
+                """,
+                (
+                    ret_orig.get("fecha") or fecha_rev, -importe_f,
+                    (ret_orig.get("de") or "")[:5] or None, None,
+                    (f"ANULACION retiro dBase id={id_retiro}"
+                     + (f" — {motivo}" if motivo else ""))[:50],
+                    "REV", f"pc-capital:{usuario}"[:50],
+                ),
+                conn=conn,
+            ) or {}
+            _md.registrar(
+                conn=conn,
+                tipo="reverso_retiro_dbase",
+                origen_table="retiros",
+                origen_id=ret_rev.get("id_retiro"),
+                destino_table="retiros",
+                destino_id=id_retiro,
+                importe=importe_f,
+                fecha=fecha_rev,
+                concepto=(f"ANULACION retiro dBase id={id_retiro} "
+                          f"$ {importe_f:,.2f}"
+                          + (f" — {motivo}" if motivo else ""))[:200],
+                usuario=usuario,
+                metadata={"id_retiro_original": id_retiro,
+                          "id_retiro_compensacion": ret_rev.get("id_retiro"),
+                          "origen": "dbase", "motivo": motivo or ""},
+            )
+        return {
+            "id_retiro_original": id_retiro,
+            "id_retiro_compensacion": ret_rev.get("id_retiro"),
+            "socio": (ret_orig.get("de") or "").strip(),
+            "cuenta": "dbase (sin pata en el programa)",
+            "importe": importe_f,
+        }
     cuenta = (md_orig.get("tipo") or "").replace("retiro_socio_de_", "")
 
     with db.tx() as conn:

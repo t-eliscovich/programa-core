@@ -907,11 +907,14 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         # fecha+valor (pedido dueña 2026-06-26): así no queda doble.
         _retiros_pc = []
         if pg_table == "scintela.retiros":
+            # TMT 2026-07-20: tambien 'pc-capital%' — aportes/retiros/anulaciones
+            # cargados por las pantallas de Dividendos (viven solo en PC).
             cur.execute(
                 "SELECT fecha, nb, ret, de, concepto, clave, "
                 "       id_transaccion_bancaria, usuario_crea "
                 "  FROM scintela.retiros "
-                " WHERE COALESCE(usuario_crea, '') = 'pc-retiro-op'"
+                " WHERE COALESCE(usuario_crea, '') = 'pc-retiro-op' "
+                "    OR COALESCE(usuario_crea, '') LIKE 'pc-capital%'"
             )
             _retiros_pc = cur.fetchall()
 
@@ -1109,6 +1112,32 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         if pg_table == "scintela.retiros" and _retiros_pc:
             restaurados = 0
             for fecha, nb, ret, de, concepto, clave, idtx, usr in _retiros_pc:
+                # TMT 2026-07-20: una ANULACION de un retiro del dBase solo se
+                # restaura si la ORIGINAL (dbf-import, ret opuesto) sigue
+                # viniendo en el DBF — si el dBase la borro, la anulacion
+                # sobra (quedaria colgada sumando sola).
+                if (usr or "").startswith("pc-capital") and \
+                        (concepto or "").upper().startswith("ANULACION"):
+                    cur.execute(
+                        "SELECT 1 FROM scintela.retiros "
+                        " WHERE COALESCE(usuario_crea,'') = 'dbf-import' "
+                        "   AND UPPER(TRIM(COALESCE(de,''))) = UPPER(TRIM(COALESCE(%s,''))) "
+                        "   AND ABS(COALESCE(ret,0) + %s) < 0.01 "
+                        "   AND (%s::date IS NULL OR ABS(fecha - %s::date) <= 15) "
+                        " LIMIT 1",
+                        (de, float(ret or 0), fecha, fecha),
+                    )
+                    if not cur.fetchone():
+                        continue  # la original ya no esta → anulacion no vuelve
+                    cur.execute(
+                        "INSERT INTO scintela.retiros "
+                        "(fecha, nb, ret, de, concepto, clave, "
+                        " id_transaccion_bancaria, usuario_crea) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        (fecha, nb, ret, de, concepto, clave, idtx, usr),
+                    )
+                    restaurados += 1
+                    continue
                 # TMT 2026-07-12 (dueña "dBase manda"): el guard usaba fecha
                 # EXACTA, así que cuando el mismo retiro OP se carga en el dBase
                 # con la fecha corrida un día (ej. banco USA 06/07 en PC vs

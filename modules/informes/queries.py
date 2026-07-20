@@ -6084,7 +6084,7 @@ def gastos_mes_corriente() -> list[dict]:
 def retiros_recientes(dias: int = 180) -> list[dict]:
     return db.fetch_all(
         """
-        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
+        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto, r.clave,
                b.nombre AS banco
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
@@ -6103,7 +6103,7 @@ def retiros_del_mes_actual() -> list[dict]:
     """
     return db.fetch_all(
         """
-        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
+        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto, r.clave,
                b.nombre AS banco,
                -- TMT 2026-07-20 (duena): "no deja cancelar retiros" desde
                -- Dividendos. Enriquecemos cada fila con su via de reverso:
@@ -6127,7 +6127,7 @@ def retiros_del_anio_actual() -> list[dict]:
     """Retiros del año corriente — para la tab 'Dividendos del año'."""
     return db.fetch_all(
         """
-        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
+        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto, r.clave,
                b.nombre AS banco,
                -- TMT 2026-07-20 (duena): "no deja cancelar retiros" desde
                -- Dividendos. Enriquecemos cada fila con su via de reverso:

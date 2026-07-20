@@ -90,8 +90,17 @@
               <a href="{{ url_for('capital.reversar_retiro', id_retiro=r.id_retiro) }}"
                  title="Cancelar este retiro/aporte (compensa la cuenta de donde salió)"
                  style="font-size:11px; padding:0 6px; border:1px solid #e2e8f0; border-radius:4px; color:#b45309; text-decoration:none;">↺</a>
+            {% elif r.id_retiro and tiene_permiso('capital.crear')
+                  and (r.clave or '')|trim|upper != 'REV'
+                  and not ((r.concepto or '')|upper).startswith('REVERSO')
+                  and not ((r.concepto or '')|upper).startswith('ANULACION') %}
+              {# TMT 2026-07-20: retiro del dBase — se anula con compensación
+                 (sin pata bancaria en el programa; esa vive en el dBase). #}
+              <a href="{{ url_for('capital.reversar_retiro', id_retiro=r.id_retiro) }}"
+                 title="Anular (vino del dBase: se inserta la compensación; la pata del banco vive allá)"
+                 style="font-size:11px; padding:0 6px; border:1px solid #e2e8f0; border-radius:4px; color:#b45309; text-decoration:none;">↺</a>
             {% else %}
-              <span class="text-slate-300" title="Cargado en el dBase — sin rastro en el programa; se cancela allá (o entra por el sync).">—</span>
+              <span class="text-slate-300" title="Compensación/reverso — no se re-cancela.">—</span>
             {% endif %}
           </td>
         </tr>

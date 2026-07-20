@@ -85,3 +85,35 @@ def test_reversar_aporte_negativo_saca_la_plata(stub, caja_spy):
     # la plata SALE de caja (tipo S) por la magnitud
     assert caja_spy[0]["tipo"] == "S" and caja_spy[0]["importe"] == 1.0
     assert r["cuenta"] == "caja"
+
+
+def test_reversar_retiro_dbase_sin_movdoble_compensa_sin_banco(stub, caja_spy):
+    """Retiro que vino del dBase (sin mov_doble): la anulación inserta SOLO la
+    compensación (ret=-ret, ANULACION, pc-capital) — sin tocar caja/banco
+    (esa pata vive en el dBase). TMT 2026-07-20 (caso RR DEP AMAZONAS)."""
+    from modules.capital import queries as q
+    stub.fetch_one_responses.append({
+        "id_retiro": 900, "fecha": date(2026, 7, 8), "ret": -32104.25,
+        "de": "RR", "nb": None, "concepto": "RR DEP AMAZONAS", "clave": "R",
+        "usuario_crea": "dbf-import",
+    })
+    stub.fetch_one_responses.append(None)  # sin mov_doble activo
+    stub.execute_returning_results.append({"id_retiro": 901})
+    r = q.reversar_retiro(id_retiro=900, usuario="t")
+    assert r["id_retiro_compensacion"] == 901
+    ins = next(e for e in stub.executes if "insert into scintela.retiros" in e[0].lower())
+    assert 32104.25 in ins[1]  # compensación = -(-32104.25)
+    assert any("pc-capital:t" in str(x) for x in ins[1])
+    assert not caja_spy  # NO tocó caja
+
+
+def test_reversar_compensacion_rechaza(stub):
+    """Una fila REV/REVERSO/ANULACION no se re-cancela."""
+    from modules.capital import queries as q
+    stub.fetch_one_responses.append({
+        "id_retiro": 901, "fecha": date(2026, 7, 20), "ret": 32104.25,
+        "de": "RR", "nb": None, "concepto": "ANULACION retiro dBase id=900",
+        "clave": "REV", "usuario_crea": "pc-capital:t",
+    })
+    with pytest.raises(ValueError, match="compensaci"):
+        q.reversar_retiro(id_retiro=901, usuario="t")
