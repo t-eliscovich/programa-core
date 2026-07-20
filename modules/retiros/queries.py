@@ -184,12 +184,18 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
     anulando/borrando el retiro.
     """
     monto = round(float(monto or 0), 2)
-    if monto <= 0:
-        raise ValueError("El monto del retiro debe ser mayor que cero.")
+    # TMT 2026-07-20 (duena): "para hacer un aporte de capital usualmente
+    # hacia un retiro en negativo" (paridad dBase). NEGATIVO = APORTE del
+    # accionista: dividendos (URET) baja y, si va imputado a una linea OP,
+    # el credito OP crece (importe += monto negativo, espejo exacto del
+    # retiro). deshacer_op ya es agnostico al signo. Solo se bloquea el 0.
+    if not monto:
+        raise ValueError("El monto no puede ser cero.")
     de = (de or "OP").strip().upper()[:5] or "OP"
     fecha = fecha or today_ec()
     if not concepto:
-        concepto = f"RR {de} banco USA" if de != "OP" else "RR OP banco USA"
+        base = "APORTE" if monto < 0 else "RR"
+        concepto = f"{base} {de} banco USA"
     concepto = concepto[:100]
 
     with db.tx() as conn:

@@ -362,8 +362,10 @@ def retiro_op():
     # la línea; el retiro se imputa a ella para mostrar su saldo restante.
     line_key = (request.form.get("line_key") or "").strip() or None
     line_concepto = (request.form.get("line_concepto") or "").strip() or None
-    if monto is None or monto <= 0:
-        flash("El monto del retiro debe ser mayor que cero.", "warn")
+    # TMT 2026-07-20 (duena): negativo = APORTE de capital (paridad dBase,
+    # "retiro en negativo"). Solo se bloquea el 0.
+    if monto is None or float(monto) == 0:
+        flash("El monto no puede ser cero (negativo = aporte de capital).", "warn")
         return redirect(url_for("posdat.lista"))
     try:
         usuario = (g.user or {}).get("username", "web")
@@ -384,8 +386,9 @@ def retiro_op():
             monto=monto, de=de, fecha=fecha, concepto=concepto, usuario=usuario,
             line_key=line_key, line_concepto=line_concepto,
         )
+        _etq = "Aporte de capital (retiro negativo)" if float(r["monto"]) < 0 else "Retiro OP"
         flash(
-            f"Retiro OP registrado: {r['de']} $ {r['monto']:,.2f} ({r['concepto']}). "
+            f"{_etq} registrado: {r['de']} $ {r['monto']:,.2f} ({r['concepto']}). "
             f"Quedó en /retiros (igual que dBase).",
             "ok",
         )
