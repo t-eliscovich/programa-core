@@ -44,7 +44,13 @@ _USUARIOS_CONOCIDOS = {
     "alex",
     "auto",
     "asinfo",
+    "formulas-auto",  # puente compras de químicos formulas→PC (cron diario)
 }
+
+# Prefijos legítimos (marker + usuario dinámico). El puente de compras usa
+# 'formulas-<user>' cuando se sincroniza a mano desde /compras/desde-formulas
+# (TMT 2026-07-17, shipped 6fb2b55).
+_PREFIJOS_CONOCIDOS = ("formulas-",)
 
 # Si una factura tiene este formato en numf_completo, es Asinfo SI o SI.
 _REGEX_NUMF_ASINFO = "^[0-9]{3}-[0-9]{3}-[0-9]{9}$"
@@ -105,6 +111,10 @@ def usuario_crea_audit():
     ):
         try:
             placeholders = ",".join(f"'{u}'" for u in _USUARIOS_CONOCIDOS)
+            prefijos_sql = " ".join(
+                f"AND COALESCE(usuario_crea, '') NOT LIKE '{pref}%'"
+                for pref in _PREFIJOS_CONOCIDOS
+            )
             row = db.fetch_one(
                 f"""
                 SELECT COUNT(*) AS n,
@@ -113,6 +123,7 @@ def usuario_crea_audit():
                   FROM scintela.{tabla}
                  WHERE fecha_crea >= (CURRENT_DATE - INTERVAL '7 days')
                    AND COALESCE(usuario_crea, '') NOT IN ({placeholders})
+                   {prefijos_sql}
                 """
             ) or {}
             n = int(row.get("n") or 0)
