@@ -484,6 +484,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(dbase_compare_bp)
 
+    # Fechas de depósito desde el dBase — TMT 2026-07-20 (dueña: "¿no podés
+    # traer el campo depositado?"). /admin/cheques-fechas-deposito completa
+    # SOLO cheque.fechaing (columna Depositado) de cheques B/A sin fecha,
+    # leyendo FECHING del CHEQUES.DBF ya subido al comparador. Display-only.
+    from modules.admin_dbase.cheques_feching_view import bp as cheques_feching_bp
+
+    app.register_blueprint(cheques_feching_bp)
+
     # TOTF 1 a 1 — TMT 2026-06-11. /admin/totf-1a1: pareo completo factura
     # por factura (N° SRI) PC vs FACTURAS.DBF, sin truncar, con cross-check
     # de backfill/stat del otro lado. SOLO LECTURA.
