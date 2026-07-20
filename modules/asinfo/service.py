@@ -220,6 +220,15 @@ def reset_flujo_caches() -> None:
 _ASINFO_CARD_RETENCIONES_DEFAULT = "202"
 
 
+_RETENCIONES_TTL_SECS = 300  # 5 min — dueña 2026-07-18: era la única card sin caché
+_RETENCIONES_CACHE: dict = {}
+
+
+def reset_retenciones_cache() -> None:
+    """Vaciar el caché de retenciones (tests / tras aplicar cambios)."""
+    _RETENCIONES_CACHE.clear()
+
+
 def retenciones_periodo(desde, hasta) -> dict:
     """Retención (fuente + IVA) por factura de Asinfo en el rango [desde, hasta].
 
@@ -237,6 +246,12 @@ def retenciones_periodo(desde, hasta) -> dict:
         desde = desde.isoformat()
     if hasattr(hasta, "isoformat"):
         hasta = hasta.isoformat()
+    import time as _time
+    _ck = (str(desde), str(hasta))
+    _now = _time.time()
+    _cached = _RETENCIONES_CACHE.get(_ck)
+    if _cached and (_now - _cached[0]) < _RETENCIONES_TTL_SECS:
+        return _cached[1]
     params = [
         {
             "type": "date/single",
@@ -261,6 +276,10 @@ def retenciones_periodo(desde, hasta) -> dict:
         ri = float(r.get("ret_iva") or 0)
         rt = float(r.get("ret_total") if r.get("ret_total") is not None else rf + ri)
         out[numero] = {"ret_fuente": rf, "ret_iva": ri, "ret_total": rt}
+    # Solo cachear si trajo algo (un fallo transitorio de Metabase no debe
+    # dejar 5 min de "{}" pegado — mismo criterio fail-soft del resto).
+    if out:
+        _RETENCIONES_CACHE[_ck] = (_now, out)
     return out
 
 
@@ -345,7 +364,7 @@ def disponible() -> bool:
 # CANTIDAD de stock (saldo_producto.saldo) sin costo. Si en algún momento
 # se cargan costos en el ERP, esta función puede ampliarse para incluirlos.
 
-_STOCK_TTL_SECS = 600  # 10 minutos
+_STOCK_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _STOCK_CACHE: dict = {}
 
 
@@ -497,7 +516,7 @@ def stock_asinfo(min_saldo: float = 0.0, id_bodega: int | None = None) -> list[d
 #
 # Dólares: NO se traen de Asinfo (no confiables). Solo cantidad (kg).
 
-_STOCK_LOTE_TTL_SECS = 600  # 10 minutos
+_STOCK_LOTE_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _STOCK_LOTE_CACHE: dict = {}
 _STOCK_LOTE_TOTALES_CACHE: dict = {}
 
@@ -695,7 +714,7 @@ def stock_asinfo_lote_totales() -> list[dict]:
 # Pasos por bodega de salida de la OFT: 52 = Tejeduría (Hilo→Tela Cruda),
 # 53 = Tintorería/Confección (Tela Cruda→Producto Terminado).
 
-_EN_PROCESO_TTL_SECS = 600
+_EN_PROCESO_TTL_SECS = 300
 _EN_PROCESO_CACHE: dict = {}
 
 _PASOS_PROCESO = {52: "Tejeduría (Hilo → Tela Cruda)", 53: "Tintorería (Tela Cruda → PT)"}
@@ -793,7 +812,7 @@ def stock_en_proceso() -> dict:
 # (también las de saldo ≤ 0 por yield/timing) para que los totales cierren
 # EXACTO contra el Excel: Saldo = ΣOSM − ΣIng.Fab. sobre todo el universo.
 
-_FABRICACION_TTL_SECS = 600
+_FABRICACION_TTL_SECS = 300
 _FABRICACION_CACHE: dict = {}
 
 # Material de ENTRADA por bodega (el que se transforma): el bloque "Inventario
@@ -953,7 +972,7 @@ def fabricacion_proceso(id_bodega: int) -> dict:
 #     Cruda total = bodega 52 + En proceso PT (saldo de fabricacion_proceso 53)
 # Solo kg — los dólares de Asinfo no son confiables (ver módulo de stock/lote).
 
-_INVENTARIO_ETAPA_TTL_SECS = 600  # 10 minutos
+_INVENTARIO_ETAPA_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _INVENTARIO_ETAPA_CACHE: dict = {}
 
 
@@ -1051,7 +1070,7 @@ def inventario_por_etapa() -> dict:
 # el histórico. Por eso las etapas "en proceso" quedan en 0 para la foto as-of y
 # hilo_total/cruda_total = el saldo de bodega puro (documentado). Sólo kg.
 
-_INVENTARIO_ASOF_TTL_SECS = 600  # 10 minutos
+_INVENTARIO_ASOF_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _INVENTARIO_ASOF_CACHE: dict = {}
 
 
@@ -1235,7 +1254,7 @@ _IMPORT_CACHE: dict = {}
 # está documentado → se descubre UNA vez vía INFORMATION_SCHEMA (cacheado) y
 # si no se encuentra, kg queda en None (la vista muestra —). Fail-soft total.
 
-_IMPORT_KG_TTL_SECS = 600
+_IMPORT_KG_TTL_SECS = 300
 _IMPORT_KG_CACHE: dict = {}
 _IMPORT_KG_DETALLE: dict = {}  # {"tabla": ..., "col": ...} descubierto
 _IMPORT_COSTO_HILADO_CACHE: dict = {}  # {im_numero: {costo,kg,usd_kg}} (promedio por tipo de hilado)
@@ -1587,7 +1606,7 @@ def hilado_egresos_mes(yy: int, mm: int, *, mov: dict | None = None,
     return out
 
 
-_FABRICACION_FLUJO_TTL_SECS = 600  # 10 minutos
+_FABRICACION_FLUJO_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _FABRICACION_FLUJO_CACHE: dict = {}
 
 
@@ -1667,7 +1686,7 @@ def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
         return dict(zero)
 
 
-_DESPACHO_TTL_SECS = 600  # 10 minutos
+_DESPACHO_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _DESPACHO_CACHE: dict = {}
 
 
@@ -1718,7 +1737,7 @@ def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
         return 0.0
 
 
-_MOVIMIENTO_BODEGA_TTL_SECS = 600  # 10 minutos
+_MOVIMIENTO_BODEGA_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _MOVIMIENTO_BODEGA_CACHE: dict = {}
 
 
@@ -1798,7 +1817,7 @@ def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
 # Verificado en vivo 2026-07-14: julio = INTELA 96.786 / AP 2.644 / RY 1.633 kg.
 # Consumido por la tab /produccion-tejeduria-asinfo (match contra compras K).
 # ---------------------------------------------------------------------------
-_PROD_TEJ_TTL_SECS = 600  # 10 minutos
+_PROD_TEJ_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _PROD_TEJ_CACHE: dict = {}
 
 INTELA_COD = "KK"

@@ -57,8 +57,9 @@ import time as _time_fp
 
 _LOG_FP = _logging_fp.getLogger(__name__)
 _FLUJO_PROD_CACHE: dict = {}
-_FLUJO_PROD_TTL_SECS = 600  # 10 min — la carga fría cuesta ~15-18s; alineado con
-# el cache del inventario Asinfo (mismo orden de frescura). Federico 2026-07-17.
+_FLUJO_PROD_TTL_SECS = 300  # 5 min (antes 10 — duena 2026-07-18); con el warmup
+# de Asinfo corriendo (modules/_lib/warmup.py) la recompute es barata y la
+# pantalla queda como maximo 5 min desactualizada.
 
 
 def reset_flujo_produccion_cache() -> None:

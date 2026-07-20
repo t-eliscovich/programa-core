@@ -45,6 +45,15 @@ def test_retenciones_periodo_shape(monkeypatch):
     assert slugs == {"fecha_inicio", "fecha_fin"}
 
 
+@pytest.fixture(autouse=True)
+def _sin_cache_retenciones():
+    """El cache TTL de retenciones (2026-07-18) no debe cruzar tests."""
+    from modules.asinfo import service as _svc
+    _svc.reset_retenciones_cache()
+    yield
+    _svc.reset_retenciones_cache()
+
+
 def test_retenciones_periodo_env_override(monkeypatch):
     from modules.asinfo import service as svc
     monkeypatch.setenv("ASINFO_CARD_RETENCIONES", "999")

@@ -148,6 +148,16 @@ def create_app() -> Flask:
     # silenciosamente y los módulos consumidores muestran placeholder.
     formulas_db.init_pool()
 
+    # Calentador de cachés Asinfo (dueña 2026-07-18): refresca las funciones
+    # caras al arrancar (post-deploy) y cada 4 min, para que nadie vea la
+    # carga fría de 15-21s de /balance y /flujo-produccion. Fail-soft, hilo
+    # daemon, apagable con WARMUP_ASINFO=0; no corre bajo pytest.
+    try:
+        from modules._lib.warmup import start_warmup_thread
+        start_warmup_thread()
+    except Exception:  # noqa: BLE001 -- el warmup jamás frena el arranque
+        pass
+
     # TMT 2026-05-28 dueña: 'no quiero usar mi compu como sincamos eso'.
     # Si hay un xlsx fresco en data/dbase_snapshots/, lo sincamos UNA VEZ
     # al boot. Marker file con el hash → idempotente entre reboots, pero se
