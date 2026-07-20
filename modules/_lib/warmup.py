@@ -62,6 +62,10 @@ def _warm_once() -> None:
         ("importaciones", lambda: asvc.importaciones_asinfo()),
         ("importaciones_kg", lambda: asvc.importaciones_kg()),
         ("produccion_tejeduria", lambda: asvc.produccion_tejeduria_mes(yy, mm)),
+        # ventas_facturado_kg → facturas_periodo(mes) — sin este paso quedaban
+        # ~3s vivos en el flujo (medido 18/07: mov_asinfo_quimicos 3,1s que en
+        # realidad eran la card de facturas fría).
+        ("ventas_facturado", lambda: asvc.ventas_facturado_kg(yy, mm)),
     ]
     # Químicos del flujo (formulas) — los 7,4s medidos de mov_asinfo_quimicos.
     try:
