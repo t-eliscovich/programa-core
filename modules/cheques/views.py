@@ -1437,100 +1437,8 @@ def api_cheques_vivos(codigo_cli: str):
     }
 
 
-@cheques_bp.route("/cheques/<int:id_cheque>/aplicar", methods=["GET", "POST"])
-@requiere_login
-@requiere_permiso("cheques.aplicar")
-def aplicar(id_cheque: int):
-    """Aplicar un cheque a facturas abiertas del mismo cliente.
+# TMT 2026-07-20 (duena): pantalla huerfana BORRADA — 'no tenemos que tener basura'. Era /cheques/<id>/aplicar (pre-FIFO; hoy /cheques/nuevo).
 
-    GET: muestra facturas pendientes con importes editables (pre-FIFO).
-    POST: recorre inputs `aplicar[id_fact]` y delega a queries.aplicar_a_factura.
-    """
-    ch = queries.por_id(id_cheque)
-    if not ch:
-        abort(404)
-    stat_ch = (ch.get("stat") or "").upper()
-    # Guard del view: paridad con queries.STATS_APLICABLES. TMT 2026-05-14 (#26).
-    if stat_ch not in queries.STATS_APLICABLES:
-        flash(
-            f"Este cheque está en stat='{stat_ch}' — no se puede aplicar a facturas. "
-            f"Sólo aplicable desde {queries.STATS_APLICABLES} (cartera/postergado/Daniela).",
-            "warn",
-        )
-        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
-
-    pendientes = queries.facturas_pendientes(ch["codigo_cli"])
-
-    if request.method == "GET":
-        restante = float(ch["importe"] or 0)
-        pre = {}
-        for f in pendientes:
-            s = float(f["saldo"] or 0)
-            usar = min(s, restante)
-            pre[f["id_factura"]] = usar if usar > 0 else 0
-            restante -= usar
-            if restante <= 0:
-                break
-        return render_template(
-            "cheques/aplicar.html",
-            ch=ch,
-            pendientes=pendientes,
-            pre=pre,
-            errores=[],
-        )
-
-    errores: list[str] = []
-    aplicaciones = []
-    for f in pendientes:
-        raw = request.form.get(f"aplicar[{f['id_factura']}]")
-        imp = parse_monto(raw)
-        # TMT 2026-06-07: aceptar NEGATIVOS (reversa de abono), igual que
-        # Nueva Cobranza. Antes `imp <= 0` los descartaba en silencio. El
-        # backend (aplicar_a_factura) ya valida que |imp| <= abono.
-        if imp is None or abs(imp) < 0.005:
-            continue
-        aplicaciones.append({"id_fact": f["id_factura"], "importe": float(imp)})
-
-    if not aplicaciones:
-        errores.append("No indicaste ningún importe a aplicar.")
-        return render_template(
-            "cheques/aplicar.html",
-            ch=ch,
-            pendientes=pendientes,
-            pre={},
-            errores=errores,
-        ), 400
-
-    try:
-        usuario = (g.user or {}).get("username", "web")
-        r = queries.aplicar_a_factura(
-            id_cheque=id_cheque,
-            aplicaciones=aplicaciones,
-            usuario=usuario,
-        )
-        flash(
-            f"Cheque aplicado a {r['n']} factura(s), total {r['total_aplicado']:.2f}.",
-            "ok",
-        )
-        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
-    except ValueError as e:
-        errores.append(str(e))
-        return render_template(
-            "cheques/aplicar.html",
-            ch=ch,
-            pendientes=pendientes,
-            pre={},
-            errores=errores,
-        ), 400
-    except Exception as e:
-        errores.append(f"No pude aplicar el cheque: {e}")
-        return render_template(
-            "cheques/aplicar.html",
-            ch=ch,
-            pendientes=pendientes,
-            pre={},
-            errores=errores,
-        ), 500
 
 
 def _facturas_que_vuelven(id_cheque: int) -> list[dict]:
@@ -2566,45 +2474,8 @@ def actualizar(id_cheque: int):
     return redirect(next_url)
 
 
-@cheques_bp.route("/cheques/<int:id_cheque>/confirmar-rebote", methods=["GET"])
-@requiere_login
-def confirmar_rebote(id_cheque: int):
-    """Wizard de 2 pasos para marcar rebote: muestra detalle + pide motivo.
+# TMT 2026-07-20 (duena): pantalla huerfana BORRADA — 'no tenemos que tener basura'. Era /cheques/<id>/confirmar-rebote (hoy es el modal de la lista).
 
-    El rebote pone al cliente en STOP, por eso requiere motivo escrito
-    (paridad con otras acciones críticas). TMT 2026-05-13.
-    """
-    ch = queries.por_id(id_cheque)
-    if not ch:
-        abort(404)
-    detalle = {
-        "N°": ch.get("no_cheque") or f"#{id_cheque}",
-        "Cliente": f"{ch.get('codigo_cli') or '—'} — {ch.get('cliente') or ''}",
-        "Importe": f"$ {ch.get('importe') or 0:,.2f}",
-        "F. depósito": (ch.get("fechad").strftime("%d/%m/%Y") if ch.get("fechad") else "—"),
-        "Stat actual": ch.get("stat") or "—",
-    }
-    return render_template(
-        "_confirmar_accion.html",
-        titulo=f"Marcar como rebotado — cheque {ch.get('no_cheque') or '#' + str(id_cheque)}",
-        mensaje=(
-            f"Vas a marcar el cheque como rebotado. "
-            f"Se anota en la observación del cliente {ch.get('codigo_cli') or ''} — "
-            "el STOP lo decidís manualmente desde la pantalla del cliente."
-        ),
-        detalle_registro=detalle,
-        accion_url=url_for("cheques.transicionar", id_cheque=id_cheque),
-        volver_url=url_for("cheques.detalle", id_cheque=id_cheque),
-        motivo_requerido=True,
-        # TMT 2026-07-08 dueña: "cuando cancelo el cheque no me obligues a poner
-        # motivo, se hace largo". El handler ya lo trata opcional (usa default
-        # si viene vacío) — sacamos el `required` del front. Era el ÚNICO
-        # confirm de cheques que forzaba motivo; el resto ya es opcional.
-        motivo_obligatorio=False,
-        confirm_label="Confirmar rebote",
-        # Hidden inputs extras para que el POST a transicionar reciba stat_destino.
-        extras_hidden=[{"name": "stat_destino", "value": "9"}],
-    )
 
 
 @cheques_bp.route("/cheques/<int:id_cheque>/transicionar", methods=["POST"])

@@ -9,6 +9,9 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Retenciones emitidas por clientes', descripcion_safe='Mostrando ' ~ (filas | length) ~ ' · Total retenido <strong>' ~ (total | money_es) ~ '</strong>') }}
     <div class="no-print flex items-center gap-2">
+      {# TMT 2026-07-20 (duena): /retenciones/emitir era huerfana — boton. #}
+      <a href="{{ url_for('retenciones.emitir') }}"
+         class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#0369a1;">+ Emitir</a>
       <a href="{{ url_for('retenciones.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>

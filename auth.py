@@ -369,15 +369,11 @@ def login():
             flash("Usuario o contraseña incorrectos.", "error")
             return render_template("login.html"), 401
 
-        # 2FA: si el usuario tiene TOTP confirmado, hacemos un login
-        # de 2 pasos — dejamos "pending_user_id" en session y redirigimos
-        # a /2fa/verify. La sesión completa (user_id real) se setea recién
-        # después de validar el código.
-        if row.get("totp_confirmado_en") and row.get("totp_secret"):
-            session.clear()
-            session["pending_user_id"] = row["id_usuario"]
-            session["pending_next"] = request.args.get("next") or url_for("dashboard.index")
-            return redirect(url_for("two_fa.verify"))
+        # TMT 2026-07-20 (dueña): módulo 2FA borrado (pantallas huérfanas —
+        # nadie podía llegar a activarlo, así que nadie lo tenía activo; y el
+        # redirect apuntaba a un endpoint inexistente → BuildError latente).
+        # Las columnas totp_* siguen en el SELECT por el fallback de
+        # compatibilidad de arriba; ya no se usan.
 
         session.clear()
         session["user_id"] = row["id_usuario"]

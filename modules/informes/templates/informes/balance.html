@@ -190,6 +190,10 @@
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m9 17 4-4 3 3 5-5"/></svg>
         Metas / Iniciales
       </a>
+      {# TMT 2026-07-20 (duena): /informes/stock-inicial era huerfana — link. #}
+      <a href="{{ url_for('informes.stock_inicial') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
+        Stock inicial
+      </a>
       {# Federico 2026-05-22 — navegación entre pantallas movida a la
          barra nav_resultados (arriba del título). #}
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">

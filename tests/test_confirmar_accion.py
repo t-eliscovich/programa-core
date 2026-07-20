@@ -188,18 +188,8 @@ def test_provisiones_eliminar_sin_motivo_ejecuta(app, fake_db, monkeypatch):
 # Posdat
 # ---------------------------------------------------------------------------
 
-def test_posdat_confirmar_anulacion_get_200(app, fake_db, monkeypatch):
-    from modules.posdat import queries as pq
-    monkeypatch.setattr(pq, "por_id", lambda _id: {
-        "id_posdat": 3, "num": 101, "prov": "PROV",
-        "importe": 2500, "fechad": None, "banc": 0,
-    })
-    c = _login_as_dueno(app, fake_db)
-    r = c.get("/posdat/3/confirmar-anulacion")
-    assert r.status_code == 200
-    assert b"PROV" in r.data
-
-
+# TMT 2026-07-20: test del wizard GET /posdat/<id>/confirmar-anulacion
+# eliminado junto con la pantalla (huerfana; la anulacion corre por historial).
 def test_posdat_anular_sin_motivo_ejecuta(app, fake_db, monkeypatch):
     # TMT 2026-05-21 dueña: motivo opcional. POST sin motivo ejecuta y vuelve a
     # la lista de posdatados.

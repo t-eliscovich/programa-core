@@ -247,37 +247,8 @@ def reabrir(id_posdat: int):
     return redirect(url_for("posdat.lista"))
 
 
-@posdat_bp.route("/posdat/<int:id_posdat>/confirmar-anulacion", methods=["GET"])
-@requiere_login
-@requiere_permiso("posdat.anular")
-def confirmar_anulacion(id_posdat: int):
-    pd = queries.por_id(id_posdat)
-    if not pd:
-        abort(404)
-    detalle = {
-        "N°": pd.get("num"),
-        "Proveedor": pd.get("prov") or "—",
-        "Importe": f"$ {pd.get('importe') or 0}",
-        "Vencimiento": (pd.get("fechad").strftime("%d/%m/%Y") if pd.get("fechad") else "—"),
-        "Estado": "cerrada" if pd.get("banc") == 9 else "abierta",
-    }
-    return render_template(
-        "_confirmar_accion.html",
-        titulo=f"Anular posdatado {pd.get('num')}",
-        mensaje=(
-            f"Vas a anular el posdatado N° {pd.get('num')} "
-            f"del proveedor {pd.get('prov') or ''} por $ {pd.get('importe') or 0}. "
-            f"La fila NO se borra (soft-delete) y queda registrada en /historial."
-        ),
-        detalle_registro=detalle,
-        accion_url=url_for("posdat.anular", id_posdat=id_posdat),
-        volver_url=url_for("posdat.lista"),
-        motivo_requerido=True,
-        # #22 (TMT 2026-05-14): el motivo es obligatorio — antes la vista
-        # template decía "obligatorio" pero el handler aceptaba vacío.
-        motivo_obligatorio=True,
-        confirm_label="Confirmar anulación",
-    )
+# TMT 2026-07-20 (duena): pantalla huerfana BORRADA — 'no tenemos que tener basura'. Era /posdat/<id>/confirmar-anulacion (la anulacion corre por historial).
+
 
 
 @posdat_bp.route("/posdat/<int:id_posdat>/anular", methods=["POST"])

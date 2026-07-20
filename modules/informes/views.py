@@ -791,59 +791,8 @@ def balance():
 
 
 # Feature A — tab Compras en /informes/balance (TMT 2026-05-19 v6).
-@informes_bp.route("/balance/compras")
-@requiere_login
-@requiere_permiso("informes.ver")
-def balance_compras():
-    """Drill-down de compras del período. Reuse de /informes/balance."""
+# TMT 2026-07-20 (duena): pantalla huerfana BORRADA — 'no tenemos que tener basura'. Era /informes/balance/compras.
 
-    hoy = today_ec()
-    try:
-        anio = int(request.args.get("anio") or hoy.year)
-    except (TypeError, ValueError):
-        anio = hoy.year
-    try:
-        mes = int(request.args.get("mes") or hoy.month)
-    except (TypeError, ValueError):
-        mes = hoy.month
-    mes = max(1, min(mes, 12))
-    prov = (request.args.get("prov") or "").strip().upper() or None
-    try:
-        num_v = int(request.args.get("v") or 0) or None
-    except (TypeError, ValueError):
-        num_v = None
-    try:
-        data = queries.compras_del_periodo(
-            anio=anio,
-            mes=mes,
-            prov=prov,
-            num_v=num_v,
-        )
-        error = None
-    except Exception as e:  # noqa: BLE001
-        data, error = (
-            {
-                "filas": [],
-                "total_importe": 0,
-                "total_kg": 0,
-                "n_filas": 0,
-                "prov_options": [],
-                "anio": anio,
-                "mes": mes,
-                "prov_actual": prov,
-                "num_v_actual": num_v,
-            },
-            str(e),
-        )
-    return render_template(
-        "informes/balance_compras.html",
-        data=data,
-        anio=anio,
-        mes=mes,
-        prov=prov,
-        num_v=num_v,
-        error=error,
-    )
 
 
 # Feature B — matriz histórica TINT.BAT (TMT 2026-05-19 v7).
@@ -2546,30 +2495,8 @@ def retiros():
     )
 
 
-@informes_bp.route("/activos")
-@requiere_login
-@requiere_permiso("informes.ver")
-def activos():
-    filas, error = _safe(queries.activos_lista, [])
-    if request.args.get("export") == "csv":
-        return csv_response(
-            filas,
-            columnas=[
-                ("fecha", "Fecha"),
-                ("concepto", "Concepto"),
-                ("tipo", "Tipo"),
-                ("proveedor", "Proveedor"),
-                ("inicial", "Inicial"),
-                ("amortizac", "Amort. acum."),
-                ("amortimes", "Amort. mes"),
-                ("valor", "Valor neto"),
-                ("cuota", "Cuota"),
-                ("vida_util", "Vida útil"),
-                ("ult_mes_amortizado", "Últ. mes amort."),
-            ],
-            filename="activos_fijos.csv",
-        )
-    return render_template("informes/activos.html", filas=filas, error=error)
+# TMT 2026-07-20 (duena): pantalla huerfana BORRADA — 'no tenemos que tener basura'. Era /informes/activos (duplicada por /activos).
+
 
 
 @informes_bp.route("/historia/multianual")

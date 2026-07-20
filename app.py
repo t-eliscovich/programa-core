@@ -260,9 +260,8 @@ def create_app() -> Flask:
     app.register_blueprint(auth_google_bp)
     app.jinja_env.globals["google_oauth_enabled"] = google_oauth_enabled
 
-    from modules.two_fa.views import two_fa_bp
-
-    app.register_blueprint(two_fa_bp)
+    # TMT 2026-07-20 (dueña): módulo 2FA BORRADO — pantallas huérfanas (nadie
+    # podía llegar a activarlo) y tenía un bug latente en el login.
 
     from modules.dashboard.views import dashboard_bp
 
@@ -573,14 +572,8 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_debug_ustock_bp)
 
-    # Diagnóstico pendientes banco — TMT 2026-06-02. /admin/diag-pendientes-banco
-    # cuenta duplicados por (no_banco, documento) en banco_historicos_pendientes
-    # y muestra ejemplos. El dedupe nuevo (mig 0062) corre al subir extracto;
-    # los duplicados del backfill viejo (migs 0056-0058) hay que detectarlos
-    # con este endpoint y limpiarlos aparte.
-    from modules.conciliacion.diag_view import bp as conciliacion_diag_bp
-
-    app.register_blueprint(conciliacion_diag_bp)
+    # TMT 2026-07-20 (dueña): /admin/diag-pendientes-banco/* BORRADO (54
+    # probes de una sesión de debugging de junio) — basura.
 
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
