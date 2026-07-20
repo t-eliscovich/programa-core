@@ -184,8 +184,9 @@ def retirar():
             "concepto": concepto,
         })
 
-        if importe is None or importe <= 0:
-            errores.append("Importe del retiro debe ser mayor que cero.")
+        # TMT 2026-07-20 (duena): negativo = APORTE de capital. Bloquea solo 0.
+        if importe is None or float(importe) == 0:
+            errores.append("Importe no puede ser cero (negativo = aporte de capital).")
         if not socio:
             errores.append("Socio requerido (RR/TMT/etc.).")
         if cuenta not in queries.CUENTAS_APORTE:
@@ -204,8 +205,10 @@ def retirar():
                 socio=socio, concepto=concepto,
                 clave=clave, usuario=usuario,
             )
+            _etq = ("Aporte de capital (retiro negativo)"
+                    if r["importe"] < 0 else "Retiro")
             flash(
-                f"Retiro de $ {r['importe']:.2f} ({r['socio']}) registrado. "
+                f"{_etq} de $ {abs(r['importe']):.2f} ({r['socio']}) registrado. "
                 f"Side effect: {r['side_effect']['tipo']}.",
                 "ok",
             )
@@ -304,9 +307,8 @@ def reversar_retiro(id_retiro: int):
     )
     if not ret:
         abort(404)
-    if float(ret.get("ret") or 0) <= 0:
-        flash(f"Retiro id={id_retiro} no tiene importe positivo — "
-              "probablemente ya está reversado.", "warn")
+    if float(ret.get("ret") or 0) == 0:
+        flash(f"Retiro id={id_retiro} tiene importe 0 — nada que reversar.", "warn")
         return redirect(url_for("capital.lista"))
 
     if request.method == "POST":

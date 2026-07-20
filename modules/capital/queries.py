@@ -232,8 +232,12 @@ def retirar(
     los retiros viven en tabla aparte (paridad legacy). Para que aparezcan
     en `movimientos_unificados`, ya se hace el UNION ALL en queries.
     """
-    if importe is None or float(importe) <= 0:
-        raise ValueError("Importe del retiro debe ser mayor que cero.")
+    # TMT 2026-07-20 (duena): "tenemos que poder cargar aportes que no tengan
+    # que ver con OP" — retiro en NEGATIVO = APORTE de capital del socio
+    # (paridad dBase: RETIROS con importe negativo). La plata ENTRA a la
+    # cuenta (caja E / banco DE) y URET baja -> utilidad quieta. Bloquea solo 0.
+    if importe is None or float(importe) == 0:
+        raise ValueError("Importe no puede ser cero (negativo = aporte).")
     socio = (socio or "").strip().upper()
     if not socio:
         raise ValueError("Socio requerido para retiro.")
@@ -245,7 +249,11 @@ def retirar(
     asegurar_fecha_abierta(fecha)
 
     importe_f = float(importe)
-    concepto_full = (concepto or f"RETIRO {socio}").strip()[:50]
+    es_aporte = importe_f < 0
+    magnitud = abs(importe_f)
+    concepto_full = (
+        concepto or (f"APORTE {socio}" if es_aporte else f"RETIRO {socio}")
+    ).strip()[:50]
 
     with db.tx() as conn:
         # Resolver no_banco para columna scintela.retiros.nb (NULL si caja).
@@ -282,15 +290,15 @@ def retirar(
             conn=conn,
         ) or {}
 
-        # 2. Side-effect: sale plata de la cuenta.
+        # 2. Side-effect: retiro = sale plata; APORTE (negativo) = ENTRA.
         side = {"tipo": cuenta_norm}
         if cuenta_norm == "caja":
             import caja_helpers
             res = caja_helpers.insert_movimiento_caja(
                 conn,
                 fecha=fecha,
-                tipo="S",
-                importe=importe_f,
+                tipo="E" if es_aporte else "S",
+                importe=magnitud,
                 concepto=f"RR {socio} {concepto_full}".strip()[:50],
                 usuario=usuario,
             )
@@ -302,8 +310,8 @@ def retirar(
                 no_banco=no_banco,
                 no_cta=None,
                 fecha=fecha,
-                documento="CH",
-                importe=importe_f,
+                documento="DE" if es_aporte else "CH",
+                importe=magnitud,
                 concepto=f"RR {socio} {concepto_full}".strip()[:50],
                 usuario=usuario,
             )
@@ -546,11 +554,12 @@ def reversar_retiro(
     if not ret_orig:
         raise ValueError(f"Retiro id={id_retiro} no existe.")
     importe_f = float(ret_orig.get("ret") or 0)
-    if importe_f <= 0:
-        raise ValueError(
-            f"Retiro id={id_retiro} no tiene importe positivo (ret={importe_f}) "
-            "— quizá ya fue reversado."
-        )
+    # TMT 2026-07-20: negativo = APORTE (tambien reversable). Solo 0 no tiene
+    # nada que reversar; las filas de compensacion no tienen mov_doble
+    # retiro_socio_* activo, asi que el lookup de abajo las rechaza solo.
+    if importe_f == 0:
+        raise ValueError(f"Retiro id={id_retiro} tiene importe 0 — nada que reversar.")
+    magnitud = abs(importe_f)
     socio = (ret_orig.get("de") or "").strip()
 
     md_orig = db.fetch_one(
@@ -594,8 +603,9 @@ def reversar_retiro(
             res = caja_helpers.insert_movimiento_caja(
                 conn,
                 fecha=fecha_rev,
-                tipo="E",
-                importe=importe_f,
+                # Retiro (salio plata) -> vuelve a ENTRAR; aporte (entro) -> SALE.
+                tipo="E" if importe_f > 0 else "S",
+                importe=magnitud,
                 concepto=(f"REVERSO retiro id={id_retiro}"
                           + (f" — {motivo}" if motivo else ""))[:50],
                 clave="REV",
@@ -624,8 +634,9 @@ def reversar_retiro(
                 no_banco=int(no_banco),
                 no_cta=None,
                 fecha=fecha_rev,
-                documento="NC",   # ingreso al banco compensa el CH
-                importe=importe_f,
+                # NC compensa el CH del retiro; ND compensa el DE del aporte.
+                documento="NC" if importe_f > 0 else "ND",
+                importe=magnitud,
                 concepto=(f"REVERSO retiro id={id_retiro}"
                           + (f" — {motivo}" if motivo else ""))[:50],
                 usuario=usuario,
