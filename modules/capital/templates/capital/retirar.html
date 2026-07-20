@@ -1,18 +1,24 @@
 {% extends "base.html" %}
 {% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
-{% block title %}Retiro de capital{% endblock %}
+{% block title %}{% if modo == 'aporte' %}Aporte de capital{% else %}Retiro de capital{% endif %}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('historial.operaciones') }}" class="hover:underline">Operaciones</a> /
-  <a href="{{ url_for('capital.lista') }}" class="hover:underline">Movimientos de capital</a> /
-  <strong>Retirar</strong>
+  <a href="{{ url_for('informes.retiros') }}" class="hover:underline">Dividendos</a> /
+  <strong>{% if modo == 'aporte' %}Aportar{% else %}Retirar{% endif %}</strong>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-2xl">
   {% set ico %}<polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/>{% endset %}
+  {% if modo == 'aporte' %}
+  {{ wizard_hero('emerald', 'Aporte de capital',
+                 'Aporte del accionista (paridad dBase: retiro en negativo). La plata ENTRA a la cuenta elegida y baja dividendos — la utilidad no se mueve.',
+                 ico) }}
+  {% else %}
   {{ wizard_hero('rose', 'Retiro de capital',
                  'Retiro de capital / pago de dividendos. Se registra la salida y el movimiento bancario o de caja en una sola transacción.',
                  ico) }}
+  {% endif %}
 
   {% if errores %}
   <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg p-3 mb-4 text-sm text-rose-900 dark:text-rose-200">
@@ -22,6 +28,9 @@
 
   <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {# TMT 2026-07-20 (duena): modo=aporte — escribis el importe en POSITIVO
+       y el backend lo guarda como retiro NEGATIVO (paridad dBase). #}
+    <input type="hidden" name="modo" value="{{ modo or '' }}">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
@@ -45,7 +54,11 @@
                         focus:outline-none focus:ring-2 focus:ring-rose-500">
         </div>
         {# TMT 2026-07-20 (duena): retiro en negativo = aporte de capital. #}
+        {% if modo == 'aporte' %}
+        <p class="mt-1 text-xs text-slate-500">Escribilo en positivo — se registra como aporte (la plata entra a la cuenta).</p>
+        {% else %}
         <p class="mt-1 text-xs text-slate-500">Negativo = aporte de capital (la plata entra a la cuenta).</p>
+        {% endif %}
       </div>
     </div>
 
@@ -90,7 +103,11 @@
     {% endset %}
     {{ wizard_info('rose', info) }}
 
-    {{ wizard_footer(url_for('capital.lista'), 'Registrar retiro →', 'rose') }}
+    {% if modo == 'aporte' %}
+      {{ wizard_footer(url_for('informes.retiros'), 'Registrar aporte →', 'emerald') }}
+    {% else %}
+      {{ wizard_footer(url_for('informes.retiros'), 'Registrar retiro →', 'rose') }}
+    {% endif %}
   </form>
 </div>
 {% endblock %}

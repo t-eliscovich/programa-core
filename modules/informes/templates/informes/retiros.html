@@ -7,6 +7,14 @@
 
 {% block content %}
 {% set _actions %}
+  {# TMT 2026-07-20 (duena): "los botones deberian estar aca" — alta de
+     aporte/retiro desde Dividendos. Gateado por operacion, no por rol. #}
+  {% if tiene_permiso('capital.crear') %}
+    <a href="{{ url_for('capital.retirar', modo='aporte') }}"
+       class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#059669;">+ Aporte</a>
+    <a href="{{ url_for('capital.retirar') }}"
+       class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#e11d48;">− Retiro</a>
+  {% endif %}
   <a href="{{ url_for('informes.retiros', tab=tab, export='csv') }}"
      class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
   <button onclick="window.print()"
