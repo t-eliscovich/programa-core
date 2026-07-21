@@ -2313,6 +2313,11 @@ def flujo_produccion():
                     "importe": _imp,
                     "ukg": (_imp / _kg if _kg else 0.0),
                 })
+            # Federico 2026-07-21: orden fijo de la tabla PRODUCCIÓN TEJIDO —
+            # INTELA arriba, luego AP, después RY (el resto, alfabético al final).
+            # Los valores no cambian; el total es suma, no depende del orden.
+            _orden_prov = {"INTELA": 0, "AP": 1, "RY": 2}
+            _rows.sort(key=lambda r: (_orden_prov.get(r["prov"], 99), r["prov"]))
             _tot_kg = float(_res.get("total_kg") or 0)
             _tot_imp = sum(r["importe"] for r in _rows)
             prod_tej_asinfo = {
