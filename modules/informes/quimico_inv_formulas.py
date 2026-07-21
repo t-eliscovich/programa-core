@@ -121,7 +121,7 @@ SELECT p.num,
 """
 
 
-def quimico_final_por_tipo(corte: date | None = None) -> dict | None:
+def quimico_final_por_tipo(corte: date | None = None, detalle: bool = False) -> dict | None:
     """{aux, poli, alg, otros, total, colorante} en US$ c/IVA al `corte`.
 
     Replica FINAL de formulas_app. `total` = aux+poli+alg+otros (lo que muestra
@@ -139,6 +139,7 @@ def quimico_final_por_tipo(corte: date | None = None) -> dict | None:
         return None
 
     buckets = {"aux": 0.0, "poli": 0.0, "alg": 0.0, "otros": 0.0}
+    filas: list = []
     for r in rows:
         num = int(r.get("num") or 0)
         num_visible = int(r.get("num_visible") or 0)
@@ -172,10 +173,20 @@ def quimico_final_por_tipo(corte: date | None = None) -> dict | None:
         monto = round(final * us, 2)
         monto_iva = round(monto * iva_mult, 2)
         buckets[tipo] = buckets.get(tipo, 0.0) + monto_iva
+        if detalle:
+            filas.append({
+                "num": num, "num_visible": num_visible, "tipo": tipo,
+                "nombre": (str(r.get("nombre") or "")), "us": us,
+                "conteo_f": str(conteo_f) if conteo_f is not None else None,
+                "conteo_q": round(conteo_q, 3),
+                "cons_q": round(cons_q, 3), "comp_q": round(comp_q, 3),
+                "aju_q": round(aju_q, 3), "final": final,
+                "monto_iva": monto_iva, "a44": es_a44,
+            })
 
     total = buckets["aux"] + buckets["poli"] + buckets["alg"] + buckets["otros"]
     colorante = buckets["poli"] + buckets["alg"]
-    return {
+    out = {
         "aux": round(buckets["aux"], 2),
         "poli": round(buckets["poli"], 2),
         "alg": round(buckets["alg"], 2),
@@ -183,6 +194,10 @@ def quimico_final_por_tipo(corte: date | None = None) -> dict | None:
         "total": round(total, 2),
         "colorante": round(colorante, 2),
     }
+    if detalle:
+        filas.sort(key=lambda x: (x["tipo"], -x["monto_iva"]))
+        out["filas"] = filas
+    return out
 
 
 def quimico_total_fisico(corte: date | None = None) -> float | None:

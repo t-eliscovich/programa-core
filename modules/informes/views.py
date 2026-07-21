@@ -998,11 +998,17 @@ def quimico_inv_debug():
     from modules.informes.quimico_inv_formulas import quimico_final_por_tipo
     hoy = today_ec()
     cierre = _d(hoy.year, hoy.month, 1) - _td(days=1)
+    det = quimico_final_por_tipo(hoy, detalle=True) or {}
+    tipo_q = request.args.get("tipo")  # aux|poli|alg para ver el detalle
+    filas = det.get("filas") or []
+    if tipo_q:
+        filas = [f for f in filas if f["tipo"] == tipo_q]
     return jsonify({
         "hoy": hoy.isoformat(),
         "cierre_prev": cierre.isoformat(),
-        "final_hoy": quimico_final_por_tipo(hoy),
+        "final_hoy": {k: v for k, v in det.items() if k != "filas"},
         "final_cierre": quimico_final_por_tipo(cierre),
+        "detalle": filas,
     })
 
 
