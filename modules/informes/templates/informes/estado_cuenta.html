@@ -381,5 +381,42 @@
     </details>
   </div>
   {% endif %}
+
+  {# ===================================================================== #}
+  {# TMT 2026-07-21 (dueña): "se tiene que poder deshacer el neteo". Panel   #}
+  {# con los neteos deshacibles del cliente. Deshacer reactiva cheques +    #}
+  {# anticipos, re-aplica facturas y anula el saldo a favor residual.       #}
+  {# Gate cheques.anular (igual que netear).                                #}
+  {# ===================================================================== #}
+  {% if tiene_permiso('cheques.anular') and neteos_deshacibles %}
+  <div class="no-print mt-4">
+    <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+      <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Deshacer neteo
+        <span class="ml-2 font-normal text-slate-500">— revierte un neteo: reactiva los cheques y anticipos, re-aplica las facturas que se habían reabierto y anula el saldo a favor residual que hubiera quedado.</span>
+      </summary>
+      <div class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for n in neteos_deshacibles %}
+        <div class="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+          <div class="min-w-0">
+            <div class="font-mono text-xs text-slate-400">{{ n.fecha | fecha_es if n.fecha else '' }}</div>
+            <div class="truncate">{{ n.concepto }}</div>
+            <div class="text-xs text-slate-500">{{ n.n_cheques }} cheque(s) · {{ n.n_anticipos }} anticipo(s){% if n.id_residuo %} · dejó saldo a favor residual{% endif %}</div>
+          </div>
+          <form method="POST"
+                action="{{ url_for('informes.estado_cuenta_neteo_deshacer', codigo_cli=data.cliente.codigo_cli, id_evento=n.id_evento) }}"
+                onsubmit="return confirm('Deshacer este neteo? Reactiva los cheques y anticipos, re-aplica las facturas y anula el saldo a favor residual.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit"
+                    class="whitespace-nowrap text-sm px-3 py-1.5 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+              ↺ Deshacer
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

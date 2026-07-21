@@ -2984,6 +2984,12 @@ def estado_cuenta(codigo_cli):
         # patrón cobranza_ok) + botón imprimir el resultado.
         totalizar_ok=session.pop("totalizar_ok", None),
         neteo_ok=session.pop("neteo_ok", None),
+        # TMT 2026-07-21 (dueña): neteos DESHACIBLES del cliente (panel
+        # "Deshacer neteo"). Best-effort: si falla, no rompe el estado de cuenta.
+        neteos_deshacibles=(_safe(
+            lambda: __import__(
+                "modules.cheques.queries", fromlist=["neteos_activos_cliente"]
+            ).neteos_activos_cliente(codigo_up), [])[0]),
     )
 
 
@@ -3069,6 +3075,33 @@ def estado_cuenta_netear(codigo_cli):
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude netear", e)
+    return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+
+
+@informes_bp.route("/estado-cuenta/<codigo_cli>/neteo/<int:id_evento>/deshacer",
+                   methods=["POST"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def estado_cuenta_neteo_deshacer(codigo_cli, id_evento):
+    """DESHACER un neteo hecho en el estado de cuenta.
+
+    TMT 2026-07-21 (dueña): "se tiene que poder deshacer el neteo que se hace
+    en un estado de cuenta". Reactiva cheques + anticipos, re-aplica facturas y
+    anula el saldo a favor residual. Mismo gate que netear (cheques.anular).
+    """
+    from modules.cheques import queries as chq
+    codigo_up = codigo_cli.upper()
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    try:
+        res = chq.deshacer_neteo(id_evento, codigo_up, usuario=usuario)
+        _extra = " (saldo a favor residual anulado)" if res.get("id_residuo") else ""
+        flash(
+            f"Neteo deshecho: {res['n_cheques']} cheque(s) y "
+            f"{res['n_anticipos']} anticipo(s) reactivados{_extra}.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude deshacer el neteo", e)
     return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 

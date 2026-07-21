@@ -4608,6 +4608,50 @@ def netear_cheques_con_anticipos(
         if residuo <= 0.01:
             residuo = 0.0
 
+        # === SNAPSHOT para poder DESHACER el neteo (TMT 2026-07-21, dueña:
+        # "se tiene que poder deshacer el neteo que se hace en un estado de
+        # cuenta"). Capturamos el estado PREVIO antes de mutar: stat de cada
+        # cheque/anticipo, la posdat hermana (que cancelar_por_anticipo BORRA)
+        # y las aplicaciones a factura (que se DESAPLICAN). Todo JSON-safe →
+        # va al metadata del evento resumen `neteo_estado_cuenta`, que después
+        # `deshacer_neteo` usa para reconstruir todo tal cual estaba. ===
+        _mov_hw = (db.fetch_one(
+            "SELECT COALESCE(MAX(id_mov_doble), 0) AS m FROM scintela.mov_doble",
+            conn=conn,
+        ) or {}).get("m", 0)
+        _snap_por_cheque: dict = {}
+        for c in cheques:
+            cid = int(c["id_cheque"])
+            _pos = db.fetch_all(
+                "SELECT num, prov, fecha, fechad, importe, concepto, "
+                "       COALESCE(banc,0) AS banc "
+                "  FROM scintela.posdat "
+                " WHERE COALESCE(banc,0)=0 AND num=%s AND prov=%s",
+                (cid, codigo_cli),
+                conn=conn,
+            ) or []
+            _snap_por_cheque[cid] = {
+                "id": cid,
+                "stat_prev": (c.get("stat") or "").strip().upper(),
+                "posdat": [
+                    {
+                        "num": int(p.get("num") or cid),
+                        "prov": (p.get("prov") or codigo_cli),
+                        "fecha": p["fecha"].isoformat() if p.get("fecha") else None,
+                        "fechad": p["fechad"].isoformat() if p.get("fechad") else None,
+                        "importe": round(float(p.get("importe") or 0), 2),
+                        "concepto": (p.get("concepto") or "")[:50],
+                    }
+                    for p in _pos
+                ],
+                "aplicaciones": [],
+            }
+        _snap_anticipos = [
+            {"id": int(a["id_cheque"]),
+             "stat_prev": (a.get("stat") or "").strip().upper()}
+            for a in anticipos
+        ]
+
         # --- Desaplicar los cheques de sus facturas (si estaban aplicados) ---
         # TMT 2026-07-09 (dueña): "falta que se desaplique el cheque de la
         # factura así completa el flujo". Un cheque aplicado a factura(s) no
@@ -4619,11 +4663,13 @@ def netear_cheques_con_anticipos(
         facturas_reabiertas: list[dict] = []
         for c in cheques:
             aps = db.fetch_all(
-                "SELECT DISTINCT cxf.id_fact, "
-                "       COALESCE(f.numf::text, '') AS numf "
+                "SELECT cxf.id_fact, "
+                "       COALESCE(f.numf::text, '') AS numf, "
+                "       SUM(cxf.importe) AS imp "
                 "  FROM scintela.chequesxfact cxf "
                 "  LEFT JOIN scintela.factura f ON f.id_factura = cxf.id_fact "
-                " WHERE cxf.id_cheque = %s AND cxf.id_fact IS NOT NULL",
+                " WHERE cxf.id_cheque = %s AND cxf.id_fact IS NOT NULL "
+                " GROUP BY cxf.id_fact, f.numf",
                 (c["id_cheque"],),
                 conn=conn,
             ) or []
@@ -4642,6 +4688,14 @@ def netear_cheques_con_anticipos(
                         "numf": (ap.get("numf") or "").strip() or None,
                     }
                 )
+                # snapshot de la aplicación (para re-aplicar al deshacer)
+                _sc = _snap_por_cheque.get(int(c["id_cheque"]))
+                if _sc is not None:
+                    _sc["aplicaciones"].append({
+                        "id_factura": int(ap["id_fact"]),
+                        "importe": round(float(ap.get("imp") or 0), 2),
+                        "numf": (ap.get("numf") or "").strip() or None,
+                    })
 
         # --- Anular cheques (reusa el primitivo reversible) ---
         ref_ant = ids_anticipos[0]
@@ -4706,13 +4760,287 @@ def netear_cheques_con_anticipos(
             )
             id_residuo = (espejo_residuo or {}).get("id_cheque")
 
+        # === EVENTO RESUMEN del neteo (TMT 2026-07-21) ===
+        # Un batch_id agrupa TODOS los mov_doble que generó este neteo (los
+        # de desaplicar/cancelar/anular espejo/residuo) → los marcamos con el
+        # mismo batch_id para poder mostrarlos/reversarlos juntos. El evento
+        # `neteo_estado_cuenta` guarda el snapshot completo para deshacer.
+        import uuid as _uuid
+        batch_id = str(_uuid.uuid4())
+        db.execute(
+            "UPDATE scintela.mov_doble SET batch_id=%s "
+            " WHERE id_mov_doble > %s AND batch_id IS NULL",
+            (batch_id, _mov_hw),
+            conn=conn,
+        )
+        import mov_doble as _md2
+        _snap = {
+            "codigo_cli": codigo_cli,
+            "ids_cheques": ids_cheques,
+            "ids_anticipos": ids_anticipos,
+            "id_residuo": id_residuo,
+            "cheques": list(_snap_por_cheque.values()),
+            "anticipos": _snap_anticipos,
+        }
+        _md2.registrar(
+            conn=conn,
+            tipo="neteo_estado_cuenta",
+            origen_table="cheque", origen_id=ids_anticipos[0],
+            destino_table="cheque", destino_id=ids_cheques[0],
+            importe=suma_cheques or 1.0,
+            fecha=fecha,
+            concepto=(
+                f"NETEO {codigo_cli}: {len(cheques)} cheque(s) "
+                f"${suma_cheques:,.2f} ↔ {len(anticipos)} anticipo(s)"
+                + (f" · resto ${residuo:,.2f}" if residuo else "")
+            )[:200],
+            usuario=usuario,
+            batch_id=batch_id,
+            metadata=_snap,
+        )
+
     return {
         "n_cheques": len(cheques),
         "n_anticipos": len(anticipos),
         "total": suma_cheques,
         "residuo": residuo,
         "id_residuo": id_residuo,
+        "batch_id": batch_id,
         "cheques": [c["id_cheque"] for c in cheques],
         "anticipos": [a["id_cheque"] for a in anticipos],
         "facturas_reabiertas": facturas_reabiertas,
+    }
+
+
+def neteos_activos_cliente(codigo_cli: str) -> list[dict]:
+    """Lista los neteos DESHACIBLES (evento `neteo_estado_cuenta` activo) de un
+    cliente, del más nuevo al más viejo. Alimenta el panel "Deshacer neteo" del
+    estado de cuenta. TMT 2026-07-21 (dueña)."""
+    import json as _json
+    codigo_cli = (codigo_cli or "").strip().upper()
+    rows = db.fetch_all(
+        "SELECT id_mov_doble, fecha_operacion, concepto, importe, metadata "
+        "  FROM scintela.mov_doble "
+        " WHERE tipo='neteo_estado_cuenta' AND estado='activo' "
+        " ORDER BY id_mov_doble DESC LIMIT 100",
+    ) or []
+    out: list[dict] = []
+    for r in rows:
+        md = r.get("metadata") or {}
+        if isinstance(md, str):
+            try:
+                md = _json.loads(md)
+            except Exception:  # noqa: BLE001
+                md = {}
+        if (md.get("codigo_cli") or "").strip().upper() != codigo_cli:
+            continue
+        out.append({
+            "id_evento": int(r["id_mov_doble"]),
+            "fecha": r.get("fecha_operacion"),
+            "concepto": r.get("concepto"),
+            "importe": float(r.get("importe") or 0),
+            "n_cheques": len(md.get("cheques") or []),
+            "n_anticipos": len(md.get("anticipos") or []),
+            "id_residuo": md.get("id_residuo"),
+        })
+    return out
+
+
+def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dict:
+    """DESHACE un neteo (evento `neteo_estado_cuenta`) restaurando el estado
+    PREVIO exacto, en una sola tx:
+
+      1. Anula el saldo a favor residual que el neteo hubiera creado.
+      2. Reactiva los anticipos (X → stat previo).
+      3. Reactiva los cheques (X → stat previo) + recrea la posdat hermana que
+         `cancelar_por_anticipo` había borrado.
+      4. Re-aplica los cheques a las facturas de las que se desaplicaron
+         (recomputa abono/saldo/stat de la factura).
+      5. Marca el batch del neteo como reversado y registra el reverso del
+         evento (→ el evento queda `reversado`, no vuelve a aparecer).
+
+    Guard conservador (TMT 2026-07-21, dueña): si algo cambió DESPUÉS del neteo
+    —algún cheque/anticipo ya no está en 'X', o el residuo ya se aplicó a una
+    factura— aborta con un ValueError claro en vez de pisar los cambios
+    posteriores. Todo por la UI (estado de cuenta), reproducible.
+    """
+    import json as _json
+    codigo_cli = (codigo_cli or "").strip().upper()
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+    with db.tx() as conn:
+        ev = db.fetch_one(
+            "SELECT id_mov_doble, tipo, estado, importe, metadata, batch_id "
+            "  FROM scintela.mov_doble WHERE id_mov_doble=%s FOR UPDATE",
+            (id_evento,), conn=conn,
+        )
+        if not ev or ev.get("tipo") != "neteo_estado_cuenta":
+            raise ValueError("Ese neteo no existe.")
+        if (ev.get("estado") or "") != "activo":
+            raise ValueError("Ese neteo ya fue deshecho.")
+        md = ev.get("metadata") or {}
+        if isinstance(md, str):
+            try:
+                md = _json.loads(md)
+            except Exception:  # noqa: BLE001
+                md = {}
+        if (md.get("codigo_cli") or "").strip().upper() != codigo_cli:
+            raise ValueError("Ese neteo es de otro cliente.")
+
+        snap_cheques = md.get("cheques") or []
+        snap_anticipos = md.get("anticipos") or []
+        id_residuo = md.get("id_residuo")
+
+        # --- Guards: nada tocado después del neteo ---
+        for sc in snap_cheques:
+            row = db.fetch_one(
+                "SELECT stat FROM scintela.cheque WHERE id_cheque=%s FOR UPDATE",
+                (sc["id"],), conn=conn)
+            if not row:
+                raise ValueError(f"El cheque #{sc['id']} ya no existe.")
+            if (row.get("stat") or "").strip().upper() != "X":
+                raise ValueError(
+                    f"El cheque #{sc['id']} ya no está anulado "
+                    f"(stat={row.get('stat')}). Deshacé los cambios posteriores "
+                    "antes de deshacer el neteo.")
+        for sa in snap_anticipos:
+            row = db.fetch_one(
+                "SELECT stat FROM scintela.cheque WHERE id_cheque=%s FOR UPDATE",
+                (sa["id"],), conn=conn)
+            if not row:
+                raise ValueError(f"El anticipo #{sa['id']} ya no existe.")
+            if (row.get("stat") or "").strip().upper() != "X":
+                raise ValueError(
+                    f"El anticipo #{sa['id']} ya no está anulado. Deshacé los "
+                    "cambios posteriores primero.")
+        if id_residuo:
+            aps = db.fetch_all(
+                "SELECT 1 FROM scintela.chequesxfact WHERE id_cheque=%s LIMIT 1",
+                (id_residuo,), conn=conn) or []
+            if aps:
+                raise ValueError(
+                    "El saldo a favor residual que dejó el neteo ya se aplicó a "
+                    "una factura; no puedo deshacerlo automáticamente. Desaplicá "
+                    "eso primero.")
+
+        import mov_doble as _md
+
+        # --- 1. Anular el espejo residuo (si sigue vivo) ---
+        if id_residuo:
+            db.execute(
+                "UPDATE scintela.cheque SET stat='X', fechaout=%s, "
+                "  observacion=RIGHT(COALESCE(observacion||' | ','')||%s,200), "
+                "  usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                " WHERE id_cheque=%s AND stat<>'X'",
+                (fecha, "[X] deshecho neteo (saldo a favor residual)", usuario,
+                 id_residuo), conn=conn)
+
+        # --- 2. Reactivar anticipos (X → stat previo) ---
+        for sa in snap_anticipos:
+            db.execute(
+                "UPDATE scintela.cheque SET stat=%s, fechaout=NULL, "
+                "  observacion=RIGHT(COALESCE(observacion||' | ','')||%s,200), "
+                "  usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                " WHERE id_cheque=%s",
+                ((sa.get("stat_prev") or "Z"),
+                 "[deshacer neteo] anticipo reactivado", usuario, sa["id"]),
+                conn=conn)
+
+        # --- 3. Reactivar cheques + recrear posdat hermana ---
+        for sc in snap_cheques:
+            db.execute(
+                "UPDATE scintela.cheque SET stat=%s, fechaout=NULL, "
+                "  observacion=RIGHT(COALESCE(observacion||' | ','')||%s,200), "
+                "  usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                " WHERE id_cheque=%s",
+                ((sc.get("stat_prev") or "Z"),
+                 "[deshacer neteo] cheque reactivado", usuario, sc["id"]),
+                conn=conn)
+            for p in (sc.get("posdat") or []):
+                existe = db.fetch_one(
+                    "SELECT 1 FROM scintela.posdat "
+                    " WHERE COALESCE(banc,0)=0 AND num=%s AND prov=%s LIMIT 1",
+                    (p.get("num") or sc["id"], p.get("prov") or codigo_cli),
+                    conn=conn)
+                if existe:
+                    continue
+                db.execute(
+                    "INSERT INTO scintela.posdat "
+                    "  (fecha, fechad, prov, num, importe, concepto, banc, "
+                    "   usuario_crea) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,0,%s)",
+                    (p.get("fecha") or fecha.isoformat(), p.get("fechad"),
+                     p.get("prov") or codigo_cli, p.get("num") or sc["id"],
+                     p.get("importe") or 0, (p.get("concepto") or "")[:50],
+                     usuario), conn=conn)
+
+        # --- 4. Re-aplicar cheques a sus facturas ---
+        for sc in snap_cheques:
+            ch = db.fetch_one(
+                "SELECT no_banco FROM scintela.cheque WHERE id_cheque=%s",
+                (sc["id"],), conn=conn) or {}
+            for ap in (sc.get("aplicaciones") or []):
+                idf = int(ap["id_factura"])
+                imp = round(float(ap.get("importe") or 0), 2)
+                if imp <= 0:
+                    continue
+                ya = db.fetch_one(
+                    "SELECT 1 FROM scintela.chequesxfact "
+                    " WHERE id_cheque=%s AND id_fact=%s LIMIT 1",
+                    (sc["id"], idf), conn=conn)
+                if ya:
+                    continue
+                f = db.fetch_one(
+                    "SELECT importe, abono FROM scintela.factura "
+                    " WHERE id_factura=%s FOR UPDATE", (idf,), conn=conn)
+                if not f:
+                    continue
+                nuevo_abono = round(float(f.get("abono") or 0) + imp, 2)
+                nuevo_saldo = round(float(f.get("importe") or 0) - nuevo_abono, 2)
+                nuevo_stat = "T" if nuevo_saldo <= 0.01 else "A"
+                db.execute(
+                    "UPDATE scintela.factura SET abono=%s, saldo=%s, stat=%s, "
+                    "  usuario_modifica=%s WHERE id_factura=%s",
+                    (nuevo_abono, nuevo_saldo, nuevo_stat, usuario, idf),
+                    conn=conn)
+                db.execute(
+                    "INSERT INTO scintela.chequesxfact "
+                    "  (id_cheque,id_fact,fechaing,codigo_cli,importe,no_banco,"
+                    "   abono_f,saldo_f,stat_f,usuario_crea) "
+                    "VALUES (%s,%s,CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s)",
+                    (sc["id"], idf, codigo_cli, imp, int(ch.get("no_banco") or 0),
+                     nuevo_abono, nuevo_saldo, nuevo_stat, usuario), conn=conn)
+                _md.registrar(
+                    conn=conn, tipo="cheque_aplicado_a_factura",
+                    origen_table="cheque", origen_id=sc["id"],
+                    destino_table="factura", destino_id=idf,
+                    importe=imp, fecha=fecha,
+                    concepto=(
+                        f"RE-APLICADO (deshacer neteo) ch#{sc['id']} → "
+                        f"factura #{ap.get('numf') or idf}")[:200],
+                    usuario=usuario)
+
+        # --- 5. Marcar el batch reversado + reverso del evento ---
+        if ev.get("batch_id"):
+            db.execute(
+                "UPDATE scintela.mov_doble SET estado='reversado' "
+                " WHERE batch_id=%s AND estado='activo' AND id_mov_doble<>%s",
+                (ev["batch_id"], id_evento), conn=conn)
+        _ids_ant = md.get("ids_anticipos") or []
+        _ids_ch = md.get("ids_cheques") or []
+        _md.registrar(
+            conn=conn, tipo="neteo_deshecho",
+            origen_table="cheque",
+            origen_id=(_ids_ant[0] if _ids_ant else id_evento),
+            destino_table="cheque",
+            destino_id=(_ids_ch[0] if _ids_ch else id_evento),
+            importe=float(ev.get("importe") or 0) or 1.0, fecha=fecha,
+            concepto=f"DESHECHO neteo {codigo_cli} (evento #{id_evento})"[:200],
+            usuario=usuario, id_original=id_evento)
+
+    return {
+        "id_evento": id_evento,
+        "n_cheques": len(snap_cheques),
+        "n_anticipos": len(snap_anticipos),
+        "id_residuo": id_residuo,
     }
