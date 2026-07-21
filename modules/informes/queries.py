@@ -4569,11 +4569,26 @@ def informe_balance() -> dict:
     # tintura_service.stock_colorante_fisico (POLI+ALG, sin AUX, ≈ 338). Que
     # salga de acá y no se recalcule → el químico es idéntico en balance y flujo.
     # Dueña 2026-07-13: "stock quimicos idem que hilado, la variable del flujo".
+    # Dueña 2026-07-21: "Stock Quí." pasa a mostrar el químico TOTAL (POLI+ALG+AUX
+    # = lo que muestra formulas_app, ~417) en vez de solo colorante (~356). Para
+    # que la UTILIDAD no se mueva (regla dueña: "no cambia la utilidad si lo
+    # agarrás bien / en las dos puntas"), el incremento por incluir los auxiliares
+    # se ACREDITA también a la apertura (patant) — así el colorante se sigue
+    # tratando igual que siempre y el aux queda simétrico en las dos puntas.
+    # `_quim_increment` = total − colorante; se resta en la utilidad más abajo.
+    _quim_increment = 0.0
     try:
         from modules.tintura import service as _tsvc_q
         _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
         if _vqx_col > 0:
-            vqx = _vqx_col
+            vqx = _vqx_col   # base histórica de la utilidad (colorante)
+        # TOTAL (incluye auxiliares) = mismo número que el flujo / formulas.
+        from modules.informes.quimico_inv_formulas import quimico_total_fisico
+        _vqx_tot = quimico_total_fisico(today_ec())
+        if _vqx_tot is not None and _vqx_tot > 0:
+            _base_col = _vqx_col if _vqx_col > 0 else float(vqx or 0)
+            _quim_increment = float(_vqx_tot) - _base_col
+            vqx = float(_vqx_tot)   # DISPLAY: Stock Quí. = químico total
     except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
         pass
 
@@ -4591,7 +4606,11 @@ def informe_balance() -> dict:
     # estaba frenada → hundía la utilidad (mostraba 54.853 en vez de ~174k).
     # Con una sola fuente de stock, patrimonio y utilidad quedan coherentes.
     # (vsto_dbase se sigue calculando sólo para el diagnóstico stock_revaluacion.)
-    utilidad = patr - patant
+    # `_quim_increment` neutraliza el efecto de mostrar el químico TOTAL (con aux)
+    # en vez de solo colorante: patr subió ese incremento vía vqx, así que se lo
+    # sumamos también a patant → la utilidad queda IDÉNTICA a la base colorante
+    # (dueña 2026-07-21: mostrar el total sin mover la utilidad).
+    utilidad = patr - (patant + _quim_increment)
     patr_para_utilidad = patr
 
     # ─── SYNC del diagnostico tras el override de vsto ───
