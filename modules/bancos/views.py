@@ -1223,6 +1223,103 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
     )
 
 
+@bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/clasificar-gasto",
+                 methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def clasificar_gasto(no_banco: int, id_transaccion: int):
+    """Clasifica un movimiento de banco EXISTENTE (CH/ND/DB, salida) como
+    gasto V1..V9: crea el xgast YA PAGADO (saldo=0, stat 'C') SIN tocar
+    banco ni caja — la plata ya salió con este mismo movimiento.
+
+    TMT 2026-07-21 (dueña, casos TOSAVA 216 y QUIMSERTEC 2184): el pago
+    salió del banco (el mov existe) pero el cuadro V1..V9 no lo veía porque
+    no había xgast, y /gastos/nuevo "contado" saca de CAJA (que acá el dBase
+    no tocó). Este botón es la pieza que faltaba: banco → xgast directo.
+    Guard anti-doble: si ya hay un xgast con la misma (fecha, importe) creado
+    desde este mismo movimiento, avisa y no duplica.
+    """
+    import db as _db
+
+    tx = _db.fetch_one(
+        "SELECT id_transaccion, no_banco, fecha, documento, importe, concepto "
+        "  FROM scintela.transacciones_bancarias "
+        " WHERE id_transaccion = %s AND no_banco = %s",
+        (id_transaccion, no_banco),
+    )
+    if not tx:
+        abort(404)
+    doc = (tx.get("documento") or "").strip().upper()
+    if doc not in ("CH", "ND", "DB"):
+        flash("Solo se clasifican salidas (CH/ND/DB) como gasto.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    num = parse_int(request.form.get("num"))
+    if not num or not (1 <= num <= 9):
+        flash("Elegí la categoría del gasto (V1..V9).", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    concepto = (request.form.get("concepto") or "").strip() or (tx.get("concepto") or "").strip()
+    prov = (request.form.get("prov") or "").strip().upper()[:5] or None
+    importe = abs(float(tx.get("importe") or 0))
+    if importe <= 0:
+        flash("El movimiento no tiene importe.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+    usuario = (g.user or {}).get("username", "web")
+
+    ya = _db.fetch_one(
+        "SELECT id_xgast FROM scintela.xgast "
+        " WHERE fecha = %s AND importe = %s "
+        "   AND concepto LIKE %s LIMIT 1",
+        (tx.get("fecha"), importe, f"%[tx{id_transaccion}]%"),
+    )
+    if ya:
+        flash(f"Este movimiento ya está clasificado (gasto #{ya['id_xgast']}).", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    try:
+        import db as _db2
+        with _db2.tx() as conn:
+            row = _db2.execute_returning(
+                """
+                INSERT INTO scintela.xgast
+                    (fecha, doc, prov, concepto, importe, saldo, stat,
+                     fechad, usuario_crea, num)
+                VALUES (%s, %s, %s, %s, %s, 0, 'C', %s, %s, %s)
+                RETURNING id_xgast
+                """,
+                (
+                    tx.get("fecha"), doc, prov,
+                    (concepto + f" [tx{id_transaccion}]")[:100],
+                    importe, tx.get("fecha"), usuario[:50], num,
+                ),
+                conn=conn,
+            )
+            id_xgast = (row or {}).get("id_xgast")
+            import mov_doble as _md
+            _md.registrar(
+                conn=conn,
+                tipo="banco_clasificado_gasto",
+                origen_table="transacciones_bancarias",
+                origen_id=id_transaccion,
+                destino_table="xgast",
+                destino_id=id_xgast,
+                importe=importe,
+                fecha=tx.get("fecha"),
+                concepto=(f"Gasto V{num} desde banco: {concepto}")[:200],
+                usuario=usuario,
+                metadata={"no_banco": no_banco, "num": num},
+            )
+        flash(
+            f"Gasto #{id_xgast} V{num} creado desde el movimiento de banco "
+            f"({concepto[:40]} · $ {importe:,.2f}) — sin tocar banco ni caja.",
+            "ok",
+        )
+    except Exception as e:
+        flash_exc("No pude clasificar el movimiento como gasto", e)
+    return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+
 # ---------------------------------------------------------------------------
 # Nuevo movimiento simple (DE / NC / ND) — TMT 2026-05-19 (pedido dueña).
 # Una vista genérica con un parámetro `doc` que decide el tipo. Reutiliza
