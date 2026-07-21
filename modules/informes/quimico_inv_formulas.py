@@ -107,6 +107,7 @@ SELECT p.num,
        p.num_visible,
        p.familia,
        p.nombre,
+       p.unidad                   AS unidad,
        p.us                       AS us,
        ct.f                       AS conteo_f,
        COALESCE(ct.q, 0)          AS conteo_q,
@@ -176,6 +177,7 @@ def quimico_final_por_tipo(corte: date | None = None, detalle: bool = False) -> 
         if detalle:
             filas.append({
                 "num": num, "num_visible": num_visible, "tipo": tipo,
+                "familia": familia, "unidad": (str(r.get("unidad") or "")),
                 "nombre": (str(r.get("nombre") or "")), "us": us,
                 "conteo_f": str(conteo_f) if conteo_f is not None else None,
                 "conteo_q": round(conteo_q, 3),

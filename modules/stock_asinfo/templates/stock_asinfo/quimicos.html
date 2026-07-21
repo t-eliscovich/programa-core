@@ -129,7 +129,7 @@
               {% if r.precio_us %}{{ r.precio_us | num_es(4) }}{% else %}—{% endif %}
             </td>
             <td class="num {% if not r.precio_us %}muted{% endif %}">
-              {% if r.precio_us %}$ {{ (r.stock_al_dia_kg * r.precio_us) | num_es(2) }}{% else %}—{% endif %}
+              {% if r.precio_us %}$ {{ r.valor_us | num_es(2) }}{% else %}—{% endif %}
             </td>
             <td class="text-slate-500 text-xs">
               {% if r.fecha_lectura %}{{ r.fecha_lectura.strftime('%d/%m/%Y') }}{% else %}—{% endif %}

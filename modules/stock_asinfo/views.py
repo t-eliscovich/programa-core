@@ -29,20 +29,32 @@ stock_asinfo_bp = Blueprint(
 @requiere_login
 @requiere_permiso("tintura.ver")
 def quimicos():
-    """Stock de químicos desde formulas_app (modules/tintura/service).
+    """Stock de químicos desde formulas_app — MISMA cuenta que el balance/flujo.
 
-    Replica la lógica de stock_al_dia: última lectura de inventario por
-    producto, ± ajustes, + compras, − consumo (de órdenes terminadas).
-    Es la fuente confiable de químicos — no Asinfo, que solo tiene 55K kg
-    (vs ~396K kg reales en formulas_app/PC).
+    Dueña 2026-07-21: esta pantalla usaba la réplica vieja (stock_quimicos_al_dia,
+    ~412) y valuaba SIN IVA, así que su total no coincidía con el "Stock Quí." del
+    balance. Ahora usa quimico_inv_formulas (réplica exacta de formulas, c/JSONB +
+    A44/10) valuada c/IVA → el total da los mismos ~416 que balance/flujo.
     """
+    from types import SimpleNamespace
+
     from filters import today_ec
     error = None
     rows = []
     fecha_corte = today_ec()
     try:
-        from modules.tintura import service as tintura
-        rows = tintura.stock_quimicos_al_dia(fecha_corte)
+        from modules.informes.quimico_inv_formulas import quimico_final_por_tipo
+        _det = quimico_final_por_tipo(fecha_corte, detalle=True) or {}
+        for f in (_det.get("filas") or []):
+            rows.append(SimpleNamespace(
+                num=f["num"], num_visible=f["num_visible"],
+                familia=f.get("familia") or "", nombre=f.get("nombre") or "",
+                unidad=f.get("unidad") or "",
+                stock_al_dia_kg=float(f.get("final") or 0),
+                precio_us=float(f.get("us") or 0),
+                valor_us=float(f.get("monto_iva") or 0),   # c/IVA (= balance)
+                fecha_lectura=None,
+            ))
     except Exception as e:  # noqa: BLE001
         error = str(e)
 
@@ -66,7 +78,7 @@ def quimicos():
 
     total_productos = len(rows_con_stock)
     total_kg = sum(r.stock_al_dia_kg for r in rows_con_stock)
-    total_us = sum(r.stock_al_dia_kg * r.precio_us for r in rows_con_stock)
+    total_us = sum(r.valor_us for r in rows_con_stock)   # c/IVA = balance
 
     # Distribución por familia
     por_familia: dict[str, dict] = {}
@@ -75,7 +87,7 @@ def quimicos():
         slot = por_familia.setdefault(f, {"n": 0, "kg": 0.0, "us": 0.0})
         slot["n"] += 1
         slot["kg"] += r.stock_al_dia_kg
-        slot["us"] += r.stock_al_dia_kg * r.precio_us
+        slot["us"] += r.valor_us
     distribucion = sorted(por_familia.items(), key=lambda kv: -kv[1]["us"])
 
     if request.args.get("export") == "csv":
@@ -87,7 +99,7 @@ def quimicos():
                 "unidad": r.unidad,
                 "stock_kg": round(r.stock_al_dia_kg, 3),
                 "precio_us": round(r.precio_us, 4),
-                "valor_us": round(r.stock_al_dia_kg * r.precio_us, 2),
+                "valor_us": round(r.valor_us, 2),
                 "fecha_lectura": (
                     r.fecha_lectura.isoformat() if r.fecha_lectura else ""
                 ),
