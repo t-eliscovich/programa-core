@@ -3648,13 +3648,6 @@ def resultados_costos_tabla(
         ct_ukg = sub_ukg + adm_ukg
         ct_us = float(mp_us or 0) + tej_us + tin_us + col_us + adm_us
 
-    # Utilidad NO ESTANDARIZADA = Venta − Costo Total (operativa pura), en $
-    # REALES. Coherente con el Costo Total que ahora es la suma de los renglones
-    # ($ gastados). Antes usaba (precio − ct_ukg)×kg con el $/kg estándar, que
-    # daba un negativo enorme y engañoso. $/kg = $ / kg vendidos. Dueña 2026-07-12.
-    ue_us = float(venta_us or 0) - ct_us
-    ue_ukg = _div(ue_us, venta_kg)
-
     # Utilidad REAL — fórmula original: ur = (patr - patant) + uret
     # = delta patrimonio + dividendos del mes (la cuenta económica completa
     # que incluye revalúo de stock, cambios de cartera, etc.).
@@ -3756,11 +3749,6 @@ def resultados_costos_tabla(
                    "+ margen variable × kg que faltan vender para la meta KPROG "
                    "− gastos fijos PROYECTADOS que faltan (XPRETOT de Iniciales − "
                    "lo ya gastado) − provisión pendiente del mes.")},
-        {"label": "Utilidad no estandarizada", "kg": venta_kg, "ukg": ue_ukg,
-         "us": ue_us, "clase": "dato",
-         "ayuda": ("Venta − Costo Total — utilidad operativa pura. Sólo usa "
-                   "los componentes visibles en esta tabla, sin patrimonio "
-                   "ni dividendos.")},
     ]
 
 
