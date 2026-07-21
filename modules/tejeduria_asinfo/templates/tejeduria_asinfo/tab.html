@@ -76,7 +76,10 @@
     {% set terc_kg = data.tejedores | selectattr('es_intela', 'equalto', false) | sum(attribute='kg') %}
     {% set intela_kg = data.tejedores | selectattr('es_intela', 'equalto', true) | sum(attribute='kg') %}
     <div class="kpis">
-      <div class="kpi"><div class="l">Total tela cruda</div><div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
+      {# TMT 2026-07-20 (dueña/Federico: "¿es stock o producción?"): es la
+         PRODUCCIÓN INGRESADA a bodega 52 en el mes — la misma cifra que el
+         flujo muestra como Ingresos de tela cruda. No es stock ni OFs. #}
+      <div class="kpi"><div class="l">Total tela cruda{% if data.ajustado_a_bodega %} · ingresada a bodega en el mes{% endif %}</div><div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div>{% if data.ajustado_a_bodega %}<div class="muted" style="font-size:10px">= Ingresos crudo del flujo de producción</div>{% endif %}</div>
       <div class="kpi"><div class="l intela">INTELA · autoprod.</div><div class="v">{{ intela_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
       <div class="kpi"><div class="l terc">Tercerizados</div><div class="v">{{ terc_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
     </div>
@@ -111,7 +114,16 @@
       </tbody>
     </table>
 
-    <h2>Diario · OFs cerradas (kg)</h2>
+    <h2>Diario · OFs cerradas (kg) <span class="muted" style="font-weight:normal; font-size:11px">— por fecha de CIERRE de la OF (control diario; no es el ingreso a bodega)</span></h2>
+    {% if data.ajustado_a_bodega and (data.total_kg_of - data.total_kg)|abs > 1 %}
+    <p class="note" style="margin:4px 0 6px;">
+      OFs cerradas en el mes: <strong>{{ data.total_kg_of|num_es }}</strong> kg ·
+      ingresado a bodega: <strong>{{ data.total_kg|num_es }}</strong> kg ·
+      Δ {{ (data.total_kg_of - data.total_kg)|num_es }} kg — las OFs se cierran en
+      tandas, y una OF cerrada este mes puede tener tela que ingresó a bodega en
+      otro mes (y viceversa).
+    </p>
+    {% endif %}
     <table>
       <thead>
         <tr><th>Día</th>
