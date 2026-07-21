@@ -1000,12 +1000,22 @@ def historico_eliminar_ultima():
         return jsonify({"ok": False, "error": f"No pude eliminar: {e}"}), 500
 
 
-@informes_bp.route("/quimico-inv-debug")
+_QUIM_TIPO_LABEL = {
+    "aux": "Auxiliares", "poli": "Colorantes poliéster",
+    "alg": "Colorantes algodón", "otros": "Otros",
+}
+
+
+@informes_bp.route("/quimico-auditoria")
+@informes_bp.route("/quimico-inv-debug")  # alias viejo (era ruta de diagnóstico)
 @requiere_login
-@requiere_permiso("informes.ver")
-def quimico_inv_debug():
-    """Verificación: químico FINAL por tipo replicando formulas_app.
-    Compará con "TOTALES POR TIPO · FINAL" de formulas (aux/poli/alg/total)."""
+@requiere_permiso("tintura.ver")
+def quimico_auditoria():
+    """Auditoría del cálculo del químico — réplica EXACTA del inventario de
+    formulas_app. Muestra, por producto, cómo se arma el stock: último conteo +
+    compras + ajustes − consumo (con A44 /10, SAL exenta), valuado c/IVA. Es el
+    MISMO número que 'Stock Quí.' del balance y el QUÍM del flujo. Con ?json=1
+    devuelve JSON (para verificar contra formulas)."""
     from datetime import date as _d
     from datetime import timedelta as _td
 
@@ -1013,7 +1023,6 @@ def quimico_inv_debug():
     hoy = today_ec()
     cierre = _d(hoy.year, hoy.month, 1) - _td(days=1)
     det = quimico_final_por_tipo(hoy, detalle=True) or {}
-    tipo_q = request.args.get("tipo")  # aux|poli|alg para ver el detalle
     todas = det.get("filas") or []
     comp_por_tipo: dict = {}
     for f in todas:
@@ -1026,15 +1035,29 @@ def quimico_inv_debug():
         b["final_us"] += f.get("monto_iva") or 0
     comp_por_tipo = {k: {kk: round(vv, 2) for kk, vv in v.items()}
                      for k, v in comp_por_tipo.items()}
-    filas = [f for f in todas if f["tipo"] == tipo_q] if tipo_q else []
-    return jsonify({
-        "hoy": hoy.isoformat(),
-        "cierre_prev": cierre.isoformat(),
-        "final_hoy": {k: v for k, v in det.items() if k != "filas"},
-        "componentes_por_tipo": comp_por_tipo,
-        "final_cierre": quimico_final_por_tipo(cierre),
-        "detalle": filas,
-    })
+    tipo_q = (request.args.get("tipo") or "").strip().lower()
+
+    if request.args.get("json") == "1":
+        filas = [f for f in todas if f["tipo"] == tipo_q] if tipo_q else []
+        return jsonify({
+            "hoy": hoy.isoformat(), "cierre_prev": cierre.isoformat(),
+            "final_hoy": {k: v for k, v in det.items() if k != "filas"},
+            "componentes_por_tipo": comp_por_tipo,
+            "final_cierre": quimico_final_por_tipo(cierre),
+            "detalle": [f for f in todas if f["tipo"] == tipo_q] if tipo_q else todas,
+        })
+
+    filas = [f for f in todas if f["tipo"] == tipo_q] if tipo_q in _QUIM_TIPO_LABEL else todas
+    filas = sorted(filas, key=lambda x: -(x.get("monto_iva") or 0))
+    total = det.get("total") or 0
+    return render_template(
+        "informes/quimico_auditoria.html",
+        hoy=hoy, cierre=cierre,
+        totales={k: v for k, v in det.items() if k != "filas"},
+        comp_por_tipo=comp_por_tipo, tipo_labels=_QUIM_TIPO_LABEL,
+        filas=filas, tipo_sel=(tipo_q if tipo_q in _QUIM_TIPO_LABEL else ""),
+        total=total, n=len(filas),
+    )
 
 
 @informes_bp.route("/balance/utilidad-debug")

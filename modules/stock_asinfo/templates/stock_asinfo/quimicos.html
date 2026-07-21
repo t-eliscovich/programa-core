@@ -62,6 +62,9 @@
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
     <a href="{{ url_for('stock_asinfo.quimicos', q=q, familia=familia_filtro, export='csv') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+    <a href="{{ url_for('informes.quimico_auditoria') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50"
+       title="Ver cómo se calcula: conteo + compras + ajustes − consumo, por producto">Auditoría del cálculo</a>
   </form>
 
   {% if error %}

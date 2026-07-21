@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Químicos · auditoría del cálculo{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <a href="{{ url_for('stock_asinfo.quimicos') }}" class="hover:underline">Stock químicos</a> /
+  <strong>Auditoría</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .qa { font-variant-numeric: tabular-nums; }
+  .qa .kpi { background:#fff; border:1px solid rgb(226 232 240); border-radius:10px; padding:12px 16px; }
+  .qa .kpi-l { color:rgb(100 116 139); font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .qa .kpi-v { font-size:20px; font-weight:700; margin-top:4px; color:rgb(15 23 42); }
+  .qa table { border-collapse:collapse; width:100%; font-size:13px; }
+  .qa th { background:rgb(248 250 252); padding:6px 10px; font-size:11px; font-weight:600;
+           text-transform:uppercase; letter-spacing:.03em; color:rgb(71 85 105);
+           border-bottom:1px solid rgb(203 213 225); text-align:right; white-space:nowrap; }
+  .qa th.l { text-align:left; }
+  .qa td { padding:5px 10px; border-bottom:1px solid rgb(241 245 249); text-align:right;
+           font-family:ui-monospace, Menlo, monospace; white-space:nowrap; }
+  .qa td.l { text-align:left; font-family:inherit; }
+  .qa td.muted { color:rgb(148 163 184); }
+  .qa .neg { color:rgb(190 24 93); }
+  .qa .chip { background:rgb(241 245 249); border-radius:999px; padding:1px 8px; font-size:11px;
+              color:rgb(51 65 85); }
+  .qa tr.tot td { background:rgb(248 250 252); font-weight:700; color:rgb(30 64 175);
+                  border-top:2px solid rgb(203 213 225); }
+  .qa a.f { font-size:13px; padding:4px 12px; border-radius:8px; border:1px solid rgb(203 213 225);
+            color:rgb(51 65 85); text-decoration:none; }
+  .qa a.f.on { background:rgb(15 23 42); color:#fff; border-color:rgb(15 23 42); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full qa">
+
+  <div class="mb-3">
+    <h1 class="text-xl font-semibold">Químicos · auditoría del cálculo</h1>
+    <p class="text-xs text-slate-500 mt-1">
+      Réplica exacta del inventario de <strong>formulas_app</strong> al {{ hoy.strftime('%d/%m/%Y') }}.
+      Por producto: <strong>último conteo + compras + ajustes − consumo</strong> (A44 /10, SAL sin IVA),
+      valuado c/IVA. Es el <strong>mismo número</strong> que “Stock Quí.” del balance y el QUÍM del flujo.
+    </p>
+  </div>
+
+  {# KPIs por tipo #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="kpi"><div class="kpi-l">Total químico</div>
+      <div class="kpi-v">$ {{ totales.total | num_es(0) }}</div></div>
+    <div class="kpi"><div class="kpi-l">Auxiliares</div>
+      <div class="kpi-v">$ {{ totales.aux | num_es(0) }}</div></div>
+    <div class="kpi"><div class="kpi-l">Colorantes poliéster</div>
+      <div class="kpi-v">$ {{ totales.poli | num_es(0) }}</div></div>
+    <div class="kpi"><div class="kpi-l">Colorantes algodón</div>
+      <div class="kpi-v">$ {{ totales.alg | num_es(0) }}</div></div>
+  </div>
+
+  {# Filtros por tipo #}
+  <div class="flex items-center gap-2 mb-3 flex-wrap">
+    <a class="f {% if not tipo_sel %}on{% endif %}" href="{{ url_for('informes.quimico_auditoria') }}">Todos</a>
+    {% for k, lbl in tipo_labels.items() if k != 'otros' %}
+      <a class="f {% if tipo_sel == k %}on{% endif %}"
+         href="{{ url_for('informes.quimico_auditoria', tipo=k) }}">{{ lbl }}</a>
+    {% endfor %}
+    <span class="text-xs text-slate-400 ml-1">{{ n }} productos</span>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th class="l">Producto</th>
+          <th class="l">Familia</th>
+          <th>Conteo (kg)</th>
+          <th class="l">Fecha</th>
+          <th>+ Compras</th>
+          <th>+ Ajuste</th>
+          <th>− Consumo</th>
+          <th>= Final (kg)</th>
+          <th>$/kg</th>
+          <th>Valor c/IVA</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+          <tr>
+            <td class="l">{{ f.nombre }}{% if f.a44 %} <span class="chip">/10</span>{% endif %}</td>
+            <td class="l">{% if f.familia %}<span class="chip">{{ f.familia }}</span>{% endif %}</td>
+            <td>{{ f.conteo_q | num_es(1) }}</td>
+            <td class="l muted">{{ f.conteo_f or '—' }}</td>
+            <td class="{% if not f.comp_q %}muted{% endif %}">{{ f.comp_q | num_es(1) if f.comp_q else '—' }}</td>
+            <td class="{% if not f.aju_q %}muted{% endif %}{% if f.aju_q < 0 %} neg{% endif %}">{{ f.aju_q | num_es(1) if f.aju_q else '—' }}</td>
+            <td class="{% if not f.cons_q %}muted{% endif %}">{{ f.cons_q | num_es(1) if f.cons_q else '—' }}</td>
+            <td>{{ f.final | num_es(1) }}</td>
+            <td class="muted">{{ f.us | num_es(4) }}</td>
+            <td>$ {{ f.monto_iva | num_es(2) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="10" class="l muted" style="text-align:center; padding:24px">Sin datos.</td></tr>
+        {% endfor %}
+        {% if filas %}
+          <tr class="tot">
+            <td class="l">TOTAL{% if tipo_sel %} · {{ tipo_labels[tipo_sel] }}{% endif %}</td>
+            <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+            <td>$ {{ filas | sum(attribute='monto_iva') | num_es(2) }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    <strong>Cómo se calcula:</strong> para cada producto se toma el <strong>último conteo físico</strong>
+    (≤ hoy) y se le suman las <strong>compras</strong> y <strong>ajustes</strong> y se le resta el
+    <strong>consumo</strong> de las órdenes terminadas desde ese conteo (el consumo incluye los ajustes
+    de dosis de cada orden; el A44 va /10 por las escamas 10x). Se valúa a precio de catálogo c/IVA
+    (15%; la SAL exenta). El total es idéntico al “TOTALES POR TIPO · FINAL” de formulas_app.
+  </p>
+</div>
+{% endblock %}
