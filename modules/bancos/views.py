@@ -752,8 +752,26 @@ def movimientos(no_banco):
         filas, banco, error = [], None, str(e)
 
     if request.args.get("export") == "csv" and filas:
+        # TMT 2026-07-21 (dueña): las claves no existían en las filas
+        # (tipo/referencia/descripcion/debito/credito) → el CSV salía con
+        # esas columnas VACÍAS. Mapeamos desde las claves reales y partimos
+        # el importe en Débito/Crédito según el documento.
+        _DOCS_SALIDA = ("CH", "ND", "DB")
+        filas_csv = []
+        for r in filas:
+            _doc = (r.get("documento") or "").strip().upper()
+            _imp = abs(float(r.get("importe") or 0))
+            filas_csv.append({
+                "fecha": r.get("fecha"),
+                "tipo": _doc,
+                "referencia": r.get("numreferencia") or "",
+                "descripcion": r.get("concepto") or "",
+                "debito": _imp if _doc in _DOCS_SALIDA else None,
+                "credito": _imp if _doc not in _DOCS_SALIDA else None,
+                "saldo": r.get("saldo"),
+            })
         return csv_response(
-            filas,
+            filas_csv,
             columnas=[
                 ("fecha", "Fecha"),
                 ("tipo", "Tipo"),
@@ -1492,9 +1510,13 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
     """
     import db as _db
 
+    # TMT 2026-07-21 (dueña): la columna se llama fecha_operacion — el
+    # SELECT con `fecha` tiraba UndefinedColumn → 500 en GET y POST (el
+    # reverso de movimientos simples estuvo roto desde el día 1).
     md = _db.fetch_one(
         """
-        SELECT id_mov_doble, tipo, origen_id, importe, fecha, concepto, estado
+        SELECT id_mov_doble, tipo, origen_id, importe,
+               fecha_operacion AS fecha, concepto, estado
           FROM scintela.mov_doble
          WHERE id_mov_doble = %s
         """,
@@ -1552,7 +1574,7 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
         detalle_registro={
             "Tipo": tipo_legible,
             "Banco": tx.get("banco_nombre", "") if tx else "",
-            "Importe": f"$ {md.get('importe', 0):.2f}",
+            "Importe": f"$ {float(md.get('importe') or 0):,.2f}",
             "Concepto": md.get("concepto") or "(sin concepto)",
             "Fecha": md.get("fecha"),
         },

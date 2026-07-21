@@ -1477,10 +1477,12 @@ def reversar_movimiento_simple(
     if not id_mov_doble:
         raise ValueError("id_mov_doble requerido.")
 
+    # TMT 2026-07-21: la columna se llama fecha_operacion (no `fecha`) — el
+    # SELECT viejo tiraba UndefinedColumn y el reverso nunca pudo correr.
     md_orig = db.fetch_one(
         """
         SELECT id_mov_doble, tipo, origen_id, destino_id, importe,
-               fecha, concepto, metadata, estado
+               fecha_operacion AS fecha, concepto, metadata, estado
           FROM scintela.mov_doble
          WHERE id_mov_doble = %s
         """,
