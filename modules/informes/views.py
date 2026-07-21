@@ -536,15 +536,17 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             # con filas nombradas, todo a precio de catálogo c/IVA:
             #   Stock inic. = físico al último día del mes ANTERIOR
             #   Ingresos    = entradas REALES a bodega (formulas.compras)
-            #   Ajustes     = ajustes de inventario del mes (±, con detalle)
             #   Egresos     = consumo de órdenes TERMINADAS en el mes
             #                 (fecha_terminado — criterio contable: el químico
             #                 se descuenta al terminar la orden, igual que los
             #                 kg y el costo)
             #   Stock act.  = físico al día de hoy
             # "En máquinas" DESAPARECE (dueña: "si no suma en ningún lado no
-            # la muestres") y el "Ajuste de arranque" también — el residuo
-            # físico − libro queda solo en el chequeo de coherencia.
+            # la muestres"), el "Ajuste de arranque" también, y la fila
+            # "Ajustes inventario" se BORRÓ (dueña 2026-07-21 segunda pasada:
+            # "tenemos que borrar la fila ajustes") — los ajustes que la
+            # planta registre quedan dentro del residuo físico − libro que
+            # vigila el chequeo de coherencia (⚠ si supera el 1%).
             _b_ini = _q_fisico_total(_corte_ini)
             _b_ent = _q_entradas(int(anio), int(mes))
             _b_aj = _q_ajustes(int(anio), int(mes))
@@ -552,20 +554,22 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             _b_fis = _q_fisico_total(_corte_fin)
 
             if None not in (_b_ini, _b_ent, _b_aj, _b_cons, _b_fis):
+                # El libro visible es lo que el usuario puede sumar en la
+                # banda: inicial + entradas − consumo (SIN ajustes — la fila
+                # se borró; van al residuo del chequeo).
                 _b_libro = (_b_ini + float(_b_ent.get("us") or 0)
-                            + float(_b_aj.get("us") or 0)
                             - float(_b_cons.get("us") or 0))
                 quimicos_modelo = {
                     "modelo": "formulas",
                     "inicial": _b_ini,
                     "compras": float(_b_ent.get("us") or 0),
                     "compras_n": int(_b_ent.get("n") or 0),
+                    # referencia para auditar el residuo (no se muestra):
                     "ajustes_inv": float(_b_aj.get("us") or 0),
                     "ajustes_inv_n": int(_b_aj.get("n") or 0),
-                    "ajustes_detalle": list(_b_aj.get("detalle") or []),
                     "egresos": float(_b_cons.get("us") or 0),
                     "en_maquinas": 0.0,
-                    "final_prog": _b_libro,          # inicial+entradas±ajustes−consumo
+                    "final_prog": _b_libro,          # inicial+entradas−consumo
                     "final_form": _b_fis,            # físico al día
                     "ajuste": _b_fis - _b_libro,     # residuo del cierre (chequeo)
                     "facturado_prog": _compras_prog,
@@ -631,19 +635,14 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
 
     # COLUMNA QUÍM.$ de la tabla de movimientos.
     if quimicos_modelo and quimicos_modelo.get("modelo") == "formulas":
-        # Banda formulas (dueña 2026-07-21): 5 filas que cierran a cero.
-        # "Ajustes inventario" reemplaza al "Ajuste de arranque"; "En máquinas"
-        # no se muestra (—).
+        # Banda formulas (dueña 2026-07-21): 4 filas — Stock inic. / Ingresos /
+        # Egresos / Stock act. Sin "Ajustes inventario" (dueña: "tenemos que
+        # borrar la fila ajustes"), sin "En máquinas" y sin "Ajuste de
+        # arranque"; el residuo vive en el chequeo de coherencia.
         co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
         co["ingresos_n"] = int(quimicos_modelo.get("compras_n") or 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
-        co["ajustes_inv_us"] = round(float(quimicos_modelo.get("ajustes_inv") or 0), 0)
-        co["ajustes_inv_title"] = " · ".join(
-            "%s: %+.0f (%d)" % (d.get("motivo") or "", d.get("us") or 0,
-                                d.get("n") or 0)
-            for d in (quimicos_modelo.get("ajustes_detalle") or [])
-        )
         co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
         co.pop("ajuste_us", None)     # fila "Ajuste de arranque" desaparece
         co.pop("maquinas_us", None)   # fila "En máquinas" QUÍM → "—"
@@ -2164,7 +2163,7 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     qm = _g(mov, "quimicos_banda") or _g(mov, "quimicos_modelo")
     if qm and _g(qm, "modelo") == "formulas":
         add("quimicos", "Químicos: la banda cierra",
-            _g(qm, "final_prog"), "Inicial+Entradas±Ajustes−Consumo",
+            _g(qm, "final_prog"), "Inicial+Entradas−Consumo",
             _g(qm, "final_form"), "Físico", "US$")
     elif qm:
         add("quimicos", "Químicos: físico vs libro",

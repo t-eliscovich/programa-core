@@ -56,11 +56,14 @@
   .fp .blk { border-radius: 10px !important; border-width: 1px !important;
              box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
              padding: 10px 14px !important; }
-  .fp .blk-title { font-size: 13px !important; letter-spacing: .06em; margin-bottom: 6px; }
+  /* Tercera pasada (dueña): "subir de tamaño las LETRAS no los números" →
+     títulos, headers de columna y labels de fila más grandes; números quedan. */
+  .fp .blk-title { font-size: 14.5px !important; letter-spacing: .06em; margin-bottom: 6px; }
   .fp table { font-size: 13.5px !important; }
   .fp td { font-size: 13.5px !important; padding: 2px 8px !important; line-height: 1.3; }
+  .fp td.lbl, .fp td.prov { font-size: 14px !important; }
   .fp td.num { font-size: 14px !important; }
-  .fp th { font-size: 10.5px !important; }
+  .fp th { font-size: 12.5px !important; }
   .fp tr.tot td, .fp td.tot { font-size: 15px !important; font-weight: 700; }
   .fp .pct { color: rgb(100 116 139); font-size: 9px; display: block;
              line-height: 1.1; margin-top: 2px; }
@@ -190,21 +193,9 @@
             <td class="num">{{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
-          {# Banda formulas (dueña 2026-07-21): fila AJUSTES INVENTARIO (±, de
-             formulas.inventario_ajustes, detalle por motivo en el tooltip).
-             Reemplaza al viejo "Ajuste de arranque". #}
-          {% if aco.get('ajustes_inv_us') is not none %}
-          <tr>
-            <td class="lbl" style="color:rgb(180 83 9);">Ajustes <span class="pct" style="color:rgb(148 163 184);">inventario</span></td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-            <td></td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-            <td class="num" style="color:rgb(180 83 9);" title="{{ aco.get('ajustes_inv_title') or 'Ajustes de inventario del mes (formulas)' }}">{% set _ai = aco.get('ajustes_inv_us') %}{% if _ai >= 0 %}+{% else %}−{% endif %}{{ (_ai if _ai >= 0 else -_ai) | num_es(0) }}</td>
-          </tr>
-          {% endif %}
+          {# Fila AJUSTES INVENTARIO BORRADA (dueña 2026-07-21 segunda pasada:
+             "tenemos que borrar la fila ajustes") — los ajustes que la planta
+             registre quedan en el residuo del chequeo de coherencia. #}
           {% set _desp = mov_asinfo.get('desperdicio', {}) %}
           {% if _desp %}
           <tr>

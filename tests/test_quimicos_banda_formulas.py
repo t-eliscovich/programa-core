@@ -162,10 +162,12 @@ def _patch_asinfo():
     ]
 
 
-def test_mov_asinfo_banda_formulas_cierra_con_5_filas():
-    """Con los 5 términos de formulas: modelo 'formulas', libro = inicial +
-    entradas + ajustes − consumo, físico aparte, sin fila de máquinas ni
-    ajuste de arranque en la columna QUÍM.$."""
+def test_mov_asinfo_banda_formulas_cierra_con_4_filas():
+    """Con los 5 términos de formulas: modelo 'formulas', libro VISIBLE =
+    inicial + entradas − consumo (dueña 2026-07-21: la fila Ajustes
+    inventario se BORRÓ — el neto queda como referencia en el modelo y
+    dentro del residuo del chequeo), físico aparte, sin fila de máquinas,
+    de ajustes ni de ajuste de arranque en la columna QUÍM.$."""
     ctxs = _patch_asinfo()
     with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], ctxs[6], \
          patch("db.fetch_one", return_value={"importe": 152776.0, "n": 4}), \
@@ -184,21 +186,21 @@ def test_mov_asinfo_banda_formulas_cierra_con_5_filas():
     assert qm["modelo"] == "formulas"
     assert qm["inicial"] == 437500.0
     assert qm["compras"] == 80467.5 and qm["compras_n"] == 93
-    assert round(qm["ajustes_inv"], 2) == 1392.2
+    assert round(qm["ajustes_inv"], 2) == 1392.2   # referencia, no fila
     assert qm["egresos"] == 147616.0              # NO el proy_quimico (90k)
     assert round(qm["final_prog"], 2) == round(
-        437500.0 + 80467.5 + 1392.2 - 147616.0, 2)
+        437500.0 + 80467.5 - 147616.0, 2)          # SIN ajustes: libro visible
     assert qm["final_form"] == 363180.0
     assert round(qm["ajuste"], 2) == round(363180.0 - qm["final_prog"], 2)
     assert qm["facturado_prog"] == 152776.0 and qm["facturado_n"] == 4
     assert mov["quimicos_banda"] == qm
-    # Columna QUÍM.$: fila Ajustes inventario, sin arranque ni máquinas.
+    # Columna QUÍM.$: 4 filas peladas — sin ajustes, arranque ni máquinas.
     co = mov["colorantes"]
     assert co["stock_inic_us"] == 437500.0
     assert co["ingresos_us"] == 80468.0            # round(...)
     assert co["egresos_us"] == 147616.0
-    assert co["ajustes_inv_us"] == 1392.0
-    assert "CORRECCION" in co["ajustes_inv_title"]
+    assert "ajustes_inv_us" not in co              # fila Ajustes BORRADA
+    assert "ajustes_inv_title" not in co
     assert co["stock_act_us"] == 363180.0
     assert "ajuste_us" not in co                   # "Ajuste de arranque" muere
     assert "maquinas_us" not in co                 # "En máquinas" QUÍM → "—"
