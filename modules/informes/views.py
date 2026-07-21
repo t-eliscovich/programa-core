@@ -2986,6 +2986,13 @@ def estado_cuenta_factura_toggle(codigo_cli, id_factura):
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude cambiar el estado de la factura", e)
+    # TMT 2026-07-21 (dueña): el mismo lapicito ahora vive también en la Cartera
+    # (/facturas). Si viene `next` con un path local (empieza con "/" y no es
+    # protocol-relative "//"), volvemos ahí con los filtros puestos en vez de
+    # rebotar siempre al estado de cuenta.
+    _next = (request.form.get("next") or "").strip()
+    if _next.startswith("/") and not _next.startswith("//"):
+        return redirect(_next)
     return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 

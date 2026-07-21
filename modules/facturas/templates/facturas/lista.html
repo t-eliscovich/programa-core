@@ -449,7 +449,35 @@
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
-          <td class="px-2 py-1.5 font-mono text-slate-500">{{ f.stat }}</td>
+          <td class="px-2 py-1.5 font-mono text-slate-500" style="white-space: nowrap;">
+            {{ f.stat }}
+            {# TMT 2026-07-21 (dueña): mismo lapicito A/Z↔T que el estado de
+               cuenta, ahora acá en la Cartera. Reusa la ruta
+               informes.estado_cuenta_factura_toggle; `next` vuelve a la Cartera
+               con los filtros puestos. Solo interactivo + con permiso. #}
+            {% set _st = (f.stat or '').strip().upper() %}
+            {% if tiene_permiso('clientes.ver') and f.codigo_cli and f.id_factura %}
+              {% if _st == 'T' %}
+              <form method="POST" class="inline"
+                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=f.codigo_cli, id_factura=f.id_factura) }}"
+                    onsubmit="return confirm('Reabrir factura {{ f.numf }} (→A)? Vuelve a la lista viva con su saldo.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" title="Reabrir (T → A)"
+                        class="ml-1 align-middle text-slate-400 hover:text-sky-600 dark:hover:text-sky-400">✎</button>
+              </form>
+              {% elif (f.importe or 0) > 0 %}
+              <form method="POST" class="inline"
+                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=f.codigo_cli, id_factura=f.id_factura) }}"
+                    onsubmit="return confirm('Cerrar factura {{ f.numf }} como pagada (→T)? Sale de la lista viva. Es reversible (Estado de cuenta → Ver totalizadas → Reabrir).');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" title="Cerrar como pagada (A/Z → T)"
+                        class="ml-1 align-middle text-slate-400 hover:text-amber-600 dark:hover:text-amber-400">✎</button>
+              </form>
+              {% endif %}
+            {% endif %}
+          </td>
         </tr>
         {% else %}
         {{ empty_row(12, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
