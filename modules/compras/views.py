@@ -415,10 +415,11 @@ def lista():
 @requiere_login
 @requiere_permiso("compras.ver")
 def produccion_tejeduria():
-    """Pantalla Producción Tejeduría — solo la producción de tejido."""
-    return _pantalla_compras(
-        "produccion", "Producción Tejeduría", "compras.produccion_tejeduria",
-    )
+    """ELIMINADA (dueña 2026-07-20): mostraba los kg tipeados a mano en las
+    compras K (mundo dBase) y ya no cuadraba con nada. La reemplaza
+    Tejeduría Asinfo; la ruta queda como redirect para bookmarks viejos."""
+    from flask import redirect, url_for
+    return redirect(url_for("tejeduria_asinfo.tab"))
 
 
 def _pantalla_compras(vista, titulo, endpoint_actual):

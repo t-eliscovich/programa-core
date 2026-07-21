@@ -280,6 +280,21 @@ def resumen_mes(anio: int, mes: int) -> dict:
         "total_costo": total_costo,
         "tejedores": tejedores,
         "por_dia": por_dia,
+        # DIARIO canónico (dueña 2026-07-20): ingreso a bodega 52 POR DÍA —
+        # la suma de los días = total_kg exacto (misma fuente). Reemplaza en
+        # la pantalla al diario por OFs cerradas (que sumaba 207k ≠ 179k).
+        "ingreso_por_dia": _ingreso_por_dia(anio, mes),
         "pendientes": pendientes,
         "tercerizado_ofs": tercerizado_ofs,
     }
+
+
+def _ingreso_por_dia(anio: int, mes: int) -> list[dict]:
+    """Ingreso diario a bodega 52 (fail-soft: [])."""
+    try:
+        from datetime import date as _date
+
+        from modules.asinfo import service as _asvc
+        return _asvc.ingreso_bodega_por_dia(52, _date(int(anio), int(mes), 1)) or []
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return []

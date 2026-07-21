@@ -829,7 +829,7 @@
            informes.ver) y "Producción Tejeduría" (venía de Modificar, gate
            compras.ver) movidos acá arriba — producción primero, luego stocks. #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}{% endif %}
-        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
+        {# 'Producción Tejeduría' (kg manuales del dBase) ELIMINADA — dueña 2026-07-20: la reemplaza Tejeduría Asinfo. La ruta vieja redirige. #}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
         {# TMT 2026-06-10 dueña: Stock = 2 tabs réplica del Excel de la nube
            (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso

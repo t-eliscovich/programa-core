@@ -1804,6 +1804,66 @@ def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
         return dict(zero)
 
 
+_INGRESO_DIA_TTL_SECS = 300
+_INGRESO_DIA_CACHE: dict = {}
+
+
+def ingreso_bodega_por_dia(id_bodega: int, corte) -> list[dict]:
+    """INGRESO físico de una bodega POR DÍA desde `corte` (exclusivo) — la
+    versión diaria de `movimiento_bodega_mes().ingreso` (misma CTE de deltas
+    por lote, mismo criterio de altas): la suma de los días = el total del
+    mes EXACTO. Dueña 2026-07-20: el DIARIO de Tejeduría Asinfo tiene que
+    sumar el ingreso a bodega (179.704), no las OFs cerradas (207.623).
+
+    Devuelve [{"dia": "YYYY-MM-DD", "kg": float}] ordenado del más nuevo al
+    más viejo. Fail-soft: [].
+    """
+    if hasattr(corte, "isoformat"):
+        corte = corte.isoformat()[:10]
+    corte = str(corte)[:10]
+    import re as _re
+    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", corte):
+        return []
+    cache_key = (int(id_bodega), corte)
+    now = _time.time()
+    cached = _INGRESO_DIA_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _INGRESO_DIA_TTL_SECS:
+        return cached[1]
+    sql = f"""
+        WITH d AS (
+            SELECT saldo,
+                   LAG(saldo) OVER (
+                       PARTITION BY id_producto, id_lote
+                       ORDER BY fecha, id_saldo_producto_lote
+                   ) AS prev,
+                   fecha
+              FROM saldo_producto_lote
+             WHERE id_bodega = {int(id_bodega)}
+        )
+        SELECT CONVERT(varchar, fecha, 23) AS dia,
+               SUM(CASE WHEN prev IS NULL AND saldo > 0 THEN saldo
+                        WHEN prev IS NOT NULL AND saldo - prev > 0 THEN saldo - prev
+                        ELSE 0 END) AS ingreso
+          FROM d
+         WHERE fecha > '{corte}'
+         GROUP BY fecha
+         ORDER BY fecha DESC
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=100) or []
+        out = [
+            {"dia": str(r.get("dia") or "")[:10],
+             "kg": round(float(r.get("ingreso") or 0.0), 2)}
+            for r in rows
+            if float(r.get("ingreso") or 0.0) > 0.005
+        ]
+        if rows:
+            _INGRESO_DIA_CACHE[cache_key] = (now, out)
+        return out
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Producción de tejeduría (bodega 52 = TELA CRUDA) por Asinfo — reemplaza la
 # carga MANUAL del dBase (alguien tipeaba las compras tipo K a mano).

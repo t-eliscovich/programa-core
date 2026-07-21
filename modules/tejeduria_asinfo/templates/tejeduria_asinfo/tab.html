@@ -114,37 +114,23 @@
       </tbody>
     </table>
 
-    <h2>Diario · OFs cerradas (kg) <span class="muted" style="font-weight:normal; font-size:11px">— por fecha de CIERRE de la OF (control diario; no es el ingreso a bodega)</span></h2>
-    {% if data.ajustado_a_bodega and (data.total_kg_of - data.total_kg)|abs > 1 %}
-    <p class="note" style="margin:4px 0 6px;">
-      OFs cerradas en el mes: <strong>{{ data.total_kg_of|num_es }}</strong> kg ·
-      ingresado a bodega: <strong>{{ data.total_kg|num_es }}</strong> kg ·
-      Δ {{ (data.total_kg_of - data.total_kg)|num_es }} kg — las OFs se cierran en
-      tandas, y una OF cerrada este mes puede tener tela que ingresó a bodega en
-      otro mes (y viceversa).
-    </p>
-    {% endif %}
+    <h2>Diario · ingreso a bodega (kg) <span class="muted" style="font-weight:normal; font-size:11px">— tela cruda que ENTRÓ a la bodega cada día · la suma del mes = el TOTAL de arriba</span></h2>
     <table>
       <thead>
-        <tr><th>Día</th>
-          {% for t in data.tejedores %}<th class="{{ 'intela' if t.es_intela else 'terc' }}">{{ t.label }}</th>{% endfor %}
-          <th>Total día</th>
-        </tr>
+        <tr><th>Día</th><th>Ingresado a bodega (kg)</th></tr>
       </thead>
       <tbody>
-        {% for d in data.por_dia %}
+        {% for d in data.ingreso_por_dia %}
           <tr>
             <td>{{ d.dia|fecha_es }}</td>
-            {% for t in data.tejedores %}
-              <td>{% if d.kg.get(t.key) %}{{ d.kg.get(t.key)|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
-            {% endfor %}
-            <td>{{ d.total|num_es }}</td>
+            <td>{{ d.kg|num_es }}</td>
           </tr>
+        {% else %}
+          <tr><td colspan="2" class="muted">Sin datos de bodega (Asinfo no respondió).</td></tr>
         {% endfor %}
         <tr class="tot">
-          <td>TOTAL OFs {{ '%02d/%d' % (mes, anio) }}</td>
-          {% for t in data.tejedores %}<td>{{ t.kg_of|num_es }}</td>{% endfor %}
-          <td>{{ data.total_kg_of|num_es }}</td>
+          <td>TOTAL {{ '%02d/%d' % (mes, anio) }}</td>
+          <td>{{ data.ingreso_por_dia|sum(attribute='kg')|num_es }}</td>
         </tr>
       </tbody>
     </table>
