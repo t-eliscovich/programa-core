@@ -2511,6 +2511,25 @@ def gastos():
     suma_v_total = sum(col_v.values())
     suma_amort_total = sum(col_amort.values())
     suma_grand = sum(col_total.values())
+
+    # Federico 2026-07-21 — fila "Gastos mes anterior": mismos GTEJ/GTIN/GGF
+    # (V1..V9 + amortización) pero del mes CERRADO anterior, para comparar
+    # columna a columna con el mes en curso.
+    v_prev, _e = _safe(lambda: queries.gastos_xgast_v1_a_v9_mes(meses_atras=1), {})
+    a_prev, _e = _safe(lambda: queries.amortizaciones_mensuales(meses_atras=1), {})
+
+    def gvp(k):
+        return float((v_prev or {}).get(k) or 0)
+
+    def gap(k):
+        return float((a_prev or {}).get(k) or 0)
+
+    col_total_prev = {
+        "tej": gvp("v1") + gvp("v2") + gvp("v3") + gap("dtj"),
+        "tin": gvp("v4") + gvp("v5") + gvp("v6") + gap("dcc"),
+        "adm": gvp("v7") + gvp("v8") + gvp("v9") + gap("deprcar"),
+    }
+    suma_grand_prev = sum(col_total_prev.values())
     # TMT 2026-05-19 v5 — pedido dueña: banner "Sin clasificar" con link
     # al wizard. xgast.num NULL → no aparece en V1..V9 → invisible al ojo.
     # Mostrar al pie cuánta plata hay en ese limbo.
@@ -2535,6 +2554,8 @@ def gastos():
         suma_v_total=suma_v_total,
         suma_amort_total=suma_amort_total,
         suma_grand=suma_grand,
+        col_total_prev=col_total_prev,
+        suma_grand_prev=suma_grand_prev,
         sin_num_resumen=sin_num_resumen,
     )
 

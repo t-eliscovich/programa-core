@@ -1892,8 +1892,14 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
     }
 
 
-def amortizaciones_mensuales() -> dict:
+def amortizaciones_mensuales(meses_atras: int = 0) -> dict:
     """Amortizaciones del mes desde scintela.activos (INFORMES.PRG líneas 42-50).
+
+    `meses_atras` (Federico 2026-07-21): 0 = mes en curso (proración diaria
+    dBase). >0 = un mes CERRADO hacia atrás → se usa la cuota completa
+    (coef=1), porque el mes ya terminó. Sirve para la fila "Gastos mes
+    anterior" de la pantalla de gastos.
+
 
     DEPRACT  = SUM(amortimes WHERE tipo='I')   inmuebles (terr/edif)
     DEPRMAQ  = SUM(amortimes WHERE tipo='M')   maquinaria
@@ -1914,14 +1920,17 @@ def amortizaciones_mensuales() -> dict:
         db.fetch_all(
             """
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
+          SELECT CASE WHEN %(off)s > 0 THEN 1.0
+                      ELSE LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0
+                 END AS c
         )
         SELECT UPPER(TRIM(tipo)) AS tipo,
                COALESCE(SUM((SELECT c FROM coef) * COALESCE(cuota, 0)), 0) AS total
         FROM scintela.activos
         WHERE COALESCE(cuota, 0) > 0
         GROUP BY 1
-        """
+        """,
+            {"off": int(meses_atras)},
         )
         or []
     )
@@ -2270,8 +2279,12 @@ TIPOS_COMPRA_A_NUM_GASTO: dict[str, int] = {
 }
 
 
-def gastos_xgast_v1_a_v9_mes() -> dict:
+def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
     """V1..V9 del PRG: SUM(importe) FROM xgast + compras (por tipo) WHERE mes en curso.
+
+    `meses_atras` (Federico 2026-07-21): 0 = mes en curso; >0 desplaza la
+    ventana ese número de meses hacia atrás (1 = mes anterior). Usado por la
+    fila "Gastos mes anterior" de /informes/gastos.
 
     Los rótulos PRG:
       V1 = sueldos tejeduría        V4 = sueldos tintorería       V7 = sueldos admin
@@ -2296,16 +2309,18 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
     # xgast por rubro; una compra con gemelo exacto en su mismo rubro no se
     # vuelve a sumar. Mismo criterio que el drill-down (`gastos_detalle_categoria`)
     # → la card de Gastos y el detalle cuadran.
+    _off = int(meses_atras)
     rows_xgast = (
         db.fetch_all(
             """
         SELECT COALESCE(num, 0) AS num, fecha, prov, concepto, importe
         FROM scintela.xgast
-        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
-          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-        """
+        """,
+            {"off": _off},
         )
         or []
     )
@@ -2327,12 +2342,12 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         SELECT ({_SQL_COMPRA_NUM_CASE}) AS num,
                c.fecha, c.codigo_prov AS prov, c.concepto, c.importe
           FROM scintela.compra c
-         WHERE c.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
-           AND c.fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
+         WHERE c.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s)
+           AND c.fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s) + INTERVAL '1 month'
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
            AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
     """
-    rows_compras = db.fetch_all(sql_compras) or []
+    rows_compras = db.fetch_all(sql_compras, {"off": _off}) or []
     for r in rows_compras:
         num = r.get("num")
         if not num:

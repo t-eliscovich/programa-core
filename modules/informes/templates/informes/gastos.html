@@ -89,6 +89,40 @@
   .gastos-cards .card.tej { border-left: 3px solid rgb(96 165 250); }
   .gastos-cards .card.tin { border-left: 3px solid rgb(168 85 247); }
   .gastos-cards .card.adm { border-left: 3px solid rgb(34 197 94); }
+
+  /* Federico 2026-07-21 — filas "Gastos mes anterior" y "Gastos proyectados". */
+  .gastos-matriz tr.mes-anterior td {
+    background: rgb(248 250 252); color: rgb(71 85 105);
+    border-top: 2px solid rgb(203 213 225);
+  }
+  .dark .gastos-matriz tr.mes-anterior td {
+    background: rgb(30 41 59 / 0.35); color: rgb(203 213 225);
+    border-top-color: rgb(71 85 105);
+  }
+  .gastos-matriz tr.proyectado td {
+    background: rgb(255 251 235); color: rgb(15 23 42);
+  }
+  .dark .gastos-matriz tr.proyectado td {
+    background: rgb(69 39 19 / 0.25); color: rgb(241 245 249);
+  }
+  .gastos-matriz tr.proyectado td.total-col {
+    background: rgb(254 243 199); font-weight: 700;
+  }
+  .dark .gastos-matriz tr.proyectado td.total-col {
+    background: rgb(120 53 15 / 0.4);
+  }
+  .gastos-matriz input.proy-input {
+    width: 100%; text-align: right; font-variant-numeric: tabular-nums;
+    padding: 4px 8px; border: 1px solid rgb(203 213 225); border-radius: 6px;
+    background: rgb(255 255 255); color: rgb(15 23 42); font-size: 13px;
+  }
+  .gastos-matriz input.proy-input:focus {
+    outline: none; border-color: rgb(245 158 11);
+    box-shadow: 0 0 0 2px rgb(245 158 11 / 0.25);
+  }
+  .dark .gastos-matriz input.proy-input {
+    background: rgb(15 23 42); color: rgb(241 245 249); border-color: rgb(71 85 105);
+  }
 </style>
 {% endblock %}
 
@@ -231,6 +265,40 @@
           <td class="num">{{ col_total.adm | num_es(0) }}</td>
           <td class="num">{{ suma_grand | num_es(0) }}</td>
         </tr>
+
+        {# Federico 2026-07-21 — FILA 1: Gastos del mes CERRADO anterior
+           (mismo GTEJ/GTIN/GGF con amortización), encolumnado con el mes
+           en curso para comparar. #}
+        <tr class="mes-anterior">
+          <td class="row-label">Gastos mes anterior</td>
+          <td class="num">{{ col_total_prev.tej | num_es(0) }}</td>
+          <td class="num">{{ col_total_prev.tin | num_es(0) }}</td>
+          <td class="num">{{ col_total_prev.adm | num_es(0) }}</td>
+          <td class="num">{{ suma_grand_prev | num_es(0) }}</td>
+        </tr>
+
+        {# Federico 2026-07-21 — FILA 2: Gastos proyectados para ESTE mes,
+           casilleros editables. El Total se calcula en vivo = suma de los 3.
+           Se guarda en el navegador por año-mes (no toca la base). #}
+        <tr class="proyectado no-print">
+          <td class="row-label">Gastos proyectados este mes</td>
+          <td class="cell">
+            <input type="number" min="0" step="1" inputmode="numeric"
+                   class="proy-input" data-seccion="tej" placeholder="0"
+                   aria-label="Gasto proyectado Tejeduría">
+          </td>
+          <td class="cell">
+            <input type="number" min="0" step="1" inputmode="numeric"
+                   class="proy-input" data-seccion="tin" placeholder="0"
+                   aria-label="Gasto proyectado Tintorería">
+          </td>
+          <td class="cell">
+            <input type="number" min="0" step="1" inputmode="numeric"
+                   class="proy-input" data-seccion="adm" placeholder="0"
+                   aria-label="Gasto proyectado Administración">
+          </td>
+          <td class="total-col num" id="proy-total">0</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -240,4 +308,39 @@
      /gastos no aporta — la matriz de arriba ya muestra los gastos
      consolidados por rubro × tipo. #}
 </div>
+
+{# Federico 2026-07-21 — Total en vivo de los gastos proyectados + persistencia
+   local por año-mes (no toca la base; sólo el navegador de este usuario). #}
+<script>
+(function () {
+  var inputs = Array.prototype.slice.call(document.querySelectorAll('.proy-input'));
+  var totalEl = document.getElementById('proy-total');
+  if (!inputs.length || !totalEl) return;
+
+  var now = new Date();
+  var key = 'gastos_proy_' + now.getFullYear() + '-' + (now.getMonth() + 1);
+  var fmt = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+
+  function recalc() {
+    var total = 0;
+    var store = {};
+    inputs.forEach(function (inp) {
+      var val = parseFloat(inp.value);
+      if (!isNaN(val)) { total += val; store[inp.dataset.seccion] = inp.value; }
+    });
+    totalEl.textContent = fmt.format(total);
+    try { window.localStorage.setItem(key, JSON.stringify(store)); } catch (e) {}
+  }
+
+  try {
+    var saved = JSON.parse(window.localStorage.getItem(key) || '{}');
+    inputs.forEach(function (inp) {
+      if (saved[inp.dataset.seccion] != null) inp.value = saved[inp.dataset.seccion];
+    });
+  } catch (e) {}
+
+  inputs.forEach(function (inp) { inp.addEventListener('input', recalc); });
+  recalc();
+})();
+</script>
 {% endblock %}
