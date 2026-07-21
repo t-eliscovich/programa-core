@@ -261,17 +261,22 @@
           {# Filas de r.tabla: label / kg / ukg / us / clase / ayuda.
              Las filas 'seccion' son divisores; el resto se estila por clase. #}
           {% set _clase_css = {'dato':'fila-dato','subtotal':'fila-aux','total':'fila-total','key':'fila-key'} %}
+          {# Federico 2026-07-21 — capturamos la Proyección (venta proyectada +
+             kg proyectados) para recalcular la Utilidad Proyectada en el
+             cliente = venta proy − gastos proyectados (localStorage de /gastos). #}
+          {% set _pns = namespace(proy_us=0, proy_kg=0) %}
           {% for row in r.tabla %}
             {% if row.clase == 'seccion' %}
           <tr>
             <th class="seccion-header" style="text-align:left" colspan="5">{{ row.label }}</th>
           </tr>
             {% else %}
-          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
+            {% if row.label == 'Proyección' %}{% set _pns.proy_us = row.us %}{% set _pns.proy_kg = row.kg %}{% endif %}
+          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}{% if row.label == 'Utilidad Proyectada' %} id="fila-utilidad-proy" data-proy-us="{{ _pns.proy_us }}" data-proy-kg="{{ _pns.proy_kg }}"{% endif %}>
             <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.parcial %} <span class="badge-parcial" title="Cifra del mes en curso — PATR−PATANT sólo cuadra al cierre de mes">parcial · {{ row.parcial_dias }} {{ 'día' if row.parcial_dias == 1 else 'días' }}</span>{% endif %}</td>
-            <td class="num-cell">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
-            <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
-            <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
+            <td class="num-cell"{% if row.label == 'Utilidad Proyectada' %} data-up="kg"{% endif %}>{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
+            <td class="num-cell"{% if row.label == 'Utilidad Proyectada' %} data-up="ukg"{% endif %}>{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
+            <td class="num-cell"{% if row.label == 'Utilidad Proyectada' %} data-up="us"{% endif %}>{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
             <td class="num-cell" style="color:#64748b">{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
           </tr>
             {% endif %}
@@ -710,4 +715,49 @@
 
   {% endif %}
 </div>
+
+{# Federico 2026-07-21 — Utilidad Proyectada = Venta proyectada − Gastos
+   proyectados de este mes. Los gastos proyectados los carga el usuario en
+   /informes/gastos y viven en localStorage (misma clave por año-mes). Ambas
+   pantallas comparten origen, así que acá los leemos y recalculamos la fila
+   en vivo. Si no hay gastos cargados, se toma 0. #}
+<script>
+(function () {
+  var row = document.getElementById('fila-utilidad-proy');
+  if (!row) return;
+
+  var proyUs = parseFloat(row.getAttribute('data-proy-us')) || 0;
+  var proyKg = parseFloat(row.getAttribute('data-proy-kg')) || 0;
+
+  var now = new Date();
+  var key = 'gastos_proy_' + now.getFullYear() + '-' + (now.getMonth() + 1);
+
+  var gastos = 0;
+  try {
+    var saved = JSON.parse(window.localStorage.getItem(key) || '{}');
+    ['tej', 'tin', 'adm'].forEach(function (k) {
+      var v = parseFloat(saved[k]);
+      if (!isNaN(v)) gastos += v;
+    });
+  } catch (e) {}
+
+  var us = proyUs - gastos;
+  var ukg = proyKg ? us / proyKg : 0;
+
+  var fUs = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+  var fUkg = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+
+  var cKg = row.querySelector('[data-up="kg"]');
+  var cUkg = row.querySelector('[data-up="ukg"]');
+  var cUs = row.querySelector('[data-up="us"]');
+  if (cKg) cKg.textContent = proyKg ? fUs.format(proyKg) : '';
+  if (cUkg) cUkg.textContent = fUkg.format(ukg);
+  if (cUs) cUs.textContent = fUs.format(us);
+
+  row.setAttribute('title',
+    'Venta proyectada (' + fUs.format(proyUs) + ') − Gastos proyectados del mes (' +
+    fUs.format(gastos) + ') = ' + fUs.format(us) + '. ' +
+    'Los gastos proyectados se cargan en la pantalla Gastos del mes.');
+})();
+</script>
 {% endblock %}
