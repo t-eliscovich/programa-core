@@ -3,7 +3,7 @@
    (estado_cuenta.html) y por la impresion en lote (estado_cuenta_lote_print.html)
    para que 'imprimir muchos' salga IDENTICO a 'imprimir uno'. TMT 2026-07-09.
    Requiere en contexto: `data` (cliente/facturas/cheques) y `t` (totales). #}
-{% from "_ui.html" import empty_row, saldo_pill %}
+{% from "_ui.html" import empty_row, saldo_pill, stat_select %}
 {% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
 
   {# Facturas #}
@@ -53,18 +53,11 @@
           <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s < 0 else 'text-slate-900 dark:text-slate-100' }}">{{ acum.s | money_es }}</td>
           <td class="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap no-print">
-            {{ f.stat }}
-            {# TMT 2026-07-09 (dueña): lapicito para CERRAR la factura (A/Z→T),
-               reversible. Solo interactivo + con permiso + importe positivo. #}
-            {% if interactivo|default(false) and tiene_permiso('clientes.ver') and (f.importe or 0) > 0 %}
-            <form method="POST" class="inline no-print"
-                  action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
-                  onsubmit="return confirm('Cerrar factura {{ f.numf }} como pagada (→T)? Sale de la lista viva. Es reversible (Ver totalizadas → Reabrir).');">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" title="Cerrar como pagada (A/Z → T)"
-                      class="ml-1 align-middle text-slate-400 hover:text-amber-600 dark:hover:text-amber-400">✎</button>
-            </form>
-            {% endif %}
+            {# TMT 2026-07-21 (dueña): dropdown por fila Z/A/T/X (antes era un
+               lapicito solo A/Z→T). Solo interactivo + con permiso amplio. #}
+            {% if interactivo|default(false) and (tiene_permiso('facturas.ver') or tiene_permiso('clientes.ver') or tiene_permiso('facturas.editar')) %}
+              {{ stat_select(f.stat, data.cliente.codigo_cli, f.id_factura, f.numf) }}
+            {% else %}{{ f.stat }}{% endif %}
           </td>
           <td class="px-4 py-2 text-right text-mono text-slate-500" title="Días desde la emisión">{{ f.fecha | dias_desde }}</td>
         </tr>
@@ -85,16 +78,11 @@
             <td class="px-4 py-2 text-right text-mono">0,00</td>
             <td class="px-4 py-2 text-right text-mono">—</td>
             <td class="px-4 py-2 font-mono text-xs whitespace-nowrap">
-              T
-              {% if tiene_permiso('clientes.ver') %}
-              <form method="POST" class="inline no-print"
-                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
-                    onsubmit="return confirm('Reabrir factura {{ f.numf }} (→A)? Vuelve a la lista viva con su saldo.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" title="Reabrir (T → A)"
-                        class="ml-1 align-middle text-slate-400 hover:text-sky-600 dark:hover:text-sky-400">✎</button>
-              </form>
-              {% endif %}
+              {# TMT 2026-07-21 (dueña): dropdown Z/A/T/X también en las
+                 totalizadas → permite reabrir (T→A/Z) o anular (X). #}
+              {% if tiene_permiso('facturas.ver') or tiene_permiso('clientes.ver') or tiene_permiso('facturas.editar') %}
+                {{ stat_select(f.stat, data.cliente.codigo_cli, f.id_factura, f.numf) }}
+              {% else %}T{% endif %}
             </td>
             <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.fecha | dias_desde }}</td>
           </tr>

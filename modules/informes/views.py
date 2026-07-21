@@ -3078,6 +3078,51 @@ def estado_cuenta_netear(codigo_cli):
     return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 
+@informes_bp.route(
+    "/estado-cuenta/<codigo_cli>/factura/<int:id_factura>/set-stat",
+    methods=["POST"])
+@requiere_login
+def estado_cuenta_factura_set_stat(codigo_cli, id_factura):
+    """Cambiar el stat de UNA factura a Z / A / T / X desde el dropdown por
+    fila (Cartera y estado de cuenta).
+
+    TMT 2026-07-21 (dueña): "que me deje cambiar el estado de Z a A a T o a X"
+    + "que todos lo puedan hacer desde front end". Gate amplio: cualquier
+    usuario que opera facturas o cuentas (facturas.ver / clientes.ver /
+    facturas.editar). 'X' = anular de verdad (reusa facturas.anular, con sus
+    guardas y reversible desde el Historial); Z/A/T = factura_set_stat.
+    """
+    if not (tiene_permiso("facturas.ver") or tiene_permiso("clientes.ver")
+            or tiene_permiso("facturas.editar")):
+        abort(404)
+    codigo_up = codigo_cli.upper()
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    target = (request.form.get("stat") or "").strip().upper()
+    try:
+        if target == "X":
+            from modules.facturas import queries as _fq
+            _fq.anular(id_factura, motivo="cambio de estado a X (dropdown)",
+                       usuario=usuario)
+            flash("Factura anulada (→X). Reversible desde el Historial.", "ok")
+        else:
+            res = queries.factura_set_stat(
+                id_factura, codigo_up, target, usuario=usuario)
+            if res.get("accion") == "sin_cambios":
+                flash("La factura ya estaba en ese estado.", "warn")
+            else:
+                flash(
+                    f"Factura {res.get('numf')} → {res.get('stat_nuevo')} "
+                    f"(saldo {res.get('saldo_nuevo', 0):,.2f}).", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude cambiar el estado de la factura", e)
+    _next = (request.form.get("next") or "").strip()
+    if _next.startswith("/") and not _next.startswith("//"):
+        return redirect(_next)
+    return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+
+
 @informes_bp.route("/estado-cuenta/<codigo_cli>/neteo/<int:id_evento>/deshacer",
                    methods=["POST"])
 @requiere_login

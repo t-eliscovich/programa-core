@@ -357,3 +357,27 @@
   {% endfor %}
 </div>
 {% endmacro %}
+
+{# ===================================================================== #}
+{# stat_select — dropdown por fila para cambiar el estado de una factura  #}
+{# a Z / A / T / X. Reusado por la Cartera (/facturas) y el estado de     #}
+{# cuenta. POSTea a informes.estado_cuenta_factura_set_stat con `next`    #}
+{# (vuelve a la misma pantalla). 'X' anula (confirm extra). El caller     #}
+{# decide el gate (tiene_permiso). TMT 2026-07-21 (dueña).                #}
+{# ===================================================================== #}
+{% macro stat_select(stat, codigo_cli, id_factura, numf) %}
+  {% set _st = (stat or '').strip().upper() %}
+  <form method="POST" class="inline"
+        action="{{ url_for('informes.estado_cuenta_factura_set_stat', codigo_cli=codigo_cli, id_factura=id_factura) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <select name="stat" data-cur="{{ _st }}" title="Cambiar estado (Z/A/T/X)"
+            class="font-mono rounded border border-slate-300 dark:border-slate-700 bg-transparent dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-1 py-0.5"
+            style="font-size:11px;"
+            onchange="var v=this.value,c=this.dataset.cur;if(v===c)return;var m=(v==='X')?('Anular la factura '+{{ (numf|string)|tojson }}+' (→X)? Reversible desde el Historial.'):('Cambiar la factura '+{{ (numf|string)|tojson }}+' a estado '+v+'?');if(confirm(m)){this.form.requestSubmit();}else{this.value=c;}">
+      {% for s in ['Z','A','T','X'] %}
+      <option value="{{ s }}" {{ 'selected' if _st==s }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </form>
+{% endmacro %}

@@ -9594,3 +9594,118 @@ def factura_cambiar_stat_a_t(
             f"La factura #{id_factura} está en stat='{stat_prev}' — solo se "
             "cierra/reabre desde estados Z/A/T."
         )
+
+
+def _reactivar_factura_anulada(id_factura: int, *, conn) -> None:
+    """Re-activa la emisión de una factura anulada (X → viva): marca el
+    'reverso_factura_anulada' activo como reversado y vuelve la emisión a
+    'activo', para que la factura vuelva a contar en flujo/utilidad. TMT
+    2026-07-21."""
+    rev = db.fetch_one(
+        "SELECT id_mov_doble, id_original FROM scintela.mov_doble "
+        " WHERE tipo='reverso_factura_anulada' AND origen_id=%s "
+        "   AND estado='activo' ORDER BY id_mov_doble DESC LIMIT 1",
+        (id_factura,), conn=conn)
+    if rev:
+        db.execute(
+            "UPDATE scintela.mov_doble SET estado='reversado' "
+            " WHERE id_mov_doble=%s", (rev["id_mov_doble"],), conn=conn)
+        if rev.get("id_original"):
+            db.execute(
+                "UPDATE scintela.mov_doble SET estado='activo', id_reverso=NULL "
+                " WHERE id_mov_doble=%s", (rev["id_original"],), conn=conn)
+
+
+def factura_set_stat(
+    id_factura: int, codigo_cli: str, target: str, usuario: str = "web"
+) -> dict:
+    """Cambia el stat de UNA factura a Z / A / T (para 'X' usar
+    facturas.anular). Reversible: snapshotea (stat, abono, saldo) previos en el
+    mov_doble `factura_stat_cambio`. Si la factura venía anulada (X) y el target
+    es un estado vivo, primero la reactiva.
+
+    TMT 2026-07-21 (dueña): "que me deje cambiar el estado de Z a A a T o a X"
+    con un dropdown por fila (Cartera y estado de cuenta).
+
+      - target 'T' → cierra (pagada): saldo = 0.
+      - target 'A' → abierta: saldo = importe − abono.
+      - target 'Z' → cartera: saldo = importe − abono.
+
+    Devuelve {id_factura, numf, stat_previo, stat_nuevo, saldo_nuevo, accion}.
+    """
+    from periodo_guard import asegurar_fecha_abierta
+
+    target = (target or "").strip().upper()
+    if target not in ("Z", "A", "T"):
+        raise ValueError("Estado inválido — usá Z, A, T o X (X = anular).")
+    codigo_cli = (codigo_cli or "").strip().upper()
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+    with db.tx() as conn:
+        f = db.fetch_one(
+            "SELECT id_factura, numf, numf_completo, codigo_cli, importe, "
+            "       abono, saldo, stat "
+            "  FROM scintela.factura WHERE id_factura=%s FOR UPDATE",
+            (id_factura,), conn=conn)
+        if not f:
+            raise ValueError(f"Factura #{id_factura} no existe.")
+        if (f.get("codigo_cli") or "").strip().upper() != codigo_cli:
+            raise ValueError(
+                f"La factura #{id_factura} es de "
+                f"{(f.get('codigo_cli') or '?').strip()}, no de {codigo_cli}.")
+        stat_prev = (f.get("stat") or "").strip().upper()
+        importe = round(float(f.get("importe") or 0), 2)
+        abono = round(float(f.get("abono") or 0), 2)
+        saldo = round(float(f.get("saldo") or 0), 2)
+        if stat_prev == target:
+            return {"id_factura": id_factura, "numf": f.get("numf"),
+                    "stat_previo": stat_prev, "stat_nuevo": target,
+                    "saldo_nuevo": saldo, "accion": "sin_cambios"}
+
+        import mov_doble as _md
+
+        # Reactivar si viene de X (anulada) → re-activar la emisión.
+        if stat_prev == "X":
+            _reactivar_factura_anulada(id_factura, conn=conn)
+
+        # Si viene de T, restaurar el abono del último cierre (si lo hay).
+        if stat_prev == "T":
+            snap = db.fetch_one(
+                "SELECT metadata FROM scintela.mov_doble "
+                " WHERE tipo IN ('factura_cerrada_a_t','factura_stat_cambio') "
+                "   AND origen_id=%s AND estado='activo' "
+                " ORDER BY id_mov_doble DESC LIMIT 1",
+                (id_factura,), conn=conn)
+            md = (snap or {}).get("metadata") or {}
+            if isinstance(md, str):
+                import json as _json
+                try:
+                    md = _json.loads(md)
+                except Exception:  # noqa: BLE001
+                    md = {}
+            if md.get("abono_previo") is not None:
+                abono = round(float(md.get("abono_previo") or abono), 2)
+
+        saldo_nuevo = 0.0 if target == "T" else round(importe - abono, 2)
+
+        db.execute(
+            "UPDATE scintela.factura SET stat=%s, saldo=%s, abono=%s, "
+            "  usuario_modifica=%s WHERE id_factura=%s",
+            (target, saldo_nuevo, abono, usuario, id_factura), conn=conn)
+
+        _md.registrar(
+            conn=conn, tipo="factura_stat_cambio",
+            origen_table="factura", origen_id=id_factura,
+            destino_table="factura", destino_id=id_factura,
+            importe=importe or 1.0, fecha=fecha,
+            concepto=(
+                f"CAMBIO stat factura {f.get('numf_completo') or f.get('numf')} "
+                f"{codigo_cli} {stat_prev or 'Z'}→{target} "
+                f"(saldo {saldo:.2f}→{saldo_nuevo:.2f})")[:200],
+            usuario=usuario,
+            metadata={"id_factura": id_factura, "codigo_cli": codigo_cli,
+                      "stat_previo": stat_prev or "Z",
+                      "abono_previo": abono, "saldo_previo": saldo})
+        return {"id_factura": id_factura, "numf": f.get("numf"),
+                "stat_previo": stat_prev or "Z", "stat_nuevo": target,
+                "saldo_nuevo": saldo_nuevo, "accion": "cambiada"}
