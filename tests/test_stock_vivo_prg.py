@@ -293,21 +293,23 @@ def test_tinto_formulas_bajos_fuertes_por_mes_fail_soft():
 def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
     """_build_tintoreria_mensual usa scintela.tinto donde existe y rellena
     los meses faltantes desde formulas_app (universo Producción Tintorería,
-    tinto_formulas_terminadas_por_mes — dueña 2026-07-21), sin doblar el
-    mes del dBase."""
+    tinto_formulas_terminadas_por_mes — dueña 2026-07-21), sin doblar meses,
+    y del CORTE en adelante formulas GANA aunque tinto tenga filas."""
     from unittest.mock import patch
 
     from modules.comparativa_tintoreria import views as v
 
-    # scintela.tinto solo tiene julio (como en producción)
+    # scintela.tinto tiene JUNIO (pre-corte, gana) y JULIO (post-corte:
+    # OBSOLETO — dueña 2026-07-21: del corte en adelante manda formulas
+    # aunque tinto tenga filas)
     tinto_rows = [
-        {"yy": 2026, "mm": 7, "tipo": "Bajos", "kg": 100.0, "importe": 10.0},
-        {"yy": 2026, "mm": 7, "tipo": "Fuertes", "kg": 200.0, "importe": 250.0},
+        {"yy": 2026, "mm": 6, "tipo": "Bajos", "kg": 100.0, "importe": 10.0},
+        {"yy": 2026, "mm": 7, "tipo": "Fuertes", "kg": 300.0, "importe": 250.0},
     ]
-    # formulas_app tiene abril, mayo y TAMBIÉN julio (que NO debe pisar al dBase)
+    # formulas_app tiene abril, junio (NO debe pisar al dBase pre-corte) y julio
     form_rows = [
         {"yy": 2026, "mm": 4, "tipo": "Bajos", "kg": 500.0, "importe": 50.0},
-        {"yy": 2026, "mm": 5, "tipo": "Fuertes", "kg": 700.0, "importe": 600.0},
+        {"yy": 2026, "mm": 6, "tipo": "Fuertes", "kg": 7777.0, "importe": 600.0},
         {"yy": 2026, "mm": 7, "tipo": "Bajos", "kg": 9999.0, "importe": 9999.0},
     ]
     with patch("modules.comparativa_tintoreria.views.queries.tinto_bajos_fuertes_por_mes",
@@ -324,13 +326,13 @@ def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
     labels = [f["label"] for f in data["filas"]]
     assert labels == ["07/2026"]  # solo el mes seleccionado
     julio = next(f for f in data["filas"] if f["label"] == "07/2026")
-    # julio salió del dBase (kg total 300), NO del row falso de formulas (9999)
-    assert julio["t_kg"] == 300.0
-    # el PROMEDIO del año incorpora los 3 meses (julio dBase + abril/mayo de
-    # formulas), sin doblar julio: Bajos = (100+500+0)/3, Fuertes = (200+0+700)/3
+    # julio (>= corte) salió de FORMULAS (9999), NO del tinto obsoleto (300)
+    assert julio["t_kg"] == 9999.0
+    # el PROMEDIO del año: abril (formulas 500 B), junio (tinto 100 B — el
+    # 7777 de formulas NO pisa un mes pre-corte) y julio (formulas 9999 B).
     prom = data["promedio"]
-    assert prom["b_kg"] == 200.0
-    assert prom["f_kg"] == 300.0
+    assert round(prom["b_kg"], 2) == round((500.0 + 100.0 + 9999.0) / 3, 2)
+    assert prom["f_kg"] == 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────

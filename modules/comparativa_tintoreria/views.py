@@ -50,9 +50,19 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
     except Exception:
         gp = {}
 
+    # Dueña 2026-07-21: del CORTE en adelante manda FORMULAS aunque
+    # scintela.tinto tenga filas (el dBase/carga manual de julio quedó
+    # obsoleto — julio 100% formulas). Antes julio "ganaba" por estar en
+    # tinto y la tabla mostraba 165k del criterio viejo en vez de los 216k
+    # de Producción Tintorería.
+    from modules.informes.queries import CORTE_TINTURA as _corte_t
+    _corte_ym = (_corte_t.year, _corte_t.month)
+
     meses_dict: dict[tuple, dict] = {}
     for r in raw:
         k = (int(r["yy"]), int(r["mm"]))
+        if k >= _corte_ym:
+            continue  # mes del mundo formulas: scintela.tinto no cuenta acá
         slot = meses_dict.setdefault(k, {"Bajos": {"kg": 0.0, "imp": 0.0},
                                           "Fuertes": {"kg": 0.0, "imp": 0.0}})
         slot[r["tipo"]]["kg"] = float(r["kg"] or 0)

@@ -50,16 +50,18 @@
                     color: rgb(30 64 175); padding-top: 2px; }
   /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
      número principal, no al costado, para encolumnar correctamente. */
-  /* Dueña 2026-07-21: "recuadros más lindos, números un poco más grandes". */
+  /* Dueña 2026-07-21: "recuadros más lindos, números un poco más grandes".
+     Segunda pasada mismo día: "la letra de las rows quedó muy chica" →
+     cuerpo 13.5px / números 14px / totales 15px. */
   .fp .blk { border-radius: 10px !important; border-width: 1px !important;
              box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
              padding: 10px 14px !important; }
-  .fp .blk-title { font-size: 12px !important; letter-spacing: .06em; margin-bottom: 6px; }
-  .fp table { font-size: 12px !important; }
-  .fp td { font-size: 12px !important; padding: 1.5px 8px !important; line-height: 1.25; }
-  .fp td.num { font-size: 12.5px !important; }
-  .fp th { font-size: 9.5px !important; }
-  .fp tr.tot td, .fp td.tot { font-size: 13px !important; font-weight: 700; }
+  .fp .blk-title { font-size: 13px !important; letter-spacing: .06em; margin-bottom: 6px; }
+  .fp table { font-size: 13.5px !important; }
+  .fp td { font-size: 13.5px !important; padding: 2px 8px !important; line-height: 1.3; }
+  .fp td.num { font-size: 14px !important; }
+  .fp th { font-size: 10.5px !important; }
+  .fp tr.tot td, .fp td.tot { font-size: 15px !important; font-weight: 700; }
   .fp .pct { color: rgb(100 116 139); font-size: 9px; display: block;
              line-height: 1.1; margin-top: 2px; }
   .fp .nd  { color: rgb(148 163 184); font-style: italic; }
@@ -193,7 +195,7 @@
              Reemplaza al viejo "Ajuste de arranque". #}
           {% if aco.get('ajustes_inv_us') is not none %}
           <tr>
-            <td class="lbl" style="font-size:13px;color:rgb(180 83 9);">Ajustes <span class="pct" style="color:rgb(148 163 184);">inventario</span></td>
+            <td class="lbl" style="color:rgb(180 83 9);">Ajustes <span class="pct" style="color:rgb(148 163 184);">inventario</span></td>
             <td class="num">—</td>
             <td class="num">—</td>
             <td class="num">—</td>
@@ -218,7 +220,7 @@
           {% endif %}
           {% if _maq.get('hilado') or _maq.get('crudo') %}
           <tr>
-            <td class="lbl" style="font-size:13px;color:rgb(100 116 139);">En máquinas</td>
+            <td class="lbl" style="color:rgb(100 116 139);">En máquinas</td>
             {# dueña 2026-07-17: mostrar si SUMA (+) o RESTA (paréntesis) en cada columna #}
             <td class="num" style="color:rgb(100 116 139);">{% if _maq.get('hilado') %}+{{ _maq.get('hilado') | num_es(0) }}{% else %}—{% endif %}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ '%.3f' % (_maq.get('hilado_ukg') or 0) if _maq.get('hilado_us') else '—' }}</td>
@@ -241,7 +243,7 @@
           </tr>
           {% if aco.get('ajuste_us') is not none %}
           <tr>
-            <td class="lbl" style="font-size:13px;color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">de arranque</span></td>
+            <td class="lbl" style="color:rgb(180 83 9);">Ajuste <span class="pct" style="color:rgb(148 163 184);">de arranque</span></td>
             <td class="num">—</td>
             <td class="num">—</td>
             <td class="num">—</td>
