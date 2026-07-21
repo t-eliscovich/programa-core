@@ -4818,11 +4818,15 @@ def neteos_activos_cliente(codigo_cli: str) -> list[dict]:
     estado de cuenta. TMT 2026-07-21 (dueña)."""
     import json as _json
     codigo_cli = (codigo_cli or "").strip().upper()
+    # Filtro por cliente EN SQL (metadata JSONB) → no depende de una ventana de
+    # "los N más nuevos globales"; un neteo viejo de este cliente igual aparece.
     rows = db.fetch_all(
         "SELECT id_mov_doble, fecha_operacion, concepto, importe, metadata "
         "  FROM scintela.mov_doble "
         " WHERE tipo='neteo_estado_cuenta' AND estado='activo' "
+        "   AND UPPER(TRIM(metadata->>'codigo_cli')) = %s "
         " ORDER BY id_mov_doble DESC LIMIT 100",
+        (codigo_cli,),
     ) or []
     out: list[dict] = []
     for r in rows:
@@ -4832,8 +4836,6 @@ def neteos_activos_cliente(codigo_cli: str) -> list[dict]:
                 md = _json.loads(md)
             except Exception:  # noqa: BLE001
                 md = {}
-        if (md.get("codigo_cli") or "").strip().upper() != codigo_cli:
-            continue
         out.append({
             "id_evento": int(r["id_mov_doble"]),
             "fecha": r.get("fecha_operacion"),
