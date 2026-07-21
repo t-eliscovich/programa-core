@@ -416,7 +416,9 @@ def comparativa_tintoreria():
     from modules.tintura import service as tintura_service
 
     hoy = today_ec()
-    default_desde = hoy - timedelta(days=14)
+    # Dueña 2026-07-21: al entrar, el rango arranca en el MES ACTUAL
+    # (desde = 1° del mes en curso, hasta = hoy). Antes eran los últimos 14 días.
+    default_desde = hoy.replace(day=1)
     desde = _parse_date(request.args.get("desde"), default_desde)
     hasta = _parse_date(request.args.get("hasta"), hoy)
 
