@@ -26,12 +26,18 @@
                               or (monto_min is not none) or (monto_max is not none)
                               or (vista in ('canceladas', 'eliminadas'))
                               or (vista == 'estado' and estado) %}
+  {# TMT 2026-07-21 (dueña): "arriba tiene que aparecer monto y kg así podemos
+     ver el total del día". Con filtro activo (ej. una fecha) el hero muestra
+     MONTO (importe facturado) + KG del universo filtrado. Sin filtro (cartera
+     default) sigue el saldo vivo de cartera, con los KG al lado. #}
   {% if _filtro_fac_activo %}
-    {% set _hero_fac_total = total_saldo | float %}
-    {% set _hero_fac_n = filas | length %}
+    {% set _hero_fac_total = total_filtrado_importe | float %}
+    {% set _hero_fac_n = total_filtrado_n %}
+    {% set _hero_fac_kg = total_filtrado_kg | float %}
   {% else %}
     {% set _hero_fac_total = tot_cartera_saldo %}
     {% set _hero_fac_n = c_cartera.get('n', 0) %}
+    {% set _hero_fac_kg = c_cartera.get('total_kg', 0) | float %}
   {% endif %}
 
   {# TMT 2026-05-19 — sin label descriptivo (regla: solo número, sin
@@ -41,7 +47,7 @@
     {{ page_hero(
         'Facturas',
         kpi_valor='$ ' ~ (_hero_fac_total | num_es(0)),
-        kpi_extra='· ' ~ (_hero_fac_n | string)
+        kpi_extra=(_hero_fac_kg | kg_es) ~ ' kg · ' ~ (_hero_fac_n | string)
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
       {% if tiene_permiso('facturas.crear') %}

@@ -173,8 +173,15 @@ import mov_doble as _md  # noqa: E402
 
 
 def _factura_por_numero(numero: str, conn):
-    """Factura viva de PC (no backfill, no anulada) por numf_completo (SRI)."""
-    return db.fetch_one(
+    """Factura viva de PC (no backfill, no anulada) por numf_completo (SRI).
+
+    TMT 2026-07-21: fallback por numf (N° SRI numérico) cuando el match por
+    numf_completo falla. Muchas facturas de PC (origen dBase o cargadas bajo
+    otro código de cliente) tienen numf_completo NULL, así que la retención
+    nunca las encontraba y no se aplicaba sola. El numf SRI es único, así que
+    matchear por numf (cualquier cliente) es seguro.
+    """
+    f = db.fetch_one(
         """
         SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
                saldo, stat
@@ -187,6 +194,32 @@ def _factura_por_numero(numero: str, conn):
          FOR UPDATE
         """,
         (numero,),
+        conn=conn,
+    )
+    if f:
+        return f
+    # Fallback: extraer el N° SRI numérico de `numero` y matchear por numf.
+    import re as _re
+    _m = _re.findall(r"\d+", str(numero or ""))
+    if not _m:
+        return None
+    try:
+        _numf = int(_m[-1])
+    except (ValueError, TypeError):
+        return None
+    return db.fetch_one(
+        """
+        SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
+               saldo, stat
+          FROM scintela.factura
+         WHERE numf = %s
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+           AND COALESCE(stat, '') <> 'X'
+         ORDER BY id_factura
+         LIMIT 1
+         FOR UPDATE
+        """,
+        (_numf,),
         conn=conn,
     )
 

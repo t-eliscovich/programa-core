@@ -1062,7 +1062,8 @@ def contar_filtrado(
         """
         SELECT COUNT(*) AS n,
                COALESCE(SUM(f.importe), 0) AS total_importe,
-               COALESCE(SUM(f.saldo), 0)   AS total_saldo
+               COALESCE(SUM(f.saldo), 0)   AS total_saldo,
+               COALESCE(SUM(f.kg), 0)      AS total_kg
         FROM scintela.factura f
         -- TMT 2026-06-10: LATERAL escalar (mismo motivo que buscar() arriba)
         LEFT JOIN LATERAL (
@@ -1135,6 +1136,7 @@ def contar_filtrado(
         "n": int(row.get("n") or 0),
         "total_importe": float(row.get("total_importe") or 0),
         "total_saldo": float(row.get("total_saldo") or 0),
+        "total_kg": float(row.get("total_kg") or 0),
     }
 
 
@@ -1157,7 +1159,8 @@ def conteos_por_vista() -> dict:
           END                                AS bucket,
           COUNT(*)                           AS n,
           COALESCE(SUM(saldo), 0)            AS total_saldo,
-          COALESCE(SUM(importe), 0)          AS total_importe
+          COALESCE(SUM(importe), 0)          AS total_importe,
+          COALESCE(SUM(kg), 0)               AS total_kg
         FROM scintela.factura
         GROUP BY 1
         """
@@ -1169,6 +1172,7 @@ def conteos_por_vista() -> dict:
         "n": sum(r["n"] for r in rows),
         "total_saldo": sum(float(r["total_saldo"] or 0) for r in rows),
         "total_importe": sum(float(r["total_importe"] or 0) for r in rows),
+        "total_kg": sum(float(r["total_kg"] or 0) for r in rows),
     }
     out["estado"] = total_row
     out["todas"] = total_row

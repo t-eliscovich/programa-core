@@ -1,4 +1,6 @@
 """Listado y detalle de facturas."""
+import threading as _threading
+import time as _time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -47,6 +49,124 @@ def _parse_monto(s: str):
         return Decimal(s)
     except (InvalidOperation, ValueError):
         return None
+
+
+# =====================================================================
+# Auto-carga de facturas del DÍA — TMT 2026-07-21 (dueña)
+# =====================================================================
+# La dueña: "que se vayan cargando ni bien las tenemos" pero "solo las del
+# día". En vez del botón manual en /facturas/desde-asinfo, al ABRIR /facturas
+# se cargan solas las facturas de HOY que están en Asinfo y todavía no en PC.
+# NO toca días previos (el backlog se sigue manejando a mano).
+#
+# Seguridad anti-duplicado (clave, porque corre en un GET): SOLO crea si el
+# N° SRI de Asinfo NO existe en PC bajo NINGÚN cliente. Así una factura ya
+# cargada con otro código de cliente (ej PC 'KM' vs Asinfo 'KAM') NO se
+# vuelve a crear. Reusa el mismo queries.crear(usuario='asinfo-carga') del
+# botón → cuenta en cartera igual que una carga manual. Fail-soft: cualquier
+# error se traga (la pantalla de facturas nunca debe romperse por esto).
+_AUTO_CARGA_LOCK = _threading.Lock()
+_auto_carga_ultimo_ts = 0.0
+_AUTO_CARGA_INTERVALO_MIN = 60.0  # s — como mucho una corrida por minuto/proceso
+
+
+def _auto_cargar_facturas_hoy() -> dict:
+    """Carga (idempotente, fail-soft) las facturas de HOY de Asinfo que faltan
+    en PC. Devuelve {cargadas, ret, corrio}. Nunca levanta."""
+    global _auto_carga_ultimo_ts
+    res = {"cargadas": 0, "ret": 0, "corrio": False}
+    ahora = _time.monotonic()
+    if ahora - _auto_carga_ultimo_ts < _AUTO_CARGA_INTERVALO_MIN:
+        return res
+    if not _AUTO_CARGA_LOCK.acquire(blocking=False):
+        return res  # otra request ya está cargando; no encimamos
+    try:
+        _auto_carga_ultimo_ts = _time.monotonic()
+        res["corrio"] = True
+        hoy = today_ec()
+        try:
+            from modules.asinfo import service as asinfo_service
+            asinfo_rows = asinfo_service.facturas_periodo(hoy, hoy) or []
+        except Exception:
+            return res
+        if not asinfo_rows:
+            return res
+        # Índices de dedup con las facturas de PC de HOY (cualquier cliente,
+        # cualquier usuario_crea, no anuladas).
+        pc_rows = db.fetch_all(
+            "SELECT numf_completo, numf FROM scintela.factura "
+            " WHERE fecha = %s AND COALESCE(stat, '') <> 'X'",
+            (hoy,),
+        ) or []
+        pc_numfcompleto = {(r.get("numf_completo") or "").strip()
+                           for r in pc_rows if r.get("numf_completo")}
+        pc_numf: set[int] = set()
+        for r in pc_rows:
+            try:
+                if r.get("numf") is not None:
+                    pc_numf.add(int(r["numf"]))
+            except (TypeError, ValueError):
+                pass
+        for r in asinfo_rows:
+            tipo = (r.get("tipo") or "").upper()
+            if tipo not in ("FACTURA", "NTEN"):
+                continue
+            fr = r.get("fecha")
+            fecha = _parse_date(str(fr)[:10]) if fr else None
+            if fecha != hoy:
+                continue  # doble seguro: solo HOY
+            numero = (r.get("numero") or "").strip()
+            if not numero:
+                continue
+            # ¿Ya está? — por N° completo exacto…
+            if numero in pc_numfcompleto:
+                continue
+            numf = _numf_de_numero(numero)
+            # …o por N° SRI (solo FACTURA: el numf SRI es único y alto; una NTEN
+            # podría colisionar con un numf viejo, así que NTEN se dedupea solo
+            # por N° completo).
+            if tipo == "FACTURA" and numf is not None and numf in pc_numf:
+                continue
+            try:
+                importe = Decimal(str(r.get("usd") or "0"))
+                kg = Decimal(str(r.get("kg") or "0"))
+            except Exception:
+                continue
+            codigo_cli = (r.get("cliente_codigo") or "").strip().upper()
+            if not codigo_cli or importe == 0:
+                continue
+            try:
+                cli_uso, _ = _resolver_cliente_asinfo(
+                    codigo_cli, "asinfo-auto", numero=numero, importe=importe)
+                queries.crear(
+                    fecha=fecha, codigo_cli=cli_uso, kg=kg, importe=importe,
+                    numf=numf, numf_completo=numero or None,
+                    tipo=tipo[:2],
+                    usuario='asinfo-carga',  # cuenta en cartera igual que el botón
+                )
+                if numero:
+                    pc_numfcompleto.add(numero)
+                if numf is not None:
+                    pc_numf.add(numf)
+                res["cargadas"] += 1
+            except Exception:
+                # _CargaAsinfoSkip u otro — no cargamos esa fila, seguimos.
+                continue
+        # Retenciones de HOY (idempotente) — que también se carguen solas.
+        try:
+            from modules.retenciones import queries as _ret_q
+            rr = _ret_q.aplicar_retenciones_asinfo(hoy, hoy, usuario="asinfo-auto-ret")
+            res["ret"] = int(rr.get("n_aplicadas") or 0)
+        except Exception:
+            pass
+        return res
+    except Exception:
+        return res
+    finally:
+        try:
+            _AUTO_CARGA_LOCK.release()
+        except RuntimeError:
+            pass
 
 
 @facturas_bp.route("/facturas/nueva", methods=["GET", "POST"])
@@ -727,6 +847,12 @@ def desde_asinfo():
     # kg e importe, pero 2 dias de diferencia y sin N) — el match por fecha
     # exacta fallaba. importe+kg identicos para el mismo cliente = misma venta.
     pc_by_cli_importe_kg: set[tuple[str, int, int]] = set()
+    # Match 5 (SIN cliente): (numf, importe_cents). El N° SRI es único por
+    # factura; si PC tiene el mismo numf con el mismo importe, la factura YA
+    # está cargada aunque el código de cliente difiera (ej: PC 'KM' vs Asinfo
+    # 'KAM' sin alias) y numf_completo sea NULL. Sin esto, una factura cargada
+    # aparece como "falta cargar" y al apretar Cargar se DUPLICA. TMT 2026-07-21.
+    pc_by_numf_importe: set[tuple[int, int]] = set()
     for r in pc_rows:
         cli_raw = (r.get("codigo_cli") or "").strip().upper()
         # TMT 2026-05-29 dueña 'sigue habiendo facturas sin match': PC tiene
@@ -774,6 +900,16 @@ def desde_asinfo():
                     pc_by_cli_importe_kg.add(
                         (cli_k, int(round(imp_pc * 100)), int(round(kg_pc * 100)))
                     )
+        except Exception:
+            pass
+        # Match 5: indexar por (numf, importe_cents) — SIN cliente.
+        try:
+            imp_pc5 = float(r.get("importe") or 0)
+            if imp_pc5:
+                cents5 = int(round(imp_pc5 * 100))
+                for cand in (n, n_completo):
+                    if cand is not None:
+                        pc_by_numf_importe.add((cand, cents5))
         except Exception:
             pass
 
@@ -921,6 +1057,14 @@ def desde_asinfo():
             kgc = int(round(kg_a * 100))
             if any((cli_pc_esperado, cents + d, kgc) in pc_by_cli_importe_kg
                    for d in (-1, 0, 1)):
+                continue
+        # Match 5 (SIN cliente): mismo numf + mismo importe. Cubre facturas ya
+        # cargadas bajo OTRO código de cliente (sin alias) y con numf_completo
+        # NULL — el N° SRI + importe idénticos = la misma factura. Sin esto se
+        # mostraba como "falta cargar" y al cargar se duplicaba. TMT 2026-07-21.
+        if numf is not None and usd_a:
+            cents = int(round(usd_a * 100))
+            if any((numf, cents + d) in pc_by_numf_importe for d in (-1, 0, 1)):
                 continue
         # Calcular hint de "está en PC bajo OTRO cli" — sugerencia de alias.
         otros_clis_pc = []
@@ -1575,6 +1719,20 @@ def deshacer_retenciones_asinfo():
 @requiere_login
 @requiere_permiso("facturas.ver")
 def lista():
+    # TMT 2026-07-21 (dueña): auto-carga de las facturas de HOY ni bien están en
+    # Asinfo — sin cron y sin ir a /facturas/desde-asinfo. Corre acá, al abrir
+    # la pantalla, y SOLO si el usuario puede crear facturas. Idempotente y
+    # fail-soft (throttle interno). El backlog de días previos NO se toca.
+    if request.args.get("export") != "csv":
+        from auth import tiene_permiso as _tp
+        if _tp("facturas.crear"):
+            _ac = _auto_cargar_facturas_hoy()
+            if _ac.get("cargadas"):
+                _m = f"Se cargaron solas {_ac['cargadas']} facturas de hoy desde Asinfo."
+                if _ac.get("ret"):
+                    _m += f" Retenciones aplicadas: {_ac['ret']}."
+                flash(_m, "ok")
+
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
@@ -1994,6 +2152,7 @@ def lista():
 
     total_importe = sum(float(r["importe"] or 0) for r in filas)
     total_saldo   = sum(float(r["saldo"]   or 0) for r in filas)
+    total_kg      = sum(float(r["kg"]      or 0) for r in filas)
     return render_template(
         "facturas/lista.html",
         filas=filas, q=q, desde=desde, hasta=hasta,
@@ -2004,6 +2163,7 @@ def lista():
         estado=estado_filtro,
         estados=estados_filtro,
         total_importe=total_importe, total_saldo=total_saldo,
+        total_kg=total_kg,
         error=error,
         asinfo_intentado=_asinfo_intentado,
         solo_huerfanas=solo_huerfanas,
@@ -2014,6 +2174,7 @@ def lista():
         total_filtrado_n=total_filtrado.get("n", 0),
         total_filtrado_importe=total_filtrado.get("total_importe", 0.0),
         total_filtrado_saldo=total_filtrado.get("total_saldo", 0.0),
+        total_filtrado_kg=total_filtrado.get("total_kg", 0.0),
         paginado=not (is_export or solo_huerfanas),
     )
 
