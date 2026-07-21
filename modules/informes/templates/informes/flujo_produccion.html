@@ -50,6 +50,16 @@
                     color: rgb(30 64 175); padding-top: 2px; }
   /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
      número principal, no al costado, para encolumnar correctamente. */
+  /* Dueña 2026-07-21: "recuadros más lindos, números un poco más grandes". */
+  .fp .blk { border-radius: 10px !important; border-width: 1px !important;
+             box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
+             padding: 10px 14px !important; }
+  .fp .blk-title { font-size: 12px !important; letter-spacing: .06em; margin-bottom: 6px; }
+  .fp table { font-size: 12px !important; }
+  .fp td { font-size: 12px !important; padding: 1.5px 8px !important; line-height: 1.25; }
+  .fp td.num { font-size: 12.5px !important; }
+  .fp th { font-size: 9.5px !important; }
+  .fp tr.tot td, .fp td.tot { font-size: 13px !important; font-weight: 700; }
   .fp .pct { color: rgb(100 116 139); font-size: 9px; display: block;
              line-height: 1.1; margin-top: 2px; }
   .fp .nd  { color: rgb(148 163 184); font-style: italic; }
@@ -384,7 +394,8 @@
        manda": la tabla de arriba ya usa data.produc_tejido = Asinfo (override en
        la view). Antes había acá una 2ª tabla "· Asinfo" duplicada — removida. #}
     {% if data.produc_tejido %}
-      <p class="text-[13px] text-slate-500" style="margin-top:-2px;margin-bottom:8px">Producción tejido = ingreso físico a bodega 52 (Asinfo). $ INTELA = gasto de tejeduría prorrateado (no incluye el hilo, que ya está en Compras hilado). Lo pendiente de cargar por tejedor está en <strong>Tejeduría Asinfo</strong>.</p>
+      {# Nota explicativa ELIMINADA (dueña 2026-07-21: pantalla limpia — la
+         definición vive en el hover/ayuda, no en texto suelto). #}
     {% endif %}
 
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
@@ -485,8 +496,10 @@
 
   {# ─── CHEQUEO DE COHERENCIA — al FINAL (dueña 2026-07-15). Detecta descuadres
        entre bandas automáticamente (no a ojo). Verde = cuadra, rojo = descuadre. #}
-  {% if coherencia %}
-    {% set _warns = coherencia | selectattr('estado', 'equalto', 'warn') | list %}
+  {# Dueña 2026-07-21: el chequeo NO ocupa lugar cuando todo cuadra — aparece
+     SOLO si hay descuadres (⚠). Sigue corriendo siempre por atrás. #}
+  {% set _warns = (coherencia or []) | selectattr('estado', 'equalto', 'warn') | list %}
+  {% if coherencia and _warns %}
     <div class="blk mb-2" style="border-color: {{ '#fca5a5' if _warns else '#86efac' }};">
       <div class="blk-title" style="color: {{ '#dc2626' if _warns else '#16a34a' }};">
         Chequeo de coherencia
@@ -503,7 +516,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for c in coherencia %}
+          {% for c in coherencia if c.estado in ('warn', 'nd') %}
             {% set _col = '#16a34a' if c.estado == 'ok' else ('#dc2626' if c.estado == 'warn' else '#94a3b8') %}
             <tr>
               <td class="lbl" style="text-align:center;color:{{ _col }};font-weight:700">
@@ -518,7 +531,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[10px] text-slate-500" style="margin-top:3px">≈ = ajuste esperado. Químicos físico vs libro: el consumo es el Total de tintorería (tela cerrada), En máquinas es lo dosificado sin cerrar, y el ajuste de este mes es de arranque. ⚠ = descuadre &gt; 1%.</p>
+      <p class="text-[10px] text-slate-500" style="margin-top:3px">⚠ = descuadre &gt; 1% entre dos números que deben coincidir.</p>
     </div>
   {% endif %}
 </div>
