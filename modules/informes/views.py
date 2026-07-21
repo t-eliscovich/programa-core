@@ -1000,13 +1000,24 @@ def quimico_inv_debug():
     cierre = _d(hoy.year, hoy.month, 1) - _td(days=1)
     det = quimico_final_por_tipo(hoy, detalle=True) or {}
     tipo_q = request.args.get("tipo")  # aux|poli|alg para ver el detalle
-    filas = det.get("filas") or []
-    if tipo_q:
-        filas = [f for f in filas if f["tipo"] == tipo_q]
+    todas = det.get("filas") or []
+    comp_por_tipo: dict = {}
+    for f in todas:
+        b = comp_por_tipo.setdefault(f["tipo"], {"conteo_us": 0.0, "cons_us": 0.0,
+                                                 "comp_us": 0.0, "aju_us": 0.0, "final_us": 0.0})
+        b["conteo_us"] += f.get("conteo_us") or 0
+        b["cons_us"] += f.get("cons_us") or 0
+        b["comp_us"] += f.get("comp_us") or 0
+        b["aju_us"] += f.get("aju_us") or 0
+        b["final_us"] += f.get("monto_iva") or 0
+    comp_por_tipo = {k: {kk: round(vv, 2) for kk, vv in v.items()}
+                     for k, v in comp_por_tipo.items()}
+    filas = [f for f in todas if f["tipo"] == tipo_q] if tipo_q else []
     return jsonify({
         "hoy": hoy.isoformat(),
         "cierre_prev": cierre.isoformat(),
         "final_hoy": {k: v for k, v in det.items() if k != "filas"},
+        "componentes_por_tipo": comp_por_tipo,
         "final_cierre": quimico_final_por_tipo(cierre),
         "detalle": filas,
     })

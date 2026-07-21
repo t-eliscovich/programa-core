@@ -181,6 +181,10 @@ def quimico_final_por_tipo(corte: date | None = None, detalle: bool = False) -> 
                 "conteo_q": round(conteo_q, 3),
                 "cons_q": round(cons_q, 3), "comp_q": round(comp_q, 3),
                 "aju_q": round(aju_q, 3), "final": final,
+                "conteo_us": round(conteo_q * us * iva_mult, 2),
+                "cons_us": round(cons_q * us * iva_mult, 2),
+                "comp_us": round(comp_q * us * iva_mult, 2),
+                "aju_us": round(aju_q * us * iva_mult, 2),
                 "monto_iva": monto_iva, "a44": es_a44,
             })
 
