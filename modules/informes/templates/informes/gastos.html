@@ -100,25 +100,31 @@
     border-top-color: rgb(71 85 105);
   }
   .gastos-matriz tr.proyectado td {
-    background: rgb(255 251 235); color: rgb(15 23 42);
+    background: rgb(240 249 255); color: rgb(15 23 42);
   }
   .dark .gastos-matriz tr.proyectado td {
-    background: rgb(69 39 19 / 0.25); color: rgb(241 245 249);
+    background: rgb(12 74 110 / 0.25); color: rgb(241 245 249);
   }
   .gastos-matriz tr.proyectado td.total-col {
-    background: rgb(254 243 199); font-weight: 700;
+    background: rgb(224 242 254); font-weight: 700;
   }
   .dark .gastos-matriz tr.proyectado td.total-col {
-    background: rgb(120 53 15 / 0.4);
+    background: rgb(7 89 133 / 0.4);
   }
+  /* Federico 2026-07-21 — casillas más cortas y corridas a la derecha para
+     encolumnar las cifras con los gastos de las filas de arriba. Reducimos el
+     padding derecho de la celda para que el borde del número caiga bajo la
+     columna (que tiene 14px de padding). */
+  .gastos-matriz tr.proyectado td.cell { padding-right: 6px; }
   .gastos-matriz input.proy-input {
-    width: 100%; text-align: right; font-variant-numeric: tabular-nums;
-    padding: 4px 8px; border: 1px solid rgb(203 213 225); border-radius: 6px;
+    width: 65%; display: block; margin-left: auto;
+    text-align: right; font-variant-numeric: tabular-nums;
+    padding: 4px 6px; border: 1px solid rgb(203 213 225); border-radius: 6px;
     background: rgb(255 255 255); color: rgb(15 23 42); font-size: 13px;
   }
   .gastos-matriz input.proy-input:focus {
-    outline: none; border-color: rgb(245 158 11);
-    box-shadow: 0 0 0 2px rgb(245 158 11 / 0.25);
+    outline: none; border-color: rgb(14 165 233);
+    box-shadow: 0 0 0 2px rgb(14 165 233 / 0.25);
   }
   .dark .gastos-matriz input.proy-input {
     background: rgb(15 23 42); color: rgb(241 245 249); border-color: rgb(71 85 105);
