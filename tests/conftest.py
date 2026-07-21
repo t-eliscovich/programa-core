@@ -41,13 +41,6 @@ KNOWN_FAILING_NODEIDS = {
     "tests/test_csv_upload.py::test_cargar_csv_requiere_permiso",
     "tests/test_diag_integraciones.py::test_diag_integraciones_sin_permiso_redirige",
     "tests/test_importaciones_movimientos.py::test_vista_renderiza_anticipos_para_editor",
-    # 2026-07-21: mismo tipo de deuda de fixture — el código de netear cheques
-    # cambió (usa conn.cursor()) y el _DBStub no lo implementa. No es regresión
-    # de producción (el conn real sí tiene cursor). Arreglar el stub y sacar.
-    "tests/test_netear_cheques_anticipos.py::test_neteo_happy",
-    "tests/test_netear_cheques_anticipos.py::test_neteo_multiple",
-    "tests/test_netear_cheques_anticipos.py::test_neteo_sobrante_de_anticipos_queda_saldo_a_favor",
-    "tests/test_netear_cheques_anticipos.py::test_neteo_exacto_no_crea_residuo",
     "tests/test_stock_fabricacion.py::test_fabricacion_tc_renderiza_estructura_excel",
     "tests/test_stock_fabricacion.py::test_fabricacion_pt_material_y_sin_detalle_oft",
     "tests/test_paridad_compra_a_balance.py::test_paridad_compra_anular_borra_posdat",

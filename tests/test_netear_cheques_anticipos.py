@@ -32,12 +32,24 @@ class _DBStub:
         # aplicaciones" para que el neteo siga directo al anular.
         if "chequesxfact" in s:
             return []
+        # 2026-07-21: el neteo snapshotea la posdat hermana (para deshacer_neteo).
+        # Es SOLO LECTURA (sin FOR UPDATE) — en el stub no hay posdat → vacío.
+        if "scintela.posdat" in s:
+            return []
         # Los SELECT de cheque/anticipo SÍ deben lockear las filas (FOR UPDATE).
         assert "for update" in s
         # el 2do fetch selecciona no_banco (anticipos); el 1ro no.
         if "no_banco" in s:
             return [dict(a) for a in self.anticipos]
         return [dict(c) for c in self.cheques]
+
+    def fetch_one(self, sql, params=None, conn=None):
+        # 2026-07-21: el neteo lee MAX(id_mov_doble) para el snapshot que usa
+        # deshacer_neteo. Sin mov_doble en el stub → 0.
+        s = " ".join(sql.split()).lower()
+        if "max(id_mov_doble)" in s:
+            return {"m": 0}
+        return {}
 
     def execute(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
@@ -67,6 +79,7 @@ def _patch(monkeypatch, stub, spy_cancelar=True):
     import periodo_guard
     from modules.cheques import queries as chq
     monkeypatch.setattr(db, "fetch_all", stub.fetch_all)
+    monkeypatch.setattr(db, "fetch_one", stub.fetch_one)
     monkeypatch.setattr(db, "execute", stub.execute)
     monkeypatch.setattr(db, "execute_returning", stub.execute_returning)
     monkeypatch.setattr(db, "tx", stub.tx)
