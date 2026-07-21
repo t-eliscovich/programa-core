@@ -208,3 +208,47 @@ def quimico_total_fisico(corte: date | None = None) -> float | None:
     """Total químico c/IVA (aux+poli+alg) al `corte` — el número de formulas."""
     r = quimico_final_por_tipo(corte)
     return None if r is None else float(r["total"])
+
+
+_SQL_CONSUMO = """
+SELECT COALESCE(SUM(
+    (ol.cantidad_kg
+     + COALESCE((SELECT SUM((e->>'kg')::numeric)
+                   FROM jsonb_array_elements(
+                          CASE WHEN jsonb_typeof(ol.ajustes) = 'array'
+                               THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
+    * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+    * (CASE WHEN p.num = 12 THEN 1.0 ELSE 1.15 END)
+    -- A44 (AV SOFT NI, aux num_visible=44): consumo en escamas 10x → /10
+    * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44
+            THEN 0.1 ELSE 1.0 END)
+), 0) AS us
+  FROM orden_lineas ol
+  JOIN ordenes o   ON o.id = ol.orden_id
+  JOIN productos p ON p.num = ol.producto_num
+ WHERE o.fecha_terminado IS NOT NULL
+   AND o.fecha_terminado <> ''
+   AND o.fecha_terminado >= %(desde)s
+   AND o.fecha_terminado <= %(hasta)s
+   AND (UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX') OR p.num < 300)
+"""
+
+
+def quimico_consumido_us(desde: date, hasta: date) -> float | None:
+    """Químico CONSUMIDO c/IVA en el período [desde, hasta] por fecha_terminado —
+    el MISMO número que la columna CONSUMIDO de formulas_app (~157.882). Físico:
+    Σ orden_lineas (cantidad_kg + ajustes JSONB) × precio × IVA, con A44 /10.
+
+    Esto es el consumo REAL de bodega — coherente con el stock físico (que ya
+    usa el balance/flujo). Reemplaza al ITIN (costeo por orden) en la fila
+    'Colorantes/Quím.' para que el costo = lo que realmente salió del stock.
+    None si formulas_db no está (fail-soft)."""
+    try:
+        row = formulas_db.fetch_one(
+            _SQL_CONSUMO, {"desde": desde.isoformat(), "hasta": hasta.isoformat()})
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("quimico_consumido_us %s-%s: %s", desde, hasta, e)
+        return None
+    if not row:
+        return None
+    return float(row.get("us") or 0)

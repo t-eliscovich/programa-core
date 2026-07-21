@@ -3531,6 +3531,7 @@ def resultados_costos_tabla(
     ktint: float,
     v7: float,
     ktint_colorantes: float | None = None,  # TMT 2026-05-29: kg live para fila Colorantes; default = ktint (compat)
+    col_us_fisico: float | None = None,      # dueña 2026-07-21: $ colorante = FÍSICO consumido (no ITIN); None → ITIN
     v8: float,
     v9: float,
     deprcar: float,
@@ -3608,7 +3609,10 @@ def resultados_costos_tabla(
     tin_us = float(v4 or 0) + float(v5 or 0) + float(v6 or 0) + float(dcc or 0)
     tin_ukg = _div(tin_us, ktint)
 
-    col_us = float(itin or 0)
+    # Dueña 2026-07-21: la fila Colorantes/Quím. usa el químico FÍSICO consumido
+    # (lo que realmente salió de bodega, coherente con el stock físico) en vez
+    # del ITIN (costeo por orden). Si no vino el físico, cae al ITIN (dBase).
+    col_us = float(col_us_fisico) if col_us_fisico is not None else float(itin or 0)
     # TMT 2026-05-29 dueña: la fila Colorantes/Quím. usa kg tinturados
     # LIVE del mes (param opcional ktint_colorantes), no el ktint de
     # historia. Caída a ktint si no se pasa (compat con callers viejos).
@@ -4679,6 +4683,18 @@ def informe_balance() -> dict:
     _csvtatot = (KV * 1.04 * (UMX + _vk_kk + _safe_div(ITIN, _kt)
                  + _safe_div(_gc, (KTINT + _kprovt))) + GS)
 
+    # Dueña 2026-07-21: la fila Colorantes/Quím. pasa a medir el químico FÍSICO
+    # consumido de bodega (mismo criterio que el stock físico, ~157) en vez del
+    # ITIN (costeo por orden, ~168). Coherencia "físico manda". Fail-soft → ITIN.
+    _col_us_fisico = None
+    try:
+        from modules.informes.quimico_inv_formulas import quimico_consumido_us
+        from datetime import date as _date_cf
+        _col_us_fisico = quimico_consumido_us(
+            _date_cf(yy_actual, mesnum_actual, 1), _hoy_ec_bal)
+    except Exception:  # noqa: BLE001 -- fail-soft, queda el ITIN
+        _col_us_fisico = None
+
     tabla_resultados = resultados_costos_tabla(
         venta_kg=h_kvent,
         venta_us=h_uvent,
@@ -4704,6 +4720,7 @@ def informe_balance() -> dict:
         # tinto/formulas si Asinfo no respondió.
         ktint=(_tin_kg_balance or float(tin.get("kr") or 0)),
         ktint_colorantes=(_tin_kg_balance or float(tin.get("ktint") or 0)),
+        col_us_fisico=_col_us_fisico,
         v7=gxg["v7"],
         v8=gxg["v8"],
         v9=gxg["v9"],
