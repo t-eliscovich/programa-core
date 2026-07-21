@@ -527,13 +527,23 @@ def test_dropdown_nunca_ofrece_transicion_invalida():
 
 
 def test_estados_con_movimiento_no_salen_por_etiqueta():
-    """Un cheque DEPOSITADO (B/A) no puede volver a cartera con un cambio de
-    etiqueta pelado (dejaría el depósito colgado en el banco). Sólo sale por
-    rebote (9) o anulación (X), que compensan el banco. TMT 2026-07-11 (dueña:
-    "que la contabilidad quede consistente")."""
+    """Un cheque DEPOSITADO (B/A) no puede volver a CARTERA (Z/P/D) con un
+    cambio de etiqueta pelado (dejaría el depósito colgado en el banco). Sale
+    por rebote (9) o anulación (X), que compensan el banco — y desde
+    TMT 2026-07-21 (dueña, casos CJE/NIF) B también puede pasar a "1"
+    (devuelto 1°) PLANO: el banco lo devolvió después del depósito y el ND del
+    protesto llega por el extracto o se tipea en /bancos (paridad dBase). El
+    depósito queda en la historia."""
     from modules.cheques import queries as q
+    assert q.TRANSICIONES_VALIDAS["B"] == {"9", "X", "1"}, (
+        "B sale por rebote (9), anulación (X) o devuelto 1° (1, plano)"
+    )
+    assert q.TRANSICIONES_VALIDAS["A"] == {"9", "X"}, (
+        "A no debe poder ir a cartera por etiqueta"
+    )
     for dep in ("B", "A"):
-        assert q.TRANSICIONES_VALIDAS[dep] == {"9", "X"}, (
+        # Cartera directa (Z/P/D) sigue prohibida desde depositado.
+        assert not ({"Z", "P", "D"} & q.TRANSICIONES_VALIDAS[dep]), (
             f"{dep} no debe poder ir a cartera por etiqueta"
         )
         # 'X' desde un depositado va por el wizard de anulación (compensa banco).

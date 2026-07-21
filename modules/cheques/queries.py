@@ -482,6 +482,12 @@ TRANSICIONES_VALIDAS = {
     "D": {"Z", "P", "1", "X"} | {"B", "C", "I"},
     # Devuelto 1°: escalar a 2°, volver a cartera, re-depositar (V), rebote, eliminar.
     "1": {"2", "Z", "P", "D", "V", "X"} | {"9"},
+    # TMT 2026-07-21 (dueña, casos CJE/NIF): un DEPOSITADO que el banco devolvió
+    # DESPUÉS puede pasar a "1" (devuelto 1°) como cambio de etiqueta PLANO, con
+    # nueva fecha de cobro. El ND del protesto NO se genera acá: llega por el
+    # extracto/sync o se tipea en /bancos (como hace el dBase). El depósito
+    # original queda en la historia del cheque. Para el rebote CON ND automático
+    # sigue existiendo B→9. Desde "1" ya se puede volver a Z/P (cartera).
     # Devuelto 2°: escalar a 3°, volver a cartera, rebote, eliminar. (NO vuelve a 1°.)
     "2": {"3", "Z", "P", "D", "X"} | {"9"},
     # Devuelto 3° (segundo rechazo): volver a cartera para gestión, o eliminar.
@@ -494,7 +500,7 @@ TRANSICIONES_VALIDAS = {
     # Eliminado: restaurar sólo a cartera (los movimientos ya se compensaron al anular).
     "X": {"Z", "P", "D"},
     # Estados CON movimiento: salida sólo por rebote/anulación (compensan banco).
-    "B": {"9", "X"},
+    "B": {"9", "X", "1"},
     "I": {"9", "X"},
     "A": {"9", "X"},
 }
