@@ -986,6 +986,26 @@ def historico_eliminar_ultima():
         return jsonify({"ok": False, "error": f"No pude eliminar: {e}"}), 500
 
 
+@informes_bp.route("/quimico-inv-debug")
+@requiere_login
+@requiere_permiso("informes.ver")
+def quimico_inv_debug():
+    """Verificación: químico FINAL por tipo replicando formulas_app.
+    Compará con "TOTALES POR TIPO · FINAL" de formulas (aux/poli/alg/total)."""
+    from datetime import date as _d
+    from datetime import timedelta as _td
+
+    from modules.informes.quimico_inv_formulas import quimico_final_por_tipo
+    hoy = today_ec()
+    cierre = _d(hoy.year, hoy.month, 1) - _td(days=1)
+    return jsonify({
+        "hoy": hoy.isoformat(),
+        "cierre_prev": cierre.isoformat(),
+        "final_hoy": quimico_final_por_tipo(hoy),
+        "final_cierre": quimico_final_por_tipo(cierre),
+    })
+
+
 @informes_bp.route("/balance/utilidad-debug")
 @requiere_login
 @requiere_permiso("informes.ver")

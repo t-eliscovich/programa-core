@@ -218,6 +218,18 @@ def fisico_total_al_dia(corte: date) -> float | None:
     hit = _cache_get(key)
     if hit is not None:
         return hit
+    # Dueña 2026-07-21: COINCIDIR con formulas_app (417.675, no la réplica 412).
+    # quimico_inv_formulas replica EXACTO el "TOTALES POR TIPO · FINAL" de
+    # formulas (ajustes JSONB del consumo, ventana del conteo inclusive, A44 /10).
+    # Fallback: la réplica aproximada de tintura.service (comportamiento previo).
+    try:
+        from modules.informes.quimico_inv_formulas import quimico_total_fisico
+        _v = quimico_total_fisico(corte)
+        if _v is not None and _v > 0:
+            _cache_put(key, float(_v))
+            return float(_v)
+    except Exception as e:  # noqa: BLE001 -- fail-soft → cae al método viejo
+        _LOG.warning("fisico_total_al_dia (formulas) %s: %s", corte, e)
     try:
         from modules.tintura import service as _tsvc
         items = _tsvc.stock_quimicos_al_dia(corte)
