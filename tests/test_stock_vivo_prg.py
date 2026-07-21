@@ -292,7 +292,9 @@ def test_tinto_formulas_bajos_fuertes_por_mes_fail_soft():
 
 def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
     """_build_tintoreria_mensual usa scintela.tinto donde existe y rellena
-    los meses faltantes desde formulas_app, sin doblar el mes del dBase."""
+    los meses faltantes desde formulas_app (universo Producción Tintorería,
+    tinto_formulas_terminadas_por_mes — dueña 2026-07-21), sin doblar el
+    mes del dBase."""
     from unittest.mock import patch
 
     from modules.comparativa_tintoreria import views as v
@@ -310,7 +312,7 @@ def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
     ]
     with patch("modules.comparativa_tintoreria.views.queries.tinto_bajos_fuertes_por_mes",
                return_value=tinto_rows), \
-         patch("modules.comparativa_tintoreria.views.queries.tinto_formulas_bajos_fuertes_por_mes",
+         patch("modules.comparativa_tintoreria.views.queries.tinto_formulas_terminadas_por_mes",
                return_value=form_rows), \
          patch("modules.comparativa_tintoreria.views.queries.gs_produccion_tintoreria_por_mes",
                return_value={}):
@@ -329,3 +331,107 @@ def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
     prom = data["promedio"]
     assert prom["b_kg"] == 200.0
     assert prom["f_kg"] == 300.0
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# COSTOS DE TINTORERÍA atada a Producción Tintorería (dueña 2026-07-21):
+# la fila del mes sale del MISMO universo que /informes/comparativa-tintoreria
+# (tinturado_resumen por fecha_terminado, kg = tela terminada de la orden) →
+# el Total kg de la tabla = el de la página, exacto por construcción.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _orden_terminada(numero, ft, cruda, term, es_reproceso=False):
+    from datetime import date as _date
+
+    from modules.tintura.service import TinturadoOrden
+    return TinturadoOrden(
+        numero=numero, fecha=_date(ft.year, ft.month, 1), fecha_terminado=ft,
+        formula_cod="A", color="c", categoria=None, kilos_planeados=0.0,
+        tela_cruda_kg=cruda, tela_terminada_kg=term,
+        desperdicio_kg=None, jet=None, es_reproceso=es_reproceso,
+        observaciones=None,
+    )
+
+
+def test_tinto_formulas_terminadas_total_igual_a_tinturado_resumen():
+    """El Total kg del mes (Bajos+Fuertes) = Σ tela_terminada_kg de
+    tinturado_resumen — lavados y órdenes sin colorante INCLUIDOS (antes se
+    excluían y la tabla subcontaba 165k vs 216k). Clasificación por orden con
+    la regla de siempre ($/kg colorantes+aux c/IVA ≤ 0.4 → Bajos; $/kg 0 →
+    Bajos)."""
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from modules.comparativa_tintoreria import queries as q
+
+    ordenes = [
+        # Bajos: 100/1000 = 0.1
+        _orden_terminada("1", _date(2026, 7, 3), 1000.0, 950.0),
+        # Fuertes: 800/1000 = 0.8
+        _orden_terminada("2", _date(2026, 7, 10), 1000.0, 900.0),
+        # lavado sin colorante: $/kg = 0 → Bajos, SUS KG CUENTAN
+        _orden_terminada("LAV1", _date(2026, 7, 12), 0.0, 600.0),
+        # sin cruda cargada: denominador = terminada (100/500 = 0.2 → Bajos)
+        _orden_terminada("3", _date(2026, 7, 15), 0.0, 500.0),
+        # junio: cae en su propio mes por fecha_terminado
+        _orden_terminada("4", _date(2026, 6, 30), 400.0, 380.0),
+    ]
+    costos = {"1": 100.0, "2": 800.0, "3": 100.0, "4": 50.0}
+    with patch("modules.tintura.service.tinturado_resumen",
+               return_value=ordenes) as m_res, \
+         patch("modules.tintura.service.costo_por_orden",
+               return_value=costos):
+        rows = q.tinto_formulas_terminadas_por_mes(
+            _date(2026, 1, 1), _date(2026, 7, 31))
+
+    # mismo rango terminado_* que usaría Producción Tintorería
+    assert m_res.call_args.kwargs["terminado_desde"] == _date(2026, 1, 1)
+    assert m_res.call_args.kwargs["terminado_hasta"] == _date(2026, 7, 31)
+
+    by = {(r["yy"], r["mm"], r["tipo"]): r for r in rows}
+    # julio: Bajos = 950 + 600 (lavado) + 500 = 2050; Fuertes = 900
+    assert by[(2026, 7, "Bajos")]["kg"] == 2050.0
+    assert by[(2026, 7, "Bajos")]["importe"] == 200.0
+    assert by[(2026, 7, "Fuertes")]["kg"] == 900.0
+    # TOTAL julio = Σ tela_terminada_kg de tinturado_resumen (universo idéntico)
+    tot_julio = by[(2026, 7, "Bajos")]["kg"] + by[(2026, 7, "Fuertes")]["kg"]
+    assert tot_julio == sum(
+        o.tela_terminada_kg for o in ordenes
+        if o.fecha_terminado and o.fecha_terminado.month == 7)
+    # junio en su propio bucket
+    assert by[(2026, 6, "Bajos")]["kg"] == 380.0
+
+
+def test_tinto_formulas_terminadas_fail_soft():
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from modules.comparativa_tintoreria import queries as q
+
+    with patch("modules.tintura.service.tinturado_resumen",
+               side_effect=RuntimeError("db down")):
+        assert q.tinto_formulas_terminadas_por_mes(
+            _date(2026, 1, 1), _date(2026, 12, 31)) == []
+    with patch("modules.tintura.service.tinturado_resumen", return_value=[]), \
+         patch("modules.tintura.service.costo_por_orden", return_value={}):
+        assert q.tinto_formulas_terminadas_por_mes(
+            _date(2026, 1, 1), _date(2026, 12, 31)) == []
+
+
+def test_tinto_formulas_terminadas_orden_con_costo_sin_kg_va_a_fuertes():
+    """Anomalía: orden terminada con $ de químico pero sin ningún kg — el $
+    no se esconde, va a Fuertes (kg aporta 0)."""
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from modules.comparativa_tintoreria import queries as q
+
+    ordenes = [_orden_terminada("X", _date(2026, 7, 5), 0.0, 0.0)]
+    with patch("modules.tintura.service.tinturado_resumen",
+               return_value=ordenes), \
+         patch("modules.tintura.service.costo_por_orden",
+               return_value={"X": 123.0}):
+        rows = q.tinto_formulas_terminadas_por_mes(
+            _date(2026, 7, 1), _date(2026, 7, 31))
+    assert rows == [
+        {"yy": 2026, "mm": 7, "tipo": "Fuertes", "kg": 0.0, "importe": 123.0}]

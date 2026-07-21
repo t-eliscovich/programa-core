@@ -58,13 +58,18 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
         slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
         slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
 
-    # scintela.tinto solo guarda el mes en curso del dBase (~1 mes de data).
-    # Los meses anteriores tienen su tinturado en formulas_app. Traemos esos
-    # meses via el mismo bridge que usa flujo-produccion (tinto_equiv_formulas)
-    # y los AGREGAMOS SOLO para los (yy, mm) que scintela.tinto no tiene, para
-    # no doblar el mes que ya vino del dBase (July queda identico al balance).
+    # scintela.tinto solo guarda meses del dBase (pre-corte). Los meses de
+    # formulas se AGREGAN SOLO para los (yy, mm) que scintela.tinto no tiene,
+    # para no doblar un mes que ya vino del dBase.
+    # Dueña 2026-07-21: los meses de formulas salen del universo PRODUCCIÓN
+    # TINTORERÍA — tinto_formulas_terminadas_por_mes usa tinturado_resumen
+    # (órdenes con fecha_terminado en el mes, kg = tela terminada, lavados y
+    # reprocesos incluidos) → el Total kg de la tabla = el de la página
+    # Producción Tintorería, EXACTO por construcción (misma función, mismo
+    # rango). Antes (tinto_formulas_bajos_fuertes_por_mes, por fecha de
+    # creación y sin lavados) la tabla daba 165k vs 216k para el mismo julio.
     try:
-        raw_f = queries.tinto_formulas_bajos_fuertes_por_mes(desde, hasta) or []
+        raw_f = queries.tinto_formulas_terminadas_por_mes(desde, hasta) or []
     except Exception:  # noqa: BLE001
         raw_f = []
     meses_tinto = set(meses_dict.keys())

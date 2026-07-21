@@ -384,3 +384,70 @@ def tinto_formulas_bajos_fuertes_por_mes(
         {"yy": yy, "mm": mm, "tipo": tipo, "kg": v[0], "importe": v[1]}
         for (yy, mm, tipo), v in sorted(acc.items())
     ]
+
+
+def tinto_formulas_terminadas_por_mes(
+    desde: date, hasta: date, limite_bajos: float = 0.4
+) -> list[dict]:
+    """Bajos/Fuertes por mes desde formulas_app — universo PRODUCCIÓN
+    TINTORERÍA (dueña 2026-07-21: la tabla COSTOS DE TINTORERÍA y la página
+    Producción Tintorería tienen que decir LO MISMO, garantizado por
+    construcción).
+
+    Universo = tinturado_resumen(terminado_desde/hasta) — la MISMA función
+    que usa /informes/comparativa-tintoreria: órdenes con fecha_terminado en
+    el rango, kg = tela_terminada_kg de la orden, agrupadas por el MES de
+    fecha_terminado. Incluye lavados y reprocesos (están terminados y suman
+    kg en Producción Tintorería; excluirlos era el gap 165k vs 216k). El
+    Total kg del mes = Σ tela_terminada_kg de tinturado_resumen, exacto.
+
+    Clasificación por orden, misma regla de siempre: $/kg = costo de
+    colorantes+auxiliares c/IVA (costo_por_orden, mismo bridge y misma
+    valuación que la página) sobre los kg de la orden (crudo preferido,
+    fallback terminado) <= limite_bajos → Bajos. Órdenes terminadas sin
+    colorante ($/kg = 0, p.ej. lavados) → Bajos; una orden con costo pero
+    sin ningún kg (anomalía) → Fuertes, para no esconder el $.
+
+    Mismo shape de salida que `tinto_bajos_fuertes_por_mes` (una fila por
+    (yy, mm, tipo) con kg e importe). Fail-soft: [] si formulas no está.
+
+    Reemplaza a `tinto_formulas_bajos_fuertes_por_mes` (por fecha de
+    CREACIÓN, sin lavados, solo kgn>0) en la tabla mensual del flujo; esa
+    queda para otros usos/historial.
+    """
+    try:
+        from modules.tintura import service as _tint_svc
+
+        ordenes = _tint_svc.tinturado_resumen(
+            limite=20000, terminado_desde=desde, terminado_hasta=hasta,
+        ) or []
+        costos = _tint_svc.costo_por_orden(
+            terminado_desde=desde, terminado_hasta=hasta,
+        ) or {}
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return []
+    if not ordenes:
+        return []
+
+    acc2: dict[tuple, list] = {}
+    for o in ordenes:
+        ft = o.fecha_terminado
+        if ft is None:
+            continue  # tinturado_resumen con terminado_* no debería traerlas
+        term = float(o.tela_terminada_kg or 0.0)
+        cruda = float(o.tela_cruda_kg or 0.0)
+        imp = float(costos.get(o.numero, 0.0) or 0.0)
+        den = cruda if cruda > 0 else term
+        if den > 0:
+            tipo = "Bajos" if (imp / den) <= limite_bajos else "Fuertes"
+        else:
+            tipo = "Bajos" if imp <= 0 else "Fuertes"
+        k = (ft.year, ft.month, tipo)
+        slot = acc2.setdefault(k, [0.0, 0.0])
+        slot[0] += term
+        slot[1] += imp
+
+    return [
+        {"yy": yy, "mm": mm, "tipo": tipo, "kg": v[0], "importe": v[1]}
+        for (yy, mm, tipo), v in sorted(acc2.items())
+    ]
