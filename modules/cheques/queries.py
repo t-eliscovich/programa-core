@@ -4509,9 +4509,10 @@ def netear_cheques_con_anticipos(
 
     TMT 2026-07-09 (dueña): "cancelar cheques y anticipos (netearlos) desde el
     estado de cuenta — anular un/varios cheque con un/varios anticipo". Los dos
-    lados se cancelan entre sí (stat='X'). Requiere que Σimporte(cheques) ==
-    Σimporte(anticipos) dentro de $0,01 (netean a cero — igual que el flujo 95
-    CANCELA ANTIC. del dBase, pero disparado a mano desde la cuenta).
+    lados se cancelan entre sí (stat='X'). TMT 2026-07-21 (dueña): ya no hace
+    falta que sumen exactamente igual — si los ANTICIPOS suman más, el
+    sobrante queda como saldo a favor nuevo (espejo NB=98 "RESTO"). Si los
+    CHEQUES suman más se bloquea (un cheque no se anula en parte).
 
     - Si un cheque está aplicado a factura(s), se DESAPLICA primero (reusa
       `desaplicar_factura`, reversible) → la factura vuelve a quedar con saldo
@@ -4590,12 +4591,22 @@ def netear_cheques_con_anticipos(
             suma_anticipos += round(-float(a["importe"] or 0), 2)
         suma_anticipos = round(suma_anticipos, 2)
 
-        if abs(suma_cheques - suma_anticipos) > 0.01:
+        # TMT 2026-07-21 (dueña): "permita netear con diferencia de valores".
+        # Si los ANTICIPOS suman más que los cheques, el sobrante NO se pierde:
+        # se anula todo y el resto queda como un espejo NB=98 NUEVO (saldo a
+        # favor residual, reversible). Si los CHEQUES suman más se sigue
+        # bloqueando: un cheque físico no se puede anular en parte.
+        residuo = round(suma_anticipos - suma_cheques, 2)
+        if residuo < -0.01:
             raise ValueError(
-                f"No netea a cero: cheques suman ${suma_cheques:,.2f} y "
-                f"anticipos ${suma_anticipos:,.2f}. Ajustá la selección para "
-                "que ambos lados sean iguales."
+                f"Los cheques suman ${suma_cheques:,.2f} y los anticipos "
+                f"${suma_anticipos:,.2f}: el sobrante quedaría del lado de "
+                "los cheques y un cheque no se puede anular en parte. Sacá "
+                "cheques o sumá anticipos — si los anticipos superan, el "
+                "resto queda como saldo a favor."
             )
+        if residuo <= 0.01:
+            residuo = 0.0
 
         # --- Desaplicar los cheques de sus facturas (si estaban aplicados) ---
         # TMT 2026-07-09 (dueña): "falta que se desaplique el cheque de la
@@ -4678,10 +4689,29 @@ def netear_cheques_con_anticipos(
                 },
             )
 
+        # --- Residuo: sobrante de anticipos → saldo a favor nuevo ---
+        # TMT 2026-07-21 (dueña): el resto queda como espejo NB=98 fresco,
+        # linkeado por mov_doble al anticipo de referencia (auditable y
+        # reversible como cualquier espejo).
+        id_residuo = None
+        if residuo:
+            espejo_residuo = crear_espejo_anticipo(
+                conn=conn,
+                id_cheque_padre=ids_anticipos[0],
+                no_cheque="RESTO",
+                fecha=fecha,
+                codigo_cli=codigo_cli,
+                importe_espejo=residuo,
+                usuario=usuario,
+            )
+            id_residuo = (espejo_residuo or {}).get("id_cheque")
+
     return {
         "n_cheques": len(cheques),
         "n_anticipos": len(anticipos),
         "total": suma_cheques,
+        "residuo": residuo,
+        "id_residuo": id_residuo,
         "cheques": [c["id_cheque"] for c in cheques],
         "anticipos": [a["id_cheque"] for a in anticipos],
         "facturas_reabiertas": facturas_reabiertas,

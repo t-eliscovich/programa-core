@@ -23,6 +23,7 @@ class _DBStub:
         self.anticipos = anticipos
         self.updates: list[tuple] = []
         self.mov_dobles: list[tuple] = []
+        self.inserts_cheque: list[tuple] = []
 
     def fetch_all(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
@@ -46,9 +47,14 @@ class _DBStub:
         return 0
 
     def execute_returning(self, sql, params=None, conn=None):
-        if "insert into scintela.mov_doble" in " ".join(sql.split()).lower():
+        s = " ".join(sql.split()).lower()
+        if "insert into scintela.mov_doble" in s:
             self.mov_dobles.append(tuple(params))
             return {"id_mov_doble": 1}
+        if "insert into scintela.cheque" in s:
+            # espejo residual (sobrante de anticipos → saldo a favor nuevo)
+            self.inserts_cheque.append(tuple(params))
+            return {"id_cheque": 999}
         return {}
 
     @contextlib.contextmanager
@@ -110,13 +116,53 @@ def test_neteo_multiple(monkeypatch):
     assert res["total"] == 100.0 and len(calls) == 2
 
 
-def test_neteo_no_cuadra(monkeypatch):
+def test_neteo_cheques_superan_bloquea(monkeypatch):
+    # TMT 2026-07-21: si los CHEQUES suman más, sigue bloqueado (un cheque
+    # físico no se anula en parte).
     from modules.cheques import queries as chq
     stub = _DBStub([_ch(1, 100.0)], [_ant(90, -80.0)])
     _patch(monkeypatch, stub)
-    with pytest.raises(ValueError, match="No netea a cero"):
+    with pytest.raises(ValueError, match="no se puede anular en parte"):
         chq.netear_cheques_con_anticipos(
             codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90])
+
+
+def test_neteo_sobrante_de_anticipos_queda_saldo_a_favor(monkeypatch):
+    # TMT 2026-07-21 (dueña, caso RKS): cheques 1.500,00 vs anticipos
+    # 1.414,00 + 88,86 = 1.502,86 → netea igual y el resto (2,86) queda como
+    # espejo NB=98 nuevo.
+    from modules.cheques import queries as chq
+    stub = _DBStub(
+        [_ch(1, 1500.0)], [_ant(90, -1414.0), _ant(91, -88.86)])
+    calls = _patch(monkeypatch, stub)
+    res = chq.netear_cheques_con_anticipos(
+        codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90, 91],
+        usuario="t")
+    assert res["n_cheques"] == 1 and res["n_anticipos"] == 2
+    assert res["residuo"] == pytest.approx(2.86)
+    assert res["id_residuo"] == 999
+    # el cheque se anuló entero
+    assert len(calls) == 1 and calls[0]["id_cheque"] == 1
+    # espejo residual insertado con importe -2.86 (negativo, NB=98)
+    assert len(stub.inserts_cheque) == 1
+    flat = stub.inserts_cheque[0]
+    assert any(
+        isinstance(v, float) and abs(v + 2.86) < 0.001 for v in flat)
+    assert 98 in flat
+    # mov_dobles: 2 'anticipo_neteado' + 1 'cheque_anticipo_espejo'
+    tipos = [m[1] for m in stub.mov_dobles]
+    assert tipos.count("anticipo_neteado") == 2
+    assert "cheque_anticipo_espejo" in tipos
+
+
+def test_neteo_exacto_no_crea_residuo(monkeypatch):
+    from modules.cheques import queries as chq
+    stub = _DBStub([_ch(1, 100.0)], [_ant(90, -100.0)])
+    _patch(monkeypatch, stub)
+    res = chq.netear_cheques_con_anticipos(
+        codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90])
+    assert res["residuo"] == 0.0 and res["id_residuo"] is None
+    assert stub.inserts_cheque == []
 
 
 def test_neteo_sin_cheques(monkeypatch):

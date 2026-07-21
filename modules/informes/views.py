@@ -2977,6 +2977,13 @@ def estado_cuenta_netear(codigo_cli):
                 f"cheque(s) tenían aplicada(s): {_nums} (quedan con saldo "
                 "pendiente; reversible desde el Historial)."
             )
+        _res_amt = float(res.get("residuo") or 0)
+        if _res_amt:
+            _msg += (
+                f" El sobrante de anticipos (${_res_amt:,.2f}) quedó como "
+                "saldo a favor nuevo"
+                + (f" (#{res['id_residuo']})." if res.get("id_residuo") else ".")
+            )
         flash(_msg, "ok")
     except ValueError as e:
         flash(str(e), "warn")
