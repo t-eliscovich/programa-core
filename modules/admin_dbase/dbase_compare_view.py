@@ -1040,9 +1040,18 @@ def reporte(dias_banco: int = 30):
         yield line(f"  [detalle compras no disponible: {exc!r}]")
     yield line()
 
-    # [10] STOCK POR ETAPA removida del reporte — TMT 2026-07-15:
+    # [10] STOCK POR ETAPA (detalle) removida del reporte — TMT 2026-07-15:
     # Hilado/Tejido/Terminado divergen por la migración del flujo a Asinfo
-    # (ruido esperado). El detalle de VSTO/insumos queda fuera.
+    # (ruido esperado). El detalle por etapa queda fuera, PERO el TOTAL
+    # (VSTO) SÍ entra como componente de la identidad — TMT 2026-07-21
+    # (dueña: "no podemos tener diferencias no encontradas"): antes VSTO
+    # era el único término de la utilidad sin línea propia y todo su Δ
+    # caía al RESIDUO (−24.590 el 21/07) disfrazado de "esperado".
+    yield line("── [10] STOCK MP+PT — VSTO = HI·UMX + TJ·UKK + PF·UFF (PRG L304-345) ──")
+    yield cmp_acum("Stock MP+PT (VSTO)", d.get("VSTO"), _f(pc.get("vsto")))
+    yield line("  (dBase valúa con la fórmula del PRG; PC con kg Asinfo + tarifa "
+               "del flujo — el Δ acá es la 'revaluación de stock')")
+    yield line()
 
     try:
         yield line("── [10b] KV kg vendidos del mes — factura x factura (fecha+kg) ──")
@@ -1111,10 +1120,9 @@ def reporte(dias_banco: int = 30):
         yield line(f"  {'Σ componentes':24} {tot:>+14,.2f}")
         yield line(f"  {'Δ utilidad':24} {util_pc - util_db:>+14,.2f}")
         ok = abs(residuo) <= 1.0
-        # TMT 2026-07-15: PC valúa el stock con Asinfo y el dBase con su fórmula
-        # (UMX/UFF), así que el residuo ≈ la revaluación de stock por cambio de
-        # fuente — es ESPERADO, no un descuadre. No lo marcamos como alarma.
-        _nota = "✓ (todo explicado)" if ok else "≈ revaluación de stock (PC=Asinfo vs dBase=fórmula) — esperado"
+        # TMT 2026-07-21: con VSTO como componente [10], el residuo debería
+        # quedar en centavos/ruido de operación en vivo. Si crece, ES alarma.
+        _nota = "✓ (todo explicado)" if ok else "⚠ residuo real — revisar (VSTO ya es componente)"
         yield line(f"  RESIDUO NO EXPLICADO: {residuo:,.2f}  {_nota}")
     yield line()
     yield line("── [14] CONCILIADOS — banco Pichincha (STAT='*' = conciliado) ──")

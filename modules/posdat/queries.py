@@ -66,6 +66,11 @@ def _ultimo_dia_del_mes(d: date) -> date:
 # histórico inmutable. /admin/debug-ustock los sigue contando.
 
 
+# TMT 2026-07-21 (dueña): switch de la acumulación automática YY/RT.
+# False = PC muestra/guarda el importe tal cual (parejo con el dBase).
+ACUMULACION_YY_ACTIVA = False
+
+
 def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
     """Aplica la fórmula display-time IN-PLACE sobre filas YY y RT:
 
@@ -91,6 +96,14 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
     Sólo opera sobre filas con prov IN ('YY','RT') AND baseline_date IS NOT NULL.
     El resto queda intacto (posdat regulares, YY/RT legacy sin baseline).
     """
+    # TMT 2026-07-21 (dueña): YY/RT SIEMPRE PAREJO CON EL dBASE.
+    # El prorrateo display-time (importe + cuota_diaria × días hábiles)
+    # hacía que PC corriera ADELANTE del dBase entre corridas del PRG
+    # (el dBase solo suma la cuota cuando alguien ejecuta MENU.PRG).
+    # Decisión dueña 21/07: mostrar el importe GUARDADO tal cual — el
+    # valor viene del dBase vía posdat-reconcile/edición manual hasta el
+    # retiro del dBase. Con ACUMULACION_YY_ACTIVA=False (default) esto
+    # NO suma nada; la matemática vieja queda abajo para reactivar.
     hoy = hoy or _hoy_ec()
     for r in rows:
         prov_upper = (r.get("prov") or "").strip().upper()
@@ -99,15 +112,16 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
         base_date = r.get("baseline_date")
         if not base_date:
             continue
+        if not ACUMULACION_YY_ACTIVA:
+            r["importe_base"] = round(float(r.get("importe") or 0), 2)
+            r["dias_offset"] = 0
+            continue
         cd = float(r.get("cuota_diaria") or 0)
         if cd <= 0:
             r["importe_base"] = float(r.get("importe") or 0)
             r["dias_offset"] = 0
             continue
         importe_pers = float(r.get("importe") or 0)
-        # NOTA arquitectura (2026-06-03): no hay cierre mensual lazy. Si
-        # baseline_date está varios meses atrás, se acumulan todos los
-        # días hábiles entre baseline y hoy (perpetuo, como dBase).
         offset = _dias_habiles_entre(base_date, hoy)
         r["importe_base"] = round(importe_pers, 2)
         r["importe"] = round(importe_pers + cd * offset, 2)
@@ -131,6 +145,11 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
         display = importe guardado (sin doble conteo) y el SUM(importe)
         del Balance ve lo mismo que la pantalla.
     """
+    # TMT 2026-07-21 (dueña): acumulación automática APAGADA — YY/RT van
+    # parejos con el dBase (ver _aplicar_display_time_yy). Devuelve 0 sin
+    # tocar nada. Para reactivar: poner ACUMULACION_YY_ACTIVA = True.
+    if not ACUMULACION_YY_ACTIVA:
+        return 0
     if not _baseline_col_exists():
         return 0
     hoy = hoy or _hoy_ec()
