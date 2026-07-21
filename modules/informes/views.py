@@ -554,11 +554,25 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             _b_fis = _q_fisico_total(_corte_fin)
 
             if None not in (_b_ini, _b_ent, _b_aj, _b_cons, _b_fis):
+                # Dueña 2026-07-21: el EGRESO de la banda usa el consumo FÍSICO
+                # coherente (c/JSONB + A44/10 = fila Colorantes/Quím del costo),
+                # NO el método viejo (_q_cons_term, sin JSONB/A44). Así la banda
+                # cierra contra el Físico (que ya usa el método nuevo) — antes
+                # el descuadre era ~5.7k porque el consumo estaba en otra vara.
+                _cons_us = float(_b_cons.get("us") or 0)
+                try:
+                    from modules.informes.quimico_inv_formulas import (
+                        quimico_consumido_us as _qcf,
+                    )
+                    _v = _qcf(_date3(int(anio), int(mes), 1), _corte_fin)
+                    if _v is not None and _v > 0:
+                        _cons_us = float(_v)
+                except Exception:  # noqa: BLE001 -- fail-soft, queda el viejo
+                    pass
                 # El libro visible es lo que el usuario puede sumar en la
                 # banda: inicial + entradas − consumo (SIN ajustes — la fila
                 # se borró; van al residuo del chequeo).
-                _b_libro = (_b_ini + float(_b_ent.get("us") or 0)
-                            - float(_b_cons.get("us") or 0))
+                _b_libro = (_b_ini + float(_b_ent.get("us") or 0) - _cons_us)
                 quimicos_modelo = {
                     "modelo": "formulas",
                     "inicial": _b_ini,
@@ -567,7 +581,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
                     # referencia para auditar el residuo (no se muestra):
                     "ajustes_inv": float(_b_aj.get("us") or 0),
                     "ajustes_inv_n": int(_b_aj.get("n") or 0),
-                    "egresos": float(_b_cons.get("us") or 0),
+                    "egresos": _cons_us,
                     "en_maquinas": 0.0,
                     "final_prog": _b_libro,          # inicial+entradas−consumo
                     "final_form": _b_fis,            # físico al día
