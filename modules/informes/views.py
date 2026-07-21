@@ -488,8 +488,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     # no la factura); físico = al-día de hoy (no la foto cruda vieja). Cierra
     # al ~1% (el ajuste queda como varianza real de inventario). La factura de
     # importación se muestra como memo informativo (facturado_prog).
-    quimicos_modelo = None   # COLUMNA QUÍM.$ (modelo A / programa)
-    quimicos_banda = None    # BANDA (solo formulas / físico colorante)
+    quimicos_modelo = None   # COLUMNA QUÍM.$ (modelo banda formulas / fallback A)
+    quimicos_banda = None    # BANDA (mismo dict que la columna)
     if anio and mes:
         try:
             import calendar as _cal3
@@ -499,39 +499,23 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             from filters import today_ec as _today_ec3
             from modules.tintura import service as _tsvc3
 
-            # FÍSICO de colorante = MISMA variable que el balance (POLI+ALG, sin
-            # AUX) → tintura_service.stock_colorante_fisico. NO recalcular acá
-            # (dueña 2026-07-13: "stock quimicos idem que hilado, la variable del
-            # flujo"). El balance (vqx) llama a la misma función → 338 único.
-            # 2026-07-18: vía quimicos_flujo (caché 240s + warmup) — era parte
-            # de los 7,4s de mov_asinfo_quimicos.
             from modules.informes.quimicos_flujo import (
+                ajustes_inventario_mes as _q_ajustes,
                 consumo_quimico_desglose as _q_desglose,
+                consumo_terminadas_mes as _q_cons_term,
+                entradas_bodega_mes as _q_entradas,
                 fisico_colorante_al_dia as _q_fisico,
+                fisico_total_al_dia as _q_fisico_total,
             )
-
-            def _fisico_quimicos_aldia(_corte):
-                _v = _q_fisico(_corte)
-                if _v is None:  # fallback directo si el caché/módulo falló
-                    _v = _tsvc3.stock_colorante_fisico(_corte)
-                return float(_v or 0)
 
             _corte_ini = _date3(int(anio), int(mes), 1) - _td3(days=1)
             _last = _date3(int(anio), int(mes),
                            _cal3.monthrange(int(anio), int(mes))[1])
             _corte_fin = min(_last, _today_ec3())
 
-            # MODELO A (dueña 2026-07-16): LIBRO CONTABLE del programa
-            # reconciliado al físico. El inicial (VQ0) y las compras (tipo Q =
-            # TODO el químico facturado) las pone el PROGRAMA; el consumo sale
-            # del TINTURADO DIARIO de formulas — TODO el químico (POLI+ALG+AUX)
-            # por fecha de tinturado, que coincide con el ITIN del dBase (~114k),
-            # NO el color_consumo de arriba (solo colorante por fecha_terminado,
-            # subcuenta ~40k). El ajuste = físico − libro es la revaluación real
-            # (~+20k). "Copiamos lo que tiene el programa y el ajuste nos ajusta
-            # al físico."
-            _vq0 = float((header.get("colorantes") or {}).get("stock_inic_us") or 0)
-
+            # MEMO facturado (ambos modelos): compras tipo Q del PROGRAMA =
+            # el químico FACTURADO del mes (deuda/costos). NO es entrada a
+            # bodega — se muestra como memo informativo, no suma en la banda.
             _qc = db.fetch_one(
                 """
                 SELECT COALESCE(SUM(importe), 0) AS importe,
@@ -547,73 +531,125 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             ) or {}
             _compras_prog = float(_qc.get("importe") or 0)
 
-            # Consumo del mes = tinturado diario de formulas, TODO el químico
-            # (POLI+ALG+AUX) por fecha de tinturado (ordenes.fecha 'DD/MM/YYYY').
-            # DESGLOSE para reconciliar con la tintorería de abajo — que solo
-            # costea el teñido con kg de tela cargado y sin lavados:
-            #   costeado = teñido con kg de tela (= Total de COSTOS DE TINTORERÍA)
-            #   proceso  = teñido sin cerrar la tela (sin kg) → trabajo en proceso
-            #   lavado   = órdenes de lavado
-            # total = costeado + proceso + lavado = egreso de químico del mes.
-            # 2026-07-18: el desglose vive en quimicos_flujo (caché 240s +
-            # warmup) — la query sobre orden_lineas (TO_DATE sobre texto) era
-            # el grueso de los 7,4s de mov_asinfo_quimicos. Misma SQL, mismo
-            # resultado; fail-soft idéntico (None → respaldo).
-            _consumo_prog = None
-            _egr_cost = _egr_proc = _egr_lav = 0.0
-            _desg = _q_desglose(int(anio), int(mes))
-            if _desg is not None:
-                _egr_cost = float(_desg.get("costeado") or 0)
-                _egr_proc = float(_desg.get("proceso") or 0)
-                _egr_lav = float(_desg.get("lavado") or 0)
-                _consumo_prog = _egr_cost + _egr_proc + _egr_lav
+            # ── MODELO BANDA FORMULAS (dueña 2026-07-21): TODA la tintorería/
+            # químicos del mes sale de formulas_app y la banda cierra a CERO
+            # con filas nombradas, todo a precio de catálogo c/IVA:
+            #   Stock inic. = físico al último día del mes ANTERIOR
+            #   Ingresos    = entradas REALES a bodega (formulas.compras)
+            #   Ajustes     = ajustes de inventario del mes (±, con detalle)
+            #   Egresos     = consumo de órdenes TERMINADAS en el mes
+            #                 (fecha_terminado — criterio contable: el químico
+            #                 se descuenta al terminar la orden, igual que los
+            #                 kg y el costo)
+            #   Stock act.  = físico al día de hoy
+            # "En máquinas" DESAPARECE (dueña: "si no suma en ningún lado no
+            # la muestres") y el "Ajuste de arranque" también — el residuo
+            # físico − libro queda solo en el chequeo de coherencia.
+            _b_ini = _q_fisico_total(_corte_ini)
+            _b_ent = _q_entradas(int(anio), int(mes))
+            _b_aj = _q_ajustes(int(anio), int(mes))
+            _b_cons = _q_cons_term(int(anio), int(mes))
+            _b_fis = _q_fisico_total(_corte_fin)
 
-            q_inicial = _vq0
-            q_compras = _compras_prog
-            # Consumo del mes = PROYECTADO de tintura (mismo número que la tabla
-            # de abajo). Dueña 2026-07-16: un solo número de químico en toda la
-            # pantalla, sin lavados ni desglose. Si formulas no dio proyectado,
-            # cae al tinturado total del programa (_consumo_prog) de respaldo.
-            q_egresos = (float(proy_quimico) if proy_quimico is not None
-                         else _consumo_prog)
-            # En máquinas (dueña 2026-07-17): químico ya dosificado en órdenes
-            # SIN cerrar la tela (_egr_proc del desglose de arriba). Con el
-            # consumo = costeado (tela cerrada), este monto ya salió del
-            # estante pero el consumo no lo descuenta → se resta en la cuenta,
-            # a la vista, y el ajuste queda midiendo solo arranque + merma.
-            # En meses cerrados tiende a 0 solo (la tela se va cerrando).
-            q_en_maquinas = float(_egr_proc or 0) if _consumo_prog is not None else 0.0
-            q_final_prog = (q_inicial + q_compras - float(q_egresos or 0)
-                            - q_en_maquinas)
-            q_final_form = _fisico_quimicos_aldia(_corte_fin)   # físico formulas
-            q_ajuste = q_final_form - q_final_prog               # de arranque (cutover)
+            if None not in (_b_ini, _b_ent, _b_aj, _b_cons, _b_fis):
+                _b_libro = (_b_ini + float(_b_ent.get("us") or 0)
+                            + float(_b_aj.get("us") or 0)
+                            - float(_b_cons.get("us") or 0))
+                quimicos_modelo = {
+                    "modelo": "formulas",
+                    "inicial": _b_ini,
+                    "compras": float(_b_ent.get("us") or 0),
+                    "compras_n": int(_b_ent.get("n") or 0),
+                    "ajustes_inv": float(_b_aj.get("us") or 0),
+                    "ajustes_inv_n": int(_b_aj.get("n") or 0),
+                    "ajustes_detalle": list(_b_aj.get("detalle") or []),
+                    "egresos": float(_b_cons.get("us") or 0),
+                    "en_maquinas": 0.0,
+                    "final_prog": _b_libro,          # inicial+entradas±ajustes−consumo
+                    "final_form": _b_fis,            # físico al día
+                    "ajuste": _b_fis - _b_libro,     # residuo del cierre (chequeo)
+                    "facturado_prog": _compras_prog,
+                    "facturado_n": int(_qc.get("n") or 0),
+                }
+                quimicos_banda = dict(quimicos_modelo)
+            else:
+                # ── FALLBACK: MODELO A anterior COMPLETO (si CUALQUIER término
+                # de formulas vino None). LIBRO CONTABLE del programa
+                # reconciliado al físico (dueña 2026-07-16); ver historial.
+                def _fisico_quimicos_aldia(_corte):
+                    _v = _q_fisico(_corte)
+                    if _v is None:  # fallback directo si el caché/módulo falló
+                        _v = _tsvc3.stock_colorante_fisico(_corte)
+                    return float(_v or 0)
 
-            quimicos_modelo = {
-                "inicial": q_inicial,
-                "compras": q_compras,
-                "compras_n": int(_qc.get("n") or 0),
-                "egresos": q_egresos,
-                "en_maquinas": q_en_maquinas,
-                "final_prog": q_final_prog,
-                "final_form": q_final_form,
-                "ajuste": q_ajuste,
-                "facturado_prog": _compras_prog,
-                "facturado_n": int(_qc.get("n") or 0),
-            }
+                _vq0 = float((header.get("colorantes") or {}).get("stock_inic_us") or 0)
 
-            # BANDA "stock de químicos" = MISMO número que la columna QUÍM.$.
-            # Dueña 2026-07-16: unificar — un solo consumo (proyectado) y un
-            # solo ajuste (de arranque, cutover dBase→programa) arriba y abajo.
-            quimicos_banda = dict(quimicos_modelo)
+                # Consumo del mes = tinturado diario de formulas, TODO el
+                # químico (POLI+ALG+AUX) por fecha de tinturado. Desglose:
+                #   costeado = teñido con kg de tela (= Total tintorería)
+                #   proceso  = teñido sin cerrar la tela → en máquinas
+                #   lavado   = órdenes de lavado
+                _consumo_prog = None
+                _egr_proc = 0.0
+                _desg = _q_desglose(int(anio), int(mes))
+                if _desg is not None:
+                    _egr_proc = float(_desg.get("proceso") or 0)
+                    _consumo_prog = (float(_desg.get("costeado") or 0)
+                                     + _egr_proc
+                                     + float(_desg.get("lavado") or 0))
+
+                q_inicial = _vq0
+                q_compras = _compras_prog
+                # Consumo = PROYECTADO de tintura (mismo número que la tabla de
+                # abajo); si formulas no dio proyectado, respaldo _consumo_prog.
+                q_egresos = (float(proy_quimico) if proy_quimico is not None
+                             else _consumo_prog)
+                # En máquinas: químico dosificado en órdenes sin cerrar la tela.
+                q_en_maquinas = (float(_egr_proc or 0)
+                                 if _consumo_prog is not None else 0.0)
+                q_final_prog = (q_inicial + q_compras - float(q_egresos or 0)
+                                - q_en_maquinas)
+                q_final_form = _fisico_quimicos_aldia(_corte_fin)
+                q_ajuste = q_final_form - q_final_prog   # de arranque (cutover)
+
+                quimicos_modelo = {
+                    "inicial": q_inicial,
+                    "compras": q_compras,
+                    "compras_n": int(_qc.get("n") or 0),
+                    "egresos": q_egresos,
+                    "en_maquinas": q_en_maquinas,
+                    "final_prog": q_final_prog,
+                    "final_form": q_final_form,
+                    "ajuste": q_ajuste,
+                    "facturado_prog": _compras_prog,
+                    "facturado_n": int(_qc.get("n") or 0),
+                }
+                quimicos_banda = dict(quimicos_modelo)
         except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
             quimicos_modelo = None
             quimicos_banda = None
 
-    # COLUMNA QUÍM.$ de la tabla de movimientos: inicial VQ0 + compras tipo Q −
-    # consumo (= PROYECTADO de tintura, el mismo número que la tabla de abajo),
-    # ajuste = físico − libro. Dueña 2026-07-16: un solo número de químico y un
-    # solo ajuste (de arranque) en toda la pantalla; la banda de abajo lo repite.
-    if quimicos_modelo and quimicos_modelo.get("final_form") is not None:
+    # COLUMNA QUÍM.$ de la tabla de movimientos.
+    if quimicos_modelo and quimicos_modelo.get("modelo") == "formulas":
+        # Banda formulas (dueña 2026-07-21): 5 filas que cierran a cero.
+        # "Ajustes inventario" reemplaza al "Ajuste de arranque"; "En máquinas"
+        # no se muestra (—).
+        co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
+        co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
+        co["ingresos_n"] = int(quimicos_modelo.get("compras_n") or 0)
+        co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
+        co["ajustes_inv_us"] = round(float(quimicos_modelo.get("ajustes_inv") or 0), 0)
+        co["ajustes_inv_title"] = " · ".join(
+            "%s: %+.0f (%d)" % (d.get("motivo") or "", d.get("us") or 0,
+                                d.get("n") or 0)
+            for d in (quimicos_modelo.get("ajustes_detalle") or [])
+        )
+        co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
+        co.pop("ajuste_us", None)     # fila "Ajuste de arranque" desaparece
+        co.pop("maquinas_us", None)   # fila "En máquinas" QUÍM → "—"
+    elif quimicos_modelo and quimicos_modelo.get("final_form") is not None:
+        # FALLBACK modelo A: inicial VQ0 + compras tipo Q − consumo proyectado,
+        # ajuste = físico − libro (de arranque). Dueña 2026-07-16.
         co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
@@ -2119,11 +2155,18 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     add("tejido", "Tejido producido = crudo ingresado",
         _g(data, "produc_tejido_total", "kg"), "Producción tejido",
         _g(mov, "tejido", "ingresos_kg"), "Ingresos crudo", "kg")
-    # Químicos: físico vs libro. El consumo = proyectado de tintura y el ajuste
-    # este mes es de arranque (cutover dBase→programa); tipo="ajuste" → informa,
-    # no marca descuadre. La banda y la columna QUÍM.$ muestran lo mismo.
+    # Químicos (dueña 2026-07-21): la banda TODO-formulas tiene que CERRAR —
+    # inicial + entradas ± ajustes − consumo = físico. Tipo normal (⚠ si
+    # |Δ| > tol_pct), ya no "ajuste": un descuadre acá es un descuadre real
+    # (lecturas de inventario intra-mes / merma), no un ajuste de arranque.
+    # Con el fallback (modelo A viejo, sin datos formulas) se mantiene el
+    # check informativo físico vs libro de antes.
     qm = _g(mov, "quimicos_banda") or _g(mov, "quimicos_modelo")
-    if qm:
+    if qm and _g(qm, "modelo") == "formulas":
+        add("quimicos", "Químicos: la banda cierra",
+            _g(qm, "final_prog"), "Inicial+Entradas±Ajustes−Consumo",
+            _g(qm, "final_form"), "Físico", "US$")
+    elif qm:
         add("quimicos", "Químicos: físico vs libro",
             _g(qm, "final_form"), "Físico",
             _g(qm, "final_prog"), "Libro", "US$", tipo="ajuste")

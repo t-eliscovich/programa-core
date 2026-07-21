@@ -188,6 +188,194 @@ def color_movimiento_mes(anio: int, mes: int) -> dict | None:
         return None
 
 
+# ── Banda QUÍM del flujo — modelo TODO-formulas (dueña 2026-07-21) ──────────
+# La tintorería/químicos de julio sale ENTERA de formulas_app y la banda cierra
+# a cero con filas nombradas:
+#   Stock inic. (físico fin mes anterior) + Entradas bodega ± Ajustes inventario
+#   − Consumo (órdenes TERMINADAS del mes) = Stock act. (físico hoy)
+# Criterio contable acordado: el químico se descuenta AL TERMINAR LA ORDEN
+# (fecha_terminado), igual que los kg y el costo. Todo valuado A PRECIO DE
+# CATÁLOGO (productos.us) × factor IVA (sal num=12 exenta) para que la
+# identidad cierre en $. Familias POLI+ALG+AUX en TODOS los términos (mismo
+# universo de productos, si no la banda no puede cerrar).
+# Fail-soft: None (sin cachear) si formulas no está.
+
+_FAMILIAS_QUIMICO = ("POLI", "ALG", "AUX")
+_SQL_FAM_QUIMICO = "UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')"
+# Factor IVA a catálogo — mismo CASE que el resto del módulo (sal num=12 al 0%).
+_SQL_IVA = "(CASE WHEN p.num IN (12) THEN 1.0 ELSE 1.15 END)"
+
+
+def fisico_total_al_dia(corte: date) -> float | None:
+    """Físico de TODO el químico (POLI+ALG+AUX) al `corte`, valuado a precio
+    de catálogo (productos.us) c/IVA por producto (sal exenta).
+
+    Usa tintura_service.stock_quimicos_al_dia (lectura + ajustes + compras −
+    consumo de órdenes terminadas, por producto) y valúa cada
+    StockProductoAlDia: stock_al_dia_kg × precio_us × factor_iva_producto.
+    None si formulas no está (fail-soft, sin cachear)."""
+    key = ("fisico_total", str(corte))
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from modules.tintura import service as _tsvc
+        items = _tsvc.stock_quimicos_al_dia(corte)
+        if not items:  # [] = bridge apagado o falló → no distinguible, None
+            return None
+        tot = 0.0
+        for x in items:
+            fam = (getattr(x, "familia", "") or "").strip().upper()
+            if fam not in _FAMILIAS_QUIMICO:
+                continue
+            tot += (float(getattr(x, "stock_al_dia_kg", 0) or 0)
+                    * float(getattr(x, "precio_us", 0) or 0)
+                    * _tsvc.factor_iva_producto(getattr(x, "num", None)))
+        _cache_put(key, tot)
+        return tot
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("fisico_total_al_dia %s: %s", corte, e)
+        return None
+
+
+def entradas_bodega_mes(anio: int, mes: int) -> dict | None:
+    """Entradas REALES a bodega del mes = formulas.compras (POLI+ALG+AUX).
+
+    {"us": Σ cantidad × COALESCE(NULLIF(precio_us,0), p.us, 0) × factorIVA,
+     "n": count}. compras.fecha es ISO text → rango lexicográfico.
+    None si formulas no está (fail-soft, sin cachear)."""
+    key = ("entradas_bodega", int(anio), int(mes))
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from modules._lib import formulas_db as _fdb
+        if not _fdb.disponible():
+            return None
+        d1 = date(int(anio), int(mes), 1).isoformat()
+        d2 = date(int(anio), int(mes),
+                  calendar.monthrange(int(anio), int(mes))[1]).isoformat()
+        row = _fdb.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(c.cantidad
+                     * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)
+                     * (CASE WHEN c.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
+                   COUNT(*) AS n
+              FROM compras c
+              JOIN productos p ON p.num = c.producto_num
+             WHERE {_SQL_FAM_QUIMICO}
+               AND c.fecha >= %(d1)s AND c.fecha <= %(d2)s
+            """,
+            {"d1": d1, "d2": d2},
+        )
+        if row is None:
+            return None
+        out = {"us": float(row.get("us") or 0), "n": int(row.get("n") or 0)}
+        _cache_put(key, out)
+        return out
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("entradas_bodega_mes %s/%s: %s", mes, anio, e)
+        return None
+
+
+def ajustes_inventario_mes(anio: int, mes: int) -> dict | None:
+    """Ajustes de inventario del mes (formulas.inventario_ajustes), valuados
+    a precio de catálogo (productos.us × factorIVA). Pueden ser ±.
+
+    {"us": Σ a.cantidad × p.us × factorIVA, "n": count,
+     "detalle": [{"motivo", "n", "us"}]} — el detalle por motivo va al
+    tooltip de la fila. inventario_ajustes.fecha es ISO text.
+    None si formulas no está (fail-soft, sin cachear)."""
+    key = ("ajustes_inv", int(anio), int(mes))
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from modules._lib import formulas_db as _fdb
+        if not _fdb.disponible():
+            return None
+        d1 = date(int(anio), int(mes), 1).isoformat()
+        d2 = date(int(anio), int(mes),
+                  calendar.monthrange(int(anio), int(mes))[1]).isoformat()
+        rows = _fdb.fetch_all(
+            f"""
+            SELECT COALESCE(NULLIF(TRIM(a.motivo), ''), '(sin motivo)') AS motivo,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(a.cantidad * COALESCE(p.us, 0) * {_SQL_IVA}), 0) AS us
+              FROM inventario_ajustes a
+              JOIN productos p ON p.num = a.producto_num
+             WHERE {_SQL_FAM_QUIMICO}
+               AND a.fecha >= %(d1)s AND a.fecha <= %(d2)s
+             GROUP BY 1
+             ORDER BY 3 DESC
+            """,
+            {"d1": d1, "d2": d2},
+        )
+        if rows is None:
+            return None
+        detalle = [
+            {"motivo": str(r.get("motivo") or ""),
+             "n": int(r.get("n") or 0),
+             "us": float(r.get("us") or 0)}
+            for r in rows
+        ]
+        out = {
+            "us": sum(d["us"] for d in detalle),
+            "n": sum(d["n"] for d in detalle),
+            "detalle": detalle,
+        }
+        _cache_put(key, out)
+        return out
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("ajustes_inventario_mes %s/%s: %s", mes, anio, e)
+        return None
+
+
+def consumo_terminadas_mes(anio: int, mes: int) -> dict | None:
+    """Consumo de químico (POLI+ALG+AUX) de las órdenes TERMINADAS en el mes
+    (criterio contable dueña 2026-07-21: el químico se descuenta al terminar
+    la orden — fecha_terminado — igual que los kg y el costo).
+
+    {"us": Σ ol.cantidad_kg × COALESCE(NULLIF(ol.precio_us,0), p.us, 0)
+           × factorIVA}. ordenes.fecha_terminado es ISO text ('YYYY-MM-DD')
+    → rango lexicográfico, mismo parseo que color_movimiento_mes.
+    None si formulas no está (fail-soft, sin cachear)."""
+    key = ("consumo_term", int(anio), int(mes))
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    try:
+        from modules._lib import formulas_db as _fdb
+        if not _fdb.disponible():
+            return None
+        d1 = date(int(anio), int(mes), 1).isoformat()
+        d2 = date(int(anio), int(mes),
+                  calendar.monthrange(int(anio), int(mes))[1]).isoformat()
+        row = _fdb.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(ol.cantidad_kg
+                     * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+              FROM orden_lineas ol
+              JOIN ordenes   o ON o.id  = ol.orden_id
+              JOIN productos p ON p.num = ol.producto_num
+             WHERE {_SQL_FAM_QUIMICO}
+               AND o.fecha_terminado IS NOT NULL
+               AND o.fecha_terminado >= %(d1)s
+               AND o.fecha_terminado <= %(d2)s
+            """,
+            {"d1": d1, "d2": d2},
+        )
+        if row is None:
+            return None
+        out = {"us": float(row.get("us") or 0)}
+        _cache_put(key, out)
+        return out
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("consumo_terminadas_mes %s/%s: %s", mes, anio, e)
+        return None
+
+
 def fisico_colorante_al_dia(corte: date) -> float | None:
     """Físico de colorante (POLI+ALG) al `corte` — LA variable compartida con
     el balance (tintura_service.stock_colorante_fisico), acá con caché.

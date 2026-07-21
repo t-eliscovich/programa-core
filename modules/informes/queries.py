@@ -52,8 +52,13 @@ NO_BACKFILL_WHERE = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
 # Corte de tintura dBase -> formulas_app (decision duena 2026-07-07).
 # Lotes con fecha ANTERIOR al corte se quedan con el dBase (scintela.tinto).
 # Lotes con fecha >= corte salen de formulas_app. Cambiar SOLO esta constante.
+# Duena 2026-07-21: julio COMPLETO desde formulas (formulas tiene todo el mes:
+# 216.352 kg por fecha_terminado) -> el corte pasa del 07/07 al 01/07. Ya no es
+# un corte "a mitad de mes": queda como FRONTERA HISTORICA — lo anterior a
+# julio esta congelado en scintela (dBase) y de julio en adelante todo sale de
+# formulas_app.
 # ---------------------------------------------------------------------------
-CORTE_TINTURA = date(2026, 7, 7)
+CORTE_TINTURA = date(2026, 7, 1)
 
 # ---------------------------------------------------------------------------
 # Constantes del PRG legacy (INFORMES.PRG líneas 5-6)
@@ -977,8 +982,9 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # foto histórica. Igual criterio que el guard de iniciales del balance.
     # El dBase MOVIMIENTOS lee TINTO.DBF del MES COMPLETO. scintela.tinto es la
     # réplica de TINTO.DBF y también tiene el mes completo (skill tintura: "solo
-    # el mes actual, 146 filas todas de julio"). El CORTE_TINTURA (07/07) que usa
-    # el resto del informe es para el COSTEO ($/kg, puente a formulas_app), NO
+    # el mes actual, 146 filas todas de julio"). El CORTE_TINTURA (hoy 01/07,
+    # era 07/07) que usa el resto del informe es para el COSTEO ($/kg, puente a
+    # formulas_app), NO
     # para el balance de masa en kg — acá cortaba el 07/07 (37.344 kg) y
     # subcontaba (48.851 vs 88.046 del dBase). Para la CADENA leemos scintela.tinto
     # del mes entero, sin corte, = lo que ve el dBase. TMT 2026-07-09 (dueña

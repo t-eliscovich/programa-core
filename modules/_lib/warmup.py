@@ -76,10 +76,18 @@ def _warm_once() -> None:
         _last = date(yy, mm, _cal.monthrange(yy, mm)[1])
         _corte_fin = min(_last, hoy)
         _corte_ini = date(yy, mm, 1) - timedelta(days=1)
+        # Banda formulas (dueña 2026-07-21): la banda QUÍM usa el físico TOTAL
+        # (POLI+ALG+AUX) hoy y al cierre del mes anterior + entradas/ajustes/
+        # consumo del mes. Los pasos viejos (desglose + físico colorante
+        # ini/fin) quedaron solo para el FALLBACK de la vista — no se calientan.
+        # (El balance usa tintura_service.stock_colorante_fisico directo, no
+        # fisico_colorante_al_dia — verificado: nadie más lo consume caliente.)
         pasos += [
-            ("quimicos_desglose", lambda: _qf.consumo_quimico_desglose(yy, mm)),
-            ("quimicos_fisico_fin", lambda: _qf.fisico_colorante_al_dia(_corte_fin)),
-            ("quimicos_fisico_ini", lambda: _qf.fisico_colorante_al_dia(_corte_ini)),
+            ("quimicos_fisico_total_fin", lambda: _qf.fisico_total_al_dia(_corte_fin)),
+            ("quimicos_fisico_total_ini", lambda: _qf.fisico_total_al_dia(_corte_ini)),
+            ("quimicos_entradas", lambda: _qf.entradas_bodega_mes(yy, mm)),
+            ("quimicos_ajustes", lambda: _qf.ajustes_inventario_mes(yy, mm)),
+            ("quimicos_consumo_term", lambda: _qf.consumo_terminadas_mes(yy, mm)),
             ("quimicos_familias", lambda: _qf.color_familias_valuadas()),
             ("quimicos_color_mov", lambda: _qf.color_movimiento_mes(yy, mm)),
         ]

@@ -181,6 +181,21 @@
             <td class="num">{{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
+          {# Banda formulas (dueña 2026-07-21): fila AJUSTES INVENTARIO (±, de
+             formulas.inventario_ajustes, detalle por motivo en el tooltip).
+             Reemplaza al viejo "Ajuste de arranque". #}
+          {% if aco.get('ajustes_inv_us') is not none %}
+          <tr>
+            <td class="lbl" style="font-size:13px;color:rgb(180 83 9);">Ajustes <span class="pct" style="color:rgb(148 163 184);">inventario</span></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num" style="color:rgb(180 83 9);" title="{{ aco.get('ajustes_inv_title') or 'Ajustes de inventario del mes (formulas)' }}">{% set _ai = aco.get('ajustes_inv_us') %}{% if _ai >= 0 %}+{% else %}−{% endif %}{{ (_ai if _ai >= 0 else -_ai) | num_es(0) }}</td>
+          </tr>
+          {% endif %}
           {% set _desp = mov_asinfo.get('desperdicio', {}) %}
           {% if _desp %}
           <tr>
@@ -242,11 +257,32 @@
         </tbody>
       </table>
 
-      {# ─── STOCK DE QUÍMICOS — repite la columna QUÍM.$ (mismo número, dueña
-           2026-07-16): Inicial + Compras − Consumo (Total de tintorería) =
-           Libro · Físico · Ajuste (de arranque). Franja fina. #}
+      {# ─── STOCK DE QUÍMICOS — repite la columna QUÍM.$ (mismo número).
+           Modelo banda formulas (dueña 2026-07-21): los 5 términos con cierre
+           exacto — Inicial + Entradas ± Ajustes − Consumo = Físico — más el
+           memo gris del facturado (compras tipo Q del programa: deuda/costos,
+           NO entrada a bodega). Fallback (modelo A 2026-07-16): Inicial +
+           Compras − Consumo = Libro · Físico · Ajuste de arranque. #}
       {% set qm = mov_asinfo.quimicos_banda %}
-      {% if qm %}
+      {% if qm and qm.get('modelo') == 'formulas' %}
+      {% set aj = qm.ajustes_inv %}
+      {% set aj_abs = (aj if aj >= 0 else -aj) %}
+      <div class="fp-quim mt-2" title="Stock de químicos, TODO de formulas y a precio de catálogo c/IVA: Físico al cierre del mes anterior + Entradas reales a bodega (compras de formulas) ± Ajustes de inventario − Consumo de las órdenes TERMINADAS en el mes (fecha_terminado, igual que los kg y el costo) = Físico de hoy. El facturado del programa (tipo Q) es deuda/costos, no entrada a bodega.">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 px-3 py-0.5 text-[10px] leading-4">
+          <span class="font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Stock de químicos</span>
+          <span class="text-slate-400 dark:text-slate-500">Inicial <b class="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</b></span>
+          <span class="text-slate-300 dark:text-slate-600">+</span>
+          <span class="text-slate-400 dark:text-slate-500">Entradas bodega{% if qm.compras_n %} ({{ qm.compras_n }}){% endif %} <b class="tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">{{ qm.compras | num_es(0) }}</b></span>
+          <span class="text-slate-300 dark:text-slate-600">{% if aj >= 0 %}+{% else %}−{% endif %}</span>
+          <span class="text-slate-400 dark:text-slate-500" title="{% for d in qm.ajustes_detalle %}{{ d.motivo }}: {{ '%+.0f' % d.us }} ({{ d.n }}){% if not loop.last %} · {% endif %}{% endfor %}">Ajustes inventario{% if qm.ajustes_inv_n %} ({{ qm.ajustes_inv_n }}){% endif %} <b class="tabular-nums font-semibold" style="color:rgb(180 83 9)">{{ aj_abs | num_es(0) }}</b></span>
+          <span class="text-slate-300 dark:text-slate-600">−</span>
+          <span class="text-slate-400 dark:text-slate-500">Consumo <b class="tabular-nums font-semibold text-rose-500 dark:text-rose-400">{{ qm.egresos | num_es(0) }}</b></span>
+          <span class="text-slate-300 dark:text-slate-600">=</span>
+          <span class="text-slate-500 dark:text-slate-300">Físico <b class="tabular-nums font-bold text-slate-900 dark:text-white">{{ qm.final_form | num_es(0) }}</b></span>
+          <span class="ml-auto text-[9px] text-slate-400 dark:text-slate-500">Facturado {{ '%02d/%d' % (mes, anio) }}: ${{ qm.facturado_prog | num_es(0) }} · {{ qm.facturado_n }} fact. (deuda/costos — no es entrada a bodega)</span>
+        </div>
+      </div>
+      {% elif qm %}
       {% set ff = qm.final_form %}
       {% set aj = qm.ajuste %}
       {% set aj_abs = (aj if aj >= 0 else -aj) %}
