@@ -115,20 +115,31 @@
      encolumnar las cifras con los gastos de las filas de arriba. Reducimos el
      padding derecho de la celda para que el borde del número caiga bajo la
      columna (que tiene 14px de padding). */
-  .gastos-matriz tr.proyectado td.cell { padding-right: 1px; }
-  .gastos-matriz input.proy-input {
+  .gastos-matriz tr.proyectado td.cell,
+  .gastos-matriz tr.mes-anterior td.cell { padding-right: 1px; }
+  .gastos-matriz input.proy-input,
+  .gastos-matriz input.ma-input {
     width: 65%; display: block; margin-left: auto;
     text-align: right; font-variant-numeric: tabular-nums;
     padding: 4px 6px; border: 1px solid rgb(203 213 225); border-radius: 6px;
     background: rgb(255 255 255); color: rgb(15 23 42); font-size: 13px;
   }
-  .gastos-matriz input.proy-input:focus {
+  .gastos-matriz input.proy-input:focus,
+  .gastos-matriz input.ma-input:focus {
     outline: none; border-color: rgb(14 165 233);
     box-shadow: 0 0 0 2px rgb(14 165 233 / 0.25);
   }
-  .dark .gastos-matriz input.proy-input {
+  .dark .gastos-matriz input.proy-input,
+  .dark .gastos-matriz input.ma-input {
     background: rgb(15 23 42); color: rgb(241 245 249); border-color: rgb(71 85 105);
   }
+  /* Federico 2026-07-22 — badge "forzado" cuando el mes anterior tiene override. */
+  .gastos-matriz .ma-badge {
+    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: rgb(180 83 9); background: rgb(254 243 199);
+    border-radius: 4px; padding: 1px 6px; margin-left: 6px;
+  }
+  .dark .gastos-matriz .ma-badge { color: rgb(253 230 138); background: rgb(120 53 15 / 0.5); }
 </style>
 {% endblock %}
 
@@ -272,15 +283,38 @@
           <td class="num">{{ suma_grand | num_es(0) }}</td>
         </tr>
 
-        {# Federico 2026-07-21 — FILA 1: Gastos del mes CERRADO anterior
-           (mismo GTEJ/GTIN/GGF con amortización), encolumnado con el mes
-           en curso para comparar. #}
-        <tr class="mes-anterior">
-          <td class="row-label">Gastos mes anterior</td>
-          <td class="num">{{ col_total_prev.tej | num_es(0) }}</td>
-          <td class="num">{{ col_total_prev.tin | num_es(0) }}</td>
-          <td class="num">{{ col_total_prev.adm | num_es(0) }}</td>
-          <td class="num">{{ suma_grand_prev | num_es(0) }}</td>
+        {# Federico 2026-07-21 / 2026-07-22 — FILA 1: Gastos del mes CERRADO
+           anterior. Por defecto sale del cálculo automático (V1..V9 + amort del
+           mes anterior), pero es EDITABLE para FORZAR el valor cuando ese mes no
+           tiene datos cargados (ej. junio, sin xgast). Lo cargado se guarda en la
+           BASE (scintela.gastos_mes_manual), compartido por todos los usuarios.
+           El badge "forzado" indica que el valor mostrado es un override manual. #}
+        <tr class="mes-anterior no-print">
+          <td class="row-label">
+            Gastos mes anterior
+            {% if mes_anterior_forzado %}<span class="ma-badge" title="Valor forzado manualmente y guardado en la base (compartido por todos los usuarios)">forzado</span>{% endif %}
+            <span id="ma-status" style="font-weight:400;font-size:11px;color:#64748b;margin-left:6px;"></span>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          </td>
+          <td class="cell">
+            <input type="number" min="0" step="1" inputmode="numeric"
+                   class="ma-input" data-seccion="tej"
+                   value="{{ col_total_prev.tej | round(0, 'common') | int }}"
+                   aria-label="Gasto mes anterior Tejeduría">
+          </td>
+          <td class="cell">
+            <input type="number" min="0" step="1" inputmode="numeric"
+                   class="ma-input" data-seccion="tin"
+                   value="{{ col_total_prev.tin | round(0, 'common') | int }}"
+                   aria-label="Gasto mes anterior Tintorería">
+          </td>
+          <td class="cell">
+            <input type="number" min="0" step="1" inputmode="numeric"
+                   class="ma-input" data-seccion="adm"
+                   value="{{ col_total_prev.adm | round(0, 'common') | int }}"
+                   aria-label="Gasto mes anterior Administración">
+          </td>
+          <td class="total-col num" id="ma-total">0</td>
         </tr>
 
         {# Federico 2026-07-21 / Tamara 2026-07-22 — FILA 2: Gastos proyectados
@@ -370,6 +404,75 @@
       body[inp.dataset.seccion] = isNaN(val) ? 0 : val;
     });
     fetch("{{ url_for('informes.gastos_proyectados_guardar') }}", {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) { setStatus('Guardado ✓', '#16a34a'); }
+        else { setStatus('No se pudo guardar', '#dc2626'); }
+      })
+      .catch(function () { setStatus('No se pudo guardar', '#dc2626'); });
+  }
+
+  inputs.forEach(function (inp) {
+    inp.addEventListener('input', recalc);
+    inp.addEventListener('input', scheduleSave);
+  });
+  recalc();
+})();
+</script>
+
+{# Federico 2026-07-22 — Fila "Gastos mes anterior" editable: total en vivo +
+   guardado en la BASE (scintela.gastos_mes_manual, compartido por todos). Fuerza
+   los valores del mes anterior cuando el cálculo automático no sirve. #}
+<script>
+(function () {
+  var inputs = Array.prototype.slice.call(document.querySelectorAll('.ma-input'));
+  var totalEl = document.getElementById('ma-total');
+  var statusEl = document.getElementById('ma-status');
+  if (!inputs.length || !totalEl) return;
+
+  var fmt = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    if (m && m.content) return m.content;
+    var i = document.querySelector('input[name="csrf_token"]');
+    return i ? i.value : '';
+  }
+
+  function setStatus(txt, color) {
+    if (!statusEl) return;
+    statusEl.textContent = txt || '';
+    statusEl.style.color = color || '#64748b';
+  }
+
+  function recalc() {
+    var total = 0;
+    inputs.forEach(function (inp) {
+      var val = parseFloat(inp.value);
+      if (!isNaN(val)) total += val;
+    });
+    totalEl.textContent = fmt.format(total);
+  }
+
+  var saveTimer = null;
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    setStatus('Guardando…', '#64748b');
+    saveTimer = setTimeout(save, 500);
+  }
+
+  function save() {
+    var body = { tej: 0, tin: 0, adm: 0 };
+    inputs.forEach(function (inp) {
+      var val = parseFloat(inp.value);
+      body[inp.dataset.seccion] = isNaN(val) ? 0 : val;
+    });
+    fetch("{{ url_for('informes.gastos_mes_anterior_guardar') }}", {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },

@@ -2434,6 +2434,69 @@ def _periodo_actual_ec() -> str:
     return (row or {}).get("p") or ""
 
 
+def _periodo_anterior_ec() -> str:
+    """Período 'YYYY-MM' del mes ANTERIOR al mes en curso (hora Ecuador)."""
+    row = db.fetch_one(
+        "SELECT to_char((CURRENT_TIMESTAMP - INTERVAL '5 hours') - INTERVAL '1 month', 'YYYY-MM') AS p"
+    )
+    return (row or {}).get("p") or ""
+
+
+def gastos_mes_manual_get(periodo: str) -> dict | None:
+    """Override MANUAL de los gastos del mes por rubro (tej/tin/adm), o None.
+
+    Federico 2026-07-22: permite FORZAR los gastos de un mes desde la fila
+    "Gastos mes anterior" de /informes/gastos (ej. meses sin datos en xgast como
+    junio 2026). Guardado en `scintela.gastos_mes_manual`, compartido por todos.
+    Devuelve None si no hay override cargado para ese período.
+    """
+    if not periodo:
+        return None
+    row = db.fetch_one(
+        "SELECT tej, tin, adm FROM scintela.gastos_mes_manual WHERE periodo = %s",
+        (periodo,),
+    )
+    if not row:
+        return None
+    return {
+        "periodo": periodo,
+        "tej": float(row.get("tej") or 0),
+        "tin": float(row.get("tin") or 0),
+        "adm": float(row.get("adm") or 0),
+    }
+
+
+def gastos_mes_manual_set(
+    periodo: str,
+    tej: float,
+    tin: float,
+    adm: float,
+    usuario: str | None = None,
+) -> dict:
+    """Upsert del override manual de gastos del mes (una fila por YYYY-MM).
+
+    Compartido por todos los usuarios; el último que guarda pisa el valor.
+    """
+    tej = float(tej or 0)
+    tin = float(tin or 0)
+    adm = float(adm or 0)
+    db.execute(
+        """
+        INSERT INTO scintela.gastos_mes_manual
+            (periodo, tej, tin, adm, usuario_modifica, fecha_modifica)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (periodo) DO UPDATE SET
+            tej = EXCLUDED.tej,
+            tin = EXCLUDED.tin,
+            adm = EXCLUDED.adm,
+            usuario_modifica = EXCLUDED.usuario_modifica,
+            fecha_modifica = CURRENT_TIMESTAMP
+        """,
+        (periodo, tej, tin, adm, usuario),
+    )
+    return {"periodo": periodo, "tej": tej, "tin": tin, "adm": adm}
+
+
 def gastos_proyectado_mes_get(periodo: str | None = None) -> dict:
     """Gastos proyectados por rubro (tej/tin/adm) del período dado.
 

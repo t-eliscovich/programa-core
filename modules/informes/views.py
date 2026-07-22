@@ -2575,6 +2575,23 @@ def gastos():
         "adm": gvp("v7") + gvp("v8") + gvp("v9") + gap("deprcar"),
     }
     suma_grand_prev = sum(col_total_prev.values())
+
+    # Federico 2026-07-22 — override MANUAL del mes anterior: si hay una fila en
+    # scintela.gastos_mes_manual para el período anterior, se FUERZA ese valor en
+    # lugar del cálculo automático (ej. junio no tiene xgast). Compartido por
+    # todos los usuarios; editable desde la propia fila (guarda en la base).
+    periodo_anterior = _safe(queries._periodo_anterior_ec, "")[0]
+    _manual_prev, _e = _safe(
+        lambda: queries.gastos_mes_manual_get(periodo_anterior), None
+    )
+    mes_anterior_forzado = bool(_manual_prev)
+    if _manual_prev:
+        col_total_prev = {
+            "tej": _manual_prev["tej"],
+            "tin": _manual_prev["tin"],
+            "adm": _manual_prev["adm"],
+        }
+        suma_grand_prev = sum(col_total_prev.values())
     # TMT 2026-05-19 v5 — pedido dueña: banner "Sin clasificar" con link
     # al wizard. xgast.num NULL → no aparece en V1..V9 → invisible al ojo.
     # Mostrar al pie cuánta plata hay en ese limbo.
@@ -2605,6 +2622,8 @@ def gastos():
         suma_grand=suma_grand,
         col_total_prev=col_total_prev,
         suma_grand_prev=suma_grand_prev,
+        periodo_anterior=periodo_anterior,
+        mes_anterior_forzado=mes_anterior_forzado,
         sin_num_resumen=sin_num_resumen,
         proy=proy or {"tej": 0, "tin": 0, "adm": 0},
     )
@@ -2634,6 +2653,38 @@ def gastos_proyectados_guardar():
     try:
         r = queries.gastos_proyectado_mes_set(
             tej, tin, adm, usuario=(g.user or {}).get("username", "web")
+        )
+        return jsonify({"ok": True, **r})
+    except Exception as e:  # pragma: no cover - defensivo
+        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
+
+
+@informes_bp.route("/gastos/mes-anterior", methods=["POST"])
+@requiere_login
+@requiere_permiso("gastos.ver")
+def gastos_mes_anterior_guardar():
+    """Guarda el override MANUAL de los gastos del mes ANTERIOR por rubro.
+
+    Federico 2026-07-22: fuerza los valores de la fila "Gastos mes anterior"
+    (ej. junio no tiene datos en xgast). Compartido por todos los usuarios. El
+    período es SIEMPRE el mes anterior calculado en el servidor (no se confía en
+    el cliente). Gate `gastos.ver` a propósito, igual que la proyección.
+    """
+
+    def _parse(v):
+        try:
+            return max(0.0, float(str(v).replace(",", ".").strip() or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    payload = request.get_json(silent=True) or request.form
+    tej = _parse(payload.get("tej"))
+    tin = _parse(payload.get("tin"))
+    adm = _parse(payload.get("adm"))
+    try:
+        periodo = queries._periodo_anterior_ec()
+        r = queries.gastos_mes_manual_set(
+            periodo, tej, tin, adm, usuario=(g.user or {}).get("username", "web")
         )
         return jsonify({"ok": True, **r})
     except Exception as e:  # pragma: no cover - defensivo
