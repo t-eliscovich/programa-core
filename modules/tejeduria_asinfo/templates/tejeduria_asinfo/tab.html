@@ -117,7 +117,7 @@
     <h2>Diario · ingreso a bodega (kg) <span class="muted" style="font-weight:normal; font-size:11px">— tela cruda que ENTRÓ a la bodega cada día · la suma del mes = el TOTAL de arriba</span></h2>
     <table>
       <thead>
-        <tr><th>Día</th><th>Reyes</th><th>Ponce</th><th>Ingresado a bodega (kg)</th></tr>
+        <tr><th>Día</th><th>Reyes</th><th>Ponce</th><th>Intela</th><th>Ingresado a bodega (kg)</th></tr>
       </thead>
       <tbody>
         {% for d in data.ingreso_por_dia %}
@@ -125,15 +125,17 @@
             <td>{{ d.dia|fecha_es }}</td>
             <td>{{ d.reyes_kg|num_es if d.reyes_kg else '' }}</td>
             <td>{{ d.ponce_kg|num_es if d.ponce_kg else '' }}</td>
+            <td>{{ d.intela_kg|num_es if d.intela_kg else '' }}</td>
             <td>{{ d.kg|num_es }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="muted">Sin datos de bodega (Asinfo no respondió).</td></tr>
+          <tr><td colspan="5" class="muted">Sin datos de bodega (Asinfo no respondió).</td></tr>
         {% endfor %}
         <tr class="tot">
           <td>TOTAL {{ '%02d/%d' % (mes, anio) }}</td>
           <td>{{ data.ingreso_por_dia|sum(attribute='reyes_kg')|num_es }}</td>
           <td>{{ data.ingreso_por_dia|sum(attribute='ponce_kg')|num_es }}</td>
+          <td>{{ data.ingreso_por_dia|sum(attribute='intela_kg')|num_es }}</td>
           <td>{{ data.ingreso_por_dia|sum(attribute='kg')|num_es }}</td>
         </tr>
       </tbody>

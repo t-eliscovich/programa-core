@@ -275,6 +275,11 @@ def resumen_mes(anio: int, mes: int) -> dict:
         _kg = _terc_dia.get(str(_row.get("dia"))[:10], {})
         _row["reyes_kg"] = round(float(_kg.get("RY", 0.0) or 0.0), 2)
         _row["ponce_kg"] = round(float(_kg.get("AP", 0.0) or 0.0), 2)
+        # INTELA (autoprod) = lo RESTANTE: ingreso a bodega − Reyes − Ponce.
+        # Así Reyes+Ponce+INTELA = Ingresado en cada fila, y la suma del mes
+        # matchea el INTELA del cuadro de arriba. TMT 2026-07-21 (dueña).
+        _row["intela_kg"] = round(
+            float(_row.get("kg", 0.0) or 0.0) - _row["reyes_kg"] - _row["ponce_kg"], 2)
 
     return {
         "disponible": disponible,
