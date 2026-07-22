@@ -305,6 +305,18 @@
               {% else %}
                 {{ m.concepto or '' }}
               {% endif %}
+              {# TMT 2026-07-22 (dueña): chip Cliente/Proveedor del movimiento
+                 manual (columna prov), estilo Pichincha — mismo look que el
+                 código de cliente de los cheques. Muestra el nombre si lo
+                 resolvimos; si no, el código solo. No lo repetimos en depósitos
+                 de cheque (esos ya traen su propio chip de cliente). #}
+              {% if m.prov and not m.cheques %}
+                <span class="inline-flex items-center gap-1 ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] align-middle"
+                      title="Cliente / Proveedor: {{ m.prov }}{% if m.prov_nombre %} · {{ m.prov_nombre }}{% endif %}">
+                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>
+                  <span class="font-mono">{{ m.prov }}</span>{% if m.prov_nombre %}<span class="text-slate-500 dark:text-slate-400 truncate max-w-[16rem]">· {{ m.prov_nombre }}</span>{% endif %}
+                </span>
+              {% endif %}
               {% if m.cheques and m.n_cheques > 1 %}
                 <button type="button"
                         class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 lote-toggle align-middle"
@@ -384,7 +396,11 @@
               {# TMT 2026-07-21 (dueña, TOSAVA/QUIMSERTEC): clasificar una
                  salida de banco existente como gasto V1..V9 — crea el xgast
                  pagado sin tocar banco/caja. #}
-              {% if doc in ('CH', 'ND', 'DB') and tiene_permiso('bancos.conciliar') %}
+              {# TMT 2026-07-22 (dueña "se ve feo"): NO mostrar el clasificador
+                 →gasto en filas de reverso/reversado — es una salida técnica de
+                 compensación, no un gasto real, y el dropdown ensuciaba la fila. #}
+              {% if doc in ('CH', 'ND', 'DB') and tiene_permiso('bancos.conciliar')
+                    and m.mov_estado not in ('reverso', 'reversado') %}
                 <form method="post"
                       action="{{ url_for('bancos.clasificar_gasto', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
                       class="inline-flex items-center gap-1 ml-1">

@@ -477,7 +477,12 @@ def movimientos(
           AND (%(monto)s::numeric IS NULL OR t.importe = %(monto)s::numeric)
           AND (%(doc_like)s IS NULL OR
                UPPER(COALESCE(NULLIF(TRIM(t.numreferencia_manual),''), t.numreferencia::text, '')) LIKE %(doc_like)s)
-          AND (%(cliente_like)s IS NULL OR EXISTS (
+          AND (%(cliente_like)s IS NULL
+               -- TMT 2026-07-22 (dueña): el código Proveedor/Cliente que se
+               -- carga a mano en un movimiento (columna prov, ej "CG3") ahora
+               -- también matchea el filtro — antes solo encontraba cheques.
+               OR UPPER(COALESCE(t.prov,'')) LIKE %(cliente_like)s
+               OR EXISTS (
                 SELECT 1
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque
@@ -577,6 +582,41 @@ def movimientos(
                     r["n_cheques"] = len(lst)
     except Exception:
         pass  # fail-graceful: la vista funciona sin el expander si falla
+
+    # TMT 2026-07-22 (dueña "poner nombre cliente"): el código Proveedor/Cliente
+    # cargado a mano (columna prov, ej "CG3") se resuelve a NOMBRE para mostrarlo
+    # como chip en el libro, igual que el código de cliente de los cheques
+    # (estilo Pichincha). Fail-graceful: sin nombre, el chip muestra solo el código.
+    try:
+        provs = sorted({
+            (r.get("prov") or "").strip().upper()
+            for r in rows
+            if (r.get("prov") or "").strip()
+        })
+        if provs:
+            nombres: dict = {}
+            for rn in db.fetch_all(
+                "SELECT UPPER(TRIM(codigo_cli)) AS cod, nombre "
+                "  FROM scintela.cliente "
+                " WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)",
+                (provs,),
+            ) or []:
+                if rn.get("cod"):
+                    nombres.setdefault(rn["cod"], (rn.get("nombre") or "").strip())
+            for rn in db.fetch_all(
+                "SELECT UPPER(TRIM(codigo_prov)) AS cod, nombre "
+                "  FROM scintela.proveedor "
+                " WHERE UPPER(TRIM(codigo_prov)) = ANY(%s)",
+                (provs,),
+            ) or []:
+                if rn.get("cod"):
+                    nombres.setdefault(rn["cod"], (rn.get("nombre") or "").strip())
+            for r in rows:
+                p = (r.get("prov") or "").strip().upper()
+                if p and nombres.get(p):
+                    r["prov_nombre"] = nombres[p]
+    except Exception:
+        pass  # fail-graceful: sin nombres, el chip cae al código
 
     return rows
 
