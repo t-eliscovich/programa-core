@@ -261,10 +261,12 @@
           {# Filas de r.tabla: label / kg / ukg / us / clase / ayuda.
              Las filas 'seccion' son divisores; el resto se estila por clase. #}
           {% set _clase_css = {'dato':'fila-dato','subtotal':'fila-aux','total':'fila-total','key':'fila-key'} %}
-          {# Federico 2026-07-21 — capturamos la Proyección (venta proyectada +
-             kg proyectados) para recalcular la Utilidad Proyectada en el
-             cliente = venta proy − gastos proyectados (localStorage de /gastos). #}
-          {% set _pns = namespace(proy_us=0, proy_kg=0) %}
+          {# Federico 2026-07-21/22 — capturamos la Proyección (venta proyectada +
+             kg proyectados) y los costos unitarios (Materia Prima + Colorantes)
+             para recalcular la Utilidad Proyectada en el cliente:
+             = venta proy − gastos proyectados (localStorage de /gastos)
+               − costos directos (kg proy × (mp_ukg + col_ukg) × 1.05). #}
+          {% set _pns = namespace(proy_us=0, proy_kg=0, mp_ukg=0, col_ukg=0) %}
           {% for row in r.tabla %}
             {% if row.clase == 'seccion' %}
           <tr>
@@ -272,7 +274,9 @@
           </tr>
             {% else %}
             {% if row.label == 'Proyección' %}{% set _pns.proy_us = row.us %}{% set _pns.proy_kg = row.kg %}{% endif %}
-          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}{% if row.label == 'Utilidad Proyectada' %} id="fila-utilidad-proy" data-proy-us="{{ _pns.proy_us }}" data-proy-kg="{{ _pns.proy_kg }}"{% endif %}>
+            {% if row.label == 'Materia Prima' %}{% set _pns.mp_ukg = row.ukg %}{% endif %}
+            {% if row.label == 'Colorantes/Quím.' %}{% set _pns.col_ukg = row.ukg %}{% endif %}
+          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}{% if row.label == 'Utilidad Proyectada' %} id="fila-utilidad-proy" data-proy-us="{{ _pns.proy_us }}" data-proy-kg="{{ _pns.proy_kg }}" data-mp-ukg="{{ _pns.mp_ukg }}" data-col-ukg="{{ _pns.col_ukg }}"{% endif %}>
             <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.parcial %} <span class="badge-parcial" title="Cifra del mes en curso — PATR−PATANT sólo cuadra al cierre de mes">parcial · {{ row.parcial_dias }} {{ 'día' if row.parcial_dias == 1 else 'días' }}</span>{% endif %}</td>
             <td class="num-cell"{% if row.label == 'Utilidad Proyectada' %} data-up="kg"{% endif %}>{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell"{% if row.label == 'Utilidad Proyectada' %} data-up="ukg"{% endif %}>{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
@@ -716,11 +720,14 @@
   {% endif %}
 </div>
 
-{# Federico 2026-07-21 — Utilidad Proyectada = Venta proyectada − Gastos
-   proyectados de este mes. Los gastos proyectados los carga el usuario en
-   /informes/gastos y viven en localStorage (misma clave por año-mes). Ambas
-   pantallas comparten origen, así que acá los leemos y recalculamos la fila
-   en vivo. Si no hay gastos cargados, se toma 0. #}
+{# Federico 2026-07-21/22 — Utilidad Proyectada:
+   = Venta proyectada − Gastos proyectados del mes − Costos directos.
+   · Gastos proyectados: los carga el usuario en /informes/gastos y viven en
+     localStorage (misma clave por año-mes); ambas pantallas comparten origen.
+   · Costos directos = kg proyectados × (costo unit. Materia Prima + costo unit.
+     Colorantes/Quím.) × 1.05 (desperdicio). Los unitarios salen de las filas
+     Materia Prima y Colorantes/Quím. de esta misma tabla.
+   Si no hay gastos cargados, se toma 0. #}
 <script>
 (function () {
   var row = document.getElementById('fila-utilidad-proy');
@@ -728,6 +735,9 @@
 
   var proyUs = parseFloat(row.getAttribute('data-proy-us')) || 0;
   var proyKg = parseFloat(row.getAttribute('data-proy-kg')) || 0;
+  var mpUkg  = parseFloat(row.getAttribute('data-mp-ukg')) || 0;
+  var colUkg = parseFloat(row.getAttribute('data-col-ukg')) || 0;
+  var DESPERDICIO = 1.05;
 
   var now = new Date();
   var key = 'gastos_proy_' + now.getFullYear() + '-' + (now.getMonth() + 1);
@@ -741,7 +751,10 @@
     });
   } catch (e) {}
 
-  var us = proyUs - gastos;
+  // Costos directos = kg proy × (MP unit + Colorantes unit) × desperdicio.
+  var costoDirecto = proyKg * (mpUkg + colUkg) * DESPERDICIO;
+
+  var us = proyUs - gastos - costoDirecto;
   var ukg = proyKg ? us / proyKg : 0;
 
   var fUs = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
@@ -755,8 +768,10 @@
   if (cUs) cUs.textContent = fUs.format(us);
 
   row.setAttribute('title',
-    'Venta proyectada (' + fUs.format(proyUs) + ') − Gastos proyectados del mes (' +
-    fUs.format(gastos) + ') = ' + fUs.format(us) + '. ' +
+    'Venta proyectada (' + fUs.format(proyUs) + ') − Gastos proyectados (' +
+    fUs.format(gastos) + ') − Costos directos (' + fUs.format(costoDirecto) +
+    ' = ' + fUs.format(proyKg) + ' kg × (' + fUkg.format(mpUkg) + ' + ' +
+    fUkg.format(colUkg) + ') × 1,05) = ' + fUs.format(us) + '. ' +
     'Los gastos proyectados se cargan en la pantalla Gastos del mes.');
 })();
 </script>
