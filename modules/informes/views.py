@@ -2576,20 +2576,37 @@ def gastos():
     }
     suma_grand_prev = sum(col_total_prev.values())
 
-    # Federico 2026-07-22 — override MANUAL del mes anterior: si hay una fila en
-    # scintela.gastos_mes_manual para el período anterior, se FUERZA ese valor en
-    # lugar del cálculo automático (ej. junio no tiene xgast). Compartido por
-    # todos los usuarios; editable desde la propia fila (guarda en la base).
+    # Federico 2026-07-22 — "Gastos mes anterior" es FIJO (no editable). El mes
+    # anterior ya está cerrado, así que su total se CONGELA en la base una sola
+    # vez (scintela.gastos_mes_manual, compartido por todos) y desde ahí se
+    # muestra — no se mueve más. Junio quedó seedeado manualmente (mig 0127);
+    # julio se congela solo al entrar agosto (primer view del mes nuevo), y así
+    # cada mes. Idempotente: si ya hay fila para el período, NO se recalcula.
     periodo_anterior = _safe(queries._periodo_anterior_ec, "")[0]
-    _manual_prev, _e = _safe(
+    _cong, _e = _safe(
         lambda: queries.gastos_mes_manual_get(periodo_anterior), None
     )
-    mes_anterior_forzado = bool(_manual_prev)
-    if _manual_prev:
+    if _cong is None and periodo_anterior:
+        _safe(
+            lambda: queries.gastos_mes_manual_set(
+                periodo_anterior,
+                col_total_prev["tej"],
+                col_total_prev["tin"],
+                col_total_prev["adm"],
+                usuario="auto-cierre-mes",
+            ),
+            None,
+        )
+        _cong = {
+            "tej": col_total_prev["tej"],
+            "tin": col_total_prev["tin"],
+            "adm": col_total_prev["adm"],
+        }
+    if _cong:
         col_total_prev = {
-            "tej": _manual_prev["tej"],
-            "tin": _manual_prev["tin"],
-            "adm": _manual_prev["adm"],
+            "tej": _cong["tej"],
+            "tin": _cong["tin"],
+            "adm": _cong["adm"],
         }
         suma_grand_prev = sum(col_total_prev.values())
     # TMT 2026-05-19 v5 — pedido dueña: banner "Sin clasificar" con link
@@ -2622,8 +2639,6 @@ def gastos():
         suma_grand=suma_grand,
         col_total_prev=col_total_prev,
         suma_grand_prev=suma_grand_prev,
-        periodo_anterior=periodo_anterior,
-        mes_anterior_forzado=mes_anterior_forzado,
         sin_num_resumen=sin_num_resumen,
         proy=proy or {"tej": 0, "tin": 0, "adm": 0},
     )
@@ -2653,38 +2668,6 @@ def gastos_proyectados_guardar():
     try:
         r = queries.gastos_proyectado_mes_set(
             tej, tin, adm, usuario=(g.user or {}).get("username", "web")
-        )
-        return jsonify({"ok": True, **r})
-    except Exception as e:  # pragma: no cover - defensivo
-        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
-
-
-@informes_bp.route("/gastos/mes-anterior", methods=["POST"])
-@requiere_login
-@requiere_permiso("gastos.ver")
-def gastos_mes_anterior_guardar():
-    """Guarda el override MANUAL de los gastos del mes ANTERIOR por rubro.
-
-    Federico 2026-07-22: fuerza los valores de la fila "Gastos mes anterior"
-    (ej. junio no tiene datos en xgast). Compartido por todos los usuarios. El
-    período es SIEMPRE el mes anterior calculado en el servidor (no se confía en
-    el cliente). Gate `gastos.ver` a propósito, igual que la proyección.
-    """
-
-    def _parse(v):
-        try:
-            return max(0.0, float(str(v).replace(",", ".").strip() or 0))
-        except (TypeError, ValueError):
-            return 0.0
-
-    payload = request.get_json(silent=True) or request.form
-    tej = _parse(payload.get("tej"))
-    tin = _parse(payload.get("tin"))
-    adm = _parse(payload.get("adm"))
-    try:
-        periodo = queries._periodo_anterior_ec()
-        r = queries.gastos_mes_manual_set(
-            periodo, tej, tin, adm, usuario=(g.user or {}).get("username", "web")
         )
         return jsonify({"ok": True, **r})
     except Exception as e:  # pragma: no cover - defensivo
