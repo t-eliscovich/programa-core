@@ -414,18 +414,23 @@ def posdat_totales() -> dict:
 
 
 def activos_totales() -> dict:
-    """UMAQ = maquinaria (Maq.Tint/Maq.Tej/Camiones)  ·  UACT = Terr/Edif/Ins.
+    """UMAQ = maquinaria (tipo M/C/K)  ·  UACT = Terr/Edif/Ins. (tipo I/T).
 
-    UACT es "todo lo que NO es maquinaria": terrenos + edificios +
-    instalaciones + otros. Antes UACT sumaba SOLO tipo='I' (edificios) y
-    los TERRENOS (tipo='T', o concepto TERRENO/PREDIO/LOTE) quedaban
-    afuera del balance por completo — reclasificar un edificio a terreno
-    lo hacía desaparecer del activo y desplomaba la utilidad. Ahora el
-    balance reusa la MISMA categorización canónica que /activos
-    (`modules.activos.queries._CATEGORIA_CASE_SQL`), así UMAQ + UACT ==
-    Σ valor en libros de TODOS los activos y la pantalla nunca se
-    desincroniza del balance (TMT 2026-07-22 — pedido dueña: "todo tiene
-    que sumar").
+    Réplica FIEL del resultado legacy (MENU.PRG): UMAQ = FOR TIPO $ 'MCK',
+    UACT = FOR TIPO = 'I'. El dBase suma SOLO por código de tipo, NUNCA por
+    el texto del concepto, y NO cuenta los activos sin tipo (blank / '(s/t)').
+
+    Único agregado sobre el legacy: el código 'T' (Terrenos) que la dueña
+    introdujo en PC (2026-05) se suma junto a 'I' en UACT — así un terreno
+    reclasificado de 'I' a 'T' sigue contando (antes se caía del activo y
+    desplomaba la utilidad, bug 2026-07-22). Los activos '(s/t)' quedan
+    afuera igual que en el dBase; para ponerlos en libros hay que tiparlos
+    T/I explícitamente (decisión de la dueña, no automática por el nombre).
+
+    Verificado 2026-07-22 contra ACTIVOS.DBF: UMAQ=1.081.299, UACT(I)=
+    2.382.867 (== columna "previa" del snapshot). Los dos terrenos '(s/t)'
+    (+TERRENO SUR 510k, TERRENO 6550m2 145k) están fuera del resultado en
+    el dBase y por eso también acá.
 
     El `valor` (valor en libros) se computa día a día como en dBase
     MENU.PRG líneas 275-276:
@@ -442,29 +447,26 @@ def activos_totales() -> dict:
     corre la procedure mensual. La columna `amortimes` stored tampoco —
     es solo histórica.
     """
-    # Categorización canónica compartida con /activos: cat 1=Terrenos,
-    # 2=Edificios, 3=Maq.Tintorería, 4=Maq.Tejeduría, 5=Camiones, 99=Otros.
-    # UMAQ = cat 3/4/5 (maquinaria+camiones). UACT = todo lo demás
-    # (terrenos+edificios+instal.+otros) → NOT IN (3,4,5), de modo que
-    # ningún activo con valor quede fuera del total (invariante "todo suma").
-    from modules.activos.queries import _CATEGORIA_CASE_SQL as _CAT_SQL
-
+    # Suma por CÓDIGO DE TIPO (como el dBase), NO por concepto: UMAQ = M/C/K,
+    # UACT = I + T (edificios/instalaciones + terrenos). '(s/t)' y otros no
+    # tipados quedan fuera, idéntico al legacy. `valor_calc` = valor en libros
+    # prorrateado al día (NUNCA `inicial`).
     row = db.fetch_one(
-        f"""
+        """
         WITH coef AS (
           SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         ),
         v AS (
           SELECT
-            {_CAT_SQL} AS cat,
-            COALESCE(a.inicial, 0)
-              - COALESCE(a.amortizac, 0)
-              - (SELECT c FROM coef) * COALESCE(a.cuota, 0) AS valor_calc
-          FROM scintela.activos a
+            UPPER(TRIM(COALESCE(tipo, ''))) AS tp,
+            COALESCE(inicial, 0)
+              - COALESCE(amortizac, 0)
+              - (SELECT c FROM coef) * COALESCE(cuota, 0) AS valor_calc
+          FROM scintela.activos
         )
         SELECT
-          COALESCE(SUM(CASE WHEN cat IN (3,4,5)     THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS umaq,
-          COALESCE(SUM(CASE WHEN cat NOT IN (3,4,5) THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS uact
+          COALESCE(SUM(CASE WHEN tp IN ('M','C','K') THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS umaq,
+          COALESCE(SUM(CASE WHEN tp IN ('I','T')     THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS uact
         FROM v
         """
     )
@@ -3425,8 +3427,8 @@ def conciliacion_balance() -> list[dict]:
     detalle_act = []
     for r in a_breakdown:
         detalle_act.append((f"tipo={r['tipo']} ({int(r['n'])} activos)", float(r.get("total") or 0)))
-    detalle_act.append(("Σ UMAQ (Maq/Camiones: cat 3/4/5)", activos["umaq"]))
-    detalle_act.append(("Σ UACT (Terr/Edif/Ins/Otros: cat 1/2/99)", activos["uact"]))
+    detalle_act.append(("Σ UMAQ (tipo M/C/K)", activos["umaq"]))
+    detalle_act.append(("Σ UACT (tipo I/T = edificios + terrenos)", activos["uact"]))
     out.append(
         {
             "concepto": "MAQ/EQUIP. + TERR/EDIF/INS.",
@@ -3435,7 +3437,7 @@ def conciliacion_balance() -> list[dict]:
             "match": True,
             "diff": 0.0,
             "detalle": detalle_act,
-            "nota": "UACT = Terr/Edif/Ins/Otros (categoría canónica 1/2/99 de /activos, todo lo no-maquinaria, INCLUYE terrenos). UMAQ = Maq+Camiones (cat 3/4/5). UMAQ+UACT == Σ valor libros de todos los activos.",
+            "nota": "Réplica legacy MENU.PRG: UACT FOR TIPO IN ('I','T') (edificios/instal. + terrenos), UMAQ FOR TIPO IN ('M','C','K'). Suma por código de tipo (no por concepto); '(s/t)'/no tipados quedan fuera igual que el dBase. Valor en libros prorrateado, no inicial.",
         }
     )
 
