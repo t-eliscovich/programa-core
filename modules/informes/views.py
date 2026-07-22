@@ -842,6 +842,21 @@ def balance():
     try:
         _tabla = (data or {}).get("resultados", {}).get("tabla") if isinstance(data, dict) else None
         if _tabla:
+            # Federico 2026-07-22 — kg de VENTA PROYECTADA editable desde esta
+            # pantalla (fila Proyección), guardado en la BASE compartida
+            # (scintela.venta_proyectada_mes). Si hay valor cargado para el mes,
+            # PISA el KGPRO de iniciales y recalcula la venta proyectada
+            # (kg × precio). Ese kg alimenta la Utilidad Proyectada (venta proy
+            # y costos directos). Se aplica ANTES de calcular la utilidad.
+            _vp_kg, _e = _safe(queries.venta_proyectada_mes_get, None)
+            if _vp_kg and _vp_kg > 0:
+                for _r in _tabla:
+                    if _r.get("label") == "Proyección":
+                        _precio = float(_r.get("ukg") or 0)
+                        _r["kg"] = _vp_kg
+                        _r["us"] = _vp_kg * _precio
+                        break
+
             _proy = queries.gastos_proyectado_mes_get()
             _gastos_proy = (
                 float(_proy.get("tej") or 0)
@@ -882,6 +897,34 @@ def balance():
         error=error,
         provisiones=prov_result,
     )
+
+
+@informes_bp.route("/balance/venta-proyectada", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def venta_proyectada_guardar():
+    """Guarda el kg de VENTA PROYECTADA del mes en curso (fila Proyección).
+
+    Federico 2026-07-22: reemplaza el KGPRO fijo de iniciales por un valor
+    editable y COMPARTIDO (scintela.venta_proyectada_mes). Gate `informes.ver`:
+    todos los que ven el balance pueden editar la proyección (planilla común).
+    """
+
+    def _parse(v):
+        try:
+            return max(0.0, float(str(v).strip() or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    payload = request.get_json(silent=True) or request.form
+    kg = _parse(payload.get("kg"))
+    try:
+        r = queries.venta_proyectada_mes_set(
+            kg, usuario=(g.user or {}).get("username", "web")
+        )
+        return jsonify({"ok": True, **r})
+    except Exception as e:  # pragma: no cover - defensivo
+        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
 # Feature A — tab Compras en /informes/balance (TMT 2026-05-19 v6).

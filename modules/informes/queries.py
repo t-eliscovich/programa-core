@@ -2497,6 +2497,50 @@ def gastos_mes_manual_set(
     return {"periodo": periodo, "tej": tej, "tin": tin, "adm": adm}
 
 
+def venta_proyectada_mes_get(periodo: str | None = None) -> float | None:
+    """Kg de VENTA PROYECTADA del período (editable desde la fila Proyección del
+    balance), o None si no hay valor cargado.
+
+    Federico 2026-07-22: si hay valor, PISA el KGPRO de `scintela.iniciales` en el
+    Informe de Resultados. Guardado en `scintela.venta_proyectada_mes`, compartido
+    por todos los usuarios. Alimenta la Utilidad Proyectada (venta proy = kg×precio
+    y costos directos = kg × (MP + Colorantes) × 1,05).
+    """
+    per = periodo or _periodo_actual_ec()
+    row = db.fetch_one(
+        "SELECT kg FROM scintela.venta_proyectada_mes WHERE periodo = %s",
+        (per,),
+    )
+    if not row:
+        return None
+    kg = float(row.get("kg") or 0)
+    return kg if kg > 0 else None
+
+
+def venta_proyectada_mes_set(
+    kg: float, usuario: str | None = None, periodo: str | None = None
+) -> dict:
+    """Upsert del kg de venta proyectada del período (una fila por YYYY-MM).
+
+    Compartido por todos los usuarios; el último que guarda pisa el valor.
+    """
+    per = periodo or _periodo_actual_ec()
+    kg = float(kg or 0)
+    db.execute(
+        """
+        INSERT INTO scintela.venta_proyectada_mes
+            (periodo, kg, usuario_modifica, fecha_modifica)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (periodo) DO UPDATE SET
+            kg = EXCLUDED.kg,
+            usuario_modifica = EXCLUDED.usuario_modifica,
+            fecha_modifica = CURRENT_TIMESTAMP
+        """,
+        (per, kg, usuario),
+    )
+    return {"periodo": per, "kg": kg}
+
+
 def gastos_proyectado_mes_get(periodo: str | None = None) -> dict:
     """Gastos proyectados por rubro (tej/tin/adm) del período dado.
 

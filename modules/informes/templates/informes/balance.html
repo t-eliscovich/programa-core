@@ -173,6 +173,25 @@
     }
   }
   .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
+  /* Federico 2026-07-22 — kg de venta proyectada editable (fila Proyección). */
+  .informe-balance input.vp-input {
+    width: 92px; text-align: right; font-variant-numeric: tabular-nums;
+    padding: 2px 6px; border: 1px solid rgb(203 213 225); border-radius: 6px;
+    background: rgb(255 255 255); color: rgb(15 23 42);
+    font-size: inherit; font-family: inherit;
+  }
+  .informe-balance input.vp-input:focus {
+    outline: none; border-color: rgb(14 165 233);
+    box-shadow: 0 0 0 2px rgb(14 165 233 / 0.25);
+  }
+  .dark .informe-balance input.vp-input {
+    background: rgb(15 23 42); color: rgb(241 245 249); border-color: rgb(71 85 105);
+  }
+  .informe-balance .vp-status { font-size: 11px; margin-left: 6px; color: rgb(100 116 139); }
+  .informe-balance .vp-print { display: none; }
+  @media print {
+    .informe-balance .vp-print { display: inline; }
+  }
 </style>
 {% endblock %}
 
@@ -272,7 +291,7 @@
             {% else %}
           <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
             <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.parcial %} <span class="badge-parcial" title="Cifra del mes en curso — PATR−PATANT sólo cuadra al cierre de mes">parcial · {{ row.parcial_dias }} {{ 'día' if row.parcial_dias == 1 else 'días' }}</span>{% endif %}</td>
-            <td class="num-cell">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
+            <td class="num-cell">{% if row.label == 'Proyección' %}<input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span><span id="vp-status" class="vp-status no-print"></span><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
             <td class="num-cell" style="color:#64748b">{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
@@ -719,4 +738,55 @@
    BASE (compartidos por todos los usuarios, tabla gastos_proyectado_mes) − costos
    directos (kg proy × (MP + Colorantes unitarios) × 1,05). Ya NO se usa
    localStorage del navegador — el valor viene renderizado en la fila. #}
+
+{# Federico 2026-07-22 — kg de VENTA PROYECTADA editable (fila Proyección). Al
+   cambiarlo se guarda en la BASE compartida (scintela.venta_proyectada_mes) y se
+   recarga la página para que el servidor recalcule la venta proyectada y la
+   Utilidad Proyectada con el nuevo kg. Compartido por todos los usuarios. #}
+<script>
+(function () {
+  var inp = document.getElementById('vp-kg-input');
+  if (!inp) return;
+  var statusEl = document.getElementById('vp-status');
+
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    if (m && m.content) return m.content;
+    var i = document.querySelector('input[name="csrf_token"]');
+    return i ? i.value : '';
+  }
+  function setStatus(txt, color) {
+    if (!statusEl) return;
+    statusEl.textContent = txt || '';
+    statusEl.style.color = color || '#64748b';
+  }
+
+  var lastSaved = inp.value;
+  function save() {
+    if (inp.value === lastSaved) return;
+    lastSaved = inp.value;
+    var kg = parseFloat(inp.value);
+    if (isNaN(kg) || kg < 0) { setStatus('Valor inválido', '#dc2626'); return; }
+    setStatus('Guardando…', '#64748b');
+    fetch("{{ url_for('informes.venta_proyectada_guardar') }}", {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify({ kg: kg })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) {
+          setStatus('Guardado ✓ actualizando…', '#16a34a');
+          // Recargar para que el servidor recalcule venta proy + utilidad proy.
+          window.location.reload();
+        } else { setStatus('No se pudo guardar', '#dc2626'); }
+      })
+      .catch(function () { setStatus('No se pudo guardar', '#dc2626'); });
+  }
+
+  // Guarda al salir del campo (blur) o Enter — no en cada tecla.
+  inp.addEventListener('change', save);
+  inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+})();
+</script>
 {% endblock %}
