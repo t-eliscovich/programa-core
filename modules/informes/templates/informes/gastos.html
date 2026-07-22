@@ -118,6 +118,10 @@
   .gastos-matriz tr.proyectado td.cell { padding-right: 1px; }
   .gastos-matriz input.proy-input {
     width: 65%; display: block; margin-left: auto;
+    /* Federico 2026-07-22 — corrido a la derecha para que el número quede
+       alineado con las cifras de las filas de arriba (compensa borde+padding).
+       Hay ~12px de aire a la derecha en la celda, así que no se desborda. */
+    margin-right: -7px;
     text-align: right; font-variant-numeric: tabular-nums;
     padding: 4px 6px; border: 1px solid rgb(203 213 225); border-radius: 6px;
     background: rgb(255 255 255); color: rgb(15 23 42); font-size: 13px;

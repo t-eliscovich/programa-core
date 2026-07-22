@@ -179,6 +179,10 @@
     padding: 2px 6px; border: 1px solid rgb(203 213 225); border-radius: 6px;
     background: rgb(255 255 255); color: rgb(15 23 42);
     font-size: inherit; font-family: inherit;
+    /* Federico 2026-07-22 — corrido a la derecha para alinear el número con las
+       cifras de arriba (Venta, etc.), compensando borde+padding. Hay ~12px de
+       aire a la derecha en la celda, no se desborda. */
+    margin-right: -7px;
   }
   .informe-balance input.vp-input:focus {
     outline: none; border-color: rgb(14 165 233);
@@ -290,8 +294,8 @@
           </tr>
             {% else %}
           <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
-            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.parcial %} <span class="badge-parcial" title="Cifra del mes en curso — PATR−PATANT sólo cuadra al cierre de mes">parcial · {{ row.parcial_dias }} {{ 'día' if row.parcial_dias == 1 else 'días' }}</span>{% endif %}</td>
-            <td class="num-cell">{% if row.label == 'Proyección' %}<input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span><span id="vp-status" class="vp-status no-print"></span><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
+            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.label == 'Proyección' %}<span id="vp-status" class="vp-status no-print"></span>{% endif %}{% if row.parcial %} <span class="badge-parcial" title="Cifra del mes en curso — PATR−PATANT sólo cuadra al cierre de mes">parcial · {{ row.parcial_dias }} {{ 'día' if row.parcial_dias == 1 else 'días' }}</span>{% endif %}</td>
+            <td class="num-cell">{% if row.label == 'Proyección' %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span>{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
             <td class="num-cell" style="color:#64748b">{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
