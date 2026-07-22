@@ -1693,7 +1693,22 @@ def depositar_lote(
         total_pos = round(sum(float(r.get("importe") or 0) for r in positivos), 2)
         if positivos:
             n_pos = len(positivos)
-            concepto_dep = (concepto or f"dep.{n_pos} ch.").strip()[:50]
+            # TMT 2026-07-22 (dueña): cuando el lote es UN solo cheque, incluir
+            # N° de cheque + cliente en el concepto (como el path individual
+            # transicionar_stat: "Dep cheque {no} {cli}") para que la
+            # conciliación lo muestre legible. Mantiene el prefijo "dep.1 ch."
+            # (paridad dBase); el display de conciliación resuelve el resto vía
+            # chequextransaccion para lotes ya existentes.
+            if concepto:
+                concepto_dep = concepto.strip()[:50]
+            elif n_pos == 1:
+                _r0 = positivos[0]
+                concepto_dep = (
+                    f"dep.1 ch. {_r0.get('no_cheque') or ''} "
+                    f"{_r0.get('codigo_cli') or ''}"
+                ).strip()[:50]
+            else:
+                concepto_dep = f"dep.{n_pos} ch."
             mov = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=no_banco,

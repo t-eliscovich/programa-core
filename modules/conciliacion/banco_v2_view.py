@@ -438,6 +438,79 @@ def _migracion_lista_o_redirect():
     return redirect(url_for("conciliacion.hub"))
 
 
+def _enriquecer_clientes_depositos(items: list[dict]) -> None:
+    """SOLO DISPLAY (TMT 2026-07-22, dueña): los depósitos consolidados del
+    lado Programa (documento='DE', concepto genérico "dep.N ch." que arma
+    depositar_lote) no traen cliente ni N° de documento — el `prov` queda NULL
+    y el concepto no dice nada. Acá resolvemos los cheques ligados vía
+    scintela.chequextransaccion → scintela.cheque → scintela.cliente y
+    guardamos en el item un string legible:
+        1 cheque  → "ch. 100410 · LTM"  (título con nombre completo)
+        N cheques → "3 cheques · LTM, SJG…"
+    NO toca el matcheo (que es por MONTO); solo enriquece el render del panel
+    Programa, así aplica también a los depósitos YA existentes.
+    """
+    ids = []
+    for it in items:
+        mov = it.get("mov")
+        doc = (getattr(mov, "documento", "") or "").upper()
+        tx = getattr(mov, "id_transaccion", None)
+        if doc == "DE" and tx:
+            ids.append(int(tx))
+    if not ids:
+        return
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT cxt.id_transaccion,
+                   COALESCE(NULLIF(TRIM(ch.codigo_cli), ''), '') AS codigo_cli,
+                   COALESCE(ch.no_cheque::text, '') AS no_cheque,
+                   COALESCE(cl.nombre, '') AS nombre
+              FROM scintela.chequextransaccion cxt
+              JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
+              LEFT JOIN scintela.cliente cl ON cl.codigo_cli = ch.codigo_cli
+             WHERE cxt.id_transaccion = ANY(%s)
+             ORDER BY cxt.id_transaccion, ch.no_cheque
+            """,
+            (ids,),
+        ) or []
+    except Exception as e:
+        _LOG.warning("enriquecer depositos programa falló: %s", e)
+        return
+    por_tx: dict[int, list[dict]] = {}
+    for r in rows:
+        por_tx.setdefault(int(r["id_transaccion"]), []).append(r)
+    for it in items:
+        mov = it.get("mov")
+        tx = getattr(mov, "id_transaccion", None)
+        chs = por_tx.get(int(tx)) if tx is not None else None
+        if not chs:
+            continue
+        clientes: list[str] = []
+        for r in chs:
+            c = (r.get("codigo_cli") or "").strip()
+            if c and c not in clientes:
+                clientes.append(c)
+        if len(chs) == 1:
+            r0 = chs[0]
+            no_ch = (r0.get("no_cheque") or "").strip()
+            cli = (r0.get("codigo_cli") or "").strip()
+            nom = (r0.get("nombre") or "").strip()
+            partes = []
+            if no_ch:
+                partes.append(f"ch. {no_ch}")
+            if cli:
+                partes.append(cli)
+            base = " · ".join(partes)
+            it["dep_display"] = base
+            it["dep_titulo"] = (f"{base} {nom}").strip() or None
+        else:
+            etiqueta = ", ".join(clientes[:4]) + ("…" if len(clientes) > 4 else "")
+            it["dep_display"] = f"{len(chs)} cheques" + (f" · {etiqueta}" if etiqueta else "")
+            it["dep_titulo"] = it["dep_display"]
+        it["dep_clientes"] = clientes
+
+
 # ─── Pantalla principal post-procesar ─────────────────────────────────
 
 
@@ -481,6 +554,9 @@ def banco_post_procesar():
         tab = "manual"
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
+    # TMT 2026-07-22 (dueña): que los depósitos consolidados "dep.N ch." del
+    # lado Programa muestren el/los cliente(s) y cheque(s) ligados. Solo display.
+    _enriquecer_clientes_depositos(buckets.get("manual_programa") or [])
     balance = _bp.calcular(no_banco)
 
     # TMT 2026-06-21 (dueña: "¿por qué dice 131k si la diferencia es 0?").

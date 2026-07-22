@@ -3215,3 +3215,62 @@ def resumen_dia():
         error = f"Error inesperado: {e}"
 
     return render_template("cheques/resumen_dia.html", resumen=resumen, fecha=fecha, error=error)
+
+
+@cheques_bp.route("/cheques/diag/depositados-sin-movimiento")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def diag_depositados_sin_movimiento():
+    """Diagnóstico (TMT 2026-07-22): cheques hoy en estado DEPOSITADO
+    (STATS_DEPOSITADO) SIN un movimiento bancario 'DE' ligado vía
+    chequextransaccion — el bug de cheques que quedaron depositados sin
+    movimiento en el banco. Solo lectura; sirve para encontrar los afectados
+    y re-depositarlos con depositar_lote.
+
+    `?formato=json` devuelve JSON en vez de la tabla HTML.
+    """
+    stats = list(queries.STATS_DEPOSITADO)
+    try:
+        filas = db.fetch_all(
+            """
+            SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
+                   c.no_banco, c.banco,
+                   COALESCE(c.fechaing, c.fechad, c.fecha) AS fecha,
+                   c.usuario_crea
+              FROM scintela.cheque c
+             WHERE UPPER(COALESCE(c.stat, '')) = ANY(%s)
+               AND NOT EXISTS (
+                     SELECT 1
+                       FROM scintela.chequextransaccion cxt
+                       JOIN scintela.transacciones_bancarias tb
+                         ON tb.id_transaccion = cxt.id_transaccion
+                      WHERE cxt.id_cheque = c.id_cheque
+                        AND UPPER(COALESCE(tb.documento, '')) = 'DE'
+               )
+             ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) DESC NULLS LAST,
+                      c.id_cheque DESC
+            """,
+            (stats,),
+        ) or []
+        error = None
+    except Exception as e:  # noqa: BLE001
+        filas, error = [], f"Error inesperado: {e}"
+
+    if request.args.get("formato") == "json":
+        def _ser(v):
+            if isinstance(v, (date, datetime)):
+                return v.isoformat()
+            try:
+                from decimal import Decimal
+                if isinstance(v, Decimal):
+                    return float(v)
+            except Exception:
+                pass
+            return v
+        cheques = [{k: _ser(v) for k, v in dict(r).items()} for r in filas]
+        return jsonify({"n": len(cheques), "error": error, "cheques": cheques})
+
+    return render_template(
+        "cheques/diag_depositados_sin_movimiento.html",
+        filas=filas, error=error, stats=stats,
+    )

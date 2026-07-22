@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Cheques depositados sin movimiento bancario{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-6">
+  <h1 class="text-lg font-semibold text-slate-800 dark:text-slate-100">
+    Cheques depositados sin movimiento bancario
+  </h1>
+  <p class="text-xs text-slate-500 mt-1">
+    Cheques en estado <span class="font-mono">{{ stats|join(' / ') }}</span>
+    (DEPOSITADO) que NO tienen un movimiento bancario <span class="font-mono">DE</span>
+    ligado. Estos son los afectados por el bug — se corrigen re-depositándolos
+    con <em>depositar en lote</em>. Solo lectura.
+    <a class="text-sky-600 underline ml-1" href="?formato=json">ver JSON</a>
+  </p>
+
+  {% if error %}
+  <div class="mt-4 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 px-3 py-2 text-sm">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <div class="mt-4 text-sm text-slate-600 dark:text-slate-300">
+    {{ filas|length }} cheque(s) encontrado(s).
+  </div>
+
+  <div class="mt-2 overflow-x-auto">
+    <table class="w-full text-xs tabular-nums border border-slate-200 dark:border-slate-700">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-2 py-1 text-right">id_cheque</th>
+          <th class="px-2 py-1 text-left">N° cheque</th>
+          <th class="px-2 py-1 text-left">Cliente</th>
+          <th class="px-2 py-1 text-right">Importe</th>
+          <th class="px-2 py-1 text-center">Stat</th>
+          <th class="px-2 py-1 text-right">N° banco</th>
+          <th class="px-2 py-1 text-left">Banco</th>
+          <th class="px-2 py-1 text-left">Fecha</th>
+          <th class="px-2 py-1 text-left">Usuario</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-2 py-1 text-right font-mono">
+            <a class="text-sky-600 underline" href="{{ url_for('cheques.detalle', id_cheque=f.id_cheque) }}">{{ f.id_cheque }}</a>
+          </td>
+          <td class="px-2 py-1">{{ f.no_cheque or '—' }}</td>
+          <td class="px-2 py-1 font-mono">{{ f.codigo_cli or '—' }}</td>
+          <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.importe|float) }}</td>
+          <td class="px-2 py-1 text-center font-mono">{{ f.stat }}</td>
+          <td class="px-2 py-1 text-right font-mono">{{ f.no_banco if f.no_banco is not none else '—' }}</td>
+          <td class="px-2 py-1">{{ f.banco or '—' }}</td>
+          <td class="px-2 py-1">{{ f.fecha.strftime('%Y-%m-%d') if f.fecha else '—' }}</td>
+          <td class="px-2 py-1">{{ f.usuario_crea or '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if not filas %}
+        <tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 italic">
+          — sin cheques depositados sin movimiento —
+        </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
