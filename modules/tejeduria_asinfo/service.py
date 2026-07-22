@@ -265,6 +265,17 @@ def resumen_mes(anio: int, mes: int) -> dict:
     tercerizado_ofs.sort(key=lambda o: ((o.get("cod") or ""), str(o.get("dia") or "")))
     pendientes = [o for o in tercerizado_ofs if o["estado"] == "pendiente"]
 
+    # ── TMT 2026-07-21 (dueña): sumar columnas Reyes (RY) y Ponce (AP) al diario
+    # de ingreso a bodega. El desglose por tejedor sale de por_dia (OFs cerradas);
+    # se cruza por día (YYYY-MM-DD) contra el ingreso a bodega 52. Aproximado: el
+    # día de cierre de la OF puede no calzar exacto con el día de ingreso a bodega.
+    _terc_dia = {str(_d.get("dia"))[:10]: (_d.get("kg") or {}) for _d in por_dia}
+    ingreso_por_dia = _ingreso_por_dia(anio, mes)
+    for _row in ingreso_por_dia:
+        _kg = _terc_dia.get(str(_row.get("dia"))[:10], {})
+        _row["reyes_kg"] = round(float(_kg.get("RY", 0.0) or 0.0), 2)
+        _row["ponce_kg"] = round(float(_kg.get("AP", 0.0) or 0.0), 2)
+
     return {
         "disponible": disponible,
         "anio": prod.get("anio", anio),
@@ -283,7 +294,7 @@ def resumen_mes(anio: int, mes: int) -> dict:
         # DIARIO canónico (dueña 2026-07-20): ingreso a bodega 52 POR DÍA —
         # la suma de los días = total_kg exacto (misma fuente). Reemplaza en
         # la pantalla al diario por OFs cerradas (que sumaba 207k ≠ 179k).
-        "ingreso_por_dia": _ingreso_por_dia(anio, mes),
+        "ingreso_por_dia": ingreso_por_dia,
         "pendientes": pendientes,
         "tercerizado_ofs": tercerizado_ofs,
     }
