@@ -1884,7 +1884,12 @@ def depositos(id_cheque: int) -> list[dict]:
 #   - Filas con 'R' (rebotado genérico) — se muestran bajo "devueltos".
 #     Reversiones nuevas escriben '1' o '3' según el caso.
 STATS = {
-    "cartera": ("Z",),  # ingresado, sin movimiento
+    # TMT 2026-07-22 (dueña): "Cartera" ahora agrupa los cheques que siguen
+    # siendo un valor por cobrar y todavía se pueden depositar/re-depositar:
+    # Z (ingresado sin movimiento) + P (postergado) + 1/2 (rebote 1°/2°, se
+    # re-presentan al banco). Antes era solo ("Z",). Subconjunto coherente de
+    # `cartera_total` (que además suma 3 y D).
+    "cartera": ("Z", "P", "1", "2"),
     "depositados": ("B", "A", "C"),  # B nuevo + A legacy + C efectivo (99, paridad dBase)
     "devueltos": ("1", "2", "3", "R"),  # rebotes (3=segundo rebote)
     "daniela": ("D",),  # gestión Daniela
@@ -2484,6 +2489,28 @@ def crear(
         stat = "B"
     if no_banco == 99 and (stat or "").upper() in ("Z", "B") and float(importe or 0) > 0:
         stat = "C"
+
+    # TMT 2026-07-22 — GUARD anti-orphan (root cause del bug cheque 100410).
+    # Un cheque NO puede nacer en un estado DEPOSITADO (STATS_DEPOSITADO) sin
+    # que se genere su movimiento bancario. El único alta que crea el
+    # movimiento (chequextransaccion + transacciones_bancarias) es el depósito
+    # directo NB=90/91 con importe>0 (bloque más abajo, paridad ALTAS.PRG
+    # L170-186). Si alguien elige stat='B' en el dropdown de /cheques/nuevo con
+    # un banco EMISOR real (p.ej. Pichincha=10) —o con importe<=0— el cheque
+    # quedaría "Depositado" SIN fila de movimiento → invisible en la
+    # conciliación bancaria (exactamente lo que le pasó a 100410, cargado por
+    # alex el 13/07). Lo bloqueamos y mandamos al flujo correcto: cargarlo en
+    # cartera (Z) y depositarlo con "Depositar lote", o elegir banco 90/91
+    # (DEP.PICH / DEP.INTER) para el depósito directo — ambos SÍ crean el mov.
+    _stat_final = (stat or "").upper()
+    _genera_mov_banco = (no_banco in (90, 91)) and float(importe or 0) > 0
+    if _stat_final in STATS_DEPOSITADO and not _genera_mov_banco:
+        raise ValueError(
+            f"No se puede crear un cheque directamente en estado '{_stat_final}' "
+            "(depositado) sin generar el movimiento bancario. Cargalo en cartera "
+            "(Z) y depositalo con 'Depositar lote', o elegí banco 90/91 "
+            "(DEP.PICH / DEP.INTER) para el depósito directo."
+        )
 
     importe_principal = float(importe or 0)
 

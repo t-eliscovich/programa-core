@@ -3044,6 +3044,23 @@ def lista():
                 conteos_por_bucket["devueltos_en_gestion"] = dict(row_eg)
         except Exception:
             pass
+        # TMT 2026-07-22 (dueña) — el tab "Cartera" ahora agrupa Z + P + 1 + 2
+        # (ver STATS["cartera"] en queries.py). El CASE de arriba solo cuenta Z
+        # en el bucket 'cartera' (cada fila cae en un único bucket), así que el
+        # badge subcontaría respecto del filtro. Lo recalculamos aparte —igual
+        # que cartera_total/devueltos_en_gestion— para que badge == listado.
+        try:
+            row_cart = db.fetch_one(
+                """
+                SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
+                  FROM scintela.cheque
+                 WHERE stat IN ('Z', 'P', '1', '2')
+                """
+            )
+            if row_cart:
+                conteos_por_bucket["cartera"] = dict(row_cart)
+        except Exception:
+            pass
         # TMT 2026-05-19 v2 — Cartera total = Z + P + 1/2/3 + D (los 4
         # buckets visibles arriba). Sin B (depositados ya están en el
         # banco). Pedido Tamara — antes incluía B, fue revertido.
