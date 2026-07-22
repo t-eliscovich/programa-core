@@ -414,7 +414,18 @@ def posdat_totales() -> dict:
 
 
 def activos_totales() -> dict:
-    """UMAQ = maquinaria (M/C/K)  ·  UACT = terrenos/edificios/instal. (I).
+    """UMAQ = maquinaria (Maq.Tint/Maq.Tej/Camiones)  ·  UACT = Terr/Edif/Ins.
+
+    UACT es "todo lo que NO es maquinaria": terrenos + edificios +
+    instalaciones + otros. Antes UACT sumaba SOLO tipo='I' (edificios) y
+    los TERRENOS (tipo='T', o concepto TERRENO/PREDIO/LOTE) quedaban
+    afuera del balance por completo — reclasificar un edificio a terreno
+    lo hacía desaparecer del activo y desplomaba la utilidad. Ahora el
+    balance reusa la MISMA categorización canónica que /activos
+    (`modules.activos.queries._CATEGORIA_CASE_SQL`), así UMAQ + UACT ==
+    Σ valor en libros de TODOS los activos y la pantalla nunca se
+    desincroniza del balance (TMT 2026-07-22 — pedido dueña: "todo tiene
+    que sumar").
 
     El `valor` (valor en libros) se computa día a día como en dBase
     MENU.PRG líneas 275-276:
@@ -431,22 +442,29 @@ def activos_totales() -> dict:
     corre la procedure mensual. La columna `amortimes` stored tampoco —
     es solo histórica.
     """
+    # Categorización canónica compartida con /activos: cat 1=Terrenos,
+    # 2=Edificios, 3=Maq.Tintorería, 4=Maq.Tejeduría, 5=Camiones, 99=Otros.
+    # UMAQ = cat 3/4/5 (maquinaria+camiones). UACT = todo lo demás
+    # (terrenos+edificios+instal.+otros) → NOT IN (3,4,5), de modo que
+    # ningún activo con valor quede fuera del total (invariante "todo suma").
+    from modules.activos.queries import _CATEGORIA_CASE_SQL as _CAT_SQL
+
     row = db.fetch_one(
-        """
+        f"""
         WITH coef AS (
           SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         ),
         v AS (
           SELECT
-            tipo,
-            COALESCE(inicial, 0)
-              - COALESCE(amortizac, 0)
-              - (SELECT c FROM coef) * COALESCE(cuota, 0) AS valor_calc
-          FROM scintela.activos
+            {_CAT_SQL} AS cat,
+            COALESCE(a.inicial, 0)
+              - COALESCE(a.amortizac, 0)
+              - (SELECT c FROM coef) * COALESCE(a.cuota, 0) AS valor_calc
+          FROM scintela.activos a
         )
         SELECT
-          COALESCE(SUM(CASE WHEN tipo IN ('M','C','K') THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS umaq,
-          COALESCE(SUM(CASE WHEN tipo = 'I'           THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS uact
+          COALESCE(SUM(CASE WHEN cat IN (3,4,5)     THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS umaq,
+          COALESCE(SUM(CASE WHEN cat NOT IN (3,4,5) THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS uact
         FROM v
         """
     )
@@ -3407,8 +3425,8 @@ def conciliacion_balance() -> list[dict]:
     detalle_act = []
     for r in a_breakdown:
         detalle_act.append((f"tipo={r['tipo']} ({int(r['n'])} activos)", float(r.get("total") or 0)))
-    detalle_act.append(("Σ UMAQ (tipo M/C/K)", activos["umaq"]))
-    detalle_act.append(("Σ UACT (tipo I)", activos["uact"]))
+    detalle_act.append(("Σ UMAQ (Maq/Camiones: cat 3/4/5)", activos["umaq"]))
+    detalle_act.append(("Σ UACT (Terr/Edif/Ins/Otros: cat 1/2/99)", activos["uact"]))
     out.append(
         {
             "concepto": "MAQ/EQUIP. + TERR/EDIF/INS.",
@@ -3417,7 +3435,7 @@ def conciliacion_balance() -> list[dict]:
             "match": True,
             "diff": 0.0,
             "detalle": detalle_act,
-            "nota": "PRG líneas 47-48: UACT FOR TIPO='I' (terrenos/edificios), UMAQ FOR TIPO $ 'MCK' (maquinaria, computación, kilos).",
+            "nota": "UACT = Terr/Edif/Ins/Otros (categoría canónica 1/2/99 de /activos, todo lo no-maquinaria, INCLUYE terrenos). UMAQ = Maq+Camiones (cat 3/4/5). UMAQ+UACT == Σ valor libros de todos los activos.",
         }
     )
 

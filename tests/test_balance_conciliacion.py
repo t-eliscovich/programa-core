@@ -71,8 +71,9 @@ class _FakeBalanceDB:
         if "from scintela.posdat" in s and "= 9" in s:
             return {"n": 540, "total": 5800.0}
 
-        # activos
-        if "from scintela.activos" in s and ("'mck'" in s or "in ('m','c','k')" in s):
+        # activos — activos_totales() suma UMAQ (maquinaria) + UACT
+        # (terr/edif/ins/otros) reusando la categorización canónica.
+        if "from scintela.activos" in s and "umaq" in s:
             return {"umaq": 998.0, "uact": 2422.0}
         if "from scintela.activos" in s and "valor" in s and "count" in s:
             return {"n": 12}
