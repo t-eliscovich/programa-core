@@ -790,14 +790,6 @@
       </details>
       {% endif %}
 
-      {# TMT 2026-07-15 (dueña: "sync compare visible para todos"): el comparador
-         PC vs dBase en su propia sección, SIN gate de permiso (requiere_login
-         solamente) para que lo vean TODOS los usuarios, no solo admin. #}
-      <details class="sidebar-section" data-key="comparacion" open>
-        <summary>Comparación</summary>
-        {{ nav_link('dbase_compare.form', 'Comparación con dBase', 'report') }}
-      </details>
-
       {# TMT 2026-07-08 dueña: "Ventas (factura)" y "Nueva compra" salen del menú.
          Federico 2026-07-22: la sección "Ingresos" (que sólo tenía "Cobranza")
          pasa a ser un enlace DIRECTO "Cobranza" a nivel de sección — sin submenú
@@ -881,6 +873,16 @@
            cuota mensual se edita inline desde /posdat (columna nueva
            "Cuota mensual"). La pantalla /provisiones sigue accesible por
            URL para audit/legacy, pero ya no es un destino visible. #}
+      </details>
+
+      {# TMT 2026-07-15 (dueña: "sync compare visible para todos"): el comparador
+         PC vs dBase, SIN gate de permiso (requiere_login solamente) para que lo
+         vean TODOS los usuarios, no solo admin.
+         Federico 2026-07-22: "Comparación" movida acá abajo — entre "Clientes y
+         proveedores" y "Recientes". #}
+      <details class="sidebar-section" data-key="comparacion" open>
+        <summary>Comparación</summary>
+        {{ nav_link('dbase_compare.form', 'Comparación con dBase', 'report') }}
       </details>
 
       {# TMT 2026-05-17: Recientes ahora es una sección colapsable más
