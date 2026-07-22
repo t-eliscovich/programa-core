@@ -298,7 +298,9 @@
           </tr>
             {% else %}
           <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
-            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.label == 'Proyección' %}<span id="vp-status" class="vp-status no-print"></span>{% endif %}{% if row.parcial %} <span class="badge-parcial" title="Cifra del mes en curso — PATR−PATANT sólo cuadra al cierre de mes">parcial · {{ row.parcial_dias }} {{ 'día' if row.parcial_dias == 1 else 'días' }}</span>{% endif %}</td>
+            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.label == 'Proyección' %}<span id="vp-status" class="vp-status no-print"></span>{% endif %}</td>
+            {# Federico 2026-07-22 — badge "parcial · N días" eliminado del cuadro
+               (ocupaba una fila extra bajo Utilidad Real; no hace falta). #}
             <td class="num-cell">{% if row.label == 'Proyección' %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span>{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
