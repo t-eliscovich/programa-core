@@ -3274,3 +3274,58 @@ def diag_depositados_sin_movimiento():
         "cheques/diag_depositados_sin_movimiento.html",
         filas=filas, error=error, stats=stats,
     )
+
+
+@cheques_bp.route("/cheques/diag/cliente-cheques")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def diag_cliente_cheques():
+    """Diagnóstico (TMT 2026-07-22): volcado COMPLETO de los cheques de un
+    cliente para detectar duplicados (mismo cheque cargado del dBase y re-
+    cargado a mano). Muestra quién lo cargó (usuario_crea), el N° real, banco,
+    estado, fechas y si tiene movimiento bancario ligado. Solo lectura.
+
+    Uso: ?cliente=CG3  (agregar &formato=json para JSON).
+    """
+    codigo = (request.args.get("cliente") or "").strip().upper()
+    if not codigo:
+        return jsonify({"error": "Falta ?cliente=CODIGO", "cheques": []})
+    try:
+        filas = db.fetch_all(
+            """
+            SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
+                   c.no_banco, c.banco,
+                   c.fecha  AS cargado,
+                   c.fechad AS a_depositar,
+                   c.fechaing AS depositado,
+                   c.usuario_crea,
+                   EXISTS (
+                     SELECT 1 FROM scintela.chequextransaccion cxt
+                       JOIN scintela.transacciones_bancarias tb
+                         ON tb.id_transaccion = cxt.id_transaccion
+                      WHERE cxt.id_cheque = c.id_cheque
+                        AND UPPER(COALESCE(tb.documento, '')) = 'DE'
+                   ) AS tiene_mov
+              FROM scintela.cheque c
+             WHERE UPPER(TRIM(COALESCE(c.codigo_cli, ''))) = %s
+             ORDER BY c.fecha, c.id_cheque
+            """,
+            (codigo,),
+        ) or []
+        error = None
+    except Exception as e:  # noqa: BLE001
+        filas, error = [], f"Error inesperado: {e}"
+
+    def _ser(v):
+        if isinstance(v, (date, datetime)):
+            return v.isoformat()
+        try:
+            from decimal import Decimal
+            if isinstance(v, Decimal):
+                return float(v)
+        except Exception:
+            pass
+        return v
+    cheques = [{k: _ser(v) for k, v in dict(r).items()} for r in filas]
+    return jsonify({"cliente": codigo, "n": len(cheques), "error": error,
+                    "cheques": cheques})
