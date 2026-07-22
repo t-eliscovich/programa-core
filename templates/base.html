@@ -305,6 +305,26 @@
     .dark aside#sidebar details.sidebar-section[open] > summary {
       color: rgb(203 213 225);
     }
+    /* Federico 2026-07-22 — enlace de nivel de sección SIN submenú (ej. Cobranza):
+       mismo look que un <summary> (uppercase, compacto) pero es un <a> directo,
+       sin chevron. Reemplaza secciones que sólo tenían un ítem. */
+    aside#sidebar a.sidebar-section-link {
+      display: flex;
+      align-items: center;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgb(100 116 139);
+      padding: 0.45rem 0.75rem 0.25rem;
+      text-decoration: none;
+    }
+    aside#sidebar a.sidebar-section-link:hover,
+    aside#sidebar a.sidebar-section-link.active { color: rgb(51 65 85); }
+    .dark aside#sidebar a.sidebar-section-link { color: rgb(148 163 184); }
+    .dark aside#sidebar a.sidebar-section-link:hover,
+    .dark aside#sidebar a.sidebar-section-link.active { color: rgb(203 213 225); }
+    aside#sidebar[data-collapsed="1"] a.sidebar-section-link { display: none; }
     /* Cuando sidebar colapsado las sections también se ocultan */
     aside#sidebar[data-collapsed="1"] details.sidebar-section > summary {
       display: none;
@@ -778,13 +798,15 @@
         {{ nav_link('dbase_compare.form', 'Comparación con dBase', 'report') }}
       </details>
 
-      {# TMT 2026-07-08 dueña: "Ventas (factura)" y "Nueva compra" salen del menú
-         (no se usan desde acá). Nueva compra se entra desde la pantalla de
-         Compras (botón). Ventas/factura sigue viva por URL (facturas.nueva). #}
-      <details class="sidebar-section" data-key="ingreso" open>
-        <summary>Ingresos</summary>
-        {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
-      </details>
+      {# TMT 2026-07-08 dueña: "Ventas (factura)" y "Nueva compra" salen del menú.
+         Federico 2026-07-22: la sección "Ingresos" (que sólo tenía "Cobranza")
+         pasa a ser un enlace DIRECTO "Cobranza" a nivel de sección — sin submenú
+         (una línea menos en el menú principal). Va directo a cheques.nuevo. #}
+      {% if tiene_permiso('cheques.crear') %}
+      <a href="{{ url_for('cheques.nuevo') }}"
+         class="sidebar-section-link{% if request.endpoint == 'cheques.nuevo' %} active{% endif %}"
+         data-key="cobranza">Cobranza</a>
+      {% endif %}
 
       <details class="sidebar-section" data-key="modificar" open>
         <summary>Modificar</summary>
