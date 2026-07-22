@@ -681,7 +681,31 @@ def matchear_extracto_banco(
     # Excluimos los ya conciliados.
     ids_excl, firmas_excl = _ya_conciliadas(no_banco, desde, hasta)
     bancsis = [b for b in bancsis if b.id_transaccion not in ids_excl]
-    movs_real_filtrados = [m for m in movs_real if _firma_real(m) not in firmas_excl]
+    # TMT 2026-07-22: exclusión del lado banco ROBUSTA al DRIFT DE FECHA. Un
+    # match guarda la firma (fecha, doc, monto, tipo); si el MISMO movimiento
+    # vuelve en el extracto con una fecha ligeramente distinta (o se concilió
+    # como histórico con otra fecha), la firma 4-campos NO coincidía y el mov
+    # REAPARECÍA como pendiente aunque ya estuviera conciliado ("se salen").
+    # El N° de documento del banco es único por movimiento → (doc, monto, tipo)
+    # lo identifica sin depender de la fecha. Excluimos por firma completa O por
+    # esa doc-clave. Es estrictamente MÁS exclusión (nunca muestra de más): un
+    # mismo doc+monto+tipo que un match activo ES ese movimiento.
+    docs_excl = {(doc, monto, tipo) for (_f, doc, monto, tipo) in firmas_excl if doc}
+
+    def _ya_excluido(m) -> bool:
+        if _firma_real(m) in firmas_excl:
+            return True
+        d = (m.documento or "").strip()
+        if d:
+            try:
+                monto = f"{Decimal(m.monto):.2f}"
+            except (ArithmeticError, TypeError, ValueError):
+                monto = "0.00"
+            if (d, monto, (m.tipo or "").upper()) in docs_excl:
+                return True
+        return False
+
+    movs_real_filtrados = [m for m in movs_real if not _ya_excluido(m)]
 
     res = ConciliacionBanco()
     res.extracto_desde = desde
