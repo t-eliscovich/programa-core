@@ -283,24 +283,32 @@
           <td class="num">{{ suma_grand_prev | num_es(0) }}</td>
         </tr>
 
-        {# Federico 2026-07-21 — FILA 2: Gastos proyectados para ESTE mes,
-           casilleros editables. El Total se calcula en vivo = suma de los 3.
-           Se guarda en el navegador por año-mes (no toca la base). #}
+        {# Federico 2026-07-21 / Tamara 2026-07-22 — FILA 2: Gastos proyectados
+           para ESTE mes, casilleros editables. El Total se calcula en vivo =
+           suma de los 3. Se guardan en la BASE (compartidos por todos los
+           usuarios, no en el navegador). #}
         <tr class="proyectado no-print">
-          <td class="row-label">Gastos proyectados este mes</td>
+          <td class="row-label">
+            Gastos proyectados este mes
+            <span id="proy-status" style="font-weight:400;font-size:11px;color:#64748b;margin-left:6px;"></span>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          </td>
           <td class="cell">
             <input type="number" min="0" step="1" inputmode="numeric"
                    class="proy-input" data-seccion="tej" placeholder="0"
+                   value="{{ proy.tej | int if proy and proy.tej else '' }}"
                    aria-label="Gasto proyectado Tejeduría">
           </td>
           <td class="cell">
             <input type="number" min="0" step="1" inputmode="numeric"
                    class="proy-input" data-seccion="tin" placeholder="0"
+                   value="{{ proy.tin | int if proy and proy.tin else '' }}"
                    aria-label="Gasto proyectado Tintorería">
           </td>
           <td class="cell">
             <input type="number" min="0" step="1" inputmode="numeric"
                    class="proy-input" data-seccion="adm" placeholder="0"
+                   value="{{ proy.adm | int if proy and proy.adm else '' }}"
                    aria-label="Gasto proyectado Administración">
           </td>
           <td class="total-col num" id="proy-total">0</td>
@@ -315,37 +323,70 @@
      consolidados por rubro × tipo. #}
 </div>
 
-{# Federico 2026-07-21 — Total en vivo de los gastos proyectados + persistencia
-   local por año-mes (no toca la base; sólo el navegador de este usuario). #}
+{# Tamara 2026-07-22 — Total en vivo + guardado en la BASE (compartido por todos
+   los usuarios). Reemplaza el localStorage por navegador que no persistía. #}
 <script>
 (function () {
   var inputs = Array.prototype.slice.call(document.querySelectorAll('.proy-input'));
   var totalEl = document.getElementById('proy-total');
+  var statusEl = document.getElementById('proy-status');
   if (!inputs.length || !totalEl) return;
 
-  var now = new Date();
-  var key = 'gastos_proy_' + now.getFullYear() + '-' + (now.getMonth() + 1);
   var fmt = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    if (m && m.content) return m.content;
+    var i = document.querySelector('input[name="csrf_token"]');
+    return i ? i.value : '';
+  }
+
+  function setStatus(txt, color) {
+    if (!statusEl) return;
+    statusEl.textContent = txt || '';
+    statusEl.style.color = color || '#64748b';
+  }
 
   function recalc() {
     var total = 0;
-    var store = {};
     inputs.forEach(function (inp) {
       var val = parseFloat(inp.value);
-      if (!isNaN(val)) { total += val; store[inp.dataset.seccion] = inp.value; }
+      if (!isNaN(val)) total += val;
     });
     totalEl.textContent = fmt.format(total);
-    try { window.localStorage.setItem(key, JSON.stringify(store)); } catch (e) {}
   }
 
-  try {
-    var saved = JSON.parse(window.localStorage.getItem(key) || '{}');
-    inputs.forEach(function (inp) {
-      if (saved[inp.dataset.seccion] != null) inp.value = saved[inp.dataset.seccion];
-    });
-  } catch (e) {}
+  var saveTimer = null;
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    setStatus('Guardando…', '#64748b');
+    saveTimer = setTimeout(save, 500);
+  }
 
-  inputs.forEach(function (inp) { inp.addEventListener('input', recalc); });
+  function save() {
+    var body = { tej: 0, tin: 0, adm: 0 };
+    inputs.forEach(function (inp) {
+      var val = parseFloat(inp.value);
+      body[inp.dataset.seccion] = isNaN(val) ? 0 : val;
+    });
+    fetch("{{ url_for('informes.gastos_proyectados_guardar') }}", {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) { setStatus('Guardado ✓', '#16a34a'); }
+        else { setStatus('No se pudo guardar', '#dc2626'); }
+      })
+      .catch(function () { setStatus('No se pudo guardar', '#dc2626'); });
+  }
+
+  inputs.forEach(function (inp) {
+    inp.addEventListener('input', recalc);
+    inp.addEventListener('input', scheduleSave);
+  });
   recalc();
 })();
 </script>

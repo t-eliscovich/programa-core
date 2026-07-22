@@ -2063,9 +2063,11 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     # TMT 2026-05-19 v6 re-audit — agregado filtro stat='Y' (anuladas).
     # Antes el drill-down mostraba gastos anulados sumados al subtotal,
     # discrepando con `gastos_xgast_v1_a_v9_mes` que sí los excluye.
-    # Federico 2026-07-22: en V6 el drill-down excluye los químicos igual que
-    # la matriz (sólo concepto CC*/GS*), para que el total del detalle cuadre.
-    where_quimico = f"AND {_es_gasto_vario_tin_sql('concepto')}" if n == 6 else ""
+    # Tamara 2026-07-22: el drill-down de V6 vuelve a incluir los químico-insumos
+    # (QUIMSERTEC/TOSAVA/ECUAPLAST/NC/QI = gasto de tintorería, como los CC), igual
+    # que la matriz, para que el detalle cuadre con el total. Los colorantes
+    # POLI/ALG no viven en xgast num=6 (se valúan aparte en el stock).
+    where_quimico = ""
     sql = f"""
         SELECT id_xgast, fecha, doc, prov, concepto, importe, stat, fechad, saldo
         FROM scintela.xgast
@@ -2344,9 +2346,10 @@ def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-          -- Federico 2026-07-22: en V6 (num=6) sólo gastos varios genuinos
-          -- (CC*/GS*); fuera las compras de colorantes/químicos cargadas en xgast.
-          AND NOT (COALESCE(num, 0) = 6 AND NOT """ + _es_gasto_vario_tin_sql("concepto") + """)
+          -- Tamara 2026-07-22: V6 (num=6) vuelve a incluir los químico-insumos
+          -- (QUIMSERTEC/TOSAVA/ECUAPLAST/NC/QI = gasto de tintorería, como los CC).
+          -- Los colorantes POLI/ALG no viven en xgast num=6 (entran por compra Q
+          -- y se valúan aparte en el stock), así que no hay doble conteo acá.
         """,
             {"off": _off},
         )
@@ -2401,6 +2404,72 @@ def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
         "gtin_sin_dcc": v.get(4, 0) + v.get(5, 0) + v.get(6, 0),
         "gs_sin_deprcar": v.get(7, 0) + v.get(8, 0) + v.get(9, 0),
     }
+
+
+def _periodo_actual_ec() -> str:
+    """Período 'YYYY-MM' del mes en curso en hora Ecuador (UTC-5)."""
+    row = db.fetch_one(
+        "SELECT to_char((CURRENT_TIMESTAMP - INTERVAL '5 hours'), 'YYYY-MM') AS p"
+    )
+    return (row or {}).get("p") or ""
+
+
+def gastos_proyectado_mes_get(periodo: str | None = None) -> dict:
+    """Gastos proyectados por rubro (tej/tin/adm) del período dado.
+
+    Tamara 2026-07-22: reemplaza el localStorage por navegador que usaba la
+    fila "Gastos proyectados este mes" de /informes/gastos. Ahora se guardan en
+    `scintela.gastos_proyectado_mes`, compartidos por todos los usuarios.
+    Devuelve 0 en cada rubro si no hay fila cargada para el período.
+    """
+    per = periodo or _periodo_actual_ec()
+    row = db.fetch_one(
+        """
+        SELECT tej, tin, adm
+          FROM scintela.gastos_proyectado_mes
+         WHERE periodo = %s
+        """,
+        (per,),
+    )
+    return {
+        "periodo": per,
+        "tej": float((row or {}).get("tej") or 0),
+        "tin": float((row or {}).get("tin") or 0),
+        "adm": float((row or {}).get("adm") or 0),
+    }
+
+
+def gastos_proyectado_mes_set(
+    tej: float,
+    tin: float,
+    adm: float,
+    usuario: str | None = None,
+    periodo: str | None = None,
+) -> dict:
+    """Upsert de los gastos proyectados del período (una fila por YYYY-MM).
+
+    Compartido por todos los usuarios; el último que guarda pisa el valor
+    anterior (igual que una planilla común). Devuelve el estado guardado.
+    """
+    per = periodo or _periodo_actual_ec()
+    tej = float(tej or 0)
+    tin = float(tin or 0)
+    adm = float(adm or 0)
+    db.execute(
+        """
+        INSERT INTO scintela.gastos_proyectado_mes
+            (periodo, tej, tin, adm, usuario_modifica, fecha_modifica)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (periodo) DO UPDATE SET
+            tej = EXCLUDED.tej,
+            tin = EXCLUDED.tin,
+            adm = EXCLUDED.adm,
+            usuario_modifica = EXCLUDED.usuario_modifica,
+            fecha_modifica = CURRENT_TIMESTAMP
+        """,
+        (per, tej, tin, adm, usuario),
+    )
+    return {"periodo": per, "tej": tej, "tin": tin, "adm": adm}
 
 
 def tinto_mes_corriente_resultado() -> dict:

@@ -2541,6 +2541,10 @@ def gastos():
     except Exception:
         pass
 
+    # Tamara 2026-07-22 — gastos proyectados por rubro, guardados en la base
+    # (compartidos por todos los usuarios). Reemplaza el localStorage anterior.
+    proy, _e = _safe(queries.gastos_proyectado_mes_get, {"tej": 0, "tin": 0, "adm": 0})
+
     return render_template(
         "informes/gastos.html",
         filas=filas,
@@ -2557,7 +2561,38 @@ def gastos():
         col_total_prev=col_total_prev,
         suma_grand_prev=suma_grand_prev,
         sin_num_resumen=sin_num_resumen,
+        proy=proy or {"tej": 0, "tin": 0, "adm": 0},
     )
+
+
+@informes_bp.route("/gastos/proyectados", methods=["POST"])
+@requiere_login
+@requiere_permiso("gastos.ver")
+def gastos_proyectados_guardar():
+    """Guarda los gastos proyectados por rubro del mes en curso.
+
+    Tamara 2026-07-22: gate `gastos.ver` a propósito — TODOS los usuarios que
+    pueden ver la pantalla de Gastos pueden editar la proyección (es una
+    planilla común compartida). Antes vivía en localStorage y no persistía.
+    """
+
+    def _parse(v):
+        try:
+            return max(0.0, float(str(v).replace(",", ".").strip() or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    payload = request.get_json(silent=True) or request.form
+    tej = _parse(payload.get("tej"))
+    tin = _parse(payload.get("tin"))
+    adm = _parse(payload.get("adm"))
+    try:
+        r = queries.gastos_proyectado_mes_set(
+            tej, tin, adm, usuario=(g.user or {}).get("username", "web")
+        )
+        return jsonify({"ok": True, **r})
+    except Exception as e:  # pragma: no cover - defensivo
+        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
 @informes_bp.route("/gastos/detalle/<int:num>")
