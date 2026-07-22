@@ -831,6 +831,51 @@ def balance():
         {"aplicado": False, "error": str(e)}
 
     data, error = _safe(queries.informe_balance, {})
+
+    # Federico 2026-07-22 — Utilidad Proyectada calculada EN EL SERVIDOR
+    # (antes era en el navegador leyendo localStorage → sólo la veía quien la
+    # cargaba). Ahora usa los gastos proyectados de la BASE (compartidos por
+    # todos los usuarios) y los costos unitarios de la misma tabla:
+    #   U$ = venta proyectada − gastos proyectados del mes
+    #        − costos directos (kg proy × (MP unit + Colorantes unit) × 1.05)
+    # Fail-soft: si algo falla, queda el valor que ya trae la tabla.
+    try:
+        _tabla = (data or {}).get("resultados", {}).get("tabla") if isinstance(data, dict) else None
+        if _tabla:
+            _proy = queries.gastos_proyectado_mes_get()
+            _gastos_proy = (
+                float(_proy.get("tej") or 0)
+                + float(_proy.get("tin") or 0)
+                + float(_proy.get("adm") or 0)
+            )
+
+            def _cell(_lbl, _k):
+                for _r in _tabla:
+                    if _r.get("label") == _lbl and _r.get(_k) is not None:
+                        return float(_r.get(_k) or 0)
+                return 0.0
+
+            _proy_us = _cell("Proyección", "us")
+            _proy_kg = _cell("Proyección", "kg")
+            _mp_ukg = _cell("Materia Prima", "ukg")
+            _col_ukg = _cell("Colorantes/Quím.", "ukg")
+            _costo_directo = _proy_kg * (_mp_ukg + _col_ukg) * 1.05
+            _up_us = _proy_us - _gastos_proy - _costo_directo
+            for _r in _tabla:
+                if _r.get("label") == "Utilidad Proyectada":
+                    _r["kg"] = _proy_kg
+                    _r["us"] = _up_us
+                    _r["ukg"] = (_up_us / _proy_kg if _proy_kg else 0)
+                    _r["ayuda"] = (
+                        "Venta proyectada − Gastos proyectados del mes (de la "
+                        "base, compartidos por todos los usuarios) − Costos "
+                        "directos (kg proy × (Materia Prima + Colorantes/Quím. "
+                        "unitarios) × 1,05 de desperdicio)."
+                    )
+                    break
+    except Exception:  # noqa: BLE001 — no romper el balance por esto
+        pass
+
     return render_template(
         "informes/balance.html",
         b=data,
