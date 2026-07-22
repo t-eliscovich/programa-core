@@ -26,6 +26,10 @@
   .gastos-matriz td.row-label {
     background: rgb(248 250 252); color: rgb(71 85 105);
     font-weight: 500; font-size: 13px; text-transform: capitalize;
+    /* Federico 2026-07-22 — etiquetas en UNA sola línea (rows más bajas → menos
+       alto → sin scroll). Los nombres se acortaron (Gs. Grales., Gs. Mes
+       Anterior, Gs. Proy. mes actual) para que entren sin cortar. */
+    white-space: nowrap;
   }
   .dark .gastos-matriz td.row-label { background: rgb(30 41 59 / 0.4); color: rgb(203 213 225); }
   .gastos-matriz td.cell {
@@ -225,7 +229,7 @@
         {% for tipo, label, v_tej, num_tej, v_tin, num_tin, v_adm, num_adm in [
             ('personal',  'Personal',  'V1', 1, 'V4', 4, 'V7', 7),
             ('servicios', 'Servicios', 'V2', 2, 'V5', 5, 'V8', 8),
-            ('otros',     'Gastos generales', 'V3', 3, 'V6', 6, 'V9', 9),
+            ('otros',     'Gs. Grales.', 'V3', 3, 'V6', 6, 'V9', 9),
         ] %}
         <tr>
           <td class="row-label">{{ label }}</td>
@@ -281,7 +285,7 @@
            el mes y ya no se mueve (junio seedeado en mig 0127; julio en adelante
            se congela solo al entrar el mes nuevo). Ver informes/views.py. #}
         <tr class="mes-anterior">
-          <td class="row-label">Gastos mes anterior</td>
+          <td class="row-label">Gs. Mes Anterior</td>
           <td class="num">{{ col_total_prev.tej | num_es(0) }}</td>
           <td class="num">{{ col_total_prev.tin | num_es(0) }}</td>
           <td class="num">{{ col_total_prev.adm | num_es(0) }}</td>
@@ -294,7 +298,7 @@
            usuarios, no en el navegador). #}
         <tr class="proyectado no-print">
           <td class="row-label">
-            Gastos proyectados este mes
+            Gs. Proy. mes actual
             <span id="proy-status" style="font-weight:400;font-size:11px;color:#64748b;margin-left:6px;"></span>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           </td>
