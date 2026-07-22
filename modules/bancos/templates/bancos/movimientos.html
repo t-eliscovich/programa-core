@@ -45,6 +45,14 @@
         CSV
       </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+      {# TMT 2026-07-22 (dueña): papelera de movimientos borrados (retención 30 días). #}
+      {% if tiene_permiso('bancos.conciliar') %}
+      <a href="{{ url_for('bancos.papelera') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5"
+         title="Movimientos borrados — se guardan 30 días por si hay que restaurar">
+        🗑 Papelera
+      </a>
+      {% endif %}
     </div>
   </div>
 

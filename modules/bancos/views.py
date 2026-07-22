@@ -1202,6 +1202,29 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
                     "DELETE FROM scintela.chequextransaccion WHERE id_transaccion = %s",
                     (id_transaccion,), conn=conn,
                 )
+                # 2.5) TMT 2026-07-22 (dueña): snapshot a la PAPELERA antes de
+                # borrar → se puede RESTAURAR dentro de 30 días. Guarda la fila
+                # completa (to_jsonb). Purga lo que pase de 30 días (retención).
+                _db.execute(
+                    """
+                    INSERT INTO scintela.papelera_movimiento_banco
+                        (id_transaccion, no_banco, banco_nombre, documento,
+                         importe, fecha, concepto, prov, snapshot, borrado_por)
+                    SELECT t.id_transaccion, t.no_banco, %s, t.documento,
+                           t.importe, t.fecha, t.concepto, t.prov,
+                           to_jsonb(t), %s
+                      FROM scintela.transacciones_bancarias t
+                     WHERE t.id_transaccion = %s
+                    """,
+                    (tx.get("banco_nombre") or "", usuario, id_transaccion),
+                    conn=conn,
+                )
+                _db.execute(
+                    "DELETE FROM scintela.papelera_movimiento_banco "
+                    "WHERE restaurado_en IS NULL "
+                    "  AND borrado_en < NOW() - INTERVAL '30 days'",
+                    conn=conn,
+                )
                 # 3) Borrar el mov de banco.
                 _db.execute(
                     "DELETE FROM scintela.transacciones_bancarias "
@@ -1226,7 +1249,8 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
             flash(
                 f"Movimiento #{id_transaccion} eliminado "
                 f"({tx.get('concepto') or ''} {float(tx.get('importe') or 0):,.2f})."
-                + extra,
+                + extra
+                + " Queda en la papelera 30 días por si hay que restaurarlo.",
                 "ok",
             )
         except Exception as e:
@@ -1327,6 +1351,48 @@ def mover_movimiento(no_banco: int, id_transaccion: int):
         tx=tx,
         bancos_dest=bancos_dest,
     )
+
+
+@bancos_bp.route("/bancos/papelera", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def papelera():
+    """Papelera de movimientos de banco borrados — retención 30 días.
+
+    TMT 2026-07-22 (dueña): "chequear que la data se esté guardando por 30 días,
+    por si hay que restaurar". Lista los movimientos borrados aún restaurables y
+    permite volverlos al banco.
+    """
+    try:
+        filas = queries.papelera_movimientos(dias=30)
+    except Exception as e:
+        filas = []
+        flash_exc("No pude leer la papelera", e)
+    return render_template("bancos/papelera.html", filas=filas)
+
+
+@bancos_bp.route("/bancos/papelera/<int:id_papelera>/restaurar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def restaurar_papelera(id_papelera: int):
+    """Restaura un movimiento borrado desde la papelera (re-inserta la fila
+    exacta + recalcula el saldo del banco)."""
+    usuario = (g.user or {}).get("username", "web")
+    try:
+        r = queries.restaurar_movimiento_papelera(
+            id_papelera=id_papelera, usuario=usuario,
+        )
+        flash(
+            f"Movimiento #{r['id_transaccion']} restaurado. "
+            f"Nuevo saldo del banco: $ {r['saldo']:,.2f}.",
+            "ok",
+        )
+        return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude restaurar el movimiento", e)
+    return redirect(url_for("bancos.papelera"))
 
 
 @bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/clasificar-gasto",

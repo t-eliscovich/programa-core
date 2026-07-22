@@ -1856,6 +1856,102 @@ def mover_movimiento_banco(
 _USUARIOS_SYNC_Q = ("dbf-import", "asinfo-carga", "asinfo-backfill")
 
 
+def papelera_movimientos(dias: int = 30) -> list[dict]:
+    """Movimientos de banco borrados que SIGUEN restaurables (últimos `dias`).
+
+    TMT 2026-07-22 (dueña): retención de 30 días. La baja de un movimiento PC
+    guarda un snapshot en scintela.papelera_movimiento_banco; acá listamos los
+    no-restaurados dentro de la ventana. `ya_existe` avisa si el id ya volvió a
+    la tabla (para no ofrecer restaurar dos veces).
+    """
+    return db.fetch_all(
+        """
+        SELECT p.id_papelera, p.id_transaccion, p.no_banco, p.banco_nombre,
+               p.documento, p.importe, p.fecha, p.concepto, p.prov,
+               p.borrado_por, p.borrado_en,
+               EXISTS (SELECT 1 FROM scintela.transacciones_bancarias t
+                        WHERE t.id_transaccion = p.id_transaccion) AS ya_existe
+          FROM scintela.papelera_movimiento_banco p
+         WHERE p.restaurado_en IS NULL
+           AND p.borrado_en >= NOW() - make_interval(days => %s)
+         ORDER BY p.borrado_en DESC
+        """,
+        (int(dias),),
+    ) or []
+
+
+def restaurar_movimiento_papelera(*, id_papelera: int, usuario: str = "web") -> dict:
+    """Restaura un movimiento borrado desde la papelera. Re-inserta la fila
+    EXACTA (mismo id_transaccion y todas las columnas, via jsonb_populate_record)
+    y recalcula el saldo del banco. Atómico.
+
+    Guards: existe en papelera, no restaurado, y el id_transaccion NO está ya en
+    la tabla (evita duplicar). Nota: no re-linkea cheques — el eliminar ya había
+    borrado los enlaces; los movimientos con cheques vivos son el caso raro.
+    """
+    import bank_helpers
+
+    p = db.fetch_one(
+        "SELECT id_papelera, id_transaccion, no_banco, restaurado_en "
+        "  FROM scintela.papelera_movimiento_banco WHERE id_papelera = %s",
+        (id_papelera,),
+    )
+    if not p:
+        raise ValueError("No encontré ese registro en la papelera.")
+    if p.get("restaurado_en"):
+        raise ValueError("Este movimiento ya fue restaurado.")
+
+    id_tx = p["id_transaccion"]
+    no_banco = p["no_banco"]
+    ya = db.fetch_one(
+        "SELECT 1 FROM scintela.transacciones_bancarias WHERE id_transaccion = %s",
+        (id_tx,),
+    )
+    if ya:
+        raise ValueError(
+            f"El movimiento #{id_tx} ya existe en el banco — no hace falta "
+            "restaurarlo (o ya se restauró)."
+        )
+
+    with db.tx() as conn:
+        # Re-insertar la fila exacta desde el snapshot (preserva id_transaccion
+        # y todas las columnas). jsonb_populate_record mapea por nombre de col.
+        db.execute(
+            """
+            INSERT INTO scintela.transacciones_bancarias
+            SELECT (jsonb_populate_record(
+                        NULL::scintela.transacciones_bancarias, snapshot)).*
+              FROM scintela.papelera_movimiento_banco
+             WHERE id_papelera = %s
+            """,
+            (id_papelera,), conn=conn,
+        )
+        db.execute(
+            "UPDATE scintela.papelera_movimiento_banco "
+            "   SET restaurado_en = NOW(), restaurado_por = %s "
+            " WHERE id_papelera = %s",
+            (usuario[:50], id_papelera), conn=conn,
+        )
+        # Recompute del saldo corrido del banco (ancla = 2da fila más vieja).
+        anc = db.fetch_one(
+            "SELECT id_transaccion AS ancla "
+            "  FROM scintela.transacciones_bancarias "
+            " WHERE no_banco = %s "
+            " ORDER BY fecha ASC, id_transaccion ASC OFFSET 1 LIMIT 1",
+            (no_banco,), conn=conn,
+        )
+        if anc and anc.get("ancla"):
+            bank_helpers.recompute_saldos_desde(
+                conn, no_banco=no_banco, no_cta=None, ancla_id=int(anc["ancla"]),
+            )
+
+    return {
+        "id_transaccion": id_tx,
+        "no_banco": no_banco,
+        "saldo": bank_helpers.saldo_actual(no_banco),
+    }
+
+
 def transferir_entre_bancos(
     *,
     no_banco_origen: int,
