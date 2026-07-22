@@ -2063,12 +2063,16 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     # TMT 2026-05-19 v6 re-audit — agregado filtro stat='Y' (anuladas).
     # Antes el drill-down mostraba gastos anulados sumados al subtotal,
     # discrepando con `gastos_xgast_v1_a_v9_mes` que sí los excluye.
+    # Federico 2026-07-22: en V6 el drill-down excluye los químicos igual que
+    # la matriz (sólo concepto CC*/GS*), para que el total del detalle cuadre.
+    where_quimico = f"AND {_es_gasto_vario_tin_sql('concepto')}" if n == 6 else ""
     sql = f"""
         SELECT id_xgast, fecha, doc, prov, concepto, importe, stat, fechad, saldo
         FROM scintela.xgast
         WHERE num = %s
           AND COALESCE(stat, '') <> 'Y'
           {where_fecha}
+          {where_quimico}
         ORDER BY fecha DESC, id_xgast DESC
     """
     filas = db.fetch_all(sql, (n,)) or []
@@ -2224,6 +2228,23 @@ _SERVICIOS_KEYWORDS_SQL = """
 """.strip()
 
 
+def _es_gasto_vario_tin_sql(col: str) -> str:
+    """Predicado SQL: `col` (un concepto) es un GASTO VARIO genuino de
+    tintorería — arranca con 'CC' o 'GS' (CC MANGUERA, GS.FAB.VS., ...).
+
+    Federico 2026-07-22: V6 (Tin·Otros) debe aislar ESTRICTAMENTE los gastos
+    CC / GS.FAB varios y EXCLUIR las compras de colorantes/químicos (prov
+    CT/AQ/SY/QI, concepto QUIMICOS/QUIMSERTEC/TOSAVA/ECUAPLAST o nº de factura).
+    Esas son material que se gasta por consumo físico en la fila Colorantes/Quím.,
+    NO un gasto de tintorería. Se aplica a xgast num=6 y a las compras C/Q/T→V6.
+    Se filtra por concepto (no por proveedor) porque hay químicos cargados con
+    prov 'CC' pero concepto 'QUIMSERTEC' — el concepto es la señal confiable.
+    Los `%%` van escapados para psycopg2 (queries que pasan params).
+    """
+    c = f"UPPER(TRIM(COALESCE({col}, '')))"
+    return f"({c} LIKE 'CC%%' OR {c} LIKE 'GS%%')"
+
+
 # SQL CASE para mapear (tipo, concepto, codigo_prov) → num V1..V9.
 # Devuelve NULL para compras que no entran al matriz (H, A, I, K-producción).
 # Cascada — primer match gana, igual que las &RNW del PRG.
@@ -2250,8 +2271,12 @@ CASE
     -- V5: Tintorería · Servicios (mismo set que V2/V8)
     WHEN UPPER(COALESCE(c.tipo, '')) IN ('C', 'Q', 'T')
          AND {_SERVICIOS_KEYWORDS_SQL} THEN 5
-    -- V6: Tintorería · Otros (catch-all C/Q/T)
-    WHEN UPPER(COALESCE(c.tipo, '')) IN ('C', 'Q', 'T') THEN 6
+    -- V6: Tintorería · Otros — SOLO gastos varios genuinos (concepto CC* / GS*).
+    -- Federico 2026-07-22: las compras de colorantes/químicos (prov CT/AQ/SY/QI,
+    -- concepto QUIMICOS/QUIMSERTEC/TOSAVA/ECUAPLAST o nº de factura) NO son gasto
+    -- vario de tintorería — son material (se consumen vía Colorantes/Quím.).
+    WHEN UPPER(COALESCE(c.tipo, '')) IN ('C', 'Q', 'T')
+         AND {_es_gasto_vario_tin_sql('c.concepto')} THEN 6
 
     -- V7: Administración · Sueldos
     WHEN UPPER(COALESCE(c.tipo, '')) = 'S'
@@ -2319,6 +2344,9 @@ def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+          -- Federico 2026-07-22: en V6 (num=6) sólo gastos varios genuinos
+          -- (CC*/GS*); fuera las compras de colorantes/químicos cargadas en xgast.
+          AND NOT (COALESCE(num, 0) = 6 AND NOT """ + _es_gasto_vario_tin_sql("concepto") + """)
         """,
             {"off": _off},
         )

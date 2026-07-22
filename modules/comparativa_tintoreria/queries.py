@@ -189,13 +189,18 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
     """
     # Import local para evitar circular y porque solo necesitamos el
     # snippet SQL (no la función completa).
-    from modules.informes.queries import _SQL_COMPRA_NUM_CASE
+    from modules.informes.queries import (
+        _SQL_COMPRA_NUM_CASE,
+        _es_gasto_vario_tin_sql,
+    )
 
     out: dict = {}
 
-    # 1) xgast num 4/5/6
+    # 1) xgast num 4/5/6 — Federico 2026-07-22: en V6 (num=6) sólo gastos varios
+    # genuinos (CC*/GS*), fuera las compras de colorantes/químicos, igual que la
+    # matriz de Gastos del mes (para que las dos pantallas sigan cuadrando).
     rows_xg = db.fetch_all(
-        """
+        f"""
         SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
                EXTRACT(MONTH FROM fecha)::int  AS mm,
                COALESCE(SUM(importe), 0)::float AS total
@@ -203,6 +208,7 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
          WHERE fecha BETWEEN %s AND %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
            AND COALESCE(num, 0) IN (4, 5, 6)
+           AND NOT (COALESCE(num, 0) = 6 AND NOT {_es_gasto_vario_tin_sql('concepto')})
          GROUP BY yy, mm
         """,
         (desde, hasta),
