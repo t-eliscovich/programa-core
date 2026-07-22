@@ -450,9 +450,10 @@ def activos_totales() -> dict:
     # Suma por CÓDIGO DE TIPO (como el dBase), NO por concepto: UMAQ = M/C/K,
     # UACT = I + T (edificios/instalaciones + terrenos). '(s/t)' y otros no
     # tipados quedan fuera, idéntico al legacy. `valor_calc` = valor en libros
-    # prorrateado al día (NUNCA `inicial`).
+    # prorrateado al día (NUNCA `inicial`). Excluye los soft-borrados (papelera).
+    from modules.activos.queries import borrado_where_sql as _borr
     row = db.fetch_one(
-        """
+        f"""
         WITH coef AS (
           SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         ),
@@ -463,6 +464,7 @@ def activos_totales() -> dict:
               - COALESCE(amortizac, 0)
               - (SELECT c FROM coef) * COALESCE(cuota, 0) AS valor_calc
           FROM scintela.activos
+          WHERE TRUE {_borr()}
         )
         SELECT
           COALESCE(SUM(CASE WHEN tp IN ('M','C','K') THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS umaq,
@@ -3414,12 +3416,14 @@ def conciliacion_balance() -> list[dict]:
 
     # ----------- ACTIVOS FIJOS (UMAQ + UACT) -----------
     activos = activos_totales()
+    from modules.activos.queries import borrado_where_sql as _borr_bd
     a_breakdown = (
         db.fetch_all(
-            """SELECT COALESCE(NULLIF(TRIM(tipo), ''), '(sin tipo)') AS tipo,
+            f"""SELECT COALESCE(NULLIF(TRIM(tipo), ''), '(sin tipo)') AS tipo,
                   COUNT(*) AS n,
                   COALESCE(SUM(valor), 0) AS total
            FROM scintela.activos
+           WHERE TRUE {_borr_bd()}
            GROUP BY 1 ORDER BY 1"""
         )
         or []
@@ -4148,8 +4152,9 @@ def informe_balance() -> dict:
     chq_breakdown = cheques_por_stat()
     snap_fecha = hist.get("fecha")
     dias_snapshot = (today_ec() - snap_fecha).days if snap_fecha else None
+    from modules.activos.queries import borrado_where_sql as _borr_cnt
     activos_count_row = (
-        db.fetch_one("SELECT COUNT(*) AS n FROM scintela.activos WHERE COALESCE(valor,0) > 0") or {}
+        db.fetch_one(f"SELECT COUNT(*) AS n FROM scintela.activos WHERE COALESCE(valor,0) > 0 {_borr_cnt()}") or {}
     )
     n_activos = int(activos_count_row.get("n") or 0)
 

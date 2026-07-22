@@ -94,6 +94,11 @@
        class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
       Imprimir
     </button>
+    {% if tiene_permiso('activos.ver') %}
+      <a href="{{ url_for('activos.papelera') }}"
+         class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50"
+         title="Activos borrados — restaurables 30 días">🗑 Papelera</a>
+    {% endif %}
 
     {% if tiene_permiso('activos.amortizar') %}
       <form method="post"
@@ -217,8 +222,14 @@
             data-id-activo="{{ a.id_activos }}"
             {% if tiene_permiso('activos.crear') %}draggable="true"{% endif %}>
           {% if tiene_permiso('activos.crear') %}
-            <td class="px-1 py-1 no-print text-center text-slate-400 cursor-grab select-none"
-                title="Arrastrá para reordenar">⋮⋮</td>
+            <td class="px-1 py-1 no-print text-center select-none" style="white-space:nowrap;">
+              <span class="text-slate-400 cursor-grab" title="Arrastrá para reordenar">⋮⋮</span>
+              <button type="button" class="activo-borrar text-slate-300 hover:text-rose-600"
+                      data-id-activo="{{ a.id_activos }}"
+                      data-concepto="{{ a.concepto or '' }}"
+                      title="Borrar activo (va a la papelera, restaurable 30 días)"
+                      style="margin-left:2px;border:0;background:none;cursor:pointer;">🗑</button>
+            </td>
           {% endif %}
           <td class="px-2 py-1" style="white-space: nowrap;">{{ a.fecha | fecha_es if a.fecha else '—' }}</td>
           <td class="px-2 py-1">{{ a.concepto or '' }}</td>
@@ -351,6 +362,29 @@
           notif('Error de red: ' + e.message, false);
         });
       }
+
+      // Borrar activo → papelera (soft-delete, restaurable 30 días).
+      tbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('.activo-borrar');
+        if (!btn) return;
+        e.preventDefault();
+        const id = parseInt(btn.dataset.idActivo, 10);
+        const nombre = btn.dataset.concepto || ('#' + id);
+        if (!window.confirm('¿Borrar "' + nombre + '"? Va a la papelera (restaurable 30 días).')) return;
+        fetch('/activos/_api/' + id + '/borrar', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        }).then(r => r.json()).then(j => {
+          if (j && j.ok) {
+            const tr = btn.closest('tr.activo-fila');
+            if (tr) tr.remove();
+            notif('Borrado: ' + nombre + ' — está en la papelera', true);
+          } else {
+            notif('No se pudo borrar: ' + ((j && j.error) || 'error'), false);
+          }
+        }).catch(err => notif('Error de red: ' + err.message, false));
+      });
 
       tbody.addEventListener('dragstart', (e) => {
         const tr = e.target.closest('tr.activo-fila');

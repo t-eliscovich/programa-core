@@ -197,6 +197,56 @@ def api_editar_tipo(id_activos: int):
         return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
+@activos_bp.route("/activos/_api/<int:id_activos>/borrar", methods=["POST"])
+@requiere_login
+@requiere_permiso("activos.crear")
+def api_borrar(id_activos: int):
+    """Soft-delete de un activo desde /activos (papelera, retención 30 días).
+
+    TMT 2026-07-22 — la dueña borra duplicados por la UI. Reversible desde
+    /activos/papelera. Devuelve `{ok}` para que la fila se saque sin recargar.
+    """
+    try:
+        r = queries.borrar_activo(
+            id_activos, usuario=(g.user or {}).get("username", "web"),
+        )
+        return jsonify({"ok": True, **r})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude borrar: {e}"}), 500
+
+
+@activos_bp.route("/activos/papelera", methods=["GET"])
+@requiere_login
+@requiere_permiso("activos.ver")
+def papelera():
+    """Papelera de activos borrados — retención 30 días, restaurable."""
+    try:
+        filas = queries.papelera_activos(dias=30)
+        error = None
+    except Exception as e:  # noqa: BLE001
+        filas, error = [], str(e)
+    return render_template("activos/papelera.html", filas=filas, error=error)
+
+
+@activos_bp.route("/activos/papelera/<int:id_activos>/restaurar", methods=["POST"])
+@requiere_login
+@requiere_permiso("activos.crear")
+def restaurar(id_activos: int):
+    """Restaura un activo borrado desde la papelera."""
+    try:
+        queries.restaurar_activo(
+            id_activos, usuario=(g.user or {}).get("username", "web"),
+        )
+        flash("Activo restaurado.", "success")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude restaurar el activo", e)
+    return redirect(url_for("activos.papelera"))
+
+
 @activos_bp.route("/activos/activar-maquinaria", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("activos.crear")

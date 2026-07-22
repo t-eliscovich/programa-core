@@ -120,6 +120,50 @@ def _tiene_orden_manual() -> bool:
     return _HAS_ORDEN_MANUAL
 
 
+# Cache module-level del feature flag "existe scintela.activos.borrado_en"
+# (columna de la migración 0130 — papelera/soft-delete de activos). Igual
+# patrón que `orden_manual`: defensivo durante el gap deploy↔migrate.
+_HAS_BORRADO: bool | None = None
+
+
+def _tiene_borrado() -> bool:
+    """Detecta si scintela.activos.borrado_en existe (migración 0130).
+
+    Cachea SOLO el True: mientras la columna no exista re-chequea en cada
+    llamada, así apenas se corre la migración 0130 el feature se activa sin
+    reiniciar el worker (evita el stale-False del patrón `orden_manual`).
+    """
+    global _HAS_BORRADO
+    if _HAS_BORRADO:
+        return True
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1 AS x FROM information_schema.columns
+             WHERE table_schema = 'scintela'
+               AND table_name   = 'activos'
+               AND column_name  = 'borrado_en'
+            """
+        )
+        _HAS_BORRADO = bool(row is not None)
+    except Exception:  # noqa: BLE001
+        _HAS_BORRADO = False
+    return _HAS_BORRADO
+
+
+def borrado_where_sql(alias: str = "") -> str:
+    """'AND <alias>.borrado_en IS NULL' si la columna existe; si no, ''.
+
+    Lo usan las queries de /activos Y el balance (activos_totales) para
+    excluir los activos soft-borrados sin romper durante el gap
+    deploy↔migrate. Con `alias=''` no antepone prefijo.
+    """
+    if not _tiene_borrado():
+        return ""
+    pref = f"{alias}." if alias else ""
+    return f"AND {pref}borrado_en IS NULL"
+
+
 def buscar(
     q: str = "",
     tipo: str | None = None,
@@ -151,6 +195,7 @@ def buscar(
     else:
         orden_manual_select   = ""
         orden_manual_order_by = ""
+    borrado_where = borrado_where_sql("a")   # excluye soft-borrados
     sql = f"""
         WITH coef AS (
           SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
@@ -203,6 +248,7 @@ def buscar(
           AND (%(tipo)s IS NULL OR UPPER(a.tipo) = UPPER(%(tipo)s))
           AND (NOT %(solo_activos)s
                OR (COALESCE(a.inicial, 0) - COALESCE(a.amortizac, 0)) > 0.01)
+          {borrado_where}
         -- TMT 2026-05-20 v3: pedido dueña "Ordenar por tipo luego por
         -- fecha. Solo una vez cada sub categoria". Sort estricto =
         -- categoría → fecha DESC. orden_manual queda como secundario
@@ -234,10 +280,11 @@ def buscar(
 def tipos_disponibles() -> list[dict]:
     """Lista los tipos distintos para el filtro — con conteo."""
     return db.fetch_all(
-        """
+        f"""
         SELECT COALESCE(NULLIF(TRIM(tipo), ''), '(s/t)') AS tipo,
                COUNT(*)                                  AS n
         FROM scintela.activos
+        WHERE TRUE {borrado_where_sql()}
         GROUP BY 1
         ORDER BY n DESC, 1
         """
@@ -280,7 +327,8 @@ def resumen() -> dict:
                  > 0.01
                )                                                   AS n_vivos
         FROM scintela.activos
-        """
+        WHERE TRUE {borrado}
+        """.format(borrado=borrado_where_sql())
     )
     if not row:
         return {
@@ -299,6 +347,72 @@ def resumen() -> dict:
         "deprec_dia_total": float(row.get("deprec_dia_total") or 0),
         "deprec_mes_total": float(row.get("deprec_mes_total") or 0),
     }
+
+
+# ---------------------------------------------------------------------------
+# Papelera / soft-delete (migración 0130). TMT 2026-07-22 — pedido dueña:
+# borrar activos duplicados por la UI, reversible con retención 30 días.
+# NO hay DELETE duro: `borrado_en` marca la fila; queda excluida de listas
+# y del balance (activos_totales) pero restaurable desde /activos/papelera.
+# ---------------------------------------------------------------------------
+
+def borrar_activo(id_activos: int, usuario: str = "web") -> dict:
+    """Soft-delete: marca borrado_en=NOW(). Idempotente (no re-borra)."""
+    if not _tiene_borrado():
+        raise RuntimeError(
+            "Falta la migración 0130 (columna borrado_en). "
+            "Corré /admin/migraciones antes de borrar."
+        )
+    row = db.fetch_one(
+        """
+        UPDATE scintela.activos
+           SET borrado_en = NOW(), borrado_por = %(u)s
+         WHERE id_activos = %(id)s
+           AND borrado_en IS NULL
+        RETURNING id_activos, concepto, tipo
+        """,
+        {"id": id_activos, "u": usuario},
+    )
+    if not row:
+        raise ValueError("Activo inexistente o ya borrado.")
+    return dict(row)
+
+
+def restaurar_activo(id_activos: int, usuario: str = "web") -> dict:
+    """Restaura un activo soft-borrado (borrado_en → NULL)."""
+    if not _tiene_borrado():
+        raise RuntimeError("Falta la migración 0130 (columna borrado_en).")
+    row = db.fetch_one(
+        """
+        UPDATE scintela.activos
+           SET borrado_en = NULL, borrado_por = NULL
+         WHERE id_activos = %(id)s
+           AND borrado_en IS NOT NULL
+        RETURNING id_activos, concepto, tipo
+        """,
+        {"id": id_activos, "u": usuario},
+    )
+    if not row:
+        raise ValueError("Activo inexistente o no estaba borrado.")
+    return dict(row)
+
+
+def papelera_activos(dias: int = 30) -> list[dict]:
+    """Activos soft-borrados dentro de la ventana de retención (default 30d)."""
+    if not _tiene_borrado():
+        return []
+    return db.fetch_all(
+        """
+        SELECT id_activos, concepto, tipo, inicial, amortizac,
+               GREATEST(COALESCE(inicial,0) - COALESCE(amortizac,0), 0) AS valor_libros,
+               borrado_en, borrado_por
+        FROM scintela.activos
+        WHERE borrado_en IS NOT NULL
+          AND borrado_en > NOW() - (%(dias)s || ' days')::interval
+        ORDER BY borrado_en DESC
+        """,
+        {"dias": int(dias)},
+    ) or []
 
 
 def crear(
