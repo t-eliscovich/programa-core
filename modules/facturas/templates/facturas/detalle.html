@@ -30,31 +30,27 @@
         {% endif %}
       </p>
     </div>
-    <div class="flex items-center gap-2 no-print">
-      {# TMT 2026-05-18 — botón Volver canónico #}
-      <a href="{{ url_for('facturas.lista') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
-        ← Volver a Facturas
-      </a>
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    {# TMT 2026-07-21 (dueña "qué desastre"): botonera UNIFICADA — mismo estilo
+       neutro para todas, en una sola línea (whitespace-nowrap), sólo Anular en
+       rojo (acción destructiva). Antes cada botón tenía un color/tamaño distinto
+       y "Volver a Facturas" se partía en dos renglones. #}
+    {% set _btn = "inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition" %}
+    <div class="flex items-center gap-2 no-print flex-wrap justify-end">
+      <a href="{{ url_for('facturas.lista') }}" style="white-space:nowrap" class="{{ _btn }}">← Volver</a>
+      <button onclick="window.print()" style="white-space:nowrap" class="{{ _btn }}">Imprimir</button>
       {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat != 'X' %}
         <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"
               onsubmit="return confirm('Generar XML SRI para la factura {{ fact.numf_completo or fact.numf }}? Se creará un comprobante electrónico en estado borrador (aún sin firmar ni enviar al SRI).');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="text-sm px-3 py-1.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30">
-            Generar XML SRI
-          </button>
+          <button type="submit" style="white-space:nowrap" class="{{ _btn }}">Generar XML SRI</button>
         </form>
       {% endif %}
       {% if tiene_permiso('facturas.editar') and fact.stat and fact.stat != 'X' %}
-        <a href="{{ url_for('facturas.editar', id_factura=fact.id_factura) }}"
-           class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30">
-          Editar...
-        </a>
+        <a href="{{ url_for('facturas.editar', id_factura=fact.id_factura) }}" style="white-space:nowrap" class="{{ _btn }}">Editar</a>
       {% endif %}
       {% if tiene_permiso('facturas.anular') and fact.stat and fact.stat != 'X' %}
-        {# Botón "Reversar carga": deshacer un alta erronea — solo si la
-           factura no tiene movimientos. Distinto de Anular (deja stat=X). #}
+        {# "Reversar carga": deshacer un alta errónea (sin movimientos). Distinto
+           de Anular (deja stat=X). #}
         {% set _abono = (fact.abono or 0)|float %}
         {% set _saldo = (fact.saldo or 0)|float %}
         {% set _importe = (fact.importe or 0)|float %}
@@ -63,14 +59,13 @@
                 class="inline"
                 onsubmit="return confirm('Borrar esta factura completamente? Solo si la cargaste por error.');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30">
-              ↺ Reversar carga
-            </button>
+            <button style="white-space:nowrap" class="{{ _btn }}">↺ Reversar carga</button>
           </form>
         {% endif %}
         <a href="{{ url_for('facturas.confirmar_anulacion', id_factura=fact.id_factura) }}"
-           class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
-          Anular...
+           style="white-space:nowrap"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30 transition">
+          Anular
         </a>
       {% endif %}
     </div>
