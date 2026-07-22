@@ -2069,7 +2069,7 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     # redundante del químico ya cargado como gasto bancario) para no doblar y que
     # el detalle cuadre con el total.
     where_quimico = (
-        "AND UPPER(TRIM(COALESCE(concepto, ''))) NOT LIKE 'QUIMICOS %'"
+        "AND UPPER(TRIM(COALESCE(concepto, ''))) NOT LIKE 'QUIMICOS %%'"
         if n == 6
         else ""
     )
@@ -2359,7 +2359,7 @@ def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
           -- ('QUIMSERTEC 2184 [tx…]', 'TOSAVA 216 [tx…]'): contarlo doblaría. El
           -- químico genuino se cuenta bajo su nombre de proveedor.
           AND NOT (COALESCE(num, 0) = 6
-                   AND UPPER(TRIM(COALESCE(concepto, ''))) LIKE 'QUIMICOS %')
+                   AND UPPER(TRIM(COALESCE(concepto, ''))) LIKE 'QUIMICOS %%')
         """,
             {"off": _off},
         )
