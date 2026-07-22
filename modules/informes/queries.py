@@ -2063,11 +2063,16 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     # TMT 2026-05-19 v6 re-audit — agregado filtro stat='Y' (anuladas).
     # Antes el drill-down mostraba gastos anulados sumados al subtotal,
     # discrepando con `gastos_xgast_v1_a_v9_mes` que sí los excluye.
-    # Tamara 2026-07-22: el drill-down de V6 vuelve a incluir los químico-insumos
+    # Tamara 2026-07-22: el drill-down de V6 incluye los químico-insumos
     # (QUIMSERTEC/TOSAVA/ECUAPLAST/NC/QI = gasto de tintorería, como los CC), igual
-    # que la matriz, para que el detalle cuadre con el total. Los colorantes
-    # POLI/ALG no viven en xgast num=6 (se valúan aparte en el stock).
-    where_quimico = ""
+    # que la matriz. Pero excluye el wrapper manual 'QUIMICOS <prov>' (copia
+    # redundante del químico ya cargado como gasto bancario) para no doblar y que
+    # el detalle cuadre con el total.
+    where_quimico = (
+        "AND UPPER(TRIM(COALESCE(concepto, ''))) NOT LIKE 'QUIMICOS %'"
+        if n == 6
+        else ""
+    )
     sql = f"""
         SELECT id_xgast, fecha, doc, prov, concepto, importe, stat, fechad, saldo
         FROM scintela.xgast
@@ -2346,10 +2351,15 @@ def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-          -- Tamara 2026-07-22: V6 (num=6) vuelve a incluir los químico-insumos
-          -- (QUIMSERTEC/TOSAVA/ECUAPLAST/NC/QI = gasto de tintorería, como los CC).
-          -- Los colorantes POLI/ALG no viven en xgast num=6 (entran por compra Q
-          -- y se valúan aparte en el stock), así que no hay doble conteo acá.
+          -- Tamara 2026-07-22: V6 (num=6) incluye los químico-insumos
+          -- (QUIMSERTEC/TOSAVA/ECUAPLAST/NC/QI = gasto de tintorería, como los CC;
+          -- los colorantes POLI/ALG no viven acá, entran por compra Q y se valúan
+          -- aparte en el stock). PERO excluye el wrapper manual 'QUIMICOS <prov>',
+          -- copia redundante de un químico YA cargado como gasto bancario
+          -- ('QUIMSERTEC 2184 [tx…]', 'TOSAVA 216 [tx…]'): contarlo doblaría. El
+          -- químico genuino se cuenta bajo su nombre de proveedor.
+          AND NOT (COALESCE(num, 0) = 6
+                   AND UPPER(TRIM(COALESCE(concepto, ''))) LIKE 'QUIMICOS %')
         """,
             {"off": _off},
         )

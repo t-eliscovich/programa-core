@@ -206,6 +206,10 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
          WHERE fecha BETWEEN %s AND %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
            AND COALESCE(num, 0) IN (4, 5, 6)
+           -- Excluir el wrapper manual 'QUIMICOS <prov>' (copia redundante del
+           -- químico ya cargado como gasto bancario), igual que la matriz de V6.
+           AND NOT (COALESCE(num, 0) = 6
+                    AND UPPER(TRIM(COALESCE(concepto, ''))) LIKE 'QUIMICOS %')
          GROUP BY yy, mm
         """,
         (desde, hasta),
