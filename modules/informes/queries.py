@@ -2103,6 +2103,10 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
                    ({_SQL_COMPRA_NUM_CASE}) AS num_calc
               FROM scintela.compra c
              WHERE COALESCE(c.stat, '') NOT IN ('X', 'Y')
+               -- Tamara 2026-07-22: excluir compras del puente formulas
+               -- (colorantes/químicos material, valuados por stock) — igual que
+               -- la matriz, para que el drill-down no las cuente como gasto.
+               AND COALESCE(c.usuario_crea, '') NOT LIKE 'formulas%%'
                {where_fecha_c}
         ) sub
          WHERE num_calc = %s
@@ -2387,6 +2391,12 @@ def gastos_xgast_v1_a_v9_mes(meses_atras: int = 0) -> dict:
            AND c.fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(off)s) + INTERVAL '1 month'
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
            AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
+           -- Tamara 2026-07-22: las compras del puente formulas (colorantes/
+           -- químicos de tintura, usuario_crea 'formulas-auto'/'formulas-<user>')
+           -- son MATERIAL — se valúan en la fila Colorantes/Quím. por stock, NO
+           -- son gasto. Guard por la marca de origen (más confiable que el
+           -- concepto) para que nunca se confundan con los químico-insumos de V6.
+           AND COALESCE(c.usuario_crea, '') NOT LIKE 'formulas%%'
     """
     rows_compras = db.fetch_all(sql_compras, {"off": _off}) or []
     for r in rows_compras:

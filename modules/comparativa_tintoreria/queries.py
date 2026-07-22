@@ -225,6 +225,9 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
           FROM scintela.compra c
          WHERE c.fecha BETWEEN %s AND %s
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           -- Tamara 2026-07-22: excluir compras del puente formulas (colorantes/
+           -- químicos material, valuados por stock) — no son gasto de tintorería.
+           AND COALESCE(c.usuario_crea, '') NOT LIKE 'formulas%%'
            AND ({_SQL_COMPRA_NUM_CASE}) IN (4, 5, 6)
          GROUP BY yy, mm
     """
