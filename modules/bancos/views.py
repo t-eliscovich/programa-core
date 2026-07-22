@@ -1241,6 +1241,94 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
     )
 
 
+@bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/mover",
+                 methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def mover_movimiento(no_banco: int, id_transaccion: int):
+    """Mueve un movimiento cargado en el banco equivocado a otro banco, SIN
+    borrar+recrear (que dejaba reversos fantasma). Reasigna no_banco de la
+    misma fila y recalcula el saldo de ambos bancos.
+
+    TMT 2026-07-22 (dueña, caso ch2825 CG3 en MACHALA → INTERNACIONAL). GET:
+    muestra el movimiento + selector de banco destino. POST: ejecuta la query
+    atómica (que re-valida todos los guards, incl. la guarda de apertura).
+    """
+    import db as _db
+
+    tx = _db.fetch_one(
+        """
+        SELECT t.id_transaccion, t.no_banco, t.fecha, t.documento, t.importe,
+               t.concepto, t.prov, t.usuario_crea,
+               COALESCE(b.nombre, '') AS banco_nombre
+          FROM scintela.transacciones_bancarias t
+          LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco
+         WHERE t.id_transaccion = %s AND t.no_banco = %s
+        """,
+        (id_transaccion, no_banco),
+    )
+    if not tx:
+        abort(404)
+
+    # Guards de entrada (el POST igual los re-valida en la query, defensa en
+    # profundidad). PC y sin conciliar; el resto lo chequea la query.
+    usuario_crea = (tx.get("usuario_crea") or "").strip().lower()
+    if (not usuario_crea) or usuario_crea in _USUARIOS_SYNC:
+        flash("Este movimiento viene del dBase (sync) — corregilo en el dBase "
+              "y re-sincronizá, no se mueve desde acá.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    conc = _db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (id_transaccion,),
+    )
+    if conc:
+        flash("Este movimiento está conciliado — desconciliá primero.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    if request.method == "POST":
+        no_banco_destino = parse_int(request.form.get("no_banco_destino"))
+        usuario = (g.user or {}).get("username", "web")
+        if not no_banco_destino:
+            flash("Elegí un banco destino.", "warn")
+        else:
+            try:
+                r = queries.mover_movimiento_banco(
+                    id_transaccion=id_transaccion,
+                    no_banco_origen=no_banco,
+                    no_banco_destino=no_banco_destino,
+                    usuario=usuario,
+                )
+                flash(
+                    f"Movimiento #{id_transaccion} movido a {r['banco_destino_nombre']}. "
+                    f"Saldo {tx.get('banco_nombre') or 'origen'}: $ {r['saldo_origen']:,.2f} · "
+                    f"{r['banco_destino_nombre']}: $ {r['saldo_destino']:,.2f}.",
+                    "ok",
+                )
+                return redirect(url_for("bancos.movimientos", no_banco=no_banco_destino))
+            except ValueError as e:
+                flash(str(e), "warn")
+            except Exception as e:
+                flash_exc("No pude mover el movimiento", e)
+
+    # GET (o POST con error): bancos destino posibles (operativos, sin el origen).
+    try:
+        bancos_dest = [
+            b for b in queries.bancos_operativos()
+            if int(b.get("no_banco")) != int(no_banco)
+        ]
+    except Exception as e:
+        bancos_dest = []
+        flash_exc("No pude listar bancos", e)
+
+    return render_template(
+        "bancos/mover_mov.html",
+        tx=tx,
+        bancos_dest=bancos_dest,
+    )
+
+
 @bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/clasificar-gasto",
                  methods=["POST"])
 @requiere_login

@@ -393,6 +393,20 @@
                   🗑 eliminar
                 </a>
               {% endif %}
+              {# TMT 2026-07-22 (dueña): mover un movimiento cargado en el banco
+                 EQUIVOCADO a otro banco, sin borrar+recrear (que dejaba reversos
+                 fantasma). Aplica a cualquier mov PC sin conciliar — incl. CH y
+                 los que tienen reverso propio (mov_doble). #}
+              {% if tiene_permiso('bancos.conciliar')
+                    and (m.usuario_crea or '') != ''
+                    and (m.usuario_crea or '')|lower not in ['dbf-import', 'asinfo-carga', 'asinfo-backfill']
+                    and not m.conciliacion_id %}
+                <a href="{{ url_for('bancos.mover_movimiento', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
+                   class="text-xs text-sky-600 hover:text-sky-800 hover:underline ml-1"
+                   title="Mover este movimiento a otro banco (se cargó en el banco equivocado)">
+                  ⇄ mover
+                </a>
+              {% endif %}
               {# TMT 2026-07-21 (dueña, TOSAVA/QUIMSERTEC): clasificar una
                  salida de banco existente como gasto V1..V9 — crea el xgast
                  pagado sin tocar banco/caja. #}

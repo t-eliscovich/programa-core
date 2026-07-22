@@ -23,9 +23,21 @@
       <div><div class="text-xs text-slate-500">Fecha</div><div class="font-mono mt-0.5">{{ tx.fecha | fecha_es }}</div></div>
     </div>
     <div class="mt-3 text-xs text-slate-600 dark:text-slate-400">
-      <span class="text-slate-500 uppercase tracking-wider font-semibold">Concepto:</span> {{ tx.concepto or '—' }}
+      {% set _resta = (tx.documento or '')|upper in ['CH', 'ND', 'DB'] %}
+      <span class="text-slate-500 uppercase tracking-wider font-semibold">Tipo:</span>
+      <span class="font-mono">{{ (tx.documento or '—')|upper }}</span>
+      <span class="{% if _resta %}text-red-600{% else %}text-emerald-700{% endif %}">({% if _resta %}resta −{% else %}suma +{% endif %})</span>
+      <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Concepto:</span> {{ tx.concepto or '—' }}
       <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Cargado por:</span> <span class="font-mono">{{ tx.usuario_crea }}</span>
     </div>
+  </div>
+
+  {# TMT 2026-07-22 (dueña): la mayoría de las veces el mov no está "de más",
+     sino en el banco equivocado → ofrecer moverlo en vez de borrar+recrear. #}
+  <div class="mb-5 -mt-1 text-sm">
+    ¿Se cargó en el banco equivocado?
+    <a href="{{ url_for('bancos.mover_movimiento', no_banco=tx.no_banco, id_transaccion=tx.id_transaccion) }}"
+       class="text-sky-600 hover:text-sky-800 hover:underline font-medium">⇄ Mejor moverlo a otro banco →</a>
   </div>
 
   <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">

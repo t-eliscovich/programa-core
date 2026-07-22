@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
+{% block title %}Mover movimiento a otro banco{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
+  <a href="{{ url_for('bancos.movimientos', no_banco=tx.no_banco) }}" class="hover:underline">{{ tx.banco_nombre }}</a> /
+  <strong>Mover a otro banco</strong>
+{% endblock %}
+
+{% block content %}
+{# TMT 2026-07-22 (dueña): mover un movimiento cargado en el banco equivocado
+   a otro banco, sin borrar+recrear. #}
+{% set _resta = (tx.documento or '')|upper in ['CH', 'ND', 'DB'] %}
+<div class="max-w-2xl">
+  {% set ico %}<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>{% endset %}
+  {{ wizard_hero('sky', 'Mover movimiento a otro banco',
+                 'Reasigna este movimiento al banco correcto sin borrarlo ni recrearlo. No cambia la plata: recalcula el saldo del banco de origen y del destino. El dBase no se toca.',
+                 ico) }}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-5 shadow-sm">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">Movimiento a mover</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div><div class="text-xs text-slate-500">N° transacción</div><div class="font-mono font-semibold mt-0.5">#{{ tx.id_transaccion }}</div></div>
+      <div><div class="text-xs text-slate-500">Banco actual</div><div class="mt-0.5">{{ tx.banco_nombre }}</div></div>
+      <div>
+        <div class="text-xs text-slate-500">Tipo</div>
+        <div class="font-mono mt-0.5">
+          {{ (tx.documento or '—')|upper }}
+          <span class="{% if _resta %}text-red-600{% else %}text-emerald-700{% endif %}">
+            ({% if _resta %}resta −{% else %}suma +{% endif %})
+          </span>
+        </div>
+      </div>
+      <div><div class="text-xs text-slate-500">Importe</div><div class="font-mono font-semibold mt-0.5 {% if _resta %}text-red-600{% else %}text-emerald-700{% endif %}">{{ tx.importe | money_es }}</div></div>
+    </div>
+    <div class="mt-3 text-xs text-slate-600 dark:text-slate-400">
+      <span class="text-slate-500 uppercase tracking-wider font-semibold">Concepto:</span> {{ tx.concepto or '—' }}
+      {% if tx.prov %}
+        <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Cliente/Prov:</span> <span class="font-mono">{{ tx.prov }}</span>
+      {% endif %}
+      <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Fecha:</span> <span class="font-mono">{{ tx.fecha | fecha_es }}</span>
+    </div>
+  </div>
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-slate-500 font-semibold mb-1">Mover a banco</label>
+      {% if bancos_dest %}
+        <select name="no_banco_destino" required
+                class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm">
+          <option value="">— Elegí el banco destino —</option>
+          {% for b in bancos_dest %}
+            <option value="{{ b.no_banco }}">{{ b.nombre }}{% if b.saldo is not none %} · saldo {{ b.saldo | money_es }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <p class="text-sm text-amber-700 dark:text-amber-400">No hay otros bancos disponibles para mover.</p>
+      {% endif %}
+    </div>
+
+    {% set info %}
+      Esto va a ejecutar en una sola transacción:
+      <ul class="list-disc list-inside mt-1 text-[13px] space-y-0.5">
+        <li>Reasignar el movimiento <strong>#{{ tx.id_transaccion }}</strong> al banco elegido</li>
+        <li>Recalcular el saldo corrido de <strong>{{ tx.banco_nombre }}</strong> y del banco destino</li>
+      </ul>
+      Solo movimientos cargados en PC, sin conciliar, y que no sean la fila de
+      apertura de un banco. La plata no cambia — solo cambia de banco.
+    {% endset %}
+    {{ wizard_info('sky', info) }}
+    {{ wizard_footer(url_for('bancos.movimientos', no_banco=tx.no_banco), 'Mover a otro banco →', 'sky') }}
+  </form>
+</div>
+{% endblock %}

@@ -1710,6 +1710,152 @@ def reversar_movimiento_simple(
     }
 
 
+def mover_movimiento_banco(
+    *,
+    id_transaccion: int,
+    no_banco_origen: int,
+    no_banco_destino: int,
+    usuario: str = "web",
+) -> dict:
+    """Mueve un movimiento EXISTENTE de un banco a otro (se cargó en el banco
+    equivocado). NO crea ni borra plata: reasigna `no_banco` de la MISMA fila
+    y recalcula el saldo corrido de ambos bancos. Atómico.
+
+    Pedido dueña 2026-07-22 (caso ch2825 CG3 cargado en MACHALA que debía ir a
+    INTERNACIONAL): antes había que borrar + recrear, lo que ensuciaba el libro
+    con reversos fantasma. Esto lo hace en un paso, reproducible por pantalla.
+
+    El saldo REAL que ve el usuario (pantalla principal) = opening + Σ(deltas
+    firmados) por banco (ver lista_bancos). El delta viaja con la fila, así que
+    los dos bancos quedan bien SOLOS. La única forma de romper el `opening` es
+    mover la fila de APERTURA (la más vieja) de un banco, o que la fila quede
+    como la más vieja del destino → GUARDA que aborta esos dos casos. Con eso,
+    el recompute del saldo corrido (ancla = 2da fila más vieja) es correcto en
+    ambos bancos.
+
+    Guards: banco destino ≠ origen y existente; movimiento PC (no del sync);
+    sin conciliar; no es la fila de apertura del origen; no quedaría de apertura
+    en el destino.
+    """
+    import bank_helpers
+
+    if not no_banco_destino:
+        raise ValueError("Banco destino requerido.")
+    if int(no_banco_origen) == int(no_banco_destino):
+        raise ValueError("El movimiento ya está en ese banco.")
+
+    tx = db.fetch_one(
+        """
+        SELECT id_transaccion, no_banco, fecha, documento, importe,
+               concepto, usuario_crea
+          FROM scintela.transacciones_bancarias
+         WHERE id_transaccion = %s AND no_banco = %s
+        """,
+        (id_transaccion, no_banco_origen),
+    )
+    if not tx:
+        raise ValueError("No encontré el movimiento en el banco de origen.")
+
+    usuario_crea = (tx.get("usuario_crea") or "").strip().lower()
+    if (not usuario_crea) or usuario_crea in _USUARIOS_SYNC_Q:
+        raise ValueError(
+            "Este movimiento viene del dBase (sync) — corregilo en el dBase y "
+            "re-sincronizá, no se mueve desde acá."
+        )
+
+    bd = db.fetch_one(
+        "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco WHERE no_banco = %s",
+        (no_banco_destino,),
+    )
+    if not bd:
+        raise ValueError("El banco destino no existe.")
+
+    conc = db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (id_transaccion,),
+    )
+    if conc:
+        raise ValueError("Este movimiento está conciliado — desconciliá primero.")
+
+    fecha = tx.get("fecha")
+    # GUARDA apertura ORIGEN: la fila movida NO puede ser la más vieja del origen
+    # (si lo fuera, sacarla cambiaría el opening del banco).
+    older_src = db.fetch_one(
+        """
+        SELECT 1 FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND id_transaccion <> %s
+           AND (fecha < %s OR (fecha = %s AND id_transaccion < %s))
+         LIMIT 1
+        """,
+        (no_banco_origen, id_transaccion, fecha, fecha, id_transaccion),
+    )
+    if not older_src:
+        raise ValueError(
+            "Este movimiento es el más VIEJO del banco de origen: moverlo "
+            "cambiaría el saldo de apertura. Ajustalo a mano."
+        )
+    # GUARDA apertura DESTINO: tiene que existir una fila más vieja en el destino
+    # (si no, la movida quedaría de apertura y su saldo almacenado —de otro banco—
+    # corrompería el opening del destino).
+    older_dst = db.fetch_one(
+        """
+        SELECT 1 FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND (fecha < %s OR (fecha = %s AND id_transaccion < %s))
+         LIMIT 1
+        """,
+        (no_banco_destino, fecha, fecha, id_transaccion),
+    )
+    if not older_dst:
+        raise ValueError(
+            f"El movimiento quedaría como el más VIEJO de {bd['nombre']} y "
+            "rompería su saldo de apertura. Cargalo a mano en ese banco."
+        )
+
+    with db.tx() as conn:
+        db.execute(
+            """
+            UPDATE scintela.transacciones_bancarias
+               SET no_banco = %s,
+                   usuario_modifica = %s,
+                   fecha_modifica = NOW()
+             WHERE id_transaccion = %s AND no_banco = %s
+            """,
+            (no_banco_destino, usuario[:50], id_transaccion, no_banco_origen),
+            conn=conn,
+        )
+        # Recompute del saldo corrido de AMBOS bancos (ancla = 2da fila más
+        # vieja → preserva el opening de cada banco). Mismo patrón que el
+        # eliminar de movimientos PC.
+        for nb in (no_banco_origen, no_banco_destino):
+            anc = db.fetch_one(
+                "SELECT id_transaccion AS ancla "
+                "  FROM scintela.transacciones_bancarias "
+                " WHERE no_banco = %s "
+                " ORDER BY fecha ASC, id_transaccion ASC OFFSET 1 LIMIT 1",
+                (nb,), conn=conn,
+            )
+            if anc and anc.get("ancla"):
+                bank_helpers.recompute_saldos_desde(
+                    conn, no_banco=nb, no_cta=None, ancla_id=int(anc["ancla"]),
+                )
+
+    return {
+        "id_transaccion": id_transaccion,
+        "no_banco_origen": no_banco_origen,
+        "no_banco_destino": no_banco_destino,
+        "banco_destino_nombre": bd["nombre"],
+        "saldo_origen": bank_helpers.saldo_actual(no_banco_origen),
+        "saldo_destino": bank_helpers.saldo_actual(no_banco_destino),
+    }
+
+
+# Usuarios del sync dBase/Asinfo — un movimiento cargado por ellos NO se mueve
+# ni se borra desde la web (el sync lo revertiría). Espejo de views._USUARIOS_SYNC.
+_USUARIOS_SYNC_Q = ("dbf-import", "asinfo-carga", "asinfo-backfill")
+
+
 def transferir_entre_bancos(
     *,
     no_banco_origen: int,
