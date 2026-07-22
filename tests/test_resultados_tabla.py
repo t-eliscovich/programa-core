@@ -117,16 +117,6 @@ def test_costo_total_suma_de_renglones():
     assert ct["kg"] is None
 
 
-def test_utilidad_no_estandarizada_venta_menos_costo():
-    """Utilidad no estandarizada = Venta$ − CostoTotal$ (en $ reales, coherente
-    con el Costo Total que ahora es la suma). $/kg = $ / kg vendidos."""
-    tab = _tabla(factor_desperdicio=1.045)
-    ct_us = _row(tab, "Costo Total")["us"]
-    ue = _row(tab, "Utilidad no estandarizada")
-    assert abs(ue["us"] - (1000000.0 - ct_us)) < 1e-6
-    assert abs(ue["ukg"] - (1000000.0 - ct_us) / 200000.0) < 1e-9
-
-
 def test_utilidad_real_delta_patrimonio_mas_dividendos():
     """Utilidad Real u$s = (patr - patant) + dividendos del mes."""
     ur = _row(_tabla(), "Utilidad Real")
@@ -138,8 +128,9 @@ def test_sin_ventas_no_rompe():
     """venta_kg = 0 no debe lanzar ZeroDivisionError."""
     tab = _tabla(venta_kg=0.0, venta_us=0.0)
     assert _row(tab, "Venta")["ukg"] == 0.0
-    # 13 filas: se agregó "Utilidad no estandarizada" a la tabla de Resultados.
-    assert len(tab) == 13
+    # 12 filas: la fila "Utilidad no estandarizada" se eliminó del cuadro de
+    # utilidades (commit 55fd9f2). TMT 2026-07-21.
+    assert len(tab) == 12
 
 
 def test_seccion_costos_presente():
