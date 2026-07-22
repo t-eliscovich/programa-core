@@ -289,7 +289,7 @@
           <th class="px-2 py-2 text-left font-medium">Cliente</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Kg</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-2 py-2 text-center font-medium" title="Tipo de documento en Asinfo: F=Factura, D=Devolución">Tipo</th>
+          <th class="px-2 py-2 text-center font-medium" title="Tipo de documento: F=Factura, D=Devolución, N=Nota">Tipo</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
           <th class="px-2 py-2 text-right font-medium acum-col" title="Total facturado corrido" data-no-sort>Acum.</th>
@@ -382,25 +382,21 @@
               <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
             </span>
           </td>
-          {# Tipo AI: F=Factura, D=Devolución, N=NTEN, NC=NC financiera,
-             NCNT=NCNT. TMT 2026-05-22: agregados N + NC + NCNT. #}
-          {% set _ai_tipo = f.asinfo_tipo if f.asinfo_tipo is defined else none %}
-          {% set _ai_letra = {
-              'FACTURA': 'F',
-              'DEVOLUCION': 'D',
-              'NTEN': 'N',
-              'NC_FINANCIERA': 'NC',
-              'NCNT': 'NCNT',
-          }.get(_ai_tipo, '—') %}
-          {% set _ai_color = {
-              'FACTURA': 'text-slate-400',
-              'DEVOLUCION': 'text-amber-600',
-              'NTEN': 'text-sky-600',
-              'NC_FINANCIERA': 'text-rose-600',
-              'NCNT': 'text-rose-700',
-          }.get(_ai_tipo, 'text-slate-300') %}
-          <td class="px-2 py-1.5 text-center font-mono" title="{% if _ai_tipo %}{{ _ai_tipo | replace('_', ' ') | title }} en Asinfo{% else %}sin tipo Asinfo{% endif %}">
-            <span class="{{ _ai_color }}">{{ _ai_letra }}</span>
+          {# Tipo del documento SEGÚN PC (siempre disponible — antes salía de
+             Asinfo y quedaba "—" con +6000 filas). N=Nota (tipo empieza con N);
+             D=Devolución (tipo empieza con D o importe/kg negativo); F=Factura.
+             TMT 2026-07-21 (dueña "¿por qué no hay tipo?"). #}
+          {% set _t = (f.tipo or '') | string | upper %}
+          {% set _neg = (f.importe is not none and f.importe | float < 0) or (f.kg is not none and f.kg | float < 0) %}
+          {% if _t[:1] == 'N' %}
+            {% set _tipo_letra, _tipo_color, _tipo_desc = 'N', 'text-sky-600', 'Nota' %}
+          {% elif _t[:1] == 'D' or _neg %}
+            {% set _tipo_letra, _tipo_color, _tipo_desc = 'D', 'text-amber-600', 'Devolución' %}
+          {% else %}
+            {% set _tipo_letra, _tipo_color, _tipo_desc = 'F', 'text-slate-400', 'Factura' %}
+          {% endif %}
+          <td class="px-2 py-1.5 text-center font-mono" title="{{ _tipo_desc }}">
+            <span class="{{ _tipo_color }}">{{ _tipo_letra }}</span>
           </td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
