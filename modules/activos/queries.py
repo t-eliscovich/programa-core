@@ -363,7 +363,7 @@ def borrar_activo(id_activos: int, usuario: str = "web") -> dict:
             "Falta la migración 0130 (columna borrado_en). "
             "Corré /admin/migraciones antes de borrar."
         )
-    row = db.fetch_one(
+    row = db.execute_returning(
         """
         UPDATE scintela.activos
            SET borrado_en = NOW(), borrado_por = %(u)s
@@ -382,7 +382,7 @@ def restaurar_activo(id_activos: int, usuario: str = "web") -> dict:
     """Restaura un activo soft-borrado (borrado_en → NULL)."""
     if not _tiene_borrado():
         raise RuntimeError("Falta la migración 0130 (columna borrado_en).")
-    row = db.fetch_one(
+    row = db.execute_returning(
         """
         UPDATE scintela.activos
            SET borrado_en = NULL, borrado_por = NULL
