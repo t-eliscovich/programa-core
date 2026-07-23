@@ -26,6 +26,9 @@ from modules.conciliacion.matcher_banco import (
     historial as historial_matches,
 )
 from modules.conciliacion.matcher_banco import (
+    rehacer_match_grupo,
+)
+from modules.conciliacion.matcher_banco import (
     movimientos_banco as movimientos_banco_q,
 )
 from modules.conciliacion.matcher_banco import (
@@ -2795,6 +2798,62 @@ def banco_deshacer():
             pass
     else:
         flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
+    return redirect(back)
+
+
+@conciliacion_bp.route("/banco/rehacer", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_rehacer():
+    """Rehace (restaura) un match deshecho. Inverso exacto de banco_deshacer.
+
+    TMT 2026-07-23 (dueña): 'solo lo que el agente deshizo'. Un agente deshizo
+    en lote conciliaciones legítimas y desfasó el saldo a conciliar. Este botón
+    las restaura tal cual estaban (soft-undo reversible). Si el match tiene
+    confirm_batch_id, rehace todo el grupo.
+    """
+    try:
+        match_id = int(request.form.get("match_id") or 0)
+    except (TypeError, ValueError):
+        match_id = 0
+    # Volver a la pantalla de historial preservando el filtro Mostrar deshechos.
+    back = url_for("conciliacion.banco_historial",
+                   deshechos=("1" if request.form.get("deshechos") == "1" else None))
+    if match_id <= 0:
+        flash("match_id inválido.", "error")
+        return redirect(back)
+    n, batch_id = rehacer_match_grupo(match_id=match_id, usuario=_usuario_actual())
+    if n:
+        if batch_id and n > 1:
+            flash(f"Conciliación rehecha — {n} matches del grupo restaurados.", "ok")
+        else:
+            flash(f"Match #{match_id} rehecho (restaurado tal como estaba).", "ok")
+        try:
+            from modules.conciliacion import saldo_snapshot as _ss
+            _ss.snapshot(_BANCO_PICHINCHA, "match_rehecho",
+                         evento_ref=match_id, usuario=_usuario_actual(),
+                         descripcion=f"rehacer match #{match_id}"
+                                     + (f" (grupo {batch_id}, {n} matches)" if batch_id and n > 1 else ""))
+        except Exception:
+            pass
+        # Incrementar matches_hechos de la sesión abierta (counter UX, espejo
+        # del decremento en banco_deshacer).
+        try:
+            import db as _db
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET matches_hechos = matches_hechos + %s
+                 WHERE no_banco = %s
+                   AND usuario = %s
+                   AND cerrada_en IS NULL
+                """,
+                (int(n), _BANCO_PICHINCHA, _usuario_actual()[:50]),
+            )
+        except Exception:
+            pass
+    else:
+        flash(f"No rehíce nada para el match #{match_id} (¿ya estaba activo?).", "warn")
     return redirect(back)
 
 

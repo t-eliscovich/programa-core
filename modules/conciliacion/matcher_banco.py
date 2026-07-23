@@ -1951,6 +1951,110 @@ def romper_match(
     return n
 
 
+def rehacer_match_grupo(
+    match_id: int,
+    usuario: str = "web",
+) -> tuple[int, str | None]:
+    """Rehace (restaura) un match deshecho. Inverso EXACTO de
+    romper_match_grupo.
+
+    Si el match tiene confirm_batch_id, rehace TODO el grupo deshecho de ese
+    batch (igual que deshacer rompía el grupo entero). Devuelve
+    (n_rehechos, batch_id_o_None).
+
+    TMT 2026-07-23 (dueña): 'solo lo que el agente deshizo'. Un agente
+    deshizo en lote 30 conciliaciones internas (2 depósitos grandes + chicos +
+    efectivo socio + otros) y eso desfasó el saldo a conciliar vs dBase. Como
+    el deshacer es soft-delete (deshecho_en), rehacer = limpiar deshecho_en y
+    restaurar stat='*'. No inventa cruces nuevos: restaura tal cual estaba.
+    """
+    row = db.fetch_one(
+        "SELECT confirm_batch_id FROM scintela.banco_conciliacion_match WHERE id = %s",
+        (int(match_id),),
+    )
+    batch_id = row.get("confirm_batch_id") if row else None
+    if not batch_id:
+        n = rehacer_match(match_id, usuario=usuario)
+        return (n, None)
+    ids = db.fetch_all(
+        """
+        SELECT id FROM scintela.banco_conciliacion_match
+         WHERE confirm_batch_id = %s AND deshecho_en IS NOT NULL
+        """,
+        (batch_id,),
+    ) or []
+    total = 0
+    for r in ids:
+        try:
+            total += rehacer_match(int(r["id"]), usuario=usuario) or 0
+        except Exception as _e:
+            import logging
+            logging.warning("rehacer_match_grupo: falla en match %s: %s", r.get("id"), _e)
+    return (total, batch_id)
+
+
+def rehacer_match(
+    match_id: int,
+    usuario: str = "web",
+) -> int:
+    """Restaura una fila de banco_conciliacion_match deshecha. Inverso exacto
+    de romper_match:
+
+      1. deshecho_en = NULL, deshecho_por = NULL (reactiva el match).
+      2. Restaura stat='*' en la tx PC (transacciones_bancarias) — el deshacer
+         lo había limpiado.
+
+    NO re-liga banco_historicos_pendientes: el deshacer nulificó ese vínculo y
+    para estos matches (internos/depósitos sin backlog) no aplica. Conservador
+    a propósito: nunca marca un histórico como conciliado sin certeza.
+
+    Idempotente: sólo actúa sobre filas con deshecho_en IS NOT NULL.
+    """
+    with db.tx() as conn:
+        row_match = None
+        try:
+            row_match = db.fetch_one(
+                "SELECT id_transaccion FROM scintela.banco_conciliacion_match WHERE id = %s",
+                (int(match_id),),
+                conn=conn,
+            )
+        except Exception:
+            pass
+
+        # 1) Reactivar el match (sólo si estaba deshecho).
+        n = db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET deshecho_en = NULL,
+                   deshecho_por = NULL
+             WHERE id = %s
+               AND deshecho_en IS NOT NULL
+            """,
+            (int(match_id),),
+            conn=conn,
+        )
+
+        # 2) Restaurar stat='*' en la fila PC (dual-write que el deshacer
+        # limpió). Sólo si el match quedó activo (n>0) para no tocar filas
+        # ajenas. Idempotente: si ya tiene '*', no cambia nada.
+        id_tx = row_match.get("id_transaccion") if row_match else None
+        if n and id_tx:
+            try:
+                db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias t
+                       SET stat = '*'
+                     WHERE t.id_transaccion = %s
+                       AND TRIM(COALESCE(t.stat, '')) = ''
+                    """,
+                    (int(id_tx),),
+                    conn=conn,
+                )
+            except Exception:
+                pass  # fail-soft: no romper el rehacer si falla el stat
+    return n
+
+
 def historial(
     no_banco: int | None = None,
     desde: date | None = None,

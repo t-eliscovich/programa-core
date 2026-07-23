@@ -140,7 +140,16 @@
               <button class="px-2 py-0.5 rounded text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30">Deshacer</button>
             </form>
             {% else %}
-            <span class="text-xs text-slate-400" title="Deshecho por {{ r.deshecho_por }} el {{ r.deshecho_en|hora_ec('%Y-%m-%d %H:%M') if r.deshecho_en else '' }}">deshecho</span>
+            <span class="inline-flex items-center gap-2">
+              <span class="text-xs text-slate-400 no-underline" title="Deshecho por {{ r.deshecho_por }} el {{ r.deshecho_en|hora_ec('%Y-%m-%d %H:%M') if r.deshecho_en else '' }}">deshecho</span>
+              <form method="POST" action="{{ url_for('conciliacion.banco_rehacer') }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="match_id" value="{{ r.id }}">
+                {% if incluir_deshechos %}<input type="hidden" name="deshechos" value="1">{% endif %}
+                <button class="px-2 py-0.5 rounded text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 no-underline"
+                        title="Rehacer: restaura este match (y su grupo) tal como estaba antes de deshacerlo.">Rehacer</button>
+              </form>
+            </span>
             {% endif %}
           </td>
         </tr>
@@ -153,6 +162,7 @@
 
   <p class="mt-3 text-xs text-slate-500">
     <strong>Deshacer</strong>: marca la fila como deshecha (soft-undo, no se borra). El movimiento vuelve a aparecer en el próximo upload del extracto.
+    <br><strong>Rehacer</strong>: restaura un match deshecho (y todo su grupo) tal como estaba — inverso exacto de Deshacer, reversible. Se ve tildando «Mostrar deshechos».
   </p>
 
 </div>
