@@ -180,6 +180,14 @@
     a.dtl-link:hover { text-decoration: underline; }
     .dtl-fecha { font-size: 11px; color: #94a3b8; }
     .dtl-monto { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
+    /* El monto queda flush-right dejando un gutter fijo a la derecha; el "+" vive
+       en ese gutter (absoluto) para NO empujar el número → los importes de la fila
+       y de su detalle quedan alineados en la misma columna. */
+    .usd-gutter { display: inline-block; padding-right: 22px; }
+    .usd-wrap { position: relative; display: inline-block; padding-right: 22px; }
+    .btn-detalle { position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+                   width: 18px; height: 18px; line-height: 1; padding: 0; border: 1px solid #cbd5e1;
+                   background: #f8fafc; color: #475569; border-radius: 4px; font-weight: 700; cursor: pointer; }
   </style>
   <div class="tabla-card">
     <table class="sortable">
@@ -193,8 +201,8 @@
           <th class="text-right" style="width: 9%">Kg</th>
           {# TMT 2026-07-06 (dueña): "en importaciones agregá fecha de recepción" #}
           <th style="width: 8%">Recibida</th>
-          <th class="text-right" style="width: 13%" data-no-sort>Compras US$</th>
-          <th class="text-right" style="width: 20%" data-no-sort>Anticipos US$</th>
+          <th class="text-right" style="width: 13%" data-no-sort><span class="usd-gutter">Compras US$</span></th>
+          <th class="text-right" style="width: 20%" data-no-sort><span class="usd-gutter">Anticipos US$</span></th>
           {# TMT 2026-07-23 (dueña): columna DETALLE borrada — el desglose se abre
              con el "+" que está al lado del monto en Compras y en Anticipos. #}
         </tr>
@@ -221,15 +229,16 @@
                los anticipos aparecían en dos lados con números distintos. #}
             <td class="num">
               {% if r.compra %}
-                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">{{ r.compra.importe_total | num_es(2) }}</a>
-                {% if r.compra.n > 1 %}<span class="text-slate-400">({{ r.compra.n }})</span>{% endif %}
-                {# TMT 2026-07-23 (dueña): "+" para ver los movimientos (fecha + monto). #}
-                <button type="button" class="btn-detalle" title="Ver las compras (fecha y monto)"
-                        style="margin-left:6px;width:18px;height:18px;line-height:1;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;border-radius:4px;font-weight:700;cursor:pointer;">+</button>
+                {# TMT 2026-07-23 (dueña): "(n)" a la IZQUIERDA y el "+" en el gutter
+                   derecho (absoluto) → el importe queda flush-right y alineado. #}
+                <span class="usd-wrap">
+                  {% if r.compra.n > 1 %}<span class="text-slate-400" style="font-size:11px;">({{ r.compra.n }})</span> {% endif %}<a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">{{ r.compra.importe_total | num_es(2) }}</a>
+                  <button type="button" class="btn-detalle" title="Ver las compras (fecha y monto)">+</button>
+                </span>
               {% elif r.codigo and not r.anticipo_total %}
-                <span class="no" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
+                <span class="no usd-gutter" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
               {% else %}
-                <span class="text-slate-300">—</span>
+                <span class="text-slate-300 usd-gutter">—</span>
               {% endif %}
             </td>
             {# TMT 2026-07-08 (dueña "hacelo neat"): celda de anticipos limpia —
@@ -241,15 +250,16 @@
                 {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
                 {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
                 {% set _ndet = (_items | length) + (_pagos | length) %}
-                <b>{{ r.anticipo_total | num_es(2) }}</b>
-                {% if _ndet > 1 %}<span class="acc-hint">({{ _ndet }})</span>{% endif %}
-                {# TMT 2026-07-23 (dueña): "+" para ver los movimientos (fecha + monto). #}
                 {% if _ndet %}
-                <button type="button" class="btn-detalle" title="Ver los anticipos (fecha y monto)"
-                        style="margin-left:6px;width:18px;height:18px;line-height:1;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;border-radius:4px;font-weight:700;cursor:pointer;">+</button>
+                <span class="usd-wrap">
+                  {% if _ndet > 1 %}<span class="acc-hint" style="font-size:11px;">({{ _ndet }})</span> {% endif %}<b>{{ r.anticipo_total | num_es(2) }}</b>
+                  <button type="button" class="btn-detalle" title="Ver los anticipos (fecha y monto)">+</button>
+                </span>
+                {% else %}
+                <span class="usd-gutter"><b>{{ r.anticipo_total | num_es(2) }}</b></span>
                 {% endif %}
               {% else %}
-                <span class="text-slate-300">—</span>
+                <span class="text-slate-300 usd-gutter">—</span>
               {% endif %}
             </td>
           </tr>
@@ -279,7 +289,7 @@
               <td class="nota"><a class="dtl-link" href="{{ url_for('compras.editar', id_compra=it.id_compra) }}">compra · /compras</a></td>
               <td></td>
               <td class="fecha dtl-fecha">{{ it.fecha }}</td>
-              <td class="num dtl-monto">{{ it.importe|num_es(2) }}</td>
+              <td class="num"><span class="usd-gutter dtl-monto">{{ it.importe|num_es(2) }}</span></td>
               <td></td>
             </tr>
             {% endfor %}
@@ -291,7 +301,7 @@
               <td></td>
               <td class="fecha dtl-fecha">{{ it.fecha }}</td>
               <td></td>
-              <td class="num dtl-monto">{{ it.importe|num_es(2) }}</td>
+              <td class="num"><span class="usd-gutter dtl-monto">{{ it.importe|num_es(2) }}</span></td>
             </tr>
             {% endfor %}
             {% for m in _pagos %}
@@ -302,7 +312,7 @@
               <td></td>
               <td class="fecha dtl-fecha">{{ m.fecha }}</td>
               <td></td>
-              <td class="num dtl-monto">{{ m.monto|num_es(2) }}</td>
+              <td class="num"><span class="usd-gutter dtl-monto">{{ m.monto|num_es(2) }}</span></td>
             </tr>
             {% endfor %}
           {% endif %}
