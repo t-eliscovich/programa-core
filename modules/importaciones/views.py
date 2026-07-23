@@ -385,4 +385,9 @@ def api_importaciones_abiertas(prov):
             "compras_n": int(_comp.get("n") or 0),
             "compras_usd": float(_comp.get("importe_total") or 0),
         })
-    return {"prov": prov, "importaciones": out[:30]}
+    # TMT 2026-07-23 (dueña): "mostrar en orden numérico, está difícil de
+    # encontrar". Se conservan las 30 más recientes (relevancia) pero se
+    # ordenan por número de AC ascendente para poder escanear la lista.
+    out = out[:30]
+    out.sort(key=lambda x: (x.get("numero") is None, x.get("numero") or 0))
+    return {"prov": prov, "importaciones": out}

@@ -580,6 +580,7 @@ document.addEventListener('click', function (ev) {
           b.type = 'button';
           b.className = 'block text-left px-2 py-1 rounded hover:bg-sky-100';
           b.style.border = '1px solid #bae6fd';
+          if (im.numero != null) b.dataset.num = String(im.numero);
           const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '')) : '';
           b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
@@ -589,16 +590,34 @@ document.addEventListener('click', function (ev) {
             concepto.focus();
             elegida.textContent = '✔ Va a matchear con ' + im.im_numero + ' (' + (im.codigo || '') + ')';
             elegida.classList.remove('hidden');
+            resaltar();
           });
           list.appendChild(b);
         });
         panel.classList.remove('hidden');
+        resaltar();
       })
       .catch(() => panel.classList.add('hidden'));
+  }
+  // TMT 2026-07-23 (dueña): "si busco AC 55 debería mostrar el 55" — resalta
+  // el chip cuyo nº de AC coincide con el primer número del concepto.
+  function resaltar() {
+    const m = (concepto.value || '').match(/\d+/);
+    const buscado = m ? String(parseInt(m[0], 10)) : null;
+    let primero = null;
+    list.querySelectorAll('button[data-num]').forEach(b => {
+      const hit = buscado != null && b.dataset.num === buscado;
+      b.style.border = hit ? '2px solid #059669' : '1px solid #bae6fd';
+      b.style.background = hit ? '#d1fae5' : '';
+      b.style.fontWeight = hit ? '600' : '';
+      if (hit && !primero) primero = b;
+    });
+    if (primero) primero.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }
   ['input', 'change', 'blur'].forEach(ev => cta.addEventListener(ev, () => {
     clearTimeout(timer); timer = setTimeout(cargar, 450);
   }));
+  concepto.addEventListener('input', resaltar);
 })();
 </script>
 
