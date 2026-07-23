@@ -247,7 +247,7 @@
                total ya cuenta el anticipo compartido una sola vez). #}
             <td class="acc-cell text-right">
               {% if r.codigo and r.anticipo_total %}
-                {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
+                {% set _items = (r.anticipo.get('items') if r.anticipo else []) or [] %}
                 {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
                 {% set _ndet = (_items | length) + (_pagos | length) %}
                 {% if _ndet %}
@@ -275,8 +275,8 @@
              'pago' parciales cargados por esta pantalla. Los movimientos tipo
              'anticipo' NO se listan aparte: ya están entre los de /dólares
              (pago.py les crea la fila viva) y se contaban/mostraban doble. #}
-          {% set _comp_items = (r.compra['items'] if r.compra else []) or [] %}
-          {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
+          {% set _comp_items = (r.compra.get('items') if r.compra else []) or [] %}
+          {% set _items = (r.anticipo.get('items') if r.anticipo else []) or [] %}
           {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
           {% if r.codigo and (_comp_items or _items or _pagos) %}
             {# TMT 2026-07-23 (dueña): el detalle son FILAS reales alineadas a las
