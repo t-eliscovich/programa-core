@@ -29,34 +29,9 @@ if _REPO_ROOT not in sys.path:
 from modules.posdat import queries as q  # noqa: E402
 
 
-# TMT 2026-07-21 (dueña): la acumulación automática YY/RT quedó APAGADA
-# por default (ACUMULACION_YY_ACTIVA=False — YY/RT parejo con el dBase).
-# Estos tests validan la MATEMÁTICA del display-time, que se conserva
-# para una eventual reactivación → prendemos el flag por test.
-@pytest.fixture(autouse=True)
-def _acumulacion_activa(monkeypatch):
-    monkeypatch.setattr(q, "ACUMULACION_YY_ACTIVA", True)
-
-
-class TestAcumulacionApagadaDefault:
-    """Comportamiento PRODUCTIVO actual: flag apagado → importe intacto."""
-
-    def test_flag_default_es_false(self, monkeypatch):
-        monkeypatch.setattr(q, "ACUMULACION_YY_ACTIVA", False)
-        assert q.ACUMULACION_YY_ACTIVA is False
-
-    def test_apagado_no_suma_nada(self, monkeypatch):
-        monkeypatch.setattr(q, "ACUMULACION_YY_ACTIVA", False)
-        rows = [{"prov": "YY", "concepto": "SUELDOS", "importe": 85100.0,
-                 "baseline_date": date(2026, 5, 28), "cuota_diaria": 1000.0}]
-        q._aplicar_display_time_yy(rows, hoy=date(2026, 7, 21))
-        assert rows[0]["importe"] == 85100.0
-        assert rows[0]["importe_base"] == 85100.0
-        assert rows[0]["dias_offset"] == 0
-
-    def test_apagado_persistir_es_noop(self, monkeypatch):
-        monkeypatch.setattr(q, "ACUMULACION_YY_ACTIVA", False)
-        assert q.persistir_acumulacion_yy(hoy=date(2026, 7, 21)) == 0
+# TMT 2026-07-23 (dueña): switch ACUMULACION_YY_ACTIVA ELIMINADO — la
+# acumulación YY/RT está siempre activa. Estos tests validan la matemática
+# del display-time, que ahora corre siempre.
 
 
 # ── _dias_habiles_entre ─────────────────────────────────────────────────

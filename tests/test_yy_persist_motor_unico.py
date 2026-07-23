@@ -17,11 +17,8 @@ import pytest
 from modules.posdat import queries as pq
 
 
-# TMT 2026-07-21 (dueña): acumulación automática YY/RT apagada por default
-# (parejo con dBase). Estos tests validan la matemática del motor → flag ON.
-@pytest.fixture(autouse=True)
-def _acumulacion_activa(monkeypatch):
-    monkeypatch.setattr(pq, "ACUMULACION_YY_ACTIVA", True)
+# TMT 2026-07-23 (dueña): switch ACUMULACION_YY_ACTIVA ELIMINADO — la
+# acumulación YY/RT corre siempre. El motor se testea directo.
 
 
 # ─── 1. el SQL del persist no referencia la columna fantasma ───────────────

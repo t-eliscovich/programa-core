@@ -66,9 +66,13 @@ def _ultimo_dia_del_mes(d: date) -> date:
 # histórico inmutable. /admin/debug-ustock los sigue contando.
 
 
-# TMT 2026-07-21 (dueña): switch de la acumulación automática YY/RT.
-# False = PC muestra/guarda el importe tal cual (parejo con el dBase).
-ACUMULACION_YY_ACTIVA = False
+# TMT 2026-07-23 (dueña): SWITCH ELIMINADO. La acumulación automática YY/RT
+# está SIEMPRE activa — no hay forma de apagarla. Antes existía un flag
+# `ACUMULACION_YY_ACTIVA` que congelaba las provisiones (puesto en False el
+# 21/07), y eso hacía que PC quedara por debajo del dBase (~32k/día hábil de
+# drift). Pedido explícito de la dueña: que nadie pueda desactivarlo. PC
+# acumula perpetuo como el dBase (MENU.PRG L283-333: REPLACE IMPORTE+cuota
+# cada día hábil, sin reset).
 
 
 def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
@@ -96,14 +100,8 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
     Sólo opera sobre filas con prov IN ('YY','RT') AND baseline_date IS NOT NULL.
     El resto queda intacto (posdat regulares, YY/RT legacy sin baseline).
     """
-    # TMT 2026-07-21 (dueña): YY/RT SIEMPRE PAREJO CON EL dBASE.
-    # El prorrateo display-time (importe + cuota_diaria × días hábiles)
-    # hacía que PC corriera ADELANTE del dBase entre corridas del PRG
-    # (el dBase solo suma la cuota cuando alguien ejecuta MENU.PRG).
-    # Decisión dueña 21/07: mostrar el importe GUARDADO tal cual — el
-    # valor viene del dBase vía posdat-reconcile/edición manual hasta el
-    # retiro del dBase. Con ACUMULACION_YY_ACTIVA=False (default) esto
-    # NO suma nada; la matemática vieja queda abajo para reactivar.
+    # PC acumula SIEMPRE (switch eliminado 2026-07-23). Display = importe
+    # base + cuota_diaria × días hábiles desde el baseline, igual que el dBase.
     hoy = hoy or _hoy_ec()
     for r in rows:
         prov_upper = (r.get("prov") or "").strip().upper()
@@ -111,10 +109,6 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
             continue
         base_date = r.get("baseline_date")
         if not base_date:
-            continue
-        if not ACUMULACION_YY_ACTIVA:
-            r["importe_base"] = round(float(r.get("importe") or 0), 2)
-            r["dias_offset"] = 0
             continue
         cd = float(r.get("cuota_diaria") or 0)
         if cd <= 0:
@@ -145,11 +139,7 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
         display = importe guardado (sin doble conteo) y el SUM(importe)
         del Balance ve lo mismo que la pantalla.
     """
-    # TMT 2026-07-21 (dueña): acumulación automática APAGADA — YY/RT van
-    # parejos con el dBase (ver _aplicar_display_time_yy). Devuelve 0 sin
-    # tocar nada. Para reactivar: poner ACUMULACION_YY_ACTIVA = True.
-    if not ACUMULACION_YY_ACTIVA:
-        return 0
+    # Acumulación SIEMPRE activa (switch eliminado 2026-07-23).
     if not _baseline_col_exists():
         return 0
     hoy = hoy or _hoy_ec()
