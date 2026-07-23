@@ -328,7 +328,15 @@ def _pc_conciliados_pichincha() -> dict:
 # ───────────────── comparación de movimientos de banco ─────────────────
 
 def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> dict:
-    """Multiset por (fecha, |importe|). Devuelve {solo_dbase, solo_pc}."""
+    """Diff de movimientos en DOS pases, devuelve {solo_dbase, solo_pc}.
+
+    Pase 1: cancela 1 a 1 por (fecha, |importe|) — los movimientos idénticos
+    del mismo día se anulan.
+    Pase 2: sobre el residuo, cancela por (importe firmado, concepto) IGNORANDO
+    la fecha — así los movimientos con fecha corrida (timing: el mismo cheque
+    que el dBase asienta el 17 y PC el 20) se anulan y NO aparecen como
+    diferencia falsa. Lo que queda es el residuo REAL del gap (TMT 2026-07-23).
+    """
     def key(m):
         return (str(m.get("fecha") or ""), round(abs(_f(m.get("importe"))), 2))
     db_n, pc_n = defaultdict(list), defaultdict(list)
@@ -344,7 +352,21 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
         n = min(len(a), len(b))
         solo_db.extend(a[n:])
         solo_pc.extend(b[n:])
-    return {"solo_dbase": solo_db, "solo_pc": solo_pc}
+    # Pase 2 — cancela timing (mismo importe firmado + concepto, otra fecha).
+    def key2(m):
+        return (round(_f(m.get("importe")), 2), str(m.get("concepto") or "").strip())
+    db2, pc2 = defaultdict(list), defaultdict(list)
+    for m in solo_db:
+        db2[key2(m)].append(m)
+    for m in solo_pc:
+        pc2[key2(m)].append(m)
+    r_db, r_pc = [], []
+    for k in set(db2) | set(pc2):
+        a, b = db2.get(k, []), pc2.get(k, [])
+        n = min(len(a), len(b))
+        r_db.extend(a[n:])
+        r_pc.extend(b[n:])
+    return {"solo_dbase": r_db, "solo_pc": r_pc}
 
 
 
