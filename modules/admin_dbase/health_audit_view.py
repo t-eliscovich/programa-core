@@ -791,7 +791,64 @@ def hilado_stock_debug():
         for r in rows
     ]
 
+    # ── ESCENARIOS: cómo valuaría el balance el hilado con cada versión de kcom ──
+    from modules.informes import queries as _iq2
+    HI0 = 0.0
+    um0_ini = 0.0
+    try:
+        HI0 = float(_iq2.tarifa_iniciales_mes_anterior(mm, yy, "hilado") or 0)
+        um0_ini = float(_iq2.tarifa_iniciales_mes_anterior(mm, yy, "um") or 0)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        comp_bal = _iq2.compras_mes_corriente()
+    except Exception as e:  # noqa: BLE001
+        comp_bal = {"error": str(e)[:120]}
+    kcom_bal = float(comp_bal.get("kg") or 0)
+    ucom_bal = float(comp_bal.get("importe") or 0)
+    kcom_ded = 0.0
+    try:
+        from modules.importaciones import service as _svc2
+        _porprov = _svc2.kg_stock_por_compra(rows)
+        kcom_ded = sum(float(v or 0) for v in (_porprov or {}).values())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from modules.importaciones import service as _svc3
+        rec = _svc3.costo_hilado_recibido_mes(yy, mm)
+    except Exception as e:  # noqa: BLE001
+        rec = {"error": str(e)[:120]}
+
+    def _um_act(kc, uc):
+        den = HI0 + kc
+        return round((HI0 * um0_ini + uc) / den, 4) if den else None
+
+    escenarios = {
+        "HI0_stock_inicial_kg": round(HI0, 2),
+        "um0_stock_inicial_usdkg": round(um0_ini, 4),
+        "A_balance_actual": {
+            "fuente": "compras_mes_corriente (SUM crudo compra.kg)",
+            "kcom": round(kcom_bal, 2), "ucom": round(ucom_bal, 2),
+            "usd_kg_compras": round(ucom_bal / kcom_bal, 4) if kcom_bal else None,
+            "um_act": _um_act(kcom_bal, ucom_bal),
+        },
+        "B_dedup_kg_por_importacion": {
+            "fuente": "kg_stock_por_compra (kg 1 vez/importacion) + TODOS los importes",
+            "kcom": round(kcom_ded, 2), "ucom": round(ucom_bal, 2),
+            "usd_kg_compras": round(ucom_bal / kcom_ded, 4) if kcom_ded else None,
+            "um_act": _um_act(kcom_ded, ucom_bal),
+        },
+        "C_recibido_mes": {
+            "fuente": "costo_hilado_recibido_mes (kg fisico recibido + su costo)",
+            "kcom": rec.get("kg"), "ucom": rec.get("us"),
+            "usd_kg_compras": rec.get("usd_kg"),
+            "um_act": _um_act(float(rec.get("kg") or 0), float(rec.get("us") or 0)) if rec.get("kg") else None,
+        },
+        "nota": "um_act mueve el $/kg de TODO el stock; delta_valor ~= delta_um_act * kg_total_stock",
+    }
+
     return jsonify({
+        "escenarios_valuacion": escenarios,
         "mes": f"{yy}-{mm:02d}",
         "n_compras_hilado": len(rows),
         "kcom_base_sum_compra_kg": round(kcom_base, 2),
