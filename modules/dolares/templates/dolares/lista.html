@@ -604,15 +604,18 @@ document.addEventListener('click', function (ev) {
   function resaltar() {
     const m = (concepto.value || '').match(/\d+/);
     const buscado = m ? String(parseInt(m[0], 10)) : null;
-    let primero = null;
+    let match = null;
     list.querySelectorAll('button[data-num]').forEach(b => {
       const hit = buscado != null && b.dataset.num === buscado;
       b.style.border = hit ? '2px solid #059669' : '1px solid #bae6fd';
       b.style.background = hit ? '#d1fae5' : '';
       b.style.fontWeight = hit ? '600' : '';
-      if (hit && !primero) primero = b;
+      if (hit && !match) match = b;
     });
-    if (primero) primero.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    // Si el concepto matchea un AC, ese chip salta al PRIMER lugar (además del
+    // resaltado) para que aparezca de una, sin tener que buscarlo en la grilla.
+    if (match && list.firstChild !== match) list.insertBefore(match, list.firstChild);
+    if (match) match.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }
   ['input', 'change', 'blur'].forEach(ev => cta.addEventListener(ev, () => {
     clearTimeout(timer); timer = setTimeout(cargar, 450);
