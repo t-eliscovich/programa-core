@@ -203,15 +203,13 @@
           <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{{ c.importe | money_es }}</td>
           <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{{ c.concepto | cleanstr }}</td>
           <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ c.fecha_vencimiento | fecha_es if c.fecha_vencimiento else '' }}</td>
-          {# Pagada: no_banco = BANC del dBase. 9 (sentinela "pagada") o un banco
-             real (1/2/32) = pagada; 0 o vacío = pendiente. cuenta_pagada cubre las
-             compras de PC pagadas contado/banco (C/P/B). #}
-          {% set _nb = c.no_banco %}
-          {% set _pagada = (_nb is not none and _nb != 0) or (c.cuenta_pagada and (c.cuenta_pagada | trim)) %}
+          {# Pagada: lo resuelve la query (columna `pagada`) — mira el posdatado
+             (deuda viva) para las compras de PC y cae al BANC del dBase para las
+             históricas. Ver queries.buscar(). #}
           <td class="px-3 py-2 text-center" style="white-space: nowrap;">
             {% if anulada %}
               <span class="text-slate-300">—</span>
-            {% elif _pagada %}
+            {% elif c.pagada %}
               <span style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#d1fae5;color:#047857;">Sí</span>
             {% else %}
               <span style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#fef3c7;color:#b45309;">No</span>

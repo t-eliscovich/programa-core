@@ -1048,7 +1048,34 @@ def buscar(
                                       AS fecha_vencimiento,
                COALESCE(b.nombre, '') AS banco,
                (UPPER(COALESCE(c.tipo, '')) = 'K'
-                AND COALESCE(c.kg, 0) > 0.01)               AS es_produccion
+                AND COALESCE(c.kg, 0) > 0.01)               AS es_produccion,
+               -- PAGADA (dueña 2026-07-23, "no va a haber sync, armá la lógica"):
+               -- fuente de verdad = el posdatado (deuda viva). Una compra de PC
+               -- se vincula a su posdat por scintela.mov_doble (compra→posdat,
+               -- estado='activo'). Está PENDIENTE mientras ese posdat siga abierto
+               -- (banc=0); pasa a PAGADA cuando el posdat se salda (banc<>0). Las
+               -- históricas del dBase NO tienen ese vínculo → fallback al BANC
+               -- importado (compra.no_banco 9/banco=pagada, 0/vacío=pendiente) o
+               -- a cuenta_pagada (compras de PC pagadas contado/banco).
+               CASE
+                 WHEN EXISTS (
+                        SELECT 1 FROM scintela.mov_doble md
+                        JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
+                        WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
+                          AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND COALESCE(pd.banc, 0) = 0
+                          AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                 ) THEN FALSE
+                 WHEN EXISTS (
+                        SELECT 1 FROM scintela.mov_doble md
+                        JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
+                        WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
+                          AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                 ) THEN TRUE
+                 ELSE ((c.no_banco IS NOT NULL AND c.no_banco <> 0)
+                       OR (c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> ''))
+               END                                          AS pagada
         FROM scintela.compra c
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
         LEFT JOIN scintela.banco b     ON b.no_banco    = c.no_banco
