@@ -261,18 +261,38 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
             conn=conn,
         ) or {}
         id_ret = rrow.get("id_retencion")
-        # Aplicar como abono: baja el saldo. saldo<=0 → 'T' (pagada);
-        # saldo>0 → 'A' (parcial).
-        abono_new = round(abono + rete, 2)
-        saldo_new = round(importe - abono_new, 2)
-        stat_new = "T" if saldo_new <= 0.005 else "A"
-        db.execute(
-            "UPDATE scintela.factura "
-            "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
-            " WHERE id_factura = %s",
-            (abono_new, saldo_new, stat_new, usuario, f["id_factura"]),
-            conn=conn,
-        )
+        # TMT 2026-07-23 (dueña): NO DUPLICAR. El dBase legacy (RETENCIO.PRG)
+        # ya aplica la retención del cliente como abono (abono+=rete,
+        # saldo-=rete, stat 'A') y ese abono entra a PC por el sync. Si la
+        # factura YA tiene abono, la retención ya está reflejada en el saldo
+        # → sólo REGISTRAMOS scintela.retencion (para el informe/SRI y el
+        # guard anti-reaplicación) y NO tocamos abono/saldo. Sólo bajamos el
+        # saldo cuando la factura no tiene abono (fresca de Asinfo, el dBase
+        # todavía no la aplicó). Antes se sumaba siempre → doble conteo del
+        # abono en toda factura que venía del dBase con la retención adentro.
+        if abono <= 0.005:
+            abono_new = round(abono + rete, 2)
+            saldo_new = round(importe - abono_new, 2)
+            stat_new = "T" if saldo_new <= 0.005 else "A"
+            db.execute(
+                "UPDATE scintela.factura "
+                "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+                " WHERE id_factura = %s",
+                (abono_new, saldo_new, stat_new, usuario, f["id_factura"]),
+                conn=conn,
+            )
+            aplicado = True
+            concepto = (
+                f"RETENCIÓN Asinfo {rete:.2f} aplicada a "
+                f"{numero} {f['codigo_cli']} — saldo {saldo:.2f}→{saldo_new:.2f}"
+            )
+        else:
+            # dBase ya aplicó el abono → sólo dejamos registrada la retención.
+            aplicado = False
+            concepto = (
+                f"RETENCIÓN Asinfo {rete:.2f} REGISTRADA (el dBase ya aplicó "
+                f"el abono) — {numero} {f['codigo_cli']}, abono {abono:.2f}"
+            )
         _md.registrar(
             conn=conn,
             tipo="retencion_asinfo_aplicada",
@@ -280,20 +300,17 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
             destino_table="factura", destino_id=f["id_factura"],
             importe=rete,
             fecha=today_ec(),
-            concepto=(
-                f"RETENCIÓN Asinfo {rete:.2f} aplicada a "
-                f"{numero} {f['codigo_cli']} — saldo {saldo:.2f}→{saldo_new:.2f}"
-            )[:200],
+            concepto=concepto[:200],
             usuario=usuario,
             batch_id=batch_id,
             metadata={
                 "id_retencion": id_ret, "numero": numero,
                 "codigo_cli": f["codigo_cli"], "numf": f["numf"],
                 "rete": rete, "abono_previo": abono, "saldo_previo": saldo,
-                "stat_previo": stat_prev,
+                "stat_previo": stat_prev, "aplicado": aplicado,
             },
         )
-    return "aplicada"
+    return "aplicada" if aplicado else "registrada"
 
 
 def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
@@ -306,8 +323,8 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
     from modules.asinfo import service as asinfo_service
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     res = {
-        "n_aplicadas": 0, "n_ya": 0, "n_sin_factura": 0, "n_error": 0,
-        "total_aplicado": 0.0, "n_retenciones_asinfo": len(ret_map),
+        "n_aplicadas": 0, "n_registradas": 0, "n_ya": 0, "n_sin_factura": 0,
+        "n_error": 0, "total_aplicado": 0.0, "n_retenciones_asinfo": len(ret_map),
     }
     batch_id = None  # cada factura es su propia tx; sin batch atómico
     for numero, r in ret_map.items():
@@ -320,6 +337,8 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
         if estado == "aplicada":
             res["n_aplicadas"] += 1
             res["total_aplicado"] = round(res["total_aplicado"] + rete, 2)
+        elif estado == "registrada":
+            res["n_registradas"] += 1
         elif estado == "ya":
             res["n_ya"] += 1
         elif estado == "sin_factura":
@@ -340,8 +359,8 @@ def aplicar_retenciones_asinfo_seleccion(
     seleccion = {str(n).strip() for n in (numeros or []) if str(n).strip()}
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     res = {
-        "n_aplicadas": 0, "n_ya": 0, "n_sin_factura": 0, "n_error": 0,
-        "total_aplicado": 0.0, "n_retenciones_asinfo": len(seleccion),
+        "n_aplicadas": 0, "n_registradas": 0, "n_ya": 0, "n_sin_factura": 0,
+        "n_error": 0, "total_aplicado": 0.0, "n_retenciones_asinfo": len(seleccion),
     }
     if not seleccion:
         return res
@@ -361,6 +380,8 @@ def aplicar_retenciones_asinfo_seleccion(
         if estado == "aplicada":
             res["n_aplicadas"] += 1
             res["total_aplicado"] = round(res["total_aplicado"] + rete, 2)
+        elif estado == "registrada":
+            res["n_registradas"] += 1
         elif estado == "ya":
             res["n_ya"] += 1
         elif estado == "sin_factura":
@@ -453,6 +474,115 @@ def desaplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
             res["n_revertidas"] += 1
         else:
             res["n_sin"] += 1
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Corrección de la DOBLE aplicación de retenciones (TMT 2026-07-23, dueña).
+# Antes del fix, PC sumaba la retención al abono aunque el dBase legacy ya la
+# hubiese aplicado (abono_previo>0). Esto duplicó el abono en toda factura que
+# venía del dBase con la retención adentro. Esta corrección:
+#   - toma los mov_doble 'retencion_asinfo_aplicada' ACTIVOS con abono_previo>0
+#     (= los que se aplicaron sobre un abono que ya existía = los dobles),
+#   - RESTA la retención del abono (preservando cheques/cobranzas posteriores),
+#     sube el saldo y recomputa stat,
+#   - MANTIENE scintela.retencion (para el informe/SRI y el guard),
+#   - marca el mov_doble original reversado → idempotente (no corrige 2 veces).
+# dry_run=True sólo cuenta (para el preview de la pantalla, sin mutar nada).
+# ---------------------------------------------------------------------------
+def _movs_doble_retencion(limite: int = 20000) -> list[dict]:
+    return db.fetch_all(
+        "SELECT id_mov_doble, origen_id, importe, metadata "
+        "  FROM scintela.mov_doble "
+        " WHERE tipo = 'retencion_asinfo_aplicada' AND estado = 'activo' "
+        " ORDER BY id_mov_doble "
+        " LIMIT %s",
+        (limite,),
+    ) or []
+
+
+def _meta_dict(mv: dict) -> dict:
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        import json as _json
+        try:
+            meta = _json.loads(meta)
+        except Exception:
+            meta = {}
+    return meta
+
+
+def corregir_doble_retenciones(usuario: str = "web", dry_run: bool = False) -> dict:
+    """Desduplica las retenciones aplicadas sobre un abono preexistente del dBase.
+
+    Devuelve {n_doble, n_corregidas, total_corregido, n_skip_no_doble, n_error}.
+    Con dry_run=True no muta nada: sólo cuenta los dobles (para el preview).
+    """
+    res = {
+        "n_doble": 0, "n_corregidas": 0, "total_corregido": 0.0,
+        "n_skip_no_doble": 0, "n_error": 0,
+    }
+    for mv in _movs_doble_retencion():
+        meta = _meta_dict(mv)
+        abono_previo = round(float(meta.get("abono_previo") or 0), 2)
+        rete = round(float(meta.get("rete") if meta.get("rete") is not None
+                           else mv.get("importe") or 0), 2)
+        # Un doble = se aplicó sobre un abono que ya existía (dBase ya lo tenía).
+        if abono_previo <= 0.005 or rete <= 0.005:
+            res["n_skip_no_doble"] += 1
+            continue
+        res["n_doble"] += 1
+        res["total_corregido"] = round(res["total_corregido"] + rete, 2)
+        if dry_run:
+            continue
+        try:
+            with db.tx() as conn:
+                f = db.fetch_one(
+                    "SELECT id_factura, importe, abono, saldo "
+                    "  FROM scintela.factura WHERE id_factura = %s FOR UPDATE",
+                    (mv["origen_id"],), conn=conn,
+                )
+                if not f:
+                    res["n_error"] += 1
+                    continue
+                importe = round(float(f["importe"] or 0), 2)
+                abono = round(float(f["abono"] or 0), 2)
+                abono_new = round(abono - rete, 2)
+                if abono_new < 0:
+                    abono_new = 0.0  # guard defensivo (no bajar de 0)
+                saldo_new = round(importe - abono_new, 2)
+                stat_new = "T" if saldo_new <= 0.005 else "A"
+                db.execute(
+                    "UPDATE scintela.factura "
+                    "   SET abono = %s, saldo = %s, stat = %s, "
+                    "       usuario_modifica = %s "
+                    " WHERE id_factura = %s",
+                    (abono_new, saldo_new, stat_new, usuario, f["id_factura"]),
+                    conn=conn,
+                )
+                _md.registrar(
+                    conn=conn,
+                    tipo="retencion_doble_corregida",
+                    origen_table="factura", origen_id=f["id_factura"],
+                    destino_table="factura", destino_id=f["id_factura"],
+                    importe=rete,
+                    fecha=today_ec(),
+                    concepto=(
+                        f"CORRECCIÓN doble retención −{rete:.2f} — "
+                        f"abono {abono:.2f}→{abono_new:.2f}, "
+                        f"saldo →{saldo_new:.2f}"
+                    )[:200],
+                    usuario=usuario,
+                    id_original=mv["id_mov_doble"],
+                    metadata={
+                        "rete": rete, "abono_antes": abono,
+                        "abono_despues": abono_new, "saldo_nuevo": saldo_new,
+                        "numf": meta.get("numf"), "codigo_cli": meta.get("codigo_cli"),
+                    },
+                )
+                res["n_corregidas"] += 1
+        except Exception:
+            res["n_error"] += 1
     return res
 
 

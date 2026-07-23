@@ -1715,6 +1715,70 @@ def deshacer_retenciones_asinfo():
         "facturas.desde_asinfo", desde=desde.isoformat(), hasta=hasta.isoformat()))
 
 
+@facturas_bp.route("/facturas/retenciones-asinfo/corregir-doble",
+                   methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def corregir_doble_retenciones():
+    """Desduplica las retenciones que se aplicaron sobre un abono que el dBase
+    legacy ya tenía (doble conteo). GET = preview (no muta); POST = ejecuta.
+
+    TMT 2026-07-23 (dueña): el dBase (RETENCIO.PRG) ya aplica la retención como
+    abono; PC la volvía a sumar. Esta pantalla resta la retención de más del
+    abono, sube el saldo y recomputa el estado — manteniendo el registro de
+    retención. Idempotente (marca el mov_doble reversado).
+    """
+    from modules.retenciones import queries as ret_q
+    usuario = (
+        getattr(g, "user", {}).get("username")
+        if hasattr(g, "user") and isinstance(g.user, dict) else "web")
+
+    if request.method == "POST":
+        try:
+            r = ret_q.corregir_doble_retenciones(usuario=usuario)
+            flash(
+                f"Doble retención corregida: {r['n_corregidas']} facturas "
+                f"(−{r['total_corregido']:,.2f} de abono duplicado)"
+                + (f", {r['n_error']} con error" if r.get("n_error") else "")
+                + ".", "ok")
+        except Exception as e:
+            flash_exc("No pude corregir la doble retención", e)
+        return redirect(url_for("retenciones.lista"))
+
+    # GET → preview read-only (dry_run).
+    try:
+        prev = ret_q.corregir_doble_retenciones(usuario=usuario, dry_run=True)
+        error = None
+    except Exception as e:
+        prev = {"n_doble": 0, "total_corregido": 0.0}
+        error = str(e)
+    if error:
+        flash_exc("No pude calcular el preview de la corrección",
+                  Exception(error))
+    detalle = {
+        "Facturas con doble retención": prev.get("n_doble", 0),
+        "Abono duplicado a restar": f"$ {prev.get('total_corregido', 0):,.2f}",
+        "Retenciones sanas (no se tocan)": prev.get("n_skip_no_doble", 0),
+    }
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Corregir doble aplicación de retenciones",
+        mensaje=(
+            f"Se detectaron {prev.get('n_doble', 0)} facturas donde la "
+            f"retención se aplicó DOS veces (el dBase ya la tenía y PC la "
+            f"volvió a sumar). Se va a restar el abono duplicado "
+            f"(${prev.get('total_corregido', 0):,.2f} en total), subir el "
+            f"saldo y recomputar el estado. El registro de la retención se "
+            f"mantiene y la acción es reversible."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("facturas.corregir_doble_retenciones"),
+        volver_url=url_for("retenciones.lista"),
+        motivo_requerido=False,
+        confirm_label=f"Corregir {prev.get('n_doble', 0)} facturas",
+    )
+
+
 @facturas_bp.route("/facturas")
 @requiere_login
 @requiere_permiso("facturas.ver")

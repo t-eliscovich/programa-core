@@ -12,6 +12,13 @@
       {# TMT 2026-07-20 (duena): /retenciones/emitir era huerfana — boton. #}
       <a href="{{ url_for('retenciones.emitir') }}"
          class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#0369a1;">+ Emitir</a>
+      {# TMT 2026-07-23 (dueña): corregir la doble aplicación de retenciones
+         (el dBase ya bajaba el saldo y PC lo volvía a sumar). Preview + confirmar. #}
+      {% if tiene_permiso('facturas.crear') %}
+      <a href="{{ url_for('facturas.corregir_doble_retenciones') }}"
+         class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#b45309;"
+         title="Desduplicar retenciones aplicadas dos veces">Corregir doble</a>
+      {% endif %}
       <a href="{{ url_for('retenciones.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>

@@ -159,6 +159,24 @@ def test_aplicar_una_idempotente(monkeypatch):
     assert not stub.updates and not stub.inserts_ret
 
 
+def test_aplicar_una_registra_si_abono_previo(monkeypatch):
+    """TMT 2026-07-23: si la factura YA tiene abono (el dBase legacy ya aplicó
+    la retención), PC sólo REGISTRA scintela.retencion y NO vuelve a bajar el
+    saldo — así no se duplica el abono."""
+    from modules.retenciones import queries as q
+    stub = _DBStub(_fac(100.0, 51.98, 48.02, "A"))  # abono>0 = dBase ya lo aplicó
+    _patch(monkeypatch, stub)
+    r = q._aplicar_una_por_numero("001-099-000179161", 27.01, "tester")
+    assert r == "registrada"
+    # registró la retención (para el informe/SRI + guard)
+    assert stub.inserts_ret and stub.inserts_ret[0][2] == 27.01
+    # pero NO tocó abono/saldo de la factura
+    assert not stub.updates
+    # el mov_doble queda con aplicado=False
+    md = stub.mov_dobles[0]
+    assert md[1] == "retencion_asinfo_aplicada"
+
+
 def test_aplicar_una_sin_factura(monkeypatch):
     from modules.retenciones import queries as q
     _patch(monkeypatch, _DBStub(None))
@@ -234,6 +252,59 @@ def test_desaplicar_una_sin_aplicacion(monkeypatch):
     stub = _DBStub(_fac(), mov=None)
     _patch(monkeypatch, stub)
     assert q._desaplicar_una_por_numero("X", "t") == "sin_aplicacion"
+
+
+# ───────────────────────── corregir doble retención ────────────────────────
+
+def test_corregir_doble_solo_los_dobles(monkeypatch):
+    """Corrige SÓLO los mov_doble con abono_previo>0 (dobles). Los de
+    abono_previo=0 (sanos, el dBase no los tenía) NO se tocan."""
+    import db
+    from modules.retenciones import queries as q
+
+    movs = [
+        {"id_mov_doble": 1, "origen_id": 100, "importe": 51.98,
+         "metadata": {"abono_previo": 51.98, "rete": 51.98, "numf": 177206}},  # doble
+        {"id_mov_doble": 2, "origen_id": 200, "importe": 10.0,
+         "metadata": {"abono_previo": 0.0, "rete": 10.0, "numf": 179905}},  # sano
+    ]
+    facturas = {100: {"id_factura": 100, "importe": 2988.66, "abono": 103.96,
+                      "saldo": 2884.70}}
+    updates = []
+
+    monkeypatch.setattr(db, "fetch_all", lambda sql, params=None: list(movs))
+
+    def _fo(sql, params=None, conn=None):
+        return dict(facturas.get(params[0])) if params and params[0] in facturas else None
+    monkeypatch.setattr(db, "fetch_one", _fo)
+
+    def _ex(sql, params=None, conn=None):
+        if "update scintela.factura" in " ".join(sql.split()).lower():
+            updates.append(tuple(params))
+        return 1
+    monkeypatch.setattr(db, "execute", _ex)
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def _tx():
+        yield object()
+    monkeypatch.setattr(db, "tx", _tx)
+    monkeypatch.setattr(q._md, "registrar", lambda **k: {"id_mov_doble": 9})
+
+    # dry_run: cuenta sin mutar
+    prev = q.corregir_doble_retenciones(dry_run=True)
+    assert prev["n_doble"] == 1 and prev["total_corregido"] == 51.98
+    assert prev["n_skip_no_doble"] == 1
+    assert not updates
+
+    # ejecución real
+    r = q.corregir_doble_retenciones(usuario="t")
+    assert r["n_corregidas"] == 1 and r["total_corregido"] == 51.98
+    # abono 103.96 − 51.98 = 51.98 ; saldo 2988.66 − 51.98 = 2936.68 ; stat A
+    assert updates and updates[0][0] == 51.98
+    assert updates[0][1] == 2936.68
+    assert updates[0][2] == "A"
 
 
 # ───────────────────────── cron helper (health/all) ────────────────────────
