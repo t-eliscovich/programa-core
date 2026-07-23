@@ -695,3 +695,119 @@ def _aplicar_retenciones_asinfo_cron(dias: int = 60) -> dict:
         return r
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+
+
+@bp.route("/hilado-stock-debug", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def hilado_stock_debug():
+    """READ-ONLY: vuelca el cálculo real del stock de HILADO del balance.
+
+    Muestra, por cada compra tipo='H' del mes: el kg GUARDADO en la compra
+    (no el de referencia de Asinfo), el importe y el $/kg implícito; cómo se
+    arma el kcom (suma de compra.kg + kg reconstruido de la importación),
+    el ucom, el $/kg ponderado de las compras del mes, y las compras que NO
+    matchean una importación (sin_match). Sirve para ver de dónde sale el
+    um_act que revalúa TODO el stock. TMT 2026-07-23 (dueña: encontrar el bug
+    del $/kg sin adivinar).
+    """
+    from filters import today_ec
+
+    hoy = today_ec()
+    yy, mm = hoy.year, hoy.month
+    _NOBF = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
+
+    rows = db.fetch_all(
+        f"""
+        SELECT id_compra, codigo_prov AS prov,
+               NULLIF(regexp_replace(COALESCE(concepto,''),'[^0-9]','','g'),'')::bigint AS ref,
+               fecha,
+               COALESCE(kg, 0)      AS kg,
+               COALESCE(importe, 0) AS importe,
+               COALESCE(stat,'')    AS stat,
+               COALESCE(usuario_crea,'') AS usuario_crea
+          FROM scintela.compra
+         WHERE UPPER(COALESCE(tipo, '')) = 'H'
+           AND COALESCE(stat, '') <> 'Y'
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+           AND {_NOBF}
+         ORDER BY fecha, id_compra
+        """,
+        (yy, mm),
+    ) or []
+
+    kcom_base = sum(float(r.get("kg") or 0) for r in rows)
+    ucom = sum(float(r.get("importe") or 0) for r in rows)
+
+    recon = {"kg": 0.0, "sin_match": [], "disponible": None, "error": None}
+    try:
+        from modules.importaciones import service as _svc
+        _r = _svc.kg_hilado_faltantes_mes(rows)
+        recon["kg"] = float(_r.get("kg") or 0)
+        recon["sin_match"] = _r.get("sin_match") or []
+        recon["disponible"] = _r.get("disponible")
+    except Exception as e:  # noqa: BLE001
+        recon["error"] = str(e)[:200]
+
+    kg_add = float(recon.get("kg") or 0)
+    kcom = kcom_base + kg_add
+
+    close = db.fetch_one(
+        "SELECT fecha, stock, ustock FROM scintela.historia ORDER BY fecha DESC LIMIT 1"
+    ) or {}
+    _stk = float(close.get("stock") or 0)
+    um0 = (float(close.get("ustock") or 0) / _stk) if _stk else 0.0
+
+    live = {}
+    try:
+        from modules.informes import queries as _iq
+        _bal = _iq.informe_balance()
+        _comp = (_bal.get("diagnostico", {}) or {}).get("componentes", {}) or {}
+        live = {
+            "vsto": _comp.get("vsto"),
+            "utilidad": _comp.get("utilidad"),
+            "patr": _comp.get("patr"),
+        }
+    except Exception as e:  # noqa: BLE001
+        live = {"error": str(e)[:200]}
+
+    def _uxk(imp, kg):
+        kg = float(kg or 0)
+        return round(float(imp or 0) / kg, 3) if kg else None
+
+    compras = [
+        {
+            "id": r.get("id_compra"),
+            "fecha": str(r.get("fecha")),
+            "prov": r.get("prov"),
+            "ref": r.get("ref"),
+            "kg_guardado": round(float(r.get("kg") or 0), 2),
+            "importe": round(float(r.get("importe") or 0), 2),
+            "usd_kg": _uxk(r.get("importe"), r.get("kg")),
+            "stat": r.get("stat"),
+            "usuario": r.get("usuario_crea"),
+        }
+        for r in rows
+    ]
+
+    return jsonify({
+        "mes": f"{yy}-{mm:02d}",
+        "n_compras_hilado": len(rows),
+        "kcom_base_sum_compra_kg": round(kcom_base, 2),
+        "kg_reconstruido_de_importacion": round(kg_add, 2),
+        "kcom_total_usado_en_balance": round(kcom, 2),
+        "ucom_total_importe": round(ucom, 2),
+        "usd_kg_ponderado_compras_mes": round(ucom / kcom, 4) if kcom else None,
+        "sin_match_n": len(recon.get("sin_match") or []),
+        "sin_match": [
+            {"id": s.get("id_compra"), "prov": s.get("prov"), "ref": s.get("ref"),
+             "importe": round(float(s.get("importe") or 0), 2)}
+            for s in (recon.get("sin_match") or [])
+        ],
+        "asinfo_disponible": recon.get("disponible"),
+        "recon_error": recon.get("error"),
+        "ultimo_cierre_um0_ref": {"fecha": str(close.get("fecha")), "um0": round(um0, 4)},
+        "balance_live": live,
+        "compras": compras,
+    })
