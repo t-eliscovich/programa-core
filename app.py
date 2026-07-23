@@ -158,6 +158,16 @@ def create_app() -> Flask:
     except Exception:  # noqa: BLE001 -- el warmup jamás frena el arranque
         pass
 
+    # Auto-carga de facturas+retenciones del DÍA en segundo plano (dueña
+    # 2026-07-23: "no quiero tener que ir a ninguna página"). Corre la misma
+    # carga que ya dispara /operaciones y /facturas, pero sola en el servidor
+    # cada 2 min — idempotente y fail-soft. Apagable con AUTOCARGA_FACTURAS=0.
+    try:
+        from modules._lib.autocarga_facturas import start_auto_carga_thread
+        start_auto_carga_thread()
+    except Exception:  # noqa: BLE001 -- jamás frena el arranque
+        pass
+
     # TMT 2026-05-28 dueña: 'no quiero usar mi compu como sincamos eso'.
     # Si hay un xlsx fresco en data/dbase_snapshots/, lo sincamos UNA VEZ
     # al boot. Marker file con el hash → idempotente entre reboots, pero se
