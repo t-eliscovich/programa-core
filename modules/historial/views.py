@@ -32,6 +32,27 @@ def operaciones():
 
     Las cards muestran solo si el usuario tiene el permiso necesario.
     """
+    # TMT 2026-07-23 (dueña): "que las facturas (y retenciones) que se cargan
+    # solas se carguen cuando entro al programa, no necesariamente en /facturas".
+    # Ésta es la landing (/ → dashboard → /operaciones), así que disparamos acá
+    # la MISMA auto-carga del día que ya corre al abrir /facturas. Idempotente,
+    # fail-soft y con throttle interno (una corrida/minuto/proceso), así que no
+    # encima ni pesa aunque también se abra /facturas. Sólo si puede crear facturas.
+    try:
+        from auth import tiene_permiso as _tp
+        if _tp("facturas.crear"):
+            from modules.facturas.views import _auto_cargar_facturas_hoy
+            _ac = _auto_cargar_facturas_hoy()
+            if _ac.get("cargadas") or _ac.get("ret"):
+                _m = []
+                if _ac.get("cargadas"):
+                    _m.append(f"Se cargaron solas {_ac['cargadas']} facturas de hoy desde Asinfo.")
+                if _ac.get("ret"):
+                    _m.append(f"Retenciones aplicadas: {_ac['ret']}.")
+                flash(" ".join(_m), "ok")
+    except Exception:  # noqa: BLE001 -- nunca romper la landing por la auto-carga
+        pass
+
     aviso_migracion = None
     try:
         kpis = queries.conteos()
