@@ -954,8 +954,15 @@ def total_buscar(
           AND COALESCE(c.stat, '') <> 'Y'
           AND (%(q)s IS NULL
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
-          -- Filtro por NÚMERO de compra (dígitos del campo flexible) — dueña 2026-07-11
-          AND (%(numero)s::int IS NULL OR c.numero = %(numero)s::int)
+          -- Filtro por NÚMERO (dígitos del campo flexible) — dueña 2026-07-11.
+          -- TMT 2026-07-23 (dueña): "AC 15" no andaba porque el 15 vive en el
+          -- CONCEPTO (ej "15" / "15 SALDO"), no en c.numero (que suele ser el
+          -- comprobante). Ahora matchea contra la parte numérica del concepto O
+          -- contra c.numero — igual que el cruce de /importaciones.
+          AND (%(numero)s::int IS NULL
+               OR c.numero = %(numero)s::int
+               OR NULLIF(substring(TRIM(COALESCE(c.concepto, '')) FROM '[0-9]+'), '')::int
+                    = %(numero)s::int)
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           AND (%(tipo)s IS NULL OR UPPER(TRIM(COALESCE(c.tipo, ''))) = %(tipo)s)
@@ -1048,8 +1055,15 @@ def buscar(
         WHERE (%(incluir_anuladas)s OR COALESCE(c.stat, '') <> 'Y')
           AND (%(q)s IS NULL
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
-          -- Filtro por NÚMERO de compra (dígitos del campo flexible) — dueña 2026-07-11
-          AND (%(numero)s::int IS NULL OR c.numero = %(numero)s::int)
+          -- Filtro por NÚMERO (dígitos del campo flexible) — dueña 2026-07-11.
+          -- TMT 2026-07-23 (dueña): "AC 15" no andaba porque el 15 vive en el
+          -- CONCEPTO (ej "15" / "15 SALDO"), no en c.numero (que suele ser el
+          -- comprobante). Ahora matchea contra la parte numérica del concepto O
+          -- contra c.numero — igual que el cruce de /importaciones.
+          AND (%(numero)s::int IS NULL
+               OR c.numero = %(numero)s::int
+               OR NULLIF(substring(TRIM(COALESCE(c.concepto, '')) FROM '[0-9]+'), '')::int
+                    = %(numero)s::int)
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           -- Filtro por TIPO (H/K/Q/C/A/I) — dueña 2026-07-09
