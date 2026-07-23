@@ -170,6 +170,17 @@
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
   </form>
 
+  {# TMT 2026-07-23 (dueña): estilos del detalle expandible (filas alineadas a
+     las columnas). El detalle arranca oculto y el "+" lo muestra. #}
+  <style>
+    .acc-detail-row { display: none; }
+    .acc-detail-row td { background: #f8fafc; padding-top: 4px; padding-bottom: 4px; }
+    .dtl-tag { font-family: ui-monospace, monospace; font-size: 10px; font-weight: 600; letter-spacing: .02em; }
+    .dtl-link { color: #64748b; font-size: 12px; }
+    a.dtl-link:hover { text-decoration: underline; }
+    .dtl-fecha { font-size: 11px; color: #94a3b8; }
+    .dtl-monto { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
+  </style>
   <div class="tabla-card">
     <table class="sortable">
       <thead>
@@ -258,38 +269,42 @@
           {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
           {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
           {% if r.codigo and (_comp_items or _items or _pagos) %}
-          <tr class="acc-detail-row" style="display:none;">
-            <td colspan="9" style="background:#f8fafc;padding:7px 14px;border-top:1px solid #eef2f6;">
-              <div style="display:flex;flex-direction:column;gap:3px;">
-                {% for it in _comp_items %}
-                <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
-                  <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ it.fecha }}</span>
-                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#16a34a;">COMPRA</span>
-                  <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                    <a class="hover:underline" style="color:#475569;" href="{{ url_for('compras.editar', id_compra=it.id_compra) }}">compra · /compras</a>
-                  </span>
-                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ it.importe|num_es(2) }}</span>
-                </div>
-                {% endfor %}
-                {% for it in _items %}
-                <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
-                  <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ it.fecha }}</span>
-                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#64748b;">ANT</span>
-                  <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">anticipo · /dólares</span>
-                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ it.importe|num_es(2) }}</span>
-                </div>
-                {% endfor %}
-                {% for m in _pagos %}
-                <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
-                  <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ m.fecha }}</span>
-                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#64748b;">PAGO</span>
-                  <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span>
-                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ m.monto|num_es(2) }}</span>
-                </div>
-                {% endfor %}
-              </div>
-            </td>
-          </tr>
+            {# TMT 2026-07-23 (dueña): el detalle son FILAS reales alineadas a las
+               columnas — la fecha cae bajo "Recibida" (es la fecha de carga) y el
+               monto bajo su columna (Compras o Anticipos), no flotando a la derecha. #}
+            {% for it in _comp_items %}
+            <tr class="acc-detail-row">
+              <td></td><td></td><td></td>
+              <td><span class="dtl-tag" style="color:#16a34a;">COMPRA</span></td>
+              <td class="nota"><a class="dtl-link" href="{{ url_for('compras.editar', id_compra=it.id_compra) }}">compra · /compras</a></td>
+              <td></td>
+              <td class="fecha dtl-fecha">{{ it.fecha }}</td>
+              <td class="num dtl-monto">{{ it.importe|num_es(2) }}</td>
+              <td></td>
+            </tr>
+            {% endfor %}
+            {% for it in _items %}
+            <tr class="acc-detail-row">
+              <td></td><td></td><td></td>
+              <td><span class="dtl-tag" style="color:#64748b;">ANT</span></td>
+              <td class="nota"><span class="dtl-link">anticipo · /dólares</span></td>
+              <td></td>
+              <td class="fecha dtl-fecha">{{ it.fecha }}</td>
+              <td></td>
+              <td class="num dtl-monto">{{ it.importe|num_es(2) }}</td>
+            </tr>
+            {% endfor %}
+            {% for m in _pagos %}
+            <tr class="acc-detail-row">
+              <td></td><td></td><td></td>
+              <td><span class="dtl-tag" style="color:#64748b;">PAGO</span></td>
+              <td class="nota"><span class="dtl-link">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span></td>
+              <td></td>
+              <td class="fecha dtl-fecha">{{ m.fecha }}</td>
+              <td></td>
+              <td class="num dtl-monto">{{ m.monto|num_es(2) }}</td>
+            </tr>
+            {% endfor %}
           {% endif %}
         {% else %}
           <tr><td colspan="9" class="text-center py-8 text-slate-500">
@@ -315,13 +330,15 @@
     const b = e.target.closest && e.target.closest('.btn-detalle');
     if (!b) return;
     const tr = b.closest('tr');
-    const detail = tr && tr.nextElementSibling;
-    if (detail && detail.classList.contains('acc-detail-row')) {
-      const showing = detail.style.display !== 'none';
-      detail.style.display = showing ? 'none' : 'table-row';
-      tr.querySelectorAll('.btn-detalle').forEach(x => { x.textContent = showing ? '+' : '−'; });
-      if (!showing) { detail.scrollIntoView({block: 'nearest'}); }
-    }
+    // El detalle son N filas hermanas .acc-detail-row (una por movimiento).
+    const rows = [];
+    let n = tr && tr.nextElementSibling;
+    while (n && n.classList.contains('acc-detail-row')) { rows.push(n); n = n.nextElementSibling; }
+    if (!rows.length) return;
+    const showing = rows[0].style.display === 'table-row';
+    rows.forEach(x => { x.style.display = showing ? 'none' : 'table-row'; });
+    tr.querySelectorAll('.btn-detalle').forEach(x => { x.textContent = showing ? '+' : '−'; });
+    if (!showing) { rows[0].scrollIntoView({block: 'nearest'}); }
   });
 })();
 </script>
