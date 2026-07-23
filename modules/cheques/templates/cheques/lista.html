@@ -229,6 +229,13 @@
             <div class="font-medium">Resumen de cobranza del día</div>
             <div class="text-xs text-slate-500">Cheques / depósitos / efectivo del día, imprimible</div>
           </a>
+          {% if tiene_permiso('cheques.transicionar') %}
+          <a href="{{ url_for('cheques.corregir_devoluciones_sin_nd') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Corregir devoluciones sin nota de débito</div>
+            <div class="text-xs text-slate-500">Cheques devueltos que estaban depositados y no descontaron el banco</div>
+          </a>
+          {% endif %}
           <button onclick="window.print()"
                   class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
             <div class="font-medium">Imprimir</div>

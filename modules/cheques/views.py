@@ -1611,6 +1611,83 @@ def reversar(id_cheque: int):
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
+@cheques_bp.route("/cheques/corregir-devoluciones-sin-nd", methods=["GET", "POST"])
+@requiere_login
+def corregir_devoluciones_sin_nd():
+    """Corrige cheques devueltos (1/2/3) que estaban depositados pero nunca
+    descontaron el banco → estaban contados DOBLE (banco + cartera viva).
+
+    Genera la nota de débito compensatoria y desagrupa el cheque del depósito,
+    de forma idempotente (solo los que todavía no tienen ND). GET = preview con
+    la lista y el total; POST = aplica. TMT 2026-07-23 (dueña: "la devolución no
+    aparece en banco"). Reproducible por un usuario normal desde la UI.
+    """
+    candidatos = queries.cheques_devueltos_sin_nd()
+    total = sum(float(c.get("importe") or 0) for c in candidatos)
+
+    if request.method == "POST":
+        usuario = (g.user or {}).get("username", "web")
+        n_ok = 0
+        comp_total = 0.0
+        try:
+            with db.tx() as conn:
+                for c in candidatos:
+                    monto = queries.compensar_deposito_devuelto(
+                        conn,
+                        id_cheque=int(c["id_cheque"]),
+                        importe=float(c.get("importe") or 0),
+                        codigo_cli=c.get("codigo_cli"),
+                        no_cheque=c.get("no_cheque"),
+                        fecha=today_ec(),
+                        usuario=usuario,
+                    )
+                    if monto > 0:
+                        n_ok += 1
+                        comp_total += monto
+            flash(
+                f"Corregidos {n_ok} cheque(s) devuelto(s). Descontado del banco: "
+                f"$ {comp_total:,.2f}.",
+                "ok",
+            )
+        except Exception as e:
+            flash_exc("No pude corregir las devoluciones", e)
+        return redirect(url_for("cheques.corregir_devoluciones_sin_nd"))
+
+    movimientos = [
+        {
+            "texto": (
+                f"Ch {c.get('no_cheque') or '#' + str(c['id_cheque'])} · "
+                f"{c.get('codigo_cli') or ''} · {c.get('banco_nombre') or ''}"
+            ).strip(),
+            "importe": float(c.get("importe") or 0),
+            "detalle": (c.get("deposito_concepto") or "").strip(),
+        }
+        for c in candidatos
+    ]
+    if not candidatos:
+        mensaje = "No hay cheques devueltos con depósito sin compensar. Todo en orden."
+    else:
+        mensaje = (
+            f"{len(candidatos)} cheque(s) devuelto(s) que estaban depositados pero "
+            f"nunca descontaron el banco → contados doble por $ {total:,.2f}. "
+            "Al confirmar, se registra la nota de débito en el banco de cada uno y "
+            "se los saca del depósito consolidado. No cambia el estado del cheque "
+            "(sigue Devuelto) ni toca al cliente."
+        )
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Corregir devoluciones sin nota de débito",
+        mensaje=mensaje,
+        detalle_registro={"Cheques a corregir": str(len(candidatos)), "Total": f"$ {total:,.2f}"},
+        movimientos=movimientos,
+        titulo_movimientos="Cheques devueltos con depósito sin compensar",
+        accion_url=url_for("cheques.corregir_devoluciones_sin_nd"),
+        volver_url=url_for("cheques.lista"),
+        motivo_requerido=False,
+        confirm_label="Registrar las notas de débito" if candidatos else None,
+    )
+
+
 @cheques_bp.route("/cheques/<int:id_cheque>/deshacer-deposito", methods=["GET", "POST"])
 @requiere_login
 def deshacer_deposito(id_cheque: int):

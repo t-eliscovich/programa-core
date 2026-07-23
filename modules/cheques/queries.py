@@ -506,6 +506,125 @@ TRANSICIONES_VALIDAS = {
 }
 
 
+def compensar_deposito_devuelto(
+    conn,
+    *,
+    id_cheque: int,
+    importe: float,
+    codigo_cli: str | None,
+    no_cheque: str | None,
+    fecha: date,
+    usuario: str = "web",
+) -> float:
+    """Descuenta del banco el importe de un cheque DEPOSITADO que fue devuelto.
+
+    Cuando un cheque que estaba depositado (parte de un mov 'DE' — depósito
+    individual o consolidado 'dep.N ch.') se marca devuelto/rebotado, vuelve a
+    contar como CARTERA VIVA (stat 1/2/3, ver informes.queries línea "cheques
+    son siempre cartera viva si stat IN (Z,1,2,3,P,D)"). Si NO se descuenta el
+    depósito del banco, el importe queda contado DOBLE: en el banco (el DE sigue
+    entero) y en cartera (el cheque devuelto). Este helper mete la nota de
+    débito (ND) compensatoria y DESAGRUPA el cheque del depósito (borra el link
+    chequextransaccion), dejando el mov 'DE' intacto — así el banco muestra el
+    depósito completo y el débito por el cheque protestado, igual que el extracto.
+
+    Idempotente y seguro:
+      - Si ya existe una ND compensatoria para este cheque (numreferencia =
+        id_cheque) → no hace nada (evita doble compensación si ya se tipeó a
+        mano en /bancos o si se corre dos veces).
+      - Si el cheque NO está linkeado a ningún 'DE' vivo (nunca se depositó, o
+        ya se desagrupó en un rebote anterior) → no hace nada.
+
+    Devuelve el importe compensado (0.0 si no hizo nada). Corre dentro de la
+    transacción del caller (usa su `conn`).
+    """
+    imp = float(importe or 0)
+    if imp <= 0:
+        return 0.0
+    # ¿Ya hay una ND compensatoria para este cheque?
+    ya_nd = db.fetch_one(
+        "SELECT 1 FROM scintela.transacciones_bancarias "
+        "WHERE numreferencia = %s "
+        "  AND UPPER(TRIM(COALESCE(documento,''))) = 'ND' LIMIT 1",
+        (id_cheque,),
+        conn=conn,
+    )
+    if ya_nd:
+        return 0.0
+    # Links vivos a un depósito 'DE'.
+    links = db.fetch_all(
+        "SELECT DISTINCT tb.id_transaccion, tb.no_banco "
+        "  FROM scintela.chequextransaccion cxt "
+        "  JOIN scintela.transacciones_bancarias tb "
+        "    ON tb.id_transaccion = cxt.id_transaccion "
+        " WHERE cxt.id_cheque = %s "
+        "   AND UPPER(TRIM(COALESCE(tb.documento,''))) = 'DE'",
+        (id_cheque,),
+        conn=conn,
+    ) or []
+    if not links:
+        return 0.0
+    import bank_helpers
+
+    banco_orig = int(links[0]["no_banco"])
+    bank_helpers.insert_movimiento_bancario(
+        conn,
+        no_banco=banco_orig,
+        no_cta=None,
+        fecha=fecha,
+        documento="ND",
+        importe=imp,
+        concepto=(
+            f"ch.devuelto {no_cheque or id_cheque} {codigo_cli or ''}"
+        ).strip()[:50],
+        prov=codigo_cli,
+        numreferencia=id_cheque,
+        usuario=usuario,
+    )
+    # Desagrupar: borrar los links del cheque a su(s) depósito(s) 'DE'.
+    for lk in links:
+        db.execute(
+            "DELETE FROM scintela.chequextransaccion "
+            "WHERE id_cheque = %s AND id_transaccion = %s",
+            (id_cheque, lk["id_transaccion"]),
+            conn=conn,
+        )
+    return imp
+
+
+def cheques_devueltos_sin_nd() -> list[dict]:
+    """Cheques DEVUELTOS (stat 1/2/3) que siguen linkeados a un depósito 'DE'
+    vivo y NO tienen la nota de débito compensatoria → el banco los cuenta doble.
+
+    Son los que quedaron mal por el bug del 21/07 (marcar devuelto un cheque
+    depositado sin descontar el banco). `compensar_deposito_devuelto` los arregla
+    de forma idempotente. Devuelve una fila por cheque con su importe y depósito.
+    """
+    return db.fetch_all(
+        """
+        SELECT c.id_cheque, c.no_cheque, c.stat, c.codigo_cli, c.importe,
+               tb.id_transaccion, tb.no_banco,
+               COALESCE(bk.nombre,'') AS banco_nombre,
+               COALESCE(tb.concepto,'') AS deposito_concepto
+          FROM scintela.cheque c
+          JOIN scintela.chequextransaccion cxt ON cxt.id_cheque = c.id_cheque
+          JOIN scintela.transacciones_bancarias tb
+            ON tb.id_transaccion = cxt.id_transaccion
+           AND UPPER(TRIM(COALESCE(tb.documento,''))) = 'DE'
+          LEFT JOIN scintela.banco bk ON bk.no_banco = tb.no_banco
+         WHERE c.stat IN ('1','2','3')
+           AND NOT EXISTS (
+                 SELECT 1 FROM scintela.transacciones_bancarias nd
+                  WHERE nd.numreferencia = c.id_cheque
+                    AND UPPER(TRIM(COALESCE(nd.documento,''))) = 'ND'
+               )
+         GROUP BY c.id_cheque, c.no_cheque, c.stat, c.codigo_cli, c.importe,
+                  tb.id_transaccion, tb.no_banco, bk.nombre, tb.concepto
+         ORDER BY c.importe DESC
+        """
+    ) or []
+
+
 def transicionar_stat(
     id_cheque: int,
     *,
@@ -738,6 +857,20 @@ def transicionar_stat(
 
         # --- anulado, postdat, daniela: sólo UPDATE ---
         else:
+            # TMT 2026-07-23 (dueña): si se marca DEVUELTO (1/2/3) un cheque que
+            # estaba depositado, descontar el importe del banco con una nota de
+            # débito (sino queda contado doble: banco + cartera viva). Idempotente
+            # (no hace nada si no hay depósito 'DE' vivo o ya se compensó).
+            if stat_destino in ("1", "2", "3"):
+                compensar_deposito_devuelto(
+                    conn,
+                    id_cheque=id_cheque,
+                    importe=importe,
+                    codigo_cli=ch.get("codigo_cli"),
+                    no_cheque=ch.get("no_cheque"),
+                    fecha=fecha,
+                    usuario=usuario,
+                )
             # TMT 2026-07-20 (dueña): al pasar a 1 (protestado) se pregunta la
             # NUEVA fecha de cobro (hoy o futura). Se guarda en fechad (columna
             # POSTERGADA) preservando fechad_original (F.DEP = la original),
@@ -3857,7 +3990,7 @@ def reversar(
 
     with db.tx() as conn:
         ch = db.fetch_one(
-            "SELECT id_cheque, no_cheque, stat, codigo_cli FROM scintela.cheque WHERE id_cheque = %s",
+            "SELECT id_cheque, no_cheque, stat, codigo_cli, importe FROM scintela.cheque WHERE id_cheque = %s",
             (id_cheque,),
             conn=conn,
         )
@@ -3866,6 +3999,21 @@ def reversar(
         stat_prev = (ch["stat"] or "").upper()
         # _stat_destino_reversa levanta si stat_prev es terminal (X/R/3).
         stat_nuevo, es_rebote_real = _stat_destino_reversa(stat_prev)
+
+        # TMT 2026-07-23 (dueña): si el cheque estaba DEPOSITADO, el rebote debe
+        # descontar el importe del banco (nota de débito) — sino queda contado
+        # doble (banco + cartera viva del cheque devuelto). Idempotente: no hace
+        # nada si no hay depósito 'DE' vivo o si ya se compensó. Ver
+        # compensar_deposito_devuelto.
+        compensar_deposito_devuelto(
+            conn,
+            id_cheque=id_cheque,
+            importe=float(ch.get("importe") or 0),
+            codigo_cli=ch.get("codigo_cli"),
+            no_cheque=ch.get("no_cheque"),
+            fecha=today_ec(),
+            usuario=usuario,
+        )
 
         # Traer aplicaciones para revertir
         aplic = db.fetch_all(
