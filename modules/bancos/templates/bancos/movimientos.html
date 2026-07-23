@@ -164,11 +164,35 @@
   </div>
   {% endif %}
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+  {# TMT 2026-07-23 (dueña "los renglones siguen mal / se corta a la derecha"):
+     el contenedor tenía overflow-hidden → la tabla (más ancha que la pantalla
+     por tantas columnas) se CORTABA y tapaba la columna Acciones. Ahora scrollea
+     en X y la columna Acciones queda FIJA a la derecha (sticky) — siempre visible
+     sin scrollear. #}
+  <style>
+    .bank-movs-wrap { overflow-x: auto; }
+    /* Compactar: renglones más chicos (dueña 2026-07-23 "hacé todo más chico"). */
+    .bank-movs { font-size: 12px; }
+    .bank-movs th, .bank-movs td { padding: 0.28rem 0.5rem; }
+    .bank-movs thead th { padding-top: 0.45rem; padding-bottom: 0.45rem; }
+    /* Columna Acciones FIJA a la derecha — siempre visible sin scrollear. */
+    .bank-movs th:last-child,
+    .bank-movs td:last-child {
+      position: sticky;
+      right: 0;
+      background: #ffffff;
+      box-shadow: -8px 0 8px -8px rgba(15, 23, 42, 0.18);
+    }
+    .bank-movs thead th:last-child { background: #f8fafc; z-index: 3; }
+    .dark .bank-movs th:last-child,
+    .dark .bank-movs td:last-child { background: #0f172a; }
+    .dark .bank-movs thead th:last-child { background: #1e293b; }
+  </style>
+  <div class="bank-movs-wrap bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     {# TMT 2026-06-03: data-no-sort para opt-out del sortable-tables.js global,
        porque acá tenemos lógica custom que mantiene los lote-child pegados
        al lote-summary durante el sort (ver <script> abajo). #}
-    <table class="w-full text-sm" data-no-sort>
+    <table class="w-full text-sm bank-movs" data-no-sort>
       {# TMT 2026-06-03 dueña: 'dejame ordenar por columnas cuando clickeo
          en la columna'. Click en cualquier header sortea por esa columna,
          alternando asc/desc. Los lotes mantienen sus hijos pegados. #}
