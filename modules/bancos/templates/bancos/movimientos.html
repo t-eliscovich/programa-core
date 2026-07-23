@@ -172,9 +172,9 @@
   <style>
     .bank-movs-wrap { overflow-x: auto; }
     /* Compactar: renglones más chicos (dueña 2026-07-23 "hacé todo más chico"). */
-    .bank-movs { font-size: 12px; }
-    .bank-movs th, .bank-movs td { padding: 0.28rem 0.5rem; }
-    .bank-movs thead th { padding-top: 0.45rem; padding-bottom: 0.45rem; }
+    .bank-movs { font-size: 11.5px; }
+    .bank-movs th, .bank-movs td { padding: 0.22rem 0.4rem; }
+    .bank-movs thead th { padding-top: 0.4rem; padding-bottom: 0.4rem; }
     /* Columna Acciones FIJA a la derecha — siempre visible sin scrollear. */
     .bank-movs th:last-child,
     .bank-movs td:last-child {
@@ -311,7 +311,7 @@
                 <input type="text" name="numreferencia"
                        value="{{ m.numreferencia or '' }}"
                        placeholder="—"
-                       class="w-28 px-1.5 py-0.5 font-mono text-xs border border-slate-200 dark:border-slate-700 rounded bg-transparent focus:ring-1 focus:ring-sky-400 focus:outline-none"
+                       class="w-20 px-1.5 py-0.5 font-mono text-xs border border-slate-200 dark:border-slate-700 rounded bg-transparent focus:ring-1 focus:ring-sky-400 focus:outline-none"
                        onblur="if(this.value !== this.defaultValue) this.form.submit();">
               </form>
               {% else %}
@@ -346,7 +346,7 @@
                 <span class="inline-flex items-center gap-1 ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] align-middle"
                       title="Cliente / Proveedor: {{ m.prov }}{% if m.prov_nombre %} · {{ m.prov_nombre }}{% endif %}">
                   <span class="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>
-                  <span class="font-mono">{{ m.prov }}</span>{% if m.prov_nombre %}<span class="text-slate-500 dark:text-slate-400 truncate max-w-[16rem]">· {{ m.prov_nombre }}</span>{% endif %}
+                  <span class="font-mono">{{ m.prov }}</span>{% if m.prov_nombre %}<span class="text-slate-500 dark:text-slate-400 truncate max-w-[10rem]">· {{ m.prov_nombre }}</span>{% endif %}
                 </span>
               {% endif %}
               {% if m.cheques and m.n_cheques > 1 %}
@@ -407,14 +407,14 @@
               {# TMT 2026-07-23 (dueña "los renglones están horribles"): las
                  acciones van en UNA sola línea, alineadas a la derecha, sin
                  partirse en 3 renglones. #}
-              <div class="inline-flex items-center justify-end gap-x-3" style="white-space: nowrap;">
+              <div class="inline-flex items-center justify-end gap-x-2" style="white-space: nowrap;">
               {% if doc == 'CH' and tiene_permiso('bancos.conciliar') %}
                 {# TMT 2026-07-11 (dueña): reverso in-page (modal), vuelve con filtros. #}
                 <button type="button"
-                   class="js-reverso text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                   class="js-reverso text-sm text-rose-600 hover:text-rose-800"
                    data-reverso-preview="{{ url_for('bancos.reverso_preview_cheque_emitido', id_transaccion=m.id_transaccion) }}"
                    title="Reversar este cheque emitido y deshacer su side effect">
-                  ↺ reversar
+                  ↺
                 </button>
                 {# TMT 2026-07-07 dueña: "cheque en letras" removido — no se usa. #}
               {# TMT 2026-06-26: eliminar movimientos cargados en PC (no del
@@ -424,9 +424,9 @@
                       and (m.usuario_crea or '')|lower not in ['dbf-import', 'asinfo-carga', 'asinfo-backfill']
                       and not m.conciliacion_id %}
                 <a href="{{ url_for('bancos.eliminar_movimiento_pc', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
-                   class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                   class="text-sm text-rose-600 hover:text-rose-800"
                    title="Eliminar este movimiento cargado en PC (no viene del dBase)">
-                  🗑 eliminar
+                  🗑
                 </a>
               {% endif %}
               {# TMT 2026-07-22 (dueña): mover un movimiento cargado en el banco
@@ -438,9 +438,9 @@
                     and (m.usuario_crea or '')|lower not in ['dbf-import', 'asinfo-carga', 'asinfo-backfill']
                     and not m.conciliacion_id %}
                 <a href="{{ url_for('bancos.mover_movimiento', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
-                   class="text-xs text-sky-600 hover:text-sky-800 hover:underline"
+                   class="text-sm text-sky-600 hover:text-sky-800"
                    title="Mover este movimiento a otro banco (se cargó en el banco equivocado)">
-                  ⇄ mover
+                  ⇄
                 </a>
               {% endif %}
               {# TMT 2026-07-21 (dueña, TOSAVA/QUIMSERTEC): clasificar una
@@ -462,9 +462,9 @@
                     {% for v in range(1, 10) %}<option value="{{ v }}">V{{ v }}</option>{% endfor %}
                   </select>
                   <button type="submit"
-                          class="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:underline"
-                          title="Clasificar como gasto (crea el xgast pagado, no toca banco ni caja)">
-                    →gasto
+                          class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                          title="Clasificar como gasto V1..V9 (crea el xgast pagado, no toca banco ni caja)">
+                    →$
                   </button>
                 </form>
               {% endif %}
