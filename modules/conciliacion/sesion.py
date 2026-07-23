@@ -239,6 +239,84 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
         return []
 
 
+def deshechos_de_sesion(sesion: dict) -> list[dict]:
+    """Grupos (por confirm_batch_id) de matches DESHECHOS del banco, para
+    poder Rehacerlos desde la pestaña Conciliados de v2 (espejo de
+    matches_de_sesion pero con deshecho_en IS NOT NULL).
+
+    TMT 2026-07-23 (dueña): 'poner el rehacer en v2, sacar v1'. Antes el
+    Rehacer sólo vivía en la pantalla vieja /banco/historial. Acá exponemos
+    los deshechos agrupados por grupo para el botón ↷ dentro de la sesión.
+
+    Cada item: {batch_id, rep_id (match_id representativo), n, prog_total,
+    concepto, fecha, usuario, deshecho_por, deshecho_en}.
+    """
+    if not sesion:
+        return []
+    no_banco = int(sesion.get("no_banco") or 0)
+    if not no_banco:
+        return []
+    try:
+        from modules.conciliacion.matcher_banco import _tiene_migration_47
+        if not _tiene_migration_47():
+            return []  # sin columna deshecho_en no hay nada reversible
+    except Exception:
+        return []
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT m.id, m.confirm_batch_id, m.creado_en, m.usuario,
+                   m.deshecho_en, m.deshecho_por, m.id_transaccion,
+                   m.real_monto, m.real_tipo, m.real_concepto,
+                   tb.documento AS tb_documento, tb.concepto AS tb_concepto,
+                   tb.importe AS tb_importe, tb.fecha AS tb_fecha
+              FROM scintela.banco_conciliacion_match m
+              LEFT JOIN scintela.transacciones_bancarias tb
+                ON tb.id_transaccion = m.id_transaccion
+             WHERE m.no_banco = %s AND m.deshecho_en IS NOT NULL
+             ORDER BY m.deshecho_en DESC NULLS LAST, m.creado_en DESC, m.id DESC
+            """,
+            (no_banco,),
+        ) or []
+    except Exception as e:
+        _LOG.warning("deshechos_de_sesion falló: %s", e)
+        return []
+
+    from collections import OrderedDict
+    groups: dict = OrderedDict()
+    for r in rows:
+        bid = r.get("confirm_batch_id") or f"_solo_{r['id']}"
+        g = groups.get(bid)
+        if not g:
+            g = {
+                "batch_id": r.get("confirm_batch_id"),
+                "rep_id": r["id"],
+                "n": 0,
+                "prog_total": 0.0,
+                "concepto": (r.get("tb_concepto") or r.get("real_concepto") or "")[:48],
+                "fecha": r.get("tb_fecha"),
+                "usuario": r.get("usuario"),
+                "deshecho_por": r.get("deshecho_por"),
+                "deshecho_en": r.get("deshecho_en"),
+                "_seen_tx": set(),
+            }
+            groups[bid] = g
+        g["n"] += 1
+        tx = r.get("id_transaccion")
+        if tx is not None and tx not in g["_seen_tx"]:
+            g["_seen_tx"].add(tx)
+            doc = (r.get("tb_documento") or "").upper()
+            imp = float(r.get("tb_importe") or 0)
+            signo = 1 if doc in ("DE", "TR", "NC", "IN", "AC", "XX") else -1
+            g["prog_total"] += signo * imp
+    out = []
+    for g in groups.values():
+        g.pop("_seen_tx", None)
+        g["prog_total"] = round(g["prog_total"], 2)
+        out.append(g)
+    return out
+
+
 def _firma_mov(documento, codigo, tipo, monto, fecha) -> tuple:
     """Firma única de una fila de extracto para dedup row-level.
 

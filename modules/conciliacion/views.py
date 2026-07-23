@@ -2816,9 +2816,18 @@ def banco_rehacer():
         match_id = int(request.form.get("match_id") or 0)
     except (TypeError, ValueError):
         match_id = 0
-    # Volver a la pantalla de historial preservando el filtro Mostrar deshechos.
-    back = url_for("conciliacion.banco_historial",
-                   deshechos=("1" if request.form.get("deshechos") == "1" else None))
+    # Destino: por defecto la pestaña Conciliados de la sesión (v2); si viene
+    # next=historial (compat pantalla vieja) vuelve al historial con el filtro.
+    _next = (request.form.get("next") or "").strip()
+    if _next == "conciliados":
+        try:
+            _sid = int(request.form.get("sesion_id") or 0)
+        except (TypeError, ValueError):
+            _sid = 0
+        back = url_for("conciliacion.banco_post_procesar", sesion_id=_sid, tab="conciliados")
+    else:
+        back = url_for("conciliacion.banco_historial",
+                       deshechos=("1" if request.form.get("deshechos") == "1" else None))
     if match_id <= 0:
         flash("match_id inválido.", "error")
         return redirect(back)

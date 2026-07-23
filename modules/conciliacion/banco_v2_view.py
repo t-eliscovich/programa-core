@@ -647,6 +647,10 @@ def banco_post_procesar():
     # hasta ahora'. Lista los matches confirmados en esta sesión.
     matches_sesion = _sesion.matches_de_sesion(sesion)
 
+    # TMT 2026-07-23 (dueña): 'poner el rehacer en v2, sacar v1'. Grupos
+    # deshechos para el panel Rehacer dentro de la pestaña Conciliados.
+    deshechos_sesion = _sesion.deshechos_de_sesion(sesion)
+
     # TMT 2026-06-02 dueña: 'en esta tabla de conciliados, me tiene que
     # aparecer monto banco, monto programa, y tengo que ver que los totales
     # coincidan'. Enriquezco cada match con monto_prog_signed (el lado PC
@@ -749,6 +753,7 @@ def banco_post_procesar():
         modo="compact",
         matches_sesion=matches_sesion,
         conciliados_totales=conciliados_totales,
+        deshechos_sesion=deshechos_sesion,
     )
 
 
