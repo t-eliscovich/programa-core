@@ -199,7 +199,19 @@
             <span class="ml-1">{{ c.proveedor }}</span>
           </td>
           <td class="px-3 py-2 font-mono text-xs">{{ c.tipo }}</td>
-          <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{% if c.kg and c.kg | float != 0 %}{{ c.kg | kg_es }}{% elif c.kg_asinfo %}<span class="text-slate-400 dark:text-slate-500" title="kg del stock (importación Asinfo)">{{ c.kg_asinfo | kg_es }}</span>{% else %}{{ c.kg | kg_es }}{% endif %}</td>
+          {# TMT 2026-07-23 (dueña): para HILADO (tipo H) el kg vive en la
+             importación (Asinfo), no en la compra — el kg tipeado no representa
+             nada (el flujo de producción ya usa el de Asinfo). Así que en hilos
+             mostramos SIEMPRE el de Asinfo; el resto de los tipos sigue igual. #}
+          <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">
+            {%- if (c.tipo or '')|upper == 'H' -%}
+              {%- if c.kg_asinfo -%}<span title="kg de la importación (Asinfo)">{{ c.kg_asinfo | kg_es }}</span>
+              {%- elif c.kg and c.kg | float != 0 -%}{{ c.kg | kg_es }}
+              {%- else -%}<span class="text-slate-300">—</span>{%- endif -%}
+            {%- elif c.kg and c.kg | float != 0 -%}{{ c.kg | kg_es }}
+            {%- elif c.kg_asinfo -%}<span class="text-slate-400 dark:text-slate-500" title="kg del stock (importación Asinfo)">{{ c.kg_asinfo | kg_es }}</span>
+            {%- else -%}{{ c.kg | kg_es }}{%- endif -%}
+          </td>
           <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{{ c.importe | money_es }}</td>
           <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{{ c.concepto | cleanstr }}</td>
           <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ c.fecha_vencimiento | fecha_es if c.fecha_vencimiento else '' }}</td>
