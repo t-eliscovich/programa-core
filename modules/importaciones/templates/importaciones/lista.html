@@ -182,13 +182,10 @@
           <th class="text-right" style="width: 9%">Kg</th>
           {# TMT 2026-07-06 (dueña): "en importaciones agregá fecha de recepción" #}
           <th style="width: 8%">Recibida</th>
-          <th class="text-right" style="width: 11%">Compras US$</th>
-          <th class="text-right" style="width: 17%" data-no-sort>Anticipos US$</th>
-          {# TMT 2026-07-06 (dueña): "otra columna: un botón para sumar
-             anticipo y otro para compra". #}
-          {# TMT 2026-07-08 (dueña): "Ingreso de hilado" es de SOLO LECTURA — la
-             columna deja de tener acciones de alta; queda un "Ver" de detalle. #}
-          <th style="width: 9%" data-no-sort>Detalle</th>
+          <th class="text-right" style="width: 13%" data-no-sort>Compras US$</th>
+          <th class="text-right" style="width: 20%" data-no-sort>Anticipos US$</th>
+          {# TMT 2026-07-23 (dueña): columna DETALLE borrada — el desglose se abre
+             con el "+" que está al lado del monto en Compras y en Anticipos. #}
         </tr>
       </thead>
       <tbody>
@@ -215,6 +212,9 @@
               {% if r.compra %}
                 <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">{{ r.compra.importe_total | num_es(2) }}</a>
                 {% if r.compra.n > 1 %}<span class="text-slate-400">({{ r.compra.n }})</span>{% endif %}
+                {# TMT 2026-07-23 (dueña): "+" para ver los movimientos (fecha + monto). #}
+                <button type="button" class="btn-detalle" title="Ver las compras (fecha y monto)"
+                        style="margin-left:6px;width:18px;height:18px;line-height:1;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;border-radius:4px;font-weight:700;cursor:pointer;">+</button>
               {% elif r.codigo and not r.anticipo_total %}
                 <span class="no" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
               {% else %}
@@ -231,21 +231,15 @@
                 {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
                 {% set _ndet = (_items | length) + (_pagos | length) %}
                 <b>{{ r.anticipo_total | num_es(2) }}</b>
-                {% if _ndet %}<span class="acc-hint">· {{ _ndet }}</span>{% endif %}
+                {% if _ndet > 1 %}<span class="acc-hint">({{ _ndet }})</span>{% endif %}
+                {# TMT 2026-07-23 (dueña): "+" para ver los movimientos (fecha + monto). #}
+                {% if _ndet %}
+                <button type="button" class="btn-detalle" title="Ver los anticipos (fecha y monto)"
+                        style="margin-left:6px;width:18px;height:18px;line-height:1;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;border-radius:4px;font-weight:700;cursor:pointer;">+</button>
+                {% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
-            </td>
-            {# TMT 2026-07-08 (dueña): solo lectura — sin "+ Anticipo" ni "+ Compra".
-               Queda un "Ver" que abre el detalle de anticipos (sin formularios). #}
-            <td class="text-center" style="white-space:nowrap;">
-              {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
-              {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
-              {% if r.codigo and (_items or _pagos) %}
-                <button type="button" class="btn-cargar-ant text-[11px] px-1.5 py-0.5 rounded"
-                        style="border:1px solid #cbd5e1;background:#f8fafc;color:#475569;"
-                        title="Ver los anticipos de esta importación">Ver</button>
-              {% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
           </tr>
           {# TMT 2026-07-08 (dueña "arreglá la página de importaciones"): el
@@ -260,12 +254,23 @@
              'pago' parciales cargados por esta pantalla. Los movimientos tipo
              'anticipo' NO se listan aparte: ya están entre los de /dólares
              (pago.py les crea la fila viva) y se contaban/mostraban doble. #}
+          {% set _comp_items = (r.compra['items'] if r.compra else []) or [] %}
           {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
           {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
-          {% if r.codigo and (_items or _pagos) %}
+          {% if r.codigo and (_comp_items or _items or _pagos) %}
           <tr class="acc-detail-row" style="display:none;">
-            <td colspan="10" style="background:#f8fafc;padding:7px 14px;border-top:1px solid #eef2f6;">
+            <td colspan="9" style="background:#f8fafc;padding:7px 14px;border-top:1px solid #eef2f6;">
               <div style="display:flex;flex-direction:column;gap:3px;">
+                {% for it in _comp_items %}
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
+                  <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ it.fecha }}</span>
+                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#16a34a;">COMPRA</span>
+                  <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    <a class="hover:underline" style="color:#475569;" href="{{ url_for('compras.editar', id_compra=it.id_compra) }}">compra · /compras</a>
+                  </span>
+                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ it.importe|num_es(2) }}</span>
+                </div>
+                {% endfor %}
                 {% for it in _items %}
                 <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
                   <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ it.fecha }}</span>
@@ -287,7 +292,7 @@
           </tr>
           {% endif %}
         {% else %}
-          <tr><td colspan="10" class="text-center py-8 text-slate-500">
+          <tr><td colspan="9" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
           </td></tr>
         {% endfor %}
@@ -304,23 +309,18 @@
 </div>
 <script>
 (function () {
-  // TMT 2026-07-06 (dueña): botón "+ Anticipo" abre el detalle de la fila
-  // y enfoca el monto (el form vive dentro del <details> de Anticipos).
+  // TMT 2026-07-23 (dueña): el "+" (en Compras o Anticipos) abre/cierra la fila
+  // hermana con el detalle de movimientos (fecha + monto). Solo lectura.
   document.addEventListener('click', function (e) {
-    const b = e.target.closest && e.target.closest('.btn-cargar-ant');
+    const b = e.target.closest && e.target.closest('.btn-detalle');
     if (!b) return;
     const tr = b.closest('tr');
-    // TMT 2026-07-08: el detalle ahora es la FILA HERMANA de abajo
-    // (.acc-detail-row, colspan completo), no un <details> en la celda.
     const detail = tr && tr.nextElementSibling;
     if (detail && detail.classList.contains('acc-detail-row')) {
       const showing = detail.style.display !== 'none';
       detail.style.display = showing ? 'none' : 'table-row';
-      if (!showing) {
-        const monto = detail.querySelector('input[name="monto_mov"]');
-        if (monto) { monto.focus(); }
-        detail.scrollIntoView({block: 'nearest'});
-      }
+      tr.querySelectorAll('.btn-detalle').forEach(x => { x.textContent = showing ? '+' : '−'; });
+      if (!showing) { detail.scrollIntoView({block: 'nearest'}); }
     }
   });
 })();

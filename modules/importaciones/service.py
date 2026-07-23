@@ -266,6 +266,16 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
                 "importe_total": sum(float(h.get("importe") or 0) for h in hits),
                 "n": len(hits),
                 "tipo": (hits[0].get("tipo") or "").strip(),
+                # Desglose por compra (fecha + monto) para el "+" que expande
+                # los movimientos en /importaciones. Más nuevo arriba.
+                "items": [
+                    {"fecha": h.get("fecha"),
+                     "importe": float(h.get("importe") or 0),
+                     "id_compra": h.get("id_compra")}
+                    for h in sorted(
+                        hits, key=lambda x: str(x.get("fecha") or ""), reverse=True
+                    )
+                ],
             }
             r["fuente"] = "compra"
             r["importe_programa"] = r["compra"]["importe_total"]
