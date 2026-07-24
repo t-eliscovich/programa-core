@@ -254,3 +254,158 @@ def quimico_consumido_us(desde: date, hasta: date) -> float | None:
     if not row:
         return None
     return float(row.get("us") or 0)
+
+
+# ── "TOTALES POR TIPO" completo (Inicial/Compras/Ajuste/Consumido/Final) ─────
+# TMT 2026-07-24 (dueña "que se cargue solo, no quiero pisar nada"): PORT LITERAL
+# de formulas_app inventario_math.compute_row + los builders (get_compras_by_date
+# / get_ajustes_by_date / get_ordenes_terminadas_in_range::consumption +
+# get_inventario_for_date). Reproduce byte-por-byte la pantalla "TOTALES POR
+# TIPO" (US$ c/IVA) → la columna QUÍM.$ del flujo se llena SOLA con esos números.
+# Reglas idénticas a formulas:
+#   FINAL   = conteo físico + (compras+ajustes−consumo) POST-conteo hasta `hasta`
+#   INICIAL = FINAL + consumido − compras − ajuste  (DERIVADO, cierra la identidad)
+#   CONS/COMP/AJU = movimientos del período [desde, hasta]
+#   Valuación: kg × productos.us × IVA (SAL exenta por NOMBRE); A44 (aux num_visible
+#   =44) divide el CONSUMO /10 (escamas). Sin filtro de familia (bucket por tipo).
+_SQL_TOTALES = """
+WITH conteo AS (
+    SELECT DISTINCT ON (producto_num) producto_num, cantidad AS q, fecha AS f
+      FROM inventario WHERE fecha <= %(hasta)s
+     ORDER BY producto_num, fecha DESC, id DESC
+),
+cons_post AS (
+    SELECT ol.producto_num, SUM(
+             ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric)
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes)='array'
+                    THEN ol.ajustes ELSE '[]'::jsonb END) e), 0)) AS q
+      FROM orden_lineas ol JOIN ordenes o ON o.id=ol.orden_id
+      LEFT JOIN conteo c ON c.producto_num=ol.producto_num
+     WHERE o.fecha_terminado IS NOT NULL AND o.fecha_terminado <> ''
+       AND o.fecha_terminado <= %(hasta)s AND (c.f IS NULL OR o.fecha_terminado >= c.f)
+     GROUP BY ol.producto_num
+),
+comp_post AS (
+    SELECT cm.producto_num, SUM(cm.cantidad) AS q FROM compras cm
+      LEFT JOIN conteo c ON c.producto_num=cm.producto_num
+     WHERE cm.fecha <= %(hasta)s AND (c.f IS NULL OR cm.fecha >= c.f)
+     GROUP BY cm.producto_num
+),
+aju_post AS (
+    SELECT ia.producto_num, SUM(ia.cantidad) AS q FROM inventario_ajustes ia
+      LEFT JOIN conteo c ON c.producto_num=ia.producto_num
+     WHERE ia.fecha <= %(hasta)s AND (c.f IS NULL OR ia.fecha >= c.f)
+     GROUP BY ia.producto_num
+),
+cons_per AS (
+    SELECT ol.producto_num, SUM(
+             ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric)
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes)='array'
+                    THEN ol.ajustes ELSE '[]'::jsonb END) e), 0)) AS q
+      FROM orden_lineas ol JOIN ordenes o ON o.id=ol.orden_id
+     WHERE o.fecha_terminado IS NOT NULL AND o.fecha_terminado <> ''
+       AND o.fecha_terminado BETWEEN %(desde)s AND %(hasta)s
+     GROUP BY ol.producto_num
+),
+comp_per AS (
+    SELECT producto_num, SUM(cantidad) AS q FROM compras
+     WHERE fecha BETWEEN %(desde)s AND %(hasta)s GROUP BY producto_num
+),
+aju_per AS (
+    SELECT producto_num, SUM(cantidad) AS q FROM inventario_ajustes
+     WHERE fecha BETWEEN %(desde)s AND %(hasta)s GROUP BY producto_num
+),
+cons_pre AS (
+    SELECT ol.producto_num, SUM(
+             ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric)
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes)='array'
+                    THEN ol.ajustes ELSE '[]'::jsonb END) e), 0)) AS q
+      FROM orden_lineas ol JOIN ordenes o ON o.id=ol.orden_id
+     WHERE o.fecha_terminado IS NOT NULL AND o.fecha_terminado <> ''
+       AND o.fecha_terminado < %(desde)s
+     GROUP BY ol.producto_num
+),
+comp_pre AS (
+    SELECT producto_num, SUM(cantidad) AS q FROM compras
+     WHERE fecha < %(desde)s GROUP BY producto_num
+),
+aju_pre AS (
+    SELECT producto_num, SUM(cantidad) AS q FROM inventario_ajustes
+     WHERE fecha < %(desde)s GROUP BY producto_num
+)
+SELECT p.num, p.num_visible, p.familia, p.nombre, COALESCE(p.us, 0) AS us,
+       ct.f AS conteo_f, COALESCE(ct.q, 0) AS conteo_q,
+       COALESCE(cp.q, 0)  AS cons_post, COALESCE(mp.q, 0)  AS comp_post, COALESCE(ap.q, 0)  AS aju_post,
+       COALESCE(cpe.q, 0) AS cons_per,  COALESCE(mpe.q, 0) AS comp_per,  COALESCE(ape.q, 0) AS aju_per,
+       COALESCE(cpr.q, 0) AS cons_pre,  COALESCE(mpr.q, 0) AS comp_pre,  COALESCE(apr.q, 0) AS aju_pre
+  FROM productos p
+  LEFT JOIN conteo    ct  ON ct.producto_num  = p.num
+  LEFT JOIN cons_post cp  ON cp.producto_num  = p.num
+  LEFT JOIN comp_post mp  ON mp.producto_num  = p.num
+  LEFT JOIN aju_post  ap  ON ap.producto_num  = p.num
+  LEFT JOIN cons_per  cpe ON cpe.producto_num = p.num
+  LEFT JOIN comp_per  mpe ON mpe.producto_num = p.num
+  LEFT JOIN aju_per   ape ON ape.producto_num = p.num
+  LEFT JOIN cons_pre  cpr ON cpr.producto_num = p.num
+  LEFT JOIN comp_pre  mpr ON mpr.producto_num = p.num
+  LEFT JOIN aju_pre   apr ON apr.producto_num = p.num
+"""
+
+
+def quimico_totales_por_tipo(desde: date, hasta: date) -> dict | None:
+    """{inicial, compras, ajuste, consumido, final} en US$ c/IVA para el período
+    [desde, hasta] — IDÉNTICO a "TOTALES POR TIPO" de formulas_app (port literal
+    de inventario_math.compute_row). None si formulas_db no está (fail-soft)."""
+    try:
+        rows = formulas_db.fetch_all(
+            _SQL_TOTALES, {"desde": desde.isoformat(), "hasta": hasta.isoformat()})
+    except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
+        _LOG.warning("quimico_totales_por_tipo %s-%s: %s", desde, hasta, e)
+        return None
+    if not rows:
+        return None
+    tot = {"inicial": 0.0, "compras": 0.0, "ajuste": 0.0,
+           "consumido": 0.0, "final": 0.0}
+    for r in rows:
+        us = float(r.get("us") or 0)
+        if us <= 0:
+            continue
+        num = int(r.get("num") or 0)
+        numv = int(r.get("num_visible") or 0)
+        nombre = (str(r.get("nombre") or "")).strip().upper()
+        # A44 (AV SOFT NI, aux num_visible=44): consumo en escamas 10x → /10.
+        es_a44 = (_tipo_key(num, r.get("familia")) == "aux" and numv == 44)
+        _div = 10.0 if es_a44 else 1.0
+        cons_per = float(r.get("cons_per") or 0) / _div
+        cons_post = float(r.get("cons_post") or 0) / _div
+        cons_pre = float(r.get("cons_pre") or 0) / _div
+        comp_per = float(r.get("comp_per") or 0)
+        aju_per = float(r.get("aju_per") or 0)
+        comp_post = float(r.get("comp_post") or 0)
+        aju_post = float(r.get("aju_post") or 0)
+        comp_pre = float(r.get("comp_pre") or 0)
+        aju_pre = float(r.get("aju_pre") or 0)
+
+        if r.get("conteo_f") is not None:
+            # FINAL anclado al conteo; INICIAL derivado (cierra la identidad).
+            final_kg = float(r.get("conteo_q") or 0) + comp_post + aju_post - cons_post
+            inicial_kg = final_kg + cons_per - comp_per - aju_per
+        else:
+            # Sin conteo físico (compute_row: net pre-período).
+            pre_net = -cons_pre + aju_pre + comp_pre
+            if pre_net != 0:
+                inicial_kg = pre_net
+                final_kg = inicial_kg - cons_per + aju_per + comp_per
+            elif cons_per != 0 or aju_per != 0 or comp_per != 0:
+                inicial_kg = 0.0
+                final_kg = -cons_per + aju_per + comp_per
+            else:
+                continue
+
+        iva = 1.0 if nombre == "SAL" else _IVA_FACTOR
+        tot["inicial"] += inicial_kg * us * iva
+        tot["compras"] += comp_per * us * iva
+        tot["ajuste"] += aju_per * us * iva
+        tot["consumido"] += cons_per * us * iva
+        tot["final"] += final_kg * us * iva
+    return {k: round(v, 2) for k, v in tot.items()}

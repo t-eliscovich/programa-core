@@ -162,12 +162,12 @@ def _patch_asinfo():
     ]
 
 
-def test_mov_asinfo_banda_formulas_cierra_con_4_filas():
-    """Con los 5 términos de formulas: modelo 'formulas', libro VISIBLE =
-    inicial + entradas − consumo (dueña 2026-07-21: la fila Ajustes
-    inventario se BORRÓ — el neto queda como referencia en el modelo y
-    dentro del residuo del chequeo), físico aparte, sin fila de máquinas,
-    de ajustes ni de ajuste de arranque en la columna QUÍM.$."""
+def test_mov_asinfo_banda_formulas_5_filas_desde_totales_por_tipo():
+    """TMT 2026-07-24 (dueña "que se cargue solo, quiero ver lo mismo que
+    formulas"): la columna QUÍM.$ = pantalla "TOTALES POR TIPO" de formulas
+    (quimico_totales_por_tipo). 5 filas — Inicial/Compras/Ajuste/Consumido/
+    Final — que CIERRAN: Inicial + Compras + Ajuste − Consumido = Final. La
+    fila Ajuste vuelve (la dueña la ve en formulas)."""
     ctxs = _patch_asinfo()
     with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], ctxs[6], \
          patch("db.fetch_one", return_value={"importe": 152776.0, "n": 4}), \
@@ -176,33 +176,34 @@ def test_mov_asinfo_banda_formulas_cierra_con_4_filas():
          patch("modules.informes.quimicos_flujo.entradas_bodega_mes",
                return_value={"us": 80467.5, "n": 93}), \
          patch("modules.informes.quimicos_flujo.ajustes_inventario_mes",
-               return_value={"us": 1392.2, "n": 132,
-                             "detalle": [{"motivo": "CORRECCION", "n": 30, "us": 3782.71}]}), \
+               return_value={"us": 1392.2, "n": 132, "detalle": []}), \
          patch("modules.informes.quimicos_flujo.consumo_terminadas_mes",
-               return_value={"us": 147616.0}):
+               return_value={"us": 147616.0}), \
+         patch("modules.informes.quimico_inv_formulas.quimico_totales_por_tipo",
+               return_value={"inicial": 480916.05, "compras": 113078.94,
+                             "ajuste": 1601.0, "consumido": 176413.42,
+                             "final": 419182.57}):
         mov = _build_mov_asinfo(_data(), _inv(), _inv(), anio=2026, mes=7,
                                 proy_quimico=90000.0)
     qm = mov["quimicos_modelo"]
     assert qm["modelo"] == "formulas"
-    assert qm["inicial"] == 437500.0
-    assert qm["compras"] == 80467.5 and qm["compras_n"] == 93
-    assert round(qm["ajustes_inv"], 2) == 1392.2   # referencia, no fila
-    assert qm["egresos"] == 147616.0              # NO el proy_quimico (90k)
+    assert qm["inicial"] == 480916.05           # = TOTALES POR TIPO, no el físico
+    assert qm["compras"] == 113078.94 and qm["compras_n"] == 93
+    assert qm["egresos"] == 176413.42           # Consumido de formulas
+    assert round(qm["ajuste"], 2) == 1601.0     # fila Ajuste (vuelve)
+    assert qm["final_form"] == 419182.57
+    # cierra: Inicial + Compras + Ajuste − Consumido = Final
     assert round(qm["final_prog"], 2) == round(
-        437500.0 + 80467.5 - 147616.0, 2)          # SIN ajustes: libro visible
-    assert qm["final_form"] == 363180.0
-    assert round(qm["ajuste"], 2) == round(363180.0 - qm["final_prog"], 2)
+        480916.05 + 113078.94 + 1601.0 - 176413.42, 2)
     assert qm["facturado_prog"] == 152776.0 and qm["facturado_n"] == 4
     assert mov["quimicos_banda"] == qm
-    # Columna QUÍM.$: 4 filas peladas — sin ajustes, arranque ni máquinas.
+    # Columna QUÍM.$: 5 filas idénticas a formulas.
     co = mov["colorantes"]
-    assert co["stock_inic_us"] == 437500.0
-    assert co["ingresos_us"] == 80468.0            # round(...)
-    assert co["egresos_us"] == 147616.0
-    assert "ajustes_inv_us" not in co              # fila Ajustes BORRADA
-    assert "ajustes_inv_title" not in co
-    assert co["stock_act_us"] == 363180.0
-    assert "ajuste_us" not in co                   # "Ajuste de arranque" muere
+    assert co["stock_inic_us"] == round(480916.05, 0)
+    assert co["ingresos_us"] == round(113078.94, 0)
+    assert co["egresos_us"] == round(176413.42, 0)
+    assert co["ajuste_us"] == round(1601.0, 0)          # fila Ajuste presente
+    assert co["stock_act_us"] == round(419182.57, 0)
     assert "maquinas_us" not in co                 # "En máquinas" QUÍM → "—"
 
 
