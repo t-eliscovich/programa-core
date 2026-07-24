@@ -2134,6 +2134,20 @@ def reversar_transferencia(
             "No encuentro las transacciones origen/destino — datos rotos."
         )
 
+    # TMT 2026-07-24: NO revertir una transferencia si CUALQUIERA de sus dos
+    # patas está conciliada — rompería la conciliación en silencio.
+    _conc = db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion IN (%s, %s) AND deshecho_en IS NULL LIMIT 1",
+        (tx_orig["id_transaccion"], tx_dest["id_transaccion"]),
+    )
+    if _conc:
+        raise ValueError(
+            "Una de las patas de esta transferencia está conciliada con el banco. "
+            "Desconciliá primero desde la conciliación y volvé a intentar — "
+            "revertirla ahora rompería la conciliación."
+        )
+
     importe_abs = abs(float(md.get("importe") or tx_orig.get("importe") or 0))
     if importe_abs <= 0:
         raise ValueError("Importe original = 0, nada que reversar.")
@@ -2240,6 +2254,19 @@ def reversar_cheque_emitido(
         raise ValueError(
             f"Esta transacción no es un cheque emitido (documento={doc!r}). "
             "Sólo se puede reversar con esta operación cheques de chequera."
+        )
+    # TMT 2026-07-24: NO revertir un cheque emitido CONCILIADO — rompería la
+    # conciliación en silencio (mismo guard que reversar_movimiento_simple).
+    _conc = db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (id_transaccion,),
+    )
+    if _conc:
+        raise ValueError(
+            "Este cheque está conciliado con el banco. Desconciliá primero desde "
+            "la conciliación y volvé a intentar — revertirlo ahora rompería la "
+            "conciliación."
         )
     # Detectar doble reverso: si ya hay una mov_doble del tipo reverso_emitido
     # que apunta al original, abortar.
