@@ -88,6 +88,18 @@ def _leer(nombre: str) -> list[dict]:
 
 # ───────────────── lado dBase (reglas PRG, validadas 2026-06-10) ─────────────────
 
+def _ultimo_saldo(rows: list[dict]):
+    """Último SALDO NO vacío de la lista (ignora filas en blanco / a medio
+    tipear al final del DBF — p.ej. un ND que se estaba cargando cuando se
+    exportó). Sin esto, `rows[-1].SALDO` puede venir None y el banco/caja
+    del dBase se lee como 0. TMT 2026-07-24."""
+    for r in reversed(rows or []):
+        sal = r.get("SALDO")
+        if sal is not None:
+            return _f(sal)
+    return None
+
+
 def lado_dbase() -> dict:
     """Calcula TODOS los valores del PRG desde los DBF extraídos."""
     hoy = _hoy_ec()
@@ -95,7 +107,7 @@ def lado_dbase() -> dict:
     d: dict = {"faltantes": [n for n in DBFS if not (EXTRACT_DIR / n).exists()]}
 
     caja = _leer("CAJA.DBF")
-    d["salcaj"] = _f(caja[-1].get("SALDO")) if caja else None
+    d["salcaj"] = _ultimo_saldo(caja) if caja else None
     d["caja_movs"] = [{"fecha": r.get("FECHA"), "tipo": (r.get("TIPO") or "").strip(),
                        "importe": round(_f(r.get("IMPORTE")), 2),
                        "saldo": round(_f(r.get("SALDO")), 2),
@@ -103,8 +115,8 @@ def lado_dbase() -> dict:
 
     pich = _leer("PICHINCH.DBF")
     inter = _leer("INTER.DBF")
-    d["salbanc1"] = _f(pich[-1].get("SALDO")) if pich else None
-    d["salbanc2"] = _f(inter[-1].get("SALDO")) if inter else None
+    d["salbanc1"] = _ultimo_saldo(pich) if pich else None
+    d["salbanc2"] = _ultimo_saldo(inter) if inter else None
     d["pich_movs"] = [{"fecha": r.get("FECHA"), "doc": (r.get("DOC") or "").strip(),
                        "importe": round(_f(r.get("IMPORTE")), 2),
                        "saldo": round(_f(r.get("SALDO")), 2),
