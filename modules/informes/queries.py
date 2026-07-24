@@ -5248,6 +5248,15 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         "anio_actual": today_ec().year,
         "totp": posdats["totp"],
         "vsto": vsto,
+        # Detalle por etapa para auditar el Δ de stock vs dBase (TMT 2026-07-24,
+        # dueña: "¿hay algo que falta que no está siendo ponderado?"). Expone kg
+        # y $/kg de cada etapa para que /admin/dbase-compare [10] muestre dónde
+        # está el hueco (hilado/tejido/terminado).
+        "stock_etapas": {
+            "hilado": {"kg": kg_hilado, "ukg": h_um, "us": val_hilado},
+            "tejido": {"kg": kg_tejido, "ukg": h_uk, "us": val_tejido},
+            "terminado": {"kg": kg_term, "ukg": h_uf, "us": val_terminado},
+        },
         "stock_fuente": _stock_fuente,          # 'dbase' | 'asinfo'
         "vsto_dbase": vsto_dbase,               # base de la utilidad
         "stock_revaluacion": vsto - vsto_dbase,  # +$ que suma el patrimonio por usar Asinfo

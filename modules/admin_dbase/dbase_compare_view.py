@@ -1073,6 +1073,27 @@ def reporte(dias_banco: int = 30):
     yield cmp_acum("Stock MP+PT (VSTO)", d.get("VSTO"), _f(pc.get("vsto")))
     yield line("  (dBase valúa con la fórmula del PRG; PC con kg Asinfo + tarifa "
                "del flujo — el Δ acá es la 'revaluación de stock')")
+    # [10a] DESGLOSE POR ETAPA — ¿el Δ es kg o $/kg? ¿en qué etapa?
+    try:
+        _pce = pc.get("stock_etapas") or {}
+        _rows = [
+            ("HILADO",    d.get("HI"), d.get("UMX"), _pce.get("hilado")),
+            ("TEJIDO",    d.get("TJ"), d.get("UKK"), _pce.get("tejido")),
+            ("TERMINADO", d.get("PF"), d.get("UFF"), _pce.get("terminado")),
+        ]
+        yield line("  ── [10a] por etapa (dBase vs PC): kg · $/kg · $valor ──")
+        for _nom, _kgd, _ukgd, _pcstage in _rows:
+            _kgd = _f(_kgd); _ukgd = _f(_ukgd)
+            _valdb = _kgd * _ukgd
+            _kgp = _f((_pcstage or {}).get("kg"))
+            _ukgp = _f((_pcstage or {}).get("ukg"))
+            _valp = _f((_pcstage or {}).get("us"))
+            yield line(f"    {_nom:10} kg dBase={_kgd:>12,.0f} PC={_kgp:>12,.0f} Δ={_kgp-_kgd:>+11,.0f}"
+                       f"  | $/kg dBase={_ukgd:>7.4f} PC={_ukgp:>7.4f}"
+                       f"  | $ dBase={_valdb:>13,.0f} PC={_valp:>13,.0f} Δ={_valp-_valdb:>+12,.0f}")
+        yield line("    (Δ kg = cantidad no ponderada; Δ $/kg = revaluación de método)")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [desglose por etapa no disponible: {exc!r}]")
     yield line()
 
     try:
