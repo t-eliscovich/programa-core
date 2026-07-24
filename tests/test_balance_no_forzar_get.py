@@ -39,8 +39,11 @@ def test_get_con_forzar_provisiones_no_fuerza(app, fake_db):
         r = c.get("/informes/balance?forzar_provisiones=1")
 
     assert r.status_code == 200, r.data[:400]
-    assert spy.called, "correr_provisiones_diarias no llegó a llamarse"
-    _, kwargs = spy.call_args
-    assert kwargs.get("forzar", False) is not True, (
-        "El GET forzó provisiones — el footgun ?forzar_provisiones=1 volvió"
+    # TMT 2026-07-24: correr_provisiones_diarias YA NO se auto-corre en el
+    # balance — persistir_acumulacion_yy (baseline por fila) es el ÚNICO motor
+    # de devengo. Un GET (con o sin ?forzar_provisiones) NO debe disparar el
+    # corredor viejo del marcador global (que pisaba las ediciones manuales).
+    assert not spy.called, (
+        "correr_provisiones_diarias se llamó desde el balance — se retiró; "
+        "el devengo lo hace sólo persistir_acumulacion_yy"
     )
