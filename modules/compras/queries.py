@@ -1048,6 +1048,7 @@ def buscar(
         SELECT c.id_compra, c.fecha, c.fechad, c.codigo_prov, c.tipo,
                c.comprobante, c.numero, c.kg, c.importe, c.concepto,
                c.clave, c.no_banco, c.stat, c.observacion, c.cuenta_pagada,
+               c.usuario_crea,
                COALESCE(p.nombre, '') AS proveedor,
                p.plazo                AS plazo,
                (c.fecha + (COALESCE(p.plazo, 0) * INTERVAL '1 day'))::date

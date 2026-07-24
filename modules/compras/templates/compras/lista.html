@@ -174,6 +174,9 @@
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
           <th class="px-3 py-3 text-left font-medium">Concepto</th>
           <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date" title="Fecha de la compra + plazo del proveedor">Vencimiento</th>
+          {# TMT 2026-07-24 (dueña): de dónde salió cada compra — Fórmulas (auto
+             desde formulas_app), dBase, Asinfo, o el usuario que la cargó a mano. #}
+          <th class="px-3 py-3 text-left font-medium" title="Origen de la compra: Fórmulas = cargada sola desde formulas_app (colorantes/químicos); dBase/Asinfo = importada del legacy; un nombre = el usuario que la tipeó en PC">Origen</th>
           {# TMT 2026-07-23 (dueña, pedido de Andrés): igual que el dBase marca en
              COMPRAS si la factura fue pagada (campo BANC/BCO: 9 o banco = pagada,
              0/vacío = pendiente). En PC ese campo vive en compra.no_banco. #}
@@ -215,6 +218,22 @@
           <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{{ c.importe | money_es }}</td>
           <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{{ c.concepto | cleanstr }}</td>
           <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ c.fecha_vencimiento | fecha_es if c.fecha_vencimiento else '' }}</td>
+          {# Origen: mapea usuario_crea a una etiqueta legible. Estilos inline
+             (el tailwind.css está congelado — clases nuevas no renderizan). #}
+          <td class="px-3 py-2" style="white-space: nowrap;">
+            {% set uc = (c.usuario_crea or '')|lower %}
+            {% if uc == 'formulas-auto' %}
+              <span title="Cargada sola desde formulas_app (colorantes/químicos)" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#ede9fe;color:#6d28d9;">Fórmulas</span>
+            {% elif uc == 'dbf-import' or uc == '' %}
+              <span title="Importada del dBase (FoxPro)" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;">dBase</span>
+            {% elif uc.startswith('asinfo') %}
+              <span title="Traída de Asinfo ({{ c.usuario_crea }})" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#e0f2fe;color:#0369a1;">Asinfo</span>
+            {% elif uc.startswith('pc-') %}
+              <span title="Cargada en Programa Core ({{ c.usuario_crea }})" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;">PC</span>
+            {% else %}
+              <span title="Cargada a mano por {{ c.usuario_crea }}" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#dcfce7;color:#15803d;">{{ c.usuario_crea }}</span>
+            {% endif %}
+          </td>
           {# Pagada: lo resuelve la query (columna `pagada`) — mira el posdatado
              (deuda viva) para las compras de PC y cae al BANC del dBase para las
              históricas. Ver queries.buscar(). #}

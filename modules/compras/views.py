@@ -485,6 +485,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
                 ("banco", "Banco"),
                 ("fechad", "F. dep."),
                 ("stat", "Estado"),
+                ("usuario_crea", "Origen"),
             ],
             filename="compras.csv",
         )
