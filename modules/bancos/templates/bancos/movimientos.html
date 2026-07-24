@@ -518,12 +518,20 @@
                 {% endif %}
               </td>
               {# TMT 2026-07-07 duena: devolver ESTE cheque a cartera si al final
-                 no se deposito. Solo para cheques depositados y con permiso. #}
-              <td class="px-3 py-1 no-print text-right">
+                 no se deposito. Solo para cheques depositados y con permiso.
+                 TMT 2026-07-24 (dueña "facilitar el proceso"): + boton "rebotó"
+                 al lado, para el caso en que el cheque SI se deposito y el banco
+                 lo rechazo. Genera su nota de debito aparte y lo saca del grupo
+                 del deposito, dejando el resto CONCILIADO. Distinto de "a cartera"
+                 (= no se deposito, reduce el deposito → bloqueado si concilado). #}
+              <td class="px-3 py-1 no-print text-right whitespace-nowrap">
                 {% if tiene_permiso('cheques.transicionar') and (c.stat or '')|upper in ['B','I','A','V','W','J','K'] %}
                 <a href="{{ url_for('cheques.deshacer_deposito', id_cheque=c.id_cheque, next=request.full_path) }}"
                    class="text-[11px] text-amber-700 dark:text-amber-400 hover:underline"
-                   title="Devolver este cheque a cartera (no se deposito)">&#8617; a cartera</a>
+                   title="El cheque NO se depositó (error de carga): lo devuelve a cartera y lo saca del depósito. Si el depósito está conciliado, hay que desconciliar primero.">&#8617; a cartera</a>
+                <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
+                   class="text-[11px] text-rose-700 dark:text-rose-400 hover:underline ml-2"
+                   title="El banco RECHAZÓ este cheque: genera su nota de débito aparte y lo saca del depósito. El resto del depósito queda conciliado.">&#9888; rebotó</a>
                 {% endif %}
               </td>
             </tr>
