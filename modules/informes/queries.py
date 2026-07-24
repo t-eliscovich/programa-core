@@ -4955,15 +4955,19 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     _csvtatot = (KV * 1.04 * (UMX + _vk_kk + _safe_div(ITIN, _kt)
                  + _safe_div(_gc, (KTINT + _kprovt))) + GS)
 
-    # Dueña 2026-07-21: la fila Colorantes/Quím. pasa a medir el químico FÍSICO
-    # consumido de bodega (mismo criterio que el stock físico, ~157) en vez del
-    # ITIN (costeo por orden, ~168). Coherencia "físico manda". Fail-soft → ITIN.
+    # TMT 2026-07-24 (dueña, opción B): la fila Colorantes/Quím. de Resultados
+    # usa el TOTAL de COSTOS DE TINTORERÍA — el MISMO número (mismo t_imp de
+    # _build_tintoreria_mensual) que el Egreso de QUÍM.$ del Flujo producción →
+    # Flujos y Resultados dan IGUAL para químicos. Antes usaba el consumido
+    # físico (quimico_consumido_us) y difería ~3k del Total de tintorería.
+    # Fail-soft → ITIN del dBase.
     _col_us_fisico = None
     try:
-        from modules.informes.quimico_inv_formulas import quimico_consumido_us
-        from datetime import date as _date_cf
-        _col_us_fisico = quimico_consumido_us(
-            _date_cf(yy_actual, mesnum_actual, 1), _hoy_ec_bal)
+        from modules.comparativa_tintoreria.views import _build_tintoreria_mensual
+        _tm_bal = _build_tintoreria_mensual(yy_actual, mesnum_actual)
+        _filas_bal = (_tm_bal or {}).get("filas") or []
+        if _filas_bal and _filas_bal[0].get("t_imp") is not None:
+            _col_us_fisico = float(_filas_bal[0]["t_imp"])
     except Exception:  # noqa: BLE001 -- fail-soft, queda el ITIN
         _col_us_fisico = None
 
