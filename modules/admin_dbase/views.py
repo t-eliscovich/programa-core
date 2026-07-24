@@ -243,7 +243,7 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         # persistía el UPDATE (pl/pgsql + psycopg2 quirk). Llamamos al helper
         # Python directo.
         try:
-            from modules.conciliacion.diag_view import _relink_py
+            from modules.conciliacion.banco_v2_view import _relink_py
             row = _relink_py(10) or {}
             yield line("")
             yield line("[relink matches post-sync]")

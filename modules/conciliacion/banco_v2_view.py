@@ -4066,3 +4066,168 @@ def banco_anular_grupo():
         "ok",
     )
     return redirect(url_for("conciliacion.banco_deshacer_v2"))
+
+
+# ─── Reenganche de conciliados huérfanos (relink por firma) ───────────
+# TMT 2026-07-24 (Tamara/Alex): cuando una fila del libro (p.ej. un depósito
+# consolidado 'dep.N ch.') se RE-CREA — por un re-depósito, un reverso de un
+# duplicado, o un dBase sync — el SERIAL id_transaccion cambia. Los
+# banco_conciliacion_match viejos siguen apuntando al id MUERTO, y como la
+# exclusión de conciliados es por id_transaccion (sesion._cargar_programa_
+# pendiente y balance_pichincha), el mov CONCILIADO reaparece como
+# pendiente-programa, sin lado banco (el extracto era de una sesión ya cerrada).
+#
+# La cura ya existía en SQL (scintela.relink_matches_post_sync, mig 0066/0067/
+# 0069) pero el ÚNICO que la llamaba era el sync, vía _relink_py en
+# modules.conciliacion.diag_view — módulo que NO EXISTE → ImportError silencioso
+# ("[WARN] relink falló (no fatal)"). Y los re-depósitos/reversos de Alex NUNCA
+# pasan por el sync. Resultado: nadie reenganchaba nunca.
+#
+# Esta es la versión Python (persiste el UPDATE, sin el quirk pl/pgsql del
+# comentario de mig 0068) + preview + botón, corrible en cualquier momento
+# desde la pantalla. Restaura el id_transaccion → balance y pendientes vuelven
+# a excluir el conciliado, sin tocar la semántica de exclusión.
+
+
+def _firma_expr(alias: str) -> str:
+    """Expresión SQL que reproduce scintela.compute_tx_firma para un alias de
+    transacciones_bancarias: fecha|documento|importe|numreferencia|concepto[:40]."""
+    a = alias
+    return (
+        f"COALESCE({a}.fecha::TEXT,'')||'|'||COALESCE({a}.documento,'')||'|'"
+        f"||COALESCE({a}.importe::TEXT,'0')||'|'||COALESCE({a}.numreferencia::TEXT,'')||'|'"
+        f"||COALESCE(LEFT({a}.concepto,40),'')"
+    )
+
+
+def relink_matches_huerfanos(no_banco: int = _BANCO_PICHINCHA, dry_run: bool = True) -> dict:
+    """Reengancha matches activos cuyo id_transaccion apunta a una fila muerta.
+
+    Sólo toca HUÉRFANOS (id_transaccion inexistente en transacciones_bancarias),
+    busca por tx_firma completa la fila del libro re-creada y — si la encuentra —
+    UPDATE el id_transaccion + marca stat='*' en la fila nueva. Con dry_run=True
+    NO escribe: devuelve el detalle para previsualizar.
+
+    Devuelve dict: {matches_total, huerfanos, relinked, sin_match, detalle:[...]}.
+    Varios matches con la MISMA firma (un depósito conciliado cheque×cheque, N
+    matches → 1 fila DE) reenganchan todos al mismo id nuevo — igual que apuntaban
+    todos al mismo id viejo. Es idempotente: correrlo de nuevo no hace nada.
+    """
+    nb = int(no_banco)
+    total = int((_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL", (nb,),
+    ) or {}).get("n") or 0)
+
+    filas = _db.fetch_all(
+        f"""
+        SELECT m.id AS match_id, m.tx_firma, m.id_transaccion AS old_id,
+               m.real_fecha, m.real_documento, m.real_monto, m.real_concepto,
+               m.creado_en,
+               (SELECT tt.id_transaccion
+                  FROM scintela.transacciones_bancarias tt
+                 WHERE tt.no_banco = %s
+                   AND ({_firma_expr('tt')}) = m.tx_firma
+                 ORDER BY tt.id_transaccion ASC LIMIT 1) AS new_id
+          FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s
+           AND m.deshecho_en IS NULL
+           AND m.tx_firma IS NOT NULL
+           AND m.id_transaccion IS NOT NULL
+           AND NOT EXISTS (
+               SELECT 1 FROM scintela.transacciones_bancarias tt
+                WHERE tt.id_transaccion = m.id_transaccion)
+         ORDER BY m.creado_en DESC
+        """,
+        (nb, nb),
+    ) or []
+
+    con_pareja = [r for r in filas if r.get("new_id") is not None]
+    sin_pareja = [r for r in filas if r.get("new_id") is None]
+
+    if not dry_run and con_pareja:
+        with _db.tx() as conn:
+            for r in con_pareja:
+                _db.execute(
+                    "UPDATE scintela.banco_conciliacion_match "
+                    "SET id_transaccion=%s WHERE id=%s",
+                    (int(r["new_id"]), int(r["match_id"])), conn=conn,
+                )
+                _db.execute(
+                    "UPDATE scintela.transacciones_bancarias SET stat='*' "
+                    "WHERE id_transaccion=%s AND COALESCE(TRIM(stat),'')<>'*'",
+                    (int(r["new_id"]),), conn=conn,
+                )
+
+    # Agrupar por new_id (depósito) para mostrar prolijo.
+    grupos: dict = {}
+    for r in filas:
+        k = r.get("new_id")
+        g = grupos.setdefault(k, {
+            "new_id": k, "n_matches": 0,
+            "importe": None, "fecha": None, "documento": None, "concepto": None,
+        })
+        g["n_matches"] += 1
+        try:
+            g["importe"] = round(float(r.get("real_monto") or 0), 2)
+        except (TypeError, ValueError):
+            pass
+        g["fecha"] = r.get("real_fecha")
+        g["documento"] = r.get("real_documento")
+        g["concepto"] = (r.get("real_concepto") or "")[:48]
+
+    return {
+        "matches_total": total,
+        "huerfanos": len(filas),
+        "relinked": len(con_pareja),
+        "sin_match": len(sin_pareja),
+        "detalle": filas,
+        "grupos": list(grupos.values()),
+    }
+
+
+def _relink_py(no_banco: int = _BANCO_PICHINCHA) -> dict:
+    """Wrapper con la forma que espera admin_dbase (post-sync). Aplica el
+    reenganche y devuelve {matches_total, relinked, sin_firma, sin_match}."""
+    res = relink_matches_huerfanos(no_banco, dry_run=False)
+    sin_firma = int((_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match "
+        "WHERE no_banco=%s AND deshecho_en IS NULL AND tx_firma IS NULL "
+        "AND id_transaccion IS NOT NULL", (int(no_banco),),
+    ) or {}).get("n") or 0)
+    return {
+        "matches_total": res["matches_total"],
+        "relinked": res["relinked"],
+        "sin_firma": sin_firma,
+        "sin_match": res["sin_match"],
+    }
+
+
+@conciliacion_bp.route("/banco-v2/relink-huerfanos", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_relink_huerfanos():
+    """Preview (GET) + aplicar (POST) el reenganche de conciliados huérfanos."""
+    no_banco = _BANCO_PICHINCHA
+    if request.method == "POST":
+        res = relink_matches_huerfanos(no_banco, dry_run=False)
+        if res["relinked"]:
+            flash(
+                f"Reenganche listo: {res['relinked']} conciliado(s) huérfano(s) "
+                f"reconectados a su fila re-creada."
+                + (f" {res['sin_match']} sin pareja por firma (revisar a mano)."
+                   if res["sin_match"] else ""),
+                "ok",
+            )
+        else:
+            flash(
+                f"No había conciliados huérfanos reenganchables "
+                f"({res['sin_match']} sin pareja por firma)."
+                if res["sin_match"] else "No hay conciliados huérfanos. Todo enganchado.",
+                "warn" if res["sin_match"] else "info",
+            )
+        return redirect(url_for("conciliacion.banco_post_procesar", tab="conciliados"))
+
+    res = relink_matches_huerfanos(no_banco, dry_run=True)
+    return render_template(
+        "conciliacion/relink_huerfanos.html", res=res, no_banco=no_banco)
