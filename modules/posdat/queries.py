@@ -146,29 +146,33 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
     # TMT 2026-07-24: persist es el ÚNICO motor de devengo (se retiró el
     # auto-run de correr_provisiones_diarias, que usaba un marcador GLOBAL y le
     # apilaba la cuota a las ediciones manuales — "se cambia y no se mantiene").
-    # Para que persist cubra TODAS las provisiones sin congelar ninguna,
-    # inicializa baseline_date=hoy en las filas YY/RT que no lo tengan (sin
-    # back-accrual: empiezan a devengar desde hoy). Idempotente: sólo NULL.
-    db.execute(
-        f"""UPDATE scintela.posdat SET baseline_date = %s
-             WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
-               AND baseline_date IS NULL
-               AND COALESCE(banc, 0) = 0
-               AND {POSDAT_NO_ANULADA_WHERE}""",
-        (hoy,),
-    )
+    # Trae YY/RT con baseline < hoy (para devengar) Y las que NO tienen baseline
+    # (para inicializarlas), así persist cubre TODAS sin congelar ninguna.
     rows = db.fetch_all(
         f"""
         SELECT id_posdat, prov, concepto, importe, baseline_date
           FROM scintela.posdat
          WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
-           AND baseline_date IS NOT NULL
-           AND baseline_date < %s
            AND COALESCE(banc, 0) = 0
            AND {POSDAT_NO_ANULADA_WHERE}
+           AND (baseline_date IS NULL OR baseline_date < %s)
         """,
         (hoy,),
     ) or []
+    if not rows:
+        return 0
+    # Inicializar las que NO tienen baseline (arrancan a devengar desde hoy, sin
+    # back-accrual). Sólo se emite el UPDATE si hay alguna (idempotente: si todas
+    # tienen baseline, no toca nada).
+    _sin_base = [r["id_posdat"] for r in rows if not r.get("baseline_date")]
+    if _sin_base:
+        db.execute(
+            "UPDATE scintela.posdat SET baseline_date = %s "
+            "WHERE id_posdat = ANY(%s)",
+            (hoy, _sin_base),
+        )
+    # Acumular sólo las que ya tenían baseline < hoy.
+    rows = [r for r in rows if r.get("baseline_date")]
     if not rows:
         return 0
     _resolver_cuotas(rows)  # misma resolución que el display
