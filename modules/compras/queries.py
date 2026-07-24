@@ -979,12 +979,18 @@ def total_buscar(
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
-                 AND NOT EXISTS (
-                       SELECT 1 FROM scintela.compra k
-                       WHERE UPPER(TRIM(COALESCE(k.codigo_prov, ''))) =
-                             UPPER(TRIM(COALESCE(c.codigo_prov, '')))
-                         AND UPPER(COALESCE(k.tipo, '')) = 'K'
-                         AND ABS(COALESCE(k.kg, 0)) > 0.01))
+                 -- TMT 2026-07-24 (dueña): "quiero ver la maquila (Ponce/Reyes)
+                 -- en Compras". Antes Compras escondía a TODO proveedor con
+                 -- producción (NOT EXISTS por prov), y de rebote ocultaba la
+                 -- maquila tercerizada — que es una compra REAL a terceros
+                 -- (genera costo y cuenta por pagar). Ahora se esconde SOLO la
+                 -- autoproducción INTELA (prov='KK': los ~202k kg/mes de
+                 -- "compra a sí mismo" que inundarían la lista). Los
+                 -- tercerizados (AP/RY, prov<>'KK') SÍ se listan con su
+                 -- desglose. Cambio de DISPLAY: no toca la utilidad ni el panel
+                 -- COSTOS (esos leen scintela.compra tipo K directo, sin este
+                 -- filtro — ver tejido_mes_componentes()).
+                 AND UPPER(TRIM(COALESCE(c.codigo_prov, ''))) <> 'KK')
           )
         """,
         {
@@ -1110,12 +1116,18 @@ def buscar(
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
-                 AND NOT EXISTS (
-                       SELECT 1 FROM scintela.compra k
-                       WHERE UPPER(TRIM(COALESCE(k.codigo_prov, ''))) =
-                             UPPER(TRIM(COALESCE(c.codigo_prov, '')))
-                         AND UPPER(COALESCE(k.tipo, '')) = 'K'
-                         AND ABS(COALESCE(k.kg, 0)) > 0.01))
+                 -- TMT 2026-07-24 (dueña): "quiero ver la maquila (Ponce/Reyes)
+                 -- en Compras". Antes Compras escondía a TODO proveedor con
+                 -- producción (NOT EXISTS por prov), y de rebote ocultaba la
+                 -- maquila tercerizada — que es una compra REAL a terceros
+                 -- (genera costo y cuenta por pagar). Ahora se esconde SOLO la
+                 -- autoproducción INTELA (prov='KK': los ~202k kg/mes de
+                 -- "compra a sí mismo" que inundarían la lista). Los
+                 -- tercerizados (AP/RY, prov<>'KK') SÍ se listan con su
+                 -- desglose. Cambio de DISPLAY: no toca la utilidad ni el panel
+                 -- COSTOS (esos leen scintela.compra tipo K directo, sin este
+                 -- filtro — ver tejido_mes_componentes()).
+                 AND UPPER(TRIM(COALESCE(c.codigo_prov, ''))) <> 'KK')
           )
         ORDER BY c.fecha DESC, c.id_compra DESC
         LIMIT %(limite)s
