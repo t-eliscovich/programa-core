@@ -657,13 +657,16 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
         # Ingresos (entradas/ajustes de stock), sin fila propia. Así Egresos =
         # Consumido real, Stock act. = FÍSICO (coincide), y cierra: Inic +
         # Ingresos − Egresos = Stock act. COSTOS DE TINTORERÍA no se toca.
-        co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
-        co["ingresos_us"] = round(
-            float(quimicos_modelo.get("compras") or 0)
-            + float(quimicos_modelo.get("ajuste") or 0), 0)   # ajuste plegado en Ingresos
+        _inic = round(float(quimicos_modelo.get("inicial") or 0), 0)
+        _egr = round(float(quimicos_modelo.get("egresos") or 0), 0)
+        _fin = round(float(quimicos_modelo["final_form"] or 0), 0)  # físico
+        co["stock_inic_us"] = _inic
+        co["egresos_us"] = _egr
+        co["stock_act_us"] = _fin
+        # Ingresos = compras + ajuste + redondeo, DERIVADO para que la columna
+        # cierre EXACTO en enteros: Stock inic + Ingresos − Egresos = Stock act.
+        co["ingresos_us"] = _fin - _inic + _egr
         co["ingresos_n"] = int(quimicos_modelo.get("compras_n") or 0)
-        co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
-        co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
         co.pop("ajuste_us", None)     # SIN fila Ajuste (plegado en Ingresos)
         co.pop("maquinas_us", None)   # fila "En máquinas" QUÍM → "—"
     elif quimicos_modelo and quimicos_modelo.get("final_form") is not None:
