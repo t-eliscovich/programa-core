@@ -554,58 +554,29 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             _b_fis = _q_fisico_total(_corte_fin)
 
             if None not in (_b_ini, _b_ent, _b_aj, _b_cons, _b_fis):
-                # TMT 2026-07-24 (dueña "que se cargue solo, no quiero pisar
-                # nada"): los 5 números de la columna QUÍM.$ salen de
-                # quimico_totales_por_tipo — PORT LITERAL de "TOTALES POR TIPO"
-                # de formulas_app → IDÉNTICO a lo que ve la fábrica. Inicial
-                # DERIVADO, Final anclado al conteo, todo a catálogo × IVA ×
-                # A44/10. La columna cierra sola: Inic+Compras+Ajuste−Consumido
-                # =Final. Respaldo: el modelo previo (físico + consumo) por si
-                # el port falla (fail-soft).
-                _tot = None
-                try:
-                    from modules.informes.quimico_inv_formulas import (
-                        quimico_totales_por_tipo as _qtt,
-                    )
-                    _tot = _qtt(_date3(int(anio), int(mes), 1), _corte_fin)
-                except Exception:  # noqa: BLE001 -- fail-soft, queda el respaldo
-                    _tot = None
-                if _tot:
-                    _q_ini = float(_tot["inicial"])
-                    _q_com = float(_tot["compras"])
-                    _q_aju = float(_tot["ajuste"])
-                    _q_egr = float(_tot["consumido"])
-                    _q_fin = float(_tot["final"])
-                else:
-                    # Respaldo: modelo previo (físico + consumo aprox).
-                    _cons_us = float(_b_cons.get("us") or 0)
-                    try:
-                        from modules.informes.quimico_inv_formulas import (
-                            quimico_consumido_us as _qcf,
-                        )
-                        _v = _qcf(_date3(int(anio), int(mes), 1), _corte_fin)
-                        if _v is not None and _v > 0:
-                            _cons_us = float(_v)
-                    except Exception:  # noqa: BLE001 -- fail-soft
-                        pass
-                    _q_ini = _b_ini
-                    _q_com = float(_b_ent.get("us") or 0)
-                    _q_egr = _cons_us
-                    _q_fin = _b_fis
-                    # Ajuste = plug para que cierre contra el físico.
-                    _q_aju = _q_fin - _q_ini - _q_com + _q_egr
+                # TMT 2026-07-24 (dueña "el egreso y el total costo químicos
+                # tienen que dar el MISMO número"): el EGRESO de QUÍM.$ = el
+                # TOTAL de COSTOS DE TINTORERÍA (proy_quimico = filas_t[0].t_imp,
+                # el mismo "179" que se ve abajo). Stock act. = inicial + compras
+                # − egreso (deriva, cierra la columna). Sin fila Ajuste, sin más
+                # vueltas. Respaldo al consumo físico si no vino el proyectado.
+                _q_ini = _b_ini
+                _q_com = float(_b_ent.get("us") or 0)
+                _q_egr = (float(proy_quimico) if proy_quimico is not None
+                          else float(_b_cons.get("us") or 0))
+                _q_fin = _q_ini + _q_com - _q_egr
                 quimicos_modelo = {
                     "modelo": "formulas",
                     "inicial": _q_ini,
                     "compras": _q_com,
                     "compras_n": int(_b_ent.get("n") or 0),
-                    "ajustes_inv": _q_aju,
-                    "ajustes_inv_n": int(_b_aj.get("n") or 0),
+                    "ajustes_inv": 0.0,
+                    "ajustes_inv_n": 0,
                     "egresos": _q_egr,
                     "en_maquinas": 0.0,
-                    "final_prog": _q_ini + _q_com + _q_aju - _q_egr,  # = final_form
-                    "final_form": _q_fin,            # FINAL de formulas
-                    "ajuste": _q_aju,                # fila Ajuste (cierra la columna)
+                    "final_prog": _q_fin,           # inicial + compras − egreso
+                    "final_form": _q_fin,
+                    "ajuste": 0.0,
                     "facturado_prog": _compras_prog,
                     "facturado_n": int(_qc.get("n") or 0),
                 }
@@ -669,17 +640,15 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
 
     # COLUMNA QUÍM.$ de la tabla de movimientos.
     if quimicos_modelo and quimicos_modelo.get("modelo") == "formulas":
-        # TMT 2026-07-24 (dueña "quiero ver lo mismo que formulas"): 5 filas
-        # idénticas a "TOTALES POR TIPO" — Stock inic. / Ingresos / Ajuste /
-        # Egresos / Stock act. La fila Ajuste vuelve (la dueña la ve en
-        # formulas) y hace que la columna cierre exacto: Inicial + Compras +
-        # Ajuste − Consumido = Final.
+        # TMT 2026-07-24 (dueña "el egreso y el total den el MISMO número"):
+        # 4 filas — Stock inic. / Ingresos / Egresos (= Total de tintorería) /
+        # Stock act. (= inicial + ingresos − egreso). Sin fila Ajuste ni máquinas.
         co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
         co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
         co["ingresos_n"] = int(quimicos_modelo.get("compras_n") or 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
-        co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)
         co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
+        co.pop("ajuste_us", None)     # sin fila Ajuste
         co.pop("maquinas_us", None)   # fila "En máquinas" QUÍM → "—"
     elif quimicos_modelo and quimicos_modelo.get("final_form") is not None:
         # FALLBACK modelo A: inicial VQ0 + compras tipo Q − consumo proyectado,

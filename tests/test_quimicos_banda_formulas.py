@@ -162,12 +162,11 @@ def _patch_asinfo():
     ]
 
 
-def test_mov_asinfo_banda_formulas_5_filas_desde_totales_por_tipo():
-    """TMT 2026-07-24 (dueña "que se cargue solo, quiero ver lo mismo que
-    formulas"): la columna QUÍM.$ = pantalla "TOTALES POR TIPO" de formulas
-    (quimico_totales_por_tipo). 5 filas — Inicial/Compras/Ajuste/Consumido/
-    Final — que CIERRAN: Inicial + Compras + Ajuste − Consumido = Final. La
-    fila Ajuste vuelve (la dueña la ve en formulas)."""
+def test_mov_asinfo_banda_formulas_egreso_igual_total_tintoreria():
+    """TMT 2026-07-24 (dueña "el egreso y el total costo químicos tienen que
+    dar el MISMO número"): el EGRESO de QUÍM.$ = proy_quimico (= Total de
+    COSTOS DE TINTORERÍA). Stock act. = inicial + compras − egreso (cierra).
+    4 filas — sin Ajuste ni máquinas."""
     ctxs = _patch_asinfo()
     with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], ctxs[6], \
          patch("db.fetch_one", return_value={"importe": 152776.0, "n": 4}), \
@@ -178,33 +177,27 @@ def test_mov_asinfo_banda_formulas_5_filas_desde_totales_por_tipo():
          patch("modules.informes.quimicos_flujo.ajustes_inventario_mes",
                return_value={"us": 1392.2, "n": 132, "detalle": []}), \
          patch("modules.informes.quimicos_flujo.consumo_terminadas_mes",
-               return_value={"us": 147616.0}), \
-         patch("modules.informes.quimico_inv_formulas.quimico_totales_por_tipo",
-               return_value={"inicial": 480916.05, "compras": 113078.94,
-                             "ajuste": 1601.0, "consumido": 176413.42,
-                             "final": 419182.57}):
+               return_value={"us": 147616.0}):
         mov = _build_mov_asinfo(_data(), _inv(), _inv(), anio=2026, mes=7,
-                                proy_quimico=90000.0)
+                                proy_quimico=179292.0)
     qm = mov["quimicos_modelo"]
     assert qm["modelo"] == "formulas"
-    assert qm["inicial"] == 480916.05           # = TOTALES POR TIPO, no el físico
-    assert qm["compras"] == 113078.94 and qm["compras_n"] == 93
-    assert qm["egresos"] == 176413.42           # Consumido de formulas
-    assert round(qm["ajuste"], 2) == 1601.0     # fila Ajuste (vuelve)
-    assert qm["final_form"] == 419182.57
-    # cierra: Inicial + Compras + Ajuste − Consumido = Final
+    assert qm["inicial"] == 437500.0
+    assert qm["compras"] == 80467.5 and qm["compras_n"] == 93
+    assert qm["egresos"] == 179292.0            # = Total de tintorería (proy_quimico)
     assert round(qm["final_prog"], 2) == round(
-        480916.05 + 113078.94 + 1601.0 - 176413.42, 2)
+        437500.0 + 80467.5 - 179292.0, 2)       # inicial + compras − egreso
+    assert qm["final_form"] == qm["final_prog"]
     assert qm["facturado_prog"] == 152776.0 and qm["facturado_n"] == 4
     assert mov["quimicos_banda"] == qm
-    # Columna QUÍM.$: 5 filas idénticas a formulas.
+    # Columna QUÍM.$: 4 filas — sin Ajuste ni máquinas.
     co = mov["colorantes"]
-    assert co["stock_inic_us"] == round(480916.05, 0)
-    assert co["ingresos_us"] == round(113078.94, 0)
-    assert co["egresos_us"] == round(176413.42, 0)
-    assert co["ajuste_us"] == round(1601.0, 0)          # fila Ajuste presente
-    assert co["stock_act_us"] == round(419182.57, 0)
-    assert "maquinas_us" not in co                 # "En máquinas" QUÍM → "—"
+    assert co["stock_inic_us"] == 437500.0
+    assert co["ingresos_us"] == round(80467.5, 0)
+    assert co["egresos_us"] == 179292.0
+    assert co["stock_act_us"] == round(437500.0 + 80467.5 - 179292.0, 0)
+    assert "ajuste_us" not in co                    # sin fila Ajuste
+    assert "maquinas_us" not in co                  # "En máquinas" QUÍM → "—"
 
 
 def test_mov_asinfo_fallback_modelo_viejo_si_falta_un_termino():
