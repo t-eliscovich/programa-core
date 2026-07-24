@@ -536,13 +536,18 @@ def banco_post_procesar():
     # TMT 2026-06-03: el contador sesion.matches_hechos venía desincronizado
     # con la realidad (decía 14 con 0 matches reales). Lo recomputamos live
     # desde banco_conciliacion_match. Single source of truth.
+    # TMT 2026-07-24 (dueña: "esta sesión no hizo 1500"): el recompute contaba
+    # TODOS los matches del banco (histórico de toda la vida) → el encabezado
+    # "N matches hechos" mostraba el acumulado, no la sesión. Acotado a los
+    # matches creados DESDE que se abrió esta sesión.
     try:
         _real_matches = _db.fetch_one(
             """
             SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match
              WHERE no_banco = %s AND deshecho_en IS NULL
+               AND creado_en >= %s
             """,
-            (no_banco,),
+            (no_banco, sesion.get("abierta_en")),
         ) or {}
         sesion = dict(sesion)
         sesion["matches_hechos"] = int(_real_matches.get("n") or 0)

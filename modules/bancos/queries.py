@@ -1556,6 +1556,27 @@ def reversar_movimiento_simple(
             f"Transacción origen #{md_orig.get('origen_id')} no existe."
         )
 
+    # TMT 2026-07-24 (Tamara/Alex): NO revertir un movimiento CONCILIADO — eso
+    # le rompe la conciliación en silencio (caso de los depósitos consolidados
+    # que reaparecieron como pendientes: se revirtió el depósito ENTERO de 28/18
+    # cheques y perdió su match). Mismo guard que ya usan mover-entre-bancos,
+    # deshacer-reverso y volver-a-cartera. Si un cheque del depósito salió mal,
+    # la vía correcta es marcar ESE cheque como devuelto (le genera su nota de
+    # débito aparte y deja el resto del depósito conciliado), no revertir todo.
+    _conc = db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (tx_orig["id_transaccion"],),
+    )
+    if _conc:
+        raise ValueError(
+            "Este movimiento está conciliado con el banco. Si es un depósito y un "
+            "cheque salió mal, marcá ESE cheque como devuelto — le genera su nota "
+            "de débito aparte y deja el resto del depósito conciliado; no conviene "
+            "revertir el movimiento entero. Si igual necesitás revertirlo, "
+            "desconciliá primero desde la conciliación."
+        )
+
     doc_orig = (tx_orig.get("documento") or "").upper().strip()
     # Documento de reverso (signo opuesto).
     doc_reverso = {"DE": "CH", "NC": "CH", "ND": "NC"}.get(doc_orig)
