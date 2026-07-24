@@ -814,10 +814,15 @@ def balance():
     # financiero (un refresh/prefetch/favorito lo disparaba). El forzado manual
     # sigue disponible para scripts vía correr_provisiones_diarias(forzar=True).
     # TMT 2026-07-11.
-    try:
-        prov_result = queries.correr_provisiones_diarias()
-    except Exception as e:  # noqa: BLE001
-        prov_result = {"aplicado": False, "error": str(e)}
+    # TMT 2026-07-24: correr_provisiones_diarias() RETIRADO del auto-run.
+    # `persistir_acumulacion_yy` (arriba) es el ÚNICO motor de devengo: es
+    # baseline-aware por fila, así que respeta las ediciones manuales (editar
+    # el importe resetea baseline → el valor queda de base y devenga desde ahí,
+    # se MANTIENE). El viejo usaba un marcador GLOBAL y le apilaba la cuota a
+    # cualquier edición ("Andrés la cambió y no se mantuvo") + duplicaba el
+    # devengo (misma cuota/match que persist). La función queda disponible para
+    # scripts vía correr_provisiones_diarias(forzar=True).
+    prov_result = {"aplicado": False, "motivo": "retirado — persist es el único motor de devengo"}
 
     # ITEM #5 — Auto-cierre de stock mensual (replica MENU.PRG L246-263).
     # Idempotente. Si ya se cerró el mes destino, no hace nada. Si falla,

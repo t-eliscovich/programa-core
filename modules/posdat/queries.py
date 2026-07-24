@@ -143,6 +143,20 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
     if not _baseline_col_exists():
         return 0
     hoy = hoy or _hoy_ec()
+    # TMT 2026-07-24: persist es el ÚNICO motor de devengo (se retiró el
+    # auto-run de correr_provisiones_diarias, que usaba un marcador GLOBAL y le
+    # apilaba la cuota a las ediciones manuales — "se cambia y no se mantiene").
+    # Para que persist cubra TODAS las provisiones sin congelar ninguna,
+    # inicializa baseline_date=hoy en las filas YY/RT que no lo tengan (sin
+    # back-accrual: empiezan a devengar desde hoy). Idempotente: sólo NULL.
+    db.execute(
+        f"""UPDATE scintela.posdat SET baseline_date = %s
+             WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
+               AND baseline_date IS NULL
+               AND COALESCE(banc, 0) = 0
+               AND {POSDAT_NO_ANULADA_WHERE}""",
+        (hoy,),
+    )
     rows = db.fetch_all(
         f"""
         SELECT id_posdat, prov, concepto, importe, baseline_date
