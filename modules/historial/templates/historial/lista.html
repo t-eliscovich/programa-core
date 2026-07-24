@@ -343,7 +343,7 @@
                   <form method="post"
                         action="{{ url_for('historial.deshacer_reverso', id_mov_doble=r.id_mov_doble) }}"
                         style="display:inline"
-                        onsubmit="return confirm('¿Deshacer este reverso? El cheque vuelve a estar activo y se elimina la NC del banco. Usar solo si el reverso fue por error.');">
+                        onsubmit='return confirm("¿Deshacer este reverso? Vuelve a quedar CARGADO el " + {{ r.destino_label|tojson }} + " (y activo el cheque), y se elimina la NC del banco de Pichincha. Usar solo si el reverso fue por error.");'>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="next" value="{{ request.full_path }}">
                     <button type="submit"
