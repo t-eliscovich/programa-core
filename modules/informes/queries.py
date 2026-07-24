@@ -4036,8 +4036,14 @@ def resultados_costos_tabla(
     ]
 
 
-def informe_balance() -> dict:
-    """Arma el BALANCE equivalente al del INFORMES.PRG screen."""
+def informe_balance(comp_mes_override: dict | None = None) -> dict:
+    """Arma el BALANCE equivalente al del INFORMES.PRG screen.
+
+    `comp_mes_override`: si se pasa {"kg": .., "importe": ..}, reemplaza el
+    resultado de compras_mes_corriente() para el cálculo del $/kg del hilado.
+    Sólo lo usa /admin/health/hilado-stock-debug para proyectar la utilidad
+    bajo cada escenario de valuación SIN tocar el balance real (read-only).
+    """
     _totf = totf()
     _totc = totc()
     bancos = saldo_bancos()
@@ -4073,7 +4079,7 @@ def informe_balance() -> dict:
     venta_anual = venta_anual_kg_y_us()
     # Mes EN CURSO (live, no del cierre histórico) — replica el dBase.
     vent_mes = ventas_mes_corriente_resultado()
-    comp_mes = compras_mes_corriente()
+    comp_mes = comp_mes_override if comp_mes_override is not None else compras_mes_corriente()
 
     # SALBANC = saldo total de TODOS los bancos + POS1 + POS2.
     #

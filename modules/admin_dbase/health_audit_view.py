@@ -823,6 +823,47 @@ def hilado_stock_debug():
         den = HI0 + kc
         return round((HI0 * um0_ini + uc) / den, 4) if den else None
 
+    # ── UTILIDAD PROYECTADA por escenario — corre el balance REAL con cada
+    # (kg, importe) de compras via comp_mes_override (read-only, no muta nada).
+    def _util_scn(kc, uc):
+        try:
+            _b = _iq2.informe_balance(comp_mes_override={"kg": float(kc or 0), "importe": float(uc or 0)})
+            _c = (_b.get("diagnostico", {}) or {}).get("componentes", {}) or {}
+            return {
+                "utilidad": round(float(_c.get("utilidad") or 0), 2),
+                "vsto": round(float(_c.get("vsto") or 0), 2),
+                "patr": round(float(_c.get("patr") or 0), 2),
+            }
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)[:160]}
+
+    util_A = _util_scn(kcom_bal, ucom_bal)
+    util_B = _util_scn(kcom_ded, ucom_bal)
+    util_C = _util_scn(float(rec.get("kg") or 0), float(rec.get("us") or 0)) if rec.get("kg") else {"error": "sin rec"}
+
+    # ── HISTORIA día-a-día: ¿la caída de stock fue por KG o por $/kg? ──
+    hist_dia = db.fetch_all(
+        """
+        SELECT fecha, stock, ustock, uqui, usuti, patrimonio
+          FROM scintela.historia
+         ORDER BY fecha DESC
+         LIMIT 8
+        """
+    ) or []
+    hist_trend = []
+    for h in hist_dia:
+        _s = float(h.get("stock") or 0)
+        _u = float(h.get("ustock") or 0)
+        hist_trend.append({
+            "fecha": str(h.get("fecha")),
+            "stock_kg": round(_s, 0),
+            "ustock": round(_u, 0),
+            "ustock_por_kg": round(_u / _s, 4) if _s else None,
+            "uqui": round(float(h.get("uqui") or 0), 0),
+            "usuti": round(float(h.get("usuti") or 0), 0),
+            "patrimonio": round(float(h.get("patrimonio") or 0), 0),
+        })
+
     escenarios = {
         "HI0_stock_inicial_kg": round(HI0, 2),
         "um0_stock_inicial_usdkg": round(um0_ini, 4),
@@ -831,18 +872,21 @@ def hilado_stock_debug():
             "kcom": round(kcom_bal, 2), "ucom": round(ucom_bal, 2),
             "usd_kg_compras": round(ucom_bal / kcom_bal, 4) if kcom_bal else None,
             "um_act": _um_act(kcom_bal, ucom_bal),
+            "utilidad_proyectada": util_A,
         },
         "B_dedup_kg_por_importacion": {
             "fuente": "kg_stock_por_compra (kg 1 vez/importacion) + TODOS los importes",
             "kcom": round(kcom_ded, 2), "ucom": round(ucom_bal, 2),
             "usd_kg_compras": round(ucom_bal / kcom_ded, 4) if kcom_ded else None,
             "um_act": _um_act(kcom_ded, ucom_bal),
+            "utilidad_proyectada": util_B,
         },
         "C_recibido_mes": {
             "fuente": "costo_hilado_recibido_mes (kg fisico recibido + su costo)",
             "kcom": rec.get("kg"), "ucom": rec.get("us"),
             "usd_kg_compras": rec.get("usd_kg"),
             "um_act": _um_act(float(rec.get("kg") or 0), float(rec.get("us") or 0)) if rec.get("kg") else None,
+            "utilidad_proyectada": util_C,
         },
         "nota": "um_act mueve el $/kg de TODO el stock; delta_valor ~= delta_um_act * kg_total_stock",
     }
@@ -866,5 +910,6 @@ def hilado_stock_debug():
         "recon_error": recon.get("error"),
         "ultimo_cierre_um0_ref": {"fecha": str(close.get("fecha")), "um0": round(um0, 4)},
         "balance_live": live,
+        "historia_dia_a_dia": hist_trend,
         "compras": compras,
     })
