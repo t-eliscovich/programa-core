@@ -1570,12 +1570,22 @@ def compras_mes_corriente() -> dict:
     Verificado contra DBF real 30/04/2026: TIPO='H' abril = 199.464 kg /
     $581.021 → cuadra exacto con la pantalla del dBase (foto TMT).
     """
-    row = (
-        db.fetch_one(
+    # TMT 2026-07-23 (dueña "subime la utilidad, es un desastre"): traemos las
+    # FILAS (no un SUM) para poder reconstruir el kg de las compras de importación
+    # convertidas en PC (BAP) que quedan con kg=0 — el kg vive en la importación
+    # (regla 2026-07-10). El SUM crudo NO las contaba, así que el stock de hilado
+    # (HI = HI0 + KM − KH) quedaba SUB-contado y la utilidad sub-valuada (~$100-135k
+    # al 07/2026: refs AC 99/16 de ARIESCOPE que Andrés convirtió). El Flujo de
+    # producción ya reconstruía; el balance NO → quedaban inconsistentes. Ahora el
+    # balance usa la MISMA fuente.
+    rows = (
+        db.fetch_all(
             f"""
-        SELECT COUNT(*) AS n,
-               COALESCE(SUM(kg), 0)      AS kg,
-               COALESCE(SUM(importe), 0) AS importe
+        SELECT codigo_prov AS prov,
+               NULLIF(regexp_replace(COALESCE(concepto,''),'[^0-9]','','g'),'')::bigint AS ref,
+               fecha,
+               COALESCE(kg, 0)      AS kg,
+               COALESCE(importe, 0) AS importe
         FROM scintela.compra
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
@@ -1587,12 +1597,23 @@ def compras_mes_corriente() -> dict:
           AND {NO_BACKFILL_WHERE}  -- ver constante arriba
         """
         )
-        or {}
+        or []
     )
+    kg = sum(float(r.get("kg") or 0) for r in rows)
+    importe = sum(float(r.get("importe") or 0) for r in rows)
+    # Reconstruir el kg que falta desde la importación (kg 1 vez por importación;
+    # dedup interno). Fail-soft: si Asinfo cae, queda el kg propio de la compra
+    # (mismo comportamiento que antes de este fix).
+    try:
+        from modules.importaciones.service import kg_hilado_faltantes_mes
+
+        kg += float(kg_hilado_faltantes_mes(rows).get("kg") or 0)
+    except Exception:  # noqa: BLE001 -- nunca romper el balance por Asinfo
+        pass
     return {
-        "n": int(row.get("n") or 0),
-        "kg": float(row.get("kg") or 0),
-        "importe": float(row.get("importe") or 0),
+        "n": len(rows),
+        "kg": float(kg),
+        "importe": float(importe),
     }
 
 
