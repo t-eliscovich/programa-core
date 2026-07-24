@@ -1132,12 +1132,11 @@ def reporte(dias_banco: int = 30):
 
     yield line("── [11] STOCK QUÍMICOS — VQX = VQ0+VQQ−ITIN (PRG L322) ──")
     yield cmp_acum("Stock Quí (VQX)", d.get("VQX"), _f(pc.get("vqx")))
-    # TMT 2026-07-24: PC MUESTRA el químico TOTAL (colorantes + auxiliares) en
-    # VQX, pero la UTILIDAD usa solo la base COLORANTE (`_quim_increment` se
-    # resta en informes/queries.py:4896). El compare tomaba el total como
-    # componente → los auxiliares sobraban y caían al RESIDUO (el "−71k residuo
-    # real" que arrastraban varias sesiones). Los descontamos como componente
-    # propio para cerrar la identidad.
+    # Dueña 2026-07-24: los auxiliares AHORA CUENTAN en la utilidad de PC (ya no se
+    # neutralizan con `_quim_increment`). Por eso NO se descuentan como componente:
+    # el dBase no valúa los auxiliares, así que quedan DENTRO del Stock Quí (VQX)
+    # como diferencia real PC−dBase que sí mueve la utilidad. (Antes se restaban
+    # para cerrar la identidad cuando la utilidad los dejaba afuera.)
     try:
         from modules.informes.quimico_inv_formulas import quimico_total_fisico as _qtf
         from modules.tintura.service import stock_colorante_fisico as _scf
@@ -1146,8 +1145,7 @@ def reporte(dias_banco: int = 30):
         _qtot = _f(_qtf(_hq))
         _quim_aux = (_qtot - _qcol) if (_qtot > 0 and _qcol > 0 and _qtot > _qcol) else 0.0
         if abs(_quim_aux) > 0.005:
-            deltas.append(("Quím.aux (fuera util.)", -_quim_aux))
-            yield line(f"  Quím. auxiliares (PC lo muestra en stock, NO en utilidad): {_quim_aux:,.2f}")
+            yield line(f"  Quím. auxiliares (ahora DENTRO de la utilidad de PC): {_quim_aux:,.2f}")
     except Exception as _exc_qa:  # noqa: BLE001
         yield line(f"  [quím. auxiliares no disponible: {_exc_qa!r}]")
     try:
