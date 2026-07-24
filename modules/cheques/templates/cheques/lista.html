@@ -448,11 +448,11 @@
                title="Ordenar por importe en todo el listado (mayor↓ / menor↑)">Importe{% if _ord_cur == 'importe_desc' %} ↓{% elif _ord_cur == 'importe_asc' %} ↑{% endif %}</a>
           </th>
           <th class="px-2 py-1 text-left font-medium">Banco</th>
-          {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que
-             numero de cheque!!'. Columna nueva para N° de comprobante /
-             depósito que da el banco (doc_banco). Editable inline. #}
-          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="N° comprobante/depósito/transferencia (lo que da el banco)">Doc. banco</th>
           <th class="px-1 py-1 text-center font-medium chq-print-hide" data-no-sort style="width:50px;">Estado</th>
+          {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que
+             numero de cheque!!'. Columna N° de comprobante/depósito (doc_banco).
+             TMT 2026-07-23 (dueña): movida al final (después de Estado). #}
+          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="N° comprobante/depósito/transferencia (lo que da el banco)">Doc. banco</th>
           <th class="px-2 py-1 text-right font-medium no-print" data-no-sort>Acc.</th>
         </tr>
       </thead>
@@ -618,31 +618,8 @@
           </td>
           {# TMT 2026-05-18 — Cliente movido a col 2 (arriba) #}
           <td class="px-1.5 py-1.5 text-slate-500">{{ c.banco or '' }}</td>
-          {# TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'.
-             Inline edit del doc_banco (N° comprobante/depósito). Vacío
-             es válido (NULL en DB). #}
-          {% set _db_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
-          <td class="px-1.5 py-1.5 font-mono text-xs chq-print-hide" data-stop="1" style="white-space: nowrap;">
-            {% if _db_editable %}
-              {% set _db_val = c.doc_banco or '' %}
-              <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
-                    class="inline-flex items-center gap-1 ch-inline-form" style="margin:0">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="next" value="{{ request.full_path }}">
-                <input type="text" name="doc_banco" maxlength="40"
-                       value="{{ _db_val }}" data-orig="{{ _db_val }}"
-                       placeholder="—"
-                       oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
-                       class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
-                       style="width: 82px;"
-                       title="Editar Doc. banco (N° depósito/transf.) — Enter para guardar">
-                <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
-              </form>
-            {% else %}
-              {% if c.doc_banco %}{{ c.doc_banco }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-            {% endif %}
-          </td>
-          {# TMT 2026-07-23 (dueña): la celda Importe se movió ARRIBA (antes de Banco). #}
+          {# TMT 2026-07-23 (dueña): la celda Importe se movió ARRIBA (antes de Banco)
+             y la celda Doc. banco se movió al FINAL (después de Estado). #}
           {# TMT 2026-05-19 — celda Acum. removida (pedido dueña). #}
           {# TMT 2026-05-19 v8 — pedido dueña: "hace en cheques un dropdown
              para el cambio de estado. no otro cuadro y un inline edit a la
@@ -729,6 +706,30 @@
             {% else %}
               {# Estado terminal — sin transiciones. Mostrar solo la letra. #}
               <span class="font-mono text-sm text-slate-500">{{ s or '—' }}</span>
+            {% endif %}
+          </td>
+          {# TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'. Inline edit del
+             doc_banco (N° comprobante/depósito). Vacío es válido (NULL en DB).
+             TMT 2026-07-23 (dueña): movida al FINAL (después de Estado). #}
+          {% set _db_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
+          <td class="px-1.5 py-1.5 font-mono text-xs chq-print-hide" data-stop="1" style="white-space: nowrap;">
+            {% if _db_editable %}
+              {% set _db_val = c.doc_banco or '' %}
+              <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
+                    class="inline-flex items-center gap-1 ch-inline-form" style="margin:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="text" name="doc_banco" maxlength="40"
+                       value="{{ _db_val }}" data-orig="{{ _db_val }}"
+                       placeholder="—"
+                       oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
+                       class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
+                       style="width: 82px;"
+                       title="Editar Doc. banco (N° depósito/transf.) — Enter para guardar">
+                <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
+              </form>
+            {% else %}
+              {% if c.doc_banco %}{{ c.doc_banco }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             {% endif %}
           </td>
           {# Columna de acciones — TMT 2026-05-24 v2 (dueña: "un botonsito").
