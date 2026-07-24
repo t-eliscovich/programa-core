@@ -1120,13 +1120,31 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         stock_act_col = float(hist_live.get("uqui") or vq0)
     except Exception:
         stock_act_col = vq0
-    header["colorantes"]["stock_act_us"] = stock_act_col
-    header["colorantes"]["egresos_us"] = max(
-        float(header["colorantes"]["stock_inic_us"])
-        + float(header["colorantes"]["ingresos_us"])
-        - float(header["colorantes"]["stock_act_us"]),
-        0.0,
-    )
+    # TMT 2026-07-24 (dueña: "el egreso de químicos y el total de tintorería
+    # tienen que coincidir"): el egreso de químicos = el consumo de tintura de
+    # los BATCHES del mes (tint_us — lo que pega con el dBase), y el stock act.
+    # se DERIVA de ahí para que la columna cierre. Antes el egreso se derivaba
+    # del stock act. (inventario snapshot), que no reconciliaba con los batches
+    # por ~4-6k. Es DISPLAY del cuadro (informe_balance sólo lee los stock_act_KG
+    # de hilado/tejido/terminado, NO este egreso ni este stock químico → no toca
+    # VQX/utilidad). `stock_act_col` (inventario) queda de fallback si no hay
+    # tintura del mes.
+    if float(tint_us or 0) > 0:
+        header["colorantes"]["egresos_us"] = float(tint_us)
+        header["colorantes"]["stock_act_us"] = max(
+            float(header["colorantes"]["stock_inic_us"])
+            + float(header["colorantes"]["ingresos_us"])
+            - float(tint_us),
+            0.0,
+        )
+    else:
+        header["colorantes"]["stock_act_us"] = stock_act_col
+        header["colorantes"]["egresos_us"] = max(
+            float(header["colorantes"]["stock_inic_us"])
+            + float(header["colorantes"]["ingresos_us"])
+            - float(header["colorantes"]["stock_act_us"]),
+            0.0,
+        )
 
     # CS.PRODUCCION — costo total de producción (mat. prima + tejido + tin
     # + col) / kg producidos en el mes. Usa hist live.
