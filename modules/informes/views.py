@@ -651,16 +651,20 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
 
     # COLUMNA QUÍM.$ de la tabla de movimientos.
     if quimicos_modelo and quimicos_modelo.get("modelo") == "formulas":
-        # TMT 2026-07-24 (dueña "egreso = lo consumido, stock cierra en físico"):
-        # Stock inic. / Ingresos / Egresos (= Consumido) / Ajuste / Stock act.
-        # (= físico). La fila Ajuste hace que cierre: Inic + Ingresos + Ajuste −
-        # Egresos = Stock act. (físico). La tabla COSTOS DE TINTORERÍA no se toca.
+        # TMT 2026-07-24 (dueña "NO quiero fila Ajuste, sumalo a una columna;
+        # quiero 420 de stock sin ajuste"): 4 filas — Stock inic. / Ingresos /
+        # Egresos / Stock act. El ajuste (físico − libro, poquito) se SUMA a
+        # Ingresos (entradas/ajustes de stock), sin fila propia. Así Egresos =
+        # Consumido real, Stock act. = FÍSICO (coincide), y cierra: Inic +
+        # Ingresos − Egresos = Stock act. COSTOS DE TINTORERÍA no se toca.
         co["stock_inic_us"] = round(float(quimicos_modelo.get("inicial") or 0), 0)
-        co["ingresos_us"] = round(float(quimicos_modelo.get("compras") or 0), 0)
+        co["ingresos_us"] = round(
+            float(quimicos_modelo.get("compras") or 0)
+            + float(quimicos_modelo.get("ajuste") or 0), 0)   # ajuste plegado en Ingresos
         co["ingresos_n"] = int(quimicos_modelo.get("compras_n") or 0)
         co["egresos_us"] = round(float(quimicos_modelo.get("egresos") or 0), 0)
-        co["ajuste_us"] = round(float(quimicos_modelo.get("ajuste") or 0), 0)
         co["stock_act_us"] = round(float(quimicos_modelo["final_form"] or 0), 0)
+        co.pop("ajuste_us", None)     # SIN fila Ajuste (plegado en Ingresos)
         co.pop("maquinas_us", None)   # fila "En máquinas" QUÍM → "—"
     elif quimicos_modelo and quimicos_modelo.get("final_form") is not None:
         # FALLBACK modelo A: inicial VQ0 + compras tipo Q − consumo proyectado,

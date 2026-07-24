@@ -194,13 +194,16 @@ def test_mov_asinfo_banda_formulas_egreso_es_consumido_cierra_al_fisico():
     assert round(qm["final_prog"], 2) == round(qm["final_form"], 2)  # cierra
     assert qm["facturado_prog"] == 152776.0 and qm["facturado_n"] == 4
     assert mov["quimicos_banda"] == qm
-    # Columna QUÍM.$: Inicial + Compras + Ajuste − Consumido = Stock act. (físico)
+    # Columna QUÍM.$: SIN fila Ajuste (plegado en Ingresos). Cierra:
+    # Stock inic + Ingresos − Egresos = Stock act. (físico).
     co = mov["colorantes"]
     assert co["stock_inic_us"] == round(480916.05, 0)
-    assert co["ingresos_us"] == round(113078.94, 0)
+    assert co["ingresos_us"] == round(113078.94 + _aj, 0)   # ajuste plegado acá
     assert co["egresos_us"] == round(176413.42, 0)
-    assert co["ajuste_us"] == round(_aj, 0)         # fila Ajuste presente
     assert co["stock_act_us"] == round(419182.57, 0)
+    assert (co["stock_inic_us"] + co["ingresos_us"]
+            - co["egresos_us"]) == co["stock_act_us"]       # cierra sin ajuste
+    assert "ajuste_us" not in co                    # SIN fila Ajuste
     assert "maquinas_us" not in co                  # "En máquinas" QUÍM → "—"
 
 
