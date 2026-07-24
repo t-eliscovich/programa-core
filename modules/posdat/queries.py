@@ -452,7 +452,12 @@ def editar(
         # Usamos _hoy_ec() (UTC-5) en lugar de CURRENT_DATE para alinear
         # con lo que ve la dueña en pantalla.
         prov_actual = (actual.get("prov") or "").strip().upper()
-        if prov_actual == "YY" and _baseline_col_exists():
+        # TMT 2026-07-24 (dueña): RT (IVA) acumula display-time IGUAL que YY
+        # (ver _aplicar_acumulacion_yy / persistir_acumulacion_yy, prov IN
+        # ('YY','RT')). Antes el reset de baseline sólo cubría 'YY', así que
+        # editar el importe de una RT a mano lo re-inflaba en el próximo
+        # persist. Ahora YY y RT resetean baseline = HOY.
+        if prov_actual in ("YY", "RT") and _baseline_col_exists():
             campos.append("baseline_date = %s")
             params.append(_hoy_ec())
     # TMT 2026-05-19 v8 — `prov` editable. Antes estaba bloqueado por
