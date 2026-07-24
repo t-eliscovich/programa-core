@@ -1110,19 +1110,21 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # Aplicar al header de colorantes el ingreso $ del mes.
     header["colorantes"]["ingresos_us"] = cs_col_us
     header["colorantes"]["kg_live"] = cs_col_kg  # exposed para la tabla
-    # TMT 2026-07-24 (dueña, "usá el mismo número en ambos"): el EGRESO de
-    # químicos = costo de colorantes del programa de tintorería (Bajos+Fuertes),
-    # así "QUÍM.$ Egresos" (MOVIMIENTOS) y el "Total" de COSTOS DE TINTORERÍA son
-    # EXACTAMENTE el mismo número. El colorante que sale del stock ES el que se
-    # consumió tinturando. El stock act. pasa a ser el saldo CONTABLE derivado
-    # (inic + compras − consumo). Antes el egreso se derivaba del snapshot de
-    # formulas (uqui) y no cerraba con el total de tintorería (Δ ~4.445).
-    _tint_quim_us = float(bajos_us) + float(fuertes_us)
-    header["colorantes"]["egresos_us"] = _tint_quim_us
-    header["colorantes"]["stock_act_us"] = max(
+    # TMT 2026-05-19 v8 — egresos $ de colorantes derivado por balance:
+    # inic + ingresos - act = consumo. Necesitamos stock act final, que
+    # viene del último snapshot live (uqui de historia_ultimo_snapshot).
+    # Si no tenemos snapshot fresh, usamos vq0 = stock_act = stock_inic
+    # (consumo = ingresos del mes).
+    try:
+        hist_live = historia_ultimo_snapshot() or {}
+        stock_act_col = float(hist_live.get("uqui") or vq0)
+    except Exception:
+        stock_act_col = vq0
+    header["colorantes"]["stock_act_us"] = stock_act_col
+    header["colorantes"]["egresos_us"] = max(
         float(header["colorantes"]["stock_inic_us"])
         + float(header["colorantes"]["ingresos_us"])
-        - _tint_quim_us,
+        - float(header["colorantes"]["stock_act_us"]),
         0.0,
     )
 
