@@ -1130,8 +1130,20 @@ def reporte(dias_banco: int = 30):
                      if r.get("tipo") == "Q" and r.get("stat") not in ("X", "Y")
                      and r.get("usuario") != "asinfo-backfill")
         yield "  " + _linea_cmp("VQQ compras Q mes", d.get("VQQ"), vqq_pc)
-        itin_pc2 = sum(_f(r["importe"]) for r in (pc_tin if isinstance(pc_tin, list) else []))
+        # TMT 2026-07-24: PC ITIN = el MISMO que usa el balance/VQX
+        # (tinto_mes_corriente_resultado → scintela.tinto pre-corte + formulas
+        # post-CORTE_TINTURA), NO el SUM crudo de scintela.tinto. En julio el
+        # SUM crudo da bajo porque el mes sale de formulas y scintela.tinto
+        # puede estar sin re-sync — eso engañaba el hueco de químicos/residuo.
+        # El crudo queda como nota de sync.
+        itin_scintela = sum(_f(r["importe"]) for r in (pc_tin if isinstance(pc_tin, list) else []))
+        try:
+            itin_pc2 = _f(iq.tinto_mes_corriente_resultado().get("itin"))
+        except Exception:  # noqa: BLE001
+            itin_pc2 = itin_scintela
         yield "  " + _linea_cmp("ITIN tinto mes", d.get("ITIN"), itin_pc2)
+        if abs(itin_pc2 - itin_scintela) > 1:
+            yield line(f"    (scintela.tinto crudo={itin_scintela:,.2f} — la dif es tintura de formulas post-corte / sync)")
         yield line("  (Δ VQX = ΔVQ0 + ΔVQQ − ΔITIN)")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [insumos VQX no disponibles: {exc!r}]")
