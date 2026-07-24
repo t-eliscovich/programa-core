@@ -928,6 +928,46 @@ def reversar_mov_inline(id_mov_doble: int):
     return redirect(_next_seguro())
 
 
+@historial_bp.route("/historial/<int:id_mov_doble>/deshacer-reverso", methods=["POST"])
+@requiere_login
+def deshacer_reverso(id_mov_doble: int):
+    """Deshace un reverso de cheque emitido hecho por ERROR (des-reverso).
+
+    Revive el cheque original, restaura el gasto/posdat/caja/retiro que el
+    reverso había deshecho, y elimina la NC compensatoria del banco. Gateado
+    por `cheques.anular` (misma operación que reversar). TMT 2026-07-24: Alex
+    reversó cheques que creyó duplicados y no lo eran.
+    """
+    if not tiene_permiso("cheques.anular"):
+        return render_template("404.html"), 404
+    r = _row_md(id_mov_doble)
+    if not r:
+        abort(404)
+    if (r.get("tipo") or "") != "reverso_cheque_emitido":
+        flash(
+            "Ese movimiento no es un reverso de cheque emitido — no se puede "
+            "deshacer con esta acción.",
+            "warn",
+        )
+        return redirect(_next_seguro())
+    usuario = (g.user or {}).get("username", "web")
+    motivo = (request.form.get("motivo") or "error de carga").strip()
+    from modules.bancos import queries as _bq
+    try:
+        res = _bq.deshacer_reverso_cheque_emitido(
+            id_mov_doble_reverso=id_mov_doble, motivo=motivo, usuario=usuario,
+        )
+        flash(
+            f"Reverso deshecho: el cheque volvió a estar activo "
+            f"(${res['importe']:,.2f}). Se eliminó la NC #{res['id_nc_borrada']} "
+            f"del banco y se restauró el movimiento original.",
+            "ok",
+        )
+    except Exception as e:
+        flash_exc("No pude deshacer el reverso (rollback total)", e)
+    return redirect(_next_seguro())
+
+
 # =====================================================================
 # Reverso ATÓMICO de batch — TMT 2026-05-15.
 #

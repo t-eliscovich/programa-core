@@ -2386,3 +2386,186 @@ def reversar_cheque_emitido(
         "side_effect_revertido":      side_revertido,
         "id_mov_doble_reverso":       id_md_rev,
     }
+
+
+def deshacer_reverso_cheque_emitido(
+    *,
+    id_mov_doble_reverso: int,
+    motivo: str = "",
+    usuario: str = "web",
+) -> dict:
+    """Deshace un reverso de cheque emitido hecho por ERROR — deja todo como
+    si el reverso nunca hubiese ocurrido.
+
+    Es la operación INVERSA de `reversar_cheque_emitido`. Se usa cuando alguien
+    reversó un cheque por confusión (ej: creyó que era un duplicado y no lo era).
+    Restaura:
+      - el cheque original (mov_doble 'reversado' → 'activo'),
+      - el gasto/posdat/caja/retiro/anticipo que el reverso había deshecho,
+      - y ELIMINA la NC compensatoria que el reverso metió en el banco.
+
+    Pasos (atómico, TMT 2026-07-24):
+      1. Lee el mov_doble del reverso (tipo='reverso_cheque_emitido',
+         estado='reverso'). `origen_id` = NC compensatoria; `id_original` =
+         mov_doble del cheque original (estado='reversado'); `metadata`
+         guarda `side_effect_revertido`.
+      2. Guard: la NC no puede estar conciliada con el banco.
+      3. Restaura el side effect según `side_effect_revertido.tipo`:
+         - xgast_anulado        → xgast.stat 'Y' → 'C' (vuelve a pagado).
+         - posdat_reabierta     → posdat.banc 0 → no_banco (vuelve a pagada).
+         - retiro_compensado    → borra la fila de retiro compensatoria (neg).
+         - caja_compensada      → borra la salida de caja compensatoria + recompute.
+         - anticipo_usd_anulado → dolares.st 'X' → '' (vuelve a vivo).
+      4. Borra la NC del banco + recompute de saldos.
+      5. mov_doble original: 'reversado' → 'activo', id_reverso=NULL.
+      6. Borra el mov_doble del reverso.
+
+    Devuelve dict con lo restaurado.
+    """
+    import bank_helpers
+
+    motivo = (motivo or "").strip()
+
+    r = db.fetch_one(
+        """
+        SELECT id_mov_doble, tipo, origen_table, origen_id,
+               destino_table, destino_id, importe, concepto, estado,
+               id_original, metadata
+          FROM scintela.mov_doble
+         WHERE id_mov_doble = %s
+        """,
+        (id_mov_doble_reverso,),
+    )
+    if not r:
+        raise ValueError(f"Reverso #{id_mov_doble_reverso} no existe.")
+    if (r.get("tipo") or "") != "reverso_cheque_emitido":
+        raise ValueError(
+            "Este movimiento no es un reverso de cheque emitido — no se puede "
+            "deshacer con esta operación."
+        )
+    if (r.get("estado") or "") != "reverso":
+        raise ValueError(
+            f"Este reverso ya no está activo (estado='{r.get('estado')}') — "
+            "puede que ya se haya deshecho."
+        )
+
+    id_nc = int(r.get("origen_id") or 0)   # NC compensatoria en el banco
+    id_orig = r.get("id_original")
+    md = r.get("metadata") or {}
+    if isinstance(md, str):
+        import json as _json
+        try:
+            md = _json.loads(md)
+        except Exception:
+            md = {}
+    side = md.get("side_effect_revertido") if isinstance(md, dict) else None
+
+    nc = db.fetch_one(
+        "SELECT id_transaccion, no_banco, documento, importe, fecha "
+        "FROM scintela.transacciones_bancarias WHERE id_transaccion = %s",
+        (id_nc,),
+    )
+    if not nc:
+        raise ValueError(
+            f"No encuentro la NC compensatoria (#{id_nc}) del reverso — no "
+            "puedo deshacerlo automáticamente."
+        )
+    conc = db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (id_nc,),
+    )
+    if conc:
+        raise ValueError(
+            f"La NC del reverso (mov #{id_nc}) ya está conciliada con el banco. "
+            "Desconciliá primero y volvé a intentar."
+        )
+    no_banco = int(nc.get("no_banco") or 0)
+
+    restaurado = None
+    with db.tx() as conn:
+        # 1) Restaurar el side effect deshecho por el reverso.
+        if isinstance(side, dict):
+            stipo = side.get("tipo")
+            if stipo == "xgast_anulado" and side.get("id_xgast"):
+                db.execute(
+                    "UPDATE scintela.xgast SET stat='C', usuario_modifica=%s, "
+                    "fecha_modifica=CURRENT_TIMESTAMP "
+                    "WHERE id_xgast=%s AND stat='Y'",
+                    (usuario[:50], side["id_xgast"]), conn=conn,
+                )
+                restaurado = {"tipo": "xgast_reactivado", "id_xgast": side["id_xgast"]}
+            elif stipo == "posdat_reabierta" and side.get("id_posdat"):
+                db.execute(
+                    "UPDATE scintela.posdat SET banc=%s, "
+                    "fecha_modifica=CURRENT_TIMESTAMP, usuario_modifica=%s "
+                    "WHERE id_posdat=%s",
+                    (no_banco, usuario[:50], side["id_posdat"]), conn=conn,
+                )
+                restaurado = {"tipo": "posdat_repagada", "id_posdat": side["id_posdat"]}
+            elif stipo == "retiro_compensado" and side.get("id_retiro_compensacion"):
+                db.execute(
+                    "DELETE FROM scintela.retiros WHERE id_retiro=%s",
+                    (side["id_retiro_compensacion"],), conn=conn,
+                )
+                restaurado = {"tipo": "retiro_recompensacion_borrada",
+                              "id_retiro": side["id_retiro_compensacion"]}
+            elif stipo == "caja_compensada" and side.get("id_caja_compensacion"):
+                import caja_helpers
+                cid = int(side["id_caja_compensacion"])
+                db.execute(
+                    "DELETE FROM scintela.caja WHERE id_caja=%s", (cid,), conn=conn,
+                )
+                anc_c = db.fetch_one(
+                    "SELECT MIN(id_caja) AS ancla FROM scintela.caja "
+                    "WHERE id_caja > %s", (cid,), conn=conn,
+                )
+                if anc_c and anc_c.get("ancla"):
+                    caja_helpers.recompute_saldos_desde(conn, ancla_id=int(anc_c["ancla"]))
+                restaurado = {"tipo": "caja_compensacion_borrada", "id_caja": cid}
+            elif stipo == "anticipo_usd_anulado" and side.get("id_dolares"):
+                db.execute(
+                    "UPDATE scintela.dolares SET st='', usuario_modifica=%s, "
+                    "fecha_modifica=NOW() WHERE id_dolares=%s AND st='X'",
+                    (usuario[:50], side["id_dolares"]), conn=conn,
+                )
+                restaurado = {"tipo": "anticipo_usd_reactivado",
+                              "id_dolares": side["id_dolares"]}
+
+        # 2) Borrar la NC del banco + recompute de saldos.
+        db.execute(
+            "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion=%s",
+            (id_nc,), conn=conn,
+        )
+        anc = db.fetch_one(
+            "SELECT id_transaccion AS ancla FROM scintela.transacciones_bancarias "
+            "WHERE no_banco=%s ORDER BY fecha ASC, id_transaccion ASC OFFSET 1 LIMIT 1",
+            (no_banco,), conn=conn,
+        )
+        if anc and anc.get("ancla"):
+            bank_helpers.recompute_saldos_desde(
+                conn, no_banco=no_banco, no_cta=None, ancla_id=int(anc["ancla"]),
+            )
+
+        # 3) Original: reversado → activo (revive el cheque).
+        if id_orig:
+            db.execute(
+                "UPDATE scintela.mov_doble SET estado='activo', id_reverso=NULL "
+                "WHERE id_mov_doble=%s",
+                (id_orig,), conn=conn,
+            )
+
+        # 4) Borrar el mov_doble del reverso (como si nunca hubiese pasado).
+        db.execute(
+            "DELETE FROM scintela.mov_doble WHERE id_mov_doble=%s",
+            (id_mov_doble_reverso,), conn=conn,
+        )
+
+    return {
+        "id_mov_doble_reverso":  id_mov_doble_reverso,
+        "id_nc_borrada":         id_nc,
+        "id_mov_doble_original": id_orig,
+        "no_banco":              no_banco,
+        "importe":               float(r.get("importe") or 0),
+        "restaurado":            restaurado,
+    }

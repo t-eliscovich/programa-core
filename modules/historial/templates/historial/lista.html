@@ -335,6 +335,22 @@
                           data-reverso-preview="{{ url_for('historial.reverso_preview', id_mov_doble=r.id_mov_doble) }}"
                           title="Reversar este movimiento"
                           aria-label="Reversar">↺</button>
+                {% elif r.estado == 'reverso' and r.tipo == 'reverso_cheque_emitido' and r.id_mov_doble and r.id_mov_doble > 0 %}
+                  {# Des-reverso (TMT 2026-07-24, dueña): deshacer un reverso de
+                     cheque emitido hecho por ERROR (Alex reversó cheques que
+                     creyó duplicados y no lo eran). Revive el cheque original,
+                     restaura el gasto/posdat/caja/retiro y borra la NC del banco. #}
+                  <form method="post"
+                        action="{{ url_for('historial.deshacer_reverso', id_mov_doble=r.id_mov_doble) }}"
+                        style="display:inline"
+                        onsubmit="return confirm('¿Deshacer este reverso? El cheque vuelve a estar activo y se elimina la NC del banco. Usar solo si el reverso fue por error.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+                    <button type="submit"
+                            class="inline-flex items-center justify-center w-6 h-6 rounded text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 leading-none"
+                            title="Deshacer este reverso (fue por error)"
+                            aria-label="Deshacer reverso">⤺</button>
+                  </form>
                 {% else %}
                   <span class="text-xs text-slate-300">—</span>
                 {% endif %}
