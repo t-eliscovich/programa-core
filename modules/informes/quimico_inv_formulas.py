@@ -256,6 +256,47 @@ def quimico_consumido_us(desde: date, hasta: date) -> float | None:
     return float(row.get("us") or 0)
 
 
+# CONSUMIDO valuado a CATÁLOGO (productos.us) — la MISMA vara que la columna
+# "Consumido" de "TOTALES POR TIPO" de formulas (compute_row: cantidad × us ×
+# IVA). SAL exenta por NOMBRE (no por num), A44 (aux num_visible=44) /10. Todo
+# el químico (POLI+ALG+AUX o num<300). TMT 2026-07-24.
+_SQL_CONSUMO_CAT = """
+SELECT COALESCE(SUM(
+    (ol.cantidad_kg
+     + COALESCE((SELECT SUM((e->>'kg')::numeric)
+                   FROM jsonb_array_elements(
+                          CASE WHEN jsonb_typeof(ol.ajustes) = 'array'
+                               THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
+    * COALESCE(p.us, 0)
+    * (CASE WHEN UPPER(TRIM(p.nombre)) = 'SAL' THEN 1.0 ELSE 1.15 END)
+    * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44
+            THEN 0.1 ELSE 1.0 END)
+), 0) AS us
+  FROM orden_lineas ol
+  JOIN ordenes o   ON o.id = ol.orden_id
+  JOIN productos p ON p.num = ol.producto_num
+ WHERE o.fecha_terminado IS NOT NULL AND o.fecha_terminado <> ''
+   AND o.fecha_terminado >= %(desde)s
+   AND o.fecha_terminado <= %(hasta)s
+   AND (UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX') OR p.num < 300)
+"""
+
+
+def quimico_consumido_catalogo(desde: date, hasta: date) -> float | None:
+    """Químico CONSUMIDO c/IVA en [desde, hasta] valuado a CATÁLOGO (productos.us)
+    — el MISMO número que la columna "Consumido" de "TOTALES POR TIPO" de
+    formulas. None si formulas_db no está (fail-soft)."""
+    try:
+        row = formulas_db.fetch_one(
+            _SQL_CONSUMO_CAT, {"desde": desde.isoformat(), "hasta": hasta.isoformat()})
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("quimico_consumido_catalogo %s-%s: %s", desde, hasta, e)
+        return None
+    if not row:
+        return None
+    return float(row.get("us") or 0)
+
+
 # ── "TOTALES POR TIPO" completo (Inicial/Compras/Ajuste/Consumido/Final) ─────
 # TMT 2026-07-24 (dueña "que se cargue solo, no quiero pisar nada"): PORT LITERAL
 # de formulas_app inventario_math.compute_row + los builders (get_compras_by_date
