@@ -222,8 +222,9 @@
              (el tailwind.css está congelado — clases nuevas no renderizan). #}
           <td class="px-3 py-2" style="white-space: nowrap;">
             {% set uc = (c.usuario_crea or '')|lower %}
-            {% if uc == 'formulas-auto' %}
-              <span title="Cargada sola desde formulas_app (colorantes/químicos)" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#ede9fe;color:#6d28d9;">Fórmulas</span>
+            {% if uc.startswith('formulas') %}
+              {# 'formulas-auto' = cron; 'formulas-<user>' = sync manual del puente #}
+              <span title="{% if uc == 'formulas-auto' %}Cargada sola (automática) desde formulas_app (colorantes/químicos){% else %}Cargada desde formulas_app — sync manual de {{ c.usuario_crea[9:] if c.usuario_crea|length > 9 else c.usuario_crea }}{% endif %}" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#ede9fe;color:#6d28d9;">Fórmulas</span>
             {% elif uc == 'dbf-import' or uc == '' %}
               <span title="Importada del dBase (FoxPro)" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;">dBase</span>
             {% elif uc.startswith('asinfo') %}
