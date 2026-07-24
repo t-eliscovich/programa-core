@@ -554,13 +554,14 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             _b_fis = _q_fisico_total(_corte_fin)
 
             if None not in (_b_ini, _b_ent, _b_aj, _b_cons, _b_fis):
-                # TMT 2026-07-24 (dueña "que el egreso sea lo efectivamente
-                # consumido (~176), y el Stock act. cierre en el físico ~420"):
-                # Egreso = químico CONSUMIDO valuado a catálogo (= columna
-                # "Consumido" de "TOTALES POR TIPO" de formulas). Stock inic. y
-                # Stock act. = físico exacto de formulas. Ajuste = lo que cierra
-                # (físico − libro), como la fila Ajuste de formulas. La tabla
-                # COSTOS DE TINTORERÍA (el "179") queda intacta — es otra cosa.
+                # TMT 2026-07-24 (dueña "el Egreso y el Total de tintorería tienen
+                # que ser EL MISMO número, y el Stock act. en el físico ~420, sin
+                # fila Ajuste"): Egreso = proy_quimico = el TOTAL de COSTOS DE
+                # TINTORERÍA (el mismo "180" de abajo). Stock inic. y Stock act. =
+                # físico. La diferencia (tintorería − compras) la absorbe INGRESOS
+                # (derivado en el setter de la columna) para que cierre EXACTO sin
+                # fila Ajuste. Fallback al consumido a catálogo si no vino el
+                # proyectado. COSTOS DE TINTORERÍA no se toca.
                 _cons_us = float(_b_cons.get("us") or 0)
                 try:
                     from modules.informes.quimico_inv_formulas import (
@@ -573,21 +574,21 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
                     pass
                 _q_ini = _b_ini
                 _q_com = float(_b_ent.get("us") or 0)
-                _q_egr = _cons_us
-                _q_fin = _b_fis                       # físico (= Final de formulas)
-                _q_aju = _q_fin - _q_ini - _q_com + _q_egr   # cierra la columna
+                _q_egr = (float(proy_quimico) if proy_quimico is not None
+                          else _cons_us)          # = Total de tintorería
+                _q_fin = _b_fis                    # físico (= Stock act.)
                 quimicos_modelo = {
                     "modelo": "formulas",
                     "inicial": _q_ini,
                     "compras": _q_com,
                     "compras_n": int(_b_ent.get("n") or 0),
-                    "ajustes_inv": _q_aju,
-                    "ajustes_inv_n": int(_b_aj.get("n") or 0),
-                    "egresos": _q_egr,
+                    "ajustes_inv": 0.0,
+                    "ajustes_inv_n": 0,
+                    "egresos": _q_egr,             # = Total de tintorería
                     "en_maquinas": 0.0,
-                    "final_prog": _q_ini + _q_com + _q_aju - _q_egr,  # = final_form
-                    "final_form": _q_fin,
-                    "ajuste": _q_aju,                # fila Ajuste (cierra al físico)
+                    "final_prog": _q_fin,
+                    "final_form": _q_fin,          # físico
+                    "ajuste": 0.0,
                     "facturado_prog": _compras_prog,
                     "facturado_n": int(_qc.get("n") or 0),
                 }

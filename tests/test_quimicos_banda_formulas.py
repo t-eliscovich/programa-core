@@ -162,11 +162,11 @@ def _patch_asinfo():
     ]
 
 
-def test_mov_asinfo_banda_formulas_egreso_es_consumido_cierra_al_fisico():
-    """TMT 2026-07-24 (dueña "el egreso = lo efectivamente consumido, y que el
-    Stock act. cierre en el físico"): Egreso = quimico_consumido_catalogo (=
-    "Consumido" de TOTALES POR TIPO). Stock inic./act. = físico. Ajuste = lo
-    que cierra (físico − libro), como la fila Ajuste de formulas."""
+def test_mov_asinfo_banda_formulas_egreso_es_total_tintoreria_cierra_al_fisico():
+    """TMT 2026-07-24 (dueña "el Egreso y el Total de tintorería tienen que ser
+    EL MISMO número, y el Stock act. en el físico, sin fila Ajuste"): Egreso =
+    proy_quimico (= Total de COSTOS DE TINTORERÍA). Stock inic./act. = físico.
+    La diferencia la absorbe Ingresos → cierra EXACTO sin fila Ajuste."""
     ctxs = _patch_asinfo()
     with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], ctxs[6], \
          patch("db.fetch_one", return_value={"importe": 152776.0, "n": 4}), \
@@ -181,27 +181,22 @@ def test_mov_asinfo_banda_formulas_egreso_es_consumido_cierra_al_fisico():
          patch("modules.informes.quimico_inv_formulas.quimico_consumido_catalogo",
                return_value=176413.42):
         mov = _build_mov_asinfo(_data(), _inv(), _inv(), anio=2026, mes=7,
-                                proy_quimico=179292.0)
+                                proy_quimico=180376.0)
     qm = mov["quimicos_modelo"]
     assert qm["modelo"] == "formulas"
-    assert qm["inicial"] == 480916.05           # físico (= Inicial de formulas)
-    assert qm["compras"] == 113078.94 and qm["compras_n"] == 93
-    assert qm["egresos"] == 176413.42           # Consumido (a catálogo)
-    assert qm["final_form"] == 419182.57        # físico (= Final de formulas)
-    # Ajuste = físico − (inicial + compras − consumido); cierra la columna.
-    _aj = 419182.57 - 480916.05 - 113078.94 + 176413.42
-    assert round(qm["ajuste"], 2) == round(_aj, 2)
-    assert round(qm["final_prog"], 2) == round(qm["final_form"], 2)  # cierra
+    assert qm["inicial"] == 480916.05           # físico
+    assert qm["egresos"] == 180376.0            # = Total de tintorería (proy_quimico)
+    assert qm["final_form"] == 419182.57        # físico (= Stock act.)
     assert qm["facturado_prog"] == 152776.0 and qm["facturado_n"] == 4
     assert mov["quimicos_banda"] == qm
-    # Columna QUÍM.$: SIN fila Ajuste (plegado en Ingresos). Cierra:
-    # Stock inic + Ingresos − Egresos = Stock act. (físico).
+    # Columna QUÍM.$: SIN fila Ajuste. Egresos = Total tintorería; Ingresos
+    # absorbe la diferencia; cierra: Stock inic + Ingresos − Egresos = Stock act.
     co = mov["colorantes"]
-    _inic, _egr, _fin = round(480916.05, 0), round(176413.42, 0), round(419182.57, 0)
+    _inic, _egr, _fin = round(480916.05, 0), round(180376.0, 0), round(419182.57, 0)
     assert co["stock_inic_us"] == _inic
-    assert co["egresos_us"] == _egr
-    assert co["stock_act_us"] == _fin               # físico (= Final de formulas)
-    assert co["ingresos_us"] == _fin - _inic + _egr  # compras + ajuste + redondeo
+    assert co["egresos_us"] == _egr             # = Total de tintorería
+    assert co["stock_act_us"] == _fin           # físico
+    assert co["ingresos_us"] == _fin - _inic + _egr   # absorbe la diferencia
     assert (co["stock_inic_us"] + co["ingresos_us"]
             - co["egresos_us"]) == co["stock_act_us"]       # cierra EXACTO, sin ajuste
     assert "ajuste_us" not in co                    # SIN fila Ajuste
