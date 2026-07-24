@@ -1120,6 +1120,24 @@ def reporte(dias_banco: int = 30):
 
     yield line("── [11] STOCK QUÍMICOS — VQX = VQ0+VQQ−ITIN (PRG L322) ──")
     yield cmp_acum("Stock Quí (VQX)", d.get("VQX"), _f(pc.get("vqx")))
+    # TMT 2026-07-24: PC MUESTRA el químico TOTAL (colorantes + auxiliares) en
+    # VQX, pero la UTILIDAD usa solo la base COLORANTE (`_quim_increment` se
+    # resta en informes/queries.py:4896). El compare tomaba el total como
+    # componente → los auxiliares sobraban y caían al RESIDUO (el "−71k residuo
+    # real" que arrastraban varias sesiones). Los descontamos como componente
+    # propio para cerrar la identidad.
+    try:
+        from modules.informes.quimico_inv_formulas import quimico_total_fisico as _qtf
+        from modules.tintura.service import stock_colorante_fisico as _scf
+        _hq = _hoy_ec()
+        _qcol = _f(_scf(_hq))
+        _qtot = _f(_qtf(_hq))
+        _quim_aux = (_qtot - _qcol) if (_qtot > 0 and _qcol > 0 and _qtot > _qcol) else 0.0
+        if abs(_quim_aux) > 0.005:
+            deltas.append(("Quím.aux (fuera util.)", -_quim_aux))
+            yield line(f"  Quím. auxiliares (PC lo muestra en stock, NO en utilidad): {_quim_aux:,.2f}")
+    except Exception as _exc_qa:  # noqa: BLE001
+        yield line(f"  [quím. auxiliares no disponible: {_exc_qa!r}]")
     try:
         ip = ip if isinstance(ip, dict) else _pc_iniciales_prev()
     except NameError:
