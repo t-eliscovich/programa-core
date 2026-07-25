@@ -392,16 +392,36 @@ def run():
     return Response(stream_with_context(_run()), mimetype="text/plain")
 
 
-def _run():
-    import shutil
+def _rmtree_robusto(path) -> None:
+    """rmtree que en Windows tolera archivos de SOLO-LECTURA (DBF 0444 del tarball).
 
+    Mismo bug que /admin/dbase-compare: la 1ra subida (dir vacío) andaba, pero la
+    2da "volver a correr" fallaba con PermissionError(13, 'Access is denied') al
+    no poder borrar el FACTURAS.DBF de solo-lectura para re-extraer. El handler
+    limpia el atributo y reintenta.
+    """
+    import os
+    import shutil
+    import stat
+
+    def _on_error(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+
+    shutil.rmtree(path, onerror=_on_error)
+
+
+def _run():
     def line(m=""):
         return m.rstrip("\n") + "\n"
 
     yield line("=== Reconciliar FACTURAS — DRY-RUN (solo lectura) ===")
     try:
         if EXTRACT_DIR.exists():
-            shutil.rmtree(EXTRACT_DIR)
+            _rmtree_robusto(EXTRACT_DIR)
         EXTRACT_DIR.mkdir(parents=True)
         miembro = None
         with tarfile.open(TARBALL_PATH, "r:gz") as tar:
