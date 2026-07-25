@@ -167,15 +167,18 @@ def _tiene_migration_47() -> bool:
     return _tiene_migration_47._cache
 
 
-def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], set[tuple]]:
+def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], set[tuple], set[tuple]]:
     """Devuelve:
         set de id_transaccion (BANCSIS) ya conciliados (y NO deshechos)
         set de firma REAL (fecha, documento, monto str, tipo) ya conciliados
+        set de doc-clave (documento, monto, tipo) SIN fecha — SOLO de matches
+        cuyo counterpart es un movimiento REAL (no un histórico del backlog).
     """
     filtro_undo = "AND deshecho_en IS NULL" if _tiene_migration_47() else ""
     rows = db.fetch_all(
         f"""
-        SELECT id_transaccion, real_fecha, real_documento, real_monto, real_tipo
+        SELECT id_transaccion, real_fecha, real_documento, real_monto, real_tipo,
+               COALESCE(metodo, '') AS metodo
           FROM scintela.banco_conciliacion_match
          WHERE no_banco = %s
            {filtro_undo}
@@ -185,16 +188,24 @@ def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], 
     ) or []
     ids_bancsis: set[int] = set()
     firmas_real: set[tuple] = set()
+    # TMT 2026-07-25 (dueña, cheque devuelto BYG 14778 que descuadraba +21.508):
+    # docs_real (doc-clave SIN fecha) se arma SOLO con matches REALES, NO con
+    # `matched_historico`. Un histórico del backlog (cruce-feb2023) NO está en el
+    # extracto de esta sesión; si un match contra ese histórico oculta la fila
+    # REAL del extracto (mismo doc+monto+tipo, otra fecha), el lado banco queda
+    # corto por ese importe y la diferencia NO cierra. La firma EXACTA (con
+    # fecha) sí sigue incluyendo históricos — eso es dedupe legítimo.
+    docs_real: set[tuple] = set()
     for r in rows:
         if r.get("id_transaccion"):
             ids_bancsis.add(int(r["id_transaccion"]))
         if r.get("real_fecha") and r.get("real_documento"):
-            firmas_real.add((
-                r["real_fecha"],
-                (r.get("real_documento") or "").strip(),
-                f"{Decimal(str(r.get('real_monto') or 0)):.2f}",
-                (r.get("real_tipo") or "").strip().upper(),
-            ))
+            doc = (r.get("real_documento") or "").strip()
+            monto = f"{Decimal(str(r.get('real_monto') or 0)):.2f}"
+            tipo = (r.get("real_tipo") or "").strip().upper()
+            firmas_real.add((r["real_fecha"], doc, monto, tipo))
+            if doc and (r.get("metodo") or "") != "matched_historico":
+                docs_real.add((doc, monto, tipo))
 
     # TMT 2026-05-27 dueña: 'en dbase, pichincha, ya existe que movimientos
     # fueron conciliados y cuales no'. PICHINCH.DBF tiene un campo STAT:
@@ -218,7 +229,7 @@ def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], 
     except Exception:
         pass  # fail-soft: si la columna no existe, seguimos con lo registrado en PC
 
-    return ids_bancsis, firmas_real
+    return ids_bancsis, firmas_real, docs_real
 
 
 import re as _re
@@ -679,18 +690,21 @@ def matchear_extracto_banco(
     bancsis_total = len(bancsis)
 
     # Excluimos los ya conciliados.
-    ids_excl, firmas_excl = _ya_conciliadas(no_banco, desde, hasta)
+    ids_excl, firmas_excl, docs_excl = _ya_conciliadas(no_banco, desde, hasta)
     bancsis = [b for b in bancsis if b.id_transaccion not in ids_excl]
     # TMT 2026-07-22: exclusión del lado banco ROBUSTA al DRIFT DE FECHA. Un
     # match guarda la firma (fecha, doc, monto, tipo); si el MISMO movimiento
-    # vuelve en el extracto con una fecha ligeramente distinta (o se concilió
-    # como histórico con otra fecha), la firma 4-campos NO coincidía y el mov
-    # REAPARECÍA como pendiente aunque ya estuviera conciliado ("se salen").
-    # El N° de documento del banco es único por movimiento → (doc, monto, tipo)
-    # lo identifica sin depender de la fecha. Excluimos por firma completa O por
-    # esa doc-clave. Es estrictamente MÁS exclusión (nunca muestra de más): un
-    # mismo doc+monto+tipo que un match activo ES ese movimiento.
-    docs_excl = {(doc, monto, tipo) for (_f, doc, monto, tipo) in firmas_excl if doc}
+    # vuelve en el extracto con una fecha ligeramente distinta, la firma 4-campos
+    # NO coincidía y el mov REAPARECÍA como pendiente aunque ya estuviera
+    # conciliado ("se salen"). El N° de documento del banco es único por
+    # movimiento → (doc, monto, tipo) lo identifica sin depender de la fecha.
+    # Excluimos por firma completa O por esa doc-clave.
+    # TMT 2026-07-25: PERO la doc-clave (docs_excl) ahora se arma SOLO con matches
+    # REALES (no `matched_historico`) — ver _ya_conciliadas. Un match contra un
+    # histórico del backlog NO debe ocultar la fila real del extracto, porque el
+    # histórico no está en el extracto y el lado banco quedaría corto (era el
+    # cheque devuelto BYG 14778 que descuadraba +21.508). La firma EXACTA sigue
+    # cubriendo históricos con fecha idéntica (dedupe legítimo).
 
     def _ya_excluido(m) -> bool:
         if _firma_real(m) in firmas_excl:
