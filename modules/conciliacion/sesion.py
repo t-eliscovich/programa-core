@@ -368,6 +368,14 @@ def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
               FROM scintela.banco_historicos_pendientes
              WHERE no_banco = %s
                AND documento IS NOT NULL AND documento <> ''
+               -- TMT 2026-07-25 (dueña: cheque devuelto que "no aparecía"):
+               -- una fila SÓLO descartada (conciliado_en seteado por
+               -- /descartar-banco, SIN conciliado_match_id) no debe suprimir
+               -- el re-subir. Antes bloqueaba para siempre: el cheque quedaba
+               -- invisible y su plata se caía del cuadre. Seguimos suprimiendo
+               -- las pendientes (conciliado_en NULL, evita duplicar) y las
+               -- realmente conciliadas por match (conciliado_match_id NOT NULL).
+               AND (conciliado_en IS NULL OR conciliado_match_id IS NOT NULL)
             """,
             (int(no_banco),),
         ) or []
@@ -386,6 +394,8 @@ def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
                   FROM scintela.banco_historicos_pendientes
                  WHERE no_banco = %s
                    AND documento IS NOT NULL AND documento <> ''
+                   -- ver nota arriba: las descartadas no bloquean el re-subir.
+                   AND (conciliado_en IS NULL OR conciliado_match_id IS NOT NULL)
                 """,
                 (int(no_banco),),
             ) or []
