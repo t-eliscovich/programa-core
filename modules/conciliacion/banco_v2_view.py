@@ -1326,7 +1326,41 @@ def banco_diag_doc():
     banco Pichincha (historicos + matches + payload de la sesión abierta),
     para entender por qué el dedup lo suprime. No escribe nada."""
     doc = (request.args.get("doc") or "").strip()
-    out: dict = {"doc": doc, "no_banco": _BANCO_PICHINCHA}
+    try:
+        monto = float(request.args.get("monto") or 0)
+    except (TypeError, ValueError):
+        monto = 0.0
+    out: dict = {"doc": doc, "monto": monto, "no_banco": _BANCO_PICHINCHA}
+    # Búsqueda por MONTO (cualquier documento) — para ver si hay OTRO mov de ~21k.
+    if monto:
+        try:
+            out["historicos_por_monto"] = [
+                r.get("r") for r in (_db.fetch_all(
+                    """
+                    SELECT to_jsonb(h) AS r
+                      FROM scintela.banco_historicos_pendientes h
+                     WHERE no_banco = %s AND monto = %s
+                     ORDER BY h.id
+                    """,
+                    (_BANCO_PICHINCHA, monto),
+                ) or [])
+            ]
+        except Exception as e:
+            out["historicos_por_monto_error"] = str(e)
+        try:
+            out["matches_por_monto"] = [
+                r.get("r") for r in (_db.fetch_all(
+                    """
+                    SELECT to_jsonb(m) AS r
+                      FROM scintela.banco_conciliacion_match m
+                     WHERE no_banco = %s AND real_monto = %s
+                     ORDER BY m.id
+                    """,
+                    (_BANCO_PICHINCHA, monto),
+                ) or [])
+            ]
+        except Exception as e:
+            out["matches_por_monto_error"] = str(e)
     # to_jsonb → agnóstico de columnas (algunas migs no están en prod).
     try:
         out["historicos"] = [
