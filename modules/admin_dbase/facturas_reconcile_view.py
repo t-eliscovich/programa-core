@@ -232,7 +232,7 @@ def _leer_pc() -> list[dict]:
     rows = db.fetch_all(
         """
         SELECT id_factura, numf, codigo_cli, fecha, importe, abono, saldo,
-               stat, tipo, usuario_crea
+               kg, stat, tipo, usuario_crea
           FROM scintela.factura
         """
     ) or []
@@ -345,6 +345,50 @@ def reporte_desde_dbf(dbf_path: Path):
                f" + ΔE({delta_diffs:,.2f})")
     yield line(f"  residuo = {residuo:,.2f}  {'✓' if abs(residuo) < 0.01 else '✗ REVISAR'}")
     yield line()
+
+    # ── [F] DIFERENCIA NETA POR CLIENTE (apareo económico por cliente, ignora numf) ──
+    # Suma la cartera viva ZA por cliente en cada lado; Σ(PC−dBase) = el Δ TOTF del
+    # programa. Los clientes cuyas facturas aparecen partidas en A/B2 (numf distinto)
+    # NETEAN a ~0 acá, así que lo que queda con Δ≠0 es la diferencia REAL. kg = señal
+    # extra: Δkg≈0 con Δsaldo≠0 → cobranza/saldo; Δkg≠0 → factura de más o de menos.
+    _acc = defaultdict(lambda: {"db_za": 0.0, "pc_za": 0.0, "db_kg": 0.0,
+                                "pc_kg": 0.0, "db_n": 0, "pc_n": 0})
+    for r in dbf:
+        cli = (r.get("codigo_cli") or "").strip().upper()
+        _acc[cli]["db_za"] += _saldo_za(r)
+        if _viva(r.get("stat")):
+            _acc[cli]["db_kg"] += float(r.get("kg") or 0)
+            _acc[cli]["db_n"] += 1
+    for r in pc:
+        if (r.get("usuario_crea") or "").strip() == BACKFILL_MARKER:
+            continue
+        cli = (r.get("codigo_cli") or "").strip().upper()
+        _acc[cli]["pc_za"] += _saldo_za(r)
+        if _viva(r.get("stat")):
+            _acc[cli]["pc_kg"] += float(r.get("kg") or 0)
+            _acc[cli]["pc_n"] += 1
+    _difs = []
+    for cli, v in _acc.items():
+        dza = round(v["pc_za"] - v["db_za"], 2)
+        if abs(dza) >= 0.01:
+            _difs.append((cli, dza, round(v["pc_kg"] - v["db_kg"], 2),
+                          v["pc_n"] - v["db_n"], v))
+    _difs.sort(key=lambda x: -abs(x[1]))
+    _tot = round(sum(x[1] for x in _difs), 2)
+    yield line("[F] DIFERENCIA NETA POR CLIENTE — cartera viva ZA, PC(sin backfill) − dBase")
+    yield line("    (netea por cliente ignorando numf; Σ = Δ TOTF del programa. "
+               "+kg de apoyo: Δkg≈0 = cobranza/saldo; Δkg≠0 = factura de más/menos)")
+    yield line(f"  clientes con Δ≠0: {len(_difs)} · Σ Δsaldo ZA = {_tot:,.2f}")
+    yield line(f"  {'cli':5} {'Δsaldo':>13} {'Δkg':>11} {'Δn':>4}   "
+               f"PC saldo/n · dBase saldo/n")
+    for cli, dza, dkg, dn, v in _difs[:60]:
+        yield line(f"  {cli:5} {dza:>+13,.2f} {dkg:>+11,.2f} {dn:>+4}   "
+                   f"PC {v['pc_za']:>12,.2f}/{v['pc_n']:<4} · "
+                   f"dB {v['db_za']:>12,.2f}/{v['db_n']}")
+    if len(_difs) > 60:
+        yield line(f"  … y {len(_difs) - 60} más")
+    yield line()
+
     yield line("DRY-RUN: no se tocó nada (este endpoint nunca escribe). "
                "Para alinear: correr /admin/dbase-sync (A/D/E) y revisar [C] a mano.")
 
