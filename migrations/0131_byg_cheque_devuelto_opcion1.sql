@@ -1,42 +1,35 @@
 -- 0131_byg_cheque_devuelto_opcion1.sql
--- TMT 2026-07-25 — Cheque rebotado de BYG: replicar el dBase (OPCIÓN 1, elegida
--- por la dueña: la deuda del rebote queda VIVA en el cheque devuelto).
+-- TMT 2026-07-25 — Cheques REBOTADOS: replicar EXACTO el dBase.
 --
--- SITUACIÓN (verificada contra el tarball del dBase 24/07 y la app live):
---   BYG entregó el cheque 14778 ($21.508,62, Pichincha), se depositó y REBOTÓ
---   (dBase CHEQUES.DBF STAT=V, FECHOUT 23/07). El banco de PC ya tiene la nota
---   de débito ("ch.devuelto 14778 BYG" −21.508,62) hecha y CONCILIADA (fix
---   23/07 "corregir devoluciones sin ND"). Lo que faltó: pasar el cheque a
---   DEVUELTO y bajar las facturas que ese cheque había pagado.
---   - En el dBase esas 5 facturas de abril están en T (cobradas por el cheque
---     que después rebotó): 172265, 172582, 172799, 174052, 174269 (Σ 21.635,09;
---     la 174269 lleva el pago grande abono 21.538,88).
---   - En PC quedaron VIVAS (el cheque nunca se aplicó a facturas acá,
---     chequesxfact=0) → inflan facturas +21.635.
+-- Decisión de la dueña: "dejalo como queda el dBase". El dBase, cuando un
+-- cheque rebota, lo deja en STAT=V (que NO cuenta en cartera: TOTC = STAT $
+-- 'Z123PD', sin V) y las facturas que ese cheque había pagado quedan en T.
+-- La deuda SALE de cartera; el único rastro es la nota de débito en el banco.
 --
--- QUÉ HACE (OPCIÓN 1 = paridad de comportamiento con el dBase pero SIN perder
--- la deuda: PC queda más correcto que el dBase, que directamente la suelta):
---   1. Las 5 facturas de abril → T (saldo 0), igual que el set-stat de la UI.
---      La 172799 ya se pasó a T a mano el 25/07 (el guard la saltea).
---   2. El cheque 14778 (depositado, stat B) → estado 1 = "Devuelto". Es el
---      relabel PLANO (mismo efecto que transicionar_stat B→1, el `else` sin
---      side-effects). Entra a cartera de cheques (TOTC cuenta 1) = la deuda
---      sigue viva, ahora en el cheque devuelto en vez de en las facturas.
+-- LOS 11 CHEQUES REBOTADOS (dBase CHEQUES.DBF STAT=V, verificados contra el
+-- tarball 24/07): BYG 21508.62, EDU 20000, AJ2 9315.21, LRA 2332 (x2),
+-- OPM 2226 + 139, FAT 1680.65, FLA 1275.83, AAM 962.09, CG3 879.96.
+-- En PC quedaron como DEPOSITADOS (stat B) — el sync no los pasó a devuelto.
+-- La ND del banco YA existe y está CONCILIADA (fix 23/07). Acá NO se toca el
+-- banco → la conciliación queda intacta.
 --
--- NO TOCA EL BANCO → la conciliación queda INTACTA (la ND ya existe y está
--- conciliada; acá sólo cambian estados de factura y de cheque).
+-- QUÉ HACE:
+--   1. Cheques rebotados que hoy están depositados (B/A/I) → V. V no cuenta en
+--      TOTC (igual que el dBase), y en PC V significa lo mismo (protestado/
+--      devuelto). Como B tampoco cuenta, pasar B→V NO cambia el total —
+--      formaliza el estado devuelto y arregla la etiqueta. Match cliente+importe.
+--   2. BYG: las 5 facturas de abril que pagó su cheque (172265, 172582, 172799,
+--      174052, 174269) → T (saldo 0). En PC estaban vivas e inflaban facturas
+--      +21.635. Con esto BYG cuadra EXACTO con el dBase (facturas 5.342,77,
+--      cheque V no cuenta). La 172799 ya se pasó a T a mano el 25/07 (guard la
+--      saltea).
+--   (Otros clientes: sus facturas del rebote ya están en T en PC o su Δ es de
+--    retenciones — no se tocan acá; sólo el cheque → V.)
 --
--- Neto BYG: facturas 26.977,86 → 5.342,77 ; cheques cartera 0 → 21.508,62.
--- (La dif 126,47 = retenciones/abonos parciales ya aplicados a esas facturas.)
---
--- IDEMPOTENTE: los WHERE piden estado ORIGEN (facturas vivas Z/A ; cheque
--- depositado B/A/I). Tras correr, re-ejecutar es no-op.
---
--- REVERSIBLE:
---   UPDATE scintela.factura SET stat='Z', saldo = importe - COALESCE(abono,0)
+-- IDEMPOTENTE: guards por estado origen. REVERSIBLE:
+--   UPDATE scintela.factura SET stat='Z', saldo=importe-COALESCE(abono,0)
 --    WHERE codigo_cli='BYG' AND numf IN (172265,172582,172799,174052,174269);
---   UPDATE scintela.cheque  SET stat='B'
---    WHERE codigo_cli='BYG' AND ROUND(importe::numeric,2)=21508.62 AND stat='1';
+--   UPDATE scintela.cheque SET stat='B' WHERE stat='V' AND usuario_modifica='mig-0131';
 --
 -- GUARD to_regclass OBLIGATORIO: no-op en test/CI donde scintela.* no existe.
 
@@ -48,19 +41,23 @@ BEGIN
     RETURN;
   END IF;
 
-  -- 1) Facturas de abril que pagó el cheque rebotado → T (sólo si siguen vivas)
+  -- 1) BYG: facturas de abril que pagó el cheque rebotado → T (sólo si vivas)
   UPDATE scintela.factura
      SET stat = 'T', saldo = 0
    WHERE codigo_cli = 'BYG'
      AND numf IN (172265, 172582, 172799, 174052, 174269)
      AND COALESCE(stat, '') IN ('Z', 'A', '', ' ');
 
-  -- 2) Cheque depositado que rebotó → estado 1 = "Devuelto" (relabel plano)
+  -- 2) Los 11 cheques rebotados que hoy están depositados → V (como el dBase)
   UPDATE scintela.cheque
-     SET stat = '1',
+     SET stat = 'V',
          usuario_modifica = 'mig-0131',
          fecha_modifica = CURRENT_TIMESTAMP
-   WHERE codigo_cli = 'BYG'
-     AND ROUND(importe::numeric, 2) = 21508.62
-     AND COALESCE(stat, '') IN ('B', 'A', 'I');
+   WHERE COALESCE(stat, '') IN ('B', 'A', 'I')
+     AND (UPPER(TRIM(codigo_cli)), ROUND(importe::numeric, 2)) IN (
+       ('BYG', 21508.62), ('EDU', 20000.00), ('AJ2', 9315.21),
+       ('LRA', 2332.00), ('OPM', 2226.00), ('OPM', 139.00),
+       ('FAT', 1680.65), ('FLA', 1275.83), ('AAM', 962.09),
+       ('CG3', 879.96)
+     );
 END $$;

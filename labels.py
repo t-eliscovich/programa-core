@@ -153,7 +153,7 @@ ESTADOS_CHEQUE_LABEL = {
     ESTADO_CHEQUE_DEVUELTO_2:   "Devuelto",
     ESTADO_CHEQUE_REBOTE_FINAL: "Segundo rechazo",
     ESTADO_CHEQUE_ANULADO:      "Anulado",
-    ESTADO_CHEQUE_LEGACY_INTER: "Depositado (legacy Internacional)",
+    ESTADO_CHEQUE_LEGACY_INTER: "Devuelto",
     ESTADO_CHEQUE_LEGACY_ACRED: "Acreditado (legacy)",
     ESTADO_CHEQUE_LEGACY_REB:   "Rebotado (legacy)",
 }
