@@ -28,6 +28,7 @@ from pathlib import Path
 from flask import (
     abort,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -1313,6 +1314,53 @@ def banco_set_saldo_objetivo():
     except Exception as e:
         flash(f"Error al guardar: {e}", "error")
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+
+# ─── Diag read-only: dónde vive la firma de un documento ──────────────
+@conciliacion_bp.route("/banco-v2/diag-doc", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_diag_doc():
+    """TMT 2026-07-25 (dueña, cheque devuelto 14778 que no reaparecía):
+    diagnóstico read-only — muestra dónde vive la firma de un documento del
+    banco Pichincha (historicos + matches + payload de la sesión abierta),
+    para entender por qué el dedup lo suprime. No escribe nada."""
+    doc = (request.args.get("doc") or "").strip()
+    out: dict = {"doc": doc, "no_banco": _BANCO_PICHINCHA}
+    out["historicos"] = _db.fetch_all(
+        """
+        SELECT id, fecha::text AS fecha, documento, monto::text AS monto, tipo,
+               COALESCE(codigo, '') AS codigo, concepto,
+               conciliado_en::text AS conciliado_en, conciliado_match_id
+          FROM scintela.banco_historicos_pendientes
+         WHERE no_banco = %s AND documento = %s
+         ORDER BY id
+        """,
+        (_BANCO_PICHINCHA, doc),
+    ) or []
+    out["matches"] = _db.fetch_all(
+        """
+        SELECT id, real_fecha::text AS real_fecha, real_documento,
+               real_monto::text AS real_monto, real_tipo,
+               deshecho_en::text AS deshecho_en
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s AND real_documento = %s
+         ORDER BY id
+        """,
+        (_BANCO_PICHINCHA, doc),
+    ) or []
+    try:
+        ab = _sesion.sesion_abierta(_BANCO_PICHINCHA)
+        out["sesion_id"] = ab.get("id") if ab else None
+        movs = _sesion.cargar_movs(ab) if ab else []
+        out["en_sesion_payload"] = [
+            {"fecha": str(m.fecha), "monto": str(m.monto), "tipo": m.tipo,
+             "codigo": getattr(m, "codigo", ""), "concepto": m.concepto}
+            for m in movs if (m.documento or "").strip() == doc
+        ]
+    except Exception as e:
+        out["en_sesion_payload_error"] = str(e)
+    return jsonify(out)
 
 
 # ─── Endpoint: descartar movs banco (no necesitan conciliarse) ────────
