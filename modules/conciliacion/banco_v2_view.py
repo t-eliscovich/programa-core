@@ -1327,48 +1327,53 @@ def banco_diag_doc():
     para entender por qué el dedup lo suprime. No escribe nada."""
     doc = (request.args.get("doc") or "").strip()
     out: dict = {"doc": doc, "no_banco": _BANCO_PICHINCHA}
+    # to_jsonb → agnóstico de columnas (algunas migs no están en prod).
     try:
-        out["historicos"] = _db.fetch_all(
-            """
-            SELECT id, fecha::text AS fecha, documento, monto::text AS monto,
-                   tipo, COALESCE(codigo, '') AS codigo, concepto,
-                   conciliado_en::text AS conciliado_en, conciliado_match_id
-              FROM scintela.banco_historicos_pendientes
-             WHERE no_banco = %s AND documento = %s
-             ORDER BY id
-            """,
-            (_BANCO_PICHINCHA, doc),
-        ) or []
-    except Exception as e:
-        out["historicos_error"] = str(e)
-    # matches: deshecho_en existe solo con mig 47 — probamos con y sin.
-    try:
-        out["matches"] = _db.fetch_all(
-            """
-            SELECT id, real_fecha::text AS real_fecha, real_documento,
-                   real_monto::text AS real_monto, real_tipo,
-                   deshecho_en::text AS deshecho_en
-              FROM scintela.banco_conciliacion_match
-             WHERE no_banco = %s AND real_documento = %s
-             ORDER BY id
-            """,
-            (_BANCO_PICHINCHA, doc),
-        ) or []
-    except Exception as e:
-        out["matches_error"] = str(e)
-        try:
-            out["matches_sin_deshecho"] = _db.fetch_all(
+        out["historicos"] = [
+            r.get("r") for r in (_db.fetch_all(
                 """
-                SELECT id, real_fecha::text AS real_fecha, real_documento,
-                       real_monto::text AS real_monto, real_tipo
-                  FROM scintela.banco_conciliacion_match
-                 WHERE no_banco = %s AND real_documento = %s
-                 ORDER BY id
+                SELECT to_jsonb(h) AS r
+                  FROM scintela.banco_historicos_pendientes h
+                 WHERE no_banco = %s AND documento = %s
+                 ORDER BY h.id
                 """,
                 (_BANCO_PICHINCHA, doc),
-            ) or []
-        except Exception as e2:
-            out["matches_sin_deshecho_error"] = str(e2)
+            ) or [])
+        ]
+    except Exception as e:
+        out["historicos_error"] = str(e)
+    try:
+        out["matches"] = [
+            r.get("r") for r in (_db.fetch_all(
+                """
+                SELECT to_jsonb(m) AS r
+                  FROM scintela.banco_conciliacion_match m
+                 WHERE no_banco = %s AND real_documento = %s
+                 ORDER BY m.id
+                """,
+                (_BANCO_PICHINCHA, doc),
+            ) or [])
+        ]
+    except Exception as e:
+        out["matches_error"] = str(e)
+    # Lado PROGRAMA: tx bancarias con ese doc o ese importe (para ver contra
+    # qué se concilió y si falta la nota de débito del cheque devuelto).
+    try:
+        out["tx_programa"] = [
+            r.get("r") for r in (_db.fetch_all(
+                """
+                SELECT to_jsonb(t) AS r
+                  FROM scintela.transacciones_bancarias t
+                 WHERE no_banco = %s
+                   AND (documento = %s OR ABS(importe) = 21508.62)
+                 ORDER BY t.fecha DESC, t.id_transaccion DESC
+                 LIMIT 20
+                """,
+                (_BANCO_PICHINCHA, doc),
+            ) or [])
+        ]
+    except Exception as e:
+        out["tx_programa_error"] = str(e)
     try:
         ab = _sesion.sesion_abierta(_BANCO_PICHINCHA)
         out["sesion_id"] = ab.get("id") if ab else None
