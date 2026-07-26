@@ -46,9 +46,10 @@ KNOWN_FAILING_NODEIDS = {
     "tests/test_paridad_compra_a_balance.py::test_paridad_compra_anular_borra_posdat",
     "tests/test_paridad_compra_a_balance.py::test_paridad_compra_no_pagada_inserta_posdat",
     "tests/test_paridad_factura_a_balance.py::test_paridad_factura_alta_modifica_anular",
-    "tests/test_session_timeout.py::test_sesion_dentro_del_timeout_actualiza_last_activity",
     "tests/test_session_timeout.py::test_sesion_expirada_se_limpia",
-    "tests/test_session_timeout.py::test_sesion_sin_last_activity_no_expira_inmediata",
+    # TMT 2026-07-26: los otros dos de session_timeout salieron de esta lista —
+    # no eran deuda de fixture, los rompía el monkeypatch permanente de
+    # test_routes_smoke.py (ya restaurado con try/finally).
 }
 
 

@@ -58,18 +58,41 @@ ALL_PERMS = {"*"}
 
 
 def _apply_db_stubs(db_stub):
+    """Pisa db.* con los stubs y devuelve los originales para restaurarlos.
+
+    TMT 2026-07-26: antes esto pisaba `db` y `auth.load_logged_in_user` PARA
+    SIEMPRE (sin monkeypatch, sin restore), así que todo test que corriera
+    DESPUÉS de este archivo veía un usuario con permisos `*`. Eso hacía fallar
+    —sólo en suite completa— a cualquier test que verifique que SIN permiso no
+    pasa nada. Ahora se guarda y se restaura.
+    """
     import db as real_db
+    previos = {}
     for name, fn in db_stub.items():
+        previos[name] = getattr(real_db, name, None)
         setattr(real_db, name, fn)
+    return previos
+
+
+def _restaurar(previos_db, loader_previo):
+    import auth as real_auth
+    import db as real_db
+    for name, fn in (previos_db or {}).items():
+        if fn is not None:
+            setattr(real_db, name, fn)
+    if loader_previo is not None:
+        real_auth.load_logged_in_user = loader_previo
 
 
 def build_app():
-    db_stub = _make_db_stub()
-    _apply_db_stubs(db_stub)
+    """Devuelve (app, deshacer). `deshacer()` restaura los globals pisados."""
+    import auth as real_auth
+
+    previos_db = _apply_db_stubs(_make_db_stub())
     sys.modules["scripts.sync_stat_from_xlsx_boot"] = types.SimpleNamespace(maybe_run_once=lambda: None)
 
     # Patch auth.load_logged_in_user so request_ctx always has our fake user.
-    import auth as real_auth
+    loader_previo = real_auth.load_logged_in_user
 
     def fake_loader():
         from flask import g, session
@@ -82,7 +105,7 @@ def build_app():
     from app import create_app
     app = create_app()
     app.config["TESTING"] = True
-    return app
+    return app, lambda: _restaurar(previos_db, loader_previo)
 
 
 def iter_get_routes(app):
@@ -127,8 +150,11 @@ def collect_route_failures(app):
 
 
 def test_static_get_routes_render_without_500():
-    app = build_app()
-    total, failed = collect_route_failures(app)
+    app, deshacer = build_app()
+    try:
+        total, failed = collect_route_failures(app)
+    finally:
+        deshacer()
     formatted = "\n".join(
         f"{code} {endpoint} {url}\n{msg[:800]}" for endpoint, url, code, msg in failed
     )
@@ -137,7 +163,7 @@ def test_static_get_routes_render_without_500():
 
 
 def main() -> int:
-    app = build_app()
+    app, _deshacer = build_app()
     total, failed = collect_route_failures(app)
 
     print(f"\n{total} GET routes walked, {len(failed)} failures\n")

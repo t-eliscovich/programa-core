@@ -476,3 +476,67 @@ def test_preview_renderiza_200(app, fake_db):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "PREVISUALIZACIÓN" in body or "previsualización" in body.lower()
+
+
+def test_auto_carga_al_abrir_la_pantalla(app, fake_db):
+    """Dueña 2026-07-26: 'que cada ingreso genere un pasivo'. Abrir la tab en el
+    MES EN CURSO crea sola la compra+pasivo de las OFs pendientes."""
+    import datetime as _dt
+    rid = fake_db.add_role("Tester3", ["compras.ver", "compras.crear"])
+    uid = fake_db.add_user("test3", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    hoy = _dt.date(2026, 7, 15)
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada", return_value={"AP": 9999.0, "RY": 9999.0}), \
+         patch.object(tsvc, "_importes_k_existentes", return_value={}), \
+         patch("filters.today_ec", return_value=hoy), \
+         patch("modules.tejeduria_asinfo.views.today_ec", return_value=hoy), \
+         patch("modules.compras.queries.crear",
+               return_value={"id_compra": 1, "numero": 900}) as m_crear:
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    assert m_crear.called, "no auto-cargó al abrir la pantalla"
+
+
+def test_auto_carga_NO_dispara_en_meses_pasados(app, fake_db):
+    """Navegar a un mes viejo no puede crear compras retroactivas."""
+    import datetime as _dt
+    rid = fake_db.add_role("Tester4", ["compras.ver", "compras.crear"])
+    uid = fake_db.add_user("test4", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada", return_value={"AP": 9999.0, "RY": 9999.0}), \
+         patch.object(tsvc, "_importes_k_existentes", return_value={}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 9, 3)), \
+         patch("modules.tejeduria_asinfo.views.today_ec", return_value=_dt.date(2026, 9, 3)), \
+         patch("modules.compras.queries.crear") as m_crear:
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    assert not m_crear.called, "no debe auto-cargar meses pasados"
+
+
+def test_auto_carga_requiere_permiso_de_crear(app, fake_db):
+    """Quien sólo mira (compras.ver) no crea pasivos por abrir la pantalla."""
+    import datetime as _dt
+    rid = fake_db.add_role("SoloVer", ["compras.ver"])
+    uid = fake_db.add_user("solover", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    hoy = _dt.date(2026, 7, 15)
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada", return_value={"AP": 9999.0, "RY": 9999.0}), \
+         patch.object(tsvc, "_importes_k_existentes", return_value={}), \
+         patch("filters.today_ec", return_value=hoy), \
+         patch("modules.tejeduria_asinfo.views.today_ec", return_value=hoy), \
+         patch("modules.compras.queries.crear") as m_crear:
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    assert not m_crear.called

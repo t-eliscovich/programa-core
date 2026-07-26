@@ -14,7 +14,7 @@ Rutas:
 """
 from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import humanize
 from filters import today_ec
 from parsers import parse_monto
@@ -44,6 +44,35 @@ def _anio_mes():
 @requiere_permiso("compras.ver")
 def tab():
     anio, mes = _anio_mes()
+
+    # ── AUTO-CARGA (TMT 2026-07-26, dueña: "que cada ingreso genere un pasivo
+    # y yo cuando lo pague lo ajusto") ────────────────────────────────────────
+    # Cada OF de tejeduría que Asinfo cierra crea SOLA su compra y su pasivo,
+    # valuada kg × tarifa. La tarifa es una ESTIMACIÓN: cuando llega la factura
+    # real (o al pagar) se ajusta el importe desde el Editar de la compra —que
+    # propaga el cambio al posdat hermano— o desde el lapicito de Posdatados.
+    # Mismo patrón que la auto-carga de facturas del día en /facturas.
+    # Corre SOLO en el mes en curso, solo para quien puede crear compras, y con
+    # las mismas guardas del botón: sin tarifa se saltea, tope acumulado por
+    # proveedor, y OFT ya estampado. Fail-soft: si algo explota, la pantalla
+    # igual se muestra.
+    hoy = today_ec()
+    if (anio, mes) == (hoy.year, hoy.month) and tiene_permiso("compras.crear"):
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            clave = (g.user or {}).get("clave") or usuario[:3].upper()
+            res = service.cargar_pendientes(anio, mes, usuario=usuario, clave=clave)
+            if res["creadas"]:
+                flash(
+                    f"Cargué solas {res['creadas']} compra(s) de tejeduría por "
+                    f"$ {res['importe']:,.2f} (kg de Asinfo × tarifa). Si la factura "
+                    f"viene distinta, ajustá el importe desde Editar en /compras y el "
+                    f"pasivo se corrige solo.",
+                    "ok",
+                )
+        except Exception:  # noqa: BLE001 -- nunca romper la pantalla por esto
+            pass
+
     data = service.resumen_mes(anio, mes)
     return render_template(
         "tejeduria_asinfo/tab.html", data=data, anio=anio, mes=mes,
