@@ -121,6 +121,38 @@ def _ensure_cache() -> None:
         _refrescar()
 
 
+# ── Sucursales por dirección de Asinfo (id_direccion → código PC) ──
+# TMT 2026-07-26: Asinfo manda todo bajo el nombre_comercial de la empresa;
+# el dBase parte algunas por dirección (ej. AJO/AJ2). scintela.sucursal_direccion
+# mapea id_direccion → código de sucursal para clasificar SIN dBase.
+_suc_cache_ts: float = 0.0
+_suc_cache: dict[int, str] = {}
+
+
+def codigo_por_direccion(id_direccion) -> str | None:
+    """Código PC de la sucursal para una dirección de Asinfo, o None.
+
+    Cache TTL 5 min. Fail-soft: tabla ausente / DB caída → None (la carga
+    usa el código normal).
+    """
+    global _suc_cache_ts, _suc_cache
+    try:
+        idd = int(id_direccion)
+    except (TypeError, ValueError):
+        return None
+    if time.time() - _suc_cache_ts > _CACHE_TTL_SECS:
+        try:
+            rows = db.fetch_all(
+                "SELECT id_direccion, codigo_cli FROM scintela.sucursal_direccion"
+            ) or []
+            _suc_cache = {int(r["id_direccion"]): _norm(r["codigo_cli"])
+                          for r in rows if r.get("codigo_cli")}
+        except Exception:
+            _suc_cache = _suc_cache or {}
+        _suc_cache_ts = time.time()
+    return _suc_cache.get(idd)
+
+
 def to_pc(codigo_asinfo: str | None) -> str:
     """Devuelve el código PC que corresponde a un código Asinfo.
 

@@ -45,7 +45,7 @@ def test_auto_carga_no_duplica_ni_carga_dias_previos(monkeypatch):
     creadas = []
     monkeypatch.setattr(fq, "crear", lambda **kw: creadas.append(kw) or {"numf": kw.get("numf")})
     monkeypatch.setattr(fv, "_resolver_cliente_asinfo",
-                        lambda cli, u, numero=None, importe=None: (cli, False))
+                        lambda cli, u, numero=None, importe=None, id_direccion=None: (cli, False))
     from modules.retenciones import queries as rq
     monkeypatch.setattr(rq, "aplicar_retenciones_asinfo",
                         lambda d, h, usuario="x": {"n_aplicadas": 2})

@@ -148,7 +148,8 @@ def _auto_cargar_facturas_hoy() -> dict:
                 continue
             try:
                 cli_uso, _ = _resolver_cliente_asinfo(
-                    codigo_cli, "asinfo-auto", numero=numero, importe=importe)
+                    codigo_cli, "asinfo-auto", numero=numero, importe=importe,
+                    id_direccion=r.get("id_direccion_empresa"))
                 queries.crear(
                     fecha=fecha, codigo_cli=cli_uso, kg=kg, importe=importe,
                     numf=numf, numf_completo=numero or None,
@@ -1106,6 +1107,7 @@ def desde_asinfo():
             "vendedor": r.get("vendedor") or "",
             "kg": float(r.get("kg") or 0),
             "usd": float(r.get("usd") or 0),
+            "id_direccion_empresa": r.get("id_direccion_empresa"),  # sucursal
             "pc_existe_bajo_cli": otros_clis_pc,  # sugerencia alias
         }
         # ¿Existe físicamente en PC, pero solo como fantasma backfill? Entonces
@@ -1264,6 +1266,7 @@ def _resolver_cliente_asinfo(
     usuario: str,
     numero: str | None = None,
     importe=None,
+    id_direccion=None,
 ) -> tuple[str, bool]:
     """Resuelve el codigo de cliente Asinfo -> PC para cargar facturas.
 
@@ -1301,6 +1304,13 @@ def _resolver_cliente_asinfo(
 
     from modules.asinfo import aliases as _aliases
     codigo_cli = (codigo_cli or "").strip().upper()
+    # TMT 2026-07-26: sucursal por dirección de Asinfo. Si la dirección de
+    # entrega tiene código de sucursal propio (scintela.sucursal_direccion,
+    # ej. 22657→AJ2), ese código MANDA sobre el nombre_comercial de la empresa
+    # (que Asinfo usa para todo el volumen). Así AJ2 se clasifica sola, sin dBase.
+    _suc = _aliases.codigo_por_direccion(id_direccion)
+    if _suc:
+        codigo_cli = _suc
     cli_pc = _aliases.to_pc(codigo_cli)
     for cand in dict.fromkeys((cli_pc, codigo_cli)):
         if cand and db.fetch_one(
@@ -1508,6 +1518,7 @@ def cargar_desde_asinfo_bulk():
                 continue
             cli_uso, creado = _resolver_cliente_asinfo(
                 codigo_cli, usuario, numero=numf_completo, importe=importe,
+                id_direccion=r.get("id_direccion_empresa"),
             )
             if creado:
                 clientes_creados.append(cli_uso)
@@ -1596,6 +1607,7 @@ def cargar_desde_asinfo():
             return redirect(url_for("facturas.desde_asinfo"))
         cli_uso, creado = _resolver_cliente_asinfo(
             codigo_cli, usuario, numero=numf_completo, importe=importe,
+            id_direccion=request.form.get("id_direccion_empresa"),
         )
         if creado:
             flash(
