@@ -330,6 +330,34 @@ def reporte_desde_dbf(dbf_path: Path):
         yield line(f"  … y {len(d) - MAX_LISTADO} más")
     yield line()
 
+    # ── [G] COBROS FALTANTES EN PC ──────────────────────────────────────────
+    # TMT 2026-07-26 (dueña: "la cobranza se ingresa en el programa, de Asinfo
+    # no tomamos cobros"). Facturas con MÁS abono en el dBase que en PC → un
+    # pago de la transición que se cargó en el dBase y falta cargar en PC.
+    # numf>0 excluye el ruido de matcheo de las numf=0 (BED). Lista concreta
+    # para quien hace cobranza: cargar estos cobros en PC.
+    faltan = []
+    for x in d:
+        p, b = x["pc"], x["dbf"]
+        try:
+            _numf = int(p.get("numf") or 0)
+        except (TypeError, ValueError):
+            _numf = 0
+        if _numf <= 0:
+            continue
+        _falta = round(_r2(b.get("abono")) - _r2(p.get("abono")), 2)
+        if _falta > 0.01:
+            faltan.append((_falta, _numf, (p.get("codigo_cli") or "").strip(),
+                           _r2(b.get("abono")), _r2(p.get("abono")), b.get("fecha")))
+    faltan.sort(reverse=True)
+    tot_faltan = round(sum(f[0] for f in faltan), 2)
+    yield line(f"[G] COBROS FALTANTES EN PC (el dBase cobró un pago que PC no tiene, numf>0) — "
+               f"{len(faltan)} facturas · $ {tot_faltan:,.2f} a cargar en PC")
+    for _f, _n, _c, _dab, _pab, _fe in faltan:
+        yield line(f"  numf={_n:<7} {_c:5} falta ${_f:>10,.2f}  "
+                   f"(dBase abono {_dab:,.2f} · PC {_pab:,.2f})  {_fe}")
+    yield line()
+
     # Identidad (self-check del bucketeo — residuo 0,00 por construcción)
     s = {k: round(sum(_saldo_za(r) for r in plan[k]), 2)
          for k in ("solo_dbase", "solo_pc_backfill", "solo_pc_carga",
