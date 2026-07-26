@@ -460,6 +460,16 @@ def _ln(m: str = "") -> str:
     return m.rstrip("\n") + "\n"
 
 
+def _veredicto_residuo(residuo: float) -> str:
+    """Hasta $1 es el redondeo del propio FoxPro: su columna SALDO guarda
+    centavos con error (verificado 2026-07-26: 20 filas de 702 en CAJA.DBF,
+    todas de 3-5 centavos; PICHINCH.DBF 989 filas sin un solo desajuste). De
+    ahí sale el histórico +0,07 / +0,19 del compare."""
+    if abs(residuo) < 1.0:
+        return "✓ (dentro del redondeo de centavos del dBase)"
+    return "⚠ falta algo en las listas de arriba"
+
+
 def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
     """Líneas de CIERRE del 1 a 1: los signos invertidos + si la lista CUADRA.
 
@@ -477,7 +487,10 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
     flips = diff.get("signo_invertido") or []
     if flips:
         yield _ln(f"  ⚠ SIGNO INVERTIDO — mismo día y mismo monto pero uno es entrada y el "
-                   f"otro salida ({len(flips)}). El 1 a 1 los cancelaba en silencio:")
+                   f"otro salida ({len(flips)}). El 1 a 1 los cancelaba en silencio.")
+        yield _ln("     OJO: el apareo es por (día, monto), así que el PAR puede juntar dos "
+                  "conceptos distintos que coinciden de casualidad —")
+        yield _ln("     lo que vale es el IMPACTO total, que es el que hace cuadrar el gap.")
         for fl in sorted(flips, key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
             a, b = fl["dbase"], fl["pc"]
             yield _ln(f"    {fl['fecha']} dBase {val_firmado(a):>12,.2f} "
@@ -500,7 +513,7 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
                f"{explicado:>+12,.2f}")
     yield _ln(f"    gap real del período ({con_ambos[0]['fecha']} → {con_ambos[-1]['fecha']}): "
                f"{gap:>+12,.2f}   ⇒ RESIDUO SIN EXPLICAR: {residuo:>+12,.2f} "
-               f"{'✓' if abs(residuo) < 0.05 else '⚠ falta algo en las listas de arriba'}")
+               f"{_veredicto_residuo(residuo)}")
 
 
 # ───────────────── diffs 1 a 1 (pedido dueña 2026-06-11) ─────────────────
