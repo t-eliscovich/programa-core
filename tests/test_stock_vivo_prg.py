@@ -437,3 +437,45 @@ def test_tinto_formulas_terminadas_orden_con_costo_sin_kg_va_a_fuertes():
             _date(2026, 7, 1), _date(2026, 7, 31))
     assert rows == [
         {"yy": 2026, "mm": 7, "tipo": "Fuertes", "kg": 0.0, "importe": 123.0}]
+
+
+# ---------------------------------------------------------------------------
+# CAJA.DBF ya NO se trunca: la caja de PC es de PC (TMT 2026-07-26)
+# ---------------------------------------------------------------------------
+
+
+def _import_dbf_mod():
+    import importlib.util
+    import pathlib
+    ruta = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "import_dbf.py"
+    spec = importlib.util.spec_from_file_location("import_dbf_caja", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_caja_dbf_no_trunca_lo_que_nace_en_pc():
+    """Sin delete_where el sync hacía TRUNCATE de scintela.caja y se llevaba
+    puesto todo movimiento cargado por las pantallas de PC. Con el delete_where
+    sólo borra lo que vino del propio DBF."""
+    mod = _import_dbf_mod()
+    cfg = mod.TABLE_MAP["CAJA.DBF"]
+    assert "delete_where" in cfg, "CAJA.DBF sin delete_where → volvería a truncar"
+    where_sql, lookup = cfg["delete_where"]
+    assert lookup is None                      # WHERE completo, sin parámetro
+    assert "usuario_crea" in where_sql
+    assert "'dbf-import'" in where_sql
+    # lo que nace en PC (usuario_crea = un usuario real) NO entra en el DELETE
+    assert "IN ('', 'dbf-import')" in where_sql
+
+
+def test_delete_where_sin_parametro_no_rompe_el_lookup():
+    """El mecanismo acepta lookup=None (WHERE completo en el SQL)."""
+    mod = _import_dbf_mod()
+    for nombre, cfg in mod.TABLE_MAP.items():
+        dw = cfg.get("delete_where")
+        if not dw:
+            continue
+        _sql, lookup = dw
+        if lookup is not None:
+            assert lookup in mod._DELETE_WHERE_FNS, f"{nombre}: lookup desconocido {lookup!r}"

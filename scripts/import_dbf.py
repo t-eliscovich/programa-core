@@ -608,6 +608,21 @@ TABLE_MAP: dict[str, dict] = {
         "mapper": _map_caja,
         "criticidad": "CRITICO",
         "descripcion": "Caja — SALCAJ del balance",
+        # TMT 2026-07-26 (dueña: "no habrá más sync, así que corregilo").
+        # Hasta hoy esta entrada NO tenía delete_where → TRUNCATE TOTAL: cada
+        # sync borraba la caja entera y la recargaba desde el CAJA.DBF. O sea
+        # la caja de PC era una COPIA del dBase y todo movimiento cargado por
+        # las pantallas de PC se perdía en el siguiente sync, sin aviso.
+        # Eso ya no va: la caja de PC es de PC. Sólo se borran las filas que
+        # vinieron del propio DBF (usuario_crea NULL o 'dbf-import'); todo lo
+        # que nace en PC — el alta de /caja/nuevo, el cobro de un cheque en
+        # efectivo, los reversos — SOBREVIVE.
+        # Mismo criterio que scintela.compra (formulas-% / asinfo-tejeduria) y
+        # scintela.tinto (pc-carga / manual-kg-edit).
+        # OJO: si algún día el dBase trae el MISMO movimiento que PC ya cargó,
+        # quedan los dos. Lo detecta el CUADRE del 1 a 1 de /admin/dbase-compare
+        # (que desde hoy avisa cuando las listas no explican el gap).
+        "delete_where": ("COALESCE(usuario_crea, '') IN ('', 'dbf-import')", None),
     },
     "DOLARES.DBF": {
         "pg_table": "scintela.dolares",
@@ -970,11 +985,16 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         delete_where = cfg.get("delete_where")
         if delete_where:
             where_sql, lookup_name = delete_where
-            lookup_fn = _DELETE_WHERE_FNS.get(lookup_name)
-            if lookup_fn is None:
-                raise RuntimeError(f"delete_where lookup desconocido: {lookup_name!r}")
-            param = lookup_fn()
-            cur.execute(f"DELETE FROM {pg_table} WHERE {where_sql}", (param,))
+            if lookup_name is None:
+                # delete_where SIN parámetro (el WHERE está completo en el SQL).
+                # TMT 2026-07-26 — lo estrenó CAJA.DBF.
+                cur.execute(f"DELETE FROM {pg_table} WHERE {where_sql}")
+            else:
+                lookup_fn = _DELETE_WHERE_FNS.get(lookup_name)
+                if lookup_fn is None:
+                    raise RuntimeError(f"delete_where lookup desconocido: {lookup_name!r}")
+                param = lookup_fn()
+                cur.execute(f"DELETE FROM {pg_table} WHERE {where_sql}", (param,))
         else:
             # TRUNCATE + RESTART IDENTITY para que id_* arranque de 1 con fresh data.
             cur.execute(f"TRUNCATE TABLE {pg_table} RESTART IDENTITY CASCADE")
