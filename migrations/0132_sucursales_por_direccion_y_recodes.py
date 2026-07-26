@@ -8,7 +8,7 @@ CONTEXTO
 Asinfo trae TODO el volumen de una empresa bajo UN `nombre_comercial`
 (= código de cliente). El dBase, en cambio, parte algunas empresas en
 códigos distintos por DIRECCIÓN de entrega (sucursal). Caso vivo:
-ALMACENES JOSE PUEBLA (empresa 22656) → dirección 22656 = AJO,
+ALMACENES JOSE PUEBLA (empresa 22656) -> dirección 22656 = AJO,
 dirección 22657 = AJO/AJ2. Como Asinfo manda todo como "AJO", PC cargaba
 las de la sucursal bajo AJO y quedaban mal clasificadas.
 
@@ -18,14 +18,14 @@ sin depender del dBase ni de un humano.
 
 QUÉ HACE (idempotente)
 ----------------------
-1. Crea `scintela.sucursal_direccion` (id_direccion → codigo_cli) y la
-   siembra con 22657→AJ2. La carga consulta esta tabla para clasificar.
+1. Crea `scintela.sucursal_direccion` (id_direccion -> codigo_cli) y la
+   siembra con 22657->AJ2. La carga consulta esta tabla para clasificar.
 2. Recode de lo EXISTENTE: las facturas hoy bajo AJO cuya dirección de
    Asinfo es 22657 pasan a AJ2 (factura + retención). Se autodetermina
    consultando Asinfo — no hay lista hardcodeada.
 3. Typos confirmados (misma empresa, código mal escrito): fusiona al
-   canónico — RRE→RRV, JUU→JUT, MR→MRD, KM→KAM (factura + retención).
-4. Registra esos typos como alias Asinfo↔PC (para que la carga futura
+   canónico — RRE->RRV, JUU->JUT, MR->MRD, KM->KAM (factura + retención).
+4. Registra esos typos como alias Asinfo<->PC (para que la carga futura
    los codee bien sola).
 
 REVERSIBLE: el detalle de qué se movió queda en usuario_modifica='mig-0132'.
@@ -49,7 +49,7 @@ _TYPOS = [
     ("KM", "KAM"),
 ]
 
-# id_direccion de Asinfo → código de sucursal en PC.
+# id_direccion de Asinfo -> código de sucursal en PC.
 _SUCURSALES = [
     (22657, "AJ2", "ALMACENES JOSE PUEBLA — sucursal dir 22657 (empresa 22656=AJO)"),
 ]
@@ -87,7 +87,7 @@ def run(conn) -> None:
         )
 
     # AJ2 ahora es sucursal SEPARADA (clasificada por dirección 22657). El alias
-    # viejo AJ2↔AJO la re-fusionaba en AJO — hay que sacarlo. Fail-soft si la
+    # viejo AJ2<->AJO la re-fusionaba en AJO — hay que sacarlo. Fail-soft si la
     # tabla de alias no existe todavía.
     try:
         cur.execute(
@@ -95,11 +95,11 @@ def run(conn) -> None:
             "WHERE UPPER(TRIM(codigo_asinfo))='AJ2' AND UPPER(TRIM(codigo_pc))='AJO'"
         )
         if cur.rowcount:
-            print("0132: alias AJ2↔AJO eliminado (AJ2 ahora es sucursal separada)")
+            print("0132: alias AJ2<->AJO eliminado (AJ2 ahora es sucursal separada)")
     except Exception as e:  # noqa: BLE001
-        print(f"0132: no pude borrar alias AJ2↔AJO ({str(e)[:80]})")
+        print(f"0132: no pude borrar alias AJ2<->AJO ({str(e)[:80]})")
 
-    # 2) Recode AJO→AJ2 de lo existente, autodeterminado de Asinfo por dirección.
+    # 2) Recode AJO->AJ2 de lo existente, autodeterminado de Asinfo por dirección.
     #    Fail-soft: si Asinfo no responde, se saltea (la tabla + la carga futura
     #    igual clasifican bien de acá en adelante).
     try:
@@ -142,11 +142,11 @@ def run(conn) -> None:
                 """,
                 (nums,),
             )
-            print(f"0132: AJO→AJ2 recodeadas {n_aj2} facturas (dir 22657, {len(nums)} N° de Asinfo)")
+            print(f"0132: AJO->AJ2 recodeadas {n_aj2} facturas (dir 22657, {len(nums)} N° de Asinfo)")
         else:
-            print("0132: Asinfo no devolvió facturas dir 22657 — recode AJO→AJ2 salteado")
+            print("0132: Asinfo no devolvió facturas dir 22657 — recode AJO->AJ2 salteado")
     except Exception as e:  # noqa: BLE001 — fail-soft, no rompe la migración
-        print(f"0132: Asinfo no disponible ({str(e)[:120]}) — recode AJO→AJ2 salteado")
+        print(f"0132: Asinfo no disponible ({str(e)[:120]}) — recode AJO->AJ2 salteado")
 
     # 3) Typos: fusionar al canónico (factura + retención).
     for typo, canon in _TYPOS:
@@ -162,9 +162,9 @@ def run(conn) -> None:
             (canon, typo),
         )
         if n:
-            print(f"0132: typo {typo}→{canon}: {n} facturas recodeadas")
+            print(f"0132: typo {typo}->{canon}: {n} facturas recodeadas")
 
-    # 4) Registrar los typos como alias Asinfo↔PC (carga futura). La tabla la
+    # 4) Registrar los typos como alias Asinfo<->PC (carga futura). La tabla la
     #    crea aliases._bootstrap; si no existe todavía, la creamos igual.
     cur.execute(
         """
