@@ -42,6 +42,8 @@
 <div class="ta">
 
   <form class="sel" method="get">
+    {# el filtro «sólo pendientes» sobrevive al cambio de mes #}
+    {% if solo_pendientes %}<input type="hidden" name="solo" value="pend">{% endif %}
     <div><label class="muted" style="font-size:11px">Mes</label><br><input type="number" name="mes" min="1" max="12" value="{{ mes }}"></div>
     <div><label class="muted" style="font-size:11px">Año</label><br><input type="number" name="anio" value="{{ anio }}"></div>
     <button class="btn" style="background:#334155">Ver</button>
@@ -150,11 +152,28 @@
         {% endif %}
       </div>
     {% endif %}
+    {# ── Filtro (TMT 2026-07-26, dueña: "¿se me va a hacer gigante la lista?")
+       Con la auto-carga las OFs quedan en «cargado» el mismo día, así que la
+       tabla es casi toda historia cuadrada. El chip deja ver sólo lo que
+       todavía necesita una mano. Default = todas: la tabla completa es la que
+       cuadra PRODUCIDO (Asinfo) vs CARGADO (compras K). #}
     {% if data.tercerizado_ofs %}
+      <div style="margin:2px 0 6px;display:flex;gap:6px;align-items:center;font-size:12px">
+        <a class="btn2" href="{{ url_for('tejeduria_asinfo.tab', anio=anio, mes=mes) }}"
+           style="{% if not solo_pendientes %}background:#334155;color:#fff;border-color:#334155{% endif %}"
+        >Todas ({{ data.tercerizado_ofs|length }})</a>
+        <a class="btn2" href="{{ url_for('tejeduria_asinfo.tab', anio=anio, mes=mes, solo='pend') }}"
+           style="{% if solo_pendientes %}background:#334155;color:#fff;border-color:#334155{% endif %}"
+        >Sólo pendientes ({{ data.pendientes|length }})</a>
+      </div>
+    {% endif %}
+
+    {% set filas = data.pendientes if solo_pendientes else data.tercerizado_ofs %}
+    {% if filas %}
     <table>
       <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>$/kg</th><th>Compra $</th></tr></thead>
       <tbody>
-        {% for of in data.tercerizado_ofs %}
+        {% for of in filas %}
           <tr>
             <td>{{ of.numero }}</td>
             <td class="muted">{{ of.dia|fecha_es }}</td>
@@ -182,6 +201,8 @@
         {% endfor %}
       </tbody>
     </table>
+    {% elif solo_pendientes %}
+      <p class="note ok">No queda ninguna OF pendiente en el mes — todas ya tienen su compra y su pasivo.</p>
     {% else %}
       <p class="note ok">No hay producción tercerizada (Reyes/Ponce) este mes.</p>
     {% endif %}

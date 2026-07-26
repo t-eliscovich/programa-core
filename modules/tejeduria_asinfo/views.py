@@ -74,8 +74,15 @@ def tab():
             pass
 
     data = service.resumen_mes(anio, mes)
+    # TMT 2026-07-26 (dueña: "¿se me va a hacer gigante la lista?"): chip para
+    # ver sólo las OFs que todavía necesitan una mano. Default = todas, porque
+    # la tabla completa es la que cuadra PRODUCIDO vs CARGADO.
+    solo_pendientes = (request.values.get("solo") or "").strip().lower() in (
+        "pend", "pendientes", "1", "si", "sí",
+    )
     return render_template(
         "tejeduria_asinfo/tab.html", data=data, anio=anio, mes=mes,
+        solo_pendientes=solo_pendientes,
     )
 
 

@@ -7,6 +7,7 @@ Sin HTTP ni DB real.
 """
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import patch
 
 import pytest
@@ -540,3 +541,65 @@ def test_auto_carga_requiere_permiso_de_crear(app, fake_db):
         r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
     assert r.status_code == 200
     assert not m_crear.called
+
+
+@contextlib.contextmanager
+def _asinfo_estable():
+    """Asinfo + tarifas fijas, con hoy dentro de julio 2026 — para testear el
+    render de la pantalla sin que dependa del reloj ni de la red."""
+    import datetime as _dt
+    with contextlib.ExitStack() as st:
+        st.enter_context(patch.object(
+            metabase_client, "fetch_dataset", return_value=_ROWS))
+        st.enter_context(patch.object(
+            tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS))
+        st.enter_context(patch.object(
+            tsvc, "falta_acumulada", return_value={"AP": 9999.0, "RY": 9999.0}))
+        st.enter_context(patch.object(
+            tsvc, "_importes_k_existentes", return_value={}))
+        st.enter_context(patch(
+            "filters.today_ec", return_value=_dt.date(2026, 7, 15)))
+        yield
+
+
+def _cliente_solo_ver(app, fake_db, nombre):
+    """Cliente logueado que sólo puede MIRAR — así el GET de la tab no dispara
+    la auto-carga y podemos testear el render del filtro en aislamiento."""
+    rid = fake_db.add_role(f"Ver-{nombre}", ["compras.ver"])
+    uid = fake_db.add_user(nombre, b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
+
+
+def test_filtro_solo_pendientes_recorta_la_tabla(app, fake_db):
+    """Dueña 2026-07-26: '¿se me va a hacer gigante la lista?'. El chip «sólo
+    pendientes» muestra únicamente las OFs que todavía necesitan una mano."""
+    c = _cliente_solo_ver(app, fake_db, "solofiltro")
+    with _asinfo_estable():
+        todas = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+        pend = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7&solo=pend")
+    assert todas.status_code == 200 and pend.status_code == 200
+    b_todas = todas.get_data(as_text=True)
+    b_pend = pend.get_data(as_text=True)
+    # El chip existe en las dos vistas.
+    assert "Sólo pendientes" in b_todas and "Todas" in b_pend
+    # Filtrado nunca muestra MÁS filas que sin filtrar.
+    assert b_pend.count("<tr>") <= b_todas.count("<tr>")
+    # Y las OFs ya cargadas (estado != pendiente) desaparecen: el marcador
+    # «cargado» de la última columna no puede estar en la vista filtrada.
+    assert ">cargado<" not in b_pend
+
+
+def test_filtro_default_es_todas(app, fake_db):
+    """Sin ?solo= la tabla viene completa — es la que cuadra PRODUCIDO vs
+    CARGADO, así que no se recorta por default."""
+    c = _cliente_solo_ver(app, fake_db, "solodefault")
+    with _asinfo_estable():
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    # El chip "Todas" queda marcado (fondo oscuro) cuando no hay filtro.
+    assert "Todas (" in body
+    assert "solo=pend" in body, "falta el link al filtro"
