@@ -3,11 +3,17 @@ import db
 
 
 def por_codigo(codigo_prov: str) -> dict | None:
+    # TMT 2026-07-26: acá había `provincia, canton`, que NO existen en
+    # scintela.proveedor (sí en scintela.cliente) → /proveedores/<cod>/editar
+    # tiraba 500 desde el commit inicial y nadie lo había notado. Ningún
+    # template ni query de este módulo las lee. Salió al querer poner el plazo
+    # de RY (Reyes) en 1 día para que el vencimiento de la maquila de tejeduría
+    # dé igual que en el dBase.
     return db.fetch_one(
         """
         SELECT id_proveedor, codigo_prov, nombre, telefono, ruc,
                representante, tipo, plazo, retbase, retiva, activo,
-               direccion, correo, provincia, canton
+               direccion, correo
         FROM scintela.proveedor
         WHERE codigo_prov = %s
         """,
