@@ -940,7 +940,14 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                 "       clave, no_banco, usuario_crea, cuenta_pagada, stat "
                 "  FROM scintela.compra "
                 " WHERE COALESCE(usuario_crea, '') LIKE 'formulas-%' "
-                "    OR COALESCE(usuario_crea, '') = 'asinfo-tejeduria'"
+                "    OR COALESCE(usuario_crea, '') = 'asinfo-tejeduria' "
+                # El marcador de verdad de "nació en PC desde Asinfo" es el OFT
+                # estampado en el concepto: el DBF NUNCA trae un OFT. Cubre las
+                # cargadas con el botón masivo (usuario_crea='asinfo-tejeduria')
+                # Y las cargadas de a una por el botón "Cargar $" de la pantalla,
+                # que pasan por /compras/nueva y quedan con el usuario logueado.
+                "    OR (UPPER(TRIM(COALESCE(tipo, ''))) = 'K' "
+                "        AND COALESCE(concepto, '') ILIKE '%%OFT-%%')"
             )
             _compras_formulas = cur.fetchall()
 
