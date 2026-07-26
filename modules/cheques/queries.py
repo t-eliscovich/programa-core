@@ -447,14 +447,17 @@ def editar(
 #
 # Codificación:
 #   "C"           → cobrado en caja: side-effect = INSERT caja TIPO=E
-#   "B"           → depositado Pichincha: INSERT tx_bancarias DOC=DE banco=1
-#   "I" o "V"     → depositado Internacional: INSERT tx_bancarias DOC=DE banco=2
+#   "B"           → depositado (venía de cartera Z/P): INSERT tx_bancarias DOC=DE
+#   "I"           → depositado en el otro banco (legacy Internacional): banco=2
+#   "V"           → depositado (venía de un DEVUELTO 1/2/3): re-depósito de un
+#                   cheque protestado. dBase (BANCOS.PRG DEPOBAN) usa esta letra
+#                   para "protestado vuelto a depositar". NO es "internacional".
 #   "9"           → rebotado: INSERT posdat banc=0 + cliente.stop=S
 #   "X"           → anulado: sólo UPDATE
-# NOTA TMT 2026-05-14 (#17): 'V' (banco Internacional legacy) está
-# DEPRECADO como destino. No aparece en ninguna lista — intentarlo
-# levanta ValueError abajo. Filas históricas con stat='V' se respetan,
-# pero no se generan nuevas.
+# NOTA TMT 2026-07-25 (dueña, alinear a dBase): 'V' = "re-depósito de devuelto"
+# (Pichincha), es un estado VÁLIDO y usable — lo genera `depositar_lote` al
+# depositar un cheque que estaba en 1/2/3. El comentario viejo lo trataba como
+# "banco Internacional legacy no usar": era una etiqueta EQUIVOCADA.
 # Estados SIN movimiento contable (sólo etiqueta): moverse entre los permitidos
 # NO toca banco ni caja → consistente. PERO siguen valiendo reglas de negocio:
 #   · Cartera (Z, P, D): "el cheque está en nuestras manos, sin resolver" →
@@ -1787,15 +1790,16 @@ def depositar_lote(
     import bank_helpers
 
     with db.tx() as conn, conn.cursor() as cur:
-        # 1) UPDATE cheques en bloque — stat='B' (depositado, terminal feliz).
-        # En el vocabulario nuevo (2026-04-29), todo depósito a cualquier
-        # banco va a 'B'. La distinción de banco vive en `no_banco` — el
-        # stat sólo trackea la fase del cheque (cartera / depositado /
-        # rebotado / etc), no la cuenta destino.
+        # 1) UPDATE cheques en bloque. TMT 2026-07-25 (dueña, copiar dBase
+        # BANCOS.PRG DEPOBAN): la letra del depósito RECUERDA de dónde venía el
+        # cheque — cartera (Z/P) → 'B'; un DEVUELTO (1/2/3) que se re-deposita →
+        # 'V' (protestado vuelto a depositar). El banco lo lleva `no_banco`, así
+        # que no hacen falta las letras W/I/J/K del legacy (encodaban el otro
+        # banco). El CASE lee el stat PREVIO (antes del UPDATE).
         cur.execute(
             f"""
             UPDATE scintela.cheque
-               SET stat = 'B',
+               SET stat = CASE WHEN stat IN ('1','2','3') THEN 'V' ELSE 'B' END,
                    fechaing = %s,
                    no_banco = %s,
                    banco = %s,
@@ -3965,10 +3969,13 @@ def reversar(
         A (legacy acred.) → 1 (rebote tardío)   — REBOTE REAL, stop al cliente
         X, R, 3 (terminales) → ValueError
 
-    Para cada chequesxfact del cheque:
-      - resta el importe de factura.abono,
-      - suma al saldo,
-      - si el saldo > 0, abre la factura (stat='A').
+    Facturas (TMT 2026-07-25, alinear a dBase):
+      - REBOTE REAL (B→1, 1/2→3): NO se toca la factura. dBase solo descuenta el
+        banco (ND); el cheque vuelve a cartera como devuelto (por-cobrar) y la
+        factura queda aplicada. Reabrirla es manual.
+      - ANULACIÓN administrativa (Z/D/P/V→X): SÍ se revierte cada chequesxfact
+        (resta abono, suma saldo, abre la factura) y se borran las aplicaciones,
+        porque el cheque fue un error de carga.
 
     Side-effect: cuando el stat previo era B/1/2/A (rebote real del banco),
     el cliente queda en stop='S' con traza en observacion. Z/D/P/V → X es
@@ -4015,13 +4022,20 @@ def reversar(
             usuario=usuario,
         )
 
-        # Traer aplicaciones para revertir
+        # TMT 2026-07-25 (dueña, copiar dBase MODIFICA.PRG): en un REBOTE REAL
+        # (B→1, 1/2→3) NO se revierte la factura ni se borran las aplicaciones.
+        # dBase solo descuenta el banco (ND) — el cheque vuelve a cartera como
+        # DEVUELTO (por-cobrar) y la factura queda aplicada; reabrirla es MANUAL.
+        # Revertirla acá duplicaba el por-cobrar (factura reabierta + cheque
+        # devuelto vivo). En una ANULACIÓN administrativa (Z/D/P/V→X) SÍ se
+        # revierte, porque el cheque fue un error y no debe dejar rastro.
+        # Traer aplicaciones para revertir (solo si NO es rebote real).
         aplic = db.fetch_all(
             "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact WHERE id_cheque = %s",
             (id_cheque,),
             conn=conn,
         )
-        for ap in aplic:
+        for ap in (aplic if not es_rebote_real else []):
             id_fact = ap["id_fact"]
             imp = float(ap["importe"] or 0)
             if not id_fact:
@@ -4067,14 +4081,18 @@ def reversar(
 
         # Bug G fix (TMT 2026-05-16): borrar las aplicaciones chequesxfact
         # del cheque reversado. Antes quedaban vivas apuntando a un cheque
-        # con stat='X', lo que ensuciaba el detalle de factura (mostraba
-        # "Cheque XXX aplicado $21" aunque ya estuviera anulado) y podía
+        # con stat='X', lo que ensuciaba el detalle de factura y podía
         # bloquear futuras anulaciones de factura con falso "cheque vivo".
-        db.execute(
-            "DELETE FROM scintela.chequesxfact WHERE id_cheque=%s",
-            (id_cheque,),
-            conn=conn,
-        )
+        # TMT 2026-07-25: SOLO en anulación administrativa. En un rebote real la
+        # aplicación se MANTIENE (la factura sigue paga, como en dBase); borrarla
+        # bajaría el abono derivado y reabriría la factura, que es lo que NO
+        # queremos.
+        if not es_rebote_real:
+            db.execute(
+                "DELETE FROM scintela.chequesxfact WHERE id_cheque=%s",
+                (id_cheque,),
+                conn=conn,
+            )
 
         # TMT 2026-05-21 dueña: el STOP es SOLO MANUAL. No marcar
         # automáticamente al rebotar. La obs sí queda anotada para que
