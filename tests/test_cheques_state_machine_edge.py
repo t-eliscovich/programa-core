@@ -93,6 +93,23 @@ def test_transicion_ilegal_rechazada_sin_mutar(setup, origen, destino):
     assert _stat(conn, id_ch) == origen
 
 
+# ── A2. "Cobrar en efectivo" (C) presente en el dropdown ───────────────
+def test_dropdown_ofrece_efectivo_donde_el_backend_lo_permite():
+    """El dropdown (transiciones_para) tiene que ofrecer 'Cobrar en efectivo' (C)
+    en los estados de cartera donde el backend lo permite — dBase lo deja
+    (MODIFICA.PRG cartera→C → caja). TMT 2026-07-26. Antes faltaba (bug de UI:
+    el backend aceptaba Z→C pero el dropdown nunca lo generaba)."""
+    from modules.cheques import queries as chq
+
+    for s in ("Z", "P", "D"):
+        dests = {o["stat_destino"] for o in chq.transiciones_para(s)}
+        assert "C" in dests, f"falta 'Cobrar en efectivo' (C) en el dropdown de {s}"
+    # Y NO debe aparecer donde el backend no lo permite (devueltos, depositados).
+    for s in ("1", "2", "3", "B", "V"):
+        dests = {o["stat_destino"] for o in chq.transiciones_para(s)}
+        assert "C" not in dests, f"'C' no debería estar en el dropdown de {s}"
+
+
 # ── B. DEPOSITAR LOTE MIXTO (Z + devuelto en la misma llamada) ─────────
 @pytest.mark.db
 def test_depositar_lote_mixto_Z_da_B_y_devuelto_da_V(setup):

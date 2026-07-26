@@ -2310,6 +2310,19 @@ def transiciones_para(stat: str) -> list[dict]:
             "kind": "POST",
             "endpoint": "cheques.transicionar",
         })
+    # 2b) Cobrar en efectivo (C) → pasa el cheque a CAJA. NO es un estado "neutro"
+    #     (mueve caja) ni tiene entrada curada, así que se agrega acá cuando el
+    #     backend lo permite (cartera Z/P/D). dBase lo permite: MODIFICA.PRG
+    #     `IF STI$CART .AND. STF$'9C'` → `USE CAJA` crea la entrada de caja. El
+    #     template ya renderiza stat_destino='C' con su confirm ("Cobrar en caja").
+    #     TMT 2026-07-26 (dueña: "si el dbase deja, dejalos").
+    if "C" in permit and "C" not in ya:
+        base.append({
+            "stat_destino": "C",
+            "label": "Cobrar en efectivo (caja)",
+            "kind": "POST",
+            "endpoint": "cheques.transicionar",
+        })
     # 3) Rebote / sin fondos (9) → wizard de reverso (compensa banco si estaba
     #    depositado). Se ofrece siempre que el backend lo permita y no esté ya.
     if "9" in permit and "9" not in ya:
