@@ -372,16 +372,16 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
         # Ordenar por importe FIRMADO en los dos lados: así un +300 se aparea
         # con el +300 y sólo queda marcado como flip lo que de verdad cambió
         # de signo (si no, el apareo era por orden de llegada y daba falsos).
-        a = sorted(db_n.get(k, []), key=lambda m: _f(m.get("importe")))
-        b = sorted(pc_n.get(k, []), key=lambda m: _f(m.get("importe")))
+        a = sorted(db_n.get(k, []), key=val_firmado)
+        b = sorted(pc_n.get(k, []), key=val_firmado)
         n = min(len(a), len(b))
         for i in range(n):
-            va, vb = _f(a[i].get("importe")), _f(b[i].get("importe"))
+            va, vb = val_firmado(a[i]), val_firmado(b[i])
             if (va >= 0) != (vb >= 0):
                 flips.append({
                     "fecha": a[i].get("fecha"),
                     "dbase": a[i], "pc": b[i],
-                    "impacto": round(vb - va, 2),
+                    "impacto": round(vb - va, 2),  # PC − dBase, firmado
                 })
         solo_db.extend(a[n:])
         solo_pc.extend(b[n:])
@@ -433,6 +433,28 @@ def saldos_fin_de_dia(dbf_movs: list[dict], pc_movs: list[dict], desde: date) ->
             prev_delta = delta
     return out
 
+def val_firmado(m: dict) -> float:
+    """Valor FIRMADO de un movimiento: + suma al saldo, − lo resta.
+
+    OJO (TMT 2026-07-26): `importe` es la MAGNITUD, no el valor firmado — la
+    dirección vive en `tipo` (caja: E/S · Entrada/Salida) o en `doc` (banco:
+    DE/NC suman, ND/CH restan). Y a veces la magnitud viene NEGATIVA
+    (contra-asientos del dBase, ej. «E −16.200,00 CH.LMM»), con lo cual una
+    entrada resta. Sumar `importe` a secas da cualquier cosa; por eso el cuadre
+    del 1 a 1 usa esta función.
+    """
+    v = _f(m.get("importe"))
+    t = str(m.get("tipo") or "").strip().upper()
+    if t.startswith("S"):          # S / SALIDA
+        return -v
+    if t.startswith("E"):          # E / ENTRADA
+        return v
+    doc = str(m.get("doc") or "").strip().upper()
+    if doc in ("ND", "CH"):        # nota de débito / cheque emitido
+        return -v
+    return v                       # DE (depósito) / NC (nota de crédito)
+
+
 def _ln(m: str = "") -> str:
     """Igual que el `line()` local de reporte(): una línea con \n al final."""
     return m.rstrip("\n") + "\n"
@@ -458,17 +480,17 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
                    f"otro salida ({len(flips)}). El 1 a 1 los cancelaba en silencio:")
         for fl in sorted(flips, key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
             a, b = fl["dbase"], fl["pc"]
-            yield _ln(f"    {fl['fecha']} dBase {_f(a.get('importe')):>12,.2f} "
+            yield _ln(f"    {fl['fecha']} dBase {val_firmado(a):>12,.2f} "
                        f"«{str(a.get('concepto') or '')[:22]}»  vs  PC "
-                       f"{_f(b.get('importe')):>12,.2f} «{str(b.get('concepto') or '')[:22]}»"
+                       f"{val_firmado(b):>12,.2f} «{str(b.get('concepto') or '')[:22]}»"
                        f"   impacto {fl['impacto']:>+12,.2f}")
     con_ambos = [x for x in dias if x.get("delta") is not None]
     if not con_ambos:
         return
     gap_ini = con_ambos[0]["delta"]
     gap_fin = con_ambos[-1]["delta"]
-    s_pc = sum(_f(m.get("importe")) for m in diff.get("solo_pc") or [])
-    s_db = sum(_f(m.get("importe")) for m in diff.get("solo_dbase") or [])
+    s_pc = sum(val_firmado(m) for m in diff.get("solo_pc") or [])
+    s_db = sum(val_firmado(m) for m in diff.get("solo_dbase") or [])
     s_flip = sum(f["impacto"] for f in flips)
     explicado = s_pc - s_db + s_flip
     gap = gap_fin - gap_ini
