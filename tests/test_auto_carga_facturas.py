@@ -20,7 +20,9 @@ def test_auto_carga_no_duplica_ni_carga_dias_previos(monkeypatch):
     _reset_throttle(monkeypatch)
 
     # Asinfo de hoy: una YA cargada en PC (numf 500), una que FALTA (numf 501),
-    # una NC/DEVOLUCION (se ignora) y una de OTRA fecha (se ignora).
+    # una DEVOLUCION de mercadería de hoy (numf 502 — AHORA se carga, TMT
+    # 2026-07-26 dueña: "que carguen en el automático") y una de OTRA fecha
+    # (se ignora).
     asinfo_rows = [
         {"numero": "001-099-000000500", "tipo": "FACTURA", "cliente_codigo": "KAM",
          "kg": 10, "usd": 100.0, "fecha": hoy.isoformat()},
@@ -50,11 +52,17 @@ def test_auto_carga_no_duplica_ni_carga_dias_previos(monkeypatch):
 
     res = fv._auto_cargar_facturas_hoy()
 
-    # Solo la 501 (falta, es FACTURA, es de hoy) se creó.
-    assert res["cargadas"] == 1
-    assert len(creadas) == 1
-    assert creadas[0]["numf"] == 501
-    assert creadas[0]["usuario"] == "asinfo-carga"  # cuenta en cartera
+    # La 501 (FACTURA que falta, de hoy) y la 502 (DEVOLUCION de mercadería de
+    # hoy) se crean. La 500 ya está (dedupe por numf), la 499 es de otra fecha.
+    assert res["cargadas"] == 2
+    assert len(creadas) == 2
+    por_numf = {c["numf"]: c for c in creadas}
+    assert set(por_numf) == {501, 502}
+    assert por_numf[501]["usuario"] == "asinfo-carga"  # cuenta en cartera
+    # La devolución entra con kg/importe negativos y tipo 'DE'.
+    assert float(por_numf[502]["kg"]) < 0
+    assert float(por_numf[502]["importe"]) < 0
+    assert por_numf[502]["tipo"] == "DE"
     # Retenciones de hoy aplicadas.
     assert res["ret"] == 2
 

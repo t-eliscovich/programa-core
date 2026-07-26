@@ -109,7 +109,18 @@ def _auto_cargar_facturas_hoy() -> dict:
                 pass
         for r in asinfo_rows:
             tipo = (r.get("tipo") or "").upper()
-            if tipo not in ("FACTURA", "NTEN"):
+            # TMT 2026-07-26 (dueña): auto-cargar también DEVOLUCION/NCNT de
+            # MERCADERÍA (kg != 0), igual que el botón. NC_FINANCIERA (kg=0) se
+            # excluye (se pisa con las retenciones ya aplicadas → duplicaría).
+            try:
+                _kg_auto = float(r.get("kg") or 0)
+            except (TypeError, ValueError):
+                _kg_auto = 0.0
+            if tipo in ("FACTURA", "NTEN"):
+                pass
+            elif tipo in ("DEVOLUCION", "NCNT") and abs(_kg_auto) > 0.001:
+                pass
+            else:
                 continue
             fr = r.get("fecha")
             fecha = _parse_date(str(fr)[:10]) if fr else None
