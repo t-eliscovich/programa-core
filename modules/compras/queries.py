@@ -442,6 +442,7 @@ def editar(
     observacion: str | None = None,
     importe=None,
     tipo: str | None = None,
+    kg=None,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de una compra existente.
@@ -454,11 +455,17 @@ def editar(
       - `concepto`, `comprobante`, `observacion`: edición libre.
       - `tipo`: edición libre (TMT 2026-07-17, dueña: reclasificar NC/QI de
         Q a C — es clasificación, no toca importe ni posdat).
+      - `kg`: edición libre (TMT 2026-07-26, dueña). Es un dato FÍSICO: no
+        toca importe, ni la posdat hermana, ni el pago — se puede corregir
+        incluso en una compra ya pagada. Existe porque las compras tipo K de
+        tejeduría se tipearon a mano SIN kg, y `tejeduria_asinfo` reconcilia
+        "producido vs cargado" contando sólo `kg > 0`: sin los kg el "falta
+        cargar" miente y la carga automática de pendientes duplicaría.
       - `asegurar_fecha_abierta(compra.fecha)` — el período original.
     """
     compra = db.fetch_one(
         "SELECT id_compra, fecha, codigo_prov, numero, importe, fechad, "
-        "       tipo, concepto, comprobante, stat, id_transaccion "
+        "       tipo, concepto, comprobante, kg, stat, id_transaccion "
         "FROM scintela.compra WHERE id_compra = %s",
         (id_compra,),
     )
@@ -520,6 +527,15 @@ def editar(
         if tipo_norm != (compra.get("tipo") or "").upper().strip():
             nuevo_tipo = tipo_norm
 
+    # kg — dato físico, edición libre incluso si está pagada (no toca $).
+    nuevo_kg = None
+    if kg is not None:
+        kg_val = float(kg)
+        if kg_val < 0:
+            raise ValueError("Los kg no pueden ser negativos.")
+        if abs(kg_val - float(compra.get("kg") or 0)) > 0.001:
+            nuevo_kg = kg_val
+
     obs_marca = f"[E] {observacion[:120]}" if observacion else None
 
     with db.tx() as conn:
@@ -534,6 +550,9 @@ def editar(
         if nuevo_tipo is not None:
             sql_set.append("tipo=%s")
             params.append(nuevo_tipo)
+        if nuevo_kg is not None:
+            sql_set.append("kg=%s")
+            params.append(nuevo_kg)
         if obs_marca:
             sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
             params.append(obs_marca)
@@ -578,6 +597,8 @@ def editar(
         "importe_nuevo": float(nuevo_importe or 0),
         "fechad_previo": compra["fechad"],
         "fechad_nuevo": nuevo_fechad,
+        "kg_previo": float(compra.get("kg") or 0),
+        "kg_nuevo": float(nuevo_kg if nuevo_kg is not None else (compra.get("kg") or 0)),
         "pagada": pagada,
     }
 

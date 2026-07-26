@@ -27,6 +27,14 @@
   .ta .note{color:#64748b;font-size:12px;margin:2px 0 10px}
   .ta .warnbox{border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px}
   .ta h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin:22px 0 4px}
+  .ta .tarbox{border:1px solid #e5e7eb;border-radius:10px;padding:10px 14px;background:#fff;margin:8px 0 4px}
+  .ta .tarbox table{margin:4px 0 0}
+  .ta .tarbox input{padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
+  .ta .tarbox input.n{width:82px;text-align:right;font-variant-numeric:tabular-nums}
+  .ta .tarbox input.p{width:110px}
+  .ta .tarbox input.x{width:100%}
+  .ta .btn2{display:inline-block;font-size:12px;font-weight:600;color:#334155;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 10px;text-decoration:none;cursor:pointer}
+  .ta .tar{font-variant-numeric:tabular-nums}
 </style>
 {% endblock %}
 
@@ -39,15 +47,112 @@
     <button class="btn" style="background:#334155">Ver</button>
   </form>
 
+  {# ── TARIFAS $/kg (TMT 2026-07-26, pedido dueña) ─────────────────────────
+     El $/kg de cada tejedor tercerizado. Con esto la carga de las compras
+     tipo K que faltan sale automática (kg de Asinfo × tarifa) en vez de
+     tipearse a mano. `Patrón` = pedazo del nombre del PRODUCTO de la OF:
+     Ponce cobra distinto los artículos con HUF. Vacío = tarifa por defecto
+     del proveedor. Edita sólo quien tiene 'tarifas.editar' = Accionistas y
+     Andrés (los roles wildcard '*'). #}
+  {% set puede_tarifas = tiene_permiso('tarifas.editar') %}
+  <h2>Tarifas de tejeduría · $/kg</h2>
+  <div class="tarbox">
+    {% if not data.tarifas %}
+      <p class="note">Todavía no hay tarifas cargadas.{% if puede_tarifas %} Poné el $/kg de cada tejedor abajo y guardá.{% endif %}</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('tejeduria_asinfo.guardar_tarifas', anio=anio, mes=mes) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table>
+        <thead><tr>
+          <th>Proveedor</th><th style="text-align:left">Patrón del producto</th>
+          <th>$/kg</th><th style="text-align:left">Nota</th><th>Actualizado</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for t in data.tarifas %}
+            <tr>
+              <td>
+                {% if puede_tarifas %}
+                  <input class="p" name="t_{{ loop.index }}_cod_prov" value="{{ t.cod_prov }}" maxlength="5">
+                {% else %}{{ t.cod_prov }}{% endif %}
+              </td>
+              <td style="text-align:left">
+                {% if puede_tarifas %}
+                  <input class="p" name="t_{{ loop.index }}_patron" value="{{ t.patron or '' }}" maxlength="60" placeholder="(por defecto)">
+                {% else %}
+                  {% if t.patron %}contiene «{{ t.patron }}»{% else %}<span class="muted">por defecto</span>{% endif %}
+                {% endif %}
+              </td>
+              <td>
+                {% if puede_tarifas %}
+                  <input class="n" name="t_{{ loop.index }}_tarifa" value="{{ t.tarifa|num_es(4) }}">
+                {% else %}<span class="tar">{{ t.tarifa|num_es(4) }}</span>{% endif %}
+              </td>
+              <td style="text-align:left" class="muted">
+                {% if puede_tarifas %}
+                  <input class="x" name="t_{{ loop.index }}_nota" value="{{ t.nota }}" maxlength="120">
+                {% else %}{{ t.nota }}{% endif %}
+              </td>
+              <td class="muted" style="font-size:11px">
+                {{ t.fecha_modifica|fecha_es if t.fecha_modifica else '—' }}
+                {% if t.usuario_modifica %}<br>{{ t.usuario_modifica }}{% endif %}
+              </td>
+              <td>
+                {% if puede_tarifas %}
+                  <button class="btn2" type="submit" formaction="{{ url_for('tejeduria_asinfo.borrar_tarifa', id_tarifa=t.id_tarifa, anio=anio, mes=mes) }}"
+                          onclick="return confirm('¿Borrar la tarifa de {{ t.cod_prov }}{% if t.patron %} ({{ t.patron }}){% endif %}?')">borrar</button>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          {% if puede_tarifas %}
+            <tr>
+              <td><input class="p" name="t_999_cod_prov" placeholder="RY" maxlength="5"></td>
+              <td style="text-align:left"><input class="p" name="t_999_patron" placeholder="(por defecto)" maxlength="60"></td>
+              <td><input class="n" name="t_999_tarifa" placeholder="0,0000"></td>
+              <td style="text-align:left"><input class="x" name="t_999_nota" placeholder="de dónde sale" maxlength="120"></td>
+              <td class="muted" style="font-size:11px">nueva</td>
+              <td></td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+      {% if puede_tarifas %}
+        <div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+          <button class="btn" type="submit">Guardar tarifas</button>
+          <span class="note" style="margin:0">El patrón más específico gana; si ninguno coincide se usa la fila «por defecto» del proveedor. INTELA no lleva tarifa: su $/kg es hilo + 0,50.</span>
+        </div>
+      {% else %}
+        <p class="note" style="margin-top:6px">Sólo accionistas y Andrés pueden editar las tarifas.</p>
+      {% endif %}
+    </form>
+  </div>
+
   {% if not data.disponible %}
     <div class="warnbox">Asinfo no está disponible en este momento — no se pudo traer la producción de tejeduría. (La pantalla no rompe; reintentá en un rato.)</div>
   {% else %}
 
     <h2>Tercerizado por OF · Reyes / Ponce
         ({{ data.pendientes|length }} para cargar)</h2>
+
+    {% if data.pendientes and tiene_permiso('compras.crear') %}
+      {# Carga automática: kg de Asinfo × tarifa. El service topea por lo que
+         falta de cada proveedor y saltea las OFs sin tarifa — nunca inventa un
+         precio ni carga de más. #}
+      <form method="post" action="{{ url_for('tejeduria_asinfo.cargar_pendientes', anio=anio, mes=mes) }}"
+            style="margin:2px 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit"
+                onclick="return confirm('Cargar {{ data.pendientes|length }} compra(s) de tejeduría por $ {{ data.total_pendiente|num_es(2) }}?')">
+          Cargar las {{ data.pendientes|length }} pendientes · $ {{ data.total_pendiente|num_es(2) }}
+        </button>
+        {% if data.pendientes_sin_tarifa %}
+          <span class="falta">{{ data.pendientes_sin_tarifa }} sin tarifa — esas se saltean, cargalas a mano o poné la tarifa arriba.</span>
+        {% endif %}
+      </form>
+    {% endif %}
     {% if data.tercerizado_ofs %}
     <table>
-      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Compra $</th></tr></thead>
+      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>$/kg</th><th>Compra $</th></tr></thead>
       <tbody>
         {% for of in data.tercerizado_ofs %}
           <tr>
@@ -56,11 +161,19 @@
             <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
             <td class="muted">{{ of.descripcion }}</td>
             <td>{{ of.kg|num_es }}</td>
+            <td class="tar">{% if of.tarifa %}{{ of.tarifa|num_es(4) }}{% else %}<span class="falta">sin tarifa</span>{% endif %}</td>
             <td>
               {% if of.estado == 'compra' %}
                 <span class="ok">$ {{ of.compra_monto|num_es(2) }}</span>
               {% elif of.estado == 'pendiente' %}
-                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K', concepto=of.numero ~ ' ' ~ of.descripcion) }}">Cargar $</a>
+                {# El importe va PRECARGADO con kg × tarifa (y la fecha de la OF)
+                   — el humano lo revisa y confirma. Sin tarifa no se precarga. #}
+                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K',
+                                                importe=of.importe_sugerido if of.importe_sugerido else None,
+                                                fecha=of.dia|fecha_es,
+                                                concepto=of.numero ~ ' ' ~ of.descripcion) }}">
+                  {% if of.importe_sugerido %}Cargar $ {{ of.importe_sugerido|num_es(2) }}{% else %}Cargar ${% endif %}
+                </a>
               {% else %}
                 <span class="muted">cargado</span>
               {% endif %}
@@ -97,8 +210,12 @@
             <td class="muted">{{ t.ofs }}</td>
             <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
             <td>
+              {# falta_kg NEGATIVO = se cargó MÁS de lo que Asinfo dice que se
+                 produjo. Señal de duplicado (típico: la misma maquila tipeada
+                 en PC y en el FoxPro). TMT 2026-07-26. #}
               {% if t.es_intela %}<span class="muted">—</span>
               {% elif t.falta_kg > 1 %}<span class="falta">{{ t.falta_kg|num_es }} kg</span>
+              {% elif t.falta_kg < -1 %}<span class="falta" title="Se cargó más de lo producido — puede haber una compra duplicada">cargado de más {{ (-t.falta_kg)|num_es }} kg ⚠</span>
               {% else %}<span class="ok">ok</span>{% endif %}
             </td>
             <td>{% if t.costo_kg %}{{ t.costo_kg|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>

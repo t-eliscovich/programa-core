@@ -340,6 +340,7 @@ def editar(id_compra: int):
         "importe": str(c.get("importe") or 0),
         "observacion": "",
         "tipo": (c.get("tipo") or "").upper().strip(),
+        "kg": str(c.get("kg") or ""),
     }
     if request.method == "POST":
         concepto = (request.form.get("concepto") or "").strip()[:200] or None
@@ -349,6 +350,13 @@ def editar(id_compra: int):
         importe = parse_monto(importe_str)
         observacion = (request.form.get("observacion") or "").strip() or None
         tipo_form = (request.form.get("tipo") or "").strip().upper() or None
+        # kg (TMT 2026-07-26): dato físico. Vacío = no tocar; 0 es un valor válido.
+        kg_str = request.form.get("kg")
+        kg_form = parse_monto(kg_str)
+        if (kg_str or "").strip() and kg_form is None:
+            errores.append(f"No entendí los kg «{kg_str}». Usá formato 1.234,56.")
+        if kg_form is not None and float(kg_form) < 0:
+            errores.append("Los kg no pueden ser negativos.")
 
         if importe is None:
             errores.append("Importe inválido.")
@@ -362,6 +370,7 @@ def editar(id_compra: int):
             "importe": importe_str,
             "observacion": observacion or "",
             "tipo": tipo_form or "",
+            "kg": kg_str or "",
         })
 
         if errores:
@@ -381,11 +390,15 @@ def editar(id_compra: int):
                 importe=float(importe) if importe is not None else None,
                 observacion=observacion,
                 tipo=tipo_form,
+                kg=float(kg_form) if kg_form is not None else None,
                 usuario=usuario,
             )
+            _kg_txt = ""
+            if res.get("kg_nuevo") != res.get("kg_previo"):
+                _kg_txt = f" · kg: {res['kg_previo']:,.2f} → {res['kg_nuevo']:,.2f}"
             flash(
                 f"Compra editada — importe: $ {res['importe_nuevo']:,.2f} "
-                f"({'pagada' if res['pagada'] else 'pendiente'}).",
+                f"({'pagada' if res['pagada'] else 'pendiente'}){_kg_txt}.",
                 "ok",
             )
             return redirect(url_for("compras.lista"))

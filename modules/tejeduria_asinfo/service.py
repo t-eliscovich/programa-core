@@ -14,11 +14,19 @@ Match:
 Todo fail-soft: si Asinfo cae, `disponible=False` y la tab muestra un aviso.
 """
 import re
+from datetime import date
 
 import db
 from modules.asinfo import service as asinfo_service
+from modules.tejeduria_asinfo import queries as _tarifas
 
 _OFT_RE = re.compile(r"OFT-\d+", re.IGNORECASE)
+
+# usuario_crea de las compras que crea la carga automática. `scripts/import_dbf.py`
+# lo PRESERVA en el sync del dBase — igual que el puente formulas ('formulas-%'):
+# estas compras nacen en PC (el DBF no las tiene, es justamente el punto) y si el
+# sync las borrara no volverían nunca.
+MARCADOR_CARGA = "asinfo-tejeduria"
 
 # Tercerizados válidos (pedido dueña 2026-07-16): en la tab SOLO mostramos
 # Reyes (RY) y Ponce (AP). Cualquier otro no-INTELA (R UNDA, GENERICA PRUEBAS,
@@ -130,6 +138,9 @@ def resumen_mes(anio: int, mes: int) -> dict:
     ofs = [_a_intela_si_desconocido(o) for o in ofs]
     compras = _compras_k_por_prov(anio, mes) if disponible else {}
     estampadas = _ofts_estampadas() if disponible else {}
+    # Tarifas $/kg por (proveedor, patrón de producto) — mig 0133. Se leen UNA
+    # vez y se resuelven en memoria por fila (queries.resolver es pura).
+    tarifas = _tarifas.listar_tarifas()
 
     # tejedores = columnas + match, ordenados por kg desc
     tej: dict = {}
@@ -261,7 +272,20 @@ def resumen_mes(anio: int, mes: int) -> dict:
             estado = "pendiente"       # falta y sin match → botón Cargar
         else:
             estado = "cargado"         # cubierto por match viejo del tejedor
-        tercerizado_ofs.append({**of, "compra_monto": monto, "estado": estado})
+        # Tarifa e importe sugerido (TMT 2026-07-26): el $/kg sale de la tabla
+        # de tarifas según el PRODUCTO de la OF (Ponce cobra distinto los HUF).
+        # Sin tarifa → importe_sugerido None y NO se ofrece carga automática:
+        # nunca inventamos un precio.
+        _tar = _tarifas.resolver(tarifas, of.get("cod"), of.get("descripcion"))
+        tercerifa = {
+            **of,
+            "compra_monto": monto,
+            "estado": estado,
+            "tarifa": _tar,
+            "importe_sugerido": (round(float(of.get("kg") or 0) * _tar, 2)
+                                 if _tar else None),
+        }
+        tercerizado_ofs.append(tercerifa)
     tercerizado_ofs.sort(key=lambda o: ((o.get("cod") or ""), str(o.get("dia") or "")))
     pendientes = [o for o in tercerizado_ofs if o["estado"] == "pendiente"]
 
@@ -302,7 +326,115 @@ def resumen_mes(anio: int, mes: int) -> dict:
         "ingreso_por_dia": ingreso_por_dia,
         "pendientes": pendientes,
         "tercerizado_ofs": tercerizado_ofs,
+        # Tarifas $/kg editables (mig 0133) + cuánto falta por proveedor, que es
+        # el TOPE de la carga automática.
+        "tarifas": tarifas,
+        "falta_por_cod": falta_por_cod,
+        "total_pendiente": round(
+            sum((o.get("importe_sugerido") or 0.0) for o in pendientes), 2),
+        "pendientes_sin_tarifa": sum(
+            1 for o in pendientes if o.get("importe_sugerido") is None),
     }
+
+
+def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
+                      clave: str | None = None) -> dict:
+    """Crea las compras tipo K que faltan del mes, con kg de Asinfo × tarifa.
+
+    TMT 2026-07-26 (pedido dueña: "que se carguen automáticamente"). Una compra
+    por OF pendiente, estampando el OFT en el concepto para que el match fino de
+    `_ofts_estampadas` la reconozca de acá en adelante.
+
+    GUARDAS (en este orden — la carga ciega duplicaba):
+      1. sólo OFs en estado 'pendiente' (ya excluye mes pasado y OFT estampado);
+      2. **tarifa resuelta o se saltea** — nunca inventamos un precio;
+      3. **tope por `falta_kg` del proveedor**: no cargamos más kg de los que
+         faltan. Es la guarda que importa: las compras K viejas tipeadas a mano
+         SIN kg hacen que `falta_kg` sobre-estime, y sin tope se crearían
+         compras por OFs que ya están pagadas (caso real 26/07: 2 OFs de Reyes
+         del 08/07). Se cargan las OFs más viejas primero hasta consumir la falta.
+      4. `usuario_crea = 'asinfo-tejeduria'` — marcador que `scripts/import_dbf.py`
+         PRESERVA en el sync del dBase (el DBF no tiene estas compras).
+
+    Devuelve {creadas, importe, salteadas, detalle:[...]} y NO levanta si una OF
+    falla: la anota en el detalle y sigue.
+    """
+    from modules.compras import queries as _compras_q
+
+    data = resumen_mes(anio, mes)
+    pendientes = data.get("pendientes") or []
+    # Más viejas primero: si la falta no alcanza para todas, se cargan las que
+    # llevan más tiempo sin facturar.
+    pendientes = sorted(pendientes, key=lambda o: str(o.get("dia") or ""))
+    restante = dict(data.get("falta_por_cod") or {})
+    estampadas = _ofts_estampadas()
+
+    creadas, importe_total = 0, 0.0
+    detalle: list[dict] = []
+    for of in pendientes:
+        cod = (of.get("cod") or "").upper().strip()
+        numero = (of.get("numero") or "").upper()
+        kg = round(float(of.get("kg") or 0), 2)
+        tarifa = of.get("tarifa")
+        importe = of.get("importe_sugerido")
+
+        if numero in estampadas:
+            detalle.append({"oft": numero, "ok": False, "motivo": "ya tiene compra"})
+            continue
+        if not tarifa or not importe:
+            detalle.append({"oft": numero, "ok": False,
+                            "motivo": f"sin tarifa para {cod or '?'}"})
+            continue
+        if kg <= 0:
+            detalle.append({"oft": numero, "ok": False, "motivo": "OF sin kg"})
+            continue
+        if restante.get(cod, 0.0) + 0.01 < kg:
+            detalle.append({
+                "oft": numero, "ok": False,
+                "motivo": (f"excede lo que falta de {cod} "
+                           f"({restante.get(cod, 0.0):,.2f} kg)"),
+            })
+            continue
+
+        try:
+            _fecha = _parse_dia(of.get("dia"))
+            res = _compras_q.crear(
+                fecha=_fecha,
+                codigo_prov=cod,
+                importe=importe,
+                kg=kg,
+                tipo="K",
+                concepto=f"{numero} {(of.get('descripcion') or '').strip()}"[:200],
+                clave=clave,
+                usuario=MARCADOR_CARGA,
+            )
+        except Exception as e:  # noqa: BLE001 -- una OF que falla no corta el lote
+            detalle.append({"oft": numero, "ok": False, "motivo": str(e)[:120]})
+            continue
+
+        creadas += 1
+        importe_total += float(importe)
+        restante[cod] = round(restante.get(cod, 0.0) - kg, 2)
+        estampadas[numero] = float(importe)
+        detalle.append({
+            "oft": numero, "ok": True, "cod": cod, "kg": kg,
+            "tarifa": tarifa, "importe": float(importe),
+            "numero_compra": res.get("numero"),
+        })
+
+    return {
+        "creadas": creadas,
+        "importe": round(importe_total, 2),
+        "salteadas": sum(1 for d in detalle if not d["ok"]),
+        "detalle": detalle,
+    }
+
+
+def _parse_dia(dia) -> date:
+    """'YYYY-MM-DD' (o date) → date. La OF de Asinfo trae el día como texto."""
+    if isinstance(dia, date):
+        return dia
+    return date.fromisoformat(str(dia)[:10])
 
 
 def _ingreso_por_dia(anio: int, mes: int) -> list[dict]:

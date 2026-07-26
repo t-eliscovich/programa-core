@@ -926,6 +926,12 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         # se restauran después SOLO si el DBF no trajo una gemela (mismo
         # proveedor + importe + mes) — si la cargaron a mano en el dBase,
         # dBase gana y la copia del puente se absorbe (sin duplicar).
+        #
+        # TMT 2026-07-26: MISMO criterio para las compras de TEJEDURÍA que crea
+        # /produccion-tejeduria-asinfo (usuario_crea = 'asinfo-tejeduria'). Los
+        # kg de tejeduría salen de Asinfo y esas compras NO se tipean en el
+        # FoxPro a propósito → el DBF nunca las trae y sin este snapshot el sync
+        # las borraría para siempre (junto con su posdat).
         _compras_formulas = []
         if pg_table == "scintela.compra":
             cur.execute(
@@ -933,7 +939,8 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                 "       kg, importe, numero, fecha_ing, fechad, concepto, "
                 "       clave, no_banco, usuario_crea, cuenta_pagada, stat "
                 "  FROM scintela.compra "
-                " WHERE COALESCE(usuario_crea, '') LIKE 'formulas-%'"
+                " WHERE COALESCE(usuario_crea, '') LIKE 'formulas-%' "
+                "    OR COALESCE(usuario_crea, '') = 'asinfo-tejeduria'"
             )
             _compras_formulas = cur.fetchall()
 
@@ -1196,6 +1203,15 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                     )
                     if _tok and cur.fetchone():
                         continue  # el DBF ya la trae → dBase gana, no duplicar
+                    # OJO tejeduría (TMT 2026-07-26): el token de estas compras
+                    # es el OFT ('OFT-000038848'), que el DBF NUNCA trae → acá
+                    # siempre se restauran. Si algún día la misma maquila se
+                    # tipea TAMBIÉN en el FoxPro, quedarían las dos y el pasivo
+                    # se contaría doble. NO lo absorbemos por importe: las
+                    # facturas de Reyes repiten monto (~1.630 el rollo entero) y
+                    # absorberíamos una OF distinta. El aviso sale por la
+                    # pantalla: /produccion-tejeduria-asinfo marca en rojo
+                    # "cargado de más" cuando lo cargado supera lo producido.
                 cur.execute(
                     "INSERT INTO scintela.compra "
                     "(fecha, id_proveedor, codigo_prov, tipo, comprobante, "

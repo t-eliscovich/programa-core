@@ -13,6 +13,7 @@ import pytest
 
 from modules._lib import metabase_client
 from modules.asinfo import service as asvc
+from modules.tejeduria_asinfo import queries as tq
 from modules.tejeduria_asinfo import service as tsvc
 
 
@@ -113,7 +114,7 @@ _PROD = {
 }
 
 
-def _run_resumen(compras, estampadas):
+def _run_resumen(compras, estampadas, tarifas=None):
     # today_ec fijo en julio 2026 → mes 7 es "el mes actual" (no pasado), así
     # el gate "meses viejos = todo cargado" no dispara y los tests son
     # deterministas (resumen_mes importa today_ec desde filters en runtime).
@@ -121,6 +122,7 @@ def _run_resumen(compras, estampadas):
     with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
          patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
          patch.object(tsvc, "_ofts_estampadas", return_value=estampadas), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=(tarifas or [])), \
          patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
         return tsvc.resumen_mes(2026, 7)
 
@@ -167,6 +169,7 @@ def test_resumen_fail_soft_asinfo_no_disponible():
                 "ofs": [], "por_tejedor": []}
     with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=prod_off), \
          patch.object(tsvc, "_compras_k_por_prov", return_value={}) as mc, \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=[]), \
          patch.object(tsvc, "_ofts_estampadas", return_value=set()) as me:
         out = tsvc.resumen_mes(2026, 7)
     assert out["disponible"] is False
@@ -193,3 +196,152 @@ def test_tab_renderiza_200(app, fake_db):
     assert "Tejeduría" in body
     assert "OFT-4" in body       # OF tercerizada pendiente (RY, sin OFT estampado)
     assert "OFT-1" not in body   # INTELA no se lista como OF individual
+
+
+# ---------------------------------------------------------------------------
+# TARIFAS $/kg (mig 0133) + carga automática de pendientes — TMT 2026-07-26
+# ---------------------------------------------------------------------------
+
+_TARIFAS = [
+    {"id_tarifa": 1, "cod_prov": "RY", "patron": None, "tarifa": 2.0125,
+     "nota": "", "usuario_modifica": "", "fecha_modifica": None},
+    {"id_tarifa": 2, "cod_prov": "AP", "patron": "HUF", "tarifa": 1.0350,
+     "nota": "", "usuario_modifica": "", "fecha_modifica": None},
+    {"id_tarifa": 3, "cod_prov": "AP", "patron": None, "tarifa": 0.5750,
+     "nota": "", "usuario_modifica": "", "fecha_modifica": None},
+]
+
+
+def test_resolver_default_del_proveedor():
+    assert tq.resolver(_TARIFAS, "RY", "M REYES KW22 C T-40") == pytest.approx(2.0125)
+    assert tq.resolver(_TARIFAS, "AP", "A PONCE KW20 R/N") == pytest.approx(0.5750)
+
+
+def test_resolver_patron_gana_sobre_default():
+    # el caso real: Ponce cobra 1,035 los artículos con HUF y 0,575 el resto.
+    assert tq.resolver(_TARIFAS, "AP", "A PONCE KW20 HUF40 R D/C LYCRA") == pytest.approx(1.0350)
+
+
+def test_resolver_patron_mas_especifico_gana():
+    tars = _TARIFAS + [
+        {"id_tarifa": 9, "cod_prov": "AP", "patron": "HUF40 R/A", "tarifa": 1.5,
+         "nota": "", "usuario_modifica": "", "fecha_modifica": None},
+    ]
+    # 'HUF40 R/A' (9 chars) le gana a 'HUF' (3) porque es más específico.
+    assert tq.resolver(tars, "AP", "A PONCE KW22 HUF40 R/A") == pytest.approx(1.5)
+    assert tq.resolver(tars, "AP", "A PONCE KW20 HUF40 R D/C") == pytest.approx(1.0350)
+
+
+def test_resolver_sin_tarifa_devuelve_none():
+    # proveedor sin fila → None. NUNCA inventamos un precio.
+    assert tq.resolver(_TARIFAS, "UN", "R UNDA ALGO") is None
+    assert tq.resolver(_TARIFAS, "", "x") is None
+    assert tq.resolver([], "RY", "x") is None
+
+
+def test_importe_sugerido_por_of():
+    out = _run_resumen(compras={}, estampadas={}, tarifas=_TARIFAS)
+    porof = {of["numero"]: of for of in out["tercerizado_ofs"]}
+    # RY: 811,45 kg × 2,0125
+    assert porof["OFT-4"]["tarifa"] == pytest.approx(2.0125)
+    assert porof["OFT-4"]["importe_sugerido"] == pytest.approx(1633.04, abs=0.01)
+    # AP sin HUF: 1.621,25 × 0,575
+    assert porof["OFT-2"]["importe_sugerido"] == pytest.approx(932.22, abs=0.01)
+    assert out["total_pendiente"] == pytest.approx(1633.04 + 932.22, abs=0.02)
+    assert out["pendientes_sin_tarifa"] == 0
+
+
+def test_sin_tarifa_no_sugiere_importe():
+    out = _run_resumen(compras={}, estampadas={}, tarifas=[])
+    porof = {of["numero"]: of for of in out["tercerizado_ofs"]}
+    assert porof["OFT-4"]["tarifa"] is None
+    assert porof["OFT-4"]["importe_sugerido"] is None
+    assert out["total_pendiente"] == 0
+    assert out["pendientes_sin_tarifa"] == 2
+
+
+def _run_cargar(compras, estampadas, tarifas):
+    import datetime as _dt
+    creadas = []
+
+    def _fake_crear(**kw):
+        creadas.append(kw)
+        return {"id_compra": len(creadas), "numero": 900 + len(creadas)}
+
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
+         patch.object(tsvc, "_ofts_estampadas", return_value=dict(estampadas)), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=tarifas), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)), \
+         patch("modules.compras.queries.crear", side_effect=_fake_crear):
+        res = tsvc.cargar_pendientes(2026, 7, usuario="tester", clave="TST")
+    return res, creadas
+
+
+def test_cargar_pendientes_crea_con_kg_por_tarifa():
+    res, creadas = _run_cargar({}, {}, _TARIFAS)
+    assert res["creadas"] == 2 and res["salteadas"] == 0
+    por_prov = {c["codigo_prov"]: c for c in creadas}
+    assert por_prov["RY"]["tipo"] == "K"
+    assert por_prov["RY"]["kg"] == pytest.approx(811.45)
+    assert por_prov["RY"]["importe"] == pytest.approx(1633.04, abs=0.01)
+    # estampa el OFT en el concepto (match fino de acá en adelante)
+    assert por_prov["RY"]["concepto"].startswith("OFT-4")
+    # fecha = día de la OF, no hoy
+    assert por_prov["RY"]["fecha"].isoformat() == "2026-07-08"
+    # marcador que import_dbf preserva en el sync del dBase
+    assert por_prov["RY"]["usuario"] == tsvc.MARCADOR_CARGA == "asinfo-tejeduria"
+
+
+def test_cargar_pendientes_saltea_sin_tarifa():
+    # sólo RY tiene tarifa → AP se saltea, no se inventa el precio.
+    solo_ry = [t for t in _TARIFAS if t["cod_prov"] == "RY"]
+    res, creadas = _run_cargar({}, {}, solo_ry)
+    assert res["creadas"] == 1 and res["salteadas"] == 1
+    assert [c["codigo_prov"] for c in creadas] == ["RY"]
+    assert any("sin tarifa" in d["motivo"] for d in res["detalle"] if not d["ok"])
+
+
+def test_cargar_pendientes_topea_por_lo_que_falta():
+    # EL caso real del 26/07: RY tiene compras viejas cargadas a mano y sólo
+    # faltan 100 kg, pero la OF trae 811 → NO se carga (sin el tope se creaba
+    # una compra duplicada de una OF ya pagada).
+    res, creadas = _run_cargar(
+        {"RY": {"kg": 711.45, "importe": 1400.0, "n": 1}}, {}, _TARIFAS)
+    cods = [c["codigo_prov"] for c in creadas]
+    assert "RY" not in cods
+    assert any("excede lo que falta de RY" in d["motivo"]
+               for d in res["detalle"] if not d["ok"])
+
+
+def test_cargar_pendientes_saltea_oft_ya_estampado():
+    res, creadas = _run_cargar({}, {"OFT-4": 1633.04}, _TARIFAS)
+    assert [c["codigo_prov"] for c in creadas] == ["AP"]
+    assert res["creadas"] == 1
+
+
+def test_cargar_pendientes_una_of_que_falla_no_corta_el_lote():
+    import datetime as _dt
+    llamadas = []
+
+    def _crear_falla_primera(**kw):
+        llamadas.append(kw)
+        if len(llamadas) == 1:
+            raise ValueError("periodo cerrado")
+        return {"id_compra": 2, "numero": 902}
+
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)), \
+         patch("modules.compras.queries.crear", side_effect=_crear_falla_primera):
+        res = tsvc.cargar_pendientes(2026, 7, usuario="t", clave="T")
+    assert res["creadas"] == 1 and res["salteadas"] == 1
+    assert any("periodo cerrado" in d["motivo"] for d in res["detalle"] if not d["ok"])
+
+
+def test_listar_tarifas_fail_soft_sin_tabla():
+    # migración 0133 sin aplicar → la pantalla no rompe.
+    with patch("db.fetch_all", side_effect=RuntimeError("no existe la relación")):
+        assert tq.listar_tarifas() == []
