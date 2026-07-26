@@ -340,7 +340,7 @@ def _pc_conciliados_pichincha() -> dict:
 # ───────────────── comparación de movimientos de banco ─────────────────
 
 def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> dict:
-    """Diff de movimientos en DOS pases, devuelve {solo_dbase, solo_pc}.
+    """Diff de movimientos en DOS pases, devuelve {solo_dbase, solo_pc, signo_invertido}.
 
     Pase 1: cancela 1 a 1 por (fecha, |importe|) — los movimientos idénticos
     del mismo día se anulan.
@@ -348,6 +348,15 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
     la fecha — así los movimientos con fecha corrida (timing: el mismo cheque
     que el dBase asienta el 17 y PC el 20) se anulan y NO aparecen como
     diferencia falsa. Lo que queda es el residuo REAL del gap (TMT 2026-07-23).
+
+    ⚠ PUNTO CIEGO que esto arregla (TMT 2026-07-26): el pase 1 empareja por
+    **valor ABSOLUTO**, así que una entrada de $300 en el dBase se cancelaba
+    contra una salida de $300 en PC del mismo día — en silencio, sin aparecer
+    en ninguna de las dos listas, aunque explica $600 de gap. Ahora esos pares
+    se emparejan por importe FIRMADO (los iguales primero) y los que quedan con
+    el signo cambiado salen en `signo_invertido` con su impacto (= PC − dBase).
+    Sin esto, las listas "solo dBase / solo PC" podían no sumar el gap real y
+    no había manera de darse cuenta.
     """
     def key(m):
         return (str(m.get("fecha") or ""), round(abs(_f(m.get("importe"))), 2))
@@ -358,10 +367,22 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
     for m in pc_movs:
         if m.get("fecha") and m["fecha"] >= desde:
             pc_n[key(m)].append(m)
-    solo_db, solo_pc = [], []
+    solo_db, solo_pc, flips = [], [], []
     for k in set(db_n) | set(pc_n):
-        a, b = db_n.get(k, []), pc_n.get(k, [])
+        # Ordenar por importe FIRMADO en los dos lados: así un +300 se aparea
+        # con el +300 y sólo queda marcado como flip lo que de verdad cambió
+        # de signo (si no, el apareo era por orden de llegada y daba falsos).
+        a = sorted(db_n.get(k, []), key=lambda m: _f(m.get("importe")))
+        b = sorted(pc_n.get(k, []), key=lambda m: _f(m.get("importe")))
         n = min(len(a), len(b))
+        for i in range(n):
+            va, vb = _f(a[i].get("importe")), _f(b[i].get("importe"))
+            if (va >= 0) != (vb >= 0):
+                flips.append({
+                    "fecha": a[i].get("fecha"),
+                    "dbase": a[i], "pc": b[i],
+                    "impacto": round(vb - va, 2),
+                })
         solo_db.extend(a[n:])
         solo_pc.extend(b[n:])
     # Pase 2 — cancela timing (mismo importe firmado + concepto, otra fecha).
@@ -378,7 +399,7 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
         n = min(len(a), len(b))
         r_db.extend(a[n:])
         r_pc.extend(b[n:])
-    return {"solo_dbase": r_db, "solo_pc": r_pc}
+    return {"solo_dbase": r_db, "solo_pc": r_pc, "signo_invertido": flips}
 
 
 
@@ -411,6 +432,54 @@ def saldos_fin_de_dia(dbf_movs: list[dict], pc_movs: list[dict], desde: date) ->
         if delta is not None:
             prev_delta = delta
     return out
+
+def _ln(m: str = "") -> str:
+    """Igual que el `line()` local de reporte(): una línea con \n al final."""
+    return m.rstrip("\n") + "\n"
+
+
+def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
+    """Líneas de CIERRE del 1 a 1: los signos invertidos + si la lista CUADRA.
+
+    TMT 2026-07-26 (dueña: "fijate si lo podemos acomodar", por el −2.902,68 de
+    caja que nadie lograba atribuir). Hasta hoy las listas "solo dBase / solo
+    PC" se leían como si explicaran todo el gap, y no había forma de saber si
+    faltaba algo. Ahora la pantalla lo dice sola:
+
+        explicado = Σ(solo PC) − Σ(solo dBase) + Σ(impacto de los signos dados vuelta)
+        gap real  = delta del último día − delta del primero (de la tabla de saldos)
+        residuo   = gap real − explicado      ← si no es ~0, la lista NO alcanza
+
+    Con eso, buscar la diferencia deja de ser una cacería a mano.
+    """
+    flips = diff.get("signo_invertido") or []
+    if flips:
+        yield _ln(f"  ⚠ SIGNO INVERTIDO — mismo día y mismo monto pero uno es entrada y el "
+                   f"otro salida ({len(flips)}). El 1 a 1 los cancelaba en silencio:")
+        for fl in sorted(flips, key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            a, b = fl["dbase"], fl["pc"]
+            yield _ln(f"    {fl['fecha']} dBase {_f(a.get('importe')):>12,.2f} "
+                       f"«{str(a.get('concepto') or '')[:22]}»  vs  PC "
+                       f"{_f(b.get('importe')):>12,.2f} «{str(b.get('concepto') or '')[:22]}»"
+                       f"   impacto {fl['impacto']:>+12,.2f}")
+    con_ambos = [x for x in dias if x.get("delta") is not None]
+    if not con_ambos:
+        return
+    gap_ini = con_ambos[0]["delta"]
+    gap_fin = con_ambos[-1]["delta"]
+    s_pc = sum(_f(m.get("importe")) for m in diff.get("solo_pc") or [])
+    s_db = sum(_f(m.get("importe")) for m in diff.get("solo_dbase") or [])
+    s_flip = sum(f["impacto"] for f in flips)
+    explicado = s_pc - s_db + s_flip
+    gap = gap_fin - gap_ini
+    residuo = gap - explicado
+    yield _ln(f"  CUADRE del 1 a 1 de {etiqueta}: solo-PC {s_pc:>+12,.2f} · solo-dBase "
+               f"{-s_db:>+12,.2f} · signo invertido {s_flip:>+12,.2f}  ⇒ explicado "
+               f"{explicado:>+12,.2f}")
+    yield _ln(f"    gap real del período ({con_ambos[0]['fecha']} → {con_ambos[-1]['fecha']}): "
+               f"{gap:>+12,.2f}   ⇒ RESIDUO SIN EXPLICAR: {residuo:>+12,.2f} "
+               f"{'✓' if abs(residuo) < 0.05 else '⚠ falta algo en las listas de arriba'}")
+
 
 # ───────────────── diffs 1 a 1 (pedido dueña 2026-06-11) ─────────────────
 # "Tenemos que ver 1 a 1 los MOVIMIENTOS, no los totales."
@@ -799,6 +868,7 @@ def reporte(dias_banco: int = 30):
         saltos_c = [x for x in dias_c if x["salto"]]
         if saltos_c:
             yield line(f"  ⇒ el gap de caja CAMBIA en: {', '.join(str(x['fecha']) for x in saltos_c)}")
+        yield from lineas_cuadre_diff(cdiff, dias_c, "CAJA")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [detalle caja no disponible: {exc!r}]")
     yield line()
@@ -836,6 +906,7 @@ def reporte(dias_banco: int = 30):
         elif dias_t and dias_t[0].get("delta") is not None:
             yield line(f"  ⇒ el gap es CONSTANTE en toda la ventana ({dias_t[0]['delta']:+,.2f}) — "
                        "se origina antes: ampliá los días o revisar recompute de saldos")
+        yield from lineas_cuadre_diff(movdiff, dias_t, "BANCO")
 
         # ── COSTURA DE APERTURA + ORIGEN (causa raíz, pedido dueña) ──
         # El archivo mensual del dBase abre con el carry del cierre anterior.
