@@ -661,11 +661,11 @@ def transicionar_stat(
     stat_destino = (stat_destino or "").upper().strip()
     if not stat_destino:
         raise ValueError("stat_destino requerido.")
-    # TMT 2026-06-30 (dueña): 'V' = "protestado vuelto a depositar". Es un cambio
-    # de ESTADO simple (sin mov de banco — el depósito real llega por el sync de
-    # PICHINCH.DBF, igual que el dBase). Solo se ofrece desde el estado '1'
-    # (protestado); cae al UPDATE plano de abajo (SET stat='V'). Las 'V' históricas
-    # (banco Internacional legacy) se respetan; no se crean nuevas por ese camino.
+    # TMT 2026-07-25 (dueña): 'V' = "protestado vuelto a depositar" (re-depósito de
+    # un cheque devuelto). Se ofrece desde el estado '1' y AHORA crea el movimiento
+    # de banco (DE) igual que un depósito 'B' — ver la rama `stat_destino in
+    # ("B","V","I")` abajo. Antes era etiqueta plana y esperaba el sync de
+    # PICHINCH.DBF. Las 'V' históricas (banco Internacional legacy) se respetan.
 
     with db.tx() as conn:
         # TMT 2026-05-26: incluimos doc_banco — al depositar individual lo
@@ -692,12 +692,15 @@ def transicionar_stat(
         side_effect_id = None
         importe = float(ch["importe"] or 0)
 
-        # --- depositado: B (Pichincha) o I (Internacional) ---
-        # 'V' está bloqueado arriba con ValueError. TMT 2026-05-14 (#17).
-        if stat_destino in ("B", "I"):
+        # --- depositado: B (cartera→Pichincha), V (re-depósito de un devuelto→
+        # Pichincha) o I (Internacional). TMT 2026-07-25 (dueña): 'V' ahora CREA
+        # el movimiento de banco (DE) igual que 'B' — antes era etiqueta plana y
+        # esperaba el sync de PICHINCH.DBF. dBase (BANCOS.PRG DEPOBAN) deposita
+        # un devuelto igual que uno de cartera; solo cambia la letra. ---
+        if stat_destino in ("B", "V", "I"):
             import bank_helpers
 
-            banco_destino = no_banco or (1 if stat_destino == "B" else 2)
+            banco_destino = no_banco or (2 if stat_destino == "I" else 1)
             # TMT 2026-05-26 dueña: numreferencia = doc_banco si la dueña
             # cargó N° de comprobante; fallback id_cheque. Es la rule #1
             # del matcher de conciliación bancaria. Se lee del cheque row
