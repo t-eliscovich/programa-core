@@ -244,6 +244,15 @@ def _map_factura(r):
     stat = _remap_stat(stat_raw, _STAT_LEGACY_MAP_FACTURA)
     if stat_raw and stat is None and stat_raw.upper() in _STAT_LEGACY_MAP_FACTURA:
         return None
+    saldo = _num_robusto(r.get("SALDO"), 0) or 0
+    # Regla "cerrada = nada" (TMT 2026-07-26): una factura cancelada por el
+    # total (stat 'T') no puede arrastrar saldo. El dBase legacy dejaba T con
+    # saldo residual (castigo/incobrable nunca seteado a 0); al importar, PC lo
+    # normaliza para que una factura cerrada jamás muestre deuda. NO afecta la
+    # cartera (T ya está excluida de Z+A) — sólo limpia el dato. El abono real
+    # se conserva; la diferencia importe-abono es el castigo, no un saldo vivo.
+    if stat is not None and str(stat).strip().upper() == "T":
+        saldo = 0
     return {
         "numf": _int(r.get("NUMF"), 0) or 0,
         "fecha": _date_robusto(r.get("FECHA")) or date.today(),
@@ -251,7 +260,7 @@ def _map_factura(r):
         "kg": _num_robusto(r.get("KG"), 0) or 0,
         "importe": _num_robusto(r.get("IMPORTE"), 0) or 0,
         "abono": _num_robusto(r.get("ABONO"), 0) or 0,
-        "saldo": _num_robusto(r.get("SALDO"), 0) or 0,
+        "saldo": saldo,
         "stat": stat,
         "condic": _str(r.get("CONDIC"), 2),
         "vencimiento": _date_robusto(r.get("VENCIM")),

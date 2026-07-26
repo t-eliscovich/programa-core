@@ -113,6 +113,43 @@ def test_factura_mapper_caso_real():
     assert out["usuario_crea"] == "dbf-import"
 
 
+def test_factura_cerrada_T_entra_con_saldo_cero():
+    """Regla "cerrada = nada" (TMT 2026-07-26): una factura stat 'T'
+    (cancelada por el total) NUNCA puede entrar con saldo. El dBase legacy
+    dejaba T con saldo residual (castigo no seteado a 0); el importador lo
+    normaliza a 0. El abono real se conserva (la diferencia importe-abono es
+    el castigo, no un saldo vivo). No afecta cartera: T está excluida de Z+A.
+    """
+    from scripts.import_dbf import _map_factura
+
+    out = _map_factura({
+        "NUMF": 177691,
+        "FECHA": date(2025, 3, 15),
+        "CLIENTE": "EEU",
+        "IMPORTE": 100000.0,
+        "ABONO": 28000.0,
+        "SALDO": 72000.0,   # dBase la cerró (T) pero dejó saldo residual
+        "STAT": "T",
+    })
+    assert out["stat"] == "T"
+    assert out["saldo"] == 0, "factura cerrada (T) debe entrar con saldo 0"
+    assert out["abono"] == 28000.0, "el abono real se conserva (el resto es castigo)"
+
+
+def test_factura_viva_conserva_saldo():
+    """Contraparte: una factura NO cerrada (Z/A) conserva su saldo real —
+    la normalización a 0 es exclusiva de las 'T'."""
+    from scripts.import_dbf import _map_factura
+
+    for stat in ("Z", "A"):
+        out = _map_factura({
+            "NUMF": 1, "CLIENTE": "JTX",
+            "IMPORTE": 1000.0, "ABONO": 300.0, "SALDO": 700.0,
+            "STAT": stat,
+        })
+        assert out["saldo"] == 700.0, f"stat {stat} no debe tocar el saldo"
+
+
 def test_pichincha_mapper_setea_no_banco_via_post_load():
     """PICHINCH map devuelve no_banco=None — se completa en post-load."""
     from scripts.import_dbf import _map_pichincha_trans
