@@ -1007,7 +1007,7 @@ def desde_asinfo():
             return None
 
     # Filtrar Asinfo que NO está en PC (huérfanas-asinfo) — alias-aware.
-    # Solo FACTURA y NTEN — las DEVOLUCION/NC son negativas y rara vez se cargan
+    # FACTURA/NTEN siempre; además DEVOLUCION/NCNT de MERCADERÍA (kg != 0).
     huerfanas = []
     # TMT 2026-06-13: facturas que YA existen en PC pero solo como
     # backfill (no cuentan en cartera). NO son "faltan cargar" — van a
@@ -1015,7 +1015,22 @@ def desde_asinfo():
     en_pc_backfill = []
     for r in asinfo_rows:
         tipo = (r.get("tipo") or "").upper()
-        if tipo not in ("FACTURA", "NTEN"):
+        # TMT 2026-07-26 (dueña): además de FACTURA/NTEN, listar para cargar
+        # las DEVOLUCION/NCNT de MERCADERÍA (kg != 0). El sync dBase las traía;
+        # al pararse el 10/07 quedaron afuera de PC e inflaron su cartera
+        # (~17,5k en 51 devoluciones). Las NC_FINANCIERA (kg=0) se EXCLUYEN a
+        # propósito: se pisan con las retenciones ya aplicadas y duplicarían el
+        # crédito. El auto-carga (arriba) sigue trayendo SOLO FACTURA/NTEN — las
+        # devoluciones se cargan a mano con el botón, no automático.
+        try:
+            _kg_tipo = float(r.get("kg") or 0)
+        except (TypeError, ValueError):
+            _kg_tipo = 0.0
+        if tipo in ("FACTURA", "NTEN"):
+            pass
+        elif tipo in ("DEVOLUCION", "NCNT") and abs(_kg_tipo) > 0.001:
+            pass
+        else:
             continue
         numero = (r.get("numero") or "").strip()
         fecha = _fecha_a_date(r.get("fecha"))
