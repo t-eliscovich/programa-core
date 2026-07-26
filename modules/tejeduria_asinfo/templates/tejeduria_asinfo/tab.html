@@ -210,12 +210,14 @@
             <td class="muted">{{ t.ofs }}</td>
             <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
             <td>
-              {# falta_kg NEGATIVO = se cargó MÁS de lo que Asinfo dice que se
-                 produjo. Señal de duplicado (típico: la misma maquila tipeada
-                 en PC y en el FoxPro). TMT 2026-07-26. #}
+              {# Falta del MES. Puede dar negativo sin que haya nada malo: las
+                 compras llevan la fecha de la OF o de carga y cubren OFs
+                 cerradas en meses anteriores. Por eso acá NO ponemos alarma —
+                 el aviso de duplicado vive en la columna del ACUMULADO, que es
+                 la que de verdad significa "se cargó de más". TMT 2026-07-26. #}
               {% if t.es_intela %}<span class="muted">—</span>
               {% elif t.falta_kg > 1 %}<span class="falta">{{ t.falta_kg|num_es }} kg</span>
-              {% elif t.falta_kg < -1 %}<span class="falta" title="Se cargó más de lo producido — puede haber una compra duplicada">cargado de más {{ (-t.falta_kg)|num_es }} kg ⚠</span>
+              {% elif t.falta_kg < -1 %}<span class="muted" title="Normal: hay compras de este mes que pagan OFs cerradas en meses anteriores. Mirá la columna del acumulado.">adelantado {{ (-t.falta_kg)|num_es }} kg</span>
               {% else %}<span class="ok">ok</span>{% endif %}
             </td>
             <td>
@@ -226,7 +228,7 @@
                 {% set fa = data.falta_acum_por_cod.get(t.cod) %}
                 {% if fa is none %}<span class="muted">—</span>
                 {% elif fa > 1 %}<span class="falta">{{ fa|num_es }} kg</span>
-                {% elif fa < -1 %}<span class="falta">cargado de más {{ (-fa)|num_es }} kg ⚠</span>
+                {% elif fa < -1 %}<span class="falta" title="Se cargó más de lo que Asinfo dice que se produjo en toda la ventana — acá SÍ puede haber una compra duplicada">cargado de más {{ (-fa)|num_es }} kg ⚠</span>
                 {% else %}<span class="ok">ok</span>{% endif %}
               {% endif %}
             </td>
