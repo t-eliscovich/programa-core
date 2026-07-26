@@ -402,9 +402,42 @@ def resumen_mes(anio: int, mes: int) -> dict:
     }
 
 
+def _importes_k_existentes(desde: str, hasta: str) -> dict:
+    """{cod_prov: [importes]} de las compras K vivas de la ventana — sólo para
+    AVISAR de un posible duplicado en el preview (no bloquea).
+
+    No bloquea a propósito: las facturas de Reyes repiten monto casi exacto (el
+    rollo entero da ~1.630 siempre), así que descartar por importe tiraría OFs
+    legítimas. Las guardas que sí bloquean son el OFT estampado y el tope.
+    """
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(TRIM(COALESCE(codigo_prov, ''))) AS cod,
+                   COALESCE(importe, 0) AS importe
+              FROM scintela.compra
+             WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
+               AND COALESCE(stat, '') <> 'Y'
+               AND fecha >= %s AND fecha < %s
+            """,
+            (desde, hasta),
+        ) or []
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {}
+    out: dict = {}
+    for r in rows:
+        out.setdefault(r["cod"], []).append(float(r["importe"] or 0))
+    return out
+
+
 def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
-                      clave: str | None = None) -> dict:
+                      clave: str | None = None, dry_run: bool = False) -> dict:
     """Crea las compras tipo K que faltan del mes, con kg de Asinfo × tarifa.
+
+    Con `dry_run=True` NO escribe nada: devuelve el MISMO plan que ejecutaría.
+    La pantalla de confirmación usa exactamente esta función, así que lo que se
+    ve en el preview es literalmente lo que se va a crear (dueña 2026-07-26:
+    "hacelo vos y fijate de no duplicar").
 
     TMT 2026-07-26 (pedido dueña: "que se carguen automáticamente"). Una compra
     por OF pendiente, estampando el OFT en el concepto para que el match fino de
@@ -438,6 +471,8 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     # TOPE ACUMULADO por proveedor (no del mes) — dueña 2026-07-26.
     restante = falta_acumulada(anio, mes)
     estampadas = _ofts_estampadas()
+    _desde, _hasta = _rango_ventana(anio, mes)
+    existentes = _importes_k_existentes(_desde, _hasta)
 
     creadas, importe_total = 0, 0.0
     detalle: list[dict] = []
@@ -447,23 +482,39 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         kg = round(float(of.get("kg") or 0), 2)
         tarifa = of.get("tarifa")
         importe = of.get("importe_sugerido")
+        base = {"oft": numero, "cod": cod, "label": of.get("label") or "",
+                "dia": of.get("dia"), "descripcion": of.get("descripcion") or "",
+                "kg": kg, "tarifa": tarifa, "importe": importe}
 
         if numero in estampadas:
-            detalle.append({"oft": numero, "ok": False, "motivo": "ya tiene compra"})
+            detalle.append({**base, "ok": False, "motivo": "ya tiene compra"})
             continue
         if not tarifa or not importe:
-            detalle.append({"oft": numero, "ok": False,
+            detalle.append({**base, "ok": False,
                             "motivo": f"sin tarifa para {cod or '?'}"})
             continue
         if kg <= 0:
-            detalle.append({"oft": numero, "ok": False, "motivo": "OF sin kg"})
+            detalle.append({**base, "ok": False, "motivo": "OF sin kg"})
             continue
         if restante.get(cod, 0.0) + 0.01 < kg:
             detalle.append({
-                "oft": numero, "ok": False,
+                **base, "ok": False,
                 "motivo": (f"excede lo que falta de {cod} "
                            f"({restante.get(cod, 0.0):,.2f} kg)"),
             })
+            continue
+
+        # Aviso (no bloquea): ya hay una compra K de ese proveedor por el MISMO
+        # importe en la ventana. Puede ser un duplicado o dos OFs del mismo peso.
+        dup = any(abs(x - float(importe)) < 0.01 for x in existentes.get(cod, []))
+
+        if dry_run:
+            creadas += 1
+            importe_total += float(importe)
+            restante[cod] = round(restante.get(cod, 0.0) - kg, 2)
+            estampadas[numero] = float(importe)
+            existentes.setdefault(cod, []).append(float(importe))
+            detalle.append({**base, "ok": True, "dup_warn": dup})
             continue
 
         try:
@@ -479,23 +530,24 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
                 usuario=MARCADOR_CARGA,
             )
         except Exception as e:  # noqa: BLE001 -- una OF que falla no corta el lote
-            detalle.append({"oft": numero, "ok": False, "motivo": str(e)[:120]})
+            detalle.append({**base, "ok": False, "motivo": str(e)[:120]})
             continue
 
         creadas += 1
         importe_total += float(importe)
         restante[cod] = round(restante.get(cod, 0.0) - kg, 2)
         estampadas[numero] = float(importe)
-        detalle.append({
-            "oft": numero, "ok": True, "cod": cod, "kg": kg,
-            "tarifa": tarifa, "importe": float(importe),
-            "numero_compra": res.get("numero"),
-        })
+        existentes.setdefault(cod, []).append(float(importe))
+        detalle.append({**base, "ok": True, "dup_warn": dup,
+                        "numero_compra": res.get("numero")})
 
     return {
+        "dry_run": dry_run,
         "creadas": creadas,
         "importe": round(importe_total, 2),
         "salteadas": sum(1 for d in detalle if not d["ok"]),
+        "avisos_dup": sum(1 for d in detalle if d["ok"] and d.get("dup_warn")),
+        "restante": restante,
         "detalle": detalle,
     }
 

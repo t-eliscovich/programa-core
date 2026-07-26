@@ -399,3 +399,80 @@ def test_listar_tarifas_fail_soft_sin_tabla():
     # migración 0133 sin aplicar → la pantalla no rompe.
     with patch("db.fetch_all", side_effect=RuntimeError("no existe la relación")):
         assert tq.listar_tarifas() == []
+
+
+def test_dry_run_no_escribe_y_devuelve_el_mismo_plan():
+    """El preview usa la MISMA función con dry_run=True: no puede mentir."""
+    import datetime as _dt
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada",
+                      return_value={"AP": 99999.0, "RY": 99999.0}), \
+         patch.object(tsvc, "_importes_k_existentes", return_value={}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)), \
+         patch("modules.compras.queries.crear") as m_crear:
+        plan = tsvc.cargar_pendientes(2026, 7, usuario="t", dry_run=True)
+    m_crear.assert_not_called()                    # NO escribió nada
+    assert plan["dry_run"] is True
+    assert plan["creadas"] == 2
+    assert plan["importe"] == pytest.approx(1633.04 + 932.22, abs=0.02)
+    # el detalle trae todo lo que la pantalla necesita mostrar
+    ok = [d for d in plan["detalle"] if d["ok"]]
+    assert {d["oft"] for d in ok} == {"OFT-2", "OFT-4"}
+    assert all(d["tarifa"] and d["kg"] and d["descripcion"] is not None for d in ok)
+
+
+def test_dry_run_y_ejecucion_dan_el_mismo_conjunto():
+    plan, _ = _run_cargar({}, {}, _TARIFAS)          # ejecución real (mockeada)
+    import datetime as _dt
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada",
+                      return_value={"AP": 99999.0, "RY": 99999.0}), \
+         patch.object(tsvc, "_importes_k_existentes", return_value={}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
+        prev = tsvc.cargar_pendientes(2026, 7, usuario="t", dry_run=True)
+    assert prev["creadas"] == plan["creadas"]
+    assert prev["importe"] == pytest.approx(plan["importe"])
+    assert ({d["oft"] for d in prev["detalle"] if d["ok"]}
+            == {d["oft"] for d in plan["detalle"] if d["ok"]})
+
+
+def test_avisa_duplicado_por_importe_pero_no_bloquea():
+    # Ya existe una compra de RY por 1.633,04 → avisa, pero la carga igual
+    # (dos OFs del mismo peso dan el mismo importe; bloquear tiraría legítimas).
+    import datetime as _dt
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada",
+                      return_value={"AP": 99999.0, "RY": 99999.0}), \
+         patch.object(tsvc, "_importes_k_existentes",
+                      return_value={"RY": [1633.04]}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
+        plan = tsvc.cargar_pendientes(2026, 7, usuario="t", dry_run=True)
+    ry = next(d for d in plan["detalle"] if d["oft"] == "OFT-4")
+    ap = next(d for d in plan["detalle"] if d["oft"] == "OFT-2")
+    assert ry["ok"] is True and ry["dup_warn"] is True
+    assert ap["dup_warn"] is False
+    assert plan["avisos_dup"] == 1
+
+
+def test_preview_renderiza_200(app, fake_db):
+    rid = fake_db.add_role("Tester", ["compras.ver", "compras.crear"])
+    uid = fake_db.add_user("test2", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS), \
+         patch.object(tsvc, "falta_acumulada", return_value={"AP": 9999.0, "RY": 9999.0}), \
+         patch.object(tsvc, "_importes_k_existentes", return_value={}):
+        r = c.get("/produccion-tejeduria-asinfo/cargar-pendientes?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "PREVISUALIZACIÓN" in body or "previsualización" in body.lower()

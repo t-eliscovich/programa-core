@@ -107,14 +107,26 @@ def borrar_tarifa(id_tarifa: int):
 
 
 @tejeduria_asinfo_bp.route(
-    "/produccion-tejeduria-asinfo/cargar-pendientes", methods=["POST"])
+    "/produccion-tejeduria-asinfo/cargar-pendientes", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("compras.crear")
 def cargar_pendientes():
-    """Crea de una las compras tipo K que faltan del mes (kg Asinfo × tarifa).
-    Las guardas viven en el service — acá sólo reportamos el resultado."""
+    """GET  = PREVISUALIZACIÓN (dry-run, no escribe nada).
+    POST = crea las compras.
+
+    TMT 2026-07-26 (dueña: "hacelo vos y fijate de no duplicar"): antes el botón
+    tenía un `confirm()` nativo. Ahora es una pantalla con el detalle de qué se
+    va a crear y qué se saltea (con el motivo), armada con la MISMA función que
+    ejecuta (`dry_run=True`) — el preview no puede mentir. Además evita el
+    diálogo del navegador, que congela la automatización.
+    """
     anio, mes = _anio_mes()
     usuario = (g.user or {}).get("username", "web")
+    if request.method == "GET":
+        plan = service.cargar_pendientes(anio, mes, usuario=usuario, dry_run=True)
+        return render_template(
+            "tejeduria_asinfo/cargar_preview.html", plan=plan, anio=anio, mes=mes,
+        )
     clave = (g.user or {}).get("clave") or usuario[:3].upper()
     try:
         res = service.cargar_pendientes(anio, mes, usuario=usuario, clave=clave)
@@ -126,6 +138,12 @@ def cargar_pendientes():
         flash(
             f"Cargué {res['creadas']} compra(s) de tejeduría por "
             f"$ {res['importe']:,.2f}.", "ok",
+        )
+    if res.get("avisos_dup"):
+        flash(
+            f"Ojo: {res['avisos_dup']} de esas ya tenían una compra del mismo "
+            f"proveedor por el mismo importe en la ventana — revisalas en /compras.",
+            "warn",
         )
     if res["salteadas"]:
         motivos = "; ".join(

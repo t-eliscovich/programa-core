@@ -138,17 +138,17 @@
       {# Carga automática: kg de Asinfo × tarifa. El service topea por lo que
          falta de cada proveedor y saltea las OFs sin tarifa — nunca inventa un
          precio ni carga de más. #}
-      <form method="post" action="{{ url_for('tejeduria_asinfo.cargar_pendientes', anio=anio, mes=mes) }}"
-            style="margin:2px 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn" type="submit"
-                onclick="return confirm('Cargar {{ data.pendientes|length }} compra(s) de tejeduría por $ {{ data.total_pendiente|num_es(2) }}?')">
-          Cargar las {{ data.pendientes|length }} pendientes · $ {{ data.total_pendiente|num_es(2) }}
-        </button>
+      <div style="margin:2px 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        {# Va a una pantalla de PREVISUALIZACIÓN (dry-run): se ve qué se crea y
+           qué se saltea ANTES de crear nada. Sin confirm() del navegador. #}
+        <a class="btn" href="{{ url_for('tejeduria_asinfo.cargar_pendientes', anio=anio, mes=mes) }}">
+          Revisar y cargar las {{ data.pendientes|length }} pendientes · $ {{ data.total_pendiente|num_es(2) }}
+        </a>
+        <span class="note" style="margin:0">Te muestra el detalle antes de crear nada.</span>
         {% if data.pendientes_sin_tarifa %}
           <span class="falta">{{ data.pendientes_sin_tarifa }} sin tarifa — esas se saltean, cargalas a mano o poné la tarifa arriba.</span>
         {% endif %}
-      </form>
+      </div>
     {% endif %}
     {% if data.tercerizado_ofs %}
     <table>

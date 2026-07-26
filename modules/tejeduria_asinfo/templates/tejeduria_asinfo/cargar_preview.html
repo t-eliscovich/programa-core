@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Cargar pendientes de tejeduría {{ '%02d/%d' % (mes, anio) }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('tejeduria_asinfo.tab', anio=anio, mes=mes) }}" class="hover:underline">Producción Tejeduría Asinfo</a> /
+  <strong>Cargar pendientes</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .cp table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 14px}
+  .cp th,.cp td{padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right}
+  .cp th:first-child,.cp td:first-child,.cp th.l,.cp td.l{text-align:left}
+  .cp thead th{background:#f8fafc;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .cp tr.tot td{font-weight:700;background:#f8fafc}
+  .cp .muted{color:#94a3b8}
+  .cp .ok{color:#16a34a}
+  .cp .no{color:#b91c1c}
+  .cp .warn{color:#b45309}
+  .cp h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin:22px 0 4px}
+  .cp .btn{display:inline-block;font-size:13px;font-weight:600;color:#fff;background:#16a34a;border:0;border-radius:6px;padding:8px 16px;cursor:pointer}
+  .cp .note{color:#64748b;font-size:12px;margin:2px 0 10px}
+  .cp .box{border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;background:#fff;margin:10px 0}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cp">
+  <h1 style="font-size:20px;font-weight:600;margin:0 0 2px">Cargar pendientes de tejeduría · {{ '%02d/%d' % (mes, anio) }}</h1>
+  <p class="note">
+    Esto es una PREVISUALIZACIÓN — todavía no se creó nada. Sale del mismo cálculo que
+    después ejecuta, así que lo que ves acá es exactamente lo que se va a crear.
+    El importe es kg de Asinfo × la tarifa del proveedor, y cada compra estampa su
+    OFT en el concepto para que no se vuelva a ofrecer.
+  </p>
+
+  {% if plan.creadas %}
+    <h2>Se van a crear {{ plan.creadas }} compra(s) · $ {{ plan.importe|num_es(2) }}</h2>
+    <table>
+      <thead><tr>
+        <th class="l">OFT</th><th class="l">Día</th><th class="l">Tejedor</th>
+        <th class="l">Producto</th><th>Kg</th><th>$/kg</th><th>Importe</th><th class="l">Aviso</th>
+      </tr></thead>
+      <tbody>
+        {% for d in plan.detalle if d.ok %}
+          <tr>
+            <td class="l">{{ d.oft }}</td>
+            <td class="l muted">{{ d.dia|fecha_es }}</td>
+            <td class="l">{{ d.label }}{% if d.cod %} · {{ d.cod }}{% endif %}</td>
+            <td class="l muted">{{ d.descripcion }}</td>
+            <td>{{ d.kg|num_es }}</td>
+            <td>{{ d.tarifa|num_es(4) }}</td>
+            <td>{{ d.importe|num_es(2) }}</td>
+            <td class="l">
+              {% if d.dup_warn %}
+                <span class="warn">⚠ ya hay una compra de {{ d.cod }} por el mismo importe — puede ser otra OF del mismo peso, revisala</span>
+              {% else %}<span class="ok">—</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        <tr class="tot">
+          <td class="l">TOTAL</td><td colspan="3" class="muted"></td>
+          <td>{{ plan.detalle | selectattr('ok') | sum(attribute='kg') | num_es }}</td>
+          <td class="muted"></td>
+          <td>{{ plan.importe|num_es(2) }}</td>
+          <td class="muted"></td>
+        </tr>
+      </tbody>
+    </table>
+  {% else %}
+    <div class="box"><strong>No hay nada para cargar.</strong>
+      {% if plan.salteadas %}Todas las OFs pendientes quedaron salteadas — mirá los motivos abajo.{% endif %}
+    </div>
+  {% endif %}
+
+  {% if plan.salteadas %}
+    <h2>Se saltean {{ plan.salteadas }}</h2>
+    <table>
+      <thead><tr>
+        <th class="l">OFT</th><th class="l">Tejedor</th><th>Kg</th><th>Importe</th><th class="l">Motivo</th>
+      </tr></thead>
+      <tbody>
+        {% for d in plan.detalle if not d.ok %}
+          <tr>
+            <td class="l">{{ d.oft }}</td>
+            <td class="l">{{ d.label }}{% if d.cod %} · {{ d.cod }}{% endif %}</td>
+            <td>{% if d.kg %}{{ d.kg|num_es }}{% else %}—{% endif %}</td>
+            <td>{% if d.importe %}{{ d.importe|num_es(2) }}{% else %}—{% endif %}</td>
+            <td class="l no">{{ d.motivo }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="note">Las que se saltean por el tope se pueden cargar igual de a una con el botón
+      «Cargar $» de cada fila en la pantalla anterior — ese no tiene tope, pero pasás por el
+      formulario de compras y confirmás vos.</p>
+  {% endif %}
+
+  <div class="box">
+    <strong>Tope restante después de esta carga</strong> (producido menos cargado, acumulado por proveedor):
+    <ul style="margin:6px 0 0 18px">
+      {% for cod, kg in plan.restante.items() %}
+        <li><strong>{{ cod }}</strong>: {{ kg|num_es }} kg</li>
+      {% else %}
+        <li class="muted">Asinfo no respondió — por eso no se carga nada.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <form method="post" action="{{ url_for('tejeduria_asinfo.cargar_pendientes', anio=anio, mes=mes) }}"
+        style="display:flex;gap:14px;align-items:center;margin-top:16px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <a href="{{ url_for('tejeduria_asinfo.tab', anio=anio, mes=mes) }}" class="muted">← Volver sin cargar</a>
+    {% if plan.creadas %}
+      <button class="btn" type="submit">Confirmar y crear {{ plan.creadas }} compra(s) · $ {{ plan.importe|num_es(2) }}</button>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}
