@@ -199,7 +199,7 @@
 
     <h2>Por tejedor · producido vs cargado + costo</h2>
     <table>
-      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>OF</th><th>Cargado (compras K)</th><th>Falta cargar</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
+      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>OF</th><th>Cargado (compras K)</th><th>Falta cargar</th><th title="Producido − cargado en los últimos {{ data.meses_ventana_tope }} meses. Es el tope de la carga automática.">Falta acum. ({{ data.meses_ventana_tope }} m)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
       <tbody>
         {% for t in data.tejedores %}
           <tr>
@@ -218,6 +218,18 @@
               {% elif t.falta_kg < -1 %}<span class="falta" title="Se cargó más de lo producido — puede haber una compra duplicada">cargado de más {{ (-t.falta_kg)|num_es }} kg ⚠</span>
               {% else %}<span class="ok">ok</span>{% endif %}
             </td>
+            <td>
+              {# TOPE real de la carga automática: acumulado, no del mes — el
+                 maquilero factura con desfase y a caballo de dos meses. #}
+              {% if t.es_intela %}<span class="muted">—</span>
+              {% else %}
+                {% set fa = data.falta_acum_por_cod.get(t.cod) %}
+                {% if fa is none %}<span class="muted">—</span>
+                {% elif fa > 1 %}<span class="falta">{{ fa|num_es }} kg</span>
+                {% elif fa < -1 %}<span class="falta">cargado de más {{ (-fa)|num_es }} kg ⚠</span>
+                {% else %}<span class="ok">ok</span>{% endif %}
+              {% endif %}
+            </td>
             <td>{% if t.costo_kg %}{{ t.costo_kg|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if t.costo is not none %}{{ t.costo|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
           </tr>
@@ -225,7 +237,8 @@
         <tr class="tot">
           <td>TOTAL</td>
           <td>{{ data.total_kg|num_es }}</td>
-          <td class="muted"></td><td class="muted"></td><td class="muted"></td><td class="muted"></td>
+          <td class="muted"></td><td class="muted"></td><td class="muted"></td>
+          <td class="muted"></td><td class="muted"></td>
           <td>{{ data.total_costo|num_es(0) }}</td>
         </tr>
       </tbody>

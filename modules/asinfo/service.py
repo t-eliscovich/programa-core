@@ -1879,6 +1879,13 @@ def ingreso_bodega_por_dia(id_bodega: int, corte) -> list[dict]:
 # ---------------------------------------------------------------------------
 _PROD_TEJ_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _PROD_TEJ_CACHE: dict = {}
+_PROD_TEJ_RANGO_CACHE: dict = {}
+# Guard anti-inyección de las fechas que se interpolan en el SQL de Metabase.
+# (el resto del módulo importa `re as _re` dentro de cada función; acá hace
+#  falta a nivel módulo porque la constante se compila una sola vez)
+import re as _re_mod  # noqa: E402
+
+_FECHA_ISO_RE = _re_mod.compile(r"\d{4}-\d{2}-\d{2}")
 
 INTELA_COD = "KK"
 # Nombre en la descripción de la OF → codigo_prov de scintela.compra. Extender
@@ -1986,6 +1993,64 @@ def produccion_tejeduria_mes(anio: int, mes: int) -> dict:
     return out
 
 
+def produccion_tejeduria_rango(d1: str, d2: str) -> dict:
+    """Igual que `produccion_tejeduria_mes` pero sobre un RANGO de fechas de
+    cierre [d1, d2), agregado por tejedor (sin el detalle de OFs).
+
+    TMT 2026-07-26 (pedido dueña: "sí, por proveedor"): el tope de la carga
+    automática pasó de mensual a ACUMULADO por proveedor. El mes solo no sirve
+    porque el maquilero factura con desfase y a caballo de dos meses: en julio
+    el dBase le facturó a Ponce 11.415,95 kg contra 8.817,00 que Asinfo cerró,
+    y a Reyes 5.210,78 contra 3.082,53.
+
+    UNA sola query para todo el rango (no N llamadas mes a mes). Fail-soft
+    igual que el resto del módulo. Cache propio con el mismo TTL.
+    """
+    vacio = {"disponible": False, "desde": d1, "hasta": d2,
+             "por_tejedor": [], "total_kg": 0.0}
+    if not (_FECHA_ISO_RE.fullmatch(str(d1) or "")
+            and _FECHA_ISO_RE.fullmatch(str(d2) or "")):
+        return dict(vacio)
+    cache_key = (str(d1), str(d2))
+    now = _time.time()
+    cached = _PROD_TEJ_RANGO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _PROD_TEJ_TTL_SECS:
+        return cached[1]
+    sql = f"""
+        SELECT ISNULL(cantidad_fabricada, 0) AS kg, descripcion
+          FROM orden_fabricacion
+         WHERE id_bodega = 52
+           AND indicador_hoja = 1
+           AND estado_produccion = 5
+           AND fecha_cierre >= '{d1}' AND fecha_cierre < '{d2}'
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return dict(vacio)
+    if not rows:
+        return dict(vacio)
+    agg: dict = {}
+    total = 0.0
+    for r in rows:
+        kg = float(r.get("kg") or 0.0)
+        cod, label, es_intela = _clasificar_tejedor(str(r.get("descripcion") or ""))
+        k = cod or ("?" + label)
+        a = agg.setdefault(k, {"cod": cod, "label": label,
+                               "es_intela": es_intela, "ofs": 0, "kg": 0.0})
+        a["ofs"] += 1
+        a["kg"] += kg
+        total += kg
+    por_tejedor = sorted(agg.values(), key=lambda x: -x["kg"])
+    for a in por_tejedor:
+        a["kg"] = round(a["kg"], 2)
+    out = {"disponible": True, "desde": d1, "hasta": d2,
+           "por_tejedor": por_tejedor, "total_kg": round(total, 2)}
+    _PROD_TEJ_RANGO_CACHE[cache_key] = (now, out)
+    return out
+
+
 def reset_prod_tejeduria_cache() -> None:
-    """Vaciar el cache de produccion_tejeduria_mes (tests / deploy)."""
+    """Vaciar el cache de produccion_tejeduria_mes/_rango (tests / deploy)."""
     _PROD_TEJ_CACHE.clear()
+    _PROD_TEJ_RANGO_CACHE.clear()

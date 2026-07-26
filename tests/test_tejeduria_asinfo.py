@@ -123,6 +123,7 @@ def _run_resumen(compras, estampadas, tarifas=None):
          patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
          patch.object(tsvc, "_ofts_estampadas", return_value=estampadas), \
          patch.object(tsvc._tarifas, "listar_tarifas", return_value=(tarifas or [])), \
+         patch.object(tsvc, "falta_acumulada", return_value={}), \
          patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
         return tsvc.resumen_mes(2026, 7)
 
@@ -260,7 +261,8 @@ def test_sin_tarifa_no_sugiere_importe():
     assert out["pendientes_sin_tarifa"] == 2
 
 
-def _run_cargar(compras, estampadas, tarifas):
+def _run_cargar(compras, estampadas, tarifas, falta_acum=None):
+    """falta_acum=None → tope generoso (no bloquea), para probar el resto."""
     import datetime as _dt
     creadas = []
 
@@ -268,10 +270,13 @@ def _run_cargar(compras, estampadas, tarifas):
         creadas.append(kw)
         return {"id_compra": len(creadas), "numero": 900 + len(creadas)}
 
+    if falta_acum is None:
+        falta_acum = {"AP": 99999.0, "RY": 99999.0}
     with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
          patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
          patch.object(tsvc, "_ofts_estampadas", return_value=dict(estampadas)), \
          patch.object(tsvc._tarifas, "listar_tarifas", return_value=tarifas), \
+         patch.object(tsvc, "falta_acumulada", return_value=dict(falta_acum)), \
          patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)), \
          patch("modules.compras.queries.crear", side_effect=_fake_crear):
         res = tsvc.cargar_pendientes(2026, 7, usuario="tester", clave="TST")
@@ -303,15 +308,62 @@ def test_cargar_pendientes_saltea_sin_tarifa():
 
 
 def test_cargar_pendientes_topea_por_lo_que_falta():
-    # EL caso real del 26/07: RY tiene compras viejas cargadas a mano y sólo
-    # faltan 100 kg, pero la OF trae 811 → NO se carga (sin el tope se creaba
-    # una compra duplicada de una OF ya pagada).
+    # EL caso real del 26/07: a RY sólo le faltan 100 kg acumulados pero la OF
+    # trae 811 → NO se carga (sin el tope se creaba una compra duplicada de una
+    # OF ya pagada).
     res, creadas = _run_cargar(
-        {"RY": {"kg": 711.45, "importe": 1400.0, "n": 1}}, {}, _TARIFAS)
+        {}, {}, _TARIFAS, falta_acum={"RY": 100.0, "AP": 99999.0})
     cods = [c["codigo_prov"] for c in creadas]
     assert "RY" not in cods
+    assert "AP" in cods
     assert any("excede lo que falta de RY" in d["motivo"]
                for d in res["detalle"] if not d["ok"])
+
+
+def test_tope_es_acumulado_no_del_mes():
+    # El mes dice que RY está cubierto (compró 711 de los 811 producidos en el
+    # mes) pero el ACUMULADO dice que faltan 2.000 kg → se carga igual. Ese es
+    # todo el punto de que el tope sea por proveedor y no por mes: el maquilero
+    # factura con desfase y a caballo de dos meses.
+    res, creadas = _run_cargar(
+        {"RY": {"kg": 711.45, "importe": 1400.0, "n": 1}}, {}, _TARIFAS,
+        falta_acum={"RY": 2000.0, "AP": 2000.0})
+    assert "RY" in [c["codigo_prov"] for c in creadas]
+
+
+def test_sin_asinfo_no_carga_nada():
+    # falta_acumulada devuelve {} cuando Asinfo no responde → mejor no cargar
+    # que cargar de más.
+    res, creadas = _run_cargar({}, {}, _TARIFAS, falta_acum={})
+    assert creadas == [] and res["creadas"] == 0
+    assert res["salteadas"] == 2
+
+
+def test_rango_ventana_3_meses():
+    assert tsvc._rango_ventana(2026, 7) == ("2026-05-01", "2026-08-01")
+    assert tsvc._rango_ventana(2026, 1) == ("2025-11-01", "2026-02-01")
+    assert tsvc._rango_ventana(2026, 12) == ("2026-10-01", "2027-01-01")
+    assert tsvc._rango_ventana(2026, 7, meses=1) == ("2026-07-01", "2026-08-01")
+
+
+def test_falta_acumulada_resta_lo_cargado_y_saltea_intela():
+    prod = {"disponible": True, "por_tejedor": [
+        {"cod": "RY", "label": "Reyes", "es_intela": False, "kg": 5000.0, "ofs": 6},
+        {"cod": "AP", "label": "Ponce", "es_intela": False, "kg": 9000.0, "ofs": 9},
+        {"cod": "KK", "label": "INTELA", "es_intela": True, "kg": 600000.0, "ofs": 200},
+    ]}
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_rango", return_value=prod), \
+         patch.object(tsvc, "_compras_k_por_prov_rango",
+                      return_value={"RY": 2740.97, "AP": 5159.45, "KK": 1.0}):
+        out = tsvc.falta_acumulada(2026, 7)
+    assert out == {"RY": pytest.approx(2259.03), "AP": pytest.approx(3840.55)}
+    assert "KK" not in out          # INTELA es autoprod, no factura
+
+
+def test_falta_acumulada_fail_soft_sin_asinfo():
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_rango",
+                      return_value={"disponible": False, "por_tejedor": []}):
+        assert tsvc.falta_acumulada(2026, 7) == {}
 
 
 def test_cargar_pendientes_saltea_oft_ya_estampado():
@@ -334,6 +386,8 @@ def test_cargar_pendientes_una_of_que_falla_no_corta_el_lote():
          patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
          patch.object(tsvc, "_ofts_estampadas", return_value={}), \
          patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada",
+                      return_value={"AP": 99999.0, "RY": 99999.0}), \
          patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)), \
          patch("modules.compras.queries.crear", side_effect=_crear_falla_primera):
         res = tsvc.cargar_pendientes(2026, 7, usuario="t", clave="T")

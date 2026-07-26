@@ -67,6 +67,67 @@ def _compras_k_por_prov(anio: int, mes: int) -> dict:
     }
 
 
+# Ventana del tope ACUMULADO por proveedor (TMT 2026-07-26, dueña: "sí, por
+# proveedor"). El mes solo no sirve: el maquilero factura con desfase y a
+# caballo de dos meses (en julio el dBase le facturó a Ponce 11.415,95 kg
+# contra 8.817,00 que Asinfo cerró). 3 meses = el mes que se ve + los 2
+# anteriores; de sobra para un desfase que en los datos reales es de días.
+MESES_VENTANA_TOPE = 3
+
+
+def _rango_ventana(anio: int, mes: int, meses: int = MESES_VENTANA_TOPE):
+    """(desde, hasta) ISO de la ventana que termina al final de (anio, mes)."""
+    a, m = int(anio), int(mes)
+    total = a * 12 + (m - 1) - (max(1, int(meses)) - 1)
+    d_a, d_m = divmod(total, 12)
+    desde = date(d_a, d_m + 1, 1)
+    h_a, h_m = (a + 1, 1) if m == 12 else (a, m + 1)
+    return desde.isoformat(), date(h_a, h_m, 1).isoformat()
+
+
+def _compras_k_por_prov_rango(desde: str, hasta: str) -> dict:
+    """{codigo_prov: kg} de compras tipo K en [desde, hasta) — el lado PC del
+    tope acumulado. Mismo universo que `_compras_k_por_prov` (kg>0, no anuladas)."""
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(TRIM(COALESCE(codigo_prov, ''))) AS cod,
+                   COALESCE(SUM(kg), 0) AS kg
+              FROM scintela.compra
+             WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
+               AND COALESCE(kg, 0) > 0
+               AND COALESCE(stat, '') <> 'Y'
+               AND fecha >= %s AND fecha < %s
+             GROUP BY UPPER(TRIM(COALESCE(codigo_prov, '')))
+            """,
+            (desde, hasta),
+        ) or []
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {}
+    return {r["cod"]: float(r["kg"] or 0) for r in rows}
+
+
+def falta_acumulada(anio: int, mes: int, meses: int = MESES_VENTANA_TOPE) -> dict:
+    """{cod_prov: kg que faltan cargar} ACUMULADO en la ventana — el TOPE.
+
+    producido (Asinfo, OFs cerradas) − cargado (compras K de PC), por proveedor
+    tercerizado. Fail-soft: si Asinfo no responde devuelve {} y el llamador
+    NO carga nada (mejor no cargar que cargar de más).
+    """
+    desde, hasta = _rango_ventana(anio, mes, meses)
+    prod = asinfo_service.produccion_tejeduria_rango(desde, hasta)
+    if not prod.get("disponible"):
+        return {}
+    cargado = _compras_k_por_prov_rango(desde, hasta)
+    out: dict = {}
+    for t in prod.get("por_tejedor", []):
+        cod = (t.get("cod") or "").upper().strip()
+        if not cod or t.get("es_intela") or cod not in TERCERIZADOS_VALIDOS:
+            continue
+        out[cod] = round(float(t.get("kg") or 0) - cargado.get(cod, 0.0), 2)
+    return out
+
+
 def _ofts_estampadas() -> dict:
     """{OFT: $ compra} — OFT que figuran en el concepto de alguna compra tipo K
     (match fino: las cargadas desde esta tab), con el IMPORTE de la compra.
@@ -326,10 +387,14 @@ def resumen_mes(anio: int, mes: int) -> dict:
         "ingreso_por_dia": ingreso_por_dia,
         "pendientes": pendientes,
         "tercerizado_ofs": tercerizado_ofs,
-        # Tarifas $/kg editables (mig 0133) + cuánto falta por proveedor, que es
-        # el TOPE de la carga automática.
+        # Tarifas $/kg editables (mig 0133) + cuánto falta por proveedor.
+        # `falta_por_cod` = del MES (lo que muestra la tabla por tejedor).
+        # `falta_acum_por_cod` = ACUMULADO en la ventana = el TOPE real de la
+        # carga automática (dueña 2026-07-26: "sí, por proveedor").
         "tarifas": tarifas,
         "falta_por_cod": falta_por_cod,
+        "falta_acum_por_cod": (falta_acumulada(anio, mes) if disponible else {}),
+        "meses_ventana_tope": MESES_VENTANA_TOPE,
         "total_pendiente": round(
             sum((o.get("importe_sugerido") or 0.0) for o in pendientes), 2),
         "pendientes_sin_tarifa": sum(
@@ -348,11 +413,15 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     GUARDAS (en este orden — la carga ciega duplicaba):
       1. sólo OFs en estado 'pendiente' (ya excluye mes pasado y OFT estampado);
       2. **tarifa resuelta o se saltea** — nunca inventamos un precio;
-      3. **tope por `falta_kg` del proveedor**: no cargamos más kg de los que
-         faltan. Es la guarda que importa: las compras K viejas tipeadas a mano
-         SIN kg hacen que `falta_kg` sobre-estime, y sin tope se crearían
-         compras por OFs que ya están pagadas (caso real 26/07: 2 OFs de Reyes
-         del 08/07). Se cargan las OFs más viejas primero hasta consumir la falta.
+      3. **tope ACUMULADO por proveedor** (`falta_acumulada`, ventana de
+         MESES_VENTANA_TOPE meses): no cargamos más kg de los que faltan. Es la
+         guarda que importa: las compras K viejas tipeadas a mano SIN kg hacen
+         que la falta sobre-estime, y sin tope se crearían compras por OFs que
+         ya están pagadas (caso real 26/07: 2 OFs de Reyes del 08/07). El tope
+         es acumulado y no mensual porque el maquilero factura con desfase y a
+         caballo de dos meses (dueña 2026-07-26: "sí, por proveedor"). Si Asinfo
+         no responde, `falta_acumulada` devuelve {} y NO se carga nada.
+         Se cargan las OFs más viejas primero hasta consumir la falta.
       4. `usuario_crea = 'asinfo-tejeduria'` — marcador que `scripts/import_dbf.py`
          PRESERVA en el sync del dBase (el DBF no tiene estas compras).
 
@@ -366,7 +435,8 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     # Más viejas primero: si la falta no alcanza para todas, se cargan las que
     # llevan más tiempo sin facturar.
     pendientes = sorted(pendientes, key=lambda o: str(o.get("dia") or ""))
-    restante = dict(data.get("falta_por_cod") or {})
+    # TOPE ACUMULADO por proveedor (no del mes) — dueña 2026-07-26.
+    restante = falta_acumulada(anio, mes)
     estampadas = _ofts_estampadas()
 
     creadas, importe_total = 0, 0.0
