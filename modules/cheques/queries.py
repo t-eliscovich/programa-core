@@ -532,11 +532,20 @@ def compensar_deposito_devuelto(
     depósito completo y el débito por el cheque protestado, igual que el extracto.
 
     Idempotente y seguro:
-      - Si ya existe una ND compensatoria para este cheque (numreferencia =
-        id_cheque) → no hace nada (evita doble compensación si ya se tipeó a
-        mano en /bancos o si se corre dos veces).
       - Si el cheque NO está linkeado a ningún 'DE' vivo (nunca se depositó, o
-        ya se desagrupó en un rebote anterior) → no hace nada.
+        ya se desagrupó en un rebote anterior) → no hace nada. El link vivo ES
+        el marcador atómico de "este depósito todavía no se compensó": la ND se
+        crea y el link se borra en la MISMA transacción, así que un doble-click
+        (2ª corrida) ya no encuentra link vivo y no duplica la ND.
+      - Si YA existe una ND compensatoria POSTERIOR al depósito vivo (numref =
+        id_cheque y su id_transaccion > el del 'DE' vivo) → no hace nada (evita
+        doble compensación si se tipeó a mano en /bancos).
+
+    OJO (bug 2026-07-26): antes bastaba con que existiera CUALQUIER ND para el
+    cheque (numreferencia = id_cheque) para saltar la compensación. Eso rompía el
+    2° rebote: cheque depositado→rebota (ND #1)→se RE-DEPOSITA (nuevo 'DE')→rebota
+    otra vez, la ND #1 vieja hacía saltar la ND #2 y el 2° depósito quedaba
+    contado doble en el banco. Ahora se compara contra el 'DE' vivo actual.
 
     Devuelve el importe compensado (0.0 si no hizo nada). Corre dentro de la
     transacción del caller (usa su `conn`).
@@ -544,17 +553,8 @@ def compensar_deposito_devuelto(
     imp = float(importe or 0)
     if imp <= 0:
         return 0.0
-    # ¿Ya hay una ND compensatoria para este cheque?
-    ya_nd = db.fetch_one(
-        "SELECT 1 FROM scintela.transacciones_bancarias "
-        "WHERE numreferencia = %s "
-        "  AND UPPER(TRIM(COALESCE(documento,''))) = 'ND' LIMIT 1",
-        (id_cheque,),
-        conn=conn,
-    )
-    if ya_nd:
-        return 0.0
-    # Links vivos a un depósito 'DE'.
+    # Links vivos a un depósito 'DE'. Si no hay, no hay nada que compensar
+    # (nunca se depositó, o ya se compensó y se desagrupó) → idempotente.
     links = db.fetch_all(
         "SELECT DISTINCT tb.id_transaccion, tb.no_banco "
         "  FROM scintela.chequextransaccion cxt "
@@ -566,6 +566,20 @@ def compensar_deposito_devuelto(
         conn=conn,
     ) or []
     if not links:
+        return 0.0
+    # ¿Ya hay una ND POSTERIOR a este 'DE' vivo? (doble-click o ND manual). Se
+    # compara por id_transaccion (serial) contra el depósito vivo más reciente:
+    # una ND más nueva que el 'DE' ⇒ ese depósito ya se compensó. Una ND más
+    # vieja (rebote anterior, ya re-depositado) NO bloquea el nuevo depósito.
+    max_de = max(int(lk["id_transaccion"]) for lk in links)
+    nd_post = db.fetch_one(
+        "SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias "
+        "WHERE numreferencia = %s "
+        "  AND UPPER(TRIM(COALESCE(documento,''))) = 'ND'",
+        (id_cheque,),
+        conn=conn,
+    )
+    if nd_post and nd_post["m"] is not None and int(nd_post["m"]) > max_de:
         return 0.0
     import bank_helpers
 
@@ -3927,26 +3941,35 @@ def aplicar_a_factura(
 def _stat_destino_reversa(stat_prev: str) -> tuple[str, bool]:
     """Devuelve (stat_destino, es_rebote_real) según el vocabulario nuevo.
 
-    Reglas (2026-04-29):
+    Reglas (2026-04-29, V corregido 2026-07-26):
       - B → 1   (primer rebote del banco — REBOTE REAL)
+      - V → 2   (rebote de un RE-DEPÓSITO de devuelto — REBOTE REAL, 2° rebote)
       - 1 → 3   (segundo rebote — REBOTE REAL)
       - 2 → 3   (segundo rebote desde alias 2 — REBOTE REAL)
       - A → 1   (legacy acreditado rebotado tardío — REBOTE REAL)
       - Z → X   (eliminado por error — administrativo)
       - D → X   (Daniela cancela, devuelve cheque — administrativo)
       - P → X   (postergado anulado — administrativo)
-      - V → X   (legacy Internacional cancelado — administrativo)
       - X, R, 3 → ValueError (terminal, no se puede reversar más)
+
+    dBase (MODIFICA.PRG FIL3): un cheque DEPOSITADO (ENBANC='BVWIJK', incluye V)
+    sólo puede rebotar a 1/2 creando una nota de débito (ND) en el banco — NUNCA
+    a X. V es un re-depósito de un devuelto, así que su rebote es el 2° → '2'.
+    Anular un V mal cargado va por `anular_por_error_de_carga`, no por acá.
     """
     s = (stat_prev or "").upper()
     # Depositado feliz (B nuevo o A legacy): primer rebote → 1.
     if s in ("B", "A"):
         return "1", True
+    # V = re-depósito de un devuelto (DEPOSITADO). Su rebote es REBOTE REAL: crea
+    # ND y vuelve a cartera como devuelto (2° rebote). NO es anulación a X.
+    if s == "V":
+        return "2", True
     # Ya rebotado una vez (1 o 2): segundo rebote → 3.
     if s in ("1", "2"):
         return "3", True
-    # Vivos no depositados (Z/D/P) o legacy V: eliminación administrativa.
-    if s in ("Z", "D", "P", "V"):
+    # Vivos no depositados (Z/D/P): eliminación administrativa.
+    if s in ("Z", "D", "P"):
         return "X", False
     # Terminales (X eliminado, R legacy rebotado, 3 segundo rebote): no más.
     if s in ("X", "R", "3"):
@@ -3963,20 +3986,22 @@ def reversar(
 ) -> dict:
     """Reversar un cheque.
 
-    Máquina de estados (vocabulario canónico 2026-04-29):
-        Z, D, P, V (cartera/Daniela/postergado/legacy)
+    Máquina de estados (vocabulario canónico 2026-04-29, V corregido 2026-07-26):
+        Z, D, P (cartera/Daniela/postergado)
                           → X (eliminado por error) — administrativo, sin stop
-        B (depositado Pichincha)
+        B (depositado desde cartera)
                           → 1 (primer rebote) — REBOTE REAL, stop al cliente
+        V (re-depósito de un devuelto)
+                          → 2 (segundo rebote) — REBOTE REAL, stop al cliente
         1, 2 (devueltos)  → 3 (segundo rebote)  — REBOTE REAL, stop al cliente
         A (legacy acred.) → 1 (rebote tardío)   — REBOTE REAL, stop al cliente
         X, R, 3 (terminales) → ValueError
 
     Facturas (TMT 2026-07-25, alinear a dBase):
-      - REBOTE REAL (B→1, 1/2→3): NO se toca la factura. dBase solo descuenta el
-        banco (ND); el cheque vuelve a cartera como devuelto (por-cobrar) y la
+      - REBOTE REAL (B→1, V→2, 1/2→3): NO se toca la factura. dBase solo descuenta
+        el banco (ND); el cheque vuelve a cartera como devuelto (por-cobrar) y la
         factura queda aplicada. Reabrirla es manual.
-      - ANULACIÓN administrativa (Z/D/P/V→X): SÍ se revierte cada chequesxfact
+      - ANULACIÓN administrativa (Z/D/P→X): SÍ se revierte cada chequesxfact
         (resta abono, suma saldo, abre la factura) y se borran las aplicaciones,
         porque el cheque fue un error de carga.
 

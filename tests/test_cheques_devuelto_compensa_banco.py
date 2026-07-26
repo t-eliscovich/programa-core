@@ -10,24 +10,36 @@ from datetime import date
 
 class _Rec:
     """Stub de db.* para el helper: simula el link a un depósito 'DE' y captura
-    las NDs insertadas y los DELETE de link."""
+    las NDs insertadas y los DELETE de link.
 
-    def __init__(self, *, tiene_link: bool, ya_nd: bool):
+    Idempotencia (2026-07-26): el helper ya NO pregunta "¿existe alguna ND?"
+    (booleano) sino "¿la ND más nueva es POSTERIOR al 'DE' vivo?" (compara
+    id_transaccion). El stub modela eso: `nd_id` es el id de la ND más reciente
+    para el cheque (None si no hay). El 'DE' vivo tiene id_transaccion=777, así
+    que una ND con nd_id>777 = ya compensado (no-op); nd_id<777 o None = hay que
+    compensar.
+    """
+
+    _DE_ID = 777
+
+    def __init__(self, *, tiene_link: bool, ya_nd: bool, nd_id: int | None = None):
         self.tiene_link = tiene_link
-        self.ya_nd = ya_nd
+        # Compat: ya_nd=True sin nd_id explícito ⇒ ND posterior al 'DE' (doble
+        # click / ND manual ya asentada) ⇒ no-op.
+        self.nd_id = nd_id if nd_id is not None else (self._DE_ID + 23 if ya_nd else None)
         self.executes: list[tuple[str, tuple]] = []
         self.nds: list[dict] = []
 
     def fetch_one(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
         if "numreferencia = %s" in s and "'nd'" in s:
-            return {"x": 1} if self.ya_nd else None
+            return {"m": self.nd_id}
         return None
 
     def fetch_all(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
         if "chequextransaccion cxt" in s and "'de'" in s:
-            return [{"id_transaccion": 777, "no_banco": 10}] if self.tiene_link else []
+            return [{"id_transaccion": self._DE_ID, "no_banco": 10}] if self.tiene_link else []
         return []
 
     def execute(self, sql, params=None, conn=None):
@@ -105,6 +117,25 @@ def test_compensa_idempotente_si_ya_hay_nd(monkeypatch):
     assert monto == 0.0
     assert rec.nds == []
     assert not _tiene_delete_link(rec.executes)
+
+
+def test_compensa_segundo_rebote_con_nd_vieja(monkeypatch):
+    """2° rebote: hay un 'DE' vivo NUEVO (re-depósito) y una ND VIEJA del rebote
+    anterior (nd_id < id del 'DE'). Debe compensar OTRA vez (ND #2) — la ND vieja
+    NO puede bloquearlo. Este es el caso del cheque de 21k contado doble."""
+    from modules.cheques import queries
+
+    rec = _Rec(tiene_link=True, ya_nd=True, nd_id=_Rec._DE_ID - 100)  # ND anterior al DE
+    _apply(monkeypatch, rec)
+
+    monto = queries.compensar_deposito_devuelto(
+        object(), id_cheque=100688, importe=21508.62, codigo_cli="BYG",
+        no_cheque="14778", fecha=date(2026, 7, 23), usuario="tmt",
+    )
+
+    assert monto == 21508.62
+    assert len(rec.nds) == 1  # se crea la ND #2
+    assert _tiene_delete_link(rec.executes)
 
 
 def test_compensa_noop_sin_deposito(monkeypatch):
