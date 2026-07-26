@@ -341,9 +341,13 @@ def reporte_desde_dbf(dbf_path: Path):
         p, b = x["pc"], x["dbf"]
         try:
             _numf = int(p.get("numf") or 0)
+            _numf_b = int(b.get("numf") or 0)
         except (TypeError, ValueError):
-            _numf = 0
-        if _numf <= 0:
+            continue
+        # SOLO facturas apareadas por el MISMO N° (no numf=0, no colisión de
+        # cliente+monto): si el numf no coincide en los dos lados, el abono es
+        # de facturas distintas y no sirve. Así el abono es comparable de verdad.
+        if _numf <= 0 or _numf != _numf_b:
             continue
         _falta = round(_r2(b.get("abono")) - _r2(p.get("abono")), 2)
         if _falta > 0.01:
