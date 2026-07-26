@@ -603,3 +603,35 @@ def test_filtro_default_es_todas(app, fake_db):
     # El chip "Todas" queda marcado (fondo oscuro) cuando no hay filtro.
     assert "Todas (" in body
     assert "solo=pend" in body, "falta el link al filtro"
+
+
+def test_secciones_plegables_con_flecha(app, fake_db):
+    """Dueña 2026-07-26: 'la lista está muy larga, por lo menos poné una flecha
+    para abajo'. Las dos tablas largas son <details> nativos: la de OFs abre
+    sola si hay pendientes, el diario arranca SIEMPRE plegado."""
+    c = _cliente_solo_ver(app, fake_db, "soloflecha")
+    with _asinfo_estable():
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "<summary>Tercerizado por OF" in body
+    assert "<summary>Diario · ingreso a bodega" in body
+    # El diario nunca viene abierto (es una fila por día).
+    diario = body[body.index("<summary>Diario") - 200: body.index("<summary>Diario")]
+    assert "<details>" in diario and "<details open>" not in diario
+
+
+def test_of_plegada_cuando_no_hay_pendientes(app, fake_db):
+    """Si no hay nada para cargar, la tabla de OFs arranca cerrada — el número
+    del título ya dice todo."""
+    c = _cliente_solo_ver(app, fake_db, "solocerrada")
+    # Sin pendientes: estampamos todos los OFT de la muestra.
+    with _asinfo_estable(), patch.object(
+        tsvc, "_ofts_estampadas",
+        return_value={"OFT-1": 1, "OFT-2": 1, "OFT-3": 1, "OFT-4": 1},
+    ):
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    i = body.index("<summary>Tercerizado por OF")
+    assert "<details open>" not in body[i - 200:i], "no debería abrirse sin pendientes"

@@ -35,6 +35,19 @@
   .ta .tarbox input.x{width:100%}
   .ta .btn2{display:inline-block;font-size:12px;font-weight:600;color:#334155;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 10px;text-decoration:none;cursor:pointer}
   .ta .tar{font-variant-numeric:tabular-nums}
+  /* ── Secciones plegables (TMT 2026-07-26, dueña: "la lista está muy larga,
+     por lo menos poné una flecha para abajo"). <details> nativo: sin JS, y la
+     flecha gira sola. La de OFs abre sola si hay algo pendiente; el diario
+     (una fila por día) arranca cerrado. */
+  .ta details{margin:22px 0 4px}
+  .ta details>summary{font-size:13px;text-transform:uppercase;letter-spacing:.04em;
+    color:#64748b;cursor:pointer;list-style:none;display:flex;align-items:center;
+    gap:7px;user-select:none;padding:2px 0}
+  .ta details>summary::-webkit-details-marker{display:none}
+  .ta details>summary::before{content:"\25BE";font-size:11px;line-height:1;
+    display:inline-block;transition:transform .12s ease}
+  .ta details[open]>summary::before{transform:rotate(180deg)}
+  .ta details>summary:hover{color:#334155}
 </style>
 {% endblock %}
 
@@ -133,8 +146,11 @@
     <div class="warnbox">Asinfo no está disponible en este momento — no se pudo traer la producción de tejeduría. (La pantalla no rompe; reintentá en un rato.)</div>
   {% else %}
 
-    <h2>Tercerizado por OF · Reyes / Ponce
-        ({{ data.pendientes|length }} para cargar)</h2>
+    {# Abre sola SÓLO si hay algo que hacer. Si dice «0 para cargar» queda
+       plegada: el número del título ya te dice todo. #}
+    <details {% if data.pendientes %}open{% endif %}>
+    <summary>Tercerizado por OF · Reyes / Ponce
+        ({{ data.pendientes|length }} para cargar)</summary>
 
     {% if data.pendientes and tiene_permiso('compras.crear') %}
       {# Carga automática: kg de Asinfo × tarifa. El service topea por lo que
@@ -206,6 +222,7 @@
     {% else %}
       <p class="note ok">No hay producción tercerizada (Reyes/Ponce) este mes.</p>
     {% endif %}
+    </details>
 
     {% set terc_kg = data.tejedores | selectattr('es_intela', 'equalto', false) | sum(attribute='kg') %}
     {% set intela_kg = data.tejedores | selectattr('es_intela', 'equalto', true) | sum(attribute='kg') %}
@@ -267,7 +284,11 @@
       </tbody>
     </table>
 
-    <h2>Diario · ingreso a bodega (kg) <span class="muted" style="font-weight:normal; font-size:11px">— tela cruda que ENTRÓ a la bodega cada día · la suma del mes = el TOTAL de arriba</span></h2>
+    {# Una fila por día del mes — es la tabla más larga de la pantalla y casi
+       nunca se mira fila por fila, así que arranca plegada. El total ya está
+       arriba en el KPI. #}
+    <details>
+    <summary>Diario · ingreso a bodega (kg) <span class="muted" style="font-weight:normal; font-size:11px; text-transform:none; letter-spacing:0">— tela cruda que ENTRÓ a la bodega cada día · la suma del mes = el TOTAL de arriba · {{ data.ingreso_por_dia|length }} días</span></summary>
     <table>
       <thead>
         <tr><th>Día</th><th>Reyes</th><th>Ponce</th><th>Intela</th><th>Ingresado a bodega (kg)</th></tr>
@@ -293,6 +314,7 @@
         </tr>
       </tbody>
     </table>
+    </details>
 
   {% endif %}
 </div>
