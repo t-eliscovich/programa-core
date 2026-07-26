@@ -44,10 +44,15 @@
     color:#64748b;cursor:pointer;list-style:none;display:flex;align-items:center;
     gap:7px;user-select:none;padding:2px 0}
   .ta details>summary::-webkit-details-marker{display:none}
-  .ta details>summary::before{content:"\25BE";font-size:11px;line-height:1;
-    display:inline-block;transition:transform .12s ease}
+  /* Triángulo dibujado con bordes en vez de un carácter: el ▾ de la fuente
+     sale como una manchita de 3px y no se ve. Esto es nítido siempre. */
+  .ta details>summary::before{content:"";width:0;height:0;flex:none;
+    border-left:5px solid transparent;border-right:5px solid transparent;
+    border-top:7px solid #94a3b8;display:inline-block;
+    transition:transform .12s ease}
   .ta details[open]>summary::before{transform:rotate(180deg)}
   .ta details>summary:hover{color:#334155}
+  .ta details>summary:hover::before{border-top-color:#334155}
 </style>
 {% endblock %}
 
