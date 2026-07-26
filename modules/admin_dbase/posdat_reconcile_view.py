@@ -62,14 +62,29 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
     importe=dBase + baseline=hoy (yy=True). El resto son cheques reales.
 
     dbf_banc0: [{prov, importe, concepto}]  (banc != 9 del POSDAT.DBF)
-    pc_banc0:  [{id_posdat, prov, importe, concepto, linked}]
-    Returns: {updates:[{id,importe,concepto,yy,que}], deletes:[{id,prov,importe,concepto,linked}],
-              inserts:[{prov,importe,concepto}]}
+    pc_banc0:  [{id_posdat, prov, importe, concepto, linked, nace_en_pc}]
+    Returns: {updates:[...], deletes:[...], inserts:[...], intocables:[...]}
+
+    `nace_en_pc` (TMT 2026-07-26, dueña "dejar impecable el flujo"): la fila
+    nació en PC de una compra que el FoxPro NO tiene ni va a tener — hoy, la
+    tejeduría que se carga desde Asinfo. Nunca va a aparecer en el POSDAT.DBF,
+    así que NO es un sobrante: se SALTEA (ni delete ni anulación) y se reporta
+    aparte en `intocables`. Sin esto el reconcile dejaba la compra viva y sin
+    pasivo, y la utilidad subía sola.
     """
     updates: list[dict] = []
     deletes: list[dict] = []
     inserts: list[dict] = []
     aligns: list[dict] = []
+    intocables: list[dict] = []
+    # Las que nacen en PC salen del universo ANTES de aparear: no compiten por
+    # una clave del dBase ni pueden terminar en deletes.
+    _pc_nace = [r for r in pc_banc0 if r.get("nace_en_pc")]
+    if _pc_nace:
+        intocables = [{"id": r["id_posdat"], "prov": _norm(r["prov"]),
+                       "importe": round(float(r["importe"] or 0), 2),
+                       "concepto": r.get("concepto")} for r in _pc_nace]
+        pc_banc0 = [r for r in pc_banc0 if not r.get("nace_en_pc")]
 
     def is_yy_like(p):
         # RT (IVA) acumula display-time igual que YY → mismo tratamiento.
@@ -194,7 +209,8 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
                             "concepto": p[i].get("concepto"), "linked": bool(p[i].get("linked"))})
         for i in range(n, len(d)):  # dBase tiene de más → insertar (cheque nuevo)
             inserts.append({"prov": prov, "importe": amt, "concepto": d[i].get("concepto")})
-    return {"updates": updates, "deletes": deletes, "inserts": inserts, "aligns": aligns}
+    return {"updates": updates, "deletes": deletes, "inserts": inserts,
+            "intocables": intocables, "aligns": aligns}
 
 
 def _leer_dbf_banc0(dbf_path: Path) -> list[dict]:
@@ -220,7 +236,27 @@ def _leer_pc_banc0() -> list[dict]:
                     WHERE m.estado = 'activo'
                       AND ((m.destino_table = 'posdat' AND m.destino_id = p.id_posdat)
                         OR (m.origen_table  = 'posdat' AND m.origen_id  = p.id_posdat))
-               ) AS linked
+               ) AS linked,
+               -- TMT 2026-07-26 (dueña: "dejar impecable el flujo", ya no hay
+               -- syncs): posdat que NACIÓ EN PC de una compra que el FoxPro no
+               -- tiene NI VA A TENER — hoy, la tejeduría de Asinfo. Esas
+               -- compras no se tipean en el dBase A PROPÓSITO (los kg salen de
+               -- Asinfo), así que su posdat JAMÁS va a estar en el POSDAT.DBF y
+               -- el reconcile lo anulaba por "sobrante": la compra quedaba viva
+               -- y sin pasivo, y la utilidad subía sola.
+               -- Marcador: el mismo que usa el sync de compras — el OFT
+               -- estampado en el concepto (el DBF nunca trae un OFT) o el
+               -- usuario_crea del botón de carga masiva.
+               EXISTS (
+                   SELECT 1 FROM scintela.compra c
+                    WHERE UPPER(TRIM(COALESCE(c.tipo, ''))) = 'K'
+                      AND COALESCE(c.stat, '') <> 'Y'
+                      AND UPPER(TRIM(COALESCE(c.codigo_prov, ''))) =
+                          UPPER(TRIM(COALESCE(p.prov, '')))
+                      AND c.numero = p.num
+                      AND ( COALESCE(c.concepto, '') ILIKE '%%OFT-%%'
+                         OR COALESCE(c.usuario_crea, '') = 'asinfo-tejeduria' )
+               ) AS nace_en_pc
           FROM scintela.posdat p
          WHERE COALESCE(p.banc, 0) = 0
            AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
@@ -228,6 +264,7 @@ def _leer_pc_banc0() -> list[dict]:
     ) or []
     return [{"id_posdat": r["id_posdat"], "prov": r["prov"],
              "importe": round(float(r["importe"] or 0), 2),
+             "nace_en_pc": bool(r.get("nace_en_pc")),
              "concepto": r["concepto"], "fechad": r["fechad"],
              "usuario_crea": r["usuario_crea"], "linked": bool(r["linked"])} for r in rows]
 
@@ -546,6 +583,13 @@ def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False
     linked_dels = [d for d in dels if d["linked"]]
 
     yield line(f"PLAN: {len(ups)} UPDATE · {len(dels)} DELETE · {len(ins)} INSERT")
+    _intoc = plan.get("intocables") or []
+    if _intoc:
+        yield line(f"  🛡 INTOCABLES ({len(_intoc)}) — nacieron en PC de una compra que el "
+                   f"FoxPro no tiene (tejeduría Asinfo). NO se tocan:")
+        for t in _intoc[:40]:
+            yield line(f"     #{t['id']} {t['prov']:4} {t['importe']:>12,.2f}  "
+                       f"{str(t.get('concepto') or '')[:40]}")
     if linked_dels:
         yield line(f"  ⚠ {len(linked_dels)} con link de compra (mov_doble) → se ANULAN (preservan id/link).")
     yield line("")
@@ -1000,6 +1044,11 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
             ins9.append(d)
 
     # ── REPORTE ──
+    _intoc = plan.get("intocables") or []
+    if _intoc:
+        yield line(f"[posdat-reconcile] 🛡 {len(_intoc)} INTOCABLES (tejeduría Asinfo: la compra "
+                   f"no está ni va a estar en el POSDAT.DBF) — NO se tocan, suma "
+                   f"{sum(t['importe'] for t in _intoc):,.2f}")
     yield line(f"[posdat-reconcile] BANC=0 plan: {len(ups)} UPDATE · {len(dels)} DEL/ANULA · {len(ins)} INSERT · {len(aligns)} ALIGN(concepto+fechad)")
     yield line(f"[posdat-reconcile] >>> PASIVO banc=0 proyectado ≈ {proj_b0:,.2f}  |  dBase {dbf_b0_sum:,.2f}  |  diff {proj_b0 - dbf_b0_sum:,.2f}")
     yield line(f"[posdat-reconcile] BANC=9: borrar {len(borrar9_ids)} · insertar {len(ins9)} de {len(dbf_b9)}")

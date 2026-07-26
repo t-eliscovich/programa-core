@@ -6,6 +6,8 @@ El nuevo paréa por (prov, concepto) — clave estable del cheque — con fallba
 importe sólo dentro de grupos con concepto vacío. Además RT (IVA) se trata como
 provisión display-time igual que YY (re-pin importe=dBase + baseline=hoy).
 """
+import pytest
+
 from modules.admin_dbase.posdat_reconcile_view import reconciliar_posdat_plan
 
 
@@ -186,3 +188,56 @@ def test_align_grupo_mismo_importe_documento_renumerado():
         post.discard((old["concepto"], old["fechad"]))
         post.add((a["concepto"], a["fechad"]))
     assert post == {(d["concepto"], d["fechad"]) for d in dbf}
+
+
+# ---------------------------------------------------------------------------
+# INTOCABLES: posdat que nace en PC de una compra que el FoxPro no tiene
+# (tejeduría Asinfo). TMT 2026-07-26 — dueña: "dejar impecable el flujo".
+# ---------------------------------------------------------------------------
+
+
+def _pctej(id_, prov, imp, cpt="", linked=False, nace=False):
+    return {"id_posdat": id_, "prov": prov, "importe": imp, "concepto": cpt,
+            "fechad": None, "usuario_crea": "", "linked": linked, "nace_en_pc": nace}
+
+
+def test_posdat_de_tejeduria_no_se_borra_ni_se_anula():
+    """Sin esto el reconcile lo anulaba por 'sobrante' y la compra quedaba
+    viva y SIN pasivo → la utilidad subía sola."""
+    dbf = [{"prov": "AQ", "importe": 100.0, "concepto": "1 1"}]
+    pc = [
+        _pctej(1, "AQ", 100.0, "1 1"),                                   # matchea
+        _pctej(2, "RY", 1653.83, "OFT-000038848 M REYES", nace=True),    # tejeduría
+        _pctej(3, "AP", 5101.10, "OFT-000038930 A PONCE", nace=True),    # tejeduría
+        _pctej(4, "XX", 50.0, "sobrante de verdad"),                     # sí se borra
+    ]
+    plan = reconciliar_posdat_plan(dbf, pc)
+    ids_del = {d["id"] for d in plan["deletes"]}
+    assert 2 not in ids_del and 3 not in ids_del, "la tejeduría NO se puede tocar"
+    assert 4 in ids_del, "el sobrante real sí se borra"
+    intoc = {t["id"] for t in plan["intocables"]}
+    assert intoc == {2, 3}
+    assert sum(t["importe"] for t in plan["intocables"]) == pytest.approx(6754.93)
+
+
+def test_intocable_no_compite_por_una_clave_del_dbase():
+    """Sale del universo ANTES de aparear: no puede robarle el match a una
+    fila normal ni terminar en deletes por duplicado."""
+    dbf = [{"prov": "RY", "importe": 1653.83, "concepto": "otra cosa"}]
+    pc = [
+        _pctej(9, "RY", 1653.83, "OFT-000038848", nace=True),
+        _pctej(10, "RY", 1653.83, "cheque real de RY"),
+    ]
+    plan = reconciliar_posdat_plan(dbf, pc)
+    assert {t["id"] for t in plan["intocables"]} == {9}
+    # la fila normal se queda con el match del dBase; nada se borra
+    assert not plan["deletes"]
+    assert not plan["inserts"]
+
+
+def test_sin_intocables_el_plan_es_igual_que_antes():
+    dbf = [{"prov": "AQ", "importe": 100.0, "concepto": "1 1"}]
+    pc = [_pctej(1, "AQ", 100.0, "1 1"), _pctej(2, "XX", 7.0, "sobra")]
+    plan = reconciliar_posdat_plan(dbf, pc)
+    assert plan["intocables"] == []
+    assert {d["id"] for d in plan["deletes"]} == {2}
