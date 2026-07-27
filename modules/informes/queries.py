@@ -4031,9 +4031,10 @@ def resultados_costos_tabla(
                    "Tejeduría + Tintorería + Admin (los mismos renglones, en pesos).")},
         {"label": "Utilidad Calculada Actual", "kg": venta_kg,
          "ukg": _div(float(venta_us or 0) - ct_us, venta_kg),
-         # Federico 2026-07-27: mismo formato que Costo Total (clase "total":
-         # fondo gris, peso medio), NO el celeste/negrita de las filas "key".
-         "us": float(venta_us or 0) - ct_us, "clase": "total",
+         # Federico 2026-07-27: las 3 filas de utilidad son filas normales
+         # ("dato") con el MISMO font; lo ÚNICO distinto es el fondo celeste de
+         # Utilidad Real (clase extra 'fila-celeste' que se agrega en el template).
+         "us": float(venta_us or 0) - ct_us, "clase": "dato",
          "ayuda": ("Ventas − Costo Total. Utilidad contable del mes: las ventas "
                    "del período menos el Costo Total (Subtotal +4.5% + "
                    "Administración). kg = kg vendidos; $/kg = utilidad / kg vendidos.")},
@@ -4045,7 +4046,7 @@ def resultados_costos_tabla(
                    "− gastos fijos PROYECTADOS que faltan (XPRETOT de Iniciales − "
                    "lo ya gastado) − provisión pendiente del mes.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
-         "clase": "key", "parcial": True, "parcial_dias": dia_actual,
+         "clase": "dato", "parcial": True, "parcial_dias": dia_actual,
          "ayuda": (
              "(PATR − PATANT) + URET — delta del patrimonio + dividendos "
              "del mes. Cuenta económica completa (incluye revalúo de "

@@ -601,11 +601,11 @@
     main .informe-balance tr.fila-key td   { font-size: 16px !important;
                                              padding-top: 6px !important;
                                              padding-bottom: 6px !important; }
-    /* Federico 2026-07-27 — Utilidad Calculada Actual y Utilidad Real con el
-       MISMO font que Utilidad Esperada (fila normal: 14px, sin negrita), pero
-       manteniendo sus fondos (gris / celeste). Va DESPUÉS de fila-total/fila-key
-       para ganarles (misma especificidad → gana la última regla). */
-    main .informe-balance tr.fila-util-eq td { font-size: 14px !important; font-weight: 400 !important; }
+    /* Federico 2026-07-27 — las 3 filas de utilidad (Calculada Actual, Esperada,
+       Real) son filas normales "dato" con el MISMO font. Lo ÚNICO distinto es el
+       fondo celeste de Utilidad Real. */
+    main .informe-balance tr.fila-celeste td { background: rgb(186 230 253) !important; }
+    .dark main .informe-balance tr.fila-celeste td { background: rgb(30 58 95) !important; }
     /* Historico-12m + tablas .table-compact siguen densas. */
     main .h12-page table tbody td,
     main .table-compact table tbody td {
