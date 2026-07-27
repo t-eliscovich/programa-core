@@ -892,7 +892,7 @@ def balance():
             _costo_directo = _proy_kg * (_mp_ukg + _col_ukg) * 1.05
             _up_us = _proy_us - _gastos_proy - _costo_directo
             for _r in _tabla:
-                if _r.get("label") == "Utilidad Proyectada":
+                if _r.get("label") == "Utilidad Esperada":
                     _r["kg"] = _proy_kg
                     _r["us"] = _up_us
                     _r["ukg"] = (_up_us / _proy_kg if _proy_kg else 0)

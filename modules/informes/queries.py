@@ -3855,15 +3855,15 @@ def resultados_costos_tabla(
     Formulas (mes en curso):
       Venta          kg/us live de scintela.factura; u$/kg = us / kg.
       Proyeccion     regla de 3 al dia 30 con el mismo precio promedio.
-      Materia Prima  solo u$/kg = costo del hilado consumido
-                     (flujo-produccion, HILADO egresos $/kg).
+      Materia Prima  kg = kg VENDIDOS; us = kg vendidos * tarifa hilado.
       Tejeduria      us = V1+V2+V3 + amort.tejeduria; u$/kg = us / kg tejidos.
       Tintoreria     us = V4+V5+V6 + amort.tintoreria; u$/kg = us / KTINT.
       Colorantes     us = ITIN (SUM importe tinto del mes); u$/kg = ITIN/KTINT.
-      Subtotal +4.5% u$/kg = 1.045 * (MP + Tejed. + Tintor. + Colorantes).
+      Subtotal +4.5% u$/kg = Tejed. + Tintor. + 1.045*(MP + Colorantes);
+                     us   = 1.045*(MP + Col) + Tejed. + Tintor.
       Administracion us = V7+V8+V9 + amort.admin; u$/kg = us / kg vendidos.
-      Costo Total    u$/kg = Subtotal + Administracion; us = kg vend. * u$/kg.
-      Ut. Esperada   u$/kg = precio - Costo Total; us = kg vendidos * u$/kg.
+      Costo Total    Subtotal + Administracion (u$/kg y us).
+      Ut.Calc.Actual us = Ventas - Costo Total; kg = kg vendidos.
       Ut. Real       us = delta patrimonio + dividendos del mes
                         = (patr - patant) + uret; u$/kg = us / kg vendidos.
     """
@@ -3903,6 +3903,13 @@ def resultados_costos_tabla(
     col_kg = float(ktint_colorantes) if ktint_colorantes else ktint
     col_ukg = _div(col_us, col_kg)
 
+    # Federico 2026-07-27: Materia Prima se mide sobre los KG VENDIDOS (costeo de
+    # lo vendido), NO sobre el hilado consumido del mes. kg = kg vendidos;
+    # $ = kg vendidos × tarifa del hilado. (Revierte el criterio del 17/7 que
+    # tomaba el hilado egresado del cuadro de movimientos, 260.008 kg.)
+    mp_kg = venta_kg
+    mp_us = venta_kg * mp_ukg
+
     # +4.5% (merma) SOLO sobre materiales (Materia Prima + Colorantes) — igual que
     # el COSTUNI del dBase (INFORMES.PRG L406: factor × (UMX + ITIN/KR)). La mano de
     # obra y gastos de Tejeduría/Tintorería NO llevan recargo de merma. Antes PC
@@ -3910,6 +3917,10 @@ def resultados_costos_tabla(
     # Costo Total (COSTUNI). Dueña 2026-07-12: "el 4.5% que hace el dBase, hagámoslo".
     _fac_merma = float(factor_desperdicio or 1.045)
     sub_ukg = tej_ukg + tin_ukg + _fac_merma * (mp_ukg + col_ukg)
+    # $ (importe) del Subtotal — misma lógica que el $/kg pero sobre los $ reales
+    # de cada renglón: el +4.5% aplica SOLO a materiales (MP + Colorantes),
+    # Tejeduría/Tintorería van a valor pleno. Federico 2026-07-27.
+    sub_us = _fac_merma * (float(mp_us or 0) + col_us) + tej_us + tin_us
 
     adm_us = (float(v7 or 0) + float(v8 or 0) + float(v9 or 0)
               + float(deprcar or 0))
@@ -3930,7 +3941,10 @@ def resultados_costos_tabla(
         # base distintos por fila, así que $/kg × kg ≠ $ — es estructura del
         # cuadro, no un descuadre. NO pretender que cruzan.
         ct_ukg = sub_ukg + adm_ukg
-        ct_us = float(mp_us or 0) + tej_us + tin_us + col_us + adm_us
+        # Federico 2026-07-27: el $ del Costo Total = Subtotal (con el +4.5% sobre
+        # MP+Col) + Administración. Antes sumaba los renglones SIN el recargo → el
+        # $ no coincidía con el $/kg ni con la cuenta de la dueña (faltaba el 4.5%).
+        ct_us = sub_us + adm_us
 
     # Utilidad REAL — fórmula original: ur = (patr - patant) + uret
     # = delta patrimonio + dividendos del mes (la cuenta económica completa
@@ -3980,10 +3994,9 @@ def resultados_costos_tabla(
          "ukg": mp_ukg,
          "us": (float(mp_us) if mp_us else None),
          "clase": "dato",
-         "ayuda": ("Hilado consumido del mes = fila EGRESOS (HILADO) del cuadro "
-                   "MOVIMIENTOS DEL MES (INICIAL ASINFO) del Flujo de producción "
-                   "— mismo número (salidas de bodega 51 netas de reingresos), "
-                   "× la tarifa del hilado del STOCK.")},
+         "ayuda": ("kg = kg VENDIDOS del mes (mismos que la fila Venta). "
+                   "$ = kg vendidos × tarifa del hilado del STOCK. Es el costo "
+                   "de la materia prima contenida en lo vendido.")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
          "proy": (float(pretej or 0) or None), "clase": "dato",
          "ayuda": ("kg = Ingresos de CRUDO (= Producción tejido) del cuadro "
@@ -4002,7 +4015,7 @@ def resultados_costos_tabla(
                    "(INICIAL ASINFO), igual que Tintorería. $ = consumo de "
                    "colorantes/químicos de las órdenes de tintura del mes; "
                    "U$/kg = $ / esos kg.")},
-        {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": None,
+        {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": sub_us,
          "clase": "subtotal",
          "ayuda": ("Tejeduria + Tintoreria + merma*(Materia Prima + Colorantes). "
                    "El +4.5% (merma) aplica SOLO a materiales, igual que el dBase "
@@ -4013,11 +4026,15 @@ def resultados_costos_tabla(
                    "U$/kg = costo total / kg vendidos.")},
         {"label": "Costo Total", "kg": None, "ukg": ct_ukg, "us": ct_us,
          "proy": (float(pretot or 0) or None), "clase": "total",
-         "ayuda": ("Replica EXACTA del dBase. $/kg = COSTUNI = merma*(MP+ITIN/KR) "
-                   "+ Tejeduria + Tintoreria + Admin (= Subtotal + Admin). "
-                   "U$ = CSVTATOT = costo estandarizado de los kg vendidos "
-                   "(KV*1.04*costo_unitario incl. hilado + gastos); por eso NO es "
-                   "la suma lineal de las filas.")},
+         "ayuda": ("Subtotal +4.5% + Administración. $/kg = Tejeduría + Tintorería "
+                   "+ 1.045*(MP + Colorantes) + Admin. $ = 1.045*(MP + Col) + "
+                   "Tejeduría + Tintorería + Admin (los mismos renglones, en pesos).")},
+        {"label": "Utilidad Calculada Actual", "kg": venta_kg,
+         "ukg": _div(float(venta_us or 0) - ct_us, venta_kg),
+         "us": float(venta_us or 0) - ct_us, "clase": "key",
+         "ayuda": ("Ventas − Costo Total. Utilidad contable del mes: las ventas "
+                   "del período menos el Costo Total (Subtotal +4.5% + "
+                   "Administración). kg = kg vendidos; $/kg = utilidad / kg vendidos.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
          "clase": "key", "parcial": True, "parcial_dias": dia_actual,
          "ayuda": (
@@ -4027,7 +4044,7 @@ def resultados_costos_tabla(
              f"(día {dia_actual}): PATR−PATANT sólo cuadra al CIERRE de mes; "
              "a principio de mes puede salir negativa — es parcial, no la "
              "utilidad final.")},
-        {"label": "Utilidad Proyectada", "kg": up_kg, "ukg": up_ukg,
+        {"label": "Utilidad Esperada", "kg": up_kg, "ukg": up_ukg,
          "us": up_us, "clase": "dato",
          "ayuda": ("Réplica dBase (UT.PROY): utilidad real del mes (PATR−PATANT) "
                    "+ margen variable × kg que faltan vender para la meta KPROG "
