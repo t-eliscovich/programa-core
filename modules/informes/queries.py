@@ -4334,6 +4334,17 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     pretin = float(inic.get("pretin") or 0)
     preadm = float(inic.get("preadm") or 0)
     pretot = float(inic.get("pretot") or 0)
+    # Federico 2026-07-27: la columna "Proyectado" del Informe de Resultados
+    # (filas Tejeduría / Tintorería / Administración) toma los gastos proyectados
+    # de la PÁGINA DE GASTOS — fila "Gs.Proy. Mes actual", tabla editable
+    # compartida scintela.gastos_proyectado_mes — NO el presupuesto de Iniciales
+    # (que daba 120000/365000/300000, valores viejos). MISMA fuente que usa la
+    # Utilidad Esperada. Fail-soft → 0 si no hay fila cargada. Los `pretej/pretin/
+    # preadm` de Iniciales se conservan para el resto de los cálculos internos.
+    _gsp_res = gastos_proyectado_mes_get() or {}
+    pretej_res = float(_gsp_res.get("tej") or 0)
+    pretin_res = float(_gsp_res.get("tin") or 0)
+    preadm_res = float(_gsp_res.get("adm") or 0)
     inic_um = float(inic.get("um") or 0)  # tarifa MP objetivo
     inic_uk = float(inic.get("uk") or 0)  # tarifa tejido objetivo
     inic_uq = float(inic.get("uq") or 0)  # tarifa col.qui. objetivo
@@ -5041,10 +5052,12 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         # UT.PROY estilo dBase — gastos proyectados de scintela.iniciales.
         kgpro=kgpro,
         pretot=pretot,
-        # Presupuesto por área (columna Proyectado GS.PROY) — TMT 2026-06-23.
-        pretej=pretej,
-        pretin=pretin,
-        preadm=preadm,
+        # Columna Proyectado = gastos proyectados de la página de Gastos
+        # ("Gs.Proy. Mes actual"), NO el presupuesto de Iniciales. Federico
+        # 2026-07-27 (antes TMT 2026-06-23 usaba pretej/pretin/preadm de Iniciales).
+        pretej=pretej_res,
+        pretin=pretin_res,
+        preadm=preadm_res,
         factor_desperdicio=_factor_desp,
         provision_pendiente=provision_pendiente_us,
         utilidad_econ=float(utilidad or 0),
