@@ -616,9 +616,10 @@ def test_secciones_plegables_con_flecha(app, fake_db):
     body = r.get_data(as_text=True)
     assert "<summary>Tercerizado por OF" in body
     assert "<summary>Diario · ingreso a bodega" in body
-    # El diario nunca viene abierto (es una fila por día).
+    # El diario viene ABIERTO por pedido de la dueña (2026-07-26: "diario
+    # dejalo desplegado") — plegable con la flecha, pero visible al entrar.
     diario = body[body.index("<summary>Diario") - 200: body.index("<summary>Diario")]
-    assert "<details>" in diario and "<details open>" not in diario
+    assert "<details open>" in diario
 
 
 def test_of_plegada_cuando_no_hay_pendientes(app, fake_db):

@@ -307,10 +307,10 @@
       </tbody>
     </table>
 
-    {# Una fila por día del mes — es la tabla más larga de la pantalla y casi
-       nunca se mira fila por fila, así que arranca plegada. El total ya está
-       arriba en el KPI. #}
-    <details>
+    {# Una fila por día del mes. La dueña la quiere SIEMPRE a la vista
+       (2026-07-26: "diario dejalo desplegado") — es el detalle que mira todos
+       los días. Se puede plegar con la flecha, pero abre por default. #}
+    <details open>
     <summary>Diario · ingreso a bodega (kg) <span class="muted" style="font-weight:normal; font-size:11px; text-transform:none; letter-spacing:0">— tela cruda que ENTRÓ a la bodega cada día · la suma del mes = el TOTAL de arriba · {{ data.ingreso_por_dia|length }} días</span></summary>
     <table>
       <thead>
