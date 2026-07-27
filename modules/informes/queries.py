@@ -4345,6 +4345,8 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     pretej_res = float(_gsp_res.get("tej") or 0)
     pretin_res = float(_gsp_res.get("tin") or 0)
     preadm_res = float(_gsp_res.get("adm") or 0)
+    # Costo Total proyectado = suma de los 3 gastos proyectados (Federico 2026-07-27).
+    pretot_res = pretej_res + pretin_res + preadm_res
     inic_um = float(inic.get("um") or 0)  # tarifa MP objetivo
     inic_uk = float(inic.get("uk") or 0)  # tarifa tejido objetivo
     inic_uq = float(inic.get("uq") or 0)  # tarifa col.qui. objetivo
@@ -5051,7 +5053,9 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         uret=0.0,
         # UT.PROY estilo dBase — gastos proyectados de scintela.iniciales.
         kgpro=kgpro,
-        pretot=pretot,
+        # Costo Total (columna Proyectado) = suma de los 3 gastos proyectados de
+        # la página de Gastos (Tej+Tint+Adm). Federico 2026-07-27.
+        pretot=pretot_res,
         # Columna Proyectado = gastos proyectados de la página de Gastos
         # ("Gs.Proy. Mes actual"), NO el presupuesto de Iniciales. Federico
         # 2026-07-27 (antes TMT 2026-06-23 usaba pretej/pretin/preadm de Iniciales).
