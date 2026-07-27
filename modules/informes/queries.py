@@ -4980,7 +4980,15 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         v2=gxg["v2"],
         v3=gxg["v3"],
         dtj=amort["dtj"],
-        tej_base_us=float(tej.get("us_total") or 0),
+        # Federico 2026-07-27 (dueña: "unificar todo en costo total 122.171"):
+        # el $ de Tejeduría = el MISMO TOTAL de "Producción tejido" del Flujo =
+        # gasto propio INTELA (V1+V2+V3 + amort DTJ) + tejido tercerizado
+        # facturado (us_externo AP/RY). Antes usaba us_total (facturado + gastos
+        # KK varios) SIN los V1+V2+V3 → daba ~78.6k y descuadraba con Flujo.
+        # OJO: dtj se suma DENTRO de resultados_costos_tabla, así que la base va
+        # sin dtj: base = V1+V2+V3 + us_externo  →  tej_us = base + dtj = 122.171.
+        tej_base_us=(float(gxg["v1"]) + float(gxg["v2"]) + float(gxg["v3"])
+                     + float(tej.get("us_externo") or 0)),
         # kg tejidos = Ingresos de CRUDO del cuadro MOVIMIENTOS (INICIAL
         # ASINFO) — misma fuente visible que Producción tejido (dueña
         # 2026-07-17). Fallback: compras K (comportamiento anterior).

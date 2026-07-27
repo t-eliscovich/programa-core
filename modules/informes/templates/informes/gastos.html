@@ -270,8 +270,22 @@
           <td class="total-col num">{{ suma_amort_total | num_es(0) }}</td>
         </tr>
 
+        {# Federico 2026-07-27 (dueña): tejido TERCERIZADO (AP/RY) — se suma a la
+           columna Tejeduría para que el Total dé el COSTO TOTAL de producción de
+           tejeduría (mismo número que "Producción tejido" del Flujo y la fila
+           Tejeduría de Resultados = 122.171). Tintorería/Admin no aplican. #}
+        {% if tercer_tej %}
+        <tr>
+          <td class="row-label">+ Tejido tercerizado</td>
+          <td class="cell num">{{ tercer_tej | num_es(0) }}</td>
+          <td class="cell num">—</td>
+          <td class="cell num">—</td>
+          <td class="total-col num">{{ tercer_tej | num_es(0) }}</td>
+        </tr>
+        {% endif %}
+
         {# GRAND TOTAL — los GTEJ/GTIN/GGF que terminan en el panel Resultados.
-           Mismo formato que la fila Subtotal (pedido Federico 2026-07-14). #}
+           Tejeduría incluye amort + tejido tercerizado (costo total). Federico 2026-07-14/27. #}
         <tr class="subtotal">
           <td class="row-label">Total con amort.</td>
           <td class="num">{{ col_total.tej | num_es(0) }}</td>

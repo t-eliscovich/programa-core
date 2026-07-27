@@ -2573,6 +2573,14 @@ def gastos():
     #   GGF  = V7+V8+V9 + DEPRCAR
     v, _e = _safe(queries.gastos_xgast_v1_a_v9_mes, {})
     a, _e = _safe(queries.amortizaciones_mensuales, {})
+    # Federico 2026-07-27 (dueña: "unificar tejeduría en costo total 122.171"):
+    # el costo de tejeduría = gasto propio de INTELA (V1+V2+V3 + amort DTJ) +
+    # tejido TERCERIZADO facturado (AP/RY = us_externo). Ese tercerizado se
+    # suma a la columna Tejeduría del total (fila "+ Tejido tercerizado"), para
+    # que dé el MISMO número que el TOTAL de "Producción tejido" del Flujo y la
+    # fila Tejeduría del Informe de Resultados. Fail-soft: si falla → 0.
+    _tej_comp, _e = _safe(queries.tejido_mes_componentes, {})
+    tercer_tej = float((_tej_comp or {}).get("us_externo") or 0)
 
     def gv(k):
         return float((v or {}).get(k) or 0)
@@ -2605,6 +2613,9 @@ def gastos():
     }
     col_amort = {"tej": ga("dtj"), "tin": ga("dcc"), "adm": ga("deprcar")}
     col_total = {k: col_v[k] + col_amort[k] for k in col_v}
+    # + tejido tercerizado (AP/RY) en la columna Tejeduría → costo total 122.171
+    # (mismo número que Flujo "Producción tejido" y Resultados). Federico 2026-07-27.
+    col_total["tej"] = col_total["tej"] + tercer_tej
     # Totales por fila (personal/servicios/otros — sin amort, son sólo V1-V9).
     fil_total = {
         "personal": matriz["personal"]["tej"] + matriz["personal"]["tin"] + matriz["personal"]["adm"],
@@ -2695,6 +2706,7 @@ def gastos():
         suma_v_total=suma_v_total,
         suma_amort_total=suma_amort_total,
         suma_grand=suma_grand,
+        tercer_tej=tercer_tej,
         col_total_prev=col_total_prev,
         suma_grand_prev=suma_grand_prev,
         sin_num_resumen=sin_num_resumen,
