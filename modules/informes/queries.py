@@ -4037,6 +4037,13 @@ def resultados_costos_tabla(
          "ayuda": ("Ventas − Costo Total. Utilidad contable del mes: las ventas "
                    "del período menos el Costo Total (Subtotal +4.5% + "
                    "Administración). kg = kg vendidos; $/kg = utilidad / kg vendidos.")},
+        # Federico 2026-07-27: orden Calculada Actual → Esperada → Real.
+        {"label": "Utilidad Esperada", "kg": up_kg, "ukg": up_ukg,
+         "us": up_us, "clase": "dato",
+         "ayuda": ("Réplica dBase (UT.PROY): utilidad real del mes (PATR−PATANT) "
+                   "+ margen variable × kg que faltan vender para la meta KPROG "
+                   "− gastos fijos PROYECTADOS que faltan (XPRETOT de Iniciales − "
+                   "lo ya gastado) − provisión pendiente del mes.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
          "clase": "key", "parcial": True, "parcial_dias": dia_actual,
          "ayuda": (
@@ -4046,12 +4053,6 @@ def resultados_costos_tabla(
              f"(día {dia_actual}): PATR−PATANT sólo cuadra al CIERRE de mes; "
              "a principio de mes puede salir negativa — es parcial, no la "
              "utilidad final.")},
-        {"label": "Utilidad Esperada", "kg": up_kg, "ukg": up_ukg,
-         "us": up_us, "clase": "dato",
-         "ayuda": ("Réplica dBase (UT.PROY): utilidad real del mes (PATR−PATANT) "
-                   "+ margen variable × kg que faltan vender para la meta KPROG "
-                   "− gastos fijos PROYECTADOS que faltan (XPRETOT de Iniciales − "
-                   "lo ya gastado) − provisión pendiente del mes.")},
     ]
 
 
