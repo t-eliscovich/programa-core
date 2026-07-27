@@ -4031,7 +4031,9 @@ def resultados_costos_tabla(
                    "Tejeduría + Tintorería + Admin (los mismos renglones, en pesos).")},
         {"label": "Utilidad Calculada Actual", "kg": venta_kg,
          "ukg": _div(float(venta_us or 0) - ct_us, venta_kg),
-         "us": float(venta_us or 0) - ct_us, "clase": "key",
+         # Federico 2026-07-27: mismo formato que Costo Total (clase "total":
+         # fondo gris, peso medio), NO el celeste/negrita de las filas "key".
+         "us": float(venta_us or 0) - ct_us, "clase": "total",
          "ayuda": ("Ventas − Costo Total. Utilidad contable del mes: las ventas "
                    "del período menos el Costo Total (Subtotal +4.5% + "
                    "Administración). kg = kg vendidos; $/kg = utilidad / kg vendidos.")},
