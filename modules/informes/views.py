@@ -852,7 +852,7 @@ def balance():
     # cargaba). Ahora usa los gastos proyectados de la BASE (compartidos por
     # todos los usuarios) y los costos unitarios de la misma tabla:
     #   U$ = venta proyectada − gastos proyectados del mes
-    #        − costos directos (kg proy × (MP unit + Colorantes unit) × 1.05)
+    #        − costos directos (kg proy × (MP unit + Colorantes unit) × 1.045)
     # Fail-soft: si algo falla, queda el valor que ya trae la tabla.
     try:
         _tabla = (data or {}).get("resultados", {}).get("tabla") if isinstance(data, dict) else None
@@ -889,7 +889,9 @@ def balance():
             _proy_kg = _cell("Proyección", "kg")
             _mp_ukg = _cell("Materia Prima", "ukg")
             _col_ukg = _cell("Colorantes/Quím.", "ukg")
-            _costo_directo = _proy_kg * (_mp_ukg + _col_ukg) * 1.05
+            # Federico 2026-07-27: desperdicio 4,5% (1.045), consistente con el
+            # Costo Total del cuadro (que usa 1.045 sobre MP+Col). Antes 1.05.
+            _costo_directo = _proy_kg * (_mp_ukg + _col_ukg) * 1.045
             _up_us = _proy_us - _gastos_proy - _costo_directo
             for _r in _tabla:
                 if _r.get("label") == "Utilidad Esperada":
@@ -900,7 +902,7 @@ def balance():
                         "Venta proyectada − Gastos proyectados del mes (de la "
                         "base, compartidos por todos los usuarios) − Costos "
                         "directos (kg proy × (Materia Prima + Colorantes/Quím. "
-                        "unitarios) × 1,05 de desperdicio)."
+                        "unitarios) × 1,045 = 4,5% de desperdicio)."
                     )
                     break
     except Exception:  # noqa: BLE001 — no romper el balance por esto
