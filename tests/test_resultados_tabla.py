@@ -60,11 +60,13 @@ def test_tejeduria_usa_compras_tipo_k_si_se_pasa():
     assert abs(t["us"] - 14000.0) < 1e-6       # tej_base_us(12000) + dtj(2000)
 
 
-def test_materia_prima_solo_unitario():
-    """Materia Prima: solo el costo unitario; kg y u$s vacios."""
+def test_materia_prima_sobre_kg_vendidos():
+    """Materia Prima: kg = kg VENDIDOS; $ = kg vendidos × tarifa hilado;
+    u$/kg = tarifa. Federico 2026-07-27 (costeo de lo vendido, no el hilado
+    consumido)."""
     mp = _row(_tabla(), "Materia Prima")
-    assert mp["kg"] is None
-    assert mp["us"] is None
+    assert abs(mp["kg"] - 200000.0) < 1e-6
+    assert abs(mp["us"] - 200000.0 * 2.911) < 1e-6
     assert abs(mp["ukg"] - 2.911) < 1e-9
 
 
@@ -91,30 +93,46 @@ def test_subtotal_45_solo_materiales():
     (merma) aplica SOLO a materiales (MP+Col), como el dBase (COSTUNI); la mano
     de obra de tejeduria/tintoreria NO lleva recargo. TMT 2026-07-12 (dueña)."""
     tab = _tabla(factor_desperdicio=1.045)
-    mp = _row(tab, "Materia Prima")["ukg"]
-    tej = _row(tab, "Tejeduría")["ukg"]
-    tin = _row(tab, "Tintorería")["ukg"]
-    col = _row(tab, "Colorantes/Quím.")["ukg"]
+    mp = _row(tab, "Materia Prima")
+    tej = _row(tab, "Tejeduría")
+    tin = _row(tab, "Tintorería")
+    col = _row(tab, "Colorantes/Quím.")
     sub = _row(tab, "Subtotal +4.5%")
-    assert abs(sub["ukg"] - (tej + tin + 1.045 * (mp + col))) < 1e-9
-    assert sub["kg"] is None and sub["us"] is None
+    assert abs(sub["ukg"] - (tej["ukg"] + tin["ukg"] + 1.045 * (mp["ukg"] + col["ukg"]))) < 1e-9
+    # Federico 2026-07-27: la fila ahora muestra también el importe ($): el +4.5%
+    # aplica sobre los $ de materiales (MP+Col), Tejeduría/Tintorería a valor pleno.
+    assert abs(sub["us"] - (1.045 * (mp["us"] + col["us"]) + tej["us"] + tin["us"])) < 1e-6
+    assert sub["kg"] is None
 
 
-def test_costo_total_suma_de_renglones():
-    """Costo Total = SUMA de los renglones (ya NO las formulas COSTUNI/CSVTATOT
-    del dBase). $/kg = Subtotal + Admin; $ = MP + Tej + Tint + Col + Admin (en
-    este fixture MP $ = None → 0). TMT 2026-07-12 (dueña)."""
+def test_costo_total_subtotal_mas_admin():
+    """Costo Total = Subtotal +4.5% + Administración, tanto en $/kg como en $.
+    El +4.5% (merma) aplica sobre materiales (MP+Col) también en la columna $.
+    Federico 2026-07-27 (antes el $ sumaba los renglones sin el recargo)."""
     tab = _tabla(factor_desperdicio=1.045)
-    sub = _row(tab, "Subtotal +4.5%")["ukg"]
+    sub = _row(tab, "Subtotal +4.5%")
     adm = _row(tab, "Administración")
+    mp = _row(tab, "Materia Prima")
     tej = _row(tab, "Tejeduría")
     tin = _row(tab, "Tintorería")
     col = _row(tab, "Colorantes/Quím.")
     ct = _row(tab, "Costo Total")
     assert abs(adm["ukg"] - 28000.0 / 200000.0) < 1e-9
-    assert abs(ct["ukg"] - (sub + adm["ukg"])) < 1e-9
-    assert abs(ct["us"] - (tej["us"] + tin["us"] + col["us"] + adm["us"])) < 1e-6
+    assert abs(ct["ukg"] - (sub["ukg"] + adm["ukg"])) < 1e-9
+    assert abs(ct["us"] - (sub["us"] + adm["us"])) < 1e-6
+    assert abs(ct["us"] - (1.045 * (mp["us"] + col["us"]) + tej["us"] + tin["us"] + adm["us"])) < 1e-6
     assert ct["kg"] is None
+
+
+def test_utilidad_calculada_actual_ventas_menos_costo():
+    """Utilidad Calculada Actual = Ventas − Costo Total; kg = kg vendidos;
+    u$/kg = utilidad / kg vendidos. Va arriba de Utilidad Real. Federico 2026-07-27."""
+    tab = _tabla(factor_desperdicio=1.045)
+    ct = _row(tab, "Costo Total")
+    uca = _row(tab, "Utilidad Calculada Actual")
+    assert abs(uca["kg"] - 200000.0) < 1e-6
+    assert abs(uca["us"] - (1000000.0 - ct["us"])) < 1e-6
+    assert abs(uca["ukg"] - (1000000.0 - ct["us"]) / 200000.0) < 1e-9
 
 
 def test_utilidad_real_delta_patrimonio_mas_dividendos():
@@ -128,9 +146,10 @@ def test_sin_ventas_no_rompe():
     """venta_kg = 0 no debe lanzar ZeroDivisionError."""
     tab = _tabla(venta_kg=0.0, venta_us=0.0)
     assert _row(tab, "Venta")["ukg"] == 0.0
-    # 12 filas: la fila "Utilidad no estandarizada" se eliminó del cuadro de
-    # utilidades (commit 55fd9f2). TMT 2026-07-21.
-    assert len(tab) == 12
+    # 13 filas: se agregó "Utilidad Calculada Actual" (Ventas − Costo Total)
+    # arriba de Utilidad Real. Federico 2026-07-27. (Antes 12: se había quitado
+    # "Utilidad no estandarizada", commit 55fd9f2.)
+    assert len(tab) == 13
 
 
 def test_seccion_costos_presente():

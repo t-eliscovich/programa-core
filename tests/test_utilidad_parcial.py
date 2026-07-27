@@ -33,8 +33,9 @@ def test_utilidad_real_marcada_parcial_con_dias():
     assert "cierre" in ur["ayuda"].lower()
 
 
-def test_utilidad_proyectada_no_se_marca_parcial():
-    # Sólo la Utilidad Real (PATR−PATANT) lleva la marca; la Proyectada ya es
-    # explícitamente una proyección.
-    up = _fila(_tabla(dia_actual=8, patr=100.0, patant=500.0), "Utilidad Proyectada")
+def test_utilidad_esperada_no_se_marca_parcial():
+    # Sólo la Utilidad Real (PATR−PATANT) lleva la marca; la Esperada (antes
+    # "Utilidad Proyectada") ya es explícitamente una proyección. Renombrada
+    # 2026-07-27.
+    up = _fila(_tabla(dia_actual=8, patr=100.0, patant=500.0), "Utilidad Esperada")
     assert not up.get("parcial")
