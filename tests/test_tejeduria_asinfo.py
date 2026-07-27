@@ -635,3 +635,33 @@ def test_of_plegada_cuando_no_hay_pendientes(app, fake_db):
     body = r.get_data(as_text=True)
     i = body.index("<summary>Tercerizado por OF")
     assert "<details open>" not in body[i - 200:i], "no debería abrirse sin pendientes"
+
+
+def test_tarifas_plegadas_con_resumen_en_la_cabecera(app, fake_db):
+    """Dueña 2026-07-26: 'podés hacer lo mismo con las tarifas?'. El panel se
+    pliega, pero el resumen de la cabecera lleva las tarifas vigentes — no hay
+    que abrirlo para saber a cuánto se valúa."""
+    c = _cliente_solo_ver(app, fake_db, "solotarifas")
+    with _asinfo_estable():
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    i = body.index("<summary>Tarifas de tejeduría")
+    assert "<details open>" not in body[i - 200:i], "con tarifas cargadas va plegado"
+    # Las tarifas vigentes se leen sin abrir.
+    cabecera = body[i:i + 700]
+    for t in _TARIFAS:
+        assert t["cod_prov"] in cabecera
+
+
+def test_tarifas_abiertas_si_no_hay_ninguna(app, fake_db):
+    """Sin tarifas cargadas el panel arranca ABIERTO — ahí sí hay que hacer algo."""
+    c = _cliente_solo_ver(app, fake_db, "solosintarifa")
+    with _asinfo_estable(), patch.object(
+        tsvc._tarifas, "listar_tarifas", return_value=[],
+    ):
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    i = body.index("<summary>Tarifas de tejeduría")
+    assert "<details open>" in body[i - 200:i]
