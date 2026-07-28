@@ -199,7 +199,10 @@ def convertir_seleccion():
                 f"Los kg quedan en el stock de la importación.",
                 "ok",
             )
-        return redirect(url_for("compras.lista", q=codigo_prov))
+        # Federico 2026-07-27: quedarse en ANTICIPOS (no saltar a Compras). El
+        # flash ya avisa el N° de compra creada; el usuario sigue trabajando en
+        # su pantalla. Vuelve exactamente a donde estaba (mismo filtro/scroll).
+        return redirect(request.referrer or url_for("dolares.lista"))
     except ValueError as e:
         flash(str(e), "warn")
         return redirect(request.referrer or url_for("dolares.lista"))
