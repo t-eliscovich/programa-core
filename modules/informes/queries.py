@@ -787,12 +787,6 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(codigo_prov, '') <> ''
            AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
-           -- Federico 2026-07-27: QC es proveedor de QUÍMICOS pero en la ficha
-           -- (scintela.proveedor) todavía figura tipado como H, así que pasaba el
-           -- filtro de abajo. Exclusión explícita hasta que se re-tipe QC a Q en la
-           -- ficha (ahí esta línea se vuelve redundante). El código QH (hilado, misma
-           -- empresa) NO se excluye — ese sí es tipo H y debe aparecer.
-           AND UPPER(TRIM(COALESCE(codigo_prov, ''))) <> 'QC'
            -- Federico 2026-07-27: la lista es de PROVEEDORES TIPO H (hilado). Solo
            -- entran proveedores cuyo tipo en scintela.proveedor empieza con H
            -- (cubre 'H' y 'HIL'). Los quimicos (ej. QC = tipo Q/QUI) quedan afuera
