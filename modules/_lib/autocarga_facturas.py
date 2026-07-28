@@ -49,10 +49,12 @@ def _loop() -> None:
             from modules.facturas.views import _auto_cargar_facturas_hoy
 
             res = _auto_cargar_facturas_hoy()
-            if res.get("cargadas") or res.get("ret"):
+            if res.get("cargadas") or res.get("ret") or res.get("anuladas"):
                 _LOG.info(
-                    "auto-carga facturas (fondo): %s facturas, %s retenciones",
+                    "auto-carga facturas (fondo): %s facturas, %s retenciones, "
+                    "%s dadas de baja por anulación en Asinfo",
                     res.get("cargadas", 0), res.get("ret", 0),
+                    res.get("anuladas", 0),
                 )
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)

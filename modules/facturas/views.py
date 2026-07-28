@@ -72,9 +72,11 @@ _AUTO_CARGA_INTERVALO_MIN = 60.0  # s — como mucho una corrida por minuto/proc
 
 def _auto_cargar_facturas_hoy() -> dict:
     """Carga (idempotente, fail-soft) las facturas de HOY de Asinfo que faltan
-    en PC. Devuelve {cargadas, ret, corrio}. Nunca levanta."""
+    en PC. Devuelve {cargadas, ret, anuladas, anuladas_bloqueadas, corrio}.
+    Nunca levanta."""
     global _auto_carga_ultimo_ts
-    res = {"cargadas": 0, "ret": 0, "corrio": False}
+    res = {"cargadas": 0, "ret": 0, "anuladas": 0, "anuladas_bloqueadas": 0,
+           "corrio": False}
     ahora = _time.monotonic()
     if ahora - _auto_carga_ultimo_ts < _AUTO_CARGA_INTERVALO_MIN:
         return res
@@ -169,6 +171,17 @@ def _auto_cargar_facturas_hoy() -> dict:
             from modules.retenciones import queries as _ret_q
             rr = _ret_q.aplicar_retenciones_asinfo(hoy, hoy, usuario="asinfo-auto-ret")
             res["ret"] = int(rr.get("n_aplicadas") or 0)
+        except Exception:
+            pass
+        # TMT 2026-07-28 (dueña, caso 180441): el paso SIMÉTRICO de la carga.
+        # Cargar mira Asinfo→PC; el vigía mira PC→Asinfo y anula (stat='X')
+        # lo que Asinfo ya no reporta vivo. Así una factura anulada DESPUÉS
+        # de que la auto-carga la levantó se va sola. Throttle propio 15 min.
+        try:
+            from . import vigia_anuladas as _vig
+            vr = _vig.correr_si_toca()
+            res["anuladas"] = int(vr.get("anuladas") or 0)
+            res["anuladas_bloqueadas"] = int(vr.get("bloqueadas") or 0)
         except Exception:
             pass
         return res
@@ -587,6 +600,56 @@ def anular(id_factura: int):
     except Exception as e:
         flash_exc("No pude anular", e)
     return redirect(url_for("facturas.detalle", id_factura=_numf_url))
+
+
+# ---------------------------------------------------------------------------
+# Vigía de anuladas en Asinfo — TMT 2026-07-28 (dueña, caso 180441)
+# ---------------------------------------------------------------------------
+# La pantalla que hace visible (y reproducible a mano) lo que el vigía hace
+# solo cada 15 min desde la auto-carga. Ver modules/facturas/vigia_anuladas.py.
+@facturas_bp.route("/facturas/anuladas-asinfo", methods=["GET"])
+@requiere_login
+@requiere_permiso("facturas.ver")
+def anuladas_asinfo():
+    from auth import tiene_permiso as _tp
+
+    from . import vigia_anuladas as _vig
+    dias = request.args.get("dias", type=int) or _vig.dias_ventana()
+    diag = _vig.detectar(dias)
+    return render_template(
+        "facturas/anuladas_asinfo.html", d=diag, dias=dias,
+        puede_anular=_tp("facturas.anular"),
+    )
+
+
+@facturas_bp.route("/facturas/anuladas-asinfo/correr", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.anular")
+def anuladas_asinfo_correr():
+    from . import vigia_anuladas as _vig
+    dias = request.form.get("dias", type=int) or _vig.dias_ventana()
+    try:
+        res = _vig.correr(dias)
+    except Exception as e:
+        flash_exc("No pude correr el vigía de anuladas", e)
+        return redirect(url_for("facturas.anuladas_asinfo", dias=dias))
+    if not res.get("ok"):
+        flash(
+            f"No se pudo comparar contra Asinfo ({res.get('motivo')}). "
+            "Por seguridad no se tocó ninguna factura.", "warn",
+        )
+    n_ok = len(res.get("anuladas") or [])
+    n_bloq = len(res.get("bloqueadas") or [])
+    if n_ok:
+        flash(f"{n_ok} factura(s) dadas de baja (anuladas en Asinfo).", "ok")
+    if n_bloq:
+        flash(
+            f"{n_bloq} no se pudieron dar de baja (tienen cobranza o "
+            "retenciones aplicadas) — hay que reversar eso primero.", "warn",
+        )
+    if res.get("ok") and not n_ok and not n_bloq:
+        flash("No hay facturas anuladas en Asinfo para dar de baja.", "info")
+    return redirect(url_for("facturas.anuladas_asinfo", dias=dias))
 
 
 @facturas_bp.route("/facturas/<int:id_factura>")
@@ -1834,6 +1897,19 @@ def lista():
                 if _ac.get("ret"):
                     _m += f" Retenciones aplicadas: {_ac['ret']}."
                 flash(_m, "ok")
+            if _ac.get("anuladas"):
+                flash(
+                    f"{_ac['anuladas']} factura(s) se dieron de baja solas: "
+                    "quedaron ANULADAS en Asinfo después de cargarse. "
+                    "Ver /facturas/anuladas-asinfo.", "ok",
+                )
+            if _ac.get("anuladas_bloqueadas"):
+                flash(
+                    f"{_ac['anuladas_bloqueadas']} factura(s) están anuladas en "
+                    "Asinfo pero NO se pudieron dar de baja solas (tienen cobranza "
+                    "o retenciones). Revisalas en /facturas/anuladas-asinfo.",
+                    "warn",
+                )
 
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None

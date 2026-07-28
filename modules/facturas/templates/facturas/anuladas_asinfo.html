@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Anuladas en Asinfo{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+  <span>Anuladas en Asinfo</span>
+{% endblock %}
+
+{% block content %}
+{% macro fila(f, badge, badge_color) %}
+  <tr class="border-t border-slate-200 dark:border-slate-800">
+    <td class="px-2 py-1.5 font-mono">
+      <a class="text-sky-700 dark:text-sky-400 hover:underline"
+         href="{{ url_for('facturas.detalle', id_factura=f.numf or f.id_factura) }}">{{ f.numf_completo }}</a>
+    </td>
+    <td class="px-2 py-1.5">{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '' }}</td>
+    <td class="px-2 py-1.5">{{ f.codigo_cli }}</td>
+    <td class="px-2 py-1.5 text-right font-mono">{{ f.importe | money_es }}</td>
+    <td class="px-2 py-1.5 text-right font-mono">{{ f.abono | money_es }}</td>
+    <td class="px-2 py-1.5 text-right font-mono">{{ f.saldo | money_es }}</td>
+    <td class="px-2 py-1.5 font-mono text-slate-500">{{ f.usuario_crea }}</td>
+    <td class="px-2 py-1.5"><span class="{{ badge_color }} text-[11px] font-semibold">{{ badge }}</span>
+      {% if f.motivo %}<div class="text-[11px] text-slate-500">{{ f.motivo }}</div>{% endif %}
+    </td>
+  </tr>
+{% endmacro %}
+
+<div class="space-y-4">
+  <div>
+    <h1 class="text-xl font-semibold">Facturas anuladas en Asinfo</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      La auto-carga trae las facturas del día ni bien Asinfo las emite. Si después
+      las <strong>anulan</strong> en Asinfo (<code>fc.estado = 0</code>), esta pantalla
+      las detecta y el vigía las da de baja solo en PC (<code>stat = 'X'</code>) para que
+      dejen de sumar en cartera y en la venta del día.
+    </p>
+  </div>
+
+  <form method="get" class="flex flex-wrap items-end gap-2">
+    <label class="text-sm">
+      <span class="block text-slate-500 text-xs mb-1">Días hacia atrás</span>
+      <input type="number" name="dias" min="1" max="60" value="{{ dias }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm w-24">
+    </label>
+    <button class="rounded bg-slate-800 text-white px-3 py-1.5 text-sm">Revisar</button>
+  </form>
+
+  {% if not d.ok %}
+    <div class="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm">
+      <strong>No se pudo comparar contra Asinfo</strong> — {{ d.motivo }}.
+      Por seguridad no se tocó ninguna factura.
+    </div>
+  {% else %}
+    <div class="text-sm text-slate-500">
+      Ventana {{ d.desde.strftime('%d/%m/%Y') }} – {{ d.hasta.strftime('%d/%m/%Y') }} ·
+      {{ d.vivas_asinfo }} documentos vivos en Asinfo · {{ d.revisadas }} facturas de PC revisadas.
+    </div>
+
+    <div class="rounded border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-2 py-2 text-left font-medium">N°</th>
+            <th class="px-2 py-2 text-left font-medium">Fecha</th>
+            <th class="px-2 py-2 text-left font-medium">Cliente</th>
+            <th class="px-2 py-2 text-right font-medium">Importe</th>
+            <th class="px-2 py-2 text-right font-medium">Abonado</th>
+            <th class="px-2 py-2 text-right font-medium">Saldo</th>
+            <th class="px-2 py-2 text-left font-medium">Origen</th>
+            <th class="px-2 py-2 text-left font-medium">Qué pasa</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in d.para_anular %}
+            {{ fila(f, 'Se da de baja sola', 'text-rose-600') }}
+          {% endfor %}
+          {% for f in d.sugeridas %}
+            {{ fila(f, 'Revisar a mano (no la cargó Asinfo)', 'text-amber-600') }}
+          {% endfor %}
+          {% if not d.para_anular and not d.sugeridas %}
+            <tr><td colspan="8" class="px-3 py-6 text-center text-slate-500">
+              Todo en orden: ninguna factura viva en PC está anulada en Asinfo.
+            </td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if d.para_anular and puede_anular %}
+      <form method="post" action="{{ url_for('facturas.anuladas_asinfo_correr') }}">
+        <input type="hidden" name="dias" value="{{ dias }}">
+        <button class="rounded bg-rose-600 text-white px-3 py-1.5 text-sm">
+          Dar de baja ahora las {{ d.para_anular | length }} anuladas
+        </button>
+        <span class="text-xs text-slate-500 ml-2">
+          (el vigía lo hace solo cada 15 minutos; este botón no espera)
+        </span>
+      </form>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

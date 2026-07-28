@@ -250,6 +250,12 @@
          class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 text-slate-600 dark:text-slate-300 text-xs">
         📥 Asinfo sin cargar en PC
       </a>
+      {# TMT 2026-07-28 (dueña, caso 180441): las que Asinfo ANULÓ después de
+         que la auto-carga ya las había traído. El vigía las da de baja solo. #}
+      <a href="{{ url_for('facturas.anuladas_asinfo') }}"
+         class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-600 dark:text-slate-300 text-xs">
+        🚫 Anuladas en Asinfo
+      </a>
     {% endif %}
   </div>
 
