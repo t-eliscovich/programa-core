@@ -65,6 +65,18 @@
     background: rgb(30 41 59 / 0.4);
     border-color: rgb(51 65 85);
   }
+  /* Federico 2026-07-27 — en "MOVIMIENTOS DEL AÑO" el encabezado se parte en 2
+     celdas (seccion-header + col-header U$); la celda U$ lleva el MISMO borde y
+     fondo para que la línea/barra superior cruce todo el ancho y no se corte. */
+  .informe-balance .seccion-cap {
+    background: rgb(248 250 252);
+    border-top: 1px solid rgb(226 232 240);
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .informe-balance .seccion-cap {
+    background: rgb(30 41 59 / 0.4);
+    border-color: rgb(51 65 85);
+  }
   .informe-balance td.label-cell { padding: 1px 12px; }
   /* Marca de "cifra parcial del mes en curso" — TMT 2026-07-11 (bug #5).
      PATR−PATANT sólo cuadra al cierre; a principio de mes la Utilidad Real
@@ -455,7 +467,7 @@
       <thead>
         <tr>
           <th class="seccion-header" style="text-align:left">MOVIMIENTOS DEL AÑO</th>
-          <th class="col-header" style="text-align:right">U$</th>
+          <th class="col-header seccion-cap" style="text-align:right">U$</th>
         </tr>
       </thead>
       <tbody>
