@@ -787,6 +787,14 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(codigo_prov, '') <> ''
            AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
+           -- Federico 2026-07-27: excluir proveedores de QUÍMICOS (proveedor.tipo='Q',
+           -- ej. QC). Aunque una compra suya haya quedado con tipo='H', NO es hilado.
+           -- Fuente de verdad = scintela.proveedor.tipo (igual que es_proveedor_quimico).
+           AND NOT EXISTS (
+                 SELECT 1 FROM scintela.proveedor p
+                  WHERE UPPER(TRIM(p.codigo_prov)) = UPPER(TRIM(compra.codigo_prov))
+                    AND UPPER(TRIM(COALESCE(p.tipo, ''))) = 'Q'
+               )
            AND {NO_BACKFILL_WHERE}
          GROUP BY codigo_prov
          ORDER BY SUM(importe) DESC
