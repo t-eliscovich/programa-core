@@ -154,7 +154,12 @@ def test_correr_si_toca_respeta_throttle_y_apagado(monkeypatch):
     assert vig.correr_si_toca() == {"corrio": False, "anuladas": 0, "bloqueadas": 0}
 
     monkeypatch.setenv("VIGIA_ANULADAS", "1")
-    monkeypatch.setattr(vig, "_ultimo_ts", 0.0)
+    # Federico 2026-07-27: _ultimo_ts MUY en el pasado (no 0.0). El throttle usa
+    # time.monotonic(); en un runner de CI recién arrancado monotonic() < 900s
+    # (el intervalo), y con _ultimo_ts=0.0 `ahora - 0 < 900` daba True → no corría
+    # y el test fallaba de forma intermitente. Con un sentinel negativo grande la
+    # diferencia siempre supera el intervalo → corre determinísticamente.
+    monkeypatch.setattr(vig, "_ultimo_ts", -1.0e9)
     primera = vig.correr_si_toca()
     assert primera["corrio"] is True
     assert primera["anuladas"] == 1
