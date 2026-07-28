@@ -788,14 +788,16 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND COALESCE(codigo_prov, '') <> ''
            AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
            -- Federico 2026-07-27: la lista es de PROVEEDORES TIPO H (hilado). Solo
-           -- entran proveedores clasificados tipo='H' en scintela.proveedor; los
-           -- químicos (ej. QC, tipo Q) quedan afuera aunque una compra suya haya
-           -- quedado con compra.tipo='H'. (Antes excluíamos tipo='Q', pero no
-           -- alcanzaba cuando el proveedor no estaba bien tipado/linkeado.)
+           -- entran proveedores cuyo tipo en scintela.proveedor empieza con 'H'
+           -- (cubre 'H' y 'HIL'). Los químicos (ej. QC = tipo Q/QUI) quedan afuera
+           -- aunque una compra suya haya quedado con compra.tipo='H'. Nota (dueña):
+           -- cuando QC venda hilado ocasionalmente se crea el código QH (tipo H,
+           -- misma empresa), que sí entrará acá. LIKE 'H%' evita vaciar la tabla si
+           -- la ficha guarda 'HIL' en vez de 'H'.
            AND EXISTS (
                  SELECT 1 FROM scintela.proveedor p
                   WHERE UPPER(TRIM(p.codigo_prov)) = UPPER(TRIM(compra.codigo_prov))
-                    AND UPPER(TRIM(COALESCE(p.tipo, ''))) = 'H'
+                    AND UPPER(TRIM(COALESCE(p.tipo, ''))) LIKE 'H%'
                )
            AND {NO_BACKFILL_WHERE}
          GROUP BY codigo_prov
