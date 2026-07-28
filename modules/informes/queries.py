@@ -788,16 +788,19 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND COALESCE(codigo_prov, '') <> ''
            AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
            -- Federico 2026-07-27: la lista es de PROVEEDORES TIPO H (hilado). Solo
-           -- entran proveedores cuyo tipo en scintela.proveedor empieza con 'H'
-           -- (cubre 'H' y 'HIL'). Los químicos (ej. QC = tipo Q/QUI) quedan afuera
-           -- aunque una compra suya haya quedado con compra.tipo='H'. Nota (dueña):
-           -- cuando QC venda hilado ocasionalmente se crea el código QH (tipo H,
-           -- misma empresa), que sí entrará acá. LIKE 'H%' evita vaciar la tabla si
-           -- la ficha guarda 'HIL' en vez de 'H'.
+           -- entran proveedores cuyo tipo en scintela.proveedor empieza con H
+           -- (cubre 'H' y 'HIL'). Los quimicos (ej. QC = tipo Q/QUI) quedan afuera
+           -- aunque una compra suya haya quedado con compra.tipo='H'. Nota (duena):
+           -- cuando QC venda hilado ocasionalmente se crea el codigo QH (tipo H,
+           -- misma empresa), que si entrara aca. El prefijo H evita vaciar la tabla
+           -- si la ficha guarda 'HIL' en vez de 'H'.
+           -- OJO: el comodin literal del LIKE va DOBLE (escapado) porque la query
+           -- pasa por psycopg2 con parametros posicionales; un comodin simple, aun
+           -- dentro de un comentario SQL, rompe con 'tuple index out of range'.
            AND EXISTS (
                  SELECT 1 FROM scintela.proveedor p
                   WHERE UPPER(TRIM(p.codigo_prov)) = UPPER(TRIM(compra.codigo_prov))
-                    AND UPPER(TRIM(COALESCE(p.tipo, ''))) LIKE 'H%'
+                    AND UPPER(TRIM(COALESCE(p.tipo, ''))) LIKE 'H%%'
                )
            AND {NO_BACKFILL_WHERE}
          GROUP BY codigo_prov
