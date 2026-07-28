@@ -90,9 +90,12 @@ def _auto_cargar_facturas_hoy() -> dict:
             from modules.asinfo import service as asinfo_service
             asinfo_rows = asinfo_service.facturas_periodo(hoy, hoy) or []
         except Exception:
-            return res
-        if not asinfo_rows:
-            return res
+            asinfo_rows = []
+        # TMT 2026-07-28: antes acá había `return res` cuando Asinfo no traía
+        # facturas de HOY. Eso dejaba el resto del ciclo (retenciones y el
+        # vigía de anuladas) sin correr durante toda la mañana, hasta que se
+        # emitía la primera factura del día. Ahora sólo se saltea el bloque de
+        # carga; lo de abajo corre igual (cada paso es fail-soft por su lado).
         # Índices de dedup con las facturas de PC de HOY (cualquier cliente,
         # cualquier usuario_crea, no anuladas).
         pc_rows = db.fetch_all(

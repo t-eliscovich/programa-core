@@ -178,3 +178,28 @@ def test_ventana_y_envs(monkeypatch):
     monkeypatch.setenv("VIGIA_ANULADAS_DIAS", "5")
     res = vig.detectar()
     assert (res["hasta"] - res["desde"]).days == 4
+
+
+def test_vigia_corre_aunque_asinfo_no_tenga_facturas_de_hoy(monkeypatch):
+    """TMT 2026-07-28: a la mañana temprano Asinfo todavía no emitió nada.
+
+    Antes `_auto_cargar_facturas_hoy` cortaba ahí y el vigía no corría hasta
+    la primera factura del día. Ahora el ciclo sigue.
+    """
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fv, "_auto_carga_ultimo_ts", 0.0)
+    monkeypatch.setattr(svc, "facturas_periodo", lambda d, h: [])
+    monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [])
+    llamado = {"n": 0}
+
+    def _vigia():
+        llamado["n"] += 1
+        return {"corrio": True, "anuladas": 3, "bloqueadas": 1}
+    monkeypatch.setattr(vig, "correr_si_toca", _vigia)
+
+    res = fv._auto_cargar_facturas_hoy()
+
+    assert llamado["n"] == 1
+    assert res["anuladas"] == 3
+    assert res["anuladas_bloqueadas"] == 1
