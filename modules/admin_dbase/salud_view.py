@@ -175,9 +175,14 @@ def _diag_banco(no_banco: int, ventana: int = 12):
     """
     filas = db.fetch_all(
         """
-        SELECT id_transaccion, fecha, documento, no_documento, importe, saldo,
-               COALESCE(concepto, '') AS concepto,
-               COALESCE(prov, '')     AS prov
+        -- OJO con los nombres: la tabla tiene `documento` (DE/CH/ND/NC…) y
+        -- `numreferencia`, NO `no_documento`. Pedir la columna equivocada acá
+        -- fue el segundo tropiezo de esta pantalla; el try/except lo dijo en
+        -- vez de colgarse, que era justamente el punto.
+        SELECT id_transaccion, fecha, documento, importe, saldo,
+               COALESCE(numreferencia, '') AS numreferencia,
+               COALESCE(concepto, '')      AS concepto,
+               COALESCE(prov, '')          AS prov
           FROM scintela.transacciones_bancarias
          WHERE no_banco = %s
          ORDER BY fecha ASC, id_transaccion ASC
@@ -366,7 +371,7 @@ def diag():
                 marca = " ←DRIFT" if f["id_transaccion"] == info["drift_id"] else ""
                 yield (f"     {f['id_transaccion']:<9} {str(f['fecha'])[:10]}  "
                        f"{(f['documento'] or ''):<4} "
-                       f"{str(f.get('no_documento') or '')[:9]:<9} "
+                       f"{str(f.get('numreferencia') or '')[:9]:<9} "
                        f"{float(f['importe'] or 0):>13,.2f} "
                        f"{(float(sr) if sr is not None else 0):>13,.2f} "
                        f"{(float(calc) if calc is not None else 0):>13,.2f} "

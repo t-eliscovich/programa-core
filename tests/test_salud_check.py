@@ -138,3 +138,21 @@ def test_el_diagnostico_usa_los_nombres_de_columna_de_verdad():
     assert "MIN(x.fecha)" not in src, "en chequesxfact la fecha es fechaing"
     for col in ("m.creado_en", "m.usuario_crea", "m.nota"):
         assert col not in src, f"mov_doble no tiene {col}"
+    # transacciones_bancarias: `documento` + `numreferencia`, no `no_documento`.
+    assert "documento, no_documento" not in src
+
+
+def test_el_stream_del_diagnostico_no_se_puede_colgar():
+    """Si el generador de un stream muere en el medio, el navegador queda
+    cargando PARA SIEMPRE: sin error, sin timeout, nada. Pasó dos veces el
+    29/07 (columnas `observacion` y `no_documento` inexistentes) y las dos
+    veces el síntoma fue una pantalla en blanco eterna en vez de un mensaje.
+    El try/except es lo que convierte eso en un traceback legible."""
+    from modules.admin_dbase import salud_view
+
+    src = inspect.getsource(salud_view.diag)
+    assert "traceback" in src, (
+        "el stream del diagnóstico perdió su red de contención: cualquier "
+        "columna mal escrita vuelve a colgar la pantalla en silencio"
+    )
+    assert "except Exception" in src
