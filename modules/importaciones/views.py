@@ -378,6 +378,11 @@ def api_importaciones_abiertas(prov):
             "numero": r.get("numero"),
             "nota": r.get("nota"),
             "fecha": str(r.get("fecha") or ""),
+            # TMT 2026-07-29: año de la importación (el de la CAMPAÑA de la
+            # nota, o el de la fecha si no la trae). El picker de /dolares lo
+            # escribe en el concepto del anticipo como `58/26`, para que el
+            # match no se pegue al mismo número de otra campaña.
+            "anio": service._anio_de(r).get("anio"),
             "kg": r.get("kg"),
             "anticipos": float(r.get("anticipo_aplicado") or 0)
                          if r.get("anticipo_aplicado") is not None else

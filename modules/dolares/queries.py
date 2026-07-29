@@ -634,3 +634,52 @@ def reversar_conversion(id_mov_doble: int, *, motivo: str = "", usuario: str = "
         "comprobante": compra.get("comprobante"),
         "restaurados": restaurados,
     }
+
+
+# ---------------------------------------------------------------------------
+# EDITAR el concepto de un anticipo vivo — TMT 2026-07-29 (dueña).
+#
+# Hasta hoy un anticipo sólo se podía CARGAR o CANCELAR: no había forma de
+# corregirle el concepto. Hace falta para poder escribirle el AÑO de la
+# importación (`58/26`), que es lo que desambigua el número reusado entre
+# campañas. Ver concepto_parser.parse_ref_anticipo.
+#
+# Sólo anticipos VIVOS (st vacío): uno ya convertido a compra o cancelado no
+# se toca — cambiarle el concepto movería una compra ya cargada de importación
+# sin dejar rastro. Para ésos, el camino es deshacer la conversión.
+# ---------------------------------------------------------------------------
+
+def editar_concepto(
+    *, id_dolares: int, concepto: str, usuario: str = "web",
+) -> dict:
+    """Cambia el CONCEPTO de un anticipo vivo. Devuelve {cta, anterior, nuevo}."""
+    nuevo = (concepto or "").strip()[:100]
+    if not nuevo:
+        raise ValueError("El concepto no puede quedar vacío.")
+    with db.tx() as conn:
+        row = db.fetch_one(
+            "SELECT id_dolares, cta, concepto, st FROM scintela.dolares "
+            " WHERE id_dolares = %s FOR UPDATE",
+            (int(id_dolares),), conn=conn,
+        )
+        if not row:
+            raise ValueError(f"No encontré el anticipo id={id_dolares}.")
+        st = (row.get("st") or "").strip()
+        if st:
+            raise ValueError(
+                f"El anticipo ya está consumido o cancelado (st='{st}'): "
+                "no se puede editar. Deshacé la conversión primero."
+            )
+        anterior = (row.get("concepto") or "").strip()
+        if anterior == nuevo:
+            return {"cta": row.get("cta"), "anterior": anterior, "nuevo": nuevo,
+                    "cambio": False}
+        db.execute(
+            "UPDATE scintela.dolares "
+            "   SET concepto = %s, usuario_modifica = %s, "
+            "       fecha_modifica = CURRENT_TIMESTAMP "
+            " WHERE id_dolares = %s",
+            (nuevo, usuario[:50], int(id_dolares)), conn=conn,
+        )
+    return {"cta": row.get("cta"), "anterior": anterior, "nuevo": nuevo,
+            "cambio": True}

@@ -233,8 +233,11 @@
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Concepto</label>
         {# TMT 2026-07-06 (dueña): picker de importación a matchear (igual que
            /compras/nueva) — elegir llena el concepto con el nº de la Nota. #}
-        <input name="concepto" maxlength="100"
+        <input name="concepto" maxlength="100" placeholder="58/26 SALDO"
                class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+        {# TMT 2026-07-29 (dueña): el AÑO va en el concepto — el número de
+           importación se reusa cada campaña. Elegir del picker lo escribe solo. #}
+        <p class="text-[11px] text-slate-500 mt-1">nº <strong>/ año</strong> de la importación: <code class="font-mono">58/26</code></p>
       </div>
       {# TMT 2026-07-07 (dueña): el picker va DEBAJO/APARTE del campo Concepto
          (antes aparecía "antes" del campo, y grid-column no aplica en flex).
@@ -437,9 +440,33 @@
             <td class="px-4 py-1.5">
               <a href="{{ url_for('dolares.lista', cta=d.cta) }}" class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">{{ d.cta }}</a>
             </td>
-            <td class="px-4 py-1.5">{{ d.concepto | cleanstr }}</td>
+            {# TMT 2026-07-29 (dueña): el concepto se puede EDITAR (lapicito)
+               para escribirle el AÑO de la importación — `58/26`. El número se
+               reusa cada campaña y sin año el anticipo se pega al del año
+               anterior. Sin confirm() nativo: se abre un input en la celda. #}
+            <td class="px-4 py-1.5">
+              <span class="conc-text">{{ d.concepto | cleanstr }}</span>
+              {% if vivo and tiene_permiso('facturas.crear') %}
+              <button type="button" class="btn-edit-conc no-print"
+                      title="Editar el concepto — poné el año de la importación: 58/26"
+                      style="margin-left:.35rem;color:rgb(100 116 139);font-size:12px;">✎</button>
+              <form method="post" class="conc-form" style="display:none;"
+                    action="{{ url_for('dolares.editar_concepto', id_dolares=d.id_dolares) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input name="concepto" maxlength="100" value="{{ d.concepto | cleanstr }}"
+                       style="width:11rem;padding:1px 6px;font-size:13px;"
+                       class="rounded border border-sky-400 bg-white dark:bg-slate-950">
+                <button class="text-xs px-2 py-0.5 rounded bg-sky-600 text-white">Guardar</button>
+                <button type="button" class="btn-edit-conc-cancel text-xs text-slate-500">✕</button>
+              </form>
+              {% endif %}
+            </td>
             <td class="px-4 py-1.5 text-xs text-slate-500 dark:text-slate-400" style="white-space: nowrap;">
-              {% if d.fecha_recepcion_im %}{{ d.fecha_recepcion_im[8:10] }}/{{ d.fecha_recepcion_im[5:7] }}/{{ d.fecha_recepcion_im[2:4] }}{% if d.kg_im %}<span class="text-slate-400 dark:text-slate-500"> · {{ d.kg_im | num_es(0) }} kg</span>{% endif %}{% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
+              {% if d.fecha_recepcion_im %}<span title="{{ d.im_numero or '' }}">{{ d.fecha_recepcion_im[8:10] }}/{{ d.fecha_recepcion_im[5:7] }}/{{ d.fecha_recepcion_im[2:4] }}{% if d.kg_im %}<span class="text-slate-400 dark:text-slate-500"> · {{ d.kg_im | num_es(0) }} kg</span>{% endif %}</span>
+              {% elif d.im_numero %}<span title="{{ d.im_numero }}">en tránsito</span>
+              {% elif d.anio_ref %}<span class="text-amber-600 dark:text-amber-400"
+                    title="No hay ninguna importación {{ d.cta }} {{ d.ref }} del {{ d.anio_ref }} en Asinfo — mejor sin match que mal matcheado.">sin imp. {{ d.anio_ref }}</span>
+              {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
             </td>
             <td class="px-4 py-1.5 text-right num-cell {% if vivo %}font-medium text-slate-700 dark:text-slate-200{% endif %}">{{ d.importe | num_es(2) }}</td>
             <td class="px-4 py-1.5 text-right num-cell text-slate-600 dark:text-slate-400">{{ d.saldo_acumulado | num_es(2) if d.saldo_acumulado is not none else '' }}</td>
@@ -541,6 +568,28 @@
    1er clic arma el botón ("¿confirmar?"), 2do clic postea; se desarma solo
    a los 4 segundos. Sin confirm() nativo (regla del proyecto). #}
 <script>
+// TMT 2026-07-29 (dueña): lapicito para editar el concepto de un anticipo
+// vivo — sirve para escribirle el AÑO de la importación (`58/26`).
+document.addEventListener('click', function (ev) {
+  var e = ev.target.closest('.btn-edit-conc');
+  if (e) {
+    var td = e.closest('td');
+    td.querySelector('.conc-text').style.display = 'none';
+    e.style.display = 'none';
+    var f = td.querySelector('.conc-form');
+    f.style.display = 'inline';
+    var i = f.querySelector('input[name="concepto"]');
+    i.focus(); i.select();
+    return;
+  }
+  var c = ev.target.closest('.btn-edit-conc-cancel');
+  if (c) {
+    var td2 = c.closest('td');
+    td2.querySelector('.conc-form').style.display = 'none';
+    td2.querySelector('.conc-text').style.display = '';
+    td2.querySelector('.btn-edit-conc').style.display = '';
+  }
+});
 document.addEventListener('click', function (ev) {
   var b = ev.target.closest('.btn-cancelar-anticipo');
   if (!b) return;
@@ -586,9 +635,14 @@ document.addEventListener('click', function (ev) {
           b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
             + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant + yac;
           b.addEventListener('click', () => {
-            concepto.value = String(im.numero != null ? im.numero : '') + ' ';
+            // TMT 2026-07-29 (dueña): el concepto se llena con nº + AÑO de la
+            // importación elegida (`58/26`). El número solo no alcanza: se
+            // reusa cada campaña y el anticipo se pegaba al del año anterior.
+            const _n = String(im.numero != null ? im.numero : '');
+            const _a = im.anio ? '/' + String(im.anio).slice(-2) : '';
+            concepto.value = _n + _a + ' ';
             concepto.focus();
-            elegida.textContent = '✔ Va a matchear con ' + im.im_numero + ' (' + (im.codigo || '') + ')';
+            elegida.textContent = '✔ Va a matchear con ' + im.im_numero + ' (' + (im.codigo || '') + (im.anio ? ' · ' + im.anio : '') + ')';
             elegida.classList.remove('hidden');
             resaltar();
           });

@@ -20,7 +20,11 @@ import logging
 import re
 
 import db
-from concepto_parser import parse_nota_importacion
+from concepto_parser import (
+    anio_importacion,
+    parse_nota_importacion,
+    parse_ref_anticipo,
+)
 from modules.asinfo import service as asinfo_service
 
 _LOG = logging.getLogger("programa_core.importaciones")
@@ -107,7 +111,7 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> list[dict]:
         rows = db.fetch_all(
             r"""
             WITH d AS (
-                SELECT UPPER(cta) AS cta, importe,
+                SELECT UPPER(cta) AS cta, importe, concepto,
                        TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha,
                        -- nº del concepto como PALABRA: "31 SALDO"→31 y "AC 95"→95
                        -- (antes anclado al inicio: se perdían los que llevan el código adelante)
@@ -120,7 +124,7 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> list[dict]:
                  WHERE UPPER(cta) = ANY(%s)
                    AND COALESCE(st, '') IN ('', ' ')
             )
-            SELECT cta, ref_num, importe, fecha
+            SELECT cta, ref_num, importe, fecha, concepto
               FROM d
              WHERE ref_num IS NOT NULL AND ref_num = ANY(%s)
             """,
@@ -147,18 +151,59 @@ def _to_date(s):
 _ATRIB_MAX_DIAS = 300  # ventana movimiento↔importación (< 365 = separa años)
 
 
-def _nearest_import(cands: list[dict], fecha_row) -> dict | None:
+def _anio_de(row: dict) -> dict:
+    """{"anio", "de_campana"} de una importación, cacheado en la propia fila."""
+    if "anio_im" not in row:
+        a = anio_importacion(row.get("nota"), row.get("fecha"))
+        row["anio_im"] = a["anio"]
+        row["anio_im_campana"] = a["de_campana"]
+    return {"anio": row.get("anio_im"), "de_campana": row.get("anio_im_campana")}
+
+
+def _nearest_import(cands: list[dict], fecha_row, anio: int | None = None) -> dict | None:
     """De las importaciones que comparten (prov, nº), la de fecha más cercana a
     la del movimiento (anticipo/compra), SOLO si cae dentro de la ventana.
 
-    Desambigua el nº de concepto reusado entre años: cada anticipo/compra se
-    atribuye a SU importación (la del mismo año/fecha), no a todas las que
-    comparten ese número. La ventana (`_ATRIB_MAX_DIAS` < 365) evita que un
-    movimiento de un año se pegue a la importación de otro año cuando la
-    importación de su propio año no vino en el set (ej. `limite` corto) →
-    devuelve None (no se atribuye) en vez de contaminar. Sin fecha en el
-    movimiento, solo se atribuye si hay una única candidata.
+    TMT 2026-07-29 (dueña): si el movimiento trae AÑO explícito (concepto
+    `58/26`), el año MANDA y se aplica antes que la fecha:
+
+      1. se descartan las importaciones de otro año → si no queda ninguna,
+         devuelve None (**sin match** es mejor que mal matcheado: es lo que
+         frena la conversión automática contra la importación equivocada);
+      2. si entre las del año hay alguna con la CAMPAÑA escrita en la nota,
+         ésas ganan sobre las que sólo tienen el año de la fecha (el caso real
+         AC 58: IM-0000622 "ACMT/EXP/2026-27" le gana a IM-0000527 "INV
+         HY336-26-1", que estaba más cerca en fecha pero es otra cosa);
+      3. entre las que quedan, la de fecha más cercana — sin la ventana de 300
+         días, que ya no hace falta porque el año desambiguó.
+
+    Sin año explícito, el comportamiento es el de siempre: la de fecha más
+    cercana dentro de la ventana `_ATRIB_MAX_DIAS` (< 365 = separa años), y
+    None si ninguna cae adentro (no se atribuye en vez de contaminar). Sin
+    fecha en el movimiento, sólo se atribuye si hay una única candidata. Así
+    los anticipos viejos, que todavía no tienen año, no cambian.
     """
+    if anio is not None:
+        mismo_anio = [c for c in cands if _anio_de(c)["anio"] == anio]
+        if not mismo_anio:
+            return None
+        con_campana = [c for c in mismo_anio if _anio_de(c)["de_campana"]]
+        finalistas = con_campana or mismo_anio
+        if len(finalistas) == 1:
+            return finalistas[0]
+        fr_a = _to_date(fecha_row)
+        if fr_a is None:
+            return None  # varias del mismo año y sin fecha para desempatar
+        mejor, mejor_d = None, None
+        for c in finalistas:
+            fi = _to_date(c.get("fecha"))
+            if fi is None:
+                continue
+            d = abs((fi - fr_a).days)
+            if mejor_d is None or d < mejor_d:
+                mejor, mejor_d = c, d
+        return mejor or finalistas[0]
+
     fr = _to_date(fecha_row)
     if fr is None:
         return cands[0] if len(cands) == 1 else None
@@ -244,8 +289,10 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         )
         if not cands:
             continue
-        im = _nearest_import(cands, a.get("fecha"))
-        if im is None:  # fuera de la ventana → no es de ninguna de estas IM
+        # TMT 2026-07-29: si el concepto trae el año ("58/26"), manda.
+        anio_ant = parse_ref_anticipo(a.get("concepto")).get("anio")
+        im = _nearest_import(cands, a.get("fecha"), anio=anio_ant)
+        if im is None:  # otro año / fuera de la ventana → no es de estas IM
             continue
         ant_por_im.setdefault(im["im_numero"], []).append(a)
 
@@ -460,8 +507,11 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
         a["im_numero"] = None
         a["fecha_recepcion_im"] = None
         a["kg_im"] = None
-        _mref = re.search(r"\b(\d{1,6})\b", a.get("concepto") or "")  # "31 SALDO"→31, "AC 95"→95
-        a["ref"] = int(_mref.group(1)) if _mref else None
+        # TMT 2026-07-29: `ref` y `anio` salen del MISMO parser que usa el
+        # cruce ("58/26 SALDO" → 58 + 2026; "31 SALDO" → 31 sin año).
+        _p = parse_ref_anticipo(a.get("concepto"))
+        a["ref"] = _p["numero"]
+        a["anio_ref"] = _p["anio"]
     if not anticipos:
         return
     index = _index_importaciones_por_codigo(limite=limite)
@@ -469,13 +519,13 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
         return
     for a in anticipos:
         cta = (a.get("cta") or "").strip().upper()
-        m = re.search(r"\b(\d{1,6})\b", a.get("concepto") or "")  # nº aunque el código vaya adelante
-        if not cta or not m:
+        if not cta or a.get("ref") is None:
             continue
-        cands = index.get((cta, int(m.group(1))))
+        cands = index.get((cta, int(a["ref"])))
         if not cands:
             continue
-        im = _nearest_import(cands, a.get("fecha"))  # ventana 300 días
+        # Con año explícito manda el año; sin año, ventana de 300 días.
+        im = _nearest_import(cands, a.get("fecha"), anio=a.get("anio_ref"))
         if im is None:
             continue
         a["im_numero"] = im.get("im_numero")

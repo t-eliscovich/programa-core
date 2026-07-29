@@ -336,6 +336,38 @@ def cancelar_anticipo(id_dolares: int):
     return redirect(url_for("dolares.lista"))
 
 
+@dolares_bp.route("/dolares/anticipo/<int:id_dolares>/concepto", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def editar_concepto(id_dolares: int):
+    """Edita el CONCEPTO de un anticipo vivo (para ponerle el año: `58/26`).
+
+    TMT 2026-07-29 (dueña): el número de importación se reusa cada campaña, así
+    que el anticipo tiene que llevar el año escrito para no pegarse a la
+    importación del año anterior. Antes no había forma de corregir el concepto:
+    sólo cargar y cancelar.
+    """
+    concepto = (request.form.get("concepto") or "").strip()
+    try:
+        usuario = (getattr(g, "user", None) or {}).get("username", "web")
+        r = queries.editar_concepto(
+            id_dolares=id_dolares, concepto=concepto, usuario=usuario,
+        )
+        if not r.get("cambio"):
+            flash("El concepto no cambió.", "warn")
+        else:
+            flash(
+                f"Anticipo {r.get('cta') or ''}: concepto "
+                f"«{r['anterior']}» → «{r['nuevo']}».",
+                "ok",
+            )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude editar el concepto", e)
+    return redirect(request.referrer or url_for("dolares.lista"))
+
+
 @dolares_bp.route("/dolares/convertir-lote", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("compras.crear")

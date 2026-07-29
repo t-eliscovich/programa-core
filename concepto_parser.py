@@ -341,5 +341,88 @@ def parse_nota_importacion(nota: str | None) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# AÑO / CAMPAÑA de las importaciones — TMT 2026-07-29 (dueña).
+#
+# El número de la importación ("AC 58") se REUSA cada campaña: en las últimas
+# 400 importaciones de Asinfo hay 78 códigos repetidos sobre 274 (el "AC 58"
+# aparece 3 veces). Hasta hoy el desempate era "la importación de fecha más
+# cercana dentro de 300 días", y cuando la del año correcto todavía no existe
+# en Asinfo el anticipo se pegaba a la del año anterior: el AC 77 del 18/06/26
+# terminó contra IM-0000495 (campaña 2025-26) y el AC 58 del 21/04/26 contra
+# IM-0000527 en vez de IM-0000622 — mientras sus hermanos 57 y 59, cargados el
+# MISMO día, sí cayeron bien.
+#
+# Solución (dueña): el anticipo lleva el año escrito en el CONCEPTO con formato
+# `58/26`, y el match exige año igual. El año viaja en el concepto para que
+# sobreviva al sync del dBase (DOLARES.DBF) y quede igual en los dos programas.
+#
+# Del lado de la importación el año sale de la CAMPAÑA de la nota
+# ("ACMT/EXP/2026-27/8368" → campaña que ARRANCA en 2026) y, si la nota no la
+# trae (MH/AI/KX no la escriben), del año de la fecha de la factura.
+# ---------------------------------------------------------------------------
+
+#: nº + barra + año en el concepto de un anticipo: "58/26", "58 / 2026".
+#: El (?<!\d)/(?!\d) evita cortar números largos por la mitad.
+_REF_ANIO_ANTICIPO = re.compile(r"(?<!\d)0*(\d{1,6})\s*/\s*(\d{4}|\d{2})(?!\d)")
+#: primer número suelto del concepto ("31 SALDO" → 31, "AC 95" → 95).
+_REF_SUELTA = re.compile(r"\b0*(\d{1,6})\b")
+#: campaña dentro de la nota de Asinfo, SIEMPRE entre barras:
+#: "ACMT/EXP/2026-27/8368". Las barras son las que evitan el falso positivo
+#: de "INV HY336-26-1" (que NO es una campaña).
+_CAMPANA_NOTA = re.compile(r"/\s*\d{3,4}\s*-\s*(\d{2})\s*/")
+
+
+def _anio_a_4(valor: int) -> int:
+    """26 → 2026 · 2026 → 2026. Los años de 2 dígitos son siempre 20xx."""
+    v = int(valor)
+    return v if v >= 1000 else 2000 + v
+
+
+def parse_ref_anticipo(concepto: str | None) -> dict:
+    """Número de importación + año explícito del concepto de un anticipo.
+
+        "58/26 SALDO" → {"numero": 58, "anio": 2026}
+        "31 SALDO"    → {"numero": 31, "anio": None}   (como siempre)
+        "AC 95"       → {"numero": 95, "anio": None}
+
+    El número sale igual que antes (primer número suelto) para no romper los
+    anticipos vivos que todavía no tienen año.
+    """
+    s = (concepto or "").strip()
+    if not s:
+        return {"numero": None, "anio": None}
+    m = _REF_ANIO_ANTICIPO.search(s)
+    if m:
+        return {"numero": int(m.group(1)), "anio": _anio_a_4(int(m.group(2)))}
+    m2 = _REF_SUELTA.search(s)
+    return {"numero": int(m2.group(1)) if m2 else None, "anio": None}
+
+
+def anio_importacion(nota: str | None, fecha: str | None = None) -> dict:
+    """Año de una importación de Asinfo.
+
+    1. Si la nota trae la CAMPAÑA entre barras ("ACMT/EXP/2026-27/8368"), el
+       año es el de INICIO de esa campaña — se deduce del cierre (27 → 2026),
+       que es el dígito que los proveedores escriben bien incluso cuando el
+       primero viene con typo ("205-26", "202-27", "206-27" están todos en la
+       base real).
+    2. Si no, el año de la fecha de la factura del proveedor.
+
+    Devuelve {"anio": int | None, "de_campana": bool}. `de_campana` marca de
+    dónde salió: entre dos candidatas del mismo año, la que tiene la campaña
+    escrita gana (es el dato del proveedor, no una inferencia por fecha).
+    """
+    m = _CAMPANA_NOTA.search(nota or "")
+    if m:
+        cierre = int(m.group(1))
+        if 1 <= cierre <= 99:
+            return {"anio": _anio_a_4(cierre) - 1, "de_campana": True}
+    try:
+        return {"anio": int(str(fecha)[:4]), "de_campana": False}
+    except (TypeError, ValueError):
+        return {"anio": None, "de_campana": False}
+
+
 if __name__ == "__main__":
     _test()
