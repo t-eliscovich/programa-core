@@ -20,7 +20,7 @@ import io
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from flask import Blueprint, Response, render_template_string, stream_with_context
+from flask import Blueprint, Response, render_template_string, request, stream_with_context
 
 from auth import requiere_login, requiere_permiso
 
@@ -68,6 +68,10 @@ _TPL = """
 <form method="get" action="/admin/salud/run">
   <button type="submit">Correr chequeo</button>
 </form>
+<p class="muted" style="margin-top:.6rem">
+  ¿Necesitás ver las filas concretas detrás de un error?
+  <a href="/admin/salud/run?verbose=1">correr con detalle</a>.
+</p>
 """
 
 
@@ -82,8 +86,16 @@ def form():
 @requiere_login
 @requiere_permiso("informes.ver")
 def run():
+    # ?verbose=1 → cada sección lista las filas concretas, no sólo el conteo.
+    # Sirve para ir del "45 reversados sin id_reverso" al detalle sin abrir
+    # una consola de SQL contra producción.
+    verbose = (request.args.get("verbose") or "").strip() in ("1", "true", "si")
+
     def _gen():
-        yield "=== CHEQUEO DE SALUD — Programa Core (solo lectura) ===\n\n"
+        yield ("=== CHEQUEO DE SALUD — Programa Core (solo lectura) ===\n"
+               + ("    [modo detalle]\n" if verbose else
+                  "    (agregá ?verbose=1 a la URL para ver las filas concretas)\n")
+               + "\n")
         try:
             chk = _cargar_checks()
         except Exception as exc:  # noqa: BLE001
@@ -97,7 +109,7 @@ def run():
                 # Los checks imprimen a stdout; se captura y se re-emite para
                 # que salga por el stream y no por el log del servidor.
                 with redirect_stdout(buf):
-                    fn(verbose=False)
+                    fn(verbose=verbose)
             except Exception as exc:  # noqa: BLE001
                 yield buf.getvalue()
                 yield f"  [ERR]  {nombre}: explotó → {exc!r}\n"

@@ -283,6 +283,18 @@ def check_mov_doble(verbose: bool = False) -> None:
     if nh:
         _reporte("MOV_DOBLE", ERROR,
                  f"{nh} reversos sin id_original (no se puede trazar a su alta).")
+        if verbose:
+            for r in db.fetch_all(
+                """
+                SELECT id_mov_doble, tipo, origen_id, destino_id, creado_en,
+                       usuario_crea, nota
+                  FROM scintela.mov_doble
+                 WHERE estado = 'reverso' AND id_original IS NULL
+                 ORDER BY id_mov_doble
+                """) or []:
+                print(f"     #{r['id_mov_doble']} {r['tipo']} "
+                      f"orig={r['origen_id']} dest={r['destino_id']} "
+                      f"{r['creado_en']} {r['usuario_crea']} — {(r.get('nota') or '')[:60]}")
     else:
         _reporte("MOV_DOBLE", OK, "Reversos tienen id_original.")
 
@@ -298,6 +310,18 @@ def check_mov_doble(verbose: bool = False) -> None:
     if nrs:
         _reporte("MOV_DOBLE", ERROR,
                  f"{nrs} reversados sin id_reverso (link roto).")
+        if verbose:
+            for r in db.fetch_all(
+                """
+                SELECT tipo, COUNT(*) AS n,
+                       MIN(creado_en)::date AS desde,
+                       MAX(creado_en)::date AS hasta
+                  FROM scintela.mov_doble
+                 WHERE estado = 'reversado' AND id_reverso IS NULL
+                 GROUP BY tipo ORDER BY COUNT(*) DESC
+                """) or []:
+                print(f"     {r['tipo']:34} n={r['n']:<4} "
+                      f"{r['desde']} → {r['hasta']}")
     else:
         _reporte("MOV_DOBLE", OK, "Reversados tienen id_reverso.")
 
@@ -715,6 +739,14 @@ def check_reversibilidad(verbose: bool = False) -> None:
         return
     conocidos = set(_REVERSO_DISPATCH) | set(_REVERSO_BLOQUEADO)
 
+    # TMT 2026-07-29: el dispatcher tiene un FALLBACK en runtime —
+    # `if not handler and tipo.startswith("caja_")` (historial/views.py) —
+    # que reversa CUALQUIER caja_* vía caja.confirmar_reverso. El check no lo
+    # conocía y reportaba caja_s_to_gasto & cia. como "sin reverso": otro
+    # grito en falso, del mismo tipo que el de fecha_modifica.
+    def _cubierto_por_fallback(tipo: str) -> bool:
+        return (tipo or "").startswith("caja_")
+
     def _es_terminal(tipo: str) -> bool:
         # Mismos excluidos que validar_reversos.py: las entradas 'reverso_*'
         # son el deshacer de algo (no se re-reversan), y los movimientos
@@ -738,10 +770,11 @@ def check_reversibilidad(verbose: bool = False) -> None:
         r for r in rows
         if (r.get("tipo") or "") not in conocidos
         and not _es_terminal(r.get("tipo") or "")
+        and not _cubierto_por_fallback(r.get("tipo") or "")
     ]
     if huerfanos:
         total = sum(int(r["n"] or 0) for r in huerfanos)
-        tipos = ", ".join(str(r["tipo"]) for r in huerfanos[:8])
+        tipos = ", ".join(f"{r['tipo']}({r['n']})" for r in huerfanos)
         _reporte("REVERSIBILIDAD", ERROR,
                  f"{len(huerfanos)} tipo(s) de mov SIN reverso ({total} movs "
                  f"activos): {tipos}.")
