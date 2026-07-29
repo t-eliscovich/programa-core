@@ -541,6 +541,95 @@ def editar_numf(id_factura: int):
         return jsonify(ok=False, error=humanize(e)), 500
 
 
+@facturas_bp.route("/facturas/abono-manual/<int:id_mov_doble>/reversar",
+                   methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def reversar_abono_manual(id_mov_doble: int):
+    """Deshace un cambio de abono hecho a mano, volviendo al abono anterior.
+
+    TMT 2026-07-29: el mov_doble 'factura_abono_manual' existía desde el 14/05
+    "para eventualmente reversarlo" y nunca tuvo pantalla — el /historial lo
+    mostraba y no se podía deshacer. Es el campo donde un cero de más manda la
+    factura a 'T' y la saca de la cobranza, así que el reverso importa.
+
+    GET = confirmación (dice a qué abono vuelve y en qué stat queda).
+    POST = ejecuta. Gate `facturas.crear`: el mismo permiso que hace falta
+    para editar el abono, no uno más alto — quien pudo equivocarse tiene que
+    poder arreglarlo.
+    """
+    from db import fetch_one as _fetch_one
+
+    mv = _fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, estado, metadata, importe "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        abort(404)
+    volver = request.values.get("next") or url_for("historial.lista")
+
+    if request.method == "POST":
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            res = queries.reversar_abono_manual(
+                id_mov_doble,
+                usuario=usuario,
+                motivo=(request.form.get("motivo") or "").strip(),
+            )
+            flash(
+                f"Abono manual deshecho en la factura {res['numf']}: "
+                f"$ {res['abono_previo']:,.2f} → $ {res['abono_actual']:,.2f}. "
+                f"Saldo $ {res['saldo']:,.2f}, estado {res['stat']}.",
+                "ok",
+            )
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude deshacer el abono manual", e)
+        return redirect(request.form.get("next") or volver)
+
+    import json as _json
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:
+            meta = {}
+    fact = queries.por_id_interno(int(mv.get("origen_id") or 0)) or {}
+    _prev = float(meta.get("abono_prev") or 0)
+    _imp = float(fact.get("importe") or 0)
+    _saldo = round(_imp - _prev, 2)
+    _stat = "T" if _saldo <= 0.01 else ("A" if _prev > 0.01 else "Z")
+    detalle = {
+        "N° factura": fact.get("numf_completo") or fact.get("numf") or "—",
+        "Cliente": fact.get("codigo_cli", "") or "—",
+        "Importe": f"$ {_imp:,.2f}",
+        "Abono ahora": f"$ {float(fact.get('abono') or 0):,.2f}",
+        "Vuelve a": f"$ {_prev:,.2f}",
+        "Qué va a pasar": (
+            f"El abono vuelve a $ {_prev:,.2f}, el saldo queda en "
+            f"$ {_saldo:,.2f} y la factura pasa a estado {_stat}. "
+            "NO se toca ningún cheque ni movimiento de banco: esta edición "
+            "nunca movió plata, sólo el campo abono."
+        ),
+    }
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer abono manual",
+        mensaje=(
+            "Vas a volver el abono de esta factura al valor que tenía antes "
+            "de la edición manual."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("facturas.reversar_abono_manual",
+                           id_mov_doble=id_mov_doble, next=volver),
+        volver_url=volver,
+        motivo_requerido=False,
+        confirm_label="Deshacer abono",
+    )
+
+
 @facturas_bp.route("/facturas/<int:id_factura>/confirmar-anulacion", methods=["GET"])
 @requiere_login
 @requiere_permiso("facturas.anular")

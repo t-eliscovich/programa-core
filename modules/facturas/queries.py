@@ -310,6 +310,148 @@ def editar(
     }
 
 
+def reversar_abono_manual(
+    id_mov_doble: int, *, usuario: str = "web", motivo: str = "",
+) -> dict:
+    """Deshace un cambio de abono hecho a mano — vuelve al abono anterior.
+
+    TMT 2026-07-29. El mov_doble 'factura_abono_manual' se creó el 14/05 con
+    el comentario "esto permite verlo en /historial y, eventualmente,
+    reversarlo". El "eventualmente" nunca llegó: eran 14 movs activos que el
+    /historial mostraba pero no dejaba deshacer, y un abono es justo el campo
+    donde un error de tipeo (un cero de más) manda la factura a stat='T' y la
+    saca de la cobranza.
+
+    No hace falta inventar nada: `editar()` ya guarda `abono_prev` en la
+    metadata del mov_doble. Restaurar es escribir ese valor y recomputar
+    saldo/stat con la MISMA regla de `editar()` (paridad MODIFICA.PRG L443).
+
+    OJO con dos cosas, y las dos están guardadas como precondición:
+
+    1. Se recomputa el saldo con el `importe` que la factura tiene HOY, no
+       con el de entonces. Si el importe cambió después (toggle de pronto
+       pago 5%), restaurar el saldo viejo dejaría `saldo ≠ importe − abono`,
+       que es exactamente uno de los errores que el chequeo de salud
+       persigue.
+    2. Si el abono ya NO es el que dejó esta edición, algo pasó en el medio
+       (se aplicó un cheque, se editó de nuevo). Reversar pisaría ese cambio
+       posterior sin avisar → ValueError. Reversá primero lo de arriba.
+
+    Devuelve `{id_factura, numf, abono_previo, abono_actual, saldo, stat}`.
+    """
+    import json as _json
+
+    import mov_doble as _md
+
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, estado, metadata, fecha_operacion "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        raise ValueError("No encuentro ese movimiento.")
+    if (mv.get("tipo") or "") != "factura_abono_manual":
+        raise ValueError(
+            f"Ese movimiento es '{mv.get('tipo')}', no un abono manual.")
+    if (mv.get("estado") or "activo") != "activo":
+        raise ValueError(
+            f"Ese abono manual ya está {mv.get('estado')} — no se reversa dos veces.")
+
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:
+            meta = {}
+    if "abono_prev" not in meta:
+        raise ValueError(
+            "Ese movimiento no guardó el abono anterior en la metadata "
+            "(es de antes de que se registrara). Corregí el abono a mano "
+            "desde la factura.")
+
+    abono_prev = round(float(meta.get("abono_prev") or 0), 2)
+    abono_esperado = round(float(meta.get("abono_nuevo") or 0), 2)
+    id_factura = int(mv.get("origen_id") or 0)
+
+    with db.tx() as conn:
+        fact = db.fetch_one(
+            "SELECT id_factura, numf, numf_completo, fecha, importe, abono, "
+            "       saldo, stat "
+            "  FROM scintela.factura WHERE id_factura = %s FOR UPDATE",
+            (id_factura,), conn=conn,
+        )
+        if not fact:
+            raise ValueError("La factura de ese movimiento ya no existe.")
+        stat_actual = (fact.get("stat") or "").upper()
+        if stat_actual in STATS_ANULADAS:
+            raise ValueError(
+                "La factura está anulada — no se puede tocar el abono.")
+
+        asegurar_fecha_abierta(fact["fecha"])
+
+        importe_hoy = round(float(fact.get("importe") or 0), 2)
+        abono_hoy = round(float(fact.get("abono") or 0), 2)
+        if abs(abono_hoy - abono_esperado) > 0.01:
+            raise ValueError(
+                f"El abono de la factura cambió después de esta edición "
+                f"(quedó en $ {abono_hoy:,.2f}, esta edición lo había dejado "
+                f"en $ {abono_esperado:,.2f}). Reversá primero el movimiento "
+                f"más nuevo — si no, este reverso lo pisaría sin avisar.")
+        if abono_prev > importe_hoy + 0.01:
+            raise ValueError(
+                f"El abono anterior ($ {abono_prev:,.2f}) es mayor que el "
+                f"importe actual de la factura ($ {importe_hoy:,.2f}): el "
+                f"importe cambió en el medio. Ajustalo a mano.")
+
+        saldo_nuevo = round(importe_hoy - abono_prev, 2)
+        # MISMA regla que `editar()` (paridad MODIFICA.PRG L443), no
+        # `_stat_desde_saldo`: con importe=0 las dos difieren (editar da 'T',
+        # la otra 'Z') y el reverso tiene que dejar la factura igual a como
+        # la habría dejado la edición inversa, no parecida.
+        if saldo_nuevo <= 0.01:
+            stat_nuevo = "T"
+        elif abono_prev > 0.01:
+            stat_nuevo = "A"
+        else:
+            stat_nuevo = "Z"
+
+        db.execute(
+            "UPDATE scintela.factura "
+            "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+            " WHERE id_factura = %s",
+            (abono_prev, saldo_nuevo, stat_nuevo, usuario, id_factura),
+            conn=conn,
+        )
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_factura_abono_manual",
+            origen_table="factura", origen_id=id_factura,
+            destino_table="factura", destino_id=id_factura,
+            importe=round(abono_prev - abono_hoy, 2),
+            fecha=fact.get("fecha") or today_ec(),
+            concepto=(
+                f"REVERSO abono manual factura "
+                f"#{fact.get('numf') or id_factura}: {abono_hoy:.2f} → "
+                f"{abono_prev:.2f}" + (f" ({motivo})" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            metadata={"abono_deshecho": abono_hoy,
+                      "abono_restaurado": abono_prev,
+                      "stat_restaurado": stat_nuevo,
+                      "motivo": motivo or None},
+            id_original=id_mov_doble,
+        )
+
+    return {
+        "id_factura": id_factura,
+        "numf": fact.get("numf_completo") or fact.get("numf"),
+        "abono_previo": abono_hoy,
+        "abono_actual": abono_prev,
+        "saldo": saldo_nuevo,
+        "stat": stat_nuevo,
+    }
+
+
 def editar_numf(
     id_factura: int,
     nuevo_numf: int,

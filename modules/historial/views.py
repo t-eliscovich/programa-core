@@ -720,6 +720,34 @@ _REVERSO_DISPATCH = {
         "bancos.confirmar_reverso_movimiento_simple",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # TMT 2026-07-29 — el chequeo de salud los listaba como "sin reverso
+    # automatizado" y era mentira: los dos tenían wizard de confirmación
+    # propio desde antes, sólo faltaba enchufarlos acá. `cheque_depositado`
+    # era el tipo con MÁS movs activos del sistema (913).
+    #
+    # deshacer_deposito devuelve el cheque a cartera (Z) y BAJA el depósito
+    # del banco por su importe (si era el único cheque del depósito, borra el
+    # movimiento). No es rebote: no toca al cliente.
+    "cheque_depositado": (
+        "cheques.deshacer_deposito",
+        lambda r: {"id_cheque": r["origen_id"]},
+    ),
+    # Gasto V1..V9 creado desde un movimiento de banco. Misma forma exacta que
+    # `caja_s_to_xgast`: destino_id ES el id_xgast. Desclasificar anula el
+    # gasto y deja el movimiento de banco libre para re-asignar — NO toca el
+    # movimiento bancario, que es real.
+    "banco_clasificado_gasto": (
+        "gastos.confirmar_desclasificar",
+        lambda r: {"id_xgast": r["destino_id"]},
+    ),
+    # Edición de abono a mano (sin cheque). El wizard vuelve al abono que
+    # guardó la metadata y recomputa saldo/stat. Toma el id del MOV, no de la
+    # factura: una misma factura puede tener varias ediciones y hay que
+    # deshacer la que se eligió, no la última.
+    "factura_abono_manual": (
+        "facturas.reversar_abono_manual",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
 }
 
 # Tipos que NO se reversan desde acá — el dispatcher muestra un toast
@@ -727,7 +755,46 @@ _REVERSO_DISPATCH = {
 # no deshacen completamente la operación (dejan saldos inconsistentes,
 # compras fantasma, etc.). Los manejamos manualmente hasta que cada uno
 # tenga un reverso atómico.
-_REVERSO_BLOQUEADO = {}
+#
+# TMT 2026-07-29 — este dict estuvo VACÍO desde el audit de mayo, así que su
+# mensaje ("Reverso no automatizado para este tipo. {mensaje}") nunca se
+# mostró y todos estos tipos caían en el genérico "Tipo 'X' aún no tiene
+# reverso automatizado" — que es FALSO: cada uno de los de abajo SÍ se
+# deshace, sólo que desde otra pantalla. Eran 521 movs activos a los que la
+# app le decía a la dueña que no había vuelta atrás cuando sí había.
+#
+# El reverso de estos vive en un POST (por período o por lote), no en un GET
+# con id, así que el dispatcher no puede redirigir: lo correcto es decir
+# dónde está el botón.
+_REVERSO_BLOQUEADO = {
+    "retencion_asinfo_aplicada": (
+        "Las retenciones de Asinfo se deshacen por PERÍODO, no de a una: "
+        "Facturas → Desde Asinfo → «Deshacer retenciones» del rango. "
+        "Eso restaura abono/saldo/stat de cada factura y borra las "
+        "retenciones."
+    ),
+    "dolares_anticipo": (
+        "Deshacelo desde /dolares con la ✕ del anticipo #{origen_id}. "
+        "Cancela el anticipo y revierte también el movimiento bancario "
+        "linkeado."
+    ),
+    "anticipo_neteado": (
+        "Es parte de un neteo. Se deshace completo desde el estado de "
+        "cuenta del cliente → «Deshacer neteo», que restaura los cheques y "
+        "los anticipos del batch juntos. Deshacer sólo esta pata dejaría "
+        "el neteo a medias."
+    ),
+    "neteo_estado_cuenta": (
+        "Es el evento del neteo. Deshacelo desde el estado de cuenta del "
+        "cliente → «Deshacer neteo»: restaura los cheques y anticipos del "
+        "batch y re-aplica lo que se había desaplicado."
+    ),
+    "importacion_anticipo": (
+        "Deshacelo desde /importaciones con la ✕ del movimiento: borra el "
+        "anticipo y su ND del banco como par atómico, y recalcula el "
+        "anticipo aplicado de la importación."
+    ),
+}
 
 
 # TMT 2026-07-01 (dueña): el reverso ya NO exige informes.ver. Es un

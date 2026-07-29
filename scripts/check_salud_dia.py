@@ -778,13 +778,27 @@ def check_reversibilidad(verbose: bool = False) -> None:
     def _cubierto_por_fallback(tipo: str) -> bool:
         return (tipo or "").startswith("caja_")
 
+    # TMT 2026-07-29 — tipos que NO son una operación con plata nueva sino la
+    # HUELLA de algo: la edición de un importe, la anulación de una posdat, el
+    # snapshot del cierre de mes, la metadata de un resumen. Igual que los
+    # 'reverso_*', no tiene sentido pedirles un reverso — el reverso de una
+    # anulación sería des-anular, y eso se hace re-cargando, no reversando.
+    # Marcarlos en rojo eran 135 falsos positivos.
+    _AUDITORIA = {
+        "posdat_edit_importe",     # guarda el delta de una edición de importe
+        "posdat_anulada",          # YA es la anulación de una posdat
+        "posdat_yy_cierre_mes",    # snapshot del acumulado al cerrar el mes
+        "totalizar_estado_cuenta",  # metadata del resumen de estado de cuenta
+    }
+
     def _es_terminal(tipo: str) -> bool:
         # Mismos excluidos que validar_reversos.py: las entradas 'reverso_*'
         # son el deshacer de algo (no se re-reversan), y los movimientos
         # directos de caja/banco no pasan por el dispatcher.
         tipo = tipo or ""
         return (
-            tipo.startswith("reverso_")
+            tipo in _AUDITORIA
+            or tipo.startswith("reverso_")
             or (tipo.startswith("caja_") and tipo.endswith("_directo"))
             or (tipo.startswith("banco_") and tipo.endswith("_directo"))
         )
@@ -811,12 +825,21 @@ def check_reversibilidad(verbose: bool = False) -> None:
                  f"activos): {tipos}.")
     else:
         _reporte("REVERSIBILIDAD", OK,
-                 f"todos los mov activos son reversables "
-                 f"({len(_REVERSO_DISPATCH)} tipos con handler, "
-                 f"0 sin cobertura).")
+                 f"todos los mov activos tienen vuelta atrás "
+                 f"({len(_REVERSO_DISPATCH)} tipos con wizard, "
+                 f"{len(_PERMISO_REVERSO_INLINE)} inline, "
+                 f"{len(_REVERSO_BLOQUEADO)} con ruta indicada).")
     if verbose and huerfanos:
         for r in huerfanos:
             print(f"     tipo={r['tipo']}  n={r['n']}")
+    # Los 'bloqueados' NO son un error: tienen reverso, pero en otra pantalla.
+    # Se listan igual para que no se vuelvan invisibles — si mañana alguien
+    # les escribe un wizard, hay que sacarlos de ahí.
+    if verbose and _REVERSO_BLOQUEADO:
+        print("     — con reverso en otra pantalla (no es error):")
+        for t in sorted(_REVERSO_BLOQUEADO):
+            n = next((int(r["n"] or 0) for r in rows if r.get("tipo") == t), 0)
+            print(f"       {t:34} n={n}")
 
 
 # ───────────────────────────────────────────────────────────────────────────
