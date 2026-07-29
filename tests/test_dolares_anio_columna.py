@@ -114,7 +114,7 @@ def test_guardar_exige_fecha_y_cuenta():
         pass
 
 
-# ── sugerencia ──────────────────────────────────────────────────────────────
+# ── evidencia (la sugerencia se retiró: dueña 29/07 "no pongas sugerencia") ──
 
 _IM_2026 = {"im_numero": "IM-0000622", "fecha": "2026-07-20",
             "nota": "ACMT/EXP/2026-27/8368 ( AC 58)", "recibida": False}
@@ -122,23 +122,17 @@ _IM_2025 = {"im_numero": "IM-0000380", "fecha": "2025-04-02",
             "nota": "ACMT/EXP/2025-26/6611 ( AC 58)", "recibida": True}
 
 
-def test_sugerencia_con_una_sola_importacion_usa_su_anio():
-    """Los 32 sin ambigüedad: un solo código posible, no hay forma de errarle."""
+def test_no_propone_ningun_anio():
+    """Dueña 29/07: la pantalla NO sugiere un año. Para el AC 77 la sugerencia
+    decía 2025 cuando el correcto era 2026 — una sugerencia que puede estar mal
+    en el campo que existe para desambiguar es peor que ninguna."""
     filas = [{**_fila("2026-04-21", "AC", "58", 8241.50), "ref": 58,
               "anio_col": None}]
     with patch.object(anio_mod, "_historial_por_ref", return_value={}):
-        anio_mod.adjuntar_sugerencia(
+        anio_mod.adjuntar_evidencia(
             filas, index_importaciones={("AC", 58): [dict(_IM_2025)]})
-    assert filas[0]["anio_sug"] == 2025
-
-
-def test_sugerencia_con_codigo_repetido_usa_el_anio_del_anticipo():
-    filas = [{**_fila("2026-04-21", "AC", "58", 8241.50), "ref": 58,
-              "anio_col": None}]
-    with patch.object(anio_mod, "_historial_por_ref", return_value={}):
-        anio_mod.adjuntar_sugerencia(
-            filas, index_importaciones={("AC", 58): [dict(_IM_2025), dict(_IM_2026)]})
-    assert filas[0]["anio_sug"] == 2026
+    assert "anio_sug" not in filas[0]
+    assert filas[0]["anio_evidencia"]
 
 
 def test_evidencia_nombra_las_importaciones_y_el_ciclo_anterior():
@@ -149,7 +143,7 @@ def test_evidencia_nombra_las_importaciones_y_el_ciclo_anterior():
         {"fecha": "2025-04-28", "importe": 48684.80, "st": "B", "ref": 58},
     ]}
     with patch.object(anio_mod, "_historial_por_ref", return_value=hist):
-        anio_mod.adjuntar_sugerencia(
+        anio_mod.adjuntar_evidencia(
             filas, index_importaciones={("AC", 58): [dict(_IM_2025), dict(_IM_2026)]})
     ev = filas[0]["anio_evidencia"]
     assert "IM-0000622" in ev and "IM-0000380" in ev
@@ -161,9 +155,8 @@ def test_evidencia_avisa_cuando_no_hay_importacion():
     filas = [{**_fila("2026-06-18", "AC", "77", 7298.20), "ref": 77,
               "anio_col": None}]
     with patch.object(anio_mod, "_historial_por_ref", return_value={}):
-        anio_mod.adjuntar_sugerencia(filas, index_importaciones={})
+        anio_mod.adjuntar_evidencia(filas, index_importaciones={})
     assert "No hay ninguna importación AC 77" in filas[0]["anio_evidencia"]
-    assert filas[0]["anio_sug"] == 2026
 
 
 def test_ciclo_anulado_se_rotula_distinto():
@@ -175,14 +168,14 @@ def test_ciclo_anulado_se_rotula_distinto():
         {"fecha": "2025-09-15", "importe": 10598.90, "st": "B", "ref": 76},
     ]}
     with patch.object(anio_mod, "_historial_por_ref", return_value=hist):
-        anio_mod.adjuntar_sugerencia(filas, index_importaciones={})
+        anio_mod.adjuntar_evidencia(filas, index_importaciones={})
     assert "anulado" in filas[0]["anio_evidencia"]
 
 
-def test_no_sugiere_si_ya_tiene_anio_guardado():
+def test_no_calcula_evidencia_si_ya_tiene_anio_guardado():
     filas = [{**_fila("2026-04-21", "AC", "58", 8241.50), "ref": 58,
               "anio_col": 2026}]
     with patch.object(anio_mod, "_historial_por_ref", return_value={}) as h:
-        anio_mod.adjuntar_sugerencia(filas, index_importaciones={})
-    assert filas[0]["anio_sug"] is None
+        anio_mod.adjuntar_evidencia(filas, index_importaciones={})
+    assert not filas[0]["anio_evidencia"]
     h.assert_not_called()

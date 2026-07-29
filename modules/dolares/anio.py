@@ -10,11 +10,11 @@ Firma = (fecha, cta, concepto normalizado, importe, orden). `orden` desempata
 las filas idénticas dentro del mismo día — existen de verdad: AC tiene dos
 "18 TRA" de $1.298,50.
 
-Además de guardar y leer, este módulo arma la **sugerencia** con la evidencia
-que ya vive en la base: el historial de anticipos del mismo número (3.180
-movimientos desde 2023) y las importaciones de Asinfo con ese código. La
-sugerencia es un DEFAULT, no una verdad: la pantalla muestra la evidencia al
-lado para que la dueña la confirme o la contradiga.
+Además de guardar y leer, este módulo arma la **evidencia** con lo que ya vive
+en la base: el historial de anticipos del mismo número (3.180 movimientos desde
+2023) y las importaciones de Asinfo con ese código. NO propone un año — la
+dueña bajó la sugerencia el 29/07 porque para el AC 77 proponía 2025 cuando el
+correcto era 2026. La pantalla muestra los datos; el año lo pone una persona.
 """
 from __future__ import annotations
 
@@ -161,7 +161,7 @@ def guardar(*, fila: dict, anio, usuario: str = "web",
 
 
 # ---------------------------------------------------------------------------
-# SUGERENCIA + EVIDENCIA
+# EVIDENCIA (sin sugerir un año — dueña 29/07)
 # ---------------------------------------------------------------------------
 
 def _historial_por_ref(ctas: list[str]) -> dict[tuple[str, int], list[dict]]:
@@ -196,25 +196,25 @@ def _historial_por_ref(ctas: list[str]) -> dict[tuple[str, int], list[dict]]:
     return out
 
 
-def adjuntar_sugerencia(filas: list[dict], index_importaciones=None) -> None:
-    """Muta cada fila VIVA sin año agregando `anio_sug` y `anio_evidencia`.
+def adjuntar_evidencia(filas: list[dict], index_importaciones=None) -> None:
+    """Muta cada fila VIVA sin año agregando `anio_evidencia`.
 
-    Regla de la sugerencia (default, no verdad):
-      · si hay UNA sola importación de Asinfo con ese código → su año (no hay
-        forma de errarle);
-      · si no, el año de la FECHA del anticipo — un anticipo se paga dentro de
-        la campaña que está corriendo. Acierta en los 4 casos reales del 29/07
-        (58, 76, 77, 18), donde el ciclo anterior del número ya estaba cerrado.
+    TMT 2026-07-29 (dueña): *"no pongas sugerencia entonces"*. Antes esto
+    también proponía un año (`anio_sug`) y la pantalla lo ofrecía con un botón
+    ✓. Se retiró: para el AC 77 sugería **2025** (Asinfo sólo tiene la
+    importación de la campaña 2025-26) cuando el correcto era **2026** — lo
+    prueba el historial, no la lista de importaciones. Una sugerencia que puede
+    estar mal en el campo que existe para desambiguar es peor que ninguna.
 
-    La EVIDENCIA es lo que decide de verdad, y va al lado en la pantalla:
+    Queda la EVIDENCIA, que no propone un número: muestra los datos con los que
+    se decide.
       · qué importaciones existen con ese código y de qué año;
       · si el ciclo anterior del número ya cerró (cuántos movimientos, cuánta
-        plata, hasta cuándo) — que es lo que prueba que el vivo es del ciclo
-        nuevo.
+        plata, hasta cuándo) — que es lo que prueba que el anticipo vivo es del
+        ciclo nuevo.
     """
     pendientes = [f for f in (filas or []) if not f.get("anio_col")]
     for f in filas or []:
-        f.setdefault("anio_sug", None)
         f.setdefault("anio_evidencia", "")
     if not pendientes:
         return
@@ -231,13 +231,7 @@ def adjuntar_sugerencia(filas: list[dict], index_importaciones=None) -> None:
         ref = f.get("ref")
         if ref is None:
             ref = parse_ref_anticipo(f.get("concepto")).get("numero")
-        anio_fecha = None
-        try:
-            anio_fecha = int(str(f.get("fecha"))[:4])
-        except (TypeError, ValueError):
-            pass
         if not cta or ref is None:
-            f["anio_sug"] = anio_fecha
             continue
 
         ims = index_importaciones.get((cta, int(ref))) or []
@@ -251,12 +245,6 @@ def adjuntar_sugerencia(filas: list[dict], index_importaciones=None) -> None:
             if a:
                 anios_im.append((a, im.get("im_numero"), im.get("fecha"),
                                  bool(im.get("recibida"))))
-        anios_unicos = sorted({a for a, *_ in anios_im})
-
-        if len(anios_unicos) == 1:
-            f["anio_sug"] = anios_unicos[0]
-        else:
-            f["anio_sug"] = anio_fecha
 
         # ── evidencia ──
         partes = []

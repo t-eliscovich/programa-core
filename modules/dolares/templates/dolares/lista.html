@@ -480,24 +480,21 @@
               <form method="post" class="inline"
                     action="{{ url_for('dolares.set_anio', id_dolares=d.id_dolares) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="origen" value="manual">
+                {# TMT 2026-07-29 (dueña): "no pongas sugerencia entonces".
+                   Se retiró el año sugerido (número gris + botón ✓). Sugería
+                   2025 para el AC 77 cuando el correcto era 2026, y además su
+                   botón se comía el Enter del campo. Queda SÓLO la EVIDENCIA
+                   en el tooltip — que no propone un número, muestra los datos
+                   con los que se decide. #}
                 <input name="anio" value="{{ d.anio_col or '' }}" maxlength="4"
-                       inputmode="numeric" placeholder="{{ d.anio_sug or '—' }}"
+                       inputmode="numeric" placeholder="año"
                        title="{{ d.anio_evidencia or 'Año de la importación' }}"
                        onchange="this.form.requestSubmit()"
-                       style="width:3.6rem;padding:1px 5px;font-size:12px;text-align:center;
-                              {% if not d.anio_col %}color:rgb(100 116 139);{% endif %}"
+                       style="width:3.6rem;padding:1px 5px;font-size:12px;text-align:center;"
                        class="rounded border border-slate-300 bg-white">
-                {% if not d.anio_col and d.anio_sug %}
-                {# TMT 2026-07-29 — BUG que casi entra un dato malo: este botón
-                   era `submit` y, al ser el primero del form, se comía el ENTER
-                   del campo de al lado: escribías 2026, apretabas Enter, y su
-                   onclick pisaba el valor con la sugerencia (2025) y guardaba
-                   ESA. Ahora es type="button" y postea él mismo; el Enter del
-                   input queda para el envío normal. #}
-                <button type="button" title="{{ d.anio_evidencia }}"
-                        onclick="this.form.origen.value='sugerencia'; this.form.anio.value='{{ d.anio_sug }}'; this.form.requestSubmit();"
-                        style="margin-left:.2rem;font-size:11px;color:rgb(2 132 199);">✓{{ d.anio_sug }}</button>
+                {% if d.anio_evidencia %}
+                <span title="{{ d.anio_evidencia }}"
+                      style="margin-left:.25rem;font-size:11px;color:rgb(148 163 184);cursor:help;">?</span>
                 {% endif %}
               </form>
               {% elif d.anio_col %}<span class="text-slate-500">{{ d.anio_col }}</span>

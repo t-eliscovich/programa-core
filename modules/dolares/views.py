@@ -103,13 +103,14 @@ def lista():
         _import_service.adjuntar_recepcion_asinfo(filas)
     except Exception:  # noqa: BLE001
         pass
-    # Sugerencia de año + evidencia (historial del número + importaciones de
-    # Asinfo) para las que todavía no lo tienen. Sólo si hay permiso de
+    # EVIDENCIA para completar el año (historial del número + importaciones de
+    # Asinfo con ese código) en las que todavía no lo tienen. NO sugiere un año
+    # — dueña 29/07 — sólo muestra con qué decidirlo. Sólo si hay permiso de
     # escritura: es para completar, no para mirar.
     if tiene_permiso("facturas.crear"):
         try:
             from . import anio as _anio_mod
-            _anio_mod.adjuntar_sugerencia(
+            _anio_mod.adjuntar_evidencia(
                 [f for f in filas if (f.get("st") or "").strip() == ""]
             )
         except Exception:  # noqa: BLE001
