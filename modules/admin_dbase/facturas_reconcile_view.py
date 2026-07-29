@@ -399,21 +399,35 @@ def reporte_desde_dbf(dbf_path: Path):
             faltan.append((_falta, _numf, (p.get("codigo_cli") or "").strip(),
                            _r2(b.get("abono")), _r2(p.get("abono")), b.get("fecha")))
     faltan.sort(reverse=True)
-    _relev = [f for f in faltan if f[2].upper() in _clientes_con_dif]
-    _neutras = [f for f in faltan if f[2].upper() not in _clientes_con_dif]
+    # El Δ de cartera del CLIENTE acota lo que puede faltar de verdad: si a un
+    # cliente le cuadra la cuenta al centavo, ninguna diferencia de abono suya
+    # es plata faltante — es repartija. Se agrupa por cliente y se muestra su Δ
+    # al lado, para que no vuelva a pasar que una línea de $72.044 (EEU) figure
+    # arriba de todo cuando la cartera de ese cliente cierra en +0,04.
+    _dif_por_cli = {x[0]: x[1] for x in _difs}
+    _relev, _neutras = [], []
+    for f in faltan:
+        (_relev if abs(_dif_por_cli.get(f[2].upper(), 0.0)) >= 1.0
+         else _neutras).append(f)
+    # Ordenar por |Δ del cliente| (lo que de verdad importa), después por monto.
+    _relev.sort(key=lambda f: (-abs(_dif_por_cli.get(f[2].upper(), 0.0)), -f[0]))
     yield line("[G] ABONO IMPUTADO DISTINTO (numf>0) — NO es plata faltante")
     yield line("    El dBase cuelga el pago entero del cliente de UNA factura "
                "(la manda a saldo negativo);")
     yield line("    PC lo aplica factura por factura. Mismo total por cliente, "
                "distinta repartija.")
-    yield line(f"  · {len(_neutras)} facturas cuyo CLIENTE ya cuadra al centavo en [F] "
-               f"→ NO tocar (cargarlas duplicaría cobranza ya depositada)")
-    yield line(f"  · {len(_relev)} facturas cuyo cliente SÍ tiene Δ≠0 en [F] "
-               f"→ únicas donde la diferencia puede ser real:")
+    yield line(f"  · {len(_neutras)} facturas de clientes cuya cartera YA CUADRA "
+               f"(|Δ| < $1) → NO tocar: cargarlas duplicaría cobranza depositada")
+    yield line(f"  · {len(_relev)} facturas de clientes con |Δ| ≥ $1 en [F]. Ojo: el "
+               f"Δ del cliente es el TECHO de lo que puede faltar;")
+    yield line("    un Δabono grande con Δcliente chico sigue siendo repartija, "
+               "no plata.")
     if not _relev:
         yield line("      (ninguna)")
     for _f, _n, _c, _dab, _pab, _fe in _relev:
+        _dc = _dif_por_cli.get(_c.upper(), 0.0)
         yield line(f"  numf={_n:<7} {_c:5} Δabono ${_f:>10,.2f}  "
+                   f"[Δ cartera del cliente {_dc:>+10,.2f}]  "
                    f"(dBase abono {_dab:,.2f} · PC {_pab:,.2f})  {_fe}")
     yield line()
 
