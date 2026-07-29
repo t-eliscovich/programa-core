@@ -457,73 +457,69 @@ def check_posdat(verbose: bool = False) -> None:
 # 8) PROVISIONES — SR=3300/día aplicado
 # ───────────────────────────────────────────────────────────────────────────
 def check_provisiones(verbose: bool = False) -> None:
-    """SR (SRI) se provisiona automáticamente $3,300/día hábil. La posdat es
-    una fila template que se updatea sumando $3300 cada día hábil que pasa.
+    """¿El devengo de provisiones está vivo, y con las cuotas correctas?
 
-    Acá no podemos verificar el total acumulado (es de 2021, ya tiene muchos
-    catch-ups manuales encima). Lo que sí podemos:
+    (a) LIVENESS — el motor mira `baseline_date`, NO `fecha_modifica`.
+        TMT 2026-07-29: este check leía `fecha_modifica` y culpaba a
+        `correr_provisiones_diarias()`. Las dos cosas están mal desde el
+        24/07: ese motor salió del auto-run y el que devenga hoy es
+        `persistir_acumulacion_yy` (modules/posdat/queries.py), que hace
+        `UPDATE posdat SET importe=…, baseline_date=hoy` y NUNCA toca
+        `fecha_modifica`. Resultado: un ERROR rojo permanente ("SRI sin
+        actualizar hace 55 días") que era falso y que además mandaba a
+        revisar un cron que no existe. Un chequeo que grita en falso es peor
+        que no tener chequeo.
 
-      a) ¿Existe la posdat SR (banc<>9, prov='YY', concepto 'SR%')?
-      b) ¿Se modificó hace poco (<=2 días hábiles)?
-      c) ¿La sistema_meta dice que el corredor diario corrió hoy?
-
-    Si la posdat no se updatea por 3+ días hábiles, las corridas diarias se
-    cayeron (cron muerto, exception silenciosa, etc.).
+    (b) CUOTAS — las 12 contra el MENU.PRG (ver `_cuotas_vs_prg`).
     """
-    _seccion("8) PROVISIONES — corredor diario SR")
-    row = db.fetch_one(
-        """
-        SELECT id_posdat, importe, fecha_modifica,
-               (CURRENT_DATE - fecha_modifica::date)::int AS dias_sin_update
-          FROM scintela.posdat
-         WHERE COALESCE(banc,0) <> 9
-           AND COALESCE(anulada,FALSE) IS NOT TRUE
-           AND UPPER(TRIM(COALESCE(prov,''))) = 'YY'
-           AND UPPER(COALESCE(concepto,'')) LIKE 'SR%'
-         ORDER BY id_posdat
-         LIMIT 1
-        """
-    )
-    if not row:
+    _seccion("8) PROVISIONES — devengo vivo + cuotas vs PRG")
+    try:
+        row = db.fetch_one(
+            """
+            SELECT id_posdat, importe, baseline_date,
+                   (CURRENT_DATE - baseline_date)::int AS dias_sin_devengar
+              FROM scintela.posdat
+             WHERE COALESCE(banc,0) <> 9
+               AND COALESCE(anulada,FALSE) IS NOT TRUE
+               AND UPPER(TRIM(COALESCE(prov,''))) = 'YY'
+               AND UPPER(COALESCE(concepto,'')) LIKE 'SR%'
+             ORDER BY id_posdat
+             LIMIT 1
+            """
+        )
+    except Exception as exc:  # noqa: BLE001  (columna baseline_date no migrada)
+        _reporte("PROVISIONES", WARN,
+                 f"no pude leer baseline_date: {exc!r}")
+        row = None
+
+    if row is None:
+        pass
+    elif not row:
         _reporte("PROVISIONES", WARN,
                  "No encontré la posdat de SRI provision (prov='YY' + 'SR%').")
-        return
-    dias_sin = row.get("dias_sin_update")
-    fm = row.get("fecha_modifica")
-    importe = float(row["importe"] or 0)
-    if fm is None:
-        _reporte("PROVISIONES", WARN,
-                 f"posdat SRI {_money(importe).strip()} sin "
-                 f"`fecha_modifica` — no puedo saber si corrió.")
-        return
-    if dias_sin is None or dias_sin <= 2:
-        _reporte("PROVISIONES", OK,
-                 f"posdat SRI {_money(importe).strip()} — última "
-                 f"actualización {fm.date() if hasattr(fm,'date') else fm} "
-                 f"({dias_sin}d atrás).")
-    elif dias_sin <= 5:
-        _reporte("PROVISIONES", WARN,
-                 f"posdat SRI sin actualizar hace {dias_sin} días — quizá "
-                 f"el cron se cayó este fin de semana.")
     else:
-        _reporte("PROVISIONES", ERROR,
-                 f"posdat SRI sin actualizar hace {dias_sin} días. El "
-                 f"corredor `correr_provisiones_diarias()` no está corriendo. "
-                 f"Revisá /informes/balance (auto-trigger) o cron.")
+        dias = row.get("dias_sin_devengar")
+        bd = row.get("baseline_date")
+        importe = float(row["importe"] or 0)
+        if bd is None:
+            _reporte("PROVISIONES", WARN,
+                     f"posdat SRI {_money(importe).strip()} sin `baseline_date` "
+                     f"— va a arrancar a devengar desde el próximo hit.")
+        elif dias is None or dias <= 3:
+            _reporte("PROVISIONES", OK,
+                     f"devengo vivo — SRI {_money(importe).strip()}, "
+                     f"baseline {bd} ({dias}d).")
+        elif dias <= 5:
+            _reporte("PROVISIONES", WARN,
+                     f"SRI sin devengar hace {dias} días (baseline {bd}) — "
+                     f"puede ser un fin de semana largo.")
+        else:
+            _reporte("PROVISIONES", ERROR,
+                     f"SRI sin devengar hace {dias} días (baseline {bd}). "
+                     f"`persistir_acumulacion_yy` no está corriendo: se dispara "
+                     f"al abrir /informes/balance o /posdat. Si nadie las abre, "
+                     f"las provisiones se congelan.")
 
-    # ── LAS 12 CUOTAS vs el MENU.PRG (TMT 2026-07-29) ──────────────────────
-    # Antes acá había un "bonus" que leía sistema_meta
-    # 'provisiones_diarias_ult_fecha' — el marcador de
-    # `correr_provisiones_diarias`, motor RETIRADO del auto-run el 24/07.
-    # O sea: reportaba OK sobre algo que ya no corre. Se reemplaza por el
-    # chequeo que sí hacía falta.
-    #
-    # POR QUÉ: el 19/06 alguien editó a mano la cuota de A,E,C en el FoxPro
-    # (7.700 → 9.000; `diff MENU.BAK MENU.PRG` devuelve esa ÚNICA línea) y PC
-    # recién se enteró el 29/07 — seis semanas y ~1.300/día de drift después.
-    # Este check miraba UNA sola provisión (SR) y sólo si se había MOVIDO,
-    # nunca el monto. Y comparar PC contra una constante de PC jamás iba a
-    # detectar que el dBase cambió: hay que leer la FUENTE.
     _cuotas_vs_prg()
 
 

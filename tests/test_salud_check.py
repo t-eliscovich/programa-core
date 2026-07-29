@@ -53,20 +53,49 @@ def test_provisiones_compara_las_12_cuotas_contra_el_prg(chk):
     )
 
 
-def _sin_comentarios(src: str) -> str:
-    """Saca comentarios y docstrings simples: el test mira el CÓDIGO, no lo que
-    los comentarios expliquen sobre el bug ya arreglado."""
-    return "\n".join(
-        ln for ln in src.splitlines() if not ln.lstrip().startswith("#")
-    )
+def _solo_codigo(src: str) -> str:
+    """Devuelve el cuerpo de la función SIN comentarios ni docstring.
+
+    El test mira el CÓDIGO. Los comentarios y docstrings sí nombran a
+    `fecha_modifica` y `correr_provisiones_diarias` — justamente para explicar
+    por qué se dejaron de usar — y no tienen que hacer fallar el assert.
+    """
+    import ast
+    import textwrap
+
+    mod = ast.parse(textwrap.dedent(src))
+    fn = mod.body[0]
+    cuerpo = fn.body
+    if (cuerpo and isinstance(cuerpo[0], ast.Expr)
+            and isinstance(getattr(cuerpo[0], "value", None), ast.Constant)
+            and isinstance(cuerpo[0].value.value, str)):
+        cuerpo = cuerpo[1:]
+    return "\n".join(ast.unparse(n) for n in cuerpo)
+
+
 
 
 def test_no_reporta_ok_sobre_el_motor_muerto(chk):
     """`correr_provisiones_diarias` salió del auto-run el 24/07: su marcador
     no puede seguir dando un OK tranquilizador."""
-    src = _sin_comentarios(inspect.getsource(chk.check_provisiones))
+    src = _solo_codigo(inspect.getsource(chk.check_provisiones))
     assert "provisiones_diarias_ult_fecha" not in src, (
         "sigue leyendo el marcador de un motor que ya no corre"
+    )
+
+
+def test_liveness_mira_baseline_date_y_no_fecha_modifica(chk):
+    """El motor vivo (`persistir_acumulacion_yy`) escribe importe+baseline_date
+    y NUNCA fecha_modifica. Mirar la columna equivocada daba un ERROR rojo
+    permanente y falso ("SRI sin actualizar hace 55 días")."""
+    src = _solo_codigo(inspect.getsource(chk.check_provisiones))
+    assert "baseline_date" in src, "el liveness tiene que mirar baseline_date"
+    assert "fecha_modifica" not in src, (
+        "sigue mirando fecha_modifica: esa columna no la toca el motor vivo, "
+        "así que el check grita en falso"
+    )
+    assert "correr_provisiones_diarias" not in src, (
+        "sigue culpando al motor retirado del auto-run el 24/07"
     )
 
 
