@@ -410,6 +410,7 @@ def _seccion_numf0():
     # Índice de Asinfo por (cliente, |usd|). El importe es la única clave
     # común: PC no guarda el número del documento cuando el dBase no lo trae.
     idx: dict = {}
+    idx_importe: dict = {}   # sólo por |usd|, para el segundo intento
     tipos_asinfo: dict = {}
     try:
         from modules.asinfo import service as _asinfo
@@ -419,6 +420,7 @@ def _seccion_numf0():
             k = ((str(d.get("cliente_codigo") or "").strip().upper()),
                  round(abs(float(d.get("usd") or 0)), 2))
             idx.setdefault(k, []).append(d)
+            idx_importe.setdefault(k[1], []).append(d)
         yield (f"  Asinfo devolvió {len(docs)} documento(s): "
                + ", ".join(f"{t}={n}" for t, n in sorted(tipos_asinfo.items()))
                + "\n")
@@ -436,8 +438,23 @@ def _seccion_numf0():
             etiqueta = f"{cand[0].get('tipo')} {cand[0].get('numero') or ''}"[:34]
             clave_res = cand[0].get("tipo") or "?"
         else:
-            etiqueta = "— sin match por (cliente, importe)"
-            clave_res = "SIN MATCH"
+            # Segundo intento IGNORANDO el código de cliente. Si el importe
+            # aparece en Asinfo pero bajo OTRO código, el documento existe: lo
+            # que difiere es cómo cada sistema nombra al mismo cliente. Ya pasó
+            # con AJO/AJ2 y CLR/CL2, y hay DOS mecanismos según el caso —
+            # `cliente_alias` si Asinfo usa un código propio, y
+            # `sucursal_direccion` si Asinfo manda todo bajo la empresa y el
+            # dBase parte por dirección de entrega (el caso AJO/AJ2 de julio).
+            # Para saber cuál hace falta, primero hay que ver adónde cae.
+            otro = idx_importe.get(k[1]) or []
+            if otro:
+                cli_a = str(otro[0].get("cliente_codigo") or "?").strip().upper()
+                etiqueta = (f"! mismo importe, cliente {cli_a}: "
+                            f"{otro[0].get('tipo')} {otro[0].get('numero') or ''}")[:52]
+                clave_res = f"OTRO CLIENTE ({k[0]} -> {cli_a})"
+            else:
+                etiqueta = "— no aparece en Asinfo con ese importe"
+                clave_res = "SIN MATCH"
         resumen[clave_res] = resumen.get(clave_res, 0) + 1
         yield (f"  {f['id_factura']:<9} {(f['codigo_cli'] or '')[:5]:<5} "
                f"{str(f['fecha'])[:10]} "
