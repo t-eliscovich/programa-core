@@ -212,17 +212,42 @@ def check_bancos(verbose: bool = False) -> None:
     for b in bancos:
         n = int(b["no_banco"])
         nombre = b["nombre"][:10]
+        # TMT 2026-07-29 — se camina por id_transaccion, NO por (fecha, id).
+        #
+        # El `saldo` de cada fila se estampa EN EL INSERT: la fila nueva toma
+        # el running de la anterior POR ID y le suma su delta
+        # (bank_helpers.insert_movimiento_bancario). O sea que la columna está
+        # en orden de CARGA, no de fecha. Caminar por fecha era comparar la
+        # data contra un criterio que nunca se usó para escribirla.
+        #
+        # Costo real del error: durante meses el chequeo gritó "#10 PICHINCHA:
+        # primer drift en tx#44053, Δ $14.591,15. Reverso roto a partir de
+        # ahí." No había ningún reverso roto. tx#44052 es un ND de $14.591,15
+        # (cheque protestado de CLR) cargado con fecha 03/07 entre dos filas
+        # del 29/06: en orden de id el running cierra perfecto, en orden de
+        # fecha ese ND se procesa 11 filas después y deja un hueco por su
+        # importe exacto. El error más alarmante del tablero era un artefacto
+        # del ORDER BY.
+        #
+        # El desorden en sí SÍ vale reportarlo, pero como WARN y por lo que
+        # es: `bank_helpers.recompute_saldos_desde` recalcula en orden
+        # (fecha, id), así que si alguien la corre, todas esas filas cambian.
         filas = db.fetch_all(
             """
             SELECT id_transaccion, fecha, documento, importe, saldo
               FROM scintela.transacciones_bancarias
              WHERE no_banco = %s
-             ORDER BY fecha ASC, id_transaccion ASC
+             ORDER BY id_transaccion ASC
             """,
             (n,),
         ) or []
         if not filas:
             continue
+        fuera_de_orden = sum(
+            1 for i in range(1, len(filas))
+            if (filas[i].get("fecha") and filas[i - 1].get("fecha")
+                and filas[i]["fecha"] < filas[i - 1]["fecha"])
+        )
         # Ancla = primera fila con saldo válido. Si todas son NULL, no podemos.
         ancla_i = next(
             (i for i, f in enumerate(filas) if f.get("saldo") is not None),
@@ -250,6 +275,14 @@ def check_bancos(verbose: bool = False) -> None:
                 f"#{n} {nombre}: saldo {_money(ultimo.get('saldo')).strip()} "
                 f"consistente con walk-forward desde ancla.",
             )
+            if fuera_de_orden:
+                _reporte(
+                    "BANCOS", WARN,
+                    f"#{n} {nombre}: {fuera_de_orden} movimiento(s) cargados "
+                    f"fuera de orden de fecha. El running cierra en orden de "
+                    f"CARGA; si alguien corre recompute_saldos_desde (que "
+                    f"recalcula por fecha) esas filas van a cambiar.",
+                )
         else:
             f, calc, real = primer_drift
             drift_count += 1

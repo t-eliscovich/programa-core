@@ -185,7 +185,9 @@ def _diag_banco(no_banco: int, ventana: int = 12):
                COALESCE(prov, '')          AS prov
           FROM scintela.transacciones_bancarias
          WHERE no_banco = %s
-         ORDER BY fecha ASC, id_transaccion ASC
+         -- por ID, igual que check_bancos: el running se estampa en el
+         -- insert tomando la fila anterior POR ID. Ver la nota larga allá.
+         ORDER BY id_transaccion ASC
         """,
         (int(no_banco),),
     ) or []
