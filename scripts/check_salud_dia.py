@@ -248,52 +248,86 @@ def check_bancos(verbose: bool = False) -> None:
             if (filas[i].get("fecha") and filas[i - 1].get("fecha")
                 and filas[i]["fecha"] < filas[i - 1]["fecha"])
         )
-        # Ancla = primera fila con saldo válido. Si todas son NULL, no podemos.
-        ancla_i = next(
-            (i for i, f in enumerate(filas) if f.get("saldo") is not None),
-            None,
-        )
-        if ancla_i is None:
+        # TMT 2026-07-29 (segunda vuelta) — se camina en LOS DOS ÓRDENES y sólo
+        # es ERROR si los dos discrepan.
+        #
+        # Primero cambié el orden de (fecha, id) a id y el drift no desapareció:
+        # se movió. Pichincha pasó de Δ 14.591,15 a Δ 46,88 e Internacional, que
+        # venía en verde, apareció con Δ 1.136,48. O sea que la columna `saldo`
+        # NO reproduce ningún orden único: se escribió con dos mecanismos
+        # distintos a lo largo del tiempo — el estampado del insert (por id) y
+        # `recompute_saldos_desde` (por fecha) — y cada tramo quedó con el que le
+        # tocó.
+        #
+        # Elegir un orden y declarar el otro "roto" es inventar una verdad que
+        # la data no tiene. Si CUALQUIERA de los dos caminos cierra, el running
+        # es explicable y no hay plata que buscar. Sólo cuando los dos fallan
+        # hay algo real, y ahí se reporta el Δ MENOR (la cota de lo que falta,
+        # no la más dramática).
+        def _caminar(ordenadas):
+            ai = next((i for i, f in enumerate(ordenadas)
+                       if f.get("saldo") is not None), None)
+            if ai is None:
+                return "sin_ancla"
+            sc = float(ordenadas[ai]["saldo"] or 0)
+            for f in ordenadas[ai + 1:]:
+                sc = round(sc + _signed_delta(f["documento"], f["importe"]), 2)
+                sr = f.get("saldo")
+                if sr is None:
+                    continue
+                if abs(sc - float(sr)) > 0.01:
+                    return (f, sc, float(sr))
+            return None
+
+        por_id = _caminar(filas)
+        if por_id == "sin_ancla":
             _reporte("BANCOS", WARN, f"#{n} {nombre}: sin ancla — todas las "
                                      f"filas tienen saldo=NULL.")
             continue
-        saldo_calc = float(filas[ancla_i]["saldo"] or 0)
+        por_fecha = _caminar(sorted(
+            filas, key=lambda f: (f.get("fecha") or _d.min, f["id_transaccion"])))
+        # None = ese orden cierra. Si alguno cierra, no hay drift real.
         primer_drift = None
-        for f in filas[ancla_i + 1:]:
-            delta = _signed_delta(f["documento"], f["importe"])
-            saldo_calc = round(saldo_calc + delta, 2)
-            saldo_real = f.get("saldo")
-            if saldo_real is None:
-                continue   # gap → seguimos calculando
-            if abs(saldo_calc - float(saldo_real)) > 0.01:
-                primer_drift = (f, saldo_calc, float(saldo_real))
-                break
+        orden_que_cierra = None
+        if por_id is None:
+            orden_que_cierra = "carga (id)"
+        elif por_fecha is None:
+            orden_que_cierra = "fecha"
+        else:
+            # Los dos fallan → el menor Δ es la cota honesta.
+            primer_drift = min(
+                (por_id, por_fecha), key=lambda d: abs(d[1] - d[2]))
         if primer_drift is None:
             ultimo = filas[-1]
             _reporte(
                 "BANCOS", OK,
                 f"#{n} {nombre}: saldo {_money(ultimo.get('saldo')).strip()} "
-                f"consistente con walk-forward desde ancla.",
+                f"cierra caminando en orden de {orden_que_cierra}.",
             )
             if fuera_de_orden:
                 _reporte(
                     "BANCOS", WARN,
                     f"#{n} {nombre}: {fuera_de_orden} movimiento(s) cargados "
-                    f"fuera de orden de fecha. El running cierra en orden de "
-                    f"CARGA; si alguien corre recompute_saldos_desde (que "
-                    f"recalcula por fecha) esas filas van a cambiar.",
+                    f"fuera de orden de fecha. El running cierra por "
+                    f"{orden_que_cierra}; si alguien corre "
+                    f"recompute_saldos_desde (que recalcula por fecha) esas "
+                    f"filas van a cambiar.",
                 )
         else:
             f, calc, real = primer_drift
             drift_count += 1
             diff = abs(calc - real)
+            # Ya NO dice "reverso roto": eso era una conclusión, no un dato, y
+            # durante meses apuntó a un reverso que no existía. Dice lo que
+            # sabe y adónde ir a mirar.
             _reporte(
                 "BANCOS", ERROR,
-                f"#{n} {nombre}: primer drift en tx#{f['id_transaccion']} "
-                f"({f['fecha']}, {f.get('documento')}). "
+                f"#{n} {nombre}: el running no cierra por fecha NI por orden "
+                f"de carga. Primer corte en tx#{f['id_transaccion']} "
+                f"({f['fecha']}, {f.get('documento')}): "
                 f"running={_money(real).strip()} vs calculado="
                 f"{_money(calc).strip()} (Δ {_money(diff).strip()}). "
-                f"Reverso roto a partir de ahí.",
+                f"Contexto en /admin/salud/diag?solo=a.",
             )
     if drift_count == 0:
         _reporte("BANCOS", OK, "Todos los bancos cuadran.")
