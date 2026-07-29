@@ -74,6 +74,14 @@ DBFS = ["CAJA.DBF", "PICHINCH.DBF", "INTER.DBF", "CHEQUES.DBF", "FACTURAS.DBF",
 # de ese día devolvía UNA sola línea: justo esa. Comparar PC contra una
 # constante de PC nunca iba a detectarlo. Ver [6b].
 PRG_NOMBRE = "MENU.PRG"
+
+# TMT 2026-07-29 — MENU.PRG solo no alcanza. Toda la lógica de COBRANZA vive en
+# los otros PRG (MENU.PRG los lista en su propio backup: ALTAS, INFORMES,
+# BANCOS, MODIFICA) y su única mención a ABONO es un SORT comentado. Sin
+# ALTAS.PRG no se puede saber cómo decide el FoxPro a qué factura va un abono
+# — y eso es justo lo que hay que saber antes de tocar el FIFO de PC.
+# Se extraen si vienen; ninguno es obligatorio.
+PRGS_EXTRA = ("ALTAS.PRG", "MODIFICA.PRG", "BANCOS.PRG", "INFORMES.PRG")
 MAX_LISTADO = 60
 MAX_LISTADO_FACT = 40  # facturas por N° SRI: máx 40 líneas por lado
 
@@ -1519,7 +1527,7 @@ def _extraer() -> None:
     with tarfile.open(TARBALL_PATH, "r:gz") as tar:
         # MENU.PRG viaja opcional: si el tarball no lo trae, [6b] avisa y
         # sigue. Nunca es motivo para que el compare falle.
-        quiero = set(DBFS) | {PRG_NOMBRE}
+        quiero = set(DBFS) | {PRG_NOMBRE} | set(PRGS_EXTRA)
         for m in tar.getmembers():
             nombre = Path(m.name).name.upper()
             if m.isfile() and nombre in quiero:
