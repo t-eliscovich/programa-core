@@ -208,27 +208,61 @@ def _diag_banco(no_banco: int, ventana: int = 12):
     )
 
 
+# B) se hace en DOS pasos a propósito. La versión de una sola query tenía
+# cuatro subconsultas correlacionadas por fila de `factura`; con la tabla
+# entera eso no volvía nunca y la pantalla quedaba colgada. Primero el scan
+# simple (¿cuáles están descuadradas?), después los agregados sólo para esos
+# ids. Mismo resultado, sin el producto cartesiano.
 _SQL_FACT_DESCUADRADAS = """
     SELECT f.id_factura, f.numf, f.numf_completo, f.codigo_cli, f.fecha,
            f.importe, f.abono, f.saldo, f.stat, f.condic,
            COALESCE(f.observacion, '') AS observacion,
-           ROUND(f.importe - f.abono - f.saldo, 2) AS diff,
-           (SELECT COUNT(*) FROM scintela.chequesxfact x
-             WHERE x.id_fact = f.id_factura)                AS n_cheques,
-           COALESCE((SELECT SUM(x.importe) FROM scintela.chequesxfact x
-             WHERE x.id_fact = f.id_factura), 0)            AS aplicado,
-           COALESCE((SELECT SUM(r.rete) FROM scintela.retencion r
-             WHERE r.numf = f.numf AND r.codigo_cli = f.codigo_cli), 0) AS retenido,
-           (SELECT COUNT(*) FROM scintela.mov_doble m
-             WHERE m.origen_table = 'factura' AND m.origen_id = f.id_factura
-               AND m.tipo IN ('factura_cerrada_a_t', 'factura_stat_cambio',
-                              'totalizar_estado_cuenta')
-               AND m.estado = 'activo')                    AS n_cierres
+           ROUND(f.importe - f.abono - f.saldo, 2) AS diff
       FROM scintela.factura f
      WHERE ABS(f.importe - f.abono - f.saldo) > 0.01
        AND TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
      ORDER BY ABS(f.importe - f.abono - f.saldo) DESC
+     LIMIT 200
 """
+
+
+def _enriquecer_facturas(filas: list[dict]) -> list[dict]:
+    """Agrega cheques aplicados / retenido / cierres a un puñado de facturas."""
+    if not filas:
+        return filas
+    ids = [int(f["id_factura"]) for f in filas]
+    aplic = {
+        int(r["id_fact"]): (int(r["n"] or 0), float(r["suma"] or 0))
+        for r in (db.fetch_all(
+            "SELECT id_fact, COUNT(*) AS n, SUM(importe) AS suma "
+            "  FROM scintela.chequesxfact WHERE id_fact = ANY(%s) "
+            " GROUP BY id_fact", (ids,)) or [])
+    }
+    cierres = {
+        int(r["origen_id"]): int(r["n"] or 0)
+        for r in (db.fetch_all(
+            "SELECT origen_id, COUNT(*) AS n FROM scintela.mov_doble "
+            " WHERE origen_table = 'factura' AND origen_id = ANY(%s) "
+            "   AND estado = 'activo' "
+            "   AND tipo IN ('factura_cerrada_a_t','factura_stat_cambio',"
+            "               'totalizar_estado_cuenta') "
+            " GROUP BY origen_id", (ids,)) or [])
+    }
+    # retencion se cruza por (codigo_cli, numf), no por id_factura.
+    claves = [(f.get("codigo_cli") or "", int(f.get("numf") or 0)) for f in filas]
+    rete: dict = {}
+    for r in (db.fetch_all(
+        "SELECT codigo_cli, numf, SUM(rete) AS suma FROM scintela.retencion "
+        " WHERE numf = ANY(%s) GROUP BY codigo_cli, numf",
+        ([k[1] for k in claves],)) or []):
+        rete[((r.get("codigo_cli") or ""), int(r.get("numf") or 0))] = float(r["suma"] or 0)
+    for f in filas:
+        n, suma = aplic.get(int(f["id_factura"]), (0, 0.0))
+        f["n_cheques"], f["aplicado"] = n, suma
+        f["n_cierres"] = cierres.get(int(f["id_factura"]), 0)
+        f["retenido"] = rete.get(((f.get("codigo_cli") or ""), int(f.get("numf") or 0)), 0.0)
+    return filas
+
 
 _SQL_SOBRE_ABONADAS = """
     SELECT f.id_factura, f.numf, f.numf_completo, f.codigo_cli, f.fecha,
@@ -244,6 +278,7 @@ _SQL_SOBRE_ABONADAS = """
               f.importe, f.abono, f.saldo, f.stat
     HAVING SUM(x.importe) - f.importe > 0.01
      ORDER BY SUM(x.importe) - f.importe DESC
+     LIMIT 200
 """
 
 _SQL_LINKS_ROTOS = """
@@ -269,18 +304,31 @@ _SQL_LINKS_ROTOS = """
 @requiere_login
 @requiere_permiso("informes.ver")
 def diag():
-    """Contexto de los errores rojos del chequeo. Solo lectura."""
+    """Contexto de los errores rojos del chequeo. Solo lectura.
+
+    `?solo=a` / `b` / `c` / `d` corre UNA sección. Vale la pena: la A camina
+    el running completo de cada banco (decenas de miles de filas) y no hay por
+    qué esperarla cuando lo que querés ver son las facturas.
+    """
+    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcd"}
+    def quiero(k: str) -> bool:
+        return (not pedido) or (k in pedido)
+
     def _gen():
         yield ("=== DIAGNÓSTICO PROFUNDO — contexto de los errores rojos ===\n"
-               "    (solo lectura: ni un UPDATE)\n\n")
+               "    (solo lectura: ni un UPDATE)"
+               + (f"  [secciones {''.join(sorted(pedido)).upper()}]" if pedido
+                  else "  (?solo=a|b|c|d para una sola)")
+               + "\n\n")
 
         # ── 1) Drift del running bancario ──────────────────────────────
-        yield "┌─ A) BANCOS — contexto del primer drift del running ───────────\n"
-        for b in db.fetch_all(
+        if quiero("a"):
+            yield "┌─ A) BANCOS — contexto del primer drift del running ───────────\n"
+        for b in (db.fetch_all(
             "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco "
             " WHERE EXISTS (SELECT 1 FROM scintela.transacciones_bancarias t "
             "               WHERE t.no_banco = banco.no_banco) "
-            " ORDER BY no_banco") or []:
+            " ORDER BY no_banco") or []) if quiero("a") else []:
             try:
                 filas, info = _diag_banco(int(b["no_banco"]))
             except Exception as exc:  # noqa: BLE001
@@ -309,14 +357,18 @@ def diag():
             yield "\n"
 
         # ── 2) Facturas descuadradas ───────────────────────────────────
-        yield "┌─ B) FACTURAS con saldo ≠ importe − abono ─────────────────────\n"
-        desc = db.fetch_all(_SQL_FACT_DESCUADRADAS) or []
-        yield (f"  {len(desc)} factura(s). 'diff' = importe − abono − saldo "
-               "(positivo = el saldo quedó MÁS BAJO de lo que corresponde).\n")
-        yield ("  id_fact   numf      cli   stat      importe       abono  "
-               "     saldo        diff  ch  aplicado  retenido cierres\n")
+        desc: list = []
+        if quiero("b") or quiero("c"):
+            # C necesita los ids de B para el solapamiento.
+            desc = _enriquecer_facturas(db.fetch_all(_SQL_FACT_DESCUADRADAS) or [])
+        if quiero("b"):
+            yield "┌─ B) FACTURAS con saldo ≠ importe − abono ─────────────────────\n"
+            yield (f"  {len(desc)} factura(s). 'diff' = importe − abono − saldo "
+                   "(positivo = el saldo quedó MÁS BAJO de lo que corresponde).\n")
+            yield ("  id_fact   numf      cli   stat      importe       abono  "
+                   "     saldo        diff  ch  aplicado  retenido cierres\n")
         _tot_diff = 0.0
-        for f in desc:
+        for f in (desc if quiero("b") else []):
             _tot_diff += float(f["diff"] or 0)
             yield (f"  {f['id_factura']:<9} {str(f['numf'])[:9]:<9} "
                    f"{(f['codigo_cli'] or '')[:5]:<5} {(f['stat'] or '')[:4]:<4} "
@@ -328,17 +380,20 @@ def diag():
                    f"{float(f['aplicado'] or 0):>9,.2f} "
                    f"{float(f['retenido'] or 0):>9,.2f} "
                    f"{int(f['n_cierres'] or 0):>4}\n")
-        yield f"  TOTAL diff: {_tot_diff:,.2f}\n"
-        yield ("  (cierres = mov_doble activos de tipo factura_cerrada_a_t / "
-               "factura_stat_cambio / totalizar_estado_cuenta)\n\n")
+        if quiero("b"):
+            yield f"  TOTAL diff: {_tot_diff:,.2f}\n"
+            yield ("  (cierres = mov_doble activos de tipo factura_cerrada_a_t / "
+                   "factura_stat_cambio / totalizar_estado_cuenta)\n\n")
 
         # ── 3) Sobre-abonadas ──────────────────────────────────────────
-        yield "┌─ C) FACTURAS sobre-abonadas (Σ cheques aplicados > importe) ──\n"
-        sob = db.fetch_all(_SQL_SOBRE_ABONADAS) or []
-        _tot_exc = sum(float(r["exceso"] or 0) for r in sob)
-        yield f"  {len(sob)} factura(s), exceso total $ {_tot_exc:,.2f}\n"
-        yield ("  id_fact   numf      cli   stat      importe    aplicado  n "
-               "      exceso  desde       hasta\n")
+        sob: list = []
+        if quiero("c"):
+            yield "┌─ C) FACTURAS sobre-abonadas (Σ cheques aplicados > importe) ──\n"
+            sob = db.fetch_all(_SQL_SOBRE_ABONADAS) or []
+            _tot_exc = sum(float(r["exceso"] or 0) for r in sob)
+            yield f"  {len(sob)} factura(s), exceso total $ {_tot_exc:,.2f}\n"
+            yield ("  id_fact   numf      cli   stat      importe    aplicado  n "
+                   "      exceso  desde       hasta\n")
         for r in sob:
             yield (f"  {r['id_factura']:<9} {str(r['numf'])[:9]:<9} "
                    f"{(r['codigo_cli'] or '')[:5]:<5} {(r['stat'] or '')[:4]:<4} "
@@ -349,15 +404,18 @@ def diag():
                    f"{str(r['desde'])[:10]}  {str(r['hasta'])[:10]}\n")
         # ¿Cuántas están en las DOS listas? Si se solapan mucho, es un solo
         # fenómeno contado dos veces, no dos problemas distintos.
-        ids_desc = {f["id_factura"] for f in desc}
-        ids_sob = {r["id_factura"] for r in sob}
-        yield (f"\n  Solapamiento B∩C: {len(ids_desc & ids_sob)} factura(s) "
-               f"(B={len(ids_desc)}, C={len(ids_sob)})\n\n")
+        if quiero("c"):
+            ids_desc = {f["id_factura"] for f in desc}
+            ids_sob = {r["id_factura"] for r in sob}
+            yield (f"\n  Solapamiento B∩C: {len(ids_desc & ids_sob)} factura(s) "
+                   f"(B={len(ids_desc)}, C={len(ids_sob)})\n\n")
 
         # ── 4) Links rotos de mov_doble ────────────────────────────────
-        yield "┌─ D) MOV_DOBLE — reversados sin reverso (filas concretas) ─────\n"
-        rotos = db.fetch_all(_SQL_LINKS_ROTOS) or []
-        yield f"  {len(rotos)} fila(s)\n"
+        rotos: list = []
+        if quiero("d"):
+            yield "┌─ D) MOV_DOBLE — reversados sin reverso (filas concretas) ─────\n"
+            rotos = db.fetch_all(_SQL_LINKS_ROTOS) or []
+            yield f"  {len(rotos)} fila(s)\n"
         for m in rotos:
             yield (f"  #{m['id_mov_doble']:<6} {(m['tipo'] or '')[:32]:<32} "
                    f"{(m['origen_table'] or '')[:8]}#{m['origen_id']}"
