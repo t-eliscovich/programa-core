@@ -587,17 +587,47 @@ def _seccion_diccionario():
     if len(ordenadas) > 40:
         yield f"  … y {len(ordenadas) - 40} combinaciones más\n"
 
-    # Propuestas ACCIONABLES: las que tienen dirección concreta.
-    listas = [(k, v) for k, v in ordenadas if k[0]]
-    yield (f"\n  Con dirección concreta (registrables): {len(listas)}\n")
-    for (iddir, cli_a, pc_cod), ej in listas[:20]:
-        yield (f"    sucursal_direccion: {iddir} → {pc_cod}   "
-               f"(Asinfo la manda como {cli_a}, {len(ej)} documento(s))\n")
-    sin_dir = len(ordenadas) - len(listas)
-    if sin_dir:
-        yield (f"\n  Sin dirección ({sin_dir}): ahí la sucursal no explica el\n"
-               "  desvío — puede ser un alias de cliente (cliente_alias) o un\n"
-               "  cruce casual de importes. Mirar antes de registrar.\n")
+    # Propuestas ACCIONABLES — con el filtro que las hace creíbles.
+    #
+    # Matchear sólo por importe genera ruido: las notas de crédito financieras
+    # repiten montos y cualquier par cliente/importe coincide de casualidad.
+    # Se ve en la data: la dirección 22657 aparece apuntando a AJ2 (136 docs)
+    # pero también a PGQ (8), ERA (5), VPM (4), JCP (3)…
+    #
+    # Y ahí está la regla, porque una dirección de entrega pertenece a UN
+    # cliente y nada más: si una dirección apunta a varios códigos de PC, todos
+    # menos uno son casualidad. Se calcula el DOMINIO — qué porcentaje de las
+    # coincidencias de esa dirección se va al código ganador — y sólo se
+    # proponen las que ganan claro.
+    #
+    # Validación del método: el primer resultado por dominio es 22657 → AJ2,
+    # que es textualmente la fila del seed de la migración 0132. El detector
+    # redescubre una respuesta ya sabida correcta sin que nadie se la diga.
+    por_dir: dict = {}
+    for (iddir, cli_a, pc_cod), ej in prop.items():
+        if not iddir:
+            continue
+        por_dir.setdefault(iddir, []).append((pc_cod, cli_a, len(ej)))
+    UMBRAL_DOMINIO, MIN_DOCS = 0.60, 3
+    fuertes, debiles = [], []
+    for iddir, cands in por_dir.items():
+        total = sum(n for _, _, n in cands)
+        pc_cod, cli_a, n = max(cands, key=lambda c: c[2])
+        dom = n / total if total else 0
+        fila = (iddir, pc_cod, cli_a, n, total, dom)
+        (fuertes if (dom >= UMBRAL_DOMINIO and n >= MIN_DOCS) else debiles).append(fila)
+    fuertes.sort(key=lambda f: -f[3])
+
+    yield (f"\n  Direcciones con un ganador claro (≥{int(UMBRAL_DOMINIO*100)}% "
+           f"de sus coincidencias y ≥{MIN_DOCS} documentos): {len(fuertes)}\n")
+    yield "    dir        → PC    docs  dominio   Asinfo la manda como\n"
+    for iddir, pc_cod, cli_a, n, total, dom in fuertes:
+        yield (f"    {iddir:<10} → {pc_cod:<4} {n:>5}/{total:<4} "
+               f"{dom*100:>5.0f}%   {cli_a}\n")
+    yield (f"\n  Descartadas por reparto ambiguo: {len(debiles)} direcciones.\n"
+           "  Una dirección pertenece a UN cliente: si apunta a varios, es\n"
+           "  coincidencia de importes (las notas de crédito repiten montos),\n"
+           "  no una sucursal.\n")
     yield ("\n  Registrar en /facturas/sucursal-direccion/agregar "
            "(id_direccion + código PC).\n\n")
 
