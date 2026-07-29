@@ -301,32 +301,52 @@ def check_mov_doble(verbose: bool = False) -> None:
     else:
         _reporte("MOV_DOBLE", OK, "Reversos tienen id_original.")
 
-    # b) reversados sin id_reverso
-    n_rev_sin = db.fetch_one(
-        """
-        SELECT COUNT(*) AS n
-          FROM scintela.mov_doble
-         WHERE estado = 'reversado' AND id_reverso IS NULL
-        """
-    ) or {}
+    # b) reversados sin id_reverso Y sin un reverso hermano que los explique.
+    #
+    # TMT 2026-07-29 — antes esto contaba TODOS los 'reversado' con
+    # id_reverso NULL y daba 45 en rojo. La mayoría NO son link roto: cuando
+    # se reversa un cheque, sus hijos se marcan EN BLOQUE con un UPDATE que
+    # a propósito no pone id_reverso individual —
+    #
+    #   UPDATE mov_doble SET estado='reversado'
+    #    WHERE origen_table='cheque' AND origen_id=%s
+    #      AND tipo='cheque_aplicado_a_factura' AND estado='activo'
+    #
+    # (cheques/queries.py L1150 y L4215) — porque el reverso es UNO solo, el
+    # del cheque padre. Lo mismo hace el deshacer-neteo por `batch_id`
+    # (L5277). Marcarlos como ERROR es gritar en falso, que es justo lo que
+    # hace que nadie mire el chequeo.
+    #
+    # Ahora sólo cuenta los que NO tienen ningún 'reverso' hermano: ni por
+    # (origen_table, origen_id) ni por batch_id. Ésos sí son link roto.
+    _SQL_REV_HUERFANO = """
+          FROM scintela.mov_doble m
+         WHERE m.estado = 'reversado' AND m.id_reverso IS NULL
+           AND NOT EXISTS (
+                 SELECT 1 FROM scintela.mov_doble h
+                  WHERE h.estado = 'reverso'
+                    AND (   (h.origen_table = m.origen_table
+                             AND h.origen_id = m.origen_id)
+                         OR (m.batch_id IS NOT NULL
+                             AND h.batch_id = m.batch_id) )
+           )
+    """
+    n_rev_sin = db.fetch_one("SELECT COUNT(*) AS n " + _SQL_REV_HUERFANO) or {}
     nrs = int(n_rev_sin.get("n") or 0)
     if nrs:
         _reporte("MOV_DOBLE", ERROR,
-                 f"{nrs} reversados sin id_reverso (link roto).")
+                 f"{nrs} reversados sin id_reverso NI reverso hermano "
+                 f"(link roto de verdad).")
         if verbose:
             for r in db.fetch_all(
-                """
-                SELECT tipo, COUNT(*) AS n,
-                       MIN(fecha_operacion) AS desde,
-                       MAX(fecha_operacion) AS hasta
-                  FROM scintela.mov_doble
-                 WHERE estado = 'reversado' AND id_reverso IS NULL
-                 GROUP BY tipo ORDER BY COUNT(*) DESC
-                """) or []:
+                "SELECT m.tipo, COUNT(*) AS n, MIN(m.fecha_operacion) AS desde,"
+                " MAX(m.fecha_operacion) AS hasta " + _SQL_REV_HUERFANO
+                + " GROUP BY m.tipo ORDER BY COUNT(*) DESC") or []:
                 print(f"     {r['tipo']:34} n={r['n']:<4} "
                       f"{r['desde']} → {r['hasta']}")
     else:
-        _reporte("MOV_DOBLE", OK, "Reversados tienen id_reverso.")
+        _reporte("MOV_DOBLE", OK,
+                 "Reversados con link (propio o del reverso hermano).")
 
     # c) alta marcada como reversada pero el reverso ya no está activo
     inconsistente = db.fetch_one(
