@@ -86,6 +86,15 @@ def lista():
         ),
         [],
     )
+    # AÑO de la importación (columna PC-only, mig 0135) — TMT 2026-07-29. Va
+    # ANTES del cruce con Asinfo porque el cruce lo usa para desempatar el
+    # número reusado entre campañas. Fail-soft: sin tabla o sin dato, el cruce
+    # se comporta como antes.
+    try:
+        from . import anio as _anio_mod
+        _anio_mod.adjuntar_anio(filas)
+    except Exception:  # noqa: BLE001
+        pass
     # Colgar a cada anticipo la RECEPCIÓN de su importación Asinfo (im_numero,
     # fecha_recepcion_im, kg_im). Fail-soft e independiente del _safe de arriba:
     # si Asinfo cae, la lista igual se muestra (las columnas quedan en blanco).
@@ -94,6 +103,28 @@ def lista():
         _import_service.adjuntar_recepcion_asinfo(filas)
     except Exception:  # noqa: BLE001
         pass
+    # Sugerencia de año + evidencia (historial del número + importaciones de
+    # Asinfo) para las que todavía no lo tienen. Sólo si hay permiso de
+    # escritura: es para completar, no para mirar.
+    if tiene_permiso("facturas.crear"):
+        try:
+            from . import anio as _anio_mod
+            _anio_mod.adjuntar_sugerencia(
+                [f for f in filas if (f.get("st") or "").strip() == ""]
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    # Filtro por año (el de la columna; "0" = sin año todavía).
+    anio_filtro = (request.args.get("anio") or "").strip()
+    if anio_filtro:
+        if anio_filtro == "0":
+            filas = [f for f in filas if not f.get("anio_col")]
+        else:
+            try:
+                _a = int(anio_filtro)
+                filas = [f for f in filas if f.get("anio_col") == _a]
+            except ValueError:
+                anio_filtro = ""
     if recibido_mes:
         filas = [
             f for f in filas
@@ -122,6 +153,7 @@ def lista():
                 ("fecha", "Fecha"), ("cta", "Cuenta"),
                 ("concepto", "Concepto"), ("importe", "Importe"),
                 ("st", "Estado"), ("clave", "Clave"),
+                ("anio_col", "Año imp."),
                 ("fecha_recepcion_im", "Recibido"),
                 ("kg_im", "Kg importación"), ("im_numero", "Importación"),
             ],
@@ -132,6 +164,7 @@ def lista():
         filas=filas, cuentas=cuentas, resumen=res,
         desde=desde, hasta=hasta, cta=cta, q=q,
         codigo=codigo or None, recibido_mes=recibido_mes,
+        anio_filtro=anio_filtro,
         solo_vivos=solo_vivos, error=error,
         hoy=today_ec().isoformat(),
     )
@@ -365,6 +398,42 @@ def editar_concepto(id_dolares: int):
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude editar el concepto", e)
+    return redirect(request.referrer or url_for("dolares.lista"))
+
+
+@dolares_bp.route("/dolares/anticipo/<int:id_dolares>/anio", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def set_anio(id_dolares: int):
+    """Guarda (o borra) el AÑO de la importación de un anticipo.
+
+    TMT 2026-07-29 (dueña): "¿y si no una columna con año? porque tampoco la van
+    a encontrar así" — el año no va metido en el concepto (que es lo que la
+    gente lee y busca, y que el BAP del dBase filtra por substring) sino en su
+    propia columna, en una tabla PC-only que sobrevive al sync.
+    """
+    from . import anio as _anio_mod
+    valor = (request.form.get("anio") or "").strip()
+    try:
+        fila = _anio_mod.fila_por_id(id_dolares)
+        if (fila.get("st") or "").strip():
+            flash("El anticipo ya está aplicado o cancelado: no se le cambia "
+                  "el año.", "warn")
+            return redirect(request.referrer or url_for("dolares.lista"))
+        usuario = (getattr(g, "user", None) or {}).get("username", "web")
+        r = _anio_mod.guardar(
+            fila=fila, anio=valor or None, usuario=usuario,
+            origen=(request.form.get("origen") or "manual"),
+        )
+        cod = f"{(fila.get('cta') or '').strip()} {(fila.get('concepto') or '').strip()}"
+        if r.get("anio"):
+            flash(f"Año {r['anio']} guardado para {cod}.", "ok")
+        else:
+            flash(f"Se borró el año de {cod}.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude guardar el año", e)
     return redirect(request.referrer or url_for("dolares.lista"))
 
 

@@ -509,9 +509,13 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
         a["kg_im"] = None
         # TMT 2026-07-29: `ref` y `anio` salen del MISMO parser que usa el
         # cruce ("58/26 SALDO" → 58 + 2026; "31 SALDO" → 31 sin año).
+        # Si alguien YA puso `anio_ref` en la fila (la COLUMNA Año de
+        # modules/dolares/anio.py, que corre antes), esa manda: es el dato
+        # explícito de la dueña, no una inferencia.
         _p = parse_ref_anticipo(a.get("concepto"))
         a["ref"] = _p["numero"]
-        a["anio_ref"] = _p["anio"]
+        if a.get("anio_ref") is None:
+            a["anio_ref"] = _p["anio"]
     if not anticipos:
         return
     index = _index_importaciones_por_codigo(limite=limite)
