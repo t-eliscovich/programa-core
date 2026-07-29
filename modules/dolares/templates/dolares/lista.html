@@ -480,16 +480,23 @@
               <form method="post" class="inline"
                     action="{{ url_for('dolares.set_anio', id_dolares=d.id_dolares) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="origen" value="manual">
                 <input name="anio" value="{{ d.anio_col or '' }}" maxlength="4"
                        inputmode="numeric" placeholder="{{ d.anio_sug or '—' }}"
                        title="{{ d.anio_evidencia or 'Año de la importación' }}"
                        onchange="this.form.requestSubmit()"
                        style="width:3.6rem;padding:1px 5px;font-size:12px;text-align:center;
                               {% if not d.anio_col %}color:rgb(100 116 139);{% endif %}"
-                       class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950">
+                       class="rounded border border-slate-300 bg-white">
                 {% if not d.anio_col and d.anio_sug %}
-                <button name="origen" value="sugerencia" title="{{ d.anio_evidencia }}"
-                        onclick="this.form.anio.value='{{ d.anio_sug }}'"
+                {# TMT 2026-07-29 — BUG que casi entra un dato malo: este botón
+                   era `submit` y, al ser el primero del form, se comía el ENTER
+                   del campo de al lado: escribías 2026, apretabas Enter, y su
+                   onclick pisaba el valor con la sugerencia (2025) y guardaba
+                   ESA. Ahora es type="button" y postea él mismo; el Enter del
+                   input queda para el envío normal. #}
+                <button type="button" title="{{ d.anio_evidencia }}"
+                        onclick="this.form.origen.value='sugerencia'; this.form.anio.value='{{ d.anio_sug }}'; this.form.requestSubmit();"
                         style="margin-left:.2rem;font-size:11px;color:rgb(2 132 199);">✓{{ d.anio_sug }}</button>
                 {% endif %}
               </form>
