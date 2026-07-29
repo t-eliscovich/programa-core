@@ -467,6 +467,25 @@ def _seccion_numf0():
     yield "\n  RESUMEN por tipo de documento en Asinfo:\n"
     for k, n in sorted(resumen.items(), key=lambda kv: -kv[1]):
         yield f"    {k:<22} {n:>4}\n"
+    # "¿en todas?" — no: la mayoría de las NUMF=0 no tiene ni un cheque.
+    con_ch = [f for f in filas if int(f.get("n_cheques") or 0) > 0]
+    sobre = [f for f in con_ch
+             if float(f.get("aplicado") or 0) - float(f.get("importe") or 0) > 0.01]
+    _exc = sum(float(f["aplicado"] or 0) - float(f["importe"] or 0) for f in sobre)
+    yield (f"\n  Con cheques aplicados: {len(con_ch)} de {len(filas)}\n"
+           f"  De esas, SOBRE-abonadas: {len(sobre)} "
+           f"(exceso $ {_exc:,.2f})\n")
+    if sobre:
+        top = sorted(sobre, key=lambda f: -(float(f["aplicado"] or 0)
+                                            - float(f["importe"] or 0)))[:5]
+        _t5 = sum(float(f["aplicado"] or 0) - float(f["importe"] or 0) for f in top)
+        yield (f"  Las 5 peores concentran $ {_t5:,.2f} "
+               f"({_t5 / _exc * 100:.0f}% del exceso):\n")
+        for f in top:
+            yield (f"    #{f['id_factura']} {(f['codigo_cli'] or '')[:4]:<4} "
+                   f"{str(f['fecha'])[:10]} importe {float(f['importe'] or 0):>10,.2f} "
+                   f"aplicado {float(f['aplicado'] or 0):>10,.2f} "
+                   f"exceso {float(f['aplicado'] or 0) - float(f['importe'] or 0):>10,.2f}\n")
     negativas = [f for f in filas if float(f.get("importe") or 0) < 0]
     yield (f"\n  Con importe NEGATIVO: {len(negativas)} de {len(filas)} "
            f"(suma {sum(float(f['importe'] or 0) for f in negativas):,.2f})\n")
@@ -575,6 +594,7 @@ def diag():
             _tot_diff += float(f["diff"] or 0)
             yield (f"  {f['id_factura']:<9} {str(f['numf'])[:9]:<9} "
                    f"{(f['codigo_cli'] or '')[:5]:<5} {(f['stat'] or '')[:4]:<4} "
+                   f"{str(f['fecha'])[:10]} "
                    f"{float(f['importe'] or 0):>12,.2f} "
                    f"{float(f['abono'] or 0):>11,.2f} "
                    f"{float(f['saldo'] or 0):>11,.2f} "
