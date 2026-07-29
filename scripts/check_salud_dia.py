@@ -753,6 +753,7 @@ def check_reversibilidad(verbose: bool = False) -> None:
     _seccion("10) REVERSIBILIDAD — todo mov tiene reverso")
     try:
         from modules.historial.views import (
+            _PERMISO_REVERSO_INLINE,
             _REVERSO_BLOQUEADO,
             _REVERSO_DISPATCH,
         )
@@ -760,7 +761,14 @@ def check_reversibilidad(verbose: bool = False) -> None:
         _reporte("REVERSIBILIDAD", WARN,
                  f"no pude importar el dispatcher de reverso: {e}")
         return
-    conocidos = set(_REVERSO_DISPATCH) | set(_REVERSO_BLOQUEADO)
+    # TMT 2026-07-29 — hay TRES tablas de cobertura, no una.
+    # `_REVERSO_DISPATCH` manda al wizard de cada tipo;
+    # `_PERMISO_REVERSO_INLINE` reversa en el acto sin cambiar de pantalla
+    # (`reversar_mov_inline`). `retiro_op` está SÓLO en la segunda — tiene
+    # reverso atómico propio (`retiros.deshacer_op`) desde el 06/07 — y el
+    # check lo listaba como "sin reverso". Otro grito en falso.
+    conocidos = (set(_REVERSO_DISPATCH) | set(_REVERSO_BLOQUEADO)
+                 | set(_PERMISO_REVERSO_INLINE))
 
     # TMT 2026-07-29: el dispatcher tiene un FALLBACK en runtime —
     # `if not handler and tipo.startswith("caja_")` (historial/views.py) —
