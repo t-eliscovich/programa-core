@@ -748,6 +748,26 @@ _REVERSO_DISPATCH = {
         "facturas.reversar_abono_manual",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # Cobro de cheque en EFECTIVO (banco=99): el alta del cheque mete una
+    # fila 'E' en caja y el cheque queda stat 'C'. El deshacer correcto es
+    # anular el cheque por error de carga, que para stat 'C' inserta la 'S'
+    # compensatoria en caja (ver la tabla de `anular_por_error_de_carga`).
+    # NO va por `caja.confirmar_reverso`: ese busca el mov_doble por
+    # (origen_table='caja', origen_id) y acá el origen es el CHEQUE, así que
+    # no encontraría nada, se caería al re-parse del concepto y podría
+    # inventar un side-effect que nunca existió — el bug #3 del 05/06.
+    "cheque_efectivo_to_caja": (
+        "cheques.anular_error_carga",
+        lambda r: {"id_cheque": r["origen_id"]},
+    ),
+    # Cheque de cartera cancelado (X) porque un anticipo lo cubría. El wizard
+    # lo devuelve a su stat anterior y restaura la posdat hermana que la
+    # cancelación había borrado; el espejo NB=98 (saldo a favor) NO se ajusta
+    # solo y la pantalla lo dice con números.
+    "cheque_cancelado_por_anticipo": (
+        "cheques.reversar_cancelacion_anticipo",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
 }
 
 # Tipos que NO se reversan desde acá — el dispatcher muestra un toast

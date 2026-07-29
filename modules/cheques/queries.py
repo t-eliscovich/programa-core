@@ -1150,12 +1150,22 @@ def anular_por_error_de_carga(
         # También marcar como reversadas las aplicaciones del cheque
         # (`cheque_aplicado_a_factura`) que seguían 'activo' — igual que
         # hace reversar().
+        #
+        # TMT 2026-07-29: se suma `cheque_efectivo_to_caja`. Un cheque
+        # banco=99 (EFECTIVO) entra a caja con una fila 'E' y deja ese
+        # mov_doble; anular por error de carga YA compensa esa caja con una
+        # 'S' (tabla de arriba, stat 'C'), pero el mov quedaba 'activo': en
+        # /historial la entrada de caja seguía ofreciendo un ↺ que después
+        # rebotaba con "cheque ya cerrado". El dinero estaba bien, la
+        # pantalla mentía.
         db.execute(
             """
             UPDATE scintela.mov_doble
                SET estado='reversado'
              WHERE origen_table='cheque' AND origen_id=%s
-               AND tipo='cheque_aplicado_a_factura' AND estado='activo'
+               AND tipo IN ('cheque_aplicado_a_factura',
+                            'cheque_efectivo_to_caja')
+               AND estado='activo'
             """,
             (id_cheque,),
             conn=conn,
@@ -1289,6 +1299,30 @@ def cancelar_por_anticipo(
             )
 
         # posdat hermana (cheques postdatados viven también en el flujo posdat)
+        #
+        # TMT 2026-07-29: ANTES de borrarla, guardarla. El DELETE existía desde
+        # el 06/07 sin snapshot, así que reversar la cancelación era imposible:
+        # la fila del pasivo se perdía y no hay de dónde deducir su fecha ni su
+        # concepto. Es el mismo patrón que ya usa `deshacer_neteo` (snapshot →
+        # borrar → re-INSERT al deshacer). Barato: son 0 o 1 filas.
+        posdat_snap = [
+            {
+                "fecha": (r.get("fecha").isoformat()
+                          if hasattr(r.get("fecha"), "isoformat") else r.get("fecha")),
+                "fechad": (r.get("fechad").isoformat()
+                           if hasattr(r.get("fechad"), "isoformat") else r.get("fechad")),
+                "prov": r.get("prov"),
+                "num": r.get("num"),
+                "importe": float(r.get("importe") or 0),
+                "concepto": r.get("concepto") or "",
+            }
+            for r in (db.fetch_all(
+                "SELECT fecha, fechad, prov, num, importe, concepto "
+                "  FROM scintela.posdat "
+                " WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
+                (id_cheque, codigo_cli), conn=conn,
+            ) or [])
+        ]
         db.execute(
             "DELETE FROM scintela.posdat WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
             (id_cheque, codigo_cli),
@@ -1336,6 +1370,10 @@ def cancelar_por_anticipo(
                 "id_cheque_anticipo": id_cheque_anticipo,
                 "monto_anticipo": float(monto_anticipo or 0),
                 "codigo_cli": codigo_cli,
+                # Snapshot para poder reversar (ver arriba). Lista vacía =
+                # el cheque NO tenía posdat hermana; ausencia de la clave =
+                # mov viejo, anterior al 29/07, sin snapshot posible.
+                "posdat_borradas": posdat_snap,
             },
         )
 
@@ -1344,6 +1382,197 @@ def cancelar_por_anticipo(
         "stat_previo": stat_prev,
         "stat_nuevo": "X",
         "importe": importe,
+    }
+
+
+def espejo_de_anticipo(id_cheque_anticipo: int | None, conn=None) -> dict | None:
+    """El espejo NB=98 (saldo a favor) que cuelga de un cheque de anticipo.
+
+    Se usa para PODER AVISAR — ver `reversar_cancelacion_por_anticipo`.
+    """
+    if not id_cheque_anticipo:
+        return None
+    return db.fetch_one(
+        "SELECT id_cheque, no_cheque, importe, stat "
+        "  FROM scintela.cheque "
+        " WHERE id_cheque_padre = %s AND no_banco IN (97, 98) "
+        "   AND TRIM(COALESCE(stat, '')) = 'Z' "
+        " ORDER BY id_cheque DESC LIMIT 1",
+        (int(id_cheque_anticipo),), conn=conn,
+    )
+
+
+def reversar_cancelacion_por_anticipo(
+    id_mov_doble: int, *, usuario: str = "web", motivo: str = "",
+) -> dict:
+    """Devuelve a cartera un cheque que se había cancelado con un anticipo.
+
+    TMT 2026-07-29. `cancelar_por_anticipo` decía en su docstring que el mov
+    quedaba "reversible individualmente" y que el reverso era "manual… NO
+    automatizado a propósito". Eran 21 movs activos que /historial mostraba
+    con un ↺ que no llevaba a ninguna parte. Esto lo automatiza en lo que se
+    puede automatizar sin adivinar, y AVISA de lo que no.
+
+    Deshace las dos cosas que la cancelación hizo sobre el cheque:
+      1. `stat='X'` → vuelve al stat que tenía (guardado en la metadata);
+      2. el DELETE de la posdat hermana → se re-inserta desde el snapshot.
+
+    Lo que NO toca, a propósito: **el espejo NB=98 (saldo a favor)**. El
+    espejo se crea por el SOBRANTE del anticipo (anticipo − Σ cheques
+    cancelados), así que al des-cancelar un cheque el sobrante debería subir
+    por su importe. Ajustarlo automáticamente exige decidir algo contable que
+    el código no puede decidir solo — si el anticipo quedó sobre-aplicado o
+    si el cliente pasa a tener más saldo a favor. Devolvemos el espejo
+    encontrado y su importe para que la pantalla lo diga con números y la
+    dueña lo resuelva; mejor eso que mover el saldo a favor por adivinanza.
+
+    Se niega (ValueError, sin escribir nada) si:
+      - el mov no es una cancelación por anticipo, o ya está reversado;
+      - el cheque ya no está en 'X' (alguien lo movió después: reponerlo
+        pisaría ese cambio);
+      - el mov es anterior al 29/07 y el cheque TENÍA posdat hermana pero no
+        hay snapshot — en ese caso el pasivo no se puede reconstruir sin
+        inventar fecha y concepto, y se explica qué cargar a mano.
+
+    Devuelve `{id_cheque, no_cheque, stat_restaurado, posdat_restauradas,
+    espejo, sin_snapshot}`.
+    """
+    import json as _json
+
+    import mov_doble as _md
+
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, destino_id, estado, metadata, "
+        "       importe, fecha_operacion "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        raise ValueError("No encuentro ese movimiento.")
+    if (mv.get("tipo") or "") != "cheque_cancelado_por_anticipo":
+        raise ValueError(
+            f"Ese movimiento es '{mv.get('tipo')}', no una cancelación por "
+            "anticipo.")
+    if (mv.get("estado") or "activo") != "activo":
+        raise ValueError(
+            f"Esa cancelación ya está {mv.get('estado')} — no se reversa dos veces.")
+
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:
+            meta = {}
+    id_cheque = int(mv.get("origen_id") or 0)
+    stat_destino = (meta.get("stat_previo") or "Z").strip().upper() or "Z"
+    if stat_destino not in STATS_VIVOS:
+        raise ValueError(
+            f"La metadata dice que el cheque venía de stat='{stat_destino}', "
+            f"que no es un estado vivo ({'/'.join(STATS_VIVOS)}). No lo "
+            "restauro a un estado inconsistente — revisalo a mano.")
+    snap = meta.get("posdat_borradas")
+    sin_snapshot = snap is None
+
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+
+    with db.tx() as conn:
+        ch = db.fetch_one(
+            "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, fechad, fecha "
+            "  FROM scintela.cheque WHERE id_cheque = %s FOR UPDATE",
+            (id_cheque,), conn=conn,
+        )
+        if not ch:
+            raise ValueError("El cheque de ese movimiento ya no existe.")
+        stat_hoy = (ch.get("stat") or "").strip().upper()
+        if stat_hoy != "X":
+            raise ValueError(
+                f"El cheque está en stat='{stat_hoy}', no en 'X': alguien lo "
+                "movió después de la cancelación. Reversá primero ese cambio "
+                "— si no, esto lo pisaría.")
+
+        # Sin snapshot no sabemos si había posdat. Si el cheque es postdatado
+        # (fechad futura respecto de su fecha) lo más probable es que sí la
+        # tuviera, y reconstruirla implicaría inventar fecha y concepto.
+        if sin_snapshot:
+            _fd, _f = ch.get("fechad"), ch.get("fecha")
+            if _fd and _f and _fd > _f:
+                raise ValueError(
+                    f"Esta cancelación es anterior al 29/07 y no guardó la "
+                    f"fila de posdatados que borró. El cheque es postdatado "
+                    f"(f.dep {_fd}), así que casi seguro tenía una: si la "
+                    f"reconstruyo estaría inventando su fecha y su concepto. "
+                    f"Volvé el cheque a '{stat_destino}' desde su ficha y "
+                    f"cargá la posdat a mano en /posdat "
+                    f"(prov {ch.get('codigo_cli')}, num {id_cheque}, "
+                    f"$ {float(ch.get('importe') or 0):,.2f}).")
+
+        db.execute(
+            "UPDATE scintela.cheque "
+            "   SET stat=%s, fechaout=NULL, "
+            "       observacion = RIGHT("
+            "           COALESCE(observacion || ' | ', '') || %s, 200), "
+            "       usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+            " WHERE id_cheque=%s",
+            (stat_destino,
+             ("[R] cancelación por anticipo deshecha"
+              + (f": {motivo[:60]}" if motivo else "")),
+             usuario, id_cheque),
+            conn=conn,
+        )
+
+        n_posdat = 0
+        for p in (snap or []):
+            db.execute(
+                "INSERT INTO scintela.posdat "
+                "  (fecha, fechad, prov, num, importe, concepto, banc, usuario_crea) "
+                "VALUES (%s,%s,%s,%s,%s,%s,0,%s)",
+                (p.get("fecha") or fecha, p.get("fechad"),
+                 p.get("prov") or ch.get("codigo_cli"),
+                 p.get("num") or id_cheque,
+                 float(p.get("importe") or 0), (p.get("concepto") or "")[:50],
+                 usuario),
+                conn=conn,
+            )
+            n_posdat += 1
+
+        espejo = espejo_de_anticipo(meta.get("id_cheque_anticipo"), conn=conn)
+
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_cheque_cancelado_por_anticipo",
+            origen_table="cheque", origen_id=id_cheque,
+            destino_table="cheque",
+            destino_id=meta.get("id_cheque_anticipo") or id_cheque,
+            importe=float(ch.get("importe") or 0) or 1.0,
+            fecha=fecha,
+            concepto=(
+                f"DESHECHA cancelación por anticipo — ch "
+                f"{(ch.get('no_cheque') or '').strip() or id_cheque} "
+                f"{ch.get('codigo_cli')} X→{stat_destino}"
+                + (f" ({motivo})" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "stat_restaurado": stat_destino,
+                "posdat_restauradas": n_posdat,
+                "espejo_no_ajustado": (
+                    {"id_cheque": espejo.get("id_cheque"),
+                     "importe": float(espejo.get("importe") or 0)}
+                    if espejo else None),
+                "motivo": motivo or None,
+            },
+            id_original=id_mov_doble,
+        )
+
+    return {
+        "id_cheque": id_cheque,
+        "no_cheque": (ch.get("no_cheque") or "").strip() or f"#{id_cheque}",
+        "importe": float(ch.get("importe") or 0),
+        "stat_restaurado": stat_destino,
+        "posdat_restauradas": n_posdat,
+        "espejo": espejo,
+        "sin_snapshot": bool(sin_snapshot),
     }
 
 

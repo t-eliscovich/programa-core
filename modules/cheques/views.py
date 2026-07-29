@@ -2634,6 +2634,102 @@ def transicionar(id_cheque: int):
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
+@cheques_bp.route("/cheques/cancelacion-anticipo/<int:id_mov_doble>/reversar",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def reversar_cancelacion_anticipo(id_mov_doble: int):
+    """Devuelve a cartera un cheque cancelado con un anticipo.
+
+    TMT 2026-07-29: `cancelar_por_anticipo` (06/07) decía en su docstring que
+    el reverso era "manual, NO automatizado a propósito" — pero /historial
+    igual mostraba el ↺, que no llevaba a ninguna parte. 21 movs así.
+
+    La pantalla dice explícitamente lo único que el reverso NO hace: ajustar
+    el espejo NB=98 (saldo a favor). Eso exige una decisión contable que el
+    código no puede tomar solo, así que se muestra el espejo con su número y
+    su importe en vez de moverlo por adivinanza.
+    """
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, metadata, estado "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        abort(404)
+    volver = request.values.get("next") or url_for("historial.lista")
+
+    if request.method == "POST":
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            res = queries.reversar_cancelacion_por_anticipo(
+                id_mov_doble,
+                usuario=usuario,
+                motivo=(request.form.get("motivo") or "").strip(),
+            )
+            msg = (
+                f"Cheque {res['no_cheque']} de vuelta en cartera "
+                f"(estado {res['stat_restaurado']})."
+            )
+            if res["posdat_restauradas"]:
+                msg += f" Restauré {res['posdat_restauradas']} fila(s) de posdatados."
+            if res.get("espejo"):
+                msg += (
+                    f" OJO: el saldo a favor #{res['espejo']['id_cheque']} "
+                    f"($ {float(res['espejo']['importe'] or 0):,.2f}) NO se "
+                    f"ajustó — debería subir $ {res['importe']:,.2f}. Revisalo."
+                )
+            flash(msg, "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude deshacer la cancelación por anticipo", e)
+        return redirect(request.form.get("next") or volver)
+
+    import json as _json
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:
+            meta = {}
+    ch = queries.por_id(int(mv.get("origen_id") or 0)) or {}
+    espejo = queries.espejo_de_anticipo(meta.get("id_cheque_anticipo"))
+    _imp = float(ch.get("importe") or 0)
+    _snap = meta.get("posdat_borradas")
+    detalle = {
+        "Cheque": (ch.get("no_cheque") or "").strip() or f"#{mv.get('origen_id')}",
+        "Cliente": ch.get("codigo_cli", "") or "—",
+        "Importe": f"$ {_imp:,.2f}",
+        "Vuelve al estado": (meta.get("stat_previo") or "Z"),
+        "Posdatados a restaurar": (
+            f"{len(_snap)} fila(s)" if isinstance(_snap, list)
+            else "sin registro (cancelación anterior al 29/07)"
+        ),
+        "Saldo a favor del cliente": (
+            f"#{espejo['id_cheque']} por $ {float(espejo['importe'] or 0):,.2f}"
+            " — NO se ajusta automáticamente"
+            if espejo else "no hay espejo NB=98 colgando de ese anticipo"
+        ),
+    }
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer cancelación por anticipo",
+        mensaje=(
+            "El cheque vuelve a cartera y se restaura su fila de posdatados. "
+            "El saldo a favor (espejo NB=98) NO se toca: el anticipo cubría "
+            f"este cheque, así que al devolverlo el sobrante debería subir "
+            f"$ {_imp:,.2f}. Ajustalo vos después — no lo muevo por mi cuenta."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("cheques.reversar_cancelacion_anticipo",
+                           id_mov_doble=id_mov_doble, next=volver),
+        volver_url=volver,
+        motivo_requerido=False,
+        confirm_label="Devolver a cartera",
+    )
+
+
 @cheques_bp.route("/cheques/<int:id_cheque>/anular-error-carga", methods=["GET", "POST"])
 @requiere_login
 def anular_error_carga(id_cheque: int):
