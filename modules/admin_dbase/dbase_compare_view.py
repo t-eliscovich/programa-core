@@ -1128,9 +1128,11 @@ def reporte(dias_banco: int = 30):
             yield line("   as-of tarball es la comparación justa — el dBase aún no corrió hoy.)")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [as-of activos no disponible: {exc!r}]")
-    if d.get("act_sin_tipo"):
-        yield line(f"  ⚠ activos SIN TIPO en dBase por {d['act_sin_tipo']:,.0f} — "
-                   "ningún sistema los suma (pendiente decisión)")
+    # TMT 2026-07-29 dueña: "esto tomalo como cierto, no me lo muestres más ...
+    # lo pone para poder ver algo de dato". Los ~655.000 de activos SIN TIPO del
+    # dBase son un apunte de referencia del FoxPro, NO un pendiente: ningún
+    # sistema los suma y así está bien. Se saca el ⚠ para que no vuelva a
+    # aparecer como ítem abierto en cada corrida del compare.
     yield line()
 
     yield line("── [8] RETIROS (PRG L37-38) ──")
