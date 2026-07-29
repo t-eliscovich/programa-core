@@ -506,6 +506,21 @@ def check_facturas(verbose: bool = False) -> None:
     # stat='T' (cobrada total) + saldo=0 + abono>importe. La fact ESTÁ
     # pagada; el delta abono-importe es rastro de sobre-pago legacy y NO
     # se considera drift. TMT 2026-05-16.
+    #
+    # TMT 2026-07-29 — se generaliza a CUALQUIER 'T' con saldo=0, no sólo las
+    # sobre-pagadas. Motivo: la migración 0134 (26/07, decisión de la dueña
+    # "si está cerrada no debería tener nada") archiva cada factura 'T' con
+    # saldo>0 en `scintela.incobrable_castigo` y le pone saldo=0; y desde esa
+    # fecha el importador hace lo mismo con cada 'T' que llega del DBF. O sea
+    # que `stat='T' AND saldo=0` ES el estado canónico de una factura cerrada,
+    # con o sin abono.
+    #
+    # Sin esta exclusión el chequeo reportaba 70 facturas "descuadradas" por
+    # $87.957,78 — que es, exactamente, el total ya castigado y archivado. El
+    # dBase deja SALDO=IMPORTE en las 'T' (verificado en FACTURAS.DBF: ICH
+    # numf 178716 del 02/07 tiene IMPORTE 4.195,89 / ABONO 0 / SALDO 4.195,89
+    # / STAT 'T'); PC lo normaliza a 0 a propósito. Marcar eso en rojo es
+    # gritarle a una decisión tomada.
     rows = db.fetch_all(
         """
         SELECT id_factura, numf, importe, abono, saldo,
@@ -514,12 +529,13 @@ def check_facturas(verbose: bool = False) -> None:
          WHERE COALESCE(stat,'') NOT IN ('X','Y')
            AND ABS(COALESCE(importe,0) - COALESCE(abono,0) - COALESCE(saldo,0)) > 0.01
            AND NOT (
-             COALESCE(stat,'') = 'T'
+             UPPER(TRIM(COALESCE(stat,''))) = 'T'
              AND ABS(COALESCE(saldo,0)) < 0.01
-             AND COALESCE(abono,0) >= COALESCE(importe,0)
            )
          ORDER BY ABS(COALESCE(importe,0) - COALESCE(abono,0) - COALESCE(saldo,0)) DESC
-         LIMIT 20
+         -- Sin LIMIT: el LIMIT 20 hacía que el mensaje dijera "20 facturas"
+         -- cuando eran 70. Un chequeo que reporta su propio tope como si
+         -- fuera el conteo miente sobre el tamaño del problema.
         """
     ) or []
     if rows:
