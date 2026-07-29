@@ -356,9 +356,26 @@ def cancelar_anticipo(id_dolares: int):
                         concepto=(f"REVERSO ANTICIPO {row.get('cta') or ''}").strip()[:50],
                         usuario=usuario,
                     )
-                db.execute(
-                    "UPDATE scintela.mov_doble SET estado='reversado' WHERE id_mov_doble = %s",
-                    (md["id_mov_doble"],), conn=conn,
+                # TMT 2026-07-29 (dueña: "todas tienen que tener link a
+                # deshacer"): antes esto marcaba el mov reversado con un
+                # UPDATE pelado, sin crear la fila del reverso. Resultado:
+                # dos anticipos de $18.000 del 08/07 quedaron como renglones
+                # tachados sin contrapartida, y el chequeo de salud los leía
+                # como link roto. `registrar` con `id_original` hace las dos
+                # cosas: crea el reverso Y linkea el original.
+                import mov_doble as _md
+                _md.registrar(
+                    conn=conn, tipo="reverso_dolares_anticipo",
+                    origen_table="dolares", origen_id=id_dolares,
+                    destino_table=(md.get("destino_id") and "transacciones_bancarias")
+                                  or "dolares",
+                    destino_id=md.get("destino_id") or id_dolares,
+                    importe=abs(float(row["importe"] or 0)) or 1.0,
+                    fecha=today_ec(),
+                    concepto=(f"CANCELADO anticipo USD {row.get('cta') or ''} "
+                              f"$ {abs(float(row['importe'] or 0)):,.2f}")[:200],
+                    usuario=usuario,
+                    id_original=md["id_mov_doble"],
                 )
             db.execute(
                 "UPDATE scintela.dolares SET st = 'B' WHERE id_dolares = %s",

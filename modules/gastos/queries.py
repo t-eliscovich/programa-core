@@ -340,10 +340,22 @@ def _clasificar_caja_dentro_tx(
             ),
             conn=conn,
         )
-        db.execute(
-            "UPDATE scintela.mov_doble    SET estado = 'reversado'  WHERE id_mov_doble = %s",
-            (md_caja_compra["id_mov_doble"],),
-            conn=conn,
+        # TMT 2026-07-29 (dueña: "todas tienen que tener link a deshacer"):
+        # antes era un UPDATE pelado y el mov quedaba tachado sin
+        # contrapartida — el `caja_s_to_compra_proveedor` del 15/05 ("CC
+        # PINTURA") sale de acá. `registrar` con `id_original` crea el reverso
+        # y linkea el original de una sola vez.
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn, tipo="reverso_caja_s_to_compra_proveedor",
+            origen_table="caja", origen_id=id_caja,
+            destino_table="compra", destino_id=id_compra_falsa,
+            importe=abs(float(importe or 0)) or 1.0,
+            fecha=fecha,
+            concepto=(f"RECLASIFICADA como gasto V{num} — compra "
+                      f"#{id_compra_falsa} anulada")[:200],
+            usuario=usuario,
+            id_original=md_caja_compra["id_mov_doble"],
         )
         compra_anulada = id_compra_falsa
 

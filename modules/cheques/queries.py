@@ -1122,7 +1122,7 @@ def anular_por_error_de_carga(
             (id_cheque,),
             conn=conn,
         )
-        _md.registrar(
+        _id_reverso = _md.registrar(
             conn=conn,
             tipo="reverso_cheque_administrativo",
             origen_table="cheque",
@@ -1158,16 +1158,21 @@ def anular_por_error_de_carga(
         # /historial la entrada de caja seguía ofreciendo un ↺ que después
         # rebotaba con "cheque ya cerrado". El dinero estaba bien, la
         # pantalla mentía.
+        # TMT 2026-07-29 (dueña: "todas tienen que tener link a deshacer"):
+        # los hijos se marcan en bloque, pero ahora APUNTAN al reverso del
+        # cheque padre. Antes quedaban con id_reverso NULL y el chequeo de
+        # salud los leía como link roto — un renglón tachado sin la
+        # contrapartida al lado. El reverso es uno, pero ahora se sabe cuál.
         db.execute(
             """
             UPDATE scintela.mov_doble
-               SET estado='reversado'
+               SET estado='reversado', id_reverso=%s
              WHERE origen_table='cheque' AND origen_id=%s
                AND tipo IN ('cheque_aplicado_a_factura',
                             'cheque_efectivo_to_caja')
                AND estado='activo'
             """,
-            (id_cheque,),
+            (_id_reverso, id_cheque),
             conn=conn,
         )
 
@@ -4415,7 +4420,7 @@ def reversar(
             (id_cheque,),
             conn=conn,
         )
-        _md.registrar(
+        _id_reverso = _md.registrar(
             conn=conn,
             tipo=tipo_reverso,
             origen_table="cheque",
@@ -4442,14 +4447,16 @@ def reversar(
         )
         # También marcar como reversadas las aplicaciones del cheque
         # (`cheque_aplicado_a_factura`) que también seguían `activo`.
+        # id_reverso apunta al reverso del cheque padre — ver la nota en
+        # anular_por_error_de_carga. TMT 2026-07-29.
         db.execute(
             """
             UPDATE scintela.mov_doble
-               SET estado='reversado'
+               SET estado='reversado', id_reverso=%s
              WHERE origen_table='cheque' AND origen_id=%s
                AND tipo='cheque_aplicado_a_factura' AND estado='activo'
             """,
-            (id_cheque,),
+            (_id_reverso, id_cheque),
             conn=conn,
         )
 
@@ -5500,15 +5507,16 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
                         f"factura #{ap.get('numf') or idf}")[:200],
                     usuario=usuario)
 
-        # --- 5. Marcar el batch reversado + reverso del evento ---
-        if ev.get("batch_id"):
-            db.execute(
-                "UPDATE scintela.mov_doble SET estado='reversado' "
-                " WHERE batch_id=%s AND estado='activo' AND id_mov_doble<>%s",
-                (ev["batch_id"], id_evento), conn=conn)
+        # --- 5. Reverso del evento + linkear el batch ---
+        # TMT 2026-07-29 (dueña: "todas tienen que tener link a deshacer"):
+        # el reverso se registra ANTES de marcar el batch, así cada fila del
+        # batch queda con id_reverso apuntando a él. Antes se marcaba primero
+        # y las filas quedaban con id_reverso NULL: el link existía a nivel
+        # batch pero ninguna fila lo decía, y el chequeo de salud las leía
+        # como link roto. Los 27 movs de PUE del 15/05 son de acá.
         _ids_ant = md.get("ids_anticipos") or []
         _ids_ch = md.get("ids_cheques") or []
-        _md.registrar(
+        _id_reverso = _md.registrar(
             conn=conn, tipo="neteo_deshecho",
             origen_table="cheque",
             origen_id=(_ids_ant[0] if _ids_ant else id_evento),
@@ -5517,6 +5525,12 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
             importe=float(ev.get("importe") or 0) or 1.0, fecha=fecha,
             concepto=f"DESHECHO neteo {codigo_cli} (evento #{id_evento})"[:200],
             usuario=usuario, id_original=id_evento)
+        if ev.get("batch_id"):
+            db.execute(
+                "UPDATE scintela.mov_doble "
+                "   SET estado='reversado', id_reverso=%s "
+                " WHERE batch_id=%s AND estado='activo' AND id_mov_doble<>%s",
+                (_id_reverso, ev["batch_id"], id_evento), conn=conn)
 
     return {
         "id_evento": id_evento,
