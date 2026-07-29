@@ -44,10 +44,28 @@
         </button>
       </form>
     </div>
-    <div class="text-[11px] text-slate-500 mt-2">
-      Frenos por corrida: máximo {{ cfg.tope_importaciones }} importaciones y
-      US$ {{ cfg.tope_usd | num_es(0) }}. Si se pasa, no convierte nada y avisa.
-    </div>
+    {# TMT 2026-07-29 (dueña): los topes se editan acá, sin deploy. No están
+       para gatear la operación normal (una importación entera ronda los
+       $70-100k) sino para que un dato raro de Asinfo no dispare una
+       conversión masiva. #}
+    <form method="post" action="{{ url_for('importaciones.automatico_topes') }}"
+          class="mt-3 flex items-end gap-2 flex-wrap text-[11px]">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <span class="text-slate-500 self-center">Freno por corrida — si se pasa, no convierte nada y avisa:</span>
+      <label class="flex items-center gap-1">
+        <input name="tope_importaciones" value="{{ cfg.tope_importaciones }}"
+               inputmode="numeric" style="width:3.5rem;padding:1px 5px;text-align:center;"
+               class="rounded border border-slate-300">
+        <span class="text-slate-500">importaciones</span>
+      </label>
+      <label class="flex items-center gap-1">
+        <span class="text-slate-500">y US$</span>
+        <input name="tope_usd" value="{{ cfg.tope_usd | num_es(0) }}"
+               inputmode="decimal" style="width:6rem;padding:1px 5px;text-align:right;"
+               class="rounded border border-slate-300">
+      </label>
+      <button class="px-2 py-1 rounded border border-slate-300 hover:bg-slate-100">Guardar</button>
+    </form>
   </div>
 
   {% if prev.frenos %}

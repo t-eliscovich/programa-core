@@ -251,3 +251,29 @@ def test_dry_run_no_convierte():
         r = autobap.correr(dry_run=True)
     conv.assert_not_called()
     assert r["convertidas"] == 0
+
+
+# ── Topes editables (mig 0137) ──────────────────────────────────────────────
+
+def test_topes_default_ya_no_frenan_una_importacion_normal():
+    """US$60.000 era menos que una sola importación (AC 94: $99.519,84)."""
+    assert autobap._TOPE_USD_DEFAULT >= 300000
+    assert autobap._TOPE_IM_DEFAULT >= 10
+
+
+def test_set_topes_valida_rangos():
+    for n, u in ((0, 100), (501, 100), (5, 0), (5, -1), (5, 99_000_000)):
+        try:
+            with patch.object(autobap.db, "execute"):
+                autobap.set_topes(tope_importaciones=n, tope_usd=u)
+            raise AssertionError(f"aceptó {n}/{u}")
+        except ValueError:
+            pass
+
+
+def test_set_topes_guarda():
+    with patch.object(autobap.db, "execute") as ex, \
+         patch.object(autobap, "config", return_value=_CFG):
+        autobap.set_topes(tope_importaciones=10, tope_usd=500000,
+                          usuario="tamara")
+    assert ex.call_args[0][1][:2] == (10, 500000.0)

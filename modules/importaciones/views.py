@@ -393,6 +393,31 @@ def automatico_switch():
     return redirect(url_for("importaciones.automatico"))
 
 
+@importaciones_bp.route("/importaciones/automatico/topes", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def automatico_topes():
+    """Edita los topes por corrida desde la pantalla, sin deploy."""
+    from . import autobap
+
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+    try:
+        cfg = autobap.set_topes(
+            tope_importaciones=parse_int(request.form.get("tope_importaciones")),
+            tope_usd=parse_monto(request.form.get("tope_usd")),
+            usuario=usuario,
+        )
+        flash(
+            f"Topes actualizados: {cfg['tope_importaciones']} importaciones y "
+            f"US$ {cfg['tope_usd']:,.2f} por corrida.", "ok",
+        )
+    except (TypeError, ValueError) as e:
+        flash(f"Topes inválidos: {e}", "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude guardar los topes", e)
+    return redirect(url_for("importaciones.automatico"))
+
+
 @importaciones_bp.route("/importaciones/automatico/correr", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.crear")

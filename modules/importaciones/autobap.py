@@ -41,6 +41,12 @@ _LOCK = threading.Lock()
 _ultimo_ts = 0.0
 _INTERVALO_MIN = 1800.0  # 30 min entre corridas (freno propio dentro del ciclo)
 
+# Topes por corrida. NO gatean la operación normal: están para que un dato raro
+# de Asinfo no dispare una conversión masiva. Dimensionados sobre lo real (una
+# importación entera ronda los $70-100k). Editables desde la pantalla.
+_TOPE_IM_DEFAULT = 10
+_TOPE_USD_DEFAULT = 500_000.0
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -56,18 +62,41 @@ def config() -> dict:
         )
     except Exception as e:  # noqa: BLE001
         _LOG.warning("autobap_config no disponible: %s", e)
-        return {"activo": False, "fecha_corte": None, "tope_importaciones": 5,
-                "tope_usd": 60000.0, "disponible": False}
+        return {"activo": False, "fecha_corte": None,
+                "tope_importaciones": _TOPE_IM_DEFAULT,
+                "tope_usd": _TOPE_USD_DEFAULT, "disponible": False}
     if not row:
-        return {"activo": False, "fecha_corte": None, "tope_importaciones": 5,
-                "tope_usd": 60000.0, "disponible": True}
+        return {"activo": False, "fecha_corte": None,
+                "tope_importaciones": _TOPE_IM_DEFAULT,
+                "tope_usd": _TOPE_USD_DEFAULT, "disponible": True}
     return {
         "activo": bool(row["activo"]),
         "fecha_corte": row["fecha_corte"],
-        "tope_importaciones": int(row["tope_importaciones"] or 5),
-        "tope_usd": float(row["tope_usd"] or 60000),
+        "tope_importaciones": int(row["tope_importaciones"] or _TOPE_IM_DEFAULT),
+        "tope_usd": float(row["tope_usd"] or _TOPE_USD_DEFAULT),
         "disponible": True,
     }
+
+
+def set_topes(*, tope_importaciones, tope_usd, usuario: str = "web") -> dict:
+    """Cambia los topes desde la pantalla (sin deploy). TMT 2026-07-29: el
+    primer valor (5 / US$60.000) frenaba SIEMPRE — una sola importación ronda
+    los $70-100k. El tope está para atajar un dato raro de Asinfo, no para
+    gatear la operación normal."""
+    n = int(tope_importaciones)
+    u = float(tope_usd)
+    if n < 1 or n > 500:
+        raise ValueError("El tope de importaciones tiene que estar entre 1 y 500.")
+    if u <= 0 or u > 50_000_000:
+        raise ValueError("El tope en US$ tiene que ser positivo y razonable.")
+    db.execute(
+        "UPDATE scintela.autobap_config "
+        "   SET tope_importaciones = %s, tope_usd = %s, "
+        "       usuario_modifica = %s, fecha_modifica = now() "
+        " WHERE id = 1",
+        (n, u, (usuario or "web")[:50]),
+    )
+    return config()
 
 
 def set_activo(activo: bool, usuario: str = "web") -> dict:
