@@ -11,18 +11,18 @@
   <script defer src="{{ url_for('static', filename='app.js') }}?v=14"></script>
   <script defer src="{{ url_for('static', filename='sortable-tables.js') }}?v=2"></script>
   <script>
-    // Theme init
+    // TMT 2026-07-29 (dueña): "siempre light mode". El botón Tema se retiró de
+    // la topbar (su lugar lo ocupa la campanita). El programa queda SIEMPRE en
+    // claro: se limpia cualquier preferencia guardada y se ignora el modo
+    // oscuro del sistema operativo. Las clases `dark:` del markup quedan (son
+    // inertes sin la clase `dark` en <html>), así que no hubo que tocar
+    // ninguna pantalla.
     (function () {
-      const saved = localStorage.getItem('intela-theme');
-      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        document.documentElement.classList.add('dark');
-      }
+      try { localStorage.removeItem('intela-theme'); } catch (e) { /* modo privado */ }
+      document.documentElement.classList.remove('dark');
     })();
-    function toggleTheme() {
-      const html = document.documentElement;
-      html.classList.toggle('dark');
-      localStorage.setItem('intela-theme', html.classList.contains('dark') ? 'dark' : 'light');
-    }
+    // Se deja definida por si algún template viejo todavía la llama: no hace nada.
+    function toggleTheme() { document.documentElement.classList.remove('dark'); }
   </script>
   <style>
     /* TMT 2026-05-15 (v2): el font-size en html sólo escala las clases
@@ -1031,44 +1031,51 @@
       </div>
       <div class="flex items-center gap-3">
         {# ---- CAMPANITA — conversiones automáticas anticipo→compra.
-             TMT 2026-07-29 (dueña): "ponelo en una campanita y hagámoslo
-             automático". Sólo aparece si hay algo sin leer, así no ocupa
-             lugar el 99% del tiempo. Ver modules/importaciones/autobap.py. #}
+             TMT 2026-07-29 (dueña): "borrá Tema y poneme ahí la campanita".
+             Ocupa el lugar exacto del botón Tema (que se retiró: el programa
+             queda siempre en claro). SIEMPRE visible: apagada cuando no hay
+             novedades, ámbar con el contador cuando sí — así además queda
+             como entrada fija a la pantalla del automático.
+             Ver modules/importaciones/autobap.py. #}
         {% if tiene_permiso('compras.crear') %}
           {% set _ab = avisos_autobap() %}
-          {% if _ab.n %}
           <div class="relative no-print" id="campanita-wrap">
             <button type="button" id="campanita-btn"
                     onclick="document.getElementById('campanita-pop').classList.toggle('hidden')"
-                    title="Importaciones convertidas solas"
-                    class="text-xs px-2.5 py-1.5 rounded border border-amber-300 hover:bg-amber-100"
-                    style="background:rgb(255 251 235);color:rgb(146 64 14);">
-              🔔 <strong>{{ _ab.n }}</strong>
+                    title="{% if _ab.n %}{{ _ab.n }} novedad(es) del automático de importaciones{% else %}Sin novedades del automático de importaciones{% endif %}"
+                    class="text-xs px-3 py-1.5 rounded border"
+                    style="{% if _ab.n %}border-color:rgb(252 211 77);background:rgb(255 251 235);color:rgb(146 64 14);font-weight:600;{% else %}border-color:rgb(203 213 225);color:rgb(100 116 139);{% endif %}">
+              🔔{% if _ab.n %} {{ _ab.n }}{% endif %}
             </button>
             <div id="campanita-pop"
-                 class="hidden absolute right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50 py-1 text-sm"
-                 style="width:26rem;max-height:24rem;overflow-y:auto;">
+                 class="hidden absolute right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-sm"
+                 style="width:27rem;max-height:24rem;overflow-y:auto;">
               {% for a in _ab['items'] %}
-              <div class="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+              <div class="px-3 py-2 border-b border-slate-100">
                 <div style="font-size:12.5px;line-height:1.45;">
                   {% if a.tipo == 'conversion' %}✅{% elif a.tipo == 'freno' %}⛔{% else %}⚠️{% endif %}
                   {{ a.mensaje }}
                 </div>
                 <div class="text-[11px] text-slate-400 mt-0.5">{{ a.creado_en }}</div>
               </div>
+              {% else %}
+              <div class="px-3 py-3 text-xs text-slate-500">
+                Sin novedades. Acá te avisa cuando una importación llega y sus
+                anticipos se convierten solos a compra.
+              </div>
               {% endfor %}
               <div class="px-3 py-2 flex items-center justify-between">
                 <a href="{{ url_for('importaciones.automatico') }}" class="text-xs text-sky-700 hover:underline">Ver todo</a>
+                {% if _ab.n %}
                 <form method="post" action="{{ url_for('importaciones.avisos_leidos') }}" class="inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="text-xs text-slate-500 hover:text-slate-700">Marcar leídos</button>
                 </form>
+                {% endif %}
               </div>
             </div>
           </div>
-          {% endif %}
         {% endif %}
-        <button onclick="toggleTheme()" class="text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Tema</button>
 
         {# ---- Menú del nombre — Bases de datos / Admin / Salir ---- #}
         <div class="relative" id="user-menu-wrap">
