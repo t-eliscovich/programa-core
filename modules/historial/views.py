@@ -814,6 +814,21 @@ _REVERSO_BLOQUEADO = {
         "anticipo y su ND del banco como par atómico, y recalcula el "
         "anticipo aplicado de la importación."
     ),
+    # Estos dos son un cambio de stat de factura. El "reverso" es volver a
+    # cambiar el stat desde el mismo selector — y `factura_set_stat` ya
+    # restaura el abono previo leyendo la metadata de ESTE mov (busca el
+    # último 'factura_cerrada_a_t'/'factura_stat_cambio' activo). O sea: la
+    # vuelta atrás no sólo existe, además es exacta.
+    "factura_cerrada_a_t": (
+        "Volvé a cambiarle el estado a la factura desde el estado de cuenta "
+        "del cliente (el selector de estado de la fila). Al sacarla de 'T' "
+        "recupera el abono que tenía antes de cerrarse."
+    ),
+    "factura_stat_cambio": (
+        "Volvé a cambiarle el estado a la factura desde el estado de cuenta "
+        "del cliente (el selector de estado de la fila). Si venía de 'T', "
+        "el abono previo se restaura solo."
+    ),
 }
 
 
