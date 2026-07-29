@@ -207,10 +207,65 @@ def _diag_banco(no_banco: int, ventana: int = 12):
         return [], None
     lo = max(ancla_i, drift_i - ventana)
     hi = min(len(filas), drift_i + ventana + 1)
+    prev_id = filas[drift_i - 1]["id_transaccion"] if drift_i > 0 else None
+    delta = round(float(filas[drift_i]["saldo"] or 0)
+                  - float(calc_por_fila[filas[drift_i]["id_transaccion"]]), 2)
     return (
         [dict(f, _calc=calc_por_fila.get(f["id_transaccion"])) for f in filas[lo:hi]],
-        {"drift_id": filas[drift_i]["id_transaccion"], "total_filas": len(filas)},
+        {"drift_id": filas[drift_i]["id_transaccion"], "total_filas": len(filas),
+         "prev_id": prev_id, "delta": delta},
     )
+
+
+def _explicar_drift(no_banco: int, info: dict):
+    """¿El salto del running es plata que falta, o el check ordena distinto?
+
+    El `saldo` de cada fila lo estampa el trigger EN EL MOMENTO DEL INSERT, o
+    sea en orden de inserción. El walk-forward del chequeo camina en orden
+    (fecha, id_transaccion). Cuando un movimiento se carga POSTDATADO —un CH
+    con fecha futura— los dos órdenes dejan de coincidir y aparece un "drift"
+    que no es plata faltante sino dos criterios distintos. `bancos/queries.py`
+    ya lo sabe desde el 25/06: el saldo actual lo toma de la última fila con
+    fecha <= hoy justamente "para excluir movimientos postdatados con saldo
+    viejo".
+
+    Las dos hipótesis se distinguen mirando los ids que caen ENTRE la última
+    fila que cerraba y la que no cierra:
+      - si el id existe pero con otra fecha → es orden, no plata;
+      - si el id NO existe → la fila se borró y su efecto quedó horneado en
+        el running: ahí sí falta algo.
+    """
+    prev_id, drift_id = info.get("prev_id"), info.get("drift_id")
+    if not prev_id or not drift_id or drift_id - prev_id <= 1:
+        return
+    yield (f"     ¿qué hay entre tx#{prev_id} y tx#{drift_id}? "
+           f"(Δ = {info.get('delta'):,.2f})\n")
+    presentes = db.fetch_all(
+        """
+        SELECT id_transaccion, no_banco, fecha, documento, importe, saldo,
+               COALESCE(concepto, '') AS concepto
+          FROM scintela.transacciones_bancarias
+         WHERE id_transaccion > %s AND id_transaccion < %s
+         ORDER BY id_transaccion
+        """, (int(prev_id), int(drift_id))) or []
+    vistos = {int(r["id_transaccion"]) for r in presentes}
+    for r in presentes:
+        marca = "  ← ESTE banco, otra fecha" if int(r["no_banco"]) == int(no_banco) else ""
+        yield (f"       tx#{r['id_transaccion']} banco#{r['no_banco']} "
+               f"{str(r['fecha'])[:10]} {(r['documento'] or ''):<3} "
+               f"$ {float(r['importe'] or 0):>12,.2f}  "
+               f"{r['concepto'][:34]}{marca}\n")
+    faltantes = [i for i in range(int(prev_id) + 1, int(drift_id)) if i not in vistos]
+    if faltantes:
+        yield (f"       ids que NO existen en ninguna cuenta: "
+               f"{', '.join('#' + str(i) for i in faltantes[:20])}"
+               f"{' …' if len(faltantes) > 20 else ''}\n"
+               "       → esas filas se BORRARON. Su efecto quedó horneado en\n"
+               "         el running de las siguientes: ahí sí falta plata.\n")
+    else:
+        yield ("       todos los ids existen → el salto es de ORDEN\n"
+               "       (running estampado al insertar vs. camino por fecha),\n"
+               "       no de plata faltante.\n")
 
 
 # B) se hace en DOS pasos a propósito. La versión de una sola query tenía
@@ -473,6 +528,7 @@ def diag():
                        f"{(float(calc) if calc is not None else 0):>13,.2f} "
                        f"{(d if d is not None else 0):>10,.2f}  "
                        f"{(f.get('prov') or '')[:6]} {f['concepto'][:34]}{marca}\n")
+            yield from _explicar_drift(int(b["no_banco"]), info)
             yield "\n"
 
         # ── 2) Facturas descuadradas ───────────────────────────────────
