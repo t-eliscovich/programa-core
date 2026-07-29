@@ -499,17 +499,120 @@ def _seccion_numf0():
     yield "\n"
 
 
+def _seccion_diccionario():
+    """Facturas que PC tiene bajo OTRO nombre — y qué entrada las arregla.
+
+    POR QUÉ (dueña, 29/07): "hacelo con todos los casos que encuentre para
+    facturas en otros nombres". No un parche para VP1: la detección general.
+
+    Cómo funciona. Asinfo manda cada documento con el código de la EMPRESA
+    (`cliente_codigo`) y con la DIRECCIÓN de entrega (`id_direccion_empresa`).
+    El dBase, en cambio, parte algunos clientes por sucursal y les da código
+    propio — AJO/AJ2, y VPM/VP1. Así que la misma factura aparece en Asinfo
+    bajo la empresa y en PC bajo la sucursal, y ningún pareo por código la
+    encuentra.
+
+    La dirección es la que desempata, y ya está en la card 199 (por eso
+    /facturas/desde-asinfo la lee): sólo había que pedirla. Para cada
+    documento de Asinfo que PC tiene con el MISMO importe pero OTRO código,
+    se propone la entrada de `scintela.sucursal_direccion`
+    (id_direccion → código PC) — el mismo mecanismo con el que ya se resolvió
+    AJ2 (22657→AJ2).
+
+    Solo lectura: propone, no escribe. Se registra desde
+    /facturas/sucursal-direccion/agregar.
+    """
+    yield "┌─ F) DICCIONARIO — facturas que PC tiene bajo otro nombre ─────\n"
+    filas = db.fetch_all(
+        """
+        SELECT f.id_factura, f.codigo_cli, f.fecha, f.importe, f.numf
+          FROM scintela.factura f
+         WHERE f.fecha >= CURRENT_DATE - INTERVAL '120 days'
+           AND TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
+           AND ABS(COALESCE(f.importe, 0)) > 0.01
+        """) or []
+    if not filas:
+        yield "  sin facturas en los últimos 120 días.\n"
+        return
+    # PC indexado por |importe| en centavos → set de códigos
+    pc_por_imp: dict = {}
+    for f in filas:
+        c = int(round(abs(float(f["importe"] or 0)) * 100))
+        pc_por_imp.setdefault(c, set()).add((f.get("codigo_cli") or "").strip().upper())
+    fechas = [f["fecha"] for f in filas if f.get("fecha")]
+    desde, hasta = min(fechas), max(fechas)
+    yield (f"  PC: {len(filas)} facturas vivas entre {desde} y {hasta}\n"
+           "  … pidiéndole a Asinfo los documentos del rango\n")
+    try:
+        from modules.asinfo import service as _asinfo
+        docs = _asinfo.facturas_periodo(desde, hasta) or []
+    except Exception as exc:  # noqa: BLE001
+        yield f"  [Asinfo no contestó: {exc!r}]\n"
+        return
+    con_dir = sum(1 for d in docs if d.get("id_direccion_empresa"))
+    yield (f"  Asinfo: {len(docs)} documentos, {con_dir} con dirección de "
+           f"entrega\n")
+    if not con_dir:
+        yield ("  [la card no está devolviendo id_direccion_empresa — sin ese "
+               "campo\n   no se puede distinguir la sucursal de la empresa]\n\n")
+
+    # (id_direccion, cliente_asinfo, codigo_pc) → [ejemplos]
+    prop: dict = {}
+    for d in docs:
+        cli_a = (str(d.get("cliente_codigo") or "")).strip().upper()
+        c = int(round(abs(float(d.get("usd") or 0)) * 100))
+        if not cli_a or not c:
+            continue
+        otros = {x for x in (pc_por_imp.get(c) or set()) if x and x != cli_a}
+        if not otros:
+            continue
+        for pc_cod in otros:
+            k = (d.get("id_direccion_empresa"), cli_a, pc_cod)
+            prop.setdefault(k, []).append(d)
+
+    if not prop:
+        yield "  ✓ ningún documento de Asinfo aparece en PC bajo otro código.\n\n"
+        return
+    # Ordenar por cantidad de coincidencias: más filas = más confianza.
+    ordenadas = sorted(prop.items(), key=lambda kv: -len(kv[1]))
+    yield ("  Asinfo dice un código, PC tiene otro, mismo importe. La columna\n"
+           "  'dir' es la que hace de árbitro:\n")
+    yield "  n    dir        Asinfo → PC       ejemplos (tipo / número)\n"
+    for (iddir, cli_a, pc_cod), ej in ordenadas[:40]:
+        muestras = ", ".join(
+            f"{(e.get('tipo') or '?')[:4]} {e.get('numero') or ''}"
+            for e in ej[:2])
+        yield (f"  {len(ej):<4} {str(iddir or '—'):<10} "
+               f"{cli_a:<4} → {pc_cod:<4}      {muestras[:52]}\n")
+    if len(ordenadas) > 40:
+        yield f"  … y {len(ordenadas) - 40} combinaciones más\n"
+
+    # Propuestas ACCIONABLES: las que tienen dirección concreta.
+    listas = [(k, v) for k, v in ordenadas if k[0]]
+    yield (f"\n  Con dirección concreta (registrables): {len(listas)}\n")
+    for (iddir, cli_a, pc_cod), ej in listas[:20]:
+        yield (f"    sucursal_direccion: {iddir} → {pc_cod}   "
+               f"(Asinfo la manda como {cli_a}, {len(ej)} documento(s))\n")
+    sin_dir = len(ordenadas) - len(listas)
+    if sin_dir:
+        yield (f"\n  Sin dirección ({sin_dir}): ahí la sucursal no explica el\n"
+               "  desvío — puede ser un alias de cliente (cliente_alias) o un\n"
+               "  cruce casual de importes. Mirar antes de registrar.\n")
+    yield ("\n  Registrar en /facturas/sucursal-direccion/agregar "
+           "(id_direccion + código PC).\n\n")
+
+
 @bp.route("/diag", methods=["GET"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def diag():
     """Contexto de los errores rojos del chequeo. Solo lectura.
 
-    `?solo=a` / `b` / `c` / `d` / `e` corre UNA sección. Vale la pena: la A camina
+    `?solo=a` … `f` corre UNA sección. Vale la pena: la A camina
     el running completo de cada banco (decenas de miles de filas) y no hay por
     qué esperarla cuando lo que querés ver son las facturas.
     """
-    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcde"}
+    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcdef"}
 
     def quiero(k: str) -> bool:
         return (not pedido) or (k in pedido)
@@ -532,7 +635,7 @@ def diag():
         yield ("=== DIAGNÓSTICO PROFUNDO — contexto de los errores rojos ===\n"
                "    (solo lectura: ni un UPDATE)"
                + (f"  [secciones {''.join(sorted(pedido)).upper()}]" if pedido
-                  else "  (?solo=a|b|c|d|e para una sola)")
+                  else "  (?solo=a|b|c|d|e|f para una sola)")
                + "\n\n")
 
         # ── 1) Drift del running bancario ──────────────────────────────
@@ -653,6 +756,10 @@ def diag():
         # ── 5) Las facturas NUMF=0 contra Asinfo ───────────────────────
         if quiero("e"):
             yield from _seccion_numf0()
+
+        # ── 6) Propuestas para el diccionario de códigos ───────────────
+        if quiero("f"):
+            yield from _seccion_diccionario()
 
         yield "\n═══ fin ═══\n"
 

@@ -1380,6 +1380,74 @@ def desde_asinfo():
     )
 
 
+@facturas_bp.route("/facturas/sucursal-direccion/agregar", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def sucursal_direccion_agregar():
+    """Registra una sucursal por dirección de Asinfo: id_direccion → código PC.
+
+    POR QUÉ (TMT 2026-07-29, dueña: "hacelo con todos los casos que encuentre
+    para facturas en otros nombres"): `scintela.sucursal_direccion` existía
+    desde la migración 0132 con su seed (22657→AJ2) pero **sin pantalla**, así
+    que agregar una sucursal nueva requería una migración. Y hace falta: VP1
+    son 6 facturas que Asinfo manda bajo VPM, y el mismo patrón aparece en
+    otros clientes.
+
+    Es el diccionario hermano de `cliente_alias`, y se usa cuando Asinfo NO
+    tiene código propio para la sucursal — manda todo bajo la empresa y sólo
+    cambia la dirección de entrega. En ese caso un alias no sirve (no hay
+    código que mapear); lo que desempata es la dirección.
+
+    Las propuestas salen de /admin/salud/diag?solo=f.
+    """
+    from modules.asinfo import aliases as _aliases
+    try:
+        id_direccion = int((request.form.get("id_direccion") or "").strip())
+    except (TypeError, ValueError):
+        flash("id_direccion tiene que ser un número (lo trae Asinfo).", "warn")
+        return redirect(url_for("facturas.desde_asinfo", **request.args))
+    codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()[:10]
+    nota = (request.form.get("nota") or "").strip()[:200]
+    if not codigo_cli:
+        flash("Falta el código de cliente de PC.", "warn")
+        return redirect(url_for("facturas.desde_asinfo", **request.args))
+    if not db.fetch_one(
+        "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s", (codigo_cli,)
+    ):
+        flash(
+            f"No existe el cliente {codigo_cli} en PC. Registrar una dirección "
+            f"apuntando a un código inexistente haría que esas facturas se "
+            f"clasifiquen a la nada.",
+            "warn",
+        )
+        return redirect(url_for("facturas.desde_asinfo", **request.args))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        n = db.execute(
+            """
+            INSERT INTO scintela.sucursal_direccion
+                   (id_direccion, codigo_cli, nota, usuario_crea)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (id_direccion) DO UPDATE
+               SET codigo_cli = EXCLUDED.codigo_cli,
+                   nota       = EXCLUDED.nota
+            """,
+            (id_direccion, codigo_cli, nota or None, usuario[:50]),
+        )
+        # El cache de aliases guarda el mapa de direcciones 5 min — sin esto
+        # la próxima carga seguiría clasificando con el mapa viejo.
+        _aliases.reset_cache()
+        flash(
+            f"Dirección {id_direccion} → {codigo_cli} registrada. Las próximas "
+            f"cargas desde Asinfo de esa dirección se clasifican solas."
+            + (f" ({n} fila)" if n else ""),
+            "ok",
+        )
+    except Exception as e:
+        flash_exc("No pude registrar la sucursal", e)
+    return redirect(url_for("facturas.desde_asinfo", **request.args))
+
+
 @facturas_bp.route("/facturas/aliases/agregar", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.editar")
