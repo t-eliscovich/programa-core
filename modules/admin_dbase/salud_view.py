@@ -216,7 +216,10 @@ def _diag_banco(no_banco: int, ventana: int = 12):
 _SQL_FACT_DESCUADRADAS = """
     SELECT f.id_factura, f.numf, f.numf_completo, f.codigo_cli, f.fecha,
            f.importe, f.abono, f.saldo, f.stat, f.condic,
-           COALESCE(f.observacion, '') AS observacion,
+           -- OJO: scintela.factura NO tiene columna `observacion` (sí la
+           -- tienen compra y cheque). Pedirla acá fue el primer error de
+           -- esta pantalla. Ver la nota en el informe: facturas.editar()
+           -- tiene una rama que escribe `observacion` y explotaría igual.
            ROUND(f.importe - f.abono - f.saldo, 2) AS diff
       FROM scintela.factura f
      WHERE ABS(f.importe - f.abono - f.saldo) > 0.01
