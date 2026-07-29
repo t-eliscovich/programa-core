@@ -207,25 +207,42 @@ class SkipTest(Exception):
 
 
 def test_01b_provisiones_diarias_matcher_aec() -> int:
-    """Re-audit C5 — patrón "A,E,C" antes nunca matcheaba ($220k/mes perdidos).
+    """A,E,C: literal "A,E,C" por $9000/día, igual que MENU.PRG L305.
 
-    Verifica que el matcher `concepto_starts_with_any` con pattern "A|E|C"
-    genera SQL que matchea conceptos que empiezan con A, E o C. No tocamos
-    la DB; sólo inspeccionamos el SQL generado por `_condicion_provision`.
+    TMT 2026-07-29 — este test ANTES exigía lo contrario (matcher
+    `concepto_starts_with_any "A|E|C"`), apoyado en un comentario del
+    re-audit del 2026-05-15 que decía que el dBase usaba
+    `LEFT(concepto,1) $ 'AEC'`. Esa regla NO existe en el PRG: la única
+    mención es `LOCA FOR LEFT(CONCEPTO,5)="A,E,C"` → el literal, $9000.
+    El matcher amplio hacía que "ALQUILER" y "AB PROVISION" compitieran
+    por el mismo `ORDER BY id_posdat LIMIT 1`.
     """
     from modules.informes import queries as qi
     asserts = 0
 
-    # 1. La constante DEBE usar concepto_starts_with_any para el "A,E,C".
+    # 1. La constante DEBE tener el literal "A,E,C" por 9000.
     aec_rows = [
         r for r in qi.PROVISIONES_DIARIAS
-        if r[1] == "concepto_starts_with_any" and "A" in r[2] and "E" in r[2]
-        and "C" in r[2]
+        if r[0] == "YY" and r[1] == "concepto_starts_with" and r[2] == "A,E,C"
     ]
     assert aec_rows, (
-        "PROVISIONES_DIARIAS no tiene una fila con matcher "
-        "concepto_starts_with_any conteniendo A/E/C. El bug del audit "
-        "anterior reapareció — A,E,C nunca matchea con LIKE 'A,E,C%'."
+        "PROVISIONES_DIARIAS no tiene la fila "
+        "('YY', 'concepto_starts_with', 'A,E,C', 9000). MENU.PRG L305 usa "
+        "el literal LEFT(CONCEPTO,5)='A,E,C', no iniciales sueltas."
+    )
+    asserts += 1
+    assert aec_rows[0][3] == 9000, (
+        f"A,E,C debe devengar 9000/día (MENU.PRG L306: "
+        f"REPLA IMPORTE WITH IMPORTE+9000); vi {aec_rows[0][3]}"
+    )
+    asserts += 1
+
+    # 1b. Ninguna otra fila debe usar el matcher amplio de iniciales: si
+    #     vuelve, "ALQUILER"/"AB PROVISION" pisan el match de A,E,C.
+    assert not [r for r in qi.PROVISIONES_DIARIAS if r[1] == "concepto_starts_with_any"], (
+        "Volvió `concepto_starts_with_any` a PROVISIONES_DIARIAS. Con "
+        "ORDER BY id_posdat LIMIT 1 eso hace que una sola provisión gane "
+        "el match y las otras no devenguen."
     )
     asserts += 1
 

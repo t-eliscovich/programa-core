@@ -1624,15 +1624,16 @@ def compras_mes_corriente() -> dict:
 # fijas a posdats específicos identificados por (PROV, CONCEPTO_pattern).
 # Cada categoría afecta UN solo posdat (el primer match — `LOCA ... IF FOUND`).
 #
-# Lista canónica derivada del PRG. Total por día hábil = $31,000.
+# Lista canónica derivada del PRG. Total por día hábil = $33,300
+# (re-verificado contra MENU.PRG el 2026-07-29).
 #
 # Bucket "YY" (línea 283 dBase: SET FILT TO PROV='YY'):
-#   ("YY", "concepto_starts_with", "SR",      2700),
+#   ("YY", "concepto_starts_with", "SR",      3300),
 #   ("YY", "concepto_starts_with", "13",      1000),
 #   ("YY", "concepto_starts_with", "14",       300),
 #   ("YY", "concepto_starts_with", "AB",      1300),
 #   ("YY", "concepto_starts_with", "SS",      2400),
-#   ("YY", "concepto_starts_with", "A,E,C",   7300),
+#   ("YY", "concepto_starts_with", "A,E,C",   9000),
 #   ("YY", "concepto_starts_with", "SUELDOS", 6000),
 #   ("YY", "concepto_eq",          "ALQUILER", 700),
 # Bucket "ALL" (línea 317 dBase: SET FILT TO — filtro despejado):
@@ -1644,21 +1645,33 @@ def compras_mes_corriente() -> dict:
 PROVISIONES_DIARIAS = [
     # (prov_filter, matcher_kind, pattern, monto)
     # TMT 2026-05-15: SR (SRI = Servicio de Rentas Internas) son $3300/día,
-    # no $2700. La lista dBase real es: SRI 3300, 13 aguinaldo 1000, 14
-    # sueldo 300, AB Andrés Bucheli 1300, IES 2400, AEC 7300, SUELDOS 6000,
-    # ALQUILER 700, RT 8400, INCOB 400, JP 200, INTER 300 = $31,600/día.
-    # El 2700 era una transcripción vieja del PRG que quedó stale.
+    # no $2700. El 2700 era una transcripción vieja del PRG que quedó stale.
+    #
+    # TMT 2026-07-29 — RE-VERIFICADO LÍNEA POR LÍNEA contra MENU.PRG L283-333
+    # del tarball de hoy. La lista correcta es: SRI 3300, 13 aguinaldo 1000,
+    # 14 sueldo 300, AB 1300, SS IESS 2400, A,E,C **9000**, SUELDOS 6000,
+    # ALQUILER 700, RT 8400, INCOB 400, JP 200, INTER 300 = **$33,300/día**.
     ("YY", "concepto_starts_with", "SR", 3300),
     ("YY", "concepto_starts_with", "13", 1000),
     ("YY", "concepto_starts_with", "14", 300),
     ("YY", "concepto_starts_with", "AB", 1300),
     ("YY", "concepto_starts_with", "SS", 2400),
-    # TMT 2026-05-15 (re-audit C5): el patrón "A,E,C" ANTES era
-    # `concepto LIKE 'A,E,C%'` — nunca matcheaba nada y silenciosamente
-    # dropeaba $7,300/día ($160-220k/mes) de provisiones. dBase original
-    # usaba `LEFT(concepto,1) $ 'AEC'` (init A, E o C). Lo reemplazamos
-    # con el matcher `concepto_starts_with_any` (lista de iniciales).
-    ("YY", "concepto_starts_with_any", "A|E|C", 7300),
+    # TMT 2026-07-29 — corrige el re-audit C5 del 2026-05-15, que tenía DOS
+    # errores en esta misma línea:
+    #
+    #   1. MONTO: decía 7300. El PRG dice `REPLA IMPORTE WITH IMPORTE+9000`.
+    #   2. MATCHER: decía `concepto_starts_with_any "A|E|C"`. El comentario
+    #      de aquel re-audit afirmaba que el dBase usaba
+    #      `LEFT(concepto,1) $ 'AEC'` (inicial A, E o C) — eso NO existe en
+    #      el PRG. La ÚNICA regla es `LOCA FOR LEFT(CONCEPTO,5)="A,E,C"`
+    #      (MENU.PRG L305), o sea el literal "A,E,C".
+    #      Verificado: `grep -n "AEC\|A,E,C" MENU.PRG` → sólo esa línea.
+    #
+    # El matcher amplio además era peligroso: el caller hace
+    # `ORDER BY id_posdat LIMIT 1`, así que "ALQUILER" y "AB PROVISION"
+    # (las dos empiezan con A) competían por el mismo match. Si alguna tenía
+    # id_posdat menor, A,E,C no devengaba nada y la otra devengaba de más.
+    ("YY", "concepto_starts_with", "A,E,C", 9000),
     ("YY", "concepto_starts_with", "SUELDOS", 6000),
     ("YY", "concepto_eq", "ALQUILER", 700),
     ("", "prov_eq", "RT", 8400),
