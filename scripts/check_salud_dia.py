@@ -286,15 +286,18 @@ def check_mov_doble(verbose: bool = False) -> None:
         if verbose:
             for r in db.fetch_all(
                 """
-                SELECT id_mov_doble, tipo, origen_id, destino_id, creado_en,
-                       usuario_crea, nota
+                SELECT id_mov_doble, tipo, origen_table, origen_id,
+                       destino_table, destino_id, importe, fecha_operacion,
+                       usuario, concepto
                   FROM scintela.mov_doble
                  WHERE estado = 'reverso' AND id_original IS NULL
                  ORDER BY id_mov_doble
                 """) or []:
                 print(f"     #{r['id_mov_doble']} {r['tipo']} "
-                      f"orig={r['origen_id']} dest={r['destino_id']} "
-                      f"{r['creado_en']} {r['usuario_crea']} — {(r.get('nota') or '')[:60]}")
+                      f"{r['origen_table']}#{r['origen_id']}→"
+                      f"{r['destino_table']}#{r['destino_id']} "
+                      f"{_money(r['importe'])} {r['fecha_operacion']} "
+                      f"{r['usuario']} — {(r.get('concepto') or '')[:50]}")
     else:
         _reporte("MOV_DOBLE", OK, "Reversos tienen id_original.")
 
@@ -314,8 +317,8 @@ def check_mov_doble(verbose: bool = False) -> None:
             for r in db.fetch_all(
                 """
                 SELECT tipo, COUNT(*) AS n,
-                       MIN(creado_en)::date AS desde,
-                       MAX(creado_en)::date AS hasta
+                       MIN(fecha_operacion) AS desde,
+                       MAX(fecha_operacion) AS hasta
                   FROM scintela.mov_doble
                  WHERE estado = 'reversado' AND id_reverso IS NULL
                  GROUP BY tipo ORDER BY COUNT(*) DESC
