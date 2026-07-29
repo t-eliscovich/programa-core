@@ -73,3 +73,53 @@ def test_auto_carga_throttle(monkeypatch):
     monkeypatch.setattr(fv, "_auto_carga_ultimo_ts", time.monotonic())
     res = fv._auto_cargar_facturas_hoy()
     assert res["corrio"] is False and res["cargadas"] == 0
+
+
+def test_auto_carga_trae_nc_financiera(monkeypatch):
+    """TMT 2026-07-28 (dueña, caso NC 11495 'no consta en el estado de cuenta').
+
+    Las NC financieras (kg=0, importe negativo) entraban a PC por el sync del
+    dBase; al pararse el 10/07 dejaron de entrar y el saldo del cliente quedó
+    inflado por el descuento. Ahora las trae la auto-carga, como el dBase:
+    fila propia con importe/saldo negativos.
+    """
+    from filters import today_ec
+    hoy = today_ec()
+    _reset_throttle(monkeypatch)
+
+    asinfo_rows = [
+        # NC financiera nueva → se carga.
+        {"numero": "001-099-000011495", "tipo": "NC_FINANCIERA", "cliente_codigo": "RST",
+         "kg": 0, "usd": -148.32, "fecha": hoy.isoformat()},
+        # NC financiera que ya está en PC por numf (la trajo el sync del dBase,
+        # que NO llena numf_completo) → NO se duplica.
+        {"numero": "001-099-000011480", "tipo": "NC_FINANCIERA", "cliente_codigo": "AJ2",
+         "kg": 0, "usd": -12.52, "fecha": hoy.isoformat()},
+    ]
+    from modules.asinfo import service as svc
+    monkeypatch.setattr(svc, "facturas_periodo", lambda d, h: asinfo_rows)
+    monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [
+        {"numf_completo": None, "numf": 11480},
+    ])
+
+    creadas = []
+    monkeypatch.setattr(fq, "crear", lambda **kw: creadas.append(kw) or {"numf": kw.get("numf")})
+    monkeypatch.setattr(fv, "_resolver_cliente_asinfo",
+                        lambda cli, u, numero=None, importe=None, id_direccion=None: (cli, False))
+    from modules.retenciones import queries as rq
+    monkeypatch.setattr(rq, "aplicar_retenciones_asinfo",
+                        lambda d, h, usuario="x": {"n_aplicadas": 0})
+    from modules.facturas import vigia_anuladas as vig
+    monkeypatch.setattr(vig, "correr_si_toca",
+                        lambda: {"corrio": False, "anuladas": 0, "bloqueadas": 0})
+
+    res = fv._auto_cargar_facturas_hoy()
+
+    assert res["cargadas"] == 1
+    assert len(creadas) == 1
+    nc = creadas[0]
+    assert nc["numf"] == 11495
+    assert float(nc["importe"]) == -148.32   # negativa: baja el saldo del cliente
+    assert float(nc["kg"]) == 0
+    assert nc["tipo"] == "NC"
+    assert nc["usuario"] == "asinfo-carga"   # cuenta en cartera

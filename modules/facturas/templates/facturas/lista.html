@@ -394,7 +394,11 @@
              TMT 2026-07-21 (dueña "¿por qué no hay tipo?"). #}
           {% set _t = (f.tipo or '') | string | upper %}
           {% set _neg = (f.importe is not none and f.importe | float < 0) or (f.kg is not none and f.kg | float < 0) %}
-          {% if _t[:1] == 'N' %}
+          {% if _t[:2] == 'NC' %}
+            {# TMT 2026-07-28: nota de crédito financiera (descuento / devolución
+               sin mercadería). kg=0 e importe negativo. #}
+            {% set _tipo_letra, _tipo_color, _tipo_desc = 'NC', 'text-rose-600', 'Nota de crédito' %}
+          {% elif _t[:1] == 'N' %}
             {% set _tipo_letra, _tipo_color, _tipo_desc = 'N', 'text-sky-600', 'Nota' %}
           {% elif _t[:1] == 'D' or _neg %}
             {% set _tipo_letra, _tipo_color, _tipo_desc = 'D', 'text-amber-600', 'Devolución' %}

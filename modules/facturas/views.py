@@ -115,13 +115,23 @@ def _auto_cargar_facturas_hoy() -> dict:
         for r in asinfo_rows:
             tipo = (r.get("tipo") or "").upper()
             # TMT 2026-07-26 (dueña): auto-cargar también DEVOLUCION/NCNT de
-            # MERCADERÍA (kg != 0), igual que el botón. NC_FINANCIERA (kg=0) se
-            # excluye (se pisa con las retenciones ya aplicadas → duplicaría).
+            # MERCADERÍA (kg != 0), igual que el botón.
+            # TMT 2026-07-28 (dueña, caso NC 11495 "no consta en el estado de
+            # cuenta"): se agrega NC_FINANCIERA (kg=0). La exclusión anterior
+            # decía "se pisa con las retenciones ya aplicadas" — es falso: la
+            # retención en Asinfo NO es una nota de crédito, vive como línea de
+            # forma_cobro (card 202, ver asinfo.service.retenciones_periodo). El
+            # catálogo `motivo_nota_credito_cliente` tiene sólo 2 motivos —
+            # 'Devolución Producto' y 'Descuento' — ninguno es una retención.
+            # Estas NC entraban a PC por el sync del dBase (FACTURAS.DBF las
+            # guarda como fila con IMPORTE/SALDO negativos, kg=0, stat 'Z'); al
+            # pararse el sync el 10/07 dejaron de entrar y el saldo del cliente
+            # quedó inflado por el descuento que ya le habíamos dado.
             try:
                 _kg_auto = float(r.get("kg") or 0)
             except (TypeError, ValueError):
                 _kg_auto = 0.0
-            if tipo in ("FACTURA", "NTEN"):
+            if tipo in ("FACTURA", "NTEN", "NC_FINANCIERA"):
                 pass
             elif tipo in ("DEVOLUCION", "NCNT") and abs(_kg_auto) > 0.001:
                 pass
@@ -138,10 +148,15 @@ def _auto_cargar_facturas_hoy() -> dict:
             if numero in pc_numfcompleto:
                 continue
             numf = _numf_de_numero(numero)
-            # …o por N° SRI (solo FACTURA: el numf SRI es único y alto; una NTEN
-            # podría colisionar con un numf viejo, así que NTEN se dedupea solo
-            # por N° completo).
-            if tipo == "FACTURA" and numf is not None and numf in pc_numf:
+            # …o por N° SRI. FACTURA: el numf SRI es único y alto. NC/DEVOLUCION/
+            # NCNT comparten la MISMA serie de notas de crédito (11xxx) y las que
+            # trajo el sync del dBase tienen numf pero numf_completo NULL — sin
+            # este dedupe, si el sync vuelve a correr se duplicarían (TMT
+            # 2026-07-28). Verificado contra FACTURAS.DBF: 0 colisiones entre la
+            # serie de NC (1.085–11.5k) y la de facturas (≥17.748). NTEN queda
+            # afuera: usa su propia serie corta (1.1xx) y sí podría chocar.
+            if (tipo in ("FACTURA", "NC_FINANCIERA", "DEVOLUCION", "NCNT")
+                    and numf is not None and numf in pc_numf):
                 continue
             try:
                 importe = Decimal(str(r.get("usd") or "0"))
@@ -1096,15 +1111,19 @@ def desde_asinfo():
         # TMT 2026-07-26 (dueña): además de FACTURA/NTEN, listar para cargar
         # las DEVOLUCION/NCNT de MERCADERÍA (kg != 0). El sync dBase las traía;
         # al pararse el 10/07 quedaron afuera de PC e inflaron su cartera
-        # (~17,5k en 51 devoluciones). Las NC_FINANCIERA (kg=0) se EXCLUYEN a
-        # propósito: se pisan con las retenciones ya aplicadas y duplicarían el
-        # crédito. El auto-carga (arriba) sigue trayendo SOLO FACTURA/NTEN — las
-        # devoluciones se cargan a mano con el botón, no automático.
+        # (~17,5k en 51 devoluciones).
+        # TMT 2026-07-28 (dueña, caso NC 11495): se agregan las NC_FINANCIERA
+        # (kg=0) por el mismo motivo — también las traía el sync y también
+        # dejaron de entrar el 10/07 (122 docs, −$2.911,49 al 28/07). La razón
+        # vieja para excluirlas ("se pisan con las retenciones") era falsa: la
+        # retención no es una NC en Asinfo (vive en forma_cobro, card 202) y el
+        # catálogo de motivos de NC sólo tiene 'Devolución Producto' y
+        # 'Descuento'. Ver modules/facturas/views.py::_auto_cargar_facturas_hoy.
         try:
             _kg_tipo = float(r.get("kg") or 0)
         except (TypeError, ValueError):
             _kg_tipo = 0.0
-        if tipo in ("FACTURA", "NTEN"):
+        if tipo in ("FACTURA", "NTEN", "NC_FINANCIERA"):
             pass
         elif tipo in ("DEVOLUCION", "NCNT") and abs(_kg_tipo) > 0.001:
             pass
