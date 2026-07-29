@@ -56,6 +56,20 @@ def _loop() -> None:
                     res.get("cargadas", 0), res.get("ret", 0),
                     res.get("anuladas", 0),
                 )
+            # TMT 2026-07-29 (dueña): conversión automática anticipo → compra
+            # BAP cuando Asinfo marca recibida la importación. Se cuelga de
+            # ESTE ciclo (no se agrega un hilo más) y trae su propio freno de
+            # 30 min + switch en base + AUTOBAP=0. Fail-soft por su cuenta.
+            try:
+                from modules.importaciones import autobap as _autobap
+                ab = _autobap.correr_si_toca()
+                if ab.get("convertidas"):
+                    _LOG.info(
+                        "autobap (fondo): %s importación(es) convertidas por $%s",
+                        ab.get("convertidas"), ab.get("importe"),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("autobap (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)

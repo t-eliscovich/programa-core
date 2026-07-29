@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, empty_row %}
+{% block title %}Conversión automática{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('importaciones.lista') }}" class="hover:underline">Ingreso de hilado</a> · <strong>Automático</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-full" style="font-variant-numeric:tabular-nums;">
+
+  {{ page_hero(
+      'Conversión automática',
+      kpi_valor=('US$ ' ~ (prev.total_usd | num_es(2))),
+      kpi_extra=('· ' ~ prev.n_importaciones ~ ' importación(es) lista(s) para convertir')
+  ) }}
+
+  {# ---- Switch ---- #}
+  <div class="mb-5 border rounded p-4"
+       style="border-color:{% if cfg.activo %}rgb(167 243 208){% else %}rgb(226 232 240){% endif %};
+              background:{% if cfg.activo %}rgb(236 253 245){% else %}rgb(248 250 252){% endif %};">
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <div class="text-sm font-semibold" style="color:rgb(15 23 42);">
+          {% if cfg.activo %}✅ Prendida{% else %}⏸️ Apagada{% endif %}
+        </div>
+        <div class="text-xs text-slate-600 mt-1" style="max-width:60rem;line-height:1.5;">
+          Cuando Asinfo marca <strong>recibida</strong> una importación, el programa convierte
+          solo sus anticipos vivos a una compra BAP y te avisa por la 🔔.
+          Corre cada 30 minutos.
+          {% if cfg.fecha_corte %}
+          Sólo mira recepciones <strong>posteriores al {{ cfg.fecha_corte }}</strong>
+          (lo anterior queda como está).
+          {% endif %}
+          <br>
+          <span style="color:rgb(146 64 14);">La compra se crea en Programa Core: hasta que hagas el
+          BAP en el dBase, esa plata va a estar en COMPRAS acá y en ANTICIPOS allá.
+          El aviso te dice cuál hacer.</span>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('importaciones.automatico_switch') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="activo" value="{{ '0' if cfg.activo else '1' }}">
+        <button class="text-sm px-4 py-2 rounded text-white"
+                style="background:{% if cfg.activo %}rgb(100 116 139){% else %}rgb(5 150 105){% endif %};">
+          {% if cfg.activo %}Apagar{% else %}Prender{% endif %}
+        </button>
+      </form>
+    </div>
+    <div class="text-[11px] text-slate-500 mt-2">
+      Frenos por corrida: máximo {{ cfg.tope_importaciones }} importaciones y
+      US$ {{ cfg.tope_usd | num_es(0) }}. Si se pasa, no convierte nada y avisa.
+    </div>
+  </div>
+
+  {% if prev.frenos %}
+  <div class="mb-4 px-4 py-3 rounded text-sm"
+       style="background:rgb(254 249 195);border:1px solid rgb(253 224 71);color:rgb(113 63 18);">
+    {% for f in prev.frenos %}<div>⛔ {{ f }}</div>{% endfor %}
+  </div>
+  {% endif %}
+
+  {# ---- Preview ---- #}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
+    Listas para convertir ahora
+  </h2>
+  <div class="border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 mb-5">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/40 text-[11px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left font-medium">Importación</th>
+            <th class="px-4 py-2 text-left font-medium">Código</th>
+            <th class="px-4 py-2 text-left font-medium">Año</th>
+            <th class="px-4 py-2 text-left font-medium">Recibida</th>
+            <th class="px-4 py-2 text-right font-medium">Kg</th>
+            <th class="px-4 py-2 text-right font-medium">Anticipos</th>
+            <th class="px-4 py-2 text-right font-medium">US$</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in prev.grupos %}
+          <tr class="border-t border-slate-100 dark:border-slate-800/60">
+            <td class="px-4 py-1.5 font-mono text-xs">{{ g.im_numero }}</td>
+            <td class="px-4 py-1.5">{{ g.codigo_prov }} {{ g.ref }}</td>
+            <td class="px-4 py-1.5 text-xs text-slate-500">{{ g.anio or '—' }}</td>
+            <td class="px-4 py-1.5 text-xs">{{ g.fecha_recepcion }}</td>
+            <td class="px-4 py-1.5 text-right">{{ g.kg | num_es(0) if g.kg else '—' }}</td>
+            <td class="px-4 py-1.5 text-right">{{ g.n }}</td>
+            <td class="px-4 py-1.5 text-right font-medium">{{ g.importe | num_es(2) }}</td>
+          </tr>
+          {% else %}
+          {{ empty_row(7, 'Nada para convertir.', 'Aparecen acá las importaciones que Asinfo marcó recibidas y todavía tienen anticipos vivos.') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if prev.grupos %}
+    <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+      <span class="text-xs text-slate-500">
+        Se crean {{ prev.n_importaciones }} compra(s) BAP por US$ {{ prev.total_usd | num_es(2) }}.
+        Cada una se puede deshacer desde /historial.
+      </span>
+      <form method="post" action="{{ url_for('importaciones.automatico_correr') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="forzar" value="1">
+        <button class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700">
+          Convertir ahora
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ---- Historial ---- #}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">Historial</h2>
+  <div class="border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/40 text-[11px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left font-medium">Cuándo</th>
+            <th class="px-4 py-2 text-left font-medium">Qué pasó</th>
+            <th class="px-4 py-2 text-left font-medium">Compra</th>
+            <th class="px-4 py-2 text-right font-medium">US$</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in historial %}
+          <tr class="border-t border-slate-100 dark:border-slate-800/60">
+            <td class="px-4 py-1.5 text-xs text-slate-500" style="white-space:nowrap;">{{ a.creado_en }}</td>
+            <td class="px-4 py-1.5" style="font-size:12.5px;line-height:1.45;">
+              {% if a.tipo == 'conversion' %}✅{% elif a.tipo == 'freno' %}⛔{% else %}⚠️{% endif %}
+              {{ a.mensaje }}
+            </td>
+            <td class="px-4 py-1.5 font-mono text-xs">{{ a.comprobante or '—' }}</td>
+            <td class="px-4 py-1.5 text-right">{{ a.importe | num_es(2) if a.importe else '—' }}</td>
+          </tr>
+          {% else %}
+          {{ empty_row(4, 'Todavía no convirtió nada.', '') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

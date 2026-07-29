@@ -1030,6 +1030,44 @@
         </span>
       </div>
       <div class="flex items-center gap-3">
+        {# ---- CAMPANITA — conversiones automáticas anticipo→compra.
+             TMT 2026-07-29 (dueña): "ponelo en una campanita y hagámoslo
+             automático". Sólo aparece si hay algo sin leer, así no ocupa
+             lugar el 99% del tiempo. Ver modules/importaciones/autobap.py. #}
+        {% if tiene_permiso('compras.crear') %}
+          {% set _ab = avisos_autobap() %}
+          {% if _ab.n %}
+          <div class="relative no-print" id="campanita-wrap">
+            <button type="button" id="campanita-btn"
+                    onclick="document.getElementById('campanita-pop').classList.toggle('hidden')"
+                    title="Importaciones convertidas solas"
+                    class="text-xs px-2.5 py-1.5 rounded border border-amber-300 hover:bg-amber-100"
+                    style="background:rgb(255 251 235);color:rgb(146 64 14);">
+              🔔 <strong>{{ _ab.n }}</strong>
+            </button>
+            <div id="campanita-pop"
+                 class="hidden absolute right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50 py-1 text-sm"
+                 style="width:26rem;max-height:24rem;overflow-y:auto;">
+              {% for a in _ab['items'] %}
+              <div class="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+                <div style="font-size:12.5px;line-height:1.45;">
+                  {% if a.tipo == 'conversion' %}✅{% elif a.tipo == 'freno' %}⛔{% else %}⚠️{% endif %}
+                  {{ a.mensaje }}
+                </div>
+                <div class="text-[11px] text-slate-400 mt-0.5">{{ a.creado_en }}</div>
+              </div>
+              {% endfor %}
+              <div class="px-3 py-2 flex items-center justify-between">
+                <a href="{{ url_for('importaciones.automatico') }}" class="text-xs text-sky-700 hover:underline">Ver todo</a>
+                <form method="post" action="{{ url_for('importaciones.avisos_leidos') }}" class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="text-xs text-slate-500 hover:text-slate-700">Marcar leídos</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        {% endif %}
         <button onclick="toggleTheme()" class="text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Tema</button>
 
         {# ---- Menú del nombre — Bases de datos / Admin / Salir ---- #}

@@ -614,6 +614,25 @@ def create_app() -> Flask:
         except Exception:
             return {"recientes_usuario": []}
 
+    # TMT 2026-07-29 (dueña): la CAMPANITA de las conversiones automáticas
+    # anticipo→compra. Se inyecta como FUNCIÓN (no como valor) para que sólo
+    # toque la base cuando el template la llama — así no le agrega una query a
+    # todas las pantallas de todos los usuarios.
+    @app.context_processor
+    def _inject_autobap():
+        def _avisos_autobap():
+            try:
+                if not g.get("user"):
+                    return {"n": 0, "items": []}
+                from modules.importaciones import autobap as _ab
+
+                items = _ab.avisos(solo_no_leidos=True, limite=15)
+                return {"n": len(items), "items": items}
+            except Exception:  # noqa: BLE001 -- nunca rompe una pantalla
+                return {"n": 0, "items": []}
+
+        return {"avisos_autobap": _avisos_autobap}
+
     @app.route("/")
     def index():
         if not g.get("user"):

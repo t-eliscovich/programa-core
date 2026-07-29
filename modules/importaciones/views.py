@@ -343,6 +343,94 @@ def movimiento_deshacer():
     return _volver()
 
 
+# ---------------------------------------------------------------------------
+# AUTOMÁTICO — conversión anticipo → compra BAP al recibir la importación.
+# TMT 2026-07-29 (dueña): "ponelo en una campanita y hagámoslo automático".
+# Ver modules/importaciones/autobap.py para los guards.
+# ---------------------------------------------------------------------------
+
+@importaciones_bp.route("/importaciones/automatico")
+@requiere_login
+@requiere_permiso("compras.crear")
+def automatico():
+    """Switch + preview de lo que convertiría + historial de lo convertido."""
+    from . import autobap
+
+    cfg = autobap.config()
+    try:
+        prev = autobap.pendientes(cfg)
+    except Exception as e:  # noqa: BLE001
+        prev = {"grupos": [], "total_usd": 0, "n_importaciones": 0,
+                "frenos": [f"No pude calcular el preview: {e}"],
+                "disponible": False}
+    return render_template(
+        "importaciones/automatico.html",
+        cfg=cfg, prev=prev,
+        historial=autobap.avisos(solo_no_leidos=False, limite=50),
+    )
+
+
+@importaciones_bp.route("/importaciones/automatico/switch", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def automatico_switch():
+    from . import autobap
+
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+    activar = (request.form.get("activo") or "") == "1"
+    try:
+        cfg = autobap.set_activo(activar, usuario=usuario)
+        if activar:
+            flash(
+                "Conversión automática PRENDIDA. Sólo mira recepciones "
+                f"posteriores al {cfg.get('fecha_corte') or 'hoy'} — lo viejo "
+                "queda como está.", "ok",
+            )
+        else:
+            flash("Conversión automática APAGADA.", "ok")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude cambiar el switch", e)
+    return redirect(url_for("importaciones.automatico"))
+
+
+@importaciones_bp.route("/importaciones/automatico/correr", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def automatico_correr():
+    """«Convertir ahora» — el mismo motor, disparado a mano."""
+    from . import autobap
+
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+    try:
+        r = autobap.correr(
+            usuario=autobap.USUARIO_AUTOBAP,
+            forzar_topes=(request.form.get("forzar") == "1"),
+        )
+        if r["convertidas"]:
+            flash(
+                f"Convertidas {r['convertidas']} importación(es) por "
+                f"$ {r['importe']:,.2f} — quedaron en la campanita "
+                f"(las hizo {usuario}).", "ok",
+            )
+        else:
+            flash("No había nada para convertir.", "warn")
+        for f in r.get("frenos", []):
+            flash(f, "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude correr la conversión", e)
+    return redirect(url_for("importaciones.automatico"))
+
+
+@importaciones_bp.route("/importaciones/automatico/leidos", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def avisos_leidos():
+    from . import autobap
+
+    autobap.marcar_leidos()
+    return redirect(request.referrer or url_for("importaciones.automatico"))
+
+
 @importaciones_bp.route("/importaciones/_api/abiertas/<prov>")
 @requiere_login
 @requiere_permiso("compras.ver")

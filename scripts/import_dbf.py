@@ -965,6 +965,12 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                 "  FROM scintela.compra "
                 " WHERE COALESCE(usuario_crea, '') LIKE 'formulas-%' "
                 "    OR COALESCE(usuario_crea, '') = 'asinfo-tejeduria' "
+                # TMT 2026-07-29: las compras BAP de la conversión AUTOMÁTICA
+                # al recibir la importación (usuario_crea='bap-auto'). Nacen en
+                # PC y el dBase todavía no las tiene (el BAP allá se hace
+                # después) → sin esto el TRUNCATE las borraría y el anticipo
+                # quedaría consumido sin compra = agujero silencioso.
+                "    OR COALESCE(usuario_crea, '') = 'bap-auto' "
                 # El marcador de verdad de "nació en PC desde Asinfo" es el OFT
                 # estampado en el concepto: el DBF NUNCA trae un OFT. Cubre las
                 # cargadas con el botón masivo (usuario_crea='asinfo-tejeduria')
