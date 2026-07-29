@@ -330,59 +330,12 @@ def reporte_desde_dbf(dbf_path: Path):
         yield line(f"  … y {len(d) - MAX_LISTADO} más")
     yield line()
 
-    # ── [G] COBROS FALTANTES EN PC ──────────────────────────────────────────
-    # TMT 2026-07-26 (dueña: "la cobranza se ingresa en el programa, de Asinfo
-    # no tomamos cobros"). Facturas con MÁS abono en el dBase que en PC → un
-    # pago de la transición que se cargó en el dBase y falta cargar en PC.
-    # numf>0 excluye el ruido de matcheo de las numf=0 (BED). Lista concreta
-    # para quien hace cobranza: cargar estos cobros en PC.
-    faltan = []
-    for x in d:
-        p, b = x["pc"], x["dbf"]
-        try:
-            _numf = int(p.get("numf") or 0)
-            _numf_b = int(b.get("numf") or 0)
-        except (TypeError, ValueError):
-            continue
-        # SOLO facturas apareadas por el MISMO N° (no numf=0, no colisión de
-        # cliente+monto): si el numf no coincide en los dos lados, el abono es
-        # de facturas distintas y no sirve. Así el abono es comparable de verdad.
-        if _numf <= 0 or _numf != _numf_b:
-            continue
-        _falta = round(_r2(b.get("abono")) - _r2(p.get("abono")), 2)
-        if _falta > 0.01:
-            faltan.append((_falta, _numf, (p.get("codigo_cli") or "").strip(),
-                           _r2(b.get("abono")), _r2(p.get("abono")), b.get("fecha")))
-    faltan.sort(reverse=True)
-    tot_faltan = round(sum(f[0] for f in faltan), 2)
-    yield line(f"[G] COBROS FALTANTES EN PC (el dBase cobró un pago que PC no tiene, numf>0) — "
-               f"{len(faltan)} facturas · $ {tot_faltan:,.2f} a cargar en PC")
-    for _f, _n, _c, _dab, _pab, _fe in faltan:
-        yield line(f"  numf={_n:<7} {_c:5} falta ${_f:>10,.2f}  "
-                   f"(dBase abono {_dab:,.2f} · PC {_pab:,.2f})  {_fe}")
-    yield line()
-
-    # Identidad (self-check del bucketeo — residuo 0,00 por construcción)
-    s = {k: round(sum(_saldo_za(r) for r in plan[k]), 2)
-         for k in ("solo_dbase", "solo_pc_backfill", "solo_pc_carga",
-                   "solo_pc_directa", "solo_pc_dbf_huerfana")}
-    residuo = round((totf_pc - totf_dbf)
-                    - (-s["solo_dbase"] + s["solo_pc_backfill"] + s["solo_pc_carga"]
-                       + s["solo_pc_directa"] + s["solo_pc_dbf_huerfana"] + delta_diffs), 2)
-    yield line("IDENTIDAD TOTF:")
-    yield line(f"  PC ({totf_pc:,.2f}) = dBase ({totf_dbf:,.2f})"
-               f" − A({s['solo_dbase']:,.2f}) + B1({s['solo_pc_backfill']:,.2f})"
-               f" + B2({s['solo_pc_carga']:,.2f})"
-               f" + C({s['solo_pc_directa']:,.2f}) + D({s['solo_pc_dbf_huerfana']:,.2f})"
-               f" + ΔE({delta_diffs:,.2f})")
-    yield line(f"  residuo = {residuo:,.2f}  {'✓' if abs(residuo) < 0.01 else '✗ REVISAR'}")
-    yield line()
-
-    # ── [F] DIFERENCIA NETA POR CLIENTE (apareo económico por cliente, ignora numf) ──
-    # Suma la cartera viva ZA por cliente en cada lado; Σ(PC−dBase) = el Δ TOTF del
-    # programa. Los clientes cuyas facturas aparecen partidas en A/B2 (numf distinto)
-    # NETEAN a ~0 acá, así que lo que queda con Δ≠0 es la diferencia REAL. kg = señal
-    # extra: Δkg≈0 con Δsaldo≠0 → cobranza/saldo; Δkg≠0 → factura de más o de menos.
+    # ── Δ neto por CLIENTE (se calcula acá porque [G] y [F] lo comparten) ────
+    # Suma la cartera viva ZA por cliente en cada lado; Σ(PC−dBase) = el Δ TOTF
+    # del programa. Los clientes cuyas facturas aparecen partidas en A/B2 (numf
+    # distinto) NETEAN a ~0 acá, así que lo que queda con Δ≠0 es la diferencia
+    # REAL. kg = señal extra: Δkg≈0 con Δsaldo≠0 → cobranza/saldo; Δkg≠0 →
+    # factura de más o de menos.
     _acc = defaultdict(lambda: {"db_za": 0.0, "pc_za": 0.0, "db_kg": 0.0,
                                 "pc_kg": 0.0, "db_n": 0, "pc_n": 0})
     for r in dbf:
@@ -406,6 +359,83 @@ def reporte_desde_dbf(dbf_path: Path):
             _difs.append((cli, dza, round(v["pc_kg"] - v["db_kg"], 2),
                           v["pc_n"] - v["db_n"], v))
     _difs.sort(key=lambda x: -abs(x[1]))
+    _clientes_con_dif = {x[0] for x in _difs}
+
+    # ── [G] ABONO IMPUTADO DISTINTO (NO es plata faltante) ───────────────────
+    # TMT 2026-07-29 — ESTE BUCKET ANTES DECÍA "COBROS FALTANTES EN PC ... $X a
+    # cargar en PC" y ESO INDUCE A UN ERROR CARO. No son cobros que falten: es
+    # que los dos sistemas IMPUTAN el mismo cobro a facturas distintas.
+    #
+    # El dBase usa una factura como BOLSA: le cuelga el pago entero del cliente
+    # a un solo comprobante y lo manda a saldo negativo. Ejemplo real del
+    # 29/07: numf=179413 AIG tiene importe 1.320,22 y abono 91.776,96 → saldo
+    # −90.456,74, stat T (AIG tiene 18 cheques posdatados de $5.400 en el DBF:
+    # el plan de pago entero colgado de una factura de mil dólares). PC hace lo
+    # contrario: aplica cada cheque a la factura que corresponde vía
+    # chequesxfact. Mismo total por cliente, distinta repartija por factura.
+    #
+    # Prueba: los 6 más grandes de este bucket sumaban $331.310 el 29/07 y sus
+    # clientes (AIG, LUT, BYG, EEU…) NO figuran en [F] o figuran con ±0,04 —
+    # o sea su cartera cuadra al centavo. Si alguien "cargaba esos cobros",
+    # movía caja/bancos por plata que YA está depositada → doble conteo.
+    #
+    # Por eso ahora sólo se listan las facturas cuyo CLIENTE tiene Δ≠0 en [F]:
+    # esas son las únicas donde la diferencia de abono puede ser real.
+    faltan = []
+    for x in d:
+        p, b = x["pc"], x["dbf"]
+        try:
+            _numf = int(p.get("numf") or 0)
+            _numf_b = int(b.get("numf") or 0)
+        except (TypeError, ValueError):
+            continue
+        # SOLO facturas apareadas por el MISMO N° (no numf=0, no colisión de
+        # cliente+monto): si el numf no coincide en los dos lados, el abono es
+        # de facturas distintas y no sirve. Así el abono es comparable de verdad.
+        if _numf <= 0 or _numf != _numf_b:
+            continue
+        _falta = round(_r2(b.get("abono")) - _r2(p.get("abono")), 2)
+        if _falta > 0.01:
+            faltan.append((_falta, _numf, (p.get("codigo_cli") or "").strip(),
+                           _r2(b.get("abono")), _r2(p.get("abono")), b.get("fecha")))
+    faltan.sort(reverse=True)
+    _relev = [f for f in faltan if f[2].upper() in _clientes_con_dif]
+    _neutras = [f for f in faltan if f[2].upper() not in _clientes_con_dif]
+    yield line("[G] ABONO IMPUTADO DISTINTO (numf>0) — NO es plata faltante")
+    yield line("    El dBase cuelga el pago entero del cliente de UNA factura "
+               "(la manda a saldo negativo);")
+    yield line("    PC lo aplica factura por factura. Mismo total por cliente, "
+               "distinta repartija.")
+    yield line(f"  · {len(_neutras)} facturas cuyo CLIENTE ya cuadra al centavo en [F] "
+               f"→ NO tocar (cargarlas duplicaría cobranza ya depositada)")
+    yield line(f"  · {len(_relev)} facturas cuyo cliente SÍ tiene Δ≠0 en [F] "
+               f"→ únicas donde la diferencia puede ser real:")
+    if not _relev:
+        yield line("      (ninguna)")
+    for _f, _n, _c, _dab, _pab, _fe in _relev:
+        yield line(f"  numf={_n:<7} {_c:5} Δabono ${_f:>10,.2f}  "
+                   f"(dBase abono {_dab:,.2f} · PC {_pab:,.2f})  {_fe}")
+    yield line()
+
+    # Identidad (self-check del bucketeo — residuo 0,00 por construcción)
+    s = {k: round(sum(_saldo_za(r) for r in plan[k]), 2)
+         for k in ("solo_dbase", "solo_pc_backfill", "solo_pc_carga",
+                   "solo_pc_directa", "solo_pc_dbf_huerfana")}
+    residuo = round((totf_pc - totf_dbf)
+                    - (-s["solo_dbase"] + s["solo_pc_backfill"] + s["solo_pc_carga"]
+                       + s["solo_pc_directa"] + s["solo_pc_dbf_huerfana"] + delta_diffs), 2)
+    yield line("IDENTIDAD TOTF:")
+    yield line(f"  PC ({totf_pc:,.2f}) = dBase ({totf_dbf:,.2f})"
+               f" − A({s['solo_dbase']:,.2f}) + B1({s['solo_pc_backfill']:,.2f})"
+               f" + B2({s['solo_pc_carga']:,.2f})"
+               f" + C({s['solo_pc_directa']:,.2f}) + D({s['solo_pc_dbf_huerfana']:,.2f})"
+               f" + ΔE({delta_diffs:,.2f})")
+    yield line(f"  residuo = {residuo:,.2f}  {'✓' if abs(residuo) < 0.01 else '✗ REVISAR'}")
+    yield line()
+
+    # ── [F] DIFERENCIA NETA POR CLIENTE (apareo económico por cliente, ignora numf) ──
+    # `_acc` / `_difs` se calculan más arriba (antes de [G], que los comparte
+    # para filtrar las facturas cuyo cliente ya cuadra). Acá sólo se imprimen.
     _tot = round(sum(x[1] for x in _difs), 2)
     yield line("[F] DIFERENCIA NETA POR CLIENTE — cartera viva ZA, PC(sin backfill) − dBase")
     yield line("    (netea por cliente ignorando numf; Σ = Δ TOTF del programa. "
