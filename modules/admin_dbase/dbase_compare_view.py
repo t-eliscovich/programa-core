@@ -43,6 +43,7 @@ Secciones:
 """
 from __future__ import annotations
 
+import re
 import sys
 import tarfile
 from collections import defaultdict
@@ -66,6 +67,13 @@ MAX_TARBALL_BYTES = 120 * 1024 * 1024
 DBFS = ["CAJA.DBF", "PICHINCH.DBF", "INTER.DBF", "CHEQUES.DBF", "FACTURAS.DBF",
         "DOLARES.DBF", "POSDAT.DBF", "ACTIVOS.DBF", "RETIROS.DBF",
         "COMPRAS.DBF", "TINTO.DBF", "INICIALE.DBF", "HISTORIA.DBF"]
+# TMT 2026-07-29 — el código fuente del FoxPro, OPCIONAL en el tarball.
+# Motivo: el 19/06/2026 alguien editó a mano la cuota diaria de la provisión
+# A,E,C (7.700 → 9.000) y PC recién se enteró el 29/07, seis semanas después,
+# porque nada compara las cuotas contra la FUENTE. `diff MENU.BAK MENU.PRG`
+# de ese día devolvía UNA sola línea: justo esa. Comparar PC contra una
+# constante de PC nunca iba a detectarlo. Ver [6b].
+PRG_NOMBRE = "MENU.PRG"
 MAX_LISTADO = 60
 MAX_LISTADO_FACT = 40  # facturas por N° SRI: máx 40 líneas por lado
 
@@ -1105,6 +1113,8 @@ def reporte(dias_banco: int = 30):
         yield line(f"  [detalle pasivos no disponible: {exc!r}]")
     yield line()
 
+    yield from _bloque_cuotas_prg(line)
+
     yield line("── [7] ACTIVOS FIJOS (PRG L47-48) ──")
     yield cmp_acum("Terr/Edif (UACT)", d.get("uact"), _f(pc.get("uact")))
     yield cmp_acum("Maq/Equip (UMAQ)", d.get("umaq"), _f(pc.get("umaq")))
@@ -1507,12 +1517,134 @@ def _extraer() -> None:
         _rmtree_robusto(EXTRACT_DIR)
     EXTRACT_DIR.mkdir(parents=True, exist_ok=True)
     with tarfile.open(TARBALL_PATH, "r:gz") as tar:
-        quiero = set(DBFS)
+        # MENU.PRG viaja opcional: si el tarball no lo trae, [6b] avisa y
+        # sigue. Nunca es motivo para que el compare falle.
+        quiero = set(DBFS) | {PRG_NOMBRE}
         for m in tar.getmembers():
             nombre = Path(m.name).name.upper()
             if m.isfile() and nombre in quiero:
                 m.name = nombre
                 tar.extract(m, EXTRACT_DIR)
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# [6b] Cuotas de provisiones: PC vs el MENU.PRG del tarball
+# ───────────────────────────────────────────────────────────────────────────
+_RE_LOCA = re.compile(r"^\s*LOCA\s+FOR\b(.*)$", re.I)
+_RE_REPLA_IMP = re.compile(
+    r"^\s*REPLA\s+IMPORTE\s+WITH\s+IMPORTE\s*\+\s*(\d+(?:\.\d+)?)\s*(?:&&.*)?$", re.I,
+)
+_RE_LITERAL = re.compile(r"""['"]([^'"]+)['"]""")
+
+
+def cuotas_del_prg() -> list[tuple[str, float]]:
+    """Cuotas diarias de provisiones parseadas del MENU.PRG (bloque L283-333).
+
+    El PRG las escribe como pares:
+
+        LOCA FOR LEFT(CONCEPTO,5)="A,E,C"
+        IF FOUND()
+           REPLA IMPORTE WITH IMPORTE+9000
+        ENDIF
+
+    Se toma el PRIMER literal entrecomillado del `LOCA FOR` como clave (sirve
+    para las 12 variantes: LEFT(CONCEPTO,n)="X", CONCEPTO='X', "X" $ CONCEPTO
+    y PROV="RT") y el número del `REPLA` siguiente como monto.
+
+    La única línea `REPLA IMPORTE WITH IMPORTE+RETE` (L1424, retenciones) NO
+    matchea porque el regex exige dígitos. Devuelve [] si no hay PRG.
+    """
+    p = EXTRACT_DIR / PRG_NOMBRE
+    if not p.exists():
+        return []
+    try:
+        txt = p.read_text(encoding="latin-1", errors="replace")
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[tuple[str, float]] = []
+    pendiente: str | None = None
+    for linea in txt.splitlines():
+        m = _RE_LOCA.match(linea)
+        if m:
+            lit = _RE_LITERAL.search(m.group(1))
+            pendiente = lit.group(1).strip().upper() if lit else None
+            continue
+        m = _RE_REPLA_IMP.match(linea)
+        if m and pendiente:
+            out.append((pendiente, float(m.group(1))))
+            pendiente = None
+    return out
+
+
+def cuotas_de_pc() -> dict[str, float]:
+    """Cuota diaria que PC usa HOY: scintela.provisiones + el RT hardcodeado
+    en modules/posdat/queries._resolver_cuotas (RT no vive en esa tabla)."""
+    out: dict[str, float] = {}
+    try:
+        from db import fetch_all as _fa
+        for r in _fa("SELECT concepto, importe FROM scintela.provisiones") or []:
+            c = (r.get("concepto") or "").strip().upper()
+            if c:
+                out[c] = float(r.get("importe") or 0)
+    except Exception:  # noqa: BLE001
+        pass
+    out.setdefault("RT", 8400.0)
+    return out
+
+
+def _match_cuota_pc(lit: str, pc: dict[str, float]) -> tuple[str, float] | None:
+    """Resuelve la clave del PRG contra los conceptos de PC: exacto, luego
+    empieza-con (SR → 'SRI PROVISION'), luego contiene (INCOB →
+    'PROV.INCOBRABLE')."""
+    L = (lit or "").strip().upper()
+    if not L:
+        return None
+    if L in pc:
+        return (L, pc[L])
+    for c, v in sorted(pc.items()):
+        if c.startswith(L):
+            return (c, v)
+    for c, v in sorted(pc.items()):
+        if L in c:
+            return (c, v)
+    return None
+
+
+def _bloque_cuotas_prg(line):
+    """Compara las cuotas de PC contra la FUENTE (el MENU.PRG del tarball)."""
+    yield line("── [6b] CUOTAS DE PROVISIONES — PC vs MENU.PRG (la fuente) ──")
+    prg = cuotas_del_prg()
+    if not prg:
+        yield line(f"  [{PRG_NOMBRE} no vino en el tarball — sin él no se puede saber si")
+        yield line("   cambiaron las cuotas en el FoxPro. Agregalo al tar y volvé a subir.]")
+        yield line()
+        return
+    pc = cuotas_de_pc()
+    tot_prg = tot_pc = 0.0
+    difs = 0
+    for lit, monto in prg:
+        tot_prg += monto
+        m = _match_cuota_pc(lit, pc)
+        if m is None:
+            difs += 1
+            yield line(f"  {lit:9} PRG {monto:>10,.2f}   PC        —      "
+                       f"✗ PC no tiene esa provisión")
+            continue
+        concepto, vpc = m
+        tot_pc += vpc
+        ok = abs(vpc - monto) < 0.005
+        if not ok:
+            difs += 1
+        yield line(f"  {lit:9} PRG {monto:>10,.2f}   PC {vpc:>10,.2f}  "
+                   f"{'✓' if ok else '✗'}   ({concepto})")
+    ok_tot = abs(tot_pc - tot_prg) < 0.005
+    yield line(f"  {'TOTAL':9} PRG {tot_prg:>10,.2f}   PC {tot_pc:>10,.2f}  "
+               f"{'✓' if ok_tot else '✗'}   por corrida del FoxPro")
+    if difs:
+        yield line(f"  ⚠ {difs} cuota(s) NO coinciden con el PRG. Si el FoxPro cambió, hay que")
+        yield line("    replicarlo en /posdat?tab=yy (columna CUOTA DIARIA). Cada día que pasa")
+        yield line("    con la cuota mal, el pasivo se separa por la diferencia.")
+    yield line()
 
 
 def _run(dias: int, reextraer: bool = True):
