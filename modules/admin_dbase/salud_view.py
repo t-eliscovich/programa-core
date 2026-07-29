@@ -157,11 +157,13 @@ _DOCS_ENTRADA = {"DE", "TR", "XX", "NC", "IN"}
 
 
 def _signed_delta(doc, imp) -> float:
-    """Mismo signo que bank_helpers.signo_documento y que check_bancos."""
-    imp = float(imp or 0)
-    if imp < 0:
-        return imp
-    return imp if (doc or "").upper().strip() in _DOCS_ENTRADA else -imp
+    """signo_documento × importe — la misma regla que bank_helpers.
+
+    SIN caso especial para importes negativos: un ND negativo es la devolución
+    de un egreso y la plata sube. Ver la nota en check_bancos.
+    """
+    return float(imp or 0) * (
+        1 if (doc or "").upper().strip() in _DOCS_ENTRADA else -1)
 
 
 def _diag_banco(no_banco: int, ventana: int = 12):

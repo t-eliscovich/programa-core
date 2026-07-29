@@ -188,10 +188,20 @@ def check_bancos(verbose: bool = False) -> None:
     DOCS_ENTRADA = {"DE", "TR", "XX", "NC", "IN"}
 
     def _signed_delta(doc, imp):
-        imp = float(imp or 0)
-        if imp < 0:
-            return imp
-        return imp if (doc or "").upper().strip() in DOCS_ENTRADA else -imp
+        # signo_documento × importe, SIN caso especial para negativos.
+        #
+        # TMT 2026-07-29 — esta función tenía `if imp < 0: return imp`, y ese
+        # atajo es exactamente lo contrario de lo que hace el sistema. La regla
+        # canónica está en bank_helpers._signed_delta y su docstring la deja
+        # escrita: "ND -44091 (reverso): -1 * -44091 = +44091 → saldo sube ✓".
+        # Un ND negativo es la DEVOLUCIÓN de un egreso: la plata vuelve.
+        #
+        # Costo: el residuo de $46,88 que quedaba en Pichincha era tx#43977,
+        # un ND de -23,44 ("GS BANCO", una comisión devuelta). El sistema le
+        # sumó 23,44; el chequeo le restó 23,44. La diferencia es 2 × 23,44 =
+        # 46,88 exacto. No faltaba plata: sobraba un `if`.
+        return float(imp or 0) * (
+            1 if (doc or "").upper().strip() in DOCS_ENTRADA else -1)
 
     bancos = db.fetch_all(
         """
