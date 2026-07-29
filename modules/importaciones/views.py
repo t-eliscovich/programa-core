@@ -383,8 +383,8 @@ def automatico_switch():
         if activar:
             flash(
                 "Conversión automática PRENDIDA. Sólo mira recepciones "
-                f"posteriores al {cfg.get('fecha_corte') or 'hoy'} — lo viejo "
-                "queda como está.", "ok",
+                f"desde el {cfg.get('fecha_corte') or 'hoy'} (ese día "
+                "incluido) — lo anterior queda como está.", "ok",
             )
         else:
             flash("Conversión automática APAGADA.", "ok")

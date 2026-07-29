@@ -232,7 +232,10 @@ def pendientes(cfg: dict | None = None) -> dict:
         if not im or not rec or not cta or ref is None:
             continue
         # ── GUARD 4: fecha de corte — no dispara el histórico ───────────────
-        if corte and str(rec)[:10] <= str(corte)[:10]:
+        # La fecha de corte se sella el día que se prende y es INCLUSIVA: las
+        # recepciones de ESE día entran (si prendés un lunes, lo que llegó el
+        # lunes se convierte), lo anterior queda como está.
+        if corte and str(rec)[:10] < str(corte)[:10]:
             continue
         # ── GUARD 9 (nuevo, 29/07): código repetido entre campañas y el
         # anticipo SIN año escrito → no se convierte solo. Es justo el caso
