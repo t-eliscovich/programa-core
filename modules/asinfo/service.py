@@ -684,7 +684,10 @@ def stock_asinfo_lote_totales() -> list[dict]:
          GROUP BY b.id_bodega, b.nombre
          ORDER BY SUM(u.saldo) DESC
     """
-    rows = metabase_client.fetch_dataset(2, sql, max_results=100)
+    # TMT 2026-07-29: `_estado` para distinguir "Metabase no contestó" de "no
+    # hay filas". Ésta es LA función que rompió el balance el 29/07 — su []
+    # cacheado 5 min dejaba el stock en cero y la utilidad ~495k abajo.
+    rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=100)
     out = []
     for r in rows:
         try:
@@ -696,7 +699,7 @@ def stock_asinfo_lote_totales() -> list[dict]:
             })
         except (TypeError, ValueError):
             continue
-    _STOCK_LOTE_TOTALES_CACHE["all"] = (now, out)
+    _cache_put(_STOCK_LOTE_TOTALES_CACHE, "all", out, ok, _STOCK_LOTE_TTL_SECS)
     return out
 
 
@@ -885,7 +888,7 @@ def fabricacion_proceso(id_bodega: int) -> dict:
             ON cp.id_categoria_producto = p.id_categoria_producto
          ORDER BY ISNULL(i.issued, 0) - o.fab DESC
     """
-    rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=20000)
     # TMT 2026-06-10 v2 — paridad con el Excel: la tabla "Órdenes de
     # Fabricación" del Excel sólo cuenta OFTs INICIADAS (con material
     # despachado). Las abiertas sin movimiento se reportan aparte como
@@ -956,7 +959,7 @@ def fabricacion_proceso(id_bodega: int) -> dict:
         "por_tejido": sorted(por_tejido.values(), key=lambda x: -x["planif"]),
         "ofts": ofts,
     }
-    _FABRICACION_CACHE[id_bodega] = (now, out)
+    _cache_put(_FABRICACION_CACHE, id_bodega, out, ok, _FABRICACION_TTL_SECS)
     return out
 
 
@@ -974,6 +977,36 @@ def fabricacion_proceso(id_bodega: int) -> dict:
 
 _INVENTARIO_ETAPA_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _INVENTARIO_ETAPA_CACHE: dict = {}
+
+
+# ── Caché de FRACASO: ventana corta ────────────────────────────────────────
+# TMT 2026-07-29. Varias funciones de acá cacheaban por 5 min el resultado de
+# Metabase SIN mirar si Metabase había contestado. `fetch_dataset` devuelve []
+# tanto si la query no tiene filas como si hubo timeout/401/500, así que UN
+# hipo dejaba el stock vacío durante toda la ventana: el balance caía a los kg
+# del dBase y la Utilidad Real aparecía ~495.000 más baja SIN AVISAR
+# (29/07: 196.010 en vez de 687.519; se "arregló sola" al vencer el TTL).
+#
+# NO se saca la caché del fracaso: si Metabase está caído, no cachear nada
+# haría que CADA request dispare la query pesada (hasta 20 s cada una) y la
+# app se arrastraría. Se guarda igual, pero con ventana corta — reintenta a
+# los 30 s en vez de a los 5 min, y mientras tanto no martilla Metabase.
+#
+# El camino feliz NO cambia: mismo TTL de siempre, misma velocidad.
+_FALLO_TTL_SECS = 30
+
+
+def _cache_put(cache: dict, clave: str, valor, ok: bool, ttl: int) -> None:
+    """Guarda `valor` con TTL normal si `ok`, con ventana corta si no.
+
+    Los lectores hacen `if cached and (now - cached[0]) < TTL`, así que para
+    acortar la ventana se guarda el timestamp ENVEJECIDO: un fracaso entra
+    como si ya tuviera (ttl − 30 s) de antigüedad y vence a los 30 s. Así no
+    hay que tocar ninguno de los lectores.
+    """
+    import time as _t
+    ahora = _t.time()
+    cache[clave] = (ahora if ok else ahora - max(0, ttl - _FALLO_TTL_SECS), valor)
 
 
 def inventario_por_etapa() -> dict:
@@ -1309,14 +1342,14 @@ def importaciones_kg(limite: int = 400) -> dict[str, float]:
          GROUP BY fp.numero, fpi.id_factura_proveedor
          ORDER BY fpi.id_factura_proveedor DESC
     """
-    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=int(limite))
     out: dict[str, float] = {}
     for r in rows:
         try:
             out[str(r.get("im_numero") or "").strip()] = float(r.get("kg") or 0)
         except (TypeError, ValueError):
             continue
-    _IMPORT_KG_CACHE["all"] = (now, out)
+    _cache_put(_IMPORT_KG_CACHE, "all", out, ok, _IMPORT_KG_TTL_SECS)
     return out
 
 
@@ -1384,7 +1417,7 @@ def importaciones_costo_estimado(limite: int = 400) -> dict[str, dict]:
          ORDER BY fpi.id_factura_proveedor DESC
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+        rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=int(limite))
     except Exception:  # noqa: BLE001
         return {}
     out: dict[str, dict] = {}
@@ -1413,7 +1446,7 @@ def importaciones_costo_estimado(limite: int = 400) -> dict[str, dict]:
             }
         except (TypeError, ValueError):
             continue
-    _IMPORT_COSTO_HILADO_CACHE["all"] = (now, out)
+    _cache_put(_IMPORT_COSTO_HILADO_CACHE, "all", out, ok, _IMPORT_KG_TTL_SECS)
     return out
 
 

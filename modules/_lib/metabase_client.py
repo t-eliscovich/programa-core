@@ -21,9 +21,30 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 _log = logging.getLogger("programa_core.metabase_client")
 _session_token: str | None = None
+
+# ── Señal "¿Metabase contestó?" (TMT 2026-07-29) ───────────────────────────
+# `fetch_dataset` devuelve [] tanto si la query no tiene filas como si hubo
+# timeout/401/500. Quien CACHEA necesita distinguirlos: cachear un fracaso
+# por 5 min dejó el 29/07 el stock en cero y la Utilidad Real ~495.000 abajo
+# (196.010 en vez de 687.519) sin ningún aviso. `fetch_dataset` marca acá el
+# resultado y `fetch_dataset_estado` lo devuelve junto con las filas.
+# threading.local porque Waitress atiende con varios hilos.
+_estado = threading.local()
+
+
+def _marcar(ok: bool) -> None:
+    _estado.ok = ok
+
+
+def ultimo_fetch_ok() -> bool:
+    """True si el último fetch de ESTE hilo llegó a Metabase. Default True
+    (si nadie marcó nada — p.ej. un test que mockea fetch_dataset — se asume
+    que el dato es bueno y se cachea normal)."""
+    return getattr(_estado, "ok", True)
 
 
 def _url() -> str | None:
@@ -120,6 +141,10 @@ def fetch_dataset(
 ) -> list[dict]:
     """POST /api/dataset — query SQL ad-hoc contra una base configurada en Metabase.
 
+    OJO si vas a CACHEAR el resultado: esta firma NO distingue "Metabase se
+    cayó" de "la query no devolvió filas" — las dos dan []. Para eso está
+    `fetch_dataset_estado`, que además devuelve si Metabase contestó.
+
     Útil cuando no hay (o no querés crear) una card guardada para un caso
     puntual. La SQL la escribís VOS — NO interpoles datos del usuario sin
     sanitizar.
@@ -138,16 +163,19 @@ def fetch_dataset(
         o si no hay conexión configurada. Fail-soft idéntico a fetch_card().
     """
     if not disponible():
+        _marcar(False)
         return []
     try:
         import requests
     except ImportError:
         _log.warning("requests no disponible — Metabase bridge devuelve []")
+        _marcar(False)
         return []
 
     global _session_token
     token = _session_token or _login(requests)
     if not token:
+        _marcar(False)
         return []
 
     body = {
@@ -176,19 +204,50 @@ def fetch_dataset(
             _session_token = None
             token2 = _login(requests)
             if not token2:
+                _marcar(False)
                 return []
             r = _do()
         r.raise_for_status()
         data = r.json() or {}
         cols = [c.get("name") or "" for c in (data.get("data", {}).get("cols") or [])]
         rows = data.get("data", {}).get("rows") or []
+        _marcar(True)
         return [
             {cols[i]: v for i, v in enumerate(row) if i < len(cols)}
             for row in rows
         ]
     except Exception as e:
         _log.warning("Metabase fetch_dataset(db=%s) falló: %s", database_id, e)
+        _marcar(False)
         return []
+
+
+def fetch_dataset_estado(
+    database_id: int,
+    sql: str,
+    params: list | None = None,
+    max_results: int = 10000,
+) -> tuple[list[dict], bool]:
+    """`fetch_dataset` + si Metabase contestó. Devuelve `(filas, ok)`.
+
+    `ok` es True SOLO si se llegó a Metabase (aunque haya devuelto 0 filas);
+    False ante bridge sin configurar, sin token, timeout, 401 o cualquier
+    excepción. Usalo en vez de `fetch_dataset` siempre que vayas a CACHEAR:
+    cachear un fracaso como si fuera un dato vacío es lo que rompió el
+    balance el 29/07 (ver el comentario de `_estado` arriba).
+
+    Delega en `fetch_dataset` a propósito: así los tests que mockean
+    `fetch_dataset` siguen funcionando (el mock no marca nada → ok=True).
+    """
+    _marcar(True)
+    # Se llama igual que lo hace todo el resto del código —
+    # `fetch_dataset(db, sql, max_results=N)`, sin `params` posicional — para
+    # no romper los fakes de los tests, que declaran esa misma firma.
+    if params is None:
+        filas = fetch_dataset(database_id, sql, max_results=max_results)
+    else:
+        filas = fetch_dataset(database_id, sql, params, max_results)
+    return filas, ultimo_fetch_ok()
 
 
 def reset_session() -> None:
