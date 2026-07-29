@@ -260,7 +260,15 @@
 
     <h2>Por tejedor · producido vs cargado + costo</h2>
     <table>
-      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>OF</th><th>Cargado (compras K)</th><th>Falta cargar</th><th title="Producido − cargado en los últimos {{ data.meses_ventana_tope }} meses. Es el tope de la carga automática.">Falta acum. ({{ data.meses_ventana_tope }} m)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
+      {# TMT 2026-07-29 (dueña: "ahora que es automática la carga, ¿cuáles de
+         estas columnas son innecesarias?"): se sacaron 'OF' (decorativa) y
+         'Falta cargar' (la del MES). Esa última era la columna de trabajo de
+         cuando se cargaba a mano: ya no es accionable, y encima CONTRADECÍA a la
+         de al lado — decía "adelantado 2.515 kg" mientras el acumulado decía
+         "faltan 4.020". Queda UNA sola columna de diferencia: la acumulada, que
+         es la que gobierna la carga automática (es su tope), renombrada
+         "Pendiente (N m)" porque no es "lo que falta cargar a mano". #}
+      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>Cargado (compras K)</th><th title="Producido − cargado en los últimos {{ data.meses_ventana_tope }} meses. Es el saldo que todavía no se compró, y el tope de la carga automática.">Pendiente ({{ data.meses_ventana_tope }} m)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
       <tbody>
         {% for t in data.tejedores %}
           <tr>
@@ -268,19 +276,7 @@
               {{ t.label }}{% if t.cod %} <span class="muted">· {{ t.cod }}</span>{% else %} <span class="muted">· desconocido</span>{% endif %}
             </td>
             <td>{{ t.kg|num_es }}</td>
-            <td class="muted">{{ t.ofs }}</td>
             <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
-            <td>
-              {# Falta del MES. Puede dar negativo sin que haya nada malo: las
-                 compras llevan la fecha de la OF o de carga y cubren OFs
-                 cerradas en meses anteriores. Por eso acá NO ponemos alarma —
-                 el aviso de duplicado vive en la columna del ACUMULADO, que es
-                 la que de verdad significa "se cargó de más". TMT 2026-07-26. #}
-              {% if t.es_intela %}<span class="muted">—</span>
-              {% elif t.falta_kg > 1 %}<span class="falta">{{ t.falta_kg|num_es }} kg</span>
-              {% elif t.falta_kg < -1 %}<span class="muted" title="Normal: hay compras de este mes que pagan OFs cerradas en meses anteriores. Mirá la columna del acumulado.">adelantado {{ (-t.falta_kg)|num_es }} kg</span>
-              {% else %}<span class="ok">ok</span>{% endif %}
-            </td>
             <td>
               {# TOPE real de la carga automática: acumulado, no del mes — el
                  maquilero factura con desfase y a caballo de dos meses. #}
@@ -301,7 +297,6 @@
           <td>TOTAL</td>
           <td>{{ data.total_kg|num_es }}</td>
           <td class="muted"></td><td class="muted"></td><td class="muted"></td>
-          <td class="muted"></td><td class="muted"></td>
           <td>{{ data.total_costo|num_es(0) }}</td>
         </tr>
       </tbody>
