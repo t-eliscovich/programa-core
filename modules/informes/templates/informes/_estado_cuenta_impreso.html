@@ -46,8 +46,12 @@
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
           <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
           {# Tipo por SIGNO del importe — negativo = Devolución. TMT 2026-07-09
-             (dueña): no-print (en la impresión la columna Tipo no va). #}
-          <td class="px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-amber-700 font-medium' if (f.importe or 0) < 0 }}">{{ 'Devolución' if (f.importe or 0) < 0 else 'Factura' }}</td>
+             (dueña): no-print (en la impresión la columna Tipo no va).
+             TMT 2026-07-28: las NC financieras (tipo 'NC', kg=0 — descuentos) se
+             rotulan "Nota de crédito", no "Devolución": no volvió mercadería. #}
+          {% set _es_nc = ((f.tipo or '') | string | upper) == 'NC' %}
+          {% set _neg = (f.importe or 0) < 0 %}
+          <td class="px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '') }}">{{ 'Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura') }}</td>
           <td class="px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
           <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
