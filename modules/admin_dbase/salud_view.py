@@ -180,7 +180,7 @@ def _diag_banco(no_banco: int, ventana: int = 12):
         -- fue el segundo tropiezo de esta pantalla; el try/except lo dijo en
         -- vez de colgarse, que era justamente el punto.
         SELECT id_transaccion, fecha, documento, importe, saldo,
-               COALESCE(numreferencia, '') AS numreferencia,
+               COALESCE(numreferencia, 0) AS numreferencia,
                COALESCE(concepto, '')      AS concepto,
                COALESCE(prov, '')          AS prov
           FROM scintela.transacciones_bancarias
@@ -308,17 +308,113 @@ _SQL_LINKS_ROTOS = """
 """
 
 
+_SQL_NUMF0 = """
+    SELECT f.id_factura, f.codigo_cli, f.fecha, f.importe, f.abono, f.saldo,
+           f.stat, COALESCE(f.usuario_crea, '') AS usuario_crea,
+           COALESCE((SELECT SUM(x.importe) FROM scintela.chequesxfact x
+                      WHERE x.id_fact = f.id_factura), 0) AS aplicado,
+           (SELECT COUNT(*) FROM scintela.chequesxfact x
+             WHERE x.id_fact = f.id_factura)               AS n_cheques
+      FROM scintela.factura f
+     WHERE COALESCE(f.numf, 0) = 0
+       AND TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
+     ORDER BY f.fecha DESC, f.id_factura DESC
+     LIMIT 400
+"""
+
+
+def _seccion_numf0():
+    """Las facturas sin N° SRI, cruzadas contra Asinfo.
+
+    POR QUÉ (pedido de la dueña, 29/07): las facturas con NUMF=0 son las que
+    aparecen sobre-abonadas, muchas con importe NEGATIVO, y el pareo contra el
+    dBase no las puede tocar — `diff_facturas_sri` las aparta en
+    `dbase_sin_numf` porque sin N° SRI no hay con qué aparearlas. Su hipótesis:
+    no son facturas. Si en Asinfo son notas de crédito, devoluciones o NTEN,
+    entonces el patrón es "documento que no es factura, cargado en
+    FACTURAS.DBF sin numerar" — y eso se puede detectar en el origen en vez de
+    perseguirlo acá.
+
+    Esta sección busca cada NUMF=0 de PC en Asinfo por (cliente, importe) y
+    reporta con qué TIPO de documento matchea. Solo lectura.
+    """
+    filas = db.fetch_all(_SQL_NUMF0) or []
+    yield "┌─ E) FACTURAS NUMF=0 (sin N° SRI) contra Asinfo ───────────────\n"
+    if not filas:
+        yield "  no hay facturas activas con numf=0.\n"
+        return
+    fechas = [f["fecha"] for f in filas if f.get("fecha")]
+    desde, hasta = (min(fechas), max(fechas)) if fechas else (None, None)
+    yield (f"  {len(filas)} fila(s) activas, fechas {desde} → {hasta}\n"
+           "  … pidiéndole a Asinfo los documentos del rango\n")
+
+    # Índice de Asinfo por (cliente, |usd|). El importe es la única clave
+    # común: PC no guarda el número del documento cuando el dBase no lo trae.
+    idx: dict = {}
+    tipos_asinfo: dict = {}
+    try:
+        from modules.asinfo import service as _asinfo
+        docs = _asinfo.facturas_periodo(desde, hasta) if desde else []
+        for d in docs:
+            tipos_asinfo[d.get("tipo") or "?"] = tipos_asinfo.get(d.get("tipo") or "?", 0) + 1
+            k = ((str(d.get("cliente_codigo") or "").strip().upper()),
+                 round(abs(float(d.get("usd") or 0)), 2))
+            idx.setdefault(k, []).append(d)
+        yield (f"  Asinfo devolvió {len(docs)} documento(s): "
+               + ", ".join(f"{t}={n}" for t, n in sorted(tipos_asinfo.items()))
+               + "\n")
+    except Exception as exc:  # noqa: BLE001
+        yield f"  [Asinfo no contestó: {exc!r}] — sigo sin el cruce\n"
+
+    yield ("  id_fact   cli   fecha        importe       abono     aplicado  ch "
+           "usuario_crea      match en Asinfo\n")
+    resumen: dict = {}
+    for f in filas:
+        k = ((f.get("codigo_cli") or "").strip().upper(),
+             round(abs(float(f.get("importe") or 0)), 2))
+        cand = idx.get(k) or []
+        if cand:
+            etiqueta = f"{cand[0].get('tipo')} {cand[0].get('numero') or ''}"[:34]
+            clave_res = cand[0].get("tipo") or "?"
+        else:
+            etiqueta = "— sin match por (cliente, importe)"
+            clave_res = "SIN MATCH"
+        resumen[clave_res] = resumen.get(clave_res, 0) + 1
+        yield (f"  {f['id_factura']:<9} {(f['codigo_cli'] or '')[:5]:<5} "
+               f"{str(f['fecha'])[:10]} "
+               f"{float(f['importe'] or 0):>12,.2f} "
+               f"{float(f['abono'] or 0):>11,.2f} "
+               f"{float(f['aplicado'] or 0):>12,.2f} "
+               f"{int(f['n_cheques'] or 0):>3} "
+               f"{(f['usuario_crea'] or 'NULL')[:17]:<17} {etiqueta}\n")
+
+    yield "\n  RESUMEN por tipo de documento en Asinfo:\n"
+    for k, n in sorted(resumen.items(), key=lambda kv: -kv[1]):
+        yield f"    {k:<22} {n:>4}\n"
+    negativas = [f for f in filas if float(f.get("importe") or 0) < 0]
+    yield (f"\n  Con importe NEGATIVO: {len(negativas)} de {len(filas)} "
+           f"(suma {sum(float(f['importe'] or 0) for f in negativas):,.2f})\n")
+    porc = {}
+    for f in filas:
+        u = (f.get("usuario_crea") or "NULL")
+        porc[u] = porc.get(u, 0) + 1
+    yield "  Quién las cargó (usuario_crea):\n"
+    for u, n in sorted(porc.items(), key=lambda kv: -kv[1]):
+        yield f"    {u[:24]:<24} {n:>4}\n"
+    yield "\n"
+
+
 @bp.route("/diag", methods=["GET"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def diag():
     """Contexto de los errores rojos del chequeo. Solo lectura.
 
-    `?solo=a` / `b` / `c` / `d` corre UNA sección. Vale la pena: la A camina
+    `?solo=a` / `b` / `c` / `d` / `e` corre UNA sección. Vale la pena: la A camina
     el running completo de cada banco (decenas de miles de filas) y no hay por
     qué esperarla cuando lo que querés ver son las facturas.
     """
-    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcd"}
+    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcde"}
 
     def quiero(k: str) -> bool:
         return (not pedido) or (k in pedido)
@@ -341,7 +437,7 @@ def diag():
         yield ("=== DIAGNÓSTICO PROFUNDO — contexto de los errores rojos ===\n"
                "    (solo lectura: ni un UPDATE)"
                + (f"  [secciones {''.join(sorted(pedido)).upper()}]" if pedido
-                  else "  (?solo=a|b|c|d para una sola)")
+                  else "  (?solo=a|b|c|d|e para una sola)")
                + "\n\n")
 
         # ── 1) Drift del running bancario ──────────────────────────────
@@ -456,6 +552,11 @@ def diag():
                    f"{(m['usuario'] or '')[:8]:<8} "
                    f"{'batch' if m.get('batch_id') else '     '} "
                    f"{(m['concepto'] or '')[:48]}\n")
+
+        # ── 5) Las facturas NUMF=0 contra Asinfo ───────────────────────
+        if quiero("e"):
+            yield from _seccion_numf0()
+
         yield "\n═══ fin ═══\n"
 
     return Response(stream_with_context(_gen()), mimetype="text/plain; charset=utf-8")
