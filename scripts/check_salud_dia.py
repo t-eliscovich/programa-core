@@ -15,7 +15,16 @@ Secciones:
   5. CHEQUES    — stat inconsistente con aplicaciones / endosos vivos.
   6. FACTURAS   — saldo != importe - abono (running invariant).
   7. POSDAT     — banc=9 con saldo>0 (legacy lock) o anuladas con banc<>9.
-  8. PROVISIONES — SR=3300/día aplicado los días hábiles del mes corriente.
+  8. PROVISIONES — SR se sigue moviendo + las 12 cuotas vs el MENU.PRG.
+  8b. BRIDGES   — Asinfo/Metabase contestan y la utilidad sale de Asinfo
+                  (no del dBase por un fallback silencioso).
+
+OJO — qué NO cubre (TMT 2026-07-29): las secciones 1-7, 9 y 10 son invariantes
+INTERNAS de PC (que el saldo cierre, que no haya reversos huérfanos). No
+comparan contra el dBase ni contra Asinfo. Los dos problemas que se comieron el
+29/07 — la cuota de A,E,C cambiada a mano en el FoxPro, y la utilidad ~495.000
+abajo por un fallback silencioso de Asinfo — no los veía NINGUNA. Por eso se
+agregaron `_cuotas_vs_prg()` (dentro de PROVISIONES) y la sección BRIDGES.
 
 Read-only, no toca nada. Buen complemento a:
   - scripts/validar_reversos.py  (integridad del dispatcher de reverso)
@@ -502,17 +511,138 @@ def check_provisiones(verbose: bool = False) -> None:
                  f"corredor `correr_provisiones_diarias()` no está corriendo. "
                  f"Revisá /informes/balance (auto-trigger) o cron.")
 
-    # Bonus: ¿la sistema_meta tiene la marca del último día corrido?
-    meta = db.fetch_one(
-        """
-        SELECT valor, actualizado
-          FROM scintela.sistema_meta
-         WHERE clave = 'provisiones_diarias_ult_fecha'
-        """
-    )
-    if meta:
+    # ── LAS 12 CUOTAS vs el MENU.PRG (TMT 2026-07-29) ──────────────────────
+    # Antes acá había un "bonus" que leía sistema_meta
+    # 'provisiones_diarias_ult_fecha' — el marcador de
+    # `correr_provisiones_diarias`, motor RETIRADO del auto-run el 24/07.
+    # O sea: reportaba OK sobre algo que ya no corre. Se reemplaza por el
+    # chequeo que sí hacía falta.
+    #
+    # POR QUÉ: el 19/06 alguien editó a mano la cuota de A,E,C en el FoxPro
+    # (7.700 → 9.000; `diff MENU.BAK MENU.PRG` devuelve esa ÚNICA línea) y PC
+    # recién se enteró el 29/07 — seis semanas y ~1.300/día de drift después.
+    # Este check miraba UNA sola provisión (SR) y sólo si se había MOVIDO,
+    # nunca el monto. Y comparar PC contra una constante de PC jamás iba a
+    # detectar que el dBase cambió: hay que leer la FUENTE.
+    _cuotas_vs_prg()
+
+
+def _cuotas_vs_prg() -> None:
+    """Compara las 12 cuotas de scintela.provisiones contra el MENU.PRG.
+
+    Reusa el parser del compare (`admin_dbase.dbase_compare_view`), que lee
+    el MENU.PRG del último tarball subido a /admin/dbase-compare. Si nunca se
+    subió un tarball CON MENU.PRG, avisa y no falla.
+    """
+    try:
+        from modules.admin_dbase import dbase_compare_view as _dcv
+        from modules.asinfo import service as _unused  # noqa: F401  (path check)
+    except Exception as exc:  # noqa: BLE001
+        _reporte("PROVISIONES", WARN, f"no pude leer el comparador: {exc!r}")
+        return
+
+    try:
+        prg = _dcv.cuotas_del_prg()
+    except Exception as exc:  # noqa: BLE001
+        _reporte("PROVISIONES", WARN, f"no pude parsear el MENU.PRG: {exc!r}")
+        return
+
+    if not prg:
+        _reporte("PROVISIONES", WARN,
+                 "no hay MENU.PRG del tarball: no puedo saber si cambiaron las "
+                 "cuotas en el FoxPro. Subí un tarball CON MENU.PRG en "
+                 "/admin/dbase-compare.")
+        return
+
+    pc = _dcv.cuotas_de_pc()
+    malas, tot_prg, tot_pc = [], 0.0, 0.0
+    for lit, monto in prg:
+        tot_prg += monto
+        m = _dcv._match_cuota_pc(lit, pc)
+        if m is None:
+            malas.append(f"{lit}: el PRG dice {monto:,.0f} y PC no tiene esa provisión")
+            continue
+        concepto, vpc = m
+        tot_pc += vpc
+        if abs(vpc - monto) >= 0.005:
+            malas.append(f"{lit} ({concepto}): PRG {monto:,.0f} vs PC {vpc:,.0f}")
+
+    if not malas:
         _reporte("PROVISIONES", OK,
-                 f"sistema_meta dice última corrida: {meta.get('valor')}.")
+                 f"las {len(prg)} cuotas coinciden con el MENU.PRG "
+                 f"(total {tot_prg:,.0f}/corrida).")
+        return
+
+    for m in malas:
+        _reporte("PROVISIONES", ERROR, f"cuota distinta del FoxPro → {m}")
+    _reporte("PROVISIONES", ERROR,
+             f"total/corrida PRG {tot_prg:,.0f} vs PC {tot_pc:,.0f}. Cada día que "
+             f"pasa así, el pasivo se separa por la diferencia. Corregir en "
+             f"/posdat?tab=yy (columna CUOTA DIARIA).")
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# 8b) BRIDGES — Asinfo/Metabase y formulas_app
+# ───────────────────────────────────────────────────────────────────────────
+def check_bridges(verbose: bool = False) -> None:
+    """¿La UTILIDAD que se está mostrando sale de la fuente que corresponde?
+
+    TMT 2026-07-29 — el check que faltaba. El balance valúa el stock con los
+    kg de ASINFO; si Asinfo no contesta cae a los kg del dBase EN SILENCIO y
+    la Utilidad Real se muestra ~495.000 más baja (196.010 en vez de 687.519).
+    El único síntoma visible son los kg del panel STOCK.
+
+    Peor: `stock_asinfo_lote_totales` cacheaba el fracaso 5 minutos (hoy son
+    30 s, ver modules/asinfo/service._cache_put), así que un hipo se
+    arrastraba. Este check lo detecta en vez de que lo descubra alguien
+    mirando un número raro.
+    """
+    _seccion("8b) BRIDGES — de dónde sale la utilidad")
+
+    try:
+        from modules._lib import formulas_db, metabase_client
+    except Exception as exc:  # noqa: BLE001
+        _reporte("BRIDGES", ERROR, f"no pude importar los bridges: {exc!r}")
+        return
+
+    if not metabase_client.disponible():
+        _reporte("BRIDGES", ERROR,
+                 "Metabase NO está configurado (METABASE_URL/USERNAME/PASSWORD). "
+                 "El balance va a mostrar el stock del dBase y una utilidad "
+                 "distinta, sin avisar.")
+    else:
+        _reporte("BRIDGES", OK, "Metabase configurado.")
+
+    try:
+        _reporte("BRIDGES", OK if formulas_db.disponible() else WARN,
+                 f"formulas_app {'configurado' if formulas_db.disponible() else 'NO configurado'}.")
+    except Exception as exc:  # noqa: BLE001
+        _reporte("BRIDGES", WARN, f"formulas_app: {exc!r}")
+
+    # Lo que de verdad importa: ¿el inventario por etapa CONTESTA?
+    try:
+        from modules.asinfo import service as _asvc
+        inv = _asvc.inventario_por_etapa()
+    except Exception as exc:  # noqa: BLE001
+        _reporte("BRIDGES", ERROR,
+                 f"inventario_por_etapa() explotó: {exc!r}. El balance está "
+                 f"mostrando el stock del dBase.")
+        return
+
+    if not inv.get("disponible"):
+        _reporte("BRIDGES", ERROR,
+                 "Asinfo NO está contestando el inventario por etapa → el "
+                 "balance está valuando el stock con los kg del dBase y la "
+                 "UTILIDAD que se ve NO es comparable (el 29/07 la diferencia "
+                 "entre las dos bases era ~495.000). Reintentá en 30 s; si "
+                 "sigue, Metabase está caído.")
+        return
+
+    _reporte("BRIDGES", OK,
+             f"inventario Asinfo OK — hilo {float(inv.get('hilo_total') or 0):,.0f} kg · "
+             f"crudo {float(inv.get('cruda_total') or 0):,.0f} · "
+             f"terminado {float(inv.get('terminada') or 0):,.0f}. "
+             f"La utilidad del balance sale de Asinfo, como corresponde.")
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -641,6 +771,7 @@ ALL_CHECKS = {
     "facturas":     check_facturas,
     "posdat":       check_posdat,
     "provisiones":  check_provisiones,
+    "bridges":      check_bridges,
     "chequesxfact": check_chequesxfact,
     "reversibilidad": check_reversibilidad,
 }

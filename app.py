@@ -493,6 +493,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(dbase_compare_bp)
 
+    # /admin/salud — corre scripts/check_salud_dia.py POR LA UI. El chequeo
+    # existía desde mayo pero NO lo corría nadie: script suelto en scripts/,
+    # sin cron ni workflow. TMT 2026-07-29. SOLO LECTURA.
+    from modules.admin_dbase.salud_view import bp as salud_bp
+
+    app.register_blueprint(salud_bp)
+
     # Fechas de depósito desde el dBase — TMT 2026-07-20 (dueña: "¿no podés
     # traer el campo depositado?"). /admin/cheques-fechas-deposito completa
     # SOLO cheque.fechaing (columna Depositado) de cheques B/A sin fecha,
