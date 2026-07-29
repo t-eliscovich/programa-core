@@ -120,3 +120,21 @@ def test_la_pantalla_esta_registrada_en_la_app(app):
     rutas = {r.rule for r in app.url_map.iter_rules()}
     assert "/admin/salud/" in rutas, "el blueprint de salud no quedó registrado"
     assert "/admin/salud/run" in rutas
+    assert "/admin/salud/diag" in rutas, "falta el diagnóstico profundo"
+
+
+def test_el_diagnostico_usa_los_nombres_de_columna_de_verdad():
+    """chequesxfact tiene `id_fact` y `fechaing`, NO `id_factura`/`fecha`.
+
+    Un typo acá no falla al importar: falla con UndefinedColumn recién cuando
+    alguien abre la pantalla en producción, que es exactamente cómo se rompió
+    la primera versión del detalle de mov_doble (pedía `creado_en`, columna
+    que esa tabla no tiene).
+    """
+    from modules.admin_dbase import salud_view
+
+    src = inspect.getsource(salud_view)
+    assert "x.id_factura" not in src, "chequesxfact se une por id_fact"
+    assert "MIN(x.fecha)" not in src, "en chequesxfact la fecha es fechaing"
+    for col in ("m.creado_en", "m.usuario_crea", "m.nota"):
+        assert col not in src, f"mov_doble no tiene {col}"
