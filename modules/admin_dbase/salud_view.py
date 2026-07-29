@@ -311,10 +311,25 @@ def diag():
     qué esperarla cuando lo que querés ver son las facturas.
     """
     pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcd"}
+
     def quiero(k: str) -> bool:
         return (not pedido) or (k in pedido)
 
     def _gen():
+        # Si una sección explota, el generador muere en el medio del stream y
+        # el navegador se queda cargando PARA SIEMPRE — sin error, sin
+        # timeout, sin nada que mirar. Es exactamente lo que pasó la primera
+        # vez que se abrió esta pantalla. El try/except convierte "se cuelga"
+        # en "dice qué pasó", que es la diferencia entre una herramienta de
+        # diagnóstico y otro misterio.
+        try:
+            yield from _secciones(quiero, pedido)
+        except Exception:  # noqa: BLE001
+            import traceback
+            yield "\n[EXPLOTÓ] la sección se cortó acá:\n"
+            yield traceback.format_exc()
+
+    def _secciones(quiero, pedido):
         yield ("=== DIAGNÓSTICO PROFUNDO — contexto de los errores rojos ===\n"
                "    (solo lectura: ni un UPDATE)"
                + (f"  [secciones {''.join(sorted(pedido)).upper()}]" if pedido
@@ -360,7 +375,14 @@ def diag():
         desc: list = []
         if quiero("b") or quiero("c"):
             # C necesita los ids de B para el solapamiento.
-            desc = _enriquecer_facturas(db.fetch_all(_SQL_FACT_DESCUADRADAS) or [])
+            # Los "…" son marcas de progreso a propósito: el stream sale a
+            # medida que avanza, así que si una query tarda se ve DÓNDE está
+            # esperando en vez de una pantalla en blanco.
+            yield "  … buscando facturas descuadradas\n"
+            desc = db.fetch_all(_SQL_FACT_DESCUADRADAS) or []
+            yield f"  … {len(desc)} encontradas, buscando sus cheques\n"
+            desc = _enriquecer_facturas(desc)
+            yield "  … listo\n"
         if quiero("b"):
             yield "┌─ B) FACTURAS con saldo ≠ importe − abono ─────────────────────\n"
             yield (f"  {len(desc)} factura(s). 'diff' = importe − abono − saldo "
@@ -389,6 +411,7 @@ def diag():
         sob: list = []
         if quiero("c"):
             yield "┌─ C) FACTURAS sobre-abonadas (Σ cheques aplicados > importe) ──\n"
+            yield "  … agrupando chequesxfact por factura\n"
             sob = db.fetch_all(_SQL_SOBRE_ABONADAS) or []
             _tot_exc = sum(float(r["exceso"] or 0) for r in sob)
             yield f"  {len(sob)} factura(s), exceso total $ {_tot_exc:,.2f}\n"
