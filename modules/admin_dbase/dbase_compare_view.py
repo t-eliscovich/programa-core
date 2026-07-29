@@ -1254,6 +1254,19 @@ def reporte(dias_banco: int = 30):
         _quim_aux = (_qtot - _qcol) if (_qtot > 0 and _qcol > 0 and _qtot > _qcol) else 0.0
         if abs(_quim_aux) > 0.005:
             yield line(f"  Quím. auxiliares (ahora DENTRO de la utilidad de PC): {_quim_aux:,.2f}")
+        # TMT 2026-07-29 dueña: "esto lo tomamos como cierto también porque
+        # viene del programa de fórmulas ... y lo aceptamos".
+        # El Stock Quí de PC NO sale de la fórmula del PRG (VQ0+VQQ−ITIN): sale
+        # del inventario FÍSICO de formulas_app. Por eso el total de PC no
+        # reconstruye con esos tres insumos y queda un remanente que los
+        # auxiliares no explican del todo (el 29/07: fórmula 335.427,08 vs PC
+        # 408.137,85 → gap 72.710,77, auxiliares 64.220,17, resto 8.490,60).
+        # ESO ES ESPERABLE Y ESTÁ ACEPTADO — formulas_app es la fuente. NO
+        # listarlo como ítem abierto ni pedir un 1-a-1 de auxiliares.
+        yield line("  (PC valúa químicos con el inventario FÍSICO de formulas_app, "
+                   "no con VQ0+VQQ−ITIN:")
+        yield line("   que el total no reconstruya con esos 3 insumos es esperable "
+                   "— formulas_app manda.)")
     except Exception as _exc_qa:  # noqa: BLE001
         yield line(f"  [quím. auxiliares no disponible: {_exc_qa!r}]")
     try:
