@@ -9,6 +9,7 @@ _LOG = logging.getLogger("programa_core.avisos")
 
 # Nombre lindo de cada fuente — es lo que se ve en la pantalla y en el filtro.
 FUENTES = {
+    "ventas": "Ventas",
     "tejeduria": "Tejeduría",
     "quimicos": "Químicos",
     "importaciones": "Importaciones",

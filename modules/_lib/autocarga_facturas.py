@@ -85,6 +85,14 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("tejeduría (fondo): %s", e)
+            # TMT 2026-07-30 (dueña): "agregar en la campanita, a fin de día,
+            # venta total kg y total facturas $" — a las 18:00 de ECUADOR, uno
+            # solo por día (la clave del aviso lo garantiza).
+            try:
+                from modules.facturas import aviso_ventas as _ventas
+                _ventas.correr_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("ventas del día (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)
