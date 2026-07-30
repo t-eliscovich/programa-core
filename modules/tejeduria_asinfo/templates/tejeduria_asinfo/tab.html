@@ -199,6 +199,23 @@
   </div>
   </details>
 
+  {# El aviso «Falta la tarifa de X» linkea a …#tarifas. El navegador scrollea
+     hasta el <details> pero NO lo abre solo, así que el link aterrizaría en un
+     panel plegado — o sea, en nada. Lo abrimos y lo centramos a mano. #}
+  <script>
+  (function () {
+    function abrirTarifas() {
+      if (location.hash !== '#tarifas') return;
+      var d = document.getElementById('tarifas');
+      if (!d) return;
+      d.open = true;
+      d.scrollIntoView({block: 'center'});
+    }
+    abrirTarifas();
+    window.addEventListener('hashchange', abrirTarifas);
+  })();
+  </script>
+
   {% if not data.disponible %}
     <div class="warnbox">Asinfo no está disponible en este momento — no se pudo traer la producción de tejeduría. (La pantalla no rompe; reintentá en un rato.)</div>
   {% else %}
@@ -210,9 +227,9 @@
         ({{ data.pendientes|length }} para cargar)</summary>
 
     {% if data.pendientes and tiene_permiso('compras.crear') %}
-      {# Carga automática: kg de Asinfo × tarifa. El service topea por lo que
-         falta de cada proveedor y saltea las OFs sin tarifa — nunca inventa un
-         precio ni carga de más. #}
+      {# Carga automática: kg de Asinfo × tarifa. El service saltea las OFs
+         que ya tienen su OFT estampado en una compra y las que no tienen
+         tarifa — nunca inventa un precio ni carga dos veces la misma OF. #}
       <div style="margin:2px 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         {# Va a una pantalla de PREVISUALIZACIÓN (dry-run): se ve qué se crea y
            qué se saltea ANTES de crear nada. Sin confirm() del navegador. #}

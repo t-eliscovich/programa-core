@@ -97,8 +97,9 @@ def _rango_ventana(anio: int, mes: int, meses: int = MESES_VENTANA_TOPE):
 
 
 def _compras_k_por_prov_rango(desde: str, hasta: str) -> dict:
-    """{codigo_prov: kg} de compras tipo K en [desde, hasta) — el lado PC del
-    tope acumulado. Mismo universo que `_compras_k_por_prov` (kg>0, no anuladas)."""
+    """{codigo_prov: kg} de compras tipo K en [desde, hasta) — el lado PC de
+    `falta_acumulada`, que hoy es sólo DATO informativo del plan (el tope se
+    sacó el 30/07). Mismo universo que `_compras_k_por_prov` (kg>0, no anuladas)."""
     try:
         rows = db.fetch_all(
             """

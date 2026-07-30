@@ -53,8 +53,8 @@ def tab():
     # propaga el cambio al posdat hermano— o desde el lapicito de Posdatados.
     # Mismo patrón que la auto-carga de facturas del día en /facturas.
     # Corre SOLO en el mes en curso, solo para quien puede crear compras, y con
-    # las mismas guardas del botón: sin tarifa se saltea, tope acumulado por
-    # proveedor, y OFT ya estampado. Fail-soft: si algo explota, la pantalla
+    # las mismas guardas del botón: Asinfo disponible, sin tarifa se saltea, y
+    # OFT ya estampado. Fail-soft: si algo explota, la pantalla
     # igual se muestra.
     hoy = today_ec()
     if (anio, mes) == (hoy.year, hoy.month) and tiene_permiso("compras.crear"):
