@@ -1270,8 +1270,12 @@ def nuevo():
                     _n = _r.get("numf")
                     if not _n and _r.get("numf_completo"):
                         _n = str(_r["numf_completo"]).split("-")[-1].lstrip("0")
+                    # TMT 2026-07-30: números en formato Ecuador (900,00), no
+                    # en el 900.00 del f-string.
+                    from filters import money_es as _me_f
                     _nums_f.append(
-                        f"{_n or ('#' + str(_a['id_fact']))} ($ {float(_a['importe']):,.2f})"
+                        f"{_n or ('#' + str(_a['id_fact']))} "
+                        f"($ {_me_f(float(_a['importe']))})"
                     )
                 if _nums_f:
                     _facts_txt = " Facturas: " + ", ".join(_nums_f) + "."
@@ -1324,10 +1328,20 @@ def nuevo():
             )
         elif n_aplicaciones > 0:
             from flask import session as _sess
-            _sess["cobranza_ok"] = (
-                f"Cheque {_desc_ch(ch)} creado y aplicado a "
-                f"{n_aplicaciones} factura(s).{_facts_txt}"
-            )
+            # TMT 2026-07-30 (dueña): "debería decir anticipo de 900 aplicado a
+            # factura, no cheque". En el 95 no entró ningún cheque — se usó el
+            # saldo a favor que el cliente ya había dejado.
+            if _hay_95:
+                from filters import money_es as _me
+                _sess["cobranza_ok"] = (
+                    f"Anticipo de $ {_me(float(ch.get('importe') or 0))} "
+                    f"aplicado a {n_aplicaciones} factura(s).{_facts_txt}"
+                )
+            else:
+                _sess["cobranza_ok"] = (
+                    f"Cheque {_desc_ch(ch)} creado y aplicado a "
+                    f"{n_aplicaciones} factura(s).{_facts_txt}"
+                )
         else:
             from flask import session as _sess
             _sess["cobranza_ok"] = (
