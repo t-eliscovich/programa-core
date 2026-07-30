@@ -305,6 +305,7 @@
           <td class="px-3 py-2 font-mono text-xs">{{ h.numero }}</td>
           <td class="px-3 py-2">
             <span class="text-slate-900 dark:text-slate-100 font-medium">{{ h.cliente_codigo }}</span>
+            {% if h.facturado_a %}<span class="text-emerald-600 dark:text-emerald-400 text-[10px] ml-1" title="Asinfo facturó a {{ h.facturado_a }} y entregó en la dirección de la sucursal (mismo RUC + un dígito)">sucursal · fact. {{ h.facturado_a }}</span>{% endif %}
             {% if h.vendedor %}<span class="text-slate-400 text-xs ml-1">· {{ h.vendedor }}</span>{% endif %}
           </td>
           <td class="px-3 py-2 text-right tabular-nums">{{ '{:,.2f}'.format(h.kg) }}</td>

@@ -129,6 +129,133 @@ def ventas_cliente_kg(vendedor: str | None = None) -> list[dict]:
 _FACTURAS_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 _FACTURAS_TTL_SECS = 300  # 5 minutos
 
+# ---------------------------------------------------------------------------
+# SUCURSALES — cómo Asinfo distingue AJO de AJ2 (TMT 2026-07-30)
+# ---------------------------------------------------------------------------
+# Dueña: "como hoy cargan manualmente en dbase, en asinfo es automatico, como
+# sabemos si es AJO o AJ2... tenes que encontrar en asinfo como diferenciarlas".
+#
+# EL DATO EXISTE Y ES EL RUC. Cada sucursal es una `empresa` propia en Asinfo
+# cuyo `identificacion` es el RUC de la matriz MÁS un dígito, con su propio
+# `nombre_comercial` y el mismo `nombre_fiscal`:
+#
+#     22656  1793217341001   AJO   ALMACENES JOSE PUEBLA   ← matriz
+#     22657  1793217341001|1 AJ2   ALMACENES JOSE PUEBLA   ← sucursal
+#
+# Son 15 en Asinfo y son exactamente los códigos que se tipean a mano: AJ2,
+# CL2, CL3, ST1, ST2, PA2, PA3, ED2, PG1, CP2, MM1, AA2, AU1, AI7, JEC.
+#
+# Y la factura de la sucursal se emite a la MATRIZ (`factura_cliente.id_empresa`
+# = AJO) con la DIRECCIÓN DE ENTREGA apuntando a la empresa-sucursal
+# (`direccion_empresa.id_empresa` = 22657 = AJ2). Eso es lo que la persona lee.
+# Medido el 30/07 sobre 2026-04-01..2026-07-30: 488 facturas / US$431.030
+# (AJO→AJ2 207, CLR→CL3 160, CLR→CL2 116, VGA→JEC 5).
+#
+# La card 199 exporta `cliente_codigo` = nombre_comercial del FACTURADO, así que
+# AJ2 nunca llegaba a PC. Esto lo resuelve con una segunda query (no hace falta
+# editar la card, que es de Asinfo y la usan otros).
+#
+# EL GUARD DEL RUC no es decorativo: hay facturas donde el vendedor eligió la
+# dirección de OTRO cliente (DIS→dirección de AJ2, AJO→RRV, CJE→FEB, AJ2→CP2).
+# Sin exigir que el RUC de la dirección empiece con el del facturado, esas irían
+# al cliente equivocado. En la ventana medida son 0 casos; históricamente 5.
+_SUCURSAL_CACHE: dict[tuple[str, str], tuple[float, dict]] = {}
+_SUCURSAL_TTL_SECS = 300
+_FECHA_ISO_RE = r"^\d{4}-\d{2}-\d{2}$"
+
+_SQL_SUCURSAL_POR_NUMERO = """
+SELECT fc.numero AS numero, e2.nombre_comercial AS sucursal
+  FROM factura_cliente fc
+  JOIN empresa e1            ON e1.id_empresa = fc.id_empresa
+  JOIN direccion_empresa de  ON de.id_direccion_empresa = fc.id_direccion_empresa
+  JOIN empresa e2            ON e2.id_empresa = de.id_empresa
+ WHERE fc.fecha >= '{desde}' AND fc.fecha <= '{hasta}'
+   AND fc.estado <> 0
+   AND de.id_empresa <> fc.id_empresa
+   AND e2.identificacion LIKE e1.identificacion + '%'
+   AND LEN(e2.identificacion) > LEN(e1.identificacion)
+   AND e2.nombre_comercial IS NOT NULL
+"""
+
+
+def sucursal_por_numero(desde, hasta) -> dict[str, str]:
+    """`{numero SRI: código de la SUCURSAL}` para las facturas del rango.
+
+    Sólo devuelve las facturas donde la dirección de entrega pertenece a una
+    empresa-sucursal del MISMO RUC (ver la nota de arriba). El resto no está en
+    el dict → se queda con el código del facturado.
+
+    Cache 5 min. Fail-soft: si Metabase no contesta devuelve `{}` y todo se
+    comporta igual que antes (el código del facturado).
+    """
+    import re as _re
+    if hasattr(desde, "isoformat"):
+        desde = desde.isoformat()
+    if hasattr(hasta, "isoformat"):
+        hasta = hasta.isoformat()
+    # Un ISO datetime ('2026-07-01T00:00:00') se recorta a la fecha; cualquier
+    # otra cosa se RECHAZA, no se trunca — la SQL se interpola (fetch_dataset no
+    # toma binds acá), así que nada que no sea una fecha ISO exacta entra.
+    desde = str(desde).strip().split("T")[0]
+    hasta = str(hasta).strip().split("T")[0]
+    if not (_re.fullmatch(_FECHA_ISO_RE, desde) and _re.fullmatch(_FECHA_ISO_RE, hasta)):
+        _LOG.warning("sucursal_por_numero: fechas inválidas (%s, %s)", desde, hasta)
+        return {}
+
+    key = (desde, hasta)
+    now = _time.time()
+    cached = _SUCURSAL_CACHE.get(key)
+    if cached and (now - cached[0]) < _SUCURSAL_TTL_SECS:
+        return cached[1]
+
+    sql = _SQL_SUCURSAL_POR_NUMERO.format(desde=desde, hasta=hasta)
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=20000) or []
+    except Exception as e:  # noqa: BLE001 — fail-soft, igual que las cards
+        _LOG.warning("sucursal_por_numero falló: %s", e)
+        return {}
+    out = {}
+    for r in rows:
+        num = str(r.get("numero") or "").strip()
+        suc = str(r.get("sucursal") or "").strip().upper()
+        if num and suc:
+            out[num] = suc
+    # Igual que facturas_periodo: NO cachear el vacío (no distingue "sin filas"
+    # de "Metabase se cayó"), así el próximo request reintenta.
+    if out:
+        _SUCURSAL_CACHE[key] = (now, out)
+    return out
+
+
+def reset_sucursal_cache() -> None:
+    """Vaciar el cache de sucursales (tests / después de un deploy)."""
+    _SUCURSAL_CACHE.clear()
+
+
+def _aplicar_sucursales(rows: list[dict], desde, hasta) -> list[dict]:
+    """Reemplaza `cliente_codigo` por el de la sucursal donde corresponda.
+
+    Deja el original en `cliente_codigo_facturado` y marca `es_sucursal=True`,
+    para que las pantallas puedan mostrar "AJ2 (facturado a AJO)" sin volver a
+    consultar. Idempotente.
+    """
+    if not rows:
+        return rows
+    suc = sucursal_por_numero(desde, hasta)
+    if not suc:
+        return rows
+    for r in rows:
+        s = suc.get(str(r.get("numero") or "").strip())
+        if not s:
+            continue
+        actual = str(r.get("cliente_codigo") or "").strip().upper()
+        if actual == s:
+            continue
+        r["cliente_codigo_facturado"] = actual
+        r["cliente_codigo"] = s
+        r["es_sucursal"] = True
+    return rows
+
 
 def facturas_periodo(desde, hasta) -> list[dict]:
     """Facturas + NC financieras + Devoluciones + NTEN en el rango [desde, hasta].
@@ -193,6 +320,12 @@ def facturas_periodo(desde, hasta) -> list[dict]:
         r for r in rows
         if str(r.get("estado", "")).strip() not in ("0", "0.0")
     ]
+    # SUCURSALES (TMT 2026-07-30): la card devuelve el código del FACTURADO
+    # (AJO); si la dirección de entrega es de una empresa-sucursal del mismo RUC
+    # (AJ2), el código correcto es el de la sucursal. Se aplica acá, ANTES del
+    # cache, para que TODA la app vea el mismo código y nadie tenga que
+    # acordarse de enriquecer. Fail-soft: sin Metabase queda el del facturado.
+    rows = _aplicar_sucursales(rows, desde, hasta)
     # Solo cacheamos si trajo algo — si fue [] por error de red, no fijamos
     # el resultado vacío 5 min (mejor reintentar al próximo request).
     if rows:

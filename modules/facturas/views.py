@@ -1282,6 +1282,11 @@ def desde_asinfo():
             "kg": float(r.get("kg") or 0),
             "usd": float(r.get("usd") or 0),
             "id_direccion_empresa": r.get("id_direccion_empresa"),  # sucursal
+            # TMT 2026-07-30: si Asinfo facturó a la matriz y entregó en la
+            # dirección de la sucursal (mismo RUC + un dígito), `cliente_codigo`
+            # ya viene siendo el de la SUCURSAL. Mostramos a quién se facturó
+            # para que se entienda de dónde salió el código.
+            "facturado_a": r.get("cliente_codigo_facturado") or "",
             "pc_existe_bajo_cli": otros_clis_pc,  # sugerencia alias
         }
         # ¿Existe físicamente en PC, pero solo como fantasma backfill? Entonces
