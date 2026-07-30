@@ -34,6 +34,11 @@
     <a href="{{ url_for('avisos.lista', todos=0) }}"
        class="px-3 py-1.5 rounded border"
        style="{% if not todos %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Sin leer</a>
+    {# Los archivados NO desaparecen: viven detrás de este filtro y se pueden
+       devolver con el ↺ de la fila. #}
+    <a href="{{ url_for('avisos.lista', archivados=1, todos=1) }}"
+       class="px-3 py-1.5 rounded border"
+       style="{% if archivados %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Archivados</a>
     {% if n_no_leidos %}
     <form method="post" action="{{ url_for('avisos.leidos') }}" class="inline ml-auto">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -52,6 +57,7 @@
           <th class="px-4 py-2 text-left font-medium" style="width:8rem;">Tema</th>
           <th class="px-4 py-2 text-left font-medium">Qué pasó</th>
           <th class="px-4 py-2 text-right font-medium" style="width:8rem;">US$</th>
+          <th class="px-2 py-2" style="width:2.5rem;"></th>
         </tr>
       </thead>
       <tbody>
@@ -70,9 +76,28 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-right">{{ a.importe | num_es(2) if a.importe else '—' }}</td>
+          {# × archivar (mig 0145, dueña 30/07: "sigo teniendo esto como
+             notificación"). Un aviso puede quedar viejo por el arreglo que él
+             mismo provocó. No borra: se puede volver a mostrar con
+             ?archivados=1 y devolverlo con el ↺. #}
+          <td class="px-2 py-2 text-center">
+            <form method="post"
+                  action="{{ url_for('avisos.archivar', id_aviso=a.id_aviso) }}"
+                  style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% if a.archivado %}
+                <input type="hidden" name="deshacer" value="1">
+                <button type="submit" title="Volver a mostrar este aviso"
+                        style="border:0;background:none;cursor:pointer;color:#0369a1;font-size:14px">↺</button>
+              {% else %}
+                <button type="submit" title="Ya no aplica — sacarlo de la lista"
+                        style="border:0;background:none;cursor:pointer;color:#94a3b8;font-size:15px;line-height:1">×</button>
+              {% endif %}
+            </form>
+          </td>
         </tr>
         {% else %}
-        {{ empty_row(4, 'Sin novedades todavía.',
+        {{ empty_row(5, 'Sin novedades todavía.',
                      'Acá aparece lo que el programa carga solo (tejeduría, químicos, importaciones) y lo que ve raro.') }}
         {% endfor %}
       </tbody>

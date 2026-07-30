@@ -59,9 +59,15 @@ def avisar(*, fuente: str, titulo: str, detalle: str | None = None,
 
 
 def listar(*, solo_no_leidos: bool = True, limite: int = 30,
-           fuente: str | None = None, nivel: str | None = None) -> list[dict]:
-    """Los avisos más nuevos primero, con `icono` y `cuando` ya resueltos."""
+           fuente: str | None = None, nivel: str | None = None,
+           archivados: bool = False) -> list[dict]:
+    """Los avisos más nuevos primero, con `icono` y `cuando` ya resueltos.
+
+    Por defecto NO trae los archivados (mig 0145): un aviso que ya no aplica se
+    saca de la vista pero la fila queda, y `archivados=True` la vuelve a mostrar.
+    """
     where, params = [], []
+    where.append("archivado" if archivados else "NOT archivado")
     if solo_no_leidos:
         where.append("NOT leido")
     if fuente:
@@ -75,7 +81,7 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
         filas = db.fetch_all(
             f"""
             SELECT id_aviso, fuente, nivel, titulo, detalle, importe, cantidad,
-                   url, leido,
+                   url, leido, archivado,
                    TO_CHAR(creado_en, 'DD/MM HH24:MI') AS cuando,
                    TO_CHAR(creado_en, 'YYYY-MM-DD HH24:MI') AS creado_en
               FROM scintela.aviso
@@ -109,7 +115,37 @@ def marcar_leidos(fuente: str | None = None) -> int:
 def n_no_leidos() -> int:
     try:
         row = db.fetch_one(
-            "SELECT COUNT(*) AS n FROM scintela.aviso WHERE NOT leido")
+            "SELECT COUNT(*) AS n FROM scintela.aviso "
+            " WHERE NOT leido AND NOT archivado")
         return int((row or {}).get("n") or 0)
     except Exception:  # noqa: BLE001
         return 0
+
+
+def archivar(id_aviso: int, usuario: str = "web", *, deshacer: bool = False) -> bool:
+    """Saca (o devuelve) un aviso de la lista. Devuelve True si tocó una fila.
+
+    TMT 2026-07-30 (dueña: *"sigo teniendo esto como notificación"*). Un aviso
+    puede quedar OBSOLETO por el arreglo que él mismo provocó — los dos
+    «Tejedor sin reconocer» de las 21:27 dejaron de ser ciertos a las 22:04,
+    cuando el programa aprendió a leer el apellido mal tipeado. "Leído" no
+    alcanzaba: leído es *lo vi*, archivado es *esto ya no es una novedad*.
+
+    No borra: la fila queda y se puede deshacer.
+    """
+    try:
+        db.execute(
+            """
+            UPDATE scintela.aviso
+               SET archivado     = %s,
+                   archivado_en  = CASE WHEN %s THEN NULL ELSE now() END,
+                   archivado_por = CASE WHEN %s THEN NULL ELSE %s END
+             WHERE id_aviso = %s
+            """,
+            (not deshacer, deshacer, deshacer, (usuario or "web")[:60],
+             int(id_aviso)),
+        )
+        return True
+    except Exception as e:  # noqa: BLE001 -- la campanita nunca rompe nada
+        _LOG.warning("no pude archivar el aviso %s: %s", id_aviso, e)
+        return False

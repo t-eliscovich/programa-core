@@ -81,10 +81,47 @@ def test_listar_filtra_por_fuente_y_no_leidos():
     assert params == ("quimicos", 5)
 
 
-def test_listar_todo_no_filtra():
+def test_listar_todo_no_filtra_salvo_archivados():
+    """Sin filtros la lista trae todo — menos lo archivado (mig 0145)."""
     with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
         avisos.listar(solo_no_leidos=False)
-    assert "WHERE" not in f.call_args[0][0]
+    sql = f.call_args[0][0]
+    assert "NOT archivado" in sql
+    assert "NOT leido" not in sql and "fuente = %s" not in sql
+
+
+def test_listar_archivados_muestra_solo_esos():
+    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=False, archivados=True)
+    sql = f.call_args[0][0]
+    assert "WHERE archivado" in sql and "NOT archivado" not in sql
+
+
+def test_archivar_y_deshacer():
+    """Archivar NO borra: la fila queda y el ↺ la devuelve."""
+    with patch.object(avisos.queries.db, "execute", return_value=None) as e:
+        assert avisos.queries.archivar(7, "tamara") is True
+    sql, params = e.call_args[0][0], e.call_args[0][1]
+    assert "UPDATE scintela.aviso" in sql and "DELETE" not in sql.upper()
+    assert params[0] is True and params[-1] == 7
+
+    with patch.object(avisos.queries.db, "execute", return_value=None) as e:
+        avisos.queries.archivar(7, "tamara", deshacer=True)
+    assert e.call_args[0][1][0] is False
+
+
+def test_archivar_es_fail_soft():
+    def explota(*a, **k):
+        raise RuntimeError("no anda")
+
+    with patch.object(avisos.queries.db, "execute", explota):
+        assert avisos.queries.archivar(7) is False
+
+
+def test_el_contador_de_la_campanita_ignora_los_archivados():
+    with patch.object(avisos.queries.db, "fetch_one", return_value={"n": 3}) as f:
+        assert avisos.queries.n_no_leidos() == 3
+    assert "NOT archivado" in f.call_args[0][0]
 
 
 def test_listar_fail_soft_devuelve_vacio():
