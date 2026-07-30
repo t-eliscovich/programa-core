@@ -34,13 +34,6 @@
   .ta .terc{color:#7c3aed}
   .ta .falta{color:#b91c1c;font-weight:600}
   .ta .ok{color:#16a34a}
-  .ta .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}
-  .ta .kpi{flex:0 1 380px;min-width:230px;border:1px solid #e2e8f0;border-left:4px solid #0284c7;
-    border-radius:10px;padding:11px 16px;background:#fff;
-    box-shadow:0 1px 2px rgba(15,23,42,.04)}
-  .ta .kpi .l{font-size:10.5px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.05em;color:#475569}
-  .ta .kpi .v{font-size:24px;font-weight:700;color:#0f172a;line-height:1.15;margin-top:2px}
   .ta .sel{display:flex;gap:8px;align-items:end;margin:4px 0 8px}
   .ta .sel input{width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px}
   .ta .btn{display:inline-block;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border-radius:6px;padding:4px 10px;text-decoration:none}
@@ -281,28 +274,18 @@
     {% endif %}
     </details>
 
-    {% set terc_kg = data.tejedores | selectattr('es_intela', 'equalto', false) | sum(attribute='kg') %}
-    {% set intela_kg = data.tejedores | selectattr('es_intela', 'equalto', true) | sum(attribute='kg') %}
-    {# TMT 2026-07-30 (dueña: "pones siempre demasiada informacion que no se
-       necesita"): eran TRES tarjetas y quedó UNA. "INTELA · autoprod." y
-       "Tercerizados" repetían literalmente las filas de la tabla de abajo, y su
-       suma es esta misma tarjeta: el mismo dato tres veces en la misma pantalla.
-       Queda el titular — la producción INGRESADA a bodega 52 en el mes, que es
-       la cifra que el flujo muestra como Ingresos de tela cruda (dueña/Federico
-       2026-07-20: "¿es stock o producción?" → producción, no stock ni OFs). #}
-    <div class="kpis">
-      <div class="kpi">
-        <div class="l">Total tela cruda{% if data.ajustado_a_bodega %} · ingresada a bodega en el mes{% endif %}</div>
-        <div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:13px;font-weight:600">kg</span></div>
-        <div class="muted" style="font-size:11px;margin-top:3px">
-          <span class="intela" style="font-weight:600">Intela {{ intela_kg|num_es(0) }}</span> ·
-          <span class="terc" style="font-weight:600">tercerizados {{ terc_kg|num_es(0) }}</span>
-          {% if data.ajustado_a_bodega %}· = Ingresos crudo del flujo{% endif %}
-        </div>
-      </div>
-    </div>
-
+    {# TMT 2026-07-30 (dueña: "borremos este kpi que total esta abajo"): la
+       tarjeta con el total de tela cruda SE BORRÓ — el número es exactamente la
+       fila TOTAL de la tabla de acá abajo, y el desglose Intela/tercerizados son
+       sus dos filas. Tercera vuelta del mismo criterio en esta pantalla: primero
+       las columnas OF y "Falta cargar" (29/07), después "Pendiente (3 m)" y las
+       otras dos tarjetas (30/07), ahora ésta. Lo único que la tarjeta decía y la
+       tabla no —qué ES ese total— quedó como nota de una línea bajo el título.
+       Ver [[feedback_pantallas_menos_informacion]]. #}
     <h2>Por tejedor · producido vs cargado + costo</h2>
+    <p class="note" style="margin:0 0 2px">Producido = tela cruda que ENTRÓ a
+      bodega en el mes (no es stock ni OFs){% if data.ajustado_a_bodega %}, la misma
+      cifra que el flujo de producción muestra como Ingresos de crudo{% endif %}.</p>
     <table>
       {# TMT 2026-07-29 (dueña: "ahora que es automática la carga, ¿cuáles de
          estas columnas son innecesarias?"): se sacaron 'OF' (decorativa) y
