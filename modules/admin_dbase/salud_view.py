@@ -632,17 +632,131 @@ def _seccion_diccionario():
            "(id_direccion + código PC).\n\n")
 
 
+def _money_txt(x) -> str:
+    """Importe en formato EU/Ecuador (punto=miles, coma=decimal), ancho fijo."""
+    s = f"{float(x or 0):,.2f}"
+    return f"{s.replace(',', '@').replace('.', ',').replace('@', '.'):>14}"
+
+
+def _seccion_recode_sucursales():
+    """Cuánto movería recodear a la SUCURSAL las facturas ya cargadas.
+
+    POR QUÉ (dueña, 30/07): *"entonces cuanto cambiaria? porque los ultimos 4
+    meses ya deberian estar cargados"*. Exacto: la regla nueva (la sucursal se
+    detecta por el RUC — ver `asinfo.service.sucursal_por_numero`) arregla lo
+    que se cargue de ahora en más, pero lo que YA está en PC entró con el código
+    de la MATRIZ. Esta sección mide eso, apareando por **N° de factura** (no por
+    importe, que es lo que hace la sección F y por eso trae ruido de notas de
+    crédito con montos repetidos).
+
+    Lo que se mueve es la CARTERA POR CLIENTE, no el total: la misma plata
+    cambia de cuenta. El número que importa es el SALDO ABIERTO (stat Z/A) —
+    eso es lo que alguien va a ir a cobrar al cliente equivocado.
+
+    Solo lectura: mide, no recodea.
+    """
+    yield "┌─ G) SUCURSALES — cuánto movería el recode ──────────────────────\n"
+    filas = db.fetch_all(
+        """
+        SELECT f.codigo_cli, f.numf, f.fecha, f.importe, f.saldo, f.stat
+          FROM scintela.factura f
+         WHERE f.fecha >= CURRENT_DATE - INTERVAL '120 days'
+           AND TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
+           AND COALESCE(f.numf, 0) > 0
+        """) or []
+    if not filas:
+        yield "  sin facturas en los últimos 120 días.\n\n"
+        return
+    pc_por_numf: dict = {}
+    for f in filas:
+        pc_por_numf.setdefault(int(f["numf"]), []).append(f)
+    fechas = [f["fecha"] for f in filas if f.get("fecha")]
+    desde, hasta = min(fechas), max(fechas)
+    yield f"  PC: {len(filas)} facturas vivas entre {desde} y {hasta}\n"
+    try:
+        from modules.asinfo import service as _asinfo
+        docs = _asinfo.facturas_periodo(desde, hasta) or []
+    except Exception as exc:  # noqa: BLE001
+        yield f"  [Asinfo no contestó: {exc!r}]\n\n"
+        return
+    de_sucursal = [d for d in docs if d.get("cliente_codigo_facturado")]
+    yield (f"  Asinfo: {len(docs)} documentos, {len(de_sucursal)} que la regla "
+           f"del RUC manda a una SUCURSAL\n")
+    if not de_sucursal:
+        yield ("  [la regla no marcó ninguno — ¿Metabase contestó? ver "
+               "asinfo.sucursal_por_numero]\n\n")
+        return
+
+    import re as _re
+    # (matriz → sucursal) → acumulado
+    mover: dict = {}
+    ya_ok = 0
+    sin_cargar = 0
+    otro_codigo: dict = {}
+    for d in de_sucursal:
+        num = str(d.get("numero") or "")
+        m = _re.findall(r"\d+", num)
+        if not m:
+            continue
+        numf = int(m[-1])
+        rows = pc_por_numf.get(numf)
+        if not rows:
+            sin_cargar += 1
+            continue
+        suc = str(d.get("cliente_codigo") or "").strip().upper()
+        matriz = str(d.get("cliente_codigo_facturado") or "").strip().upper()
+        for r in rows:
+            pc_cod = (r.get("codigo_cli") or "").strip().upper()
+            if pc_cod == suc:
+                ya_ok += 1
+                continue
+            if pc_cod != matriz:
+                # PC lo tiene bajo un TERCER código: no lo toca un recode
+                # automático, va a mano.
+                otro_codigo[(pc_cod, suc)] = otro_codigo.get((pc_cod, suc), 0) + 1
+                continue
+            acc = mover.setdefault((matriz, suc), {"n": 0, "imp": 0.0, "saldo": 0.0})
+            acc["n"] += 1
+            acc["imp"] += float(r.get("importe") or 0)
+            if (r.get("stat") or "").strip().upper() in ("Z", "A", ""):
+                acc["saldo"] += float(r.get("saldo") or 0)
+
+    if not mover:
+        yield (f"  ✓ nada que recodear: {ya_ok} ya están bajo la sucursal, "
+               f"{sin_cargar} no están en PC.\n\n")
+        return
+    yield "\n  A RECODEAR (PC tiene la matriz, Asinfo dice la sucursal):\n"
+    yield "  n      de  →  a        importe        saldo abierto\n"
+    tot_n = tot_imp = tot_saldo = 0.0
+    for (matriz, suc), a in sorted(mover.items(), key=lambda kv: -kv[1]["n"]):
+        yield (f"  {a['n']:<6} {matriz:<4} → {suc:<4}   "
+               f"{_money_txt(a['imp'])}  {_money_txt(a['saldo'])}\n")
+        tot_n += a["n"]
+        tot_imp += a["imp"]
+        tot_saldo += a["saldo"]
+    yield (f"  {'-' * 58}\n  {int(tot_n):<6} TOTAL          "
+           f"{_money_txt(tot_imp)}  {_money_txt(tot_saldo)}\n")
+    yield (f"\n  Ya correctas: {ya_ok}   ·   No están en PC: {sin_cargar}\n")
+    if otro_codigo:
+        yield ("  Bajo un TERCER código (no las toca un recode automático):\n")
+        for (pc_cod, suc), n in sorted(otro_codigo.items(), key=lambda kv: -kv[1])[:10]:
+            yield f"    {n:<4} PC={pc_cod:<4} debería ser {suc}\n"
+    yield ("\n  OJO: el total de cartera NO cambia — la misma plata pasa de la\n"
+           "  cuenta de la matriz a la de la sucursal. Lo que cambia es a QUIÉN\n"
+           "  se le va a cobrar el saldo abierto de la última columna.\n\n")
+
+
 @bp.route("/diag", methods=["GET"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def diag():
     """Contexto de los errores rojos del chequeo. Solo lectura.
 
-    `?solo=a` … `f` corre UNA sección. Vale la pena: la A camina
+    `?solo=a` … `g` corre UNA sección. Vale la pena: la A camina
     el running completo de cada banco (decenas de miles de filas) y no hay por
     qué esperarla cuando lo que querés ver son las facturas.
     """
-    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcdef"}
+    pedido = {c for c in (request.args.get("solo") or "").lower() if c in "abcdefg"}
 
     def quiero(k: str) -> bool:
         return (not pedido) or (k in pedido)
@@ -665,7 +779,7 @@ def diag():
         yield ("=== DIAGNÓSTICO PROFUNDO — contexto de los errores rojos ===\n"
                "    (solo lectura: ni un UPDATE)"
                + (f"  [secciones {''.join(sorted(pedido)).upper()}]" if pedido
-                  else "  (?solo=a|b|c|d|e|f para una sola)")
+                  else "  (?solo=a|b|c|d|e|f|g para una sola)")
                + "\n\n")
 
         # ── 1) Drift del running bancario ──────────────────────────────
@@ -790,6 +904,10 @@ def diag():
         # ── 6) Propuestas para el diccionario de códigos ───────────────
         if quiero("f"):
             yield from _seccion_diccionario()
+
+        # ── 7) Cuánto movería el recode de sucursales ──────────────────
+        if quiero("g"):
+            yield from _seccion_recode_sucursales()
 
         yield "\n═══ fin ═══\n"
 
