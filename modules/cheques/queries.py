@@ -4085,14 +4085,19 @@ def aplicar_a_factura(
                 #     nace con abono 0, así que no había forma de saldarla.
                 #   · factura con saldo >= 0: el negativo REVIERTE un abono —
                 #     tope el abono, no podés desabonar lo que no se abonó.
+                # `permitir_sobre_saldo` = el monto lo TIPEÓ la dueña (espejo de
+                # la sobre-aplicación positiva): devolvió más de lo que el
+                # cliente tenía a favor y la factura queda debiendo. Es una
+                # decisión, no un error de tipeo — no la topeamos.
+                _sobre_ok = bool(a.get("permitir_sobre_saldo"))
                 if saldo_actual < -0.005:
-                    if abs(imp) > abs(saldo_actual) + 0.01:
+                    if not _sobre_ok and abs(imp) > abs(saldo_actual) + 0.01:
                         raise ValueError(
                             f"El negativo ({abs(imp):.2f}) excede el crédito a "
                             f"favor de la factura {f['numf']} "
                             f"({abs(saldo_actual):.2f})."
                         )
-                elif abs(imp) > abono_actual + 0.01:
+                elif not _sobre_ok and abs(imp) > abono_actual + 0.01:
                     raise ValueError(
                         f"El negativo ({abs(imp):.2f}) excede el abono de "
                         f"factura {f['numf']} ({abono_actual:.2f}) — no podés "

@@ -155,3 +155,37 @@ def test_el_negativo_no_puede_exceder_el_credito(monkeypatch):
 def test_contra_saldo_positivo_el_tope_sigue_siendo_el_abono(monkeypatch):
     with pytest.raises(ValueError, match="excede el abono"):
         _aplicar(monkeypatch, saldo=500.0, abono=100.0, imp=-300.0)
+
+
+def _aplicar_sobre(monkeypatch, saldo, abono, imp, sobre):
+    import db
+    import mov_doble
+    from modules.cheques import queries as q
+    s = _StubAplicarNeg(saldo, abono)
+    monkeypatch.setattr(db, "fetch_one", s.fetch_one)
+    monkeypatch.setattr(db, "execute", s.execute)
+    monkeypatch.setattr(mov_doble, "registrar", lambda **kw: None)
+    q.aplicar_a_factura(
+        id_cheque=777,
+        aplicaciones=[{"id_fact": 10985, "importe": imp,
+                       "permitir_sobre_saldo": sobre}],
+        conn=object(), permitir_depositado=True)
+    return s
+
+
+def test_devolucion_tipeada_puede_superar_el_credito(monkeypatch):
+    # Dueña, caso ADI: se le devolvió al cliente MÁS de lo que tenía a favor.
+    # La NC de -16,20 absorbe 16,20 y el resto lo pasa a DEBER: saldo positivo.
+    s = _aplicar_sobre(monkeypatch, saldo=-16.20, abono=0.0,
+                       imp=-1679.08, sobre=True)
+    upd = [u for u in s.updates if "update scintela.factura" in u[0]]
+    abono, saldo = upd[0][1][0], upd[0][1][1]
+    assert round(abono, 2) == -1679.08
+    assert round(saldo, 2) == 1662.88, "el cliente queda debiendo la diferencia"
+
+
+def test_sin_tipear_sigue_topeado(monkeypatch):
+    # El monto SUGERIDO no puede pasarse: eso sería un descuadre silencioso.
+    with pytest.raises(ValueError, match="excede el crédito"):
+        _aplicar_sobre(monkeypatch, saldo=-16.20, abono=0.0,
+                       imp=-1679.08, sobre=False)
