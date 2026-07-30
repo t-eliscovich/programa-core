@@ -39,6 +39,19 @@
     </div>
   </div>
 
+  {% if est.disponible and est.trabadas %}
+    <div class="page-card mb-4" style="border-left:4px solid #e11d48">
+      <p class="text-sm" style="color:#9f1239">
+        <strong>{{ est.trabadas }} compra{{ '' if est.trabadas == 1 else 's' }}
+        de este mes no se {{ 'puede' if est.trabadas == 1 else 'pueden' }} cargar</strong>
+        ({{ est.total_trabado | money_es }}) — mirá la columna ESTADO abajo.
+        <em>Sin mapear</em> = el programa no sabe qué proveedor es (lo agrega el
+        sistema, avisá). <em>Sin N° de factura</em> = ponele el número en el
+        programa de tintorería y entra sola.
+      </p>
+    </div>
+  {% endif %}
+
   {% if not est.disponible %}
     <div class="page-card">
       <p class="text-slate-500">El puente a formulas no está disponible en este momento
@@ -62,7 +75,7 @@
         </thead>
         <tbody>
           {% for f in est.filas %}
-          <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% elif f.ajustable %}bg-sky-50{% endif %}">
+          <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% elif f.estado in ('sin_mapear', 'sin_numero') %}bg-rose-50{% elif f.ajustable %}bg-sky-50{% endif %}">
             <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
             <td class="py-1.5 pr-3">{{ f.proveedor_formulas }}</td>
             <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or '—' }}</td>
@@ -84,6 +97,9 @@
                       title="{{ f.detalle_match or '' }}">✓ cargada</span>
               {% elif f.estado == 'pendiente' %}
                 <span class="inline-block px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800">pendiente</span>
+              {% elif f.estado == 'sin_numero' %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-rose-100 text-rose-800"
+                      title="{{ f.detalle_match or '' }}">sin N° de factura</span>
               {% elif f.estado == 'excluida' %}
                 <span class="inline-block px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-600"
                       title="{{ f.detalle_match or '' }}">excluida</span>

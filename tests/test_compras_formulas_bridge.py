@@ -415,3 +415,68 @@ def test_contar_pendientes_fail_soft():
 def test_contar_pendientes_ok():
     with patch.object(fb, "estado_mes", return_value={"pendientes": 3}):
         assert fb.contar_pendientes_mes_actual(hoy=date(2026, 7, 17)) == 3
+
+
+# ── trabadas: sin número de factura + aviso ─────────────────────────────────
+
+_SIN_NUM = [
+    {"proveedor": "SEY", "factura": "", "fecha": "2026-07-23",
+     "kg": 500, "importe_siva": 1550.0},
+    {"proveedor": "QQQ", "factura": "77", "fecha": "2026-07-24",
+     "kg": 10, "importe_siva": 100.0},
+]
+
+
+def _estado_sin_num():
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_SIN_NUM), \
+         patch.object(fb.db, "fetch_all", return_value=[]):
+        return fb.estado_mes(2026, 7)
+
+
+def test_factura_sin_numero_no_se_carga():
+    """Sin N° el puente no la puede reconocer después: la cargaría de nuevo en
+    CADA corrida (ahora cada 30 min). Se frena."""
+    est = _estado_sin_num()
+    por = {f.proveedor_formulas: f for f in est["filas"]}
+    assert por["SEY"].estado == "sin_numero"
+    assert por["QQQ"].estado == "sin_mapear"
+    assert est["trabadas"] == 2
+    assert est["pendientes"] == 0
+
+    creadas = []
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_SIN_NUM), \
+         patch.object(fb.db, "fetch_all", return_value=[]), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw)):
+        rep = fb.sincronizar_mes(2026, 7)
+    assert creadas == []
+    assert rep["creadas"] == []
+
+
+def test_avisar_trabadas_un_aviso_por_proveedor():
+    est = _estado_sin_num()
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        n = fb.avisar_trabadas(est)
+    assert n == 2
+    titulos = sorted(a["titulo"] for a in puestos)
+    assert titulos == ["Compra de químicos sin N° de factura: SEY",
+                       "Proveedor de químicos sin reconocer: QQQ"]
+    assert all(a["url"] == "/compras/desde-formulas" for a in puestos)
+    assert all(a["nivel"] == "alerta" for a in puestos)
+    # la clave lleva el conteo → si aparece otra factura, vuelve a avisar
+    assert all(a["clave"].endswith(":1") for a in puestos)
+
+
+def test_avisar_trabadas_sin_nada_no_avisa():
+    with patch("modules.avisos.avisar") as av:
+        assert fb.avisar_trabadas({"filas": []}) == 0
+    av.assert_not_called()
+
+
+def test_avisar_trabadas_nunca_levanta():
+    with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
+        assert fb.avisar_trabadas(_estado_sin_num()) == 0

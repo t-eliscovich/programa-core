@@ -127,7 +127,7 @@ class FilaPuente:
     importe_siva: float
     iva_pct: float
     importe_con_iva: float
-    estado: str                    # cargada | pendiente | excluida | sin_mapear
+    estado: str                    # cargada | pendiente | excluida | sin_mapear | sin_numero
     detalle_match: str | None = None
     id_compra_pc: int | None = None   # la compra de PC que la matcheó
     importe_pc: float | None = None   # importe con el que quedó cargada
@@ -300,6 +300,17 @@ def estado_mes(anio: int, mes: int) -> dict:
                                     siva, 0.0, siva, "sin_mapear",
                                     "proveedor de formulas sin mapping a PC"))
             continue
+        if not factura_f:
+            # SIN N° DE FACTURA: el puente identifica cada compra por su
+            # número — sin él no la puede reconocer en la corrida siguiente y
+            # la cargaría DE NUEVO cada vez (con el ciclo de 30 min serían
+            # decenas de duplicados por día). Se frena y se avisa.
+            iva0 = IVA_POR_PROV.get(prov_pc, IVA_DEFAULT)
+            filas.append(FilaPuente(
+                prov_f, prov_pc, factura_f, None, fecha, kg, siva, iva0,
+                round(siva * (1 + iva0), 2), "sin_numero",
+                "la compra no tiene N° de factura en el programa de tintorería"))
+            continue
         iva = IVA_POR_PROV.get(prov_pc, IVA_DEFAULT)
         civa = round(siva * (1 + iva), 2)
         factura_pc = normalizar_factura(prov_pc, factura_f)
@@ -326,12 +337,15 @@ def estado_mes(anio: int, mes: int) -> dict:
         ))
     pendientes = [f for f in filas if f.estado == "pendiente"]
     ajustables = [f for f in filas if f.ajustable]
+    trabadas = [f for f in filas if f.estado in ("sin_mapear", "sin_numero")]
     return {
         "disponible": True,
         "filas": filas,
         "pendientes": len(pendientes),
         "total_pendiente": round(sum(f.importe_con_iva for f in pendientes), 2),
         "ajustables": len(ajustables),
+        "trabadas": len(trabadas),
+        "total_trabado": round(sum(f.importe_con_iva for f in trabadas), 2),
     }
 
 
@@ -419,6 +433,7 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                 "error": str(e),
             })
     _avisar_novedades(creadas, errores, ajustadas)
+    avisar_trabadas(est)
     return {
         "disponible": True,
         "creadas": creadas,
@@ -483,6 +498,65 @@ def _avisar_novedades(creadas: list, errores: list, ajustadas: list | None = Non
             )
     except Exception as e:  # noqa: BLE001 -- avisar nunca rompe la carga
         log.warning("puente formulas: no pude avisar a novedades: %s", e)
+
+
+def avisar_trabadas(est: dict) -> int:
+    """Avisa por la campanita las compras de formulas que NO se pueden cargar.
+
+    TMT 2026-07-30 (dueña), después de que la QSI del 28/07 estuviera 2 días
+    invisible: *"ídem debería avisar, hay compra de fórmulas no sabemos cuál
+    es"* — mismo formato que el aviso de tejedor sin reconocer.
+
+    Dos situaciones, y la diferencia importa porque una la arregla ella y la
+    otra no:
+
+    · **PROVEEDOR SIN RECONOCER** — formulas trae un código que el programa no
+      tiene mapeado. Vive en el CÓDIGO (`PROV_MAP`), así que ella no lo puede
+      arreglar sola y el aviso lo dice.
+    · **SIN N° DE FACTURA** — la compra se cargó en tintorería sin número. Eso
+      SÍ se arregla allá, y hasta entonces el puente no la toca (sin número no
+      la puede reconocer después y la duplicaría en cada corrida).
+
+    Idempotente por `clave`, que incluye el conteo de facturas: si aparece una
+    más del mismo proveedor, vuelve a avisar. Nunca levanta.
+    """
+    puestos = 0
+    try:
+        from filters import num_es
+        from modules.avisos import avisar
+
+        for estado, titulo, que_hacer in (
+            ("sin_mapear",
+             "Proveedor de químicos sin reconocer",
+             "no se está cargando ninguna de sus compras. Hay que darlo de "
+             "alta en el programa para poder cargarlas."),
+            ("sin_numero",
+             "Compra de químicos sin N° de factura",
+             "sin el número no se puede cargar (no habría cómo reconocerla "
+             "después). Ponele el N° en el programa de tintorería y entra sola."),
+        ):
+            porprov: dict = {}
+            for f in est.get("filas") or []:
+                if f.estado != estado:
+                    continue
+                acc = porprov.setdefault(f.proveedor_formulas,
+                                         {"n": 0, "importe": 0.0})
+                acc["n"] += 1
+                acc["importe"] += float(f.importe_con_iva or 0)
+            for prov, acc in sorted(porprov.items()):
+                puestos += bool(avisar(
+                    fuente="quimicos", nivel="alerta",
+                    titulo=f"{titulo}: {prov}",
+                    detalle=(f"{acc['n']} factura{'' if acc['n'] == 1 else 's'} "
+                             f"por $ {num_es(acc['importe'], 2)} este mes · "
+                             f"{que_hacer}"),
+                    importe=round(acc["importe"], 2), cantidad=acc["n"],
+                    url="/compras/desde-formulas",
+                    clave=f"quimicos:{estado}:{prov}:{acc['n']}"[:400],
+                ))
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe nada
+        log.warning("puente formulas: no pude avisar lo trabado: %s", e)
+    return puestos
 
 
 def correr_si_toca() -> dict:
