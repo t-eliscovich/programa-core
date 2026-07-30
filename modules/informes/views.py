@@ -1029,19 +1029,7 @@ def historico_12m():
         except Exception:  # noqa: BLE001
             pass
         try:
-            # TMT 2026-07-30 (dueña): "no quiero dos columnas... nunca estuvo
-            # en 700 así que no sé por qué se ve 700". El mes en curso mostraba
-            # DOS columnas —la última foto guardada y el estado en vivo— más una
-            # Δ entre las dos. Pero la foto CONGELA el stock de químicos y el
-            # vivo lo RECALCULA, así que la Δ no medía un cambio del negocio:
-            # medía la distancia entre dos formas de valuar. Una foto con los
-            # químicos en 559,7 (contra 416,7 en vivo, el valor verificado el
-            # 21/07 contra formulas_app) inflaba la utilidad ~143k y mostraba
-            # 766,6 — una utilidad que nunca existió.
-            # El mes en curso va con UNA sola columna: la de en vivo.
-            # Los snapshots se siguen tomando (son los que cierran el mes), sólo
-            # que no se muestran como columna del mes actual.
-            data = queries.historico_5m_con_actual(max_actual=0)
+            data = queries.historico_5m_con_actual(max_actual=3)
         except Exception as e:  # noqa: BLE001
             data = {"columnas": [], "lineas": [], "meses_sin_snap": [], "n_actual": 0, "hoy": None}
             error = str(e)
