@@ -55,7 +55,13 @@
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-200">Segundo rechazo</span>
         {% elif ch.stat == 'E' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">Endosado{% if ch.prov %} → {{ ch.prov }}{% endif %}</span>
-        {% elif ch.stat == 'X' %}
+        {% elif ch.stat == 'X' and ch.no_banco == 95 and aplicaciones %}
+          {# TMT 2026-07-30: el 95 no lo eliminó nadie — nace anulado contra el
+             espejo del anticipo, y si además cerró facturas hizo su trabajo.
+             Decir "Eliminado" arriba de una aplicación viva confunde. Un 95
+             SIN aplicaciones sí es basura: ése sigue diciendo Eliminado. #}
+          <span class="ml-2 text-sm px-2 py-0.5 rounded bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                title="Usó el saldo a favor del cliente para pagar la factura: el anticipo y este cheque se anulan entre sí">Anticipo usado</span>
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Eliminado</span>
         {% elif ch.stat == 'V' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 font-mono" title="Banco Internacional — legacy, deprecado">V (legacy)</span>
