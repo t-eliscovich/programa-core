@@ -4590,18 +4590,29 @@ def anticipos_vivos(codigo_cli: str, limite: int = 200) -> list[dict]:
 
     Devuelve el importe en POSITIVO (`importe_abs`) además del original: es lo
     que hay que tipear en el cheque 95.
+
+    TMT 2026-07-30, segunda vuelta: NO se filtra por stat='Z' aunque el match del
+    95 exija exactamente eso. El primer caso real (GL1, espejo #99282 de −900)
+    estaba **POSTERGADO**, y un panel que filtra por Z habría dicho "este cliente
+    no tiene anticipos vivos" — mintiendo, porque el anticipo existe y la plata
+    está. Se traen todos los espejos del grupo vivo (Z/1/2/3/P/D) con
+    `aplicable` marcando cuáles puede tomar el 95 hoy; la pantalla explica qué
+    hacer con el resto (volverlo a cartera). Mejor mostrar y explicar que
+    esconder.
     """
     return db.fetch_all(
         """
         SELECT id_cheque, no_cheque, fecha, fechad, importe,
                ABS(COALESCE(importe, 0)) AS importe_abs,
-               no_banco, COALESCE(banco, '') AS banco, stat
+               no_banco, COALESCE(banco, '') AS banco,
+               TRIM(COALESCE(stat, '')) AS stat,
+               (TRIM(COALESCE(stat, '')) = 'Z') AS aplicable
           FROM scintela.cheque
          WHERE codigo_cli = %s
            AND no_banco IN (97, 98)
-           AND TRIM(COALESCE(stat, '')) = 'Z'
+           AND TRIM(COALESCE(stat, '')) IN ('Z', '1', '2', '3', 'P', 'D')
            AND COALESCE(importe, 0) < 0
-         ORDER BY fecha, id_cheque
+         ORDER BY (TRIM(COALESCE(stat, '')) = 'Z') DESC, fecha, id_cheque
          LIMIT %s
         """,
         (codigo_cli, limite),

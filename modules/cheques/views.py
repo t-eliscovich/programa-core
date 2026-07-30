@@ -1428,6 +1428,8 @@ def api_anticipos_vivos(codigo_cli: str):
                 "importe_abs": float(r.get("importe_abs") or 0),
                 "no_banco": r.get("no_banco"),
                 "banco": (r.get("banco") or "").strip(),
+                "stat": (r.get("stat") or "").strip(),
+                "aplicable": bool(r.get("aplicable")),
             }
             for r in rows
         ],

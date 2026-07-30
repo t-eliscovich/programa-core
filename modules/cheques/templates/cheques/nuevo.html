@@ -1248,14 +1248,21 @@
         + 'queda en cartera y te avisa.</td></tr>';
       return;
     }
+    // El 95 sólo puede tomar espejos EN CARTERA (Z). Los que están postergados
+    // o depositados se muestran igual —existen, la plata está— pero con el
+    // motivo, en vez de esconderlos y dejar la pantalla muda.
     tb.innerHTML = anticipos95.map(a => (
-      '<tr class="border-t border-slate-100 dark:border-slate-800">'
+      '<tr class="border-t border-slate-100 dark:border-slate-800'
+      + (a.aplicable ? '' : ' text-slate-400') + '">'
       + '<td class="px-3 py-2">' + (a.fecha || '') + '</td>'
       + '<td class="px-3 py-2 text-right tabular-nums font-medium">$ ' + fmt(a.importe_abs) + '</td>'
       + '<td class="px-3 py-2 text-slate-500">' + (a.banco || '') + '</td>'
       + '<td class="px-3 py-2 text-right">'
-      + '<button type="button" class="ant95-usar px-2 py-0.5 rounded border border-sky-400 '
-      + 'text-sky-700 hover:bg-sky-50 text-xs" data-importe="' + a.importe_abs + '">Usar</button>'
+      + (a.aplicable
+          ? ('<button type="button" class="ant95-usar px-2 py-0.5 rounded border border-sky-400 '
+             + 'text-sky-700 hover:bg-sky-50 text-xs" data-importe="' + a.importe_abs + '">Usar</button>')
+          : ('<span class="text-xs" title="El 95 sólo cancela anticipos que están en cartera (Z)">'
+             + 'no está en cartera (' + (a.stat || '?') + ') — volvelo a Z para usarlo</span>'))
       + '</td></tr>'
     )).join('');
   }
