@@ -374,10 +374,10 @@
            style="margin-top:18px;border:1px solid rgb(226 232 240);border-radius:12px;background:#fff;">
     <summary style="cursor:pointer;padding:10px 14px;font-size:12px;font-weight:700;color:rgb(51 65 85);list-style:none;">
       <span style="display:inline-block;width:14px;color:rgb(148 163 184);">+</span>
-      Tarifas de compras locales ($/kg sin IVA, una por proveedor)
+      Tarifas de compras locales ($/kg, una por proveedor)
       {% if tarifas %}
         <span style="font-weight:500;color:rgb(100 116 139);font-size:11px;">
-          — {% for t in tarifas %}{{ ' · ' if not loop.first }}{{ t.cod_prov }} {{ t.tarifa|num_es(4) }}{% endfor %}
+          — {% for t in tarifas %}{{ ' · ' if not loop.first }}{{ t.cod_prov }} {{ t.tarifa|num_es(4) }} + IVA = {{ (t.tarifa * 1.15)|num_es(4) }}{% endfor %}
         </span>
       {% endif %}
       {% if locales_sin_tarifa %}
@@ -399,6 +399,11 @@
             <tr>
               <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Proveedor</th>
               <th style="text-align:right;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">$/kg s/IVA</th>
+              {# TMT 2026-07-30 (dueña): "poné tarifario monto sin IVA y con IVA
+                 así todos estamos claros". La de con IVA es DERIVADA (× 1,15) y
+                 no se edita: hay un solo número de verdad, el de s/IVA — es el
+                 que guarda la tabla y el que multiplica el motor. #}
+              <th style="text-align:right;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">$/kg c/IVA 15%</th>
               <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Actualizado</th>
               <th style="border-bottom:1px solid rgb(226 232 240);"></th>
             </tr>
@@ -421,6 +426,10 @@
                          style="width:82px;text-align:right;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-variant-numeric:tabular-nums;">
                 {% else %}<span style="font-variant-numeric:tabular-nums;">{{ t.tarifa|num_es(4) }}</span>{% endif %}
               </td>
+              <td style="padding:5px 8px;text-align:right;border-bottom:1px solid rgb(241 245 249);font-variant-numeric:tabular-nums;color:rgb(100 116 139);"
+                  title="Es lo que se graba en la compra — el dBase guarda el importe con IVA">
+                {{ (t.tarifa * 1.15)|num_es(4) }}
+              </td>
               {# La nota viaja oculta: si no se manda, el UPSERT la borraría. #}
               {% if puede_tarifas %}<input type="hidden" name="t_{{ loop.index }}_nota" value="{{ t.nota }}">{% endif %}
               <td style="padding:5px 8px;font-size:10.5px;color:rgb(148 163 184);border-bottom:1px solid rgb(241 245 249);">
@@ -440,7 +449,7 @@
                     style="width:56px;text-transform:uppercase;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;"></td>
               <td style="padding:5px 8px;text-align:right;"><input name="t_999_tarifa" placeholder="0,0000"
                     style="width:82px;text-align:right;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;"></td>
-              <td colspan="2"></td>
+              <td colspan="3"></td>
             </tr>
             {% endif %}
           </tbody>
