@@ -153,3 +153,32 @@ def test_compensa_noop_sin_deposito(monkeypatch):
     assert monto == 0.0
     assert rec.nds == []
     assert not _tiene_delete_link(rec.executes)
+
+
+def test_no_duplica_la_nd_tipeada_a_mano(monkeypatch):
+    """TMT 2026-07-30 (dueña, caso CJE 99698). El guard miraba SÓLO
+    `numreferencia = id_cheque`, y una ND tipeada a mano en /bancos nunca la
+    lleva (`crear_movimiento_simple` no la setea). La ND del protesto ya estaba
+    cargada —y conciliada contra el extracto— y marcar el cheque devuelto
+    metía una SEGUNDA: Pichincha −3.384,32 por un solo rebote.
+
+    Este test clava que el match por (banco + cliente + importe) también
+    cuenta: la query tiene que preguntar por `prov` e `importe`, no sólo por
+    numreferencia.
+    """
+    import inspect
+
+    from modules.cheques import queries as q
+    src = inspect.getsource(q.compensar_deposito_devuelto)
+    i = src.find("nd_post = db.fetch_one")
+    assert i > 0, "cambió el guard — revisar este test"
+    bloque = src[i:i + 900]
+    assert "numreferencia = %s" in bloque, "el match por referencia se mantiene"
+    assert "prov" in bloque and "no_banco = %s" in bloque, (
+        "el guard volvió a mirar sólo numreferencia: una ND cargada a mano se "
+        "vuelve a duplicar"
+    )
+    assert "ABS(COALESCE(importe, 0) - %s) <= 0.01" in bloque, (
+        "sin el match por importe exacto, cualquier ND del cliente cancelaría "
+        "la compensación"
+    )

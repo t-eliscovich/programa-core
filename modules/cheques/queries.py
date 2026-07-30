@@ -580,11 +580,25 @@ def compensar_deposito_devuelto(
     # una ND más nueva que el 'DE' ⇒ ese depósito ya se compensó. Una ND más
     # vieja (rebote anterior, ya re-depositado) NO bloquea el nuevo depósito.
     max_de = max(int(lk["id_transaccion"]) for lk in links)
+    # TMT 2026-07-30 (dueña, caso CJE): el guard miraba SÓLO
+    # `numreferencia = id_cheque`, y una ND tipeada a mano en /bancos nunca
+    # lleva numreferencia (`crear_movimiento_simple` no la setea). Resultado:
+    # la ND del protesto ya estaba cargada —y CONCILIADA contra el extracto—
+    # y pasar el cheque a devuelto insertaba una SEGUNDA ND por el mismo
+    # importe: Pichincha −3.384,32 por un solo cheque rebotado. Ahora también
+    # cuenta como "ya compensado" una ND del MISMO cliente por el MISMO
+    # importe posterior al depósito. Es angosto a propósito (banco + prov +
+    # importe exacto + posterior al DE); si el importe no coincide, la ND se
+    # crea igual.
     nd_post = db.fetch_one(
         "SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias "
-        "WHERE numreferencia = %s "
-        "  AND UPPER(TRIM(COALESCE(documento,''))) = 'ND'",
-        (id_cheque,),
+        " WHERE UPPER(TRIM(COALESCE(documento,''))) = 'ND' "
+        "   AND ( numreferencia = %s "
+        "         OR ( no_banco = %s "
+        "              AND UPPER(TRIM(COALESCE(prov,''))) = %s "
+        "              AND ABS(COALESCE(importe, 0) - %s) <= 0.01 ) )",
+        (id_cheque, int(links[0]["no_banco"]),
+         (codigo_cli or "").strip().upper(), imp),
         conn=conn,
     )
     if nd_post and nd_post["m"] is not None and int(nd_post["m"]) > max_de:
