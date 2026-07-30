@@ -332,10 +332,33 @@ def nuevo():
         # importe es obligatorio —es lo que aparea con el anticipo— pero el
         # N° no existe, así que pedirlo confundía.
         if "95" in (request.form.getlist("no_banco[]") or []):
-            errores.append(
-                "Falta el importe del anticipo. Tildalo en la lista de "
-                "arriba y se completa solo."
-            )
+            # TMT 2026-07-30 (dueña): "sin el 900 me podría mandar los
+            # anticipos que están y ya". El error no pide un número de
+            # memoria: lista los anticipos vivos del cliente ahí mismo.
+            _vivos = []
+            try:
+                if codigo_cli:
+                    _vivos = queries.anticipos_vivos(codigo_cli) or []
+            except Exception:  # noqa: BLE001
+                _vivos = []
+            if _vivos:
+                from filters import fecha_es as _fe
+                from filters import money_es as _mev
+                _lista = " · ".join(
+                    f"$ {_mev(float(a.get('importe_abs') or 0))} "
+                    f"({_fe(a.get('fecha'))})"
+                    for a in _vivos[:6]
+                )
+                errores.append(
+                    f"Falta decir cuál anticipo usás. "
+                    f"{codigo_cli.upper().strip()} tiene: {_lista}. "
+                    f"Tildalo en la lista de arriba y el importe se completa solo."
+                )
+            else:
+                errores.append(
+                    f"{codigo_cli.upper().strip() or 'Este cliente'} no tiene "
+                    "anticipos vivos para cancelar con un 95."
+                )
         else:
             errores.append("Por lo menos un cheque (N° + importe) requerido.")
     else:
