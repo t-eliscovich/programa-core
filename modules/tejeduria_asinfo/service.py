@@ -119,11 +119,19 @@ def _compras_k_por_prov_rango(desde: str, hasta: str) -> dict:
 
 
 def ultima_compra_k_por_prov() -> dict:
-    """{codigo_prov: 'YYYY-MM-DD' de su compra K más nueva}.
+    """{codigo_prov: 'YYYY-MM-DD' de su última compra K **SIN OFT**}.
 
     TMT 2026-07-30. Sirve para saber qué producción NO PUEDE estar ya pagada:
     una compra vieja no puede cubrir una OF que cerró DESPUÉS de ella. Ver el
     uso en `cargar_pendientes` (excepción al tope acumulado).
+
+    ⚠ Se excluyen las compras que YA llevan un OFT estampado — o sea las que
+    creó este mismo motor. Motivo: contarlas rompe la regla apenas se usa. Caso
+    real UN, 30/07: el motor cargó primero la OF del **28/07** (es la más nueva)
+    y con eso la "última compra" saltó al 28/07, dejando la OF del **24/07** por
+    detrás de su propia creación ⇒ volvía a frenarse por tope. El tope existe
+    para protegerse de las compras VIEJAS tipeadas a mano sin OFT; contra las
+    que tienen OFT ya está la guarda de `_ofts_estampadas`.
     """
     try:
         rows = db.fetch_all(
@@ -134,6 +142,7 @@ def ultima_compra_k_por_prov() -> dict:
              WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
                AND COALESCE(kg, 0) > 0
                AND COALESCE(stat, '') <> 'Y'
+               AND COALESCE(concepto, '') NOT ILIKE '%%OFT-%%'
              GROUP BY UPPER(TRIM(COALESCE(codigo_prov, '')))
             """,
         ) or []

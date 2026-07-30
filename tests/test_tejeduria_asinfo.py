@@ -766,3 +766,23 @@ def test_sin_compras_previas_del_proveedor_manda_el_tope():
 def test_con_tope_suficiente_carga_igual():
     res = _plan_un({"UN": "2026-08-01"}, 5000.0)
     assert res["creadas"] == 1
+
+
+def test_una_carga_del_motor_no_frena_a_la_siguiente():
+    """El motor carga la OF más nueva primero; eso no puede tapar a las viejas.
+
+    Caso real UN 30/07: cargó la OF del 28/07 y la "última compra" saltó al
+    28/07, dejando la OF del 24/07 por detrás de su propia creación. Por eso
+    `ultima_compra_k_por_prov` sólo mira compras SIN OFT.
+    """
+    import re as _re
+    sql_calls = []
+
+    def _fake_fetch_all(sql, *a, **kw):
+        sql_calls.append(sql)
+        return [{"cod": "UN", "ultima": "2026-06-16"}]
+
+    with _patch.object(_tsvc.db, "fetch_all", side_effect=_fake_fetch_all):
+        assert _tsvc.ultima_compra_k_por_prov() == {"UN": "2026-06-16"}
+    # La consulta tiene que excluir explícitamente las compras con OFT.
+    assert _re.search(r"NOT\s+ILIKE\s+'%+OFT-%+'", sql_calls[0]), sql_calls[0]
