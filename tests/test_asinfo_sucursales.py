@@ -38,6 +38,12 @@ from modules.asinfo import service as svc  # noqa: E402
 def _reset():
     svc.reset_sucursal_cache()
     svc.reset_facturas_cache()
+    svc.reset_sucursales_en_uso_cache()
+
+
+def _en_uso(monkeypatch, *codigos):
+    """Finge que esos códigos ya se usan como cliente propio en PC."""
+    monkeypatch.setattr(svc, "sucursales_en_uso", lambda: set(codigos))
 
 
 def test_sql_exige_el_ruc_de_la_matriz():
@@ -97,6 +103,7 @@ def test_facturas_periodo_reclasifica_a_la_sucursal(monkeypatch):
         svc.metabase_client, "fetch_dataset",
         lambda *a, **k: [{"numero": "001-099-000180340", "sucursal": "AJ2"}],
     )
+    _en_uso(monkeypatch, "AJ2")
     rows = svc.facturas_periodo("2026-07-01", "2026-07-30")
     suc = [r for r in rows if r["numero"].endswith("340")][0]
     matriz = [r for r in rows if r["numero"].endswith("341")][0]
@@ -133,9 +140,79 @@ def test_aplicar_sucursales_es_idempotente(monkeypatch):
         svc.metabase_client, "fetch_dataset",
         lambda *a, **k: [{"numero": "001-099-000180340", "sucursal": "AJ2"}],
     )
+    _en_uso(monkeypatch, "AJ2")
     rows = [{"numero": "001-099-000180340", "cliente_codigo": "AJO"}]
     svc._aplicar_sucursales(rows, "2026-07-01", "2026-07-30")
     svc._aplicar_sucursales(rows, "2026-07-01", "2026-07-30")
     assert rows[0]["cliente_codigo"] == "AJ2"
     # el facturado NO se sobreescribe con "AJ2" en la segunda pasada
     assert rows[0]["cliente_codigo_facturado"] == "AJO"
+
+
+# ── El criterio del dBase: se parte SÓLO lo que ya se usa ──────────────────
+# Dueña 30/07: "como haga dbase, pero dejemos que a futuro sea automatico".
+# Control contra FACTURAS.DBF del 29/07: AJ2 tiene 149 facturas (se parte),
+# CL2/CL3/JEC/CJE tienen CERO (se cobran a la matriz) aunque existan en Asinfo
+# como empresas con RUC propio y en CLIENTES.DBF como códigos.
+
+
+def test_sucursal_que_nadie_usa_se_queda_en_la_matriz(monkeypatch):
+    _reset()
+    monkeypatch.setattr(
+        svc, "fetch_card_from_env",
+        lambda *a, **k: [
+            {"numero": "001-099-000180614", "cliente_codigo": "CLR", "usd": 451.69},
+        ],
+    )
+    monkeypatch.setattr(
+        svc.metabase_client, "fetch_dataset",
+        lambda *a, **k: [{"numero": "001-099-000180614", "sucursal": "CL3"}],
+    )
+    _en_uso(monkeypatch, "AJ2")  # CL3 NO está en uso
+    rows = svc.facturas_periodo("2026-07-01", "2026-07-30")
+    assert rows[0]["cliente_codigo"] == "CLR"
+    assert "es_sucursal" not in rows[0]
+
+
+def test_el_dia_que_se_empiece_a_usar_se_parte_solo(monkeypatch):
+    """Mismo escenario, pero CL3 ya tiene facturas propias: ahora sí se parte."""
+    _reset()
+    monkeypatch.setattr(
+        svc, "fetch_card_from_env",
+        lambda *a, **k: [
+            {"numero": "001-099-000180614", "cliente_codigo": "CLR", "usd": 451.69},
+        ],
+    )
+    monkeypatch.setattr(
+        svc.metabase_client, "fetch_dataset",
+        lambda *a, **k: [{"numero": "001-099-000180614", "sucursal": "CL3"}],
+    )
+    _en_uso(monkeypatch, "CL3")
+    rows = svc.facturas_periodo("2026-07-01", "2026-07-30")
+    assert rows[0]["cliente_codigo"] == "CL3"
+    assert rows[0]["cliente_codigo_facturado"] == "CLR"
+
+
+def test_sucursales_en_uso_pide_el_minimo_y_es_fail_soft(monkeypatch):
+    _reset()
+    import db as _db
+    llamadas = []
+
+    def fake_fetch_all(sql, params=None, *a, **k):
+        llamadas.append((sql, params))
+        return [{"cod": "aj2", "n": 149}, {"cod": "CLR", "n": 226}]
+
+    monkeypatch.setattr(_db, "fetch_all", fake_fetch_all)
+    out = svc.sucursales_en_uso()
+    assert out == {"AJ2", "CLR"}
+    assert llamadas[0][1] == (svc._MIN_FACTURAS_SUCURSAL,)
+    assert "HAVING COUNT(*) >= %s" in llamadas[0][0]
+
+    # Si la DB falla: set() → NO se parte nada (queda como hoy).
+    svc.reset_sucursales_en_uso_cache()
+
+    def explota(*a, **k):
+        raise RuntimeError("db caída")
+
+    monkeypatch.setattr(_db, "fetch_all", explota)
+    assert svc.sucursales_en_uso() == set()

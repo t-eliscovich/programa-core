@@ -232,8 +232,76 @@ def reset_sucursal_cache() -> None:
     _SUCURSAL_CACHE.clear()
 
 
+# ── ¿Se parte o no se parte? Lo decide el USO, no la estructura ──
+# TMT 2026-07-30 (dueña: *"como haga dbase, pero dejemos que a futuro sea
+# automatico"*). El control contra FACTURAS.DBF del 29/07 mostró que Asinfo tiene
+# 15 sucursales pero la persona **sólo usa algunas**:
+#
+#     AJ2  149 facturas en el dBase  → SE PARTE
+#     CL2    0                        → todo va a CLR
+#     CL3    0                        → todo va a CLR
+#     JEC    0                        → todo va a VGA
+#     CJE    0                        → todo va a STB
+#
+# (CL2/CL3/JEC/CJE existen en CLIENTES.DBF y nunca se usaron.) Así que la regla
+# del RUC sola reproduce la ESTRUCTURA de Asinfo, no la PRÁCTICA. Se filtra por
+# uso: la sucursal manda **sólo si ese código ya tiene facturas propias en PC**.
+#
+# Y por eso es automático a futuro: el día que alguien empiece a usar CL3, la
+# regla lo parte sola, sin tocar código ni ninguna tabla de mapeos. Al revés
+# también: una sucursal nueva de Asinfo que nadie usa se sigue cobrando a la
+# matriz, que es lo que se hace hoy.
+#
+# El umbral son 3 facturas, no 1: una sola factura mal codeada no debería
+# cambiar el criterio de cobranza de un cliente entero.
+_MIN_FACTURAS_SUCURSAL = 3
+_SUC_USO_CACHE: dict = {}
+_SUC_USO_TTL_SECS = 300
+
+
+def sucursales_en_uso() -> set:
+    """Códigos que PC YA usa como cliente propio (≥3 facturas vivas).
+
+    Fail-soft y CONSERVADOR: si la consulta falla devuelve `set()`, con lo cual
+    no se parte nada y todo queda como hoy (a la matriz).
+    """
+    now = _time.time()
+    cached = _SUC_USO_CACHE.get("v")
+    if cached and (now - cached[0]) < _SUC_USO_TTL_SECS:
+        return cached[1]
+    try:
+        import db as _db
+        rows = _db.fetch_all(
+            """
+            SELECT UPPER(TRIM(codigo_cli)) AS cod, COUNT(*) AS n
+              FROM scintela.factura
+             WHERE TRIM(COALESCE(stat, '')) NOT IN ('X', 'Y')
+               AND COALESCE(codigo_cli, '') <> ''
+             GROUP BY UPPER(TRIM(codigo_cli))
+            HAVING COUNT(*) >= %s
+            """,
+            (_MIN_FACTURAS_SUCURSAL,),
+        ) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("sucursales_en_uso falló (%s) — no se parte ninguna", e)
+        return set()
+    out = {str(r["cod"]).strip().upper() for r in rows if r.get("cod")}
+    if out:
+        _SUC_USO_CACHE["v"] = (now, out)
+    return out
+
+
+def reset_sucursales_en_uso_cache() -> None:
+    """Vaciar el cache de "sucursales en uso" (tests / tras cargar facturas)."""
+    _SUC_USO_CACHE.clear()
+
+
 def _aplicar_sucursales(rows: list[dict], desde, hasta) -> list[dict]:
     """Reemplaza `cliente_codigo` por el de la sucursal donde corresponda.
+
+    Sólo para las sucursales QUE SE USAN (ver `sucursales_en_uso`): así PC hace
+    lo que hace el dBase — parte AJO/AJ2 y junta CLR/CL2/CL3 — y se adapta solo
+    cuando la práctica cambia.
 
     Deja el original en `cliente_codigo_facturado` y marca `es_sucursal=True`,
     para que las pantallas puedan mostrar "AJ2 (facturado a AJO)" sin volver a
@@ -244,9 +312,12 @@ def _aplicar_sucursales(rows: list[dict], desde, hasta) -> list[dict]:
     suc = sucursal_por_numero(desde, hasta)
     if not suc:
         return rows
+    en_uso = sucursales_en_uso()
+    if not en_uso:
+        return rows
     for r in rows:
         s = suc.get(str(r.get("numero") or "").strip())
-        if not s:
+        if not s or s not in en_uso:
             continue
         actual = str(r.get("cliente_codigo") or "").strip().upper()
         if actual == s:
