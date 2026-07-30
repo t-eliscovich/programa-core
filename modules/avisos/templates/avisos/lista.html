@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, empty_row %}
+{% block title %}Novedades{% endblock %}
+{% block breadcrumb %}<strong>Novedades</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-07-30 (dueña): "una pantalla novedades nueva" + "el punto es
+   avisar". Sin switches ni botones de operación: se lee, y si algo hay que
+   hacer se va a la pantalla del tema por el link de la fila.
+   Tailwind está congelado → los estilos nuevos van en style= inline. #}
+<div class="max-w-full" style="font-variant-numeric:tabular-nums;">
+
+  {{ page_hero(
+      'Novedades',
+      descripcion='Todo lo que el programa cargó solo o vio raro. Lo más nuevo arriba.',
+      kpi_valor=(items | length) ~ '',
+      kpi_extra=('· ' ~ n_no_leidos ~ ' sin leer' if n_no_leidos else '· todo leído')
+  ) }}
+
+  {# ---- Filtros: por tema, por tipo, y leídos o no ---- #}
+  <div class="my-4 flex items-center gap-2 flex-wrap text-xs">
+    <a href="{{ url_for('avisos.lista', todos=1) }}"
+       class="px-3 py-1.5 rounded border"
+       style="{% if not fuente and not nivel %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Todo</a>
+    {% for f, label in fuentes.items() %}
+    <a href="{{ url_for('avisos.lista', fuente=f, todos=1) }}"
+       class="px-3 py-1.5 rounded border"
+       style="{% if fuente == f %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">{{ label }}</a>
+    {% endfor %}
+    <span style="width:1px;height:20px;background:rgb(226 232 240);"></span>
+    <a href="{{ url_for('avisos.lista', nivel='alerta', todos=1) }}"
+       class="px-3 py-1.5 rounded border"
+       style="{% if nivel == 'alerta' %}border-color:rgb(252 211 77);background:rgb(255 251 235);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">⚠️ Para mirar</a>
+    <a href="{{ url_for('avisos.lista', todos=0) }}"
+       class="px-3 py-1.5 rounded border"
+       style="{% if not todos %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Sin leer</a>
+    {% if n_no_leidos %}
+    <form method="post" action="{{ url_for('avisos.leidos') }}" class="inline ml-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="px-3 py-1.5 rounded border" style="border-color:rgb(226 232 240);color:rgb(100 116 139);">
+        Marcar todo leído
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="border border-slate-200 rounded bg-white">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-2 text-left font-medium" style="width:9rem;">Cuándo</th>
+          <th class="px-4 py-2 text-left font-medium" style="width:8rem;">Tema</th>
+          <th class="px-4 py-2 text-left font-medium">Qué pasó</th>
+          <th class="px-4 py-2 text-right font-medium" style="width:8rem;">US$</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in items %}
+        <tr class="border-t border-slate-100"
+            style="{% if not a.leido %}background:rgb(254 252 232);{% endif %}">
+          <td class="px-4 py-2 text-xs text-slate-500" style="white-space:nowrap;">{{ a.creado_en }}</td>
+          <td class="px-4 py-2 text-xs text-slate-500">{{ a.fuente_label }}</td>
+          <td class="px-4 py-2" style="line-height:1.35;">
+            <span style="font-size:12.5px;font-weight:600;color:rgb(30 41 59);">{{ a.icono }} {{ a.titulo }}</span>
+            {% if a.detalle %}
+            <span style="font-size:11.5px;color:rgb(100 116 139);"> · {{ a.detalle }}</span>
+            {% endif %}
+            {% if a.url %}
+            <a href="{{ a.url }}" style="font-size:11.5px;color:rgb(3 105 161);text-decoration:none;"> · ver →</a>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-right">{{ a.importe | num_es(2) if a.importe else '—' }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(4, 'Sin novedades todavía.',
+                     'Acá aparece lo que el programa carga solo (tejeduría, químicos, importaciones) y lo que ve raro.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -13,12 +13,19 @@ Match:
 
 Todo fail-soft: si Asinfo cae, `disponible=False` y la tab muestra un aviso.
 """
+import logging
+import os
 import re
+import threading
+import time as _time
 from datetime import date
 
 import db
+from filters import num_es
 from modules.asinfo import service as asinfo_service
 from modules.tejeduria_asinfo import queries as _tarifas
+
+_LOG = logging.getLogger("programa_core.tejeduria")
 
 _OFT_RE = re.compile(r"OFT-\d+", re.IGNORECASE)
 
@@ -541,7 +548,7 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         detalle.append({**base, "ok": True, "dup_warn": dup,
                         "numero_compra": res.get("numero")})
 
-    return {
+    out = {
         "dry_run": dry_run,
         "creadas": creadas,
         "importe": round(importe_total, 2),
@@ -550,6 +557,11 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         "restante": restante,
         "detalle": detalle,
     }
+    # A la campanita, cargue quien cargue: el hilo de fondo, la pantalla, o el
+    # botón. Nunca en dry_run (la pantalla de preview no avisa nada todavía).
+    if creadas and not dry_run:
+        _avisar_carga(out)
+    return out
 
 
 def _parse_dia(dia) -> date:
@@ -568,3 +580,92 @@ def _ingreso_por_dia(anio: int, mes: int) -> list[dict]:
         return _asvc.ingreso_bodega_por_dia(52, _date(int(anio), int(mes), 1)) or []
     except Exception:  # noqa: BLE001 -- fail-soft
         return []
+
+
+# ---------------------------------------------------------------------------
+# NOVEDADES + corrida sola — TMT 2026-07-30 (dueña)
+#
+# 1. *"tejeduría tiene que correr sola"*: hasta hoy `cargar_pendientes` se
+#    disparaba ÚNICAMENTE cuando alguien con permiso abría la pantalla. Si nadie
+#    entraba, no se cargaba nada; si entraban tres personas, corría tres veces.
+#    Ahora se cuelga del hilo de fondo (modules/_lib/autocarga_facturas.py) con
+#    su propio freno de 30 minutos, y la pantalla queda como atajo.
+# 2. *"hacé notificaciones globales"*: lo que carga se cuenta en la campanita.
+#
+# ⚠ Lo que NO se avisa, a propósito: los "kilos producidos y no comprados" de los
+#    meses cerrados. Parece un pasivo sin registrar y NO lo es — las compras K de
+#    PC arrancan en MAYO (las anteriores viven en el archivo del FoxPro), así que
+#    la resta contra la producción de Asinfo, que tiene la historia completa, da
+#    un número que se mueve 12.000 kg con sólo correr la ventana un mes. La dueña
+#    hizo borrar la columna que lo mostraba el 30/07 ("nadie entiende") — ver
+#    a7264f6. `falta_acumulada` queda como TOPE de la carga: es una guarda, no un
+#    dato para mirar.
+# ---------------------------------------------------------------------------
+
+_AUTO_LOCK = threading.Lock()
+_auto_ultimo_ts = 0.0
+_AUTO_INTERVALO_MIN = 1800.0  # 30 min entre corridas de fondo
+
+def _avisar_carga(res: dict) -> int:
+    """Un aviso por PROVEEDOR con lo que se acaba de cargar. Devuelve cuántos."""
+    from modules.avisos import avisar as _avisar
+
+    porprov: dict = {}
+    for d in res.get("detalle") or []:
+        if not d.get("ok"):
+            continue
+        cod = (d.get("cod") or "?").upper()
+        acc = porprov.setdefault(
+            cod, {"n": 0, "kg": 0.0, "importe": 0.0,
+                  "label": d.get("label") or cod, "ofts": []})
+        acc["n"] += 1
+        acc["kg"] += float(d.get("kg") or 0)
+        acc["importe"] += float(d.get("importe") or 0)
+        acc["ofts"].append(str(d.get("oft") or ""))
+
+    puestos = 0
+    for cod, a in porprov.items():
+        # La clave es el conjunto exacto de OFs cargadas: si la corrida se
+        # repite no entra de nuevo, y si carga una OF nueva sí.
+        clave = f"tejeduria:{cod}:" + ",".join(sorted(a["ofts"]))
+        puestos += bool(_avisar(
+            fuente="tejeduria",
+            titulo=(f"{a['label']} · $ {num_es(a['importe'], 2)}"),
+            detalle=(f"Se cargaron {a['n']} compra"
+                     f"{'' if a['n'] == 1 else 's'} · "
+                     f"{num_es(a['kg'], 2)} kg"),
+            importe=round(a["importe"], 2), cantidad=a["n"],
+            url="/produccion-tejeduria-asinfo", clave=clave[:400],
+        ))
+    return puestos
+
+
+def correr_si_toca() -> dict:
+    """Entrada del hilo de fondo: carga lo pendiente del mes y avisa.
+
+    Respeta el switch de ambiente (TEJEDURIA_AUTO=0), el freno de 30 minutos, y
+    todas las guardas de `cargar_pendientes` (tarifa resuelta, tope acumulado
+    por proveedor, OFT ya estampado). Nunca levanta.
+    """
+    global _auto_ultimo_ts
+    res = {"corrio": False, "creadas": 0, "importe": 0.0, "avisos": 0}
+    if os.environ.get("TEJEDURIA_AUTO", "1").strip() == "0":
+        return res
+    ahora = _time.monotonic()
+    with _AUTO_LOCK:
+        if _auto_ultimo_ts and (ahora - _auto_ultimo_ts) < _AUTO_INTERVALO_MIN:
+            return res
+        _auto_ultimo_ts = ahora
+    try:
+        from filters import today_ec
+
+        hoy = today_ec()
+        res["corrio"] = True
+        # `cargar_pendientes` ya deja el aviso de lo que cargó (avisa igual si
+        # lo dispara la pantalla), así que acá no se repite.
+        carga = cargar_pendientes(hoy.year, hoy.month, usuario=MARCADOR_CARGA)
+        res["creadas"] = carga.get("creadas") or 0
+        res["importe"] = carga.get("importe") or 0.0
+    except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
+        _LOG.warning("tejeduría (fondo): %s", e)
+    return res

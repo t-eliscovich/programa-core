@@ -1,0 +1,213 @@
+"""NOVEDADES — el buzón único de avisos (TMT 2026-07-30).
+
+Dueña: *"la campanita debería funcionar también para cargas de tejeduría, de
+fórmulas, no la hagas para compras. hacé notificaciones globales"*.
+
+Lo que se prueba es lo que hace que el buzón no moleste:
+  · `avisar` NUNCA levanta (un aviso roto no puede tumbar la carga que avisaba);
+  · la `clave` no deja entrar el mismo aviso dos veces (los procesos de fondo
+    reintentan lo mismo cada 30 min);
+  · cada fuente escribe en castellano y sin siglas internas.
+"""
+from unittest.mock import patch
+
+from modules import avisos
+
+
+def test_avisar_guarda_y_devuelve_true():
+    with patch.object(avisos.queries.db, "fetch_one",
+                      return_value={"id_aviso": 7}) as f:
+        ok = avisos.avisar(fuente="tejeduria", titulo="Reyes · $ 1.630,00",
+                           detalle="Se cargaron 2 compras · 1.618,00 kg",
+                           importe=1630, cantidad=2, clave="tejeduria:RY:OFT-1")
+    assert ok is True
+    sql, params = f.call_args[0][0], f.call_args[0][1]
+    assert "ON CONFLICT (clave) DO NOTHING" in sql
+    assert params[0] == "tejeduria" and params[1] == "ok"
+
+
+def test_la_clave_repetida_no_entra_de_nuevo():
+    """ON CONFLICT DO NOTHING → RETURNING no trae fila → False."""
+    with patch.object(avisos.queries.db, "fetch_one", return_value=None):
+        assert avisos.avisar(fuente="tejeduria", titulo="x",
+                             clave="tejeduria:RY:OFT-1") is False
+
+
+def test_avisar_nunca_levanta():
+    def explota(*a, **k):
+        raise RuntimeError("la base se cayó")
+
+    with patch.object(avisos.queries.db, "fetch_one", explota):
+        assert avisos.avisar(fuente="quimicos", titulo="x") is False
+
+
+def test_nivel_invalido_cae_en_ok():
+    with patch.object(avisos.queries.db, "fetch_one",
+                      return_value={"id_aviso": 1}) as f:
+        avisos.avisar(fuente="quimicos", titulo="x", nivel="URGENTÍSIMO")
+    assert f.call_args[0][1][1] == "ok"
+
+
+def test_listar_resuelve_icono_y_nombre_de_la_fuente():
+    fila = {"fuente": "tejeduria", "nivel": "alerta", "titulo": "t",
+            "detalle": "d", "importe": 1, "cantidad": 1, "url": None,
+            "leido": False, "cuando": "30/07 15:00", "creado_en": "x"}
+    with patch.object(avisos.queries.db, "fetch_all", return_value=[fila]):
+        out = avisos.listar()
+    assert out[0]["icono"] == "⚠️"
+    assert out[0]["fuente_label"] == "Tejeduría"
+
+
+def test_listar_filtra_por_fuente_y_no_leidos():
+    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=True, fuente="quimicos", limite=5)
+    sql, params = f.call_args[0][0], f.call_args[0][1]
+    assert "NOT leido" in sql and "fuente = %s" in sql
+    assert params == ("quimicos", 5)
+
+
+def test_listar_todo_no_filtra():
+    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=False)
+    assert "WHERE" not in f.call_args[0][0]
+
+
+def test_listar_fail_soft_devuelve_vacio():
+    def explota(*a, **k):
+        raise RuntimeError("timeout")
+
+    with patch.object(avisos.queries.db, "fetch_all", explota):
+        assert avisos.listar() == []
+
+
+def test_marcar_leidos_y_contador():
+    with patch.object(avisos.queries.db, "execute") as ex:
+        avisos.marcar_leidos()
+    assert "SET leido = TRUE" in ex.call_args[0][0]
+    with patch.object(avisos.queries.db, "fetch_one", return_value={"n": 3}):
+        assert avisos.n_no_leidos() == 3
+
+
+# ── Las tres fuentes: cada una escribe en castellano, sin siglas internas ────
+
+def test_tejeduria_avisa_una_linea_por_proveedor():
+    from modules.tejeduria_asinfo import service as tej
+
+    carga = {"detalle": [
+        {"ok": True, "cod": "RY", "label": "REYES", "kg": 809.0,
+         "importe": 815.0, "oft": "OFT-1"},
+        {"ok": True, "cod": "RY", "label": "REYES", "kg": 809.0,
+         "importe": 815.0, "oft": "OFT-2"},
+        {"ok": False, "cod": "AP", "label": "PONCE", "motivo": "sin tarifa"},
+    ]}
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        tej._avisar_carga(carga)
+    assert len(puestos) == 1  # una sola línea para las dos compras de Reyes
+    a = puestos[0]
+    assert a["fuente"] == "tejeduria"
+    assert a["titulo"] == "REYES · $ 1.630,00"          # formato EU/Ecuador
+    assert a["detalle"] == "Se cargaron 2 compras · 1.618,00 kg"
+    assert a["clave"] == "tejeduria:RY:OFT-1,OFT-2"     # anti-repetido por OFs
+    assert "OFT" not in a["titulo"] + a["detalle"]      # sin siglas internas
+
+
+def test_quimicos_avisa_el_total_y_los_proveedores():
+    from modules.compras import formulas_bridge as fb
+
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        fb._avisar_novedades(
+            [{"proveedor": "AQ", "factura": "0133", "importe": 5000.0},
+             {"proveedor": "SY", "factura": "0134", "importe": 3450.0}], [])
+    a = puestos[0]
+    assert a["fuente"] == "quimicos"
+    assert a["titulo"] == "Químicos · $ 8.450,00"
+    assert a["detalle"] == "Se cargaron 2 compras de AQ, SY"
+    assert a["clave"] == "quimicos:0133,0134"
+
+
+def test_quimicos_avisa_los_errores_como_error():
+    from modules.compras import formulas_bridge as fb
+
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        fb._avisar_novedades([], [{"proveedor": "AQ", "factura": "0140",
+                                   "error": "proveedor inexistente"}])
+    assert puestos[0]["nivel"] == "error"
+    assert puestos[0]["detalle"] == "proveedor inexistente"
+
+
+def test_quimicos_sin_nada_no_avisa():
+    from modules.compras import formulas_bridge as fb
+
+    with patch("modules.avisos.avisar") as av:
+        fb._avisar_novedades([], [])
+    av.assert_not_called()
+
+
+def test_importaciones_manda_el_aviso_al_buzon_con_la_clave_de_la_compra():
+    from modules.importaciones import autobap
+
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        autobap._al_buzon({
+            "tipo": "conversion", "im_numero": "IM-1", "codigo_prov": "AC",
+            "importe": 100.0, "n_anticipos": 1, "id_compra": 42,
+            "comprobante": "BAP1", "ref_num": 7,
+        })
+    a = puestos[0]
+    assert a["fuente"] == "importaciones" and a["nivel"] == "ok"
+    assert a["titulo"] == "IM-1 · AC · $ 100,00"
+    assert a["clave"] == "importaciones:compra:42"
+    assert "BAP" not in a["titulo"] + (a["detalle"] or "")
+
+
+def test_importaciones_el_freno_es_alerta_una_por_dia():
+    from modules.importaciones import autobap
+
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        autobap._al_buzon({"tipo": "freno", "n_anticipos": 2, "importe": 1.0})
+    assert puestos[0]["nivel"] == "alerta"
+    assert puestos[0]["clave"].startswith("importaciones:freno:")
+
+
+# ── La pantalla NOVEDADES ────────────────────────────────────────────────────
+
+def test_la_pantalla_novedades_existe_y_no_tiene_botones_de_operacion():
+    """Dueña: "una pantalla novedades nueva" + "el punto es avisar"."""
+    from pathlib import Path
+
+    html = Path("modules/avisos/templates/avisos/lista.html").read_text()
+    assert "Novedades" in html
+    # Nada de operar desde acá: ni convertir, ni topes, ni switches.
+    for prohibido in ("Convertir", "convertir", "tope", "Apagar", "Prendida"):
+        assert prohibido not in html
+
+
+def test_leidos_contesta_204_al_fetch_de_la_campanita():
+    """La campanita marca leído por fetch y no espera nada: 204, no redirect."""
+    import inspect
+
+    from modules.avisos import views
+
+    src = inspect.getsource(views.leidos)
+    assert 'request.form.get("ajax") == "1"' in src
+    assert 'return ("", 204)' in src
+    # Y el camino normal (sin fetch) sí vuelve a la pantalla.
+    assert "redirect(" in src
+
+
+def test_la_campanita_lee_el_buzon_global_y_apunta_a_novedades():
+    from pathlib import Path
+
+    base = Path("templates/base.html").read_text()
+    assert "novedades()" in base            # ya no avisos_autobap()
+    assert "url_for('avisos.lista')" in base  # "Ver todo" va a Novedades
+    assert "url_for(\"avisos.leidos\")" in base  # abrir = leer

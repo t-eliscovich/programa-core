@@ -70,6 +70,21 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("autobap (fondo): %s", e)
+            # TMT 2026-07-30 (dueña): "tejeduría tiene que correr sola". Antes
+            # la carga de compras de tejeduría se disparaba SÓLO cuando alguien
+            # abría /produccion-tejeduria-asinfo — si nadie entraba, no cargaba
+            # nada. Se cuelga de este ciclo con su propio freno de 30 min
+            # (TEJEDURIA_AUTO=0 la apaga) y cuenta lo que cargó en la campanita.
+            try:
+                from modules.tejeduria_asinfo import service as _tej
+                tj = _tej.correr_si_toca()
+                if tj.get("creadas"):
+                    _LOG.info(
+                        "tejeduría (fondo): %s compra(s) por $%s",
+                        tj.get("creadas"), tj.get("importe"),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("tejeduría (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)

@@ -328,6 +328,7 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                 "factura": f.factura_pc,
                 "error": str(e),
             })
+    _avisar_novedades(creadas, errores)
     return {
         "disponible": True,
         "creadas": creadas,
@@ -335,6 +336,46 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
         "ya_cargadas": sum(1 for f in est["filas"] if f.estado == "cargada"),
         "dejadas_para_manana": dejadas_hoy,
     }
+
+
+def _avisar_novedades(creadas: list, errores: list) -> None:
+    """Lo cargado (y lo que falló) va a la campanita.
+
+    TMT 2026-07-30 (dueña): *"la campanita debería funcionar también para cargas
+    de tejeduría, de fórmulas"*. Va acá adentro y no en el hook del cron para
+    que también avise cuando alguien aprieta el botón de /compras. Nunca levanta.
+    """
+    if not creadas and not errores:
+        return
+    try:
+        from filters import num_es
+        from modules.avisos import avisar
+
+        if creadas:
+            total = sum(float(c.get("importe") or 0) for c in creadas)
+            provs = sorted({(c.get("proveedor") or "") for c in creadas})
+            facturas = ",".join(sorted(str(c.get("factura") or "") for c in creadas))
+            avisar(
+                fuente="quimicos",
+                titulo=f"Químicos · $ {num_es(total, 2)}",
+                detalle=(f"Se cargaron {len(creadas)} compra"
+                         f"{'' if len(creadas) == 1 else 's'} de "
+                         f"{', '.join(p for p in provs if p)}"),
+                importe=round(total, 2), cantidad=len(creadas),
+                url="/compras", clave=f"quimicos:{facturas}"[:400],
+            )
+        if errores:
+            avisar(
+                fuente="quimicos", nivel="error",
+                titulo=f"{len(errores)} compra(s) de químicos no se pudieron cargar",
+                detalle=str((errores[0] or {}).get("error") or "")[:140],
+                cantidad=len(errores), url="/compras",
+                clave=("quimicos:error:"
+                       + ",".join(sorted(str((e or {}).get("factura") or "")
+                                         for e in errores))[:300]),
+            )
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe la carga
+        log.warning("puente formulas: no pude avisar a novedades: %s", e)
 
 
 def sincronizar_mes_actual(usuario: str = "formulas-auto") -> dict:

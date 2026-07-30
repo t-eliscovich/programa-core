@@ -336,6 +336,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(importaciones_bp)
 
+    # TMT 2026-07-30 (dueña): NOVEDADES — el buzón único de la campanita.
+    # "hacé notificaciones globales" + "una pantalla novedades nueva".
+    from modules.avisos.views import avisos_bp
+
+    app.register_blueprint(avisos_bp)
+
     from modules.retenciones.views import retenciones_bp
 
     app.register_blueprint(retenciones_bp)
@@ -621,24 +627,26 @@ def create_app() -> Flask:
         except Exception:
             return {"recientes_usuario": []}
 
-    # TMT 2026-07-29 (dueña): la CAMPANITA de las conversiones automáticas
-    # anticipo→compra. Se inyecta como FUNCIÓN (no como valor) para que sólo
-    # toque la base cuando el template la llama — así no le agrega una query a
-    # todas las pantallas de todos los usuarios.
+    # TMT 2026-07-29 (dueña): la CAMPANITA. Se inyecta como FUNCIÓN (no como
+    # valor) para que sólo toque la base cuando el template la llama — así no le
+    # agrega una query a todas las pantallas de todos los usuarios.
+    # TMT 2026-07-30: dejó de ser la campanita de UN proceso ("hacé
+    # notificaciones globales") y lee el buzón único `scintela.aviso`
+    # (modules/avisos) donde escriben tejeduría, químicos e importaciones.
     @app.context_processor
-    def _inject_autobap():
-        def _avisos_autobap():
+    def _inject_avisos():
+        def _novedades():
             try:
                 if not g.get("user"):
                     return {"n": 0, "items": []}
-                from modules.importaciones import autobap as _ab
+                from modules import avisos as _av
 
-                items = _ab.avisos(solo_no_leidos=True, limite=15)
+                items = _av.listar(solo_no_leidos=True, limite=15)
                 return {"n": len(items), "items": items}
             except Exception:  # noqa: BLE001 -- nunca rompe una pantalla
                 return {"n": 0, "items": []}
 
-        return {"avisos_autobap": _avisos_autobap}
+        return {"novedades": _novedades}
 
     @app.route("/")
     def index():

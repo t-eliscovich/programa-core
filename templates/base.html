@@ -1030,15 +1030,18 @@
         </span>
       </div>
       <div class="flex items-center gap-3">
-        {# ---- CAMPANITA — conversiones automáticas anticipo→compra.
+        {# ---- CAMPANITA — NOVEDADES de todo el programa.
              TMT 2026-07-29 (dueña): "borrá Tema y poneme ahí la campanita".
              Ocupa el lugar exacto del botón Tema (que se retiró: el programa
              queda siempre en claro). SIEMPRE visible: apagada cuando no hay
              novedades, ámbar con el contador cuando sí — así además queda
-             como entrada fija a la pantalla del automático.
-             Ver modules/importaciones/autobap.py. #}
-        {% if tiene_permiso('compras.crear') %}
-          {% set _ab = avisos_autobap() %}
+             como entrada fija a la pantalla de Novedades.
+             TMT 2026-07-30 (dueña): "hacé notificaciones globales" — dejó de ser
+             la campanita del automático de importaciones y lee el buzón único
+             `scintela.aviso` (modules/avisos), donde escriben tejeduría,
+             químicos e importaciones. #}
+        {% if tiene_permiso('compras.ver') %}
+          {% set _ab = novedades() %}
           {# TMT 2026-07-30 (dueña): "hagamos notificaciones más lindas, están
              muy wordy — y una vez que lo abro que se marque leído solo".
              · el texto largo se cambió por título + detalle (autobap.resumen);
@@ -1049,7 +1052,7 @@
           <div class="relative no-print" id="campanita-wrap">
             <button type="button" id="campanita-btn" data-n="{{ _ab.n }}"
                     onclick="campanitaToggle()"
-                    title="{% if _ab.n %}{{ _ab.n }} novedad(es) del automático de importaciones{% else %}Sin novedades del automático de importaciones{% endif %}"
+                    title="{% if _ab.n %}{{ _ab.n }} novedad(es){% else %}Sin novedades{% endif %}"
                     class="text-xs px-3 py-1.5 rounded border"
                     style="{% if _ab.n %}border-color:rgb(252 211 77);background:rgb(255 251 235);color:rgb(146 64 14);font-weight:600;{% else %}border-color:rgb(203 213 225);color:rgb(100 116 139);{% endif %}">
               🔔<span id="campanita-n">{% if _ab.n %} {{ _ab.n }}{% endif %}</span>
@@ -1058,7 +1061,7 @@
                  class="hidden absolute right-0 mt-2 bg-white z-50"
                  style="width:22rem;border:1px solid rgb(226 232 240);border-radius:10px;box-shadow:0 10px 24px -6px rgb(15 23 42 / .18);overflow:hidden;">
               <div style="padding:8px 12px;background:rgb(248 250 252);border-bottom:1px solid rgb(241 245 249);display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgb(100 116 139);font-weight:600;">Importaciones · automático</span>
+                <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgb(100 116 139);font-weight:600;">Novedades</span>
                 {% if _ab.n %}<span style="font-size:10px;color:rgb(148 163 184);">{{ _ab.n }} nueva{{ '' if _ab.n == 1 else 's' }}</span>{% endif %}
               </div>
               <div style="max-height:19rem;overflow-y:auto;">
@@ -1075,13 +1078,13 @@
                 </div>
                 {% else %}
                 <div style="padding:14px 12px;font-size:11.5px;color:rgb(100 116 139);line-height:1.45;">
-                  Sin novedades. Acá te aviso cuando llega una importación y sus
-                  anticipos se convierten solos a compra.
+                  Sin novedades. Acá te aviso cuando el programa carga solo
+                  tejeduría, químicos o una importación, y cuando ve algo raro.
                 </div>
                 {% endfor %}
               </div>
               <div style="padding:8px 12px;border-top:1px solid rgb(241 245 249);background:rgb(248 250 252);">
-                <a href="{{ url_for('importaciones.automatico') }}"
+                <a href="{{ url_for('avisos.lista') }}"
                    style="font-size:11.5px;color:rgb(3 105 161);text-decoration:none;">Ver todo →</a>
               </div>
             </div>
@@ -1101,7 +1104,7 @@
                 var fd = new FormData();
                 fd.append('csrf_token', '{{ csrf_token() }}');
                 fd.append('ajax', '1');
-                fetch('{{ url_for("importaciones.avisos_leidos") }}',
+                fetch('{{ url_for("avisos.leidos") }}',
                       {method: 'POST', body: fd, credentials: 'same-origin'})
                   .catch(function () { /* si falla, se marcan la próxima vez */ });
               }

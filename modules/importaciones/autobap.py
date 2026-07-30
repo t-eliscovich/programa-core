@@ -154,6 +154,42 @@ def avisar(**kw) -> None:
         )
     except Exception as e:  # noqa: BLE001
         _LOG.warning("no pude escribir el aviso: %s", e)
+    _al_buzon(kw)
+
+
+_NIVEL_POR_TIPO = {"conversion": "ok", "freno": "alerta", "error": "error"}
+
+
+def _al_buzon(kw: dict) -> None:
+    """El mismo aviso, también al buzón global de NOVEDADES.
+
+    TMT 2026-07-30 (dueña): *"hacé notificaciones globales"*. `autobap_log`
+    sigue siendo el HISTORIAL de este proceso (con sus columnas, para la
+    pantalla del automático); la campanita en cambio lee `scintela.aviso`, donde
+    conviven tejeduría, químicos e importaciones. Nunca levanta.
+    """
+    try:
+        from modules import avisos as _av
+
+        tipo = kw.get("tipo", "conversion")
+        r = resumen(kw)
+        hoy = today_ec()
+        if tipo == "conversion":
+            clave = f"importaciones:compra:{kw.get('id_compra')}"
+        elif tipo == "freno":
+            # Se reintenta cada 30 min con los mismos números: una vez por día.
+            clave = f"importaciones:freno:{hoy}:{kw.get('n_anticipos')}"
+        else:
+            clave = f"importaciones:error:{kw.get('im_numero')}:{hoy}"
+        _av.avisar(
+            fuente="importaciones",
+            nivel=_NIVEL_POR_TIPO.get(tipo, "ok"),
+            titulo=r["titulo"], detalle=r["detalle"],
+            importe=kw.get("importe"), cantidad=kw.get("n_anticipos"),
+            url="/importaciones/automatico", clave=clave,
+        )
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+        _LOG.warning("no pude mandar el aviso a novedades: %s", e)
 
 
 ICONOS = {"conversion": "✅", "freno": "⛔", "error": "⚠️"}
