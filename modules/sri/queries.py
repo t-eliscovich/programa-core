@@ -380,7 +380,11 @@ def crear_borrador_nota_credito(
         "id_factura_origen": id_factura_origen,
     }
 
-    row = db.fetch_one(
+    # execute_returning, NO fetch_one: fetch_one no commitea (rollback al
+    # devolver la conexión al pool) ⇒ la nota de crédito electrónica se creaba
+    # "bien", devolvía id… y no quedaba nada en la base. Las dos altas de
+    # arriba ya estaban a salvo porque van dentro de un db.tx(). TMT 2026-07-30.
+    row = db.execute_returning(
         """
         INSERT INTO scintela.factura_electronica (
             id_factura, clave_acceso, ambiente, tipo_emision, tipo_comprobante,

@@ -274,3 +274,42 @@ def test_backfill_completo_usa_el_mismo_resumen():
                        "creado_en": "2026-07-29 15:40", "im_numero": None}) \
         == "importaciones:freno:2026-07-29:2"
     assert mig._NIVEL["freno"] == "alerta"
+
+
+def test_ningun_insert_returning_usa_fetch_one():
+    """El bug de "escribe y se pierde", clavado para todo el repo.
+
+    `db.fetch_one()` no commitea: un INSERT/UPDATE/DELETE ... RETURNING hecho
+    con él se pierde en silencio (psycopg2 hace rollback al devolver la conexión
+    al pool). El helper correcto es `db.execute_returning()` — salvo que el
+    llamador pase `conn=` de un `db.tx()`, que commitea él.
+
+    Los dos PENDIENTES quedaron así a propósito (TMT 2026-07-30, decisión de la
+    dueña): tocarlos cambia números o despierta un proceso dormido.
+    """
+    import re
+    from pathlib import Path
+
+    PENDIENTES = {
+        "modules/conciliacion/saldo_snapshot.py",   # cambia el saldo inicial de la hoja
+        "modules/admin_dbase/auto_match_view.py",   # empezaría a escribir matches
+    }
+    ESCRIBE = re.compile(r"^[\s\"\'f]*(INSERT|UPDATE|DELETE)\b", re.IGNORECASE)
+
+    def llamadas(texto: str):
+        """Cada `fetch_one(...)` completo, cerrando paréntesis de verdad."""
+        for m in re.finditer(r"fetch_one\(", texto):
+            i, prof = m.end(), 1
+            while i < len(texto) and prof:
+                prof += (texto[i] == "(") - (texto[i] == ")")
+                i += 1
+            yield texto[m.end():i]
+
+    malos = []
+    for p in sorted(Path("modules").rglob("*.py")):
+        if p.as_posix() in PENDIENTES:
+            continue
+        for call in llamadas(p.read_text(encoding="utf-8")):
+            if ESCRIBE.match(call.lstrip()) and "conn=" not in call:
+                malos.append(p.as_posix())
+    assert not malos, f"INSERT/UPDATE ... RETURNING con fetch_one (no commitea): {sorted(set(malos))}"

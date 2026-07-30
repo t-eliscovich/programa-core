@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import date
 
 import db
@@ -46,61 +45,12 @@ def cheque_por_id(id_cheque: int) -> dict | None:
     )
 
 
-# ─── Log manual de conciliación de depósitos ──────────────────────────────
-# Migration 0039_conciliacion_manual_log.sql
-
-
-def firma_deposito(fecha, valor, codigo: str, concepto: str) -> str:
-    """Genera una firma estable para un depósito del Excel.
-
-    Misma fecha + mismo valor + mismo código + mismo concepto → misma firma.
-    Usada para dedupe del log de conciliación manual.
-    """
-    fecha_s = fecha.isoformat() if hasattr(fecha, "isoformat") else str(fecha or "")
-    raw = f"{fecha_s}|{float(valor or 0):.2f}|{codigo or ''}|{(concepto or '')[:80]}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:32]
-
-
-def marcar_deposito(
-    *,
-    firma_dep: str,
-    fecha_dep,
-    valor_dep: float,
-    codigo_dep: str,
-    concepto_dep: str,
-    accion: str,
-    id_transaccion: int | None = None,
-    nota: str = "",
-    usuario: str = "web",
-) -> dict:
-    """Inserta una decisión del usuario en `conciliacion_manual_log`.
-
-    Inserta SIEMPRE una nueva fila (el log es append-only para auditoría).
-    Si querés saber el estado actual de un depósito, usá `ultimo_estado_dep`.
-    """
-    if accion not in ("confirmado", "rechazado", "pendiente"):
-        raise ValueError(f"acción inválida: {accion!r}")
-    row = db.fetch_one(
-        """
-        INSERT INTO scintela.conciliacion_manual_log
-            (firma_dep, fecha_dep, valor_dep, codigo_dep, concepto_dep,
-             accion, id_transaccion, nota, usuario)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id, creado_en
-        """,
-        (
-            firma_dep,
-            fecha_dep,
-            valor_dep,
-            codigo_dep or "",
-            (concepto_dep or "")[:1000],
-            accion,
-            id_transaccion,
-            (nota or "")[:500],
-            usuario[:50],
-        ),
-    )
-    return {"id": int(row["id"]), "creado_en": row["creado_en"]} if row else {}
+# ─── Log manual de conciliación de depósitos: BORRADO ────────────────────
+# TMT 2026-07-30: `firma_deposito()` + `marcar_deposito()` no los llamaba
+# NADIE (quedaron de una pantalla vieja de depósitos). Encima el INSERT iba
+# por `db.fetch_one()`, que no commitea: aunque alguien los hubiera usado, la
+# decisión se perdía al soltar la conexión. La tabla `conciliacion_manual_log`
+# (mig 0039) QUEDA con lo que tenga; el código muerto se va.
 
 
 # ─── Selector de banco (Fase C — 2026-05-23) ─────────────────────────────
@@ -188,7 +138,11 @@ def registrar_upload(
     """Inserta un registro de upload. Devuelve id o None si falló (fail-soft)."""
     _bootstrap_upload_tabla()
     try:
-        row = db.fetch_one(
+        # execute_returning, NO fetch_one: fetch_one no commitea (psycopg2 le
+        # hace rollback al devolver la conexión al pool) y el registro del
+        # upload se perdía siempre — la lista de "extractos ya subidos" salía
+        # vacía. TMT 2026-07-30, mismo bug que dejó mudo el buzón de novedades.
+        row = db.execute_returning(
             """
             INSERT INTO scintela.conciliacion_upload
                 (no_banco, filename, file_hash, n_filas, fecha_min, fecha_max, usuario)

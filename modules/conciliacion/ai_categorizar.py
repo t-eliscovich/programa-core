@@ -64,7 +64,10 @@ def normalizar_concepto(concepto: str) -> str:
 def _leer_cache(concepto_norm: str, tipo: str) -> dict | None:
     if not concepto_norm:
         return None
-    row = db.fetch_one(
+    # execute_returning, NO fetch_one: con fetch_one el UPDATE se lee bien pero
+    # NO se commitea, así que `hits`/`ultimo_hit` nunca subían (el cache servía
+    # igual; lo que se perdía era saber cuánto se usa). TMT 2026-07-30.
+    row = db.execute_returning(
         """
         UPDATE scintela.conciliacion_ai_cache
            SET hits = hits + 1, ultimo_hit = CURRENT_TIMESTAMP
