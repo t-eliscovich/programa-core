@@ -354,7 +354,15 @@ def resumen_mes(anio: int, mes: int) -> dict:
                                  if _tar else None),
         }
         tercerizado_ofs.append(tercerifa)
-    tercerizado_ofs.sort(key=lambda o: ((o.get("cod") or ""), str(o.get("dia") or "")))
+    # TMT 2026-07-30 (dueña: "ordenalo por dia esto"). Antes agrupaba por tejedor
+    # y dentro por día, así que para ver lo del día había que saltar entre dos
+    # bloques. Ahora manda el DÍA, del más nuevo al más viejo — igual que el
+    # diario de ingreso a bodega de la misma pantalla. El tejedor desempata.
+    tercerizado_ofs.sort(
+        key=lambda o: (str(o.get("dia") or ""), (o.get("cod") or ""),
+                       str(o.get("numero") or "")),
+        reverse=True,
+    )
     pendientes = [o for o in tercerizado_ofs if o["estado"] == "pendiente"]
 
     # ── TMT 2026-07-21 (dueña): sumar columnas Reyes (RY) y Ponce (AP) al diario
