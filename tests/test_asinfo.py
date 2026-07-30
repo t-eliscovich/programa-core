@@ -520,6 +520,40 @@ def test_resolver_cliente_codigo_crudo_fallback(monkeypatch):
     assert inserts == []
 
 
+def test_resolver_prefiere_el_codigo_propio_sobre_el_alias(monkeypatch):
+    """Si los DOS códigos existen en PC, gana el propio — no el del alias.
+
+    TMT 2026-07-30 (dueña, sobre VPM↔VP1: *"todas no !!! ese alias era para
+    matchear dbase"*). Con la preferencia al revés, TODA factura que Asinfo
+    manda como VPM ("VENTA POR MENOR", el cajón del mostrador) se guardaba como
+    VP1 (María Ibadango, un cliente real y distinto). El alias es para MATCHEAR;
+    sólo se usa para codificar cuando el código propio no existe en PC (ahí
+    evita crear un cliente duplicado).
+    """
+    views, inserts, _ = _setup_resolver(monkeypatch, existentes={"VPM", "VP1"},
+                                        alias_map={"VPM": "VP1"})
+    assert views._resolver_cliente_asinfo("VPM", "tam") == ("VPM", False)
+    assert inserts == []
+
+
+def test_resolver_sucursal_por_direccion_gana_sobre_todo(monkeypatch):
+    """La dirección manda sobre el código propio Y sobre el alias.
+
+    Es el mecanismo bueno para las sucursales (dueña 30/07: *"es mucho mejor lo
+    de la sucursal"*): la dirección 18801 de VPM es VP1, el resto de VPM no.
+    """
+    from modules.asinfo import aliases as _aliases
+    views, inserts, _ = _setup_resolver(monkeypatch, existentes={"VPM", "VP1"},
+                                        alias_map={"VPM": "VP1"})
+    monkeypatch.setattr(_aliases, "codigo_por_direccion",
+                        lambda d: "VP1" if str(d) == "18801" else None)
+    assert views._resolver_cliente_asinfo(
+        "VPM", "tam", id_direccion=18801) == ("VP1", False)
+    assert views._resolver_cliente_asinfo(
+        "VPM", "tam", id_direccion=99999) == ("VPM", False)
+    assert inserts == []
+
+
 def test_resolver_cliente_faltante_auto_crea(monkeypatch):
     # Cliente nuevo del dBase que aun no paso por clientes-import: se crea.
     views, inserts, _ = _setup_resolver(monkeypatch, existentes=set())

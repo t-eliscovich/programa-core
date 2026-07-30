@@ -1585,8 +1585,23 @@ def _resolver_cliente_asinfo(
     _suc = _aliases.codigo_por_direccion(id_direccion)
     if _suc:
         codigo_cli = _suc
+    # TMT 2026-07-30 (dueña, sobre el alias VPM↔VP1: *"todas no !!! ese alias
+    # era para matchear dbase"*): **el alias NO re-codifica la carga.** Sirve
+    # para MATCHEAR — comparar lo de PC contra Asinfo/dBase y no contar dos
+    # veces la misma factura — y es el único uso que tiene en el resto del
+    # código. Acá se estaba usando para ELEGIR el código con el que se guarda, y
+    # con preferencia sobre el propio: por eso TODA factura que Asinfo manda como
+    # `VPM` (= "VENTA POR MENOR", el cajón de las ventas al mostrador) se estaba
+    # guardando como `VP1` (= María Ibadango, un cliente real). Son dos clientes
+    # distintos.
+    #
+    # Orden nuevo: **el código propio manda**; el alias es el FALLBACK para
+    # cuando ese código no existe en PC (ahí sí evita crear un cliente
+    # duplicado, que es lo que el alias vino a resolver). La dirección sigue
+    # mandando sobre los dos — es el mecanismo bueno para las sucursales
+    # (dueña: *"es mucho mejor lo de la sucursal"*).
     cli_pc = _aliases.to_pc(codigo_cli)
-    for cand in dict.fromkeys((cli_pc, codigo_cli)):
+    for cand in dict.fromkeys((codigo_cli, cli_pc)):
         if cand and db.fetch_one(
             "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s", (cand,)
         ):
