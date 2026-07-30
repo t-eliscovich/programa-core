@@ -166,6 +166,8 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
                            WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                              AND COALESCE(pd.banc, 0) = 0
                              AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                             -- Un posdatado de $0,00 no es una deuda.
+                             AND ABS(COALESCE(pd.importe, 0)) > 0.01
                              -- Con concepto de los dos lados manda el concepto:
                              -- es lo único que distingue CUOTAS del mismo
                              -- importe y fecha (caso CN, 6 × 20.200 el mismo
@@ -396,6 +398,8 @@ def estado_pago_de_compras(compras: list[dict] | None) -> dict:
                            WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                              AND COALESCE(pd.banc, 0) = 0
                              AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                             -- Un posdatado de $0,00 no es una deuda.
+                             AND ABS(COALESCE(pd.importe, 0)) > 0.01
                              -- Con concepto de los dos lados manda el concepto:
                              -- es lo único que distingue CUOTAS del mismo
                              -- importe y fecha (caso CN, 6 × 20.200 el mismo

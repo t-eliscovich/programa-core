@@ -1134,6 +1134,11 @@ def buscar(
                          WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                            AND COALESCE(pd.banc, 0) = 0
                            AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                           -- Un posdatado de $0,00 NO es una deuda. Quedan
+                           -- dos (OP «AC 17-35» y «AI 13-27», 20/07) y hacían
+                           -- que sus dos compras figuraran "debe" por
+                           -- $181.286,42 que ya no se deben.
+                           AND ABS(COALESCE(pd.importe, 0)) > 0.01
                            -- Cuando los DOS lados tienen concepto, manda el
                            -- concepto: es lo único que distingue CUOTAS del
                            -- mismo importe y la misma fecha. Caso real CN: 6
