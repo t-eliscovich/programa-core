@@ -1084,12 +1084,22 @@ def buscar(
                -- (banc=0); pasa a PAGADA cuando el posdat se salda (banc<>0). Las
                -- históricas del dBase NO tienen ese vínculo → se resuelve por
                -- scintela.posdat (ver el comentario largo del ELSE).
+               --
+               -- ⚠ El vínculo mov_doble se exige del MISMO PROVEEDOR. El
+               -- reconciliador de posdat hace UPDATE **in-place** preservando
+               -- id_posdat, así que un vínculo viejo puede terminar apuntando a
+               -- una fila cuyo contenido ya es otra deuda, de otro proveedor.
+               -- Caso real 30/07: la compra 226 (MH, 111.794,60) mostraba
+               -- "debe 11.875,00" — el importe de una CUOTA DEL PRÉSTAMO BP,
+               -- que no tiene nada que ver. Un posdatado de otro proveedor no
+               -- puede ser la deuda de esta compra.
                CASE
                  WHEN EXISTS (
                         SELECT 1 FROM scintela.mov_doble md
                         JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
                         WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                           AND COALESCE(pd.banc, 0) = 0
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                  ) THEN FALSE
@@ -1098,6 +1108,7 @@ def buscar(
                         JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
                         WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                  ) THEN TRUE
                  -- TMT 2026-07-30 (dueña: "no se supone que varias ya están

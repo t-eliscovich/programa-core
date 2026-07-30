@@ -138,6 +138,7 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
                          JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
                         WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                           AND COALESCE(pd.banc, 0) = 0
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                    ), 0) AS saldo_pasivo,
@@ -147,6 +148,7 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
                          JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
                         WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                    ) AS tiene_posdat,
                    -- Sin vínculo mov_doble (histórica del dBase): el BANC
@@ -354,6 +356,7 @@ def estado_pago_de_compras(compras: list[dict] | None) -> dict:
                          JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
                         WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                           AND COALESCE(pd.banc, 0) = 0
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                    ), 0) AS saldo_pasivo,
@@ -363,6 +366,7 @@ def estado_pago_de_compras(compras: list[dict] | None) -> dict:
                          JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
                         WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                    ) AS tiene_posdat,
                    -- Sin vínculo mov_doble (histórica del dBase): el BANC
