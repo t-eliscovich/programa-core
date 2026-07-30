@@ -8,6 +8,7 @@ Sin HTTP ni DB real.
 from __future__ import annotations
 
 import contextlib
+from datetime import date as _dt_date
 from unittest.mock import patch
 
 import pytest
@@ -913,3 +914,63 @@ def test_a_un_error_de():
     assert not f("UNDA", "REYES")
     assert not f("ES", "REYES")           # muy corta
     assert not f("EYES", "REYES")         # primera letra distinta
+
+
+# ---------------------------------------------------------------------------
+# La OF ya está cargada A MANO desde la factura — TMT 2026-07-30
+# ---------------------------------------------------------------------------
+# Descubierto verificando en vivo, DESPUÉS de sacar el tope: Reyes y Ponce se
+# siguen cargando a mano desde la factura (Tamara tipeó las 5 líneas de la
+# 1253-1257 el 21/07; Andrés las de 1243-1249 el 16/07), pero esas compras NO
+# llevan el OFT en el concepto ⇒ `_ofts_estampadas` no las ve y las OFs quedan
+# "pendientes" para siempre. Sin esta guarda el motor las volvía a crear:
+# 5 compras DUPLICADAS de Reyes por ~$5.970 sólo en julio.
+#
+# No es un tope (no limita cuánto se carga): es detección de duplicado por KG.
+
+_A_MANO_JULIO = [                       # datos REALES de /compras
+    {"fecha": _dt_date(2026, 7, 21), "kg": 209.80, "numero": 1255},
+    {"fecha": _dt_date(2026, 7, 21), "kg": 315.03, "numero": 1254},
+    {"fecha": _dt_date(2026, 7, 21), "kg": 323.32, "numero": 1257},
+    {"fecha": _dt_date(2026, 7, 21), "kg": 810.52, "numero": 1256},
+    {"fecha": _dt_date(2026, 7, 21), "kg": 811.14, "numero": 1253},
+    {"fecha": _dt_date(2026, 7, 16), "kg": 811.20, "numero": 1246},
+]
+
+
+@pytest.mark.parametrize("dia,kg,numero", [
+    ("2026-07-20", 209.80, 1255),      # exacto
+    ("2026-07-20", 807.30, 1256),      # 0,40% — dos balanzas distintas
+    ("2026-07-24", 314.75, 1254),      # 0,09%
+    ("2026-07-24", 323.55, 1257),      # 0,07%
+    ("2026-07-24", 811.00, 1253),      # 0,02%
+])
+def test_of_ya_tipeada_a_mano_no_se_duplica(dia, kg, numero):
+    a_mano = {"RY": [dict(c) for c in _A_MANO_JULIO]}
+    m = tsvc._match_a_mano(a_mano, "RY", kg, dia)
+    assert m is not None and m["numero"] == numero
+
+
+def test_una_factura_no_tapa_dos_ofs():
+    """El match se CONSUME: la factura de Reyes trae 5 líneas para 5 OFs."""
+    a_mano = {"RY": [dict(c) for c in _A_MANO_JULIO]}
+    primera = tsvc._match_a_mano(a_mano, "RY", 209.80, "2026-07-20")
+    segunda = tsvc._match_a_mano(a_mano, "RY", 209.80, "2026-07-20")
+    assert primera["numero"] == 1255 and segunda is None
+
+
+def test_una_of_legitima_no_queda_bloqueada():
+    """821,78 kg contra la más parecida a mano (811,20) = 1,3% → se carga.
+
+    Es el par más cercano que NO es el mismo rollo, y marca el techo real de la
+    tolerancia: 0,5% deja pasar los 5 duplicados y frena éste.
+    """
+    a_mano = {"RY": [dict(c) for c in _A_MANO_JULIO]}
+    assert tsvc._match_a_mano(a_mano, "RY", 821.78, "2026-07-08") is None
+
+
+def test_el_match_a_mano_respeta_proveedor_y_fecha():
+    a_mano = {"RY": [dict(c) for c in _A_MANO_JULIO]}
+    assert tsvc._match_a_mano(a_mano, "AP", 209.80, "2026-07-20") is None
+    assert tsvc._match_a_mano(a_mano, "RY", 209.80, "2026-06-01") is None   # +15 d
+    assert tsvc._match_a_mano(a_mano, "RY", 0, "2026-07-20") is None        # OF sin kg

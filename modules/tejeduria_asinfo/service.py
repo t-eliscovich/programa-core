@@ -449,7 +449,9 @@ def _importes_k_existentes(desde: str, hasta: str) -> dict:
 
     No bloquea a propósito: las facturas de Reyes repiten monto casi exacto (el
     rollo entero da ~1.630 siempre), así que descartar por importe tiraría OFs
-    legítimas. Las guardas que sí bloquean son el OFT estampado y el tope.
+    legítimas. La guarda que sí bloquea es el OFT estampado (y, desde el
+    2026-07-30, el match por KG contra lo tipeado a mano — ver
+    `_compras_k_a_mano`).
     """
     try:
         rows = db.fetch_all(
@@ -469,6 +471,91 @@ def _importes_k_existentes(desde: str, hasta: str) -> dict:
     for r in rows:
         out.setdefault(r["cod"], []).append(float(r["importe"] or 0))
     return out
+
+
+#: Tolerancia del match OF ↔ compra tipeada a mano. Reyes se pesa dos veces
+#: (la hoja de Asinfo y la balanza de la factura) y da 810,52 vs 811,00: 0,06%.
+#: Con 0,5% entran todos los pares reales y NO se toca el par más cercano que
+#: es legítimamente distinto (821,78 vs 811,20 = 1,3%). Verificado sobre julio.
+TOLERANCIA_KG = 0.005
+#: Días de distancia máxima entre el cierre de la OF y la fecha de la factura.
+DIAS_MATCH_A_MANO = 15
+
+
+def _compras_k_a_mano(desde: str, hasta: str) -> dict:
+    """{cod_prov: [{fecha, kg, numero}]} de las compras K TIPEADAS A MANO.
+
+    ⚠ EL CASO QUE ESTO TAPA (descubierto 2026-07-30, verificando en vivo):
+    Reyes y Ponce **se siguen cargando a mano desde la factura** — Tamara tipeó
+    las 5 líneas de la factura 1253-1257 el 21/07, Andrés las de 1243-1249 el
+    16/07 — pero esas compras NO llevan el OFT en el concepto, así que
+    `_ofts_estampadas` no las ve y las OFs quedan "pendientes" para siempre. Con
+    el tope sacado, el motor las habría vuelto a crear: **5 compras duplicadas
+    de Reyes por ~$5.970 en julio**.
+
+    Esto NO es un tope (no limita cuánto se puede cargar): es detección de
+    DUPLICADO — "esta OF ya está cargada, sólo que sin el OFT". El match es por
+    KG, que es la huella fuerte: la OF de 209,80 kg contra la compra de 209,80
+    kg no es coincidencia.
+
+    Se excluyen las que creó el propio motor (`usuario_crea = MARCADOR_CARGA`):
+    esas ya llevan su OFT y las agarra `_ofts_estampadas`.
+    """
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(TRIM(COALESCE(codigo_prov, ''))) AS cod,
+                   fecha, COALESCE(kg, 0) AS kg, numero
+              FROM scintela.compra
+             WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
+               AND COALESCE(stat, '') <> 'Y'
+               AND COALESCE(kg, 0) > 0
+               AND COALESCE(usuario_crea, '') <> %s
+               AND fecha >= %s AND fecha < %s
+            """,
+            (MARCADOR_CARGA, desde, hasta),
+        ) or []
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {}
+    out: dict = {}
+    for r in rows:
+        out.setdefault(r["cod"], []).append(
+            {"fecha": r["fecha"], "kg": float(r["kg"] or 0),
+             "numero": r.get("numero")})
+    return out
+
+
+def _match_a_mano(a_mano: dict, cod: str, kg: float, dia) -> dict | None:
+    """La compra tipeada a mano que YA cubre esta OF, o None.
+
+    Consume el match (lo saca de la lista) para que una sola factura no tape
+    dos OFs distintas: la factura de Reyes trae 5 líneas para 5 OFs.
+    """
+    if not kg:
+        return None
+    try:
+        f_of = _parse_dia(dia)
+    except Exception:  # noqa: BLE001
+        return None
+    candidatas = a_mano.get(cod) or []
+    mejor, mejor_dif = None, None
+    for c in candidatas:
+        c_kg = c["kg"]
+        if not c_kg:
+            continue
+        dif = abs(c_kg - kg) / max(c_kg, kg)
+        if dif > TOLERANCIA_KG:
+            continue
+        c_fecha = c["fecha"]
+        if hasattr(c_fecha, "date"):
+            c_fecha = c_fecha.date()
+        if abs((c_fecha - f_of).days) > DIAS_MATCH_A_MANO:
+            continue
+        if mejor_dif is None or dif < mejor_dif:
+            mejor, mejor_dif = c, dif
+    if mejor is not None:
+        candidatas.remove(mejor)
+    return mejor
 
 
 def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
@@ -530,6 +617,9 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     estampadas = _ofts_estampadas()
     _desde, _hasta = _rango_ventana(anio, mes)
     existentes = _importes_k_existentes(_desde, _hasta)
+    # Compras K tipeadas a mano (sin OFT en el concepto): si una de ellas ya
+    # cubre la OF, no se vuelve a crear. Ver `_compras_k_a_mano`.
+    a_mano = _compras_k_a_mano(_desde, _hasta)
 
     creadas, importe_total = 0, 0.0
     detalle: list[dict] = []
@@ -552,6 +642,17 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
             continue
         if kg <= 0:
             detalle.append({**base, "ok": False, "motivo": "OF sin kg"})
+            continue
+        # ¿Ya la cargaron a mano desde la factura, sin estampar el OFT? Se
+        # reconoce por los KG (huella fuerte) dentro de ±15 días. NO es un tope:
+        # es no cargar dos veces la misma tela.
+        ya = _match_a_mano(a_mano, cod, kg, of.get("dia"))
+        if ya is not None:
+            _n = ya.get("numero")
+            detalle.append({**base, "ok": False,
+                            "motivo": (f"ya está cargada a mano"
+                                       f"{f' (compra {_n})' if _n else ''} · "
+                                       f"{num_es(ya['kg'], 2)} kg")})
             continue
         # Aviso (no bloquea): ya hay una compra K de ese proveedor por el MISMO
         # importe en la ventana. Puede ser un duplicado o dos OFs del mismo peso.
