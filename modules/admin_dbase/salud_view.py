@@ -658,7 +658,8 @@ def _seccion_recode_sucursales():
     yield "┌─ G) SUCURSALES — cuánto movería el recode ──────────────────────\n"
     filas = db.fetch_all(
         """
-        SELECT f.codigo_cli, f.numf, f.fecha, f.importe, f.saldo, f.stat
+        SELECT f.codigo_cli, f.numf, f.numf_completo, f.fecha,
+               f.importe, f.saldo, f.stat
           FROM scintela.factura f
          WHERE f.fecha >= CURRENT_DATE - INTERVAL '120 days'
            AND TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
@@ -667,9 +668,19 @@ def _seccion_recode_sucursales():
     if not filas:
         yield "  sin facturas en los últimos 120 días.\n\n"
         return
+    # DOS índices, y el orden importa. `numf` es la cola numérica del N° SRI,
+    # y la serie de las NOTAS DE CRÉDITO (001-099-0000115xx → 11515) COLISIONA
+    # con las facturas viejas de ese mismo número: aparear sólo por numf metía
+    # falsos positivos ("11 PC=BED debería ser AJ2"). El N° SRI completo no
+    # colisiona nunca, así que manda; numf queda como respaldo para las filas
+    # que el sync del dBase cargó sin numf_completo.
+    pc_por_completo: dict = {}
     pc_por_numf: dict = {}
     for f in filas:
         pc_por_numf.setdefault(int(f["numf"]), []).append(f)
+        nc = (f.get("numf_completo") or "").strip()
+        if nc:
+            pc_por_completo.setdefault(nc, []).append(f)
     fechas = [f["fecha"] for f in filas if f.get("fecha")]
     desde, hasta = min(fechas), max(fechas)
     yield f"  PC: {len(filas)} facturas vivas entre {desde} y {hasta}\n"
@@ -692,6 +703,8 @@ def _seccion_recode_sucursales():
     mover: dict = {}
     ya_ok = 0
     sin_cargar = 0
+    n_completo = 0
+    n_solo_numf = 0
     otro_codigo: dict = {}
     for d in de_sucursal:
         num = str(d.get("numero") or "")
@@ -699,10 +712,17 @@ def _seccion_recode_sucursales():
         if not m:
             continue
         numf = int(m[-1])
-        rows = pc_por_numf.get(numf)
+        rows = pc_por_completo.get(num.strip())
+        por_completo = bool(rows)
+        if not rows:
+            rows = pc_por_numf.get(numf)
         if not rows:
             sin_cargar += 1
             continue
+        if por_completo:
+            n_completo += 1
+        else:
+            n_solo_numf += 1
         suc = str(d.get("cliente_codigo") or "").strip().upper()
         matriz = str(d.get("cliente_codigo_facturado") or "").strip().upper()
         for r in rows:
@@ -736,7 +756,9 @@ def _seccion_recode_sucursales():
         tot_saldo += a["saldo"]
     yield (f"  {'-' * 58}\n  {int(tot_n):<6} TOTAL          "
            f"{_money_txt(tot_imp)}  {_money_txt(tot_saldo)}\n")
-    yield (f"\n  Ya correctas: {ya_ok}   ·   No están en PC: {sin_cargar}\n")
+    yield (f"\n  Ya correctas: {ya_ok}   ·   No están en PC: {sin_cargar}\n"
+           f"  Apareadas por N° SRI completo: {n_completo}   ·   "
+           f"sólo por numf (puede colisionar): {n_solo_numf}\n")
     if otro_codigo:
         yield ("  Bajo un TERCER código (no las toca un recode automático):\n")
         for (pc_cod, suc), n in sorted(otro_codigo.items(), key=lambda kv: -kv[1])[:10]:
