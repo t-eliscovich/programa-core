@@ -590,15 +590,19 @@ def compensar_deposito_devuelto(
     # importe posterior al depósito. Es angosto a propósito (banco + prov +
     # importe exacto + posterior al DE); si el importe no coincide, la ND se
     # crea igual.
+    # El cliente puede venir en `prov` O en el concepto: la ND real del caso
+    # CJE se cargó con prov='PROT' y concepto "ND ch. prot. CJE 1", así que
+    # exigir prov=cliente no alcanzaba y la duplicaba igual.
+    _cli = (codigo_cli or "").strip().upper()
     nd_post = db.fetch_one(
         "SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias "
         " WHERE UPPER(TRIM(COALESCE(documento,''))) = 'ND' "
         "   AND ( numreferencia = %s "
         "         OR ( no_banco = %s "
-        "              AND UPPER(TRIM(COALESCE(prov,''))) = %s "
-        "              AND ABS(COALESCE(importe, 0) - %s) <= 0.01 ) )",
-        (id_cheque, int(links[0]["no_banco"]),
-         (codigo_cli or "").strip().upper(), imp),
+        "              AND ABS(COALESCE(importe, 0) - %s) <= 0.01 "
+        "              AND ( UPPER(TRIM(COALESCE(prov,''))) = %s "
+        "                    OR UPPER(COALESCE(concepto,'')) LIKE %s ) ) )",
+        (id_cheque, int(links[0]["no_banco"]), imp, _cli, f"%{_cli}%"),
         conn=conn,
     )
     if nd_post and nd_post["m"] is not None and int(nd_post["m"]) > max_de:

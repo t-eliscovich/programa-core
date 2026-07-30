@@ -178,6 +178,12 @@ def test_no_duplica_la_nd_tipeada_a_mano(monkeypatch):
         "el guard volvió a mirar sólo numreferencia: una ND cargada a mano se "
         "vuelve a duplicar"
     )
+    # La ND real del caso CJE se cargó con prov='PROT' y el cliente sólo
+    # aparece en el concepto ("ND ch. prot. CJE 1") — sin este OR, el guard
+    # no la ve y la duplica igual (fue exactamente lo que pasó el 30/07).
+    assert "concepto" in bloque.lower() and "LIKE %s" in bloque, (
+        "el cliente puede venir en el concepto y no en prov"
+    )
     assert "ABS(COALESCE(importe, 0) - %s) <= 0.01" in bloque, (
         "sin el match por importe exacto, cualquier ND del cliente cancelaría "
         "la compensación"
