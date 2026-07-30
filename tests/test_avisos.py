@@ -15,7 +15,7 @@ from modules import avisos
 
 
 def test_avisar_guarda_y_devuelve_true():
-    with patch.object(avisos.queries.db, "fetch_one",
+    with patch.object(avisos.queries.db, "execute_returning",
                       return_value={"id_aviso": 7}) as f:
         ok = avisos.avisar(fuente="tejeduria", titulo="Reyes · $ 1.630,00",
                            detalle="Se cargaron 2 compras · 1.618,00 kg",
@@ -43,7 +43,7 @@ def test_el_indice_de_la_clave_no_es_parcial():
 
 def test_la_clave_repetida_no_entra_de_nuevo():
     """ON CONFLICT DO NOTHING → RETURNING no trae fila → False."""
-    with patch.object(avisos.queries.db, "fetch_one", return_value=None):
+    with patch.object(avisos.queries.db, "execute_returning", return_value=None):
         assert avisos.avisar(fuente="tejeduria", titulo="x",
                              clave="tejeduria:RY:OFT-1") is False
 
@@ -52,12 +52,12 @@ def test_avisar_nunca_levanta():
     def explota(*a, **k):
         raise RuntimeError("la base se cayó")
 
-    with patch.object(avisos.queries.db, "fetch_one", explota):
+    with patch.object(avisos.queries.db, "execute_returning", explota):
         assert avisos.avisar(fuente="quimicos", titulo="x") is False
 
 
 def test_nivel_invalido_cae_en_ok():
-    with patch.object(avisos.queries.db, "fetch_one",
+    with patch.object(avisos.queries.db, "execute_returning",
                       return_value={"id_aviso": 1}) as f:
         avisos.avisar(fuente="quimicos", titulo="x", nivel="URGENTÍSIMO")
     assert f.call_args[0][1][1] == "ok"
@@ -226,3 +226,31 @@ def test_la_campanita_lee_el_buzon_global_y_apunta_a_novedades():
     assert "novedades()" in base            # ya no avisos_autobap()
     assert "url_for('avisos.lista')" in base  # "Ver todo" va a Novedades
     assert "url_for(\"avisos.leidos\")" in base  # abrir = leer
+
+
+def test_el_insert_del_aviso_COMMITEA():
+    """El bug que dejó el buzón vacío desde que se estrenó (TMT 2026-07-30).
+
+    `db.fetch_one()` no commitea: psycopg2 le hace rollback a la transacción
+    implícita cuando la conexión vuelve al pool. El aviso "entraba", `avisar()`
+    devolvía True… y no quedaba nada. Encima es fail-soft, así que no había ni
+    un error para mirar: la campanita simplemente no decía nada nunca.
+    """
+    with patch.object(avisos.queries.db, "execute_returning",
+                      return_value={"id_aviso": 1}) as er, \
+         patch.object(avisos.queries.db, "fetch_one") as fo:
+        assert avisos.avisar(fuente="importaciones", titulo="x",
+                             clave="importaciones:compra:1") is True
+    assert er.called and not fo.called
+
+
+def test_backfill_de_los_avisos_que_se_perdieron():
+    """La 0141 recupera del historial del automático los avisos que se comió el
+    rollback — sin inventar texto (usa el mensaje ya redactado) y idempotente."""
+    from pathlib import Path
+
+    sql = Path("migrations/0141_backfill_avisos_importaciones.sql").read_text()
+    assert "INSERT INTO scintela.aviso" in sql
+    assert "ON CONFLICT (clave) DO NOTHING" in sql
+    assert "'importaciones:compra:' || l.id_compra::text" in sql
+    assert "l.tipo = 'conversion'" in sql

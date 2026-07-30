@@ -31,7 +31,13 @@ def avisar(*, fuente: str, titulo: str, detalle: str | None = None,
     if nivel not in NIVELES:
         nivel = "ok"
     try:
-        row = db.fetch_one(
+        # `execute_returning`, NO `fetch_one`: fetch_one no COMMITEA y psycopg2
+        # le hace rollback a la transacción implícita al devolver la conexión
+        # al pool. TMT 2026-07-30: por eso el buzón estaba VACÍO desde que se
+        # estrenó — las dos importaciones AI que se cargaron solas quedaron en
+        # el historial del automático y la campanita nunca dijo nada. Y como
+        # avisar() es fail-soft, no había ni un error para mirar.
+        row = db.execute_returning(
             """
             INSERT INTO scintela.aviso
                    (fuente, nivel, titulo, detalle, importe, cantidad, url, clave)
