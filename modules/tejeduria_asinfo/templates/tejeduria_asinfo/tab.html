@@ -156,9 +156,12 @@
                   <input class="x" name="t_{{ loop.index }}_nota" value="{{ t.nota }}" maxlength="120">
                 {% else %}{{ t.nota }}{% endif %}
               </td>
+              {# TMT 2026-07-30 (dueña: "en tarifa en actualizado pone solo la
+                 fecha"): iba la fecha Y el usuario en dos renglones. Quién la
+                 tocó no cambia ninguna decisión — y hacía la fila el doble de
+                 alta. Queda la fecha. #}
               <td class="muted" style="font-size:11px">
                 {{ t.fecha_modifica|fecha_es if t.fecha_modifica else '—' }}
-                {% if t.usuario_modifica %}<br>{{ t.usuario_modifica }}{% endif %}
               </td>
               <td>
                 {% if puede_tarifas %}
@@ -181,9 +184,13 @@
         </tbody>
       </table>
       {% if puede_tarifas %}
-        <div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+        {# TMT 2026-07-30 (dueña: "saca la nota del tarifario tmbn"). Lo que
+           decía —el patrón más específico gana, y INTELA no lleva tarifa porque
+           su $/kg es hilo + 0,50— vive en `queries.resolver()` y en este
+           comentario, que es donde le sirve a quien toca el código. Al lado del
+           botón era un párrafo que nadie lee dos veces. #}
+        <div style="margin-top:8px">
           <button class="btn" type="submit">Guardar tarifas</button>
-          <span class="note" style="margin:0">El patrón más específico gana; si ninguno coincide se usa la fila «por defecto» del proveedor. INTELA no lleva tarifa: su $/kg es hilo + 0,50.</span>
         </div>
       {% else %}
         <p class="note" style="margin-top:6px">Sólo accionistas y Andrés pueden editar las tarifas.</p>
@@ -282,10 +289,18 @@
        otras dos tarjetas (30/07), ahora ésta. Lo único que la tarjeta decía y la
        tabla no —qué ES ese total— quedó como nota de una línea bajo el título.
        Ver [[feedback_pantallas_menos_informacion]]. #}
-    <h2>Por tejedor · producido vs cargado + costo</h2>
-    <p class="note" style="margin:0 0 2px">Producido = tela cruda que ENTRÓ a
-      bodega en el mes (no es stock ni OFs){% if data.ajustado_a_bodega %}, la misma
-      cifra que el flujo de producción muestra como Ingresos de crudo{% endif %}.</p>
+    {# TMT 2026-07-30 (dueña: "no se la diferencia entre producido y compras. si
+       ya decidimos que no hay nada que hacer, no mostremos una diferencia"): se
+       fue la columna "Cargado (compras K)". Era la mitad de una comparación que
+       NO es accionable — producción de Asinfo contra facturas del maquilero, que
+       llegan con semanas de desfase (y cuyo residuo ya nos hizo perder una
+       sesión: ver la nota de "Pendiente (3 m)" más abajo). La tabla quedó siendo
+       lo que sirve: cuánto produjo cada tejedor y cuánto costó.
+       El costo sigue saliendo de las compras tipo K; el $/kg es costo/producido.
+       Ver [[feedback_pantallas_menos_informacion]]. #}
+    <h2>Por tejedor · producción y costo</h2>
+    <p class="note" style="margin:0 0 2px">Producido = tela cruda que entró a
+      bodega en el mes.</p>
     <table>
       {# TMT 2026-07-29 (dueña: "ahora que es automática la carga, ¿cuáles de
          estas columnas son innecesarias?"): se sacaron 'OF' (decorativa) y
@@ -309,7 +324,7 @@
          `falta_acumulada` SIGUE SIENDO EL TOPE de la carga automática y NO se
          tocó — es una guarda, no un dato para mirar. Simplemente dejó de
          mostrarse. #}
-      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>Cargado (compras K)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
+      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
       <tbody>
         {% for t in data.tejedores %}
           <tr>
@@ -317,7 +332,6 @@
               {{ t.label }}{% if t.cod %} <span class="muted">· {{ t.cod }}</span>{% else %} <span class="muted">· desconocido</span>{% endif %}
             </td>
             <td>{{ t.kg|num_es }}</td>
-            <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
             <td>{% if t.costo_kg %}{{ t.costo_kg|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if t.costo is not none %}{{ t.costo|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
           </tr>
@@ -325,7 +339,7 @@
         <tr class="tot">
           <td>TOTAL</td>
           <td>{{ data.total_kg|num_es }}</td>
-          <td class="muted"></td><td class="muted"></td>
+          <td class="muted"></td>
           <td>{{ data.total_costo|num_es(0) }}</td>
         </tr>
       </tbody>
