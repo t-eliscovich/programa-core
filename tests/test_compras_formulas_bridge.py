@@ -558,13 +558,31 @@ def test_estado_historico_excluye_el_mes_en_curso():
 
     with patch.object(fb.formulas_db, "disponible", return_value=True), \
          patch.object(fb, "meses_con_compras",
-                      return_value=[(2026, 7), (2026, 5), (2026, 4)]), \
+                      return_value=[(2026, 10), (2026, 9), (2026, 5)]), \
+         patch.object(fb, "estado_mes", side_effect=_estado), \
+         patch("filters.today_ec", return_value=date(2026, 10, 5)):
+        hist = fb.estado_historico()
+    # 10 es el mes en curso (fuera) y 5 es anterior al piso (fuera)
+    assert [m["mes_str"] for m in hist["meses"]] == ["2026-09"]
+    assert hist["facturas"] == 1
+
+
+def test_estado_historico_no_avisa_lo_anterior_al_piso():
+    """Dueña 30/07: "lo anterior no importa, no vamos a mover ni mayo ni
+    junio" — abril–junio quedan cerrados, no se listan ni se avisan."""
+    def _estado(anio, mes):
+        f = fb.FilaPuente("AVQ", "AQ", "6010", "6010", date(anio, mes, 24),
+                          0, 7040.0, 0.15, 8096.0, "pendiente")
+        return {"disponible": True, "filas": [f]}
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb, "meses_con_compras",
+                      return_value=[(2026, 6), (2026, 5), (2026, 4)]), \
          patch.object(fb, "estado_mes", side_effect=_estado), \
          patch("filters.today_ec", return_value=date(2026, 7, 30)):
         hist = fb.estado_historico()
-    assert [m["mes_str"] for m in hist["meses"]] == ["2026-05", "2026-04"]
-    assert hist["facturas"] == 2
-    assert hist["importe"] == pytest.approx(16192.0, abs=0.01)
+    assert hist["meses"] == []
+    assert hist["facturas"] == 0
 
 
 def test_estado_historico_sin_bridge():

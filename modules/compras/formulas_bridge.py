@@ -105,6 +105,16 @@ _TOL_ABS = 0.5
 # de formulas dentro de scintela.compra. Ver _compras_pc_mes.
 _VENTANA_MESES = 6
 
+# PISO del barrido histórico. Dueña 2026-07-30: *"enfocate en julio. lo
+# anterior no importa. no vamos a mover ni mayo ni junio"* — hay 9 facturas de
+# abril–junio por ~$42.100 c/IVA que formulas registró y nunca entraron al
+# programa (el puente nació el 17/07 y esos meses dependían del FoxPro). Se
+# toman como cerradas: NO se cargan y NO se avisan, porque un aviso que no se
+# va a accionar entrena a ignorar la campanita. El barrido sigue vivo de julio
+# en adelante, que es para lo que se construyó: que no se vuelva a perder un
+# mes entero en silencio.
+_HISTORICO_DESDE = (2026, 7)
+
 
 _AUTO_LOCK = threading.Lock()
 _auto_ultimo_ts = 0.0
@@ -551,7 +561,11 @@ def estado_historico(hoy: date | None = None) -> dict:
     17/07/2026 y abril–junio quedaron dependiendo del FoxPro, que no las
     tipeó — 9 facturas por ~$42.100 que nadie vio hasta que la dueña preguntó
     (30/07). Sin este barrido, un mes entero se puede volver a perder en
-    silencio. El mes en curso NO entra: ése ya lo muestra la pantalla normal.
+    silencio.
+
+    Dos meses quedan afuera a propósito: el **en curso** (ése ya lo muestra la
+    pantalla normal) y todo lo **anterior a `_HISTORICO_DESDE`** (decisión de
+    la dueña, ver la constante).
     """
     if not formulas_db.disponible():
         return {"disponible": False, "meses": [], "facturas": 0, "importe": 0.0}
@@ -560,7 +574,7 @@ def estado_historico(hoy: date | None = None) -> dict:
     h = hoy or today_ec()
     meses, n, imp = [], 0, 0.0
     for anio, mes in meses_con_compras():
-        if (anio, mes) >= (h.year, h.month):
+        if (anio, mes) >= (h.year, h.month) or (anio, mes) < _HISTORICO_DESDE:
             continue
         est = estado_mes(anio, mes)
         faltan = [f for f in (est.get("filas") or [])
