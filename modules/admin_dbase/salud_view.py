@@ -659,7 +659,7 @@ def _seccion_recode_sucursales():
     filas = db.fetch_all(
         """
         SELECT f.codigo_cli, f.numf, f.numf_completo, f.fecha,
-               f.importe, f.saldo, f.stat
+               f.kg, f.importe, f.saldo, f.stat
           FROM scintela.factura f
          WHERE f.fecha >= CURRENT_DATE - INTERVAL '120 days'
            AND TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
@@ -705,6 +705,7 @@ def _seccion_recode_sucursales():
     sin_cargar = 0
     n_completo = 0
     n_solo_numf = 0
+    n_kg_distinto = 0
     otro_codigo: dict = {}
     for d in de_sucursal:
         num = str(d.get("numero") or "")
@@ -719,6 +720,22 @@ def _seccion_recode_sucursales():
         if not rows:
             sin_cargar += 1
             continue
+        # CHEQUEO DE KILOS (dueña, 30/07: "chequia kilos si no"). Aunque el N° SRI
+        # completo ya no colisiona, el respaldo por `numf` sí puede: la serie de
+        # notas de crédito repite números de facturas viejas. Los kilos (y el
+        # importe) son la segunda firma del documento — si no coinciden, no es la
+        # misma factura y no se cuenta. Tolerancia 0,01 en las dos.
+        kg_a = abs(float(d.get("kg") or 0))
+        usd_a = abs(float(d.get("usd") or 0))
+        coinciden = [
+            r for r in rows
+            if abs(abs(float(r.get("kg") or 0)) - kg_a) <= 0.01
+            and abs(abs(float(r.get("importe") or 0)) - usd_a) <= 0.01
+        ]
+        if not coinciden:
+            n_kg_distinto += 1
+            continue
+        rows = coinciden
         if por_completo:
             n_completo += 1
         else:
@@ -758,7 +775,9 @@ def _seccion_recode_sucursales():
            f"{_money_txt(tot_imp)}  {_money_txt(tot_saldo)}\n")
     yield (f"\n  Ya correctas: {ya_ok}   ·   No están en PC: {sin_cargar}\n"
            f"  Apareadas por N° SRI completo: {n_completo}   ·   "
-           f"sólo por numf (puede colisionar): {n_solo_numf}\n")
+           f"sólo por numf: {n_solo_numf}\n"
+           f"  Descartadas porque los KILOS/importe no coinciden "
+           f"(era otro documento con el mismo número): {n_kg_distinto}\n")
     if otro_codigo:
         yield ("  Bajo un TERCER código (no las toca un recode automático):\n")
         for (pc_cod, suc), n in sorted(otro_codigo.items(), key=lambda kv: -kv[1])[:10]:
