@@ -19,7 +19,7 @@
     <div class="text-base">
       El banco tiene
       <strong class="{% if prop.diferencia > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
-        ${{ '{:,.2f}'.format(prop.importe) }}
+        ${{ (prop.importe)|num_es }}
         {% if prop.diferencia > 0 %}de más (crédito){% else %}de menos (débito){% endif %}
       </strong>
       que el programa.
@@ -28,14 +28,14 @@
       Se propone crear un movimiento de programa
       <strong>{{ prop.documento }}</strong>
       ({% if prop.documento == 'NC' %}nota de crédito, suma al saldo{% else %}nota de débito, resta del saldo{% endif %})
-      por <strong>${{ '{:,.2f}'.format(prop.importe) }}</strong> para que la diferencia
+      por <strong>${{ (prop.importe)|num_es }}</strong> para que la diferencia
       cierre y se concilie todo.
     </p>
   </section>
 
   {% if prop.requiere_confirmar %}
   <section class="mb-4 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-[13px] text-amber-900 dark:text-amber-200">
-    Esta diferencia supera los ${{ '{:,.0f}'.format(prop.umbral_confirmar) }}. Revisá bien el
+    Esta diferencia supera los ${{ (prop.umbral_confirmar)|num_es(0) }}. Revisá bien el
     monto antes de confirmar.
   </section>
   {% endif %}
@@ -72,7 +72,7 @@
     {% if prop.requiere_confirmar %}
     <label class="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
       <input type="checkbox" name="confirmar_grande" value="on" required class="mt-0.5">
-      <span>Confirmo la diferencia de ${{ '{:,.2f}'.format(prop.importe) }} (&gt;${{ '{:,.0f}'.format(prop.umbral_confirmar) }})</span>
+      <span>Confirmo la diferencia de ${{ (prop.importe)|num_es }} (&gt;${{ (prop.umbral_confirmar)|num_es(0) }})</span>
     </label>
     {% endif %}
 
@@ -83,7 +83,7 @@
       </a>
       <button type="submit"
               class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-5 py-2">
-        Agregar movimiento en el programa por ${{ '{:,.2f}'.format(prop.importe) }}
+        Agregar movimiento en el programa por ${{ (prop.importe)|num_es }}
       </button>
     </div>
   </form>

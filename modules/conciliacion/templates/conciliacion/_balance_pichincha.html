@@ -47,9 +47,9 @@
     <div class="px-4 py-2 border-r border-slate-200 dark:border-slate-700 flex flex-col justify-center min-w-[180px]">
       <div class="flex items-baseline gap-1.5">
         <span class="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Saldo a conciliar</span>
-        {% if _cuadra %}<span class="text-emerald-600 text-[10px]" title="Libros − PendProg + PendBanco = Esperado">✓</span>{% else %}<span class="text-rose-600 text-[10px]" title="Δ {{ '{:+,.2f}'.format(_delta_check) }}">⚠</span>{% endif %}
+        {% if _cuadra %}<span class="text-emerald-600 text-[10px]" title="Libros − PendProg + PendBanco = Esperado">✓</span>{% else %}<span class="text-rose-600 text-[10px]" title="Δ {{ ('+' if ((_delta_check) or 0) >= 0 else '-') ~ (((_delta_check) or 0)|abs|num_es) }}">⚠</span>{% endif %}
       </div>
-      <div class="text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
+      <div class="text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">${{ (balance.saldo_si_concilio_todo or balance.saldo)|num_es }}</div>
       <div class="text-[10px] text-slate-400">{% if balance.fecha %}{{ balance.fecha }}{% endif %}</div>
     </div>
 
@@ -67,15 +67,15 @@
       <div class="{{ _row }}" style="{{ _cols }}">
         <span class="text-slate-500">Libros (live)</span>
         <span></span><span></span>
-        <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:,.2f}'.format(balance.saldo) }}</span>
+        <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ (balance.saldo)|num_es }}</span>
       </div>
 
       <div class="{{ _row }}" style="{{ _cols }}">
         <span class="text-slate-500">− Pendientes programa <span class="text-slate-400">({{ balance.n_pendientes_conciliar or 0 }})</span></span>
         {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
-          <span class="text-right font-mono text-slate-400 text-[11px]">+{{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</span>
-          <span class="text-right font-mono text-slate-400 text-[11px]">−{{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</span>
-          <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</span>
+          <span class="text-right font-mono text-slate-400 text-[11px]">+{{ (balance.pendientes_pc_creditos)|num_es }}</span>
+          <span class="text-right font-mono text-slate-400 text-[11px]">−{{ (balance.pendientes_pc_debitos)|num_es }}</span>
+          <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ ('+' if ((balance.pendientes_conciliar_neto) or 0) >= 0 else '-') ~ (((balance.pendientes_conciliar_neto) or 0)|abs|num_es) }}</span>
         {% else %}
           <span></span><span></span><span class="text-right text-slate-300">—</span>
         {% endif %}
@@ -84,18 +84,18 @@
       <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
         <span class="text-slate-700 dark:text-slate-200 font-medium">= Saldo a conciliar</span>
         <span></span><span></span>
-        <span class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">{{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</span>
+        <span class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">{{ (balance.saldo_si_concilio_todo or balance.saldo)|num_es }}</span>
       </div>
 
       <div class="{{ _row }}" style="{{ _cols }}">
         <span class="text-slate-500">+ Pendientes banco <span class="text-slate-400">({{ _pbtq or 0 }})</span></span>
         {% if _pbtc or _pbtd %}
-          <span class="text-right font-mono text-slate-400 text-[11px]">+{{ '{:,.2f}'.format(_pbtc) }}</span>
-          <span class="text-right font-mono text-slate-400 text-[11px]">−{{ '{:,.2f}'.format(_pbtd) }}</span>
-          <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:+,.2f}'.format(_pbtn) }}</span>
+          <span class="text-right font-mono text-slate-400 text-[11px]">+{{ (_pbtc)|num_es }}</span>
+          <span class="text-right font-mono text-slate-400 text-[11px]">−{{ (_pbtd)|num_es }}</span>
+          <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ ('+' if ((_pbtn) or 0) >= 0 else '-') ~ (((_pbtn) or 0)|abs|num_es) }}</span>
         {% elif _pbtn is not none %}
           <span></span><span></span>
-          <span class="text-right font-mono text-slate-700">{{ '{:+,.2f}'.format(_pbtn) }}</span>
+          <span class="text-right font-mono text-slate-700">{{ ('+' if ((_pbtn) or 0) >= 0 else '-') ~ (((_pbtn) or 0)|abs|num_es) }}</span>
         {% else %}
           <span></span><span></span><span class="text-right text-slate-300">—</span>
         {% endif %}
@@ -104,7 +104,7 @@
       <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
         <span class="text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</span>
         <span></span><span></span>
-        <span class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">{{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</span>
+        <span class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">{{ (balance.saldo_banco_esperado or balance.saldo)|num_es }}</span>
       </div>
 
       {# Saldo banco objetivo (editable) + diferencia. #}
@@ -121,7 +121,7 @@
             <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
             <input type="text" name="saldo_objetivo" inputmode="decimal"
                    value="{% if _sbr is not none and _sbr_origen == 'manual' %}{{ '{:.2f}'.format(_sbr) }}{% endif %}"
-                   placeholder="{% if _sbr is not none %}{{ '{:,.2f}'.format(_sbr) }}{% else %}—{% endif %}"
+                   placeholder="{% if _sbr is not none %}{{ (_sbr)|num_es }}{% else %}—{% endif %}"
                    class="w-24 px-1 py-0 text-right font-mono text-slate-700 dark:text-slate-200
                           border border-slate-200 dark:border-slate-700 rounded text-xs
                           focus:ring-1 focus:ring-slate-400 focus:outline-none">
@@ -133,7 +133,7 @@
       <div class="grid items-baseline px-3 py-1" style="{{ _cols }}">
         <span class="text-slate-500">Diferencia</span>
         <span></span><span></span>
-        <span class="text-right font-mono font-semibold {% if _dnc|abs < 0.5 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(-_dnc) }}</span>
+        <span class="text-right font-mono font-semibold {% if _dnc|abs < 0.5 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((-_dnc) or 0) >= 0 else '-') ~ (((-_dnc) or 0)|abs|num_es) }}</span>
       </div>
       {% endif %}
       {% endif %}
@@ -153,7 +153,7 @@
   <div class="px-4 py-2 bg-gradient-to-br from-emerald-50/50 to-emerald-50/0 dark:from-emerald-900/10">
     <div class="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold leading-tight">Saldo a conciliar</div>
     <div class="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">
-      ${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}
+      ${{ (balance.saldo_si_concilio_todo or balance.saldo)|num_es }}
     </div>
   </div>
 
@@ -169,23 +169,23 @@
   <div class="text-sm tabular-nums border-t border-slate-100 dark:border-slate-800">
     <div class="{{ _row }}" style="{{ _cols }}">
       <div class="text-slate-500">Saldo banco programa</div>
-      <div class="text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(balance.saldo) }}</div>
+      <div class="text-right font-mono text-slate-700 dark:text-slate-300">${{ (balance.saldo)|num_es }}</div>
     </div>
 
     <div class="{{ _row }}" style="{{ _cols }}">
       <div class="text-slate-500">− Pendientes de conciliar en programa ({{ balance.n_pendientes_conciliar or 0 }})</div>
       <div class="text-right font-mono leading-snug">
         {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
-          <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</div>
-          <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</div>
-          <div class="font-semibold text-slate-700 dark:text-slate-200 mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</div>
+          <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ (balance.pendientes_pc_creditos)|num_es }}</div>
+          <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ (balance.pendientes_pc_debitos)|num_es }}</div>
+          <div class="font-semibold text-slate-700 dark:text-slate-200 mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">{{ ('+' if ((balance.pendientes_conciliar_neto) or 0) >= 0 else '-') ~ (((balance.pendientes_conciliar_neto) or 0)|abs|num_es) }}</div>
         {% else %}<span class="text-slate-300">—</span>{% endif %}
       </div>
     </div>
 
     <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
       <div class="text-slate-700 dark:text-slate-200 font-medium">= Saldo conciliado</div>
-      <div class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
+      <div class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ (balance.saldo_si_concilio_todo or balance.saldo)|num_es }}</div>
     </div>
 
     {# TMT 2026-06-03: *_total = histos + extracto sesión #}
@@ -197,10 +197,10 @@
       <div class="text-slate-500">+ Pendientes de conciliar en banco ({{ _pbtq_f or 0 }})</div>
       <div class="text-right font-mono leading-snug">
         {% if _pbtc_f or _pbtd_f %}
-          <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ '{:,.2f}'.format(_pbtc_f) }}</div>
-          <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ '{:,.2f}'.format(_pbtd_f) }}</div>
-          <div class="font-semibold text-slate-700 dark:text-slate-200 mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">{{ '{:+,.2f}'.format(_pbtn_f) }}</div>
-        {% elif _pbtn_f is not none %}{{ '{:+,.2f}'.format(_pbtn_f) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ (_pbtc_f)|num_es }}</div>
+          <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ (_pbtd_f)|num_es }}</div>
+          <div class="font-semibold text-slate-700 dark:text-slate-200 mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">{{ ('+' if ((_pbtn_f) or 0) >= 0 else '-') ~ (((_pbtn_f) or 0)|abs|num_es) }}</div>
+        {% elif _pbtn_f is not none %}{{ ('+' if ((_pbtn_f) or 0) >= 0 else '-') ~ (((_pbtn_f) or 0)|abs|num_es) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
       </div>
     </div>
 
@@ -212,7 +212,7 @@
 
     <div class="{{ _row }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
       <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
-      <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
+      <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ (balance.saldo_banco_esperado or balance.saldo)|num_es }}</div>
     </div>
 
     {# TMT 2026-06-02: saldo banco objetivo — editable si hay sesión activa.
@@ -234,7 +234,7 @@
           <span class="font-mono text-sky-700">$</span>
           <input type="text" name="saldo_objetivo" inputmode="decimal"
                  value="{% if _sbr_full is not none and _sbr_origen_full == 'manual' %}{{ '{:.2f}'.format(_sbr_full) }}{% endif %}"
-                 placeholder="{% if _sbr_full is not none %}{{ '{:,.2f}'.format(_sbr_full) }}{% else %}—{% endif %}"
+                 placeholder="{% if _sbr_full is not none %}{{ (_sbr_full)|num_es }}{% else %}—{% endif %}"
                  class="w-40 px-2 py-1 text-right font-mono font-bold text-sky-700 dark:text-sky-300
                         border border-slate-200 dark:border-slate-700 rounded
                         focus:ring-1 focus:ring-sky-400 focus:outline-none">
@@ -252,7 +252,7 @@
         Saldo banco según extracto
         <span class="block text-[10px] font-normal text-slate-400">auto-detect — abrí la sesión para editarlo</span>
       </div>
-      <div class="text-right font-mono font-bold text-sky-700 dark:text-sky-300">${{ '{:,.2f}'.format(_sbr_full) }}</div>
+      <div class="text-right font-mono font-bold text-sky-700 dark:text-sky-300">${{ (_sbr_full)|num_es }}</div>
     </div>
     {% endif %}
   </div>

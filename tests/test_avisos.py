@@ -284,16 +284,13 @@ def test_ningun_insert_returning_usa_fetch_one():
     al pool). El helper correcto es `db.execute_returning()` — salvo que el
     llamador pase `conn=` de un `db.tx()`, que commitea él.
 
-    Los dos PENDIENTES quedaron así a propósito (TMT 2026-07-30, decisión de la
-    dueña): tocarlos cambia números o despierta un proceso dormido.
+    `PENDIENTES` está vacío a propósito: si algún día hay que dejar uno afuera,
+    va acá con el motivo escrito, no se saca el test.
     """
     import re
     from pathlib import Path
 
-    PENDIENTES = {
-        "modules/conciliacion/saldo_snapshot.py",   # cambia el saldo inicial de la hoja
-        "modules/admin_dbase/auto_match_view.py",   # empezaría a escribir matches
-    }
+    PENDIENTES: set[str] = set()  # 30/07: ya no queda ninguno (dueña: "dale con todo")
     ESCRIBE = re.compile(r"^[\s\"\'f]*(INSERT|UPDATE|DELETE)\b", re.IGNORECASE)
 
     def llamadas(texto: str):

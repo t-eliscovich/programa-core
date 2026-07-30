@@ -149,7 +149,7 @@
                 {% else %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[8px] font-bold">−</span>
                 {% endif %}
               </td>
-              <td class="px-1 py-0 text-right font-mono font-semibold {% if _vb >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format((m.monto|float)|abs) }}</td>
+              <td class="px-1 py-0 text-right font-mono font-semibold {% if _vb >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ((m.monto|float)|abs)|num_es }}</td>
               <td class="px-1 py-0 text-slate-500 font-mono text-[9px]">{{ (m.documento or '')|string|truncate(9,True,'') }}</td>
               <td class="px-1 py-0 text-slate-600 dark:text-slate-300 truncate" title="{% if _hist %}histórico · {% endif %}{{ m.concepto }}">
                 {% if _hist %}<span class="inline-flex w-3 h-3 items-center justify-center rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200 text-[8px] font-bold mr-0.5" title="histórico">H</span>{% endif %}
@@ -235,7 +235,7 @@
                 {% if _val >= 0 %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[8px] font-bold">+</span>
                 {% else %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[8px] font-bold">−</span>{% endif %}
               </td>
-              <td class="px-1 py-0 text-right font-mono font-semibold {% if _val >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format((m.importe|float)|abs) }}</td>
+              <td class="px-1 py-0 text-right font-mono font-semibold {% if _val >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ((m.importe|float)|abs)|num_es }}</td>
               <td class="px-1 py-0 text-slate-500 font-mono text-[9px]">{{ (m.numreferencia or '')|string|truncate(10,True,'') }}</td>
               <td class="px-1 py-0 text-slate-600 dark:text-slate-300 truncate" title="{{ item.dep_titulo or m.prov_nombre or m.concepto }}">
                 {% if item.dep_display %}

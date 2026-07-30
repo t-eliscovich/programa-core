@@ -40,7 +40,7 @@
             <td class="px-3 py-1.5 text-slate-500 font-mono text-xs">{{ g.documento }}</td>
             <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300 truncate max-w-md" title="{{ g.concepto }}">{{ g.concepto }}</td>
             <td class="px-3 py-1.5 text-right font-mono font-semibold {% if _es_debito %}text-rose-700{% else %}text-emerald-700{% endif %}">
-              {{ _signo_str }}{{ '{:,.2f}'.format(g.importe|float) }}
+              {{ _signo_str }}{{ (g.importe|float)|num_es }}
             </td>
             <td class="px-3 py-1.5 text-right text-slate-600">{{ g.n_matches_activos }} / {{ g.n_matches_total }}</td>
             <td class="px-3 py-1.5 text-right">
@@ -88,13 +88,13 @@
           </div>
           <div class="flex items-baseline gap-3 text-xs tabular-nums">
             <span class="text-slate-500">Banco</span>
-            <span class="font-mono font-semibold {% if b.sum_banco >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(b.sum_banco) }}</span>
+            <span class="font-mono font-semibold {% if b.sum_banco >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((b.sum_banco) or 0) >= 0 else '-') ~ (((b.sum_banco) or 0)|abs|num_es) }}</span>
             <span class="text-slate-300">·</span>
             <span class="text-slate-500">Programa</span>
-            <span class="font-mono font-semibold {% if b.sum_programa >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(b.sum_programa) }}</span>
+            <span class="font-mono font-semibold {% if b.sum_programa >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((b.sum_programa) or 0) >= 0 else '-') ~ (((b.sum_programa) or 0)|abs|num_es) }}</span>
             <span class="text-slate-300">·</span>
             <span class="text-slate-500">Δ</span>
-            <span class="font-mono font-bold {% if b.delta|abs < 0.5 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(b.delta) }}</span>
+            <span class="font-mono font-bold {% if b.delta|abs < 0.5 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((b.delta) or 0) >= 0 else '-') ~ (((b.delta) or 0)|abs|num_es) }}</span>
             {# Deshacer grupo: cualquier match_id del grupo deshace todos (el endpoint hace romper_match_grupo) #}
             <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline m-0"
                   onsubmit="return confirm('¿Deshacer esta conciliación ({{ b['items']|length }} match{% if b['items']|length != 1 %}es{% endif %})?\n\nTodos los items vuelven a aparecer como pendientes.');">
@@ -125,7 +125,7 @@
                 <span class="text-slate-500 w-10 font-mono text-[10px]">{{ (it.real_documento or '—')|string|truncate(8,True,'') }}</span>
                 <span class="flex-1 text-slate-700 dark:text-slate-300 truncate" title="{{ it.real_concepto or '' }}">{{ (it.real_concepto or '—')[:45] }}</span>
                 <span class="font-mono font-semibold {% if it.real_tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">
-                  {% if it.real_tipo == 'C' %}+{% else %}−{% endif %}{{ '{:,.2f}'.format(it.real_monto|float) }}
+                  {% if it.real_tipo == 'C' %}+{% else %}−{% endif %}{{ (it.real_monto|float)|num_es }}
                 </span>
               </label>
               {% endif %}
@@ -149,7 +149,7 @@
                   {% if it.pc_prov %}<span class="text-slate-500 text-[10px]">[{{ it.pc_prov }}]</span> {% endif %}{{ (it.pc_cliente_nombre or it.pc_concepto or '—')[:40] }}
                 </span>
                 <span class="font-mono font-semibold {% if _es_cred %}text-emerald-700{% else %}text-rose-700{% endif %}">
-                  {% if _es_cred %}+{% else %}−{% endif %}{{ '{:,.2f}'.format(it.pc_importe|float) if it.pc_importe is not none else '0.00' }}
+                  {% if _es_cred %}+{% else %}−{% endif %}{{ (it.pc_importe|float)|num_es if it.pc_importe is not none else '0.00' }}
                 </span>
               </label>
               {% endif %}

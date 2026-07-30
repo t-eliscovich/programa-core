@@ -29,22 +29,22 @@
       <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30">
         <div class="text-[9px] uppercase tracking-wider text-slate-500">Total banco</div>
         <div class="flex items-baseline gap-1.5 tabular-nums">
-          <span class="text-emerald-700">+{{ '{:,.2f}'.format(conciliados_totales.banco_creditos) }}</span>
-          <span class="text-rose-700">−{{ '{:,.2f}'.format(conciliados_totales.banco_debitos) }}</span>
+          <span class="text-emerald-700">+{{ (conciliados_totales.banco_creditos)|num_es }}</span>
+          <span class="text-rose-700">−{{ (conciliados_totales.banco_debitos)|num_es }}</span>
         </div>
         <div class="text-[11px] font-semibold tabular-nums {% if conciliados_totales.banco_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
-          neto {{ '{:+,.2f}'.format(conciliados_totales.banco_neto) }}
+          neto {{ ('+' if ((conciliados_totales.banco_neto) or 0) >= 0 else '-') ~ (((conciliados_totales.banco_neto) or 0)|abs|num_es) }}
         </div>
       </div>
 
       <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30">
         <div class="text-[9px] uppercase tracking-wider text-slate-500">Total programa</div>
         <div class="flex items-baseline gap-1.5 tabular-nums">
-          <span class="text-emerald-700">+{{ '{:,.2f}'.format(conciliados_totales.prog_creditos) }}</span>
-          <span class="text-rose-700">−{{ '{:,.2f}'.format(conciliados_totales.prog_debitos) }}</span>
+          <span class="text-emerald-700">+{{ (conciliados_totales.prog_creditos)|num_es }}</span>
+          <span class="text-rose-700">−{{ (conciliados_totales.prog_debitos)|num_es }}</span>
         </div>
         <div class="text-[11px] font-semibold tabular-nums {% if conciliados_totales.prog_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
-          neto {{ '{:+,.2f}'.format(conciliados_totales.prog_neto) }}
+          neto {{ ('+' if ((conciliados_totales.prog_neto) or 0) >= 0 else '-') ~ (((conciliados_totales.prog_neto) or 0)|abs|num_es) }}
         </div>
       </div>
 
@@ -63,7 +63,7 @@
           {% if conciliados_totales.diff_neto|abs < 0.01 %}
             ✓ $0.00
           {% else %}
-            {{ '{:+,.2f}'.format(conciliados_totales.diff_neto) }}
+            {{ ('+' if ((conciliados_totales.diff_neto) or 0) >= 0 else '-') ~ (((conciliados_totales.diff_neto) or 0)|abs|num_es) }}
           {% endif %}
         </div>
         <div class="text-[9px] text-slate-500">
@@ -177,16 +177,16 @@
                 {{ m.real_fecha or m.tb_fecha or '—' }}
               </td>
               <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_banco > 0 %}text-emerald-700{% elif _bs_banco < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-                Σ {{ '{:+,.2f}'.format(_bs_banco) }}
+                Σ {{ ('+' if ((_bs_banco) or 0) >= 0 else '-') ~ (((_bs_banco) or 0)|abs|num_es) }}
               </td>
               <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_prog_eff > 0 %}text-emerald-700{% elif _bs_prog_eff < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-                {% if _bs_desde_firma %}<span style="font-style:italic" title="Valor del programa guardado en el match. El vínculo se rompió en un sync (en reparación) — no afecta pendientes.">≈ {{ '{:+,.2f}'.format(_bs_prog_eff) }}</span>{% else %}{{ '{:+,.2f}'.format(_bs_prog_eff) }}{% endif %}
+                {% if _bs_desde_firma %}<span style="font-style:italic" title="Valor del programa guardado en el match. El vínculo se rompió en un sync (en reparación) — no afecta pendientes.">≈ {{ ('+' if ((_bs_prog_eff) or 0) >= 0 else '-') ~ (((_bs_prog_eff) or 0)|abs|num_es) }}</span>{% else %}{{ ('+' if ((_bs_prog_eff) or 0) >= 0 else '-') ~ (((_bs_prog_eff) or 0)|abs|num_es) }}{% endif %}
               </td>
               <td class="px-1.5 py-0.5 text-right font-mono">
                 {% if _bs_diff|abs < 0.01 %}
                   <span class="text-emerald-600">✓</span>
                 {% else %}
-                  <span class="text-rose-700 font-semibold">{{ '{:+,.2f}'.format(_bs_diff) }}</span>
+                  <span class="text-rose-700 font-semibold">{{ ('+' if ((_bs_diff) or 0) >= 0 else '-') ~ (((_bs_diff) or 0)|abs|num_es) }}</span>
                 {% endif %}
               </td>
               <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px] whitespace-nowrap" title="grupo {{ m.confirm_batch_id }}">
@@ -226,10 +226,10 @@
               {{ m.real_fecha or m.tb_fecha or '—' }}
             </td>
             <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mb > 0 %}text-emerald-700{% elif _mb < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-              {% if m.has_banco %}{{ '{:+,.2f}'.format(_mb) }}{% else %}—{% endif %}
+              {% if m.has_banco %}{{ ('+' if ((_mb) or 0) >= 0 else '-') ~ (((_mb) or 0)|abs|num_es) }}{% else %}—{% endif %}
             </td>
             <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mp > 0 %}text-emerald-700{% elif _mp < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-              {% if m.has_programa %}{{ '{:+,.2f}'.format(_mp) }}{% elif m.tiene_prog_firma %}<span class="text-slate-400" style="font-style:italic" title="Valor del programa guardado en el match (vínculo roto por un sync — en reparación)">≈ {{ '{:+,.2f}'.format(m.prog_firma_signed|float) }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
+              {% if m.has_programa %}{{ ('+' if ((_mp) or 0) >= 0 else '-') ~ (((_mp) or 0)|abs|num_es) }}{% elif m.tiene_prog_firma %}<span class="text-slate-400" style="font-style:italic" title="Valor del programa guardado en el match (vínculo roto por un sync — en reparación)">≈ {{ ('+' if ((m.prog_firma_signed|float) or 0) >= 0 else '-') ~ (((m.prog_firma_signed|float) or 0)|abs|num_es) }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
             <td class="px-1.5 py-0.5 text-right font-mono">
               {# TMT 2026-06-03 dueña: 'la diferencia no hace falta'. En filas
@@ -242,7 +242,7 @@
                 {% if m.diff|abs < 0.01 %}
                   <span class="text-emerald-600">✓</span>
                 {% else %}
-                  <span class="text-rose-700 font-semibold">{{ '{:+,.2f}'.format(m.diff) }}</span>
+                  <span class="text-rose-700 font-semibold">{{ ('+' if ((m.diff) or 0) >= 0 else '-') ~ (((m.diff) or 0)|abs|num_es) }}</span>
                 {% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
@@ -348,7 +348,7 @@
             </td>
             <td class="px-2 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">{{ g.fecha or '—' }}</td>
             <td class="px-2 py-1 truncate max-w-[240px]" title="{{ g.concepto }}">{{ g.concepto or '—' }}</td>
-            <td class="px-2 py-1 text-right font-mono whitespace-nowrap">{{ '{:+,.2f}'.format(g.prog_total) }}</td>
+            <td class="px-2 py-1 text-right font-mono whitespace-nowrap">{{ ('+' if ((g.prog_total) or 0) >= 0 else '-') ~ (((g.prog_total) or 0)|abs|num_es) }}</td>
             <td class="px-2 py-1 text-[10px] text-slate-500 whitespace-nowrap" title="Deshecho {{ g.deshecho_en|hora_ec('%Y-%m-%d %H:%M') if g.deshecho_en else '' }}">{{ g.deshecho_por or '—' }}</td>
             <td class="px-2 py-1 text-right">
               <form method="POST" action="{{ url_for('conciliacion.banco_rehacer') }}" class="inline m-0"

@@ -100,8 +100,13 @@ def snapshot(
         n_pend = int(row_pend.get("n") or 0)
         saldo_conc = round(saldo_pc - pend_signed, 2)
 
-        # Insert
-        row = _db.fetch_one(
+        # Insert — execute_returning, NO fetch_one: fetch_one no commitea y
+        # psycopg2 le hace rollback al devolver la conexión al pool, así que
+        # NINGÚN snapshot se guardó nunca (probado live 30/07: el hub no muestra
+        # la línea "Última conciliación manual"). Efecto de arreglarlo: el saldo
+        # INICIAL de la hoja de conciliación vuelve a salir del "saldo a
+        # conciliar" (pedido dueña 28/05) en vez del fallback a saldo en libros.
+        row = _db.execute_returning(
             """
             INSERT INTO scintela.banco_saldo_conc_snapshot
                 (no_banco, saldo_pc, pend_signed, saldo_conc, n_pendientes,

@@ -181,7 +181,12 @@ def run():
                 n_matched += 1
                 continue
             try:
-                row = _db.fetch_one(
+                # execute_returning, NO fetch_one: con fetch_one el match se
+                # insertaba, se contaba en el resumen… y se perdía al soltar la
+                # conexión (no commitea). O sea: esta pantalla decía "conciliados
+                # N" y no dejaba ni uno. TMT 2026-07-30. Sigue sin hacer nada
+                # sola: hay que subir el xlsx acá y destildar "dry run".
+                row = _db.execute_returning(
                     """
                     INSERT INTO scintela.banco_conciliacion_match
                         (no_banco, estado, real_fecha, real_concepto, real_documento,

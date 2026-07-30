@@ -16,7 +16,7 @@
       <div class="text-xs tabular-nums">
         <span class="text-slate-500">Monto neto agrupado:</span>
         <span class="font-mono font-bold {% if monto_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
-          {{ '{:+,.2f}'.format(monto_neto) }}
+          {{ ('+' if ((monto_neto) or 0) >= 0 else '-') ~ (((monto_neto) or 0)|abs|num_es) }}
         </span>
       </div>
     </header>
@@ -24,7 +24,7 @@
       {% for r in real_subset %}
       <li class="flex items-baseline gap-3 px-3 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
         <span class="w-4 text-center font-bold text-sm {% if r.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if r.tipo == 'C' %}+{% else %}−{% endif %}</span>
-        <span class="font-mono font-bold text-sm w-28 text-right {% if r.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(r.monto|float) }}</span>
+        <span class="font-mono font-bold text-sm w-28 text-right {% if r.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ (r.monto|float)|num_es }}</span>
         <span class="text-slate-400 w-20">{{ r.fecha }}</span>
         <span class="text-slate-500 font-mono w-24 truncate">{{ r.documento or '—' }}</span>
         <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ r.concepto or '' }}">{{ (r.concepto or '')[:70] }}</span>
@@ -41,7 +41,7 @@
       <div><span class="text-slate-500">Concepto:</span> <span>{{ concepto or '—' }}</span></div>
       <div><span class="text-slate-500">Prov:</span> <span class="font-mono">{{ prov or '—' }}</span></div>
       <div class="ml-auto"><span class="text-slate-500">Monto:</span>
-        <span class="font-mono font-bold {% if monto_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(monto_neto) }}</span>
+        <span class="font-mono font-bold {% if monto_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((monto_neto) or 0) >= 0 else '-') ~ (((monto_neto) or 0)|abs|num_es) }}</span>
       </div>
     </div>
   </section>
@@ -73,10 +73,10 @@
         {% set is_int = '(n)' in label %}
         <tr class="border-t border-slate-100 dark:border-slate-800 {% if label.startswith('=') %}bg-slate-50/60 dark:bg-slate-800/30 font-semibold{% endif %}">
           <td class="px-4 py-1.5">{{ label }}</td>
-          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ b }}{% else %}{{ '{:,.2f}'.format(b|float) }}{% endif %}</td>
-          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ a }}{% else %}{{ '{:,.2f}'.format(a|float) }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ b }}{% else %}{{ (b|float)|num_es }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ a }}{% else %}{{ (a|float)|num_es }}{% endif %}</td>
           <td class="px-4 py-1.5 text-right font-mono {% if delta|abs > 0.001 %}{% if delta > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}{% else %}text-slate-400{% endif %}">
-            {% if delta|abs > 0.001 %}{% if is_int %}{{ '%+d' % delta }}{% else %}{{ '{:+,.2f}'.format(delta) }}{% endif %}{% else %}={% endif %}
+            {% if delta|abs > 0.001 %}{% if is_int %}{{ '%+d' % delta }}{% else %}{{ ('+' if ((delta) or 0) >= 0 else '-') ~ (((delta) or 0)|abs|num_es) }}{% endif %}{% else %}={% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -88,7 +88,7 @@
   <section class="mb-4 rounded-lg border border-amber-200 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-900/10 p-3 text-[12px] text-amber-900 dark:text-amber-200">
     <div class="font-semibold mb-1">Side effects al confirmar:</div>
     <ul class="list-disc list-inside space-y-0.5">
-      <li>Crea 1 nueva fila en <code>transacciones_bancarias</code> (la tx agrupada) por <strong>{{ '{:+,.2f}'.format(monto_neto) }}</strong>.</li>
+      <li>Crea 1 nueva fila en <code>transacciones_bancarias</code> (la tx agrupada) por <strong>{{ ('+' if ((monto_neto) or 0) >= 0 else '-') ~ (((monto_neto) or 0)|abs|num_es) }}</strong>.</li>
       <li>Crea {{ real_subset|length }} match(es) en <code>banco_conciliacion_match</code>, todos apuntando a esa tx.</li>
       <li>Los {{ real_subset|length }} item(s) del extracto dejan de aparecer como pendientes.</li>
       <li>Reversible desde <a href="{{ url_for('conciliacion.banco_deshacer_v2') }}" class="text-sky-600 underline">/banco-v2/deshacer</a> (Anular completo).</li>

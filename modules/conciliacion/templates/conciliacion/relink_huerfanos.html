@@ -50,7 +50,7 @@
       <tr class="border-b border-slate-100 dark:border-slate-800">
         <td class="py-1 pr-3 tabular-nums">{{ g.fecha }}</td>
         <td class="py-1 pr-3">{{ g.documento or '—' }}</td>
-        <td class="py-1 pr-3 text-right tabular-nums">{{ '{:,.2f}'.format(g.importe or 0) }}</td>
+        <td class="py-1 pr-3 text-right tabular-nums">{{ (g.importe or 0)|num_es }}</td>
         <td class="py-1 pr-3 text-right tabular-nums">{{ g.n_matches }}</td>
         <td class="py-1 pr-3 tabular-nums">
           {% if g.new_id %}<span class="text-emerald-700">#{{ g.new_id }}</span>

@@ -168,7 +168,7 @@
                 <td class="px-2 py-2 text-center">
                   {% if r.tipo == 'C' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">+</span>{% else %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[10px] font-bold">−</span>{% endif %}
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ (r.monto|float)|num_es }}</td>
                 <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-700 dark:text-slate-300">{{ r.documento or '·' }}</td>
                 <td class="px-3 py-2 text-slate-600 dark:text-slate-400 text-xs truncate max-w-[260px]" title="{{ r.concepto }}">{{ (r.concepto or '')[:60] }}</td>
               </tr>
@@ -187,7 +187,7 @@
                 <td class="px-2 py-2 text-center">
                   <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold" title="Sugerencia matcher — confirmá o arrastrá a otra fila para overridir">✓</span>
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ (r.monto|float)|num_es }}</td>
                 <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-600">{{ r.documento or '·' }}</td>
                 <td class="px-3 py-2 text-slate-600 dark:text-slate-300 text-xs truncate max-w-[260px]" title="{{ r.concepto }}">{{ (r.concepto or '')[:60] }}</td>
               </tr>
@@ -237,7 +237,7 @@
                 <td class="px-2 py-2 text-center">
                   {% if _es_credito %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">+</span>{% else %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[10px] font-bold">−</span>{% endif %}
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold {% if _es_credito %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold {% if _es_credito %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ (b.importe|float)|num_es }}</td>
                 <td class="px-3 py-2 font-mono text-xs whitespace-nowrap {% if b.numreferencia or b.doc_banco_rel %}text-slate-700 dark:text-slate-300 font-medium{% else %}text-slate-300{% endif %}">{{ b.numreferencia or b.doc_banco_rel or '·' }}</td>
                 <td class="px-3 py-2 text-xs truncate max-w-[260px]" title="{{ b.prov_nombre or b.concepto }}">
                   {% if b.prov %}<span class="inline-block px-1.5 py-0.5 mr-1.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-300 font-medium">{{ b.prov }}</span>{% endif %}
@@ -260,7 +260,7 @@
                 <td class="px-2 py-2 text-center">
                   <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold" title="Sugerencia matcher — confirmá o arrastrá a otra fila">✓</span>
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if _es_credito %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if _es_credito %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ (b.importe|float)|num_es }}</td>
                 <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-600">{{ _doc_b_match or '·' }}</td>
                 <td class="px-3 py-2 text-xs truncate max-w-[260px]" title="{{ b.prov_nombre or b.concepto }}">
                   {% if b.prov %}<span class="inline-block px-1.5 py-0.5 mr-1.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 font-medium">{{ b.prov }}</span>{% endif %}
@@ -307,7 +307,7 @@
       <div class="text-right flex items-start gap-3">
         <div>
           <div class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Diferencia</div>
-          <div id="conc-diff" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.diff) }}</div>
+          <div id="conc-diff" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ (resumen.diff)|num_es }}</div>
         </div>
         {# TMT 2026-05-28 dueña: 'imprimir hoja y lista son horribles.
            tienen que ser como un xls y chiquito y funcione'. Ya no
@@ -326,24 +326,24 @@
         <tbody>
           <tr class="border-b border-slate-200 dark:border-slate-700">
             <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo conciliado al {{ resumen.fecha_pc or '—' }}</td>
-            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" data-conc-saldo>$ {{ '{:,.2f}'.format(resumen.saldo_conciliado) }}</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" data-conc-saldo>$ {{ (resumen.saldo_conciliado)|num_es }}</td>
           </tr>
           <tr class="text-[11px] text-slate-500 dark:text-slate-400">
             <td class="pb-1.5 pl-4" colspan="2">
-              Saldo PC libros ${{ '{:,.2f}'.format(resumen.saldo_pc) }} − pendientes históricos
+              Saldo PC libros ${{ (resumen.saldo_pc)|num_es }} − pendientes históricos
             </td>
           </tr>
           <tr class="text-xs text-slate-600 dark:text-slate-400">
             <td class="py-1 pl-4">+ Depósitos en banco no identificados en PC</td>
-            <td class="py-1 text-right">+ $ <span data-conc-bco-cred>{{ '{:,.2f}'.format(resumen.bco_pend_cred) }}</span></td>
+            <td class="py-1 text-right">+ $ <span data-conc-bco-cred>{{ (resumen.bco_pend_cred)|num_es }}</span></td>
           </tr>
           <tr class="text-xs text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
             <td class="py-1 pl-4">− Cargos del banco no identificados en PC</td>
-            <td class="py-1 text-right">− $ <span data-conc-bco-deb>{{ '{:,.2f}'.format(resumen.bco_pend_deb) }}</span></td>
+            <td class="py-1 text-right">− $ <span data-conc-bco-deb>{{ (resumen.bco_pend_deb)|num_es }}</span></td>
           </tr>
           <tr class="border-b-2 border-slate-300 dark:border-slate-700">
             <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">= Saldo banco esperado</td>
-            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" id="conc-esperado">$ {{ '{:,.2f}'.format(resumen.saldo_bco_esperado) }}</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" id="conc-esperado">$ {{ (resumen.saldo_bco_esperado)|num_es }}</td>
           </tr>
           {# TMT 2026-05-28 dueña: 'ok el del banco final que sea editable'.
              El saldo banco según extracto ahora es un input. Cuando lo
@@ -360,7 +360,7 @@
                 <input type="text" id="conc-bco-extracto-input"
                        data-original="{{ '{:.2f}'.format(resumen.saldo_bco_extracto) }}"
                        data-no-banco="{{ data.no_banco }}"
-                       value="{{ '{:,.2f}'.format(resumen.saldo_bco_extracto) }}"
+                       value="{{ (resumen.saldo_bco_extracto)|num_es }}"
                        inputmode="decimal"
                        class="w-36 text-right font-bold tabular-nums text-slate-900 dark:text-slate-100 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
               </div>
@@ -393,7 +393,7 @@
 
     <div class="seccion-summary">
       <span>+ Depósitos / créditos banco no identificados ({{ ns_ro.n_c }})</span>
-      <span class="num">+ $ {{ '{:,.2f}'.format(ns_ro.tot_c) }}</span>
+      <span class="num">+ $ {{ (ns_ro.tot_c)|num_es }}</span>
     </div>
     {% if ns_ro.n_c > 0 %}
     <table>
@@ -406,7 +406,7 @@
           <td>{{ r.fecha or '' }}</td>
           <td>{{ r.documento or '' }}</td>
           <td>{{ (r.concepto or '')[:80] }}</td>
-          <td class="num">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+          <td class="num">{{ (r.monto|float)|num_es }}</td>
         </tr>
         {% endif %}{% endfor %}
       </tbody>
@@ -415,7 +415,7 @@
 
     <div class="seccion-summary">
       <span>− Cargos / débitos banco no identificados ({{ ns_ro.n_d }})</span>
-      <span class="num">− $ {{ '{:,.2f}'.format(ns_ro.tot_d) }}</span>
+      <span class="num">− $ {{ (ns_ro.tot_d)|num_es }}</span>
     </div>
     {% if ns_ro.n_d > 0 %}
     <table>
@@ -428,7 +428,7 @@
           <td>{{ r.fecha or '' }}</td>
           <td>{{ r.documento or '' }}</td>
           <td>{{ (r.concepto or '')[:80] }}</td>
-          <td class="num">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+          <td class="num">{{ (r.monto|float)|num_es }}</td>
         </tr>
         {% endif %}{% endfor %}
       </tbody>
@@ -450,7 +450,7 @@
 
     <div class="seccion-summary">
       <span>+ Créditos PC sin contrapartida banco ({{ ns_bo.n_c }})</span>
-      <span class="num">+ $ {{ '{:,.2f}'.format(ns_bo.tot_c) }}</span>
+      <span class="num">+ $ {{ (ns_bo.tot_c)|num_es }}</span>
     </div>
     {% if ns_bo.n_c > 0 %}
     <table>
@@ -464,7 +464,7 @@
           <td>{{ b.documento or '' }}</td>
           <td>{{ b.numreferencia or '' }}</td>
           <td>{{ (b.concepto or '')[:80] }}</td>
-          <td class="num">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+          <td class="num">{{ (b.importe|float)|num_es }}</td>
         </tr>
         {% endif %}{% endfor %}
       </tbody>
@@ -473,7 +473,7 @@
 
     <div class="seccion-summary">
       <span>− Débitos PC sin contrapartida banco ({{ ns_bo.n_d }})</span>
-      <span class="num">− $ {{ '{:,.2f}'.format(ns_bo.tot_d) }}</span>
+      <span class="num">− $ {{ (ns_bo.tot_d)|num_es }}</span>
     </div>
     {% if ns_bo.n_d > 0 %}
     <table>
@@ -487,7 +487,7 @@
           <td>{{ b.documento or '' }}</td>
           <td>{{ b.numreferencia or '' }}</td>
           <td>{{ (b.concepto or '')[:80] }}</td>
-          <td class="num">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+          <td class="num">{{ (b.importe|float)|num_es }}</td>
         </tr>
         {% endif %}{% endfor %}
       </tbody>
@@ -510,8 +510,8 @@
         <span class="text-xs text-amber-700 dark:text-amber-300">{{ hist_n }} sin conciliar (se inyectan al matcher en cada upload)</span>
       </div>
       <div class="flex items-center gap-4 text-sm tabular-nums">
-        <span class="text-emerald-700 dark:text-emerald-400">+ $ {{ '{:,.2f}'.format(hist_total_c) }}</span>
-        {% if hist_total_d %}<span class="text-rose-700 dark:text-rose-400">− $ {{ '{:,.2f}'.format(hist_total_d) }}</span>{% endif %}
+        <span class="text-emerald-700 dark:text-emerald-400">+ $ {{ (hist_total_c)|num_es }}</span>
+        {% if hist_total_d %}<span class="text-rose-700 dark:text-rose-400">− $ {{ (hist_total_d)|num_es }}</span>{% endif %}
       </div>
     </summary>
     <div class="max-h-96 overflow-y-auto">
@@ -534,7 +534,7 @@
             <td class="px-3 py-1 text-center">
               {% if (h.tipo or 'C')|upper == 'C' %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">+</span>{% else %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-rose-100 text-rose-700 text-[9px] font-bold">−</span>{% endif %}
             </td>
-            <td class="px-3 py-1 text-right tabular-nums font-semibold whitespace-nowrap {% if (h.tipo or 'C')|upper == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(h.monto|float) }}</td>
+            <td class="px-3 py-1 text-right tabular-nums font-semibold whitespace-nowrap {% if (h.tipo or 'C')|upper == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ (h.monto|float)|num_es }}</td>
             <td class="px-3 py-1 font-mono text-xs whitespace-nowrap {% if h.documento %}text-slate-700 dark:text-slate-300{% else %}text-slate-300{% endif %}">{{ h.documento or '·' }}</td>
             <td class="px-3 py-1 text-slate-600 dark:text-slate-400 text-xs truncate max-w-md" title="{{ h.concepto }}">{{ (h.concepto or '')[:80] }}</td>
             <td class="px-3 py-1 text-slate-400 text-[10px] truncate max-w-[180px]" title="{{ h.fuente }}">{{ h.fuente or '—' }}</td>
@@ -613,13 +613,13 @@
             </td>
             <td class="px-3 py-1 font-mono text-emerald-700 dark:text-emerald-400 font-semibold whitespace-nowrap">{{ m.real_documento }}</td>
             <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.real_fecha }}</td>
-            <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.real_monto) }}</td>
+            <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ (m.real_monto)|num_es }}</td>
             <td class="px-3 py-1 text-slate-600 dark:text-slate-400 truncate max-w-xs" title="{{ m.real_concepto }}">{{ m.real_concepto[:40] }}</td>
             <td class="px-3 py-1 text-center text-emerald-600 font-bold">
               {% if m.date_diff %}<span class="text-amber-600" title="Fechas distintas">↔</span>{% else %}↔{% endif %}
             </td>
             <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.bk_fecha }}</td>
-            <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.bk_importe) }}</td>
+            <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ (m.bk_importe)|num_es }}</td>
             <td class="px-3 py-1 text-slate-700 dark:text-slate-300 truncate max-w-xs" title="{{ m.bk_concepto }}">
               {% if m.bk_prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">{{ m.bk_prov }}</span>{% endif %}{{ (m.bk_prov_nombre or m.bk_concepto)[:38] }}
             </td>
@@ -692,11 +692,11 @@
         <span class="text-xs text-slate-500">{{ depositos_por_dia|length }} días · {{ dep_n_dias_cuadran }} cuadran</span>
       </div>
       <div class="flex items-center gap-4 text-sm tabular-nums">
-        <span class="text-slate-500">Banco</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(dep_total_banco) }}</span>
-        <span class="text-slate-500">Programa</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(dep_total_prog) }}</span>
+        <span class="text-slate-500">Banco</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ (dep_total_banco)|num_es }}</span>
+        <span class="text-slate-500">Programa</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ (dep_total_prog)|num_es }}</span>
         <span class="text-slate-500">Diff</span>
         <span class="font-bold px-2 py-0.5 rounded {% if dep_total_diff|abs < 1 %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200{% else %}bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200{% endif %}">
-          $ {{ '{:,.2f}'.format(dep_total_diff) }}
+          $ {{ (dep_total_diff)|num_es }}
         </span>
       </div>
     </summary>
@@ -743,10 +743,10 @@
             <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100 cursor-pointer btn-toggle-dep" data-target="{{ _dep_id }}">
               <span class="dep-chevron inline-block text-slate-400 text-xs mr-1 transition-transform">▸</span>{{ d.fecha_mostrar }}
             </td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.banco) }}</td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.programa) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (d.banco)|num_es }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (d.programa)|num_es }}</td>
             <td class="px-4 py-2 text-right tabular-nums font-semibold {% if d.cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
-              {% if d.cuadra %}✓{% else %}$ {{ '{:,.2f}'.format(d.diff) }}{% endif %}
+              {% if d.cuadra %}✓{% else %}$ {{ (d.diff)|num_es }}{% endif %}
             </td>
             <td class="px-4 py-2 text-center text-xs text-slate-500 tabular-nums">{{ d.n_banco }} / {{ d.n_programa }}</td>
           </tr>
@@ -772,7 +772,7 @@
                 <div class="px-4 py-3 min-w-0">
                   <div class="flex items-baseline justify-between mb-2 gap-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
-                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ (d.banco)|num_es }}</span>
                   </div>
                   {% if d.banco_items and d.banco_items|length > 0 %}
                   <div class="max-h-72 overflow-y-auto">
@@ -797,7 +797,7 @@
                             {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en programa el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
                           </td>
-                          <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ '{:,.2f}'.format(it.monto) }}</td>
+                          <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ (it.monto)|num_es }}</td>
                           <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.concepto[:55] }}</td>
                         </tr>
                         {% endfor %}
@@ -812,7 +812,7 @@
                 <div class="px-4 py-3 min-w-0">
                   <div class="flex items-baseline justify-between mb-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Programa</span>
-                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_programa }} movs · $ {{ '{:,.2f}'.format(d.programa) }}</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_programa }} movs · $ {{ (d.programa)|num_es }}</span>
                   </div>
                   {% if d.programa_items and d.programa_items|length > 0 %}
                   <div class="max-h-72 overflow-y-auto">
@@ -840,7 +840,7 @@
                             {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc_a_mostrar or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
                           </td>
-                          <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ '{:,.2f}'.format(it.importe) }}</td>
+                          <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ (it.importe)|num_es }}</td>
                           <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">
                             {% if it.es_agrupado %}<span class="inline-block px-1 py-0 mr-1 rounded bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 text-[10px]">📦{{ it.n_cheques }}</span>{% endif %}
                             {% if it.prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-mono">{{ it.prov }}</span>{% endif %}
@@ -862,10 +862,10 @@
           <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 font-semibold">
             <td></td>
             <td class="px-4 py-2 text-slate-900 dark:text-slate-100">TOTAL</td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(dep_total_banco) }}</td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(dep_total_prog) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (dep_total_banco)|num_es }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (dep_total_prog)|num_es }}</td>
             <td class="px-4 py-2 text-right tabular-nums {% if dep_total_diff|abs < 1 %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
-              $ {{ '{:,.2f}'.format(dep_total_diff) }}
+              $ {{ (dep_total_diff)|num_es }}
             </td>
             <td class="px-4 py-2"></td>
           </tr>
@@ -887,11 +887,11 @@
         <span class="text-xs text-slate-500">{{ transferencias_por_dia|length }} días · {{ transf_n_dias_cuadran }} cuadran</span>
       </div>
       <div class="flex items-center gap-4 text-sm tabular-nums">
-        <span class="text-slate-500">Banco</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(transf_total_banco) }}</span>
-        <span class="text-slate-500">Programa</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(transf_total_prog) }}</span>
+        <span class="text-slate-500">Banco</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ (transf_total_banco)|num_es }}</span>
+        <span class="text-slate-500">Programa</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ (transf_total_prog)|num_es }}</span>
         <span class="text-slate-500">Diff</span>
         <span class="font-bold px-2 py-0.5 rounded {% if transf_total_diff|abs < 1 %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200{% else %}bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200{% endif %}">
-          $ {{ '{:,.2f}'.format(transf_total_diff) }}
+          $ {{ (transf_total_diff)|num_es }}
         </span>
       </div>
     </summary>
@@ -935,10 +935,10 @@
             <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100 cursor-pointer btn-toggle-transf" data-target="{{ _t_id }}">
               <span class="transf-chevron inline-block text-slate-400 text-xs mr-1 transition-transform">▸</span>{{ d.fecha_mostrar }}
             </td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.banco) }}</td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.programa) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (d.banco)|num_es }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (d.programa)|num_es }}</td>
             <td class="px-4 py-2 text-right tabular-nums font-semibold {% if d.cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
-              {% if d.cuadra %}✓{% else %}$ {{ '{:,.2f}'.format(d.diff) }}{% endif %}
+              {% if d.cuadra %}✓{% else %}$ {{ (d.diff)|num_es }}{% endif %}
             </td>
             <td class="px-4 py-2 text-center text-xs text-slate-500 tabular-nums">{{ d.n_banco }} / {{ d.n_programa }}</td>
           </tr>
@@ -954,7 +954,7 @@
                 <div class="px-4 py-3 min-w-0">
                   <div class="flex items-baseline justify-between mb-2 gap-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
-                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ (d.banco)|num_es }}</span>
                   </div>
                   {% if d.banco_items %}
                   <div class="max-h-72 overflow-y-auto">
@@ -977,7 +977,7 @@
                           {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ it.documento or '·' }}
                           {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en programa el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
                         </td>
-                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ '{:,.2f}'.format(it.monto) }}</td>
+                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ (it.monto)|num_es }}</td>
                         <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.cliente_nombre or (it.concepto[:55]) }}</td>
                       </tr>
                       {% endfor %}
@@ -989,7 +989,7 @@
                 <div class="px-4 py-3 min-w-0">
                   <div class="flex items-baseline justify-between mb-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Programa</span>
-                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_programa }} movs · $ {{ '{:,.2f}'.format(d.programa) }}</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_programa }} movs · $ {{ (d.programa)|num_es }}</span>
                   </div>
                   {% if d.programa_items %}
                   <div class="max-h-72 overflow-y-auto">
@@ -1012,7 +1012,7 @@
                           {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc_t or '·' }}
                           {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
                         </td>
-                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ '{:,.2f}'.format(it.importe) }}</td>
+                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ (it.importe)|num_es }}</td>
                         <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">
                           {% if it.prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-mono">{{ it.prov }}</span>{% endif %}
                           {{ it.prov_nombre or (it.concepto[:50]) }}
@@ -1031,10 +1031,10 @@
           <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 font-semibold">
             <td></td>
             <td class="px-4 py-2 text-slate-900 dark:text-slate-100">TOTAL</td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(transf_total_banco) }}</td>
-            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(transf_total_prog) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (transf_total_banco)|num_es }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ (transf_total_prog)|num_es }}</td>
             <td class="px-4 py-2 text-right tabular-nums {% if transf_total_diff|abs < 1 %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
-              $ {{ '{:,.2f}'.format(transf_total_diff) }}
+              $ {{ (transf_total_diff)|num_es }}
             </td>
             <td></td>
           </tr>
@@ -1063,7 +1063,7 @@
       <div class="text-right shrink-0">
         <div class="text-xs text-amber-700 dark:text-amber-300">Monto neto ({{ agrupado_comisiones.documento }})</div>
         <div class="text-xl font-bold tabular-nums text-amber-900 dark:text-amber-100">
-          $ {{ '{:,.2f}'.format(agrupado_comisiones.neto|abs) }}
+          $ {{ (agrupado_comisiones.neto|abs)|num_es }}
         </div>
       </div>
     </div>
@@ -1103,7 +1103,7 @@
                 {{ it.concepto }}
               </td>
               <td class="px-2 py-1 text-right w-24 whitespace-nowrap {% if it.tipo == 'D' %}text-rose-700{% else %}text-emerald-700{% endif %}">
-                {% if it.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(it.monto) }}
+                {% if it.tipo == 'D' %}-{% endif %}{{ (it.monto)|num_es }}
               </td>
             </tr>
             {% endfor %}
@@ -1283,8 +1283,8 @@
               {% if fecha_diff %}<div class="text-amber-600 dark:text-amber-400 tabular-nums text-[10px]">→ {{ m.bancsis.fecha }}</div>{% endif %}
             </td>
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap">
-              <div class="text-slate-900 dark:text-slate-100 font-medium">{% if m.real.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(m.real.monto) }}</div>
-              {% if monto_diff %}<div class="text-amber-600 dark:text-amber-400 text-[10px]">prog {{ '{:,.2f}'.format(m.bancsis.importe) }}</div>{% endif %}
+              <div class="text-slate-900 dark:text-slate-100 font-medium">{% if m.real.tipo == 'D' %}-{% endif %}{{ (m.real.monto)|num_es }}</div>
+              {% if monto_diff %}<div class="text-amber-600 dark:text-amber-400 text-[10px]">prog {{ (m.bancsis.importe)|num_es }}</div>{% endif %}
             </td>
             <td class="px-2 py-2 text-xs font-mono whitespace-nowrap">
               {% if _doc_match %}
@@ -1325,7 +1325,7 @@
           <tr class="detalle-componentes hidden" data-match-idx="{{ loop.index0 }}">
             <td colspan="7" class="px-2 py-1 bg-emerald-50/30 dark:bg-emerald-900/10">
               <div class="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400 mb-1 mt-1">
-                {{ m.componentes|length }} cheques del programa que suman ${{ '{:,.2f}'.format(m.real.monto) }} ↔ depósito banco
+                {{ m.componentes|length }} cheques del programa que suman ${{ (m.real.monto)|num_es }} ↔ depósito banco
               </div>
               <table class="w-full text-xs">
                 <thead>
@@ -1343,13 +1343,13 @@
                     <td class="pl-4 pr-2 py-1 font-mono">{{ c.no_cheque_rel or ('#' ~ c.id_transaccion) }}</td>
                     <td class="px-2 py-1 tabular-nums">{{ c.fecha or '' }}</td>
                     <td class="px-2 py-1 font-mono">{{ c.prov or '—' }}</td>
-                    <td class="px-2 py-1 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-300">{{ '{:,.2f}'.format(c.importe) }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-300">{{ (c.importe)|num_es }}</td>
                     <td class="px-2 py-1 truncate text-slate-500 text-[11px]" title="{{ c.concepto }}">{{ (c.concepto or '')[:50] }}</td>
                   </tr>
                   {% endfor %}
                   <tr class="border-t-2 border-emerald-300 dark:border-emerald-700 bg-emerald-100/50 dark:bg-emerald-900/20">
                     <td colspan="3" class="pl-4 pr-2 py-1 font-medium text-emerald-800 dark:text-emerald-200">Total ({{ m.componentes|length }} cheques)</td>
-                    <td class="px-2 py-1 text-right tabular-nums font-bold text-emerald-800 dark:text-emerald-200">${{ '{:,.2f}'.format(m.real.monto) }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums font-bold text-emerald-800 dark:text-emerald-200">${{ (m.real.monto)|num_es }}</td>
                     <td></td>
                   </tr>
                 </tbody>
@@ -1450,7 +1450,7 @@
               <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" title="{{ m.cat.label }}">{{ m.cat.abrev or '?' }}</span>
             </td>
             <td class="px-2 py-1.5 tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">{{ m.real.fecha }}</td>
-            <td class="px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(m.real.monto) }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">$ {{ (m.real.monto)|num_es }}</td>
             <td class="px-2 py-1.5 font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">{{ _dr or '—' }}</td>
             <td class="px-2 py-1.5 truncate" title="{{ m.bancsis.prov_nombre or m.cat.cliente_nombre or '' }}">
               {% if _cli_extr %}<span class="font-mono {% if _cli_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% endif %}">{{ _cli_extr }}</span>{% else %}<span class="text-slate-500 italic">{{ m.cat.label }}</span>{% endif %}
@@ -1502,7 +1502,7 @@
             </td>
             <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap">{{ r.fecha }}</td>
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
-              {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
+              {% if r.tipo == 'D' %}-{% endif %}{{ (r.monto)|num_es }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate">
@@ -1524,7 +1524,7 @@
                   {% for c in r.sugerencias %}
                   <tr class="border-t border-amber-200/50 dark:border-amber-800/30">
                     <td class="px-2 py-1.5 tabular-nums text-slate-600 whitespace-nowrap w-24">{{ c.fecha }}</td>
-                    <td class="px-2 py-1.5 text-right tabular-nums whitespace-nowrap w-24">$ {{ '{:,.2f}'.format(c.importe) }}</td>
+                    <td class="px-2 py-1.5 text-right tabular-nums whitespace-nowrap w-24">$ {{ (c.importe)|num_es }}</td>
                     <td class="px-2 py-1.5 font-mono text-slate-500 w-12">{{ c.documento or '' }}</td>
                     <td class="px-2 py-1.5">
                       {% if c.prov_nombre %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ c.prov_nombre }}</span>
@@ -1615,7 +1615,7 @@
             </td>
             <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ r.fecha }}</td>
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
-              {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
+              {% if r.tipo == 'D' %}-{% endif %}{{ (r.monto)|num_es }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate">
@@ -1724,7 +1724,7 @@
             </td>
             <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ b.fecha }}</td>
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
-              {% if b.tipo_real == 'D' %}-{% endif %}{{ '{:,.2f}'.format(b.importe) }}
+              {% if b.tipo_real == 'D' %}-{% endif %}{{ (b.importe)|num_es }}
             </td>
             <td class="px-2 py-2 text-xs truncate" title="{{ b.prov_nombre or '' }} (id {{ b.id_transaccion }})">
               {{ cliente_cell(b.prov, b.prov_nombre, '', b.cat.grupo, b.cat.label) }}

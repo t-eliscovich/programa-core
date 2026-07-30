@@ -14,13 +14,13 @@
     <div class="grid grid-cols-3 gap-6">
       <div>
         <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Saldo banco esperado (cálculo)</div>
-        <div class="text-2xl font-bold tabular-nums">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or 0) }}</div>
+        <div class="text-2xl font-bold tabular-nums">${{ (balance.saldo_banco_esperado or 0)|num_es }}</div>
         <div class="text-[11px] text-slate-500 mt-0.5">PC + pendientes</div>
       </div>
       <div>
         <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Saldo banco real (extracto)</div>
         <div class="text-2xl font-bold tabular-nums">
-          {% if saldo_banco_real is not none %}${{ '{:,.2f}'.format(saldo_banco_real) }}
+          {% if saldo_banco_real is not none %}${{ (saldo_banco_real)|num_es }}
           {% else %}<span class="text-slate-400">—</span><span class="text-xs text-slate-500"> (necesitás una sesión abierta con extracto)</span>{% endif %}
         </div>
         <div class="text-[11px] text-slate-500 mt-0.5">Último saldo del último xlsx subido</div>
@@ -28,7 +28,7 @@
       <div>
         <div class="text-[10px] uppercase tracking-wider text-rose-700 dark:text-rose-300 font-semibold">Diferencia</div>
         <div class="text-2xl font-bold tabular-nums {% if diferencia_objetivo and diferencia_objetivo|abs > 0.5 %}text-rose-700{% else %}text-emerald-700{% endif %}">
-          {% if diferencia_objetivo is not none %}{{ '{:+,.2f}'.format(diferencia_objetivo) }}
+          {% if diferencia_objetivo is not none %}{{ ('+' if ((diferencia_objetivo) or 0) >= 0 else '-') ~ (((diferencia_objetivo) or 0)|abs|num_es) }}
           {% else %}<span class="text-slate-400">—</span>{% endif %}
         </div>
         <div class="text-[11px] text-slate-500 mt-0.5">Real − calculado</div>
@@ -45,7 +45,7 @@
       </div>
       <div class="text-xs tabular-nums">
         {% if filas_torcidas %}
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ filas_torcidas|length }} filas torcidas · Σ {{ '{:+,.2f}'.format(suma_diff_torcidas) }}</span>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ filas_torcidas|length }} filas torcidas · Σ {{ ('+' if ((suma_diff_torcidas) or 0) >= 0 else '-') ~ (((suma_diff_torcidas) or 0)|abs|num_es) }}</span>
         {% else %}
           <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ Cadena coherente</span>
         {% endif %}
@@ -72,10 +72,10 @@
             <td class="px-2 py-1 font-mono">{{ f.id }}</td>
             <td class="px-2 py-1 text-slate-500">{{ f.fecha }}</td>
             <td class="px-2 py-1 font-mono text-[10px]">{{ f.documento }}</td>
-            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.importe) }}</td>
-            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.saldo_grabado) }}</td>
-            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.saldo_esperado) }}</td>
-            <td class="px-2 py-1 text-right font-mono font-bold {% if f.diferencia > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(f.diferencia) }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ (f.importe)|num_es }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ (f.saldo_grabado)|num_es }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ (f.saldo_esperado)|num_es }}</td>
+            <td class="px-2 py-1 text-right font-mono font-bold {% if f.diferencia > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((f.diferencia) or 0) >= 0 else '-') ~ (((f.diferencia) or 0)|abs|num_es) }}</td>
             <td class="px-2 py-1 text-slate-600 truncate max-w-xs" title="{{ f.concepto }}">{{ f.concepto }}</td>
           </tr>
           {% endfor %}
@@ -93,7 +93,7 @@
     </div>
     {% else %}
     <div class="px-5 py-3 bg-emerald-50/40 dark:bg-emerald-900/10 text-xs text-emerald-900 dark:text-emerald-200">
-      Último saldo de la cadena: <strong>${{ '{:,.2f}'.format(last_saldo or 0) }}</strong>
+      Último saldo de la cadena: <strong>${{ (last_saldo or 0)|num_es }}</strong>
     </div>
     {% endif %}
   </section>
@@ -107,7 +107,7 @@
       </div>
       <div class="text-xs tabular-nums">
         {% if diff_matches %}
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ diff_matches|length }} matches · suma {{ '{:+,.2f}'.format(sum_diff_matches) }}</span>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ diff_matches|length }} matches · suma {{ ('+' if ((sum_diff_matches) or 0) >= 0 else '-') ~ (((sum_diff_matches) or 0)|abs|num_es) }}</span>
         {% else %}
           <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ Todos cuadran</span>
         {% endif %}
@@ -133,9 +133,9 @@
             <td class="px-2 py-1 text-slate-500">{{ d.creado_en|hora_ec('%m-%d %H:%M') if d.creado_en else '—' }}</td>
             <td class="px-2 py-1 text-slate-500">{{ d.real_fecha or '—' }}</td>
             <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (d.real_documento or '')[:12] }}</td>
-            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(d.real_monto|float) }}</td>
-            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(d.tb_importe|float) }}</td>
-            <td class="px-2 py-1 text-right font-mono font-bold {% if d.diferencia|float > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(d.diferencia|float) }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ (d.real_monto|float)|num_es }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ (d.tb_importe|float)|num_es }}</td>
+            <td class="px-2 py-1 text-right font-mono font-bold {% if d.diferencia|float > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((d.diferencia|float) or 0) >= 0 else '-') ~ (((d.diferencia|float) or 0)|abs|num_es) }}</td>
             <td class="px-2 py-1 text-slate-600 truncate max-w-xs" title="{{ d.real_concepto or '' }}">{{ (d.real_concepto or d.tb_concepto or '—')[:40] }}</td>
           </tr>
           {% endfor %}
@@ -179,10 +179,10 @@
           <tr class="border-t border-slate-100 dark:border-slate-800">
             <td class="px-2 py-1 text-slate-500">{{ r.fecha or '—' }}</td>
             <td class="px-2 py-1 font-mono text-[10px]">{{ (r.documento or '')[:14] }}</td>
-            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ (r.monto|float)|num_es }}</td>
             <td class="px-2 py-1 text-slate-500">{{ r.tipo }}</td>
             <td class="px-2 py-1 text-right font-semibold">{{ r.n }}</td>
-            <td class="px-2 py-1 text-right font-mono text-rose-700">{{ '{:+,.2f}'.format(extra) }}</td>
+            <td class="px-2 py-1 text-right font-mono text-rose-700">{{ ('+' if ((extra) or 0) >= 0 else '-') ~ (((extra) or 0)|abs|num_es) }}</td>
           </tr>
           {% endfor %}
         </tbody>

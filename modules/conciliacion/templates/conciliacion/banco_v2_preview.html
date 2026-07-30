@@ -30,11 +30,11 @@
     <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
       <h2 class="text-base font-semibold">Lo que vas a conciliar</h2>
       <div class="text-xs tabular-nums">
-        <span class="text-emerald-700">Banco Σ {{ '{:+,.2f}'.format(banco_total_signed) }}</span>
+        <span class="text-emerald-700">Banco Σ {{ ('+' if ((banco_total_signed) or 0) >= 0 else '-') ~ (((banco_total_signed) or 0)|abs|num_es) }}</span>
         ·
-        <span class="text-sky-700">Programa Σ {{ '{:+,.2f}'.format(programa_total_signed) }}</span>
+        <span class="text-sky-700">Programa Σ {{ ('+' if ((programa_total_signed) or 0) >= 0 else '-') ~ (((programa_total_signed) or 0)|abs|num_es) }}</span>
         {% if diff_total|abs > 0.01 %}
-          · <span class="text-rose-700 font-semibold">Δ {{ '{:+,.2f}'.format(diff_total) }}</span>
+          · <span class="text-rose-700 font-semibold">Δ {{ ('+' if ((diff_total) or 0) >= 0 else '-') ~ (((diff_total) or 0)|abs|num_es) }}</span>
         {% else %}
           · <span class="text-emerald-700">cuadra ✓</span>
         {% endif %}
@@ -50,7 +50,7 @@
           {% for m in real_subset|sort(attribute='monto', reverse=true) %}
           <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
             <span class="w-4 text-center font-bold text-sm {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if m.tipo == 'C' %}+{% else %}−{% endif %}</span>
-            <span class="font-mono font-bold text-sm w-28 text-right {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</span>
+            <span class="font-mono font-bold text-sm w-28 text-right {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ (m.monto|float)|num_es }}</span>
             <span class="text-slate-400 w-16">{{ m.fecha }}</span>
             <span class="text-slate-500 font-mono w-24 truncate">{{ m.documento or '—' }}</span>
             <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ m.concepto or '' }}">{{ (m.concepto or '')[:55] }}</span>
@@ -59,7 +59,7 @@
           {% for h in hist_rows|sort(attribute='monto', reverse=true) %}
           <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
             <span class="w-4 text-center font-bold text-sm {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if h.tipo == 'C' %}+{% else %}−{% endif %}</span>
-            <span class="font-mono font-bold text-sm w-28 text-right {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(h.monto|float) }}</span>
+            <span class="font-mono font-bold text-sm w-28 text-right {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ (h.monto|float)|num_es }}</span>
             <span class="text-slate-400 w-16">{{ h.fecha }}</span>
             <span class="text-slate-500 font-mono w-24 truncate">{{ h.documento or '—' }}</span>
             <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ h.concepto or '' }}"><span class="text-purple-600 font-bold text-[10px] uppercase mr-1">H</span>{{ (h.concepto or '')[:50] }}</span>
@@ -74,7 +74,7 @@
           {% set _signo = 1 if b.documento in ('DE','TR','XX','NC','IN','AC') else -1 %}
           <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
             <span class="w-4 text-center font-bold text-sm {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if _signo > 0 %}+{% else %}−{% endif %}</span>
-            <span class="font-mono font-bold text-sm w-28 text-right {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(b.importe|float) }}</span>
+            <span class="font-mono font-bold text-sm w-28 text-right {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ (b.importe|float)|num_es }}</span>
             <span class="text-slate-400 w-16">{{ b.fecha }}</span>
             <span class="text-slate-500 font-mono w-16 truncate">{{ b.documento or '—' }}</span>
             <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ b.concepto or '' }}">{% if b.prov %}<span class="text-slate-500 text-xs">[{{ b.prov }}]</span> {% endif %}{{ ((b.prov_nombre + ' · ') if b.prov_nombre else '') + (b.concepto or '')[:50] }}</span>
@@ -114,12 +114,12 @@
         {% set is_int = '(n)' in label %}
         <tr class="border-t border-slate-100 dark:border-slate-800 {% if label.startswith('=') %}bg-slate-50/60 dark:bg-slate-800/30 font-semibold{% endif %}">
           <td class="px-4 py-1.5">{{ label }}</td>
-          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ b }}{% else %}{{ '{:,.2f}'.format(b|float) }}{% endif %}</td>
-          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ a }}{% else %}{{ '{:,.2f}'.format(a|float) }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ b }}{% else %}{{ (b|float)|num_es }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ a }}{% else %}{{ (a|float)|num_es }}{% endif %}</td>
           <td class="px-4 py-1.5 text-right font-mono {% if delta|abs > 0.001 %}{% if delta > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}{% else %}text-slate-400{% endif %}">
             {% if delta|abs < 0.001 %}=
             {% elif is_int %}{{ '{:+d}'.format(delta|int) }}
-            {% else %}{{ '{:+,.2f}'.format(delta) }}{% endif %}
+            {% else %}{{ ('+' if ((delta) or 0) >= 0 else '-') ~ (((delta) or 0)|abs|num_es) }}{% endif %}
           </td>
         </tr>
         {% endfor %}

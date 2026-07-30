@@ -74,19 +74,19 @@
         </span>
       </div>
       <div class="text-4xl font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums leading-none">
-        ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}
+        ${{ (saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo)|num_es }}
       </div>
       <div class="text-[11px] text-slate-500 mt-1.5">
         Saldo PC libros − pendientes PC · invariante a movs pendientes nuevos
         {% if saldo_pc_actual.saldo_a_conciliar_estable is not none and saldo_pc_actual.snapshot_evento %}
           <br>
           <span class="text-slate-400">
-            Última conciliación manual: ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_a_conciliar_estable) }}
+            Última conciliación manual: ${{ (saldo_pc_actual.saldo_a_conciliar_estable)|num_es }}
             · {{ saldo_pc_actual.snapshot_evento }}{% if saldo_pc_actual.snapshot_fecha %} · {{ saldo_pc_actual.snapshot_fecha }}{% endif %}
             {% set _drift = ((saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) - saldo_pc_actual.saldo_a_conciliar_estable) | round(2) %}
             {% if _drift|abs > 0.5 %}
               · drift desde snapshot:
-              <span class="{% if _drift > 0 %}text-emerald-600{% else %}text-rose-600{% endif %} font-mono">{{ '{:+,.2f}'.format(_drift) }}</span>
+              <span class="{% if _drift > 0 %}text-emerald-600{% else %}text-rose-600{% endif %} font-mono">{{ ('+' if ((_drift) or 0) >= 0 else '-') ~ (((_drift) or 0)|abs|num_es) }}</span>
               (movs auto-conciliados del sync)
             {% endif %}
           </span>
@@ -100,7 +100,7 @@
       <tbody>
         <tr class="border-b border-slate-100 dark:border-slate-800">
           <td class="px-5 py-1.5 text-slate-500">Saldo PC libros (live)</td>
-          <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}</td>
+          <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">${{ (saldo_pc_actual.saldo)|num_es }}</td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">se mueve con movs nuevos</td>
         </tr>
         {# TMT 2026-05-28 dueña: 'ver detalle que se abra en la misma pantalla'.
@@ -113,12 +113,12 @@
             {# TMT 2026-05-28 dueña: split entradas/salidas en lugar del neto. #}
             {% if saldo_pc_actual.pendientes_pc_creditos or saldo_pc_actual.pendientes_pc_debitos %}
               <div class="text-emerald-700 dark:text-emerald-400 text-[12px]" title="{{ saldo_pc_actual.n_pendientes_pc_cred }} entrada(s) sin conciliar">
-                + {{ '{:,.2f}'.format(saldo_pc_actual.pendientes_pc_creditos) }}
+                + {{ (saldo_pc_actual.pendientes_pc_creditos)|num_es }}
               </div>
               <div class="text-rose-700 dark:text-rose-400 text-[12px]" title="{{ saldo_pc_actual.n_pendientes_pc_deb }} salida(s) sin conciliar">
-                − {{ '{:,.2f}'.format(saldo_pc_actual.pendientes_pc_debitos) }}
+                − {{ (saldo_pc_actual.pendientes_pc_debitos)|num_es }}
               </div>
-              <div class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">neto {{ '{:+,.2f}'.format(saldo_pc_actual.pendientes_conciliar_neto) }}</div>
+              <div class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">neto {{ ('+' if ((saldo_pc_actual.pendientes_conciliar_neto) or 0) >= 0 else '-') ~ (((saldo_pc_actual.pendientes_conciliar_neto) or 0)|abs|num_es) }}</div>
             {% else %}—{% endif %}
           </td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">
@@ -153,7 +153,7 @@
                       <td class="px-2 py-1 text-slate-500 font-mono">{{ p.no_cheque or '' }}</td>
                       <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ p.concepto or '' }}">{{ (p.concepto or '')[:50] }}</td>
                       <td class="px-2 py-1 text-right font-mono {% if (p.importe_signed or 0) < 0 %}text-rose-600{% else %}text-emerald-700{% endif %}">
-                        {{ '{:+,.2f}'.format(p.importe_signed or 0) }}
+                        {{ ('+' if ((p.importe_signed or 0) or 0) >= 0 else '-') ~ (((p.importe_signed or 0) or 0)|abs|num_es) }}
                       </td>
                     </tr>
                     {% endfor %}
@@ -172,7 +172,7 @@
         {% endif %}
         <tr class="border-b border-slate-100 dark:border-slate-800">
           <td class="px-5 py-1.5 text-slate-500">= Saldo conciliado live</td>
-          <td class="px-5 py-1.5 text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}</td>
+          <td class="px-5 py-1.5 text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ (saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo)|num_es }}</td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">si conciliara todo ahora</td>
         </tr>
         <tr class="border-b border-slate-100 dark:border-slate-800">
@@ -180,19 +180,19 @@
           <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">
             {% if saldo_pc_actual.pendientes_banco_creditos or saldo_pc_actual.pendientes_banco_debitos %}
               <div class="text-emerald-700 dark:text-emerald-400 text-[12px]" title="{{ saldo_pc_actual.n_pendientes_banco_cred }} entrada(s) en extracto sin PC">
-                + {{ '{:,.2f}'.format(saldo_pc_actual.pendientes_banco_creditos) }}
+                + {{ (saldo_pc_actual.pendientes_banco_creditos)|num_es }}
               </div>
               <div class="text-rose-700 dark:text-rose-400 text-[12px]" title="{{ saldo_pc_actual.n_pendientes_banco_deb }} salida(s) en extracto sin PC">
-                − {{ '{:,.2f}'.format(saldo_pc_actual.pendientes_banco_debitos) }}
+                − {{ (saldo_pc_actual.pendientes_banco_debitos)|num_es }}
               </div>
-              <div class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">neto {{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}</div>
-            {% elif saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}
+              <div class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">neto {{ ('+' if ((saldo_pc_actual.neto_pendientes) or 0) >= 0 else '-') ~ (((saldo_pc_actual.neto_pendientes) or 0)|abs|num_es) }}</div>
+            {% elif saldo_pc_actual.neto_pendientes is not none %}{{ ('+' if ((saldo_pc_actual.neto_pendientes) or 0) >= 0 else '-') ~ (((saldo_pc_actual.neto_pendientes) or 0)|abs|num_es) }}{% else %}—{% endif %}
           </td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">banco confirmó, PC no tiene</td>
         </tr>
         <tr>
           <td class="px-5 py-2 text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</td>
-          <td class="px-5 py-2 text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo) }}</td>
+          <td class="px-5 py-2 text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ (saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo)|num_es }}</td>
           <td class="px-5 py-2 text-[11px] text-slate-400">lo que el banco debería tener</td>
         </tr>
       </tbody>

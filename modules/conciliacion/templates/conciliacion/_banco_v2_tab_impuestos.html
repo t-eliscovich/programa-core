@@ -60,7 +60,7 @@
             <td class="px-2 py-1">
               {% if m.tipo == 'C' %}<span class="text-emerald-700 font-bold">+</span>{% else %}<span class="text-rose-700 font-bold">−</span>{% endif %}
             </td>
-            <td class="px-2 py-1 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
+            <td class="px-2 py-1 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ (m.monto|float)|num_es }}</td>
             <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (m.documento or '')|string|truncate(12,True,'') }}</td>
             <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate" title="{{ m.concepto }}">{{ (m.concepto or '')[:60] }}</td>
             {# TMT 2026-07-06 (dueña): Oficina del extracto — vacía si el archivo no la trae #}
