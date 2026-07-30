@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Compras — Meses anteriores desde formulas{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('compras.lista') }}" class="hover:underline text-slate-500">Compras</a> / <a href="{{ url_for('compras.desde_formulas') }}" class="hover:underline text-slate-500">Desde formulas</a> / <strong>Meses anteriores</strong>{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--xl">
+  <header class="page-header">
+    <h1 class="page-title">Químicos de meses anteriores sin cargar</h1>
+    <p class="text-sm text-slate-500">
+      Compras que el programa de tintorería registró y nunca entraron acá. El puente
+      sincroniza sólo el mes en curso, así que sin esta pantalla un mes entero se
+      pierde en silencio. Cargarlas genera el pasivo que falta.
+    </p>
+  </header>
+
+  {% if not hist.disponible %}
+    <div class="page-card"><p class="text-slate-500">El puente a formulas no está disponible en este momento.</p></div>
+  {% elif not hist.facturas %}
+    <div class="page-card"><p style="color:#047857"><strong>Todo al día.</strong>
+      No quedó ninguna compra de meses anteriores sin cargar.</p></div>
+  {% else %}
+    <div class="page-card mb-4" style="border-left:4px solid #e11d48">
+      <p class="text-sm" style="color:#9f1239">
+        <strong>{{ hist.facturas }} factura{{ '' if hist.facturas == 1 else 's' }}
+        por {{ hist.importe | money_es }}</strong> sin cargar.
+      </p>
+    </div>
+    {% for m in hist.meses %}
+      <div class="page-card mb-4">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h2 class="text-base font-semibold">{{ m.mes_str }} — {{ m.n }} factura{{ '' if m.n == 1 else 's' }} ({{ m.total | money_es }})</h2>
+          {% if tiene_permiso('compras.crear') %}
+            <form method="post" action="{{ url_for('compras.desde_formulas_sincronizar', mes=m.mes_str) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+                Cargar {{ m.mes_str }}
+              </button>
+            </form>
+          {% endif %}
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-slate-500 border-b border-slate-200">
+                <th class="py-2 pr-3">FECHA</th>
+                <th class="py-2 pr-3">PROV</th>
+                <th class="py-2 pr-3">FACTURA</th>
+                <th class="py-2 pr-3 text-right">KG</th>
+                <th class="py-2 pr-3 text-right">S/IVA</th>
+                <th class="py-2 pr-3 text-right">C/IVA</th>
+                <th class="py-2 pr-3">ESTADO</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in m.filas %}
+              <tr class="border-b border-slate-100">
+                <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
+                <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or f.proveedor_formulas }}</td>
+                <td class="py-1.5 pr-3">{{ f.factura_pc or f.factura_formulas or '—' }}</td>
+                <td class="py-1.5 pr-3 text-right">{{ f.kg | num_es }}</td>
+                <td class="py-1.5 pr-3 text-right">{{ f.importe_siva | money_es }}</td>
+                <td class="py-1.5 pr-3 text-right font-medium">{{ f.importe_con_iva | money_es }}</td>
+                <td class="py-1.5 pr-3">
+                  {% if f.estado == 'pendiente' %}
+                    <span class="inline-block px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800">sin cargar</span>
+                  {% elif f.estado == 'sin_numero' %}
+                    <span class="inline-block px-2 py-0.5 rounded text-xs bg-rose-100 text-rose-800">sin N° de factura</span>
+                  {% else %}
+                    <span class="inline-block px-2 py-0.5 rounded text-xs bg-rose-100 text-rose-800">proveedor sin reconocer</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

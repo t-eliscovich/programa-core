@@ -26,6 +26,8 @@
         </label>
         <button type="submit" class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Ver</button>
       </form>
+      <a href="{{ url_for('compras.desde_formulas_historico') }}"
+         class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Meses anteriores</a>
       {% if est.disponible and (est.pendientes > 0 or est.ajustables > 0) and tiene_permiso('compras.crear') %}
         <form method="post" action="{{ url_for('compras.desde_formulas_sincronizar', mes=mes_str) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

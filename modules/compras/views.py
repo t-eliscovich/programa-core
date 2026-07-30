@@ -628,6 +628,17 @@ def desde_formulas():
     )
 
 
+@compras_bp.route("/compras/desde-formulas/historico")
+@requiere_login
+@requiere_permiso("compras.ver")
+def desde_formulas_historico():
+    """Lo que formulas registró en meses ANTERIORES y nunca llegó a PC."""
+    from modules.compras import formulas_bridge
+
+    return render_template("compras/desde_formulas_historico.html",
+                           hist=formulas_bridge.estado_historico())
+
+
 @compras_bp.route("/compras/desde-formulas/sincronizar", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.crear")

@@ -205,10 +205,25 @@ def grupos_formulas(anio: int, mes: int) -> list[dict]:
     )
 
 
+def _mes_offset(anio: int, mes: int, delta: int) -> date:
+    """Primer día del mes (anio, mes) corrido `delta` meses."""
+    m = mes - 1 + delta
+    return date(anio + m // 12, m % 12 + 1, 1)
+
+
 def _compras_pc_mes(anio: int, mes: int) -> list[dict]:
-    """Compras ya cargadas en PC ese mes (excluye anuladas stat='Y')."""
-    ini = date(anio, mes, 1)
-    fin = date(anio + (1 if mes == 12 else 0), 1 if mes == 12 else mes + 1, 1)
+    """Compras de PC contra las que matchear (excluye anuladas stat='Y').
+
+    VENTANA DE ±1 MES, no el mes exacto. La fecha de una compra no coincide
+    entre los dos sistemas: formulas la fecha cuando RECIBE la mercadería y el
+    dBase cuando la TIPEAN. Ejemplo real: la SEY 21859 está en formulas el
+    28/04 y en PC el 01/05 — con la ventana angosta el puente la daba por
+    "pendiente" y, si alguien apretaba cargar sobre abril, la DUPLICABA.
+    El match sigue siendo por número exacto, así que abrir la ventana no
+    inventa coincidencias: sólo deja de perder las que ya están.
+    """
+    ini = _mes_offset(anio, mes, -1)
+    fin = _mes_offset(anio, mes, 2)
     return db.fetch_all(
         """
         SELECT id_compra, codigo_prov, importe, concepto,
@@ -500,6 +515,82 @@ def _avisar_novedades(creadas: list, errores: list, ajustadas: list | None = Non
         log.warning("puente formulas: no pude avisar a novedades: %s", e)
 
 
+# ── Revisión histórica (que no se pierda un mes entero otra vez) ────────────
+
+def meses_con_compras() -> list[tuple[int, int]]:
+    """Meses (año, mes) en los que formulas registró compras. Más nuevo primero."""
+    filas = formulas_db.fetch_all(
+        "SELECT DISTINCT substring(fecha::text, 1, 7) AS mes "
+        "  FROM compras WHERE fecha IS NOT NULL ORDER BY 1 DESC"
+    )
+    out = []
+    for f in filas:
+        try:
+            a, m = str(f.get("mes"))[:7].split("-")
+            out.append((int(a), int(m)))
+        except (ValueError, AttributeError):
+            continue
+    return out
+
+
+def estado_historico(hoy: date | None = None) -> dict:
+    """Todo lo que formulas registró y NUNCA llegó a PC, mes por mes.
+
+    Existe porque el puente sincroniza SÓLO el mes en curso: arrancó el
+    17/07/2026 y abril–junio quedaron dependiendo del FoxPro, que no las
+    tipeó — 9 facturas por ~$42.100 que nadie vio hasta que la dueña preguntó
+    (30/07). Sin este barrido, un mes entero se puede volver a perder en
+    silencio. El mes en curso NO entra: ése ya lo muestra la pantalla normal.
+    """
+    if not formulas_db.disponible():
+        return {"disponible": False, "meses": [], "facturas": 0, "importe": 0.0}
+    from filters import today_ec
+
+    h = hoy or today_ec()
+    meses, n, imp = [], 0, 0.0
+    for anio, mes in meses_con_compras():
+        if (anio, mes) >= (h.year, h.month):
+            continue
+        est = estado_mes(anio, mes)
+        faltan = [f for f in (est.get("filas") or [])
+                  if f.estado in ("pendiente", "sin_numero", "sin_mapear")]
+        if not faltan:
+            continue
+        total = round(sum(f.importe_con_iva for f in faltan), 2)
+        meses.append({"anio": anio, "mes": mes, "mes_str": f"{anio:04d}-{mes:02d}",
+                      "filas": faltan, "n": len(faltan), "total": total})
+        n += len(faltan)
+        imp += total
+    return {"disponible": True, "meses": meses, "facturas": n,
+            "importe": round(imp, 2)}
+
+
+def avisar_historico(hist: dict) -> int:
+    """Un aviso con lo que quedó sin cargar de meses ANTERIORES. Nunca levanta."""
+    if not hist.get("facturas"):
+        return 0
+    try:
+        from filters import num_es
+        from modules.avisos import avisar
+
+        meses = ", ".join(m["mes_str"] for m in hist["meses"])
+        return bool(avisar(
+            fuente="quimicos", nivel="alerta",
+            titulo=(f"{hist['facturas']} compra"
+                    f"{'' if hist['facturas'] == 1 else 's'} de químicos de "
+                    f"meses anteriores sin cargar"),
+            detalle=(f"$ {num_es(hist['importe'], 2)} que el programa de "
+                     f"tintorería registró y nunca entraron acá ({meses}). "
+                     f"El pasivo de esos meses está de menos."),
+            importe=hist["importe"], cantidad=hist["facturas"],
+            url="/compras/desde-formulas/historico",
+            clave=f"quimicos:historico:{meses}:{hist['facturas']}"[:400],
+        ))
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe nada
+        log.warning("puente formulas: no pude avisar el histórico: %s", e)
+        return 0
+
+
 def avisar_trabadas(est: dict) -> int:
     """Avisa por la campanita las compras de formulas que NO se pueden cargar.
 
@@ -583,6 +674,9 @@ def correr_si_toca() -> dict:
         res["ajustadas"] = len(rep.get("ajustadas") or [])
         res["importe"] = round(
             sum(float(c.get("importe") or 0) for c in (rep.get("creadas") or [])), 2)
+        # Barrido de meses anteriores: si quedó un mes entero sin cargar,
+        # que se entere por la campanita y no dentro de tres meses.
+        res["historico"] = avisar_historico(estado_historico())
     except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
         log.warning("puente formulas (fondo): %s", e)
     return res

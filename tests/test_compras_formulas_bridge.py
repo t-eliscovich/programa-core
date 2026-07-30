@@ -480,3 +480,99 @@ def test_avisar_trabadas_sin_nada_no_avisa():
 def test_avisar_trabadas_nunca_levanta():
     with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
         assert fb.avisar_trabadas(_estado_sin_num()) == 0
+
+
+# ── ventana de match ±1 mes ─────────────────────────────────────────────────
+
+def test_ventana_match_abarca_mes_anterior_y_siguiente():
+    """La SEY 21859 está en formulas el 28/04 y en PC el 01/05: con la ventana
+    del mes exacto el puente la daba por pendiente y la habría DUPLICADO."""
+    capt = {}
+
+    def _fetch(sql, params=None):
+        capt["params"] = params
+        return []
+
+    with patch.object(fb.db, "fetch_all", side_effect=_fetch):
+        fb._compras_pc_mes(2026, 4)
+    assert capt["params"] == (date(2026, 3, 1), date(2026, 6, 1))
+
+
+def test_ventana_match_cruza_el_anio():
+    capt = {}
+    with patch.object(fb.db, "fetch_all",
+                      side_effect=lambda sql, params=None: capt.update(p=params) or []):
+        fb._compras_pc_mes(2026, 12)
+    assert capt["p"] == (date(2026, 11, 1), date(2027, 2, 1))
+
+
+def test_no_da_pendiente_la_que_esta_en_el_mes_siguiente():
+    grupos = [{"proveedor": "SEY", "factura": "859", "fecha": "2026-04-28",
+               "kg": 1000, "importe_siva": 3200.0}]
+    pc = [{"id_compra": 5, "codigo_prov": "SY", "importe": 3680.0,
+           "concepto": "21859        28", "usuario_crea": "dbf-import",
+           "usuario_modifica": None, "id_transaccion": None}]
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=grupos), \
+         patch.object(fb.db, "fetch_all", return_value=pc):
+        est = fb.estado_mes(2026, 4)
+    # '859' → sufijo de '21859' + importe en rango ⇒ ya está cargada
+    assert est["filas"][0].estado == "cargada"
+    assert est["pendientes"] == 0
+
+
+# ── barrido histórico ───────────────────────────────────────────────────────
+
+def test_meses_con_compras_parsea():
+    with patch.object(fb.formulas_db, "fetch_all",
+                      return_value=[{"mes": "2026-07"}, {"mes": "2026-04"},
+                                    {"mes": None}]):
+        assert fb.meses_con_compras() == [(2026, 7), (2026, 4)]
+
+
+def test_estado_historico_excluye_el_mes_en_curso():
+    def _estado(anio, mes):
+        f = fb.FilaPuente("AVQ", "AQ", "6010", "6010", date(anio, mes, 24),
+                          0, 7040.0, 0.15, 8096.0, "pendiente")
+        return {"disponible": True, "filas": [f], "pendientes": 1,
+                "total_pendiente": 8096.0, "ajustables": 0, "trabadas": 0,
+                "total_trabado": 0.0}
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb, "meses_con_compras",
+                      return_value=[(2026, 7), (2026, 5), (2026, 4)]), \
+         patch.object(fb, "estado_mes", side_effect=_estado), \
+         patch("filters.today_ec", return_value=date(2026, 7, 30)):
+        hist = fb.estado_historico()
+    assert [m["mes_str"] for m in hist["meses"]] == ["2026-05", "2026-04"]
+    assert hist["facturas"] == 2
+    assert hist["importe"] == pytest.approx(16192.0, abs=0.01)
+
+
+def test_estado_historico_sin_bridge():
+    with patch.object(fb.formulas_db, "disponible", return_value=False):
+        assert fb.estado_historico()["disponible"] is False
+
+
+def test_avisar_historico():
+    hist = {"facturas": 9, "importe": 42126.74,
+            "meses": [{"mes_str": "2026-04"}, {"mes_str": "2026-06"}]}
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        assert fb.avisar_historico(hist) == 1
+    assert "9 compras de químicos de meses anteriores" in puestos[0]["titulo"]
+    assert puestos[0]["url"] == "/compras/desde-formulas/historico"
+    assert puestos[0]["clave"].endswith(":9")
+
+
+def test_avisar_historico_sin_nada():
+    with patch("modules.avisos.avisar") as av:
+        assert fb.avisar_historico({"facturas": 0, "meses": []}) == 0
+    av.assert_not_called()
+
+
+def test_avisar_historico_nunca_levanta():
+    with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
+        assert fb.avisar_historico({"facturas": 1, "importe": 1.0,
+                                    "meses": [{"mes_str": "2026-04"}]}) == 0
