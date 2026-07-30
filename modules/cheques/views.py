@@ -3737,3 +3737,102 @@ def residuos_retencion_eliminar():
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude anular los residuos", e)
     return redirect(url_for("cheques.residuos_retencion", tope=tope))
+
+
+@cheques_bp.route("/cheques/anulacion-error-carga/<int:id_mov_doble>/deshacer",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def deshacer_anulacion_error_carga(id_mov_doble: int):
+    """Revive un cheque anulado por "error de carga".
+
+    TMT 2026-07-30 (dueña: "tiene que tener pantalla"). Era el único
+    movimiento de cheques sin vuelta atrás: /historial mostraba el ↺ y el
+    dispatcher contestaba "aún no tiene reverso automatizado". El caso testigo
+    es el anticipo de CJE (#100934), que hubo que RE-CREAR entero por esto.
+    """
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, metadata, estado, importe "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        abort(404)
+    volver = request.values.get("next") or url_for("historial.lista")
+
+    if request.method == "POST":
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            res = queries.deshacer_anulacion_error_carga(
+                id_mov_doble, usuario=usuario,
+                motivo=(request.form.get("motivo") or "").strip(),
+            )
+            msg = (
+                f"Cheque {res['no_cheque'] or ('#' + str(res['id_cheque']))} "
+                f"de vuelta (estado {res['stat_restaurado']})."
+            )
+            if res["aplicaciones_reaplicadas"]:
+                msg += (f" Se re-aplicó a {res['aplicaciones_reaplicadas']} "
+                        f"factura(s).")
+            if res["aplicaciones_pendientes"]:
+                msg += (
+                    f" OJO: esta anulación es anterior al 30/07 y no guardó "
+                    f"cuáles eran sus {res['aplicaciones_pendientes']} "
+                    f"aplicación(es) a facturas — re-aplicalas a mano desde la "
+                    f"ficha del cheque."
+                )
+            if res.get("compensacion"):
+                msg += (f" Se compensó el movimiento de "
+                        f"{res['compensacion']['tipo']} que había dejado la "
+                        f"anulación.")
+            flash(msg, "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude deshacer la anulación por error de carga", e)
+        return redirect(request.form.get("next") or volver)
+
+    import json as _json
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            meta = {}
+    ch = queries.por_id(int(mv.get("origen_id") or 0)) or {}
+    _snap = meta.get("aplicaciones_borradas")
+    _n_ap = int(meta.get("n_aplicaciones_reversadas") or 0)
+    _comp = meta.get("compensacion") or {}
+    detalle = {
+        "Cheque": (ch.get("no_cheque") or "").strip() or f"#{mv.get('origen_id')}",
+        "Cliente": ch.get("codigo_cli", "") or "—",
+        "Importe": f"$ {float(ch.get('importe') or 0):,.2f}",
+        "Vuelve al estado": (meta.get("stat_previo") or "—"),
+        "Aplicaciones a facturas": (
+            f"{len(_snap)} — se re-aplican solas" if isinstance(_snap, list) and _snap
+            else (f"{_n_ap} — SIN registro (anulación anterior al 30/07): hay "
+                  f"que re-aplicarlas a mano" if _n_ap
+                  else "ninguna")
+        ),
+        "Compensación a revertir": (
+            f"{_comp.get('tipo')} #{_comp.get('id')}" if _comp.get("tipo")
+            else "no hubo (el cheque estaba en cartera)"
+        ),
+        "Motivo de la anulación": (meta.get("motivo") or "—"),
+    }
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer anulación por error de carga",
+        mensaje=(
+            "El cheque vuelve a su estado anterior y la nota de débito (o el "
+            "movimiento de caja) que dejó la anulación se compensa con su "
+            "opuesta — la fila original no se borra, queda la historia "
+            "completa."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("cheques.deshacer_anulacion_error_carga",
+                           id_mov_doble=id_mov_doble, next=volver),
+        volver_url=volver,
+        motivo_requerido=False,
+        confirm_label="Devolver el cheque",
+    )

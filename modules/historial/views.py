@@ -768,6 +768,16 @@ _REVERSO_DISPATCH = {
         "cheques.reversar_cancelacion_anticipo",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # Cheque anulado por "error de carga". TMT 2026-07-30 (dueña: "tiene que
+    # tener pantalla") — era el único del módulo sin vuelta atrás: el ↺ se
+    # mostraba igual y el dispatcher contestaba "aún no tiene reverso
+    # automatizado". El wizard devuelve el cheque a su estado anterior,
+    # compensa la ND / el movimiento de caja con su opuesta y re-aplica las
+    # facturas desde el snapshot.
+    "reverso_cheque_administrativo": (
+        "cheques.deshacer_anulacion_error_carga",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
 }
 
 # Tipos que NO se reversan desde acá — el dispatcher muestra un toast
@@ -786,6 +796,14 @@ _REVERSO_DISPATCH = {
 # El reverso de estos vive en un POST (por período o por lote), no en un GET
 # con id, así que el dispatcher no puede redirigir: lo correcto es decir
 # dónde está el botón.
+# Movimientos que SON un reverso y aun así se pueden deshacer. Un reverso
+# normalmente es terminal —deshacer un reverso sería re-hacer la operación— pero
+# la anulación por error de carga es distinta: no revierte una operación real,
+# marca un cheque como mal cargado. Si el error fue anularlo, tiene que haber
+# vuelta atrás. TMT 2026-07-30 (dueña: "tiene que tener pantalla"); el caso
+# testigo es el anticipo de CJE #100934, que hubo que re-crear entero.
+_REVERSO_DE_REVERSO_OK = {"reverso_cheque_administrativo"}
+
 _REVERSO_BLOQUEADO = {
     "retencion_asinfo_aplicada": (
         "Las retenciones de Asinfo se deshacen por PERÍODO, no de a una: "
@@ -859,7 +877,9 @@ def reversar_mov(id_mov_doble: int):
     r = _row_md(id_mov_doble)
     if not r:
         abort(404)
-    if r["estado"] in ("reverso", "reversado"):
+    if (r["estado"] in ("reverso", "reversado")
+            and not (r["estado"] == "reverso"
+                     and (r.get("tipo") or "") in _REVERSO_DE_REVERSO_OK)):
         flash(
             f"Este movimiento ya está {r['estado']} — no se puede volver a reversar.",
             "warn",
@@ -959,7 +979,9 @@ def reversar_mov_inline(id_mov_doble: int):
     r = _row_md(id_mov_doble)
     if not r:
         abort(404)
-    if r["estado"] in ("reverso", "reversado"):
+    if (r["estado"] in ("reverso", "reversado")
+            and not (r["estado"] == "reverso"
+                     and (r.get("tipo") or "") in _REVERSO_DE_REVERSO_OK)):
         flash(
             f"Este movimiento ya está {r['estado']} — no se puede volver a reversar.",
             "warn",

@@ -1171,6 +1171,17 @@ def anular_por_error_de_carga(
                 "stat_previo": stat_prev,
                 "id_reemplazo": id_reemplazo,
                 "n_aplicaciones_reversadas": len(aplic),
+                # TMT 2026-07-30: snapshot de las aplicaciones, no sólo el
+                # conteo. Sin esto, deshacer la anulación devolvía el cheque a
+                # cartera pero las facturas quedaban desabonadas y había que
+                # re-aplicarlas de memoria. Mismo patrón que el snapshot de
+                # posdat de `cancelar_por_anticipo` (29/07). Ausencia de la
+                # clave = anulación vieja, sin snapshot posible.
+                "aplicaciones_borradas": [
+                    {"id_fact": int(a["id_fact"]),
+                     "importe": float(a["importe"] or 0)}
+                    for a in (aplic or [])
+                ],
                 "compensacion": compensacion,
                 "motivo": motivo or "",
             },
@@ -5837,3 +5848,198 @@ def eliminar_residuos_retencion(
         hechos.append(i)
         total += abs(validos[i])
     return {"n": len(hechos), "total": round(total, 2), "ids": hechos}
+
+
+def deshacer_anulacion_error_carga(
+    id_mov_doble: int, *, usuario: str = "web", motivo: str = ""
+) -> dict:
+    """Devuelve a la vida un cheque anulado por "error de carga".
+
+    TMT 2026-07-30 (dueña: *"tiene que tener pantalla"*). `anular_por_error_de_carga`
+    era el único movimiento del módulo sin vuelta atrás: no estaba en el
+    dispatcher de /historial y `TRANSICIONES_VALIDAS['X']` no ofrece →B, así
+    que un cheque depositado anulado por error quedaba muerto y había que
+    re-crearlo a mano. Eso fue exactamente lo que pasó con el anticipo de CJE
+    (#100934) y obligó a recargar los 1.700 en vez de recuperarlos.
+
+    Deshace las tres cosas que la anulación hizo, en una sola transacción:
+
+      1. el cheque vuelve a `stat_previo` (de la metadata) y se le limpia
+         `fechaout`;
+      2. la compensación de banco/caja se COMPENSA con su opuesta (la ND se
+         cancela con una NC, la salida de caja con una entrada) — no se borra
+         la fila original: el paper trail queda entero, igual que en el resto
+         de los reversos de la app;
+      3. las aplicaciones a facturas se re-aplican desde el snapshot.
+
+    Se niega, SIN escribir nada, si:
+      - el mov no es una anulación por error de carga, o ya está reversado;
+      - el cheque ya no está en 'X' (alguien lo movió después);
+      - la metadata no dice de qué stat venía.
+
+    Las anulaciones anteriores al 30/07 no guardaron el snapshot de
+    aplicaciones: ésas se deshacen igual (el cheque vuelve y el banco se
+    compensa) pero las facturas hay que re-aplicarlas a mano desde la ficha.
+    `aplicaciones_pendientes` en el resultado lo dice con el número.
+    """
+    import json as _json
+
+    import mov_doble as _md
+
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, estado, metadata, importe "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        raise ValueError("No encuentro ese movimiento.")
+    if (mv.get("tipo") or "") != "reverso_cheque_administrativo":
+        raise ValueError(
+            f"Ese movimiento es '{mv.get('tipo')}', no una anulación por error "
+            "de carga.")
+    if (mv.get("estado") or "") == "reversado":
+        raise ValueError("Esa anulación ya se deshizo — no se deshace dos veces.")
+
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            meta = {}
+    id_cheque = int(mv.get("origen_id") or 0)
+    stat_destino = (meta.get("stat_previo") or "").strip().upper()
+    if not stat_destino:
+        raise ValueError(
+            "La metadata no dice de qué estado venía el cheque. No lo restauro "
+            "a ciegas — revisalo a mano desde su ficha.")
+
+    snap_aplic = meta.get("aplicaciones_borradas")
+    sin_snapshot_aplic = snap_aplic is None and int(
+        meta.get("n_aplicaciones_reversadas") or 0) > 0
+
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+
+    with db.tx() as conn:
+        ch = db.fetch_one(
+            "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, no_banco "
+            "  FROM scintela.cheque WHERE id_cheque = %s FOR UPDATE",
+            (id_cheque,), conn=conn,
+        )
+        if not ch:
+            raise ValueError("El cheque de ese movimiento ya no existe.")
+        stat_hoy = (ch.get("stat") or "").strip().upper()
+        if stat_hoy != "X":
+            raise ValueError(
+                f"El cheque está en stat='{stat_hoy}', no en 'X': alguien lo "
+                "movió después de la anulación. Reversá primero ese cambio.")
+
+        importe = float(ch.get("importe") or 0)
+
+        # 1. el cheque vuelve
+        db.execute(
+            "UPDATE scintela.cheque "
+            "   SET stat=%s, fechaout=NULL, "
+            "       observacion = RIGHT("
+            "           COALESCE(observacion || ' | ', '') || %s, 200), "
+            "       usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+            " WHERE id_cheque=%s",
+            (stat_destino,
+             ("[R] anulación por error de carga deshecha"
+              + (f": {motivo[:60]}" if motivo else "")),
+             usuario, id_cheque),
+            conn=conn,
+        )
+
+        # 2. la compensación, al revés
+        comp = meta.get("compensacion") or {}
+        compensacion_nueva = None
+        if comp.get("tipo") == "banco" and importe:
+            import bank_helpers
+            _banco = int(ch.get("no_banco") or 10)
+            _CONCEPTO_A_REAL = {90: 10, 91: 32, 95: 10, 97: 10, 98: 10, 99: 10}
+            if _banco >= 90:
+                _banco = _CONCEPTO_A_REAL.get(_banco, 10)
+            _res = bank_helpers.insert_movimiento_bancario(
+                conn,
+                no_banco=_banco,
+                no_cta=None,
+                fecha=fecha,
+                documento="NC",  # opuesta a la ND que puso la anulación
+                importe=abs(importe),
+                concepto=(f"REV ANUL ch{ch.get('no_cheque') or id_cheque} "
+                          f"err carga")[:80],
+                prov=ch.get("codigo_cli"),
+                numreferencia=id_cheque,
+                usuario=usuario,
+            )
+            compensacion_nueva = {"tipo": "banco", "id": _res.get("id_transaccion")}
+        elif comp.get("tipo") == "caja" and importe:
+            import caja_helpers
+            _res = caja_helpers.insert_movimiento_caja(
+                conn,
+                fecha=fecha,
+                # La anulación de un efectivo POSITIVO sacó plata ('S'); la de
+                # uno negativo la puso ('E'). Deshacer es el espejo de eso.
+                tipo="S" if importe < 0 else "E",
+                importe=abs(importe),
+                concepto=(f"REV ANUL ch{ch.get('no_cheque') or id_cheque} "
+                          f"err carga")[:80],
+                id_cheque=id_cheque,
+                usuario=usuario,
+            )
+            compensacion_nueva = {"tipo": "caja", "id": _res.get("id_caja")}
+
+        # 3. las facturas, re-aplicadas
+        n_aplic = 0
+        if snap_aplic:
+            aplicar_a_factura(
+                id_cheque=id_cheque,
+                aplicaciones=[{"id_fact": int(a["id_fact"]),
+                               "importe": float(a["importe"] or 0)}
+                              for a in snap_aplic],
+                usuario=usuario,
+                conn=conn,
+                # El cheque acaba de volver a su stat original en ESTA tx; si
+                # era un depósito directo, ese stat es 'B'.
+                permitir_depositado=True,
+            )
+            n_aplic = len(snap_aplic)
+
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_anulacion_error_carga",
+            origen_table="cheque", origen_id=id_cheque,
+            destino_table="cheque", destino_id=id_cheque,
+            importe=importe or 1.0,
+            fecha=fecha,
+            concepto=(
+                f"DESHECHA anulación por error de carga — ch "
+                f"{(ch.get('no_cheque') or '').strip() or id_cheque} "
+                f"{ch.get('codigo_cli')} X→{stat_destino}"
+                + (f" ({motivo})" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_mov_anulacion": id_mov_doble,
+                "stat_restaurado": stat_destino,
+                "aplicaciones_reaplicadas": n_aplic,
+                "aplicaciones_pendientes": (
+                    int(meta.get("n_aplicaciones_reversadas") or 0)
+                    if sin_snapshot_aplic else 0),
+                "compensacion": compensacion_nueva,
+                "motivo": motivo or "",
+            },
+            id_original=id_mov_doble,
+        )
+
+    return {
+        "id_cheque": id_cheque,
+        "no_cheque": (ch.get("no_cheque") or "").strip(),
+        "stat_restaurado": stat_destino,
+        "aplicaciones_reaplicadas": n_aplic,
+        "aplicaciones_pendientes": (
+            int(meta.get("n_aplicaciones_reversadas") or 0)
+            if sin_snapshot_aplic else 0),
+        "compensacion": compensacion_nueva,
+    }
