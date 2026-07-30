@@ -116,6 +116,26 @@
         {% for c in cuentas_op %}<option value="{{ c.codigo_prov }}">{{ c.codigo_prov }} · {{ c.nombre }} — saldo {{ '{:+,.2f}'.format(c.saldo_op|float) }}</option>{% endfor %}
       </datalist>
       {% endif %}
+
+      {# TMT 2026-07-30 (dueña: "pero si hago ND no puedo mandar a gasto"). Un
+         cargo del banco —comisión, ISI, chequera— casi siempre ES un gasto, y
+         hasta ahora había que registrar la ND acá y después ir a la lista de
+         movimientos a apretar el `→$`. Dos pantallas para una sola cosa.
+         Opcional: si no elegís categoría, no pasa nada. Crea el xgast YA
+         PAGADO, sin tocar caja (la plata ya salió por esta misma ND). #}
+      <div class="md:col-span-2">
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+          ¿Es un gasto?
+          <span class="ml-1 text-slate-400 normal-case tracking-normal">(lo suma al cuadro V1..V9 — no toca caja)</span>
+        </label>
+        <select name="gasto_num"
+                class="px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+          <option value="">— No —</option>
+          {% for v in range(1, 10) %}
+            <option value="{{ v }}" {% if form_vals and form_vals.gasto_num == v|string %}selected{% endif %}>Gasto V{{ v }}</option>
+          {% endfor %}
+        </select>
+      </div>
       {% endif %}
 
       <div class="md:col-span-2">

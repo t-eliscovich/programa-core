@@ -669,6 +669,88 @@ def banco_info(no_banco: int) -> dict | None:
 TIPOS_CHEQUE_EMITIDO = ("proveedor", "retiro", "caja", "gasto", "anticipo_usd", "otro")
 
 
+def clasificar_tx_como_gasto(
+    *, id_transaccion: int, num: int, concepto: str = "", prov: str | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Crea el gasto V1..V9 (xgast YA PAGADO) de un movimiento de banco existente.
+
+    NO toca banco ni caja: la plata ya salió con ese mismo movimiento. Es la
+    pieza que faltaba entre "el pago salió por el banco" y "el cuadro V1..V9 lo
+    ve" — cargarlo por /gastos/nuevo como contado estaría mal, porque eso saca
+    de CAJA (TMT 2026-07-21, casos TOSAVA 216 y QUIMSERTEC 2184).
+
+    TMT 2026-07-30: se extrajo acá desde la vista `bancos.clasificar_gasto`
+    porque ahora hay DOS entradas — el botón `→$` de la lista de movimientos y
+    el desplegable del alta de Nota de débito (dueña: *"pero si hago ND no puedo
+    mandar a gasto"*). Una sola implementación: si cambia el criterio, cambia en
+    los dos lados a la vez.
+
+    Guard anti-doble: si ya existe un xgast con la misma (fecha, importe) creado
+    desde ESTE movimiento (marca `[txN]` en el concepto), no duplica.
+
+    Devuelve {id_xgast, importe, concepto, ya_estaba}.
+    """
+    if not (1 <= int(num) <= 9):
+        raise ValueError("Categoría de gasto inválida: usá V1..V9.")
+    tx = db.fetch_one(
+        "SELECT id_transaccion, no_banco, fecha, documento, importe, concepto "
+        "  FROM scintela.transacciones_bancarias WHERE id_transaccion = %s",
+        (id_transaccion,),
+    )
+    if not tx:
+        raise ValueError(f"El movimiento {id_transaccion} no existe.")
+    doc = (tx.get("documento") or "").strip().upper()
+    if doc not in ("CH", "ND", "DB"):
+        raise ValueError("Sólo se clasifican salidas (CH/ND/DB) como gasto.")
+    importe = abs(float(tx.get("importe") or 0))
+    if importe <= 0:
+        raise ValueError("El movimiento no tiene importe.")
+    concepto = (concepto or "").strip() or (tx.get("concepto") or "").strip()
+    prov = (prov or "").strip().upper()[:5] or None
+
+    ya = db.fetch_one(
+        "SELECT id_xgast FROM scintela.xgast "
+        " WHERE fecha = %s AND importe = %s AND concepto LIKE %s LIMIT 1",
+        (tx.get("fecha"), importe, f"%[tx{id_transaccion}]%"),
+    )
+    if ya:
+        return {"id_xgast": ya["id_xgast"], "importe": importe,
+                "concepto": concepto, "ya_estaba": True}
+
+    with db.tx() as conn:
+        row = db.execute_returning(
+            """
+            INSERT INTO scintela.xgast
+                (fecha, doc, prov, concepto, importe, saldo, stat,
+                 fechad, usuario_crea, num)
+            VALUES (%s, %s, %s, %s, %s, 0, 'C', %s, %s, %s)
+            RETURNING id_xgast
+            """,
+            (tx.get("fecha"), doc, prov,
+             (concepto + f" [tx{id_transaccion}]")[:100],
+             importe, tx.get("fecha"), usuario[:50], int(num)),
+            conn=conn,
+        )
+        id_xgast = (row or {}).get("id_xgast")
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="banco_clasificado_gasto",
+            origen_table="transacciones_bancarias",
+            origen_id=id_transaccion,
+            destino_table="xgast",
+            destino_id=id_xgast,
+            importe=importe,
+            fecha=tx.get("fecha"),
+            concepto=(f"Gasto V{num} desde banco: {concepto}")[:200],
+            usuario=usuario,
+            metadata={"no_banco": tx.get("no_banco"), "num": int(num)},
+        )
+    return {"id_xgast": id_xgast, "importe": importe,
+            "concepto": concepto, "ya_estaba": False}
+
+
 def emitir_cheque(
     *,
     tipo: str,
