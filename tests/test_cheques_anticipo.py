@@ -112,3 +112,35 @@ def test_cheque_anticipo_default_es_false(stub):
     )
     assert r.get("id_cheque_anticipo") is None
     assert len(stub.execute_returning_calls) == 1
+
+
+# ── El 95 acepta anticipos POSTERGADOS (TMT 2026-07-30) ────────────────────
+# Dueña: "deberia mostrar postergados igual, no se porque filtramos". El primer
+# caso real falló por esto: el espejo de GL1 (−900) estaba postergado, y
+# postergar sólo mueve la fecha de depósito — el crédito del cliente sigue ahí.
+# Si esto se vuelve a acotar a 'Z', el 95 deja el cheque en cartera con un aviso
+# y la dueña se entera después.
+
+def test_match_del_95_acepta_el_grupo_vivo_no_solo_Z():
+    import inspect
+
+    from modules.cheques import queries as q
+    src = inspect.getsource(q.crear)
+    i = src.find("no_banco == 95")
+    assert i > 0, "cambió el bloque del 95 — revisar este test"
+    bloque = src[i:i + 1200]
+    assert "IN ('Z','1','2','3','P','D')" in bloque, (
+        "el match del 95 volvió a exigir stat='Z': los anticipos postergados "
+        "dejan de encontrarse"
+    )
+    assert "= 'Z') DESC" in bloque, "los de cartera tienen que ir primero"
+
+
+def test_anticipos_vivos_lista_los_postergados():
+    import inspect
+
+    from modules.cheques import queries as q
+    src = inspect.getsource(q.anticipos_vivos)
+    assert "IN ('Z', '1', '2', '3', 'P', 'D')" in src
+    assert "no_banco IN (97, 98)" in src
+    assert "COALESCE(importe, 0) < 0" in src, "el espejo del anticipo es negativo"

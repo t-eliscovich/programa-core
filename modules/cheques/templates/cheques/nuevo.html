@@ -1248,9 +1248,9 @@
         + 'queda en cartera y te avisa.</td></tr>';
       return;
     }
-    // El 95 sólo puede tomar espejos EN CARTERA (Z). Los que están postergados
-    // o depositados se muestran igual —existen, la plata está— pero con el
-    // motivo, en vez de esconderlos y dejar la pantalla muda.
+    // Se listan todos los espejos vivos (Z/1/2/3/P/D) y todos son usables: el
+    // match del 95 acepta el mismo grupo desde el 30/07 (antes exigía Z y por
+    // eso el primer caso real —un anticipo POSTERGADO— no aparecía).
     tb.innerHTML = anticipos95.map(a => (
       '<tr class="border-t border-slate-100 dark:border-slate-800'
       + (a.aplicable ? '' : ' text-slate-400') + '">'

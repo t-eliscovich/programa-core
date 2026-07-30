@@ -3067,14 +3067,22 @@ def crear(
         # encuentra, el cheque queda 'Z' y se avisa (dBase: "NO SE ENCUENTRA
         # EL ANTICIPO") — la duena lo resuelve a mano.
         if no_banco == 95 and row.get("id_cheque") and importe_principal > 0:
+            # TMT 2026-07-30 (dueña: "deberia mostrar postergados igual, no se
+            # porque filtramos"). Antes exigía stat='Z' EXACTO y por eso el
+            # primer caso real falló: el espejo de GL1 (−900) estaba POSTERGADO,
+            # y postergarlo sólo movió la fecha de depósito — el crédito del
+            # cliente sigue estando. Ahora acepta el mismo grupo vivo que la
+            # cartera (Z/1/2/3/P/D), con Z primero para no cambiar el
+            # comportamiento cuando hay uno en cartera. Los ya cancelados ('X')
+            # o cobrados siguen afuera.
             espejo_95 = db.fetch_one(
                 """
                 SELECT id_cheque FROM scintela.cheque
                  WHERE codigo_cli = %s
                    AND importe = %s
                    AND no_banco IN (97, 98)
-                   AND TRIM(COALESCE(stat, '')) = 'Z'
-                 ORDER BY id_cheque
+                   AND TRIM(COALESCE(stat, '')) IN ('Z','1','2','3','P','D')
+                 ORDER BY (TRIM(COALESCE(stat, '')) = 'Z') DESC, id_cheque
                  LIMIT 1
                 """,
                 (codigo_cli.upper().strip(), -importe_principal),
@@ -4596,9 +4604,10 @@ def anticipos_vivos(codigo_cli: str, limite: int = 200) -> list[dict]:
     estaba **POSTERGADO**, y un panel que filtra por Z habría dicho "este cliente
     no tiene anticipos vivos" — mintiendo, porque el anticipo existe y la plata
     está. Se traen todos los espejos del grupo vivo (Z/1/2/3/P/D) con
-    `aplicable` marcando cuáles puede tomar el 95 hoy; la pantalla explica qué
-    hacer con el resto (volverlo a cartera). Mejor mostrar y explicar que
-    esconder.
+    `aplicable` en True: desde el mismo día el MATCH del 95 acepta ese mismo
+    grupo (dueña: *"deberia mostrar postergados igual, no se porque
+    filtramos"*), así que todo lo que se muestra se puede usar. El flag queda
+    por si algún día hay que volver a distinguir.
     """
     return db.fetch_all(
         """
@@ -4606,7 +4615,7 @@ def anticipos_vivos(codigo_cli: str, limite: int = 200) -> list[dict]:
                ABS(COALESCE(importe, 0)) AS importe_abs,
                no_banco, COALESCE(banco, '') AS banco,
                TRIM(COALESCE(stat, '')) AS stat,
-               (TRIM(COALESCE(stat, '')) = 'Z') AS aplicable
+               TRUE AS aplicable
           FROM scintela.cheque
          WHERE codigo_cli = %s
            AND no_banco IN (97, 98)
