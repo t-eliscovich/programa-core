@@ -26,6 +26,21 @@ def test_avisar_guarda_y_devuelve_true():
     assert params[0] == "tejeduria" and params[1] == "ok"
 
 
+def test_el_indice_de_la_clave_no_es_parcial():
+    """Postgres no acepta un índice PARCIAL como árbitro de ON CONFLICT (clave).
+
+    Tiraría 42P10 y, como `avisar()` es fail-soft, el error se tragaría en
+    silencio: las cargas seguirían andando y la campanita muda. Pasó en la 0139
+    y lo arregla la 0140 — este test evita que vuelva.
+    """
+    from pathlib import Path
+
+    sql = "\n".join(p.read_text() for p in sorted(Path("migrations").glob("014*.sql"))
+                    + sorted(Path("migrations").glob("0139*.sql")))
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS aviso_clave_uk ON scintela.aviso (clave);" in sql
+    assert "aviso_clave_uk\n    ON scintela.aviso (clave) WHERE" not in sql
+
+
 def test_la_clave_repetida_no_entra_de_nuevo():
     """ON CONFLICT DO NOTHING → RETURNING no trae fila → False."""
     with patch.object(avisos.queries.db, "fetch_one", return_value=None):

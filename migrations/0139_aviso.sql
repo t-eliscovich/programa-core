@@ -28,8 +28,10 @@ CREATE TABLE IF NOT EXISTS scintela.aviso (
     creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS aviso_clave_uk
-    ON scintela.aviso (clave) WHERE clave IS NOT NULL;
+-- NO parcial: un índice parcial no sirve de árbitro para ON CONFLICT (clave)
+-- sin repetir el predicado (ver 0140, que arregla justamente esto). En Postgres
+-- los NULL son distintos entre sí, así que los avisos sin clave entran igual.
+CREATE UNIQUE INDEX IF NOT EXISTS aviso_clave_uk ON scintela.aviso (clave);
 
 CREATE INDEX IF NOT EXISTS aviso_no_leidos_ix
     ON scintela.aviso (leido, creado_en DESC);
