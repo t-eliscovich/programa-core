@@ -2152,18 +2152,73 @@ TEJEDOR_TERCERIZADO_PREFIJO = {
     r"^R\s+UNDA\b": ("UN", "Unda"),
 }
 
+#: (inicial, apellido) → (codigo_prov, label) para tolerar ERRORES DE TIPEO.
+#:
+#: TMT 2026-07-30 (dueña, mirando dos avisos de "tejedor sin reconocer": *"me
+#: parece que esto es un error de tipeo y en verdad es Reyes"*). Tenía razón.
+#: En dos años y medio de OFs hay **7 con el apellido mal tipeado**, y las 7
+#: se contaron como producción PROPIA — o sea, nunca se les creó la compra:
+#:
+#:   M RTEYES ×2 · M RERYES · M RYES ×2 · M REYRS  (Reyes, ~2.030 kg)
+#:   A PONGE                                        (Ponce,  1.929 kg)
+#:
+#: Todas están a **UN solo error** del apellido correcto, así que se reconocen
+#: con distancia de edición ≤ 1. Las guardas que lo hacen seguro y no un
+#: adivinador: (1) la descripción tiene que arrancar con la INICIAL exacta del
+#: tejedor (`M` Reyes · `A` Ponce · `R` Unda) — verificado contra Asinfo: TODA
+#: descripción que arranca con una letra sola y un espacio es de uno de los
+#: tres; (2) la primera letra del apellido tiene que coincidir; (3) mínimo 4
+#: caracteres. Sin (1) y (2), "FUNDA" entraría como "UNDA".
+TEJEDOR_TIPEO = {
+    ("M", "REYES"): ("RY", "Reyes"),
+    ("A", "PONCE"): ("AP", "Ponce"),
+    ("R", "UNDA"): ("UN", "Unda"),
+}
+
+
+def _a_un_error_de(palabra: str, canonico: str) -> bool:
+    """True si `palabra` está a **una sola** edición de `canonico`.
+
+    Una inserción, un borrado o una sustitución. Sin librerías: son palabras de
+    6 letras y se corre por cada OF.
+    """
+    if len(canonico) < 4 or len(palabra) < 4:
+        return False
+    if palabra == canonico:
+        return True
+    if abs(len(palabra) - len(canonico)) > 1 or palabra[0] != canonico[0]:
+        return False
+    if len(palabra) == len(canonico):  # sustitución
+        return sum(1 for a, b in zip(palabra, canonico) if a != b) == 1
+    corta, larga = ((palabra, canonico) if len(palabra) < len(canonico)
+                    else (canonico, palabra))
+    i = 0
+    while i < len(corta) and corta[i] == larga[i]:
+        i += 1
+    return corta[i:] == larga[i + 1:]        # inserción / borrado
+
 
 def _clasificar_tejedor(descripcion: str) -> tuple[str, str, bool]:
     """(codigo_prov, label, es_intela) desde orden_fabricacion.descripcion.
 
-    INTELA si arranca con 'MQ' + dígito (máquina propia). Si no, tercerizado:
-    se mapea el nombre → codigo_prov. Un tejedor no mapeado devuelve cod=''
-    (la tab lo muestra como 'desconocido' para agregarlo al mapa).
+    INTELA si arranca con máquina (`MQ02`, `MQ 11`, `MAQ 21`, `M07`…). Si no,
+    tercerizado: se mapea el nombre → codigo_prov, tolerando UN error de tipeo.
+    Un tejedor no mapeado devuelve cod='' (la tab lo muestra como 'desconocido'
+    y la campanita avisa que hay que darlo de alta).
+
+    ⚠ **Asinfo NO tiene un código de tejedor.** Se verificó columna por columna
+    (2026-07-30): `id_entidad_origen`, `nombre_responsable`, `id_sucursal`,
+    `id_ruta_fabricacion`, atributos — todas NULL o idénticas entre INTELA,
+    Ponce, Reyes y Unda. El texto de `descripcion` es el ÚNICO lugar donde vive
+    la identidad del tejedor, y por eso hay que ser tolerante con cómo se tipea.
     """
     import re as _re
     d = (descripcion or "").strip()
     du = d.upper()
-    if _re.match(r"^MQ\d", du):
+    # Máquina propia. El `M(A?Q)?\s*\d` cubre las 5 formas que aparecen en
+    # Asinfo — MQ02 · MQ 11 · MAQ 21 · M07 · M15 — sin tocar a los tejedores,
+    # que después de la inicial llevan una LETRA, no un dígito.
+    if _re.match(r"^M(?:A?Q)?\s*\d", du):
         return (INTELA_COD, "INTELA", True)
     # Los anclados primero: son los que necesitan estar al arranque para no
     # confundirse con otra palabra o con una nota al pie.
@@ -2173,6 +2228,13 @@ def _clasificar_tejedor(descripcion: str) -> tuple[str, str, bool]:
     for nombre, cod in TEJEDOR_TERCERIZADO_MAP.items():
         if nombre in du:
             return (cod, nombre.capitalize(), False)
+    # Apellido MAL TIPEADO — ver TEJEDOR_TIPEO. Sólo si la descripción arranca
+    # con la inicial exacta del tejedor y el apellido está a una sola edición.
+    palabras = du.split()
+    if len(palabras) >= 2 and len(palabras[0]) == 1:
+        for (inicial, apellido), (cod, label) in TEJEDOR_TIPEO.items():
+            if palabras[0] == inicial and _a_un_error_de(palabras[1], apellido):
+                return (cod, label, False)
     label = " ".join(d.split()[:2]) or "?"
     return ("", label, False)
 

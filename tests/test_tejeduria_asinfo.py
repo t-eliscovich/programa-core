@@ -842,3 +842,74 @@ def test_una_of_con_tarifa_no_genera_aviso():
     n, puestos = _avisos_de({"disponible": True, "desconocidos": [],
                              "pendientes": [_OF_UN]})
     assert (n, puestos) == (0, [])
+
+
+# ---------------------------------------------------------------------------
+# Errores de TIPEO en el nombre del tejedor — TMT 2026-07-30
+# ---------------------------------------------------------------------------
+# Dueña, mirando dos avisos de "tejedor sin reconocer": *"me parece que esto es
+# un error de tipeo y en verdad es Reyes"*. Tenía razón: en 2,5 años hay 7 OFs
+# con el apellido mal tipeado, y las 7 se contaron como producción PROPIA — o
+# sea, nunca se les creó la compra.
+#
+# ⚠ Y NO hay alternativa: Asinfo **no tiene un código de tejedor**. Se revisó
+# columna por columna (id_entidad_origen, nombre_responsable, id_sucursal,
+# id_ruta_fabricacion, atributos): todas NULL o idénticas entre INTELA, Ponce,
+# Reyes y Unda. El texto de `descripcion` es el único lugar donde vive.
+
+_TIPEOS_REALES = [
+    ("M RTEYES HY10 22 PUÑOS 10%", "RY"),      # 2026-07-20 · 209,80 kg
+    ("M RTEYES KW22 C T-40", "RY"),
+    ("M RERYES KW22 C T-40", "RY"),            # 2026-07-20 · 807,30 kg
+    ("M RYES KW22 C-T40", "RY"),               # 2025-02-27 · 809 kg
+    ("M RYES HY10 22 PUÑOS 10%", "RY"),        # 2025-01-22 ·  77 kg
+    ("M REYRS HY10 22 C-T40 10%", "RY"),       # 2025-08-11 · 126 kg
+    ("A PONGE KW20 R/N", "AP"),                # 2024-03-07 · 1.929 kg
+]
+
+
+@pytest.mark.parametrize("desc,cod", _TIPEOS_REALES)
+def test_apellido_mal_tipeado_igual_se_reconoce(desc, cod):
+    assert asvc._clasificar_tejedor(desc)[0] == cod
+    assert asvc._clasificar_tejedor(desc)[2] is False   # NO es producción propia
+
+
+@pytest.mark.parametrize("desc", [
+    "MQ02 SUT5 20", "MQ 11 KW20", "MAQ 21SUT5 20",
+    "M07 KW20 HY14 F-102 PRUEBAS", "M15 HY2 20 ABY16",
+    "\nMQ62 HG75/36 ROMA-90",
+])
+def test_intela_en_sus_cinco_formas(desc):
+    """La máquina propia se escribe MQ02 · MQ 11 · MAQ 21 · M07 · M15.
+
+    Antes sólo se reconocía `MQ`+dígito, así que las otras cuatro caían a
+    'desconocido' — inofensivo mientras nadie miraba, pero ahora dispararían un
+    aviso de «tejedor sin reconocer» por cada una.
+    """
+    assert asvc._clasificar_tejedor(desc)[:1] == (asvc.INTELA_COD,)
+    assert asvc._clasificar_tejedor(desc)[2] is True
+
+
+@pytest.mark.parametrize("desc", [
+    "PRUEBAS VARIAS", "GENERICA PRUEBAS", "KW20 QC70 J-LY150",
+    "X FUNDA 20",                                   # FUNDA está a 1 de UNDA
+    "6 FF 96CM 2.20 TEJIDO SR UNDA",                # nota al pie de una OF ajena
+    "2 JERSEY 1.20X2.10 TELA DE SEGUNDA",
+])
+def test_la_tolerancia_no_es_un_adivinador(desc):
+    """Sin las guardas (inicial exacta + misma primera letra + 4 caracteres)
+    esto sería un imán de falsos positivos. `X FUNDA` es el caso testigo."""
+    assert asvc._clasificar_tejedor(desc)[0] == ""
+
+
+def test_a_un_error_de():
+    f = asvc._a_un_error_de
+    assert f("REYES", "REYES")            # igual
+    assert f("RTEYES", "REYES")           # inserción
+    assert f("RYES", "REYES")             # borrado
+    assert f("REYRS", "REYES")            # sustitución
+    assert not f("RRYRS", "REYES")        # dos ediciones
+    assert not f("PONCE", "REYES")
+    assert not f("UNDA", "REYES")
+    assert not f("ES", "REYES")           # muy corta
+    assert not f("EYES", "REYES")         # primera letra distinta
