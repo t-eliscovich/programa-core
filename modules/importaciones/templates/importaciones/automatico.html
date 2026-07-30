@@ -144,9 +144,12 @@
           {% for a in historial %}
           <tr class="border-t border-slate-100 dark:border-slate-800/60">
             <td class="px-4 py-1.5 text-xs text-slate-500" style="white-space:nowrap;">{{ a.creado_en }}</td>
-            <td class="px-4 py-1.5" style="font-size:12.5px;line-height:1.45;">
-              {% if a.tipo == 'conversion' %}✅{% elif a.tipo == 'freno' %}⛔{% else %}⚠️{% endif %}
-              {{ a.mensaje }}
+            {# Mismo resumen corto que la campanita (autobap.resumen). #}
+            <td class="px-4 py-1.5" style="line-height:1.35;">
+              <span style="font-size:12.5px;font-weight:600;color:rgb(30 41 59);">{{ a.icono }} {{ a.titulo }}</span>
+              {% if a.detalle %}
+              <span style="font-size:11.5px;color:rgb(100 116 139);"> · {{ a.detalle }}</span>
+              {% endif %}
             </td>
             <td class="px-4 py-1.5 font-mono text-xs">{{ a.comprobante or '—' }}</td>
             <td class="px-4 py-1.5 text-right">{{ a.importe | num_es(2) if a.importe else '—' }}</td>

@@ -450,9 +450,17 @@ def automatico_correr():
 @requiere_login
 @requiere_permiso("compras.crear")
 def avisos_leidos():
+    """Marca todo como leído.
+
+    TMT 2026-07-30 (dueña): "una vez que lo abro se marque leído solo" — la
+    campanita lo llama por fetch al abrirse (`ajax=1`) y no espera nada, así
+    que ahí contestamos 204 en vez de un redirect que el browser descartaría.
+    """
     from . import autobap
 
     autobap.marcar_leidos()
+    if request.form.get("ajax") == "1":
+        return ("", 204)
     return redirect(request.referrer or url_for("importaciones.automatico"))
 
 

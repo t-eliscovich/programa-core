@@ -1039,41 +1039,80 @@
              Ver modules/importaciones/autobap.py. #}
         {% if tiene_permiso('compras.crear') %}
           {% set _ab = avisos_autobap() %}
+          {# TMT 2026-07-30 (dueña): "hagamos notificaciones más lindas, están
+             muy wordy — y una vez que lo abro que se marque leído solo".
+             · el texto largo se cambió por título + detalle (autobap.resumen);
+             · ABRIR la campanita ES leerla: el POST a /leidos sale por fetch y
+               el contador se apaga en el acto, sin recargar (por eso ya no
+               está el botón "Marcar leídos").
+             Tailwind está CONGELADO → todo el layout nuevo va en style=. #}
           <div class="relative no-print" id="campanita-wrap">
-            <button type="button" id="campanita-btn"
-                    onclick="document.getElementById('campanita-pop').classList.toggle('hidden')"
+            <button type="button" id="campanita-btn" data-n="{{ _ab.n }}"
+                    onclick="campanitaToggle()"
                     title="{% if _ab.n %}{{ _ab.n }} novedad(es) del automático de importaciones{% else %}Sin novedades del automático de importaciones{% endif %}"
                     class="text-xs px-3 py-1.5 rounded border"
                     style="{% if _ab.n %}border-color:rgb(252 211 77);background:rgb(255 251 235);color:rgb(146 64 14);font-weight:600;{% else %}border-color:rgb(203 213 225);color:rgb(100 116 139);{% endif %}">
-              🔔{% if _ab.n %} {{ _ab.n }}{% endif %}
+              🔔<span id="campanita-n">{% if _ab.n %} {{ _ab.n }}{% endif %}</span>
             </button>
             <div id="campanita-pop"
-                 class="hidden absolute right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-50 py-1 text-sm"
-                 style="width:27rem;max-height:24rem;overflow-y:auto;">
-              {% for a in _ab['items'] %}
-              <div class="px-3 py-2 border-b border-slate-100">
-                <div style="font-size:12.5px;line-height:1.45;">
-                  {% if a.tipo == 'conversion' %}✅{% elif a.tipo == 'freno' %}⛔{% else %}⚠️{% endif %}
-                  {{ a.mensaje }}
+                 class="hidden absolute right-0 mt-2 bg-white z-50"
+                 style="width:22rem;border:1px solid rgb(226 232 240);border-radius:10px;box-shadow:0 10px 24px -6px rgb(15 23 42 / .18);overflow:hidden;">
+              <div style="padding:8px 12px;background:rgb(248 250 252);border-bottom:1px solid rgb(241 245 249);display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgb(100 116 139);font-weight:600;">Importaciones · automático</span>
+                {% if _ab.n %}<span style="font-size:10px;color:rgb(148 163 184);">{{ _ab.n }} nueva{{ '' if _ab.n == 1 else 's' }}</span>{% endif %}
+              </div>
+              <div style="max-height:19rem;overflow-y:auto;">
+                {% for a in _ab['items'] %}
+                <div style="padding:9px 12px;display:flex;align-items:flex-start;gap:8px;{% if not loop.last %}border-bottom:1px solid rgb(241 245 249);{% endif %}">
+                  <span style="font-size:13px;line-height:1.3;">{{ a.icono }}</span>
+                  <div style="flex:1 1 auto;min-width:0;">
+                    <div style="font-size:12.5px;font-weight:600;color:rgb(30 41 59);line-height:1.35;">{{ a.titulo }}</div>
+                    {% if a.detalle %}
+                    <div style="font-size:11.5px;color:rgb(100 116 139);line-height:1.35;margin-top:1px;">{{ a.detalle }}</div>
+                    {% endif %}
+                  </div>
+                  <span style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;">{{ a.cuando or a.creado_en }}</span>
                 </div>
-                <div class="text-[11px] text-slate-400 mt-0.5">{{ a.creado_en }}</div>
+                {% else %}
+                <div style="padding:14px 12px;font-size:11.5px;color:rgb(100 116 139);line-height:1.45;">
+                  Sin novedades. Acá te aviso cuando llega una importación y sus
+                  anticipos se convierten solos a compra.
+                </div>
+                {% endfor %}
               </div>
-              {% else %}
-              <div class="px-3 py-3 text-xs text-slate-500">
-                Sin novedades. Acá te avisa cuando una importación llega y sus
-                anticipos se convierten solos a compra.
-              </div>
-              {% endfor %}
-              <div class="px-3 py-2 flex items-center justify-between">
-                <a href="{{ url_for('importaciones.automatico') }}" class="text-xs text-sky-700 hover:underline">Ver todo</a>
-                {% if _ab.n %}
-                <form method="post" action="{{ url_for('importaciones.avisos_leidos') }}" class="inline">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="text-xs text-slate-500 hover:text-slate-700">Marcar leídos</button>
-                </form>
-                {% endif %}
+              <div style="padding:8px 12px;border-top:1px solid rgb(241 245 249);background:rgb(248 250 252);">
+                <a href="{{ url_for('importaciones.automatico') }}"
+                   style="font-size:11.5px;color:rgb(3 105 161);text-decoration:none;">Ver todo →</a>
               </div>
             </div>
+            <script>
+              function campanitaToggle() {
+                var pop = document.getElementById('campanita-pop');
+                var btn = document.getElementById('campanita-btn');
+                if (!pop || !btn) { return; }
+                var abriendo = pop.classList.contains('hidden');
+                pop.classList.toggle('hidden');
+                if (!abriendo || btn.dataset.n === '0') { return; }
+                // Abrirla ES leerla: apago el contador acá y lo marco en la DB.
+                btn.dataset.n = '0';
+                var n = document.getElementById('campanita-n');
+                if (n) { n.textContent = ''; }
+                btn.setAttribute('style', 'border-color:rgb(203 213 225);color:rgb(100 116 139);');
+                var fd = new FormData();
+                fd.append('csrf_token', '{{ csrf_token() }}');
+                fd.append('ajax', '1');
+                fetch('{{ url_for("importaciones.avisos_leidos") }}',
+                      {method: 'POST', body: fd, credentials: 'same-origin'})
+                  .catch(function () { /* si falla, se marcan la próxima vez */ });
+              }
+              document.addEventListener('click', function (e) {
+                var wrap = document.getElementById('campanita-wrap');
+                var pop = document.getElementById('campanita-pop');
+                if (wrap && pop && !wrap.contains(e.target)) {
+                  pop.classList.add('hidden');
+                }
+              });
+            </script>
           </div>
         {% endif %}
 

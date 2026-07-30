@@ -277,3 +277,77 @@ def test_set_topes_guarda():
         autobap.set_topes(tope_importaciones=10, tope_usd=500000,
                           usuario="tamara")
     assert ex.call_args[0][1][:2] == (10, 500000.0)
+
+
+# ── La campanita: avisos cortos (dueña 30/07: "están muy wordy") ────────────
+
+def test_resumen_conversion_dos_lineas_y_formato_ecuador():
+    r = autobap.resumen({
+        "tipo": "conversion", "im_numero": "IM-0000625", "codigo_prov": "AC",
+        "ref_num": 29, "n_anticipos": 3, "importe": 73359.95,
+        "comprobante": "BAP11",
+        "mensaje": "un párrafo larguísimo que ya no se muestra",
+    })
+    assert r["icono"] == "✅"
+    # Punto = miles, coma = decimales (nunca el formato US).
+    assert r["titulo"] == "IM-0000625 · AC · $ 73.359,95"
+    assert r["detalle"] == "3 anticipos → BAP11 · BAP dBase AC 29"
+    # El párrafo viejo NO se cuela.
+    assert "larguísimo" not in r["titulo"] + r["detalle"]
+
+
+def test_resumen_conversion_un_solo_anticipo_en_singular():
+    r = autobap.resumen({"tipo": "conversion", "im_numero": "IM-1", "n_anticipos": 1,
+                         "codigo_prov": "AC", "importe": 10, "comprobante": "BAP1"})
+    assert r["detalle"].startswith("1 anticipo →")
+
+
+def test_resumen_freno_no_repite_el_parrafo():
+    r = autobap.resumen({"tipo": "freno", "n_anticipos": 2, "importe": 172879.79,
+                         "mensaje": "Frenado por el tope: 2 importaciones por …"})
+    assert r["icono"] == "⛔"
+    assert r["titulo"] == "Frenado por el tope"
+    assert r["detalle"] == "2 importaciones · $ 172.879,79"
+
+
+def test_resumen_error_saca_el_prefijo():
+    r = autobap.resumen({"tipo": "error", "im_numero": "IM-9",
+                         "mensaje": "IM-9 de AC: período cerrado"})
+    assert r == {"icono": "⚠️", "titulo": "No pude convertir IM-9",
+                 "detalle": "período cerrado"}
+
+
+def test_resumen_fila_vieja_sin_columnas_cae_al_mensaje():
+    r = autobap.resumen({"tipo": "otro", "mensaje": "algo pasó"})
+    assert r["titulo"] == "algo pasó"
+    assert r["detalle"] == ""
+
+
+def test_avisos_adjunta_el_resumen_a_cada_fila():
+    fila = {"tipo": "conversion", "im_numero": "IM-1", "codigo_prov": "AC",
+            "ref_num": 7, "n_anticipos": 1, "importe": 100.0,
+            "comprobante": "BAP1", "mensaje": "x"}
+    with patch.object(autobap.db, "fetch_all", return_value=[fila]):
+        out = autobap.avisos()
+    assert out[0]["titulo"] == "IM-1 · AC · $ 100,00"
+    assert out[0]["icono"] == "✅"
+
+
+def test_el_mensaje_guardado_ya_no_es_un_parrafo():
+    """El texto que se escribe en el log también es corto y en formato EC."""
+    grupo = {"im_numero": "IM-0000625", "codigo_prov": "AC", "ref": 29,
+             "anio": None, "fecha_recepcion": "2026-07-29", "kg": 100,
+             "ids": [1], "n": 3, "importe": 73359.95}
+    with patch.object(autobap, "config", return_value=_CFG), \
+         patch.object(autobap, "pendientes", return_value={
+             "grupos": [grupo], "total_usd": 73359.95, "n_importaciones": 1,
+             "frenos": [], "disponible": True}), \
+         patch("modules.dolares.queries.convertir_a_compra", return_value={
+             "importe_total": 73359.95, "id_compra": 1, "comprobante": "BAP11"}), \
+         patch("periodo_guard.asegurar_fecha_abierta"), \
+         patch.object(autobap, "avisar") as av:
+        autobap.correr(forzar_topes=True)
+    msg = av.call_args.kwargs["mensaje"]
+    assert msg == ("IM-0000625 · AC · $ 73.359,95 · 3 anticipo(s) → BAP11 · "
+                   "BAP dBase AC 29")
+    assert len(msg) < 100

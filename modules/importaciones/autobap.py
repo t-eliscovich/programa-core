@@ -31,7 +31,7 @@ import threading
 import time as _time
 
 import db
-from filters import today_ec
+from filters import num_es, today_ec
 
 _LOG = logging.getLogger("programa_core.autobap")
 
@@ -156,14 +156,65 @@ def avisar(**kw) -> None:
         _LOG.warning("no pude escribir el aviso: %s", e)
 
 
+ICONOS = {"conversion": "✅", "freno": "⛔", "error": "⚠️"}
+
+
+def resumen(a: dict) -> dict:
+    """El aviso en DOS LÍNEAS: `titulo` (qué pasó) + `detalle` (el resto).
+
+    TMT 2026-07-30 (dueña): *"hagamos notificaciones más lindas, están muy
+    wordy"*. El párrafo de tres renglones se arma de nuevo acá desde las
+    COLUMNAS del log (im_numero / codigo_prov / importe / comprobante / ref),
+    que ya estaban guardadas — el `mensaje` largo queda sólo como fallback
+    para las filas viejas y para los errores. Función pura: la campanita y el
+    historial de /importaciones/automatico muestran exactamente lo mismo.
+    """
+    tipo = (a or {}).get("tipo") or ""
+    icono = ICONOS.get(tipo, "•")
+    msg = ((a or {}).get("mensaje") or "").strip()
+
+    if tipo == "conversion" and a.get("im_numero"):
+        prov = a.get("codigo_prov") or ""
+        n = int(a.get("n_anticipos") or 0)
+        titulo = f"{a['im_numero']} · {prov} · $ {num_es(a.get('importe'), 2)}"
+        det = [f"{n} anticipo{'' if n == 1 else 's'} → {a.get('comprobante') or 'compra'}"]
+        if a.get("ref_num"):
+            # El recordatorio que la dueña sí quiere ver: el BAP del dBase.
+            det.append(f"BAP dBase {prov} {a['ref_num']}".strip())
+        return {"icono": icono, "titulo": titulo, "detalle": " · ".join(det)}
+
+    if tipo == "freno":
+        n = int(a.get("n_anticipos") or 0)
+        return {
+            "icono": icono,
+            "titulo": "Frenado por el tope",
+            "detalle": (f"{n} {'importación' if n == 1 else 'importaciones'} · "
+                        f"$ {num_es(a.get('importe'), 2)}"),
+        }
+
+    if tipo == "error":
+        im = a.get("im_numero")
+        # El mensaje del error trae el prefijo "IM-x de PROV: " — sacarlo.
+        det = msg.split(": ", 1)[1] if ": " in msg else msg
+        return {
+            "icono": icono,
+            "titulo": f"No pude convertir {im}" if im else "No pude convertir",
+            "detalle": det[:140],
+        }
+
+    return {"icono": icono, "titulo": msg[:90] or "Novedad", "detalle": ""}
+
+
 def avisos(solo_no_leidos: bool = True, limite: int = 30) -> list[dict]:
+    """Los avisos con `icono`/`titulo`/`detalle`/`cuando` ya resueltos."""
     try:
-        return db.fetch_all(
+        filas = db.fetch_all(
             f"""
             SELECT id_autobap_log, tipo, im_numero, codigo_prov, ref_num, anio,
                    TO_CHAR(fecha_recepcion,'YYYY-MM-DD') AS fecha_recepcion,
                    kg, n_anticipos, importe, id_compra, comprobante, mensaje,
-                   leido, TO_CHAR(creado_en,'YYYY-MM-DD HH24:MI') AS creado_en
+                   leido, TO_CHAR(creado_en,'YYYY-MM-DD HH24:MI') AS creado_en,
+                   TO_CHAR(creado_en,'DD/MM HH24:MI') AS cuando
               FROM scintela.autobap_log
              {"WHERE NOT leido" if solo_no_leidos else ""}
              ORDER BY creado_en DESC, id_autobap_log DESC
@@ -173,6 +224,9 @@ def avisos(solo_no_leidos: bool = True, limite: int = 30) -> list[dict]:
         ) or []
     except Exception:  # noqa: BLE001
         return []
+    for f in filas:
+        f.update(resumen(f))
+    return filas
 
 
 def marcar_leidos(usuario: str = "web") -> int:
@@ -320,10 +374,13 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
     if not forzar_topes and (
             p["n_importaciones"] > cfg["tope_importaciones"]
             or p["total_usd"] > cfg["tope_usd"]):
-        msg = (f"FRENADO: {p['n_importaciones']} importaciones por "
-               f"$ {p['total_usd']:,.2f} superan el tope "
-               f"({cfg['tope_importaciones']} / $ {cfg['tope_usd']:,.2f}). "
-               f"Revisalo en Ingreso de hilado → Automático.")
+        # Formato EU/Ecuador (punto miles, coma decimales) — el aviso lo vuelve
+        # a armar corto en resumen(); este texto es el del flash y el fallback.
+        _n = p["n_importaciones"]
+        msg = (f"Frenado por el tope: {_n} "
+               f"{'importación' if _n == 1 else 'importaciones'} por "
+               f"$ {num_es(p['total_usd'], 2)} "
+               f"(tope {cfg['tope_importaciones']} / $ {num_es(cfg['tope_usd'], 2)}).")
         res["frenos"].append(msg)
         avisar(tipo="freno", mensaje=msg, importe=p["total_usd"],
                n_anticipos=p["n_importaciones"])
@@ -358,12 +415,10 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
                 n_anticipos=g["n"], importe=r.get("importe_total"),
                 id_compra=r.get("id_compra"), comprobante=r.get("comprobante"),
                 mensaje=(
-                    f"{g['im_numero']} de {g['codigo_prov']} recibida el "
-                    f"{str(g['fecha_recepcion'])[8:10]}/{str(g['fecha_recepcion'])[5:7]}"
-                    f" — convertí {g['n']} anticipo(s) por "
-                    f"$ {float(r.get('importe_total') or 0):,.2f} a la compra "
-                    f"{r.get('comprobante')}. Acordate del BAP en el dBase: "
-                    f"{g['codigo_prov']} {g['ref']}."
+                    f"{g['im_numero']} · {g['codigo_prov']} · "
+                    f"$ {num_es(r.get('importe_total'), 2)} · {g['n']} anticipo(s) "
+                    f"→ {r.get('comprobante')} · BAP dBase "
+                    f"{g['codigo_prov']} {g['ref']}"
                 ),
             )
         except Exception as e:  # noqa: BLE001 -- una importación no frena al resto
