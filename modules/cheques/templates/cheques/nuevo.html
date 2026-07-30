@@ -1100,9 +1100,19 @@
     if (!sobranteTocado) {
       // Defaults de la confirmación: única factura → NC en ESA factura
       // (radio factura); si no → anticipo. Checkbox tildado en ambos.
-      if (unica) { rFact.checked = true; }
-      else { rAnt.checked = true; }
-      chkAnt.checked = true;
+      // TMT 2026-07-30 (Andrés): salvo que se haya pedido NINGUNA. Ahí el
+      // cheque entra en cartera a propósito y NO hay que fabricarle un
+      // anticipo NB=98 por el importe entero — que es exactamente lo que
+      // pasaba si nadie destildaba a mano.
+      if (sinAplicar) {
+        rFact.checked = false;
+        rAnt.checked = false;
+        chkAnt.checked = false;
+      } else {
+        if (unica) { rFact.checked = true; }
+        else { rAnt.checked = true; }
+        chkAnt.checked = true;
+      }
     }
   }
   (function () {

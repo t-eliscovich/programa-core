@@ -1280,9 +1280,12 @@ def nuevo():
         # Ahora siempre muestra el importe (+ N° si hay) y la LISTA de
         # facturas aplicadas con su monto.
         def _desc_ch(c):
+            # TMT 2026-07-30: importes en formato Ecuador (892,24) — el
+            # f-string dejaba el "892.24" de EE.UU. en el banner verde.
+            from filters import money_es as _me_ch
             _num = (str(c.get("no_cheque") or "")).strip()
             _imp = float(c.get("importe") or 0)
-            return (f"N° {_num} " if _num else "") + f"($ {_imp:,.2f})"
+            return (f"N° {_num} " if _num else "") + f"($ {_me_ch(_imp)})"
 
 
         # Detalle de facturas aplicadas para el banner de éxito.
