@@ -798,16 +798,37 @@ def check_chequesxfact(verbose: bool = False) -> None:
          ORDER BY SUM(COALESCE(cf.importe, 0)) - COALESCE(c.importe, 0) DESC
          LIMIT 20
         """, {"t": tol}) or []
+    # TMT 2026-07-30 — el invariante NO es "Σaplicado > importe": es
+    # "Σaplicado ≠ abono".
+    #
+    # Lo de antes reportaba 60 facturas "sobre-abonadas". Fui al FACTURAS.DBF y
+    # la mitad las tiene IGUAL: EDU con IMPORTE 450,44 y ABONO 21.000,00, saldo
+    # −20.549,56, STAT 'A'. El dBase usa una fila como bolsa del cliente y deja
+    # el saldo irse a negativo — y le cierra, porque STAT 'A' sigue contando en
+    # cartera y ese negativo resta. Es su forma de decir "nos pagó de más".
+    # PC copia ese ABONO tal cual. Marcarlo en rojo es marcar al dBase.
+    #
+    # Lo que sí es un problema de PC es cuando sus LINKS no coinciden con el
+    # abono del dBase: BED con IMPORTE 2.962,53 tiene ABONO 30,94 en el dBase y
+    # 7.800,00 en chequesxfact (3 cheques). Ahí PC ligó cheques que el dBase
+    # nunca asignó a esa fila — eso se inventó del lado de PC y se puede
+    # deshacer.
+    #
+    # `factura.abono` es la verdad (viene del DBF); `chequesxfact` es la
+    # reconstrucción que hizo PC. Si difieren, PC inventó o perdió un link, y
+    # ESO es lo que hay que mirar. Que el abono exceda al importe es asunto del
+    # dBase.
     sobre_fact = db.fetch_all(
         """
         SELECT cf.id_fact, COALESCE(f.importe, 0) AS fact_importe,
+               COALESCE(f.abono, 0) AS fact_abono,
                SUM(COALESCE(cf.importe, 0)) AS aplicado, COUNT(*) AS n
           FROM scintela.chequesxfact cf
           JOIN scintela.factura f ON f.id_factura = cf.id_fact
-         GROUP BY cf.id_fact, f.importe
-        HAVING SUM(COALESCE(cf.importe, 0)) > COALESCE(f.importe, 0) + %(t)s
-         ORDER BY SUM(COALESCE(cf.importe, 0)) - COALESCE(f.importe, 0) DESC
-         LIMIT 20
+         WHERE TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
+         GROUP BY cf.id_fact, f.importe, f.abono
+        HAVING ABS(SUM(COALESCE(cf.importe, 0)) - COALESCE(f.abono, 0)) > %(t)s
+         ORDER BY ABS(SUM(COALESCE(cf.importe, 0)) - COALESCE(f.abono, 0)) DESC
         """, {"t": tol}) or []
     dups = db.fetch_all(
         """
@@ -825,8 +846,9 @@ def check_chequesxfact(verbose: bool = False) -> None:
                  "(Σ aplicado > importe del cheque).")
     if sobre_fact:
         _reporte("CHEQUESXFACT", ERROR,
-                 f"{len(sobre_fact)} factura(s) sobre-abonadas por cheques "
-                 "(Σ aplicado > importe).")
+                 f"{len(sobre_fact)} factura(s) donde los cheques de PC no "
+                 f"suman el abono del dBase "
+                 "(chequesxfact ≠ factura.abono → link inventado o perdido).")
     if dups:
         _reporte("CHEQUESXFACT", WARN,
                  f"{len(dups)} fila(s) exactamente duplicadas "

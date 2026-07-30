@@ -129,6 +129,34 @@
                class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex-1">
         <button class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white">+</button>
       </form>
+
+      {# ── Sucursal por dirección de Asinfo (TMT 2026-07-29) ──
+         Hermano del alias, para el caso en que Asinfo NO tiene código propio:
+         manda todo bajo la empresa y sólo cambia la dirección de entrega. Ahí
+         un alias no sirve —no hay código que mapear— y lo que desempata es la
+         dirección. Es el mecanismo con el que ya se resolvió AJO/AJ2
+         (22657→AJ2); faltaba la pantalla, así que agregar una sucursal nueva
+         requería una migración.
+         Las propuestas salen de /admin/salud/diag?solo=f #}
+      <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+        <p class="text-xs text-slate-500 mb-1">
+          <strong>Sucursal por dirección</strong> — cuando Asinfo manda todo bajo
+          la empresa y el dBase la parte por sucursal (ej. AJO/AJ2, VPM/VP1).
+          Propuestas en <a class="underline" href="/admin/salud/diag?solo=f">diagnóstico F</a>.
+        </p>
+        <form method="POST" action="{{ url_for('facturas.sucursal_direccion_agregar') }}"
+              class="flex items-center gap-1 text-xs">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input name="id_direccion" placeholder="id_direccion" inputmode="numeric" required
+                 class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-28 font-mono">
+          <span class="text-slate-400">&rarr;</span>
+          <input name="codigo_cli" placeholder="PC" maxlength="10" required
+                 class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-24 font-mono uppercase">
+          <input name="nota" placeholder="nota (opcional)"
+                 class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex-1">
+          <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white">+</button>
+        </form>
+      </div>
     </div>
 
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
