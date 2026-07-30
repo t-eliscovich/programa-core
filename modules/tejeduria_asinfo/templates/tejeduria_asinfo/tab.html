@@ -107,7 +107,7 @@
      saber a cuánto se está valuando: sólo se abre para editar. Arranca abierto
      si no hay ninguna tarifa o si hay OFs pendientes sin tarifa — ahí sí hay
      algo que hacer. #}
-  <details {% if not data.tarifas or data.pendientes_sin_tarifa %}open{% endif %}>
+  <details id="tarifas" {% if not data.tarifas or data.pendientes_sin_tarifa %}open{% endif %}>
   <summary>Tarifas de tejeduría · $/kg
     {% if data.tarifas %}
       <span class="muted tar" style="font-weight:normal;text-transform:none;letter-spacing:0">

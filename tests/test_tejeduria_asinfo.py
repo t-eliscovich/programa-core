@@ -262,8 +262,11 @@ def test_sin_tarifa_no_sugiere_importe():
     assert out["pendientes_sin_tarifa"] == 2
 
 
-def _run_cargar(compras, estampadas, tarifas, falta_acum=None):
-    """falta_acum=None → tope generoso (no bloquea), para probar el resto."""
+def _run_cargar(compras, estampadas, tarifas, falta_acum=None, prod=None):
+    """`falta_acum` ya NO frena nada (el tope se sacó el 30/07): es sólo dato.
+
+    `prod` permite simular a Asinfo mudo (disponible=False).
+    """
     import datetime as _dt
     creadas = []
 
@@ -273,7 +276,8 @@ def _run_cargar(compras, estampadas, tarifas, falta_acum=None):
 
     if falta_acum is None:
         falta_acum = {"AP": 99999.0, "RY": 99999.0}
-    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
+                      return_value=(_PROD if prod is None else prod)), \
          patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
          patch.object(tsvc, "_ofts_estampadas", return_value=dict(estampadas)), \
          patch.object(tsvc._tarifas, "listar_tarifas", return_value=tarifas), \
@@ -308,36 +312,41 @@ def test_cargar_pendientes_saltea_sin_tarifa():
     assert any("sin tarifa" in d["motivo"] for d in res["detalle"] if not d["ok"])
 
 
-def test_cargar_pendientes_topea_por_lo_que_falta():
-    # EL caso real del 26/07: a RY sólo le faltan 100 kg acumulados pero la OF
-    # trae 811 → NO se carga (sin el tope se creaba una compra duplicada de una
-    # OF ya pagada).
+def test_el_tope_por_kg_faltantes_ya_no_frena():
+    """TMT 2026-07-30 (dueña: *"dejá de poner muchos topes que entorpece más
+    que ayudar"*).
+
+    El tope acumulado comparaba producción de una ventana de 3 meses contra las
+    compras de esa misma ventana. Como el maquilero factura con desfase, frenaba
+    OFs que nadie había pagado (caso UN, julio). La guarda que queda es la
+    EXACTA — `_ofts_estampadas` — que no falla por corrimiento de fechas.
+    """
     res, creadas = _run_cargar(
-        {}, {}, _TARIFAS, falta_acum={"RY": 100.0, "AP": 99999.0})
-    cods = [c["codigo_prov"] for c in creadas]
-    assert "RY" not in cods
-    assert "AP" in cods
-    assert any("excede lo que falta de RY" in d["motivo"]
-               for d in res["detalle"] if not d["ok"])
+        {}, {}, _TARIFAS, falta_acum={"RY": 100.0, "AP": 0.0})
+    cods = sorted(c["codigo_prov"] for c in creadas)
+    assert cods == ["AP", "RY"]          # 811 kg de RY contra 100 "faltantes"
+    assert res["creadas"] == 2 and res["salteadas"] == 0
+    assert not any("excede" in (d.get("motivo") or "") for d in res["detalle"])
 
 
-def test_tope_es_acumulado_no_del_mes():
-    # El mes dice que RY está cubierto (compró 711 de los 811 producidos en el
-    # mes) pero el ACUMULADO dice que faltan 2.000 kg → se carga igual. Ese es
-    # todo el punto de que el tope sea por proveedor y no por mes: el maquilero
-    # factura con desfase y a caballo de dos meses.
-    res, creadas = _run_cargar(
-        {"RY": {"kg": 711.45, "importe": 1400.0, "n": 1}}, {}, _TARIFAS,
-        falta_acum={"RY": 2000.0, "AP": 2000.0})
-    assert "RY" in [c["codigo_prov"] for c in creadas]
+def test_falta_acumulada_sigue_siendo_dato_del_plan():
+    # Se sigue calculando y devolviendo (la pantalla la muestra como contexto),
+    # sólo que ya no decide nada.
+    res, _ = _run_cargar({}, {}, _TARIFAS, falta_acum={"RY": 2000.0, "AP": 5.0})
+    # Arranca en la falta y se le descuentan los kg cargados. AP queda en
+    # NEGATIVO (5 − 1.621,25) y aun así su OF se creó: ya no frena.
+    assert res["restante"]["RY"] == pytest.approx(2000.0 - 811.45)
+    assert res["restante"]["AP"] == pytest.approx(5.0 - 1621.25)
 
 
 def test_sin_asinfo_no_carga_nada():
-    # falta_acumulada devuelve {} cuando Asinfo no responde → mejor no cargar
-    # que cargar de más.
-    res, creadas = _run_cargar({}, {}, _TARIFAS, falta_acum={})
+    # Asinfo mudo → resumen_mes marca disponible=False y NO se crea nada. No es
+    # un tope: es no inventar producción cuando el puente no contesta.
+    res, creadas = _run_cargar(
+        {}, {}, _TARIFAS, prod={"disponible": False, "anio": 2026, "mes": 7,
+                                "total_kg": 0.0, "ofs": [], "por_tejedor": []})
     assert creadas == [] and res["creadas"] == 0
-    assert res["salteadas"] == 2
+    assert res["sin_asinfo"] is True
 
 
 def test_rango_ventana_3_meses():
@@ -665,7 +674,9 @@ def test_tarifas_abiertas_si_no_hay_ninguna(app, fake_db):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     i = body.index("<summary>Tarifas de tejeduría")
-    assert "<details open>" in body[i - 200:i]
+    # El <details> lleva id="tarifas" para que el link de la notificación de
+    # "tejedor nuevo" (/produccion-tejeduria-asinfo#tarifas) caiga acá.
+    assert 'id="tarifas" open>' in body[i - 200:i]
 
 
 # ---------------------------------------------------------------------------
@@ -716,13 +727,12 @@ def test_los_de_siempre_no_se_movieron():
 
 
 # ---------------------------------------------------------------------------
-# El tope no frena producción POSTERIOR a la última compra del proveedor
+# El TOPE acumulado por kg SE FUE (dueña 2026-07-30)
 # ---------------------------------------------------------------------------
-# TMT 2026-07-30. El tope compara producción de una ventana de 3 meses contra
-# las compras de esa misma ventana, pero el maquilero factura con un mes de
-# desfase: dentro de la ventana entran compras que pagan producción ANTERIOR a
-# ella, el saldo se come solo y frena OFs que nadie pagó (caso real UN, julio).
-# Una compra NO puede pagar una OF que cerró DESPUÉS de ella.
+# "Dejá de poner muchos topes que entorpece más que ayudar". Era una guarda
+# difusa: comparaba producción de 3 meses contra las compras de esos mismos 3
+# meses, y como el maquilero factura con un mes de desfase frenaba OFs que nadie
+# había pagado (caso UN, julio). Queda la guarda EXACTA: el OFT estampado.
 from unittest.mock import patch as _patch  # noqa: E402
 
 from modules.tejeduria_asinfo import service as _tsvc  # noqa: E402
@@ -732,57 +742,103 @@ _OF_UN = {"cod": "UN", "numero": "OFT-000039340", "dia": "2026-07-24",
           "label": "Unda · UN", "descripcion": "R UNDA VAR10"}
 
 
-def _plan_un(ultima_compra, restante_kg, dia="2026-07-24"):
-    of = {**_OF_UN, "dia": dia}
-    with _patch.object(_tsvc, "resumen_mes", return_value={"pendientes": [of]}), \
-         _patch.object(_tsvc, "falta_acumulada", return_value={"UN": restante_kg}), \
-         _patch.object(_tsvc, "ultima_compra_k_por_prov", return_value=ultima_compra), \
-         _patch.object(_tsvc, "_ofts_estampadas", return_value={}), \
+def _plan(ofs, *, disponible=True, estampadas=None):
+    with _patch.object(_tsvc, "resumen_mes",
+                       return_value={"disponible": disponible, "pendientes": ofs}), \
+         _patch.object(_tsvc, "falta_acumulada", return_value={}), \
+         _patch.object(_tsvc, "_ofts_estampadas", return_value=estampadas or {}), \
          _patch.object(_tsvc, "_importes_k_existentes", return_value={}):
         return _tsvc.cargar_pendientes(2026, 7, dry_run=True)
 
 
-def test_of_posterior_a_la_ultima_compra_no_pasa_por_el_tope():
-    # Caso UN: última compra 16/06, OF del 24/07, tope dice que faltan 29,92 kg.
-    res = _plan_un({"UN": "2026-06-16"}, 29.92)
-    assert res["creadas"] == 1, res["detalle"]
+def test_ya_no_hay_tope_por_kg():
+    """falta_acumulada vacío (antes = frenar todo) ya no frena nada."""
+    res = _plan([_OF_UN])
+    assert res["creadas"] == 1
     assert res["importe"] == 1152.24
 
 
-def test_of_anterior_a_la_ultima_compra_SIGUE_frenada_por_el_tope():
-    # La guarda contra las compras viejas sin OFT no se toca.
-    res = _plan_un({"UN": "2026-08-01"}, 29.92, dia="2026-07-24")
+def test_la_guarda_exacta_sigue_viva():
+    """Una OF con su OFT ya estampado no se vuelve a ofrecer. Esa no falla."""
+    res = _plan([_OF_UN], estampadas={"OFT-000039340": 1152.24})
     assert res["creadas"] == 0
-    assert "excede lo que falta" in res["detalle"][0]["motivo"]
+    assert res["detalle"][0]["motivo"] == "ya tiene compra"
 
 
-def test_sin_compras_previas_del_proveedor_manda_el_tope():
-    # Sin fecha de referencia no hay excepción posible: se respeta el tope.
-    res = _plan_un({}, 29.92)
+def test_sin_tarifa_sigue_salteando():
+    of = {**_OF_UN, "tarifa": None, "importe_sugerido": None}
+    res = _plan([of])
     assert res["creadas"] == 0
-    assert "excede lo que falta" in res["detalle"][0]["motivo"]
+    assert "sin tarifa" in res["detalle"][0]["motivo"]
 
 
-def test_con_tope_suficiente_carga_igual():
-    res = _plan_un({"UN": "2026-08-01"}, 5000.0)
-    assert res["creadas"] == 1
+def test_asinfo_mudo_no_carga_nada():
+    """No es un tope: es no inventar producción con el puente caído."""
+    res = _plan([_OF_UN], disponible=False)
+    assert res["creadas"] == 0
+    assert res["sin_asinfo"] is True
 
 
-def test_una_carga_del_motor_no_frena_a_la_siguiente():
-    """El motor carga la OF más nueva primero; eso no puede tapar a las viejas.
+# ---------------------------------------------------------------------------
+# Aviso de tejedor nuevo (campanita) — TMT 2026-07-30
+# ---------------------------------------------------------------------------
+# Dueña: *"cuando tenemos un tejedor nuevo, por ejemplo UN, debería aparecer una
+# notificación que diga: vimos que hay un nuevo tejedor que produjo esta orden,
+# cargás su tarifa así podemos proceder a cargar la compra… y un link para que
+# vaya directo a esa parte donde dice tarifa"*.
 
-    Caso real UN 30/07: cargó la OF del 28/07 y la "última compra" saltó al
-    28/07, dejando la OF del 24/07 por detrás de su propia creación. Por eso
-    `ultima_compra_k_por_prov` sólo mira compras SIN OFT.
-    """
-    import re as _re
-    sql_calls = []
+def _avisos_de(resumen):
+    puestos = []
 
-    def _fake_fetch_all(sql, *a, **kw):
-        sql_calls.append(sql)
-        return [{"cod": "UN", "ultima": "2026-06-16"}]
+    def _fake_avisar(**kw):
+        puestos.append(kw)
+        return True
 
-    with _patch.object(_tsvc.db, "fetch_all", side_effect=_fake_fetch_all):
-        assert _tsvc.ultima_compra_k_por_prov() == {"UN": "2026-06-16"}
-    # La consulta tiene que excluir explícitamente las compras con OFT.
-    assert _re.search(r"NOT\s+ILIKE\s+'%+OFT-%+'", sql_calls[0]), sql_calls[0]
+    with _patch.object(_tsvc, "resumen_mes", return_value=resumen), \
+         _patch("modules.avisos.avisar", side_effect=_fake_avisar):
+        n = _tsvc.avisar_tejedores_nuevos(2026, 7)
+    return n, puestos
+
+
+def test_aviso_sin_tarifa_linkea_al_tarifario():
+    n, puestos = _avisos_de({"disponible": True, "desconocidos": [],
+                             "pendientes": [{**_OF_UN, "tarifa": None,
+                                             "importe_sugerido": None}]})
+    assert n == 1
+    a = puestos[0]
+    assert a["titulo"] == "Falta la tarifa de Unda · UN"
+    assert a["url"] == "/produccion-tejeduria-asinfo#tarifas"   # link directo
+    assert "1.001,95 kg" in a["detalle"]
+    assert a["nivel"] == "alerta"
+
+
+def test_aviso_sin_reconocer_no_manda_al_tarifario():
+    # No se arregla desde la pantalla: el mapeo vive en el código.
+    n, puestos = _avisos_de({
+        "disponible": True, "pendientes": [],
+        "desconocidos": [{"cod": "??", "label": "R UNDA", "kg": 1001.95, "ofs": 2}]})
+    assert n == 1
+    a = puestos[0]
+    assert a["titulo"] == "Tejedor sin reconocer: R UNDA"
+    assert a["url"] == "/produccion-tejeduria-asinfo"
+    assert "producción propia" in a["detalle"]
+
+
+def test_aviso_no_se_repite_pero_sigue_a_las_ofs_nuevas():
+    """La clave incluye el conteo de OFs: misma situación = misma clave."""
+    def _claves(ofs):
+        return [a["clave"] for a in _avisos_de(
+            {"disponible": True, "desconocidos": [], "pendientes": ofs})[1]]
+
+    sin_tarifa = {**_OF_UN, "tarifa": None, "importe_sugerido": None}
+    una = _claves([sin_tarifa])
+    otra_vez = _claves([sin_tarifa])
+    dos = _claves([sin_tarifa, {**sin_tarifa, "numero": "OFT-000039341"}])
+    assert una == otra_vez            # idempotente
+    assert dos != una                 # una OF más → aviso nuevo
+
+
+def test_una_of_con_tarifa_no_genera_aviso():
+    n, puestos = _avisos_de({"disponible": True, "desconocidos": [],
+                             "pendientes": [_OF_UN]})
+    assert (n, puestos) == (0, [])

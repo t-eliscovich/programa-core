@@ -118,39 +118,6 @@ def _compras_k_por_prov_rango(desde: str, hasta: str) -> dict:
     return {r["cod"]: float(r["kg"] or 0) for r in rows}
 
 
-def ultima_compra_k_por_prov() -> dict:
-    """{codigo_prov: 'YYYY-MM-DD' de su última compra K **SIN OFT**}.
-
-    TMT 2026-07-30. Sirve para saber qué producción NO PUEDE estar ya pagada:
-    una compra vieja no puede cubrir una OF que cerró DESPUÉS de ella. Ver el
-    uso en `cargar_pendientes` (excepción al tope acumulado).
-
-    ⚠ Se excluyen las compras que YA llevan un OFT estampado — o sea las que
-    creó este mismo motor. Motivo: contarlas rompe la regla apenas se usa. Caso
-    real UN, 30/07: el motor cargó primero la OF del **28/07** (es la más nueva)
-    y con eso la "última compra" saltó al 28/07, dejando la OF del **24/07** por
-    detrás de su propia creación ⇒ volvía a frenarse por tope. El tope existe
-    para protegerse de las compras VIEJAS tipeadas a mano sin OFT; contra las
-    que tienen OFT ya está la guarda de `_ofts_estampadas`.
-    """
-    try:
-        rows = db.fetch_all(
-            """
-            SELECT UPPER(TRIM(COALESCE(codigo_prov, ''))) AS cod,
-                   TO_CHAR(MAX(fecha), 'YYYY-MM-DD')      AS ultima
-              FROM scintela.compra
-             WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
-               AND COALESCE(kg, 0) > 0
-               AND COALESCE(stat, '') <> 'Y'
-               AND COALESCE(concepto, '') NOT ILIKE '%%OFT-%%'
-             GROUP BY UPPER(TRIM(COALESCE(codigo_prov, '')))
-            """,
-        ) or []
-    except Exception:  # noqa: BLE001 -- fail-soft
-        return {}
-    return {r["cod"]: r["ultima"] for r in rows if r.get("cod") and r.get("ultima")}
-
-
 def falta_acumulada(anio: int, mes: int, meses: int = MESES_VENTANA_TOPE) -> dict:
     """{cod_prov: kg que faltan cargar} ACUMULADO en la ventana — el TOPE.
 
@@ -239,6 +206,25 @@ def resumen_mes(anio: int, mes: int) -> dict:
             o["cod"] = _int_cod
             o["label"] = _int_label
         return o
+
+    # TMT 2026-07-30 (dueña): "cuando tenemos un tejedor nuevo debería aparecer
+    # una notificación". ANTES de mandarlos a INTELA, guardamos quiénes son —
+    # si no, un tejedor que el programa no conoce desaparece EN SILENCIO dentro
+    # de la producción propia. Fue exactamente lo que pasó con UN (Rodrigo Unda)
+    # durante meses.
+    _desc: dict = {}
+    for o in ofs:
+        if o.get("es_intela"):
+            continue
+        _c = (o.get("cod") or "").strip().upper()
+        if _c and _c in TERCERIZADOS_VALIDOS:
+            continue
+        k = (o.get("label") or "?").strip()
+        d = _desc.setdefault(k, {"label": k, "cod": _c, "ofs": 0, "kg": 0.0,
+                                 "ejemplo": o.get("numero")})
+        d["ofs"] += 1
+        d["kg"] = round(d["kg"] + float(o.get("kg") or 0), 2)
+    desconocidos = sorted(_desc.values(), key=lambda x: -x["kg"])
 
     ofs = [_a_intela_si_desconocido(o) for o in ofs]
     compras = _compras_k_por_prov(anio, mes) if disponible else {}
@@ -446,6 +432,8 @@ def resumen_mes(anio: int, mes: int) -> dict:
         "tarifas": tarifas,
         "falta_por_cod": falta_por_cod,
         "falta_acum_por_cod": (falta_acumulada(anio, mes) if disponible else {}),
+        # Tejedores que Asinfo trae y el programa no reconoce (ver el aviso).
+        "desconocidos": desconocidos,
         "meses_ventana_tope": MESES_VENTANA_TOPE,
         "total_pendiente": round(
             sum((o.get("importe_sugerido") or 0.0) for o in pendientes), 2),
@@ -498,12 +486,10 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     GUARDAS (en este orden — la carga ciega duplicaba):
       1. sólo OFs en estado 'pendiente' (ya excluye mes pasado y OFT estampado);
       2. **tarifa resuelta o se saltea** — nunca inventamos un precio;
-      3. **tope ACUMULADO por proveedor** (`falta_acumulada`, ventana de
-         MESES_VENTANA_TOPE meses): no cargamos más kg de los que faltan.
-         EXCEPCIÓN (2026-07-30): las OFs que cerraron DESPUÉS de la última
-         compra K del proveedor no pasan por el tope — una compra no puede
-         pagar una OF que cerró después de ella. Es la
-         guarda que importa: las compras K viejas tipeadas a mano SIN kg hacen
+      3. ~~tope acumulado por kg~~ — **SACADO el 2026-07-30** (dueña: "dejá de
+         poner muchos topes que entorpece más que ayudar"). Era difuso y frenaba
+         OFs reales. La guarda que queda es la EXACTA: `_ofts_estampadas`.
+         (texto viejo, para contexto) las compras K viejas tipeadas a mano SIN kg hacen
          que la falta sobre-estime, y sin tope se crearían compras por OFs que
          ya están pagadas (caso real 26/07: 2 OFs de Reyes del 08/07). El tope
          es acumulado y no mensual porque el maquilero factura con desfase y a
@@ -519,30 +505,27 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     from modules.compras import queries as _compras_q
 
     data = resumen_mes(anio, mes)
+    # Asinfo mudo → no se carga NADA. No es un tope: es no inventar producción
+    # cuando el puente no contesta. `resumen_mes` marca `disponible=False` y sus
+    # listas quedan vacías o incompletas.
+    if not data.get("disponible"):
+        return {"dry_run": dry_run, "creadas": 0, "importe": 0.0,
+                "salteadas": 0, "restante": {}, "avisos_dup": 0,
+                "detalle": [], "sin_asinfo": True}
     pendientes = data.get("pendientes") or []
     # Más viejas primero: si la falta no alcanza para todas, se cargan las que
     # llevan más tiempo sin facturar.
     pendientes = sorted(pendientes, key=lambda o: str(o.get("dia") or ""))
     # TOPE ACUMULADO por proveedor (no del mes) — dueña 2026-07-26.
+    # TMT 2026-07-30 (dueña: "dejá de poner muchos topes que entorpece más que
+    # ayudar"). El tope acumulado por kg SE FUE. Era una guarda difusa: comparaba
+    # producción de una ventana de 3 meses contra las compras de esa misma
+    # ventana, y como el maquilero factura con un mes de desfase frenaba OFs que
+    # nadie había pagado (caso UN, julio). Se queda la guarda EXACTA, que es la
+    # que importa: `_ofts_estampadas` — una OF con su OFT ya estampado en el
+    # concepto no se vuelve a ofrecer, y eso no falla por desfase de fechas.
+    # `restante` sigue calculándose sólo como DATO del plan, no frena nada.
     restante = falta_acumulada(anio, mes)
-    # TMT 2026-07-30 (dueña: "tratarlo como el resto de los tejedores… se
-    # dispara automático"). El tope compara la producción de una ventana de 3
-    # meses contra las compras de ESA MISMA ventana — pero el maquilero factura
-    # con un mes de desfase, así que dentro de la ventana entran compras que
-    # pagan producción ANTERIOR a ella. Resultado: el tope se come el saldo y
-    # frena OFs que nadie pagó.
-    #
-    # Caso real UN (Rodrigo Unda), julio: producción may-jul 5.561,00 kg contra
-    # compras may-jul 5.286,88 ⇒ "falta 29,92" y su OF de 1.001,95 quedaba
-    # salteada. Pero la compra del 01/05 (concepto «116 29», o sea factura del
-    # 29/04) paga producción de ABRIL, que está fuera de la ventana. Mirado
-    # desde enero la deuda real son 1.313,54 kg — de sobra para esa OF.
-    #
-    # EXCEPCIÓN, y es demostrable: **una compra no puede pagar una OF que cerró
-    # DESPUÉS de ella**. Así que la producción posterior a la última compra K
-    # del proveedor NO está sujeta al tope. Todo lo anterior sigue igual, así
-    # que la guarda contra las compras viejas sin OFT no se toca.
-    ult_compra = ultima_compra_k_por_prov()
     estampadas = _ofts_estampadas()
     _desde, _hasta = _rango_ventana(anio, mes)
     existentes = _importes_k_existentes(_desde, _hasta)
@@ -569,20 +552,6 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         if kg <= 0:
             detalle.append({**base, "ok": False, "motivo": "OF sin kg"})
             continue
-        _ult = ult_compra.get(cod)
-        _dia = str(of.get("dia") or "")[:10]
-        _post = bool(_ult) and _dia > str(_ult)[:10]
-        if not _post and restante.get(cod, 0.0) + 0.01 < kg:
-            detalle.append({
-                **base, "ok": False,
-                # El motivo dice contra QUÉ se comparó: sin eso, "excede lo que
-                # falta" no se puede ni verificar ni discutir.
-                "motivo": (f"excede lo que falta de {cod} "
-                           f"({restante.get(cod, 0.0):,.2f} kg) · OF {_dia or '?'} "
-                           f"vs última compra {str(_ult)[:10] if _ult else 'ninguna'}"),
-            })
-            continue
-
         # Aviso (no bloquea): ya hay una compra K de ese proveedor por el MISMO
         # importe en la ventana. Puede ser un duplicado o dos OFs del mismo peso.
         dup = any(abs(x - float(importe)) < 0.01 for x in existentes.get(cod, []))
@@ -712,12 +681,85 @@ def _avisar_carga(res: dict) -> int:
     return puestos
 
 
+def avisar_tejedores_nuevos(anio: int, mes: int) -> int:
+    """Avisa por la campanita cuando falta algo para poder cargar un tejedor.
+
+    TMT 2026-07-30 (dueña): *"cuando tenemos un tejedor nuevo, por ejemplo UN,
+    debería aparecer una notificación que diga: vimos que hay un nuevo tejedor
+    que produjo esta orden, cargás su tarifa así podemos proceder a cargar la
+    compra… y un link para que vaya directo a esa parte donde dice tarifa"*.
+
+    Dos situaciones distintas, y la diferencia importa porque una la resolvés
+    vos sola y la otra no:
+
+    · **SIN TARIFA** — el programa ya lo reconoce, sólo falta el $/kg. Se
+      arregla en la misma pantalla: el link va derecho al tarifario.
+    · **SIN RECONOCER** — Asinfo lo trae pero el programa no sabe qué proveedor
+      es, así que su producción se está contando como propia. Eso NO se arregla
+      desde la pantalla (el mapeo vive en el código) y el aviso lo dice.
+
+    Idempotente por `clave`: mientras la situación no cambie no se repite, y si
+    aparece una OF nueva del mismo tejedor vuelve a avisar con el conteo nuevo.
+    Nunca levanta.
+    """
+    from modules.avisos import avisar as _avisar
+
+    puestos = 0
+    try:
+        data = resumen_mes(anio, mes)
+    except Exception as e:  # noqa: BLE001 -- el aviso nunca rompe al que avisa
+        _LOG.warning("avisar_tejedores_nuevos: %s", e)
+        return 0
+
+    # 1) Tejedores que Asinfo trae y el programa NO reconoce.
+    for d in data.get("desconocidos") or []:
+        label = d.get("label") or "?"
+        puestos += bool(_avisar(
+            fuente="tejeduria",
+            nivel="alerta",
+            titulo=f"Tejedor sin reconocer: {label}",
+            detalle=(f"Produjo {d['ofs']} orden{'' if d['ofs'] == 1 else 'es'} · "
+                     f"{num_es(d['kg'], 2)} kg este mes y se está contando como "
+                     f"producción propia. Hay que darlo de alta para poder "
+                     f"cargarle las compras."),
+            cantidad=d["ofs"],
+            url="/produccion-tejeduria-asinfo",
+            clave=f"tejeduria:sin-reconocer:{anio}-{mes:02d}:{label}:{d['ofs']}"[:400],
+        ))
+
+    # 2) Tejedores reconocidos con OFs esperando y SIN tarifa cargada.
+    faltan: dict = {}
+    for of in data.get("pendientes") or []:
+        if of.get("tarifa"):
+            continue
+        cod = (of.get("cod") or "").strip().upper()
+        if not cod:
+            continue
+        f = faltan.setdefault(cod, {"cod": cod, "label": of.get("label") or cod,
+                                    "ofs": 0, "kg": 0.0})
+        f["ofs"] += 1
+        f["kg"] = round(f["kg"] + float(of.get("kg") or 0), 2)
+    for f in faltan.values():
+        puestos += bool(_avisar(
+            fuente="tejeduria",
+            nivel="alerta",
+            titulo=f"Falta la tarifa de {f['label']}",
+            detalle=(f"Tiene {f['ofs']} orden{'' if f['ofs'] == 1 else 'es'} · "
+                     f"{num_es(f['kg'], 2)} kg esperando. Cargale el $/kg y la "
+                     f"compra se carga sola."),
+            cantidad=f["ofs"],
+            url="/produccion-tejeduria-asinfo#tarifas",
+            clave=f"tejeduria:sin-tarifa:{anio}-{mes:02d}:{f['cod']}:{f['ofs']}"[:400],
+        ))
+    return puestos
+
+
 def correr_si_toca() -> dict:
     """Entrada del hilo de fondo: carga lo pendiente del mes y avisa.
 
     Respeta el switch de ambiente (TEJEDURIA_AUTO=0), el freno de 30 minutos, y
-    todas las guardas de `cargar_pendientes` (tarifa resuelta, tope acumulado
-    por proveedor, OFT ya estampado). Nunca levanta.
+    todas las guardas de `cargar_pendientes` (Asinfo disponible, tarifa
+    resuelta, OFT ya estampado). Nunca levanta.
     """
     global _auto_ultimo_ts
     res = {"corrio": False, "creadas": 0, "importe": 0.0, "avisos": 0}
@@ -738,6 +780,9 @@ def correr_si_toca() -> dict:
         carga = cargar_pendientes(hoy.year, hoy.month, usuario=MARCADOR_CARGA)
         res["creadas"] = carga.get("creadas") or 0
         res["importe"] = carga.get("importe") or 0.0
+        # Lo que NO se pudo cargar también se avisa: un tejedor nuevo o sin
+        # tarifa se quedaba esperando sin que nadie se enterara.
+        res["avisos_alta"] = avisar_tejedores_nuevos(hoy.year, hoy.month)
     except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
         _LOG.warning("tejeduría (fondo): %s", e)
     return res

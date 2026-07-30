@@ -90,21 +90,12 @@
         {% endfor %}
       </tbody>
     </table>
-    <p class="note">Las que se saltean por el tope se pueden cargar igual de a una con el botón
-      «Cargar $» de cada fila en la pantalla anterior — ese no tiene tope, pero pasás por el
-      formulario de compras y confirmás vos.</p>
+    {# TMT 2026-07-30 (dueña: "dejá de poner muchos topes"). Se fue el tope
+       acumulado por kg y con él su bloque de saldos. Lo que queda saltea por
+       motivos concretos: ya tiene compra, sin tarifa, o sin kg. #}
+    <p class="note">Las que se saltean se pueden cargar igual de a una con el botón
+      «Cargar $» de cada fila en la pantalla anterior.</p>
   {% endif %}
-
-  <div class="box">
-    <strong>Tope restante después de esta carga</strong> (producido menos cargado, acumulado por proveedor):
-    <ul style="margin:6px 0 0 18px">
-      {% for cod, kg in plan.restante.items() %}
-        <li><strong>{{ cod }}</strong>: {{ kg|num_es }} kg</li>
-      {% else %}
-        <li class="muted">Asinfo no respondió — por eso no se carga nada.</li>
-      {% endfor %}
-    </ul>
-  </div>
 
   <form method="post" action="{{ url_for('tejeduria_asinfo.cargar_pendientes', anio=anio, mes=mes) }}"
         style="display:flex;gap:14px;align-items:center;margin-top:16px">
