@@ -252,7 +252,47 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         "patrimonio": float(bal.get("patr", 0) or 0) - float(bal.get("uret", 0) or retiro),
         "usuti":      float(bal.get("utilidad", 0) or 0),
         "usret":      float(bal.get("uret", 0) or retiro),
+        # TMT 2026-07-30 (dueña: "nunca estuvo en 700"). Marca si `uqui` salió
+        # del FÍSICO de formulas_app o del respaldo del PRG. Ver
+        # `quimico_respaldado_por_fisico`. La columna EN VIVO la ignora (se
+        # recalcula sola); la usa `insertar_snapshot` para no CONGELAR un valor
+        # de respaldo.
+        "_quimico_fisico": quimico_respaldado_por_fisico(fecha_cierre),
     }
+
+
+def quimico_respaldado_por_fisico(fecha_cierre: date) -> bool:
+    """True si el stock de químicos del balance viene del físico de formulas_app.
+
+    POR QUÉ EXISTE (TMT 2026-07-30). `informe_balance` resuelve el "Stock Quí."
+    en dos pasos:
+
+        vqx = VQ0(mes anterior) + compras Q del mes − ITIN   # respaldo del PRG
+        try:  vqx = químico FÍSICO de formulas_app           # el bueno
+        except: pass                                         # en silencio
+
+    Si el puente a formulas_app no contesta, ese `except` deja pasar el
+    respaldo sin avisar. Y el respaldo es un número plausible pero equivocado:
+    arrastra el VQ del dBase y le suma las compras Q del mes, entre ellas
+    facturas de importación que YA están dentro del físico desde que la
+    mercadería entró. Así salió una foto con químicos en 559,7 contra 416,7
+    reales — 143k que caen enteros en patrimonio y, como
+    utilidad = Δ patrimonio, mostraron una utilidad de 766,6 que nunca existió.
+
+    La columna EN VIVO se cura sola en la carga siguiente. Una FOTO no: congela
+    el error, y cuando el mes cierra entra a la historia para siempre.
+    """
+    try:
+        from modules.informes.quimico_inv_formulas import quimico_total_fisico
+
+        v = quimico_total_fisico(fecha_cierre)
+    except Exception as e:  # noqa: BLE001
+        log.warning("químico físico no disponible (%s) — la foto se frena", e)
+        return False
+    if not v or float(v) <= 0:
+        log.warning("químico físico vino en 0/None — la foto se frena")
+        return False
+    return True
 
 
 def existe_snapshot(fecha: date) -> dict | None:
@@ -273,6 +313,23 @@ def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
     maquinaria, realty, patrimonio, usret, usuti. Sin estas el
     histórico mostraba 0,0 en mes corriente (Federico #4).
     """
+    # ── GUARD (TMT 2026-07-30) ──────────────────────────────────────────
+    # Único cuello de botella por el que una foto se vuelve permanente, así que
+    # el chequeo vive ACÁ y no en la ruta web: cubre también el CLI y el cierre
+    # de mes, que son los que escriben la historia definitiva.
+    # `_quimico_fisico=False` ⇒ el "Stock Quí." de estos KPIs es el valor de
+    # respaldo, no el físico. Mejor que falte la foto (se rehace con "Snapshot
+    # ahora" o volviendo a correr el script) a que quede una mal.
+    # Se puede saltear a propósito con `_quimico_fisico=True` para backfills de
+    # meses viejos, donde el físico de formulas_app ya no se puede reconstruir.
+    if kpis.get("_quimico_fisico") is False:
+        raise ValueError(
+            "No guardo el snapshot: el stock de químicos no viene del físico de "
+            "formulas_app sino del valor de respaldo, que infla el patrimonio. "
+            "Reintentá cuando el puente responda."
+        )
+    kpis = {k: v for k, v in kpis.items() if not k.startswith("_")}
+
     # TMT 2026-05-20 v3 — defaults + nombres de columnas correctos.
     # OJO: scintela.historia tiene 'stock' (kg) y 'ustock' (US$). El
     # template del histórico lee 'ustock'. calcular_kpis() popula

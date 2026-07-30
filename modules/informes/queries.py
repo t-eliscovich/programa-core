@@ -7750,40 +7750,6 @@ def tomar_snapshot_mes_actual(
                 "motivo": f"último snapshot hace {int(edad)}s (< {throttle_segundos}s)",
             }
 
-    # ── GUARD del químico (TMT 2026-07-30, dueña: "nunca estuvo en 700") ──
-    # El "Stock Quí." del balance se resuelve así:
-    #     vqx = VQ0(mes anterior) + compras Q del mes − ITIN      ← fallback del PRG
-    #     try: vqx = químico FÍSICO de formulas_app               ← el bueno
-    #     except: pass                                            ← silencio
-    # Si el puente a formulas_app no contesta, el `except` deja pasar el
-    # fallback SIN avisar. Es un número plausible pero equivocado: arrastra el
-    # VQ de junio (144.637) y le suma las compras Q del mes, entre ellas las 2
-    # facturas de CT Colourtex ($241.330) que YA están dentro del físico desde
-    # que la mercadería entró (ver el análisis del 12/07). Así salió una foto
-    # con químicos en 559,7 contra 416,7 reales — 143k que caen enteros en
-    # patrimonio y, como utilidad = Δ patrimonio, mostraron una utilidad de
-    # 766,6 que nunca existió.
-    #
-    # Una foto que FALTA se recupera con el botón "Snapshot ahora". Una foto
-    # MAL congela el error para siempre y, cuando el mes cierra, entra a la
-    # historia. Así que: sin físico, no hay foto.
-    try:
-        from modules.informes.quimico_inv_formulas import quimico_total_fisico
-
-        _qf = quimico_total_fisico(hoy)
-    except Exception as e:  # noqa: BLE001
-        _qf, _err = None, str(e)[:120]
-    else:
-        _err = None
-    if not _qf or float(_qf) <= 0:
-        return {
-            "accion": "sin_quimico",
-            "id_historia": int(ult["id_historia"]) if ult else None,
-            "motivo": ("no se tomó la foto: el stock de químicos de formulas_app "
-                       "no está disponible y el valor de respaldo no es confiable"
-                       + (f" ({_err})" if _err else "")),
-        }
-
     # Importar el script de snapshot dinamicamente (vive en scripts/).
     import os
     import sys
@@ -7796,13 +7762,25 @@ def tomar_snapshot_mes_actual(
         sys.path.insert(0, scripts_dir)
     import snapshot_historia_mensual as _snap
 
-    r = _snap.ejecutar(hoy, force=False, usuario=usuario)
-    # Si ya existía (skipped), forzamos insert nuevo manual — queremos
-    # MÚLTIPLES snapshots del mismo mes para comparar.
-    if r.get("accion") == "skipped":
-        kpis = _snap.calcular_kpis(hoy)
-        new_id = _snap.insertar_snapshot(kpis, usuario=usuario)
-        return {"accion": "inserted", "id_historia": new_id, "kpis": kpis}
+    # TMT 2026-07-30 (dueña: "nunca estuvo en 700"). `insertar_snapshot` se
+    # planta si el stock de químicos vino del valor de respaldo en vez del
+    # físico de formulas_app — congelarlo inflaba el patrimonio ~143k y
+    # mostraba una utilidad que nunca existió. Acá sólo traducimos ese plantón
+    # a una respuesta que la pantalla pueda mostrar.
+    try:
+        r = _snap.ejecutar(hoy, force=False, usuario=usuario)
+        # Si ya existía (skipped), forzamos insert nuevo manual — queremos
+        # MÚLTIPLES snapshots del mismo mes para comparar.
+        if r.get("accion") == "skipped":
+            kpis = _snap.calcular_kpis(hoy)
+            new_id = _snap.insertar_snapshot(kpis, usuario=usuario)
+            return {"accion": "inserted", "id_historia": new_id, "kpis": kpis}
+    except ValueError as e:
+        return {
+            "accion": "sin_quimico",
+            "id_historia": int(ult["id_historia"]) if ult else None,
+            "motivo": str(e),
+        }
     return {"accion": r.get("accion"), "id_historia": r.get("id_historia"), "kpis": r.get("kpis", {})}
 
 
