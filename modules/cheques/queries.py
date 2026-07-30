@@ -4475,6 +4475,9 @@ def reversar(
 def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
     """Facturas con saldo distinto de cero de un cliente.
 
+    Orden: la más NUEVA primero, igual que el dBase (ver la nota del ORDER BY
+    más abajo). NO es FIFO.
+
     Incluye las dos puntas para que la dueña pueda aplicar un cheque
     cancelando facturas vivas Y absorbiendo créditos a favor del cliente:
 
@@ -4516,7 +4519,25 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
         -- TMT 2026-05-15: orden cronológico puro (positivas y negativas
         -- mezcladas por fecha de emisión / vencimiento). La separación
         -- previa por signo confundía visualmente al aplicar.
-        ORDER BY fecha, vencimiento NULLS LAST, numf
+        --
+        -- TMT 2026-07-30 — orden DESCENDENTE: la más NUEVA primero, igual que
+        -- el dBase. Decisión de la dueña: "podemos hacer que sea como dbase".
+        --
+        -- PC venía aplicando FIFO (la más vieja primero) y el FoxPro hace lo
+        -- contrario. La prueba está en ALTAS.PRG, PROCEDURE REPLA:
+        --
+        --     GO BOTT
+        --     REPLA ABONO WITH ABONO+D->IMPORTE, SALDO WITH SALDO-D->IMPORTE
+        --
+        -- `GO BOTT` va a la ÚLTIMA fila del cliente, que con el SORT ON
+        -- FECHA, NUMF del pase diario es la más reciente. Y no hay ningún IF:
+        -- suma el cheque entero a esa fila y deja el saldo irse a negativo.
+        --
+        -- Eso explica la divergencia que veníamos persiguiendo: PC y el dBase
+        -- imputaban la misma plata a facturas distintas —extremos opuestos de
+        -- la lista— y por eso `chequesxfact` de PC no sumaba el `abono` del
+        -- DBF. No eran links inventados: era el ORDER BY.
+        ORDER BY fecha DESC, vencimiento DESC NULLS LAST, numf DESC
         LIMIT %s
         """,
         (codigo_cli, limite),

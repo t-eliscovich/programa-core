@@ -848,7 +848,7 @@ def check_chequesxfact(verbose: bool = False) -> None:
         _reporte("CHEQUESXFACT", ERROR,
                  f"{len(sobre_fact)} factura(s) donde los cheques de PC no "
                  f"suman el abono del dBase "
-                 "(chequesxfact ≠ factura.abono → link inventado o perdido).")
+                 "(chequesxfact ≠ factura.abono → PC imputó a otra factura que el dBase).")
     if dups:
         _reporte("CHEQUESXFACT", WARN,
                  f"{len(dups)} fila(s) exactamente duplicadas "
