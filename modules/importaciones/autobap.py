@@ -303,7 +303,7 @@ def pendientes(cfg: dict | None = None) -> dict:
 
     cfg = cfg or config()
     out = {"grupos": [], "total_usd": 0.0, "n_importaciones": 0,
-           "frenos": [], "disponible": True}
+           "frenos": [], "ambiguos": [], "disponible": True}
 
     # ── GUARD 1: Asinfo mudo → no se toca nada ──────────────────────────────
     try:
@@ -359,10 +359,15 @@ def pendientes(cfg: dict | None = None) -> dict:
         # lunes se convierte), lo anterior queda como está.
         if corte and str(rec)[:10] < str(corte)[:10]:
             continue
-        # ── GUARD 9 (nuevo, 29/07): código repetido entre campañas y el
-        # anticipo SIN año escrito → no se convierte solo. Es justo el caso
-        # que mandaba el AC 58 contra la importación equivocada.
-        if f.get("anio_ref") is None and len(index.get((cta, int(ref))) or []) > 1:
+        # ── GUARD 9 (29/07): código repetido entre campañas y el anticipo SIN
+        # año escrito → no se convierte solo. Es justo el caso que mandaba el
+        # AC 58 contra la importación equivocada.
+        # TMT 2026-07-30: se cuentan las candidatas que la FECHA no descartó
+        # (`candidatas_plausibles`), no todas las homónimas de la historia. El
+        # AI 19 y el AI 25 se repetían contra importaciones de 2024, a dos años
+        # del anticipo: eso no es ambigüedad, es un homónimo viejo.
+        if f.get("anio_ref") is None and len(imp_service.candidatas_plausibles(
+                index.get((cta, int(ref))), f.get("fecha"))) > 1:
             ambiguos.add((cta, int(ref)))
             continue
         g = grupos.setdefault((cta, im), {
@@ -376,7 +381,8 @@ def pendientes(cfg: dict | None = None) -> dict:
         g["importe"] += float(f.get("importe") or 0)
         g["conceptos"].append((f.get("concepto") or "").strip())
 
-    for k in ambiguos:
+    out["ambiguos"] = [{"codigo_prov": k[0], "ref": k[1]} for k in sorted(ambiguos)]
+    for k in sorted(ambiguos):
         out["frenos"].append(
             f"{k[0]} {k[1]}: el número se repite entre campañas y el anticipo no "
             f"tiene el año puesto — poné el año en /dolares y se convierte solo."
@@ -389,6 +395,31 @@ def pendientes(cfg: dict | None = None) -> dict:
     out["n_importaciones"] = len(lista)
     out["total_usd"] = round(sum(g["importe"] for g in lista), 2)
     return out
+
+
+def _avisar_ambiguos(ambiguos: list[dict] | None) -> None:
+    """Aviso para lo que llegó y NO se pudo cargar solo por falta del año.
+
+    TMT 2026-07-30: la dueña descubrió a mano dos importaciones recibidas que el
+    automático había frenado — el freno vivía sólo en /importaciones/automatico
+    y nadie lo miraba. Un freno mudo es peor que no tener el automático: parece
+    que anduvo. Va a la campanita como ALERTA (es accionable: poner el año en
+    anticipos), con clave estable ⇒ **una vez por código**, no cada 30 minutos.
+    """
+    for a in ambiguos or []:
+        try:
+            from modules import avisos as _av
+
+            cta, ref = a.get("codigo_prov"), a.get("ref")
+            _av.avisar(
+                fuente="importaciones", nivel="alerta",
+                titulo=f"{cta} {ref} · falta ponerle el año",
+                detalle=("Llegó la mercadería pero ese número se repite en otra "
+                         "campaña: poné el año en anticipos y se carga solo."),
+                url="/dolares", clave=f"importaciones:falta_anio:{cta}:{ref}",
+            )
+        except Exception as e:  # noqa: BLE001 -- avisar nunca rompe
+            _LOG.warning("no pude avisar el ambiguo %s: %s", a, e)
 
 
 def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
@@ -406,6 +437,8 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
     p = pendientes(cfg)
     res["grupos"] = p["grupos"]
     res["frenos"] = list(p["frenos"])
+    if not dry_run:
+        _avisar_ambiguos(p.get("ambiguos"))
     if not p["disponible"] or not p["grupos"]:
         return res
 

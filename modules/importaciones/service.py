@@ -221,6 +221,34 @@ def _nearest_import(cands: list[dict], fecha_row, anio: int | None = None) -> di
     return best if best_d <= _ATRIB_MAX_DIAS else None
 
 
+def candidatas_plausibles(cands: list[dict], fecha_row) -> list[dict]:
+    """De las importaciones que comparten (prov, nº), las que la atribución SIN
+    AÑO podría llegar a elegir para un movimiento fechado `fecha_row`: las que
+    caen dentro de la ventana `_ATRIB_MAX_DIAS`.
+
+    TMT 2026-07-30 (dueña): *"todo lo que sea H tiene recibido y tiene que
+    pasarse automático"*. El AI 19 y el AI 25 estaban frenados por "el número se
+    repite entre campañas" y el número se repetía… en **2024**: IM-0000246 (feb
+    2024) contra IM-0000570 (may 2026). Contar TODAS las homónimas trata como
+    ambiguo lo que la fecha ya desambiguó sola. Ambigüedad de verdad es la del
+    AC 58 (IM-0000622 jul-2026 e IM-0000527 feb-2026, las dos a tiro del mismo
+    anticipo): ésa sigue necesitando el año escrito.
+
+    Sin fecha en el movimiento devuelve todas (el atribuidor sólo se anima
+    cuando hay una única candidata, así que la cuenta sigue diciendo la verdad).
+    """
+    cands = list(cands or [])
+    fr = _to_date(fecha_row)
+    if fr is None:
+        return cands
+    out = []
+    for c in cands:
+        fi = _to_date(c.get("fecha"))
+        if fi is not None and abs((fi - fr).days) <= _ATRIB_MAX_DIAS:
+            out.append(c)
+    return out
+
+
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     """Importaciones de Asinfo enriquecidas con el código parseado y el cruce
     contra el programa: primero compra (`scintela.compra`), si no hay, anticipo

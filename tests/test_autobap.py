@@ -348,3 +348,64 @@ def test_el_mensaje_guardado_ya_no_es_un_parrafo():
     assert msg == "IM-0000625 · AC · $ 73.359,95 · Se cargó a compras"
     assert "BAP" not in msg
     assert len(msg) < 100
+
+
+# ── GUARD 9 afinado (30/07): homónimo VIEJO ≠ ambigüedad ────────────────────
+
+_IM_HOMONIMA_VIEJA = {("AI", 19): [
+    # La que llegó ahora…
+    {"im_numero": "IM-0000570", "fecha": "2026-05-05",
+     "nota": "AYF02652 ( AI 19)"},
+    # …y la de hace dos años, que reusó el número.
+    {"im_numero": "IM-0000246", "fecha": "2024-02-28",
+     "nota": "AYF001121 ( AI 19)"},
+]}
+
+
+def test_codigo_repetido_hace_dos_anios_si_se_convierte():
+    """TMT 2026-07-30 (dueña): *"todo lo que sea H tiene recibido y tiene que
+    pasarse automático"*. El AI 19 se repetía contra una importación de 2024:
+    la fecha ya lo desambigua, no hace falta escribir el año."""
+    a = _anticipo(cta="AI", concepto="19 SALDO", ref=19,
+                  im_numero="IM-0000570", anio_ref=None)
+    r = _correr_pendientes([a], _IM_HOMONIMA_VIEJA)
+    assert r["n_importaciones"] == 1
+    assert r["grupos"][0]["im_numero"] == "IM-0000570"
+    assert r["frenos"] == [] and r["ambiguos"] == []
+
+
+def test_ambiguo_de_verdad_sigue_frenado_y_queda_como_dato():
+    """El AC 58 (dos importaciones del MISMO año, las dos a tiro) no cambia."""
+    a = _anticipo(concepto="58", ref=58, im_numero="IM-0000527", anio_ref=None)
+    r = _correr_pendientes([a], _IM_REPETIDA)
+    assert r["grupos"] == []
+    assert r["ambiguos"] == [{"codigo_prov": "AC", "ref": 58}]
+
+
+def test_candidatas_plausibles_descarta_las_que_la_fecha_ya_descarto():
+    from modules.importaciones import service as imp_service
+
+    cands = _IM_HOMONIMA_VIEJA[("AI", 19)]
+    assert len(imp_service.candidatas_plausibles(cands, "2026-07-29")) == 1
+    # Sin fecha del movimiento no se puede descartar ninguna.
+    assert len(imp_service.candidatas_plausibles(cands, None)) == 2
+    assert imp_service.candidatas_plausibles(None, "2026-07-29") == []
+
+
+# ── El freno ya no es mudo ──────────────────────────────────────────────────
+
+def test_el_ambiguo_avisa_una_vez_por_codigo():
+    """Un freno que sólo vive en la pantalla del automático no existe: va a la
+    campanita, con clave estable para no repetirse cada 30 minutos."""
+    with patch("modules.avisos.avisar") as av:
+        autobap._avisar_ambiguos([{"codigo_prov": "AC", "ref": 58}])
+    kw = av.call_args.kwargs
+    assert kw["clave"] == "importaciones:falta_anio:AC:58"
+    assert kw["nivel"] == "alerta"
+    assert kw["titulo"] == "AC 58 · falta ponerle el año"
+    assert "BAP" not in kw["titulo"] + kw["detalle"]
+
+
+def test_avisar_ambiguos_nunca_levanta():
+    with patch("modules.avisos.avisar", side_effect=Exception("caído")):
+        autobap._avisar_ambiguos([{"codigo_prov": "AC", "ref": 58}])
