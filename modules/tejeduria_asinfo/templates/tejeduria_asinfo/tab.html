@@ -7,26 +7,49 @@
 
 {% block head_extra %}
 <style>
+  /* ── DISEÑO (TMT 2026-07-30, dueña: "le falta diseño, ponelo un poco más
+     lindo, acordate que aparece oculto y que aparece visible. los titulos en
+     grisesito no se ven").
+     Tres decisiones:
+     1. Los títulos eran #64748b (slate-500) sobre blanco: se leían como texto
+        deshabilitado. Pasan a #0f172a con peso 700. El gris queda SÓLO para lo
+        secundario, y subido de #94a3b8 a #64748b para que igual se lea.
+     2. Cada sección plegable parece un CAJÓN: fondo + borde cuando está
+        cerrada, y cuando se abre el summary se pega a su contenido (borde de
+        abajo recto). Así se ve de un saque qué está abierto y qué escondido.
+     3. Las tablas: cabecera más oscura, hover de fila, números tabulares y la
+        fila TOTAL separada con una línea gruesa arriba. */
   .ta table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 14px}
-  .ta th,.ta td{padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right}
+  .ta th,.ta td{padding:7px 10px;border-bottom:1px solid #eef2f6;text-align:right;
+    font-variant-numeric:tabular-nums}
   .ta th:first-child,.ta td:first-child{text-align:left}
-  .ta thead th{background:#f8fafc;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
-  .ta tr.tot td{font-weight:700;background:#f8fafc}
-  .ta .muted{color:#94a3b8}
+  .ta thead th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1}
+  .ta tbody tr:hover td{background:#f8fafc}
+  .ta tr.tot td{font-weight:700;background:#f8fafc;color:#0f172a;
+    border-top:2px solid #cbd5e1;border-bottom:none}
+  .ta tr.tot:hover td{background:#f8fafc}
+  .ta .muted{color:#64748b}
   .ta .intela{color:#0284c7}
   .ta .terc{color:#7c3aed}
   .ta .falta{color:#b91c1c;font-weight:600}
   .ta .ok{color:#16a34a}
   .ta .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}
-  .ta .kpi{flex:1;min-width:150px;border:1px solid #e5e7eb;border-radius:10px;padding:10px 14px;background:#fff}
-  .ta .kpi .l{font-size:11px;text-transform:uppercase;color:#64748b}
-  .ta .kpi .v{font-size:21px;font-weight:700}
+  .ta .kpi{flex:0 1 380px;min-width:230px;border:1px solid #e2e8f0;border-left:4px solid #0284c7;
+    border-radius:10px;padding:11px 16px;background:#fff;
+    box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .ta .kpi .l{font-size:10.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.05em;color:#475569}
+  .ta .kpi .v{font-size:24px;font-weight:700;color:#0f172a;line-height:1.15;margin-top:2px}
   .ta .sel{display:flex;gap:8px;align-items:end;margin:4px 0 8px}
   .ta .sel input{width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px}
   .ta .btn{display:inline-block;font-size:12px;font-weight:600;color:#fff;background:#16a34a;border-radius:6px;padding:4px 10px;text-decoration:none}
-  .ta .note{color:#64748b;font-size:12px;margin:2px 0 10px}
+  .ta .note{color:#475569;font-size:12px;margin:2px 0 10px}
   .ta .warnbox{border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px}
-  .ta h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin:22px 0 4px}
+  /* Título de sección SIEMPRE visible: oscuro, con una barra de color al
+     lado para que se distinga del cuerpo de un vistazo. */
+  .ta h2{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    color:#0f172a;margin:26px 0 6px;padding-left:9px;border-left:3px solid #0284c7}
   .ta .tarbox{border:1px solid #e5e7eb;border-radius:10px;padding:10px 14px;background:#fff;margin:8px 0 4px}
   .ta .tarbox table{margin:4px 0 0}
   .ta .tarbox input{padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
@@ -39,20 +62,31 @@
      por lo menos poné una flecha para abajo"). <details> nativo: sin JS, y la
      flecha gira sola. La de OFs abre sola si hay algo pendiente; el diario
      (una fila por día) arranca cerrado. */
-  .ta details{margin:22px 0 4px}
-  .ta details>summary{font-size:13px;text-transform:uppercase;letter-spacing:.04em;
-    color:#64748b;cursor:pointer;list-style:none;display:flex;align-items:center;
-    gap:7px;user-select:none;padding:2px 0}
+  .ta details{margin:26px 0 4px}
+  /* CERRADA = cajón: fondo, borde y radio en las 4 esquinas.
+     ABIERTA  = cabecera pegada a su contenido (abajo recto, fondo más claro). */
+  .ta details>summary{font-size:12.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.05em;color:#0f172a;cursor:pointer;list-style:none;display:flex;
+    align-items:center;gap:9px;user-select:none;padding:9px 12px;background:#f1f5f9;
+    border:1px solid #cbd5e1;border-radius:9px;transition:background .12s ease}
+  /* Abierta: el cajón se "enciende" (más oscuro + barra a la izquierda). NO se
+     encierra el contenido en una caja: los <details> de acá tienen varios hijos
+     (un div de botones, la tabla, notas) y cada uno habría quedado en su propio
+     recuadro. */
+  .ta details[open]>summary{background:#e8eef5;border-left:3px solid #0284c7}
   .ta details>summary::-webkit-details-marker{display:none}
   /* Triángulo dibujado con bordes en vez de un carácter: el ▾ de la fuente
      sale como una manchita de 3px y no se ve. Esto es nítido siempre. */
   .ta details>summary::before{content:"";width:0;height:0;flex:none;
     border-left:5px solid transparent;border-right:5px solid transparent;
-    border-top:7px solid #94a3b8;display:inline-block;
+    border-top:7px solid #334155;display:inline-block;
     transition:transform .12s ease}
   .ta details[open]>summary::before{transform:rotate(180deg)}
-  .ta details>summary:hover{color:#334155}
-  .ta details>summary:hover::before{border-top-color:#334155}
+  .ta details>summary:hover{background:#e2e8f0}
+  /* Pista de estado en palabras, no sólo la flecha. */
+  .ta details>summary::after{content:"abrir";margin-left:auto;font-size:10px;
+    font-weight:600;letter-spacing:.04em;color:#475569;text-transform:uppercase}
+  .ta details[open]>summary::after{content:"cerrar"}
 </style>
 {% endblock %}
 
@@ -249,13 +283,23 @@
 
     {% set terc_kg = data.tejedores | selectattr('es_intela', 'equalto', false) | sum(attribute='kg') %}
     {% set intela_kg = data.tejedores | selectattr('es_intela', 'equalto', true) | sum(attribute='kg') %}
+    {# TMT 2026-07-30 (dueña: "pones siempre demasiada informacion que no se
+       necesita"): eran TRES tarjetas y quedó UNA. "INTELA · autoprod." y
+       "Tercerizados" repetían literalmente las filas de la tabla de abajo, y su
+       suma es esta misma tarjeta: el mismo dato tres veces en la misma pantalla.
+       Queda el titular — la producción INGRESADA a bodega 52 en el mes, que es
+       la cifra que el flujo muestra como Ingresos de tela cruda (dueña/Federico
+       2026-07-20: "¿es stock o producción?" → producción, no stock ni OFs). #}
     <div class="kpis">
-      {# TMT 2026-07-20 (dueña/Federico: "¿es stock o producción?"): es la
-         PRODUCCIÓN INGRESADA a bodega 52 en el mes — la misma cifra que el
-         flujo muestra como Ingresos de tela cruda. No es stock ni OFs. #}
-      <div class="kpi"><div class="l">Total tela cruda{% if data.ajustado_a_bodega %} · ingresada a bodega en el mes{% endif %}</div><div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div>{% if data.ajustado_a_bodega %}<div class="muted" style="font-size:10px">= Ingresos crudo del flujo de producción</div>{% endif %}</div>
-      <div class="kpi"><div class="l intela">INTELA · autoprod.</div><div class="v">{{ intela_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
-      <div class="kpi"><div class="l terc">Tercerizados</div><div class="v">{{ terc_kg|num_es(0) }} <span class="muted" style="font-size:12px">kg</span></div></div>
+      <div class="kpi">
+        <div class="l">Total tela cruda{% if data.ajustado_a_bodega %} · ingresada a bodega en el mes{% endif %}</div>
+        <div class="v">{{ data.total_kg|num_es(0) }} <span class="muted" style="font-size:13px;font-weight:600">kg</span></div>
+        <div class="muted" style="font-size:11px;margin-top:3px">
+          <span class="intela" style="font-weight:600">Intela {{ intela_kg|num_es(0) }}</span> ·
+          <span class="terc" style="font-weight:600">tercerizados {{ terc_kg|num_es(0) }}</span>
+          {% if data.ajustado_a_bodega %}· = Ingresos crudo del flujo{% endif %}
+        </div>
+      </div>
     </div>
 
     <h2>Por tejedor · producido vs cargado + costo</h2>
