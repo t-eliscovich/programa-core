@@ -399,6 +399,35 @@
        FIFO por fecha hasta cubrir el anticipo; editable — las decisiones
        manuales viven en manualCancel (patrón manualValues) y PERSISTEN
        entre renders. Los checkboxes tildados viajan como cheques_cancelar[]. #}
+    {# ── BANCO 95 (CANCELA ANTICIPO) → qué anticipo estoy usando ──────────
+       TMT 2026-07-30 (dueña: "cuando pongo 95 me tiene que mostrar cuales
+       puedo aplicar"). El 97 CREA el anticipo y muestra los cheques a
+       cancelar; el 95 lo USA, y hasta ahora no mostraba nada: PC busca el
+       espejo por importe EXACTO y, si no coincide al centavo, deja el cheque
+       en cartera con un aviso (paridad ALTAS.PRG "NO SE ENCUENTRA EL
+       ANTICIPO"). Había que acordarse el importe de memoria.
+       Elegir uno acá completa el importe del cheque 95 — no decide nada por
+       tu cuenta, sólo evita el número tipeado a ojo. #}
+    <div id="anticipo-95" class="mt-6 hidden">
+      <div class="flex items-baseline justify-between mb-2">
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Anticipos disponibles para cancelar</h3>
+        <span class="text-xs text-slate-500" id="ant95-hint">Elegí cuál estás usando — completa el importe del cheque.</span>
+      </div>
+      <div class="border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">
+            <tr>
+              <th class="px-3 py-2 text-left">Fecha</th>
+              <th class="px-3 py-2 text-right">Importe</th>
+              <th class="px-3 py-2 text-left">Banco</th>
+              <th class="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody id="ant95-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="anticipo-cheques" class="mt-6 hidden">
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700">Anticipo → cancelar cheques en cartera</h3>
@@ -509,6 +538,10 @@
   const CHV_URL_BASE = "{{ url_for('cheques.api_cheques_vivos', codigo_cli='__CODIGO__') }}";
   let chequesVivos = [];
   let chvCodigo = "";
+  // Anticipos vivos del cliente (espejos 97/98 en Z, negativos) — para el 95.
+  const ANT95_URL_BASE = "{{ url_for('cheques.api_anticipos_vivos', codigo_cli='__CODIGO__') }}";
+  let anticipos95 = [];
+  let ant95Codigo = "";
   // Decisiones manuales por cheque (id → true/false). Mismo patrón que
   // manualValues: viven ACÁ y no en el DOM, así destildar PERSISTE cuando
   // render re-arma la tabla (el FIFO no re-tilda una fila decidida a mano).
@@ -1201,6 +1234,71 @@
     }
   }
 
+  // ── Panel del 95: qué anticipos puede aplicar este cliente ──────────────
+  function renderAnticipos95() {
+    const panel95 = document.getElementById('anticipo-95');
+    const tb = document.getElementById('ant95-tbody');
+    if (!panel95 || !tb) return;
+    const hay95 = [...document.querySelectorAll('.cheque-banco')].some(s => s.value === '95');
+    if (!hay95) { panel95.classList.add('hidden'); tb.innerHTML = ''; return; }
+    panel95.classList.remove('hidden');
+    if (!anticipos95.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="px-3 py-2 text-slate-500">'
+        + 'Este cliente no tiene anticipos vivos. Si igual cargás el cheque, '
+        + 'queda en cartera y te avisa.</td></tr>';
+      return;
+    }
+    tb.innerHTML = anticipos95.map(a => (
+      '<tr class="border-t border-slate-100 dark:border-slate-800">'
+      + '<td class="px-3 py-2">' + (a.fecha || '') + '</td>'
+      + '<td class="px-3 py-2 text-right tabular-nums font-medium">$ ' + fmt(a.importe_abs) + '</td>'
+      + '<td class="px-3 py-2 text-slate-500">' + (a.banco || '') + '</td>'
+      + '<td class="px-3 py-2 text-right">'
+      + '<button type="button" class="ant95-usar px-2 py-0.5 rounded border border-sky-400 '
+      + 'text-sky-700 hover:bg-sky-50 text-xs" data-importe="' + a.importe_abs + '">Usar</button>'
+      + '</td></tr>'
+    )).join('');
+  }
+
+  // "Usar" = completar el importe del primer cheque con banco 95 (el vacío
+  // primero). No guarda nada: sólo escribe el número que hay que acertar.
+  document.addEventListener('click', (e) => {
+    const b = e.target;
+    if (!b || !b.classList || !b.classList.contains('ant95-usar')) return;
+    const bloques = [...document.querySelectorAll('.cheque-bloque')].filter(x => {
+      const sel = x.querySelector('.cheque-banco');
+      return sel && sel.value === '95';
+    });
+    if (!bloques.length) return;
+    const destino = bloques.find(x => !((x.querySelector('.cheque-imp') || {}).value || '').trim())
+                    || bloques[0];
+    const inp = destino.querySelector('.cheque-imp');
+    if (!inp) return;
+    inp.value = fmt(parseFloat(b.dataset.importe || '0'));
+    inp.dispatchEvent(new Event('input', {bubbles: true}));
+    inp.dispatchEvent(new Event('change', {bubbles: true}));
+  });
+
+  async function cargarAnticipos95() {
+    const codigo = (codigoInput.value || '').trim().toUpperCase();
+    if (!codigo || codigo.startsWith('%')) return;
+    const hay95 = [...document.querySelectorAll('.cheque-banco')].some(s => s.value === '95');
+    if (!hay95) { renderAnticipos95(); return; }
+    if (codigo === ant95Codigo) { renderAnticipos95(); return; }
+    try {
+      const resp = await fetch(ANT95_URL_BASE.replace('__CODIGO__', encodeURIComponent(codigo)));
+      if (!resp.ok) { anticipos95 = []; renderAnticipos95(); return; }
+      const data = await resp.json();
+      ant95Codigo = codigo;
+      anticipos95 = data.anticipos || [];
+      renderAnticipos95();
+    } catch (e) {
+      console.error('Error cargando anticipos vivos:', e);
+      anticipos95 = [];
+      renderAnticipos95();
+    }
+  }
+
   async function cargarChequesVivos() {
     const codigo = (codigoInput.value || '').trim().toUpperCase();
     if (!codigo || codigo.startsWith('%')) return;
@@ -1229,6 +1327,7 @@
     if (t && t.classList
         && (t.classList.contains('cheque-banco') || t.classList.contains('cheque-medio'))) {
       cargarChequesVivos();
+      cargarAnticipos95();
     }
   });
 
@@ -1362,6 +1461,7 @@
       }
       render(buscar.value);
       cargarChequesVivos();  // TMT 2026-07-06: panel anticipo→cheques
+      cargarAnticipos95();   // TMT 2026-07-30: panel del 95
       return;
     }
     codigoActual = codigo;
@@ -1398,6 +1498,7 @@
       }
       render(buscar.value);
       cargarChequesVivos();  // TMT 2026-07-06: panel anticipo→cheques
+      cargarAnticipos95();   // TMT 2026-07-30: panel del 95
     } catch (e) {
       console.error('Error cargando facturas:', e);
       facturas = [];

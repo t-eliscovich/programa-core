@@ -1404,6 +1404,36 @@ def api_facturas_pendientes(codigo_cli: str):
     }
 
 
+@cheques_bp.route("/cheques/_api/anticipos-vivos/<codigo_cli>")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def api_anticipos_vivos(codigo_cli: str):
+    """JSON con los ANTICIPOS vivos del cliente (espejos 97/98 en Z, negativos).
+
+    TMT 2026-07-30 (dueña: "cuando pongo 95 me tiene que mostrar cuales puedo
+    aplicar"). Alimenta el panel del banco 95 en el form de cobranza. Mismo
+    patrón que api_cheques_vivos.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    if not codigo_cli:
+        return {"anticipos": []}, 400
+    rows = queries.anticipos_vivos(codigo_cli, limite=500)
+    return {
+        "codigo_cli": codigo_cli,
+        "anticipos": [
+            {
+                "id_cheque": int(r["id_cheque"]),
+                "fecha": r["fecha"].isoformat() if r.get("fecha") else None,
+                "importe": float(r.get("importe") or 0),
+                "importe_abs": float(r.get("importe_abs") or 0),
+                "no_banco": r.get("no_banco"),
+                "banco": (r.get("banco") or "").strip(),
+            }
+            for r in rows
+        ],
+    }
+
+
 @cheques_bp.route("/cheques/_api/cheques-vivos/<codigo_cli>")
 @requiere_login
 @requiere_permiso("cheques.ver")

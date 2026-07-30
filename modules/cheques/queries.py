@@ -4577,6 +4577,37 @@ def cheques_vivos(codigo_cli: str, limite: int = 200) -> list[dict]:
     )
 
 
+def anticipos_vivos(codigo_cli: str, limite: int = 200) -> list[dict]:
+    """Anticipos VIVOS del cliente — los espejos NB 97/98 en Z, importe < 0.
+
+    TMT 2026-07-30 (dueña: *"cuando pongo 95 me tiene que mostrar cuales puedo
+    aplicar"*). Es el espejo exacto de `cheques_vivos`, para el otro lado de la
+    operación: el 97 CREA el anticipo (y ahí se eligen los cheques a cancelar),
+    el **95 lo USA**, y hasta ahora había que acertar el importe de memoria —
+    PC busca el espejo por importe EXACTO y, si no coincide al centavo, deja el
+    cheque en cartera y avisa (paridad ALTAS.PRG: "NO SE ENCUENTRA EL
+    ANTICIPO").
+
+    Devuelve el importe en POSITIVO (`importe_abs`) además del original: es lo
+    que hay que tipear en el cheque 95.
+    """
+    return db.fetch_all(
+        """
+        SELECT id_cheque, no_cheque, fecha, fechad, importe,
+               ABS(COALESCE(importe, 0)) AS importe_abs,
+               no_banco, COALESCE(banco, '') AS banco, stat
+          FROM scintela.cheque
+         WHERE codigo_cli = %s
+           AND no_banco IN (97, 98)
+           AND TRIM(COALESCE(stat, '')) = 'Z'
+           AND COALESCE(importe, 0) < 0
+         ORDER BY fecha, id_cheque
+         LIMIT %s
+        """,
+        (codigo_cli, limite),
+    )
+
+
 def total_buscar(
     q: str = "",
     estado: str = "todos",
