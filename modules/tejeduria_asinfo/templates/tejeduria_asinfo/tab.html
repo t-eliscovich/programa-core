@@ -267,8 +267,22 @@
          de al lado — decía "adelantado 2.515 kg" mientras el acumulado decía
          "faltan 4.020". Queda UNA sola columna de diferencia: la acumulada, que
          es la que gobierna la carga automática (es su tope), renombrada
-         "Pendiente (N m)" porque no es "lo que falta cargar a mano". #}
-      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>Cargado (compras K)</th><th title="Producido − cargado en los últimos {{ data.meses_ventana_tope }} meses. Es el saldo que todavía no se compró, y el tope de la carga automática.">Pendiente ({{ data.meses_ventana_tope }} m)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
+         "Pendiente (N m)" porque no es "lo que falta cargar a mano".
+
+         TMT 2026-07-30 — y esa columna TAMBIÉN se borró: *"borrame esta columna,
+         nadie entiende"*. Tenía razón, y el análisis lo confirmó: **el número no
+         es una deuda, es el arranque de PC.** Por mes daba Ponce 33.520 kg
+         (abril) · 28.980 (mayo) · 16.220 (junio) · 4.020 (julio), bajando a
+         medida que se acerca al presente — porque **en abril el "cargado" es
+         0,00**: las compras K de PC empiezan en mayo (las anteriores viven en el
+         archivo del FoxPro, F:\STAND). La columna comparaba la producción de
+         Asinfo (historia completa) contra compras que en PC no existen todavía.
+         Una deuda real no se mueve 12.000 kg cuando corrés la ventana un mes.
+
+         `falta_acumulada` SIGUE SIENDO EL TOPE de la carga automática y NO se
+         tocó — es una guarda, no un dato para mirar. Simplemente dejó de
+         mostrarse. #}
+      <thead><tr><th>Tejedor</th><th>Producido (Asinfo)</th><th>Cargado (compras K)</th><th>$/kg crudo</th><th>Costo $</th></tr></thead>
       <tbody>
         {% for t in data.tejedores %}
           <tr>
@@ -277,18 +291,6 @@
             </td>
             <td>{{ t.kg|num_es }}</td>
             <td>{% if t.es_intela %}<span class="muted">— autoprod.</span>{% else %}{{ t.compra_kg|num_es }}{% endif %}</td>
-            <td>
-              {# TOPE real de la carga automática: acumulado, no del mes — el
-                 maquilero factura con desfase y a caballo de dos meses. #}
-              {% if t.es_intela %}<span class="muted">—</span>
-              {% else %}
-                {% set fa = data.falta_acum_por_cod.get(t.cod) %}
-                {% if fa is none %}<span class="muted">—</span>
-                {% elif fa > 1 %}<span class="falta">{{ fa|num_es }} kg</span>
-                {% elif fa < -1 %}<span class="falta" title="Se cargó más de lo que Asinfo dice que se produjo en toda la ventana — acá SÍ puede haber una compra duplicada">cargado de más {{ (-fa)|num_es }} kg ⚠</span>
-                {% else %}<span class="ok">ok</span>{% endif %}
-              {% endif %}
-            </td>
             <td>{% if t.costo_kg %}{{ t.costo_kg|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if t.costo is not none %}{{ t.costo|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
           </tr>
@@ -296,7 +298,7 @@
         <tr class="tot">
           <td>TOTAL</td>
           <td>{{ data.total_kg|num_es }}</td>
-          <td class="muted"></td><td class="muted"></td><td class="muted"></td>
+          <td class="muted"></td><td class="muted"></td>
           <td>{{ data.total_costo|num_es(0) }}</td>
         </tr>
       </tbody>
