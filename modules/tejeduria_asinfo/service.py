@@ -39,7 +39,11 @@ MARCADOR_CARGA = "asinfo-tejeduria"
 # Reyes (RY) y Ponce (AP). Cualquier otro no-INTELA (R UNDA, GENERICA PRUEBAS,
 # OFs sin código que salen como "?") se excluye — no sabemos qué son / son
 # tests. Para sumar un tercerizado nuevo, agregá su código de proveedor acá.
-TERCERIZADOS_VALIDOS = {"RY", "AP"}
+# TMT 2026-07-30: entra **UN (Rodrigo Unda)**. Asinfo registraba su producción
+# desde siempre (`"R UNDA …"`) pero no estaba mapeado, así que caía a INTELA y
+# el motor nunca le creó una compra. Ver TEJEDOR_TERCERIZADO_PREFIJO en
+# modules/asinfo/service.py.
+TERCERIZADOS_VALIDOS = {"RY", "AP", "UN"}
 
 
 def _compras_k_por_prov(anio: int, mes: int) -> dict:

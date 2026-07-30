@@ -2133,6 +2133,25 @@ TEJEDOR_TERCERIZADO_MAP = {
     "REYES": "RY",
 }
 
+#: Tejedores cuyo apellido aparece DENTRO de otras palabras o de notas al pie,
+#: así que sólo valen anclados al ARRANQUE de la descripción.
+#:
+#: TMT 2026-07-30 (dueña: *"la factura de UN N.-131 no está en tus compras?"*).
+#: **UN = RODRIGO UNDA** es tercerizado y Asinfo SÍ registra su producción como
+#: `"R UNDA …"`, pero no estaba en el mapa ⇒ `_clasificar_tejedor` devolvía
+#: cod='' y `_a_intela_si_desconocido` lo pasaba a INTELA. Efecto doble: su
+#: producción se contaba como propia, y el motor de tejeduría (que sólo carga
+#: los de `TERCERIZADOS_VALIDOS`) **nunca creó una compra de UN**. La tarifa
+#: UN 1,1500 ya estaba cargada — el filtro la frenaba tres pasos antes.
+#:
+#: ⚠ Por qué ANCLADO y no `"UNDA" in desc` como PONCE/REYES: "UNDA" aparece
+#: dentro de "SEGUNDA" y "FUNDAS", y además hay 6 OFs de FF 96CM que dicen
+#: `"… NUEVO TEJIDO SR UNDA"` en una nota y NO son de él. De las 22 OFs de 2026
+#: que contienen "R UNDA", sólo las **16 que ARRANCAN** con eso son suyas.
+TEJEDOR_TERCERIZADO_PREFIJO = {
+    r"^R\s+UNDA\b": ("UN", "Unda"),
+}
+
 
 def _clasificar_tejedor(descripcion: str) -> tuple[str, str, bool]:
     """(codigo_prov, label, es_intela) desde orden_fabricacion.descripcion.
@@ -2146,6 +2165,11 @@ def _clasificar_tejedor(descripcion: str) -> tuple[str, str, bool]:
     du = d.upper()
     if _re.match(r"^MQ\d", du):
         return (INTELA_COD, "INTELA", True)
+    # Los anclados primero: son los que necesitan estar al arranque para no
+    # confundirse con otra palabra o con una nota al pie.
+    for patron, (cod, label) in TEJEDOR_TERCERIZADO_PREFIJO.items():
+        if _re.match(patron, du):
+            return (cod, label, False)
     for nombre, cod in TEJEDOR_TERCERIZADO_MAP.items():
         if nombre in du:
             return (cod, nombre.capitalize(), False)

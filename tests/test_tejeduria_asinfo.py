@@ -666,3 +666,50 @@ def test_tarifas_abiertas_si_no_hay_ninguna(app, fake_db):
     body = r.get_data(as_text=True)
     i = body.index("<summary>Tarifas de tejeduría")
     assert "<details open>" in body[i - 200:i]
+
+
+# ---------------------------------------------------------------------------
+# UN (Rodrigo Unda) — tejedor tercerizado que no estaba mapeado
+# ---------------------------------------------------------------------------
+# TMT 2026-07-30 (dueña: "la factura de UN N.-131 no está en tus compras?").
+# Asinfo registra su producción como "R UNDA …" desde siempre, pero no estaba
+# en el mapa ⇒ caía a INTELA y el motor nunca le creó una compra.
+from modules.asinfo.service import _clasificar_tejedor  # noqa: E402
+from modules.tejeduria_asinfo.service import TERCERIZADOS_VALIDOS  # noqa: E402
+
+
+def test_unda_se_clasifica_como_tercerizado_un():
+    for desc in ("R UNDA HY10 20 HUF40 R/A",
+                 "R UNDA VAR10 20 HUF40 R/A 10%",
+                 "r unda kw30 r/a especial"):
+        cod, label, es_intela = _clasificar_tejedor(desc)
+        assert (cod, es_intela) == ("UN", False), desc
+        assert label == "Unda"
+
+
+def test_un_esta_habilitado_para_la_carga_automatica():
+    assert "UN" in TERCERIZADOS_VALIDOS
+
+
+def test_unda_solo_cuenta_ANCLADO_al_arranque():
+    """«UNDA» aparece dentro de otras palabras y en notas al pie de OFs ajenas.
+
+    De las 22 OFs de 2026 que contienen "R UNDA", sólo las 16 que ARRANCAN con
+    eso son suyas; las otras 6 son FF 96CM que dicen "… NUEVO TEJIDO SR UNDA".
+    """
+    ajenas = (
+        "6 FF 96CM 2.20 CON FALLA ABIERTO HVA RIB ACANALADO TEJIDO SR UNDA",
+        "FF 96CM 2.20 CON FALLA TELA ABIERTA HVA RIB NUEVO TEJIDO SR UNDA",
+        "2 JERSEY 1.20X2.10 TELA DE SEGUNDA SEÑALAR HOM",
+        "SEÑALAR EN LAS FUNDAS HY 10",
+    )
+    for desc in ajenas:
+        cod, _label, _ = _clasificar_tejedor(desc)
+        assert cod != "UN", desc
+
+
+def test_los_de_siempre_no_se_movieron():
+    assert _clasificar_tejedor("A PONCE KW22 HUF40 R/A")[0] == "AP"
+    assert _clasificar_tejedor("M REYES KW22 C-T38")[0] == "RY"
+    assert _clasificar_tejedor("MQ12 JERSEY")[2] is True    # máquina propia
+    assert _clasificar_tejedor("20 JERSEY 2.60")[0] == ""   # desconocido
