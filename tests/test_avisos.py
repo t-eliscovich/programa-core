@@ -254,3 +254,23 @@ def test_backfill_de_los_avisos_que_se_perdieron():
     assert "ON CONFLICT (clave) DO NOTHING" in sql
     assert "'importaciones:compra:' || l.id_compra::text" in sql
     assert "l.tipo = 'conversion'" in sql
+
+
+def test_backfill_completo_usa_el_mismo_resumen():
+    """La 0142 trae TAMBIÉN las viejas (dueña: *"faltan las del pasado"*): el
+    texto se rearma desde las columnas con `autobap.resumen()`, así las del
+    29/07 —que tenían el mensaje largo y con siglas— entran limpias."""
+    import importlib.util
+    from pathlib import Path
+
+    p = Path("migrations/0142_backfill_avisos_historial_completo.py")
+    spec = importlib.util.spec_from_file_location("mig0142", p)
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+
+    assert mig._clave({"tipo": "conversion", "id_compra": 7, "creado_en": "2026-07-29",
+                       "n_anticipos": 1, "im_numero": "IM-1"}) == "importaciones:compra:7"
+    assert mig._clave({"tipo": "freno", "id_compra": None, "n_anticipos": 2,
+                       "creado_en": "2026-07-29 15:40", "im_numero": None}) \
+        == "importaciones:freno:2026-07-29:2"
+    assert mig._NIVEL["freno"] == "alerta"
