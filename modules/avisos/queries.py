@@ -134,8 +134,15 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
             SELECT id_aviso, fuente, nivel, titulo, detalle, importe, cantidad,
                    url, leido,
                    {"archivado" if hay else "FALSE AS archivado"},
-                   TO_CHAR(creado_en, 'DD/MM HH24:MI') AS cuando,
-                   TO_CHAR(creado_en, 'YYYY-MM-DD HH24:MI') AS creado_en
+                   -- La hora, en ECUADOR. El server corre en UTC (5 h
+                   -- adelante): sin el AT TIME ZONE, el cierre de ventas de las
+                   -- 18:00 se mostraba estampado 23:01 (verificado en vivo el
+                   -- 30/07, primer aviso real del buzón). Mismo criterio que
+                   -- today_ec() en el resto del programa.
+                   TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
+                           'DD/MM HH24:MI') AS cuando,
+                   TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
+                           'YYYY-MM-DD HH24:MI') AS creado_en
               FROM scintela.aviso
              {("WHERE " + " AND ".join(where)) if where else ""}
              ORDER BY creado_en DESC, id_aviso DESC

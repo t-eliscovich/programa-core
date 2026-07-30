@@ -428,3 +428,14 @@ def test_el_flag_se_entera_de_la_migracion_sin_reiniciar():
             f.assert_not_called()
     finally:
         avisos.queries.reset_cache()
+
+
+def test_la_hora_del_aviso_se_muestra_en_ECUADOR():
+    """El server corre en UTC (+5): sin convertir, el cierre de las 18:00 se
+    mostraba "23:01". Verificado en vivo el 30/07 con el primer aviso real."""
+    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar()
+    sql = f.call_args[0][0]
+    assert "AT TIME ZONE 'America/Guayaquil'" in sql
+    assert "TO_CHAR(creado_en," not in sql.replace(
+        "TO_CHAR(creado_en AT TIME ZONE", "")
