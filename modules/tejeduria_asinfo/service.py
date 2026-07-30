@@ -560,12 +560,17 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         if kg <= 0:
             detalle.append({**base, "ok": False, "motivo": "OF sin kg"})
             continue
-        _post = bool(ult_compra.get(cod)) and str(of.get("dia") or "") > ult_compra[cod]
+        _ult = ult_compra.get(cod)
+        _dia = str(of.get("dia") or "")[:10]
+        _post = bool(_ult) and _dia > str(_ult)[:10]
         if not _post and restante.get(cod, 0.0) + 0.01 < kg:
             detalle.append({
                 **base, "ok": False,
+                # El motivo dice contra QUÉ se comparó: sin eso, "excede lo que
+                # falta" no se puede ni verificar ni discutir.
                 "motivo": (f"excede lo que falta de {cod} "
-                           f"({restante.get(cod, 0.0):,.2f} kg)"),
+                           f"({restante.get(cod, 0.0):,.2f} kg) · OF {_dia or '?'} "
+                           f"vs última compra {str(_ult)[:10] if _ult else 'ninguna'}"),
             })
             continue
 
