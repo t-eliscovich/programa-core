@@ -26,12 +26,13 @@
         </label>
         <button type="submit" class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Ver</button>
       </form>
-      {% if est.disponible and est.pendientes > 0 and tiene_permiso('compras.crear') %}
+      {% if est.disponible and (est.pendientes > 0 or est.ajustables > 0) and tiene_permiso('compras.crear') %}
         <form method="post" action="{{ url_for('compras.desde_formulas_sincronizar', mes=mes_str) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
                   class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
-            Cargar las {{ est.pendientes }} pendientes ({{ est.total_pendiente | money_es }})
+            {% if est.pendientes > 0 %}Cargar las {{ est.pendientes }} pendientes ({{ est.total_pendiente | money_es }}){% if est.ajustables > 0 %} y corregir {{ est.ajustables }}{% endif %}
+            {% else %}Corregir el importe de {{ est.ajustables }} compra{{ '' if est.ajustables == 1 else 's' }}{% endif %}
           </button>
         </form>
       {% endif %}
@@ -61,7 +62,7 @@
         </thead>
         <tbody>
           {% for f in est.filas %}
-          <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% endif %}">
+          <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% elif f.ajustable %}bg-sky-50{% endif %}">
             <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
             <td class="py-1.5 pr-3">{{ f.proveedor_formulas }}</td>
             <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or '—' }}</td>
@@ -75,7 +76,10 @@
             <td class="py-1.5 pr-3 text-right">{{ (f.iva_pct * 100) | int }}%</td>
             <td class="py-1.5 pr-3 text-right font-medium">{{ f.importe_con_iva | money_es }}</td>
             <td class="py-1.5 pr-3">
-              {% if f.estado == 'cargada' %}
+              {% if f.estado == 'cargada' and f.ajustable %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-sky-100 text-sky-800"
+                      title="{{ f.detalle_match or '' }}">cambió: cargada por {{ f.importe_pc | money_es }}</span>
+              {% elif f.estado == 'cargada' %}
                 <span class="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-800"
                       title="{{ f.detalle_match or '' }}">✓ cargada</span>
               {% elif f.estado == 'pendiente' %}
@@ -96,8 +100,11 @@
       </table>
     </div>
     <p class="text-xs text-slate-500 mt-3">
-      El importe C/IVA usa 15% (0% para la sal / ES). Si una factura mezcla ítems con y sin
-      IVA, cargá igual y corregí el importe con Editar en /compras — el pasivo se ajusta solo.
+      Las facturas del día también se cargan: si después crecen en el programa de tintorería,
+      el puente les corrige el importe solo (y el pasivo), salvo que alguien ya las haya
+      editado a mano. El importe C/IVA usa 15% (0% para la sal / ES). Si una factura mezcla
+      ítems con y sin IVA, corregí el importe con Editar en /compras — el pasivo se ajusta
+      solo y desde ese momento el puente no la vuelve a tocar.
       COLOURTEX (COLO) queda excluido: es importación y entra por su circuito (banc 9).
     </p>
   {% endif %}

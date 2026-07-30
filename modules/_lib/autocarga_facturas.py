@@ -100,6 +100,22 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("hilo local (fondo): %s", e)
+            # TMT 2026-07-30 (dueña): las compras de QUÍMICOS de formulas ya
+            # no esperan al día siguiente — se cargan el mismo día y, si la
+            # factura sigue creciendo mientras la tipean, esta corrida le
+            # corrige el importe (y el posdat). Freno propio de 30 min;
+            # FORMULAS_COMPRAS_AUTOSYNC=0 lo apaga.
+            try:
+                from modules.compras import formulas_bridge as _fbr
+                fq = _fbr.correr_si_toca()
+                if fq.get("creadas") or fq.get("ajustadas"):
+                    _LOG.info(
+                        "químicos formulas (fondo): %s compra(s) por $%s, "
+                        "%s corregida(s)",
+                        fq.get("creadas"), fq.get("importe"), fq.get("ajustadas"),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("químicos formulas (fondo): %s", e)
             # TMT 2026-07-30 (dueña): "agregar en la campanita, a fin de día,
             # venta total kg y total facturas $" — a las 18:00 de ECUADOR, uno
             # solo por día (la clave del aviso lo garantiza).

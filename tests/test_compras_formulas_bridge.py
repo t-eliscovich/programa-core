@@ -29,6 +29,24 @@ def test_normalizar_factura_sey_completa_millar():
     assert fb.normalizar_factura("SY", "859") == "859"
 
 
+def test_normalizar_factura_qi_completa_prefijo():
+    """QI (Q.S.I.) numera en 6 dígitos y el campo de formulas tiene 4:
+    la 104904 del 28/07/2026 llegó como '4904'."""
+    assert fb.normalizar_factura("QI", "4904") == "104904"
+    assert fb.normalizar_factura("QI", "104250") == "104250"
+    assert fb.normalizar_factura("QI", "265") == "265"
+
+
+def test_prov_map_qsi_es_qi():
+    assert fb.PROV_MAP["QSI"] == "QI"
+
+
+def test_normalizar_factura_prov_sin_prefijo_no_toca():
+    # un proveedor que numera corto NO lleva prefijo aunque tenga 4 dígitos
+    assert fb.normalizar_factura("ES", "7197") == "7197"
+    assert fb.normalizar_factura("NQ", "8426") == "8426"
+
+
 def test_normalizar_factura_no_digito_queda():
     assert fb.normalizar_factura("AQ", "F26-27/125") == "F26-27/125"
 
@@ -73,10 +91,12 @@ GRUPOS = [
 
 COMPRAS_PC = [
     {"id_compra": 1, "codigo_prov": "AQ", "importe": 3945.54,
-     "concepto": "85            1"},
+     "concepto": "85            1", "usuario_crea": "formulas-auto",
+     "usuario_modifica": None, "id_transaccion": None},
     # SY cargada a mano con el número completo y total real (entre s/IVA y c/IVA)
     {"id_compra": 2, "codigo_prov": "SY", "importe": 1014.50,
-     "concepto": "21945         1"},
+     "concepto": "21945         1", "usuario_crea": "andres",
+     "usuario_modifica": None, "id_transaccion": None},
 ]
 
 
@@ -213,10 +233,10 @@ def test_sincronizar_sin_bridge_no_crea():
     crear_mock.assert_not_called()
 
 
-def test_sincronizar_no_carga_facturas_de_hoy():
-    """Regresión 2026-07-17: la 0133 creció de 3.779 a 9.930 mientras se
-    sincronizaba — en formulas la estaban tipeando. Las facturas de HOY
-    quedan para mañana."""
+def test_sincronizar_carga_tambien_las_de_hoy():
+    """Dueña 2026-07-30: "dejá de poner topes que entorpecen". La factura del
+    día en curso se carga igual; si después crece, se corrige (ver los tests
+    de auto-corrección)."""
     llamadas = []
 
     def _crear(**kw):
@@ -230,11 +250,133 @@ def test_sincronizar_no_carga_facturas_de_hoy():
          patch("modules.compras.queries.crear", side_effect=_crear):
         rep = fb.sincronizar_mes(2026, 7)
 
-    # AVQ 0127 es del 14/07 (= hoy simulado) → NO se carga
-    assert all(k["codigo_prov"] != "AQ" or k["fecha"] != date(2026, 7, 14)
+    # AVQ 0127 es del 14/07 (= hoy simulado) → SÍ se carga
+    assert any(k["codigo_prov"] == "AQ" and k["fecha"] == date(2026, 7, 14)
                for k in llamadas)
-    assert rep["dejadas_para_manana"] == 1
-    assert len(rep["creadas"]) == 1  # solo EMP 7197 (07/07)
+    assert len(rep["creadas"]) == 2
+    assert "dejadas_para_manana" not in rep
+
+
+# ── auto-corrección de importe ──────────────────────────────────────────────
+
+_GRUPO_CRECIO = [
+    {"proveedor": "AVQ", "factura": "0133", "fecha": "2026-07-17",
+     "kg": 2370, "importe_siva": 8634.50},   # c/IVA = 9.929,67
+]
+
+
+def _pc(**kw):
+    base = {"id_compra": 7, "codigo_prov": "AQ", "importe": 3779.00,
+            "concepto": "133          17", "usuario_crea": "formulas-auto",
+            "usuario_modifica": None, "id_transaccion": None}
+    base.update(kw)
+    return [base]
+
+
+def _correr(grupos, pc):
+    editadas, creadas = [], []
+
+    def _editar(id_compra, **kw):
+        editadas.append((id_compra, kw))
+        return {"importe_previo": pc[0]["importe"],
+                "importe_nuevo": kw.get("importe")}
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=grupos), \
+         patch.object(fb.db, "fetch_all", return_value=pc), \
+         patch("modules.compras.queries.editar", side_effect=_editar), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw) or {"numero": 1}):
+        rep = fb.sincronizar_mes(2026, 7)
+    return rep, editadas, creadas
+
+
+def test_estado_mes_marca_ajustable_cuando_formulas_crecio():
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_GRUPO_CRECIO), \
+         patch.object(fb.db, "fetch_all", return_value=_pc()):
+        est = fb.estado_mes(2026, 7)
+    fila = est["filas"][0]
+    assert fila.estado == "cargada"
+    assert fila.ajustable is True
+    assert fila.id_compra_pc == 7
+    assert fila.importe_pc == pytest.approx(3779.00)
+    assert est["ajustables"] == 1
+
+
+def test_sincronizar_corrige_el_importe_y_no_duplica():
+    rep, editadas, creadas = _correr(_GRUPO_CRECIO, _pc())
+    assert creadas == []                       # NO se crea una segunda compra
+    assert len(editadas) == 1
+    id_compra, kw = editadas[0]
+    assert id_compra == 7
+    assert kw["importe"] == pytest.approx(9929.67, abs=0.01)
+    assert "formulas" in kw["observacion"]
+    assert len(rep["ajustadas"]) == 1
+    assert rep["ajustadas"][0]["factura"] == "133"
+
+
+def test_no_corrige_si_alguien_la_edito_a_mano():
+    """La corrección manual de una factura con IVA mixto no se pisa."""
+    _, editadas, _ = _correr(_GRUPO_CRECIO, _pc(usuario_modifica="tamara"))
+    assert editadas == []
+
+
+def test_no_corrige_si_no_la_creo_el_puente():
+    _, editadas, _ = _correr(_GRUPO_CRECIO, _pc(usuario_crea="dbf-import"))
+    assert editadas == []
+
+
+def test_no_corrige_si_ya_esta_pagada():
+    _, editadas, _ = _correr(_GRUPO_CRECIO, _pc(id_transaccion=42))
+    assert editadas == []
+
+
+def test_no_corrige_si_el_importe_coincide():
+    _, editadas, _ = _correr(_GRUPO_CRECIO, _pc(importe=9929.67))
+    assert editadas == []
+
+
+def test_editar_que_falla_no_frena_la_corrida():
+    def _editar(id_compra, **kw):
+        raise ValueError("compra bloqueada")
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_GRUPO_CRECIO), \
+         patch.object(fb.db, "fetch_all", return_value=_pc()), \
+         patch("modules.compras.queries.editar", side_effect=_editar):
+        rep = fb.sincronizar_mes(2026, 7)
+    assert rep["disponible"] is True
+    assert rep["ajustadas"] == []
+
+
+# ── hilo de fondo ───────────────────────────────────────────────────────────
+
+def test_correr_si_toca_respeta_el_freno(monkeypatch):
+    monkeypatch.setattr(fb, "_auto_ultimo_ts", 0.0)
+    with patch.object(fb, "sincronizar_mes_actual",
+                      return_value={"creadas": [], "ajustadas": []}) as sm:
+        primera = fb.correr_si_toca()
+        segunda = fb.correr_si_toca()
+    assert primera["corrio"] is True
+    assert segunda["corrio"] is False      # el freno de 30 min la frenó
+    assert sm.call_count == 1
+
+
+def test_correr_si_toca_apagado(monkeypatch):
+    monkeypatch.setattr(fb, "_auto_ultimo_ts", 0.0)
+    monkeypatch.setenv("FORMULAS_COMPRAS_AUTOSYNC", "0")
+    with patch.object(fb, "sincronizar_mes_actual") as sm:
+        assert fb.correr_si_toca()["corrio"] is False
+    sm.assert_not_called()
+
+
+def test_correr_si_toca_nunca_levanta(monkeypatch):
+    monkeypatch.setattr(fb, "_auto_ultimo_ts", 0.0)
+    with patch.object(fb, "sincronizar_mes_actual",
+                      side_effect=RuntimeError("boom")):
+        res = fb.correr_si_toca()
+    assert res["corrio"] is True and res["creadas"] == 0
 
 
 # ── autosync / hook del cron ────────────────────────────────────────────────

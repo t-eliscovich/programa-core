@@ -364,7 +364,10 @@ def main(argv: list[str] | None = None) -> int:
             _n, _e = len(_rep.get("creadas") or []), len(_rep.get("errores") or [])
             print(f"  [OK]  puente formulas: {_n} compras cargadas, "
                   f"{_rep.get('ya_cargadas', 0)} ya estaban, {_e} errores, "
-                  f"{_rep.get('dejadas_para_manana', 0)} de hoy para mañana")
+                  f"{len(_rep.get('ajustadas') or [])} con el importe corregido")
+            for _a in (_rep.get("ajustadas") or []):
+                print(f"        ~ {_a['proveedor']} {_a['factura']} "
+                      f"→ {_a['importe']:.2f}")
             for _c in (_rep.get("creadas") or []):
                 print(f"        + {_c['proveedor']} {_c['factura']} {_c['importe']:.2f}")
             for _x in (_rep.get("errores") or []):
