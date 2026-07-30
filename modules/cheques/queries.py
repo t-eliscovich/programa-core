@@ -44,11 +44,13 @@ _OBS_CAP = 200
 # sigue viendo en cartera para futuras aplicaciones.
 TOLERANCIA_CIERRE_USD = 50.0
 
-# TMT 2026-07-30: "esto son centavos, no un sobrante". Es el umbral que ya
-# usaba la cobranza para NO fabricar un espejo NB=98 por monedas
-# (`_imp_espejo >= 1.00` en `crear`); acá le ponemos nombre para que el neteo
-# use el mismo criterio en vez de una banda propia de un centavo.
-TOLERANCIA_CENTAVOS_USD = 1.00
+# TMT 2026-07-30: "esto son monedas, no un sobrante". Arrancó en $1 (el mismo
+# umbral con el que la cobranza no fabrica un espejo NB=98 por centavos) y la
+# dueña lo subió a $5 el mismo día: *"lo que sobra, si es más de 5 dólares,
+# ofrece dejarlo como anticipo (esto mueve de 1 a 5 dólares)"*. Por debajo se
+# olvida sin preguntar; por encima se pregunta — ver `sobrante_a_anticipo` en
+# `netear_cheques_con_anticipos`.
+TOLERANCIA_CENTAVOS_USD = 5.00
 
 
 # Stats donde el cheque está depositado en banco (lockean campos duros).
@@ -5161,6 +5163,7 @@ def netear_cheques_con_anticipos(
     ids_cheques: list[int],
     ids_anticipos: list[int],
     usuario: str = "web",
+    sobrante_a_anticipo: bool = True,
 ) -> dict:
     """NETEA (anula) cheque(s) vivo(s) contra anticipo(s) del mismo cliente.
 
@@ -5182,8 +5185,15 @@ def netear_cheques_con_anticipos(
     - Anticipos (espejos NB=98, importe negativo): stat='X' + mov_doble
       'anticipo_neteado'. Todo en UNA tx: si algo falla, rollback total.
 
+    TMT 2026-07-30 (dueña): el sobrante ya no se guarda siempre solo. Hasta
+    TOLERANCIA_CENTAVOS_USD ($5) son monedas y se olvidan; por encima, la
+    pantalla lo OFRECE (`sobrante_a_anticipo`, tildado por default) y si la
+    dueña destilda, el sobrante se olvida igual que el "totalizar" de la
+    cobranza.
+
     Devuelve {n_cheques, n_anticipos, total, cheques:[...], anticipos:[...],
-    facturas_reabiertas:[{id_cheque, id_factura, numf}]}.
+    facturas_reabiertas:[{id_cheque, id_factura, numf}], id_residuo,
+    sobrante_ofrecido}.
     """
     codigo_cli = (codigo_cli or "").strip().upper()
     ids_cheques = [int(i) for i in (ids_cheques or [])]
@@ -5256,12 +5266,18 @@ def netear_cheques_con_anticipos(
         #
         # TMT 2026-07-30 (dueña, caso CEM): la banda era de UN CENTAVO y
         # frenaba neteos que sólo difieren en redondeo — CEM: cheques
-        # $4.140,26 contra anticipos $4.140,00, o sea 26 centavos. Se sube a
-        # TOLERANCIA_CENTAVOS_USD ($1), el mismo umbral con el que la cobranza
-        # decide "esto son centavos y no un sobrante" (`_imp_espejo >= 1.00`
-        # en `crear`) y con el que se cierran facturas con saldo de monedas.
-        # Por encima de $1 sigue bloqueado: ahí falta plata de verdad y anular
-        # un cheque entero contra un anticipo más chico sería regalarla.
+        # $4.140,26 contra anticipos $4.140,00, o sea 26 centavos. Ahora la
+        # banda es TOLERANCIA_CENTAVOS_USD ($5, ver arriba) y vale para los
+        # dos lados:
+        #   · faltan más de $5 de anticipos → BLOQUEA. Ahí falta plata de
+        #     verdad y anular un cheque entero contra un anticipo más chico
+        #     sería regalarla.
+        #   · sobran hasta $5 de anticipos → se olvida, sin preguntar y sin
+        #     fabricar un saldo a favor de monedas.
+        #   · sobran más de $5 → es plata del cliente: se deja como saldo a
+        #     favor si la dueña lo pidió (`sobrante_a_anticipo`, que la
+        #     pantalla ofrece tildado). Si lo destilda, el sobrante se olvida
+        #     — mismo criterio que el "totalizar" de la cobranza.
         residuo = round(suma_anticipos - suma_cheques, 2)
         if residuo < -TOLERANCIA_CENTAVOS_USD:
             raise ValueError(
@@ -5271,9 +5287,10 @@ def netear_cheques_con_anticipos(
                 "parte. Sacá cheques o sumá anticipos — si los anticipos "
                 "superan, el resto queda como saldo a favor."
             )
-        if residuo <= 0.01:
-            # Incluye la banda de centavos del lado de los cheques: se anulan
-            # enteros y la diferencia se olvida (no hay espejo que crear).
+        sobrante_ofrecido = round(residuo, 2) if residuo > TOLERANCIA_CENTAVOS_USD else 0.0
+        if residuo <= TOLERANCIA_CENTAVOS_USD or not sobrante_a_anticipo:
+            # Monedas (o sobrante que la dueña eligió no guardar): los cheques
+            # se anulan enteros y la diferencia se olvida. Sin espejo.
             residuo = 0.0
 
         # === SNAPSHOT para poder DESHACER el neteo (TMT 2026-07-21, dueña:
@@ -5473,6 +5490,9 @@ def netear_cheques_con_anticipos(
         "total": suma_cheques,
         "residuo": residuo,
         "id_residuo": id_residuo,
+        # Cuánto sobró por encima de la banda de monedas — se informa aunque
+        # la dueña haya elegido NO guardarlo, para que el flash lo diga.
+        "sobrante_ofrecido": sobrante_ofrecido,
         "batch_id": batch_id,
         "cheques": [c["id_cheque"] for c in cheques],
         "anticipos": [a["id_cheque"] for a in anticipos],

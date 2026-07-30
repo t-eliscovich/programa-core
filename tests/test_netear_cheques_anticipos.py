@@ -141,18 +141,19 @@ def test_neteo_cheques_superan_bloquea(monkeypatch):
 
 
 def test_neteo_sobrante_de_anticipos_queda_saldo_a_favor(monkeypatch):
-    # TMT 2026-07-21 (dueña, caso RKS): cheques 1.500,00 vs anticipos
-    # 1.414,00 + 88,86 = 1.502,86 → netea igual y el resto (2,86) queda como
-    # espejo NB=98 nuevo.
+    # TMT 2026-07-21 (dueña, caso RKS): cheques 1.500,00 vs anticipos que
+    # suman más → netea igual y el resto queda como espejo NB=98 nuevo.
+    # TMT 2026-07-30: los montos suben para pasar la banda de $5 — un
+    # sobrante de monedas hoy se olvida (ver el test de abajo).
     from modules.cheques import queries as chq
     stub = _DBStub(
-        [_ch(1, 1500.0)], [_ant(90, -1414.0), _ant(91, -88.86)])
+        [_ch(1, 1500.0)], [_ant(90, -1414.0), _ant(91, -88.86 - 20.0)])
     calls = _patch(monkeypatch, stub)
     res = chq.netear_cheques_con_anticipos(
         codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90, 91],
         usuario="t")
     assert res["n_cheques"] == 1 and res["n_anticipos"] == 2
-    assert res["residuo"] == pytest.approx(2.86)
+    assert res["residuo"] == pytest.approx(22.86)
     assert res["id_residuo"] == 999
     # el cheque se anuló entero
     assert len(calls) == 1 and calls[0]["id_cheque"] == 1
@@ -160,7 +161,7 @@ def test_neteo_sobrante_de_anticipos_queda_saldo_a_favor(monkeypatch):
     assert len(stub.inserts_cheque) == 1
     flat = stub.inserts_cheque[0]
     assert any(
-        isinstance(v, float) and abs(v + 2.86) < 0.001 for v in flat)
+        isinstance(v, float) and abs(v + 22.86) < 0.001 for v in flat)
     assert 98 in flat
     # mov_dobles: 2 'anticipo_neteado' + 1 'cheque_anticipo_espejo'
     tipos = [m[1] for m in stub.mov_dobles]
@@ -239,11 +240,42 @@ def test_neteo_pasa_con_centavos_de_diferencia(monkeypatch):
     assert res["id_residuo"] is None, "26 centavos no son un saldo a favor"
 
 
-def test_neteo_bloquea_si_falta_mas_de_un_dolar(monkeypatch):
-    """El umbral es $1: un peso y medio ya es plata, no redondeo."""
+def test_neteo_bloquea_si_falta_mas_que_la_banda(monkeypatch):
+    """El umbral es $5: seis dólares ya son plata, no redondeo."""
     from modules.cheques import queries as chq
-    stub = _DBStub([_ch(1, 100.00)], [_ant(90, -98.50)])
+    stub = _DBStub([_ch(1, 100.00)], [_ant(90, -94.00)])
     _patch(monkeypatch, stub)
     with pytest.raises(ValueError, match="no se puede anular en parte"):
         chq.netear_cheques_con_anticipos(
             codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90])
+
+
+def test_neteo_sobrante_chico_se_olvida(monkeypatch):
+    """TMT 2026-07-30 (dueña): "lo que sobra, si es más de 5 dólares, ofrece
+    dejarlo como anticipo". Por debajo son monedas: se olvidan, sin preguntar
+    y sin ensuciar la cuenta con un saldo a favor de $2,86."""
+    from modules.cheques import queries as chq
+    stub = _DBStub([_ch(1, 1500.0)], [_ant(90, -1502.86)])
+    _patch(monkeypatch, stub)
+    res = chq.netear_cheques_con_anticipos(
+        codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90], usuario="t")
+    assert res["residuo"] == 0.0
+    assert res["id_residuo"] is None
+    assert res["sobrante_ofrecido"] == 0.0, "monedas: ni se ofrecen"
+    assert stub.inserts_cheque == []
+
+
+def test_neteo_sobrante_grande_destildado_no_crea_saldo_a_favor(monkeypatch):
+    """Si la dueña destilda la oferta, el sobrante se olvida — pero el monto
+    se DEVUELVE (`sobrante_ofrecido`) para que el aviso lo diga con número.
+    Un sobrante que desaparece en silencio es lo que después nadie explica."""
+    from modules.cheques import queries as chq
+    stub = _DBStub([_ch(1, 3211.90)], [_ant(90, -1500.0), _ant(91, -2211.90)])
+    _patch(monkeypatch, stub)
+    res = chq.netear_cheques_con_anticipos(
+        codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90, 91],
+        usuario="t", sobrante_a_anticipo=False)
+    assert res["residuo"] == 0.0
+    assert res["id_residuo"] is None
+    assert res["sobrante_ofrecido"] == pytest.approx(500.0)
+    assert stub.inserts_cheque == [], "no se creó espejo"

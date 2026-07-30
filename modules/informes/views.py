@@ -3298,9 +3298,15 @@ def estado_cuenta_netear(codigo_cli):
     ids_cheques = [int(x) for x in request.form.getlist("ch") if x.strip().isdigit()]
     ids_anticipos = [int(x) for x in request.form.getlist("ant") if x.strip().isdigit()]
     try:
+        # TMT 2026-07-30 (dueña): "lo que sobra, si es más de 5 dólares,
+        # ofrece dejarlo como anticipo". El checkbox de la pantalla viene
+        # tildado; si la dueña lo destilda, el sobrante se olvida.
+        _sobrante_ok = (request.form.get("sobrante_a_anticipo") or "").strip() in (
+            "1", "true", "on", "si", "sí")
         res = chq.netear_cheques_con_anticipos(
             codigo_cli=codigo_up, ids_cheques=ids_cheques,
             ids_anticipos=ids_anticipos, usuario=usuario,
+            sobrante_a_anticipo=_sobrante_ok,
         )
         session["neteo_ok"] = res
         _reab = res.get("facturas_reabiertas") or []
@@ -3319,11 +3325,20 @@ def estado_cuenta_netear(codigo_cli):
                 "pendiente; reversible desde el Historial)."
             )
         _res_amt = float(res.get("residuo") or 0)
+        _ofrecido = float(res.get("sobrante_ofrecido") or 0)
         if _res_amt:
             _msg += (
                 f" El sobrante de anticipos (${_res_amt:,.2f}) quedó como "
                 "saldo a favor nuevo"
                 + (f" (#{res['id_residuo']})." if res.get("id_residuo") else ".")
+            )
+        elif _ofrecido:
+            # TMT 2026-07-30: la dueña destildó guardar el sobrante. Decirlo
+            # con el número — un sobrante que se olvida en silencio es
+            # exactamente lo que después nadie puede explicar.
+            _msg += (
+                f" Sobraban ${_ofrecido:,.2f} de anticipos y elegiste NO "
+                "dejarlos como saldo a favor: se olvidaron."
             )
         flash(_msg, "ok")
     except ValueError as e:
