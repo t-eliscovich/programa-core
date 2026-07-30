@@ -616,12 +616,40 @@ algo roto en una URL real (no localhost:5000):
 
 1. Antes de pedirle correr migrate.py local, preguntar **¿es local o prod?**
    En general la dueña usa prod.
-2. Para aplicar una migración a RDS, hay que mandar SSM Run Command al EC2.
-   El patrón está en la skill `intela-aws-deploy`.
+2. Para aplicar una migración a RDS: **`/admin/migraciones` → "Aplicar
+   pendientes"** (ver abajo). NO por AWS.
 3. GitHub Actions tiene `deploy.yml` que **NO corre migraciones automáticamente**
    — sólo copia el código y reinicia el task. Las migraciones son manuales.
 
-Patrón canónico para aplicar migración a RDS (desde CloudShell):
+### ✅ Cómo se aplica HOY una migración a prod: `/admin/migraciones`
+
+**Dueña 2026-07-30: *"las migraciones se corren de la pantalla migraciones.
+AWS no."*** Hay una pantalla, y Claude puede usarla por Chrome:
+
+1. `https://programa.intela.com.ec/admin/migraciones/` (permiso `admin_dbase.ver`).
+2. Muestra aplicadas + pendientes.
+3. Click **"Aplicar pendientes"** -> corre `scripts/migrate.py` en el EC2 con el
+   output en vivo. Idempotente: un click de mas es seguro.
+
+```
+Aplicando 1 migracion(es):
+  -> [0145] 0145_aviso_archivado  (sql)  OK (13 ms)
+=== exit code: 0 ===
+```
+
+Codigo: `modules/admin_dbase/migraciones_view.py`.
+
+⚠ **Aunque exista la pantalla, deploy y migración siguen sin viajar juntos**: el
+código sube solo y la migración espera a que alguien entre. Entonces **todo
+código que nombre una columna nueva tiene que funcionar SIN ella** (patrón
+`_tiene_orden_manual()` / `_tiene_archivado()`), y ese flag defensivo **no puede
+cachear el "todavía no está" para siempre** — negativo con TTL corto, positivo
+eterno. El 30/07 `listar()` de avisos rompió por columna inexistente, el
+fail-soft lo convirtió en lista vacía, y la dueña vio su buzón en blanco:
+*"ME BORRASTE TODAS!!"*.
+
+<details><summary>Camino VIEJO (CloudShell/SSM) — sólo si la pantalla no anda.
+Desde el contenedor de Claude no se puede: no hay credenciales AWS.</summary>
 
 ```bash
 export AWS_PAGER=""
@@ -635,6 +663,7 @@ aws ssm get-command-invocation --region us-east-2 \
   --instance-id i-0fcca4d7029f08489 --command-id "$CMD_ID" \
   --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}' --output json
 ```
+</details>
 
 ### Error 2 — deploy.yml excluía `*.sql` (incluyendo migrations)
 
