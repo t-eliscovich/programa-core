@@ -140,24 +140,29 @@
      TEXTO (sin caja, sin placeholder gritando "año", sin el "?" al lado) y
      recién al pasarle el mouse o al tipear se nota que es editable. La
      evidencia del año sigue estando: es el tooltip de la propia celda. */
+  /* Ojo: base.html pinta TODOS los inputs con
+     `:root:not(.dark) input { border-color: … !important }` y les fija el
+     font-size con `main form input { … !important }` → acá hace falta
+     !important o la celda vuelve a verse como una caja. */
   .anio-cell {
     width: 3.2rem;
     padding: 1px 4px;
-    font-size: 12px;
+    font-size: 12px !important;
     text-align: left;
     color: rgb(71 85 105);
-    background: transparent;
-    border: 1px solid transparent;
+    background: transparent !important;
+    border: 1px solid transparent !important;
     border-radius: 4px;
+    box-shadow: none !important;
   }
   .anio-cell::placeholder { color: rgb(203 213 225); }
-  .anio-cell:hover { border-color: rgb(226 232 240); background: #fff; }
+  .anio-cell:hover { border-color: rgb(226 232 240) !important; background: #fff !important; }
   .anio-cell:focus {
-    border-color: rgb(56 189 248); background: #fff; outline: none;
+    border-color: rgb(56 189 248) !important; background: #fff !important; outline: none;
   }
   .dark .anio-cell { color: rgb(148 163 184); }
   .dark .anio-cell:hover,
-  .dark .anio-cell:focus { background: rgb(2 6 23); }
+  .dark .anio-cell:focus { background: rgb(2 6 23) !important; }
 </style>
 {% endblock %}
 
