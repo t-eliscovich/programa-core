@@ -526,9 +526,14 @@
       Verde = subió respecto del mes A, rojo = bajó.
     {% else %}
       Valores en <strong>miles de U$</strong> excepto operativo (kg y U$/kg) y MARGEN %.
-      La columna <strong>en vivo</strong> se recalcula en cada carga y refleja cualquier cambio al
-      instante (no hace falta apretar nada). La columna <strong>previa</strong> es la última foto
-      guardada; la <strong>Δ</strong> muestra qué cambió desde esa foto.
+      {# TMT 2026-07-30 (dueña: "no quiero dos columnas"). El mes en curso tenía la
+         foto guardada + el vivo + una Δ. La foto CONGELA el stock de químicos y el
+         vivo lo RECALCULA, así que la Δ no medía un cambio del negocio sino la
+         distancia entre dos formas de valuar — y mostraba una utilidad de 766,6
+         que nunca existió. Ahora el mes en curso va con UNA columna. #}
+      El <strong>mes en curso</strong> va en una sola columna y se recalcula en cada carga:
+      refleja cualquier cambio al instante (no hace falta apretar nada). Los meses
+      cerrados son la foto de su último día.
     {% endif %}
     Imprimí con el botón <em>Imprimir</em> (queda en blanco para guardar en PDF).
   </p>
