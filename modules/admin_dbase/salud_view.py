@@ -706,6 +706,7 @@ def _seccion_recode_sucursales():
     n_completo = 0
     n_solo_numf = 0
     n_kg_distinto = 0
+    dobles: dict = {}
     otro_codigo: dict = {}
     for d in de_sucursal:
         num = str(d.get("numero") or "")
@@ -752,14 +753,32 @@ def _seccion_recode_sucursales():
                 # automático, va a mano.
                 otro_codigo[(pc_cod, suc)] = otro_codigo.get((pc_cod, suc), 0) + 1
                 continue
+            # ¿PC tiene el MISMO documento también bajo la sucursal? Entonces
+            # no es un recode: son DOS filas para la misma factura (una del
+            # sync del dBase, que la tiene bien, y otra de la carga de Asinfo
+            # bajo la matriz). Recodear crearía dos AJ2 idénticas. Se cuenta
+            # aparte — eso es un duplicado a resolver, no un código a cambiar.
+            codigos_del_doc = {
+                (x.get("codigo_cli") or "").strip().upper() for x in rows}
+            if suc in codigos_del_doc:
+                dup = dobles.setdefault((matriz, suc), {"n": 0, "saldo": 0.0})
+                dup["n"] += 1
+                dup["saldo"] += float(r.get("saldo") or 0)
+                continue
             acc = mover.setdefault((matriz, suc), {"n": 0, "imp": 0.0, "saldo": 0.0})
             acc["n"] += 1
             acc["imp"] += float(r.get("importe") or 0)
             if (r.get("stat") or "").strip().upper() in ("Z", "A", ""):
                 acc["saldo"] += float(r.get("saldo") or 0)
 
+    if dobles:
+        yield ("\n  ⚠ DUPLICADAS (PC tiene el MISMO documento bajo la matriz Y\n"
+               "    bajo la sucursal — no es un recode, es una fila de más):\n")
+        for (matriz, suc), a in sorted(dobles.items(), key=lambda kv: -kv[1]["n"]):
+            yield (f"    {a['n']:<5} {matriz} + {suc}   saldo de la de más "
+                   f"{_money_txt(a['saldo'])}\n")
     if not mover:
-        yield (f"  ✓ nada que recodear: {ya_ok} ya están bajo la sucursal, "
+        yield (f"\n  ✓ nada que recodear: {ya_ok} ya están bajo la sucursal, "
                f"{sin_cargar} no están en PC.\n\n")
         return
     yield "\n  A RECODEAR (PC tiene la matriz, Asinfo dice la sucursal):\n"
