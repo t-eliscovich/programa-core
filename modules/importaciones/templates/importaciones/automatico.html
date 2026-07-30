@@ -29,12 +29,12 @@
           Sólo mira recepciones <strong>desde el {{ cfg.fecha_corte }}</strong>
           (lo anterior queda como está).
           {% endif %}
-          <br>
-          {# TMT 2026-07-30 (dueña): "quitá lo de BAP, no sé ni qué es" — el
-             acrónimo se fue de acá también, y con él la promesa vieja de que
-             "el aviso te dice cuál hacer" (ya no lo dice). #}
-          <span style="color:rgb(146 64 14);">La compra se crea sólo en Programa Core: en el dBase
-          esa plata sigue figurando en ANTICIPOS hasta que alguien la cargue allá también.</span>
+          {# TMT 2026-07-30 (dueña): *"esto problema del dBase, no nuestro"* —
+             se fue el cartel ámbar que avisaba que en el dBase esa plata sigue
+             en ANTICIPOS "hasta que alguien la cargue allá también". Programa
+             Core carga la compra y listo: lo que le falte al FoxPro no es una
+             tarea pendiente de esta pantalla. (Antes ya se había ido de acá la
+             palabra "BAP": *"no sé ni qué es"*.) #}
         </div>
       </div>
       <form method="post" action="{{ url_for('importaciones.automatico_switch') }}">
