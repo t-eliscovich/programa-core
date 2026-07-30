@@ -713,3 +713,56 @@ def test_los_de_siempre_no_se_movieron():
     assert _clasificar_tejedor("M REYES KW22 C-T38")[0] == "RY"
     assert _clasificar_tejedor("MQ12 JERSEY")[2] is True    # máquina propia
     assert _clasificar_tejedor("20 JERSEY 2.60")[0] == ""   # desconocido
+
+
+# ---------------------------------------------------------------------------
+# El tope no frena producción POSTERIOR a la última compra del proveedor
+# ---------------------------------------------------------------------------
+# TMT 2026-07-30. El tope compara producción de una ventana de 3 meses contra
+# las compras de esa misma ventana, pero el maquilero factura con un mes de
+# desfase: dentro de la ventana entran compras que pagan producción ANTERIOR a
+# ella, el saldo se come solo y frena OFs que nadie pagó (caso real UN, julio).
+# Una compra NO puede pagar una OF que cerró DESPUÉS de ella.
+from unittest.mock import patch as _patch  # noqa: E402
+
+from modules.tejeduria_asinfo import service as _tsvc  # noqa: E402
+
+_OF_UN = {"cod": "UN", "numero": "OFT-000039340", "dia": "2026-07-24",
+          "kg": 1001.95, "tarifa": 1.15, "importe_sugerido": 1152.24,
+          "label": "Unda · UN", "descripcion": "R UNDA VAR10"}
+
+
+def _plan_un(ultima_compra, restante_kg, dia="2026-07-24"):
+    of = {**_OF_UN, "dia": dia}
+    with _patch.object(_tsvc, "resumen_mes", return_value={"pendientes": [of]}), \
+         _patch.object(_tsvc, "falta_acumulada", return_value={"UN": restante_kg}), \
+         _patch.object(_tsvc, "ultima_compra_k_por_prov", return_value=ultima_compra), \
+         _patch.object(_tsvc, "_ofts_estampadas", return_value={}), \
+         _patch.object(_tsvc, "_importes_k_existentes", return_value={}):
+        return _tsvc.cargar_pendientes(2026, 7, dry_run=True)
+
+
+def test_of_posterior_a_la_ultima_compra_no_pasa_por_el_tope():
+    # Caso UN: última compra 16/06, OF del 24/07, tope dice que faltan 29,92 kg.
+    res = _plan_un({"UN": "2026-06-16"}, 29.92)
+    assert res["creadas"] == 1, res["detalle"]
+    assert res["importe"] == 1152.24
+
+
+def test_of_anterior_a_la_ultima_compra_SIGUE_frenada_por_el_tope():
+    # La guarda contra las compras viejas sin OFT no se toca.
+    res = _plan_un({"UN": "2026-08-01"}, 29.92, dia="2026-07-24")
+    assert res["creadas"] == 0
+    assert "excede lo que falta" in res["detalle"][0]["motivo"]
+
+
+def test_sin_compras_previas_del_proveedor_manda_el_tope():
+    # Sin fecha de referencia no hay excepción posible: se respeta el tope.
+    res = _plan_un({}, 29.92)
+    assert res["creadas"] == 0
+    assert "excede lo que falta" in res["detalle"][0]["motivo"]
+
+
+def test_con_tope_suficiente_carga_igual():
+    res = _plan_un({"UN": "2026-08-01"}, 5000.0)
+    assert res["creadas"] == 1

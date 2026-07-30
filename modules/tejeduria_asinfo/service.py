@@ -118,6 +118,30 @@ def _compras_k_por_prov_rango(desde: str, hasta: str) -> dict:
     return {r["cod"]: float(r["kg"] or 0) for r in rows}
 
 
+def ultima_compra_k_por_prov() -> dict:
+    """{codigo_prov: 'YYYY-MM-DD' de su compra K más nueva}.
+
+    TMT 2026-07-30. Sirve para saber qué producción NO PUEDE estar ya pagada:
+    una compra vieja no puede cubrir una OF que cerró DESPUÉS de ella. Ver el
+    uso en `cargar_pendientes` (excepción al tope acumulado).
+    """
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(TRIM(COALESCE(codigo_prov, ''))) AS cod,
+                   TO_CHAR(MAX(fecha), 'YYYY-MM-DD')      AS ultima
+              FROM scintela.compra
+             WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
+               AND COALESCE(kg, 0) > 0
+               AND COALESCE(stat, '') <> 'Y'
+             GROUP BY UPPER(TRIM(COALESCE(codigo_prov, '')))
+            """,
+        ) or []
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {}
+    return {r["cod"]: r["ultima"] for r in rows if r.get("cod") and r.get("ultima")}
+
+
 def falta_acumulada(anio: int, mes: int, meses: int = MESES_VENTANA_TOPE) -> dict:
     """{cod_prov: kg que faltan cargar} ACUMULADO en la ventana — el TOPE.
 
@@ -466,7 +490,10 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
       1. sólo OFs en estado 'pendiente' (ya excluye mes pasado y OFT estampado);
       2. **tarifa resuelta o se saltea** — nunca inventamos un precio;
       3. **tope ACUMULADO por proveedor** (`falta_acumulada`, ventana de
-         MESES_VENTANA_TOPE meses): no cargamos más kg de los que faltan. Es la
+         MESES_VENTANA_TOPE meses): no cargamos más kg de los que faltan.
+         EXCEPCIÓN (2026-07-30): las OFs que cerraron DESPUÉS de la última
+         compra K del proveedor no pasan por el tope — una compra no puede
+         pagar una OF que cerró después de ella. Es la
          guarda que importa: las compras K viejas tipeadas a mano SIN kg hacen
          que la falta sobre-estime, y sin tope se crearían compras por OFs que
          ya están pagadas (caso real 26/07: 2 OFs de Reyes del 08/07). El tope
@@ -489,6 +516,24 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     pendientes = sorted(pendientes, key=lambda o: str(o.get("dia") or ""))
     # TOPE ACUMULADO por proveedor (no del mes) — dueña 2026-07-26.
     restante = falta_acumulada(anio, mes)
+    # TMT 2026-07-30 (dueña: "tratarlo como el resto de los tejedores… se
+    # dispara automático"). El tope compara la producción de una ventana de 3
+    # meses contra las compras de ESA MISMA ventana — pero el maquilero factura
+    # con un mes de desfase, así que dentro de la ventana entran compras que
+    # pagan producción ANTERIOR a ella. Resultado: el tope se come el saldo y
+    # frena OFs que nadie pagó.
+    #
+    # Caso real UN (Rodrigo Unda), julio: producción may-jul 5.561,00 kg contra
+    # compras may-jul 5.286,88 ⇒ "falta 29,92" y su OF de 1.001,95 quedaba
+    # salteada. Pero la compra del 01/05 (concepto «116 29», o sea factura del
+    # 29/04) paga producción de ABRIL, que está fuera de la ventana. Mirado
+    # desde enero la deuda real son 1.313,54 kg — de sobra para esa OF.
+    #
+    # EXCEPCIÓN, y es demostrable: **una compra no puede pagar una OF que cerró
+    # DESPUÉS de ella**. Así que la producción posterior a la última compra K
+    # del proveedor NO está sujeta al tope. Todo lo anterior sigue igual, así
+    # que la guarda contra las compras viejas sin OFT no se toca.
+    ult_compra = ultima_compra_k_por_prov()
     estampadas = _ofts_estampadas()
     _desde, _hasta = _rango_ventana(anio, mes)
     existentes = _importes_k_existentes(_desde, _hasta)
@@ -515,7 +560,8 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         if kg <= 0:
             detalle.append({**base, "ok": False, "motivo": "OF sin kg"})
             continue
-        if restante.get(cod, 0.0) + 0.01 < kg:
+        _post = bool(ult_compra.get(cod)) and str(of.get("dia") or "") > ult_compra[cod]
+        if not _post and restante.get(cod, 0.0) + 0.01 < kg:
             detalle.append({
                 **base, "ok": False,
                 "motivo": (f"excede lo que falta de {cod} "
