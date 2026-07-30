@@ -1082,9 +1082,8 @@ def buscar(
                -- se vincula a su posdat por scintela.mov_doble (compra→posdat,
                -- estado='activo'). Está PENDIENTE mientras ese posdat siga abierto
                -- (banc=0); pasa a PAGADA cuando el posdat se salda (banc<>0). Las
-               -- históricas del dBase NO tienen ese vínculo → fallback al BANC
-               -- importado (compra.no_banco 9/banco=pagada, 0/vacío=pendiente) o
-               -- a cuenta_pagada (compras de PC pagadas contado/banco).
+               -- históricas del dBase NO tienen ese vínculo → se resuelve por
+               -- scintela.posdat (ver el comentario largo del ELSE).
                CASE
                  WHEN EXISTS (
                         SELECT 1 FROM scintela.mov_doble md
@@ -1101,8 +1100,32 @@ def buscar(
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                  ) THEN TRUE
-                 ELSE ((c.no_banco IS NOT NULL AND c.no_banco <> 0)
-                       OR (c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> ''))
+                 -- TMT 2026-07-30 (dueña: "no se supone que varias ya están
+                 -- pagas?"). Las HISTÓRICAS del dBase no tienen vínculo
+                 -- mov_doble, y el fallback al BANC importado MIENTE: el sync
+                 -- del dBase está parado desde el 10/07, así que `no_banco`
+                 -- quedó congelado en el estado ANTERIOR al pago. Las compras
+                 -- HY 36880 y 36925 se pagaron el 16/07 con un ND de Pichincha
+                 -- de 60.790,64 y las dos pantallas seguían diciendo "debe".
+                 --
+                 -- La fuente VIVA es scintela.posdat, que se reconcilia aparte
+                 -- (/admin/posdat-reconcile) y sí está al día: si el dBase
+                 -- pagó, POSDAT.DBF ya no la trae. Entonces, sin vínculo:
+                 -- no hay posdatado abierto que la represente = PAGADA.
+                 -- El match es (prov, fecha, importe) porque el posdat del
+                 -- dBase hereda fecha e importe de la compra y su `concepto`
+                 -- viene vacío. Verificado contra HY: los 5 posdat vivos son
+                 -- exactamente las 5 compras impagas, al centavo.
+                 WHEN c.no_banco IS NOT NULL AND c.no_banco <> 0 THEN TRUE
+                 WHEN c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> '' THEN TRUE
+                 ELSE NOT EXISTS (
+                        SELECT 1 FROM scintela.posdat pd
+                         WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                           AND pd.fecha = c.fecha
+                           AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
+                           AND COALESCE(pd.banc, 0) = 0
+                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                 )
                END                                          AS pagada
         FROM scintela.compra c
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov

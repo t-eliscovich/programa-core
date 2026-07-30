@@ -374,3 +374,30 @@ def test_buscador_una_palabra_se_comporta_igual_que_antes():
 
 def test_buscador_es_and_entre_terminos():
     assert _buscar("CMTR AC", FILAS_BUSCADOR) == []
+
+
+# ---------------------------------------------------------------------------
+# Estado de pago de las HISTÓRICAS del dBase (bug 30/07)
+# ---------------------------------------------------------------------------
+def test_historica_sin_posdat_abierto_figura_pagada():
+    """El caso real HY 36880/36925.
+
+    Se pagaron el 16/07 con un ND de Pichincha de 60.790,64, pero
+    `compra.no_banco` seguía en 0 porque el sync del dBase está parado desde el
+    10/07. La verdad la tiene scintela.posdat: si no hay posdatado abierto que
+    represente la compra, está pagada — y eso es lo que ahora resuelve el SQL
+    en la columna `pagada_legacy`.
+    """
+    est = svc._estado_pago([
+        _compra(41970.55, tiene_posdat=False, legacy=True),
+        _compra(20728.31, tiene_posdat=False, legacy=True),
+    ])
+    assert est["pagada"] is True
+    assert est["saldo"] == 0.0
+
+
+def test_historica_con_posdat_abierto_sigue_debiendo():
+    # HY 37216 / 37231: sí tienen posdatado vivo → pagada_legacy False.
+    est = svc._estado_pago([_compra(21297.47, tiene_posdat=False, legacy=False)])
+    assert est["pagada"] is False
+    assert est["saldo"] == 21297.47

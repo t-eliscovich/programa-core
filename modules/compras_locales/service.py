@@ -149,8 +149,24 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                    ) AS tiene_posdat,
+                   -- Sin vínculo mov_doble (histórica del dBase): el BANC
+                   -- importado NO sirve — el sync del dBase está parado desde
+                   -- el 10/07 y ese campo quedó congelado ANTES del pago. Manda
+                   -- scintela.posdat, que se reconcilia aparte y sí está al
+                   -- día: sin posdatado abierto que la represente = PAGADA.
+                   -- MISMA expresión que la columna "Pagada" de /compras: dos
+                   -- pantallas diciendo cosas distintas de la misma compra
+                   -- sería peor que el bug.
                    ((c.no_banco IS NOT NULL AND c.no_banco <> 0)
-                    OR (c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> ''))
+                    OR (c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> '')
+                    OR NOT EXISTS (
+                          SELECT 1 FROM scintela.posdat pd
+                           WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                             AND pd.fecha = c.fecha
+                             AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
+                             AND COALESCE(pd.banc, 0) = 0
+                             AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                    ))
                        AS pagada_legacy
               FROM scintela.compra c
              WHERE UPPER(TRIM(c.codigo_prov)) = ANY(%s)
@@ -344,8 +360,24 @@ def estado_pago_de_compras(compras: list[dict] | None) -> dict:
                           AND md.destino_table = 'posdat' AND md.estado = 'activo'
                           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
                    ) AS tiene_posdat,
+                   -- Sin vínculo mov_doble (histórica del dBase): el BANC
+                   -- importado NO sirve — el sync del dBase está parado desde
+                   -- el 10/07 y ese campo quedó congelado ANTES del pago. Manda
+                   -- scintela.posdat, que se reconcilia aparte y sí está al
+                   -- día: sin posdatado abierto que la represente = PAGADA.
+                   -- MISMA expresión que la columna "Pagada" de /compras: dos
+                   -- pantallas diciendo cosas distintas de la misma compra
+                   -- sería peor que el bug.
                    ((c.no_banco IS NOT NULL AND c.no_banco <> 0)
-                    OR (c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> ''))
+                    OR (c.cuenta_pagada IS NOT NULL AND btrim(c.cuenta_pagada) <> '')
+                    OR NOT EXISTS (
+                          SELECT 1 FROM scintela.posdat pd
+                           WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                             AND pd.fecha = c.fecha
+                             AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
+                             AND COALESCE(pd.banc, 0) = 0
+                             AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                    ))
                        AS pagada_legacy
               FROM scintela.compra c
              WHERE c.id_compra = ANY(%s)
