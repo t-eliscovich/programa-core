@@ -844,20 +844,57 @@ def check_chequesxfact(verbose: bool = False) -> None:
         _reporte("CHEQUESXFACT", ERROR,
                  f"{len(sobre_cheque)} cheque(s) sobre-aplicados "
                  "(Σ aplicado > importe del cheque).")
+    # TMT 2026-07-30 — SUAVIZADO. Fila por fila esto NO es un error y no puede
+    # serlo: PC imputa FIFO (la más vieja) y el dBase imputa `GO BOTT` (la más
+    # nueva, ALTAS.PRG PROCEDURE REPLA). Con esa divergencia —deliberada, la
+    # dueña la confirmó el 30/07— la MISMA plata cae en facturas distintas, así
+    # que `chequesxfact ≠ factura.abono` es lo NORMAL, no un síntoma. Decirlo en
+    # rojo entrenaba a ignorar la sección entera.
+    #
+    # El invariante que SÍ vale es por CLIENTE: los dos criterios reparten la
+    # misma plata dentro del mismo cliente, así que los totales tienen que dar
+    # igual. Si el total del cliente no cierra, ahí sí PC inventó o perdió un
+    # link (misma regla que "el Δ de cartera del cliente es el techo").
+    por_cliente = db.fetch_all(
+        """
+        SELECT f.codigo_cli,
+               SUM(COALESCE(f.abono, 0))     AS abono_dbase,
+               SUM(COALESCE(cf.aplicado, 0)) AS aplicado_pc
+          FROM scintela.factura f
+          LEFT JOIN (
+                SELECT id_fact, SUM(COALESCE(importe, 0)) AS aplicado
+                  FROM scintela.chequesxfact
+                 GROUP BY id_fact
+               ) cf ON cf.id_fact = f.id_factura
+         WHERE TRIM(COALESCE(f.stat, '')) NOT IN ('X', 'Y')
+         GROUP BY f.codigo_cli
+        HAVING ABS(SUM(COALESCE(f.abono, 0)) - SUM(COALESCE(cf.aplicado, 0))) > 1
+         ORDER BY ABS(SUM(COALESCE(f.abono, 0)) - SUM(COALESCE(cf.aplicado, 0))) DESC
+         LIMIT 20
+        """) or []
     if sobre_fact:
+        _reporte("CHEQUESXFACT", OK,
+                 f"{len(sobre_fact)} factura(s) con chequesxfact ≠ abono — "
+                 "ESPERADO: PC imputa FIFO y el dBase GO BOTT (la más nueva). "
+                 "Dos criterios conviviendo, no un error. Lo que se mira es el "
+                 "total por cliente.")
+    if por_cliente:
+        _peor = por_cliente[0]
+        _delta = float(_peor["aplicado_pc"] or 0) - float(_peor["abono_dbase"] or 0)
         _reporte("CHEQUESXFACT", ERROR,
-                 f"{len(sobre_fact)} factura(s) donde los cheques de PC no "
-                 f"suman el abono del dBase "
-                 "(chequesxfact ≠ factura.abono → PC imputó a otra factura que el dBase).")
+                 f"{len(por_cliente)} cliente(s) donde el TOTAL aplicado por PC "
+                 f"no da el total abonado del dBase — ahí sí falta o sobra un "
+                 f"link (el mayor: {_peor['codigo_cli']}, "
+                 f"{_money(_delta).strip()}).")
     if dups:
         _reporte("CHEQUESXFACT", WARN,
                  f"{len(dups)} fila(s) exactamente duplicadas "
                  "(cheque+factura+importe+fecha) — posible doble-INSERT.")
-    if not (sobre_cheque or sobre_fact or dups):
+    if not (sobre_cheque or sobre_fact or dups or por_cliente):
         _reporte("CHEQUESXFACT", OK,
                  "sin sobre-aplicaciones ni duplicados exactos.")
     if verbose:
-        for r in (sobre_cheque[:5] + sobre_fact[:5] + dups[:5]):
+        for r in (sobre_cheque[:5] + sobre_fact[:5] + por_cliente[:5] + dups[:5]):
             print("     ", dict(r))
 
 

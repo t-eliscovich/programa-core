@@ -1322,6 +1322,9 @@ def desde_asinfo():
     alias_existe_para = {
         a["codigo_asinfo"]: a["codigo_pc"] for a in aliases_existentes
     }
+    # Las sucursales por dirección ya registradas (id_direccion → código PC).
+    # Antes esto se podía escribir y no leer: no había cómo confirmar un alta.
+    sucursales_direccion = _aliases.sucursales_todas()
     sugerencias_alias = []
     for cli, g in grupos_cli.items():
         if not g["votos_alias"]:
@@ -1375,6 +1378,7 @@ def desde_asinfo():
         cutoff_reciente=cutoff_reciente.isoformat(),
         incluir_recientes=incluir_recientes,
         aliases_existentes=aliases_existentes,
+        sucursales_direccion=sucursales_direccion,
         sugerencias_alias=sugerencias_alias,
         grupos_cli=grupos_ordenados,
     )
@@ -1446,6 +1450,34 @@ def sucursal_direccion_agregar():
     except Exception as e:
         flash_exc("No pude registrar la sucursal", e)
     return redirect(url_for("facturas.desde_asinfo", **request.args))
+
+
+@facturas_bp.route("/facturas/sucursal-direccion/borrar", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def sucursal_direccion_borrar():
+    """Saca el mapeo de una dirección. Form: id_direccion.
+
+    POR QUÉ: el alta es un UPSERT, así que una dirección tipeada mal se podía
+    corregir pero no sacar. Borrarla NO recodea facturas ya cargadas (siguen
+    con el código que se les puso); sólo deja de clasificar las próximas.
+    """
+    from modules.asinfo import aliases as _aliases
+    id_direccion = (request.form.get("id_direccion") or "").strip()
+    try:
+        n = _aliases.sucursal_borrar(id_direccion)
+    except Exception as e:
+        flash_exc("No se pudo borrar la sucursal", e)
+        return redirect(request.referrer or url_for("facturas.desde_asinfo"))
+    if n:
+        flash(
+            f"Dirección {id_direccion} borrada. Las facturas ya cargadas NO "
+            f"cambian de código.",
+            "ok",
+        )
+    else:
+        flash("Esa dirección no estaba registrada.", "info")
+    return redirect(request.referrer or url_for("facturas.desde_asinfo"))
 
 
 @facturas_bp.route("/facturas/aliases/agregar", methods=["POST"])

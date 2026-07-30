@@ -144,6 +144,50 @@
           la empresa y el dBase la parte por sucursal (ej. AJO/AJ2, VPM/VP1).
           Propuestas en <a class="underline" href="/admin/salud/diag?solo=f">diagnóstico F</a>.
         </p>
+        {# Listado (TMT 2026-07-30): antes esto se podía ESCRIBIR y no LEER, así
+           que un alta no se podía confirmar. `N fact` = facturas hoy bajo ese
+           código en PC — sirve para ver que la sucursal está recibiendo. #}
+        {% if sucursales_direccion %}
+        <div class="max-h-40 overflow-auto mb-2">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wide text-slate-500 sticky top-0">
+              <tr>
+                <th class="px-1 py-1 text-left">Dirección</th>
+                <th class="px-1 py-1 text-left">PC</th>
+                <th class="px-1 py-1 text-left">Cliente</th>
+                <th class="px-1 py-1 text-right">N fact</th>
+                <th class="px-1 py-1 text-left">Alta</th>
+                <th class="px-1 py-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in sucursales_direccion %}
+              <tr class="border-t border-slate-100 dark:border-slate-800" title="{{ s.nota or '' }}">
+                <td class="px-1 py-1 font-mono text-slate-700 dark:text-slate-300">{{ s.id_direccion }}</td>
+                <td class="px-1 py-1 font-mono text-slate-700 dark:text-slate-300">{{ s.codigo_cli }}</td>
+                <td class="px-1 py-1 text-slate-500">
+                  {% if s.cliente_nombre %}{{ s.cliente_nombre }}{% else %}<span class="text-rose-500">no existe en PC</span>{% endif %}
+                </td>
+                <td class="px-1 py-1 text-right tabular-nums text-slate-500">{{ s.n_facturas }}</td>
+                <td class="px-1 py-1 text-slate-400 text-[10px]">
+                  {{ s.fecha_alta.strftime('%d/%m/%Y') if s.fecha_alta else '' }}
+                  {% if s.usuario_crea %}· {{ s.usuario_crea }}{% endif %}
+                </td>
+                <td class="px-1 py-1 text-right">
+                  <form method="POST" action="{{ url_for('facturas.sucursal_direccion_borrar') }}" class="inline" onsubmit="return confirm('Borrar la dirección {{ s.id_direccion }} → {{ s.codigo_cli }}? Las facturas ya cargadas NO cambian.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="id_direccion" value="{{ s.id_direccion }}">
+                    <button class="text-rose-500 hover:text-rose-700 text-[10px]" title="Borrar">×</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-xs text-slate-400 italic mb-2">No hay sucursales por dirección registradas.</p>
+        {% endif %}
         <form method="POST" action="{{ url_for('facturas.sucursal_direccion_agregar') }}"
               class="flex items-center gap-1 text-xs">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

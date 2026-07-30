@@ -241,7 +241,63 @@ def borrar(codigo_asinfo: str, codigo_pc: str) -> int:
     return int(n or 0)
 
 
+def sucursales_todas() -> list[dict]:
+    """Las sucursales por dirección registradas, para MOSTRARLAS.
+
+    POR QUÉ (TMT 2026-07-30): la tabla se podía ESCRIBIR desde
+    /facturas/desde-asinfo desde el 29/07 pero no había dónde LEERLA, así que
+    después de registrar `18801 → VP1` no había forma de confirmar que quedó.
+    Un diccionario que no se puede leer no se puede auditar.
+
+    Lee de la DB (no del cache de `codigo_por_direccion`) para que la pantalla
+    muestre la verdad incluso dentro de la ventana de 5 min del cache.
+    Fail-soft: tabla ausente / DB caída → [].
+    """
+    try:
+        return db.fetch_all(
+            """
+            SELECT s.id_direccion,
+                   s.codigo_cli,
+                   s.nota,
+                   s.fecha_alta,
+                   s.usuario_crea,
+                   c.nombre AS cliente_nombre,
+                   (SELECT COUNT(*) FROM scintela.factura f
+                     WHERE UPPER(TRIM(f.codigo_cli)) = UPPER(TRIM(s.codigo_cli))
+                   ) AS n_facturas
+              FROM scintela.sucursal_direccion s
+              LEFT JOIN scintela.cliente c
+                     ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(s.codigo_cli))
+             ORDER BY s.id_direccion
+            """
+        ) or []
+    except Exception as e:  # noqa: BLE001 — la pantalla no se cae por esto
+        _LOG.warning("sucursales_todas: fetch falló (%s)", e)
+        return []
+
+
+def sucursal_borrar(id_direccion) -> int:
+    """Borra el mapeo de una dirección. Devuelve filas borradas.
+
+    Sin esto, una dirección mal tipeada quedaba para siempre (el alta es un
+    UPSERT: podía corregirse el código, nunca sacarse la fila).
+    """
+    try:
+        idd = int(id_direccion)
+    except (TypeError, ValueError):
+        return 0
+    n = db.execute(
+        "DELETE FROM scintela.sucursal_direccion WHERE id_direccion = %s",
+        (idd,),
+    )
+    reset_cache()
+    return int(n or 0)
+
+
 def reset_cache() -> None:
     """Para tests o tras migración manual."""
-    global _cache_ts
+    global _cache_ts, _suc_cache_ts
     _cache_ts = 0.0
+    # El mapa de sucursales tiene su PROPIO TTL: sin resetearlo, dar de alta o
+    # borrar una dirección seguía clasificando con el mapa viejo hasta 5 min.
+    _suc_cache_ts = 0.0
