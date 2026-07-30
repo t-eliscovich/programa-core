@@ -401,3 +401,13 @@ def test_historica_con_posdat_abierto_sigue_debiendo():
     est = svc._estado_pago([_compra(21297.47, tiene_posdat=False, legacy=False)])
     assert est["pagada"] is False
     assert est["saldo"] == 21297.47
+
+
+def test_fila_anterior_al_corte_se_marca_como_historica():
+    # La pantalla no la muestra como "sin cargar": el motor no la va a tocar y
+    # scintela.compra tampoco la tiene (COMPRAS.DBF es rotativo ~3 meses).
+    vieja = {**CRUDA, "fecha_recepcion": "2026-04-21", "fact_num": 36736}
+    (f,) = _con_cruce(crudas=[vieja])
+    assert f["pre_corte"] is True
+    (g,) = _con_cruce()          # 2026-07-20, posterior al corte
+    assert g["pre_corte"] is False

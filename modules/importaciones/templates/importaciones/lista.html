@@ -257,6 +257,11 @@
                   {% elif r.parcial %}<span class="pg-no">debe {{ r.saldo | num_es(2) }}</span>
                   {% else %}<span class="pg-no">debe</span>{% endif %}
                 </div>
+              {% elif r.pre_corte %}
+                {# Compra local anterior a la fecha de corte: el motor no la va a
+                   cargar y el programa nunca la tuvo (COMPRAS.DBF es rotativo).
+                   Es historia de Asinfo, no una tarea pendiente. #}
+                <span class="text-slate-300 usd-gutter" title="Anterior al arranque de la carga automática — historia de Asinfo">histórica</span>
               {% elif r.codigo and not r.anticipo_total %}
                 <span class="no usd-gutter" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
               {% else %}

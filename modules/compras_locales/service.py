@@ -297,6 +297,11 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
             "pagada": False,
             "saldo": 0.0,
             "parcial": False,
+            # Anterior a la fecha de corte: el motor no la va a tocar nunca, y
+            # además `scintela.compra` ni siquiera la tiene (COMPRAS.DBF es
+            # rotativo ~3 meses, así que el sync nunca trajo lo viejo). Marcarla
+            # como "sin cargar" sería inventar una tarea pendiente.
+            "pre_corte": _antes_del_corte(c.get("fecha_recepcion")),
         })
 
     cruce = _buscar_compras(refs)
