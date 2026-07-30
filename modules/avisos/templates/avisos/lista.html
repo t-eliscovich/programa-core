@@ -36,9 +36,9 @@
        style="{% if not todos %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Sin leer</a>
     {# Los archivados NO desaparecen: viven detrás de este filtro y se pueden
        devolver con el ↺ de la fila. #}
-    <a href="{{ url_for('avisos.lista', archivados=1, todos=1) }}"
+    {% if hay_archivo %}<a href="{{ url_for('avisos.lista', archivados=1, todos=1) }}"
        class="px-3 py-1.5 rounded border"
-       style="{% if archivados %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Archivados</a>
+       style="{% if archivados %}border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;{% else %}border-color:rgb(226 232 240);color:rgb(100 116 139);{% endif %}">Archivados</a>{% endif %}
     {% if n_no_leidos %}
     <form method="post" action="{{ url_for('avisos.leidos') }}" class="inline ml-auto">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -81,7 +81,7 @@
              mismo provocó. No borra: se puede volver a mostrar con
              ?archivados=1 y devolverlo con el ↺. #}
           <td class="px-2 py-2 text-center">
-            <form method="post"
+            {% if hay_archivo %}<form method="post"
                   action="{{ url_for('avisos.archivar', id_aviso=a.id_aviso) }}"
                   style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -93,7 +93,7 @@
                 <button type="submit" title="Ya no aplica — sacarlo de la lista"
                         style="border:0;background:none;cursor:pointer;color:#94a3b8;font-size:15px;line-height:1">×</button>
               {% endif %}
-            </form>
+            </form>{% endif %}
           </td>
         </tr>
         {% else %}

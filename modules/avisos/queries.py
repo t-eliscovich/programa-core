@@ -20,6 +20,37 @@ FUENTES = {
 
 NIVELES = ("ok", "alerta", "error")
 
+# ── Feature flag de la mig 0145 ──────────────────────────────────────────────
+# El deploy NO corre migraciones (son manuales, por SSM). Entre que sube el
+# código y se aplica la 0145 hay una ventana en la que `archivado` no existe, y
+# como `listar` es fail-soft el buzón se veía VACÍO — peor que el problema que
+# vino a resolver. Mismo patrón que `_tiene_orden_manual()`: se pregunta UNA vez
+# por worker y la query se arma con o sin la columna.
+_TIENE_ARCHIVADO: bool | None = None
+
+
+def _tiene_archivado() -> bool:
+    global _TIENE_ARCHIVADO
+    if _TIENE_ARCHIVADO is None:
+        try:
+            row = db.fetch_one(
+                """
+                SELECT 1 AS ok FROM information_schema.columns
+                 WHERE table_schema = 'scintela' AND table_name = 'aviso'
+                   AND column_name = 'archivado'
+                """,
+            )
+            _TIENE_ARCHIVADO = bool(row)
+        except Exception:  # noqa: BLE001 -- ante la duda, la versión vieja
+            return False
+    return _TIENE_ARCHIVADO
+
+
+def reset_cache() -> None:
+    """Olvida el flag — para después de aplicar la migración, sin reiniciar."""
+    global _TIENE_ARCHIVADO
+    _TIENE_ARCHIVADO = None
+
 ICONOS = {"ok": "✅", "alerta": "⚠️", "error": "⛔"}
 
 
@@ -66,8 +97,12 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
     Por defecto NO trae los archivados (mig 0145): un aviso que ya no aplica se
     saca de la vista pero la fila queda, y `archivados=True` la vuelve a mostrar.
     """
+    hay = _tiene_archivado()
     where, params = [], []
-    where.append("archivado" if archivados else "NOT archivado")
+    if hay:
+        where.append("archivado" if archivados else "NOT archivado")
+    elif archivados:
+        return []                      # sin la columna no hay archivados
     if solo_no_leidos:
         where.append("NOT leido")
     if fuente:
@@ -81,7 +116,8 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
         filas = db.fetch_all(
             f"""
             SELECT id_aviso, fuente, nivel, titulo, detalle, importe, cantidad,
-                   url, leido, archivado,
+                   url, leido,
+                   {"archivado" if hay else "FALSE AS archivado"},
                    TO_CHAR(creado_en, 'DD/MM HH24:MI') AS cuando,
                    TO_CHAR(creado_en, 'YYYY-MM-DD HH24:MI') AS creado_en
               FROM scintela.aviso
@@ -115,8 +151,8 @@ def marcar_leidos(fuente: str | None = None) -> int:
 def n_no_leidos() -> int:
     try:
         row = db.fetch_one(
-            "SELECT COUNT(*) AS n FROM scintela.aviso "
-            " WHERE NOT leido AND NOT archivado")
+            "SELECT COUNT(*) AS n FROM scintela.aviso WHERE NOT leido"
+            + (" AND NOT archivado" if _tiene_archivado() else ""))
         return int((row or {}).get("n") or 0)
     except Exception:  # noqa: BLE001
         return 0
@@ -133,6 +169,9 @@ def archivar(id_aviso: int, usuario: str = "web", *, deshacer: bool = False) -> 
 
     No borra: la fila queda y se puede deshacer.
     """
+    if not _tiene_archivado():
+        _LOG.warning("archivar: falta la migracion 0145")
+        return False
     try:
         db.execute(
             """

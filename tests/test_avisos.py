@@ -9,6 +9,7 @@ Lo que se prueba es lo que hace que el buzón no moleste:
     reintentan lo mismo cada 30 min);
   · cada fuente escribe en castellano y sin siglas internas.
 """
+import contextlib
 from unittest.mock import patch
 
 from modules import avisos
@@ -81,9 +82,21 @@ def test_listar_filtra_por_fuente_y_no_leidos():
     assert params == ("quimicos", 5)
 
 
+@contextlib.contextmanager
+def _con_columna(hay: bool):
+    """Simula que la mig 0145 está (o no) aplicada."""
+    avisos.queries.reset_cache()
+    try:
+        with patch.object(avisos.queries, "_tiene_archivado", return_value=hay):
+            yield
+    finally:
+        avisos.queries.reset_cache()
+
+
 def test_listar_todo_no_filtra_salvo_archivados():
     """Sin filtros la lista trae todo — menos lo archivado (mig 0145)."""
-    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+    with _con_columna(True), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
         avisos.listar(solo_no_leidos=False)
     sql = f.call_args[0][0]
     assert "NOT archivado" in sql
@@ -91,35 +104,75 @@ def test_listar_todo_no_filtra_salvo_archivados():
 
 
 def test_listar_archivados_muestra_solo_esos():
-    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+    with _con_columna(True), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
         avisos.listar(solo_no_leidos=False, archivados=True)
     sql = f.call_args[0][0]
     assert "WHERE archivado" in sql and "NOT archivado" not in sql
 
 
+# ── El deploy NO corre migraciones (son manuales, por SSM). Entre que sube el
+# código y se aplica la 0145 hay una ventana en la que `archivado` no existe.
+# TMT 2026-07-30: en esa ventana la pantalla se vio VACÍA y la dueña escribió
+# **"ME BORRASTE TODAS!!"**. No faltaba ni un aviso: `listar` es fail-soft y el
+# error de columna inexistente se convertía en una lista vacía, que es
+# indistinguible de "no hay novedades". Estos tests clavan que la pantalla
+# funciona IGUAL que antes mientras la migración no esté.
+
+def test_sin_la_migracion_la_lista_sigue_andando():
+    with _con_columna(False), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=False)
+    sql = f.call_args[0][0]
+    assert "archivado" not in sql.replace("FALSE AS archivado", "")
+    assert "WHERE" not in sql            # exactamente la query de antes
+
+
+def test_sin_la_migracion_no_hay_archivados_que_mostrar():
+    with _con_columna(False), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        assert avisos.listar(archivados=True) == []
+    f.assert_not_called()                # ni se le pega a la DB
+
+
+def test_sin_la_migracion_el_contador_no_nombra_la_columna():
+    with _con_columna(False), \
+         patch.object(avisos.queries.db, "fetch_one", return_value={"n": 3}) as f:
+        assert avisos.queries.n_no_leidos() == 3
+    assert "archivado" not in f.call_args[0][0]
+
+
+def test_sin_la_migracion_archivar_no_explota():
+    with _con_columna(False), \
+         patch.object(avisos.queries.db, "execute", return_value=None) as e:
+        assert avisos.queries.archivar(7) is False
+    e.assert_not_called()
+
+
 def test_archivar_y_deshacer():
     """Archivar NO borra: la fila queda y el ↺ la devuelve."""
-    with patch.object(avisos.queries.db, "execute", return_value=None) as e:
+    with _con_columna(True), \
+         patch.object(avisos.queries.db, "execute", return_value=None) as e:
         assert avisos.queries.archivar(7, "tamara") is True
-    sql, params = e.call_args[0][0], e.call_args[0][1]
-    assert "UPDATE scintela.aviso" in sql and "DELETE" not in sql.upper()
-    assert params[0] is True and params[-1] == 7
+        sql, params = e.call_args[0][0], e.call_args[0][1]
+        assert "UPDATE scintela.aviso" in sql and "DELETE" not in sql.upper()
+        assert params[0] is True and params[-1] == 7
 
-    with patch.object(avisos.queries.db, "execute", return_value=None) as e:
         avisos.queries.archivar(7, "tamara", deshacer=True)
-    assert e.call_args[0][1][0] is False
+        assert e.call_args[0][1][0] is False
 
 
 def test_archivar_es_fail_soft():
     def explota(*a, **k):
         raise RuntimeError("no anda")
 
-    with patch.object(avisos.queries.db, "execute", explota):
+    with _con_columna(True), patch.object(avisos.queries.db, "execute", explota):
         assert avisos.queries.archivar(7) is False
 
 
 def test_el_contador_de_la_campanita_ignora_los_archivados():
-    with patch.object(avisos.queries.db, "fetch_one", return_value={"n": 3}) as f:
+    with _con_columna(True), \
+         patch.object(avisos.queries.db, "fetch_one", return_value={"n": 3}) as f:
         assert avisos.queries.n_no_leidos() == 3
     assert "NOT archivado" in f.call_args[0][0]
 

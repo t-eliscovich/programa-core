@@ -31,6 +31,9 @@ def lista():
         "avisos/lista.html", items=items, fuente=fuente, nivel=nivel,
         todos=todos, fuentes=queries.FUENTES, n_no_leidos=queries.n_no_leidos(),
         archivados=archivados,
+        # El deploy no corre migraciones: hasta que se aplique la 0145 la
+        # pantalla se ve exactamente como antes, sin × y sin chip.
+        hay_archivo=queries._tiene_archivado(),
     )
 
 
