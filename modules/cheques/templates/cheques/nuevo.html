@@ -326,6 +326,11 @@
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas
           <button type="button" id="aplic-todas" class="ml-2 align-middle text-xs px-2 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/30">TODAS</button>
+          {# TMT 2026-07-30 (Andrés): "cuando ingresás un cheque y no querés que
+             se aplique a nada, solo se ingresa quedando en estado Z". #}
+          <button type="button" id="aplic-ninguna"
+                  title="El cheque entra en cartera (Z) sin tocar ninguna factura"
+                  class="ml-1 align-middle text-xs px-2 py-0.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800">NINGUNA</button>
           {# TMT 2026-07-06 (dueña): rango por teclado estilo dBase —
              "registro1Hregistro2" + Enter tilda todo el rango. Reemplaza el
              dropdown Hasta (poblarHasta/selHasta quedan como no-op). #}
@@ -538,9 +543,19 @@
   const manualValues = Object.create(null);
   // TMT 2026-07-06: override T/A por factura (columna QUEDA, ex-confirmación).
   const manualStat = Object.create(null);
+  // ── "NINGUNA": el cheque entra y NO se aplica a nada ────────────────────
+  // TMT 2026-07-30 (Andrés): *"en el dBase, cuando ingresás un cheque y no
+  // querés que se aplique a nada, solo se ingresa el cheque quedando en
+  // estado Z. En tu sistema no me permite eso"*. Y no lo permitía: al tipear
+  // el importe, la pantalla auto-asigna FIFO sobre las facturas abiertas
+  // (240 filas en el caso de CLR), así que "no aplicar nada" era destildar a
+  // mano una por una. Esta bandera apaga esa sugerencia hasta que se pida lo
+  // contrario. El backend ya sabía guardar el cheque en cartera puro.
+  let sinAplicar = false;
   const limpiarManuales = () => {
     for (const k in manualValues) delete manualValues[k];
     for (const k in manualStat) delete manualStat[k];
+    sinAplicar = false;
   };
   let codigoActual = "";
 
@@ -668,7 +683,7 @@
     //      "varios cheques en una misma factura para dejar abonado".
     // Es sólo SUGERENCIA: la dueña puede editar/destildar (se respeta vía
     // userValues más abajo).
-    if (!_hayAnticipo) {
+    if (!_hayAnticipo && !sinAplicar) {
       // Las filas editadas a mano quedan afuera del FIFO (userValues manda).
       const _editada = f => userValues[String(f.id_factura)] != null;
       const pos = facturas.filter(f => (parseFloat(f.saldo) || 0) > 0.005 && !_editada(f));
@@ -1962,6 +1977,9 @@
       // render. Antes disparaba 'change' por checkbox y cada uno re-renderizaba
       // el tbody a mitad del loop → el "destildar todas" quedaba roto.
       const wantChecked = e.target.checked;
+      // TMT 2026-07-30: destildar todo desde el header equivale a NINGUNA —
+      // si no, el FIFO volvía a llenarlas en cuanto se tocaba el importe.
+      sinAplicar = !wantChecked;
       facturas.forEach(f => {
         manualValues[f.id_factura] = wantChecked ? (parseFloat(f.saldo) || 0) : 0;
       });
@@ -1974,7 +1992,21 @@
   if (btnTodas) {
     btnTodas.addEventListener('click', () => {
       // TMT 2026-07-06: vía manualValues + un solo render (ver toggle-all).
+      sinAplicar = false;
       facturas.forEach(f => { manualValues[f.id_factura] = parseFloat(f.saldo) || 0; });
+      render(buscar.value);
+    });
+  }
+  // TMT 2026-07-30 (Andrés): NINGUNA — el cheque queda en cartera sin tocar
+  // ninguna factura. Destildar 240 filas a mano no era una opción, y el
+  // header-checkbox se re-llenaba en cuanto se tocaba el importe (el FIFO
+  // vuelve a sugerir). `sinAplicar` apaga la sugerencia hasta que se pida
+  // TODAS, se tilde una fila o se cambie de cliente.
+  const btnNinguna = document.getElementById('aplic-ninguna');
+  if (btnNinguna) {
+    btnNinguna.addEventListener('click', () => {
+      sinAplicar = true;
+      facturas.forEach(f => { manualValues[f.id_factura] = 0; });
       render(buscar.value);
     });
   }
