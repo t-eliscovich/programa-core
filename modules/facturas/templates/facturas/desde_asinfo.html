@@ -11,6 +11,11 @@
        descripcion='Documentos que el ERP tiene pero el programa todavía no. Cargá a PC con un click los que falten.'
     ) }}
     <div class="flex items-center gap-2 shrink-0 mt-1">
+      {# TMT 2026-07-30: las de sucursal que entraron bajo la matriz antes de que
+         la clasificación fuera automática. #}
+      <a href="{{ url_for('facturas.sucursal_recode') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Sucursales bajo la matriz
+      </a>
       <a href="{{ url_for('facturas.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
         ← Volver a Facturas
       </a>

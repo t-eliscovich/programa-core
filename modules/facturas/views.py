@@ -1475,6 +1475,74 @@ def sucursal_direccion_borrar():
 # para matchear contra el dBase, y se pueden borrar por la pantalla.
 
 
+@facturas_bp.route("/facturas/sucursales/recode", methods=["GET"])
+@requiere_login
+@requiere_permiso("facturas.ver")
+def sucursal_recode():
+    """Preview del recode a sucursal. SOLO LECTURA — muestra, no mueve.
+
+    Ver `modules/facturas/sucursal_recode.py` para el criterio completo. El
+    resumen: Asinfo factura a la matriz y entrega en la dirección de la
+    sucursal; lo que se carga de ahora en más ya se clasifica solo, y esto es
+    para lo que entró antes.
+    """
+    from . import sucursal_recode as _rec
+    plan = _rec.plan()
+    return render_template(
+        "facturas/sucursal_recode.html",
+        plan=plan,
+        pares=_rec.resumen_por_par(plan["mover"]),
+        hechas=_rec.pendientes_de_deshacer(),
+    )
+
+
+@facturas_bp.route("/facturas/sucursales/recode/aplicar", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def sucursal_recode_aplicar():
+    """Mueve las facturas del plan a su sucursal. Reversible (ver deshacer).
+
+    Recalcula el plan del lado del servidor en vez de confiar en lo que venga
+    del form: entre que se vio la pantalla y se apretó el botón pudo entrar una
+    cobranza. Así se mueve lo que corresponde AHORA, o nada.
+    """
+    from . import sucursal_recode as _rec
+    if (request.form.get("confirmo") or "") != "si":
+        flash("Falta confirmar.", "warn")
+        return redirect(url_for("facturas.sucursal_recode"))
+    plan = _rec.plan()
+    if plan.get("error"):
+        flash(f"No pude armar el plan: {plan['error']}", "warn")
+        return redirect(url_for("facturas.sucursal_recode"))
+    try:
+        n = _rec.aplicar(plan["mover"])
+    except Exception as e:
+        flash_exc("No pude recodear", e)
+        return redirect(url_for("facturas.sucursal_recode"))
+    flash(
+        f"{n} factura(s) movidas a su sucursal. El total de cartera no cambió: "
+        f"la misma plata pasó de la cuenta de la matriz a la de la sucursal. "
+        f"Se puede deshacer desde esta misma pantalla.",
+        "ok",
+    )
+    return redirect(url_for("facturas.sucursal_recode"))
+
+
+@facturas_bp.route("/facturas/sucursales/recode/deshacer", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def sucursal_recode_deshacer():
+    """Devuelve a la matriz todo lo que el recode movió."""
+    from . import sucursal_recode as _rec
+    try:
+        n = _rec.deshacer()
+    except Exception as e:
+        flash_exc("No pude deshacer el recode", e)
+        return redirect(url_for("facturas.sucursal_recode"))
+    flash(f"{n} factura(s) devueltas a la matriz.", "ok" if n else "info")
+    return redirect(url_for("facturas.sucursal_recode"))
+
+
 @facturas_bp.route("/facturas/aliases/borrar", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.editar")

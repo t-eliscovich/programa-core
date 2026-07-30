@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block titulo %}Facturas de sucursal bajo la matriz{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-5">
+  <div class="flex items-center justify-between mb-1">
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">
+      Facturas de sucursal cargadas bajo la matriz
+    </h1>
+    <a href="{{ url_for('facturas.desde_asinfo') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700">&larr; Asinfo</a>
+  </div>
+  <p class="text-sm text-slate-500 mb-4">
+    Asinfo factura a la <strong>matriz</strong> y entrega en la dirección de la
+    <strong>sucursal</strong> — misma razón social, mismo RUC más un dígito. Lo
+    que se carga de ahora en más ya se clasifica solo. Éstas entraron antes, con
+    el código de la matriz, y en el dBase están bajo la sucursal.
+  </p>
+
+  {% if plan.error %}
+  <div class="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm mb-4">
+    No pude armar el plan: {{ plan.error }}
+  </div>
+  {% endif %}
+
+  {% if pares %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-4">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">De → a</th>
+          <th class="px-3 py-2 text-right">Facturas</th>
+          <th class="px-3 py-2 text-right">Importe</th>
+          <th class="px-3 py-2 text-right">Saldo abierto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pares %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-2 font-mono">{{ p.de }} → {{ p.a }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ p.n }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ p.importe | money_es }}</td>
+          <td class="px-3 py-2 text-right tabular-nums font-medium">{{ p.saldo | money_es }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="POST" action="{{ url_for('facturas.sucursal_recode_aplicar') }}"
+        class="mb-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="confirmo" value="si">
+    <button class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium">
+      Mover {{ plan.mover | length }} factura(s) a su sucursal
+    </button>
+    <span class="text-xs text-slate-500 ml-2">
+      El total de cartera no cambia; la misma plata pasa de una cuenta a la otra.
+      Se puede deshacer.
+    </span>
+  </form>
+  {% else %}
+  <div class="rounded border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-sm mb-4">
+    Nada para mover: todo está bajo el código que corresponde.
+  </div>
+  {% endif %}
+
+  {% if plan.dobles %}
+  <div class="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm mb-4">
+    <strong>{{ plan.dobles | length }} documento(s) están cargados DOS veces</strong>
+    — una bajo la matriz y otra bajo la sucursal. Ésos no se recodean: hay una
+    fila de más que resolver primero, porque moverla dejaría dos facturas
+    idénticas.
+    <ul class="mt-1 text-xs font-mono">
+      {% for d in plan.dobles[:20] %}
+      <li>{{ d.numero }} · {{ d.de }} + {{ d.a }} · {{ d.importe | money_es }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if hechas %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 mb-4">
+    <p class="text-sm mb-2">
+      <strong>{{ hechas | length }}</strong> factura(s) ya movidas por acá.
+    </p>
+    <form method="POST" action="{{ url_for('facturas.sucursal_recode_deshacer') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="px-3 py-1.5 rounded border border-rose-300 text-rose-600 text-sm">
+        Deshacer — devolverlas a la matriz
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if plan.mover %}
+  <details class="mb-4">
+    <summary class="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-400">
+      Ver el detalle de las {{ plan.mover | length }}
+    </summary>
+    <div class="mt-2 max-h-96 overflow-auto border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase text-slate-500 sticky top-0">
+          <tr>
+            <th class="px-2 py-1.5 text-left">N°</th>
+            <th class="px-2 py-1.5 text-left">Fecha</th>
+            <th class="px-2 py-1.5 text-left">De → a</th>
+            <th class="px-2 py-1.5 text-right">Importe</th>
+            <th class="px-2 py-1.5 text-right">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in plan.mover %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-2 py-1 font-mono">{{ i.numero }}</td>
+            <td class="px-2 py-1">{{ i.fecha }}</td>
+            <td class="px-2 py-1 font-mono">{{ i.de }} → {{ i.a }}</td>
+            <td class="px-2 py-1 text-right tabular-nums">{{ i.importe | money_es }}</td>
+            <td class="px-2 py-1 text-right tabular-nums">{{ i.saldo | money_es }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  <p class="text-xs text-slate-400">
+    Cómo se decide: se aparea por N° SRI completo (numf sólo como respaldo,
+    porque la serie de notas de crédito repite números viejos) y se validan
+    kilos e importe contra Asinfo. Sólo se parten las sucursales que ya se usan
+    como cliente propio — si el dBase cobra todo a la matriz, se deja así.
+    Ventana: {{ plan.resumen.desde }} a {{ plan.resumen.hasta }}.
+  </p>
+</div>
+{% endblock %}
