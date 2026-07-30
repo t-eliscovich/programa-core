@@ -1070,6 +1070,11 @@ def buscar(
                c.comprobante, c.numero, c.kg, c.importe, c.concepto,
                c.clave, c.no_banco, c.stat, c.observacion, c.cuenta_pagada,
                c.usuario_crea,
+               -- TMT 2026-07-30 (dueña): "¿esta fecha es cuando se carga la
+               -- compra o cuando se pagó?". Ninguna de las dos: `fecha` es la
+               -- del documento. Traemos también CUÁNDO se cargó, que hasta
+               -- ahora sólo vivía en la ficha.
+               c.fecha_crea,
                COALESCE(p.nombre, '') AS proveedor,
                p.plazo                AS plazo,
                (c.fecha + (COALESCE(p.plazo, 0) * INTERVAL '1 day'))::date

@@ -499,6 +499,8 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
                 ("fechad", "F. dep."),
                 ("stat", "Estado"),
                 ("usuario_crea", "Origen"),
+                # TMT 2026-07-30 (dueña): cuándo se cargó, no sólo quién.
+                ("fecha_crea", "Cargada"),
             ],
             filename="compras.csv",
         )

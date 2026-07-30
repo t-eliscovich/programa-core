@@ -167,7 +167,8 @@
     <table class="w-full text-sm sortable">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date">Fecha</th>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date"
+              title="Fecha de la COMPRA (la del documento). No es la de pago ni la de carga: cuándo se cargó está en Origen.">Fecha</th>
           <th class="px-3 py-3 text-left font-medium">Proveedor</th>
           <th class="px-3 py-3 text-left font-medium">Tipo</th>
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Kg</th>
@@ -176,7 +177,7 @@
           <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date" title="Fecha de la compra + plazo del proveedor">Vencimiento</th>
           {# TMT 2026-07-24 (dueña): de dónde salió cada compra — Fórmulas (auto
              desde formulas_app), dBase, Asinfo, o el usuario que la cargó a mano. #}
-          <th class="px-3 py-3 text-left font-medium" title="Origen de la compra: Fórmulas = cargada sola desde formulas_app (colorantes/químicos); dBase/Asinfo = importada del legacy; un nombre = el usuario que la tipeó en PC">Origen</th>
+          <th class="px-3 py-3 text-left font-medium" title="Quién cargó la compra y cuándo. Fórmulas = cargada sola desde formulas_app (colorantes/químicos); dBase/Asinfo = importada del legacy; un nombre = el usuario que la tipeó en PC">Origen</th>
           {# TMT 2026-07-23 (dueña, pedido de Andrés): igual que el dBase marca en
              COMPRAS si la factura fue pagada (campo BANC/BCO: 9 o banco = pagada,
              0/vacío = pendiente). En PC ese campo vive en compra.no_banco. #}
@@ -237,6 +238,13 @@
               <span title="Cargada en Programa Core ({{ c.usuario_crea }})" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;">PC</span>
             {% else %}
               <span title="Cargada a mano por {{ c.usuario_crea }}" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#dcfce7;color:#15803d;">{{ c.usuario_crea }}</span>
+            {% endif %}
+            {# TMT 2026-07-30 (dueña): "agregá la fecha cargada". Va acá abajo y
+               no en una columna nueva: quién la cargó y cuándo son el mismo
+               dato. Si coincide con la fecha de la compra no se repite. #}
+            {% if c.fecha_crea and (c.fecha_crea | fecha_es) != (c.fecha | fecha_es) %}
+              <div style="font-size:10px;color:#94a3b8;margin-top:1px;"
+                   title="Cuándo se cargó en el sistema">cargada {{ c.fecha_crea | fecha_es }}</div>
             {% endif %}
           </td>
           {# Pagada: lo resuelve la query (columna `pagada`) — mira el posdatado
