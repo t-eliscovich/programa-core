@@ -85,6 +85,21 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("tejeduría (fondo): %s", e)
+            # TMT 2026-07-30 (dueña): las COMPRAS LOCALES de hilo (HY, EP) se
+            # cargan solas cuando Asinfo marca la recepción — no tienen anticipo,
+            # así que el pasivo nace al recibir. Mismo patrón que tejeduría: kg de
+            # Asinfo × tarifa del tarifario, freno propio de 30 min,
+            # HILO_LOCAL_AUTO=0 lo apaga. Fail-soft por su cuenta.
+            try:
+                from modules.compras_locales import service as _hloc
+                hl = _hloc.correr_si_toca()
+                if hl.get("creadas"):
+                    _LOG.info(
+                        "hilo local (fondo): %s compra(s) por $%s",
+                        hl.get("creadas"), hl.get("importe"),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("hilo local (fondo): %s", e)
             # TMT 2026-07-30 (dueña): "agregar en la campanita, a fin de día,
             # venta total kg y total facturas $" — a las 18:00 de ECUADOR, uno
             # solo por día (la clave del aviso lo garantiza).

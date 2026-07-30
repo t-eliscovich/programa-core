@@ -185,15 +185,166 @@
        y de su detalle quedan alineados en la misma columna. */
     .usd-gutter { display: inline-block; padding-right: 22px; }
     .usd-wrap { position: relative; display: inline-block; padding-right: 22px; }
+    .tag-local { display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 4px;
+                 background: #ecfeff; color: #0e7490; font-size: 9px; font-weight: 800;
+                 text-transform: uppercase; letter-spacing: .04em; vertical-align: middle; }
+    .pago-tag { margin-top: 2px; padding-right: 22px; font-size: 10px; font-weight: 700;
+                letter-spacing: .02em; }
+    .pg-si { color: #059669; }
+    .pg-no { color: #b45309; }
     .btn-detalle { position: absolute; right: 0; top: 50%; transform: translateY(-50%);
                    width: 18px; height: 18px; line-height: 1; padding: 0; border: 1px solid #cbd5e1;
                    background: #f8fafc; color: #475569; border-radius: 4px; font-weight: 700; cursor: pointer; }
   </style>
+  {# ──────────────────────────────────────────────────────────────────────────
+     TARIFARIO de las compras LOCALES de hilo (TMT 2026-07-30, dueña: "las
+     tarifas en la misma pantalla de ingreso de hilo que tenga un + para que
+     aparezcan escondidas salvo que queramos editar, como en tejeduría asinfo").
+
+     Por qué existe: la compra local no tiene anticipo — llega la mercadería y
+     nace el pasivo. Los kg y el producto los da Asinfo, pero la PLATA sale de
+     acá, no del ERP ("asinfo nunca nos importa en plata"). Las tarifas van SIN
+     IVA; el motor multiplica por 1,15 porque así lo graba el dBase.
+
+     El panel arranca CERRADO. Se abre solo si no hay ninguna tarifa o si hay
+     compras esperando que les falta la tarifa — ahí sí hay algo que hacer.
+     Layout 100% inline: el build de tailwind está congelado.
+  ──────────────────────────────────────────────────────────────────────────#}
+  {% set puede_tarifas = tiene_permiso('tarifas.editar') %}
+  <details class="no-print" {% if not tarifas or locales_sin_tarifa %}open{% endif %}
+           style="margin-bottom:14px;border:1px solid rgb(226 232 240);border-radius:12px;background:#fff;">
+    <summary style="cursor:pointer;padding:10px 14px;font-size:12px;font-weight:700;color:rgb(51 65 85);list-style:none;">
+      <span style="display:inline-block;width:14px;color:rgb(148 163 184);">+</span>
+      Tarifas de compras locales ($/kg sin IVA)
+      {% if tarifas %}
+        <span style="font-weight:500;color:rgb(100 116 139);font-size:11px;">
+          — {% for t in tarifas %}{{ ' · ' if not loop.first }}{{ t.cod_prov }}{% if t.patron %}/{{ t.patron }}{% endif %} {{ t.tarifa|num_es(4) }}{% endfor %}
+        </span>
+      {% endif %}
+      {% if locales_sin_tarifa %}
+        <span style="margin-left:6px;color:rgb(180 83 9);font-size:11px;font-weight:700;">· falta {{ locales_sin_tarifa }}</span>
+      {% endif %}
+    </summary>
+
+    <div style="padding:0 14px 14px 14px;">
+      {% if not tarifas %}
+        <p style="font-size:11.5px;color:rgb(100 116 139);margin:0 0 8px 0;">
+          Todavía no hay tarifas cargadas.{% if puede_tarifas %} Poné el $/kg de cada producto y guardá.{% endif %}
+        </p>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('importaciones.guardar_tarifas_locales') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <table style="border-collapse:collapse;width:100%;font-size:12px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Proveedor</th>
+              <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Producto (Asinfo)</th>
+              <th style="text-align:right;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">$/kg s/IVA</th>
+              <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Actualizado</th>
+              <th style="border-bottom:1px solid rgb(226 232 240);"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in tarifas %}
+            <tr>
+              <td style="padding:5px 8px;border-bottom:1px solid rgb(241 245 249);">
+                {% if puede_tarifas %}
+                  <input name="t_{{ loop.index }}_cod_prov" value="{{ t.cod_prov }}"
+                         style="width:56px;text-transform:uppercase;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;">
+                {% else %}<span style="font-family:ui-monospace,Menlo,monospace;">{{ t.cod_prov }}</span>{% endif %}
+              </td>
+              <td style="padding:5px 8px;border-bottom:1px solid rgb(241 245 249);">
+                {% if puede_tarifas %}
+                  <input name="t_{{ loop.index }}_patron" value="{{ t.patron or '' }}" placeholder="todos los productos"
+                         style="width:230px;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;">
+                {% else %}<span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;">{{ t.patron or 'todos los productos' }}</span>{% endif %}
+              </td>
+              <td style="padding:5px 8px;text-align:right;border-bottom:1px solid rgb(241 245 249);">
+                {% if puede_tarifas %}
+                  <input name="t_{{ loop.index }}_tarifa" value="{{ t.tarifa|num_es(4) }}"
+                         style="width:82px;text-align:right;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-variant-numeric:tabular-nums;">
+                {% else %}<span style="font-variant-numeric:tabular-nums;">{{ t.tarifa|num_es(4) }}</span>{% endif %}
+              </td>
+              {# La nota viaja oculta: si no se manda, el UPSERT la borraría. #}
+              {% if puede_tarifas %}<input type="hidden" name="t_{{ loop.index }}_nota" value="{{ t.nota }}">{% endif %}
+              <td style="padding:5px 8px;font-size:10.5px;color:rgb(148 163 184);border-bottom:1px solid rgb(241 245 249);">
+                {{ t.usuario_modifica }}
+              </td>
+              <td style="padding:5px 8px;text-align:right;border-bottom:1px solid rgb(241 245 249);">
+                {% if puede_tarifas %}
+                  <button type="submit" formaction="{{ url_for('importaciones.borrar_tarifa_local', id_tarifa=t.id_tarifa) }}"
+                          style="font-size:10.5px;color:rgb(100 116 139);background:none;border:1px solid rgb(226 232 240);border-radius:5px;padding:1px 7px;cursor:pointer;">borrar</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% if puede_tarifas %}
+            <tr>
+              <td style="padding:5px 8px;"><input name="t_999_cod_prov" placeholder="HY"
+                    style="width:56px;text-transform:uppercase;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;"></td>
+              <td style="padding:5px 8px;"><input name="t_999_patron" placeholder="código de producto de Asinfo"
+                    style="width:230px;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-size:11px;"></td>
+              <td style="padding:5px 8px;text-align:right;"><input name="t_999_tarifa" placeholder="0,0000"
+                    style="width:82px;text-align:right;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;"></td>
+              <td colspan="2"></td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+        {% if puede_tarifas %}
+          <button type="submit" style="margin-top:10px;font-size:12px;padding:5px 12px;border-radius:6px;background:rgb(15 23 42);color:#fff;border:none;cursor:pointer;">Guardar tarifas</button>
+        {% else %}
+          <p style="font-size:11px;color:rgb(148 163 184);margin-top:6px;">Sólo accionistas y Andrés pueden editar las tarifas.</p>
+        {% endif %}
+      </form>
+
+      {# Lo que está esperando. El motor corre solo cada 30 minutos; el botón es
+         un atajo para no esperar (las guardas son las mismas: no duplica). #}
+      {% if pendientes_local %}
+      <div style="margin-top:14px;border-top:1px solid rgb(241 245 249);padding-top:10px;">
+        <div style="font-size:11px;font-weight:700;color:rgb(51 65 85);margin-bottom:6px;">
+          Recibidas sin cargar ({{ pendientes_local|length }})
+        </div>
+        <table style="border-collapse:collapse;width:100%;font-size:11.5px;">
+          <tbody>
+            {% for p in pendientes_local %}
+            <tr>
+              <td style="padding:3px 8px;font-family:ui-monospace,Menlo,monospace;color:rgb(100 116 139);">{{ p.im_numero }}</td>
+              <td style="padding:3px 8px;font-family:ui-monospace,Menlo,monospace;">{{ p.prov or '—' }}</td>
+              <td style="padding:3px 8px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:rgb(100 116 139);">{{ p.producto or '—' }}</td>
+              <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums;">{{ p.kg|num_es(2) }} kg</td>
+              <td style="padding:3px 8px;text-align:right;">
+                {% if p.importe_sugerido %}
+                  <span style="font-variant-numeric:tabular-nums;font-weight:600;">$ {{ p.importe_sugerido|num_es(2) }}</span>
+                  <span style="color:rgb(148 163 184);font-size:10.5px;">({{ p.tarifa|num_es(4) }} × 1,15)</span>
+                {% else %}
+                  <span style="color:rgb(180 83 9);font-weight:700;font-size:10.5px;">falta tarifa</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if tiene_permiso('compras.crear') %}
+        <form method="post" action="{{ url_for('importaciones.cargar_locales') }}" style="margin-top:8px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" style="font-size:12px;padding:5px 12px;border-radius:6px;background:rgb(2 132 199);color:#fff;border:none;cursor:pointer;">Cargar ahora</button>
+          <span style="font-size:10.5px;color:rgb(148 163 184);margin-left:8px;">
+            Se cargan solas cada 30 minutos; el botón es para no esperar.
+          </span>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </details>
+
   <div class="tabla-card">
     <table class="sortable">
       <thead>
         <tr>
-          <th style="width: 9%">Importación</th>
+          <th style="width: 11%">Importación/Compra</th>
           <th style="width: 8%">Fecha</th>
           <th style="width: 9%">Proveedor</th>
           <th style="width: 8%">Código</th>
@@ -210,7 +361,13 @@
       <tbody>
         {% for r in rows %}
           <tr>
-            <td class="font-mono">{{ r.im_numero }}</td>
+            <td class="font-mono">
+              {{ r.im_numero }}
+              {# TMT 2026-07-30 (dueña): la fila puede ser una IMPORTACIÓN
+                 (IM-…, se paga con anticipos) o una COMPRA LOCAL (CMTR-…, sin
+                 anticipo, nace el pasivo al recibirla). El badge dice cuál. #}
+              {% if r.origen == 'compra' %}<span class="tag-local">local</span>{% endif %}
+            </td>
             <td class="fecha text-slate-500">{{ r.fecha or '—' }}</td>
             <td class="font-mono" title="{{ r.proveedor }}">{{ r.prov or '—' }}</td>
             <td>{% if r.codigo %}<span class="code">{{ r.codigo }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
@@ -235,6 +392,15 @@
                   {% if r.compra.n > 1 %}<span class="text-slate-400" style="font-size:11px;">({{ r.compra.n }})</span> {% endif %}<a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">{{ r.compra.importe_total | num_es(2) }}</a>
                   <button type="button" class="btn-detalle" title="Ver las compras (fecha y monto)">+</button>
                 </span>
+                {# TMT 2026-07-30 (dueña: "no puede haber compras y pasivo").
+                   El pasivo NO es una columna aparte: si la compra está impaga,
+                   ESE importe ya es la deuda. El marcador sólo dice el estado, y
+                   repite el número únicamente cuando difiere (pago parcial). #}
+                <div class="pago-tag">
+                  {% if r.pagada %}<span class="pg-si">✓ pagada</span>
+                  {% elif r.parcial %}<span class="pg-no">debe {{ r.saldo | num_es(2) }}</span>
+                  {% else %}<span class="pg-no">debe</span>{% endif %}
+                </div>
               {% elif r.codigo and not r.anticipo_total %}
                 <span class="no usd-gutter" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
               {% else %}

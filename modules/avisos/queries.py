@@ -13,6 +13,9 @@ FUENTES = {
     "tejeduria": "Tejeduría",
     "quimicos": "Químicos",
     "importaciones": "Importaciones",
+    # TMT 2026-07-30 (dueña): las compras LOCALES de hilo (HY, EP) se cargan
+    # solas al recibirlas y avisan acá. Nombre en castellano llano, sin jerga.
+    "hilo-local": "Hilo local",
 }
 
 NIVELES = ("ok", "alerta", "error")

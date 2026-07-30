@@ -2291,3 +2291,145 @@ def reset_prod_tejeduria_cache() -> None:
     """Vaciar el cache de produccion_tejeduria_mes/_rango (tests / deploy)."""
     _PROD_TEJ_CACHE.clear()
     _PROD_TEJ_RANGO_CACHE.clear()
+
+
+# ---------------------------------------------------------------------------
+# COMPRAS LOCALES de hilo (TMT 2026-07-30, dueña: "la fábrica importa hilo pero
+# también hace compras locales; en Ingreso de hilado hay que sumarlas").
+#
+# En Asinfo una compra local es una `factura_proveedor` que NO tiene fila en
+# `factura_proveedor_importacion` (numero CMTR-… en vez de IM-…) y cuya
+# recepción entra a la BODEGA 51, igual que una importación. Los proveedores
+# reales son HY (Hiltexpoy) y EP (El Peral), los dos con RUC.
+#
+# ⚠ Hay que partir de la FACTURA, no de la recepción: una factura puede tener
+#   N recepciones parciales, así que mirando `recepcion_proveedor` sola aparecen
+#   recepciones de AC/AART "sin importación" que SÍ son importaciones.
+#
+# El TOTAL de Asinfo viene SIN IVA y es sólo referencial (dueña: "asinfo nunca
+# nos importa en plata") — la plata sale del tarifario, ver modules/compras_locales.
+# ---------------------------------------------------------------------------
+_LOCALES_TTL_SECS = 300  # 5 minutos
+_LOCALES_CACHE: dict = {}
+
+BODEGA_HILO = 51
+
+
+def compras_locales_asinfo(limite: int = 200) -> list[dict]:
+    """Compras LOCALES de hilo del ERP (factura sin importación, bodega 51).
+
+    Cada fila:
+        fp_numero       — número de la factura de proveedor en Asinfo (CMTR-…)
+        fecha           — fecha de la factura (YYYY-MM-DD)
+        fecha_recepcion — fecha de la 1ª recepción (YYYY-MM-DD o None)
+        recibida        — bool
+        bod             — documento de recepción (BOD-…)
+        numero_factura  — nº SRI completo del proveedor ('001-002-000037649')
+        fact_num        — int con el nº de factura sin ceros ni guiones (37649)
+        total_asinfo    — total del ERP, SIN IVA (REFERENCIAL)
+        proveedor       — razón comercial/fiscal
+        ruc             — empresa.codigo (para locales es el RUC)
+        producto        — código de producto de la recepción
+        n_productos     — cuántos productos distintos trae la factura
+        kg              — kg ingresados a la bodega 51
+        nota            — descripción libre de la factura
+
+    Returns:
+        Lista ordenada por factura más reciente primero. [] si Metabase no está
+        configurado o falla (fail-soft — la pantalla nunca se rompe por esto).
+    """
+    import time as _time
+    cache_key = f"l{int(limite)}"
+    now = _time.time()
+    cached = _LOCALES_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _LOCALES_TTL_SECS:
+        return cached[1]
+
+    # OUTER APPLY agrega la recepción de bodega 51 de ESA factura (puede haber
+    # varias parciales). `r.kg IS NOT NULL` deja afuera las facturas que no
+    # tocan la bodega de hilo (químicos, servicios).
+    sql = f"""
+        SELECT TOP {int(limite)}
+               fp.numero                                        AS fp_numero,
+               CONVERT(varchar, fp.fecha, 23)                   AS fecha,
+               fp.numero_factura                                AS numero_factura,
+               fp.total                                         AS total_asinfo,
+               COALESCE(e.nombre_comercial, e.nombre_fiscal, '') AS proveedor,
+               e.codigo                                         AS ruc,
+               fp.descripcion                                   AS nota,
+               r.fecha_recepcion, r.bod, r.kg, r.producto, r.n_productos
+          FROM factura_proveedor fp
+          LEFT JOIN factura_proveedor_importacion fpi
+                 ON fpi.id_factura_proveedor = fp.id_factura_proveedor
+          LEFT JOIN empresa e ON e.id_empresa = fp.id_empresa
+          OUTER APPLY (
+              SELECT CONVERT(varchar, MIN(rp.fecha), 23) AS fecha_recepcion,
+                     MIN(rp.numero)                      AS bod,
+                     SUM(d.cantidad)                     AS kg,
+                     MIN(p.codigo)                       AS producto,
+                     COUNT(DISTINCT p.codigo)            AS n_productos
+                FROM detalle_factura_proveedor dfp
+                JOIN detalle_recepcion_proveedor d
+                     ON d.id_detalle_factura_proveedor = dfp.id_detalle_factura_proveedor
+                JOIN recepcion_proveedor rp
+                     ON rp.id_recepcion_proveedor = d.id_recepcion_proveedor
+                LEFT JOIN producto p ON p.id_producto = d.id_producto
+               WHERE dfp.id_factura_proveedor = fp.id_factura_proveedor
+                 AND d.id_bodega = {int(BODEGA_HILO)}
+          ) r
+         WHERE fpi.id_factura_proveedor IS NULL
+           AND r.kg IS NOT NULL
+         ORDER BY fp.id_factura_proveedor DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    out = []
+    for r in rows:
+        try:
+            frec = str(r.get("fecha_recepcion") or "").strip() or None
+            nf = str(r.get("numero_factura") or "").strip()
+            out.append({
+                "fp_numero": str(r.get("fp_numero") or "").strip(),
+                "fecha": str(r.get("fecha") or "").strip() or None,
+                "fecha_recepcion": frec,
+                "recibida": frec is not None,
+                "bod": str(r.get("bod") or "").strip(),
+                "numero_factura": nf,
+                "fact_num": numero_de_factura(nf),
+                "total_asinfo": float(r.get("total_asinfo") or 0),
+                "proveedor": str(r.get("proveedor") or "").strip(),
+                "ruc": str(r.get("ruc") or "").strip(),
+                "producto": str(r.get("producto") or "").strip(),
+                "n_productos": int(r.get("n_productos") or 0),
+                "kg": float(r.get("kg") or 0),
+                "nota": str(r.get("nota") or "").strip(),
+            })
+        except (TypeError, ValueError):
+            continue
+    _LOCALES_CACHE[cache_key] = (now, out)
+    return out
+
+
+def numero_de_factura(numero_factura: str) -> int | None:
+    """'001-002-000037649' → 37649. El nº que el dBase escribe en el concepto.
+
+    Toma el ÚLTIMO segmento (el secuencial) y le saca los ceros a la izquierda.
+    Si no viene con guiones, usa todos los dígitos. None si no hay ninguno.
+    """
+    s = str(numero_factura or "").strip()
+    if not s:
+        return None
+    ult = s.split("-")[-1]
+    digitos = "".join(c for c in ult if c.isdigit())
+    if not digitos:
+        digitos = "".join(c for c in s if c.isdigit())
+    if not digitos:
+        return None
+    try:
+        return int(digitos)
+    except ValueError:
+        return None
+
+
+def reset_locales_cache() -> None:
+    """Vaciar el cache de compras_locales_asinfo (tests / deploy)."""
+    _LOCALES_CACHE.clear()

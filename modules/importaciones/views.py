@@ -47,8 +47,41 @@ def lista():
     rows = []
     try:
         rows = service.importaciones_con_cruce()
+        for r in rows:
+            r["origen"] = "importacion"
     except Exception as e:  # noqa: BLE001
         error = str(e)
+
+    # TMT 2026-07-30 (dueña): "la fábrica importa hilo pero también hace compras
+    # locales; hay que sumarlas acá y la columna se llama IMPORTACIÓN/COMPRA".
+    # Las locales son facturas de proveedor de Asinfo SIN importación con
+    # recepción a la bodega 51. Fail-soft aparte: si ese bridge cae, las
+    # importaciones se siguen viendo.
+    from modules.compras_locales import service as _loc
+
+    try:
+        rows = rows + _loc.compras_locales_con_cruce()
+    except Exception as e:  # noqa: BLE001
+        error = error or str(e)
+
+    # Estado del pasivo de las importaciones (las locales ya vienen con el
+    # suyo): misma regla que la columna "Pagada" de /compras.
+    for r in rows:
+        if r.get("origen") != "importacion":
+            continue
+        est = (
+            _loc.estado_pago_de_compras((r.get("compra") or {}).get("items") or [])
+            if r.get("compra") else None
+        )
+        r["pagada"] = bool(est and est["pagada"])
+        r["saldo"] = float(est["saldo"]) if est else 0.0
+        r["parcial"] = bool(est and est["parcial"])
+
+    # Más nuevas arriba, mezclando las dos clases por fecha.
+    rows.sort(
+        key=lambda r: (str(r.get("fecha") or ""), str(r.get("im_numero") or "")),
+        reverse=True,
+    )
 
     if q:
         rows = [
@@ -135,6 +168,7 @@ def lista():
         export_rows = [
             {
                 "im_numero": r["im_numero"],
+                "clase": "Compra local" if r.get("origen") == "compra" else "Importación",
                 "fecha": r.get("fecha") or "",
                 "fecha_recepcion": r.get("fecha_recepcion") or "",
                 "recepcion": "Recibida" if r.get("recibida") else "Pendiente",
@@ -158,7 +192,8 @@ def lista():
         return csv_response(
             export_rows,
             columnas=[
-                ("im_numero", "Importación"),
+                ("im_numero", "Importación/Compra"),
+                ("clase", "Clase"),
                 ("fecha", "Fecha"),
                 ("fecha_recepcion", "Fecha Recepción"),
                 ("recepcion", "Recepción"),
@@ -175,9 +210,29 @@ def lista():
             filename="importaciones_cruce.csv",
         )
 
+    # Tarifario de las compras locales + qué está esperando para cargarse. Vive
+    # en esta misma pantalla, plegado detrás de un "+" (dueña 2026-07-30: "las
+    # tarifas en la misma pantalla de ingreso de hilo que tenga un + para que
+    # aparezcan escondidas salvo que queramos editar, como en tejeduría").
+    from modules.compras_locales import queries as _loc_q
+
+    try:
+        tarifas = _loc_q.listar_tarifas()
+    except Exception:  # noqa: BLE001 -- fail-soft: la tabla puede no existir
+        tarifas = []
+    locales = [r for r in rows if r.get("origen") == "compra"]
+    pendientes_local = [
+        r for r in locales
+        if r.get("recibida") and not r.get("compra") and float(r.get("kg") or 0) > 0
+    ]
+    locales_sin_tarifa = sum(1 for r in pendientes_local if not r.get("tarifa"))
+
     return render_template(
         "importaciones/lista.html",
         rows=rows,
+        tarifas=tarifas,
+        pendientes_local=pendientes_local,
+        locales_sin_tarifa=locales_sin_tarifa,
         total=total,
         con_codigo=con_codigo,
         con_match=con_match,
@@ -194,6 +249,102 @@ def lista():
         hoy=today_ec().isoformat(),
         error=error,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compras LOCALES de hilo — tarifario y carga (TMT 2026-07-30, dueña)
+# ---------------------------------------------------------------------------
+@importaciones_bp.route("/importaciones/tarifas", methods=["POST"])
+@requiere_login
+@requiere_permiso("tarifas.editar")
+def guardar_tarifas_locales():
+    """Guarda la matriz de tarifas $/kg de las compras locales.
+
+    Mismo patrón que /produccion-tejeduria-asinfo/tarifas: los inputs vienen
+    como t_<i>_<campo> y sólo se escriben las filas con proveedor y tarifa. La
+    fila en blanco del final sirve para agregar un producto nuevo.
+    """
+    from modules.compras_locales import queries as _loc_q
+
+    usuario = (g.user or {}).get("username", "web")
+    filas: list[dict] = []
+    idxs = sorted({
+        k.split("_")[1] for k in request.form
+        if k.startswith("t_") and len(k.split("_")) >= 3
+    })
+    for i in idxs:
+        raw = request.form.get(f"t_{i}_tarifa")
+        cod = (request.form.get(f"t_{i}_cod_prov") or "").strip()
+        if not cod:
+            continue
+        tarifa = parse_monto(raw)
+        if (raw or "").strip() and tarifa is None:
+            flash(f"No entendí la tarifa «{raw}» de {cod.upper()}. Usá formato 2,9500.",
+                  "error")
+            return redirect(url_for("importaciones.lista"))
+        if tarifa is None:
+            continue
+        filas.append({
+            "cod_prov": cod,
+            "patron": request.form.get(f"t_{i}_patron"),
+            "tarifa": tarifa,
+            "nota": request.form.get(f"t_{i}_nota"),
+        })
+    try:
+        res = _loc_q.guardar_tarifas(filas, usuario=usuario)
+        flash(f"Tarifas guardadas ({res['guardadas']}).", "ok")
+    except ValueError as e:
+        flash(str(e), "error")
+    except Exception as e:  # noqa: BLE001
+        flash_exc(e)
+    return redirect(url_for("importaciones.lista"))
+
+
+@importaciones_bp.route("/importaciones/tarifas/<int:id_tarifa>/borrar",
+                        methods=["POST"])
+@requiere_login
+@requiere_permiso("tarifas.editar")
+def borrar_tarifa_local(id_tarifa: int):
+    from modules.compras_locales import queries as _loc_q
+
+    try:
+        _loc_q.borrar_tarifa(id_tarifa)
+        flash("Tarifa borrada.", "ok")
+    except Exception as e:  # noqa: BLE001
+        flash_exc(e)
+    return redirect(url_for("importaciones.lista"))
+
+
+@importaciones_bp.route("/importaciones/cargar-locales", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def cargar_locales():
+    """Carga ahora las compras locales recibidas que faltan.
+
+    Es un ATAJO: el motor ya corre solo cada 30 minutos colgado del ciclo de
+    autocarga. El botón sirve para no esperar. Las guardas son las mismas (la
+    función es la misma), así que apretarlo dos veces no duplica nada.
+    """
+    from modules.compras_locales import service as _loc
+
+    usuario = (g.user or {}).get("username", "web")
+    clave = (g.user or {}).get("clave") or usuario[:3].upper()
+    try:
+        res = _loc.cargar_pendientes(usuario=usuario, clave=clave)
+    except Exception as e:  # noqa: BLE001
+        flash_exc(e)
+        return redirect(url_for("importaciones.lista"))
+    if res["creadas"]:
+        flash(
+            f"Cargué {res['creadas']} compra(s) local(es) de hilo por "
+            f"$ {res['importe']:,.2f}.",
+            "ok",
+        )
+    else:
+        motivos = {d["motivo"] for d in res["detalle"] if not d.get("ok")}
+        detalle = (" — " + "; ".join(sorted(motivos)[:3])) if motivos else ""
+        flash(f"No había nada para cargar.{detalle}", "warn")
+    return redirect(url_for("importaciones.lista"))
 
 
 def _volver():
