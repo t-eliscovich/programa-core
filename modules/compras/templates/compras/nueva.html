@@ -68,6 +68,23 @@
         </select>
       </div>
 
+      {# TMT 2026-07-30 (dueña, eligiendo entre tipear a mano o automático:
+         "automático"). Reyes, Ponce y Unda los carga solo el motor de tejeduría
+         con los kg de Asinfo × la tarifa. El 21/07 se tipearon igual a mano las
+         5 líneas de la factura 1253-1257 y quedaron SIN el OFT en el concepto,
+         así que la pantalla de tejeduría las sigue mostrando como si faltaran.
+         AVISO, no bloqueo: si la factura no está en Asinfo hay que poder
+         cargarla igual. #}
+      <div id="aviso-tercerizado" class="hidden md:col-span-3" style="border:1px solid #fcd34d;
+           background:#fffbeb;border-radius:8px;padding:8px 12px;font-size:12.5px;color:#78350f">
+        <strong>Este tejedor se carga solo.</strong>
+        <span id="aviso-terc-quien"></span> entra por
+        <a href="/produccion-tejeduria-asinfo" style="text-decoration:underline">Producción Tejeduría Asinfo</a>,
+        con los kg de Asinfo × la tarifa. Si la cargás también acá, la compra
+        queda duplicada o sin el OFT. Podés seguir igual si esta factura no está
+        en Asinfo.
+      </div>
+
       <label class="flex flex-col">
         <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
         <input type="text" name="importe" value="{{ form.importe or '' }}"
@@ -264,6 +281,21 @@
     }
     ['input', 'change', 'blur'].forEach(ev => prov.addEventListener(ev, aplicarDesdeProveedor));
     aplicarDesdeProveedor();
+  }
+
+  // Aviso "este tejedor se carga solo" (dueña 2026-07-30: "automático").
+  const TERCERIZADOS = {RY: 'Reyes', AP: 'Ponce', UN: 'Unda'};
+  const caja = document.getElementById('aviso-tercerizado');
+  const quien = document.getElementById('aviso-terc-quien');
+  if (caja && quien) {
+    function avisarTercerizado() {
+      const cod = (prov.value || '').trim().toUpperCase().slice(0, 2);
+      const nombre = TERCERIZADOS[cod];
+      caja.classList.toggle('hidden', !nombre);
+      if (nombre) quien.textContent = nombre + ' (' + cod + ')';
+    }
+    ['input', 'change', 'blur'].forEach(ev => prov.addEventListener(ev, avisarTercerizado));
+    avisarTercerizado();
   }
 })();
 </script>

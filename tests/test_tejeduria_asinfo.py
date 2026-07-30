@@ -974,3 +974,18 @@ def test_el_match_a_mano_respeta_proveedor_y_fecha():
     assert tsvc._match_a_mano(a_mano, "AP", 209.80, "2026-07-20") is None
     assert tsvc._match_a_mano(a_mano, "RY", 209.80, "2026-06-01") is None   # +15 d
     assert tsvc._match_a_mano(a_mano, "RY", 0, "2026-07-20") is None        # OF sin kg
+
+
+def test_el_form_de_compra_avisa_que_el_tejedor_se_carga_solo():
+    """TMT 2026-07-30 (dueña, eligiendo el flujo: *"automático"*).
+
+    El aviso vive donde se comete el error — /compras/nueva — y es AVISO, no
+    bloqueo: si la factura no está en Asinfo hay que poder cargarla igual.
+    """
+    from pathlib import Path
+    html = Path("modules/compras/templates/compras/nueva.html").read_text()
+    assert 'id="aviso-tercerizado"' in html
+    assert "Este tejedor se carga solo" in html
+    assert "/produccion-tejeduria-asinfo" in html
+    for cod in ("RY", "AP", "UN"):                 # los tres tercerizados
+        assert f"{cod}:" in html
