@@ -291,15 +291,11 @@ def test_resumen_conversion_dos_lineas_y_formato_ecuador():
     assert r["icono"] == "✅"
     # Punto = miles, coma = decimales (nunca el formato US).
     assert r["titulo"] == "IM-0000625 · AC · $ 73.359,95"
-    assert r["detalle"] == "3 anticipos → BAP11 · BAP dBase AC 29"
+    # Dueña 30/07: "quitá lo de BAP, no sé ni qué es. Solo que se cargó."
+    assert r["detalle"] == "Se cargó a compras"
+    assert "BAP" not in r["titulo"] + r["detalle"]
     # El párrafo viejo NO se cuela.
     assert "larguísimo" not in r["titulo"] + r["detalle"]
-
-
-def test_resumen_conversion_un_solo_anticipo_en_singular():
-    r = autobap.resumen({"tipo": "conversion", "im_numero": "IM-1", "n_anticipos": 1,
-                         "codigo_prov": "AC", "importe": 10, "comprobante": "BAP1"})
-    assert r["detalle"].startswith("1 anticipo →")
 
 
 def test_resumen_freno_no_repite_el_parrafo():
@@ -330,6 +326,7 @@ def test_avisos_adjunta_el_resumen_a_cada_fila():
     with patch.object(autobap.db, "fetch_all", return_value=[fila]):
         out = autobap.avisos()
     assert out[0]["titulo"] == "IM-1 · AC · $ 100,00"
+    assert out[0]["detalle"] == "Se cargó a compras"
     assert out[0]["icono"] == "✅"
 
 
@@ -348,6 +345,6 @@ def test_el_mensaje_guardado_ya_no_es_un_parrafo():
          patch.object(autobap, "avisar") as av:
         autobap.correr(forzar_topes=True)
     msg = av.call_args.kwargs["mensaje"]
-    assert msg == ("IM-0000625 · AC · $ 73.359,95 · 3 anticipo(s) → BAP11 · "
-                   "BAP dBase AC 29")
+    assert msg == "IM-0000625 · AC · $ 73.359,95 · Se cargó a compras"
+    assert "BAP" not in msg
     assert len(msg) < 100

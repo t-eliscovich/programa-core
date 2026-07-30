@@ -174,14 +174,17 @@ def resumen(a: dict) -> dict:
     msg = ((a or {}).get("mensaje") or "").strip()
 
     if tipo == "conversion" and a.get("im_numero"):
+        # TMT 2026-07-30 (dueña): *"quitá lo de BAP, no sé ni qué es. Solo que
+        # se cargó debe ser la notificación"*. Ni el código del comprobante
+        # (BAP11) ni el recordatorio de rehacerlo en el dBase van acá: el
+        # aviso dice QUÉ llegó, POR CUÁNTO y que ya quedó cargado. El
+        # comprobante sigue en la columna COMPRA del historial y en /compras.
         prov = a.get("codigo_prov") or ""
-        n = int(a.get("n_anticipos") or 0)
-        titulo = f"{a['im_numero']} · {prov} · $ {num_es(a.get('importe'), 2)}"
-        det = [f"{n} anticipo{'' if n == 1 else 's'} → {a.get('comprobante') or 'compra'}"]
-        if a.get("ref_num"):
-            # El recordatorio que la dueña sí quiere ver: el BAP del dBase.
-            det.append(f"BAP dBase {prov} {a['ref_num']}".strip())
-        return {"icono": icono, "titulo": titulo, "detalle": " · ".join(det)}
+        return {
+            "icono": icono,
+            "titulo": f"{a['im_numero']} · {prov} · $ {num_es(a.get('importe'), 2)}",
+            "detalle": "Se cargó a compras",
+        }
 
     if tipo == "freno":
         n = int(a.get("n_anticipos") or 0)
@@ -416,9 +419,7 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
                 id_compra=r.get("id_compra"), comprobante=r.get("comprobante"),
                 mensaje=(
                     f"{g['im_numero']} · {g['codigo_prov']} · "
-                    f"$ {num_es(r.get('importe_total'), 2)} · {g['n']} anticipo(s) "
-                    f"→ {r.get('comprobante')} · BAP dBase "
-                    f"{g['codigo_prov']} {g['ref']}"
+                    f"$ {num_es(r.get('importe_total'), 2)} · Se cargó a compras"
                 ),
             )
         except Exception as e:  # noqa: BLE001 -- una importación no frena al resto
