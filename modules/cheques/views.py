@@ -3599,3 +3599,74 @@ def diag_cliente_cheques():
     cheques = [{k: _ser(v) for k, v in dict(r).items()} for r in filas]
     return jsonify({"cliente": codigo, "n": len(cheques), "error": error,
                     "cheques": cheques})
+
+
+@cheques_bp.route("/cheques/diag/efectivos-stat")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def diag_efectivos_stat():
+    """Diagnóstico (TMT 2026-07-30, dueña: "los efectivos en el dBase son C y
+    vos los tenés como B").
+
+    El dBase tipea stat='C' en CHEQUES.DBF para el efectivo (PASOCAJA). PC lo
+    hace igual desde el 11/06 — antes usaba 'B' (depositado), que los escondía
+    de la vista de caja y los mostraba como si hubieran ido al banco. Este
+    endpoint cuenta los efectivos (no_banco=99) por estado y lista los que NO
+    están en 'C' pero deberían, con su fila de caja si la tienen. Solo lectura.
+
+    `?formato=json` para el JSON crudo (default HTML no existe: es JSON).
+    """
+    try:
+        por_stat = db.fetch_all(
+            """
+            SELECT TRIM(COALESCE(stat, '')) AS stat,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(importe), 0) AS suma
+              FROM scintela.cheque
+             WHERE no_banco = 99
+             GROUP BY TRIM(COALESCE(stat, ''))
+             ORDER BY n DESC
+            """
+        ) or []
+        # Los que están en un estado "de banco" siendo efectivo — el caso que
+        # la dueña vio. Se muestran con su caja ligada (si la tienen) para
+        # poder decidir sin adivinar.
+        sospechosos = db.fetch_all(
+            """
+            SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe,
+                   TRIM(COALESCE(c.stat, '')) AS stat,
+                   c.fecha, c.fechaing, c.usuario_crea,
+                   EXISTS (SELECT 1 FROM scintela.caja k
+                            WHERE k.id_cheque = c.id_cheque) AS tiene_caja
+              FROM scintela.cheque c
+             WHERE c.no_banco = 99
+               AND TRIM(COALESCE(c.stat, '')) IN ('B','V','W','I','J','K','A')
+             ORDER BY c.fecha DESC, c.id_cheque DESC
+             LIMIT 200
+            """
+        ) or []
+        error = None
+    except Exception as e:  # noqa: BLE001
+        por_stat, sospechosos, error = [], [], f"Error inesperado: {e}"
+
+    def _ser(v):
+        if isinstance(v, (date, datetime)):
+            return v.isoformat()
+        try:
+            from decimal import Decimal
+            if isinstance(v, Decimal):
+                return float(v)
+        except Exception:
+            pass
+        return v
+
+    return jsonify({
+        "error": error,
+        "por_stat": [{k: _ser(v) for k, v in dict(r).items()} for r in por_stat],
+        "en_estado_de_banco": [
+            {k: _ser(v) for k, v in dict(r).items()} for r in sospechosos
+        ],
+        "nota": ("El dBase usa stat='C' para el efectivo (PASOCAJA). PC hace "
+                 "lo mismo desde el 11/06/2026; lo listado acá es anterior a "
+                 "esa fecha o cargado a mano."),
+    })

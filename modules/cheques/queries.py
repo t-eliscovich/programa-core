@@ -1068,11 +1068,14 @@ def anular_por_error_de_carga(
         elif stat_prev == "C":
             import caja_helpers
 
+            # TMT 2026-07-30: si el efectivo era NEGATIVO (devolución al
+            # cliente, caja tipo='S'), anularlo tiene que DEVOLVER la plata a
+            # la caja — una 'E'. Con 'S' fijo la anulación restaba dos veces.
             res = caja_helpers.insert_movimiento_caja(
                 conn,
                 fecha=fecha,
-                tipo="S",
-                importe=importe,
+                tipo="E" if importe < 0 else "S",
+                importe=abs(importe),
                 concepto=f"ANUL ch{ch.get('no_cheque') or id_cheque} err carga",
                 id_cheque=id_cheque,
                 usuario=usuario,
@@ -2906,7 +2909,15 @@ def crear(
     #           el dBase en CHEQUES.DBF (C) y los escondía de la vista.
     if no_banco in (90, 91) and (stat or "").upper() == "Z" and float(importe or 0) > 0:
         stat = "B"
-    if no_banco == 99 and (stat or "").upper() in ("Z", "B") and float(importe or 0) > 0:
+    # TMT 2026-07-30 (dueña: "es una entrada en negativo a la caja que se
+    # convierte en salida... necesito que se registre el abono en negativo en
+    # la factura del cliente"). El efectivo NEGATIVO (devolución de plata al
+    # cliente) es un cobro al revés, no un cheque en cartera: entra igual por
+    # 'C' y abajo genera la fila de caja como SALIDA. Antes el gate `> 0` lo
+    # dejaba en 'Z' SIN movimiento de caja — la plata salía de la lata y el
+    # sistema no se enteraba.
+    if (no_banco == 99 and (stat or "").upper() in ("Z", "B")
+            and abs(float(importe or 0)) > 0.005):
         stat = "C"
 
     # TMT 2026-07-22 — GUARD anti-orphan (root cause del bug cheque 100410).
@@ -3113,21 +3124,34 @@ def crear(
         # `trg_caja_set_saldo` (mig 0022) lo computa BEFORE INSERT.
         # NO usamos caja.queries.crear() acá para evitar la cascada de
         # side-effects basados en concepto_parser (riesgo de match falso).
-        if no_banco == 99 and row.get("id_cheque") and importe_principal > 0:
+        if no_banco == 99 and row.get("id_cheque") and abs(importe_principal) > 0.005:
+            # TMT 2026-07-30: el efectivo NEGATIVO es una SALIDA de caja. El
+            # trigger `fn_caja_set_saldo` toma el signo del campo `tipo` y usa
+            # ABS(importe) — meter un importe negativo con tipo='E' SUMABA a
+            # la caja. Por eso el signo va en el tipo y el importe siempre
+            # positivo, que es además la convención de todo el módulo caja
+            # (`egresos = SUM(importe) WHERE tipo='S'`).
+            _es_salida_caja = importe_principal < 0
+            _tipo_caja = "S" if _es_salida_caja else "E"
+            _importe_caja = abs(importe_principal)
             # Concepto paridad PASOCAJA: "CH."+cliente (antes "99 CLI ch N").
-            concepto_caja = f"CH.{codigo_cli.upper().strip()}"[:80]
+            # La salida se marca DEV. para que en la lista de caja se lea de
+            # qué se trata sin abrir el cheque.
+            _pre_caja = "DEV." if _es_salida_caja else "CH."
+            concepto_caja = f"{_pre_caja}{codigo_cli.upper().strip()}"[:80]
             caja_row = (
                 db.execute_returning(
                     """
                 INSERT INTO scintela.caja
                     (fecha, tipo, importe, concepto, saldo, clave,
                      id_cheque, usuario_crea)
-                VALUES (%s, 'E', %s, %s, NULL, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
                 RETURNING id_caja
                 """,
                     (
                         fecha,
-                        importe_principal,
+                        _tipo_caja,
+                        _importe_caja,
                         concepto_caja,
                         (clave or None) and clave[:3],
                         row["id_cheque"],
@@ -3150,7 +3174,8 @@ def crear(
                     importe=importe_principal,
                     fecha=fecha,
                     concepto=(
-                        f"Cobro efectivo ch{(no_cheque or '').strip()} de {codigo_cli.upper().strip()} → caja"
+                        f"{'Devolución en efectivo a' if _es_salida_caja else 'Cobro efectivo ch' + (no_cheque or '').strip() + ' de'} "
+                        f"{codigo_cli.upper().strip()} → caja"
                     )[:200],
                     usuario=usuario,
                     metadata={
@@ -4050,10 +4075,28 @@ def aplicar_a_factura(
             # (no podés revertir más abono del que hay). Para normales,
             # imp no puede exceder el saldo pendiente (signo a signo).
             if es_espejo:
-                if abs(imp) > abono_actual + 0.01:
+                # TMT 2026-07-30 (dueña, caso ADI): el tope depende de qué
+                # está haciendo el negativo, igual que en la rama de abajo.
+                #   · factura con saldo NEGATIVO (nota de crédito / plata a
+                #     favor del cliente): el negativo la SALDA — tope |saldo|.
+                #     Es el caso de la devolución en efectivo: sale plata de
+                #     caja y el crédito del cliente se cierra. Antes esto
+                #     rebotaba con "excede el abono (0.00)" porque una NC
+                #     nace con abono 0, así que no había forma de saldarla.
+                #   · factura con saldo >= 0: el negativo REVIERTE un abono —
+                #     tope el abono, no podés desabonar lo que no se abonó.
+                if saldo_actual < -0.005:
+                    if abs(imp) > abs(saldo_actual) + 0.01:
+                        raise ValueError(
+                            f"El negativo ({abs(imp):.2f}) excede el crédito a "
+                            f"favor de la factura {f['numf']} "
+                            f"({abs(saldo_actual):.2f})."
+                        )
+                elif abs(imp) > abono_actual + 0.01:
                     raise ValueError(
-                        f"Espejo ({abs(imp):.2f}) excede el abono de factura "
-                        f"{f['numf']} ({abono_actual:.2f})."
+                        f"El negativo ({abs(imp):.2f}) excede el abono de "
+                        f"factura {f['numf']} ({abono_actual:.2f}) — no podés "
+                        f"revertir más de lo abonado."
                     )
                 nuevo_abono = abono_actual - abs(imp)
             else:
