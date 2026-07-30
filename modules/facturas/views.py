@@ -1317,34 +1317,16 @@ def desde_asinfo():
         if len(g["muestra"]) < 3:
             g["muestra"].append(h)
 
-    # Sugerencia de alias por grupo.
+    # Los aliases HISTÓRICOS (ya no se agregan: ver la nota de la pantalla) y
+    # las sucursales por dirección registradas (id_direccion → código PC).
     aliases_existentes = _aliases.todos()
-    alias_existe_para = {
-        a["codigo_asinfo"]: a["codigo_pc"] for a in aliases_existentes
-    }
-    # Las sucursales por dirección ya registradas (id_direccion → código PC).
-    # Antes esto se podía escribir y no leer: no había cómo confirmar un alta.
     sucursales_direccion = _aliases.sucursales_todas()
-    sugerencias_alias = []
-    for cli, g in grupos_cli.items():
-        if not g["votos_alias"]:
-            continue
-        # El alias-candidato con más votos. Si la mayoría (>=50%) apunta al
-        # mismo cli_pc, lo sugerimos.
-        ganador = max(g["votos_alias"].items(), key=lambda kv: kv[1])
-        c_pc, votos = ganador
-        if votos * 2 < g["n"]:  # menos del 50%
-            continue
-        if alias_existe_para.get(cli) == c_pc:
-            continue  # ya existe el alias
-        sugerencias_alias.append({
-            "codigo_asinfo": cli,
-            "codigo_pc": c_pc,
-            "votos": votos,
-            "total_huerf_cli": g["n"],
-            "porcentaje": round(100 * votos / g["n"], 1),
-        })
-    sugerencias_alias.sort(key=lambda s: s["votos"], reverse=True)
+    # TMT 2026-07-30 (dueña): se sacó el cálculo de "aliases sugeridos". Sugería
+    # un alias cuando ≥50% de las missing de un código aparecían en PC bajo
+    # otro — y ese otro casi siempre era una SUCURSAL, no el mismo cliente.
+    # Aceptarlo mandaba TODO el volumen del código al cliente equivocado. Las
+    # propuestas buenas, con la dirección de entrega como árbitro, salen de
+    # /admin/salud/diag?solo=f.
     grupos_ordenados = sorted(
         grupos_cli.values(), key=lambda g: g["n"], reverse=True
     )
@@ -1379,7 +1361,6 @@ def desde_asinfo():
         incluir_recientes=incluir_recientes,
         aliases_existentes=aliases_existentes,
         sucursales_direccion=sucursales_direccion,
-        sugerencias_alias=sugerencias_alias,
         grupos_cli=grupos_ordenados,
     )
 
@@ -1480,33 +1461,13 @@ def sucursal_direccion_borrar():
     return redirect(request.referrer or url_for("facturas.desde_asinfo"))
 
 
-@facturas_bp.route("/facturas/aliases/agregar", methods=["POST"])
-@requiere_login
-@requiere_permiso("facturas.editar")
-def alias_agregar():
-    """Agrega un alias cliente Asinfo↔PC. Form: codigo_asinfo, codigo_pc, nota."""
-    from modules.asinfo import aliases as _aliases
-    codigo_asinfo = (request.form.get("codigo_asinfo") or "").strip().upper()
-    codigo_pc = (request.form.get("codigo_pc") or "").strip().upper()
-    nota = (request.form.get("nota") or "").strip()
-    if not codigo_asinfo or not codigo_pc:
-        flash("Faltan codigo_asinfo y codigo_pc.", "warn")
-        return redirect(url_for("facturas.desde_asinfo", **request.args))
-    try:
-        creado = _aliases.agregar(
-            codigo_asinfo, codigo_pc,
-            nota=nota,
-            usuario=(g.user or {}).get("username", "web"),
-        )
-    except Exception as e:
-        flash_exc("No se pudo agregar el alias", e)
-        return redirect(url_for("facturas.desde_asinfo"))
-    if creado:
-        flash(f"Alias agregado: {codigo_asinfo} ↔ {codigo_pc}.", "ok")
-    else:
-        flash(f"Alias {codigo_asinfo} ↔ {codigo_pc} ya existía.", "info")
-    # Mantener filtros de la URL anterior.
-    return redirect(request.referrer or url_for("facturas.desde_asinfo"))
+# TMT 2026-07-30 (dueña): la ruta `/facturas/aliases/agregar` SE BORRÓ junto
+# con su formulario. No se cargan más aliases: cuando Asinfo manda todo bajo un
+# código y el dBase lo parte, eso es una SUCURSAL y se resuelve por la DIRECCIÓN
+# de entrega (`/facturas/sucursal-direccion/agregar`). El alias arrastra TODO el
+# volumen de un código a otro cliente — así VPM ("VENTA POR MENOR") terminó
+# guardándose como VP1 (María Ibadango). Los aliases que YA existen quedan, sólo
+# para matchear contra el dBase, y se pueden borrar por la pantalla.
 
 
 @facturas_bp.route("/facturas/aliases/borrar", methods=["POST"])
@@ -1654,19 +1615,21 @@ def _resolver_cliente_asinfo(
                 )
             if len(duenos_mismo_importe) == 1:
                 dueno = duenos_mismo_importe[0]
-                # Mismo numf + mismo importe + un solo dueno => mismo
-                # cliente con otro codigo. Mapear: alias automatico.
-                try:
-                    _aliases.agregar(
-                        codigo_cli, dueno,
-                        nota=f"auto: factura {numero or numf} ya cargada bajo {dueno}",
-                        usuario=(usuario or "asinfo"),
-                    )
-                except Exception:
-                    pass  # alias ya existia o fallo: el skip aplica igual
+                # Mismo numf + mismo importe + un solo dueno => la factura YA
+                # está en PC bajo otro código: se saltea, no se duplica.
+                #
+                # TMT 2026-07-30 (dueña): acá se REGISTRABA un alias automático
+                # `codigo_cli → dueno`. Ya no. Dos códigos para la misma factura
+                # casi nunca son "el mismo cliente con otro nombre": son una
+                # SUCURSAL, y la sucursal se resuelve por la DIRECCIÓN de
+                # entrega (`sucursal_direccion`) — que es un DATO de Asinfo, no
+                # una adivinanza por importe. Y el alias, de paso, arrastraba
+                # TODO el volumen del código al otro cliente.
                 raise _CargaAsinfoSkip(
-                    f"ya está cargada bajo '{dueno}' — alias "
-                    f"{codigo_cli}→{dueno} registrado, no se duplicó"
+                    f"ya está cargada en PC bajo '{dueno}' — no se duplicó. Si "
+                    f"{codigo_cli} y {dueno} son sucursales del mismo cliente, "
+                    f"registrá la DIRECCIÓN en /facturas/desde-asinfo "
+                    f"(propuestas en /admin/salud/diag?solo=f)"
                 )
             otros = sorted({
                 (r.get("codigo_cli") or "").strip().upper() for r in rows
@@ -1678,7 +1641,10 @@ def _resolver_cliente_asinfo(
                     "antes de cargar"
                 )
 
-    nuevo = (cli_pc or codigo_cli)[:5]
+    # TMT 2026-07-30: el cliente NUEVO se crea con su código propio, no con el
+    # destino del alias (si el alias existiera y su destino estuviera en PC,
+    # nunca llegaríamos acá — el loop de arriba lo habría devuelto).
+    nuevo = (codigo_cli or cli_pc)[:5]
     # OJO: scintela.cliente en PROD no tiene UNIQUE(codigo_cli) (el fixture
     # de tests si — drift), asi que ON CONFLICT explota con "no unique or
     # exclusion constraint". WHERE NOT EXISTS logra el mismo no-duplicar

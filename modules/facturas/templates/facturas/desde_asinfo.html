@@ -80,11 +80,11 @@
   <details class="mb-5 group">
     <summary class="cursor-pointer select-none text-sm font-semibold text-slate-700 dark:text-slate-300 px-3 py-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center gap-2">
       <span class="text-slate-400 transition-transform group-open:rotate-90">▸</span>
-      Aliases cliente Asinfo ↔ PC
-      <span class="text-xs text-slate-400 font-normal">({{ aliases_existentes|length }})</span>
-      {% if sugerencias_alias %}<span class="text-xs text-amber-600 font-normal">· {{ sugerencias_alias|length }} sugerido(s)</span>{% endif %}
+      Clientes: sucursales por dirección
+      <span class="text-xs text-slate-400 font-normal">({{ sucursales_direccion|length }})</span>
+      <span class="text-xs text-slate-400 font-normal">· {{ aliases_existentes|length }} aliases históricos</span>
     </summary>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+    <div class="grid grid-cols-1 gap-3 mt-3">
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -92,7 +92,17 @@
           <span class="text-xs text-slate-400 font-normal">({{ aliases_existentes|length }})</span>
         </h3>
       </div>
-      <p class="text-xs text-slate-500 mb-2">Asinfo y PC usan códigos distintos para el mismo cliente real. Esos pares se registran acá y el matcher los considera la misma entidad.</p>
+      {# TMT 2026-07-30 (dueña): NO se cargan más aliases. La lista queda para
+         VER y BORRAR los que hay — el mecanismo bueno es la SUCURSAL POR
+         DIRECCIÓN (abajo). Un alias arrastra TODO el volumen de un código a
+         otro cliente; la dirección separa sólo lo que corresponde. #}
+      <p class="text-xs text-slate-500 mb-2">
+        <strong>Histórico — no se agregan más.</strong> Estos pares se usan sólo
+        para MATCHEAR contra el dBase (que el matcher no cuente dos veces la
+        misma factura). Para separar sucursales, usá
+        <strong>Sucursal por dirección</strong>, abajo: el alias se lleva TODO
+        el volumen del código, la dirección sólo lo que entra por esa puerta.
+      </p>
       {% if aliases_existentes %}
       <div class="max-h-32 overflow-auto mb-2">
         <table class="w-full text-xs">
@@ -118,17 +128,6 @@
       {% else %}
       <p class="text-xs text-slate-400 italic mb-2">No hay aliases cargados.</p>
       {% endif %}
-      <form method="POST" action="{{ url_for('facturas.alias_agregar') }}" class="flex items-center gap-1 text-xs">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input name="codigo_asinfo" placeholder="Asinfo" maxlength="10" required
-               class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-24 font-mono uppercase">
-        <span class="text-slate-400">↔</span>
-        <input name="codigo_pc" placeholder="PC" maxlength="10" required
-               class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-24 font-mono uppercase">
-        <input name="nota" placeholder="nota (opcional)"
-               class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex-1">
-        <button class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white">+</button>
-      </form>
 
       {# ── Sucursal por dirección de Asinfo (TMT 2026-07-29) ──
          Hermano del alias, para el caso en que Asinfo NO tiene código propio:
@@ -203,33 +202,12 @@
       </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-        💡 Aliases sugeridos
-        <span class="text-xs text-slate-400 font-normal">({{ sugerencias_alias|length }})</span>
-      </h3>
-      <p class="text-xs text-slate-500 mb-2">Detectados auto: cuando ≥50% de las missing de un cliente Asinfo tienen su numf en PC bajo otro código.</p>
-      {% if sugerencias_alias %}
-      <div class="space-y-1 max-h-48 overflow-auto">
-        {% for s in sugerencias_alias %}
-        <form method="POST" action="{{ url_for('facturas.alias_agregar') }}"
-              class="flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 rounded px-2 py-1.5 border border-amber-200 dark:border-amber-800">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="codigo_asinfo" value="{{ s.codigo_asinfo }}">
-          <input type="hidden" name="codigo_pc" value="{{ s.codigo_pc }}">
-          <input type="hidden" name="nota" value="auto-detectado ({{ s.votos }}/{{ s.total_huerf_cli }} match)">
-          <span class="font-mono">{{ s.codigo_asinfo }}</span>
-          <span class="text-slate-400">↔</span>
-          <span class="font-mono">{{ s.codigo_pc }}</span>
-          <span class="text-amber-700 dark:text-amber-300 text-[10px]">{{ s.votos }}/{{ s.total_huerf_cli }} ({{ s.porcentaje }}%)</span>
-          <button class="ml-auto px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-[10px]">Agregar</button>
-        </form>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="text-xs text-slate-400 italic">Sin sugerencias en este período.</p>
-      {% endif %}
-    </div>
+    {# TMT 2026-07-30 (dueña): se BORRÓ el panel "Aliases sugeridos". Proponía
+       aliases a un click cuando ≥50% de las missing de un código aparecían en
+       PC bajo otro — y ese "otro" casi siempre era una SUCURSAL. Aceptar la
+       sugerencia mandaba todo el volumen del código al cliente equivocado.
+       Las propuestas de sucursal, con la dirección como árbitro, están en
+       /admin/salud/diag?solo=f. #}
     </div>
   </details>
 

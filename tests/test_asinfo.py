@@ -575,9 +575,16 @@ def test_resolver_cliente_normaliza_y_trunca(monkeypatch):
     assert len(inserts[0][3]) == 50  # usuario truncado a varchar(50)
 
 
-def test_resolver_guard_factura_ya_cargada_otro_cli_auto_alias(monkeypatch):
-    # numf ya existe bajo AJO con MISMO importe y cliente AJ3 no existe:
-    # NO crear cliente duplicado, SI registrar alias AJ3->AJO, skip fila.
+def test_resolver_guard_factura_ya_cargada_otro_cli_no_crea_alias(monkeypatch):
+    """numf ya en PC bajo AJO con MISMO importe y AJ3 no existe: NO se crea
+    cliente duplicado, se saltea la fila, y **NO se registra ningún alias**.
+
+    TMT 2026-07-30 (dueña: "no usar más los alias, identificar el cliente por
+    sucursal"). Antes esto registraba solo el alias AJ3→AJO por coincidencia de
+    importe — y con eso TODO el volumen de AJ3 pasaba a AJO para siempre. Dos
+    códigos con la misma factura son una SUCURSAL: se resuelve por la DIRECCIÓN
+    de entrega, que es un dato de Asinfo, no una inferencia.
+    """
     import pytest
     views, inserts, aliases_creados = _setup_resolver(
         monkeypatch, existentes=set(),
@@ -587,8 +594,8 @@ def test_resolver_guard_factura_ya_cargada_otro_cli_auto_alias(monkeypatch):
         views._resolver_cliente_asinfo(
             "AJ3", "tam", numero="001-099-000175661", importe=1234.56,
         )
-    assert inserts == []                      # no se creo cliente
-    assert aliases_creados == [("AJ3", "AJO")]  # se mapeo el de Asinfo
+    assert inserts == []          # no se creo cliente
+    assert aliases_creados == []  # y NO se registro alias
 
 
 def test_resolver_guard_mismo_codigo_no_duplica(monkeypatch):
