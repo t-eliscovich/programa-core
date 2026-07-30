@@ -161,20 +161,40 @@ def test_no_reversa_dos_veces(monkeypatch, _stubs):
     assert not fake.escribio("update scintela.cheque")
 
 
-def test_cancelacion_vieja_de_un_postdatado_sin_snapshot_no_se_inventa(
+def test_cancelacion_vieja_de_un_rebotado_sin_snapshot_no_se_inventa(
         monkeypatch, _stubs):
-    """Sin snapshot no hay fecha ni concepto de la posdat borrada. Antes que
-    inventar un pasivo, se explica qué cargar a mano."""
-    q, fake = _correr(monkeypatch, _mov(con_snap=False), _ch("X"))
+    """Los únicos cheques que pudieron tener posdat son los que vuelven a un
+    estado de REBOTE (1/2/3/9): el protesto es el único alta de
+    `posdat banc=0` para un cheque. Sin snapshot no hay fecha ni concepto, y
+    antes que inventar un pasivo se explica qué cargar a mano."""
+    q, fake = _correr(monkeypatch, _mov(stat_previo="1", con_snap=False), _ch("X"))
     with pytest.raises(ValueError, match="anterior al 29/07"):
         q.reversar_cancelacion_por_anticipo(8801)
     assert not fake.escribio("update scintela.cheque")
     assert not fake.escribio("insert into scintela.posdat")
 
 
+def test_cancelacion_vieja_de_un_postdatado_de_cartera_si_se_reversa(
+        monkeypatch, _stubs):
+    """TMT 2026-07-30 (dueña: "¿por qué no me deja? me debería dejar"). Un
+    cheque POSTDATADO en cartera no tiene fila de posdatados por ser
+    postdatado — sólo el rebote la crea. El guard viejo miraba fechad>fecha y
+    bloqueaba de más: caso testigo el ch 99699 de CJE, que en el dBase está
+    VIVO en cartera y en PC había quedado en 'X'."""
+    q, fake = _correr(
+        monkeypatch, _mov(stat_previo="Z", con_snap=False),
+        _ch("X", fecha=date(2026, 6, 1), fechad=date(2026, 8, 10)))
+    res = q.reversar_cancelacion_por_anticipo(8801)
+    assert res["sin_snapshot"] is True
+    assert res["posdat_restauradas"] == 0
+    assert res["stat_restaurado"] == "Z"
+    assert fake.escribio("update scintela.cheque")
+    assert not fake.escribio("insert into scintela.posdat")
+
+
 def test_cancelacion_vieja_de_un_cheque_al_dia_si_se_reversa(monkeypatch, _stubs):
-    """Si el cheque NO era postdatado (fechad == fecha) no había posdat que
-    perder, así que la falta de snapshot no bloquea nada."""
+    """Si el cheque NO era postdatado (fechad == fecha) tampoco había posdat
+    que perder, así que la falta de snapshot no bloquea nada."""
     q, fake = _correr(
         monkeypatch, _mov(con_snap=False),
         _ch("X", fecha=date(2026, 6, 1), fechad=date(2026, 6, 1)))

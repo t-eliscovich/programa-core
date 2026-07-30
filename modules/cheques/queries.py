@@ -1499,21 +1499,35 @@ def reversar_cancelacion_por_anticipo(
                 "movió después de la cancelación. Reversá primero ese cambio "
                 "— si no, esto lo pisaría.")
 
-        # Sin snapshot no sabemos si había posdat. Si el cheque es postdatado
-        # (fechad futura respecto de su fecha) lo más probable es que sí la
-        # tuviera, y reconstruirla implicaría inventar fecha y concepto.
-        if sin_snapshot:
-            _fd, _f = ch.get("fechad"), ch.get("fecha")
-            if _fd and _f and _fd > _f:
-                raise ValueError(
-                    f"Esta cancelación es anterior al 29/07 y no guardó la "
-                    f"fila de posdatados que borró. El cheque es postdatado "
-                    f"(f.dep {_fd}), así que casi seguro tenía una: si la "
-                    f"reconstruyo estaría inventando su fecha y su concepto. "
-                    f"Volvé el cheque a '{stat_destino}' desde su ficha y "
-                    f"cargá la posdat a mano en /posdat "
-                    f"(prov {ch.get('codigo_cli')}, num {id_cheque}, "
-                    f"$ {float(ch.get('importe') or 0):,.2f}).")
+        # Sin snapshot, ¿podía haber una posdat que reconstruir?
+        #
+        # TMT 2026-07-30 (dueña: "¿por qué no me deja? me debería dejar").
+        # Tenía razón: el guard del 29/07 miraba si el cheque era POSTDATADO
+        # (fechad > fecha) y bloqueaba. Eso es un falso positivo, porque un
+        # cheque postdatado NO tiene fila de posdatados por ser postdatado.
+        # El ÚNICO alta de `posdat banc=0` para un cheque en PC es el rebote
+        # (`transicionar_stat` → stat '9', concepto "ch.prot.<n°>"), y el
+        # DELETE de la cancelación aparea por `num = id_cheque`, que es un id
+        # interno de PC — ninguna fila venida del dBase puede matchearlo.
+        # Entonces: si el cheque vuelve a cartera/postergado/Daniela, nunca
+        # pasó por el protesto, no hay nada que reconstruir y el reverso es
+        # seguro.
+        #
+        # El caso testigo es el ch 99699 de CJE ($1.692,16): venía de 'Z' y el
+        # dBase lo tiene VIVO en cartera — o sea que el bloqueado era el
+        # arreglo que alinea PC con el dBase.
+        #
+        # Se sigue bloqueando si el cheque vuelve a un estado de REBOTE
+        # (1/2/3/9): ésos sí pudieron pasar por el protesto y arrastrar su
+        # fila de pasivo. Ahí la falta de snapshot es un problema real.
+        if sin_snapshot and stat_destino in ("1", "2", "3", "9"):
+            raise ValueError(
+                f"Esta cancelación es anterior al 29/07, el cheque vuelve a "
+                f"REBOTADO ('9') y no se guardó la fila de posdatados que se "
+                f"borró: reconstruirla sería inventar su fecha y su concepto. "
+                f"Volvé el cheque a '{stat_destino}' desde su ficha y cargá la "
+                f"posdat a mano en /posdat (prov {ch.get('codigo_cli')}, "
+                f"num {id_cheque}, $ {float(ch.get('importe') or 0):,.2f}).")
 
         db.execute(
             "UPDATE scintela.cheque "
