@@ -101,6 +101,10 @@ IVA_POR_PROV = {"ES": 0.0}
 # dBase con IVA mixto: el total real cae entre s/IVA y s/IVA*1.15).
 _TOL_ABS = 0.5
 
+# Meses hacia atrás y hacia adelante en los que se busca el par de una factura
+# de formulas dentro de scintela.compra. Ver _compras_pc_mes.
+_VENTANA_MESES = 6
+
 
 _AUTO_LOCK = threading.Lock()
 _auto_ultimo_ts = 0.0
@@ -214,16 +218,23 @@ def _mes_offset(anio: int, mes: int, delta: int) -> date:
 def _compras_pc_mes(anio: int, mes: int) -> list[dict]:
     """Compras de PC contra las que matchear (excluye anuladas stat='Y').
 
-    VENTANA DE ±1 MES, no el mes exacto. La fecha de una compra no coincide
-    entre los dos sistemas: formulas la fecha cuando RECIBE la mercadería y el
-    dBase cuando la TIPEAN. Ejemplo real: la SEY 21859 está en formulas el
-    28/04 y en PC el 01/05 — con la ventana angosta el puente la daba por
-    "pendiente" y, si alguien apretaba cargar sobre abril, la DUPLICABA.
-    El match sigue siendo por número exacto, así que abrir la ventana no
-    inventa coincidencias: sólo deja de perder las que ya están.
+    VENTANA ANCHA (±_VENTANA_MESES), no el mes exacto. La fecha de una compra
+    NO coincide entre los dos sistemas: formulas la fecha cuando RECIBE la
+    mercadería y el dBase cuando la TIPEAN, y el desfase puede ser de meses.
+    Casos reales que lo obligaron (30/07):
+      · SEY 21859 — formulas 28/04, PC 01/05 (un mes).
+      · SEY 21945 / 21960 / 21981 — formulas 08–12/05, y Andrés las tipeó en
+        PC el **16/07**: más de dos meses. Con la ventana angosta salían como
+        "sin cargar" y apretar el botón las habría DUPLICADO (y ya están
+        pagadas).
+    El match sigue siendo por NÚMERO exacto de factura, que es único por
+    proveedor, así que abrir la ventana no inventa coincidencias: sólo deja de
+    perder las que ya están. No se abre a "todo": los proveedores reinician la
+    numeración de vez en cuando (AQ pasó de 6086 a 1 en junio) y una ventana
+    acotada evita cruzar dos series distintas.
     """
-    ini = _mes_offset(anio, mes, -1)
-    fin = _mes_offset(anio, mes, 2)
+    ini = _mes_offset(anio, mes, -_VENTANA_MESES)
+    fin = _mes_offset(anio, mes, _VENTANA_MESES + 1)
     return db.fetch_all(
         """
         SELECT id_compra, codigo_prov, importe, concepto,

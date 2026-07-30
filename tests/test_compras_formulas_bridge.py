@@ -495,7 +495,7 @@ def test_ventana_match_abarca_mes_anterior_y_siguiente():
 
     with patch.object(fb.db, "fetch_all", side_effect=_fetch):
         fb._compras_pc_mes(2026, 4)
-    assert capt["params"] == (date(2026, 3, 1), date(2026, 6, 1))
+    assert capt["params"] == (date(2025, 10, 1), date(2026, 11, 1))
 
 
 def test_ventana_match_cruza_el_anio():
@@ -503,7 +503,25 @@ def test_ventana_match_cruza_el_anio():
     with patch.object(fb.db, "fetch_all",
                       side_effect=lambda sql, params=None: capt.update(p=params) or []):
         fb._compras_pc_mes(2026, 12)
-    assert capt["p"] == (date(2026, 11, 1), date(2027, 2, 1))
+    assert capt["p"] == (date(2026, 6, 1), date(2027, 7, 1))
+
+
+def test_no_da_pendiente_la_tipeada_dos_meses_despues():
+    """SEY 21945: formulas 08/05, Andrés la tipeó en PC el 16/07. Con la
+    ventana angosta salía "sin cargar" y el botón la habría duplicado."""
+    grupos = [{"proveedor": "SEY", "factura": "1945", "fecha": "2026-05-08",
+               "kg": 1300, "importe_siva": 910.0}]
+    pc = [{"id_compra": 9, "codigo_prov": "SY", "importe": 1014.50,
+           "concepto": "21945", "usuario_crea": "andres",
+           "usuario_modifica": None, "id_transaccion": 77}]
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=grupos), \
+         patch.object(fb.db, "fetch_all", return_value=pc):
+        est = fb.estado_mes(2026, 5)
+    assert est["filas"][0].estado == "cargada"
+    assert est["pendientes"] == 0
+    # importe distinto, pero NO la creó el puente ⇒ no se toca
+    assert est["filas"][0].ajustable is False
 
 
 def test_no_da_pendiente_la_que_esta_en_el_mes_siguiente():
