@@ -4475,8 +4475,7 @@ def reversar(
 def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
     """Facturas con saldo distinto de cero de un cliente.
 
-    Orden: la más NUEVA primero, igual que el dBase (ver la nota del ORDER BY
-    más abajo). NO es FIFO.
+    Orden FIFO — la más vieja primero. NO cambiar: ver la nota del ORDER BY.
 
     Incluye las dos puntas para que la dueña pueda aplicar un cheque
     cancelando facturas vivas Y absorbiendo créditos a favor del cliente:
@@ -4520,11 +4519,16 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
         -- mezcladas por fecha de emisión / vencimiento). La separación
         -- previa por signo confundía visualmente al aplicar.
         --
-        -- TMT 2026-07-30 — orden DESCENDENTE: la más NUEVA primero, igual que
-        -- el dBase. Decisión de la dueña: "podemos hacer que sea como dbase".
+        -- NO CAMBIAR ESTE ORDEN. TMT 2026-07-30: se probó ponerlo DESC para
+        -- imitar al dBase y la dueña lo revirtió en el acto — "estamos
+        -- cambiando algo de la cobranza que ya teníamos hecho? eso no me
+        -- gusta". La cobranza de PC funciona y FIFO es lo contablemente sano:
+        -- el cliente paga lo más viejo que debe. Que el dBase haga otra cosa
+        -- NO es razón para cambiarla.
         --
-        -- PC venía aplicando FIFO (la más vieja primero) y el FoxPro hace lo
-        -- contrario. La prueba está en ALTAS.PRG, PROCEDURE REPLA:
+        -- Queda documentado igual, porque explica una divergencia que costó
+        -- medio día entender. El FoxPro imputa al revés, y está en ALTAS.PRG,
+        -- PROCEDURE REPLA:
         --
         --     GO BOTT
         --     REPLA ABONO WITH ABONO+D->IMPORTE, SALDO WITH SALDO-D->IMPORTE
@@ -4533,11 +4537,16 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
         -- FECHA, NUMF del pase diario es la más reciente. Y no hay ningún IF:
         -- suma el cheque entero a esa fila y deja el saldo irse a negativo.
         --
-        -- Eso explica la divergencia que veníamos persiguiendo: PC y el dBase
-        -- imputaban la misma plata a facturas distintas —extremos opuestos de
-        -- la lista— y por eso `chequesxfact` de PC no sumaba el `abono` del
-        -- DBF. No eran links inventados: era el ORDER BY.
-        ORDER BY fecha DESC, vencimiento DESC NULLS LAST, numf DESC
+        -- Eso explica la divergencia: PC y el dBase imputan la misma plata a
+        -- facturas distintas —extremos opuestos de la misma lista— y por eso
+        -- `chequesxfact` de PC no suma el `abono` del DBF. No son links
+        -- inventados y no hay nada que reparar: son dos criterios.
+        --
+        -- Consecuencia práctica: el chequeo NO puede exigir que coincidan. Lo
+        -- que sí vale es el criterio del dBase sobre las notas de entrega y de
+        -- crédito — no las distingue de una factura y deja el saldo irse a
+        -- negativo sin chistar. Ver check_chequesxfact.
+        ORDER BY fecha, vencimiento NULLS LAST, numf
         LIMIT %s
         """,
         (codigo_cli, limite),
