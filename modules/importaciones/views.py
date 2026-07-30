@@ -220,10 +220,18 @@ def lista():
         tarifas = _loc_q.listar_tarifas()
     except Exception:  # noqa: BLE001 -- fail-soft: la tabla puede no existir
         tarifas = []
-    locales = [r for r in rows if r.get("origen") == "compra"]
+    from modules.compras_locales import service as _loc_svc
+
+    # "Recibidas sin cargar" = SOLO lo que el motor realmente va a intentar, o
+    # sea después de la fecha de corte. Sin este filtro la lista traía 110
+    # facturas de 2024/2025 que el motor nunca va a tocar, y el contador
+    # "falta N" gritaba por tarifas que no hacen falta.
     pendientes_local = [
-        r for r in locales
-        if r.get("recibida") and not r.get("compra") and float(r.get("kg") or 0) > 0
+        r for r in rows
+        if r.get("origen") == "compra"
+        and r.get("recibida") and not r.get("compra")
+        and float(r.get("kg") or 0) > 0
+        and not _loc_svc._antes_del_corte(r.get("fecha_recepcion"))
     ]
     locales_sin_tarifa = sum(1 for r in pendientes_local if not r.get("tarifa"))
 
