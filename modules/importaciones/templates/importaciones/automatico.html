@@ -22,17 +22,19 @@
           {% if cfg.activo %}✅ Prendida{% else %}⏸️ Apagada{% endif %}
         </div>
         <div class="text-xs text-slate-600 mt-1" style="max-width:60rem;line-height:1.5;">
-          Cuando Asinfo marca <strong>recibida</strong> una importación, el programa convierte
-          solo sus anticipos vivos a una compra BAP y te avisa por la 🔔.
+          Cuando Asinfo marca <strong>recibida</strong> una importación, el programa pasa
+          solo sus anticipos vivos a una compra y te avisa por la 🔔.
           Corre cada 30 minutos.
           {% if cfg.fecha_corte %}
           Sólo mira recepciones <strong>desde el {{ cfg.fecha_corte }}</strong>
           (lo anterior queda como está).
           {% endif %}
           <br>
-          <span style="color:rgb(146 64 14);">La compra se crea en Programa Core: hasta que hagas el
-          BAP en el dBase, esa plata va a estar en COMPRAS acá y en ANTICIPOS allá.
-          El aviso te dice cuál hacer.</span>
+          {# TMT 2026-07-30 (dueña): "quitá lo de BAP, no sé ni qué es" — el
+             acrónimo se fue de acá también, y con él la promesa vieja de que
+             "el aviso te dice cuál hacer" (ya no lo dice). #}
+          <span style="color:rgb(146 64 14);">La compra se crea sólo en Programa Core: en el dBase
+          esa plata sigue figurando en ANTICIPOS hasta que alguien la cargue allá también.</span>
         </div>
       </div>
       <form method="post" action="{{ url_for('importaciones.automatico_switch') }}">
@@ -113,7 +115,7 @@
     {% if prev.grupos %}
     <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
       <span class="text-xs text-slate-500">
-        Se crean {{ prev.n_importaciones }} compra(s) BAP por US$ {{ prev.total_usd | num_es(2) }}.
+        Se crean {{ prev.n_importaciones }} compra(s) por US$ {{ prev.total_usd | num_es(2) }}.
         Cada una se puede deshacer desde /historial.
       </span>
       <form method="post" action="{{ url_for('importaciones.automatico_correr') }}">
