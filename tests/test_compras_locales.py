@@ -329,3 +329,48 @@ def test_correr_si_toca_nunca_levanta(monkeypatch):
     monkeypatch.setattr(svc, "_auto_ultimo_ts", 0.0)
     with patch.object(svc, "cargar_pendientes", side_effect=RuntimeError("boom")):
         assert svc.correr_si_toca()["creadas"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Buscador de /importaciones — varias palabras
+# ---------------------------------------------------------------------------
+def _buscar(q, rows):
+    """Réplica del filtro de la vista (AND entre términos, OR entre campos)."""
+    terminos = q.upper().split()
+
+    def _m(r):
+        campos = " ".join((
+            r.get("proveedor") or "", r.get("nota") or "", r.get("codigo") or "",
+            r.get("im_numero") or "", r.get("prov") or "",
+            r.get("numero_factura") or "",
+        )).upper()
+        return all(t in campos for t in terminos)
+
+    return [r for r in rows if _m(r)]
+
+
+FILAS_BUSCADOR = [
+    {"im_numero": "CMTR-06995", "prov": "HY", "codigo": "HY 37711",
+     "proveedor": "HILTEXPOY S.A.", "nota": "HY HG75/72 F-37711",
+     "numero_factura": "001-002-000037711"},
+    {"im_numero": "IM-0000625", "prov": "AC", "codigo": "AC 29",
+     "proveedor": "ARIESCOPE", "nota": "ACMT/EXP/2026-27/8140 ( AC 29)",
+     "numero_factura": ""},
+]
+
+
+def test_buscador_dos_palabras_cruza_campos_distintos():
+    # "CMTR" vive en el número y "HY" en el código: ningún campo suelto tiene
+    # la cadena entera. Antes esto devolvía cero filas.
+    r = _buscar("CMTR HY", FILAS_BUSCADOR)
+    assert len(r) == 1
+    assert r[0]["im_numero"] == "CMTR-06995"
+
+
+def test_buscador_una_palabra_se_comporta_igual_que_antes():
+    assert len(_buscar("AC", FILAS_BUSCADOR)) == 1
+    assert len(_buscar("CMTR", FILAS_BUSCADOR)) == 1
+
+
+def test_buscador_es_and_entre_terminos():
+    assert _buscar("CMTR AC", FILAS_BUSCADOR) == []

@@ -84,13 +84,23 @@ def lista():
     )
 
     if q:
-        rows = [
-            r for r in rows
-            if q in (r.get("proveedor") or "").upper()
-            or q in (r.get("nota") or "").upper()
-            or q in (r.get("codigo") or "").upper()
-            or q in (r.get("im_numero") or "").upper()
-        ]
+        # TMT 2026-07-30 (dueña: buscar "CMTR HY" no devolvía nada). Antes la
+        # búsqueda era la cadena ENTERA contra cada campo por separado, así que
+        # cualquier combinación de dos cosas fallaba: "CMTR" está en el número y
+        # "HY" en el código, y ningún campo suelto contiene "CMTR HY".
+        # Ahora: cada PALABRA tiene que aparecer en algún campo (AND entre
+        # términos, OR entre campos). Con una sola palabra se comporta igual.
+        _terminos = q.split()
+
+        def _matchea(r) -> bool:
+            campos = " ".join((
+                r.get("proveedor") or "", r.get("nota") or "",
+                r.get("codigo") or "", r.get("im_numero") or "",
+                r.get("prov") or "", r.get("numero_factura") or "",
+            )).upper()
+            return all(t in campos for t in _terminos)
+
+        rows = [r for r in rows if _matchea(r)]
     if estado == "match":
         rows = [r for r in rows if r.get("fuente")]
     elif estado == "sin_match":
