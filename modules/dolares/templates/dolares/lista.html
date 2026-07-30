@@ -134,6 +134,30 @@
   .dark #sel-modal > div:last-child > div:last-child {
     background: rgb(30 41 59) !important; border-top-color: rgb(51 65 85) !important;
   }
+
+  /* AÑO — TMT 2026-07-30 (dueña): "esto de año quedó horrible, ponelo como si
+     fuese un dato más y sin ese signo de pregunta". La celda se lee como
+     TEXTO (sin caja, sin placeholder gritando "año", sin el "?" al lado) y
+     recién al pasarle el mouse o al tipear se nota que es editable. La
+     evidencia del año sigue estando: es el tooltip de la propia celda. */
+  .anio-cell {
+    width: 3.2rem;
+    padding: 1px 4px;
+    font-size: 12px;
+    text-align: left;
+    color: rgb(71 85 105);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+  }
+  .anio-cell::placeholder { color: rgb(203 213 225); }
+  .anio-cell:hover { border-color: rgb(226 232 240); background: #fff; }
+  .anio-cell:focus {
+    border-color: rgb(56 189 248); background: #fff; outline: none;
+  }
+  .dark .anio-cell { color: rgb(148 163 184); }
+  .dark .anio-cell:hover,
+  .dark .anio-cell:focus { background: rgb(2 6 23); }
 </style>
 {% endblock %}
 
@@ -486,16 +510,15 @@
                    botón se comía el Enter del campo. Queda SÓLO la EVIDENCIA
                    en el tooltip — que no propone un número, muestra los datos
                    con los que se decide. #}
+                {# TMT 2026-07-30 (dueña): "ponelo como si fuese un dato más y
+                   sin ese signo de pregunta". Se fue el "?" de la evidencia
+                   (ahora es el tooltip de la celda) y la caja blanca: se ve
+                   como el resto de la fila hasta que la tocás. #}
                 <input name="anio" value="{{ d.anio_col or '' }}" maxlength="4"
-                       inputmode="numeric" placeholder="año"
+                       inputmode="numeric" placeholder="—"
                        title="{{ d.anio_evidencia or 'Año de la importación' }}"
                        onchange="this.form.requestSubmit()"
-                       style="width:3.6rem;padding:1px 5px;font-size:12px;text-align:center;"
-                       class="rounded border border-slate-300 bg-white">
-                {% if d.anio_evidencia %}
-                <span title="{{ d.anio_evidencia }}"
-                      style="margin-left:.25rem;font-size:11px;color:rgb(148 163 184);cursor:help;">?</span>
-                {% endif %}
+                       class="anio-cell">
               </form>
               {% elif d.anio_col %}<span class="text-slate-500">{{ d.anio_col }}</span>
               {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
