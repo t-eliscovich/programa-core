@@ -45,6 +45,12 @@
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Depositado (Pichincha)</span>
         {% elif ch.stat == 'A' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Acreditado</span>
+        {% elif ch.stat == 'C' %}
+          {# TMT 2026-07-30 (dueña): el efectivo caía en el `elif ch.stat` de
+             abajo y mostraba una "C" pelada en monoespaciada. Es el estado que
+             tipea PASOCAJA en el dBase y tiene su renglón en caja. #}
+          <span class="ml-2 text-sm px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                title="Cobrado en efectivo — tiene su renglón en Caja (stat C, igual que el dBase)">Efectivo (caja)</span>
         {% elif ch.stat == 'D' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Daniela</span>
         {% elif ch.stat == 'P' %}
