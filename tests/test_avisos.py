@@ -400,3 +400,31 @@ def test_ningun_insert_returning_usa_fetch_one():
             if ESCRIBE.match(call.lstrip()) and "conn=" not in call:
                 malos.append(p.as_posix())
     assert not malos, f"INSERT/UPDATE ... RETURNING con fetch_one (no commitea): {sorted(set(malos))}"
+
+
+def test_el_flag_se_entera_de_la_migracion_sin_reiniciar():
+    """Aplicada la 0145 por /admin/migraciones, la pantalla se actualiza sola.
+
+    TMT 2026-07-30. El "todavía no está" se re-chequea cada minuto; el "sí
+    está" no vence nunca (una columna no se va). Misma lección que la caché de
+    Metabase del 29/07: **no cachear el negativo tanto como el positivo**.
+    """
+    avisos.queries.reset_cache()
+    try:
+        # 1) Antes de la migración: no está, y se cachea el "no".
+        with patch.object(avisos.queries.db, "fetch_one", return_value=None) as f:
+            assert avisos.queries._tiene_archivado() is False
+            assert avisos.queries._tiene_archivado() is False
+            assert f.call_count == 1          # el negativo se cachea…
+
+        # 2) Pasa el TTL y la migración ya corrió → se entera sola.
+        avisos.queries._TIENE_ARCHIVADO_TS -= avisos.queries._TTL_SIN_COLUMNA + 1
+        with patch.object(avisos.queries.db, "fetch_one", return_value={"ok": 1}):
+            assert avisos.queries._tiene_archivado() is True
+
+        # 3) El "sí" no se vuelve a preguntar nunca.
+        with patch.object(avisos.queries.db, "fetch_one", return_value=None) as f:
+            assert avisos.queries._tiene_archivado() is True
+            f.assert_not_called()
+    finally:
+        avisos.queries.reset_cache()

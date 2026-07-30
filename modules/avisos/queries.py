@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 
 import db
 
@@ -21,35 +22,50 @@ FUENTES = {
 NIVELES = ("ok", "alerta", "error")
 
 # ── Feature flag de la mig 0145 ──────────────────────────────────────────────
-# El deploy NO corre migraciones (son manuales, por SSM). Entre que sube el
-# código y se aplica la 0145 hay una ventana en la que `archivado` no existe, y
-# como `listar` es fail-soft el buzón se veía VACÍO — peor que el problema que
-# vino a resolver. Mismo patrón que `_tiene_orden_manual()`: se pregunta UNA vez
-# por worker y la query se arma con o sin la columna.
+# El deploy NO corre migraciones: se aplican con un click en **/admin/migraciones**
+# (NO por AWS/SSM — dueña 2026-07-30: *"las migraciones se corren de la pantalla
+# migraciones. AWS no."*). Entre que sube el código y alguien entra a esa
+# pantalla hay una ventana en la que `archivado` no existe, y como `listar` es
+# fail-soft el buzón se veía VACÍO — peor que el problema que vino a resolver.
+# Mismo patrón que `_tiene_orden_manual()`: se pregunta a information_schema y
+# la query se arma con o sin la columna.
 _TIENE_ARCHIVADO: bool | None = None
+_TIENE_ARCHIVADO_TS: float = 0.0
+#: El "todavía no está" se re-chequea cada minuto; el "sí está" no vence nunca
+#: (una columna no se va). Misma lección que la caché de Metabase (29/07): NO
+#: cachear el resultado negativo tanto como el positivo — si no, después de
+#: aplicar la migración por /admin/migraciones la pantalla sigue vieja hasta
+#: que alguien reinicie, y nadie entiende por qué.
+_TTL_SIN_COLUMNA = 60.0
 
 
 def _tiene_archivado() -> bool:
-    global _TIENE_ARCHIVADO
-    if _TIENE_ARCHIVADO is None:
-        try:
-            row = db.fetch_one(
-                """
-                SELECT 1 AS ok FROM information_schema.columns
-                 WHERE table_schema = 'scintela' AND table_name = 'aviso'
-                   AND column_name = 'archivado'
-                """,
-            )
-            _TIENE_ARCHIVADO = bool(row)
-        except Exception:  # noqa: BLE001 -- ante la duda, la versión vieja
-            return False
-    return _TIENE_ARCHIVADO
+    global _TIENE_ARCHIVADO, _TIENE_ARCHIVADO_TS
+    if _TIENE_ARCHIVADO:
+        return True
+    if _TIENE_ARCHIVADO is not None and (
+            _time.monotonic() - _TIENE_ARCHIVADO_TS) < _TTL_SIN_COLUMNA:
+        return False
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1 AS ok FROM information_schema.columns
+             WHERE table_schema = 'scintela' AND table_name = 'aviso'
+               AND column_name = 'archivado'
+            """,
+        )
+        _TIENE_ARCHIVADO = bool(row)
+        _TIENE_ARCHIVADO_TS = _time.monotonic()
+    except Exception:  # noqa: BLE001 -- ante la duda, la versión vieja
+        return False
+    return bool(_TIENE_ARCHIVADO)
 
 
 def reset_cache() -> None:
     """Olvida el flag — para después de aplicar la migración, sin reiniciar."""
-    global _TIENE_ARCHIVADO
+    global _TIENE_ARCHIVADO, _TIENE_ARCHIVADO_TS
     _TIENE_ARCHIVADO = None
+    _TIENE_ARCHIVADO_TS = 0.0
 
 ICONOS = {"ok": "✅", "alerta": "⚠️", "error": "⛔"}
 
