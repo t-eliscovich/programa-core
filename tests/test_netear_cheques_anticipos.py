@@ -221,3 +221,29 @@ def test_neteo_cheque_negativo(monkeypatch):
     with pytest.raises(ValueError, match="no es positivo"):
         chq.netear_cheques_con_anticipos(
             codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90])
+
+
+# ── La banda de centavos del lado de los cheques (TMT 2026-07-30, caso CEM) ──
+# Cheques $4.140,26 contra anticipos $4.140,00: 26 centavos de redondeo
+# frenaban el neteo entero. Arriba de $1 sigue bloqueado — ahí falta plata.
+
+def test_neteo_pasa_con_centavos_de_diferencia(monkeypatch):
+    """Caso CEM: 4.140,26 vs 4.140,00. Los cheques se anulan enteros y los 26
+    centavos se olvidan — no hay saldo a favor residual que crear."""
+    from modules.cheques import queries as chq
+    stub = _DBStub([_ch(1, 4140.26)], [_ant(90, -4140.00)])
+    calls = _patch(monkeypatch, stub)
+    res = chq.netear_cheques_con_anticipos(
+        codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90], usuario="t")
+    assert len(calls) == 1, "el cheque se anula igual"
+    assert res["id_residuo"] is None, "26 centavos no son un saldo a favor"
+
+
+def test_neteo_bloquea_si_falta_mas_de_un_dolar(monkeypatch):
+    """El umbral es $1: un peso y medio ya es plata, no redondeo."""
+    from modules.cheques import queries as chq
+    stub = _DBStub([_ch(1, 100.00)], [_ant(90, -98.50)])
+    _patch(monkeypatch, stub)
+    with pytest.raises(ValueError, match="no se puede anular en parte"):
+        chq.netear_cheques_con_anticipos(
+            codigo_cli="aaa", ids_cheques=[1], ids_anticipos=[90])

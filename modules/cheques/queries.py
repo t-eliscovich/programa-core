@@ -44,6 +44,12 @@ _OBS_CAP = 200
 # sigue viendo en cartera para futuras aplicaciones.
 TOLERANCIA_CIERRE_USD = 50.0
 
+# TMT 2026-07-30: "esto son centavos, no un sobrante". Es el umbral que ya
+# usaba la cobranza para NO fabricar un espejo NB=98 por monedas
+# (`_imp_espejo >= 1.00` en `crear`); acá le ponemos nombre para que el neteo
+# use el mismo criterio en vez de una banda propia de un centavo.
+TOLERANCIA_CENTAVOS_USD = 1.00
+
 
 # Stats donde el cheque está depositado en banco (lockean campos duros).
 STATS_DEPOSITADO = ("B", "V", "W", "I", "J", "K", "A")
@@ -5247,16 +5253,27 @@ def netear_cheques_con_anticipos(
         # se anula todo y el resto queda como un espejo NB=98 NUEVO (saldo a
         # favor residual, reversible). Si los CHEQUES suman más se sigue
         # bloqueando: un cheque físico no se puede anular en parte.
+        #
+        # TMT 2026-07-30 (dueña, caso CEM): la banda era de UN CENTAVO y
+        # frenaba neteos que sólo difieren en redondeo — CEM: cheques
+        # $4.140,26 contra anticipos $4.140,00, o sea 26 centavos. Se sube a
+        # TOLERANCIA_CENTAVOS_USD ($1), el mismo umbral con el que la cobranza
+        # decide "esto son centavos y no un sobrante" (`_imp_espejo >= 1.00`
+        # en `crear`) y con el que se cierran facturas con saldo de monedas.
+        # Por encima de $1 sigue bloqueado: ahí falta plata de verdad y anular
+        # un cheque entero contra un anticipo más chico sería regalarla.
         residuo = round(suma_anticipos - suma_cheques, 2)
-        if residuo < -0.01:
+        if residuo < -TOLERANCIA_CENTAVOS_USD:
             raise ValueError(
                 f"Los cheques suman ${suma_cheques:,.2f} y los anticipos "
-                f"${suma_anticipos:,.2f}: el sobrante quedaría del lado de "
-                "los cheques y un cheque no se puede anular en parte. Sacá "
-                "cheques o sumá anticipos — si los anticipos superan, el "
-                "resto queda como saldo a favor."
+                f"${suma_anticipos:,.2f}: faltan ${abs(residuo):,.2f} del "
+                "lado de los anticipos y un cheque no se puede anular en "
+                "parte. Sacá cheques o sumá anticipos — si los anticipos "
+                "superan, el resto queda como saldo a favor."
             )
         if residuo <= 0.01:
+            # Incluye la banda de centavos del lado de los cheques: se anulan
+            # enteros y la diferencia se olvida (no hay espejo que crear).
             residuo = 0.0
 
         # === SNAPSHOT para poder DESHACER el neteo (TMT 2026-07-21, dueña:
