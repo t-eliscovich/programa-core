@@ -129,7 +129,7 @@
       <table>
         <thead><tr>
           <th>Proveedor</th><th style="text-align:left">Patrón del producto</th>
-          <th>$/kg</th><th style="text-align:left">Nota</th><th>Actualizado</th><th></th>
+          <th>$/kg</th><th>Actualizado</th><th></th>
         </tr></thead>
         <tbody>
           {% for t in data.tarifas %}
@@ -151,11 +151,12 @@
                   <input class="n" name="t_{{ loop.index }}_tarifa" value="{{ t.tarifa|num_es(4) }}">
                 {% else %}<span class="tar">{{ t.tarifa|num_es(4) }}</span>{% endif %}
               </td>
-              <td style="text-align:left" class="muted">
-                {% if puede_tarifas %}
-                  <input class="x" name="t_{{ loop.index }}_nota" value="{{ t.nota }}" maxlength="120">
-                {% else %}{{ t.nota }}{% endif %}
-              </td>
+              {# TMT 2026-07-30 (dueña: "borrar la nota en el tarifario"): la
+                 columna Nota ya no se muestra. El valor guardado viaja en un
+                 hidden porque el form manda TODAS las filas de una: sin esto, el
+                 primer "Guardar tarifas" borraba las notas existentes en
+                 silencio. #}
+              {% if puede_tarifas %}<input type="hidden" name="t_{{ loop.index }}_nota" value="{{ t.nota }}">{% endif %}
               {# TMT 2026-07-30 (dueña: "en tarifa en actualizado pone solo la
                  fecha"): iba la fecha Y el usuario en dos renglones. Quién la
                  tocó no cambia ninguna decisión — y hacía la fila el doble de
@@ -176,7 +177,6 @@
               <td><input class="p" name="t_999_cod_prov" placeholder="RY" maxlength="5"></td>
               <td style="text-align:left"><input class="p" name="t_999_patron" placeholder="(por defecto)" maxlength="60"></td>
               <td><input class="n" name="t_999_tarifa" placeholder="0,0000"></td>
-              <td style="text-align:left"><input class="x" name="t_999_nota" placeholder="de dónde sale" maxlength="120"></td>
               <td class="muted" style="font-size:11px">nueva</td>
               <td></td>
             </tr>
@@ -267,7 +267,16 @@
                   {% if of.importe_sugerido %}Cargar $ {{ of.importe_sugerido|num_es(2) }}{% else %}Cargar ${% endif %}
                 </a>
               {% else %}
-                <span class="muted">cargado</span>
+                {# TMT 2026-07-30 (dueña: "compra y cargado no entiendo la
+                   diferencia"). Y no había diferencia que le importe: el $ verde
+                   es la compra ENCONTRADA (OFT estampado en el concepto) y
+                   "cargado" era el caso en que igual la damos por comprada pero
+                   NO sabemos cuál es —mes viejo, o el tejedor ya está cubierto—.
+                   Las dos querían decir "esta OF ya está comprada", y una de las
+                   dos no mostraba el dato que promete la columna. Queda el
+                   guión: sin importe que mostrar. Lo que SÍ se distingue solo es
+                   lo pendiente, que tiene botón. #}
+                <span class="muted" title="Ya comprada, pero sin el OFT estampado en la compra: no podemos decir cuál es">—</span>
               {% endif %}
             </td>
           </tr>
