@@ -3683,3 +3683,57 @@ def diag_efectivos_stat():
                  "lo mismo desde el 11/06/2026; lo listado acá es anterior a "
                  "esa fecha o cargado a mano."),
     })
+
+
+@cheques_bp.route("/cheques/residuos-retencion")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def residuos_retencion():
+    """Los saldos a favor de monedas que dejó la retención — para limpiarlos.
+
+    TMT 2026-07-30 (dueña): "los residuos de retenciones deberían eliminarse".
+    El control del 29/07 los tenía repartidos en 6 clientes por −100,45; el
+    dBase no tiene ninguno. Solo lectura acá; el POST de al lado los anula.
+    """
+    try:
+        tope = float(request.args.get("tope") or queries.TOPE_RESIDUO_RETENCION_USD)
+    except (TypeError, ValueError):
+        tope = queries.TOPE_RESIDUO_RETENCION_USD
+    tope = max(0.01, min(10000.0, tope))
+    residuos = queries.residuos_retencion(tope)
+    total = round(sum(abs(float(r.get("importe") or 0)) for r in residuos), 2)
+    return render_template(
+        "cheques/residuos_retencion.html",
+        residuos=residuos, total=total, tope=tope,
+    )
+
+
+@cheques_bp.route("/cheques/residuos-retencion/eliminar", methods=["POST"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def residuos_retencion_eliminar():
+    ids = [int(x) for x in request.form.getlist("id") if x.strip().isdigit()]
+    try:
+        tope = float(request.form.get("tope") or queries.TOPE_RESIDUO_RETENCION_USD)
+    except (TypeError, ValueError):
+        tope = queries.TOPE_RESIDUO_RETENCION_USD
+    if not ids:
+        flash("No tildaste ninguno.", "warn")
+        return redirect(url_for("cheques.residuos_retencion", tope=tope))
+    usuario = (g.user or {}).get("username", "web")
+    try:
+        res = queries.eliminar_residuos_retencion(ids, usuario=usuario, tope=tope)
+        from filters import money_es as _me_r
+        if res["n"]:
+            flash(
+                f"Anulados {res['n']} residuo(s) de retención por "
+                f"$ {_me_r(res['total'])}. Cada uno se puede deshacer de a uno "
+                f"desde el Historial.",
+                "ok",
+            )
+        else:
+            flash("No se anuló ninguno — ya no estaban vivos o quedaron "
+                  "fuera del tope.", "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude anular los residuos", e)
+    return redirect(url_for("cheques.residuos_retencion", tope=tope))

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Residuos de retención{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
+  <strong>Residuos de retención</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Residuos de retención</h1>
+    <a href="{{ url_for('cheques.lista') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700">&larr; Cheques</a>
+  </div>
+  <p class="text-sm text-slate-500 mb-4">
+    Saldos a favor de monedas que quedaron cuando el cliente retuvo impuesto y
+    el cheque no cerró exacto contra sus facturas. <strong>El dBase no los
+    tiene</strong>: ahí esa diferencia se olvida. Anularlos limpia el estado de
+    cuenta del cliente y el cuadre contra el dBase.
+    <br>
+    <span class="text-slate-400">De ahora en más ya no se generan: el sobrante
+    de hasta $5 se olvida solo y por encima la cobranza pregunta.</span>
+  </p>
+
+  {% if not residuos %}
+  <div class="rounded border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-sm">
+    No quedan residuos por debajo de {{ tope | money_es }}. Nada que limpiar.
+  </div>
+  {% else %}
+  <form method="POST" action="{{ url_for('cheques.residuos_retencion_eliminar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="tope" value="{{ tope }}">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-3">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-2 py-2 text-center" style="width:36px">
+              <input type="checkbox" id="chk-todos" checked
+                     title="Tildar / destildar todos">
+            </th>
+            <th class="px-3 py-2 text-left">Cliente</th>
+            <th class="px-3 py-2 text-left">Desde</th>
+            <th class="px-3 py-2 text-left">Cargado por</th>
+            <th class="px-3 py-2 text-right">Saldo a favor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in residuos %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-2 py-2 text-center">
+              <input type="checkbox" class="chk-res" name="id" value="{{ r.id_cheque }}" checked>
+            </td>
+            <td class="px-3 py-2">
+              <span class="font-mono">{{ r.codigo_cli }}</span>
+              <span class="text-slate-500">{{ r.nombre | cleanstr }}</span>
+            </td>
+            <td class="px-3 py-2 text-slate-500 text-xs">
+              {% if r.id_cheque_padre %}
+                cheque <a class="font-mono hover:underline"
+                          href="{{ url_for('cheques.detalle', id_cheque=r.id_cheque_padre) }}">#{{ r.id_cheque_padre }}</a>
+                {% if r.importe_padre %}de {{ r.importe_padre | money_es }}{% endif %}
+                {% if r.fecha_padre %}· {{ r.fecha_padre | fecha_es }}{% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-2 text-slate-500 text-xs">{{ r.usuario_crea or '—' }}</td>
+            <td class="px-3 py-2 text-right tabular-nums font-medium">
+              {{ (r.importe * -1) | money_es }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-300 dark:border-slate-700">
+          <tr>
+            <td colspan="4" class="px-3 py-2 text-right text-xs uppercase tracking-wide text-slate-500">
+              {{ residuos | length }} residuo(s) · total
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums font-semibold">{{ total | money_es }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <button class="px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium">
+        Anular los tildados
+      </button>
+      <span class="text-xs text-slate-500">
+        Cada uno queda en X con su motivo y se puede deshacer de a uno desde el
+        Historial. No toca banco ni caja — un espejo en cartera no tiene
+        movimiento que revertir.
+      </span>
+    </div>
+  </form>
+  <script>
+    (function () {
+      var todos = document.getElementById('chk-todos');
+      if (!todos) return;
+      todos.addEventListener('change', function () {
+        document.querySelectorAll('.chk-res').forEach(function (c) {
+          c.checked = todos.checked;
+        });
+      });
+    })();
+  </script>
+  {% endif %}
+
+  <p class="text-xs text-slate-400 mt-4">
+    Ventana: espejos NB=98 vivos (Z/1/2/3/P/D) por menos de {{ tope | money_es }}.
+    Se puede cambiar con <span class="font-mono">?tope=</span>.
+  </p>
+</div>
+{% endblock %}

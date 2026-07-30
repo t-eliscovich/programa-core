@@ -5759,3 +5759,81 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
         "n_anticipos": len(snap_anticipos),
         "id_residuo": id_residuo,
     }
+
+
+# ── Residuos de retención (espejos NB=98 de monedas) ──────────────────────
+# TMT 2026-07-30 (dueña): *"los residuos de retenciones deberían eliminarse"*.
+#
+# QUÉ SON. Cuando el cliente paga con un cheque que no cierra exacto contra
+# sus facturas porque retuvo impuesto, la cobranza dejaba el sobrante como
+# saldo a favor: un espejo NB=98 negativo de monedas. El dBase no los tiene —
+# ahí esa diferencia simplemente se olvida. Resultado: PC arrastra decenas de
+# "saldos a favor" de $2,86 que nadie va a usar nunca y que ensucian el estado
+# de cuenta y el cuadre contra el dBase (−100,45 en el control del 29/07:
+# DII −71,76 · WLL −8,96 · YAU −6,09 · CG3 −5,72 · HJV −5,24 · MVC −2,68).
+#
+# DE ACÁ EN MÁS YA NO SE CREAN: desde hoy el sobrante de hasta
+# TOLERANCIA_CENTAVOS_USD se olvida solo y por encima se pregunta. Esto es la
+# limpieza de los que quedaron.
+#
+# El tope por default ($100) es deliberadamente más alto que la banda de
+# monedas: la idea es VER todo lo chico en una lista y que la dueña elija, no
+# borrar por umbral.
+TOPE_RESIDUO_RETENCION_USD = 100.0
+
+
+def residuos_retencion(tope: float = TOPE_RESIDUO_RETENCION_USD) -> list[dict]:
+    """Espejos NB=98 vivos por menos de `tope` — los saldos a favor de monedas.
+
+    Solo lectura. Trae también el nombre del cliente y de dónde salió cada uno
+    (el cheque padre) para poder decidir sin abrir ficha por ficha.
+    """
+    return db.fetch_all(
+        """
+        SELECT c.id_cheque, c.codigo_cli, c.importe, c.fecha, c.fechad,
+               TRIM(COALESCE(c.stat, '')) AS stat,
+               c.usuario_crea, c.id_cheque_padre,
+               COALESCE(cl.nombre, '') AS nombre,
+               p.importe AS importe_padre, p.fecha AS fecha_padre
+          FROM scintela.cheque c
+          LEFT JOIN scintela.cliente cl
+                 ON UPPER(TRIM(cl.codigo_cli)) = UPPER(TRIM(c.codigo_cli))
+          LEFT JOIN scintela.cheque p ON p.id_cheque = c.id_cheque_padre
+         WHERE c.no_banco = 98
+           AND COALESCE(c.importe, 0) < 0
+           AND ABS(COALESCE(c.importe, 0)) <= %s
+           AND TRIM(COALESCE(c.stat, '')) IN ('Z', '1', '2', '3', 'P', 'D')
+         ORDER BY ABS(COALESCE(c.importe, 0)) DESC, c.codigo_cli
+        """,
+        (float(tope),),
+    ) or []
+
+
+def eliminar_residuos_retencion(
+    ids: list[int], *, usuario: str = "web", tope: float = TOPE_RESIDUO_RETENCION_USD
+) -> dict:
+    """Anula los espejos de monedas elegidos. Devuelve {n, total, ids}.
+
+    Reusa `anular_por_error_de_carga`, que para un espejo en cartera es un
+    UPDATE a 'X' sin compensación de banco ni de caja (no hay movimiento que
+    revertir) y deja su mov_doble — o sea que cada uno se puede deshacer
+    individualmente desde /historial.
+
+    GUARDA: sólo anula ids que la propia consulta considera residuo. Si
+    alguien manda el id de un saldo a favor grande —a mano o por un form
+    viejo— se ignora, no se anula de más.
+    """
+    validos = {int(r["id_cheque"]): float(r["importe"] or 0)
+               for r in residuos_retencion(tope)}
+    hechos, total = [], 0.0
+    for i in [int(x) for x in (ids or [])]:
+        if i not in validos:
+            continue
+        anular_por_error_de_carga(
+            i,
+            motivo="residuo de retencion (el dBase no lo tiene)",
+            usuario=usuario,
+        )
+        hechos.append(i)
+        total += abs(validos[i])
+    return {"n": len(hechos), "total": round(total, 2), "ids": hechos}

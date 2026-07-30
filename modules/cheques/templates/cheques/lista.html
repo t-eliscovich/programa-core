@@ -229,6 +229,13 @@
             <div class="font-medium">Resumen de cobranza del día</div>
             <div class="text-xs text-slate-500">Cheques / depósitos / efectivo del día, imprimible</div>
           </a>
+          {# TMT 2026-07-30 (dueña): "los residuos de retenciones deberían
+             eliminarse". Los saldos a favor de monedas que el dBase no tiene. #}
+          <a href="{{ url_for('cheques.residuos_retencion') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Residuos de retención</div>
+            <div class="text-xs text-slate-500">Saldos a favor de monedas para limpiar</div>
+          </a>
           {% if tiene_permiso('cheques.transicionar') %}
           <a href="{{ url_for('cheques.corregir_devoluciones_sin_nd') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
