@@ -1132,10 +1132,28 @@ def buscar(
                  ELSE NOT EXISTS (
                         SELECT 1 FROM scintela.posdat pd
                          WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
-                           AND pd.fecha = c.fecha
-                           AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
                            AND COALESCE(pd.banc, 0) = 0
                            AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                           -- Cuando los DOS lados tienen concepto, manda el
+                           -- concepto: es lo único que distingue CUOTAS del
+                           -- mismo importe y la misma fecha. Caso real CN: 6
+                           -- compras de 20.200 del 14/05/2026 (`1/6 20200 14`
+                           -- … `6/6 14`) contra 4 posdatados abiertos (3/6 a
+                           -- 6/6) — por fecha+importe las 6 matcheaban y las
+                           -- cuotas 1/6 y 2/6, ya pagadas, seguían en "debe"
+                           -- ($40.400 de más). El posdat del dBase escribe el
+                           -- concepto con relleno (`'5/6          14'`), por eso
+                           -- se comparan con los espacios colapsados.
+                           -- Si alguno viene VACÍO (el caso HY, donde el posdat
+                           -- no trae concepto) se cae a fecha + importe.
+                           AND CASE
+                                 WHEN btrim(COALESCE(pd.concepto, '')) <> ''
+                                  AND btrim(COALESCE(c.concepto, ''))  <> ''
+                                 THEN regexp_replace(upper(btrim(pd.concepto)), '[[:space:]]+', ' ', 'g')
+                                    = regexp_replace(upper(btrim(c.concepto)),  '[[:space:]]+', ' ', 'g')
+                                 ELSE pd.fecha = c.fecha
+                                  AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
+                               END
                  )
                END                                          AS pagada
         FROM scintela.compra c

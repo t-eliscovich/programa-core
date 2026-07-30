@@ -164,10 +164,22 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
                     OR NOT EXISTS (
                           SELECT 1 FROM scintela.posdat pd
                            WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
-                             AND pd.fecha = c.fecha
-                             AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
                              AND COALESCE(pd.banc, 0) = 0
                              AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                             -- Con concepto de los dos lados manda el concepto:
+                             -- es lo único que distingue CUOTAS del mismo
+                             -- importe y fecha (caso CN, 6 × 20.200 el mismo
+                             -- día). El posdat del dBase lo escribe con relleno,
+                             -- por eso se colapsan los espacios. Si alguno viene
+                             -- vacío (caso HY) se cae a fecha + importe.
+                             AND CASE
+                                   WHEN btrim(COALESCE(pd.concepto, '')) <> ''
+                                    AND btrim(COALESCE(c.concepto, ''))  <> ''
+                                   THEN regexp_replace(upper(btrim(pd.concepto)), '[[:space:]]+', ' ', 'g')
+                                      = regexp_replace(upper(btrim(c.concepto)),  '[[:space:]]+', ' ', 'g')
+                                   ELSE pd.fecha = c.fecha
+                                    AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
+                                 END
                     ))
                        AS pagada_legacy
               FROM scintela.compra c
@@ -382,10 +394,22 @@ def estado_pago_de_compras(compras: list[dict] | None) -> dict:
                     OR NOT EXISTS (
                           SELECT 1 FROM scintela.posdat pd
                            WHERE UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
-                             AND pd.fecha = c.fecha
-                             AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
                              AND COALESCE(pd.banc, 0) = 0
                              AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                             -- Con concepto de los dos lados manda el concepto:
+                             -- es lo único que distingue CUOTAS del mismo
+                             -- importe y fecha (caso CN, 6 × 20.200 el mismo
+                             -- día). El posdat del dBase lo escribe con relleno,
+                             -- por eso se colapsan los espacios. Si alguno viene
+                             -- vacío (caso HY) se cae a fecha + importe.
+                             AND CASE
+                                   WHEN btrim(COALESCE(pd.concepto, '')) <> ''
+                                    AND btrim(COALESCE(c.concepto, ''))  <> ''
+                                   THEN regexp_replace(upper(btrim(pd.concepto)), '[[:space:]]+', ' ', 'g')
+                                      = regexp_replace(upper(btrim(c.concepto)),  '[[:space:]]+', ' ', 'g')
+                                   ELSE pd.fecha = c.fecha
+                                    AND ABS(COALESCE(pd.importe, 0) - COALESCE(c.importe, 0)) < 0.01
+                                 END
                     ))
                        AS pagada_legacy
               FROM scintela.compra c
