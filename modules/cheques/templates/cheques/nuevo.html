@@ -1274,6 +1274,18 @@
       + '<td class="px-3 py-2 text-right tabular-nums font-medium">$ ' + fmt(a.importe_abs) + '</td>'
       + '</tr>'
     )).join('');
+    // TMT 2026-07-30 (dueña: "hace falta ingresar el 900 al principio?").
+    // Hacía falta, sí: el importe del 95 es lo que aparea con el espejo y lo
+    // que se reparte a las facturas — sin él la cobranza ni arranca. Pero
+    // tipearlo de memoria era el paso que hacía fallar todo. Si el cliente
+    // tiene UN solo anticipo vivo, se tilda solo y llena el importe. Con dos
+    // o más no adivinamos: elige ella.
+    if (anticipos95.length === 1) {
+      const impVacio = [...document.querySelectorAll('.cheque-bloque')]
+        .filter(b => (b.querySelector('.cheque-banco') || {}).value === '95')
+        .every(b => !(((b.querySelector('.cheque-imp') || {}).value) || '').trim());
+      if (impVacio) tb.querySelector('.ant95-chk').click();
+    }
   }
 
   // Tildar = "este es el anticipo que estoy usando": completa el importe del

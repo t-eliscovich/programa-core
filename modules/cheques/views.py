@@ -328,7 +328,16 @@ def nuevo():
         errores.append(f"El cliente {codigo_cli!r} no existe.")
     # Validación multi-cheque: TODOS los bloques deben tener n° y importe>0.
     if not cheques_in:
-        errores.append("Por lo menos un cheque (N° + importe) requerido.")
+        # TMT 2026-07-30 (dueña: "pasa algo si no está?"): con banco 95 el
+        # importe es obligatorio —es lo que aparea con el anticipo— pero el
+        # N° no existe, así que pedirlo confundía.
+        if "95" in (request.form.getlist("no_banco[]") or []):
+            errores.append(
+                "Falta el importe del anticipo. Tildalo en la lista de "
+                "arriba y se completa solo."
+            )
+        else:
+            errores.append("Por lo menos un cheque (N° + importe) requerido.")
     else:
         for i, ch in enumerate(cheques_in, start=1):
             etq = f"Cheque #{i}" if len(cheques_in) > 1 else ""
