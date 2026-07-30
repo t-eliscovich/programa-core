@@ -268,6 +268,41 @@
        un input "monto a aplicar" pre-cargado FIFO (factura más vieja primero)
        o match exacto si hay una factura con saldo = importe del cheque.
        Si "Es anticipo" está tildado, esta sección queda oculta. #}
+    {# ── BANCO 95 (CANCELA ANTICIPO) → qué anticipo estoy usando ──────────
+       TMT 2026-07-30 (dueña: "cuando pongo 95 me tiene que mostrar cuales
+       puedo aplicar"). El 97 CREA el anticipo y muestra los cheques a
+       cancelar; el 95 lo USA, y no mostraba nada: PC busca el espejo por
+       importe EXACTO y si no coincide deja el cheque en cartera con un aviso
+       (paridad ALTAS.PRG "NO SE ENCUENTRA EL ANTICIPO"). Había que acordarse
+       el importe de memoria.
+
+       Va ARRIBA de las facturas y con CHECKBOX, no con un botón (dueña:
+       "el anticipo deberia aparece primero y tener un checkbox como la
+       factura, no se porque cambias el formato"). Mismo lenguaje visual que
+       la tabla de facturas: se tilda la fila. Tildar completa el importe del
+       cheque 95; destildar lo limpia. Uno a la vez, porque el 95 cancela UN
+       espejo (el match es por importe exacto). #}
+    <div id="anticipo-95" class="mt-6 hidden">
+      <div class="flex items-baseline justify-between mb-2">
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Anticipos disponibles para cancelar</h3>
+        <span class="text-xs text-slate-500" id="ant95-hint">Tildá cuál estás usando — completa el importe del cheque.</span>
+      </div>
+      <div class="border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">
+            <tr>
+              <th class="px-2 py-2 w-10"></th>
+              <th class="px-3 py-2 text-left">Fecha</th>
+              <th class="px-3 py-2 text-left">Banco</th>
+              <th class="px-3 py-2 text-left">Estado</th>
+              <th class="px-3 py-2 text-right">Importe</th>
+            </tr>
+          </thead>
+          <tbody id="ant95-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="aplicacion-facturas" class="mt-6 hidden">
       {# Marca si la dueña usó el botón T en alguna fila — el backend
          relaja la tolerancia de rounding cuando ve "1" acá. TMT 2026-05-16. #}
@@ -399,35 +434,6 @@
        FIFO por fecha hasta cubrir el anticipo; editable — las decisiones
        manuales viven en manualCancel (patrón manualValues) y PERSISTEN
        entre renders. Los checkboxes tildados viajan como cheques_cancelar[]. #}
-    {# ── BANCO 95 (CANCELA ANTICIPO) → qué anticipo estoy usando ──────────
-       TMT 2026-07-30 (dueña: "cuando pongo 95 me tiene que mostrar cuales
-       puedo aplicar"). El 97 CREA el anticipo y muestra los cheques a
-       cancelar; el 95 lo USA, y hasta ahora no mostraba nada: PC busca el
-       espejo por importe EXACTO y, si no coincide al centavo, deja el cheque
-       en cartera con un aviso (paridad ALTAS.PRG "NO SE ENCUENTRA EL
-       ANTICIPO"). Había que acordarse el importe de memoria.
-       Elegir uno acá completa el importe del cheque 95 — no decide nada por
-       tu cuenta, sólo evita el número tipeado a ojo. #}
-    <div id="anticipo-95" class="mt-6 hidden">
-      <div class="flex items-baseline justify-between mb-2">
-        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Anticipos disponibles para cancelar</h3>
-        <span class="text-xs text-slate-500" id="ant95-hint">Elegí cuál estás usando — completa el importe del cheque.</span>
-      </div>
-      <div class="border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-        <table class="w-full text-sm">
-          <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">
-            <tr>
-              <th class="px-3 py-2 text-left">Fecha</th>
-              <th class="px-3 py-2 text-right">Importe</th>
-              <th class="px-3 py-2 text-left">Banco</th>
-              <th class="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody id="ant95-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
     <div id="anticipo-cheques" class="mt-6 hidden">
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700">Anticipo → cancelar cheques en cartera</h3>
@@ -1251,27 +1257,30 @@
     // Se listan todos los espejos vivos (Z/1/2/3/P/D) y todos son usables: el
     // match del 95 acepta el mismo grupo desde el 30/07 (antes exigía Z y por
     // eso el primer caso real —un anticipo POSTERGADO— no aparecía).
+    const ANT95_ESTADOS = {'Z': 'en cartera', '1': 'postergado', '2': 'postergado',
+                           '3': 'postergado', 'P': 'protestado', 'D': 'depositado'};
     tb.innerHTML = anticipos95.map(a => (
-      '<tr class="border-t border-slate-100 dark:border-slate-800'
-      + (a.aplicable ? '' : ' text-slate-400') + '">'
+      '<tr class="border-t border-slate-100 dark:border-slate-800">'
+      + '<td class="px-2 py-2 text-center">'
+      + '<input type="checkbox" class="ant95-chk" data-importe="' + a.importe_abs + '">'
+      + '</td>'
       + '<td class="px-3 py-2">' + (a.fecha || '') + '</td>'
-      + '<td class="px-3 py-2 text-right tabular-nums font-medium">$ ' + fmt(a.importe_abs) + '</td>'
       + '<td class="px-3 py-2 text-slate-500">' + (a.banco || '') + '</td>'
-      + '<td class="px-3 py-2 text-right">'
-      + (a.aplicable
-          ? ('<button type="button" class="ant95-usar px-2 py-0.5 rounded border border-sky-400 '
-             + 'text-sky-700 hover:bg-sky-50 text-xs" data-importe="' + a.importe_abs + '">Usar</button>')
-          : ('<span class="text-xs" title="El 95 sólo cancela anticipos que están en cartera (Z)">'
-             + 'no está en cartera (' + (a.stat || '?') + ') — volvelo a Z para usarlo</span>'))
-      + '</td></tr>'
+      + '<td class="px-3 py-2 text-slate-500">' + (ANT95_ESTADOS[a.stat] || a.stat || '') + '</td>'
+      + '<td class="px-3 py-2 text-right tabular-nums font-medium">$ ' + fmt(a.importe_abs) + '</td>'
+      + '</tr>'
     )).join('');
   }
 
-  // "Usar" = completar el importe del primer cheque con banco 95 (el vacío
-  // primero). No guarda nada: sólo escribe el número que hay que acertar.
-  document.addEventListener('click', (e) => {
-    const b = e.target;
-    if (!b || !b.classList || !b.classList.contains('ant95-usar')) return;
+  // Tildar = "este es el anticipo que estoy usando": completa el importe del
+  // cheque 95. Uno a la vez — el 95 cancela UN espejo (match por importe
+  // exacto), así que tildar otro destilda el anterior. Destildar limpia.
+  document.addEventListener('change', (e) => {
+    const chk = e.target;
+    if (!chk || !chk.classList || !chk.classList.contains('ant95-chk')) return;
+    if (chk.checked) {
+      document.querySelectorAll('.ant95-chk').forEach(o => { if (o !== chk) o.checked = false; });
+    }
     const bloques = [...document.querySelectorAll('.cheque-bloque')].filter(x => {
       const sel = x.querySelector('.cheque-banco');
       return sel && sel.value === '95';
@@ -1281,7 +1290,7 @@
                     || bloques[0];
     const inp = destino.querySelector('.cheque-imp');
     if (!inp) return;
-    inp.value = fmt(parseFloat(b.dataset.importe || '0'));
+    inp.value = chk.checked ? fmt(parseFloat(chk.dataset.importe || '0')) : '';
     inp.dispatchEvent(new Event('input', {bubbles: true}));
     inp.dispatchEvent(new Event('change', {bubbles: true}));
   });
