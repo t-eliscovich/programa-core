@@ -144,3 +144,74 @@ def test_anticipos_vivos_lista_los_postergados():
     assert "IN ('Z', '1', '2', '3', 'P', 'D')" in src
     assert "no_banco IN (97, 98)" in src
     assert "COALESCE(importe, 0) < 0" in src, "el espejo del anticipo es negativo"
+
+
+# ── El 95 tiene que poder CERRAR la factura que el anticipo paga ───────────
+# TMT 2026-07-30. `crear()` anula el 95 contra el espejo NB=98 (los dos a 'X')
+# en la misma tx, y después el flujo de cobranza lo aplica a la factura. El
+# guard de stats aplicables (#26) rechazaba ese 'X' y la cobranza entera moría
+# con "Cheque N en stat='X' no se puede aplicar a facturas" — el saldo a favor
+# del cliente no había forma de usarlo. La excepción es angosta a propósito:
+# sólo el flujo de creación (permitir_depositado) y sólo no_banco=95.
+
+class _StubAplicar:
+    def __init__(self, stat: str, no_banco: int):
+        self.stat, self.no_banco = stat, no_banco
+        self.updates: list[tuple] = []
+
+    def fetch_one(self, sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.cheque" in s:
+            return {"id_cheque": 501, "codigo_cli": "GL1", "no_banco": self.no_banco,
+                    "importe": 900.0, "stat": self.stat, "fecha": date(2026, 7, 30)}
+        if "from scintela.factura" in s:
+            return {"id_factura": 9001, "numf": 178474, "importe": 1874.91,
+                    "abono": 974.91, "saldo": 900.0, "stat": "A"}
+        return None
+
+    def execute(self, sql, params=None, conn=None):
+        self.updates.append((" ".join(sql.split()).lower(), tuple(params or ())))
+        return 1
+
+
+@pytest.fixture
+def _aplicar(monkeypatch):
+    def _run(stat, no_banco, permitir_depositado=True):
+        import db
+        import mov_doble
+        from modules.cheques import queries as q
+        s = _StubAplicar(stat, no_banco)
+        monkeypatch.setattr(db, "fetch_one", s.fetch_one)
+        monkeypatch.setattr(db, "execute", s.execute)
+        monkeypatch.setattr(mov_doble, "registrar", lambda **kw: None)
+        r = q.aplicar_a_factura(
+            id_cheque=501,
+            aplicaciones=[{"id_fact": 9001, "importe": 900.0}],
+            conn=object(),
+            permitir_depositado=permitir_depositado,
+        )
+        return s, r
+    return _run
+
+
+def test_el_95_anulado_igual_cierra_la_factura(_aplicar):
+    s, r = _aplicar("X", 95)
+    assert r["total_aplicado"] == 900.0
+    upd = [u for u in s.updates if "update scintela.factura" in u[0]]
+    assert upd, "no actualizó la factura"
+    abono, saldo, stat = upd[0][1][0], upd[0][1][1], upd[0][1][2]
+    assert round(abono, 2) == 1874.91
+    assert abs(saldo) < 0.005
+    assert stat == "T", "la factura tiene que quedar cancelada"
+
+
+def test_un_cheque_anulado_que_no_es_95_sigue_bloqueado(_aplicar):
+    with pytest.raises(ValueError, match="stat='X'"):
+        _aplicar("X", 90)
+
+
+def test_la_ruta_manual_no_puede_aplicar_un_95_anulado(_aplicar):
+    # /cheques/<id>/aplicar pasa permitir_depositado=False: un 95 ya anulado
+    # (de otra cobranza, otro día) no se re-aplica desde ahí.
+    with pytest.raises(ValueError, match="stat='X'"):
+        _aplicar("X", 95, permitir_depositado=False)

@@ -2874,8 +2874,11 @@ def crear(
     # Mapeo (confirmado por screenshot del dropdown):
     #   90 DEP. PICH   → cobro directo en Pichincha (sin papel) → stat='B'
     #   91 DEP. INTER  → cobro directo en Internacional        → stat='B'
-    #   95 CANCELA ANTIC → marca contable; queda en cartera para que la
-    #                       dueña lo aplique manualmente.
+    #   95 CANCELA ANTIC → marca contable: busca el espejo NB=98 del
+    #                       anticipo y anula los dos ('X'). El 95 se aplica
+    #                       igual a la factura que el anticipo paga — es esa
+    #                       aplicación la que cierra la cuenta (ver la
+    #                       excepción por no_banco=95 en aplicar_a_factura).
     #   97 ANTICIPO   → el view fuerza es_anticipo=True; queda en Z y
     #                    genera espejo negativo.
     #   98 UKN        → legacy unknown, sin side-effect.
@@ -3985,6 +3988,26 @@ def aplicar_a_factura(
         # TMT 2026-06-11: el flujo de creacion tambien aplica cheques 'C'
         # (efectivo 99, paridad dBase PASOCAJA) en la misma tx.
         stats_ok = STATS_APLICABLES + (("B", "C") if permitir_depositado else ())
+        # TMT 2026-07-30 (dueña: "despues cancelalos") — banco 95 CANCELA
+        # ANTICIPO. `crear()` ya anuló el 95 contra el espejo NB=98 del
+        # anticipo (los dos a 'X', paridad ALTAS.PRG) DENTRO de esta misma
+        # tx... y el 95 es justamente el cheque que tiene que cerrar la
+        # factura que el anticipo paga. Sin esta excepción la cobranza moría
+        # con "en stat='X' no se puede aplicar" y el saldo a favor no había
+        # forma de usarlo.
+        #
+        # Por qué cierra la cuenta: la plata del anticipo ya entró en su día
+        # (cheque real depositado); el espejo −900 es el crédito parqueado.
+        # Al usarlo: espejo 'X' (−900 sale de cartera de cheques, +900) y la
+        # factura baja 900 → cartera total IGUAL. El 95 no es plata nueva,
+        # es la contrapartida contable, por eso también queda 'X' y no
+        # infla la cartera.
+        #
+        # Alcance: SOLO el flujo de creación (permitir_depositado=True, el
+        # cheque nació en esta tx) y SOLO no_banco=95. La ruta manual
+        # /cheques/<id>/aplicar sigue sin poder tocar un cheque anulado.
+        if permitir_depositado and int(ch.get("no_banco") or 0) == 95:
+            stats_ok = stats_ok + ("X",)
         if stat_ch not in stats_ok:
             raise ValueError(
                 f"Cheque {id_cheque} en stat='{stat_ch}' no se puede aplicar a "

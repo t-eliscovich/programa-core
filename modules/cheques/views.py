@@ -816,6 +816,25 @@ def nuevo():
             if _modo_sobrante == "totalizar" and espejos_anticipo is not None:
                 espejos_anticipo = [0.0 for _ in espejos_anticipo]
 
+        # ── GUARDA DEL 95 (CANCELA ANTICIPO) — TMT 2026-07-30 ──────────────
+        # El 95 anula el espejo NB=98 (el saldo a favor del cliente) contra
+        # sí mismo: los dos quedan en 'X'. Si además NO se aplica a ninguna
+        # factura, el crédito del cliente se evapora sin cerrar nada: la
+        # cartera de cheques sube por el importe del anticipo, la de facturas
+        # no baja, y el cliente queda debiendo plata que ya pagó. El 95 sin
+        # factura no es una operación válida.
+        _hay_95 = any(
+            int((c.get("no_banco") if c.get("no_banco") is not None else no_banco) or 0) == 95
+            for c in cheques_in
+        )
+        if _hay_95 and not aplicaciones_pre:
+            raise ValueError(
+                "El banco 95 CANCELA ANTICIPO usa el saldo a favor del "
+                "cliente para pagar una factura: tildá la factura que "
+                "cancela. Si no tildás ninguna, el anticipo se anula sin "
+                "cerrar nada y el cliente queda debiendo esa plata."
+            )
+
         with db.tx() as conn:
             _idx_esp_97 = 0
             for ch_in in cheques_in:

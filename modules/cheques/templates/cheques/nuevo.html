@@ -1257,8 +1257,12 @@
     // Se listan todos los espejos vivos (Z/1/2/3/P/D) y todos son usables: el
     // match del 95 acepta el mismo grupo desde el 30/07 (antes exigía Z y por
     // eso el primer caso real —un anticipo POSTERGADO— no aparecía).
-    const ANT95_ESTADOS = {'Z': 'en cartera', '1': 'postergado', '2': 'postergado',
-                           '3': 'postergado', 'P': 'protestado', 'D': 'depositado'};
+    // Vocabulario canónico del stat (docstring de cheques/queries.py).
+    // TMT 2026-07-30: decía "protestado" para P —que es POSTERGADO, como lo
+    // llama la ficha del cheque— y "depositado" para D, que es Daniela.
+    const ANT95_ESTADOS = {'Z': 'en cartera', '1': 'devuelto', '2': 'devuelto',
+                           '3': 'devuelto', 'P': 'postergado',
+                           'D': 'en gestión Daniela'};
     tb.innerHTML = anticipos95.map(a => (
       '<tr class="border-t border-slate-100 dark:border-slate-800">'
       + '<td class="px-2 py-2 text-center">'
