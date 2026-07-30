@@ -215,10 +215,10 @@
            style="margin-bottom:14px;border:1px solid rgb(226 232 240);border-radius:12px;background:#fff;">
     <summary style="cursor:pointer;padding:10px 14px;font-size:12px;font-weight:700;color:rgb(51 65 85);list-style:none;">
       <span style="display:inline-block;width:14px;color:rgb(148 163 184);">+</span>
-      Tarifas de compras locales ($/kg sin IVA)
+      Tarifas de compras locales ($/kg sin IVA, una por proveedor)
       {% if tarifas %}
         <span style="font-weight:500;color:rgb(100 116 139);font-size:11px;">
-          — {% for t in tarifas %}{{ ' · ' if not loop.first }}{{ t.cod_prov }}{% if t.patron %}/{{ t.patron }}{% endif %} {{ t.tarifa|num_es(4) }}{% endfor %}
+          — {% for t in tarifas %}{{ ' · ' if not loop.first }}{{ t.cod_prov }} {{ t.tarifa|num_es(4) }}{% endfor %}
         </span>
       {% endif %}
       {% if locales_sin_tarifa %}
@@ -229,7 +229,7 @@
     <div style="padding:0 14px 14px 14px;">
       {% if not tarifas %}
         <p style="font-size:11.5px;color:rgb(100 116 139);margin:0 0 8px 0;">
-          Todavía no hay tarifas cargadas.{% if puede_tarifas %} Poné el $/kg de cada producto y guardá.{% endif %}
+          Todavía no hay tarifas cargadas.{% if puede_tarifas %} Poné el $/kg de cada proveedor y guardá.{% endif %}
         </p>
       {% endif %}
 
@@ -239,7 +239,6 @@
           <thead>
             <tr>
               <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Proveedor</th>
-              <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Producto (Asinfo)</th>
               <th style="text-align:right;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">$/kg s/IVA</th>
               <th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:rgb(100 116 139);border-bottom:1px solid rgb(226 232 240);">Actualizado</th>
               <th style="border-bottom:1px solid rgb(226 232 240);"></th>
@@ -254,12 +253,9 @@
                          style="width:56px;text-transform:uppercase;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;">
                 {% else %}<span style="font-family:ui-monospace,Menlo,monospace;">{{ t.cod_prov }}</span>{% endif %}
               </td>
-              <td style="padding:5px 8px;border-bottom:1px solid rgb(241 245 249);">
-                {% if puede_tarifas %}
-                  <input name="t_{{ loop.index }}_patron" value="{{ t.patron or '' }}" placeholder="todos los productos"
-                         style="width:230px;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;">
-                {% else %}<span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;">{{ t.patron or 'todos los productos' }}</span>{% endif %}
-              </td>
+              {# El patrón de producto no se muestra: hoy hay UNA tarifa por
+                 proveedor. Viaja oculto para no perderlo si alguna fila lo tiene. #}
+              {% if puede_tarifas %}<input type="hidden" name="t_{{ loop.index }}_patron" value="{{ t.patron or '' }}">{% endif %}
               <td style="padding:5px 8px;text-align:right;border-bottom:1px solid rgb(241 245 249);">
                 {% if puede_tarifas %}
                   <input name="t_{{ loop.index }}_tarifa" value="{{ t.tarifa|num_es(4) }}"
@@ -283,8 +279,6 @@
             <tr>
               <td style="padding:5px 8px;"><input name="t_999_cod_prov" placeholder="HY"
                     style="width:56px;text-transform:uppercase;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-family:ui-monospace,Menlo,monospace;"></td>
-              <td style="padding:5px 8px;"><input name="t_999_patron" placeholder="código de producto de Asinfo"
-                    style="width:230px;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;font-size:11px;"></td>
               <td style="padding:5px 8px;text-align:right;"><input name="t_999_tarifa" placeholder="0,0000"
                     style="width:82px;text-align:right;border:1px solid rgb(203 213 225);border-radius:5px;padding:2px 6px;"></td>
               <td colspan="2"></td>

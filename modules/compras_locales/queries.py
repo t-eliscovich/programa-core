@@ -6,9 +6,11 @@ Asinfo no se usa** (*"asinfo nunca nos importa en plata"*). El importe sale de
 un tarifario editable, igual que en tejeduría, con los $/kg promediados del
 COMPRAS.DBF del FoxPro.
 
-`patron` = substring del CÓDIGO DE PRODUCTO de la recepción de Asinfo
-(ej. '22/1-65:35CAR-10%-HY'). `patron IS NULL` = tarifa por defecto del
-proveedor. El patrón MÁS ESPECÍFICO (el más largo que matchea) gana.
+Hoy hay **UNA tarifa por PROVEEDOR** (dueña 2026-07-30: *"uno solo por
+proveedor y hace un promedio ponderado"*) — la fila con `patron IS NULL`, que es
+el default. El mecanismo de `patron` (substring del código de producto de
+Asinfo, el más específico gana) queda disponible por si algún día un producto se
+sale mucho del promedio, pero la pantalla no lo pide.
 
 ⚠ La tarifa se guarda **SIN IVA**. El motor multiplica por 1,15 al crear la
 compra, porque el dBase graba COMPRAS.IMPORTE con IVA (ver migración 0143).

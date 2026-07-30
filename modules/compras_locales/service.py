@@ -28,13 +28,11 @@ proveedor y **nace el pasivo** — igual que tejeduría. Por eso:
     ya están cargadas a mano o archivadas en el FoxPro.
  4. **Proveedor mapeado por RUC** o se saltea (nunca adivinamos el código).
  5. **Tarifa resuelta** o se saltea — nunca inventamos un precio.
- 6. **Una sola familia de producto por factura**: si la factura trae varios
-    productos no sabemos cuál tarifa aplicar → se saltea y se avisa.
- 7. **Ya cruzada** — si la factura ya tiene una compra en PC (match por
+ 6. **Ya cruzada** — si la factura ya tiene una compra en PC (match por
     proveedor + nº de factura), no se vuelve a cargar. Idempotente.
- 8. **Topes por corrida** (cantidad e importe) — un cambio raro en Asinfo no
+ 7. **Topes por corrida** (cantidad e importe) — un cambio raro en Asinfo no
     puede generar 200 compras de golpe.
- 9. **Switch de ambiente** `HILO_LOCAL_AUTO=0`.
+ 8. **Switch de ambiente** `HILO_LOCAL_AUTO=0`.
 
 El período cerrado lo valida `compras.queries.crear` (`asegurar_fecha_abierta`)
 y se reporta como salteada, sin cortar el lote.
@@ -62,7 +60,7 @@ _LOG = logging.getLogger("programa_core.compras_locales")
 #: /compras tienen origen "dBase"). Si las preserváramos, después de un sync
 #: quedarían DUPLICADAS — la nuestra y la del DBF. Dejándolas caer, el sync las
 #: reemplaza por la del FoxPro, que es la misma factura con el mismo importe.
-#: Y si el FoxPro no la tipeó, la guarda 7 no encuentra cruce en la próxima
+#: Y si el FoxPro no la tipeó, la guarda 6 no encuentra cruce en la próxima
 #: corrida y el motor la vuelve a cargar solo. Se cura sola en los dos sentidos.
 MARCADOR_CARGA = "asinfo-hilo-local"
 
@@ -74,7 +72,7 @@ IVA = 1.15
 #: dBase o se tipearon a mano; arrancar antes duplicaría.
 CORTE = date(2026, 7, 1)
 
-#: Topes por corrida (guarda 8).
+#: Topes por corrida (guarda 7).
 TOPE_COMPRAS = 20
 TOPE_IMPORTE = 500_000.0
 
@@ -407,7 +405,7 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
         }
         kg = float(f.get("kg") or 0)
 
-        if f.get("compra"):                                    # guarda 7
+        if f.get("compra"):                                    # guarda 6
             detalle.append({**base, "ok": False, "motivo": "ya tiene compra"})
             continue
         if not f.get("recibida") or kg <= 0:                   # guarda 2
@@ -424,15 +422,11 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
         if f.get("fact_num") is None:
             detalle.append({**base, "ok": False, "motivo": "factura sin número"})
             continue
-        if int(f.get("n_productos") or 0) > 1:                 # guarda 6
-            detalle.append({**base, "ok": False,
-                            "motivo": "la factura trae varios productos"})
-            continue
         if not f.get("tarifa") or not f.get("importe_sugerido"):   # guarda 5
             detalle.append({**base, "ok": False,
                             "motivo": f"falta tarifa para {f.get('producto') or '?'}"})
             continue
-        if creadas >= TOPE_COMPRAS or (                        # guarda 8
+        if creadas >= TOPE_COMPRAS or (                        # guarda 7
                 importe_total + float(f["importe_sugerido"]) > TOPE_IMPORTE):
             detalle.append({**base, "ok": False, "motivo": "tope de la corrida"})
             continue
@@ -508,7 +502,7 @@ def correr_si_toca() -> dict:
     """Entrada del hilo de fondo: carga lo que llegó y avisa. Nunca levanta."""
     global _auto_ultimo_ts
     res = {"corrio": False, "creadas": 0, "importe": 0.0}
-    if os.environ.get("HILO_LOCAL_AUTO", "1").strip() == "0":   # guarda 9
+    if os.environ.get("HILO_LOCAL_AUTO", "1").strip() == "0":   # guarda 8
         return res
     ahora = _time.monotonic()
     with _AUTO_LOCK:

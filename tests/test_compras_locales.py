@@ -58,6 +58,21 @@ def test_resolver_sin_default_devuelve_none():
     assert q.resolver(TARIFAS, "EP", "16/1-65:35-OPEN-EP") is None
 
 
+def test_una_tarifa_por_proveedor_aplica_a_cualquier_producto():
+    # Forma REAL del tarifario desde la mig 0144: una fila por proveedor
+    # (patron NULL) con el promedio ponderado. Cubre todos sus productos.
+    solo_default = [{"cod_prov": "HY", "patron": None, "tarifa": 3.0708}]
+    assert q.resolver(solo_default, "HY", "75D/72F-POL-HENGYI") == 3.0708
+    assert q.resolver(solo_default, "HY", "14/1-SPUN-HY") == 3.0708
+    assert q.resolver(solo_default, "HY", None) == 3.0708
+
+
+def test_factura_con_varios_productos_ya_no_frena_la_carga():
+    # Con una tarifa por proveedor, cuántos productos trae la factura da igual.
+    res = _plan([_fila(n_productos=3)])
+    assert res["creadas"] == 1
+
+
 def test_resolver_proveedor_desconocido_o_vacio():
     assert q.resolver(TARIFAS, "ZZ", "lo que sea") is None
     assert q.resolver(TARIFAS, "", "lo que sea") is None
@@ -204,7 +219,6 @@ def test_carga_dry_run_no_escribe_y_planifica():
         ({"fecha_recepcion": "2026-06-30"}, "antes del"),
         ({"prov": None}, "sin código en el programa"),
         ({"fact_num": None}, "factura sin número"),
-        ({"n_productos": 3}, "varios productos"),
         ({"tarifa": None, "importe_sugerido": None}, "falta tarifa"),
     ],
 )
