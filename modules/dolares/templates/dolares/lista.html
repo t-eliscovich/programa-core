@@ -156,13 +156,29 @@
     box-shadow: none !important;
   }
   .anio-cell::placeholder { color: rgb(203 213 225); }
-  .anio-cell:hover { border-color: rgb(226 232 240) !important; background: #fff !important; }
-  .anio-cell:focus {
-    border-color: rgb(56 189 248) !important; background: #fff !important; outline: none;
+  /* La regla de base.html es `:root:not(.dark) input` = MÁS específica que una
+     clase sola, así que con !important no alcanzaba: hay que igualarle el peso
+     (por eso `:root:not(.dark) input.anio-cell`). Verificado en vivo: con
+     `.anio-cell` a secas el borde seguía saliendo rgb(15 23 42). */
+  :root:not(.dark) input.anio-cell,
+  .dark input.anio-cell {
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+  :root:not(.dark) input.anio-cell:hover,
+  .dark input.anio-cell:hover {
+    border-color: rgb(203 213 225) !important;
+    background: #fff !important;
+  }
+  :root:not(.dark) input.anio-cell:focus,
+  .dark input.anio-cell:focus {
+    border-color: rgb(56 189 248) !important;
+    background: #fff !important;
+    outline: none;
   }
   .dark .anio-cell { color: rgb(148 163 184); }
-  .dark .anio-cell:hover,
-  .dark .anio-cell:focus { background: rgb(2 6 23) !important; }
+  .dark input.anio-cell:hover,
+  .dark input.anio-cell:focus { background: rgb(2 6 23) !important; }
 </style>
 {% endblock %}
 
