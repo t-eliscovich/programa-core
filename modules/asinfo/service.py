@@ -2345,9 +2345,14 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
     if cached and (now - cached[0]) < _LOCALES_TTL_SECS:
         return cached[1]
 
-    # OUTER APPLY agrega la recepción de bodega 51 de ESA factura (puede haber
-    # varias parciales). `r.kg IS NOT NULL` deja afuera las facturas que no
-    # tocan la bodega de hilo (químicos, servicios).
+    # JOIN + GROUP BY, NO un OUTER APPLY correlacionado: la primera versión
+    # usaba `OUTER APPLY` y con TOP 200 se pasaba del timeout de Metabase (20 s)
+    # → `fetch_dataset` devuelve [] fail-soft y la pantalla quedaba SIN las
+    # locales, sin un solo error a la vista. Con TOP 3 andaba, así que el bug se
+    # escondía en cualquier prueba chica. Así tarda ~1,1 s.
+    #
+    # El piso de 24 meses es parte del arreglo: sin él, SQL Server tiene que
+    # recorrer la tabla entera de facturas para juntar TOP N.
     sql = f"""
         SELECT TOP {int(limite)}
                fp.numero                                        AS fp_numero,
@@ -2357,28 +2362,28 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
                COALESCE(e.nombre_comercial, e.nombre_fiscal, '') AS proveedor,
                e.codigo                                         AS ruc,
                fp.descripcion                                   AS nota,
-               r.fecha_recepcion, r.bod, r.kg, r.producto, r.n_productos
+               CONVERT(varchar, MIN(rp.fecha), 23)              AS fecha_recepcion,
+               MIN(rp.numero)                                   AS bod,
+               SUM(d.cantidad)                                  AS kg,
+               MIN(p.codigo)                                    AS producto,
+               COUNT(DISTINCT p.codigo)                         AS n_productos
           FROM factura_proveedor fp
           LEFT JOIN factura_proveedor_importacion fpi
                  ON fpi.id_factura_proveedor = fp.id_factura_proveedor
           LEFT JOIN empresa e ON e.id_empresa = fp.id_empresa
-          OUTER APPLY (
-              SELECT CONVERT(varchar, MIN(rp.fecha), 23) AS fecha_recepcion,
-                     MIN(rp.numero)                      AS bod,
-                     SUM(d.cantidad)                     AS kg,
-                     MIN(p.codigo)                       AS producto,
-                     COUNT(DISTINCT p.codigo)            AS n_productos
-                FROM detalle_factura_proveedor dfp
-                JOIN detalle_recepcion_proveedor d
-                     ON d.id_detalle_factura_proveedor = dfp.id_detalle_factura_proveedor
-                JOIN recepcion_proveedor rp
-                     ON rp.id_recepcion_proveedor = d.id_recepcion_proveedor
-                LEFT JOIN producto p ON p.id_producto = d.id_producto
-               WHERE dfp.id_factura_proveedor = fp.id_factura_proveedor
-                 AND d.id_bodega = {int(BODEGA_HILO)}
-          ) r
+          JOIN detalle_factura_proveedor dfp
+               ON dfp.id_factura_proveedor = fp.id_factura_proveedor
+          JOIN detalle_recepcion_proveedor d
+               ON d.id_detalle_factura_proveedor = dfp.id_detalle_factura_proveedor
+          JOIN recepcion_proveedor rp
+               ON rp.id_recepcion_proveedor = d.id_recepcion_proveedor
+          LEFT JOIN producto p ON p.id_producto = d.id_producto
          WHERE fpi.id_factura_proveedor IS NULL
-           AND r.kg IS NOT NULL
+           AND d.id_bodega = {int(BODEGA_HILO)}
+           AND fp.fecha >= DATEADD(month, -24, GETDATE())
+         GROUP BY fp.id_factura_proveedor, fp.numero, fp.fecha, fp.numero_factura,
+                  fp.total, e.nombre_comercial, e.nombre_fiscal, e.codigo,
+                  fp.descripcion
          ORDER BY fp.id_factura_proveedor DESC
     """
     rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
