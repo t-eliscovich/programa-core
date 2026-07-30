@@ -2315,14 +2315,14 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
             "delta": delta, "pct": pct, "estado": estado,
         })
 
-    # Hilo (dueña 2026-07-17: "que los 3 sean iguales"): Compras hilado =
-    # Ingresos de la banda MOVIMIENTOS = Importaciones recibidas. La banda ya
-    # muestra las importaciones recibidas como Ingresos (los reingresos de
-    # lote van neteados en el egreso), así que acá se chequean los 3 números
-    # de a pares: si cualquiera difiere, algún par marca ⚠.
-    add("hilo", "Hilo comprado = ingresado",
-        _g(data, "compras_hilado_total", "kg"), "Compras hilado",
-        _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado", "kg")
+    # Hilo. El chequeo "Compras hilado = Ingresos hilado" se SACÓ (dueña
+    # 2026-07-30: "por ahi hay mas que AC, quitame ese chequeo... importa
+    # asinfo"). Nació el 15/07 asumiendo que AC era el ÚNICO proveedor de
+    # hilo; hoy compran también AI, MH y HY, y sobre todo compara cosas
+    # distintas: "Compras hilado" es lo FACTURADO del mes y "Ingresos" es lo
+    # que entró FÍSICAMENTE a bodega, así que el hilo en tránsito lo marcaba
+    # en rojo para siempre. Queda el chequeo de abajo, que cruza dos números
+    # de Asinfo entre sí (ingresado vs importaciones recibidas).
     add("hilo_import", "Hilo ingresado = importaciones recibidas",
         _g(mov, "hilado", "ingresos_kg"), "Ingresos hilado",
         _g(mov, "hilado", "ref_import_kg"), "Importaciones recibidas", "kg")
