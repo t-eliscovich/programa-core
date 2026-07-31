@@ -341,19 +341,26 @@ def api_editar_campo(id_proveedor: int):
 
     try:
         usuario = (g.user or {}).get("username", "web")
-        n = db.execute(
+        # RETURNING y no un UPDATE a secas: lo que vuelve a la pantalla es lo
+        # que QUEDÓ GUARDADO, no lo que mandamos. Si la columna recorta el
+        # valor (retbase/retiva eran INTEGER y `1,75` se guardaba como `2` sin
+        # decir nada — de ahí la mig 0147), la dueña lo ve en el acto en vez de
+        # irse creyendo que guardó otra cosa.
+        fila = db.execute_returning(
             f"""
             UPDATE scintela.proveedor
                SET {campo} = %s,
                    usuario_modifica = %s,
                    fecha_modifica = CURRENT_TIMESTAMP
              WHERE id_proveedor = %s
+         RETURNING {campo} AS guardado
             """,
             (valor, usuario[:50], id_proveedor),
         )
-        if not n:
+        if not fila:
             return jsonify({"ok": False, "error": "Proveedor no existe."}), 404
-        return jsonify({"ok": True, "campo": campo, "valor": _mostrar(clase, valor)})
+        return jsonify({"ok": True, "campo": campo,
+                        "valor": _mostrar(clase, fila.get("guardado"))})
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
