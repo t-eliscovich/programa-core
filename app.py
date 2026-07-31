@@ -558,9 +558,16 @@ def create_app() -> Flask:
     # pago) sin tocar datos. SOLO LECTURA.
     from modules.admin_dbase.debug_asinfo_facturas_view import bp as debug_asinfo_fact_bp
     from modules.admin_dbase.debug_fabricacion_wip_view import bp as debug_fab_wip_bp
+    # /admin/debug-import-recepcion — kg facturados vs kg REALMENTE recibidos
+    # por importación. Para medir el desfase anticipo↔stock (dueña 2026-07-31:
+    # "están pistoleando hilo, todavía no cargó todo el stock"). SOLO LECTURA.
+    from modules.admin_dbase.debug_import_recepcion_view import (
+        bp as debug_import_recep_bp,
+    )
 
     app.register_blueprint(debug_asinfo_fact_bp)
     app.register_blueprint(debug_fab_wip_bp)
+    app.register_blueprint(debug_import_recep_bp)
 
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
