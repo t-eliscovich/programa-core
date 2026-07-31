@@ -1348,13 +1348,30 @@ def crear_movimiento_simple(
 
     Argumentos:
         documento: 'DE' (depósito), 'NC' (nota de crédito), 'ND' (nota de débito).
-        importe:   positivo siempre — el signo lo aplica bank_helpers.
+        importe:   positivo = el efecto natural del documento.
+                   NEGATIVO = deshacer ese mismo documento (convención FoxPro).
         prov:      opcional, código de proveedor relacionado (informativo).
 
     Signos (`bank_helpers.signo_documento`):
         DE → +1 (suma al saldo)
         NC → +1 (suma al saldo)
         ND → −1 (resta del saldo)
+
+    ⭐ IMPORTE NEGATIVO (TMT 2026-07-31, dueña: "dejame cargar con signo
+    negativo o positivo en cualquier lado... igualate al dBase en signos").
+    Hasta hoy acá había un `abs()`: para deshacer un depósito había que
+    ACERTAR el documento opuesto, y si te equivocabas el movimiento sumaba
+    cuando tenía que restar. Eso fue el caso CG3 del 21/07 — una NC (que SUMA)
+    con concepto «ANUL ch2825 err carga», $1.136,48 de más durante 10 días.
+    El FoxPro no tiene ese problema porque deshace con la MISMA fila en
+    negativo. Ahora PC acepta las dos formas:
+
+        ND  +500  → el banco baja 500      DE  +500  → el banco sube 500
+        ND  −500  → el banco sube 500      DE  −500  → el banco baja 500
+
+    El efecto sobre el saldo lo calcula siempre `bank_helpers._signed_delta`
+    (`signo_documento × importe`), que ya venía manejando el signo — lo único
+    que faltaba era dejar pasar el negativo.
 
     Atómico: insert + mov_doble en la misma tx. Devuelve dict con
     `id_transaccion`, `saldo_nuevo`, `id_mov_doble`.
@@ -1369,9 +1386,10 @@ def crear_movimiento_simple(
         )
     if not no_banco:
         raise ValueError("no_banco requerido")
-    importe_f = abs(float(importe or 0))
-    if importe_f <= 0:
-        raise ValueError("Importe debe ser > 0.")
+    importe_f = float(importe or 0)
+    if importe_f == 0:
+        raise ValueError("Importe no puede ser 0 (poné + para el efecto normal "
+                         "del documento, o − para deshacerlo).")
     if not fecha:
         raise ValueError("fecha requerida")
     asegurar_fecha_abierta(fecha)
@@ -1517,6 +1535,7 @@ def crear_movimiento_simple(
             concepto=concepto_clean,
             prov=(prov or None),
             usuario=usuario,
+            permitir_signed=True,   # el alta manual acepta − (convención FoxPro)
         )
 
         ruta = _routear_mov_simple(

@@ -189,6 +189,7 @@ def insert_movimiento_bancario(
     stat: str = "A",
     clave: str | None = None,
     usuario: str = "web",
+    permitir_signed: bool = False,
 ) -> dict:
     """Inserta un movimiento bancario con saldo running calculado.
 
@@ -196,6 +197,14 @@ def insert_movimiento_bancario(
 
     `importe` siempre positivo. El signo se aplica internamente según
     `documento`. Errores claros si el caller pasa importe negativo o cero.
+
+    `permitir_signed=True` habilita la convención del FoxPro — el MISMO
+    documento con el importe en NEGATIVO para deshacer (TMT 2026-07-31, dueña:
+    "dejame cargar con signo negativo o positivo en cualquier lado"). El
+    negativo se GUARDA tal cual: `_signed_delta` ya lo maneja (`ND −44.091`
+    SUBE el saldo) y así están las 38 filas negativas de PICHINCH.DBF de julio.
+    Sólo lo usa el alta MANUAL, donde la persona ve el signo que tipeó; el
+    resto de los callers mantiene la guarda de abs.
 
     El `saldo_nuevo` se persiste en la columna `saldo` (paridad dBase). Si
     insertás al medio (fecha pasada) la fila queda con saldo correcto pero
@@ -214,18 +223,20 @@ def insert_movimiento_bancario(
     # TMT 2026-06-03 audit fix: la convención bank_helpers exige importe ABS.
     # Si recibimos negativo el caller está confundido (probablemente está mezclando
     # convenciones legacy DBF). Mejor fallar explícito que dejar saldo corrupto.
-    if importe_f < 0:
+    if importe_f < 0 and not permitir_signed:
         raise ValueError(
             f"importe debe ser positivo (abs). Recibido: {importe!r}. "
             f"El signo lo determina el documento ({documento!r}). "
-            f"Si necesitás convención DBF legacy (signed), insertá directo con SQL."
+            f"Si necesitás convención DBF legacy (signed), pasá permitir_signed=True."
         )
     # Aceptamos importe signed (legacy) o abs (nuevo). El delta unificado
     # lo computa _signed_delta. El valor que almacenamos en la columna
     # `importe` mantiene el SIGNO del caller para preservar la convención
     # mixta — lo que pasa Programa Core legacy queda signed, lo que pasa
     # bank_helpers nuevo queda abs.
-    importe_abs = abs(importe_f)
+    # Con permitir_signed el negativo se GUARDA (convención FoxPro); sin él,
+    # se guarda la magnitud y la dirección la lleva el documento.
+    importe_abs = importe_f if permitir_signed else abs(importe_f)
     signo = signo_documento(documento)
     # TMT 2026-06-03 audit fix: advisory lock por banco para serializar
     # inserts concurrentes. Sin esto, dos inserts en paralelo computaban

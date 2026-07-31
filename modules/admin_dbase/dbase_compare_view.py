@@ -358,24 +358,34 @@ def _pc_conciliados_pichincha() -> dict:
 def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> dict:
     """Diff de movimientos en DOS pases, devuelve {solo_dbase, solo_pc, signo_invertido}.
 
-    Pase 1: cancela 1 a 1 por (fecha, |importe|) — los movimientos idénticos
-    del mismo día se anulan.
-    Pase 2: sobre el residuo, cancela por (importe firmado, concepto) IGNORANDO
+    Pase 1: cancela 1 a 1 por (fecha, IMPACTO FIRMADO).
+    Pase 2: sobre el residuo, cancela por (impacto firmado, concepto) IGNORANDO
     la fecha — así los movimientos con fecha corrida (timing: el mismo cheque
     que el dBase asienta el 17 y PC el 20) se anulan y NO aparecen como
     diferencia falsa. Lo que queda es el residuo REAL del gap (TMT 2026-07-23).
 
-    ⚠ PUNTO CIEGO que esto arregla (TMT 2026-07-26): el pase 1 empareja por
-    **valor ABSOLUTO**, así que una entrada de $300 en el dBase se cancelaba
-    contra una salida de $300 en PC del mismo día — en silencio, sin aparecer
-    en ninguna de las dos listas, aunque explica $600 de gap. Ahora esos pares
-    se emparejan por importe FIRMADO (los iguales primero) y los que quedan con
-    el signo cambiado salen en `signo_invertido` con su impacto (= PC − dBase).
-    Sin esto, las listas "solo dBase / solo PC" podían no sumar el gap real y
-    no había manera de darse cuenta.
+    ⭐ POR QUÉ EL IMPACTO FIRMADO Y NO EL |importe| (TMT 2026-07-31, dueña:
+    "me parece que el problema es de signo... igualate al dBase en signos").
+    Los dos sistemas anotan la MISMA plata de dos formas distintas:
+
+      · PC    → el importe es siempre positivo y la dirección la lleva el TIPO
+                (DE/AC/NC suman · CH/ND/DB restan). Para deshacer algo crea un
+                documento del tipo OPUESTO: «ANUL ch100767 err carga» es un ND.
+      · dBase → el tipo también manda, pero para deshacer NO cambia de tipo:
+                repite la misma fila con el importe en NEGATIVO. En julio 2026
+                hay 38 filas así en PICHINCH.DBF (24 DE y 14 ND).
+
+    Apareando por |importe| esas dos formas NO se reconocen: el `DE −611,80`
+    del dBase y el `ND +611,80` de PC caían como "signo invertido" con un
+    impacto inventado de ±1.223,60 que después se cancelaba contra las listas
+    solo-PC/solo-dBase. El cuadre daba bien pero la pantalla era ilegible.
+
+    Apareando por `val_firmado` los dos quedan en −611,80 y se cancelan solos.
+    **La convención de signo deja de importar y los sobrantes SON la respuesta.**
+    `signo_invertido` se devuelve vacío (queda la clave por compatibilidad).
     """
     def key(m):
-        return (str(m.get("fecha") or ""), round(abs(_f(m.get("importe"))), 2))
+        return (str(m.get("fecha") or ""), round(val_firmado(m), 2))
     db_n, pc_n = defaultdict(list), defaultdict(list)
     for m in dbf_movs:
         if m.get("fecha") and m["fecha"] >= desde:
@@ -383,27 +393,16 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
     for m in pc_movs:
         if m.get("fecha") and m["fecha"] >= desde:
             pc_n[key(m)].append(m)
-    solo_db, solo_pc, flips = [], [], []
+    solo_db, solo_pc = [], []
     for k in set(db_n) | set(pc_n):
-        # Ordenar por importe FIRMADO en los dos lados: así un +300 se aparea
-        # con el +300 y sólo queda marcado como flip lo que de verdad cambió
-        # de signo (si no, el apareo era por orden de llegada y daba falsos).
-        a = sorted(db_n.get(k, []), key=val_firmado)
-        b = sorted(pc_n.get(k, []), key=val_firmado)
+        a = db_n.get(k, [])
+        b = pc_n.get(k, [])
         n = min(len(a), len(b))
-        for i in range(n):
-            va, vb = val_firmado(a[i]), val_firmado(b[i])
-            if (va >= 0) != (vb >= 0):
-                flips.append({
-                    "fecha": a[i].get("fecha"),
-                    "dbase": a[i], "pc": b[i],
-                    "impacto": round(vb - va, 2),  # PC − dBase, firmado
-                })
         solo_db.extend(a[n:])
         solo_pc.extend(b[n:])
-    # Pase 2 — cancela timing (mismo importe firmado + concepto, otra fecha).
+    # Pase 2 — cancela timing (mismo impacto firmado + concepto, otra fecha).
     def key2(m):
-        return (round(_f(m.get("importe")), 2), str(m.get("concepto") or "").strip())
+        return (round(val_firmado(m), 2), str(m.get("concepto") or "").strip())
     db2, pc2 = defaultdict(list), defaultdict(list)
     for m in solo_db:
         db2[key2(m)].append(m)
@@ -415,7 +414,7 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
         n = min(len(a), len(b))
         r_db.extend(a[n:])
         r_pc.extend(b[n:])
-    return {"solo_dbase": r_db, "solo_pc": r_pc, "signo_invertido": flips}
+    return {"solo_dbase": r_db, "solo_pc": r_pc, "signo_invertido": []}
 
 
 
@@ -500,19 +499,6 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
 
     Con eso, buscar la diferencia deja de ser una cacería a mano.
     """
-    flips = diff.get("signo_invertido") or []
-    if flips:
-        yield _ln(f"  ⚠ SIGNO INVERTIDO — mismo día y mismo monto pero uno es entrada y el "
-                   f"otro salida ({len(flips)}). El 1 a 1 los cancelaba en silencio.")
-        yield _ln("     OJO: el apareo es por (día, monto), así que el PAR puede juntar dos "
-                  "conceptos distintos que coinciden de casualidad —")
-        yield _ln("     lo que vale es el IMPACTO total, que es el que hace cuadrar el gap.")
-        for fl in sorted(flips, key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
-            a, b = fl["dbase"], fl["pc"]
-            yield _ln(f"    {fl['fecha']} dBase {val_firmado(a):>12,.2f} "
-                       f"«{str(a.get('concepto') or '')[:22]}»  vs  PC "
-                       f"{val_firmado(b):>12,.2f} «{str(b.get('concepto') or '')[:22]}»"
-                       f"   impacto {fl['impacto']:>+12,.2f}")
     con_ambos = [x for x in dias if x.get("delta") is not None]
     if not con_ambos:
         return
@@ -520,16 +506,47 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
     gap_fin = con_ambos[-1]["delta"]
     s_pc = sum(val_firmado(m) for m in diff.get("solo_pc") or [])
     s_db = sum(val_firmado(m) for m in diff.get("solo_dbase") or [])
-    s_flip = sum(f["impacto"] for f in flips)
-    explicado = s_pc - s_db + s_flip
+    explicado = s_pc - s_db
     gap = gap_fin - gap_ini
     residuo = gap - explicado
     yield _ln(f"  CUADRE del 1 a 1 de {etiqueta}: solo-PC {s_pc:>+12,.2f} · solo-dBase "
-               f"{-s_db:>+12,.2f} · signo invertido {s_flip:>+12,.2f}  ⇒ explicado "
-               f"{explicado:>+12,.2f}")
+               f"{-s_db:>+12,.2f}  ⇒ explicado {explicado:>+12,.2f}")
     yield _ln(f"    gap real del período ({con_ambos[0]['fecha']} → {con_ambos[-1]['fecha']}): "
                f"{gap:>+12,.2f}   ⇒ RESIDUO SIN EXPLICAR: {residuo:>+12,.2f} "
                f"{_veredicto_residuo(residuo)}")
+    yield from lineas_top_gap(diff, etiqueta)
+
+
+def lineas_top_gap(diff: dict, etiqueta: str, top: int = 12):
+    """QUIÉN se come el gap: los sobrantes agrupados por concepto, de mayor a menor.
+
+    Pedido dueña 2026-07-31: "necesitamos tener el mismo saldo en banco".
+    Las listas 1 a 1 salen truncadas a 30 líneas y ordenadas por fecha, así que
+    el movimiento de $50.000 podía quedar fuera de pantalla. Este bloque suma el
+    impacto firmado por CONCEPTO (PC menos dBase) y muestra los `top` más
+    grandes: leer de arriba hacia abajo es cerrar el gap.
+    """
+    acum: dict = defaultdict(lambda: {"pc": 0.0, "db": 0.0, "n": 0})
+    for m in diff.get("solo_pc") or []:
+        c = str(m.get("concepto") or "—").strip()[:34] or "—"
+        acum[c]["pc"] += val_firmado(m)
+        acum[c]["n"] += 1
+    for m in diff.get("solo_dbase") or []:
+        c = str(m.get("concepto") or "—").strip()[:34] or "—"
+        acum[c]["db"] += val_firmado(m)
+        acum[c]["n"] += 1
+    filas = [(c, round(v["pc"] - v["db"], 2), v["n"]) for c, v in acum.items()]
+    filas = [f for f in filas if abs(f[1]) >= 0.01]
+    if not filas:
+        return
+    filas.sort(key=lambda f: -abs(f[1]))
+    yield _ln(f"  ── QUIÉN SE COME EL GAP DE {etiqueta} (impacto PC − dBase, "
+              f"por concepto, {len(filas)} conceptos) ──")
+    for c, imp, n in filas[:top]:
+        yield _ln(f"    {imp:>+13,.2f}  «{c}»  ({n} mov)")
+    resto = round(sum(f[1] for f in filas[top:]), 2)
+    if filas[top:]:
+        yield _ln(f"    {resto:>+13,.2f}  (los otros {len(filas) - top} conceptos)")
 
 
 # ───────────────── diffs 1 a 1 (pedido dueña 2026-06-11) ─────────────────

@@ -39,9 +39,14 @@
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
           Importe <span class="text-red-500">*</span>
         </label>
-        <input type="text" name="importe" required placeholder="0,00"
+        <input type="text" name="importe" required placeholder="0,00" id="mov-importe"
                value="{{ form_vals.importe if form_vals else '' }}"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
+        <p class="mt-1 text-xs text-slate-500">
+          Se puede poner en <strong>negativo</strong> para deshacer este mismo
+          movimiento, igual que en el sistema viejo.
+        </p>
+        <p id="mov-efecto" class="mt-1 text-xs font-semibold" style="display:none"></p>
       </div>
 
       <div>
@@ -140,9 +145,19 @@
 
       <div class="md:col-span-2">
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Concepto</label>
-        <input type="text" name="concepto" maxlength="50" placeholder="Descripción corta del movimiento"
+        <input type="text" name="concepto" maxlength="50" id="mov-concepto"
+               placeholder="Descripción corta del movimiento"
                value="{{ form_vals.concepto if form_vals else '' }}"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+        <p id="mov-aviso-anular" style="display:none"
+           class="mt-2 text-xs rounded border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2
+                  dark:bg-amber-950 dark:border-amber-800 dark:text-amber-200">
+          Parece que querés <strong>deshacer</strong> un movimiento que ya está
+          cargado. Es más seguro hacerlo desde la lista de movimientos con el
+          <strong>↺</strong> de esa fila: el programa elige el signo solo y deja
+          los dos linkeados. Cargado a mano acá, si el signo queda al revés la
+          plata se cuenta dos veces.
+        </p>
       </div>
     </div>
 
@@ -217,6 +232,56 @@
         btn.disabled = true;
         btn.textContent = 'Registrando…';
       });
+    })();
+
+    /* TMT 2026-07-31 (dueña: "fijate qué acción hace que tengan signos
+       negativos o positivos"). El caso CG3: una NC —que SUMA— con concepto
+       «ANUL ch2825 err carga». El texto decía anular y el tipo decía sumá, y
+       nadie lo vio en 10 días. Acá el efecto se dice en castellano ANTES de
+       guardar, con el signo ya aplicado. */
+    (function () {
+      var inp = document.getElementById('mov-importe');
+      var out = document.getElementById('mov-efecto');
+      if (!inp || !out) return;
+      var SIGNO_DOC = {{ 1 if doc in ('DE', 'NC') else -1 }};
+      var LABEL_DOC = {{ label | tojson }};
+      function parseMonto(s) {
+        s = (s || '').trim();
+        if (!s) return null;
+        var lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
+        if (lc > -1 && ld > -1) {
+          s = (lc > ld) ? s.replace(/\./g, '').replace(',', '.')
+                        : s.replace(/,/g, '');
+        } else if (lc > -1) { s = s.replace(/\./g, '').replace(',', '.'); }
+        var n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      }
+      function render() {
+        var n = parseMonto(inp.value);
+        if (n === null || n === 0) { out.style.display = 'none'; return; }
+        var delta = SIGNO_DOC * n;
+        var sube = delta > 0;
+        var monto = Math.abs(delta).toLocaleString('es-EC',
+          { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        out.textContent = (sube ? '↑ El saldo del banco SUBE $ ' : '↓ El saldo del banco BAJA $ ')
+          + monto + (n < 0 ? '  (importe negativo: deshace ' + LABEL_DOC.toLowerCase() + ')' : '');
+        out.style.color = sube ? '#059669' : '#dc2626';
+        out.style.display = '';
+      }
+      inp.addEventListener('input', render);
+      render();
+
+      /* Aviso "esto es un deshacer" — exacto, por el texto del concepto. */
+      var con = document.getElementById('mov-concepto');
+      var av = document.getElementById('mov-aviso-anular');
+      if (con && av) {
+        var RE_DESHACER = /^\s*(anul|revers|corr|devol)/i;
+        var chequear = function () {
+          av.style.display = RE_DESHACER.test(con.value) ? '' : 'none';
+        };
+        con.addEventListener('input', chequear);
+        chequear();
+      }
     })();
   </script>
 {% endblock %}
