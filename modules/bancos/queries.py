@@ -1947,6 +1947,13 @@ def mover_movimiento_banco(
         raise ValueError("Este movimiento está conciliado — desconciliá primero.")
 
     fecha = tx.get("fecha")
+    # TMT 2026-07-31 (dueña): si el banco de ORIGEN no existe en el catálogo, no
+    # hay saldo de apertura que proteger — son movimientos huérfanos que hay que
+    # poder rescatar SIEMPRE (caso ch14778 / ch UXI, banco 1 inexistente).
+    bo = db.fetch_one(
+        "SELECT 1 FROM scintela.banco WHERE no_banco = %s", (no_banco_origen,)
+    )
+    origen_huerfano = not bo
     # GUARDA apertura ORIGEN: la fila movida NO puede ser la más vieja del origen
     # (si lo fuera, sacarla cambiaría el opening del banco).
     older_src = db.fetch_one(
@@ -1958,7 +1965,7 @@ def mover_movimiento_banco(
         """,
         (no_banco_origen, id_transaccion, fecha, fecha, id_transaccion),
     )
-    if not older_src:
+    if not older_src and not origen_huerfano:
         raise ValueError(
             "Este movimiento es el más VIEJO del banco de origen: moverlo "
             "cambiaría el saldo de apertura. Ajustalo a mano."
