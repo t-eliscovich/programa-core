@@ -107,6 +107,8 @@
 {% endblock %}
 
 {% block content %}
+{# marcador temporal para verificar que el deploy carga el código nuevo — se saca después #}
+<span id="deploy-check" data-build="egreso-20260731-A" hidden></span>
 <div class="max-w-full fp info-page">
   {{ nav_resultados('flujo_produccion') }}
   <div class="flex items-center justify-between mb-2 no-print flex-wrap gap-2">
