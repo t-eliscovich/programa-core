@@ -325,10 +325,6 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     hl["ref_bodega_ing_kg"] = ing_hilo     # ingreso bruto real de bodega 51
     hl["ref_reingresos_kg"] = _reingresos_kg
     hl["ref_tejer_kg"] = hilo_consumido    # lo que se fue a tejer (órdenes)
-    hl["egresos_kg"] = float(_hegr.get("egresos_kg") or 0.0) if _hegr.get("disponible") \
-        else max(egr_hilo - _reingresos_kg, 0.0)
-    hl["egresos_ukg"] = _avg_ukg
-    hl["egresos_us"] = hl["egresos_kg"] * _avg_ukg
     # En máquinas (WIP) al $/kg de apertura; suma al stock actual (es stock nuestro).
     _maq_us = maq_hilado * _open_ukg
     hl["stock_act_kg"] = float(_hv_hil["stock_act_kg"]) if _hv_ok else (hi1 + maq_hilado)
@@ -336,6 +332,16 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     hl["stock_act_ukg"] = (
         hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
     )
+    # EGRESO anclado a la FOTO para que la columna CIERRE (dueña 2026-07-31). Ingresos
+    # (recepciones import+local) y Stock inic/act (foto Asinfo) son las fuentes
+    # autoritativas; el movimiento de bodega (egr bruto − reingresos) difería ~4.769
+    # de la foto (inconsistencia interna de Asinfo entre "movimiento" y "saldo"). El
+    # egreso pasa a ser el consumo que hace cerrar la cadena:
+    #   egreso = Stock inic + Ingresos + En máquinas − Stock act
+    # El neteo por movimiento (egr bruto, reingresos) queda de referencia en ref_*.
+    hl["egresos_kg"] = max(hi0 + compras + maq_hilado - hl["stock_act_kg"], 0.0)
+    hl["egresos_ukg"] = _avg_ukg
+    hl["egresos_us"] = hl["egresos_kg"] * _avg_ukg
 
     # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
     # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
