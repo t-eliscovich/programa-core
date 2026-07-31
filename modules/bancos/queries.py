@@ -1679,14 +1679,36 @@ def reversar_movimiento_simple(
         )
 
     doc_orig = (tx_orig.get("documento") or "").upper().strip()
-    # Documento de reverso (signo opuesto).
-    doc_reverso = {"DE": "CH", "NC": "CH", "ND": "NC"}.get(doc_orig)
+    # ⚠ TMT 2026-07-31 — BUG QUE COSTÓ $24.138,78 EN PROD. El reverso hacía
+    # SIEMPRE `abs(importe)` + tipo opuesto. Con la convención FoxPro (mismo
+    # tipo, importe NEGATIVO, habilitada hoy) eso da el signo AL REVÉS: una
+    # `ND −5.274,03` (que SUMA 5.274,03) se "reversaba" con una `NC +5.274,03`
+    # que SUMA otros 5.274,03. Reversar duplicaba el error en vez de deshacerlo.
+    #
+    # Regla correcta y única: el reverso es el movimiento cuyo EFECTO es el
+    # opuesto exacto del original. Se calcula sobre el efecto, no sobre el tipo.
+    importe_orig = float(tx_orig.get("importe") or md_orig.get("importe") or 0)
+    efecto_orig = bank_helpers.signo_documento(doc_orig) * importe_orig
+    if efecto_orig == 0:
+        raise ValueError("El movimiento original tiene efecto 0 — nada que reversar.")
+    if importe_orig < 0:
+        # Original en convención FoxPro → el reverso es la MISMA fila en
+        # positivo (mismo documento). Así queda legible al lado del original.
+        doc_reverso, importe_f = doc_orig, abs(importe_orig)
+    else:
+        doc_reverso = {"DE": "CH", "NC": "CH", "ND": "NC"}.get(doc_orig)
+        importe_f = abs(importe_orig)
     if not doc_reverso:
         raise ValueError(
             f"No sé cómo reversar documento {doc_orig!r} (esperaba DE/NC/ND)."
         )
-
-    importe_f = abs(float(md_orig.get("importe") or 0))
+    # Guarda dura: el efecto del reverso TIENE que ser el opuesto exacto.
+    efecto_rev = bank_helpers.signo_documento(doc_reverso) * importe_f
+    if round(efecto_rev + efecto_orig, 2) != 0:
+        raise ValueError(
+            f"Reverso mal calculado: el original mueve {efecto_orig:+,.2f} y el "
+            f"reverso movería {efecto_rev:+,.2f}. Abortado para no romper el saldo."
+        )
     fecha_rev = today_ec()
     asegurar_fecha_abierta(fecha_rev)
 
