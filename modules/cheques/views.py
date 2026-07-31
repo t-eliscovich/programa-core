@@ -2695,8 +2695,12 @@ def transicionar(id_cheque: int):
     # (legacy: B/I tenían 1/2 hardcodeados pero la DB del usuario tiene
     # no_banco distintos — Pichincha=10 en data 2026). TMT 2026-05-11.
     # Match en Python — el LIKE de Postgres se comportaba raro acá.
-    if stat_destino in ("B", "I"):
-        needle = "PICHINC" if stat_destino == "B" else "INTER"
+    # TMT 2026-07-31 (dueña, caso ch14778 BYG): V (re-depósito de un protestado)
+    # también crea un DE en Pichincha — faltaba en esta lista, así que llegaba a
+    # queries con no_banco=None y caía en el hardcode legacy (banco 1, que no
+    # existe). El movimiento quedaba huérfano y no entraba a conciliación.
+    if stat_destino in ("B", "I", "V"):
+        needle = "INTER" if stat_destino == "I" else "PICHINC"
         all_b = (
             db.fetch_all(
                 "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco ORDER BY no_banco"
@@ -3296,7 +3300,7 @@ def lista():
             SELECT
               CASE
                 WHEN stat = 'Z'                       THEN 'cartera'
-                WHEN stat IN ('B','A')                THEN 'depositados'
+                WHEN stat IN ('B','A','V')            THEN 'depositados'
                 WHEN stat IN ('1','2','3','R')        THEN 'devueltos'
                 WHEN stat = 'D'                       THEN 'daniela'
                 WHEN stat = 'P'                       THEN 'postergados'

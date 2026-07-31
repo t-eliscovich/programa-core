@@ -668,6 +668,26 @@ def cheques_devueltos_sin_nd() -> list[dict]:
     ) or []
 
 
+def _banco_operativo(needle: str, conn=None) -> int | None:
+    """Devuelve el `no_banco` del banco cuyo nombre contiene `needle`.
+
+    TMT 2026-07-31 (dueña): los números de banco NO son estables entre bases
+    (el legacy usaba 1/2; la data 2026 usa Pichincha=10, Internacional=20).
+    Cualquier side-effect que necesite "el banco Pichincha" tiene que
+    resolverlo por NOMBRE, nunca hardcodear el número. Si no matchea nada
+    devuelve None y el caller debe fallar con un mensaje claro — grabar en un
+    banco inexistente deja el movimiento huérfano e invisible.
+    """
+    needle = (needle or "").upper()
+    rows = db.fetch_all(
+        "SELECT no_banco, COALESCE(nombre, '') AS nombre "
+        "FROM scintela.banco ORDER BY no_banco",
+        conn=conn,
+    ) or []
+    match = next((r for r in rows if needle in (r.get("nombre") or "").upper()), None)
+    return int(match["no_banco"]) if match else None
+
+
 def transicionar_stat(
     id_cheque: int,
     *,
@@ -740,7 +760,23 @@ def transicionar_stat(
         if stat_destino in ("B", "V", "I"):
             import bank_helpers
 
-            banco_destino = no_banco or (2 if stat_destino == "I" else 1)
+            # TMT 2026-07-31 (dueña, caso ch14778 BYG): el fallback era
+            # `no_banco or (2 if I else 1)` — números HARDCODEADOS del legacy.
+            # En la data 2026 Pichincha es no_banco=10 e Internacional 20, así
+            # que un →V desde la lista (el form NO manda no_banco) grababa el
+            # DE en un banco 1 INEXISTENTE: el movimiento quedaba huérfano,
+            # invisible en /bancos y por lo tanto FUERA de la conciliación.
+            # Ahora el banco se resuelve por NOMBRE (igual que hace la vista
+            # para B/I) y, si no se puede, FALLA con un error claro en vez de
+            # escribir en un banco fantasma.
+            banco_destino = no_banco or _banco_operativo(
+                "INTER" if stat_destino == "I" else "PICHINC", conn=conn
+            )
+            if not banco_destino:
+                raise ValueError(
+                    "No pude resolver el banco destino del depósito "
+                    f"(stat {stat_destino}). Revisá los nombres en /bancos."
+                )
             # TMT 2026-05-26 dueña: numreferencia = doc_banco si la dueña
             # cargó N° de comprobante; fallback id_cheque. Es la rule #1
             # del matcher de conciliación bancaria. Se lee del cheque row
@@ -2347,7 +2383,10 @@ STATS = {
     # re-presentan al banco). Antes era solo ("Z",). Subconjunto coherente de
     # `cartera_total` (que además suma 3 y D).
     "cartera": ("Z", "P", "1", "2"),
-    "depositados": ("B", "A", "C"),  # B nuevo + A legacy + C efectivo (99, paridad dBase)
+    # TMT 2026-07-31 (dueña): V (protestado vuelto a depositar) TAMBIÉN es
+    # un depósito — crea su DE en el banco. Sin esto no aparecía en NINGUNA
+    # solapa (ni Depositados ni Cartera total): sólo en "Todos los estados".
+    "depositados": ("B", "A", "C", "V"),  # B nuevo + A legacy + C efectivo + V re-depósito
     "devueltos": ("1", "2", "3", "R"),  # rebotes (3=segundo rebote)
     "daniela": ("D",),  # gestión Daniela
     "postergados": ("P",),  # postergados con fecha nueva

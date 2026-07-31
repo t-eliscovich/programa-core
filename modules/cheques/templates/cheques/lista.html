@@ -476,7 +476,9 @@
           {% set stat_u = (c.stat or '').upper() %}
           {# TMT 2026-07-20 (dueña): un devuelto (1/2/3/R) NO muestra fecha en
              Depositado — el depósito rebotó, ya no está en el banco. #}
-          {% set ya_depositado = stat_u in ('B','A') %}
+          {# TMT 2026-07-31 (dueña): V = re-depósito de un protestado → SÍ está
+             depositado, mostramos la fecha. #}
+          {% set ya_depositado = stat_u in ('B','A','V') %}
           {% set fechaing_real = c.fechaing if ya_depositado else None %}
           {# TMT 2026-05-20 — checkbox: sólo habilitado para cheques en
              estados depositables (Z cartera, P postdatado/postergado).
