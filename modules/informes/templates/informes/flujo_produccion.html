@@ -225,7 +225,8 @@
             <td></td>
             {# CRUDO: Desperdicio (y %) eliminado a pedido de Federico (2026-07-31) #}
             <td class="num"></td>
-            <td class="num">{% set _dt = _desp.get('term') or 0 %}{% if _dt >= 0 %}{% else %}−{% endif %}{{ (_dt if _dt >= 0 else -_dt) | num_es(0) }}{% if ate.get('ingresos_pct') %} <span class="pct">{{ '%.1f' % ate.ingresos_pct }}%</span>{% endif %}</td>
+            {# TERMINADO: Desperdicio (y %) eliminado a pedido de Federico (2026-07-31) #}
+            <td class="num"></td>
             <td class="num">—</td>
           </tr>
           {% endif %}
