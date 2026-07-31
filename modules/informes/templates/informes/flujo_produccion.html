@@ -375,21 +375,21 @@
           <tbody>
             <tr>
               <td class="lbl">Hilo → Tela Cruda</td>
-              <td class="num">{{ (_tc.issued or 0) | num_es(2) }}</td>
-              <td class="num">{{ (_tc.fab or 0) | num_es(2) }}</td>
-              <td class="num">{{ (_tc.saldo or 0) | num_es(2) }}</td>
+              <td class="num">{{ (_tc.issued or 0) | num_es(0) }}</td>
+              <td class="num">{{ (_tc.fab or 0) | num_es(0) }}</td>
+              <td class="num">{{ (_tc.saldo or 0) | num_es(0) }}</td>
             </tr>
             <tr>
               <td class="lbl">Tela Cruda → Terminada</td>
-              <td class="num">{{ (_pt.issued or 0) | num_es(2) }}</td>
-              <td class="num">{{ (_pt.fab or 0) | num_es(2) }}</td>
-              <td class="num">{{ (_pt.saldo or 0) | num_es(2) }}</td>
+              <td class="num">{{ (_pt.issued or 0) | num_es(0) }}</td>
+              <td class="num">{{ (_pt.fab or 0) | num_es(0) }}</td>
+              <td class="num">{{ (_pt.saldo or 0) | num_es(0) }}</td>
             </tr>
             <tr class="total">
               <td class="lbl">Total en proceso</td>
-              <td class="num">{{ ((_tc.issued or 0) + (_pt.issued or 0)) | num_es(2) }}</td>
-              <td class="num">{{ ((_tc.fab or 0) + (_pt.fab or 0)) | num_es(2) }}</td>
-              <td class="num">{{ ((_tc.saldo or 0) + (_pt.saldo or 0)) | num_es(2) }}</td>
+              <td class="num">{{ ((_tc.issued or 0) + (_pt.issued or 0)) | num_es(0) }}</td>
+              <td class="num">{{ ((_tc.fab or 0) + (_pt.fab or 0)) | num_es(0) }}</td>
+              <td class="num">{{ ((_tc.saldo or 0) + (_pt.saldo or 0)) | num_es(0) }}</td>
             </tr>
           </tbody>
         </table>
