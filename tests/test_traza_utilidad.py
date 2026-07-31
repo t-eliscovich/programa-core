@@ -1,0 +1,147 @@
+"""La grabadora de la utilidad (TMT 2026-07-31).
+
+Dueña, después de un día entero de hipótesis: *"mirálo ahora. guardá la data y
+fijate en un rato también. no podemos tener utilidad menor a la mañana"*.
+
+El problema de fondo no era ninguna de las hipótesis: era que no había con qué
+comparar. `scintela.historia` guarda UNA fila por día, así que un salto de las
+09:16 a las 10:34 no quedaba registrado en ningún lado y había que reconstruirlo
+de memoria. Esto guarda la utilidad JUNTO CON sus componentes cada 5 minutos.
+
+Lo que estos tests fijan:
+  · la foto se arma del balance y no inventa columnas;
+  · el Δ se calcula contra la foto ANTERIOR y dice QUÉ lo movió;
+  · los pasivos aportan con el signo dado vuelta (suben → utilidad baja);
+  · la grabadora NO puede tumbar nada: si falla, devuelve False y sigue.
+"""
+from unittest.mock import patch
+
+import pytest
+
+from modules.informes import traza as t
+
+
+@pytest.fixture(autouse=True)
+def _limpio():
+    t._ultimo_ts = 0.0
+    yield
+    t._ultimo_ts = 0.0
+
+
+BALANCE = {
+    "diagnostico": {"componentes": {
+        "utilidad": 582358.0, "patr": 21368271.0, "uret": 211393.12,
+        "salcaj": 40659.0, "salbanc_total": 2564877.0,
+        "totc": 2544807.0, "totf": 5112947.0,
+        "antic": 2138524.55, "vsto": 8351691.0, "vqx": 409279.0,
+        "umaq": 1072300.0, "uact": 2379014.0, "totp": 3457219.37,
+    }},
+    "stock_etapas": {
+        "hilado": {"kg": 1899100.0, "ukg": 2.9970},
+        "tejido": {"kg": 294986.0},
+        "terminado": {"kg": 313339.0},
+    },
+    "kg": {"kvent": 329908.0, "uvent": 2814059.0},
+    "hilado_valuacion": {"compras": 404657.0, "compras_us": 1224937.0,
+                         "kg_sin_costo": 0.0},
+}
+
+
+def test_la_foto_sale_del_balance():
+    f = t._fila_desde_balance(BALANCE)
+    assert f["utilidad"] == 582358.0
+    assert f["vsto"] == 8351691.0
+    assert f["antic"] == 2138524.55
+    assert f["totp"] == 3457219.37
+    assert f["hilado_ukg"] == 2.9970
+    assert f["venta_kg"] == 329908.0
+    # Patrimonio NETO: el de la pantalla, sin los dividendos adentro.
+    assert f["patr_neto"] == pytest.approx(21368271.0 - 211393.12)
+
+
+def test_un_balance_vacio_no_se_guarda():
+    """Sin componentes no hay foto que valga: mejor ninguna que una en cero."""
+    with patch.object(t.db, "execute") as ex:
+        assert t.registrar(bal={}) is False
+    ex.assert_not_called()
+
+
+def test_si_la_base_falla_la_grabadora_no_rompe_nada():
+    with patch.object(t.db, "execute", side_effect=RuntimeError("sin tabla")):
+        assert t.registrar(bal=BALANCE) is False      # no levanta
+
+
+def test_guarda_una_sola_vez_por_intervalo():
+    with patch.object(t, "registrar", return_value=True) as reg:
+        assert t.registrar_si_toca() is True
+        for _ in range(10):
+            assert t.registrar_si_toca() is False
+    assert reg.call_count == 1
+
+
+def test_pasado_el_intervalo_vuelve_a_guardar():
+    with patch.object(t, "registrar", return_value=True) as reg:
+        t.registrar_si_toca()
+        t._ultimo_ts -= t._intervalo() + 1
+        assert t.registrar_si_toca() is True
+    assert reg.call_count == 2
+
+
+# ── El Δ y el "quién lo movió" ─────────────────────────────────────────────
+
+def _foto(**kw):
+    base = {"utilidad": 0.0, "caja": 0.0, "bancos": 0.0, "cheques": 0.0,
+            "facturas": 0.0, "antic": 0.0, "vsto": 0.0, "vqx": 0.0,
+            "umaq": 0.0, "uact": 0.0, "totp": 0.0, "uret": 0.0}
+    base.update(kw)
+    return base
+
+
+def test_el_delta_se_calcula_contra_la_foto_anterior():
+    filas = [_foto(utilidad=600000.0), _foto(utilidad=574000.0)]  # nueva primero
+    out = t.con_deltas(filas)
+    assert out[0]["d_utilidad"] == 26000.0
+    assert out[1]["d_utilidad"] is None      # la más vieja no tiene contra qué
+
+
+def test_dice_QUE_se_movio_y_lo_ordena_por_tamano():
+    filas = [
+        _foto(utilidad=600000.0, vsto=8_400_000.0, antic=2_000_000.0),
+        _foto(utilidad=574000.0, vsto=8_330_000.0, antic=2_010_000.0),
+    ]
+    out = t.con_deltas(filas)
+    movs = out[0]["movio"]
+    assert movs[0]["col"] == "vsto" and movs[0]["aporte"] == 70000.0
+    assert movs[1]["col"] == "antic" and movs[1]["aporte"] == -10000.0
+
+
+def test_los_pasivos_aportan_al_reves():
+    """Si los pasivos SUBEN, la utilidad baja: el aporte tiene que ser negativo."""
+    filas = [_foto(utilidad=574000.0, totp=3_457_000.0),
+             _foto(utilidad=600000.0, totp=3_406_000.0)]
+    out = t.con_deltas(filas)
+    mov = out[0]["movio"][0]
+    assert mov["col"] == "totp"
+    assert mov["delta"] == 51000.0 and mov["aporte"] == -51000.0
+
+
+def test_el_ruido_de_centavos_no_ensucia_la_lista():
+    filas = [_foto(utilidad=1.0, vsto=100.40), _foto(utilidad=0.0, vsto=100.0)]
+    assert t.con_deltas(filas)[0]["movio"] == []
+
+
+def test_las_bajadas_son_las_que_hay_que_mirar():
+    """Dueña: 'no podemos tener utilidad menor a la mañana'."""
+    filas = t.con_deltas([
+        _foto(utilidad=560000.0),   # bajó 40.000
+        _foto(utilidad=600000.0),   # subió 26.000
+        _foto(utilidad=574000.0),
+    ])
+    bajas = t.bajadas(filas, umbral=1000.0)
+    assert len(bajas) == 1
+    assert bajas[0]["d_utilidad"] == -40000.0
+
+
+def test_sin_fotos_no_explota():
+    assert t.con_deltas([]) == []
+    assert t.bajadas([]) == []

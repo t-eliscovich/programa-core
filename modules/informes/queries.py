@@ -4894,6 +4894,12 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         _mov_hil_ukg = 0.0
     if _mov_hil_ukg > 0:
         h_um = _mov_hil_ukg  # fallback = tarifa del mov (fuente dBase)
+    # Se expone en el resultado (`hilado_valuacion`) para que la GRABADORA
+    # (modules.informes.traza) pueda guardar, junto con la utilidad, los kilos
+    # y los dólares de compra que arman la tarifa. Sin eso, en la traza no se
+    # distingue "entraron kilos" de "cambió el $/kg" — y el $/kg mueve el valor
+    # de TODO el stock de un saque. TMT 2026-07-31.
+    _hval: dict = {}
     if _stock_fuente == "asinfo":
         try:
             from modules.asinfo import service as _asvc_hval
@@ -5458,6 +5464,9 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
             "terminado": {"kg": kg_term, "ukg": h_uf, "us": val_terminado},
         },
         "stock_fuente": _stock_fuente,          # 'dbase' | 'asinfo'
+        # Insumos de la tarifa del hilado (compras del mes con y sin su plata).
+        # Los usa la grabadora de la traza. {} si la fuente es el dBase.
+        "hilado_valuacion": _hval,
         "vsto_dbase": vsto_dbase,               # base de la utilidad
         "stock_revaluacion": vsto - vsto_dbase,  # +$ que suma el patrimonio por usar Asinfo
         # CHECK de coherencia across el cuadro (dueña 2026-07-13). Verifica que los

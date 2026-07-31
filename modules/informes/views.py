@@ -1184,6 +1184,41 @@ def quimico_auditoria():
     )
 
 
+@informes_bp.route("/traza")
+@requiere_login
+@requiere_permiso("informes.ver")
+def traza():
+    """La grabadora: una foto del balance cada pocos minutos, con el Δ y el
+    componente que lo explica.
+
+    TMT 2026-07-31 (dueña): *"guardá la data y fijate en un rato también. no
+    podemos tener utilidad menor a la mañana"*. Todo el día se discutió por qué
+    la utilidad se movía y cada respuesta fue una hipótesis, porque
+    `scintela.historia` guarda una sola fila por día: un salto de las 09:16 a
+    las 10:34 no dejaba rastro en ningún lado. Acá queda.
+    """
+    from modules.informes import traza as _traza
+
+    filas = _traza.con_deltas(_traza.ultimas(200))
+    return render_template(
+        "informes/traza.html",
+        filas=filas,
+        bajadas=_traza.bajadas(filas),
+        intervalo=_traza._intervalo(),
+    )
+
+
+@informes_bp.route("/traza/ahora", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def traza_ahora():
+    """Saca una foto ahora mismo, sin esperar al ciclo de fondo."""
+    from modules.informes import traza as _traza
+
+    _traza.registrar(origen="manual")
+    return redirect(url_for("informes.traza"))
+
+
 @informes_bp.route("/balance/utilidad-debug")
 @requiere_login
 @requiere_permiso("informes.ver")

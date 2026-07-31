@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, empty_row %}
+{% block title %}Traza de la utilidad{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Traza</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-07-31 (dueña): "guardá la data y fijate en un rato también. no
+   podemos tener utilidad menor a la mañana". Cada fila es una foto del balance;
+   la columna Δ dice cuánto se movió la utilidad desde la foto anterior y la
+   última columna QUÉ la movió. Tailwind está congelado → estilos inline. #}
+<div class="max-w-full" style="font-variant-numeric:tabular-nums;">
+
+  {{ page_hero(
+      'Traza de la utilidad',
+      descripcion='Una foto del balance cada pocos minutos. Cuando la utilidad se mueve, acá se ve qué la movió.',
+      kpi_valor=(filas | length) ~ ' fotos',
+      kpi_extra=('· ' ~ (bajadas | length) ~ ' bajadas de más de $ 1.000' if bajadas else '· sin bajadas')
+  ) }}
+
+  {% if not filas %}
+    <div class="my-4 border border-slate-200 rounded bg-white px-4 py-6 text-sm text-slate-500">
+      Todavía no hay fotos guardadas. La primera entra sola dentro de unos
+      minutos; si querés una ahora, tocá <em>Sacar foto ahora</em>.
+    </div>
+  {% endif %}
+
+  <div class="my-4 flex items-center gap-2 flex-wrap text-xs">
+    <form method="post" action="{{ url_for('informes.traza_ahora') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="px-3 py-1.5 rounded border"
+              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">
+        Sacar foto ahora
+      </button>
+    </form>
+    <span style="color:rgb(100 116 139);">Se guarda una sola cada {{ intervalo // 60 }} minutos.</span>
+  </div>
+
+  <div class="border border-slate-200 rounded bg-white" style="overflow-x:auto;">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium" style="width:7rem;">Cuándo</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Utilidad</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:7rem;">Δ</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Stock MP+Prod.</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:6rem;">$/kg hilado</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Anticipos</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Pasivos</th>
+          <th class="px-3 py-2 text-left font-medium">Qué se movió</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100"
+            style="{% if f.d_utilidad is not none and f.d_utilidad <= -1000 %}background:rgb(254 242 242);{% endif %}">
+          <td class="px-3 py-2 text-xs text-slate-500" style="white-space:nowrap;">
+            {{ f.cuando }}{% if f.origen != 'loop' %} <span style="font-size:10px;color:rgb(148 163 184);">{{ f.origen }}</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right" style="font-weight:600;">{{ f.utilidad | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right"
+              style="{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
+            {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right">{{ f.vsto | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right">{{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '—' }}</td>
+          <td class="px-3 py-2 text-right">{{ f.antic | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right">{{ f.totp | num_es(0) }}</td>
+          <td class="px-3 py-2" style="font-size:11.5px;color:rgb(71 85 105);line-height:1.4;">
+            {% for m in f.movio[:4] %}
+              <span style="white-space:nowrap;">{{ m.label }}
+                <strong style="{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">{{ '%+d' | format(m.aporte | round | int) }}</strong></span>{% if not loop.last %} · {% endif %}
+            {% else %}
+              <span style="color:rgb(148 163 184);">—</span>
+            {% endfor %}
+            {% if f.kg_sin_costo and f.kg_sin_costo > 0 %}
+              <span style="color:rgb(180 83 9);"> · {{ f.kg_sin_costo | num_es(0) }} kg esperando su compra</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500" style="line-height:1.5;">
+    <strong>Cómo leerla.</strong> Cada fila es una foto del balance. <em>Δ</em> es
+    cuánto se movió la utilidad desde la foto de arriba hacia abajo (la anterior
+    en el tiempo). <em>Qué se movió</em> muestra los componentes ordenados por
+    cuánto aportaron a ese Δ — Pasivos va con el signo dado vuelta, porque si
+    suben la utilidad baja. Las filas en rojo son bajadas de más de $ 1.000.
+    El <em>$/kg del hilado</em> está aparte a propósito: el stock se valúa a
+    promedio ponderado, así que ese número mueve el valor de TODO el stock de
+    un saque — si cambió él y no cambiaron los kilos, el salto es de tarifa.
+  </p>
+</div>
+{% endblock %}

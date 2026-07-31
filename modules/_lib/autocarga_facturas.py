@@ -124,6 +124,17 @@ def _loop() -> None:
                 _ventas.correr_si_toca()
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("ventas del día (fondo): %s", e)
+            # TMT 2026-07-31 (dueña): "guardá la data y fijate en un rato
+            # también". La grabadora: una foto del balance con TODOS sus
+            # componentes cada 5 minutos, para que un salto de las 09:16 a las
+            # 10:34 deje rastro y se pueda mirar QUÉ se movió en vez de
+            # discutir hipótesis. Va última a propósito: es la que menos
+            # importa del ciclo y no tiene por qué demorar a las otras.
+            try:
+                from modules.informes import traza as _traza
+                _traza.registrar_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("traza de la utilidad (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)
