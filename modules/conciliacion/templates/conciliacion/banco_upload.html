@@ -238,6 +238,53 @@
     </p>
   </form>
 
+  {# TMT 2026-07-31 (dueña: "no tengo ese documento"): agregar a mano una fila
+     del BANCO al backlog de pendientes. Está también acá — y no sólo adentro de
+     la sesión — porque con la sesión cerrada no había forma de llegar. #}
+  <form method="POST" action="{{ url_for('conciliacion.banco_agregar_pendiente') }}"
+        class="mt-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <span class="text-xs text-slate-500 dark:text-slate-400">Agregar a mano un movimiento del banco que falta</span>
+    <div class="flex flex-wrap items-end gap-2">
+      <label class="block">
+        <span class="block text-[11px] text-slate-500">Fecha</span>
+        <input type="date" name="fecha" required
+               class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
+      </label>
+      <label class="block">
+        <span class="block text-[11px] text-slate-500">N° documento</span>
+        <input type="text" name="documento" placeholder="34146049"
+               class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm font-mono bg-white dark:bg-slate-800" style="width:130px">
+      </label>
+      <label class="block flex-1" style="min-width:200px">
+        <span class="block text-[11px] text-slate-500">Concepto</span>
+        <input type="text" name="concepto" placeholder="DEPOSITO CHEQUE"
+               class="w-full border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
+      </label>
+      <label class="block">
+        <span class="block text-[11px] text-slate-500">Importe</span>
+        <input type="text" name="monto" placeholder="255,00" required
+               class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm font-mono bg-white dark:bg-slate-800" style="width:110px">
+      </label>
+      <label class="block">
+        <span class="block text-[11px] text-slate-500">Signo</span>
+        <select name="tipo"
+                class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
+          <option value="C">+ entra</option>
+          <option value="D">&minus; sale</option>
+        </select>
+      </label>
+      <button type="submit"
+              class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm whitespace-nowrap">
+        Agregar al banco &rarr;
+      </button>
+    </div>
+    <p class="text-[11px] text-slate-500">
+      Entra al mismo backlog de pendientes que usa &ldquo;Hacer prevalecer&rdquo;: aparece en el panel Banco
+      de la conciliación y se puede sacar con la ✕.
+    </p>
+  </form>
+
   {# TMT 2026-06-03 duena: 'dejame subir un archivo para cruzar por las dudas,
      por si algo cambio'. Sube la hoja de DEPOSITOS PENDIENTES (FEB2023 prevalece)
      y cruza contra el backlog del sistema por doc+monto. Read-only. #}

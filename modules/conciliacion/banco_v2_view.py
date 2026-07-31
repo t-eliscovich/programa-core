@@ -3743,9 +3743,11 @@ def banco_agregar_pendiente():
         sesion_id = int(request.form.get("sesion_id") or 0)
     except (TypeError, ValueError):
         sesion_id = 0
+    # Si vino del hub (sin sesión abierta) volvemos al hub: mandarlo a la
+    # pantalla de la sesión rebota con un flash que tapa el mensaje real.
     _back = (
         url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id)
-        if sesion_id else url_for("conciliacion.banco_post_procesar")
+        if sesion_id else url_for("conciliacion.hub")
     )
     fecha_s = (request.form.get("fecha") or "").strip()
     documento = (request.form.get("documento") or "").strip()
