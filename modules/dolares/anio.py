@@ -56,6 +56,12 @@ def marcar_orden(filas: list[dict]) -> None:
         grupos[clave] = f["_orden"] + 1
 
 
+def _clave_laxa(fecha, cta, importe) -> tuple:
+    """Firma SIN el concepto — el pedazo que se mueve."""
+    return (str(fecha or "")[:10], (cta or "").strip().upper()[:3],
+            round(float(importe or 0), 2))
+
+
 def adjuntar_anio(filas: list[dict]) -> None:
     """Muta cada fila agregando `anio_col` (el guardado) y `anio_ref` (el que
     manda: la columna si está, si no el `/26` del concepto).
@@ -63,14 +69,31 @@ def adjuntar_anio(filas: list[dict]) -> None:
     Fail-soft: si la tabla no existe todavía (migración sin correr) o la DB
     falla, deja `anio_col=None` y el año del concepto — o sea, exactamente el
     comportamiento anterior. NUNCA rompe /dolares.
+
+    TMT 2026-07-31 (dueña: *"si se cargó este 11 que puse el año…"*): el AI 11
+    tenía el año puesto y la celda salía VACÍA. La firma incluye el
+    `concepto_norm`, y el concepto se mueve por abajo — lo edita el ✎ de la
+    propia pantalla y lo revierte el TRUNCATE+INSERT del sync del dBase
+    (DOLARES.DBF no tiene `delete_where`). Al cambiar el concepto la firma
+    guardada deja de matchear y el año, que sigue en la tabla, se vuelve
+    invisible: el freno del automático seguía diciendo "falta el año".
+
+    Por eso el rescate LAXO: si la firma exacta no pega, se busca por
+    (fecha, cta, importe) — el pedazo que NO se mueve — y sólo se usa cuando
+    es **inequívoco**: exactamente UNA fila pendiente y exactamente UNA fila
+    guardada sin usar con esa clave. Si hay gemelos, no se adivina.
     """
     if not filas:
         return
     marcar_orden(filas)
     for f in filas:
         f["anio_col"] = None
+        f["anio_origen"] = None
         if "anio_ref" not in f:
             f["anio_ref"] = parse_ref_anticipo(f.get("concepto")).get("anio")
+    for f in filas:
+        if f.get("anio_ref"):
+            f["anio_origen"] = "concepto"
     try:
         rows = db.fetch_all(
             """
@@ -87,11 +110,45 @@ def adjuntar_anio(filas: list[dict]) -> None:
          round(float(r["importe"] or 0), 2), int(r["orden"] or 0)): int(r["anio"])
         for r in rows
     }
+    usadas: set[tuple] = set()
     for f in filas:
-        a = mapa.get(_firma(f))
+        firma = _firma(f)
+        a = mapa.get(firma)
         if a:
             f["anio_col"] = a
             f["anio_ref"] = a  # la columna MANDA sobre el `/26` del concepto
+            f["anio_origen"] = "columna"
+            usadas.add(firma)
+
+    # ── rescate LAXO (sólo lo inequívoco) ──────────────────────────────────
+    pendientes: dict[tuple, list[dict]] = {}
+    for f in filas:
+        if f.get("anio_col"):
+            continue
+        pendientes.setdefault(
+            _clave_laxa(f.get("fecha"), f.get("cta"), f.get("importe")), []
+        ).append(f)
+    if not pendientes:
+        return
+    libres: dict[tuple, list[dict]] = {}
+    for r in rows:
+        firma = (r["fecha"], (r["cta"] or "").strip().upper(), r["concepto_norm"],
+                 round(float(r["importe"] or 0), 2), int(r["orden"] or 0))
+        if firma in usadas:
+            continue
+        libres.setdefault(
+            _clave_laxa(r["fecha"], r["cta"], r["importe"]), []
+        ).append(r)
+    for clave, fs in pendientes.items():
+        cands = libres.get(clave) or []
+        if len(fs) != 1 or len(cands) != 1:
+            continue  # gemelos: no se adivina
+        f, a = fs[0], int(cands[0]["anio"])
+        f["anio_col"] = a
+        f["anio_ref"] = a
+        f["anio_origen"] = "columna-rescatada"
+        _LOG.info("año %s rescatado por firma laxa %s (concepto guardado %r ≠ %r)",
+                  a, clave, cands[0]["concepto_norm"], _norm(f.get("concepto")))
 
 
 def fila_por_id(id_dolares: int) -> dict:
@@ -158,6 +215,35 @@ def guardar(*, fila: dict, anio, usuario: str = "web",
         (fecha, cta, conc, imp, orden, a, origen[:20], (usuario or "web")[:50]),
     )
     return {"anio": a}
+
+
+def mudar(*, fila_antes: dict, id_dolares: int, usuario: str = "web") -> int | None:
+    """El concepto cambió: mueve el año guardado de la firma vieja a la nueva.
+
+    `fila_antes` es la fila TAL COMO ESTABA (con su `_orden`) antes del UPDATE.
+    Sin esto el año quedaba huérfano: la PK de `dolares_anio` incluye
+    `concepto_norm` y el ✎ del concepto es justo donde se escribe el año.
+    Devuelve el año mudado, o None si no había nada guardado.
+    """
+    fecha, cta, conc, imp, orden = _firma(fila_antes)
+    row = db.fetch_one(
+        "SELECT anio, origen FROM scintela.dolares_anio "
+        " WHERE fecha = %s AND UPPER(cta) = %s AND concepto_norm = %s "
+        "   AND importe = %s AND orden = %s",
+        (fecha, cta, conc, imp, orden),
+    )
+    if not row:
+        return None
+    a = int(row["anio"])
+    db.execute(
+        "DELETE FROM scintela.dolares_anio "
+        " WHERE fecha = %s AND UPPER(cta) = %s AND concepto_norm = %s "
+        "   AND importe = %s AND orden = %s",
+        (fecha, cta, conc, imp, orden),
+    )
+    guardar(fila=fila_por_id(id_dolares), anio=a, usuario=usuario,
+            origen=(row.get("origen") or "manual"))
+    return a
 
 
 # ---------------------------------------------------------------------------

@@ -115,15 +115,23 @@ def lista():
             )
         except Exception:  # noqa: BLE001
             pass
-    # Filtro por año (el de la columna; "0" = sin año todavía).
+    # Cuántos VIVOS no tienen año por ningún lado (ni la columna ni el `58/26`
+    # del concepto) — el atajo para completarlos. Se cuenta ANTES de filtrar.
+    n_sin_anio = len([
+        f for f in filas
+        if (f.get("st") or "").strip() == "" and not f.get("anio_ref")
+    ])
+    # Filtro por año — el EFECTIVO (`anio_ref` = la columna, o el `/26` del
+    # concepto). "0" = los que no lo tienen por ningún lado. TMT 2026-07-31:
+    # antes miraba sólo `anio_col`, así que un `49/26` caía en "sin año".
     anio_filtro = (request.args.get("anio") or "").strip()
     if anio_filtro:
         if anio_filtro == "0":
-            filas = [f for f in filas if not f.get("anio_col")]
+            filas = [f for f in filas if not f.get("anio_ref")]
         else:
             try:
                 _a = int(anio_filtro)
-                filas = [f for f in filas if f.get("anio_col") == _a]
+                filas = [f for f in filas if f.get("anio_ref") == _a]
             except ValueError:
                 anio_filtro = ""
     if recibido_mes:
@@ -154,7 +162,7 @@ def lista():
                 ("fecha", "Fecha"), ("cta", "Cuenta"),
                 ("concepto", "Concepto"), ("importe", "Importe"),
                 ("st", "Estado"), ("clave", "Clave"),
-                ("anio_col", "Año imp."),
+                ("anio_ref", "Año imp."),
                 ("fecha_recepcion_im", "Recibido"),
                 ("kg_im", "Kg importación"), ("im_numero", "Importación"),
             ],
@@ -165,7 +173,7 @@ def lista():
         filas=filas, cuentas=cuentas, resumen=res,
         desde=desde, hasta=hasta, cta=cta, q=q,
         codigo=codigo or None, recibido_mes=recibido_mes,
-        anio_filtro=anio_filtro,
+        anio_filtro=anio_filtro, n_sin_anio=n_sin_anio,
         solo_vivos=solo_vivos, error=error,
         hoy=today_ec().isoformat(),
     )
@@ -401,9 +409,23 @@ def editar_concepto(id_dolares: int):
     concepto = (request.form.get("concepto") or "").strip()
     try:
         usuario = (getattr(g, "user", None) or {}).get("username", "web")
+        # El AÑO guardado cuelga de una firma que INCLUYE el concepto: hay que
+        # mudarlo, si no queda huérfano y la celda Año se vacía sola (TMT
+        # 2026-07-31). La firma vieja se toma ANTES del UPDATE.
+        from . import anio as _anio_mod
+        try:
+            _fila_antes = _anio_mod.fila_por_id(id_dolares)
+        except Exception:  # noqa: BLE001
+            _fila_antes = None
         r = queries.editar_concepto(
             id_dolares=id_dolares, concepto=concepto, usuario=usuario,
         )
+        if r.get("cambio") and _fila_antes:
+            try:
+                _anio_mod.mudar(fila_antes=_fila_antes, id_dolares=id_dolares,
+                                usuario=usuario)
+            except Exception:  # noqa: BLE001 -- mudar el año nunca frena la edición
+                pass
         if not r.get("cambio"):
             flash("El concepto no cambió.", "warn")
         else:
@@ -452,6 +474,57 @@ def set_anio(id_dolares: int):
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude guardar el año", e)
+    return redirect(request.referrer or url_for("dolares.lista"))
+
+
+@dolares_bp.route("/dolares/anio-lote", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def set_anio_lote():
+    """Pone el MISMO año a los anticipos tildados.
+
+    TMT 2026-07-31 (dueña): *"el resto pongámosle año y así se pasa… ponerles a
+    los que tengamos que, el año 2026"*. De a uno son 120 clicks; la conversión
+    automática frena justo por esto. Sólo toca los VIVOS: un anticipo aplicado
+    ya matcheó con su importación y no se le cambia el año.
+    """
+    from . import anio as _anio_mod
+    valor = (request.form.get("anio") or "").strip()
+    ids_raw = request.form.getlist("id_dolares")
+    try:
+        ids = [int(x) for x in ids_raw if x and str(x).strip()]
+    except ValueError:
+        flash("IDs de anticipos inválidos.", "warn")
+        return redirect(request.referrer or url_for("dolares.lista"))
+    if not ids:
+        flash("No seleccionaste ningún anticipo.", "warn")
+        return redirect(request.referrer or url_for("dolares.lista"))
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+    hechos, saltados, errores = 0, 0, []
+    for i in ids:
+        try:
+            fila = _anio_mod.fila_por_id(i)
+            if (fila.get("st") or "").strip():
+                saltados += 1
+                continue
+            _anio_mod.guardar(fila=fila, anio=valor or None, usuario=usuario,
+                              origen="lote")
+            hechos += 1
+        except Exception as e:  # noqa: BLE001 -- uno malo no frena al resto
+            errores.append(f"#{i}: {e}")
+    if hechos:
+        flash(
+            (f"Año {valor} puesto en {hechos} anticipo"
+             f"{'s' if hechos != 1 else ''}." if valor
+             else f"Se borró el año de {hechos} anticipo"
+                  f"{'s' if hechos != 1 else ''}."),
+            "ok",
+        )
+    if saltados:
+        flash(f"{saltados} ya estaban aplicados o cancelados: no se tocaron.",
+              "warn")
+    for e in errores[:5]:
+        flash(f"No pude poner el año en {e}", "warn")
     return redirect(request.referrer or url_for("dolares.lista"))
 
 

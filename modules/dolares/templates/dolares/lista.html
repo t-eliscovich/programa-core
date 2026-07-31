@@ -156,6 +156,12 @@
     box-shadow: none !important;
   }
   .anio-cell::placeholder { color: rgb(203 213 225); }
+  /* Año que viene ESCRITO EN EL CONCEPTO (`49/26`): no está guardado en la
+     columna, pero es el que el programa usa — así que se lee, no se esconde.
+     Gris medio (no negro) para que se distinga del que está fijado a mano.
+     TMT 2026-07-31. */
+  .anio-cell.anio-del-concepto::placeholder { color: rgb(148 163 184); }
+  .dark .anio-cell.anio-del-concepto::placeholder { color: rgb(100 116 139); }
   /* La regla de base.html es `:root:not(.dark) input` = MÁS específica que una
      clase sola, así que con !important no alcanzaba: hay que igualarle el peso
      (por eso `:root:not(.dark) input.anio-cell`). Verificado en vivo: con
@@ -449,6 +455,14 @@
       </div>
       {# Contador reubicado desde el viejo header "Detalle". #}
       <span class="ml-auto self-center text-xs text-slate-500">{{ filas | length }} movimiento{{ 's' if filas | length != 1 else '' }}</span>
+      {# TMT 2026-07-31: atajo a los VIVOS sin año por ningún lado — son los que
+         frenan la conversión automática cuando el número se repite de campaña. #}
+      {% if n_sin_anio and anio_filtro != '0' %}
+      <a class="self-center text-xs px-2 py-1 rounded"
+         style="background:rgb(254 243 199);color:rgb(146 64 14);text-decoration:none;"
+         title="Anticipos vivos sin año — ni en la columna ni en el concepto. Son los que el automático no puede convertir solo cuando el número se repite entre campañas."
+         href="{{ url_for('dolares.lista', cta=cta, desde=desde, hasta=hasta, q=q, codigo=codigo, recibido_mes=recibido_mes, anio=0, solo_vivos=(1 if solo_vivos else 0)) }}">{{ n_sin_anio }} sin año</a>
+      {% endif %}
     </form>
 
     <div class="overflow-x-auto">
@@ -504,8 +518,12 @@
             <td class="px-4 py-1.5">
               <span class="conc-text">{{ d.concepto | cleanstr }}</span>
               {% if vivo and tiene_permiso('facturas.crear') %}
+              {# TMT 2026-07-31: el ✎ ya NO es el lugar para el año. El concepto
+                 vuelve al valor del dBase en el próximo sync (DOLARES.DBF entra
+                 por TRUNCATE+INSERT), así que un `58/26` escrito acá se borra
+                 solo. El año va en la columna Año, que es PC-only y sobrevive. #}
               <button type="button" class="btn-edit-conc no-print"
-                      title="Editar el concepto — poné el año de la importación: 58/26"
+                      title="Editar el concepto. Ojo: el año ponelo en la columna Año — lo que escribas acá se pierde en el próximo sync del dBase."
                       style="margin-left:.35rem;color:rgb(100 116 139);font-size:12px;">✎</button>
               <form method="post" class="conc-form" style="display:none;"
                     action="{{ url_for('dolares.editar_concepto', id_dolares=d.id_dolares) }}">
@@ -535,13 +553,23 @@
                    sin ese signo de pregunta". Se fue el "?" de la evidencia
                    (ahora es el tooltip de la celda) y la caja blanca: se ve
                    como el resto de la fila hasta que la tocás. #}
+                {# TMT 2026-07-31 (dueña: "a los anticipos recientes les falta
+                   el año"): si el año viene ESCRITO EN EL CONCEPTO (`49/26`)
+                   la celda salía vacía, aunque el programa ya lo estaba usando
+                   para elegir la importación y para la conversión automática.
+                   No es una sugerencia — es el mismo dato, tipeado por una
+                   persona — así que se muestra en gris: nada guardado en la
+                   columna, pero la pantalla dice el año que MANDA. #}
                 <input name="anio" value="{{ d.anio_col or '' }}" maxlength="4"
-                       inputmode="numeric" placeholder="—"
-                       title="{{ d.anio_evidencia or 'Año de la importación' }}"
+                       inputmode="numeric"
+                       placeholder="{% if not d.anio_col and d.anio_ref %}{{ d.anio_ref }}{% else %}—{% endif %}"
+                       title="{% if not d.anio_col and d.anio_ref %}Año {{ d.anio_ref }} — sale del concepto «{{ d.concepto | cleanstr }}» y es el que se está usando. Escribilo acá si querés fijarlo aparte. · {% endif %}{{ d.anio_evidencia or 'Año de la importación' }}"
                        onchange="this.form.requestSubmit()"
-                       class="anio-cell">
+                       class="anio-cell{% if not d.anio_col and d.anio_ref %} anio-del-concepto{% endif %}">
               </form>
               {% elif d.anio_col %}<span class="text-slate-500">{{ d.anio_col }}</span>
+              {% elif d.anio_ref %}<span class="text-slate-400 dark:text-slate-500"
+                    title="Año {{ d.anio_ref }} — sale del concepto «{{ d.concepto | cleanstr }}».">{{ d.anio_ref }}</span>
               {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
             </td>
             <td class="px-4 py-1.5 text-xs text-slate-500 dark:text-slate-400" style="white-space: nowrap;">
@@ -608,11 +636,31 @@
       <span id="sel-maq-hint" style="display:none;font-size:13px;color:rgb(153 27 27);">
         Los anticipos de maquinaria se cargan desde «Activar máquina», no como compra.
       </span>
-      <button type="button" id="sel-convertir"
-              class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-        <span id="sel-convertir-label">Convertir a compra</span>
-      </button>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+        {# TMT 2026-07-31 (dueña): "el resto pongámosle año y así se pasa".
+           De a uno son 120 clicks — y es justo lo que frena el automático. #}
+        {% if tiene_permiso('facturas.crear') %}
+        <form method="post" action="{{ url_for('dolares.set_anio_lote') }}"
+              id="sel-anio-form"
+              style="display:flex;align-items:center;gap:.4rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div id="sel-anio-ids"></div>
+          <label style="font-size:13px;color:rgb(71 85 105);">Poner año</label>
+          <input name="anio" value="2026" maxlength="4" inputmode="numeric"
+                 style="width:4rem;padding:4px 6px;font-size:13px;"
+                 class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950">
+          <button class="text-sm px-3 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800"
+                  title="Le pone ese año a todos los anticipos vivos tildados.">
+            a los tildados
+          </button>
+        </form>
+        {% endif %}
+        <button type="button" id="sel-convertir"
+                class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          <span id="sel-convertir-label">Convertir a compra</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -820,6 +868,18 @@ document.addEventListener('click', function (ev) {
       const esQ = tipo === 'Q';
       if (btnLabel) btnLabel.textContent = esQ ? 'Cargar químicos' : 'Convertir a compra';
       if (modalTit) modalTit.textContent = esQ ? 'Cargar químicos' : 'Convertir a compra';
+    }
+    // ids para el "Poner año a los tildados" (TMT 2026-07-31). Va aparte del
+    // convertir: el año se le puede poner a una selección MEZCLADA (varias
+    // importaciones), que es justo cuando sirve.
+    const anioIds = document.getElementById('sel-anio-ids');
+    if (anioIds) {
+      anioIds.innerHTML = '';
+      sel.forEach(b => {
+        const h = document.createElement('input');
+        h.type = 'hidden'; h.name = 'id_dolares'; h.value = b.value;
+        anioIds.appendChild(h);
+      });
     }
     // estado del select-all
     if (selAll) {

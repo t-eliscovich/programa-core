@@ -179,3 +179,75 @@ def test_no_calcula_evidencia_si_ya_tiene_anio_guardado():
         anio_mod.adjuntar_evidencia(filas, index_importaciones={})
     assert not filas[0]["anio_evidencia"]
     h.assert_not_called()
+
+
+# ── rescate LAXO: el concepto se mueve, el año no se pierde ────────────────
+# TMT 2026-07-31 (dueña: "si se cargó este 11 que puse el año, no me avisó").
+# El AI 11 tenía el año puesto y la celda salía vacía: la firma incluye el
+# concepto, y el concepto lo mueve el ✎ de la pantalla y lo revierte el
+# TRUNCATE+INSERT del sync (DOLARES.DBF no tiene delete_where).
+
+def test_el_anio_sobrevive_a_que_cambie_el_concepto():
+    filas = [_fila("2026-07-23", "AI", "11", 15518.68)]          # concepto de HOY
+    guardado = [{"fecha": "2026-07-23", "cta": "AI", "concepto_norm": "11/26",
+                 "importe": 15518.68, "orden": 0, "anio": 2026}]  # el de ANTES
+    with patch.object(anio_mod.db, "fetch_all", return_value=guardado):
+        anio_mod.adjuntar_anio(filas)
+    assert filas[0]["anio_col"] == 2026
+    assert filas[0]["anio_ref"] == 2026
+    assert filas[0]["anio_origen"] == "columna-rescatada"
+
+
+def test_el_rescate_no_adivina_si_hay_gemelos():
+    """Dos anticipos del mismo día, cuenta e importe con conceptos distintos:
+    la clave laxa no alcanza para saber cuál es cuál → no se asigna nada."""
+    filas = [_fila("2026-07-09", "AC", "18 TRA", 1298.50, id_dolares=12),
+             _fila("2026-07-09", "AC", "20 TRA", 1298.50, id_dolares=77)]
+    guardado = [{"fecha": "2026-07-09", "cta": "AC", "concepto_norm": "18/26 TRA",
+                 "importe": 1298.50, "orden": 0, "anio": 2026}]
+    with patch.object(anio_mod.db, "fetch_all", return_value=guardado):
+        anio_mod.adjuntar_anio(filas)
+    assert [f["anio_col"] for f in filas] == [None, None]
+
+
+def test_el_rescate_no_le_roba_el_anio_a_una_firma_exacta():
+    """Si el año guardado ya matcheó exacto con otra fila, no se reusa."""
+    filas = [_fila("2026-07-09", "AC", "18 TRA", 1298.50, id_dolares=12),
+             _fila("2026-07-09", "AC", "20 TRA", 1298.50, id_dolares=77)]
+    guardado = [{"fecha": "2026-07-09", "cta": "AC", "concepto_norm": "18 TRA",
+                 "importe": 1298.50, "orden": 0, "anio": 2026}]
+    with patch.object(anio_mod.db, "fetch_all", return_value=guardado):
+        anio_mod.adjuntar_anio(filas)
+    assert filas[0]["anio_col"] == 2026 and filas[0]["anio_origen"] == "columna"
+    assert filas[1]["anio_col"] is None
+
+
+def test_origen_marca_de_donde_salio_el_anio():
+    filas = [_fila("2026-07-30", "AC", "49/26", 313.09)]
+    with patch.object(anio_mod.db, "fetch_all", return_value=[]):
+        anio_mod.adjuntar_anio(filas)
+    assert filas[0]["anio_ref"] == 2026
+    assert filas[0]["anio_col"] is None
+    assert filas[0]["anio_origen"] == "concepto"
+
+
+# ── mudar: el ✎ del concepto se lleva el año con él ────────────────────────
+
+def test_mudar_reubica_el_anio_guardado():
+    antes = {**_fila("2026-07-23", "AI", "11", 15518.68), "_orden": 0}
+    nueva = {**_fila("2026-07-23", "AI", "11/26", 15518.68), "_orden": 0}
+    with patch.object(anio_mod.db, "fetch_one",
+                      return_value={"anio": 2026, "origen": "manual"}), \
+         patch.object(anio_mod.db, "execute") as ex, \
+         patch.object(anio_mod, "fila_por_id", return_value=nueva):
+        assert anio_mod.mudar(fila_antes=antes, id_dolares=9) == 2026
+    sqls = " ".join(str(c.args[0]) for c in ex.call_args_list)
+    assert "DELETE" in sqls and "INSERT" in sqls
+
+
+def test_mudar_no_hace_nada_si_no_habia_anio():
+    antes = {**_fila("2026-07-23", "AI", "11", 15518.68), "_orden": 0}
+    with patch.object(anio_mod.db, "fetch_one", return_value=None), \
+         patch.object(anio_mod.db, "execute") as ex:
+        assert anio_mod.mudar(fila_antes=antes, id_dolares=9) is None
+    ex.assert_not_called()
