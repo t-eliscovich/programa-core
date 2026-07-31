@@ -1459,6 +1459,18 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         )
     except Exception:  # noqa: BLE001
         compras_us = 0.0
+    # + COMPRAS LOCALES de hilo (dueña 2026-07-30): entran al promedio ponderado
+    # igual que las importaciones, porque son compra real de hilo (con su tarifa).
+    # Así el $/kg del hilado (compartido con el balance/Materia Prima) refleja el
+    # costo de TODO lo comprado, no solo lo importado. Fail-soft: si Asinfo cae,
+    # quedan solo las importaciones (import-only, como antes).
+    try:
+        from modules.compras_locales import service as _locsvc
+        _loc = _locsvc.hilado_local_recibido_mes(int(yy), int(mm)) or {}
+        compras += float(_loc.get("kg") or 0)
+        compras_us += float(_loc.get("us") or 0)
+    except Exception:  # noqa: BLE001
+        pass
     avg = ((hi0 * _open + compras_us) / (hi0 + compras)) if (hi0 + compras) else _open
     act_kg = hi1 + maq
     act_us = hi1 * avg + maq * _open

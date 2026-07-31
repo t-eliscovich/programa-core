@@ -176,6 +176,19 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             )
         except Exception:  # noqa: BLE001 -- fail-soft
             compras_us = 0.0
+        # + COMPRAS LOCALES de hilo (dueña 2026-07-30: "también hace compras
+        # locales; en Ingreso de hilado hay que sumarlas"). El Ingreso = importación
+        # + compra local (misma suma que la pantalla /importaciones). Al sumarlas a
+        # `compras`, entran a la fila Ingresos Y al neteo del egreso (importaciones_kg),
+        # así los kg de las locales dejan de contarse como reingreso y la columna
+        # sigue cerrando. Fail-soft: si Asinfo cae, quedan solo las importaciones.
+        try:
+            from modules.compras_locales import service as _locsvc
+            _loc = _locsvc.hilado_local_recibido_mes(int(anio), int(mes)) or {}
+            compras += float(_loc.get("kg") or 0.0)
+            compras_us += float(_loc.get("us") or 0.0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            pass
     # FLUJO DE FABRICACIÓN REAL de Asinfo (dueña 2026-07-09). Por bodega, de las
     # órdenes CERRADAS en el mes (fecha_cierre): material consumido (issued) y
     # producto fabricado (fab). El desperdicio (merma) = issued − fab.

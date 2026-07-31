@@ -349,6 +349,41 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
     return filas
 
 
+def hilado_local_recibido_mes(yy: int, mm: int) -> dict:
+    """Kg y $ (tarifario, SIN IVA) de compras LOCALES de hilo RECIBIDAS en el mes.
+
+    El análogo local de `asinfo_service.hilado_recibido_mes` (que sólo cuenta
+    importaciones). "Recibida en el mes" = con fecha de recepción a la bodega 51
+    cuyo prefijo YYYY-MM coincide, igual corte que las importaciones. El $ sale
+    del TARIFARIO (kg × tarifa sin IVA), la MISMA plata con la que el motor de
+    compras locales crea el pasivo — NO el total de Asinfo (referencial).
+
+    Dueña 2026-07-30: "la fábrica importa hilo pero también hace compras locales;
+    en Ingreso de hilado hay que sumarlas". Se usa en el cuadro MOVIMIENTOS del
+    flujo (fila Ingresos) y en la valuación del hilado (mov_hilado_valuacion),
+    para que Ingresos = importación + compra local y la columna cierre.
+
+    Fail-soft: {"kg": 0.0, "us": 0.0} si Asinfo no responde.
+    """
+    pref = f"{int(yy):04d}-{int(mm):02d}-"
+    try:
+        filas = compras_locales_con_cruce()
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el flujo/balance
+        return {"kg": 0.0, "us": 0.0}
+    kg = 0.0
+    us = 0.0
+    for f in filas or []:
+        if not f.get("recibida"):
+            continue
+        if not str(f.get("fecha_recepcion") or "").startswith(pref):
+            continue
+        _kg = float(f.get("kg") or 0.0)
+        _tar = f.get("tarifa")
+        kg += _kg
+        us += (_kg * float(_tar)) if _tar else 0.0
+    return {"kg": kg, "us": us}
+
+
 def estado_pago_de_compras(compras: list[dict] | None) -> dict:
     """Estado de pago de las compras ya cruzadas de una IMPORTACIÓN.
 
