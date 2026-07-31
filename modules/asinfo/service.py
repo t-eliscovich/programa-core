@@ -1843,7 +1843,24 @@ def hilado_egresos_mes(yy: int, mm: int, *, mov: dict | None = None,
             importaciones_kg = float(hilado_recibido_mes(int(yy), int(mm)) or 0.0)
         except Exception:  # noqa: BLE001
             importaciones_kg = 0.0
-    rein = max(ing - float(importaciones_kg or 0.0), 0.0)
+        # + compras LOCALES de hilo (dueña 2026-07-30): el ingreso contra el que se
+        # netea el egreso = importación + local, la MISMA suma que la fila Ingresos
+        # del flujo. Así el BALANCE (que llama sin importaciones_kg) usa el mismo
+        # neteo que el FLUJO (que la pasa ya sumada) y los dos egresos coinciden.
+        try:
+            from modules.compras_locales import service as _locsvc
+            importaciones_kg += float(
+                (_locsvc.hilado_local_recibido_mes(int(yy), int(mm)) or {}).get("kg") or 0.0
+            )
+        except Exception:  # noqa: BLE001 -- fail-soft
+            pass
+    # reingresos SIN clamp a 0 (dueña 2026-07-30 "la cuenta tiene que sumar"): si las
+    # recepciones (import + local) superan el ingreso BRUTO de bodega, es hilo
+    # recibido Y consumido dentro del MISMO mes → reingresos < 0 y el egreso lo
+    # absorbe, así el egreso captura ese consumo y la columna del flujo CIERRA
+    # (inicial + ingresos + máquinas − egresos = stock act.). Antes el max(,0) lo
+    # escondía y esa diferencia sobraba en Stock act.
+    rein = ing - float(importaciones_kg or 0.0)
     out.update({
         "disponible": True,
         "egresos_kg": max(egr - rein, 0.0),
