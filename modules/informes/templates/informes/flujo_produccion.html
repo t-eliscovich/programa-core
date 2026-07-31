@@ -188,17 +188,17 @@
             <td class="num">{{ ate.get('stock_inic_kg') | num_es(0) if ate.get('stock_inic_kg') else '—' }}</td>
             <td class="num">{{ aco.get('stock_inic_us') | num_es(0) if aco.get('stock_inic_us') else '—' }}</td>
           </tr>
-          {# Federico 2026-07-27: la fila Ingresos de hilado muestra EXACTAMENTE los
-             mismos kg / $/kg / $ que la tabla "Compras hilado" de abajo (UNA sola
-             fuente = las compras de hilado del mes). Antes el $/kg difería por 0,001
-             (3,063 vs 3,062) porque acá se dividía el costo de importación por el kg
-             físico de Asinfo, y en Compras hilado por el kg de scintela. Fuente
-             elegida: Compras hilado (importe ÷ kg). Fail-soft: si no hay compras
-             cargadas, cae a los valores de la banda (Asinfo/importaciones). #}
-          {% set _cht = data.compras_hilado_total if data.compras_hilado else None %}
-          {% set _ing_kg  = (_cht.kg if _cht else ahl.get('ingresos_kg')) %}
-          {% set _ing_us  = (_cht.importe if _cht else ahl.get('ingresos_us')) %}
-          {% set _ing_ukg = ((_cht.importe / _cht.kg) if (_cht and _cht.kg) else ahl.get('ingresos_ukg')) %}
+          {# Federico 2026-07-30: la fila Ingresos de hilado = RECEPCIONES de Asinfo
+             (hilado_recibido_mes), NO la tabla "Compras hilado" del programa. Motivo:
+             la columna tiene que CERRAR verticalmente — inicial + ingresos(recepción)
+             + en máquinas − egresos(consumo neto) = Stock act. El egreso ya netea los
+             reingresos contra la recepción, así que el ingreso DEBE ser esa misma
+             recepción; si no, sobra la brecha (≈184k) = lo cargado como compras en el
+             programa menos lo recibido en Asinfo. (Antes se usaba Compras hilado para
+             igualar el $/kg de esa tabla, pero rompía el balance de kg.) #}
+          {% set _ing_kg  = ahl.get('ingresos_kg') %}
+          {% set _ing_us  = ahl.get('ingresos_us') %}
+          {% set _ing_ukg = ahl.get('ingresos_ukg') %}
           <tr>
             <td class="lbl">Ingresos</td>
             <td class="num">{{ _ing_kg | num_es(0) if _ing_kg else '—' }}</td>
