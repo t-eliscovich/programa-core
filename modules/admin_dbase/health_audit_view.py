@@ -208,11 +208,22 @@ def utilidad_watchdog():
         balance = iq.informe_balance()
         comp = balance.get("diagnostico", {}).get("componentes", {})
 
-        live_patr = float(comp.get("patr") or 0)
+        # `componentes.patr` es el patrimonio BRUTO: URET (los dividendos del
+        # mes) vive DENTRO del Total Activo, así que patr los incluye. En
+        # cambio `historia.patrimonio` se guarda NETO — crear_snapshot_diario
+        # escribe patr − uret, igual que el PRG (línea 1347: REPLA PATRIMONIO
+        # WITH PATR-URET). Comparar uno contra el otro daba un delta inflado
+        # por el total de retiros del mes: el 2026-07-31 marcaba +153.772
+        # cuando el patrimonio real había BAJADO 57.800 (los retiros del mes
+        # eran 211.393). La alerta de $200k saltaba sola a fin de mes.
+        # TMT 2026-07-31.
+        live_uret = float(comp.get("uret") or 0)
+        live_patr = float(comp.get("patr") or 0) - live_uret
         live_cart = float(comp.get("cart") or 0)
         live_vsto = float(comp.get("vsto") or 0)
         live_utilidad = float(comp.get("utilidad") or 0)
 
+        stats["live_uret"] = live_uret
         stats["live_patrimonio"] = live_patr
         stats["live_cart"] = live_cart
         stats["live_vsto"] = live_vsto
