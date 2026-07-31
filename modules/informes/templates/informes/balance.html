@@ -260,7 +260,13 @@
      las alarmas de HILADO sin kg SÍ se muestran — una compra H con $ y sin
      kg infla la tarifa y revalúa TODO el stock (+83k de utilidad falsa el
      16-17/07). Solo las que arrancan con "⚠ HILADO". #}
-  {% for _adv in (b.diagnostico.advertencias or []) if _adv.startswith('⚠ HILADO') %}
+  {# TMT 2026-07-31: también las "⚠ ASINFO". Cuando el puente de stock no
+     contesta, el balance valúa con los kilos del dBase y la utilidad se corre
+     ~460.000 — el 31/07 Alex la vio saltar cuatro veces en diez minutos y la
+     pantalla no decía una palabra. Un fallback de ese tamaño no puede ser
+     invisible. #}
+  {% for _adv in (b.diagnostico.advertencias or [])
+       if _adv.startswith('⚠ HILADO') or _adv.startswith('⚠ ASINFO') %}
     <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
       <strong>{{ _adv }}</strong>
     </div>

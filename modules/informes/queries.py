@@ -4746,10 +4746,28 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     kg_hilado, kg_tejido, kg_term = kg_hilado_db, kg_tejido_db, kg_term_db
     _stock_fuente = "dbase"
 
+    # TMT 2026-07-31: el fallback Asinfo→dBase mueve la utilidad ~460.000 y
+    # hasta hoy era INVISIBLE — el `except: pass` de abajo se tragaba todo y la
+    # pantalla mostraba el número del dBase como si nada. Alex vio la utilidad
+    # saltar 576 → 545 → 609 → 688 en diez minutos y no había dónde mirar.
+    _stock_aviso = ""
     if _stock_src == "asinfo":
         try:
             from modules.asinfo import service as _asinfo_svc
             _inv = _asinfo_svc.inventario_por_etapa()
+            if not _inv.get("disponible"):
+                _stock_aviso = (
+                    "⚠ ASINFO no contestó el inventario: el stock se está "
+                    "valuando con los kilos del dBase, así que esta utilidad NO "
+                    "es comparable con la de hace un rato (entre las dos bases "
+                    "hay unos 460.000 de diferencia). Reintentá en un minuto."
+                )
+            elif _inv.get("de_cache_vieja"):
+                _stock_aviso = (
+                    "⚠ ASINFO contestó a medias: se está usando el último "
+                    "inventario completo, de unos minutos atrás. El número es "
+                    "bueno, pero puede tardar en reflejar lo último."
+                )
             if _inv.get("disponible"):
                 # Con MATERIAL EN PROCESO (WIP), igual que la vista de Stock y
                 # que el dBase: Hilado = bodega 51 + hilo despachado a tejeduría;
@@ -4759,8 +4777,11 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
                 kg_tejido = float(_inv["cruda_total"])  # 52 + en proceso PT
                 kg_term = float(_inv["terminada"])      # bodega 53
                 _stock_fuente = "asinfo"
-        except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
-            pass
+        except Exception as _e_inv:  # noqa: BLE001 -- nunca romper el balance
+            _stock_aviso = (
+                f"⚠ ASINFO falló al traer el inventario ({_e_inv}): el stock "
+                "se está valuando con los kilos del dBase."
+            )
 
     # COHERENCIA $/kg HILADO (dueña 2026-07-13: "el 2954 directamente = a la
     # variable del flujo"). El $/kg del hilado del balance TIENE que ser el MISMO
@@ -4943,6 +4964,15 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # patrimonio 38% off. Bug encontrado 2026-06-02 via /admin/dbase-sync.
     # Top-level resultado["vsto"] siempre estuvo bien — éste es sólo el
     # mirror para componentes.
+    # El aviso del puente de stock viaja con las advertencias para que la
+    # pantalla lo pueda mostrar (balance.html deja pasar las "⚠ HILADO" y las
+    # "⚠ ASINFO"). Sin esto, el fallback más caro del balance seguiría siendo
+    # invisible. TMT 2026-07-31.
+    try:
+        if _stock_aviso:
+            (diagnostico or {}).setdefault("advertencias", []).append(_stock_aviso)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         _comp = (diagnostico or {}).get("componentes")
         if isinstance(_comp, dict):

@@ -1200,7 +1200,16 @@ _INVENTARIO_ETAPA_CACHE: dict = {}
 _FALLO_TTL_SECS = 30
 
 
-def _cache_put(cache: dict, clave: str, valor, ok: bool, ttl: int) -> None:
+#: ¿El valor que está hoy en cada caché vino de una consulta que SALIÓ BIEN?
+#: `_cache_put` lo anota acá para que quien COMBINA varias fuentes (el
+#: inventario por etapa) pueda distinguir "contestaron todas" de "contestaron
+#: dos de tres" — que es lo que produce un número plausible pero equivocado.
+#: Va aparte y no dentro de la tupla porque los ~20 lectores de estas cachés
+#: esperan exactamente `(ts, valor)`.
+_OK_POR_CACHE: dict = {}
+
+
+def _cache_put(cache: dict, clave, valor, ok: bool, ttl: int) -> None:
     """Guarda `valor` con TTL normal si `ok`, con ventana corta si no.
 
     Los lectores hacen `if cached and (now - cached[0]) < TTL`, así que para
@@ -1211,6 +1220,30 @@ def _cache_put(cache: dict, clave: str, valor, ok: bool, ttl: int) -> None:
     import time as _t
     ahora = _t.time()
     cache[clave] = (ahora if ok else ahora - max(0, ttl - _FALLO_TTL_SECS), valor)
+    _OK_POR_CACHE[(id(cache), clave)] = bool(ok)
+
+
+def _cache_ok(cache: dict, clave) -> bool:
+    """¿Lo último que se guardó en esa caché vino de una consulta buena?
+
+    Ante la duda dice que sí: una caché que todavía no pasó por `_cache_put`
+    (proceso recién arrancado) no tiene por qué disparar una falsa alarma.
+    """
+    return bool(_OK_POR_CACHE.get((id(cache), clave), True))
+
+
+#: El último inventario COMPLETO que contestó Asinfo. Sirve de red: si en la
+#: próxima vuelta falla una de las tres consultas, se devuelve éste en vez de
+#: uno incompleto. Se pierde al reiniciar la app, y está bien: recién ahí no
+#: hay nada mejor que caer al dBase.
+_ULTIMO_INVENTARIO_BUENO: dict | None = None
+
+
+def _ultimo_bueno_o(vacio: dict) -> dict:
+    """El último inventario bueno, marcado como viejo; si no hay, el vacío."""
+    if _ULTIMO_INVENTARIO_BUENO:
+        return {**_ULTIMO_INVENTARIO_BUENO, "de_cache_vieja": True}
+    return vacio
 
 
 def inventario_por_etapa() -> dict:
@@ -1249,6 +1282,9 @@ def inventario_por_etapa() -> dict:
 
     try:
         totales = stock_asinfo_lote_totales() or []
+        # ¿Contestaron las TRES fuentes? Si falla una sola, el inventario que
+        # sale de acá es plausible pero está incompleto — ver el guard de abajo.
+        _ok_bodegas = _cache_ok(_STOCK_LOTE_TOTALES_CACHE, "all")
         por_bodega = {int(r.get("id_bodega")): float(r.get("total_kg") or 0)
                       for r in totales}
         # WIP entre pasos = "en máquinas" = material despachado − producido.
@@ -1261,9 +1297,11 @@ def inventario_por_etapa() -> dict:
         # los contaba nadie. (fabricacion_proceso sigue exponiendo
         # saldo_produciendo por si se quiere el corte fab>0.)
         wip_tc = float((fabricacion_proceso(52).get("resumen") or {}).get("saldo") or 0)
+        _ok_52 = _cache_ok(_FABRICACION_CACHE, 52)
         wip_pt = float((fabricacion_proceso(53).get("resumen") or {}).get("saldo") or 0)
+        _ok_53 = _cache_ok(_FABRICACION_CACHE, 53)
     except Exception:  # noqa: BLE001
-        return vacio
+        return _ultimo_bueno_o(vacio)
 
     hilo = por_bodega.get(51, 0.0)
     tela_cruda = por_bodega.get(52, 0.0)
@@ -1274,7 +1312,31 @@ def inventario_por_etapa() -> dict:
 
     if not (hilo or tela_cruda or terminada or wip_tc or wip_pt):
         # Nada vino — tratar como no disponible (fail-soft).
-        return vacio
+        return _ultimo_bueno_o(vacio)
+
+    # ── GUARD del inventario INCOMPLETO (TMT 2026-07-31) ────────────────────
+    # El guard de arriba sólo ataja "no vino NADA". El caso caro es el otro:
+    # contestan las bodegas y se cae `fabricacion_proceso(52)` (timeout de 20 s
+    # contra una query que ya se midió en 21). Ahí el inventario sale sin el
+    # material EN MÁQUINAS —~45.000 kg de hilo, ~135.000 US$— y como el número
+    # es plausible, el guard viejo lo dejaba pasar Y lo cacheaba 5 minutos.
+    # Eso es lo que hacía saltar la Utilidad de un F5 al otro (31/07: Alex la
+    # vio en 576, 545, 609 y 688 en diez minutos).
+    #
+    # Ahora: si faltó alguna fuente, se devuelve el ÚLTIMO INVENTARIO BUENO.
+    # Un número quieto y de hace tres minutos es infinitamente mejor que uno
+    # fresco y equivocado — y si no hay ninguno bueno todavía, se devuelve
+    # vacío, que hace caer el balance al dBase (que al menos es coherente).
+    if not (_ok_bodegas and _ok_52 and _ok_53):
+        _LOG.warning(
+            "inventario_por_etapa INCOMPLETO (bodegas=%s wip52=%s wip53=%s) — "
+            "devuelvo el último bueno", _ok_bodegas, _ok_52, _ok_53,
+        )
+        parcial = _ultimo_bueno_o(vacio)
+        # Ventana corta: reintentar a los 30 s, no dentro de 5 minutos.
+        _cache_put(_INVENTARIO_ETAPA_CACHE, "all", parcial, False,
+                   _INVENTARIO_ETAPA_TTL_SECS)
+        return parcial
 
     out = {
         "disponible": True,
@@ -1287,7 +1349,10 @@ def inventario_por_etapa() -> dict:
         "cruda_total": tela_cruda + wip_pt,
         "total": hilo + wip_tc + tela_cruda + wip_pt + terminada,
     }
-    _INVENTARIO_ETAPA_CACHE["all"] = (now, out)
+    _cache_put(_INVENTARIO_ETAPA_CACHE, "all", out, True,
+               _INVENTARIO_ETAPA_TTL_SECS)
+    global _ULTIMO_INVENTARIO_BUENO
+    _ULTIMO_INVENTARIO_BUENO = out
     return out
 
 
@@ -1761,7 +1826,13 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
           LEFT JOIN recepcion_proveedor rp ON rp.id_recepcion_proveedor = fp.id_recepcion_proveedor
          ORDER BY fpi.id_factura_proveedor DESC
     """
-    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    # TMT 2026-07-31: `_estado` en vez de `fetch_dataset` a secas. Esta lista
+    # alimenta el cruce anticipo↔importación y, por ahí, la tarifa $/kg del
+    # hilado — que revalúa TODO el stock. Estaba cacheada 5 min sin mirar si
+    # Metabase contestó: un fracaso movía la utilidad y quedaba pegado. Ahora
+    # el fracaso vence a los 30 s, como el resto.
+    rows, _ok_imp = metabase_client.fetch_dataset_estado(
+        2, sql, max_results=int(limite))
     out = []
     for r in rows:
         try:
@@ -1779,7 +1850,7 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
             })
         except (TypeError, ValueError):
             continue
-    _IMPORT_CACHE[cache_key] = (now, out)
+    _cache_put(_IMPORT_CACHE, cache_key, out, _ok_imp, _IMPORT_TTL_SECS)
     return out
 
 
