@@ -517,7 +517,7 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
     yield from lineas_top_gap(diff, etiqueta)
 
 
-def lineas_top_gap(diff: dict, etiqueta: str, top: int = 12):
+def lineas_top_gap(diff: dict, etiqueta: str, top: int = 40):
     """QUIÉN se come el gap: los sobrantes agrupados por concepto, de mayor a menor.
 
     Pedido dueña 2026-07-31: "necesitamos tener el mismo saldo en banco".
@@ -542,11 +542,16 @@ def lineas_top_gap(diff: dict, etiqueta: str, top: int = 12):
     filas.sort(key=lambda f: -abs(f[1]))
     yield _ln(f"  ── QUIÉN SE COME EL GAP DE {etiqueta} (impacto PC − dBase, "
               f"por concepto, {len(filas)} conceptos) ──")
+    yield _ln("     (la columna ACUM va sumando: cuando llega al gap, ya está todo "
+              "el dinero — lo de abajo se cancela entre sí)")
+    acumulado = 0.0
     for c, imp, n in filas[:top]:
-        yield _ln(f"    {imp:>+13,.2f}  «{c}»  ({n} mov)")
+        acumulado = round(acumulado + imp, 2)
+        yield _ln(f"    {imp:>+13,.2f}  acum {acumulado:>+13,.2f}  «{c}»  ({n} mov)")
     resto = round(sum(f[1] for f in filas[top:]), 2)
     if filas[top:]:
-        yield _ln(f"    {resto:>+13,.2f}  (los otros {len(filas) - top} conceptos)")
+        yield _ln(f"    {resto:>+13,.2f}  acum {round(acumulado + resto, 2):>+13,.2f}  "
+                  f"(los otros {len(filas) - top} conceptos)")
 
 
 # ───────────────── diffs 1 a 1 (pedido dueña 2026-06-11) ─────────────────

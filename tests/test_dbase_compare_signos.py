@@ -88,8 +88,9 @@ def test_top_gap_ordena_por_impacto_y_agrupa_por_concepto():
     lineas = list(lineas_top_gap(d, "BANCO"))
     cuerpo = "".join(lineas)
     assert "QUIÉN SE COME EL GAP DE BANCO" in cuerpo
-    assert lineas[1].index("1 ch.GRANDE") > 0        # el más grande, primero
-    assert "-200.00" in lineas[2]                    # 100 (PC) − 300 (dBase)
+    assert "1 ch.GRANDE" in lineas[2]                # el más grande, primero
+    assert "-200.00" in lineas[3]                    # 100 (PC) − 300 (dBase)
+    assert "acum    +49,800.00" in lineas[3]         # 50.000 − 200
 
 
 def test_top_gap_no_imprime_nada_si_no_hay_sobrantes():
