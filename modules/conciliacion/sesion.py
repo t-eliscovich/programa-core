@@ -840,6 +840,60 @@ def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
     return out
 
 
+def eliminar_mov_extracto(sesion_id: int, firma: str) -> dict | None:
+    """Saca UNA fila del extracto cargado en la sesión (la primera que matchea).
+
+    TMT 2026-07-31 (dueña): el extracto traía la MISMA fila dos veces
+    ("DEPOSITO CHEQUE 34146049 $255,00" duplicado) y no había forma de sacar
+    la repetida: el botón ✕ existía SÓLO para los pendientes históricos, no
+    para las filas que vienen del archivo.
+
+    `firma` = "YYYY-MM-DD|documento|monto(2 dec)|tipo" — la misma que arma el
+    template en `data-sig`. Borra UNA sola ocurrencia (no todas), justamente
+    para poder quedarse con una de las dos filas duplicadas.
+
+    Devuelve el dict de la fila borrada, o None si no encontró nada.
+    """
+    if not sesion_id or not firma:
+        return None
+    row = db.fetch_one(
+        "SELECT id, extracto_payload FROM scintela.banco_conciliacion_sesion "
+        "WHERE id = %s AND cerrada_en IS NULL",
+        (int(sesion_id),),
+    )
+    if not row:
+        return None
+    payload = row.get("extracto_payload") or []
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, list):
+        return None
+
+    def _firma_de(d):
+        try:
+            monto = f"{float(d.get('monto') or 0):.2f}"
+        except (TypeError, ValueError):
+            monto = "0.00"
+        return (
+            f"{d.get('fecha') or ''}|{d.get('documento') or ''}|"
+            f"{monto}|{d.get('tipo') or ''}"
+        )
+
+    for i, d in enumerate(payload):
+        if _firma_de(d) == firma:
+            borrado = payload.pop(i)
+            db.execute(
+                "UPDATE scintela.banco_conciliacion_sesion "
+                "   SET extracto_payload = %s::jsonb WHERE id = %s",
+                (json.dumps(payload), int(sesion_id)),
+            )
+            return borrado
+    return None
+
+
 def estado_sesion(sesion: dict, no_banco: int) -> dict:
     """De la sesión DB → buckets listos para renderizar.
 

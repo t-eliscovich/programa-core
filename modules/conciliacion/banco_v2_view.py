@@ -3655,6 +3655,28 @@ def banco_eliminar_pendiente():
         url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id)
         if sesion_id else url_for("conciliacion.banco_post_procesar")
     )
+    # TMT 2026-07-31 (dueña): si no viene hist_id, puede ser una fila del
+    # EXTRACTO repetida (el archivo del banco trajo dos veces el mismo
+    # movimiento). Se borra por FIRMA y UNA sola ocurrencia, así queda la otra.
+    sig = (request.form.get("sig") or "").strip()
+    if hist_id <= 0 and sig:
+        borrado = _sesion.eliminar_mov_extracto(sesion_id, sig)
+        if borrado:
+            _LOG.warning(
+                "ELIMINAR fila de extracto (sesion %s) por %s: %s",
+                sesion_id, _usuario_actual(), sig,
+            )
+            flash(
+                f"Fila del extracto eliminada: "
+                f"{(borrado.get('concepto') or '')[:40]} "
+                f"${float(borrado.get('monto') or 0):,.2f} "
+                f"(doc {borrado.get('documento') or '—'}).",
+                "ok",
+            )
+        else:
+            flash("No encontré esa fila del extracto (¿ya la borraste?).", "warn")
+        return redirect(_back)
+
     if hist_id <= 0:
         flash("No identifiqué el pendiente a eliminar.", "error")
         return redirect(_back)

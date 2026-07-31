@@ -156,17 +156,28 @@
                 {{ m.concepto or '' }}
               </td>
               {# TMT 2026-07-06 (dueña): Oficina del extracto — vacía si el archivo no la trae #}
-              <td class="px-1 py-0 text-slate-500 text-[9px] truncate" title="{{ m.oficina or '' }}">{{ (m.oficina or '')|truncate(14, True, '') }}</td>
-              <td class="px-1 py-0 text-center">
-                {% if _hist %}
+              {# TMT 2026-07-31 (dueña): "los que tienen oficina taparon la x" — el
+                 tooltip nativo del title flotaba encima de la columna de acciones.
+                 Ahora el title sólo aparece si el texto REALMENTE está cortado. #}
+              <td class="px-1 py-0 text-slate-500 text-[9px] truncate"
+                  {% if (m.oficina or '')|length > 14 %}title="{{ m.oficina }}"{% endif %}>{{ (m.oficina or '')|truncate(14, True, '') }}</td>
+              {# TMT 2026-07-31 (dueña): el ✕ existía SÓLO para los pendientes
+                 históricos. Cuando el archivo del banco trae la MISMA fila dos
+                 veces (caso "DEPOSITO CHEQUE 34146049 $255,00") no había forma
+                 de sacar la repetida. Ahora las filas del EXTRACTO también
+                 tienen ✕: se borran por FIRMA y de a UNA, así queda la otra. #}
+              <td class="px-1 py-0 text-center" style="position:relative; white-space:nowrap;">
                 <form method="POST" action="{{ url_for('conciliacion.banco_eliminar_pendiente') }}" class="inline m-0">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
-                  <input type="hidden" name="hist_id" value="{{ item.id_historico }}">
-                  <button type="button" class="elim-x text-slate-300 hover:text-rose-600 text-[10px] leading-none" title="Eliminar este pendiente del backlog">✕</button>
+                  {% if _hist %}
+                    <input type="hidden" name="hist_id" value="{{ item.id_historico }}">
+                  {% else %}
+                    <input type="hidden" name="sig" value="{{ (m.fecha.isoformat() if m.fecha else '') ~ '|' ~ (m.documento or '') ~ '|' ~ ('%.2f'|format(m.monto|float)) ~ '|' ~ (m.tipo or '') }}">
+                  {% endif %}
+                  <button type="button" class="elim-x text-slate-300 hover:text-rose-600 text-[10px] leading-none" title="{% if _hist %}Eliminar este pendiente del backlog{% else %}Sacar esta fila del extracto (si vino repetida){% endif %}">✕</button>
                   <button type="submit" class="elim-ok hidden text-rose-600 font-bold text-[9px] leading-none" title="Confirmar borrado">borrar?</button>
                 </form>
-                {% endif %}
               </td>
             </tr>
           {% endfor %}
