@@ -153,7 +153,20 @@
               <span style="font-size:11.5px;color:rgb(100 116 139);"> · {{ a.detalle }}</span>
               {% endif %}
             </td>
-            <td class="px-4 py-1.5 font-mono text-xs">{{ a.comprobante or '—' }}</td>
+            {# TMT 2026-07-31 (dueña, mirando esta columna): *"el bap puede no
+               estar… no sé a qué se refiere"*. `BAP17` es el código con el que
+               el dBase numera estas compras y acá no le dice nada a nadie. En
+               su lugar va un link que se explica solo, a la compra buscada por
+               su CÓDIGO (`AI 11`) — el mismo nombre del aviso. El código del
+               comprobante queda en el tooltip, para quien lo tenga que cruzar
+               contra el FoxPro. Ver feedback_sin_jerga_bap_en_la_ui. #}
+            <td class="px-4 py-1.5 text-xs">
+              {% if a.id_compra and a.codigo_prov and a.ref_num is not none %}
+              <a href="{{ url_for('compras.lista', codigo=a.codigo_prov ~ ' ' ~ a.ref_num) }}"
+                 class="text-sky-700 dark:text-sky-400 hover:underline"
+                 title="{{ 'Comprobante ' ~ a.comprobante if a.comprobante else 'Ver la compra' }}">Ver la compra</a>
+              {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
+            </td>
             <td class="px-4 py-1.5 text-right">{{ a.importe | num_es(2) if a.importe else '—' }}</td>
           </tr>
           {% else %}

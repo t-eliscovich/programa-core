@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}BAP — Conciliar anticipos USD ↔ importaciones{% endblock %}
+{% block title %}Conciliar anticipos USD ↔ importaciones{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('dolares.lista') }}" class="hover:underline">Anticipos USD</a> /
   <strong>Conciliar → Convertir a compra</strong>
@@ -12,7 +12,7 @@
     A la izquierda los anticipos vivos; a la derecha las importaciones
     (Ingreso de hilado). Escribí un filtro (ej. <code class="text-xs">AC 15</code>)
     y filtra los dos lados a la vez. Marcá los anticipos, elegí la importación
-    destino y convertí a compra (BAP).
+    destino y convertí a compra.
   </p>
 
   {# ── Filtro único (filtra ambos paneles en JS) ────────────────────────── #}

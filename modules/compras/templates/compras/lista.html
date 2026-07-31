@@ -229,7 +229,7 @@
             {% elif uc == 'bap-auto' %}
               {# TMT 2026-07-29: conversión AUTOMÁTICA anticipo→compra al
                  recibir la importación (modules/importaciones/autobap.py). #}
-              <span title="Creada sola al recibirse la importación (anticipos USD → BAP). Acordate del BAP en el dBase." style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#fef3c7;color:#92400e;">Automática</span>
+              <span title="Creada sola: llegó la importación y sus anticipos en dólares pasaron a esta compra." style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#fef3c7;color:#92400e;">Automática</span>
             {% elif uc == 'dbf-import' or uc == '' %}
               <span title="Importada del dBase (FoxPro)" style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;">dBase</span>
             {% elif uc.startswith('asinfo') %}
