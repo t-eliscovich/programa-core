@@ -36,6 +36,50 @@ _session_token: str | None = None
 _estado = threading.local()
 
 
+# ── BITÁCORA de las consultas (TMT 2026-07-31) ─────────────────────────────
+# Cuando la utilidad se movía, nadie podía decir si Metabase había contestado:
+# el fallo se loguea por WARNING y ese log, en el servidor, no lo lee nadie.
+# Acá quedan las últimas consultas EN MEMORIA (cuánto tardaron, si salieron
+# bien, y el error si no) y `/admin/health/metabase` las muestra. Sin tabla y
+# sin archivo: se pierde al reiniciar, y está bien — es para mirar AHORA,
+# cuando el número se movió hace un minuto.
+_BITACORA: list = []
+_BITACORA_MAX = 60
+
+
+def _anotar(db: int, ms: float, ok: bool, error: str = "") -> None:
+    try:
+        import time as _t
+        _BITACORA.append({
+            "ts": _t.strftime("%H:%M:%S", _t.gmtime(_t.time() - 5 * 3600)),
+            "db": int(db), "ms": round(ms, 1), "ok": bool(ok),
+            "error": (error or "")[:200],
+        })
+        del _BITACORA[:-_BITACORA_MAX]
+    except Exception:  # noqa: BLE001 -- una bitácora no puede romper nada
+        pass
+
+
+def bitacora() -> list:
+    """Las últimas consultas a Metabase, la más nueva al final. Hora de Ecuador."""
+    return list(_BITACORA)
+
+
+def _timeout_secs() -> int:
+    """Cuánto se espera una consulta pesada.
+
+    Eran 20 s contra los 90 de `fetch_card`, sin ninguna razón: una consulta
+    que tardara un poco más fallaba salteado y dejaba el inventario a medias
+    (31/07). Con la red del "último valor bueno" ya puesta, esperar un rato más
+    es mejor que contestar rápido y mal. Ajustable con METABASE_TIMEOUT_SECS.
+    """
+    try:
+        v = int(os.environ.get("METABASE_TIMEOUT_SECS", "45"))
+    except (TypeError, ValueError):
+        return 45
+    return v if 5 <= v <= 180 else 45
+
+
 def _marcar(ok: bool) -> None:
     _estado.ok = ok
 
@@ -195,15 +239,19 @@ def fetch_dataset(
             f"{_url()}/api/dataset",
             json=body,
             headers={"X-Metabase-Session": _session_token, "Content-Type": "application/json"},
-            timeout=20,
+            timeout=_timeout_secs(),
         )
 
+    import time as _t
+    _t0 = _t.monotonic()
     try:
         r = _do()
         if r.status_code == 401:
             _session_token = None
             token2 = _login(requests)
             if not token2:
+                _anotar(database_id, (_t.monotonic() - _t0) * 1000, False,
+                        "401 y no pude renovar la sesión")
                 _marcar(False)
                 return []
             r = _do()
@@ -211,6 +259,7 @@ def fetch_dataset(
         data = r.json() or {}
         cols = [c.get("name") or "" for c in (data.get("data", {}).get("cols") or [])]
         rows = data.get("data", {}).get("rows") or []
+        _anotar(database_id, (_t.monotonic() - _t0) * 1000, True)
         _marcar(True)
         return [
             {cols[i]: v for i, v in enumerate(row) if i < len(cols)}
@@ -218,6 +267,7 @@ def fetch_dataset(
         ]
     except Exception as e:
         _log.warning("Metabase fetch_dataset(db=%s) falló: %s", database_id, e)
+        _anotar(database_id, (_t.monotonic() - _t0) * 1000, False, str(e))
         _marcar(False)
         return []
 

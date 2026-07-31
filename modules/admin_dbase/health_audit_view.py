@@ -535,6 +535,38 @@ def snapshot_diario_health():
     return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
 
 
+@bp.route("/metabase", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def metabase_bitacora():
+    """Las últimas consultas a Asinfo/Fórmulas: cuánto tardaron y cuáles fallaron.
+
+    TMT 2026-07-31. Cuando la utilidad se movía no había forma de saber si el
+    puente había contestado — el fallo se loguea por WARNING y ese log, en el
+    servidor, no lo lee nadie. Esto es esa respuesta, en una pantalla.
+
+    Sólo lectura, y vive en memoria: se pierde al reiniciar la app. Es para
+    mirar AHORA, cuando el número se movió hace un minuto.
+    """
+    from modules._lib import metabase_client
+
+    filas = metabase_client.bitacora()
+    fallos = [f for f in filas if not f.get("ok")]
+    lentas = sorted(filas, key=lambda f: -(f.get("ms") or 0))[:5]
+    tiempos = sorted((f.get("ms") or 0) for f in filas)
+    return jsonify({
+        "ok": not fallos,
+        "timeout_configurado_secs": metabase_client._timeout_secs(),
+        "n_consultas": len(filas),
+        "n_fallos": len(fallos),
+        "ms_mediana": (tiempos[len(tiempos) // 2] if tiempos else None),
+        "ms_maximo": (tiempos[-1] if tiempos else None),
+        "las_5_mas_lentas": lentas,
+        "fallos": fallos,
+        "todas": filas,
+    })
+
+
 @bp.route("/cron-status", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
