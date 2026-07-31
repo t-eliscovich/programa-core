@@ -7,7 +7,11 @@
 {# TMT 2026-05-20 — migrado a page_hero (PASADA 2 design system). #}
 <div class="max-w-6xl">
   <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
-    {{ page_hero('Proveedores', 'Listado con saldo pendiente de pago (posdat)') }}
+    {% if tiene_permiso('proveedores.editar') %}
+      {{ page_hero('Proveedores', 'Clic en cualquier celda para editarla — Enter guarda, Esc cancela') }}
+    {% else %}
+      {{ page_hero('Proveedores', 'Listado con saldo pendiente de pago (posdat)') }}
+    {% endif %}
     <div class="no-print flex items-center gap-2">
       <form class="flex items-center gap-2">
         <input type="text" name="q" value="{{ q }}" placeholder="Código, nombre o RUC…" autofocus
@@ -67,13 +71,22 @@
       </thead>
       <tbody>
         {% for p in filas %}
+        {# Sin id_proveedor (rows legacy del dBase) no hay a quién postearle. #}
+        {% set _edit = tiene_permiso('proveedores.editar') and p.id_proveedor %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if p.activo and p.activo != 'S' %}opacity-50{% endif %}"
             data-id-proveedor="{{ p.id_proveedor }}">
           <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">{{ p.codigo_prov }}</td>
-          <td class="px-3 py-2">{{ p.nombre }}</td>
+          {# TMT 2026-07-31 — todas las celdas son inputs inline (ver JS al pie). #}
+          <td class="px-1 py-1">
+            {% if _edit %}
+              <input class="prov-inline" data-campo="nombre" value="{{ p.nombre or '' }}"
+                     maxlength="200" placeholder="—" title="Nombre del proveedor">
+            {% else %}{{ p.nombre or '' }}{% endif %}
+          </td>
           <td class="px-1 py-2 text-center font-mono" data-stop="1">
-            {% if tiene_permiso('proveedores.editar') %}
-              <select class="prov-tipo-edit bg-slate-100 dark:bg-slate-800 border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-0.5 py-0 text-[11px] font-medium uppercase w-12"
+            {% if _edit %}
+              <select class="prov-inline prov-tipo-edit" data-campo="tipo"
+                      style="width:44px;text-align:center;"
                       title="Tipo: U=Máquina · H=Hilado · Q=Químicos · B=Bancos · Y=Otro">
                 <option value="">—</option>
                 {% set _t = (p.tipo or '').upper() %}
@@ -89,12 +102,42 @@
               <span class="text-[10px] text-slate-600">{{ p.tipo or '' }}</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ p.ruc }}</td>
-          <td class="px-3 py-2 text-xs text-slate-500">{{ p.telefono }}</td>
-          <td class="px-3 py-2 text-xs">{{ p.representante }}</td>
-          <td class="px-3 py-2 text-right text-mono">{{ p.plazo or '' }}</td>
-          <td class="px-3 py-2 text-right text-mono">{{ p.retbase or '' }}</td>
-          <td class="px-3 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
+          <td class="px-1 py-1 text-xs" style="white-space: nowrap;">
+            {% if _edit %}
+              <input class="prov-inline" data-campo="ruc" value="{{ p.ruc or '' }}"
+                     maxlength="16" placeholder="—" title="RUC">
+            {% else %}{{ p.ruc or '' }}{% endif %}
+          </td>
+          <td class="px-1 py-1 text-xs">
+            {% if _edit %}
+              <input class="prov-inline" data-campo="telefono" value="{{ p.telefono or '' }}"
+                     maxlength="30" placeholder="—" title="Teléfono">
+            {% else %}{{ p.telefono or '' }}{% endif %}
+          </td>
+          <td class="px-1 py-1 text-xs">
+            {% if _edit %}
+              <input class="prov-inline" data-campo="representante" value="{{ p.representante or '' }}"
+                     maxlength="100" placeholder="—" title="Representante">
+            {% else %}{{ p.representante or '' }}{% endif %}
+          </td>
+          <td class="px-1 py-1 text-right">
+            {% if _edit %}
+              <input class="prov-inline num" data-campo="plazo" value="{{ p.plazo if p.plazo is not none else '' }}"
+                     placeholder="—" title="Plazo de pago en días" style="width:56px;">
+            {% else %}{{ p.plazo if p.plazo is not none else '' }}{% endif %}
+          </td>
+          <td class="px-1 py-1 text-right">
+            {% if _edit %}
+              <input class="prov-inline num" data-campo="retbase" value="{{ p.retbase | num_es(2) if p.retbase is not none else '' }}"
+                     placeholder="—" title="Retención sobre la base" style="width:72px;">
+            {% else %}{{ p.retbase | num_es(2) if p.retbase is not none else '' }}{% endif %}
+          </td>
+          <td class="px-1 py-1 text-right">
+            {% if _edit %}
+              <input class="prov-inline num" data-campo="retiva" value="{{ p.retiva | num_es(2) if p.retiva is not none else '' }}"
+                     placeholder="—" title="Retención de IVA" style="width:72px;">
+            {% else %}{{ p.retiva | num_es(2) if p.retiva is not none else '' }}{% endif %}
+          </td>
           {% if tiene_permiso('proveedores.editar') and p.id_proveedor %}
           <td class="px-1 py-2 no-print text-center">
             {# TMT 2026-05-20 v4 — eliminar por id_proveedor (PK). #}
@@ -149,39 +192,81 @@
     {% endif %}
   </div>
 
-  {# TMT 2026-05-20 — JS inline edit del tipo (postea a /proveedores/_api/<id>/tipo). #}
+  {# TMT 2026-07-31 — edición inline de TODA la fila (postea a
+     /proveedores/_api/<id>/campo). Antes sólo el `tipo` era editable y el
+     resto había que ir a mirarlo a otro lado. Enter o salir del campo guarda;
+     Escape cancela. El CSS va inline porque static/tailwind.css es un build
+     JIT congelado (clases nuevas no renderizan). #}
   {% if tiene_permiso('proveedores.editar') %}
   <style>
-    .prov-tipo-saved { background: rgba(34,197,94,0.18) !important; }
-    .prov-tipo-error { background: rgba(248,113,113,0.20) !important; }
+    .prov-inline {
+      width: 100%; font: inherit; color: inherit; background: transparent;
+      border: 1px solid transparent; border-radius: 4px; padding: 2px 4px;
+      transition: background .15s, border-color .15s;
+    }
+    .prov-inline:hover { border-color: rgb(203,213,225); }
+    .prov-inline:focus {
+      outline: none; border-color: rgb(56,189,248);
+      background: rgba(255,255,255,.95); box-shadow: 0 0 0 2px rgba(56,189,248,.18);
+    }
+    .dark .prov-inline:focus { background: rgba(2,6,23,.95); }
+    .prov-inline.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .prov-inline::placeholder { color: rgb(203,213,225); }
+    select.prov-inline { text-transform: uppercase; font-size: 11px; }
+    .prov-saved { background: rgba(34,197,94,0.18) !important; }
+    .prov-error { background: rgba(248,113,113,0.20) !important; }
+    @media print { .prov-inline { border: none; } }
   </style>
   <script>
     (function() {
       const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
                 || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+
+      function flash(el, klass) {
+        el.classList.remove('prov-saved', 'prov-error');
+        el.classList.add(klass);
+        if (klass === 'prov-saved') setTimeout(() => el.classList.remove('prov-saved'), 1200);
+      }
+
+      function guardar(el, idProv) {
+        const campo = el.dataset.campo;
+        const valor = el.value;
+        if (valor === el.dataset.orig) return;   // nada cambió
+        el.disabled = true;
+        fetch('/proveedores/_api/' + idProv + '/campo', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ campo: campo, valor: valor }),
+        }).then(r => r.json()).then(j => {
+          el.disabled = false;
+          if (j && j.ok) {
+            // El server devuelve el valor normalizado (montos en formato EU).
+            if (el.tagName === 'INPUT' && typeof j.valor === 'string') el.value = j.valor;
+            el.dataset.orig = el.value;
+            flash(el, 'prov-saved');
+          } else {
+            el.value = el.dataset.orig;          // revertimos: no se guardó
+            flash(el, 'prov-error');
+            alert('No se pudo guardar: ' + ((j && j.error) || 'error'));
+          }
+        }).catch(e => {
+          el.disabled = false;
+          el.value = el.dataset.orig;
+          flash(el, 'prov-error');
+          alert('Error de red: ' + e.message);
+        });
+      }
+
       document.querySelectorAll('#proveedores-tabla tbody tr[data-id-proveedor]').forEach(tr => {
         const idProv = tr.dataset.idProveedor;
-        const sel = tr.querySelector('.prov-tipo-edit');
-        if (!sel) return;
-        sel.addEventListener('change', () => {
-          const nuevo = sel.value;
-          fetch('/proveedores/_api/' + idProv + '/tipo', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-            body: JSON.stringify({ tipo: nuevo }),
-          }).then(r => r.json()).then(j => {
-            if (j && j.ok) {
-              sel.classList.remove('prov-tipo-error');
-              sel.classList.add('prov-tipo-saved');
-              setTimeout(() => sel.classList.remove('prov-tipo-saved'), 1200);
-            } else {
-              sel.classList.add('prov-tipo-error');
-              alert('No se pudo guardar: ' + ((j && j.error) || 'error'));
-            }
-          }).catch(e => {
-            sel.classList.add('prov-tipo-error');
-            alert('Error de red: ' + e.message);
+        tr.querySelectorAll('[data-campo]').forEach(el => {
+          el.dataset.orig = el.value;
+          // 'change' cubre Enter, Tab y salir del campo, sin doble POST.
+          el.addEventListener('change', () => guardar(el, idProv));
+          el.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Escape') { el.value = el.dataset.orig; el.blur(); }
+            if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); }
           });
         });
       });

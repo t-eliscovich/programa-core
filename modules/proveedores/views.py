@@ -275,6 +275,89 @@ def api_editar_tipo(id_proveedor: int):
         return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
+# TMT 2026-07-31 — pedido dueña ("dejame editar proveedores"): edición inline
+# de TODA la fila en /proveedores, no sólo el `tipo`. Antes el único camino era
+# /proveedores/<cod>/editar, y la lista ni siquiera linkeaba ahí, así que en la
+# práctica RUC / tel / representante / plazo / retenciones quedaban como
+# vinieron del dBase (y encima la lista imprimía el literal "None").
+# Whitelist campo -> (clase de parseo, largo máximo). El nombre de la columna
+# sale de acá y NUNCA del request, así que el f-string del UPDATE es seguro.
+_CAMPOS_INLINE: dict[str, tuple[str, int | None]] = {
+    "nombre": ("str", 200),
+    "ruc": ("str", 16),
+    "telefono": ("str", 30),
+    "representante": ("str", 100),
+    "tipo": ("upper", 2),
+    "plazo": ("int", None),
+    "retbase": ("num", None),
+    "retiva": ("num", None),
+}
+
+
+def _mostrar(clase: str, valor) -> str:
+    """Cómo debe quedar el input después de guardar (formato EU para montos)."""
+    if valor is None:
+        return ""
+    if clase == "num":
+        crudo = f"{float(valor):,.2f}"
+        return crudo.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    return str(valor)
+
+
+@proveedores_bp.route("/proveedores/_api/<int:id_proveedor>/campo", methods=["POST"])
+@requiere_login
+@requiere_permiso("proveedores.editar")
+def api_editar_campo(id_proveedor: int):
+    """Inline edit de cualquier campo del proveedor desde /proveedores.
+
+    JSON `{campo: 'ruc', valor: '1790012345001'}`. Vacío = limpiar (NULL),
+    salvo `nombre` que es obligatorio. Montos en formato EU (1.234,56) vía
+    `parse_monto`; plazo entero vía `parse_int`.
+    """
+    data = request.get_json(silent=True) or request.form
+    campo = (data.get("campo") or "").strip().lower()
+    if campo not in _CAMPOS_INLINE:
+        return jsonify({"ok": False, "error": f"Campo no editable: {campo!r}"}), 400
+    clase, maxlen = _CAMPOS_INLINE[campo]
+
+    crudo = data.get("valor")
+    crudo = "" if crudo is None else str(crudo).strip()
+
+    if clase == "int":
+        valor = parse_int(crudo) if crudo else None
+        if crudo and valor is None:
+            return jsonify({"ok": False, "error": f"{crudo!r} no es un entero."}), 400
+    elif clase == "num":
+        valor = parse_monto(crudo) if crudo else None
+        if crudo and valor is None:
+            return jsonify({"ok": False, "error": f"{crudo!r} no es un número."}), 400
+    elif clase == "upper":
+        valor = crudo.upper()[:maxlen] or None
+    else:
+        valor = crudo[:maxlen] or None
+
+    if campo == "nombre" and not valor:
+        return jsonify({"ok": False, "error": "El nombre no puede quedar vacío."}), 400
+
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        n = db.execute(
+            f"""
+            UPDATE scintela.proveedor
+               SET {campo} = %s,
+                   usuario_modifica = %s,
+                   fecha_modifica = CURRENT_TIMESTAMP
+             WHERE id_proveedor = %s
+            """,
+            (valor, usuario[:50], id_proveedor),
+        )
+        if not n:
+            return jsonify({"ok": False, "error": "Proveedor no existe."}), 404
+        return jsonify({"ok": True, "campo": campo, "valor": _mostrar(clase, valor)})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
+
+
 @proveedores_bp.route("/proveedores")
 @requiere_login
 @requiere_permiso("proveedores.ver")
