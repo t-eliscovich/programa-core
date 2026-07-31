@@ -1441,7 +1441,12 @@ def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
          GROUP BY id_bodega
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=100) or []
+        # TMT 2026-07-31: CON estado. Este inventario de APERTURA es el `hi0`
+        # del promedio ponderado del hilado; si Metabase no contesta y el vacío
+        # se cachea 5 minutos, la tarifa $/kg se corre y revalúa TODO el stock.
+        rows, _ok_asof = metabase_client.fetch_dataset_estado(
+            2, sql, max_results=100)
+        rows = rows or []
         por_bodega = {int(r.get("id_bodega")): float(r.get("total_kg") or 0)
                       for r in rows}
     except Exception:  # noqa: BLE001
@@ -1452,7 +1457,10 @@ def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
     terminada = por_bodega.get(53, 0.0)
 
     if not (hilo or tela_cruda or terminada):
-        # Nada vino — tratar como no disponible (fail-soft).
+        # Nada vino — tratar como no disponible (fail-soft). Si además fue
+        # porque no contestaron, el vacío vence a los 30 s en vez de a los 5 min.
+        _cache_put(_INVENTARIO_ASOF_CACHE, fecha_corte, vacio, _ok_asof,
+                   _INVENTARIO_ASOF_TTL_SECS)
         return vacio
 
     # WIP entre pasos no es reconstruible a fecha pasada (ver nota arriba).
@@ -1470,7 +1478,8 @@ def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
         "cruda_total": tela_cruda + en_proceso_pt,
         "total": hilo + tela_cruda + terminada + en_proceso_tc + en_proceso_pt,
     }
-    _INVENTARIO_ASOF_CACHE[fecha_corte] = (now, out)
+    _cache_put(_INVENTARIO_ASOF_CACHE, fecha_corte, out, _ok_asof,
+               _INVENTARIO_ASOF_TTL_SECS)
     return out
 
 
@@ -1536,7 +1545,25 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         compras_us += float(_loc.get("us") or 0)
     except Exception:  # noqa: BLE001
         pass
-    avg = ((hi0 * _open + compras_us) / (hi0 + compras)) if (hi0 + compras) else _open
+    # ── GUARD de la ASIMETRÍA kg / dólares (TMT 2026-07-31) ────────────────
+    # Los KILOS comprados salen de Asinfo y los DÓLARES de nuestra base, cada
+    # uno con su propio `except → 0`. Si llegan los kilos y no los dólares, el
+    # promedio se calcula como si ese hilo hubiese entrado GRATIS: con 300.000
+    # kg de apertura y 100.000 comprados, la tarifa cae 25 % de un saque y
+    # revalúa los ~800.000 kg de stock. Es el mismo tipo de trampa que la
+    # compra H con importe y sin kg del 16/07 (+83k de utilidad falsa), al
+    # revés. Ante la asimetría NO se diluye: queda la tarifa de apertura.
+    _asimetrico = (compras > 0 and compras_us <= 0) or (compras_us > 0 and compras <= 0)
+    if _asimetrico:
+        _LOG.warning(
+            "mov_hilado_valuacion %s-%s: kg y dólares no se corresponden "
+            "(compras=%s kg, compras_us=%s) — dejo la tarifa de apertura %s",
+            yy, mm, compras, compras_us, _open,
+        )
+        avg = _open
+    else:
+        avg = (((hi0 * _open + compras_us) / (hi0 + compras))
+               if (hi0 + compras) else _open)
     act_kg = hi1 + maq
     act_us = hi1 * avg + maq * _open
     act_ukg = (act_us / act_kg) if act_kg else avg
@@ -1545,6 +1572,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "stock_act_kg": act_kg, "stock_act_us": act_us, "stock_act_ukg": act_ukg,
         "avg_ukg": avg, "hi0": hi0, "hi1": hi1, "maq": maq,
         "compras": compras, "compras_us": compras_us,
+        "asimetrico": _asimetrico,
     }
 
 

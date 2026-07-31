@@ -4069,6 +4069,12 @@ def resultados_costos_tabla(
     ]
 
 
+#: Último Stock de Químicos que contestó formulas_app. Red para que un timeout
+#: de esa base no mueva la utilidad: sin esto, la cadena de tres escalones
+#: bajaba ~70.000 de una recarga a la otra, en silencio (TMT 2026-07-31).
+_VQX_ULTIMO_BUENO: float | None = None
+
+
 def informe_balance(comp_mes_override: dict | None = None) -> dict:
     """Arma el BALANCE equivalente al del INFORMES.PRG screen.
 
@@ -4924,6 +4930,16 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # a patrimonio Y a la utilidad. El patrimonio de junio (patant) NO se toca →
     # la utilidad pega el salto por incorporar los auxiliares (aceptado por la dueña;
     # reemplaza la neutralización `_quim_increment` del 21/07).
+    # ⚠ TMT 2026-07-31 — LA RED DE LOS QUÍMICOS. Esta cadena tiene TRES
+    # escalones (total con auxiliares ≈411k → sólo colorante ≈338k → VQ0 +
+    # compras − ITIN) y las dos consultas van a formulas_app SIN CACHÉ: son un
+    # volado por request. Un timeout en la de arriba bajaba el Stock Quí. ~70k
+    # de una recarga a la otra, sin decir nada — otra pieza de los saltos de
+    # utilidad que reportó Alex. Ahora, si formulas no contesta, se usa el
+    # ÚLTIMO valor bueno y se avisa; sólo se baja de escalón cuando no hay
+    # ningún valor bueno todavía (app recién arrancada).
+    global _VQX_ULTIMO_BUENO
+    _vqx_bueno = False
     try:
         from modules.tintura import service as _tsvc_q
         _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
@@ -4934,8 +4950,18 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         _vqx_tot = quimico_total_fisico(today_ec())
         if _vqx_tot is not None and _vqx_tot > 0:
             vqx = float(_vqx_tot)   # Stock Quí. = químico total (con aux) → entra a la utilidad
+            _vqx_bueno = True
+            _VQX_ULTIMO_BUENO = vqx
     except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
         pass
+    if not _vqx_bueno and _VQX_ULTIMO_BUENO:
+        vqx = _VQX_ULTIMO_BUENO
+        _quim_aviso = (
+            "⚠ ASINFO/FÓRMULAS no contestó el stock de químicos: se está "
+            "usando el último valor bueno. El número es de hace unos minutos."
+        )
+    else:
+        _quim_aviso = ""
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
@@ -4969,8 +4995,9 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # "⚠ ASINFO"). Sin esto, el fallback más caro del balance seguiría siendo
     # invisible. TMT 2026-07-31.
     try:
-        if _stock_aviso:
-            (diagnostico or {}).setdefault("advertencias", []).append(_stock_aviso)
+        for _av in (_stock_aviso, _quim_aviso):
+            if _av:
+                (diagnostico or {}).setdefault("advertencias", []).append(_av)
     except Exception:  # noqa: BLE001
         pass
     try:
