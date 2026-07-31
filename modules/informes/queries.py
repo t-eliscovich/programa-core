@@ -477,11 +477,59 @@ def activos_totales() -> dict:
     return {"umaq": float(row["umaq"] or 0), "uact": float(row["uact"] or 0)}
 
 
+#: Último total bueno de anticipos cuya mercadería ya llegó. Sin esta red, un
+#: Asinfo mudo devolvería 0 y el activo pegaría el salto que justamente vinimos
+#: a sacar. TMT 2026-07-31.
+_ANTIC_RECIBIDOS_ULTIMO_BUENO: float | None = None
+
+
+def anticipos_con_mercaderia_recibida() -> float:
+    """$ de anticipos VIVOS cuya importación Asinfo ya marcó RECIBIDA.
+
+    Esa plata está contada dos veces: como anticipo (activo) y como los kilos
+    que entraron a la bodega (stock). Fail-soft con red: si Asinfo no contesta
+    se devuelve el último total bueno — devolver 0 haría saltar el activo.
+    """
+    global _ANTIC_RECIBIDOS_ULTIMO_BUENO
+    try:
+        from modules.dolares import queries as _dol_q
+        from modules.importaciones import service as _imp_svc
+
+        filas = _dol_q.anticipos_vivos() or []
+        if not filas:
+            _ANTIC_RECIBIDOS_ULTIMO_BUENO = 0.0
+            return 0.0
+        _imp_svc.adjuntar_recepcion_asinfo(filas)
+        if not any(f.get("im_numero") for f in filas):
+            # Ni un match: Asinfo no contestó (con datos siempre hay alguno).
+            raise RuntimeError("sin cruce con Asinfo")
+        total = round(sum(
+            float(f.get("importe") or 0)
+            for f in filas if f.get("fecha_recepcion_im")
+        ), 2)
+        _ANTIC_RECIBIDOS_ULTIMO_BUENO = total
+        return total
+    except Exception:  # noqa: BLE001 -- nunca romper el balance
+        return float(_ANTIC_RECIBIDOS_ULTIMO_BUENO or 0.0)
+
+
 def anticipos() -> float:
-    """Anticipos USD vivos de clientes/proveedores.
+    """Anticipos USD vivos, SIN los que ya tienen la mercadería en bodega.
 
     TMT 2026-06-10 (revert): filtro `asinfo-backfill` removido. Anticipos
     Asinfo son anticipos reales que deben aparecer en balance live.
+
+    TMT 2026-07-31 (dueña: *"cuando se convierte debería hacer todo al mismo
+    tiempo para no desbalancear"*). El anticipo de una importación que YA llegó
+    a la bodega no es un activo aparte: esos kilos ya están contados en el
+    stock. Mientras se contaban los dos, la utilidad quedaba inflada y se caía
+    de golpe cuando la conversión automática se llevaba el anticipo — hasta
+    media hora después. Alex vio ese salto cuatro veces en una mañana.
+
+    Ahora las dos patas se mueven con la MISMA señal (la recepción de Asinfo):
+    entran los kilos al stock y sale el anticipo del activo en el mismo
+    instante. La conversión automática pasa a ser una formalidad contable que
+    no mueve el patrimonio.
     """
     row = db.fetch_one(
         """
@@ -491,7 +539,8 @@ def anticipos() -> float:
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
-    return float(row["total"] or 0) if row else 0.0
+    total = float(row["total"] or 0) if row else 0.0
+    return round(total - anticipos_con_mercaderia_recibida(), 2)
 
 
 def uret_mes_corriente() -> float:
