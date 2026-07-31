@@ -575,6 +575,15 @@ def create_app() -> Flask:
     app.register_blueprint(debug_fab_wip_bp)
     app.register_blueprint(debug_import_recep_bp)
     app.register_blueprint(debug_dbase_compras_bp)
+    # /admin/debug-cruce-compras — a qué importación se le atribuye cada compra
+    # de hilado, y si esa importación está recibida. Para contestar por qué la
+    # plata de algo NO recibido aparece en la tarifa del hilado (dueña
+    # 2026-07-31). SOLO LECTURA.
+    from modules.admin_dbase.debug_cruce_compras_view import (
+        bp as debug_cruce_compras_bp,
+    )
+
+    app.register_blueprint(debug_cruce_compras_bp)
 
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
