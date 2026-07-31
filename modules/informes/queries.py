@@ -482,6 +482,11 @@ def activos_totales() -> dict:
 #: a sacar. TMT 2026-07-31.
 _ANTIC_RECIBIDOS_ULTIMO_BUENO: float | None = None
 
+#: id_dolares de los anticipos cuya mercadería YA vimos en la bodega. El cruce
+#: con Asinfo puede fallar en una vuelta y acertar en la siguiente; sin esta
+#: memoria, el anticipo volvería al activo y la utilidad subiría sola.
+_ANTIC_RECIBIDOS_VISTOS: set = set()
+
 
 def anticipos_con_mercaderia_recibida() -> float:
     """$ de anticipos VIVOS cuya importación Asinfo ya marcó RECIBIDA.
@@ -498,14 +503,37 @@ def anticipos_con_mercaderia_recibida() -> float:
         filas = _dol_q.anticipos_vivos() or []
         if not filas:
             _ANTIC_RECIBIDOS_ULTIMO_BUENO = 0.0
+            _ANTIC_RECIBIDOS_VISTOS.clear()
             return 0.0
         _imp_svc.adjuntar_recepcion_asinfo(filas)
         if not any(f.get("im_numero") for f in filas):
             # Ni un match: Asinfo no contestó (con datos siempre hay alguno).
             raise RuntimeError("sin cruce con Asinfo")
+
+        # ── La mercadería no puede "des-llegar" ─────────────────────────────
+        # El cruce anticipo↔importación es por (código, nº) y, cuando el nº se
+        # repite entre campañas, se desempata por fecha más cercana. Ese
+        # desempate depende de QUÉ importaciones trajo Asinfo en la última
+        # vuelta (lista cacheada, tope de filas), así que el mismo anticipo
+        # puede matchear en una vuelta y no matchear en la siguiente — sin que
+        # haya pasado nada en la fábrica. Cuando no matchea, deja de
+        # descontarse: el activo SUBE solo, y con él la utilidad. Un anticipo
+        # típico son ~74.000. Es justo lo que hoy avisó Novedades para AI 11
+        # ("ese número se repite en otra campaña").
+        #
+        # Una vez que vimos la mercadería en la bodega, se queda vista mientras
+        # el anticipo siga vivo. Cuando el anticipo se convierte deja de estar
+        # vivo y sale solo de la lista, que es la única baja legítima.
+        # TMT 2026-07-31.
+        vivos = {f.get("id_dolares") for f in filas}
+        _ANTIC_RECIBIDOS_VISTOS.intersection_update(vivos)
+        for f in filas:
+            if f.get("fecha_recepcion_im"):
+                _ANTIC_RECIBIDOS_VISTOS.add(f.get("id_dolares"))
+
         total = round(sum(
             float(f.get("importe") or 0)
-            for f in filas if f.get("fecha_recepcion_im")
+            for f in filas if f.get("id_dolares") in _ANTIC_RECIBIDOS_VISTOS
         ), 2)
         _ANTIC_RECIBIDOS_ULTIMO_BUENO = total
         return total

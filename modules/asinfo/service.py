@@ -1577,18 +1577,43 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     maq = float(inv_act.get("en_proceso_tc") or 0)
     if (hi0 + hi1) <= 0:
         return _fallback
+    # kg FÍSICOS recibidos en el mes (para trazabilidad y para el chequeo del
+    # flujo). NO es el denominador del promedio — ver el bloque de abajo.
     try:
-        compras = float(hilado_recibido_mes(int(yy), int(mm)) or 0)
+        compras_fisicas = float(hilado_recibido_mes(int(yy), int(mm)) or 0)
     except Exception:  # noqa: BLE001
-        compras = 0.0
+        compras_fisicas = 0.0
+    # ── Los kilos NO entran al promedio hasta que llega su plata ────────────
+    # TMT 2026-07-31 (dueña: "el stock ahora subió 20k... fijate si a la mañana
+    # estaba distinto"). Asinfo marca la recepción y los kilos aparecen en la
+    # bodega al instante; la compra con su importe la crea la conversión
+    # DESPUÉS — hoy 31/07 fueron 8, 27 y 76 minutos de diferencia. Mientras
+    # dura ese hueco, esos kilos entrarían al promedio ponderado SIN dólares,
+    # o sea gratis, y el promedio revalúa los ~1,85 millones de kg de hilo que
+    # hay en stock: cada dólar de compra que entra mueve el stock ~0,85 US$, y
+    # cada kilo que entra sin su dólar lo mueve ~2,55 US$ para abajo. De ahí
+    # los escalones de ±60.000 en la utilidad durante la mañana, y el rebote
+    # cuando la compra por fin se carga.
+    #
+    # La plata y los kilos tienen que entrar JUNTOS: el denominador usa sólo
+    # los kg cuyo importe YA está cargado (`kg_con_costo`). Los kilos que
+    # todavía no tienen plata están igual en el stock (hi1) y se valúan al
+    # promedio vigente — que es exactamente lo que no sabemos todavía cuánto
+    # costaron. Cuando la compra entra, el promedio se mueve sólo por lo que
+    # esa importación se aparta del promedio: un pasito, no un escalón.
+    compras = 0.0
     compras_us = 0.0
+    kg_sin_costo = 0.0
     try:
         from modules.importaciones import service as _impsvc
-        compras_us = float(
-            (_impsvc.costo_hilado_recibido_mes(int(yy), int(mm)) or {}).get("us") or 0
-        )
+        _rec = _impsvc.costo_hilado_recibido_mes(int(yy), int(mm)) or {}
+        compras_us = float(_rec.get("us") or 0)
+        compras = float(_rec.get("kg_con_costo") or 0)
+        kg_sin_costo = max(0.0, float(_rec.get("kg") or 0) - compras)
     except Exception:  # noqa: BLE001
+        compras = 0.0
         compras_us = 0.0
+        kg_sin_costo = 0.0
     # + COMPRAS LOCALES de hilo (dueña 2026-07-30): entran al promedio ponderado
     # igual que las importaciones, porque son compra real de hilo (con su tarifa).
     # Así el $/kg del hilado (compartido con el balance/Materia Prima) refleja el
@@ -1628,6 +1653,12 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "stock_act_kg": act_kg, "stock_act_us": act_us, "stock_act_ukg": act_ukg,
         "avg_ukg": avg, "hi0": hi0, "hi1": hi1, "maq": maq,
         "compras": compras, "compras_us": compras_us,
+        # kg FÍSICOS recibidos según Asinfo (lo que el flujo muestra como
+        # Ingresos) y los que todavía esperan que se cargue su compra. Si
+        # `kg_sin_costo` no es 0, hay plata en camino que aún no está en la
+        # tarifa — y esos kilos NO están diluyendo el promedio.
+        "compras_fisicas": compras_fisicas,
+        "kg_sin_costo": kg_sin_costo,
         "asimetrico": _asimetrico,
     }
 

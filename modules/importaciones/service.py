@@ -432,37 +432,58 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     (prov, nº, año): las importaciones partidas (---1/---2) comparten el costo.
     Es "costo-a-la-fecha": crece solo a medida que cargan CAE/saldo/etc.
 
+    `kg_con_costo` son los kg cuyo importe YA está cargado. Los kilos llegan
+    desde Asinfo en el momento de la recepción y los dólares recién cuando la
+    conversión crea la compra — entre medio (hoy: 8, 27 y 76 minutos) esos kilos
+    quedarían entrando "gratis" al promedio ponderado del hilado y revaluarían
+    TODO el stock hacia abajo, para rebotar cuando la plata aparece. Por eso la
+    valuación usa `kg_con_costo` y no `kg`. TMT 2026-07-31.
+
     Returns:
-        {"us": float, "kg": float, "usd_kg": float | None}. Fail-soft: ceros.
+        {"us": float, "kg": float, "kg_con_costo": float, "usd_kg": float|None}.
+        Fail-soft: ceros.
     """
+    _vacio = {"us": 0.0, "kg": 0.0, "kg_con_costo": 0.0, "usd_kg": None}
     try:
         rows = importaciones_con_cruce(limite=limite)
     except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista
-        return {"us": 0.0, "kg": 0.0, "usd_kg": None}
+        return dict(_vacio)
     pref = f"{int(yy):04d}-{int(mm):02d}-"
-    total_us = 0.0
-    total_kg = 0.0
-    vistos: set[tuple] = set()
+    # Una pasada para juntar las filas del mes con su clave de grupo; el importe
+    # vive a nivel (prov, nº, año) y las partidas ---1/---2 lo COMPARTEN, así que
+    # "tiene costo" se decide por grupo, no por fila.
+    filas: list[tuple] = []
     for r in rows or []:
         if not r.get("recibida"):
             continue
         if not str(r.get("fecha_recepcion") or "").startswith(pref):
-            continue
-        total_kg += float(r.get("kg") or 0.0)
-        imp = r.get("importe_programa")
-        if not imp:
             continue
         clave = (
             str(r.get("prov") or "").strip().upper(),
             r.get("numero"),
             str(r.get("fecha") or "")[:4],
         )
-        if clave in vistos:
+        filas.append((clave, float(r.get("kg") or 0.0), r.get("importe_programa")))
+
+    grupos_con_costo = {c for c, _kg, imp in filas if imp}
+    total_kg = sum(kg for _c, kg, _i in filas)
+    kg_con_costo = sum(kg for c, kg, _i in filas if c in grupos_con_costo)
+
+    total_us = 0.0
+    vistos: set[tuple] = set()
+    for clave, _kg, imp in filas:
+        if not imp or clave in vistos:
             continue
         vistos.add(clave)
         total_us += float(imp)
-    usd_kg = round(total_us / total_kg, 4) if total_kg else None
-    return {"us": round(total_us, 2), "kg": round(total_kg, 2), "usd_kg": usd_kg}
+
+    usd_kg = round(total_us / kg_con_costo, 4) if kg_con_costo else None
+    return {
+        "us": round(total_us, 2),
+        "kg": round(total_kg, 2),
+        "kg_con_costo": round(kg_con_costo, 2),
+        "usd_kg": usd_kg,
+    }
 
 
 def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:

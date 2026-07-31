@@ -27,8 +27,10 @@ from modules.informes import queries as q
 @pytest.fixture(autouse=True)
 def _limpio():
     q._ANTIC_RECIBIDOS_ULTIMO_BUENO = None
+    q._ANTIC_RECIBIDOS_VISTOS.clear()   # TMT 2026-07-31: memoria de "ya llegó"
     yield
     q._ANTIC_RECIBIDOS_ULTIMO_BUENO = None
+    q._ANTIC_RECIBIDOS_VISTOS.clear()
 
 
 VIVOS = [

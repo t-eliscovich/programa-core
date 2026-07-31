@@ -228,7 +228,7 @@ def test_costo_hilado_recibido_mes_dedup_y_filtra_por_mes():
 def test_costo_hilado_recibido_mes_sin_datos_es_cero():
     with patch.object(service, "importaciones_con_cruce", return_value=[]):
         out = service.costo_hilado_recibido_mes(2026, 7)
-    assert out == {"us": 0.0, "kg": 0.0, "usd_kg": None}
+    assert out == {"us": 0.0, "kg": 0.0, "kg_con_costo": 0.0, "usd_kg": None}
 
 
 # ---------------------------------------------------------------------------

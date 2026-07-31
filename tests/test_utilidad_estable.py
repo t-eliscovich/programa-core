@@ -40,18 +40,29 @@ def _valuacion(*, compras_kg, compras_us, hi0=300000.0, hi1=300000.0, open_ukg=2
          patch.object(svc, "inventario_por_etapa", return_value=inv), \
          patch.object(svc, "hilado_recibido_mes", return_value=compras_kg), \
          patch("modules.importaciones.service.costo_hilado_recibido_mes",
-               return_value={"us": compras_us}), \
+               # TMT 2026-07-31: el denominador del promedio pasó a ser
+               # `kg_con_costo` — los kilos cuyo importe YA está cargado. Estos
+               # escenarios son "llegaron los kilos y los dólares no", así que
+               # esos kilos no tienen costo asociado todavía.
+               return_value={"us": compras_us, "kg": compras_kg,
+                             "kg_con_costo": (compras_kg if compras_us else 0.0)}), \
          patch("modules.compras_locales.service.hilado_local_recibido_mes",
                return_value={"kg": 0.0, "us": 0.0}):
         return svc.mov_hilado_valuacion(2026, 7, open_ukg)
 
 
 def test_kilos_sin_dolares_no_desploma_la_tarifa():
-    """100.000 kg 'gratis' sobre 300.000 de apertura bajaban la tarifa 25 %."""
+    """100.000 kg 'gratis' sobre 300.000 de apertura bajaban la tarifa 25 %.
+
+    TMT 2026-07-31: ya no hace falta el guard de asimetría para este caso — los
+    kilos sin importe cargado directamente NO entran al denominador, así que no
+    hay nada que diluir. Lo que se exige sigue siendo lo mismo: la tarifa no se
+    mueve. Y ahora además queda dicho cuántos kilos están esperando su plata.
+    """
     r = _valuacion(compras_kg=100000.0, compras_us=0.0)
-    assert r["asimetrico"] is True
     assert r["avg_ukg"] == 2.95              # la de apertura, sin diluir
     assert round(r["stock_act_ukg"], 4) == 2.95
+    assert r["kg_sin_costo"] == 100000.0
 
 
 def test_dolares_sin_kilos_tampoco_la_dispara():
