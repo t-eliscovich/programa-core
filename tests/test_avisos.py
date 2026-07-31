@@ -439,3 +439,102 @@ def test_la_hora_del_aviso_se_muestra_en_ECUADOR():
     assert "AT TIME ZONE 'America/Guayaquil'" in sql
     assert "TO_CHAR(creado_en," not in sql.replace(
         "TO_CHAR(creado_en AT TIME ZONE", "")
+
+
+# ── mig 0146 — LEÍDO ES POR PERSONA ──────────────────────────────────────────
+# Dueña 2026-07-31: *"las notificaciones tienen que ser por persona. si yo la
+# leo igual le tienen que aparecer no leídas a federico andres y alex"*.
+# Antes `leido` era un booleano de la FILA: el primero que abría la campanita
+# la apagaba para los cuatro. Lo que se prueba acá es que ya no.
+
+@contextlib.contextmanager
+def _como(usuario: str | None):
+    """Simula la mig 0146 aplicada y a `usuario` mirando la pantalla.
+
+    `usuario=None` = la migración NO está (o es un proceso de fondo, sin
+    request): tiene que comportarse EXACTAMENTE como antes.
+    """
+    avisos.queries.reset_cache()
+    try:
+        with patch.object(avisos.queries, "_tiene_leido_por_usuario",
+                          return_value=usuario is not None), \
+             patch.object(avisos.queries, "usuario_actual",
+                          return_value=usuario or ""):
+            yield
+    finally:
+        avisos.queries.reset_cache()
+
+
+def test_la_campanita_pregunta_por_lo_que_NO_leyo_ESTA_persona():
+    with _como("federico"), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=True)
+    sql, params = f.call_args[0][0], f.call_args[0][1]
+    assert "LEFT JOIN scintela.aviso_leido al" in sql
+    assert "al.usuario IS NULL" in sql       # nadie más se lo puede marcar
+    assert params[0] == "federico"           # el JOIN va primero → su param también
+
+
+def test_leer_no_marca_la_fila_sino_el_par_aviso_persona():
+    with _como("tamara"), patch.object(avisos.queries.db, "execute") as ex:
+        avisos.marcar_leidos()
+    sql, params = ex.call_args[0][0], ex.call_args[0][1]
+    assert "INSERT INTO scintela.aviso_leido" in sql
+    assert "UPDATE" not in sql.upper()       # la fila del aviso NO se toca
+    assert "ON CONFLICT (id_aviso, usuario) DO NOTHING" in sql
+    assert params[0] == "tamara"
+
+
+def test_reabrir_la_campanita_no_duplica_ni_pisa_la_primera_vez():
+    """`ON CONFLICT DO NOTHING`, no `DO UPDATE`: leido_en es la 1ª vez."""
+    with _como("alex"), patch.object(avisos.queries.db, "execute") as ex:
+        avisos.marcar_leidos()
+        avisos.marcar_leidos()
+    assert "DO NOTHING" in ex.call_args[0][0]
+    assert "DO UPDATE" not in ex.call_args[0][0]
+
+
+def test_el_contador_es_de_cada_uno():
+    with _como("andres"), \
+         patch.object(avisos.queries.db, "fetch_one", return_value={"n": 5}) as f:
+        assert avisos.n_no_leidos() == 5
+    sql, params = f.call_args[0][0], f.call_args[0][1]
+    assert "aviso_leido" in sql and "al.usuario IS NULL" in sql
+    assert params[0] == "andres"
+
+
+def test_el_historial_ya_leido_no_reaparece_al_aplicar_la_migracion():
+    """La columna vieja `leido` sigue valiendo como 'leído por todos'.
+
+    Sin esto, aplicar la 0146 haría reaparecer de golpe como NUEVO todo lo que
+    ya se había leído — el ruido que vacía una campanita.
+    """
+    with _como("federico"), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=True)
+    assert "NOT leido AND al.usuario IS NULL" in f.call_args[0][0]
+
+
+def test_sin_la_migracion_todo_se_comporta_como_antes():
+    with _como(None), patch.object(avisos.queries.db, "execute") as ex:
+        avisos.marcar_leidos()
+    assert "SET leido = TRUE" in ex.call_args[0][0]
+    with _como(None), \
+         patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.listar(solo_no_leidos=True)
+    sql = f.call_args[0][0]
+    assert "aviso_leido" not in sql and "NOT leido" in sql
+
+
+def test_un_proceso_de_fondo_no_marca_leido_a_nombre_de_nadie():
+    """Sin request no hay persona: `usuario_actual()` devuelve ''."""
+    assert avisos.queries.usuario_actual() == ""
+
+
+def test_archivar_sigue_siendo_global_a_proposito():
+    """'Ya no aplica' es un hecho del mundo; 'leído' es de cada uno."""
+    with _con_columna(True), _como("tamara"), \
+         patch.object(avisos.queries.db, "execute", return_value=None) as e:
+        avisos.queries.archivar(7, "tamara")
+    assert "UPDATE scintela.aviso" in e.call_args[0][0]
+    assert "aviso_leido" not in e.call_args[0][0]
