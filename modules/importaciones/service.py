@@ -50,13 +50,41 @@ def _numeros_de(code: dict) -> list[int]:
 # AC 19 = 22.354 / 10.990, MH 66 = 46.860 / 23.430. En total **70.570 kg que el
 # balance no ve**, y que le faltan al denominador del $/kg del hilado.
 #
-# La regla de agrupación pasó por tres intentos de romperla. La que quedó exige
-# las TRES cosas: mismo `prov_cod_asinfo`, MISMA `fp.fecha` exacta y misma nota
-# base. El intento anterior agrupaba por (prov, nº, año) y se moría con AC 58:
-# IM-0000622 (2026-07-20, "ACMT/EXP/2026-27/8368") e IM-0000527 (2026-02-11,
-# "INV HY336-26-1") son las dos AC 58 del mismo año y NO son mitades de nada;
-# sumarles los kilos habría bajado el $/kg de 3,0271 a 2,3428 y el stock 284.772.
-_SUFIJO_PARTIDA_RE = re.compile(r"-{2,}\s*(\d{1,2})\s*$")
+# La regla pasó por CINCO intentos. Los tres primeros murieron en el escritorio;
+# los dos últimos los mató la medición contra las 632 importaciones reales
+# (/admin/debug-grupos-partidas, 31/07/2026). Vale la pena dejar el registro,
+# porque cada una parecía razonable:
+#
+#   1. agrupar por (prov, nº, año) → **AC 58**: IM-0000622 (2026-07-20,
+#      "ACMT/EXP/2026-27/8368") e IM-0000527 (2026-02-11, "INV HY336-26-1") son
+#      las dos AC 58 del mismo año y no son mitades de nada. Sumarlas bajaba el
+#      $/kg de julio de 3,0271 a 2,3428 y el stock 284.772.
+#   2. exigir el sufijo `---N` → **AC 19** no lo usa: sus dos mitades son
+#      "ACMT/EXP/2026-27/7914 (--1--)" y "(--2--)", con el ordinal DENTRO del
+#      paréntesis. 11.363,72 + 10.990,42 = 22.354,14, que es exactamente lo que
+#      dice el dBase. Con la regla del sufijo se perdían esos 11.000 kg.
+#   3. descalificar si la nota trae RANGO → mataba justo los casos buenos:
+#      **AC 25** son IM-0000548 e IM-0000549, las dos "AC 25-26"
+#      (24.492,24 + 24.494,24 = 48.986,48 ≈ los 48.988 del dBase). El rango no
+#      es una señal de peligro: es parte del código que las dos mitades
+#      COMPARTEN.
+#   4. exigir MISMA fecha exacta → Asinfo fecha los dos documentos en días
+#      distintos: **AC 88** a 68 días (2026-01-15 y 2026-03-24, mismos
+#      19.812,48 kg cada uno, recibidos los dos el 2026-03-28), AC 23-24 a 39.
+#      Y peor: **AI 62** tiene ---1/---2/---3 y sólo dos comparten fecha, así
+#      que se sumaba una PARTE del grupo — el error que el plan quería evitar.
+#   5. agrupar por (proveedor + nota base) a secas → **MH 68/69/70**: una sola
+#      factura del proveedor ("INV HY3821-26") cubre TRES importaciones con
+#      códigos distintos. No son mitades: sumarlas daba 71.880 kg donde iban
+#      24.300. Lo mismo AI 23 con AI 28 bajo "AYF02748".
+#
+# Lo que queda, y por qué cada pieza está: el proveedor y la nota base dicen que
+# es LA MISMA FACTURA; el código del programa dice que es LA MISMA MERCADERÍA
+# (es lo que separa MH 68/69/70); la ventana de fechas evita pegar dos campañas
+# que reusan un número de factura (el único caso a más de 68 días en toda la
+# historia son 366, y es una nota sin código).
+_SEP_ORDINAL_RE = re.compile(r"[-\s]+\d{0,2}\s*$")
+_VENTANA_PARTIDA_DIAS = 120
 
 # Banda económica razonable del hilado importado (US$/kg). Fuera de acá el dato
 # está mal cargado, no es un precio. NO descalifica la agrupación (ver
@@ -64,18 +92,35 @@ _SUFIJO_PARTIDA_RE = re.compile(r"-{2,}\s*(\d{1,2})\s*$")
 BANDA_USD_KG = (2.7, 3.4)
 
 
-def _partida_de(nota) -> tuple[str, int | None]:
-    """`nota` → (nota base normalizada, nº de partida | None).
+def _nota_base(nota) -> str:
+    """`nota` → el número de factura del proveedor, sin adornos.
 
-    Saca el código del programa entre paréntesis ("( AI 11)") y el sufijo
-    `---N`. "AYF02649---1 ( AI 11)" → ("AYF02649", 1).
+    Saca TODO lo que va entre paréntesis (ahí viven tanto el código del programa
+    "( AI 11)" como el ordinal de la partida "(--1--)") y el separador final con
+    su ordinal. Las seis notaciones que usa Asinfo caen todas en la misma base:
+
+        "AYF02649 ( AI 11) ---1"                 → "AYF02649"
+        "AYF02653 ( AI 15 ) ----2"               → "AYF02653"
+        "ACMT/EXP/2026-27/7682 ( AC 88)-------2" → "ACMT/EXP/2026-27/7682"
+        "ACMT/EXP/2026-27/7914 (--1--)  (AC 19)" → "ACMT/EXP/2026-27/7914"
+        "HY3087-26-1 ( MH 66 -67)--2"            → "HY3087-26-1"
+        "MTGE3753--- 2"                          → "MTGE3753"
     """
     txt = re.sub(r"\([^)]*\)", " ", str(nota or ""))
     txt = " ".join(txt.split()).strip()
-    m = _SUFIJO_PARTIDA_RE.search(txt)
-    if not m:
-        return txt.upper(), None
-    return _SUFIJO_PARTIDA_RE.sub("", txt).strip().upper(), int(m.group(1))
+    return _SEP_ORDINAL_RE.sub("", txt).strip().upper()
+
+
+def _partida_de(nota) -> tuple[str, int | None]:
+    """`nota` → (nota base, ordinal de la partida | None).
+
+    El ordinal es informativo — se muestra, no se usa para decidir. AC 19 lo
+    lleva dentro del paréntesis y por eso acá sale None, y aun así agrupa.
+    """
+    txt = re.sub(r"\([^)]*\)", " ", str(nota or ""))
+    txt = " ".join(txt.split()).strip()
+    m = re.search(r"-{2,}\s*(\d{1,2})\s*$", txt)
+    return _nota_base(nota), (int(m.group(1)) if m else None)
 
 
 def adjuntar_grupo_partidas(rows: list[dict]) -> None:
@@ -87,16 +132,27 @@ def adjuntar_grupo_partidas(rows: list[dict]) -> None:
         grupo_completo — False si el grupo se descartó (ver grupo_aviso)
         grupo_aviso    — por qué se descartó, o None
 
+    La clave son TRES cosas, y cada una está por un caso real que se rompió sin
+    ella (ver el bloque de arriba):
+
+      · mismo `prov_cod_asinfo` + misma **nota base** → es la misma factura;
+      · mismo **código del programa** (prov + nº + nº_hasta) → es la misma
+        mercadería. Es lo único que separa MH 68 / 69 / 70, tres importaciones
+        distintas bajo una sola factura "INV HY3821-26";
+      · fechas dentro de `_VENTANA_PARTIDA_DIAS` → no pegar dos campañas que
+        reusan un número de factura.
+
     **Por defecto cada importación es su propio grupo**: si algo no cierra, el
-    número no cambia respecto de hoy. Sólo se suma cuando las tres claves
-    coinciden y ningún descalificador aplica.
+    número no cambia respecto de hoy.
 
     Descalificadores (cualquiera ⇒ no se suma y queda el aviso):
-      1. algún miembro trae RANGO en la nota ("AC 25-26")
-      2. los sufijos no son 1..N contiguos
-      3. el grupo tiene más de 3 miembros
-      4. a algún miembro le falta el kg ⇒ **grupo incompleto**: una suma parcial
-         que cambia en cada corrida es peor que el número de hoy
+      1. el grupo tiene más de 3 miembros — nunca se vio uno así
+      2. a algún miembro le falta el kg ⇒ **grupo incompleto**: una suma parcial
+         que cambia en cada corrida es peor que el número de hoy (una mitad
+         puede quedar fuera del tope de filas que devuelve Asinfo)
+      3. los miembros se recibieron en MESES distintos — el número que esto
+         alimenta es mensual, y meter en un mes kilos que llegaron en otro es
+         justo el error que estamos arreglando
 
     IDEMPOTENTE sobre filas cacheadas: `grupo_kg` se recalcula siempre desde
     `kg`, nunca acumulando sobre el valor anterior. Las filas de
@@ -116,27 +172,35 @@ def adjuntar_grupo_partidas(rows: list[dict]) -> None:
     for r in filas:
         base, suf = _partida_de(r.get("nota"))
         r["partida_n"] = suf
-        if suf is None or not base:
+        if not base:
             continue
         cand.setdefault((
             str(r.get("prov_cod_asinfo") or "").strip().upper(),
-            str(r.get("fecha") or "")[:10],
             base,
+            str(r.get("prov") or "").strip().upper(),
+            r.get("numero"),
+            r.get("numero_hasta"),
         ), []).append(r)
 
-    for miembros in cand.values():
+    for clave, miembros in cand.items():
         if len(miembros) < 2:
-            continue  # una sola mitad a la vista: no hay nada que sumar
-        sufijos = sorted(int(m["partida_n"]) for m in miembros)
+            continue  # una sola: no hay nada que sumar
+        if clave[3] is None:
+            continue  # sin código del programa nunca matchea una compra
+        fechas = sorted(_to_date(m.get("fecha")) for m in miembros
+                        if _to_date(m.get("fecha")))
+        meses = {str(m.get("fecha_recepcion") or "")[:7] for m in miembros}
         aviso = None
-        if any(m.get("numero_hasta") for m in miembros):
-            aviso = "un miembro del grupo trae rango en la nota"
-        elif len(miembros) > 3:
-            aviso = f"el grupo tiene {len(miembros)} partidas (máx 3)"
-        elif sufijos != list(range(1, len(sufijos) + 1)):
-            aviso = f"sufijos no contiguos: {sufijos}"
+        if len(miembros) > 3:
+            aviso = f"el grupo tendría {len(miembros)} partidas (máx 3)"
         elif any(m.get("kg") in (None, "") for m in miembros):
             aviso = "grupo incompleto: a una partida le falta el kg"
+        elif len(fechas) == len(miembros) and \
+                (fechas[-1] - fechas[0]).days > _VENTANA_PARTIDA_DIAS:
+            aviso = (f"las partidas están a {(fechas[-1] - fechas[0]).days} días "
+                     f"(máx {_VENTANA_PARTIDA_DIAS}): puede ser otra campaña")
+        elif len(meses) > 1:
+            aviso = f"las partidas se recibieron en meses distintos: {sorted(meses)}"
         if aviso:
             for m in miembros:
                 m["grupo_completo"] = False
@@ -756,7 +820,10 @@ def _index_importaciones_por_codigo(limite: int = 400) -> dict[tuple[str, int], 
     # de ellos no tiene código parseable.
     for r in rows or []:
         r["kg"] = kg_map.get(str(r.get("im_numero") or "").strip())
-        r["numero_hasta"] = parse_nota_importacion(r.get("nota")).get("numero_hasta")
+        _c = parse_nota_importacion(r.get("nota"))
+        r["prov"] = _c.get("prov")
+        r["numero"] = _c.get("numero")
+        r["numero_hasta"] = _c.get("numero_hasta")
     adjuntar_grupo_partidas(rows)
 
     index: dict[tuple[str, int], list[dict]] = {}

@@ -34,19 +34,28 @@ def _con_asinfo(imps, kgs):
 
 def _grupos(imps, kgs):
     """Corre la agrupación como la corre el código real y devuelve las filas."""
+    from concepto_parser import parse_nota_importacion
     filas = [dict(r) for r in imps]
     for r in filas:
         r["kg"] = kgs.get(r["im_numero"])
+        c = parse_nota_importacion(r.get("nota"))
+        r.setdefault("prov", c.get("prov"))
+        r.setdefault("numero", c.get("numero"))
+        r.setdefault("numero_hasta", c.get("numero_hasta"))
     isvc.adjuntar_grupo_partidas(filas)
     return filas
 
 
 # ── La nota: base y nº de partida ────────────────────────────────────────────
 def test_partida_de_saca_codigo_y_sufijo():
+    # Las seis notaciones reales que usa Asinfo caen todas en la misma base.
+    assert isvc._nota_base("AYF02649 ( AI 11) ---1") == "AYF02649"
+    assert isvc._nota_base("AYF02653 ( AI 15 ) ----2") == "AYF02653"
+    assert isvc._nota_base("ACMT/EXP/2026-27/7682 ( AC 88)-------2") == "ACMT/EXP/2026-27/7682"
+    assert isvc._nota_base("ACMT/EXP/2026-27/7914 (--1--)  (AC 19)") == "ACMT/EXP/2026-27/7914"
+    assert isvc._nota_base("HY3087-26-1 ( MH 66 -67)--2") == "HY3087-26-1"
+    assert isvc._nota_base("MTGE3753--- 2") == "MTGE3753"
     assert isvc._partida_de("AYF02649---1 ( AI 11)") == ("AYF02649", 1)
-    assert isvc._partida_de("AYF02649---2 ( AI 11)") == ("AYF02649", 2)
-    # Sin sufijo no hay partida.
-    assert isvc._partida_de("ACMT/EXP/2026-27/8368 ( AC 58)")[1] is None
 
 
 # ── 5. AI 11 SÍ se agrupa (misma fecha, misma nota base, sufijos 1 y 2) ──────
@@ -107,31 +116,68 @@ def test_no_se_agrupa_otro_proveedor():
     assert filas[0]["grupo_kg"] == 100.0 and filas[1]["grupo_kg"] == 200.0
 
 
-# ── 7. Sin sufijo no hay grupo ──────────────────────────────────────────────
-def test_sin_sufijo_cada_uno_es_su_propio_grupo():
+# ── AC 19: el ordinal va DENTRO del paréntesis y aun así agrupa ────────────
+def test_ac_19_agrupa_aunque_el_ordinal_este_en_el_parentesis():
+    """Medido: "ACMT/EXP/2026-27/7914 (--1--)  (AC 19)" y "(--2--) ( AC 19)".
+    11.363,72 + 10.990,42 = 22.354,14, que es exactamente lo que dice el dBase.
+    Exigir el sufijo ---N (la regla anterior) perdía estos 11.000 kg."""
     imps = [
-        {"im_numero": "IM-900", "fecha": "2026-07-02", "recibida": True,
-         "prov_cod_asinfo": "AYF", "nota": "AYF02649 ( AI 11)"},
-        {"im_numero": "IM-901", "fecha": "2026-07-02", "recibida": True,
-         "prov_cod_asinfo": "AYF", "nota": "AYF02649 ( AI 11)"},
+        {"im_numero": "IM-0000550", "fecha": "2026-04-16", "fecha_recepcion": "2026-07-08",
+         "recibida": True, "prov_cod_asinfo": "AC",
+         "nota": "ACMT/EXP/2026-27/7914 (--1--)  (AC 19)"},
+        {"im_numero": "IM-0000551", "fecha": "2026-04-16", "fecha_recepcion": "2026-07-08",
+         "recibida": True, "prov_cod_asinfo": "AC",
+         "nota": "ACMT/EXP/2026-27/7914 (--2--) ( AC 19)"},
     ]
-    filas = _grupos(imps, {"IM-900": 100.0, "IM-901": 200.0})
-    assert filas[0]["grupo_id"] == "IM-900" and filas[0]["grupo_kg"] == 100.0
-    assert filas[1]["grupo_id"] == "IM-901" and filas[1]["grupo_kg"] == 200.0
+    filas = _grupos(imps, {"IM-0000550": 11363.72, "IM-0000551": 10990.42})
+    assert filas[0]["grupo_kg"] == 22354.14
+    assert filas[0]["grupo_completo"] is True
 
 
-# ── 8. Sufijos no contiguos ⇒ grupo incompleto, no suma ─────────────────────
-def test_sufijos_no_contiguos_no_suman_y_avisan():
+# ── MH 68/69/70: UNA factura, TRES importaciones distintas ─────────────────
+def test_una_factura_con_tres_codigos_distintos_no_es_una_partida():
+    """Medido: "INV HY3821-26" cubre MH 68, MH 69 y MH 70, mismo día, mismo
+    proveedor. NO son mitades: agruparlas daba 71.880 kg donde van 24.300.
+    El código del programa es lo único que las separa."""
     imps = [
-        {"im_numero": "IM-910", "fecha": "2026-07-02", "recibida": True,
-         "prov_cod_asinfo": "AYF", "nota": "AYF02649---1 ( AI 11)"},
-        {"im_numero": "IM-911", "fecha": "2026-07-02", "recibida": True,
-         "prov_cod_asinfo": "AYF", "nota": "AYF02649---3 ( AI 11)"},
+        {"im_numero": "IM-0000617", "fecha": "2026-07-20", "recibida": False,
+         "prov_cod_asinfo": "EXT0059", "nota": "INV HY3821-26 ( MH 68)"},
+        {"im_numero": "IM-0000618", "fecha": "2026-07-20", "recibida": False,
+         "prov_cod_asinfo": "EXT0059", "nota": "INV HY3821-26 ( MH 69)"},
+        {"im_numero": "IM-0000619", "fecha": "2026-07-20", "recibida": False,
+         "prov_cod_asinfo": "EXT0059", "nota": "INV HY3821-26 ( MH 70)"},
     ]
-    filas = _grupos(imps, {"IM-910": 100.0, "IM-911": 200.0})
-    assert filas[0]["grupo_kg"] == 100.0  # queda como estaba
-    assert filas[0]["grupo_completo"] is False
-    assert "contiguos" in filas[0]["grupo_aviso"]
+    filas = _grupos(imps, {"IM-0000617": 24300.0, "IM-0000618": 23430.0,
+                           "IM-0000619": 24150.0})
+    assert [f["grupo_kg"] for f in filas] == [24300.0, 23430.0, 24150.0]
+
+
+# ── Ventana de fechas: dos campañas que reusan el número de factura ────────
+def test_fuera_de_la_ventana_no_agrupa():
+    """El único caso a más de 68 días en toda la historia son 366 — y no es una
+    partida."""
+    imps = [
+        {"im_numero": "IM-A", "fecha": "2023-08-20", "fecha_recepcion": "2024-10-07",
+         "recibida": True, "prov_cod_asinfo": "EXT0017", "nota": "SG-INV-2024 ( MH 9) --1"},
+        {"im_numero": "IM-B", "fecha": "2024-08-20", "fecha_recepcion": "2024-10-08",
+         "recibida": True, "prov_cod_asinfo": "EXT0017", "nota": "SG-INV-2024 ( MH 9) --2"},
+    ]
+    filas = _grupos(imps, {"IM-A": 23430.0, "IM-B": 24300.0})
+    assert filas[0]["grupo_kg"] == 23430.0
+    assert "días" in filas[0]["grupo_aviso"]
+
+
+# ── Recibidas en meses distintos: el número que alimentan es MENSUAL ───────
+def test_mitades_recibidas_en_meses_distintos_no_agrupan():
+    imps = [
+        {"im_numero": "IM-C", "fecha": "2026-04-01", "fecha_recepcion": "2026-06-30",
+         "recibida": True, "prov_cod_asinfo": "AC", "nota": "ACMT/1 ( AC 40) ---1"},
+        {"im_numero": "IM-D", "fecha": "2026-04-02", "fecha_recepcion": "2026-07-01",
+         "recibida": True, "prov_cod_asinfo": "AC", "nota": "ACMT/1 ( AC 40) ---2"},
+    ]
+    filas = _grupos(imps, {"IM-C": 10000.0, "IM-D": 12000.0})
+    assert filas[0]["grupo_kg"] == 10000.0
+    assert "meses distintos" in filas[0]["grupo_aviso"]
 
 
 # ── 9. Un miembro sin kg ⇒ grupo incompleto ────────────────────────────────
@@ -150,22 +196,49 @@ def test_miembro_sin_kg_no_suma_parcial():
     assert "incompleto" in filas[0]["grupo_aviso"]
 
 
-# ── 6. Rango vs suelto: el rango descalifica ───────────────────────────────
-def test_rango_en_la_nota_descalifica_el_grupo():
+# ── AC 25 / MH 66-67: el RANGO es el código compartido, no un peligro ──────
+def test_el_rango_en_la_nota_no_descalifica():
+    """Medido: AC 25 son IM-0000548 e IM-0000549, las DOS "AC 25-26".
+    24.492,24 + 24.494,24 = 48.986,48, contra los 48.988 del dBase.
+    Descalificar por rango (la regla anterior) mataba justo el caso bueno."""
     imps = [
-        {"im_numero": "IM-930", "fecha": "2026-07-02", "recibida": True,
-         "prov_cod_asinfo": "MHUM", "nota": "MH/2026/1---1 ( MH 66-67)"},
-        {"im_numero": "IM-931", "fecha": "2026-07-02", "recibida": True,
-         "prov_cod_asinfo": "MHUM", "nota": "MH/2026/1---2 ( MH 66-67)"},
+        {"im_numero": "IM-0000548", "fecha": "2026-04-15", "fecha_recepcion": "2026-06-18",
+         "recibida": True, "prov_cod_asinfo": "AC",
+         "nota": "ACMT/EXP/2026-27/7918    (AC 25-26)---1"},
+        {"im_numero": "IM-0000549", "fecha": "2026-04-15", "fecha_recepcion": "2026-06-18",
+         "recibida": True, "prov_cod_asinfo": "AC",
+         "nota": "ACMT/EXP/2026-27/7918    (AC 25-26)---2"},
     ]
-    filas = [dict(r) for r in imps]
-    for r in filas:
-        r["kg"] = 23430.0
-        r["numero_hasta"] = 67  # lo que cuelga _index_importaciones_por_codigo
-    isvc.adjuntar_grupo_partidas(filas)
-    assert filas[0]["grupo_kg"] == 23430.0
-    assert filas[0]["grupo_completo"] is False
-    assert "rango" in filas[0]["grupo_aviso"]
+    filas = _grupos(imps, {"IM-0000548": 24492.24, "IM-0000549": 24494.24})
+    assert filas[0]["grupo_kg"] == 48986.48
+    assert filas[0]["grupo_completo"] is True
+
+
+def test_ac_88_agrupa_a_68_dias():
+    """Asinfo fecha los dos documentos en días distintos: 2026-01-15 y
+    2026-03-24, mismos 19.812,48 kg cada uno, recibidos los dos el 28/03.
+    Exigir "misma fecha exacta" perdía la mitad."""
+    imps = [
+        {"im_numero": "IM-0000524", "fecha": "2026-01-15", "fecha_recepcion": "2026-03-28",
+         "recibida": True, "prov_cod_asinfo": "AC",
+         "nota": "ACMT/EXP/2026-27/7682 ( AC 88) ----1"},
+        {"im_numero": "IM-0000535", "fecha": "2026-03-24", "fecha_recepcion": "2026-03-28",
+         "recibida": True, "prov_cod_asinfo": "AC",
+         "nota": "ACMT/EXP/2026-27/7682 ( AC 88)-------2"},
+    ]
+    filas = _grupos(imps, {"IM-0000524": 19812.48, "IM-0000535": 19812.48})
+    assert filas[0]["grupo_kg"] == 39624.96
+
+
+def test_mas_de_tres_partidas_no_suma():
+    imps = [
+        {"im_numero": f"IM-{i}", "fecha": "2026-07-02", "fecha_recepcion": "2026-07-08",
+         "recibida": True, "prov_cod_asinfo": "AYF", "nota": f"AYF1 ( AI 11) ---{i}"}
+        for i in (1, 2, 3, 4)
+    ]
+    filas = _grupos(imps, {f"IM-{i}": 100.0 for i in (1, 2, 3, 4)})
+    assert filas[0]["grupo_kg"] == 100.0
+    assert "máx 3" in filas[0]["grupo_aviso"]
 
 
 # ── 15. Idempotencia sobre filas cacheadas ─────────────────────────────────

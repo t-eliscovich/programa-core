@@ -124,10 +124,11 @@ def run():
         "ok": True,
         "prov": prov_f or None,
         "n_importaciones": len(salida),
-        "regla": ("mismo prov_cod_asinfo + MISMA fecha exacta + misma nota base "
-                  "(sin ---N ni el código entre paréntesis). Descalifica: rango en "
-                  "la nota, sufijos no contiguos, más de 3 miembros, o falta el kg "
-                  "de alguno."),
+        "regla": ("mismo prov_cod_asinfo + misma nota base (numero de factura del "
+                  "proveedor, sin parentesis ni ordinal) + MISMO codigo del programa "
+                  "(prov + n + n_hasta) + fechas dentro de 120 dias. Descalifica: mas "
+                  "de 3 miembros, falta el kg de alguno, o se recibieron en meses "
+                  "distintos."),
         "grupos_armados": armados,
         "grupos_descartados": descartados,
         "importaciones": salida,
