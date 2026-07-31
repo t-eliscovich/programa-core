@@ -564,10 +564,17 @@ def create_app() -> Flask:
     from modules.admin_dbase.debug_import_recepcion_view import (
         bp as debug_import_recep_bp,
     )
+    # /admin/debug-dbase-compras — buscar una compra en el COMPRAS.DBF del
+    # dBase (dueña 2026-07-31: "fijate si dBase lo tiene, si no no podemos
+    # seguir tocando"). SOLO LECTURA sobre el tarball de dbase-compare.
+    from modules.admin_dbase.debug_dbase_compras_view import (
+        bp as debug_dbase_compras_bp,
+    )
 
     app.register_blueprint(debug_asinfo_fact_bp)
     app.register_blueprint(debug_fab_wip_bp)
     app.register_blueprint(debug_import_recep_bp)
+    app.register_blueprint(debug_dbase_compras_bp)
 
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
