@@ -675,6 +675,26 @@
                           sel.value = '';
                           return;
                         }
+                        // TMT 2026-07-31 (dueña): "siempre se deposita en
+                        // Pichincha" → si alguien elige INTERNACIONAL hay que
+                        // hacerlo confirmar, porque es la excepción y ya nos
+                        // costó un depósito perdido. Aviso explícito.
+                        if (v === 'I' && !confirm(
+                              'OJO: esto NO va a Pichincha.\n\n' +
+                              'Vas a depositar este cheque en el banco INTERNACIONAL, ' +
+                              'con fecha de hoy.\n\n¿Seguro?')) {
+                          sel.value = '';
+                          return;
+                        }
+                        // TMT 2026-07-31 (dueña): V (protestado vuelto a
+                        // depositar) TAMBIÉN crea el movimiento en el banco —
+                        // antes lo hacía sin avisar. Mismo cartel que →B.
+                        if (v === 'V' && !confirm(
+                              '¿Volver a depositar este cheque protestado en Pichincha, ' +
+                              'con fecha de hoy?')) {
+                          sel.value = '';
+                          return;
+                        }
                         // TMT 2026-07-20 (dueña): →1 pregunta la nueva fecha de
                         // cobro (hoy o futura) antes de mandar.
                         if (v === '1') {
