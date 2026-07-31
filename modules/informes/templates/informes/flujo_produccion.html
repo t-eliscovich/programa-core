@@ -161,6 +161,17 @@
       {% set ate = mov_asinfo.get('terminado', {}) %}
       {% set aco = mov_asinfo.get('colorantes', {}) %}
       {% set _maq = mov_asinfo.get('maquinas', {}) %}
+      <span id="py-debug" hidden
+        data-marker="{{ ahl.get('codemarker') or 'OLD' }}"
+        data-ing="{{ ahl.get('ingresos_kg') }}"
+        data-egr="{{ ahl.get('egresos_kg') }}"
+        data-bodega-ing="{{ ahl.get('dbg_ing_bodega') }}"
+        data-bodega-egr="{{ ahl.get('dbg_egr_bodega') }}"
+        data-reing="{{ ahl.get('ref_reingresos_kg') }}"
+        data-hi0="{{ ahl.get('dbg_hi0') }}"
+        data-hi1="{{ ahl.get('dbg_hi1') }}"
+        data-maq="{{ ahl.get('dbg_maq') }}"
+        data-sact="{{ ahl.get('stock_act_kg') }}"></span>
       <table class="mov-table" data-no-sort-table>
         <colgroup>
           <col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:21%"><col style="width:11%"><col style="width:9%"><col style="width:15%">

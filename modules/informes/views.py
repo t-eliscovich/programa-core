@@ -336,6 +336,14 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     hl["stock_act_ukg"] = (
         hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
     )
+    # DEBUG temporal (2026-07-31): marcador para saber si el proceso recargó el
+    # Python nuevo + números crudos del egreso, para diagnosticar la brecha.
+    hl["codemarker"] = "vB-egreso"
+    hl["dbg_ing_bodega"] = ing_hilo
+    hl["dbg_egr_bodega"] = egr_hilo
+    hl["dbg_hi0"] = hi0
+    hl["dbg_hi1"] = hi1
+    hl["dbg_maq"] = maq_hilado
 
     # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
     # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
