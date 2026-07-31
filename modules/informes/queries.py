@@ -795,8 +795,18 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         try:
             from modules.importaciones import service as _imp_kg_svc
 
-            _hil_kg_importacion = _imp_kg_svc.kg_hilado_faltantes_mes(_h_rows)
-            kcom += float(_hil_kg_importacion.get("kg") or 0)
+            # TMT 2026-07-31: REEMPLAZA el SUM crudo (mismo criterio que el
+            # balance — kg_hilado_mes). Antes COMPLETABA sólo las compras con
+            # kg=0, y no veía ni los recargos con kg repetido ni las
+            # importaciones partidas con la mitad de los kilos.
+            _hil_kg_importacion = _imp_kg_svc.kg_hilado_mes(_h_rows)
+            if (_hil_kg_importacion.get("disponible")
+                    and _hilado_kg_fuente() == "grupo"):
+                kcom = float(_hil_kg_importacion.get("kg") or 0)
+            else:
+                # Camino de siempre mientras el interruptor esté en "legacy".
+                kcom += float(
+                    _imp_kg_svc.kg_hilado_faltantes_mes(_h_rows).get("kg") or 0)
         except Exception:  # noqa: BLE001 -- nunca romper el mov por Asinfo
             pass
     except Exception:
@@ -1660,6 +1670,33 @@ def ventas_mes_corriente_kg_fisico() -> float:
     return float(row.get("kg") or 0) if row else 0.0
 
 
+# ── De dónde salen los KILOS de las compras de hilado ───────────────────────
+# "legacy" = SUM(compra.kg) + lo que falte desde la importación (lo de siempre).
+# "grupo"  = el kg de la importación, una vez por GRUPO de partidas, ignorando
+#            `compra.kg` en toda compra de importación (kg_hilado_mes).
+#
+# El cambio mueve el $/kg del hilado, que revalúa 1,9 M de kg: por eso sale en
+# dos pasos y con un interruptor. Se puede volver atrás sin deploy con
+# HILADO_KG_FUENTE=legacy, y probar en vivo con ?hilado_kg=grupo.
+_HILADO_KG_FUENTE_DEFAULT = "legacy"
+
+
+def _hilado_kg_fuente() -> str:
+    import os as _os
+    val = ""
+    try:
+        from flask import has_request_context, request as _rq
+        if has_request_context():
+            val = (_rq.args.get("hilado_kg") or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        val = ""
+    if val not in ("grupo", "legacy"):
+        val = (_os.environ.get("HILADO_KG_FUENTE") or "").strip().lower()
+    if val not in ("grupo", "legacy"):
+        val = _HILADO_KG_FUENTE_DEFAULT
+    return val
+
+
 def compras_mes_corriente() -> dict:
     """Compras de MATERIA PRIMA (hilado) del mes en curso.
 
@@ -1703,19 +1740,33 @@ def compras_mes_corriente() -> dict:
     )
     kg = sum(float(r.get("kg") or 0) for r in rows)
     importe = sum(float(r.get("importe") or 0) for r in rows)
-    # Reconstruir el kg que falta desde la importación (kg 1 vez por importación;
-    # dedup interno). Fail-soft: si Asinfo cae, queda el kg propio de la compra
-    # (mismo comportamiento que antes de este fix).
+    # TMT 2026-07-31 — el kg de las compras de importación se REEMPLAZA por el de
+    # la importación (una vez por GRUPO de partidas), no se completa. `compra.kg`
+    # estaba mal por los dos lados: los recargos que grabó el dBase repetían
+    # 70.354 kg y las importaciones partidas traían la mitad (70.570 kg de
+    # menos). Ver `kg_hilado_mes()`: los dos defectos se cancelan hasta 215 kg,
+    # así que arreglar uno solo movía el $/kg ±0,111 y el stock ±210.000.
+    # Fail-soft: si Asinfo cae queda el kg propio de la compra (como antes).
+    #
+    # Sale en DOS deploys a propósito (ver HILADO_KG_FUENTE). El primero calcula
+    # el número nuevo, lo publica en /admin/health/hilado-stock-debug y prende
+    # las alarmas de banda, pero NO lo usa: así se puede mirar el antes y el
+    # después del mismo día sin que la utilidad se mueva mientras tanto. El
+    # segundo cambia el default y es de una línea.
+    hil = None
     try:
-        from modules.importaciones.service import kg_hilado_faltantes_mes
+        from modules.importaciones.service import kg_hilado_mes
 
-        kg += float(kg_hilado_faltantes_mes(rows).get("kg") or 0)
+        hil = kg_hilado_mes(rows)
+        if hil.get("disponible") and _hilado_kg_fuente() == "grupo":
+            kg = float(hil.get("kg") or 0)
     except Exception:  # noqa: BLE001 -- nunca romper el balance por Asinfo
-        pass
+        hil = None
     return {
         "n": len(rows),
         "kg": float(kg),
         "importe": float(importe),
+        "hilado_kg": hil,
     }
 
 
@@ -4825,6 +4876,10 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # importe sin kg puede distorsionar en serio el ponderado.
     _HILADO_SIN_KG_UMBRAL_US = 5_000.0
     try:
+        from modules.importaciones.service import BANDA_USD_KG as _BANDA_HILADO
+    except Exception:  # noqa: BLE001
+        _BANDA_HILADO = (2.7, 3.4)
+    try:
         _hkimp = (mov or {}).get("hilado_kg_importacion") or {}
         _hk_sin_match = _hkimp.get("sin_match") or []
         _hk_total_us = sum(float(c.get("importe") or 0) for c in _hk_sin_match)
@@ -4849,6 +4904,27 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
                 "Completar el kg (o el N° de importación en el concepto); si la compra "
                 "no es hilo, corregirle el TIPO desde Editar."
             )
+
+        # ── ALARMA de BANDA (US$/kg) ─────────────────────────────────────
+        # TMT 2026-07-31. Hasta hoy el balance sólo avisaba cuando una compra
+        # tipo H tenía importe SIN kg. Con la MITAD de los kilos no saltaba
+        # nada: las cinco compras fuera de banda de julio (6,546 · 6,168 ·
+        # 5,999 · 4,477 · 4,328) las encontramos ordenando a mano. El $/kg del
+        # hilado importado vive entre 2,7 y 3,4; fuera de ahí el dato está mal
+        # cargado (falta el CAE, o falta la mitad de los kilos) — no es un
+        # precio. Se mira por GRUPO de importación, no por compra suelta.
+        for _fb in (_hkimp.get("fuera_de_banda") or [])[:6]:
+            advertencias.append(
+                f"⚠ HILADO {_fb['codigo']}: {_fb['usd_kg']:,.4f} US$/kg — fuera de la banda "
+                f"{_BANDA_HILADO[0]:,.1f}–{_BANDA_HILADO[1]:,.1f} "
+                f"({_fb['kg']:,.0f} kg por {_fb['importe']:,.2f}). "
+                "O falta plata por cargar (CAE / flete / seguro) o faltan kilos. "
+                "Revisar antes de leer la utilidad: este $/kg revalúa TODO el stock."
+            )
+        # Grupos de partidas ---1/---2 que se descartaron: sus kilos quedaron
+        # como están (no se suman), y eso hay que saberlo.
+        for _av in (_hkimp.get("avisos") or [])[:4]:
+            advertencias.append(f"⚠ HILADO: partida no agrupada — {_av}")
     except Exception:  # noqa: BLE001 -- la alarma nunca rompe el balance
         pass
 

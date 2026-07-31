@@ -391,15 +391,22 @@ def pendientes(cfg: dict | None = None) -> dict:
         # (`candidatas_plausibles`), no todas las homónimas de la historia. El
         # AI 19 y el AI 25 se repetían contra importaciones de 2024, a dos años
         # del anticipo: eso no es ambigüedad, es un homónimo viejo.
-        if f.get("anio_ref") is None and len(imp_service.candidatas_plausibles(
+        # TMT 2026-07-31: se cuentan GRUPOS, no documentos. Una importación
+        # partida en ---1/---2 daba SIEMPRE 2 candidatas plausibles → se
+        # declaraba ambigua y salía "falta ponerle el año", cuando poner el año
+        # no arreglaba nada: las dos mitades son la misma mercadería del mismo
+        # año. La ambigüedad real (AC 58, dos campañas) sigue dando 2 grupos.
+        if f.get("anio_ref") is None and len(imp_service.grupos_plausibles(
                 index.get((cta, int(ref))), f.get("fecha"))) > 1:
             ambiguos.add((cta, int(ref)))
             continue
-        g = grupos.setdefault((cta, im), {
+        # La clave es el GRUPO de partidas, no el documento: las dos mitades
+        # tienen que dar UNA compra, no dos.
+        g = grupos.setdefault((cta, f.get("grupo_id_im") or im), {
             "im_numero": im, "codigo_prov": cta, "ref": int(ref),
             "anio": f.get("anio_ref"), "fecha_recepcion": rec,
             "kg": f.get("kg_im"), "ids": [], "n": 0, "importe": 0.0,
-            "conceptos": [],
+            "conceptos": [], "grupo_ims": f.get("grupo_ims_im") or [],
         })
         g["ids"].append(int(f["id_dolares"]))
         g["n"] += 1

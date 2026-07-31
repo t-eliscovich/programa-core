@@ -585,6 +585,15 @@ def create_app() -> Flask:
 
     app.register_blueprint(debug_cruce_compras_bp)
 
+    # /admin/debug-grupos-partidas — qué importaciones son MITADES (---1/---2)
+    # de una misma factura. Corre la MISMA agrupación que usa el balance y
+    # muestra por qué cada grupo se armó o se descartó. SOLO LECTURA.
+    from modules.admin_dbase.debug_grupos_partidas_view import (
+        bp as debug_grupos_partidas_bp,
+    )
+
+    app.register_blueprint(debug_grupos_partidas_bp)
+
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
     from modules.admin_dbase.health_audit_view import bp as health_audit_bp

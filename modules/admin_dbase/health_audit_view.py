@@ -796,6 +796,29 @@ def hilado_stock_debug():
     kg_add = float(recon.get("kg") or 0)
     kcom = kcom_base + kg_add
 
+    # TMT 2026-07-31 — el camino NUEVO: `kg_hilado_mes` REEMPLAZA el SUM crudo
+    # (kg 1 vez por GRUPO de partidas, ignorando `compra.kg` en las compras de
+    # importación). Se muestra al lado del viejo para poder comparar los dos
+    # números en la misma pantalla el día del cambio.
+    nuevo = {"error": None}
+    try:
+        from modules.importaciones import service as _svc_n
+        _n = _svc_n.kg_hilado_mes(rows)
+        nuevo = {
+            "kg": _n.get("kg"),
+            "disponible": _n.get("disponible"),
+            "grupos": _n.get("grupos"),
+            "kg_de_importacion": _n.get("kg_de_importacion"),
+            "kg_compra_ignorado": _n.get("kg_compra_ignorado"),
+            "n_sin_match": len(_n.get("sin_match") or []),
+            "avisos": _n.get("avisos") or [],
+            "fuera_de_banda": _n.get("fuera_de_banda") or [],
+            "delta_vs_sum_crudo": round(float(_n.get("kg") or 0) - kcom_base, 2),
+            "error": None,
+        }
+    except Exception as e:  # noqa: BLE001
+        nuevo = {"error": str(e)[:200]}
+
     close = db.fetch_one(
         "SELECT fecha, stock, ustock FROM scintela.historia ORDER BY fecha DESC LIMIT 1"
     ) or {}
@@ -941,6 +964,7 @@ def hilado_stock_debug():
         "kcom_base_sum_compra_kg": round(kcom_base, 2),
         "kg_reconstruido_de_importacion": round(kg_add, 2),
         "kcom_total_usado_en_balance": round(kcom, 2),
+        "kg_hilado_mes_NUEVO": nuevo,
         "ucom_total_importe": round(ucom, 2),
         "usd_kg_ponderado_compras_mes": round(ucom / kcom, 4) if kcom else None,
         "sin_match_n": len(recon.get("sin_match") or []),

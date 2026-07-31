@@ -41,6 +41,116 @@ def _numeros_de(code: dict) -> list[int]:
     return [n]
 
 
+# ── Importaciones PARTIDAS (---1 / ---2) ────────────────────────────────────
+# Asinfo parte una misma factura en DOS documentos `factura_proveedor` con la
+# MISMA descripción y un sufijo `---1` / `---2`. Cada documento se lleva la
+# MITAD de los kilos, pero el costo se carga una sola vez (en una de las dos).
+#
+# Medido el 31/07/2026 contra el dBase: AC 25 = 48.988 kg reales / 24.494 en PC,
+# AC 19 = 22.354 / 10.990, MH 66 = 46.860 / 23.430. En total **70.570 kg que el
+# balance no ve**, y que le faltan al denominador del $/kg del hilado.
+#
+# La regla de agrupación pasó por tres intentos de romperla. La que quedó exige
+# las TRES cosas: mismo `prov_cod_asinfo`, MISMA `fp.fecha` exacta y misma nota
+# base. El intento anterior agrupaba por (prov, nº, año) y se moría con AC 58:
+# IM-0000622 (2026-07-20, "ACMT/EXP/2026-27/8368") e IM-0000527 (2026-02-11,
+# "INV HY336-26-1") son las dos AC 58 del mismo año y NO son mitades de nada;
+# sumarles los kilos habría bajado el $/kg de 3,0271 a 2,3428 y el stock 284.772.
+_SUFIJO_PARTIDA_RE = re.compile(r"-{2,}\s*(\d{1,2})\s*$")
+
+# Banda económica razonable del hilado importado (US$/kg). Fuera de acá el dato
+# está mal cargado, no es un precio. NO descalifica la agrupación (ver
+# adjuntar_grupo_partidas): sólo avisa.
+BANDA_USD_KG = (2.7, 3.4)
+
+
+def _partida_de(nota) -> tuple[str, int | None]:
+    """`nota` → (nota base normalizada, nº de partida | None).
+
+    Saca el código del programa entre paréntesis ("( AI 11)") y el sufijo
+    `---N`. "AYF02649---1 ( AI 11)" → ("AYF02649", 1).
+    """
+    txt = re.sub(r"\([^)]*\)", " ", str(nota or ""))
+    txt = " ".join(txt.split()).strip()
+    m = _SUFIJO_PARTIDA_RE.search(txt)
+    if not m:
+        return txt.upper(), None
+    return _SUFIJO_PARTIDA_RE.sub("", txt).strip().upper(), int(m.group(1))
+
+
+def adjuntar_grupo_partidas(rows: list[dict]) -> None:
+    """Muta cada importación agregando su GRUPO de partidas.
+
+        grupo_id       — clave estable del grupo ("IM-0000548+IM-0000549")
+        grupo_kg       — kg del grupo COMPLETO (= kg propio si no está partida)
+        grupo_ims      — im_numero de los miembros, ordenados
+        grupo_completo — False si el grupo se descartó (ver grupo_aviso)
+        grupo_aviso    — por qué se descartó, o None
+
+    **Por defecto cada importación es su propio grupo**: si algo no cierra, el
+    número no cambia respecto de hoy. Sólo se suma cuando las tres claves
+    coinciden y ningún descalificador aplica.
+
+    Descalificadores (cualquiera ⇒ no se suma y queda el aviso):
+      1. algún miembro trae RANGO en la nota ("AC 25-26")
+      2. los sufijos no son 1..N contiguos
+      3. el grupo tiene más de 3 miembros
+      4. a algún miembro le falta el kg ⇒ **grupo incompleto**: una suma parcial
+         que cambia en cada corrida es peor que el número de hoy
+
+    IDEMPOTENTE sobre filas cacheadas: `grupo_kg` se recalcula siempre desde
+    `kg`, nunca acumulando sobre el valor anterior. Las filas de
+    `importaciones_asinfo()` se comparten entre llamadas dentro del TTL — una
+    pasada que acumulara se aplicaría dos veces en la segunda visita.
+    """
+    filas = list(rows or [])
+    for r in filas:
+        im = str(r.get("im_numero") or "").strip()
+        r["grupo_id"] = im
+        r["grupo_kg"] = float(r.get("kg") or 0.0)
+        r["grupo_ims"] = [im] if im else []
+        r["grupo_completo"] = True
+        r["grupo_aviso"] = None
+
+    cand: dict[tuple, list[dict]] = {}
+    for r in filas:
+        base, suf = _partida_de(r.get("nota"))
+        r["partida_n"] = suf
+        if suf is None or not base:
+            continue
+        cand.setdefault((
+            str(r.get("prov_cod_asinfo") or "").strip().upper(),
+            str(r.get("fecha") or "")[:10],
+            base,
+        ), []).append(r)
+
+    for miembros in cand.values():
+        if len(miembros) < 2:
+            continue  # una sola mitad a la vista: no hay nada que sumar
+        sufijos = sorted(int(m["partida_n"]) for m in miembros)
+        aviso = None
+        if any(m.get("numero_hasta") for m in miembros):
+            aviso = "un miembro del grupo trae rango en la nota"
+        elif len(miembros) > 3:
+            aviso = f"el grupo tiene {len(miembros)} partidas (máx 3)"
+        elif sufijos != list(range(1, len(sufijos) + 1)):
+            aviso = f"sufijos no contiguos: {sufijos}"
+        elif any(m.get("kg") in (None, "") for m in miembros):
+            aviso = "grupo incompleto: a una partida le falta el kg"
+        if aviso:
+            for m in miembros:
+                m["grupo_completo"] = False
+                m["grupo_aviso"] = aviso
+            continue
+        ims = sorted(str(m.get("im_numero") or "").strip() for m in miembros)
+        gid = "+".join(ims)
+        gkg = round(sum(float(m.get("kg") or 0.0) for m in miembros), 2)
+        for m in miembros:
+            m["grupo_id"] = gid
+            m["grupo_kg"] = gkg
+            m["grupo_ims"] = list(ims)
+
+
 def _buscar_compras(refs: set[tuple[str, int]]) -> list[dict]:
     """Filas CRUDAS de compra (con `fecha`) para las refs pedidas.
 
@@ -249,6 +359,23 @@ def candidatas_plausibles(cands: list[dict], fecha_row) -> list[dict]:
     return out
 
 
+def grupos_plausibles(cands: list[dict], fecha_row) -> list[str]:
+    """Los GRUPOS distintos que `candidatas_plausibles` podría elegir.
+
+    TMT 2026-07-31. Una importación PARTIDA siempre da dos candidatas
+    plausibles — pero son la misma mercadería. Contarlas por separado declara
+    ambigua una conversión que no lo es, y la campanita pide *"poné el año"*,
+    que no arregla nada porque las dos mitades tienen el mismo año. La
+    ambigüedad de verdad (AC 58: dos campañas distintas) sigue dando 2 grupos.
+    """
+    vistos: list[str] = []
+    for c in candidatas_plausibles(cands, fecha_row):
+        gid = str(c.get("grupo_id") or c.get("im_numero") or "")
+        if gid and gid not in vistos:
+            vistos.append(gid)
+    return vistos
+
+
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     """Importaciones de Asinfo enriquecidas con el código parseado y el cruce
     contra el programa: primero compra (`scintela.compra`), si no hay, anticipo
@@ -282,6 +409,10 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         if r["prov"] and r["numero"] is not None:
             for n in _numeros_de(code):
                 refs.add((r["prov"], n))
+
+    # Grupo de partidas ---1/---2. Va DESPUÉS de colgar kg y numero_hasta en
+    # todas las filas, porque los dos son entrada de la agrupación.
+    adjuntar_grupo_partidas(rows)
 
     # Índice (prov, nº) → importaciones que usan ese código, para atribuir cada
     # anticipo/compra a SU importación por fecha (el nº se reusa entre años).
@@ -570,8 +701,18 @@ def promedio_hilado_usd_kg(limite: int = 1000) -> float | None:
     del stock en el Flujo producción, sin depender del dBase.
 
     El $ se cuenta UNA vez por (prov, nº, año) — importaciones partidas comparten
-    costo; los kg se suman de todas las filas recibidas. Fail-soft: None si Asinfo
+    costo; los kg se suman de TODAS las filas recibidas. Fail-soft: None si Asinfo
     cae o no hay datos.
+
+    TMT 2026-07-31 — el `continue` salteaba la fila entera cuando faltaba el
+    importe. En una importación PARTIDA la mitad `---1` no tiene
+    `importe_programa` (el costo vive en la `---2`), así que sus kilos se
+    perdían mientras el $ del grupo se contaba entero: **el $/kg salía casi al
+    doble**. El docstring decía "los kg se suman de todas las filas recibidas"
+    y el código hacía otra cosa. Ahora la falta de importe saltea sólo el $.
+
+    Nota: acá los kg se suman fila por fila a propósito. `grupo_kg` NO se usa —
+    sumar el kg del grupo en cada mitad sería exactamente el doble conteo.
     """
     try:
         rows = importaciones_con_cruce(limite=limite)
@@ -580,14 +721,17 @@ def promedio_hilado_usd_kg(limite: int = 1000) -> float | None:
     total_us = 0.0
     total_kg = 0.0
     vistos: set[tuple] = set()
+    # El $ del grupo sólo vale si el grupo aporta kilos: si ninguna de sus filas
+    # está recibida no entra, y si entra, entra con TODOS sus kilos recibidos.
     for r in rows or []:
         if not r.get("recibida"):
             continue
         kg = float(r.get("kg") or 0.0)
+        if kg:
+            total_kg += kg
         imp = r.get("importe_programa")
-        if not kg or not imp:
+        if not imp:
             continue
-        total_kg += kg
         clave = (str(r.get("prov") or "").upper(), r.get("numero"),
                  str(r.get("fecha") or "")[:4])
         if clave not in vistos:
@@ -607,13 +751,20 @@ def _index_importaciones_por_codigo(limite: int = 400) -> dict[tuple[str, int], 
         kg_map = asinfo_service.importaciones_kg(limite=limite)
     except Exception:  # noqa: BLE001 -- Asinfo/Metabase caído
         return {}
+    # El kg y el rango se cuelgan de TODAS las filas antes de agrupar: la
+    # agrupación necesita ver a los dos miembros de una partida, incluso si uno
+    # de ellos no tiene código parseable.
+    for r in rows or []:
+        r["kg"] = kg_map.get(str(r.get("im_numero") or "").strip())
+        r["numero_hasta"] = parse_nota_importacion(r.get("nota")).get("numero_hasta")
+    adjuntar_grupo_partidas(rows)
+
     index: dict[tuple[str, int], list[dict]] = {}
     for r in rows or []:
         code = parse_nota_importacion(r.get("nota"))
         prov, numero = code.get("prov"), code.get("numero")
         if not prov or numero is None:
             continue
-        r["kg"] = kg_map.get(str(r.get("im_numero") or "").strip())
         for n in _numeros_de(code):  # soporta rangos "MH 64-65"
             index.setdefault((str(prov).strip().upper(), n), []).append(r)
     return index
@@ -660,7 +811,11 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
             continue
         a["im_numero"] = im.get("im_numero")
         a["fecha_recepcion_im"] = im.get("fecha_recepcion")
-        a["kg_im"] = im.get("kg")
+        # kg del GRUPO: si la importación viene partida en ---1/---2, el
+        # anticipo se pagó por la mercadería entera, no por media.
+        a["kg_im"] = im.get("grupo_kg", im.get("kg"))
+        a["grupo_id_im"] = im.get("grupo_id") or im.get("im_numero")
+        a["grupo_ims_im"] = im.get("grupo_ims") or []
 
 
 def kg_stock_por_compra(compras: list[dict], limite: int = 400) -> dict[str, float]:
@@ -688,12 +843,16 @@ def kg_stock_por_compra(compras: list[dict], limite: int = 400) -> dict[str, flo
         im = _nearest_import(cands, c.get("fecha"))
         if im is None:
             continue
-        imn = im.get("im_numero")
+        # Dedup por GRUPO, no por im_numero: una importación partida son dos
+        # im_numero distintos que son la MISMA mercadería. Con dedup por
+        # im_numero y kg de grupo, cada mitad sumaría el total → doble conteo.
+        imn = im.get("grupo_id") or im.get("im_numero")
         seen = vistos.setdefault(prov, set())
         if imn in seen:  # muchas compras → un stock: el kg una sola vez
             continue
         seen.add(imn)
-        por_prov[prov] = por_prov.get(prov, 0.0) + float(im.get("kg") or 0.0)
+        por_prov[prov] = por_prov.get(prov, 0.0) + float(
+            im.get("grupo_kg", im.get("kg")) or 0.0)
     return por_prov
 
 
@@ -767,6 +926,129 @@ def kg_hilado_faltantes_mes(compras: list[dict], limite: int = 400) -> dict:
     return out
 
 
+def kg_hilado_mes(compras: list[dict], limite: int = 400) -> dict:
+    """Kg de hilado de las compras H del mes, contados UNA vez por importación
+    (o por GRUPO de partidas ---1/---2). **Reemplaza a `SUM(compra.kg)`**, no lo
+    completa — ésa es toda la diferencia con `kg_hilado_faltantes_mes`.
+
+    Por qué el reemplazo y no la suma. `compra.kg` está mal por los dos lados a
+    la vez, y las dos cosas viven en el mismo SUM:
+
+      · **de más** — los recargos (CAE / flete / seguro) que el dBase grabó
+        REPITEN los kg de la fila principal: AC 15, AC 16 y AC 25 aparecen dos
+        veces con el mismo kg = **70.354 kg contados dos veces** (medido
+        31/07/2026);
+      · **de menos** — las importaciones partidas llevan la MITAD: AC 25 48.988
+        reales contra 24.494 en PC, AC 19 22.354/10.990, MH 66 46.860/23.430,
+        AI 11 = **70.570 kg que faltan**.
+
+    `kg_hilado_faltantes_mes` no podía arreglar ninguna de las dos: sólo mira las
+    compras con `kg == 0` (service.py, `sin_kg`), así que una fila con la mitad
+    de los kilos nunca entraba, y una fila con los kilos repetidos tampoco.
+
+    Los dos defectos se cancelan hasta 215 kg. Medido: arreglar sólo los recargos
+    mueve el $/kg +0,1108 (stock +210.359); arreglar sólo las partidas −0,1112
+    (stock −211.003); los dos juntos −0,0003 (stock −644). Por eso van en el
+    mismo cambio: **cualquiera de los dos solo mueve la utilidad 210.000**.
+
+    La regla que queda es la de la dueña del 2026-07-10, aplicada sin
+    excepciones: *el kg no vive en la compra, vive en el stock*. Para toda compra
+    cuyo (prov, nº) sea código de una importación, `compra.kg` se IGNORA y el kg
+    sale de la importación, una vez por grupo. Las compras que no son de
+    importación (hilo local: HY, EP — cruzan por RUC, no por nota) conservan su
+    propio kg.
+
+    `compras`: filas {prov, ref, fecha, kg} de TODAS las compras H del mes.
+
+    Devuelve:
+        kg          — el total a usar (ya incluye las compras locales)
+        sin_match   — compras de código conocido que no pudieron atribuirse
+        avisos      — grupos descartados, con el motivo
+        disponible  — False si Asinfo no contestó
+        kg_compra_ignorado / kg_de_importacion / grupos — para el debug
+
+    **Fail-soft**: si Asinfo no contesta devuelve el `SUM(compra.kg)` de siempre
+    y `disponible=False`. El balance ya advierte cuando eso pasa.
+    """
+    compras = list(compras or [])
+    out = {
+        "kg": round(sum(float(c.get("kg") or 0) for c in compras), 2),
+        "sin_match": [], "avisos": [], "fuera_de_banda": [], "disponible": False,
+        "kg_compra_ignorado": 0.0, "kg_de_importacion": 0.0, "grupos": 0,
+    }
+    index = _index_importaciones_por_codigo(limite=limite)
+    if not index:
+        return out
+    out["disponible"] = True
+
+    total = 0.0
+    ignorado = 0.0
+    de_import = 0.0
+    vistos: set = set()
+    avisos: dict[str, str] = {}
+    # Para la alarma de banda: el $/kg se mira por GRUPO (Σ importe de todas las
+    # compras del grupo ÷ kg del grupo), nunca por fila. Una fila sola es un
+    # recargo de CAE contra kg del grupo = 0,15 $/kg, y no significa nada.
+    banda: dict[str, dict] = {}
+    for c in compras:
+        prov = str(c.get("prov") or "").strip().upper()
+        ref = c.get("ref")
+        kg_compra = float(c.get("kg") or 0)
+        cands = index.get((prov, int(ref))) if (prov and ref is not None) else None
+        if not cands:
+            total += kg_compra  # compra local / sin importación: su kg manda
+            continue
+
+        # Es una compra de importación: su kg propio no cuenta, pase lo que pase.
+        ignorado += kg_compra
+        im = _nearest_import(cands, c.get("fecha"))
+        # Dedup por GRUPO. Si no se pudo atribuir, por (prov, nº): los recargos
+        # comparten (prov, nº) con su principal, así que igual se cuentan una
+        # sola vez aunque la atribución falle.
+        clave = (im or {}).get("grupo_id") or f"{prov}:{ref}"
+        gkg = float((im or {}).get("grupo_kg") or 0.0)
+        b = banda.setdefault(clave, {
+            "codigo": f"{prov} {ref}", "kg": gkg, "importe": 0.0,
+            "ims": (im or {}).get("grupo_ims") or [],
+        })
+        b["importe"] += float(c.get("importe") or 0)
+
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        if im is None or gkg <= 0:
+            # No hay de dónde sacarlo: queda el kg de la compra y se AVISA.
+            out["sin_match"].append(c)
+            total += kg_compra
+            b["kg"] = kg_compra
+            continue
+        total += gkg
+        de_import += gkg
+        out["grupos"] += 1
+        if im.get("grupo_aviso"):
+            avisos[str(im.get("grupo_id"))] = str(im["grupo_aviso"])
+
+    lo, hi = BANDA_USD_KG
+    for b in banda.values():
+        if b["kg"] <= 0 or b["importe"] <= 0:
+            continue
+        ukg = b["importe"] / b["kg"]
+        if lo <= ukg <= hi:
+            continue
+        out["fuera_de_banda"].append({
+            "codigo": b["codigo"], "usd_kg": round(ukg, 4),
+            "kg": round(b["kg"], 2), "importe": round(b["importe"], 2),
+            "ims": b["ims"],
+        })
+    out["fuera_de_banda"].sort(key=lambda d: -abs(d["usd_kg"] - (lo + hi) / 2))
+
+    out["kg"] = round(total, 2)
+    out["kg_compra_ignorado"] = round(ignorado, 2)
+    out["kg_de_importacion"] = round(de_import, 2)
+    out["avisos"] = [f"{k}: {v}" for k, v in sorted(avisos.items())]
+    return out
+
+
 def adjuntar_kg_asinfo_a_compras(compras: list[dict], limite: int = 400) -> None:
     """Muta cada compra agregando `kg_asinfo`: el kg de su importación de Asinfo
     (match por codigo_prov + concepto-numérico + fecha más cercana).
@@ -794,4 +1076,6 @@ def adjuntar_kg_asinfo_a_compras(compras: list[dict], limite: int = 400) -> None
         im = _nearest_import(cands, c.get("fecha"))
         if im is None:
             continue
-        c["kg_asinfo"] = im.get("kg")
+        # kg del GRUPO: las dos mitades de una partida son una sola mercadería.
+        c["kg_asinfo"] = im.get("grupo_kg", im.get("kg"))
+        c["im_grupo_ims"] = im.get("grupo_ims") or []
