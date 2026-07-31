@@ -4875,10 +4875,8 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # puesto, no hilo) mueve la tarifa en decimales; solo alertar cuando el
     # importe sin kg puede distorsionar en serio el ponderado.
     _HILADO_SIN_KG_UMBRAL_US = 5_000.0
-    try:
-        from modules.importaciones.service import BANDA_USD_KG as _BANDA_HILADO
-    except Exception:  # noqa: BLE001
-        _BANDA_HILADO = (2.7, 3.4)
+    diagnostico_hilado_banda: list = []
+    diagnostico_hilado_avisos: list = []
     try:
         _hkimp = (mov or {}).get("hilado_kg_importacion") or {}
         _hk_sin_match = _hkimp.get("sin_match") or []
@@ -4913,20 +4911,20 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         # hilado importado vive entre 2,7 y 3,4; fuera de ahí el dato está mal
         # cargado (falta el CAE, o falta la mitad de los kilos) — no es un
         # precio. Se mira por GRUPO de importación, no por compra suelta.
-        for _fb in (_hkimp.get("fuera_de_banda") or [])[:6]:
-            advertencias.append(
-                f"⚠ HILADO {_fb['codigo']}: {_fb['usd_kg']:,.4f} US$/kg — fuera de la banda "
-                f"{_BANDA_HILADO[0]:,.1f}–{_BANDA_HILADO[1]:,.1f} "
-                f"({_fb['kg']:,.0f} kg por {_fb['importe']:,.2f}). "
-                "O falta plata por cargar (CAE / flete / seguro) o faltan kilos. "
-                "Revisar antes de leer la utilidad: este $/kg revalúa TODO el stock."
-            )
-        # Grupos de partidas ---1/---2 que se descartaron: sus kilos quedaron
-        # como están (no se suman), y eso hay que saberlo.
-        for _av in (_hkimp.get("avisos") or [])[:4]:
-            advertencias.append(f"⚠ HILADO: partida no agrupada — {_av}")
+        #
+        # TMT 2026-07-31, después de verlas en pantalla: *"me sacás todo esto en
+        # rojo de Resultados"*. Tres carteles rojos arriba del Informe, todos los
+        # días, por compras a las que les falta cargar el CAE, tapan la pantalla
+        # que se mira para decidir. La alarma NO se borra — se sigue calculando y
+        # queda en `diagnostico.hilado_fuera_de_banda`, en
+        # /admin/health/hilado-stock-debug y en /admin/debug-grupos-partidas.
+        # Lo que se saca es el cartel: no va en `advertencias`.
+        diagnostico_hilado_banda = list(_hkimp.get("fuera_de_banda") or [])
+        diagnostico_hilado_avisos = list(_hkimp.get("avisos") or [])
     except Exception:  # noqa: BLE001 -- la alarma nunca rompe el balance
         pass
+    diagnostico["hilado_fuera_de_banda"] = diagnostico_hilado_banda
+    diagnostico["hilado_partidas_no_agrupadas"] = diagnostico_hilado_avisos
 
     def _mov_stock_kg(_et, _fallback):
         try:

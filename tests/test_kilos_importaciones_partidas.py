@@ -437,3 +437,20 @@ def test_interruptor_legacy_no_mueve_el_numero(monkeypatch):
     assert q._hilado_kg_fuente() == "grupo"
     monkeypatch.setenv("HILADO_KG_FUENTE", "cualquier-cosa")
     assert q._hilado_kg_fuente() == q._HILADO_KG_FUENTE_DEFAULT
+
+
+# ── La banda NO sale en rojo en Resultados ────────────────────────────────
+def test_la_banda_no_ensucia_las_advertencias_del_balance():
+    """TMT 2026-07-31: *"me sacás todo esto en rojo de Resultados"*. Tres
+    carteles arriba del Informe todos los días tapan la pantalla con la que se
+    decide. El dato NO se pierde: queda en diagnostico.hilado_fuera_de_banda."""
+    import inspect
+
+    from modules.informes import queries as q
+    src = inspect.getsource(q.informe_balance)
+    i = src.index("ALARMA de BANDA")
+    # Desde el comentario de la banda hasta el fin del bloque no puede haber
+    # ningún advertencias.append: si alguien lo vuelve a poner, esto se cae.
+    bloque = src[i:src.index('diagnostico["hilado_fuera_de_banda"]', i)]
+    assert "advertencias.append" not in bloque
+    assert 'diagnostico["hilado_fuera_de_banda"]' in src

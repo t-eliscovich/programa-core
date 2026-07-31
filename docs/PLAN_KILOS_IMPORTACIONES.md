@@ -151,7 +151,12 @@ deploy y sin tocarle el número a nadie.
 
 ## 4. Lo que quedó andando sin tocar la utilidad
 
-**Alarma de banda 2,7 – 3,4 US$/kg.** Se calcula **por grupo** (Σ importe del
+**Alarma de banda 2,7 – 3,4 US$/kg.** **No sale en rojo en Resultados**
+(31/07, la dueña al verla: *"me sacás todo esto en rojo de Resultados"* — tres
+carteles arriba del Informe todos los días tapan la pantalla con la que se
+decide). El dato no se pierde: vive en `diagnostico.hilado_fuera_de_banda`, en
+`/admin/health/hilado-stock-debug` y en `/admin/debug-grupos-partidas`. Se
+calcula **por grupo** (Σ importe del
 grupo ÷ kg del grupo), y sólo sobre importaciones **recibidas en el mes** — si
 la mercadería llegó en junio y en julio sólo se cargó el CAE, el $/kg del mes da
 0,79 y no significa nada. Una alarma que suena siempre no la mira nadie. Antes
