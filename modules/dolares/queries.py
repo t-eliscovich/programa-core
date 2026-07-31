@@ -284,6 +284,32 @@ def es_proveedor_quimico(codigo_prov: str) -> bool:
     return tipos_por_cuenta([codigo_prov]).get(codigo_prov.strip().upper()) == "Q"
 
 
+def _etiqueta_anticipos(rows: list[dict], codigo_prov: str) -> str:
+    """Cómo se llama esto para un humano: "AC 22", "AC 22/28", o "AC".
+
+    TMT 2026-07-31 (dueña: *"acá nada dice AC 22, ¿cómo sé qué anticipo es?"*).
+    El historial decía *"BAP AC: 3 anticipo(s) → compra #10117 (BAP22)"*: no
+    nombraba el anticipo por ningún lado, y encima el comprobante "BAP22" se
+    lee igual que el concepto "AC 22" sin tener nada que ver. Ahora la línea
+    empieza por el nombre con el que la fábrica llama a esa importación.
+
+    El concepto del anticipo es texto libre con el número adelante ("22 SALDO",
+    "22 CAE", "58/26 SALDO"): se toma ese prefijo.
+    """
+    import re as _re
+
+    refs = []
+    for r in rows or []:
+        m = _re.match(r"\s*(\d{1,6})", str(r.get("concepto") or ""))
+        if m and m.group(1) not in refs:
+            refs.append(m.group(1))
+    prov = (codigo_prov or "").strip().upper()
+    if not refs:
+        return prov
+    refs.sort(key=lambda x: int(x))
+    return f"{prov} {'/'.join(refs[:4])}" + ("…" if len(refs) > 4 else "")
+
+
 def _anticipos_sin_recepcion(rows: list[dict], codigo_prov: str) -> list[str]:
     """De los anticipos que se van a convertir, cuáles son de mercadería que
     Asinfo TODAVÍA NO marcó recibida.
@@ -403,7 +429,7 @@ def convertir_a_compra(
         placeholder = ",".join(["%s"] * len(ids_unique))
         rows = db.fetch_all(
             f"""
-            SELECT id_dolares, cta, importe, st, fecha
+            SELECT id_dolares, cta, importe, st, fecha, concepto
               FROM scintela.dolares
              WHERE id_dolares IN ({placeholder})
              ORDER BY id_dolares
@@ -515,9 +541,12 @@ def convertir_a_compra(
         # Plazo del proveedor para fechad (default 30 días).
         fechad_compra = fecha  # BAP ya está pagado; fechad = hoy es ok.
 
+        # Cómo lo lee un humano: "AC 22", no "BAP18". TMT 2026-07-31.
+        _etiqueta = _etiqueta_anticipos(rows, codigo_prov)
+
         concepto_compra = (
             concepto.strip()
-            or f"BAP {codigo_prov} ({len(rows)} anticipos)"
+            or f"{_etiqueta} ({len(rows)} anticipos)"
         )[:50]
 
         compra = db.execute_returning(
@@ -538,7 +567,7 @@ def convertir_a_compra(
                 fechad_compra, concepto_compra,
                 usuario[:50],
                 (
-                    f"BAP — consumió {len(rows)} anticipos USD "
+                    f"{_etiqueta} — consumió {len(rows)} anticipos USD "
                     f"(ids: {','.join(str(i) for i in ids_unique[:20])}"
                     f"{'…' if len(ids_unique) > 20 else ''})."
                     + (f" Motivo: {motivo[:100]}" if motivo else "")
@@ -561,9 +590,13 @@ def convertir_a_compra(
             destino_id=compra.get("id_compra"),
             importe=importe_total,
             fecha=fecha,
+            # La línea del historial. Empieza por el nombre que usa la fábrica
+            # ("AC 22") y NO lleva el comprobante, que se confundía con él.
+            # TMT 2026-07-31 (dueña: "acá nada dice AC 22, ¿cómo sé qué
+            # anticipo es?" + "dejá de usar BAP que nadie sabe qué es").
             concepto=(
-                f"BAP {codigo_prov}: {len(rows)} anticipo(s) → compra "
-                f"#{compra.get('numero')} ({comprobante})"
+                f"{_etiqueta} · {len(rows)} anticipo(s) → compra "
+                f"#{compra.get('numero')}"
                 + (f" — {motivo}" if motivo else "")
             )[:200],
             usuario=usuario,

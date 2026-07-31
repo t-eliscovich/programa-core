@@ -57,7 +57,10 @@ TIPOS_LABEL = {
     "compra_anticipo_dolares":  "Compra → Anticipo USD",
     "cheque_aplicado_a_factura":"Cheque → Factura aplicada",
     "cheque_reemplazo":         "Cheque reemplazo (XX)",
-    "bap_anticipo_a_compra":    "BAP: anticipo USD → Compra",
+    # TMT 2026-07-31 (dueña: *"dejá de usar BAP que nadie sabe qué es"*).
+    # Y "BAP22" al lado de "AC 22" en la misma línea era una trampa: dos
+    # números parecidos que no tienen nada que ver entre sí.
+    "bap_anticipo_a_compra":    "Anticipo → Compra",
     "activacion_maquinaria":        "Activación de maquinaria",
     "activacion_maquinaria_reverso": "Reverso: activación de maquinaria",
     "factura_devolucion":       "Factura: devolución",
@@ -151,7 +154,7 @@ def listar(
     except Exception:
         col_batch_id = "NULL::uuid"
 
-    return db.fetch_all(
+    _filas = db.fetch_all(
         f"""
         WITH unificado AS (
             -- A) mov_doble — todos los registrados explícitamente.
@@ -278,6 +281,87 @@ def listar(
             "offset": max(0, int(offset)),
         },
     ) or []
+
+    return _nombrar_conversiones(_filas)
+
+
+def _nombrar_conversiones(filas: list[dict]) -> list[dict]:
+    """Le pone nombre a las conversiones de anticipo → compra ya guardadas.
+
+    TMT 2026-07-31 (dueña, buscando cuál de las conversiones del día era la de
+    AC 22): *"acá nada dice AC 22, ¿cómo sé qué anticipo es?"*.
+
+    Las filas viejas tienen guardado el concepto con el formato anterior
+    ("BAP AC: 3 anticipo(s) → compra #10117 (BAP22)"), que no nombra el
+    anticipo y encima mete un "BAP22" que se lee igual que "AC 22" sin tener
+    nada que ver. Los ids de los anticipos SÍ están en la metadata, así que la
+    línea se puede reescribir en la lectura — sin migrar nada.
+
+    Best-effort: si algo falla, se devuelve la lista tal como vino.
+    """
+    import json as _json
+    import re as _re
+
+    try:
+        objetivo = [
+            f for f in filas
+            if (f.get("tipo") or "") == "bap_anticipo_a_compra"
+        ]
+        if not objetivo:
+            return filas
+
+        ids: set[int] = set()
+        por_fila: dict[int, list[int]] = {}
+        for f in objetivo:
+            meta = f.get("metadata")
+            if isinstance(meta, str):
+                try:
+                    meta = _json.loads(meta)
+                except Exception:  # noqa: BLE001
+                    meta = None
+            _ids = [int(i) for i in ((meta or {}).get("ids_anticipos") or [])]
+            if _ids:
+                por_fila[int(f["id_mov_doble"])] = _ids
+                ids.update(_ids)
+        if not ids:
+            return filas
+
+        placeholder = ",".join(["%s"] * len(ids))
+        conceptos = {
+            int(r["id_dolares"]): (r.get("concepto") or "")
+            for r in (db.fetch_all(
+                f"SELECT id_dolares, concepto FROM scintela.dolares "
+                f"WHERE id_dolares IN ({placeholder})",
+                tuple(sorted(ids)),
+            ) or [])
+        }
+
+        for f in objetivo:
+            _ids = por_fila.get(int(f["id_mov_doble"]))
+            if not _ids:
+                continue
+            refs: list[str] = []
+            for i in _ids:
+                m = _re.match(r"\s*(\d{1,6})", conceptos.get(i, ""))
+                if m and m.group(1) not in refs:
+                    refs.append(m.group(1))
+            if not refs:
+                continue
+            refs.sort(key=lambda x: int(x))
+            prov = str((f.get("metadata") or {}).get("codigo_prov") or "").strip().upper() \
+                if isinstance(f.get("metadata"), dict) else ""
+            if not prov:
+                # Sale del concepto viejo: "BAP AC: 3 anticipo(s) → …".
+                mm = _re.search(r"BAP\s+([A-Z0-9]{1,4})\s*:", f.get("concepto") or "")
+                prov = mm.group(1) if mm else ""
+            etiqueta = (f"{prov} {'/'.join(refs[:4])}").strip()
+            f["concepto"] = (
+                f"{etiqueta} · {len(_ids)} anticipo(s) → compra "
+                f"#{f.get('destino_id') or ''}"
+            )
+    except Exception:  # noqa: BLE001 -- un rótulo no puede romper el historial
+        pass
+    return filas
 
 
 def _filtro_fechas_sql():
