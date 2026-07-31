@@ -4132,6 +4132,17 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     Sólo lo usa /admin/health/hilado-stock-debug para proyectar la utilidad
     bajo cada escenario de valuación SIN tocar el balance real (read-only).
     """
+    # Dueña 2026-07-31: "cuando se convierte debería hacer todo al mismo tiempo
+    # para no desbalancear". En Asinfo YA pasa todo junto (las recepciones no
+    # son parciales — verificado contra el ERP). El que las separaba era este
+    # programa: el STOCK y las IMPORTACIONES venían de dos cachés de 5 minutos
+    # que vencían cada una por su lado. Esto las alinea antes de calcular nada.
+    try:
+        from modules.asinfo import service as _asinfo_par
+        _asinfo_par.alinear_lecturas_del_balance()
+    except Exception:  # noqa: BLE001 -- nunca romper el balance por esto
+        pass
+
     _totf = totf()
     _totc = totc()
     bancos = saldo_bancos()

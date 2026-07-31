@@ -1232,6 +1232,62 @@ def _cache_ok(cache: dict, clave) -> bool:
     return bool(_OK_POR_CACHE.get((id(cache), clave), True))
 
 
+# ── Las dos patas del balance vencen JUNTAS ───────────────────────────────
+# TMT 2026-07-31. Cuando llega una importación se mueven dos cosas a la vez:
+# el ANTICIPO sale del activo (porque Asinfo le puso fecha de recepción) y el
+# STOCK entra (porque los lotes aparecen en la bodega). Medido contra Asinfo el
+# mismo día: las recepciones NO son parciales — se crean completas de una
+# (fecha_creacion y fecha_modificacion a 1-3 segundos) y los lotes entran al
+# saldo en el mismo instante. O sea: en el ERP las dos patas SÍ pasan juntas.
+#
+# El desfase lo poníamos NOSOTROS. Cada pata venía de su propia caché de 5
+# minutos, y cada una vencía por su lado: había ventanas de hasta 5 minutos en
+# las que una ya había visto la recepción y la otra no. Una importación típica
+# son ~24.500 kg × ~3 US$/kg ≈ 74.000 de utilidad que aparecían y desaparecían
+# solos — del tamaño exacto del salto que vio Alex el 31/07 (609 → 688 en
+# minutos).
+#
+# Acá las dos vencen al mismo tiempo: cuando toca refrescar se invalidan las
+# DOS y se leen una atrás de la otra. La ventana de desfase pasa de 5 minutos a
+# los ~2 segundos que tardan las dos consultas. El costo contra Metabase no
+# cambia: sigue siendo una vuelta cada 5 minutos por pata.
+_PAR_BALANCE_TTL_SECS = 300
+_PAR_BALANCE_TS = 0.0
+
+
+def alinear_lecturas_del_balance() -> bool:
+    """Deja el inventario y las importaciones leídos en la MISMA vuelta.
+
+    Se llama al principio del balance. Devuelve True si esta llamada disparó el
+    refresco (útil para los tests). Nunca lanza: si Asinfo no está armado, no
+    hace nada y el balance sigue su camino de siempre.
+    """
+    global _PAR_BALANCE_TS
+    import time as _t
+
+    ahora = _t.time()
+    if (ahora - _PAR_BALANCE_TS) < _PAR_BALANCE_TTL_SECS:
+        return False
+    try:
+        _INVENTARIO_ETAPA_CACHE.pop("all", None)
+        _STOCK_LOTE_TOTALES_CACHE.pop("all", None)
+        _IMPORT_CACHE.clear()
+        inventario_por_etapa()
+        importaciones_asinfo()
+    except Exception:  # noqa: BLE001 -- alinear cachés no puede tumbar el balance
+        _PAR_BALANCE_TS = ahora - max(0, _PAR_BALANCE_TTL_SECS - _FALLO_TTL_SECS)
+        return True
+    # Si alguna de las dos falló, que se reintente a los 30 s (mismo criterio
+    # que `_cache_put`): quedan desalineadas y no queremos esperar 5 minutos.
+    ok = (_cache_ok(_INVENTARIO_ETAPA_CACHE, "all")
+          and _cache_ok(_STOCK_LOTE_TOTALES_CACHE, "all"))
+    _PAR_BALANCE_TS = (
+        ahora if ok
+        else ahora - max(0, _PAR_BALANCE_TTL_SECS - _FALLO_TTL_SECS)
+    )
+    return True
+
+
 #: El último inventario COMPLETO que contestó Asinfo. Sirve de red: si en la
 #: próxima vuelta falla una de las tres consultas, se devuelve éste en vez de
 #: uno incompleto. Se pierde al reiniciar la app, y está bien: recién ahí no
