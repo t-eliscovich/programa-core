@@ -2425,16 +2425,29 @@ def flujo_produccion():
     # lógica de químicos. Cada tarea va envuelta en _safe → fail-soft por separado.
     from concurrent.futures import ThreadPoolExecutor
     _s = _time_fp.perf_counter()
-    with ThreadPoolExecutor(max_workers=3) as _ex:
+    with ThreadPoolExecutor(max_workers=5) as _ex:
         _f_data = _ex.submit(
             _safe, lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes), {})
         _f_inv = _ex.submit(_safe, asinfo_service.inventario_por_etapa, {})
         _f_inv_asof = _ex.submit(
             _safe, lambda: asinfo_service.inventario_por_etapa_a_fecha(fecha_corte), {})
+        # Federico 2026-07-31: "Inventario en proceso" (saldo despachado −
+        # fabricado) por etapa — bodega 52 (Hilo→Tela Cruda) y 53 (Tela
+        # Cruda→Terminada). Fail-soft: si Asinfo cae quedan {} y el template
+        # no muestra la tabla.
+        _f_fab_tc = _ex.submit(
+            _safe, lambda: asinfo_service.fabricacion_proceso(52), {})
+        _f_fab_pt = _ex.submit(
+            _safe, lambda: asinfo_service.fabricacion_proceso(53), {})
         data, error = _f_data.result()
         inv_asinfo, _e_inv = _f_inv.result()
         inv_asinfo_inic, _e_inic = _f_inv_asof.result()
+        _fab_tc, _e_ftc = _f_fab_tc.result()
+        _fab_pt, _e_fpt = _f_fab_pt.result()
     _timings["fetch_paralelo_3"] = round(_time_fp.perf_counter() - _s, 3)
+
+    inv_en_proceso_tc = (_fab_tc or {}).get("resumen") or {}
+    inv_en_proceso_pt = (_fab_pt or {}).get("resumen") or {}
 
     if not isinstance(inv_asinfo, dict):
         inv_asinfo = {}
@@ -2569,6 +2582,8 @@ def flujo_produccion():
         mov_asinfo=mov_asinfo,
         prod_tej_asinfo=prod_tej_asinfo,
         coherencia=coherencia,
+        inv_en_proceso_tc=inv_en_proceso_tc,
+        inv_en_proceso_pt=inv_en_proceso_pt,
     )
     # Guardar en cache SOLO cargas buenas: sin error y con data del mes. Así un
     # Asinfo caído o un mes vacío no queda "pegado" el TTL entero.

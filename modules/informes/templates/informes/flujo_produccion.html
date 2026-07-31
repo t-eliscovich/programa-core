@@ -348,6 +348,54 @@
       </table>
     </div>
 
+    {# ─── INVENTARIO EN PROCESO — saldo despachado a órdenes abiertas −
+         lo ya devuelto fabricado, por etapa. Fuente: Asinfo
+         fabricacion_proceso(52/53). Fail-soft: si Asinfo cae llega vacío y
+         no se muestra. Federico 2026-07-31 #}
+    {% if inv_en_proceso_tc or inv_en_proceso_pt %}
+      {% set _tc = inv_en_proceso_tc or {} %}
+      {% set _pt = inv_en_proceso_pt or {} %}
+      <div class="blk mb-2">
+        <div class="blk-title">Inventario en proceso</div>
+        <table class="mov-table" data-no-sort-table>
+          <colgroup>
+            <col style="width:34%"><col style="width:22%"><col style="width:22%"><col style="width:22%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="lbl"></th>
+              <th>Despachado (OSM)</th>
+              <th>Ing. fabricación</th>
+              <th>Saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="lbl">Hilo → Tela Cruda</td>
+              <td class="num">{{ (_tc.issued or 0) | num_es(2) }}</td>
+              <td class="num">{{ (_tc.fab or 0) | num_es(2) }}</td>
+              <td class="num">{{ (_tc.saldo or 0) | num_es(2) }}</td>
+            </tr>
+            <tr>
+              <td class="lbl">Tela Cruda → Terminada</td>
+              <td class="num">{{ (_pt.issued or 0) | num_es(2) }}</td>
+              <td class="num">{{ (_pt.fab or 0) | num_es(2) }}</td>
+              <td class="num">{{ (_pt.saldo or 0) | num_es(2) }}</td>
+            </tr>
+            <tr class="total">
+              <td class="lbl">Total en proceso</td>
+              <td class="num">{{ ((_tc.issued or 0) + (_pt.issued or 0)) | num_es(2) }}</td>
+              <td class="num">{{ ((_tc.fab or 0) + (_pt.fab or 0)) | num_es(2) }}</td>
+              <td class="num">{{ ((_tc.saldo or 0) + (_pt.saldo or 0)) | num_es(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="text-[11px] text-slate-400" style="padding:2px 4px 0;">
+          Saldo = material despachado a órdenes abiertas − lo ya devuelto fabricado.
+        </div>
+      </div>
+    {% endif %}
+
     {# Producción tejido = FÍSICO de Asinfo (bodega 52). Dueña 2026-07-15 "Asinfo
        manda": la tabla de arriba ya usa data.produc_tejido = Asinfo (override en
        la view). Antes había acá una 2ª tabla "· Asinfo" duplicada — removida. #}
