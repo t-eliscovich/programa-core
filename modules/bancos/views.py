@@ -33,6 +33,14 @@ def lista():
     except Exception as e:
         filas_all, error = [], str(e)
 
+    # TMT 2026-07-31 (dueña, caso ch14778 BYG): movimientos grabados en un
+    # no_banco que no existe quedan invisibles en TODA la app (y fuera de la
+    # conciliación). Los mostramos acá para que se puedan reparar.
+    try:
+        huerfanos = queries.bancos_huerfanos()
+    except Exception:
+        huerfanos = []
+
     # TMT 2026-06-25 (dueña): la lista de CUENTAS no debe incluir los
     # bancos-concepto/espejo (DEP.PICH 90, DEP.INTER 91, CANCELA ANTICIPO 95,
     # ANTICIPO 97, UKN 98, EFECTIVO 99) — son rubros contables internos de la
@@ -103,6 +111,7 @@ def lista():
 
     return render_template(
         "bancos/lista.html",
+        huerfanos=huerfanos,
         filas=filas,
         error=error,
         mostrar_todos=mostrar_todos,
@@ -732,7 +741,23 @@ def movimientos(no_banco):
     try:
         banco = queries.banco_info(no_banco)
         if not banco:
-            abort(404)
+            # TMT 2026-07-31 (dueña, caso ch14778 BYG): un movimiento grabado
+            # con un no_banco que NO está en el catálogo daba 500 acá (el
+            # abort(404) caía en el except de abajo y el template explotaba) —
+            # o sea: la fila era INVISIBLE e IRREPARABLE. Ahora la pantalla
+            # abre igual con un banco sintético, para poder ver el movimiento
+            # y moverlo (⇄) al banco correcto.
+            banco = {
+                "no_banco": no_banco,
+                "nombre": f"Banco {no_banco} · NO está en el catálogo",
+                "saldo_stored": 0,
+            }
+            flash(
+                f"El banco {no_banco} no existe en /bancos: estos movimientos "
+                "están huérfanos (no suman a ningún saldo ni entran a la "
+                "conciliación). Movelos con ⇄ al banco correcto.",
+                "warn",
+            )
         filas = queries.movimientos(
             no_banco,
             desde,

@@ -6,6 +6,18 @@
 {% block content %}
 {# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
 <div class="page-shell page-shell--full">
+  {# TMT 2026-07-31 (dueña, caso ch14778 BYG): movimientos grabados en un
+     no_banco que NO está en el catálogo. Son invisibles en toda la app y no
+     entran a la conciliación — hay que moverlos (⇄) al banco correcto. #}
+  {% if huerfanos %}
+  <div class="mb-4 rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm">
+    <strong>Movimientos en bancos que no existen.</strong>
+    No suman a ningún saldo ni aparecen en la conciliación.
+    {% for h in huerfanos %}
+      <a class="underline font-medium" href="{{ url_for('bancos.movimientos', no_banco=h.no_banco) }}">Banco {{ h.no_banco }} ({{ h.n }} mov · $ {{ h.total | float | num_es(2) }})</a>{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
   {# Total general de bancos — el número que todos vienen a ver.
      Bug histórico (2026-05-06): `{% set var = var + x %}` dentro de un
      `{% for %}` NO acumula en Jinja2 — usar namespace. #}

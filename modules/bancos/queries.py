@@ -621,6 +621,30 @@ def movimientos(
     return rows
 
 
+def bancos_huerfanos() -> list[dict]:
+    """Bancos que TIENEN movimientos pero NO están en el catálogo `banco`.
+
+    TMT 2026-07-31 (dueña, caso ch14778 BYG): un side-effect con el `no_banco`
+    hardcodeado (1) grabó el depósito en un banco que no existe. La fila queda
+    invisible: no sale en /bancos, no sale en la conciliación, y el saldo del
+    banco real no la ve. Este chequeo la SACA A LA LUZ para poder moverla (⇄)
+    al banco correcto desde /bancos/<n>.
+    """
+    return db.fetch_all(
+        """
+        SELECT t.no_banco,
+               COUNT(*)                    AS n,
+               COALESCE(SUM(t.importe), 0) AS total,
+               MAX(t.fecha)                AS ultima
+          FROM scintela.transacciones_bancarias t
+     LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco
+         WHERE b.no_banco IS NULL
+      GROUP BY t.no_banco
+      ORDER BY t.no_banco
+        """
+    ) or []
+
+
 def banco_info(no_banco: int) -> dict | None:
     # TMT 2026-05-27 dueña: 'a lado de pichincha no me muestra el total'.
     # Agregamos saldo_stored (running balance último) al banco_info para
