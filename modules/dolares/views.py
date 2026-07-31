@@ -251,6 +251,12 @@ def convertir_seleccion():
             codigo_prov=codigo_prov, ids_anticipos=ids,
             concepto=concepto, tipo_compra=tipo_compra, kg=None,
             motivo=motivo, usuario=usuario,
+            # Los químicos no vienen de una importación con recepción en
+            # Asinfo — el guard de "todavía no llegó" no les aplica.
+            permitir_sin_recibir=(
+                es_quimico
+                or (request.form.get("sin_recibir") or "").strip() in ("1", "on", "si", "sí")
+            ),
         )
         if es_quimico:
             flash(
@@ -612,6 +618,11 @@ def convertir_lote():
                 kg=kg,
                 motivo=motivo,
                 usuario=usuario,
+                permitir_sin_recibir=(
+                    tipo_compra == "Q"
+                    or (request.form.get("sin_recibir") or "").strip()
+                    in ("1", "on", "si", "sí")
+                ),
             )
             flash(
                 f"BAP: {r['n_anticipos']} anticipo(s) de {codigo_prov} "
@@ -751,6 +762,7 @@ def cargar_quimicos():
                 kg=kg,
                 motivo=motivo,
                 usuario=usuario,
+                permitir_sin_recibir=True,   # químicos: no hay recepción Asinfo
             )
             flash(
                 f"Químicos: {r['n_anticipos']} anticipo(s) de {codigo_prov} "

@@ -51,6 +51,15 @@
           <div class="text-xs text-slate-500 tabular-nums" id="im-valor"></div>
         </div>
       </div>
+      {# TMT 2026-07-31 (dueña: "¿podemos, la próxima que cargue compra sin
+         recibir, avisarle a Andrés?"). Por defecto NO deja convertir algo que
+         todavía no llegó: sacar el anticipo del activo sin que entre stock en
+         su lugar baja la utilidad contra nada (AC 22, 53.861 el 31/07). Se
+         puede forzar, pero a mano — y queda anotado en Novedades. #}
+      <label class="flex items-center gap-2 text-xs" style="color:rgb(180 83 9);">
+        <input type="checkbox" name="sin_recibir" value="1">
+        Convertir aunque la mercadería no haya llegado
+      </label>
       <div class="flex items-center gap-2">
         <a href="{{ url_for('dolares.lista') }}"
            class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-100 text-sm">

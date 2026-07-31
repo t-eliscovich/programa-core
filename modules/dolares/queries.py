@@ -284,6 +284,40 @@ def es_proveedor_quimico(codigo_prov: str) -> bool:
     return tipos_por_cuenta([codigo_prov]).get(codigo_prov.strip().upper()) == "Q"
 
 
+def _anticipos_sin_recepcion(rows: list[dict], codigo_prov: str) -> list[str]:
+    """De los anticipos que se van a convertir, cuáles son de mercadería que
+    Asinfo TODAVÍA NO marcó recibida.
+
+    Devuelve una lista de etiquetas legibles ("AC 22 · IM-0000578") para
+    ponerlas en el mensaje. Lista vacía = todo llegó, o no se pudo averiguar.
+
+    **Fail-OPEN a propósito**: si Asinfo no contesta, no bloquea. Un puente
+    caído no puede frenarle el trabajo a nadie; el costo de dejar pasar una es
+    mucho menor que el de trabar la carga de todo el día. TMT 2026-07-31.
+    """
+    try:
+        from modules.importaciones import service as _imp_svc
+
+        filas = [dict(r, cta=codigo_prov) for r in (rows or [])]
+        _imp_svc.adjuntar_recepcion_asinfo(filas)
+        # Si NINGUNA enganchó con Asinfo, el cruce no funcionó — no es que la
+        # mercadería no haya llegado. No bloquear por eso.
+        if not any(f.get("im_numero") for f in filas):
+            return []
+        faltan = []
+        for f in filas:
+            if f.get("im_numero") and not f.get("fecha_recepcion_im"):
+                _ref = f.get("ref")
+                faltan.append(
+                    f"{codigo_prov} {_ref if _ref is not None else '?'}"
+                    f" · {f.get('im_numero')}"
+                )
+        # Sin repetidos y en orden estable, que el mensaje se lea.
+        return sorted(set(faltan))
+    except Exception:  # noqa: BLE001 -- fail-open: nunca frenar por el puente
+        return []
+
+
 def convertir_a_compra(
     *,
     codigo_prov: str,
@@ -294,6 +328,7 @@ def convertir_a_compra(
     kg=None,
     motivo: str = "",
     usuario: str = "web",
+    permitir_sin_recibir: bool = False,
 ) -> dict:
     """Convierte un lote de anticipos vivos a una compra (BAP).
 
@@ -394,6 +429,36 @@ def convertir_a_compra(
                     f"Anticipo id={r['id_dolares']} ya está consumido "
                     f"(st='{st_r}')."
                 )
+
+        # ── GUARD: no convertir mercadería que TODAVÍA NO LLEGÓ ────────────
+        # TMT 2026-07-31 (dueña: *"¿podemos, la próxima que cargue compra sin
+        # recibir, avisarle a Andrés?"*).
+        #
+        # Qué pasó: se convirtieron los anticipos de AC 22 (IM-0000578) —
+        # 53.860,75 + 3.545,52 — cuando esa importación NO figura recibida en
+        # Asinfo: la mercadería está navegando. La conversión saca el anticipo
+        # del activo y crea una compra PAGADA, así que no nace ningún pasivo y
+        # no entra ni un kilo al stock. El patrimonio bajó 53.861 contra nada
+        # — una pérdida ficticia que costó media tarde encontrar.
+        #
+        # El anticipo de algo en tránsito es un activo legítimo y tiene que
+        # seguir siéndolo hasta que la mercadería llegue. La conversión
+        # AUTOMÁTICA ya respeta esta regla (sólo mira recepciones); ésta es la
+        # misma regla para el camino manual.
+        #
+        # Se puede forzar (`permitir_sin_recibir=True`) porque hay casos
+        # legítimos —una importación vieja que Asinfo nunca marcó, un cruce que
+        # no engancha— pero deja de ser silencioso: queda en Novedades.
+        _sin_recibir = _anticipos_sin_recepcion(rows, codigo_prov)
+        if _sin_recibir and not permitir_sin_recibir:
+            raise ValueError(
+                "Esta mercadería todavía no llegó, así que el anticipo tiene "
+                "que seguir siendo un anticipo: convertirlo ahora borra el "
+                "activo y baja la utilidad sin que haya pasado nada "
+                f"({', '.join(_sin_recibir)}). Si igual hay que cargarla, "
+                "tildá «convertir aunque no haya llegado» y queda anotado en "
+                "Novedades."
+            )
 
         importe_total = sum(float(r.get("importe") or 0) for r in rows)
         if importe_total <= 0:
@@ -514,6 +579,32 @@ def convertir_a_compra(
             },
         )
 
+    # Si se forzó sobre mercadería que no llegó, que NO quede en silencio: el
+    # que lo mire mañana tiene que poder ver por qué bajó la utilidad sin que
+    # entrara un kilo. Fuera de la transacción y fail-soft: un aviso no puede
+    # tumbar una conversión que ya se hizo. TMT 2026-07-31.
+    if _sin_recibir:
+        try:
+            from modules.avisos import queries as _avisos
+            _avisos.avisar(
+                fuente="importaciones",
+                nivel="alerta",
+                titulo=(f"{codigo_prov} · $ {importe_total:,.2f} · "
+                        f"se cargó a compras SIN que llegue la mercadería"),
+                detalle=(
+                    f"{', '.join(_sin_recibir)} todavía no figura recibida en "
+                    "Asinfo. El anticipo salió del activo y no entró stock en "
+                    "su lugar, así que la utilidad bajó ese importe sin que "
+                    f"pasara nada. Lo cargó {usuario}. Si fue un error, se "
+                    "deshace desde el anticipo."
+                ),
+                importe=importe_total,
+                url="/importaciones?recep=pendiente",
+                clave=f"convertido-sin-recibir:{compra.get('id_compra')}",
+            )
+        except Exception:  # noqa: BLE001 -- el aviso nunca rompe la operación
+            pass
+
     return {
         "id_compra":     compra.get("id_compra"),
         "numero_compra": compra.get("numero"),
@@ -523,6 +614,7 @@ def convertir_a_compra(
         "n_anticipos":   len(rows),
         "ids_anticipos": ids_unique,
         "tipo_compra":   tipo_norm,
+        "sin_recibir":   _sin_recibir,
     }
 
 
