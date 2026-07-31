@@ -46,9 +46,12 @@ def _numeros_de(code: dict) -> list[int]:
 # MISMA descripción y un sufijo `---1` / `---2`. Cada documento se lleva la
 # MITAD de los kilos, pero el costo se carga una sola vez (en una de las dos).
 #
-# Medido el 31/07/2026 contra el dBase: AC 25 = 48.988 kg reales / 24.494 en PC,
-# AC 19 = 22.354 / 10.990, MH 66 = 46.860 / 23.430. En total **70.570 kg que el
-# balance no ve**, y que le faltan al denominador del $/kg del hilado.
+# Dónde duele, medido el 31/07/2026 (/admin/health/hilado-stock-debug): la
+# compra de MH 66 de julio son 104.894,95 US$. Contra UNA mitad (23.430 kg) da
+# **4,477 US$/kg**, un número que no existe en el mercado; contra el grupo
+# entero (24.300 + 23.430 = 47.730) da 2,198, que es "falta cargar plata" — y
+# efectivamente falta el concepto 67. El 4,477 no era un precio caro: era media
+# importación.
 #
 # La regla pasó por CINCO intentos. Los tres primeros murieron en el escritorio;
 # los dos últimos los mató la medición contra las 632 importaciones reales
@@ -993,7 +996,8 @@ def kg_hilado_faltantes_mes(compras: list[dict], limite: int = 400) -> dict:
     return out
 
 
-def kg_hilado_mes(compras: list[dict], limite: int = 400) -> dict:
+def kg_hilado_mes(compras: list[dict], limite: int = 400,
+                  mes: str | None = None) -> dict:
     """Kg de hilado de las compras H del mes, contados UNA vez por importación
     (o por GRUPO de partidas ---1/---2). **Reemplaza a `SUM(compra.kg)`**, no lo
     completa — ésa es toda la diferencia con `kg_hilado_faltantes_mes`.
@@ -1030,6 +1034,8 @@ def kg_hilado_mes(compras: list[dict], limite: int = 400) -> dict:
     Devuelve:
         kg          — el total a usar (ya incluye las compras locales)
         sin_match   — compras de código conocido que no pudieron atribuirse
+        fuera_de_banda — grupos RECIBIDOS EN EL MES cuyo $/kg se sale de
+                      BANDA_USD_KG: o falta plata por cargar, o faltan kilos
         avisos      — grupos descartados, con el motivo
         disponible  — False si Asinfo no contestó
         kg_compra_ignorado / kg_de_importacion / grupos — para el debug
@@ -1077,6 +1083,7 @@ def kg_hilado_mes(compras: list[dict], limite: int = 400) -> dict:
         b = banda.setdefault(clave, {
             "codigo": f"{prov} {ref}", "kg": gkg, "importe": 0.0,
             "ims": (im or {}).get("grupo_ims") or [],
+            "recibida_en_el_mes": str((im or {}).get("fecha_recepcion") or "")[:7],
         })
         b["importe"] += float(c.get("importe") or 0)
 
@@ -1095,9 +1102,19 @@ def kg_hilado_mes(compras: list[dict], limite: int = 400) -> dict:
         if im.get("grupo_aviso"):
             avisos[str(im.get("grupo_id"))] = str(im["grupo_aviso"])
 
+    # La banda sólo se mira en las importaciones RECIBIDAS EN EL MES. Si la
+    # mercadería llegó en junio y en julio sólo se cargó el CAE, el $/kg del mes
+    # da 0,79 y no significa nada: la plata de la mercadería está en junio. Sin
+    # este filtro la alarma gritaría todos los meses y nadie la miraría.
+    mes = str(mes or "").strip()[:7]
+    if not mes:
+        meses = [str(c.get("fecha") or "")[:7] for c in compras if c.get("fecha")]
+        mes = max(set(meses), key=meses.count) if meses else ""
     lo, hi = BANDA_USD_KG
     for b in banda.values():
         if b["kg"] <= 0 or b["importe"] <= 0:
+            continue
+        if mes and b.get("recibida_en_el_mes") and b["recibida_en_el_mes"] != mes:
             continue
         ukg = b["importe"] / b["kg"]
         if lo <= ukg <= hi:
