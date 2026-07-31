@@ -98,6 +98,49 @@
                 class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
           Conciliar interno
         </button>
+        {# TMT 2026-07-31 (dueña: "volvé para atrás ya mismo"): la ✕ ahora es un
+           borrado SUAVE y esto lo deshace, sin tener que re-subir el archivo. #}
+        <form method="POST" action="{{ url_for('conciliacion.banco_restaurar_extracto') }}" class="inline m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+          <button type="submit"
+                  title="Traer de vuelta las filas del extracto que borraste con la ✕"
+                  class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
+            ↩ Restaurar borradas
+          </button>
+        </form>
+        {# TMT 2026-07-31 (dueña: "no tengo ese documento"): inverso de la ✕.
+           Si una fila del banco falta (borrada por error, o el xlsx ya no está)
+           se puede agregar a mano al backlog y conciliarla normalmente. #}
+        <details class="relative inline-block">
+          <summary class="list-none cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium"
+                   title="Agregar a mano una fila del banco que falta">＋ Agregar fila</summary>
+          <form method="POST" action="{{ url_for('conciliacion.banco_agregar_pendiente') }}"
+                style="position:absolute; right:0; top:22px; z-index:40; width:250px;"
+                class="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg p-2 space-y-1 text-left">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+            <input type="date" name="fecha" required
+                   class="w-full border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-[11px] bg-white dark:bg-slate-800">
+            <input type="text" name="documento" placeholder="N° de documento"
+                   class="w-full border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-[11px] bg-white dark:bg-slate-800">
+            <input type="text" name="concepto" placeholder="Concepto (ej. DEPOSITO CHEQUE)"
+                   class="w-full border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-[11px] bg-white dark:bg-slate-800">
+            <div class="flex gap-1">
+              <input type="text" name="monto" placeholder="255,00" required
+                     class="flex-1 border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-[11px] font-mono bg-white dark:bg-slate-800">
+              <select name="tipo"
+                      class="border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-[11px] bg-white dark:bg-slate-800">
+                <option value="C">+ entra</option>
+                <option value="D">− sale</option>
+              </select>
+            </div>
+            <button type="submit"
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] rounded px-2 py-1 font-medium">
+              Agregar al banco
+            </button>
+          </form>
+        </details>
       </div>
     </header>
 

@@ -513,9 +513,13 @@ def crear_sesion(
     abierta = sesion_abierta(no_banco)
     if abierta:
         # MERGE: concatenar payload existente + nuevos.
+        # TMT 2026-07-31: preservar las filas marcadas `_borrado` (cargar_movs
+        # las filtra). Si el archivo vuelve a traer una borrada, el dedupe no la
+        # ve y la re-agrega — que es justo lo que se espera al re-subir.
+        borradas = [d for d in _payload_list(abierta) if d.get("_borrado")]
         existentes = cargar_movs(abierta)
         merged = existentes + nuevos
-        payload = json.dumps([_mov_to_dict(m) for m in merged])
+        payload = json.dumps([_mov_to_dict(m) for m in merged] + borradas)
         nombre = (extracto_nombre or abierta.get("extracto_nombre") or "")[:200]
         db.execute(
             """
@@ -595,16 +599,61 @@ def listar_sesiones(no_banco: int | None = None, limit: int = 100) -> list[dict]
 # ─── Recuperar payload y re-correr matcher ────────────────────────────
 
 
-def cargar_movs(sesion: dict) -> list[MovBanco]:
-    """De la fila DB → lista MovBanco."""
+def _payload_list(sesion: dict) -> list:
+    """extracto_payload como lista (el driver lo devuelve str o list)."""
     payload = sesion.get("extracto_payload") or []
-    # psycopg2 RealDictCursor devuelve jsonb como str o list dependiendo del driver.
     if isinstance(payload, str):
         try:
             payload = json.loads(payload)
         except json.JSONDecodeError:
             return []
-    return [_dict_to_mov(d) for d in payload]
+    return payload if isinstance(payload, list) else []
+
+
+def cargar_movs(sesion: dict) -> list[MovBanco]:
+    """De la fila DB → lista MovBanco.
+
+    TMT 2026-07-31: las filas marcadas `_borrado` NO se cargan — es un borrado
+    SUAVE (la dueña borró una fila repetida y no había forma de volver atrás).
+    Se recuperan con `restaurar_movs_extracto`.
+    """
+    return [d for d in (
+        _dict_to_mov(d) for d in _payload_list(sesion) if not d.get("_borrado")
+    )]
+
+
+def movs_borrados(sesion: dict) -> list[dict]:
+    """Filas del extracto marcadas como borradas (para el panel de restaurar)."""
+    out = []
+    for i, d in enumerate(_payload_list(sesion)):
+        if d.get("_borrado"):
+            out.append({**d, "_idx": i})
+    return out
+
+
+def restaurar_movs_extracto(sesion_id: int) -> int:
+    """Des-borra TODAS las filas del extracto marcadas en la sesión."""
+    if not sesion_id:
+        return 0
+    row = db.fetch_one(
+        "SELECT id, extracto_payload FROM scintela.banco_conciliacion_sesion "
+        "WHERE id = %s AND cerrada_en IS NULL",
+        (int(sesion_id),),
+    )
+    if not row:
+        return 0
+    payload = _payload_list(row)
+    n = 0
+    for d in payload:
+        if d.pop("_borrado", None):
+            n += 1
+    if n:
+        db.execute(
+            "UPDATE scintela.banco_conciliacion_sesion "
+            "   SET extracto_payload = %s::jsonb WHERE id = %s",
+            (json.dumps(payload), int(sesion_id)),
+        )
+    return n
 
 
 # ─── Bucketización del resultado del matcher ──────────────────────────
@@ -882,15 +931,20 @@ def eliminar_mov_extracto(sesion_id: int, firma: str) -> dict | None:
             f"{monto}|{d.get('tipo') or ''}"
         )
 
-    for i, d in enumerate(payload):
+    for d in payload:
+        if d.get("_borrado"):
+            continue
         if _firma_de(d) == firma:
-            borrado = payload.pop(i)
+            # TMT 2026-07-31 (dueña: "volvé para atrás ya mismo"): borrado
+            # SUAVE. La fila queda en el payload marcada y deja de cargarse;
+            # el botón "↩ Restaurar" la trae de vuelta sin re-subir el archivo.
+            d["_borrado"] = True
             db.execute(
                 "UPDATE scintela.banco_conciliacion_sesion "
                 "   SET extracto_payload = %s::jsonb WHERE id = %s",
                 (json.dumps(payload), int(sesion_id)),
             )
-            return borrado
+            return d
     return None
 
 

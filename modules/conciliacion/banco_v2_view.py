@@ -3724,6 +3724,105 @@ def banco_eliminar_pendiente():
     return redirect(_back)
 
 
+@conciliacion_bp.route("/banco-v2/agregar-pendiente", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_agregar_pendiente():
+    """Agrega A MANO una fila del BANCO al backlog de pendientes.
+
+    TMT 2026-07-31 (dueña: "no tengo ese documento"). Faltaba el inverso de la
+    ✕: si una fila del extracto se pierde (borrada por error, o el archivo del
+    banco ya no está a mano) no había forma de volver a meterla sin re-subir el
+    xlsx. Entra a `banco_historicos_pendientes`, que es el mismo backlog que usa
+    "Hacer prevalecer": aparece en el panel Banco con la marca H, se puede
+    conciliar normalmente y se puede borrar con la ✕.
+    """
+    from datetime import datetime as _dt2
+
+    try:
+        sesion_id = int(request.form.get("sesion_id") or 0)
+    except (TypeError, ValueError):
+        sesion_id = 0
+    _back = (
+        url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id)
+        if sesion_id else url_for("conciliacion.banco_post_procesar")
+    )
+    fecha_s = (request.form.get("fecha") or "").strip()
+    documento = (request.form.get("documento") or "").strip()
+    concepto = (request.form.get("concepto") or "").strip()
+    tipo = (request.form.get("tipo") or "C").strip().upper()
+    # Formato EU/Ecuador: punto = miles, coma = decimal (255,00 · 1.255,00).
+    monto_raw = (request.form.get("monto") or "").strip().replace(".", "").replace(",", ".")
+    try:
+        monto = float(monto_raw) if monto_raw else None
+    except ValueError:
+        monto = None
+
+    if tipo not in ("C", "D"):
+        tipo = "C"
+    try:
+        fecha = _dt2.strptime(fecha_s, "%Y-%m-%d").date() if fecha_s else None
+    except ValueError:
+        fecha = None
+    if not fecha or monto is None or float(monto) == 0:
+        flash("Para agregar un pendiente del banco hacen falta fecha e importe.", "warn")
+        return redirect(_back)
+
+    try:
+        n = _db.execute(
+            "INSERT INTO scintela.banco_historicos_pendientes "
+            "(no_banco, fecha, concepto, documento, monto, tipo, fuente, creado_en) "
+            "VALUES (%s, %s, %s, %s, %s, %s, 'manual', CURRENT_TIMESTAMP) "
+            "ON CONFLICT DO NOTHING",
+            (_BANCO_PICHINCHA, fecha, concepto[:200], documento[:50],
+             abs(float(monto)), tipo),
+        ) or 0
+    except Exception as e:
+        _LOG.exception("agregar pendiente banco falló: %s", e)
+        flash(f"No pude agregar el pendiente del banco: {e}", "error")
+        return redirect(_back)
+
+    if n:
+        _LOG.warning(
+            "AGREGAR pendiente banco a mano por %s: %s %s %s %.2f",
+            _usuario_actual(), fecha, documento or "—", concepto[:40], float(monto),
+        )
+        flash(
+            f"Pendiente del banco agregado: {concepto[:40] or 'sin concepto'} "
+            f"${abs(float(monto)):,.2f} (doc {documento or '—'}).",
+            "ok",
+        )
+    else:
+        flash("Ese pendiente del banco ya existía (misma fecha, doc, importe y tipo).", "warn")
+    return redirect(_back)
+
+
+@conciliacion_bp.route("/banco-v2/restaurar-extracto", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_restaurar_extracto():
+    """Trae de vuelta las filas del extracto borradas con la ✕.
+
+    TMT 2026-07-31 (dueña: "me borraste ambos de 255!!! volvé para atrás ya
+    mismo"). La ✕ ahora es un borrado SUAVE; esto lo deshace sin tener que
+    volver a subir el archivo del banco.
+    """
+    try:
+        sesion_id = int(request.form.get("sesion_id") or 0)
+    except (TypeError, ValueError):
+        sesion_id = 0
+    _back = (
+        url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id)
+        if sesion_id else url_for("conciliacion.banco_post_procesar")
+    )
+    n = _sesion.restaurar_movs_extracto(sesion_id)
+    if n:
+        flash(f"{n} fila(s) del extracto restaurada(s).", "ok")
+    else:
+        flash("No había filas borradas para restaurar.", "warn")
+    return redirect(_back)
+
+
 @conciliacion_bp.route("/banco-v2/historial", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
