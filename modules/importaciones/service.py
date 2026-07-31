@@ -465,6 +465,83 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     return {"us": round(total_us, 2), "kg": round(total_kg, 2), "usd_kg": usd_kg}
 
 
+def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:
+    """Tabla 'Compras hilado' del flujo, pero SOLO RECIBIDAS y por proveedor =
+    IMPORTACIÓN + COMPRA LOCAL. MISMA fuente que la fila Ingresos del cuadro de
+    movimientos, para que el TOTAL de la tabla coincida exacto con Ingresos.
+
+    Dueña 2026-07-30: "en la tabla de compras mostrame también solo recibidas, así
+    el número coincide". Antes la tabla salía de scintela.compra tipo H por fecha
+    de carga (incluía no recibidas y no cuadraba con Ingresos).
+
+      · Importaciones: importaciones_con_cruce() recibidas con fecha_recepción en el
+        mes. kg = kg_map de Asinfo (MISMO que hilado_recibido_mes); $ =
+        importe_programa contado UNA vez por (prov, nº, año) — igual que
+        costo_hilado_recibido_mes (las partidas ---1/---2 comparten costo).
+      · Locales: compras_locales_con_cruce() recibidas en el mes; $ por tarifario
+        (kg × tarifa sin IVA), igual que hilado_local_recibido_mes.
+
+    Devuelve {"filas": [{prov,kg,importe,ukg}], "total": {kg,importe}} ordenado por
+    $ desc. Fail-soft: {"filas": [], "total": {"kg":0,"importe":0}}.
+    """
+    pref = f"{int(yy):04d}-{int(mm):02d}-"
+    agg: dict[str, dict] = {}
+    vistos: set[tuple] = set()  # (prov, nº, año) → no duplicar $ de partidas
+    # -- Importaciones recibidas --
+    try:
+        rows = importaciones_con_cruce(limite=limite)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        rows = []
+    for r in rows or []:
+        if not r.get("recibida"):
+            continue
+        if not str(r.get("fecha_recepcion") or "").startswith(pref):
+            continue
+        prov = str(r.get("prov") or "").strip().upper()
+        if not prov:
+            continue
+        a = agg.setdefault(prov, {"kg": 0.0, "importe": 0.0})
+        a["kg"] += float(r.get("kg") or 0.0)
+        imp = r.get("importe_programa")
+        if imp:
+            clave = (prov, r.get("numero"), str(r.get("fecha") or "")[:4])
+            if clave not in vistos:
+                vistos.add(clave)
+                a["importe"] += float(imp)
+    # -- Compras locales recibidas --
+    try:
+        from modules.compras_locales import service as _loc
+        lfilas = _loc.compras_locales_con_cruce(limite=200)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        lfilas = []
+    for f in lfilas or []:
+        if not f.get("recibida"):
+            continue
+        if not str(f.get("fecha_recepcion") or "").startswith(pref):
+            continue
+        prov = str(f.get("prov") or "").strip().upper()
+        if not prov:
+            continue
+        kg = float(f.get("kg") or 0.0)
+        tar = f.get("tarifa")
+        a = agg.setdefault(prov, {"kg": 0.0, "importe": 0.0})
+        a["kg"] += kg
+        a["importe"] += (kg * float(tar)) if tar else 0.0
+    filas = [
+        {"prov": p, "kg": v["kg"], "importe": v["importe"],
+         "ukg": (v["importe"] / v["kg"] if v["kg"] else 0.0)}
+        for p, v in agg.items()
+    ]
+    filas.sort(key=lambda r: r["importe"], reverse=True)
+    return {
+        "filas": filas,
+        "total": {
+            "kg": sum(v["kg"] for v in agg.values()),
+            "importe": sum(v["importe"] for v in agg.values()),
+        },
+    }
+
+
 def promedio_hilado_usd_kg(limite: int = 1000) -> float | None:
     """$/kg promedio ponderado del hilado importado, TODO de Programa Core:
     Σ(costo real = importe_programa: anticipos+compras) ÷ Σ(kg) de las

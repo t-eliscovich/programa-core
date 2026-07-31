@@ -2532,6 +2532,20 @@ def flujo_produccion():
         data["produc_tejido"] = prod_tej_asinfo["filas"]
         data["produc_tejido_total"] = prod_tej_asinfo["total"]
 
+    # dueña 2026-07-30: la tabla "Compras hilado" muestra SOLO RECIBIDAS (importación
+    # + compra local), misma fuente que la fila Ingresos → el TOTAL coincide exacto.
+    # Antes salía de scintela.compra tipo H por fecha de carga y no cuadraba con
+    # Ingresos. Fail-soft: si Asinfo cae o no hay recibidas, queda la tabla original.
+    if isinstance(data, dict):
+        try:
+            from modules.importaciones import service as _imp_ch
+            _ch = _imp_ch.compras_hilado_recibidas_mes(anio, mes)
+            if _ch and _ch.get("filas"):
+                data["compras_hilado"] = _ch["filas"]
+                data["compras_hilado_total"] = _ch["total"]
+        except Exception:  # noqa: BLE001 -- best-effort, la vista no rompe
+            pass
+
     _s = _time_fp.perf_counter()
     coherencia, _e_coh = _safe(
         lambda: _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo),
