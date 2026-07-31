@@ -142,6 +142,30 @@ def lista():
     cuentas, _ = _safe(lambda: queries.por_cuenta(solo_vivos=True), [])
     res, _ = _safe(queries.resumen, {})
 
+    # ── EL NÚMERO QUE VA AL BALANCE ────────────────────────────────────────
+    # TMT 2026-07-31 (dueña): *"esencial, y que nunca más vuelva a pasar que
+    # esto nos va a mover la utilidad por 20k"*.
+    #
+    # Esta tira decía "Total vivo · = ANTICIPOS del balance", y el 31/07 dejó
+    # de ser cierto: el balance descuenta los anticipos cuya mercadería YA
+    # está en la bodega, porque esos kilos ya están contados en el stock. Los
+    # dos números son correctos y miden cosas distintas — pero la pantalla
+    # afirmaba que eran el mismo. Costó media hora buscar un descalce de
+    # 17.900 que no existía.
+    #
+    # Ahora la pantalla muestra la resta entera y no hay nada que deducir.
+    try:
+        from modules.informes import queries as _iq
+        _ya_en_bodega = float(_iq.anticipos_con_mercaderia_recibida() or 0)
+        _total_vivo = float((res or {}).get("total_vivos") or 0)
+        conciliacion_balance = {
+            "total_vivo": round(_total_vivo, 2),
+            "ya_en_bodega": round(_ya_en_bodega, 2),
+            "al_balance": round(_total_vivo - _ya_en_bodega, 2),
+        }
+    except Exception:  # noqa: BLE001 -- nunca romper la pantalla por un KPI
+        conciliacion_balance = None
+
     # Enriquecer cuentas con nombre del cliente (una sola query, no N+1).
     nombres = _nombres_clientes([c["cta"] for c in cuentas])
     for c in cuentas:
@@ -171,6 +195,7 @@ def lista():
     return render_template(
         "dolares/lista.html",
         filas=filas, cuentas=cuentas, resumen=res,
+        conciliacion_balance=conciliacion_balance,
         desde=desde, hasta=hasta, cta=cta, q=q,
         codigo=codigo or None, recibido_mes=recibido_mes,
         anio_filtro=anio_filtro, n_sin_anio=n_sin_anio,

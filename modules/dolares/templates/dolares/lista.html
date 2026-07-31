@@ -330,20 +330,27 @@
      + cuentas + aplicados/consumidos. Grid inline (sm:grid-cols-* no existe en
      el tailwind congelado). #}
   <div class="mb-4" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;">
+    {# TMT 2026-07-31 (dueña: "esencial, y que nunca más vuelva a pasar que
+       esto nos va a mover la utilidad por 20k"). Acá decía "Total vivo =
+       ANTICIPOS del balance" y desde el 31/07 dejó de ser cierto: el balance
+       descuenta los anticipos cuya mercadería YA está en la bodega, porque
+       esos kilos ya están contados en el stock. Los dos números eran
+       correctos; lo que faltaba era la resta escrita. Ahora está entera y no
+       hay nada que deducir. #}
     <div class="kpi-card">
       <div class="kpi-label">Total vivo</div>
-      <div class="kpi-value kpi-accent">$ {{ resumen.total_vivos | num_es(0) }}</div>
-      <div class="kpi-meta">= ANTICIPOS del balance</div>
+      <div class="kpi-value">$ {{ resumen.total_vivos | num_es(0) }}</div>
+      <div class="kpi-meta">{{ resumen.n_vivos | num_es(0) }} anticipos sin aplicar</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Partidas vivas</div>
-      <div class="kpi-value">{{ resumen.n_vivos | num_es(0) }}</div>
-      <div class="kpi-meta">anticipos sin aplicar</div>
+      <div class="kpi-label">− Ya en bodega</div>
+      <div class="kpi-value" style="color:rgb(180 83 9);">$ {{ (conciliacion_balance.ya_en_bodega if conciliacion_balance else 0) | num_es(0) }}</div>
+      <div class="kpi-meta">su mercadería ya llegó: esos kilos están en el stock</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Cuentas con saldo</div>
-      <div class="kpi-value">{{ resumen.n_ctas_vivos | num_es(0) }}</div>
-      <div class="kpi-meta">proveedores con anticipo</div>
+      <div class="kpi-label">= Va al balance</div>
+      <div class="kpi-value kpi-accent">$ {{ (conciliacion_balance.al_balance if conciliacion_balance else resumen.total_vivos) | num_es(0) }}</div>
+      <div class="kpi-meta">éste es el ANTICIPOS del balance</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Aplicados</div>

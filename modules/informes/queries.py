@@ -525,10 +525,36 @@ def anticipos_con_mercaderia_recibida() -> float:
         # el anticipo siga vivo. Cuando el anticipo se convierte deja de estar
         # vivo y sale solo de la lista, que es la única baja legítima.
         # TMT 2026-07-31.
+        # ── El MISMO corte que la conversión automática ─────────────────────
+        # Este descuento existe para tapar la ventana entre que Asinfo marca
+        # la recepción (entran los kilos al stock) y que la conversión crea la
+        # compra (sale el anticipo del activo): ahí, y SÓLO ahí, la misma
+        # mercadería está contada dos veces.
+        #
+        # La conversión automática tiene fecha de corte (se sella el día que se
+        # prende) y no toca nada anterior. Sin el mismo corte acá, el descuento
+        # se comía anticipos viejos —recibidos hace meses, cuyos kilos ya se
+        # consumieron y no están en ningún stock— restándolos del activo contra
+        # nada. El 31/07 eran 17.900 y hacían que /dolares y el balance no
+        # cerraran. Dueña: *"esos 17 no deberían estar directamente"*. Tenía
+        # razón: no es un rótulo que faltaba, era un descuento de más.
+        _corte = None
+        try:
+            from modules.importaciones import autobap as _autobap
+            _corte = (_autobap.config() or {}).get("fecha_corte")
+        except Exception:  # noqa: BLE001 -- sin config, se comporta como antes
+            _corte = None
+
+        def _en_ventana(f) -> bool:
+            rec = str(f.get("fecha_recepcion_im") or "")[:10]
+            if not rec:
+                return False
+            return (not _corte) or rec >= str(_corte)[:10]
+
         vivos = {f.get("id_dolares") for f in filas}
         _ANTIC_RECIBIDOS_VISTOS.intersection_update(vivos)
         for f in filas:
-            if f.get("fecha_recepcion_im"):
+            if _en_ventana(f):
                 _ANTIC_RECIBIDOS_VISTOS.add(f.get("id_dolares"))
 
         total = round(sum(
