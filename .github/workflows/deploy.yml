@@ -109,7 +109,25 @@ jobs:
           Start-Sleep 2
           Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          # TMT 2026-07-31: matar TAMBIÉN por PUERTO. Verificado que el deploy subía
+          # los archivos pero el proceso Python NO se reiniciaba (un huérfano/detachado
+          # seguía tomando el 5002 y el Get-Process python no lo agarraba): las
+          # PLANTILLAS cambiaban (se leen del disco por request) pero la LÓGICA Python
+          # no (queda en RAM hasta reiniciar) → cambios de fórmula (ej. egreso) no
+          # cargaban aunque el deploy diera verde. Get-NetTCPConnection da el PID dueño
+          # del 5002 y lo matamos por PID, sea cual sea el proceso.
+          for (\$i = 0; \$i -lt 6; \$i++) {
+            \$owners = Get-NetTCPConnection -LocalPort 5002 -State Listen -ErrorAction SilentlyContinue |
+                      Select-Object -ExpandProperty OwningProcess -Unique
+            if (-not \$owners) { break }
+            \$owners | ForEach-Object { Stop-Process -Id \$_ -Force -ErrorAction SilentlyContinue }
+            Start-Sleep 1
+          }
           Start-Sleep 3
+          # Verificar que el 5002 quedó LIBRE antes de arrancar; si sigue tomado, el
+          # nuevo no bindea y volvemos al no-op → fallar el deploy para que se vea.
+          \$still = Get-NetTCPConnection -LocalPort 5002 -State Listen -ErrorAction SilentlyContinue
+          if (\$still) { Write-Output "ERROR: puerto 5002 sigue tomado por PID(s) \$(\$still.OwningProcess -join ',') — no se pudo liberar"; exit 1 }
           Start-ScheduledTask -TaskName ProgramaCoreApp
           # TMT 2026-06-07: 15s (antes 6/8) — Waitress + imports tardan más;
           # con 6s el health check daba falso negativo ("Failed") aunque el
