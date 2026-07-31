@@ -353,3 +353,45 @@ def test_lookup_no_banco_pichincha_default_es_1():
         assert importer._lookup_no_banco_pichincha() == 1
     finally:
         importer.db.fetch_one = original
+
+
+# ---------------------------------------------------------------------------
+# TMT 2026-07-31 — tablas con datos PC-only NO pueden truncarse en el sync.
+# ---------------------------------------------------------------------------
+def test_tablas_con_datos_pc_only_tienen_delete_where():
+    """INVARIANTE: si una tabla recibe filas creadas por PC, su entry en
+    TABLE_MAP DEBE tener `delete_where`.
+
+    Sin `delete_where` el sync hace TRUNCATE TOTAL y recarga desde el DBF, o
+    sea que la tabla de PC es una COPIA del dBase y todo lo que se cargó por
+    las pantallas se pierde en el siguiente sync, sin aviso.
+    Ya pasó con CAJA.DBF (corregido 2026-07-26) y con HISTORIA.DBF, que se
+    llevaba puesta la FOTO DIARIA del balance ('snapshot-diario') — el dato
+    que justamente independiza a PC del dBase para el cierre de mes.
+    """
+    from scripts.import_dbf import TABLE_MAP
+
+    # DBFs cuya tabla destino recibe también filas nacidas en PC.
+    con_datos_pc = ["CAJA.DBF", "HISTORIA.DBF"]
+    for dbf_name in con_datos_pc:
+        cfg = TABLE_MAP[dbf_name]
+        assert cfg.get("delete_where"), (
+            f"{dbf_name} no tiene `delete_where` → TRUNCATE TOTAL de "
+            f"{cfg['pg_table']}: el sync borraría los datos propios de PC."
+        )
+
+
+def test_historia_delete_where_solo_borra_lo_del_dbf():
+    """El filtro de HISTORIA.DBF sólo alcanza a las filas del propio DBF.
+
+    La foto diaria ('snapshot-diario'), los snapshots de la pantalla Historial
+    ('tamara', 'andres', 'web') y los de /admin/regenerar-snapshot SOBREVIVEN.
+    """
+    from scripts.import_dbf import TABLE_MAP
+
+    where_sql, lookup = TABLE_MAP["HISTORIA.DBF"]["delete_where"]
+    assert lookup is None
+    assert "usuario_crea" in where_sql
+    assert "'dbf-import'" in where_sql
+    for propio_de_pc in ("snapshot-diario", "andres", "tamara", "web"):
+        assert propio_de_pc not in where_sql

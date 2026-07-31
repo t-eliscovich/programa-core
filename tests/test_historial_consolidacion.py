@@ -104,3 +104,43 @@ def test_eliminar_ultima_sin_columnas_no_rompe(monkeypatch):
 def test_hora_quito_resta_5_horas():
     """fecha_crea viene en UTC (server/RDS); se muestra en hora de Quito
     (UTC-5, sin horario de verano)."""
+
+# ---------------------------------------------------------------------------
+# TMT 2026-07-31 — la FOTO DIARIA no se consolida.
+# ---------------------------------------------------------------------------
+def test_consolidar_no_borra_la_foto_diaria(monkeypatch):
+    """INVARIANTE: las filas `snapshot-diario` quedan FUERA del DELETE.
+
+    El bug: entrar a Historial tomaba una foto propia y después consolidaba a
+    2 columnas, así que la foto diaria de AYER se borraba todos los días. Sin
+    la fila de ayer, `snapshot_diario_health` nunca podía comparar y las
+    guardas "patrimonio saltó > $500k" y "stock saltó > 5%" NUNCA corrían —
+    en silencio, sin un solo error.
+    """
+    cap: dict = {}
+    monkeypatch.setattr(
+        queries.db, "execute",
+        lambda sql, params=None: cap.update(sql=sql, params=params) or 0,
+    )
+    queries.consolidar_snapshots_mes_actual(conservar=2)
+
+    assert cap["params"]["diario"] == queries.USUARIO_SNAPSHOT_DIARIO
+    # La exclusión tiene que estar en el DELETE de afuera, NO sólo en el
+    # subselect de los que se conservan (ahí no protegería nada).
+    delete_head = cap["sql"].split("id_historia NOT IN")[0]
+    assert "COALESCE(usuario_crea, '') <> %(diario)s" in delete_head
+
+
+def test_consolidar_sigue_borrando_los_manuales(monkeypatch):
+    """La exclusión es SÓLO para la foto diaria: los snapshots manuales del
+    mes en curso se siguen consolidando a `conservar`."""
+    cap: dict = {}
+    monkeypatch.setattr(
+        queries.db, "execute",
+        lambda sql, params=None: cap.update(sql=sql, params=params) or 4,
+    )
+    n = queries.consolidar_snapshots_mes_actual(conservar=2)
+
+    assert n == 4
+    assert "LIMIT %(k)s" in cap["sql"]
+    assert cap["params"]["k"] == 2

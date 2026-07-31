@@ -641,6 +641,16 @@ TABLE_MAP: dict[str, dict] = {
         "mapper": _map_historia,
         "criticidad": "SUPER",
         "descripcion": "Snapshots mensuales — VSTO, VQX, PATANT, USUTI",
+        # TMT 2026-07-31. Esta entrada NO tenía delete_where → TRUNCATE TOTAL:
+        # cada sync borraba scintela.historia entera y la recargaba desde el
+        # DBF. Eso se lleva puesta la FOTO DIARIA del balance
+        # (usuario_crea='snapshot-diario'), que es PC-only y es justamente lo
+        # que independiza a PC del dBase para el cierre de mes. También se
+        # llevaba los snapshots que toma la pantalla Historial ('tamara',
+        # 'andres', 'web') y los de /admin/regenerar-snapshot.
+        # Mismo criterio que CAJA.DBF: sólo se borran las filas que vinieron
+        # del propio DBF; todo lo que nace en PC SOBREVIVE.
+        "delete_where": ("COALESCE(usuario_crea, '') IN ('', 'dbf-import')", None),
     },
     "INICIALE.DBF": {
         "pg_table": "scintela.iniciales",

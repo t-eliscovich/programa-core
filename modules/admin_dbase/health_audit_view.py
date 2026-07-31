@@ -45,6 +45,14 @@ _USUARIOS_CONOCIDOS = {
     "auto",
     "asinfo",
     "formulas-auto",  # puente compras de químicos formulas→PC (cron diario)
+    # TMT 2026-07-31 — markers que ya estaban en producción y no figuraban acá,
+    # así que el health quedaba en ok=false todos los días por un falso
+    # positivo. Cada marker nuevo hay que agregarlo ACÁ el mismo día.
+    "federico",           # usuario real (faltaba; tamara/andres/alex sí estaban)
+    "bap-auto",           # BAP automático: anticipo USD → compra al recibirse
+    "asinfo-tejeduria",   # carga automática de producción de tejeduría
+    "asinfo-hilo-local",  # carga automática de compras de hilo local
+    "snapshot-diario",    # foto diaria del balance (health)
 }
 
 # Prefijos legítimos (marker + usuario dinámico). El puente de compras usa

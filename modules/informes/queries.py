@@ -8073,12 +8073,33 @@ def borrar_snapshot(id_historia: int) -> int:
     )
 
 
+#: Origen de la FOTO DIARIA del balance. Estas filas son PC-only y NO se
+#: consolidan: son la serie histórica del mes.
+USUARIO_SNAPSHOT_DIARIO = "snapshot-diario"
+
+
 def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
-    """Borra los snapshots del mes actual salvo los `conservar` mas recientes.
+    """Borra los snapshots MANUALES del mes actual salvo los `conservar` mas recientes.
 
     Federico 2026-05-21 -- la pantalla Historial deja siempre la columna
     previa + la nueva (conservar=2) para comparar; lo mas viejo se limpia.
     Devuelve la cantidad de filas borradas.
+
+    TMT 2026-07-31 -- BUG: la FOTO DIARIA la borraba esta consolidacion.
+    Entrar a Historial tomaba una foto propia y despues consolidaba a 2 filas,
+    asi que la foto de AYER moria todos los dias. Efectos, los tres en silencio:
+      1. `snapshot_diario_health` busca la fila `snapshot-diario` del dia previo
+         para comparar; nunca la encontraba (`stats.ayer` = None), asi que las
+         guardas "patrimonio salto > $500k" y "stock salto > 5%" NUNCA corrian.
+      2. No existia serie diaria: el mes entero guardaba 2 columnas.
+      3. El objetivo declarado de la foto ("el cierre de mes es la foto del
+         ultimo dia, sin reconstruir nada") dependia de que nadie abriera
+         Historial ese dia.
+    Ahora las filas `snapshot-diario` quedan EXCLUIDAS del DELETE. La pantalla
+    sigue mostrando solo las `max_actual` mas recientes, asi que no cambia lo
+    que se ve; lo que cambia es que la serie sobrevive.
+    Mismo criterio que el `delete_where` de CAJA.DBF: un dato PC-only no puede
+    vivir en una tabla que otra ruta borra en bloque.
     """
 
     hoy = today_ec()
@@ -8088,6 +8109,7 @@ def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
         DELETE FROM scintela.historia
          WHERE EXTRACT(YEAR FROM fecha) = %(a)s
            AND EXTRACT(MONTH FROM fecha) = %(m)s
+           AND COALESCE(usuario_crea, '') <> %(diario)s
            AND id_historia NOT IN (
                SELECT id_historia
                  FROM scintela.historia
@@ -8097,7 +8119,8 @@ def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
                 LIMIT %(k)s
            )
         """,
-        {"a": hoy.year, "m": hoy.month, "k": k},
+        {"a": hoy.year, "m": hoy.month, "k": k,
+         "diario": USUARIO_SNAPSHOT_DIARIO},
     ) or 0
 
 
