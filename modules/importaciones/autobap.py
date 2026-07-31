@@ -270,8 +270,15 @@ def avisos(solo_no_leidos: bool = True, limite: int = 30) -> list[dict]:
             SELECT id_autobap_log, tipo, im_numero, codigo_prov, ref_num, anio,
                    TO_CHAR(fecha_recepcion,'YYYY-MM-DD') AS fecha_recepcion,
                    kg, n_anticipos, importe, id_compra, comprobante, mensaje,
-                   leido, TO_CHAR(creado_en,'YYYY-MM-DD HH24:MI') AS creado_en,
-                   TO_CHAR(creado_en,'DD/MM HH24:MI') AS cuando
+                   leido,
+                   -- TMT 2026-07-31: el servidor guarda en UTC. Sin el
+                   -- AT TIME ZONE, el historial de esta pantalla decía 15:34
+                   -- y la campanita (que sí convierte, avisos/queries.py) 10:34
+                   -- del MISMO evento. La hora que se muestra es la de Ecuador.
+                   TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
+                           'YYYY-MM-DD HH24:MI') AS creado_en,
+                   TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
+                           'DD/MM HH24:MI') AS cuando
               FROM scintela.autobap_log
              {"WHERE NOT leido" if solo_no_leidos else ""}
              ORDER BY creado_en DESC, id_autobap_log DESC
