@@ -186,7 +186,8 @@
             <td></td>
             {# CRUDO: Stock inic. vacío a pedido de Federico (2026-07-31) #}
             <td class="num"></td>
-            <td class="num">{{ ate.get('stock_inic_kg') | num_es(0) if ate.get('stock_inic_kg') else '—' }}</td>
+            {# TERMINADO: Stock inic. vacío a pedido de Federico (2026-07-31) #}
+            <td class="num"></td>
             <td class="num">{{ aco.get('stock_inic_us') | num_es(0) if aco.get('stock_inic_us') else '—' }}</td>
           </tr>
           {# Federico 2026-07-30: la fila Ingresos de hilado = RECEPCIONES de Asinfo
@@ -207,7 +208,8 @@
             <td class="num">{{ _ing_us | num_es(0) if _ing_us else '—' }}</td>
             <td></td>
             <td class="num">{{ atj.get('ingresos_kg') | num_es(0) if atj.get('ingresos_kg') else '—' }}</td>
-            <td class="num">{{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}</td>
+            {# TERMINADO: Ingresos vacío a pedido de Federico (2026-07-31) #}
+            <td class="num"></td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
           {# Fila AJUSTES INVENTARIO BORRADA (dueña 2026-07-21 segunda pasada:
@@ -248,7 +250,8 @@
             <td></td>
             {# CRUDO: Egresos eliminado a pedido de Federico (2026-07-31) #}
             <td class="num"></td>
-            <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
+            {# TERMINADO: Egresos = kg VENDIDOS del mes (fuente Resultados). Federico 2026-07-31 #}
+            <td class="num">{{ kg_vendidos_terminado | num_es(0) if kg_vendidos_terminado else '—' }}</td>
             <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
           </tr>
           {% if aco.get('ajuste_us') is not none %}

@@ -2449,6 +2449,11 @@ def flujo_produccion():
     inv_en_proceso_tc = (_fab_tc or {}).get("resumen") or {}
     inv_en_proceso_pt = (_fab_pt or {}).get("resumen") or {}
 
+    # Federico 2026-07-31: kg VENDIDOS del mes (= KV de Resultados, misma fuente
+    # ventas_mes_corriente_resultado) para la fila Egresos de la columna TERMINADO.
+    _kg_vend, _e_kv = _safe(lambda: queries.ventas_mes_corriente_resultado(), {})
+    kg_vendidos_terminado = float((_kg_vend or {}).get("kg") or 0)
+
     if not isinstance(inv_asinfo, dict):
         inv_asinfo = {}
     if not isinstance(inv_asinfo_inic, dict):
@@ -2584,6 +2589,7 @@ def flujo_produccion():
         coherencia=coherencia,
         inv_en_proceso_tc=inv_en_proceso_tc,
         inv_en_proceso_pt=inv_en_proceso_pt,
+        kg_vendidos_terminado=kg_vendidos_terminado,
     )
     # Guardar en cache SOLO cargas buenas: sin error y con data del mes. Así un
     # Asinfo caído o un mes vacío no queda "pegado" el TTL entero.
