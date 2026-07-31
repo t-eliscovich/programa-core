@@ -1050,6 +1050,14 @@ def matchear_extracto_banco(
         else:
             sin_match_pass3.append(real)
 
+    # TMT 2026-07-31 (dueña: "este registro se repite"). FALTABA este traspaso:
+    # P3.5 seguía iterando la lista PRE-P3, así que un real ya matcheado por P3
+    # volvía a procesarse. Combinado con el bug de P4 (abajo), el MISMO
+    # movimiento del extracto salía DOS VECES en el panel Banco — una como
+    # sugerencia (idx=-1) y otra como real_only — e inflaba los pendientes y el
+    # saldo esperado. Caso real: "DEPOSITO CHEQUE 33627734 $270,51".
+    aun_sin_match = sin_match_pass3
+
     # ─── PASS 3.5: cliente + monto CERCANO (±10%, fecha ≤7d) ───────────
     # Para los reales con cliente extraído sin match: si hay un único
     # BANCSIS del mismo cliente con monto razonablemente cercano y fecha
@@ -1104,7 +1112,10 @@ def matchear_extracto_banco(
     # matcheamos arbitrariamente (cualquier asignación da la misma suma).
     from collections import defaultdict
     pendientes_real: dict[tuple, list[MovBanco]] = defaultdict(list)
-    for real in sin_match_pass3:
+    # TMT 2026-07-31: iterar `aun_sin_match` (lo que quedó DESPUÉS de P3.5),
+    # no `sin_match_pass3` — si no, un real ya matcheado en P3.5 volvía a caer
+    # en real_only y aparecía duplicado en pantalla.
+    for real in aun_sin_match:
         key = (real.tipo, round(float(real.monto), 2))
         pendientes_real[key].append(real)
 
@@ -1135,7 +1146,10 @@ def matchear_extracto_banco(
         else:
             aun_sin_match_p4.extend(reals_grupo)
 
-    res.real_only = aun_sin_match_p4
+    # Cinturón y tiradores: nada que ya esté del lado real de un match puede
+    # quedar además en real_only (identidad del objeto, no igualdad de campos).
+    _ya_en_match = {id(m.real) for m in res.matches if getattr(m, "real", None) is not None}
+    res.real_only = [m for m in aun_sin_match_p4 if id(m) not in _ya_en_match]
 
     res.matches_por_pasada = {"P1": cont_p1, "P2": cont_p2, "P3": cont_p3, "P4": cont_p4}
 
