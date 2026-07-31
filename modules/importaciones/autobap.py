@@ -195,6 +195,21 @@ def _al_buzon(kw: dict) -> None:
 ICONOS = {"conversion": "✅", "freno": "⛔", "error": "⚠️"}
 
 
+def _codigo(a: dict) -> str:
+    """`AI 11` — el nombre con el que la dueña pide y busca la importación.
+
+    TMT 2026-07-31: *"acá ponele AI y el número o AC y número. no así"*. El
+    `IM-0000561` es el número interno de Asinfo: sigue en la columna
+    IMPORTACIÓN del historial, pero no encabeza el aviso. Devuelve "" si el log
+    viejo no tiene las columnas (ahí el aviso cae al `im_numero`).
+    """
+    prov = (str((a or {}).get("codigo_prov") or "")).strip().upper()
+    ref = (a or {}).get("ref_num")
+    if not prov or ref in (None, ""):
+        return prov
+    return f"{prov} {ref}"
+
+
 def resumen(a: dict) -> dict:
     """El aviso en DOS LÍNEAS: `titulo` (qué pasó) + `detalle` (el resto).
 
@@ -215,10 +230,13 @@ def resumen(a: dict) -> dict:
         # (BAP11) ni el recordatorio de rehacerlo en el dBase van acá: el
         # aviso dice QUÉ llegó, POR CUÁNTO y que ya quedó cargado. El
         # comprobante sigue en la columna COMPRA del historial y en /compras.
-        prov = a.get("codigo_prov") or ""
+        # TMT 2026-07-31 (dueña): el aviso se encabeza con el CÓDIGO (`AI 11`),
+        # igual que el de "falta ponerle el año" — así los dos avisos del mismo
+        # caso se leen igual y se buscan igual en /dolares.
         return {
             "icono": icono,
-            "titulo": f"{a['im_numero']} · {prov} · $ {num_es(a.get('importe'), 2)}",
+            "titulo": f"{_codigo(a) or a['im_numero']} · "
+                      f"$ {num_es(a.get('importe'), 2)}",
             "detalle": "Se cargó a compras",
         }
 
@@ -232,12 +250,12 @@ def resumen(a: dict) -> dict:
         }
 
     if tipo == "error":
-        im = a.get("im_numero")
+        cod = _codigo(a) or a.get("im_numero")
         # El mensaje del error trae el prefijo "IM-x de PROV: " — sacarlo.
         det = msg.split(": ", 1)[1] if ": " in msg else msg
         return {
             "icono": icono,
-            "titulo": f"No pude convertir {im}" if im else "No pude convertir",
+            "titulo": f"No pude convertir {cod}" if cod else "No pude convertir",
             "detalle": det[:140],
         }
 
@@ -487,7 +505,7 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
                 n_anticipos=g["n"], importe=r.get("importe_total"),
                 id_compra=r.get("id_compra"), comprobante=r.get("comprobante"),
                 mensaje=(
-                    f"{g['im_numero']} · {g['codigo_prov']} · "
+                    f"{g['codigo_prov']} {g['ref']} · "
                     f"$ {num_es(r.get('importe_total'), 2)} · Se cargó a compras"
                 ),
             )

@@ -290,7 +290,10 @@ def test_resumen_conversion_dos_lineas_y_formato_ecuador():
     })
     assert r["icono"] == "✅"
     # Punto = miles, coma = decimales (nunca el formato US).
-    assert r["titulo"] == "IM-0000625 · AC · $ 73.359,95"
+    # Dueña 31/07: "acá ponele AI y el número o AC y número. no así" — la
+    # importación se nombra por el CÓDIGO, no por el IM- interno de Asinfo.
+    assert r["titulo"] == "AC 29 · $ 73.359,95"
+    assert "IM-" not in r["titulo"]
     # Dueña 30/07: "quitá lo de BAP, no sé ni qué es. Solo que se cargó."
     assert r["detalle"] == "Se cargó a compras"
     assert "BAP" not in r["titulo"] + r["detalle"]
@@ -308,9 +311,17 @@ def test_resumen_freno_no_repite_el_parrafo():
 
 def test_resumen_error_saca_el_prefijo():
     r = autobap.resumen({"tipo": "error", "im_numero": "IM-9",
+                         "codigo_prov": "AC", "ref_num": 29,
                          "mensaje": "IM-9 de AC: período cerrado"})
-    assert r == {"icono": "⚠️", "titulo": "No pude convertir IM-9",
+    assert r == {"icono": "⚠️", "titulo": "No pude convertir AC 29",
                  "detalle": "período cerrado"}
+
+
+def test_resumen_log_viejo_sin_ref_cae_al_im_numero():
+    """Las filas guardadas antes de que existiera `ref_num` no se rompen."""
+    r = autobap.resumen({"tipo": "conversion", "im_numero": "IM-0000625",
+                         "importe": 100.0})
+    assert r["titulo"] == "IM-0000625 · $ 100,00"
 
 
 def test_resumen_fila_vieja_sin_columnas_cae_al_mensaje():
@@ -325,7 +336,7 @@ def test_avisos_adjunta_el_resumen_a_cada_fila():
             "comprobante": "BAP1", "mensaje": "x"}
     with patch.object(autobap.db, "fetch_all", return_value=[fila]):
         out = autobap.avisos()
-    assert out[0]["titulo"] == "IM-1 · AC · $ 100,00"
+    assert out[0]["titulo"] == "AC 7 · $ 100,00"
     assert out[0]["detalle"] == "Se cargó a compras"
     assert out[0]["icono"] == "✅"
 
@@ -345,7 +356,7 @@ def test_el_mensaje_guardado_ya_no_es_un_parrafo():
          patch.object(autobap, "avisar") as av:
         autobap.correr(forzar_topes=True)
     msg = av.call_args.kwargs["mensaje"]
-    assert msg == "IM-0000625 · AC · $ 73.359,95 · Se cargó a compras"
+    assert msg == "AC 29 · $ 73.359,95 · Se cargó a compras"
     assert "BAP" not in msg
     assert len(msg) < 100
 

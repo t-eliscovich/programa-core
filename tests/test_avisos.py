@@ -267,7 +267,7 @@ def test_importaciones_manda_el_aviso_al_buzon_con_la_clave_de_la_compra():
         })
     a = puestos[0]
     assert a["fuente"] == "importaciones" and a["nivel"] == "ok"
-    assert a["titulo"] == "IM-1 · AC · $ 100,00"
+    assert a["titulo"] == "AC 7 · $ 100,00"   # dueña 31/07: el CÓDIGO, no el IM-
     assert a["clave"] == "importaciones:compra:42"
     assert "BAP" not in a["titulo"] + (a["detalle"] or "")
 
