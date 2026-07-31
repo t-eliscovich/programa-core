@@ -506,18 +506,28 @@ def lineas_cuadre_diff(diff: dict, dias: list[dict], etiqueta: str):
     gap_fin = con_ambos[-1]["delta"]
     s_pc = sum(val_firmado(m) for m in diff.get("solo_pc") or [])
     s_db = sum(val_firmado(m) for m in diff.get("solo_dbase") or [])
-    explicado = s_pc - s_db
+    # TMT 2026-07-31: el dBase es una FOTO. Lo que PC cargó DESPUÉS del último
+    # día del DBF no entra en el gap del último día — si se cuenta igual,
+    # aparece un residuo fantasma (así salió +1.136,48 al reversar la NC de
+    # CG3: el reverso quedó fechado hoy, un día después de la foto).
+    corte = con_ambos[-1]["fecha"]
+    post = sum(val_firmado(m) for m in (diff.get("solo_pc") or [])
+               if m.get("fecha") and m["fecha"] > corte)
+    explicado = s_pc - s_db - post
     gap = gap_fin - gap_ini
     residuo = gap - explicado
     yield _ln(f"  CUADRE del 1 a 1 de {etiqueta}: solo-PC {s_pc:>+12,.2f} · solo-dBase "
                f"{-s_db:>+12,.2f}  ⇒ explicado {explicado:>+12,.2f}")
+    if abs(post) >= 0.01:
+        yield _ln(f"    (no cuenta: {post:>+12,.2f} que PC cargó DESPUÉS del {corte}, "
+                  f"la fecha de la foto del dBase)")
     yield _ln(f"    gap real del período ({con_ambos[0]['fecha']} → {con_ambos[-1]['fecha']}): "
                f"{gap:>+12,.2f}   ⇒ RESIDUO SIN EXPLICAR: {residuo:>+12,.2f} "
                f"{_veredicto_residuo(residuo)}")
     yield from lineas_top_gap(diff, etiqueta)
 
 
-def lineas_top_gap(diff: dict, etiqueta: str, top: int = 40):
+def lineas_top_gap(diff: dict, etiqueta: str, top: int | None = None):
     """QUIÉN se come el gap: los sobrantes agrupados por concepto, de mayor a menor.
 
     Pedido dueña 2026-07-31: "necesitamos tener el mismo saldo en banco".
@@ -542,14 +552,18 @@ def lineas_top_gap(diff: dict, etiqueta: str, top: int = 40):
     filas.sort(key=lambda f: -abs(f[1]))
     yield _ln(f"  ── QUIÉN SE COME EL GAP DE {etiqueta} (impacto PC − dBase, "
               f"por concepto, {len(filas)} conceptos) ──")
-    yield _ln("     (la columna ACUM va sumando: cuando llega al gap, ya está todo "
-              "el dinero — lo de abajo se cancela entre sí)")
+    bruto = round(sum(abs(f[1]) for f in filas), 2)
+    yield _ln(f"     bruto (suma de valores absolutos) {bruto:>+13,.2f} — el neto es chico "
+              f"porque se compensan entre sí, pero cada línea es un movimiento real")
+    yield _ln("     (ACUM va sumando; NADA queda escondido: se listan los "
+              f"{len(filas)} conceptos)")
     acumulado = 0.0
-    for c, imp, n in filas[:top]:
+    mostrar = filas if top is None else filas[:top]
+    for c, imp, n in mostrar:
         acumulado = round(acumulado + imp, 2)
         yield _ln(f"    {imp:>+13,.2f}  acum {acumulado:>+13,.2f}  «{c}»  ({n} mov)")
-    resto = round(sum(f[1] for f in filas[top:]), 2)
-    if filas[top:]:
+    if top is not None and filas[top:]:
+        resto = round(sum(f[1] for f in filas[top:]), 2)
         yield _ln(f"    {resto:>+13,.2f}  acum {round(acumulado + resto, 2):>+13,.2f}  "
                   f"(los otros {len(filas) - top} conceptos)")
 
