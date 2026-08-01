@@ -345,6 +345,52 @@ def test_gstotal_no_se_arma_con_un_sumando_faltante():
     assert "gasto" not in viv
 
 
+def test_los_flujos_salen_de_los_valores_CRUDOS_no_de_la_pantalla():
+    """⭐ `costos` es para MOSTRAR: `cost_tej_kg` pasa por `_eff_rate(live,
+    meta)`, que cae a la META de iniciales cuando el kg del mes todavía es 0.
+
+    Guardar eso en el cierre escribe una meta como si fuera un kg real — y el
+    mes siguiente la relee como dato (INFORMES.PRG L291 `KKANT`). El snapshot
+    tiene que leer los valores crudos del PRG.
+    """
+    res = {
+        "flujos_prg": {"KM": 111.0, "VM": 222.0, "KK": 333.0, "VK": 444.0,
+                       "KTINT": 555.0, "ITIN": 666.0, "KR": 777.0,
+                       "GTIN": 888.0, "GS": 999.0},
+        # la pantalla dice otra cosa (meta de iniciales) — no debe ganar
+        "costos": [
+            {"label": "MAT.PR.", "kg": 999999.0, "us": 999999.0},
+            {"label": "TEJIDO", "kg": 999999.0, "us": 999999.0},
+            {"label": "COL.QUI.", "kg": 999999.0},
+            {"label": "GS.PROC.", "us": 999999.0},
+            {"label": "GASTOS", "us": 999999.0},
+        ],
+    }
+    viv = iq._flujos_vivos_del_mes({"resultados": res})
+
+    assert viv["kcom"] == 111.0 and viv["ucom"] == 222.0
+    assert viv["ktej"] == 333.0 and viv["utej"] == 444.0
+    assert viv["ktin"] == 555.0
+    assert viv["utin"] == 888.0
+    assert viv["gasto"] == 999.0
+    assert viv["gstotal"] == 444.0 + 888.0 + 999.0
+    assert 999999.0 not in viv.values()
+
+
+def test_sin_flujos_prg_se_cae_a_las_filas_de_pantalla():
+    """Compatibilidad: si el balance no expone `flujos_prg` (deploy viejo,
+    rama as-of), se sigue leyendo de `costos` como antes."""
+    res = {"costos": [
+        {"label": "TEJIDO", "kg": 300.0, "us": 100.0},
+        {"label": "GS.PROC.", "us": 200.0},
+        {"label": "GASTOS", "us": 50.0},
+    ]}
+    viv = iq._flujos_vivos_del_mes({"resultados": res})
+
+    assert viv["ktej"] == 300.0 and viv["utej"] == 100.0
+    assert viv["gstotal"] == 350.0
+
+
 def test_flujos_vivos_indexa_por_label_no_por_posicion():
     """Si mañana se agrega o reordena una fila de costos, el mapeo tiene que
     seguir apuntando al rubro correcto."""

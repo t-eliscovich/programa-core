@@ -5388,6 +5388,22 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
             "proy_kg": kgpro,
         },
         "cartera_dias": cart_dias,
+        # TMT 2026-08-01 — LOS FLUJOS DEL MES, CRUDOS, con los nombres del PRG.
+        # Las filas de `costos` de abajo son para la PANTALLA, y algunas pasan
+        # por `_eff_rate(live, meta)`, que cae a la META de iniciales cuando el
+        # dato del mes todavía es 0 (típico los primeros días). Eso está bien
+        # para mostrar — el template pinta un chip "meta" — pero NO para
+        # guardar el cierre: `historia.ktej` terminaría con una meta en vez de
+        # los kg realmente tejidos, y el mes siguiente la relee como si fuera
+        # un dato real (INFORMES.PRG L291 `KKANT`).
+        # El snapshot lee de acá; `costos` queda sólo de fallback.
+        "flujos_prg": {
+            "KM": KM, "VM": VM,              # materia prima comprada
+            "KK": KK, "VK": VK,              # tejeduría
+            "KTINT": KTINT, "ITIN": ITIN,    # colorantes / químicos
+            "KR": KR, "GTIN": GTIN,          # gastos de proceso (tintorería)
+            "GS": GS,                        # administración
+        },
         "costos": [
             # Cinco filas exactas del PRG INFORMES.PRG líneas 399-403.
             # Cada fila es un dict {label, kg, ukg, us, proy, src, ayuda}.
@@ -8744,14 +8760,24 @@ def _flujos_vivos_del_mes(bal: dict) -> dict:
         v = (por_label.get(label) or {}).get(campo)
         return None if v is None else float(v)
 
+    # TMT 2026-08-01 — preferir SIEMPRE los valores crudos del PRG. Las filas
+    # de `costos` son de pantalla y algunas caen a la META de iniciales vía
+    # `_eff_rate` (caso `cost_tej_kg`), así que guardarlas en el cierre podía
+    # dejar una meta escrita como si fuera un kg real.
+    prg = res.get("flujos_prg") or {}
+
+    def _prg(clave: str, label: str, campo: str):
+        v = prg.get(clave)
+        return float(v) if v is not None else _campo(label, campo)
+
     out: dict[str, float] = {}
-    ucom = _campo("MAT.PR.", "us")
-    kcom = _campo("MAT.PR.", "kg")
-    utej = _campo("TEJIDO", "us")
-    ktej = _campo("TEJIDO", "kg")
-    utin = _campo("GS.PROC.", "us")
-    ktin = _campo("COL.QUI.", "kg")
-    gasto = _campo("GASTOS", "us")
+    ucom = _prg("VM", "MAT.PR.", "us")
+    kcom = _prg("KM", "MAT.PR.", "kg")
+    utej = _prg("VK", "TEJIDO", "us")
+    ktej = _prg("KK", "TEJIDO", "kg")
+    utin = _prg("GTIN", "GS.PROC.", "us")
+    ktin = _prg("KTINT", "COL.QUI.", "kg")
+    gasto = _prg("GS", "GASTOS", "us")
 
     for k, v in (("ucom", ucom), ("kcom", kcom), ("utej", utej),
                  ("ktej", ktej), ("utin", utin), ("ktin", ktin),
