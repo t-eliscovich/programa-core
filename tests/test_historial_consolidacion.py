@@ -65,7 +65,13 @@ def test_consolidar_solo_toca_el_mes_actual(monkeypatch):
     )
     queries.consolidar_snapshots_mes_actual(conservar=2)
 
-    hoy = date.today()
+    # `today_ec()`, no `date.today()`: el server corre en UTC y Ecuador está a
+    # −5. Entre las 19:00 y la medianoche de Ecuador, UTC ya está en el día (y a
+    # fin de mes, en el MES) siguiente — este test fallaba todas las noches a
+    # partir de las 19:00 EC, y el 31 a la noche encima con un mes de
+    # diferencia. Es el mismo error que el test dice estar cuidando.
+    from filters import today_ec
+    hoy = today_ec()
     assert cap["params"]["a"] == hoy.year
     assert cap["params"]["m"] == hoy.month
     assert "EXTRACT(YEAR FROM fecha) = %(a)s" in cap["sql"]
