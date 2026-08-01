@@ -8659,6 +8659,84 @@ def informe_balance_as_of(as_of=None) -> dict:
     }
 
 
+def _flujos_vivos_del_mes(bal: dict) -> dict:
+    """Flujos del MES EN CURSO, leídos del balance VIVO y mapeados a las
+    columnas de `scintela.historia`.
+
+    TMT 2026-08-01 — dueña: *"¿y eso es toda la info que usa el dBase? ¿qué tal
+    gastos mes pasado? tenés que ir más a fondo"*. Tenía razón.
+
+    El problema: `bal["kg"]` NO son los flujos del mes en curso — se arman
+    (queries.py ~4350) leyendo `historia_ultimo_mes()`, que por definición es
+    el snapshot del mes ANTERIOR. Las dos rutinas de snapshot escribían esas
+    llaves tal cual, así que por la rama LIVE el cierre de un mes guardaba los
+    kg/US$ del mes anterior — plausibles, sin ninguna alarma. Y `gasto` /
+    `gstotal` ni siquiera existen en `componentes` por la rama live, así que
+    quedaban en **0**: por eso julio 2026 salió con los gastos VACÍOS en
+    /iniciales/comparativo, mientras enero–junio (que venían del dBase o de
+    anclas a mano) sí los tenían.
+
+    Esto importa porque el legacy RELEE del snapshot los valores del mes
+    anterior (`INFORMES.PRG` L283-290: `GSANT=GASTO`, `GTOTANT=GSTOTAL`,
+    `GKANT=UTEJ`, `GTANT=UTIN`, `KVANT/KTANT/KKANT`) para las columnas
+    comparativas — un cierre mal guardado queda mal para siempre.
+
+    El mapeo es el de `INFORMES.PRG` L1344-1348:
+
+        historia.ucom = VM (compras MP)       → fila MAT.PR.
+        historia.utej = VK (tejeduría)        → fila TEJIDO
+        historia.utin = GTIN (tintorería)     → fila GS.PROC.
+        historia.gasto = GS (administración)  → fila GASTOS
+        historia.gstotal = UTEJ+UTIN+GASTO
+        historia.stock = STOK = HI+TJ+PF
+        historia.kcom = KM · ktej = KK · ktin = KTINT
+
+    La identidad de `gstotal` está verificada contra el ancla del dBase del
+    30/06: 119.940 + 360.290 + 294.944 = **775.174**, al centavo.
+
+    Se indexa por LABEL, no por posición, y sólo se devuelven las llaves que
+    de verdad se pudieron leer — así, si el balance cambia de forma, el
+    snapshot cae al comportamiento anterior en vez de escribir ceros.
+    Por la rama AS-OF `bal` no trae `resultados` y esto devuelve `{}`.
+    """
+    res = (bal or {}).get("resultados") or {}
+    por_label: dict[str, dict] = {}
+    for fila in res.get("costos") or []:
+        lab = (fila or {}).get("label")
+        if lab:
+            por_label[lab] = fila
+
+    def _campo(label: str, campo: str):
+        v = (por_label.get(label) or {}).get(campo)
+        return None if v is None else float(v)
+
+    out: dict[str, float] = {}
+    ucom = _campo("MAT.PR.", "us")
+    kcom = _campo("MAT.PR.", "kg")
+    utej = _campo("TEJIDO", "us")
+    ktej = _campo("TEJIDO", "kg")
+    utin = _campo("GS.PROC.", "us")
+    ktin = _campo("COL.QUI.", "kg")
+    gasto = _campo("GASTOS", "us")
+
+    for k, v in (("ucom", ucom), ("kcom", kcom), ("utej", utej),
+                 ("ktej", ktej), ("utin", utin), ("ktin", ktin),
+                 ("gasto", gasto)):
+        if v is not None:
+            out[k] = v
+
+    # GSTOTAL = UTEJ + UTIN + GASTO (PRG L1348). Sólo si están los tres —
+    # una suma con un sumando faltante es peor que no escribir nada.
+    if utej is not None and utin is not None and gasto is not None:
+        out["gstotal"] = utej + utin + gasto
+
+    stock_kg = ((res.get("stock") or {}).get("total") or {}).get("kg")
+    if stock_kg is not None:
+        out["stock"] = float(stock_kg)
+
+    return out
+
+
 def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
                             forzar: bool = False,
                             dry_run: bool = False) -> dict:
@@ -8787,22 +8865,43 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
         or 0
     )
 
+    # ⭐ Flujos del MES EN CURSO desde el balance vivo (gasto/gstotal/utej/utin/
+    # ucom/kcom/ktej/ktin/stock). Por la rama AS-OF devuelve {} y manda `d`/`kg`
+    # como siempre. Ver el docstring de `_flujos_vivos_del_mes`.
+    _viv = _flujos_vivos_del_mes(bal)
+
+    # kvent/uvent del mes en curso — mismo cálculo que la columna "en vivo" del
+    # Historial (`_snap_live_mes_actual`), no el `kg[...]` del cierre anterior.
+    # Es el fix que la foto diaria ya tenía desde el 2026-07-14 y que este
+    # camino no había recibido.
+    _kvent_snap = float(kg.get("kvent") or 0)
+    _uvent_snap = float(kg.get("uvent") or 0)
+    if _viv:  # sólo la rama live
+        _lk = _snap_live_mes_actual(fecha_snap) or {}
+        if _lk:
+            _kvent_snap = float(_lk.get("kvent") or 0)
+            _uvent_snap = float(_lk.get("uvent") or 0)
+
     params = {
         "fecha": fecha_snap,
         # Stock KG y US$
-        "stock": _stock_kg_snap,
+        "stock": float(_viv.get("stock", _stock_kg_snap)),
         "ustock": _ustock_snap,
         "uqui": _uqui_snap,
         # Flujos del mes (KG)
-        "kcom": float(kg.get("kcom") or 0),
-        "ktej": float(kg.get("ktej") or 0),
-        "ktin": float(kg.get("ktin") or 0),
-        "kvent": float(kg.get("kvent") or 0),
+        "kcom": float(_viv.get("kcom", kg.get("kcom") or 0)),
+        "ktej": float(_viv.get("ktej", kg.get("ktej") or 0)),
+        "ktin": float(_viv.get("ktin", kg.get("ktin") or 0)),
+        "kvent": _kvent_snap,
         # Flujos del mes (US$)
-        "ucom": float(kg.get("ucom") or 0),
-        "utej": float(kg.get("utej") or 0),
-        "utin": float(kg.get("utin") or 0),
-        "uvent": float(kg.get("uvent") or 0),
+        "ucom": float(_viv.get("ucom", kg.get("ucom") or 0)),
+        "utej": float(_viv.get("utej", kg.get("utej") or 0)),
+        "utin": float(_viv.get("utin", kg.get("utin") or 0)),
+        "uvent": _uvent_snap,
+        # ⚠ `costo` (COST del PRG = KV*VTOT0+GPROM) NO tiene equivalente exacto
+        # en PC: `resultados.costo_total.us` aplica factor de desperdicio y es
+        # otra definición. Se deja como estaba antes que escribir un número con
+        # otro significado en una columna histórica.
         "costo": float(kg.get("costo_mes") or 0),
         # Resultados del mes.
         # 2026-06-04 fix — balance_components_as_of expone las claves
@@ -8810,8 +8909,10 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
         # `gastos_total`/`uret`. Antes estos .get() caían al default y
         # guardaban gasto=0 y RR=0 en cada snapshot del camino as_of
         # (backfill + cron nuevo).
-        "gasto": float(d.get("gasto") or 0),
-        "gstotal": float(d.get("gstotal") or d.get("gasto") or 0),
+        "gasto": float(_viv.get("gasto", d.get("gasto") or 0)),
+        "gstotal": float(
+            _viv.get("gstotal", d.get("gstotal") or d.get("gasto") or 0)
+        ),
         # Balance components. `salbanc` ya incluye la CAJA
         # (balance_components_as_of la suma) → cierra la identidad
         # ACTIVO − PASIVO = PATRIMONIO.
@@ -9100,13 +9201,24 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
     # TMT 2026-07-15: kg de stock de HOY (mismo panel STOCK que valúa ustock),
     # NO kg["stock_kg"] (= kg del cierre anterior) — así la fila de historia
     # tiene kg y $ coherentes (misma foto). Fallback al viejo si falta. [[coherencia]]
-    _stock_kg_hoy = float(((bal.get("stock") or {}).get("total") or {}).get("kg") or 0)
+    # TMT 2026-08-01 — `bal["stock"]` NO existe en el retorno de
+    # `informe_balance()` (el stock vive en `bal["resultados"]["stock"]`), así
+    # que este `_stock_kg_hoy` daba 0 SIEMPRE y caía al kg del cierre anterior
+    # — justo lo que el comentario de arriba dice estar evitando.
+    # `_flujos_vivos_del_mes` lo lee del lugar correcto.
+    _viv = _flujos_vivos_del_mes(bal)
+    _stock_kg_hoy = float(
+        _viv.get("stock")
+        or ((bal.get("stock") or {}).get("total") or {}).get("kg")
+        or 0
+    )
     row = {
         "fecha": hoy,
         "stock": _stock_kg_hoy or float(kg.get("stock_kg") or 0),
-        "kcom": float(kg.get("kcom") or 0),
-        "ktej": float(kg.get("ktej") or 0),
-        "ktin": float(kg.get("ktin") or 0),
+        # ⭐ Flujos del MES EN CURSO, no los del cierre anterior que trae `kg`.
+        "kcom": float(_viv.get("kcom", kg.get("kcom") or 0)),
+        "ktej": float(_viv.get("ktej", kg.get("ktej") or 0)),
+        "ktin": float(_viv.get("ktin", kg.get("ktin") or 0)),
         "ustock": float(bal.get("vsto") or _c("vsto")),
         # TMT 2026-07-15: uqui del top-level (químico final, POLI+ALG físico ~338k),
         # NO componentes["vqx"] (viejo ~279k) — igual que ustock/patrimonio/usuti,
@@ -9115,11 +9227,17 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
         "kvent": _kvent_live,
         "uvent": _uvent_live,
         "costo": float(kg.get("costo_mes") or 0),
-        "ucom": float(kg.get("ucom") or 0),
-        "utej": float(kg.get("utej") or 0),
-        "utin": float(kg.get("utin") or 0),
-        "gasto": float(comp.get("gasto") or 0),
-        "gstotal": float(comp.get("gstotal") or comp.get("gasto") or 0),
+        "ucom": float(_viv.get("ucom", kg.get("ucom") or 0)),
+        "utej": float(_viv.get("utej", kg.get("utej") or 0)),
+        "utin": float(_viv.get("utin", kg.get("utin") or 0)),
+        # ⭐ `componentes` NO tiene `gasto` ni `gstotal` por la rama live, así
+        # que esto escribía **0 todos los días** — y como el cierre del mes es
+        # la foto del último día, julio 2026 quedó SIN gastos en
+        # /iniciales/comparativo (enero–junio sí los tienen: venían del dBase).
+        "gasto": float(_viv.get("gasto", comp.get("gasto") or 0)),
+        "gstotal": float(
+            _viv.get("gstotal", comp.get("gstotal") or comp.get("gasto") or 0)
+        ),
         "banco": banco,
         "cart": _c("cart"),
         "deuda": _c("totp"),

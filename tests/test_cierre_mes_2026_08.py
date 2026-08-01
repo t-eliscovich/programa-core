@@ -240,6 +240,128 @@ def test_foto_de_cierre_por_la_rama_as_of_sigue_igual(monkeypatch):
     assert row["ustock"] == 8_400.0
 
 
+# ---------------------------------------------------------------------------
+# BUG 3 — los FLUJOS DEL MES (y sobre todo los GASTOS) salían del mes anterior
+# ---------------------------------------------------------------------------
+
+def _resultados_vivos() -> dict:
+    """Las 5 filas de costos del PRG, con los valores del ancla del dBase del
+    30/06/2026 (`ancla-dbase-30-06`): utej 119.940 · utin 360.290 ·
+    gasto 294.944 ⇒ gstotal 775.174."""
+    return {
+        "costos": [
+            {"label": "MAT.PR.", "kg": 259_866.0, "us": 772_762.0},
+            {"label": "TEJIDO", "kg": 306_315.0, "us": 119_940.0},
+            {"label": "COL.QUI.", "kg": 341_884.0, "us": 88_000.0},
+            {"label": "GS.PROC.", "kg": 300_000.0, "us": 360_290.0},
+            {"label": "GASTOS", "kg": None, "us": 294_944.0},
+        ],
+        "stock": {"total": {"kg": 2_231_673.0}},
+    }
+
+
+def test_el_cierre_guarda_los_GASTOS_del_mes_no_cero(monkeypatch):
+    """⭐ El bug que dejó a JULIO 2026 sin gastos en /iniciales/comparativo.
+
+    `componentes` de la rama LIVE no tiene ni `gasto` ni `gstotal` (tiene 20
+    claves y ninguna es esa), así que el mapeo caía al default 0. Enero–junio
+    sí tenían gastos porque venían del dBase o de anclas a mano; julio fue el
+    primer mes que fotografió PC y salió vacío.
+    """
+    _sin_foto_previa(monkeypatch)
+    comp = {"patr": 1_000.0, "usret": 0.0, "utilidad": 50.0}  # SIN gasto/gstotal
+    bal = _bal(comp, resultados=_resultados_vivos(), vsto=1.0, vqx=1.0)
+    monkeypatch.setattr(iq, "informe_balance", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "informe_balance_as_of", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "_snap_live_mes_actual", lambda *a, **k: {})
+
+    row = iq.crear_snapshot_historia(2026, 7, dry_run=True)["row"]
+
+    assert row["gasto"] == 294_944.0
+    # GSTOTAL = UTEJ + UTIN + GASTO (INFORMES.PRG L1348)
+    assert row["gstotal"] == 775_174.0
+    assert row["gstotal"] == row["utej"] + row["utin"] + row["gasto"]
+
+
+def test_el_cierre_guarda_los_flujos_del_mes_en_curso(monkeypatch):
+    """`bal["kg"]` viene de `historia_ultimo_mes()` = el mes ANTERIOR.
+
+    Escribir eso en el cierre es peor que un 0: es un número plausible que no
+    dispara ninguna alarma y que el legacy después relee como "mes anterior".
+    """
+    _sin_foto_previa(monkeypatch)
+    comp = {"patr": 1_000.0, "usret": 0.0, "utilidad": 50.0}
+    bal = _bal(comp, resultados=_resultados_vivos(), vsto=1.0, vqx=1.0)
+    # kg = los valores STALE del cierre anterior; no tienen que aparecer.
+    bal["kg"] = {"kcom": 111.0, "ktej": 222.0, "ktin": 333.0,
+                 "ucom": 444.0, "utej": 555.0, "utin": 666.0,
+                 "stock_kg": 777.0}
+    monkeypatch.setattr(iq, "informe_balance", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "informe_balance_as_of", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "_snap_live_mes_actual", lambda *a, **k: {})
+
+    row = iq.crear_snapshot_historia(2026, 7, dry_run=True)["row"]
+
+    assert row["ucom"] == 772_762.0 and row["kcom"] == 259_866.0   # MAT.PR.
+    assert row["utej"] == 119_940.0 and row["ktej"] == 306_315.0   # TEJIDO
+    assert row["utin"] == 360_290.0                                # GS.PROC.
+    assert row["ktin"] == 341_884.0                                # COL.QUI.
+    assert row["stock"] == 2_231_673.0
+    for stale in (111.0, 222.0, 333.0, 444.0, 555.0, 666.0, 777.0):
+        assert stale not in row.values()
+
+
+def test_sin_resultados_el_cierre_no_cambia_de_comportamiento(monkeypatch):
+    """Guarda: si el balance cambia de forma y no se puede leer `resultados`
+    (o es la rama AS-OF, que no lo trae), se vuelve al camino anterior — NUNCA
+    se escriben ceros nuevos."""
+    _sin_foto_previa(monkeypatch)
+    comp = {"patr": 1_000.0, "usret": 0.0, "utilidad": 50.0,
+            "gasto": 9_000.0, "gstotal": 12_000.0}
+    bal = _bal(comp)  # sin `resultados`
+    bal["kg"] = {"kcom": 111.0, "ucom": 444.0}
+    monkeypatch.setattr(iq, "informe_balance", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "informe_balance_as_of", lambda *a, **k: bal)
+
+    row = iq.crear_snapshot_historia(2026, 7, dry_run=True)["row"]
+
+    assert row["gasto"] == 9_000.0
+    assert row["gstotal"] == 12_000.0
+    assert row["kcom"] == 111.0 and row["ucom"] == 444.0
+
+
+def test_gstotal_no_se_arma_con_un_sumando_faltante():
+    """Una suma incompleta es peor que no escribir nada: se vería como un
+    total razonable y estaría corta justo en el rubro que faltó."""
+    parcial = {"costos": [
+        {"label": "TEJIDO", "us": 100.0},
+        {"label": "GS.PROC.", "us": 200.0},
+        # falta GASTOS
+    ]}
+    viv = iq._flujos_vivos_del_mes({"resultados": parcial})
+
+    assert viv["utej"] == 100.0 and viv["utin"] == 200.0
+    assert "gstotal" not in viv
+    assert "gasto" not in viv
+
+
+def test_flujos_vivos_indexa_por_label_no_por_posicion():
+    """Si mañana se agrega o reordena una fila de costos, el mapeo tiene que
+    seguir apuntando al rubro correcto."""
+    revuelto = {"costos": [
+        {"label": "GASTOS", "us": 294_944.0},
+        {"label": "NUEVA.FILA", "us": 1.0},
+        {"label": "TEJIDO", "kg": 306_315.0, "us": 119_940.0},
+        {"label": "GS.PROC.", "us": 360_290.0},
+    ]}
+    viv = iq._flujos_vivos_del_mes({"resultados": revuelto})
+
+    assert viv["gasto"] == 294_944.0
+    assert viv["utej"] == 119_940.0
+    assert viv["utin"] == 360_290.0
+    assert viv["gstotal"] == 775_174.0
+
+
 def test_dry_run_no_escribe(monkeypatch):
     _sin_foto_previa(monkeypatch)
     comp = {"patr": 1_000.0, "usret": 200.0, "utilidad": 50.0}
