@@ -257,16 +257,30 @@ def cerrar_mes_auto(fecha_cierre: date | None = None,
     id_iniciales_nuevo: int | None, razon: str}`.
     """
     fecha_cierre = fecha_cierre or today_ec()
-    mes_origen_num = fecha_cierre.month
-    anio_origen = fecha_cierre.year
 
-    # Mes destino = mes siguiente (rollover de diciembre→enero del año siguiente)
-    if mes_origen_num == 12:
-        mes_dest_num = 1
-        anio_dest = anio_origen + 1
+    # TMT 2026-08-01 ⭐ EL DESTINO ES EL MES EN CURSO, NO EL SIGUIENTE.
+    # El PRG hace `REPLA MES WITH CMONTH(DATE())` — o sea, al abrir el
+    # FoxPro el 1 de agosto crea la fila de AGOSTO con el cierre de julio.
+    # Acá el destino era `mes+1`, así que el hook de /informes/balance
+    # creaba la fila de SEPTIEMBRE el 1 de agosto: un mes futuro con el
+    # stock del mes que recién cerraba. Es exactamente la condición que el
+    # 2026-07-01 dejó al balance leyendo iniciales de un mes que todavía no
+    # había ocurrido (stock −2M, utilidad −1,69M fantasma; de ahí salió el
+    # fallback "nunca de un mes futuro" en iniciales_mes_actual).
+    # Con el destino corregido esta función coincide con
+    # `informes.queries.rollover_y_writeback_iniciales`, y las dos quedan
+    # idempotentes entre sí: la que llegue primero crea la fila del mes y
+    # la otra la encuentra y no hace nada.
+    mes_dest_num = fecha_cierre.month
+    anio_dest = fecha_cierre.year
+
+    # El ORIGEN es el mes anterior — de ahí se arrastra el stock de cierre.
+    if mes_dest_num == 1:
+        mes_origen_num = 12
+        anio_origen = anio_dest - 1
     else:
-        mes_dest_num = mes_origen_num + 1
-        anio_dest = anio_origen
+        mes_origen_num = mes_dest_num - 1
+        anio_origen = anio_dest
 
     mes_origen_clave = f"{anio_origen:04d}-{mes_origen_num:02d}"
     mes_dest_clave = f"{anio_dest:04d}-{mes_dest_num:02d}"
@@ -300,18 +314,18 @@ def cerrar_mes_auto(fecha_cierre: date | None = None,
             )
             ult_clave = "1900-01"
 
-        # Si ya cerramos hasta el mes destino, no hacer nada.
-        if ult_clave >= mes_dest_clave:
-            return {
-                "aplicado": False,
-                "mes_origen": mes_origen_clave,
-                "mes_destino": mes_dest_clave,
-                "id_iniciales_nuevo": None,
-                "razon": (f"Ya se cerró hasta {ult_clave} ≥ destino "
-                          f"{mes_dest_clave}. Nada que hacer."),
-            }
+        # TMT 2026-08-01 — el marker `cierre_mes_ult_fecha` YA NO BLOQUEA.
+        # Antes cortaba acá con `ult_clave >= mes_dest_clave`, y eso escondía
+        # el caso real: el marker quedó en '2026-08' cuando la versión vieja
+        # (destino = mes+1) creó la fila de agosto el 1 de julio, pero después
+        # un sync del dBase TRUNCÓ `scintela.iniciales` (INICIALE.DBF no tiene
+        # delete_where) y se la llevó puesta. Con el marker adelantado y la
+        # fila borrada, el mes en curso se quedaba SIN iniciales y nadie
+        # avisaba. El invariante verdadero es "¿existe la fila del mes?",
+        # que es lo que se chequea abajo; el marker queda sólo como rastro.
+        # [[feedback_mostrar_lo_guardado]]
 
-        # Idempotencia adicional: si ya hay fila para (yy_dest, mes_dest_num)
+        # Idempotencia: si ya hay fila para (yy_dest, mes_dest_num)
         # no insertar. Sólo avanzamos el marker.
         ya_existe = db.fetch_one(
             """

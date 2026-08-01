@@ -674,12 +674,73 @@ def simulacro_cierre():
     finally:
         reset_today_override(token)
 
+    # ------------------------------------------------------------------
+    # TMT 2026-08-01 — DRY-RUN DE LA FOTO DE CIERRE.
+    # Corre FUERA del override del reloj, a propósito: lo que se quiere ver
+    # es qué guardaría la foto **ahora**, con el balance vivo, no con una
+    # fecha inventada. Muestra la fila que escribiría al lado de la que ya
+    # está guardada, para mirar el Δ ANTES de pisar nada.
+    # ------------------------------------------------------------------
+    import calendar as _cal
+
+    from modules.informes.queries import crear_snapshot_historia
+
+    _hoy_real = today_ec()
+    _ult_dia_hoy = _cal.monthrange(_hoy_real.year, _hoy_real.month)[1]
+    if _hoy_real.day == _ult_dia_hoy:
+        _a_cerrar = (_hoy_real.year, _hoy_real.month)   # hoy termina el mes
+    elif _hoy_real.month == 1:
+        _a_cerrar = (_hoy_real.year - 1, 12)
+    else:
+        _a_cerrar = (_hoy_real.year, _hoy_real.month - 1)
+
+    try:
+        foto = crear_snapshot_historia(_a_cerrar[0], _a_cerrar[1], dry_run=True)
+    except Exception as e:  # el dry-run nunca debe tumbar el simulacro
+        foto = {"error": f"{type(e).__name__}: {e}"}
+
+    guardada = None
+    if not foto.get("error"):
+        guardada = db.fetch_one(
+            """
+            SELECT id_historia, fecha, fecha_crea, usuario_crea,
+                   patrimonio, usret, usuti
+              FROM scintela.historia
+             WHERE fecha = %s
+             ORDER BY id_historia DESC LIMIT 1
+            """,
+            (foto.get("fecha_cierre"),),
+        )
+
+    _row = (foto.get("row") or {}) if not foto.get("error") else {}
+    delta = None
+    if guardada and _row:
+        delta = {
+            k: round(float(_row.get(k) or 0) - float(guardada.get(k) or 0), 2)
+            for k in ("patrimonio", "usret", "usuti")
+        }
+
     apertura_ok = bool(hi0 and pf0)  # hay stock de apertura (no 0)
     return jsonify({
         "ok": apertura_ok and (roll.get("rollover") or roll.get("writeback")),
         "simulando_fecha": fstr,
         "today_ec_visto_por_el_codigo": visto,
         "rollover_dry_run": roll,
+        "iniciales_cerrar_mes_auto_crearia": f"{fsim.year:04d}-{fsim.month:02d}",
+        "foto_de_cierre_dry_run": {
+            "mes_que_cierra": f"{_a_cerrar[0]:04d}-{_a_cerrar[1]:02d}",
+            "guardada_hoy": ({k: str(v) for k, v in guardada.items()}
+                             if guardada else None),
+            "escribiria": {k: _row.get(k) for k in
+                           ("fecha", "patrimonio", "usret", "usuti",
+                            "banco", "cart", "deuda", "ustock", "uqui")},
+            "delta_vs_guardada": delta,
+            "error": foto.get("error"),
+            "nota": ("`patrimonio` va NETO de retiros (patr − usret), igual que "
+                     "el dBase (REPLA PATRIMONIO WITH PATR-URET) y que la foto "
+                     "diaria. El Δ es lo que se corrige al rehacer la foto — "
+                     "acá no se escribió nada."),
+        },
         "apertura_que_usaria_el_balance": {
             "hilado": hi0, "tejido": tj0, "terminado": pf0, "vq": vq0, "um": um0,
             "nota": "= cierre del mes anterior (mesnum-1). Si es 0, se rompería.",

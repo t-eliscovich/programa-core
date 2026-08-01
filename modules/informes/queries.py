@@ -8659,8 +8659,23 @@ def informe_balance_as_of(as_of=None) -> dict:
     }
 
 
-def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
+def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
+                            forzar: bool = False,
+                            dry_run: bool = False) -> dict:
     """Crea un snapshot mensual en scintela.historia para (anio, mes).
+
+    TMT 2026-08-01 — `forzar=True` REHACE la foto de cierre: borra la(s)
+    fila(s) que ya haya con la fecha exacta del cierre y la vuelve a tomar
+    con los datos de ahora. Es el equivalente del FoxPro: en INFORMES.PRG
+    (PROCEDURE HISTORIA) cada vez que la dueña aprieta "N" se graba la foto
+    del mes y el dedup final —
+        `DELETE ALL FOR DAY(FECHA)<=DDD .AND. RECNO()<RECC()`
+    dentro del mismo (año, mes) — deja UNA sola fila por mes: **la última**.
+    Sin esto, la primera foto del último día del mes (típicamente la foto
+    diaria, tomada a media tarde) congelaba el cierre y todo lo que se
+    cargaba después de esa hora se perdía del PATANT del mes siguiente.
+
+    `dry_run=True` calcula la fila y la devuelve en `row` SIN escribir nada.
 
     TMT 2026-05-18 — Pedido dueña: necesitamos snapshots automáticos del
     cierre mensual para que `/informes/fuentes-y-usos` tenga data.
@@ -8703,7 +8718,7 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
             )
         )
 
-    if _existe_cierre():
+    if _existe_cierre() and not forzar:
         return {
             "aplicado": False,
             "anio": anio,
@@ -8735,13 +8750,102 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
     kg = bal.get("kg", {})
     stock_sub = bal.get("stock_subpanels", {})
 
+    # TMT 2026-08-01 — RETIROS DEL MES. Las dos ramas del balance nombran
+    # esto distinto: la LIVE (`informe_balance`) lo expone como `uret` y la
+    # AS-OF (`balance_components_as_of`) como `usret`/`retiro`. El código
+    # viejo sólo leía `usret`, así que por la rama live guardaba **0** en las
+    # columnas `retiro`/`usret` del cierre. Se lee una sola vez, acá.
+    _uret_snap = float(
+        d.get("usret")
+        if d.get("usret") is not None
+        else (d.get("uret") if d.get("uret") is not None else d.get("retiro") or 0)
+        or 0
+    )
+
+    params = {
+        "fecha": fecha_snap,
+        # Stock KG y US$
+        "stock": float(kg.get("stock_kg") or kg.get("stock_kg_live") or 0),
+        "ustock": float(stock_sub.get("total_us") or 0),
+        "uqui": float(d.get("vqx") or 0),
+        # Flujos del mes (KG)
+        "kcom": float(kg.get("kcom") or 0),
+        "ktej": float(kg.get("ktej") or 0),
+        "ktin": float(kg.get("ktin") or 0),
+        "kvent": float(kg.get("kvent") or 0),
+        # Flujos del mes (US$)
+        "ucom": float(kg.get("ucom") or 0),
+        "utej": float(kg.get("utej") or 0),
+        "utin": float(kg.get("utin") or 0),
+        "uvent": float(kg.get("uvent") or 0),
+        "costo": float(kg.get("costo_mes") or 0),
+        # Resultados del mes.
+        # 2026-06-04 fix — balance_components_as_of expone las claves
+        # `gasto`/`gstotal`/`usret`/`retiro`, NO `gastos_mes`/
+        # `gastos_total`/`uret`. Antes estos .get() caían al default y
+        # guardaban gasto=0 y RR=0 en cada snapshot del camino as_of
+        # (backfill + cron nuevo).
+        "gasto": float(d.get("gasto") or 0),
+        "gstotal": float(d.get("gstotal") or d.get("gasto") or 0),
+        # Balance components. `salbanc` ya incluye la CAJA
+        # (balance_components_as_of la suma) → cierra la identidad
+        # ACTIVO − PASIVO = PATRIMONIO.
+        "banco": float(d.get("salbanc") or 0),
+        "cart": float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
+        "deuda": float(d.get("totp") or 0),
+        "retiro": _uret_snap,
+        # TMT 2026-08-01 ⭐ PATRIMONIO **NETO DE RETIROS**, igual que el dBase
+        # (`REPLA PATRIMONIO WITH PATR-URET`, INFORMES.PRG PROCEDURE HISTORIA),
+        # que `crear_snapshot_diario` (2026-07-06) y que `calcular_kpis`.
+        # Hasta hoy este cierre guardaba el patrimonio BRUTO: el cierre de un
+        # mes con retiros dejaba el PATANT inflado por ese monto y la utilidad
+        # del mes siguiente arrancaba subestimada exactamente en los retiros
+        # (julio 2026: $211.400). Es la razón por la que cada mes había que
+        # anclar el cierre a mano (`restore_205`, `ancla-dbase-30-06`).
+        # [[feedback_coherencia_numeros_una_fuente]]
+        "patrimonio": float(d.get("patr") or 0) - _uret_snap,
+        "anticipos": float(d.get("antic") or 0),
+        "dolar": 0.0,  # no usado en PC
+        "maquinaria": float(d.get("umaq") or 0),
+        "realty": float(d.get("uact") or 0),
+        "usret": _uret_snap,
+        "usuti": float(d.get("utilidad") or 0),
+        "usuario": usuario[:50],
+    }
+
+    if dry_run:
+        return {
+            "aplicado": False,
+            "dry_run": True,
+            "anio": anio,
+            "mes": mes,
+            "fecha_cierre": str(fecha_snap),
+            "ya_existe": _existe_cierre(),
+            "id_historia": None,
+            "row": {k: (str(v) if k in ("fecha", "usuario") else v)
+                    for k, v in params.items()},
+            "razon": "dry-run: no se escribió nada.",
+        }
+
     with db.tx() as conn:
         db.execute(
             "SELECT pg_advisory_xact_lock(hashtext('snapshot_historia'))",
             conn=conn,
         )
+        # `forzar` = rehacer la foto: borrar la del día de cierre y volver a
+        # tomarla (mirror del dedup del FoxPro — gana la última del mes).
+        borradas = 0
+        if forzar:
+            borradas = int(
+                db.execute(
+                    "DELETE FROM scintela.historia WHERE fecha = %s",
+                    (fecha_snap,),
+                    conn=conn,
+                )
+                or 0
+            )
         # Re-check después del lock (por fecha de cierre exacta).
-        if _existe_cierre():
+        if _existe_cierre() and not forzar:
             return {
                 "aplicado": False,
                 "anio": anio,
@@ -8768,47 +8872,7 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
                     CURRENT_TIMESTAMP, %(usuario)s)
             RETURNING id_historia
             """,
-            {
-                "fecha": fecha_snap,
-                # Stock KG y US$
-                "stock": float(kg.get("stock_kg") or kg.get("stock_kg_live") or 0),
-                "ustock": float(stock_sub.get("total_us") or 0),
-                "uqui": float(d.get("vqx") or 0),
-                # Flujos del mes (KG)
-                "kcom": float(kg.get("kcom") or 0),
-                "ktej": float(kg.get("ktej") or 0),
-                "ktin": float(kg.get("ktin") or 0),
-                "kvent": float(kg.get("kvent") or 0),
-                # Flujos del mes (US$)
-                "ucom": float(kg.get("ucom") or 0),
-                "utej": float(kg.get("utej") or 0),
-                "utin": float(kg.get("utin") or 0),
-                "uvent": float(kg.get("uvent") or 0),
-                "costo": float(kg.get("costo_mes") or 0),
-                # Resultados del mes.
-                # 2026-06-04 fix — balance_components_as_of expone las claves
-                # `gasto`/`gstotal`/`usret`/`retiro`, NO `gastos_mes`/
-                # `gastos_total`/`uret`. Antes estos .get() caían al default y
-                # guardaban gasto=0 y RR=0 en cada snapshot del camino as_of
-                # (backfill + cron nuevo).
-                "gasto": float(d.get("gasto") or 0),
-                "gstotal": float(d.get("gstotal") or d.get("gasto") or 0),
-                # Balance components. `salbanc` ya incluye la CAJA
-                # (balance_components_as_of la suma) → cierra la identidad
-                # ACTIVO − PASIVO = PATRIMONIO.
-                "banco": float(d.get("salbanc") or 0),
-                "cart": float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
-                "deuda": float(d.get("totp") or 0),
-                "retiro": float(d.get("retiro", d.get("usret")) or 0),
-                "patrimonio": float(d.get("patr") or 0),
-                "anticipos": float(d.get("antic") or 0),
-                "dolar": 0.0,  # no usado en PC
-                "maquinaria": float(d.get("umaq") or 0),
-                "realty": float(d.get("uact") or 0),
-                "usret": float(d.get("usret") or 0),
-                "usuti": float(d.get("utilidad") or 0),
-                "usuario": usuario[:50],
-            },
+            params,
             conn=conn,
         )
 
@@ -8833,7 +8897,16 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
         "anio": anio,
         "mes": mes,
         "id_historia": (res or {}).get("id_historia"),
-        "razon": f"Snapshot creado para {periodo_clave}.",
+        "borradas": borradas,
+        "patrimonio": params["patrimonio"],
+        "usret": params["usret"],
+        "usuti": params["usuti"],
+        "razon": (
+            f"Foto de cierre rehecha para {periodo_clave} "
+            f"(pisó {borradas} anterior{'es' if borradas != 1 else ''})."
+            if borradas
+            else f"Snapshot creado para {periodo_clave}."
+        ),
     }
 
 
