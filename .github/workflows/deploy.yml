@@ -107,9 +107,16 @@ jobs:
           #    el código nuevo NUNCA se carga (deploys silenciosamente no-op).
           Stop-ScheduledTask -TaskName ProgramaCoreApp -ErrorAction SilentlyContinue
           Start-Sleep 2
-          Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          # TMT 2026-07-31: matar TAMBIÉN por PUERTO. Verificado que el deploy subía
+          # TMT 2026-08-01: SACADO el kill por NOMBRE de proceso
+          #   Get-Process python  | Stop-Process -Force
+          #   Get-Process pythonw | Stop-Process -Force
+          # `Get-Process python` agarra TODOS los python.exe del server, no sólo
+          # el nuestro: formulas_app corre Waitress en el 5001 con el mismo
+          # ejecutable. Cada deploy de Programa Core la mataba de paso — 57
+          # caídas el 31/07, siempre exit -1 y siempre 2s después de esta línea.
+          # No se notaba porque launch_waitress.ps1 la relanza a los 5s.
+          # El kill por PUERTO de abajo resuelve el huérfano sin daño colateral.
+          # TMT 2026-07-31: matar por PUERTO. Verificado que el deploy subía
           # los archivos pero el proceso Python NO se reiniciaba (un huérfano/detachado
           # seguía tomando el 5002 y el Get-Process python no lo agarraba): las
           # PLANTILLAS cambiaban (se leen del disco por request) pero la LÓGICA Python
