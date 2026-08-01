@@ -61,6 +61,40 @@ NO_BACKFILL_WHERE = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
 CORTE_TINTURA = date(2026, 7, 1)
 
 # ---------------------------------------------------------------------------
+# TMT 2026-08-01 ⭐ UNA FILA POR MES — el invariante de `scintela.historia`.
+#
+# En el legacy, HISTORIA.DBF tiene **exactamente una fila por mes**: el
+# PROCEDURE HISTORIA graba la foto y después deduplica
+# (`INFORMES.PRG` L1543-1545):
+#
+#     SET FILT TO YEAR(FECHA)=YYY .AND. MONTH(FECHA)=MMM
+#     DELE ALL FOR DAY(FECHA)<=DDD .AND. RECNO()<RECC()
+#
+# Sobre ese invariante están escritas las consultas del PRG, que suman filas
+# como si sumaran meses (`VENTANUAL = SUM(UVENT)` de las últimas 12, L293).
+#
+# PC ROMPIÓ ESE INVARIANTE al introducir la FOTO DIARIA: desde el 2026-07-31
+# `consolidar_snapshots_mes_actual` excluye a propósito las filas
+# `snapshot-diario` del borrado, así que a partir de ahora se acumula ~una
+# fila por DÍA. Y las columnas de `historia` (uvent, kvent, gasto, usuti…)
+# son TOTALES DEL MES, no incrementos diarios: sumarlas multiplica.
+#
+# Consecuencias que esto evitaba tapar: "Real vs Meta" mostrando los gastos
+# del mes multiplicados por la cantidad de fotos, las ventas y la utilidad
+# acumuladas del año infladas, y los DÍAS DE CARTERA (CART/VENTANUAL*360)
+# calculados sobre los últimos 12 DÍAS en vez de los últimos 12 MESES.
+#
+# Toda lectura de "el valor del mes X" tiene que pasar por acá: una fila por
+# (año, mes), la MÁS RECIENTE — que es justo lo que deja el dedup del FoxPro.
+# ---------------------------------------------------------------------------
+CIERRES_MENSUALES_SQL = """
+    SELECT DISTINCT ON (EXTRACT(YEAR FROM fecha), EXTRACT(MONTH FROM fecha)) *
+      FROM scintela.historia
+     ORDER BY EXTRACT(YEAR FROM fecha), EXTRACT(MONTH FROM fecha),
+              fecha DESC, id_historia DESC
+"""
+
+# ---------------------------------------------------------------------------
 # Constantes del PRG legacy (INFORMES.PRG líneas 5-6)
 # ---------------------------------------------------------------------------
 
@@ -3137,10 +3171,10 @@ def ventas_anio_en_curso() -> float:
             db.fetch_one(
                 """
             SELECT COALESCE(SUM(uvent), 0) AS total
-              FROM scintela.historia
-             WHERE EXTRACT(YEAR FROM fecha)  = %s
-               AND EXTRACT(MONTH FROM fecha) < %s
-            """,
+              FROM (%s) h
+             WHERE EXTRACT(YEAR FROM h.fecha)  = %%s
+               AND EXTRACT(MONTH FROM h.fecha) < %%s
+            """ % CIERRES_MENSUALES_SQL,
                 (yy, mm),
             )
             or {}
@@ -3195,10 +3229,10 @@ def utilidades_anio_en_curso(utilidad_mes_live: float = 0.0) -> float:
             db.fetch_one(
                 """
             SELECT COALESCE(SUM(usuti), 0) AS total
-              FROM scintela.historia
-             WHERE EXTRACT(YEAR FROM fecha)  = %s
-               AND EXTRACT(MONTH FROM fecha) < %s
-            """,
+              FROM (%s) h
+             WHERE EXTRACT(YEAR FROM h.fecha)  = %%s
+               AND EXTRACT(MONTH FROM h.fecha) < %%s
+            """ % CIERRES_MENSUALES_SQL,
                 (yy, mm),
             )
             or {}
@@ -3222,11 +3256,11 @@ def venta_anual_kg_y_us() -> dict:
           COALESCE(SUM(kvent), 0) AS kvent_anual
         FROM (
           SELECT uvent, kvent
-          FROM scintela.historia
-          ORDER BY fecha DESC
+          FROM (%s) h
+          ORDER BY h.fecha DESC
           LIMIT 12
         ) sub
-        """
+        """ % CIERRES_MENSUALES_SQL
     )
     return {
         "uvent_anual": float((row or {}).get("uvent_anual") or 0),
@@ -6466,14 +6500,14 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
     rows_hist = (
         db.fetch_all(
             """
-        SELECT EXTRACT(MONTH FROM fecha)::int AS mes_num,
-               COALESCE(SUM(uvent), 0) AS importe,
-               COALESCE(SUM(kvent), 0) AS kg
-          FROM scintela.historia
-         WHERE EXTRACT(YEAR FROM fecha)  = %s
-           AND EXTRACT(MONTH FROM fecha) < %s
-         GROUP BY EXTRACT(MONTH FROM fecha)
-        """,
+        SELECT EXTRACT(MONTH FROM h.fecha)::int AS mes_num,
+               COALESCE(SUM(h.uvent), 0) AS importe,
+               COALESCE(SUM(h.kvent), 0) AS kg
+          FROM (%s) h
+         WHERE EXTRACT(YEAR FROM h.fecha)  = %%s
+           AND EXTRACT(MONTH FROM h.fecha) < %%s
+         GROUP BY EXTRACT(MONTH FROM h.fecha)
+        """ % CIERRES_MENSUALES_SQL,
             (yy, mm),
         )
         or []

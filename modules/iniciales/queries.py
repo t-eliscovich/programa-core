@@ -109,14 +109,29 @@ def comparativo_anio(yy: int) -> list[dict]:
     return db.fetch_all(
         """
         WITH meses(mesnum) AS (SELECT generate_series(1, 12)),
-             reales AS (
-                 SELECT EXTRACT(MONTH FROM fecha)::int AS mesnum,
-                        COALESCE(SUM(kvent), 0) AS kvent_real,
-                        COALESCE(SUM(uvent), 0) AS uvent_real,
-                        COALESCE(SUM(gasto), 0) AS gasto_real
+             -- TMT 2026-08-01 ⭐ UNA FILA POR MES: la MÁS RECIENTE.
+             -- `historia.kvent/uvent/gasto` son TOTALES DEL MES, no
+             -- incrementos diarios. Desde que existe la FOTO DIARIA la tabla
+             -- acumula ~una fila por día, así que el `SUM(...) GROUP BY mes`
+             -- que había acá multiplicaba los gastos y las ventas del mes por
+             -- la cantidad de fotos. Con una sola foto por mes no se notaba;
+             -- con las diarias acumulándose, esta pantalla era la primera en
+             -- mentir. Es el mismo dedup que hace el FoxPro
+             -- (INFORMES.PRG L1543-1545: dentro del mes queda la última).
+             cierres AS (
+                 SELECT DISTINCT ON (EXTRACT(MONTH FROM fecha))
+                        EXTRACT(MONTH FROM fecha)::int AS mesnum,
+                        kvent, uvent, gasto
                  FROM scintela.historia
                  WHERE EXTRACT(YEAR FROM fecha)::int = %(yy)s
-                 GROUP BY 1
+                 ORDER BY EXTRACT(MONTH FROM fecha), fecha DESC, id_historia DESC
+             ),
+             reales AS (
+                 SELECT mesnum,
+                        COALESCE(kvent, 0) AS kvent_real,
+                        COALESCE(uvent, 0) AS uvent_real,
+                        COALESCE(gasto, 0) AS gasto_real
+                 FROM cierres
              ),
              iniciales_dedupe AS (
                  SELECT DISTINCT ON (mesnum)

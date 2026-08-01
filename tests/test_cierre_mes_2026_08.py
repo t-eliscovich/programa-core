@@ -362,6 +362,79 @@ def test_flujos_vivos_indexa_por_label_no_por_posicion():
     assert viv["gstotal"] == 775_174.0
 
 
+# ---------------------------------------------------------------------------
+# BUG 4 — `scintela.historia` dejó de tener UNA FILA POR MES
+# ---------------------------------------------------------------------------
+
+def test_comparativo_anio_toma_una_foto_por_mes_no_la_suma(monkeypatch):
+    """⭐ `historia.kvent/uvent/gasto` son TOTALES DEL MES, no incrementos.
+
+    El legacy garantiza una fila por mes con el dedup de INFORMES.PRG
+    L1543-1545. PC rompió ese invariante con la FOTO DIARIA (que desde el
+    2026-07-31 queda excluida a propósito de la consolidación), así que la
+    tabla acumula ~una fila por día. El `SUM(...) GROUP BY mes` que había acá
+    multiplicaba los gastos y las ventas del mes por la cantidad de fotos.
+    """
+    from modules.iniciales import queries as _qi
+
+    cap: dict = {}
+    monkeypatch.setattr(
+        _qi.db, "fetch_all",
+        lambda sql, params=None: cap.update(sql=sql) or [],
+    )
+    _qi.comparativo_anio(2026)
+
+    sql = " ".join(cap["sql"].split())
+    assert "DISTINCT ON (EXTRACT(MONTH FROM fecha))" in sql
+    assert "ORDER BY EXTRACT(MONTH FROM fecha), fecha DESC" in sql
+    # y NINGUNA de las tres columnas del mes se suma
+    for col in ("kvent", "uvent", "gasto"):
+        assert f"SUM({col})" not in sql
+
+
+def test_ventanual_son_los_ultimos_12_MESES_no_las_ultimas_12_filas(monkeypatch):
+    """Días de cartera = CART/VENTANUAL*360 (PRG L441).
+
+    `VENTANUAL` es la suma de las últimas 12 FILAS de historia — que en el
+    legacy son 12 meses. Con fotos diarias, `LIMIT 12` sobre la tabla cruda
+    son los últimos 12 DÍAS y los días de cartera salen por las nubes.
+    """
+    cap: dict = {}
+    monkeypatch.setattr(
+        iq.db, "fetch_one",
+        lambda sql, params=None: cap.update(sql=sql) or {},
+    )
+    iq.venta_anual_kg_y_us()
+
+    sql = " ".join(cap["sql"].split())
+    assert "DISTINCT ON" in sql
+    assert "LIMIT 12" in sql
+
+
+def test_los_acumulados_del_anio_no_suman_fotos_diarias(monkeypatch):
+    """Ventas y utilidad acumuladas de los meses ya cerrados."""
+    vistos: list[str] = []
+    monkeypatch.setattr(
+        iq.db, "fetch_one",
+        lambda sql, params=None: vistos.append(" ".join(sql.split())) or {},
+    )
+    iq.utilidades_anio_en_curso(0)
+    iq.ventas_anio_en_curso()
+
+    hist = [s for s in vistos if "scintela.historia" in s]
+    assert len(hist) >= 2, hist
+    for s in hist:
+        assert "DISTINCT ON" in s, s
+
+
+def test_el_sql_de_cierres_mensuales_ordena_por_la_mas_reciente():
+    """Dentro del mes gana la ÚLTIMA foto — igual que el dedup del FoxPro,
+    que borra `DAY(FECHA)<=DDD .AND. RECNO()<RECC()` y deja la de arriba."""
+    sql = " ".join(iq.CIERRES_MENSUALES_SQL.split())
+    assert sql.startswith("SELECT DISTINCT ON (EXTRACT(YEAR FROM fecha), EXTRACT(MONTH FROM fecha))")
+    assert "fecha DESC, id_historia DESC" in sql
+
+
 def test_dry_run_no_escribe(monkeypatch):
     _sin_foto_previa(monkeypatch)
     comp = {"patr": 1_000.0, "usret": 200.0, "utilidad": 50.0}
