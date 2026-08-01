@@ -603,6 +603,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(debug_maduracion_import_bp)
 
+    # /admin/importaciones-sin-plata — las que llegaron y quedaron sin toda su
+    # plata cargada. ?correr=1 fuerza la revisión sin esperar el ciclo de 6 h.
+    from modules.admin_dbase.import_sin_plata_view import (
+        bp as import_sin_plata_bp,
+    )
+
+    app.register_blueprint(import_sin_plata_bp)
+
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
     from modules.admin_dbase.health_audit_view import bp as health_audit_bp

@@ -217,3 +217,14 @@ def test_la_migracion_borra_los_avisos_de_esta_clave():
     sql = Path("migrations/0151_borrar_avisos_import_sin_plata_falsos.sql").read_text()
     assert "DELETE FROM scintela.aviso" in sql
     assert "import-sin-plata:%" in sql
+
+
+def test_el_endpoint_esta_registrado():
+    import inspect
+
+    import app as _app
+    src = inspect.getsource(_app)
+    assert "import_sin_plata_view" in src
+    assert "/admin/importaciones-sin-plata" in inspect.getsource(
+        __import__("modules.admin_dbase.import_sin_plata_view",
+                   fromlist=["bp"]))
