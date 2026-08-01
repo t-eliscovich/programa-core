@@ -230,6 +230,15 @@ def test_forzar_rehace_la_foto_pisando_la_anterior(monkeypatch):
     assert sin_forzar["aplicado"] is False
     assert "Ya existe snapshot de cierre" in sin_forzar["razon"]
 
+    # …pero el DRY-RUN sí calcula igual: con una foto ya guardada, lo que se
+    # quiere ver es cuánto cambiaría rehacerla. Si el dry-run se cortara acá,
+    # el simulacro mostraría todo en null y parecería que no hay nada que
+    # corregir. [[feedback_mostrar_lo_guardado]]
+    seco = iq.crear_snapshot_historia(2026, 7, dry_run=True)
+    assert seco["dry_run"] is True
+    assert seco["ya_existe"] is True
+    assert seco["row"]["patrimonio"] == 800.0
+
     sqls: list[str] = []
 
     def fake_execute(sql, params=None, conn=None):

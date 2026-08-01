@@ -8718,7 +8718,9 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
             )
         )
 
-    if _existe_cierre() and not forzar:
+    # El dry-run NO corta acá: justamente lo que se quiere ver cuando ya hay
+    # foto guardada es CUÁNTO cambiaría rehacerla.
+    if _existe_cierre() and not forzar and not dry_run:
         return {
             "aplicado": False,
             "anio": anio,
