@@ -8760,24 +8760,55 @@ def _flujos_vivos_del_mes(bal: dict) -> dict:
         v = (por_label.get(label) or {}).get(campo)
         return None if v is None else float(v)
 
-    # TMT 2026-08-01 — preferir SIEMPRE los valores crudos del PRG. Las filas
-    # de `costos` son de pantalla y algunas caen a la META de iniciales vía
-    # `_eff_rate` (caso `cost_tej_kg`), así que guardarlas en el cierre podía
-    # dejar una meta escrita como si fuera un kg real.
+    # ⭐ TMT 2026-08-01 (dueña: *"pero tiene que guardar todo lo mismo, no
+    # distintos números"*). SE GUARDA LO QUE MUESTRA LA PANTALLA.
+    #
+    # En el balance conviven DOS cálculos de los costos del mes:
+    #
+    #   `resultados.tabla`  → es lo que el template RENDERIZA (balance.html
+    #                         L315 `{% for row in r.tabla %}`). Es la versión
+    #                         acordada con la dueña: Tejeduría suma V1+V2+V3
+    #                         para dar el MISMO total que "Producción tejido"
+    #                         del Flujo (2026-07-27, *"unificar todo en costo
+    #                         total"*), los kg salen del cuadro MOVIMIENTOS de
+    #                         Asinfo, y Materia Prima usa la tarifa de Hilado
+    #                         (spec 2026-07-12).
+    #   `resultados.costos` → la réplica literal del PRG (`VK` sin V1+V2+V3,
+    #                         kg de compras tipo K). Quedó atrás y NO se
+    #                         muestra en ninguna pantalla.
+    #
+    # El cierre leía `costos`, así que guardaba números que no aparecían en
+    # ningún lado: tejeduría 93.176 guardado contra 139.004 en pantalla, y
+    # materia prima 1.939.966 contra 1.003.590 — verificado en el MISMO
+    # instante (mismo patrimonio al centavo, no era drift).
+    #
+    # Ahora manda `tabla`. `costos`/`flujos_prg` quedan de fallback para la
+    # rama as-of, que no arma la tabla. [[feedback_coherencia_numeros_una_fuente]]
+    por_tabla: dict[str, dict] = {}
+    for fila in res.get("tabla") or []:
+        lab = (fila or {}).get("label")
+        if lab:
+            por_tabla[lab] = fila
+
     prg = res.get("flujos_prg") or {}
 
-    def _prg(clave: str, label: str, campo: str):
-        v = prg.get(clave)
-        return float(v) if v is not None else _campo(label, campo)
+    def _uno(label_tabla: str, campo: str, clave_prg: str,
+             label_costos: str, campo_costos: str):
+        """Pantalla primero; si no está, PRG crudo; si no, la fila de `costos`."""
+        v = (por_tabla.get(label_tabla) or {}).get(campo)
+        if v is not None:
+            return float(v)
+        v = prg.get(clave_prg)
+        return float(v) if v is not None else _campo(label_costos, campo_costos)
 
     out: dict[str, float] = {}
-    ucom = _prg("VM", "MAT.PR.", "us")
-    kcom = _prg("KM", "MAT.PR.", "kg")
-    utej = _prg("VK", "TEJIDO", "us")
-    ktej = _prg("KK", "TEJIDO", "kg")
-    utin = _prg("GTIN", "GS.PROC.", "us")
-    ktin = _prg("KTINT", "COL.QUI.", "kg")
-    gasto = _prg("GS", "GASTOS", "us")
+    ucom = _uno("Materia Prima", "us", "VM", "MAT.PR.", "us")
+    kcom = _uno("Materia Prima", "kg", "KM", "MAT.PR.", "kg")
+    utej = _uno("Tejeduría", "us", "VK", "TEJIDO", "us")
+    ktej = _uno("Tejeduría", "kg", "KK", "TEJIDO", "kg")
+    utin = _uno("Tintorería", "us", "GTIN", "GS.PROC.", "us")
+    ktin = _uno("Colorantes/Quím.", "kg", "KTINT", "COL.QUI.", "kg")
+    gasto = _uno("Administración", "us", "GS", "GASTOS", "us")
 
     for k, v in (("ucom", ucom), ("kcom", kcom), ("utej", utej),
                  ("ktej", ktej), ("utin", utin), ("ktin", ktin),

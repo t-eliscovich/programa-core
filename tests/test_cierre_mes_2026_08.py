@@ -345,13 +345,55 @@ def test_gstotal_no_se_arma_con_un_sumando_faltante():
     assert "gasto" not in viv
 
 
-def test_los_flujos_salen_de_los_valores_CRUDOS_no_de_la_pantalla():
-    """⭐ `costos` es para MOSTRAR: `cost_tej_kg` pasa por `_eff_rate(live,
-    meta)`, que cae a la META de iniciales cuando el kg del mes todavía es 0.
+def test_el_cierre_guarda_LO_QUE_MUESTRA_LA_PANTALLA():
+    """⭐ Dueña 2026-08-01: *"pero tiene que guardar todo lo mismo, no distintos
+    números"*.
 
-    Guardar eso en el cierre escribe una meta como si fuera un kg real — y el
-    mes siguiente la relee como dato (INFORMES.PRG L291 `KKANT`). El snapshot
-    tiene que leer los valores crudos del PRG.
+    El balance renderiza `resultados.tabla` (balance.html L315), que es la
+    versión acordada con ella: Tejeduría suma V1+V2+V3 para dar el mismo total
+    que "Producción tejido" del Flujo, y los kg salen del cuadro MOVIMIENTOS de
+    Asinfo. `resultados.costos` es la réplica literal del PRG y no se muestra
+    en ninguna pantalla.
+
+    El cierre leía `costos` → guardaba tejeduría 93.176 mientras la pantalla
+    decía 139.004, y materia prima 1.939.966 contra 1.003.590. Mismo instante,
+    mismo patrimonio al centavo: no era drift, eran dos cálculos.
+    """
+    res = {
+        "tabla": [
+            {"label": "Venta", "kg": 332_305.0, "us": 2_832_519.0},
+            {"label": "Materia Prima", "kg": 332_305.0, "us": 1_003_590.0},
+            {"label": "Tejeduría", "kg": 286_305.0, "us": 139_004.0},
+            {"label": "Tintorería", "kg": 273_914.0, "us": 381_612.0},
+            {"label": "Colorantes/Quím.", "kg": 273_914.0, "us": 228_612.0},
+            {"label": "Administración", "kg": None, "us": 318_659.0},
+        ],
+        # el cálculo viejo dice otra cosa — NO debe ganar
+        "flujos_prg": {"KM": 266_332.0, "VM": 1_939_966.0,
+                       "KK": 233_515.0, "VK": 93_176.0,
+                       "KTINT": 281_208.0, "GTIN": 381_612.0, "GS": 318_659.0},
+    }
+    viv = iq._flujos_vivos_del_mes({"resultados": res})
+
+    assert viv["ucom"] == 1_003_590.0 and viv["kcom"] == 332_305.0
+    assert viv["utej"] == 139_004.0 and viv["ktej"] == 286_305.0
+    assert viv["utin"] == 381_612.0
+    assert viv["ktin"] == 273_914.0
+    assert viv["gasto"] == 318_659.0
+    assert viv["gstotal"] == 139_004.0 + 381_612.0 + 318_659.0
+    # ninguno de los números del cálculo viejo sobrevive
+    for viejo in (266_332.0, 1_939_966.0, 233_515.0, 93_176.0, 281_208.0):
+        assert viejo not in viv.values()
+
+
+def test_sin_tabla_los_crudos_del_PRG_le_ganan_a_las_filas_de_costos():
+    """Orden de precedencia cuando NO hay `tabla` (rama as-of).
+
+    `costos` es de pantalla vieja y `cost_tej_kg` pasa por `_eff_rate(live,
+    meta)`, que cae a la META de iniciales cuando el kg del mes todavía es 0 —
+    guardar eso escribe una meta como si fuera un kg real, y el mes siguiente
+    la relee como dato (INFORMES.PRG L291 `KKANT`). Entre los dos, gana el
+    crudo del PRG.
     """
     res = {
         "flujos_prg": {"KM": 111.0, "VM": 222.0, "KK": 333.0, "VK": 444.0,
