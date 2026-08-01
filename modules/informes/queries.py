@@ -8764,12 +8764,35 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
         or 0
     )
 
+    # TMT 2026-08-01 — LAS DOS RAMAS DEL BALANCE NOMBRAN LAS COSAS DISTINTO.
+    # `informe_balance_as_of` devuelve `salbanc` (con la caja adentro),
+    # `total_us`… pero la rama LIVE (`informe_balance`) expone
+    # `salbanc_total`+`salcaj` por separado y el stock/químico en el TOP-LEVEL
+    # (`vsto`/`vqx`), no en `componentes`. El mapeo leía sólo los nombres de
+    # la rama as-of, así que un cierre tomado por la rama live guardaba
+    # **banco = 0 y ustock = 0** — y la columna del Historial salía en cero.
+    # Lo cazó el dry-run del simulacro. Mismos fallbacks que
+    # `crear_snapshot_diario`. [[feedback_coherencia_numeros_una_fuente]]
+    _banco_snap = float(d.get("salbanc") or 0) or (
+        float(d.get("salbanc_total") or 0) + float(d.get("salcaj") or 0)
+    )
+    _ustock_snap = float(
+        stock_sub.get("total_us") or bal.get("vsto") or d.get("vsto") or 0
+    )
+    _uqui_snap = float(bal.get("vqx") or d.get("vqx") or 0)
+    _stock_kg_snap = float(
+        ((bal.get("stock") or {}).get("total") or {}).get("kg")
+        or kg.get("stock_kg")
+        or kg.get("stock_kg_live")
+        or 0
+    )
+
     params = {
         "fecha": fecha_snap,
         # Stock KG y US$
-        "stock": float(kg.get("stock_kg") or kg.get("stock_kg_live") or 0),
-        "ustock": float(stock_sub.get("total_us") or 0),
-        "uqui": float(d.get("vqx") or 0),
+        "stock": _stock_kg_snap,
+        "ustock": _ustock_snap,
+        "uqui": _uqui_snap,
         # Flujos del mes (KG)
         "kcom": float(kg.get("kcom") or 0),
         "ktej": float(kg.get("ktej") or 0),
@@ -8792,7 +8815,7 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
         # Balance components. `salbanc` ya incluye la CAJA
         # (balance_components_as_of la suma) → cierra la identidad
         # ACTIVO − PASIVO = PATRIMONIO.
-        "banco": float(d.get("salbanc") or 0),
+        "banco": _banco_snap,
         "cart": float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
         "deuda": float(d.get("totp") or 0),
         "retiro": _uret_snap,

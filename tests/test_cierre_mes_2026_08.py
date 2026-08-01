@@ -130,12 +130,14 @@ def test_cerrar_mes_auto_no_duplica_si_la_fila_ya_esta(monkeypatch):
 # BUG 2 — la foto de cierre guardaba el patrimonio BRUTO y usret=0
 # ---------------------------------------------------------------------------
 
-def _bal(componentes: dict) -> dict:
-    return {
+def _bal(componentes: dict, **extra) -> dict:
+    base = {
         "diagnostico": {"componentes": componentes},
         "kg": {},
         "stock_subpanels": {},
     }
+    base.update(extra)
+    return base
 
 
 def _sin_foto_previa(monkeypatch):
@@ -194,6 +196,48 @@ def test_foto_de_cierre_sin_retiros_no_cambia_nada(monkeypatch):
 
     assert row["patrimonio"] == 1_000.0
     assert row["usret"] == 0.0
+
+
+def test_foto_de_cierre_por_la_rama_live_no_guarda_banco_ni_stock_en_cero(monkeypatch):
+    """La rama LIVE del balance expone `salbanc_total`+`salcaj` por separado y
+    el stock/químico en el TOP-LEVEL; la AS-OF, `salbanc` y `total_us`.
+
+    El mapeo leía sólo los nombres de la rama as-of, así que un cierre tomado
+    por la rama live guardaba banco=0 y ustock=0 y la columna del Historial
+    salía en cero. Lo cazó el dry-run del simulacro.
+    """
+    _sin_foto_previa(monkeypatch)
+    comp = {
+        "patr": 1_000.0, "usret": 0.0, "utilidad": 50.0,
+        "salbanc_total": 600.0, "salcaj": 40.0,   # rama live: separados
+        "vsto": 8_400.0, "vqx": 409.0,
+    }
+    bal = _bal(comp, vsto=8_410.0, vqx=409.2,
+               stock=({"total": {"kg": 2_231_673.0}}))
+    monkeypatch.setattr(iq, "informe_balance", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "informe_balance_as_of", lambda *a, **k: bal)
+
+    row = iq.crear_snapshot_historia(2026, 7, dry_run=True)["row"]
+
+    assert row["banco"] == 640.0        # 600 + 40, no 0
+    assert row["ustock"] == 8_410.0     # top-level, no 0
+    assert row["uqui"] == 409.2
+    assert row["stock"] == 2_231_673.0
+
+
+def test_foto_de_cierre_por_la_rama_as_of_sigue_igual(monkeypatch):
+    """La rama as-of no se toca: `salbanc` ya trae la caja adentro."""
+    _sin_foto_previa(monkeypatch)
+    comp = {"patr": 1_000.0, "usret": 0.0, "utilidad": 50.0, "salbanc": 640.0}
+    bal = _bal(comp)
+    bal["stock_subpanels"] = {"total_us": 8_400.0}
+    monkeypatch.setattr(iq, "informe_balance", lambda *a, **k: bal)
+    monkeypatch.setattr(iq, "informe_balance_as_of", lambda *a, **k: bal)
+
+    row = iq.crear_snapshot_historia(2026, 7, dry_run=True)["row"]
+
+    assert row["banco"] == 640.0
+    assert row["ustock"] == 8_400.0
 
 
 def test_dry_run_no_escribe(monkeypatch):
