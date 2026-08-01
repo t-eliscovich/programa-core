@@ -594,6 +594,15 @@ def create_app() -> Flask:
 
     app.register_blueprint(debug_grupos_partidas_bp)
 
+    # /admin/debug-maduracion-importacion — cuántos días tarda una importación
+    # en tener toda su plata cargada, desde que llegó la mercadería. Para sacar
+    # del dato el umbral de la alarma de banda. SOLO LECTURA.
+    from modules.admin_dbase.debug_maduracion_import_view import (
+        bp as debug_maduracion_import_bp,
+    )
+
+    app.register_blueprint(debug_maduracion_import_bp)
+
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
     from modules.admin_dbase.health_audit_view import bp as health_audit_bp
