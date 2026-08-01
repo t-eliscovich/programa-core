@@ -177,3 +177,43 @@ def test_el_ciclo_de_fondo_la_corre():
 def _dummy():
     """El date/timedelta importado se usa arriba; acá sólo para el linter."""
     return date, timedelta
+
+
+# ── El techo de antigüedad y el mínimo de un movimiento ────────────────────
+# Los dos guards salieron de romperlo en producción: sin ellos, a los tres
+# minutos de deployar había 200+ avisos en la campanita, sobre importaciones de
+# 2025 cuyo cruce no encuentra ninguna compra (los anticipos ya se convirtieron
+# y PC no tiene las compras de esa época). El US$/kg daba 0,00 y la alarma lo
+# leía como "no cargaron nada" en vez de "PC nunca tuvo ese dato".
+def test_sin_ningun_movimiento_no_avisa():
+    """Cero compras y cero anticipos atribuidos: no hay nada que comparar."""
+    r = _im("MH", 25, 200, 25110.0, 0.0)
+    r["compra"] = None
+    assert _casos([r]) == []
+
+
+def test_demasiado_vieja_no_avisa():
+    """Más de 18 meses es historia, no una tarea pendiente."""
+    assert _casos([_im("MH", 15, 20 * 31, 25110.0, 5000.0)]) == []
+
+
+def test_vieja_pero_dentro_del_techo_si_avisa():
+    """AC 76-75 (225 días, un movimiento) tiene que seguir saltando."""
+    casos = _casos([_im("AC", 76, 225, 50200.0, 8360.0)])
+    assert len(casos) == 1
+
+
+def test_un_anticipo_solo_alcanza_como_movimiento():
+    """Si la importación no llegó a compra pero tiene anticipos, eso cuenta."""
+    r = _im("AC", 40, 60, 24000.0, 0.0)
+    r["compra"] = None
+    r["anticipo"] = {"items": [{"fecha": "2026-06-01", "importe": 30000.0}]}
+    casos = _casos([r])
+    assert len(casos) == 1 and casos[0]["importe"] == 30000.0
+
+
+def test_la_migracion_borra_los_avisos_de_esta_clave():
+    from pathlib import Path
+    sql = Path("migrations/0151_borrar_avisos_import_sin_plata_falsos.sql").read_text()
+    assert "DELETE FROM scintela.aviso" in sql
+    assert "import-sin-plata:%" in sql

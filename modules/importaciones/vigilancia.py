@@ -57,6 +57,18 @@ _FRENO_SECS = 6 * 3600          # una revisada cada 6 h alcanza y sobra
 _ultima_corrida = 0.0
 _lock = threading.Lock()
 
+# Techo de antigüedad. **Esto lo aprendí rompiéndolo**: la primera versión no lo
+# tenía y a los tres minutos de deployar había 200+ avisos en la campanita.
+# Motivo: para una importación de 2025 el cruce no encuentra NINGUNA compra ni
+# anticipo — los anticipos ya se convirtieron (dejan de estar vivos) y PC no
+# tiene las compras de esa época — así que el $/kg da 0,00 y la alarma la lee
+# como "no cargaron nada". No es "falta el CAE": es "PC nunca tuvo ese dato".
+# Dos guardas, y las dos hacen falta:
+#   · `_MAX_DIAS` — más viejo que esto es historia, no una tarea pendiente;
+#   · **al menos un movimiento cargado** — sin ni uno, no hay nada que comparar.
+#     Es lo que baja el ruido de 200+ a los 6 casos reales.
+_MAX_DIAS = 18 * 31
+
 
 def _dias_umbral() -> int:
     try:
@@ -135,6 +147,13 @@ def importaciones_fuera_de_banda(dias: int | None = None,
         edad = (hoy - g["recepcion"]).days
         if edad < dias:
             continue                     # todavía se está cargando: es normal
+        if edad > _MAX_DIAS:
+            continue                     # historia, no una tarea pendiente
+        if not g["ids"] and g["importe"] <= 0:
+            # Ni una compra ni un anticipo atribuidos: PC no tiene el dato,
+            # no es que Andrés no lo haya cargado. Avisar acá es el ruido que
+            # llenó la campanita de 200 avisos el 31/07.
+            continue
         ukg = g["importe"] / g["kg"]
         if lo <= ukg <= hi:
             continue
