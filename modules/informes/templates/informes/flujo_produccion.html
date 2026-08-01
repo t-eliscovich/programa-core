@@ -430,6 +430,20 @@
   {% if _show_historial %}
     <div class="blk">
       <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}</div>
+      {# TMT 2026-08-01 (dueña: "debería aparecer en 0 la tabla, no borrada").
+         Antes, si el mes no tenía tintura, el bloque entero desaparecía y no
+         se distinguía "todavía no tinturaron" de "se cayó el puente a formulas". #}
+      {% if tintoreria_mensual.sin_datos %}
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;
+                    padding:6px 10px;margin-bottom:8px;font-size:11px;color:#1e40af">
+          Todavía no hay tintura registrada en
+          <strong>{{ '%02d' % tintoreria_mensual.mes }}/{{ tintoreria_mensual.anio }}</strong>.
+          La tabla queda en cero hasta que la planta cierre el primer batch del
+          mes — los kg salen del programa de tintorería por <em>fecha de
+          terminado</em>. El <strong>promedio del año</strong> de abajo no
+          cuenta este mes.
+        </div>
+      {% endif %}
       {# Federico 2026-07-27: mismo ancho (820px) y misma geometría de columnas
          numéricas que la tabla "Producción tejido" de arriba, para que KG / $/KG / $
          caigan EXACTAMENTE bajo las mismas columnas. Izquierda (MES+COLORANTES+%)

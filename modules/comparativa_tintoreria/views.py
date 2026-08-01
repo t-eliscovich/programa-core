@@ -218,11 +218,29 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
     except Exception:  # noqa: BLE001 -- fail-soft, la tabla igual renderiza
         pass
 
+    # ⭐ TMT 2026-08-01 (dueña: *"pero debería aparecer en 0 la tabla, no
+    # borrada"*). Si el mes seleccionado todavía no tiene tintura, la tabla
+    # DESAPARECÍA entera — y una tabla que no está no dice nada: no se
+    # distingue "todavía no tinturaron este mes" de "se rompió el puente a
+    # formulas". Se emite la fila del mes en CERO y `sin_datos=True` para que
+    # el template lo diga con todas las letras.
+    #
+    # El PROMEDIO del año NO se toca: se calcula arriba sobre `filas` (los
+    # meses que SÍ tienen data) ANTES de este filtro, así que un mes en cero
+    # no lo arrastra hacia abajo. [[feedback_mostrar_lo_guardado]]
+    sin_datos = not filas_mes
+    if sin_datos:
+        vacia = {"yy": anio, "mm": mes, "label": f"{mes:02d}/{anio}"}
+        vacia.update(_calc(0.0, 0.0, 0.0, 0.0, float(gp.get((anio, mes), 0.0))))
+        filas_mes = [vacia]
+
     return {
         "filas": filas_mes,
+        "sin_datos": sin_datos,
         "promedio": promedio,
         "total": total,
         "anio": anio,
+        "mes": mes,
         "desde": desde,
         "hasta": hasta,
     }
