@@ -213,9 +213,16 @@ def test_a_los_32_dias_ya_no_avisa():
     assert _casos([_im("AC", 76, 32, 50200.0, 8360.0)]) == []
 
 
-def test_techo_cero_muestra_todo_el_historico():
-    """`?techo=0` sigue mostrando lo viejo: deja de AVISAR, no desaparece."""
-    assert len(_casos([_im("AC", 76, 225, 50200.0, 8360.0)], techo=0)) == 1
+def test_ninguna_pantalla_muestra_lo_viejo():
+    """TMT 2026-07-31: *"borralos no me gusta"*. El `?techo=0` que dejaba ver el
+    histórico se sacó — /admin/importaciones-sin-plata muestra exactamente lo
+    que la alarma diría hoy y nada más. El parámetro sigue existiendo para los
+    tests; si alguna vista lo vuelve a exponer, esto se cae."""
+    import inspect
+    from modules.admin_dbase import import_sin_plata_view as v
+    src = inspect.getsource(v.run)
+    assert 'request.args.get("techo")' not in src
+    assert "techo=" not in src
 
 
 def test_un_anticipo_solo_alcanza_como_movimiento():
