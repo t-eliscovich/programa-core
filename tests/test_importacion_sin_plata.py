@@ -34,11 +34,11 @@ def _im(codigo_prov, numero, dias_atras, kg, importe, *, im="IM-1"):
     }
 
 
-def _casos(rows, dias=30):
+def _casos(rows, dias=30, techo=None):
     with patch.object(vig, "_dias_umbral", return_value=dias), \
          patch("modules.importaciones.service.importaciones_con_cruce",
                return_value=rows):
-        return vig.importaciones_fuera_de_banda()
+        return vig.importaciones_fuera_de_banda(techo=techo)
 
 
 # ── El umbral: 30 días ───────────────────────────────────────────────────────
@@ -63,8 +63,9 @@ def test_a_los_30_dias_avisa():
 
 def test_el_caso_ac_76_75():
     """Medido: recibida el 18/12/2025, 50.200 kg, un solo movimiento de 8.360.
-    225 días sin que nadie lo viera."""
-    casos = _casos([_im("AC", 76, 225, 50200.0, 8360.0)])
+    Con `techo=0` (mirar el histórico a mano) sigue apareciendo — la alarma ya
+    no lo dice, pero el caso no desaparece del sistema."""
+    casos = _casos([_im("AC", 76, 225, 50200.0, 8360.0)], techo=0)
     assert len(casos) == 1
     assert casos[0]["dias"] == 225
     assert casos[0]["usd_kg"] < 0.2
@@ -74,12 +75,12 @@ def test_el_caso_ac_76_75():
 
 # ── Dentro de banda no avisa, por vieja que sea ─────────────────────────────
 def test_en_banda_no_avisa_aunque_sea_vieja():
-    assert _casos([_im("AC", 30, 400, 24494.0, 74000.0)]) == []
+    assert _casos([_im("AC", 30, 400, 24494.0, 74000.0)], techo=0) == []
 
 
 # ── Por arriba de la banda también avisa, con otro texto ───────────────────
 def test_usd_kg_alto_avisa_como_faltan_kilos():
-    casos = _casos([_im("AC", 94, 60, 22992.64, 99519.84)])
+    casos = _casos([_im("AC", 94, 31, 22992.64, 99519.84)])
     assert len(casos) == 1
     assert casos[0]["falta_plata"] is False
     assert casos[0]["usd_kg"] > 4.0
@@ -99,11 +100,11 @@ def test_la_plata_no_se_cuenta_dos_veces_en_una_partida():
     """Las dos mitades de un grupo pueden tener colgada LA MISMA compra. Sin
     dedup por id_compra el importe se dobla y la alarma no salta nunca."""
     from filters import today_ec
-    rec = today_ec() - timedelta(days=60)
+    rec = today_ec() - timedelta(days=31)
     comp = {"items": [{"id_compra": 7, "fecha": str(rec), "importe": 60000.0}]}
     mitades = []
     for im in ("IM-A", "IM-B"):
-        r = _im("AC", 25, 60, 24494.0, 0.0, im=im)
+        r = _im("AC", 25, 31, 24494.0, 0.0, im=im)
         r["grupo_id"] = "IM-A+IM-B"
         r["grupo_ims"] = ["IM-A", "IM-B"]
         r["grupo_kg"] = 48988.0
@@ -186,37 +187,53 @@ def _dummy():
 # y PC no tiene las compras de esa época). El US$/kg daba 0,00 y la alarma lo
 # leía como "no cargaron nada" en vez de "PC nunca tuvo ese dato".
 def test_sin_ningun_movimiento_no_avisa():
-    """Cero compras y cero anticipos atribuidos: no hay nada que comparar."""
+    """Cero compras y cero anticipos atribuidos: no hay nada que comparar.
+    Con techo=0 para que lo que lo frene sea ESTE guard y no el de antigüedad."""
     r = _im("MH", 25, 200, 25110.0, 0.0)
     r["compra"] = None
-    assert _casos([r]) == []
+    assert _casos([r], techo=0) == []
 
 
-def test_demasiado_vieja_no_avisa():
-    """Más de 18 meses es historia, no una tarea pendiente."""
-    assert _casos([_im("MH", 15, 20 * 31, 25110.0, 5000.0)]) == []
+def test_el_techo_por_defecto_es_31(monkeypatch):
+    monkeypatch.delenv("IMPORT_SIN_PLATA_TECHO", raising=False)
+    assert vig._techo_dias() == 31
+    monkeypatch.setenv("IMPORT_SIN_PLATA_TECHO", "60")
+    assert vig._techo_dias() == 60
 
 
-def test_vieja_pero_dentro_del_techo_si_avisa():
-    """AC 76-75 (225 días, un movimiento) tiene que seguir saltando."""
-    casos = _casos([_im("AC", 76, 225, 50200.0, 8360.0)])
-    assert len(casos) == 1
+def test_justo_en_el_techo_todavia_avisa():
+    """La ventana es [30, 31]: al día 31 todavía se dice."""
+    assert len(_casos([_im("AC", 76, 31, 50200.0, 8360.0)])) == 1
+
+
+def test_a_los_32_dias_ya_no_avisa():
+    """TMT: "borrá todo lo que ya pasó más de 31 días". Con la alarma andando
+    cada importación se agarra al cruzar el umbral y nunca llega a ser vieja —
+    el techo es lo que evita el inventario de pendientes históricos."""
+    assert _casos([_im("AC", 76, 32, 50200.0, 8360.0)]) == []
+
+
+def test_techo_cero_muestra_todo_el_historico():
+    """`?techo=0` sigue mostrando lo viejo: deja de AVISAR, no desaparece."""
+    assert len(_casos([_im("AC", 76, 225, 50200.0, 8360.0)], techo=0)) == 1
 
 
 def test_un_anticipo_solo_alcanza_como_movimiento():
     """Si la importación no llegó a compra pero tiene anticipos, eso cuenta."""
-    r = _im("AC", 40, 60, 24000.0, 0.0)
+    r = _im("AC", 40, 31, 24000.0, 0.0)
     r["compra"] = None
     r["anticipo"] = {"items": [{"fecha": "2026-06-01", "importe": 30000.0}]}
     casos = _casos([r])
     assert len(casos) == 1 and casos[0]["importe"] == 30000.0
 
 
-def test_la_migracion_borra_los_avisos_de_esta_clave():
+def test_las_migraciones_borran_los_avisos_de_esta_clave():
     from pathlib import Path
-    sql = Path("migrations/0151_borrar_avisos_import_sin_plata_falsos.sql").read_text()
-    assert "DELETE FROM scintela.aviso" in sql
-    assert "import-sin-plata:%" in sql
+    for f in ("migrations/0151_borrar_avisos_import_sin_plata_falsos.sql",
+              "migrations/0152_borrar_avisos_import_sin_plata_viejos.sql"):
+        sql = Path(f).read_text()
+        assert "DELETE FROM scintela.aviso" in sql
+        assert "import-sin-plata:%" in sql
 
 
 def test_el_endpoint_esta_registrado():

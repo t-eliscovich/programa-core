@@ -8,6 +8,7 @@ Este endpoint deja mirar la lista cuando uno quiere, y con `?correr=1` dispara
 la revisión y deja los avisos en la campanita.
 
     ?dias=30     umbral (default: el de la vigilancia)
+    ?techo=0     sin techo de antigüedad — muestra TODO el histórico
     ?correr=1    además de listar, deja los avisos
 
 SOLO LECTURA salvo `?correr=1`, que sólo escribe avisos (nunca toca plata).
@@ -44,7 +45,15 @@ def run():
         return Response(json.dumps({"ok": False, "error": "dias fuera de rango"}),
                         status=400, mimetype="application/json")
 
-    casos = vig.importaciones_fuera_de_banda(dias)
+    techo = request.args.get("techo")
+    try:
+        techo = int(techo) if techo is not None else None
+    except (TypeError, ValueError):
+        return Response(json.dumps({"ok": False, "error": "techo invalido"}),
+                        status=400, mimetype="application/json")
+    # `?techo=0` muestra TODO el histórico. La alarma nunca lo hace — es para
+    # mirar a mano lo que quedó viejo, que sigue existiendo aunque no avise.
+    casos = vig.importaciones_fuera_de_banda(dias, techo=techo)
     corrida = None
     if (request.args.get("correr") or "").strip() == "1":
         vig._ultima_corrida = 0.0        # saltear el freno: es un pedido humano
@@ -55,7 +64,7 @@ def run():
         json.dumps({
             "ok": True,
             "umbral_dias": dias or vig._dias_umbral(),
-            "techo_dias": vig._MAX_DIAS,
+            "techo_dias": (vig._techo_dias() if techo is None else techo),
             "banda": [lo, hi],
             "n": len(casos),
             "nota": ("Sólo entran las recibidas hace más del umbral, con al menos "

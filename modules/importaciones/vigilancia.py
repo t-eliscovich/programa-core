@@ -59,15 +59,34 @@ _lock = threading.Lock()
 
 # Techo de antigüedad. **Esto lo aprendí rompiéndolo**: la primera versión no lo
 # tenía y a los tres minutos de deployar había 200+ avisos en la campanita.
-# Motivo: para una importación de 2025 el cruce no encuentra NINGUNA compra ni
+# Motivo: para una importación vieja el cruce no encuentra NINGUNA compra ni
 # anticipo — los anticipos ya se convirtieron (dejan de estar vivos) y PC no
 # tiene las compras de esa época — así que el $/kg da 0,00 y la alarma la lee
 # como "no cargaron nada". No es "falta el CAE": es "PC nunca tuvo ese dato".
 # Dos guardas, y las dos hacen falta:
-#   · `_MAX_DIAS` — más viejo que esto es historia, no una tarea pendiente;
+#   · `_MAX_DIAS` — más viejo que esto no se toca;
 #   · **al menos un movimiento cargado** — sin ni uno, no hay nada que comparar.
-#     Es lo que baja el ruido de 200+ a los 6 casos reales.
-_MAX_DIAS = 18 * 31
+#
+# TMT 2026-07-31, viendo los 8 que quedaron (de 37 a 225 días): *"borrá todo lo
+# que ya pasó más de 31 días, no tiene sentido traer problemas de hace tanto
+# tiempo"*. Con la alarma andando NO hay backlog: cada importación se agarra al
+# cruzar el umbral y nunca llega a ser vieja. El techo de 31 es lo que hace que
+# esto sea un aviso del día y no un inventario de pendientes históricos.
+#
+# El costo, dicho: la ventana de aviso es de un día (entre el 30 y el 31). El
+# ciclo corre cada 6 h, así que hay ~4 oportunidades; si el servidor estuviera
+# caído un día entero, esa importación no se avisaría nunca — y no vuelve.
+# Las viejas no desaparecen del sistema, sólo dejan de avisar: se siguen viendo
+# en /admin/importaciones-sin-plata?techo=0.
+_MAX_DIAS_DEFAULT = 31
+
+
+def _techo_dias() -> int:
+    try:
+        v = int(os.environ.get("IMPORT_SIN_PLATA_TECHO", _MAX_DIAS_DEFAULT))
+        return v if v >= 1 else _MAX_DIAS_DEFAULT
+    except (TypeError, ValueError):
+        return _MAX_DIAS_DEFAULT
 
 
 def _dias_umbral() -> int:
@@ -86,7 +105,8 @@ def _d(s):
 
 
 def importaciones_fuera_de_banda(dias: int | None = None,
-                                 limite: int = 1000) -> list[dict]:
+                                 limite: int = 1000,
+                                 techo: int | None = None) -> list[dict]:
     """Grupos recibidos hace más de `dias` cuyo US$/kg sigue fuera de banda.
 
     Se mira por GRUPO (las dos mitades de una partida son una sola mercadería) y
@@ -98,6 +118,8 @@ def importaciones_fuera_de_banda(dias: int | None = None,
     from . import service as svc
 
     dias = int(dias if dias is not None else _dias_umbral())
+    # techo=0 → sin techo (para mirar el histórico a mano; la alarma nunca lo usa)
+    techo = _techo_dias() if techo is None else int(techo)
     try:
         rows = svc.importaciones_con_cruce(limite=limite)
     except Exception as e:  # noqa: BLE001
@@ -147,7 +169,7 @@ def importaciones_fuera_de_banda(dias: int | None = None,
         edad = (hoy - g["recepcion"]).days
         if edad < dias:
             continue                     # todavía se está cargando: es normal
-        if edad > _MAX_DIAS:
+        if techo and edad > techo:
             continue                     # historia, no una tarea pendiente
         if not g["ids"] and g["importe"] <= 0:
             # Ni una compra ni un anticipo atribuidos: PC no tiene el dato,
