@@ -116,6 +116,23 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("químicos formulas (fondo): %s", e)
+            # TMT 2026-07-31 (dueña): "si no cargaron después de 30 días, pero
+            # nada de rojo en resultados — en la campanita". Importaciones que
+            # llegaron y quedaron sin toda su plata cargada. El umbral sale de
+            # la medición: 34 de 35 tienen la plata completa antes de los 21
+            # días, así que a los 30 no queda maduración normal. Freno propio de
+            # 6 h, un aviso por grupo (clave idempotente), IMPORT_SIN_PLATA=0 lo
+            # apaga. Fail-soft por su cuenta.
+            try:
+                from modules.importaciones import vigilancia as _vig
+                vg = _vig.revisar_si_toca()
+                if vg.get("avisados"):
+                    _LOG.info(
+                        "importaciones sin plata (fondo): %s aviso(s) de %s caso(s)",
+                        vg.get("avisados"), vg.get("casos"),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("importaciones sin plata (fondo): %s", e)
             # TMT 2026-07-30 (dueña): "agregar en la campanita, a fin de día,
             # venta total kg y total facturas $" — a las 18:00 de ECUADOR, uno
             # solo por día (la clave del aviso lo garantiza).
