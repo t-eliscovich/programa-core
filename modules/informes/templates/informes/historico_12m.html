@@ -200,7 +200,7 @@
       {# Federico 2026-05-21 - boton para borrar la columna mas reciente. #}
       <button id="eliminar-ultima" type="button"
               class="no-print text-xs px-3 py-1 rounded bg-rose-600 text-white hover:bg-rose-700 font-medium"
-              title="Borra la columna mas reciente del mes actual y deja viva la previa.">
+              title="Borra la última columna (la más reciente) del mes actual y deja viva la penúltima. Úsalo cuando la última tiene un error.">
         Eliminar última columna
       </button>
     {% endif %}
@@ -395,7 +395,7 @@
               const id = btn.dataset.id;
               postAction('/informes/historico-12m/_api/' + id + '/validar').then(j => {
                 if (j && j.ok) {
-                  window.location.reload();
+                  window.location.href = '/informes/historico-12m?nosnap=1';
                 } else {
                   alert('No se pudo validar: ' + ((j && j.error) || 'error'));
                 }
@@ -408,7 +408,7 @@
               const id = btn.dataset.id;
               postAction('/informes/historico-12m/_api/' + id + '/borrar').then(j => {
                 if (j && j.ok) {
-                  window.location.reload();
+                  window.location.href = '/informes/historico-12m?nosnap=1';
                 } else {
                   alert('No se pudo borrar: ' + ((j && j.error) || 'error'));
                 }
@@ -426,7 +426,7 @@
               btnForzar.textContent = '⏳ Procesando…';
               postAction('/informes/historico-12m/_api/snapshot-ahora').then(j => {
                 if (j && j.ok) {
-                  window.location.reload();
+                  window.location.href = '/informes/historico-12m?nosnap=1';
                 } else {
                   alert('No se pudo crear: ' + ((j && j.error) || 'error'));
                   btnForzar.disabled = false;
@@ -444,11 +444,11 @@
           const btnElimUlt = document.getElementById('eliminar-ultima');
           if (btnElimUlt) {
             btnElimUlt.addEventListener('click', () => {
-              if (!confirm('¿Eliminar la última columna del mes actual? Queda viva la columna previa.')) return;
+              if (!confirm('¿Eliminar la última columna del mes actual? Queda viva la penúltima.')) return;
               btnElimUlt.disabled = true;
               postAction('/informes/historico-12m/_api/eliminar-ultima').then(j => {
                 if (j && j.ok) {
-                  window.location.reload();
+                  window.location.href = '/informes/historico-12m?nosnap=1';
                 } else {
                   alert('No se pudo eliminar: ' + ((j && j.error) || 'error'));
                   btnElimUlt.disabled = false;

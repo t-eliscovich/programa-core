@@ -7905,23 +7905,29 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
             }
         )
     # ── Mes en curso ────────────────────────────────────────────────────
-    # 2026-06-04 (pedido dueña: "que el cuadro cambie cada vez que muevo algo,
-    # no cuando pongo validar"). La columna "actual" se RECALCULA EN VIVO en
-    # cada carga (refleja cualquier factura/cobranza/pago al instante, igual
-    # que la pantalla Resultados). La foto guardada más reciente del mes queda
-    # como "previa" para comparar (Δ = qué cambió desde esa foto).
+    # Federico 2026-08-01 — REGLA "una foto por mes gana". Mostramos las 2
+    # fotos GUARDADAS más recientes del mes en curso: la PENÚLTIMA (visita
+    # anterior, respaldo) y la ÚLTIMA (recién tomada al entrar = copia exacta
+    # de Resultados en ese instante). La última es la canónica por default (la
+    # que se congela al cierre); si tiene un error, "Eliminar última columna"
+    # la borra y queda viva la penúltima. Ya NO hay columna "en vivo" efímera:
+    # como el throttle es 0, la última guardada YA es el estado vivo, y así las
+    # dos columnas son fotos reales (con id_historia) que se pueden validar/
+    # borrar — no una foto + un cálculo fantasma sin botones.
     n_actual = len(snaps_actual_asc)
-    # Foto guardada más reciente del mes → columna "previa" (a lo sumo 1).
-    for snap in snaps_actual_asc[-1:]:
+    _cols_mes = snaps_actual_asc[-2:]  # [penúltima, última] (o solo [única])
+    for _idx, snap in enumerate(_cols_mes):
+        _es_ultima = _idx == len(_cols_mes) - 1
         fc_ec = _hora_quito(snap.get("fecha_crea"))
-        sufijo = " · previa" + (f" {fc_ec.strftime('%d/%m %H:%M')}" if fc_ec else "")
+        _tag = "última" if _es_ultima else "penúltima"
+        sufijo = f" · {_tag}" + (f" {fc_ec.strftime('%d/%m %H:%M')}" if fc_ec else "")
         columnas.append(
             {
                 "key": f"{hoy.year:04d}-{hoy.month:02d}-{snap['id_historia']}",
                 "anio": hoy.year,
                 "mes": hoy.month,
                 # Día al que corresponde la foto (fecha del snapshot = el día
-                # en que se tomó, p.ej. "9 jul" para la previa de hoy).
+                # en que se tomó).
                 "dia": snap["fecha"].day if snap.get("fecha") else hoy.day,
                 "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
                 "label_largo": f"{hoy.month:02d}/{hoy.year}{sufijo}",
@@ -7929,35 +7935,14 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 # fecha_crea CRUDA (UTC); el template aplica |hora_ec una sola vez.
                 "fecha_crea": snap.get("fecha_crea"),
                 "es_mes_actual": True,
-                "es_canonico_default": False,
+                # La última guardada es la canónica (badge "actual"); la
+                # penúltima queda como respaldo (badge "previa").
+                "es_canonico_default": _es_ultima,
                 "es_live": False,
                 "snap": snap,
             }
         )
-
-    # Columna ACTUAL — estado LIVE recalculado en CADA carga (no guardado).
-    # Reusa calcular_kpis (misma lógica que el snapshot: caja en banco,
-    # excluye asinfo-backfill) → tiene TODAS las filas, incluido operativo.
-    hubo_live = False
-    _live_snap = _snap_live_mes_actual(hoy)
-    if _live_snap is not None:
-        columnas.append(
-            {
-                "key": f"{hoy.year:04d}-{hoy.month:02d}-live",
-                "anio": hoy.year,
-                "mes": hoy.month,
-                "dia": hoy.day,
-                "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d} · ahora",
-                "label_largo": f"{hoy.month:02d}/{hoy.year} · en vivo",
-                "id_historia": None,
-                "fecha_crea": None,
-                "es_mes_actual": True,
-                "es_canonico_default": True,
-                "es_live": True,
-                "snap": _live_snap,
-            }
-        )
-        hubo_live = True
+    hubo_live = bool(_cols_mes)
 
     # Armar líneas (igual que historico_12m_matriz).
     lineas_out = []

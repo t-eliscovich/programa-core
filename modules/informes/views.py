@@ -1026,23 +1026,34 @@ def historico_12m():
             mom = {"par_a": (a_a, m_a), "par_b": (a_b, m_b), "lineas": [], "meses_sin_snap": []}
             error = str(e)
     else:
-        # Federico 2026-05-21 -- foto automatica al entrar (reactivada).
-        # El bug que la habia desactivado (snapshot con ktej/ktin en 0)
-        # quedo resuelto con el carry-forward en insertar_snapshot.
-        # Flujo: (1) tomar a lo sumo UNA foto por dia (throttle 24h) para que
-        # las columnas sean "ayer vs hoy" y no "hace 3 minutos"; (2) consolidar
-        # dejando las 2 columnas mas recientes (la previa + la de hoy).
-        # TMT 2026-06-04 (Bug #3): el throttle era 180s -> se creaba una columna
-        # nueva por cada visita >3min y las 2 columnas salian casi identicas
-        # (delta ~0). Con 24h la comparacion intra-mes tiene sentido. Para
-        # forzar una foto fuera de hora esta el boton "Snapshot ahora".
-        try:
-            snap_info = queries.tomar_snapshot_mes_actual(
-                usuario=(g.user or {}).get("username", "web"),
-                throttle_segundos=86400,
-            )
-        except Exception as e:  # noqa: BLE001
-            snap_info = {"accion": "error", "error": str(e)}
+        # Federico 2026-08-01 -- REGLA "una foto por mes gana":
+        # cada entrada a Historial inserta una foto FRESCA del mes en curso
+        # (throttle=0), que es una copia exacta de lo que muestra Resultados
+        # en ese instante (misma fuente: informe_balance via calcular_kpis).
+        # Luego consolidar deja las 2 mas recientes: la ULTIMA (recien tomada,
+        # la que por default sobrevive y se congela al cierre del mes) y la
+        # PENULTIMA (la de la visita anterior, disponible como respaldo). Si
+        # la ultima tiene un error, el boton "Eliminar ultima columna" la borra
+        # y queda viva la penultima. Los meses cerrados no se tocan (freezados).
+        # ANTES habia throttle de 24h: al entrar NO refrescaba la foto y se veia
+        # un valor viejo (p.ej. utilidad -16k) al lado de Resultados (+15,7k) ->
+        # parecian numeros distintos siendo la misma metrica en otro momento.
+        # nosnap=1 → la recarga viene de una acción MANUAL (validar / borrar /
+        # eliminar última / snapshot ahora). En ese caso NO tomamos otra foto:
+        # con throttle=0 una foto nueva pisaría la decisión que el usuario
+        # acaba de tomar (p.ej. borró la última mala para quedarse con la
+        # penúltima, y la recarga le metería una última nueva otra vez).
+        _nosnap = bool(request.args.get("nosnap"))
+        if _nosnap:
+            snap_info = {"accion": "skip_nosnap"}
+        else:
+            try:
+                snap_info = queries.tomar_snapshot_mes_actual(
+                    usuario=(g.user or {}).get("username", "web"),
+                    throttle_segundos=0,
+                )
+            except Exception as e:  # noqa: BLE001
+                snap_info = {"accion": "error", "error": str(e)}
         try:
             queries.consolidar_snapshots_mes_actual(conservar=2)
         except Exception:  # noqa: BLE001
