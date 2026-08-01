@@ -54,6 +54,10 @@ else:
     POWERSHELL = None
 
 SCHEDULED_TASK_NAME = "ProgramaCoreApp"
+# Puerto donde Waitress sirve Programa Core. formulas_app usa el 5001 en el
+# mismo server, así que el restart tiene que apuntar a ESTE puerto y no matar
+# por nombre de proceso (ver comentario en _generate()).
+APP_PORT = 5002
 
 
 @bp.route("/", methods=["GET"])
@@ -148,12 +152,22 @@ def restart():
         # la instancia de la tarea pero NO siempre mata el python hijo, que
         # queda tomando el puerto 5002 → la instancia nueva no puede bindear,
         # sale, y el código nuevo NUNCA se carga (deploys no-op silenciosos).
-        # Matamos python/pythonw entre End y Run.
+        # TMT 2026-08-01: se mataba con `Get-Process python,pythonw`, que agarra
+        # TODOS los python.exe del server — incluido formulas_app (Waitress en el
+        # 5001, mismo ejecutable). Ese kill global la tiraba en cada deploy.
+        # Ahora matamos SOLO al dueño del puerto 5002, por PID, igual que
+        # .github/workflows/deploy.yml.
         cmd_script = (
             f"schtasks /End /TN '{SCHEDULED_TASK_NAME}'; "
             f"Start-Sleep -Seconds 2; "
-            f"Get-Process python,pythonw -ErrorAction SilentlyContinue | "
-            f"Stop-Process -Force -ErrorAction SilentlyContinue; "
+            f"for ($i = 0; $i -lt 6; $i++) {{ "
+            f"$owners = Get-NetTCPConnection -LocalPort {APP_PORT} -State Listen "
+            f"-ErrorAction SilentlyContinue | "
+            f"Select-Object -ExpandProperty OwningProcess -Unique; "
+            f"if (-not $owners) {{ break }}; "
+            f"$owners | ForEach-Object {{ "
+            f"Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}; "
+            f"Start-Sleep -Seconds 1 }}; "
             f"Start-Sleep -Seconds 2; "
             f"schtasks /Run /TN '{SCHEDULED_TASK_NAME}'"
         )
