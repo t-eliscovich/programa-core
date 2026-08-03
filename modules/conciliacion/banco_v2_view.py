@@ -2839,16 +2839,43 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
         rows_resumen.append(("DIFERENCIA", diferencia))
 
+    # ⭐ TMT 2026-08-03 — EL RESUMEN VA EN UNA HOJA APARTE.
+    #
+    # Estaba al pie de la MISMA hoja que los movimientos, con el rótulo en la
+    # columna C (CODIGO) y el importe en la D (VALOR). Y "Hacer prevalecer"
+    # (`banco_cruzar_pendientes` → `hoja_parser`) lee justamente el DOCUMENTO
+    # de la columna C. O sea: para el importador, "SALDO BANCO (extracto)" no
+    # era un rótulo, era un número de documento válido.
+    #
+    # Resultado: cada vez que alguien bajaba el Excel de pendientes y lo
+    # volvía a subir —el ciclo normal de trabajo— se cargaban las 6 líneas
+    # del resumen como pendientes del banco. El 03/08/2026 metieron
+    # **$8.304.132,19** de créditos fantasma y el export siguiente salió con
+    # DIFERENCIA −8.323.357,19. La dueña las borró a mano.
+    #
+    # El archivo que genera la app tiene que poder re-importarse SIN
+    # envenenarse. El parser elige la pestaña buscando los headers
+    # FECHA + VALOR (`hoja_parser._elegir_hoja`), así que un resumen que vive
+    # en su propia hoja es INVISIBLE para él — no importa qué rótulos tenga ni
+    # en qué columna estén. La dueña lo sigue viendo: es una solapa al lado.
+    # El test `test_conciliacion_xlsx_ida_y_vuelta` clava el invariante.
+    # [[project_2026_08_03_resumen_como_pendientes]]
+    ws_res = wb.create_sheet("RESUMEN")
+    ws_res.cell(row=1, column=1, value="RESUMEN CONTABLE").font = bold
+    ws_res.cell(row=2, column=1, value=str(ws["A2"].value or ""))
+    rr = 4
     for label, val in rows_resumen:
-        ws.cell(row=r, column=label_col, value=label).font = bold
+        ws_res.cell(row=rr, column=1, value=label).font = bold
         if val is not None:
-            cell = ws.cell(row=r, column=val_col, value=val)
+            cell = ws_res.cell(row=rr, column=2, value=val)
             cell.font = bold
             # Signo + / − explícito, mismo formato que las filas de movs.
             cell.number_format = "+#,##0.00;-#,##0.00;0.00"
         else:
-            ws.cell(row=r, column=val_col, value="—").font = bold
-        r += 1
+            ws_res.cell(row=rr, column=2, value="—").font = bold
+        rr += 1
+    ws_res.column_dimensions["A"].width = 34
+    ws_res.column_dimensions["B"].width = 18
 
     ws.column_dimensions["A"].width = 12
     ws.column_dimensions["B"].width = 60
@@ -3492,7 +3519,8 @@ def banco_cruzar_pendientes():
         return redirect(url_for("conciliacion.hub"))
     try:
         from modules.conciliacion.parser_xlsx import parse_pendientes_cruce
-        hoja, items, dropped = parse_pendientes_cruce(raw, return_dropped=True)
+        hoja, items, dropped, ignoradas = parse_pendientes_cruce(
+            raw, return_dropped=True)
     except Exception as e:
         _LOG.exception("parse cruce fallo: %s", e)
         flash(f"No pude leer el archivo: {e}", "error")
@@ -3513,6 +3541,23 @@ def banco_cruzar_pendientes():
             f"⚠ {len(dropped)} fila(s) del archivo NO se cargaron porque no pude "
             f"leer su VALOR — revisalas en el Excel: {detalle}{mas}",
             "error",
+        )
+
+    # TMT 2026-08-03 — decir SIEMPRE qué se salteó. Estas filas antes entraban
+    # como pendientes (el resumen del propio export: $8.304.132,19 el 03/08).
+    # Ahora se filtran, pero en silencio nadie se enteraría de que el archivo
+    # traía basura — ni de que un día el filtro se pase de listo.
+    if ignoradas:
+        _det = " · ".join(
+            f"{d['rotulo']}"
+            + (f" ({d['valor']:,.2f})" if d.get("valor") is not None else "")
+            for d in ignoradas[:8]
+        )
+        _mas = f" (+{len(ignoradas) - 8} más)" if len(ignoradas) > 8 else ""
+        flash(
+            f"Ignoré {len(ignoradas)} fila(s) del archivo que son del RESUMEN "
+            f"contable, no movimientos: {_det}{_mas}.",
+            "info",
         )
 
     sis_rows = _db.fetch_all(

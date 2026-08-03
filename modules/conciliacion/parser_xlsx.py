@@ -287,6 +287,8 @@ def parse_pendientes_cruce(raw: bytes, *, return_dropped: bool = False):
 
     Devuelve (nombre_hoja, items), cada item:
         {doc, monto (SIGNADO: + crédito / − débito), fecha (date|None), detalle}
+    Con `return_dropped=True`: (hoja, items, dropped, ignoradas) — `ignoradas`
+    son las filas de RESUMEN CONTABLE que se saltearon (TMT 2026-08-03).
 
     Reusa hoja_parser (depósitos +, pagos −, ajustes sin fecha) — fuente
     única de parseo de la hoja.
@@ -301,7 +303,8 @@ def parse_pendientes_cruce(raw: bytes, *, return_dropped: bool = False):
     finally:
         _wb.close()
 
-    rows, dropped = _hp.parse_hoja_pendientes(raw, sheet=hoja, return_dropped=True)
+    rows, dropped, ignoradas = _hp.parse_hoja_pendientes(
+        raw, sheet=hoja, return_dropped=True)
     items = []
     for r in rows:
         signed = r["monto"] if (r.get("tipo") or "C") == "C" else -r["monto"]
@@ -312,5 +315,5 @@ def parse_pendientes_cruce(raw: bytes, *, return_dropped: bool = False):
             "detalle": r.get("concepto") or "",
         })
     if return_dropped:
-        return hoja, items, dropped
+        return hoja, items, dropped, ignoradas
     return hoja, items

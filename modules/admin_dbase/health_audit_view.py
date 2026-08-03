@@ -906,6 +906,134 @@ def cadena_saldos():
     return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
 
 
+# ---------------------------------------------------------------------------
+# Pendientes de conciliación: ¿entró basura al backlog?
+# ---------------------------------------------------------------------------
+
+
+def _evaluar_pendientes(*, no_banco, nombre, filas, saldo_banco):
+    """Stat + alertas de UN banco. Pura — se testea sin Flask.
+
+    `filas`: pendientes VIVOS (conciliado_en IS NULL) con
+    {id, fecha, concepto, documento, monto, tipo}.
+    """
+    from modules.conciliacion.hoja_parser import _es_fila_de_resumen
+
+    rotulos, gigantes = [], []
+    for f in filas:
+        rot = _es_fila_de_resumen(f.get("concepto"), f.get("documento"))
+        if rot:
+            rotulos.append({
+                "id": f.get("id"), "rotulo": rot,
+                "monto": float(f.get("monto") or 0),
+                "fecha": (str(f.get("fecha")) if f.get("fecha") else None),
+            })
+            continue
+        # Ningún movimiento pendiente puede ser más grande que la cuenta
+        # entera. Refuerzo del anterior, con otro criterio.
+        if saldo_banco and float(f.get("monto") or 0) > abs(float(saldo_banco)):
+            gigantes.append({
+                "id": f.get("id"),
+                "concepto": (f.get("concepto") or f.get("documento") or "")[:60],
+                "monto": float(f.get("monto") or 0),
+            })
+
+    stat = {
+        "no_banco": no_banco, "nombre": nombre,
+        "n_pendientes": len(filas),
+        "saldo_banco": float(saldo_banco or 0),
+        "n_rotulos_de_resumen": len(rotulos),
+        "monto_rotulos": round(sum(r["monto"] for r in rotulos), 2),
+        "rotulos_de_resumen": rotulos[:20],
+        "n_mayores_al_saldo": len(gigantes),
+        "mayores_al_saldo": gigantes[:10],
+        # Informativo: los "sin fecha" son LEGÍTIMOS (pedido de la dueña
+        # 2026-06-04, "que prevalezcan aunque no tengan fecha"). Se listan
+        # para poder mirarlos, NO se alerta por ellos.
+        "n_sin_fecha": sum(1 for f in filas if not f.get("fecha")),
+    }
+    alerts = []
+    if rotulos:
+        alerts.append({
+            "severity": "high",
+            "category": "resumen_como_pendiente",
+            "msg": (
+                f"{nombre}: {len(rotulos)} pendiente(s) por "
+                f"{stat['monto_rotulos']:,.2f} que NO son movimientos — son "
+                f"líneas del RESUMEN contable del propio Excel de pendientes "
+                f"(" + ", ".join(r["rotulo"] for r in rotulos[:4]) + "). "
+                f"Entran al subir con «Hacer prevalecer» un export sin la hoja "
+                f"RESUMEN separada. Borralos con la ✕ en /conciliacion/banco-v2."
+            ),
+        })
+    if gigantes:
+        alerts.append({
+            "severity": "high",
+            "category": "pendiente_mayor_al_saldo",
+            "msg": (
+                f"{nombre}: {len(gigantes)} pendiente(s) más grandes que el "
+                f"saldo del banco ({float(saldo_banco or 0):,.2f}). Un "
+                f"movimiento no puede ser mayor que la cuenta entera."
+            ),
+        })
+    return stat, alerts
+
+
+@bp.route("/pendientes-conciliacion", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def pendientes_conciliacion():
+    """¿Hay basura en el backlog de pendientes del banco?
+
+    ⭐ POR QUÉ (TMT 2026-08-03). El Excel de pendientes que genera la app
+    llevaba el RESUMEN contable al pie de la misma hoja, con el rótulo en la
+    columna CODIGO — que es de donde «Hacer prevalecer» lee el DOCUMENTO.
+    Bajar ese archivo y volver a subirlo (el ciclo normal de trabajo) cargaba
+    las 6 líneas del resumen como pendientes: **$8.304.132,19** de créditos
+    fantasma, y el export siguiente salió con DIFERENCIA −8.323.357,19.
+
+    Ya está arreglado de raíz (el resumen vive en su propia hoja) y hay red en
+    el parser, pero los Excel viejos siguen dando vueltas. Esto lo mira todos
+    los días. NO cambia ningún cálculo.
+    """
+    alerts: list[dict] = []
+    stats: dict = {"bancos": []}
+    try:
+        from modules.informes.queries import saldo_bancos
+
+        saldos = {int(b["no_banco"]): float(b.get("saldo_stored") or 0)
+                  for b in saldo_bancos()}
+        filas = db.fetch_all(
+            """
+            SELECT h.id, h.no_banco, h.fecha, h.concepto, h.documento,
+                   h.monto, h.tipo,
+                   COALESCE(b.nombre, '') AS nombre
+              FROM scintela.banco_historicos_pendientes h
+              LEFT JOIN scintela.banco b ON b.no_banco = h.no_banco
+             WHERE h.conciliado_en IS NULL
+             ORDER BY h.no_banco, h.fecha NULLS FIRST
+            """
+        ) or []
+        por_banco: dict = {}
+        for f in filas:
+            por_banco.setdefault(int(f["no_banco"]), []).append(f)
+        for no_banco, fs in sorted(por_banco.items()):
+            nombre = (fs[0].get("nombre") or f"Banco {no_banco}").strip()
+            stat, al = _evaluar_pendientes(
+                no_banco=no_banco, nombre=nombre, filas=fs,
+                saldo_banco=saldos.get(no_banco),
+            )
+            stats["bancos"].append(stat)
+            alerts.extend(al)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "alerts": [{
+            "severity": "high", "category": "error",
+            "msg": f"pendientes-conciliacion falló: {str(e)[:200]}",
+        }], "stats": stats})
+
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -922,11 +1050,13 @@ def health_all():
     resp3 = cartera_coherence()
     resp4 = snapshot_diario_health()
     resp6 = cadena_saldos()
+    resp7 = pendientes_conciliacion()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
     data4 = json.loads(resp4.get_data(as_text=True))
     data6 = json.loads(resp6.get_data(as_text=True))
+    data7 = json.loads(resp7.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -935,13 +1065,14 @@ def health_all():
     data5 = _aplicar_retenciones_asinfo_cron(dias=60)
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
-               and data6["ok"]),
+               and data6["ok"] and data7["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
         "snapshot_diario": data4,
         "retenciones_asinfo": data5,
         "cadena_saldos": data6,
+        "pendientes_conciliacion": data7,
     })
 
 

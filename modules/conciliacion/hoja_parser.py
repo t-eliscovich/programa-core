@@ -29,10 +29,78 @@ from datetime import date, datetime
 _LOG = logging.getLogger("programa_core.conciliacion.hoja_parser")
 
 # Filas de cierre que NO son pendientes.
+# ⭐ TMT 2026-08-03 — RED contra el resumen contable del propio export.
+#
+# El generador (`_generar_xlsx_pendientes`) escribía el resumen al pie de la
+# MISMA hoja, con el rótulo en la columna C (CODIGO) y el importe en la D.
+# Este parser lee el DOCUMENTO de la columna C — así que para él
+# "SALDO BANCO (extracto)" era un número de documento válido — y comparaba
+# esta lista contra el CONCEPTO (columna B), que en esas filas viene VACÍA.
+# La lista negra no matcheaba NUNCA.
+#
+# Resultado: bajar el Excel de pendientes y volver a subirlo con "Hacer
+# prevalecer" —el ciclo normal de trabajo— cargaba 6 líneas de resumen como
+# pendientes del banco. El 03/08/2026: **$8.304.132,19** de créditos
+# fantasma (DIFERENCIA −8.323.357,19 en el export siguiente).
+#
+# El arreglo de raíz es que el resumen viva en OTRA HOJA (ya está hecho, y el
+# auto-detect de `_elegir_hoja` nunca la elige). Esto es la red para los
+# archivos que ya están descargados en la compu de la dueña, que siguen
+# teniendo el resumen en la misma hoja.
+#
+# Dos cambios sobre el chequeo viejo:
+#   1. se mira el CONCEPTO **y** el DOCUMENTO (el rótulo puede caer en
+#      cualquiera de los dos según cómo se armó el archivo);
+#   2. por *contiene* normalizado, no por igualdad exacta — si no,
+#      "SALDO BANCO (extracto)" y "SALDO SISTEMA (conciliado)" se escapan
+#      por el sufijo. Fue justo lo que pasó.
+#
+# ⚠ NO se filtra por "fila sin fecha": hay pendientes legítimos sin fecha,
+# a pedido expreso de la dueña (2026-06-04: *"quiero que los -15.835,60
+# prevalezcan aunque no tengan fecha"*).
+# [[project_2026_08_03_resumen_como_pendientes]]
 _FILAS_CIERRE = {
-    "TOTAL", "SALDO SISTEMA", "SALDO BANCO", "SALDO", "DIFERENCIA",
-    "SALDO ANTERIOR", "SALDO FINAL",
+    # Los rótulos EXACTOS que escribe `_generar_xlsx_pendientes`, ya
+    # normalizados (mayúsculas, sin acentos, sin signos ni paréntesis).
+    "TOTAL", "AJUSTE", "DIFERENCIA",
+    "SALDO", "SALDO ANTERIOR", "SALDO FINAL",
+    "SALDO SISTEMA", "SALDO SISTEMA CONCILIADO",
+    "SALDO BANCO", "SALDO BANCO EXTRACTO",
+    "PENDIENTES BANCO CREDITOS", "PENDIENTES BANCO DEBITOS",
 }
+
+
+def _norm_rotulo(t) -> str:
+    """MAYÚSCULAS, sin acentos, sin signos ni paréntesis, espacios colapsados."""
+    import unicodedata
+
+    if t is None:
+        return ""
+    s = unicodedata.normalize("NFKD", str(t))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    for ch in "+-\u2212()[]:.,;":
+        s = s.replace(ch, " ")
+    return " ".join(s.upper().split())
+
+
+def _es_fila_de_resumen(*textos) -> str | None:
+    """Devuelve el rótulo de cierre que matchea, o None.
+
+    ⭐ Comparación EXACTA sobre el texto normalizado, NO "contiene".
+
+    Probamos con `contiene` y se comía movimientos de verdad: el pendiente
+    `AJUSTE AC97 SIN FECHA` (el que la dueña pidió expresamente que
+    prevalezca el 2026-06-04) y los `DE AJUSTE CONCILIACION` que la propia
+    conciliación carga en el banco. Un filtro que se lleva puesto un dato
+    bueno es peor que el bug que arregla.
+
+    Normalizar sí hace falta: por igualdad cruda, `"SALDO BANCO (extracto)"`
+    no matchea `"SALDO BANCO"` y por ahí se coló todo el 03/08/2026.
+    """
+    for t in textos:
+        if _norm_rotulo(t) in _FILAS_CIERRE and str(t).strip():
+            return str(t).strip()[:60]
+    return None
 
 
 def _parse_fecha(v) -> date | None:
@@ -152,10 +220,14 @@ def parse_hoja_pendientes(
     Args:
         source: path (str) o bytes del .xlsx.
         sheet:  nombre de la pestaña (ej. "FEB2023"). Si None, auto-detecta.
-        return_dropped: si True, devuelve ``(rows, dropped)`` donde `dropped`
-            son las filas con concepto+VALOR que NO se pudieron parsear (antes
-            se descartaban en silencio → un mov "no cargaba como las demás" y
-            nadie se enteraba). Default False = comportamiento histórico.
+        return_dropped: si True, devuelve ``(rows, dropped, ignoradas)``.
+            `dropped` son las filas con concepto+VALOR que NO se pudieron
+            parsear (antes se descartaban en silencio → un mov "no cargaba
+            como las demás" y nadie se enteraba). `ignoradas` son las filas
+            de RESUMEN CONTABLE que se saltearon a propósito (TOTAL, AJUSTE,
+            SALDO BANCO…) — también se reportan, para que nadie tenga que
+            adivinar por qué el archivo trajo menos filas de las que tiene.
+            Default False = comportamiento histórico.
 
     Returns:
         list[{fecha, concepto, documento, monto (>0), tipo: 'C'|'D', fila}]
@@ -177,14 +249,24 @@ def parse_hoja_pendientes(
 
     out: list[dict] = []
     dropped: list[dict] = []
+    # Filas de resumen contable que se saltearon — se reportan a la pantalla
+    # en vez de descartarse en silencio. TMT 2026-08-03.
+    ignoradas: list[dict] = []
     for i, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), header_row + 1):
         def _cell(idx):
             return row[idx] if idx is not None and idx < len(row) else None
 
         concepto_raw = _cell(c_concepto)
         concepto = str(concepto_raw).strip() if concepto_raw is not None else ""
-        # Fila de cierre (TOTAL / SALDO / DIFERENCIA) → no es pendiente.
-        if concepto.upper() in _FILAS_CIERRE:
+        doc_previo = _cell(c_doc)
+        # Fila de cierre (TOTAL / SALDO / AJUSTE / DIFERENCIA / PENDIENTES) →
+        # no es un pendiente. Se mira el concepto Y el código: el rótulo cae
+        # en uno u otro según cómo se armó el archivo. Ver la nota de
+        # `_FILAS_CIERRE`.
+        _rotulo = _es_fila_de_resumen(concepto, doc_previo)
+        if _rotulo:
+            ignoradas.append({"fila": i, "rotulo": _rotulo,
+                              "valor": _to_float(_cell(c_valor))})
             continue
 
         valor_raw = _cell(c_valor)
@@ -225,9 +307,7 @@ def parse_hoja_pendientes(
             "fila": i,
         })
     if return_dropped:
-        return out, dropped
-    return out
-
+        return out, dropped, ignoradas
     return out
 
 
