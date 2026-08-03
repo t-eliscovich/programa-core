@@ -301,6 +301,31 @@ def test_resumen_conversion_dos_lineas_y_formato_ecuador():
     assert "larguísimo" not in r["titulo"] + r["detalle"]
 
 
+def test_resumen_conversion_muestra_los_kg():
+    """Dueña 03/08: *"podés agregarme los kg también en la notificación"*.
+
+    Caso real: AI 15 = AYF02653 partida en IM-0000571 (----1) + IM-0000572
+    (----2), 323 cajitas cada una, 22.578,78 kg entre las dos.
+    """
+    r = autobap.resumen({
+        "tipo": "conversion", "im_numero": "IM-0000572", "codigo_prov": "AI",
+        "ref_num": 15, "kg": 22578.78, "n_anticipos": 1, "importe": 58367.20,
+    })
+    assert r["titulo"] == "AI 15 · 22.579 kg · $ 58.367,20"
+    assert r["detalle"] == "Se cargó a compras"
+
+
+def test_resumen_conversion_sin_kg_no_deja_hueco():
+    """Las filas viejas del log (sin la columna kg) quedan como estaban."""
+    for kg in (None, 0, ""):
+        r = autobap.resumen({
+            "tipo": "conversion", "im_numero": "IM-0000572", "codigo_prov": "AI",
+            "ref_num": 15, "kg": kg, "importe": 58367.20,
+        })
+        assert r["titulo"] == "AI 15 · $ 58.367,20"
+        assert "kg" not in r["titulo"]
+
+
 def test_resumen_freno_no_repite_el_parrafo():
     r = autobap.resumen({"tipo": "freno", "n_anticipos": 2, "importe": 172879.79,
                          "mensaje": "Frenado por el tope: 2 importaciones por …"})

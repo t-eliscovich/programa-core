@@ -233,10 +233,21 @@ def resumen(a: dict) -> dict:
         # TMT 2026-07-31 (dueña): el aviso se encabeza con el CÓDIGO (`AI 11`),
         # igual que el de "falta ponerle el año" — así los dos avisos del mismo
         # caso se leen igual y se buscan igual en /dolares.
+        # TMT 2026-08-03 (dueña): *"¿podés agregarme los kg también en la
+        # notificación?"*. Los kg ya se guardaban en la columna `kg` del log
+        # (los de la importación en Asinfo, del GRUPO entero cuando viene
+        # partida en ---1/---2, ej. AI 15 = IM-0000571 + IM-0000572 = 22.579)
+        # pero sólo se veían en la tabla de pendientes. La plata sola no dice
+        # cuánto stock entró: van en el título, entre el código y el importe.
+        # Las filas viejas del log, sin kg, siguen mostrando el título de antes.
+        kg = a.get("kg")
+        partes = [_codigo(a) or a["im_numero"]]
+        if kg:
+            partes.append(f"{num_es(kg, 0)} kg")
+        partes.append(f"$ {num_es(a.get('importe'), 2)}")
         return {
             "icono": icono,
-            "titulo": f"{_codigo(a) or a['im_numero']} · "
-                      f"$ {num_es(a.get('importe'), 2)}",
+            "titulo": " · ".join(partes),
             "detalle": "Se cargó a compras",
         }
 
