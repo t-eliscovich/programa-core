@@ -1,14 +1,24 @@
 """Endpoint /admin/cheques-fechas-deposito — backfill de la fecha de depósito
-(FECHING) desde CHEQUES.DBF para cheques depositados que quedaron sin ella.
+(FECHOUT) desde CHEQUES.DBF para cheques depositados que quedaron sin ella.
 
 TMT 2026-07-20 (dueña: "¿no podés traer el campo depositado del dBase?").
-Contexto: la columna Depositado de /cheques = cheque.fechaing. El sync del
-dBase la trae (FECHING), pero un cheque depositado en el dBase DESPUÉS del
-último sync queda en PC con fechaing NULL → "—" en pantalla.
+Contexto: la columna Depositado de /cheques sale de `fechaing` cuando el
+depósito lo hizo Programa Core, y de `fechaout` cuando la fila viene del
+dBase. Un cheque depositado en el dBase DESPUÉS del último sync queda en PC
+sin ninguna de las dos → "—" en pantalla.
+
+⚠ TMT 2026-08-03 (dueña: "cambiá la columna"). Esta pantalla leía **FECHING**
+y la escribía en `fechaing` como si fuera la fecha de depósito. En el dBase
+FECHING es el día de INGRESO a cartera (`ALTAS.PRG` L30 `FECHING WITH DD`) y
+el depósito es **FECHOUT** (`BANCOS.PRG` L1234 `FECHOUT WITH DATE()`). Medido
+sobre CHEQUES.DBF: de 1.615 depositados/rebotados, **697 tienen FECHOUT ≠
+FECHING** (mediana 41 días de desfase, máximo 168) — o sea que casi la mitad
+de lo que escribía era una fecha equivocada, y encima `fechaing` es la columna
+que `informes` usa para decidir qué seguía en cartera a una fecha dada.
 
 Política CONSERVADORA (display-only, no toca estados/banco/saldos):
   - Solo cheques PC con stat B/A y fechaing IS NULL.
-  - Solo filas del DBF con FECHING y STAT depositado (B/V/A/W/I/J/K —
+  - Solo filas del DBF con FECHOUT y STAT depositado (B/V/A/W/I/J/K —
     V/W/I/J/K = variantes legacy de depositado del FoxPro).
   - Match por (CLIENTE, IMPORTE, BANCO); si el DBF tiene varias candidatas,
     desempata por NB == no_banco. Ambiguo → se SALTEA y se lista.
@@ -69,13 +79,18 @@ def calcular_propuestas(pc_rows: list[dict], dbf_rows: list[dict]) -> dict:
     """Función PURA (testeable): matchea y devuelve propuestas + salteados.
 
     pc_rows:  filas de scintela.cheque (stat B/A, fechaing NULL).
-    dbf_rows: filas crudas del DBF (dicts con CLIENTE/IMPORTE/BANCO/NB/STAT/FECHING).
+    dbf_rows: filas crudas del DBF (dicts con CLIENTE/IMPORTE/BANCO/NB/STAT/FECHOUT).
+
+    TMT 2026-08-03: se lee **FECHOUT**, no FECHING. Ver el docstring del
+    módulo — FECHING es el día de INGRESO a cartera y esto escribía esa fecha
+    en la columna Depositado (y en `fechaing`, que informes usa para decidir
+    qué seguía en cartera a una fecha).
     """
     dbf_por_clave: dict[tuple, list[dict]] = {}
     for r in dbf_rows:
         stat = (str(r.get("STAT") or "")).strip().upper()
-        feching = r.get("FECHING")
-        if stat not in _DBF_STATS_DEPOSITADO or not isinstance(feching, date):
+        fechout = r.get("FECHOUT")
+        if stat not in _DBF_STATS_DEPOSITADO or not isinstance(fechout, date):
             continue
         dbf_por_clave.setdefault(
             _clave(r.get("CLIENTE"), r.get("IMPORTE")), []
@@ -92,7 +107,7 @@ def calcular_propuestas(pc_rows: list[dict], dbf_rows: list[dict]) -> dict:
         cands = dbf_por_clave.get(k, [])
         if not cands:
             for c in pcs:
-                salteados.append((c, "sin fila depositada con FECHING en el DBF"))
+                salteados.append((c, "sin fila depositada con FECHOUT en el DBF"))
             continue
         if len(pcs) > 1:
             for c in pcs:
@@ -115,7 +130,7 @@ def calcular_propuestas(pc_rows: list[dict], dbf_rows: list[dict]) -> dict:
         if len(cands) != 1:
             salteados.append((c, f"{len(cands)} filas del DBF matchean (ambiguo)"))
             continue
-        propuestas.append((c, cands[0].get("FECHING")))
+        propuestas.append((c, cands[0].get("FECHOUT")))
     return {"propuestas": propuestas, "salteados": salteados}
 
 
@@ -142,7 +157,7 @@ _TPL = """
   <h1 class="text-xl font-bold mb-1">Fechas de depósito desde el dBase</h1>
   <p class="text-sm text-slate-500 mb-4">
     Completa SOLO la columna Depositado (fechaing) de cheques B/A que no la
-    tienen, leyendo FECHING de CHEQUES.DBF{% if mtime %} (tarball del {{ mtime }}){% endif %}.
+    tienen, leyendo FECHOUT de CHEQUES.DBF{% if mtime %} (tarball del {{ mtime }}){% endif %}.
     No toca estados ni saldos.
   </p>
   {% if err %}

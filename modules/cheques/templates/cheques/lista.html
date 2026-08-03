@@ -443,7 +443,7 @@
           <th class="px-2 py-1 text-left font-medium">N°</th>
           <th class="px-2 py-1 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. dep.</th>
           <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
-          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
+          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Día en que realmente se depositó (fechaout del dBase, o fechaing si el depósito se hizo por Programa Core). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
           {# TMT 2026-07-23 (dueña): "que vaya primero el importe y luego el banco"
              → Importe ANTES que Banco. #}
           {% set _ord_args = request.args.to_dict() %}
@@ -479,7 +479,14 @@
           {# TMT 2026-07-31 (dueña): V = re-depósito de un protestado → SÍ está
              depositado, mostramos la fecha. #}
           {% set ya_depositado = stat_u in ('B','A','V') %}
-          {% set fechaing_real = c.fechaing if ya_depositado else None %}
+          {# TMT 2026-08-03 (dueña: "cambiá la columna"). La fecha de depósito
+             de las filas que vienen del dBase es FECHOUT (→ `fechaout`), NO
+             FECHING (→ `fechaing`, que ahí es el día de INGRESO a cartera).
+             Medido sobre CHEQUES.DBF: de 1.615 depositados/rebotados, 697
+             tienen FECHOUT ≠ FECHING — mediana 41 días de desfase, máximo 168.
+             PC nunca escribe `fechaout` en B/A/V (lo usa para X/C/9/E), así
+             que el COALESCE es seguro: dBase → fechaout, PC → fechaing. #}
+          {% set fechaing_real = (c.fechaout or c.fechaing) if ya_depositado else None %}
           {# TMT 2026-05-20 — checkbox: sólo habilitado para cheques en
              estados depositables (Z cartera, P postdatado/postergado).
              Para el resto, queda vacío (sin checkbox) — no se puede

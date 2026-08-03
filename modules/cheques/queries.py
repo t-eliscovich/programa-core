@@ -5155,7 +5155,7 @@ def resumen_cobranza_dia(fecha) -> dict:
             """
             SELECT c.id_cheque, c.no_cheque, c.importe, c.fecha, c.fechad,
                    c.no_banco, c.stat, c.doc_banco,
-                   c.fecha_crea, c.usuario_crea,
+                   c.fecha_crea, c.usuario_crea, c.clave,
                    c.fecha_recibido, c.fechaing,
                    COALESCE(c.banco, '') AS banco_emisor,
                    c.codigo_cli,

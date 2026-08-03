@@ -1,6 +1,11 @@
 """Tests de calcular_propuestas() — backfill de fechas de depósito desde
 CHEQUES.DBF (TMT 2026-07-20). Match conservador: (cliente, importe, banco),
-desempate por NB; ambiguo → salteado. NUNCA por importe solo."""
+desempate por NB; ambiguo → salteado. NUNCA por importe solo.
+
+TMT 2026-08-03: la fecha que se propone sale de **FECHOUT** (el día que el
+cheque SALIÓ al banco), no de FECHING (el día que ENTRÓ a cartera). Los
+fixtures traen las dos, distintas a propósito, para que el test falle si
+alguien vuelve a leer FECHING."""
 from __future__ import annotations
 
 from datetime import date
@@ -18,7 +23,7 @@ def _pc(**kw):
 
 def _dbf(**kw):
     base = dict(CLIENTE="CG3", IMPORTE=879.96, BANCO="INTERNACI", NB=32,
-                STAT="V", FECHING=date(2026, 7, 13))
+                STAT="V", FECHING=date(2026, 5, 2), FECHOUT=date(2026, 7, 13))
     base.update(kw)
     return base
 
@@ -30,8 +35,8 @@ def test_match_unico_propone():
     assert c["id_cheque"] == 1 and f == date(2026, 7, 13)
 
 
-def test_dbf_sin_feching_o_no_depositado_no_cuenta():
-    r = calcular_propuestas([_pc()], [_dbf(FECHING=None), _dbf(STAT="Z")])
+def test_dbf_sin_fechout_o_no_depositado_no_cuenta():
+    r = calcular_propuestas([_pc()], [_dbf(FECHOUT=None), _dbf(STAT="Z")])
     assert not r["propuestas"]
     assert r["salteados"][0][1].startswith("sin fila")
 
@@ -53,7 +58,7 @@ def test_nb_distinto_con_candidato_unico_matchea():
 def test_ambiguo_en_dbf_desempata_por_nb():
     r = calcular_propuestas(
         [_pc(no_banco=32)],
-        [_dbf(NB=32, FECHING=date(2026, 7, 13)), _dbf(NB=17, FECHING=date(2026, 7, 1))],
+        [_dbf(NB=32, FECHOUT=date(2026, 7, 13)), _dbf(NB=17, FECHOUT=date(2026, 7, 1))],
     )
     assert len(r["propuestas"]) == 1
     assert r["propuestas"][0][1] == date(2026, 7, 13)
@@ -62,7 +67,7 @@ def test_ambiguo_en_dbf_desempata_por_nb():
 def test_ambiguo_sin_desempate_se_saltea():
     r = calcular_propuestas(
         [_pc(no_banco=32)],
-        [_dbf(NB=32), _dbf(NB=32, FECHING=date(2026, 7, 1))],
+        [_dbf(NB=32), _dbf(NB=32, FECHOUT=date(2026, 7, 1))],
     )
     assert not r["propuestas"]
     assert "ambiguo" in r["salteados"][0][1]
@@ -71,3 +76,20 @@ def test_ambiguo_sin_desempate_se_saltea():
 def test_dos_pc_iguales_se_saltean():
     r = calcular_propuestas([_pc(id_cheque=1), _pc(id_cheque=2)], [_dbf()])
     assert not r["propuestas"] and len(r["salteados"]) == 2
+
+
+def test_propone_fechout_no_feching():
+    """La fecha propuesta es FECHOUT (salida al banco), NO FECHING (ingreso).
+
+    TMT 2026-08-03 (dueña: "cambiá la columna"). En CHEQUES.DBF, 697 de las
+    1.615 filas depositadas tienen FECHOUT ≠ FECHING (mediana 41 días), así
+    que leer la columna equivocada escribía una fecha de depósito falsa —
+    y `fechaing` es además la columna que `informes` usa para decidir qué
+    cheques seguían en cartera a una fecha dada.
+    """
+    r = calcular_propuestas(
+        [_pc()], [_dbf(FECHING=date(2026, 5, 2), FECHOUT=date(2026, 7, 13))]
+    )
+    assert len(r["propuestas"]) == 1
+    _, f = r["propuestas"][0]
+    assert f == date(2026, 7, 13), "debe proponer FECHOUT, no FECHING"

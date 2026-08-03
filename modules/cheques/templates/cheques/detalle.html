@@ -245,9 +245,13 @@
      "Cargado" / "A depositar" / "Depositado" igual que en /cheques/lista.
      "Depositado" sólo si stat indica banco (B/A/1/2/3/R) — para cartera/postergados
      muestra "—" porque fechaing en esos casos es "fecha de ingreso al sistema"
-     no "fecha de depósito". TMT 2026-05-16. #}
+     no "fecha de depósito". TMT 2026-05-16.
+     TMT 2026-08-03 (dueña: "cambiá la columna"): en las filas que vienen del
+     dBase la fecha de depósito es FECHOUT (→ `fechaout`); `fechaing` es el
+     día de INGRESO. 697 de 1.615 depositados del DBF difieren (mediana 41
+     días). PC nunca escribe `fechaout` en B/A → el COALESCE sirve a los dos. #}
   {% set stat_u = (ch.stat or '').upper() %}
-  {% set fechaing_real = ch.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
+  {% set fechaing_real = (ch.fechaout or ch.fechaing) if stat_u in ('B','A','1','2','3','R') else None %}
   {% set fecha_cargado = ch.fecha_recibido or (ch.fecha_crea.date() if ch.fecha_crea and ch.fecha_crea.__class__.__name__ == 'datetime' else ch.fecha_crea) or ch.fecha %}
   <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6 text-sm">
     {# Importe — editable inline (queries.editar acepta importe desde 2026-05-27). #}
