@@ -7226,8 +7226,14 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                -- observacion cuando correo está vacío. Es sólo lectura: no se
                -- migra nada, y si mañana lo corrigen en el dBase se actualiza
                -- solo. `correo` (editable en /clientes/editar) tiene prioridad.
-               -- Sin `%` en la clase de caracteres: psycopg2 lo tomaría como
-               -- placeholder y explota ("unsupported format character").
+               -- OJO: esta query se manda CON parámetros, así que psycopg2
+               -- interpola la cadena entera. Cualquier signo de porcentaje
+               -- suelto (en el regex O EN UN COMENTARIO COMO ESTE) revienta con
+               -- "unsupported format character". Por eso el regex de abajo no
+               -- usa la clase de caracteres con porcentaje, y por eso acá no se
+               -- escribe el símbolo. Se pagó el 03/08: el comentario que
+               -- avisaba de esto TENÍA el símbolo y tiró abajo el estado de
+               -- cuenta de todos los clientes.
                COALESCE(
                    NULLIF(TRIM(c.correo), ''),
                    (regexp_match(c.observacion,

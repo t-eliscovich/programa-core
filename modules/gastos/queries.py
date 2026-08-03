@@ -456,7 +456,14 @@ def caja_egresos_sin_clasificar(limite: int = 200) -> list[dict]:
            -- moderno crea su mov_doble correctamente; este filtro cubre
            -- la data importada del DBF que no tiene esos links.
            -- TMT 2026-05-15: pasamos los prefijos como parámetros para
-           -- evitar líos con psycopg2 y el escape de %.
+           -- evitar líos con psycopg2 y el escape del comodín.
+           -- TMT 2026-08-03: el comentario original terminaba con el signo de
+           -- porcentaje literal y psycopg2 interpola la cadena ENTERA (también
+           -- los comentarios): esta función venía tirando ValueError
+           -- "unsupported format character" en CADA llamada desde el 15/05.
+           -- El único que la llama (/caja) la envuelve en un `except: []`, así
+           -- que el botón "Clasificar" de los egresos sin gasto V1..V9
+           -- simplemente NUNCA aparecía, sin un solo error a la vista.
            AND UPPER(TRIM(COALESCE(c.concepto, ''))) NOT LIKE %s
            AND UPPER(TRIM(COALESCE(c.concepto, ''))) NOT LIKE %s
            AND UPPER(TRIM(COALESCE(c.concepto, ''))) NOT LIKE %s

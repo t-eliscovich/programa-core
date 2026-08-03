@@ -9,6 +9,7 @@ from flask import (
     Blueprint,
     Response,
     abort,
+    current_app,
     flash,
     g,
     jsonify,
@@ -3307,6 +3308,19 @@ def estado_cuenta_lote_imprimir():
 def estado_cuenta(codigo_cli):
     codigo_up = codigo_cli.upper()
     data, error = _safe(lambda: queries.estado_cuenta_cliente(codigo_up), {})
+    # TMT 2026-08-03 — INCIDENTE: un error de SQL en la query del cliente hacía
+    # que `_safe` devolviera {} y esto abortara con **404**. O sea: la pantalla
+    # rota para TODOS los clientes se veía igual que "ese código no existe", y
+    # la dueña reportó un 404 sobre un cliente que sí existe (NDL). El 404
+    # miente sobre la causa y no deja rastro en el log. Si la consulta
+    # REVENTÓ, es un 500 y se loguea.
+    if error:
+        current_app.logger.error(
+            "estado_cuenta(%s): la consulta del cliente falló: %s",
+            codigo_up,
+            error,
+        )
+        abort(500)
     if not data or not data.get("cliente"):
         abort(404)
     try:
