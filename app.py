@@ -626,6 +626,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(health_audit_bp)
 
+    # Consola SQL de SÓLO LECTURA. Cada pregunta de datos costaba un endpoint
+    # nuevo + 3 min de CI/deploy; con esto se contesta en el momento. La
+    # garantía de que no escribe la da Postgres (`SET TRANSACTION READ ONLY`),
+    # no un filtro de texto. TMT 2026-08-03.
+    from modules.admin_dbase.sql_console_view import bp as sql_console_bp
+
+    app.register_blueprint(sql_console_bp)
+
     # Regenerar snapshot scintela.historia. TMT 2026-06-10.
     from modules.admin_dbase.regen_snapshot_view import bp as regen_snapshot_bp
 

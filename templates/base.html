@@ -1159,6 +1159,10 @@
             {% endif %}
             {% if tiene_permiso('usuarios.admin') %}
               <a href="{{ url_for('usuarios.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Usuarios</a>
+              {# TMT 2026-08-03 — consultar la base sin escribir un endpoint
+                 nuevo por cada pregunta. Sólo lectura, garantizado por
+                 Postgres (`SET TRANSACTION READ ONLY`), no por un filtro. #}
+              <a href="{{ url_for('sql_console.consola') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Consola SQL <span class="text-[10px] text-slate-400">sólo lectura</span></a>
             {% endif %}
             {% endif %}
 
