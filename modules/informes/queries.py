@@ -7202,14 +7202,26 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     """
     cliente = db.fetch_one(
         """
-        SELECT codigo_cli, nombre, telefono, ruc, cupo, stop, pago, pase, descuento,
+        SELECT c.codigo_cli, c.nombre, c.telefono, c.ruc, c.cupo, c.stop,
+               c.pago, c.pase, c.descuento,
                -- TMT 2026-06-07: dirección para el header del estado de cuenta
-               COALESCE(direccion1, '') AS direccion1,
-               COALESCE(direccion2, '') AS direccion2,
-               COALESCE(provincia, '')  AS provincia,
-               COALESCE(canton, '')     AS canton
-        FROM scintela.cliente
-        WHERE codigo_cli = %s
+               COALESCE(c.direccion1, '') AS direccion1,
+               COALESCE(c.direccion2, '') AS direccion2,
+               COALESCE(c.provincia, '')  AS provincia,
+               COALESCE(c.canton, '')     AS canton,
+               -- TMT 2026-08-03 (dueña): VENDEDOR + MAIL en el bloque de
+               -- contacto, en una SEGUNDA columna (que no le robe ancho al
+               -- resto). Va el CÓDIGO crudo de `cliente.vend`, por pedido
+               -- explícito de ella ("pone codigo mejor") — y además joinear
+               -- scintela.vendedor no sirve: verificado el 03/08 por
+               -- /admin/sql, las 21 filas de esa tabla tienen `nombre` =
+               -- `codigo` (BED→'BED', EDG→'EDG'…), o sea el join devolvía el
+               -- mismo string a cambio de un LEFT JOIN. Si algún día se les
+               -- carga nombre de verdad en /comisiones, ahí sí conviene.
+               COALESCE(c.correo, '')                 AS correo,
+               COALESCE(NULLIF(TRIM(c.vend), ''), '') AS vend
+        FROM scintela.cliente c
+        WHERE c.codigo_cli = %s
         """,
         (codigo_cli,),
     )

@@ -193,19 +193,35 @@
      estado de cuenta clásico sirva también a los empleados (dirección / RUC /
      tel claros y legibles). Solo va acá (no se repite en la cuenta corriente).
      TMT 2026-07-07 (dueña): en la IMPRESIÓN no va — no-print. #}
-  {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono %}
-  <div class="no-print mb-5 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-    {# TMT 2026-06-07: el dBase guarda la dirección en DOS renglones
-       (direccion1 + direccion2). Mostramos ambos. #}
-    {% set _d1 = data.cliente.direccion1 | cleanstr %}
-    {% set _d2 = data.cliente.direccion2 | cleanstr %}
-    {% if _d1 and _d1 | trim %}<div><span class="text-slate-400">Dirección:</span> {{ _d1 }}</div>{% endif %}
-    {% if _d2 and _d2 | trim %}<div><span class="text-slate-400">Dirección (2):</span> {{ _d2 }}</div>{% endif %}
-    {% if data.cliente.canton or data.cliente.provincia %}<div><span class="text-slate-400">Ciudad:</span> {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}</div>{% endif %}
+  {# TMT 2026-08-03 (dueña): VENDEDOR + MAIL. Van en una SEGUNDA columna, en el
+     hueco vacío que queda a la derecha de la dirección, para no achicar los
+     datos que ya estaban. #}
+  {% set _vend = data.cliente.vend | cleanstr %}
+  {% set _mail = data.cliente.correo | cleanstr %}
+  {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono
+        or (_vend and _vend | trim) or (_mail and _mail | trim) %}
+  <div class="no-print mb-5 grid sm:grid-cols-2 gap-x-8 max-w-3xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
     <div>
-      {% if data.cliente.ruc %}<span class="text-slate-400">RUC:</span> {{ data.cliente.ruc | cleanstr }}{% endif %}
-      {% if data.cliente.ruc and data.cliente.telefono %} &nbsp;·&nbsp; {% endif %}
-      {% if data.cliente.telefono %}<span class="text-slate-400">Tel:</span> {{ data.cliente.telefono | cleanstr }}{% endif %}
+      {# TMT 2026-06-07: el dBase guarda la dirección en DOS renglones
+         (direccion1 + direccion2). Mostramos ambos. #}
+      {% set _d1 = data.cliente.direccion1 | cleanstr %}
+      {% set _d2 = data.cliente.direccion2 | cleanstr %}
+      {% if _d1 and _d1 | trim %}<div><span class="text-slate-400">Dirección:</span> {{ _d1 }}</div>{% endif %}
+      {% if _d2 and _d2 | trim %}<div><span class="text-slate-400">Dirección (2):</span> {{ _d2 }}</div>{% endif %}
+      {% if data.cliente.canton or data.cliente.provincia %}<div><span class="text-slate-400">Ciudad:</span> {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}</div>{% endif %}
+      <div>
+        {% if data.cliente.ruc %}<span class="text-slate-400">RUC:</span> {{ data.cliente.ruc | cleanstr }}{% endif %}
+        {% if data.cliente.ruc and data.cliente.telefono %} &nbsp;·&nbsp; {% endif %}
+        {% if data.cliente.telefono %}<span class="text-slate-400">Tel:</span> {{ data.cliente.telefono | cleanstr }}{% endif %}
+      </div>
+    </div>
+    <div>
+      <div><span class="text-slate-400">Vendedor:</span>
+        {% if _vend and _vend | trim %}{{ _vend }}{% else %}<span class="text-slate-400">—</span>{% endif %}
+      </div>
+      <div class="break-all"><span class="text-slate-400">Mail:</span>
+        {% if _mail and _mail | trim %}<a href="mailto:{{ _mail }}" class="text-sky-700 dark:text-sky-400 hover:underline">{{ _mail }}</a>{% else %}<span class="text-slate-400">—</span>{% endif %}
+      </div>
     </div>
   </div>
   {% endif %}
