@@ -35,8 +35,14 @@
     .hoja tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; }
     .neg { color: #000 !important; }
   }
+  /* TMT 2026-08-03 (dueña: "estéticamente mejoralo, que midan lo mismo"). Las
+     pestañas, la barra de filtros y la hoja comparten ANCHO y arrancan
+     alineadas a la izquierda: antes la hoja iba centrada con margin auto y
+     medía distinto que el filtro, y las dos pantallas ni siquiera coincidían
+     entre sí. El ancho vive en .ancho-informe, que usan los tres bloques. */
+  .ancho-informe { max-width:980px; margin-left:0; margin-right:0; }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
-          padding:1.25rem 1.5rem; margin:1rem auto; max-width:820px; border-radius:4px; }
+          padding:1.25rem 1.5rem; margin:1rem 0; border-radius:4px; }
   .hoja table.principal { width:100%; border-collapse:collapse; margin-top:12px; }
   .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px; text-align:left;
              font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
@@ -54,7 +60,7 @@
 {% set activo = 'ingresados' %}
 {% include "cheques/_tabs_informes_dia.html" %}
 
-<div class="no-print bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 max-w-4xl">
+<div class="no-print ancho-informe bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
   <form method="get" action="{{ url_for('cheques.ingresados_dia') }}"
         class="flex flex-wrap items-end gap-3">
     <div>
@@ -62,17 +68,6 @@
       <input type="date" name="fecha" value="{{ fecha.isoformat() }}"
              title="Día en que el cheque ENTRÓ a cartera — no la fecha del cheque ni la de depósito"
              class="rounded border border-slate-300 px-2 py-1.5 text-sm">
-    </div>
-    {# TMT 2026-08-03 (dueña: "y solo estado Z no B"). El default es Z — los
-       que quedaron EN CARTERA. Los ya depositados (B) no van a este listado:
-       es la lista que se lleva al banco. El dBase pregunta ESTADO en CHEQUING
-       por lo mismo. #}
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Estado</label>
-      <select name="estado" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
-        <option value="z" {% if estado != 'todos' %}selected{% endif %}>En cartera (Z)</option>
-        <option value="todos" {% if estado == 'todos' %}selected{% endif %}>Todos</option>
-      </select>
     </div>
     <button type="submit"
             class="text-sm px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Ver</button>
@@ -82,13 +77,13 @@
 </div>
 
 {% if error %}
-  <div class="no-print max-w-4xl rounded border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm">{{ error }}</div>
+  <div class="no-print ancho-informe rounded border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm">{{ error }}</div>
 {% elif listado %}
-<div class="hoja">
+<div class="hoja ancho-informe">
   <div class="flex items-start justify-between border-b-2 border-slate-800 pb-2">
     <div>
       <h1 class="text-xl font-bold tracking-tight">LISTADO DE CHEQUES INGRESADOS</h1>
-      <div class="text-sm text-slate-600">INTELA CIA. LTDA.{% if estado != 'todos' %} — en cartera{% endif %}</div>
+      <div class="text-sm text-slate-600">INTELA CIA. LTDA. — en cartera</div>
     </div>
     <div class="mono text-sm">{{ fecha | fecha_es }}</div>
   </div>

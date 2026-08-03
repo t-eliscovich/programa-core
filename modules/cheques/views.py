@@ -3530,12 +3530,12 @@ def ingresados_dia():
     except ValueError:
         fecha = today_ec()
 
-    # TMT 2026-08-03 (dueña: "y solo estado Z no B"). Este listado es el que se
-    # lleva al banco: lo que quedó EN CARTERA. Por eso el default es Z y los
-    # depositados (B/A) no entran salvo que se pida "Todos". El dBase pregunta
-    # ESTADO en CHEQUING por la misma razón.
-    estado = (request.args.get("estado") or "z").strip().lower()
-    estados = None if estado == "todos" else ("Z",)
+    # TMT 2026-08-03 (dueña: "y solo estado Z no B" → "es siempre Z, no hay que
+    # seleccionar"). Este listado es el que se lleva al banco: SIEMPRE lo que
+    # quedó EN CARTERA. No hay selector — un filtro con una sola respuesta
+    # posible es un click de más. El dBase pregunta ESTADO en CHEQUING porque
+    # su pantalla es genérica; acá la pantalla ya es específica.
+    estados = ("Z",)
 
     try:
         listado = queries.cheques_ingresados_dia(fecha, estados)
@@ -3546,7 +3546,7 @@ def ingresados_dia():
 
     return render_template(
         "cheques/ingresados_dia.html",
-        listado=listado, fecha=fecha, estado=estado, error=error,
+        listado=listado, fecha=fecha, error=error,
     )
 
 

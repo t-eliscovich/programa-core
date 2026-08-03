@@ -37,8 +37,11 @@
                                  font-weight: 700 !important; }
     .saldo-neg, .neg { color: #000 !important; }
   }
+  /* TMT 2026-08-03 (dueña: "estéticamente mejoralo, que midan lo mismo") —
+     ver el comentario gemelo en ingresados_dia.html. */
+  .ancho-informe { max-width:980px; margin-left:0; margin-right:0; }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
-          padding:1.25rem 1.5rem; margin:1rem auto; max-width:980px; border-radius:4px; }
+          padding:1.25rem 1.5rem; margin:1rem 0; border-radius:4px; }
   .hoja table.principal { width:100%; table-layout:fixed; border-collapse:collapse; margin-top:12px; }
   .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px 5px; text-align:left;
              font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
@@ -80,7 +83,7 @@
 {% set activo = 'resumen' %}
 {% include "cheques/_tabs_informes_dia.html" %}
 
-<div class="no-print bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 max-w-4xl">
+<div class="no-print ancho-informe bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
   <form method="get" class="flex flex-wrap items-end gap-3">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha de cobranza</label>
@@ -94,10 +97,10 @@
 </div>
 
 {% if error %}
-  <div class="no-print mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">{{ error }}</div>
+  <div class="no-print ancho-informe mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">{{ error }}</div>
 {% endif %}
 
-<div class="hoja">
+<div class="hoja ancho-informe">
   <div class="flex items-start justify-between mb-2 pb-3 border-b-2 border-slate-800">
     <div>
       <div class="text-lg font-bold uppercase tracking-wide">Resumen de cobranza</div>

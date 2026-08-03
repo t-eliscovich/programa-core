@@ -13,7 +13,7 @@
    a 'resumen' o 'ingresados' y `fecha` en el contexto.
 
    Estilos inline: el tailwind.css del repo es un build JIT congelado. #}
-<div class="no-print" style="display:flex; gap:18px; border-bottom:1px solid #e2e8f0; margin-bottom:12px; max-width:980px;">
+<div class="no-print" style="display:flex; gap:18px; border-bottom:1px solid #e2e8f0; margin:0 0 12px 0; max-width:980px;">
   <a href="{{ url_for('cheques.resumen_dia', fecha=fecha.isoformat()) }}"
      style="padding:6px 2px; font-size:14px; text-decoration:none; border-bottom:2px solid {{ '#0284c7' if activo == 'resumen' else 'transparent' }}; color:{{ '#0369a1' if activo == 'resumen' else '#64748b' }}; font-weight:{{ '600' if activo == 'resumen' else '400' }};">
     Resumen de cobranza

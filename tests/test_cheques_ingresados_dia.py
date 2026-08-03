@@ -92,11 +92,11 @@ def test_estado_filtra_por_stat(monkeypatch):
     assert cap["params"]["estados"] == ["Z"]
 
 
-def test_default_es_solo_en_cartera_Z(client, fake_db, monkeypatch):
-    """TMT 2026-08-03 (dueña: "y solo estado Z no B").
+def test_siempre_solo_en_cartera_Z(client, fake_db, monkeypatch):
+    """TMT 2026-08-03 (dueña: "es siempre Z, no hay que seleccionar").
 
-    Este listado es el que se lleva al banco: sin ?estado sólo salen los que
-    quedaron EN CARTERA. Los depositados (B/A) entran sólo con estado=todos.
+    Este listado es el que se lleva al banco: SIEMPRE lo que quedó en cartera.
+    No hay selector de estado, y un ?estado en la URL no lo cambia.
     """
     import bcrypt
 
@@ -110,10 +110,16 @@ def test_default_es_solo_en_cartera_Z(client, fake_db, monkeypatch):
     assert client.get("/cheques/ingresados-dia?fecha=2026-07-31").status_code == 200
     assert cap["params"]["estados"] == ["Z"]
 
+    # Ni siquiera forzándolo por querystring entran los depositados.
     assert client.get(
         "/cheques/ingresados-dia?fecha=2026-07-31&estado=todos"
     ).status_code == 200
-    assert cap["params"]["estados"] is None
+    assert cap["params"]["estados"] == ["Z"]
+    assert "<select" not in _html_ultimo(client)
+
+
+def _html_ultimo(client):
+    return client.get("/cheques/ingresados-dia?fecha=2026-07-31").get_data(as_text=True)
 
 
 def test_render_ingresados_dia(client, fake_db, monkeypatch):
@@ -126,7 +132,7 @@ def test_render_ingresados_dia(client, fake_db, monkeypatch):
     fake_db.add_user("tamara", pw, rid)
     client.post("/login", data={"username": "tamara", "password": "secret123"})
 
-    resp = client.get("/cheques/ingresados-dia?fecha=2026-07-31&estado=todos")
+    resp = client.get("/cheques/ingresados-dia?fecha=2026-07-31")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
