@@ -356,7 +356,19 @@ def convertir_a_compra(
     usuario: str = "web",
     permitir_sin_recibir: bool = False,
 ) -> dict:
-    """Convierte un lote de anticipos vivos a una compra (BAP).
+    """
+    ⚠️ **La conversión NO escribe kilos.** `kg` llega en None desde el botón
+    manual (`dolares/views.py:252`) y desde el automático (`autobap.py:520`) —
+    regla de la dueña del 10/07: *el kg vive en el stock, no en la compra*.
+
+    Si estás acá porque alguien dijo *"la conversión repite los kilos"* y eso
+    explicaría un gap contra el dBase: **ya se midió y no es cierto**. 14 meses,
+    cero duplicaciones. El gap (+96.369 entre junio y julio) es desfase de FECHA:
+    `kcom` mide por fecha de la compra y Asinfo por fecha de recepción, y este
+    mismo motor convierte anticipos de importaciones recibidas meses antes.
+    Ver `docs/KG_HILADO_GAP_CERRADO_2026-08-03.md` y correr
+    `/admin/debug-kg-por-mes` antes de proponer nada.
+Convierte un lote de anticipos vivos a una compra (BAP).
 
     Replica BANCOS.PRG:803-816:
         - Suma los `importe` de los anticipos seleccionados.

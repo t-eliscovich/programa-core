@@ -935,6 +935,15 @@ def kg_hilado_faltantes_mes(compras: list[dict], limite: int = 400) -> dict:
     CIEGO a estos kg y se infla (bug 2026-07-17: compra AC de 22.992 kg
     convertida en PC → tarifa hilado +0,036 → utilidad +83k).
 
+    ⚠️ **Acá NO se duplican kilos.** El dedup es por `im_numero`, así que la
+    única vía sería que dos compras del mismo (prov, nº) cayeran en
+    importaciones distintas. Medido el 03/08 sobre 14 meses con
+    `/admin/debug-kg-por-mes`: **cero casos**, incluidos los 9 códigos con dos
+    compras (AC 25, AC 15, AC 16, MH 66, AC 92, AC 28, AI 14, AC 32, AI 15) —
+    los nueve resuelven a UNA sola importación. Antes de "arreglar" una
+    duplicación acá, mostrá un mes con `duplica_kilos = true`. Ver
+    `docs/KG_HILADO_GAP_CERRADO_2026-08-03.md`.
+
     `compras`: filas {prov, ref, fecha, kg} de TODAS las compras H del mes
     (ref = parte numérica del concepto, como en /compras).
 

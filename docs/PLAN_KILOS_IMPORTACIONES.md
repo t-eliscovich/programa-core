@@ -213,6 +213,16 @@ descartó. Es lo que permitió tirar abajo las reglas 2 a 5 en una tarde.
 
 ---
 
+## 4 bis. El gap de kilos contra el dBase — CERRADO (03/08)
+
+No lo vuelvan a diagnosticar: `docs/KG_HILADO_GAP_CERRADO_2026-08-03.md`.
+Resumen — el gap (+96.369 entre junio y julio) es **desfase de fecha**, no
+duplicación. 14 meses medidos con `/admin/debug-kg-por-mes`, cero kilos
+duplicados, y los 9 códigos con dos compras resuelven todos a una sola
+importación.
+
+---
+
 ## 5. Lo que falta, y de quién depende
 
 **Depende de la carpeta, no del sistema:**
