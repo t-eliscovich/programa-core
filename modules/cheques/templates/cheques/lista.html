@@ -350,17 +350,40 @@
              title="Entero = el dólar entero (500 → 500,00–500,99). Con centavos = exacto (500,51)."
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
-    {# Grupo 3: Fecha de depósito #}
+    {# Grupo 3: Fecha — TMT 2026-08-03 (dueña: "quiero imprimir los cheques
+       depositados hoy. esto no me filtra", parada en Cartera total). El campo
+       SIEMPRE se llamó "F. depósito", pero filtra cosas distintas según la
+       pestaña: en Depositados/Devueltos/Daniela es el día que el cheque pasó
+       por el banco, y en el resto es la fecha AGENDADA de depósito (fechad).
+       Estando en Cartera total, "hoy" traía los postergados a hoy — correcto
+       para el motor, incomprensible desde la pantalla. Ahora el rótulo dice
+       cuál de las dos es, y si estás en una pestaña de cartera hay un link
+       directo a Depositados conservando las fechas. #}
+    {% set _es_bucket_banco = estado in ('depositados', 'devueltos', 'daniela') %}
+    {% set _rot_fecha = 'Depositado' if _es_bucket_banco else 'A depositar' %}
     <div>
-      <label class="block text-xs text-slate-500 mb-1">F. depósito desde</label>
+      <label class="block text-xs text-slate-500 mb-1">{{ _rot_fecha }} desde</label>
       <input type="date" name="desde" value="{{ desde or '' }}" style="width:140px;"
+             title="{{ 'Día en que el cheque pasó por el banco.' if _es_bucket_banco else 'Fecha AGENDADA de depósito (fechad), no el depósito real.' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     <div>
-      <label class="block text-xs text-slate-500 mb-1">F. depósito hasta</label>
+      <label class="block text-xs text-slate-500 mb-1">{{ _rot_fecha }} hasta</label>
       <input type="date" name="hasta" value="{{ hasta or '' }}" style="width:140px;"
+             title="{{ 'Día en que el cheque pasó por el banco.' if _es_bucket_banco else 'Fecha AGENDADA de depósito (fechad), no el depósito real.' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
+    {% if not _es_bucket_banco and (desde or hasta) %}
+    {% set _args_dep = request.args.to_dict() %}
+    {% set _ = _args_dep.update({'estado': 'depositados'}) %}
+    <div class="self-end">
+      <a href="{{ url_for('cheques.lista', **_args_dep) }}"
+         style="display:inline-block; font-size:11px; line-height:1.25; padding:5px 8px; border-radius:6px; border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; text-decoration:none; max-width:190px;"
+         title="Cambia a la pestaña Depositados manteniendo el rango de fechas">
+        ¿Buscabas los <b>depositados</b> en esas fechas?
+      </a>
+    </div>
+    {% endif %}
     {# TMT 2026-05-20 — atajo "Hoy" (pedido dueña: agilizar depósitos).
        Setea desde=hasta=hoy y submitea. Visualmente queda como un chip
        chico al lado del rango. #}

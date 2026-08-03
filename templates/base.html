@@ -1254,5 +1254,32 @@
 {% else %}
   {% block unauth %}{% endblock %}
 {% endif %}
+
+{# TMT 2026-08-03 (dueña: "esto me traba la pantalla", con el menú "Más" de
+   /cheques abierto). Los 8 dropdowns de la app son <details class="relative">
+   con un panel absolute: <details> nativo NO se cierra al clickear afuera, así
+   que el panel quedaba tapando la tabla y había que volver a apretar "Más"
+   para salir. Ahora se cierran al clickear afuera, con Escape, y al elegir una
+   opción.
+
+   Sólo aplica a `details.relative` — los <details class="sidebar-section"> del
+   menú lateral son acordeones con estado persistente y NO se tocan. #}
+<script>
+  (function () {
+    function abiertos() { return document.querySelectorAll('details.relative[open]'); }
+    document.addEventListener('click', function (ev) {
+      abiertos().forEach(function (d) {
+        if (!d.contains(ev.target)) { d.removeAttribute('open'); return; }
+        // Click DENTRO: el <summary> abre/cierra solo; una opción del panel cierra.
+        var sum = d.querySelector(':scope > summary');
+        if (sum && sum.contains(ev.target)) return;
+        if (ev.target.closest && ev.target.closest('a, button')) d.removeAttribute('open');
+      });
+    }, true);
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') abiertos().forEach(function (d) { d.removeAttribute('open'); });
+    });
+  })();
+</script>
 </body>
 </html>

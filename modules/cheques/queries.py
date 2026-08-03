@@ -4939,10 +4939,19 @@ def buscar(
     # `fechad` (cuándo está agendado a depositar) — es lo operativo.
     # TMT 2026-05-16: "ver cheques del día" en tab Depositados antes daba 0
     # porque filtraba por fechad y los depósitos tienen fechaing≠fechad.
+    # TMT 2026-08-03 (dueña: "quiero imprimir los cheques depositados hoy"):
+    # va `fechaout` PRIMERO. En las filas que vienen del dBase la fecha de
+    # depósito es FECHOUT (→ `fechaout`); `fechaing` es FECHING = el día de
+    # INGRESO a cartera, y 697 de las 1.615 filas depositadas del DBF las
+    # tienen distintas (mediana 41 días). Sin esto, "Depositados + hoy" se
+    # comía cheques y traía otros. PC nunca escribe `fechaout` en B/A/V — lo
+    # usa para X/C/9/E — así que el COALESCE sirve para los dos orígenes.
+    # Misma columna que muestra la pantalla (ver lista.html, "Depositado").
+    _COL_DEPOSITO = "COALESCE(c.fechaout, c.fechaing, c.fechad, c.fecha)"
     fecha_col_por_estado = {
-        "depositados": "COALESCE(c.fechaing, c.fechad, c.fecha)",
-        "devueltos": "COALESCE(c.fechaing, c.fechad, c.fecha)",
-        "daniela": "COALESCE(c.fechaing, c.fechad, c.fecha)",
+        "depositados": _COL_DEPOSITO,
+        "devueltos": _COL_DEPOSITO,
+        "daniela": _COL_DEPOSITO,
     }
     fecha_col = fecha_col_por_estado.get(estado, "COALESCE(c.fechad, c.fecha)")
     # TMT 2026-05-19 v8 — refactor: cliente/banco/proveedor se traen vía
