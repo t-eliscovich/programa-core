@@ -171,6 +171,22 @@ def total_por_mes(anio: int | None = None) -> list[dict]:
 # ---------------------------------------------------------------------------
 import mov_doble as _md  # noqa: E402
 
+# Tope del listado de sin-factura del lote (el CONTADOR es exacto igual).
+_MAX_DETALLE = 200
+
+
+def _numf_sri(numero) -> int | None:
+    """N SRI numerico de '001-099-000179468' -> 179468. None si no hay digitos.
+
+    Fuente unica: la usan el aplicador (`_factura_por_numero`) y la pantalla
+    (`preview_retenciones_asinfo`), que TIENEN que clasificar igual.
+    """
+    import re as _re
+    m = _re.findall(r"\d+", str(numero or ""))
+    if not m:
+        return None
+    return int(m[-1])
+
 
 def _factura_por_numero(numero: str, conn):
     """Factura viva de PC (no backfill, no anulada) por numf_completo (SRI).
@@ -199,13 +215,8 @@ def _factura_por_numero(numero: str, conn):
     if f:
         return f
     # Fallback: extraer el N° SRI numérico de `numero` y matchear por numf.
-    import re as _re
-    _m = _re.findall(r"\d+", str(numero or ""))
-    if not _m:
-        return None
-    try:
-        _numf = int(_m[-1])
-    except (ValueError, TypeError):
+    _numf = _numf_sri(numero)
+    if _numf is None:
         return None
     return db.fetch_one(
         """
@@ -325,6 +336,10 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
     res = {
         "n_aplicadas": 0, "n_registradas": 0, "n_ya": 0, "n_sin_factura": 0,
         "n_error": 0, "total_aplicado": 0.0, "n_retenciones_asinfo": len(ret_map),
+        # TMT 2026-08-03: un CONTADOR no se puede investigar. Las que no
+        # encuentran factura salían por un `return "sin_factura"` que no dejaba
+        # log, ni mov_doble, ni fila: eran 45 invisibles. Ahora se listan.
+        "sin_factura": [],
     }
     batch_id = None  # cada factura es su propia tx; sin batch atómico
     for numero, r in ret_map.items():
@@ -343,8 +358,14 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
             res["n_ya"] += 1
         elif estado == "sin_factura":
             res["n_sin_factura"] += 1
+            if len(res["sin_factura"]) < _MAX_DETALLE:
+                res["sin_factura"].append({
+                    "numero": numero, "numf": _numf_sri(numero), "rete": rete,
+                })
         elif estado in ("rete_0", "rete_gt_importe"):
             res["n_error"] += 1
+    res["total_sin_factura"] = round(
+        sum(float(x["rete"] or 0) for x in res["sin_factura"]), 2)
     return res
 
 
@@ -600,7 +621,7 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     resumen = {
         "n_total": len(ret_map), "se_aplica": 0, "ya": 0, "sin_factura": 0,
-        "rete_gt_importe": 0, "rete_0": 0, "total_a_aplicar": 0.0,
+        "rete_gt_importe": 0, "rete_0": 0, "total_a_aplicar": 0.0, "via_numf": 0,
         "total_periodo": round(
             sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
     }
@@ -624,6 +645,36 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
     fac_by_num: dict = {}
     for f in fac_rows:
         fac_by_num.setdefault(f["numf_completo"], f)
+
+    # TMT 2026-08-03 (dueña: "por qué no tiene aplicada?"): ESPEJO del fallback
+    # por numf de `_factura_por_numero`. Las facturas de origen dBase tienen
+    # numf_completo NULL (import_dbf no lo escribe: el DBF sólo trae el entero),
+    # así que el match por SRI completo falla y esta pantalla las daba TODAS por
+    # "sin factura en PC" — 896 falsas contra 45 reales el 03/08. El aplicador
+    # sí las encontraba, o sea la pantalla mentía y el botón no.
+    via_numf: set = set()
+    faltan = {n: _numf_sri(n) for n in numeros if n not in fac_by_num}
+    faltan = {n: v for n, v in faltan.items() if v is not None}
+    if faltan:
+        por_numf: dict = {}
+        for f in db.fetch_all(
+            """
+            SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
+                   saldo, stat
+              FROM scintela.factura
+             WHERE numf = ANY(%s)
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+               AND COALESCE(stat, '') <> 'X'
+             ORDER BY id_factura
+            """,
+            (sorted(set(faltan.values())),),
+        ):
+            por_numf.setdefault(f["numf"], f)
+        for numero_, numf_ in faltan.items():
+            f = por_numf.get(numf_)
+            if f is not None:
+                fac_by_num[numero_] = f
+                via_numf.add(numero_)
 
     # Retenciones ya registradas para esas facturas (set de pares codigo_cli|numf).
     codigos = list({f["codigo_cli"] for f in fac_by_num.values()})
@@ -654,7 +705,10 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
             "codigo_cli": None, "cliente": None, "numf": None,
             "importe": None, "saldo_actual": None, "saldo_nuevo": None,
             "stat_nuevo": None, "estado": None,
+            "via_numf": numero in via_numf,
         }
+        if fila["via_numf"]:
+            resumen["via_numf"] += 1
         f = fac_by_num.get(numero)
         if rete <= 0.005:
             fila["estado"] = "rete_0"
