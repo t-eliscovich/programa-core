@@ -233,10 +233,37 @@ def eliminar_por_id(id_cliente: int) -> int:
         (int(id_cliente),),
     ) or {}
     codigo = (fila.get("codigo_cli") or "").strip()
+    # TMT 2026-08-03 — dueña, sobre los dos 'GUF' que le aparecían con el
+    # MISMO saldo en el estado de cuenta: "el otro borralo por ahora".
+    # No se podía: la guarda de abajo mira las FKs POR CÓDIGO, y GUF tiene
+    # 55 facturas + 8 cheques, así que rechazaba borrar las DOS filas —
+    # incluida la sobrante. Y ninguna otra pantalla sirve: `editar` y `stop`
+    # resuelven por `codigo_cli`, y con el código repetido no hay forma de
+    # decir a cuál de las dos filas te referís. `eliminar` es la única que
+    # va por PK.
+    #
+    # Los movimientos apuntan al CÓDIGO, no al id_cliente. Así que mientras
+    # quede al menos otra fila con ese código, borrar la sobrante no deja
+    # nada huérfano: la factura y el cheque siguen resolviendo. La guarda
+    # sólo tiene sentido cuando ésta es la ÚLTIMA fila del código.
+    #
+    # scintela.cliente tiene 25 códigos duplicados (3.973 filas / 3.948
+    # códigos): dos empresas distintas compartiendo el mismo código de 3
+    # letras. Ver STATS/_CTE_CLI en modules/comisiones/queries.py — ahí el
+    # duplicado contaba la cobranza dos veces.
+    queda_otra_fila_con_el_codigo = False
+    if codigo:
+        otras = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.cliente "
+            "WHERE UPPER(TRIM(codigo_cli)) = %s AND id_cliente <> %s",
+            (codigo.upper(), int(id_cliente)),
+        ) or {}
+        queda_otra_fila_con_el_codigo = int(otras.get("n") or 0) > 0
+
     # Si tiene código, chequeamos FKs por código. Si NO tiene código,
     # asumimos que no puede tener facturas/cheques vinculados (no podrían
     # haberse cargado sin código del cliente).
-    if codigo:
+    if codigo and not queda_otra_fila_con_el_codigo:
         n_fact = db.fetch_one(
             "SELECT COUNT(*) AS n FROM scintela.factura WHERE UPPER(codigo_cli) = %s",
             (codigo.upper(),),
