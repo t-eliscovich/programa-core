@@ -754,6 +754,158 @@ def simulacro_cierre():
     })
 
 
+# ---------------------------------------------------------------------------
+# Cadena de saldos bancarios: ¿el running `saldo` guardado sigue encadenado?
+# ---------------------------------------------------------------------------
+
+
+def _breaks_cadena(no_banco: int, desde) -> list[dict]:
+    """Filas donde el running `saldo` GUARDADO no encadena con la anterior.
+
+    Criterio a propósito AGNÓSTICO de convención de signos (el `documento`
+    viene con formatos distintos en filas legacy del DBF, y en las del sync
+    el `importe` ya viene firmado): sólo pedimos que el salto del saldo
+    valga lo mismo que el importe de la fila. |Δsaldo| == |importe|.
+    Sobre 500 filas de Pichincha el 03/08/2026 dio exactamente 3 hits y
+    ningún falso positivo.
+    """
+    return db.fetch_all(
+        """
+        WITH w AS (
+          SELECT id_transaccion, fecha, documento, concepto, importe, saldo,
+                 LAG(saldo)   OVER (ORDER BY fecha, id_transaccion) AS saldo_prev,
+                 LAG(fecha)   OVER (ORDER BY fecha, id_transaccion) AS fecha_prev,
+                 LAG(concepto) OVER (ORDER BY fecha, id_transaccion) AS concepto_prev
+            FROM scintela.transacciones_bancarias
+           WHERE no_banco = %s
+             AND saldo IS NOT NULL
+             AND fecha >= %s
+        )
+        SELECT * FROM w
+         WHERE saldo_prev IS NOT NULL
+           AND ABS(ABS(saldo - saldo_prev) - ABS(COALESCE(importe, 0))) > 0.02
+         ORDER BY fecha, id_transaccion
+        """,
+        (no_banco, desde),
+    ) or []
+
+
+def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias):
+    """Arma el stat y las alertas de UN banco. Pura — se testea sin Flask."""
+    gap_total = round(sum(
+        abs(abs(float(r["saldo"]) - float(r["saldo_prev"]))
+            - abs(float(r["importe"] or 0)))
+        for r in breaks
+    ), 2)
+    stat = {
+        "no_banco": no_banco,
+        "nombre": nombre,
+        "saldo_usado_por_el_balance": stored,
+        "saldo_signed": signed,
+        "delta_stored_vs_signed": round(stored - signed, 2),
+        "n_breaks": len(breaks),
+        "gap_total": gap_total,
+        "saldos_null": int(n_nulls or 0),
+        "breaks": [{
+            "id_transaccion": r.get("id_transaccion"),
+            "fecha": str(r.get("fecha")),
+            "documento": (r.get("documento") or "").strip(),
+            "concepto": (r.get("concepto") or "")[:60],
+            "importe": float(r["importe"] or 0),
+            "saldo_prev": float(r["saldo_prev"]),
+            "saldo": float(r["saldo"]),
+            "gap": round(abs(abs(float(r["saldo"]) - float(r["saldo_prev"]))
+                             - abs(float(r["importe"] or 0))), 2),
+            "fila_anterior": (r.get("concepto_prev") or "")[:40],
+        } for r in breaks[:15]],
+    }
+    alerts = []
+    if gap_total > 1.0:
+        alerts.append({
+            "severity": "high",
+            "category": "cadena_saldos_rota",
+            "msg": (
+                f"{nombre}: la cadena del running saldo está partida en "
+                f"{len(breaks)} punto(s), gap acumulado {gap_total:,.2f}. "
+                f"El BALANCE lee el saldo guardado de la última fila, así que "
+                f"el patrimonio y la utilidad están corridos por esa plata — y "
+                f"la conciliación va a mostrar esa misma diferencia contra el "
+                f"extracto. Revisar /bancos/{no_banco} desde la fecha del "
+                f"primer break y recomputar."
+            ),
+        })
+    if n_nulls:
+        alerts.append({
+            "severity": "medium",
+            "category": "saldo_null",
+            "msg": (f"{nombre}: {n_nulls} fila(s) con `saldo` NULL en los "
+                    f"últimos {dias} días — quedan fuera de la cadena."),
+        })
+    return stat, alerts
+
+
+@bp.route("/cadena-saldos", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cadena_saldos():
+    """¿La cadena del running `saldo` de cada banco sigue entera?
+
+    ⭐ POR QUÉ EXISTE (TMT 2026-08-03). `saldo_bancos()` NO suma los
+    movimientos: toma el `saldo` running GUARDADO de la fila de mayor
+    (fecha, id). O sea el BANCO del balance — y con él el PATRIMONIO y la
+    UTILIDAD — es *el running que traiga la última fila del día*. Si la
+    cadena se parte, todo eso se corre por esa diferencia y **nada avisa**.
+
+    Pasó: una fila `ND Comisiones e impuestos` de **$2,96** creada por la
+    conciliación movió Pichincha **+155.187,31**; la utilidad saltó de
+    37.658 a 193.749 en 5 minutos sin que se moviera un peso, y la sesión
+    de conciliación #60 marcó esa misma diferencia contra el extracto.
+    Se descubrió a ojo, mirando el listado. Este chequeo lo hace visible.
+
+    NO cambia ningún cálculo. Sólo mira y avisa.
+    """
+    from datetime import timedelta
+
+    from filters import today_ec
+
+    dias = max(1, min(int(request.args.get("dias", 120) or 120), 3650))
+    desde = today_ec() - timedelta(days=dias)
+    alerts: list[dict] = []
+    stats: dict = {"dias": dias, "desde": str(desde), "bancos": []}
+
+    try:
+        from modules.informes.queries import saldo_bancos
+
+        for b in saldo_bancos():
+            no_banco = int(b["no_banco"])
+            nombre = (b.get("nombre") or f"Banco {no_banco}").strip()
+            breaks = _breaks_cadena(no_banco, desde)
+            n_nulls = (db.fetch_one(
+                "SELECT COUNT(*) AS n FROM scintela.transacciones_bancarias "
+                " WHERE no_banco = %s AND fecha >= %s AND saldo IS NULL",
+                (no_banco, desde),
+            ) or {}).get("n", 0)
+            stat, al = _evaluar_cadena(
+                no_banco=no_banco,
+                nombre=nombre,
+                stored=float(b.get("saldo_stored") or 0),
+                signed=float(b.get("saldo_signed") or 0),
+                breaks=breaks,
+                n_nulls=n_nulls,
+                dias=dias,
+            )
+            stat["saldo_origen"] = b.get("saldo_origen")
+            stats["bancos"].append(stat)
+            alerts.extend(al)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "alerts": [{
+            "severity": "high", "category": "error",
+            "msg": f"cadena-saldos falló: {str(e)[:200]}",
+        }], "stats": stats})
+
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -769,10 +921,12 @@ def health_all():
     resp2 = utilidad_watchdog()
     resp3 = cartera_coherence()
     resp4 = snapshot_diario_health()
+    resp6 = cadena_saldos()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
     data4 = json.loads(resp4.get_data(as_text=True))
+    data6 = json.loads(resp6.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -780,12 +934,14 @@ def health_all():
     # Mismo patrón que snapshot_diario (que también escribe en este cron).
     data5 = _aplicar_retenciones_asinfo_cron(dias=60)
     return jsonify({
-        "ok": data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"],
+        "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
+               and data6["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
         "snapshot_diario": data4,
         "retenciones_asinfo": data5,
+        "cadena_saldos": data6,
     })
 
 

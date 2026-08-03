@@ -1290,7 +1290,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
               FROM scintela.historia
              WHERE EXTRACT(YEAR FROM fecha)  = %s
                AND EXTRACT(MONTH FROM fecha) = %s
-             ORDER BY fecha DESC LIMIT 1
+             ORDER BY fecha DESC, id_historia DESC LIMIT 1
             """,
                 (yy_ant, mm_ant),
             )
@@ -1413,7 +1413,7 @@ def historia_ultimo_snapshot() -> dict | None:
         """
         SELECT *
         FROM scintela.historia
-        ORDER BY fecha DESC
+        ORDER BY fecha DESC, id_historia DESC
         LIMIT 1
         """
     )
@@ -1436,13 +1436,27 @@ def historia_ultimo_mes() -> dict | None:
     Fix: filtrar a `fecha < primer día del mes en curso` para forzar que
     PATANT sea efectivamente el cierre del mes anterior (= 30 de abril
     cuando estamos en mayo).
+
+    ⭐ TMT 2026-08-03 — DESEMPATE POR `id_historia DESC`, obligatorio.
+    Desde a95c835b (01/08) cada entrada a /historico-12m toma una foto
+    fresca, así que el ÚLTIMO DÍA DEL MES puede tener VARIAS filas (el
+    03/08 hubo 3, con patrimonios que diferían 153.549). Sin desempate,
+    `ORDER BY fecha DESC LIMIT 1` devolvía una CUALQUIERA de ellas y el
+    PATANT del mes siguiente salía a la suerte — y el legacy RELEE ese
+    snapshot y no lo recalcula nunca, así que un día de flapeo quedaba
+    como un cierre mal para siempre.
+
+    Gana la ÚLTIMA guardada: es la misma regla del FoxPro
+    (`DELE ALL FOR DAY(FECHA)<=DDD .AND. RECNO()<RECC()`, INFORMES.PRG
+    L1336-1546) y la de la pantalla del Historial ("una foto por mes gana").
+    [[project_2026_08_03_utilidad_37k]]
     """
     return db.fetch_one(
         """
         SELECT *
         FROM scintela.historia
         WHERE fecha < date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::date
-        ORDER BY fecha DESC
+        ORDER BY fecha DESC, id_historia DESC
         LIMIT 1
         """
     )
@@ -1476,7 +1490,7 @@ def historia_mas_reciente() -> dict | None:
         SELECT *
         FROM scintela.historia
         WHERE COALESCE(ktej, 0) > 0
-        ORDER BY fecha DESC
+        ORDER BY fecha DESC, id_historia DESC
         LIMIT 1
         """
     )
@@ -1487,7 +1501,7 @@ def historia_mas_reciente() -> dict | None:
         """
         SELECT *
         FROM scintela.historia
-        ORDER BY fecha DESC
+        ORDER BY fecha DESC, id_historia DESC
         LIMIT 1
         """
     )
@@ -6902,7 +6916,7 @@ def historia_lista(limite: int = 24) -> list[dict]:
                banco, cart, deuda, retiro, patrimonio, anticipos,
                dolar, maquinaria, realty, usret, usuti
         FROM scintela.historia
-        ORDER BY fecha DESC
+        ORDER BY fecha DESC, id_historia DESC
         LIMIT %s
         """,
         (limite,),
@@ -6967,15 +6981,15 @@ def historia_multianual(meses: int = 12) -> dict:
                EXTRACT(MONTH FROM fecha)::int AS mm,
                MAX(fecha)                     AS fecha,
                -- Tomamos el último snapshot del mes si hay >1.
-               (ARRAY_AGG(patrimonio ORDER BY fecha DESC))[1] AS patrimonio,
-               (ARRAY_AGG(uvent      ORDER BY fecha DESC))[1] AS uvent,
-               (ARRAY_AGG(usuti      ORDER BY fecha DESC))[1] AS usuti,
-               (ARRAY_AGG(kvent      ORDER BY fecha DESC))[1] AS kvent,
-               (ARRAY_AGG(ustock     ORDER BY fecha DESC))[1] AS ustock,
-               (ARRAY_AGG(uqui       ORDER BY fecha DESC))[1] AS uqui,
-               (ARRAY_AGG(cart       ORDER BY fecha DESC))[1] AS cart,
-               (ARRAY_AGG(deuda      ORDER BY fecha DESC))[1] AS deuda,
-               (ARRAY_AGG(usret      ORDER BY fecha DESC))[1] AS usret
+               (ARRAY_AGG(patrimonio ORDER BY fecha DESC, id_historia DESC))[1] AS patrimonio,
+               (ARRAY_AGG(uvent      ORDER BY fecha DESC, id_historia DESC))[1] AS uvent,
+               (ARRAY_AGG(usuti      ORDER BY fecha DESC, id_historia DESC))[1] AS usuti,
+               (ARRAY_AGG(kvent      ORDER BY fecha DESC, id_historia DESC))[1] AS kvent,
+               (ARRAY_AGG(ustock     ORDER BY fecha DESC, id_historia DESC))[1] AS ustock,
+               (ARRAY_AGG(uqui       ORDER BY fecha DESC, id_historia DESC))[1] AS uqui,
+               (ARRAY_AGG(cart       ORDER BY fecha DESC, id_historia DESC))[1] AS cart,
+               (ARRAY_AGG(deuda      ORDER BY fecha DESC, id_historia DESC))[1] AS deuda,
+               (ARRAY_AGG(usret      ORDER BY fecha DESC, id_historia DESC))[1] AS usret
         FROM scintela.historia
         WHERE EXTRACT(YEAR FROM fecha) BETWEEN %s AND %s
         GROUP BY yy, mm
@@ -8413,7 +8427,7 @@ def balance_components_as_of(as_of) -> dict:
                patrimonio, usret, usuti
           FROM scintela.historia
          WHERE fecha < DATE_TRUNC('month', %s::date)
-         ORDER BY fecha DESC
+         ORDER BY fecha DESC, id_historia DESC
          LIMIT 1
         """,
             (as_of,),

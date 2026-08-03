@@ -150,20 +150,43 @@ def recompute_saldos_desde(
             "Sin ancla, se rebobina desde 0 y se pierde el opening histórico."
         )
     if ancla_id is not None:
+        # ⭐ TMT 2026-08-03 — EL ANCLA VA POR (fecha, id), NO POR id.
+        # Mismo bug que bank_helpers: el saldo de arranque salía por orden de
+        # INSERCIÓN y el walk de abajo camina por FECHA, así que una fila
+        # BACKDATED partía la cadena en dos segmentos incoherentes. En bancos
+        # eso valió 155.187,31 de patrimonio fantasma el 03/08/2026 y rompió
+        # la conciliación de Pichincha. [[project_2026_08_03_utilidad_37k]]
+        anc = db.fetch_one(
+            "SELECT fecha FROM scintela.caja WHERE id_caja = %s",
+            (ancla_id,),
+            conn=conn,
+        )
+        if anc and anc.get("fecha"):
+            ancla_fecha_del_id = anc["fecha"]
+        else:
+            # Ancla borrada: ensanchamos el walk, nunca lo achicamos.
+            _mn = db.fetch_one(
+                "SELECT MIN(fecha) AS fecha FROM scintela.caja WHERE id_caja >= %s",
+                (ancla_id,),
+                conn=conn,
+            )
+            if not _mn or not _mn.get("fecha"):
+                return 0
+            ancla_fecha_del_id = _mn["fecha"]
         row = db.fetch_one(
             """
             SELECT COALESCE(saldo, 0) AS saldo
               FROM scintela.caja
-             WHERE id_caja < %s
-             ORDER BY id_caja DESC
+             WHERE (fecha, id_caja) < (%s::date, %s)
+             ORDER BY fecha DESC, id_caja DESC
              LIMIT 1
             """,
-            (ancla_id,),
+            (ancla_fecha_del_id, ancla_id),
             conn=conn,
         )
         saldo = float(row["saldo"]) if row else 0.0
-        cond_inicio = "id_caja >= %s"
-        params_inicio: tuple = (ancla_id,)
+        cond_inicio = "(fecha, id_caja) >= (%s::date, %s)"
+        params_inicio: tuple = (ancla_fecha_del_id, ancla_id)
     else:  # ancla_fecha
         # TMT 2026-06-11: ancla = cierre del día ANTERIOR (estricto), el walk
         # re-aplica todas las filas de la fecha ancla. Ver bank_helpers.

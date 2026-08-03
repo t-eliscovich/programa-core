@@ -26,6 +26,34 @@ class _FakeBankDB:
     def fetch_one(self, sql: str, params: Any = None, conn=None):
         s = " ".join((sql or "").split()).lower()
         params = tuple(params or ())
+        # --- ancla por (fecha, id) — fix TMT 2026-08-03 --------------------
+        # fecha del ancla a partir de su id
+        if s.startswith("select fecha from scintela.transacciones_bancarias"):
+            no_banco, _, _, ancla = params
+            for f in self.filas:
+                if f["no_banco"] == no_banco and f["id_transaccion"] == ancla:
+                    return {"fecha": f["fecha"]}
+            return None
+        # fallback MIN(fecha) cuando el ancla ya no existe
+        if "select min(fecha)" in s and "from scintela.transacciones_bancarias" in s:
+            no_banco, _, _, ancla = params
+            cand = [f["fecha"] for f in self.filas
+                    if f["no_banco"] == no_banco and f["id_transaccion"] >= ancla]
+            return {"fecha": min(cand)} if cand else {"fecha": None}
+        # saldo de arranque = última fila ESTRICTAMENTE anterior en (fecha, id)
+        if (
+            "from scintela.transacciones_bancarias" in s
+            and "(fecha, id_transaccion) <" in s
+            and len(params) == 5
+        ):
+            no_banco, _, _, fecha_a, ancla = params
+            cand = [f for f in self.filas
+                    if f["no_banco"] == no_banco
+                    and (f["fecha"], f["id_transaccion"]) < (fecha_a, ancla)]
+            if not cand:
+                return None
+            row = max(cand, key=lambda f: (f["fecha"], f["id_transaccion"]))
+            return {"saldo": row["saldo"]}
         # recompute_saldos_desde — second lookup por id (no por fecha)
         # SQL: "ORDER BY id_transaccion DESC LIMIT 1" sin fecha en order
         if (
@@ -111,13 +139,19 @@ class _FakeBankDB:
             #   (no_banco, no_cta, no_cta, ancla_id)         → id_transaccion >= ancla_id
             #   (no_banco, no_cta, no_cta, ancla_fecha)      → fecha >= ancla_fecha
             no_banco = params[0]
-            extra = params[3] if len(params) >= 4 else None
             todas = [f for f in self.filas if f["no_banco"] == no_banco]
-            if extra is not None:
-                if isinstance(extra, int):
-                    todas = [f for f in todas if f["id_transaccion"] >= extra]
-                elif isinstance(extra, date):
-                    todas = [f for f in todas if f["fecha"] >= extra]
+            if len(params) >= 5:
+                # (fecha, id_transaccion) >= (ancla_fecha, ancla_id)
+                fecha_a, id_a = params[3], params[4]
+                todas = [f for f in todas
+                         if (f["fecha"], f["id_transaccion"]) >= (fecha_a, id_a)]
+            else:
+                extra = params[3] if len(params) >= 4 else None
+                if extra is not None:
+                    if isinstance(extra, date):
+                        todas = [f for f in todas if f["fecha"] >= extra]
+                    elif isinstance(extra, int):
+                        todas = [f for f in todas if f["id_transaccion"] >= extra]
             return sorted(todas, key=lambda f: (f["fecha"], f["id_transaccion"]))
         return []
 
@@ -172,6 +206,25 @@ class _FakeCajaDB:
     def fetch_one(self, sql: str, params: Any = None, conn=None):
         s = " ".join((sql or "").split()).lower()
         params = tuple(params or ())
+        # --- ancla por (fecha, id) — fix TMT 2026-08-03 -------------------
+        if s.startswith("select fecha from scintela.caja"):
+            (ancla,) = params
+            for f in self.filas:
+                if f["id_caja"] == ancla:
+                    return {"fecha": f["fecha"]}
+            return None
+        if "select min(fecha)" in s and "from scintela.caja" in s:
+            (ancla,) = params
+            cand = [f["fecha"] for f in self.filas if f["id_caja"] >= ancla]
+            return {"fecha": min(cand)} if cand else {"fecha": None}
+        if "from scintela.caja" in s and "(fecha, id_caja) <" in s and len(params) == 2:
+            fecha_a, ancla = params
+            cand = [f for f in self.filas
+                    if (f["fecha"], f["id_caja"]) < (fecha_a, ancla)]
+            if not cand:
+                return None
+            row = max(cand, key=lambda f: (f["fecha"], f["id_caja"]))
+            return {"saldo": row["saldo"]}
         # recompute_saldos_desde — primer lookup por id antes de walk
         if (
             "from scintela.caja" in s
@@ -208,8 +261,16 @@ class _FakeCajaDB:
 
     def fetch_all(self, sql: str, params: Any = None, conn=None):
         s = " ".join((sql or "").split()).lower()
+        params = tuple(params or ())
         if "from scintela.caja" in s and "order by fecha, id_caja" in s:
-            return sorted(self.filas, key=lambda f: (f["fecha"], f["id_caja"]))
+            todas = list(self.filas)
+            if len(params) >= 2:
+                fecha_a, id_a = params[0], params[1]
+                todas = [f for f in todas
+                         if (f["fecha"], f["id_caja"]) >= (fecha_a, id_a)]
+            elif len(params) == 1 and isinstance(params[0], date):
+                todas = [f for f in todas if f["fecha"] >= params[0]]
+            return sorted(todas, key=lambda f: (f["fecha"], f["id_caja"]))
         return []
 
     def execute(self, sql: str, params: Any = None, conn=None):

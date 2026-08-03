@@ -66,8 +66,18 @@
 
   {# ── PANEL BANCO ─────────────────────────────────────────────── #}
   <section data-panel="banco" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
-    <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-      <div class="flex items-baseline gap-2">
+    {# TMT 2026-08-03 (dueña: "se ve muy feo"): el header metía título, pill,
+       "+N del extracto a cruzar", Sel, Σ y TRES botones en una sola línea de
+       media pantalla — las frases se partían al medio y los botones caían en
+       dos renglones. Ahora son dos filas fijas (datos arriba, acciones
+       abajo), con `white-space:nowrap` en cada átomo para que ninguna frase
+       se corte. El panel Programa usa la MISMA estructura, así los dos
+       headers miden igual y las tablas arrancan a la misma altura.
+       Layout 100% inline: el build de Tailwind está congelado. #}
+    <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800"
+            style="display:flex; flex-direction:column; gap:4px;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
+      <div class="flex items-baseline gap-2" style="min-width:0; flex-wrap:wrap;">
         <strong class="text-sm">Banco</strong>
         {# TMT 2026-06-04 dueña: 'que no diga 165'. El pill muestra los
            PENDIENTES (la hoja), no el total mezclado con el extracto. El
@@ -80,14 +90,17 @@
           {{ _n_pend }} <span class="text-[10px] font-normal opacity-70">pendientes</span>
         </span>
         {% if _n_extracto > 0 %}
-        <span class="text-xs text-slate-500">+ {{ _n_extracto }} del extracto a cruzar</span>
+        <span class="text-xs text-slate-500" style="white-space:nowrap;">+ {{ _n_extracto }} del extracto a cruzar</span>
         {% else %}
-        <span class="text-xs text-slate-500">sin parear</span>
+        <span class="text-xs text-slate-500" style="white-space:nowrap;">sin parear</span>
         {% endif %}
       </div>
-      <div class="text-xs text-slate-500 flex items-baseline gap-3">
-        <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
-        <span>Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
+      <div class="text-xs text-slate-500" style="display:flex; align-items:baseline; gap:12px; white-space:nowrap; flex:0 0 auto;">
+        <span style="white-space:nowrap;">Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
+        <span style="white-space:nowrap;">Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
+      </div>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; white-space:nowrap;">
         {# TMT 2026-07-20 (dueña): "conciliación interna también en el lado del
            banco" — espejo del botón del panel Programa. Usa el flujo
            descartar-banco de siempre (queda conciliado sin contraparte PC,
@@ -95,16 +108,18 @@
         <button type="button" id="descartar-banco-btn" disabled
                 onclick="descartarBancoSeleccionados()"
                 title="Conciliar los movs de banco seleccionados como internos (sin contraparte en el programa). Para cargos/movimientos del banco que no van al libro."
+                style="white-space:nowrap; flex:0 0 auto;"
                 class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
           Conciliar interno
         </button>
         {# TMT 2026-07-31 (dueña: "volvé para atrás ya mismo"): la ✕ ahora es un
            borrado SUAVE y esto lo deshace, sin tener que re-subir el archivo. #}
-        <form method="POST" action="{{ url_for('conciliacion.banco_restaurar_extracto') }}" class="inline m-0">
+        <form method="POST" action="{{ url_for('conciliacion.banco_restaurar_extracto') }}" class="inline m-0" style="flex:0 0 auto;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
           <button type="submit"
                   title="Traer de vuelta las filas del extracto que borraste con la ✕"
+                  style="white-space:nowrap;"
                   class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
             ↩ Restaurar borradas
           </button>
@@ -112,8 +127,9 @@
         {# TMT 2026-07-31 (dueña: "no tengo ese documento"): inverso de la ✕.
            Si una fila del banco falta (borrada por error, o el xlsx ya no está)
            se puede agregar a mano al backlog y conciliarla normalmente. #}
-        <details class="relative inline-block">
+        <details class="relative inline-block" style="flex:0 0 auto;">
           <summary class="list-none cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium"
+                   style="white-space:nowrap;"
                    title="Agregar a mano una fila del banco que falta">＋ Agregar fila</summary>
           <form method="POST" action="{{ url_for('conciliacion.banco_agregar_pendiente') }}"
                 style="position:absolute; right:0; top:22px; z-index:40; width:250px;"
@@ -234,22 +250,29 @@
 
   {# ── PANEL PROGRAMA ──────────────────────────────────────────── #}
   <section data-panel="programa" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
-    <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-      <div class="flex items-baseline gap-2">
+    {# Mismo header de dos filas que el panel Banco — ver la nota de arriba. #}
+    <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800"
+            style="display:flex; flex-direction:column; gap:4px;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
+      <div class="flex items-baseline gap-2" style="min-width:0; flex-wrap:wrap;">
         <strong class="text-sm">Programa</strong>
         <span class="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-full bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 text-xs font-semibold tabular-nums">
           {{ _programa|length }} <span class="text-[9px] font-normal opacity-70">docs</span>
         </span>
-        <span class="text-xs text-slate-500">sin parear · según PC</span>
+        <span class="text-xs text-slate-500" style="white-space:nowrap;">sin parear · según PC</span>
       </div>
-      <div class="text-xs text-slate-500 flex items-baseline gap-3">
-        <span>Sel: <span data-count="programa" class="font-bold tabular-nums">0</span></span>
-        <span>Σ <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono tabular-nums">$ 0.00</span></span>
+      <div class="text-xs text-slate-500" style="display:flex; align-items:baseline; gap:12px; white-space:nowrap; flex:0 0 auto;">
+        <span style="white-space:nowrap;">Sel: <span data-count="programa" class="font-bold tabular-nums">0</span></span>
+        <span style="white-space:nowrap;">Σ <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono tabular-nums">$ 0.00</span></span>
+      </div>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; white-space:nowrap;">
         {# Conciliar interno: mov de programa sin contraparte de banco (ej.
            corrección de un negativo / asiento OP interno que netea). #}
         <button type="button" id="interno-programa-btn" disabled
                 onclick="descartarProgramaSeleccionados()"
                 title="Conciliar los movs de programa seleccionados como internos (sin contraparte de banco). Para correcciones / asientos OP que no tocan el banco."
+                style="white-space:nowrap; flex:0 0 auto;"
                 class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
           Conciliar interno
         </button>

@@ -383,28 +383,79 @@ def recompute_saldos_desde(
 
     # Saldo previo al ancla — punto de partida del walk.
     if ancla_id is not None:
-        saldo = _saldo_previo(
-            conn, no_banco=no_banco, no_cta=no_cta,
-            fecha=date(1900, 1, 1),  # ignorado porque excluir_id manda
-            excluir_id=ancla_id,
+        # ⭐ TMT 2026-08-03 — EL ANCLA VA POR (fecha, id), NO POR id.
+        #
+        # Antes se tomaba el saldo de arranque con `id_transaccion <` (orden
+        # de INSERCIÓN) y después se caminaba `ORDER BY fecha, id_transaccion`
+        # (orden de FECHA). Mezclar los dos órdenes ROMPE LA CADENA cada vez
+        # que entra una fila BACKDATED (id alto, fecha vieja) — que es justo
+        # el caso que los llamadores dicen cubrir ("si la fila quedó al
+        # medio", matcher_banco.py). Dos daños a la vez:
+        #   1) el saldo de arranque salía de la ÚLTIMA fila INSERTADA, que
+        #      puede ser de una fecha mucho posterior → la fila vieja quedaba
+        #      estampada con un saldo del futuro;
+        #   2) `id_transaccion >= ancla_id` dejaba AFUERA del walk las filas
+        #      de fecha posterior con id menor → la cadena quedaba partida en
+        #      dos segmentos incoherentes.
+        #
+        # Daño real medido en Pichincha el 03/08/2026: una fila
+        # `ND Comisiones e impuestos 17/06-30/07` de **$2,96** creada por la
+        # conciliación movió el saldo **+155.187,31**. Como `saldo_bancos()`
+        # lee el running GUARDADO de la última fila, el Balance mostró el
+        # patrimonio inflado en esa plata (utilidad 37.658 → 193.749 sin que
+        # se moviera un peso) y la conciliación de la sesión #60 marcó esa
+        # misma diferencia contra el extracto. La conciliación se rompía a
+        # sí misma. [[project_2026_08_03_utilidad_37k]]
+        anc = db.fetch_one(
+            """
+            SELECT fecha
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+               AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
+               AND id_transaccion = %s
+            """,
+            (no_banco, no_cta, no_cta, ancla_id),
+            conn=conn,
         )
-        # Re-buscamos saldo pre-ancla por id (más preciso que por fecha).
+        if anc and anc.get("fecha"):
+            ancla_fecha_del_id = anc["fecha"]
+        else:
+            # El ancla ya no existe (la borraron entre medio). Arrancamos
+            # desde la fecha más vieja de lo que sí quedó con id >= ancla_id:
+            # ENSANCHA el walk, nunca lo achica. Si no quedó nada, no hay
+            # nada que recomputar.
+            _mn = db.fetch_one(
+                """
+                SELECT MIN(fecha) AS fecha
+                  FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s
+                   AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
+                   AND id_transaccion >= %s
+                """,
+                (no_banco, no_cta, no_cta, ancla_id),
+                conn=conn,
+            )
+            if not _mn or not _mn.get("fecha"):
+                return 0
+            ancla_fecha_del_id = _mn["fecha"]
+        # Saldo de arranque = última fila ESTRICTAMENTE anterior en (fecha, id)
+        # — el mismo orden en que camina el walk de abajo.
         row = db.fetch_one(
             """
             SELECT COALESCE(saldo, 0) AS saldo
               FROM scintela.transacciones_bancarias
              WHERE no_banco = %s
                AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
-               AND id_transaccion < %s
-             ORDER BY id_transaccion DESC
+               AND (fecha, id_transaccion) < (%s::date, %s)
+             ORDER BY fecha DESC, id_transaccion DESC
              LIMIT 1
             """,
-            (no_banco, no_cta, no_cta, ancla_id),
+            (no_banco, no_cta, no_cta, ancla_fecha_del_id, ancla_id),
             conn=conn,
         )
         saldo = float(row["saldo"]) if row else 0.0
-        cond_inicio = "id_transaccion >= %s"
-        params_inicio: tuple = (ancla_id,)
+        cond_inicio = "(fecha, id_transaccion) >= (%s::date, %s)"
+        params_inicio: tuple = (ancla_fecha_del_id, ancla_id)
     elif ancla_fecha is not None:
         # TMT 2026-06-11 fix: el ancla es el saldo al CIERRE del día ANTERIOR
         # a ancla_fecha (fecha < ancla, ESTRICTO), porque el walk de abajo
