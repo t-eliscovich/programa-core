@@ -442,12 +442,16 @@
       {# TMT 2026-05-29 — fila TOTAL al pie. Suma de IMPORTE (con
          display-time aplicado) y de CUOTA DIARIA (si la columna está
          visible). #}
-      {% set _suma_importe = 0 %}
-      {% for f in filas %}{% set _suma_importe = _suma_importe + (f.importe or 0) %}{% endfor %}
-      {% set _suma_cuota = 0 %}
-      {% if _show_mensual %}
-        {% for f in filas %}{% set _suma_cuota = _suma_cuota + (f.cuota_mensual or 0) %}{% endfor %}
-      {% endif %}
+      {# ⭐ TMT 2026-08-01 (dueña: "acá el total no funciona") — el pie daba
+         0,00 en las DOS pestañas. Acá se re-sumaba con
+             {% set x = x + ... %}  DENTRO de un  {% for %}
+         y en Jinja un `set` adentro del loop es LOCAL A LA VUELTA: la
+         variable de afuera nunca se modifica, así que quedaba en el 0
+         inicial. La vista ya venía calculando estos totales y pasándolos al
+         template — se usan ESOS, que además son los mismos que alimentan los
+         KPIs de arriba. [[feedback_coherencia_numeros_una_fuente]] #}
+      {% set _suma_importe = total_importe or 0 %}
+      {% set _suma_cuota = total_cuota_mensual or 0 %}
       <tfoot class="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
           {# 4 columnas iniciales (Fecha, Venc., Prov, Concepto) ocupadas por el label. #}

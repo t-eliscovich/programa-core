@@ -26,6 +26,26 @@ from . import queries
 posdat_bp = Blueprint("posdat", __name__, template_folder="templates")
 
 
+def _totales_de(filas) -> dict:
+    """Totales de la fila TOTAL del pie de la grilla de /posdat.
+
+    TMT 2026-08-01 — vive acá, fuera de la vista, para poder testearlo: el
+    pie venía dando 0,00 en las dos pestañas y nadie lo notó hasta que la
+    dueña lo vio. Suma lo MISMO que se ve en las columnas (`importe`,
+    `cuota_mensual`, `cuota_diaria`), tolerando NULL.
+    """
+    ti = tcm = tcd = 0.0
+    for f in filas or []:
+        ti += float(f.get("importe") or 0)
+        tcm += float(f.get("cuota_mensual") or 0)
+        tcd += float(f.get("cuota_diaria") or 0)
+    return {
+        "importe": round(ti, 2),
+        "cuota_mensual": round(tcm, 2),
+        "cuota_diaria": round(tcd, 2),
+    }
+
+
 @posdat_bp.route("/posdat/nueva", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("posdat.crear")
@@ -509,14 +529,19 @@ def lista():
     # diaria derivada. → "Total Importe" (sum del column importe) y
     # "Total Cuota Mensual" (sum del column cuota_mensual). Coincide
     # con lo que se ve en la tabla.
-    total_importe = 0.0
-    total_cuota_mensual = 0.0
-    total_cuota_diaria = 0.0
-    if tab == "yy":
-        for f in filas:
-            total_importe += float(f.get("importe") or 0)
-            total_cuota_mensual += float(f.get("cuota_mensual") or 0)
-            total_cuota_diaria += float(f.get("cuota_diaria") or 0)
+    # ⭐ TMT 2026-08-01 (dueña: *"acá el total no funciona"*, con la fila TOTAL
+    # del pie en 0,00). Eran DOS bugs sumados:
+    #   1) acá: los totales se calculaban SOLO con `if tab == "yy"`, así que en
+    #      la pestaña POSDATADOS quedaban en 0;
+    #   2) en el template: el pie no usaba estos valores, los re-sumaba con
+    #      `{% set x = x + ... %}` DENTRO de un `{% for %}` — y en Jinja un
+    #      `set` adentro del loop es local a la vuelta, la variable de afuera
+    #      NUNCA se modifica. Por eso daba 0,00 también en YY.
+    # Ahora se calculan para las dos pestañas y el template usa ESTOS.
+    _tot = _totales_de(filas)
+    total_importe = _tot["importe"]
+    total_cuota_mensual = _tot["cuota_mensual"]
+    total_cuota_diaria = _tot["cuota_diaria"]
     # TMT 2026-05-28 sesión replanear: el KPI ahora es la PROYECCIÓN del
     # mes completo (25 días hábiles × cuota total), no el día_calendario
     # × cuota que daba números inflados (29 × 29539 = 856k cuando la
