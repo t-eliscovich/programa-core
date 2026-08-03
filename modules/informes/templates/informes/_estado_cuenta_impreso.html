@@ -9,7 +9,7 @@
   {# Facturas #}
   {# TMT 2026-07-09 (dueña): en modo interactivo, botón para ver las
      totalizadas (T) y poder reabrirlas con el lapicito. #}
-  <div class="flex items-center justify-between mb-2">
+  <div class="flex items-center justify-between mb-2 ec-bloque-facturas">
     <h2 class="text-lg font-semibold">Facturas</h2>
     {% if interactivo|default(false) and facturas_totalizadas|default(none) %}
     <button type="button" data-on="0"
@@ -19,7 +19,7 @@
     </button>
     {% endif %}
   </div>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-8">
+  <div class="ec-bloque-facturas bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-8">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
@@ -111,13 +111,45 @@
       </tfoot>
       {% endif %}
     </table>
+
+    {# TMT 2026-08-03 (dueña, con la pantalla verde del FoxPro al lado:
+       "únicamente agregando abajo una línea q diga TOTAL CHEQUES XXX (que son
+       los cheques por cobrar)"). El dBase cierra el estado de cuenta con tres
+       renglones pegados a las facturas — CUENTA.PRG L365-392:
+
+         SALDO:                <importe> <abonado> <saldo>
+         CHEQUES A DEPOSITAR:  CH − CHPRO      (STAT ZP12D menos los 1/2)
+         + CHEQUES PROTESTADOS: CHPRO         (sólo si hay)
+         TOTAL:                SA + CH
+
+       Antes esto vivía al final de todo, DESPUÉS de la tabla de cheques: al
+       imprimir sólo la hoja de facturas el total no salía. Va acá. #}
+    {% set _ch_depositar = t.cheques_cartera or 0 %}
+    {% set _ch_protestados = t.cheques_rebotados or 0 %}
+    <div class="px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
+      <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
+        <span class="text-slate-600">Total cheques <span class="text-slate-400">(por cobrar)</span></span>
+        <span class="text-mono font-semibold">{{ _ch_depositar | money_es }}</span>
+      </div>
+      {% if _ch_protestados %}
+      <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
+        <span class="text-slate-600">+ Cheques protestados</span>
+        <span class="text-mono font-semibold text-red-600">{{ _ch_protestados | money_es }}</span>
+      </div>
+      {% endif %}
+      <div class="flex justify-between border-t border-slate-300 dark:border-slate-700 mt-1 pt-1"
+           style="max-width:420px; margin-left:auto;">
+        <span class="text-xs uppercase tracking-wider text-slate-500">Total</span>
+        <span class="text-mono font-semibold text-base">{{ ((_saldo_neto or 0) + _ch_depositar + _ch_protestados) | money_es }}</span>
+      </div>
+    </div>
   </div>
 
   {# Cheques — TMT 2026-07-07 dueña v2: "en imprimir estado de cuenta volvé a
      poner los cheques abajo" → se quita el no-print; se imprimen al final,
      después de la tabla de facturas. #}
-  <h2 class="text-lg font-semibold mb-2 mt-6">Cheques</h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+  <h2 class="text-lg font-semibold mb-2 mt-6 ec-bloque-cheques">Cheques</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden ec-bloque-cheques">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
@@ -152,7 +184,12 @@
         {% set fechaing_real = c.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
         {% set anulado = stat_u == 'X' %}
         {% if not anulado %}{% set nch.activos = nch.activos + 1 %}{% endif %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{{ ' opacity-60' if anulado }}">
+        {# TMT 2026-08-03 (Alex, por WhatsApp: "de momento se imprime incluso los
+           depositados y para enviar eso al cliente viene a ser innecesario").
+           Marcamos la fila con su estado para que el botón "Imprimir cheques"
+           pueda dejar afuera lo que ya pasó por el banco. #}
+        <tr data-ec-stat="{{ stat_u }}"
+            class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{{ ' opacity-60' if anulado }}{{ ' ec-ch-cobrado' if stat_u in ('B','A') }}">
           <td class="px-4 py-2 font-mono text-xs">
             <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
                class="text-sky-700 hover:underline">
@@ -210,13 +247,6 @@
     {% endif %}
   </div>
 
-  {# TMT 2026-07-09 (dueña): TOTAL final = saldo cliente + cheques EN CARTERA
-     (Z/P). Se EXCLUYEN los depositados (B/A) — ya están cobrados, no deben
-     sumar. Coincide con el cuadro "Total (facturas + cheques)" de arriba. #}
-  {% set _total_con_cheques = (_saldo_neto or 0) + (t.cheques_cartera or 0) %}
-  <div class="mb-8 flex justify-end">
-    <div class="text-right border-t-2 border-slate-400 dark:border-slate-600 pt-2">
-      <span class="text-xs uppercase tracking-wider text-slate-500">Total saldo facturas + cheques</span>
-      <span class="ml-3 text-xl font-semibold text-mono">$ {{ _total_con_cheques | money_es }}</span>
-    </div>
-  </div>
+  {# TMT 2026-08-03: el TOTAL (saldo + cheques en cartera) se movió arriba,
+     pegado a las facturas, como lo cierra el dBase. Antes estaba acá abajo y
+     no salía al imprimir sólo la hoja de facturas. #}
