@@ -89,6 +89,53 @@ def test_forma_de_los_links_principales(tabla, esperado):
     assert url == esperado
 
 
+def _fila_bap(destino_id=473):
+    return {
+        "id_mov_doble": 19860, "tipo": "bap_anticipo_a_compra",
+        "destino_table": "compra", "destino_id": destino_id,
+        "concepto": "BAP AI: 1 anticipo(s) → compra #473 (BAP15)",
+        "metadata": {"ids_anticipos": [3209], "codigo_prov": "AI"},
+    }
+
+
+def test_rotulo_de_conversion_usa_el_numero_de_compra_no_el_id(monkeypatch):
+    """El rótulo decía "→ compra #473" (id interno, invisible en Compras).
+
+    TMT 2026-08-03: la compra 473 es la N° 10121. La dueña no tenía cómo
+    saberlo — ningún otro lado del programa muestra el id.
+    """
+    import db
+    from modules.historial import queries as hq
+
+    def fake_fetch_all(sql, params=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.dolares" in s:
+            return [{"id_dolares": 3209, "concepto": "15 SALDO"}]
+        if "from scintela.compra" in s:
+            return [{"id_compra": 473, "numero": "10121"}]
+        raise AssertionError(f"fetch_all inesperado: {s[:80]}")
+
+    monkeypatch.setattr(db, "fetch_all", fake_fetch_all)
+    (fila,) = hq._nombrar_conversiones([_fila_bap()])
+    assert fila["concepto"] == "AI 15 · 1 anticipo(s) → compra N° 10121"
+    assert "#473" not in fila["concepto"]
+
+
+def test_rotulo_de_conversion_cae_al_id_si_la_compra_no_tiene_numero(monkeypatch):
+    import db
+    from modules.historial import queries as hq
+
+    def fake_fetch_all(sql, params=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.dolares" in s:
+            return [{"id_dolares": 3209, "concepto": "15 SALDO"}]
+        return [{"id_compra": 473, "numero": ""}]
+
+    monkeypatch.setattr(db, "fetch_all", fake_fetch_all)
+    (fila,) = hq._nombrar_conversiones([_fila_bap()])
+    assert fila["concepto"] == "AI 15 · 1 anticipo(s) → compra #473"
+
+
 def test_link_destino_usa_el_mismo_mapeo():
     from modules.historial import queries as hq
 

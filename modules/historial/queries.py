@@ -336,6 +336,22 @@ def _nombrar_conversiones(filas: list[dict]) -> list[dict]:
             ) or [])
         }
 
+        # TMT 2026-08-03 (dueña): el rótulo decía "→ compra #473", que es el id
+        # INTERNO y no coincide con el N° que muestra la pantalla Compras. Se
+        # traduce a `numero`, igual que las facturas usan numf.
+        _id_compras = {int(f["destino_id"]) for f in objetivo if f.get("destino_id")}
+        numeros_compra: dict[int, str] = {}
+        if _id_compras:
+            _ph = ",".join(["%s"] * len(_id_compras))
+            for rc in (db.fetch_all(
+                f"SELECT id_compra, COALESCE(numero::text, '') AS numero "
+                f"FROM scintela.compra WHERE id_compra IN ({_ph})",
+                tuple(sorted(_id_compras)),
+            ) or []):
+                _n = (rc.get("numero") or "").strip()
+                if _n and _n != "0":
+                    numeros_compra[int(rc["id_compra"])] = _n
+
         for f in objetivo:
             _ids = por_fila.get(int(f["id_mov_doble"]))
             if not _ids:
@@ -355,10 +371,10 @@ def _nombrar_conversiones(filas: list[dict]) -> list[dict]:
                 mm = _re.search(r"BAP\s+([A-Z0-9]{1,4})\s*:", f.get("concepto") or "")
                 prov = mm.group(1) if mm else ""
             etiqueta = (f"{prov} {'/'.join(refs[:4])}").strip()
-            f["concepto"] = (
-                f"{etiqueta} · {len(_ids)} anticipo(s) → compra "
-                f"#{f.get('destino_id') or ''}"
-            )
+            _did = f.get("destino_id")
+            _num = numeros_compra.get(int(_did)) if _did else None
+            _ref = f"N° {_num}" if _num else f"#{_did or ''}"
+            f["concepto"] = f"{etiqueta} · {len(_ids)} anticipo(s) → compra {_ref}"
     except Exception:  # noqa: BLE001 -- un rótulo no puede romper el historial
         pass
     return filas

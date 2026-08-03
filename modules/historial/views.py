@@ -191,6 +191,7 @@ def lista():
     id_cheques: set[int] = set()
     id_facturas: set[int] = set()
     id_txbanco: set[int] = set()
+    id_compras: set[int] = set()
     for r in filas:
         ot, oid = r.get("origen_table"), r.get("origen_id")
         dt, did = r.get("destino_table"), r.get("destino_id")
@@ -198,6 +199,10 @@ def lista():
             id_cheques.add(int(oid))
         if dt == "cheque" and did:
             id_cheques.add(int(did))
+        if ot == "compra" and oid:
+            id_compras.add(int(oid))
+        if dt == "compra" and did:
+            id_compras.add(int(did))
         if ot == "factura" and oid:
             id_facturas.add(int(oid))
         if dt == "factura" and did:
@@ -236,6 +241,27 @@ def lista():
         for rf in rows_f:
             num = (rf.get("numf") or "").strip()
             factura_labels[int(rf["id_factura"])] = num or f"#{rf['id_factura']}"
+    # TMT 2026-08-03 (dueña, mismo pedido que ya se hizo con facturas): la
+    # compra tiene UN número visible — el `numero` de la pantalla Compras. El
+    # historial mostraba "Compra #473", que es el id INTERNO y no aparece en
+    # ninguna otra pantalla, así que no había forma de saber cuál era.
+    # OJO: esto cambia sólo la ETIQUETA. La URL sigue yendo por id_compra,
+    # porque un `numero` puede coincidir con el id de OTRA compra.
+    compra_numeros: dict[int, str] = {}
+    if id_compras:
+        placeholder = ",".join(["%s"] * len(id_compras))
+        rows_c = (
+            db.fetch_all(
+                f"SELECT id_compra, COALESCE(numero::text, '') AS numero "
+                f"FROM scintela.compra WHERE id_compra IN ({placeholder})",
+                tuple(id_compras),
+            )
+            or []
+        )
+        for rc in rows_c:
+            num = (rc.get("numero") or "").strip()
+            if num and num != "0":
+                compra_numeros[int(rc["id_compra"])] = num
     banco_labels: dict[int, str] = {}
     if id_txbanco:
         placeholder = ",".join(["%s"] * len(id_txbanco))
@@ -267,6 +293,8 @@ def lista():
             return f"Factura {factura_labels[int(rid)]}"
         if t == "transacciones_bancarias" and rid and int(rid) in banco_labels:
             return banco_labels[int(rid)]
+        if t == "compra" and rid and int(rid) in compra_numeros:
+            return f"Compra N° {compra_numeros[int(rid)]}"
         return default_label
 
     # Mapeo id_factura → numf (solo si tiene numf válido) y id_cheque → no_cheque.
