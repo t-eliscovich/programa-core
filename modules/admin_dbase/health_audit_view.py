@@ -1209,6 +1209,12 @@ def health_all():
     # pase diario idempotente es lo que las agarra sin que nadie apriete nada.
     # Mismo patrón que snapshot_diario (que también escribe en este cron).
     data5 = _aplicar_retenciones_asinfo_cron(dias=60)
+    # TMT 2026-08-03: refresco del espejo de mails de clientes (los que Asinfo
+    # usa para mandar la factura electrónica). Mismo criterio que las
+    # retenciones: un pase diario idempotente. NO entra al `ok` general — que
+    # Metabase esté caído un día no es un problema contable y no tiene que
+    # encender el panel. Ver [[feedback_flujo_chequeo_coherencia]].
+    data8 = _refrescar_mails_asinfo_cron()
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"]),
@@ -1219,7 +1225,14 @@ def health_all():
         "retenciones_asinfo": data5,
         "cadena_saldos": data6,
         "pendientes_conciliacion": data7,
+        "mails_asinfo": data8,
     })
+
+
+def _refrescar_mails_asinfo_cron() -> dict:
+    """Copia el catálogo de mails de Asinfo a la tabla espejo. Fail-soft."""
+    from modules.clientes import mail_asinfo
+    return mail_asinfo.refrescar_cron()
 
 
 def _aplicar_retenciones_asinfo_cron(dias: int = 60) -> dict:

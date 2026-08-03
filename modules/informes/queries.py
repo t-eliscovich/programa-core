@@ -7223,6 +7223,12 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     `totales.saldo_vivo` = lo que el cliente nos debe HOY (sum facturas activas
     con saldo > 0, excluye anuladas). Es el número que el gerente busca primero.
     """
+    # La query de abajo hace LEFT JOIN contra la tabla espejo de mails de
+    # Asinfo. El deploy no corre migraciones, así que se bootstrapea en
+    # caliente (no-op después de la primera vez).
+    from modules.clientes import mail_asinfo as _ma
+
+    _ma.asegurar_tabla()
     cliente = db.fetch_one(
         """
         SELECT c.codigo_cli, c.nombre, c.telefono, c.ruc, c.cupo, c.stop,
@@ -7249,28 +7255,34 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                -- observacion cuando correo está vacío. Es sólo lectura: no se
                -- migra nada, y si mañana lo corrigen en el dBase se actualiza
                -- solo. `correo` (editable en /clientes/editar) tiene prioridad.
-               -- OJO: esta query se manda CON parámetros, así que psycopg2
-               -- interpola la cadena entera. Cualquier signo de porcentaje
-               -- suelto (en el regex O EN UN COMENTARIO COMO ESTE) revienta con
-               -- "unsupported format character". Por eso el regex de abajo no
-               -- usa la clase de caracteres con porcentaje, y por eso acá no se
-               -- escribe el símbolo. Se pagó el 03/08: el comentario que
-               -- avisaba de esto TENÍA el símbolo y tiró abajo el estado de
-               -- cuenta de todos los clientes.
-               COALESCE(
-                   NULLIF(TRIM(c.correo), ''),
-                   (regexp_match(c.observacion,
-                    '[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}'))[1],
-                   ''
-               )                                      AS correo,
-               -- De dónde salió, para poder aclararlo en pantalla.
-               (NULLIF(TRIM(c.correo), '') IS NULL)   AS correo_de_observacion,
+               -- TMT 2026-08-03: el MAIL. Se traen las TRES fuentes crudas y
+               -- decide `mail_asinfo.resolver()` en Python — así la regla de
+               -- prioridad se testea sin Postgres (en CI no hay base).
+               -- Ver modules/clientes/mail_asinfo.py para el porqué de cada una.
+               COALESCE(c.correo, '')                 AS correo,
+               COALESCE(c.observacion, '')            AS observacion,
+               COALESCE(ma.email, '')                 AS mail_asinfo,
                COALESCE(NULLIF(TRIM(c.vend), ''), '') AS vend
         FROM scintela.cliente c
+        -- Espejo del catálogo de mails de Asinfo (facturación electrónica),
+        -- refrescado por el cron diario. LEFT: si la tabla está vacía o el
+        -- cliente no está en Asinfo, la ficha se abre igual.
+        LEFT JOIN scintela.cliente_mail_asinfo ma
+               ON ma.ruc10 = LEFT(regexp_replace(COALESCE(c.ruc, ''), '[^0-9]', '', 'g'), 10)
+              AND LENGTH(regexp_replace(COALESCE(c.ruc, ''), '[^0-9]', '', 'g')) >= 10
         WHERE c.codigo_cli = %s
         """,
         (codigo_cli,),
     )
+    if cliente:
+        # Qué mail se muestra y de dónde salió. La regla vive en Python
+        # (testeable sin Postgres) — ver modules/clientes/mail_asinfo.py.
+        cliente = dict(cliente)
+        cliente["mail"] = _ma.resolver(
+            cliente.get("correo"),
+            cliente.get("observacion"),
+            cliente.get("mail_asinfo"),
+        )
     if not cliente:
         return {
             "cliente": None,

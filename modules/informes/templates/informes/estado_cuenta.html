@@ -197,9 +197,12 @@
      hueco vacío que queda a la derecha de la dirección, para no achicar los
      datos que ya estaban. #}
   {% set _vend = data.cliente.vend | cleanstr %}
-  {% set _mail = data.cliente.correo | cleanstr %}
+  {# TMT 2026-08-03: el mail ya viene RESUELTO desde Python (ficha >
+     Observación completa > Asinfo). Ver modules/clientes/mail_asinfo.py. #}
+  {% set _m = data.cliente.mail or {} %}
+  {% set _mail = _m.mail %}
   {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono
-        or (_vend and _vend | trim) or (_mail and _mail | trim) %}
+        or (_vend and _vend | trim) or _mail or _m.incompleto %}
   <div class="no-print mb-5 grid sm:grid-cols-2 gap-x-8 max-w-3xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
     <div>
       {# TMT 2026-06-07: el dBase guarda la dirección en DOS renglones
@@ -220,10 +223,28 @@
         {% if _vend and _vend | trim %}{{ _vend }}{% else %}<span class="text-slate-400">—</span>{% endif %}
       </div>
       <div class="break-all"><span class="text-slate-400">Mail:</span>
-        {% if _mail and _mail | trim %}<a href="mailto:{{ _mail }}"
+        {% if _mail %}<a href="mailto:{{ _mail }}"
              class="text-sky-700 dark:text-sky-400 hover:underline"
-             title="{{ 'Tomado de la Observación del cliente' if data.cliente.correo_de_observacion else 'Cargado en la ficha del cliente' }}">{{ _mail }}</a>{% else %}<span class="text-slate-400">—</span>{% endif %}
+             title="{{ _m.etiqueta }}">{{ _mail }}</a>{% else %}<span class="text-slate-400">—</span>{% endif %}
       </div>
+      {# TMT 2026-08-03 (dueña, "muestro los dos"): cuando Asinfo tiene un
+         contacto DISTINTO al cargado a mano, se muestran los dos y elige la
+         persona. Nunca se decide por ella cuál es "el bueno". #}
+      {% if _m.alternativo %}
+      <div class="break-all text-xs text-slate-500 mt-0.5">
+        también en Asinfo:
+        <a href="mailto:{{ _m.alternativo }}" class="hover:underline">{{ _m.alternativo }}</a>
+      </div>
+      {% endif %}
+      {# El fragmento que quedó cortado a los 30 caracteres del dBase. Se
+         muestra tal cual, marcado, para que se vea que hay algo a medio
+         cargar en vez de hacerlo pasar por un mail válido. #}
+      {% if _m.incompleto %}
+      <div class="break-all text-xs text-amber-600 mt-0.5"
+           title="El campo Observación del dBase corta a los 30 caracteres. Cargalo completo en Editar cliente.">
+        en Observación quedó cortado: {{ _m.incompleto }}…
+      </div>
+      {% endif %}
     </div>
   </div>
   {% endif %}

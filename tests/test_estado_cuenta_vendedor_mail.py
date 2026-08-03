@@ -106,50 +106,51 @@ def test_vendedor_y_mail_estan_en_la_segunda_columna():
     )
 
 
-def test_el_mail_sale_de_observacion_cuando_correo_esta_vacio():
+def test_la_query_trae_las_TRES_fuentes_del_mail_sin_decidir():
     """Dueña 2026-08-03: "mail está en observaciones y lo veo cuando pongo
-    editar".
+    editar" — y después, sobre completar los cortados, "solo los vacíos".
 
-    Es literal: `cliente.correo` está cargado en 1 cliente de 3.973, pero
-    `observacion` tiene un mail en **2.984** — se tipeó ahí durante años,
-    pegado a notas sueltas ("ventas@americanspirit.ec MBT", "isabel1981@
-    yahoo.es    CONTADO"). Sin este fallback la columna Mail que ella pidió
-    salía "—" para el 75% de la cartera teniendo el dato a la vista.
+    La query trae las tres fuentes CRUDAS (ficha, Observación, espejo de
+    Asinfo) y no elige: la prioridad se resuelve en Python
+    (`modules/clientes/mail_asinfo.resolver`) porque **en CI no hay Postgres**
+    y una regla escrita en SQL no se puede testear. Ver tests/test_mail_asinfo.py.
     """
     sql = _sql_cliente()
-    assert "regexp_match(c.observacion" in sql, (
-        "el mail tiene que salir de observacion cuando correo está vacío"
+    for campo in ("c.correo", "c.observacion", "ma.email"):
+        assert campo in sql, f"falta traer {campo}"
+    assert "LEFT JOIN scintela.cliente_mail_asinfo" in sql, (
+        "el mail de Asinfo sale de la tabla espejo que refresca el cron; "
+        "consultar Metabase en cada carga de pantalla sería inaceptable"
     )
-    # Prioridad: lo cargado a mano en la ficha le gana a lo parseado.
-    i_correo = sql.index("NULLIF(TRIM(c.correo), '')")
-    i_obs = sql.index("regexp_match(c.observacion")
-    assert i_correo < i_obs, (
-        "c.correo (editable en /clientes/editar) va PRIMERO en el COALESCE: "
-        "si alguien lo corrige a mano, no se lo puede pisar la observación"
+    assert "LEFT JOIN" in sql, (
+        "LEFT, no INNER: un cliente que no está en Asinfo, o con la tabla "
+        "espejo vacía, tiene que seguir abriendo su estado de cuenta"
     )
 
 
-def test_el_regex_del_mail_no_lleva_porcentaje():
-    """`%` en el SQL lo toma psycopg2 como placeholder y revienta.
-
-    La query se pasa con parámetros (`(codigo_cli,)`), así que un `%` suelto
-    en la clase de caracteres tira "unsupported format character" EN
-    PRODUCCIÓN — no lo caza ningún test que no tenga Postgres. Se sacó a
-    propósito; un mail con `%` no existe en esta cartera.
-    """
+def test_el_cruce_con_asinfo_es_por_los_10_digitos_del_ruc():
     sql = _sql_cliente()
-    regex = sql[sql.index("'[A-Za-z0-9"):]
-    regex = regex[:regex.index("'", 1) + 1]
-    assert "%" not in regex, f"el regex del mail tiene un % sin escapar: {regex}"
+    assert "ma.ruc10 = LEFT(regexp_replace" in sql
+    assert ">= 10" in sql, (
+        "un RUC corto no puede cruzar: un prefijo de 6 dígitos aparearía "
+        "clientes al azar"
+    )
 
 
-def test_se_sabe_si_el_mail_vino_de_observacion():
-    """Para poder aclararlo en pantalla en vez de mentir que está en la ficha."""
-    sql = _sql_cliente()
-    assert "AS correo_de_observacion" in sql
+def test_la_vista_no_arma_la_regla_del_mail_a_mano():
+    """Si el Jinja empieza a decidir, la regla deja de estar testeada."""
     html = _TPL.read_text(encoding="utf-8")
-    assert "correo_de_observacion" in html
-    assert "Tomado de la Observación" in html
+    assert "data.cliente.mail" in html, "el mail ya viene resuelto de Python"
+    assert "regexp" not in html.lower()
+
+
+def test_la_tabla_espejo_se_bootstrapea_antes_de_consultar():
+    """El deploy NO corre migraciones: si la tabla no existiera, el LEFT JOIN
+    tiraría abajo la pantalla entera con 'relation does not exist'."""
+    src = _src_estado_cuenta()
+    i_boot = src.index("asegurar_tabla()")
+    i_sql = src.index("FROM scintela.cliente c")
+    assert i_boot < i_sql
 
 
 def test_el_mail_es_clickeable():
