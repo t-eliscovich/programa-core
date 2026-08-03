@@ -333,8 +333,22 @@ def crear(
         raise ValueError(f"Proveedor {prov!r} no existe.")
     if num is None:
         num = proximo_num()
+    # TMT 2026-08-03 (dueña: *"el proveedor OP no tiene asignado un amount de
+    # tiempo para vencimiento? La fecha de vencimiento seguro no es hoy"*).
+    # Antes, si el alta no traía vencimiento, `fechad = fecha` → la deuda
+    # nacía vencida el mismo día que se cargaba. Ahora usamos el PLAZO del
+    # proveedor, igual que `compras.queries.crear` (OP=99, HY=60, EP=2...).
+    # Fallback = la fecha (comportamiento viejo) cuando el proveedor no tiene
+    # plazo cargado o es YY (proveedor virtual, sin ficha).
     if fechad is None:
-        fechad = fecha
+        _dias = 0
+        if not es_yy:
+            _row = db.fetch_one(
+                "SELECT plazo FROM scintela.proveedor WHERE codigo_prov = %s",
+                (prov,),
+            )
+            _dias = int(_row["plazo"]) if _row and _row.get("plazo") else 0
+        fechad = fecha + timedelta(days=_dias) if _dias else fecha
 
     # Backward compat: si vinieron compr/no_comp/tipo, los apendeamos al concepto.
     extras = " ".join(

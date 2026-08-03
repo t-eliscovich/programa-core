@@ -65,7 +65,9 @@ def nueva():
         return render_template("posdat/form.html", form=form, errores=errores, modo="crear")
 
     fecha = parse_date(request.form.get("fecha"))
-    fechad = parse_date(request.form.get("fechad")) or fecha
+    # TMT 2026-08-03: si el campo viene vacío NO forzamos fechad=fecha —
+    # se lo dejamos a queries.crear(), que aplica el PLAZO del proveedor.
+    fechad = parse_date(request.form.get("fechad"))
     prov = (request.form.get("prov") or "").strip().upper()
     importe = parse_monto(request.form.get("importe"))
     concepto = (request.form.get("concepto") or "").strip()
@@ -793,7 +795,9 @@ def api_nuevo():
         if fechad is None:
             return jsonify({"ok": False, "error": f"Fecha venc. inválida: {fechad_raw!r}."}), 400
     else:
-        fechad = fecha
+        # TMT 2026-08-03: vacío → queries.crear() lo calcula con el plazo del
+        # proveedor (OP=99 días). Antes caía a `fecha` = nacía vencida.
+        fechad = None
     prov = (data.get("prov") or "").strip().upper()
     importe = parse_monto(data.get("importe"))
     concepto = (data.get("concepto") or "").strip()

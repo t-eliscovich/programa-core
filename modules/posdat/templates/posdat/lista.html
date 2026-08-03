@@ -167,7 +167,7 @@
          como columna. #}
       <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-2 py-1">Fecha</th>
+          <th class="px-2 py-1" title="Fecha en que se cargó la línea">Fecha</th>
           <th class="px-2 py-1">Venc.</th>
           <th class="px-2 py-1">Prov</th>
           <th class="px-2 py-1">Concepto</th>
@@ -198,14 +198,21 @@
             data-id-posdat="{{ f.id_posdat }}"
             data-concepto="{{ f.concepto or '' }}"
             {% if f.id_provisiones %}data-id-prov="{{ f.id_provisiones }}"{% endif %}>
-          {# TMT 2026-07-14 (dueña): en filas OP la FECHA propia es NULL → mostramos
-             la fecha del retiro más reciente (op_fecha_hecha); — si no hubo retiro.
-             El resto de las filas muestra su fecha normal. #}
+          {# TMT 2026-08-03 (dueña: *"la de la izquierda debería ser fecha
+             cargada"*). Revierte el override del 2026-07-14: en las filas OP la
+             columna mostraba la fecha del ÚLTIMO RETIRO, así que una línea sin
+             retiros salía con "—" y parecía cargada sin fecha (lo estaba: #918
+             tenía fecha 03/08). Las fechas de los retiros ya se ven una por una
+             en la columna DETALLE, no se pierde nada. Fallback a la fecha del
+             retiro sólo para las filas OP viejas que vienen del dBase con
+             fecha NULL. #}
           <td class="px-2 py-1 whitespace-nowrap">
-            {%- if f.op_line_key -%}
-              {%- if f.op_fecha_hecha %}{{ f.op_fecha_hecha | fecha_es }}{% else %}<span class="text-slate-300">—</span>{% endif -%}
-            {%- else -%}
+            {%- if f.fecha -%}
               {{ f.fecha | fecha_es }}
+            {%- elif f.op_fecha_hecha -%}
+              <span title="Sin fecha de carga — mostramos la del último retiro">{{ f.op_fecha_hecha | fecha_es }}</span>
+            {%- else -%}
+              <span class="text-slate-300">—</span>
             {%- endif -%}
           </td>
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fechad | fecha_es }}</td>
