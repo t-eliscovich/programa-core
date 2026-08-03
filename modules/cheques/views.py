@@ -3530,15 +3530,10 @@ def ingresados_dia():
     except ValueError:
         fecha = today_ec()
 
-    # TMT 2026-08-03 (dueña: "y solo estado Z no B" → "es siempre Z, no hay que
-    # seleccionar"). Este listado es el que se lleva al banco: SIEMPRE lo que
-    # quedó EN CARTERA. No hay selector — un filtro con una sola respuesta
-    # posible es un click de más. El dBase pregunta ESTADO en CHEQUING porque
-    # su pantalla es genérica; acá la pantalla ya es específica.
-    estados = ("Z",)
-
+    # TMT 2026-08-03: sin selector de estado. El corte es por MEDIO (cheque sí,
+    # depósito directo y efectivo no) — ver el docstring de la query.
     try:
-        listado = queries.cheques_ingresados_dia(fecha, estados)
+        listado = queries.cheques_ingresados_dia(fecha)
         error = None
     except Exception as e:  # noqa: BLE001
         listado = None

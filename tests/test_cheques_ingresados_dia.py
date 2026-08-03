@@ -82,44 +82,72 @@ def test_filtra_por_dia_de_ingreso_no_por_fecha_del_cheque(monkeypatch):
     assert " ".join(queries.SQL_DIA_INGRESO.split()) in sql
     assert "WHERE c.fecha = %(fecha)s" not in sql
     assert cap["params"]["fecha"] == FECHA
-    assert cap["params"]["estados"] is None
 
 
-def test_estado_filtra_por_stat(monkeypatch):
-    cap = {}
-    _patch(monkeypatch, cap)
-    queries.cheques_ingresados_dia(FECHA, ("Z",))
-    assert cap["params"]["estados"] == ["Z"]
+def test_el_corte_es_por_MEDIO_no_por_estado(monkeypatch):
+    """TMT 2026-08-03, tres pasos con la dueña mirando la pantalla.
 
+    "y solo estado Z no B" → "es siempre Z, no hay que seleccionar" → y al
+    final, señalando el cheque de KOR depositado ese mismo día, **"este
+    falta"**. Lo que sobraba en el listado no eran los depositados: eran los
+    DEP.PICH. (NB=90), que no son cheques. Filtrar por `stat` tapaba eso y de
+    paso se comía un cheque legítimo.
 
-def test_siempre_solo_en_cartera_Z(client, fake_db, monkeypatch):
-    """TMT 2026-08-03 (dueña: "es siempre Z, no hay que seleccionar").
-
-    Este listado es el que se lleva al banco: SIEMPRE lo que quedó en cartera.
-    No hay selector de estado, y un ?estado en la URL no lo cambia.
+    El listado NO filtra por estado; filtra por MEDIO, con la misma expresión
+    que parte los buckets del resumen de cobranza.
     """
-    import bcrypt
-
     cap = {}
     _patch(monkeypatch, cap)
-    rid = fake_db.add_role("Admin", ["*"])
-    pw = bcrypt.hashpw(b"secret123", bcrypt.gensalt())
-    fake_db.add_user("tamara", pw, rid)
-    client.post("/login", data={"username": "tamara", "password": "secret123"})
-
-    assert client.get("/cheques/ingresados-dia?fecha=2026-07-31").status_code == 200
-    assert cap["params"]["estados"] == ["Z"]
-
-    # Ni siquiera forzándolo por querystring entran los depositados.
-    assert client.get(
-        "/cheques/ingresados-dia?fecha=2026-07-31&estado=todos"
-    ).status_code == 200
-    assert cap["params"]["estados"] == ["Z"]
-    assert "<select" not in _html_ultimo(client)
+    queries.cheques_ingresados_dia(FECHA)
+    sql = cap["sql"]
+    assert queries.SQL_ES_CHEQUE in sql
+    assert "c.stat = ANY" not in sql
+    assert "estados" not in (cap["params"] or {})
 
 
-def _html_ultimo(client):
-    return client.get("/cheques/ingresados-dia?fecha=2026-07-31").get_data(as_text=True)
+def test_el_conteo_coincide_con_el_bucket_CHEQUES_del_resumen(monkeypatch):
+    """La dueña cruza las dos pantallas: "¿cómo puede haber 15 ingresos y acá
+    16 cheques?? hay algo mal". Tenía razón — y esta es la barrera para que no
+    vuelva a pasar: las dos parten el universo del día con la MISMA regla, así
+    que sobre las mismas filas tienen que dar el mismo número."""
+    filas = _filas() + [
+        # Un DEP.PICH. y un efectivo del mismo día: NO son cheques, y ninguna
+        # de las dos pantallas los cuenta como tales.
+        {"id_cheque": 9, "no_cheque": None, "fechad": FECHA, "fecha": FECHA,
+         "importe": 300.0, "stat": "B", "no_banco": 90, "codigo_cli": "MTM",
+         "banco_emisor": "DEP.PICH.", "cliente": "MTM", "doc_banco": "1",
+         "fecha_crea": None, "usuario_crea": "alex", "clave": "ALE",
+         "fecha_recibido": FECHA, "fechaing": None},
+        {"id_cheque": 10, "no_cheque": None, "fechad": FECHA, "fecha": FECHA,
+         "importe": 50.0, "stat": "C", "no_banco": 99, "codigo_cli": "BED",
+         "banco_emisor": "EFECTIVO", "cliente": "BED", "doc_banco": None,
+         "fecha_crea": None, "usuario_crea": "alex", "clave": "ALE",
+         "fecha_recibido": FECHA, "fechaing": None},
+    ]
+
+    def es_cheque(f):
+        return (f.get("no_banco") or 0) not in (90, 91, 99)
+
+    anterior = queries.db.fetch_all
+
+    def fake_fetch_all(sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.cheque c" in s and "order by c.importe desc" in s:
+            return [f for f in filas if es_cheque(f)]   # lo hace el WHERE en Postgres
+        if "from scintela.cheque c" in s:
+            return filas
+        if "from scintela.chequesxfact cxf" in s:
+            return []
+        return anterior(sql, params, conn=conn)
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake_fetch_all)
+
+    listado = queries.cheques_ingresados_dia(FECHA)
+    resumen = queries.resumen_cobranza_dia(FECHA)
+    assert listado["n"] == resumen["n_cheques"] == 4
+    assert round(listado["total"], 2) == round(resumen["total_cheques"], 2)
+    # ...y el depósito y el efectivo siguen contándose en SU bucket.
+    assert resumen["n_depositos"] == 1 and resumen["n_efectivo"] == 1
 
 
 def test_render_ingresados_dia(client, fake_db, monkeypatch):

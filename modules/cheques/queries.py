@@ -43,6 +43,13 @@ from periodo_guard import asegurar_fecha_abierta
 #   · `fechaing` SOLO si la fila nació del dBase: ahí es FECHING = ingreso.
 #     (En las filas de PC `fechaing` es la fecha de depósito — no sirve.)
 #   · `fecha` de último recurso.
+# Qué cuenta como CHEQUE — la misma partición por medio que usa el resumen de
+# cobranza (réplica de FINAL, ALTAS.PRG): NB 90/91 = depósito directo, NB 99 =
+# efectivo, todo lo demás (banco emisor real, y el 98 = espejo de anticipo) es
+# cheque. Compartida para que el listado de ingresados y el bucket CHEQUES del
+# resumen NO puedan dar números distintos para el mismo día.
+SQL_ES_CHEQUE = "COALESCE(c.no_banco, 0) NOT IN (90, 91, 99)"
+
 SQL_DIA_INGRESO = """COALESCE(
                        c.fecha_recibido,
                        CASE WHEN COALESCE(c.usuario_crea, '')
@@ -5304,7 +5311,7 @@ def resumen_cobranza_dia(fecha) -> dict:
     }
 
 
-def cheques_ingresados_dia(fecha, estados: tuple[str, ...] | None = None) -> dict:
+def cheques_ingresados_dia(fecha) -> dict:
     """Listado de cheques INGRESADOS en una fecha — réplica de CHEQUING (BANCOS.PRG).
 
     TMT 2026-08-03 (dueña, con la tirilla del FoxPro en la mano: "al parecer
@@ -5328,8 +5335,18 @@ def cheques_ingresados_dia(fecha, estados: tuple[str, ...] | None = None) -> dic
     éste es la lista plana para llevar al banco. Los dos comparten
     `SQL_DIA_INGRESO` a propósito.
 
-    `estados`: filtro opcional por `stat` (el dBase pide ESTADO y traduce
-    "CAR" → 'Z12PD'). None = todos menos anulados (X/Y).
+    ⚠ TMT 2026-08-03, en tres pasos con la dueña mirando la pantalla:
+    primero "y solo estado Z no B" (había filas B en el listado), después
+    "es siempre Z, no hay que seleccionar", y finalmente — señalando el
+    cheque de KOR que se había depositado ese mismo día — **"este falta"**.
+    Lo que le molestaba de las filas B no era el estado: eran los **DEP.PICH.
+    (NB=90)**, que no son cheques y se habían colado. Filtrar por `stat`
+    tapaba eso y de paso se comía un cheque legítimo.
+
+    Por eso el corte es por **MEDIO, no por estado**: entra todo lo que el
+    resumen cuenta como CHEQUE (`SQL_ES_CHEQUE`), depositado o no. La
+    consecuencia buscada es que **`n` de acá == `n_cheques` del resumen del
+    mismo día** — si algún día difieren, hay un bug en uno de los dos.
 
     Solo lectura. Devuelve {fecha, filas, total, n}.
     """
@@ -5360,13 +5377,12 @@ def cheques_ingresados_dia(fecha, estados: tuple[str, ...] | None = None) -> dic
           LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
          WHERE __DIA_INGRESO__ = %(fecha)s
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
-           AND (%(estados)s::text[] IS NULL OR c.stat = ANY(%(estados)s::text[]))
+           AND __ES_CHEQUE__
          ORDER BY c.importe DESC NULLS LAST, c.id_cheque ASC
-    """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
-    filas = (
-        db.fetch_all(sql, {"fecha": fecha, "estados": list(estados) if estados else None})
-        or []
+    """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO).replace(
+        "__ES_CHEQUE__", SQL_ES_CHEQUE
     )
+    filas = db.fetch_all(sql, {"fecha": fecha}) or []
     total = round(sum(float(f.get("importe") or 0) for f in filas), 2)
     return {"fecha": fecha, "filas": filas, "total": total, "n": len(filas)}
 
