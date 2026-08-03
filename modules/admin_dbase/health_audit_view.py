@@ -1034,6 +1034,152 @@ def pendientes_conciliacion():
     return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
 
 
+# ---------------------------------------------------------------------------
+# Saldo DERIVADO: ¿se puede dejar de leer la cadena y pasar a sumar?
+# ---------------------------------------------------------------------------
+
+
+def _derivar_cadena(filas: list[dict]) -> dict:
+    """Deriva el importe FIRMADO de cada fila a partir del saldo guardado.
+
+    ⭐ La identidad que hace que esto no mueva NADA, por álgebra:
+
+        firmado[0] = saldo[0]
+        firmado[n] = saldo[n] − saldo[n−1]        (n > 0)
+
+        ⇒ SUM(firmado[0..k]) = saldo[k]           (telescópica)
+
+    O sea: sumar los firmados reproduce EXACTAMENTE el saldo guardado, en
+    cualquier punto de la cadena. No adivina el signo desde el `documento`
+    —que es de donde salen todos los problemas—: lo LEE de la cadena que ya
+    está escrita.
+
+    Y de yapa sale gratis el diagnóstico: una fila donde
+    `|firmado| ≠ |importe|` es, por definición, un quiebre de la cadena.
+    Las demás son derivables sin ambigüedad.
+    """
+    filas = [f for f in filas if f.get("saldo") is not None]
+    derivables, quiebres = 0, []
+    prev = None
+    for f in filas:
+        saldo = float(f["saldo"])
+        firmado = saldo if prev is None else round(saldo - prev, 2)
+        imp = abs(float(f.get("importe") or 0))
+        if prev is not None and abs(abs(firmado) - imp) > 0.02:
+            quiebres.append({
+                "id_transaccion": f.get("id_transaccion"),
+                "fecha": str(f.get("fecha")),
+                "documento": (f.get("documento") or "").strip(),
+                "concepto": (f.get("concepto") or "")[:50],
+                "importe": imp,
+                "firmado_derivado": firmado,
+                "gap": round(abs(abs(firmado) - imp), 2),
+            })
+        elif prev is not None:
+            derivables += 1
+        prev = saldo
+    return {
+        "n_filas": len(filas),
+        "n_derivables": derivables,
+        "n_quiebres": len(quiebres),
+        "quiebres": quiebres[:20],
+        "suma_derivada": round(prev, 2) if prev is not None else 0.0,
+    }
+
+
+@bp.route("/saldo-derivado", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def saldo_derivado():
+    """DRY-RUN: ¿pasar de LEER la cadena a SUMAR movimientos mueve algún número?
+
+    ⭐ EL PROBLEMA DE FONDO (TMT 2026-08-03). El saldo corrido está GUARDADO y
+    se usa como fuente de verdad, cuando es un valor DERIVADO. Y no se puede
+    re-derivar porque `transacciones_bancarias.importe` **no lleva su signo**:
+    hay que adivinarlo desde el `documento`, con reglas que cambiaron entre el
+    dBase y la web (`bank_helpers._signed_delta`).
+
+    De ahí sale todo: un recompute total es peligroso (el dry-run del 29/06
+    daba −472.943), un solo insert backdated corrompe historia, y quedan 7
+    filas de junio-julio que no se pueden arreglar sin el extracto.
+
+    El arreglo es que el importe lleve signo y el saldo salga de un `SUM()`:
+    **sin cadena no hay cadena que romper, y una suma no depende del orden**,
+    así que un insert backdated deja de poder corromper nada.
+
+    Esta pantalla NO ESCRIBE. Sólo demuestra la premisa: que derivar el signo
+    de la cadena reproduce el saldo actual **al centavo**, banco por banco.
+    Si algún Δ no es 0,00, la migración no se hace.
+    """
+    alerts: list[dict] = []
+    stats: dict = {"bancos": [], "delta_maximo": 0.0}
+    try:
+        from modules.informes.queries import saldo_bancos
+
+        for b in saldo_bancos():
+            no_banco = int(b["no_banco"])
+            nombre = (b.get("nombre") or f"Banco {no_banco}").strip()
+            stored = float(b.get("saldo_stored") or 0)
+            if not stored and not int(b.get("n_transacciones") or 0):
+                continue
+            filas = db.fetch_all(
+                """
+                SELECT id_transaccion, fecha, documento, concepto,
+                       importe, saldo
+                  FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s
+                   AND fecha <= CURRENT_DATE
+                 ORDER BY fecha, id_transaccion
+                """,
+                (no_banco,),
+            ) or []
+            n_null = sum(1 for f in filas if f.get("saldo") is None)
+            d = _derivar_cadena(filas)
+            # `saldo_bancos()` toma el último saldo NO-CERO; la suma derivada
+            # termina en el último saldo a secas. Comparamos contra ese mismo.
+            delta = round(d["suma_derivada"] - stored, 2)
+            stats["bancos"].append({
+                "no_banco": no_banco, "nombre": nombre,
+                "saldo_hoy_que_usa_el_balance": stored,
+                "saldo_si_sumaramos": d["suma_derivada"],
+                "delta": delta,
+                "n_filas": d["n_filas"],
+                "n_derivables": d["n_derivables"],
+                "n_quiebres": d["n_quiebres"],
+                "saldos_null_no_derivables": n_null,
+                "quiebres": d["quiebres"],
+            })
+            stats["delta_maximo"] = max(stats["delta_maximo"], abs(delta))
+            if abs(delta) > 0.01:
+                alerts.append({
+                    "severity": "high", "category": "derivado_no_reproduce",
+                    "msg": (f"{nombre}: sumar los importes firmados da "
+                            f"{d['suma_derivada']:,.2f} y el balance usa "
+                            f"{stored:,.2f} (Δ {delta:+,.2f}). Con este Δ la "
+                            f"migración NO se hace."),
+                })
+            if n_null:
+                alerts.append({
+                    "severity": "medium", "category": "saldo_null",
+                    "msg": (f"{nombre}: {n_null} fila(s) con `saldo` NULL — no "
+                            f"se les puede derivar el signo desde la cadena."),
+                })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "alerts": [{
+            "severity": "high", "category": "error",
+            "msg": f"saldo-derivado falló: {str(e)[:200]}",
+        }], "stats": stats})
+
+    stats["veredicto"] = (
+        "OK — derivar el signo de la cadena reproduce el saldo de cada banco "
+        "al centavo. La migración a `importe_firmado` + SUM() no movería "
+        "ningún número."
+        if not alerts else
+        "OJO — hay bancos donde la suma NO reproduce el saldo. No migrar."
+    )
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
