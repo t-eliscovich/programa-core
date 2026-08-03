@@ -7218,7 +7218,24 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                -- `codigo` (BED→'BED', EDG→'EDG'…), o sea el join devolvía el
                -- mismo string a cambio de un LEFT JOIN. Si algún día se les
                -- carga nombre de verdad en /comisiones, ahí sí conviene.
-               COALESCE(c.correo, '')                 AS correo,
+               -- TMT 2026-08-03 (dueña): "mail está en observaciones y lo veo
+               -- cuando pongo editar". Y es así: `cliente.correo` está cargado
+               -- en 1 solo cliente de 3.973, pero `observacion` tiene un mail
+               -- en 2.984 — lo tipearon ahí durante años, mezclado con notas
+               -- ("ventas@x.com  CONTADO"). Así que el mail se MUESTRA desde
+               -- observacion cuando correo está vacío. Es sólo lectura: no se
+               -- migra nada, y si mañana lo corrigen en el dBase se actualiza
+               -- solo. `correo` (editable en /clientes/editar) tiene prioridad.
+               -- Sin `%` en la clase de caracteres: psycopg2 lo tomaría como
+               -- placeholder y explota ("unsupported format character").
+               COALESCE(
+                   NULLIF(TRIM(c.correo), ''),
+                   (regexp_match(c.observacion,
+                    '[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}'))[1],
+                   ''
+               )                                      AS correo,
+               -- De dónde salió, para poder aclararlo en pantalla.
+               (NULLIF(TRIM(c.correo), '') IS NULL)   AS correo_de_observacion,
                COALESCE(NULLIF(TRIM(c.vend), ''), '') AS vend
         FROM scintela.cliente c
         WHERE c.codigo_cli = %s

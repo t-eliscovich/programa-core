@@ -106,6 +106,52 @@ def test_vendedor_y_mail_estan_en_la_segunda_columna():
     )
 
 
+def test_el_mail_sale_de_observacion_cuando_correo_esta_vacio():
+    """Dueña 2026-08-03: "mail está en observaciones y lo veo cuando pongo
+    editar".
+
+    Es literal: `cliente.correo` está cargado en 1 cliente de 3.973, pero
+    `observacion` tiene un mail en **2.984** — se tipeó ahí durante años,
+    pegado a notas sueltas ("ventas@americanspirit.ec MBT", "isabel1981@
+    yahoo.es    CONTADO"). Sin este fallback la columna Mail que ella pidió
+    salía "—" para el 75% de la cartera teniendo el dato a la vista.
+    """
+    sql = _sql_cliente()
+    assert "regexp_match(c.observacion" in sql, (
+        "el mail tiene que salir de observacion cuando correo está vacío"
+    )
+    # Prioridad: lo cargado a mano en la ficha le gana a lo parseado.
+    i_correo = sql.index("NULLIF(TRIM(c.correo), '')")
+    i_obs = sql.index("regexp_match(c.observacion")
+    assert i_correo < i_obs, (
+        "c.correo (editable en /clientes/editar) va PRIMERO en el COALESCE: "
+        "si alguien lo corrige a mano, no se lo puede pisar la observación"
+    )
+
+
+def test_el_regex_del_mail_no_lleva_porcentaje():
+    """`%` en el SQL lo toma psycopg2 como placeholder y revienta.
+
+    La query se pasa con parámetros (`(codigo_cli,)`), así que un `%` suelto
+    en la clase de caracteres tira "unsupported format character" EN
+    PRODUCCIÓN — no lo caza ningún test que no tenga Postgres. Se sacó a
+    propósito; un mail con `%` no existe en esta cartera.
+    """
+    sql = _sql_cliente()
+    regex = sql[sql.index("'[A-Za-z0-9"):]
+    regex = regex[:regex.index("'", 1) + 1]
+    assert "%" not in regex, f"el regex del mail tiene un % sin escapar: {regex}"
+
+
+def test_se_sabe_si_el_mail_vino_de_observacion():
+    """Para poder aclararlo en pantalla en vez de mentir que está en la ficha."""
+    sql = _sql_cliente()
+    assert "AS correo_de_observacion" in sql
+    html = _TPL.read_text(encoding="utf-8")
+    assert "correo_de_observacion" in html
+    assert "Tomado de la Observación" in html
+
+
 def test_el_mail_es_clickeable():
     html = _TPL.read_text(encoding="utf-8")
     assert 'href="mailto:{{ _mail }}"' in html, (

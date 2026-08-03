@@ -220,7 +220,9 @@
         {% if _vend and _vend | trim %}{{ _vend }}{% else %}<span class="text-slate-400">—</span>{% endif %}
       </div>
       <div class="break-all"><span class="text-slate-400">Mail:</span>
-        {% if _mail and _mail | trim %}<a href="mailto:{{ _mail }}" class="text-sky-700 dark:text-sky-400 hover:underline">{{ _mail }}</a>{% else %}<span class="text-slate-400">—</span>{% endif %}
+        {% if _mail and _mail | trim %}<a href="mailto:{{ _mail }}"
+             class="text-sky-700 dark:text-sky-400 hover:underline"
+             title="{{ 'Tomado de la Observación del cliente' if data.cliente.correo_de_observacion else 'Cargado en la ficha del cliente' }}">{{ _mail }}</a>{% else %}<span class="text-slate-400">—</span>{% endif %}
       </div>
     </div>
   </div>
@@ -277,9 +279,16 @@
          lo multiplicó ×1000). Se muestra con $ y el % usado va sobre el cupo real. #}
       {% set cupo = (data.cliente.cupo or 0) | float %}
       <div class="mt-0.5 text-lg font-semibold text-mono">$ {{ cupo | num_es(0) }}</div>
+      {# TMT 2026-08-03 (dueña): "acá el porcentaje está mal, debería ser más
+         del 100%: es 3159/3000". El % iba sobre `t.saldo_vivo` (sólo facturas
+         vivas) mientras el tile de al lado mostraba TOTAL (facturas +
+         cheques) — dos números distintos pegados, y el % siempre MENOR que
+         el riesgo real: los cheques en cartera todavía no se cobraron, así
+         que ocupan cupo. Ahora el % es del MISMO `_total_fc` que se ve. #}
       {% if cupo > 0 %}
-        {% set pct = (t.saldo_vivo / cupo * 100) %}
-        <div class="mt-1 text-xs {{ 'text-red-600' if pct >= 100 else ('text-amber-600' if pct >= 80 else 'text-slate-500') }}">
+        {% set pct = ((_total_fc or 0) / cupo * 100) %}
+        <div class="mt-1 text-xs {{ 'text-red-600' if pct >= 100 else ('text-amber-600' if pct >= 80 else 'text-slate-500') }}"
+             title="Total (facturas + cheques) {{ _total_fc | money_es }} sobre el cupo de $ {{ cupo | num_es(0) }}">
           {{ pct | num_es(0) }} % usado
         </div>
       {% endif %}
