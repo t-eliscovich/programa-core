@@ -230,6 +230,27 @@ def nueva():
         ), 500
 
 
+@compras_bp.route("/compras/<int:id_compra>")
+@requiere_login
+@requiere_permiso("compras.ver")
+def detalle(id_compra: int):
+    """Ficha de una compra.
+
+    TMT 2026-08-03 (dueña): en el Historial el link "Compra #N" apuntaba a
+    /compras/N y esa ruta NO existía → 404. Compras era el único módulo con
+    links entrantes y sin ficha (facturas y cheques ya la tenían).
+
+    El parámetro se resuelve primero como id INTERNO (que es lo que guarda
+    mov_doble y por lo tanto lo que arma el link del Historial) y, si no
+    existe, como N° de compra (el número que la gente nombra).
+    """
+    c = queries.por_id(id_compra) or queries.por_numero(id_compra)
+    if not c:
+        abort(404)
+    movs = queries.movimientos(c["id_compra"])
+    return render_template("compras/detalle.html", c=c, movs=movs)
+
+
 @compras_bp.route("/compras/<int:id_compra>/confirmar-anulacion", methods=["GET"])
 @requiere_login
 @requiere_permiso("compras.anular")

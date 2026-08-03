@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% set anulada = (c.stat or '')|upper == 'Y' %}
+{% block title %}Compra N° {{ c.numero or c.id_compra }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('compras.lista') }}" class="hover:underline">Compras</a> /
+  <strong>N° {{ c.numero or c.id_compra }}</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+
+  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-semibold">
+        Compra N° {{ c.numero or c.id_compra }}
+        {% if anulada %}
+          <span class="ml-2 inline-block px-2 py-0.5 rounded text-xs bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 font-medium align-middle"
+                title="{{ c.observacion or 'Anulada' }}">ANULADA</span>
+        {% endif %}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        <span class="font-mono">{{ c.codigo_prov }}</span> — {{ c.proveedor or '' }}
+        · {{ c.fecha | fecha_es }}
+        {% if c.numero and c.numero != c.id_compra %}
+          <span class="text-slate-400" title="Id interno del registro en Programa Core">· id interno #{{ c.id_compra }}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-3 no-print">
+      {% if not anulada and tiene_permiso('compras.editar') %}
+        <a href="{{ url_for('compras.editar', id_compra=c.id_compra) }}"
+           class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">Editar</a>
+      {% endif %}
+      {% if not anulada and tiene_permiso('compras.anular') %}
+        <a href="{{ url_for('compras.confirmar_anulacion', id_compra=c.id_compra) }}"
+           class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-600 dark:text-red-400 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20">Anular</a>
+      {% endif %}
+      <a href="{{ url_for('compras.lista', q=c.codigo_prov) }}"
+         class="text-sm text-slate-500 hover:text-sky-600 hover:underline">Ver todas las de {{ c.codigo_prov }}</a>
+    </div>
+  </div>
+
+  {% if anulada and c.observacion %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-200 text-sm">
+      {{ c.observacion | cleanstr }}
+    </div>
+  {% endif %}
+
+  <div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Importe</div>
+      <div class="font-mono text-base{% if anulada %} line-through{% endif %}">{{ c.importe | money_es }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Kg</div>
+      <div class="font-mono">{% if c.kg and c.kg | float != 0 %}{{ c.kg | kg_es }}{% else %}—{% endif %}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500" title="Fecha de la compra + plazo del proveedor">Vencimiento</div>
+      <div class="font-mono">{{ c.fechad | fecha_es if c.fechad else '—' }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500" title="BANC/BCO del dBase: 9 o un banco = pagada; 0 o vacío = pendiente">Pago</div>
+      <div class="font-mono">
+        {%- if c.no_banco and (c.no_banco | string) not in ('0', '') -%}
+          {{ c.banco or ('banco ' ~ c.no_banco) }}
+        {%- else -%}Pendiente{%- endif -%}
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-8">
+    <table class="w-full text-sm">
+      <tbody>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <th class="px-3 py-2 text-left font-medium text-slate-500 w-48">Tipo</th>
+          <td class="px-3 py-2 font-mono">{{ c.tipo or '—' }}</td>
+        </tr>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <th class="px-3 py-2 text-left font-medium text-slate-500">Comprobante</th>
+          <td class="px-3 py-2">{{ c.comprobante | cleanstr if c.comprobante else '—' }}</td>
+        </tr>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <th class="px-3 py-2 text-left font-medium text-slate-500">Concepto</th>
+          <td class="px-3 py-2">{{ c.concepto | cleanstr if c.concepto else '—' }}</td>
+        </tr>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <th class="px-3 py-2 text-left font-medium text-slate-500">Proveedor</th>
+          <td class="px-3 py-2">
+            <a href="{{ url_for('compras.lista', q=c.codigo_prov) }}" class="text-sky-600 hover:underline">
+              <span class="font-mono text-xs">{{ c.codigo_prov }}</span> {{ c.proveedor or '' }}</a>
+          </td>
+        </tr>
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-500">Cargada</th>
+          <td class="px-3 py-2 text-slate-500">
+            {{ c.usuario_crea or 'dBase' }}{% if c.fecha_crea %} · {{ c.fecha_crea | fecha_es }}{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="text-lg font-semibold mb-2">Movimientos</h2>
+  <p class="text-sm text-slate-500 mb-3">
+    Todo lo que el programa registró contra esta compra: el pago, los anticipos
+    aplicados, la obligación generada y los reversos.
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium">Fecha</th>
+          <th class="px-3 py-2 text-left font-medium">Tipo</th>
+          <th class="px-3 py-2 text-right font-medium">Importe</th>
+          <th class="px-3 py-2 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2 text-left font-medium">Usuario</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in movs %}
+        <tr class="border-t border-slate-100 dark:border-slate-800{% if m.estado != 'activo' %} opacity-60{% endif %}">
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ m.fecha_operacion | fecha_es }}</td>
+          <td class="px-3 py-2">
+            {{ (m.tipo or '') | replace('_', ' ') | title }}
+            {% if m.estado and m.estado != 'activo' %}
+              <span class="ml-1 text-xs text-slate-400">({{ m.estado }})</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right font-mono">{{ m.importe | money_es }}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{{ m.concepto | cleanstr }}</td>
+          <td class="px-3 py-2 text-slate-500">{{ m.usuario or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-3 py-6 text-center text-slate-400 text-sm">
+          Sin movimientos registrados para esta compra.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-slate-400 mt-2 no-print">
+    <a href="{{ url_for('historial.lista', q='compra #' ~ (c.numero or c.id_compra)) }}"
+       class="hover:underline">Buscar esta compra en el Historial →</a>
+  </p>
+
+</div>
+{% endblock %}

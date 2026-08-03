@@ -622,6 +622,57 @@ def por_id(id_compra: int) -> dict | None:
     )
 
 
+def por_numero(numero: int) -> dict | None:
+    """Ficha de una compra por su N° de compra (el visible en pantalla).
+
+    TMT 2026-08-03 (dueña): el link "Compra #N" del Historial usa el id
+    INTERNO, pero la compra que la gente nombra es la del N°. La ficha
+    acepta los dos: primero prueba por id, y si no existe cae acá.
+    """
+    return db.fetch_one(
+        """
+        SELECT c.id_compra, c.fecha, c.fechad, c.codigo_prov, c.tipo,
+               c.comprobante, c.numero, c.kg, c.importe, c.concepto,
+               c.clave, c.no_banco, c.stat, c.observacion,
+               c.fecha_crea, c.usuario_crea,
+               COALESCE(p.nombre, '') AS proveedor,
+               COALESCE(b.nombre, '') AS banco
+        FROM scintela.compra c
+        LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
+        LEFT JOIN scintela.banco b     ON b.no_banco    = c.no_banco
+        WHERE c.numero = %s
+        ORDER BY c.id_compra DESC
+        LIMIT 1
+        """,
+        (numero,),
+    )
+
+
+def movimientos(id_compra: int, limite: int = 100) -> list[dict]:
+    """Movimientos del historial (mov_doble) que tocan esta compra.
+
+    Es la trazabilidad de la ficha: el pago, los anticipos aplicados, la
+    posdat generada, los reversos. Best-effort — la ficha no se cae si
+    mov_doble no existe todavía en el entorno.
+    """
+    try:
+        return db.fetch_all(
+            """
+            SELECT m.id_mov_doble, m.fecha_operacion, m.tipo, m.importe,
+                   m.concepto, m.usuario, m.estado,
+                   m.origen_table, m.origen_id, m.destino_table, m.destino_id
+              FROM scintela.mov_doble m
+             WHERE (m.origen_table  = 'compra' AND m.origen_id  = %(id)s)
+                OR (m.destino_table = 'compra' AND m.destino_id = %(id)s)
+             ORDER BY m.fecha_operacion DESC, m.id_mov_doble DESC
+             LIMIT %(lim)s
+            """,
+            {"id": id_compra, "lim": limite},
+        ) or []
+    except Exception:
+        return []
+
+
 def anular(id_compra: int, *, motivo: str = "", usuario: str = "web") -> int:
     """Marca la compra como anulada (stat='Y') Y reverte sus side-effects.
 

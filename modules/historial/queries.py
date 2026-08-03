@@ -478,10 +478,13 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         if nfact and str(nfact).strip() and str(nfact).strip() != "0":
             return f"/facturas/{nfact}", f"Factura {nfact}"
         return f"/facturas/{rid}", f"Factura #{rid}"
+    # TMT 2026-08-03: /capital ya no existe — la pantalla unificada de
+    # aportes y retiros es /retiros (informes.retiros, "Dividendos",
+    # TMT 2026-05-20). Los dos links apuntaban a una ruta muerta → 404.
     if t == "capital":
-        return "/capital", f"Capital #{rid}"
+        return "/retiros", f"Capital #{rid}"
     if t == "retiros":
-        return "/capital?filtro=retiros", f"Retiro #{rid}"
+        return "/retiros", f"Retiro #{rid}"
     if t == "dolares":
         return "/dolares?cta=", f"USD #{rid}"
     if t == "posdat":

@@ -182,9 +182,7 @@
              COMPRAS si la factura fue pagada (campo BANC/BCO: 9 o banco = pagada,
              0/vacío = pendiente). En PC ese campo vive en compra.no_banco. #}
           <th class="px-3 py-3 text-center font-medium" title="Pagada según el banco de la compra — BANC/BCO del dBase (9 o banco = pagada, 0/vacío = pendiente)">Pagada</th>
-          {% if tiene_permiso('compras.anular') or tiene_permiso('compras.editar') %}
-            <th class="px-3 py-3 text-right font-medium no-print" data-no-sort>Acciones</th>
-          {% endif %}
+          <th class="px-3 py-3 text-right font-medium no-print" data-no-sort>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -259,8 +257,12 @@
               <span style="display:inline-block;padding:1px 9px;border-radius:9999px;font-size:11px;font-weight:600;background:#fef3c7;color:#b45309;">No</span>
             {% endif %}
           </td>
-          {% if tiene_permiso('compras.anular') or tiene_permiso('compras.editar') %}
             <td class="px-3 py-2 text-right no-print" style="white-space: nowrap;">
+              {# TMT 2026-08-03: ficha de la compra — mismo destino al que
+                 apunta el link "Compra #N" del Historial. #}
+              <a href="{{ url_for('compras.detalle', id_compra=c.id_compra) }}"
+                 class="text-xs text-slate-500 hover:text-sky-600 hover:underline mr-2"
+                 title="Ver la ficha de la compra y sus movimientos">Ver</a>
               {% if not anulada %}
                 {% if tiene_permiso('compras.editar') %}
                   <a href="{{ url_for('compras.editar', id_compra=c.id_compra) }}"
@@ -271,14 +273,11 @@
                   <a href="{{ url_for('compras.confirmar_anulacion', id_compra=c.id_compra) }}"
                      class="text-xs text-red-600 dark:text-red-400 hover:underline">Anular</a>
                 {% endif %}
-              {% else %}
-                <span class="text-xs text-slate-400">—</span>
               {% endif %}
             </td>
-          {% endif %}
         </tr>
         {% else %}
-        {{ empty_row(8, 'Sin compras en el filtro.', 'Ampliá el rango de fechas o quitá el proveedor.') }}
+        {{ empty_row(10, 'Sin compras en el filtro.', 'Ampliá el rango de fechas o quitá el proveedor.') }}
         {% endfor %}
       </tbody>
     </table>
