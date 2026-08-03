@@ -611,6 +611,15 @@ def create_app() -> Flask:
 
     app.register_blueprint(import_sin_plata_bp)
 
+    # /admin/debug-kg-por-mes — ¿los kilos del hilado se duplican o faltan?
+    # kcom del balance vs los kg que Asinfo dice que entraron, mes por mes, y el
+    # detalle de los códigos con más de una compra. SOLO LECTURA.
+    from modules.admin_dbase.debug_kg_por_mes_view import (
+        bp as debug_kg_por_mes_bp,
+    )
+
+    app.register_blueprint(debug_kg_por_mes_bp)
+
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
     from modules.admin_dbase.health_audit_view import bp as health_audit_bp
