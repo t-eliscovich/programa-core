@@ -144,36 +144,7 @@
          Tres botones: todo (el de siempre), sólo facturas, sólo cheques —
          y el de cheques deja afuera los ya cobrados (B/A), que es lo que
          sobra cuando el papel se le manda al cliente. #}
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir todo</button>
-      <button type="button" onclick="ecImprimir('facturas')"
-              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-              title="Sólo la hoja de facturas, con el total de cheques por cobrar al pie">Imprimir facturas</button>
-      <button type="button" onclick="ecImprimir('cheques')"
-              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-              title="Sólo el listado de cheques, sin los ya depositados (para mandarle al cliente)">Imprimir cheques</button>
-      <script>
-        function ecImprimir(que) {
-          var b = document.body;
-          b.classList.add('ec-print-' + que);
-          function limpiar() {
-            b.classList.remove('ec-print-facturas', 'ec-print-cheques');
-            window.removeEventListener('afterprint', limpiar);
-          }
-          window.addEventListener('afterprint', limpiar);
-          window.print();
-          // Safari/algunos navegadores no disparan afterprint: red de seguridad.
-          setTimeout(limpiar, 3000);
-        }
-      </script>
-      <style>
-        @media print {
-          body.ec-print-facturas .ec-bloque-cheques { display: none !important; }
-          body.ec-print-cheques  .ec-bloque-facturas { display: none !important; }
-          /* Los ya cobrados (B/A) no van en el papel que se le manda al
-             cliente — Alex, 2026-08-03. */
-          body.ec-print-cheques  tr.ec-ch-cobrado { display: none !important; }
-        }
-      </style>
+      {% include "informes/_ec_print_botones.html" %}
       {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
          (réplica mejorada del dBase CUENTA.PRG rama 'Y'). El GET es solo la
          pantalla de confirmación; ahí se ve lo que va a quedar. #}

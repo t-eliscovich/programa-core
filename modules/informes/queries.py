@@ -39,6 +39,42 @@ from modules.posdat import (
 # que se le manda al cliente dice una fecha y la pantalla otra.
 from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# "POR COBRAR" es UNA definición, no tres. TMT 2026-08-03.
+#
+# El estado de cuenta lo IMPRIME el cliente. Tres lugares decidían por su
+# cuenta qué cheque "todavía nos debe": la fila que se esconde al imprimir sólo
+# cheques (miraba B/A), el contador que decide si el cliente entra en la
+# impresión por vendedor, y el pie "Total cheques (por cobrar)" (miraba Z/P).
+# Con criterios distintos el papel salía contradictorio: 2 cheques listados y
+# "Total (3 cheques)" abajo, más una franja que decía "Depositados (B/A): $X"
+# justo en la hoja que se le manda al cliente.
+#
+# Por cobrar = sigue siendo plata del cliente:
+#   Z/P cartera · D "Daniela" · 1/2/3/R rebotados · 9 "sin fondos (rebotó)".
+#   ⚠️ `9` es el rebote que se marca desde el dropdown de /cheques
+#   (`transicionar_stat`, que además pone `cliente.stop='S'`): el banco lo
+#   rechazó, o sea que es el caso MÁS por cobrar que hay. Se pasó por alto en
+#   la primera versión de esta lista y el cliente desaparecía de la impresión.
+# NO por cobrar = ya la cobramos o el cheque no es más nuestro:
+#   B/A y los depositados legacy V/W/I/J/K · C cobrado en caja · E endosado ·
+#   X anulado.
+STATS_CHEQUE_POR_COBRAR = ("Z", "P", "D", "1", "2", "3", "R", "9")
+
+
+def cheque_por_cobrar(stat) -> bool:
+    """¿Este cheque sigue siendo plata que el cliente nos debe?"""
+    return (str(stat or "").strip().upper()) in STATS_CHEQUE_POR_COBRAR
+
+
+# El SQL normaliza IGUAL que `cheque_por_cobrar()`. Sin el UPPER(TRIM(...)) un
+# `stat = 'Z '` quedaba en la lista impresa pero fuera del total: "Total 0,00"
+# debajo de un cheque de $500. La normalización defensiva es la norma en el
+# repo (ver `modules/conciliacion`), no una paranoia.
+_SQL_CHEQUE_POR_COBRAR = "UPPER(TRIM(COALESCE(stat, ''))) IN (" + ", ".join(
+    "'%s'" % st for st in STATS_CHEQUE_POR_COBRAR
+) + ")"
+
 
 # ---------------------------------------------------------------------------
 # Filtro común para excluir backfill de Asinfo (TMT 2026-05-29).
@@ -7363,6 +7399,11 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         (codigo_cli,),
     )
 
+    # Marca compartida: la usan la fila que se esconde al imprimir sólo
+    # cheques y el contador de la impresión en lote. Ver STATS_CHEQUE_POR_COBRAR.
+    for _c in (cheques or []):
+        _c["por_cobrar"] = cheque_por_cobrar(_c.get("stat"))
+
     # TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
     # En cobranza, cuando un cheque excede las facturas, el sobrante se guarda
     # como un cheque-espejo NEGATIVO NB=98 'ANTICIPO' (paridad dBase ALTAS.PRG).
@@ -7437,14 +7478,15 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           COALESCE(SUM(CASE WHEN stat IN ('B','A')         THEN importe ELSE 0 END), 0)   AS depositados,
           COALESCE(SUM(CASE WHEN stat IN ('1','2','3','R') THEN importe ELSE 0 END), 0)   AS rebotados,
           COALESCE(SUM(CASE WHEN stat = 'E'                THEN importe ELSE 0 END), 0)   AS endosados,
-          COALESCE(SUM(CASE WHEN stat = 'D'                THEN importe ELSE 0 END), 0)   AS daniela
+          COALESCE(SUM(CASE WHEN stat = 'D'                THEN importe ELSE 0 END), 0)   AS daniela,
+          COALESCE(SUM(CASE WHEN __POR_COBRAR__ THEN importe ELSE 0 END), 0)               AS por_cobrar
         FROM scintela.cheque
         WHERE codigo_cli = %s
           AND COALESCE(stat,'') <> 'X'
           -- TMT 2026-06-23: excluir espejos de anticipo NB=98 de los totales
           -- de cheques reales (se contabilizan en `saldo_a_favor`).
           AND COALESCE(no_banco, 0) <> 98
-        """,
+        """.replace("__POR_COBRAR__", _SQL_CHEQUE_POR_COBRAR),
             (codigo_cli,),
         )
         or {}
@@ -7484,6 +7526,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         "cheques_rebotados": float(tot_che.get("rebotados") or 0),
         "cheques_endosados": float(tot_che.get("endosados") or 0),
         "cheques_daniela": float(tot_che.get("daniela") or 0),
+        "cheques_por_cobrar": float(tot_che.get("por_cobrar") or 0),
         # TMT 2026-06-23: saldo a favor (positivo) y saldo neteado.
         "saldo_a_favor": -_anticipo_raw,
         "saldo_neto": round(_saldo_fac + _anticipo_raw, 2),

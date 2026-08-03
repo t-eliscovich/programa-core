@@ -1,0 +1,80 @@
+{# Los TRES botones de impresión del estado de cuenta: todo / sólo facturas /
+   sólo cheques. COMPARTIDO por la pantalla individual (estado_cuenta.html) y
+   por la impresión en lote — vendedor / provincia / grupos —
+   (estado_cuenta_lote_print.html), para que las dos impriman exactamente lo
+   mismo. TMT 2026-08-03 (dueña: "cuando quiero imprimir la cartera por
+   vendedor, provincias o grupos igual debería poder elegir sólo factura sólo
+   cheques o ambas").
+
+   ⚠️ NO duplicar este bloque: si un lado cambia y el otro no, el papel sale
+   distinto según de qué pantalla salió y no se nota hasta que está impreso.
+
+   Depende de las clases que emite `_estado_cuenta_impreso.html`:
+     .ec-bloque-facturas · .ec-bloque-cheques · tr.ec-ch-cobrado (= NO por cobrar)
+   .ec-ch-total-todos · .ec-ch-resumen · .ec-ch-total-cobrar
+   y, sólo en el lote, de `data-n-ch-cobrar` en el `.cli-block` para saltear a
+   los clientes que no tienen nada que mostrar en "sólo cheques". #}
+<style>
+  /* El total "por cobrar" existe SÓLO para la hoja de cheques del cliente. */
+  .ec-ch-total-cobrar { display: none; }
+</style>
+<button type="button" onclick="ecImprimir('todo')"
+        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        title="Facturas y cheques, todo junto">Imprimir todo</button>
+<button type="button" onclick="ecImprimir('facturas')"
+        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        title="Sólo la hoja de facturas, con el total de cheques por cobrar al pie">Imprimir facturas</button>
+<button type="button" onclick="ecImprimir('cheques')"
+        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+        title="Sólo el listado de cheques por cobrar, sin los ya depositados (para mandarle al cliente)">Imprimir cheques</button>
+<script>
+  function ecImprimir(que) {
+    var b = document.body;
+    if (que !== 'todo') { b.classList.add('ec-print-' + que); }
+    // Impresión en LOTE: el separador gris de arriba lo anula
+    // `.cli-block:first-of-type`, pero `:first-of-type` es POSICIONAL — si el
+    // primer cliente queda escondido (no tiene cheques por cobrar), el primero
+    // que sí se imprime arranca con una raya colgada y 24pt de aire. Marcamos
+    // a mano el primero VISIBLE. No existe un `:first-of-class` en CSS.
+    var bloques = document.querySelectorAll('.cli-block');
+    for (var i = 0; i < bloques.length; i++) {
+      var vacio = que === 'cheques' && bloques[i].getAttribute('data-n-ch-cobrar') === '0';
+      bloques[i].classList.toggle('ec-primero', !vacio && !document.querySelector('.cli-block.ec-primero'));
+    }
+    function limpiar() {
+      b.classList.remove('ec-print-facturas', 'ec-print-cheques');
+      document.querySelectorAll('.cli-block.ec-primero').forEach(function (e) {
+        e.classList.remove('ec-primero');
+      });
+      window.removeEventListener('afterprint', limpiar);
+    }
+    window.addEventListener('afterprint', limpiar);
+    window.print();
+    // Safari/algunos navegadores no disparan afterprint: red de seguridad.
+    setTimeout(limpiar, 3000);
+  }
+</script>
+<style>
+  @media print {
+    body.ec-print-facturas .ec-bloque-cheques { display: none !important; }
+    body.ec-print-cheques  .ec-bloque-facturas { display: none !important; }
+    /* Los ya cobrados (B/A) no van en el papel que se le manda al
+       cliente — Alex, 2026-08-03. */
+    body.ec-print-cheques  tr.ec-ch-cobrado { display: none !important; }
+    /* El pie "Total (N cheques)" cuenta TODOS y la franja de abajo dice
+       "Depositados (B/A): $X" — las dos contradicen la hoja que se le manda al
+       cliente, donde esas filas no salen. En su lugar va el total que cuadra. */
+    body.ec-print-cheques .ec-ch-total-todos,
+    body.ec-print-cheques .ec-ch-resumen { display: none !important; }
+    body.ec-print-cheques .ec-ch-total-cobrar { display: block !important; }
+    /* Impresión en LOTE (vendedor / provincia / grupos): un vendedor puede
+       tener 69 clientes y la mitad no tener cheques por cobrar. Sin esto, el
+       modo "sólo cheques" imprime decenas de hojas con el nombre del cliente y
+       un "Sin cheques" debajo. El data- lo calcula el lote; en la pantalla
+       individual no hay .cli-block y esta regla no aplica. */
+    body.ec-print-cheques .cli-block[data-n-ch-cobrar="0"] { display: none !important; }
+    /* El separador de arriba, sobre el primer bloque que REALMENTE se imprime. */
+    .cli-block.ec-primero { margin-top: 0 !important; padding-top: 0 !important;
+                            border-top: 0 !important; }
+  }
+</style>

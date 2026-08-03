@@ -57,8 +57,11 @@
     <div class="flex gap-2">
       <a href="{{ request.referrer or url_for('informes.estado_cuenta_landing') }}"
          class="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">← Volver</a>
-      <button onclick="window.print()"
-              class="rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">Imprimir ahora</button>
+      {# TMT 2026-08-03 (dueña: "cuando quiero imprimir la cartera por vendedor,
+         provincias o grupos igual debería poder elegir sólo factura sólo
+         cheques o ambas"). Los MISMOS tres botones que el estado de cuenta
+         individual, por include — no una copia. #}
+      {% include "informes/_ec_print_botones.html" %}
     </div>
   </div>
 
@@ -70,7 +73,14 @@
     {% set data = c %}
     {% set t = c.totales %}
     {% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
-    <section class="cli-block">
+    {# Cheques POR COBRAR = los mismos que quedan visibles en el modo "sólo
+       cheques". `por_cobrar` lo marca `estado_cuenta_cliente` con
+       STATS_CHEQUE_POR_COBRAR — acá NO se re-define el criterio. Si un cliente
+       no tiene ninguno, su bloque no se imprime en ese modo: un vendedor puede
+       tener 69 clientes y la mitad sin cheques → 30 hojas con un "Sin cheques"
+       adentro. #}
+    {% set _ch_cobrar = c.cheques | selectattr('por_cobrar') | list %}
+    <section class="cli-block" data-n-ch-cobrar="{{ _ch_cobrar | length }}">
       <div class="print-head">
         <span class="ph-nombre">{{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})</span>
         · <span class="ph-saldo">Saldo: {{ _saldo_neto | money_es }}</span>
@@ -80,7 +90,4 @@
   {% endfor %}
 </div>
 
-{% if request.args.get('auto') %}
-<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 400); });</script>
-{% endif %}
 {% endblock %}

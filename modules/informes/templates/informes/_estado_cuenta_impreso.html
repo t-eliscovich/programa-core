@@ -193,10 +193,13 @@
         {% if not anulado %}{% set nch.activos = nch.activos + 1 %}{% endif %}
         {# TMT 2026-08-03 (Alex, por WhatsApp: "de momento se imprime incluso los
            depositados y para enviar eso al cliente viene a ser innecesario").
-           Marcamos la fila con su estado para que el botón "Imprimir cheques"
-           pueda dejar afuera lo que ya pasó por el banco. #}
+           Marcamos la fila para que el botón "Imprimir cheques" deje afuera lo
+           que YA cobramos. `por_cobrar` lo calcula `estado_cuenta_cliente`
+           (STATS_CHEQUE_POR_COBRAR) — antes acá se miraba sólo B/A y se colaban
+           los depositados legacy (V/W/I/J/K), el cobrado en caja (C) y el
+           endosado (E), que no son plata que el cliente deba. #}
         <tr data-ec-stat="{{ stat_u }}"
-            class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{{ ' opacity-60' if anulado }}{{ ' ec-ch-cobrado' if stat_u in ('B','A') }}">
+            class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{{ ' opacity-60' if anulado }}{{ '' if c.por_cobrar else ' ec-ch-cobrado' }}">
           <td class="px-4 py-2 font-mono text-xs">
             <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
                class="text-sky-700 hover:underline">
@@ -231,7 +234,11 @@
         {% endfor %}
       </tbody>
       {% if data.cheques %}
-      <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
+      {# TMT 2026-08-03: este pie cuenta TODOS los cheques del cliente. En
+         "Imprimir cheques" las filas ya cobradas no se imprimen, así que este
+         total contradiría la lista (2 filas y "Total (3 cheques)") → se
+         esconde y en su lugar sale `ec-ch-total-cobrar`, que sí cuadra. #}
+      <tfoot class="ec-ch-total-todos bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
           <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="6">
             Total ({{ nch.activos }} cheque{{ '' if nch.activos == 1 else 's' }})
@@ -245,13 +252,28 @@
       {% endif %}
     </table>
     {% if data.cheques %}
-      <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-600 dark:text-slate-400 grid grid-cols-2 md:grid-cols-4 gap-2">
+      {# Sólo pantalla/impresión completa: la franja dice "Depositados (B/A): $X",
+         justo lo que no va en el papel que se le manda al cliente. #}
+      <div class="ec-ch-resumen px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-600 dark:text-slate-400 grid grid-cols-2 md:grid-cols-4 gap-2">
         <div>Cartera <span class="text-slate-400">(Z/P)</span>: <span class="text-mono font-semibold">{{ t.cheques_cartera | money_es }}</span></div>
         <div>Depositados <span class="text-slate-400">(B/A)</span>: <span class="text-mono font-semibold text-emerald-700">{{ t.cheques_depositados | money_es }}</span></div>
         <div>Rebotados <span class="text-slate-400">(1/2/3/R)</span>: <span class="text-mono font-semibold {{ 'text-red-600' if t.cheques_rebotados > 0 else '' }}">{{ t.cheques_rebotados | money_es }}</span></div>
         <div>Endosados <span class="text-slate-400">(E)</span>: <span class="text-mono font-semibold">{{ t.cheques_endosados | money_es }}</span></div>
       </div>
     {% endif %}
+
+    {# Visible SÓLO en "Imprimir cheques". Dice LITERAL lo que suma — las filas
+       que quedaron impresas — para no competir con el "Total cheques (por
+       cobrar)" del pie de facturas, que sale de otra definición (Z/P, paridad
+       CUENTA.PRG) y no cuenta lo mismo. 🟡 Esas dos definiciones habría que
+       unificarlas, pero el pie de facturas se validó contra el FoxPro el
+       03/08 y no se toca sin la dueña. #}
+    <div class="ec-ch-total-cobrar px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
+      <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
+        <span class="text-xs uppercase tracking-wider text-slate-500">Total de los cheques listados</span>
+        <span class="text-mono font-semibold text-base">{{ (t.cheques_por_cobrar or 0) | money_es }}</span>
+      </div>
+    </div>
   </div>
 
   {# TMT 2026-08-03: el TOTAL (saldo + cheques en cartera) se movió arriba,
