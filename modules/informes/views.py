@@ -3507,6 +3507,77 @@ def estado_cuenta_factura_set_stat(codigo_cli, id_factura):
     return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 
+# --- Deshacer un cambio de estado desde el ↺ del Historial ------------------
+# TMT 2026-08-03 (dueña: *"totalicé mal y no me deja volver"*). Antes el ↺
+# contestaba "Reverso no automatizado… volvé a cambiarlo desde el estado de
+# cuenta" — pero al pasar a 'T' la factura SALE del listado y queda detrás del
+# botón "Ver totalizadas": el consejo era correcto y la dejaba trabada igual.
+# El snapshot (stat/abono/saldo previos) ya estaba guardado, así que el reverso
+# es exacto y automático. Mismo gate que el selector de estado.
+def _puede_tocar_stat_factura() -> bool:
+    return bool(tiene_permiso("facturas.ver") or tiene_permiso("clientes.ver")
+                or tiene_permiso("facturas.editar"))
+
+
+@informes_bp.route("/factura/cambio-stat/<int:id_mov_doble>/deshacer",
+                   methods=["GET"])
+@requiere_login
+def factura_cambio_stat_confirmar(id_mov_doble: int):
+    """Pantalla de confirmación del ↺ (qué estado vuelve, con los números)."""
+    if not _puede_tocar_stat_factura():
+        abort(404)
+    prev = queries.factura_cambio_stat_preview(id_mov_doble)
+    if not prev:
+        abort(404)
+    if prev.get("bloqueo"):
+        flash(prev["bloqueo"], "warn")
+        return redirect(url_for("historial.lista"))
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer el cambio de estado",
+        mensaje=(
+            f"La factura {prev['numf']} ({prev['codigo_cli']}) vuelve del "
+            f"estado {prev['stat_actual']} al {prev['stat_destino']}, con el "
+            "saldo y el abono que tenía antes del cambio."),
+        detalle_registro={
+            "Factura": f"{prev['numf']} · {prev['codigo_cli']}",
+            "Estado": f"{prev['stat_actual']} → {prev['stat_destino']}",
+            "Abono": f"{prev['abono_destino']:,.2f}",
+        },
+        saldo_preview=[{"label": "Saldo de la factura",
+                        "antes": prev["saldo_actual"],
+                        "despues": prev["saldo_destino"]}],
+        accion_url=url_for("informes.factura_cambio_stat_deshacer",
+                           id_mov_doble=id_mov_doble),
+        volver_url=url_for("historial.lista"),
+        motivo_requerido=False,
+        confirm_label=f"Volver a {prev['stat_destino']}",
+    )
+
+
+@informes_bp.route("/factura/cambio-stat/<int:id_mov_doble>/deshacer",
+                   methods=["POST"])
+@requiere_login
+def factura_cambio_stat_deshacer(id_mov_doble: int):
+    if not _puede_tocar_stat_factura():
+        abort(404)
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    codigo_up = ""
+    try:
+        res = queries.factura_deshacer_cambio_stat(id_mov_doble, usuario=usuario)
+        codigo_up = res.get("codigo_cli") or ""
+        flash(
+            f"Factura {res.get('numf')} volvió a {res.get('stat_destino')} "
+            f"(saldo {res.get('saldo_destino', 0):,.2f}).", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude deshacer el cambio de estado", e)
+    if codigo_up:
+        return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+    return redirect(url_for("historial.lista"))
+
+
 @informes_bp.route("/estado-cuenta/<codigo_cli>/neteo/<int:id_evento>/deshacer",
                    methods=["POST"])
 @requiere_login

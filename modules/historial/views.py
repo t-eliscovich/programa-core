@@ -806,6 +806,21 @@ _REVERSO_DISPATCH = {
         "cheques.deshacer_anulacion_error_carga",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # Cambio de estado de una factura (Z/A/T, por el selector de la fila).
+    # TMT 2026-08-03 (dueña: *"totalicé mal y no me deja volver"*) — estos dos
+    # estaban en _REVERSO_BLOQUEADO, mandándola al selector del estado de
+    # cuenta; pero una factura en 'T' SALE del listado y queda detrás del botón
+    # "Ver totalizadas": el consejo era cierto y la dejaba trabada igual. El
+    # mov snapshotea (stat, abono, saldo) previos ⇒ el reverso es EXACTO: el
+    # wizard lo muestra con números y lo aplica.
+    "factura_stat_cambio": (
+        "informes.factura_cambio_stat_confirmar",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
+    "factura_cerrada_a_t": (
+        "informes.factura_cambio_stat_confirmar",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
 }
 
 # Tipos que NO se reversan desde acá — el dispatcher muestra un toast
@@ -860,21 +875,9 @@ _REVERSO_BLOQUEADO = {
         "anticipo y su ND del banco como par atómico, y recalcula el "
         "anticipo aplicado de la importación."
     ),
-    # Estos dos son un cambio de stat de factura. El "reverso" es volver a
-    # cambiar el stat desde el mismo selector — y `factura_set_stat` ya
-    # restaura el abono previo leyendo la metadata de ESTE mov (busca el
-    # último 'factura_cerrada_a_t'/'factura_stat_cambio' activo). O sea: la
-    # vuelta atrás no sólo existe, además es exacta.
-    "factura_cerrada_a_t": (
-        "Volvé a cambiarle el estado a la factura desde el estado de cuenta "
-        "del cliente (el selector de estado de la fila). Al sacarla de 'T' "
-        "recupera el abono que tenía antes de cerrarse."
-    ),
-    "factura_stat_cambio": (
-        "Volvé a cambiarle el estado a la factura desde el estado de cuenta "
-        "del cliente (el selector de estado de la fila). Si venía de 'T', "
-        "el abono previo se restaura solo."
-    ),
+    # `factura_cerrada_a_t` y `factura_stat_cambio` VIVÍAN acá, con el mensaje
+    # "volvé a cambiarlo desde el selector del estado de cuenta". Pasaron al
+    # dispatch el 2026-08-03: ver el comentario en _REVERSO_DISPATCH.
 }
 
 

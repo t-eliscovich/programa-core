@@ -10743,7 +10743,144 @@ def factura_set_stat(
             usuario=usuario,
             metadata={"id_factura": id_factura, "codigo_cli": codigo_cli,
                       "stat_previo": stat_prev or "Z",
+                      # TMT 2026-08-03: guardar también el estado que QUEDA.
+                      # Sin esto, el deshacer del Historial no puede contar qué
+                      # va a pasar sin re-derivarlo.
+                      "stat_nuevo": target,
                       "abono_previo": abono, "saldo_previo": saldo})
         return {"id_factura": id_factura, "numf": f.get("numf"),
                 "stat_previo": stat_prev or "Z", "stat_nuevo": target,
                 "saldo_nuevo": saldo_nuevo, "accion": "cambiada"}
+
+
+# ---------------------------------------------------------------------------
+# Deshacer un cambio de estado desde el HISTORIAL (el ↺ de la fila)
+# ---------------------------------------------------------------------------
+# TMT 2026-08-03 (dueña: *"totalicé mal y no me deja volver"*). El ↺ del
+# historial contestaba "Reverso no automatizado para este tipo. Volvé a
+# cambiarle el estado desde el estado de cuenta (el selector de la fila)" — y
+# la fila NO estaba a la vista: al pasar a 'T' la factura sale del listado y
+# queda detrás del botón "Ver totalizadas". El consejo era cierto y la dejaba
+# trabada igual.
+#
+# El reverso es EXACTO y ya estaba todo guardado: el mov snapshotea
+# (stat_previo, abono_previo, saldo_previo). No había razón para no
+# automatizarlo.
+_TIPOS_CAMBIO_STAT = ("factura_stat_cambio", "factura_cerrada_a_t")
+
+
+def factura_cambio_stat_preview(id_mov_doble: int) -> dict:
+    """Qué pasa si se deshace ESE cambio de estado. No escribe nada.
+
+    Devuelve {id_factura, numf, codigo_cli, stat_actual, stat_destino,
+    abono_actual, abono_destino, saldo_actual, saldo_destino, bloqueo}.
+    `bloqueo` es None si se puede deshacer, o el motivo en castellano.
+    """
+    mov = db.fetch_one(
+        "SELECT id_mov_doble, tipo, estado, origen_id, metadata "
+        "  FROM scintela.mov_doble WHERE id_mov_doble=%s", (id_mov_doble,))
+    if not mov or (mov.get("tipo") or "") not in _TIPOS_CAMBIO_STAT:
+        return {}
+    md = mov.get("metadata") or {}
+    if isinstance(md, str):
+        import json as _json
+        try:
+            md = _json.loads(md)
+        except Exception:  # noqa: BLE001
+            md = {}
+    id_factura = int(md.get("id_factura") or mov.get("origen_id") or 0)
+    f = db.fetch_one(
+        "SELECT id_factura, numf, numf_completo, codigo_cli, importe, abono, "
+        "       saldo, stat FROM scintela.factura WHERE id_factura=%s",
+        (id_factura,))
+    if not f:
+        return {}
+    # `factura_cerrada_a_t` es el cierre viejo (A/Z→T) y no siempre guardó el
+    # stat previo con este nombre: si falta, volvía a 'A' (lo que hace el
+    # reabrir de esa misma pantalla).
+    stat_destino = (md.get("stat_previo") or "").strip().upper() or "A"
+    abono_actual = round(float(f.get("abono") or 0), 2)
+    out = {
+        "id_mov_doble": id_mov_doble,
+        "id_factura": id_factura,
+        "numf": f.get("numf_completo") or f.get("numf"),
+        "codigo_cli": (f.get("codigo_cli") or "").strip().upper(),
+        "stat_actual": (f.get("stat") or "").strip().upper(),
+        "stat_destino": stat_destino,
+        "abono_actual": abono_actual,
+        "abono_destino": round(float(md.get("abono_previo") or 0), 2),
+        "saldo_actual": round(float(f.get("saldo") or 0), 2),
+        "saldo_destino": round(float(md.get("saldo_previo") or 0), 2),
+        "bloqueo": None,
+    }
+    if (mov.get("estado") or "") != "activo":
+        out["bloqueo"] = (
+            f"Ese cambio de estado ya está {mov.get('estado')} — no se puede "
+            "deshacer dos veces.")
+        return out
+    # ¿Es el ÚLTIMO cambio de estado de esta factura? Deshacer uno del medio
+    # deja los snapshots encadenados apuntando a un estado que ya no existe.
+    ultimo = db.fetch_one(
+        "SELECT id_mov_doble FROM scintela.mov_doble "
+        " WHERE tipo IN %s AND origen_id=%s AND estado='activo' "
+        " ORDER BY id_mov_doble DESC LIMIT 1",
+        (_TIPOS_CAMBIO_STAT, id_factura))
+    if ultimo and int(ultimo["id_mov_doble"]) != int(id_mov_doble):
+        out["bloqueo"] = (
+            "Después de este cambio hubo otro sobre la misma factura. "
+            f"Deshacé primero el más reciente (#{ultimo['id_mov_doble']}).")
+        return out
+    # ¿Se cobró algo después? El cambio de estado dejó el abono en
+    # `abono_previo`; si hoy es otro, la plata se movió y restaurar el saldo
+    # viejo pisaría una cobranza real.
+    if abs(abono_actual - out["abono_destino"]) > 0.005:
+        out["bloqueo"] = (
+            f"La factura tiene hoy un abono de {abono_actual:,.2f} y cuando se "
+            f"cambió el estado tenía {out['abono_destino']:,.2f}: hubo "
+            "cobranza después. Ajustala desde el estado de cuenta.")
+    return out
+
+
+def factura_deshacer_cambio_stat(id_mov_doble: int, usuario: str = "web") -> dict:
+    """Deshace UN cambio de estado de factura, exacto, desde el Historial.
+
+    Restaura (stat, abono, saldo) del snapshot y marca el mov original como
+    reversado, para que el ↺ no se ofrezca dos veces. A su vez es reversible
+    desde el selector de estado de la fila.
+    """
+    prev = factura_cambio_stat_preview(id_mov_doble)
+    if not prev:
+        raise ValueError(
+            f"El movimiento #{id_mov_doble} no es un cambio de estado de "
+            "factura.")
+    if prev.get("bloqueo"):
+        raise ValueError(prev["bloqueo"])
+    import mov_doble as _md
+    fecha = today_ec()
+    with db.tx() as conn:
+        db.execute(
+            "UPDATE scintela.factura SET stat=%s, saldo=%s, abono=%s, "
+            "  usuario_modifica=%s WHERE id_factura=%s",
+            (prev["stat_destino"], prev["saldo_destino"],
+             prev["abono_destino"], usuario, prev["id_factura"]), conn=conn)
+        # `id_original` hace las dos cosas de una: registra el reverso y marca
+        # el original con estado='reversado' + id_reverso (el ↺ desaparece).
+        _md.registrar(
+            conn=conn, tipo="reverso_factura_stat_cambio",
+            id_original=id_mov_doble,
+            origen_table="factura", origen_id=prev["id_factura"],
+            destino_table="factura", destino_id=prev["id_factura"],
+            importe=abs(prev["saldo_destino"]) or 1.0, fecha=fecha,
+            concepto=(
+                f"DESHACER cambio de estado factura {prev['numf']} "
+                f"{prev['codigo_cli']} {prev['stat_actual']}→"
+                f"{prev['stat_destino']} "
+                f"(saldo {prev['saldo_actual']:.2f}→"
+                f"{prev['saldo_destino']:.2f})")[:200],
+            usuario=usuario,
+            metadata={"id_factura": prev["id_factura"],
+                      "id_mov_deshecho": id_mov_doble,
+                      "codigo_cli": prev["codigo_cli"],
+                      "stat_previo": prev["stat_actual"],
+                      "stat_nuevo": prev["stat_destino"]})
+    return prev
