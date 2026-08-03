@@ -1803,7 +1803,7 @@ def corregir_devoluciones_sin_nd():
 def deshacer_deposito(id_cheque: int):
     """Devuelve UN cheque depositado a cartera (Z) porque al final no se
     depositó. Ajusta el depósito de banco 'dep.N ch.' (baja el importe por el
-    cheque; si era el único, se elimina). NO es rebote (no toca al cliente) ni
+    cheque; si queda en cero, se elimina). NO es rebote (no toca al cliente) ni
     anulación (el cheque sigue vivo). TMT 2026-07-07 dueña. Gate por
     cheques.transicionar → anda para Alex, Andres y cualquiera, no solo la dueña.
     """
@@ -1869,8 +1869,8 @@ def deshacer_deposito(id_cheque: int):
         "Estado actual": f"{stat} (depositado)",
         "Qué va a pasar": (
             f"{_paso1} (2) El depósito del banco baja "
-            f"$ {float(importe or 0):,.2f} (si era el único cheque, se elimina el "
-            "movimiento). (3) NO se toca al cliente — no es un rebote."
+            f"$ {float(importe or 0):,.2f} (si el depósito queda en cero, se elimina "
+            "el movimiento). (3) NO se toca al cliente — no es un rebote."
         ),
     }
     # Campo de fecha para postergar (destino=P). Prefill: la fechad actual si es

@@ -364,6 +364,37 @@ def editar(
     # Para corregir las relacionadas anular+reemitir sigue siendo el flow.
     if importe is not None:
         from decimal import Decimal as _Dec
+        # TMT 2026-08-03 (bug A): si el cheque está DENTRO de un depósito
+        # bancario ('DE'), cambiarle el importe acá desincroniza el depósito —
+        # el 'DE' sigue valiendo lo que el banco acreditó y el cheque pasa a
+        # valer otra cosa. Después, "Volver a cartera" no puede distinguir ese
+        # descuadre de un resto legítimo (el que dejan los cheques rebotados) y
+        # termina inventando plata o borrándola. El importe se corrige con el
+        # cheque FUERA del depósito; el camino por pantalla es "Volver a
+        # cartera" (o desarmar el depósito en /bancos) y recién ahí editarlo.
+        # ⚠️ El guard exige stat DEPOSITADO además del link: hay cheques que
+        # conservan el link a un 'DE' viejo sin estar depositados (un rebote de
+        # un depósito de UN cheque no desagrupa a propósito — ver
+        # `transicionar_stat` rama '9' —, y `anular_por_error_de_carga` tampoco
+        # borra el link). Esos no pueden ir por «Volver a cartera» (que exige
+        # STATS_DEPOSITADO), así que bloquearlos los dejaría sin ninguna salida
+        # por pantalla — y su 'DE' ya es historia compensada, editarles el
+        # importe no descuadra nada.
+        _dep = db.fetch_one(
+            "SELECT tb.id_transaccion FROM scintela.chequextransaccion cxt "
+            "  JOIN scintela.transacciones_bancarias tb "
+            "    ON tb.id_transaccion = cxt.id_transaccion "
+            " WHERE cxt.id_cheque = %s "
+            "   AND UPPER(TRIM(COALESCE(tb.documento,''))) = 'DE' LIMIT 1",
+            (id_cheque,),
+        ) if (ch.get("stat") or "").upper() in STATS_DEPOSITADO else None
+        if _dep:
+            raise ValueError(
+                f"Este cheque está dentro de un depósito bancario (mov "
+                f"#{_dep['id_transaccion']}). Sacalo del depósito con «Volver a "
+                "cartera» antes de cambiarle el importe, si no el depósito queda "
+                "descuadrado contra el banco."
+            )
         imp_dec = _Dec(str(importe))
         # TMT 2026-06-07: permitir NEGATIVO (notas de crédito/correcciones),
         # igual que crear. Solo bloqueamos el cero.
@@ -633,6 +664,21 @@ def compensar_deposito_devuelto(
         conn=conn,
     )
     if nd_post and nd_post["m"] is not None and int(nd_post["m"]) > max_de:
+        # TMT 2026-08-03 (bug A): el depósito YA está compensado (la ND se
+        # tipeó a mano en /bancos), así que no insertamos otra — pero hay que
+        # DESAGRUPAR igual. Antes se salía dejando el link vivo, y el link vivo
+        # significa "este cheque todavía está dentro de ese depósito": el cheque
+        # quedaba en stat '1' (re-depositable) y al re-depositarlo terminaba
+        # colgando de DOS 'DE' a la vez. Después, "Volver a cartera" resta su
+        # importe a los dos → el banco perdía el importe del cheque una vez de
+        # más. Desagrupar acá deja el mismo estado que el camino normal.
+        for lk in links:
+            db.execute(
+                "DELETE FROM scintela.chequextransaccion "
+                "WHERE id_cheque = %s AND id_transaccion = %s",
+                (id_cheque, lk["id_transaccion"]),
+                conn=conn,
+            )
         return 0.0
     import bank_helpers
 
@@ -2746,10 +2792,18 @@ STATS_TERMINALES = ("B",)
 def _relabel_dep_concepto(concepto: str, n: int) -> str:
     """Reescribe el contador de un concepto de depósito consolidado
     'dep.N ch.' → 'dep.<n> ch.' cuando sacamos un cheque del lote. Si el
-    concepto no matchea ese patrón, lo deja igual. TMT 2026-07-07."""
+    concepto no matchea ese patrón, lo deja igual. TMT 2026-07-07.
+
+    ⚠️ El FORMATO 'dep.N ch.' es contrato, no cosmética: lo parsean
+    `matcher_banco._RE_AGRUPADO` / `_RE_CODIGO_INTERNO`,
+    `hoja_queries._detectar_agrupado_simple` y la firma de match
+    (`banco_v2_view._firma_expr`, LEFT(concepto,40)). Cambiarle el texto (p.ej.
+    a 'dep. resto (…)') rompe la extracción del código de cliente, mueve el mov
+    de bucket en la conciliación y, por los 17 chars extra, trunca el sufijo de
+    los conceptos de lote con texto libre. Mantener el largo y la forma."""
     import re as _re
     c = concepto or ""
-    return _re.sub(r"dep\.\s*\d+\s*ch\.", f"dep.{n} ch.", c, flags=_re.IGNORECASE)[:50]
+    return _re.sub(r"dep\.\s*\d+\s*ch\.", f"dep.{max(n, 0)} ch.", c, flags=_re.IGNORECASE)[:50]
 
 
 def deshacer_deposito_cheque(
@@ -2769,8 +2823,10 @@ def deshacer_deposito_cheque(
     fecha_postergacion + snapshot de fechad_original.
 
     Lado banco: el depósito consolidado 'dep.N ch.' baja su importe por el
-    cheque y su contador N→N-1; si el cheque era el único (o el mov queda en
-    ~0), se elimina el movimiento. Recalcula el saldo running del banco. Guard:
+    cheque y su contador N→N-1; el movimiento se elimina SÓLO si queda en ~0
+    (TMT 2026-08-03: antes se borraba con sólo mirar que quedara UN link, y eso
+    se llevaba puesto el resto que dejan los cheques REBOTADOS — ver el
+    comentario del guard). Recalcula el saldo running del banco. Guard:
     NO toca un depósito ya conciliado (rompería la conciliación) — avisa que
     hay que desconciliar primero. Reproducible por pantalla, reversible
     (podés volver a depositar el cheque). Anda para cualquier usuario con
@@ -2825,14 +2881,38 @@ def deshacer_deposito_cheque(
                 "SELECT COUNT(*) AS n FROM scintela.chequextransaccion WHERE id_transaccion = %s",
                 (id_t,), conn=conn,
             ) or {}).get("n") or 0)
+            conc_de = lk.get("concepto") or ""
             de_imp = round(float(lk["importe"] or 0), 2)
+            nuevo_imp = round(de_imp - imp_ch, 2)
+            # ── TMT 2026-08-03 (bug A, dueña) ────────────────────────────────
+            # El guard era `if n <= 1 or nuevo_imp <= 0.005` → DELETE del mov.
+            # Usaba el CONTEO DE LINKS como proxy de "este cheque era el único
+            # del depósito", y ese proxy se rompe con el REBOTE:
+            # `compensar_deposito_devuelto` le saca el link al cheque protestado
+            # y DEJA el importe del 'DE' entero a propósito (el extracto muestra
+            # el depósito completo + la ND del protesto, y así concilia). Un 'DE'
+            # de 150 con 3 cheques del que dos rebotaron queda con UN link, y
+            # "Volver a cartera" sobre el tercero (50) borraba los 150 enteros:
+            # el banco perdía 100 reales.
+            # Ahora se decide por IMPORTE: el mov se borra sólo si queda en ~0.
+            # Que el resto sea siempre plata REAL depende de un invariante que
+            # `editar()` rompía (dejaba cambiar el importe de un cheque ya
+            # depositado sin tocar su 'DE', inventando un resto de la nada) —
+            # por eso este fix viene junto con el guard de `editar()`.
+            if nuevo_imp <= 0.005 and n > 1:
+                # Quedaría en ~0 con cheques todavía agrupados: borrarlo los
+                # dejaría marcados como depositados sin depósito. No adivinar.
+                raise ValueError(
+                    f"El depósito (mov #{id_t}) quedaría en cero pero todavía tiene "
+                    f"{n - 1} cheque(s) agrupado(s). Borrarlo los dejaría marcados como "
+                    "depositados sin depósito — revisá los importes antes de deshacerlo."
+                )
             db.execute(
                 "DELETE FROM scintela.chequextransaccion "
                 "WHERE id_cheque = %s AND id_transaccion = %s",
                 (id_cheque, id_t), conn=conn,
             )
-            nuevo_imp = round(de_imp - imp_ch, 2)
-            if n <= 1 or nuevo_imp <= 0.005:
+            if nuevo_imp <= 0.005:
                 db.execute(
                     "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = %s",
                     (id_t,), conn=conn,
@@ -2842,7 +2922,7 @@ def deshacer_deposito_cheque(
                     "UPDATE scintela.transacciones_bancarias "
                     "   SET importe = %s, concepto = %s "
                     " WHERE id_transaccion = %s",
-                    (nuevo_imp, _relabel_dep_concepto(lk.get("concepto") or "", n - 1), id_t),
+                    (nuevo_imp, _relabel_dep_concepto(conc_de, n - 1), id_t),
                     conn=conn,
                 )
             bancos_recompute.add(no_banco)

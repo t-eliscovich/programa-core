@@ -103,7 +103,8 @@ def test_compensa_genera_nd_y_desagrupa(monkeypatch):
 
 
 def test_compensa_idempotente_si_ya_hay_nd(monkeypatch):
-    """Si ya existe una ND para el cheque → no hace nada (evita doble descuento)."""
+    """Si ya existe una ND posterior al depósito → NO inserta otra (evita el
+    doble descuento). Igual desagrupa: ver el test de abajo."""
     from modules.cheques import queries
 
     rec = _Rec(tiene_link=True, ya_nd=True)
@@ -116,7 +117,35 @@ def test_compensa_idempotente_si_ya_hay_nd(monkeypatch):
 
     assert monto == 0.0
     assert rec.nds == []
-    assert not _tiene_delete_link(rec.executes)
+
+
+def test_compensa_desagrupa_aunque_la_nd_ya_estuviera(monkeypatch):
+    """TMT 2026-08-03 (bug A). Cuando la ND del protesto ya estaba cargada a
+    mano, el helper salía SIN borrar el link. Un link vivo significa "este
+    cheque sigue adentro de ese depósito": el cheque quedaba en stat '1'
+    (re-depositable, STATS_DEPOSITABLES) y al re-depositarlo terminaba colgando
+    de DOS 'DE' a la vez. Después "Volver a cartera" le resta el importe a CADA
+    'DE' del que cuelga (`deshacer_deposito_cheque`, `for lk in links`) → el
+    banco perdía el importe del cheque una vez de más.
+
+    Escenario: lote A+B+C de 50 (DE=150) · ND de A tipeada en /bancos (−50) ·
+    A → devuelto (no duplica la ND) · A se re-deposita (DE#2 = 50) · volver a
+    cartera A → el libro terminaba en 50 contra 100 de banco real.
+    """
+    from modules.cheques import queries
+
+    rec = _Rec(tiene_link=True, ya_nd=True)
+    _apply(monkeypatch, rec)
+
+    queries.compensar_deposito_devuelto(
+        object(), id_cheque=100688, importe=21508.62, codigo_cli="BYG",
+        no_cheque="14778", fecha=date(2026, 7, 23), usuario="tmt",
+    )
+
+    assert _tiene_delete_link(rec.executes), (
+        "salió sin desagrupar: el cheque queda dentro de un depósito ya "
+        "compensado y puede terminar colgando de dos 'DE'"
+    )
 
 
 def test_compensa_segundo_rebote_con_nd_vieja(monkeypatch):
