@@ -34,6 +34,12 @@ from modules.posdat import (
     posdat_deuda_viva_where,
 )
 
+# Día de INGRESO del cheque — la MISMA definición que usa modules/cheques
+# (SQL_DIA_INGRESO). Se importa, no se copia: si divergen, el estado de cuenta
+# que se le manda al cliente dice una fecha y la pantalla otra.
+from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
+
+
 # ---------------------------------------------------------------------------
 # Filtro común para excluir backfill de Asinfo (TMT 2026-05-29).
 #
@@ -7254,7 +7260,19 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     cheques = db.fetch_all(
         """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing,
-               c.fecha_recibido, c.fecha_crea,
+               c.fecha_recibido, c.fecha_crea, c.fechaout,
+               -- TMT 2026-08-03. Este parcial tiene query PROPIA y se quedó con
+               -- la versión vieja de dos columnas que ya se arreglaron en
+               -- /cheques y en la ficha el mismo día:
+               --   · "Cargado" caía a `fecha_crea` = cuándo se INSERTÓ la fila
+               --     en PC → los ~3.200 cheques del dBase decían todos
+               --     12/07/2026, el día del import masivo.
+               --   · "Depositado" leía `fechaing`, que en las filas del dBase
+               --     es FECHING (ingreso a cartera); el depósito es FECHOUT.
+               -- Se traen las MISMAS expresiones que usa modules/cheques
+               -- (SQL_DIA_INGRESO y fechaout), no copias: el estado de cuenta
+               -- impreso es lo que se le manda al cliente.
+               __DIA_INGRESO__ AS dia_ingreso,
                -- TMT 2026-05-17: fechad_original NULL = sin postergar; NOT NULL
                -- = fue postergado, snapshot de la 1ra fechad. fecha_postergacion
                -- = cuándo se postergó (última si hay varias).
@@ -7271,7 +7289,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         -- TMT 2026-06-11 (dueña): mismo criterio que facturas — del más
         -- antiguo al más actual.
         ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) ASC, c.id_cheque ASC
-        """,
+        """.replace("__DIA_INGRESO__", _SQL_DIA_INGRESO_CHEQUE),
         (codigo_cli,),
     )
 

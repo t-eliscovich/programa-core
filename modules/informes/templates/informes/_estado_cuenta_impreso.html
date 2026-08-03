@@ -159,7 +159,7 @@
              (última si fue postergado). NULL en postergada = nunca se postergó. #}
           <th class="px-4 py-3 text-left font-medium" title="Fecha original de depósito (la pactada al alta). NUNCA cambia.">F. depósito (orig.)</th>
           <th class="px-4 py-3 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó.">Postergada</th>
-          <th class="px-4 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera.">Depositado</th>
+          <th class="px-4 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaout del dBase, o fechaing si el depósito se hizo por Programa Core). '—' si todavía está en cartera.">Depositado</th>
           <th class="px-4 py-3 text-left font-medium">Banco</th>
           <th class="px-4 py-3 text-right font-medium">Importe</th>
           <th class="px-4 py-3 text-left font-medium">Stat</th>
@@ -175,13 +175,20 @@
         {# N° de cheque — si no_cheque está NULL (data legacy o anticipo),
            cae a #id_cheque para que la dueña pueda identificarlo. TMT 2026-05-16. #}
         {% set no_ch_str = (c.no_cheque | cleanstr) if c.no_cheque else None %}
-        {% set fecha_cargado = c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
+        {# TMT 2026-08-03: `dia_ingreso` lo calcula el SQL con la MISMA expresión
+           que /cheques y la ficha. Antes caía a `fecha_crea` y los ~3.200
+           cheques del dBase decían todos 12/07/2026 (el día del import). #}
+        {% set fecha_cargado = c.dia_ingreso or c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
         {# fechaing es válida sólo si el cheque pasó por el banco (B/A) o
            rebotó (1/2/3/R). En cartera/postergado (Z/P) el legacy DBF la
            setea con la fecha de ingreso al sistema — no es fecha de depósito.
            TMT 2026-05-16. #}
         {% set stat_u = (c.stat or '').strip().upper() %}
-        {% set fechaing_real = c.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
+        {# TMT 2026-08-03: la fecha de depósito de las filas del dBase es FECHOUT;
+           `fechaing` ahí es el día de INGRESO a cartera (697 de 1.615 difieren,
+           mediana 41 días). PC nunca escribe `fechaout` en B/A, así que el
+           COALESCE sirve para los dos orígenes — igual que en /cheques. #}
+        {% set fechaing_real = (c.fechaout or c.fechaing) if stat_u in ('B','A','1','2','3','R') else None %}
         {% set anulado = stat_u == 'X' %}
         {% if not anulado %}{% set nch.activos = nch.activos + 1 %}{% endif %}
         {# TMT 2026-08-03 (Alex, por WhatsApp: "de momento se imprime incluso los

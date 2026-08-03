@@ -66,3 +66,31 @@ def test_la_clase_de_impresion_se_limpia_siempre():
     """Si quedara pegada, la pantalla se vería mutilada después de imprimir."""
     assert "afterprint" in PANTALLA
     assert "setTimeout(limpiar, 3000)" in PANTALLA
+
+
+def test_las_tres_pantallas_fechan_el_cheque_igual():
+    """Cargado y Depositado tienen que salir de la MISMA expresión en las tres.
+
+    TMT 2026-08-03. `/cheques` y la ficha se arreglaron a la mañana; este
+    parcial tiene query propia y se quedó atrás: "Cargado" caía a `fecha_crea`
+    (12/07/2026 en los ~3.200 del dBase) y "Depositado" leía `fechaing` en vez
+    de `fechaout`. Es el papel que se le manda al cliente.
+    """
+    from modules.informes import queries as iq
+
+    assert "dia_ingreso" in IMPRESO
+    assert "(c.fechaout or c.fechaing)" in IMPRESO
+    # La query del estado de cuenta usa la constante compartida, no una copia.
+    fuente = Path(iq.__file__).read_text(encoding="utf-8")
+    assert "_SQL_DIA_INGRESO_CHEQUE" in fuente
+    assert "c.fechaout" in fuente
+
+    for tpl_dir, nombre in (
+        ("modules/cheques/templates/cheques", "lista.html"),
+        ("modules/cheques/templates/cheques", "detalle.html"),
+    ):
+        html = (Path(__file__).resolve().parent.parent / tpl_dir / nombre).read_text(
+            encoding="utf-8"
+        )
+        assert "dia_ingreso" in html, nombre
+        assert "fechaout or " in html, nombre
