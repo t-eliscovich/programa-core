@@ -173,6 +173,17 @@ def colapsar_partidas(rows: list[dict], estado_pago=None) -> list[dict]:
             m.get("fecha_recepcion_pc") for m in miembros)
         base["recibido_pc"] = any(m.get("recibido_pc") for m in miembros)
 
+        # La nota del grupo es la del PROVEEDOR, sin el ordinal de la partida:
+        # en una fila que ya dice "2 partidas", un "----2" suelto confunde más
+        # de lo que informa (parecía que se muestra sólo la mitad 2).
+        try:
+            from .service import _nota_base as _nb
+            _base_nota = _nb(miembros[0].get("nota"))
+            _cod = str(miembros[0].get("codigo") or "").strip()
+            base["nota"] = f"{_base_nota} ( {_cod} )" if _cod else _base_nota
+        except Exception:  # noqa: BLE001 -- si falla, queda la nota cruda
+            pass
+
         base["compra"] = _unir_compras(miembros)
         base["anticipo"] = _unir_anticipos(miembros)
         base["movimientos"] = _unir_movimientos(miembros)

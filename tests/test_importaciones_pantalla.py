@@ -222,3 +222,12 @@ def test_el_colapso_no_entra_al_camino_del_balance():
         if f and "test_" not in f and "presentacion.py" not in f
     }
     assert usuarios == {"./modules/importaciones/views.py"}, usuarios
+
+
+def test_la_nota_del_grupo_no_muestra_el_ordinal_de_una_mitad():
+    """En una fila que ya dice "2 partidas", un "----2" suelto parece que se
+    está mostrando sólo la mitad 2."""
+    rows = [_mitad("IM-0000572", compras=_COMPRAS), _mitad("IM-0000571")]
+    out = pres.colapsar_partidas(rows, None)
+    assert out[0]["nota"] == "AYF02653 ( AI 15 )"
+    assert "---" not in out[0]["nota"]
