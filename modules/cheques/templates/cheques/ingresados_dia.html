@@ -51,6 +51,9 @@
   .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; color:#0f172a; }
 </style>
 
+{% set activo = 'ingresados' %}
+{% include "cheques/_tabs_informes_dia.html" %}
+
 <div class="no-print bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 max-w-4xl">
   <form method="get" action="{{ url_for('cheques.ingresados_dia') }}"
         class="flex flex-wrap items-end gap-3">
@@ -60,22 +63,21 @@
              title="Día en que el cheque ENTRÓ a cartera — no la fecha del cheque ni la de depósito"
              class="rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
+    {# TMT 2026-08-03 (dueña: "y solo estado Z no B"). El default es Z — los
+       que quedaron EN CARTERA. Los ya depositados (B) no van a este listado:
+       es la lista que se lleva al banco. El dBase pregunta ESTADO en CHEQUING
+       por lo mismo. #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Estado</label>
       <select name="estado" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
-        <option value="todos" {% if estado != 'cartera' %}selected{% endif %}>Todos</option>
-        <option value="cartera" {% if estado == 'cartera' %}selected{% endif %}>Sólo en cartera</option>
+        <option value="z" {% if estado != 'todos' %}selected{% endif %}>En cartera (Z)</option>
+        <option value="todos" {% if estado == 'todos' %}selected{% endif %}>Todos</option>
       </select>
     </div>
     <button type="submit"
             class="text-sm px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Ver</button>
     <button type="button" onclick="window.print()"
             class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Imprimir</button>
-    <a href="{{ url_for('cheques.resumen_dia', fecha=fecha.isoformat()) }}"
-       class="text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-100"
-       title="El otro informe del día: agrupa por medio y muestra qué factura paga cada cobro">
-      Resumen de cobranza →
-    </a>
   </form>
 </div>
 
@@ -86,7 +88,7 @@
   <div class="flex items-start justify-between border-b-2 border-slate-800 pb-2">
     <div>
       <h1 class="text-xl font-bold tracking-tight">LISTADO DE CHEQUES INGRESADOS</h1>
-      <div class="text-sm text-slate-600">INTELA CIA. LTDA.{% if estado == 'cartera' %} — sólo en cartera{% endif %}</div>
+      <div class="text-sm text-slate-600">INTELA CIA. LTDA.{% if estado != 'todos' %} — en cartera{% endif %}</div>
     </div>
     <div class="mono text-sm">{{ fecha | fecha_es }}</div>
   </div>

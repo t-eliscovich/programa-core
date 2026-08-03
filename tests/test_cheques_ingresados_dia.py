@@ -85,12 +85,35 @@ def test_filtra_por_dia_de_ingreso_no_por_fecha_del_cheque(monkeypatch):
     assert cap["params"]["estados"] is None
 
 
-def test_estado_cartera_traduce_a_los_stats_del_dbase(monkeypatch):
-    """El dBase pide ESTADO y traduce "CAR" → 'Z12PD'."""
+def test_estado_filtra_por_stat(monkeypatch):
     cap = {}
     _patch(monkeypatch, cap)
-    queries.cheques_ingresados_dia(FECHA, ("Z", "1", "2", "P", "D"))
-    assert cap["params"]["estados"] == ["Z", "1", "2", "P", "D"]
+    queries.cheques_ingresados_dia(FECHA, ("Z",))
+    assert cap["params"]["estados"] == ["Z"]
+
+
+def test_default_es_solo_en_cartera_Z(client, fake_db, monkeypatch):
+    """TMT 2026-08-03 (dueña: "y solo estado Z no B").
+
+    Este listado es el que se lleva al banco: sin ?estado sólo salen los que
+    quedaron EN CARTERA. Los depositados (B/A) entran sólo con estado=todos.
+    """
+    import bcrypt
+
+    cap = {}
+    _patch(monkeypatch, cap)
+    rid = fake_db.add_role("Admin", ["*"])
+    pw = bcrypt.hashpw(b"secret123", bcrypt.gensalt())
+    fake_db.add_user("tamara", pw, rid)
+    client.post("/login", data={"username": "tamara", "password": "secret123"})
+
+    assert client.get("/cheques/ingresados-dia?fecha=2026-07-31").status_code == 200
+    assert cap["params"]["estados"] == ["Z"]
+
+    assert client.get(
+        "/cheques/ingresados-dia?fecha=2026-07-31&estado=todos"
+    ).status_code == 200
+    assert cap["params"]["estados"] is None
 
 
 def test_render_ingresados_dia(client, fake_db, monkeypatch):
@@ -103,7 +126,7 @@ def test_render_ingresados_dia(client, fake_db, monkeypatch):
     fake_db.add_user("tamara", pw, rid)
     client.post("/login", data={"username": "tamara", "password": "secret123"})
 
-    resp = client.get("/cheques/ingresados-dia?fecha=2026-07-31")
+    resp = client.get("/cheques/ingresados-dia?fecha=2026-07-31&estado=todos")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 

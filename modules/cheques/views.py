@@ -3530,9 +3530,12 @@ def ingresados_dia():
     except ValueError:
         fecha = today_ec()
 
-    # El dBase pide ESTADO y traduce "CAR" → 'Z12PD' (lo que sigue en cartera).
-    estado = (request.args.get("estado") or "todos").strip().lower()
-    estados = ("Z", "1", "2", "P", "D") if estado == "cartera" else None
+    # TMT 2026-08-03 (dueña: "y solo estado Z no B"). Este listado es el que se
+    # lleva al banco: lo que quedó EN CARTERA. Por eso el default es Z y los
+    # depositados (B/A) no entran salvo que se pida "Todos". El dBase pregunta
+    # ESTADO en CHEQUING por la misma razón.
+    estado = (request.args.get("estado") or "z").strip().lower()
+    estados = None if estado == "todos" else ("Z",)
 
     try:
         listado = queries.cheques_ingresados_dia(fecha, estados)

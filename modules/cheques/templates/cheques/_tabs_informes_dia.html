@@ -1,0 +1,25 @@
+{# Pestañas de los DOS informes del día — TMT 2026-08-03 (dueña: "necesitamos
+   otro tab que nos imprima cheques ingresados" y después "uno solo, si no son
+   muchas opciones"): una sola entrada en el menú "Más" y acá se cambia de
+   informe conservando la fecha.
+
+     · Resumen de cobranza  → réplica de FINAL (ALTAS.PRG): agrupa por medio
+       (cheques / depósitos / efectivo) y muestra qué factura paga cada cobro.
+     · Cheques ingresados   → réplica de CHEQUING (BANCOS.PRG L429): lista
+       plana ordenada por importe, con el total al pie. Es la que se lleva
+       al banco.
+
+   Uso: {% include "cheques/_tabs_informes_dia.html" %} con `activo` seteado
+   a 'resumen' o 'ingresados' y `fecha` en el contexto.
+
+   Estilos inline: el tailwind.css del repo es un build JIT congelado. #}
+<div class="no-print" style="display:flex; gap:18px; border-bottom:1px solid #e2e8f0; margin-bottom:12px; max-width:980px;">
+  <a href="{{ url_for('cheques.resumen_dia', fecha=fecha.isoformat()) }}"
+     style="padding:6px 2px; font-size:14px; text-decoration:none; border-bottom:2px solid {{ '#0284c7' if activo == 'resumen' else 'transparent' }}; color:{{ '#0369a1' if activo == 'resumen' else '#64748b' }}; font-weight:{{ '600' if activo == 'resumen' else '400' }};">
+    Resumen de cobranza
+  </a>
+  <a href="{{ url_for('cheques.ingresados_dia', fecha=fecha.isoformat()) }}"
+     style="padding:6px 2px; font-size:14px; text-decoration:none; border-bottom:2px solid {{ '#0284c7' if activo == 'ingresados' else 'transparent' }}; color:{{ '#0369a1' if activo == 'ingresados' else '#64748b' }}; font-weight:{{ '600' if activo == 'ingresados' else '400' }};">
+    Cheques ingresados
+  </a>
+</div>

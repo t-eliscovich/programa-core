@@ -224,17 +224,13 @@
             <div class="font-medium">Exportar CSV</div>
             <div class="text-xs text-slate-500">Filas visibles según filtros</div>
           </a>
+          {# TMT 2026-08-03 (dueña: "uno solo, si no son muchas opciones"). Los
+             dos informes del día viven en UNA entrada del menú; adentro se
+             cambia con las pestañas Resumen / Cheques ingresados. #}
           <a href="{{ url_for('cheques.resumen_dia') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-            <div class="font-medium">Resumen de cobranza del día</div>
-            <div class="text-xs text-slate-500">Cheques / depósitos / efectivo del día, imprimible</div>
-          </a>
-          {# TMT 2026-08-03 (dueña): el listado del FoxPro que se lleva al banco
-             — BANCOS.PRG opción 6 (PROCEDURE CHEQUING). #}
-          <a href="{{ url_for('cheques.ingresados_dia') }}"
-             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-            <div class="font-medium">Cheques ingresados en fecha</div>
-            <div class="text-xs text-slate-500">Lista plana por importe, con su fecha de depósito y el total</div>
+            <div class="font-medium">Informes del día</div>
+            <div class="text-xs text-slate-500">Resumen de cobranza · Cheques ingresados — imprimibles</div>
           </a>
           {# TMT 2026-07-30 (dueña): "los residuos de retenciones deberían
              eliminarse". Los saldos a favor de monedas que el dBase no tiene. #}
