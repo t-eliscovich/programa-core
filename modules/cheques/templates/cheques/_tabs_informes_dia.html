@@ -1,7 +1,12 @@
-{# Pestañas de los DOS informes del día — TMT 2026-08-03 (dueña: "necesitamos
-   otro tab que nos imprima cheques ingresados" y después "uno solo, si no son
-   muchas opciones"): una sola entrada en el menú "Más" y acá se cambia de
-   informe conservando la fecha.
+{# Cabecera COMPARTIDA de los dos informes del día: pestañas + barra de filtro.
+
+   TMT 2026-08-03 (dueña: "necesitamos otro tab que nos imprima cheques
+   ingresados" → "uno solo, si no son muchas opciones" → "estéticamente
+   mejoralo, que midan lo mismo" → "los botones te quedaron distintos"). Las
+   dos pantallas tenían su propia copia de la barra y se fueron separando en
+   tres pasadas: distinto ancho, distinto padding de los botones, Imprimir
+   verde en una y outline en la otra. Ahora la barra vive ACÁ, una sola vez:
+   si son iguales en la pantalla, tienen que ser el mismo código.
 
      · Resumen de cobranza  → réplica de FINAL (ALTAS.PRG): agrupa por medio
        (cheques / depósitos / efectivo) y muestra qué factura paga cada cobro.
@@ -9,11 +14,17 @@
        plana ordenada por importe, con el total al pie. Es la que se lleva
        al banco.
 
-   Uso: {% include "cheques/_tabs_informes_dia.html" %} con `activo` seteado
-   a 'resumen' o 'ingresados' y `fecha` en el contexto.
+   Uso: setear `activo` ('resumen' o 'ingresados') y `label_fecha`, y hacer
+   include de este archivo. OJO al editar este comentario: NO abrir un
+   comentario Jinja anidado acá adentro — cierra el de afuera, el ejemplo de
+   uso pasa a ejecutarse y el include se llama a sí mismo (RecursionError).
+
+   `fecha` (date) tiene que estar en el contexto. El ancho lo da
+   .ancho-informe, que definen las dos plantillas con el MISMO valor y que
+   también usa la hoja, para que todo arranque en la misma columna.
 
    Estilos inline: el tailwind.css del repo es un build JIT congelado. #}
-<div class="no-print" style="display:flex; gap:18px; border-bottom:1px solid #e2e8f0; margin:0 0 12px 0; max-width:980px;">
+<div class="no-print ancho-informe" style="display:flex; gap:18px; border-bottom:1px solid #e2e8f0; margin:0 0 12px 0;">
   <a href="{{ url_for('cheques.resumen_dia', fecha=fecha.isoformat()) }}"
      style="padding:6px 2px; font-size:14px; text-decoration:none; border-bottom:2px solid {{ '#0284c7' if activo == 'resumen' else 'transparent' }}; color:{{ '#0369a1' if activo == 'resumen' else '#64748b' }}; font-weight:{{ '600' if activo == 'resumen' else '400' }};">
     Resumen de cobranza
@@ -22,4 +33,18 @@
      style="padding:6px 2px; font-size:14px; text-decoration:none; border-bottom:2px solid {{ '#0284c7' if activo == 'ingresados' else 'transparent' }}; color:{{ '#0369a1' if activo == 'ingresados' else '#64748b' }}; font-weight:{{ '600' if activo == 'ingresados' else '400' }};">
     Cheques ingresados
   </a>
+</div>
+
+<div class="no-print ancho-informe bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
+  <form method="get" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">{{ label_fecha or 'Fecha' }}</label>
+      <input type="date" name="fecha" value="{{ fecha.isoformat() }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
+    </div>
+    <button type="submit"
+            class="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-700">Ver</button>
+    <button type="button" onclick="window.print()"
+            class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700">Imprimir</button>
+  </form>
 </div>

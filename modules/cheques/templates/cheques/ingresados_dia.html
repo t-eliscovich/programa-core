@@ -58,23 +58,8 @@
 </style>
 
 {% set activo = 'ingresados' %}
+{% set label_fecha = 'Fecha de ingreso' %}
 {% include "cheques/_tabs_informes_dia.html" %}
-
-<div class="no-print ancho-informe bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
-  <form method="get" action="{{ url_for('cheques.ingresados_dia') }}"
-        class="flex flex-wrap items-end gap-3">
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Fecha de ingreso</label>
-      <input type="date" name="fecha" value="{{ fecha.isoformat() }}"
-             title="Día en que el cheque ENTRÓ a cartera — no la fecha del cheque ni la de depósito"
-             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
-    </div>
-    <button type="submit"
-            class="text-sm px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Ver</button>
-    <button type="button" onclick="window.print()"
-            class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Imprimir</button>
-  </form>
-</div>
 
 {% if error %}
   <div class="no-print ancho-informe rounded border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm">{{ error }}</div>

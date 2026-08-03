@@ -182,3 +182,25 @@ def test_banco_se_resuelve_por_catalogo_no_por_el_texto(monkeypatch):
     sql = cap["sql"]
     assert "FROM scintela.banco bco" in sql
     assert "'ANTICIPO'" in sql
+
+
+def test_las_dos_pantallas_comparten_la_barra_de_filtro():
+    """Los botones Ver / Imprimir viven en UN solo lugar.
+
+    TMT 2026-08-03 (dueña: "los botones te quedaron distintos"). Cada pantalla
+    tenía su copia de la barra y en tres pasadas se separaron: distinto ancho,
+    distinto padding, Imprimir verde en una y outline en la otra. Si dos cosas
+    tienen que verse iguales, comparten el código — un "espeja a la otra" en un
+    comentario no se mantiene solo.
+    """
+    from pathlib import Path
+
+    tpl = Path(__file__).resolve().parent.parent / "modules/cheques/templates/cheques"
+    partial = (tpl / "_tabs_informes_dia.html").read_text(encoding="utf-8")
+    assert ">Ver</button>" in partial and ">Imprimir</button>" in partial
+
+    for nombre in ("resumen_dia.html", "ingresados_dia.html"):
+        html = (tpl / nombre).read_text(encoding="utf-8")
+        assert '{% include "cheques/_tabs_informes_dia.html" %}' in html, nombre
+        assert ">Ver</button>" not in html, f"{nombre} volvió a tener su propia barra"
+        assert ">Imprimir</button>" not in html, f"{nombre} volvió a tener su propio botón"

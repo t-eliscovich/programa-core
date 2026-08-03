@@ -81,20 +81,8 @@
 </style>
 
 {% set activo = 'resumen' %}
+{% set label_fecha = 'Fecha de cobranza' %}
 {% include "cheques/_tabs_informes_dia.html" %}
-
-<div class="no-print ancho-informe bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
-  <form method="get" class="flex flex-wrap items-end gap-3">
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Fecha de cobranza</label>
-      <input type="date" name="fecha" value="{{ fecha.isoformat() }}"
-             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
-    </div>
-    <button type="submit" class="px-3 py-1.5 bg-slate-900 text-white text-sm rounded hover:bg-slate-700">Ver</button>
-    <button type="button" onclick="window.print()"
-            class="px-3 py-1.5 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">Imprimir</button>
-  </form>
-</div>
 
 {% if error %}
   <div class="no-print ancho-informe mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">{{ error }}</div>
