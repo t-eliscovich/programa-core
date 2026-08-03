@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Papelera de pendientes — Programa Core{% endblock %}
+
+{# TMT 2026-08-03. La ✕ sobre un pendiente histórico hacía un DELETE y el único
+   rastro guardaba el id y el saldo, no el importe ni el concepto. Un borrado
+   viejo era irreconstruible desde la app. Layout inline: Tailwind congelado. #}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+
+  <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <h1 class="text-lg font-semibold">Papelera de pendientes del banco</h1>
+    <a href="{{ url_for('conciliacion.banco_post_procesar') }}"
+       class="text-xs underline text-slate-500">← Volver a la conciliación</a>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-1 mb-3" style="max-width:62rem;">
+    Todo lo que se borró con la <strong>✕</strong> del panel Banco queda acá.
+    Borrar un pendiente <strong>baja el "Saldo banco esperado" por su importe</strong>,
+    así que restaurarlo lo vuelve a sumar. Miralo con la sesión a la vista.
+  </p>
+
+  {% if filas %}
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 mb-3"
+       style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
+    <div>
+      <div class="text-[10px] uppercase text-slate-500">Borrados sin restaurar</div>
+      <div class="text-sm font-semibold tabular-nums">{{ n_vivos }}</div>
+    </div>
+    <div>
+      <div class="text-[10px] uppercase text-slate-500">Suman</div>
+      <div class="text-sm font-semibold font-mono tabular-nums">{{ (total_vivo or 0)|num_es }}</div>
+    </div>
+    <div class="text-[11px] text-slate-500" style="max-width:34rem;">
+      Si esa suma no es cero y tu conciliación cierra, es porque lo que se borró
+      era basura. Si no cierra, empezá mirando acá.
+    </div>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <div style="max-height:32rem; overflow-y:auto;">
+      <table class="w-full text-[11px] tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
+          <tr>
+            <th class="px-2 py-1.5 text-left">Borrado</th>
+            <th class="px-2 py-1.5 text-left">Quién</th>
+            <th class="px-2 py-1.5 text-left">Fecha mov.</th>
+            <th class="px-2 py-1.5 text-left">Doc</th>
+            <th class="px-2 py-1.5 text-left">Concepto</th>
+            <th class="px-2 py-1.5 text-right">Importe</th>
+            <th class="px-2 py-1.5 text-left">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if f.restaurado_en %}opacity-60{% endif %}">
+            <td class="px-2 py-1 text-slate-500">{{ f.borrado_en|hora_ec('%d/%m %H:%M') if f.borrado_en else '—' }}</td>
+            <td class="px-2 py-1 text-slate-600">{{ f.borrado_por or '—' }}</td>
+            <td class="px-2 py-1 text-slate-500">{{ f.fecha or '— sin fecha' }}</td>
+            <td class="px-2 py-1 font-mono text-[10px] text-slate-500">{{ (f.documento or '—')[:22] }}</td>
+            <td class="px-2 py-1 text-slate-700 dark:text-slate-300">{{ (f.concepto or '—')[:52] }}</td>
+            <td class="px-2 py-1 text-right font-mono font-semibold {% if (f.tipo or 'C') == 'D' %}text-rose-700{% else %}text-emerald-700{% endif %}">
+              {{ ('−' if (f.tipo or 'C') == 'D' else '+') ~ ((f.monto or 0)|abs|num_es) }}
+            </td>
+            <td class="px-2 py-1">
+              {% if f.restaurado_en %}
+                <span class="text-slate-500">restaurado {{ f.restaurado_en|hora_ec('%d/%m %H:%M') }}
+                  {% if f.restaurado_por %}· {{ f.restaurado_por }}{% endif %}</span>
+              {% else %}
+                <form method="POST" class="inline m-0"
+                      action="{{ url_for('conciliacion.banco_papelera_restaurar', id_papelera=f.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit"
+                          title="Devolver este pendiente al backlog. Vuelve a sumar al saldo banco esperado."
+                          class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] rounded px-2 py-0.5 font-medium">
+                    ↩ Restaurar
+                  </button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 text-sm text-slate-600 dark:text-slate-300">
+    No hay nada en la papelera.
+    <span class="text-slate-500">Se empieza a llenar con el próximo pendiente que borres con la ✕.
+    Lo borrado antes del 03/08/2026 no está — el borrado viejo no dejaba copia.</span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

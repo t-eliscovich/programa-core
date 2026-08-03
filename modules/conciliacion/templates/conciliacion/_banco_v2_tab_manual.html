@@ -127,6 +127,14 @@
         {# TMT 2026-07-31 (dueña: "no tengo ese documento"): inverso de la ✕.
            Si una fila del banco falta (borrada por error, o el xlsx ya no está)
            se puede agregar a mano al backlog y conciliarla normalmente. #}
+        {# TMT 2026-08-03: la ✕ sobre un histórico borraba sin vuelta. Ahora
+           queda en la papelera y desde acá se ve y se restaura. #}
+        <a href="{{ url_for('conciliacion.banco_papelera_pendientes') }}"
+           title="Ver los pendientes que se borraron con la ✕ y restaurarlos"
+           style="white-space:nowrap; flex:0 0 auto;"
+           class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
+          🗑 Papelera
+        </a>
         <details class="relative inline-block" style="flex:0 0 auto;">
           <summary class="list-none cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium"
                    style="white-space:nowrap;"

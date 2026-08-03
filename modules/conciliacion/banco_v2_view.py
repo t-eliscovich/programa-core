@@ -3807,10 +3807,15 @@ def banco_eliminar_pendiente():
         flash("No identifiqué el pendiente a eliminar.", "error")
         return redirect(_back)
 
-    # Traer la fila primero para el mensaje (y para no borrar a ciegas).
+    # Traer la fila ENTERA: para el mensaje, para no borrar a ciegas, y para
+    # copiarla a la papelera. TMT 2026-08-03: hasta hoy la ✕ sobre un
+    # histórico era la única acción de la app que toca plata y no se podía
+    # deshacer — y el rastro que quedaba no guardaba ni el importe ni el
+    # concepto, así que un borrado viejo era irreconstruible.
     row = _db.fetch_one(
         """
-        SELECT concepto, documento, monto, tipo
+        SELECT id, fecha, concepto, documento, monto, tipo, oficina,
+               detalle, codigo, fuente, creado_en
           FROM scintela.banco_historicos_pendientes
          WHERE id = %s AND no_banco = %s AND conciliado_en IS NULL
         """,
@@ -3819,6 +3824,13 @@ def banco_eliminar_pendiente():
     if not row:
         flash("Ese pendiente ya no existe o ya está conciliado.", "warn")
         return redirect(_back)
+
+    # A la papelera ANTES de borrar. Fail-soft a propósito: si la papelera
+    # falla, la ✕ tiene que seguir funcionando (se pierde la traza, no la
+    # acción). Ver modules/conciliacion/papelera_pendientes.py.
+    from modules.conciliacion import papelera_pendientes as _pap
+    _pap.guardar(row, no_banco=_BANCO_PICHINCHA,
+                 usuario=_usuario_actual(), sesion_id=sesion_id or None)
 
     n = _db.execute(
         """
@@ -3835,7 +3847,8 @@ def banco_eliminar_pendiente():
         )
         flash(
             f"Pendiente eliminado: {(row.get('concepto') or '')[:40]} "
-            f"${float(row.get('monto') or 0):,.2f}.",
+            f"${float(row.get('monto') or 0):,.2f}. "
+            f"Queda en la papelera por si hay que traerlo de vuelta.",
             "ok",
         )
         try:
@@ -3848,6 +3861,57 @@ def banco_eliminar_pendiente():
     else:
         flash("No pude eliminar el pendiente.", "error")
     return redirect(_back)
+
+
+@conciliacion_bp.route("/banco-v2/papelera", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_papelera_pendientes():
+    """Qué pendientes del banco se borraron, cuándo, quién y por cuánto.
+
+    Antes del 2026-08-03 esto no existía: la ✕ hacía un DELETE y el único
+    rastro guardaba el id y el saldo resultante, no el importe ni el concepto.
+    Cuando la dueña borró 6 filas de basura (el resumen contable que se había
+    cargado como pendientes, $8.304.132,19) no hubo forma de reconstruir desde
+    la app qué se había sacado.
+    """
+    from modules.conciliacion import papelera_pendientes as _pap
+
+    filas = _pap.listar(_BANCO_PICHINCHA, limite=300)
+    return render_template(
+        "conciliacion/papelera_pendientes.html",
+        filas=filas,
+        n_vivos=sum(1 for f in filas if not f.get("restaurado_en")),
+        total_vivo=round(sum(float(f.get("monto") or 0) for f in filas
+                             if not f.get("restaurado_en")), 2),
+    )
+
+
+@conciliacion_bp.route("/banco-v2/papelera/<int:id_papelera>/restaurar",
+                       methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_papelera_restaurar(id_papelera: int):
+    """Devuelve un pendiente borrado al backlog.
+
+    ⚠ Esto MUEVE la conciliación: el pendiente vuelve a sumar al "Saldo banco
+    esperado" por su importe. Es justamente lo que se quiere cuando se borró
+    algo por error — pero conviene mirarlo con la sesión a la vista.
+    """
+    from modules.conciliacion import papelera_pendientes as _pap
+
+    r = _pap.restaurar(id_papelera, no_banco=_BANCO_PICHINCHA,
+                       usuario=_usuario_actual())
+    _monto = float(r.get("monto") or 0)
+    if r.get("ok"):
+        flash(
+            f"Pendiente restaurado: {(r.get('concepto') or '')[:40]} "
+            f"${_monto:,.2f}. Volvió al backlog y suma al saldo banco esperado.",
+            "ok",
+        )
+    else:
+        flash(r.get("motivo") or "No pude restaurar ese pendiente.", "warn")
+    return redirect(url_for("conciliacion.banco_papelera_pendientes"))
 
 
 @conciliacion_bp.route("/banco-v2/agregar-pendiente", methods=["POST"])
