@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Re-encadenar saldos — Programa Core{% endblock %}
+
+{# TMT 2026-08-03. El running `saldo` guardado es lo que el Balance usa como
+   BANCOS, así que una cadena partida corre el patrimonio, la utilidad y la
+   conciliación. Esta pantalla re-encadena DESDE UNA FECHA (nunca toda la
+   historia: la convención de signos de las filas viejas del DBF no es
+   confiable) y SIEMPRE muestra el dry-run primero.
+   Layout inline — el build de Tailwind está congelado. #}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+
+  <h1 class="text-lg font-semibold mb-1">Re-encadenar saldos de un banco</h1>
+  <p class="text-xs text-slate-500 mb-3" style="max-width:62rem;">
+    El saldo que muestra el Balance es el <strong>saldo corrido guardado</strong> de la
+    última fila del banco. Si esa cadena se corta, el patrimonio, la utilidad y la
+    conciliación quedan corridos por esa misma plata.
+    Mirá <a href="{{ url_for('health_audit.cadena_saldos') }}" class="underline">el chequeo de la cadena</a>
+    para ver dónde está cortada y desde qué fecha conviene re-encadenar.
+  </p>
+
+  <form method="GET" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 mb-3"
+        style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+    <label class="text-xs text-slate-600 dark:text-slate-300" style="display:flex; flex-direction:column; gap:2px;">
+      Banco
+      <select name="no_banco" class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
+        {% for b in bancos %}
+        <option value="{{ b.no_banco }}" {% if no_banco == b.no_banco %}selected{% endif %}>
+          {{ b.nombre or ('Banco ' ~ b.no_banco) }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="text-xs text-slate-600 dark:text-slate-300" style="display:flex; flex-direction:column; gap:2px;">
+      Desde qué fecha
+      <input type="date" name="desde" value="{{ desde }}" required
+             class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
+    </label>
+    <button type="submit"
+            class="bg-slate-800 hover:bg-slate-900 text-white text-xs rounded px-3 py-1.5 font-medium">
+      Ver qué cambiaría
+    </button>
+    <span class="text-[11px] text-slate-500" style="max-width:26rem;">
+      Esto <strong>no escribe nada</strong>. El saldo del día anterior a la fecha queda
+      como punto de partida, así que elegí una fecha en la que el saldo era correcto.
+    </span>
+  </form>
+
+  {% if error %}
+  <div class="rounded-lg border border-rose-300 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-sm p-3 mb-3">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  {% if plan is not none %}
+    {% if not plan %}
+    <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm text-slate-600 dark:text-slate-300">
+      No hay movimientos desde esa fecha — no habría nada que re-encadenar.
+    </div>
+    {% else %}
+
+    <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 mb-3">
+      <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
+        <div>
+          <div class="text-[10px] uppercase text-slate-500">Filas que se recorren</div>
+          <div class="text-sm font-semibold tabular-nums">{{ plan|length }}</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase text-slate-500">Filas que cambian</div>
+          <div class="text-sm font-semibold tabular-nums">{{ cambios|length }}</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase text-slate-500">Saldo final hoy</div>
+          <div class="text-sm font-semibold font-mono tabular-nums">{{ (total_actual or 0)|num_es }}</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase text-slate-500">Saldo final después</div>
+          <div class="text-sm font-semibold font-mono tabular-nums">{{ (total_nuevo or 0)|num_es }}</div>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase text-slate-500">Diferencia</div>
+          {% set _d = (total_nuevo or 0) - (total_actual or 0) %}
+          <div class="text-sm font-semibold font-mono tabular-nums {% if _d < 0 %}text-rose-600{% else %}text-emerald-700{% endif %}">
+            {{ ('+' if _d >= 0 else '−') ~ (_d|abs|num_es) }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if cambios %}
+    <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden mb-3">
+      <div class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 text-xs font-semibold">
+        Filas que cambiarían
+        <span class="font-normal text-slate-500">— las que ya están bien no se listan</span>
+      </div>
+      <div style="max-height:26rem; overflow-y:auto;">
+        <table class="w-full text-[11px] tabular-nums">
+          <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
+            <tr>
+              <th class="px-2 py-1 text-left">Fecha</th>
+              <th class="px-2 py-1 text-left">Doc</th>
+              <th class="px-2 py-1 text-left">Concepto</th>
+              <th class="px-2 py-1 text-right">Importe</th>
+              <th class="px-2 py-1 text-right">Saldo hoy</th>
+              <th class="px-2 py-1 text-right">Saldo nuevo</th>
+              <th class="px-2 py-1 text-right">Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in cambios %}
+            {% set _delta = f.saldo_nuevo - (f.saldo_actual or 0) %}
+            <tr class="border-t border-slate-100 dark:border-slate-800">
+              <td class="px-2 py-1">{{ f.fecha }}</td>
+              <td class="px-2 py-1">{{ f.documento }}</td>
+              <td class="px-2 py-1 text-slate-600 dark:text-slate-300">{{ (f.concepto or '')[:52] }}</td>
+              <td class="px-2 py-1 text-right font-mono">{{ f.importe|num_es }}</td>
+              <td class="px-2 py-1 text-right font-mono text-slate-500">
+                {% if f.saldo_actual is none %}—{% else %}{{ f.saldo_actual|num_es }}{% endif %}
+              </td>
+              <td class="px-2 py-1 text-right font-mono font-semibold">{{ f.saldo_nuevo|num_es }}</td>
+              <td class="px-2 py-1 text-right font-mono {% if _delta < 0 %}text-rose-600{% else %}text-emerald-700{% endif %}">
+                {{ ('+' if _delta >= 0 else '−') ~ (_delta|abs|num_es) }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <form method="POST" class="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3"
+          style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco }}">
+      <input type="hidden" name="desde" value="{{ desde }}">
+      <input type="hidden" name="aplicar" value="1">
+      <span class="text-xs text-amber-900 dark:text-amber-200" style="max-width:44rem;">
+        Aplicar escribe el saldo corrido de esas {{ cambios|length }} fila(s). No borra ni
+        agrega movimientos: sólo vuelve a encadenar los que ya están. Se puede
+        volver a correr cuantas veces haga falta.
+      </span>
+      <button type="submit"
+              class="bg-amber-600 hover:bg-amber-700 text-white text-xs rounded px-3 py-1.5 font-medium">
+        Aplicar
+      </button>
+    </form>
+    {% else %}
+    <div class="rounded-lg border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 text-sm p-3">
+      La cadena ya está bien desde esa fecha — no cambiaría ninguna fila.
+    </div>
+    {% endif %}
+
+    {% endif %}
+  {% endif %}
+
+  <p class="mt-3 text-xs">
+    <a href="{{ url_for('bancos.lista') }}" class="underline text-slate-500">← Volver a Bancos</a>
+  </p>
+</div>
+{% endblock %}

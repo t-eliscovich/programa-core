@@ -275,3 +275,55 @@ def test_health_cadena_saldos_avisa_saldos_null():
         breaks=[], n_nulls=3, dias=120,
     )
     assert [a["category"] for a in alerts] == ["saldo_null"]
+
+
+# --- dry-run: mirar antes de escribir sobre plata de produccion -----------
+
+
+def test_dry_run_no_escribe_y_devuelve_el_plan(monkeypatch):
+    """`dry_run=True` devuelve exactamente lo que escribiría, sin tocar nada.
+
+    Un recompute mal anclado dejó Pichincha en −917.651,96 el 2026-05-12.
+    Mirarlo en seco primero es la misma disciplina del simulacro de cierre.
+    """
+    import bank_helpers as bh
+    import db as db_mod
+
+    fake = _escenario_pichincha()
+    fake.apply_to(monkeypatch, db_mod)
+    saldos_antes = {f["id_transaccion"]: f["saldo"] for f in fake.filas}
+
+    plan = bh.recompute_saldos_desde(
+        conn=object(), no_banco=10, no_cta=None,
+        ancla_fecha=date(2026, 7, 30), dry_run=True,
+    )
+
+    assert {f["id_transaccion"]: f["saldo"] for f in fake.filas} == saldos_antes, (
+        "el dry-run escribió en la base"
+    )
+    assert not [sql for sql, _ in fake.executes if "SET saldo" in sql]
+    assert [(f["id_transaccion"], f["saldo_nuevo"]) for f in plan] == [
+        (3, 997.04), (2, 897.04),
+    ]
+    # el plan trae el saldo guardado al lado del nuevo, para poder comparar
+    assert plan[0]["saldo_actual"] == 0
+    assert plan[1]["saldo_actual"] == 900
+
+
+def test_dry_run_predice_exactamente_lo_que_aplica(monkeypatch):
+    """Lo que el dry-run muestra es lo que el aplicar escribe. Sin sorpresas."""
+    import bank_helpers as bh
+    import db as db_mod
+
+    fake = _escenario_pichincha()
+    fake.apply_to(monkeypatch, db_mod)
+    plan = bh.recompute_saldos_desde(
+        conn=object(), no_banco=10, no_cta=None,
+        ancla_fecha=date(2026, 7, 30), dry_run=True,
+    )
+    bh.recompute_saldos_desde(
+        conn=object(), no_banco=10, no_cta=None, ancla_fecha=date(2026, 7, 30),
+    )
+    por_id = {f["id_transaccion"]: f["saldo"] for f in fake.filas}
+    for f in plan:
+        assert por_id[f["id_transaccion"]] == f["saldo_nuevo"]

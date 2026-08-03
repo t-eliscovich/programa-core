@@ -1053,6 +1053,99 @@ def movimientos(no_banco):
     )
 
 
+@bancos_bp.route("/bancos/reencadenar", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.editar")
+def reencadenar_saldos():
+    """Re-encadena el running `saldo` de UN banco DESDE UNA FECHA — con
+    pantalla de dry-run.
+
+    ⭐ POR QUÉ (TMT 2026-08-03). El running `saldo` guardado es lo que el
+    Balance usa como BANCOS (ver `saldo_bancos()`), así que si la cadena se
+    parte, el patrimonio, la utilidad y la conciliación se corren por esa
+    plata. El 03/08 Pichincha tenía 10 quiebres — el peor, una fila de
+    $2,96 que movió el saldo **+155.187,31**. Ver
+    `/admin/health/cadena-saldos`.
+
+    Dos cosas que el botón viejo (`recompute-saldos`) NO permite y que acá
+    son el punto:
+
+    1. **DESDE UNA FECHA.** Re-encadenar toda la historia es peligroso: la
+       convención de signos de las filas viejas del DBF no es confiable
+       (la suma firmada de Pichincha da −472.943 contra un saldo real de
+       2.6 M). Un recompute total sin ancla dejó el banco en −917.651,96 el
+       2026-05-12. Se ancla en el último saldo SANO y se camina para
+       adelante.
+    2. **DRY-RUN.** Muestra fila por fila qué escribiría contra lo que hay
+       guardado, y el saldo final antes/después. No escribe nada hasta que
+       alguien mira y aprieta Aplicar. Es la misma disciplina del
+       simulacro de cierre.
+    """
+    import db as _db
+    from datetime import date as _date
+
+    no_banco = request.values.get("no_banco", type=int)
+    desde_raw = (request.values.get("desde") or "").strip()
+    aplicar = request.method == "POST" and request.form.get("aplicar") == "1"
+
+    bancos = _db.fetch_all(
+        "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco "
+        " ORDER BY no_banco"
+    ) or []
+
+    plan, err, banco_sel = None, None, None
+    total_actual = total_nuevo = None
+    if no_banco and desde_raw:
+        try:
+            desde = _date.fromisoformat(desde_raw)
+        except ValueError:
+            err = f"Fecha inválida: {desde_raw} — usá AAAA-MM-DD."
+            desde = None
+        if desde:
+            banco_sel = next(
+                (b for b in bancos if int(b["no_banco"]) == no_banco), None)
+            if not banco_sel:
+                err = f"El banco {no_banco} no está en el catálogo."
+            else:
+                import bank_helpers
+                try:
+                    with _db.tx() as conn:
+                        plan = bank_helpers.recompute_saldos_desde(
+                            conn, no_banco=no_banco, no_cta=None,
+                            ancla_fecha=desde, dry_run=True,
+                        )
+                    if plan:
+                        total_actual = plan[-1]["saldo_actual"]
+                        total_nuevo = plan[-1]["saldo_nuevo"]
+                    if aplicar:
+                        with _db.tx() as conn:
+                            n = bank_helpers.recompute_saldos_desde(
+                                conn, no_banco=no_banco, no_cta=None,
+                                ancla_fecha=desde,
+                            )
+                        flash(
+                            f"{banco_sel['nombre'] or no_banco}: "
+                            f"{n} fila(s) re-encadenadas desde {desde}. "
+                            f"Saldo {(total_actual or 0):,.2f} → "
+                            f"{(total_nuevo or 0):,.2f}.", "ok")
+                        return redirect(url_for(
+                            "bancos.reencadenar_saldos",
+                            no_banco=no_banco, desde=desde_raw))
+                except Exception as e:  # noqa: BLE001
+                    err = f"No pude armar el plan: {str(e)[:200]}"
+
+    # Sólo mostramos las filas que CAMBIAN (las que ya están bien son ruido).
+    cambios = [f for f in (plan or [])
+               if f["saldo_actual"] is None
+               or abs(f["saldo_nuevo"] - f["saldo_actual"]) > 0.005]
+    return render_template(
+        "bancos/reencadenar.html",
+        bancos=bancos, no_banco=no_banco, desde=desde_raw, error=err,
+        banco_sel=banco_sel, plan=plan, cambios=cambios,
+        total_actual=total_actual, total_nuevo=total_nuevo,
+    )
+
+
 @bancos_bp.route("/bancos/recompute-saldos", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.editar")

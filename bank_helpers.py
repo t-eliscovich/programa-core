@@ -342,8 +342,13 @@ def recompute_saldos_desde(
     ancla_id: int | None = None,
     ancla_fecha: date | None = None,
     desde_cero: bool = False,
-) -> int:
+    dry_run: bool = False,
+) -> int | list[dict]:
     """Walk-forward: recalcula `saldo` para toda fila >= ancla.
+
+    Con `dry_run=True` NO escribe: devuelve la lista de filas que tocaría,
+    con `saldo_actual` y `saldo_nuevo`, para poder mirarla antes de aplicar.
+    Sin `dry_run` devuelve la cantidad de filas actualizadas.
 
     ⚠️ ATENCIÓN — LEÉ ESTO ANTES DE LLAMAR ESTA FUNCIÓN ⚠️
 
@@ -436,7 +441,7 @@ def recompute_saldos_desde(
                 conn=conn,
             )
             if not _mn or not _mn.get("fecha"):
-                return 0
+                return [] if dry_run else 0
             ancla_fecha_del_id = _mn["fecha"]
         # Saldo de arranque = última fila ESTRICTAMENTE anterior en (fecha, id)
         # — el mismo orden en que camina el walk de abajo.
@@ -478,7 +483,7 @@ def recompute_saldos_desde(
 
     rows = db.fetch_all(
         f"""
-        SELECT id_transaccion, documento, importe,
+        SELECT id_transaccion, fecha, documento, concepto, importe, saldo,
                COALESCE(usuario_crea, '') AS usuario_crea
           FROM scintela.transacciones_bancarias
          WHERE no_banco = %s
@@ -490,22 +495,38 @@ def recompute_saldos_desde(
         conn=conn,
     ) or []
 
-    n = 0
+    # ⭐ TMT 2026-08-03 — el plan se arma ANTES de escribir. `dry_run=True`
+    # devuelve exactamente lo que escribiría, sin tocar nada: es la única
+    # forma de mirar un recompute sobre plata de producción antes de
+    # aplicarlo (un recompute mal anclado dejó Pichincha en −917.651,96 el
+    # 2026-05-12). Ver /bancos/recompute-saldos?dry_run=1.
+    plan: list[dict] = []
     for r in rows:
         # TMT 2026-06-03 audit fix: pasamos usuario_crea para distinguir
         # convención legacy DBF (importe signed, NDs reverso = +imp legítimo)
         # de nueva web (importe abs, sign por doc). Sin esto, los NDs reverso
         # del DBF se "corregían" al sign equivocado en cada recompute.
         saldo = round(saldo + _signed_delta(r["documento"], r["importe"], r.get("usuario_crea") or ""), 2)
+        plan.append({
+            "id_transaccion": r["id_transaccion"],
+            "fecha": r.get("fecha"),
+            "documento": (r.get("documento") or "").strip(),
+            "concepto": (r.get("concepto") or ""),
+            "importe": float(r["importe"] or 0),
+            "saldo_actual": (None if r.get("saldo") is None else float(r["saldo"])),
+            "saldo_nuevo": saldo,
+        })
+    if dry_run:
+        return plan
+    for f in plan:
         db.execute(
             "UPDATE scintela.transacciones_bancarias "
             "SET saldo = %s, fecha_modifica = CURRENT_TIMESTAMP "
             "WHERE id_transaccion = %s",
-            (saldo, r["id_transaccion"]),
+            (f["saldo_nuevo"], f["id_transaccion"]),
             conn=conn,
         )
-        n += 1
-    return n
+    return len(plan)
 
 
 def saldo_actual(no_banco: int, no_cta: str | None = None, conn=None) -> float:
