@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Cheques ingresados — {{ fecha | fecha_es }}{% endblock %}
+
+{# TMT 2026-08-03 (dueña, con la tirilla del FoxPro en la mano: "al parecer
+   necesitamos imprimir esto"). Réplica de PROCEDURE CHEQUING (BANCOS.PRG
+   L429-463), la opción 6 del menú de bancos del dBase:
+
+     SORT ON IMPORTE/D TO PASAING FOR FECHING=FFF
+     LIST ALL FECHAD, CLIENTE, IMPORTE, BANCO, STAT TO PRINT
+     ? "      TOTAL: " + STR(IMPOR,10,2)
+
+   O sea: día de INGRESO (no la fecha del cheque), orden por IMPORTE
+   DESCENDENTE, y la fecha que se lista es FECHAD (cuándo se deposita). El
+   TOTAL es NETO — los espejos de anticipo (NB=98) entran negativos y restan.
+
+   Estilos calcados de resumen_dia.html (el tailwind.css del repo es un build
+   JIT congelado: sólo clases que ya existan, o CSS inline). #}
+
+{% block content %}
+<style>
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important;
+            max-width: none !important; padding: 0 !important; }
+    .hoja .border-b-2 { border-bottom-color: #9ca3af !important; }
+    .hoja tbody tr { page-break-inside: avoid; }
+    @page { margin: 1.2cm; size: auto; }
+    .cli-nombre { display: none !important; }
+    .hoja table.principal { font-size: 9pt !important; }
+    .hoja table.principal td, .hoja table.principal th {
+      padding: 1px 4px !important; border-bottom: 0.3pt solid #ccc !important;
+    }
+    .hoja table.principal thead th { border-bottom: 0.8pt solid #9ca3af !important; }
+    .hoja tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; }
+    .neg { color: #000 !important; }
+  }
+  .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
+          padding:1.25rem 1.5rem; margin:1rem auto; max-width:820px; border-radius:4px; }
+  .hoja table.principal { width:100%; border-collapse:collapse; margin-top:12px; }
+  .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px; text-align:left;
+             font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
+  .hoja table.principal td { padding:5px; border-bottom:1px solid #e2e8f0; font-size:12px; }
+  .hoja td.num, .hoja th.num { text-align:right; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+             white-space:nowrap; }
+  .hoja tfoot td { border-top:2px solid #1e293b; border-bottom:none; font-weight:700;
+             font-size:13px; padding-top:8px; }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .neg  { color:#b91c1c; }
+  .kpi  { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:.03em; }
+  .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; color:#0f172a; }
+</style>
+
+<div class="no-print bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 max-w-4xl">
+  <form method="get" action="{{ url_for('cheques.ingresados_dia') }}"
+        class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Fecha de ingreso</label>
+      <input type="date" name="fecha" value="{{ fecha.isoformat() }}"
+             title="Día en que el cheque ENTRÓ a cartera — no la fecha del cheque ni la de depósito"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Estado</label>
+      <select name="estado" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
+        <option value="todos" {% if estado != 'cartera' %}selected{% endif %}>Todos</option>
+        <option value="cartera" {% if estado == 'cartera' %}selected{% endif %}>Sólo en cartera</option>
+      </select>
+    </div>
+    <button type="submit"
+            class="text-sm px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Ver</button>
+    <button type="button" onclick="window.print()"
+            class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Imprimir</button>
+    <a href="{{ url_for('cheques.resumen_dia', fecha=fecha.isoformat()) }}"
+       class="text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-100"
+       title="El otro informe del día: agrupa por medio y muestra qué factura paga cada cobro">
+      Resumen de cobranza →
+    </a>
+  </form>
+</div>
+
+{% if error %}
+  <div class="no-print max-w-4xl rounded border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm">{{ error }}</div>
+{% elif listado %}
+<div class="hoja">
+  <div class="flex items-start justify-between border-b-2 border-slate-800 pb-2">
+    <div>
+      <h1 class="text-xl font-bold tracking-tight">LISTADO DE CHEQUES INGRESADOS</h1>
+      <div class="text-sm text-slate-600">INTELA CIA. LTDA.{% if estado == 'cartera' %} — sólo en cartera{% endif %}</div>
+    </div>
+    <div class="mono text-sm">{{ fecha | fecha_es }}</div>
+  </div>
+
+  <div class="kpi mt-3">Ingresos ({{ listado.n }}) <b class="{% if listado.total < 0 %}neg{% endif %}">{{ listado.total | money_es }}</b></div>
+
+  {% if listado.n == 0 %}
+    <p class="text-sm text-slate-500 mt-4">No hay cheques ingresados esa fecha.</p>
+  {% else %}
+  <table class="principal">
+    <thead>
+      <tr>
+        <th style="width:34px" class="num">#</th>
+        <th style="width:92px">F. dep.</th>
+        <th>Cliente</th>
+        <th class="num" style="width:110px">Importe</th>
+        <th style="width:110px">Banco</th>
+        <th style="width:56px">Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in listado.filas %}
+      <tr>
+        <td class="num">{{ loop.index }}</td>
+        <td class="mono">{{ (f.fechad or f.fecha) | fecha_es }}</td>
+        <td>
+          <strong class="mono">{{ f.codigo_cli }}</strong>
+          <span class="cli-nombre text-slate-500">{{ f.cliente | cleanstr }}</span>
+        </td>
+        <td class="num {% if (f.importe or 0) < 0 %}neg{% endif %}">{{ f.importe | money_es }}</td>
+        <td>{{ f.banco_emisor | cleanstr }}</td>
+        <td class="mono">{{ f.stat }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3">TOTAL — {{ listado.n }} cheque{{ '' if listado.n == 1 else 's' }}</td>
+        <td class="num {% if listado.total < 0 %}neg{% endif %}">{{ listado.total | money_es }}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -3504,6 +3504,49 @@ def resumen_dia():
     return render_template("cheques/resumen_dia.html", resumen=resumen, fecha=fecha, error=error)
 
 
+@cheques_bp.route("/cheques/ingresados-dia")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def ingresados_dia():
+    """Listado imprimible de los cheques INGRESADOS en una fecha.
+
+    TMT 2026-08-03 (dueña, foto de la tirilla del FoxPro: "al parecer
+    necesitamos imprimir esto"). Réplica de `PROCEDURE CHEQUING`
+    (BANCOS.PRG L429, opción 6 del menú de bancos): filtra por día de
+    INGRESO, ordena por IMPORTE DESCENDENTE y lista fechad / cliente /
+    importe / banco / estado con el TOTAL neto al pie.
+
+    Es el complemento del *Resumen de cobranza del día*: aquél agrupa por
+    medio y muestra las facturas que paga cada cobro; éste es la lista plana
+    que se lleva al banco, y sí incluye los posdatados que quedaron en
+    cartera. Query params: `?fecha=YYYY-MM-DD` (default hoy) y
+    `?estado=cartera|todos`. Solo lectura.
+    """
+    from datetime import datetime as _dt
+
+    fecha_str = (request.args.get("fecha") or "").strip()
+    try:
+        fecha = _dt.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else today_ec()
+    except ValueError:
+        fecha = today_ec()
+
+    # El dBase pide ESTADO y traduce "CAR" → 'Z12PD' (lo que sigue en cartera).
+    estado = (request.args.get("estado") or "todos").strip().lower()
+    estados = ("Z", "1", "2", "P", "D") if estado == "cartera" else None
+
+    try:
+        listado = queries.cheques_ingresados_dia(fecha, estados)
+        error = None
+    except Exception as e:  # noqa: BLE001
+        listado = None
+        error = f"Error inesperado: {e}"
+
+    return render_template(
+        "cheques/ingresados_dia.html",
+        listado=listado, fecha=fecha, estado=estado, error=error,
+    )
+
+
 @cheques_bp.route("/cheques/diag/depositados-sin-movimiento")
 @requiere_login
 @requiere_permiso("cheques.ver")

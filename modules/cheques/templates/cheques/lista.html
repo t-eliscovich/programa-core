@@ -229,6 +229,13 @@
             <div class="font-medium">Resumen de cobranza del día</div>
             <div class="text-xs text-slate-500">Cheques / depósitos / efectivo del día, imprimible</div>
           </a>
+          {# TMT 2026-08-03 (dueña): el listado del FoxPro que se lleva al banco
+             — BANCOS.PRG opción 6 (PROCEDURE CHEQUING). #}
+          <a href="{{ url_for('cheques.ingresados_dia') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Cheques ingresados en fecha</div>
+            <div class="text-xs text-slate-500">Lista plana por importe, con su fecha de depósito y el total</div>
+          </a>
           {# TMT 2026-07-30 (dueña): "los residuos de retenciones deberían
              eliminarse". Los saldos a favor de monedas que el dBase no tiene. #}
           <a href="{{ url_for('cheques.residuos_retencion') }}"
@@ -495,7 +502,14 @@
             data-id-cheque="{{ c.id_cheque }}"
             data-importe="{{ c.importe or 0 }}">
           {# TMT 2026-05-18 — fecha en col 1, cliente en col 2 #}
-          {% set fecha_cargado = c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
+          {# TMT 2026-08-03 (dueña: "cargado me muestra solo 12/07 sin importar cómo
+             filtre"). Antes: fecha_recibido → fecha_crea → fecha. En las filas del
+             dBase `fecha_recibido` es NULL, así que caía en `fecha_crea` = cuándo se
+             INSERTÓ la fila en PC, o sea el día del import masivo: los ~3.200 cheques
+             del dBase mostraban todos 12/07/2026. `dia_ingreso` lo calcula el SQL con
+             SQL_DIA_INGRESO (queries.py), la MISMA definición que usan el resumen de
+             cobranza y el listado de ingresados. #}
+          {% set fecha_cargado = c.dia_ingreso or c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
           {% set stat_u = (c.stat or '').upper() %}
           {# TMT 2026-07-20 (dueña): un devuelto (1/2/3/R) NO muestra fecha en
              Depositado — el depósito rebotó, ya no está en el banco. #}

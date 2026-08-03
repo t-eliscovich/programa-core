@@ -32,6 +32,26 @@ import db
 from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
+# Día de INGRESO de un cobro — la fecha con la que el dBase arma sus listados
+# del día (`FECHING`). Es UNA sola definición porque hay DOS pantallas que la
+# usan (el resumen de cobranza y el listado de cheques ingresados) y un
+# "espeja a la otra" en el docstring no se mantiene solo: si divergen, dos
+# informes del mismo día dan totales distintos y nadie se entera.
+#
+#   · `fecha_recibido` — lo cargado por las pantallas de PC (el alta hace
+#     `fecha = fecha_recibido`, así que siempre está).
+#   · `fechaing` SOLO si la fila nació del dBase: ahí es FECHING = ingreso.
+#     (En las filas de PC `fechaing` es la fecha de depósito — no sirve.)
+#   · `fecha` de último recurso.
+SQL_DIA_INGRESO = """COALESCE(
+                       c.fecha_recibido,
+                       CASE WHEN COALESCE(c.usuario_crea, '')
+                                 IN ('dbf-import', 'reconcile-dbf')
+                            THEN c.fechaing END,
+                       c.fecha
+                     )"""
+
+
 # scintela.cliente.observacion es varchar(200). Al trazar rebotes en la
 # observacion del cliente hay que capar la longitud: con 3-4 rebotes acumulados
 # (cada marca ~60 chars) se desborda. Cap del lado SQL con RIGHT(..., 200).
@@ -2004,6 +2024,7 @@ def por_id(id_cheque: int) -> dict | None:
         """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
                c.fecha_recibido, c.fecha_crea, c.fecha_postergacion, c.fechad_original,
+               __DIA_INGRESO__ AS dia_ingreso,
                c.codigo_cli, c.importe, c.stat, c.no_banco,
                c.banco AS banco_texto, c.prov, c.clave,
                c.numero_transaccion, c.id_cheque_padre, c.pasaconta,
@@ -2027,7 +2048,7 @@ def por_id(id_cheque: int) -> dict | None:
          WHERE c.no_cheque::text = %s OR c.id_cheque = %s
          ORDER BY (c.no_cheque::text = %s) DESC, c.id_cheque ASC
          LIMIT 1
-        """,
+        """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO),
         (str(id_cheque), id_cheque, str(id_cheque)),
     )
 
@@ -4962,6 +4983,14 @@ def buscar(
     sql_buscar_cheques = """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
                c.fecha_recibido, c.fecha_crea,
+               -- TMT 2026-08-03 (dueña: "cargado me muestra solo 12/07 sin
+               -- importar como filtre"). La columna CARGADO usaba
+               -- COALESCE(fecha_recibido, fecha_crea, fecha) y en las filas
+               -- del dBase `fecha_recibido` es NULL → caía en `fecha_crea`,
+               -- que es cuándo se INSERTÓ la fila en PC: el día del import
+               -- masivo. Por eso TODOS los cheques del dBase decían el mismo
+               -- día. El día real de carga es el de INGRESO (FECHING).
+               __DIA_INGRESO__ AS dia_ingreso,
                -- TMT 2026-05-17: fechad_original NULL = no fue postergado;
                -- NOT NULL = la primera postergación snapshoteó la fechad
                -- previa acá. fecha_postergacion = cuándo se postergó (última).
@@ -5072,6 +5101,7 @@ def buscar(
         _order_sql = "ORDER BY c.fecha ASC, c.id_cheque ASC"
     sql_buscar_cheques = sql_buscar_cheques.replace("__ORDER_BY__", _order_sql)
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
+    sql_buscar_cheques = sql_buscar_cheques.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
     rows = (
         db.fetch_all(
             sql_buscar_cheques,
@@ -5171,16 +5201,10 @@ def resumen_cobranza_dia(fecha) -> dict:
                    COALESCE(cl.nombre, '') AS cliente
               FROM scintela.cheque c
               LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
-             WHERE COALESCE(
-                       c.fecha_recibido,
-                       CASE WHEN COALESCE(c.usuario_crea, '')
-                                 IN ('dbf-import', 'reconcile-dbf')
-                            THEN c.fechaing END,
-                       c.fecha
-                   ) = %s
+             WHERE __DIA_INGRESO__ = %s
                AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
              ORDER BY c.id_cheque
-            """,
+            """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO),
             (fecha,),
         )
         or []
@@ -5262,6 +5286,55 @@ def resumen_cobranza_dia(fecha) -> dict:
         "total_efectivo": tot_ef,
         "total_general": round(tot_ch + tot_de + tot_ef, 2),
     }
+
+
+def cheques_ingresados_dia(fecha, estados: tuple[str, ...] | None = None) -> dict:
+    """Listado de cheques INGRESADOS en una fecha — réplica de CHEQUING (BANCOS.PRG).
+
+    TMT 2026-08-03 (dueña, con la tirilla del FoxPro en la mano: "al parecer
+    necesitamos imprimir esto" → *LISTADO DE CHEQUES INGRESADOS EN FECHA:
+    31.07.26*). Es la opción 6 del menú de bancos del dBase,
+    `PROCEDURE CHEQUING` (BANCOS.PRG L429-463):
+
+        SORT ON IMPORTE/D TO PASAING FOR FECHING=FFF
+        LIST ALL FECHAD, CLIENTE, IMPORTE, BANCO, STAT TO PRINT
+        ? "      TOTAL: " + STR(IMPOR,10,2)
+
+    O sea: filtra por **día de INGRESO** (no por la fecha del cheque), ordena
+    por **IMPORTE DESCENDENTE**, y lista `FECHAD` (cuándo se deposita), no
+    `FECHA`. El TOTAL es **neto**: los espejos de anticipo (NB=98) entran
+    negativos y restan — en la tirilla del 31/07 los dos RTO de −3.754 y
+    −7.000 llevan el total a −374,82.
+
+    Se diferencia del *Resumen de cobranza del día* (`resumen_cobranza_dia`,
+    réplica de FINAL en ALTAS.PRG) en que aquél agrupa por medio
+    (cheques/depósitos/efectivo) y muestra las facturas que paga cada cobro;
+    éste es la lista plana para llevar al banco. Los dos comparten
+    `SQL_DIA_INGRESO` a propósito.
+
+    `estados`: filtro opcional por `stat` (el dBase pide ESTADO y traduce
+    "CAR" → 'Z12PD'). None = todos menos anulados (X/Y).
+
+    Solo lectura. Devuelve {fecha, filas, total, n}.
+    """
+    sql = """
+        SELECT c.id_cheque, c.no_cheque, c.fechad, c.fecha, c.importe,
+               c.stat, c.no_banco, c.codigo_cli,
+               COALESCE(NULLIF(TRIM(c.banco), ''), '') AS banco_emisor,
+               COALESCE(cl.nombre, '') AS cliente
+          FROM scintela.cheque c
+          LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
+         WHERE __DIA_INGRESO__ = %(fecha)s
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND (%(estados)s::text[] IS NULL OR c.stat = ANY(%(estados)s::text[]))
+         ORDER BY c.importe DESC NULLS LAST, c.id_cheque ASC
+    """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
+    filas = (
+        db.fetch_all(sql, {"fecha": fecha, "estados": list(estados) if estados else None})
+        or []
+    )
+    total = round(sum(float(f.get("importe") or 0) for f in filas), 2)
+    return {"fecha": fecha, "filas": filas, "total": total, "n": len(filas)}
 
 
 def netear_cheques_con_anticipos(

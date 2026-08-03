@@ -120,16 +120,40 @@
     return (raw || '').trim().toLowerCase();
   }
 
+  function esVacio(v, type) {
+    return (type === 'text') ? v === '' : isNaN(v);
+  }
+
   function compareValues(a, b, type) {
     // NaN/'' al final siempre.
-    const aEmpty = (type === 'text') ? a === '' : isNaN(a);
-    const bEmpty = (type === 'text') ? b === '' : isNaN(b);
+    const aEmpty = esVacio(a, type);
+    const bEmpty = esVacio(b, type);
     if (aEmpty && bEmpty) return 0;
     if (aEmpty) return 1;
     if (bEmpty) return -1;
     if (a < b) return -1;
     if (a > b) return 1;
     return 0;
+  }
+
+  // TMT 2026-08-03 (dueña: "tiene que estar ordenado como depositado
+  // descendiente y no lo veo bien"). compareValues manda los vacíos al final,
+  // pero sortTable negaba TODO el resultado para 'desc' — incluido el
+  // desempate de vacíos — así que en descendente los '—' subían al tope y
+  // tapaban las filas con dato. Ahora el vacío se resuelve ANTES de aplicar
+  // la dirección: los '—' quedan al final en las dos direcciones. Afecta a
+  // todas las tablas sortables de la app (cheques, facturas, caja, bancos,
+  // compras, …), no sólo la columna Depositado.
+  function comparadorFilas(type, dir) {
+    return function (va, vb) {
+      const aEmpty = esVacio(va, type);
+      const bEmpty = esVacio(vb, type);
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      const cmp = compareValues(va, vb, type);
+      return dir === 'asc' ? cmp : -cmp;
+    };
   }
 
   function setIcon(th, state) {
@@ -154,12 +178,11 @@
       const rows = Array.from(tb.rows);
       const sortable = rows.filter(r => !r.classList.contains('no-sort'));
       const fixed    = rows.filter(r =>  r.classList.contains('no-sort'));
-      sortable.sort((a, b) => {
-        const va = cellSortValue(a.cells[colIdx], type);
-        const vb = cellSortValue(b.cells[colIdx], type);
-        const cmp = compareValues(va, vb, type);
-        return dir === 'asc' ? cmp : -cmp;
-      });
+      const cmpFn = comparadorFilas(type, dir);
+      sortable.sort((a, b) => cmpFn(
+        cellSortValue(a.cells[colIdx], type),
+        cellSortValue(b.cells[colIdx], type)
+      ));
       // Re-inyectar en orden: sortable primero, fixed (totales/footer) al final.
       const frag = document.createDocumentFragment();
       sortable.forEach(r => frag.appendChild(r));
@@ -280,9 +303,18 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  // `typeof document` — en node (tests del comparador) no hay DOM y el
+  // bootstrap no aplica.
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  }
+
+  // Export SOLO para los tests (node). En el browser `module` no existe.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { parseNumber, parseDate, compareValues, comparadorFilas, esVacio };
   }
 })();
