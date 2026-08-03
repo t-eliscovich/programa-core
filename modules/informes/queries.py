@@ -289,6 +289,29 @@ def saldo_bancos() -> list[dict]:
                  FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
                    AND t.saldo IS NOT NULL
+                   -- ⚠ BUG CONOCIDO, DECISIÓN DE LA DUEÑA 2026-08-03: NO TOCAR.
+                   -- Este filtro busca el último saldo "que no sea cero" para
+                   -- esquivar filas insertadas sin recalcular el running (que
+                   -- dejaban NULL/0 arriba de todo). Pero confunde dos cosas
+                   -- distintas: saldo=0 PORQUE NADIE LO CALCULÓ vs saldo=0
+                   -- PORQUE LA CUENTA ESTÁ EN CERO. Mirando el número no se
+                   -- distinguen.
+                   --
+                   -- Caso vivo: DEP.PICH. (no_banco 90) tiene 2 filas — un ND
+                   -- de 455,89 del 23/06 y su reverso NC del 25/06. La cadena
+                   -- está PERFECTA (0 quiebres, ids en orden de fecha) y el
+                   -- saldo real es 0,00. Este filtro saltea esa fila por valer
+                   -- cero y se lleva la anterior: −455,89. O sea BANCOS entra
+                   -- 455,89 MÁS BAJO de lo que corresponde, desde el 25/06.
+                   --
+                   -- Se le ofreció el arreglo a la dueña el 03/08 y dijo que
+                   -- NO: corregirlo hoy mete +455,89 en la utilidad de AGOSTO
+                   -- (las fotos de cierre de junio y julio ya quedaron con el
+                   -- −455,89 adentro), y sería una corrección de junio cayendo
+                   -- en el mes equivocado. Sobre 37k de utilidad es 1,2%.
+                   -- Muere solo con la migración a `importe_firmado` + SUM():
+                   -- una suma no tiene que adivinar si un cero es real.
+                   -- NO lo re-abras sin preguntarle. Ver /admin/health/saldo-derivado.
                    AND ABS(t.saldo) > 0.5
                    -- TMT 2026-06-26 (dueña: "la utilidad está muy baja"). El
                    -- balance tomaba el saldo de una fila POSTDATADA (fecha

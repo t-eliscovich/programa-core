@@ -199,6 +199,24 @@ SELECT table_name, ordinal_position, column_name, data_type
 - **Un pendiente sin fecha puede ser legítimo** (pedido expreso de la dueña,
   2026-06-04: *"quiero que los −15.835,60 prevalezcan aunque no tengan
   fecha"*). Nunca filtres por "no tiene fecha ⇒ no es un movimiento".
+- **`saldo_bancos()` toma el último saldo stored *que no sea cero*** (filtro
+  `ABS(t.saldo) > 0.5`). Confunde "saldo 0 porque nadie lo calculó" con
+  "saldo 0 porque la cuenta está vacía".
+
+## Cosas que ya se decidieron — NO re-abrir sin preguntar
+
+Cada una de éstas ya se investigó y se cerró. Reabrirlas cuesta una jornada y
+molesta a la dueña, que ya tuvo que decir *"los kg ya dijimos que no están
+duplicados, fijate la otra sesión"*.
+
+| Tema | Estado |
+|---|---|
+| Kg de compras duplicados | **No están duplicados.** Los recargos que grabó el dBase repetían 70.354 kg; ya resuelto (2026-07-31). |
+| DEP.PICH. −455,89 (debería ser 0,00) | **Real, y la dueña dijo que se deja** (03/08). Corregirlo mete +455,89 en la utilidad de agosto siendo una corrección de junio. Muere con la migración a `SUM()`. |
+| Los 7 quiebres viejos (29/06–03/07, gap 297.123,54) | **No se tocan.** Son cicatrices del bug del ancla. El nivel actual lo valida la conciliación cerrando en +2,00. |
+| Los 15.527,85 de anticipos | **Legítimo**: conversión manual de Andrés. Anticipos concilian al centavo. |
+| El cierre de julio (2.382.056,31) | **Correcto.** Validado contra la conciliación. |
+| Los +2,00 que quedan en la conciliación | `PAGO SENAE 51775463`: banco 17.467,11 vs anticipo AI 21/26 17.465,11. Abierto, no urgente. |
 
 ---
 
