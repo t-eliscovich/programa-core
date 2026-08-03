@@ -461,7 +461,19 @@
                      title="Seleccionar todos los depositables visibles">
             </th>
           {% endif %}
-          <th class="px-2 py-1 text-left font-medium" title="Día en que cargué el cheque" data-sort-type="date">Cargado</th>
+          {# TMT 2026-08-03 (dueña: "los cargados de hoy tampoco se ven"). El sort
+             de los <th> es CLIENT-SIDE: reordena SOLO la página cargada, así que
+             en Cartera total (1.365 filas) "Cargado ↓" mostraba el máximo de la
+             página (27/07) y los de hoy quedaban en otra página. Igual que
+             Importe, CARGADO ordena SERVER-SIDE sobre todo el listado. #}
+          {% set _carg_args = request.args.to_dict() %}
+          {% set _carg_cur = request.args.get('orden') %}
+          {% set _carg_next = 'cargado_asc' if _carg_cur == 'cargado_desc' else 'cargado_desc' %}
+          {% set _ = _carg_args.update({'orden': _carg_next, 'page': '1'}) %}
+          <th class="px-2 py-1 text-left font-medium" data-no-sort>
+            <a href="{{ url_for('cheques.lista', **_carg_args) }}" class="hover:underline"
+               title="Día en que entró el cheque. Ordena TODO el listado (más nuevo ↓ / más viejo ↑), no sólo esta página.">Cargado{% if _carg_cur == 'cargado_desc' %} ↓{% elif _carg_cur == 'cargado_asc' %} ↑{% endif %}</a>
+          </th>
           {# TMT 2026-07-23 (dueña): al filtrar por un cliente, Cliente y Vend
              van UNA vez en el encabezado (banner arriba) → se ocultan acá. #}
           {% if not cliente %}

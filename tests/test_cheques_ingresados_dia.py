@@ -136,3 +136,20 @@ def test_render_ingresados_dia_vacio(client, fake_db, monkeypatch):
     resp = client.get("/cheques/ingresados-dia")
     assert resp.status_code == 200
     assert "No hay cheques ingresados esa fecha" in resp.get_data(as_text=True)
+
+
+def test_banco_se_resuelve_por_catalogo_no_por_el_texto(monkeypatch):
+    """`cheque.banco` (texto) viene NULL en casi todo lo que carga PC.
+
+    TMT 2026-08-03 (dueña: "banco es el banco del cheque, y estás seguro que
+    esto está bien??"). La primera versión leía `c.banco` a secas y la columna
+    salía vacía en 17 de 18 filas. El banco real vive en `no_banco` contra
+    `scintela.banco`; el 98 se rotula ANTICIPO porque el catálogo lo tiene
+    como UKN legacy.
+    """
+    cap = {}
+    _patch(monkeypatch, cap)
+    queries.cheques_ingresados_dia(FECHA)
+    sql = cap["sql"]
+    assert "FROM scintela.banco bco" in sql
+    assert "'ANTICIPO'" in sql

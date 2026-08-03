@@ -5092,13 +5092,23 @@ def buscar(
     # TMT 2026-06-16 dueña: ordenar por IMPORTE de mayor a menor (server-side,
     # sobre TODO el universo, no solo la página visible). orden es un enum
     # controlado (no entra texto del usuario al SQL).
+    # TMT 2026-08-03 (dueña: "los cargados de hoy tampoco se ven"). El sort de
+    # los <th> es CLIENT-SIDE: reordena sólo la página cargada. Con 1.365
+    # cheques en Cartera total, pedir "Cargado ↓" mostraba el máximo DE LA
+    # PÁGINA (27/07) y los de hoy quedaban en otra página, invisibles. Por eso
+    # CARGADO necesita orden server-side propio, igual que Importe.
     _orden = (orden or "").lower()
     if _orden == "importe_desc":
         _order_sql = "ORDER BY c.importe DESC NULLS LAST, c.id_cheque DESC"
     elif _orden == "importe_asc":
         _order_sql = "ORDER BY c.importe ASC NULLS LAST, c.id_cheque ASC"
+    elif _orden == "cargado_desc":
+        _order_sql = "ORDER BY __DIA_INGRESO__ DESC NULLS LAST, c.id_cheque DESC"
+    elif _orden == "cargado_asc":
+        _order_sql = "ORDER BY __DIA_INGRESO__ ASC NULLS LAST, c.id_cheque ASC"
     else:
         _order_sql = "ORDER BY c.fecha ASC, c.id_cheque ASC"
+    _order_sql = _order_sql.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
     sql_buscar_cheques = sql_buscar_cheques.replace("__ORDER_BY__", _order_sql)
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
     sql_buscar_cheques = sql_buscar_cheques.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
@@ -5127,7 +5137,13 @@ def buscar(
     # Running total. Por importe (dueña) o cronológico (default).
     from datetime import date as _date
 
-    if _orden in ("importe_desc", "importe_asc"):
+    if _orden in ("cargado_desc", "cargado_asc"):
+        rows_out = sorted(
+            rows,
+            key=lambda r: (r.get("dia_ingreso") or _date.min, r.get("id_cheque") or 0),
+            reverse=(_orden == "cargado_desc"),
+        )
+    elif _orden in ("importe_desc", "importe_asc"):
         rows_out = sorted(
             rows, key=lambda r: float(r.get("importe") or 0),
             reverse=(_orden == "importe_desc"),
@@ -5320,7 +5336,25 @@ def cheques_ingresados_dia(fecha, estados: tuple[str, ...] | None = None) -> dic
     sql = """
         SELECT c.id_cheque, c.no_cheque, c.fechad, c.fecha, c.importe,
                c.stat, c.no_banco, c.codigo_cli,
-               COALESCE(NULLIF(TRIM(c.banco), ''), '') AS banco_emisor,
+               -- TMT 2026-08-03 (dueña: "banco es el banco del cheque, y
+               -- estás seguro que esto está bien??"). `cheque.banco` es TEXTO
+               -- y viene NULL en casi todo lo que carga PC (el banco real vive
+               -- en `no_banco` contra el catálogo `scintela.banco`), así que
+               -- leerlo solo dejaba la columna vacía. Misma resolución que
+               -- usa buscar() para la lista, incluido el 98 = ANTICIPO (el
+               -- catálogo tiene 98=UKN legacy y ganaba el nombre del catálogo).
+               CASE
+                 WHEN c.no_banco = 98
+                      AND (UPPER(TRIM(COALESCE(c.banco, ''))) = 'ANTICIPO'
+                           OR COALESCE(c.importe, 0) < 0)
+                 THEN 'ANTICIPO'
+                 ELSE COALESCE(
+                   (SELECT bco.nombre FROM scintela.banco bco
+                     WHERE bco.no_banco = c.no_banco LIMIT 1),
+                   NULLIF(TRIM(COALESCE(c.banco, '')), ''),
+                   ''
+                 )
+               END AS banco_emisor,
                COALESCE(cl.nombre, '') AS cliente
           FROM scintela.cheque c
           LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
