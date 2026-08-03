@@ -425,32 +425,29 @@ def test_grupos_plausibles_sigue_viendo_la_ambiguedad_real():
     assert len(isvc.grupos_plausibles(cands, date(2026, 7, 25))) == 2
 
 
-# ── El interruptor: sale en dos deploys ───────────────────────────────────
-def test_interruptor_legacy_no_mueve_el_numero(monkeypatch):
-    """Deploy 1: se calcula el número nuevo y se publica, pero el balance sigue
-    usando el de siempre. Así se mira el antes y el después el mismo día sin
-    que la utilidad se mueva mientras tanto."""
-    from modules.informes import queries as q
-    monkeypatch.delenv("HILADO_KG_FUENTE", raising=False)
-    assert q._hilado_kg_fuente() == q._HILADO_KG_FUENTE_DEFAULT
-    monkeypatch.setenv("HILADO_KG_FUENTE", "grupo")
-    assert q._hilado_kg_fuente() == "grupo"
-    monkeypatch.setenv("HILADO_KG_FUENTE", "cualquier-cosa")
-    assert q._hilado_kg_fuente() == q._HILADO_KG_FUENTE_DEFAULT
+# ── NO hay interruptor que pueda desalinear balance y flujo ───────────────
+def test_no_existe_un_interruptor_que_cambie_la_valuacion():
+    """TMT 2026-08-03: *"entonces no me dejes un interruptor que pueda
+    desalinear"*.
 
+    Hubo un `HILADO_KG_FUENTE` (+ `?hilado_kg=grupo`) que valuaba con el kg del
+    GRUPO. Medido el 03/08: el Flujo y el Balance YA coinciden al centavo
+    (1.897.270 kg × 3,044 = 5.774.704) y prenderlo los desalineaba (3,026 vs
+    3,044). Un interruptor que puede separar dos pantallas sin que nadie se
+    entere es peor que el defecto que arregla.
 
-# ── La banda NO sale en rojo en Resultados ────────────────────────────────
-def test_la_banda_no_ensucia_las_advertencias_del_balance():
-    """TMT 2026-07-31: *"me sacás todo esto en rojo de Resultados"*. Tres
-    carteles arriba del Informe todos los días tapan la pantalla con la que se
-    decide. El dato NO se pierde: queda en diagnostico.hilado_fuera_de_banda."""
+    `kg_hilado_mes` sigue vivo como DIAGNÓSTICO (health + alarma de banda); lo
+    que no puede es volver a decidir el kg que valúa.
+    """
     import inspect
 
     from modules.informes import queries as q
-    src = inspect.getsource(q.informe_balance)
-    i = src.index("ALARMA de BANDA")
-    # Desde el comentario de la banda hasta el fin del bloque no puede haber
-    # ningún advertencias.append: si alguien lo vuelve a poner, esto se cae.
-    bloque = src[i:src.index('diagnostico["hilado_fuera_de_banda"]', i)]
-    assert "advertencias.append" not in bloque
-    assert 'diagnostico["hilado_fuera_de_banda"]' in src
+    assert not hasattr(q, "_hilado_kg_fuente")
+    for fn in (q.compras_mes_corriente, q._try_movimientos_mes):
+        src = inspect.getsource(fn)
+        assert "hilado_kg" not in src or "request.args" not in src
+        assert "HILADO_KG_FUENTE" not in src
+        # el kg que valúa se COMPLETA como siempre, no se reemplaza
+        if "kg_hilado_mes" in src:
+            assert "kg = float(hil" not in src
+            assert "kcom = float(_hil" not in src

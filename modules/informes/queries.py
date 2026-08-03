@@ -829,18 +829,14 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         try:
             from modules.importaciones import service as _imp_kg_svc
 
-            # TMT 2026-07-31: REEMPLAZA el SUM crudo (mismo criterio que el
-            # balance — kg_hilado_mes). Antes COMPLETABA sólo las compras con
-            # kg=0, y no veía ni los recargos con kg repetido ni las
-            # importaciones partidas con la mitad de los kilos.
+            # El kg que VALÚA sigue siendo el de siempre. `kg_hilado_mes` se
+            # calcula al lado y viaja como diagnóstico (health + alarma de
+            # banda): no cambia ningún número. Ver el bloque "De dónde salen los
+            # KILOS de las compras de hilado" — la dueña sacó el interruptor el
+            # 03/08 porque desalineaba el balance del flujo.
+            kcom += float(
+                _imp_kg_svc.kg_hilado_faltantes_mes(_h_rows).get("kg") or 0)
             _hil_kg_importacion = _imp_kg_svc.kg_hilado_mes(_h_rows)
-            if (_hil_kg_importacion.get("disponible")
-                    and _hilado_kg_fuente() == "grupo"):
-                kcom = float(_hil_kg_importacion.get("kg") or 0)
-            else:
-                # Camino de siempre mientras el interruptor esté en "legacy".
-                kcom += float(
-                    _imp_kg_svc.kg_hilado_faltantes_mes(_h_rows).get("kg") or 0)
         except Exception:  # noqa: BLE001 -- nunca romper el mov por Asinfo
             pass
     except Exception:
@@ -1705,30 +1701,29 @@ def ventas_mes_corriente_kg_fisico() -> float:
 
 
 # ── De dónde salen los KILOS de las compras de hilado ───────────────────────
-# "legacy" = SUM(compra.kg) + lo que falte desde la importación (lo de siempre).
-# "grupo"  = el kg de la importación, una vez por GRUPO de partidas, ignorando
-#            `compra.kg` en toda compra de importación (kg_hilado_mes).
+# `SUM(compra.kg)` + lo que falte reconstruido desde la importación. Y punto:
+# **no hay interruptor**.
 #
-# El cambio mueve el $/kg del hilado, que revalúa 1,9 M de kg: por eso sale en
-# dos pasos y con un interruptor. Se puede volver atrás sin deploy con
-# HILADO_KG_FUENTE=legacy, y probar en vivo con ?hilado_kg=grupo.
-_HILADO_KG_FUENTE_DEFAULT = "legacy"
-
-
-def _hilado_kg_fuente() -> str:
-    import os as _os
-    val = ""
-    try:
-        from flask import has_request_context, request as _rq
-        if has_request_context():
-            val = (_rq.args.get("hilado_kg") or "").strip().lower()
-    except Exception:  # noqa: BLE001
-        val = ""
-    if val not in ("grupo", "legacy"):
-        val = (_os.environ.get("HILADO_KG_FUENTE") or "").strip().lower()
-    if val not in ("grupo", "legacy"):
-        val = _HILADO_KG_FUENTE_DEFAULT
-    return val
+# Hubo uno (`HILADO_KG_FUENTE`, con `?hilado_kg=grupo`) que permitía valuar con
+# el kg del GRUPO de partidas. TMT 2026-08-03 (dueña): *"entonces no me dejes un
+# interruptor que pueda desalinear"*. Tenía razón, y el dato le dio la razón:
+#
+#   · Flujo producción, stock hilado : 1.897.270 kg × **3,044** = 5.774.704
+#   · Balance HOY                    : 1.897.270 kg × **3,044** = 5.774.704
+#   · Balance con el interruptor     : 1.897.270 kg × **3,026** = 5.741.141
+#
+# O sea que las dos pantallas YA coinciden al centavo, y prenderlo las
+# desalineaba. El motivo: la tarifa que valúa el stock la da Asinfo
+# (`mov_hilado_valuacion`), que suma las dos mitades de una partida fila por
+# fila y por eso da bien. El `6,5455 US$/kg` que se ve en
+# /admin/health/hilado-stock-debug es `ucom ÷ kcom` de acá — un DIAGNÓSTICO,
+# donde `kcom` todavía cuenta media importación. Está mal y hay que arreglarlo,
+# pero no es lo que valúa el stock.
+#
+# Un interruptor que puede desalinear dos pantallas sin que nadie se entere es
+# peor que el defecto que arregla. `kg_hilado_mes()` sigue existiendo y se
+# publica en el health y en la alarma de banda — como diagnóstico, sin tocar
+# ningún número.
 
 
 def compras_mes_corriente() -> dict:
@@ -1778,22 +1773,22 @@ def compras_mes_corriente() -> dict:
     # la importación (una vez por GRUPO de partidas), no se completa. `compra.kg`
     # estaba mal por los dos lados: los recargos que grabó el dBase repetían
     # 70.354 kg y las importaciones partidas traían la mitad (70.570 kg de
-    # menos). Ver `kg_hilado_mes()`: los dos defectos se cancelan hasta 215 kg,
-    # así que arreglar uno solo movía el $/kg ±0,111 y el stock ±210.000.
-    # Fail-soft: si Asinfo cae queda el kg propio de la compra (como antes).
+    # menos). Fail-soft: si Asinfo cae queda el kg propio de la compra.
+    try:
+        from modules.importaciones.service import kg_hilado_faltantes_mes
+    except Exception:  # noqa: BLE001
+        def kg_hilado_faltantes_mes(_r):  # type: ignore[misc]
+            return {"kg": 0.0}
     #
-    # Sale en DOS deploys a propósito (ver HILADO_KG_FUENTE). El primero calcula
-    # el número nuevo, lo publica en /admin/health/hilado-stock-debug y prende
-    # las alarmas de banda, pero NO lo usa: así se puede mirar el antes y el
-    # después del mismo día sin que la utilidad se mueva mientras tanto. El
-    # segundo cambia el default y es de una línea.
+    # `kg_hilado_mes` se calcula pero **NO se usa para valuar**: viaja en
+    # `hilado_kg` para el health y la alarma de banda. Ver el bloque de arriba —
+    # el interruptor que lo aplicaba se sacó a pedido de la dueña.
+    kg += float(kg_hilado_faltantes_mes(rows).get("kg") or 0)
     hil = None
     try:
         from modules.importaciones.service import kg_hilado_mes
 
         hil = kg_hilado_mes(rows)
-        if hil.get("disponible") and _hilado_kg_fuente() == "grupo":
-            kg = float(hil.get("kg") or 0)
     except Exception:  # noqa: BLE001 -- nunca romper el balance por Asinfo
         hil = None
     return {

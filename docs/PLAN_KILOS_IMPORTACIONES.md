@@ -20,15 +20,39 @@ como tal.
 | `promedio_hilado_usd_kg` — el `continue` que perdía kilos | **arreglado** |
 | `autobap` — la partida ya no se declara ambigua | **arreglado** |
 | `/admin/debug-grupos-partidas` | **desplegado** |
-| **Usar los kilos nuevos en el balance** | **NO. Apagado a propósito** |
+| **Usar los kilos nuevos en el balance** | **NO, y ya no se puede: el interruptor se borró** |
 
-El interruptor es `HILADO_KG_FUENTE` (`modules/informes/queries.py`), hoy en
-`legacy`. Se prueba en vivo sin deploy con `?hilado_kg=grupo`.
+### 03/08/2026 — el interruptor se sacó, y la razón da vuelta la sección 3
 
-**Por qué está apagado, con el número:** prenderlo mueve la Utilidad Real de
-**650.899 a 546.056 (−104.843)**. Medido, no estimado
-(`/admin/health/hilado-stock-debug` contra `…?hilado_kg=grupo`). El plan
-anterior predecía ≈0. Estaba mal, y la sección 3 explica por qué.
+Existía `HILADO_KG_FUENTE` (+ `?hilado_kg=grupo`) para valuar con el kg del
+GRUPO. **Ya no existe.** TMT: *"entonces no me dejes un interruptor que pueda
+desalinear"*.
+
+Tenía razón, y el dato le dio la razón — medido el 03/08 con AI 15 como único
+ingreso del mes:
+
+| | Hilado kg | $/kg | $ |
+|---|---|---|---|
+| Flujo producción | 1.897.270 | **3,044** | 5.774.704 |
+| Balance HOY | 1.897.270 | **3,044** | 5.774.704 |
+| Balance con el interruptor | 1.897.270 | **3,026** | 5.741.141 |
+
+**Las dos pantallas YA coinciden al centavo. Prenderlo las desalineaba.**
+
+Por qué: la tarifa que valúa el stock la da **Asinfo**
+(`mov_hilado_valuacion`), que suma las dos mitades de una partida fila por fila
+y por eso da bien. El `6,5455 US$/kg` que se ve en
+`/admin/health/hilado-stock-debug` es `ucom ÷ kcom` de `compras_mes_corriente`
+— un **diagnóstico**, donde `kcom` todavía cuenta media importación. Está mal y
+hay que arreglarlo, pero **no es lo que valúa el stock**.
+
+Mi error fue leer un número de diagnóstico como si fuera la tarifa, y de ahí
+recomendar un cambio de −44.888 sobre un número que estaba bien. La dueña lo
+frenó con *"me suena más que el hilo sea 3,2"* — y 3,273 es exactamente el
+precio de compra de AI 15.
+
+`kg_hilado_mes()` sigue vivo **como diagnóstico** (health + alarma de banda).
+Lo que no puede es volver a decidir el kg que valúa.
 
 ---
 
@@ -111,7 +135,15 @@ cambia si el sistema puede decirte cuál es el problema.
 
 ---
 
-## 3. Por qué prender el interruptor mueve −104.843, y por qué eso NO es motivo para prenderlo hoy
+## 3. ⚠️ SECCIÓN OBSOLETA — ver el bloque del 03/08 en la sección 0
+
+Lo de abajo se escribió el 31/07 leyendo `usd_kg_ponderado_compras_mes` como si
+fuera la tarifa del hilado. **No lo es.** La medición del 03/08 mostró que el
+balance y el flujo ya coinciden y que el interruptor los desalineaba; el
+interruptor se borró. Se deja el texto porque el razonamiento que lleva a la
+conclusión equivocada vale más que borrarlo.
+
+### (obsoleto) Por qué prender el interruptor mueve −104.843
 
 Medido:
 
