@@ -1156,43 +1156,123 @@ def banco_auditar():
     suma_diff_torcidas = round(sum(x["diferencia"] for x in filas_torcidas), 2)
 
     # ── Check 2: matches confirmados con drift de monto ────────────
+    #
+    # ⭐ TMT 2026-08-03 — SE AGRUPA POR EL BATCH, NO POR LA TX DE PC.
+    #
+    # Antes: `GROUP BY tb.id_transaccion` — el lado del PROGRAMA. Pero una
+    # conciliación N:M crea UNA fila de match por cada tx de PC (mig 0071,
+    # 2026-06-03: *"una conciliación 2 vs 14 crea 14 matches… si tenés N:M,
+    # la math se rompe"*). Agrupando por PC, esa conciliación se parte en 14
+    # pedazos y se compara cada pedazo contra lo que le tocó del banco:
+    # **ninguno cierra, aunque el grupo entero cierre perfecto**.
+    #
+    # El 03/08/2026 daba **36 matches · +754.963,54** con la conciliación
+    # cerrando en +2,00 — o sea 755k de falso positivo. Lo cazó la dueña:
+    # *"para mí esos de match distinto es porque no está contando agrupados…
+    # o sea distinto número de movimientos de cada lado"*.
+    #
+    # La columna correcta (`confirm_batch_id`) existe desde el 2026-06-03; el
+    # GROUP BY viejo es del 06-04, un día después. Se agrupó por el lado
+    # equivocado teniendo la buena ya hecha.
+    #
+    # Dos cuidados:
+    #   · el lado del BANCO se dedupea por firma antes de sumar — dentro de un
+    #     batch el mismo movimiento puede aparecer en varias filas de match, y
+    #     sumarlo tal cual lo contaría de más;
+    #   · el lado de PC se dedupea por `id_transaccion` por lo mismo.
+    # Se muestran los dos conteos (N banco vs N programa) para que se vea de
+    # una si el grupo era N:M. [[project_2026_08_03_auditar_agrupa_mal]]
     diff_matches = []
     sum_diff_matches = 0.0
+    diff_matches_viejo = 0
     try:
         diff_matches = _db.fetch_all(
             """
-            -- TMT 2026-06-04: agrupar por PC tx. En grupos N:1 (ej. 15 cheques
-            -- contra 1 depósito) cada match tiene real_monto chico vs el importe
-            -- total del PC → comparar uno a uno daba falso positivo gigante.
-            -- Ahora sumamos los real_monto del grupo y comparamos la SUMA vs el
-            -- importe del PC. Solo salta si la suma del grupo NO cuadra.
-            SELECT MAX(m.creado_en) AS creado_en,
-                   MIN(m.real_fecha) AS real_fecha,
-                   CASE WHEN COUNT(*) > 1
-                        THEN COUNT(*)::text || ' movs (grupo)'
-                        ELSE MIN(m.real_documento) END AS real_documento,
-                   SUM(m.real_monto) AS real_monto,
-                   MIN(m.real_concepto) AS real_concepto,
-                   tb.importe   AS tb_importe,
-                   tb.documento AS tb_documento,
-                   tb.concepto  AS tb_concepto,
-                   ROUND(SUM(m.real_monto) - tb.importe, 2) AS diferencia
-              FROM scintela.banco_conciliacion_match m
-              JOIN scintela.transacciones_bancarias tb
-                ON tb.id_transaccion = m.id_transaccion
-             WHERE m.no_banco = %s
-               AND (m.deshecho_en IS NULL)
-               AND m.id_transaccion IS NOT NULL
-               AND m.real_monto IS NOT NULL
-               AND m.estado = 'matched'
-             GROUP BY tb.id_transaccion, tb.importe, tb.documento, tb.concepto
-            HAVING ABS(SUM(m.real_monto) - tb.importe) > 0.01
-             ORDER BY ABS(SUM(m.real_monto) - tb.importe) DESC
+            WITH activos AS (
+                SELECT m.*,
+                       COALESCE(m.confirm_batch_id,
+                                'tx:' || m.id_transaccion::text) AS batch
+                  FROM scintela.banco_conciliacion_match m
+                 WHERE m.no_banco = %s
+                   AND m.deshecho_en IS NULL
+                   AND m.id_transaccion IS NOT NULL
+                   AND m.estado = 'matched'
+            ),
+            -- un renglón por movimiento DISTINTO del banco dentro del batch
+            banco AS (
+                SELECT batch, real_fecha, real_documento, real_monto, real_tipo,
+                       MIN(real_concepto) AS real_concepto
+                  FROM activos
+                 WHERE real_monto IS NOT NULL
+                 GROUP BY batch, real_fecha, real_documento, real_monto, real_tipo
+            ),
+            banco_tot AS (
+                SELECT batch,
+                       COUNT(*)          AS n_banco,
+                       SUM(real_monto)   AS real_monto,
+                       MIN(real_fecha)   AS real_fecha,
+                       MIN(real_documento) AS un_doc,
+                       MIN(real_concepto)  AS real_concepto
+                  FROM banco GROUP BY batch
+            ),
+            -- un renglón por transacción DISTINTA de PC dentro del batch
+            pc AS (
+                SELECT a.batch, tb.id_transaccion, tb.importe,
+                       tb.documento, tb.concepto
+                  FROM activos a
+                  JOIN scintela.transacciones_bancarias tb
+                    ON tb.id_transaccion = a.id_transaccion
+                 GROUP BY a.batch, tb.id_transaccion, tb.importe,
+                          tb.documento, tb.concepto
+            ),
+            pc_tot AS (
+                SELECT batch,
+                       COUNT(*)        AS n_pc,
+                       SUM(importe)    AS tb_importe,
+                       MIN(documento)  AS tb_documento,
+                       MIN(concepto)   AS tb_concepto
+                  FROM pc GROUP BY batch
+            ),
+            creado AS (
+                SELECT batch, MAX(creado_en) AS creado_en FROM activos GROUP BY batch
+            )
+            SELECT c.creado_en, b.real_fecha,
+                   CASE WHEN b.n_banco > 1 OR p.n_pc > 1
+                        THEN b.n_banco::text || ' banco / ' || p.n_pc::text || ' prog.'
+                        ELSE b.un_doc END           AS real_documento,
+                   b.n_banco, p.n_pc,
+                   b.real_monto, b.real_concepto,
+                   p.tb_importe, p.tb_documento, p.tb_concepto,
+                   ROUND(b.real_monto - p.tb_importe, 2) AS diferencia
+              FROM banco_tot b
+              JOIN pc_tot   p ON p.batch = b.batch
+              JOIN creado   c ON c.batch = b.batch
+             WHERE ABS(b.real_monto - p.tb_importe) > 0.01
+             ORDER BY ABS(b.real_monto - p.tb_importe) DESC
              LIMIT 200
             """,
             (no_banco,),
         ) or []
         sum_diff_matches = sum(float(r.get("diferencia") or 0) for r in diff_matches)
+        # El conteo con la agrupación VIEJA, sólo para mostrar cuántos eran
+        # falso positivo. Se puede sacar cuando deje de sorprender.
+        _viejo = _db.fetch_one(
+            """
+            SELECT COUNT(*) AS n FROM (
+                SELECT tb.id_transaccion
+                  FROM scintela.banco_conciliacion_match m
+                  JOIN scintela.transacciones_bancarias tb
+                    ON tb.id_transaccion = m.id_transaccion
+                 WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+                   AND m.id_transaccion IS NOT NULL
+                   AND m.real_monto IS NOT NULL AND m.estado = 'matched'
+                 GROUP BY tb.id_transaccion, tb.importe
+                HAVING ABS(SUM(m.real_monto) - tb.importe) > 0.01
+            ) q
+            """,
+            (no_banco,),
+        ) or {}
+        diff_matches_viejo = int(_viejo.get("n") or 0)
     except Exception as e:
         _LOG.warning("auditar diff_matches falló: %s", e)
 
@@ -1248,6 +1328,7 @@ def banco_auditar():
         suma_diff_torcidas=suma_diff_torcidas,
         last_saldo=last_saldo,
         diff_matches=diff_matches,
+        diff_matches_viejo=diff_matches_viejo,
         sum_diff_matches=round(sum_diff_matches, 2),
         duplicados_hist=duplicados_hist,
     )

@@ -103,7 +103,24 @@
     <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
       <div>
         <h2 class="text-base font-semibold">2 · Matches con monto distinto</h2>
-        <p class="text-xs text-slate-500 mt-0.5">Si conciliaste $1000 contra $1010, el $10 se acumula como diferencia.</p>
+        {# TMT 2026-08-03: se agrupa por el BATCH de conciliación, no por la
+           transacción de PC. Una conciliación N:M (ej. 2 del banco contra 14
+           del programa) se partía en 14 pedazos y ninguno cerraba, aunque el
+           grupo entero cerrara perfecto: daba 36 falsos positivos por 755k. #}
+        <p class="text-xs text-slate-500 mt-0.5">
+          Compara lo que dice el banco contra lo que dice el libro, <strong>por
+          grupo conciliado</strong>. Si conciliaste $1000 contra $1010, esos $10
+          quedan escondidos: los dos lados salen de pendientes y la diferencia
+          no los muestra.
+        </p>
+        {% if diff_matches_viejo and diff_matches_viejo > (diff_matches|length) %}
+        <p class="text-[11px] text-slate-400 mt-1">
+          Agrupando por movimiento del programa —como antes— saldrían
+          <strong>{{ diff_matches_viejo }}</strong>:
+          {{ diff_matches_viejo - (diff_matches|length) }} eran grupos N:M
+          partidos al medio, no descuadres.
+        </p>
+        {% endif %}
       </div>
       <div class="text-xs tabular-nums">
         {% if diff_matches %}
@@ -120,7 +137,7 @@
           <tr>
             <th class="px-2 py-1.5 text-left w-32">Conciliado</th>
             <th class="px-2 py-1.5 text-left w-20">Fecha</th>
-            <th class="px-2 py-1.5 text-left w-20">Doc</th>
+            <th class="px-2 py-1.5 text-left w-28">Doc / grupo</th>
             <th class="px-2 py-1.5 text-right w-24">Real (banco)</th>
             <th class="px-2 py-1.5 text-right w-24">PC (BANCSIS)</th>
             <th class="px-2 py-1.5 text-right w-24">Diferencia</th>
@@ -132,7 +149,8 @@
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
             <td class="px-2 py-1 text-slate-500">{{ d.creado_en|hora_ec('%m-%d %H:%M') if d.creado_en else '—' }}</td>
             <td class="px-2 py-1 text-slate-500">{{ d.real_fecha or '—' }}</td>
-            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (d.real_documento or '')[:12] }}</td>
+            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]"
+                title="{{ d.n_banco }} movimiento(s) del banco contra {{ d.n_pc }} del programa">{{ (d.real_documento or '')[:18] }}</td>
             <td class="px-2 py-1 text-right font-mono">{{ (d.real_monto|float)|num_es }}</td>
             <td class="px-2 py-1 text-right font-mono">{{ (d.tb_importe|float)|num_es }}</td>
             <td class="px-2 py-1 text-right font-mono font-bold {% if d.diferencia|float > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ ('+' if ((d.diferencia|float) or 0) >= 0 else '-') ~ (((d.diferencia|float) or 0)|abs|num_es) }}</td>
