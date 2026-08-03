@@ -243,6 +243,12 @@
       <div class="break-all text-xs text-amber-600 mt-0.5"
            title="El campo Observación del dBase corta a los 30 caracteres. Cargalo completo en Editar cliente.">
         en Observación quedó cortado: {{ _m.incompleto }}…
+        {# TMT 2026-08-03 (dueña: "puedes intentar adivinar los mails que
+           faltan?"). Cuando lo único que falta es el final de un dominio
+           masivo, se deduce — pero se muestra como PREGUNTA, no como dato, y
+           sin mailto: que alguien lo confirme antes de escribirle. #}
+        {% if _m.sugerido %}<br><span class="text-slate-500">¿será</span>
+        <span class="font-medium">{{ _m.sugerido }}</span><span class="text-slate-500">? — deducido, confirmalo antes de usarlo</span>{% endif %}
       </div>
       {% endif %}
     </div>

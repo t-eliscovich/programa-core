@@ -296,3 +296,57 @@ def test_el_cron_no_repite_el_trabajo_si_ya_esta_fresco(monkeypatch):
         AssertionError("no tendría que haber refrescado")))
     r = ma.refrescar_cron()
     assert r["ok"] is True and "salteado" in r
+
+
+# ---------------------------------------------------------------------------
+# Deducir el final cortado — el pedido textual de la dueña
+# ---------------------------------------------------------------------------
+
+
+def test_deduce_el_ejemplo_que_dio_la_dueña():
+    """"ejemplo este sabemos que es fabricadecamisetaslex@hotmail.com"."""
+    assert ma.deducir("fabricadecamisetaslex@hotmail.") == \
+        "fabricadecamisetaslex@hotmail.com"
+
+
+def test_deduce_los_cortes_tipicos_de_hotmail_y_gmail():
+    for frag, esperado in [
+        ("contabilidadnortextil@gmail.co", "contabilidadnortextil@gmail.com"),
+        ("guadalupeaguilar1711@hotmail.c", "guadalupeaguilar1711@hotmail.com"),
+        ("andugatitavillafuerte@hotmailc", "andugatitavillafuerte@hotmail.com"),
+        ("washington_martinez1971@hm.com", "washington_martinez1971@hotmail.com"),
+        ("lauramartinezparedes19@hotma.c", "lauramartinezparedes19@hotmail.com"),
+    ]:
+        assert ma.deducir(frag) == esperado, frag
+
+
+def test_NO_deduce_yahoo():
+    """139 yahoo.com contra 85 yahoo.es en esta cartera: la moneda sale cara
+    y cruz. Un mail mal deducido le manda el estado de cuenta a un
+    desconocido — mejor el guión."""
+    assert ma.deducir("confecciones patricia67@yah.es") == ""
+    assert ma.deducir("mayraespincriollo@yahoo.") == ""
+
+
+def test_NO_deduce_cuando_el_corte_se_comio_el_dominio_propio():
+    """`...@cmdpublicidadte` puede terminar en cualquier cosa."""
+    for frag in ("administrativo@cmdpublicidadte", "9sociacionartesanosbuenvestir@",
+                 "contabilidad@textilesalvarez.c", ""):
+        assert ma.deducir(frag) == "", frag
+
+
+def test_la_deduccion_va_como_sugerencia_no_como_mail():
+    """No puede entrar al mailto: nadie tiene que escribirle a un mail
+    deducido sin confirmarlo."""
+    r = ma.resolver(None, "fabricadecamisetaslex@hotmail.", None)
+    assert r["mail"] == "", "una deducción no es el mail del cliente"
+    assert r["sugerido"] == "fabricadecamisetaslex@hotmail.com"
+    assert r["incompleto"] == "fabricadecamisetaslex@hotmail."
+
+
+def test_si_asinfo_lo_tiene_no_se_deduce_nada():
+    """El dato real le gana siempre a la deducción."""
+    r = ma.resolver(None, "contabilidadnortextil@gmail.co",
+                    "contabilidadnortextil@gmail.com")
+    assert r["mail"] == "contabilidadnortextil@gmail.com"
+    assert not r["sugerido"]

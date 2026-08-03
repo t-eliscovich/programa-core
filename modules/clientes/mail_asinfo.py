@@ -154,10 +154,13 @@ def resolver(
         asinfo = ""
     obs, cortado = mail_de_observacion(observacion)
 
-    def _r(principal, origen, alternativo="", origen_alt="", incompleto=""):
+    def _r(principal, origen, alternativo="", origen_alt="", incompleto="",
+           sugerido=""):
         return {
             "mail": principal,
             "origen": origen,
+            # Deducción, no dato: la pantalla la muestra aparte y marcada.
+            "sugerido": sugerido,
             # La etiqueta se arma acá y no en el Jinja: así el template no
             # necesita un filtro nuevo y el texto se testea con el resto.
             "etiqueta": ETIQUETA_ORIGEN.get(origen, ""),
@@ -182,11 +185,61 @@ def resolver(
             # Asinfo tiene otro contacto: se muestra, y el fragmento queda a
             # la vista para que se note que hay algo a medio cargar.
             return _r(asinfo, "asinfo", "", "", incompleto=obs)
-        return _r("", "cortado", "", "", incompleto=obs)
+        # Último recurso: deducir el final del dominio. Va como SUGERENCIA.
+        return _r("", "cortado", "", "", incompleto=obs, sugerido=deducir(obs))
 
     if asinfo:
         return _r(asinfo, "asinfo")
     return _r("", "")
+
+
+# ---------------------------------------------------------------------------
+# Deducir el final que se comió el corte — SOLO donde no hay ambigüedad
+# ---------------------------------------------------------------------------
+
+#: Proveedores donde el final es predecible. Los números salen de contar los
+#: dominios de los 2.759 mails COMPLETOS de esta cartera (03/08):
+#:   hotmail.com 1199 vs hotmail.es 91  → 93 %
+#:   gmail.com    917 vs gmail.es    0  → 100 %
+#:   outlook.com   57 vs outlook.es  19 → 75 %  (queda afuera, ver abajo)
+#: ⛔ **yahoo NO se deduce**: 139 .com contra 85 .es. Ahí la moneda sale cara
+#: y cruz, y un mail mal deducido le manda el estado de cuenta a un
+#: desconocido. Preferimos el "—" antes que inventar.
+_DEDUCIBLES = (
+    # (final que quedó tras el corte, mail completo)
+    (re.compile(r"@gmai?l?[.]?c?o?m?$", re.I), "@gmail.com"),
+    (re.compile(r"@gmail[.]?c?o?$", re.I), "@gmail.com"),
+    (re.compile(r"@hotmai?l?[.]?c?o?m?$", re.I), "@hotmail.com"),
+    (re.compile(r"@hotmailc?$", re.I), "@hotmail.com"),
+    (re.compile(r"@hotm[.]?c?o?m?$", re.I), "@hotmail.com"),
+    (re.compile(r"@hm(al)?[.]?c?o?m?$", re.I), "@hotmail.com"),
+    (re.compile(r"@live[.]?c?o?$", re.I), "@live.com"),
+)
+
+
+def deducir(fragmento: str) -> str:
+    """Completa el final de un mail cortado, o "" si no es seguro.
+
+    Dueña 2026-08-03: *"puedes intentar adivinar los mails que faltan? ejemplo
+    este sabemos que es fabricadecamisetaslex@hotmail.com"*. Se puede cuando
+    lo único que falta es el final de un dominio masivo y no hay otra opción
+    razonable. **Nunca** cuando el corte se comió parte del nombre o el
+    dominio es propio (`...@cmdpublicidadte`): ahí no hay nada que deducir,
+    hay que ir a preguntarle al cliente.
+
+    Lo que devuelve es una SUGERENCIA, y la pantalla lo muestra como tal.
+    """
+    f = (fragmento or "").strip().lower()
+    if f.count("@") != 1:
+        return ""
+    local, _, _dominio = f.partition("@")
+    if not local:
+        return ""
+    for regex, completo in _DEDUCIBLES:
+        if regex.search(f):
+            candidato = regex.sub(completo, f)
+            return candidato if RE_MAIL.fullmatch(candidato) else ""
+    return ""
 
 
 ETIQUETA_ORIGEN = {
