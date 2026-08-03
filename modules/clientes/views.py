@@ -5,6 +5,7 @@ from flask import (
     abort,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -455,3 +456,25 @@ def cuenta(codigo_cli: str):
         )
 
     return render_template("clientes/cuenta.html", data=data)
+
+
+@clientes_bp.route("/clientes/mails-asinfo/refrescar", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("clientes.editar")
+def refrescar_mails_asinfo():
+    """Trae de Asinfo el catálogo de mails de clientes, a pedido.
+
+    TMT 2026-08-03. Normalmente lo hace el cron diario (/admin/health/all),
+    pero hace falta poder correrlo a mano: cuando alguien carga mails en el
+    ERP y los quiere ver hoy, y para el primer llenado. Es idempotente y no
+    escribe nada en la ficha del cliente — sólo la tabla espejo.
+    """
+    from modules.clientes import mail_asinfo
+
+    forzar = (request.args.get("forzar") or "") == "1"
+    if not forzar and mail_asinfo.esta_fresco():
+        return jsonify({"ok": True, "salteado": "ya está fresco (usá ?forzar=1)"})
+    try:
+        return jsonify(mail_asinfo.refrescar())
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)[:300]}), 500

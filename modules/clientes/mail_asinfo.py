@@ -254,7 +254,9 @@ def refrescar() -> dict:
     if not contesto:
         return {"ok": False, "error": "Metabase no contestó", "filas": 0}
 
-    nuevas = descartadas_casa = 0
+    descartadas_casa = 0
+    valores: list[tuple[str, str, str]] = []
+    vistos: set[str] = set()
     for f in filas or []:
         clave = ruc10(f.get("ruc10"))
         email = (f.get("email") or "").strip().lower()
@@ -263,29 +265,74 @@ def refrescar() -> dict:
         if es_mail_de_la_casa(email):
             descartadas_casa += 1
             continue
-        _db.execute(
-            """
-            INSERT INTO scintela.cliente_mail_asinfo (ruc10, email, nombre_fiscal)
-                 VALUES (%s, %s, %s)
-            ON CONFLICT (ruc10) DO UPDATE
-                    SET email = EXCLUDED.email,
-                        nombre_fiscal = EXCLUDED.nombre_fiscal,
-                        actualizado = CURRENT_TIMESTAMP
-            """,
-            (clave, email, (f.get("nombre_fiscal") or "")[:120]),
-        )
-        nuevas += 1
+        if clave in vistos:
+            # Un mismo RUC10 puede venir dos veces (RUC y cédula del mismo
+            # titular). El ON CONFLICT no salva de duplicados DENTRO del
+            # mismo INSERT: Postgres tira "cannot affect row a second time".
+            continue
+        vistos.add(clave)
+        valores.append((clave, email, (f.get("nombre_fiscal") or "")[:120]))
+
+    if not valores:
+        return {"ok": True, "filas": 0, "descartadas_casa": descartadas_casa,
+                "leidas_de_asinfo": len(filas or [])}
+
+    # UN solo INSERT. La primera versión hacía uno por fila: 3.500 viajes a
+    # RDS dentro del request del cron → /admin/health/all devolvía 502 por
+    # timeout del proxy. TMT 2026-08-03.
+    marcadores = ",".join(["(%s, %s, %s)"] * len(valores))
+    planos: list[str] = [v for fila in valores for v in fila]
+    _db.execute(
+        f"""
+        INSERT INTO scintela.cliente_mail_asinfo (ruc10, email, nombre_fiscal)
+             VALUES {marcadores}
+        ON CONFLICT (ruc10) DO UPDATE
+                SET email = EXCLUDED.email,
+                    nombre_fiscal = EXCLUDED.nombre_fiscal,
+                    actualizado = CURRENT_TIMESTAMP
+        """,
+        tuple(planos),
+    )
     return {
         "ok": True,
-        "filas": nuevas,
+        "filas": len(valores),
         "descartadas_casa": descartadas_casa,
         "leidas_de_asinfo": len(filas or []),
     }
 
 
-def refrescar_cron() -> dict:
-    """Envoltorio para /admin/health/all — nunca levanta."""
+#: El espejo cambia de a poco (un mail nuevo por semana). Refrescarlo más de
+#: una vez por día es gastar el puente de Metabase al pedo.
+HORAS_FRESCO = 20
+
+
+def esta_fresco() -> bool:
     try:
+        asegurar_tabla()
+        r = _db.fetch_one(
+            """
+            SELECT MAX(actualizado) AS ult, COUNT(*) AS n
+              FROM scintela.cliente_mail_asinfo
+            """
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    if not r or not r.get("ult") or not r.get("n"):
+        return False
+    from datetime import datetime, timedelta
+    return r["ult"] > datetime.now() - timedelta(hours=HORAS_FRESCO)
+
+
+def refrescar_cron() -> dict:
+    """Envoltorio para /admin/health/all — nunca levanta y no repite trabajo.
+
+    El cron corre una vez al día, pero `/admin/health/all` lo abre cualquiera
+    desde el panel: sin el guard de frescura, cada visita dispararía la
+    consulta pesada a Asinfo y agregaría segundos al request.
+    """
+    try:
+        if esta_fresco():
+            return {"ok": True, "salteado": "ya está fresco", "filas": 0}
         return refrescar()
     except Exception as e:  # noqa: BLE001
         _LOG.warning("refresco de mails de Asinfo falló: %s", e)

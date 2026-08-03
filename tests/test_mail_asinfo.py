@@ -239,3 +239,60 @@ def test_el_cron_nunca_levanta(monkeypatch):
     monkeypatch.setattr(ma, "refrescar", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     r = ma.refrescar_cron()
     assert r["ok"] is False and "boom" in r["error"]
+
+
+# ---------------------------------------------------------------------------
+# El 502 del 03/08 — un INSERT por fila dentro del request del cron
+# ---------------------------------------------------------------------------
+
+
+def test_el_refresco_hace_UN_solo_insert(monkeypatch):
+    """La primera versión insertaba fila por fila: 3.500 viajes a RDS adentro
+    del request de /admin/health/all → 502 por timeout del proxy, y la tabla
+    quedó en 0 filas."""
+    from modules._lib import metabase_client as mc
+
+    sqls = []
+    monkeypatch.setattr(ma._db, "execute", lambda sql, params=None: sqls.append(sql))
+    monkeypatch.setattr(mc, "disponible", lambda: True)
+    monkeypatch.setattr(mc, "fetch_dataset_estado", lambda *a, **k: ([
+        {"ruc10": f"1{str(i).zfill(9)}001", "email": f"c{i}@gmail.com",
+         "nombre_fiscal": f"CLI {i}"} for i in range(500)
+    ], True))
+    ma._bootstrapped = False
+    r = ma.refrescar()
+    assert r["filas"] == 500
+    assert len([s for s in sqls if "INSERT" in s]) == 1, (
+        f"un INSERT por fila otra vez: {len([s for s in sqls if 'INSERT' in s])}"
+    )
+
+
+def test_no_manda_el_mismo_ruc_dos_veces_en_el_insert(monkeypatch):
+    """Postgres tira "ON CONFLICT cannot affect row a second time" si la MISMA
+    clave viene repetida dentro del mismo INSERT. Pasa cuando Asinfo tiene la
+    cédula y el RUC del mismo titular."""
+    from modules._lib import metabase_client as mc
+
+    params_vistos = []
+    monkeypatch.setattr(
+        ma._db, "execute",
+        lambda sql, params=None: params_vistos.append(params) if "INSERT" in sql else None)
+    monkeypatch.setattr(mc, "disponible", lambda: True)
+    monkeypatch.setattr(mc, "fetch_dataset_estado", lambda *a, **k: ([
+        {"ruc10": "1752968204", "email": "uno@gmail.com", "nombre_fiscal": "A"},
+        {"ruc10": "1752968204001", "email": "dos@gmail.com", "nombre_fiscal": "A"},
+    ], True))
+    ma._bootstrapped = False
+    r = ma.refrescar()
+    assert r["filas"] == 1
+    assert params_vistos[0].count("1752968204") == 1
+
+
+def test_el_cron_no_repite_el_trabajo_si_ya_esta_fresco(monkeypatch):
+    """/admin/health/all lo abre cualquiera desde el panel: sin este guard,
+    cada visita dispara la consulta pesada a Asinfo."""
+    monkeypatch.setattr(ma, "esta_fresco", lambda: True)
+    monkeypatch.setattr(ma, "refrescar", lambda: (_ for _ in ()).throw(
+        AssertionError("no tendría que haber refrescado")))
+    r = ma.refrescar_cron()
+    assert r["ok"] is True and "salteado" in r
