@@ -129,7 +129,7 @@ def debug():
           LEFT JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
          WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
            AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-           AND ch.stat IN ('B','V','W','I','J','K','A')
+           AND ch.stat IN ('B','V','W','I','J','K','A','C')
          GROUP BY COALESCE(UPPER(TRIM(c.vend)), '(null)')
          ORDER BY n DESC
         """,
@@ -145,7 +145,7 @@ def debug():
           LEFT JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
          WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
            AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-           AND ch.stat IN ('B','V','W','I','J','K','A')
+           AND ch.stat IN ('B','V','W','I','J','K','A','C')
            AND c.codigo_cli IS NULL
         """,
         {"yy": yy, "mm": mm},
@@ -174,7 +174,7 @@ def debug():
             COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fecha)=%(yy)s AND EXTRACT(MONTH FROM ch.fecha)=%(mm)s) AS n_fecha,
             COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechaing)=%(yy)s AND EXTRACT(MONTH FROM ch.fechaing)=%(mm)s) AS n_fechaing
           FROM scintela.cheque ch
-         WHERE ch.stat IN ('B','V','W','I','J','K','A')
+         WHERE ch.stat IN ('B','V','W','I','J','K','A','C')
         """,
         {"yy": yy, "mm": mm},
     ) or {}

@@ -1,13 +1,22 @@
 """Queries de comisiones de vendedores.
 
 Replica MODIFICA.PRG PROCEDURE COMISION (línea 1770) — lista cobranzas
-del mes filtradas por cliente.vend. En dBase los stats considerados
-"cobrado/depositado" eran 'BWVCIK'. En PC la lista canónica es
-`STATS_DEPOSITADO = ('B','V','W','I','J','K','A')` definida en
-`modules/cheques/queries.py`. TMT 2026-05-27 dueña: 'porque no calcula
-las cosas' — abril mostraba cobranzas=0 porque la query antes filtraba
-solo IN ('B','A'), faltaban V/W/I/J/K (cheques en distinto estado de
-depósito que también son cobrados).
+del mes filtradas por cliente.vend. TMT 2026-05-27 dueña: 'porque no
+calcula las cosas' — abril mostraba cobranzas=0 porque la query antes
+filtraba solo IN ('B','A'), faltaban V/W/I/J/K (cheques en distinto
+estado de depósito que también son cobrados).
+
+TMT 2026-08-03 dueña: 'las comisiones están siendo mal calculadas,
+Dbase las tuvo diferentes para julio'. Eran DOS cosas, ver los
+comentarios de `STATS_COBRADO` y `_CTE_CLI` abajo:
+  1. faltaba el estado 'C' (cheque cobrado en caja) → $109.854,13 de
+     cobranza de julio fuera de la comisión;
+  2. `scintela.cliente` tiene códigos duplicados y el JOIN contaba esa
+     cobranza dos veces → +$4.341,86 de más para PPR en julio.
+Julio queda en $1.321.862,60 de cobranza / $13.218,63 de comisión, a
+$0,04 del dBase (el resto de la diferencia contra el dBase es cartera
+reasignada después del 26/04 — `CLIENTES.DBF` no se actualiza desde
+esa fecha — y cheques cargados en PC después del último sync).
 
 TMT 2026-05-27 dueña v2: 'me importa la plata que entró al banco. usar
 fechad puro'. La cobranza del mes para comisión = cuándo el cheque se
@@ -22,6 +31,67 @@ esto (la dueña lo hacía a mano); acá lo automatizamos.
 
 import db
 from filters import today_ec
+
+# ─────────────────────────────────────────────────────────────────────
+# TMT 2026-08-03 — dueña: "Las comisiones están siendo mal calculadas.
+# Dbase las tuvo diferentes para julio". Tenía razón, y era UN estado.
+#
+# Paridad MODIFICA.PRG L1830/L1833:
+#     COPY TO COMIS FOR MONTH(FECHAD)=MES .AND. YEAR(FECHAD)=YYEAR
+#                       .AND. STAT $ "BWVCIK"
+# El dBase cuenta la 'C'; PC la tiraba. 'C' = cheque COBRADO EN CAJA:
+# ALTAS.PRG PROCEDURE PASOCAJA (L870-893) toma los cheques con NB=99
+# ("EFT."), les crea la entrada de caja "CH."+CLIENTE y los marca
+# STAT='C'. Es cobranza REAL — la plata entró, sólo que a caja y no al
+# banco. Julio 2026: eran $109.854,13 de cobranza fuera de la comisión
+# ($1.098,53 sin pagar), casi todo de PPR (60 de los 78 cheques del mes:
+# es la cartera que paga en ventanilla).
+#
+# ⚠ Esta constante es PROPIA de comisiones y NO es
+# `modules.cheques.queries.STATS_DEPOSITADO`. Allá 'C' significa otra
+# cosa — "el cheque está en banco" → lockea los campos duros — y meterla
+# ahí rompe la cobranza. Son dos preguntas distintas sobre el mismo
+# campo: "¿está depositado?" vs. "¿entró la plata?".
+#
+# 'I', 'J', 'K' y 'A' no aparecen en ningún dato real (ni en el DBF ni en
+# scintela.cheque); se dejan por paridad con el PRG y con la lista de
+# cheques. 'W' existe en el DBF y el sync lo mapea a 'B'.
+STATS_COBRADO = ("B", "V", "W", "I", "J", "K", "A", "C")
+
+# Fragmento SQL, armado UNA sola vez desde la constante para que las
+# apariciones no puedan volver a divergir entre sí.
+_IN_COBRADO = ", ".join(f"'{s}'" for s in STATS_COBRADO)
+
+# ─────────────────────────────────────────────────────────────────────
+# TMT 2026-08-03 — `scintela.cliente` tiene 25 códigos DUPLICADOS
+# (3.973 filas / 3.948 códigos): dos empresas distintas comparten el
+# mismo código de 3 letras. Ej. 'GUF' = "ASOTEXMANA NUBE FAJARDO BORJA"
+# (RUC 1591718165001) Y "GUADALUPE FIALLOS" (RUC 1801968924001), las dos
+# de PPR. Un `JOIN scintela.cliente` crudo devuelve 2 filas por cheque y
+# **cuenta la cobranza dos veces**: en julio 2026 le inflaba a PPR
+# $4.341,86 de cobranza y $23.795,07 de ventas.
+#
+# El dBase NO tiene el problema: `CLIENTE $ GRUPO` (MODIFICA.PRG L1836)
+# es un test de substring, matchea una sola vez aunque el código esté
+# repetido en el grupo. Deduplicar es paridad con el PRG, no un criterio
+# nuevo.
+#
+# Desempate: gana la fila QUE TIENE vendedor (si una está en blanco no
+# sirve para comisiones), y después por nombre para que sea determinista
+# — sin `ORDER BY` completo el resultado cambia entre corridas.
+#
+# Los cheques de las dos empresas ya vienen mezclados bajo un solo
+# `cheque.codigo_cli`: separarlos requiere limpiar los códigos repetidos
+# en `scintela.cliente`. Hasta entonces esto es lo correcto.
+_CTE_CLI = """
+        cli AS (
+            SELECT DISTINCT ON (codigo_cli)
+                   codigo_cli, vend, nombre
+              FROM scintela.cliente
+             ORDER BY codigo_cli,
+                      (CASE WHEN COALESCE(TRIM(vend), '') = '' THEN 1 ELSE 0 END),
+                      nombre
+        )"""
 
 
 def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
@@ -38,8 +108,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
     mm = int(mes) if mes else hoy.month
 
     return db.fetch_all(
-        """
-        WITH
+        f"""
+        WITH{_CTE_CLI},
         -- TMT 2026-05-19 v8 — dueña: "N° clientes tiene que decir num
         -- de clientes que se estan sumando para esa comisión". Antes
         -- contaba todos los clientes con cliente.vend = código. Ahora
@@ -49,16 +119,16 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
             SELECT UPPER(TRIM(c.vend))        AS codigo,
                    ch.codigo_cli              AS codigo_cli
               FROM scintela.cheque ch
-              JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
+              JOIN cli c ON c.codigo_cli = ch.codigo_cli
              WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
                AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-               AND ch.stat IN ('B','V','W','I','J','K','A')
+               AND ch.stat IN ({_IN_COBRADO})
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
             SELECT UPPER(TRIM(c.vend))        AS codigo,
                    co.codigo_cli              AS codigo_cli
               FROM scintela.cobro co
-              JOIN scintela.cliente c ON c.codigo_cli = co.codigo_cli
+              JOIN cli c ON c.codigo_cli = co.codigo_cli
              WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
                AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
@@ -84,10 +154,10 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
             SELECT UPPER(TRIM(c.vend))            AS codigo,
                    COALESCE(SUM(ch.importe), 0)   AS total
               FROM scintela.cheque ch
-              JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
+              JOIN cli c ON c.codigo_cli = ch.codigo_cli
              WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
                AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-               AND ch.stat IN ('B','V','W','I','J','K','A')
+               AND ch.stat IN ({_IN_COBRADO})
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
             UNION ALL
@@ -97,7 +167,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
             SELECT UPPER(TRIM(c.vend))            AS codigo,
                    COALESCE(SUM(co.valor), 0)     AS total
               FROM scintela.cobro co
-              JOIN scintela.cliente c ON c.codigo_cli = co.codigo_cli
+              JOIN cli c ON c.codigo_cli = co.codigo_cli
              WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
                AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
@@ -115,7 +185,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
             SELECT UPPER(TRIM(c.vend))            AS codigo,
                    COALESCE(SUM(f.importe), 0)    AS total
               FROM scintela.factura f
-              JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+              JOIN cli c ON c.codigo_cli = f.codigo_cli
              WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
                AND EXTRACT(MONTH FROM f.fecha) = %(mm)s
                AND (f.stat IS NULL OR f.stat <> 'X')
@@ -193,7 +263,8 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
     al pedido de la dueña.
     """
     return db.fetch_all(
-        """
+        f"""
+        WITH{_CTE_CLI}
         -- Cheques acreditados
         SELECT 'CHE'                          AS origen,
                ch.id_cheque                   AS id_origen,
@@ -205,11 +276,11 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
                COALESCE(b.nombre, ch.banco)   AS banco,
                ch.stat                        AS stat
           FROM scintela.cheque ch
-          JOIN scintela.cliente c  ON c.codigo_cli = ch.codigo_cli
+          JOIN cli c  ON c.codigo_cli = ch.codigo_cli
           LEFT JOIN scintela.banco b ON b.no_banco = ch.no_banco
          WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
            AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-           AND ch.stat IN ('B','V','W','I','J','K','A')
+           AND ch.stat IN ({_IN_COBRADO})
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         UNION ALL
         -- Cobros no-cheque (efectivo / transferencia / depósito directo).
@@ -223,7 +294,7 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
                co.banco                           AS banco,
                ''                                 AS stat
           FROM scintela.cobro co
-          JOIN scintela.cliente c ON c.codigo_cli = co.codigo_cli
+          JOIN cli c ON c.codigo_cli = co.codigo_cli
          WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
            AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
            AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
@@ -237,13 +308,14 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
 def ventas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
     """Detalle de facturas emitidas del mes para un vendedor."""
     return db.fetch_all(
-        """
+        f"""
+        WITH{_CTE_CLI}
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
                f.importe, f.saldo, f.stat,
                f.codigo_cli,
                COALESCE(c.nombre, '')   AS cliente
           FROM scintela.factura f
-          JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+          JOIN cli c ON c.codigo_cli = f.codigo_cli
          WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
            AND EXTRACT(MONTH FROM f.fecha) = %(mm)s
            AND (f.stat IS NULL OR f.stat <> 'X')
