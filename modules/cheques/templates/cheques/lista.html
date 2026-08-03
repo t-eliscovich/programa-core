@@ -123,16 +123,17 @@
     {% set _hero_n = n_total | int %}
     {% set _hero_label = 'cheques (filtrado)' %}
   {% else %}
-    {% set c_cartera     = conteos.get('cartera', {}) %}
-    {% set c_dev_gest    = conteos.get('devueltos_en_gestion', {}) %}
-    {% set c_postergados = conteos.get('postergados', {}) %}
-    {% set c_daniela     = conteos.get('daniela', {}) %}
-    {% set _hero_total = (c_cartera.get('total', 0) | float)
-                      + (c_dev_gest.get('total', 0) | float)
-                      + (c_postergados.get('total', 0) | float)
-                      + (c_daniela.get('total', 0) | float) %}
-    {% set _hero_n = (c_cartera.get('n', 0) or 0) + (c_dev_gest.get('n', 0) or 0)
-                   + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) %}
+    {# TMT 2026-08-03 (dueña, mirando el número de arriba): el KPI sumaba
+       cartera + devueltos + postergados + daniela, pero desde el 22/07 el
+       bucket `cartera` ES Z+P+1+2 — o sea que ya incluye a los postergados y
+       a los devueltos, y los contaba DOS VECES. Con los datos del 03/08:
+       1363 + 73 + 21 + 2 = 1459 cheques, cuando el total real es 1365 (94 de
+       más). Ahora usa `cartera_total`, el MISMO conteo que alimenta la
+       pestaña "Cartera total": el número de arriba y el de la pestaña tienen
+       que ser idénticos, siempre. #}
+    {% set c_total = conteos.get('cartera_total', {}) %}
+    {% set _hero_total = c_total.get('total', 0) | float %}
+    {% set _hero_n = c_total.get('n', 0) or 0 %}
     {% set _hero_label = 'cheques en cartera' %}
   {% endif %}
   {# Encabezado de INFORME (solo impresión) — pedido dueña 2026-07-07:

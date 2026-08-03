@@ -61,20 +61,27 @@ def parse_fecha(s: str | None) -> date | None:
 
 
 def parse_monto(s: str | None) -> Decimal | None:
-    """Acepta '1234.56', '1.234,56', '1234,56'. None si vacío, error si basura."""
+    """Monto de un CSV. Delega en `parsers.parse_monto` — NO reimplementar.
+
+    ⚠ TMT 2026-08-03. Acá vivía una SEGUNDA implementación que, cuando había
+    coma Y punto, asumía siempre formato ES: `"1,234.56"` (US, con miles)
+    salía **1,23** en vez de 1.234,56, en silencio y ya guardado. `parsers`
+    arregló exactamente ese caso el 2026-05-15 —mira cuál separador está más a
+    la derecha— y dejó el comentario explicándolo; esta copia nunca se enteró.
+
+    Dos funciones que leen lo mismo tienen que ser la MISMA función: si no, el
+    mismo texto vale distinto según por qué puerta entró el dato.
+    """
+    from parsers import parse_monto as _parse_monto
+
     if s is None:
         return None
-    s = str(s).strip().replace(" ", "")
-    if not s:
+    if not str(s).strip():
         return None
-    if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        s = s.replace(",", ".")
-    try:
-        return Decimal(s)
-    except InvalidOperation as e:
-        raise ValueError(f"monto inválido: {s!r}") from e
+    v = _parse_monto(s)
+    if v is None:
+        raise ValueError(f"monto inválido: {s!r}")
+    return v
 
 
 def parse_int(s: str | None) -> int | None:
