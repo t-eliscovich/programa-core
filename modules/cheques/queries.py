@@ -5335,20 +5335,27 @@ def cheques_ingresados_dia(fecha) -> dict:
     éste es la lista plana para llevar al banco. Los dos comparten
     `SQL_DIA_INGRESO` a propósito.
 
-    ⚠ TMT 2026-08-03, en tres pasos con la dueña mirando la pantalla:
-    primero "y solo estado Z no B" (había filas B en el listado), después
-    "es siempre Z, no hay que seleccionar", y finalmente — señalando el
-    cheque de KOR que se había depositado ese mismo día — **"este falta"**.
-    Lo que le molestaba de las filas B no era el estado: eran los **DEP.PICH.
-    (NB=90)**, que no son cheques y se habían colado. Filtrar por `stat`
-    tapaba eso y de paso se comía un cheque legítimo.
+    ⚠ TMT 2026-08-03. Son DOS cortes, y hay que hacer los dos — se llegó acá
+    después de equivocarse en las dos direcciones, con la dueña mirando la
+    pantalla:
 
-    Por eso el corte es por **MEDIO, no por estado**: entra todo lo que el
-    resumen cuenta como CHEQUE (`SQL_ES_CHEQUE`), depositado o no. La
-    consecuencia buscada es que **`n` de acá == `n_cheques` del resumen del
-    mismo día** — si algún día difieren, hay un bug en uno de los dos.
+      1. **Por MEDIO** (`SQL_ES_CHEQUE`): fuera los DEP.PICH. (NB 90/91) y el
+         efectivo (NB=99). Eso fue lo que le llamó la atención primero ("y
+         solo estado Z no B") — no le molestaba el estado B, le molestaban
+         los depósitos, que no son cheques.
+      2. **Por ESTADO** (`stat='Z'`): sólo lo que sigue EN CARTERA. Al sacar
+         este corte apareció un cheque de KOR depositado el mismo día y la
+         dueña marcó "este falta"; después lo confirmó con Alex: *"está bien
+         que falte"*. Esta lista se lleva al banco — lo ya depositado no va.
 
-    Solo lectura. Devuelve {fecha, filas, total, n}.
+    Por eso `n` NO coincide con el bucket CHEQUES del resumen del mismo día:
+    el resumen cuenta lo que ENTRÓ (esté donde esté) y esto lista lo que
+    queda POR depositar. La diferencia se devuelve explícita en `n_fuera` /
+    `total_fuera` y la pantalla la muestra: la dueña ya cruzó los dos números
+    una vez ("cómo puede haber 15 ingresos y acá 16 cheques?? hay algo mal") y
+    una diferencia sin explicar se lee como bug.
+
+    Solo lectura. Devuelve {fecha, filas, total, n, n_fuera, total_fuera}.
     """
     sql = """
         SELECT c.id_cheque, c.no_cheque, c.fechad, c.fecha, c.importe,
@@ -5382,9 +5389,21 @@ def cheques_ingresados_dia(fecha) -> dict:
     """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO).replace(
         "__ES_CHEQUE__", SQL_ES_CHEQUE
     )
-    filas = db.fetch_all(sql, {"fecha": fecha}) or []
+    todos = db.fetch_all(sql, {"fecha": fecha}) or []
+    filas = [f for f in todos if (f.get("stat") or "").strip().upper() == "Z"]
+    fuera = [f for f in todos if f not in filas]
     total = round(sum(float(f.get("importe") or 0) for f in filas), 2)
-    return {"fecha": fecha, "filas": filas, "total": total, "n": len(filas)}
+    return {
+        "fecha": fecha,
+        "filas": filas,
+        "total": total,
+        "n": len(filas),
+        # Cheques que ingresaron ese día pero YA salieron de cartera. No se
+        # listan, pero se dicen: es la diferencia contra el bucket CHEQUES del
+        # resumen, y callarla la convierte en "hay algo mal".
+        "n_fuera": len(fuera),
+        "total_fuera": round(sum(float(f.get("importe") or 0) for f in fuera), 2),
+    }
 
 
 def netear_cheques_con_anticipos(

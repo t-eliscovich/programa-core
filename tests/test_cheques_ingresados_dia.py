@@ -105,12 +105,22 @@ def test_el_corte_es_por_MEDIO_no_por_estado(monkeypatch):
     assert "estados" not in (cap["params"] or {})
 
 
-def test_el_conteo_coincide_con_el_bucket_CHEQUES_del_resumen(monkeypatch):
-    """La dueña cruza las dos pantallas: "¿cómo puede haber 15 ingresos y acá
-    16 cheques?? hay algo mal". Tenía razón — y esta es la barrera para que no
-    vuelva a pasar: las dos parten el universo del día con la MISMA regla, así
-    que sobre las mismas filas tienen que dar el mismo número."""
+def test_lista_solo_lo_que_sigue_en_cartera_y_dice_lo_que_dejo_afuera(monkeypatch):
+    """Los DOS cortes: por medio (no son cheques) y por estado (ya no están).
+
+    TMT 2026-08-03: "está bien que falte, ya me dijo alex" — el cheque
+    depositado el mismo día NO va, esta lista se lleva al banco. Pero la
+    dueña ya cruzó los dos informes una vez ("cómo puede haber 15 ingresos y
+    acá 16 cheques?? hay algo mal"), así que la diferencia se devuelve
+    explícita para poder mostrarla."""
     filas = _filas() + [
+        # Un cheque de verdad que YA se depositó: cuenta en el resumen, pero
+        # no va a la lista que se lleva al banco (caso KOR del 03/08).
+        {"id_cheque": 8, "no_cheque": "8", "fechad": FECHA, "fecha": FECHA,
+         "importe": 583.26, "stat": "B", "no_banco": 10, "codigo_cli": "KOR",
+         "banco_emisor": "PICHINCHA", "cliente": "KOR", "doc_banco": None,
+         "fecha_crea": None, "usuario_crea": "andres", "clave": "AND",
+         "fecha_recibido": FECHA, "fechaing": FECHA},
         # Un DEP.PICH. y un efectivo del mismo día: NO son cheques, y ninguna
         # de las dos pantallas los cuenta como tales.
         {"id_cheque": 9, "no_cheque": None, "fechad": FECHA, "fecha": FECHA,
@@ -144,10 +154,20 @@ def test_el_conteo_coincide_con_el_bucket_CHEQUES_del_resumen(monkeypatch):
 
     listado = queries.cheques_ingresados_dia(FECHA)
     resumen = queries.resumen_cobranza_dia(FECHA)
-    assert listado["n"] == resumen["n_cheques"] == 4
-    assert round(listado["total"], 2) == round(resumen["total_cheques"], 2)
-    # ...y el depósito y el efectivo siguen contándose en SU bucket.
+
+    # El resumen cuenta los 5 cheques del día (el DEP.PICH. y el efectivo van
+    # a SU bucket); el listado sólo los 4 que siguen en cartera.
+    assert resumen["n_cheques"] == 5
     assert resumen["n_depositos"] == 1 and resumen["n_efectivo"] == 1
+    assert listado["n"] == 4
+    assert 8 not in [f["id_cheque"] for f in listado["filas"]]
+
+    # Y la diferencia contra el resumen queda dicha, no escondida.
+    assert listado["n_fuera"] == 1
+    assert listado["total_fuera"] == 583.26
+    assert round(listado["total"] + listado["total_fuera"], 2) == round(
+        resumen["total_cheques"], 2
+    )
 
 
 def test_render_ingresados_dia(client, fake_db, monkeypatch):

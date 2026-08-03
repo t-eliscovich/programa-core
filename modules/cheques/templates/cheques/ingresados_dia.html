@@ -73,7 +73,22 @@
     <div class="mono text-sm">{{ fecha | fecha_es }}</div>
   </div>
 
-  <div class="kpi mt-3">Ingresos ({{ listado.n }}) <b class="{% if listado.total < 0 %}neg{% endif %}">{{ listado.total | money_es }}</b></div>
+  <div class="kpi mt-3">En cartera ({{ listado.n }}) <b class="{% if listado.total < 0 %}neg{% endif %}">{{ listado.total | money_es }}</b></div>
+  {# TMT 2026-08-03 (dueña: "cómo puede haber 15 ingresos y acá 16 cheques??
+     hay algo mal" → después, con Alex: "está bien que falte"). Esta lista es
+     la que se lleva al banco: sólo lo que sigue EN CARTERA. El resumen del
+     mismo día cuenta TODO lo que entró, depositado o no, así que los dos
+     números difieren a propósito — y por eso la diferencia se dice acá.
+     Una diferencia sin explicar se lee como bug. #}
+  {% if listado.n_fuera %}
+    <div class="text-xs text-slate-500" style="margin-top:4px;">
+      {{ listado.n_fuera }} cheque{{ '' if listado.n_fuera == 1 else 's' }} más
+      ingresó{{ '' if listado.n_fuera == 1 else 'aron' }} este día y ya
+      {{ 'salió' if listado.n_fuera == 1 else 'salieron' }} de cartera
+      ({{ listado.total_fuera | money_es }}) — no
+      {{ 'entra' if listado.n_fuera == 1 else 'entran' }} en esta lista.
+    </div>
+  {% endif %}
 
   {% if listado.n == 0 %}
     <p class="text-sm text-slate-500 mt-4">No hay cheques ingresados esa fecha.</p>
