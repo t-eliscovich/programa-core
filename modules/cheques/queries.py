@@ -5112,7 +5112,30 @@ def resumen_cobranza_dia(fecha) -> dict:
     el cliente, medio y las facturas que cancela — con fecha, numf, importe,
     abonado acumulado y SALDO RESULTANTE (incluye 0.00 y negativos = saldo a
     favor, la dueña quiere verlos). Como PC no tiene "sesión", agrupamos por
-    fecha de cobranza (`cheque.fecha`).
+    DÍA DE INGRESO del cobro.
+
+    ⚠ TMT 2026-08-03 (dueña: "resumen cobranza del día está trayendo dbf
+    imports, es erróneo … lo de KOR estaría bien, lo anterior no debería
+    mostrar"). El filtro era `cheque.fecha = %s`, y eso NO es el día de
+    ingreso para los cheques que vienen del dBase:
+      · En PC, el alta de /cheques/nuevo COLAPSA `fecha` a `fecha_recibido`
+        (views.py: `fecha = fecha_recibido`) → para lo cargado por la UI,
+        `fecha` SÍ es el día de cobranza.
+      · En el dBase NO: ALTAS.PRG estampa `FECHING WITH DD` (día de carga) y
+        deja que el usuario tipee FECHA = la fecha DEL CHEQUE (posdatado).
+        MODIFICA.PRG L674 filtra "ingresados hoy" por `FECHING=DD`, y
+        BANCOS.PRG L441 pasa los ingresos del día por `FECHING=FFF`.
+        FECHOUT (→ `fechaout`) es la salida/depósito, no FECHING.
+      · El import mapea FECHA→`fecha` y FECHING→`fechaing`. Resultado: un
+        cheque recibido el 09/06 y posdatado al 03/08 aparecía como cobranza
+        DEL 03/08. El 03/08 el CHEQUES.DBF tenía 12 filas con FECHA=03/08 y
+        CERO con FECHING=03/08 → los 10 "cheques" de la tirilla eran
+        posdatados que sólo vencían ese día. No es un caso de borde: 2.047 de
+        3.250 filas del DBF tienen FECHA ≠ FECHING.
+
+    Por eso el día de ingreso es `fecha_recibido` y, sólo para las filas
+    nacidas del dBase, `fechaing` (que ahí es FECHING = ingreso). `fecha`
+    queda como último fallback.
 
     Buckets (paridad FINAL: CH = NB<90 ó NB=98; DE = NB 90/91; EF = NB=99):
       - cheques    → cheque real en cartera / depositado (banco emisor < 90)
@@ -5133,12 +5156,19 @@ def resumen_cobranza_dia(fecha) -> dict:
             SELECT c.id_cheque, c.no_cheque, c.importe, c.fecha, c.fechad,
                    c.no_banco, c.stat, c.doc_banco,
                    c.fecha_crea, c.usuario_crea,
+                   c.fecha_recibido, c.fechaing,
                    COALESCE(c.banco, '') AS banco_emisor,
                    c.codigo_cli,
                    COALESCE(cl.nombre, '') AS cliente
               FROM scintela.cheque c
               LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
-             WHERE c.fecha = %s
+             WHERE COALESCE(
+                       c.fecha_recibido,
+                       CASE WHEN COALESCE(c.usuario_crea, '')
+                                 IN ('dbf-import', 'reconcile-dbf')
+                            THEN c.fechaing END,
+                       c.fecha
+                   ) = %s
                AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
              ORDER BY c.id_cheque
             """,

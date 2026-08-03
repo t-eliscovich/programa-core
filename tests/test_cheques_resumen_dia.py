@@ -181,3 +181,98 @@ def test_render_resumen_dia_vacio(client, fake_db, monkeypatch):
     resp = client.get("/cheques/resumen-dia")
     assert resp.status_code == 200
     assert "Sin cobranza registrada" in resp.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# TMT 2026-08-03 (dueña: "resumen cobranza del día está trayendo dbf imports,
+# es erróneo" / "lo de KOR estaría bien, lo anterior no debería mostrar").
+#
+# El resumen filtraba por `cheque.fecha`. Para lo que carga PC eso está bien
+# (el alta colapsa fecha := fecha_recibido), pero para lo que viene del dBase
+# `fecha` es la fecha DEL CHEQUE (posdatado) y el día de ingreso es FECHING
+# (ALTAS.PRG L30 `FECHING WITH DD`; MODIFICA.PRG L674 filtra el día por
+# FECHING). El 03/08/2026 aparecieron 10 cheques recibidos en junio/julio
+# posdatados a esa fecha.
+#
+# El test corre el WHERE REAL de la query contra SQLite (la expresión es
+# ANSI y se evalúa igual), así que si alguien vuelve a `c.fecha = %s` falla.
+# ---------------------------------------------------------------------------
+
+def _sql_del_resumen(monkeypatch) -> str:
+    """Captura el SQL de cheques que emite resumen_cobranza_dia()."""
+    capturado = {}
+    anterior = queries.db.fetch_all
+
+    def fake_fetch_all(sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.cheque c" in s:
+            capturado["sql"] = sql
+            return []
+        if "from scintela." in s:
+            return []
+        return anterior(sql, params, conn=conn)
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake_fetch_all)
+    queries.resumen_cobranza_dia(FECHA)
+    assert "sql" in capturado, "resumen_cobranza_dia no consultó scintela.cheque"
+    return capturado["sql"]
+
+
+_CHEQUES_SQLITE = [
+    # (id, usuario_crea, fecha, fecha_recibido, fechaing) — fechas ISO
+    # 1) dbf-import: recibido 09/06, POSDATADO al 03/08 → NO es cobranza del 03/08
+    (1, "dbf-import", "2026-08-03", None, "2026-06-09"),
+    # 2) dbf-import: recibido el 03/08 en el dBase → SÍ entra
+    (2, "dbf-import", "2026-09-15", None, "2026-08-03"),
+    # 3) PC (andres, caso KOR): fecha_recibido = 03/08 → SÍ entra
+    (3, "andres", "2026-08-03", "2026-08-03", None),
+    # 4) PC: cheque recibido el 03/08 pero con fechad futura → SÍ entra
+    (4, "andres", "2026-08-03", "2026-08-03", "2026-08-20"),
+    # 5) PC: recibido otro día → NO entra
+    (5, "andres", "2026-07-30", "2026-07-30", None),
+    # 6) dbf-import sin FECHING → fallback a `fecha` → entra
+    (6, "dbf-import", "2026-08-03", None, None),
+]
+
+
+def _ids_que_devuelve(sql: str, fecha_iso: str) -> set[int]:
+    """Corre el WHERE real contra SQLite y devuelve los id_cheque que pasan."""
+    import re
+    import sqlite3
+
+    con = sqlite3.connect(":memory:")
+    con.execute(
+        "CREATE TABLE cheque (id_cheque INT, no_cheque TEXT, importe REAL, "
+        "fecha TEXT, fechad TEXT, no_banco INT, stat TEXT, doc_banco TEXT, "
+        "fecha_crea TEXT, usuario_crea TEXT, fecha_recibido TEXT, "
+        "fechaing TEXT, banco TEXT, codigo_cli TEXT)"
+    )
+    con.execute("CREATE TABLE cliente (codigo_cli TEXT, nombre TEXT)")
+    for idc, usr, fecha, frec, fing in _CHEQUES_SQLITE:
+        con.execute(
+            "INSERT INTO cheque (id_cheque, importe, fecha, fechad, no_banco, "
+            "stat, usuario_crea, fecha_recibido, fechaing, banco, codigo_cli) "
+            "VALUES (?, 100, ?, ?, 10, 'Z', ?, ?, ?, 'PICHINCHA', 'KOR')",
+            (idc, fecha, fecha, usr, frec, fing),
+        )
+    con.commit()
+
+    sql_lite = sql.replace("scintela.", "").replace("%s", "?")
+    # SQLite no tiene NOT IN sobre NULL-safe COALESCE distinto; el resto es ANSI.
+    sql_lite = re.sub(r"\s+", " ", sql_lite)
+    filas = con.execute(sql_lite, (fecha_iso,)).fetchall()
+    cols = [d[0] for d in con.execute(sql_lite, (fecha_iso,)).description]
+    i = cols.index("id_cheque")
+    return {f[i] for f in filas}
+
+
+def test_resumen_dia_no_trae_posdatados_del_dbase(monkeypatch):
+    """Un cheque del dBase posdatado a HOY no es cobranza de HOY (FECHING manda)."""
+    sql = _sql_del_resumen(monkeypatch)
+    assert _ids_que_devuelve(sql, "2026-08-03") == {2, 3, 4, 6}
+
+
+def test_resumen_dia_trae_el_dbf_import_en_su_dia_de_ingreso(monkeypatch):
+    """El posdatado sí aparece el día que ENTRÓ (FECHING = 09/06)."""
+    sql = _sql_del_resumen(monkeypatch)
+    assert _ids_que_devuelve(sql, "2026-06-09") == {1}
