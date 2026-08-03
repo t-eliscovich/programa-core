@@ -159,6 +159,18 @@
       </select>
     </div>
     <div>
+      {# TMT 2026-08-03 (dueña): *"necesitamos hide las recibidas en 2024 y 2025
+         salvo explícitamente filtrada"*. Default: el año en curso. Lo que
+         todavía NO llegó se muestra siempre, cualquiera sea el año. #}
+      <label class="block text-xs text-slate-500 mb-1">Año recibida</label>
+      <select name="anio" class="border rounded px-2 py-1 text-sm">
+        {% for a in anios_disponibles %}
+        <option value="{{ a }}" {% if anio == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+        <option value="todos" {% if anio == 'todos' %}selected{% endif %}>Todos</option>
+      </select>
+    </div>
+    <div>
       {# TMT 2026-07-09 (dueña): filtrar por mes/año de la fecha recibida. #}
       <label class="block text-xs text-slate-500 mb-1">Recibida en (mes)</label>
       <input type="month" name="mes" value="{{ mes }}"
@@ -192,7 +204,10 @@
                 letter-spacing: .02em; }
     .pg-si { color: #059669; }
     .pg-no { color: #b45309; }
-    .btn-detalle { position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    .tag-grupo { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 10px;
+               background: #eef2ff; color: #4338ca; font-size: 10px; font-weight: 700;
+               letter-spacing: .02em; vertical-align: middle; white-space: nowrap; }
+  .btn-detalle { position: absolute; right: 0; top: 50%; transform: translateY(-50%);
                    width: 18px; height: 18px; line-height: 1; padding: 0; border: 1px solid #cbd5e1;
                    background: #f8fafc; color: #475569; border-radius: 4px; font-weight: 700; cursor: pointer; }
   </style>
@@ -223,6 +238,12 @@
                  (IM-…, se paga con anticipos) o una COMPRA LOCAL (CMTR-…, sin
                  anticipo, nace el pasivo al recibirla). El badge dice cuál. #}
               {% if r.origen == 'compra' %}<span class="tag-local">local</span>{% endif %}
+              {# TMT 2026-08-03 (dueña, AI 15): las dos mitades de una factura
+                 partida se muestran COLAPSADAS en una fila, con los kg del grupo
+                 y sus compras una sola vez — por eso queda UNA marca de pagada y
+                 no una "sin cargar" al lado. El colapso es SÓLO de pantalla:
+                 ver modules/importaciones/presentacion.py. #}
+              {% if r.es_grupo %}<span class="tag-grupo" title="Una sola factura del proveedor, partida por Asinfo en {{ r.n_partidas }} documentos. Los kg y las compras son del grupo.">{{ r.n_partidas }} partidas</span>{% endif %}
             </td>
             <td class="fecha text-slate-500">{{ r.fecha or '—' }}</td>
             <td class="font-mono" title="{{ r.proveedor }}">{{ r.prov or '—' }}</td>
@@ -306,38 +327,49 @@
           {% set _items = (r.anticipo.get('items') if r.anticipo else []) or [] %}
           {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
           {% if r.codigo and (_comp_items or _items or _pagos) %}
-            {# TMT 2026-07-23 (dueña): el detalle son FILAS reales alineadas a las
-               columnas — la fecha cae bajo "Recibida" (es la fecha de carga) y el
-               monto bajo su columna (Compras o Anticipos), no flotando a la derecha. #}
+            {# TMT 2026-07-23 (dueña): el detalle son FILAS reales alineadas a
+               las columnas, con el monto bajo su columna (Compras o Anticipos).
+               TMT 2026-08-03 (dueña): *"eso no debería poner fecha recibida, la
+               fecha recibida es una sola; quizás debajo de Fecha cuando se cargó
+               la compra"*. Tenía razón: la fecha de carga estaba cayendo bajo
+               RECIBIDA y se leía como una segunda recepción de la importación.
+               Ahora va bajo FECHA y la columna Recibida queda vacía acá — la
+               recepción es una sola y vive en la fila de la importación. #}
             {% for it in _comp_items %}
             <tr class="acc-detail-row">
-              <td></td><td></td><td></td>
+              <td></td>
+              <td class="fecha dtl-fecha">{{ it.fecha }}</td>
+              <td></td>
               <td><span class="dtl-tag" style="color:#16a34a;">COMPRA</span></td>
               <td class="nota"><a class="dtl-link" href="{{ url_for('compras.editar', id_compra=it.id_compra) }}">compra · /compras</a></td>
               <td></td>
-              <td class="fecha dtl-fecha">{{ it.fecha }}</td>
+              <td></td>
               <td class="num"><span class="usd-gutter dtl-monto">{{ it.importe|num_es(2) }}</span></td>
               <td></td>
             </tr>
             {% endfor %}
             {% for it in _items %}
             <tr class="acc-detail-row">
-              <td></td><td></td><td></td>
+              <td></td>
+              <td class="fecha dtl-fecha">{{ it.fecha }}</td>
+              <td></td>
               <td><span class="dtl-tag" style="color:#64748b;">ANT</span></td>
               <td class="nota"><span class="dtl-link">anticipo · /dólares</span></td>
               <td></td>
-              <td class="fecha dtl-fecha">{{ it.fecha }}</td>
+              <td></td>
               <td></td>
               <td class="num"><span class="usd-gutter dtl-monto">{{ it.importe|num_es(2) }}</span></td>
             </tr>
             {% endfor %}
             {% for m in _pagos %}
             <tr class="acc-detail-row">
-              <td></td><td></td><td></td>
+              <td></td>
+              <td class="fecha dtl-fecha">{{ m.fecha }}</td>
+              <td></td>
               <td><span class="dtl-tag" style="color:#64748b;">PAGO</span></td>
               <td class="nota"><span class="dtl-link">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span></td>
               <td></td>
-              <td class="fecha dtl-fecha">{{ m.fecha }}</td>
+              <td></td>
               <td></td>
               <td class="num"><span class="usd-gutter dtl-monto">{{ m.monto|num_es(2) }}</span></td>
             </tr>

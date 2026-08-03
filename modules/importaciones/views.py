@@ -42,6 +42,19 @@ def lista():
     # TMT 2026-07-09 (dueña): filtrar por MES/AÑO de la fecha recibida. El
     # input type=month da "YYYY-MM"; fecha_recepcion es "YYYY-MM-DD" → prefix.
     mes = (request.args.get("mes") or "").strip()        # "" | "YYYY-MM"
+    # TMT 2026-08-03 (dueña): *"necesitamos hide las recibidas en 2024 y 2025
+    # salvo explícitamente filtrada"*. Medido: de 632 importaciones, por año de
+    # recepción hay 93 en 2022, 134 en 2023, 111 en 2024, 161 en 2025 y **67 en
+    # 2026** — se arrastraban 499 filas viejas para ver 67. Default 2026;
+    # `anio=todos` trae la historia.
+    anio = (request.args.get("anio") or "").strip()
+    if not anio:
+        anio = str(today_ec().year)
+    # Un filtro de MES ya dice el año: no se pisan.
+    if mes:
+        anio = "todos"
+    # `colapsar=0` muestra las partidas separadas (para auditar el colapso).
+    colapsar = (request.args.get("colapsar") or "1").strip() != "0"
 
     error = None
     rows = []
@@ -119,6 +132,34 @@ def lista():
             r for r in rows
             if (r.get("fecha_recepcion") or "").startswith(_pref)
         ]
+    # Los años que existen de verdad, para no ofrecer opciones vacías.
+    anios_disponibles = sorted(
+        {str(r.get("fecha_recepcion"))[:4] for r in rows if r.get("fecha_recepcion")},
+        reverse=True,
+    )
+    if anio not in anios_disponibles and anio != "todos":
+        anios_disponibles = sorted(set(anios_disponibles) | {anio}, reverse=True)
+    if anio != "todos":
+        # Por año de RECEPCIÓN. Las que todavía NO llegaron se muestran
+        # siempre: si no, desaparecería de la pantalla justo lo que está por
+        # entrar, que es lo que más se mira.
+        _a = anio + "-"
+        rows = [
+            r for r in rows
+            if not r.get("fecha_recepcion")
+            or str(r.get("fecha_recepcion")).startswith(_a)
+        ]
+
+    # Colapsar las mitades de una importación partida en UNA fila. SOLO
+    # pantalla — ver el aviso de modules/importaciones/presentacion.py: el dato
+    # que alimenta la tarifa del hilado se lee fila por fila y no se toca.
+    if colapsar:
+        from modules.importaciones import presentacion as _pres
+
+        try:
+            rows = _pres.colapsar_partidas(rows, _loc.estado_pago_de_compras)
+        except Exception as e:  # noqa: BLE001 -- la pantalla no se cae por esto
+            error = error or str(e)
 
     total = len(rows)
     con_codigo = sum(1 for r in rows if r.get("codigo"))
@@ -264,6 +305,9 @@ def lista():
         estado=estado,
         recep=recep,
         mes=mes,
+        anio=anio,
+        anios_disponibles=anios_disponibles,
+        colapsar=colapsar,
         hoy=today_ec().isoformat(),
         error=error,
     )
