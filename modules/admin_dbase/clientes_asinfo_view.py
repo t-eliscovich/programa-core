@@ -366,7 +366,25 @@ def que_hacer(grupo: dict) -> dict:
     Devuelve ``{clase, titulo, detalle, advertencia, acciones}``. `acciones`
     son links a pantallas que EXISTEN (`/clientes?q=`, `/clientes/<id>/
     cambiar-codigo`, `/clientes/<cod>/editar`); no se inventa ninguna ruta.
+
+    Cuando hay plata mezclada bajo el código, se agrega el link al detalle
+    (`/admin/clientes-asinfo/<cod>`), que es la pantalla que la reparte por
+    RUC contra Asinfo. Sin ese paso el resto de las acciones están bloqueadas,
+    así que tiene que estar donde se lee la advertencia y no dos clicks más
+    allá.
     """
+    veredicto = _que_hacer_base(grupo)
+    if veredicto.get("advertencia"):
+        cod = str(grupo.get("codigo_cli") or "")
+        veredicto["acciones"] = [{
+            "texto": f"Ver de quién es cada factura de {cod}",
+            "href": f"/admin/clientes-asinfo/{cod}",
+        }] + list(veredicto.get("acciones") or [])
+    return veredicto
+
+
+def _que_hacer_base(grupo: dict) -> dict:
+    """El veredicto, sin el link al detalle. Ver :func:`que_hacer`."""
     fichas = list(grupo.get("fichas") or [])
     cod = str(grupo.get("codigo_cli") or "")
     n_fact = int(grupo.get("n_facturas") or 0)

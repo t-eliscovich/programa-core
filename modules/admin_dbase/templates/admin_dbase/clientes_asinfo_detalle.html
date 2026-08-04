@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ codigo }} · quién es quién{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <p class="text-sm mb-1">
+    <a href="/admin/clientes-asinfo/" class="text-sky-700 hover:underline">← Códigos duplicados</a>
+  </p>
+  <h1 class="text-2xl font-semibold mb-1">{{ codigo }} · quién es quién</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    Las facturas guardan el <b>código</b>, no la ficha, así que con el código repetido la plata de
+    las dos empresas queda amontonada. <b>Asinfo factura contra el RUC</b>: acá se cruza factura por
+    factura para saber de cuál de las dos es cada una.
+    Pantalla de <b>sólo lectura</b>.
+  </p>
+
+  {% if not asinfo_ok %}
+  <p class="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded text-sm">
+    <b>El lado de Asinfo no está disponible</b> (Metabase sin configurar o sin respuesta).
+    Abajo está el lado de Programa Core igual, pero sin Asinfo no se puede repartir nada.
+  </p>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# Las fichas, con lo que Asinfo dice de cada RUC                      #}
+  {# ------------------------------------------------------------------ #}
+  <h2 class="text-lg font-semibold mb-2">Las fichas</h2>
+  <div class="mb-6 grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    {% for f in fichas %}
+    <div class="rounded border border-slate-200 dark:border-slate-700 p-3 text-sm">
+      <div class="font-semibold">#{{ f.id_cliente }} · {{ f.nombre or '—' }}</div>
+      <div class="text-xs text-slate-500 mt-1">RUC en PC</div>
+      <div class="font-mono text-xs">{{ f.ruc or '—' }}</div>
+
+      <div class="text-xs text-slate-500 mt-2">Dirección en PC</div>
+      <div class="text-xs">{{ f.direccion1 or '—' }}</div>
+
+      {% if f.asinfo %}
+      <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+        <div class="text-xs text-slate-500">En Asinfo</div>
+        <div class="text-xs">{{ f.asinfo.nombre_fiscal or '—' }}</div>
+        <div class="text-xs font-mono">
+          {{ f.asinfo.ruc_completo or '—' }}
+          {% if f.asinfo.nombre_comercial %}· código {{ f.asinfo.nombre_comercial }}{% endif %}
+        </div>
+        <div class="text-xs mt-1">
+          {{ f.asinfo.direccion or 'sin dirección cargada' }}
+          {% if f.asinfo.telefono %}· {{ f.asinfo.telefono }}{% endif %}
+        </div>
+        {% if f.direccion_difiere %}
+        <div class="text-xs mt-1" style="color:#b45309">
+          La dirección de Asinfo no es la de PC. La de Asinfo es la que se está usando para facturar.
+        </div>
+        {% endif %}
+      </div>
+      {% elif asinfo_ok %}
+      <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500">
+        Asinfo no tiene este RUC. Buscala por nombre abajo.
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ------------------------------------------------------------------ #}
+  {# El reparto                                                          #}
+  {# ------------------------------------------------------------------ #}
+  <h2 class="text-lg font-semibold mb-2">Cómo se reparten las facturas</h2>
+
+  {% if not cruce.filas %}
+  <p class="mb-6 p-4 rounded border border-slate-200 dark:border-slate-700 text-sm text-slate-500">
+    Este código no tiene ninguna factura en Programa Core, así que no hay nada que repartir:
+    el cambio de código no va a estar bloqueado por plata mezclada.
+  </p>
+  {% else %}
+
+  <div class="mb-3 flex flex-wrap gap-3 text-sm">
+    {% for p in cruce.por_ficha %}
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">#{{ p.id_cliente }} {{ p.nombre[:28] }}</div>
+      <div class="text-xl font-bold tabular-nums">{{ p.n }} <span class="text-xs font-normal">facturas</span></div>
+      <div class="text-xs tabular-nums">{{ p.importe | money_es }} · saldo {{ p.saldo | money_es }}</div>
+    </div>
+    {% endfor %}
+    {% if cruce.sin_dueno.n %}
+    <div class="px-3 py-2 rounded" style="background:#fffbeb;border:1px solid #fde68a">
+      <div class="text-[10px] uppercase text-slate-500">Asinfo no las tiene</div>
+      <div class="text-xl font-bold tabular-nums">{{ cruce.sin_dueno.n }}</div>
+      <div class="text-xs tabular-nums">{{ cruce.sin_dueno.importe | money_es }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if cruce.concluyente %}
+  <p class="mb-4 p-3 rounded text-sm" style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46">
+    <b>Todas las facturas tienen dueño.</b> El reparto de arriba es completo: ya se puede decidir
+    quién se queda con {{ codigo }} sabiendo exactamente cuánta plata se lleva cada una.
+  </p>
+  {% else %}
+  <p class="mb-4 p-3 rounded text-sm" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e">
+    <b>Quedan {{ cruce.sin_dueno.n }} facturas sin dueño</b> — Asinfo no las reporta para ninguno de
+    los dos RUC. Pueden ser viejas, del dBase, o tipeadas a mano. Mientras estén ahí el reparto no
+    está cerrado: mirá esas primero antes de separar.
+  </p>
+  {% endif %}
+
+  <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden mb-6">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-500 border-b border-slate-200 dark:border-slate-700">
+          <th class="text-left px-3 py-1.5">Factura</th>
+          <th class="text-left px-3 py-1.5">Fecha</th>
+          <th class="text-right px-3 py-1.5">Importe</th>
+          <th class="text-right px-3 py-1.5">Saldo</th>
+          <th class="text-left px-3 py-1.5">Estado</th>
+          <th class="text-left px-3 py-1.5">Es de</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in cruce.filas %}
+        <tr class="border-b border-slate-100 dark:border-slate-800"
+            style="{% if f.estado == 'sin_dueno' %}background:#fffbeb{% endif %}">
+          <td class="px-3 py-1.5 font-mono text-xs">{{ f.numf_completo or f.numf }}</td>
+          <td class="px-3 py-1.5 text-xs">{{ f.fecha or '—' }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ f.importe | money_es }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ f.saldo | money_es }}</td>
+          <td class="px-3 py-1.5 text-xs">{{ f.stat or '—' }}</td>
+          <td class="px-3 py-1.5">
+            {% if f.id_dueno %}
+              #{{ f.id_dueno }} {{ f.nombre_dueno }}
+            {% else %}
+              <span class="text-xs" style="color:#b45309">Asinfo no la tiene</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# Buscar en Asinfo por nombre                                         #}
+  {# ------------------------------------------------------------------ #}
+  <h2 class="text-lg font-semibold mb-1">Buscar en Asinfo por nombre</h2>
+  <p class="text-sm text-slate-500 mb-2">
+    Cuando el RUC de una ficha está mal cargado, preguntarle a Asinfo por RUC devuelve al cliente
+    equivocado. Buscando por nombre aparece la ficha real, con su RUC verdadero.
+  </p>
+  <form method="get" class="mb-3 flex gap-2">
+    <input type="text" name="q" value="{{ q }}" placeholder="Apellido o nombre de la empresa"
+           class="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-800"
+           style="min-width:280px" maxlength="60">
+    <button type="submit" class="px-3 py-1.5 text-sm rounded bg-sky-700 text-white">Buscar</button>
+  </form>
+
+  {% if q and not busqueda_ok %}
+  <p class="text-sm text-slate-500 mb-6">Asinfo no contestó la búsqueda.</p>
+  {% elif q and not resultados_nombre %}
+  <p class="text-sm text-slate-500 mb-6">Asinfo no tiene ninguna empresa con ese nombre.</p>
+  {% elif resultados_nombre %}
+  <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden mb-6">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-500 border-b border-slate-200 dark:border-slate-700">
+          <th class="text-left px-3 py-1.5">RUC en Asinfo</th>
+          <th class="text-left px-3 py-1.5">Nombre fiscal</th>
+          <th class="text-left px-3 py-1.5">Código</th>
+          <th class="text-left px-3 py-1.5">Es cliente</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in resultados_nombre %}
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-1.5 font-mono text-xs">{{ r.ruc_completo }}</td>
+          <td class="px-3 py-1.5">{{ r.nombre_fiscal }}</td>
+          <td class="px-3 py-1.5 font-mono text-xs">{{ r.nombre_comercial or '—' }}</td>
+          <td class="px-3 py-1.5 text-xs">{{ 'sí' if r.es_cliente in (1, '1', True, 'true') else 'no' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

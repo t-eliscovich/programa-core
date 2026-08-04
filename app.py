@@ -572,6 +572,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(clientes_asinfo_bp)
 
+    # Detalle de UN código repetido — /admin/clientes-asinfo/<codigo>. Cruza
+    # las facturas de PC contra Asinfo POR RUC para decir de cuál de las dos
+    # fichas es cada una. Es lo único que destraba BLP (75 facturas) y BRC
+    # (18): con la plata mezclada, renombrar es una apuesta.
+    from modules.admin_dbase.clientes_asinfo_detalle_view import bp as clientes_asinfo_det_bp
+
+    app.register_blueprint(clientes_asinfo_det_bp)
+
     # Importador de proveedores desde FABRICA.DBF — TMT 2026-06-19.
     # /admin/proveedores-import crea los proveedores que faltan (BP, AC, AQ…)
     # con nombre/RUC/retenciones del maestro FABRICA. Dry-run por defecto.
