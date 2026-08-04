@@ -103,3 +103,18 @@ def test_el_form_de_cobranza_arrastra_desde_caja():
     assert 'name="desde_caja"' in tpl
     assert "request.form.get('desde_caja')" in tpl
     assert "request.args.get('desde_caja')" in tpl
+
+
+def test_adoptando_una_caja_el_fechad_es_el_de_la_fila_no_hoy():
+    """Visto en vivo con CHI el 04/08: el cheque nació con fechad=03/08
+    adoptando una caja del 21/07 → el cobro se iba a la comisión de AGOSTO."""
+    import inspect
+
+    from modules.cheques import views as cv
+
+    src = inspect.getsource(cv.nuevo)
+    i = src.index("if es_deposito")
+    bloque = src[i : i + 700]
+    assert "desde_caja" in bloque, "el forzado a hoy no distingue la adopción"
+    j = bloque.index("desde_caja")
+    assert "today_ec()" not in bloque[:j], "sigue forzando hoy antes de mirar la adopción"

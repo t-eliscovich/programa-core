@@ -248,7 +248,14 @@ def nuevo():
         # Si stat='P' (postdatado), fechad obligatoria explicita.
         # Para el resto, colapsa a fecha_recibido.
         fd_parsed = parse_date(fd_clean) if fd_clean else None
-        if es_deposito:
+        if es_deposito and desde_caja:
+            # TMT 2026-08-04 — estamos ADOPTANDO una entrada de caja que ya
+            # existe (botón "⚠ sin cobranza" de /caja): la plata entró el día
+            # que dice esa fila, no hoy. Forzar hoy mandaba un cobro de JULIO
+            # a la comisión de AGOSTO. Se vio en vivo con CHI el 04/08: el
+            # cheque nació con fechad=03/08 adoptando una caja del 21/07.
+            cheque_fechad = fd_parsed or fecha
+        elif es_deposito:
             cheque_fechad = today_ec()  # dueña: 'obligatoriamente fecha de hoy'
         elif st_clean == "P":
             cheque_fechad = fd_parsed  # puede ser None → error abajo
