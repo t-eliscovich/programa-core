@@ -109,6 +109,30 @@ def test_cada_gancho_del_css_de_celular_existe_en_algun_template():
     )
 
 
+def test_las_pantallas_de_informes_quedan_afuera_del_scroll_generico():
+    """La regla genérica `main table { display: block }` NO puede alcanzarlas.
+
+    En las listas (cheques, compras, clientes…) queremos que la tabla se panee
+    de costado. En las 4 de informes queremos lo contrario: la tabla entera
+    entra en 360px y ahí un scroll horizontal sería un bug, no una ayuda. Si
+    alguien borra la línea de exclusión, Resultados vuelve a "cortarse" en el
+    teléfono y no hay forma de notarlo mirando el escritorio.
+    """
+    bloque = re.sub(r"/\*.*?\*/", "", _bloque_celular(), flags=re.S)
+
+    assert "main table { display: block;" in bloque, "cambió la regla genérica"
+
+    reglas = re.findall(r"([^{}]+)\{([^{}]*)\}", bloque)
+    excluidos = " ".join(
+        sel for sel, cuerpo in reglas if re.search(r"display:\s*table\b", cuerpo)
+    )
+    for contenedor in (".informe-balance", ".h12-page", ".gastos-matriz", ".fp"):
+        assert f"{contenedor} table" in excluidos, (
+            f"{contenedor} quedó adentro del scroll genérico: su tabla ya entra "
+            "completa en el celu y no debe panearse"
+        )
+
+
 @pytest.mark.parametrize("tpl", _templates(), ids=lambda p: p.name)
 def test_solo_movil_y_solo_escritorio_van_siempre_de_a_pares(tpl: Path):
     """Un `.solo-movil` sin su `.solo-escritorio` = un título que desaparece.
