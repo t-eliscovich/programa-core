@@ -50,16 +50,46 @@ from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  
 # "Total (3 cheques)" abajo, más una franja que decía "Depositados (B/A): $X"
 # justo en la hoja que se le manda al cliente.
 #
-# Por cobrar = sigue siendo plata del cliente:
-#   Z/P cartera · D "Daniela" · 1/2/3/R rebotados · 9 "sin fondos (rebotó)".
-#   ⚠️ `9` es el rebote que se marca desde el dropdown de /cheques
-#   (`transicionar_stat`, que además pone `cliente.stop='S'`): el banco lo
-#   rechazó, o sea que es el caso MÁS por cobrar que hay. Se pasó por alto en
-#   la primera versión de esta lista y el cliente desaparecía de la impresión.
+# La partición es la del dBase — `CUENTA.PRG` PROCEDURE EDITA, verificado en el
+# fuente (TMT 2026-08-03, dueña: "lo que haga dbase"):
+#
+#     &SU .AND. STAT $ "12"     TO CHPRO     -- protestados
+#     &SU .AND. STAT $ "ZP12D"  TO CH        -- todo lo que el cliente debe
+#     ? "CHEQUES A DEPOSITAR: " + STR(CH-CHPRO)   -- o sea Z/P/D
+#     ? "+ CHEQUES PROTESTADOS: " + STR(CHPRO)
+#     ? "TOTAL: " + STR(SA+CH)                    -- saldo + Z/P/1/2/D
+#
+# El dBase lee YCHEQUES.DBF, que es la copia VIVA: sus 1.176 filas son sólo
+# `Z P 1 D` — los cobrados (B/C/W/V) y los anulados (X) ni entran. O sea que
+# "por cobrar" para el dBase ES el archivo entero, y `ZP12D` lo cubre.
+#
+# ⚠️ DOS diferencias deliberadas con el PRG, las dos verificadas contra la data:
+#  1. El dBase suma también los ESPEJOS DE ANTICIPO NB=98 (73 filas vivas por
+#     −93.456,24, todas en stat Z). PC los excluye del cheque y los netea en
+#     `saldo_neto`. El renglón "a depositar" queda distinto para 13 clientes,
+#     pero el TOTAL da IGUAL por los dos caminos (verificado: MTV 3.783,21 ·
+#     MMM 8.997,73 · RCQ −2.479,76). Replicar el 98 acá los contaría dos veces.
+#  2. En el PRG, "CHEQUES A DEPOSITAR" está adentro de un `IF PRN $ "OFF"` — o
+#     sea que sale SÓLO EN PANTALLA, y en papel `CH` queda en 0 y tampoco se
+#     imprime el TOTAL. La dueña pidió el TOTAL mirando la pantalla verde
+#     (03/08), así que acá se imprimen los tres siempre.
+#
+# `3 R 9` NO EXISTEN en el dBase (verificado sobre CHEQUES.DBF: B 1698 · Z 1233
+# · X 139 · C 112 · P 53 · W 48 · 1 20 · V 12 · D 2). Son estados que agregó PC
+# para el mismo hecho —el cheque rebotó— así que van con los protestados: si no,
+# un cheque rebotado por PC desaparece del total que el cliente debe.
+#   ⚠️ `9` es el rebote del dropdown de /cheques (`transicionar_stat`, que
+#   además pone `cliente.stop='S'`). Olvidarlo hacía desaparecer al cliente
+#   entero de la impresión por vendedor.
+#
 # NO por cobrar = ya la cobramos o el cheque no es más nuestro:
 #   B/A y los depositados legacy V/W/I/J/K · C cobrado en caja · E endosado ·
 #   X anulado.
-STATS_CHEQUE_POR_COBRAR = ("Z", "P", "D", "1", "2", "3", "R", "9")
+STATS_CHEQUE_A_DEPOSITAR = ("Z", "P", "D")
+STATS_CHEQUE_PROTESTADO = ("1", "2", "3", "R", "9")
+# Invariante estructural: por cobrar = a depositar + protestados. No se escribe
+# a mano — así el pie del estado de cuenta no puede volver a contradecirse.
+STATS_CHEQUE_POR_COBRAR = STATS_CHEQUE_A_DEPOSITAR + STATS_CHEQUE_PROTESTADO
 
 
 def cheque_por_cobrar(stat) -> bool:
@@ -67,13 +97,18 @@ def cheque_por_cobrar(stat) -> bool:
     return (str(stat or "").strip().upper()) in STATS_CHEQUE_POR_COBRAR
 
 
-# El SQL normaliza IGUAL que `cheque_por_cobrar()`. Sin el UPPER(TRIM(...)) un
-# `stat = 'Z '` quedaba en la lista impresa pero fuera del total: "Total 0,00"
-# debajo de un cheque de $500. La normalización defensiva es la norma en el
-# repo (ver `modules/conciliacion`), no una paranoia.
-_SQL_CHEQUE_POR_COBRAR = "UPPER(TRIM(COALESCE(stat, ''))) IN (" + ", ".join(
-    "'%s'" % st for st in STATS_CHEQUE_POR_COBRAR
-) + ")"
+def _sql_stat_in(stats) -> str:
+    """`stat IN (...)` normalizado IGUAL que `cheque_por_cobrar()`. Sin el
+    UPPER(TRIM(...)) un `stat = 'Z '` quedaba en la lista impresa pero fuera del
+    total: "Total 0,00" debajo de un cheque de $500."""
+    return "UPPER(TRIM(COALESCE(stat, ''))) IN (" + ", ".join(
+        "'%s'" % st for st in stats
+    ) + ")"
+
+
+_SQL_CHEQUE_POR_COBRAR = _sql_stat_in(STATS_CHEQUE_POR_COBRAR)
+_SQL_CHEQUE_A_DEPOSITAR = _sql_stat_in(STATS_CHEQUE_A_DEPOSITAR)
+_SQL_CHEQUE_PROTESTADO = _sql_stat_in(STATS_CHEQUE_PROTESTADO)
 
 
 # ---------------------------------------------------------------------------
@@ -7335,6 +7370,9 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                 "saldo_vencido": 0.0,
                 "cheques_total": 0.0,
                 "cheques_cartera": 0.0,
+                "cheques_por_cobrar": 0.0,
+                "cheques_a_depositar": 0.0,
+                "cheques_protestados": 0.0,
                 "cheques_depositados": 0.0,
                 "cheques_acreditados": 0.0,
                 "cheques_rebotados": 0.0,
@@ -7479,14 +7517,20 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           COALESCE(SUM(CASE WHEN stat IN ('1','2','3','R') THEN importe ELSE 0 END), 0)   AS rebotados,
           COALESCE(SUM(CASE WHEN stat = 'E'                THEN importe ELSE 0 END), 0)   AS endosados,
           COALESCE(SUM(CASE WHEN stat = 'D'                THEN importe ELSE 0 END), 0)   AS daniela,
-          COALESCE(SUM(CASE WHEN __POR_COBRAR__ THEN importe ELSE 0 END), 0)               AS por_cobrar
+          COALESCE(SUM(CASE WHEN __POR_COBRAR__ THEN importe ELSE 0 END), 0)               AS por_cobrar,
+          -- Paridad CUENTA.PRG: "CHEQUES A DEPOSITAR" (CH-CHPRO) y
+          -- "+ CHEQUES PROTESTADOS" (CHPRO). Su suma es `por_cobrar`.
+          COALESCE(SUM(CASE WHEN __A_DEPOSITAR__ THEN importe ELSE 0 END), 0)              AS a_depositar,
+          COALESCE(SUM(CASE WHEN __PROTESTADO__ THEN importe ELSE 0 END), 0)               AS protestados
         FROM scintela.cheque
         WHERE codigo_cli = %s
           AND COALESCE(stat,'') <> 'X'
           -- TMT 2026-06-23: excluir espejos de anticipo NB=98 de los totales
           -- de cheques reales (se contabilizan en `saldo_a_favor`).
           AND COALESCE(no_banco, 0) <> 98
-        """.replace("__POR_COBRAR__", _SQL_CHEQUE_POR_COBRAR),
+        """.replace("__POR_COBRAR__", _SQL_CHEQUE_POR_COBRAR)
+            .replace("__A_DEPOSITAR__", _SQL_CHEQUE_A_DEPOSITAR)
+            .replace("__PROTESTADO__", _SQL_CHEQUE_PROTESTADO),
             (codigo_cli,),
         )
         or {}
@@ -7527,6 +7571,8 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         "cheques_endosados": float(tot_che.get("endosados") or 0),
         "cheques_daniela": float(tot_che.get("daniela") or 0),
         "cheques_por_cobrar": float(tot_che.get("por_cobrar") or 0),
+        "cheques_a_depositar": float(tot_che.get("a_depositar") or 0),
+        "cheques_protestados": float(tot_che.get("protestados") or 0),
         # TMT 2026-06-23: saldo a favor (positivo) y saldo neteado.
         "saldo_a_favor": -_anticipo_raw,
         "saldo_neto": round(_saldo_fac + _anticipo_raw, 2),

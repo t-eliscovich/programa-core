@@ -123,26 +123,50 @@
          TOTAL:                SA + CH
 
        Antes esto vivía al final de todo, DESPUÉS de la tabla de cheques: al
-       imprimir sólo la hoja de facturas el total no salía. Va acá. #}
-    {% set _ch_depositar = t.cheques_cartera or 0 %}
-    {% set _ch_protestados = t.cheques_rebotados or 0 %}
+       imprimir sólo la hoja de facturas el total no salía. Va acá.
+
+       TMT 2026-08-03 tarde (dueña: "lo que haga dbase"). Los dos renglones
+       salían de definiciones propias y no eran los del FoxPro:
+         · "a depositar" usaba `cheques_cartera` = Z/P → **se comía los `D`**
+           (el dBase suma ZP12D y resta los 1/2, o sea Z/P/D);
+         · "protestados" usaba `cheques_rebotados` = 1/2/3/R, que además del
+           1/2 del dBase mete estados que el dBase no tiene.
+       Y el TOTAL quedaba `saldo + Z/P + 1/2/3/R`, sin los D. Ahora los tres
+       números salen de STATS_CHEQUE_A_DEPOSITAR / STATS_CHEQUE_PROTESTADO, y
+       `por cobrar` ES la suma de los dos — por construcción, no por copia.
+       Se replican también los `IF` del PRG: cada renglón sale sólo si tiene
+       monto, y el TOTAL sólo si el cliente tiene algún cheque por cobrar. #}
+    {% set _ch_depositar = t.cheques_a_depositar or 0 %}
+    {% set _ch_protestados = t.cheques_protestados or 0 %}
+    {% set _ch_total = t.cheques_por_cobrar or 0 %}
+    {# 371 de los 493 clientes con saldo no tienen NINGÚN cheque por cobrar
+       (medido sobre FACTURAS.DBF + YCHEQUES.DBF). Sin este `if` externo, a esos
+       les quedaba al pie de la hoja un recuadro con borde de 2px y 24pt de aire
+       ADENTRO DEL CUAL no se imprime una sola letra. El PRG compara `> 0`, no
+       "distinto de cero": un importe negativo tampoco imprime renglón. #}
+    {% if _ch_depositar > 0 or _ch_protestados > 0 or _ch_total > 0 %}
     <div class="px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
+      {% if _ch_depositar > 0 %}
       <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
-        <span class="text-slate-600">Total cheques <span class="text-slate-400">(por cobrar)</span></span>
+        <span class="text-slate-600">Cheques a depositar</span>
         <span class="text-mono font-semibold">{{ _ch_depositar | money_es }}</span>
       </div>
-      {% if _ch_protestados %}
+      {% endif %}
+      {% if _ch_protestados > 0 %}
       <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
         <span class="text-slate-600">+ Cheques protestados</span>
         <span class="text-mono font-semibold text-red-600">{{ _ch_protestados | money_es }}</span>
       </div>
       {% endif %}
+      {% if _ch_total > 0 %}
       <div class="flex justify-between border-t border-slate-300 dark:border-slate-700 mt-1 pt-1"
            style="max-width:420px; margin-left:auto;">
         <span class="text-xs uppercase tracking-wider text-slate-500">Total</span>
-        <span class="text-mono font-semibold text-base">{{ ((_saldo_neto or 0) + _ch_depositar + _ch_protestados) | money_es }}</span>
+        <span class="text-mono font-semibold text-base">{{ ((_saldo_neto or 0) + _ch_total) | money_es }}</span>
       </div>
+      {% endif %}
     </div>
+    {% endif %}
   </div>
 
   {# Cheques — TMT 2026-07-07 dueña v2: "en imprimir estado de cuenta volvé a
@@ -261,22 +285,23 @@
       {# Sólo pantalla/impresión completa: la franja dice "Depositados (B/A): $X",
          justo lo que no va en el papel que se le manda al cliente. #}
       <div class="ec-ch-resumen px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-600 dark:text-slate-400 grid grid-cols-2 md:grid-cols-4 gap-2">
-        <div>Cartera <span class="text-slate-400">(Z/P)</span>: <span class="text-mono font-semibold">{{ t.cheques_cartera | money_es }}</span></div>
+        {# TMT 2026-08-03 tarde: la franja cortaba por Z/P y 1/2/3/R mientras el
+           pie de arriba cortaba por Z/P/D y 1/2/3/R/9 — en "Imprimir todo" el
+           cliente veía "Cheques a depositar 11.609,26" y, dos bloques abajo,
+           "Cartera (Z/P) 2.609,26". Misma partición que el pie. #}
+        <div>A depositar <span class="text-slate-400">(Z/P/D)</span>: <span class="text-mono font-semibold">{{ t.cheques_a_depositar | money_es }}</span></div>
         <div>Depositados <span class="text-slate-400">(B/A)</span>: <span class="text-mono font-semibold text-emerald-700">{{ t.cheques_depositados | money_es }}</span></div>
-        <div>Rebotados <span class="text-slate-400">(1/2/3/R)</span>: <span class="text-mono font-semibold {{ 'text-red-600' if t.cheques_rebotados > 0 else '' }}">{{ t.cheques_rebotados | money_es }}</span></div>
+        <div>Protestados <span class="text-slate-400">(1/2/3/R/9)</span>: <span class="text-mono font-semibold {{ 'text-red-600' if (t.cheques_protestados or 0) > 0 else '' }}">{{ t.cheques_protestados | money_es }}</span></div>
         <div>Endosados <span class="text-slate-400">(E)</span>: <span class="text-mono font-semibold">{{ t.cheques_endosados | money_es }}</span></div>
       </div>
     {% endif %}
 
-    {# Visible SÓLO en "Imprimir cheques". Dice LITERAL lo que suma — las filas
-       que quedaron impresas — para no competir con el "Total cheques (por
-       cobrar)" del pie de facturas, que sale de otra definición (Z/P, paridad
-       CUENTA.PRG) y no cuenta lo mismo. 🟡 Esas dos definiciones habría que
-       unificarlas, pero el pie de facturas se validó contra el FoxPro el
-       03/08 y no se toca sin la dueña. #}
+    {# Visible SÓLO en "Imprimir cheques": la suma de las filas que quedaron
+       impresas. Es el MISMO número que el pie de facturas suma al saldo
+       (a depositar + protestados), así que las dos hojas cierran igual. #}
     <div class="ec-ch-total-cobrar px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
       <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
-        <span class="text-xs uppercase tracking-wider text-slate-500">Total de los cheques listados</span>
+        <span class="text-xs uppercase tracking-wider text-slate-500">Total cheques por cobrar</span>
         <span class="text-mono font-semibold text-base">{{ (t.cheques_por_cobrar or 0) | money_es }}</span>
       </div>
     </div>

@@ -40,14 +40,61 @@ def test_el_pie_de_facturas_trae_el_total_de_cheques_por_cobrar():
     """
     i_tabla_facturas = IMPRESO.index("ec-bloque-facturas")
     i_cheques = IMPRESO.index("ec-bloque-cheques")
-    i_total = IMPRESO.index("Total cheques")
+    i_total = IMPRESO.index(">Cheques a depositar<")
     assert i_tabla_facturas < i_total < i_cheques, (
         "el pie con el total de cheques tiene que quedar dentro del bloque de "
         "facturas, antes de la tabla de cheques"
     )
-    # Y el TOTAL suma saldo + cheques por cobrar + protestados (CUENTA.PRG).
-    assert "(_saldo_neto or 0) + _ch_depositar + _ch_protestados" in IMPRESO
+    # Y el TOTAL suma saldo + TODO lo que el cliente debe (CUENTA.PRG: SA+CH).
+    assert "(_saldo_neto or 0) + _ch_total" in IMPRESO
     assert "+ Cheques protestados" in IMPRESO
+
+
+def test_el_pie_es_el_de_CUENTA_PRG():
+    """Paridad literal con `CUENTA.PRG` PROCEDURE EDITA (dueña: "lo que haga
+    dbase"), verificado contra el fuente del FoxPro:
+
+        &SU .AND. STAT $ "12"     TO CHPRO
+        &SU .AND. STAT $ "ZP12D"  TO CH
+        ? "CHEQUES A DEPOSITAR: " + STR(CH-CHPRO)    -> Z/P/D
+        ? "+ CHEQUES PROTESTADOS: " + STR(CHPRO)     -> 1/2
+        ? "TOTAL: " + STR(SA+CH)                     -> saldo + Z/P/1/2/D
+
+    `3 R 9` no existen en el dBase (CHEQUES.DBF: B/Z/X/C/P/W/1/V/D) — son
+    estados que agregó PC para el mismo hecho (el cheque rebotó), así que van
+    con los protestados. Si quedaran afuera, un cheque rebotado por PC
+    desaparecería de lo que el cliente debe.
+    """
+    from modules.informes import queries as iq
+
+    assert iq.STATS_CHEQUE_A_DEPOSITAR == ("Z", "P", "D"), "CH − CHPRO del PRG"
+    assert set(iq.STATS_CHEQUE_PROTESTADO) >= {"1", "2"}, "CHPRO del PRG"
+    for st in ("3", "R", "9"):
+        assert st in iq.STATS_CHEQUE_PROTESTADO, (
+            f"{st} es un rebote que sólo existe en PC: tiene que contar"
+        )
+    # ⭐ Invariante estructural: por cobrar ES la suma de los dos, no una copia.
+    assert set(iq.STATS_CHEQUE_POR_COBRAR) == (
+        set(iq.STATS_CHEQUE_A_DEPOSITAR) | set(iq.STATS_CHEQUE_PROTESTADO)
+    )
+    assert not (set(iq.STATS_CHEQUE_A_DEPOSITAR) & set(iq.STATS_CHEQUE_PROTESTADO))
+    # El `D` es el que se perdía: el pie sumaba `cheques_cartera` (Z/P).
+    assert "D" in iq.STATS_CHEQUE_A_DEPOSITAR
+    assert "t.cheques_a_depositar" in IMPRESO and "t.cheques_protestados" in IMPRESO
+    assert "t.cheques_cartera or 0" not in IMPRESO, "volvió la definición vieja (Z/P)"
+    assert "t.cheques_rebotados or 0" not in IMPRESO
+
+
+def test_el_pie_replica_los_IF_del_PRG():
+    """El PRG imprime cada renglón sólo si tiene monto (`IF CH-CHPRO > 0`,
+    `IF CHPRO > 0`, `IF CH > 0`)."""
+    i = IMPRESO.index(">Cheques a depositar<")
+    bloque = IMPRESO[i - 400:i + 1400]
+    assert "{% if _ch_depositar > 0 %}" in bloque
+    assert "{% if _ch_protestados > 0 %}" in bloque
+    assert "{% if _ch_total > 0 %}" in bloque
+    # `> 0`, no truthiness: un importe negativo tampoco imprime renglón.
+    assert "{% if _ch_depositar %}" not in bloque
 
 
 def test_hay_tres_botones_de_impresion():
@@ -130,19 +177,27 @@ def test_el_total_por_cobrar_del_SQL_usa_la_misma_lista(monkeypatch):
     monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [])
     iq.estado_cuenta_cliente("ZZZ")
 
-    sql = next((q for q in vistos if "AS por_cobrar" in q), None)
-    assert sql, "la query de totales dejó de calcular `por_cobrar`"
-    caso = sql.split("AS por_cobrar")[0].rsplit("WHEN", 1)[-1]
     import re
 
-    en_sql = {x for x in re.findall(r"'([^']*)'", caso) if x}
-    assert en_sql == set(iq.STATS_CHEQUE_POR_COBRAR), (
-        f"el IN del SQL no es la lista compartida: sobra {en_sql - set(iq.STATS_CHEQUE_POR_COBRAR)}, "
-        f"falta {set(iq.STATS_CHEQUE_POR_COBRAR) - en_sql}"
-    )
-    # Y normaliza igual que la función Python: un `stat = 'Z '` tiene que caer
-    # del MISMO lado en los dos, si no el total contradice a las filas.
-    assert "UPPER(TRIM(" in caso, "el SQL no normaliza y `cheque_por_cobrar()` sí"
+    sql = next((q for q in vistos if "AS por_cobrar" in q), None)
+    assert sql, "la query de totales dejó de calcular `por_cobrar`"
+    # Los TRES totales del pie salen de las MISMAS listas. Que uno solo se
+    # desalinee es justo el bug que veníamos a cerrar.
+    for alias, esperado in (
+        ("por_cobrar", iq.STATS_CHEQUE_POR_COBRAR),
+        ("a_depositar", iq.STATS_CHEQUE_A_DEPOSITAR),
+        ("protestados", iq.STATS_CHEQUE_PROTESTADO),
+    ):
+        assert f"AS {alias}" in sql, alias
+        caso = sql.split(f"AS {alias}")[0].rsplit("WHEN", 1)[-1]
+        en_sql = {x for x in re.findall(r"'([^']*)'", caso) if x}
+        assert en_sql == set(esperado), (
+            f"el IN de `{alias}` no es la lista compartida: sobra "
+            f"{en_sql - set(esperado)}, falta {set(esperado) - en_sql}"
+        )
+        # Y normaliza igual que la función Python: un `stat = 'Z '` tiene que
+        # caer del MISMO lado en los dos, si no el total contradice a las filas.
+        assert "UPPER(TRIM(" in caso, f"`{alias}` no normaliza y Python sí"
 
 
 def test_el_total_impreso_es_LA_SUMA_de_las_filas_que_quedan(app, fake_db, monkeypatch):
@@ -152,10 +207,10 @@ def test_el_total_impreso_es_LA_SUMA_de_las_filas_que_quedan(app, fake_db, monke
         _cliente_fake("SUMA", facturas=1, cheques=["Z", "P", "B", "X", "C", "E", "9"]),
     ])
     bloque = html[html.index("CLIENTE SUMA"):]
-    bloque = bloque[:bloque.index("Total de los cheques listados") + 400]
+    bloque = bloque[:bloque.index("Total cheques por cobrar") + 400]
     # 4 filas por cobrar (Z, P, 9 … y ninguna más) → las otras llevan la marca.
     assert bloque.count("ec-ch-cobrado") == 4, "B/X/C/E tienen que quedar marcados"
-    assert "150,00" in bloque.split("Total de los cheques listados")[1], (
+    assert "150,00" in bloque.split("Total cheques por cobrar")[1], (
         "el total impreso no es la suma de Z + P + 9"
     )
 
@@ -174,10 +229,12 @@ def test_en_solo_cheques_el_total_cuadra_con_lo_impreso():
     # El rótulo no puede competir con el "Total cheques (por cobrar)" del pie de
     # facturas, que sale de OTRA definición (Z/P, paridad CUENTA.PRG): dos
     # líneas con la misma etiqueta y números distintos en el mismo estado.
-    assert "Total de los cheques listados" in IMPRESO
-    assert IMPRESO.count(
-        'Total cheques <span class="text-slate-400">(por cobrar)</span>'
-    ) == 1, "hay dos líneas rotuladas 'por cobrar' con números distintos"
+    assert "Total cheques por cobrar" in IMPRESO
+    # Ya no hay dos líneas peleando por el rótulo: el pie de facturas usa los
+    # nombres del PRG ("Cheques a depositar" / "+ Cheques protestados") y su
+    # TOTAL suma exactamente el mismo `cheques_por_cobrar` que imprime la hoja
+    # de cheques.
+    assert 'Total cheques <span class="text-slate-400">(por cobrar)</span>' not in IMPRESO
 
 
 def test_el_separador_va_sobre_el_primer_bloque_que_de_verdad_se_imprime():
@@ -255,7 +312,14 @@ def _cliente_fake(codigo, *, facturas, cheques):
     definición compartida cambiara."""
     from datetime import date
 
-    from modules.informes.queries import cheque_por_cobrar
+    from modules.informes.queries import (
+        STATS_CHEQUE_A_DEPOSITAR,
+        STATS_CHEQUE_PROTESTADO,
+        cheque_por_cobrar,
+    )
+
+    def _suma(stats):
+        return 50.0 * sum(1 for st in cheques if st.upper() in stats)
 
     hoy = date(2026, 8, 3)
     return {
@@ -284,8 +348,11 @@ def _cliente_fake(codigo, *, facturas, cheques):
             "saldo_neto": 100.0 * facturas, "cheques_total": 50.0 * len(cheques),
             "cheques_cartera": 0.0, "cheques_depositados": 0.0,
             "cheques_rebotados": 0.0, "cheques_endosados": 0.0,
-            # El MISMO número que tiene que imprimir la hoja de cheques.
+            # El MISMO número que tiene que imprimir la hoja de cheques…
             "cheques_por_cobrar": 50.0 * sum(1 for st in cheques if cheque_por_cobrar(st)),
+            # …y los dos renglones del pie (CUENTA.PRG), que tienen que sumarlo.
+            "cheques_a_depositar": _suma(STATS_CHEQUE_A_DEPOSITAR),
+            "cheques_protestados": _suma(STATS_CHEQUE_PROTESTADO),
         },
     }
 
@@ -343,3 +410,90 @@ def test_el_lote_no_dispara_la_impresion_al_cargar(app, fake_db, monkeypatch):
         url="/informes/estado-cuenta/imprimir?por=vendedor&sel=EDG&auto=1",
     )
     assert "window.print(); }, 400)" not in html
+
+
+def test_el_pie_no_se_come_los_cheques_D(app, fake_db, monkeypatch):
+    """El bug que cerró la dueña con "lo que haga dbase": el renglón "a
+    depositar" sumaba `cheques_cartera` (Z/P), así que un cheque en gestión
+    Daniela (`D`) no entraba ni ahí ni en el TOTAL — y el dBase lo cuenta
+    (`STAT $ "ZP12D"`).
+
+    Cliente con 1 factura de $100 y tres cheques de $50 (`D`, `Z`, `1`):
+        Cheques a depositar   = D + Z = 100,00
+        + Cheques protestados = 1     =  50,00
+        TOTAL                 = 100 + 150 = 250,00   (antes daba 200,00)
+    """
+    html = _get_lote(app, fake_db, monkeypatch, [
+        _cliente_fake("DANI", facturas=1, cheques=["D", "Z", "1"]),
+    ])
+    pie = html[html.index("CLIENTE DANI"):]
+    pie = pie[:pie.index("ec-bloque-cheques")]
+    i_dep = pie.index("Cheques a depositar")
+    i_pro = pie.index("+ Cheques protestados")
+    assert "100,00" in pie[i_dep:i_pro], "el D quedó fuera de 'a depositar'"
+    i_tot = pie.index(">Total<", i_pro)
+    assert "50,00" in pie[i_pro:i_tot], "los protestados no son el 1"
+    assert "250,00" in pie[i_tot:], f"el TOTAL se comió el D: {pie[i_tot:][:400]!r}"
+
+
+def test_lo_impreso_en_el_pie_suma_el_total(app, fake_db, monkeypatch):
+    """Los DOS renglones del pie tienen que sumar el TOTAL que sale abajo, y ese
+    mismo número es el que imprime la hoja de cheques. Se lee del HTML
+    renderizado — que las constantes cierren entre sí es tautológico."""
+    from modules.informes.queries import (
+        STATS_CHEQUE_A_DEPOSITAR,
+        STATS_CHEQUE_PROTESTADO,
+        cheque_por_cobrar,
+    )
+
+    todos = list(STATS_CHEQUE_A_DEPOSITAR) + list(STATS_CHEQUE_PROTESTADO) + [
+        "B", "A", "C", "V", "W", "E", "X",
+    ]
+    fake = _cliente_fake("MIX", facturas=1, cheques=todos)
+    t = fake["totales"]
+    assert t["cheques_por_cobrar"] == 50.0 * sum(1 for st in todos if cheque_por_cobrar(st))
+
+    def _es(x):
+        return f"{x:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+    html = _get_lote(app, fake_db, monkeypatch, [fake])
+    pie = html[html.index("CLIENTE MIX"):]
+    pie = pie[:pie.index("ec-bloque-cheques")]
+    i_dep, i_pro = pie.index("Cheques a depositar"), pie.index("+ Cheques protestados")
+    i_tot = pie.index(">Total<", i_pro)
+    assert _es(t["cheques_a_depositar"]) in pie[i_dep:i_pro]
+    assert _es(t["cheques_protestados"]) in pie[i_pro:i_tot]
+    # saldo de la factura (100) + los dos renglones de arriba.
+    assert _es(100.0 + t["cheques_por_cobrar"]) in pie[i_tot:]
+    # Y la hoja de cheques imprime ese mismo por-cobrar.
+    cheques = html[html.index("Total cheques por cobrar"):]
+    assert _es(t["cheques_por_cobrar"]) in cheques[:400]
+
+
+def test_sin_cheques_por_cobrar_no_queda_un_recuadro_vacio(app, fake_db, monkeypatch):
+    """371 de los 493 clientes con saldo no tienen ningún cheque por cobrar. Sin
+    el `if` externo les quedaba al pie un recuadro con borde de 2px y 24pt de
+    aire, sin una sola letra adentro."""
+    html = _get_lote(app, fake_db, monkeypatch, [
+        _cliente_fake("SECO", facturas=2, cheques=["B", "X"]),
+    ])
+    pie = html[html.index("CLIENTE SECO"):]
+    pie = pie[:pie.index("ec-bloque-cheques")]
+    assert "Cheques a depositar" not in pie
+    assert ">Total<" not in pie
+    assert "border-t-2 border-slate-400" not in pie, "quedó el recuadro vacío"
+
+
+def test_la_franja_de_abajo_corta_igual_que_el_pie(app, fake_db, monkeypatch):
+    """En "Imprimir todo" el cliente ve el pie Y la franja en el mismo papel. Si
+    cortan distinto (Z/P vs Z/P/D) los dos números se contradicen a la vista."""
+    html = _get_lote(app, fake_db, monkeypatch, [
+        _cliente_fake("FRANJA", facturas=1, cheques=["D", "Z", "1", "B"]),
+    ])
+    assert "A depositar <span class=\"text-slate-400\">(Z/P/D)</span>" in html
+    assert "Protestados <span class=\"text-slate-400\">(1/2/3/R/9)</span>" in html
+    assert "Cartera <span" not in html, "volvió el corte Z/P de la franja"
+    assert "Rebotados <span" not in html
+    franja = html[html.index("ec-ch-resumen"):]
+    franja = franja[:franja.index("</div>", franja.index("Endosados"))]
+    assert "100,00" in franja, "la franja no muestra D+Z como 'a depositar'"

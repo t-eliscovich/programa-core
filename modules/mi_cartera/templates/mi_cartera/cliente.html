@@ -21,7 +21,7 @@
   <div class="val">$ {{ totales.saldo_vivo|money_es }}</div>
   <div class="sub">
     {{ totales.n_vencidas }} vencida{{ '' if totales.n_vencidas == 1 else 's' }} ·
-    $ {{ totales.cheques_cartera|money_es }} en cheques en cartera
+    $ {{ totales.cheques_por_cobrar|money_es }} en cheques por cobrar
   </div>
   <div class="split">
     <div><small>Vencido</small><b>$ {{ totales.saldo_vencido|money_es }}</b></div>

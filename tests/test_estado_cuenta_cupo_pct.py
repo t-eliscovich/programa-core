@@ -50,7 +50,18 @@ def test_el_total_es_facturas_mas_cheques_y_se_define_antes():
     i_uso = HTML.index("set pct =")
     assert i_def < i_uso, "_total_fc se usa antes de definirse"
     definicion = HTML[i_def:HTML.index("%}", i_def)]
-    assert "_saldo_neto" in definicion and "cheques_cartera" in definicion
+    assert "_saldo_neto" in definicion
+    # TMT 2026-08-03 tarde: era `cheques_cartera` (Z/P), que dejaba afuera los
+    # `D` y los rebotados — justo los que MÁS ocupan cupo — y encima daba un
+    # total distinto del que cierra el estado de cuenta impreso más abajo, en
+    # la misma pantalla. Ahora es el mismo `cheques_por_cobrar` del pie.
+    assert "cheques_por_cobrar" in definicion, (
+        f"el tile tiene que sumar lo mismo que el pie impreso: {definicion}"
+    )
+    assert "t.cheques_cartera" not in HTML, (
+        "volvió el corte Z/P: el tile y el pie de la misma pantalla se "
+        "contradicen para cualquier cliente con cheques rebotados"
+    )
 
 
 def test_pasado_de_cupo_se_ve_en_rojo():
