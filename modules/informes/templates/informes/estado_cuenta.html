@@ -65,6 +65,12 @@
     thead { display: table-header-group !important; }   /* repite por página */
     tfoot { display: table-row-group !important; }      /* totales UNA vez al final, no por página */
     tr { page-break-inside: avoid !important; }
+    /* TMT 2026-08-04 (Alex/dueña, IJM 15 facturas): los contenedores redondeados
+       de facturas/cheques usan Tailwind `overflow-hidden` (esquinas prolijas en
+       pantalla) → Chromium `--print-to-pdf` los trata como caja recortada en el
+       corte de página y desaparecen filas del pie del bloque (el tfoot igual
+       queda ok porque es una fila aparte). Overflow visible para el papel. */
+    .ec-bloque-facturas, .ec-bloque-cheques { overflow: visible !important; }
     h2 { font-size: 9pt !important; margin: 5pt 0 1pt 0 !important; page-break-after: avoid !important; }
 
     /* Pills / badges (saldo_pill, "anulado") → texto plano al tamaño de la celda. */
