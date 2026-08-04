@@ -1,4 +1,4 @@
-"""La hoja imprimible de la lista de precios (/precios/imprimir).
+"""La hoja imprimible de la lista de precios (al pie de /precios).
 
 Pedido de la dueña 2026-08-04, literal: "Precios tenemos que poder imprimir,
 tambien no es Falso es fleece" + "una impresion asi masomenos, hagamosla
@@ -13,10 +13,11 @@ Dos cosas se prueban acá:
    cubre la matriz editable, el <select> de descuentos y la hoja impresa de
    una sola vez.
 
-2. La hoja: matriz clases x telas, con el tramo de descuento y el IVA 15%
-   elegibles ANTES de imprimir (los dos por querystring, sin escribir nada).
-   El riesgo real es que el descuento y el IVA se apliquen mal (o no se
-   apliquen), así que los tests miran el NÚMERO, no el layout.
+2. La hoja: matriz clases x telas al pie de /precios ("puedes poner el
+   imprimir abajo y asi no hay tantas pantallas"), SIEMPRE con IVA 15%
+   ("nadie imprime sin iva") y con el tramo de descuento por querystring.
+   El riesgo real es que el descuento o el IVA se apliquen mal, así que los
+   tests miran el NÚMERO, no el layout.
 """
 from __future__ import annotations
 
@@ -133,45 +134,48 @@ def cliente_logueado(app, fake_db, monkeypatch):
     return client
 
 
-def test_imprimir_requiere_login(client):
-    resp = client.get("/precios/imprimir")
+def test_la_hoja_requiere_login(client):
+    resp = client.get("/precios")
     assert resp.status_code in (302, 401)
 
 
-def test_imprimir_muestra_la_matriz(cliente_logueado):
-    html = cliente_logueado.get("/precios/imprimir").get_data(as_text=True)
+def test_la_hoja_esta_al_pie_de_precios(cliente_logueado):
+    """Una sola pantalla: la hoja va abajo de /precios, no aparte."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
     assert "LISTA DE PRECIOS" in html
+    assert 'id="hoja"' in html
     assert "FLEECE" in html and "FALSO" not in html
     assert "BLANCO" in html and "FUERTES" in html
-    assert "8,87" in html  # formato es-EC: coma decimal
 
 
-def test_imprimir_con_iva_cambia_titulo_y_numeros(cliente_logueado):
-    html = cliente_logueado.get("/precios/imprimir?iva=1").get_data(as_text=True)
+def test_la_hoja_sale_siempre_con_iva(cliente_logueado):
+    """Dueña: "deja solo la opcion con IVA para imprimir, nadie imprime sin
+    iva". No hay switch: 8,87 x 1,15 = 10,20."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
     assert "IVA 15%" in html
-    assert "10,20" in html  # 8,87 x 1,15
-    assert "8,87" not in html
+    assert "10,20" in html
 
 
-def test_imprimir_con_descuento_aplica_el_tramo(cliente_logueado):
+def test_la_hoja_aplica_el_tramo_elegido(cliente_logueado):
     idx = [i for i, (lbl, _f) in enumerate(queries.TRAMOS_DESCUENTO) if lbl == "5%"][0]
-    html = cliente_logueado.get(f"/precios/imprimir?tramo={idx}").get_data(as_text=True)
-    assert "8,43" in html  # 8,87 x 0,95 = 8,4265 -> 8,43
+    html = cliente_logueado.get(f"/precios?tramo={idx}").get_data(as_text=True)
+    # 8,87 x 0,95 x 1,15 = 9,69
+    assert "9,69" in html
     assert "Descuento 5%" in html
 
 
-def test_imprimir_tramo_basura_no_rompe(cliente_logueado):
-    """Un tramo fuera de rango cae al Basico en vez de tirar 500."""
-    resp = cliente_logueado.get("/precios/imprimir?tramo=99")
+def test_tramo_basura_no_rompe(cliente_logueado):
+    resp = cliente_logueado.get("/precios?tramo=99")
     assert resp.status_code == 200
-    assert "8,87" in resp.get_data(as_text=True)
+    assert "10,20" in resp.get_data(as_text=True)
 
 
-def test_la_lista_linkea_a_la_hoja(cliente_logueado):
-    """El botón Imprimir tiene que estar en /precios para todos, no sólo
-    para quien puede editar (este usuario no tiene 'precios.editar')."""
-    html = cliente_logueado.get("/precios").get_data(as_text=True)
-    assert "/precios/imprimir" in html
+def test_la_ruta_vieja_de_imprimir_redirige(cliente_logueado):
+    """Los links de este sistema son strings hardcodeados: la ruta vieja no
+    puede empezar a dar 404."""
+    resp = cliente_logueado.get("/precios/imprimir")
+    assert resp.status_code == 302
+    assert "/precios" in resp.headers["Location"]
 
 
 # ---------------------------------------------------------------------------
@@ -179,21 +183,20 @@ def test_la_lista_linkea_a_la_hoja(cliente_logueado):
 #    el 2026-08-04: "a proforma y precios agregar esto, tiene iva incluido".
 # ---------------------------------------------------------------------------
 
-# Lo que se ve en la foto, tal cual (CON IVA 15% incluido).
+# Lo que se ve en la foto, tal cual. Son NETOS (sin IVA), igual que la matriz.
 FOTO = {"SCUBA": 11.25, "SUPLEX": 10.21, "BELTIS": 11.49, "NATY": 8.88}
 
 
-def test_el_seed_guarda_sin_iva_y_vuelve_exacto_con_iva():
-    """El número de la foto viene CON IVA; la tabla guarda NETO.
+def test_el_seed_guarda_el_numero_de_la_foto_tal_cual():
+    """Las cifras de la foto ya son netas: van SIN dividir por 1,15.
 
-    Si se guardara con IVA, la hoja "Con IVA 15%" lo cobraría dos veces. El
-    seed divide por 1,15 con 4 decimales — este test es el que garantiza que
-    al re-multiplicar vuelve EXACTO el número que ella escribió.
+    El primer intento las dividió (leyó "tiene iva incluido" como que venían
+    con IVA) y la dueña lo corrigió: "les sacamos doblemente IVA, ya estaban
+    sin IVA". Se ve mirando la matriz: KIANA vale 8,88 y NATY también 8,88,
+    o sea están en la misma escala. Este test es el que impide que vuelva.
     """
     seed = {tela: precio for _o, tela, precio, ref, _n in queries._PLANO_SEED if ref is None}
-    assert set(seed) == set(FOTO)
-    for tela, con_iva in FOTO.items():
-        assert round(seed[tela] * 1.15, 2) == con_iva, tela
+    assert seed == FOTO
 
 
 def test_jersey_3_y_3_5_no_tienen_precio_propio():
@@ -207,7 +210,7 @@ def test_jersey_3_y_3_5_no_tienen_precio_propio():
 PLANOS = [
     {"id": 1, "orden": 1, "tela": "JERSEY 3,5", "precio": None, "ref_col": "jersey",
      "nota": "Precio de JERSEY"},
-    {"id": 3, "orden": 3, "tela": "SCUBA", "precio": 9.7826, "ref_col": None,
+    {"id": 3, "orden": 3, "tela": "SCUBA", "precio": 11.25, "ref_col": None,
      "nota": "Todos los colores"},
 ]
 
@@ -230,7 +233,7 @@ def test_proformas_ofrece_las_telas_de_precio_unico(monkeypatch):
     monkeypatch.setattr(queries, "precio_plano", lambda: PLANOS)
     planas = pq.telas_planas()
     por_label = {p["label"]: p for p in planas}
-    assert por_label["SCUBA"]["precio"] == 9.7826
+    assert por_label["SCUBA"]["precio"] == 11.25
     assert por_label["SCUBA"]["col"] is None
     # JERSEY 3,5 no lleva cifra: la saca de la columna jersey de la matriz.
     assert por_label["JERSEY 3,5"]["precio"] is None
@@ -252,9 +255,9 @@ def cliente_con_planos(app, fake_db, monkeypatch):
 def test_la_hoja_impresa_incluye_las_telas_de_precio_unico(cliente_con_planos):
     """Van SUMADAS como columnas de la misma tabla, no en un bloque aparte
     (corrección de la dueña: "sumar a como está, no una foto así")."""
-    html = cliente_con_planos.get("/precios/imprimir?iva=1").get_data(as_text=True)
+    html = cliente_con_planos.get("/precios").get_data(as_text=True)
     assert "SCUBA" in html
-    assert "11,25" in html          # el número de la foto, con IVA
+    assert "12,94" in html          # 11,25 neto x 1,15
     assert "JERSEY 3,5" in html
     # JERSEY 3,5 cobra lo del jersey: 8,87 x 1,15 = 10,20, y sale DOS veces
     # (columna JERSEY y columna JERSEY 3,5) en la misma fila.
@@ -290,7 +293,7 @@ def test_la_columna_fija_repite_el_mismo_numero_en_todas_las_clases():
     filas = [_fila(jersey=8.64), _fila(clase=5, descripcio="FUERTES", jersey=10.75)]
     cols = queries.columnas_hoja(filas, PLANOS)
     i = [c["label"] for c in cols].index("SCUBA")
-    out = queries.tabla_impresion(filas, 0, True, cols)
+    out = queries.tabla_impresion(filas, 0, False, cols)
     assert {f["valores"][i] for f in out} == {FOTO["SCUBA"]}
 
 
@@ -305,6 +308,18 @@ def test_la_columna_ref_sigue_al_jersey_clase_por_clase():
     assert out[0]["valores"][i35] != out[1]["valores"][i35]
 
 
+def test_los_tramos_van_de_5_mas_4_a_5_mas_14_sin_saltos():
+    """Dueña: "dame la opcion de calcular descuentos desde 5%+4% y 5%+5%
+    hasta 5%+14% todas". Y son EN CASCADA: 5%+9% = x0,95 x0,91, no x0,86."""
+    labels = [lbl for lbl, _f in queries.TRAMOS_DESCUENTO]
+    assert labels[:2] == ["Basico", "5%"]
+    assert labels[2:] == [f"5%+{n}%" for n in range(4, 15)]
+    por_label = dict(queries.TRAMOS_DESCUENTO)
+    for n in range(4, 15):
+        assert por_label[f"5%+{n}%"] == 0.95 * (1 - n / 100)
+    assert round(por_label["5%+9%"], 6) == 0.8645  # NO 0,86 (= 14% de una)
+
+
 def test_el_selector_de_la_pantalla_ofrece_las_telas_de_precio_unico(cliente_con_planos):
     html = cliente_con_planos.get("/precios").get_data(as_text=True)
     assert "SCUBA" in html and "JERSEY 3,5" in html
@@ -317,5 +332,5 @@ def test_descuentos_de_una_tela_de_precio_unico(cliente_con_planos):
     scuba = [c for c in cols if c["label"] == "SCUBA"][0]
     filas = [_fila(jersey=8.87)]
     out = queries.tabla_descuentos_columna(filas, scuba)
-    assert out[0]["lista"] == 9.7826
-    assert out[0]["netos"][1] == round(9.7826 * 0.95, 2)
+    assert out[0]["lista"] == 11.25
+    assert out[0]["netos"][1] == round(11.25 * 0.95, 2)

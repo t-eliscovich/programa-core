@@ -125,16 +125,19 @@ def sumar_monto(monto: float, usuario: str) -> None:
     )
 
 
-# Los CUATRO tramos de precio que usa la duena: basico (precio de lista, sin
-# descuento) y luego descuentos EN CASCADA (sucesivos): 5%, 5%+9% y 5%+14%.
-# "5%+9%" = un 5% de descuento y luego un 9% adicional sobre el ya rebajado,
-# es decir lista * 0.95 * 0.91. Cada tramo es (etiqueta, factor sobre la lista).
+# Los tramos de precio: basico (precio de lista, sin descuento) y luego
+# descuentos EN CASCADA (sucesivos). "5%+9%" = un 5% de descuento y luego un
+# 9% adicional sobre el YA REBAJADO, es decir lista * 0,95 * 0,91 — NO un 14%
+# de una (eso daría 0,86, casi dos centavos menos por kilo).
+#
+# TMT 2026-08-04, dueña: "dame la opcion de calcular descuentos desde 5%+4% y
+# 5%+5% hasta 5%+14% todas" → antes había cuatro sueltos (4, 9 y 14); ahora
+# está la escala COMPLETA punto por punto. Cada tramo es (etiqueta, factor
+# sobre la lista).
 TRAMOS_DESCUENTO: list[tuple[str, float]] = [
     ("Basico", 1.0),
     ("5%", 0.95),
-    ("5%+4%", 0.95 * 0.96),
-    ("5%+9%", 0.95 * 0.91),
-    ("5%+14%", 0.95 * 0.86),
+    *[(f"5%+{n}%", 0.95 * (1.0 - n / 100.0)) for n in range(4, 15)],
 ]
 
 
@@ -147,20 +150,25 @@ IVA_PCT: float = 15.0
 # ---------------------------------------------------------------------------
 # Telas de PRECIO ÚNICO (scintela.precio_plano) — migración 0159.
 #
-# La dueña (2026-08-04, foto por chat: "a proforma y precios agregar esto,
-# tiene iva incluido") usa aparte de la matriz una tablita de telas que no
-# tienen precio por clase de color: uno solo para todas. `precio` se guarda
-# SIN IVA, igual que la matriz — el IVA lo agrega la hoja al imprimir.
+# La dueña (2026-08-04, foto por chat) usa aparte de la matriz una tablita de
+# telas que no tienen precio por clase de color: uno solo para todas.
 # `ref_col` = "cobra lo mismo que esta columna de la matriz" (JERSEY 3,5 y
 # JERSEY 3 = jersey), para que suban solas cuando sube el jersey.
+#
+# 🚨 LAS CIFRAS DE LA FOTO SON NETAS (sin IVA). El primer intento las dividió
+# por 1,15 leyendo su "tiene iva incluido" como que venían con IVA, y ella lo
+# corrigió: "los precios que subimos recien, les sacamos doblemente IVA, ya
+# estaban sin IVA". Se ve solo mirando la matriz: KIANA vale 8,88 y NATY
+# también 8,88 — están en la MISMA escala. Van tal cual, netas como la
+# matriz; el IVA lo agrega la hoja al imprimir.
 # ---------------------------------------------------------------------------
 _PLANO_SEED: list[tuple[int, str, float | None, str | None, str]] = [
     (1, "JERSEY 3,5", None, "jersey", "Precio de JERSEY"),
     (2, "JERSEY 3", None, "jersey", "Precio de JERSEY"),
-    (3, "SCUBA", 9.7826, None, "Todos los colores"),
-    (4, "SUPLEX", 8.8783, None, "Todos los colores"),
-    (5, "BELTIS", 9.9913, None, "Todos los colores"),
-    (6, "NATY", 7.7217, None, "Todos los colores"),
+    (3, "SCUBA", 11.25, None, "Todos los colores"),
+    (4, "SUPLEX", 10.21, None, "Todos los colores"),
+    (5, "BELTIS", 11.49, None, "Todos los colores"),
+    (6, "NATY", 8.88, None, "Todos los colores"),
 ]
 
 _plano_listo = False

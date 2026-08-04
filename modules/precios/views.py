@@ -74,6 +74,24 @@ def lista():
     except Exception:  # noqa: BLE001
         planos_ui = []
 
+    # LA HOJA PARA IMPRIMIR, al pie de esta misma pantalla. TMT 2026-08-04,
+    # dueña: "puedes poner el imprimir abajo y asi no hay tantas pantallas".
+    # Siempre CON IVA — "deja solo la opcion con IVA para imprimir, nadie
+    # imprime sin iva" / "aca razonamos siempre con IVA".
+    from parsers import parse_int
+
+    tramo_idx = parse_int(request.args.get("tramo")) or 0
+    if not 0 <= tramo_idx < len(queries.TRAMOS_DESCUENTO):
+        tramo_idx = 0
+    try:
+        hoja = (
+            queries.tabla_impresion(filas, tramo_idx, True, opciones)
+            if filas
+            else []
+        )
+    except Exception:  # noqa: BLE001
+        hoja = []
+
     return render_template(
         "precios/lista.html",
         filas=filas,
@@ -84,68 +102,27 @@ def lista():
         descuentos=descuentos,
         tramos=queries.TRAMOS_DESCUENTO,
         tela_sel=tela_sel,
+        hoja=hoja,
+        tramo_idx=tramo_idx,
+        tramo_label=queries.TRAMOS_DESCUENTO[tramo_idx][0],
+        iva_pct=queries.IVA_PCT,
+        hoy=today_ec(),
     )
 
 
 @precios_bp.route("/precios/imprimir")
 @requiere_login
 def imprimir():
-    """Hoja imprimible de la lista de precios (matriz clases x telas).
+    """La hoja ya no es una pantalla aparte: vive al pie de /precios.
 
-    Réplica del Excel que usa la dueña: filas = clases de color, columnas =
-    las 12 telas, un solo número por celda. Antes de imprimir se eligen las
-    dos cosas que cambian según a quién se le entrega la hoja:
-    - `tramo`: cuál de los descuentos en cascada se aplica (índice en
-      TRAMOS_DESCUENTO; 0 = Basico, precio de lista).
-    - `iva`: si el precio sale con IVA 15% incluido (lo que ve el cliente).
-    Todo derivado — esta pantalla no escribe nada. Sólo login, la ven todos.
+    TMT 2026-08-04, dueña: "puedes poner el imprimir abajo y asi no hay
+    tantas pantallas". La ruta queda redirigiendo para no romper links ni
+    favoritos viejos (los links de este sistema son strings hardcodeados).
     """
     from parsers import parse_int
 
     tramo_idx = parse_int(request.args.get("tramo")) or 0
-    if not 0 <= tramo_idx < len(queries.TRAMOS_DESCUENTO):
-        tramo_idx = 0
-    con_iva = request.args.get("iva") == "1"
-
-    try:
-        filas = queries.matriz()
-        error = None
-    except Exception as e:  # noqa: BLE001
-        filas, error = [], str(e)
-
-    # UNA sola tabla: las 12 de la matriz + las de precio único, en el mismo
-    # orden en que las tiene la dueña en su Excel. Una columna entera vacía no
-    # va al papel (hoy: MEDICAL).
-    try:
-        planos = queries.precio_plano()
-    except Exception:  # noqa: BLE001
-        planos = []
-    columnas = (
-        queries.columnas_hoja(filas, planos)
-        if filas
-        else [{"key": c, "label": lab, "col": c, "fijo": None} for c, lab in queries.TELAS]
-    )
-    try:
-        cuerpo = (
-            queries.tabla_impresion(filas, tramo_idx, con_iva, columnas)
-            if filas
-            else []
-        )
-    except Exception:  # noqa: BLE001
-        cuerpo = []
-
-    return render_template(
-        "precios/imprimir.html",
-        cuerpo=cuerpo,
-        telas=columnas,
-        tramos=queries.TRAMOS_DESCUENTO,
-        tramo_idx=tramo_idx,
-        tramo_label=queries.TRAMOS_DESCUENTO[tramo_idx][0],
-        con_iva=con_iva,
-        iva_pct=queries.IVA_PCT,
-        hoy=today_ec(),
-        error=error,
-    )
+    return redirect(url_for("precios.lista", tramo=tramo_idx, _anchor="hoja"))
 
 
 @precios_bp.route("/precios/actualizar", methods=["POST"])
