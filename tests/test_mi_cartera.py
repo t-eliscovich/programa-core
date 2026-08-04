@@ -658,3 +658,78 @@ def test_la_comision_ya_no_tiene_selector_de_semana_ni_de_ano(vendedor_logueado,
 
     html = vendedor_logueado.get("/mi-cartera/comision").data.decode()
     assert "periodo=semana" not in html and "periodo=anio" not in html
+
+
+# ---------------------------------------------------------------------------
+# "Ver como" desde el celular
+# ---------------------------------------------------------------------------
+
+
+def test_ver_como_por_GET_muestra_una_pantalla_no_un_405(app, client, fake_db,
+                                                          monkeypatch):
+    """Dueña 2026-08-03, desde el celular: "ver como no me funciona" + un
+    **405 Method Not Allowed** crudo de Flask.
+
+    La ruta era POST-only y la confirmación era un `confirm()` de JavaScript.
+    Ahora el GET muestra una pantalla de confirmación de verdad — el mismo
+    patrón que el resto de lo irreversible de la app — y sólo el POST cambia
+    la sesión.
+    """
+    rid = fake_db.add_role("Accionista", ["*"])
+    fake_db.add_user("jefa", _hash("Admin20261"), rid)
+    otro = fake_db.add_user("roberto", _hash("Vendedor2026"), rid, vend="RMY")
+    client.post("/login", data={"username": "jefa", "password": "Admin20261"})
+
+    import db as dbmod
+
+    real_fetch_one = dbmod.fetch_one
+
+    def _fetch_one(sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "u.id_usuario, u.username, r.nombre_rol" in s:
+            return {"id_usuario": 1, "username": "jefa", "nombre_rol": "Accionista"}
+        if "select id_usuario, username, activo" in s:
+            return {"id_usuario": otro, "username": "roberto", "activo": True}
+        return real_fetch_one(sql, params, conn)
+
+    monkeypatch.setattr(dbmod, "fetch_one", _fetch_one)
+
+    r = client.get(f"/impersonate/{otro}")
+    assert r.status_code == 200, "el GET tiene que abrir la confirmación, no 405"
+    html = r.data.decode()
+    assert "roberto" in html
+    # Y la pantalla postea de verdad, con CSRF.
+    assert f'action="/impersonate/{otro}"' in html and "csrf_token" in html
+
+
+def test_la_lista_de_usuarios_ya_no_usa_confirm_de_javascript():
+    """Un `confirm()` depende del navegador, se porta distinto en el celular y
+    cuando falla no deja rastro. La app confirma con PANTALLAS."""
+    from pathlib import Path
+
+    tpl = Path("modules/usuarios/templates/usuarios/lista.html").read_text()
+    bloque = tpl[tpl.index("Ver como") - 900:tpl.index("Ver como")]
+    assert "confirm(" not in bloque
+
+
+def test_la_lista_de_usuarios_se_apila_en_el_celular():
+    """A 390 px la tabla medía 932 y el botón quedaba 393 px fuera del borde."""
+    from pathlib import Path
+
+    tpl = Path("modules/usuarios/templates/usuarios/lista.html").read_text()
+    assert "@media (max-width: 720px)" in tpl
+    assert "min-width: 0 !important" in tpl, (
+        "sin anular min-w-full la tabla sigue siendo más ancha que la pantalla"
+    )
+
+
+def test_en_la_comision_el_cheque_sin_numero_tampoco_queda_pelado(monkeypatch):
+    """Mismo caso que en la ficha del cliente: "Ch. —" no identifica nada.
+    Visto en el desglose de RMY."""
+    monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: [
+        {"origen": "CHE", "id_origen": 9001, "doc": "  ", "fecha": date(2026, 8, 3),
+         "importe": 257.82, "codigo_cli": "ERN", "cliente": "ELENA ROSARIO",
+         "banco": "DEP.PICH."}])
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 1.0)
+    cobro = q.comision_por_cliente("RMY", 2026, 8)[0]["cobros"][0]
+    assert cobro["doc"] is None and cobro["id_origen"] == 9001

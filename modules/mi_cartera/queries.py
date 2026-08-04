@@ -491,6 +491,7 @@ def comision_por_cliente(vend: str, anio: int, mes: int) -> list[dict]:
         g["cobros"].append({
             "fecha": c.get("fecha"),
             "doc": (str(c.get("doc") or "").strip() or None),
+            "id_origen": c.get("id_origen"),
             "banco": (str(c.get("banco") or "").strip() or None),
             "es_cheque": (str(c.get("origen") or "").upper() == "CHE"),
             "importe": imp,

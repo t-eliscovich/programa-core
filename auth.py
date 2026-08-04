@@ -483,12 +483,30 @@ def _es_accionista(user_row: dict | None) -> bool:
     return (user_row.get("nombre_rol") or "").lower() == "accionista"
 
 
-@auth_bp.route("/impersonate/<int:id_usuario>", methods=["POST"])
+@auth_bp.route("/impersonate/<int:id_usuario>", methods=["GET", "POST"])
 def impersonate(id_usuario: int):
     """Cambia la sesión actual para ver el sistema como otro usuario.
 
     Solo Accionistas. Si ya estás impersonando, primero te tenés que detener
     (POST /auth/stop-impersonate) — no permitimos cadenas de impersonate.
+
+    ⭐ EL **GET** MUESTRA UNA PANTALLA DE CONFIRMACIÓN; sólo el POST cambia la
+    sesión. Antes la ruta era POST-only y la confirmación era un `confirm()`
+    de JavaScript en el botón: desde el celular eso devolvía un **405 Method
+    Not Allowed** —la página cruda de Flask, sin diseño ni explicación— y la
+    dueña se quedaba sin saber qué había pasado (2026-08-03).
+
+    Un `confirm()` es la peor forma de pedir confirmación acá: depende del
+    navegador, en el celular se comporta distinto, y cuando falla no deja
+    rastro. La app ya resuelve esto con PANTALLAS de confirmación en todo lo
+    irreversible (`/compras/<n>/confirmar-anulacion`, el preview del reverso
+    de cheques); esto es lo mismo. Y de yapa: una pantalla se puede leer
+    tranquila antes de apretar, que es justo lo que uno quiere antes de
+    cambiar de identidad.
+
+    Sigue haciendo falta el POST con CSRF para el cambio real: el GET no
+    puede mover la sesión, así que un link no alcanza para hacerte cambiar
+    de cuenta sin querer.
     """
     if not g.get("user"):
         return redirect(url_for("auth.login"))
@@ -522,6 +540,14 @@ def impersonate(id_usuario: int):
     if int(id_usuario) == int(real_id):
         flash("Ya estás logueado como vos mismo.", "info")
         return redirect(url_for("dashboard.index"))
+
+    # GET = pantalla de confirmación. Recién el POST cambia la sesión.
+    if request.method == "GET":
+        return render_template(
+            "auth/confirmar_impersonate.html",
+            destino=target,
+            real=real_user,
+        )
 
     # Guardamos el real (si todavía no lo guardamos) y switcheamos.
     session["impersonating_from_id"] = real_id

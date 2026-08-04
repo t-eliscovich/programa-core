@@ -67,7 +67,10 @@
             <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;
                          white-space:nowrap;">
               {{ c.fecha.strftime('%d/%m') if c.fecha else '—' }} ·
-              {% if c.es_cheque %}Ch. {{ c.doc or '—' }}{% else %}{{ c.doc or 'Cobro' }}{% endif %}
+              {# Mismo criterio que la ficha del cliente: hay filas de cheque
+                 sin número (depósitos que vienen del dBase) y "Ch. —" no
+                 identifica nada. #}
+              {% if c.es_cheque %}Ch. {{ c.doc or ('#' ~ c.id_origen) }}{% else %}{{ c.doc or 'Cobro' }}{% endif %}
               {%- if c.banco %} · {{ c.banco }}{% endif %}
             </span>
             <span style="font-variant-numeric:tabular-nums;white-space:nowrap;">

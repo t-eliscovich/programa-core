@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Ver como {{ destino.username }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('usuarios.lista') }}" class="hover:underline">Usuarios</a> / <strong>Ver como</strong>{% endblock %}
+{% block content %}
+{# TMT 2026-08-03 — reemplaza al confirm() de JavaScript, que desde el celular
+   terminaba en un 405 crudo de Flask. Mismo patrón que las otras pantallas de
+   confirmación de la app (anular compra, reverso de cheque). #}
+<div class="max-w-xl">
+  {{ page_hero('Ver el sistema como ' ~ destino.username,
+               'Vas a navegar con sus permisos y viendo sus datos, hasta que vuelvas a tu cuenta.') }}
+
+  <div class="bg-white border rounded-lg p-4 shadow-sm">
+    <p class="text-sm text-slate-700">
+      Tu cuenta real es <strong class="font-mono">{{ real.username }}</strong>.
+      No se cambia ninguna contraseña y no queda nada guardado en la cuenta de
+      <strong class="font-mono">{{ destino.username }}</strong>: es sólo tu
+      sesión, mirando lo que él ve.
+    </p>
+    <p class="text-sm text-slate-500 mt-3">
+      Para volver, el botón <strong>“← Volver a mi cuenta”</strong> del cartel
+      amarillo que va a quedar arriba de todo.
+    </p>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t gap-3 flex-wrap">
+      <a href="{{ url_for('usuarios.lista') }}"
+         class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <form method="post" action="{{ url_for('auth.impersonate', id_usuario=destino.id_usuario) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit"
+                class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded shadow-sm">
+          👁 Ver como {{ destino.username }}
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
