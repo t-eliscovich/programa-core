@@ -167,7 +167,7 @@
                precargada; al guardar ADOPTA esta fila en vez de crear otra,
                así el saldo de caja no se mueve ni un centavo. #}
             {% if m.sin_cobranza and tiene_permiso('cheques.aplicar') %}
-              <a href="/cheques/nuevo?desde_caja={{ m.id_caja }}&codigo_cli={{ m.cli_concepto }}&no_banco=99&importe={{ '%.2f' % (m.importe | abs) }}&fechad={{ m.fecha }}"
+              <a href="/cheques/nuevo?desde_caja={{ m.id_caja }}&codigo_cli={{ m.cli_concepto }}&no_banco=99&importe={{ '%.2f' % (m.importe | abs) }}&fechad={{ m.fecha }}&fecha_recibido={{ m.fecha }}"
                  style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:5px;
                         background:#fdf0e3;color:#a86400;font-weight:600;text-decoration:none;
                         border:1px solid #f0d9b8;white-space:nowrap"

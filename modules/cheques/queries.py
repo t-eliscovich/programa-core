@@ -3368,6 +3368,7 @@ def crear(
                        AND tipo      = %s
                        AND ROUND(importe, 2) = ROUND(%s::numeric, 2)
                        AND UPPER(TRIM(concepto)) = UPPER(TRIM(%s))
+                       AND fecha     = %s
                     """,
                     (
                         row["id_cheque"],
@@ -3375,6 +3376,7 @@ def crear(
                         _tipo_caja,
                         _importe_caja,
                         concepto_caja,
+                        fecha,
                     ),
                     conn=conn,
                 )

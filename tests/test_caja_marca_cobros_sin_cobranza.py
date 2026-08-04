@@ -85,3 +85,21 @@ def test_el_importe_va_en_absoluto():
     """La caja guarda el importe POSITIVO y el signo en `tipo`."""
     tpl = _tpl()
     assert "m.importe | abs" in tpl
+
+
+def test_el_link_manda_tambien_la_fecha_de_recibido():
+    """Sin `fecha_recibido`, el cheque nace con fecha de HOY (agosto) y la
+    adopción de una fila de caja de JULIO falla por el guard de fecha."""
+    tpl = _tpl()
+    m = re.search(r'href="(/cheques/nuevo\?desde_caja=.*?)"', tpl, re.S)
+    assert "fecha_recibido={{ m.fecha }}" in m.group(1)
+
+
+def test_el_form_de_cobranza_arrastra_desde_caja():
+    """Si el hidden se pierde, el alta crea una SEGUNDA fila de caja."""
+    f = os.path.join(_REPO_ROOT, "modules", "cheques", "templates", "cheques", "nuevo.html")
+    with open(f, encoding="utf-8") as fh:
+        tpl = fh.read()
+    assert 'name="desde_caja"' in tpl
+    assert "request.form.get('desde_caja')" in tpl
+    assert "request.args.get('desde_caja')" in tpl

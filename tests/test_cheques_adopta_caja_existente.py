@@ -63,6 +63,10 @@ def test_la_adopcion_exige_que_la_fila_siga_libre_y_calce():
     assert "tipo      = %s" in upd or "tipo = %s" in upd
     assert "ROUND(importe, 2)" in upd, "sin comparar importe adoptaría una fila por otra"
     assert "UPPER(TRIM(concepto))" in upd, "sin comparar concepto cruzaría clientes"
+    assert "fecha     = %s" in upd or "fecha = %s" in upd, (
+        "sin comparar la fecha, un cheque cargado HOY adoptaría una fila de "
+        "caja de JULIO y el cobro cambiaría de mes"
+    )
 
 
 def test_si_no_adopta_exactamente_una_fila_aborta():

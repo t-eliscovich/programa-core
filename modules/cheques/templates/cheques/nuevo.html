@@ -42,6 +42,14 @@
        en la columna QUEDA y el sobrante en el recuadro ámbar de abajo. #}
     <input type="hidden" name="paso" value="ejecutar">
 
+    {# TMT 2026-08-03 — este cobro en efectivo YA está en la caja como entrada
+       suelta `CH.<cliente>` (se llegó acá por el botón "⚠ sin cobranza" de
+       /caja). Sin este hidden el dato se pierde al postear y el alta crearía
+       una SEGUNDA fila de caja: la plata quedaría contada dos veces.
+       Ver `caja_existente_id` en modules/cheques/queries.crear. #}
+    {% set _dc = request.form.get('desde_caja') or request.args.get('desde_caja') %}
+    {% if _dc %}<input type="hidden" name="desde_caja" value="{{ _dc }}">{% endif %}
+
     {# TMT 2026-05-19 v8 — la dueña aclaró: "YA ESTABA AHI EL COBRO DE
        EFECTIVO, NO HACIA FALTA PANTALLA EXTRA". El cobro en efectivo se
        carga eligiendo BANCO=99·EFECTIVO en el select de banco emisor.
