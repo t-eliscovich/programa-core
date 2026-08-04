@@ -9,9 +9,18 @@
 
   <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <h1 class="text-lg font-semibold">Consola SQL · <span class="text-emerald-700">sólo lectura</span></h1>
+    {# TMT 2026-08-03 — este cartel afirmaba la garantía de Postgres SIEMPRE,
+       también cuando la consulta va a Asinfo por Metabase, donde esa garantía
+       NO existe. Un cartel que promete de más es peor que no tenerlo. #}
     <div class="text-xs text-slate-500">
-      La consulta corre dentro de <code>SET TRANSACTION READ ONLY</code> y termina en
-      <code>ROLLBACK</code>. Postgres rechaza cualquier escritura, no hay SQL que lo esquive.
+      {% if base == 'pc' %}
+        La consulta corre dentro de <code>SET TRANSACTION READ ONLY</code> y termina en
+        <code>ROLLBACK</code>. Postgres rechaza cualquier escritura, no hay SQL que lo esquive.
+      {% else %}
+        Consulta contra una base EXTERNA vía Metabase. Acá <strong>no</strong> hay
+        <code>READ ONLY</code> del motor: sólo se aceptan consultas que empiezan
+        en SELECT/WITH y una sola sentencia.
+      {% endif %}
     </div>
   </div>
 

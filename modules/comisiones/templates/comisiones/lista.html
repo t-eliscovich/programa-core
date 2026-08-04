@@ -70,9 +70,25 @@
       <tbody>
         {% for f in filas %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2 font-mono text-base font-semibold">
+          <td class="px-4 py-2">
             <a href="{{ url_for('comisiones.detalle', codigo=f.codigo, anio=anio, mes=mes) }}"
-               class="text-sky-700 hover:underline" title="Ver cobranzas y ventas del vendedor">{{ f.codigo }}</a>
+               class="text-sky-700 hover:underline font-mono text-base font-semibold"
+               title="Ver cobranzas y ventas del vendedor">{{ f.codigo }}</a>
+            {# TMT 2026-08-03 — el NOMBRE se podía guardar (la ruta
+               `comisiones.actualizar_nombre` existe y dice "inline edit desde
+               la lista") pero ninguna pantalla tenía el campo: los 6 vendedores
+               quedaron con el nombre vacío desde que se sembraron en mayo, y el
+               portal del vendedor saludaba "Hola, RMY". #}
+            <form method="post" action="{{ url_for('comisiones.actualizar_nombre', codigo=f.codigo) }}"
+                  class="inline-flex items-center gap-1 mt-1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="anio" value="{{ anio }}">
+              <input type="hidden" name="mes" value="{{ mes }}">
+              <input type="text" name="nombre" maxlength="100"
+                     value="{{ f.nombre or '' }}" placeholder="— sin nombre —"
+                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-sm w-52">
+              <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nombre">✓</button>
+            </form>
           </td>
           <td class="px-4 py-2 text-right">
             {# Inline edit del % #}

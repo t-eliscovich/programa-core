@@ -301,3 +301,18 @@ def test_el_contador_del_inicio_usa_el_mismo_criterio_que_la_lista(monkeypatch):
     assert q.por_cobrar("RMY")["n_clientes"] == 33
     assert "having coalesce(sum(f.saldo), 0) <> 0" in visto["sql"]
     assert "count(distinct" not in visto["sql"]
+
+
+def test_la_lista_de_comisiones_deja_editar_el_nombre():
+    """El nombre del vendedor tenía ruta para guardarse (`actualizar_nombre`,
+    docstring: "inline edit desde la lista") pero NINGUNA pantalla con el
+    campo. Resultado: los 6 quedaron sin nombre desde mayo y el portal
+    saludaba "Hola, RMY".
+
+    ⭐ Una ruta sin pantalla es una función que no existe.
+    """
+    from pathlib import Path
+
+    tpl = Path("modules/comisiones/templates/comisiones/lista.html").read_text()
+    assert "comisiones.actualizar_nombre" in tpl
+    assert 'name="nombre"' in tpl

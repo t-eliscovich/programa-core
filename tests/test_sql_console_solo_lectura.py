@@ -355,3 +355,16 @@ def test_externas_tambien_tapan_columnas_sensibles(monkeypatch):
                         lambda *a, **k: ([{"usuario": "x", "password": "hunter2"}], True))
     res = sc.correr("SELECT usuario, password FROM users", base="asinfo")
     assert "hunter2" not in str(res["filas"])
+
+
+def test_el_cartel_no_promete_la_garantia_de_postgres_en_las_externas():
+    """Un cartel que promete de más es peor que no tenerlo: contra Asinfo NO
+    hay `SET TRANSACTION READ ONLY`."""
+    from pathlib import Path
+
+    tpl = Path("modules/admin_dbase/templates/admin_dbase/sql_console.html").read_text()
+    i = tpl.index("SET TRANSACTION READ ONLY")
+    cabecera = tpl[max(0, i - 400):i]
+    assert "base == 'pc'" in cabecera, (
+        "la promesa de READ ONLY tiene que estar condicionada a la base propia"
+    )
