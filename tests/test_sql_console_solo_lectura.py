@@ -15,6 +15,7 @@ abajo tienen que ponerse rojos.
 from __future__ import annotations
 
 import inspect
+import re
 import sys
 from pathlib import Path
 
@@ -163,11 +164,25 @@ def test_null_en_columna_sensible_queda_null():
 
 
 def test_toda_consulta_queda_registrada():
+    """Que `consola()` llame a `_bitacora` con el resultado, sin importar cómo
+    arme el texto.
+
+    Antes esto comparaba la línea exacta `_bitacora(sql, res)` y se rompió al
+    agregarle la base a la anotación (2026-08-03) — un cambio que MEJORABA el
+    log. Un test de intención no puede caerse porque mejoraste lo que vigila.
+    """
     src = inspect.getsource(sc.consola)
-    assert "_bitacora(sql, res)" in src, (
+    assert re.search(r"_bitacora\(.*\bres\b\s*\)", src), (
         "sin bitácora no hay forma de auditar quién corrió qué contra "
         "producción"
     )
+
+
+def test_la_bitacora_anota_contra_que_base_se_pregunto():
+    """La misma consulta contra Asinfo o contra la base propia no quiere decir
+    lo mismo: sin la base, el log no alcanza para auditar."""
+    src = inspect.getsource(sc.consola)
+    assert "base" in src.split("_bitacora(")[1].split(")")[0]
 
 
 def test_la_bitacora_no_puede_romper_la_consulta():
@@ -280,3 +295,63 @@ def test_sin_permiso_de_admin_la_consola_no_existe(client, monkeypatch):
     assert r.status_code in (302, 404), (
         f"la consola SQL contestó {r.status_code} a alguien sin sesión"
     )
+
+
+# --- las bases externas (Asinfo / formulas_app) ----------------------------
+
+
+def test_base_desconocida_cae_en_la_propia():
+    """Un `?base=` inventado no puede elegir una base al azar."""
+    assert sc._base("cualquiera")[0] == "pc"
+    assert sc._base("")[0] == "pc"
+    assert sc._base(None)[0] == "pc"
+
+
+def test_las_externas_pasan_por_el_validador_igual(monkeypatch):
+    """En Asinfo no hay `SET TRANSACTION READ ONLY` — el validador es la única
+    defensa, así que tiene que correr ANTES de llegar a Metabase."""
+    llamado = []
+    from modules._lib import metabase_client as mc
+
+    monkeypatch.setattr(mc, "fetch_dataset_estado",
+                        lambda *a, **k: (llamado.append(1), ([], True))[1])
+    res = sc.correr("DELETE FROM clientes", base="asinfo")
+    assert res["ok"] is False
+    assert "Sólo lectura" in res["error"]
+    assert not llamado, "la consulta llegó a Metabase pese a no ser un SELECT"
+
+
+def test_metabase_mudo_no_se_confunde_con_cero_filas(monkeypatch):
+    """`fetch_dataset` devuelve [] tanto si no hay filas como si el bridge se
+    cayó. Confundirlos es lo que rompió el balance el 2026-07-29."""
+    from modules._lib import metabase_client as mc
+
+    monkeypatch.setattr(mc, "fetch_dataset_estado", lambda *a, **k: ([], False))
+    res = sc.correr("SELECT 1", base="asinfo")
+    assert res["ok"] is False and "no contestó" in res["error"]
+
+    monkeypatch.setattr(mc, "fetch_dataset_estado", lambda *a, **k: ([], True))
+    res = sc.correr("SELECT 1", base="asinfo")
+    assert res["ok"] is True and res["n"] == 0
+
+
+def test_externas_arman_columnas_y_truncan(monkeypatch):
+    from modules._lib import metabase_client as mc
+
+    filas = [{"codigo": f"V{i}", "nombre": f"N{i}"} for i in range(5)]
+    monkeypatch.setattr(mc, "fetch_dataset_estado", lambda *a, **k: (filas, True))
+    res = sc.correr("SELECT codigo, nombre FROM vendedores", base="asinfo",
+                    limite=3)
+    assert res["columnas"] == ["codigo", "nombre"]
+    assert res["n"] == 3 and res["truncado"] is True
+    assert res["filas"][0] == ["V0", "N0"]
+
+
+def test_externas_tambien_tapan_columnas_sensibles(monkeypatch):
+    """El redactado no puede depender de qué base contestó."""
+    from modules._lib import metabase_client as mc
+
+    monkeypatch.setattr(mc, "fetch_dataset_estado",
+                        lambda *a, **k: ([{"usuario": "x", "password": "hunter2"}], True))
+    res = sc.correr("SELECT usuario, password FROM users", base="asinfo")
+    assert "hunter2" not in str(res["filas"])

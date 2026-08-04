@@ -162,7 +162,21 @@
 </head>
 <body>
 
-{% if preview %}
+{% if g.get('impersonating_from') %}
+  {# "👁 Ver como" sobre un vendedor. El shell de escritorio tiene su propio
+     banner, pero acá no lo hereda — y sin salida quedás encerrada en el
+     portal (scope_vendedor.py sólo deja /mi-cartera). #}
+  <form method="post" action="{{ url_for('auth.stop_impersonate') }}"
+        class="banner" style="display:flex;align-items:center;
+                              justify-content:space-between;gap:10px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <span>Viendo como <strong>{{ g.user.username }}</strong></span>
+    <button type="submit" style="font:inherit;font-weight:700;color:#fff;
+            background:var(--warn);border:0;border-radius:8px;padding:5px 11px;">
+      ← Volver a mi cuenta
+    </button>
+  </form>
+{% elif preview %}
   {# La dueña mirando ?vend=XXX. Que quede clarísimo que no es su pantalla. #}
   <div class="banner">Vista previa de {{ vend }} — así lo ve el vendedor</div>
 {% endif %}

@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_hero %}
 {% block title %}Metas de vendedores{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('comisiones.lista') }}" class="hover:underline">Comisiones</a> / <strong>Metas</strong>{% endblock %}
 {% block content %}
+<div class="max-w-7xl">
 {{ page_hero('Metas de venta por vendedor',
              'Se carga una meta por MES. La del año se suma sola y la de la semana se prorratea. Dejar vacío = sin meta (el vendedor ve el facturado, sin anillo de progreso).') }}
+
+{% set tab_activa = 'metas' %}
+{% include "_partials/tabs_comisiones.html" %}
 
 <form method="get" class="mb-4">
   <label class="text-sm text-slate-600">Año
@@ -54,4 +59,5 @@
     </button>
   </div>
 </form>
+</div>
 {% endblock %}

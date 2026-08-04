@@ -72,6 +72,54 @@ bp = Blueprint("sql_console", __name__, url_prefix="/admin/sql",
 
 _LOG = logging.getLogger("programa_core.sql_console")
 
+# ---------------------------------------------------------------------------
+# Contra qué base se pregunta — TMT 2026-08-03
+# ---------------------------------------------------------------------------
+# La consola nació contra la base propia (Postgres). Pero la mitad de las
+# preguntas de datos de esta empresa son sobre ASINFO (el ERP) o sobre
+# formulas_app, y hasta hoy contestarlas costaba escribir un endpoint,
+# pushear y esperar el deploy — exactamente el problema que esta pantalla
+# vino a resolver. Salió de necesitar los NOMBRES de los 6 vendedores, que
+# no están ni en la base propia ni en el dBase.
+#
+# ⚠ LA GARANTÍA NO ES LA MISMA Y HAY QUE DECIRLO:
+#   · pc       → `SET TRANSACTION READ ONLY` + ROLLBACK. Lo hace Postgres;
+#                no hay SQL que lo esquive.
+#   · externas → van por Metabase (`fetch_dataset`), que NO expone un modo
+#                read-only. Lo único que las frena es `_validar()`: tiene que
+#                empezar en SELECT/WITH, una sola sentencia. Es una defensa
+#                de texto, no del motor. Por eso la pantalla lo dice en
+#                letras y el permiso sigue siendo `usuarios.admin`.
+BASES = {
+    "pc": {
+        "rotulo": "Programa Core (Postgres)",
+        "motor": "postgres",
+        "db_id": None,
+        "nota": "Sólo lectura garantizada por el motor (READ ONLY + ROLLBACK).",
+    },
+    "asinfo": {
+        "rotulo": "Asinfo — el ERP (SQL Server)",
+        "motor": "metabase",
+        "db_id": 2,
+        "nota": "Vía Metabase. Dialecto SQL Server: usá TOP en vez de LIMIT.",
+    },
+    "formulas": {
+        "rotulo": "formulas_app (Postgres)",
+        "motor": "metabase",
+        "db_id": 3,
+        "nota": "Vía Metabase.",
+    },
+}
+BASE_DEFAULT = "pc"
+
+
+def _base(nombre: str | None) -> tuple[str, dict]:
+    clave = (nombre or "").strip().lower() or BASE_DEFAULT
+    if clave not in BASES:
+        clave = BASE_DEFAULT
+    return clave, BASES[clave]
+
+
 LIMITE_DEFAULT = 2000
 LIMITE_MAX = 20000
 TIMEOUT_MS_DEFAULT = 15000
@@ -229,9 +277,44 @@ def _redactar(columnas: list[str], filas: list[list]) -> list[list]:
     return filas
 
 
+def _correr_metabase(sql: str, db_id: int, limite: int) -> dict:
+    """Consulta a una base EXTERNA por Metabase (Asinfo / formulas_app).
+
+    Devuelve la misma forma que `correr()`. `fetch_dataset_estado` distingue
+    "no hay filas" de "Metabase no contestó" — sin eso, un bridge caído se
+    vería como una consulta que devolvió vacío, que es justo el error que
+    rompió el balance el 2026-07-29.
+    """
+    from modules._lib import metabase_client as mc
+
+    t0 = time.perf_counter()
+    try:
+        filas_dict, contesto = mc.fetch_dataset_estado(db_id, sql,
+                                                       max_results=limite + 1)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc).strip(), "columnas": [],
+                "filas": [], "n": 0, "truncado": False,
+                "ms": int((time.perf_counter() - t0) * 1000)}
+    ms = int((time.perf_counter() - t0) * 1000)
+    if not contesto:
+        return {"ok": False, "columnas": [], "filas": [], "n": 0,
+                "truncado": False, "ms": ms,
+                "error": "Metabase no contestó (bridge sin configurar, caído, "
+                         "token vencido o la consulta tiene un error de "
+                         "sintaxis). Mirá /admin/health/metabase."}
+    columnas = list(filas_dict[0].keys()) if filas_dict else []
+    truncado = len(filas_dict) > limite
+    filas = [[_json_safe(f.get(c)) for c in columnas]
+             for f in filas_dict[:limite]]
+    filas = _redactar(columnas, filas)
+    return {"ok": True, "columnas": columnas, "filas": filas, "n": len(filas),
+            "truncado": truncado, "ms": ms, "error": None}
+
+
 def correr(sql: str, *, limite: int = LIMITE_DEFAULT,
-           timeout_ms: int = TIMEOUT_MS_DEFAULT) -> dict:
-    """Corre la consulta en una transacción de SÓLO LECTURA y hace ROLLBACK.
+           timeout_ms: int = TIMEOUT_MS_DEFAULT,
+           base: str = BASE_DEFAULT) -> dict:
+    """Corre la consulta contra la base elegida, siempre de sólo lectura.
 
     Devuelve `{ok, columnas, filas, n, truncado, ms, error}`.
     """
@@ -241,6 +324,9 @@ def correr(sql: str, *, limite: int = LIMITE_DEFAULT,
                 "n": 0, "truncado": False, "ms": 0}
 
     limite = max(1, min(int(limite or LIMITE_DEFAULT), LIMITE_MAX))
+    _clave, cfg = _base(base)
+    if cfg["motor"] == "metabase":
+        return _correr_metabase(sql, int(cfg["db_id"]), limite)
     timeout_ms = max(1000, min(int(timeout_ms or TIMEOUT_MS_DEFAULT), TIMEOUT_MS_MAX))
     t0 = time.perf_counter()
     try:
@@ -504,9 +590,10 @@ HAVING COUNT(*) > 1
 # ---------------------------------------------------------------------------
 
 
-def _params() -> tuple[str, int, int, str]:
+def _params() -> tuple[str, int, int, str, str]:
     src = request.form if request.method == "POST" else request.args
     sql = (src.get("q") or src.get("sql") or "").strip()
+    base, _cfg = _base(src.get("base"))
     try:
         limite = int(src.get("limite") or LIMITE_DEFAULT)
     except (TypeError, ValueError):
@@ -519,7 +606,7 @@ def _params() -> tuple[str, int, int, str]:
     if not formato:
         acepta = (request.headers.get("Accept") or "")
         formato = "json" if "application/json" in acepta and "text/html" not in acepta else "html"
-    return sql, limite, timeout, formato
+    return sql, limite, timeout, formato, base
 
 
 @bp.route("", methods=["GET", "POST"])
@@ -527,11 +614,13 @@ def _params() -> tuple[str, int, int, str]:
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def consola():
-    sql, limite, timeout, formato = _params()
+    sql, limite, timeout, formato, base = _params()
     res = None
     if sql:
-        res = correr(sql, limite=limite, timeout_ms=timeout)
-        _bitacora(sql, res)
+        res = correr(sql, limite=limite, timeout_ms=timeout, base=base)
+        # La bitácora guarda contra QUÉ base se preguntó: la misma consulta
+        # contra Asinfo o contra la base propia no quiere decir lo mismo.
+        _bitacora(f"[{base}] {sql}", res)
 
     if formato == "json":
         return jsonify(res or {"ok": True, "filas": [], "columnas": [], "n": 0,
@@ -549,4 +638,5 @@ def consola():
         )
 
     return render_template("admin_dbase/sql_console.html", sql=sql, res=res,
-                           limite=limite, timeout_ms=timeout, recetas=RECETAS)
+                           limite=limite, timeout_ms=timeout, recetas=RECETAS,
+                           base=base, bases=BASES)

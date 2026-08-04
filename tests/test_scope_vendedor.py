@@ -196,3 +196,19 @@ def test_columna_vend_no_cachea_el_negativo_para_siempre(monkeypatch):
     assert auth._columna_vend_existe() is True
     assert len(llamadas) == 2
     auth._reset_cache_columna_vend()
+
+
+def test_se_puede_volver_de_ver_como(app):
+    """Sin esto, quien impersona a un vendedor queda encerrado en el portal.
+
+    El banner "Volver a mi cuenta" postea a /stop-impersonate; si el allowlist
+    lo 404ea, la única salida es borrar la cookie de sesión. Un candado no
+    puede cerrar la puerta por la que se entró.
+    """
+    assert _con_user(app, "/stop-impersonate", {"vend": "PPR"}) is None
+
+
+def test_pero_no_puede_impersonar_a_otro(app):
+    """La puerta de SALIDA se abre; la de ENTRADA no."""
+    resp = _con_user(app, "/impersonate/3", {"vend": "PPR"})
+    assert resp is not None and resp[1] == 404

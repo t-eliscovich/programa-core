@@ -8,6 +8,9 @@
 <div class="max-w-7xl">
   {{ page_hero('Comisiones de vendedores', 'Cálculo por mes — selecciona el período abajo.') }}
 
+  {% set tab_activa = 'comisiones' %}
+  {% include "_partials/tabs_comisiones.html" %}
+
   {% if error %}
     <div class="page-error"><p>{{ error }}</p></div>
   {% endif %}

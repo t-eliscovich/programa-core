@@ -273,9 +273,13 @@ def comision():
 # ---------------------------------------------------------------------------
 # Vive fuera de /mi-cartera a propósito: scope_vendedor.py sólo deja pasar
 # /mi-cartera, así que un vendedor no puede llegar acá ni tipeando la URL.
+#
+# TMT 2026-08-03 (dueña): *"metas por vendedor ponelo en una tab dentro de
+# comisiones"*. Cuelga de /comisiones y las dos pantallas comparten la barra
+# de pestañas; se sacó la entrada suelta del menú.
 
 
-@mi_cartera_bp.route("/vendedores/metas", methods=["GET", "POST"])
+@mi_cartera_bp.route("/comisiones/metas", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("metas.editar")
 def metas():

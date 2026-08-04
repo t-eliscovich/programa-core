@@ -50,6 +50,11 @@ PREFIJOS_INFRA: tuple[str, ...] = (
     "/login",
     "/logout",
     "/password",
+    # ⭐ Sin esto, la dueña que usa "👁 Ver como" sobre un vendedor queda
+    # ENCERRADA: el botón "Volver a mi cuenta" postea acá y el allowlist se
+    # lo comía con un 404, sin más salida que borrar la cookie de sesión.
+    # Un candado no puede cerrar la puerta por la que se entró.
+    "/stop-impersonate",
 )
 
 # Adónde mandamos al vendedor cuando pide "/" (la raíz redirige al tablero

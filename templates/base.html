@@ -829,9 +829,7 @@
         {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
            (pedido dueña: "no debe estar colgada de informes"). #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
-        {# TMT 2026-08-03 — metas de venta por vendedor (alimenta el anillo de
-           progreso del portal /mi-cartera). #}
-        {% if tiene_permiso('metas.editar') %}{{ nav_link('mi_cartera.metas', 'Metas de vendedores', 'money') }}{% endif %}
+
         {# TMT 2026-07-09 (dueña): Lista de precios movida a Modificar (última posición), desde Datos base. #}
         {{ nav_link('precios.lista', 'Lista de precios', 'money') }}
       </details>
