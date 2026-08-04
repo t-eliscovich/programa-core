@@ -231,6 +231,35 @@ def test_el_pie_de_facturas_tiene_TODAS_las_columnas_de_la_tabla(app):
     assert encabezado.count("no-print") == pie.count("no-print")
 
 
+def test_el_pie_de_cheques_tambien_cubre_todas_sus_columnas(app):
+    """El mismo control que el de facturas, para la otra tabla.
+
+    Al mover Importe delante de Banco (dueña 2026-08-04: *"así se puede ver
+    monto abajo de monto"*) el colspan del rótulo tenía que bajar de 6 a 5, o
+    el total del mes se iba a imprimir bajo BANCO. Es exactamente el error que
+    el pie de facturas ya cometió dos veces: los números bien y la alineación
+    mal, que es la peor combinación porque no hay nada que "no cierre".
+    """
+    import re
+    from pathlib import Path
+
+    tpl = re.sub(r"\{#.*?#\}", "", Path(
+        "modules/informes/templates/informes/_estado_cuenta_impreso.html"
+    ).read_text(), flags=re.S)
+    # La segunda tabla del parcial es la de cheques.
+    cheques = tpl.split("<thead", 2)[2]
+    encabezado = cheques.split("</thead>", 1)[0]
+    pie = cheques.split("<tfoot", 1)[1].split("</tfoot>", 1)[0]
+
+    n_th = len(re.findall(r"<th\b", encabezado))
+    n_td = len(re.findall(r"<td\b", pie))
+    colspans = [int(c) for c in re.findall(r'colspan="(\d+)"', pie)]
+    assert n_td + sum(colspans) - len(colspans) == n_th
+
+    # Y el orden que pidió: Importe ANTES que Banco.
+    assert encabezado.index(">Importe<") < encabezado.index(">Banco<")
+
+
 def test_el_pdf_sale_del_template_que_ya_se_imprime(app, monkeypatch):
     """⭐ La invariante de todo esto.
 

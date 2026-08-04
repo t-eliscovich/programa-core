@@ -207,8 +207,15 @@
           <th class="px-4 py-3 text-left font-medium" title="Fecha original de depósito (la pactada al alta). NUNCA cambia.">F. depósito (orig.)</th>
           <th class="px-4 py-3 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó.">Postergada</th>
           <th class="px-4 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaout del dBase, o fechaing si el depósito se hizo por Programa Core). '—' si todavía está en cartera.">Depositado</th>
-          <th class="px-4 py-3 text-left font-medium">Banco</th>
+          {# TMT 2026-08-04 (dueña): *"poné en cheques el importe donde está
+             banco y viceversa, así se puede ver monto abajo de monto"*.
+             Importe queda en la MISMA posición que la última columna de plata
+             de la tabla de facturas, así los dos bloques se leen como una sola
+             columna de números para abajo en vez de dos columnas corridas. El
+             banco pasa al final, que es un dato de referencia y no algo que se
+             sume. #}
           <th class="px-4 py-3 text-right font-medium">Importe</th>
+          <th class="px-4 py-3 text-left font-medium">Banco</th>
           <th class="px-4 py-3 text-left font-medium">Stat</th>
         </tr>
       </thead>
@@ -276,8 +283,8 @@
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-slate-500">{{ c.nombre_banco or c.banco }}</td>
           <td class="px-4 py-2 text-right text-mono{{ ' line-through text-slate-400' if anulado }}">{{ c.importe | money_es }}</td>
+          <td class="px-4 py-2 text-slate-500">{{ c.nombre_banco or c.banco }}</td>
           <td class="px-4 py-2 font-mono text-xs text-slate-500">
             {{ c.stat }}{% if anulado %} <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] uppercase tracking-wide" title="Cheque anulado — no suma al total ni al contador">anulado</span>{% endif %}
           </td>
@@ -293,12 +300,17 @@
          esconde y en su lugar sale `ec-ch-total-cobrar`, que sí cuadra. #}
       <tfoot class="ec-ch-total-todos bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
-          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="6">
+          {# El rótulo abarca hasta Depositado: el total tiene que caer bajo
+             IMPORTE, que ahora es la 6ª columna. Si el colspan se queda en 6,
+             el total se corre a Banco — el mismo error que el pie de facturas
+             tuvo dos veces. #}
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="5">
             Total ({{ nch.activos }} cheque{{ '' if nch.activos == 1 else 's' }})
             {%- set n_anulados = data.cheques | length - nch.activos %}
             {%- if n_anulados > 0 %} <span class="normal-case tracking-normal text-slate-400 font-normal">· {{ n_anulados }} anulado{{ '' if n_anulados == 1 else 's' }} sin sumar</span>{% endif %}
           </td>
           <td class="px-4 py-3 text-right text-mono">{{ t.cheques_total | money_es }}</td>
+          <td></td>
           <td></td>
         </tr>
       </tfoot>
