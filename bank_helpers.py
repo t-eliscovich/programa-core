@@ -565,6 +565,37 @@ class CadenaRotaError(RuntimeError):
     """
 
 
+class AperturaDistintaError(ValueError):
+    """El re-encadenado hacia atrás no aterriza en el saldo de la primera fila.
+
+    ⭐ TMT 2026-08-04 — LA PREMISA QUE FALLÓ. `reencadenar_retro` nació
+    asumiendo que la primera fila del banco era confiable, y que con el
+    cierre anclado moverla significaba un faltante. En Pichincha resultó que
+    **la primera fila ES una de las corruptas**: en orden (fecha, id) el
+    ledger arranca con las ND del 29/06, que se cargaron ÚLTIMAS (id 44051+)
+    y quedaron estampadas con un saldo de nivel 03/07.
+
+    Tres caminos independientes dijeron que la apertura real es
+    **2.962.335,77** y no los 3.209.797,81 que declara esa primera fila:
+      · la apertura implícita de la primera fila CARGADA (id 43947);
+      · cierre validado − suma de todos los movimientos;
+      · la foto de cierre de junio — `historia.banco`(30/06) 3.083.974 menos
+        caja 116.174,67 menos Internacional 3.761,19 = 2.964.038,14 contra
+        los 2.964.038,04 que cierra el ledger el 30/06. Δ 0,10, y
+        `historia.banco` está redondeado a entero.
+
+    Así que la guarda no se afloja: se le **pasa la apertura**. Los dos
+    extremos siguen clavados, sólo que el de abajo pasa a ser un número que
+    alguien afirma explícitamente, en vez de uno que se lee de una fila que
+    puede estar rota. Es más fuerte, no más débil.
+    """
+
+    def __init__(self, msg, *, actual, propuesta):
+        super().__init__(msg)
+        self.actual = actual
+        self.propuesta = propuesta
+
+
 def _sql_signed_delta(alias: str = "") -> str:
     """El `_signed_delta` de arriba, escrito en SQL. UNA sola regla.
 
@@ -670,6 +701,7 @@ def reencadenar_retro(
     *,
     no_banco: int,
     no_cta: str | None = None,
+    apertura: float | None = None,
     dry_run: bool = False,
 ) -> int | list[dict]:
     """Re-encadena HACIA ATRÁS: ancla en la ÚLTIMA fila y camina al pasado.
@@ -693,11 +725,12 @@ def reencadenar_retro(
 
     GUARDA ESPEJO del bug del 2026-05-12 (un walk sin ancla dejó Pichincha en
     −917.651,96 destruyendo el opening): éste podría destruirlo por el otro
-    lado. Si la PRIMERA fila cambiaría de saldo, abortamos — querría decir
-    que los deltas firmados no reconcilian los dos extremos, y entonces esto
-    no es una costura de orden sino un faltante que hay que mirar a mano
-    contra el extracto. Con los dos extremos clavados, un re-encadenado no
-    puede inventar plata.
+    lado. Con los dos extremos clavados, un re-encadenado no puede inventar
+    plata. Si el walk no aterriza donde dice la primera fila, levanta
+    `AperturaDistintaError` con la apertura que piden los movimientos — y
+    recién se aplica pasando esa apertura por `apertura=`, que es alguien
+    afirmándola. Ver `AperturaDistintaError` para por qué el saldo de la
+    primera fila no alcanza como referencia.
 
     Con `dry_run=True` devuelve el plan (`saldo_actual` / `saldo_nuevo`),
     mismo formato que `recompute_saldos_desde`. Sin él, devuelve cuántas
@@ -747,15 +780,36 @@ def reencadenar_retro(
     } for r in rows]
 
     primera = plan[0]
-    if primera["saldo_actual"] is not None and \
-            abs(primera["saldo_nuevo"] - primera["saldo_actual"]) > 0.02:
-        raise ValueError(
-            f"Abortado: re-encadenar hacia atrás movería la PRIMERA fila del "
-            f"banco de {primera['saldo_actual']:,.2f} a "
-            f"{primera['saldo_nuevo']:,.2f}. Con el cierre anclado, eso "
-            f"significa que los movimientos NO explican la diferencia entre "
-            f"los dos extremos: no es una costura de orden, es un faltante. "
-            f"Mirá esas filas de a una contra el extracto."
+    # La APERTURA es la plata que el banco tenía antes de la primera fila:
+    # el saldo que le queda a esa fila, menos lo que la fila misma movió.
+    _d0 = _signed_delta(rows[0]["documento"], rows[0]["importe"],
+                        rows[0].get("usuario_crea") or "")
+    ap_nueva = round(primera["saldo_nuevo"] - _d0, 2)
+    ap_guardada = (None if primera["saldo_actual"] is None
+                   else round(primera["saldo_actual"] - _d0, 2))
+
+    if apertura is not None:
+        # Alguien AFIRMA la apertura. Los dos extremos quedan clavados: el
+        # cierre por construcción, la apertura por este chequeo. Es más
+        # fuerte que leerla de una fila que puede estar rota.
+        if abs(ap_nueva - float(apertura)) > 0.02:
+            raise ValueError(
+                f"Abortado: con el cierre anclado, los movimientos dan una "
+                f"apertura de {ap_nueva:,.2f} y vos afirmaste "
+                f"{float(apertura):,.2f} — difieren "
+                f"{ap_nueva - float(apertura):,.2f}. Eso no es una costura de "
+                f"orden, es un faltante: mirá esas filas de a una contra el "
+                f"extracto."
+            )
+    elif ap_guardada is not None and abs(ap_nueva - ap_guardada) > 0.02:
+        raise AperturaDistintaError(
+            f"El re-encadenado no aterriza donde dice la primera fila: ella "
+            f"declara una apertura de {ap_guardada:,.2f} y los movimientos, "
+            f"contados desde el cierre, piden {ap_nueva:,.2f} "
+            f"({ap_nueva - ap_guardada:+,.2f}). O falta plata, o la primera "
+            f"fila es una de las que están mal estampadas. Confirmá cuál es "
+            f"la apertura antes de aplicar.",
+            actual=ap_guardada, propuesta=ap_nueva,
         )
 
     cambios = [f for f in plan

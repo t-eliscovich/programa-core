@@ -69,6 +69,31 @@
   </div>
   {% endif %}
 
+  {% if apertura_conflicto %}
+  {# TMT 2026-08-04. No es un error: es una pregunta, y la única que esta
+     pantalla no puede contestar sola. #}
+  <div class="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 mb-3"
+       style="max-width:62rem;">
+    <div class="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-1">
+      Confirmá el saldo de apertura antes de aplicar
+    </div>
+    <p class="text-xs text-amber-900 dark:text-amber-200 mb-2">
+      La primera fila del banco dice que antes de ella había
+      <strong class="font-mono">{{ apertura_conflicto.guardada|num_es }}</strong>.
+      Contando los movimientos para atrás desde el saldo de hoy, dan
+      <strong class="font-mono">{{ apertura_conflicto.propuesta|num_es }}</strong>
+      ({{ ('+' if apertura_conflicto.delta >= 0 else '−') ~ (apertura_conflicto.delta|abs|num_es) }}).
+      Las dos no pueden ser ciertas: o falta plata, o esa primera fila es una
+      de las que están mal estampadas. El plan de abajo está armado con
+      <strong class="font-mono">{{ apertura_conflicto.propuesta|num_es }}</strong>.
+    </p>
+    <p class="text-[11px] text-amber-800 dark:text-amber-300">
+      Contrastalo con el extracto del banco antes de apretar Aplicar — el
+      árbitro es el papel, no esta pantalla.
+    </p>
+  </div>
+  {% endif %}
+
   {% if plan is not none %}
     {% if not plan %}
     <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm text-slate-600 dark:text-slate-300">
@@ -151,6 +176,7 @@
       <input type="hidden" name="no_banco" value="{{ no_banco }}">
       <input type="hidden" name="desde" value="{{ desde }}">
       <input type="hidden" name="modo" value="{{ modo }}">
+      {% if apertura is not none %}<input type="hidden" name="apertura" value="{{ apertura }}">{% endif %}
       <input type="hidden" name="aplicar" value="1">
       <span class="text-xs text-amber-900 dark:text-amber-200" style="max-width:44rem;">
         Aplicar escribe el saldo corrido de esas {{ cambios|length }} fila(s). No borra ni

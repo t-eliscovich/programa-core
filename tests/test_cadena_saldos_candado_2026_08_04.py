@@ -127,22 +127,54 @@ def test_retro_dry_run_no_escribe_y_muestra_lo_mismo_que_aplicaria(monkeypatch):
     assert {f["id_transaccion"]: f["saldo"] for f in fake.filas} == prometido
 
 
-def test_retro_aborta_si_moveria_la_primera_fila(monkeypatch):
+def test_retro_pregunta_por_la_apertura_en_vez_de_adivinarla(monkeypatch):
     """GUARDA ESPEJO del desastre del 2026-05-12 (Pichincha −917.651,96).
 
-    Aquel fue por el otro lado: un walk sin ancla destruyó el opening. Con
-    los dos extremos clavados —cierre por construcción, opening por esta
-    guarda— un re-encadenado no puede inventar plata. Si los dos extremos no
-    reconcilian, no es una costura de orden: es un faltante, y lo tiene que
-    mirar una persona contra el extracto.
+    Aquel fue por el otro lado: un walk sin ancla destruyó el opening. Acá
+    los dos extremos quedan clavados —el cierre por construcción, la
+    apertura por esta guarda— así que un re-encadenado no puede inventar
+    plata.
+
+    ⭐ Y la guarda NO se planta contra el saldo de la primera fila, porque
+    esa fila puede ser una de las rotas: en Pichincha el ledger arranca (en
+    orden de fecha) con las ND del 29/06 que se cargaron ÚLTIMAS, estampadas
+    con un saldo del 03/07. Se planta contra una apertura AFIRMADA.
     """
     import bank_helpers
     filas = _ledger_con_costura()
-    filas[0]["saldo"] = 5000.0  # el opening no reconcilia con el cierre
+    filas[0]["saldo"] = 5000.0  # la primera fila declara otra apertura
     _instalar(monkeypatch, filas)
 
-    with pytest.raises(ValueError, match="PRIMERA fila"):
+    with pytest.raises(bank_helpers.AperturaDistintaError) as e:
         bank_helpers.reencadenar_retro(None, no_banco=10, dry_run=True)
+    # 1000 − 100 = 900 declarados por la fila mal estampada era lo de antes;
+    # ahora declara 5000 − 100 = 4900, y los movimientos piden 900.
+    assert e.value.actual == 4900.0
+    assert e.value.propuesta == 900.0
+
+
+def test_retro_aplica_cuando_alguien_afirma_la_apertura(monkeypatch):
+    """Afirmarla desbloquea; afirmar la equivocada no."""
+    import bank_helpers
+    filas = _ledger_con_costura()
+    filas[0]["saldo"] = 5000.0
+    fake = _instalar(monkeypatch, filas)
+
+    with pytest.raises(ValueError, match="afirmaste"):
+        bank_helpers.reencadenar_retro(
+            None, no_banco=10, apertura=4900.0, dry_run=True)
+
+    bank_helpers.reencadenar_retro(None, no_banco=10, apertura=900.0)
+    assert bank_helpers.contar_quiebres(no_banco=10) == []
+    assert fake.filas[-1]["saldo"] == 1058.0, "el cierre NO se puede mover"
+
+
+def test_retro_no_pide_confirmacion_si_la_apertura_ya_cierra(monkeypatch):
+    """Sin conflicto no hay pregunta — si no, la pantalla se vuelve ruido."""
+    import bank_helpers
+    _instalar(monkeypatch, _ledger_con_costura())
+    plan = bank_helpers.reencadenar_retro(None, no_banco=10, dry_run=True)
+    assert plan[0]["saldo_nuevo"] == plan[0]["saldo_actual"] == 1000.0
 
 
 def test_retro_es_idempotente(monkeypatch):

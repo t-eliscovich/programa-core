@@ -1109,6 +1109,8 @@ def reencadenar_saldos():
 
     plan, err, banco_sel = None, None, None
     total_actual = total_nuevo = None
+    apertura = None
+    apertura_conflicto = None
     # Hacia atrás el ancla es el cierre, no una fecha: no se pide fecha.
     if no_banco and modo == "atras":
         banco_sel = next(
@@ -1117,17 +1119,45 @@ def reencadenar_saldos():
             err = f"El banco {no_banco} no está en el catálogo."
         else:
             import bank_helpers
+            # `apertura` viaja del dry-run al Aplicar: si la primera fila del
+            # banco está mal estampada (pasó en Pichincha: el ledger arranca
+            # con las ND del 29/06 que se cargaron últimas), el saldo de esa
+            # fila no sirve de referencia y hay que AFIRMAR la apertura.
+            ap_raw = (request.values.get("apertura") or "").strip()
             try:
-                with _db.tx() as conn:
-                    plan = bank_helpers.reencadenar_retro(
-                        conn, no_banco=no_banco, no_cta=None, dry_run=True)
+                apertura = float(ap_raw) if ap_raw else None
+            except ValueError:
+                apertura = None
+            try:
+                try:
+                    with _db.tx() as conn:
+                        plan = bank_helpers.reencadenar_retro(
+                            conn, no_banco=no_banco, no_cta=None,
+                            apertura=apertura, dry_run=True)
+                except bank_helpers.AperturaDistintaError as ae:
+                    # No es un error: es una pregunta. Armamos igual el plan
+                    # —con la apertura que piden los movimientos— para que se
+                    # pueda MIRAR, pero Aplicar queda detrás de confirmarla.
+                    apertura_conflicto = {
+                        "guardada": ae.actual,
+                        "propuesta": ae.propuesta,
+                        "delta": round(ae.propuesta - ae.actual, 2),
+                        "msg": str(ae),
+                    }
+                    with _db.tx() as conn:
+                        plan = bank_helpers.reencadenar_retro(
+                            conn, no_banco=no_banco, no_cta=None,
+                            apertura=ae.propuesta, dry_run=True)
+                    apertura = ae.propuesta
+                    aplicar = False
                 if plan:
                     total_actual = plan[-1]["saldo_actual"]
                     total_nuevo = plan[-1]["saldo_nuevo"]
                 if aplicar:
                     with _db.tx() as conn:
                         n = bank_helpers.reencadenar_retro(
-                            conn, no_banco=no_banco, no_cta=None)
+                            conn, no_banco=no_banco, no_cta=None,
+                            apertura=apertura)
                     flash(
                         f"{banco_sel['nombre'] or no_banco}: {n} fila(s) "
                         f"re-encadenadas hacia atrás. El saldo de cierre "
@@ -1185,7 +1215,7 @@ def reencadenar_saldos():
     return render_template(
         "bancos/reencadenar.html",
         bancos=bancos, no_banco=no_banco, desde=desde_raw, error=err,
-        modo=modo,
+        modo=modo, apertura=apertura, apertura_conflicto=apertura_conflicto,
         banco_sel=banco_sel, plan=plan, cambios=cambios,
         total_actual=total_actual, total_nuevo=total_nuevo,
     )
