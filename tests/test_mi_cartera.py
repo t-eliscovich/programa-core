@@ -406,7 +406,7 @@ def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
     )
     r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")
     assert r.status_code == 200
-    assert "#4242".encode() in r.data
+    assert b"#4242" in r.data
     assert "Ch. ·".encode() not in r.data
 
 
@@ -418,9 +418,9 @@ def test_el_rotulo_dice_lo_que_se_esta_mostrando(vendedor_logueado, monkeypatch)
                        "vencido": 5.0, "provincia": "", "n_facturas": 1,
                        "vence_mas_viejo": None}],
     )
-    assert "con vencido".encode() in vendedor_logueado.get(
+    assert b"con vencido" in vendedor_logueado.get(
         "/mi-cartera/clientes?f=vencidos").data
-    assert "con saldo".encode() in vendedor_logueado.get(
+    assert b"con saldo" in vendedor_logueado.get(
         "/mi-cartera/clientes").data
-    assert "encontrado".encode() in vendedor_logueado.get(
+    assert b"encontrado" in vendedor_logueado.get(
         "/mi-cartera/clientes?q=uno").data
