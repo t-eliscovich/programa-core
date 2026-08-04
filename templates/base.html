@@ -850,6 +850,12 @@
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}{% endif %}
         {# 'Producción Tejeduría' (kg manuales del dBase) ELIMINADA — dueña 2026-07-20: la reemplaza Tejeduría Asinfo. La ruta vieja redirige. #}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
+        {# TMT 2026-08-04 (dueña: "hacé una copia de tejeduría asinfo y ponéme
+           un terminado asinfo"). El paso siguiente de la fábrica (bodega 53).
+           Va con `stock.ver` y no con `compras.ver` como su hermana: acá no hay
+           compras que cruzar —el terminado no se terceriza—, así que es data de
+           producción pura, del mismo tenor que Inventario. #}
+        {{ nav_link('terminado_asinfo.tab', 'Terminado Asinfo', 'box') }}
         {# TMT 2026-06-10 dueña: Stock = 2 tabs réplica del Excel de la nube
            (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
            e importaciones siguen vivas por URL y linkeadas DENTRO de estas

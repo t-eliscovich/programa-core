@@ -2138,6 +2138,111 @@ def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
         return dict(zero)
 
 
+# ---------------------------------------------------------------------------
+# El MISMO flujo, pero abierto DÍA POR DÍA.
+#
+# TMT 2026-08-04 (dueña, sobre la pantalla de Terminado: *"no quiero artículos,
+# quiero cantidades por día, así entendemos por qué el balance o la duda de
+# utilidad"*). El total del mes no explica un salto: para eso hace falta ver en
+# qué día entraron los kg. Y como la utilidad es Δ patrimonio, lo que la mueve
+# no es sólo lo que SALIÓ terminado sino lo que se COMIÓ de tela cruda — por
+# eso cada fila trae las dos puntas y la merma del día.
+#
+# Es la misma query que `fabricacion_flujo_mes`, con el mismo criterio de hoja
+# (`NOT IN` los padres) y el mismo filtro de categoría del material de entrada,
+# agregada por `fecha_cierre` en vez de en un solo total. Que sea LA MISMA es
+# la gracia: la suma de los días da EXACTAMENTE el número del mes que muestra
+# Flujo de producción. Si un día se hace una copia con otro criterio, las dos
+# pantallas empiezan a discutir y nadie sabe cuál creer.
+# ---------------------------------------------------------------------------
+_FABRICACION_DIA_TTL_SECS = 300  # 5 min, igual que el mensual
+_FABRICACION_DIA_CACHE: dict = {}
+
+
+def fabricacion_flujo_por_dia(id_bodega: int, yy: int, mm: int) -> list[dict]:
+    """`fabricacion_flujo_mes` abierto por día de cierre.
+
+    Devuelve (fail-soft, `[]` si Asinfo no contesta):
+        [{dia 'YYYY-MM-DD', n_ofs, issued, fab}]  ordenado por día.
+
+    · fab    = kg que INGRESARON a la bodega ese día (terminado producido).
+    · issued = kg de material de entrada que se CONSUMIERON en esas órdenes
+               (tela cruda para bodega 53, hilo para la 52).
+    · issued − fab = merma del día.
+    """
+    try:
+        yy = int(yy)
+        mm = int(mm)
+        id_bodega = int(id_bodega)
+    except (TypeError, ValueError):
+        return []
+    cache_key = (id_bodega, yy, mm)
+    now = _time.time()
+    cached = _FABRICACION_DIA_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _FABRICACION_DIA_TTL_SECS:
+        return cached[1]
+    d1 = f"{yy:04d}-{mm:02d}-01"
+    ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
+    d2 = f"{ny:04d}-{nm:02d}-01"
+    mat = _MATERIAL_PROCESO.get(id_bodega, "")
+    cat_filter = (
+        f" AND prm.nombre_categoria_producto = '{mat}'" if mat else ""
+    )
+    sql = f"""
+        WITH ofs AS (
+            SELECT id_orden_fabricacion,
+                   CONVERT(varchar(10), fecha_cierre, 23) AS dia,
+                   ISNULL(cantidad_fabricada, 0)          AS fab
+              FROM orden_fabricacion
+             WHERE id_bodega = {id_bodega}
+               AND fecha_cierre >= '{d1}' AND fecha_cierre < '{d2}'
+               AND id_orden_fabricacion NOT IN (
+                     SELECT id_orden_fabricacion_padre FROM orden_fabricacion
+                      WHERE id_orden_fabricacion_padre IS NOT NULL)
+        ),
+        iss AS (
+            SELECT j.id_orden_fabricacion,
+                   SUM(ISNULL(d.cantidad_despachada, 0)) AS issued
+              FROM detalle_orden_salida_material_orden_fabricacion j
+              JOIN detalle_orden_salida_material d
+                ON d.id_detalle_orden_salida_material = j.id_detalle_orden_salida_material
+              JOIN producto prm ON prm.id_producto = d.id_producto
+             WHERE j.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM ofs)
+                   {cat_filter}
+             GROUP BY j.id_orden_fabricacion
+        )
+        SELECT o.dia,
+               COUNT(*)                      AS n_ofs,
+               SUM(o.fab)                    AS fab,
+               SUM(ISNULL(i.issued, 0))      AS issued
+          FROM ofs o
+          LEFT JOIN iss i ON i.id_orden_fabricacion = o.id_orden_fabricacion
+         GROUP BY o.dia
+         ORDER BY o.dia
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=400)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return []
+    out = [
+        {
+            "dia": str(r.get("dia") or "")[:10],
+            "n_ofs": int(r.get("n_ofs") or 0),
+            "issued": round(float(r.get("issued") or 0.0), 2),
+            "fab": round(float(r.get("fab") or 0.0), 2),
+        }
+        for r in (rows or [])
+    ]
+    if out:  # no congelar un [] por error de red (mismo criterio que el mensual)
+        _FABRICACION_DIA_CACHE[cache_key] = (now, out)
+    return out
+
+
+def reset_fabricacion_dia_cache() -> None:
+    """Vaciar el cache de fabricacion_flujo_por_dia (tests / deploy)."""
+    _FABRICACION_DIA_CACHE.clear()
+
+
 _DESPACHO_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _DESPACHO_CACHE: dict = {}
 

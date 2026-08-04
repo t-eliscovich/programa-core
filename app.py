@@ -320,6 +320,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(tejeduria_asinfo_bp)
 
+    # TMT 2026-08-04 (dueña: "copia de tejeduría asinfo → terminado asinfo").
+    # El otro paso de fabricación (bodega 53). Solo lectura: no hay compras.
+    from modules.terminado_asinfo.views import terminado_asinfo_bp
+
+    app.register_blueprint(terminado_asinfo_bp)
+
     from modules.stock.views import stock_bp
 
     app.register_blueprint(stock_bp)
