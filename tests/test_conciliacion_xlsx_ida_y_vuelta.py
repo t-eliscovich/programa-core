@@ -21,11 +21,24 @@ de banco y otras líneas salieron repetidas".
 pendientes legítimos sin fecha, a pedido expreso de la dueña (2026-06-04,
 *"quiero que los -15.835,60 prevalezcan aunque no tengan fecha"*). Ese
 caso está clavado abajo.
+
+QUÉ CAMBIÓ (04/08/2026). La dueña pidió el resumen de vuelta en la MISMA
+hoja: *"el archivo de la conciliacion me esta separando los movimientos y
+el resumen en hojas distintas, podemos unificar en uno"*. Volver al pie sin
+volver al bug se apoya en tres cosas, y las tres se prueban acá:
+
+  1. la fila marcador `RESUMEN CONTABLE`, donde el parser DEJA de leer
+     (corte por posición: no depende de conocer los rótulos);
+  2. el rótulo en la columna B (CONCEPTO) y no en la C, así la lista negra
+     `_FILAS_CIERRE` sí matchea si alguien borra el marcador;
+  3. el invariante de siempre: generar el archivo y re-importarlo no puede
+     crear NI UN pendiente nuevo.
 """
 from __future__ import annotations
 
 import io
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -37,6 +50,7 @@ if str(ROOT) not in sys.path:
 openpyxl = pytest.importorskip("openpyxl")
 
 from modules.conciliacion.hoja_parser import (  # noqa: E402
+    MARCADOR_RESUMEN,
     _es_fila_de_resumen,
     parse_hoja_pendientes,
 )
@@ -59,13 +73,21 @@ MOVS = [
 ]
 
 
-def _libro(*, resumen_en_hoja_aparte: bool):
-    """Reproduce el layout de `_generar_xlsx_pendientes`."""
+def _libro(layout: str):
+    """Reproduce los tres layouts que existieron de `_generar_xlsx_pendientes`.
+
+    · ``"pie_viejo"``  — resumen al pie, rótulo en la C (VENENO del 03/08).
+    · ``"aparte"``     — resumen en su propia solapa (fix del 03/08).
+    · ``"pie_nuevo"``  — resumen al pie detrás del marcador `RESUMEN
+      CONTABLE`, rótulo en la B (pedido de la dueña, 04/08). Es el que
+      escribe la app HOY.
+    """
+    assert layout in ("pie_viejo", "aparte", "pie_nuevo")
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "MOVIMIENTOS PENDIENTES"
     ws["A1"] = "MOVIMIENTOS PENDIENTES"
-    ws["A2"] = "Pichincha · Sesión #60 · 2026-08-03 09:27 · 3 movs"
+    ws["A2"] = "Pichincha · Sesión #60 · 2026-08-04 09:27 · 3 movs"
     for col, h in enumerate(["FECHA", "DETALLE", "CODIGO", "VALOR", "DETALLE"], 1):
         ws.cell(row=4, column=col, value=h)
     r = 5
@@ -75,12 +97,18 @@ def _libro(*, resumen_en_hoja_aparte: bool):
         ws.cell(row=r, column=3, value=doc)
         ws.cell(row=r, column=4, value=valor)
         r += 1
-    destino = wb.create_sheet("RESUMEN") if resumen_en_hoja_aparte else ws
-    # El rótulo va a la columna 3 (CODIGO) en la hoja de movs — ahí estaba
-    # el veneno — y a la 1 en la hoja RESUMEN.
-    col_label = 1 if resumen_en_hoja_aparte else 3
-    col_val = 2 if resumen_en_hoja_aparte else 4
-    rr = 4 if resumen_en_hoja_aparte else r + 1
+
+    if layout == "aparte":
+        destino, col_label, col_val, rr = wb.create_sheet("RESUMEN"), 1, 2, 4
+    elif layout == "pie_viejo":
+        # El rótulo en la columna 3 (CODIGO): ahí estaba el veneno.
+        destino, col_label, col_val, rr = ws, 3, 4, r + 1
+    else:
+        destino, col_label, col_val = ws, 2, 4
+        rr = r + 1
+        ws.cell(row=rr, column=1, value=MARCADOR_RESUMEN)
+        rr += 1
+
     for label, val in ROTULOS_RESUMEN:
         destino.cell(row=rr, column=col_label, value=label)
         destino.cell(row=rr, column=col_val, value=val)
@@ -90,19 +118,38 @@ def _libro(*, resumen_en_hoja_aparte: bool):
     return buf.getvalue()
 
 
-def test_ida_y_vuelta_resumen_en_hoja_aparte():
-    """Con el resumen en su propia hoja, vuelven EXACTAMENTE los movimientos."""
-    filas, dropped, ignoradas = parse_hoja_pendientes(
-        _libro(resumen_en_hoja_aparte=True), return_dropped=True)
+def _volvieron_solo_los_movs(filas):
     assert len(filas) == len(MOVS), (
         f"el archivo que genera la app no se puede re-importar: volvieron "
         f"{len(filas)} filas y se escribieron {len(MOVS)}"
     )
-    assert not ignoradas, "el parser ni siquiera debería VER la hoja RESUMEN"
     assert round(sum(
         f["monto"] if f["tipo"] == "C" else -f["monto"] for f in filas), 2
     ) == round(sum(m[3] for m in MOVS), 2)
     assert {f["documento"] for f in filas} == {m[2] for m in MOVS}
+
+
+def test_ida_y_vuelta_resumen_al_pie_detras_del_marcador():
+    """⭐ El layout de HOY (04/08): una sola hoja, y aun así no se envenena.
+
+    Este es EL test del pedido de la dueña. Si alguien saca el marcador o
+    mueve el rótulo a la columna CODIGO, vuelven los $8.304.132,19.
+    """
+    filas, dropped, ignoradas = parse_hoja_pendientes(
+        _libro("pie_nuevo"), return_dropped=True)
+    _volvieron_solo_los_movs(filas)
+    assert not dropped
+    # Una sola ignorada: el marcador. De ahí para abajo no se leyó NADA —
+    # por eso no hay 7 rótulos reportados como en el layout viejo.
+    assert [i["rotulo"] for i in ignoradas] == [MARCADOR_RESUMEN]
+
+
+def test_ida_y_vuelta_resumen_en_hoja_aparte():
+    """Los archivos generados entre el 03 y el 04/08 siguen entrando bien."""
+    filas, dropped, ignoradas = parse_hoja_pendientes(
+        _libro("aparte"), return_dropped=True)
+    _volvieron_solo_los_movs(filas)
+    assert not ignoradas, "el parser ni siquiera debería VER la hoja RESUMEN"
 
 
 def test_red_para_los_excel_viejos_con_el_resumen_en_la_misma_hoja():
@@ -112,7 +159,7 @@ def test_red_para_los_excel_viejos_con_el_resumen_en_la_misma_hoja():
     $8.304.132,19 de créditos fantasma.
     """
     filas, dropped, ignoradas = parse_hoja_pendientes(
-        _libro(resumen_en_hoja_aparte=False), return_dropped=True)
+        _libro("pie_viejo"), return_dropped=True)
     assert len(filas) == len(MOVS), (
         "volvió a entrar el resumen contable como si fueran movimientos"
     )
@@ -215,13 +262,14 @@ def test_health_callado_cuando_esta_limpio():
     assert alerts == []
 
 
-def test_el_generador_escribe_el_resumen_en_OTRA_hoja():
+def test_el_generador_escribe_el_marcador_antes_del_resumen():
     """Invariante de estructura — el arreglo de raíz vive acá.
 
-    Los tests de arriba prueban que el parser aguanta las dos formas, pero
-    ninguno mira el generador real. Si mañana alguien vuelve a poner el
-    resumen al pie de la hoja de movimientos, el archivo se vuelve a
-    envenenar y todo lo demás sigue en verde.
+    Los tests de arriba prueban que el parser aguanta las tres formas, pero
+    ninguno mira el generador real. Ahora que el resumen volvió a la hoja de
+    movimientos (pedido de la dueña), lo único que lo hace seguro es que el
+    generador escriba el MARCADOR justo antes — y que el rótulo caiga en la
+    columna 2 (CONCEPTO) y no en la 3 (CODIGO), que fue el veneno del 03/08.
 
     Mismo patrón que `test_yy_persist_motor_unico`: se mira el fuente.
     """
@@ -230,15 +278,102 @@ def test_el_generador_escribe_el_resumen_en_OTRA_hoja():
     from modules.conciliacion.banco_v2_view import _generar_xlsx_pendientes
 
     src = inspect.getsource(_generar_xlsx_pendientes)
-    assert 'wb.create_sheet("RESUMEN")' in src, (
-        "el resumen contable volvió a la hoja de movimientos — el Excel que "
-        "genera la app se puede re-importar y envenenar el backlog"
+    i_marcador = src.find("_MARCADOR_RESUMEN")
+    i_bloque = src.index("for label, val in rows_resumen:")
+    assert 0 <= i_marcador < i_bloque, (
+        "el resumen se escribe en la hoja de movimientos SIN el marcador "
+        "RESUMEN CONTABLE arriba — el parser no tiene dónde frenar y el "
+        "Excel vuelve a envenenar el backlog al re-importarse"
     )
-    # El bloque que vuelca `rows_resumen` NO puede escribir en `ws`.
-    i = src.index("for label, val in rows_resumen:")
-    bloque = src[i:src.index("column_dimensions", i)]
-    assert "ws.cell(" not in bloque, (
-        "el resumen se está escribiendo en la hoja de movimientos (`ws`); "
-        "tiene que ir a la hoja RESUMEN (`ws_res`)"
+    bloque = src[i_bloque:src.index("column_dimensions", i_bloque)]
+    assert "column=2, value=label" in bloque, (
+        "el rótulo del resumen tiene que ir a la columna 2 (CONCEPTO): ahí "
+        "es donde `_FILAS_CIERRE` lo puede cazar si falta el marcador"
     )
-    assert "ws_res.cell(" in bloque
+    assert "column=3" not in bloque, (
+        "el rótulo volvió a la columna 3 (CODIGO) — es exactamente el bug "
+        "del 03/08/2026 ($8.304.132,19 de créditos fantasma)"
+    )
+
+
+def test_los_dos_importadores_frenan_en_el_marcador():
+    """`parse_xlsx` (el otro camino de subida) tiene que frenar igual.
+
+    Si sólo frena `hoja_parser`, el mismo archivo se importa limpio por una
+    pantalla y envenenado por la otra — el peor de los mundos, porque el
+    síntoma aparece días después y en otro lado.
+    """
+    from modules.conciliacion.parser_xlsx import parse_xlsx
+
+    deps = parse_xlsx(_libro("pie_nuevo"))
+    # parse_xlsx sólo devuelve créditos (valor > 0): los 2 depósitos.
+    assert len(deps) == 2, [d.concepto for d in deps]
+    assert {d.codigo for d in deps} == {"41508270", "115025288"}
+
+
+def test_END_TO_END_el_archivo_REAL_de_la_app_se_re_importa_limpio(
+        tmp_path, monkeypatch):
+    """⭐ El test que no se puede engañar: generador REAL → parser REAL.
+
+    Los de arriba replican el layout a mano; este corre
+    `_generar_xlsx_pendientes` de verdad, abre el .xlsx que sale y lo mete
+    por `parse_hoja_pendientes`. Si el resumen vuelve a colarse como
+    movimientos —por el motivo que sea, incluso uno que no se nos ocurrió—
+    acá se ve.
+    """
+    from modules.conciliacion import banco_v2_view as v
+
+    pendientes = [
+        {"fecha": f, "concepto": c, "documento": d, "monto": abs(m),
+         "oficina": "AG. NORTE", "detalle": "",
+         "tipo": "C" if m > 0 else "D"}
+        for f, c, d, m in [
+            (date(2026, 4, 9), "DEPOSITO", "41508270", 590.27),
+            (date(2026, 4, 13), "DEPOSITO", "115025288", 2300.0),
+            (date(2026, 7, 31), "INTELA C-PAG-CASH 07 31", "45873196", -24147.29),
+        ]
+    ]
+
+    def _fake_fetch_all(sql, params=None, conn=None):
+        if "banco_historicos_pendientes" in sql:
+            return list(pendientes)
+        return []
+
+    monkeypatch.setattr(v._db, "fetch_all", _fake_fetch_all)
+    monkeypatch.setattr(v._sesion, "estado_sesion", lambda s, nb: {})
+    monkeypatch.setattr(v._sesion, "cargar_movs", lambda s: [])
+    monkeypatch.setattr(v, "_PDF_DIR", tmp_path)
+
+    sesion = {"id": 60, "no_banco": 10, "saldo_banco_objetivo": 2683631.95,
+              "saldo_banco_detectado": None}
+    balance = {"saldo_si_concilio_todo": 2566365.84,
+               "pendientes_banco_creditos": 2890.27,
+               "pendientes_banco_debitos": 24147.29}
+
+    ruta = v._generar_xlsx_pendientes(sesion, balance)
+    assert ruta, "el generador no produjo el archivo"
+
+    # 1. Una sola hoja — que es lo que pidió la dueña.
+    wb = openpyxl.load_workbook(ruta)
+    assert wb.sheetnames == ["MOVIMIENTOS PENDIENTES"], (
+        f"el archivo volvió a salir partido en solapas: {wb.sheetnames}")
+    plano = "\n".join(
+        " | ".join(str(c) for c in fila if c is not None)
+        for fila in wb.active.iter_rows(values_only=True)
+    )
+    wb.close()
+    # 2. Y el resumen está adentro de esa hoja (no se perdió).
+    assert MARCADOR_RESUMEN in plano
+    assert "SALDO BANCO (extracto)" in plano
+
+    # 3. Re-importarlo no crea NI UN pendiente nuevo.
+    filas, dropped, ignoradas = parse_hoja_pendientes(
+        Path(ruta).read_bytes(), return_dropped=True)
+    assert len(filas) == len(pendientes), (
+        f"al re-importar el archivo que genera la app volvieron {len(filas)} "
+        f"filas y se habían escrito {len(pendientes)}: "
+        + str([f["documento"] for f in filas])
+    )
+    assert {f["documento"] for f in filas} == {p["documento"] for p in pendientes}
+    assert not dropped
+    assert [i["rotulo"] for i in ignoradas] == [MARCADOR_RESUMEN]
