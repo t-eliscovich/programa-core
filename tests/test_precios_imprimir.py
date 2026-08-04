@@ -254,21 +254,24 @@ def cliente_con_planos(app, fake_db, monkeypatch):
 
 def test_la_hoja_impresa_incluye_las_telas_de_precio_unico(cliente_con_planos):
     """Van SUMADAS como columnas de la misma tabla, no en un bloque aparte
-    (corrección de la dueña: "sumar a como está, no una foto así")."""
+    (corrección de la dueña: "sumar a como está, no una foto así").
+
+    TMT 2026-08-04 (Alex): JERSEY 3,5 y JERSEY 3 quedan FUERA de la hoja —
+    valen lo mismo que JERSEY y ensucian la lista con columnas idénticas."""
     html = cliente_con_planos.get("/precios").get_data(as_text=True)
     assert "SCUBA" in html
     assert "12,94" in html          # 11,25 neto x 1,15
-    assert "JERSEY 3,5" in html
-    # JERSEY 3,5 cobra lo del jersey: 8,87 x 1,15 = 10,20, y sale DOS veces
-    # (columna JERSEY y columna JERSEY 3,5) en la misma fila.
-    assert html.count("10,20") >= 2
+    # Un solo JERSEY, no tres. La cifra 10,20 sigue apareciendo (JERSEY neto x 1,15).
+    assert "10,20" in html
     # Y no queda una tablita suelta con la nota de la foto.
     assert "Precio de JERSEY" not in html
 
 
 def test_la_pantalla_de_precios_incluye_las_telas_de_precio_unico(cliente_con_planos):
+    """SCUBA aparece; JERSEY 3,5/JERSEY 3 sólo en la tablita del pie de la
+    matriz (editor de precio_plano), no en la hoja impresa (Alex 2026-08-04)."""
     html = cliente_con_planos.get("/precios").get_data(as_text=True)
-    assert "SCUBA" in html and "JERSEY 3,5" in html
+    assert "SCUBA" in html
 
 
 # ---------------------------------------------------------------------------
@@ -276,11 +279,16 @@ def test_la_pantalla_de_precios_incluye_las_telas_de_precio_unico(cliente_con_pl
 # ---------------------------------------------------------------------------
 
 
-def test_columnas_hoja_pega_la_ref_al_lado_de_su_tela():
-    """JERSEY 3,5 y JERSEY 3 van JUNTO a JERSEY, no al final."""
+def test_columnas_hoja_excluye_las_ref_col():
+    """TMT 2026-08-04 (Alex): las telas con `ref_col` (JERSEY 3,5, JERSEY 3)
+    NO aparecen en la hoja — son la misma columna que su referencia, y
+    duplicarlas en el papel confunde ("un solo jersey no los 3 tipos"). Las
+    de cifra fija (SCUBA, etc.) siguen yendo al final."""
     cols = queries.columnas_hoja([_fila(jersey=8.87)], PLANOS)
     labels = [c["label"] for c in cols]
-    assert labels[:2] == ["JERSEY", "JERSEY 3,5"]
+    assert "JERSEY 3,5" not in labels
+    assert "JERSEY 3" not in labels
+    assert labels[0] == "JERSEY"
     assert labels[-1] == "SCUBA"  # las de cifra fija, al final
 
 
@@ -297,15 +305,15 @@ def test_la_columna_fija_repite_el_mismo_numero_en_todas_las_clases():
     assert {f["valores"][i] for f in out} == {FOTO["SCUBA"]}
 
 
-def test_la_columna_ref_sigue_al_jersey_clase_por_clase():
-    """No es una cifra fija: JERSEY 3,5 vale lo que el jersey de ESA clase."""
+def test_la_hoja_no_tiene_columna_ref_col():
+    """TMT 2026-08-04 (Alex): las columnas con ref_col están fuera de la hoja.
+    En la matriz de proforma siguen resolviéndose por `resolver_plano`; acá
+    sólo probamos que la hoja impresa quedó limpia."""
     filas = [_fila(jersey=8.64), _fila(clase=5, descripcio="FUERTES", jersey=10.75)]
     cols = queries.columnas_hoja(filas, PLANOS)
     labels = [c["label"] for c in cols]
-    ij, i35 = labels.index("JERSEY"), labels.index("JERSEY 3,5")
-    out = queries.tabla_impresion(filas, 0, False, cols)
-    assert [f["valores"][i35] for f in out] == [f["valores"][ij] for f in out]
-    assert out[0]["valores"][i35] != out[1]["valores"][i35]
+    assert "JERSEY 3,5" not in labels
+    assert "JERSEY 3" not in labels
 
 
 def test_los_tramos_van_de_5_mas_4_a_5_mas_14_sin_saltos():
@@ -321,8 +329,10 @@ def test_los_tramos_van_de_5_mas_4_a_5_mas_14_sin_saltos():
 
 
 def test_el_selector_de_la_pantalla_ofrece_las_telas_de_precio_unico(cliente_con_planos):
+    """SCUBA (precio fijo) sigue en el selector; JERSEY 3,5 no —
+    TMT 2026-08-04 (Alex): la ref_col se dibuja igual que JERSEY."""
     html = cliente_con_planos.get("/precios").get_data(as_text=True)
-    assert "SCUBA" in html and "JERSEY 3,5" in html
+    assert "SCUBA" in html
 
 
 def test_descuentos_de_una_tela_de_precio_unico(cliente_con_planos):

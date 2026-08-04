@@ -302,12 +302,18 @@ def columnas_hoja(filas: list[dict], planos: list[dict] | None = None) -> list[d
     Las de `ref_col` (JERSEY 3,5 / JERSEY 3) son columnas `col`='jersey': se
     dibujan PEGADAS a su tela de referencia y varían igual que ella.
     """
-    refs: dict[str, list[dict]] = {}
     fijas: list[dict] = []
     for p in planos or []:
+        # TMT 2026-08-04 (Alex por WhatsApp): *"en la lista de precios
+        # mantengamos un solo jersey no los 3 tipos"*. Las telas con `ref_col`
+        # (JERSEY 3,5 y JERSEY 3, ambas = JERSEY) duplicaban la columna JERSEY
+        # con el mismo número, ensuciando la hoja impresa. Se ocultan de la
+        # hoja Y del selector de descuentos: son la misma columna que su
+        # referencia. Siguen existiendo en scintela.precio_plano para que la
+        # proforma pueda cotizarlas por su propio nombre.
         if p.get("ref_col"):
-            refs.setdefault(p["ref_col"], []).append(p)
-        elif p.get("precio") is not None:
+            continue
+        if p.get("precio") is not None:
             fijas.append(p)
 
     cols: list[dict] = []
@@ -315,10 +321,6 @@ def columnas_hoja(filas: list[dict], planos: list[dict] | None = None) -> list[d
         if not any(f.get(col) is not None for f in filas):
             continue  # columna entera vacía: no va al papel (hoy, MEDICAL)
         cols.append({"key": col, "label": label, "col": col, "fijo": None})
-        for p in refs.get(col, []):
-            cols.append(
-                {"key": f"pp{p['id']}", "label": p["tela"], "col": col, "fijo": None}
-            )
     for p in fijas:
         cols.append(
             {
