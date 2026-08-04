@@ -26,6 +26,9 @@ from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
 
+from modules._lib import pdf_motor
+from modules.informes import estado_cuenta_pdf
+
 from . import queries
 
 informes_bp = Blueprint(
@@ -3359,6 +3362,57 @@ def estado_cuenta(codigo_cli):
             lambda: __import__(
                 "modules.cheques.queries", fromlist=["neteos_activos_cliente"]
             ).neteos_activos_cliente(codigo_up), [])[0]),
+    )
+
+
+@informes_bp.route("/estado-cuenta/<codigo_cli>/pdf")
+@requiere_login
+# Mismo criterio que la pantalla de la que cuelga (TMT 2026-07-09: "estado de
+# cuenta abierto a todos los usuarios logueados"). Este PDF no muestra nada que
+# esa pantalla no muestre: es esa pantalla, impresa.
+def estado_cuenta_pdf_cliente(codigo_cli):
+    """El estado de cuenta como archivo, para mandárselo al cliente.
+
+    TMT 2026-08-04 (dueña): *"dejá esto de enviar por WhatsApp para todos los
+    usuarios, no sólo vendedores — quizás Alex le puede mandar al cliente
+    también"*.
+    """
+    codigo_up = (codigo_cli or "").upper()
+    data, error = _safe(lambda: queries.estado_cuenta_cliente(codigo_up), {})
+    if error or not data or not data.get("cliente"):
+        abort(404)
+    return responder_pdf(data, codigo_up)
+
+
+def responder_pdf(data: dict, codigo_up: str):
+    """La respuesta HTTP del PDF. Compartida con el portal de vendedores.
+
+    El 503 no es decorativo: el front esconde el botón cuando no hay motor,
+    pero alguien puede llegar por la URL. Un mensaje que dice qué falta es lo
+    que evita el reporte de "no anda el botón".
+    """
+    try:
+        blob = estado_cuenta_pdf.generar(data)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("PDF de %s: %s", codigo_up, e)
+        return Response(
+            "No se puede generar el PDF: el servidor no tiene un navegador "
+            "instalado para imprimirlo. La pantalla de impresión sigue "
+            "funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8",
+        )
+    nombre = estado_cuenta_pdf.nombre_archivo(
+        (data.get("cliente") or {}).get("nombre") or "", codigo_up)
+    return Response(
+        blob,
+        mimetype="application/pdf",
+        headers={
+            # `inline` a propósito: en el celular el botón lo agarra por fetch
+            # y lo pasa al menú de compartir; si alguien abre la URL a mano,
+            # que lo vea en vez de bajarlo a ciegas.
+            "Content-Disposition": f'inline; filename="{nombre}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

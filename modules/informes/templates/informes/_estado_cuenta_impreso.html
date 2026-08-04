@@ -144,8 +144,24 @@
        les quedaba al pie de la hoja un recuadro con borde de 2px y 24pt de aire
        ADENTRO DEL CUAL no se imprime una sola letra. El PRG compara `> 0`, no
        "distinto de cero": un importe negativo tampoco imprime renglón. #}
+    {# TMT 2026-08-04 — `text-sm` es tamaño de PANTALLA (~14px) y la tabla de
+       arriba se imprime a 7,5pt: en el papel los tres renglones del cierre
+       salían al doble que todo lo demás y el rótulo quedaba flotando en el
+       medio de la hoja. Pasaba desde siempre, pero recién importó cuando la
+       hoja empezó a mandarse por WhatsApp: es lo último que lee el cliente y
+       es el número que le estamos cobrando. Las reglas de impresión van ACÁ,
+       en el parcial que dibuja el bloque, para que valgan igual en la
+       pantalla individual y en el lote. #}
+    <style>
+      @media print {
+        .ec-cierre { padding: 2pt 0 0 0 !important; font-size: 8pt !important; }
+        .ec-cierre > div { max-width: 62mm !important; margin-left: auto !important;
+                           padding: 0.5pt 0 !important; }
+        .ec-cierre .ec-cierre-total { font-size: 9pt !important; }
+      }
+    </style>
     {% if _ch_depositar > 0 or _ch_protestados > 0 or _ch_total > 0 %}
-    <div class="px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
+    <div class="ec-cierre px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
       {% if _ch_depositar > 0 %}
       <div class="flex justify-between" style="max-width:420px; margin-left:auto;">
         <span class="text-slate-600">Cheques a depositar</span>
@@ -159,7 +175,7 @@
       </div>
       {% endif %}
       {% if _ch_total > 0 %}
-      <div class="flex justify-between border-t border-slate-300 dark:border-slate-700 mt-1 pt-1"
+      <div class="ec-cierre-total flex justify-between border-t border-slate-300 dark:border-slate-700 mt-1 pt-1"
            style="max-width:420px; margin-left:auto;">
         <span class="text-xs uppercase tracking-wider text-slate-500">Total</span>
         <span class="text-mono font-semibold text-base">{{ ((_saldo_neto or 0) + _ch_total) | money_es }}</span>

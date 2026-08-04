@@ -46,8 +46,19 @@
       <h1 style="margin-top:3px">{{ cliente.nombre }}</h1>
       <div class="sub">{{ cliente.codigo_cli }}{% if cliente.provincia %} · {{ cliente.provincia }}{% endif %}</div>
     </div>
-    <a class="iconbtn" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
-       href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙</a>
+    <div style="display:flex;gap:8px;flex:0 0 auto">
+      {# El mismo botón que usa la oficina, con el mismo PDF detrás — dueña
+         2026-08-04: "que Alex le pueda mandar al cliente también". #}
+      {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
+              wa_numero = cliente.telefono | wa_tel,
+              wa_nombre = cliente.nombre,
+              wa_clase = 'iconbtn wa',
+              wa_label = '⤴' %}
+        {% include "informes/_ec_boton_whatsapp.html" %}
+      {% endwith %}
+      <a class="iconbtn" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
+         href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙</a>
+    </div>
   </div>
 {% endblock %}
 
@@ -328,6 +339,14 @@
   .ficha .mono{font-variant-numeric:tabular-nums}
   .ficha .lnk{color:var(--accent);font-weight:600}
   .ficha .brk{word-break:break-all}
+
+  /* El botón de WhatsApp en el appbar: verde, del mismo tamaño que el de
+     imprimir. Mientras genera el PDF el texto cambia a "Generando…", así que
+     la caja no puede tener ancho fijo. */
+  .iconbtn.wa{border-color:#BFE7CD;color:#15803D;background:#EFFBF3;
+              font:inherit;font-size:16px;cursor:pointer;width:auto;
+              min-width:36px;padding:0 9px;white-space:nowrap}
+  .iconbtn.wa:disabled{opacity:.6;font-size:12px;font-weight:600}
 
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
   @media (max-width: 374px){

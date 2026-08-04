@@ -27,6 +27,7 @@ from flask import Blueprint, abort, g, redirect, render_template, request, url_f
 from auth import requiere_login, requiere_permiso, tiene_permiso
 from filters import today_ec
 from modules.informes import queries as informes_queries
+from modules.informes import views as informes_views
 from parsers import parse_int
 from scope_vendedor import vendedor_de
 
@@ -276,6 +277,25 @@ def imprimir(codigo_cli: str):
         por="vendedor",
         n=1,
     )
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/pdf")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def pdf(codigo_cli: str):
+    """El estado de cuenta como archivo, para mandárselo al cliente.
+
+    Es EL MISMO PDF que genera la oficina desde
+    /informes/estado-cuenta/<cod>/pdf — misma función, mismo template, mismo
+    archivo. Lo único propio de acá es el guard: `_cargar_cliente` 404ea si el
+    cliente no es de este vendedor.
+
+    (El vendedor no puede llegar a la ruta de informes: scope_vendedor.py sólo
+    deja pasar /mi-cartera. Por eso hay dos puertas y una sola cocina.)
+    """
+    vend = _vend_actual()
+    data = _cargar_cliente(vend, codigo_cli)
+    return informes_views.responder_pdf(data, (codigo_cli or "").upper())
 
 
 @mi_cartera_bp.route("/mi-cartera/imprimir")

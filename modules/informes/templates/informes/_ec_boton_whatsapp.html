@@ -1,0 +1,109 @@
+{# Botón "Enviar por WhatsApp" del estado de cuenta.
+
+   TMT 2026-08-04 (dueña): *"dejá esto de enviar por WhatsApp para todos los
+   usuarios, no sólo vendedores — quizás Alex le puede mandar al cliente
+   también"*. Por eso vive en `informes` y no en el portal: lo incluyen la
+   pantalla de la oficina y la ficha del vendedor, con el mismo código.
+
+   Contexto que espera:
+     · `pdf_url`   — la ruta del PDF (cada pantalla pasa la suya; las dos
+                     devuelven el mismo archivo, cambia sólo quién puede)
+     · `wa_numero` — teléfono ya normalizado con el filtro `wa_tel` ('' si no
+                     hay uno usable)
+     · `wa_nombre` — nombre del cliente, para el nombre del archivo
+     · `wa_clase`  — clases CSS del botón (el portal y la oficina no comparten
+                     hoja de estilos)
+     · `wa_label`  — opcional; en el celular el appbar no tiene lugar para
+                     "Enviar por WhatsApp" y va sólo el ícono
+
+   Cómo se comporta, y por qué:
+
+   En el CELULAR usa `navigator.share` con el archivo: se abre el menú de
+   compartir del sistema y WhatsApp aparece ahí con el PDF adjunto. Es un
+   toque y el vendedor no sale de la pantalla.
+
+   En la COMPUTADORA (Alex) casi nunca hay share de archivos, así que baja el
+   PDF y abre la conversación del cliente en WhatsApp Web para que lo arrastre.
+   No se puede adjuntar un archivo por link —`wa.me` sólo acepta texto— y
+   fingir que sí sería un botón que promete algo que no hace.
+
+   El nombre del archivo lo pone el servidor ("Estado de cuenta - CLIENTE.pdf")
+   y acá se respeta: es lo primero que ve el cliente en el chat. #}
+{# Sin motor de PDF en el servidor no se dibuja: un botón que siempre falla
+   es peor que no tenerlo. Quien llegue igual por la URL recibe un 503 que
+   explica qué falta. #}
+{% if pdf_disponible() %}
+<button type="button" class="{{ wa_clase }}" data-wa-pdf
+        data-url="{{ pdf_url }}"
+        data-tel="{{ wa_numero }}"
+        data-nombre="{{ wa_nombre }}"
+        title="{% if wa_numero %}Genera el estado de cuenta en PDF y lo manda por WhatsApp{% else %}Genera el estado de cuenta en PDF para compartirlo (este cliente no tiene teléfono cargado){% endif %}">
+  <span data-wa-txt>{{ wa_label | default('Enviar por WhatsApp', true) }}</span>
+</button>
+<script>
+(function () {
+  if (window.__ecWaListo) return;   // el lote puede incluirlo más de una vez
+  window.__ecWaListo = true;
+
+  function descargar(blob, nombre) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+  }
+
+  function nombreDe(resp, fallback) {
+    // El servidor manda el nombre en Content-Disposition. Si un proxy lo
+    // comió, igual no se baja un "descarga.pdf".
+    var cd = resp.headers.get('Content-Disposition') || '';
+    var m = cd.match(/filename="([^"]+)"/);
+    return (m && m[1]) || ('Estado de cuenta - ' + fallback + '.pdf');
+  }
+
+  document.addEventListener('click', async function (ev) {
+    var btn = ev.target.closest('[data-wa-pdf]');
+    if (!btn) return;
+    var txt = btn.querySelector('[data-wa-txt]');
+    var original = txt.textContent;
+    btn.disabled = true;
+    txt.textContent = 'Generando…';
+    try {
+      var resp = await fetch(btn.dataset.url, { credentials: 'same-origin' });
+      if (!resp.ok) {
+        // El 503 del servidor trae un mensaje que explica qué falta; se
+        // muestra tal cual en vez de un "error" genérico.
+        var msg = resp.status === 503
+          ? (await resp.text())
+          : ('No se pudo generar el PDF (error ' + resp.status + ').');
+        alert(msg);
+        return;
+      }
+      var blob = await resp.blob();
+      var nombre = nombreDe(resp, btn.dataset.nombre || 'cliente');
+      var file = new File([blob], nombre, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: nombre });
+          return;
+        } catch (e) {
+          // El usuario cerró el menú de compartir: no es un error, y no hay
+          // que bajarle el archivo por las dudas.
+          if (e && e.name === 'AbortError') return;
+        }
+      }
+      descargar(blob, nombre);
+      if (btn.dataset.tel) {
+        window.open('https://wa.me/' + btn.dataset.tel, '_blank', 'noopener');
+      }
+    } catch (e) {
+      alert('No se pudo generar el PDF: ' + e);
+    } finally {
+      btn.disabled = false;
+      txt.textContent = original;
+    }
+  });
+})();
+</script>
+{% endif %}

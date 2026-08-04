@@ -145,6 +145,16 @@
          y el de cheques deja afuera los ya cobrados (B/A), que es lo que
          sobra cuando el papel se le manda al cliente. #}
       {% include "informes/_ec_print_botones.html" %}
+      {# TMT 2026-08-04 (dueña): *"dejá esto de enviar por WhatsApp para todos
+         los usuarios, no sólo vendedores — quizás Alex le puede mandar al
+         cliente también"*. El PDF es la MISMA hoja que imprimen los botones de
+         al lado, pasada por el motor de impresión del navegador. #}
+      {% with pdf_url = url_for('informes.estado_cuenta_pdf_cliente', codigo_cli=data.cliente.codigo_cli),
+              wa_numero = data.cliente.telefono | wa_tel,
+              wa_nombre = data.cliente.nombre,
+              wa_clase = 'text-sm px-3 py-1.5 rounded border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100' %}
+        {% include "informes/_ec_boton_whatsapp.html" %}
+      {% endwith %}
       {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
          (réplica mejorada del dBase CUENTA.PRG rama 'Y'). El GET es solo la
          pantalla de confirmación; ahí se ve lo que va a quedar. #}

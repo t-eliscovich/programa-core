@@ -1,5 +1,6 @@
 """Jinja filters. Spanish/Ecuadorian number formatting to match formulas_app."""
 import contextvars as _contextvars
+import re
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -196,7 +197,61 @@ def cleanstr(value, fallback: str = "") -> str:
     return s
 
 
+#: Ecuador. Los teléfonos del dBase están guardados como los marca alguien
+#: dentro del país ("0989506447", a veces varios separados por / o -), y
+#: WhatsApp necesita el número internacional sin signos.
+_COD_PAIS_EC = "593"
+
+
+def wa_tel(value) -> str:
+    """Teléfono → número internacional para un link de WhatsApp. '' si no sirve.
+
+    TMT 2026-08-04 (dueña): *"quizás Alex le puede mandar al cliente también"*.
+    El link `wa.me/<numero>` abre la conversación con esa persona; si el número
+    va mal formado abre un chat con un desconocido, que es peor que no tener
+    el botón. Por eso ante la duda devuelve '' y la pantalla no lo ofrece.
+
+    Reglas, todas sacadas de cómo está cargada la data real:
+      · se queda con el PRIMER número — hay fichas con "0989506447 / 032745123"
+        y mandarle el estado de cuenta al fax no sirve;
+      · saca todo lo que no sea dígito;
+      · el 0 inicial es el prefijo NACIONAL de Ecuador: se REEMPLAZA por 593,
+        no se le pega adelante (5930989… no existe);
+      · si ya viene con 593, se deja como está.
+    """
+    crudo = cleanstr(value)
+    if not crudo:
+        return ""
+    primero = re.split(r"[/,;]| o ", crudo, maxsplit=1)[0]
+    d = re.sub(r"\D", "", primero)
+    if not d:
+        return ""
+    if d.startswith("00"):
+        d = d[2:]
+    if d.startswith(_COD_PAIS_EC) and len(d) >= 11:
+        return d if len(d) <= 13 else ""
+    d = d.removeprefix("0")
+    if not 8 <= len(d) <= 10:
+        return ""
+    return _COD_PAIS_EC + d
+
+
+def _pdf_disponible() -> bool:
+    """¿Este servidor puede generar PDFs? Lo pregunta el botón de WhatsApp.
+
+    Import adentro: `filters` lo carga todo el mundo y `pdf_motor` mira el
+    disco. Un botón que siempre falla es peor que no tener botón, así que la
+    plantilla pregunta antes de dibujarlo — y si alguien llega igual por la
+    URL, la ruta contesta un 503 que explica qué falta.
+    """
+    from modules._lib import pdf_motor
+
+    return pdf_motor.disponible()
+
+
 def register(app):
+    app.jinja_env.globals["pdf_disponible"] = _pdf_disponible
+    app.jinja_env.filters["wa_tel"] = wa_tel
     app.jinja_env.filters["num_es"] = num_es
     app.jinja_env.filters["kg_es"] = kg_es
     app.jinja_env.filters["money_es"] = money_es
