@@ -123,6 +123,12 @@ def inicio():
             }
             for i, s in enumerate(semanas)
         ]
+        # Una sola barra no es un gráfico: es un rectángulo de color. Las
+        # barras existen para COMPARAR semanas entre sí; con una sola (los
+        # primeros días del mes) no hay nada que comparar y encima ocupa el
+        # lugar donde el vendedor espera información. Visto a 390 px el 03/08.
+        if len(barras) < 2:
+            barras = []
 
     pend = queries.por_cobrar(vend)
     return render_template(

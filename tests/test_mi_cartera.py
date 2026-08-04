@@ -458,3 +458,38 @@ def test_el_alta_se_puede_prellenar_por_link(app, client, fake_db, monkeypatch):
     assert 'name="password" class="border rounded px-2 py-1 mt-1"' in html \
         or 'type="password"' in html
     assert "value=\"36Patricio8\"" not in html
+
+
+def test_una_sola_semana_no_dibuja_barras(app, monkeypatch):
+    """Una sola barra no es un gráfico: es un rectángulo de color.
+
+    Las barras comparan semanas entre sí; los primeros días del mes hay una
+    sola y no hay nada que comparar. Visto a 390 px el 2026-08-03.
+    """
+    from datetime import date
+
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 3))
+    monkeypatch.setattr(q, "ventas", lambda *a, **k: 750.34)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
+
+    monkeypatch.setattr(q, "ventas_por_semana",
+                        lambda *a, **k: [{"semana": date(2026, 8, 3), "total": 750.34}])
+    with app.test_request_context("/mi-cartera?vend=RMY"):
+        g.user, g.permisos = {"vend": "RMY"}, {"micartera.ver"}
+        assert 'class="bars"' not in views.inicio()
+
+    monkeypatch.setattr(
+        q, "ventas_por_semana",
+        lambda *a, **k: [{"semana": date(2026, 8, 3), "total": 750.34},
+                         {"semana": date(2026, 8, 10), "total": 1200.0}])
+    with app.test_request_context("/mi-cartera?vend=RMY"):
+        g.user, g.permisos = {"vend": "RMY"}, {"micartera.ver"}
+        assert 'class="bars"' in views.inicio()
