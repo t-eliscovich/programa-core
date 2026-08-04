@@ -57,14 +57,16 @@ def lista():
 def nuevo():
     errores: list[str] = []
     roles = queries.roles_disponibles()
+    vendedores = queries.vendedores_disponibles()
     if request.method == "GET":
         return render_template("usuarios/form.html", form={}, errores=errores,
-                               roles=roles, modo="crear")
+                               roles=roles, vendedores=vendedores, modo="crear")
 
     form = {
         "username": (request.form.get("username") or "").strip().lower(),
         "id_rol": parse_int(request.form.get("id_rol")),
         "clave": (request.form.get("clave") or "").strip().upper(),
+        "vend": (request.form.get("vend") or "").strip().upper(),
     }
     password = request.form.get("password") or ""
     password_confirm = request.form.get("password_confirm") or ""
@@ -80,7 +82,7 @@ def nuevo():
 
     if errores:
         return render_template("usuarios/form.html", form=form, errores=errores,
-                               roles=roles, modo="crear"), 400
+                               roles=roles, vendedores=vendedores, modo="crear"), 400
 
     try:
         queries.crear(
@@ -88,17 +90,18 @@ def nuevo():
             password=password,
             id_rol=form["id_rol"],
             clave=form["clave"] or None,
+            vend=form["vend"] or None,
         )
         flash(f"Usuario {form['username']} creado.", "ok")
         return redirect(url_for("usuarios.lista"))
     except ValueError as e:
         errores.append(str(e))
         return render_template("usuarios/form.html", form=form, errores=errores,
-                               roles=roles, modo="crear"), 400
+                               roles=roles, vendedores=vendedores, modo="crear"), 400
     except Exception as e:
         errores.append(f"No pude crear: {e}")
         return render_template("usuarios/form.html", form=form, errores=errores,
-                               roles=roles, modo="crear"), 500
+                               roles=roles, vendedores=vendedores, modo="crear"), 500
 
 
 @usuarios_bp.route("/usuarios/<int:id_usuario>/editar", methods=["GET", "POST"])
@@ -109,6 +112,7 @@ def editar(id_usuario: int):
     if not u:
         abort(404)
     roles = queries.roles_disponibles()
+    vendedores = queries.vendedores_disponibles()
     errores: list[str] = []
 
     if request.method == "GET":
@@ -118,14 +122,18 @@ def editar(id_usuario: int):
             "email": u.get("email") or "",
             "id_rol": u["id_rol"],
             "clave": u.get("clave") or "",
+            "vend": u.get("vend") or "",
             "activo": u.get("activo", True),
         }
         return render_template("usuarios/form.html", form=form, errores=errores,
-                               roles=roles, modo="editar")
+                               roles=roles, vendedores=vendedores, modo="editar")
 
     id_rol = parse_int(request.form.get("id_rol")) or u["id_rol"]
     clave = (request.form.get("clave") or "").strip().upper() or None
     email = (request.form.get("email") or "").strip().lower() or None
+    # Siempre string (nunca None) para que "sacarle el vendedor" a un usuario
+    # llegue a queries.editar como '' → NULL, y no como "no lo toques".
+    vend = (request.form.get("vend") or "").strip().upper()
     activo = (request.form.get("activo") or "").strip() == "1"
     password = request.form.get("password") or ""
     password_confirm = request.form.get("password_confirm") or ""
@@ -136,23 +144,25 @@ def editar(id_usuario: int):
         errores.append("Password debe tener al menos 6 caracteres.")
 
     if errores:
-        form = {**u, "id_rol": id_rol, "clave": clave or "", "activo": activo}
+        form = {**u, "id_rol": id_rol, "clave": clave or "",
+                "vend": vend, "activo": activo}
         return render_template("usuarios/form.html", form=form, errores=errores,
-                               roles=roles, modo="editar"), 400
+                               roles=roles, vendedores=vendedores, modo="editar"), 400
 
     try:
         queries.editar(
             id_usuario, id_rol=id_rol, clave=clave,
             activo=activo, password=password or None,
-            email=email,
+            email=email, vend=vend,
         )
         flash(f"Usuario {u['username']} actualizado.", "ok")
         return redirect(url_for("usuarios.lista"))
     except Exception as e:
         errores.append(f"No pude actualizar: {e}")
-        form = {**u, "id_rol": id_rol, "clave": clave or "", "activo": activo}
+        form = {**u, "id_rol": id_rol, "clave": clave or "",
+                "vend": vend, "activo": activo}
         return render_template("usuarios/form.html", form=form, errores=errores,
-                               roles=roles, modo="editar"), 500
+                               roles=roles, vendedores=vendedores, modo="editar"), 500
 
 
 @usuarios_bp.route("/usuarios/<int:id_usuario>/activo", methods=["POST"])

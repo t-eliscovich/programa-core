@@ -31,11 +31,55 @@ def _normalizar_clave(clave: str | None) -> str | None:
     return c
 
 
+def _col_vend() -> str:
+    """`u.vend` si la migración 0153 ya corrió; si no, NULL.
+
+    El deploy no corre migraciones, así que la pantalla de usuarios tiene que
+    abrir igual en una base que todavía no la tiene.
+    """
+    from auth import _columna_vend_existe
+
+    return "u.vend" if _columna_vend_existe() else "NULL::varchar AS vend"
+
+
+def _columna_vend_disponible() -> bool:
+    from auth import _columna_vend_existe
+
+    return _columna_vend_existe()
+
+
+def _normalizar_vend(vend: str | None) -> str | None:
+    """Código de vendedor a MAYÚSCULAS, 3 chars. '' / None → None."""
+    if not vend:
+        return None
+    v = vend.strip().upper()[:3]
+    return v or None
+
+
+def vendedores_disponibles() -> list[dict]:
+    """Vendedores ACTIVOS del catálogo, para el desplegable de /usuarios.
+
+    Si la tabla no existe (base vieja) devuelve [] en vez de romper la
+    pantalla de administración de usuarios.
+    """
+    try:
+        return db.fetch_all(
+            """
+            SELECT codigo, COALESCE(NULLIF(TRIM(nombre), ''), codigo) AS nombre
+              FROM scintela.vendedor
+             WHERE COALESCE(activo, TRUE) = TRUE
+             ORDER BY codigo
+            """
+        ) or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def listar() -> list[dict]:
     return db.fetch_all(
-        """
+        f"""
         SELECT u.id_usuario, u.username, u.email, u.activo, u.id_rol,
-               r.nombre_rol, u.clave
+               r.nombre_rol, u.clave, {_col_vend()}
         FROM seguridad.usuario u
         LEFT JOIN seguridad.rol r USING (id_rol)
         ORDER BY u.activo DESC, u.username
@@ -45,9 +89,9 @@ def listar() -> list[dict]:
 
 def por_id(id_usuario: int) -> dict | None:
     return db.fetch_one(
-        """
+        f"""
         SELECT u.id_usuario, u.username, u.email, u.activo, u.id_rol,
-               r.nombre_rol, u.clave
+               r.nombre_rol, u.clave, {_col_vend()}
         FROM seguridad.usuario u
         LEFT JOIN seguridad.rol r USING (id_rol)
         WHERE u.id_usuario = %s
@@ -66,6 +110,7 @@ def crear(
     password: str,
     id_rol: int,
     clave: str | None = None,
+    vend: str | None = None,
 ) -> dict:
     username = (username or "").strip().lower()
     if not username:
@@ -84,15 +129,28 @@ def crear(
         raise ValueError(f"Ya existe un usuario {username!r}.")
 
     ph = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    vend_norm = _normalizar_vend(vend)
+    if vend_norm and not _columna_vend_disponible():
+        raise ValueError(
+            "Falta correr la migración 0153 antes de asignar un vendedor. "
+            "Corrémela en /admin/migraciones y volvé a intentar."
+        )
+    cols = "(username, password_hash, id_rol, activo, clave"
+    vals = "(%s, %s, %s, TRUE, %s"
+    params: list = [username[:40], ph, id_rol, _normalizar_clave(clave)]
+    if _columna_vend_disponible():
+        cols += ", vend"
+        vals += ", %s"
+        params.append(vend_norm)
     return (
         db.execute_returning(
-            """
+            f"""
         INSERT INTO seguridad.usuario
-            (username, password_hash, id_rol, activo, clave)
-        VALUES (%s, %s, %s, TRUE, %s)
+            {cols})
+        VALUES {vals})
         RETURNING id_usuario, username
         """,
-            (username[:40], ph, id_rol, _normalizar_clave(clave)),
+            tuple(params),
         )
         or {}
     )
@@ -106,6 +164,7 @@ def editar(
     activo: bool | None = None,
     password: str | None = None,
     email: str | None = None,
+    vend: str | None = None,
 ) -> int:
     campos = []
     params: list = []
@@ -123,6 +182,17 @@ def editar(
         # NULL si viene string vacío. Normalizar a lowercase.
         campos.append("email = %s")
         params.append((email or "").strip().lower() or None)
+    if vend is not None:
+        vend_norm = _normalizar_vend(vend)
+        if not _columna_vend_disponible():
+            if vend_norm:
+                raise ValueError(
+                    "Falta correr la migración 0153 antes de asignar un "
+                    "vendedor. Corrémela en /admin/migraciones."
+                )
+        else:
+            campos.append("vend = %s")
+            params.append(vend_norm)
     if password:
         # TMT 2026-06-03 audit fix: mismo policy que crear() / cambiar_password.
         from auth import _valida_password_nueva as _vpn

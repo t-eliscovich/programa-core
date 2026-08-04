@@ -48,6 +48,28 @@
       </select>
     </label>
 
+    {# TMT 2026-08-03 (dueña): los vendedores entran a ver el estado de cuenta
+       de SUS clientes. Asignar un código acá es lo que ACOTA al usuario: pasa
+       a ver sólo los clientes con cliente.vend = ese código, y sólo puede
+       entrar a /mi-cartera. Vacío = usuario normal, sin acotar. #}
+    <label class="flex flex-col mb-3">
+      <span class="text-sm text-slate-600">Vendedor (acota lo que ve)</span>
+      <select name="vend" class="border rounded px-2 py-1 mt-1">
+        <option value="">&mdash; sin acotar (usuario normal) &mdash;</option>
+        {% for v in vendedores or [] %}
+          <option value="{{ v.codigo }}"
+                  {% if (form.vend or '')|upper == v.codigo|upper %}selected{% endif %}>
+            {{ v.codigo }} &mdash; {{ v.nombre }}
+          </option>
+        {% endfor %}
+      </select>
+      <span class="text-xs text-slate-400 mt-1">
+        Si elegís un vendedor, este usuario va a ver <strong>solamente</strong>
+        los clientes de ese código &mdash; sus facturas y sus cheques &mdash; y
+        no va a poder entrar a ninguna otra pantalla del programa.
+      </span>
+    </label>
+
     <label class="flex flex-col mb-3">
       <span class="text-sm text-slate-600">
         Clave corta (operador de movimientos)

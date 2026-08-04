@@ -100,6 +100,40 @@ def _parse_last_activity(raw: str | None) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Scope de datos (vendedores) — columna seguridad.usuario.vend
+# ---------------------------------------------------------------------------
+# TMT 2026-08-03: la migración 0153 agrega `vend`. El deploy NO corre
+# migraciones, así que el código tiene que andar con y sin la columna
+# (mismo patrón feature-flag que modules/avisos/queries.py). Se consulta una
+# sola vez por proceso.
+_COL_VEND: bool | None = None
+
+
+def _columna_vend_existe() -> bool:
+    global _COL_VEND
+    if _COL_VEND is None:
+        try:
+            row = db.fetch_one(
+                """
+                SELECT 1 AS ok FROM information_schema.columns
+                 WHERE table_schema = 'seguridad'
+                   AND table_name   = 'usuario'
+                   AND column_name  = 'vend'
+                """
+            )
+            _COL_VEND = bool(row)
+        except Exception:  # noqa: BLE001 — sin DB o sin permisos: asumimos que no está
+            _COL_VEND = False
+    return bool(_COL_VEND)
+
+
+def _reset_cache_columna_vend() -> None:
+    """Sólo para tests / después de correr la migración."""
+    global _COL_VEND
+    _COL_VEND = None
+
+
 def load_logged_in_user() -> None:
     """before_request handler: populate g.user and g.permisos.
 
@@ -112,9 +146,11 @@ def load_logged_in_user() -> None:
     user_id = session.get("user_id")
     if not user_id:
         return
+    _vend_col = "u.vend" if _columna_vend_existe() else "NULL::varchar AS vend"
     row = db.fetch_one(
-        """
-        SELECT u.id_usuario, u.username, u.id_rol, u.activo, r.nombre_rol
+        f"""
+        SELECT u.id_usuario, u.username, u.id_rol, u.activo, r.nombre_rol,
+               {_vend_col}
         FROM seguridad.usuario u
         JOIN seguridad.rol r USING (id_rol)
         WHERE u.id_usuario = %s AND u.activo = TRUE
@@ -124,6 +160,8 @@ def load_logged_in_user() -> None:
     if not row:
         session.clear()
         return
+    # Los fakes de test y las bases sin la migración 0153 no traen la clave.
+    row.setdefault("vend", None)
 
     # Timeout por rol — sliding window. Si expiró, limpiar y cortar.
     timeout = timeout_for_role(row.get("nombre_rol"))

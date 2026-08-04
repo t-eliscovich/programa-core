@@ -253,6 +253,15 @@ def create_app() -> Flask:
 
     app.before_request(enforce_allowlist)
 
+    # Scope de datos de VENDEDORES — TMT 2026-08-03. También DESPUÉS de
+    # load_logged_in_user (mira g.user.vend). Un usuario con `vend` cargado
+    # sólo puede tocar /mi-cartera; todo lo demás devuelve 404. Para el resto
+    # de los usuarios es un no-op exacto. Ver scope_vendedor.py: es un
+    # allowlist a propósito (fail-closed), no una lista de rutas prohibidas.
+    from scope_vendedor import enforce_scope_vendedor
+
+    app.before_request(enforce_scope_vendedor)
+
     # Blueprints
     app.register_blueprint(auth_bp)
 

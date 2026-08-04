@@ -23,6 +23,7 @@
           <th class="px-3 py-2">Email</th>
           <th class="px-3 py-2">Rol</th>
           <th class="px-3 py-2">Clave</th>
+          <th class="px-3 py-2">Vendedor</th>
           <th class="px-3 py-2">Activo</th>
           <th class="px-3 py-2"></th>
         </tr>
@@ -34,6 +35,16 @@
           <td class="px-3 py-2 text-xs text-slate-600">{{ u.email or '—' }}</td>
           <td class="px-3 py-2">{{ u.nombre_rol }}</td>
           <td class="px-3 py-2 font-mono text-xs">{{ u.clave or '' }}</td>
+          {# TMT 2026-08-03 — si tiene código de vendedor, el usuario está
+             ACOTADO: sólo ve los clientes de ese código, sólo /mi-cartera. #}
+          <td class="px-3 py-2">
+            {% if u.vend %}
+              <span class="inline-block px-1.5 py-0.5 rounded font-mono text-xs"
+                    style="background:#EEF0FE;color:#4338CA;">{{ u.vend }}</span>
+            {% else %}
+              <span class="text-xs text-slate-400">&mdash;</span>
+            {% endif %}
+          </td>
           <td class="px-3 py-2">
             {% if u.activo %}
               <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Sí</span>

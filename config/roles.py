@@ -323,6 +323,21 @@ ROLES: list[tuple[str, list[str]]] = [
         ],
     ),
     (
+        # TMT 2026-08-03 (dueña): los 6 vendedores (PPR, EDG, SEP, JQU, FL1,
+        # RMY) entran a ver el estado de cuenta de SUS clientes desde el
+        # celular. Solo lectura + impresión.
+        #
+        # El rol NO lleva `clientes.ver` / `facturas.ver` / `cheques.ver` a
+        # propósito: esos permisos son de PANTALLA COMPLETA (todos los
+        # clientes de la empresa). El acceso del vendedor se acota por FILA
+        # con `seguridad.usuario.vend` + el allowlist de scope_vendedor.py.
+        # Darle facturas.ver acá le abriría /facturas entera.
+        "Vendedor",
+        [
+            "micartera.ver",
+        ],
+    ),
+    (
         "Lectura",
         [
             "stock.ver",
