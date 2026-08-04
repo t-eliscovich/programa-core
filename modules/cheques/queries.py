@@ -3027,6 +3027,20 @@ def crear(
     # espejo NB=98 se crea SOLO por el SOBRANTE (anticipo − Σ cancelados).
     # None = flujo clásico (espejo por el importe total del cheque).
     anticipo_espejo_importe: float | None = None,
+    # TMT 2026-08-03 (dueña: "si las cargué yo están mal, ayudame a corregir").
+    # Cobro en efectivo que YA está en la caja como entrada suelta
+    # `CH.<cliente>`, cargada a mano por la pantalla de caja: entró la plata
+    # pero nunca se generó la cobranza, así que la deuda del cliente no bajó
+    # (a YHJ le sobraban $1.000 y a CHI $400, clavados contra el dBase) y no
+    # contaba para la comisión del vendedor. Pasándole el `id_caja` existente,
+    # el alta **ADOPTA esa fila** en lugar de insertar una nueva: el saldo de
+    # caja no se mueve ni un centavo y ningún mes se toca.
+    #
+    # No alcanzaba con reversar y recargar: `caja.reversar` no borra, crea la
+    # contrapartida CON FECHA DE HOY — reversar 5 cobros de julio y volver a
+    # cargarlos dejaba julio +4.402,86 y agosto −4.402,86. Dos meses rotos
+    # para arreglar uno.
+    caja_existente_id: int | None = None,
     conn=None,
 ) -> dict:
     """Alta de cheque nuevo.
@@ -3337,28 +3351,63 @@ def crear(
             # qué se trata sin abrir el cheque.
             _pre_caja = "DEV." if _es_salida_caja else "CH."
             concepto_caja = f"{_pre_caja}{codigo_cli.upper().strip()}"[:80]
-            caja_row = (
-                db.execute_returning(
+            if caja_existente_id:
+                # ADOPTAR la fila de caja que ya está cargada (ver el comentario
+                # del parámetro). El UPDATE es la validación: sólo agarra si la
+                # fila sigue siendo la misma que se le mostró al usuario en la
+                # confirmación — mismo importe, mismo tipo, mismo cliente y
+                # todavía sin cheque. Si alguien la reversó, la editó o la
+                # convirtió en el medio, no matchea y abortamos la transacción
+                # entera en vez de dejar el cheque colgado sin caja.
+                _adoptadas = db.execute(
                     """
+                    UPDATE scintela.caja
+                       SET id_cheque = %s
+                     WHERE id_caja   = %s
+                       AND id_cheque IS NULL
+                       AND tipo      = %s
+                       AND ROUND(importe, 2) = ROUND(%s::numeric, 2)
+                       AND UPPER(TRIM(concepto)) = UPPER(TRIM(%s))
+                    """,
+                    (
+                        row["id_cheque"],
+                        int(caja_existente_id),
+                        _tipo_caja,
+                        _importe_caja,
+                        concepto_caja,
+                    ),
+                    conn=conn,
+                )
+                if int(_adoptadas or 0) != 1:
+                    raise ValueError(
+                        f"La entrada de caja id={caja_existente_id} ya no coincide con "
+                        f"este cobro ({concepto_caja} {_tipo_caja} {_importe_caja:.2f}) "
+                        "o ya tiene un cheque asociado. Volvé a abrirla desde /caja."
+                    )
+                caja_row = {"id_caja": int(caja_existente_id)}
+            else:
+                caja_row = (
+                    db.execute_returning(
+                        """
                 INSERT INTO scintela.caja
                     (fecha, tipo, importe, concepto, saldo, clave,
                      id_cheque, usuario_crea)
                 VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
                 RETURNING id_caja
                 """,
-                    (
-                        fecha,
-                        _tipo_caja,
-                        _importe_caja,
-                        concepto_caja,
-                        (clave or None) and clave[:3],
-                        row["id_cheque"],
-                        usuario,
-                    ),
-                    conn=conn,
+                        (
+                            fecha,
+                            _tipo_caja,
+                            _importe_caja,
+                            concepto_caja,
+                            (clave or None) and clave[:3],
+                            row["id_cheque"],
+                            usuario,
+                        ),
+                        conn=conn,
+                    )
+                    or {}
                 )
-                or {}
-            )
             # mov_doble linkea cheque ↔ caja para que el reverso del
             # cheque pueda compensar la entrada de caja en automático.
             if caja_row.get("id_caja"):

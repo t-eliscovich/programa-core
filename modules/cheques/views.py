@@ -171,6 +171,10 @@ def nuevo():
     codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()
     # Multi-cheque: el form manda no_cheque[], importe[], fechad[] como
     # arrays alineados por índice. Backwards-compat con name sin [].
+    # TMT 2026-08-03 — id de una entrada de caja `CH.<cliente>` ya existente
+    # que este cobro tiene que ADOPTAR (ver `caja_existente_id` en
+    # queries.crear). Viaja como hidden desde /caja; si no está, alta normal.
+    desde_caja = parse_int(request.form.get("desde_caja") or request.args.get("desde_caja"))
     nos_cheque_raw = request.form.getlist("no_cheque[]")
     if not nos_cheque_raw:
         v = request.form.get("no_cheque")
@@ -905,6 +909,14 @@ def nuevo():
                         else 0.0
                     )
                     _idx_esp_97 += 1
+                # TMT 2026-08-03 (dueña: "si las cargué yo están mal, ayudame a
+                # corregir"). `desde_caja=<id_caja>` = este cobro en efectivo YA
+                # está en la caja como entrada suelta `CH.<cliente>`, cargada a
+                # mano por la pantalla de caja. El alta ADOPTA esa fila en lugar
+                # de insertar otra, así el saldo de caja no se mueve ni un
+                # centavo. Sólo aplica si se está cargando UN solo cheque: con
+                # varios no hay forma de saber cuál corresponde a esa fila.
+                _desde_caja = desde_caja if len(cheques_in) == 1 else None
                 ch = queries.crear(
                     fecha=fecha,
                     fechad=ch_in.get("fechad") or fechad,  # por cheque
@@ -925,6 +937,7 @@ def nuevo():
                     usuario=usuario,
                     batch_id=batch_id,
                     anticipo_espejo_importe=_esp_override,
+                    caja_existente_id=_desde_caja,
                     conn=conn,
                 )
                 # TMT 2026-05-15: queries.crear devuelve {id_cheque, no_cheque}
