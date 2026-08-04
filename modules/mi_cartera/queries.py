@@ -502,16 +502,24 @@ def comision_por_cliente(vend: str, anio: int, mes: int) -> list[dict]:
     return salida
 
 
+def comision_mes(vend: str, anio: int, mes: int) -> float:
+    """La comisión de un MES = la SUMA de lo que muestra el desglose.
+
+    ⭐ No es `round(cobrado_total × pct)`. Redondear el total por un lado y
+    cada cliente por el otro da resultados distintos: con la cartera de RMY
+    en agosto, el encabezado decía **$7,73** y el detalle sumaba **$7,74**.
+    Un centavo alcanza para que el vendedor deje de creerle a los dos
+    números, y tiene razón — uno de los dos está mal.
+
+    El detalle manda: es lo que se puede auditar cobro por cobro. El total
+    es su suma, por definición.
+    """
+    return round(sum(g["comision"] for g in comision_por_cliente(vend, anio, mes)), 2)
+
+
 def comision_meses(vend: str, anio: int, hasta_mes: int) -> list[dict]:
     """Comisión mes a mes del año, de la más nueva a la más vieja."""
-    out = []
-    for mes in range(hasta_mes, 0, -1):
-        ultimo = calendar.monthrange(anio, mes)[1]
-        out.append(
-            {
-                "anio": anio,
-                "mes": mes,
-                "monto": comision(vend, date(anio, mes, 1), date(anio, mes, ultimo)),
-            }
-        )
-    return out
+    return [
+        {"anio": anio, "mes": mes, "monto": comision_mes(vend, anio, mes)}
+        for mes in range(hasta_mes, 0, -1)
+    ]

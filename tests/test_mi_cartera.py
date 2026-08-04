@@ -590,16 +590,43 @@ def test_la_comision_se_agrupa_por_cliente_y_muestra_cada_cobro(monkeypatch):
     assert g[0]["cobros"][0]["es_cheque"] is False
 
 
-def test_la_suma_del_desglose_es_la_comision_del_mes(monkeypatch):
-    """Si el detalle no suma el total, el vendedor deja de creerle a los dos."""
-    monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: COBROS)
-    monkeypatch.setattr(q, "_pct_comision", lambda vend: 1.0)
-    monkeypatch.setattr(q, "cobrado", lambda *a, **k: sum(c["importe"] for c in COBROS))
+def test_la_suma_del_desglose_ES_la_comision_del_mes(monkeypatch):
+    """EXACTAMENTE igual, no "parecido".
+
+    Con la cartera real de RMY en agosto, redondear el total por un lado
+    (round(257,82 × 3%) = 7,73) y cada cliente por el otro (3,60 + 2,57 +
+    1,57 = 7,74) daba números distintos en la misma pantalla. Un centavo
+    alcanza para que el vendedor deje de creerle a los dos.
+    """
+    monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: COBROS_CENTAVO)
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 3.0)
 
     g = q.comision_por_cliente("RMY", 2026, 8)
-    total_detalle = sum(x["comision"] for x in g)
-    total_mes = q.comision("RMY", date(2026, 8, 1), date(2026, 8, 31))
-    assert abs(total_detalle - total_mes) < 0.02
+    assert q.comision_mes("RMY", 2026, 8) == round(sum(x["comision"] for x in g), 2)
+
+    # Y el caso concreto que lo destapó: el redondeo del total NO coincide.
+    cobrado = sum(c["importe"] for c in COBROS_CENTAVO)
+    assert round(cobrado * 3.0 / 100.0, 2) != q.comision_mes("RMY", 2026, 8)
+
+
+COBROS_CENTAVO = [
+    {"origen": "EFE", "doc": "1204", "fecha": date(2026, 8, 1), "importe": 120.00,
+     "codigo_cli": "ADG", "cliente": "MOLRIV ADELA", "banco": ""},
+    {"origen": "CHE", "doc": "101731", "fecha": date(2026, 8, 3), "importe": 35.64,
+     "codigo_cli": "MWI", "cliente": "MARIO W", "banco": "DEP.PICH."},
+    {"origen": "CHE", "doc": "101737", "fecha": date(2026, 8, 3), "importe": 50.00,
+     "codigo_cli": "MWI", "cliente": "MARIO W", "banco": "DEP.PICH."},
+    {"origen": "CHE", "doc": "101690", "fecha": date(2026, 8, 2), "importe": 52.18,
+     "codigo_cli": "FLA", "cliente": "FRANCO LAUTARO", "banco": "DEP.PICH."},
+]
+
+
+def test_el_mes_a_mes_usa_la_misma_cuenta_que_el_desglose(monkeypatch):
+    """Si la lista de meses contara distinto, agosto valdría dos cosas."""
+    monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: COBROS_CENTAVO)
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 3.0)
+    filas = q.comision_meses("RMY", 2026, 8)
+    assert filas[0] == {"anio": 2026, "mes": 8, "monto": q.comision_mes("RMY", 2026, 8)}
 
 
 def test_la_comision_no_deja_pedir_un_mes_futuro(vendedor_logueado, monkeypatch):

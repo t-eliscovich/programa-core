@@ -170,7 +170,12 @@ def inicio():
         pendiente=pend,
         barras=barras,
         alertas=[c for c in queries.mis_clientes(vend) if c["vencido"] > 0][:5],
-        comision=queries.comision(vend, desde, hasta),
+        # Para el mes se usa la MISMA cuenta que la pantalla de comisión
+        # (suma del desglose). Si el Inicio dijera 7,73 y Comisión 7,74, el
+        # vendedor no sabe a cuál creerle.
+        comision=(queries.comision_mes(vend, hoy.year, hoy.month)
+                  if periodo == "mes"
+                  else queries.comision(vend, desde, hasta)),
         **_ctx_base(vend),
     )
 
@@ -325,7 +330,6 @@ def comision():
     mes = max(1, min(12, mes))
 
     ultimo = calendar.monthrange(anio, mes)[1]
-    desde, hasta = date(anio, mes, 1), date(anio, mes, ultimo)
     grupos = queries.comision_por_cliente(vend, anio, mes)
 
     ant = date(anio, mes, 1) - timedelta(days=1)
@@ -335,7 +339,9 @@ def comision():
         anio=anio,
         mes=mes,
         etiqueta=f"{MESES[mes - 1]} {anio}",
-        monto=queries.comision(vend, desde, hasta),
+        # El total es la SUMA del desglose, no un redondeo aparte: si no,
+        # el encabezado y el detalle se separan por centavos.
+        monto=round(sum(g["comision"] for g in grupos), 2),
         cobrado=sum(g["cobrado"] for g in grupos),
         grupos=grupos,
         mes_anterior=(ant.year, ant.month),
