@@ -105,8 +105,11 @@
     </section>
 
     <section class="rounded-lg border border-slate-200 dark:border-slate-700 p-5">
+      {# TMT 2026-08-04 (dueña): "acá no pongas deudores, se ve feo, poné top
+         clientes o algo". El atajo es el mismo; sólo cambia cómo se llama. #}
       <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
-        Top 10 deudores (atajo)
+        Top 10 clientes
+        <span class="normal-case font-normal text-slate-400">— por saldo</span>
       </h2>
       {% if top %}
         <ul class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -126,7 +129,7 @@
           {% endfor %}
         </ul>
       {% else %}
-        <p class="text-sm text-slate-400">Sin deudores pendientes. 🎉</p>
+        <p class="text-sm text-slate-400">Nadie con saldo pendiente. 🎉</p>
       {% endif %}
     </section>
   </div>

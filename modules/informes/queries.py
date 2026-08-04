@@ -5916,7 +5916,13 @@ def cartera_por_cliente() -> list[dict]:
     total = sum(float(r.get("saldo_total") or 0) for r in rows) or 1.0
     for r in rows:
         r["pct"] = round(float(r.get("saldo_total") or 0) / total * 100, 1)
-    rows.sort(key=lambda r: r.get("pct", 0), reverse=True)
+    # 🚨 Ordena por el SALDO, no por el `pct`: el pct está REDONDEADO a 1
+    # decimal, así que dos clientes distintos EMPATAN (65.096,53 y 66.321,46
+    # son los dos "1,2%") y el desempate quedaba en el orden arbitrario que
+    # devolvió el SQL → el Top 10 se veía desordenado al final. Reporte dueña
+    # 2026-08-04 (screenshot: PUE 66.321,46 DEBAJO de PGQ 65.096,53). El pct
+    # se sigue mostrando igual, sólo deja de decidir el orden.
+    rows.sort(key=lambda r: float(r.get("saldo_total") or 0), reverse=True)
     return rows
 
 
