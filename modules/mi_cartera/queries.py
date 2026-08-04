@@ -216,32 +216,21 @@ def ventas(vend: str, desde: date, hasta: date) -> float:
 def cobrado(vend: str, desde: date, hasta: date) -> float:
     """Cobranza ACREDITADA del período.
 
-    Misma definición que el módulo de comisiones (`cobranzas_detalle`):
-    cheques que llegaron a banco + cobros no-cheque (efectivo, transferencia,
-    depósito directo). Si las dos pantallas contaran distinto, el vendedor
-    vería una comisión que no cierra con lo que ve acá.
+    ⭐ TMT 2026-08-04 — esta función tenía su PROPIA copia de la consulta, con
+    su propia lista de estados —`('B','V','W','I','J','K','A')`, **sin la
+    'C'**— y sin la rama de caja. O sea: el KPI de arriba de la pantalla del
+    vendedor NO contaba los cobros de ventanilla, mientras que el detalle de
+    abajo —que sí reusa `comisiones.cobranzas_detalle`— sí los contaba. El
+    total no era la suma del desglose que la propia pantalla mostraba, que es
+    justo el invariante que ya se había arreglado una vez.
+
+    Ahora delega en `comisiones.queries.cobranza_periodo`: **una sola
+    definición**. Copiar la consulta fue el error; que las dos vuelvan a
+    divergir ahora exige editar un solo lugar.
     """
-    row = db.fetch_one(
-        """
-        SELECT COALESCE((
-            SELECT SUM(ch.importe)
-              FROM scintela.cheque ch
-              JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))
-               AND ch.fechad BETWEEN %(desde)s AND %(hasta)s
-               AND ch.stat IN ('B','V','W','I','J','K','A')
-        ), 0) + COALESCE((
-            SELECT SUM(co.valor)
-              FROM scintela.cobro co
-              JOIN scintela.cliente c ON c.codigo_cli = co.codigo_cli
-             WHERE UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))
-               AND co.fecha BETWEEN %(desde)s AND %(hasta)s
-               AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
-        ), 0) AS total
-        """,
-        {"vend": vend, "desde": desde, "hasta": hasta},
-    )
-    return float((row or {}).get("total") or 0)
+    from modules.comisiones import queries as comisiones_queries
+
+    return comisiones_queries.cobranza_periodo(vend, desde, hasta)
 
 
 def por_cobrar(vend: str) -> dict:

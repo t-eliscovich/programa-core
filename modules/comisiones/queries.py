@@ -63,6 +63,48 @@ STATS_COBRADO = ("B", "V", "W", "I", "J", "K", "A", "C")
 _IN_COBRADO = ", ".join(f"'{s}'" for s in STATS_COBRADO)
 
 # ─────────────────────────────────────────────────────────────────────
+# TMT 2026-08-04 — el cobro que entró a CAJA y NO tiene fila de cheque.
+#
+# Agregar la 'C' arriba arregló los cheques de ventanilla que PC sí tiene
+# cargados. Pero en la primera semana de julio PC **no tiene la fila de
+# cheque**: `dbf-import` trajo el movimiento de CAJA (`tipo='E'`,
+# `concepto='CH.'+CLIENTE`, que es la convención de `ALTAS.PRG PROCEDURE
+# PASOCAJA`) y nada más. El 01 y el 02/07 son 37 movimientos por
+# $34.040,14 que la comisión no veía; de esos, $2.212,00 son de EDG y
+# $1.305,00 de SEP.
+#
+# ⚠ NO se arregla cargando esos cheques a mano: **la plata ya está en
+# PC**, en `scintela.caja`. Cargar el cheque la contaría DOS VECES — que
+# es exactamente el error del 04/08 de madrugada ("apliqué 5 conversiones
+# habiendo verificado 3, la deuda bajó dos veces"). Lo que faltaba no era
+# el dato: era que la comisión mirara donde el dato está.
+#
+# El `NOT EXISTS` evita el doble conteo del otro lado: del 06/07 en
+# adelante la pantalla de PC crea el par (caja + cheque) y el cheque ya
+# suma por la rama de arriba. Se compara por (cliente, fecha, importe) y
+# NO por `caja.id_cheque`, porque las filas del `dbf-import` tienen ese
+# campo en NULL aunque el cheque exista: filtrar por `id_cheque IS NULL`
+# contaría dos veces el 06, el 07 y el 10 de julio.
+#
+# Esta es, además, la rama que `scintela.cobro` prometía y nunca cumplió:
+# esa tabla tiene UNA fila, del 14/03/2024, y nadie la escribe.
+_CAJA_COBRO_FROM = """
+              FROM scintela.caja k
+              JOIN cli c
+                ON UPPER(TRIM(c.codigo_cli))
+                 = UPPER(TRIM(SUBSTRING(k.concepto FROM 4)))
+             WHERE k.tipo = 'E'
+               AND k.concepto LIKE 'CH.%%'
+               AND NOT EXISTS (
+                     SELECT 1
+                       FROM scintela.cheque chx
+                      WHERE chx.no_banco = '99'
+                        AND chx.fechad   = k.fecha
+                        AND ROUND(chx.importe, 2) = ROUND(k.importe, 2)
+                        AND UPPER(TRIM(chx.codigo_cli))
+                          = UPPER(TRIM(SUBSTRING(k.concepto FROM 4))))"""
+
+# ─────────────────────────────────────────────────────────────────────
 # TMT 2026-08-03 — `scintela.cliente` tiene 25 códigos DUPLICADOS
 # (3.973 filas / 3.948 códigos): dos empresas distintas comparten el
 # mismo código de 3 letras. Ej. 'GUF' = "ASOTEXMANA NUBE FAJARDO BORJA"
@@ -133,6 +175,13 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
+            UNION
+            SELECT UPPER(TRIM(c.vend))        AS codigo,
+                   c.codigo_cli               AS codigo_cli
+            {_CAJA_COBRO_FROM}
+               AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
+               AND EXTRACT(MONTH FROM k.fecha) = %(mm)s
+               AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
         ),
         clientes_por_vend AS (
             SELECT codigo, COUNT(DISTINCT codigo_cli) AS n_clientes
@@ -171,6 +220,17 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
              WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
                AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
+               AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
+             GROUP BY UPPER(TRIM(c.vend))
+            UNION ALL
+            -- Cobros que entraron a CAJA sin fila de cheque. Ver
+            -- `_CAJA_COBRO_FROM`: la plata ya está en PC, lo que faltaba
+            -- era mirarla.
+            SELECT UPPER(TRIM(c.vend))            AS codigo,
+                   COALESCE(SUM(k.importe), 0)    AS total
+            {_CAJA_COBRO_FROM}
+               AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
+               AND EXTRACT(MONTH FROM k.fecha) = %(mm)s
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
         ),
@@ -299,6 +359,24 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
            AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
            AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
+        UNION ALL
+        -- Cobros de CAJA sin fila de cheque (ver `_CAJA_COBRO_FROM`).
+        -- Aparecen en el detalle con su propio origen para que el
+        -- vendedor pueda ver de dónde sale cada peso: el total de la
+        -- pantalla ES la suma de esta lista.
+        SELECT 'CAJA'                         AS origen,
+               k.id_caja                      AS id_origen,
+               k.concepto                     AS doc,
+               k.fecha                        AS fecha,
+               k.importe                      AS importe,
+               c.codigo_cli                   AS codigo_cli,
+               COALESCE(c.nombre, '')         AS cliente,
+               'CAJA'                         AS banco,
+               'C'                            AS stat
+        {_CAJA_COBRO_FROM}
+           AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
+           AND EXTRACT(MONTH FROM k.fecha) = %(mm)s
+           AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
          ORDER BY fecha, id_origen
         """,
         {"codigo": codigo, "yy": int(anio), "mm": int(mes)},
@@ -349,6 +427,14 @@ def cobranzas_por_cliente_anio(codigo: str, *, anio: int,
                AND EXTRACT(MONTH FROM co.fecha) <= %(hasta)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
                AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
+            UNION ALL
+            SELECT EXTRACT(MONTH FROM k.fecha)::int AS mes,
+                   TRIM(c.codigo_cli)                AS codigo_cli,
+                   k.importe                         AS importe
+            {_CAJA_COBRO_FROM}
+               AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
+               AND EXTRACT(MONTH FROM k.fecha) <= %(hasta)s
+               AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         )
         SELECT mes, codigo_cli, COALESCE(SUM(importe), 0) AS cobrado
           FROM mov
@@ -395,3 +481,45 @@ def crear(codigo: str, nombre: str, pct: float = 0, usuario: str = "web") -> dic
         """,
         (cod, nombre[:100], pct, usuario[:30]),
     ) or {"codigo": cod}
+
+
+def cobranza_periodo(vend: str, desde, hasta) -> float:
+    """Cobranza acreditada de un vendedor entre dos fechas, inclusive.
+
+    ⭐ Existe para que el PORTAL DEL VENDEDOR y la pantalla de la oficina no
+    puedan contar distinto. Hasta el 04/08 `mi_cartera.queries.cobrado` tenía
+    su propia lista de estados —**sin la 'C'**— y ninguna rama de caja, así
+    que el vendedor veía en el KPI una comisión más chica que la del detalle
+    que la propia pantalla le mostraba abajo (el detalle sí reusa
+    `cobranzas_detalle`). El total tiene que SER la suma del desglose.
+
+    Mismas tres fuentes que la comisión: cheques acreditados, cobros
+    no-cheque de `scintela.cobro`, y cobros de CAJA sin fila de cheque.
+    """
+    row = db.fetch_one(
+        f"""
+        WITH{_CTE_CLI}
+        SELECT COALESCE((
+            SELECT SUM(ch.importe)
+              FROM scintela.cheque ch
+              JOIN cli c ON c.codigo_cli = ch.codigo_cli
+             WHERE UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))
+               AND ch.fechad BETWEEN %(desde)s AND %(hasta)s
+               AND ch.stat IN ({_IN_COBRADO})
+        ), 0) + COALESCE((
+            SELECT SUM(co.valor)
+              FROM scintela.cobro co
+              JOIN cli c ON c.codigo_cli = co.codigo_cli
+             WHERE UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))
+               AND co.fecha BETWEEN %(desde)s AND %(hasta)s
+               AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
+        ), 0) + COALESCE((
+            SELECT SUM(k.importe)
+            {_CAJA_COBRO_FROM}
+               AND UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))
+               AND k.fecha BETWEEN %(desde)s AND %(hasta)s
+        ), 0) AS total
+        """,
+        {"vend": vend, "desde": desde, "hasta": hasta},
+    )
+    return float((row or {}).get("total") or 0)
