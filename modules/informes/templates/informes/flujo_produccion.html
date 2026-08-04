@@ -208,8 +208,16 @@
             <td class="num">{{ _ing_us | num_es(0) if _ing_us else '—' }}</td>
             <td></td>
             <td class="num">{{ atj.get('ingresos_kg') | num_es(0) if atj.get('ingresos_kg') else '—' }}</td>
-            {# TERMINADO: Ingresos vacío a pedido de Federico (2026-07-31) #}
-            <td class="num"></td>
+            {# TERMINADO · Ingresos: se había vaciado a pedido de Federico
+               (2026-07-31) y VUELVE a pedido de la dueña (2026-08-04: "¿podés
+               volver a agregar ingresos terminado en esta tabla?"), mientras
+               mira por qué se movió la utilidad. Sin la columna, la fila de
+               terminado no dice de dónde salió el stock.
+               Sólo los kg — el % de merma de tintura que acompañaba a este
+               número NO vuelve ("acordate de sacar merma"). El desperdicio del
+               paso se mira en /produccion-terminado-asinfo, que lo trae de
+               Asinfo día por día y mes por mes. #}
+            <td class="num">{{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
           {# Fila AJUSTES INVENTARIO BORRADA (dueña 2026-07-21 segunda pasada:
