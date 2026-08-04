@@ -159,7 +159,23 @@
               <span class="font-mono text-slate-500">{{ m.tipo }}</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-xs">{{ m.concepto | cleanstr }}</td>
+          <td class="px-3 py-2 text-xs">
+            {{ m.concepto | cleanstr }}
+            {# TMT 2026-08-03 — cobro en efectivo que entró a la caja sin
+               cobranza detrás: la deuda del cliente NO bajó y no cuenta para
+               la comisión del vendedor. El link abre la cobranza de siempre
+               precargada; al guardar ADOPTA esta fila en vez de crear otra,
+               así el saldo de caja no se mueve ni un centavo. #}
+            {% if m.sin_cobranza and tiene_permiso('cheques.aplicar') %}
+              <a href="/cheques/nuevo?desde_caja={{ m.id_caja }}&codigo_cli={{ m.cli_concepto }}&no_banco=99&importe={{ '%.2f' % (m.importe | abs) }}&fechad={{ m.fecha }}"
+                 style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:5px;
+                        background:#fdf0e3;color:#a86400;font-weight:600;text-decoration:none;
+                        border:1px solid #f0d9b8;white-space:nowrap"
+                 title="Este efectivo entró a la caja pero nunca se aplicó a las facturas del cliente: sigue figurando como deuda y no cuenta para la comisión del vendedor.">
+                ⚠ sin cobranza — convertir
+              </a>
+            {% endif %}
+          </td>
           {# importe se almacena POSITIVO; el color viene de `tipo`.
              Para egresos, mostramos el signo "−" delante. #}
           <td class="px-3 py-2 text-right text-mono {% if m.tipo == 'S' %}text-red-600{% elif m.tipo == 'E' %}text-emerald-700{% endif %}">

@@ -38,7 +38,24 @@ def movimientos(
         SELECT c.id_caja, c.fecha, c.tipo, c.importe, c.concepto, c.saldo,
                UPPER(TRIM(COALESCE(c.clave, ''))) AS clave, c.id_cheque,
                ch.no_cheque, ch.codigo_cli,
-               COALESCE(cli.nombre, '') AS cliente
+               COALESCE(cli.nombre, '') AS cliente,
+               -- TMT 2026-08-03 (dueña: "si las cargué yo están mal, ayudame a
+               -- corregir"). Entrada `CH.<cliente>` cargada a mano por ESTA
+               -- pantalla, sin cobranza detrás: la plata entró pero la deuda del
+               -- cliente no bajó (a YHJ le sobraban $1.000 y a CHI $400 contra
+               -- el dBase) y no contaba para la comisión. El template ofrece
+               -- "Convertir en cobranza" — ver `caja_existente_id` en
+               -- modules/cheques/queries.crear.
+               -- Exigimos que el código sea un cliente REAL: hay conceptos
+               -- `CH.MJM` y `CH.RETAZOS` que no lo son, y ofrecerles el botón
+               -- sería una promesa que falla al clickearla.
+               (c.tipo = 'E'
+                AND c.id_cheque IS NULL
+                AND UPPER(COALESCE(c.concepto,'')) LIKE 'CH.%%'
+                AND EXISTS (SELECT 1 FROM scintela.cliente x
+                            WHERE x.codigo_cli = UPPER(TRIM(SUBSTRING(c.concepto FROM 4)))))
+                   AS sin_cobranza,
+               UPPER(TRIM(SUBSTRING(COALESCE(c.concepto,'') FROM 4))) AS cli_concepto
         FROM scintela.caja c
         LEFT JOIN scintela.cheque  ch  ON ch.id_cheque = c.id_cheque
         LEFT JOIN scintela.cliente cli ON cli.codigo_cli = ch.codigo_cli
