@@ -101,6 +101,8 @@ ROLES: list[tuple[str, list[str]]] = [
             "historia.ver",
             "iniciales.ver",
             "comisiones.ver",
+            # TMT 2026-08-03: cargar las metas de venta de los vendedores.
+            "metas.editar",
         ],
     ),
     (

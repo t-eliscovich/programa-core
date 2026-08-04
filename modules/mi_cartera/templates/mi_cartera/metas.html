@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Metas de vendedores{% endblock %}
+{% block content %}
+{{ page_hero('Metas de venta por vendedor',
+             'Se carga una meta por MES. La del año se suma sola y la de la semana se prorratea. Dejar vacío = sin meta (el vendedor ve el facturado, sin anillo de progreso).') }}
+
+<form method="get" class="mb-4">
+  <label class="text-sm text-slate-600">Año
+    <input type="number" name="anio" value="{{ anio }}" class="border rounded px-2 py-1 ml-2 w-24">
+  </label>
+  <button class="ml-2 px-3 py-1 border rounded text-sm">Ver</button>
+</form>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="anio" value="{{ anio }}">
+  <div class="bg-white border rounded-lg shadow-sm overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Vendedor</th>
+          {% for m in range(1, 13) %}<th class="px-2 py-2 text-right">{{ '%02d'|format(m) }}</th>{% endfor %}
+          <th class="px-3 py-2 text-right">Año</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for v in vendedores %}
+        {% set fila = [] %}
+        <tr>
+          <td class="px-3 py-2 whitespace-nowrap">
+            <span class="font-mono text-xs">{{ v.codigo }}</span>
+            <span class="text-slate-500 ml-1">{{ v.nombre }}</span>
+          </td>
+          {% for m in range(1, 13) %}
+            {% set val = cargadas.get((v.codigo, m)) %}
+            {% if val is not none %}{% set _ = fila.append(val) %}{% endif %}
+            <td class="px-1 py-1">
+              <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
+                     value="{{ val if val is not none else '' }}"
+                     class="border rounded px-1 py-1 w-20 text-right text-xs
+                            {% if m == hoy.month and anio == hoy.year %}bg-indigo-50{% endif %}">
+            </td>
+          {% endfor %}
+          <td class="px-3 py-2 text-right font-medium">{{ fila|sum|money_es }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-4">
+    <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+      Guardar metas {{ anio }}
+    </button>
+  </div>
+</form>
+{% endblock %}

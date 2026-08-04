@@ -1,0 +1,62 @@
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'comision' %}
+{% block title %}Mi comisión{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Mi comisión</h1>
+      <div class="sub">{{ vend }} · sobre cobranzas acreditadas</div>
+    </div>
+    <div class="avatar">{{ iniciales }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% set qv = ('&vend=' ~ vend) if preview else '' %}
+<div class="seg">
+  {% for p, rot in [('semana','Semana'), ('mes','Mes'), ('anio','Año')] %}
+    <a href="?periodo={{ p }}{{ qv }}" class="{% if periodo == p %}on{% endif %}">{{ rot }}</a>
+  {% endfor %}
+</div>
+
+<div class="hero">
+  <div class="lbl">{{ etiqueta }} · estimado</div>
+  <div class="val">$ {{ monto|money_es }}</div>
+  <div class="sub">Se actualiza cuando el cobro se acredita en el banco</div>
+</div>
+
+{% if meta_anio %}
+{% set pct = [(vendido_anio * 100 / meta_anio)|round|int, 100]|min %}
+<div class="card">
+  <div class="card-t">Año {{ anio }} · meta $ {{ meta_anio|money_es }}</div>
+  <div class="ring-wrap">
+    <div class="ring">
+      <svg width="112" height="112" aria-hidden="true">
+        <circle cx="56" cy="56" r="47" fill="none" stroke="#EDEFF4" stroke-width="11"/>
+        <circle cx="56" cy="56" r="47" fill="none" stroke="#4338CA" stroke-width="11"
+                stroke-linecap="round" stroke-dasharray="295.3"
+                stroke-dashoffset="{{ (295.3 * (100 - pct) / 100)|round(1) }}"/>
+      </svg>
+      <div class="mid"><b>{{ (vendido_anio * 100 / meta_anio)|round|int }}%</b></div>
+    </div>
+    <div class="meta-lines">
+      <div class="big">$ {{ vendido_anio|money_es }}</div>
+      <div class="of">vendido en el año</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-t">Mes a mes</div>
+  {% for m in meses %}
+    <div class="rowitem">
+      <div class="nm"><b>{{ '%02d'|format(m.mes) }}/{{ m.anio }}</b></div>
+      <div class="amt"><b>$ {{ m.monto|money_es }}</b></div>
+    </div>
+  {% else %}
+    <div class="vacio">Todavía no hay comisiones este año.</div>
+  {% endfor %}
+</div>
+{% endblock %}

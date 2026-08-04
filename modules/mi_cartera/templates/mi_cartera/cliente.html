@@ -1,0 +1,95 @@
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'clientes' %}
+{% block title %}{{ cliente.nombre }}{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <a class="back" href="{{ url_for('mi_cartera.clientes') }}{{ ('?vend=' ~ vend) if preview else '' }}">‹ Mis clientes</a>
+      <h1 style="margin-top:3px">{{ cliente.nombre }}</h1>
+      <div class="sub">{{ cliente.codigo_cli }}{% if cliente.provincia %} · {{ cliente.provincia }}{% endif %}</div>
+    </div>
+    <a class="iconbtn" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
+       href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% set qv = ('&vend=' ~ vend) if preview else '' %}
+<div class="hero">
+  <div class="lbl">Saldo actual</div>
+  <div class="val">$ {{ totales.saldo_vivo|money_es }}</div>
+  <div class="sub">
+    {{ totales.n_vencidas }} vencida{{ '' if totales.n_vencidas == 1 else 's' }} ·
+    $ {{ totales.cheques_cartera|money_es }} en cheques en cartera
+  </div>
+  <div class="split">
+    <div><small>Vencido</small><b>$ {{ totales.saldo_vencido|money_es }}</b></div>
+    <div><small>Por vencer</small>
+      <b>$ {{ (totales.saldo_vivo - totales.saldo_vencido)|money_es }}</b></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tabs">
+    <a href="?tab=facturas{{ qv }}" class="{% if tab != 'cheques' %}on{% endif %}">Facturas</a>
+    <a href="?tab=cheques{{ qv }}" class="{% if tab == 'cheques' %}on{% endif %}">Cheques</a>
+  </div>
+
+  {% if tab != 'cheques' %}
+    {% for f in facturas %}
+      {% set vencida = f.saldo and f.saldo > 0 and (f.vencimiento or f.fecha) and (f.vencimiento or f.fecha) < hoy %}
+      <div class="rowitem" {% if not f.saldo or f.saldo == 0 %}style="opacity:.55"{% endif %}>
+        <div class="nm">
+          <b>Fact. {{ f.numf_completo or f.numf }}</b>
+          <span>
+            Emitida {{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '—' }}
+            {% if f.vencimiento %} · Vence {{ f.vencimiento.strftime('%d/%m/%Y') }}{% endif %}
+          </span>
+        </div>
+        <div class="amt">
+          <b>$ {{ (f.saldo if f.saldo else f.importe)|money_es }}</b>
+          {% if not f.saldo or f.saldo == 0 %}
+            <span class="tag good">Pagada</span>
+          {% elif vencida %}
+            <span class="tag bad">Vencida {{ (hoy - (f.vencimiento or f.fecha)).days }} d</span>
+          {% else %}
+            <span class="tag warn">Por vencer</span>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="vacio">Este cliente no tiene facturas.</div>
+    {% endfor %}
+  {% else %}
+    {% for c in cheques %}
+      <div class="rowitem">
+        <div class="nm">
+          <b>Ch. {{ c.no_cheque }}{% if c.nombre_banco %} · {{ c.nombre_banco }}{% endif %}</b>
+          <span>
+            {% if c.stat in ('B','A') %}Depositado {{ c.fechaout.strftime('%d/%m/%Y') if c.fechaout else '' }}
+            {% elif c.fechad %}Cobra el {{ c.fechad.strftime('%d/%m/%Y') }}
+            {% else %}—{% endif %}
+          </span>
+        </div>
+        <div class="amt">
+          <b>$ {{ c.importe|money_es }}</b>
+          {% if c.stat in ('B','A') %}<span class="tag good">Depositado</span>
+          {% elif c.stat in ('1','2','3','R') %}<span class="tag bad">Devuelto</span>
+          {% elif c.stat == 'X' %}<span class="tag">Anulado</span>
+          {% else %}<span class="tag warn">En cartera</span>{% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="vacio">Este cliente no tiene cheques cargados.</div>
+    {% endfor %}
+  {% endif %}
+</div>
+
+{% if totales.saldo_a_favor and totales.saldo_a_favor > 0 %}
+<div class="card">
+  <div class="card-t">Saldo a favor del cliente</div>
+  <div class="meta-lines"><div class="big">$ {{ totales.saldo_a_favor|money_es }}</div></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,241 @@
+"""Portal de vendedores — /mi-cartera.
+
+Lo que protegen estos tests, en orden de gravedad:
+  1. Que un vendedor NO pueda abrir la ficha de un cliente ajeno tipeando el
+     código en la barra de direcciones (`cliente_es_mio`).
+  2. Que el código de vendedor salga de la SESIÓN y no del querystring — que
+     `?vend=OTRO` no haga nada si el que lo manda es un vendedor.
+  3. Que el vendedor NO vea el cupo del cliente ni su % de comisión (decisión
+     de la dueña 2026-08-03).
+  4. Que los períodos (semana comercial / mes / año) y el prorrateo de la meta
+     den lo que dicen que dan.
+"""
+from __future__ import annotations
+
+from datetime import date
+
+import bcrypt
+import pytest
+from flask import g
+
+from modules.mi_cartera import queries as q
+
+
+def _hash(pw: str) -> bytes:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt(rounds=4))
+
+
+# ---------------------------------------------------------------------------
+# Períodos y ritmo
+# ---------------------------------------------------------------------------
+
+
+def test_semana_es_lunes_a_domingo():
+    # 2026-08-05 es miércoles.
+    desde, hasta, rot = q.rango_periodo("semana", date(2026, 8, 5))
+    assert (desde, hasta) == (date(2026, 8, 3), date(2026, 8, 9))
+    assert desde.weekday() == 0 and hasta.weekday() == 6
+    assert rot == "Esta semana"
+
+
+def test_mes_va_del_1_al_ultimo():
+    desde, hasta, _ = q.rango_periodo("mes", date(2026, 2, 17))
+    assert (desde, hasta) == (date(2026, 2, 1), date(2026, 2, 28))
+
+
+def test_anio_completo():
+    desde, hasta, rot = q.rango_periodo("anio", date(2026, 8, 5))
+    assert (desde, hasta) == (date(2026, 1, 1), date(2026, 12, 31))
+    assert rot == "2026"
+
+
+def test_periodo_desconocido_cae_en_mes():
+    assert q.rango_periodo("cualquiera", date(2026, 8, 5))[2] == "Este mes"
+
+
+def test_avance_esperado():
+    d, h, _ = q.rango_periodo("mes", date(2026, 8, 15))
+    # Al día 15 de un mes de 31, transcurrió 15/31.
+    assert q.avance_esperado(d, h, date(2026, 8, 15)) == pytest.approx(15 / 31)
+    # Un día posterior al cierre del período no pasa de 1.
+    assert q.avance_esperado(d, h, date(2026, 9, 20)) == 1.0
+    # Período degenerado no divide por cero.
+    assert q.avance_esperado(date(2026, 8, 2), date(2026, 8, 1), date(2026, 8, 1)) == 1.0
+
+
+def test_meta_semanal_se_prorratea(monkeypatch):
+    monkeypatch.setattr(q, "meta_mes", lambda *a, **k: 3100.0)
+    # Agosto tiene 31 días → la semana vale 7/31 de la meta del mes.
+    assert q.meta_periodo("PPR", "semana", date(2026, 8, 5)) == pytest.approx(700.0)
+    assert q.meta_periodo("PPR", "mes", date(2026, 8, 5)) == 3100.0
+
+
+def test_sin_meta_cargada_devuelve_none(monkeypatch):
+    """Sin meta no hay anillo: un 0% falso es peor que no mostrar nada."""
+    monkeypatch.setattr(q, "meta_mes", lambda *a, **k: None)
+    assert q.meta_periodo("PPR", "mes", date(2026, 8, 5)) is None
+
+
+# ---------------------------------------------------------------------------
+# Pertenencia — el guard que evita la fuga por URL
+# ---------------------------------------------------------------------------
+
+
+def test_cliente_es_mio_sin_datos_es_false():
+    assert q.cliente_es_mio("", "TDV") is False
+    assert q.cliente_es_mio("PPR", "") is False
+
+
+def test_cliente_es_mio_manda_el_vend_como_parametro(monkeypatch):
+    visto = {}
+
+    def _fetch_one(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        visto["params"] = params
+        return {"ok": 1}
+
+    monkeypatch.setattr(q.db, "fetch_one", _fetch_one)
+    assert q.cliente_es_mio("ppr", "TDV") is True
+    # El código NUNCA se interpola en el SQL: va como parámetro.
+    assert "ppr" not in visto["sql"] and "PPR" not in visto["sql"]
+    assert visto["params"] == {"cod": "TDV", "vend": "ppr"}
+    assert "c.vend" in visto["sql"]
+
+
+def test_comision_devuelve_solo_el_monto(monkeypatch):
+    """La dueña 2026-08-03: el vendedor no ve su %. Ni la base (deja despejarlo)."""
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 10_000.0)
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 3.0)
+    assert q.comision("PPR", date(2026, 8, 1), date(2026, 8, 31)) == 300.0
+
+
+# ---------------------------------------------------------------------------
+# El vendedor sale de la SESIÓN, no del querystring
+# ---------------------------------------------------------------------------
+
+
+def _vend_en(app, path, user, permisos):
+    from modules.mi_cartera.views import _vend_actual
+
+    with app.test_request_context(path):
+        g.user = user
+        g.permisos = permisos
+        try:
+            return _vend_actual()
+        except Exception as e:  # werkzeug NotFound
+            return type(e).__name__
+
+
+def test_vendedor_usa_su_codigo_e_ignora_el_querystring(app):
+    """El ataque obvio: PPR pide ?vend=EDG para ver la cartera del otro."""
+    assert _vend_en(app, "/mi-cartera?vend=EDG", {"vend": "PPR"}, set()) == "PPR"
+
+
+def test_duena_puede_previsualizar(app):
+    assert _vend_en(app, "/mi-cartera?vend=edg", {"vend": None}, {"*"}) == "EDG"
+
+
+def test_duena_sin_vend_en_la_url_no_inventa_uno(app):
+    assert _vend_en(app, "/mi-cartera", {"vend": None}, {"*"}) == "NotFound"
+
+
+def test_usuario_comun_no_entra_ni_con_querystring(app):
+    assert _vend_en(
+        app, "/mi-cartera?vend=PPR", {"vend": None}, {"facturas.ver", "cheques.ver"}
+    ) == "NotFound"
+
+
+# ---------------------------------------------------------------------------
+# Rutas — end to end con sesión real
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def vendedor_logueado(app, client, fake_db):
+    rid = fake_db.add_role("Vendedor", ["micartera.ver"])
+    fake_db.add_user("pablo", _hash("Vendedor2026"), rid, vend="PPR")
+    r = client.post("/login", data={"username": "pablo", "password": "Vendedor2026"})
+    assert r.status_code in (302, 303)
+    return client
+
+
+def test_cliente_ajeno_da_404(vendedor_logueado, monkeypatch):
+    """La fuga que este portal tiene que hacer imposible."""
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: False)
+    assert vendedor_logueado.get("/mi-cartera/cliente/AJENO").status_code == 404
+    assert vendedor_logueado.get("/mi-cartera/cliente/AJENO/imprimir").status_code == 404
+
+
+def test_el_vendedor_no_llega_a_las_pantallas_del_programa(vendedor_logueado):
+    """El allowlist de scope_vendedor.py, ejercitado de punta a punta."""
+    for path in ("/facturas", "/cheques", "/informes/estado-cuenta", "/usuarios",
+                 "/vendedores/metas", "/anticipos/nuevo"):
+        assert vendedor_logueado.get(path).status_code == 404, path
+
+
+def test_la_raiz_lo_manda_a_su_portal(vendedor_logueado):
+    r = vendedor_logueado.get("/")
+    assert r.status_code in (301, 302, 303)
+    assert r.headers["Location"].endswith("/mi-cartera")
+
+
+def test_el_cupo_del_cliente_no_sale_del_backend(app, monkeypatch):
+    """No alcanza con no pintarlo en el template: no tiene que salir del server."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries,
+        "estado_cuenta_cliente",
+        lambda cod: {"cliente": {"codigo_cli": cod, "nombre": "X", "cupo": 20000}},
+    )
+    with app.test_request_context("/mi-cartera/cliente/TDV"):
+        data = views._cargar_cliente("PPR", "TDV")
+    assert "cupo" not in data["cliente"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/mi-cartera",
+        "/mi-cartera?periodo=semana",
+        "/mi-cartera?periodo=anio",
+        "/mi-cartera/clientes",
+        "/mi-cartera/clientes?f=vencidos",
+        "/mi-cartera/clientes?q=zzz",
+        "/mi-cartera/comision",
+        "/mi-cartera/comision?periodo=anio",
+    ],
+)
+def test_las_pantallas_renderizan(vendedor_logueado, path):
+    """Smoke: sin datos, el portal abre igual (y no explota un template)."""
+    r = vendedor_logueado.get(path)
+    assert r.status_code == 200
+    assert b"Mi Cartera" in r.data or b"cartera" in r.data.lower()
+
+
+def test_la_ficha_del_cliente_renderiza(vendedor_logueado, monkeypatch):
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "Textiles del Valle",
+                        "provincia": "Quito", "ruc": "17", "direccion1": "",
+                        "cupo": 20000},
+            "facturas": [], "cheques": [], "anticipos": [],
+            "totales": {"saldo_vivo": 0, "saldo_vencido": 0, "n_vencidas": 0,
+                        "cheques_cartera": 0, "saldo_a_favor": 0, "importe": 0,
+                        "abono": 0, "saldo": 0},
+        },
+    )
+    r = vendedor_logueado.get("/mi-cartera/cliente/TDV")
+    assert r.status_code == 200
+    assert b"Textiles del Valle" in r.data
+    # El cupo no viaja al navegador.
+    assert b"20000" not in r.data and b"20.000" not in r.data
+
+    p = vendedor_logueado.get("/mi-cartera/cliente/TDV/imprimir")
+    assert p.status_code == 200
+    assert b"Estado de cuenta" in p.data

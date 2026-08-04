@@ -1,0 +1,58 @@
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'clientes' %}
+{% block title %}Mis clientes{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Mis clientes</h1>
+      <div class="sub">{{ filas|length }} con saldo · $ {{ total|money_es }} por cobrar</div>
+    </div>
+    <div class="avatar">{{ iniciales }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% set qv = ('&vend=' ~ vend) if preview else '' %}
+<form class="search" method="get">
+  {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+  <input type="hidden" name="f" value="{{ filtro }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Buscar cliente…"
+         autocomplete="off" enterkeyhint="search">
+</form>
+
+<div class="seg">
+  {% for f, rot in [('saldo','Con saldo'), ('vencidos','Vencidos')] %}
+    <a href="?f={{ f }}{% if q %}&q={{ q }}{% endif %}{{ qv }}"
+       class="{% if filtro == f %}on{% endif %}">{{ rot }}</a>
+  {% endfor %}
+</div>
+
+{% if filas %}
+<div class="card">
+  {% for c in filas %}
+    <a class="rowitem" href="{{ url_for('mi_cartera.cliente', codigo_cli=c.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
+      {% set _p = (c.nombre or c.codigo_cli).split() %}<div class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</div>
+      <div class="nm">
+        <b>{{ c.nombre }}</b>
+        <span>{{ c.codigo_cli }}{% if c.provincia %} · {{ c.provincia }}{% endif %}</span>
+      </div>
+      <div class="amt">
+        <b>$ {{ c.saldo|money_es }}</b>
+        {% if c.vencido > 0 %}
+          <span class="tag bad">Vencido</span>
+        {% else %}
+          <span class="tag good">Al día</span>
+        {% endif %}
+      </div>
+    </a>
+  {% endfor %}
+</div>
+{% else %}
+  <div class="vacio">
+    {% if q %}No encontré ningún cliente con “{{ q }}”.
+    {% elif filtro == 'vencidos' %}Ningún cliente tuyo tiene facturas vencidas. 👏
+    {% else %}No tenés clientes con saldo abierto.{% endif %}
+  </div>
+{% endif %}
+{% endblock %}

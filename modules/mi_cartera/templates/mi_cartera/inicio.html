@@ -1,0 +1,108 @@
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'inicio' %}
+{% block title %}Mi Cartera{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Hola, {{ vend_nombre.split()[0] if vend_nombre else vend }}</h1>
+      <div class="sub">{{ vend }} · {{ pendiente.n_clientes }} cliente{{ '' if pendiente.n_clientes == 1 else 's' }} con saldo</div>
+    </div>
+    <div class="avatar">{{ iniciales }}</div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% set qv = ('&vend=' ~ vend) if preview else '' %}
+<div class="seg">
+  {% for p, rot in [('semana','Semana'), ('mes','Mes'), ('anio','Año')] %}
+    <a href="?periodo={{ p }}{{ qv }}" class="{% if periodo == p %}on{% endif %}">{{ rot }}</a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-t">Ventas · {{ etiqueta }}</div>
+  {% if meta %}
+    {# Anillo sólo si hay meta cargada: un 0% falso es peor que no mostrar nada. #}
+    {% set pct = [pct_meta, 100]|min %}
+    <div class="ring-wrap">
+      <div class="ring">
+        <svg width="112" height="112" aria-hidden="true">
+          <circle cx="56" cy="56" r="47" fill="none" stroke="#EDEFF4" stroke-width="11"/>
+          <circle cx="56" cy="56" r="47" fill="none" stroke="#4338CA" stroke-width="11"
+                  stroke-linecap="round" stroke-dasharray="295.3"
+                  stroke-dashoffset="{{ (295.3 * (100 - pct) / 100)|round(1) }}"/>
+        </svg>
+        <div class="mid"><b>{{ pct_meta }}%</b></div>
+      </div>
+      <div class="meta-lines">
+        <div class="big">$ {{ vendido|money_es }}</div>
+        <div class="of">de $ {{ meta|money_es }}</div>
+        {% if delta_ritmo is not none %}
+          <span class="pill {{ 'good' if delta_ritmo >= 0 else 'warn' }}">
+            {% if delta_ritmo >= 0 %}$ {{ delta_ritmo|money_es }} arriba del ritmo
+            {% else %}$ {{ (-delta_ritmo)|money_es }} abajo del ritmo{% endif %}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="meta-lines">
+      <div class="big">$ {{ vendido|money_es }}</div>
+      <div class="of">facturado {{ etiqueta|lower }}</div>
+    </div>
+  {% endif %}
+
+  {% if barras %}
+    <div class="bars">
+      {% for b in barras %}
+        <div class="b {% if b.actual %}on{% endif %}">
+          <i style="height:{{ b.pct }}%"></i><span>{{ b.rotulo }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="kpis">
+  <div class="kpi">
+    <small>Cobrado</small><b>$ {{ cobrado|money_es }}</b>
+    <i style="color:var(--ink-3)">{{ etiqueta|lower }}</i>
+  </div>
+  <div class="kpi">
+    <small>Por cobrar</small><b>$ {{ pendiente.saldo|money_es }}</b>
+    {% if pendiente.vencido > 0 %}
+      <i style="color:var(--bad)">$ {{ pendiente.vencido|money_es }} vencido</i>
+    {% else %}
+      <i style="color:var(--good)">todo al día</i>
+    {% endif %}
+  </div>
+</div>
+
+{% if alertas %}
+<div class="card">
+  <div class="card-t">Requieren atención</div>
+  {% for c in alertas %}
+    <a class="rowitem" href="{{ url_for('mi_cartera.cliente', codigo_cli=c.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
+      {% set _p = (c.nombre or c.codigo_cli).split() %}<div class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</div>
+      <div class="nm">
+        <b>{{ c.nombre }}</b>
+        <span>{{ c.n_facturas }} factura{{ '' if c.n_facturas == 1 else 's' }} abierta{{ '' if c.n_facturas == 1 else 's' }}</span>
+      </div>
+      <div class="amt">
+        <b>$ {{ c.saldo|money_es }}</b>
+        <span class="tag bad">Vencido $ {{ c.vencido|money_es }}</span>
+      </div>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-t">Comisión estimada · {{ etiqueta }}</div>
+  <div class="meta-lines">
+    <div class="big">$ {{ comision|money_es }}</div>
+    <div class="of">se actualiza cuando el cobro se acredita</div>
+  </div>
+</div>
+{% endblock %}

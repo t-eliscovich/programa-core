@@ -433,6 +433,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(usuarios_bp)
 
+    # Portal de vendedores (/mi-cartera) + carga de metas (/vendedores/metas).
+    # TMT 2026-08-03. Ver scope_vendedor.py: los usuarios con `vend` cargado
+    # SÓLO pueden entrar acá.
+    from modules.mi_cartera.views import mi_cartera_bp
+
+    app.register_blueprint(mi_cartera_bp)
+
     from modules.sri.views import sri_bp
 
     app.register_blueprint(sri_bp)

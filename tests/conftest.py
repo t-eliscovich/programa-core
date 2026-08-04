@@ -95,7 +95,10 @@ class FakeDB:
             self.permisos.append({"id_rol": rid, "nombre_opcion": p})
         return rid
 
-    def add_user(self, username: str, password_hash: bytes, id_rol: int, activo: bool = True) -> int:
+    def add_user(self, username: str, password_hash: bytes, id_rol: int, activo: bool = True,
+                 vend: str | None = None) -> int:
+        # TMT 2026-08-03: `vend` = código de vendedor (migración 0153). Es lo
+        # que ACOTA al usuario — ver scope_vendedor.py. None = usuario normal.
         uid = self.next_id
         self.next_id += 1
         self.users[uid] = {
@@ -104,6 +107,7 @@ class FakeDB:
             "password_hash": password_hash.decode() if isinstance(password_hash, bytes) else password_hash,
             "id_rol": id_rol,
             "activo": activo,
+            "vend": vend,
         }
         return uid
 
@@ -122,6 +126,7 @@ class FakeDB:
                 "id_rol": u["id_rol"],
                 "activo": u["activo"],
                 "nombre_rol": r["nombre_rol"],
+                "vend": u.get("vend"),
             }
         if "from seguridad.usuario" in s and "where lower(username)" in s:
             uname = params[0].lower()

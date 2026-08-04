@@ -1,0 +1,182 @@
+{# Cascarón del portal de vendedores — mobile-first, INDEPENDIENTE de
+   templates/base.html (que es el shell de escritorio con el menú completo).
+
+   TMT 2026-08-03. Ojo: static/tailwind.css es un build JIT CONGELADO — las
+   clases nuevas de Tailwind NO renderizan. Por eso todo el estilo de este
+   portal vive acá abajo, en CSS propio.
+
+   PWA: el manifest + el apple-touch-icon son lo que permite "Agregar a
+   pantalla de inicio" y que abra sin la barra del navegador. #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Mi Cartera{% endblock %} · Intela</title>
+
+<link rel="manifest" href="{{ url_for('static', filename='mi-cartera/manifest.webmanifest') }}">
+<meta name="theme-color" content="#4338CA">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mi Cartera">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='mi-cartera/icon-180.png') }}">
+<link rel="icon" href="{{ url_for('static', filename='mi-cartera/icon.svg') }}" type="image/svg+xml">
+
+<style>
+  :root{
+    --ink:#0F172A; --ink-2:#475569; --ink-3:#94A3B8;
+    --surface:#FFFFFF; --surface-2:#F6F7F9; --line:#E6E9EF;
+    --accent:#4338CA; --accent-soft:#EEF0FE;
+    --good:#15803D; --good-soft:#E9F7EE;
+    --warn:#B45309; --warn-soft:#FDF3E3;
+    --bad:#B91C1C;  --bad-soft:#FCEDED;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    background:var(--surface-2); color:var(--ink);
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+    display:flex; flex-direction:column;
+  }
+  a{color:inherit;text-decoration:none}
+
+  .appbar{
+    position:sticky; top:0; z-index:10; flex:0 0 auto;
+    background:var(--surface); border-bottom:1px solid var(--line);
+    padding:calc(10px + env(safe-area-inset-top)) 16px 12px;
+  }
+  .appbar .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .appbar h1{font-size:18px;letter-spacing:-.02em;font-weight:700}
+  .appbar .sub{font-size:12px;color:var(--ink-3);margin-top:2px}
+  .avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;
+          display:grid;place-items:center;font-size:12.5px;font-weight:700;flex:0 0 auto}
+  .back{font-size:13px;color:var(--accent);font-weight:600;display:inline-block}
+  .iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);
+           display:grid;place-items:center;font-size:16px;color:var(--accent);
+           flex:0 0 auto;background:var(--surface)}
+
+  main{flex:1;padding:14px 14px 20px;max-width:640px;width:100%;margin:0 auto}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+        padding:14px;margin-bottom:11px}
+  .card-t{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+          color:var(--ink-3);margin-bottom:10px}
+
+  .seg{display:flex;background:#EDEFF4;border-radius:11px;padding:3px;margin-bottom:12px}
+  .seg a{flex:1;text-align:center;font-size:13px;font-weight:600;color:var(--ink-2);
+         padding:8px 0;border-radius:9px}
+  .seg a.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.10)}
+
+  .ring-wrap{display:flex;align-items:center;gap:16px}
+  .ring{position:relative;width:112px;height:112px;flex:0 0 auto}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .mid{position:absolute;inset:0;display:grid;place-items:center}
+  .ring .mid b{font-size:26px;letter-spacing:-.03em;line-height:1}
+  .meta-lines{flex:1;min-width:0}
+  .meta-lines .big{font-size:22px;letter-spacing:-.03em;line-height:1.15;
+                   font-variant-numeric:tabular-nums}
+  .meta-lines .of{font-size:12.5px;color:var(--ink-2);margin-top:3px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;
+        padding:4px 10px;border-radius:99px;margin-top:9px}
+  .pill.good{background:var(--good-soft);color:var(--good)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+
+  .bars{display:flex;align-items:flex-end;gap:6px;height:74px;margin-top:12px}
+  .bars .b{flex:1;display:flex;flex-direction:column;justify-content:flex-end;
+           align-items:center;gap:5px;height:100%}
+  .bars .b i{display:block;width:100%;background:var(--accent);
+             border-radius:4px 4px 0 0;opacity:.30}
+  .bars .b.on i{opacity:1}
+  .bars .b span{font-size:9.5px;color:var(--ink-3)}
+
+  .rowitem{display:flex;align-items:center;gap:11px;padding:12px 0;
+           border-bottom:1px solid var(--line)}
+  .rowitem:last-child{border-bottom:0;padding-bottom:2px}
+  .rowitem:first-child{padding-top:2px}
+  .ini{width:36px;height:36px;border-radius:10px;background:#EEF1F6;color:var(--ink-2);
+       display:grid;place-items:center;font-size:11.5px;font-weight:700;flex:0 0 auto}
+  .rowitem .nm{flex:1;min-width:0}
+  .rowitem .nm b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;
+                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rowitem .nm span{display:block;font-size:11.5px;color:var(--ink-3);margin-top:2px}
+  .rowitem .amt{text-align:right;flex:0 0 auto}
+  .rowitem .amt b{display:block;font-size:14px;letter-spacing:-.01em;
+                  font-variant-numeric:tabular-nums}
+  .tag{display:inline-flex;font-size:10.5px;font-weight:700;padding:2px 7px;
+       border-radius:6px;margin-top:3px}
+  .tag.good{background:var(--good-soft);color:var(--good)}
+  .tag.warn{background:var(--warn-soft);color:var(--warn)}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+
+  .search{display:flex;gap:8px;margin-bottom:11px}
+  .search input{flex:1;background:var(--surface);border:1px solid var(--line);
+                border-radius:11px;padding:10px 12px;font-size:14px;color:var(--ink);
+                font-family:inherit}
+
+  .hero{background:linear-gradient(160deg,#4338CA,#5B4FE0);color:#fff;border-radius:16px;
+        padding:16px;margin-bottom:11px}
+  .hero .lbl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+             opacity:.72;font-weight:700}
+  .hero .val{font-size:31px;letter-spacing:-.035em;margin-top:5px;
+             font-variant-numeric:tabular-nums}
+  .hero .sub{font-size:12px;opacity:.82;margin-top:5px}
+  .hero .split{display:flex;gap:10px;margin-top:13px;padding-top:12px;
+               border-top:1px solid rgba(255,255,255,.22)}
+  .hero .split div{flex:1}
+  .hero .split small{display:block;font-size:10.5px;opacity:.72;text-transform:uppercase;
+                     letter-spacing:.05em;font-weight:700}
+  .hero .split b{display:block;font-size:15px;margin-top:3px;letter-spacing:-.02em;
+                 font-variant-numeric:tabular-nums}
+
+  .kpis{display:flex;gap:9px;margin-bottom:11px}
+  .kpi{flex:1;background:var(--surface);border:1px solid var(--line);
+       border-radius:13px;padding:11px}
+  .kpi small{display:block;font-size:10px;font-weight:700;letter-spacing:.06em;
+             text-transform:uppercase;color:var(--ink-3)}
+  .kpi b{display:block;font-size:17px;letter-spacing:-.03em;margin-top:5px;
+         font-variant-numeric:tabular-nums}
+  .kpi i{display:block;font-style:normal;font-size:10.5px;margin-top:3px;font-weight:600}
+
+  .tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:-2px 0 10px}
+  .tabs a{font-size:13.5px;font-weight:600;color:var(--ink-3);padding:0 0 9px}
+  .tabs a.on{color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
+
+  .vacio{text-align:center;color:var(--ink-3);font-size:13.5px;padding:34px 10px}
+
+  .tabbar{position:sticky;bottom:0;flex:0 0 auto;display:flex;background:var(--surface);
+          border-top:1px solid var(--line);
+          padding:9px 6px calc(12px + env(safe-area-inset-bottom))}
+  .tabbar a{flex:1;text-align:center;font-size:10.5px;font-weight:600;color:var(--ink-3)}
+  .tabbar a.on{color:var(--accent)}
+  .tabbar em{display:block;font-size:17px;font-style:normal;margin-bottom:3px;opacity:.55}
+  .tabbar a.on em{opacity:1}
+
+  .banner{background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:600;
+          padding:7px 14px;text-align:center}
+</style>
+</head>
+<body>
+
+{% if preview %}
+  {# La dueña mirando ?vend=XXX. Que quede clarísimo que no es su pantalla. #}
+  <div class="banner">Vista previa de {{ vend }} — así lo ve el vendedor</div>
+{% endif %}
+
+<header class="appbar">{% block appbar %}{% endblock %}</header>
+
+<main>{% block content %}{% endblock %}</main>
+
+<nav class="tabbar">
+  {% set qp = ('?vend=' ~ vend) if preview else '' %}
+  <a href="{{ url_for('mi_cartera.inicio') }}{{ qp }}"
+     class="{% if seccion == 'inicio' %}on{% endif %}"><em>◉</em>Inicio</a>
+  <a href="{{ url_for('mi_cartera.clientes') }}{{ qp }}"
+     class="{% if seccion == 'clientes' %}on{% endif %}"><em>☰</em>Clientes</a>
+  <a href="{{ url_for('mi_cartera.comision') }}{{ qp }}"
+     class="{% if seccion == 'comision' %}on{% endif %}"><em>◆</em>Comisión</a>
+</nav>
+
+</body>
+</html>
