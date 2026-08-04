@@ -34,6 +34,21 @@ def lista():
         flash(f"No pude cargar la lista de usuarios: {e}", "error")
         filas = []
 
+    # TMT 2026-08-03 (dueña, viendo dos cuentas repetidas que quedaron del
+    # consolidado de Google): "podés eliminar el repetido que no está activo".
+    #
+    # No se BORRA una cuenta: desactivar ya le saca todo el acceso, y el
+    # username sigue apareciendo en la bitácora — una fila borrada deja el
+    # historial firmado por alguien que "no existe". Lo que molestaba era que
+    # ensuciaban la lista, así que los desactivados se esconden y quedan
+    # detrás de un contador. Sin botón de borrar: no existe en la app, y
+    # agregarlo por dos filas sería dejar un botón irreversible en producción
+    # para siempre.
+    ver_inactivos = request.args.get("inactivos") == "1"
+    n_inactivos = sum(1 for f in filas if not f.get("activo"))
+    if not ver_inactivos:
+        filas = [f for f in filas if f.get("activo")]
+
     # TMT 2026-05-22 — defensive: calcular "_real" (usuario real para
     # impersonación) acá en vez del template, donde g.impersonating_from
     # puede no estar definido en algunos contextos.
@@ -48,6 +63,8 @@ def lista():
         filas=filas,
         real_id=real_id,
         real_es_accionista=real_es_accionista,
+        ver_inactivos=ver_inactivos,
+        n_inactivos=n_inactivos,
     )
 
 

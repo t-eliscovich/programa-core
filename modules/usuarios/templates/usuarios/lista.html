@@ -85,5 +85,23 @@
       </tbody>
     </table>
   </div>
+
+  {# TMT 2026-08-03 — los desactivados no se borran, se esconden. Ver el
+     comentario de `usuarios.lista`: una cuenta borrada deja la bitácora
+     firmada por alguien que ya no existe. #}
+  {% if n_inactivos %}
+    <p class="mt-3 text-xs text-slate-500">
+      {% if ver_inactivos %}
+        Mostrando también {{ n_inactivos }} usuario{{ '' if n_inactivos == 1 else 's' }}
+        desactivado{{ '' if n_inactivos == 1 else 's' }} (sin acceso al sistema).
+        <a href="{{ url_for('usuarios.lista') }}" class="text-sky-600 hover:underline">Ocultarlos</a>
+      {% else %}
+        Hay {{ n_inactivos }} usuario{{ '' if n_inactivos == 1 else 's' }}
+        desactivado{{ '' if n_inactivos == 1 else 's' }} — sin acceso al sistema, pero
+        su nombre se conserva para que la bitácora siga teniendo autor.
+        <a href="{{ url_for('usuarios.lista', inactivos=1) }}" class="text-sky-600 hover:underline">Verlos</a>
+      {% endif %}
+    </p>
+  {% endif %}
 </div>
 {% endblock %}

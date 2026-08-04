@@ -493,3 +493,65 @@ def test_una_sola_semana_no_dibuja_barras(app, monkeypatch):
     with app.test_request_context("/mi-cartera?vend=RMY"):
         g.user, g.permisos = {"vend": "RMY"}, {"micartera.ver"}
         assert 'class="bars"' in views.inicio()
+
+
+# ---------------------------------------------------------------------------
+# Usuarios desactivados: se esconden, no se borran
+# ---------------------------------------------------------------------------
+
+
+def _cliente_admin(app, client, fake_db, monkeypatch, filas):
+    from modules.usuarios import queries as uq
+
+    rid = fake_db.add_role("Accionista", ["*"])
+    fake_db.add_user("jefa", _hash("Admin20261"), rid)
+    monkeypatch.setattr(uq, "listar", lambda: filas)
+    client.post("/login", data={"username": "jefa", "password": "Admin20261"})
+    return client
+
+
+FILAS_USUARIOS = [
+    {"id_usuario": 1, "username": "tamara", "email": None, "activo": True,
+     "id_rol": 1, "nombre_rol": "Accionista", "clave": "TAM", "vend": None},
+    {"id_usuario": 2, "username": "teliscovich@gmail.com", "email": None,
+     "activo": False, "id_rol": 1, "nombre_rol": "Accionista", "clave": None,
+     "vend": None},
+    {"id_usuario": 3, "username": "feliscovich@gmail.com", "email": None,
+     "activo": False, "id_rol": 1, "nombre_rol": "Accionista", "clave": None,
+     "vend": None},
+]
+
+
+def test_los_desactivados_no_ensucian_la_lista(app, client, fake_db, monkeypatch):
+    """Dueña 2026-08-03: "podés eliminar el repetido que no está activo".
+
+    No se borran —una cuenta borrada deja la bitácora firmada por alguien que
+    ya no existe— pero tampoco tienen por qué ocupar la pantalla.
+    """
+    c = _cliente_admin(app, client, fake_db, monkeypatch, FILAS_USUARIOS)
+    html = c.get("/usuarios").data.decode()
+    assert "tamara" in html
+    assert "teliscovich@gmail.com" not in html
+    # El texto lo parte Jinja en varias líneas; se compara normalizado.
+    assert "2 usuarios desactivados" in " ".join(html.split())
+
+
+def test_se_pueden_ver_los_desactivados_a_proposito(app, client, fake_db, monkeypatch):
+    c = _cliente_admin(app, client, fake_db, monkeypatch, FILAS_USUARIOS)
+    html = c.get("/usuarios?inactivos=1").data.decode()
+    assert "teliscovich@gmail.com" in html and "feliscovich@gmail.com" in html
+
+
+def test_sin_desactivados_no_aparece_el_cartel(app, client, fake_db, monkeypatch):
+    c = _cliente_admin(app, client, fake_db, monkeypatch, [FILAS_USUARIOS[0]])
+    assert "desactivado" not in c.get("/usuarios").data.decode()
+
+
+def test_no_existe_ninguna_ruta_para_BORRAR_un_usuario(app):
+    """Desactivar es reversible; borrar no. Si alguien agrega un botón de
+    borrar, que sea a propósito y no de arrastre — este test lo va a frenar.
+    """
+    rutas = [str(r) for r in app.url_map.iter_rules() if "usuario" in str(r).lower()]
+    assert rutas, "no encontré ninguna ruta de usuarios: el test dejó de vigilar"
+    for r in rutas:
+        assert "borrar" not in r and "eliminar" not in r and "delete" not in r
