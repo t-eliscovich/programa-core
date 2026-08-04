@@ -23,6 +23,9 @@
   .tm tr.tot:hover td{background:#f8fafc}
   .tm .muted{color:#64748b}
   .tm .desp{color:#b91c1c}
+  /* "Otros mov." es la columna que explica el descuadre: va destacada porque
+     un número grande ahí es justamente lo que hay que ir a mirar. */
+  .tm td.otros{color:#a16207;font-weight:600}
   /* Las tres columnas de flujo (producido/vendido/desperdicio) van con un
      fondo tenue para que el ojo separe de un saque el STOCK (inicial/final)
      de lo que se MOVIÓ en el medio. */
@@ -38,6 +41,31 @@
     padding:10px 14px;margin:8px 0;font-size:13px}
   .tm .okbox{border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;
     padding:8px 14px;margin:8px 0 14px;font-size:12.5px;color:#166534}
+  /* ── Secciones plegables — MISMO diseño que la tab de Tejeduría (TMT
+     2026-07-26/30). Se copian las reglas en vez de compartirlas porque el
+     CSS de aquella pantalla vive en su propio <style> y tailwind.css es un
+     build congelado: no hay dónde poner una clase común sin un build nuevo.
+     CERRADA = cajón (fondo, borde, radio en las 4 esquinas).
+     ABIERTA  = cabecera pegada a su contenido, con barra de color. */
+  .tm details{margin:26px 0 4px}
+  .tm details>summary{font-size:12.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.05em;color:#0f172a;cursor:pointer;list-style:none;display:flex;
+    align-items:center;gap:9px;user-select:none;padding:9px 12px;background:#f1f5f9;
+    border:1px solid #cbd5e1;border-radius:9px;transition:background .12s ease}
+  .tm details[open]>summary{background:#e8eef5;border-left:3px solid #0284c7}
+  .tm details>summary::-webkit-details-marker{display:none}
+  /* Triángulo dibujado con bordes en vez de un carácter: el ▾ de la fuente
+     sale como una manchita de 3px y no se ve. Esto es nítido siempre. */
+  .tm details>summary::before{content:"";width:0;height:0;flex:none;
+    border-left:5px solid transparent;border-right:5px solid transparent;
+    border-top:7px solid #334155;display:inline-block;
+    transition:transform .12s ease}
+  .tm details[open]>summary::before{transform:rotate(180deg)}
+  .tm details>summary:hover{background:#e2e8f0}
+  /* Pista de estado en palabras, no sólo la flecha. */
+  .tm details>summary::after{content:"abrir";margin-left:auto;font-size:10px;
+    font-weight:600;letter-spacing:.04em;color:#475569;text-transform:uppercase}
+  .tm details[open]>summary::after{content:"cerrar"}
   .tm h2{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
     color:#0f172a;margin:26px 0 6px;padding-left:9px;border-left:3px solid #0284c7}
 </style>
@@ -74,6 +102,7 @@
           <th>Inicial (kg)</th>
           <th class="flujo">Producido (kg)</th>
           <th class="flujo">Vendido (kg)</th>
+          <th class="flujo">Otros mov. (kg)</th>
           <th>Final (kg)</th>
           <th class="flujo">Desperdicio (kg)</th>
           <th class="flujo">Desperdicio %</th>
@@ -86,7 +115,9 @@
             <td>{{ f.n_ofs }}</td>
             <td>{% if f.inicial is not none %}{{ f.inicial|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="flujo">{{ f.producido|num_es }}</td>
-            <td class="flujo">{{ f.vendido|num_es }}</td>
+            <td class="flujo{{ ' otros' if f.otros }}"
+                {%- if f.otros_ingreso is not none %} title="Entró sin ser producción: {{ f.otros_ingreso|num_es }} kg · salió sin ser venta: {{ f.otros_egreso|num_es }} kg"{% endif %}>
+              {%- if f.otros is not none %}{{ f.otros|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if f.final is not none %}{{ f.final|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="flujo desp">{{ f.desperdicio_kg|num_es }}</td>
             <td class="flujo desp">{% if f.desperdicio_pct is not none %}{{ f.desperdicio_pct|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -97,7 +128,7 @@
           <td>{{ tabla.total.n_ofs }}</td>
           <td>{% if tabla.total.inicial is not none %}{{ tabla.total.inicial|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo">{{ tabla.total.producido|num_es }}</td>
-          <td class="flujo">{{ tabla.total.vendido|num_es }}</td>
+          <td class="flujo{{ ' otros' if tabla.total.otros }}">{% if tabla.total.otros is not none %}{{ tabla.total.otros|num_es }}{% else %}—{% endif %}</td>
           <td>{% if tabla.total.final is not none %}{{ tabla.total.final|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo desp">{{ tabla.total.desperdicio_kg|num_es }}</td>
           <td class="flujo desp">{% if tabla.total.desperdicio_pct is not none %}{{ tabla.total.desperdicio_pct|num_es }}{% else %}—{% endif %}</td>
@@ -112,10 +143,20 @@
        inicial + producido − vendido = final. El desperdicio va al costado
        porque NO es un movimiento de esta bodega: son los kg de tela cruda que
        entraron al proceso y no salieron como terminado. #}
-    <h2>Por mes · {{ anio }}</h2>
-    <p class="note" style="margin:0 0 2px">Inicial + producido − vendido = final.
+    <details>
+    <summary>Por mes · {{ anio }}
+      {%- if data.meses.total.otros %}
+      <span style="font-weight:normal;text-transform:none;letter-spacing:0;color:#a16207">
+        · otros mov. {{ data.meses.total.otros|num_es }} kg</span>
+      {%- endif %}
+    </summary>
+    <p class="note" style="margin:8px 0 2px">Inicial + producido − vendido = final.
       <strong>Vendido</strong> = lo despachado físicamente al cliente (no la factura).
-      <strong>Desperdicio</strong> = tela cruda que entró al proceso y no salió como terminado.</p>
+      <strong>Desperdicio</strong> = tela cruda que entró al proceso y no salió como terminado.<br>
+      <strong>Otros mov.</strong> = lo que la bodega movió y no fue ni producción ni venta
+      (devoluciones de cliente, reprocesos, ajustes de inventario). Pasá el mouse por
+      encima para ver cuánto entró y cuánto salió. Con esta columna el final CIERRA con
+      el stock que tiene Asinfo; sin ella el año se separaba 33 t y no se veía por qué.</p>
     {{ tabla_mov(data.meses, 'Mes', 'TOTAL ' ~ anio, false) }}
 
     {# Control de que el encadenado no se separó de la realidad. El inicial se
@@ -137,6 +178,8 @@
           ajustes de inventario.</div>
       {% endif %}
     {% endif %}
+
+    </details>
 
     {# ── DÍA A DÍA (dueña: "cantidades por día, así entendemos por qué el
        balance o la duda de utilidad") ─────────────────────────────────────── #}

@@ -2479,6 +2479,108 @@ def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
         return dict(zero)
 
 
+# ---------------------------------------------------------------------------
+# El MISMO movimiento de bodega, abierto por período (día o mes).
+#
+# TMT 2026-08-04 (dueña, sobre el descuadre que mostró Terminado Asinfo: *"sí,
+# esto me suena raro"*). En 8 meses el encadenado producción−despacho daba
+# 295.106 kg y Asinfo tenía 328.541: **33.435 kg que no entraron por producción
+# ni salieron por venta**. Para saber de dónde salen hace falta el movimiento
+# REAL de la bodega —el que cierra por construcción con el stock— puesto al
+# lado de la producción declarada y del despacho a cliente:
+#
+#     ingreso_real − producido = lo que entró SIN ser producción
+#                                (devoluciones de cliente, reingresos)
+#     egreso_real  − vendido   = lo que salió SIN ser venta
+#                                (bajas, reprocesos que vuelven a tintura)
+#
+# Misma query que `movimiento_bodega_mes` (LAG sobre saldo_producto_lote), con
+# la ventana acotada y un GROUP BY. ⚠ La partición del LAG NO se filtra por
+# fecha: para que el primer movimiento de la ventana sepa contra qué comparar,
+# tiene que ver toda la historia del lote. El filtro va en el WHERE de afuera.
+# ---------------------------------------------------------------------------
+_MOVIMIENTO_PERIODO_CACHE: dict = {}
+
+
+def _movimiento_bodega_agrupado(id_bodega: int, d1: str, d2: str,
+                                por: str) -> dict:
+    """{periodo: {ingreso, egreso}}. Fail-soft: {}."""
+    periodo = _PERIODO_SQL[por] % "fecha"
+    sql = f"""
+        WITH d AS (
+            SELECT saldo,
+                   LAG(saldo) OVER (
+                       PARTITION BY id_producto, id_lote
+                       ORDER BY fecha, id_saldo_producto_lote
+                   ) AS prev,
+                   fecha
+              FROM saldo_producto_lote
+             WHERE id_bodega = {id_bodega}
+        )
+        SELECT {periodo} AS periodo,
+            SUM(CASE WHEN prev IS NULL AND saldo > 0 THEN saldo
+                     WHEN prev IS NOT NULL AND saldo - prev > 0 THEN saldo - prev
+                     ELSE 0 END) AS ingreso,
+            SUM(CASE WHEN prev IS NOT NULL AND saldo - prev < 0 THEN prev - saldo
+                     ELSE 0 END) AS egreso
+          FROM d
+         WHERE fecha >= '{d1}' AND fecha < '{d2}'
+         GROUP BY {periodo}
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=400)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {}
+    return {
+        str(r.get("periodo") or ""): {
+            "ingreso": round(float(r.get("ingreso") or 0.0), 2),
+            "egreso": round(float(r.get("egreso") or 0.0), 2),
+        }
+        for r in (rows or [])
+    }
+
+
+def movimiento_bodega_por_dia(id_bodega: int, yy: int, mm: int) -> dict:
+    """{'YYYY-MM-DD': {ingreso, egreso}} del mes. Fail-soft: {}."""
+    try:
+        yy, mm, id_bodega = int(yy), int(mm), int(id_bodega)
+    except (TypeError, ValueError):
+        return {}
+    cache_key = (id_bodega, yy, mm, "dia")
+    now = _time.time()
+    cached = _MOVIMIENTO_PERIODO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _MOVIMIENTO_BODEGA_TTL_SECS:
+        return cached[1]
+    d1, d2 = _rango_mes(yy, mm)
+    out = _movimiento_bodega_agrupado(id_bodega, d1, d2, "dia")
+    if out:
+        _MOVIMIENTO_PERIODO_CACHE[cache_key] = (now, out)
+    return out
+
+
+def movimiento_bodega_por_mes(id_bodega: int, anio: int) -> dict:
+    """{'YYYY-MM': {ingreso, egreso}} del año. UNA query para los 12 meses."""
+    try:
+        anio, id_bodega = int(anio), int(id_bodega)
+    except (TypeError, ValueError):
+        return {}
+    cache_key = (id_bodega, anio, 0, "mes")
+    now = _time.time()
+    cached = _MOVIMIENTO_PERIODO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _MOVIMIENTO_BODEGA_TTL_SECS:
+        return cached[1]
+    out = _movimiento_bodega_agrupado(
+        id_bodega, f"{anio:04d}-01-01", f"{anio + 1:04d}-01-01", "mes")
+    if out:
+        _MOVIMIENTO_PERIODO_CACHE[cache_key] = (now, out)
+    return out
+
+
+def reset_movimiento_periodo_cache() -> None:
+    """Vaciar el cache de movimiento_bodega_por_dia/_por_mes (tests/deploy)."""
+    _MOVIMIENTO_PERIODO_CACHE.clear()
+
+
 _INGRESO_DIA_TTL_SECS = 300
 _INGRESO_DIA_CACHE: dict = {}
 

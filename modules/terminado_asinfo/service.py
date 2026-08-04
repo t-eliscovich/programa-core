@@ -75,13 +75,26 @@ def _stock_terminado_a_fecha(fecha_iso: str):
     return round(float(foto.get("terminada") or 0.0), 2)
 
 
-def _encadenar(periodos: list[dict], vendido_por_periodo: dict, inicial):
+def _encadenar(periodos: list[dict], vendido_por_periodo: dict,
+               movimiento_por_periodo: dict, inicial):
     """Arma las filas de una tabla encadenando el stock.
 
     `periodos` = [{periodo, n_ofs, issued, fab}] ordenado. `inicial` puede ser
     None (Asinfo no dio la foto): en ese caso las columnas de stock quedan en
-    None y la tabla igual muestra producido / vendido / desperdicio.
+    None y la tabla igual muestra los flujos.
+
+    OTROS MOV. es la columna que explica el descuadre (TMT 2026-08-04, dueña:
+    *"sí, esto me suena raro"*). Es lo que la bodega movió y no fue ni
+    producción ni venta:
+
+        otros = (ingreso_real − producido) − (egreso_real − vendido)
+
+    Con eso el encadenado CIERRA POR CONSTRUCCIÓN con el stock de Asinfo,
+    porque `inicial + ingreso_real − egreso_real` es exactamente la identidad
+    telescópica de `saldo_producto_lote`. Sin la columna, el final calculado se
+    separaba 33 t del real en 8 meses y no había dónde ver por qué.
     """
+    hay_mov = bool(movimiento_por_periodo)
     filas = []
     saldo = inicial
     for p in periodos:
@@ -90,14 +103,28 @@ def _encadenar(periodos: list[dict], vendido_por_periodo: dict, inicial):
         consumido = round(float(p.get("issued") or 0.0), 2)
         vendido = round(float(vendido_por_periodo.get(clave) or 0.0), 2)
         desperdicio = round(consumido - producido, 2)
-        final = (None if saldo is None
-                 else round(saldo + producido - vendido, 2))
+
+        mov = movimiento_por_periodo.get(clave) or {}
+        # Sin la fuente de movimientos no inventamos un "otros": la tabla
+        # vuelve al encadenado simple (producido − vendido) y la columna queda
+        # en None para que se vea que ese dato no está.
+        otros_ing = (round(float(mov.get("ingreso") or 0.0) - producido, 2)
+                     if hay_mov else None)
+        otros_egr = (round(float(mov.get("egreso") or 0.0) - vendido, 2)
+                     if hay_mov else None)
+        otros = None if not hay_mov else round(otros_ing - otros_egr, 2)
+
+        neto = producido - vendido + (otros or 0.0)
+        final = None if saldo is None else round(saldo + neto, 2)
         filas.append({
             "periodo": clave,
             "n_ofs": int(p.get("n_ofs") or 0),
             "inicial": saldo,
             "producido": producido,
             "vendido": vendido,
+            "otros": otros,
+            "otros_ingreso": otros_ing,
+            "otros_egreso": otros_egr,
             "final": final,
             "desperdicio_kg": desperdicio,
             # Sin crudo consumido no hay porcentaje posible. None y no 0.0: un
@@ -111,6 +138,10 @@ def _encadenar(periodos: list[dict], vendido_por_periodo: dict, inicial):
 
 def _totalizar(filas: list[dict]) -> dict:
     """Fila TOTAL: los flujos se suman, el stock se toma de las puntas."""
+    def _suma(campo):
+        vals = [f[campo] for f in filas if f[campo] is not None]
+        return round(sum(vals), 2) if vals else None
+
     producido = round(sum(f["producido"] for f in filas), 2)
     vendido = round(sum(f["vendido"] for f in filas), 2)
     desperdicio = round(sum(f["desperdicio_kg"] for f in filas), 2)
@@ -121,6 +152,9 @@ def _totalizar(filas: list[dict]) -> dict:
         "inicial": filas[0]["inicial"] if filas else None,
         "producido": producido,
         "vendido": vendido,
+        "otros": _suma("otros"),
+        "otros_ingreso": _suma("otros_ingreso"),
+        "otros_egreso": _suma("otros_egreso"),
         "final": filas[-1]["final"] if filas else None,
         "desperdicio_kg": desperdicio,
         "desperdicio_pct": (round(100.0 * desperdicio / consumido, 2)
@@ -128,8 +162,8 @@ def _totalizar(filas: list[dict]) -> dict:
     }
 
 
-def _tabla(periodos, vendido, inicial):
-    filas = _encadenar(periodos, vendido, inicial)
+def _tabla(periodos, vendido, movimiento, inicial):
+    filas = _encadenar(periodos, vendido, movimiento, inicial)
     return {"filas": filas, "total": _totalizar(filas)}
 
 
@@ -151,11 +185,13 @@ def resumen(anio: int, mes: int) -> dict:
     dias_raw = asinfo_service.fabricacion_flujo_por_dia(BODEGA_TERMINADO, anio, mes)
     vendido_mes = asinfo_service.despacho_fisico_por_mes(anio, BODEGA_TERMINADO)
     vendido_dia = asinfo_service.despacho_fisico_por_dia(anio, mes, BODEGA_TERMINADO)
+    mov_mes = asinfo_service.movimiento_bodega_por_mes(BODEGA_TERMINADO, anio)
+    mov_dia = asinfo_service.movimiento_bodega_por_dia(BODEGA_TERMINADO, anio, mes)
 
     # Un ancla por tabla, cada una con la foto REAL de su arranque.
-    meses = _tabla(meses_raw, vendido_mes,
+    meses = _tabla(meses_raw, vendido_mes, mov_mes,
                    _stock_terminado_a_fecha(_fin_de_mes_anterior(anio, 1)))
-    dias = _tabla(dias_raw, vendido_dia,
+    dias = _tabla(dias_raw, vendido_dia, mov_dia,
                   _stock_terminado_a_fecha(_fin_de_mes_anterior(anio, mes)))
 
     # Control: ¿el encadenado del año llega al stock que Asinfo dice tener al

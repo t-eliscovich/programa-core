@@ -27,11 +27,15 @@ from modules.terminado_asinfo import service as tsvc
 
 @pytest.fixture(autouse=True)
 def _limpiar_cache():
-    asvc.reset_fabricacion_dia_cache()
-    asvc.reset_despacho_periodo_cache()
+    for reset in (asvc.reset_fabricacion_dia_cache,
+                  asvc.reset_despacho_periodo_cache,
+                  asvc.reset_movimiento_periodo_cache):
+        reset()
     yield
-    asvc.reset_fabricacion_dia_cache()
-    asvc.reset_despacho_periodo_cache()
+    for reset in (asvc.reset_fabricacion_dia_cache,
+                  asvc.reset_despacho_periodo_cache,
+                  asvc.reset_movimiento_periodo_cache):
+        reset()
 
 
 _DIAS = [
@@ -166,9 +170,13 @@ def test_despacho_fail_soft():
 
 
 def _mock_resumen(stock_por_fecha, meses=None, dias=None, vendido_mes=None,
-                  vendido_dia=None):
-    """Arma los patches de las 5 fuentes que consume `resumen`."""
+                  vendido_dia=None, mov_mes=None, mov_dia=None):
+    """Arma los patches de las 7 fuentes que consume `resumen`."""
     return (
+        patch.object(asvc, "movimiento_bodega_por_mes",
+                     return_value=mov_mes if mov_mes is not None else {}),
+        patch.object(asvc, "movimiento_bodega_por_dia",
+                     return_value=mov_dia if mov_dia is not None else {}),
         patch.object(asvc, "fabricacion_flujo_por_mes",
                      return_value=meses if meses is not None else _MESES),
         patch.object(asvc, "fabricacion_flujo_por_dia",
@@ -188,8 +196,8 @@ def _mock_resumen(stock_por_fecha, meses=None, dias=None, vendido_mes=None,
 def test_resumen_encadena_el_stock_mes_a_mes():
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 50_000.0,
              "2026-02-28": 121_000.0}
-    p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5:
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5, p6, p7:
         out = tsvc.resumen(2026, 7)
     f = out["meses"]["filas"]
     # Enero: 100.000 + 10.000 producido − 4.000 vendido = 106.000
@@ -211,10 +219,10 @@ def test_resumen_control_no_pide_una_foto_del_futuro():
     estando a 4 de agosto devuelve igual el stock de HOY y el rótulo mentiría.
     El corte se topea en el día de hoy."""
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0}
-    p1, p2, p3, p4, p5 = _mock_resumen(
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
         stock, meses=[{"periodo": "2026-08", "n_ofs": 1, "fab": 10.0,
                        "issued": 11.0}])
-    with p1, p2, p3, p4, p5, \
+    with p1, p2, p3, p4, p5, p6, p7, \
          patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         out = tsvc.resumen(2026, 8)
     # Sin foto para el 04/08 en el mock, el control queda en None — pero lo que
@@ -225,8 +233,8 @@ def test_resumen_control_no_pide_una_foto_del_futuro():
 def test_resumen_control_cierra_contra_la_foto_real():
     """El encadenado llega a 121.000 y Asinfo dice 121.000 → dif 0."""
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 121_000.0}
-    p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5, \
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5, p6, p7, \
          patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         out = tsvc.resumen(2026, 7)
     assert out["control"]["fecha"] == "2026-02-28"
@@ -237,8 +245,8 @@ def test_resumen_control_marca_la_diferencia():
     """Si Asinfo tiene menos de lo que el encadenado calcula, la dif se ve: es
     movimiento que no es ni producción ni despacho (devolución, ajuste)."""
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 120_500.0}
-    p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5, \
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5, p6, p7, \
          patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         out = tsvc.resumen(2026, 7)
     assert out["control"]["dif"] == 500.0
@@ -247,8 +255,8 @@ def test_resumen_control_marca_la_diferencia():
 def test_resumen_sin_foto_de_stock_no_inventa_saldos():
     """Asinfo no dio la foto → inicial/final None, pero los flujos se muestran
     igual. Un 0,00 se leería como "no había stock"."""
-    p1, p2, p3, p4, p5 = _mock_resumen({})
-    with p1, p2, p3, p4, p5:
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen({})
+    with p1, p2, p3, p4, p5, p6, p7:
         out = tsvc.resumen(2026, 7)
     assert out["meses"]["filas"][0]["inicial"] is None
     assert out["meses"]["filas"][0]["final"] is None
@@ -258,8 +266,8 @@ def test_resumen_sin_foto_de_stock_no_inventa_saldos():
 
 def test_resumen_dia_se_ancla_en_el_cierre_del_mes_anterior():
     stock = {"2025-12-31": 0.0, "2026-06-30": 50_000.0}
-    p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5:
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5, p6, p7:
         out = tsvc.resumen(2026, 7)
     d = out["dias"]["filas"]
     # 50.000 + 1.400 producido − 900 vendido = 50.500
@@ -271,9 +279,9 @@ def test_resumen_dia_se_ancla_en_el_cierre_del_mes_anterior():
 
 
 def test_resumen_sin_datos_no_disponible():
-    p1, p2, p3, p4, p5 = _mock_resumen({}, meses=[], dias=[],
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen({}, meses=[], dias=[],
                                        vendido_mes={}, vendido_dia={})
-    with p1, p2, p3, p4, p5:
+    with p1, p2, p3, p4, p5, p6, p7:
         out = tsvc.resumen(2026, 7)
     assert out["disponible"] is False
     assert out["meses"]["filas"] == []
@@ -281,9 +289,9 @@ def test_resumen_sin_datos_no_disponible():
 
 def test_resumen_desperdicio_pct_none_sin_consumo():
     """issued=0 → pct None. Un 0,00% se lee como "no hubo desperdicio"."""
-    p1, p2, p3, p4, p5 = _mock_resumen(
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
         {}, meses=[{"periodo": "2026-01", "n_ofs": 1, "fab": 10.0, "issued": 0.0}])
-    with p1, p2, p3, p4, p5:
+    with p1, p2, p3, p4, p5, p6, p7:
         out = tsvc.resumen(2026, 7)
     assert out["meses"]["filas"][0]["desperdicio_pct"] is None
     assert out["meses"]["total"]["desperdicio_pct"] is None
@@ -307,12 +315,15 @@ def test_tab_renderiza_las_dos_tablas(app, fake_db):
     c = _login(app, fake_db)
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 50_000.0,
              "2026-02-28": 121_000.0}
-    p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5:
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5, p6, p7:
         r = c.get("/produccion-terminado-asinfo?anio=2026&mes=7")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "Por mes · 2026" in body
+    # Dueña 2026-08-04: "poneme un + y que esté hide si no clickeo" — el bloque
+    # por mes arranca PLEGADO (<details> sin `open`).
+    assert "<details>" in body and "<details open>" not in body
     assert "Día a día" in body
     assert "Desperdicio" in body and "Merma" not in body   # dueña: "desperdicio"
     assert "01/2026" in body           # etiqueta del mes
@@ -326,3 +337,73 @@ def test_tab_sin_asinfo_avisa_y_no_rompe(app, fake_db):
         r = c.get("/produccion-terminado-asinfo?anio=2026&mes=7")
     assert r.status_code == 200
     assert "Asinfo no está respondiendo" in r.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# OTROS MOV. — la columna que explica el descuadre (dueña: "esto me suena raro")
+# ---------------------------------------------------------------------------
+
+
+def test_movimiento_por_mes_sql_no_filtra_la_particion_del_lag():
+    """⚠ El LAG tiene que ver TODA la historia del lote para que el primer
+    movimiento de la ventana sepa contra qué comparar. Si el filtro de fecha se
+    mete adentro del CTE, ese primer movimiento sale como alta de lote y el
+    ingreso del mes se infla."""
+    with patch.object(metabase_client, "fetch_dataset", return_value=[]) as fd:
+        asvc.movimiento_bodega_por_mes(53, 2026)
+    sql = fd.call_args[0][1]
+    cte = sql[sql.index("WITH d AS"):sql.index(")\n        SELECT")]
+    assert "fecha >=" not in cte and "fecha <" not in cte
+    assert "WHERE fecha >= '2026-01-01' AND fecha < '2027-01-01'" in sql
+    assert "CONVERT(varchar(7),  fecha, 23)" in sql
+
+
+def test_movimiento_por_dia_shape_y_fail_soft():
+    filas = [{"periodo": "2026-07-03", "ingreso": 10.0, "egreso": 4.0}]
+    with patch.object(metabase_client, "fetch_dataset", return_value=filas):
+        assert asvc.movimiento_bodega_por_dia(53, 2026, 7) == {
+            "2026-07-03": {"ingreso": 10.0, "egreso": 4.0}}
+    asvc.reset_movimiento_periodo_cache()
+    with patch.object(metabase_client, "fetch_dataset", side_effect=RuntimeError):
+        assert asvc.movimiento_bodega_por_dia(53, 2026, 7) == {}
+
+
+def test_otros_mov_hace_cerrar_el_final_con_el_stock_real():
+    """Enero: produce 10.000 y vende 4.000, pero la bodega movió 12.000 de
+    ingreso y 4.500 de egreso. Los 2.000 que entraron sin ser producción y los
+    500 que salieron sin ser venta son OTROS MOV. = +1.500, y el final tiene
+    que dar 100.000 + 12.000 − 4.500 = 107.500 (la identidad del saldo)."""
+    stock = {"2025-12-31": 100_000.0}
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        stock,
+        meses=[{"periodo": "2026-01", "n_ofs": 40, "fab": 10_000.0,
+                "issued": 10_500.0}],
+        vendido_mes={"2026-01": 4_000.0},
+        mov_mes={"2026-01": {"ingreso": 12_000.0, "egreso": 4_500.0}})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        out = tsvc.resumen(2026, 1)
+    f = out["meses"]["filas"][0]
+    assert f["otros_ingreso"] == 2_000.0     # entró sin ser producción
+    assert f["otros_egreso"] == 500.0        # salió sin ser venta
+    assert f["otros"] == 1_500.0
+    assert f["final"] == 107_500.0
+    assert out["meses"]["total"]["otros"] == 1_500.0
+
+
+def test_sin_fuente_de_movimientos_otros_es_none_y_no_cero():
+    """Un 0 en esa columna dice "no hubo movimientos raros". Que la fuente esté
+    caída dice otra cosa muy distinta."""
+    stock = {"2025-12-31": 100_000.0}
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        stock,
+        meses=[{"periodo": "2026-01", "n_ofs": 1, "fab": 10_000.0,
+                "issued": 10_500.0}],
+        vendido_mes={"2026-01": 4_000.0},
+        mov_mes={})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        out = tsvc.resumen(2026, 1)
+    f = out["meses"]["filas"][0]
+    assert f["otros"] is None
+    assert f["final"] == 106_000.0           # vuelve al encadenado simple
