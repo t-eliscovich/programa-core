@@ -115,6 +115,7 @@
             <td>{{ f.n_ofs }}</td>
             <td>{% if f.inicial is not none %}{{ f.inicial|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="flujo">{{ f.producido|num_es }}</td>
+            <td class="flujo">{{ f.vendido|num_es }}</td>
             <td class="flujo{{ ' otros' if f.otros }}"
                 {%- if f.otros_ingreso is not none %} title="Entró sin ser producción: {{ f.otros_ingreso|num_es }} kg · salió sin ser venta: {{ f.otros_egreso|num_es }} kg"{% endif %}>
               {%- if f.otros is not none %}{{ f.otros|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -128,6 +129,7 @@
           <td>{{ tabla.total.n_ofs }}</td>
           <td>{% if tabla.total.inicial is not none %}{{ tabla.total.inicial|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo">{{ tabla.total.producido|num_es }}</td>
+          <td class="flujo">{{ tabla.total.vendido|num_es }}</td>
           <td class="flujo{{ ' otros' if tabla.total.otros }}">{% if tabla.total.otros is not none %}{{ tabla.total.otros|num_es }}{% else %}—{% endif %}</td>
           <td>{% if tabla.total.final is not none %}{{ tabla.total.final|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo desp">{{ tabla.total.desperdicio_kg|num_es }}</td>

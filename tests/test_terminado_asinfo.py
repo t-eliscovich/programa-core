@@ -16,6 +16,7 @@ Sin HTTP ni DB real: se mockea metabase_client.
 from __future__ import annotations
 
 from datetime import date as _date
+from html.parser import HTMLParser
 from unittest.mock import patch
 
 import pytest
@@ -407,3 +408,58 @@ def test_sin_fuente_de_movimientos_otros_es_none_y_no_cero():
     f = out["meses"]["filas"][0]
     assert f["otros"] is None
     assert f["final"] == 106_000.0           # vuelve al encadenado simple
+
+
+# ---------------------------------------------------------------------------
+# ⚠ ALINEACIÓN DE COLUMNAS
+#
+# TMT 2026-08-04: al agregar "Otros mov." se PERDIÓ la celda de Vendido y toda
+# la tabla quedó corrida un lugar — en producción se veía el desperdicio bajo
+# "Final" y el final bajo "Otros mov.". Ninguno de los 26 tests lo agarró:
+# todos miraban que ciertos números ESTUVIERAN en el body, y estaban… en la
+# columna equivocada. Esto cuenta las celdas de cada fila contra el <thead>.
+# ---------------------------------------------------------------------------
+
+
+class _Tablas(HTMLParser):
+    """Junta, por tabla, la cantidad de <th> del thead y de <td> de cada fila."""
+
+    def __init__(self):
+        super().__init__()
+        self.tablas = []
+        self._fila = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.tablas.append([])
+        elif tag == "tr" and self.tablas:
+            self._fila = 0
+        elif tag in ("th", "td") and self._fila is not None:
+            self._fila += 1
+
+    def handle_endtag(self, tag):
+        if tag == "tr" and self._fila is not None and self.tablas:
+            self.tablas[-1].append(self._fila)
+            self._fila = None
+
+
+def test_todas_las_filas_tienen_las_columnas_del_encabezado(app, fake_db):
+    c = _login(app, fake_db)
+    stock = {"2025-12-31": 100_000.0, "2026-06-30": 50_000.0}
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        stock, mov_mes={"2026-01": {"ingreso": 12_000.0, "egreso": 4_500.0}},
+        mov_dia={"2026-07-03": {"ingreso": 1_500.0, "egreso": 900.0}})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        r = c.get("/produccion-terminado-asinfo?anio=2026&mes=7")
+    parser = _Tablas()
+    parser.feed(r.get_data(as_text=True))
+    tablas = [t for t in parser.tablas if len(t) > 1]
+    assert tablas, "no se renderizó ninguna tabla con filas"
+    for filas in tablas:
+        cabecera, *cuerpo = filas
+        assert cabecera == 9, f"el <thead> cambió de ancho: {cabecera}"
+        for n in cuerpo:
+            assert n == cabecera, (
+                f"fila de {n} celdas contra {cabecera} del encabezado — "
+                "la tabla quedó corrida")
