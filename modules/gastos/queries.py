@@ -23,6 +23,7 @@ from datetime import date, timedelta
 
 import db
 from filters import today_ec
+from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 # Categorías canónicas para el dropdown de alta de gasto.
@@ -487,6 +488,10 @@ def buscar(
     """Histórico de gastos filtrable por concepto/proveedor/doc + fecha."""
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
+    # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+    _txt_sql, _txt_params = busqueda.condicion(
+        q, ("g.concepto", "g.prov", "g.doc", "p.nombre"), prefijo="bqt")
     rows = (
         db.fetch_all(
             """
@@ -496,17 +501,15 @@ def buscar(
         FROM scintela.xgast g
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = g.prov
         WHERE (%(q)s IS NULL
-               OR UPPER(COALESCE(g.concepto,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(g.prov,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(g.doc,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s)
+               OR (__TEXTO_MATCH__)
                OR CAST(COALESCE(g.num, 0) AS TEXT) LIKE %(like)s)
           AND (%(desde)s::date IS NULL OR g.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR g.fecha <= %(hasta)s::date)
         ORDER BY g.fecha DESC, g.id_xgast DESC
         LIMIT %(limite)s
-        """,
+        """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
             {
+                **_txt_params,
                 "q": q or None,
                 "like": like,
                 "desde": desde or None,

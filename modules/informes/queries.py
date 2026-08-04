@@ -28,16 +28,17 @@ from datetime import date
 
 import db
 from filters import today_ec
-from modules.posdat import (
-    POSDAT_DEUDA_VIVA_WHERE,
-    POSDAT_EGRESO_FLUJO_WHERE,
-    posdat_deuda_viva_where,
-)
+from modules._lib import busqueda
 
 # Día de INGRESO del cheque — la MISMA definición que usa modules/cheques
 # (SQL_DIA_INGRESO). Se importa, no se copia: si divergen, el estado de cuenta
 # que se le manda al cliente dice una fecha y la pantalla otra.
 from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
+from modules.posdat import (
+    POSDAT_DEUDA_VIVA_WHERE,
+    POSDAT_EGRESO_FLUJO_WHERE,
+    posdat_deuda_viva_where,
+)
 
 # ---------------------------------------------------------------------------
 # "POR COBRAR" es UNA definición, no tres. TMT 2026-08-03.
@@ -5059,7 +5060,8 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # responde, cae al dBase y nunca rompe el balance.
     _stock_src = _os_bal.environ.get("BALANCE_STOCK_SOURCE", "asinfo")
     try:
-        from flask import has_request_context as _hrc, request as _rq_bal
+        from flask import has_request_context as _hrc
+        from flask import request as _rq_bal
         if _hrc():
             _stock_src = _rq_bal.args.get("stock_source") or _stock_src
     except Exception:  # noqa: BLE001
@@ -7273,14 +7275,39 @@ def iniciales_lista(anio: int | None = None, limite: int = 36) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+#: Columnas por las que busca el buscador de clientes (estado de cuenta y
+#: búsqueda global Ctrl/Cmd+K, que redirige acá). El RUC entró 2026-08-04:
+#: la dueña a veces pega el RUC del SRI.
+_BUSCADOR_CLIENTE_COLUMNAS = ("c.codigo_cli", "c.nombre", "c.ruc")
+
+
 def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
-    """Fuzzy-ish lookup de cliente por codigo_cli o nombre (ilike)."""
+    """Busca clientes por código, nombre o RUC — por PALABRAS, no por substring.
+
+    TMT 2026-08-04 (dueña): *"esto no funciona si solo busco condor, podes
+    hacerlo mejor"*. Antes era un solo `ILIKE %q%`, así que "irene condor" no
+    encontraba a "IRENE CHICAIZA CONDOR" (apellido en el medio) y la dueña
+    tipeaba el comodín a mano: `?q=IRENE%25CONDOR`. Ahora, vía
+    `modules/_lib/busqueda`:
+
+      · TODAS las palabras tienen que estar, en CUALQUIER orden;
+      · acentos y ñ plegados de los dos lados ("peña" == "PENA");
+      · ranking: código exacto → código que empieza así → nombre que empieza
+        así → palabra del nombre que empieza así → resto; y dentro de cada
+        grupo el que más debe primero;
+      · si NO hay ningún match exacto, cae al "¿quisiste decir?" por
+        parecido (typos: "chicaisa" → CHICAIZA). Esas filas vienen con
+        `aprox=True` para que la pantalla lo aclare.
+
+    Las filas aproximadas son un fallback: sólo se calculan cuando la
+    búsqueda normal volvió vacía.
+    """
     q = (q or "").strip()
-    if not q:
+    cond, params = busqueda.condicion(q, _BUSCADOR_CLIENTE_COLUMNAS)
+    if not cond:
         return []
-    pattern = f"%{q}%"
-    return db.fetch_all(
-        """
+    rank, params_rank = busqueda.ranking(q, "c.codigo_cli")
+    plantilla = """
         SELECT c.codigo_cli,
                c.nombre,
                c.ruc,
@@ -7299,12 +7326,45 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
                    AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
                ), 0) AS saldo
         FROM scintela.cliente c
-        WHERE c.codigo_cli ILIKE %s OR c.nombre ILIKE %s
-        ORDER BY saldo DESC, c.nombre
-        LIMIT %s
-        """,
-        (pattern, pattern, limite),
+        WHERE {where}
+        ORDER BY {orden}, saldo DESC, c.nombre
+        LIMIT %(limite)s
+    """
+
+    def _correr(where: str, orden: str, extra: dict) -> list[dict]:
+        return db.fetch_all(
+            plantilla.format(where=where, orden=orden),
+            {**params, **params_rank, **extra, "limite": limite},
+        ) or []
+
+    filas = _correr(cond, rank, {})
+    if filas:
+        return filas
+
+    # ── Nada exacto → "¿quisiste decir?" (typo). Traigo el padrón liviano
+    #    (código+nombre, sin los saldos) y comparo en Python; después pido
+    #    los saldos SOLO de los pocos códigos que sobrevivieron.
+    if len(q) < 4:
+        return []
+    padron = db.fetch_all(
+        """
+        SELECT codigo_cli, COALESCE(nombre, '') AS nombre
+          FROM scintela.cliente
+         LIMIT 5000
+        """
+    ) or []
+    codigos = [
+        f["codigo_cli"]
+        for f in busqueda.parecidos(q, padron, limite=limite)
+    ]
+    if not codigos:
+        return []
+    filas = _correr(
+        "c.codigo_cli = ANY(%(cods)s)", "0", {"cods": codigos}
     )
+    for f in filas:
+        f["aprox"] = True
+    return filas
 
 
 def estado_cuenta_clientes_saldos() -> list[dict]:

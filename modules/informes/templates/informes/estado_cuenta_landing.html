@@ -47,9 +47,16 @@
 
       <form method="GET" action="{{ url_for('informes.estado_cuenta_landing') }}" class="mt-5 space-y-3">
         <div>
-          <label class="block text-xs text-slate-500 mb-1">O por nombre / código parcial</label>
+          {# TMT 2026-08-04 (dueña: "no funciona si solo busco condor"): la
+             búsqueda pasó a ser por PALABRAS sueltas, en cualquier orden y
+             sin acentos, así que el rótulo lo dice — antes ella tenía que
+             tipear el comodín a mano ("IRENE%CONDOR"). #}
+          <label class="block text-xs text-slate-500 mb-1">
+            O por nombre / código / RUC
+            <span class="text-slate-400">— varias palabras, en cualquier orden</span>
+          </label>
           <div class="flex gap-2">
-            <input name="q" type="text" value="{{ q or '' }}" placeholder="Ej: textil, ABC, García"
+            <input name="q" type="text" value="{{ q or '' }}" placeholder="Ej: irene condor, textil, ABC"
                    class="flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
             <button type="submit"
                     class="rounded-md bg-slate-600 hover:bg-slate-500 px-4 py-2 text-sm font-medium text-white">
@@ -61,7 +68,16 @@
 
       {% if q %}
         <div class="mt-5">
-          <div class="text-xs text-slate-500 mb-2">Resultados para "{{ q }}"</div>
+          {# Cuando NO hubo ningún match exacto, el buscador cae al parecido
+             (typos: "chicaisa" → CHICAIZA) y marca las filas con aprox. #}
+          {% set es_aprox = matches and matches[0].get('aprox') %}
+          <div class="text-xs text-slate-500 mb-2">
+            {% if es_aprox %}
+              Nada exacto para "{{ q }}". ¿Quisiste decir…?
+            {% else %}
+              Resultados para "{{ q }}"
+            {% endif %}
+          </div>
           {% if matches %}
             <ul class="divide-y divide-slate-100 dark:divide-slate-800">
               {% for m in matches %}
@@ -80,7 +96,9 @@
               {% endfor %}
             </ul>
           {% else %}
-            <p class="text-sm text-slate-400">Sin coincidencias.</p>
+            <p class="text-sm text-slate-400">
+              Sin coincidencias. Probá con menos palabras, o con el código.
+            </p>
           {% endif %}
         </div>
       {% endif %}

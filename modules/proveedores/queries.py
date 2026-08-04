@@ -1,5 +1,6 @@
 """Consultas de proveedores."""
 import db
+from modules._lib import busqueda
 
 
 def por_codigo(codigo_prov: str) -> dict | None:
@@ -181,19 +182,18 @@ def eliminar(codigo_prov: str) -> int:
 def contar(q: str = "", tipo: str | None = None) -> int:
     """COUNT(*) total para paginación."""
     q = (q or "").strip()
-    like = f"%{q}%" if q else None
+    # MISMO filtro que buscar() — si divergen, el contador de la paginación
+    # miente.
+    cond, p_cond = busqueda.condicion(q, ("p.codigo_prov", "p.nombre", "p.ruc"))
     row = db.fetch_one(
-        """
+        f"""
         SELECT COUNT(*) AS n
           FROM scintela.proveedor p
-         WHERE (%(q)s IS NULL
-                OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
-                OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
-                OR p.ruc LIKE %(like)s)
+         WHERE ({cond or 'TRUE'})
            AND (%(tipo)s IS NULL
                 OR UPPER(TRIM(COALESCE(p.tipo, ''))) = %(tipo)s)
         """,
-        {"q": q or None, "like": like, "tipo": tipo},
+        {**p_cond, "tipo": tipo},
     ) or {}
     return int(row.get("n") or 0)
 
@@ -201,9 +201,11 @@ def contar(q: str = "", tipo: str | None = None) -> int:
 def buscar(q: str = "", tipo: str | None = None,
            limite: int = 300, offset: int = 0) -> list[dict]:
     q = (q or "").strip()
-    like = f"%{q}%" if q else None
+    # TMT 2026-08-04: búsqueda por PALABRAS y plegando acentos, igual que
+    # clientes y el estado de cuenta. Ver modules/_lib/busqueda.py.
+    cond, p_cond = busqueda.condicion(q, ("p.codigo_prov", "p.nombre", "p.ruc"))
     return db.fetch_all(
-        """
+        f"""
         SELECT p.id_proveedor, p.codigo_prov, p.nombre, p.telefono, p.ruc,
                p.representante, p.tipo, p.plazo, p.retbase, p.retiva, p.activo,
                COALESCE(d.saldo_total, 0) AS saldo_total
@@ -216,10 +218,7 @@ def buscar(q: str = "", tipo: str | None = None,
               AND (anulada IS NOT TRUE OR anulada IS NULL)
             GROUP BY prov
         ) d ON d.codigo_prov = p.codigo_prov
-        WHERE (%(q)s IS NULL
-               OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
-               OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
-               OR p.ruc LIKE %(like)s)
+        WHERE ({cond or 'TRUE'})
           AND (%(tipo)s IS NULL
                OR UPPER(TRIM(COALESCE(p.tipo, ''))) = %(tipo)s)
         -- TMT 2026-05-20 v2 — pedido dueña: "provedores sort by tipo,
@@ -228,6 +227,6 @@ def buscar(q: str = "", tipo: str | None = None,
         ORDER BY COALESCE(p.tipo, '') ASC, p.nombre ASC
         LIMIT %(limite)s OFFSET %(offset)s
         """,
-        {"q": q or None, "like": like, "tipo": tipo, "limite": limite,
+        {**p_cond, "tipo": tipo, "limite": limite,
          "offset": int(offset or 0)},
     )

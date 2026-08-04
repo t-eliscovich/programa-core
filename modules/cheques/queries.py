@@ -30,6 +30,7 @@ from datetime import date, timedelta
 
 import db
 from filters import today_ec
+from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 from . import concepto_cobro as _concepto_cobro
@@ -5025,6 +5026,9 @@ def total_buscar(
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # Nombre de cliente / proveedor endosado: match por PALABRAS sueltas.
+    _nom_cli, _p_cli = busqueda.condicion(q, ("cli.nombre",), prefijo="bqn")
+    _nom_prv, _p_prv = busqueda.condicion(q, ("prv.nombre",), prefijo="bqp")
     stats = STATS.get(estado)
     # TMT 2026-05-19 v8 — bug detectado por dueña: hero cheques 1.851.871
     # vs balance 1.840.030 (diferencia ~$11.841 / 8 cheques). Root cause:
@@ -5045,7 +5049,10 @@ def total_buscar(
              OR EXISTS (
                   SELECT 1 FROM scintela.cliente cli
                    WHERE cli.codigo_cli = c.codigo_cli
-                     AND UPPER(cli.nombre) LIKE UPPER(%(like)s)
+                     -- TMT 2026-08-04 (dueña "no funciona si solo busco
+                     -- condor"): por PALABRAS y sin acentos. Ver
+                     -- modules/_lib/busqueda.py.
+                     AND (__NOMBRE_CLI__)
                 )
           )
           -- Filtro por fecha de depósito (fechad) — es lo que importa
@@ -5069,8 +5076,9 @@ def total_buscar(
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(c.importe, 0) <= %(monto_max)s)
           -- Excluir reversados del total. Pedido TMT 2026-05-14.
           AND COALESCE(c.stat, '') <> 'X'
-        """,
+        """.replace("__NOMBRE_CLI__", _nom_cli or "FALSE"),
         {
+            **_p_cli,
             "q": q or None,
             "like": like,
             "desde": desde or None,
@@ -5140,6 +5148,9 @@ def buscar(
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # Nombre de cliente / proveedor endosado: match por PALABRAS sueltas.
+    _nom_cli, _p_cli = busqueda.condicion(q, ("cli.nombre",), prefijo="bqn")
+    _nom_prv, _p_prv = busqueda.condicion(q, ("prv.nombre",), prefijo="bqp")
     stats = STATS.get(estado)  # None = todos
     # Excluir stat='X' del listado por default cuando estado='todos'. Si la
     # usuaria pide `?ver_eliminados=1` o va al tab "eliminados", los muestra.
@@ -5243,12 +5254,15 @@ def buscar(
              OR EXISTS (
                   SELECT 1 FROM scintela.cliente cli
                    WHERE cli.codigo_cli = c.codigo_cli
-                     AND UPPER(cli.nombre) LIKE UPPER(%(like)s)
+                     -- TMT 2026-08-04 (dueña "no funciona si solo busco
+                     -- condor"): por PALABRAS y sin acentos. Ver
+                     -- modules/_lib/busqueda.py.
+                     AND (__NOMBRE_CLI__)
                 )
              OR EXISTS (
                   SELECT 1 FROM scintela.proveedor prv
                    WHERE prv.codigo_prov = c.prov
-                     AND UPPER(prv.nombre) LIKE UPPER(%(like)s)
+                     AND (__NOMBRE_PRV__)
                 )
           )
           -- Filtro explícito por cliente (3 chars = exacto, otro = fuzzy).
@@ -5308,11 +5322,16 @@ def buscar(
     _order_sql = _order_sql.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
     sql_buscar_cheques = sql_buscar_cheques.replace("__ORDER_BY__", _order_sql)
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
+    sql_buscar_cheques = sql_buscar_cheques.replace(
+        "__NOMBRE_CLI__", _nom_cli or "FALSE")
+    sql_buscar_cheques = sql_buscar_cheques.replace(
+        "__NOMBRE_PRV__", _nom_prv or "FALSE")
     sql_buscar_cheques = sql_buscar_cheques.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
     rows = (
         db.fetch_all(
             sql_buscar_cheques,
             {
+                **_p_cli, **_p_prv,
                 "q": q or None,
                 "like": like,
                 "cliente": cliente or None,

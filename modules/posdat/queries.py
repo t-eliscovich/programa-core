@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 
 import db
 from filters import today_ec
+from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 
@@ -755,6 +756,10 @@ def buscar(
 ) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
+    # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+    _txt_sql, _txt_params = busqueda.condicion(
+        q, ("pd.concepto", "p.nombre", "pd.prov"), prefijo="bqt")
     # #18 (TMT 2026-05-14): "solo_abiertas" = deuda viva sin instrumentar.
     # Antes filtraba banc<>9, pero eso incluía banc=10/32 (cheques emitidos
     # modernos PC) — esos NO son deuda abierta, ya fueron pagados desde el
@@ -776,9 +781,7 @@ def buscar(
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
         WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
           AND (%(q)s IS NULL
-               OR UPPER(COALESCE(pd.concepto,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre,''))    LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(pd.prov,''))     LIKE UPPER(%(like)s))
+               OR (__TEXTO_MATCH__))
           AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
           AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
@@ -794,8 +797,9 @@ def buscar(
           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         ORDER BY pd.fechad, pd.id_posdat
         LIMIT %(limite)s
-        """,
+        """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
+            **_txt_params,
             "prov": prov or None,
             "q": q or None, "like": like,
             "solo_abiertas": solo_abiertas,
@@ -854,6 +858,10 @@ def resumen(
     """
     q_s = (q or "").strip()
     like = f"%{q_s}%" if q_s else None
+    # MISMO filtro de texto que buscar() — si divergen, el total del resumen
+    # no cuadra con las filas listadas (precedente: audit 2026-06-03).
+    _txt_sql, _txt_params = busqueda.condicion(
+        q_s, ("pd.concepto", "p.nombre", "pd.prov"), prefijo="bqt")
     tab_norm = (tab or "posdatados").strip().lower()
 
     # TMT 2026-05-28 (migración 0061): para el tab YY el SUM(pd.importe)
@@ -900,9 +908,7 @@ def resumen(
           LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
          WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
            AND (%(q)s IS NULL
-                OR UPPER(COALESCE(pd.concepto,'')) LIKE UPPER(%(like)s)
-                OR UPPER(COALESCE(p.nombre,''))    LIKE UPPER(%(like)s)
-                OR UPPER(COALESCE(pd.prov,''))     LIKE UPPER(%(like)s))
+                OR (__TEXTO_MATCH__))
            AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
            AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
            AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
@@ -914,8 +920,9 @@ def resumen(
              OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
            )
            AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
-        """,
+        """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
+            **_txt_params,
             "prov": prov or None,
             "q": q_s or None, "like": like,
             "solo_abiertas": solo_abiertas,

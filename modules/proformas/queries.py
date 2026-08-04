@@ -16,6 +16,7 @@ cotizar (no factura, no stock, no contabilidad):
     PROCEDURE FACTURO (primero volumen, después contado sobre el ya rebajado).
 """
 import db
+from modules._lib import busqueda
 
 # Las 12 telas de la matriz de precios, en el orden del dBase (= precios.TELAS).
 # (columna en scintela.precios, etiqueta que ve el usuario / nombre_producto).
@@ -286,6 +287,10 @@ def buscar(
 ) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
+    # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+    _txt_sql, _txt_params = busqueda.condicion(
+        q, ("c.nombre", "c.codigo_cli"), prefijo="bqt")
     return db.fetch_all(
         """
         SELECT h.id_proforma, h.fecha_emision, h.id_cliente,
@@ -297,15 +302,15 @@ def buscar(
         FROM scintela.proforma_cabecera h
         LEFT JOIN scintela.cliente c ON c.id_cliente = h.id_cliente
         WHERE (%(q)s IS NULL
-               OR UPPER(COALESCE(c.nombre,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(c.codigo_cli,'')) LIKE UPPER(%(like)s)
+               OR (__TEXTO_MATCH__)
                OR CAST(h.id_proforma AS TEXT) LIKE %(like)s)
           AND (%(desde)s::date IS NULL OR h.fecha_emision >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR h.fecha_emision <= %(hasta)s::date)
         ORDER BY h.fecha_emision DESC, h.id_proforma DESC
         LIMIT %(limite)s
-        """,
+        """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
+            **_txt_params,
             "q": q or None, "like": like,
             "desde": desde or None, "hasta": hasta or None,
             "limite": limite,

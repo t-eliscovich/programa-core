@@ -7,6 +7,7 @@ from datetime import date
 
 import db
 from filters import today_ec
+from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 
@@ -116,6 +117,10 @@ def buscar(
 ) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
+    # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+    _txt_sql, _txt_params = busqueda.condicion(
+        q, ("r.codigo_cli", "c.nombre", "f.numf_completo"), prefijo="bqt")
     return db.fetch_all(
         """
         SELECT r.id_retencion, r.fecha, r.codigo_cli, r.numf, r.rete,
@@ -128,16 +133,15 @@ def buscar(
         LEFT JOIN scintela.cliente c ON c.codigo_cli = r.codigo_cli
         LEFT JOIN scintela.factura f ON f.codigo_cli = r.codigo_cli AND f.numf = r.numf
         WHERE (%(q)s IS NULL
-               OR UPPER(r.codigo_cli) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(c.nombre,'')) LIKE UPPER(%(like)s)
                OR CAST(r.numf AS TEXT) LIKE %(like)s
-               OR UPPER(COALESCE(f.numf_completo,'')) LIKE UPPER(%(like)s))
+               OR (__TEXTO_MATCH__))
           AND (%(desde)s::date IS NULL OR r.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR r.fecha <= %(hasta)s::date)
         ORDER BY r.fecha DESC, r.id_retencion DESC
         LIMIT %(limite)s
-        """,
+        """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
+            **_txt_params,
             "q": q or None, "like": like,
             "desde": desde or None, "hasta": hasta or None,
             "limite": limite,

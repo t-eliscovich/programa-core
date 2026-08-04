@@ -2,6 +2,7 @@
 import re
 
 import db
+from modules._lib import busqueda
 
 
 class _Vaciar:
@@ -52,6 +53,10 @@ def directorio(q: str = "") -> list[dict]:
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
+    # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+    _txt_sql, _txt_params = busqueda.condicion(
+        q, ("codigo_cli", "nombre", "telefono", "correo"), prefijo="bqt")
     return db.fetch_all(
         """
         SELECT codigo_cli, nombre,
@@ -63,13 +68,10 @@ def directorio(q: str = "") -> list[dict]:
         FROM scintela.cliente
         WHERE (COALESCE(telefono, '') <> '' OR COALESCE(correo, '') <> '')
           AND (%(q)s IS NULL
-               OR UPPER(codigo_cli) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(nombre, '')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(telefono, '')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(correo, '')) LIKE UPPER(%(like)s))
+               OR (__TEXTO_MATCH__))
         ORDER BY nombre ASC, codigo_cli ASC
-        """,
-        {"q": q or None, "like": like},
+        """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
+        {**_txt_params, "q": q or None, "like": like},
     ) or []
 
 
@@ -662,10 +664,13 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
     query — evitar N+1.
     """
     q = (q or "").strip()
-    like = f"%{q}%" if q else None
-    pref = f"{q}%" if q else None
+    # TMT 2026-08-04 (dueña, mismo reporte que el estado de cuenta): la
+    # búsqueda es por PALABRAS y pliega acentos — "irene condor" encuentra a
+    # "IRENE CHICAIZA CONDOR". Ver modules/_lib/busqueda.py.
+    cond, p_cond = busqueda.condicion(q, ("c.codigo_cli", "c.nombre", "c.ruc"))
+    rank, p_rank = busqueda.ranking(q, "c.codigo_cli")
     return db.fetch_all(
-        """
+        f"""
         SELECT c.id_cliente, c.codigo_cli, c.nombre, c.telefono, c.ruc, c.stop, c.cupo,
                c.pago, c.vend, c.fecha_cupo,
                COALESCE(c.direccion1, '') AS direccion1,
@@ -691,34 +696,26 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
             GROUP BY codigo_cli
         ) s ON s.codigo_cli = c.codigo_cli
         WHERE (%(incluir_inactivos)s OR COALESCE(c.activo, TRUE) = TRUE)
-          AND (%(q)s IS NULL
-               OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
-               OR UPPER(c.nombre)     LIKE UPPER(%(like)s)
-               OR c.ruc LIKE %(like)s)
+          AND ({cond or 'TRUE'})
         -- TMT 2026-05-20 v2 — pedido dueña: "Clientes idem, sortear
         -- por codigo" → sin término de búsqueda se mantiene código ASC.
         -- TMT 2026-07-06 — queja dueña: buscar "edu" listaba EDUARDOs por
         -- NOMBRE y el cliente con CÓDIGO "EDU" ni aparecía en la 1ra página.
         -- Con término ranqueamos como la búsqueda global (Ctrl/Cmd+K →
-        -- informes.buscar_clientes): (0) código exacto, (1) código que
-        -- EMPIEZA con el término, (2) resto (nombre/RUC contienen);
-        -- dentro de cada grupo saldo pendiente DESC y luego nombre.
+        -- informes.buscar_clientes): código exacto → código que empieza así
+        -- → nombre que empieza así → palabra del nombre → resto; dentro de
+        -- cada grupo saldo pendiente DESC y luego nombre.
         ORDER BY
-          CASE
-            WHEN %(q)s IS NULL                            THEN 3
-            WHEN UPPER(c.codigo_cli) = UPPER(%(q)s)       THEN 0
-            WHEN UPPER(c.codigo_cli) LIKE UPPER(%(pref)s) THEN 1
-            ELSE 2
-          END ASC,
-          CASE WHEN %(q)s IS NULL THEN NULL
-               ELSE COALESCE(s.saldo_total, 0) END DESC NULLS LAST,
-          CASE WHEN %(q)s IS NULL THEN NULL
-               ELSE c.nombre END ASC NULLS FIRST,
+          -- OJO: sin término va NULL, no una constante numérica — un entero
+          -- suelto en ORDER BY es una referencia POSICIONAL a la columna N.
+          {rank if cond else 'NULL'} ASC,
+          {'COALESCE(s.saldo_total, 0)' if cond else 'NULL'} DESC NULLS LAST,
+          {'c.nombre' if cond else 'NULL'} ASC NULLS FIRST,
           c.codigo_cli ASC
         LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
-            "q": q or None, "like": like, "pref": pref, "limite": limite,
+            **p_cond, **p_rank, "limite": limite,
             "incluir_inactivos": bool(incluir_inactivos),
             "offset": int(offset or 0),
         },
@@ -728,19 +725,16 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
 def contar(q: str = "", incluir_inactivos: bool = False) -> int:
     """COUNT(*) total para paginación (sin LIMIT)."""
     q = (q or "").strip()
-    like = f"%{q}%" if q else None
+    # MISMO filtro que buscar() — si divergen, el "mostrando 200 de N" miente.
+    cond, p_cond = busqueda.condicion(q, ("c.codigo_cli", "c.nombre", "c.ruc"))
     row = db.fetch_one(
-        """
+        f"""
         SELECT COUNT(*) AS n
           FROM scintela.cliente c
          WHERE (%(incluir_inactivos)s OR COALESCE(c.activo, TRUE) = TRUE)
-           AND (%(q)s IS NULL
-                OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
-                OR UPPER(c.nombre)     LIKE UPPER(%(like)s)
-                OR c.ruc LIKE %(like)s)
+           AND ({cond or 'TRUE'})
         """,
-        {"q": q or None, "like": like,
-         "incluir_inactivos": bool(incluir_inactivos)},
+        {**p_cond, "incluir_inactivos": bool(incluir_inactivos)},
     ) or {}
     return int(row.get("n") or 0)
 

@@ -18,6 +18,7 @@ from datetime import date, timedelta
 
 import db
 from filters import today_ec
+from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 # Stats que cuentan como "vivos" (cartera viva). Excluye T (cancelada) y X (anulada).
@@ -1002,6 +1003,8 @@ def buscar(
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # Nombre del cliente: match por PALABRAS (ver el comentario en el SQL).
+    _nom_sql, _nom_params = busqueda.condicion(q, ("c.nombre",), prefijo="bqn")
     vista = (vista or "cartera").lower().strip()
     # Back-compat — la vista antes se llamaba 'todas'.
     if vista == "todas":
@@ -1067,7 +1070,10 @@ def buscar(
                        UPPER(f.codigo_cli) LIKE UPPER(%(like)s)
                     OR UPPER(COALESCE(f.numf_completo,'')) LIKE UPPER(%(like)s)
                     OR CAST(f.numf AS TEXT) LIKE %(like)s
-                    OR UPPER(c.nombre) LIKE UPPER(%(like)s)
+                    -- TMT 2026-08-04 (dueña "no funciona si solo busco
+                    -- condor"): el nombre del cliente matchea por PALABRAS
+                    -- sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+                    OR (__NOMBRE_CLI__)
                   )
                 )
               )
@@ -1114,8 +1120,9 @@ def buscar(
           )
         ORDER BY f.fecha DESC, f.numf DESC
         LIMIT %(limite)s OFFSET %(offset)s
-        """,
+        """.replace("__NOMBRE_CLI__", _nom_sql or "FALSE"),
         {
+            **_nom_params,
             "q": q or None, "like": like,
             "q_upper": q_upper, "q_codigo_exacto": es_q_codigo_exacto,
             "cliente": cliente or None, "cliente_like": cliente_like,
@@ -1173,6 +1180,8 @@ def contar_filtrado(
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # Nombre del cliente: match por PALABRAS (ver el comentario en el SQL).
+    _nom_sql, _nom_params = busqueda.condicion(q, ("c.nombre",), prefijo="bqn")
     vista = (vista or "cartera").lower().strip()
     if vista == "todas":
         vista = "estado"
@@ -1225,7 +1234,10 @@ def contar_filtrado(
                        UPPER(f.codigo_cli) LIKE UPPER(%(like)s)
                     OR UPPER(COALESCE(f.numf_completo,'')) LIKE UPPER(%(like)s)
                     OR CAST(f.numf AS TEXT) LIKE %(like)s
-                    OR UPPER(c.nombre) LIKE UPPER(%(like)s)
+                    -- TMT 2026-08-04 (dueña "no funciona si solo busco
+                    -- condor"): el nombre del cliente matchea por PALABRAS
+                    -- sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+                    OR (__NOMBRE_CLI__)
                   )
                 )
               )
@@ -1258,8 +1270,9 @@ def contar_filtrado(
                  AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
              OR f.stat = ANY(%(estados_para_in)s::text[])
           )
-        """,
+        """.replace("__NOMBRE_CLI__", _nom_sql or "FALSE"),
         {
+            **_nom_params,
             "q": q or None, "like": like,
             "q_upper": q_upper, "q_codigo_exacto": es_q_codigo_exacto,
             "cliente": cliente or None, "cliente_like": cliente_like,

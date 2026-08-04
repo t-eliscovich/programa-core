@@ -30,6 +30,7 @@ from datetime import date
 
 import db
 from filters import today_ec
+from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 # Mapeo canónico de tipo → orden + label.
@@ -181,6 +182,10 @@ def buscar(
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
+    # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
+    _txt_sql, _txt_params = busqueda.condicion(
+        q, ("a.concepto", "a.tipo", "p.nombre"), prefijo="bqt")
     # COEF = min(día_del_mes, 30) / 30  →  proración diaria (MENU.PRG L275).
     # AMORTIMES_calc = COEF × CUOTA  (lo que va corriendo este mes).
     # valor_libros = inicial - amortizac_acum - amortimes_calc.
@@ -242,9 +247,7 @@ def buscar(
         FROM scintela.activos a
         LEFT JOIN scintela.proveedor p ON p.id_proveedor = a.id_proveedor
         WHERE (%(q)s IS NULL
-               OR UPPER(COALESCE(a.concepto, '')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(a.tipo, '')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre, '')) LIKE UPPER(%(like)s))
+               OR (__TEXTO_MATCH__))
           AND (%(tipo)s IS NULL OR UPPER(a.tipo) = UPPER(%(tipo)s))
           AND (NOT %(solo_activos)s
                OR (COALESCE(a.inicial, 0) - COALESCE(a.amortizac, 0)) > 0.01)
@@ -261,8 +264,9 @@ def buscar(
         LIMIT %(limite)s
     """
     filas = db.fetch_all(
-        sql,
+        sql.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
+            **_txt_params,
             "q": q or None, "like": like,
             "tipo": tipo or None,
             "solo_activos": bool(solo_activos),

@@ -34,9 +34,25 @@ import db as _db  # noqa: E402
 from modules.clientes import queries  # noqa: E402
 
 
+def _translate(texto, desde, hasta):
+    """`TRANSLATE()` de Postgres — sqlite no lo trae (TMT 2026-08-04).
+
+    Mapeo posicional; los caracteres de `desde` que no tienen par en `hasta`
+    se BORRAN (misma semántica que Postgres — por eso los dos strings de
+    modules/_lib/busqueda.py tienen que medir igual).
+    """
+    if texto is None:
+        return None
+    tabla = {}
+    for i, ch in enumerate(desde or ""):
+        tabla[ch] = (hasta or "")[i] if i < len(hasta or "") else ""
+    return "".join(tabla.get(ch, ch) for ch in texto)
+
+
 def _mk_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
+    conn.create_function("TRANSLATE", 3, _translate)
     conn.execute("ATTACH DATABASE ':memory:' AS scintela")
     conn.execute(
         """
@@ -155,3 +171,59 @@ def test_ranking_pasa_antes_del_limit(buscar_sqlite):
     """Con paginado chico, EDU tiene que estar en la PRIMERA página."""
     filas = queries.buscar("edu", incluir_inactivos=True, limite=2, offset=0)
     assert [f["codigo_cli"] for f in filas] == ["EDU", "EDUX"]
+
+
+# ── Búsqueda por PALABRAS (TMT 2026-08-04) ────────────────────────────────
+# Reporte dueña sobre el estado de cuenta: *"esto no funciona si solo busco
+# condor"* (URL `?q=IRENE%25CONDOR` → estaba tipeando el comodín a mano).
+# Estos tests EJECUTAN el SQL real: si el WHERE se rompe, fallan acá.
+
+
+@pytest.fixture()
+def buscar_sqlite_nombres(monkeypatch):
+    conn = _mk_conn()
+    for id_, cod, nom in [
+        (1, "ICH", "IRENE CHICAIZA CONDOR"),
+        (2, "CON", "WILSON CONDOR"),
+        (3, "PEN", "JOSE PEÑA DAVILA"),
+    ]:
+        conn.execute(
+            "INSERT INTO scintela.cliente (id_cliente, codigo_cli, nombre, activo)"
+            " VALUES (?, ?, ?, 1)",
+            (id_, cod, nom),
+        )
+    monkeypatch.setattr(_db, "fetch_all", _sqlite_fetch_all(conn))
+
+    def fake_fetch_one(sql, params=None, **kw):
+        filas = _sqlite_fetch_all(conn)(sql, params)
+        return filas[0] if filas else None
+
+    monkeypatch.setattr(_db, "fetch_one", fake_fetch_one)
+    yield
+    conn.close()
+
+
+@pytest.mark.parametrize("q", ["condor", "irene condor", "condor irene",
+                               "IRENE CONDOR", "irene%condor", "chicaiza"])
+def test_buscar_encuentra_a_irene_chicaiza_condor(buscar_sqlite_nombres, q):
+    filas = queries.buscar(q, incluir_inactivos=True)
+    assert "ICH" in [f["codigo_cli"] for f in filas], q
+
+
+def test_buscar_exige_todas_las_palabras(buscar_sqlite_nombres):
+    """"irene condor" no puede traer a WILSON CONDOR."""
+    filas = queries.buscar("irene condor", incluir_inactivos=True)
+    assert [f["codigo_cli"] for f in filas] == ["ICH"]
+
+
+def test_buscar_ignora_los_acentos(buscar_sqlite_nombres):
+    for q in ("peña", "pena", "PEÑA"):
+        filas = queries.buscar(q, incluir_inactivos=True)
+        assert [f["codigo_cli"] for f in filas] == ["PEN"], q
+
+
+def test_contar_usa_el_mismo_filtro_que_buscar(buscar_sqlite_nombres):
+    """Si divergen, el "mostrando X de N" del paginado miente."""
+    for q in ("condor", "irene condor", "peña", ""):
+        filas = queries.buscar(q, incluir_inactivos=True)
+        assert queries.contar(q, incluir_inactivos=True) == len(filas), q
