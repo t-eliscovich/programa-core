@@ -65,9 +65,12 @@
     {% for c in cheques %}
       <div class="rowitem">
         <div class="nm">
-          <b>Ch. {{ c.no_cheque }}{% if c.nombre_banco %} · {{ c.nombre_banco }}{% endif %}</b>
+          {# Hay filas sin N° de cheque (depósitos directos del dBase): sin
+             fallback quedaba un "Ch. ·" pelado. La hoja de la oficina ya usa
+             el id interno como respaldo — acá se hace lo mismo. #}
+          <b>Ch. {{ c.no_cheque | default('', true) | trim or ('#' ~ c.id_cheque) }}{% if c.nombre_banco %} · {{ c.nombre_banco }}{% endif %}</b>
           <span>
-            {% if c.stat in ('B','A') %}Depositado {{ c.fechaout.strftime('%d/%m/%Y') if c.fechaout else '' }}
+            {% if c.stat in ('B','A') %}{% if c.fechaout %}Depositado {{ c.fechaout.strftime('%d/%m/%Y') }}{% else %}Depositado{% endif %}
             {% elif c.fechad %}Cobra el {{ c.fechad.strftime('%d/%m/%Y') }}
             {% else %}—{% endif %}
           </span>

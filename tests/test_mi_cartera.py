@@ -383,3 +383,44 @@ def test_meses_con_meta_ignora_los_ceros(monkeypatch):
     monkeypatch.setattr(q.db, "fetch_all", _fetch_all)
     assert q.meses_con_meta("RMY", 2026) == [8]
     assert "coalesce(monto, 0) <> 0" in vistos["sql"]
+
+
+def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
+    """Hay filas sin N° de cheque (depósitos directos del dBase). Sin
+    fallback, la ficha mostraba «Ch. · DEP.PICH.» — visto en vivo con MWI."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "X", "provincia": ""},
+            "facturas": [],
+            "cheques": [{"id_cheque": 4242, "no_cheque": "  ", "importe": 10.0,
+                         "stat": "B", "fechad": None, "fechaout": None,
+                         "nombre_banco": "DEP.PICH."}],
+            "anticipos": [],
+            "totales": {"saldo_vivo": 0, "saldo_vencido": 0, "n_vencidas": 0,
+                        "cheques_cartera": 0, "saldo_a_favor": 0},
+        },
+    )
+    r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")
+    assert r.status_code == 200
+    assert "#4242".encode() in r.data
+    assert "Ch. ·".encode() not in r.data
+
+
+def test_el_rotulo_dice_lo_que_se_esta_mostrando(vendedor_logueado, monkeypatch):
+    """Con el filtro Vencidos puesto, el encabezado decía «22 con saldo»."""
+    monkeypatch.setattr(
+        q, "mis_clientes",
+        lambda vend: [{"codigo_cli": "A", "nombre": "Uno", "saldo": 10.0,
+                       "vencido": 5.0, "provincia": "", "n_facturas": 1,
+                       "vence_mas_viejo": None}],
+    )
+    assert "con vencido".encode() in vendedor_logueado.get(
+        "/mi-cartera/clientes?f=vencidos").data
+    assert "con saldo".encode() in vendedor_logueado.get(
+        "/mi-cartera/clientes").data
+    assert "encontrado".encode() in vendedor_logueado.get(
+        "/mi-cartera/clientes?q=uno").data
