@@ -44,10 +44,18 @@ from tests.test_mi_cartera import _totales
         ("+593989506447", "593989506447"),
         ("593989506447", "593989506447"),
         ("00593989506447", "593989506447"),
-        # Fichas con varios números: gana el primero. Mandarle el estado de
+        # Fichas con VARIOS números: gana el primero. Mandarle el estado de
         # cuenta al fax de la empresa no sirve.
         ("0989506447 / 032745123", "593989506447"),
         ("0989506447, 0987654321", "593989506447"),
+        # ⭐ El caso que se rompió en producción el 04/08: LUIS ENRIQUE
+        # PILATAXI tiene dos celulares separados por un ESPACIO y el botón
+        # le salía sin teléfono. Cortar por espacios tampoco sirve —ver el
+        # caso de abajo, un solo número escrito con espacios—, así que se
+        # corta por largo, no por separador.
+        ("0991271637 0993391393", "593991271637"),
+        ("099 123 4567", "593991234567"),
+        ("0991271637  0993391393  032745123", "593991271637"),
         # Basura → '' y la pantalla no ofrece el botón.
         ("", ""), (None, ""), ("s/n", ""), ("123", ""), ("-", ""),
         ("0" * 20, ""),
@@ -188,6 +196,41 @@ def oficina(app, fake_db):
     return c
 
 
+def test_el_pie_de_facturas_tiene_TODAS_las_columnas_de_la_tabla(app):
+    """⭐ El pie se corría una columna, pero SÓLO en el papel.
+
+    Dueña 2026-08-04, con el PDF de LEP: *"está bastante desprolijo"*. El
+    rótulo "Totales" abarcaba 3 columnas (Fecha, Número, Tipo), pero Tipo y
+    Stat son `no-print`: al imprimir esas columnas no quedan vacías, DESAPARECEN,
+    y entonces el colspan se comía Importe. En el PDF el total de importes caía
+    bajo ABONADO y el de abonos bajo SALDO. Los números estaban bien: era
+    alineación, y del lado que no se ve en pantalla.
+
+    Este test cuenta celdas: encabezado y pie tienen que tener las mismas, y
+    las que se esconden al imprimir tienen que estar en los dos.
+    """
+    import re
+    from pathlib import Path
+
+    tpl = Path("modules/informes/templates/informes/"
+               "_estado_cuenta_impreso.html").read_text()
+    sin_comentarios = re.sub(r"\{#.*?#\}", "", tpl, flags=re.S)
+    encabezado = sin_comentarios.split("<thead", 1)[1].split("</thead>", 1)[0]
+    pie = sin_comentarios.split("<tfoot", 1)[1].split("</tfoot>", 1)[0]
+
+    n_th = len(re.findall(r"<th\b", encabezado))
+    # El pie: celdas sueltas + lo que abarca el colspan.
+    n_td = len(re.findall(r"<td\b", pie))
+    colspans = [int(c) for c in re.findall(r'colspan="(\d+)"', pie)]
+    assert n_td + sum(colspans) - len(colspans) == n_th, (
+        f"el pie cubre {n_td + sum(colspans) - len(colspans)} columnas y la "
+        f"tabla tiene {n_th}")
+
+    # Y las columnas que no se imprimen tienen celda propia en el pie, para
+    # que desaparezcan de las dos filas a la vez.
+    assert encabezado.count("no-print") == pie.count("no-print")
+
+
 def test_el_pdf_sale_del_template_que_ya_se_imprime(app, monkeypatch):
     """⭐ La invariante de todo esto.
 
@@ -312,6 +355,21 @@ def test_la_pestania_de_whatsapp_se_abre_en_el_click_y_no_despues(app):
     assert "window.open('', '_blank')" in antes_del_fetch
 
 
+def test_siempre_abre_whatsapp_aunque_el_cliente_no_tenga_telefono(app):
+    """Dueña 2026-08-04: *"igual quizás se lo quiero mandar a otra persona"*.
+
+    Antes, sin teléfono cargado no se abría nada y el botón parecía roto —
+    que es lo que ella vio con LUIS ENRIQUE. Ahora abre siempre: la
+    conversación del cliente si hay número, y WhatsApp a secas si no, para
+    que elija el chat (el contador del cliente, un socio, ella misma).
+    """
+    html = _boton(app)
+    assert "wa.me/" in html
+    assert "web.whatsapp.com" in html
+    # La ventana se abre sin condicionarla al teléfono.
+    assert "var ventana = porMenu ? null : window.open" in html
+
+
 def test_el_boton_no_cambia_de_ancho_mientras_genera(app):
     """El otro bug del 04/08: *"el generando mueve toda la pantalla, así que
     el nombre y los botones desordena diseño"*.
@@ -345,3 +403,30 @@ def test_sin_motor_de_pdf_no_se_dibuja_nada(app):
             '{% with pdf_url="/x", wa_numero="", wa_nombre="X", wa_clase="b" %}'
             '{% include "informes/_ec_boton_whatsapp.html" %}{% endwith %}')
     assert "data-wa-pdf" not in html
+
+
+def test_el_arreglo_de_impresion_vale_para_TODAS_las_pantallas():
+    """Dueña 2026-08-04: *"pero eso corregilo para todos los clientes y todos
+    los métodos de impresión, ¿no?"*. Sí — y por eso las reglas de impresión
+    viven en el PARCIAL, no en cada pantalla.
+
+    `_estado_cuenta_impreso.html` es el cuerpo del estado de cuenta y lo
+    incluyen las dos pantallas que existen: la individual y la de impresión en
+    lote (por vendedor, provincia o grupos). Los tres botones de imprimir y el
+    PDF salen de ahí. Si alguien arregla el papel tocando una sola pantalla,
+    la otra queda distinta y no se nota hasta que está impreso — que es
+    exactamente lo que pasó con el pie corrido.
+    """
+    from pathlib import Path
+
+    base = Path("modules/informes/templates/informes")
+    parcial = (base / "_estado_cuenta_impreso.html").read_text()
+
+    # Las dos pantallas incluyen el mismo cuerpo.
+    for pantalla in ("estado_cuenta.html", "estado_cuenta_lote_print.html"):
+        assert "_estado_cuenta_impreso.html" in (base / pantalla).read_text(), pantalla
+
+    # Y los arreglos del papel están en el parcial, no en una pantalla suelta.
+    assert "@media print" in parcial
+    for regla in ("main .ec-bloque-facturas table tbody td", ".ec-cierre"):
+        assert regla in parcial, regla

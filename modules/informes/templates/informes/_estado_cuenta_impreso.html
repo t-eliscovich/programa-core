@@ -101,11 +101,26 @@
              tiene 4 antes de Kg (N°, Tipo, Fecha, Vence) → TODO el pie
              quedaba corrido una columna a la izquierda. Los totales estaban
              bien calculados; era alineación. #}
-          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="3">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
+          {# TMT 2026-08-04 — y volvió a pasar, sólo que EN EL PAPEL. El rótulo
+             abarcaba 3 columnas (Fecha, Número, Tipo), pero Tipo y Stat son
+             `no-print`: al imprimir, esas dos columnas no quedan vacías —
+             desaparecen— y entonces el `colspan=3` se come Importe. Resultado
+             en el PDF de LEP (04/08): el total de importes caía bajo ABONADO
+             y el de abonos bajo SALDO. Los números estaban bien; era la
+             alineación otra vez, y del lado que no se ve en pantalla.
+
+             Se arregla con la misma cuenta que el encabezado: el rótulo abarca
+             sólo las columnas que SIEMPRE están (Fecha y Número), y las que se
+             esconden al imprimir tienen su propia celda `no-print`, que
+             desaparece junto con su columna. Ahora el pie tiene las 9 celdas
+             de la tabla, no 8. #}
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="2">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
+          <td class="no-print"></td>
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-900 dark:text-slate-100">{{ t.saldo | money_es }}</td>
           <td></td>
+          <td class="no-print"></td>
           <td></td>
         </tr>
       </tfoot>
@@ -152,14 +167,6 @@
        es el número que le estamos cobrando. Las reglas de impresión van ACÁ,
        en el parcial que dibuja el bloque, para que valgan igual en la
        pantalla individual y en el lote. #}
-    <style>
-      @media print {
-        .ec-cierre { padding: 2pt 0 0 0 !important; font-size: 8pt !important; }
-        .ec-cierre > div { max-width: 62mm !important; margin-left: auto !important;
-                           padding: 0.5pt 0 !important; }
-        .ec-cierre .ec-cierre-total { font-size: 9pt !important; }
-      }
-    </style>
     {% if _ch_depositar > 0 or _ch_protestados > 0 or _ch_total > 0 %}
     <div class="ec-cierre px-4 py-3 border-t-2 border-slate-400 dark:border-slate-600 text-sm">
       {% if _ch_depositar > 0 %}
@@ -326,3 +333,45 @@
   {# TMT 2026-08-03: el TOTAL (saldo + cheques en cartera) se movió arriba,
      pegado a las facturas, como lo cierra el dBase. Antes estaba acá abajo y
      no salía al imprimir sólo la hoja de facturas. #}
+
+{# ── Reglas de IMPRESIÓN del estado de cuenta ────────────────────────────
+   Van al final a propósito: al ser lo último del documento le ganan los
+   empates de especificidad, y además así los nombres de clase que aparecen
+   acá (`ec-bloque-cheques`…) no se cruzan con los tests que ubican los
+   bloques por orden en el HTML.
+
+   Todo esto vale para TODAS las pantallas y TODOS los botones de imprimir
+   —dueña 2026-08-04: "corregilo para todos los clientes y todos los métodos
+   de impresión"— porque este parcial es el cuerpo del estado de cuenta y lo
+   incluyen tanto la pantalla individual como la impresión en lote. #}
+<style>
+      @media print {
+        .ec-cierre { padding: 2pt 0 0 0 !important; font-size: 8pt !important; }
+        .ec-cierre > div { max-width: 62mm !important; margin-left: auto !important;
+                           padding: 0.5pt 0 !important; }
+        /* El `text-base` del span gana por especificidad si sólo se toca el
+           div: en el PDF de LEP el TOTAL salía al triple que la tabla. */
+        .ec-cierre .ec-cierre-total,
+        .ec-cierre .ec-cierre-total span { font-size: 9pt !important; }
+
+        /* UN SOLO cuerpo y UN SOLO tipo de letra en el papel.
+           Dueña 2026-08-04, con el PDF de LEP: "está bastante desprolijo".
+           Los números de factura y de cheque salían a 13px contra 7,5pt del
+           resto — el doble— y encima en monoespaciada.
+
+           El 13px no venía de acá: `templates/base.html` tiene
+               main table tbody td.text-xs { font-size: .8125rem !important }
+           que es una normalización de PANTALLA, y le ganaba a la regla de
+           impresión por especificidad (0,1,4 contra 0,1,2). Por eso este
+           selector arranca en `main`: para pasarla, no para pelearle de
+           igual a igual. Se deja el `thead` afuera, que tiene su propio
+           cuerpo más chico. */
+        main .ec-bloque-facturas table tbody td,
+        main .ec-bloque-facturas table tfoot td,
+        main .ec-bloque-cheques table tbody td,
+        main .ec-bloque-cheques table tfoot td {
+          font-size: 7.5pt !important;
+          font-family: inherit !important;
+        }
+      }
+    </style>

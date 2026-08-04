@@ -211,29 +211,45 @@ def wa_tel(value) -> str:
     va mal formado abre un chat con un desconocido, que es peor que no tener
     el botón. Por eso ante la duda devuelve '' y la pantalla no lo ofrece.
 
-    Reglas, todas sacadas de cómo está cargada la data real:
-      · se queda con el PRIMER número — hay fichas con "0989506447 / 032745123"
-        y mandarle el estado de cuenta al fax no sirve;
-      · saca todo lo que no sea dígito;
-      · el 0 inicial es el prefijo NACIONAL de Ecuador: se REEMPLAZA por 593,
-        no se le pega adelante (5930989… no existe);
-      · si ya viene con 593, se deja como está.
+    ⚠ NO se separa por el separador, se separa por el LARGO. La primera
+    versión cortaba en "/" y ",", y se comió el caso más común: LUIS ENRIQUE
+    PILATAXI tiene "0991271637 0993391393" —dos celulares separados por un
+    espacio— y el botón le salió sin teléfono. Cortar por espacios tampoco
+    sirve, porque un solo número se escribe "099 123 4567". Lo único que
+    distingue un número de dos es cuántos dígitos hay, así que se tiran todos
+    los signos y se lee el PRIMER número completo:
+
+        593 + 9 dígitos  → ya internacional
+        09  + 8 dígitos  → celular
+        0   + 8 dígitos  → fijo (032745123)
+
+    El 0 inicial es el prefijo NACIONAL de Ecuador: se REEMPLAZA por 593, no
+    se le pega adelante (5930989… no existe).
     """
-    crudo = cleanstr(value)
-    if not crudo:
-        return ""
-    primero = re.split(r"[/,;]| o ", crudo, maxsplit=1)[0]
-    d = re.sub(r"\D", "", primero)
+    d = re.sub(r"\D", "", cleanstr(value))
     if not d:
         return ""
-    if d.startswith("00"):
+    if d.startswith("00"):          # 00593… — prefijo internacional a la vieja
         d = d[2:]
-    if d.startswith(_COD_PAIS_EC) and len(d) >= 11:
-        return d if len(d) <= 13 else ""
-    d = d.removeprefix("0")
-    if not 8 <= len(d) <= 10:
+
+    if d.startswith(_COD_PAIS_EC):
+        primero = d[:12]
+    elif d.startswith("09"):        # celular
+        primero = d[:10]
+    elif d.startswith("0"):         # fijo
+        primero = d[:9]
+    else:                           # ya sin el 0 de adelante
+        primero = d[:9]
+
+    if primero.startswith(_COD_PAIS_EC):
+        return primero if len(primero) == 12 else ""
+    nacional = primero.removeprefix("0")
+    # Un 0 después del prefijo nacional no existe: es basura ("000000…", un
+    # campo relleno con ceros). Sin este guard, 20 ceros daban un wa.me válido
+    # apuntando a la nada.
+    if nacional.startswith("0") or not 8 <= len(nacional) <= 10:
         return ""
-    return _COD_PAIS_EC + d
+    return _COD_PAIS_EC + nacional
 
 
 def _pdf_disponible() -> bool:

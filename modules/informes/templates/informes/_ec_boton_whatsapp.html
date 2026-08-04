@@ -25,10 +25,12 @@
    compartir del sistema y WhatsApp aparece ahí con el PDF adjunto. Es un
    toque y el vendedor no sale de la pantalla.
 
-   En la COMPUTADORA (Alex) casi nunca hay share de archivos, así que baja el
-   PDF y abre la conversación del cliente en WhatsApp Web para que lo arrastre.
-   No se puede adjuntar un archivo por link —`wa.me` sólo acepta texto— y
-   fingir que sí sería un botón que promete algo que no hace.
+   En la COMPUTADORA baja el PDF y abre WhatsApp al lado para que lo arrastre:
+   la conversación del cliente si tiene teléfono cargado, WhatsApp a secas si
+   no — que además es lo que hace falta cuando el estado de cuenta va para
+   otra persona (el contador del cliente, un socio). No se puede adjuntar un
+   archivo por link —`wa.me` sólo acepta texto— y fingir que sí sería un botón
+   que promete algo que no hace.
 
    El nombre del archivo lo pone el servidor ("Estado de cuenta - CLIENTE.pdf")
    y acá se respeta: es lo primero que ve el cliente en el chat. #}
@@ -91,10 +93,16 @@
     var tel = btn.dataset.tel;
     var porMenu = esTelefono() && !!navigator.canShare;
 
-    // La pestaña de WhatsApp Web se abre ACÁ, en el click. Si se abriera
-    // después del `await`, Safari la bloquea por popup y el botón baja el PDF
-    // sin abrir nada — que es medio botón.
-    var ventana = (!porMenu && tel) ? window.open('', '_blank') : null;
+    // La pestaña de WhatsApp se abre ACÁ, en el click. Si se abriera después
+    // del `await`, Safari la bloquea por popup y el botón baja el PDF sin
+    // abrir nada — que es medio botón.
+    //
+    // Se abre SIEMPRE, tenga o no teléfono el cliente. TMT 2026-08-04 (dueña):
+    // *"igual quizás se lo quiero mandar a otra persona"* — al contador del
+    // cliente, a un socio, a ella misma. Si hay número, se abre esa
+    // conversación; si no, WhatsApp a secas y elige el chat. Antes, sin
+    // teléfono cargado no se abría nada y el botón parecía roto.
+    var ventana = porMenu ? null : window.open('', '_blank');
 
     // El texto cambia de largo y, sin clavar el ancho, se corre TODA la fila
     // de botones y hasta el nombre del cliente. Visto en producción el 04/08.
@@ -144,10 +152,11 @@
       // así que adjuntarlo por link no se puede — y un botón que dijera que sí
       // estaría mintiendo.
       descargar(blob, nombre);
+      var destino = tel ? ('https://wa.me/' + tel) : 'https://web.whatsapp.com/';
       if (ventana) {
-        ventana.location = 'https://wa.me/' + tel;
-      } else if (tel) {
-        window.open('https://wa.me/' + tel, '_blank', 'noopener');
+        ventana.location = destino;
+      } else {
+        window.open(destino, '_blank', 'noopener');
       }
     } catch (e) {
       if (ventana) ventana.close();
