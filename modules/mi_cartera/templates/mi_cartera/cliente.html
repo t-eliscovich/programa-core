@@ -48,12 +48,16 @@
     </div>
     <div style="display:flex;gap:8px;flex:0 0 auto">
       {# El mismo botón que usa la oficina, con el mismo PDF detrás — dueña
-         2026-08-04: "que Alex le pueda mandar al cliente también". #}
+         2026-08-04: "que Alex le pueda mandar al cliente también".
+
+         `wa_label_cargando`: acá el botón es un cuadradito y, mientras
+         genera, el ancho queda clavado — "Generando…" no entra. #}
       {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
               wa_numero = cliente.telefono | wa_tel,
               wa_nombre = cliente.nombre,
               wa_clase = 'iconbtn wa',
-              wa_label = '⤴' %}
+              wa_label = '⤴',
+              wa_label_cargando = '···' %}
         {% include "informes/_ec_boton_whatsapp.html" %}
       {% endwith %}
       <a class="iconbtn" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
@@ -346,7 +350,8 @@
   .iconbtn.wa{border-color:#BFE7CD;color:#15803D;background:#EFFBF3;
               font:inherit;font-size:16px;cursor:pointer;width:auto;
               min-width:36px;padding:0 9px;white-space:nowrap}
-  .iconbtn.wa:disabled{opacity:.6;font-size:12px;font-weight:600}
+  .iconbtn.wa:disabled{opacity:.6}
+  .iconbtn.wa span{display:block;overflow:hidden;white-space:nowrap}
 
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
   @media (max-width: 374px){

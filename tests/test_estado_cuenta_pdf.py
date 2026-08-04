@@ -264,3 +264,84 @@ def test_sin_motor_el_servidor_explica_en_vez_de_dar_500(oficina, monkeypatch):
     # Y aclara que lo otro sigue andando: el usuario no tiene que adivinar si
     # se rompió todo o sólo esto.
     assert "impresi" in r.data.decode().lower()
+
+
+# ---------------------------------------------------------------------------
+# El botón: por dónde llega esto a WhatsApp en CADA aparato
+# ---------------------------------------------------------------------------
+
+
+def _boton(app, **ctx):
+    from flask import render_template_string
+
+    with app.test_request_context("/"):
+        app.jinja_env.globals["pdf_disponible"] = lambda: True
+        args = {"pdf_url": "/x/pdf", "wa_numero": "593989506447",
+                "wa_nombre": "LUIS ENRIQUE", "wa_clase": "btn", **ctx}
+        con = ", ".join(f'{k}="{v}"' for k, v in args.items())
+        return render_template_string(
+            "{% with " + con + " %}"
+            '{% include "informes/_ec_boton_whatsapp.html" %}{% endwith %}')
+
+
+def test_el_boton_decide_por_el_TIPO_DE_APARATO_y_no_por_canShare(app):
+    """⭐ El bug del 04/08, con la captura de la Mac de la dueña al lado:
+    *"fijate porque no funciona whatsapp"*.
+
+    La primera versión preguntaba `navigator.canShare({files})` y, si decía
+    que sí, abría el menú de compartir del sistema. En el celular está bien:
+    WhatsApp vive ahí. En una Mac, Safari TAMBIÉN dice que sí — y el menú que
+    se abre tiene AirDrop, Mail, Messages, Notes y Freeform. WhatsApp no.
+    O sea: un botón que decía "Enviar por WhatsApp" y abría un menú sin
+    WhatsApp.
+
+    El error fue preguntar "¿podés compartir?" cuando la pregunta era "¿por
+    dónde llega esto a WhatsApp en ESTE aparato?".
+    """
+    html = _boton(app)
+    assert "pointer: coarse" in html, "ya no distingue teléfono de escritorio"
+    assert "wa.me/" in html, "en escritorio tiene que abrir WhatsApp Web"
+
+
+def test_la_pestania_de_whatsapp_se_abre_en_el_click_y_no_despues(app):
+    """Safari bloquea como popup cualquier `window.open` posterior a un
+    `await`. Si se abriera después de generar el PDF, el botón bajaría el
+    archivo sin abrir nada — medio botón, y encima en silencio."""
+    html = _boton(app)
+    antes_del_fetch = html.split("await fetch")[0]
+    assert "window.open('', '_blank')" in antes_del_fetch
+
+
+def test_el_boton_no_cambia_de_ancho_mientras_genera(app):
+    """El otro bug del 04/08: *"el generando mueve toda la pantalla, así que
+    el nombre y los botones desordena diseño"*.
+
+    "Enviar por WhatsApp" → "Generando…" son anchos distintos, y en una fila
+    flex eso corre todo lo que está al lado. Se clava el ancho EXACTO (no un
+    mínimo: el texto de espera puede ser más corto o más largo según la
+    pantalla) y se suelta al terminar, incluso si algo falló.
+    """
+    html = _boton(app)
+    assert "btn.style.width = btn.getBoundingClientRect().width" in html
+    # Se suelta en el camino feliz Y en el finally: un botón que queda clavado
+    # a 150px para siempre es peor que el salto que estamos arreglando.
+    assert html.count("btn.style.width = ''") >= 2
+    assert "finally" in html
+
+
+def test_cada_pantalla_elige_su_texto_de_espera(app):
+    """En el appbar del celular el botón es un cuadradito: con el ancho
+    clavado, "Generando…" no entra. Por eso el texto es configurable."""
+    assert "Generando" in _boton(app)
+    assert 'data-cargando="···"' in _boton(app, wa_label="⤴", wa_label_cargando="···")
+
+
+def test_sin_motor_de_pdf_no_se_dibuja_nada(app):
+    from flask import render_template_string
+
+    with app.test_request_context("/"):
+        app.jinja_env.globals["pdf_disponible"] = lambda: False
+        html = render_template_string(
+            '{% with pdf_url="/x", wa_numero="", wa_nombre="X", wa_clase="b" %}'
+            '{% include "informes/_ec_boton_whatsapp.html" %}{% endwith %}')
+    assert "data-wa-pdf" not in html

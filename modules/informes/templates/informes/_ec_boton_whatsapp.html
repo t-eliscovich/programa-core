@@ -15,6 +15,9 @@
                      hoja de estilos)
      · `wa_label`  — opcional; en el celular el appbar no tiene lugar para
                      "Enviar por WhatsApp" y va sólo el ícono
+     · `wa_label_cargando` — opcional; lo que dice mientras genera. El ancho
+                     del botón queda CLAVADO durante la espera, así que en un
+                     botón-ícono este texto tiene que ser corto o se corta
 
    Cómo se comporta, y por qué:
 
@@ -37,6 +40,7 @@
         data-url="{{ pdf_url }}"
         data-tel="{{ wa_numero }}"
         data-nombre="{{ wa_nombre }}"
+        data-cargando="{{ wa_label_cargando | default('Generando…', true) }}"
         title="{% if wa_numero %}Genera el estado de cuenta en PDF y lo manda por WhatsApp{% else %}Genera el estado de cuenta en PDF para compartirlo (este cliente no tiene teléfono cargado){% endif %}">
   <span data-wa-txt>{{ wa_label | default('Enviar por WhatsApp', true) }}</span>
 </button>
@@ -61,13 +65,44 @@
     return (m && m[1]) || ('Estado de cuenta - ' + fallback + '.pdf');
   }
 
+  // ⭐ TMT 2026-08-04, con la captura de la Mac al lado: "fijate porque no
+  // funciona whatsapp".
+  //
+  // La primera versión preguntaba `navigator.canShare({files})` y, si decía
+  // que sí, usaba el menú de compartir del sistema. En el celular está bien:
+  // WhatsApp vive ahí. En una Mac, Safari TAMBIÉN dice que sí — y el menú que
+  // se abre tiene AirDrop, Mail, Messages, Notes y Freeform. WhatsApp no
+  // aparece salvo que esté instalado Y registrado como extensión. O sea: el
+  // botón decía "Enviar por WhatsApp" y abría un menú sin WhatsApp.
+  //
+  // El error fue preguntar "¿podés compartir?" cuando la pregunta era "¿por
+  // dónde llega esto a WhatsApp en ESTE aparato?". En un teléfono, por el
+  // menú del sistema. En una computadora, por WhatsApp Web. Se decide por el
+  // tipo de puntero, que es lo que distingue un teléfono de un escritorio.
+  function esTelefono() {
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+
   document.addEventListener('click', async function (ev) {
     var btn = ev.target.closest('[data-wa-pdf]');
     if (!btn) return;
     var txt = btn.querySelector('[data-wa-txt]');
     var original = txt.textContent;
+    var tel = btn.dataset.tel;
+    var porMenu = esTelefono() && !!navigator.canShare;
+
+    // La pestaña de WhatsApp Web se abre ACÁ, en el click. Si se abriera
+    // después del `await`, Safari la bloquea por popup y el botón baja el PDF
+    // sin abrir nada — que es medio botón.
+    var ventana = (!porMenu && tel) ? window.open('', '_blank') : null;
+
+    // El texto cambia de largo y, sin clavar el ancho, se corre TODA la fila
+    // de botones y hasta el nombre del cliente. Visto en producción el 04/08.
+    // Se fija el ancho EXACTO (no un mínimo): el texto de espera puede ser más
+    // largo o más corto que el original según la pantalla.
+    btn.style.width = btn.getBoundingClientRect().width + 'px';
     btn.disabled = true;
-    txt.textContent = 'Generando…';
+    txt.textContent = btn.dataset.cargando || 'Generando\u2026';
     try {
       var resp = await fetch(btn.dataset.url, { credentials: 'same-origin' });
       if (!resp.ok) {
@@ -76,32 +111,51 @@
         var msg = resp.status === 503
           ? (await resp.text())
           : ('No se pudo generar el PDF (error ' + resp.status + ').');
+        if (ventana) ventana.close();
         alert(msg);
         return;
       }
       var blob = await resp.blob();
       var nombre = nombreDe(resp, btn.dataset.nombre || 'cliente');
-      var file = new File([blob], nombre, { type: 'application/pdf' });
 
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: nombre });
-          return;
-        } catch (e) {
-          // El usuario cerró el menú de compartir: no es un error, y no hay
-          // que bajarle el archivo por las dudas.
-          if (e && e.name === 'AbortError') return;
+      // El PDF ya está: el botón vuelve a su texto ANTES de abrir el menú de
+      // compartir. Si no, queda "Generando…" mientras el menú está abierto y
+      // parece colgado.
+      btn.disabled = false;
+      txt.textContent = original;
+      btn.style.width = '';
+
+      if (porMenu) {
+        var file = new File([blob], nombre, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: nombre });
+            return;
+          } catch (e) {
+            // Cerró el menú a propósito: no es un error y no hay que bajarle
+            // el archivo por las dudas.
+            if (e && e.name === 'AbortError') return;
+          }
         }
       }
+
+      // Escritorio: el PDF a la carpeta de descargas y la conversación del
+      // cliente abierta al lado, para arrastrarlo. `wa.me` sólo acepta texto,
+      // así que adjuntarlo por link no se puede — y un botón que dijera que sí
+      // estaría mintiendo.
       descargar(blob, nombre);
-      if (btn.dataset.tel) {
-        window.open('https://wa.me/' + btn.dataset.tel, '_blank', 'noopener');
+      if (ventana) {
+        ventana.location = 'https://wa.me/' + tel;
+      } else if (tel) {
+        window.open('https://wa.me/' + tel, '_blank', 'noopener');
       }
     } catch (e) {
+      if (ventana) ventana.close();
       alert('No se pudo generar el PDF: ' + e);
     } finally {
       btn.disabled = false;
       txt.textContent = original;
+      btn.style.width = '';
     }
   });
 })();
