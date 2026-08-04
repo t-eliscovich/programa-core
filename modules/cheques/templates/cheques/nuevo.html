@@ -227,8 +227,17 @@
                    'sin aplicar facturas'"). Se imprime en el resumen de
                    cobranza del día cuando el cobro no se aplica a facturas.
                    Antes esto se tipeaba en Doc. banco, que es el N° de
-                   comprobante y va al matcher de conciliación. #}
-                <div class="chq-full">
+                   comprobante y va al matcher de conciliación.
+
+                   TMT 2026-08-04 (tarde), dueña: "lo del concepto opcional
+                   solo para anticipos". Nació así en el pedido de Alex
+                   ("cuando sea anticipo") y se había puesto en TODOS los
+                   bloques: un campo de texto libre en cada cheque de una
+                   cobranza de doce es ruido, y encima el cobro normal ya se
+                   explica solo — se aplica a facturas y la tirilla lo dice.
+                   Ahora sale sólo con banco 97·ANTICIPO. Ver el toggle en
+                   `configurarBloque`. #}
+                <div class="chq-full cheque-concepto-wrap hidden">
                   <input type="text" name="concepto[]" value="{{ form.concepto or '' }}"
                          list="conceptos-cobro" autocomplete="off"
                          class="w-full border rounded px-2 py-1 text-sm cheque-concepto"
@@ -2246,6 +2255,26 @@
     const esAnticipo97 = (bancoSel.value === '97');
     if (medioWrap) medioWrap.classList.toggle('hidden', !esAnticipo97);
     if (medioSel) medioSel.required = esAnticipo97;
+    // Concepto: sólo para anticipos (dueña, 04/08 tarde). Se guarda y se
+    // restaura lo tipeado igual que el N° de cheque — cambiar de banco no
+    // puede comerse en silencio algo que la persona escribió; ese fue
+    // literalmente el error del 11/06 con el N° (12 correcciones + 3 migs).
+    // Y se limpia al ocultarlo para que un concepto viejo no viaje en el POST
+    // de un cobro que ya no es anticipo.
+    {
+      const conceptoInp  = bloque.querySelector('.cheque-concepto');
+      const conceptoWrap = bloque.querySelector('.cheque-concepto-wrap');
+      if (conceptoInp) {
+        if (!esAnticipo97) {
+          if (conceptoInp.value) bloque.dataset.conceptoGuardado = conceptoInp.value;
+          conceptoInp.value = '';
+        } else if (!conceptoInp.value && bloque.dataset.conceptoGuardado) {
+          conceptoInp.value = bloque.dataset.conceptoGuardado;
+          delete bloque.dataset.conceptoGuardado;
+        }
+      }
+      if (conceptoWrap) conceptoWrap.classList.toggle('hidden', !esAnticipo97);
+    }
     const v = esAnticipo97 ? ((medioSel && medioSel.value) || '97') : bancoSel.value;
     const esDeposito = DEPOSITO_BANCOS.includes(v);
     // TMT 2026-05-28 dueña: 'Si es un deposito (90/91/95/97/99) obligatoriamente
@@ -2495,6 +2524,15 @@
       if (window.__wireBloqueListener) window.__wireBloqueListener(nuevo);
     }
     aplicarToggleFechad(base);
+    // TMT 2026-08-04 — re-configurar CADA bloque con los valores restaurados.
+    // El bloque base se configuró al cargar la página, ANTES de que este
+    // restore le pisara el banco: sin esto queda mostrando el estado del
+    // banco viejo (se vio con el Concepto, que ahora sale sólo con 97).
+    // `change` sintético → isTrusted=false → no roba el foco.
+    chequesList.querySelectorAll('.cheque-bloque').forEach((b) => {
+      const sel = b.querySelector('.cheque-banco');
+      if (sel) sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     renumerarBloques();
     actualizarVisibilidad();
     actualizarMultiHint();
