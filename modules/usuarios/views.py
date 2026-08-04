@@ -59,7 +59,26 @@ def nuevo():
     roles = queries.roles_disponibles()
     vendedores = queries.vendedores_disponibles()
     if request.method == "GET":
-        return render_template("usuarios/form.html", form={}, errores=errores,
+        # TMT 2026-08-03 — el alta se puede PRE-LLENAR por querystring:
+        #   /usuarios/nuevo?username=roberto&rol=Vendedor&vend=RMY
+        # Sirve para dar de alta una tanda (los 6 vendedores) sin tipear el
+        # mismo formulario seis veces: se abre el link y sólo queda poner la
+        # contraseña, que es justamente lo único que NO tiene que viajar en
+        # una URL. Pre-llenar no es crear: nada se guarda hasta que la
+        # persona aprieta Guardar.
+        rol_pedido = (request.args.get("rol") or "").strip().lower()
+        id_rol_pedido = next(
+            (r["id_rol"] for r in roles
+             if (r["nombre_rol"] or "").strip().lower() == rol_pedido),
+            None,
+        )
+        form = {
+            "username": (request.args.get("username") or "").strip().lower(),
+            "id_rol": id_rol_pedido or parse_int(request.args.get("id_rol")),
+            "vend": (request.args.get("vend") or "").strip().upper(),
+            "clave": (request.args.get("clave") or "").strip().upper(),
+        }
+        return render_template("usuarios/form.html", form=form, errores=errores,
                                roles=roles, vendedores=vendedores, modo="crear")
 
     form = {

@@ -424,3 +424,37 @@ def test_el_rotulo_dice_lo_que_se_esta_mostrando(vendedor_logueado, monkeypatch)
         "/mi-cartera/clientes").data
     assert b"encontrado" in vendedor_logueado.get(
         "/mi-cartera/clientes?q=uno").data
+
+
+# ---------------------------------------------------------------------------
+# Alta de usuarios pre-llenada por link
+# ---------------------------------------------------------------------------
+
+
+def test_el_alta_se_puede_prellenar_por_link(app, client, fake_db, monkeypatch):
+    """`/usuarios/nuevo?username=...&rol=Vendedor&vend=RMY` abre el formulario
+    ya cargado, para dar de alta una tanda sin tipear seis veces lo mismo.
+
+    ⚠ La CONTRASEÑA no se pre-llena y no debe viajar nunca en una URL: queda
+    en el historial del navegador, en los logs del server y en el Referer.
+    """
+    from modules.usuarios import queries as uq
+
+    rid = fake_db.add_role("Vendedor", ["micartera.ver", "usuarios.admin"])
+    fake_db.add_user("jefa", _hash("Admin20261"), rid)
+    monkeypatch.setattr(uq, "roles_disponibles",
+                        lambda: [{"id_rol": rid, "nombre_rol": "Vendedor"}])
+    monkeypatch.setattr(uq, "vendedores_disponibles",
+                        lambda: [{"codigo": "RMY", "nombre": "Roberto Miranda"}])
+    client.post("/login", data={"username": "jefa", "password": "Admin20261"})
+
+    r = client.get("/usuarios/nuevo?username=ROBERTO&rol=vendedor&vend=rmy")
+    assert r.status_code == 200
+    html = r.data.decode()
+    assert 'value="roberto"' in html          # normalizado a minúsculas
+    assert f'value="{rid}"' in html and "selected" in html
+    assert 'value="RMY"' in html
+    # Y el campo de contraseña sigue vacío.
+    assert 'name="password" class="border rounded px-2 py-1 mt-1"' in html \
+        or 'type="password"' in html
+    assert "value=\"36Patricio8\"" not in html
