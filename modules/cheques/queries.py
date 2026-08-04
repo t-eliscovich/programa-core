@@ -1203,19 +1203,55 @@ def anular_por_error_de_carga(
         elif stat_prev == "C":
             import caja_helpers
 
-            # TMT 2026-07-30: si el efectivo era NEGATIVO (devolución al
-            # cliente, caja tipo='S'), anularlo tiene que DEVOLVER la plata a
-            # la caja — una 'E'. Con 'S' fijo la anulación restaba dos veces.
-            res = caja_helpers.insert_movimiento_caja(
-                conn,
-                fecha=fecha,
-                tipo="E" if importe < 0 else "S",
-                importe=abs(importe),
-                concepto=f"ANUL ch{ch.get('no_cheque') or id_cheque} err carga",
-                id_cheque=id_cheque,
-                usuario=usuario,
+            # TMT 2026-08-04 — ¿esta fila de caja la creó el cheque, o el
+            # cheque la ADOPTÓ? (ver `caja_existente_id` en `crear`). Es la
+            # misma pregunta que "¿de quién es la plata?": si el cheque la
+            # creó, anularlo tiene que sacarla; si la adoptó, la plata entró
+            # a la caja ANTES y por su cuenta — compensarla la borraría dos
+            # veces y dejaría la caja corta por un cobro que sí ocurrió.
+            #
+            # El hecho que las distingue: una fila creada por el cheque nace
+            # en la MISMA transacción, así que su `fecha_crea` es la del
+            # cheque. Una adoptada es más vieja. No hace falta un marcador
+            # que alguien pueda olvidar de escribir — la fecha ya lo dice.
+            adoptada = db.fetch_one(
+                """
+                SELECT cj.id_caja
+                  FROM scintela.caja cj
+                  JOIN scintela.cheque c ON c.id_cheque = cj.id_cheque
+                 WHERE cj.id_cheque = %s
+                   AND cj.fecha_crea < c.fecha_crea
+                 ORDER BY cj.id_caja
+                 LIMIT 1
+                """,
+                (id_cheque,),
+                conn=conn,
             )
-            compensacion = {"tipo": "caja", "id": res["id_caja"]}
+            if adoptada:
+                # Desenlazar, no compensar: la fila vuelve a quedar libre
+                # (y `/caja` la vuelve a marcar "⚠ sin cobranza"), que es
+                # exactamente el estado previo a la conversión.
+                db.execute(
+                    "UPDATE scintela.caja SET id_cheque = NULL "
+                    "WHERE id_caja = %s AND id_cheque = %s",
+                    (adoptada["id_caja"], id_cheque),
+                    conn=conn,
+                )
+                compensacion = {"tipo": "caja_desenlazada", "id": adoptada["id_caja"]}
+            else:
+                # TMT 2026-07-30: si el efectivo era NEGATIVO (devolución al
+                # cliente, caja tipo='S'), anularlo tiene que DEVOLVER la plata a
+                # la caja — una 'E'. Con 'S' fijo la anulación restaba dos veces.
+                res = caja_helpers.insert_movimiento_caja(
+                    conn,
+                    fecha=fecha,
+                    tipo="E" if importe < 0 else "S",
+                    importe=abs(importe),
+                    concepto=f"ANUL ch{ch.get('no_cheque') or id_cheque} err carga",
+                    id_cheque=id_cheque,
+                    usuario=usuario,
+                )
+                compensacion = {"tipo": "caja", "id": res["id_caja"]}
 
         # --- DELETE posdat hermana si existía ---
         db.execute(
