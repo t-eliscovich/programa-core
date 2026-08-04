@@ -19,7 +19,8 @@ siempre.
 
 from __future__ import annotations
 
-from datetime import timedelta
+import calendar
+from datetime import date, timedelta
 
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
@@ -34,6 +35,9 @@ from . import queries
 mi_cartera_bp = Blueprint("mi_cartera", __name__, template_folder="templates")
 
 PERIODOS = ("semana", "mes", "anio")
+
+MESES = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
+         "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
 
 
 def _vend_actual() -> str:
@@ -75,6 +79,28 @@ def _ctx_base(vend: str) -> dict:
     }
 
 
+def _anio_vs_meta(vend: str, hoy) -> dict:
+    """Lo vendido y la meta del año, comparables entre sí.
+
+    Si la dueña cargó sólo algunos meses, se comparan ESOS meses contra esas
+    metas. Comparar el año entero contra media meta daba 3345% (2026-08-03).
+    """
+    meta = queries.meta_anio(vend, hoy.year)
+    if not meta:
+        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
+                "meta_anio": None, "nota_anio": ""}
+    meses = queries.meses_con_meta(vend, hoy.year)
+    if len(meses) >= 12:
+        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
+                "meta_anio": meta, "nota_anio": ""}
+    return {
+        "vendido_anio": queries.ventas_en_meses(vend, hoy.year, meses),
+        "meta_anio": meta,
+        "nota_anio": (f"{len(meses)} mes cargado" if len(meses) == 1
+                      else f"{len(meses)} meses cargados"),
+    }
+
+
 @mi_cartera_bp.route("/mi-cartera")
 @requiere_login
 @requiere_permiso("micartera.ver")
@@ -96,12 +122,10 @@ def inicio():
     # los meses que tienen meta contra la suma de esas metas — y se aclara
     # sobre cuántos meses habla.
     if periodo == "anio" and meta:
-        meses = queries.meses_con_meta(vend, hoy.year)
-        if len(meses) < 12:
-            vendido = queries.ventas_en_meses(vend, hoy.year, meses)
-            nota_meta = (f"sobre {len(meses)} mes cargado"
-                         if len(meses) == 1
-                         else f"sobre {len(meses)} meses cargados")
+        anio = _anio_vs_meta(vend, hoy)
+        vendido = anio["vendido_anio"]
+        if anio["nota_anio"]:
+            nota_meta = f"sobre {anio['nota_anio']}"
             # El "ritmo" del año no aplica cuando el período no es el año
             # entero: sin los 12 meses no se sabe cuánto debería llevar.
             esperado = None
@@ -273,44 +297,53 @@ def imprimir_todos():
     )
 
 
-def _anio_vs_meta(vend: str, hoy) -> dict:
-    """Lo vendido y la meta del año, comparables entre sí.
-
-    Si la dueña cargó sólo algunos meses, se comparan ESOS meses contra esas
-    metas. Comparar el año entero contra media meta daba 3345% (2026-08-03).
-    """
-    meta = queries.meta_anio(vend, hoy.year)
-    if not meta:
-        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
-                "meta_anio": None, "nota_anio": ""}
-    meses = queries.meses_con_meta(vend, hoy.year)
-    if len(meses) >= 12:
-        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
-                "meta_anio": meta, "nota_anio": ""}
-    return {
-        "vendido_anio": queries.ventas_en_meses(vend, hoy.year, meses),
-        "meta_anio": meta,
-        "nota_anio": (f"{len(meses)} mes cargado" if len(meses) == 1
-                      else f"{len(meses)} meses cargados"),
-    }
-
-
 @mi_cartera_bp.route("/mi-cartera/comision")
 @requiere_login
 @requiere_permiso("micartera.ver")
 def comision():
+    """Mi comisión — SÓLO MENSUAL, con el detalle de qué la generó.
+
+    TMT 2026-08-03 (dueña): *"comisión solo necesito mensual, y podés mostrar
+    cada mes, seguro quieren saber de qué clientes están ganando esta
+    comisión, que la comisión diga de qué cobranza es"*.
+
+    Se fue el selector Semana/Mes/Año (una comisión semanal no se paga, así
+    que el número no significaba nada) y entró la navegación mes a mes más el
+    desglose: por cliente, y dentro de cada cliente, cobro por cobro.
+
+    ⚠ Mostrar el cobrado al lado de la comisión deja despejar el %, que en
+    agosto se había decidido no mostrar. Es consecuencia inevitable de
+    "que diga de qué cobranza es", y es un pedido posterior y más específico.
+    """
     vend = _vend_actual()
     hoy = today_ec()
-    periodo = _periodo()
-    desde, hasta, etiqueta = queries.rango_periodo(periodo, hoy)
+    anio = parse_int(request.args.get("anio")) or hoy.year
+    mes = parse_int(request.args.get("mes")) or hoy.month
+    # Nunca un mes futuro: la comisión de un mes que no pasó es 0 y confunde.
+    if (anio, mes) > (hoy.year, hoy.month):
+        anio, mes = hoy.year, hoy.month
+    mes = max(1, min(12, mes))
+
+    ultimo = calendar.monthrange(anio, mes)[1]
+    desde, hasta = date(anio, mes, 1), date(anio, mes, ultimo)
+    grupos = queries.comision_por_cliente(vend, anio, mes)
+
+    ant = date(anio, mes, 1) - timedelta(days=1)
+    sig = date(anio, mes, ultimo) + timedelta(days=1)
     return render_template(
         "mi_cartera/comision.html",
-        periodo=periodo,
-        etiqueta=etiqueta,
+        anio=anio,
+        mes=mes,
+        etiqueta=f"{MESES[mes - 1]} {anio}",
         monto=queries.comision(vend, desde, hasta),
+        cobrado=sum(g["cobrado"] for g in grupos),
+        grupos=grupos,
+        mes_anterior=(ant.year, ant.month),
+        mes_siguiente=((sig.year, sig.month)
+                       if (sig.year, sig.month) <= (hoy.year, hoy.month) else None),
         meses=queries.comision_meses(vend, hoy.year, hoy.month),
-        **_anio_vs_meta(vend, hoy),
-        anio=hoy.year,
+        es_mes_actual=(anio, mes) == (hoy.year, hoy.month),
+        nombres_meses=MESES,
         **_ctx_base(vend),
     )
 

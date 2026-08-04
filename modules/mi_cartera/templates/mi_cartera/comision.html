@@ -14,53 +14,85 @@
 
 {% block content %}
 {% set qv = ('&vend=' ~ vend) if preview else '' %}
-<div class="seg">
-  {% for p, rot in [('semana','Semana'), ('mes','Mes'), ('anio','Año')] %}
-    <a href="?periodo={{ p }}{{ qv }}" class="{% if periodo == p %}on{% endif %}">{{ rot }}</a>
-  {% endfor %}
+
+{# Navegación mes a mes. La comisión se paga por MES: no hay selector de
+   semana ni de año (dueña 2026-08-03: "comisión solo necesito mensual"). #}
+<div class="seg" style="align-items:center;">
+  <a href="?anio={{ mes_anterior[0] }}&mes={{ mes_anterior[1] }}{{ qv }}"
+     style="flex:0 0 44px;">‹</a>
+  <span style="flex:1;text-align:center;font-size:13.5px;font-weight:700;
+               padding:8px 0;">{{ etiqueta }}</span>
+  {% if mes_siguiente %}
+    <a href="?anio={{ mes_siguiente[0] }}&mes={{ mes_siguiente[1] }}{{ qv }}"
+       style="flex:0 0 44px;">›</a>
+  {% else %}
+    <span style="flex:0 0 44px;"></span>
+  {% endif %}
 </div>
 
 <div class="hero">
-  <div class="lbl">{{ etiqueta }} · estimado</div>
+  <div class="lbl">{{ 'Estimado del mes' if es_mes_actual else 'Comisión del mes' }}</div>
   <div class="val">$ {{ monto|money_es }}</div>
-  <div class="sub">Se actualiza cuando el cobro se acredita en el banco</div>
-</div>
-
-{% if meta_anio %}
-{# El anillo se llena hasta 100 pero el número dice la verdad (puede pasarse).
-   `nota_anio` aclara cuántos meses entran en la comparación: sin eso, la meta
-   a medio cargar contra el año entero marcaba 3345% (2026-08-03). #}
-{% set pct_real = (vendido_anio * 100 / meta_anio)|round|int %}
-{% set pct = [pct_real, 100]|min %}
-<div class="card">
-  <div class="card-t">
-    Año {{ anio }} · meta $ {{ meta_anio|money_es }}{% if nota_anio %} · {{ nota_anio }}{% endif %}
-  </div>
-  <div class="ring-wrap">
-    <div class="ring">
-      <svg width="112" height="112" aria-hidden="true">
-        <circle cx="56" cy="56" r="47" fill="none" stroke="#EDEFF4" stroke-width="11"/>
-        <circle cx="56" cy="56" r="47" fill="none" stroke="#4338CA" stroke-width="11"
-                stroke-linecap="round" stroke-dasharray="295.3"
-                stroke-dashoffset="{{ (295.3 * (100 - pct) / 100)|round(1) }}"/>
-      </svg>
-      <div class="mid"><b>{{ pct_real }}%</b></div>
-    </div>
-    <div class="meta-lines">
-      <div class="big">$ {{ vendido_anio|money_es }}</div>
-      <div class="of">{{ 'vendido en el año' if not nota_anio else 'vendido en esos meses' }}</div>
-    </div>
+  <div class="sub">
+    sobre $ {{ cobrado|money_es }} cobrados
+    {%- if es_mes_actual %} · se actualiza cuando el cobro se acredita{% endif %}
   </div>
 </div>
-{% endif %}
+
+{# De dónde sale el número. Dueña: "seguro quieren saber de qué clientes
+   están ganando esta comisión, que la comisión diga de qué cobranza es". #}
+<div class="card">
+  <div class="card-t">De qué cobranzas</div>
+  {% for g in grupos %}
+    <details {% if grupos|length <= 3 %}open{% endif %}
+             style="border-bottom:1px solid var(--line);padding:10px 0;">
+      <summary style="display:flex;align-items:center;gap:11px;cursor:pointer;
+                      list-style:none;">
+        {% set _p = (g.nombre or g.codigo_cli).split() %}
+        <span class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</span>
+        <span style="flex:1;min-width:0;">
+          <b style="display:block;font-size:14px;font-weight:600;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ g.nombre }}</b>
+          <span style="display:block;font-size:11.5px;color:var(--ink-3);margin-top:2px;">
+            {{ g.cobros|length }} cobro{{ '' if g.cobros|length == 1 else 's' }} ·
+            $ {{ g.cobrado|money_es }}
+          </span>
+        </span>
+        <b style="font-size:14px;font-variant-numeric:tabular-nums;">$ {{ g.comision|money_es }}</b>
+      </summary>
+      <div style="margin:8px 0 2px 47px;">
+        {% for c in g.cobros %}
+          <div style="display:flex;justify-content:space-between;gap:10px;
+                      font-size:12px;color:var(--ink-2);padding:4px 0;">
+            <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;
+                         white-space:nowrap;">
+              {{ c.fecha.strftime('%d/%m') if c.fecha else '—' }} ·
+              {% if c.es_cheque %}Ch. {{ c.doc or '—' }}{% else %}{{ c.doc or 'Cobro' }}{% endif %}
+              {%- if c.banco %} · {{ c.banco }}{% endif %}
+            </span>
+            <span style="font-variant-numeric:tabular-nums;white-space:nowrap;">
+              $ {{ c.importe|money_es }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </details>
+  {% else %}
+    <div class="vacio">
+      No hubo cobranzas acreditadas en {{ etiqueta|lower }}.<br>
+      La comisión se cuenta cuando el cheque llega al banco.
+    </div>
+  {% endfor %}
+</div>
 
 <div class="card">
-  <div class="card-t">Mes a mes</div>
+  <div class="card-t">Mes a mes · {{ meses[0].anio if meses else '' }}</div>
   {% for m in meses %}
-    <div class="rowitem">
-      <div class="nm"><b>{{ '%02d'|format(m.mes) }}/{{ m.anio }}</b></div>
+    <a class="rowitem" href="?anio={{ m.anio }}&mes={{ m.mes }}{{ qv }}">
+      <div class="nm">
+        <b>{{ nombres_meses[m.mes - 1] }}</b>
+      </div>
       <div class="amt"><b>$ {{ m.monto|money_es }}</b></div>
-    </div>
+    </a>
   {% else %}
     <div class="vacio">Todavía no hay comisiones este año.</div>
   {% endfor %}

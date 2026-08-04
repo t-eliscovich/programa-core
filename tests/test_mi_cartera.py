@@ -555,3 +555,79 @@ def test_no_existe_ninguna_ruta_para_BORRAR_un_usuario(app):
     assert rutas, "no encontré ninguna ruta de usuarios: el test dejó de vigilar"
     for r in rutas:
         assert "borrar" not in r and "eliminar" not in r and "delete" not in r
+
+
+# ---------------------------------------------------------------------------
+# Comisión: sólo mensual, y con el detalle de qué la generó
+# ---------------------------------------------------------------------------
+
+
+COBROS = [
+    {"origen": "CHE", "doc": "101731", "fecha": date(2026, 8, 3), "importe": 35.64,
+     "codigo_cli": "MWI", "cliente": "MARIO W INNOVANOVENTA", "banco": "DEP.PICH."},
+    {"origen": "CHE", "doc": "101737", "fecha": date(2026, 8, 3), "importe": 50.00,
+     "codigo_cli": "MWI", "cliente": "MARIO W INNOVANOVENTA", "banco": "DEP.PICH."},
+    {"origen": "EFE", "doc": "88", "fecha": date(2026, 8, 1), "importe": 200.00,
+     "codigo_cli": "ADG", "cliente": "MOLRIV ADELA", "banco": ""},
+]
+
+
+def test_la_comision_se_agrupa_por_cliente_y_muestra_cada_cobro(monkeypatch):
+    """Dueña 2026-08-03: "quieren saber de qué clientes están ganando esta
+    comisión, que la comisión diga de qué cobranza es"."""
+    monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: COBROS)
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 1.0)
+
+    g = q.comision_por_cliente("RMY", 2026, 8)
+    # Ordenados por lo cobrado, de mayor a menor.
+    assert [x["codigo_cli"] for x in g] == ["ADG", "MWI"]
+    assert g[0]["cobrado"] == 200.0 and g[0]["comision"] == 2.0
+    assert g[1]["cobrado"] == 85.64 and g[1]["comision"] == 0.86
+    # Cada cliente trae sus cobros uno por uno, en orden de fecha.
+    assert len(g[1]["cobros"]) == 2
+    assert g[1]["cobros"][0]["doc"] == "101731"
+    assert g[1]["cobros"][0]["es_cheque"] is True
+    assert g[0]["cobros"][0]["es_cheque"] is False
+
+
+def test_la_suma_del_desglose_es_la_comision_del_mes(monkeypatch):
+    """Si el detalle no suma el total, el vendedor deja de creerle a los dos."""
+    monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: COBROS)
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 1.0)
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: sum(c["importe"] for c in COBROS))
+
+    g = q.comision_por_cliente("RMY", 2026, 8)
+    total_detalle = sum(x["comision"] for x in g)
+    total_mes = q.comision("RMY", date(2026, 8, 1), date(2026, 8, 31))
+    assert abs(total_detalle - total_mes) < 0.02
+
+
+def test_la_comision_no_deja_pedir_un_mes_futuro(vendedor_logueado, monkeypatch):
+    """La comisión de un mes que no pasó es 0 y confunde."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 3))
+    monkeypatch.setattr(q, "comision_por_cliente", lambda *a, **k: [])
+    monkeypatch.setattr(q, "comision", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_meses", lambda *a, **k: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
+
+    html = vendedor_logueado.get("/mi-cartera/comision?anio=2026&mes=12").data.decode()
+    assert "Agosto 2026" in html and "Diciembre 2026" not in html
+    # Y en el mes actual no hay flecha "siguiente".
+    assert "mes=9" not in html
+
+
+def test_la_comision_ya_no_tiene_selector_de_semana_ni_de_ano(vendedor_logueado,
+                                                              monkeypatch):
+    """Una comisión semanal no se paga: el número no significaba nada."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 3))
+    monkeypatch.setattr(q, "comision_por_cliente", lambda *a, **k: [])
+    monkeypatch.setattr(q, "comision", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_meses", lambda *a, **k: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
+
+    html = vendedor_logueado.get("/mi-cartera/comision").data.decode()
+    assert "periodo=semana" not in html and "periodo=anio" not in html

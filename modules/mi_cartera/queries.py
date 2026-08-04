@@ -451,6 +451,57 @@ def comision(vend: str, desde: date, hasta: date) -> float:
     return round(cobrado(vend, desde, hasta) * _pct_comision(vend) / 100.0, 2)
 
 
+def cobros_del_mes(vend: str, anio: int, mes: int) -> list[dict]:
+    """Los cobros ACREDITADOS del mes, uno por uno, con su cliente.
+
+    Es el MISMO detalle que usa la pantalla de comisiones de la oficina
+    (`modules.comisiones.queries.cobranzas_detalle`): cheques que llegaron a
+    banco + cobros no-cheque de `scintela.cobro`. Se reusa a propósito — si
+    el vendedor y la dueña vieran dos listas distintas del mismo mes, la
+    conversación siguiente es imposible.
+    """
+    from modules.comisiones import queries as comisiones_queries
+
+    return comisiones_queries.cobranzas_detalle(vend, anio=int(anio), mes=int(mes))
+
+
+def comision_por_cliente(vend: str, anio: int, mes: int) -> list[dict]:
+    """Los cobros del mes AGRUPADOS por cliente, con la comisión de cada uno.
+
+    TMT 2026-08-03 (dueña): *"seguro quieren saber de qué clientes están
+    ganando esta comisión, que la comisión diga de qué cobranza es"*. Sin
+    esto, la pantalla mostraba un número sin forma de contestarse "¿de dónde
+    salió?", que es la única pregunta que un vendedor le hace a su comisión.
+
+    Cada grupo trae sus cobros uno por uno (fecha, documento, banco, importe),
+    ordenados de mayor a menor cobrado.
+    """
+    pct = _pct_comision(vend)
+    grupos: dict[str, dict] = {}
+    for c in cobros_del_mes(vend, anio, mes):
+        cod = (c.get("codigo_cli") or "").strip()
+        g = grupos.setdefault(cod, {
+            "codigo_cli": cod,
+            "nombre": (c.get("cliente") or cod or "—").strip(),
+            "cobrado": 0.0,
+            "cobros": [],
+        })
+        imp = float(c.get("importe") or 0)
+        g["cobrado"] += imp
+        g["cobros"].append({
+            "fecha": c.get("fecha"),
+            "doc": (str(c.get("doc") or "").strip() or None),
+            "banco": (str(c.get("banco") or "").strip() or None),
+            "es_cheque": (str(c.get("origen") or "").upper() == "CHE"),
+            "importe": imp,
+        })
+    salida = sorted(grupos.values(), key=lambda g: g["cobrado"], reverse=True)
+    for g in salida:
+        g["comision"] = round(g["cobrado"] * pct / 100.0, 2)
+        g["cobros"].sort(key=lambda c: (c["fecha"] is None, c["fecha"]))
+    return salida
+
+
 def comision_meses(vend: str, anio: int, hasta_mes: int) -> list[dict]:
     """Comisión mes a mes del año, de la más nueva a la más vieja."""
     out = []
