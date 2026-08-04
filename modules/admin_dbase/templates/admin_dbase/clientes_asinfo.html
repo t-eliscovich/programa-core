@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Códigos de cliente duplicados vs Asinfo{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <h1 class="text-2xl font-semibold mb-1">Códigos de cliente duplicados · qué dice Asinfo</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    Dos empresas distintas con el <b>mismo código de 3 letras</b>. Pasa porque el código
+    son las iniciales del nombre, así que dos clientes con las mismas iniciales chocan solos
+    (<code>LEC</code> = Luis Ernesto Cañamar <i>y</i> Lola Emperatriz Cisneros).
+    Un código repetido <b>duplica la plata</b>: todo el sistema JOINea por
+    <code>codigo_cli</code>, así que la comisión del vendedor se infla y el estado de cuenta
+    muestra el saldo dos veces.
+    <b>Asinfo es la autoridad sobre el código de cliente</b> — es el ERP que factura contra
+    el RUC. Acá se cruza ficha por ficha, por los 10 primeros dígitos del RUC.
+  </p>
+  <p class="text-xs text-slate-500 mb-4">
+    Pantalla de <b>sólo lectura</b>: no toca nada, ni acá ni en Asinfo. Sirve para decidir.
+    Para borrar la fila sobrante, andá a la ficha del cliente.
+  </p>
+
+  {% if not asinfo_ok %}
+  <p class="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded text-sm">
+    <b>El lado de Asinfo no está disponible</b> (Metabase sin configurar o sin respuesta).
+    Abajo está igual todo el lado de Programa Core: qué códigos están repetidos y cuánta
+    plata cuelga de cada uno. Volvé a cargar la pantalla cuando el puente vuelva.
+  </p>
+  {% endif %}
+
+  <div class="mb-5 flex flex-wrap gap-4 text-sm">
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">Códigos repetidos</div>
+      <div class="text-xl font-bold tabular-nums">{{ resumen.codigos }}</div>
+    </div>
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">Fichas involucradas</div>
+      <div class="text-xl font-bold tabular-nums">{{ resumen.fichas }}</div>
+    </div>
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">Resueltos por Asinfo</div>
+      <div class="text-xl font-bold tabular-nums">{{ resumen.resueltos }}</div>
+    </div>
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">Fichas que Asinfo desmiente</div>
+      <div class="text-xl font-bold tabular-nums">{{ resumen.difieren }}</div>
+    </div>
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">RUCs consultados a Asinfo</div>
+      <div class="text-xl font-bold tabular-nums">{{ n_rucs }}</div>
+    </div>
+  </div>
+
+  {% if not grupos %}
+  <p class="p-4 rounded border border-slate-200 dark:border-slate-700 text-sm text-slate-500">
+    No hay ningún <code>codigo_cli</code> repetido en <code>scintela.cliente</code>.
+  </p>
+  {% endif %}
+
+  {% for g in grupos %}
+  <div class="mb-5 rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div class="px-4 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700
+                flex items-center justify-between">
+      <div>
+        <span class="text-base font-bold">{{ g.codigo_cli }}</span>
+        <span class="text-xs text-slate-500">
+          · {{ g.n_fichas }} fichas con el mismo código
+          · {{ g.n_facturas }} facturas y {{ g.n_cheques }} cheques cuelgan de ese código
+        </span>
+      </div>
+      <div class="text-xs">
+        {% if g.hay_ganador %}
+          <span style="color:#047857;font-weight:600">Asinfo resuelve cuál es</span>
+        {% elif asinfo_ok %}
+          <span style="color:#b45309;font-weight:600">Asinfo no lo resuelve solo</span>
+        {% endif %}
+        <a href="/informes/estado-cuenta/{{ g.codigo_cli }}" class="ml-3 text-sky-700 hover:underline">
+          Estado de cuenta →
+        </a>
+      </div>
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-500 border-b border-slate-200 dark:border-slate-700">
+          <th class="text-left px-3 py-1.5">id_cliente</th>
+          <th class="text-left px-3 py-1.5">Código PC</th>
+          <th class="text-left px-3 py-1.5">Nombre en PC</th>
+          <th class="text-left px-3 py-1.5">RUC</th>
+          <th class="text-left px-3 py-1.5">Vend.</th>
+          <th class="text-right px-3 py-1.5">Facturas</th>
+          <th class="text-right px-3 py-1.5">Cheques</th>
+          <th class="text-left px-3 py-1.5">Código en Asinfo</th>
+          <th class="text-left px-3 py-1.5">Nombre fiscal en Asinfo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in g.fichas %}
+        <tr class="border-b border-slate-100 dark:border-slate-800"
+            style="{% if f.estado == 'coincide' %}background:#ecfdf5{% elif f.estado == 'difiere' %}background:#fef2f2{% endif %}">
+          <td class="px-3 py-1.5 tabular-nums">{{ f.id_cliente }}</td>
+          <td class="px-3 py-1.5 font-mono">
+            {{ f.codigo_cli }}
+            {% if not f.activo %}<span class="text-xs text-slate-500">(inactivo)</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5">{{ f.nombre or '—' }}</td>
+          <td class="px-3 py-1.5 font-mono text-xs">{{ f.ruc or '—' }}</td>
+          <td class="px-3 py-1.5">{{ f.vend or '—' }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ f.n_facturas }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ f.n_cheques }}</td>
+          <td class="px-3 py-1.5 font-mono">
+            {% if f.asinfo_codigo %}
+              {{ f.asinfo_codigos | join(' / ') }}
+              {% if f.estado == 'coincide' %}
+                <span style="color:#047857;font-weight:600">✓ es esta</span>
+              {% elif f.estado == 'difiere' %}
+                <span style="color:#b91c1c;font-weight:600">✗ no es {{ f.codigo_cli }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-xs text-slate-500">{{ f.etiqueta }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-xs">{{ f.asinfo_nombre or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

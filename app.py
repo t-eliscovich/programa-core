@@ -564,6 +564,14 @@ def create_app() -> Flask:
     app.register_blueprint(clientes_import_bp)
     app.register_blueprint(ficha_asinfo_bp)
 
+    # Códigos de cliente DUPLICADOS vs Asinfo — TMT 2026-08-04.
+    # /admin/clientes-asinfo cruza el maestro `empresa` de Asinfo contra
+    # scintela.cliente y muestra qué código le da el ERP a cada RUC. Sólo
+    # lectura: es la pantalla que se mira ANTES de borrar la ficha sobrante.
+    from modules.admin_dbase.clientes_asinfo_view import bp as clientes_asinfo_bp
+
+    app.register_blueprint(clientes_asinfo_bp)
+
     # Importador de proveedores desde FABRICA.DBF — TMT 2026-06-19.
     # /admin/proveedores-import crea los proveedores que faltan (BP, AC, AQ…)
     # con nombre/RUC/retenciones del maestro FABRICA. Dry-run por defecto.
