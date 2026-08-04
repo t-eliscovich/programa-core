@@ -37,7 +37,7 @@
       </div>
       <div class="meta-lines">
         <div class="big">$ {{ vendido|money_es }}</div>
-        <div class="of">de $ {{ meta|money_es }}</div>
+        <div class="of">de $ {{ meta|money_es }}{% if nota_meta %} · {{ nota_meta }}{% endif %}</div>
         {% if delta_ritmo is not none %}
           <span class="pill {{ 'good' if delta_ritmo >= 0 else 'warn' }}">
             {% if delta_ritmo >= 0 %}$ {{ delta_ritmo|money_es }} arriba del ritmo

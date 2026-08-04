@@ -27,9 +27,15 @@
 </div>
 
 {% if meta_anio %}
-{% set pct = [(vendido_anio * 100 / meta_anio)|round|int, 100]|min %}
+{# El anillo se llena hasta 100 pero el número dice la verdad (puede pasarse).
+   `nota_anio` aclara cuántos meses entran en la comparación: sin eso, la meta
+   a medio cargar contra el año entero marcaba 3345% (2026-08-03). #}
+{% set pct_real = (vendido_anio * 100 / meta_anio)|round|int %}
+{% set pct = [pct_real, 100]|min %}
 <div class="card">
-  <div class="card-t">Año {{ anio }} · meta $ {{ meta_anio|money_es }}</div>
+  <div class="card-t">
+    Año {{ anio }} · meta $ {{ meta_anio|money_es }}{% if nota_anio %} · {{ nota_anio }}{% endif %}
+  </div>
   <div class="ring-wrap">
     <div class="ring">
       <svg width="112" height="112" aria-hidden="true">
@@ -38,11 +44,11 @@
                 stroke-linecap="round" stroke-dasharray="295.3"
                 stroke-dashoffset="{{ (295.3 * (100 - pct) / 100)|round(1) }}"/>
       </svg>
-      <div class="mid"><b>{{ (vendido_anio * 100 / meta_anio)|round|int }}%</b></div>
+      <div class="mid"><b>{{ pct_real }}%</b></div>
     </div>
     <div class="meta-lines">
       <div class="big">$ {{ vendido_anio|money_es }}</div>
-      <div class="of">vendido en el año</div>
+      <div class="of">{{ 'vendido en el año' if not nota_anio else 'vendido en esos meses' }}</div>
     </div>
   </div>
 </div>

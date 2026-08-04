@@ -87,6 +87,24 @@ def inicio():
     vendido = queries.ventas(vend, desde, hasta)
     meta = queries.meta_periodo(vend, periodo, hoy)
     esperado = queries.avance_esperado(desde, hasta, hoy)
+    nota_meta = ""
+
+    # ⚠ La meta del AÑO es la suma de los meses CARGADOS, no una de 12 meses.
+    # Comparada contra las ventas del año entero da un disparate: el
+    # 2026-08-03, con sólo agosto cargado ($10.000) y $334.524 vendidos en el
+    # año, el anillo marcaba 3345%. Se compara like con like — lo vendido en
+    # los meses que tienen meta contra la suma de esas metas — y se aclara
+    # sobre cuántos meses habla.
+    if periodo == "anio" and meta:
+        meses = queries.meses_con_meta(vend, hoy.year)
+        if len(meses) < 12:
+            vendido = queries.ventas_en_meses(vend, hoy.year, meses)
+            nota_meta = (f"sobre {len(meses)} mes cargado"
+                         if len(meses) == 1
+                         else f"sobre {len(meses)} meses cargados")
+            # El "ritmo" del año no aplica cuando el período no es el año
+            # entero: sin los 12 meses no se sabe cuánto debería llevar.
+            esperado = None
 
     # Barritas: las semanas del mes en curso (en 'anio' no entran 52 barras en
     # un celular, así que ahí no se muestran).
@@ -114,8 +132,10 @@ def inicio():
         vendido=vendido,
         meta=meta,
         pct_meta=(round(vendido * 100 / meta) if meta else None),
-        pct_esperado=round(esperado * 100),
-        delta_ritmo=(vendido - meta * esperado) if meta else None,
+        pct_esperado=(round(esperado * 100) if esperado is not None else None),
+        delta_ritmo=((vendido - meta * esperado)
+                     if (meta and esperado is not None) else None),
+        nota_meta=nota_meta,
         cobrado=queries.cobrado(vend, desde, hasta),
         pendiente=pend,
         barras=barras,
@@ -247,6 +267,28 @@ def imprimir_todos():
     )
 
 
+def _anio_vs_meta(vend: str, hoy) -> dict:
+    """Lo vendido y la meta del año, comparables entre sí.
+
+    Si la dueña cargó sólo algunos meses, se comparan ESOS meses contra esas
+    metas. Comparar el año entero contra media meta daba 3345% (2026-08-03).
+    """
+    meta = queries.meta_anio(vend, hoy.year)
+    if not meta:
+        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
+                "meta_anio": None, "nota_anio": ""}
+    meses = queries.meses_con_meta(vend, hoy.year)
+    if len(meses) >= 12:
+        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
+                "meta_anio": meta, "nota_anio": ""}
+    return {
+        "vendido_anio": queries.ventas_en_meses(vend, hoy.year, meses),
+        "meta_anio": meta,
+        "nota_anio": (f"{len(meses)} mes cargado" if len(meses) == 1
+                      else f"{len(meses)} meses cargados"),
+    }
+
+
 @mi_cartera_bp.route("/mi-cartera/comision")
 @requiere_login
 @requiere_permiso("micartera.ver")
@@ -261,8 +303,7 @@ def comision():
         etiqueta=etiqueta,
         monto=queries.comision(vend, desde, hasta),
         meses=queries.comision_meses(vend, hoy.year, hoy.month),
-        vendido_anio=queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
-        meta_anio=queries.meta_anio(vend, hoy.year),
+        **_anio_vs_meta(vend, hoy),
         anio=hoy.year,
         **_ctx_base(vend),
     )

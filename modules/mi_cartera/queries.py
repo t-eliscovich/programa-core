@@ -290,14 +290,39 @@ def meta_mes(vend: str, anio: int, mes: int) -> float | None:
     return float(row["monto"])
 
 
+def meses_con_meta(vend: str, anio: int) -> list[int]:
+    """Meses del año que tienen una meta cargada. [] si ninguno."""
+    try:
+        filas = db.fetch_all(
+            """
+            SELECT mes FROM scintela.vendedor_meta
+             WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(%s)) AND anio = %s
+               AND COALESCE(monto, 0) <> 0
+             ORDER BY mes
+            """,
+            (vend, int(anio)),
+        )
+    except Exception:  # noqa: BLE001 — tabla todavía no creada (migración 0154)
+        return []
+    return [int(f["mes"]) for f in filas or []]
+
+
 def meta_anio(vend: str, anio: int) -> float | None:
-    """Meta del año = suma de las metas mensuales cargadas. None si no hay."""
+    """Meta del año = suma de las metas mensuales CARGADAS. None si no hay.
+
+    ⚠ OJO AL COMPARARLA: es la suma de los meses que la dueña cargó, no una
+    meta de 12 meses. Contra las ventas del año ENTERO da un disparate — el
+    2026-08-03, con sólo agosto cargado ($10.000) y $334.524 vendidos en el
+    año, el anillo mostraba **3345%**. Para comparar like con like está
+    `ventas_en_meses()` + `meses_con_meta()`.
+    """
     try:
         row = db.fetch_one(
             """
             SELECT COALESCE(SUM(monto), 0) AS total, COUNT(*) AS n
               FROM scintela.vendedor_meta
              WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(%s)) AND anio = %s
+               AND COALESCE(monto, 0) <> 0
             """,
             (vend, int(anio)),
         )
@@ -308,6 +333,32 @@ def meta_anio(vend: str, anio: int) -> float | None:
     return float(row["total"] or 0)
 
 
+def ventas_en_meses(vend: str, anio: int, meses: list[int]) -> float:
+    """Facturado del año restringido a ciertos MESES.
+
+    Es la mitad que faltaba para que el anillo del año signifique algo con la
+    meta a medio cargar: se compara lo vendido en los meses que TIENEN meta
+    contra la suma de esas metas.
+    """
+    if not meses:
+        return 0.0
+    return float(
+        (db.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(f.importe), 0) AS total
+              FROM scintela.factura f
+              JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+             WHERE {_ES_MI_CLIENTE}
+               AND EXTRACT(YEAR FROM f.fecha) = %(anio)s
+               AND EXTRACT(MONTH FROM f.fecha) = ANY(%(meses)s)
+               AND (f.stat IS NULL OR f.stat <> 'X')
+               AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+            """,
+            {"vend": vend, "anio": int(anio), "meses": [int(m) for m in meses]},
+        ) or {}).get("total") or 0
+    )
+
+
 def meta_periodo(vend: str, periodo: str, hoy: date) -> float | None:
     """Meta del período elegido.
 
@@ -316,6 +367,8 @@ def meta_periodo(vend: str, periodo: str, hoy: date) -> float | None:
     pedirle 52 números por vendedor por año.
     """
     if periodo == "anio":
+        # Ver el aviso de `meta_anio`: la vista tiene que comparar contra
+        # `ventas_en_meses(meses_con_meta(...))`, no contra el año entero.
         return meta_anio(vend, hoy.year)
     m = meta_mes(vend, hoy.year, hoy.month)
     if m is None:

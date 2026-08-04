@@ -316,3 +316,70 @@ def test_la_lista_de_comisiones_deja_editar_el_nombre():
     tpl = Path("modules/comisiones/templates/comisiones/lista.html").read_text()
     assert "comisiones.actualizar_nombre" in tpl
     assert 'name="nombre"' in tpl
+
+
+# ---------------------------------------------------------------------------
+# La meta del AÑO a medio cargar — el 3345%
+# ---------------------------------------------------------------------------
+
+
+def test_meta_del_anio_a_medio_cargar_se_compara_like_con_like(app, monkeypatch):
+    """Encontrado mirando el portal en vivo el 2026-08-03.
+
+    La dueña cargó UNA meta (agosto, $10.000). `meta_anio` suma los meses
+    cargados → $10.000. La pantalla lo comparaba contra las ventas del AÑO
+    ENTERO ($334.524) y el anillo marcaba **3345%**.
+
+    Ahora se comparan los meses que TIENEN meta contra la suma de esas metas.
+    """
+    from datetime import date
+
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "meta_anio", lambda vend, anio: 10_000.0)
+    monkeypatch.setattr(q, "meses_con_meta", lambda vend, anio: [8])
+    monkeypatch.setattr(q, "ventas", lambda *a, **k: 334_524.01)
+    monkeypatch.setattr(q, "ventas_en_meses", lambda vend, anio, meses: 750.34)
+
+    ctx = views._anio_vs_meta("RMY", date(2026, 8, 3))
+    assert ctx["vendido_anio"] == 750.34
+    assert ctx["meta_anio"] == 10_000.0
+    assert ctx["nota_anio"] == "1 mes cargado"
+    assert round(ctx["vendido_anio"] * 100 / ctx["meta_anio"]) == 8
+
+
+def test_con_los_12_meses_cargados_es_el_anio_entero(app, monkeypatch):
+    from datetime import date
+
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "meta_anio", lambda vend, anio: 120_000.0)
+    monkeypatch.setattr(q, "meses_con_meta", lambda vend, anio: list(range(1, 13)))
+    monkeypatch.setattr(q, "ventas", lambda *a, **k: 90_000.0)
+    ctx = views._anio_vs_meta("RMY", date(2026, 8, 3))
+    assert ctx["vendido_anio"] == 90_000.0 and ctx["nota_anio"] == ""
+
+
+def test_sin_meta_no_hay_nota_ni_anillo(app, monkeypatch):
+    from datetime import date
+
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "meta_anio", lambda vend, anio: None)
+    monkeypatch.setattr(q, "ventas", lambda *a, **k: 5.0)
+    ctx = views._anio_vs_meta("RMY", date(2026, 8, 3))
+    assert ctx["meta_anio"] is None and ctx["nota_anio"] == ""
+
+
+def test_meses_con_meta_ignora_los_ceros(monkeypatch):
+    """Una meta en 0 es "no cargada", no "meta cero": si contara, el mes
+    entraría a la comparación con denominador 0."""
+    vistos = {}
+
+    def _fetch_all(sql, params=None, conn=None):
+        vistos["sql"] = " ".join(sql.split()).lower()
+        return [{"mes": 8}]
+
+    monkeypatch.setattr(q.db, "fetch_all", _fetch_all)
+    assert q.meses_con_meta("RMY", 2026) == [8]
+    assert "coalesce(monto, 0) <> 0" in vistos["sql"]
