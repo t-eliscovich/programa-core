@@ -39,12 +39,11 @@ POR QUÉ EL INICIAL SE ANCLA UNA SOLA VEZ Y NO FILA POR FILA
 Cada foto as-of es una query pesada sobre `saldo_producto_lote`: doce anclas
 serían doce queries de varios segundos cada una y la pantalla tardaría un
 minuto en abrir. Con un ancla y el encadenado, son 3 queries en total. El
-precio es que si en el medio hubo un movimiento que no es producción ni
-despacho (una devolución de cliente, un ajuste de inventario), el encadenado
-se separa de la realidad — por eso la tab pide ADEMÁS la foto real al final
-del período y muestra la diferencia si no cierra. Un descuadre ahí no es un
-bug de la pantalla: es exactamente la clase de cosa que la dueña quería poder
-ver cuando el balance no le cierra.
+precio es que si en el medio la bodega se movió por algo que producción y
+despacho no explican, el encadenado se separa de la realidad — por eso la tab
+pide ADEMÁS la foto real al final del período y muestra la diferencia si no
+cierra. Un descuadre ahí no es un bug de la pantalla: es exactamente la clase
+de cosa que la dueña quería poder ver cuando el balance no le cierra.
 
 Todo fail-soft: si Asinfo no contesta, `disponible=False` y la tab muestra el
 aviso en vez de romperse.
@@ -83,9 +82,7 @@ def _encadenar(periodos: list[dict], vendido_por_periodo: dict,
     None (Asinfo no dio la foto): en ese caso las columnas de stock quedan en
     None y la tabla igual muestra los flujos.
 
-    OTROS MOV. es la columna que explica el descuadre (TMT 2026-08-04, dueña:
-    *"sí, esto me suena raro"*). Es lo que la bodega movió y no fue ni
-    producción ni venta:
+    `otros` es la columna que en pantalla se llama DIF. DE MEDICIÓN:
 
         otros = (ingreso_real − producido) − (egreso_real − vendido)
 
@@ -93,6 +90,22 @@ def _encadenar(periodos: list[dict], vendido_por_periodo: dict,
     porque `inicial + ingreso_real − egreso_real` es exactamente la identidad
     telescópica de `saldo_producto_lote`. Sin la columna, el final calculado se
     separaba 33 t del real en 8 meses y no había dónde ver por qué.
+
+    ⚠ QUÉ ES Y QUÉ NO ES (TMT 2026-08-04, deep dive que pidió la dueña después
+    de *"sí, esto me suena raro"*). La primera versión de esta pantalla la
+    llamaba "otros mov." y decía que eran devoluciones, reprocesos y ajustes.
+    Es FALSO. El perfil por tamaño de julio
+    (`/admin/debug-terminado-otros?perfil=2026-07`) devolvió CERO movimientos
+    de 100 kg o más: 14.611 ingresos de 19,6 kg promedio —un rollo— y 98% de
+    ellos altas de lote. No hay ninguna devolución grande que ir a buscar.
+    La causa es que `saldo_producto_lote` es una FOTO DIARIA: el rollo que se
+    produce y se despacha el mismo día no queda contado ni en `fab` ni en
+    despacho, pero la bodega sí lo registró. En 2026 la bodega movió 1.949.445
+    de ingreso y 1.950.129 de egreso (neto −684) contra 2.076.668 producidos y
+    2.112.416 vendidos declarados (neto −35.748): las DOS puntas declaradas
+    corren cortas (6,1% y 7,7%) y casi se cancelan; el residuo de 1,6% es esta
+    columna. El balance NO se ve afectado: usa la foto real del stock.
+    Por eso el nombre es "dif. de medición" y la celda va en gris, no en ámbar.
     """
     hay_mov = bool(movimiento_por_periodo)
     filas = []

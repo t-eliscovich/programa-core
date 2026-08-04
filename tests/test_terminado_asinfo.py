@@ -244,7 +244,7 @@ def test_resumen_control_cierra_contra_la_foto_real():
 
 def test_resumen_control_marca_la_diferencia():
     """Si Asinfo tiene menos de lo que el encadenado calcula, la dif se ve: es
-    movimiento que no es ni producción ni despacho (devolución, ajuste)."""
+    movimiento de bodega que producción y despacho no explican."""
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 120_500.0}
     p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(stock)
     with p1, p2, p3, p4, p5, p6, p7, \
@@ -373,9 +373,10 @@ def test_movimiento_por_dia_shape_y_fail_soft():
 
 def test_otros_mov_hace_cerrar_el_final_con_el_stock_real():
     """Enero: produce 10.000 y vende 4.000, pero la bodega movió 12.000 de
-    ingreso y 4.500 de egreso. Los 2.000 que entraron sin ser producción y los
-    500 que salieron sin ser venta son OTROS MOV. = +1.500, y el final tiene
-    que dar 100.000 + 12.000 − 4.500 = 107.500 (la identidad del saldo)."""
+    ingreso y 4.500 de egreso. Los 2.000 que entraron sin que producción los
+    explique y los 500 que salieron sin que despacho los explique son la DIF.
+    DE MEDICIÓN = +1.500, y el final tiene que dar 100.000 + 12.000 − 4.500 =
+    107.500 (la identidad del saldo)."""
     stock = {"2025-12-31": 100_000.0}
     p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
         stock,
@@ -387,16 +388,16 @@ def test_otros_mov_hace_cerrar_el_final_con_el_stock_real():
          patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         out = tsvc.resumen(2026, 1)
     f = out["meses"]["filas"][0]
-    assert f["otros_ingreso"] == 2_000.0     # entró sin ser producción
-    assert f["otros_egreso"] == 500.0        # salió sin ser venta
+    assert f["otros_ingreso"] == 2_000.0     # entró y producción no lo explica
+    assert f["otros_egreso"] == 500.0        # salió y despacho no lo explica
     assert f["otros"] == 1_500.0
     assert f["final"] == 107_500.0
     assert out["meses"]["total"]["otros"] == 1_500.0
 
 
 def test_sin_fuente_de_movimientos_otros_es_none_y_no_cero():
-    """Un 0 en esa columna dice "no hubo movimientos raros". Que la fuente esté
-    caída dice otra cosa muy distinta."""
+    """Un 0 en esa columna dice "las dos formas de contar dieron igual". Que la
+    fuente esté caída dice otra cosa muy distinta."""
     stock = {"2025-12-31": 100_000.0}
     p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
         stock,
@@ -529,3 +530,58 @@ def test_vendido_cero_no_se_imprime_como_menos_cero(app, fake_db):
          patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         r = c.get("/produccion-terminado-asinfo?anio=2026&mes=8")
     assert "-0,00" not in r.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# La columna de diferencia dice la verdad
+# ---------------------------------------------------------------------------
+# TMT 2026-08-04, cierre del deep dive. La columna se llamaba "Otros mov." y el
+# texto de la pantalla decía que eran devoluciones de clientes, reprocesos y
+# ajustes de inventario. Era una historia inventada: el perfil por tamaño de
+# julio (/admin/debug-terminado-otros?perfil=2026-07) devolvió CERO movimientos
+# de 100 kg o más — 14.611 ingresos de 19,6 kg promedio, 98% altas de lote. Lo
+# que hay es que `saldo_producto_lote` es una foto DIARIA y el rollo producido
+# y despachado el mismo día no entra en ninguna de las dos cuentas.
+#
+# Este test existe para que esa historia no vuelva sola. Una pantalla que le
+# dice a la dueña "andá a buscar 34 toneladas de devoluciones" le hace perder
+# días buscando algo que no está.
+
+
+def _html_terminado(app, fake_db):
+    c = _login(app, fake_db)
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        {"2025-12-31": 100_000.0},
+        meses=[{"periodo": "2026-01", "n_ofs": 4, "fab": 10_000.0,
+                "issued": 10_500.0}],
+        vendido_mes={"2026-01": 4_000.0},
+        mov_mes={"2026-01": {"ingreso": 12_000.0, "egreso": 4_500.0}})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        r = c.get("/produccion-terminado-asinfo?anio=2026&mes=1")
+    assert r.status_code == 200
+    return r.get_data(as_text=True)
+
+
+def test_la_columna_se_llama_diferencia_de_medicion(app, fake_db):
+    html = _html_terminado(app, fake_db)
+    assert "Dif. de medición (kg)" in html
+    assert "Otros mov." not in html
+
+
+def test_la_pantalla_no_promete_devoluciones_ni_ajustes(app, fake_db):
+    """La explicación no puede volver a atribuir el descuadre a movimientos que
+    la investigación demostró que no existen."""
+    html = _html_terminado(app, fake_db).lower()
+    # "devoluc" agarra devolución/devoluciones con y sin tilde.
+    for invento in ("devoluc", "reproces", "ajuste de inventario",
+                    "ajustes de inventario"):
+        assert invento not in html, invento
+
+
+def test_la_pantalla_aclara_que_el_balance_no_se_ve_afectado(app, fake_db):
+    """Lo primero que la dueña preguntó al ver el número fue si le inflaba la
+    utilidad. La respuesta —no— tiene que estar en la pantalla, no en un chat."""
+    html = _html_terminado(app, fake_db)
+    assert "No es plata ni tela perdida" in html
+    assert "foto diaria" in html.lower() or "foto <em>diaria</em>" in html

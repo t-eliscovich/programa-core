@@ -23,9 +23,12 @@
   .tm tr.tot:hover td{background:#f8fafc}
   .tm .muted{color:#64748b}
   .tm .desp{color:#b91c1c}
-  /* "Otros mov." es la columna que explica el descuadre: va destacada porque
-     un número grande ahí es justamente lo que hay que ir a mirar. */
-  .tm td.otros{color:#a16207;font-weight:600}
+  /* La columna de diferencia va en GRIS, no destacada (TMT 2026-08-04, después
+     del deep dive). Estuvo en ámbar mientras creíamos que un número grande ahí
+     era algo que ir a buscar. El perfil por tamaño mostró que no lo es —en
+     julio, cero movimientos ≥ 100 kg; promedio 19,6 kg, o sea un rollo— así
+     que pintarla de alerta mandaba a la dueña a buscar algo que no existe. */
+  .tm td.otros{color:#94a3b8}
   /* Lo que RESTA del stock se imprime en negativo (dueña 2026-08-04) y en un
      gris azulado, para que la fila se lea como una suma. */
   .tm td.resta{color:#475569}
@@ -115,7 +118,7 @@
           <th>Inicial (kg)</th>
           <th class="flujo">Producido (kg)</th>
           <th class="flujo">Vendido (kg)</th>
-          <th class="flujo">Otros mov. (kg)</th>
+          <th class="flujo">Dif. de medición (kg)</th>
           <th>Final (kg)</th>
           <th class="flujo">Desperdicio (kg)</th>
         </tr>
@@ -131,7 +134,7 @@
                en una columna de restas se lee como un error. Cero es cero. #}
             <td class="flujo resta">{{ (-f.vendido if f.vendido else 0)|num_es }}</td>
             <td class="flujo{{ ' otros' if f.otros }}"
-                {%- if f.otros_ingreso is not none %} title="Entró a bodega sin ser producción: {{ f.otros_ingreso|num_es }} kg · salió de bodega sin ser venta: {{ f.otros_egreso|num_es }} kg"{% endif %}>
+                {%- if f.otros_ingreso is not none %} title="Entradas que la bodega registró y producción no explica: {{ f.otros_ingreso|num_es }} kg · salidas que despacho no explica: {{ f.otros_egreso|num_es }} kg. Las dos corren parejas: es la misma tela contada de dos maneras."{% endif %}>
               {%- if f.otros is not none %}{{ f.otros|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if f.final is not none %}{{ f.final|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="flujo desp">{{ f.desperdicio_kg|num_es }}{% if f.desperdicio_pct is not none %}
@@ -162,20 +165,35 @@
     <details>
     <summary>Por mes · {{ anio }}
       {%- if data.meses.total.otros %}
-      <span style="font-weight:normal;text-transform:none;letter-spacing:0;color:#a16207">
-        · otros mov. {{ data.meses.total.otros|num_es }} kg</span>
+      <span style="font-weight:normal;text-transform:none;letter-spacing:0;color:#94a3b8">
+        · dif. de medición {{ data.meses.total.otros|num_es }} kg</span>
       {%- endif %}
     </summary>
     <p class="note" style="margin:8px 0 2px">Inicial + producido − vendido = final.
       <strong>Vendido</strong> = lo despachado físicamente al cliente (no la factura).
-      <strong>Desperdicio</strong> = tela cruda que entró al proceso y no salió como terminado.<br>
-      <strong>Otros mov.</strong> = todo lo demás que entró o salió de la bodega de
-      terminado y <em>no</em> fue producir ni vender: devoluciones de clientes, tela que
-      vuelve a reprocesarse, y ajustes de inventario. Es la resta entre lo que la bodega
-      movió de verdad y lo que explican las otras dos columnas — en positivo entró de más,
-      en negativo salió de más. Pasá el mouse por encima de la celda para ver las dos
-      puntas por separado. Con esta columna el final CIERRA con el stock que tiene Asinfo;
-      sin ella el año se separaba 33 t y no se veía por qué.</p>
+      <strong>Desperdicio</strong> = tela cruda que entró al proceso y no salió como terminado.</p>
+    {# TMT 2026-08-04, después del deep dive que pidió la dueña ("dale hacé un
+       deep dive y me contás qué son y decidimos"). Esta columna se llamó
+       "Otros mov." y el texto decía que eran devoluciones, reprocesos y
+       ajustes. ERA FALSO y hay que dejarlo dicho acá para que no vuelva: el
+       perfil por tamaño de julio (/admin/debug-terminado-otros?perfil=2026-07)
+       devolvió CERO movimientos ≥ 100 kg — 14.611 ingresos de 19,6 kg
+       promedio, 98% altas de lote. No hay ninguna devolución que ir a buscar.
+       Lo que hay es que `saldo_producto_lote` es una FOTO DIARIA: el rollo que
+       se produce y se despacha el mismo día no queda en ninguna de las dos
+       cuentas. Por eso producción declarada corre 6,1% corta y despacho 7,7%
+       corto contra lo que registró la bodega, y como casi se cancelan, lo que
+       queda acá es el residuo. El nombre y el color de la columna dicen eso
+       ahora. #}
+    <p class="note" style="margin:0 0 2px"><strong>Dif. de medición</strong> no es
+      una clase de movimiento: es el resto de contar la misma tela de dos maneras.
+      Asinfo guarda el saldo por lote como una foto <em>diaria</em>, así que un rollo
+      producido y despachado el mismo día no entra ni en «producido» ni en «vendido»,
+      pero sí quedó registrado en la bodega. En el año esas dos columnas corren 6% y 8%
+      cortas contra lo que la bodega movió de verdad, y casi se cancelan: acá queda el
+      residuo. <strong>No es plata ni tela perdida</strong> — el balance usa la foto real
+      del stock, que en 8 meses cierra dentro de 597 kg. Está para que el final de la
+      fila cuadre con Asinfo; si no, el año se separaba 33 t y no se veía por qué.</p>
     {{ tabla_mov(data.meses, 'Mes', 'TOTAL ' ~ anio, false) }}
 
     {# Control de que el encadenado no se separó de la realidad. El inicial se
@@ -192,9 +210,9 @@
         <div class="warnbox">Al {{ data.control.fecha|fecha_es }} el encadenado da
           <strong>{{ data.control.calculado|num_es }} kg</strong> y Asinfo tiene
           <strong>{{ data.control.real|num_es }} kg</strong> — una diferencia de
-          {{ data.control.dif|num_es }} kg. Eso es movimiento de la bodega que no
-          es ni producción ni despacho: devoluciones de cliente, reprocesos o
-          ajustes de inventario.</div>
+          {{ data.control.dif|num_es }} kg. Eso es movimiento de la bodega que las
+          columnas de producción y despacho no alcanzan a explicar (ver
+          «dif. de medición»).</div>
       {% endif %}
     {% endif %}
 
