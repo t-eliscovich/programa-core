@@ -172,3 +172,32 @@ def test_cobranza_periodo_sin_datos_devuelve_cero(monkeypatch):
 
     monkeypatch.setattr(q, "db", _FakeDB())
     assert q.cobranza_periodo("EDG", "2026-07-01", "2026-07-31") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# La caja REVERSADA tampoco cuenta
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("nombre", sorted(TODAS))
+def test_una_caja_reversada_no_cuenta(nombre):
+    """Caso ICH: el cobro entró en efectivo el 30/06 y el 15/07 se pasó a
+    depósito (`REVERSO id 299 — ES DEPOSITO` + cheque nuevo en el banco). Es
+    la MISMA plata: si la caja de junio cuenta y el cheque de julio también,
+    se paga comisión dos veces por un solo cobro.
+    """
+    sql = _sql_de(TODAS[nombre])
+    assert "kr.tipo = 'S'" in sql
+    assert "REVERSO id " in sql
+
+
+def test_el_reverso_se_matchea_con_borde_y_no_con_LIKE():
+    """⭐ `LIKE 'REVERSO id ' || id || '%'` pesca de más.
+
+    Con LIKE, la caja `id 2` matchea el texto "REVERSO id 299" y se cae de
+    la comisión un cobro ajeno — medido en producción: CH.VIL, $2.488,01,
+    que no tiene nada que ver con el reverso de ICH. El borde `([^0-9]|$)`
+    es lo único que separa `id 2` de `id 299`.
+    """
+    frag = q._CAJA_COBRO_FROM
+    assert "([^0-9]|$)" in frag, "falta el borde del id en el match del reverso"
+    assert "LIKE 'REVERSO" not in frag, "el reverso NO se matchea con LIKE"

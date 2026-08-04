@@ -88,6 +88,19 @@ _IN_COBRADO = ", ".join(f"'{s}'" for s in STATS_COBRADO)
 #
 # Esta es, además, la rama que `scintela.cobro` prometía y nunca cumplió:
 # esa tabla tiene UNA fila, del 14/03/2024, y nadie la escribe.
+#
+# Y una caja REVERSADA tampoco cuenta. Caso ICH (04/08): el cobro de
+# $4.046,93 entró en efectivo el 30/06 y el 15/07 se pasó a depósito —
+# `scintela.caja` tiene la salida `REVERSO id 299 — ES DEPOSITO` y se
+# creó el cheque #100664 en el banco. Es la MISMA plata: si la caja de
+# junio sigue contando y el cheque de julio también, el mes que viene
+# paga comisión dos veces por un solo cobro. El dBase hace lo mismo con
+# un asiento negativo el 14/07.
+#
+# ⚠ El match del reverso va por REGEX con borde y NO por
+# `LIKE 'REVERSO id ' || id || '%%'`: con LIKE, `id 2` pesca
+# "REVERSO id 299" y se cae de la comisión una caja ajena (medido:
+# CH.VIL, $2.488,01).
 _CAJA_COBRO_FROM = """
               FROM scintela.caja k
               JOIN cli c
@@ -102,7 +115,13 @@ _CAJA_COBRO_FROM = """
                         AND chx.fechad   = k.fecha
                         AND ROUND(chx.importe, 2) = ROUND(k.importe, 2)
                         AND UPPER(TRIM(chx.codigo_cli))
-                          = UPPER(TRIM(SUBSTRING(k.concepto FROM 4))))"""
+                          = UPPER(TRIM(SUBSTRING(k.concepto FROM 4))))
+               AND NOT EXISTS (
+                     SELECT 1
+                       FROM scintela.caja kr
+                      WHERE kr.tipo = 'S'
+                        AND kr.concepto ~ ('^REVERSO id ' || k.id_caja
+                                           || '([^0-9]|$)'))"""
 
 # ─────────────────────────────────────────────────────────────────────
 # TMT 2026-08-03 — `scintela.cliente` tiene 25 códigos DUPLICADOS
