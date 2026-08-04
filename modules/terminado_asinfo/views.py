@@ -1,9 +1,9 @@
-"""Tab 'Producción Terminado Asinfo' — kg de producto terminado por OF y día.
+"""Tab 'Producción Terminado Asinfo' — el movimiento del stock de terminado.
 
 Copia liviana de /produccion-tejeduria-asinfo para el OTRO paso de fabricación
 (bodega 53: tela cruda → producto terminado). SOLO LECTURA: el terminado lo
 hace la fábrica, no hay maquilero, así que no hay tarifas, ni carga de compras,
-ni pasivos. Ver el docstring de `service.py`.
+ni pasivos. Qué muestra y de dónde sale cada columna: ver `service.py`.
 
 Rutas:
   GET /produccion-terminado-asinfo    (stock.ver — el mismo gate que el resto
@@ -46,7 +46,7 @@ def _anio_mes():
 @requiere_permiso("stock.ver")
 def tab():
     anio, mes = _anio_mes()
-    data = service.resumen_mes(anio, mes)
+    data = service.resumen(anio, mes)
     return render_template(
         "terminado_asinfo/tab.html", data=data, anio=anio, mes=mes,
     )

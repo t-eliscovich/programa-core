@@ -9,9 +9,8 @@
 <style>
   /* Mismo lenguaje visual que la tab de Tejeduría (TMT 2026-07-30): títulos
      oscuros, cabecera de tabla gris, números tabulares y fila TOTAL separada.
-     Se copian sólo las reglas que esta pantalla usa. Todo va inline/<style>
-     porque static/tailwind.css es un build congelado: una clase nueva no
-     renderiza. */
+     Todo va inline/<style> porque static/tailwind.css es un build congelado:
+     una clase nueva no renderiza. */
   .tm table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 14px}
   .tm th,.tm td{padding:7px 10px;border-bottom:1px solid #eef2f6;text-align:right;
     font-variant-numeric:tabular-nums}
@@ -23,7 +22,12 @@
     border-top:2px solid #cbd5e1;border-bottom:none}
   .tm tr.tot:hover td{background:#f8fafc}
   .tm .muted{color:#64748b}
-  .tm .merma{color:#b91c1c}
+  .tm .desp{color:#b91c1c}
+  /* Las tres columnas de flujo (producido/vendido/desperdicio) van con un
+     fondo tenue para que el ojo separe de un saque el STOCK (inicial/final)
+     de lo que se MOVIÓ en el medio. */
+  .tm td.flujo,.tm th.flujo{background:#fbfdff}
+  .tm tr:hover td.flujo{background:#f4f8fc}
   .tm .sel{display:flex;gap:8px;align-items:end;margin:4px 0 8px}
   .tm .sel input{width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px}
   .tm .btn{display:inline-block;font-size:12px;font-weight:600;color:#fff;
@@ -32,20 +36,10 @@
   .tm .note{color:#475569;font-size:12px;margin:2px 0 10px}
   .tm .warnbox{border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;
     padding:10px 14px;margin:8px 0;font-size:13px}
+  .tm .okbox{border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;
+    padding:8px 14px;margin:8px 0 14px;font-size:12.5px;color:#166534}
   .tm h2{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
     color:#0f172a;margin:26px 0 6px;padding-left:9px;border-left:3px solid #0284c7}
-  /* KPIs del mes: 4 tarjetas que bajan a 2 y a 1 en pantallas chicas. */
-  .tm .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:10px 0 4px}
-  @media (max-width:900px){.tm .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media (max-width:520px){.tm .kpis{grid-template-columns:1fr}}
-  .tm .kpi{border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:10px 14px}
-  .tm .kpi .k{font-size:10.5px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.05em;color:#64748b}
-  .tm .kpi .v{font-size:20px;font-weight:700;color:#0f172a;
-    font-variant-numeric:tabular-nums;margin-top:2px}
-  .tm .kpi .u{font-size:11px;font-weight:600;color:#94a3b8;margin-left:3px}
-  .tm .kpi.mm{border-color:#fecaca;background:#fef2f2}
-  .tm .kpi.mm .v{color:#b91c1c}
 </style>
 {% endblock %}
 
@@ -61,72 +55,106 @@
   {% if not data.disponible %}
     <div class="warnbox">
       Asinfo no está respondiendo (o no hay órdenes de terminado cerradas en
-      {{ '%02d/%d' % (mes, anio) }}). La pantalla lee directo del ERP: no hay
-      nada cargado a mano que se pueda haber perdido — probá de nuevo en un rato.
+      {{ anio }}). La pantalla lee directo del ERP: no hay nada cargado a mano
+      que se pueda haber perdido — probá de nuevo en un rato.
     </div>
   {% else %}
 
-    {# ── EL MES DE UN VISTAZO (dueña 2026-08-04: "sí, arriba de todo") ──────
-       Son la suma de la tabla de abajo, no una segunda query: así la cabecera
-       nunca puede contradecir al detalle. #}
-    <div class="kpis">
-      <div class="kpi">
-        <div class="k">Tela cruda consumida</div>
-        <div class="v">{{ data.total.consumido|num_es }}<span class="u">kg</span></div>
-      </div>
-      <div class="kpi">
-        <div class="k">Terminado producido</div>
-        <div class="v">{{ data.total.producido|num_es }}<span class="u">kg</span></div>
-      </div>
-      <div class="kpi mm">
-        <div class="k">Merma</div>
-        <div class="v">{{ data.total.merma_kg|num_es }}<span class="u">kg</span></div>
-      </div>
-      <div class="kpi mm">
-        <div class="k">Merma %</div>
-        <div class="v">{% if data.total.merma_pct is not none %}{{ data.total.merma_pct|num_es }}<span class="u">%</span>{% else %}—{% endif %}</div>
-      </div>
-    </div>
-
-    {# ── EL DÍA A DÍA ────────────────────────────────────────────────────────
-       TMT 2026-08-04 (dueña: "no quiero artículos, quiero cantidades por día,
-       así entendemos por qué el balance o la duda de utilidad"). La primera
-       versión listaba OF por OF con el artículo. El artículo no explica un
-       salto de utilidad; el día sí: la utilidad es Δ patrimonio, y en este
-       paso la mueve la diferencia entre los kg de crudo que se comieron y los
-       kg de terminado que salieron. Una fila por día deja ver QUÉ DÍA pasó. #}
-    <h2>Día a día · {{ '%02d/%d' % (mes, anio) }}</h2>
-    <p class="note" style="margin:0 0 2px">Cada fila es el día en que Asinfo
-      CERRÓ las órdenes — o sea, el día que el terminado entró a bodega.
-      Merma = lo que entró de tela cruda menos lo que salió terminado.</p>
+  {# ── El macro de la tabla ────────────────────────────────────────────────
+     Las dos tablas (por mes y por día) tienen EXACTAMENTE las mismas columnas
+     a propósito: es la misma cuenta —inicial + producido − vendido = final—
+     mirada con dos zooms distintos. Un macro y no dos tablas copiadas para que
+     no se puedan separar con el tiempo. #}
+  {% macro tabla_mov(tabla, rotulo_periodo, rotulo_total, es_dia) -%}
     <table>
       <thead>
         <tr>
-          <th>Día</th><th>Órdenes</th><th>Tela cruda consumida (kg)</th>
-          <th>Terminado producido (kg)</th><th>Merma (kg)</th><th>Merma %</th>
+          <th>{{ rotulo_periodo }}</th>
+          <th>Órdenes</th>
+          <th>Inicial (kg)</th>
+          <th class="flujo">Producido (kg)</th>
+          <th class="flujo">Vendido (kg)</th>
+          <th>Final (kg)</th>
+          <th class="flujo">Desperdicio (kg)</th>
+          <th class="flujo">Desperdicio %</th>
         </tr>
       </thead>
       <tbody>
-        {% for d in data.dias %}
+        {% for f in tabla.filas %}
           <tr>
-            <td>{{ d.dia|fecha_es }}</td>
-            <td>{{ d.n_ofs }}</td>
-            <td>{{ d.consumido|num_es }}</td>
-            <td>{{ d.producido|num_es }}</td>
-            <td class="merma">{{ d.merma_kg|num_es }}</td>
-            <td class="merma">{% if d.merma_pct is not none %}{{ d.merma_pct|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{% if es_dia %}{{ f.periodo|fecha_es }}{% else %}{{ f.periodo[5:7] }}/{{ f.periodo[:4] }}{% endif %}</td>
+            <td>{{ f.n_ofs }}</td>
+            <td>{% if f.inicial is not none %}{{ f.inicial|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="flujo">{{ f.producido|num_es }}</td>
+            <td class="flujo">{{ f.vendido|num_es }}</td>
+            <td>{% if f.final is not none %}{{ f.final|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="flujo desp">{{ f.desperdicio_kg|num_es }}</td>
+            <td class="flujo desp">{% if f.desperdicio_pct is not none %}{{ f.desperdicio_pct|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
           </tr>
         {% endfor %}
         <tr class="tot">
-          <td>TOTAL {{ '%02d/%d' % (mes, anio) }}</td>
-          <td>{{ data.total.n_ofs }}</td>
-          <td>{{ data.total.consumido|num_es }}</td>
-          <td>{{ data.total.producido|num_es }}</td>
-          <td>{{ data.total.merma_kg|num_es }}</td>
-          <td>{% if data.total.merma_pct is not none %}{{ data.total.merma_pct|num_es }}{% else %}—{% endif %}</td>
+          <td>{{ rotulo_total }}</td>
+          <td>{{ tabla.total.n_ofs }}</td>
+          <td>{% if tabla.total.inicial is not none %}{{ tabla.total.inicial|num_es }}{% else %}—{% endif %}</td>
+          <td class="flujo">{{ tabla.total.producido|num_es }}</td>
+          <td class="flujo">{{ tabla.total.vendido|num_es }}</td>
+          <td>{% if tabla.total.final is not none %}{{ tabla.total.final|num_es }}{% else %}—{% endif %}</td>
+          <td class="flujo desp">{{ tabla.total.desperdicio_kg|num_es }}</td>
+          <td class="flujo desp">{% if tabla.total.desperdicio_pct is not none %}{{ tabla.total.desperdicio_pct|num_es }}{% else %}—{% endif %}</td>
         </tr>
       </tbody>
     </table>
+  {%- endmacro %}
+
+    {# ── POR MES (TMT 2026-08-04, dueña: "poné inicial producido vendido
+       final" · "para cada mes") ────────────────────────────────────────────
+       Es el movimiento del stock de terminado, que es lo que mueve el balance:
+       inicial + producido − vendido = final. El desperdicio va al costado
+       porque NO es un movimiento de esta bodega: son los kg de tela cruda que
+       entraron al proceso y no salieron como terminado. #}
+    <h2>Por mes · {{ anio }}</h2>
+    <p class="note" style="margin:0 0 2px">Inicial + producido − vendido = final.
+      <strong>Vendido</strong> = lo despachado físicamente al cliente (no la factura).
+      <strong>Desperdicio</strong> = tela cruda que entró al proceso y no salió como terminado.</p>
+    {{ tabla_mov(data.meses, 'Mes', 'TOTAL ' ~ anio, false) }}
+
+    {# Control de que el encadenado no se separó de la realidad. El inicial se
+       ancla UNA vez (una foto as-of por tabla; doce serían doce queries
+       pesadas), así que si en el medio hubo una devolución o un ajuste de
+       inventario, el final calculado se corre del stock que Asinfo dice tener.
+       Cuando pasa, la pantalla lo dice en vez de mostrar un número lindo y
+       falso. #}
+    {% if data.control %}
+      {% if data.control.dif|abs < 1 %}
+        <div class="okbox">El stock final calculado cierra con la foto de Asinfo
+          al {{ data.control.fecha|fecha_es }}: {{ data.control.real|num_es }} kg.</div>
+      {% else %}
+        <div class="warnbox">Al {{ data.control.fecha|fecha_es }} el encadenado da
+          <strong>{{ data.control.calculado|num_es }} kg</strong> y Asinfo tiene
+          <strong>{{ data.control.real|num_es }} kg</strong> — una diferencia de
+          {{ data.control.dif|num_es }} kg. Eso es movimiento de la bodega que no
+          es ni producción ni despacho: devoluciones de cliente, reprocesos o
+          ajustes de inventario.</div>
+      {% endif %}
+    {% endif %}
+
+    {# ── DÍA A DÍA (dueña: "cantidades por día, así entendemos por qué el
+       balance o la duda de utilidad") ─────────────────────────────────────── #}
+    <h2>Día a día · {{ '%02d/%d' % (mes, anio) }}</h2>
+    {# TMT 2026-08-04 (dueña: "¿y que ayer 2 de agosto o 1 de agosto no se
+       terminó nada? tampoco nada el sábado, qué raro"). No: el sábado se
+       trabaja (los 4 sábados de julio tienen producción). Lo que pasa es que
+       la fecha es la del CIERRE de la orden en Asinfo, y los cierres se
+       amontonan — los lunes de julio son siempre los días más grandes (13/07
+       con 127 órdenes, 20/07 con 94) contra 45-70 de un día normal. Un día
+       vacío seguido de uno doble es cierre acumulado, no fábrica parada. Y eso
+       importa para leer la utilidad: mueve el stock de un día al otro sin que
+       haya plata nueva. Por eso el aviso va en la pantalla y no sólo acá. #}
+    <p class="note" style="margin:0 0 2px">Ojo: la fecha es el día en que Asinfo
+      <strong>cerró</strong> la orden, no el día en que se hizo la tela. Los cierres se
+      amontonan (los lunes son siempre los días más grandes), así que un día
+      vacío seguido de uno doble es cierre acumulado, no fábrica parada.</p>
+    {{ tabla_mov(data.dias, 'Día', 'TOTAL %02d/%d' % (mes, anio), true) }}
 
   {% endif %}
 </div>

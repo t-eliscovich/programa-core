@@ -2139,51 +2139,47 @@ def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# El MISMO flujo, pero abierto DÍA POR DÍA.
+# El MISMO flujo, pero abierto POR PERÍODO (día o mes).
 #
 # TMT 2026-08-04 (dueña, sobre la pantalla de Terminado: *"no quiero artículos,
 # quiero cantidades por día, así entendemos por qué el balance o la duda de
-# utilidad"*). El total del mes no explica un salto: para eso hace falta ver en
-# qué día entraron los kg. Y como la utilidad es Δ patrimonio, lo que la mueve
-# no es sólo lo que SALIÓ terminado sino lo que se COMIÓ de tela cruda — por
-# eso cada fila trae las dos puntas y la merma del día.
+# utilidad"*, y después *"desperdicio... inicial producido vendido final... para
+# cada mes"*). El total del mes no explica un salto: hace falta ver en qué
+# período entraron los kg. Y como la utilidad es Δ patrimonio, lo que la mueve
+# no es sólo lo que SALIÓ terminado sino lo que se COMIÓ de tela cruda — de ahí
+# el desperdicio (crudo consumido − terminado producido) en cada fila.
 #
 # Es la misma query que `fabricacion_flujo_mes`, con el mismo criterio de hoja
 # (`NOT IN` los padres) y el mismo filtro de categoría del material de entrada,
 # agregada por `fecha_cierre` en vez de en un solo total. Que sea LA MISMA es
-# la gracia: la suma de los días da EXACTAMENTE el número del mes que muestra
-# Flujo de producción. Si un día se hace una copia con otro criterio, las dos
-# pantallas empiezan a discutir y nadie sabe cuál creer.
+# la gracia: la suma de los períodos da EXACTAMENTE el número del mes que
+# muestra Flujo de producción. Si un día se hace una copia con otro criterio,
+# las dos pantallas empiezan a discutir y nadie sabe cuál creer.
 # ---------------------------------------------------------------------------
 _FABRICACION_DIA_TTL_SECS = 300  # 5 min, igual que el mensual
 _FABRICACION_DIA_CACHE: dict = {}
 
 
-def fabricacion_flujo_por_dia(id_bodega: int, yy: int, mm: int) -> list[dict]:
-    """`fabricacion_flujo_mes` abierto por día de cierre.
-
-    Devuelve (fail-soft, `[]` si Asinfo no contesta):
-        [{dia 'YYYY-MM-DD', n_ofs, issued, fab}]  ordenado por día.
-
-    · fab    = kg que INGRESARON a la bodega ese día (terminado producido).
-    · issued = kg de material de entrada que se CONSUMIERON en esas órdenes
-               (tela cruda para bodega 53, hilo para la 52).
-    · issued − fab = merma del día.
-    """
-    try:
-        yy = int(yy)
-        mm = int(mm)
-        id_bodega = int(id_bodega)
-    except (TypeError, ValueError):
-        return []
-    cache_key = (id_bodega, yy, mm)
-    now = _time.time()
-    cached = _FABRICACION_DIA_CACHE.get(cache_key)
-    if cached and (now - cached[0]) < _FABRICACION_DIA_TTL_SECS:
-        return cached[1]
+def _rango_mes(yy: int, mm: int) -> tuple[str, str]:
+    """(primero del mes, primero del siguiente) en ISO."""
     d1 = f"{yy:04d}-{mm:02d}-01"
     ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
-    d2 = f"{ny:04d}-{nm:02d}-01"
+    return d1, f"{ny:04d}-{nm:02d}-01"
+
+
+# `CONVERT(..., 23)` da 'YYYY-MM-DD'; recortado a varchar(7) da 'YYYY-MM'. Es
+# la clave de agrupación de cada granularidad, y también la clave del dict que
+# devuelven las funciones de despacho — así las dos fuentes se cruzan sin
+# parsear fechas.
+_PERIODO_SQL = {"dia": "CONVERT(varchar(10), %s, 23)",
+                "mes": "CONVERT(varchar(7),  %s, 23)"}
+
+
+def _fabricacion_flujo_agrupado(id_bodega: int, d1: str, d2: str,
+                                por: str) -> list[dict]:
+    """Motor de `fabricacion_flujo_por_dia` / `_por_mes`. Ver el comentario de
+    arriba: es la query de `fabricacion_flujo_mes` con un GROUP BY."""
+    periodo = _PERIODO_SQL[por] % "fecha_cierre"
     mat = _MATERIAL_PROCESO.get(id_bodega, "")
     cat_filter = (
         f" AND prm.nombre_categoria_producto = '{mat}'" if mat else ""
@@ -2191,8 +2187,8 @@ def fabricacion_flujo_por_dia(id_bodega: int, yy: int, mm: int) -> list[dict]:
     sql = f"""
         WITH ofs AS (
             SELECT id_orden_fabricacion,
-                   CONVERT(varchar(10), fecha_cierre, 23) AS dia,
-                   ISNULL(cantidad_fabricada, 0)          AS fab
+                   {periodo}                     AS periodo,
+                   ISNULL(cantidad_fabricada, 0) AS fab
               FROM orden_fabricacion
              WHERE id_bodega = {id_bodega}
                AND fecha_cierre >= '{d1}' AND fecha_cierre < '{d2}'
@@ -2211,35 +2207,81 @@ def fabricacion_flujo_por_dia(id_bodega: int, yy: int, mm: int) -> list[dict]:
                    {cat_filter}
              GROUP BY j.id_orden_fabricacion
         )
-        SELECT o.dia,
+        SELECT o.periodo,
                COUNT(*)                      AS n_ofs,
                SUM(o.fab)                    AS fab,
                SUM(ISNULL(i.issued, 0))      AS issued
           FROM ofs o
           LEFT JOIN iss i ON i.id_orden_fabricacion = o.id_orden_fabricacion
-         GROUP BY o.dia
-         ORDER BY o.dia
+         GROUP BY o.periodo
+         ORDER BY o.periodo
     """
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=400)
     except Exception:  # noqa: BLE001 -- fail-soft
         return []
-    out = [
+    return [
         {
-            "dia": str(r.get("dia") or "")[:10],
+            "periodo": str(r.get("periodo") or ""),
             "n_ofs": int(r.get("n_ofs") or 0),
             "issued": round(float(r.get("issued") or 0.0), 2),
             "fab": round(float(r.get("fab") or 0.0), 2),
         }
         for r in (rows or [])
     ]
+
+
+def fabricacion_flujo_por_dia(id_bodega: int, yy: int, mm: int) -> list[dict]:
+    """`fabricacion_flujo_mes` abierto por DÍA de cierre.
+
+    Devuelve (fail-soft, `[]` si Asinfo no contesta):
+        [{periodo 'YYYY-MM-DD', n_ofs, issued, fab}]  ordenado por período.
+
+    · fab    = kg que INGRESARON a la bodega ese día (terminado producido).
+    · issued = kg de material de entrada que se CONSUMIERON en esas órdenes
+               (tela cruda para bodega 53, hilo para la 52).
+    · issued − fab = DESPERDICIO del día.
+    """
+    try:
+        yy, mm, id_bodega = int(yy), int(mm), int(id_bodega)
+    except (TypeError, ValueError):
+        return []
+    cache_key = (id_bodega, yy, mm, "dia")
+    now = _time.time()
+    cached = _FABRICACION_DIA_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _FABRICACION_DIA_TTL_SECS:
+        return cached[1]
+    d1, d2 = _rango_mes(yy, mm)
+    out = _fabricacion_flujo_agrupado(id_bodega, d1, d2, "dia")
     if out:  # no congelar un [] por error de red (mismo criterio que el mensual)
         _FABRICACION_DIA_CACHE[cache_key] = (now, out)
     return out
 
 
+def fabricacion_flujo_por_mes(id_bodega: int, anio: int) -> list[dict]:
+    """Igual, pero una fila por MES del año `anio` ('YYYY-MM' en `periodo`).
+
+    TMT 2026-08-04 (dueña: *"para cada mes"*). UNA query para los 12 meses, no
+    doce llamadas a `fabricacion_flujo_mes`.
+    """
+    try:
+        anio, id_bodega = int(anio), int(id_bodega)
+    except (TypeError, ValueError):
+        return []
+    cache_key = (id_bodega, anio, 0, "mes")
+    now = _time.time()
+    cached = _FABRICACION_DIA_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _FABRICACION_DIA_TTL_SECS:
+        return cached[1]
+    out = _fabricacion_flujo_agrupado(
+        id_bodega, f"{anio:04d}-01-01", f"{anio + 1:04d}-01-01", "mes")
+    if out:
+        _FABRICACION_DIA_CACHE[cache_key] = (now, out)
+    return out
+
+
 def reset_fabricacion_dia_cache() -> None:
-    """Vaciar el cache de fabricacion_flujo_por_dia (tests / deploy)."""
+    """Vaciar el cache de fabricacion_flujo_por_dia/_por_mes (tests/deploy)."""
     _FABRICACION_DIA_CACHE.clear()
 
 
@@ -2292,6 +2334,82 @@ def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
         return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return 0.0
+
+
+# ---------------------------------------------------------------------------
+# El MISMO despacho físico, abierto por período (día o mes).
+#
+# TMT 2026-08-04 (dueña, sobre Terminado: *"poné inicial producido vendido
+# final"*). El "vendido" de esa tabla es ESTO: el despacho físico que salió por
+# la puerta, no la factura (documento) ni el delta del saldo por lote. Misma
+# fuente y mismo WHERE que `despacho_fisico_mes` — con un GROUP BY, para que el
+# total de la tabla dé exactamente lo que da esa función.
+# ---------------------------------------------------------------------------
+_DESPACHO_PERIODO_CACHE: dict = {}
+
+
+def _despacho_fisico_agrupado(id_bodega: int, d1: str, d2: str,
+                              por: str) -> dict:
+    """{periodo: kg}. Fail-soft: {} si Asinfo no contesta."""
+    periodo = _PERIODO_SQL[por] % "dc.fecha"
+    sql = f"""
+        SELECT {periodo}                   AS periodo,
+               SUM(ISNULL(dd.cantidad, 0)) AS kg
+          FROM despacho_cliente dc
+          JOIN detalle_despacho_cliente dd
+            ON dd.id_despacho_cliente = dc.id_despacho_cliente
+         WHERE dc.fecha >= '{d1}' AND dc.fecha < '{d2}'
+           AND dc.fecha_anulacion IS NULL
+           AND dd.id_bodega = {id_bodega}
+         GROUP BY {periodo}
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=400)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {}
+    return {str(r.get("periodo") or ""): round(float(r.get("kg") or 0.0), 2)
+            for r in (rows or [])}
+
+
+def despacho_fisico_por_dia(yy: int, mm: int, id_bodega: int = 53) -> dict:
+    """{'YYYY-MM-DD': kg despachados} del mes. Fail-soft: {}."""
+    try:
+        yy, mm, id_bodega = int(yy), int(mm), int(id_bodega)
+    except (TypeError, ValueError):
+        return {}
+    cache_key = (id_bodega, yy, mm, "dia")
+    now = _time.time()
+    cached = _DESPACHO_PERIODO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _DESPACHO_TTL_SECS:
+        return cached[1]
+    d1, d2 = _rango_mes(yy, mm)
+    out = _despacho_fisico_agrupado(id_bodega, d1, d2, "dia")
+    if out:
+        _DESPACHO_PERIODO_CACHE[cache_key] = (now, out)
+    return out
+
+
+def despacho_fisico_por_mes(anio: int, id_bodega: int = 53) -> dict:
+    """{'YYYY-MM': kg despachados} del año. UNA query para los 12 meses."""
+    try:
+        anio, id_bodega = int(anio), int(id_bodega)
+    except (TypeError, ValueError):
+        return {}
+    cache_key = (id_bodega, anio, 0, "mes")
+    now = _time.time()
+    cached = _DESPACHO_PERIODO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _DESPACHO_TTL_SECS:
+        return cached[1]
+    out = _despacho_fisico_agrupado(
+        id_bodega, f"{anio:04d}-01-01", f"{anio + 1:04d}-01-01", "mes")
+    if out:
+        _DESPACHO_PERIODO_CACHE[cache_key] = (now, out)
+    return out
+
+
+def reset_despacho_periodo_cache() -> None:
+    """Vaciar el cache de despacho_fisico_por_dia/_por_mes (tests / deploy)."""
+    _DESPACHO_PERIODO_CACHE.clear()
 
 
 _MOVIMIENTO_BODEGA_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)

@@ -1,9 +1,14 @@
-"""Tests de la tab Producción Terminado Asinfo (bodega 53, día por día).
+"""Tests de la tab Producción Terminado Asinfo (bodega 53).
 
-  - asinfo.service.fabricacion_flujo_por_dia: shape, SQL (bodega, ventana de
-    cierre, criterio de hoja, material de entrada), caché y fail-soft.
-  - terminado_asinfo.service.resumen_mes: merma por día, total = suma de los
-    días, y el caso "sin consumo" (merma_pct None, no 0).
+La pantalla es el MOVIMIENTO del stock de terminado —inicial + producido −
+vendido = final— con el desperdicio al costado, por mes y por día.
+
+  - asinfo.service.fabricacion_flujo_por_dia/_por_mes: shape, SQL (bodega,
+    ventana, criterio de hoja, material de entrada, granularidad), caché
+    separada por granularidad y fail-soft.
+  - asinfo.service.despacho_fisico_por_dia/_por_mes (la columna "vendido").
+  - terminado_asinfo.service.resumen: encadenado del stock, total, control
+    contra la foto real de Asinfo, y los casos None.
   - render de /produccion-terminado-asinfo.
 
 Sin HTTP ni DB real: se mockea metabase_client.
@@ -22,31 +27,36 @@ from modules.terminado_asinfo import service as tsvc
 @pytest.fixture(autouse=True)
 def _limpiar_cache():
     asvc.reset_fabricacion_dia_cache()
+    asvc.reset_despacho_periodo_cache()
     yield
     asvc.reset_fabricacion_dia_cache()
+    asvc.reset_despacho_periodo_cache()
 
 
-_ROWS = [
-    {"dia": "2026-07-03", "n_ofs": 3, "fab": 1_400.0, "issued": 1_500.0},
-    {"dia": "2026-07-10", "n_ofs": 5, "fab": 2_000.0, "issued": 2_100.0},
+_DIAS = [
+    {"periodo": "2026-07-03", "n_ofs": 3, "fab": 1_400.0, "issued": 1_500.0},
+    {"periodo": "2026-07-10", "n_ofs": 5, "fab": 2_000.0, "issued": 2_100.0},
+]
+_MESES = [
+    {"periodo": "2026-01", "n_ofs": 40, "fab": 10_000.0, "issued": 10_500.0},
+    {"periodo": "2026-02", "n_ofs": 60, "fab": 20_000.0, "issued": 21_000.0},
 ]
 
 
 # ---------------------------------------------------------------------------
-# fabricacion_flujo_por_dia
+# fabricacion_flujo_por_dia / _por_mes
 # ---------------------------------------------------------------------------
 
 
 def test_por_dia_shape():
-    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS):
+    with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS):
         out = asvc.fabricacion_flujo_por_dia(53, 2026, 7)
-    assert [d["dia"] for d in out] == ["2026-07-03", "2026-07-10"]
-    assert out[0] == {"dia": "2026-07-03", "n_ofs": 3,
+    assert out[0] == {"periodo": "2026-07-03", "n_ofs": 3,
                       "issued": 1_500.0, "fab": 1_400.0}
 
 
 def test_por_dia_sql_bodega_ventana_hoja_y_material():
-    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS) as fd:
+    with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS) as fd:
         asvc.fabricacion_flujo_por_dia(53, 2026, 7)
     sql = fd.call_args[0][1]
     assert "id_bodega = 53" in sql
@@ -56,11 +66,30 @@ def test_por_dia_sql_bodega_ventana_hoja_y_material():
     # El material de entrada de la bodega 53 es la TELA CRUDA (no el hilo):
     # sin este filtro el 'consumido' sumaría cualquier insumo de la orden.
     assert "prm.nombre_categoria_producto = 'TELA CRUDA'" in sql
-    assert "GROUP BY o.dia" in sql
+    assert "CONVERT(varchar(10), fecha_cierre, 23)" in sql   # granularidad día
+
+
+def test_por_mes_agrupa_por_mes_y_barre_el_anio():
+    with patch.object(metabase_client, "fetch_dataset", return_value=_MESES) as fd:
+        out = asvc.fabricacion_flujo_por_mes(53, 2026)
+    sql = fd.call_args[0][1]
+    assert "CONVERT(varchar(7),  fecha_cierre, 23)" in sql   # granularidad mes
+    assert "'2026-01-01'" in sql and "'2027-01-01'" in sql
+    assert [f["periodo"] for f in out] == ["2026-01", "2026-02"]
+
+
+def test_dia_y_mes_no_comparten_cache():
+    """Misma bodega y mismo año: si la clave no distingue la granularidad, la
+    tabla por mes devuelve las filas por día (o al revés)."""
+    with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS):
+        asvc.fabricacion_flujo_por_dia(53, 2026, 7)
+    with patch.object(metabase_client, "fetch_dataset", return_value=_MESES):
+        assert [f["periodo"] for f in asvc.fabricacion_flujo_por_mes(53, 2026)] \
+            == ["2026-01", "2026-02"]
 
 
 def test_por_dia_diciembre_cruza_de_anio():
-    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS) as fd:
+    with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS) as fd:
         asvc.fabricacion_flujo_por_dia(53, 2026, 12)
     sql = fd.call_args[0][1]
     assert "'2026-12-01'" in sql and "'2027-01-01'" in sql
@@ -70,17 +99,18 @@ def test_por_dia_fail_soft():
     with patch.object(metabase_client, "fetch_dataset", side_effect=RuntimeError("boom")):
         assert asvc.fabricacion_flujo_por_dia(53, 2026, 7) == []
     with patch.object(metabase_client, "fetch_dataset", return_value=[]):
-        assert asvc.fabricacion_flujo_por_dia(53, 2026, 7) == []
+        assert asvc.fabricacion_flujo_por_mes(53, 2026) == []
 
 
-def test_por_dia_mes_invalido_no_consulta():
+def test_periodo_mes_invalido_no_consulta():
     with patch.object(metabase_client, "fetch_dataset") as fd:
         assert asvc.fabricacion_flujo_por_dia(53, "no", "va") == []
+        assert asvc.fabricacion_flujo_por_mes(53, "no") == []
     fd.assert_not_called()
 
 
 def test_por_dia_cachea():
-    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS) as fd:
+    with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS) as fd:
         asvc.fabricacion_flujo_por_dia(53, 2026, 7)
         asvc.fabricacion_flujo_por_dia(53, 2026, 7)
     assert fd.call_count == 1
@@ -91,45 +121,153 @@ def test_por_dia_vacio_no_se_congela_en_cache():
     5 minutos aunque el ERP ya conteste."""
     with patch.object(metabase_client, "fetch_dataset", return_value=[]):
         asvc.fabricacion_flujo_por_dia(53, 2026, 7)
-    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS):
+    with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS):
         assert len(asvc.fabricacion_flujo_por_dia(53, 2026, 7)) == 2
 
 
 # ---------------------------------------------------------------------------
-# resumen_mes — la merma por día y el total
+# despacho_fisico_por_dia / _por_mes — la columna "vendido"
+# ---------------------------------------------------------------------------
+
+_VENTA_ROWS = [{"periodo": "2026-07-03", "kg": 900.0},
+               {"periodo": "2026-07-10", "kg": 1_100.0}]
+
+
+def test_despacho_por_dia_devuelve_dict_y_filtra_anulados():
+    with patch.object(metabase_client, "fetch_dataset", return_value=_VENTA_ROWS) as fd:
+        out = asvc.despacho_fisico_por_dia(2026, 7, 53)
+    assert out == {"2026-07-03": 900.0, "2026-07-10": 1_100.0}
+    sql = fd.call_args[0][1]
+    assert "dc.fecha_anulacion IS NULL" in sql      # mismo WHERE que el mensual
+    assert "dd.id_bodega = 53" in sql
+    assert "'2026-07-01'" in sql and "'2026-08-01'" in sql
+
+
+def test_despacho_por_mes_barre_el_anio():
+    with patch.object(metabase_client, "fetch_dataset", return_value=[]) as fd:
+        asvc.despacho_fisico_por_mes(2026, 53)
+    sql = fd.call_args[0][1]
+    assert "CONVERT(varchar(7),  dc.fecha, 23)" in sql
+    assert "'2026-01-01'" in sql and "'2027-01-01'" in sql
+
+
+def test_despacho_fail_soft():
+    with patch.object(metabase_client, "fetch_dataset", side_effect=RuntimeError("boom")):
+        assert asvc.despacho_fisico_por_dia(2026, 7, 53) == {}
+    with patch.object(metabase_client, "fetch_dataset") as fd:
+        assert asvc.despacho_fisico_por_mes("no", 53) == {}
+    fd.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# resumen — el encadenado del stock
 # ---------------------------------------------------------------------------
 
 
-def test_resumen_mes_merma_por_dia_y_total():
-    with patch.object(asvc, "fabricacion_flujo_por_dia", return_value=_ROWS) as fp:
-        out = tsvc.resumen_mes(2026, 7)
-    fp.assert_called_once_with(53, 2026, 7)
-    assert out["disponible"] is True
-    d0 = out["dias"][0]
-    assert d0["merma_kg"] == 100.0
-    assert d0["merma_pct"] == round(100.0 * 100.0 / 1_500.0, 2)  # 6,67 %
-    # El total es la SUMA de los días, no una segunda query.
-    assert out["total"]["n_ofs"] == 8
-    assert out["total"]["consumido"] == 3_600.0
-    assert out["total"]["producido"] == 3_400.0
-    assert out["total"]["merma_kg"] == 200.0
+def _mock_resumen(stock_por_fecha, meses=None, dias=None, vendido_mes=None,
+                  vendido_dia=None):
+    """Arma los patches de las 5 fuentes que consume `resumen`."""
+    return (
+        patch.object(asvc, "fabricacion_flujo_por_mes",
+                     return_value=meses if meses is not None else _MESES),
+        patch.object(asvc, "fabricacion_flujo_por_dia",
+                     return_value=dias if dias is not None else _DIAS),
+        patch.object(asvc, "despacho_fisico_por_mes",
+                     return_value=vendido_mes if vendido_mes is not None
+                     else {"2026-01": 4_000.0, "2026-02": 5_000.0}),
+        patch.object(asvc, "despacho_fisico_por_dia",
+                     return_value=vendido_dia if vendido_dia is not None
+                     else {"2026-07-03": 900.0}),
+        patch.object(asvc, "inventario_por_etapa_a_fecha",
+                     side_effect=lambda f: {"disponible": f in stock_por_fecha,
+                                            "terminada": stock_por_fecha.get(f, 0.0)}),
+    )
 
 
-def test_resumen_mes_sin_consumo_no_inventa_porcentaje():
-    """issued=0 → merma_pct None. Un 0,00% se lee como "no hubo merma"."""
-    with patch.object(asvc, "fabricacion_flujo_por_dia",
-                      return_value=[{"dia": "2026-07-03", "n_ofs": 1,
-                                     "fab": 10.0, "issued": 0.0}]):
-        out = tsvc.resumen_mes(2026, 7)
-    assert out["dias"][0]["merma_pct"] is None
-    assert out["total"]["merma_pct"] is None
+def test_resumen_encadena_el_stock_mes_a_mes():
+    stock = {"2025-12-31": 100_000.0, "2026-06-30": 50_000.0,
+             "2026-02-28": 121_000.0}
+    p1, p2, p3, p4, p5 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
+    f = out["meses"]["filas"]
+    # Enero: 100.000 + 10.000 producido − 4.000 vendido = 106.000
+    assert f[0]["inicial"] == 100_000.0
+    assert f[0]["final"] == 106_000.0
+    # El final de enero es el inicial de febrero (encadenado).
+    assert f[1]["inicial"] == 106_000.0
+    assert f[1]["final"] == 121_000.0
+    # Desperdicio de enero = 10.500 consumido − 10.000 producido.
+    assert f[0]["desperdicio_kg"] == 500.0
+    # El TOTAL toma el stock de las PUNTAS y suma los flujos.
+    t = out["meses"]["total"]
+    assert (t["inicial"], t["final"]) == (100_000.0, 121_000.0)
+    assert t["producido"] == 30_000.0 and t["vendido"] == 9_000.0
 
 
-def test_resumen_mes_sin_datos_no_disponible():
-    with patch.object(asvc, "fabricacion_flujo_por_dia", return_value=[]):
-        out = tsvc.resumen_mes(2026, 7)
+def test_resumen_control_cierra_contra_la_foto_real():
+    """El encadenado llega a 121.000 y Asinfo dice 121.000 → dif 0."""
+    stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 121_000.0}
+    p1, p2, p3, p4, p5 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
+    assert out["control"]["fecha"] == "2026-02-28"
+    assert out["control"]["dif"] == 0.0
+
+
+def test_resumen_control_marca_la_diferencia():
+    """Si Asinfo tiene menos de lo que el encadenado calcula, la dif se ve: es
+    movimiento que no es ni producción ni despacho (devolución, ajuste)."""
+    stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 120_500.0}
+    p1, p2, p3, p4, p5 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
+    assert out["control"]["dif"] == 500.0
+
+
+def test_resumen_sin_foto_de_stock_no_inventa_saldos():
+    """Asinfo no dio la foto → inicial/final None, pero los flujos se muestran
+    igual. Un 0,00 se leería como "no había stock"."""
+    p1, p2, p3, p4, p5 = _mock_resumen({})
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
+    assert out["meses"]["filas"][0]["inicial"] is None
+    assert out["meses"]["filas"][0]["final"] is None
+    assert out["meses"]["filas"][0]["producido"] == 10_000.0
+    assert out["control"] is None
+
+
+def test_resumen_dia_se_ancla_en_el_cierre_del_mes_anterior():
+    stock = {"2025-12-31": 0.0, "2026-06-30": 50_000.0}
+    p1, p2, p3, p4, p5 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
+    d = out["dias"]["filas"]
+    # 50.000 + 1.400 producido − 900 vendido = 50.500
+    assert d[0]["inicial"] == 50_000.0
+    assert d[0]["final"] == 50_500.0
+    # El 10/07 no tiene despacho en el mock → vendido 0.
+    assert d[1]["vendido"] == 0.0
+    assert d[1]["final"] == 52_500.0
+
+
+def test_resumen_sin_datos_no_disponible():
+    p1, p2, p3, p4, p5 = _mock_resumen({}, meses=[], dias=[],
+                                       vendido_mes={}, vendido_dia={})
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
     assert out["disponible"] is False
-    assert out["dias"] == []
+    assert out["meses"]["filas"] == []
+
+
+def test_resumen_desperdicio_pct_none_sin_consumo():
+    """issued=0 → pct None. Un 0,00% se lee como "no hubo desperdicio"."""
+    p1, p2, p3, p4, p5 = _mock_resumen(
+        {}, meses=[{"periodo": "2026-01", "n_ofs": 1, "fab": 10.0, "issued": 0.0}])
+    with p1, p2, p3, p4, p5:
+        out = tsvc.resumen(2026, 7)
+    assert out["meses"]["filas"][0]["desperdicio_pct"] is None
+    assert out["meses"]["total"]["desperdicio_pct"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -137,28 +275,34 @@ def test_resumen_mes_sin_datos_no_disponible():
 # ---------------------------------------------------------------------------
 
 
-def test_tab_renderiza_200(app, fake_db):
+def _login(app, fake_db):
     rid = fake_db.add_role("Tester", ["stock.ver"])
     uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
         s["user_id"] = uid
-    with patch.object(asvc, "fabricacion_flujo_por_dia", return_value=_ROWS):
+    return c
+
+
+def test_tab_renderiza_las_dos_tablas(app, fake_db):
+    c = _login(app, fake_db)
+    stock = {"2025-12-31": 100_000.0, "2026-06-30": 50_000.0,
+             "2026-02-28": 121_000.0}
+    p1, p2, p3, p4, p5 = _mock_resumen(stock)
+    with p1, p2, p3, p4, p5:
         r = c.get("/produccion-terminado-asinfo?anio=2026&mes=7")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
+    assert "Por mes · 2026" in body
     assert "Día a día" in body
-    assert "03/07/2026" in body        # la fecha del primer día, formato EU
-    assert "Merma" in body
-    assert "1.500,00" in body          # tela cruda consumida del 03/07
+    assert "Desperdicio" in body and "Merma" not in body   # dueña: "desperdicio"
+    assert "01/2026" in body           # etiqueta del mes
+    assert "03/07/2026" in body        # etiqueta del día, formato EU
+    assert "106.000,00" in body        # final encadenado de enero
 
 
 def test_tab_sin_asinfo_avisa_y_no_rompe(app, fake_db):
-    rid = fake_db.add_role("Tester", ["stock.ver"])
-    uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
-    c = app.test_client()
-    with c.session_transaction() as s:
-        s["user_id"] = uid
+    c = _login(app, fake_db)
     with patch.object(metabase_client, "fetch_dataset", side_effect=RuntimeError("boom")):
         r = c.get("/produccion-terminado-asinfo?anio=2026&mes=7")
     assert r.status_code == 200
