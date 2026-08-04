@@ -18,6 +18,8 @@ Secciones:
   8. PROVISIONES — SR se sigue moviendo + las 12 cuotas vs el MENU.PRG.
   8b. BRIDGES   — Asinfo/Metabase contestan y la utilidad sale de Asinfo
                   (no del dBase por un fallback silencioso).
+  11. DUPLICADOS — la misma cobranza cargada dos veces (caso ELF 13/07), con
+                  el veredicto del extracto al lado.
 
 OJO — qué NO cubre (TMT 2026-07-29): las secciones 1-7, 9 y 10 son invariantes
 INTERNAS de PC (que el saldo cierre, que no haya reversos huérfanos). No
@@ -995,6 +997,54 @@ def check_reversibilidad(verbose: bool = False) -> None:
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# 11) COBROS DUPLICADOS — ¿la misma cobranza se cargó dos veces?
+# ───────────────────────────────────────────────────────────────────────────
+def check_cobros_duplicados(verbose: bool = False) -> None:
+    """TMT 2026-08-04. Alex cargó la cobranza de ELF dos veces el 13/07, a las
+    21:46:53 y a las 21:47:07. Se descubrió TRES SEMANAS después, cuando la
+    comisión de julio no cerró contra el dBase — porque no hay ninguna pantalla
+    donde eso salte: las dos filas se ven perfectamente normales por separado.
+
+    La lógica (y sobre todo el POR QUÉ del filtro, con los números medidos)
+    vive en `modules/cheques/duplicados.py`. Acá sólo se reporta.
+    """
+    _seccion("11) COBROS DUPLICADOS — la misma cobranza cargada dos veces")
+    from datetime import timedelta as _td
+
+    from modules.cheques import duplicados as _dup
+
+    hasta = _d.today()
+    desde = hasta - _td(days=60)
+    try:
+        filas = _dup.revisar(desde, hasta)
+    except Exception as e:  # noqa: BLE001
+        _reporte("DUPLICADOS", WARN, f"no pude revisar: {e}")
+        return
+
+    if not filas:
+        _reporte("DUPLICADOS", OK,
+                 f"Ninguna cobranza repetida desde el {desde.isoformat()}.")
+        return
+
+    # Un grupo con plata sin respaldo en el extracto es ERROR; uno que sólo
+    # "se parece" es WARN. Mezclarlos dejaría el semáforo siempre en rojo por
+    # casos que el banco ya explicó, y un rojo permanente no se mira.
+    con_riesgo = [f for f in filas if f["monto_en_riesgo"] > 0]
+    if con_riesgo:
+        total = sum(f["monto_en_riesgo"] for f in con_riesgo)
+        _reporte("DUPLICADOS", ERROR,
+                 f"{len(con_riesgo)} cobro(s) repetido(s) que el banco NO "
+                 f"acreditó — {_money(total).strip()} contados de más.")
+    if len(filas) > len(con_riesgo):
+        _reporte("DUPLICADOS", WARN,
+                 f"{len(filas) - len(con_riesgo)} grupo(s) que se parecen pero "
+                 f"el extracto todavía no desempata.")
+    for f in (filas if verbose else filas[:5]):
+        print(f"     {f['cli']}  ${float(f['imp']):,.2f}  {f['fechad']}  "
+              f"banco {f['no_banco']}  ids={list(f['ids'])}  → {f['veredicto']}")
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Entry
 # ───────────────────────────────────────────────────────────────────────────
 ALL_CHECKS = {
@@ -1009,6 +1059,7 @@ ALL_CHECKS = {
     "bridges":      check_bridges,
     "chequesxfact": check_chequesxfact,
     "reversibilidad": check_reversibilidad,
+    "duplicados":   check_cobros_duplicados,
 }
 
 

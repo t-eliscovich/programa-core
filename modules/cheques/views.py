@@ -3966,3 +3966,53 @@ def deshacer_anulacion_error_carga(id_mov_doble: int):
         motivo_requerido=False,
         confirm_label="Devolver el cheque",
     )
+
+
+@cheques_bp.route("/cheques/diag/cobros-duplicados")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def diag_cobros_duplicados():
+    """¿Se cargó la misma cobranza dos veces?
+
+    TMT 2026-08-04. El chequeo de salud lo reporta a diario, pero el reporte
+    es texto: acá se ven las filas, con el veredicto del extracto al lado y el
+    link al estado de cuenta del cliente para poder actuar.
+
+    Solo lectura. El porqué del filtro está en `modules/cheques/duplicados.py`.
+    """
+    from datetime import timedelta as _td_esp
+    from decimal import Decimal
+
+    from . import duplicados
+
+    hoy = today_ec()
+    dias = parse_int(request.args.get("dias")) or 60
+    dias = max(1, min(int(dias), 400))
+    desde = hoy - _td_esp(days=dias)
+    try:
+        filas = duplicados.revisar(desde, hoy)
+        error = None
+    except Exception as e:  # noqa: BLE001
+        filas, error = [], f"Error inesperado: {e}"
+
+    if request.args.get("formato") == "json":
+        def _ser(v):
+            if isinstance(v, (date, datetime)):
+                return v.isoformat()
+            if isinstance(v, Decimal):
+                return float(v)
+            if isinstance(v, (list, tuple)):
+                return [_ser(x) for x in v]
+            return v
+        return jsonify({
+            "n": len(filas),
+            "desde": desde.isoformat(),
+            "hasta": hoy.isoformat(),
+            "error": error,
+            "grupos": [{k: _ser(v) for k, v in f.items()} for f in filas],
+        })
+
+    return render_template(
+        "cheques/diag_cobros_duplicados.html",
+        filas=filas, error=error, desde=desde, hasta=hoy, dias=dias,
+    )

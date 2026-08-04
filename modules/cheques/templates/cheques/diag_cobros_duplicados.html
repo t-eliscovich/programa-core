@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}¿Se cargó la misma cobranza dos veces?{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-6">
+  <h1 class="text-lg font-semibold text-slate-800 dark:text-slate-100">
+    ¿Se cargó la misma cobranza dos veces?
+  </h1>
+  <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+    Cobros ya acreditados del <strong>{{ desde.strftime('%d/%m/%Y') }}</strong>
+    al <strong>{{ hasta.strftime('%d/%m/%Y') }}</strong> que se repiten:
+    mismo cliente, mismo importe, misma fecha de depósito y mismo banco, pero
+    cargados en <strong>cobranzas distintas</strong>.
+    Dos cheques iguales de la <em>misma</em> cobranza no aparecen acá — son dos
+    papeles de verdad. Solo lectura.
+    <a class="text-sky-600 underline ml-1" href="?formato=json&amp;dias={{ dias }}">ver JSON</a>
+  </p>
+
+  <form method="get" class="mt-3 flex items-end gap-2 text-xs">
+    <label class="flex flex-col">
+      <span class="text-slate-500">Últimos días</span>
+      <input type="number" name="dias" value="{{ dias }}" min="1" max="400"
+             class="border rounded px-2 py-1 w-24 text-sm">
+    </label>
+    <button class="rounded bg-slate-800 text-white px-3 py-1.5">Ver</button>
+  </form>
+
+  {% if error %}
+  <div class="mt-4 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 px-3 py-2 text-sm">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  {% if not filas %}
+  <div class="mt-4 rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 px-3 py-2 text-sm">
+    Ninguna cobranza repetida en el período.
+  </div>
+  {% else %}
+  <div class="mt-4 text-sm text-slate-600 dark:text-slate-300">
+    {{ filas|length }} grupo(s).
+  </div>
+
+  <div class="mt-2 overflow-x-auto">
+    <table class="w-full text-xs tabular-nums border border-slate-200 dark:border-slate-700">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-2 py-1 text-left">Cliente</th>
+          <th class="px-2 py-1 text-right">Importe</th>
+          <th class="px-2 py-1 text-left">A depositar</th>
+          <th class="px-2 py-1 text-right">Banco</th>
+          <th class="px-2 py-1 text-center">Cheques</th>
+          <th class="px-2 py-1 text-center">Cobranzas</th>
+          <th class="px-2 py-1 text-left">Cargó</th>
+          <th class="px-2 py-1 text-right">De más</th>
+          <th class="px-2 py-1 text-left">Qué dice el banco</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800
+                   {% if f.monto_en_riesgo %}bg-rose-50/60 dark:bg-rose-900/20{% endif %}">
+          <td class="px-2 py-1">
+            <a class="text-sky-600 underline"
+               href="{{ url_for('informes.estado_cuenta', codigo_cli=f.cli) }}">{{ f.cli }}</a>
+          </td>
+          <td class="px-2 py-1 text-right">{{ f.imp | money_es }}</td>
+          <td class="px-2 py-1">{{ f.fechad.strftime('%d/%m/%Y') }}</td>
+          <td class="px-2 py-1 text-right">{{ f.no_banco }}</td>
+          <td class="px-2 py-1 text-center">{{ f.n_cheques }}</td>
+          <td class="px-2 py-1 text-center">{{ f.n_cobranzas }}</td>
+          <td class="px-2 py-1">{{ f.usuarios | join(', ') }}</td>
+          <td class="px-2 py-1 text-right font-semibold
+                     {% if f.monto_en_riesgo %}text-rose-700 dark:text-rose-300{% else %}text-slate-400{% endif %}">
+            {{ f.monto_en_riesgo | money_es }}
+          </td>
+          <td class="px-2 py-1 text-slate-600 dark:text-slate-300">{{ f.veredicto }}</td>
+        </tr>
+        <tr class="border-t border-dashed border-slate-100 dark:border-slate-800">
+          <td colspan="9" class="px-2 pb-2 text-[11px] text-slate-500">
+            {% for id in f.ids %}
+              <a class="underline mr-3" href="{{ url_for('cheques.detalle', id_cheque=id) }}">
+                #{{ id }}{% if id in f.ids_sin_respaldo %} · sin respaldo{% endif %}</a>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
