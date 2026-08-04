@@ -127,7 +127,9 @@
             <td>{{ f.n_ofs }}</td>
             <td>{% if f.inicial is not none %}{{ f.inicial|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="flujo">{{ f.producido|num_es }}</td>
-            <td class="flujo resta">{{ (-f.vendido)|num_es }}</td>
+            {# `-0` existe en punto flotante y `num_es` lo imprime "-0,00", que
+               en una columna de restas se lee como un error. Cero es cero. #}
+            <td class="flujo resta">{{ (-f.vendido if f.vendido else 0)|num_es }}</td>
             <td class="flujo{{ ' otros' if f.otros }}"
                 {%- if f.otros_ingreso is not none %} title="Entró a bodega sin ser producción: {{ f.otros_ingreso|num_es }} kg · salió de bodega sin ser venta: {{ f.otros_egreso|num_es }} kg"{% endif %}>
               {%- if f.otros is not none %}{{ f.otros|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -141,7 +143,7 @@
           <td>{{ tabla.total.n_ofs }}</td>
           <td>{% if tabla.total.inicial is not none %}{{ tabla.total.inicial|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo">{{ tabla.total.producido|num_es }}</td>
-          <td class="flujo resta">{{ (-tabla.total.vendido)|num_es }}</td>
+          <td class="flujo resta">{{ (-tabla.total.vendido if tabla.total.vendido else 0)|num_es }}</td>
           <td class="flujo{{ ' otros' if tabla.total.otros }}">{% if tabla.total.otros is not none %}{{ tabla.total.otros|num_es }}{% else %}—{% endif %}</td>
           <td>{% if tabla.total.final is not none %}{{ tabla.total.final|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo desp">{{ tabla.total.desperdicio_kg|num_es }}{% if tabla.total.desperdicio_pct is not none %}

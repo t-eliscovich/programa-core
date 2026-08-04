@@ -514,3 +514,18 @@ def test_los_periodos_extra_no_rompen_el_orden():
         out = tsvc.resumen(2026, 8)
     assert [d["periodo"] for d in out["dias"]["filas"]] == [
         "2026-08-01", "2026-08-02", "2026-08-03"]
+
+
+def test_vendido_cero_no_se_imprime_como_menos_cero(app, fake_db):
+    """`-0` existe en punto flotante y `num_es` lo imprime "-0,00" — en una
+    columna de restas se lee como un error. Los días 01 y 02 de agosto (sin
+    despachos) lo mostraban así."""
+    c = _login(app, fake_db)
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        {"2026-07-31": 1_000.0},
+        dias=[{"periodo": "2026-08-01", "n_ofs": 0, "fab": 0.0, "issued": 0.0}],
+        vendido_dia={}, mov_dia={"2026-08-01": {"ingreso": 5.0, "egreso": 0.0}})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        r = c.get("/produccion-terminado-asinfo?anio=2026&mes=8")
+    assert "-0,00" not in r.get_data(as_text=True)
