@@ -13,7 +13,12 @@ from flask import (
 )
 
 import db
-from auth import requiere_login, requiere_permiso, tiene_permiso
+from auth import (
+    registrar_bitacora,
+    requiere_login,
+    requiere_permiso,
+    tiene_permiso,
+)
 from error_messages import flash_exc
 from exports import csv_response
 from parsers import parse_int
@@ -176,13 +181,21 @@ def editar(codigo_cli: str):
             "observacion": cli.get("observacion") or "",
             "stop": cli.get("stop") or "N",
             "activo": cli.get("activo", True),
+            # Para el link a "Cambiar código", que va por PK (el código puede
+            # estar duplicado y no señala una ficha concreta). TMT 2026-08-04.
+            "id_cliente": cli.get("id_cliente"),
         }
         return render_template("clientes/form.html", form=form, errores=errores, modo="editar", next_url=next_url)
 
     form = _form_from_request()
     # Solo Andrés / accionistas editan el cupo (perm cupos.editar); el resto
     # conserva el cupo actual del cliente. TMT 2026-07-09.
-    cupo = parse_int(form["cupo"]) if tiene_permiso("cupos.editar") else cli.get("cupo")
+    # TMT 2026-08-04: campo vacío = "sacale el cupo" (VACIAR), no "no lo
+    # toques" — mismo agujero que el vendedor de KET (ver queries.editar).
+    if tiene_permiso("cupos.editar"):
+        cupo = parse_int(form["cupo"]) if form["cupo"].strip() else queries.VACIAR
+    else:
+        cupo = cli.get("cupo")
 
     if not form["nombre"]:
         errores.append("Nombre requerido.")
@@ -192,24 +205,39 @@ def editar(codigo_cli: str):
 
     try:
         usuario = (g.user or {}).get("username", "web")
-        queries.editar(
+        # TMT 2026-08-04 (caso KET) — los campos van TAL CUAL, string vacío
+        # incluido. Antes iban con `or None` y `queries.editar` interpreta
+        # None como "no toques esta columna": desde la pantalla se podía
+        # cambiar un valor por otro pero NUNCA borrarlo. KET tenía vendedor
+        # FL1 en PC y ninguno en el dBase; la pantalla decía "actualizado" y
+        # no cambiaba nada.
+        n = queries.editar(
             cli["codigo_cli"],
             nombre=form["nombre"],
-            ruc=form["ruc"] or None,
-            telefono=form["telefono"] or None,
-            correo=form["correo"] or None,
-            direccion1=form["direccion1"] or None,
-            direccion2=form["direccion2"] or None,
-            provincia=form["provincia"] or None,
-            canton=form["canton"] or None,
-            parroquia=form["parroquia"] or None,
-            pago=form["pago"] or None,
+            ruc=form["ruc"],
+            telefono=form["telefono"],
+            correo=form["correo"],
+            direccion1=form["direccion1"],
+            direccion2=form["direccion2"],
+            provincia=form["provincia"],
+            canton=form["canton"],
+            parroquia=form["parroquia"],
+            pago=form["pago"],
             cupo=cupo,
-            vend=form["vend"] or None,
-            observacion=form["observacion"] or None,
+            vend=form["vend"],
+            observacion=form["observacion"],
             usuario=usuario,
         )
-        flash(f"Cliente {cli['codigo_cli']} actualizado.", "ok")
+        # El flash tiene que decir la verdad: `editar` devuelve 0 cuando no
+        # cambió ninguna columna.
+        if n:
+            flash(f"Cliente {cli['codigo_cli']} actualizado.", "ok")
+        else:
+            flash(
+                f"Cliente {cli['codigo_cli']} — no había nada que cambiar "
+                "(los datos ya estaban así).",
+                "warn",
+            )
         if next_url:
             return redirect(next_url)
         return redirect(url_for("clientes.lista"))
@@ -266,6 +294,170 @@ def quitar_stop(codigo_cli: str):
     except Exception as e:
         flash_exc("No pude quitar STOP", e)
     return redirect(url_for("clientes.lista"))
+
+
+# ---------------------------------------------------------------------------
+# Cambiar el CÓDIGO de una ficha — 3 pantallas (form → confirmar → aplicar)
+# ---------------------------------------------------------------------------
+# TMT 2026-08-04. `scintela.cliente` tiene 20 códigos duplicados (LEC = "Luis
+# Ernesto Cañamar" Y "Lola Emperatriz Cisneros"; LUL = "Luis Llugla" Y "Luis
+# Lopez"): el código son las iniciales del nombre, así que dos clientes con
+# las mismas iniciales colisionan solos. 17 de esos 20 son dos clientes
+# REALES — borrar uno pierde una ficha legítima; lo que hace falta es que uno
+# de los dos pase a tener código propio, y no existía pantalla para eso.
+#
+# Todo va por `id_cliente` (PK) y no por código: con dos fichas `LEC` el
+# código no señala una ficha concreta (mismo motivo que `eliminar`).
+
+
+def _ficha_por_id(id_cliente: int) -> dict | None:
+    return db.fetch_one(
+        "SELECT id_cliente, codigo_cli, nombre, ruc, "
+        "       COALESCE(activo, TRUE) AS activo "
+        "FROM scintela.cliente WHERE id_cliente = %s",
+        (int(id_cliente),),
+    )
+
+
+@clientes_bp.route("/clientes/<int:id_cliente>/cambiar-codigo", methods=["GET"])
+@requiere_login
+@requiere_permiso("clientes.editar")
+def cambiar_codigo_form(id_cliente: int):
+    """Paso 1 de 3: elegir el código nuevo."""
+    cli = _ficha_por_id(id_cliente)
+    if not cli:
+        abort(404)
+    codigo = (cli.get("codigo_cli") or "").strip().upper()
+    try:
+        movimientos = queries.movimientos_por_codigo(codigo)
+        hermanas = [
+            f for f in queries.fichas_con_el_codigo(codigo)
+            if int(f.get("id_cliente") or 0) != int(id_cliente)
+        ]
+        sugerencias = queries.sugerir_codigos(cli.get("nombre") or "")
+        error = None
+    except Exception as e:  # noqa: BLE001 — la pantalla se muestra igual
+        movimientos, hermanas, sugerencias, error = [], [], [], str(e)
+    return render_template(
+        "clientes/cambiar_codigo.html",
+        cli=cli,
+        movimientos=movimientos,
+        total_movimientos=sum(m["n"] for m in movimientos),
+        hermanas=hermanas,
+        sugerencias=sugerencias,
+        nuevo_codigo=(request.args.get("nuevo") or "").strip().upper(),
+        error=error,
+    )
+
+
+@clientes_bp.route("/clientes/<int:id_cliente>/confirmar-cambio-codigo", methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.editar")
+def confirmar_cambio_codigo(id_cliente: int):
+    """Paso 2 de 3: mostrar exactamente qué se mueve y cuánto, antes de tocar nada."""
+    cli = _ficha_por_id(id_cliente)
+    if not cli:
+        abort(404)
+    nuevo = (request.form.get("nuevo_codigo") or "").strip().upper()
+    try:
+        plan = queries.plan_cambio_codigo(id_cliente, nuevo)
+    except ValueError as e:
+        flash(str(e), "warn")
+        return redirect(
+            url_for("clientes.cambiar_codigo_form", id_cliente=id_cliente, nuevo=nuevo)
+        )
+    except Exception as e:
+        flash_exc("No pude revisar el cambio de código", e)
+        return redirect(url_for("clientes.cambiar_codigo_form", id_cliente=id_cliente))
+
+    detalle = {
+        "Ficha": f"#{plan['cliente'].get('id_cliente')}",
+        "Cliente": (plan["cliente"].get("nombre") or "(sin nombre)"),
+        "RUC": (plan["cliente"].get("ruc") or "—"),
+        "Código actual": plan["codigo_actual"] or "(sin código)",
+        "Código nuevo": plan["codigo_nuevo"],
+        "Fichas que comparten el código actual": (
+            f"{len(plan['fichas_hermanas']) + 1} "
+            f"({', '.join((f.get('nombre') or '?') for f in plan['fichas_hermanas'])})"
+            if plan["fichas_hermanas"] else "1 (sólo ésta)"
+        ),
+    }
+    # Se listan TODAS las tablas, incluidas las que dan 0: el cero explícito
+    # es la prueba de que no se está moviendo plata a espaldas de nadie.
+    movimientos = [
+        {"texto": f"{m['n']} {m['etiqueta']}", "detalle": m["tabla"]}
+        for m in plan["movimientos"]
+    ]
+    return render_template(
+        "_confirmar_accion.html",
+        titulo=f"Cambiar el código {plan['codigo_actual'] or '(sin código)'} → {plan['codigo_nuevo']}",
+        mensaje=(
+            f"Se renombra SÓLO la ficha #{plan['cliente'].get('id_cliente')} "
+            f"({plan['cliente'].get('nombre') or 'sin nombre'}). No se mueve "
+            "ningún movimiento: el código actual no tiene facturas, cheques, "
+            "retenciones ni cobros colgando, y por eso el cambio es seguro."
+        ),
+        detalle_registro=detalle,
+        movimientos=movimientos,
+        titulo_movimientos=(
+            f"Movimientos atados al código {plan['codigo_actual'] or '(sin código)'}"
+        ),
+        accion_url=url_for("clientes.aplicar_cambio_codigo", id_cliente=id_cliente),
+        volver_url=url_for("clientes.cambiar_codigo_form", id_cliente=id_cliente),
+        extras_hidden=[{"name": "nuevo_codigo", "value": plan["codigo_nuevo"]}],
+        motivo_requerido=True,
+        motivo_obligatorio=False,
+        confirm_label=f"Cambiar a {plan['codigo_nuevo']}",
+    )
+
+
+@clientes_bp.route("/clientes/<int:id_cliente>/aplicar-cambio-codigo", methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.editar")
+def aplicar_cambio_codigo(id_cliente: int):
+    """Paso 3 de 3: aplicar (una sola transacción)."""
+    if not _ficha_por_id(id_cliente):
+        abort(404)
+    nuevo = (request.form.get("nuevo_codigo") or "").strip().upper()
+    motivo = (request.form.get("motivo") or "").strip()
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        plan = queries.cambiar_codigo(
+            id_cliente, nuevo, usuario=usuario, motivo=motivo
+        )
+    except ValueError as e:
+        flash(str(e), "warn")
+        return redirect(
+            url_for("clientes.cambiar_codigo_form", id_cliente=id_cliente, nuevo=nuevo)
+        )
+    except Exception as e:
+        flash_exc("No pude cambiar el código", e)
+        return redirect(url_for("clientes.cambiar_codigo_form", id_cliente=id_cliente))
+
+    # Bitácora explícita: el after_request global sólo guarda el form, y acá
+    # importa dejar asentado el código VIEJO (que ya no está en ningún lado).
+    registrar_bitacora(
+        modulo="clientes",
+        accion="cambiar_codigo",
+        entidad="cliente",
+        id_entidad=id_cliente,
+        payload={
+            "codigo_anterior": plan["codigo_actual"],
+            "codigo_nuevo": plan["codigo_nuevo"],
+            "motivo": motivo,
+        },
+        resumen=(
+            f"Código de cliente {plan['codigo_actual'] or '(sin código)'} → "
+            f"{plan['codigo_nuevo']} (ficha #{id_cliente})"
+        ),
+    )
+    flash(
+        f"Código cambiado: {plan['codigo_actual'] or '(sin código)'} → "
+        f"{plan['codigo_nuevo']}. Se renombró sólo la ficha; no había "
+        "movimientos que mover.",
+        "ok",
+    )
+    return redirect(url_for("clientes.lista", q=plan["codigo_nuevo"]))
 
 
 @clientes_bp.route("/clientes/<int:id_cliente>/eliminar", methods=["POST"])

@@ -1,5 +1,47 @@
 """Consultas de clientes."""
+import re
+
 import db
+
+
+class _Vaciar:
+    """Sentinela para `editar()`: *poné esta columna en NULL*.
+
+    En `editar()` (y en el resto de los `queries.editar` del repo) `None`
+    significa **"no toques esta columna"** — los callers parciales dependen
+    de eso. Para los campos de TEXTO alcanza con el string vacío (`""` →
+    NULL), pero para los numéricos (`cupo`) no hay string vacío posible, así
+    que va este sentinela. Es falsy a propósito para que el código que
+    normaliza (`val[:maxlen] if val else None`) lo trate como vacío.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - sólo debug
+        return "VACIAR"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+#: Pasalo como valor de un campo de `editar()` para ponerlo en NULL.
+VACIAR = _Vaciar()
+
+#: Los códigos de cliente son de hasta 3 caracteres (ver `maxlength` del form
+#: y el `CHAR(3)` del dBase). La convención de la fábrica es "las iniciales
+#: del nombre" — de ahí salen los duplicados.
+_CODIGO_RE = re.compile(r"^[A-Z0-9]{1,3}$")
+
+#: Tablas cuyo `codigo_cli` apunta al **CÓDIGO** del cliente, no a
+#: `id_cliente`. Es la razón por la que renombrar un código no es un UPDATE
+#: de una fila: toda la plata cuelga del string de 3 letras.
+_TABLAS_CON_CODIGO_CLI = (
+    ("scintela.factura", "facturas"),
+    ("scintela.cheque", "cheques"),
+    ("scintela.chequesxfact", "aplicaciones de cheque a factura"),
+    ("scintela.retencion", "retenciones"),
+    ("scintela.cobro", "cobros"),
+)
 
 
 def directorio(q: str = "") -> list[dict]:
@@ -137,15 +179,39 @@ def editar(
     canton: str | None = None,
     parroquia: str | None = None,
     pago: str | None = None,
-    cupo: int | None = None,
+    cupo: "int | _Vaciar | None" = None,
     vend: str | None = None,
     observacion: str | None = None,
     stop: str | None = None,
     usuario: str = "web",
 ) -> int:
-    """Update de cliente. Sólo campos no-None se modifican."""
-    campos = []
-    params: list = []
+    """Update de cliente. Devuelve cuántas filas CAMBIARON de verdad.
+
+    Semántica de cada parámetro (no cambió para los callers viejos):
+
+    * ``None``  → **no se toca** esa columna. Es lo que usan los callers
+      parciales que sólo mandan un subconjunto de campos.
+    * ``""`` (string vacío) o :data:`VACIAR` → la columna se pone en **NULL**.
+      O sea: se puede VACIAR un campo desde la pantalla.
+
+    TMT 2026-08-04 — caso KET. El cliente KET tenía vendedor ``FL1`` en PC y
+    en el dBase **no tiene vendedor**. Había que dejarlo sin vendedor para
+    que las dos bases coincidan y no se le siga liquidando comisión a FL1.
+    No se podía: la vista mandaba ``form["vend"] or None`` y acá el
+    ``if val is not None`` salteaba la columna. La pantalla contestaba
+    "Cliente KET actualizado" y no cambiaba nada — peor que fallar, porque
+    miente. El fix es de los dos lados: la vista manda el string tal cual
+    (vacío incluido) y acá el corte es por ``is None``, no por falsy.
+
+    El UPDATE lleva además un ``IS DISTINCT FROM`` por columna tocada, así
+    que si mandás exactamente los valores que la ficha ya tiene devuelve
+    ``0`` y la pantalla puede decir la verdad ("no había nada que cambiar")
+    en vez de inventar un "actualizado". Sin eso el rowcount era siempre 1
+    (porque `usuario_modifica` cambiaba solo) y no había forma de saberlo.
+    """
+    sets: list[str] = []
+    valores: list = []
+    distintos: list[str] = []
     mapping = {
         "nombre": (nombre, 200),
         "ruc": (ruc, 16),
@@ -162,19 +228,26 @@ def editar(
         "stop": (stop, 1),
     }
     for col, (val, maxlen) in mapping.items():
-        if val is not None:
-            campos.append(f"{col} = %s")
-            params.append(val[:maxlen] if val else None)
+        # OJO: `is None` (no `if val`). `""`/VACIAR son falsy y SÍ tienen que
+        # llegar al UPDATE — son el pedido de vaciar la columna.
+        if val is None:
+            continue
+        sets.append(f"{col} = %s")
+        valores.append(val[:maxlen] if val else None)
+        distintos.append(f"{col} IS DISTINCT FROM %s")
     if cupo is not None:
-        campos.append("cupo = %s")
-        params.append(cupo)
-    if not campos:
+        sets.append("cupo = %s")
+        valores.append(None if isinstance(cupo, _Vaciar) else cupo)
+        distintos.append("cupo IS DISTINCT FROM %s")
+    if not sets:
         return 0
-    campos.append("usuario_modifica = %s")
-    params.append(usuario)
-    params.append(codigo_cli.upper().strip())
+    sets.append("usuario_modifica = %s")
+    # Orden de params: valores del SET, usuario, código del WHERE y otra vez
+    # los valores para los IS DISTINCT FROM.
+    params = [*valores, usuario, codigo_cli.upper().strip(), *valores]
     return db.execute(
-        f"UPDATE scintela.cliente SET {', '.join(campos)} WHERE codigo_cli = %s",
+        f"UPDATE scintela.cliente SET {', '.join(sets)} "
+        f"WHERE codigo_cli = %s AND ({' OR '.join(distintos)})",
         tuple(params),
     )
 
@@ -298,6 +371,259 @@ def eliminar(codigo_cli: str) -> int:
     if not fila:
         raise ValueError(f"Cliente {codigo_cli!r} no encontrado.")
     return eliminar_por_id(int(fila["id_cliente"]))
+
+
+# ---------------------------------------------------------------------------
+# Cambiar el CÓDIGO de una ficha  (TMT 2026-08-04)
+# ---------------------------------------------------------------------------
+# POR QUÉ EXISTE
+# --------------
+# `scintela.cliente` tiene 20 códigos DUPLICADOS: dos empresas distintas
+# compartiendo el mismo código de 3 letras. La causa es estructural — el
+# código son las INICIALES del nombre, así que dos clientes con las mismas
+# iniciales colisionan solos. `LEC` es "Luis Ernesto Cañamar" **y** "Lola
+# Emperatriz Cisneros"; `LUL` es "Luis Llugla" **y** "Luis Lopez".
+#
+# De esos 20, 17 son DOS CLIENTES REALES: borrar uno (que es lo único que
+# había hasta ahora, `eliminar_por_id`) perdería una ficha legítima. Lo que
+# hace falta es que UNO DE LOS DOS pase a tener código propio. Hay 13.729
+# combinaciones de 3 letras libres; hasta hoy no existía ninguna pantalla
+# para usarlas.
+def _movimientos_sql() -> str:
+    """UNION ALL que cuenta, de una, los movimientos de un código."""
+    return " UNION ALL ".join(
+        f"SELECT '{tabla}' AS tabla, COUNT(*) AS n FROM {tabla} "
+        f"WHERE UPPER(TRIM(codigo_cli)) = %(cod)s"
+        for tabla, _ in _TABLAS_CON_CODIGO_CLI
+    )
+
+
+def movimientos_por_codigo(codigo_cli: str, conn=None) -> list[dict]:
+    """Cuántos movimientos cuelgan de un CÓDIGO, tabla por tabla.
+
+    Devuelve SIEMPRE una fila por tabla (con n=0 si no hay), así la pantalla
+    de confirmación puede mostrar el cero explícito: "0 facturas, 0 cheques"
+    es información, no ausencia de información.
+    """
+    cod = (codigo_cli or "").upper().strip()
+    if not cod:
+        return [{"tabla": t, "etiqueta": e, "n": 0} for t, e in _TABLAS_CON_CODIGO_CLI]
+    filas = db.fetch_all(_movimientos_sql(), {"cod": cod}, conn=conn) or []
+    por_tabla = {f["tabla"]: int(f.get("n") or 0) for f in filas}
+    return [
+        {"tabla": t, "etiqueta": e, "n": por_tabla.get(t, 0)}
+        for t, e in _TABLAS_CON_CODIGO_CLI
+    ]
+
+
+def fichas_con_el_codigo(codigo_cli: str, conn=None) -> list[dict]:
+    """Todas las fichas que comparten un código (normalmente 1, a veces 2)."""
+    cod = (codigo_cli or "").upper().strip()
+    if not cod:
+        return []
+    return db.fetch_all(
+        "SELECT id_cliente, codigo_cli, nombre, ruc "
+        "FROM scintela.cliente WHERE UPPER(TRIM(codigo_cli)) = %s "
+        "ORDER BY id_cliente",
+        (cod,),
+        conn=conn,
+    ) or []
+
+
+def sugerir_codigos(nombre: str, limite: int = 8, conn=None) -> list[str]:
+    """Códigos de 3 letras LIBRES parecidos al nombre del cliente.
+
+    Sin esto el usuario tipea a ciegas y come "ya existe" una y otra vez
+    (17.576 combinaciones, 3.848 ocupadas). Proponemos las iniciales
+    canónicas y después las dos primeras iniciales + cada letra del apellido
+    y del abecedario, quedándonos sólo con las que hoy no existen.
+    """
+    palabras = [p for p in re.split(r"[^A-Z0-9]+", (nombre or "").upper()) if p]
+    if not palabras:
+        return []
+    iniciales = "".join(p[0] for p in palabras)
+    candidatos: list[str] = []
+    if len(iniciales) >= 3:
+        candidatos.append(iniciales[:3])
+    par = (iniciales[:2] if len(iniciales) >= 2 else (palabras[0] + "X")[:2])
+    for letra in palabras[-1][1:] + "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        candidatos.append(par + letra)
+    unicos: list[str] = []
+    vistos: set[str] = set()
+    for c in candidatos:
+        if len(c) == 3 and _CODIGO_RE.match(c) and c not in vistos:
+            vistos.add(c)
+            unicos.append(c)
+    if not unicos:
+        return []
+    ocupados = {
+        (f.get("c") or "")
+        for f in (
+            db.fetch_all(
+                "SELECT UPPER(TRIM(codigo_cli)) AS c FROM scintela.cliente "
+                "WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)",
+                (unicos,),
+                conn=conn,
+            )
+            or []
+        )
+    }
+    return [c for c in unicos if c not in ocupados][:limite]
+
+
+def plan_cambio_codigo(id_cliente: int, nuevo_codigo: str, conn=None) -> dict:
+    """Valida el cambio de código y devuelve el plan. **No escribe nada.**
+
+    Levanta `ValueError` con el motivo exacto si no se puede. La pantalla de
+    confirmación y el `cambiar_codigo` real usan ESTA misma función, así que
+    lo que se muestra es literalmente lo que se va a aplicar.
+
+    QUÉ SE MUEVE — la decisión (TMT 2026-08-04)
+    -------------------------------------------
+    Los movimientos NO se mueven: **si el código tiene movimientos, se
+    RECHAZA el cambio.** Elegido a conciencia sobre la alternativa de
+    arrastrarlos en la misma transacción, porque:
+
+    1. El caso real es un código DUPLICADO. `factura.codigo_cli='LEC'` no
+       dice a cuál de las dos empresas pertenece la factura — no hay
+       `id_cliente` en la factura ni en el cheque. Los movimientos de las
+       dos empresas están MEZCLADOS bajo el mismo string y NO existe forma
+       automática de separarlos.
+    2. Con esa mezcla, las dos opciones automáticas son igual de falsas:
+       arrastrar todo le regala a la ficha renombrada la plata de la otra
+       empresa; dejar todo le regala a la que se queda con el código viejo
+       la plata de la renombrada. Un UPDATE masivo de historia financiera,
+       encima, no se deshace desde ninguna pantalla.
+    3. Rechazar deja el sistema en un estado *conocido* y le devuelve la
+       decisión a la persona, que es la única que sabe qué factura es de
+       quién. El subconjunto que SÍ se resuelve solo — la ficha sin ningún
+       movimiento, típicamente la que creó `/admin/clientes-import` o la
+       carga de Asinfo y nunca facturó — es exactamente el caso donde
+       renombrar es demostrablemente seguro.
+
+    Mismo criterio del lado del DESTINO: si el código nuevo ya tiene una
+    ficha (requisito duro: si no, se crea una colisión nueva) **o** tiene
+    movimientos huérfanos colgando, se rechaza — mudar la ficha ahí la
+    haría dueña de plata que no es suya.
+    """
+    nuevo = (nuevo_codigo or "").strip().upper()
+    if not _CODIGO_RE.match(nuevo):
+        raise ValueError(
+            "El código nuevo tiene que ser de 1 a 3 letras o números, sin "
+            "espacios ni símbolos (ej. LEE)."
+        )
+    fila = db.fetch_one(
+        "SELECT id_cliente, codigo_cli, nombre, ruc "
+        "FROM scintela.cliente WHERE id_cliente = %s",
+        (int(id_cliente),),
+        conn=conn,
+    )
+    if not fila:
+        raise ValueError(f"No existe la ficha de cliente #{int(id_cliente)}.")
+    actual = (fila.get("codigo_cli") or "").strip().upper()
+    if nuevo == actual:
+        raise ValueError(f"La ficha ya tiene el código {nuevo}.")
+
+    # (1) El destino no puede estar ocupado por otra ficha.
+    ocupa = db.fetch_one(
+        "SELECT codigo_cli, nombre FROM scintela.cliente "
+        "WHERE UPPER(TRIM(codigo_cli)) = %s LIMIT 1",
+        (nuevo,),
+        conn=conn,
+    )
+    if ocupa:
+        quien = (ocupa.get("nombre") or "").strip() or "sin nombre"
+        raise ValueError(
+            f"Ya existe un cliente con código {nuevo} ({quien}). Elegí otro: "
+            "mudar la ficha ahí crearía una colisión NUEVA, que es justo lo "
+            "que estamos deshaciendo."
+        )
+
+    # (1-bis) Tampoco puede tener movimientos huérfanos.
+    movs_destino = movimientos_por_codigo(nuevo, conn=conn)
+    total_destino = sum(m["n"] for m in movs_destino)
+    if total_destino:
+        detalle = ", ".join(f"{m['n']} {m['etiqueta']}" for m in movs_destino if m["n"])
+        raise ValueError(
+            f"El código {nuevo} no tiene ficha, pero tiene movimientos "
+            f"colgando ({detalle}). Si mudás la ficha ahí, este cliente pasa "
+            "a ser dueño de plata que no es suya. Elegí otro código."
+        )
+
+    # (2) El código de ORIGEN no puede tener movimientos. Ver el docstring.
+    movimientos = movimientos_por_codigo(actual, conn=conn)
+    total = sum(m["n"] for m in movimientos)
+    hermanas = [
+        f for f in fichas_con_el_codigo(actual, conn=conn)
+        if int(f.get("id_cliente") or 0) != int(id_cliente)
+    ]
+    if total:
+        detalle = ", ".join(f"{m['n']} {m['etiqueta']}" for m in movimientos if m["n"])
+        mezcla = (
+            " Además el código lo comparten "
+            f"{len(hermanas) + 1} fichas, así que ni siquiera se sabe cuáles "
+            "de esos movimientos son de esta empresa."
+            if hermanas else ""
+        )
+        raise ValueError(
+            f"No puedo cambiar el código {actual}: tiene {detalle}. Los "
+            "movimientos apuntan al CÓDIGO, no a la ficha, y no hay forma "
+            "automática de saber cuáles corresponden a este cliente."
+            + mezcla
+            + " Renombrá la ficha que NO tiene movimientos, o reasigná los "
+            "movimientos uno por uno desde su propia pantalla y volvé."
+        )
+
+    return {
+        "cliente": dict(fila),
+        "codigo_actual": actual,
+        "codigo_nuevo": nuevo,
+        "movimientos": movimientos,
+        "total_movimientos": total,
+        "fichas_hermanas": hermanas,
+    }
+
+
+def cambiar_codigo(
+    id_cliente: int,
+    nuevo_codigo: str,
+    *,
+    usuario: str = "web",
+    motivo: str = "",
+) -> dict:
+    """Aplica el cambio de código. Va por PK, no por código.
+
+    Por PK porque el caso de uso ES el código duplicado: con dos fichas
+    `LEC`, `codigo_cli` no alcanza para señalar cuál de las dos querés
+    renombrar (mismo motivo por el que `eliminar_por_id` va por PK).
+
+    Todo — validación y UPDATE — corre dentro de UNA transacción: si algo
+    falla, no queda a medias y nadie ve un código intermedio.
+    """
+    with db.tx() as conn:
+        plan = plan_cambio_codigo(id_cliente, nuevo_codigo, conn=conn)
+        traza = f"[CÓDIGO {plan['codigo_actual'] or '(vacío)'}→{plan['codigo_nuevo']}]"
+        if motivo:
+            traza = f"{traza} {motivo[:100]}"
+        n = db.execute(
+            """
+            UPDATE scintela.cliente
+               SET codigo_cli = %s,
+                   observacion = LEFT(COALESCE(observacion||' | ','')||%s, 200),
+                   usuario_modifica = %s
+             WHERE id_cliente = %s
+            """,
+            (plan["codigo_nuevo"], traza, usuario[:50], int(id_cliente)),
+            conn=conn,
+        )
+        if n != 1:
+            # Rollback: preferimos no cambiar nada antes que dejar el
+            # renombre a medias (o pisar más de una ficha).
+            raise ValueError(
+                f"El cambio de código afectó {n} filas en vez de 1 — lo revertí."
+            )
+        plan["filas"] = n
+    return plan
 
 
 def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,

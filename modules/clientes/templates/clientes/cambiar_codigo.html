@@ -1,0 +1,117 @@
+{# Cambiar el CÓDIGO de una ficha de cliente — paso 1 de 3.
+
+TMT 2026-08-04. scintela.cliente tiene 20 códigos duplicados (dos empresas
+distintas con el mismo código de 3 letras, porque el código son las
+iniciales del nombre). 17 son dos clientes REALES: hay que darle código
+propio a uno de los dos, no borrarlo.
+
+Sin clases Tailwind nuevas (el build JIT está congelado): sólo clases que ya
+existen en static/tailwind.css, más `style=` inline donde hace falta.
+#}
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Cambiar código de cliente{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('clientes.lista') }}" class="hover:underline">Clientes</a> / <strong>Cambiar código</strong>{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  {{ page_hero(
+      'Cambiar el código de ' ~ (cli.codigo_cli or '(sin código)'),
+      'El código de cliente son las iniciales del nombre, así que dos empresas distintas pueden terminar con el mismo. Acá le das código propio a una de las dos.'
+  ) }}
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 mb-4">
+    <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2">Ficha</h3>
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+      <dt class="text-slate-500">Ficha</dt>
+      <dd class="text-slate-800 dark:text-slate-200">#{{ cli.id_cliente }}</dd>
+      <dt class="text-slate-500">Código actual</dt>
+      <dd class="font-mono text-slate-800 dark:text-slate-200">{{ cli.codigo_cli or '(sin código)' }}</dd>
+      <dt class="text-slate-500">Nombre</dt>
+      <dd class="text-slate-800 dark:text-slate-200">{{ cli.nombre or '(sin nombre)' }}</dd>
+      <dt class="text-slate-500">RUC</dt>
+      <dd class="text-slate-800 dark:text-slate-200">{{ cli.ruc or '—' }}</dd>
+    </dl>
+  </div>
+
+  {% if hermanas %}
+    <div class="mb-4 px-4 py-3 rounded bg-amber-50 border border-amber-200 text-sm text-amber-900">
+      <strong>Este código está duplicado.</strong> Lo comparten {{ hermanas|length + 1 }} fichas:
+      <ul class="list-disc pl-6 mt-1">
+        <li>#{{ cli.id_cliente }} — {{ cli.nombre or '(sin nombre)' }} <span class="text-xs">(ésta)</span></li>
+        {% for h in hermanas %}
+          <li>#{{ h.id_cliente }} — {{ h.nombre or '(sin nombre) ' }}{% if h.ruc %} <span class="text-xs">RUC {{ h.ruc }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 mb-4">
+    <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2">
+      Movimientos atados al código {{ cli.codigo_cli or '(sin código)' }}
+    </h3>
+    <p class="text-xs text-slate-500 mb-2">
+      Las facturas, cheques, retenciones y cobros apuntan al <strong>código</strong>,
+      no a la ficha. Por eso sólo se puede renombrar un código que no tenga
+      ninguno: con el código duplicado, los movimientos de las dos empresas
+      están mezclados y no hay forma automática de saber cuáles son de cuál.
+    </p>
+    <ul class="text-sm">
+      {% for m in movimientos %}
+        <li class="flex items-center justify-between px-2 py-1 border-t border-slate-100 dark:border-slate-800">
+          <span class="text-slate-700 dark:text-slate-200">{{ m.etiqueta }}</span>
+          <span class="font-mono {{ 'text-red-600' if m.n else 'text-slate-400' }}">{{ m.n }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+    {% if total_movimientos %}
+      <div class="mt-3 px-3 py-2 rounded bg-red-100 text-red-800 text-sm">
+        Este código tiene <strong>{{ total_movimientos }}</strong> movimientos: el cambio
+        va a ser rechazado. Renombrá la ficha que <strong>no</strong> tiene movimientos, o
+        reasigná los movimientos uno por uno desde su propia pantalla y volvé.
+      </div>
+    {% endif %}
+  </div>
+
+  <form method="post" action="{{ url_for('clientes.confirmar_cambio_codigo', id_cliente=cli.id_cliente) }}"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="flex flex-col mb-3" style="max-width:12rem;">
+      <span class="text-sm text-slate-600">Código nuevo <span class="text-red-500">*</span></span>
+      <input type="text" name="nuevo_codigo" value="{{ nuevo_codigo or '' }}"
+             class="border rounded px-2 py-1 mt-1 uppercase font-mono" maxlength="3"
+             oninput="this.value=this.value.toUpperCase()" required autofocus>
+    </label>
+
+    {% if sugerencias %}
+      <div class="mb-3 text-sm">
+        <span class="text-slate-500">Códigos libres parecidos al nombre:</span>
+        {% for s in sugerencias %}
+          <button type="button"
+                  class="font-mono text-xs px-2 py-0.5 rounded border border-slate-300 hover:bg-slate-100"
+                  onclick="this.form.nuevo_codigo.value='{{ s }}'">{{ s }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <label class="flex flex-col mb-3">
+      <span class="text-sm text-slate-600">Motivo <span class="text-slate-400">(opcional)</span></span>
+      <input type="text" name="motivo" maxlength="200"
+             placeholder="p.ej. código LEC compartido con Lola Emperatriz Cisneros"
+             class="border rounded px-2 py-1 mt-1">
+    </label>
+
+    <div class="flex items-center justify-between mt-4 pt-3 border-t">
+      <a href="{{ url_for('clientes.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Revisar el cambio
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

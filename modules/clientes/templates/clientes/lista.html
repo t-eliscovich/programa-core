@@ -49,7 +49,7 @@
              "en base de datos clientes, no mostrar deuda"). La info
              de saldo por cliente se ve en /informes/estado-cuenta. #}
           {% if tiene_permiso('clientes.editar') %}
-          <th class="px-1 py-3 no-print" style="width:40px;" data-no-sort></th>
+          <th class="px-1 py-3 no-print" style="width:80px;" data-no-sort></th>
           {% endif %}
         </tr>
       </thead>
@@ -112,7 +112,15 @@
           </td>
           <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
           {% if tiene_permiso('clientes.editar') and c.id_cliente %}
-          <td class="px-1 py-2 no-print text-center">
+          <td class="px-1 py-2 no-print text-center" style="white-space: nowrap;">
+            {# TMT 2026-08-04 — cambiar el CÓDIGO de la ficha. Va por
+               id_cliente (PK) igual que eliminar: con 20 códigos duplicados,
+               el código no señala una ficha concreta. Es la única entrada
+               posible para desempatar los 17 duplicados que son dos clientes
+               reales (borrar uno perdería una ficha legítima). #}
+            <a href="{{ url_for('clientes.cambiar_codigo_form', id_cliente=c.id_cliente) }}"
+               class="inline-block text-slate-500 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded p-1 font-mono text-xs"
+               title="Cambiar el código de este cliente">Abc</a>
             {# TMT 2026-05-20 v4 — eliminar por id_cliente (PK).
                Antes usaba codigo_cli y fallaba con 404 cuando el código
                estaba vacío (clientes legacy). Ahora cualquier row con

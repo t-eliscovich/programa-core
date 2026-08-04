@@ -38,6 +38,14 @@
                class="border rounded px-2 py-1 mt-1 uppercase" maxlength="3"
                oninput="this.value=this.value.toUpperCase()"
                {% if modo=='editar' %}readonly{% endif %} required>
+        {# TMT 2026-08-04 — el código es readonly acá a propósito, pero SÍ se
+           puede cambiar por su propia pantalla (con confirmación y guardas).
+           Va por id_cliente porque hay 20 códigos duplicados y el código no
+           señala una ficha concreta. #}
+        {% if modo=='editar' and form.id_cliente %}
+          <a href="{{ url_for('clientes.cambiar_codigo_form', id_cliente=form.id_cliente) }}"
+             class="text-xs text-sky-600 hover:text-sky-800 mt-1">Cambiar el código…</a>
+        {% endif %}
       </label>
 
       <label class="flex flex-col">
