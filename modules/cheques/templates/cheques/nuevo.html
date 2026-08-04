@@ -108,6 +108,13 @@
           {% endif %}
         </label>
 
+        {# Conceptos sugeridos del campo Concepto de cada cheque. <datalist>
+           = sugeridos pero NO obligatorios: Alex pidió "de forma manual …
+           o tener preestablecido", así que van las dos cosas. #}
+        <datalist id="conceptos-cobro">
+          {% for c in conceptos_preset %}<option value="{{ c }}"></option>{% endfor %}
+        </datalist>
+
         {# ─── Cheques (repetibles) ────────────────────────────────────
            Cliente y banco se cargan UNA vez arriba; los cheques van como
            bloques. Botón "+ Otro cheque" clona el bloque para cargar
@@ -213,6 +220,22 @@
                 <input type="text" name="doc_banco[]" value="{{ form.doc_banco or '' }}"
                        class="w-full border rounded px-2 py-1 font-mono text-sm cheque-docbanco"
                        maxlength="40" placeholder="N° depósito/transf." aria-label="Doc. banco">
+                {# Concepto — TMT 2026-08-04 (Alex: "podemos colocar de forma
+                   manual un concepto cuando sea anticipo, o tener
+                   preestablecido: Abono a cheques, anticipo a facturas … esto
+                   se entrega a contabilidad y no van a saber qué hacer con el
+                   'sin aplicar facturas'"). Se imprime en el resumen de
+                   cobranza del día cuando el cobro no se aplica a facturas.
+                   Antes esto se tipeaba en Doc. banco, que es el N° de
+                   comprobante y va al matcher de conciliación. #}
+                <div class="chq-full">
+                  <input type="text" name="concepto[]" value="{{ form.concepto or '' }}"
+                         list="conceptos-cobro" autocomplete="off"
+                         class="w-full border rounded px-2 py-1 text-sm cheque-concepto"
+                         maxlength="{{ conceptos_max_len }}"
+                         placeholder="Concepto (opcional) — para la impresión de cobranza del día"
+                         aria-label="Concepto">
+                </div>
                 {# Medio del anticipo (sólo banco=97) — fila full-width debajo. #}
                 <div class="chq-full cheque-medio-wrap hidden">
                   <label class="flex flex-col">
@@ -1732,7 +1755,11 @@
   // importe VACÍO = "no hay más cheques" → salta al panel de facturas.
   // Enter dentro de la grilla NUNCA submitea el form.
   const CHQ_ORDEN = ['.cheque-imp', '.cheque-banco', '.cheque-num',
-                     '.cheque-fechad', '.cheque-stat', '.cheque-docbanco'];
+                     '.cheque-fechad', '.cheque-stat', '.cheque-docbanco',
+                     // TMT 2026-08-04 — el concepto es el último campo del
+                     // bloque, así el Enter estilo dBase sigue cerrando la
+                     // línea en el mismo lugar (arma el cheque siguiente).
+                     '.cheque-concepto'];
   chequesList.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const bloque = e.target.closest ? e.target.closest('.cheque-bloque') : null;
@@ -2439,6 +2466,7 @@
       set('.cheque-fechad', String(c.fechad || '').slice(0, 10));
       set('.cheque-stat', c.stat || 'Z');
       set('.cheque-docbanco', c.doc_banco);
+      set('.cheque-concepto', c.concepto);
       set('.cheque-medio', c.medio_anticipo);
     };
     // El primer item ya vino precargado en el bloque del template (scalars),

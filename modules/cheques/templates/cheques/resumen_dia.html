@@ -184,6 +184,35 @@
               {% if c.total_aplicado and (c.importe|float - c.total_aplicado)|abs > 0.01 %}
                 <div class="facts" style="margin-top:1px">aplicó {{ c.total_aplicado | money_es }} de {{ c.importe | money_es }}</div>
               {% endif %}
+            {% elif c.explicacion and c.explicacion.facturas %}
+              {# TMT 2026-08-04 (dueña): "aunque se totalice la cuenta quiero
+                 que en cobranza quede guardado qué factura se pagó". El
+                 vínculo vivo lo borró el TOTALIZAR, pero mov_doble guardó
+                 numf + importe + el saldo que quedó AL APLICAR — se imprime
+                 igual que una aplicación normal, marcada como histórica. #}
+              <div class="apps">
+                {% for a in c.explicacion.facturas %}
+                  <div class="app">
+                    <span class="fnumf">{{ a.numf or '—' }}</span>
+                    <span></span>
+                    <span>{{ a.importe | money_es }}</span>
+                    <span>{{ a.saldo_post | money_es if a.saldo_post is not none else '' }}</span>
+                    <span class="fbadge">
+                      {% if (a.stat_post or '') | upper == 'T' %}<span class="badge badge-t" title="Totalizó — factura cancelada">T</span>
+                      {% elif a.stat_post %}<span class="badge badge-a" title="Abonó — queda saldo">A</span>{% endif %}
+                    </span>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="facts" style="margin-top:1px">
+                {%- if c.concepto %}{{ c.concepto | cleanstr }} · {% endif -%}
+                aplicado — el vínculo lo redistribuyó el TOTALIZAR del estado de cuenta
+              </div>
+            {% elif c.concepto %}
+              <span class="facts">{{ c.concepto | cleanstr }}</span>
+              {% if c.explicacion %}<div class="facts">{{ c.explicacion.texto }}</div>{% endif %}
+            {% elif c.explicacion %}
+              <span class="facts">{{ c.explicacion.texto }}</span>
             {% elif c.medio == 'ANTICIPO' %}
               <span class="facts">anticipo · saldo a favor del cliente</span>
             {% else %}

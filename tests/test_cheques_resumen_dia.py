@@ -244,6 +244,7 @@ def _ids_que_devuelve(sql: str, fecha_iso: str) -> set[int]:
     con.execute(
         "CREATE TABLE cheque (id_cheque INT, no_cheque TEXT, importe REAL, "
         "fecha TEXT, fechad TEXT, no_banco INT, stat TEXT, doc_banco TEXT, "
+        "concepto TEXT, "
         "fecha_crea TEXT, usuario_crea TEXT, clave TEXT, fecha_recibido TEXT, "
         "fechaing TEXT, fechaout TEXT, banco TEXT, codigo_cli TEXT)"
     )
@@ -276,3 +277,75 @@ def test_resumen_dia_trae_el_dbf_import_en_su_dia_de_ingreso(monkeypatch):
     """El posdatado sí aparece el día que ENTRÓ (FECHING = 09/06)."""
     sql = _sql_del_resumen(monkeypatch)
     assert _ids_que_devuelve(sql, "2026-06-09") == {1}
+
+
+# ---------------------------------------------------------------------------
+# TMT 2026-08-04 (Alex: "en el caso de MTM los dos fueron abonos a factura,
+# pero refleja sin aplicar facturas … esto se entrega a contabilidad y no van
+# a saber qué hacer con el 'sin aplicar facturas'").
+#
+# Alex aplicó los dos depósitos de MTM a la factura 177617 y 16 minutos
+# después corrió TOTALIZAR del estado de cuenta, que BORRA los vínculos a
+# propósito. El resumen leía sólo `chequesxfact` → imprimía "sin aplicar a
+# facturas" sobre un cobro que SÍ se aplicó. La dueña: "aunque se totalice la
+# cuenta quiero que en cobranza quede guardado qué factura se pagó" y "me
+# gustaría que me digas a qué factura fue aplicada realmente".
+#
+# Se testea sobre el HTML RENDERIZADO (no sobre el dict), que es lo que ve
+# contabilidad.
+# ---------------------------------------------------------------------------
+
+_MTM_FECHA = date(2026, 8, 3)
+
+
+def _patch_db_mtm(monkeypatch):
+    anterior = queries.db.fetch_all
+
+    def fake_fetch_all(sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.cheque c" in s:
+            return [{
+                "id_cheque": 101712, "no_cheque": None, "importe": 300.0,
+                "fecha": _MTM_FECHA, "fechad": _MTM_FECHA, "no_banco": 90,
+                "stat": "B", "doc_banco": "116526248", "concepto": None,
+                "fecha_crea": datetime(2026, 8, 3, 12, 8),
+                "usuario_crea": "alex", "clave": "ALE", "banco_emisor": "",
+                "codigo_cli": "MTM", "cliente": "MULTITELAS",
+                "fecha_recibido": _MTM_FECHA, "fechaing": _MTM_FECHA,
+            }]
+        if "from scintela.chequesxfact cxf" in s:
+            return []           # el TOTALIZAR los borró
+        if "totalizar_estado_cuenta" in s:
+            return [{"codigo_cli": "MTM", "cuando": _MTM_FECHA}]
+        if "from scintela.mov_doble" in s:
+            return [
+                {"tipo": "cheque_creado", "origen_id": 101712,
+                 "destino_id": 101712, "importe": 300.0, "batch_id": None,
+                 "metadata": {"codigo_cli": "MTM"}},
+                {"tipo": "cheque_aplicado_a_factura", "origen_id": 101712,
+                 "destino_id": 276593, "importe": 300.0, "batch_id": None,
+                 "metadata": {"numf": 177617, "saldo_factura_post": 1759.28,
+                              "stat_factura_post": "A"}},
+            ]
+        return anterior(sql, params, conn=conn)
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake_fetch_all)
+
+
+def test_render_mtm_dice_la_factura_y_no_sin_aplicar(client, fake_db, monkeypatch):
+    import bcrypt
+
+    _patch_db_mtm(monkeypatch)
+    rid = fake_db.add_role("Admin", ["*"])
+    pw = bcrypt.hashpw(b"secret123", bcrypt.gensalt())
+    fake_db.add_user("tamara", pw, rid)
+    client.post("/login", data={"username": "tamara", "password": "secret123"})
+
+    resp = client.get("/cheques/resumen-dia?fecha=2026-08-03")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert "sin aplicar a facturas" not in html
+    assert "177617" in html                 # a QUÉ factura fue aplicada
+    assert "TOTALIZAR" in html              # y por qué el vínculo no está
+    assert "1.759,28" in html               # el saldo que quedó AL APLICAR

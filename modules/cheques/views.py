@@ -21,9 +21,24 @@ from exports import csv_response
 from filters import today_ec
 from parsers import parse_date, parse_int, parse_monto
 
-from . import queries
+from . import concepto_cobro, queries
 
 cheques_bp = Blueprint("cheques", __name__, template_folder="templates")
+
+
+@cheques_bp.context_processor
+def _conceptos_cobro_ctx():
+    """Opciones y largo del campo Concepto, para las vistas de cheques.
+
+    TMT 2026-08-04. Van por context_processor y no por kwargs porque
+    `cheques/nuevo.html` se renderiza desde ~6 puntos distintos del view
+    (alta, cada rama de validación, restore-on-error): pasarlos a mano
+    garantizaba que alguna rama quedara sin el datalist.
+    """
+    return {
+        "conceptos_preset": concepto_cobro.PRESETS,
+        "conceptos_max_len": concepto_cobro.MAX_LEN,
+    }
 
 
 def _bancos() -> list[dict]:
@@ -132,6 +147,7 @@ def nuevo():
         dbs = request.form.getlist("doc_banco[]")
         nbs = request.form.getlist("no_banco[]")
         mas = request.form.getlist("medio_anticipo[]")
+        cps = request.form.getlist("concepto[]")
         n = max(len(nos), len(imps), len(fchs), len(sts), len(dbs), len(nbs))
         for i in range(n):
             form_back["cheques"].append({
@@ -142,6 +158,7 @@ def nuevo():
                 "doc_banco": dbs[i] if i < len(dbs) else "",
                 "no_banco": nbs[i] if i < len(nbs) else "",
                 "medio_anticipo": mas[i] if i < len(mas) else "",
+                "concepto": cps[i] if i < len(cps) else "",
             })
         # Compat: el template usa form.importe/no_cheque/fechad/no_banco
         # (scalars del primer bloque) para precarga. Llenamos del primero.
@@ -154,6 +171,7 @@ def nuevo():
             form_back["stat"] = _p["stat"]
             form_back["doc_banco"] = _p["doc_banco"]
             form_back["no_banco"] = _p["no_banco"]
+            form_back["concepto"] = _p["concepto"]
         return render_template(
             "cheques/nuevo.html",
             form=form_back,
@@ -209,6 +227,14 @@ def nuevo():
     if not nos_banco_raw:
         v = request.form.get("no_banco")
         nos_banco_raw = [v] if v else []
+    # TMT 2026-08-04 (Alex: "podemos colocar de forma manual un concepto
+    # cuando sea anticipo … o tener preestablecido: Abono a cheques, anticipo
+    # a facturas"). Concepto por cheque — lo que se imprime en el resumen de
+    # cobranza del día cuando el cobro no se aplica a ninguna factura.
+    conceptos_raw = request.form.getlist("concepto[]")
+    if not conceptos_raw:
+        v = request.form.get("concepto")
+        conceptos_raw = [v] if v else []
     # Bancos depósito directo: 90 DEP.PICH, 91 DEP.INTER, 95 CANCELA ANT,
     # 97 ANTICIPO, 99 EFECTIVO. La dueña pidió que para estos: fecha hoy
     # obligatoria, no_cheque no requerido.
@@ -274,6 +300,7 @@ def nuevo():
                 "es_anticipo": _ch_anticipo,
                 "no_banco_form": _nb_form,
                 "medio_anticipo": _medio,
+                "concepto": (conceptos_raw[i] if i < len(conceptos_raw) else ""),
             }
         )
     # `fechad` general (compat con resto del view + restore-on-error).
@@ -430,6 +457,7 @@ def nuevo():
             "no_banco": nos_banco_raw[_i] if _i < len(nos_banco_raw) else "",
             "medio_anticipo": (medios_anticipo_raw[_i]
                                if _i < len(medios_anticipo_raw) else ""),
+            "concepto": (conceptos_raw[_i] if _i < len(conceptos_raw) else ""),
         })
     form.update(
         {
@@ -941,6 +969,8 @@ def nuevo():
                     es_anticipo=_ch_es_anticipo,
                     # TMT 2026-05-26 — doc_banco por cheque (N° comprobante/depósito).
                     doc_banco=ch_in.get("doc_banco"),
+                    # TMT 2026-08-04 — concepto del cobro (impresión diaria).
+                    concepto=ch_in.get("concepto"),
                     usuario=usuario,
                     batch_id=batch_id,
                     anticipo_espejo_importe=_esp_override,

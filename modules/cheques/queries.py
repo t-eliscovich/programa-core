@@ -32,6 +32,8 @@ import db
 from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
+from . import concepto_cobro as _concepto_cobro
+
 # Día de INGRESO de un cobro — la fecha con la que el dBase arma sus listados
 # del día (`FECHING`). Es UNA sola definición porque hay DOS pantallas que la
 # usan (el resumen de cobranza y el listado de cheques ingresados) y un
@@ -354,6 +356,15 @@ def editar(
 
     sql_set = ["fechad=%s", "usuario_modifica=%s", "fecha_modifica=CURRENT_TIMESTAMP"]
     params: list = [fechad_nueva, usuario]
+    # TMT 2026-08-04: además de la traza `[C]` en observacion (que es una
+    # bitácora append-only y no se puede leer como campo), el concepto ahora
+    # va a su COLUMNA — es lo que imprime el resumen de cobranza del día. Así
+    # un cobro ya cargado se puede explicar sin anularlo y recargarlo.
+    _concepto_col = _concepto_cobro.limpiar(concepto)
+    if _concepto_col:
+        _concepto_cobro.bootstrap_columna()
+        sql_set.append("concepto=%s")
+        params.append(_concepto_col)
     if obs_marca:
         sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
         params.append(obs_marca)
@@ -3057,6 +3068,12 @@ def crear(
     clave: str | None = None,
     es_anticipo: bool = False,
     doc_banco: str | None = None,
+    # TMT 2026-08-04 (Alex: "podemos colocar de forma manual un concepto
+    # cuando sea anticipo … es más porque esto se entrega a contabilidad y no
+    # van a saber qué hacer con el 'sin aplicar facturas'"). Texto corto que
+    # explica un cobro que NO se aplica a facturas; se imprime en el resumen
+    # de cobranza del día. Ver `modules/cheques/concepto_cobro.py`.
+    concepto: str | None = None,
     usuario: str = "web",
     batch_id: str | None = None,
     # TMT 2026-07-06 (dueña): anticipo aplicado a cheques en cartera — el
@@ -3213,16 +3230,21 @@ def crear(
         # postergado".
         # TMT 2026-05-26: agregada col `doc_banco` (migration 0051) — N° de
         # comprobante/depósito/transferencia. Si no se pasa queda NULL.
+        # TMT 2026-08-04: `concepto` es columna nueva y el deploy NO corre
+        # migraciones → se bootstrapea en caliente antes del INSERT.
+        _concepto_cobro.bootstrap_columna(conn=conn)
         row = (
             db.execute_returning(
                 """
             INSERT INTO scintela.cheque
                 (no_cheque, fecha, fechad, fecha_recibido,
                  codigo_cli, importe, no_banco,
-                 banco, stat, fechaing, prov, clave, doc_banco, usuario_crea)
+                 banco, stat, fechaing, prov, clave, doc_banco, concepto,
+                 usuario_crea)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s)
             RETURNING id_cheque, no_cheque
             """,
                 (
@@ -3241,6 +3263,7 @@ def crear(
                     (prov or None),
                     (clave or None) and clave[:5],
                     (doc_banco or None),
+                    _concepto_cobro.limpiar(concepto),
                     usuario,
                 ),
                 conn=conn,
@@ -5379,11 +5402,14 @@ def resumen_cobranza_dia(fecha) -> dict:
     al momento de aplicar) — igual que la tirilla del dBase, que imprime el
     saldo que quedó en ESE momento, no el saldo vivo de hoy.
     """
+    # `concepto` es columna nueva (TMT 2026-08-04) y el deploy no corre
+    # migraciones: asegurarla antes de SELECTearla.
+    _concepto_cobro.bootstrap_columna()
     rows = (
         db.fetch_all(
             """
             SELECT c.id_cheque, c.no_cheque, c.importe, c.fecha, c.fechad,
-                   c.no_banco, c.stat, c.doc_banco,
+                   c.no_banco, c.stat, c.doc_banco, c.concepto,
                    c.fecha_crea, c.usuario_crea, c.clave,
                    c.fecha_recibido, c.fechaing,
                    COALESCE(c.banco, '') AS banco_emisor,
@@ -5437,12 +5463,26 @@ def resumen_cobranza_dia(fecha) -> dict:
             return "ANTICIPO"
         return "CHEQUE"
 
+    # TMT 2026-08-04 (Alex: "en el caso de MTM los dos fueron abonos a
+    # factura, pero refleja sin aplicar facturas"). Para los cobros que
+    # quedaron SIN filas vivas en chequesxfact, el sistema igual sabe qué
+    # fueron — está en mov_doble. El caso testigo: Alex aplicó los dos
+    # depósitos de MTM a la factura 177617 y 16 minutos después corrió
+    # TOTALIZAR del estado de cuenta, que BORRA los vínculos a propósito
+    # (`n_links_borrados: 6`). La plata quedó; el rastro no. La dueña,
+    # 04/08: "aunque se totalice la cuenta quiero que en cobranza quede
+    # guardado qué factura se pagó".
+    _sin_apps = [r["id_cheque"] for r in rows if not aplic_por_cheque.get(r["id_cheque"])]
+    _expl = _concepto_cobro.explicaciones(
+        _sin_apps, {r["id_cheque"]: r.get("codigo_cli") for r in rows})
+
     cheques: list[dict] = []
     depositos: list[dict] = []
     efectivo: list[dict] = []
     for r in rows:
         apps = aplic_por_cheque.get(r["id_cheque"], [])
         r["aplicaciones"] = apps
+        r["explicacion"] = _expl.get(r["id_cheque"])
         nb = r.get("no_banco") or 0
         r["medio"] = _medio(nb)
         r["total_aplicado"] = round(sum(float(a.get("aplicado") or 0) for a in apps), 2)
