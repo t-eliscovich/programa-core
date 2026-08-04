@@ -341,7 +341,9 @@ def _ec_con_facturas(cod):
         "cliente": {"codigo_cli": cod, "nombre": "Textiles del Valle",
                     "provincia": "PICHINCHA", "canton": "QUITO",
                     "ruc": "1790012345001", "telefono": "0989 506 447",
-                    "mail": "compras@tdv.com", "cupo": 20000,
+                    "mail": {"mail": "compras@tdv.com", "origen": "asinfo",
+                             "etiqueta": "Tomado de Asinfo", "alternativo": ""},
+                    "cupo": 20000,
                     "direccion1": "AV. AMAZONAS", "direccion2": "N32-14"},
         "facturas": [
             {"id_factura": 1, "numf": 100, "numf_completo": None,
@@ -442,6 +444,11 @@ def test_el_vendedor_ve_como_contactar_al_cliente_pero_no_su_cupo(ficha):
     # Tocables: desde el celular, llamar es un toque.
     assert 'href="tel:0989506447"' in ficha
     assert 'href="mailto:compras@tdv.com"' in ficha
+    # `cliente.mail` es un DICT (mail + origen + etiqueta), no un string: la
+    # pantalla salió a producción el 04/08 imprimiendo el repr entero de
+    # Python — "{'mail': '...', 'origen': 'asinfo_completa', 'etiqueta': ...}"
+    # — en el renglón del mail. Se muestra la dirección, no la estructura.
+    assert "origen" not in ficha and "'mail':" not in ficha
     # Y la línea que no se cruza.
     assert "20000" not in ficha and "20.000" not in ficha
 

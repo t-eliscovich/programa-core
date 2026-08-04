@@ -81,7 +81,12 @@
    encabezado y lo que un vendedor necesita para ir a ver al cliente. El
    teléfono y el mail son tocables: desde el celular, llamar es un toque. #}
 {% set _tel = cliente.telefono|cleanstr %}
-{% set _mail = cliente.mail|cleanstr %}
+{# `cliente.mail` NO es un string: `estado_cuenta_cliente` guarda ahí el dict
+   que devuelve `clientes.mail_asinfo.resolver()` (mail + origen + etiqueta +
+   alternativo). Pasarlo por |cleanstr imprime el repr entero de Python en la
+   pantalla del vendedor — pasó en producción el 04/08. La dirección es
+   `.mail`, igual que en la pantalla de la oficina. #}
+{% set _mail = ((cliente.mail or {}).mail if cliente.mail is mapping else cliente.mail)|cleanstr %}
 {% set _dir = [cliente.direccion1|cleanstr, cliente.direccion2|cleanstr]|select|join(' ') %}
 {% set _ciudad = [cliente.canton|cleanstr, cliente.provincia|cleanstr]|select|join(', ') %}
 {% if _dir or _ciudad or cliente.ruc or _tel or _mail %}
