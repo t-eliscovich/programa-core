@@ -153,3 +153,46 @@ def test_una_ruta_nueva_nace_cerrada(app):
     resp = _con_user(app, "/pantalla-que-alguien-agrega-manana", {"vend": "PPR"})
     assert resp is not None
     assert resp[1] == 404
+
+
+# --------------------------------------------------------------------------
+# La caché de la columna `vend` — el SÍ es para siempre, el NO dura 60 s
+# --------------------------------------------------------------------------
+
+
+def test_columna_vend_no_cachea_el_negativo_para_siempre(monkeypatch):
+    """Pasó de verdad el 2026-08-03: corrí la migración 0153 y la app siguió
+    sin ver la columna, porque ya había preguntado ANTES de la migración y se
+    había guardado el "no está" para toda la vida del proceso. Sin síntoma
+    visible más que "no me deja guardar el vendedor".
+
+    Misma familia que la caché del fracaso de Metabase (2026-07-29): un
+    negativo no puede tener la misma vida que un positivo.
+    """
+    import auth
+
+    auth._reset_cache_columna_vend()
+    respuestas = [None, {"ok": 1}]
+    llamadas = []
+
+    def _fetch_one(sql, params=None, conn=None):
+        llamadas.append(1)
+        return respuestas.pop(0) if respuestas else {"ok": 1}
+
+    monkeypatch.setattr(auth.db, "fetch_one", _fetch_one)
+
+    # Antes de la migración: no está.
+    assert auth._columna_vend_existe() is False
+    # Dentro del TTL no vuelve a preguntar (no una query por request).
+    assert auth._columna_vend_existe() is False
+    assert len(llamadas) == 1
+
+    # Pasa el TTL (corrieron la migración en el medio) → re-pregunta y la ve.
+    monkeypatch.setattr(auth, "_COL_VEND_TTL_NEGATIVO", 0.0)
+    assert auth._columna_vend_existe() is True
+    assert len(llamadas) == 2
+
+    # Y una vez que existe, no pregunta nunca más.
+    assert auth._columna_vend_existe() is True
+    assert len(llamadas) == 2
+    auth._reset_cache_columna_vend()

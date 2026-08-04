@@ -12,6 +12,7 @@ Session timeouts (sliding, per rol):
     en load_logged_in_user.
 """
 
+import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -107,31 +108,51 @@ def _parse_last_activity(raw: str | None) -> datetime | None:
 # migraciones, así que el código tiene que andar con y sin la columna
 # (mismo patrón feature-flag que modules/avisos/queries.py). Se consulta una
 # sola vez por proceso.
-_COL_VEND: bool | None = None
+# ⭐ El SÍ se cachea para siempre; el NO, sólo 60 segundos.
+#
+# Una columna que existe no desaparece, así que el positivo es definitivo. El
+# negativo NO: cambia sola en el momento en que alguien corre la migración por
+# /admin/migraciones. Cachear el "no está" para siempre dejaba la app
+# convencida de que la columna no existe hasta el próximo deploy — y sin
+# ningún síntoma más que "no me deja guardar el vendedor". Es el mismo bug que
+# el 2026-07-29 con la caché del fracaso de Metabase: cachear un negativo con
+# la misma vida que un positivo.
+#
+# Pasó de verdad: el 2026-08-03 corrí la 0153 y la app siguió sin ver la
+# columna porque ya la había preguntado antes de la migración.
+_COL_VEND: bool = False
+_COL_VEND_CHEQUEADO_EN: float = 0.0
+_COL_VEND_TTL_NEGATIVO = 60.0  # segundos
 
 
 def _columna_vend_existe() -> bool:
-    global _COL_VEND
-    if _COL_VEND is None:
-        try:
-            row = db.fetch_one(
-                """
-                SELECT 1 AS ok FROM information_schema.columns
-                 WHERE table_schema = 'seguridad'
-                   AND table_name   = 'usuario'
-                   AND column_name  = 'vend'
-                """
-            )
-            _COL_VEND = bool(row)
-        except Exception:  # noqa: BLE001 — sin DB o sin permisos: asumimos que no está
-            _COL_VEND = False
-    return bool(_COL_VEND)
+    global _COL_VEND, _COL_VEND_CHEQUEADO_EN
+    if _COL_VEND:
+        return True
+    ahora = time.monotonic()
+    if _COL_VEND_CHEQUEADO_EN and (ahora - _COL_VEND_CHEQUEADO_EN) < _COL_VEND_TTL_NEGATIVO:
+        return False
+    _COL_VEND_CHEQUEADO_EN = ahora
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1 AS ok FROM information_schema.columns
+             WHERE table_schema = 'seguridad'
+               AND table_name   = 'usuario'
+               AND column_name  = 'vend'
+            """
+        )
+        _COL_VEND = bool(row)
+    except Exception:  # noqa: BLE001 — sin DB o sin permisos: asumimos que no está
+        _COL_VEND = False
+    return _COL_VEND
 
 
 def _reset_cache_columna_vend() -> None:
-    """Sólo para tests / después de correr la migración."""
-    global _COL_VEND
-    _COL_VEND = None
+    """Sólo para tests."""
+    global _COL_VEND, _COL_VEND_CHEQUEADO_EN
+    _COL_VEND = False
+    _COL_VEND_CHEQUEADO_EN = 0.0
 
 
 def load_logged_in_user() -> None:
