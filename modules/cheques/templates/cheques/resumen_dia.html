@@ -194,7 +194,7 @@
                 {% for a in c.explicacion.facturas %}
                   <div class="app">
                     <span class="fnumf">{{ a.numf or '—' }}</span>
-                    <span></span>
+                    <span>{{ a.fact_importe | money_es if a.fact_importe is not none else '' }}</span>
                     <span>{{ a.importe | money_es }}</span>
                     <span>{{ a.saldo_post | money_es if a.saldo_post is not none else '' }}</span>
                     <span class="fbadge">

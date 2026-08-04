@@ -218,6 +218,7 @@ def explicaciones(ids_cheque, codigos_por_id=None, conn=None) -> dict[int, dict]
         elif tipo == "cheque_aplicado_a_factura" and oid in ids_set:
             aplicadas.setdefault(oid, []).append({
                 "numf": meta.get("numf") or did,
+                "id_fact": meta.get("id_factura") or did,
                 "importe": r.get("importe"),
                 "saldo_post": meta.get("saldo_factura_post"),
                 "stat_post": meta.get("stat_factura_post"),
@@ -249,22 +250,30 @@ def explicaciones(ids_cheque, codigos_por_id=None, conn=None) -> dict[int, dict]
         if cid in batch_alta
     }
 
-    # Nº VISIBLE + importe de los cheques cancelados (una sola query).
+    # Cómo se llama el cheque cancelado (una sola query).
+    #
     # Regla del skill `programa-core`: la dueña nombra los cheques por
-    # `no_cheque`, no por el id interno. Varios legacy lo tienen vacío → ahí
-    # el rótulo lo omite en vez de imprimir un id que nadie reconoce, y el
-    # monto queda como la referencia útil.
+    # `no_cheque`, NUNCA por el id interno. Pero **1.430 de los 2.043 cheques
+    # vivos no tienen `no_cheque`** (verificado en prod el 04/08 — los dos de
+    # este caso, 99366 y 99741, entre ellos), así que "poné el número de
+    # cheque o algo" (dueña, 04/08) necesita un fallback: banco + fecha de
+    # depósito, que es como los identifica la pantalla de cartera.
     cache_ref: dict[int, tuple[str, object]] = {}
     ids_cancelados = sorted(set(cancelo_padre.values()) | set(por_batch.values()))
     if ids_cancelados:
         try:
             for row in (_db.fetch_all(
-                "SELECT id_cheque, COALESCE(no_cheque, '') AS no_cheque, importe "
+                "SELECT id_cheque, COALESCE(no_cheque, '') AS no_cheque, "
+                "       COALESCE(banco, '') AS banco, fechad, importe "
                 "  FROM scintela.cheque WHERE id_cheque = ANY(%s)",
                 (ids_cancelados,), conn=conn,
             ) or []):
-                cache_ref[int(row["id_cheque"])] = (
-                    (row.get("no_cheque") or "").strip(), row.get("importe"))
+                num = (row.get("no_cheque") or "").strip()
+                if not num:
+                    banco = (row.get("banco") or "").strip().title()
+                    cuando = _fecha_es(row.get("fechad"))
+                    num = " ".join(x for x in (banco, f"dep. {cuando}" if cuando else "") if x)
+                cache_ref[int(row["id_cheque"])] = (num, row.get("importe"))
         except Exception as exc:  # noqa: BLE001 -- fail-soft
             _LOG.exception("lookup de cheques cancelados falló: %s", exc)
 
@@ -273,6 +282,26 @@ def explicaciones(ids_cheque, codigos_por_id=None, conn=None) -> dict[int, dict]
     # dueña el 04/08.
     fecha_totalizar = _fechas_totalizar(
         {(codigos_por_id or {}).get(c) for c in aplicadas} - {None}, conn=conn)
+
+    # Importe de cada factura tocada — `mov_doble` guarda el numf y lo
+    # aplicado pero no el total de la factura, y sin eso la columna "importe"
+    # de la tirilla quedaba vacía. La dueña, 04/08: "mientras siga quedando
+    # encolumnado y prolijo sí".
+    ids_fact = sorted({a["id_fact"] for apps in aplicadas.values() for a in apps
+                       if a.get("id_fact")})
+    imp_fact: dict[int, object] = {}
+    if ids_fact:
+        try:
+            for row in (_db.fetch_all(
+                "SELECT id_factura, importe FROM scintela.factura "
+                " WHERE id_factura = ANY(%s)", (ids_fact,), conn=conn,
+            ) or []):
+                imp_fact[int(row["id_factura"])] = row.get("importe")
+        except Exception as exc:  # noqa: BLE001 -- fail-soft
+            _LOG.exception("lookup de importes de factura falló: %s", exc)
+    for apps in aplicadas.values():
+        for a in apps:
+            a["fact_importe"] = imp_fact.get(a.pop("id_fact", None))
 
     out: dict[int, dict] = {}
     for cid in ids:
@@ -310,6 +339,7 @@ def explicaciones(ids_cheque, codigos_por_id=None, conn=None) -> dict[int, dict]
                     else f"anticipo · canceló un cheque en cartera{detalle}"
                 ),
                 "facturas": [],
+                "id_cheque_cancelado": cancelado,
             }
             continue
         # 3. Anticipo suelto (espejo NB=98 / marcado como anticipo al alta).

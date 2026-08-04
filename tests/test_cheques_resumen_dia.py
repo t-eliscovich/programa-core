@@ -315,6 +315,8 @@ def _patch_db_mtm(monkeypatch):
             }]
         if "from scintela.chequesxfact cxf" in s:
             return []           # el TOTALIZAR los borró
+        if "from scintela.factura" in s:
+            return [{"id_factura": 276593, "importe": 2059.28}]
         if "totalizar_estado_cuenta" in s:
             return [{"codigo_cli": "MTM", "cuando": _MTM_FECHA}]
         if "from scintela.mov_doble" in s:
@@ -324,7 +326,8 @@ def _patch_db_mtm(monkeypatch):
                  "metadata": {"codigo_cli": "MTM"}},
                 {"tipo": "cheque_aplicado_a_factura", "origen_id": 101712,
                  "destino_id": 276593, "importe": 300.0, "batch_id": None,
-                 "metadata": {"numf": 177617, "saldo_factura_post": 1759.28,
+                 "metadata": {"numf": 177617, "id_factura": 276593,
+                              "saldo_factura_post": 1759.28,
                               "stat_factura_post": "A"}},
             ]
         return anterior(sql, params, conn=conn)
@@ -349,3 +352,4 @@ def test_render_mtm_dice_la_factura_y_no_sin_aplicar(client, fake_db, monkeypatc
     assert "177617" in html                 # a QUÉ factura fue aplicada
     assert "TOTALIZAR" in html              # y por qué el vínculo no está
     assert "1.759,28" in html               # el saldo que quedó AL APLICAR
+    assert "2.059,28" in html               # importe de la factura (columna llena)

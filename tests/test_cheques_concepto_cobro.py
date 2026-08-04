@@ -20,8 +20,9 @@ from modules.cheques import concepto_cobro
 class _FakeDB:
     """Devuelve filas fijas según qué tabla menciona el SQL."""
 
-    def __init__(self, movs, cheques=None, totalizar=None):
+    def __init__(self, movs, cheques=None, totalizar=None, facturas=None):
         self.movs, self.cheques, self.totalizar = movs, cheques or [], totalizar or []
+        self.facturas = facturas or []
         self.sqls: list[str] = []
 
     def fetch_all(self, sql, params=None, conn=None):
@@ -31,6 +32,8 @@ class _FakeDB:
             return self.totalizar
         if "from scintela.mov_doble" in s:
             return self.movs
+        if "from scintela.factura" in s:
+            return self.facturas
         if "from scintela.cheque" in s:
             return self.cheques
         return []
@@ -58,12 +61,12 @@ def _usar(monkeypatch, fake):
 _MTM_MOVS = [
     _md("cheque_creado", 101712, 101712, meta={"codigo_cli": "MTM"}),
     _md("cheque_aplicado_a_factura", 101712, 276593, importe=300.0,
-        meta={"numf": 177617, "saldo_factura_post": 1759.28,
-              "stat_factura_post": "A"}),
+        meta={"numf": 177617, "id_factura": 276593,
+              "saldo_factura_post": 1759.28, "stat_factura_post": "A"}),
     _md("cheque_creado", 101713, 101713, meta={"codigo_cli": "MTM"}),
     _md("cheque_aplicado_a_factura", 101713, 276593, importe=300.0,
-        meta={"numf": 177617, "saldo_factura_post": 1459.28,
-              "stat_factura_post": "A"}),
+        meta={"numf": 177617, "id_factura": 276593,
+              "saldo_factura_post": 1459.28, "stat_factura_post": "A"}),
 ]
 
 
@@ -72,6 +75,7 @@ def test_mtm_aplicado_aunque_totalizar_borro_el_vinculo(monkeypatch):
     _usar(monkeypatch, _FakeDB(
         _MTM_MOVS,
         totalizar=[{"codigo_cli": "MTM", "cuando": date(2026, 8, 3)}],
+        facturas=[{"id_factura": 276593, "importe": 2059.28}],
     ))
     out = concepto_cobro.explicaciones([101712, 101713],
                                        {101712: "MTM", 101713: "MTM"})
@@ -81,8 +85,11 @@ def test_mtm_aplicado_aunque_totalizar_borro_el_vinculo(monkeypatch):
         # La dueña: "quiero que en cobranza quede guardado qué factura se pagó".
         assert "177617" in out[cid]["texto"]
         assert "TOTALIZAR" in out[cid]["texto"]
+        # La columna "importe" de la tirilla necesita el total de la factura,
+        # que mov_doble NO guarda: sale de un lookup a scintela.factura
+        # ("mientras siga quedando encolumnado y prolijo sí").
         assert out[cid]["facturas"] == [
-            {"numf": 177617, "importe": 300.0,
+            {"numf": 177617, "importe": 300.0, "fact_importe": 2059.28,
              "saldo_post": 1759.28 if cid == 101712 else 1459.28,
              "stat_post": "A"}
         ]
@@ -123,7 +130,8 @@ _CEM_MOVS = [
     _md("anticipo_neteado", 101724, 99741, batch="b616"),
 ]
 _CHEQUE_CANCELADO_CEM = [
-    {"id_cheque": 99741, "no_cheque": "645", "importe": 4020.69},
+    {"id_cheque": 99741, "no_cheque": "645", "banco": "PICHINCHA",
+     "fechad": date(2026, 8, 21), "importe": 4020.69},
 ]
 
 
@@ -163,13 +171,17 @@ def test_joh_el_hermano_del_batch_tambien_queda_explicado(monkeypatch):
     """Sin la propagación por batch, el depósito de $770 quedaba mudo."""
     _usar(monkeypatch, _FakeDB(
         _JOH_MOVS,
-        cheques=[{"id_cheque": 99366, "no_cheque": "", "importe": 1028.0}],
+        cheques=[{"id_cheque": 99366, "no_cheque": "", "banco": "PICHINCHA",
+                  "fechad": date(2026, 8, 4), "importe": 1028.0}],
     ))
     out = concepto_cobro.etiquetas_automaticas([101750, 101751])
     assert set(out) == {101750, 101751}
-    # `no_cheque` vacío (legacy) → el rótulo NO imprime el id interno.
+    # 1.430 de los 2.043 cheques vivos NO tienen no_cheque (99366 entre
+    # ellos). La dueña: "poné el número de cheque o algo" → fallback banco +
+    # fecha de depósito, nunca el id interno.
     for cid in (101750, 101751):
-        assert out[cid] == "anticipo · canceló un cheque en cartera ($1.028,00)"
+        assert out[cid] == (
+            "anticipo · canceló el cheque Pichincha dep. 04/08 ($1.028,00)")
         assert "99366" not in out[cid]
         assert "101750" not in out[cid]
 
