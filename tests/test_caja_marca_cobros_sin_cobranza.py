@@ -107,14 +107,25 @@ def test_el_form_de_cobranza_arrastra_desde_caja():
 
 def test_adoptando_una_caja_el_fechad_es_el_de_la_fila_no_hoy():
     """Visto en vivo con CHI el 04/08: el cheque nació con fechad=03/08
-    adoptando una caja del 21/07 → el cobro se iba a la comisión de AGOSTO."""
-    import inspect
+    adoptando una caja del 21/07 → el cobro se iba a la comisión de AGOSTO.
 
-    from modules.cheques import views as cv
+    TMT 2026-08-04 (tarde) — este test exigía una rama
+    `if es_deposito and desde_caja` aparte. Ya no existe **porque el mismo
+    bug estaba también en la otra puerta** (el alta común: caso ECH,
+    cobranza del 21/07 guardada con fechad 04/08). Ahora la regla es una
+    sola y vive en `views.fechad_por_defecto`. Se protege lo mismo, pero por
+    comportamiento y no por forma — ver
+    `tests/test_cheques_fechad_cobranza_retroactiva.py`.
+    """
+    from datetime import date
 
-    src = inspect.getsource(cv.nuevo)
-    i = src.index("if es_deposito")
-    bloque = src[i : i + 700]
-    assert "desde_caja" in bloque, "el forzado a hoy no distingue la adopción"
-    j = bloque.index("desde_caja")
-    assert "today_ec()" not in bloque[:j], "sigue forzando hoy antes de mirar la adopción"
+    from modules.cheques.views import fechad_por_defecto
+
+    caja_de_julio = date(2026, 7, 21)
+    hoy = date(2026, 8, 4)
+    assert (
+        fechad_por_defecto(
+            es_deposito=True, stat="B", fechad_tipeada=hoy, fecha_cobranza=caja_de_julio,
+        )
+        == caja_de_julio
+    )

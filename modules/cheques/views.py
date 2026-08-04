@@ -41,6 +41,48 @@ def _conceptos_cobro_ctx():
     }
 
 
+def fechad_por_defecto(
+    *,
+    es_deposito: bool,
+    stat: str,
+    fechad_tipeada: date | None,
+    fecha_cobranza: date,
+) -> date | None:
+    """Qué `fechad` se guarda cuando el usuario no puede elegirla.
+
+    ⭐ TMT 2026-08-04 (tarde). `fechad` es **el día en que la plata entró al
+    banco**, y por eso es lo que decide en qué MES cae la comisión del
+    vendedor (`modules/comisiones/queries.py` agrupa por `cheque.fechad`).
+
+    Acá decía `today_ec()` para todo banco de depósito, por la regla de la
+    dueña *"si es un depósito obligatoriamente fecha de hoy"*. Esa regla
+    describe la cobranza DEL DÍA, que es el 99 % de las cargas — y ahí `hoy`
+    y el día de cobranza son lo mismo. Pero **pisa la fecha en una carga
+    RETROACTIVA**: medido en vivo cargando el cobro de ECH, cobranza del
+    21/07 → `fechad` 04/08, o sea la plata de julio contada en agosto.
+
+    Y no se podía arreglar en pantalla: para 90/91/95/97/99 el campo "A
+    depositar" se **oculta** y el JS le escribe HOY (`configurarBloque` en
+    `cheques/nuevo.html`). Por eso acá el valor tipeado se **ignora** para
+    depósitos en vez de hacer `fechad_tipeada or fecha_cobranza`: lo que
+    llega en el POST no es una decisión del usuario, es el HOY que puso el
+    navegador. Confiar en él dejaría el bug igual de vivo.
+
+    La rama `desde_caja` (adoptar una fila de caja ya existente) era este
+    mismo bug parchado para UNA sola de las puertas; ahora es la regla
+    general y no hace falta distinguir.
+
+    El postdatado (`stat='P'`) es el único caso donde `fechad` es un dato
+    propio y no derivable: si no vino, devuelve `None` a propósito para que
+    la validación de más abajo lo rechace.
+    """
+    if es_deposito:
+        return fecha_cobranza
+    if (stat or "").strip().upper() == "P":
+        return fechad_tipeada  # puede ser None → la validación lo frena
+    return fechad_tipeada or fecha_cobranza
+
+
 def _bancos() -> list[dict]:
     try:
         return db.fetch_all("SELECT no_banco, nombre FROM scintela.banco ORDER BY no_banco")
@@ -270,23 +312,16 @@ def nuevo():
         es_deposito = (nb_clean in _BANCOS_DEPOSITO)
         if not n_clean and not (i_clean and str(i_clean).strip()):
             continue  # bloque totalmente vacío → skip
-        # fechad por defecto: si banco es depósito → fecha hoy obligatoria.
+        # fechad por defecto: si banco es depósito → el DÍA DE LA COBRANZA.
         # Si stat='P' (postdatado), fechad obligatoria explicita.
         # Para el resto, colapsa a fecha_recibido.
         fd_parsed = parse_date(fd_clean) if fd_clean else None
-        if es_deposito and desde_caja:
-            # TMT 2026-08-04 — estamos ADOPTANDO una entrada de caja que ya
-            # existe (botón "⚠ sin cobranza" de /caja): la plata entró el día
-            # que dice esa fila, no hoy. Forzar hoy mandaba un cobro de JULIO
-            # a la comisión de AGOSTO. Se vio en vivo con CHI el 04/08: el
-            # cheque nació con fechad=03/08 adoptando una caja del 21/07.
-            cheque_fechad = fd_parsed or fecha
-        elif es_deposito:
-            cheque_fechad = today_ec()  # dueña: 'obligatoriamente fecha de hoy'
-        elif st_clean == "P":
-            cheque_fechad = fd_parsed  # puede ser None → error abajo
-        else:
-            cheque_fechad = fd_parsed or fecha
+        cheque_fechad = fechad_por_defecto(
+            es_deposito=es_deposito,
+            stat=st_clean,
+            fechad_tipeada=fd_parsed,
+            fecha_cobranza=fecha,
+        )
         cheques_in.append(
             {
                 "no_cheque": n_clean,

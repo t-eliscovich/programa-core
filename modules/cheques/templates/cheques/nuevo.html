@@ -2216,6 +2216,18 @@
   // Para 90/91/95/97/99 → la dueña pidió: 'obligatoriamente fecha de hoy
   // y no necesita numero de cheque'.
   const HOY_ISO = new Date().toISOString().slice(0, 10);
+  // ⭐ TMT 2026-08-04 — para los bancos de depósito este campo se OCULTA y se
+  // llena solo. Llenarlo con HOY hacía que una cobranza retroactiva (fecha
+  // 21/07 cargada el 04/08) viajara con `fechad` = 04/08, y `fechad` es lo que
+  // decide el MES de la comisión. El backend ya lo ignora para depósitos
+  // (`fechad_por_defecto` en cheques/views.py), pero si el campo muestra una
+  // fecha tiene que ser la verdadera: la de la cobranza, no la del navegador.
+  // `fecha_recibido` es texto DD/MM/AAAA; este input es <input type="date">.
+  function cobranzaISO() {
+    const inp = document.querySelector('input[name="fecha_recibido"]');
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(((inp && inp.value) || '').trim());
+    return m ? (m[3] + '-' + m[2] + '-' + m[1]) : HOY_ISO;
+  }
   const DEPOSITO_BANCOS = ['90', '91', '95', '97', '99'];
 
   function configurarBloque(bloque, fromUser) {
@@ -2295,10 +2307,11 @@
     } else if (warnDiv) {
       warnDiv.classList.add('hidden');
     }
-    // Fecha A depositar: forzar HOY y ocultar para depósitos.
+    // Fecha A depositar: para depósitos va la fecha DE LA COBRANZA (no hoy) y
+    // el campo se oculta. Ver `cobranzaISO()` arriba.
     if (fechadInp) {
       if (esDeposito) {
-        fechadInp.value = HOY_ISO;
+        fechadInp.value = cobranzaISO();
         fechadInp.readOnly = true;
       } else {
         fechadInp.readOnly = false;
