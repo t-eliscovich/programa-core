@@ -19,9 +19,11 @@ Modos (todos GET, todo sanitizado antes de interpolar):
     ?tablas=devol          — tablas de Asinfo cuyo nombre contiene el texto.
     ?meta=<tabla>          — columnas de esa tabla (INFORMATION_SCHEMA).
     ?deltas=YYYY-MM        — los movimientos de saldo de bodega 53 del mes,
-                             de mayor a menor, con producto y lote.
-                             &signo=ingreso|egreso (default ingreso)
-                             &n=200
+                             de mayor a menor, con producto, lote, descripción
+                             y usuario. &signo=ingreso|egreso · &n=200
+    ?perfil=YYYY-MM        — cómo se reparten esos movimientos por TAMAÑO.
+                             ¿Pocos grandes (algo que ir a buscar) o miles
+                             chicos (ruido)? Un promedio no lo contesta.
     (sin parámetros)       — resumen por mes de 2026: ingreso/egreso real de la
                              bodega contra producción declarada y despacho.
 """
@@ -114,12 +116,17 @@ def run():
         except (TypeError, ValueError):
             n = 200
         # El delta > 0 es ingreso; < 0 egreso. `prev IS NULL` = alta de lote.
+        # ⚠ Sin joins a `producto`/`lote`: la primera versión los tenía y la
+        # query devolvía [] (fail-soft se come el error). `saldo_producto_lote`
+        # trae `descripcion` y `usuario_creacion` propios, que es justo lo que
+        # sirve para saber QUÉ es cada movimiento.
         cond = ("(prev IS NULL AND saldo > 0) OR (saldo - prev > 0)"
                 if signo == "ingreso" else "saldo - prev < 0")
         orden = "delta DESC" if signo == "ingreso" else "delta ASC"
         rows = mc.fetch_dataset(2, f"""
             WITH d AS (
-                SELECT id_producto, id_lote, fecha, saldo,
+                SELECT id_producto, id_lote, fecha, saldo, descripcion,
+                       usuario_creacion,
                        LAG(saldo) OVER (
                            PARTITION BY id_producto, id_lote
                            ORDER BY fecha, id_saldo_producto_lote
@@ -128,18 +135,13 @@ def run():
                  WHERE id_bodega = {BODEGA_TERMINADO}
             )
             SELECT TOP {n}
-                   CONVERT(varchar(10), d.fecha, 23) AS dia,
-                   d.id_producto,
-                   p.nombre                          AS producto,
-                   d.id_lote,
-                   l.numero                          AS lote,
-                   d.prev, d.saldo,
-                   CASE WHEN d.prev IS NULL THEN d.saldo
-                        ELSE d.saldo - d.prev END    AS delta
+                   CONVERT(varchar(10), fecha, 23) AS dia,
+                   id_producto, id_lote, prev, saldo, descripcion,
+                   usuario_creacion,
+                   CASE WHEN prev IS NULL THEN saldo
+                        ELSE saldo - prev END AS delta
               FROM d
-              LEFT JOIN producto p ON p.id_producto = d.id_producto
-              LEFT JOIN lote     l ON l.id_lote     = d.id_lote
-             WHERE d.fecha >= '{d1}' AND d.fecha < '{d2}'
+             WHERE fecha >= '{d1}' AND fecha < '{d2}'
                AND ({cond})
              ORDER BY {orden}
         """, max_results=n)
@@ -147,6 +149,55 @@ def run():
         return _json({"ok": True, "modo": "deltas", "mes": mes, "signo": signo,
                       "n": len(rows or []), "suma_kg": round(total, 2),
                       "rows": rows})
+
+    # --- Modo perfil: cómo se reparten los movimientos por tamaño ------------
+    # La pregunta que decide la historia: ¿son POCOS movimientos GRANDES
+    # (devoluciones, ajustes — algo que ir a buscar) o MILES chicos (ruido de
+    # cómo Asinfo escribe el saldo)? Un promedio no lo contesta; la
+    # distribución sí.
+    perfil = (request.args.get("perfil") or "").strip()
+    if perfil:
+        if not _MES_RE.match(perfil):
+            return _json({"ok": False, "error": "mes inválido (YYYY-MM)"}, 400)
+        d1, d2 = _rango(perfil)
+        rows = mc.fetch_dataset(2, f"""
+            WITH d AS (
+                SELECT fecha, saldo,
+                       LAG(saldo) OVER (
+                           PARTITION BY id_producto, id_lote
+                           ORDER BY fecha, id_saldo_producto_lote
+                       ) AS prev
+                  FROM saldo_producto_lote
+                 WHERE id_bodega = {BODEGA_TERMINADO}
+            ),
+            m AS (
+                SELECT CASE WHEN prev IS NULL THEN saldo ELSE saldo - prev END AS delta,
+                       CASE WHEN prev IS NULL THEN 1 ELSE 0 END AS es_alta
+                  FROM d
+                 WHERE fecha >= '{d1}' AND fecha < '{d2}'
+                   AND (prev IS NULL OR saldo <> prev)
+            )
+            SELECT CASE WHEN ABS(delta) >= 1000 THEN 'e 1000+'
+                        WHEN ABS(delta) >=  500 THEN 'd 500-1000'
+                        WHEN ABS(delta) >=  100 THEN 'c 100-500'
+                        WHEN ABS(delta) >=   10 THEN 'b 10-100'
+                        ELSE 'a 0-10' END AS tramo,
+                   CASE WHEN delta > 0 THEN 'ingreso' ELSE 'egreso' END AS signo,
+                   COUNT(*)   AS n,
+                   SUM(delta) AS kg,
+                   SUM(es_alta) AS altas_lote
+              FROM m
+             WHERE delta <> 0
+             GROUP BY CASE WHEN ABS(delta) >= 1000 THEN 'e 1000+'
+                           WHEN ABS(delta) >=  500 THEN 'd 500-1000'
+                           WHEN ABS(delta) >=  100 THEN 'c 100-500'
+                           WHEN ABS(delta) >=   10 THEN 'b 10-100'
+                           ELSE 'a 0-10' END,
+                      CASE WHEN delta > 0 THEN 'ingreso' ELSE 'egreso' END
+             ORDER BY signo, tramo
+        """, max_results=50)
+        return _json({"ok": True, "modo": "perfil", "mes": perfil,
+                      "n": len(rows or []), "rows": rows})
 
     # --- Default: el resumen del año ----------------------------------------
     anio = (request.args.get("anio") or "2026").strip()
