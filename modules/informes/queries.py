@@ -7417,6 +7417,30 @@ def estado_cuenta_clientes_saldos() -> list[dict]:
     ) or []
 
 
+def totales_estado_cuenta_en_cero() -> dict:
+    """El bloque `totales` del estado de cuenta, todo en cero.
+
+    Existe para que la rama "el cliente no existe" y la rama con datos
+    devuelvan EL MISMO juego de claves. Antes la de cero era un literal
+    aparte al que le faltaban `cheques_endosados` y `cheques_daniela`: una
+    pantalla que las usa anda perfecto con cualquier cliente real y explota
+    únicamente con un código inexistente — el peor lugar donde poner un
+    error, porque no aparece probando.
+
+    También lo usan los tests como fake de totales, así que agregar una clave
+    en la rama real no puede dejar atrás ni al fake ni a la rama vacía.
+    """
+    ceros = dict.fromkeys((
+        "kg", "importe", "abono", "saldo", "saldo_vivo", "saldo_vencido",
+        "cheques_total", "cheques_cartera", "cheques_depositados",
+        "cheques_rebotados", "cheques_endosados", "cheques_daniela",
+        "cheques_por_cobrar", "cheques_a_depositar", "cheques_protestados",
+        "cheques_acreditados", "saldo_a_favor", "saldo_neto",
+    ), 0.0)
+    ceros.update(n_vencidas=0, n_anticipos=0)
+    return ceros
+
+
 def estado_cuenta_cliente(codigo_cli: str) -> dict:
     """Facturas + cheques aplicados de un cliente, con totales para el resumen.
 
@@ -7489,26 +7513,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
             "facturas": [],
             "cheques": [],
             "anticipos": [],
-            "totales": {
-                "kg": 0.0,
-                "importe": 0.0,
-                "abono": 0.0,
-                "saldo": 0.0,
-                "saldo_vivo": 0.0,
-                "n_vencidas": 0,
-                "saldo_vencido": 0.0,
-                "cheques_total": 0.0,
-                "cheques_cartera": 0.0,
-                "cheques_por_cobrar": 0.0,
-                "cheques_a_depositar": 0.0,
-                "cheques_protestados": 0.0,
-                "cheques_depositados": 0.0,
-                "cheques_acreditados": 0.0,
-                "cheques_rebotados": 0.0,
-                "saldo_a_favor": 0.0,
-                "saldo_neto": 0.0,
-                "n_anticipos": 0,
-            },
+            "totales": totales_estado_cuenta_en_cero(),
         }
     facturas = db.fetch_all(
         """

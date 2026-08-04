@@ -274,6 +274,22 @@ def test_las_pantallas_renderizan(vendedor_logueado, path):
     assert b"Mi Cartera" in r.data or b"cartera" in r.data.lower()
 
 
+def _totales(**cambios) -> dict:
+    """Totales del estado de cuenta para los fakes de estos tests.
+
+    Salen de `informes.queries.totales_estado_cuenta_en_cero()`, la MISMA
+    función que usa la rama "cliente inexistente" de producción — no de un
+    diccionario escrito a mano acá. Un fake a mano se queda corto de claves
+    en cuanto la pantalla usa una más, y entonces el template revienta recién
+    en producción con el test en verde.
+    """
+    from modules.informes import queries as iq
+
+    t = iq.totales_estado_cuenta_en_cero()
+    t.update(cambios)
+    return t
+
+
 def test_la_ficha_del_cliente_renderiza(vendedor_logueado, monkeypatch):
     from modules.mi_cartera import views
 
@@ -285,9 +301,7 @@ def test_la_ficha_del_cliente_renderiza(vendedor_logueado, monkeypatch):
                         "provincia": "Quito", "ruc": "17", "direccion1": "",
                         "cupo": 20000},
             "facturas": [], "cheques": [], "anticipos": [],
-            "totales": {"saldo_vivo": 0, "saldo_vencido": 0, "n_vencidas": 0,
-                        "cheques_cartera": 0, "saldo_a_favor": 0, "importe": 0,
-                        "abono": 0, "saldo": 0},
+            "totales": _totales(),
         },
     )
     r = vendedor_logueado.get("/mi-cartera/cliente/TDV")
@@ -312,6 +326,126 @@ def test_la_ficha_del_cliente_renderiza(vendedor_logueado, monkeypatch):
     assert b"/cheques/" not in p.data
 
 
+# ---------------------------------------------------------------------------
+# La ficha del cliente ES un estado de cuenta
+# ---------------------------------------------------------------------------
+# Dueña 2026-08-04: *"estado de cuenta se tiene que parecer más al estado de
+# cuenta del programa"*. Un estado de cuenta no es una lista de facturas: es
+# un libro mayor — columnas alineadas, un acumulado que corre y un total al
+# pie. Estos tests son lo que impide que vuelva a ser una lista linda.
+
+
+def _ec_con_facturas(cod):
+    """Tres facturas: una pagada, una con abono parcial y una viva."""
+    return {
+        "cliente": {"codigo_cli": cod, "nombre": "Textiles del Valle",
+                    "provincia": "PICHINCHA", "canton": "QUITO",
+                    "ruc": "1790012345001", "telefono": "0989 506 447",
+                    "mail": "compras@tdv.com", "cupo": 20000,
+                    "direccion1": "AV. AMAZONAS", "direccion2": "N32-14"},
+        "facturas": [
+            {"id_factura": 1, "numf": 100, "numf_completo": None,
+             "fecha": date(2026, 1, 15), "vencimiento": date(2026, 2, 14),
+             "importe": 1000.0, "abono": 1000.0, "saldo": 0.0,
+             "stat": "A", "tipo": "FA"},
+            {"id_factura": 2, "numf": 101, "numf_completo": "001-099-000000101",
+             "fecha": date(2026, 3, 10), "vencimiento": date(2026, 4, 9),
+             "importe": 500.0, "abono": 200.0, "saldo": 300.0,
+             "stat": "A", "tipo": "FA"},
+            {"id_factura": 3, "numf": 102, "numf_completo": "001-099-000000102",
+             "fecha": date(2026, 7, 27), "vencimiento": date(2026, 8, 26),
+             "importe": 250.0, "abono": 0.0, "saldo": 250.0,
+             "stat": "A", "tipo": "FA"},
+        ],
+        "cheques": [], "anticipos": [],
+        "totales": _totales(importe=1750.0, abono=1200.0, saldo=550.0,
+                            saldo_neto=550.0, saldo_vivo=550.0,
+                            saldo_vencido=300.0, n_vencidas=1,
+                            cheques_por_cobrar=80.0, cheques_a_depositar=80.0),
+    }
+
+
+@pytest.fixture()
+def ficha(vendedor_logueado, monkeypatch):
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    r = vendedor_logueado.get("/mi-cartera/cliente/TDV")
+    assert r.status_code == 200
+    return r.data.decode()
+
+
+def test_la_ficha_tiene_las_columnas_del_estado_de_cuenta(ficha):
+    """Los mismos rótulos que `informes/_estado_cuenta_impreso.html`."""
+    for rotulo in ("Fecha", "Número", "Importe", "Saldo", "Acum.", "Totales"):
+        assert rotulo in ficha, f"falta la columna «{rotulo}»"
+
+
+def test_el_acumulado_corre_y_la_ultima_fila_da_el_saldo(ficha):
+    """El corazón del asunto: sin ACUM esto es una lista, no un estado de cuenta.
+
+    Corre de la más vieja a la más nueva (dueña 2026-06-11), así que la última
+    fila TIENE que dar el saldo de hoy: 0 + 300 + 250 = 550. Si el acumulado
+    arrancara del otro lado o se salteara una fila, el vendedor le muestra al
+    cliente un número que no cierra con el papel que le deja.
+    """
+    import re
+
+    nums = re.findall(r">\s*([\d.]+,\d\d)\s*</td>", ficha)
+    # (importe, saldo, acum) por fila, en orden.
+    assert nums[0:3] == ["1.000,00", "0,00", "0,00"]
+    assert nums[3:6] == ["500,00", "300,00", "300,00"]
+    assert nums[6:9] == ["250,00", "250,00", "550,00"]
+    # Y el pie, con el total de la oficina.
+    assert "Totales (3)" in ficha
+    assert "1.750,00" in ficha
+
+
+def test_el_abonado_sale_solo_cuando_hay_abono(ficha):
+    """La decisión de diseño que hace entrar la tabla en 390 px.
+
+    En la oficina «Abonado» es una columna fija; acá es un renglón que aparece
+    únicamente en las filas que tienen abono. La información no se pierde
+    —perderla sería inaceptable, es la respuesta a "pero yo te pagué"— pero
+    diecisiete «0,00» no pueden costar el ancho de una columna que sí habla.
+    """
+    assert ficha.count("Abonado $") == 3   # dos filas con abono + el pie
+    assert "Abonado $ 200,00" in ficha
+    assert "Abonado $ 1.000,00" in ficha
+    assert "Abonado $ 1.200,00" in ficha   # total
+
+
+def test_el_numero_de_factura_es_el_mismo_que_en_la_oficina(ficha):
+    """La hoja de la oficina muestra 101; el portal mostraba 001-099-000000101.
+
+    Dos rótulos para la misma factura obligan al vendedor a traducir mientras
+    discute con el cliente. Se usa la misma expresión que el parcial impreso.
+    """
+    assert "001-099" not in ficha
+
+
+def test_la_ficha_cierra_como_el_dbase(ficha):
+    """Los tres renglones de CUENTA.PRG L365-392, igual que la hoja impresa."""
+    assert "Cheques a depositar" in ficha
+    assert "80,00" in ficha
+    # TOTAL = saldo neto + cheques por cobrar = 550 + 80.
+    assert "630,00" in ficha
+
+
+def test_el_vendedor_ve_como_contactar_al_cliente_pero_no_su_cupo(ficha):
+    """Dueña 2026-08-04: el contacto sí (va a visitarlo); el cupo no."""
+    assert "AV. AMAZONAS N32-14" in ficha
+    assert "QUITO, PICHINCHA" in ficha
+    assert "1790012345001" in ficha
+    # Tocables: desde el celular, llamar es un toque.
+    assert 'href="tel:0989506447"' in ficha
+    assert 'href="mailto:compras@tdv.com"' in ficha
+    # Y la línea que no se cruza.
+    assert "20000" not in ficha and "20.000" not in ficha
+
+
 def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeypatch):
     """Equivalente a /informes/estado-cuenta/imprimir?por=vendedor&sel=PPR."""
     from modules.mi_cartera import views
@@ -331,10 +465,7 @@ def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeyp
         vistos.append(cod)
         return {"cliente": {"codigo_cli": cod, "nombre": cod, "cupo": 5},
                 "facturas": [], "cheques": [], "anticipos": [],
-                "totales": {"saldo": 0, "saldo_neto": 0, "saldo_vivo": 0,
-                            "saldo_vencido": 0, "n_vencidas": 0, "importe": 0,
-                            "abono": 0, "kg": 0, "cheques_cartera": 0,
-                            "cheques_rebotados": 0, "saldo_a_favor": 0}}
+                "totales": _totales()}
 
     monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _ec)
     r = vendedor_logueado.get("/mi-cartera/imprimir")
@@ -460,8 +591,7 @@ def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
                          "stat": "B", "fechad": None, "fechaout": None,
                          "nombre_banco": "DEP.PICH."}],
             "anticipos": [],
-            "totales": {"saldo_vivo": 0, "saldo_vencido": 0, "n_vencidas": 0,
-                        "cheques_cartera": 0, "saldo_a_favor": 0},
+            "totales": _totales(cheques_total=10.0, cheques_depositados=10.0),
         },
     )
     r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")

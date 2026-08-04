@@ -1,3 +1,40 @@
+{# Estado de cuenta de UN cliente, en el celular.
+
+   TMT 2026-08-04 (dueña): *"estado de cuenta se tiene que parecer más al
+   estado de cuenta del programa"* — y antes, sobre el papel: *"Imprimir tiene
+   que imprimir lo mismo que acá"*.
+
+   Antes esto era una lista de fichas: número, fecha y saldo. Se leía lindo y
+   no era un estado de cuenta. Un estado de cuenta es un LIBRO MAYOR: filas en
+   orden, columnas alineadas que se leen hacia abajo, un acumulado que corre y
+   un total al pie. Eso es lo que el vendedor tiene en la mano cuando imprime,
+   y lo que la dueña ve en la oficina; que la pantalla mostrara otra cosa
+   obligaba a traducir entre las tres.
+
+   Ahora tiene las mismas columnas, en el mismo orden y con los mismos
+   rótulos que `informes/_estado_cuenta_impreso.html`:
+       Fecha · Número · Importe · Abonado · Saldo · Acum. · Días
+   y cierra con los tres renglones del dBase (CUENTA.PRG L365-392):
+       Cheques a depositar / + Cheques protestados / TOTAL.
+
+   Los números son literalmente los mismos: la vista llama a
+   `informes.queries.estado_cuenta_cliente`, la misma función que la pantalla
+   de la oficina y que la hoja impresa. Acá no se calcula NADA salvo el
+   acumulado, que corre igual que allá.
+
+   Lo único que cambia es cómo entra en 390 px:
+     · "Abonado" no es una columna sino un renglón bajo la fila, y sólo
+       aparece cuando hay un abono. En la oficina la columna existe siempre
+       porque una grilla de escritorio la banca; en el celular serían
+       diecisiete "0,00" ocupando el lugar de algo que sí importa.
+     · "Días" va bajo la fecha, en la misma celda.
+     · "Tipo" y "Stat" no van: Stat es un control de edición de la oficina, y
+       Tipo se dice con el color y el signo (una nota de crédito se ve roja y
+       en negativo, que es como se lee igual en el papel).
+   Ninguno de esos datos se pierde: se reacomodan.
+
+   Lo que el vendedor NO ve (dueña, 2026-08-03): el cupo del cliente ni su
+   propio % de comisión. El cupo se saca en la vista, no acá. #}
 {% extends "mi_cartera/base.html" %}
 {% set seccion = 'clientes' %}
 {% block title %}{{ cliente.nombre }}{% endblock %}
@@ -16,19 +53,49 @@
 
 {% block content %}
 {% set qv = ('&vend=' ~ vend) if preview else '' %}
+{% set t = totales %}
+{% set saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+
+{# Los tres tiles con los que abre la hoja de la oficina, en el mismo orden:
+   SALDO FACTURAS · CHEQUES POR COBRAR · TOTAL (FACTURAS + CHEQUES). #}
 <div class="hero">
-  <div class="lbl">Saldo actual</div>
-  <div class="val">$ {{ totales.saldo_vivo|money_es }}</div>
+  <div class="lbl">Saldo facturas</div>
+  <div class="val">$ {{ t.saldo|money_es }}</div>
   <div class="sub">
-    {{ totales.n_vencidas }} vencida{{ '' if totales.n_vencidas == 1 else 's' }} ·
-    $ {{ totales.cheques_por_cobrar|money_es }} en cheques por cobrar
+    {{ facturas|length }} factura{{ '' if facturas|length == 1 else 's' }} ·
+    {{ t.n_vencidas }} vencida{{ '' if t.n_vencidas == 1 else 's' }}
   </div>
   <div class="split">
-    <div><small>Vencido</small><b>$ {{ totales.saldo_vencido|money_es }}</b></div>
-    <div><small>Por vencer</small>
-      <b>$ {{ (totales.saldo_vivo - totales.saldo_vencido)|money_es }}</b></div>
+    <div><small>Cheques por cobrar</small><b>$ {{ t.cheques_por_cobrar|money_es }}</b></div>
+    <div><small>Total</small><b>$ {{ (saldo_neto + t.cheques_por_cobrar)|money_es }}</b></div>
   </div>
 </div>
+
+<div class="kpis">
+  <div class="kpi"><small>Vencido</small><b>$ {{ t.saldo_vencido|money_es }}</b></div>
+  <div class="kpi"><small>Por vencer</small>
+    <b>$ {{ (t.saldo - t.saldo_vencido)|money_es }}</b></div>
+</div>
+
+{# Contacto — dueña 2026-08-04. Es lo que la hoja de la oficina tiene en el
+   encabezado y lo que un vendedor necesita para ir a ver al cliente. El
+   teléfono y el mail son tocables: desde el celular, llamar es un toque. #}
+{% set _tel = cliente.telefono|cleanstr %}
+{% set _mail = cliente.mail|cleanstr %}
+{% set _dir = [cliente.direccion1|cleanstr, cliente.direccion2|cleanstr]|select|join(' ') %}
+{% set _ciudad = [cliente.canton|cleanstr, cliente.provincia|cleanstr]|select|join(', ') %}
+{% if _dir or _ciudad or cliente.ruc or _tel or _mail %}
+<div class="card">
+  <div class="card-t">Contacto</div>
+  <div class="ficha">
+    {% if _dir %}<div><small>Dirección</small><span>{{ _dir }}</span></div>{% endif %}
+    {% if _ciudad %}<div><small>Ciudad</small><span>{{ _ciudad }}</span></div>{% endif %}
+    {% if cliente.ruc %}<div><small>RUC</small><span class="mono">{{ cliente.ruc|cleanstr }}</span></div>{% endif %}
+    {% if _tel %}<div><small>Teléfono</small><a href="tel:{{ _tel|replace(' ', '') }}" class="lnk">{{ _tel }}</a></div>{% endif %}
+    {% if _mail %}<div><small>Mail</small><a href="mailto:{{ _mail }}" class="lnk brk">{{ _mail }}</a></div>{% endif %}
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="tabs">
@@ -37,55 +104,154 @@
   </div>
 
   {% if tab != 'cheques' %}
-    {% for f in facturas %}
-      {% set vencida = f.saldo and f.saldo > 0 and (f.vencimiento or f.fecha) and (f.vencimiento or f.fecha) < hoy %}
-      <div class="rowitem" {% if not f.saldo or f.saldo == 0 %}style="opacity:.55"{% endif %}>
-        <div class="nm">
-          <b>Fact. {{ f.numf_completo or f.numf }}</b>
-          <span>
-            Emitida {{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '—' }}
-            {% if f.vencimiento %} · Vence {{ f.vencimiento.strftime('%d/%m/%Y') }}{% endif %}
-          </span>
-        </div>
-        <div class="amt">
-          <b>$ {{ (f.saldo if f.saldo else f.importe)|money_es }}</b>
-          {% if not f.saldo or f.saldo == 0 %}
-            <span class="tag good">Pagada</span>
-          {% elif vencida %}
-            <span class="tag bad">Vencida {{ (hoy - (f.vencimiento or f.fecha)).days }} d</span>
-          {% else %}
-            <span class="tag warn">Por vencer</span>
+    {% if facturas %}
+    <table class="ec">
+      <thead>
+        <tr>
+          <th class="l">Fecha</th>
+          <th class="l">Número</th>
+          <th>Importe</th>
+          <th>Saldo</th>
+          <th title="Saldo acumulado leído de arriba hacia abajo">Acum.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {# El acumulado corre de arriba hacia abajo, igual que en la hoja de la
+           oficina: la lista viene de la más vieja a la más nueva, así que la
+           ÚLTIMA fila tiene que dar el saldo de hoy. Si no da, algo se rompió
+           — hay un test que lo verifica. #}
+        {% set acum = namespace(s=0) %}
+        {% for f in facturas %}
+          {% set acum.s = acum.s + (f.saldo or 0) %}
+          {% set es_nc = ((f.tipo or '')|string|upper) == 'NC' %}
+          {% set neg = (f.importe or 0) < 0 %}
+          {% set vence = f.vencimiento or f.fecha %}
+          {% set vencida = f.saldo and f.saldo > 0 and vence and vence < hoy %}
+          <tr class="{{ 'pagada' if not f.saldo or f.saldo == 0 }}">
+            <td class="l nowrap">
+              {{ f.fecha|fecha_es }}
+              <small class="{{ 'venc' if vencida }}">{{ f.fecha|dias_desde }} d</small>
+            </td>
+            <td class="l mono nowrap">
+              {{ (f.numf_completo.split('-')[-1]|int) if f.numf_completo else f.numf }}
+              {% if es_nc %}<small class="nc">Nota de crédito</small>
+              {% elif neg %}<small class="nc">Devolución</small>
+              {% elif vencida %}<small class="venc">Vencida</small>{% endif %}
+            </td>
+            <td class="mono">{{ f.importe|money_es }}</td>
+            <td class="mono fuerte">{{ f.saldo|money_es }}</td>
+            <td class="mono {{ 'venc' if acum.s < 0 }}">{{ acum.s|money_es }}</td>
+          </tr>
+          {# "Abonado" sólo cuando existe. Ver el comentario de arriba: en el
+             celular una columna de ceros cuesta el ancho de una que sí habla. #}
+          {% if f.abono and f.abono != 0 %}
+          <tr class="sub-ab"><td colspan="5">Abonado $ {{ f.abono|money_es }}</td></tr>
           {% endif %}
-        </div>
-      </div>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="l" colspan="2">Totales ({{ facturas|length }})</td>
+          <td class="mono">{{ t.importe|money_es }}</td>
+          <td class="mono fuerte">{{ t.saldo|money_es }}</td>
+          <td></td>
+        </tr>
+        {% if t.abono and t.abono != 0 %}
+        <tr class="sub-ab"><td colspan="5">Abonado $ {{ t.abono|money_es }}</td></tr>
+        {% endif %}
+      </tfoot>
+    </table>
+
+    {# Los tres renglones con los que el dBase cierra el estado de cuenta
+       (CUENTA.PRG L365-392), con los mismos `if > 0` que la hoja impresa:
+       cada uno sale sólo si tiene monto. #}
+    {% set ch_dep = t.cheques_a_depositar or 0 %}
+    {% set ch_pro = t.cheques_protestados or 0 %}
+    {% set ch_tot = t.cheques_por_cobrar or 0 %}
+    {% if ch_dep > 0 or ch_pro > 0 or ch_tot > 0 %}
+    <div class="cierre">
+      {% if ch_dep > 0 %}
+      <div><span>Cheques a depositar</span><b class="mono">{{ ch_dep|money_es }}</b></div>
+      {% endif %}
+      {% if ch_pro > 0 %}
+      <div><span>+ Cheques protestados</span><b class="mono venc">{{ ch_pro|money_es }}</b></div>
+      {% endif %}
+      {% if ch_tot > 0 %}
+      <div class="tot"><span>Total</span>
+        <b class="mono">{{ (saldo_neto + ch_tot)|money_es }}</b></div>
+      {% endif %}
+    </div>
+    {% endif %}
     {% else %}
       <div class="vacio">Este cliente no tiene facturas.</div>
-    {% endfor %}
+    {% endif %}
+
   {% else %}
-    {% for c in cheques %}
-      <div class="rowitem">
-        <div class="nm">
-          {# Hay filas sin N° de cheque (depósitos directos del dBase): sin
-             fallback quedaba un "Ch. ·" pelado. La hoja de la oficina ya usa
-             el id interno como respaldo — acá se hace lo mismo. #}
-          <b>Ch. {{ c.no_cheque | default('', true) | trim or ('#' ~ c.id_cheque) }}{% if c.nombre_banco %} · {{ c.nombre_banco }}{% endif %}</b>
-          <span>
-            {% if c.stat in ('B','A') %}{% if c.fechaout %}Depositado {{ c.fechaout.strftime('%d/%m/%Y') }}{% else %}Depositado{% endif %}
-            {% elif c.fechad %}Cobra el {{ c.fechad.strftime('%d/%m/%Y') }}
-            {% else %}—{% endif %}
-          </span>
-        </div>
-        <div class="amt">
-          <b>$ {{ c.importe|money_es }}</b>
-          {% if c.stat in ('B','A') %}<span class="tag good">Depositado</span>
-          {% elif c.stat in ('1','2','3','R') %}<span class="tag bad">Devuelto</span>
-          {% elif c.stat == 'X' %}<span class="tag">Anulado</span>
-          {% else %}<span class="tag warn">En cartera</span>{% endif %}
-        </div>
-      </div>
+    {% if cheques %}
+    {% set nch = namespace(activos=0) %}
+    <table class="ec">
+      <thead>
+        <tr>
+          <th class="l">N° cheque</th>
+          <th class="l">Depósito</th>
+          <th>Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cheques %}
+          {% set stat_u = (c.stat or '')|string|trim|upper %}
+          {% set anulado = stat_u == 'X' %}
+          {% if not anulado %}{% set nch.activos = nch.activos + 1 %}{% endif %}
+          {# Hay filas sin N° (depósitos directos que vienen del dBase): sin
+             respaldo quedaba un "Ch. ·" pelado. La hoja de la oficina cae al
+             id interno — acá se hace lo mismo. #}
+          {% set no_ch = (c.no_cheque|cleanstr) or ('#' ~ c.id_cheque) %}
+          {% set fechad_orig = c.fechad_original or c.fechad %}
+          {% set depositado = (c.fechaout or c.fechaing) if stat_u in ('B','A','1','2','3','R') else None %}
+          <tr class="{{ 'pagada' if anulado }}">
+            <td class="l mono">
+              {{ no_ch }}
+              {% if c.nombre_banco or c.banco %}<small>{{ c.nombre_banco or c.banco }}</small>{% endif %}
+            </td>
+            <td class="l nowrap">
+              {{ fechad_orig|fecha_es if fechad_orig else '—' }}
+              {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
+                <small class="post">postergado a {{ c.fechad|fecha_es }}</small>
+              {% elif depositado %}
+                <small class="ok">depositado {{ depositado|fecha_es }}</small>
+              {% endif %}
+            </td>
+            <td class="mono fuerte">
+              {{ c.importe|money_es }}
+              {% if anulado %}<small>anulado</small>
+              {% elif stat_u in ('B','A','V','W','C') %}<small class="ok">cobrado</small>
+              {% elif stat_u in ('1','2','3','R','9') %}<small class="venc">protestado</small>
+              {% elif stat_u == 'E' %}<small>endosado</small>
+              {% else %}<small class="post">en cartera</small>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="l" colspan="2">Total ({{ nch.activos }} cheque{{ '' if nch.activos == 1 else 's' }})</td>
+          <td class="mono fuerte">{{ t.cheques_total|money_es }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {# La misma franja de cuatro números que la hoja de la oficina, con los
+       mismos cortes de estado entre paréntesis. #}
+    <div class="franja">
+      <div>A depositar <i>(Z/P/D)</i><b class="mono">{{ t.cheques_a_depositar|money_es }}</b></div>
+      <div>Depositados <i>(B/A)</i><b class="mono ok">{{ t.cheques_depositados|money_es }}</b></div>
+      <div>Protestados <i>(1/2/3/R/9)</i>
+        <b class="mono {{ 'venc' if (t.cheques_protestados or 0) > 0 }}">{{ t.cheques_protestados|money_es }}</b></div>
+      <div>Endosados <i>(E)</i><b class="mono">{{ t.cheques_endosados|money_es }}</b></div>
+    </div>
     {% else %}
       <div class="vacio">Este cliente no tiene cheques cargados.</div>
-    {% endfor %}
+    {% endif %}
   {% endif %}
 </div>
 
@@ -95,4 +261,73 @@
   <div class="meta-lines"><div class="big">$ {{ totales.saldo_a_favor|money_es }}</div></div>
 </div>
 {% endif %}
+
+<style>
+  /* Tabla de estado de cuenta. Las cinco columnas entran en 390 px sin
+     scroll horizontal: los números van con `tabular-nums` para que se lean
+     hacia abajo como una columna —que es TODO el punto de un estado de
+     cuenta— y las etiquetas secundarias (días, "vencida", el banco) van
+     dentro de la celda en vez de robar una columna. */
+  .ec{width:100%;border-collapse:collapse;font-size:11.5px;
+      font-variant-numeric:tabular-nums}
+  .ec th{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+         color:var(--ink-3);text-align:right;padding:0 0 6px 6px;
+         border-bottom:1px solid var(--line);white-space:nowrap}
+  .ec th.l,.ec td.l{text-align:left;padding-left:0}
+  .ec td{text-align:right;padding:7px 0 7px 6px;border-bottom:1px solid var(--line);
+         vertical-align:top;line-height:1.25}
+  .ec tbody tr:last-child td{border-bottom:0}
+  .ec .mono{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .ec .fuerte{font-weight:700}
+  .ec .nowrap{white-space:nowrap}
+  .ec td small{display:block;font-size:9.5px;color:var(--ink-3);margin-top:2px;
+               font-weight:500;letter-spacing:0}
+  .ec td small.venc,.ec .venc{color:var(--bad)}
+  .ec td small.ok,.ec .ok{color:var(--good)}
+  .ec td small.post,.ec .post{color:var(--warn)}
+  .ec td small.nc{color:var(--bad);font-weight:700}
+  .ec tr.pagada{opacity:.5}
+  .ec tr.sub-ab td{text-align:left;font-size:10px;color:var(--ink-2);
+                   padding:0 0 7px;border-bottom:1px solid var(--line)}
+  .ec tfoot td{border-top:2px solid var(--ink);border-bottom:0;
+               padding-top:9px;font-weight:700;font-size:12px}
+  .ec tfoot td.l{font-size:9px;letter-spacing:.05em;text-transform:uppercase;
+                 color:var(--ink-3);font-weight:700}
+  .ec tfoot tr.sub-ab td{border-top:0;font-weight:500;font-size:10px;
+                         text-transform:none;letter-spacing:0;padding-top:4px}
+
+  /* Los tres renglones del cierre, alineados a la derecha como en el dBase. */
+  .cierre{margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-3);
+          font-size:12px}
+  .cierre div{display:flex;justify-content:space-between;gap:12px;padding:3px 0;
+              color:var(--ink-2)}
+  .cierre div b{font-weight:700;color:var(--ink)}
+  .cierre .tot{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;
+               font-size:11px;font-weight:700;letter-spacing:.05em;
+               text-transform:uppercase;color:var(--ink-3)}
+  .cierre .tot b{font-size:15px;letter-spacing:-.02em}
+
+  .franja{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:12px;
+          padding-top:11px;border-top:1px solid var(--line);
+          font-size:10.5px;color:var(--ink-2)}
+  .franja i{font-style:normal;color:var(--ink-3)}
+  .franja b{display:block;font-size:12.5px;color:var(--ink);margin-top:1px;
+            font-variant-numeric:tabular-nums}
+
+  .ficha div{display:flex;gap:10px;padding:5px 0;font-size:12.5px;
+             border-bottom:1px solid var(--line)}
+  .ficha div:last-child{border-bottom:0;padding-bottom:0}
+  .ficha small{flex:0 0 74px;font-size:10px;font-weight:700;letter-spacing:.05em;
+               text-transform:uppercase;color:var(--ink-3);padding-top:2px}
+  .ficha span,.ficha a{flex:1;min-width:0}
+  .ficha .mono{font-variant-numeric:tabular-nums}
+  .ficha .lnk{color:var(--accent);font-weight:600}
+  .ficha .brk{word-break:break-all}
+
+  /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
+  @media (max-width: 374px){
+    .ec{font-size:10.6px}
+    .ec td,.ec th{padding-left:4px}
+  }
+</style>
 {% endblock %}
