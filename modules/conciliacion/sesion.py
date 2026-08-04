@@ -221,12 +221,26 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
                tb.numreferencia AS tb_numreferencia,
                tb.concepto    AS tb_concepto,
                tb.prov        AS tb_prov,
-               h.id           AS historico_id
+               h.id           AS historico_id,
+               -- TMT 2026-08-04 (dueña, mirando la lista impresa): *"pone
+               -- clave TAM ALX etc no el nombre completo"*. La columna Usr
+               -- mostraba el `username` crudo del match ("tamara"), que no
+               -- entra en el ancho de columna y en papel salía cortado. La
+               -- clave de 3 letras es la que ella usa en toda la app
+               -- (mig. 0042: FED · TAM · ALX · ADR).
+               -- ⚠ El fallback a las 3 primeras letras NO es adorno: hay
+               -- matches viejos hechos por usuarios que no están en el set
+               -- canónico (y los del sync, sin usuario). Dejar la celda en
+               -- blanco sería perder quién concilió.
+               UPPER(COALESCE(NULLIF(us.clave, ''),
+                              LEFT(TRIM(COALESCE(m.usuario, '')), 3))) AS usuario_clave
           FROM scintela.banco_conciliacion_match m
           LEFT JOIN scintela.transacciones_bancarias tb
             ON tb.id_transaccion = m.id_transaccion
           LEFT JOIN scintela.banco_historicos_pendientes h
             ON h.conciliado_match_id = m.id
+          LEFT JOIN seguridad.usuario us
+            ON LOWER(us.username) = LOWER(TRIM(COALESCE(m.usuario, '')))
          WHERE m.no_banco = %s
            AND m.creado_en >= %s
            AND (%s::timestamptz IS NULL OR m.creado_en <= %s)

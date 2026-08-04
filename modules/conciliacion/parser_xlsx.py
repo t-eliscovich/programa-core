@@ -25,6 +25,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from modules.conciliacion.hoja_parser import (
+    es_marcador_resumen as _es_marcador_resumen,
+)
+
 _LOG = logging.getLogger("programa_core.conciliacion.parser_xlsx")
 
 
@@ -208,6 +212,13 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
             ws.iter_rows(min_row=header_row_idx + 1, values_only=True), start=header_row_idx + 1
         ):
             row_list = list(row)
+            # ⭐ TMT 2026-08-04 — mismo corte que `hoja_parser`: el export
+            # ahora lleva el RESUMEN CONTABLE al pie de la hoja de
+            # movimientos (pedido de la dueña), y de ese marcador para abajo
+            # no hay depósitos que leer. Los dos importadores tienen que
+            # frenar en el mismo lugar o el archivo se re-importa envenenado.
+            if _es_marcador_resumen(row_list):
+                break
             if not any(c is not None and str(c).strip() for c in row_list):
                 continue  # fila totalmente vacía
             try:

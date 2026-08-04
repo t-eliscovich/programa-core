@@ -40,6 +40,7 @@ import db as _db
 from auth import requiere_login, requiere_permiso
 from modules.conciliacion import balance_pichincha as _bp
 from modules.conciliacion import sesion as _sesion
+from modules.conciliacion.hoja_parser import MARCADOR_RESUMEN as _MARCADOR_RESUMEN
 from modules.conciliacion.matcher_banco import (
     confirmar_match,
     crear_transaccion_agrupada_desde_reals,
@@ -2902,9 +2903,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     total_calc = round(saldo_sistema + ajuste, 2)
     diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
 
-    label_col = 3
-    val_col = 4
-
     r += 1  # fila vacía de separación
     # TMT 2026-05-29 dueña: 'puedes separar en ajuste los positivos y los
     # negativos?'. Ajuste = banco_cred − banco_deb; mostramos las dos
@@ -2920,43 +2918,45 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
         rows_resumen.append(("DIFERENCIA", diferencia))
 
-    # ⭐ TMT 2026-08-03 — EL RESUMEN VA EN UNA HOJA APARTE.
+    # ⭐ TMT 2026-08-04 (dueña): *"el archivo de la conciliacion me esta
+    # separando los movimientos y el resumen en hojas distintas, podemos
+    # unificar en uno"*. El resumen vuelve al PIE DE LA MISMA HOJA.
     #
-    # Estaba al pie de la MISMA hoja que los movimientos, con el rótulo en la
-    # columna C (CODIGO) y el importe en la D (VALOR). Y "Hacer prevalecer"
-    # (`banco_cruzar_pendientes` → `hoja_parser`) lee justamente el DOCUMENTO
-    # de la columna C. O sea: para el importador, "SALDO BANCO (extracto)" no
-    # era un rótulo, era un número de documento válido.
+    # Historia de por qué se había ido a una solapa aparte (2026-08-03): el
+    # resumen se escribía con el rótulo en la columna C (CODIGO) y el importe
+    # en la D (VALOR). "Hacer prevalecer" (`hoja_parser`) lee el DOCUMENTO de
+    # la C y el CONCEPTO de la B — así que "SALDO BANCO (extracto)" le
+    # entraba como número de documento con su importe al lado, y la lista
+    # negra `_FILAS_CIERRE`, que miraba el CONCEPTO (columna B, vacía en esas
+    # filas), no matcheaba NUNCA. Bajar el Excel y volver a subirlo —el ciclo
+    # normal de trabajo— cargaba 6 líneas de resumen como pendientes del
+    # banco: **$8.304.132,19** de créditos fantasma el 03/08/2026.
     #
-    # Resultado: cada vez que alguien bajaba el Excel de pendientes y lo
-    # volvía a subir —el ciclo normal de trabajo— se cargaban las 6 líneas
-    # del resumen como pendientes del banco. El 03/08/2026 metieron
-    # **$8.304.132,19** de créditos fantasma y el export siguiente salió con
-    # DIFERENCIA −8.323.357,19. La dueña las borró a mano.
-    #
-    # El archivo que genera la app tiene que poder re-importarse SIN
-    # envenenarse. El parser elige la pestaña buscando los headers
-    # FECHA + VALOR (`hoja_parser._elegir_hoja`), así que un resumen que vive
-    # en su propia hoja es INVISIBLE para él — no importa qué rótulos tenga ni
-    # en qué columna estén. La dueña lo sigue viendo: es una solapa al lado.
-    # El test `test_conciliacion_xlsx_ida_y_vuelta` clava el invariante.
+    # Volver al pie SIN volver al bug pide tres cosas, y están las tres:
+    #   1. **Marcador de corte**: la fila `RESUMEN CONTABLE` en la columna A.
+    #      `hoja_parser` FRENA de leer ahí (`_ES_MARCADOR_RESUMEN`), así que
+    #      todo lo que va abajo es invisible para el importador sin importar
+    #      qué rótulos tenga ni en qué columna caigan.
+    #   2. **Rótulo en la columna B (CONCEPTO), no en la C**: ahí la lista
+    #      negra `_FILAS_CIERRE` sí matchea, fila por fila. Es la red de
+    #      abajo por si alguien edita el archivo y borra el marcador.
+    #   3. El importe queda en la D (VALOR), alineado con los movimientos —
+    #      que es lo que la dueña quiere ver.
+    # `test_conciliacion_xlsx_ida_y_vuelta` clava el invariante: generar el
+    # archivo y volver a importarlo no puede crear NI UN pendiente nuevo.
     # [[project_2026_08_03_resumen_como_pendientes]]
-    ws_res = wb.create_sheet("RESUMEN")
-    ws_res.cell(row=1, column=1, value="RESUMEN CONTABLE").font = bold
-    ws_res.cell(row=2, column=1, value=str(ws["A2"].value or ""))
-    rr = 4
+    ws.cell(row=r, column=1, value=_MARCADOR_RESUMEN).font = Font(bold=True, size=12)
+    r += 1
     for label, val in rows_resumen:
-        ws_res.cell(row=rr, column=1, value=label).font = bold
+        ws.cell(row=r, column=2, value=label).font = bold
         if val is not None:
-            cell = ws_res.cell(row=rr, column=2, value=val)
+            cell = ws.cell(row=r, column=4, value=val)
             cell.font = bold
             # Signo + / − explícito, mismo formato que las filas de movs.
             cell.number_format = "+#,##0.00;-#,##0.00;0.00"
         else:
-            ws_res.cell(row=rr, column=2, value="—").font = bold
-        rr += 1
-    ws_res.column_dimensions["A"].width = 34
-    ws_res.column_dimensions["B"].width = 18
+            ws.cell(row=r, column=4, value="—").font = bold
+        r += 1
 
     ws.column_dimensions["A"].width = 12
     ws.column_dimensions["B"].width = 60
@@ -4656,3 +4656,4 @@ def banco_relink_huerfanos():
     res = relink_matches_huerfanos(no_banco, dry_run=True)
     return render_template(
         "conciliacion/relink_huerfanos.html", res=res, no_banco=no_banco)
+

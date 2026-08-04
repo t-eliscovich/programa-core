@@ -70,6 +70,21 @@ _FILAS_CIERRE = {
 }
 
 
+#: ⭐ TMT 2026-08-04 — MARCADOR DE CORTE del propio export.
+#
+# La dueña pidió el resumen de vuelta al pie de la MISMA hoja que los
+# movimientos (*"el archivo me esta separando los movimientos y el resumen
+# en hojas distintas, podemos unificar en uno"*). Para que eso NO reviva el
+# bug del 03/08 (el resumen importándose como pendientes: $8.304.132,19
+# fantasma), `_generar_xlsx_pendientes` escribe esta fila justo antes del
+# bloque y el parser DEJA DE LEER ahí.
+#
+# Es un corte por POSICIÓN, no por rótulo: no depende de que `_FILAS_CIERRE`
+# conozca cada etiqueta ni de en qué columna cayó. Lo que se le agregue al
+# resumen mañana queda tapado igual.
+MARCADOR_RESUMEN = "RESUMEN CONTABLE"
+
+
 def _norm_rotulo(t) -> str:
     """MAYÚSCULAS, sin acentos, sin signos ni paréntesis, espacios colapsados."""
     import unicodedata
@@ -101,6 +116,16 @@ def _es_fila_de_resumen(*textos) -> str | None:
         if _norm_rotulo(t) in _FILAS_CIERRE and str(t).strip():
             return str(t).strip()[:60]
     return None
+
+
+def es_marcador_resumen(fila) -> bool:
+    """¿Esta fila es el `RESUMEN CONTABLE` que corta la lectura?
+
+    Se mira la fila ENTERA (no sólo las columnas mapeadas): el marcador va
+    en la A, pero si alguien mueve el bloque de columna, el corte tiene que
+    seguir funcionando.
+    """
+    return any(_norm_rotulo(celda) == MARCADOR_RESUMEN for celda in (fila or ()))
 
 
 def _parse_fecha(v) -> date | None:
@@ -255,6 +280,15 @@ def parse_hoja_pendientes(
     for i, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), header_row + 1):
         def _cell(idx):
             return row[idx] if idx is not None and idx < len(row) else None
+
+        # ⭐ Corte duro: de `RESUMEN CONTABLE` para abajo NO hay movimientos,
+        # hay resumen. Ver `MARCADOR_RESUMEN`. Se reporta como ignorada (una
+        # sola línea) para que quede en el flash y nadie tenga que adivinar
+        # por qué el archivo trajo menos filas.
+        if es_marcador_resumen(row):
+            ignoradas.append({"fila": i, "rotulo": MARCADOR_RESUMEN,
+                              "valor": None})
+            break
 
         concepto_raw = _cell(c_concepto)
         concepto = str(concepto_raw).strip() if concepto_raw is not None else ""
