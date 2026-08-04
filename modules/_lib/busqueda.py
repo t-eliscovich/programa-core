@@ -120,7 +120,9 @@ def ranking(
     """
     toks = palabras(q)
     if not toks:
-        return "0", {}
+        # NULL, no 0: un entero suelto en ORDER BY es una referencia
+        # POSICIONAL a la columna N (y `ORDER BY 0` directamente explota).
+        return "NULL", {}
     qn = " ".join(toks)
     cod = sql_normalizado(columna_codigo)
     params = {

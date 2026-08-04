@@ -7359,8 +7359,13 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
     ]
     if not codigos:
         return []
+    # OJO: el "sin ranking" va NULL, NO 0 — un entero suelto en ORDER BY es
+    # una referencia POSICIONAL a la columna N, y `ORDER BY 0` es un ERROR de
+    # Postgres ("position 0 is not in select list"). Con el 0 la query moría,
+    # el `_safe()` de la vista se comía la excepción y el "¿quisiste decir?"
+    # no aparecía NUNCA (verificado en vivo: "condorr" daba 0 resultados).
     filas = _correr(
-        "c.codigo_cli = ANY(%(cods)s)", "0", {"cods": codigos}
+        "c.codigo_cli = ANY(%(cods)s)", "NULL", {"cods": codigos}
     )
     for f in filas:
         f["aprox"] = True

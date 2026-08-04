@@ -9,6 +9,7 @@ tests/test_busqueda_por_palabras.py.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -67,6 +68,15 @@ def test_si_no_hay_nada_exacto_cae_al_quisiste_decir():
         filas = iq.buscar_clientes("chicaisa")
     assert len(filas) == 1 and filas[0]["aprox"] is True
     assert "ANY(" in llamadas[2][0], "las filas aprox se piden por código"
+    # TMT 2026-08-04 (bug encontrado EN VIVO, después del primer deploy): el
+    # fallback ordenaba `ORDER BY 0, saldo DESC` → en Postgres un entero
+    # suelto en ORDER BY es una referencia POSICIONAL y el 0 revienta la
+    # query. El `_safe()` de la vista se comía la excepción, así que
+    # "condorr" devolvía 0 resultados y el "¿quisiste decir?" no salía nunca.
+    assert not re.search(r"ORDER BY\s+\d+\b", llamadas[2][0]), (
+        "ORDER BY con un entero suelto = referencia posicional (ORDER BY 0 "
+        "es un error de Postgres)"
+    )
 
 
 def test_el_quisiste_decir_no_se_dispara_con_dos_letras():
@@ -169,3 +179,7 @@ def test_ninguna_query_sale_con_el_sentinela_sin_reemplazar():
             assert "__TEXTO_MATCH__" not in sql, modulo.__name__
             assert "__NOMBRE_CLI__" not in sql, modulo.__name__
             assert "__NOMBRE_PRV__" not in sql, modulo.__name__
+            assert not re.search(r"ORDER BY\s+\d+\s*(,|$|\n)", sql), (
+                f"{modulo.__name__}: ORDER BY con un entero suelto — en "
+                "Postgres eso ordena por la columna N, no por la constante"
+            )

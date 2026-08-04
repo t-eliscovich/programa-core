@@ -148,8 +148,13 @@ def test_ranking_pone_el_codigo_exacto_primero():
     assert "codigo_cli" in primero and "THEN 0" in primero
 
 
-def test_ranking_sin_termino_es_constante():
-    assert busqueda.ranking("", "c.codigo_cli") == ("0", {})
+def test_ranking_sin_termino_no_devuelve_un_entero():
+    """`ORDER BY 0` es un ERROR de Postgres: un entero suelto en ORDER BY es
+    una referencia POSICIONAL a la columna N. Tiene que ser NULL."""
+    sql, params = busqueda.ranking("", "c.codigo_cli")
+    assert params == {}
+    assert not sql.strip().isdigit(), "ORDER BY con un entero suelto → posicional"
+    assert sql == "NULL"
 
 
 # ── 4. "¿Quisiste decir?" ──────────────────────────────────────────────────
