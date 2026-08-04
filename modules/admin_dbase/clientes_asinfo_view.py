@@ -180,7 +180,20 @@ def codigos_de_asinfo(ruc10s: list[str]) -> tuple[dict[str, list[dict]], bool]:
     mapa: dict[str, list[dict]] = {}
     for f in filas or []:
         clave = ruc10(f.get("ruc10"))
-        cod = str(f.get("codigo") or "").strip().upper()
+        # TMT 2026-08-04 — en Asinfo `empresa.codigo` **es el RUC**, no un
+        # código corto: el código de 3 letras que comparte con Programa Core
+        # vive en **`nombre_comercial`**. Se ve en la ficha de AS2 del RUC
+        # 1591718165001 → Código = 1591718165001, Nombre Comercial = **NUF**,
+        # Nombre Fiscal = "ASOCIACIÓN … ASOTEXMANA". Comparando contra
+        # `codigo` la pantalla decía "1802931442001 ✗ no es ALP" en TODAS las
+        # filas: ruido, no información. `codigo` queda de fallback por si
+        # alguna ficha vieja sí lo tiene cargado corto.
+        comercial = str(f.get("nombre_comercial") or "").strip().upper()
+        cod = comercial if 0 < len(comercial) <= 4 else str(f.get("codigo") or "").strip().upper()
+        if len(cod) > 4:
+            # Un RUC no es un código de cliente: mejor "Asinfo no lo tiene"
+            # que un ✗ que nadie puede accionar.
+            cod = ""
         if not clave:
             continue
         mapa.setdefault(clave, []).append({

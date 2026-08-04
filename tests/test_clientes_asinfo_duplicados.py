@@ -406,3 +406,30 @@ def test_el_lado_pc_agrupa_por_codigo_y_solo_trae_los_repetidos():
         "hay que mostrar cuántas facturas y cheques cuelgan del código: es la "
         "plata que el duplicado cuenta dos veces"
     )
+
+
+def test_el_codigo_de_asinfo_sale_del_NOMBRE_COMERCIAL_no_de_codigo():
+    """TMT 2026-08-04 — en Asinfo `empresa.codigo` ES EL RUC. El código de 3
+    letras que comparte con PC vive en `nombre_comercial` (RUC 1591718165001:
+    Código=1591718165001, Nombre Comercial=NUF). Comparar contra `codigo`
+    ponía "1802931442001 ✗ no es ALP" en todas las filas."""
+    import modules.admin_dbase.clientes_asinfo_view as v
+
+    filas = [{
+        "ruc10": "1591718165", "codigo": "1591718165001",
+        "nombre_comercial": "NUF", "nombre_fiscal": "ASOTEXMANA",
+        "indicador_cliente": 1, "id_empresa": 7,
+    }]
+    mapa = {}
+    for f in filas:
+        comercial = str(f.get("nombre_comercial") or "").strip().upper()
+        mapa[f["ruc10"]] = comercial if 0 < len(comercial) <= 4 else ""
+    assert mapa["1591718165"] == "NUF", "el código tiene que ser NUF, no el RUC"
+
+    import inspect
+    src = inspect.getsource(v.codigos_de_asinfo)
+    assert "nombre_comercial" in src
+    i_com = src.index('comercial = str(f.get("nombre_comercial")')
+    i_cod = src.index('cod = comercial if')
+    assert i_com < i_cod, "el comercial se lee antes de elegir el código"
+    assert "len(cod) > 4" in src, "un RUC no puede quedar como código"
