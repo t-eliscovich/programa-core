@@ -33,19 +33,35 @@
       </select>
     </label>
     <label class="text-xs text-slate-600 dark:text-slate-300" style="display:flex; flex-direction:column; gap:2px;">
-      Desde qué fecha
-      <input type="date" name="desde" value="{{ desde }}" required
+      Punto de partida
+      <select name="modo" class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
+        <option value="atras" {% if modo == 'atras' %}selected{% endif %}>Desde el saldo de hoy, hacia atrás</option>
+        <option value="adelante" {% if modo == 'adelante' %}selected{% endif %}>Desde una fecha, hacia adelante</option>
+      </select>
+    </label>
+    <label class="text-xs text-slate-600 dark:text-slate-300" style="display:flex; flex-direction:column; gap:2px;">
+      Desde qué fecha <span class="text-[10px] text-slate-400">(sólo hacia adelante)</span>
+      <input type="date" name="desde" value="{{ desde }}"
              class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800">
     </label>
     <button type="submit"
             class="bg-slate-800 hover:bg-slate-900 text-white text-xs rounded px-3 py-1.5 font-medium">
       Ver qué cambiaría
     </button>
-    <span class="text-[11px] text-slate-500" style="max-width:26rem;">
-      Esto <strong>no escribe nada</strong>. El saldo del día anterior a la fecha queda
-      como punto de partida, así que elegí una fecha en la que el saldo era correcto.
-    </span>
   </form>
+
+  {# TMT 2026-08-04. La diferencia entre los dos sentidos no es un detalle
+     técnico: es cuál de los dos extremos queda clavado. Dicho en plata. #}
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 p-3 mb-3 text-[11px] text-slate-600 dark:text-slate-300"
+       style="max-width:62rem;">
+    <strong>Hacia atrás</strong> arranca del saldo de hoy y va corrigiendo para el pasado.
+    El saldo de hoy <strong>no se mueve</strong>, así que el balance, el patrimonio y la
+    utilidad quedan exactamente igual — sólo se planchan las costuras viejas.
+    Es el que conviene casi siempre.<br>
+    <strong>Hacia adelante</strong> arranca del saldo de una fecha y recalcula hasta hoy.
+    Sirve cuando lo que está mal es de esa fecha en adelante, pero
+    <strong>mueve el saldo de hoy</strong>: mirá el número final antes de aplicar.
+    Ninguno de los dos escribe nada hasta que aprietes Aplicar.
 
   {% if error %}
   <div class="rounded-lg border border-rose-300 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-sm p-3 mb-3">
@@ -56,7 +72,7 @@
   {% if plan is not none %}
     {% if not plan %}
     <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm text-slate-600 dark:text-slate-300">
-      No hay movimientos desde esa fecha — no habría nada que re-encadenar.
+      No hay movimientos para re-encadenar.
     </div>
     {% else %}
 
@@ -75,7 +91,7 @@
           <div class="text-sm font-semibold font-mono tabular-nums">{{ (total_actual or 0)|num_es }}</div>
         </div>
         <div>
-          <div class="text-[10px] uppercase text-slate-500">Saldo final después</div>
+          <div class="text-[10px] uppercase text-slate-500">Saldo final después{% if modo == 'atras' %} (queda igual){% endif %}</div>
           <div class="text-sm font-semibold font-mono tabular-nums">{{ (total_nuevo or 0)|num_es }}</div>
         </div>
         <div>
@@ -134,11 +150,14 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="no_banco" value="{{ no_banco }}">
       <input type="hidden" name="desde" value="{{ desde }}">
+      <input type="hidden" name="modo" value="{{ modo }}">
       <input type="hidden" name="aplicar" value="1">
       <span class="text-xs text-amber-900 dark:text-amber-200" style="max-width:44rem;">
         Aplicar escribe el saldo corrido de esas {{ cambios|length }} fila(s). No borra ni
         agrega movimientos: sólo vuelve a encadenar los que ya están. Se puede
         volver a correr cuantas veces haga falta.
+        {% if modo == 'atras' %}El saldo de hoy queda clavado, así que el balance
+        y la utilidad no se mueven.{% endif %}
       </span>
       <button type="submit"
               class="bg-amber-600 hover:bg-amber-700 text-white text-xs rounded px-3 py-1.5 font-medium">
@@ -147,7 +166,7 @@
     </form>
     {% else %}
     <div class="rounded-lg border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 text-sm p-3">
-      La cadena ya está bien desde esa fecha — no cambiaría ninguna fila.
+      La cadena ya está entera — no cambiaría ninguna fila.
     </div>
     {% endif %}
 

@@ -1087,6 +1087,20 @@ def reencadenar_saldos():
     no_banco = request.values.get("no_banco", type=int)
     desde_raw = (request.values.get("desde") or "").strip()
     aplicar = request.method == "POST" and request.form.get("aplicar") == "1"
+    # ⭐ TMT 2026-08-04 — DOS SENTIDOS, y el que importa es el de atrás.
+    #
+    # "adelante" ancla en una fecha y camina al futuro: preserva el opening y
+    # MUEVE EL CIERRE. Por eso el dry-run desde el 29/06 se abortó el 03/08 —
+    # el cierre es justo lo que no se puede mover, es lo que publica el
+    # Balance y lo que la conciliación ya validó contra el extracto (+2,00).
+    #
+    # "atras" ancla en la ÚLTIMA fila y camina al pasado. El cierre queda
+    # invariante POR CONSTRUCCIÓN: patrimonio y utilidad no se mueven ni un
+    # centavo, y las costuras viejas se planchan igual. Es la herramienta
+    # para arreglar historia sin tocar el presente, y por eso es el default.
+    modo = (request.values.get("modo") or "atras").strip().lower()
+    if modo not in ("atras", "adelante"):
+        modo = "atras"
 
     bancos = _db.fetch_all(
         "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco "
@@ -1095,7 +1109,36 @@ def reencadenar_saldos():
 
     plan, err, banco_sel = None, None, None
     total_actual = total_nuevo = None
-    if no_banco and desde_raw:
+    # Hacia atrás el ancla es el cierre, no una fecha: no se pide fecha.
+    if no_banco and modo == "atras":
+        banco_sel = next(
+            (b for b in bancos if int(b["no_banco"]) == no_banco), None)
+        if not banco_sel:
+            err = f"El banco {no_banco} no está en el catálogo."
+        else:
+            import bank_helpers
+            try:
+                with _db.tx() as conn:
+                    plan = bank_helpers.reencadenar_retro(
+                        conn, no_banco=no_banco, no_cta=None, dry_run=True)
+                if plan:
+                    total_actual = plan[-1]["saldo_actual"]
+                    total_nuevo = plan[-1]["saldo_nuevo"]
+                if aplicar:
+                    with _db.tx() as conn:
+                        n = bank_helpers.reencadenar_retro(
+                            conn, no_banco=no_banco, no_cta=None)
+                    flash(
+                        f"{banco_sel['nombre'] or no_banco}: {n} fila(s) "
+                        f"re-encadenadas hacia atrás. El saldo de cierre "
+                        f"quedó igual ({(total_nuevo or 0):,.2f}) — el "
+                        f"balance y la utilidad no se movieron.", "ok")
+                    return redirect(url_for(
+                        "bancos.reencadenar_saldos",
+                        no_banco=no_banco, modo="atras"))
+            except Exception as e:  # noqa: BLE001
+                err = f"No pude armar el plan: {str(e)[:300]}"
+    elif no_banco and desde_raw:
         try:
             desde = _date.fromisoformat(desde_raw)
         except ValueError:
@@ -1130,7 +1173,8 @@ def reencadenar_saldos():
                             f"{(total_nuevo or 0):,.2f}.", "ok")
                         return redirect(url_for(
                             "bancos.reencadenar_saldos",
-                            no_banco=no_banco, desde=desde_raw))
+                            no_banco=no_banco, desde=desde_raw,
+                            modo="adelante"))
                 except Exception as e:  # noqa: BLE001
                     err = f"No pude armar el plan: {str(e)[:200]}"
 
@@ -1141,6 +1185,7 @@ def reencadenar_saldos():
     return render_template(
         "bancos/reencadenar.html",
         bancos=bancos, no_banco=no_banco, desde=desde_raw, error=err,
+        modo=modo,
         banco_sel=banco_sel, plan=plan, cambios=cambios,
         total_actual=total_actual, total_nuevo=total_nuevo,
     )

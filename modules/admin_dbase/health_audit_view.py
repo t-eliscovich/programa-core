@@ -762,47 +762,53 @@ def simulacro_cierre():
 def _breaks_cadena(no_banco: int, desde) -> list[dict]:
     """Filas donde el running `saldo` GUARDADO no encadena con la anterior.
 
-    Criterio a propósito AGNÓSTICO de convención de signos (el `documento`
-    viene con formatos distintos en filas legacy del DBF, y en las del sync
-    el `importe` ya viene firmado): sólo pedimos que el salto del saldo
-    valga lo mismo que el importe de la fila. |Δsaldo| == |importe|.
-    Sobre 500 filas de Pichincha el 03/08/2026 dio exactamente 3 hits y
-    ningún falso positivo.
+    ⭐ TMT 2026-08-04 — UNA SOLA REGLA DE SIGNOS. Esto tenía su propio SQL con
+    criterio `ABS` ("el salto vale lo mismo que el importe, no me importa el
+    signo") porque se creía que la convención de signos de las filas viejas
+    del DBF no era legible. **No era cierto.** Verificado ese día sobre las
+    1.333 filas de Pichincha: `documento` predice el signo en 1.326, y las 7
+    excepciones son exactamente los 7 quiebres reales — el mismo conjunto que
+    devolvía el criterio ABS. Lo que estaba roto era el ORDEN (saldo estampado
+    por id, leído por (fecha, id)), no los signos.
+
+    Con criterio firmado además se caza un caso que el ABS deja pasar: la
+    fila cuyo saldo se mueve el importe correcto pero **para el lado
+    equivocado**. Fuente única: `bank_helpers.contar_quiebres`.
     """
-    return db.fetch_all(
-        """
-        WITH w AS (
-          SELECT id_transaccion, fecha, documento, concepto, importe, saldo,
-                 LAG(saldo)   OVER (ORDER BY fecha, id_transaccion) AS saldo_prev,
-                 LAG(fecha)   OVER (ORDER BY fecha, id_transaccion) AS fecha_prev,
-                 LAG(concepto) OVER (ORDER BY fecha, id_transaccion) AS concepto_prev
-            FROM scintela.transacciones_bancarias
-           WHERE no_banco = %s
-             AND saldo IS NOT NULL
-             AND fecha >= %s
-        )
-        SELECT * FROM w
-         WHERE saldo_prev IS NOT NULL
-           AND ABS(ABS(saldo - saldo_prev) - ABS(COALESCE(importe, 0))) > 0.02
-         ORDER BY fecha, id_transaccion
-        """,
-        (no_banco, desde),
-    ) or []
+    import bank_helpers
+    return bank_helpers.contar_quiebres(no_banco=no_banco, desde_fecha=desde)
 
 
-def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias):
+def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
+                    derivado=None):
     """Arma el stat y las alertas de UN banco. Pura — se testea sin Flask."""
-    gap_total = round(sum(
-        abs(abs(float(r["saldo"]) - float(r["saldo_prev"]))
-            - abs(float(r["importe"] or 0)))
-        for r in breaks
-    ), 2)
+    def _gap(r):
+        # Criterio FIRMADO (ver `_breaks_cadena`). Sobre el break real del
+        # 03/08 da 155.193,23 y no 155.187,31: la diferencia son los 2×2,96
+        # del propio movimiento (tenía que BAJAR 2,96 y subió 155.190,27).
+        # Y 155.193,23 es exactamente el Δ que el re-encadenado terminó
+        # aplicando a las 107 filas — el criterio firmado PREDICE la
+        # corrección, el ABS no.
+        return abs((float(r["saldo"]) - float(r["saldo_prev"]))
+                   - float(r.get("sgn") or 0))
+
+    gap_total = round(sum(_gap(r) for r in breaks), 2)
     stat = {
         "no_banco": no_banco,
         "nombre": nombre,
         "saldo_usado_por_el_balance": stored,
+        # ⭐ TMT 2026-08-04 — el número que hay que mirar es `saldo_derivado`
+        # (APERTURA + suma firmada), no `saldo_signed` (suma firmada sola).
+        # `delta_stored_vs_signed` valía la apertura del banco — en Pichincha
+        # 2.962.335,77 — todos los días, pasara lo que pasara, y la alerta lo
+        # anunciaba como patrimonio corrido. Un ⚠ que siempre está prendido
+        # entrena a ignorar el panel.
+        "saldo_derivado": derivado,
+        "delta_stored_vs_derivado": (
+            None if derivado is None else round(stored - derivado, 2)),
         "saldo_signed": signed,
-        "delta_stored_vs_signed": round(stored - signed, 2),
+        "apertura_implicita": (
+            None if derivado is None else round(derivado - signed, 2)),
         "n_breaks": len(breaks),
         "gap_total": gap_total,
         "saldos_null": int(n_nulls or 0),
@@ -814,12 +820,26 @@ def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias):
             "importe": float(r["importe"] or 0),
             "saldo_prev": float(r["saldo_prev"]),
             "saldo": float(r["saldo"]),
-            "gap": round(abs(abs(float(r["saldo"]) - float(r["saldo_prev"]))
-                             - abs(float(r["importe"] or 0))), 2),
+            "gap": round(_gap(r), 2),
             "fila_anterior": (r.get("concepto_prev") or "")[:40],
         } for r in breaks[:15]],
     }
     alerts = []
+    # El invariante DE VERDAD: el running que publica el balance tiene que
+    # valer lo mismo que apertura + suma de los movimientos. Con esto, el
+    # 03/08 se cazaba solo en vez de a ojo mirando el listado.
+    if derivado is not None and abs(stored - derivado) > 1.0:
+        alerts.append({
+            "severity": "high",
+            "category": "saldo_no_derivable",
+            "msg": (
+                f"{nombre}: el saldo que usa el BALANCE ({stored:,.2f}) no "
+                f"coincide con apertura + movimientos ({derivado:,.2f}) — "
+                f"difieren {stored - derivado:,.2f}. Ese es el patrimonio y "
+                f"la utilidad corridos por esa plata. Re-encadenar en "
+                f"/bancos/reencadenar."
+            ),
+        })
     if gap_total > 1.0:
         alerts.append({
             "severity": "high",
@@ -890,6 +910,8 @@ def cadena_saldos():
                 nombre=nombre,
                 stored=float(b.get("saldo_stored") or 0),
                 signed=float(b.get("saldo_signed") or 0),
+                derivado=(None if b.get("saldo_derivado") is None
+                          else float(b.get("saldo_derivado") or 0)),
                 breaks=breaks,
                 n_nulls=n_nulls,
                 dias=dias,

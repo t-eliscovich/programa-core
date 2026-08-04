@@ -325,6 +325,14 @@ def insert_movimiento_bancario(
             ancla_fecha=fecha,
         )
 
+    # ⭐ TMT 2026-08-04 — CANDADO DE COMMIT. Ver `CadenaRotaError`.
+    # Acotado a `fecha` para adelante: un quiebre histórico que todavía no se
+    # limpió no tiene por qué frenarle una carga de hoy a la oficina.
+    assert_cadena_intacta(
+        conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=fecha,
+        contexto=f"Alta de {(documento or '').upper().strip()} "
+                 f"{(concepto or '').strip()[:30]}")
+
     return {
         "id_transaccion": row.get("id_transaccion"),
         "saldo_nuevo": saldo_nuevo,
@@ -461,6 +469,7 @@ def recompute_saldos_desde(
         saldo = float(row["saldo"]) if row else 0.0
         cond_inicio = "(fecha, id_transaccion) >= (%s::date, %s)"
         params_inicio: tuple = (ancla_fecha_del_id, ancla_id)
+        fecha_guarda = ancla_fecha_del_id
     elif ancla_fecha is not None:
         # TMT 2026-06-11 fix: el ancla es el saldo al CIERRE del día ANTERIOR
         # a ancla_fecha (fecha < ancla, ESTRICTO), porque el walk de abajo
@@ -476,10 +485,12 @@ def recompute_saldos_desde(
         )
         cond_inicio = "fecha >= %s::date"
         params_inicio = (ancla_fecha,)
+        fecha_guarda = ancla_fecha
     else:
         saldo = 0.0
         cond_inicio = "1=1"
         params_inicio = ()
+        fecha_guarda = None
 
     rows = db.fetch_all(
         f"""
@@ -526,7 +537,244 @@ def recompute_saldos_desde(
             (f["saldo_nuevo"], f["id_transaccion"]),
             conn=conn,
         )
+    # ⭐ TMT 2026-08-04 — CANDADO DE COMMIT. Ver `CadenaRotaError`.
+    # Si el walk hacia adelante dejó una costura (típico: el ancla cayó al
+    # medio de un tramo con fechas fuera de orden), esto lo frena ACÁ en vez
+    # de que aparezca mañana en el health con el balance ya publicado.
+    assert_cadena_intacta(
+        conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=fecha_guarda,
+        contexto="Re-encadenado hacia adelante")
     return len(plan)
+
+
+class CadenaRotaError(RuntimeError):
+    """Un write dejó el running `saldo` partido. Aborta la transacción.
+
+    ⭐ TMT 2026-08-04 (dueña: *"ayer hubo otro quiebre, no nos debería pasar
+    más"*). Tenía razón en no conformarse con "hace un mes que no aparece
+    uno nuevo": el quiebre del 03/08 apareció y se reparó el mismo día, y el
+    04/08 no se cargó nada. O sea la evidencia de que el motor estaba sano
+    era la ausencia de uso, no la ausencia de bug.
+
+    La respuesta no es mirar el panel a la mañana siguiente: es que **una
+    transacción que deja la cadena partida no llegue a commitear**. Este
+    error lo levanta `assert_cadena_intacta` y, como todos los writes de
+    banco viven adentro de un `db.tx()`, hace ROLLBACK de la operación
+    entera. Preferimos que el usuario vea "no pude guardar esto" a que el
+    balance mienta en silencio hasta el health de la mañana.
+    """
+
+
+def _sql_signed_delta(alias: str = "") -> str:
+    """El `_signed_delta` de arriba, escrito en SQL. UNA sola regla.
+
+    Había TRES conviviendo (`DOCS_ENTRADA` acá, `IN ('CH','ND')` en
+    `saldo_bancos`, `IN ('CH','ND','RE','GS','PA')` en el fallback de
+    `_saldo_previo`). Hoy la tabla sólo tiene DE/ND/CH/NC y las tres
+    coinciden, así que la divergencia es invisible — hasta que aparezca un
+    documento nuevo. Hay un test que clava que ésta y la de Python dan lo
+    mismo. [[feedback_coherencia_numeros_una_fuente]]
+    """
+    a = f"{alias}." if alias else ""
+    docs = ", ".join(f"'{d}'" for d in DOCS_ENTRADA)
+    return (f"CASE WHEN UPPER(TRIM({a}documento)) IN ({docs}) "
+            f"THEN {a}importe ELSE -{a}importe END")
+
+
+def contar_quiebres(
+    conn=None,
+    *,
+    no_banco: int,
+    no_cta: str | None = None,
+    desde_fecha: date | None = None,
+) -> list[dict]:
+    """Filas donde el `saldo` guardado NO se movió por su delta firmado.
+
+    Camina en el MISMO orden que lee todo el sistema — `(fecha,
+    id_transaccion)` — porque ese es el orden en que `saldo_bancos()` elige
+    "la última fila". La ventana se calcula sobre TODAS las filas del banco
+    y recién después se filtra por `desde_fecha`: si filtráramos antes, la
+    primera fila de la ventana no tendría anterior y el quiebre del borde se
+    perdería.
+
+    ⭐ Criterio FIRMADO, no `ABS`. Se creía que la convención de signos de
+    las filas viejas del DBF no era legible — por eso el health nació con
+    criterio ABS. Verificado el 04/08/2026 sobre las 1.333 filas de
+    Pichincha: `documento` predice el signo en **1.326**, y las 7 excepciones
+    son exactamente los 7 quiebres reales. Lo que estaba roto era el ORDEN
+    (saldo estampado por `id`, leído por `(fecha, id)`), no los signos.
+    Firmado además caza un caso que ABS deja pasar: la fila que se mueve el
+    importe correcto para el lado equivocado.
+    """
+    return db.fetch_all(
+        f"""
+        WITH w AS (
+          SELECT id_transaccion, fecha, documento, concepto, importe, saldo,
+                 {_sql_signed_delta('t')} AS sgn,
+                 LAG(saldo)    OVER (ORDER BY fecha, id_transaccion) AS saldo_prev,
+                 LAG(fecha)    OVER (ORDER BY fecha, id_transaccion) AS fecha_prev,
+                 LAG(concepto) OVER (ORDER BY fecha, id_transaccion) AS concepto_prev
+            FROM scintela.transacciones_bancarias t
+           WHERE no_banco = %s
+             AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
+             AND saldo IS NOT NULL
+        )
+        SELECT * FROM w
+         WHERE saldo_prev IS NOT NULL
+           AND ABS((saldo - saldo_prev) - sgn) > 0.02
+           AND (%s::date IS NULL OR fecha >= %s::date)
+         ORDER BY fecha, id_transaccion
+        """,
+        (no_banco, no_cta, no_cta, desde_fecha, desde_fecha),
+        conn=conn,
+    ) or []
+
+
+def assert_cadena_intacta(
+    conn=None,
+    *,
+    no_banco: int,
+    no_cta: str | None = None,
+    desde_fecha: date | None = None,
+    contexto: str = "",
+) -> None:
+    """Candado de commit: si el write dejó un quiebre, revienta y rollback.
+
+    `desde_fecha` acota a lo que ESTE write pudo tocar — no queremos que un
+    quiebre histórico que todavía no se limpió bloquee una carga de hoy. Sin
+    ese recorte el candado no se podría prender hasta terminar de planchar
+    la historia, y mientras tanto la oficina no podría trabajar.
+    """
+    rotas = contar_quiebres(
+        conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=desde_fecha)
+    if not rotas:
+        return
+    r = rotas[0]
+    detalle = (
+        f"id {r['id_transaccion']} {r['fecha']} "
+        f"{(r.get('documento') or '').strip()} "
+        f"{(r.get('concepto') or '')[:30]}: el saldo saltó "
+        f"{float(r['saldo']) - float(r['saldo_prev']):,.2f} "
+        f"cuando el movimiento vale {float(r['sgn']):,.2f}"
+    )
+    raise CadenaRotaError(
+        f"{contexto or 'Movimiento bancario'}: la operación habría dejado el "
+        f"saldo del banco {no_banco} partido en {len(rotas)} punto(s) — "
+        f"{detalle}. No se guardó nada. El balance lee ese saldo, así que "
+        f"guardarlo habría corrido el patrimonio y la utilidad."
+    )
+
+
+def reencadenar_retro(
+    conn,
+    *,
+    no_banco: int,
+    no_cta: str | None = None,
+    dry_run: bool = False,
+) -> int | list[dict]:
+    """Re-encadena HACIA ATRÁS: ancla en la ÚLTIMA fila y camina al pasado.
+
+    ⭐ POR QUÉ EXISTE (TMT 2026-08-04). `recompute_saldos_desde` ancla en un
+    punto y camina para ADELANTE: preserva el opening y **mueve el cierre**.
+    Pero el cierre es justo lo que no se puede mover — es el número que el
+    Balance publica como BANCOS (vía `saldo_bancos()`, que lee el running
+    guardado de la última fila) y el que la conciliación ya validó contra el
+    EXTRACTO (sesión #60 cerrada en +2,00 el 03/08). Por eso el dry-run hacia
+    adelante desde el 29/06 se abortó: iba a mover el cierre.
+
+    Este camina al revés. El ancla es la última fila en `(fecha,
+    id_transaccion)` — el nivel que el extracto ya dio por bueno — y cada
+    fila anterior se estampa restándole el delta firmado de la que le sigue.
+    Consecuencia: **el cierre queda invariante por construcción**, así que
+    patrimonio y utilidad no se mueven ni un centavo. Es la herramienta para
+    limpiar costuras viejas sin tocar el presente, que es exactamente lo que
+    pide la regla de la dueña: *"si tocás algo de antes de agosto tenés que
+    dejarlo sin que la utilidad se mueva en absoluto"*.
+
+    GUARDA ESPEJO del bug del 2026-05-12 (un walk sin ancla dejó Pichincha en
+    −917.651,96 destruyendo el opening): éste podría destruirlo por el otro
+    lado. Si la PRIMERA fila cambiaría de saldo, abortamos — querría decir
+    que los deltas firmados no reconcilian los dos extremos, y entonces esto
+    no es una costura de orden sino un faltante que hay que mirar a mano
+    contra el extracto. Con los dos extremos clavados, un re-encadenado no
+    puede inventar plata.
+
+    Con `dry_run=True` devuelve el plan (`saldo_actual` / `saldo_nuevo`),
+    mismo formato que `recompute_saldos_desde`. Sin él, devuelve cuántas
+    filas escribió.
+    """
+    if not no_banco:
+        raise ValueError("no_banco requerido para reencadenar_retro")
+
+    rows = db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, concepto, importe, saldo,
+               COALESCE(usuario_crea, '') AS usuario_crea
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
+         ORDER BY fecha, id_transaccion
+        """,
+        (no_banco, no_cta, no_cta),
+        conn=conn,
+    ) or []
+    if len(rows) < 2:
+        return [] if dry_run else 0
+    if rows[-1].get("saldo") is None:
+        raise ValueError(
+            "La última fila del banco no tiene saldo guardado: no hay ancla "
+            "que preservar. Arreglá esa fila antes de re-encadenar."
+        )
+
+    # Camino al revés: saldo(anterior) = saldo(actual) - delta(actual).
+    saldos: dict[int, float] = {rows[-1]["id_transaccion"]: float(rows[-1]["saldo"])}
+    corriente = float(rows[-1]["saldo"])
+    for i in range(len(rows) - 1, 0, -1):
+        r = rows[i]
+        corriente = round(
+            corriente - _signed_delta(
+                r["documento"], r["importe"], r.get("usuario_crea") or ""), 2)
+        saldos[rows[i - 1]["id_transaccion"]] = corriente
+
+    plan = [{
+        "id_transaccion": r["id_transaccion"],
+        "fecha": r.get("fecha"),
+        "documento": (r.get("documento") or "").strip(),
+        "concepto": (r.get("concepto") or ""),
+        "importe": float(r["importe"] or 0),
+        "saldo_actual": (None if r.get("saldo") is None else float(r["saldo"])),
+        "saldo_nuevo": saldos[r["id_transaccion"]],
+    } for r in rows]
+
+    primera = plan[0]
+    if primera["saldo_actual"] is not None and \
+            abs(primera["saldo_nuevo"] - primera["saldo_actual"]) > 0.02:
+        raise ValueError(
+            f"Abortado: re-encadenar hacia atrás movería la PRIMERA fila del "
+            f"banco de {primera['saldo_actual']:,.2f} a "
+            f"{primera['saldo_nuevo']:,.2f}. Con el cierre anclado, eso "
+            f"significa que los movimientos NO explican la diferencia entre "
+            f"los dos extremos: no es una costura de orden, es un faltante. "
+            f"Mirá esas filas de a una contra el extracto."
+        )
+
+    cambios = [f for f in plan
+               if f["saldo_actual"] is None
+               or abs(f["saldo_nuevo"] - f["saldo_actual"]) > 0.005]
+    if dry_run:
+        return plan
+    for f in cambios:
+        db.execute(
+            "UPDATE scintela.transacciones_bancarias "
+            "SET saldo = %s, fecha_modifica = CURRENT_TIMESTAMP "
+            "WHERE id_transaccion = %s",
+            (f["saldo_nuevo"], f["id_transaccion"]),
+            conn=conn,
+        )
+    assert_cadena_intacta(
+        conn, no_banco=no_banco, no_cta=no_cta,
+        contexto="Re-encadenado hacia atrás")
+    return len(cambios)
 
 
 def saldo_actual(no_banco: int, no_cta: str | None = None, conn=None) -> float:

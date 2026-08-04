@@ -227,6 +227,9 @@ def _break(imp, saldo_prev, saldo):
         "id_transaccion": 1, "fecha": date(2026, 7, 30), "documento": "ND",
         "concepto": "Comisiones e impuestos 17/06-30/07", "concepto_prev": "CC EMPAQUES",
         "importe": imp, "saldo_prev": saldo_prev, "saldo": saldo,
+        # TMT 2026-08-04: el gap pasó a criterio FIRMADO (ver
+        # `bank_helpers.contar_quiebres`). Un ND resta.
+        "sgn": -imp,
     }
 
 
@@ -239,10 +242,15 @@ def test_health_cadena_saldos_caza_el_break_real():
         breaks=[_break(2.96, 2464557.97, 2619748.24)], n_nulls=0, dias=120,
     )
     assert stat["n_breaks"] == 1
-    assert stat["gap_total"] == 155187.31
+    # ⭐ TMT 2026-08-04 — con criterio FIRMADO el gap da 155.193,23 y no
+    # 155.187,31. La diferencia son los 2×2,96 del propio movimiento: el
+    # saldo tenía que BAJAR 2,96 y subió 155.190,27. Y 155.193,23 es
+    # exactamente el Δ que el re-encadenado del 03/08 terminó aplicando a las
+    # 107 filas — o sea el criterio firmado predice la corrección, el ABS no.
+    assert stat["gap_total"] == 155193.23
     assert [a["category"] for a in alerts] == ["cadena_saldos_rota"]
     assert alerts[0]["severity"] == "high"
-    assert "155,187.31" in alerts[0]["msg"]
+    assert "155,193.23" in alerts[0]["msg"]
 
 
 def test_health_cadena_saldos_callada_cuando_esta_sana():

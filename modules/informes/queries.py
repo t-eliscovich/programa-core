@@ -411,6 +411,35 @@ def saldo_bancos() -> list[dict]:
                  WHERE t.no_banco = b.no_banco
                    AND t.fecha <= CURRENT_DATE
                ), 0) AS saldo_raw,
+               -- ⭐ TMT 2026-08-04 — `saldo_derivado` = APERTURA + suma firmada.
+               -- `saldo_signed` (arriba) suma los movimientos y nada más, así
+               -- que le falta toda la plata que el banco tenía ANTES de la
+               -- primera fila cargada. En Pichincha esa apertura son
+               -- 2.962.335,77 — exactamente el "delta" que el health venía
+               -- reportando como cadena rota todos los días desde que existe.
+               -- Era ruido estructural, no plata: comparar el running guardado
+               -- contra una suma sin apertura no puede dar nunca otra cosa.
+               -- Con la apertura adentro, `stored` vs `derivado` SÍ es el
+               -- invariante de verdad: el 03/08 habría marcado los 155.187,31
+               -- en el momento, sin que nadie tuviera que mirar el listado.
+               COALESCE((
+                 SELECT (
+                          SELECT t0.saldo - (CASE
+                                   WHEN UPPER(TRIM(t0.documento)) IN ('CH','ND')
+                                   THEN -t0.importe ELSE t0.importe END)
+                            FROM scintela.transacciones_bancarias t0
+                           WHERE t0.no_banco = b.no_banco
+                             AND t0.saldo IS NOT NULL
+                           ORDER BY t0.fecha, t0.id_transaccion
+                           LIMIT 1
+                        )
+                        + SUM(CASE
+                                WHEN UPPER(TRIM(t.documento)) IN ('CH','ND')
+                                THEN -t.importe ELSE t.importe END)
+                   FROM scintela.transacciones_bancarias t
+                  WHERE t.no_banco = b.no_banco
+                    AND t.fecha <= CURRENT_DATE
+               ), 0) AS saldo_derivado,
                (
                  SELECT COUNT(*)
                  FROM scintela.transacciones_bancarias t
@@ -428,6 +457,7 @@ def saldo_bancos() -> list[dict]:
         stored = float(r.get("saldo_stored") or 0)
         signed = float(r.get("saldo_signed") or 0)
         raw = float(r.get("saldo_raw") or 0)
+        derivado = float(r.get("saldo_derivado") or 0)
         if abs(stored) > 0.5:
             saldo, origen = stored, "stored"
         elif abs(signed) > 0.5:
@@ -464,6 +494,7 @@ def saldo_bancos() -> list[dict]:
                 "saldo_stored": stored,
                 "saldo_signed": signed,
                 "saldo_raw": raw,
+                "saldo_derivado": derivado,
                 "n_transacciones": int(r.get("n_transacciones") or 0),
             }
         )

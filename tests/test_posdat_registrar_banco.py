@@ -42,6 +42,12 @@ class _DBStub:
             return {"saldo": 0}
         return None
 
+    def fetch_all(self, sql, params=None, conn=None):
+        # TMT 2026-08-04: el candado de commit (`assert_cadena_intacta`)
+        # consulta los quiebres después de escribir. Este stub no lleva
+        # ledger, así que no hay cadena que romper: sin quiebres.
+        return []
+
     def execute(self, sql, params=None, conn=None):
         self.executes.append((sql, tuple(params or ())))
 
@@ -68,12 +74,14 @@ def stub(monkeypatch):
         "concepto": "6/6 14", "banc": 0, "anulada": False,
     })
     monkeypatch.setattr(db, "fetch_one", s.fetch_one)
+    monkeypatch.setattr(db, "fetch_all", s.fetch_all)
     monkeypatch.setattr(db, "execute", s.execute)
     monkeypatch.setattr(db, "execute_returning", s.execute_returning)
     monkeypatch.setattr(db, "tx", s.tx)
 
     import bank_helpers
     monkeypatch.setattr(bank_helpers.db, "fetch_one", s.fetch_one)
+    monkeypatch.setattr(bank_helpers.db, "fetch_all", s.fetch_all)
     monkeypatch.setattr(bank_helpers.db, "execute", s.execute)
     monkeypatch.setattr(bank_helpers.db, "execute_returning", s.execute_returning)
 
