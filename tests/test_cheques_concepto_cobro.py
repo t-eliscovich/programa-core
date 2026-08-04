@@ -31,7 +31,14 @@ class _FakeDB:
         if "totalizar_estado_cuenta" in s:
             return self.totalizar
         if "from scintela.mov_doble" in s:
-            return self.movs
+            # ⚠ FILTRA por los ids pedidos, como el SQL real. Un fake que
+            # devuelve TODOS los movs tapó el bug de CEM: la cancelación
+            # referencia al espejo NB=98, que el resumen del día no trae, y
+            # sin filtrar el test pasaba igual mientras en prod salía
+            # "anticipo · saldo a favor" en vez de "canceló el cheque".
+            pedidos = set(params[1]) if params and len(params) > 1 else set()
+            return [m for m in self.movs
+                    if m["origen_id"] in pedidos or m["destino_id"] in pedidos]
         if "from scintela.factura" in s:
             return self.facturas
         if "from scintela.cheque" in s:
@@ -141,10 +148,16 @@ def test_cem_los_dos_depositos_dicen_que_cancelaron_el_cheque(monkeypatch):
     Y `anticipo_neteado` es el que salva al SEGUNDO depósito — el
     `cheque_cancelado_por_anticipo` referencia a uno solo.
     """
-    _usar(monkeypatch, _FakeDB(_CEM_MOVS, cheques=_CHEQUE_CANCELADO_CEM))
+    fake = _FakeDB(_CEM_MOVS, cheques=_CHEQUE_CANCELADO_CEM)
+    _usar(monkeypatch, fake)
+    # OJO: se piden SOLO los depósitos. Los espejos (101722/101724) quedan con
+    # stat='X' y el resumen del día no los trae — la cancelación referencia a
+    # ELLOS, así que hace falta la segunda pasada sobre los espejos.
     out = concepto_cobro.etiquetas_automaticas([101721, 101723])
     assert out[101721] == "anticipo · canceló el cheque 645 ($4.020,69)"
     assert out[101723] == out[101721]
+    consultas_mov = [q for q in fake.sqls if "from scintela.mov_doble" in q]
+    assert len(consultas_mov) == 2, "falta la segunda pasada por los espejos"
 
 
 def test_monto_en_formato_ecuador(monkeypatch):

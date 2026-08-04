@@ -174,8 +174,8 @@ def explicaciones(ids_cheque, codigos_por_id=None, conn=None) -> dict[int, dict]
     ids = sorted({int(i) for i in (ids_cheque or []) if i is not None})
     if not ids:
         return {}
-    try:
-        filas = _db.fetch_all(
+    def _traer(sobre):
+        return _db.fetch_all(
             """
             SELECT tipo, origen_id, destino_id, importe, batch_id, metadata
               FROM scintela.mov_doble
@@ -185,9 +185,26 @@ def explicaciones(ids_cheque, codigos_por_id=None, conn=None) -> dict[int, dict]
                   OR (destino_table = 'cheque' AND destino_id = ANY(%s)) )
              ORDER BY id_mov_doble
             """,
-            (list(_TIPOS), ids, ids),
+            (list(_TIPOS), sobre, sobre),
             conn=conn,
         ) or []
+
+    try:
+        filas = _traer(ids)
+        # 🚨 SEGUNDA PASADA por los ESPEJOS. Verificado en vivo el 04/08: los
+        # dos depósitos de CEM salieron como "anticipo · saldo a favor" en vez
+        # de "canceló el cheque…". La cancelación (`cheque_cancelado_por_
+        # anticipo` y `anticipo_neteado`) NO referencia al depósito sino a su
+        # espejo NB=98 (101722/101724), y el espejo queda con stat='X', así
+        # que el resumen del día NO lo trae → esos movs nunca entraban en la
+        # primera query. Los espejos recién se conocen DESPUÉS de leerla.
+        _espejos = sorted({
+            r["destino_id"] for r in filas
+            if r.get("tipo") == "cheque_anticipo_espejo"
+            and r.get("origen_id") in set(ids) and r.get("destino_id")
+        } - set(ids))
+        if _espejos:
+            filas = filas + _traer(_espejos)
     except Exception as exc:  # noqa: BLE001 -- fail-soft
         _LOG.exception("explicaciones falló: %s", exc)
         return {}

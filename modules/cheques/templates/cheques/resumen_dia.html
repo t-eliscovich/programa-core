@@ -206,7 +206,7 @@
               </div>
               <div class="facts" style="margin-top:1px">
                 {%- if c.concepto %}{{ c.concepto | cleanstr }} · {% endif -%}
-                aplicado — el vínculo lo redistribuyó el TOTALIZAR del estado de cuenta
+                {{ c.explicacion.texto }}
               </div>
             {% elif c.concepto %}
               <span class="facts">{{ c.concepto | cleanstr }}</span>
