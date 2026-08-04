@@ -215,7 +215,14 @@
              banco pasa al final, que es un dato de referencia y no algo que se
              sume. #}
           <th class="px-4 py-3 text-right font-medium">Importe</th>
-          <th class="px-4 py-3 text-left font-medium">Banco</th>
+          {# TMT 2026-08-04 (dueña): *"centrá banco entre importe y stat"*. La
+             columna se queda con el 24% del ancho impreso (entra
+             "BANECUADOR", que es el nombre más largo de la base) y el texto
+             pegado a la izquierda dejaba el nombre besando al importe y un
+             hueco largo hasta Stat. Centrado, el nombre queda en el medio del
+             espacio que ya tenía: no cambia ningún ancho, sólo deja de
+             parecer que la columna está corrida. #}
+          <th class="px-4 py-3 text-center font-medium">Banco</th>
           <th class="px-4 py-3 text-left font-medium">Stat</th>
         </tr>
       </thead>
@@ -284,7 +291,7 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-right text-mono{{ ' line-through text-slate-400' if anulado }}">{{ c.importe | money_es }}</td>
-          <td class="px-4 py-2 text-slate-500">{{ c.nombre_banco or c.banco }}</td>
+          <td class="px-4 py-2 text-center text-slate-500">{{ c.nombre_banco or c.banco }}</td>
           <td class="px-4 py-2 font-mono text-xs text-slate-500">
             {{ c.stat }}{% if anulado %} <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] uppercase tracking-wide" title="Cheque anulado — no suma al total ni al contador">anulado</span>{% endif %}
           </td>

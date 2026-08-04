@@ -497,3 +497,58 @@ def test_la_franja_de_abajo_corta_igual_que_el_pie(app, fake_db, monkeypatch):
     franja = html[html.index("ec-ch-resumen"):]
     franja = franja[:franja.index("</div>", franja.index("Endosados"))]
     assert "100,00" in franja, "la franja no muestra D+Z como 'a depositar'"
+
+
+# ---------------------------------------------------------------------------
+# La columna Banco, centrada — TMT 2026-08-04
+# ---------------------------------------------------------------------------
+def _parcial_impreso() -> str:
+    import os
+
+    ruta = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "modules", "informes", "templates", "informes",
+        "_estado_cuenta_impreso.html",
+    )
+    with open(ruta, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_banco_va_centrado_entre_importe_y_stat():
+    """Dueña: "centrá banco entre importe y stat".
+
+    La columna tiene el 24% del ancho impreso —hace falta para
+    "BANECUADOR"— y con el texto a la izquierda el nombre quedaba besando al
+    importe, con un hueco largo hasta Stat. Centrado ocupa el medio del
+    espacio que ya tenía.
+    """
+    html = _parcial_impreso()
+    i = html.index(">Banco</th>")
+    th = html[html.rindex("<th", 0, i):i]
+    assert "text-center" in th
+    assert "text-left" not in th
+
+
+def test_la_celda_de_banco_va_centrada_igual_que_su_encabezado():
+    """Si sólo se centra el <th>, el título queda en el medio y el nombre del
+    banco pegado a la izquierda — peor que antes, porque ahora se nota."""
+    html = _parcial_impreso()
+    i = html.index("{{ c.nombre_banco or c.banco }}")
+    td = html[html.rindex("<td", 0, i):i]
+    assert "text-center" in td
+
+
+def test_importe_sigue_a_la_derecha():
+    """Es plata y se lee en columna con el Saldo de facturas: centrarlo
+    también rompería la alineación que se acaba de conseguir."""
+    html = _parcial_impreso()
+    i = html.index(">Importe</th>")
+    th = html[html.rindex("<th", 0, i):i]
+    assert "text-right" in th
+
+
+def test_no_se_tocaron_los_anchos_de_impresion():
+    """El cambio es de alineación. Si además se movieran los anchos, Importe
+    dejaría de terminar en el 70% y se despegaría del Saldo de facturas."""
+    html = _parcial_impreso()
+    assert "table th:nth-child(7),\n        main .ec-bloque-cheques table tbody td:nth-child(7) { width: 24% !important; }" in html
