@@ -170,6 +170,18 @@
     {v:'cuellos', label:'CUELLOS',  col:'cuellos',  unidad:'cuellos', factor:33, op:'/'},
     {v:'punos',   label:'PUÑOS',    col:'cuellos',  unidad:'puños',   factor:45, op:'/'},
   ];
+  // TMT 2026-08-04 (dueña: "a proforma y precios agregar esto") — telas de
+  // PRECIO ÚNICO (scintela.precio_plano). Se suman a la lista de siempre:
+  //   · `plano` != null  → esa cifra para cualquier color (SIN IVA).
+  //   · `col` != null    → cobran lo que esa columna de la matriz (JERSEY 3,5
+  //                        y JERSEY 3 = JERSEY), o sea varían por clase.
+  // La conversión asumida es la del jersey (piezas x 22) hasta que la dueña
+  // diga otra cosa.
+  (MATRIZ.planos || []).forEach(p => {
+    if (TIPOS.some(t => t.label === p.label)) return;   // ya está en la lista
+    TIPOS.push({v: p.v, label: p.label, col: p.col, plano: p.precio,
+                unidad: 'piezas', factor: 22, op: 'x'});
+  });
   // Resolver el tipo escrito (por LABEL, código v, o sin acentos).
   const TIPO_MAP = {}, TIPO_BY_LABEL = {}, TIPO_BY_NORM = {};
   function _norm(s){ return (s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
@@ -182,7 +194,14 @@
     // prefijo ÚNICO (ej. "FL" → FLEECE; "PU" → PUÑOS)
     const nu = _norm(txt);
     const pref = TIPOS.filter(t => _norm(t.label).indexOf(nu) === 0);
-    return pref.length === 1 ? pref[0] : null;
+    if (pref.length === 1) return pref[0];
+    // Varios candidatos (ej. "JE" → JERSEY, JERSEY 3, JERSEY 3,5): si el más
+    // corto es prefijo de todos los demás, gana él — es la tela "base".
+    if (pref.length > 1) {
+      const corto = pref.slice().sort((a, b) => a.label.length - b.label.length)[0];
+      if (pref.every(t => _norm(t.label).indexOf(_norm(corto.label)) === 0)) return corto;
+    }
+    return null;
   }
 
   // Datalist de tipos de tela para el autocompletado de la columna Tipo.
@@ -342,7 +361,10 @@
       if (inPrecio.dataset.touched !== '1') {
         const clase = hidClase.value;
         const t = tipoObjDe(selTipo.value);
-        const p = (clase && t) ? (PRECIOS[clase] || {})[t.col] : null;
+        // Tela de precio único: la cifra no depende de la clase de color.
+        const p = (t && t.plano != null)
+          ? t.plano
+          : ((clase && t && t.col) ? (PRECIOS[clase] || {})[t.col] : null);
         inPrecio.value = (p != null) ? fmt(p) : '';
       }
       recalc();

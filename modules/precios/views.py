@@ -18,6 +18,7 @@ from flask import (
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
+from filters import today_ec
 from parsers import parse_monto
 
 from . import queries
@@ -41,23 +42,109 @@ def lista():
     except Exception as e:  # noqa: BLE001
         filas, error = [], str(e)
 
-    # Seccion de descuentos (solo lectura): Basico + 5% / 5%+9% / 5%+14% (cascada).
-    tela_sel = (request.args.get("tela") or "jersey").strip().lower()
-    if tela_sel not in queries.COLUMNAS_TELA:
-        tela_sel = "jersey"
+    # Telas de PRECIO ÚNICO (migración 0159): mismo precio para todas las
+    # clases de color. La dueña las quiere SUMADAS a lo que ya hay, no en un
+    # bloque aparte — así que entran al mismo selector de tela.
     try:
-        descuentos = queries.tabla_descuentos(filas, tela_sel) if filas else []
+        planos = queries.precio_plano()
+    except Exception:  # noqa: BLE001
+        planos = []
+    opciones = queries.columnas_hoja(filas, planos) if filas else []
+    por_key = {c["key"]: c for c in opciones}
+
+    # Seccion de descuentos (solo lectura): Basico + 5% / 5%+9% / 5%+14% (cascada).
+    tela_sel = (request.args.get("tela") or "jersey").strip()
+    if tela_sel.lower() in queries.COLUMNAS_TELA:
+        tela_sel = tela_sel.lower()
+    if tela_sel not in por_key:
+        tela_sel = "jersey" if "jersey" in por_key else (
+            opciones[0]["key"] if opciones else "jersey"
+        )
+    try:
+        descuentos = (
+            queries.tabla_descuentos_columna(filas, por_key[tela_sel])
+            if filas and tela_sel in por_key
+            else []
+        )
     except Exception:  # noqa: BLE001
         descuentos = []
+
+    try:
+        planos_ui = queries.resolver_plano(planos, filas)
+    except Exception:  # noqa: BLE001
+        planos_ui = []
 
     return render_template(
         "precios/lista.html",
         filas=filas,
+        planos=planos_ui,
         telas=queries.TELAS,
+        opciones=opciones,
         error=error,
         descuentos=descuentos,
         tramos=queries.TRAMOS_DESCUENTO,
         tela_sel=tela_sel,
+    )
+
+
+@precios_bp.route("/precios/imprimir")
+@requiere_login
+def imprimir():
+    """Hoja imprimible de la lista de precios (matriz clases x telas).
+
+    Réplica del Excel que usa la dueña: filas = clases de color, columnas =
+    las 12 telas, un solo número por celda. Antes de imprimir se eligen las
+    dos cosas que cambian según a quién se le entrega la hoja:
+    - `tramo`: cuál de los descuentos en cascada se aplica (índice en
+      TRAMOS_DESCUENTO; 0 = Basico, precio de lista).
+    - `iva`: si el precio sale con IVA 15% incluido (lo que ve el cliente).
+    Todo derivado — esta pantalla no escribe nada. Sólo login, la ven todos.
+    """
+    from parsers import parse_int
+
+    tramo_idx = parse_int(request.args.get("tramo")) or 0
+    if not 0 <= tramo_idx < len(queries.TRAMOS_DESCUENTO):
+        tramo_idx = 0
+    con_iva = request.args.get("iva") == "1"
+
+    try:
+        filas = queries.matriz()
+        error = None
+    except Exception as e:  # noqa: BLE001
+        filas, error = [], str(e)
+
+    # UNA sola tabla: las 12 de la matriz + las de precio único, en el mismo
+    # orden en que las tiene la dueña en su Excel. Una columna entera vacía no
+    # va al papel (hoy: MEDICAL).
+    try:
+        planos = queries.precio_plano()
+    except Exception:  # noqa: BLE001
+        planos = []
+    columnas = (
+        queries.columnas_hoja(filas, planos)
+        if filas
+        else [{"key": c, "label": lab, "col": c, "fijo": None} for c, lab in queries.TELAS]
+    )
+    try:
+        cuerpo = (
+            queries.tabla_impresion(filas, tramo_idx, con_iva, columnas)
+            if filas
+            else []
+        )
+    except Exception:  # noqa: BLE001
+        cuerpo = []
+
+    return render_template(
+        "precios/imprimir.html",
+        cuerpo=cuerpo,
+        telas=columnas,
+        tramos=queries.TRAMOS_DESCUENTO,
+        tramo_idx=tramo_idx,
+        tramo_label=queries.TRAMOS_DESCUENTO[tramo_idx][0],
+        con_iva=con_iva,
+        iva_pct=queries.IVA_PCT,
+        hoy=today_ec(),
+        error=error,
     )
 
 
@@ -180,6 +267,39 @@ def guardar():
                 cambios += 1
             except Exception:  # noqa: BLE001
                 errores.append(f"{clase}/{col}")
+
+    # Telas de precio único: campo `pp_<id>`. Lo que se tipea es el precio SIN
+    # IVA (es lo que se muestra en la pantalla de edición).
+    try:
+        planos = queries.precio_plano()
+    except Exception:  # noqa: BLE001
+        planos = []
+    for p in planos:
+        if p.get("ref_col"):
+            continue  # sigue a la matriz, no tiene número propio
+        campo = f"pp_{int(p['id'])}"
+        if campo not in request.form:
+            continue
+        raw = (request.form.get(campo) or "").strip()
+        nuevo = parse_monto(raw)
+        if raw and nuevo is None:
+            errores.append(f"«{raw}»")
+            continue
+        actual = float(p["precio"]) if p.get("precio") is not None else None
+        nue_f = float(nuevo) if nuevo is not None else None
+        # Se compara con los 2 decimales que se MUESTRAN: el valor guardado
+        # tiene 4 (viene de dividir por 1,15) y si no, abrir y guardar sin
+        # tocar nada lo truncaría solo.
+        if actual is not None and nue_f is not None:
+            if round(actual, 2) == round(nue_f, 2):
+                continue
+        elif actual == nue_f:
+            continue
+        try:
+            queries.actualizar_precio_plano(int(p["id"]), nuevo, usuario)
+            cambios += 1
+        except Exception:  # noqa: BLE001
+            errores.append(str(p["tela"]))
 
     if errores:
         flash("No entendí algunos precios: " + ", ".join(errores[:8]), "error")

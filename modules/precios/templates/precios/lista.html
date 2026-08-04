@@ -8,14 +8,21 @@
 <div class="max-w-6xl">
   <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
     {{ page_hero('Lista de precios', 'Precio USD/kg por tipo de tela y clase de color (replica de PRECIOS.DBF).') }}
-    {% if puede_editar %}
     <div class="no-print flex items-center gap-2">
+      {# TMT 2026-08-04 dueña: "Precios tenemos que poder imprimir". La hoja
+         (clases x telas, un tramo, con o sin IVA) vive en /precios/imprimir —
+         la ven todos, no sólo quien puede editar. #}
+      <a href="{{ url_for('precios.imprimir') }}"
+         class="rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm px-4 py-2 font-medium hover:bg-slate-50 dark:hover:bg-slate-800">
+        Imprimir
+      </a>
+      {% if puede_editar %}
       <button type="button" id="btn-editar"
               class="rounded bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-2 font-medium">
         Editar
       </button>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 
   {% if error %}
@@ -117,6 +124,47 @@
           </tbody>
         </table>
       </div>
+
+      {# TMT 2026-08-04 — telas de PRECIO ÚNICO (mig. 0159). No son columnas de
+         la matriz porque no varían por clase de color. Las de `ref_col`
+         (JERSEY 3,5 / JERSEY 3) no se editan: cobran lo que el JERSEY. #}
+      {% if planos %}
+      <div class="mt-6" style="max-width:520px;">
+        <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Telas de precio unico</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">
+          El mismo precio para todas las clases de color. Se tipea <b>sin IVA</b>,
+          igual que la matriz (el IVA lo agrega la hoja al imprimir).
+        </p>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+          <table class="w-full text-sm" style="border-collapse:collapse;">
+            <thead class="text-xs uppercase tracking-wider text-slate-500">
+              <tr class="bg-slate-50 dark:bg-slate-800/50">
+                <th class="px-3 py-2 text-left font-medium">Tela</th>
+                <th class="px-3 py-2 text-right font-medium">Precio sin IVA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in planos %}
+              <tr class="border-t border-slate-100 dark:border-slate-800">
+                <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">{{ p.tela }}</td>
+                <td class="px-3 py-1.5 text-right">
+                  {% if p.ref_col %}
+                  <span class="text-slate-400 text-xs">{{ p.nota }}</span>
+                  {% else %}
+                  <input type="text" name="pp_{{ p.id }}"
+                         class="text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-2 py-0.5 text-sm tabular-nums"
+                         style="width:92px;"
+                         value="{{ p.precio | num_es if p.precio is not none else '' }}"
+                         autocomplete="off">
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
     </div>
   </form>
   {% endif %}
@@ -131,8 +179,13 @@
         <select name="tela" id="tela-sel" onchange="this.form.submit()"
                 class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-lg font-semibold text-slate-800 dark:text-slate-100"
                 style="min-width:220px;">
+          {# Todas las telas: las 12 de la matriz + las de precio único. #}
+          {% for c in (opciones or []) %}
+          <option value="{{ c.key }}" {% if c.key == tela_sel %}selected{% endif %}>{{ c.label }}</option>
+          {% else %}
           {% for col, label in telas %}
           <option value="{{ col }}" {% if col == tela_sel %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
           {% endfor %}
         </select>
       </form>
@@ -175,6 +228,7 @@
         </tbody>
       </table>
     </div>
+
   </div>
 </div>
 

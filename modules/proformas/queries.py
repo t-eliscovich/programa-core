@@ -63,7 +63,42 @@ def matriz_precios() -> dict:
         "clases": clases,
         "telas": [{"col": c, "label": lab} for c, lab in TELAS],
         "precios": precios,
+        "planos": telas_planas(),
     }
+
+
+def telas_planas() -> list[dict]:
+    """Telas de PRECIO ÚNICO (scintela.precio_plano, migración 0159).
+
+    Pedido de la dueña 2026-08-04 ("a proforma y precios agregar esto"): son
+    telas que no tienen precio por clase de color. Dos formas:
+      - `precio` (SIN IVA, igual que la matriz) → misma cifra para todo color.
+      - `col` (JERSEY 3,5 / JERSEY 3) → cobran lo que esa columna de la
+        matriz, así que el precio SÍ varía por clase y sale de PRECIOS.
+    Fail-soft: si la tabla no está, la proforma sigue andando con las 12 de
+    siempre.
+    """
+    from modules.precios import queries as precios_queries
+
+    try:
+        filas = precios_queries.precio_plano()
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for f in filas:
+        out.append(
+            {
+                "v": "pp_" + str(f["id"]),
+                "label": str(f["tela"]).upper(),
+                "col": f.get("ref_col"),
+                "precio": (
+                    float(f["precio"])
+                    if f.get("precio") is not None and not f.get("ref_col")
+                    else None
+                ),
+            }
+        )
+    return out
 
 
 _CLASE_DESC: dict[int, str] = {
