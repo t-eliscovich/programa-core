@@ -640,6 +640,12 @@
 <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
 {% if g.user %}
 <div class="flex" style="height: 100vh;">
+  {# TMT 2026-08-03 — un usuario VENDEDOR sólo puede entrar a /mi-cartera
+     (scope_vendedor.py). Varias entradas de este menú no tienen gate de
+     permiso, así que le aparecerían y le darían 404 al clickear. Para él el
+     chrome de escritorio no se dibuja: llega acá sólo por la hoja de
+     impresión, que es la MISMA de la oficina a pedido de la dueña. #}
+  {% if not es_vendedor(g.get('user')) %}
   <aside id="sidebar" class="no-print shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden" style="height: 100vh;">
     <div class="px-4 py-3.5 flex items-center justify-between gap-2">
       {# TMT 2026-05-19 v8 — brand = logo oficial. Pedido literal dueña:
@@ -1014,10 +1020,12 @@
       v0.1
     </div>
   </aside>
+  {% endif %}
 
   <div class="flex-1 flex flex-col min-w-0">
     {# TMT 2026-05-17: topbar más alto (h-16) y tipografía base 1rem para
        que el breadcrumb + el buscador se vean a tono con el sidebar grande. #}
+    {% if not es_vendedor(g.get('user')) %}
     <header class="no-print h-16 flex items-center justify-between px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
       <div class="flex items-center gap-4 text-base text-slate-600 dark:text-slate-400">
         <button id="nav-toggle" type="button" aria-label="Abrir menú"
@@ -1196,6 +1204,7 @@
         </div>
       </div>
     </header>
+    {% endif %}
 
     {# ── Top action bar — TODAS las operaciones a 1 click. TMT 2026-05-16.
        Agrupada en categorías con dividers sutiles:

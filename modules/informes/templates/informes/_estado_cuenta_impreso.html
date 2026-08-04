@@ -201,10 +201,16 @@
         <tr data-ec-stat="{{ stat_u }}"
             class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{{ ' opacity-60' if anulado }}{{ '' if c.por_cobrar else ' ec-ch-cobrado' }}">
           <td class="px-4 py-2 font-mono text-xs">
-            <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
-               class="text-sky-700 hover:underline">
-              {% if no_ch_str %}{{ no_ch_str }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}
-            </a>
+            {# TMT 2026-08-03: para un VENDEDOR la ficha del cheque no existe
+               (scope_vendedor.py la 404ea) — el número va en texto plano en
+               vez de un link muerto. Para todos los demás, igual que siempre. #}
+            {% set _num_ch %}{% if no_ch_str %}{{ no_ch_str }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}{% endset %}
+            {% if es_vendedor(g.get('user')) %}
+              {{ _num_ch }}
+            {% else %}
+              <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
+                 class="text-sky-700 hover:underline">{{ _num_ch }}</a>
+            {% endif %}
           </td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
           {% set fechad_original = c.fechad_original or c.fechad %}

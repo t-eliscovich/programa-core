@@ -258,9 +258,12 @@ def create_app() -> Flask:
     # sólo puede tocar /mi-cartera; todo lo demás devuelve 404. Para el resto
     # de los usuarios es un no-op exacto. Ver scope_vendedor.py: es un
     # allowlist a propósito (fail-closed), no una lista de rutas prohibidas.
-    from scope_vendedor import enforce_scope_vendedor
+    from scope_vendedor import enforce_scope_vendedor, es_vendedor
 
     app.before_request(enforce_scope_vendedor)
+    # base.html lo usa para no dibujarle el chrome de escritorio (menú con
+    # entradas que él no puede abrir) a un vendedor.
+    app.jinja_env.globals["es_vendedor"] = es_vendedor
 
     # Blueprints
     app.register_blueprint(auth_bp)

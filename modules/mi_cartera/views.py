@@ -187,11 +187,63 @@ def cliente(codigo_cli: str):
 @requiere_login
 @requiere_permiso("micartera.ver")
 def imprimir(codigo_cli: str):
-    """Versión para imprimir / guardar como PDF y mandársela al cliente."""
+    """Impresión de UN cliente.
+
+    TMT 2026-08-03 (dueña, mandando el link de
+    /informes/estado-cuenta/imprimir?por=vendedor&sel=EDG): *"Imprimir tiene
+    que imprimir lo mismo que acá"*. Así que NO se arma una hoja propia: se
+    renderiza EXACTAMENTE el mismo template que la impresión de la oficina
+    (`informes/estado_cuenta_lote_print.html`, que a su vez incluye el
+    parcial `_estado_cuenta_impreso.html`).
+
+    Dos plantillas distintas divergen a la primera corrección que se le hace
+    a una sola — y el papel que el vendedor le deja al cliente tiene que ser
+    el mismo que sale de la oficina.
+
+    El parcial es READ-ONLY salvo que se le pase `interactivo` (los dropdowns
+    Z/A/T/X cuelgan de ese flag); acá no se pasa, y además el vendedor no
+    tiene facturas.ver / clientes.ver.
+    """
     vend = _vend_actual()
     data = _cargar_cliente(vend, codigo_cli)
     return render_template(
-        "mi_cartera/imprimir.html", hoy=today_ec(), **data, **_ctx_base(vend)
+        "informes/estado_cuenta_lote_print.html",
+        clientes=[data],
+        titulo=f"{data['cliente']['nombre']} ({codigo_cli})",
+        por="vendedor",
+        n=1,
+    )
+
+
+@mi_cartera_bp.route("/mi-cartera/imprimir")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def imprimir_todos():
+    """Impresión de TODA la cartera del vendedor, un cliente tras otro.
+
+    Es el equivalente exacto de
+    /informes/estado-cuenta/imprimir?por=vendedor&sel=<código> — mismo
+    template, mismo orden (por saldo descendente), mismo cuerpo por cliente.
+    La diferencia es que el vendedor no elige el `sel`: sale de su sesión.
+    """
+    vend = _vend_actual()
+    filas = sorted(
+        queries.mis_clientes(vend),
+        key=lambda r: float(r.get("saldo") or 0),
+        reverse=True,
+    )
+    clientes = []
+    for f in filas:
+        d = informes_queries.estado_cuenta_cliente(f["codigo_cli"])
+        if d and d.get("cliente"):
+            d["cliente"].pop("cupo", None)
+            clientes.append(d)
+    return render_template(
+        "informes/estado_cuenta_lote_print.html",
+        clientes=clientes,
+        titulo=f"Vendedor: {queries.nombre_vendedor(vend)}",
+        por="vendedor",
+        n=len(clientes),
     )
 
 

@@ -236,6 +236,49 @@ def test_la_ficha_del_cliente_renderiza(vendedor_logueado, monkeypatch):
     # El cupo no viaja al navegador.
     assert b"20000" not in r.data and b"20.000" not in r.data
 
+    # La impresión usa EL MISMO template que la de la oficina
+    # (/informes/estado-cuenta/imprimir) — dueña 2026-08-03: "Imprimir tiene
+    # que imprimir lo mismo que acá". Si alguien le hace una hoja propia al
+    # portal, este test se cae.
     p = vendedor_logueado.get("/mi-cartera/cliente/TDV/imprimir")
     assert p.status_code == 200
-    assert b"Estado de cuenta" in p.data
+    assert b"Imprimir estados de cuenta" in p.data
+    assert b"Textiles del Valle" in p.data
+    # Read-only: sin `interactivo`, el parcial no dibuja los dropdowns Z/A/T/X.
+    assert b"estado_cuenta_factura_set_stat" not in p.data
+    assert b"<select" not in p.data
+    # Ni chrome de escritorio ni links a pantallas que él no puede abrir.
+    assert b'id="sidebar"' not in p.data
+    assert b"/cheques/" not in p.data
+
+
+def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeypatch):
+    """Equivalente a /informes/estado-cuenta/imprimir?por=vendedor&sel=PPR."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(
+        q, "mis_clientes",
+        lambda vend: [{"codigo_cli": "AAA", "nombre": "Uno", "saldo": 100.0,
+                       "vencido": 0, "provincia": "", "n_facturas": 1,
+                       "vence_mas_viejo": None},
+                      {"codigo_cli": "BBB", "nombre": "Dos", "saldo": 900.0,
+                       "vencido": 0, "provincia": "", "n_facturas": 1,
+                       "vence_mas_viejo": None}],
+    )
+    vistos = []
+
+    def _ec(cod):
+        vistos.append(cod)
+        return {"cliente": {"codigo_cli": cod, "nombre": cod, "cupo": 5},
+                "facturas": [], "cheques": [], "anticipos": [],
+                "totales": {"saldo": 0, "saldo_neto": 0, "saldo_vivo": 0,
+                            "saldo_vencido": 0, "n_vencidas": 0, "importe": 0,
+                            "abono": 0, "kg": 0, "cheques_cartera": 0,
+                            "cheques_rebotados": 0, "saldo_a_favor": 0}}
+
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _ec)
+    r = vendedor_logueado.get("/mi-cartera/imprimir")
+    assert r.status_code == 200
+    assert b"Imprimir estados de cuenta" in r.data
+    # Mismo orden que el lote de la oficina: saldo descendente.
+    assert vistos == ["BBB", "AAA"]

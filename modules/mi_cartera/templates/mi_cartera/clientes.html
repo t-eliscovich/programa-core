@@ -8,7 +8,8 @@
       <h1>Mis clientes</h1>
       <div class="sub">{{ filas|length }} con saldo · $ {{ total|money_es }} por cobrar</div>
     </div>
-    <div class="avatar">{{ iniciales }}</div>
+    <a class="iconbtn" title="Imprimir toda mi cartera" target="_blank" rel="noopener"
+       href="{{ url_for('mi_cartera.imprimir_todos') }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙</a>
   </div>
 {% endblock %}
 
