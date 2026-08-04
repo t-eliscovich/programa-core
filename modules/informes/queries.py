@@ -411,6 +411,19 @@ def saldo_bancos() -> list[dict]:
                  WHERE t.no_banco = b.no_banco
                    AND t.fecha <= CURRENT_DATE
                ), 0) AS saldo_raw,
+               -- ⭐ TMT 2026-08-04 — la suma firmada con la regla ÚNICA
+               -- (`bank_helpers.DOCS_ENTRADA`). Junto con la apertura
+               -- guardada, ESTO es el saldo del banco. Ver
+               -- `modules/bancos/apertura.py`.
+               COALESCE((
+                 SELECT SUM(CASE
+                          WHEN UPPER(TRIM(t.documento))
+                               IN ('DE', 'TR', 'XX', 'NC', 'IN')
+                          THEN t.importe ELSE -t.importe END)
+                 FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = b.no_banco
+                   AND t.fecha <= CURRENT_DATE
+               ), 0) AS suma_firmada,
                -- ⭐ TMT 2026-08-04 — `saldo_derivado` = APERTURA + suma firmada.
                -- `saldo_signed` (arriba) suma los movimientos y nada más, así
                -- que le falta toda la plata que el banco tenía ANTES de la
@@ -452,13 +465,36 @@ def saldo_bancos() -> list[dict]:
     import logging
 
     _log_saldo = logging.getLogger("programa_core.informes.saldo_bancos")
+    try:
+        from modules.bancos.apertura import aperturas as _ap
+        _aperturas = _ap()
+    except Exception:  # noqa: BLE001  — fail-soft: cae a la escalera vieja
+        _log_saldo.exception("no pude leer las aperturas de banco")
+        _aperturas = {}
     out = []
     for r in rows:
         stored = float(r.get("saldo_stored") or 0)
         signed = float(r.get("saldo_signed") or 0)
         raw = float(r.get("saldo_raw") or 0)
-        derivado = float(r.get("saldo_derivado") or 0)
-        if abs(stored) > 0.5:
+        suma = float(r.get("suma_firmada") or 0)
+        apertura = _aperturas.get(int(r.get("no_banco") or 0))
+        derivado = (float(r.get("saldo_derivado") or 0) if apertura is None
+                    else round(apertura + suma, 2))
+        # ⭐ TMT 2026-08-04 — EL SALDO SE CALCULA, NO SE LEE.
+        #
+        # Antes esto tomaba el `saldo` running GUARDADO de la última fila:
+        # el Balance publicaba un número que un write anterior había escrito
+        # a mano, y cualquier error en mantener esa cadena iba derecho al
+        # patrimonio y a la utilidad (12/05, 11/06, 03/08). Ahora sale de un
+        # solo dato guardado —la apertura del banco— más la suma de los
+        # movimientos. La columna `saldo` quedó como decoración de la
+        # pantalla de banco. Ver `modules/bancos/apertura.py`.
+        #
+        # Si la apertura no está (tabla recién creada, bootstrap fallado),
+        # cae a la escalera vieja: nunca dejamos el Balance sin número.
+        if apertura is not None:
+            saldo, origen = derivado, "derivado"
+        elif abs(stored) > 0.5:
             saldo, origen = stored, "stored"
         elif abs(signed) > 0.5:
             saldo, origen = signed, "signed"
@@ -473,7 +509,7 @@ def saldo_bancos() -> list[dict]:
         # el bug del running. Loguear ayuda a Tamara a saber que hay
         # drift entre lo stored y lo computado. `usa_fallback=True` se
         # devuelve para que el template pueda mostrar un warning visible.
-        if origen != "stored":
+        if origen not in ("stored", "derivado"):
             _log_saldo.warning(
                 "saldo banco %s (%s) no usa 'stored': origen=%s stored=%.2f signed=%.2f raw=%.2f n_tx=%s",
                 r.get("no_banco"),
@@ -490,7 +526,9 @@ def saldo_bancos() -> list[dict]:
                 "nombre": r.get("nombre"),
                 "saldo": saldo,
                 "saldo_origen": origen,
-                "usa_fallback": origen not in ("stored", "empty"),
+                "usa_fallback": origen not in ("stored", "derivado", "empty"),
+                "saldo_apertura": apertura,
+                "suma_firmada": suma,
                 "saldo_stored": stored,
                 "saldo_signed": signed,
                 "saldo_raw": raw,

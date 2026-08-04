@@ -1158,6 +1158,20 @@ def reencadenar_saldos():
                         n = bank_helpers.reencadenar_retro(
                             conn, no_banco=no_banco, no_cta=None,
                             apertura=apertura)
+                        # ⭐ TMT 2026-08-04 — el momento en que una persona
+                        # confirma la apertura contra el extracto es el
+                        # momento en que ese número deja de ser una
+                        # inferencia. Se asienta acá, en la misma
+                        # transacción, y a partir de ahí el Balance calcula
+                        # el saldo con él en vez de leer el running
+                        # guardado. Ver modules/bancos/apertura.py.
+                        if apertura is not None:
+                            from modules.bancos import apertura as _ap_mod
+                            _ap_mod.fijar(
+                                no_banco, apertura, conn=conn,
+                                usuario=(g.user or {}).get("username", ""),
+                                nota="Confirmada al re-encadenar hacia atrás "
+                                     "el banco desde el saldo de cierre.")
                     flash(
                         f"{banco_sel['nombre'] or no_banco}: {n} fila(s) "
                         f"re-encadenadas hacia atrás. El saldo de cierre "
