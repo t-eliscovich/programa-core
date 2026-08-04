@@ -139,3 +139,57 @@ def test_la_suma_firmada_usa_la_regla_unica():
     bloque = src[max(0, i - 500):i]
     for doc in bank_helpers.DOCS_ENTRADA:
         assert f"'{doc}'" in bloque, f"falta {doc} en la suma firmada"
+
+
+# --- la pantalla de aperturas --------------------------------------------
+
+
+def test_la_apertura_sugerida_ignora_la_guarda_del_abs(monkeypatch):
+    """⭐ El caso DEP.PICH.: −455,89 que no eran plata.
+
+    Sus dos únicos movimientos son un `ND ANUL ch77436 err carga` del 23/06
+    (posteado a DEP por error) y su `NC` reverso del 25/06. Se cancelan: el
+    saldo de la última fila es **0,00**, que es la verdad. Pero
+    `saldo_bancos()` saltea las filas con `ABS(saldo) <= 0.5` —guarda vieja
+    contra filas en cero por error— así que leía la ANTERIOR y publicaba
+    −455,89; la siembra copió ese valor para no mover nada al migrar.
+
+    La apertura SUGERIDA sale del último saldo **sin esa guarda**, así que
+    dice 0,00 y la pantalla marca que difiere de la guardada.
+    """
+    import db as db_mod
+    from modules.bancos import apertura as ap_mod
+
+    monkeypatch.setattr(ap_mod, "_bootstrap", lambda: None)
+    monkeypatch.setattr(db_mod, "fetch_all", lambda *a, **kw: [{
+        "no_banco": 90, "nombre": "DEP.PICH.", "saldo_apertura": -455.89,
+        "origen": "siembra", "nota": "", "usuario": None, "fijado_en": None,
+        "suma": 0.0, "ultimo_saldo": 0.0, "n_mov": 2,
+    }])
+    monkeypatch.setattr(ap_mod._db, "fetch_all", lambda *a, **kw: [{
+        "no_banco": 90, "nombre": "DEP.PICH.", "saldo_apertura": -455.89,
+        "origen": "siembra", "nota": "", "usuario": None, "fijado_en": None,
+        "suma": 0.0, "ultimo_saldo": 0.0, "n_mov": 2,
+    }])
+
+    fila = ap_mod.panel()[0]
+    assert fila["saldo_publicado"] == -455.89, "lo que se publica hoy"
+    assert fila["sugerida"] == 0.0, "lo que dicen los movimientos"
+    assert fila["difiere"] is True, "la pantalla lo tiene que marcar"
+
+
+def test_la_sugerida_no_marca_nada_cuando_ya_coincide(monkeypatch):
+    """Sin diferencia no hay marca — si no, la pantalla es ruido."""
+    from modules.bancos import apertura as ap_mod
+
+    monkeypatch.setattr(ap_mod, "_bootstrap", lambda: None)
+    monkeypatch.setattr(ap_mod._db, "fetch_all", lambda *a, **kw: [{
+        "no_banco": 10, "nombre": "PICHINCHA", "saldo_apertura": 2962335.77,
+        "origen": "afirmada", "nota": "", "usuario": "tamara",
+        "fijado_en": None, "suma": -1001943.68, "ultimo_saldo": 1960392.09,
+        "n_mov": 1333,
+    }])
+    fila = ap_mod.panel()[0]
+    assert fila["saldo_publicado"] == 1960392.09
+    assert fila["sugerida"] == 2962335.77
+    assert fila["difiere"] is False

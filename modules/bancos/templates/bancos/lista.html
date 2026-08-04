@@ -114,6 +114,15 @@
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
       Re-encadenar saldos
     </a>
+    {# TMT 2026-08-04: desde que el saldo se CALCULA (apertura + movimientos),
+       la apertura es el único número guardado del que cuelga la plata del
+       banco. Tiene que poder mirarse y corregirse por pantalla. #}
+    <a href="{{ url_for('bancos.apertura_bancos') }}"
+       title="Ver y corregir el saldo de apertura de cada banco (la plata que tenía antes del primer movimiento cargado)"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12h18"/><path d="M12 3v18"/></svg>
+      Saldos de apertura
+    </a>
   </div>
   {% endif %}
   {% endif %}{# fin banco_actual #}

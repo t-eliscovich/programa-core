@@ -166,3 +166,70 @@ def fijar(no_banco: int, saldo_apertura: float, *, usuario: str = "",
          (nota or "")[:400], (usuario or "")[:50]),
         conn=conn,
     )
+
+
+def panel() -> list[dict]:
+    """Una fila por banco: qué dice la apertura y qué dicen los movimientos.
+
+    ⭐ TMT 2026-08-04 — POR QUÉ HAY PANTALLA. La apertura es, desde hoy, el
+    único número guardado del que cuelga el saldo de un banco. Un dato así no
+    puede vivir sólo en la base: tiene que poder mirarse y corregirse por una
+    pantalla, como todo lo demás. [[operar-por-la-ui]]
+
+    El caso que la pidió: **DEP.PICH. arrastraba −455,89 que no eran plata.**
+    Sus dos únicos movimientos son un `ND ANUL ch77436 err carga` del 23/06
+    (Alex, posteado a DEP por error) y su `NC` reverso del 25/06 (Tamara). Se
+    cancelan: el saldo de la última fila es **0,00**, que es la verdad. Pero
+    `saldo_bancos()` saltea las filas con `ABS(saldo) <= 0.5` —una guarda vieja
+    contra filas en cero por error— así que leía la ANTERIOR y publicaba
+    −455,89. La siembra copió ese −455,89 para no mover nada al migrar.
+    Con el saldo ya derivado la guarda sobra: una suma no tiene que adivinar
+    si un cero es real. Dueña: *"ya podemos eliminar ese 455 no sé qué es"*.
+    """
+    _bootstrap()
+    filas = _db.fetch_all(
+        f"""
+        SELECT b.no_banco, COALESCE(b.nombre,'') AS nombre,
+               ap.saldo_apertura, ap.origen, ap.nota,
+               ap.usuario, ap.fijado_en,
+               {SUMA_FIRMADA_SQL.format(banco='b.no_banco')} AS suma,
+               (SELECT t.saldo FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = b.no_banco AND t.saldo IS NOT NULL
+                   AND t.fecha <= CURRENT_DATE
+                 ORDER BY t.fecha DESC, t.id_transaccion DESC LIMIT 1
+               ) AS ultimo_saldo,
+               (SELECT COUNT(*) FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = b.no_banco) AS n_mov
+          FROM scintela.banco b
+          LEFT JOIN scintela.banco_apertura ap ON ap.no_banco = b.no_banco
+         ORDER BY b.no_banco
+        """
+    ) or []
+    out = []
+    for f in filas:
+        ap = (None if f.get("saldo_apertura") is None
+              else float(f["saldo_apertura"]))
+        suma = float(f.get("suma") or 0)
+        ult = (None if f.get("ultimo_saldo") is None
+               else float(f["ultimo_saldo"]))
+        # Lo que los MOVIMIENTOS dicen que debería ser la apertura, tomando
+        # como bueno el saldo corrido de la última fila — SIN la guarda del
+        # `ABS(saldo) > 0.5`, que es justo la que inventaba los −455,89.
+        sugerida = (None if ult is None else round(ult - suma, 2))
+        out.append({
+            "no_banco": int(f["no_banco"]),
+            "nombre": (f.get("nombre") or "").strip() or f"Banco {f['no_banco']}",
+            "apertura": ap,
+            "origen": (f.get("origen") or ""),
+            "nota": (f.get("nota") or ""),
+            "usuario": (f.get("usuario") or ""),
+            "fijado_en": f.get("fijado_en"),
+            "suma": suma,
+            "ultimo_saldo": ult,
+            "saldo_publicado": (None if ap is None else round(ap + suma, 2)),
+            "sugerida": sugerida,
+            "difiere": (ap is not None and sugerida is not None
+                        and abs(ap - sugerida) > 0.02),
+            "n_mov": int(f.get("n_mov") or 0),
+        })
+    return out

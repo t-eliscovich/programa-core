@@ -1053,6 +1053,52 @@ def movimientos(no_banco):
     )
 
 
+@bancos_bp.route("/bancos/apertura", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.editar")
+def apertura_bancos():
+    """Ver y corregir la APERTURA de cada banco.
+
+    ⭐ TMT 2026-08-04. Desde hoy el saldo de un banco es `apertura + suma de
+    los movimientos` — la columna `saldo` quedó como decoración. Eso deja a la
+    apertura como el ÚNICO número guardado del que cuelga la plata, y un dato
+    así tiene que poder mirarse y corregirse por una pantalla, no por SQL.
+    [[operar-por-la-ui]]
+
+    La pantalla muestra, por banco: la apertura guardada, lo que suman los
+    movimientos, el saldo que se publica, y la **apertura sugerida** — la que
+    haría que el saldo publicado coincida con el saldo corrido de la última
+    fila. Cuando las dos difieren, lo marca.
+    """
+    import db as _db
+
+    from modules.bancos import apertura as _ap
+
+    if request.method == "POST":
+        no_banco = request.form.get("no_banco", type=int)
+        crudo = (request.form.get("saldo_apertura") or "").strip()
+        try:
+            from parsers import parse_monto
+            # Formato EU/Ecuador: punto = miles, coma = decimales.
+            # [[feedback_formato_numerico_eu_ecuador]]
+            _v = parse_monto(crudo)
+            valor = None if _v is None else float(_v)
+        except Exception:  # noqa: BLE001
+            valor = None
+        if not no_banco or valor is None:
+            flash("Faltó el banco o el importe (usá formato 1.234,56).", "error")
+        else:
+            with _db.tx() as conn:
+                _ap.fijar(no_banco, valor, conn=conn,
+                          usuario=(g.user or {}).get("username", ""),
+                          nota=(request.form.get("nota") or "").strip()[:400])
+            flash(f"Apertura del banco {no_banco} fijada en "
+                  f"{valor:,.2f}. El saldo se recalcula solo.", "ok")
+        return redirect(url_for("bancos.apertura_bancos"))
+
+    return render_template("bancos/apertura.html", filas=_ap.panel())
+
+
 @bancos_bp.route("/bancos/reencadenar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("bancos.editar")

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Apertura de bancos — Programa Core{% endblock %}
+
+{# TMT 2026-08-04. El saldo de un banco es apertura + movimientos, así que la
+   apertura es el único número guardado del que cuelga la plata. Tiene que
+   poder mirarse y corregirse acá. Layout inline — Tailwind está congelado. #}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+
+  <h1 class="text-lg font-semibold mb-1">Saldo de apertura de cada banco</h1>
+  <p class="text-xs text-slate-500 mb-3" style="max-width:62rem;">
+    El saldo que muestra el Balance se <strong>calcula</strong>:
+    apertura + los movimientos cargados. La apertura es la plata que el banco
+    tenía <em>antes</em> del primer movimiento que hay en el sistema, y es el
+    único número de acá que está guardado a mano.
+    <strong>Sugerida</strong> es la apertura que haría que el saldo publicado
+    coincida con el saldo corrido de la última fila del banco.
+  </p>
+
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden mb-3">
+    <table class="w-full text-[11px] tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500">
+        <tr>
+          <th class="px-2 py-1 text-left">Banco</th>
+          <th class="px-2 py-1 text-right">Movim.</th>
+          <th class="px-2 py-1 text-right">Apertura</th>
+          <th class="px-2 py-1 text-right">+ Movimientos</th>
+          <th class="px-2 py-1 text-right">= Saldo publicado</th>
+          <th class="px-2 py-1 text-right">Sugerida</th>
+          <th class="px-2 py-1 text-left">Corregir</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        {% if f.n_mov or f.apertura %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if f.difiere %}bg-amber-50 dark:bg-amber-900/20{% endif %}">
+          <td class="px-2 py-1 font-medium">{{ f.nombre }}</td>
+          <td class="px-2 py-1 text-right text-slate-500">{{ f.n_mov }}</td>
+          <td class="px-2 py-1 text-right font-mono">
+            {% if f.apertura is none %}—{% else %}{{ f.apertura|num_es }}{% endif %}
+          </td>
+          <td class="px-2 py-1 text-right font-mono text-slate-500">{{ f.suma|num_es }}</td>
+          <td class="px-2 py-1 text-right font-mono font-semibold">
+            {% if f.saldo_publicado is none %}—{% else %}{{ f.saldo_publicado|num_es }}{% endif %}
+          </td>
+          <td class="px-2 py-1 text-right font-mono {% if f.difiere %}text-amber-700 dark:text-amber-300 font-semibold{% else %}text-slate-400{% endif %}">
+            {% if f.sugerida is none %}—{% else %}{{ f.sugerida|num_es }}{% endif %}
+          </td>
+          <td class="px-2 py-1">
+            <form method="POST" style="display:flex; gap:4px; align-items:center;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="no_banco" value="{{ f.no_banco }}">
+              <input type="text" name="saldo_apertura" inputmode="decimal"
+                     value="{% if f.sugerida is not none %}{{ f.sugerida|num_es }}{% endif %}"
+                     class="border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-right font-mono bg-white dark:bg-slate-800"
+                     style="width:8.5rem;">
+              <button type="submit"
+                      class="bg-slate-800 hover:bg-slate-900 text-white text-[10px] rounded px-2 py-0.5">
+                Fijar
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% if f.origen or f.nota %}
+        <tr class="border-0">
+          <td colspan="7" class="px-2 pb-1 text-[10px] text-slate-400">
+            {{ f.origen }}{% if f.usuario %} · {{ f.usuario }}{% endif %}{% if f.nota %} — {{ f.nota }}{% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-[11px] text-slate-500" style="max-width:62rem;">
+    Cambiar una apertura <strong>mueve el saldo de ese banco y con él el
+    patrimonio</strong>, en el mes en que lo hagas. Hacelo sólo cuando sepas
+    contra qué — el árbitro es el extracto.
+  </p>
+
+  <p class="mt-3 text-xs">
+    <a href="{{ url_for('bancos.lista') }}" class="underline text-slate-500">← Volver a Bancos</a>
+  </p>
+</div>
+{% endblock %}
