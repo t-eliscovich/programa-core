@@ -20,6 +20,9 @@ Secciones:
                   (no del dBase por un fallback silencioso).
   11. DUPLICADOS — la misma cobranza cargada dos veces (caso ELF 13/07), con
                   el veredicto del extracto al lado.
+  12. SIN VENDEDOR — cuánta cobranza no le suma a nadie. Es una CIFRA, no una
+                  alarma: la venta directa a fábrica es válida. Lo que sí
+                  alarma es perder un vendedor que se tenía.
 
 OJO — qué NO cubre (TMT 2026-07-29): las secciones 1-7, 9 y 10 son invariantes
 INTERNAS de PC (que el saldo cierre, que no haya reversos huérfanos). No
@@ -1045,6 +1048,68 @@ def check_cobros_duplicados(verbose: bool = False) -> None:
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# 12) SIN VENDEDOR — cuánta cobranza no le suma a nadie
+# ───────────────────────────────────────────────────────────────────────────
+def check_sin_vendedor(verbose: bool = False) -> None:
+    """⚠️ Esta sección es sobre todo una CIFRA, no una alarma.
+
+    La dueña, textual: *"si hay algunos que compran directo a la fábrica sin
+    vendedor"*. Un cliente sin vendedor es un estado válido y pintarlo de rojo
+    sería mentir — y peor, acostumbra a mirar rojo y seguir de largo. Medido
+    sobre julio 2026: $1.117.837,12 de 112 clientes, casi la mitad del mes.
+
+    Lo que sí se reporta como problema son las dos formas de PERDER el
+    vendedor sin querer: un código que no es de ninguno de los seis, y un
+    cliente que tenía uno y se quedó sin. El porqué está en
+    `modules/comisiones/sin_vendedor.py`.
+    """
+    _seccion("12) SIN VENDEDOR — cobranza que no le suma a nadie")
+    from datetime import timedelta as _td
+
+    from modules.comisiones import sin_vendedor as _sv
+
+    hasta = _d.today()
+    desde = hasta.replace(day=1)
+    try:
+        datos = _sv.cifra(desde, hasta)
+        raros = _sv.codigos_desconocidos(desde, hasta)
+        perdidos = _sv.perdieron_vendedor(hasta - _td(days=365))
+    except Exception as e:  # noqa: BLE001
+        _reporte("SIN_VENDEDOR", WARN, f"no pude medirlo: {e}")
+        return
+
+    sin = datos[_sv.SIN_VENDEDOR]
+    pct = _sv.porcentaje_sin_vendedor(datos)
+    # OK y no WARN: es el número del mes, no un hallazgo. Va con el signo del
+    # semáforo en verde justamente para que se lea sin que nadie se asuste.
+    _reporte("SIN_VENDEDOR", OK,
+             f"Del {desde.isoformat()} a hoy: {_money(sin['total']).strip()} "
+             f"de {sin['n_clientes']} cliente(s) sin vendedor "
+             f"({pct}% de la cobranza). Venta directa — no es un error.")
+
+    if raros:
+        total = sum(float(r["total"] or 0) for r in raros)
+        _reporte("SIN_VENDEDOR", WARN,
+                 f"{len(raros)} cliente(s) con un código de vendedor que no es "
+                 f"de los seis ({_money(total).strip()}): se caen de todos los "
+                 f"informes por vendedor.")
+        for r in (raros if verbose else raros[:5]):
+            print(f"     {r['codigo_cli']} · vend={r['vend']} · "
+                  f"${float(r['total'] or 0):,.2f} · {r['nombre']}")
+
+    if perdidos:
+        _reporte("SIN_VENDEDOR", ERROR,
+                 f"{len(perdidos)} cliente(s) TENÍAN vendedor y quedaron sin "
+                 f"él — eso no es venta directa, es una edición que salió mal.")
+        for r in (perdidos if verbose else perdidos[:5]):
+            print(f"     {r['codigo_cli']} · era {r['vendedor_anterior']} · "
+                  f"{r['cuando']:%d/%m/%Y} · {r['usuario']} · {r['nombre']}")
+    else:
+        _reporte("SIN_VENDEDOR", OK,
+                 "Ningún cliente perdió su vendedor en el último año.")
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Entry
 # ───────────────────────────────────────────────────────────────────────────
 ALL_CHECKS = {
@@ -1060,6 +1125,7 @@ ALL_CHECKS = {
     "chequesxfact": check_chequesxfact,
     "reversibilidad": check_reversibilidad,
     "duplicados":   check_cobros_duplicados,
+    "sin_vendedor": check_sin_vendedor,
 }
 
 

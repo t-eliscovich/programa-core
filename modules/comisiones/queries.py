@@ -62,6 +62,20 @@ STATS_COBRADO = ("B", "V", "W", "I", "J", "K", "A", "C")
 # apariciones no puedan volver a divergir entre sí.
 _IN_COBRADO = ", ".join(f"'{s}'" for s in STATS_COBRADO)
 
+#: Los seis vendedores que cobran comisión.
+#:
+#: TMT 2026-05-19 v8, dueña: *"Sigo viendo muchos vendedores, no solo 6"*.
+#: `scintela.vendedor` arrastra códigos legacy del backfill de `cliente.vend`
+#: (BED, DJA, EDU, EVB, X, MRY…). Toda consulta que hable de "los vendedores"
+#: filtra por esta lista.
+#:
+#: TMT 2026-08-04 — pasó de estar escrita adentro de un WHERE a ser constante
+#: porque el chequeo de salud necesita LA MISMA lista: un cliente con un
+#: código que no está acá se cae de todos los informes por vendedor sin que
+#: nadie se entere, y su cobranza no le suma a nadie.
+VENDEDORES_OFICIALES = ("PPR", "EDG", "SEP", "JQU", "FL1", "RMY")
+_IN_VENDEDORES = ", ".join(f"'{v}'" for v in VENDEDORES_OFICIALES)
+
 # ─────────────────────────────────────────────────────────────────────
 # TMT 2026-08-04 — el cobro que entró a CAJA y NO tiene fila de cheque.
 #
@@ -284,10 +298,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
           LEFT JOIN clientes_por_vend cv ON cv.codigo = v.codigo
           LEFT JOIN cobranzas_total    co ON co.codigo = v.codigo
           LEFT JOIN ventas_mes         ve ON ve.codigo = v.codigo
-         -- TMT 2026-05-19 v8 — dueña: "Sigo viendo muchos vendedores, no
-         -- solo 6". scintela.vendedor tiene códigos legacy del backfill de
-         -- cliente.vend. Filtramos a los 6 oficiales y listo.
-         WHERE v.codigo IN ('PPR','EDG','SEP','JQU','FL1','RMY')
+         -- Los 6 oficiales, de la constante (ver VENDEDORES_OFICIALES).
+         WHERE v.codigo IN ({_IN_VENDEDORES})
          ORDER BY comision_mes DESC, cobranzas_mes DESC, v.codigo
         """,
         {"yy": yy, "mm": mm},
