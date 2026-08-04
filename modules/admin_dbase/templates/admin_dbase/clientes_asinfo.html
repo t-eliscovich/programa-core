@@ -16,7 +16,15 @@
   </p>
   <p class="text-xs text-slate-500 mb-4">
     Pantalla de <b>sólo lectura</b>: no toca nada, ni acá ni en Asinfo. Sirve para decidir.
-    Para borrar la fila sobrante, andá a la ficha del cliente.
+    Cada bloque dice abajo <b>qué hacer</b> con ese código y linkea a la pantalla que lo hace.
+  </p>
+
+  <p class="mb-4 p-3 rounded text-sm" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af">
+    Desde la migración <b>0155</b> la base <b>ya no deja crear códigos repetidos</b>
+    (índice único sobre <code>UPPER(TRIM(codigo_cli))</code>). Los que quedan acá son los
+    pares que ya existían y siguen abiertos: están en una lista de excepción explícita que
+    se achica a medida que se resuelven. Cuando se cierre uno, hay que sacarlo de esa lista
+    con una migración nueva.
   </p>
 
   {% if not asinfo_ok %}
@@ -43,6 +51,14 @@
     <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
       <div class="text-[10px] uppercase text-slate-500">Fichas que Asinfo desmiente</div>
       <div class="text-xl font-bold tabular-nums">{{ resumen.difieren }}</div>
+    </div>
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">Se arreglan borrando una fila</div>
+      <div class="text-xl font-bold tabular-nums">{{ resumen.duplicadas }}</div>
+    </div>
+    <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+      <div class="text-[10px] uppercase text-slate-500">Necesitan una decisión</div>
+      <div class="text-xl font-bold tabular-nums">{{ resumen.necesitan_decision }}</div>
     </div>
     <div class="px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
       <div class="text-[10px] uppercase text-slate-500">RUCs consultados a Asinfo</div>
@@ -78,6 +94,25 @@
         </a>
       </div>
     </div>
+
+    {% set qh = g.que_hacer %}
+    <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700"
+         style="{% if qh.clase == 'duplicada' %}background:#ecfdf5{% elif qh.clase == 'ruc_sospechoso' or qh.clase == 'ambiguo' %}background:#fef2f2{% else %}background:#fffbeb{% endif %}">
+      <div class="text-[10px] uppercase text-slate-500 mb-0.5">Qué hacer</div>
+      <div class="text-sm font-semibold">{{ qh.titulo }}</div>
+      <div class="text-sm text-slate-700 dark:text-slate-300 mt-0.5">{{ qh.detalle }}</div>
+      {% if qh.advertencia %}
+      <div class="text-xs mt-1" style="color:#b45309">{{ qh.advertencia }}</div>
+      {% endif %}
+      {% if qh.acciones %}
+      <div class="mt-1.5 text-sm">
+        {% for a in qh.acciones %}
+        <a href="{{ a.href }}" class="text-sky-700 hover:underline mr-4">{{ a.texto }} →</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
     <table class="w-full text-sm">
       <thead>
         <tr class="text-xs text-slate-500 border-b border-slate-200 dark:border-slate-700">

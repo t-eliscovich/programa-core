@@ -97,6 +97,7 @@ SELECT c.id_cliente,
        UPPER(TRIM(c.codigo_cli))          AS codigo_cli,
        COALESCE(NULLIF(TRIM(c.nombre), ''), '') AS nombre,
        COALESCE(TRIM(c.ruc), '')          AS ruc,
+       COALESCE(TRIM(c.direccion1), '')   AS direccion1,
        COALESCE(TRIM(c.vend), '')         AS vend,
        COALESCE(c.activo, TRUE)           AS activo,
        COALESCE(fact.n, 0)                AS n_facturas,
@@ -279,19 +280,257 @@ def cruzar(fichas: list[dict], mapa: dict[str, list[dict]], asinfo_ok: bool) -> 
         g = grupos[cod]
         g["n_fichas"] = len(g["fichas"])
         g["hay_ganador"] = sum(1 for x in g["fichas"] if x["estado"] == COINCIDE) == 1
+        g["que_hacer"] = que_hacer(g)
         salida.append(g)
     return salida
+
+
+# ---------------------------------------------------------------------------
+# «Qué hacer» — la columna que convierte el diagnóstico en una acción
+# ---------------------------------------------------------------------------
+# TMT 2026-08-04. La pantalla decía muy bien QUÉ PASA y no decía nada de QUÉ
+# HACER, así que cada uno de los 20 casos había que volver a razonarlo de
+# cero mirando el RUC, el nombre y el conteo de movimientos. Peor: los 20 NO
+# son el mismo problema, y tratarlos igual es lo que hizo perder una tarde —
+# en 14 de los 20 la ficha con el código bueno YA EXISTE en PC con el mismo
+# RUC (es el mismo cliente cargado dos veces, se borra la sobrante), y sólo
+# en 6 son dos empresas reales chocando (ahí hay que renombrar a una).
+#
+# Todo lo de acá abajo es PURO: entra un grupo, sale un veredicto. Sin DB,
+# sin Metabase, testeable a mano.
+
+#: Es el mismo cliente cargado dos veces (mismo RUC, mismo nombre).
+DUPLICADA = "duplicada"
+#: Mismo RUC pero nombres que no se parecen → una tiene el RUC mal cargado.
+RUC_SOSPECHOSO = "ruc_sospechoso"
+#: Dos empresas reales y Asinfo dice cuál se queda con el código.
+RENOMBRAR = "renombrar"
+#: Dos empresas reales y Asinfo no conoce a ninguna → decide la dueña.
+DECIDIR = "decidir"
+#: A una de las fichas le falta el RUC: sin RUC no se le puede preguntar.
+FALTA_RUC = "falta_ruc"
+#: Asinfo le da el mismo código a las dos. No lo resuelve solo.
+AMBIGUO = "ambiguo"
+#: Ni se pudo preguntar (Metabase caído o sin configurar).
+PENDIENTE_ASINFO = "pendiente_asinfo"
+
+#: Palabras que no distinguen a una persona/empresa de otra: si se cuelan en
+#: la comparación de nombres, "MODITEX S.A." y "MODITEX CIA LTDA" dejan de
+#: parecerse. Se sacan antes de comparar.
+_RUIDO_NOMBRE = frozenset({
+    "SA", "S.A", "CIA", "LTDA", "CIALTDA", "SAS", "SCC", "EIRL",
+    "DEL", "LOS", "LAS", "DE", "LA", "EL", "Y",
+})
+
+
+def _tokens(nombre: str) -> frozenset[str]:
+    """Palabras significativas de un nombre, sin tildes ni ruido societario."""
+    import unicodedata
+
+    plano = unicodedata.normalize("NFKD", str(nombre or "").upper())
+    plano = "".join(ch for ch in plano if not unicodedata.combining(ch))
+    crudas = [p for p in re.split(r"[^A-Z0-9]+", plano) if p]
+    return frozenset(p for p in crudas if len(p) >= 3 and p not in _RUIDO_NOMBRE)
+
+
+def mismo_nombre(a: str, b: str) -> bool:
+    """¿Los dos nombres son la MISMA persona escrita distinto?
+
+    El criterio es **contención**, no igualdad: la carga duplicada casi
+    siempre es el nombre completo contra el nombre corto —
+    "ALEXA MAGDALENA PINCAY" ⊂ "ALEXA MAGDALENA PINCAY ESPIN". Igualdad
+    exacta no los agarraría y una similitud difusa agarraría de más.
+
+    Es lo único que separa el caso "cargado dos veces" (se borra la sobrante)
+    del caso JRP — Jorge Rosero Pozo y Judith del Rocío Pantoja Pozo, dos
+    personas DISTINTAS que en PC tienen el mismo RUC porque una lo tiene mal.
+    Comparten el apellido Pozo y nada más; sin este corte la pantalla diría
+    "borrá una" y se perdería un cliente real.
+    """
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb:
+        return False
+    return ta <= tb or tb <= ta
+
+
+def _link_cambiar(f: dict) -> dict:
+    return {
+        "texto": f"Ponerle código propio a #{f['id_cliente']} {f.get('nombre') or ''}".strip(),
+        "href": f"/clientes/{f['id_cliente']}/cambiar-codigo",
+    }
+
+
+def que_hacer(grupo: dict) -> dict:
+    """El veredicto accionable de un código repetido.
+
+    Devuelve ``{clase, titulo, detalle, advertencia, acciones}``. `acciones`
+    son links a pantallas que EXISTEN (`/clientes?q=`, `/clientes/<id>/
+    cambiar-codigo`, `/clientes/<cod>/editar`); no se inventa ninguna ruta.
+    """
+    fichas = list(grupo.get("fichas") or [])
+    cod = str(grupo.get("codigo_cli") or "")
+    n_fact = int(grupo.get("n_facturas") or 0)
+    n_chq = int(grupo.get("n_cheques") or 0)
+    rucs = {f.get("ruc10") for f in fichas if f.get("ruc10")}
+    sin_ruc = [f for f in fichas if not f.get("ruc10")]
+    coinciden = [f for f in fichas if f.get("estado") == COINCIDE]
+    perdedoras = [f for f in fichas if f.get("estado") != COINCIDE]
+    asinfo_ok = not any(f.get("estado") == NO_DISPONIBLE for f in fichas)
+
+    # La advertencia de plata mezclada vale para TODOS los casos de "dos
+    # empresas": es la razón por la que `plan_cambio_codigo` va a rechazar el
+    # cambio, y decirlo acá evita el viaje hasta la pantalla para comerse el
+    # error.
+    advertencia = ""
+    if n_fact or n_chq:
+        advertencia = (
+            f"Ojo: {n_fact} facturas y {n_chq} cheques cuelgan del código "
+            f"{cod} y no se sabe de cuál de las fichas son (los movimientos "
+            "guardan el CÓDIGO, no la ficha). Mientras el código tenga "
+            "movimientos, la pantalla de cambiar código lo va a rechazar: "
+            "hay que separarlos primero mirando Asinfo por RUC."
+        )
+
+    # (1) Todas las fichas con el MISMO RUC → no son dos empresas.
+    if len(rucs) == 1 and not sin_ruc and len(fichas) > 1:
+        nombres = [str(f.get("nombre") or "") for f in fichas]
+        base = nombres[0]
+        if all(mismo_nombre(base, n) for n in nombres[1:]):
+            direcciones = {str(f.get("direccion1") or "").strip().upper() for f in fichas}
+            direcciones.discard("")
+            extra = ""
+            if len(direcciones) > 1:
+                extra = (
+                    " Las direcciones no coinciden — quedate con la ficha de "
+                    "la dirección vigente, el dato de la otra se pierde."
+                )
+            return {
+                "clase": DUPLICADA,
+                "titulo": "Es el mismo cliente cargado dos veces",
+                "detalle": (
+                    f"Las {len(fichas)} fichas tienen el mismo RUC y el mismo "
+                    "nombre: no son dos empresas. Borrá la sobrante. Mientras "
+                    "quede una ficha con el código, los movimientos siguen "
+                    "resolviendo — no queda nada huérfano." + extra
+                ),
+                "advertencia": "",
+                "acciones": [{"texto": f"Buscar {cod} en clientes y borrar la sobrante",
+                              "href": f"/clientes?q={cod}"}],
+            }
+        return {
+            "clase": RUC_SOSPECHOSO,
+            "titulo": "Mismo RUC, nombres distintos → un RUC está mal cargado",
+            "detalle": (
+                "Las fichas comparten el RUC pero son personas distintas, así "
+                "que una lo tiene mal. Conseguí el RUC verdadero y corregilo: "
+                "recién ahí Asinfo puede decir de quién es el código. No "
+                "borres ninguna."
+            ),
+            "advertencia": advertencia,
+            "acciones": [{"texto": f"Editar la ficha {cod}", "href": f"/clientes/{cod}/editar"}],
+        }
+
+    # (2) Ni se pudo preguntar.
+    if not asinfo_ok:
+        return {
+            "clase": PENDIENTE_ASINFO,
+            "titulo": "Falta la respuesta de Asinfo",
+            "detalle": (
+                "Los RUC son distintos, así que son dos empresas, pero sin "
+                "Asinfo no se sabe de cuál es el código. Volvé a cargar la "
+                "pantalla cuando el puente vuelva."
+            ),
+            "advertencia": advertencia,
+            "acciones": [],
+        }
+
+    # (3) A alguna ficha le falta el RUC.
+    if sin_ruc:
+        quienes = ", ".join(f"#{f['id_cliente']}" for f in sin_ruc)
+        return {
+            "clase": FALTA_RUC,
+            "titulo": "Falta el RUC",
+            "detalle": (
+                f"La ficha {quienes} no tiene RUC usable, y el RUC es la única "
+                "clave contra Asinfo. Cargáselo y volvé: con eso el caso "
+                "probablemente se resuelva solo."
+            ),
+            "advertencia": advertencia,
+            "acciones": [{"texto": f"Editar la ficha {cod}", "href": f"/clientes/{cod}/editar"}],
+        }
+
+    # (4) Asinfo resuelve: exactamente una ficha coincide.
+    if len(coinciden) == 1:
+        gana = coinciden[0]
+        return {
+            "clase": RENOMBRAR,
+            "titulo": f"Asinfo dice que {cod} es de {gana.get('nombre') or '—'}",
+            "detalle": (
+                f"Son dos empresas reales. {cod} se queda en la ficha "
+                f"#{gana['id_cliente']}; a la otra hay que ponerle un código "
+                "propio (la pantalla propone los libres). Borrar no es opción: "
+                "se perdería un cliente."
+            ),
+            "advertencia": advertencia,
+            "acciones": [_link_cambiar(f) for f in perdedoras],
+        }
+
+    # (5) Asinfo le da el mismo código a más de una.
+    if len(coinciden) > 1:
+        return {
+            "clase": AMBIGUO,
+            "titulo": "Asinfo le da el mismo código a las dos",
+            "detalle": (
+                f"{len(coinciden)} fichas con RUC distinto y Asinfo dice {cod} "
+                "para todas. O hay un duplicado del lado de Asinfo, o los RUC "
+                "de PC están cruzados. Hay que mirarlo en Asinfo antes de "
+                "tocar nada acá."
+            ),
+            "advertencia": advertencia,
+            "acciones": [],
+        }
+
+    # (6) Ninguna coincide.
+    otros = sorted({c for f in fichas for c in (f.get("asinfo_codigos") or [])})
+    if otros:
+        return {
+            "clase": DECIDIR,
+            "titulo": f"Asinfo no le da {cod} a ninguna de las dos",
+            "detalle": (
+                f"Asinfo les da {', '.join(otros)}. O sea que ninguna de las "
+                f"dos debería estar usando {cod}: hay que renombrarlas a las "
+                "dos, o corregir el RUC si el que está mal es el de PC."
+            ),
+            "advertencia": advertencia,
+            "acciones": [_link_cambiar(f) for f in fichas],
+        }
+    return {
+        "clase": DECIDIR,
+        "titulo": "Asinfo no conoce ninguno de los dos RUC",
+        "detalle": (
+            f"Son dos empresas reales y Asinfo no tiene a ninguna, así que no "
+            f"hay autoridad externa: decidí vos cuál se queda con {cod} y "
+            "ponele código propio a la otra."
+        ),
+        "advertencia": advertencia,
+        "acciones": [_link_cambiar(f) for f in fichas],
+    }
 
 
 def resumen(grupos: list[dict]) -> dict:
     """Contadores para el encabezado."""
     fichas = [f for g in grupos for f in g["fichas"]]
+    clases = [(g.get("que_hacer") or {}).get("clase") for g in grupos]
     return {
         "codigos": len(grupos),
         "fichas": len(fichas),
         "resueltos": sum(1 for g in grupos if g.get("hay_ganador")),
         "difieren": sum(1 for f in fichas if f["estado"] == DIFIERE),
         "sin_asinfo": sum(1 for f in fichas if f["estado"] in (SIN_ASINFO, SIN_RUC)),
+        # Cuántos se arreglan borrando una fila (no hace falta decidir nada) y
+        # cuántos necesitan a la dueña. Es el número que dice cuánto falta.
+        "duplicadas": sum(1 for c in clases if c == DUPLICADA),
+        "necesitan_decision": sum(1 for c in clases if c != DUPLICADA),
     }
 
 
