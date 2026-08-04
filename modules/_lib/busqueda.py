@@ -120,9 +120,13 @@ def ranking(
     """
     toks = palabras(q)
     if not toks:
-        # NULL, no 0: un entero suelto en ORDER BY es una referencia
-        # POSICIONAL a la columna N (y `ORDER BY 0` directamente explota).
-        return "NULL", {}
+        # 🚨 Devuelve VACÍO, no una constante: Postgres rechaza los términos
+        # constantes en ORDER BY — `0` es "position 0 is not in select list"
+        # (un entero suelto es una referencia POSICIONAL) y `NULL` es
+        # "non-integer constant in ORDER BY". El llamador tiene que ARMAR el
+        # ORDER BY, no rellenar un hueco. Las dos variantes se deployaron el
+        # 2026-08-04 y las dos rompieron una pantalla en producción.
+        return "", {}
     qn = " ".join(toks)
     cod = sql_normalizado(columna_codigo)
     params = {

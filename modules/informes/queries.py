@@ -7327,9 +7327,15 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
                ), 0) AS saldo
         FROM scintela.cliente c
         WHERE {where}
-        ORDER BY {orden}, saldo DESC, c.nombre
+        ORDER BY {orden}
         LIMIT %(limite)s
     """
+    # 🚨 El ORDER BY se ARMA entero: Postgres RECHAZA los términos constantes
+    # (`ORDER BY 0` = "position 0 is not in select list", `ORDER BY NULL` =
+    # "non-integer constant in ORDER BY"). Las dos variantes se deployaron el
+    # 2026-08-04 y las dos hicieron que el fallback muriera en silencio
+    # (`_safe()` en la vista) → "Sin coincidencias" para siempre.
+    _COLA_ORDEN = "saldo DESC, c.nombre"
 
     def _correr(where: str, orden: str, extra: dict) -> list[dict]:
         return db.fetch_all(
@@ -7337,7 +7343,7 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
             {**params, **params_rank, **extra, "limite": limite},
         ) or []
 
-    filas = _correr(cond, rank, {})
+    filas = _correr(cond, f"{rank}, {_COLA_ORDEN}" if rank else _COLA_ORDEN, {})
     if filas:
         return filas
 
@@ -7350,7 +7356,10 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
         """
         SELECT codigo_cli, COALESCE(nombre, '') AS nombre
           FROM scintela.cliente
-         LIMIT 5000
+         -- Tope de seguridad, NO un paginado: el LIMIT no tiene ORDER BY, así
+         -- que si cortara de verdad estaría escondiendo clientes al azar. Hoy
+         -- hay ~4.000 (3.842 sólo con contacto cargado); dejamos margen.
+         LIMIT 20000
         """
     ) or []
     codigos = [
@@ -7359,13 +7368,9 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
     ]
     if not codigos:
         return []
-    # OJO: el "sin ranking" va NULL, NO 0 — un entero suelto en ORDER BY es
-    # una referencia POSICIONAL a la columna N, y `ORDER BY 0` es un ERROR de
-    # Postgres ("position 0 is not in select list"). Con el 0 la query moría,
-    # el `_safe()` de la vista se comía la excepción y el "¿quisiste decir?"
-    # no aparecía NUNCA (verificado en vivo: "condorr" daba 0 resultados).
+    # Sin ranking: el ORDER BY va SOLO con la cola (columnas de verdad).
     filas = _correr(
-        "c.codigo_cli = ANY(%(cods)s)", "NULL", {"cods": codigos}
+        "c.codigo_cli = ANY(%(cods)s)", _COLA_ORDEN, {"cods": codigos}
     )
     for f in filas:
         f["aprox"] = True

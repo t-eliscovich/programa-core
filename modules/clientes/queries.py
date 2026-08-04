@@ -669,6 +669,20 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
     # "IRENE CHICAIZA CONDOR". Ver modules/_lib/busqueda.py.
     cond, p_cond = busqueda.condicion(q, ("c.codigo_cli", "c.nombre", "c.ruc"))
     rank, p_rank = busqueda.ranking(q, "c.codigo_cli")
+    # 🚨 El ORDER BY se ARMA, no se rellena con constantes. Postgres RECHAZA
+    # los términos constantes: `ORDER BY 0` es "position 0 is not in select
+    # list" (un entero suelto es una referencia POSICIONAL) y `ORDER BY NULL`
+    # es "non-integer constant in ORDER BY". Las dos versiones se deployaron
+    # el 2026-08-04 y las dos rompieron esta pantalla: /clientes SIN filtro
+    # devolvía "Mostrando 1-0 de 0 clientes" porque la vista atrapa la
+    # excepción y muestra la lista vacía. Ver tests/test_orden_sin_constantes.py.
+    orden = (
+        f"{rank} ASC, COALESCE(s.saldo_total, 0) DESC NULLS LAST,"
+        " c.nombre ASC NULLS FIRST, c.codigo_cli ASC"
+        if cond
+        # Sin término: código ASC a secas (pedido dueña 2026-05-20).
+        else "c.codigo_cli ASC"
+    )
     return db.fetch_all(
         f"""
         SELECT c.id_cliente, c.codigo_cli, c.nombre, c.telefono, c.ruc, c.stop, c.cupo,
@@ -703,15 +717,8 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
         -- NOMBRE y el cliente con CÓDIGO "EDU" ni aparecía en la 1ra página.
         -- Con término ranqueamos como la búsqueda global (Ctrl/Cmd+K →
         -- informes.buscar_clientes): código exacto → código que empieza así
-        -- → nombre que empieza así → palabra del nombre → resto; dentro de
-        -- cada grupo saldo pendiente DESC y luego nombre.
-        ORDER BY
-          -- OJO: sin término va NULL, no una constante numérica — un entero
-          -- suelto en ORDER BY es una referencia POSICIONAL a la columna N.
-          {rank if cond else 'NULL'} ASC,
-          {'COALESCE(s.saldo_total, 0)' if cond else 'NULL'} DESC NULLS LAST,
-          {'c.nombre' if cond else 'NULL'} ASC NULLS FIRST,
-          c.codigo_cli ASC
+        -- → resto; dentro de cada grupo saldo pendiente DESC y luego nombre.
+        ORDER BY {orden}
         LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
