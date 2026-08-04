@@ -633,13 +633,107 @@
       padding-top: 0 !important;
       padding-bottom: 0 !important;
     }
+
+    /* ══════════════════ CELULAR — inicio ══════════════════════════════
+       TMT 2026-08-04 (dueña): "que cuando abro resultados desde el celu se
+       vea mejor. no quiero cambiar nada de como se ve en la compu".
+
+       ⚠ REGLA DE ESTE BLOQUE: TODO va adentro del `@media (max-width: 767px)`.
+       Arriba de 768px no aplica NADA, así que el escritorio queda intacto por
+       construcción, no por cuidado. La única regla de afuera es el default de
+       `.solo-movil` (oculto), que es justamente lo que mantiene el escritorio
+       como estaba. Hay un test que lo verifica: tests/test_css_celular.py.
+
+       Las 4 pantallas de informes (Resultados / Historial / Gastos del mes /
+       Flujo producción) están afinadas para entrar en 360px de ancho SIN
+       scroll horizontal, salvo los bloques de Flujo producción, que son una
+       grilla FIJA de 8 columnas: esos se panean de costado (encogerlos
+       superpone los números).
+       ════════════════════════════════════════════════════════════════ */
+    .solo-movil { display: none; }
+
+    @media (max-width: 767px) {
+      .solo-movil { display: inline; }
+      .solo-escritorio { display: none !important; }
+
+      /* — Scroll natural del teléfono. En escritorio el shell mide 100vh y el
+         <main> scrollea adentro; en el celu eso deja la barra del navegador
+         siempre abierta y esconde el final de la página. — */
+      #app-shell { height: auto !important; min-height: 100vh; }
+      #app-shell main { overflow: visible !important; padding: 8px !important; }
+
+      /* — Barra de arriba: el breadcrumb repetía el <h1> y se partía en 4
+         renglones; el rol al lado del usuario no entra. — */
+      #topbar-breadcrumb { display: none !important; }
+      header.no-print { padding-left: 10px !important; padding-right: 10px !important; }
+      #user-menu-btn .rol-usuario { display: none !important; }
+
+      /* — Botonera Resultados / Historial / Gastos: 3 botones en UNA fila
+         (el min-width de 11rem del macro los apilaba de a uno). — */
+      .nav-resultados { gap: 4px !important; margin-bottom: 6px !important; }
+      .nav-resultados > * { min-width: 0 !important; flex: 1 1 0 !important;
+                            padding: 5px 2px !important; font-size: 12px !important; }
+
+      /* — Título y botones de acción de cada pantalla. — */
+      main .info-page h1 { font-size: 19px !important; }
+      .acciones-pantalla { gap: 4px !important; width: 100%; }
+      .acciones-pantalla > * { font-size: 11.5px !important; padding: 4px 6px !important;
+                               flex: 0 1 auto; justify-content: center; }
+      .acciones-pantalla svg { width: 13px !important; height: 13px !important; }
+
+      /* — RESULTADOS (/informes/balance): las 5 columnas entran en 360px. — */
+      main .informe-balance table tbody td { font-size: 12px !important; padding: 4px 2px !important; }
+      main .informe-balance table thead th { font-size: 10px !important; padding: 3px 2px !important; }
+      main .informe-balance tr.fila-total td { font-size: 12.5px !important; }
+      main .informe-balance tr.fila-key td { font-size: 14px !important; }
+      .informe-balance td.label-cell { padding: 4px 2px !important; overflow-wrap: anywhere; }
+      .informe-balance td.num-cell { padding: 4px 2px !important; }
+      /* el sangrado de 100px de los sumandos es para una pantalla ancha */
+      .informe-balance td.num-cell--sumando { padding-right: 12px !important; font-size: 12px !important; }
+      .informe-balance .seccion-header { padding: 3px 3px !important; font-size: 10px !important; }
+      .informe-balance input.vp-input { width: 58px; margin-right: 0 !important; padding: 1px 3px; }
+      /* los dos paneles quedan apilados: una línea los separa */
+      .informe-balance .balance-col + .balance-col { border-top: 3px solid rgb(203 213 225); }
+
+      /* — HISTORIAL (/informes/historico-12m): 6 columnas de meses no entran;
+         se panea de costado con la columna INDICADOR clavada. — */
+      .tabla-ancha { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+      main .h12-page table tbody td { font-size: 12px !important; padding: 3px 7px !important; }
+      main .h12-page table thead th { font-size: 10.5px !important; padding: 3px 7px !important; }
+      .h12-tbl thead th.first, .h12-tbl tbody td:first-child {
+        position: sticky; left: 0; z-index: 2; background: #fff;
+        box-shadow: 1px 0 0 rgb(226 232 240);
+      }
+      .h12-tbl thead th.first { background: rgb(248 250 252); }
+
+      /* — GASTOS DEL MES: la matriz rubro × tipo entra completa. — */
+      .gastos-matriz th, .gastos-matriz td { padding: 6px 4px !important; }
+      .gastos-matriz thead th { font-size: 9.5px !important; }
+      .gastos-matriz td.row-label { font-size: 11px !important; white-space: normal !important; }
+      main .gastos-matriz table tbody td { font-size: 11.5px !important; }
+      .gastos-matriz td.cell .cell-val { min-width: 0 !important; }
+      .gastos-matriz td.cell a.cell-link { gap: 3px !important; }
+      .gastos-matriz td.cell .vcode { font-size: 8px !important; }
+      .gastos-matriz td input { width: 100% !important; max-width: none !important;
+                                min-width: 0 !important; font-size: 10.5px !important;
+                                padding: 2px 3px !important; box-sizing: border-box !important; }
+
+      /* — FLUJO PRODUCCIÓN: bloques de grilla FIJA de 8 columnas. Encogerlos
+         superpone los números (table-layout:fixed + nowrap), así que se los
+         deja a su ancho natural y el bloque se panea. — */
+      .fp .blk { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .fp .blk table { table-layout: auto !important; max-width: none !important;
+                       width: auto !important; min-width: 100%; }
+      .fp .blk .hil-titles { min-width: 100%; }
+    }
+    /* ══════════════════ CELULAR — fin ═════════════════════════════════ */
   </style>
   {# Child templates can add extra <link>/<script>/<style> tags here. #}
   {% block head_extra %}{% endblock %}
 </head>
 <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
 {% if g.user %}
-<div class="flex" style="height: 100vh;">
+<div id="app-shell" class="flex" style="height: 100vh;">
   {# TMT 2026-08-03 — un usuario VENDEDOR sólo puede entrar a /mi-cartera
      (scope_vendedor.py). Varias entradas de este menú no tienen gate de
      permiso, así que le aparecerían y le darían 404 al clickear. Para él el
@@ -1040,7 +1134,9 @@
           <span class="flex-1 text-left">Buscar cliente, factura, cheque…</span>
           <kbd id="__gs_kbd" class="ml-2 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-300 shrink-0 border border-slate-200 dark:border-slate-700">Ctrl+K</kbd>
         </button>
-        <span class="text-base font-medium text-slate-700 dark:text-slate-200">
+        {# id para el CSS del celular: ahí se esconde (repite el <h1> y se
+           parte en 4 renglones en 390px). Ver bloque CELULAR en el <style>. #}
+        <span id="topbar-breadcrumb" class="text-base font-medium text-slate-700 dark:text-slate-200">
           {% block breadcrumb %}{% endblock %}
         </span>
       </div>
@@ -1140,7 +1236,7 @@
                   onclick="document.getElementById('user-menu-pop').classList.toggle('hidden')"
                   class="text-sm flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
             <span class="font-medium">{{ g.user.username }}</span>
-            <span class="text-slate-500">· {{ g.user.nombre_rol }}</span>
+            <span class="text-slate-500 rol-usuario">· {{ g.user.nombre_rol }}</span>
             <svg class="w-3 h-3 ml-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
           </button>
 

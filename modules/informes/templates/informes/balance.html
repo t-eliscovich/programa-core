@@ -225,7 +225,9 @@
   {{ nav_resultados('balance') }}
   <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
     {{ page_hero('Informe de Resultados', descripcion_safe=_desc) }}
-    <div class="flex items-center gap-2">
+    {# `acciones-pantalla`: gancho del CSS del celular (base.html) — los 3
+       botones entran en una fila. En escritorio no cambia nada. #}
+    <div class="flex items-center gap-2 acciones-pantalla">
       {# Botón a Metas/Iniciales — editar gastos proyectados (Presupuesto) que
          alimentan la Utilidad Proyectada. TMT 2026-06-06. #}
       <a href="{{ url_for('iniciales.lista') }}" class="text-sm px-3 py-1.5 rounded border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 inline-flex items-center gap-1.5">
@@ -302,7 +304,10 @@
             <th class="col-header" style="text-align:right">U$</th>
             {# TMT 2026-06-23 (dueña): columna Proyectado = presupuesto de gastos
                de Iniciales (GS.PROY del dBase), al lado del gasto real (U$). #}
-            <th class="col-header" style="text-align:right">Gs. Proyectados</th>
+            {# TMT 2026-08-04 — en el celu "GS. PROYECTADOS" es una palabra
+               indivisible de ~90px: sola empujaba la tabla fuera de pantalla.
+               Abreviada SOLO en celular (ver `.solo-movil` en base.html). #}
+            <th class="col-header" style="text-align:right"><span class="solo-escritorio">Gs. Proyectados</span><span class="solo-movil">Gs.Proy.</span></th>
           </tr>
         </thead>
         <tbody>

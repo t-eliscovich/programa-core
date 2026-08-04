@@ -340,7 +340,9 @@
 {# TMT 2026-05-22 dueña: "estos tienen que estar más alineados en diseño".
    Ancho uniforme (min-width) + texto centrado + border 1px sutil. El activo
    destaca solo por fondo lleno, no por más peso de fuente. #}
-<div class="no-print flex flex-wrap items-stretch gap-2 mb-3"
+{# La clase `nav-resultados` es el gancho del CSS del celular (base.html):
+   ahí los 3 botones pasan a una sola fila. En escritorio no hace nada. #}
+<div class="no-print nav-resultados flex flex-wrap items-stretch gap-2 mb-3"
      style="font-feature-settings: 'tnum' 1;">
   {% for _ep, _lbl in [
         ('balance', 'Resultados'),

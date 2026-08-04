@@ -146,7 +146,7 @@
         {% endif %}
       </p>
     </div>
-    <div class="no-print flex items-center gap-2">
+    <div class="no-print flex items-center gap-2 acciones-pantalla">
       <button onclick="window.print()"
               class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
         Imprimir
@@ -269,7 +269,10 @@
   {% endif %}
 
   {# ===== Card principal ─ panel blanco con la tabla adentro ========== #}
-  <div class="bg-white border border-slate-200 rounded overflow-hidden">
+  {# `tabla-ancha`: gancho del CSS del celular (base.html). Las 6 columnas de
+     meses no entran en un teléfono; ahí el card se panea de costado con la
+     columna INDICADOR clavada a la izquierda. En escritorio, nada cambia. #}
+  <div class="bg-white border border-slate-200 rounded overflow-hidden tabla-ancha">
     {# Header del card — etiqueta arriba a la izquierda como en el resto. #}
     <div class="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
       <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
