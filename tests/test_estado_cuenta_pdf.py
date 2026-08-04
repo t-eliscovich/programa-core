@@ -459,3 +459,47 @@ def test_el_arreglo_de_impresion_vale_para_TODAS_las_pantallas():
     assert "@media print" in parcial
     for regla in ("main .ec-bloque-facturas table tbody td", ".ec-cierre"):
         assert regla in parcial, regla
+
+
+def test_saldo_de_facturas_e_importe_de_cheques_terminan_igual():
+    """Dueña 2026-08-04: alinear la columna Saldo de facturas con la columna
+    Importe de cheques.
+
+    Son dos tablas: cada una repartía el ancho midiendo su propio contenido,
+    así que las dos columnas caían cerca y nunca encima — peor que estar
+    lejos, porque parece que debería alinear y no alinea. Se les fija dónde
+    TERMINA esa columna; el reparto de cada tabla hasta ahí es distinto y no
+    importa.
+
+    Este test hace la suma sobre el CSS: si alguien toca un ancho de un lado
+    y se olvida del otro, se rompe acá y no en la impresora.
+    """
+    import re
+    from pathlib import Path
+
+    css = Path("modules/informes/templates/informes/"
+               "_estado_cuenta_impreso.html").read_text().split("@media print", 1)[1]
+
+    anchos = {"facturas": {}, "cheques": {}}
+    for selectores, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        # `width: 0` va sin unidad; `max-width` no cuenta.
+        m = re.search(r"(?:^|[;\s])width:\s*([\d.]+)\s*%?", cuerpo)
+        if not m:
+            continue
+        for bloque, n in re.findall(
+                r"\.ec-bloque-(facturas|cheques) table (?:th|tbody td)"
+                r":nth-child\((\d+)\)", selectores):
+            anchos[bloque][int(n)] = float(m.group(1))
+
+    # Tipo (3) y Stat (8) de facturas no se imprimen: con `fixed` el navegador
+    # les daría ancho igual y correría todo lo demás.
+    for n in (3, 8):
+        assert anchos["facturas"].get(n) == 0
+
+    hasta_saldo = sum(anchos["facturas"][n] for n in range(1, 7))     # …Saldo
+    hasta_importe = sum(anchos["cheques"][n] for n in range(1, 7))    # …Importe
+    assert hasta_saldo == hasta_importe, (
+        f"Saldo termina en {hasta_saldo}% e Importe en {hasta_importe}%")
+    # Y ninguna tabla queda más angosta que la otra.
+    assert sum(anchos["facturas"].values()) == 100
+    assert sum(anchos["cheques"].values()) == 100

@@ -385,5 +385,64 @@
           font-size: 7.5pt !important;
           font-family: inherit !important;
         }
+
+        /* ── SALDO (facturas) e IMPORTE (cheques), en la misma vertical ──
+           Dueña 2026-08-04. Poner Importe antes que Banco los acercó pero no
+           alcanzaba: son dos tablas y cada una repartía el ancho midiendo su
+           propio contenido, así que caían cerca y nunca encima — que es peor
+           que estar lejos, porque parece que debería alinear y no alinea.
+
+           Lo único que se fija es dónde TERMINA esa columna: el 70% del ancho,
+           en las dos tablas. Facturas llega ahí con cinco columnas y cheques
+           con seis, así que cada una reparte ese 70% a su manera. El resto de
+           la hoja —el bloque del TOTAL, los subtotales de cheques— queda como
+           estaba.
+
+           Las dos columnas que no se imprimen (Tipo y Stat de facturas) van a
+           0: con `table-layout: fixed` el navegador les daría ancho igual y
+           correría todo lo demás. */
+        main .ec-bloque-facturas table,
+        main .ec-bloque-cheques table { table-layout: fixed !important; }
+
+        /* Facturas: 13+13+0+15+14+15 = 70% hasta el final de Saldo. */
+        main .ec-bloque-facturas table th:nth-child(1),
+        main .ec-bloque-facturas table tbody td:nth-child(1) { width: 13% !important; }
+        main .ec-bloque-facturas table th:nth-child(2),
+        main .ec-bloque-facturas table tbody td:nth-child(2) { width: 13% !important; }
+        main .ec-bloque-facturas table th:nth-child(3),
+        main .ec-bloque-facturas table tbody td:nth-child(3),
+        main .ec-bloque-facturas table th:nth-child(8),
+        main .ec-bloque-facturas table tbody td:nth-child(8) { width: 0 !important;
+                                                               padding: 0 !important; }
+        main .ec-bloque-facturas table th:nth-child(4),
+        main .ec-bloque-facturas table tbody td:nth-child(4) { width: 15% !important; }
+        main .ec-bloque-facturas table th:nth-child(5),
+        main .ec-bloque-facturas table tbody td:nth-child(5) { width: 14% !important; }
+        main .ec-bloque-facturas table th:nth-child(6),
+        main .ec-bloque-facturas table tbody td:nth-child(6) { width: 15% !important; }
+        main .ec-bloque-facturas table th:nth-child(7),
+        main .ec-bloque-facturas table tbody td:nth-child(7) { width: 16% !important; }
+        main .ec-bloque-facturas table th:nth-child(9),
+        main .ec-bloque-facturas table tbody td:nth-child(9) { width: 14% !important; }
+
+        /* Cheques: 10+10+13+10+11+16 = 70% hasta el final de Importe. Banco se
+           queda con 24%, de sobra para el nombre más largo que hay en la base
+           ("BANECUADOR", 10 letras). */
+        main .ec-bloque-cheques table th:nth-child(1),
+        main .ec-bloque-cheques table tbody td:nth-child(1) { width: 10% !important; }
+        main .ec-bloque-cheques table th:nth-child(2),
+        main .ec-bloque-cheques table tbody td:nth-child(2) { width: 10% !important; }
+        main .ec-bloque-cheques table th:nth-child(3),
+        main .ec-bloque-cheques table tbody td:nth-child(3) { width: 13% !important; }
+        main .ec-bloque-cheques table th:nth-child(4),
+        main .ec-bloque-cheques table tbody td:nth-child(4) { width: 10% !important; }
+        main .ec-bloque-cheques table th:nth-child(5),
+        main .ec-bloque-cheques table tbody td:nth-child(5) { width: 11% !important; }
+        main .ec-bloque-cheques table th:nth-child(6),
+        main .ec-bloque-cheques table tbody td:nth-child(6) { width: 16% !important; }
+        main .ec-bloque-cheques table th:nth-child(7),
+        main .ec-bloque-cheques table tbody td:nth-child(7) { width: 24% !important; }
+        main .ec-bloque-cheques table th:nth-child(8),
+        main .ec-bloque-cheques table tbody td:nth-child(8) { width: 6% !important; }
       }
     </style>
