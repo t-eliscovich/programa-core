@@ -7826,7 +7826,18 @@ _HIST_LINEAS: list[tuple[str, str, str, str, str]] = [
     ("utilid", "_utilid", "ratio", "white", "operativo"),
     ("MARGEN  %", "_margen_p", "pct", "white", "operativo"),
     # BALANCE — bottom section (miles de U$)
-    ("BANCO       U$", "banco", "miles", "white", "balance"),
+    # ⭐ TMT 2026-08-04 (dueña: *"pero por qué banco es distinto acá y en
+    # Resultados, 2.016.164,32 vs 1.963.697,39, debería ser igual"*).
+    # El número estaba bien: `historia.banco` es `salbanc + salcaj` — bancos
+    # MÁS CAJA (así lo guarda el cierre del dBase), y los 52.466,93 de
+    # diferencia son exactamente la Caja del Informe de Resultados. Lo que
+    # estaba mal era el RÓTULO: decía "BANCO" y el Informe muestra Caja y
+    # Bancos en dos líneas separadas, así que las dos pantallas parecían
+    # contradecirse. Una columna que se llama distinto de lo que contiene
+    # hace perder horas y siembra desconfianza en un número correcto.
+    # El rótulo lo eligió ella, textual: *"ponele banco + caja y ya estamos"*.
+    # [[feedback_ui_labels_descriptivos]] [[feedback_coherencia_numeros_una_fuente]]
+    ("BANCO + CAJA U$", "banco", "miles", "white", "balance"),
     ("CARTERA", "cart", "miles", "white", "balance"),
     ("ANTICIPOS", "anticipos", "miles", "white", "balance"),
     ("STOCK MP+PROD", "ustock", "miles", "white", "balance"),

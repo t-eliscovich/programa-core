@@ -407,3 +407,25 @@ def test_el_sql_de_quiebres_usa_la_regla_firmada_unica():
         "volvió el criterio ABS: deja pasar la fila que se mueve el importe "
         "correcto para el lado equivocado"
     )
+
+
+# --- 7) el rótulo tiene que decir lo que la columna contiene --------------
+
+
+def test_la_linea_del_historial_avisa_que_incluye_la_caja():
+    """Dueña: *"por qué banco es distinto acá y en Resultados… debería ser
+    igual"*. 2.016.164,32 − 1.963.697,39 = 52.466,93 = **la Caja**.
+
+    `historia.banco` es `salbanc + salcaj` (así lo guarda el cierre del
+    dBase), pero el Informe de Resultados muestra Caja y Bancos en líneas
+    separadas. Con el rótulo "BANCO" las dos pantallas parecían
+    contradecirse sobre un número que estaba bien. Una columna que se llama
+    distinto de lo que contiene siembra desconfianza y hace perder horas.
+    """
+    from modules.informes.queries import _HIST_LINEAS
+
+    etiqueta = next(lbl for lbl, campo, *_ in _HIST_LINEAS if campo == "banco")
+    assert "BANCO" in etiqueta.upper() and "CAJA" in etiqueta.upper(), (
+        f"la línea del campo `banco` se rotula {etiqueta!r} pero contiene "
+        f"bancos + caja"
+    )
