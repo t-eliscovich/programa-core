@@ -1860,6 +1860,9 @@ def fuentes_y_usos():
         desde_mes=desde_mes,
         hasta_anio=hasta_anio,
         hasta_mes=hasta_mes,
+        # Federico 2026-08-04 — para etiquetar los selectores DESDE/HASTA con
+        # el último día del mes (y el día de hoy cuando HASTA = mes actual).
+        hoy=hoy,
     )
 
 
