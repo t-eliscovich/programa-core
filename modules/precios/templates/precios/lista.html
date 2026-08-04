@@ -338,7 +338,7 @@
     <div>
       <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Hoja para imprimir</h2>
       <p class="text-xs text-slate-500 dark:text-slate-400">
-        Sale en horizontal, con IVA {{ iva_pct | int }}% incluido. Elegí el descuento y dale Imprimir.
+        Con IVA {{ iva_pct | int }}% incluido. Elegí el descuento y el papel, y dale Imprimir.
       </p>
     </div>
     <form method="get" action="{{ url_for('precios.lista') }}" class="flex items-end gap-3">
@@ -353,6 +353,14 @@
             {% if loop.index0 == 0 %}Básico (precio de lista){% else %}{{ label }}{% endif %}
           </option>
           {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="papel" class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Papel</label>
+        <select name="papel" id="papel" onchange="this.form.submit()"
+                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-100">
+          <option value="v" {% if not apaisado %}selected{% endif %}>Vertical</option>
+          <option value="h" {% if apaisado %}selected{% endif %}>Horizontal</option>
         </select>
       </div>
     </form>
@@ -444,12 +452,20 @@
     .hoja-precios { padding: 0 !important; box-shadow: none !important; }
     /* El wrapper con scroll es de pantalla: en papel no puede recortar. */
     .hoja-precios .tabla-wrap { overflow: visible !important; }
+    {% if apaisado %}
     .hoja-precios thead th { font-size: 8.5pt !important; padding: 7px 4px !important; }
     .hoja-precios tbody td { font-size: 11pt !important; padding: 11px 4px !important; }
     .hoja-precios h1 { font-size: 17pt !important; }
-    /* Dueña: "tambien imprimir en horizontal que va a quedar mejor". Con 20
-       columnas el ancho es lo que manda. */
     @page { size: A4 landscape; margin: 10mm; }
+    {% else %}
+    /* Vertical: el ancho es lo que manda (son ~18 columnas), así que la letra
+       baja. Verificado contra el PDF real — con 11pt se caía la última
+       columna fuera de la hoja. */
+    .hoja-precios thead th { font-size: 7.5pt !important; padding: 7px 3px !important; }
+    .hoja-precios tbody td { font-size: 9.5pt !important; padding: 9px 3px !important; }
+    .hoja-precios h1 { font-size: 16pt !important; }
+    @page { size: A4 portrait; margin: 12mm 8mm; }
+    {% endif %}
   }
 </style>
 {% endblock %}

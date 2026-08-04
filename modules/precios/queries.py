@@ -17,7 +17,11 @@ TELAS: list[tuple[str, str]] = [
     # sigue llamándose `falso` en la tabla; sólo cambia lo que ve el usuario.
     ("falso", "FLEECE"),
     ("kiana", "KIANA"),
-    ("medical", "MEDICAL"),
+    # TMT 2026-08-04, dueña: "borrar medical". La tela salió de la lista de
+    # precios (pantalla, hoja impresa y proforma). La COLUMNA `medical` de
+    # scintela.precios NO se toca: los precios cargados siguen ahí y para
+    # volver a ofrecerla alcanza con descomentar esta línea.
+    # ("medical", "MEDICAL"),
     ("micro", "MICRO"),
     ("james", "JAMES"),
 ]

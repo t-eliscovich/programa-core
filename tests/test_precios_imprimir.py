@@ -334,3 +334,46 @@ def test_descuentos_de_una_tela_de_precio_unico(cliente_con_planos):
     out = queries.tabla_descuentos_columna(filas, scuba)
     assert out[0]["lista"] == 11.25
     assert out[0]["netos"][1] == round(11.25 * 0.95, 2)
+
+
+# ---------------------------------------------------------------------------
+# 6. MEDICAL fuera de la lista (dueña 2026-08-04: "borrar medical")
+# ---------------------------------------------------------------------------
+
+
+def test_medical_no_esta_en_la_lista_de_precios():
+    """Salió de la pantalla, de la hoja impresa y de la proforma."""
+    from modules.proformas import queries as proformas_queries
+
+    assert "medical" not in queries.COLUMNAS_TELA
+    assert "MEDICAL" not in {lab.upper() for _c, lab in queries.TELAS}
+    assert "MEDICAL" not in {lab.upper() for _c, lab in proformas_queries.TELAS}
+
+
+def test_la_matriz_no_pide_la_columna_medical():
+    """`matriz()` arma el SELECT con TELAS: si la tela no está, la columna no
+    se lee. Los datos siguen en la tabla — esto es sólo dejar de mostrarla."""
+    capturado = {}
+
+    def fake_fetch_all(sql, *a, **kw):
+        capturado["sql"] = sql
+        return []
+
+    import db
+
+    original = db.fetch_all
+    db.fetch_all = fake_fetch_all
+    try:
+        queries.matriz()
+    finally:
+        db.fetch_all = original
+    assert "medical" not in capturado["sql"]
+    assert "jersey" in capturado["sql"]
+
+
+def test_la_proforma_no_ofrece_medical_como_tipo():
+    """El <datalist> de tipos sale de la constante TIPOS del template."""
+    from pathlib import Path
+
+    tpl = Path("modules/proformas/templates/proformas/nueva.html").read_text()
+    assert "label:'MEDICAL'" not in tpl.replace(" ", "")

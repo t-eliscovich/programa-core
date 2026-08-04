@@ -83,6 +83,12 @@ def lista():
     tramo_idx = parse_int(request.args.get("tramo")) or 0
     if not 0 <= tramo_idx < len(queries.TRAMOS_DESCUENTO):
         tramo_idx = 0
+    # Orientación del papel. Primero fue apaisada ("imprimir en horizontal que
+    # va a quedar mejor") y después quiso probar la vertical ("perdon imprimi
+    # vertical a ver si sale mejor") → en vez de elegir por ella, queda un
+    # selector. Default: vertical, que es lo último que pidió y con las telas
+    # de hoy entra cómoda.
+    apaisado = request.args.get("papel") == "h"
     try:
         hoja = (
             queries.tabla_impresion(filas, tramo_idx, True, opciones)
@@ -105,6 +111,7 @@ def lista():
         hoja=hoja,
         tramo_idx=tramo_idx,
         tramo_label=queries.TRAMOS_DESCUENTO[tramo_idx][0],
+        apaisado=apaisado,
         iva_pct=queries.IVA_PCT,
         hoy=today_ec(),
     )
