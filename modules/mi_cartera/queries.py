@@ -60,16 +60,51 @@ def _dias(desde: date, hasta: date) -> int:
     return (hasta - desde).days + 1
 
 
+def dias_habiles(desde: date, hasta: date) -> int:
+    """Días LUNES A VIERNES del rango, ambos inclusive.
+
+    ⭐ El ritmo se mide en días hábiles, no en días de calendario, porque la
+    fábrica no factura los fines de semana. Medido sobre producción
+    (facturas desde el 2026-02-01, por día ISO de la semana):
+
+        lun 2395 · mar 2439 · mié 2446 · jue 2522 · vie 2027
+        sáb 273 (1,2% del valor) · dom 0
+
+    El domingo no existe: no hay UNA factura. Contarlos como días de venta
+    no es una aproximación, es meter ceros a propósito en el divisor.
+
+    Bug que destapó esto (dueña, 2026-08-04): *"siendo 4 de agosto ¿cómo es
+    que en semana estoy arriba del ritmo y en mes abajo?"*. Agosto 2026
+    arranca sábado: al 4 de agosto el MES ya había "consumido" 4 de 31 días
+    (12,9%) mientras la SEMANA —que arranca el lunes 3— sólo 2 de 7 (28,6%
+    pero sobre una meta de 7/31). Los mismos $750,34 daban arriba en un lado
+    y abajo en el otro. Con días hábiles el sábado y el domingo dejan de
+    empujar el mes, y las dos pantallas dan el mismo delta por construcción:
+    al 04/08 el esperado es 2/21 de la meta mensual, se mire desde donde se
+    mire.
+    """
+    total = 0
+    d = desde
+    while d <= hasta:
+        if d.weekday() < 5:
+            total += 1
+        d += timedelta(days=1)
+    return total
+
+
 def avance_esperado(desde: date, hasta: date, hoy: date) -> float:
     """Qué fracción del período ya transcurrió (0..1) — el 'ritmo'.
 
     Sirve para decirle "vas arriba/abajo del ritmo" en vez de sólo "71%",
     que sin contexto no dice nada el día 5 del mes.
+
+    Se cuenta en días HÁBILES — ver `dias_habiles()` para el por qué y para
+    el bug que lo motivó.
     """
-    total = _dias(desde, hasta)
+    total = dias_habiles(desde, hasta)
     if total <= 0:
         return 1.0
-    corridos = _dias(desde, min(hoy, hasta))
+    corridos = dias_habiles(desde, min(hoy, hasta))
     return max(0.0, min(1.0, corridos / total))
 
 
@@ -363,8 +398,14 @@ def meta_periodo(vend: str, periodo: str, hoy: date) -> float | None:
     """Meta del período elegido.
 
     La dueña carga UNA meta por mes. La del año se suma; la de la semana se
-    prorratea (meta del mes × 7 / días del mes) — no se carga aparte, para no
-    pedirle 52 números por vendedor por año.
+    prorratea — no se carga aparte, para no pedirle 52 números por vendedor
+    por año.
+
+    El prorrateo semanal va por días HÁBILES (meta del mes × hábiles de la
+    semana / hábiles del mes), no por 7/31. Esto no es cosmética: hace que
+    la plata esperada POR DÍA HÁBIL sea idéntica en las dos pantallas, y por
+    lo tanto que "arriba/abajo del ritmo" no pueda decir cosas opuestas en
+    la misma fecha. Con 7/31 sí podía — pasó el 2026-08-04.
     """
     if periodo == "anio":
         # Ver el aviso de `meta_anio`: la vista tiene que comparar contra
@@ -374,8 +415,12 @@ def meta_periodo(vend: str, periodo: str, hoy: date) -> float | None:
     if m is None:
         return None
     if periodo == "semana":
-        dias_mes = calendar.monthrange(hoy.year, hoy.month)[1]
-        return m * 7.0 / dias_mes
+        d_mes, h_mes, _ = rango_periodo("mes", hoy)
+        habiles_mes = dias_habiles(d_mes, h_mes)
+        if habiles_mes <= 0:  # pragma: no cover — ningún mes real da 0
+            return m * 7.0 / calendar.monthrange(hoy.year, hoy.month)[1]
+        d_sem, h_sem, _ = rango_periodo("semana", hoy)
+        return m * dias_habiles(d_sem, h_sem) / habiles_mes
     return m
 
 
@@ -519,8 +564,30 @@ def comision_mes(vend: str, anio: int, mes: int) -> float:
 
 
 def comision_meses(vend: str, anio: int, hasta_mes: int) -> list[dict]:
-    """Comisión mes a mes del año, de la más nueva a la más vieja."""
+    """Comisión mes a mes del año, de la más nueva a la más vieja.
+
+    ⚡ UNA sola query para todo el año. Antes llamaba a `comision_mes()` en
+    un loop, o sea el detalle completo (UNION cheque+cobro con JOIN a
+    cliente) una vez por mes: 8 veces por carga de pantalla. La pantalla
+    tardaba **3.190 ms** contra 162 ms del Inicio — dueña 2026-08-04:
+    *"también está súper lento"*.
+
+    La cuenta es la MISMA, no una aproximación rápida: se redondea la
+    comisión de cada cliente y recién ahí se suma el mes, igual que
+    `comision_mes()`. Un test compara las dos, mes por mes, con igualdad
+    exacta — si alguien "optimiza" esto sumando primero, se rompe.
+    """
+    from modules.comisiones import queries as comisiones_queries
+
+    pct = _pct_comision(vend)
+    por_mes: dict[int, float] = {}
+    for f in comisiones_queries.cobranzas_por_cliente_anio(
+        vend, anio=int(anio), hasta_mes=int(hasta_mes)
+    ):
+        mes = int(f["mes"])
+        cobrado_cli = float(f["cobrado"] or 0)
+        por_mes[mes] = por_mes.get(mes, 0.0) + round(cobrado_cli * pct / 100.0, 2)
     return [
-        {"anio": anio, "mes": mes, "monto": comision_mes(vend, anio, mes)}
+        {"anio": anio, "mes": mes, "monto": round(por_mes.get(mes, 0.0), 2)}
         for mes in range(hasta_mes, 0, -1)
     ]

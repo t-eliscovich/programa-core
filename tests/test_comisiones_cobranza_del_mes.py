@@ -89,6 +89,10 @@ def test_cheques_STATS_DEPOSITADO_sigue_sin_C():
     [
         ("lista", lambda f: f(anio=2026, mes=7)),
         ("cobranzas_detalle", lambda f: f("PPR", anio=2026, mes=7)),
+        # Agregada el 2026-08-04 para que el mes a mes del portal no pida el
+        # detalle 8 veces. Si contara los cheques con otra lista de estados,
+        # la columna de meses no cerraría con la pantalla del mes.
+        ("cobranzas_por_cliente_anio", lambda f: f("PPR", anio=2026, hasta_mes=8)),
     ],
 )
 def test_toda_query_de_cobranza_filtra_por_STATS_COBRADO(sql_de, caso):
@@ -98,17 +102,34 @@ def test_toda_query_de_cobranza_filtra_por_STATS_COBRADO(sql_de, caso):
 
 
 def test_ninguna_lista_de_stats_quedo_hardcodeada_en_el_fuente():
-    """Las 3 apariciones salen de `_IN_COBRADO`, no de literales sueltos.
+    """TODA aparición de `stat IN (...)` sale de `_IN_COBRADO`.
 
     Si alguien vuelve a escribir la lista a mano, se pueden desincronizar
     otra vez — que es exactamente como nació este bug.
+
+    ⚠ Antes esto contaba las apariciones (`== 3`) y se rompía cada vez que se
+    agregaba una query legítima — le pasó a `cobranzas_por_cliente_anio` el
+    2026-08-04. Un test que hay que "arreglar" para agregar código correcto
+    enseña a editarlo sin leerlo, y el día que detecte algo de verdad lo van
+    a editar igual. Lo que importa no es cuántas son: es que ninguna tenga la
+    lista escrita a mano.
     """
     import inspect
+    import re
 
     fuente = inspect.getsource(q)
     cuerpo = fuente.split("_IN_COBRADO = ", 1)[1].split("\n", 1)[1]
-    assert "'B','V','W','I','J','K','A'" not in cuerpo
-    assert cuerpo.count("{_IN_COBRADO}") == 3
+    # Sin los comentarios SQL: ahí la lista se MENCIONA a propósito (la
+    # explicación de la paridad con el PRG cita `stat IN (B, A)`), y no es
+    # código que pueda desincronizarse.
+    cuerpo = "\n".join(
+        ln for ln in cuerpo.splitlines() if not ln.lstrip().startswith("--")
+    )
+
+    apariciones = re.findall(r"stat\s+IN\s+\(([^)]*)\)", cuerpo, re.IGNORECASE)
+    assert apariciones, "desapareció el filtro de estados de cobranza"
+    for a in apariciones:
+        assert a.strip() == "{_IN_COBRADO}", f"lista de stats escrita a mano: {a}"
 
 
 # ── Bug 2: los códigos de cliente duplicados ────────────────────────────

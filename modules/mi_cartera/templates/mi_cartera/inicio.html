@@ -43,6 +43,9 @@
             {% if delta_ritmo >= 0 %}$ {{ delta_ritmo|money_es }} arriba del ritmo
             {% else %}$ {{ (-delta_ritmo)|money_es }} abajo del ritmo{% endif %}
           </span>
+          {# El ritmo va por días hábiles: sin el denominador a la vista el
+             número no se puede verificar, y entonces no se le cree. #}
+          {% if nota_ritmo %}<div class="of">{{ nota_ritmo }}</div>{% endif %}
         {% endif %}
       </div>
     </div>

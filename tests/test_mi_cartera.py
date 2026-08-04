@@ -53,21 +53,81 @@ def test_periodo_desconocido_cae_en_mes():
     assert q.rango_periodo("cualquiera", date(2026, 8, 5))[2] == "Este mes"
 
 
+def test_dias_habiles_no_cuenta_sabados_ni_domingos():
+    # Agosto 2026 arranca sábado: 31 días de calendario, 21 hábiles.
+    assert q.dias_habiles(date(2026, 8, 1), date(2026, 8, 31)) == 21
+    # Una semana comercial completa son 5.
+    assert q.dias_habiles(date(2026, 8, 3), date(2026, 8, 9)) == 5
+    # Un fin de semana solo son 0 — y eso no puede reventar nada.
+    assert q.dias_habiles(date(2026, 8, 1), date(2026, 8, 2)) == 0
+    # Rango invertido = 0, no negativo.
+    assert q.dias_habiles(date(2026, 8, 5), date(2026, 8, 1)) == 0
+
+
 def test_avance_esperado():
     d, h, _ = q.rango_periodo("mes", date(2026, 8, 15))
-    # Al día 15 de un mes de 31, transcurrió 15/31.
-    assert q.avance_esperado(d, h, date(2026, 8, 15)) == pytest.approx(15 / 31)
+    # Al 15 de agosto de 2026 van 10 días hábiles de los 21 del mes.
+    assert q.avance_esperado(d, h, date(2026, 8, 15)) == pytest.approx(10 / 21)
     # Un día posterior al cierre del período no pasa de 1.
     assert q.avance_esperado(d, h, date(2026, 9, 20)) == 1.0
     # Período degenerado no divide por cero.
     assert q.avance_esperado(date(2026, 8, 2), date(2026, 8, 1), date(2026, 8, 1)) == 1.0
+    # Un período de puro fin de semana tampoco.
+    assert q.avance_esperado(date(2026, 8, 1), date(2026, 8, 2), date(2026, 8, 1)) == 1.0
 
 
 def test_meta_semanal_se_prorratea(monkeypatch):
     monkeypatch.setattr(q, "meta_mes", lambda *a, **k: 3100.0)
-    # Agosto tiene 31 días → la semana vale 7/31 de la meta del mes.
-    assert q.meta_periodo("PPR", "semana", date(2026, 8, 5)) == pytest.approx(700.0)
+    # Agosto 2026 tiene 21 días hábiles → la semana (5 hábiles) vale 5/21.
+    assert q.meta_periodo("PPR", "semana", date(2026, 8, 5)) == pytest.approx(
+        3100.0 * 5 / 21
+    )
     assert q.meta_periodo("PPR", "mes", date(2026, 8, 5)) == 3100.0
+
+
+@pytest.mark.parametrize("hoy", [date(2026, 8, 3), date(2026, 8, 4), date(2026, 8, 5),
+                                 date(2026, 8, 6), date(2026, 8, 7)])
+def test_la_semana_y_el_mes_no_pueden_decir_cosas_opuestas(monkeypatch, hoy):
+    """El bug que reportó la dueña el 2026-08-04:
+
+        *"eso de el ritmo está mal calculado. siendo 4 de agosto ¿cómo es que
+        en semana estoy arriba del ritmo y en mes abajo? O lo sacás o le
+        ponés bien la lógica."*
+
+    Tenía razón y era el fin de semana. Agosto 2026 arranca SÁBADO: el mes
+    prorrateaba por días de calendario, así que al 04/08 ya daba por
+    transcurrido el 1 y el 2 —sábado y domingo, 0 facturas de domingo en la
+    historia de la empresa— mientras la semana, que arranca el lunes 3, no
+    los contaba. Los mismos $750,34 quedaban arriba del ritmo en una
+    pantalla y abajo en la otra, el mismo día.
+
+    Durante la PRIMERA semana del mes lo vendido en la semana y lo vendido
+    en el mes son lo mismo, así que el delta contra el ritmo TIENE que ser
+    idéntico. Es una identidad, no una tolerancia.
+    """
+    monkeypatch.setattr(q, "meta_mes", lambda *a, **k: 10_000.0)
+    vendido = 750.34
+
+    d_sem, h_sem, _ = q.rango_periodo("semana", hoy)
+    d_mes, h_mes, _ = q.rango_periodo("mes", hoy)
+
+    delta_sem = vendido - q.meta_periodo("V", "semana", hoy) * q.avance_esperado(
+        d_sem, h_sem, hoy)
+    delta_mes = vendido - q.meta_periodo("V", "mes", hoy) * q.avance_esperado(
+        d_mes, h_mes, hoy)
+
+    assert delta_sem == pytest.approx(delta_mes, abs=1e-9)
+    # Y el signo, que es lo único que el vendedor mira.
+    assert (delta_sem >= 0) == (delta_mes >= 0)
+
+
+def test_el_ritmo_no_avanza_el_fin_de_semana():
+    """Corolario: el viernes a la noche y el domingo a la noche el vendedor
+    ve el MISMO objetivo. Antes el lunes arrancaba debiendo dos días."""
+    d, h, _ = q.rango_periodo("mes", date(2026, 8, 7))
+    viernes = q.avance_esperado(d, h, date(2026, 8, 7))
+    domingo = q.avance_esperado(d, h, date(2026, 8, 9))
+    assert viernes == domingo == pytest.approx(5 / 21)
 
 
 def test_sin_meta_cargada_devuelve_none(monkeypatch):
@@ -622,11 +682,62 @@ COBROS_CENTAVO = [
 
 
 def test_el_mes_a_mes_usa_la_misma_cuenta_que_el_desglose(monkeypatch):
-    """Si la lista de meses contara distinto, agosto valdría dos cosas."""
+    """Si la lista de meses contara distinto, agosto valdría dos cosas.
+
+    ⭐ Desde el 2026-08-04 la lista mes a mes ya NO recorre el detalle mes por
+    mes (eran 8 queries pesadas por pantalla, 3.190 ms): sale de UNA sola
+    consulta agregada por (mes, cliente). Este test es lo que garantiza que
+    la optimización no cambió el número: el agregado se agrupa por CLIENTE y
+    se redondea por cliente, igual que el desglose. Si alguien lo "mejora"
+    sumando el mes entero antes de aplicar el %, vuelve el $7,73 vs $7,74.
+    """
+    from modules.comisiones import queries as cq
+
     monkeypatch.setattr(q, "cobros_del_mes", lambda *a, **k: COBROS_CENTAVO)
     monkeypatch.setattr(q, "_pct_comision", lambda vend: 3.0)
+
+    # El agregado que devolvería Postgres para los mismos cobros.
+    por_cli: dict[str, float] = {}
+    for c in COBROS_CENTAVO:
+        por_cli[c["codigo_cli"]] = por_cli.get(c["codigo_cli"], 0.0) + c["importe"]
+    monkeypatch.setattr(
+        cq, "cobranzas_por_cliente_anio",
+        lambda codigo, *, anio, hasta_mes=12: [
+            {"mes": 8, "codigo_cli": k, "cobrado": v} for k, v in por_cli.items()
+        ],
+    )
+
     filas = q.comision_meses("RMY", 2026, 8)
     assert filas[0] == {"anio": 2026, "mes": 8, "monto": q.comision_mes("RMY", 2026, 8)}
+    # Los meses sin cobranza salen en 0, no se saltean: la lista es el año.
+    assert [f["mes"] for f in filas] == [8, 7, 6, 5, 4, 3, 2, 1]
+    assert all(f["monto"] == 0 for f in filas[1:])
+
+
+def test_el_mes_a_mes_hace_UNA_query_y_no_una_por_mes(monkeypatch):
+    """La regresión de performance, medida en la unidad que importa: queries.
+
+    Dueña 2026-08-04: *"también está súper lento"*. /mi-cartera/comisión
+    tardaba 3.190 ms contra 162 ms del Inicio, y no era la base: era que la
+    columna mes a mes pedía el detalle completo una vez por mes.
+    """
+    from modules.comisiones import queries as cq
+
+    llamadas = []
+    monkeypatch.setattr(q, "_pct_comision", lambda vend: 1.0)
+    monkeypatch.setattr(
+        cq, "cobranzas_por_cliente_anio",
+        lambda codigo, *, anio, hasta_mes=12: llamadas.append((codigo, anio,
+                                                               hasta_mes)) or [],
+    )
+    # Y que nadie vuelva al detalle por mes por la puerta de atrás.
+    def _prohibido(*a, **k):
+        raise AssertionError("comision_meses volvió a pedir el detalle por mes")
+
+    monkeypatch.setattr(q, "cobros_del_mes", _prohibido)
+
+    q.comision_meses("RMY", 2026, 8)
+    assert llamadas == [("RMY", 2026, 8)]
 
 
 def test_la_comision_no_deja_pedir_un_mes_futuro(vendedor_logueado, monkeypatch):

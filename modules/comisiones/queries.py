@@ -305,6 +305,60 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
     ) or []
 
 
+def cobranzas_por_cliente_anio(codigo: str, *, anio: int,
+                               hasta_mes: int = 12) -> list[dict]:
+    """Cobranza acreditada del AÑO, agregada por (mes, cliente). UNA query.
+
+    Misma definición que `cobranzas_detalle` —mismos estados, mismo CTE de
+    deduplicación, mismo filtro de no-cheque— pero sumada en la base en vez
+    de traer fila por fila.
+
+    ⭐ Existe por una regresión del 2026-08-03: la lista "mes a mes" del
+    portal del vendedor llamaba al detalle completo del mes UNA VEZ POR MES
+    para armar la columna. Con 8 meses cargados eso son 8 UNION sobre
+    cheque+cobro por cada visita a la pantalla: **3.190 ms** contra 162 ms
+    del Inicio. La dueña, 2026-08-04: *"también está súper lento"*.
+
+    Se devuelve el desglose POR CLIENTE y no un total por mes a propósito:
+    la comisión canónica es la suma de las comisiones redondeadas de cada
+    cliente (ver `mi_cartera.queries.comision_mes`). Si acá se sumara todo
+    el mes de una y recién después se aplicara el %, la lista mes a mes
+    volvería a diferir del desglose en centavos — que es exactamente el bug
+    del $7,73 vs $7,74 que ya se arregló una vez.
+    """
+    return db.fetch_all(
+        f"""
+        WITH{_CTE_CLI},
+        mov AS (
+            SELECT EXTRACT(MONTH FROM ch.fechad)::int AS mes,
+                   TRIM(ch.codigo_cli)                AS codigo_cli,
+                   ch.importe                         AS importe
+              FROM scintela.cheque ch
+              JOIN cli c ON c.codigo_cli = ch.codigo_cli
+             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+               AND EXTRACT(MONTH FROM ch.fechad) <= %(hasta)s
+               AND ch.stat IN ({_IN_COBRADO})
+               AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
+            UNION ALL
+            SELECT EXTRACT(MONTH FROM co.fecha)::int AS mes,
+                   TRIM(co.codigo_cli)               AS codigo_cli,
+                   co.valor                          AS importe
+              FROM scintela.cobro co
+              JOIN cli c ON c.codigo_cli = co.codigo_cli
+             WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
+               AND EXTRACT(MONTH FROM co.fecha) <= %(hasta)s
+               AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
+               AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
+        )
+        SELECT mes, codigo_cli, COALESCE(SUM(importe), 0) AS cobrado
+          FROM mov
+         GROUP BY mes, codigo_cli
+         ORDER BY mes DESC, cobrado DESC
+        """,
+        {"codigo": codigo, "yy": int(anio), "hasta": int(hasta_mes)},
+    ) or []
+
+
 def ventas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
     """Detalle de facturas emitidas del mes para un vendedor."""
     return db.fetch_all(

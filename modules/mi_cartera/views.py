@@ -166,6 +166,14 @@ def inicio():
         delta_ritmo=((vendido - meta * esperado)
                      if (meta and esperado is not None) else None),
         nota_meta=nota_meta,
+        # El ritmo se mide en días HÁBILES: la fábrica no factura sábados ni
+        # domingos (0 facturas de domingo desde que hay datos). Se muestra el
+        # denominador porque un "abajo del ritmo" que no dice contra qué es
+        # exactamente lo que la dueña no pudo verificar el 04/08 — y tenía
+        # razón, estaba mal.
+        nota_ritmo=(f"día hábil {queries.dias_habiles(desde, min(hoy, hasta))}"
+                    f" de {queries.dias_habiles(desde, hasta)}"
+                    if (meta and esperado is not None) else None),
         cobrado=queries.cobrado(vend, desde, hasta),
         pendiente=pend,
         barras=barras,
