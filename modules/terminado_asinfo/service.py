@@ -167,6 +167,28 @@ def _tabla(periodos, vendido, movimiento, inicial):
     return {"filas": filas, "total": _totalizar(filas)}
 
 
+def _todos_los_periodos(fabricacion: list[dict], *fuentes) -> list[dict]:
+    """La lista de períodos de una tabla = la UNIÓN de las tres fuentes.
+
+    TMT 2026-08-04. La primera versión iteraba SÓLO los períodos con
+    fabricación, y eso escondía días enteros: el 01 y el 02 de agosto tuvieron
+    despachos y movimientos de bodega pero ninguna OF cerrada, así que no
+    aparecían — que es exactamente lo que la dueña preguntó ("¿y que el 1 o el
+    2 de agosto no se terminó nada?"). Peor: sus kg quedaban afuera del
+    encadenado, así que la tabla por día no cerraba con la tabla por mes (el
+    03/08 mostraba −7.808 de otros mov. contra +8.925 del mes).
+
+    Un período sin fabricación entra con fab/issued en 0 — que es la verdad:
+    no se cerró ninguna orden ese día, pero la bodega se movió igual.
+    """
+    por_clave = {f["periodo"]: dict(f) for f in fabricacion}
+    for fuente in fuentes:
+        for clave in (fuente or {}):
+            por_clave.setdefault(clave, {"periodo": clave, "n_ofs": 0,
+                                         "fab": 0.0, "issued": 0.0})
+    return [por_clave[k] for k in sorted(por_clave)]
+
+
 def resumen(anio: int, mes: int) -> dict:
     """Las dos tablas de la pantalla.
 
@@ -188,10 +210,14 @@ def resumen(anio: int, mes: int) -> dict:
     mov_mes = asinfo_service.movimiento_bodega_por_mes(BODEGA_TERMINADO, anio)
     mov_dia = asinfo_service.movimiento_bodega_por_dia(BODEGA_TERMINADO, anio, mes)
 
-    # Un ancla por tabla, cada una con la foto REAL de su arranque.
-    meses = _tabla(meses_raw, vendido_mes, mov_mes,
+    # Un ancla por tabla, cada una con la foto REAL de su arranque. Y los
+    # períodos son la UNIÓN de las tres fuentes: un día con despacho pero sin
+    # OF cerrada TAMBIÉN es una fila (ver `_todos_los_periodos`).
+    meses = _tabla(_todos_los_periodos(meses_raw, vendido_mes, mov_mes),
+                   vendido_mes, mov_mes,
                    _stock_terminado_a_fecha(_fin_de_mes_anterior(anio, 1)))
-    dias = _tabla(dias_raw, vendido_dia, mov_dia,
+    dias = _tabla(_todos_los_periodos(dias_raw, vendido_dia, mov_dia),
+                  vendido_dia, mov_dia,
                   _stock_terminado_a_fecha(_fin_de_mes_anterior(anio, mes)))
 
     # Control: ¿el encadenado del año llega al stock que Asinfo dice tener al

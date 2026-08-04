@@ -330,6 +330,8 @@ def test_tab_renderiza_las_dos_tablas(app, fake_db):
     assert "01/2026" in body           # etiqueta del mes
     assert "03/07/2026" in body        # etiqueta del día, formato EU
     assert "106.000,00" in body        # final encadenado de enero
+    # Dueña 2026-08-04: "poneme los mov que restan un −". Vendido va negativo.
+    assert "-4.000,00" in body
 
 
 def test_tab_sin_asinfo_avisa_y_no_rompe(app, fake_db):
@@ -458,8 +460,57 @@ def test_todas_las_filas_tienen_las_columnas_del_encabezado(app, fake_db):
     assert tablas, "no se renderizó ninguna tabla con filas"
     for filas in tablas:
         cabecera, *cuerpo = filas
-        assert cabecera == 9, f"el <thead> cambió de ancho: {cabecera}"
+        assert cabecera == 8, f"el <thead> cambió de ancho: {cabecera}"
         for n in cuerpo:
             assert n == cabecera, (
                 f"fila de {n} celdas contra {cabecera} del encabezado — "
                 "la tabla quedó corrida")
+
+
+# ---------------------------------------------------------------------------
+# ⚠ DÍAS SIN OF CERRADA
+#
+# TMT 2026-08-04, dueña: *"¿y que ayer 2 de agosto o 1 de agosto no se terminó
+# nada?"*. Tenía razón en desconfiar: esos días SÍ tuvieron despachos y
+# movimiento de bodega, pero como no cerró ninguna OF, la tabla iteraba sólo
+# los períodos con fabricación y los borraba de la pantalla — y sus kg
+# quedaban afuera del encadenado, así que la tabla por día no cerraba con la
+# de por mes (el 03/08 daba −7.808 de otros mov. contra +8.925 del mes).
+# ---------------------------------------------------------------------------
+
+
+def test_un_dia_con_venta_pero_sin_of_cerrada_igual_es_una_fila():
+    stock = {"2026-07-31": 100_000.0}
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        stock,
+        dias=[{"periodo": "2026-08-03", "n_ofs": 92, "fab": 1_000.0,
+               "issued": 1_050.0}],
+        vendido_dia={"2026-08-01": 700.0, "2026-08-03": 400.0},
+        mov_dia={"2026-08-01": {"ingreso": 0.0, "egreso": 700.0},
+                 "2026-08-03": {"ingreso": 1_000.0, "egreso": 400.0}})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        out = tsvc.resumen(2026, 8)
+    dias = out["dias"]["filas"]
+    assert [d["periodo"] for d in dias] == ["2026-08-01", "2026-08-03"]
+    # El 01/08 no cerró ninguna orden, pero vendió 700 kg.
+    assert dias[0]["n_ofs"] == 0 and dias[0]["producido"] == 0.0
+    assert dias[0]["vendido"] == 700.0
+    assert dias[0]["final"] == 99_300.0
+    # Y el encadenado sigue: el 03/08 arranca donde terminó el 01/08.
+    assert dias[1]["inicial"] == 99_300.0
+    assert dias[1]["final"] == 99_900.0
+
+
+def test_los_periodos_extra_no_rompen_el_orden():
+    """Las filas salen ordenadas por período aunque la fuente extra traiga un
+    día ANTERIOR al primero con fabricación."""
+    p1, p2, p3, p4, p5, p6, p7 = _mock_resumen(
+        {}, dias=[{"periodo": "2026-08-03", "n_ofs": 1, "fab": 1.0,
+                   "issued": 1.0}],
+        vendido_dia={"2026-08-02": 5.0, "2026-08-01": 9.0})
+    with p1, p2, p3, p4, p5, p6, p7, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        out = tsvc.resumen(2026, 8)
+    assert [d["periodo"] for d in out["dias"]["filas"]] == [
+        "2026-08-01", "2026-08-02", "2026-08-03"]

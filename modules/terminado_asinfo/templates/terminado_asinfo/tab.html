@@ -26,6 +26,12 @@
   /* "Otros mov." es la columna que explica el descuadre: va destacada porque
      un número grande ahí es justamente lo que hay que ir a mirar. */
   .tm td.otros{color:#a16207;font-weight:600}
+  /* Lo que RESTA del stock se imprime en negativo (dueña 2026-08-04) y en un
+     gris azulado, para que la fila se lea como una suma. */
+  .tm td.resta{color:#475569}
+  /* El % de desperdicio va pegado a los kg, chiquito y gris: es la lectura del
+     mismo número, no otra columna. */
+  .tm .pct{color:#94a3b8;font-weight:400;font-size:11px;margin-left:5px}
   /* Las tres columnas de flujo (producido/vendido/desperdicio) van con un
      fondo tenue para que el ojo separe de un saque el STOCK (inicial/final)
      de lo que se MOVIÓ en el medio. */
@@ -94,6 +100,13 @@
      mirada con dos zooms distintos. Un macro y no dos tablas copiadas para que
      no se puedan separar con el tiempo. #}
   {% macro tabla_mov(tabla, rotulo_periodo, rotulo_total, es_dia) -%}
+    {# TMT 2026-08-04 (dueña: "poneme los mov que restan un −, si no no
+       entiendo"). Vendido SALE del stock, así que se imprime en NEGATIVO: la
+       fila se lee como una suma de izquierda a derecha —inicial + producido +
+       (−vendido) + otros = final— y la cuenta se puede seguir con el dedo. En
+       positivo parecía un sumando más y no cerraba a la vista.
+       Y ("desperdicio un número y al lado un porcentaje en grisecito, no hacen
+       falta dos columnas") los kg y el % de desperdicio van en UNA celda. #}
     <table>
       <thead>
         <tr>
@@ -105,7 +118,6 @@
           <th class="flujo">Otros mov. (kg)</th>
           <th>Final (kg)</th>
           <th class="flujo">Desperdicio (kg)</th>
-          <th class="flujo">Desperdicio %</th>
         </tr>
       </thead>
       <tbody>
@@ -115,13 +127,13 @@
             <td>{{ f.n_ofs }}</td>
             <td>{% if f.inicial is not none %}{{ f.inicial|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="flujo">{{ f.producido|num_es }}</td>
-            <td class="flujo">{{ f.vendido|num_es }}</td>
+            <td class="flujo resta">{{ (-f.vendido)|num_es }}</td>
             <td class="flujo{{ ' otros' if f.otros }}"
-                {%- if f.otros_ingreso is not none %} title="Entró sin ser producción: {{ f.otros_ingreso|num_es }} kg · salió sin ser venta: {{ f.otros_egreso|num_es }} kg"{% endif %}>
+                {%- if f.otros_ingreso is not none %} title="Entró a bodega sin ser producción: {{ f.otros_ingreso|num_es }} kg · salió de bodega sin ser venta: {{ f.otros_egreso|num_es }} kg"{% endif %}>
               {%- if f.otros is not none %}{{ f.otros|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if f.final is not none %}{{ f.final|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td class="flujo desp">{{ f.desperdicio_kg|num_es }}</td>
-            <td class="flujo desp">{% if f.desperdicio_pct is not none %}{{ f.desperdicio_pct|num_es }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="flujo desp">{{ f.desperdicio_kg|num_es }}{% if f.desperdicio_pct is not none %}
+              <span class="pct">{{ f.desperdicio_pct|num_es }}%</span>{% endif %}</td>
           </tr>
         {% endfor %}
         <tr class="tot">
@@ -129,11 +141,11 @@
           <td>{{ tabla.total.n_ofs }}</td>
           <td>{% if tabla.total.inicial is not none %}{{ tabla.total.inicial|num_es }}{% else %}—{% endif %}</td>
           <td class="flujo">{{ tabla.total.producido|num_es }}</td>
-          <td class="flujo">{{ tabla.total.vendido|num_es }}</td>
+          <td class="flujo resta">{{ (-tabla.total.vendido)|num_es }}</td>
           <td class="flujo{{ ' otros' if tabla.total.otros }}">{% if tabla.total.otros is not none %}{{ tabla.total.otros|num_es }}{% else %}—{% endif %}</td>
           <td>{% if tabla.total.final is not none %}{{ tabla.total.final|num_es }}{% else %}—{% endif %}</td>
-          <td class="flujo desp">{{ tabla.total.desperdicio_kg|num_es }}</td>
-          <td class="flujo desp">{% if tabla.total.desperdicio_pct is not none %}{{ tabla.total.desperdicio_pct|num_es }}{% else %}—{% endif %}</td>
+          <td class="flujo desp">{{ tabla.total.desperdicio_kg|num_es }}{% if tabla.total.desperdicio_pct is not none %}
+            <span class="pct">{{ tabla.total.desperdicio_pct|num_es }}%</span>{% endif %}</td>
         </tr>
       </tbody>
     </table>
@@ -155,10 +167,13 @@
     <p class="note" style="margin:8px 0 2px">Inicial + producido − vendido = final.
       <strong>Vendido</strong> = lo despachado físicamente al cliente (no la factura).
       <strong>Desperdicio</strong> = tela cruda que entró al proceso y no salió como terminado.<br>
-      <strong>Otros mov.</strong> = lo que la bodega movió y no fue ni producción ni venta
-      (devoluciones de cliente, reprocesos, ajustes de inventario). Pasá el mouse por
-      encima para ver cuánto entró y cuánto salió. Con esta columna el final CIERRA con
-      el stock que tiene Asinfo; sin ella el año se separaba 33 t y no se veía por qué.</p>
+      <strong>Otros mov.</strong> = todo lo demás que entró o salió de la bodega de
+      terminado y <em>no</em> fue producir ni vender: devoluciones de clientes, tela que
+      vuelve a reprocesarse, y ajustes de inventario. Es la resta entre lo que la bodega
+      movió de verdad y lo que explican las otras dos columnas — en positivo entró de más,
+      en negativo salió de más. Pasá el mouse por encima de la celda para ver las dos
+      puntas por separado. Con esta columna el final CIERRA con el stock que tiene Asinfo;
+      sin ella el año se separaba 33 t y no se veía por qué.</p>
     {{ tabla_mov(data.meses, 'Mes', 'TOTAL ' ~ anio, false) }}
 
     {# Control de que el encadenado no se separó de la realidad. El inicial se
