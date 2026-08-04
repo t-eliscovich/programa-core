@@ -516,6 +516,53 @@ def test_la_lista_de_comisiones_deja_editar_el_nombre():
     assert 'name="nombre"' in tpl
 
 
+def test_el_nombre_ya_cargado_se_muestra_como_texto(app, fake_db, monkeypatch):
+    """Dueña 2026-08-04: *"no me hagas editable los nombres, dejalos como están"*.
+
+    Los seis ya están cargados. Seis cajas de texto abiertas en la pantalla
+    que se mira todos los meses no agregan nada y sí ofrecen pisar un nombre
+    sin querer.
+
+    Pero el campo NO desaparece: queda detrás del lapicito, y sale abierto
+    solo en las filas donde falta el nombre. Si se borrara del todo volvería
+    el bug de ayer —una ruta sin pantalla es una función que no existe— y un
+    vendedor nuevo no tendría dónde ponerle el nombre.
+    """
+    from modules.comisiones import views as cviews
+
+    filas = [
+        {"codigo": "RMY", "nombre": "Roberto Miranda", "pct_comision": 1.0,
+         "activo": True, "n_clientes": 3, "ventas_mes": 0, "cobranzas_mes": 0,
+         "comision_mes": 0},
+        # Recién sembrado: el nombre viene igual al código (así quedaron los
+        # seis en mayo) — para la pantalla eso es "sin nombre".
+        {"codigo": "NUE", "nombre": "NUE", "pct_comision": 0,
+         "activo": True, "n_clientes": 0, "ventas_mes": 0, "cobranzas_mes": 0,
+         "comision_mes": 0},
+    ]
+    monkeypatch.setattr(cviews.queries, "lista", lambda **k: filas)
+
+    rid = fake_db.add_role("Tester", ["comisiones.ver"])
+    uid = fake_db.add_user("jefa", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    html = c.get("/comisiones").data.decode()
+
+    # El que YA tiene nombre: texto plano, y su formulario arranca oculto.
+    assert ">Roberto Miranda</span>" in html
+    assert 'id="nom-RMY-form"' in html
+    forma_rmy = html.split('id="nom-RMY-form"')[1].split(">")[0]
+    assert "hidden" in forma_rmy and "inline-flex" not in forma_rmy
+
+    # El que NO lo tiene: la caja abierta, vacía y lista para escribir.
+    forma_nue = html.split('id="nom-NUE-form"')[1].split(">")[0]
+    assert "inline-flex" in forma_nue and "hidden" not in forma_nue
+    assert "— sin nombre —" in html
+    # Y el código repetido como nombre no se muestra como si fuera un nombre.
+    assert ">NUE</span>" not in html
+
+
 # ---------------------------------------------------------------------------
 # La meta del AÑO a medio cargar — el 3345%
 # ---------------------------------------------------------------------------

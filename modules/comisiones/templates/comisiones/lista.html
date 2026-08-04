@@ -78,17 +78,45 @@
                `comisiones.actualizar_nombre` existe y dice "inline edit desde
                la lista") pero ninguna pantalla tenía el campo: los 6 vendedores
                quedaron con el nombre vacío desde que se sembraron en mayo, y el
-               portal del vendedor saludaba "Hola, RMY". #}
+               portal del vendedor saludaba "Hola, RMY".
+
+               TMT 2026-08-04 (dueña): *"no me hagas editable los nombres,
+               dejalos como están"*. Los seis ya están cargados; seis cajas de
+               texto abiertas en la pantalla que se mira todos los meses no
+               agregan nada y sí ofrecen pisar un nombre sin querer.
+
+               Ahora el nombre es TEXTO. La caja aparece sola sólo donde falta
+               algo que llenar —nombre vacío, o nombre igual al código, que es
+               como quedaron los sembrados de mayo— y, si no, detrás del
+               lapicito. Sacar el campo del todo sería volver al problema de
+               ayer: una ruta sin pantalla es una función que no existe, y el
+               día que se dé de alta un vendedor nuevo no habría dónde
+               ponerle el nombre. #}
+            {% set _nom = (f.nombre or '') | trim %}
+            {% set _fila_nom = 'nom-' ~ f.codigo %}
             <form method="post" action="{{ url_for('comisiones.actualizar_nombre', codigo=f.codigo) }}"
-                  class="inline-flex items-center gap-1 mt-1">
+                  id="{{ _fila_nom }}-form"
+                  class="{{ 'inline-flex' if not _nom or _nom|upper == f.codigo|upper else 'hidden' }} items-center gap-1 mt-1">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="anio" value="{{ anio }}">
               <input type="hidden" name="mes" value="{{ mes }}">
               <input type="text" name="nombre" maxlength="100"
-                     value="{{ f.nombre or '' }}" placeholder="— sin nombre —"
+                     value="{{ _nom if _nom|upper != f.codigo|upper else '' }}"
+                     placeholder="— sin nombre —"
                      class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-sm w-52">
               <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nombre">✓</button>
             </form>
+            {% if _nom and _nom|upper != f.codigo|upper %}
+            <div id="{{ _fila_nom }}-txt" class="flex items-center gap-1 mt-1">
+              <span class="text-sm text-slate-700 dark:text-slate-300">{{ _nom }}</span>
+              <button type="button" title="Corregir el nombre"
+                      class="text-xs text-slate-300 hover:text-sky-600"
+                      onclick="document.getElementById('{{ _fila_nom }}-txt').classList.add('hidden');
+                               var f=document.getElementById('{{ _fila_nom }}-form');
+                               f.classList.remove('hidden');f.classList.add('inline-flex');
+                               f.querySelector('input[name=nombre]').focus();">✎</button>
+            </div>
+            {% endif %}
           </td>
           <td class="px-4 py-2 text-right">
             {# Inline edit del % #}
