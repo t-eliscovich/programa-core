@@ -57,9 +57,26 @@ PREFIJOS_INFRA: tuple[str, ...] = (
     "/stop-impersonate",
 )
 
-# Adónde mandamos al vendedor cuando pide "/" (la raíz redirige al tablero
-# general, que él no puede ver).
+# Adónde mandamos al vendedor cuando pide una pantalla de ENTRADA.
 HOME_VENDEDOR = "/mi-cartera"
+
+# ⭐ Las pantallas de ENTRADA se REDIRIGEN, no se 404ean.
+#
+# El login manda a `dashboard.index` (`/tablero/`), que a su vez rebota a
+# `historial.operaciones` (`/operaciones`). Ninguna de las dos está en el
+# allowlist, así que un vendedor que ponía su usuario y contraseña aterrizaba
+# en un **404** — lo primero que veía del sistema. Lo mismo al usar "Ver como"
+# y al clickear "Volver al inicio" desde cualquier página de error.
+#
+# Es el mismo error que tenía `/stop-impersonate`, y por eso está acá arriba
+# escrito: **un candado no puede cerrar la puerta por la que se entra ni la
+# puerta por la que se sale.** Cada vez que alguien hardcodea "la home" en un
+# redirect, esta lista es la que evita que el vendedor termine en un 404.
+PREFIJOS_HOME: tuple[str, ...] = (
+    "/",
+    "/tablero",
+    "/operaciones",
+)
 
 
 def vendedor_de(user: dict | None) -> str:
@@ -97,7 +114,7 @@ def enforce_scope_vendedor():
 
     path = request.path or "/"
 
-    if path == "/":
+    if path == "/" or _path_permitido(path, PREFIJOS_HOME):
         return redirect(HOME_VENDEDOR)
 
     if _path_permitido(path, PREFIJOS_PERMITIDOS):

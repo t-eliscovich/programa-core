@@ -15,6 +15,7 @@ from flask import g
 
 from scope_vendedor import (
     HOME_VENDEDOR,
+    PREFIJOS_HOME,
     PREFIJOS_INFRA,
     PREFIJOS_PERMITIDOS,
     _path_permitido,
@@ -212,3 +213,35 @@ def test_pero_no_puede_impersonar_a_otro(app):
     """La puerta de SALIDA se abre; la de ENTRADA no."""
     resp = _con_user(app, "/impersonate/3", {"vend": "PPR"})
     assert resp is not None and resp[1] == 404
+
+
+# --------------------------------------------------------------------------
+# Las pantallas de ENTRADA se redirigen, no se 404ean
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/", "/tablero", "/tablero/", "/operaciones"])
+def test_las_entradas_llevan_al_portal_en_vez_de_404(app, path):
+    """El bug que se comió el primer login de verdad (2026-08-03).
+
+    `auth.login` manda a `dashboard.index` = `/tablero/`, que rebota a
+    `/operaciones`. Ninguna estaba en el allowlist: el vendedor ponía su
+    usuario y contraseña y **lo primero que veía del sistema era un 404**.
+    Lo mismo con "Ver como" y con "Volver al inicio" de las páginas de error.
+    """
+    resp = _con_user(app, path, {"vend": "PPR"})
+    assert not isinstance(resp, tuple), f"{path} 404ea en vez de redirigir"
+    assert resp.status_code in (301, 302, 303)
+    assert resp.headers["Location"].endswith(HOME_VENDEDOR)
+
+
+def test_las_entradas_no_abren_lo_que_cuelga_de_ellas(app):
+    """`/operaciones` redirige; `/operaciones-secretas` no existe para él."""
+    resp = _con_user(app, "/operaciones-secretas", {"vend": "PPR"})
+    assert isinstance(resp, tuple) and resp[1] == 404
+
+
+def test_un_usuario_normal_no_ve_ningun_redirect_nuevo(app):
+    """La invariante de siempre: para quien no es vendedor, no-op exacto."""
+    for path in PREFIJOS_HOME:
+        assert _con_user(app, path, {"username": "tamara", "vend": None}) is None
