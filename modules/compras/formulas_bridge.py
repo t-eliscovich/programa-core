@@ -426,9 +426,13 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                                  f"({(f.importe_pc or 0):.2f} → "
                                  f"{f.importe_con_iva:.2f})"),
                 )
+                _previo = (res or {}).get("importe_previo")
                 ajustadas.append({
                     "proveedor": f.proveedor_pc, "factura": f.factura_pc,
-                    "importe_previo": (res or {}).get("importe_previo"),
+                    # si `editar` no lo devolvió, el importe que PC tenía
+                    # antes de la corrida es el que leímos en estado_mes
+                    "importe_previo": (_previo if _previo is not None
+                                       else f.importe_pc),
                     "importe": f.importe_con_iva,
                 })
                 log.info("puente formulas: corregida %s %s %.2f → %.2f",
@@ -510,12 +514,27 @@ def _avisar_novedades(creadas: list, errores: list, ajustadas: list | None = Non
             facturas = ",".join(sorted(str(a.get("factura") or "")
                                        for a in ajustadas))
             total = sum(float(a.get("importe") or 0) for a in ajustadas)
+            # TMT 2026-08-04 (dueña): *"aca poneme de cuanto era el anterior
+            # o (+100) algo asi"*. El aviso decía sólo el importe nuevo, así
+            # que no se podía saber si la factura creció $2 o $2.000 sin
+            # abrir la compra. Ahora dice de cuánto era y cuánto cambió.
+            previo = sum(float(a.get("importe_previo") or 0) for a in ajustadas)
+            delta = round(total - previo, 2)
+            if previo:
+                cambio = (f"antes $ {num_es(previo, 2)} → ahora $ "
+                          f"{num_es(total, 2)} "
+                          f"({'+' if delta >= 0 else '−'}$ "
+                          f"{num_es(abs(delta), 2)})")
+            else:
+                cambio = f"ahora $ {num_es(total, 2)}"
             avisar(
                 fuente="quimicos",
                 titulo=f"Químicos · se corrigió el importe de {len(ajustadas)} compra"
-                       f"{'' if len(ajustadas) == 1 else 's'}",
+                       f"{'' if len(ajustadas) == 1 else 's'}"
+                       + (f" ({'+' if delta >= 0 else '−'}$ {num_es(abs(delta), 2)})"
+                          if previo else ""),
                 detalle=(f"La factura cambió en el programa de tintorería: "
-                         f"{facturas} · ahora $ {num_es(total, 2)}"),
+                         f"{facturas} · {cambio}"),
                 importe=round(total, 2), cantidad=len(ajustadas),
                 url="/compras",
                 # el importe va en la clave: si la misma factura se corrige

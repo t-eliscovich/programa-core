@@ -314,6 +314,54 @@ def test_sincronizar_corrige_el_importe_y_no_duplica():
     assert "formulas" in kw["observacion"]
     assert len(rep["ajustadas"]) == 1
     assert rep["ajustadas"][0]["factura"] == "133"
+    assert rep["ajustadas"][0]["importe_previo"] == pytest.approx(3779.00)
+
+
+# ── el aviso de corrección dice de cuánto era antes ─────────────────────────
+
+def _aviso_ajuste(ajustadas):
+    """Corre _avisar_novedades y devuelve los kwargs del aviso de ajuste."""
+    with patch("modules.avisos.avisar") as av:
+        fb._avisar_novedades([], [], ajustadas)
+    return av.call_args_list[0].kwargs
+
+
+def test_aviso_de_ajuste_muestra_el_importe_anterior_y_la_diferencia():
+    kw = _aviso_ajuste([{"proveedor": "AQ", "factura": "174",
+                         "importe_previo": 7608.97, "importe": 7708.97}])
+    assert "antes $ 7.608,97" in kw["detalle"]
+    assert "ahora $ 7.708,97" in kw["detalle"]
+    assert "(+$ 100,00)" in kw["detalle"]
+    assert "(+$ 100,00)" in kw["titulo"]
+
+
+def test_aviso_de_ajuste_cuando_la_factura_bajo():
+    kw = _aviso_ajuste([{"proveedor": "AQ", "factura": "174",
+                         "importe_previo": 7708.97, "importe": 7608.97}])
+    assert "(−$ 100,00)" in kw["detalle"]
+    assert "+" not in kw["titulo"]
+
+
+def test_aviso_de_ajuste_sin_previo_no_inventa_la_diferencia():
+    """Si no sabemos de cuánto era, el aviso vuelve al texto de antes."""
+    kw = _aviso_ajuste([{"proveedor": "AQ", "factura": "174",
+                         "importe_previo": None, "importe": 7708.97}])
+    assert kw["detalle"].endswith("174 · ahora $ 7.708,97")
+    assert "antes" not in kw["detalle"]
+    assert "$" not in kw["titulo"]
+
+
+def test_aviso_de_ajuste_suma_varias_facturas():
+    kw = _aviso_ajuste([
+        {"proveedor": "AQ", "factura": "174",
+         "importe_previo": 1000.00, "importe": 1100.00},
+        {"proveedor": "AQ", "factura": "175",
+         "importe_previo": 2000.00, "importe": 2400.00},
+    ])
+    assert "antes $ 3.000,00" in kw["detalle"]
+    assert "ahora $ 3.500,00" in kw["detalle"]
+    assert "(+$ 500,00)" in kw["detalle"]
+    assert "2 compras" in kw["titulo"]
 
 
 def test_no_corrige_si_alguien_la_edito_a_mano():
