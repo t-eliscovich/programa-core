@@ -3286,7 +3286,12 @@ def estado_cuenta_lote_imprimir():
             if str(k) == sel:
                 sub.append(r)
                 titulo = ("Vendedor: " if por == "vendedor" else "Provincia: ") + label
-        sub.sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
+        # TMT 2026-08-04 (Alex por WhatsApp): al imprimir por vendedor/provincia,
+        # los clientes deben salir en orden ALFABÉTICO por código, no descendente
+        # por saldo. La vista deja ordenar por header (SALDO↕ / CÓDIGO↕), pero
+        # el "Imprimir" cortaba lo elegido y volvía a descendente por saldo.
+        # Alex: *"al momento de imprimir vuelve a detectar el orden descendente"*.
+        sub.sort(key=lambda r: (r.get("codigo_cli") or "").upper())
         codes = [r["codigo_cli"] for r in sub]
 
     # Estado de cuenta completo por cliente (facturas + totales).
