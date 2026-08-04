@@ -668,6 +668,34 @@
       header.no-print { padding-left: 10px !important; padding-right: 10px !important; }
       #user-menu-btn .rol-usuario { display: none !important; }
 
+      /* ── TODAS LAS PANTALLAS DE LISTA (cheques, compras, caja, clientes,
+         proveedores, comisiones, gastos, cartera, estado de cuenta…) ──
+         TMT 2026-08-04, segunda pasada. Medido a 390px: la tabla de /cheques
+         se salía 891px (dos pantallas y media) y quedaba CORTADA, sin forma de
+         llegar a las columnas de la derecha. Mismo cuadro en /compras (706),
+         /gastos (636), /clientes (564), /proveedores (464), estado de cuenta
+         (458), /caja (396), /comisiones (292), /cartera (254).
+
+         En vez de tocar diez templates, dos reglas genéricas:
+         1) `display:block` convierte la tabla en su propio contenedor con
+            scroll → se panea de costado en vez de cortarse. Vale para toda
+            tabla de lista, incluidas las que se agreguen mañana.
+         2) las barras de botones son `flex` SIN `flex-wrap`, así que se salían
+            de pantalla enteras (el `shrink-0` de /caja además impedía que
+            encogieran). En el celu envuelven.
+         Las 4 pantallas de informes están afinadas a mano más abajo y se
+         excluyen acá: ahí la tabla ENTERA entra y no queremos scroll. ── */
+      main .flex { flex-wrap: wrap; }
+      main .flex > .flex.shrink-0 { flex-shrink: 1; min-width: 0; }
+      main table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      main table thead th, main table tbody td {
+        white-space: nowrap; font-size: 12px !important; padding: 5px 7px !important; }
+      main .informe-balance table, main .h12-page table,
+      main .gastos-matriz table, main .fp table { display: table; overflow: visible; }
+      main .informe-balance table thead th, main .informe-balance table tbody td,
+      main .gastos-matriz table thead th, main .gastos-matriz table tbody td {
+        white-space: normal; }
+
       /* — Botonera Resultados / Historial / Gastos: 3 botones en UNA fila
          (el min-width de 11rem del macro los apilaba de a uno). — */
       .nav-resultados { gap: 4px !important; margin-bottom: 6px !important; }
