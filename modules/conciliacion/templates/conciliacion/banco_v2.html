@@ -21,7 +21,10 @@
         {% endif %}
       </p>
     </div>
-    <div class="flex gap-2">
+    {# `no-print`: son <a> con pinta de botón, y el print stylesheet de
+       base.html sólo saca <button>/<form>. Sin esto salían impresos como
+       texto suelto arriba de la hoja (TMT 2026-08-04). #}
+    <div class="flex gap-2 no-print">
       <a href="{{ url_for('conciliacion.banco_resumen_xlsx') }}"
          class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-4 py-2 whitespace-nowrap">
         📥 Descargar resumen
@@ -43,7 +46,13 @@
   </div>
 
   {# ── Balance Pichincha compact (sticky) ──────────────────────── #}
-  {% include 'conciliacion/_balance_pichincha.html' with context %}
+  {# `no-print`: es un tablero de trabajo (saldos vivos, input editable del
+     saldo objetivo). Al imprimir se desarmaba en un bloque de números
+     encimados arriba de la lista. Los saldos ya van en el XLSX del resumen;
+     el papel de esta pantalla es la LISTA de conciliados. TMT 2026-08-04. #}
+  <div class="no-print">
+    {% include 'conciliacion/_balance_pichincha.html' with context %}
+  </div>
 
   {# ── Nav tabs ────────────────────────────────────────────────── #}
   {# TMT 2026-06-03 dueña: 'tiene que ser banco (x) programa (x)'.
