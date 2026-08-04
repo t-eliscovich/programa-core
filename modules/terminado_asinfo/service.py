@@ -51,6 +51,7 @@ aviso en vez de romperse.
 """
 from datetime import date, timedelta
 
+from filters import today_ec
 from modules.asinfo import service as asinfo_service
 
 #: Bodega de Asinfo que produce el terminado. Constante y no parámetro: si
@@ -164,9 +165,13 @@ def resumen(anio: int, mes: int) -> dict:
         ultimo = meses["filas"][-1]["periodo"]          # 'YYYY-MM'
         try:
             y, m = (int(x) for x in ultimo.split("-")[:2])
-            # Cierre del último mes = víspera del primero del siguiente.
+            # Cierre del último mes = víspera del primero del siguiente. Pero
+            # el mes en curso todavía no cerró: pedirle a Asinfo la foto al
+            # 31/08 estando a 4 de agosto devuelve igual el stock de HOY y el
+            # rótulo miente. Se corta en el día que sea más chico.
             sig_y, sig_m = (y + 1, 1) if m == 12 else (y, m + 1)
-            corte = _fin_de_mes_anterior(sig_y, sig_m)
+            corte = min(_fin_de_mes_anterior(sig_y, sig_m),
+                        today_ec().isoformat())
         except (ValueError, TypeError):
             corte = None
         real = _stock_terminado_a_fecha(corte) if corte else None

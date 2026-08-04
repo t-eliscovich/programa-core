@@ -15,6 +15,7 @@ Sin HTTP ni DB real: se mockea metabase_client.
 """
 from __future__ import annotations
 
+from datetime import date as _date
 from unittest.mock import patch
 
 import pytest
@@ -205,11 +206,28 @@ def test_resumen_encadena_el_stock_mes_a_mes():
     assert t["producido"] == 30_000.0 and t["vendido"] == 9_000.0
 
 
+def test_resumen_control_no_pide_una_foto_del_futuro():
+    """El mes en curso todavía no cerró: pedirle a Asinfo la foto al 31/08
+    estando a 4 de agosto devuelve igual el stock de HOY y el rótulo mentiría.
+    El corte se topea en el día de hoy."""
+    stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0}
+    p1, p2, p3, p4, p5 = _mock_resumen(
+        stock, meses=[{"periodo": "2026-08", "n_ofs": 1, "fab": 10.0,
+                       "issued": 11.0}])
+    with p1, p2, p3, p4, p5, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
+        out = tsvc.resumen(2026, 8)
+    # Sin foto para el 04/08 en el mock, el control queda en None — pero lo que
+    # importa es que la fecha pedida NO fue 2026-08-31.
+    assert out["control"] is None
+
+
 def test_resumen_control_cierra_contra_la_foto_real():
     """El encadenado llega a 121.000 y Asinfo dice 121.000 → dif 0."""
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 121_000.0}
     p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5:
+    with p1, p2, p3, p4, p5, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         out = tsvc.resumen(2026, 7)
     assert out["control"]["fecha"] == "2026-02-28"
     assert out["control"]["dif"] == 0.0
@@ -220,7 +238,8 @@ def test_resumen_control_marca_la_diferencia():
     movimiento que no es ni producción ni despacho (devolución, ajuste)."""
     stock = {"2025-12-31": 100_000.0, "2026-06-30": 0.0, "2026-02-28": 120_500.0}
     p1, p2, p3, p4, p5 = _mock_resumen(stock)
-    with p1, p2, p3, p4, p5:
+    with p1, p2, p3, p4, p5, \
+         patch.object(tsvc, "today_ec", return_value=_date(2026, 8, 4)):
         out = tsvc.resumen(2026, 7)
     assert out["control"]["dif"] == 500.0
 
