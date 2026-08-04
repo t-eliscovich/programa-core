@@ -604,8 +604,16 @@ def create_app() -> Flask:
         bp as debug_dbase_compras_bp,
     )
 
+    # /admin/debug-terminado-otros — de dónde salen los "otros mov." de la
+    # bodega de terminado (dueña 2026-08-04: "hacé un deep dive y me contás qué
+    # son"). SOLO LECTURA sobre Asinfo.
+    from modules.admin_dbase.debug_terminado_otros_view import (
+        bp as debug_terminado_otros_bp,
+    )
+
     app.register_blueprint(debug_asinfo_fact_bp)
     app.register_blueprint(debug_fab_wip_bp)
+    app.register_blueprint(debug_terminado_otros_bp)
     app.register_blueprint(debug_import_recep_bp)
     app.register_blueprint(debug_dbase_compras_bp)
     # /admin/debug-cruce-compras — a qué importación se le atribuye cada compra
