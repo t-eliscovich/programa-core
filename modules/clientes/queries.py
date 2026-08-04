@@ -128,14 +128,36 @@ def crear(
     clave: str | None = None,
     usuario: str = "web",
 ) -> dict:
-    """Alta de cliente. Código único."""
+    """Alta de cliente. Código único.
+
+    TMT 2026-08-04 (dueña: "hay que prohibir codigos duplicados"). El chequeo
+    de unicidad comparaba ``codigo_cli = %s`` **exacto**, y en la base hay
+    códigos guardados con espacios (`'LEC '`) o en minúscula. Para el resto
+    del sistema ésos SON el mismo código —todo JOINea por
+    ``UPPER(TRIM(codigo_cli))``— así que el alta dejaba pasar un duplicado
+    real. Desde la migración 0155 hay además un índice único sobre esa misma
+    expresión: sin normalizar acá, el alta pasaría la validación y moriría con
+    un `UniqueViolation` de Postgres en la cara del usuario, que no dice
+    quién ocupa el código. La comparación normalizada da el mensaje bueno
+    ("Ya existe un cliente con código LEC (Luis Ernesto Cañamar)") antes de
+    llegar al INSERT.
+    """
     codigo_cli = codigo_cli.upper().strip()
     if not codigo_cli:
         raise ValueError("Código requerido.")
     if not nombre:
         raise ValueError("Nombre requerido.")
-    if db.fetch_one("SELECT 1 x FROM scintela.cliente WHERE codigo_cli = %s", (codigo_cli,)):
-        raise ValueError(f"Ya existe un cliente con código {codigo_cli!r}.")
+    ocupa = db.fetch_one(
+        "SELECT nombre FROM scintela.cliente "
+        "WHERE UPPER(TRIM(codigo_cli)) = %s LIMIT 1",
+        (codigo_cli,),
+    )
+    if ocupa:
+        quien = (ocupa.get("nombre") or "").strip()
+        raise ValueError(
+            f"Ya existe un cliente con código {codigo_cli!r}"
+            + (f" ({quien})." if quien else ".")
+        )
     return db.execute_returning(
         """
         INSERT INTO scintela.cliente
