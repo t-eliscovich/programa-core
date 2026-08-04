@@ -210,18 +210,32 @@ def cobrado(vend: str, desde: date, hasta: date) -> float:
 
 
 def por_cobrar(vend: str) -> dict:
-    """Saldo vivo total del vendedor y cuánto de eso ya está vencido."""
+    """Saldo vivo total del vendedor y cuánto de eso ya está vencido.
+
+    `n_clientes` cuenta los clientes cuyo saldo NETO es distinto de cero —
+    el MISMO criterio que `mis_clientes()`. Con un COUNT(DISTINCT) plano
+    sobre las facturas, un cliente cuyas facturas netean a cero (una NC que
+    cancela una factura) sumaba acá y no aparecía en la lista: el Inicio
+    decía 34 y la lista mostraba 33. Verificado en vivo con RMY.
+    """
     row = db.fetch_one(
         f"""
-        SELECT COALESCE(SUM(f.saldo), 0) AS saldo,
-               COALESCE(SUM(CASE WHEN COALESCE(f.vencimiento, f.fecha)
-                                      < CURRENT_DATE
-                                 THEN f.saldo ELSE 0 END), 0) AS vencido,
-               COUNT(DISTINCT f.codigo_cli) AS n_clientes
-          FROM scintela.factura f
-          JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
-         WHERE {_ES_MI_CLIENTE}
-           AND {_FACTURA_VIVA}
+        WITH por_cli AS (
+            SELECT f.codigo_cli,
+                   SUM(f.saldo) AS saldo,
+                   SUM(CASE WHEN COALESCE(f.vencimiento, f.fecha) < CURRENT_DATE
+                            THEN f.saldo ELSE 0 END) AS vencido
+              FROM scintela.factura f
+              JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+             WHERE {_ES_MI_CLIENTE}
+               AND {_FACTURA_VIVA}
+             GROUP BY f.codigo_cli
+            HAVING COALESCE(SUM(f.saldo), 0) <> 0
+        )
+        SELECT COALESCE(SUM(saldo), 0)   AS saldo,
+               COALESCE(SUM(vencido), 0) AS vencido,
+               COUNT(*)                  AS n_clientes
+          FROM por_cli
         """,
         {"vend": vend},
     )

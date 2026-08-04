@@ -282,3 +282,22 @@ def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeyp
     assert b"Imprimir estados de cuenta" in r.data
     # Mismo orden que el lote de la oficina: saldo descendente.
     assert vistos == ["BBB", "AAA"]
+
+
+def test_el_contador_del_inicio_usa_el_mismo_criterio_que_la_lista(monkeypatch):
+    """El Inicio decía 34 clientes y la lista mostraba 33 (verificado con RMY).
+
+    Un cliente cuyas facturas netean a cero (una NC que cancela una factura)
+    entraba en el COUNT(DISTINCT) del Inicio pero no en la lista, que filtra
+    por saldo neto. Los dos tienen que contar lo mismo.
+    """
+    visto = {}
+
+    def _fetch_one(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split()).lower()
+        return {"saldo": 100, "vencido": 0, "n_clientes": 33}
+
+    monkeypatch.setattr(q.db, "fetch_one", _fetch_one)
+    assert q.por_cobrar("RMY")["n_clientes"] == 33
+    assert "having coalesce(sum(f.saldo), 0) <> 0" in visto["sql"]
+    assert "count(distinct" not in visto["sql"]
