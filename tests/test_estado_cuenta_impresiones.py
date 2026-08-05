@@ -641,14 +641,29 @@ def test_el_papel_no_lleva_el_rayado_negro_de_pantalla():
     # Los comentarios CITAN el selector de base.html para explicar el porqué;
     # lo que se audita es el CSS, no la prosa.
     css = re.sub(r"/\*.*?\*/", "", bloque, flags=re.S)
-    for sel in ("main .ec-bloque-facturas table tbody td",
-                "main .ec-bloque-cheques  table tbody td"):
+    for sel in (":root:not(.dark) main .ec-bloque-facturas table tbody td",
+                ":root:not(.dark) main .ec-bloque-cheques  table tbody td"):
         assert sel in css, f"falta el selector que pasa el override: {sel}"
     assert "border-bottom: 0.3pt solid #b8c0cc !important" in css
-    # Y NO se generaliza: en pantalla y en el resto de la app siguen negros.
-    assert ":root" not in css, (
-        "el override del rayado no puede salirse del estado de cuenta impreso"
-    )
+    # ⚠️ La CUENTA de especificidad, que ya se comió una vuelta: el rival es
+    # `:root:not(.dark) td` = (0,2,1) — `:root` es pseudo-CLASE y el `.dark`
+    # de adentro del `:not()` también cuenta. Sin repetir ese prefijo, un
+    # `main .ec-bloque-… td` vale (0,1,4) y PIERDE (2 clases > 1). Y pierde
+    # sólo para el COLOR: el ancho se aplica igual, así que el cambio parece
+    # hecho y el papel sigue negro.
+    for regla in css.split("}"):
+        if "b8c0cc" in regla or "8a94a6" in regla:
+            assert ":root:not(.dark)" in regla, (
+                "regla de rayado sin el prefijo que le gana al override negro:\n"
+                + regla.strip()
+            )
+    # Y NO se generaliza: cada selector queda acotado al estado de cuenta.
+    for regla in css.split("}"):
+        for sel in regla.split("{")[0].split(","):
+            if ":root" in sel:
+                assert ".ec-" in sel, (
+                    f"selector con :root fuera del estado de cuenta: {sel.strip()}"
+                )
 
 
 def test_sin_numero_de_cheque_la_celda_queda_vacia():

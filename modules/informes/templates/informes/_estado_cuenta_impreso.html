@@ -514,32 +514,41 @@
 
            que es el pedido de contraste de pantalla ("LINEAS DE LOS RECUADROS
            EN NEGRO, MI PAPA NO LAS VE"). Los dos llevan `!important`, así que
-           gana el de más especificidad (0,1,1 contra 0,0,1) — y el papel salía
-           negro aunque la regla de impresión dijera gris. Por eso esto arranca
-           en `main .ec-bloque-…` (0,2,3): para pasarla.
+           gana el de más especificidad — y el papel salía negro aunque la
+           regla de impresión dijera gris.
+
+           ⚠️ LA CUENTA IMPORTA Y ME LA COMÍ UNA VEZ: `:root:not(.dark) td` NO
+           vale (0,1,1). `:root` es una pseudo-CLASE y el `.dark` de adentro
+           del `:not()` también cuenta ⇒ **(0,2,1)**. Un selector como
+           `main .ec-bloque-cheques table tbody td` es (0,1,4) y PIERDE: primero
+           se comparan las clases, 2 gana a 1. El ancho fino se aplicaba (esa
+           propiedad no la peleaba nadie) y el color seguía negro — o sea que
+           el cambio parecía hecho y el papel salía igual. Por eso acá se repite
+           el `:root:not(.dark)` y encima se agrega el scope: (0,3,4).
 
            ⚠️ Es a propósito que el override quede ACOTADO al estado de cuenta
            impreso: en pantalla, y en todo el resto de la app, los bordes
            siguen negros. Si se generaliza, se rompe el pedido de contraste. */
-        main .ec-bloque-facturas table tbody td,
-        main .ec-bloque-cheques  table tbody td {
+        :root:not(.dark) main .ec-bloque-facturas table tbody td,
+        :root:not(.dark) main .ec-bloque-cheques  table tbody td {
           border-top: 0 !important;
           border-bottom: 0.3pt solid #b8c0cc !important;
         }
-        main .ec-bloque-facturas table thead th,
-        main .ec-bloque-cheques  table thead th {
+        :root:not(.dark) main .ec-bloque-facturas table thead th,
+        :root:not(.dark) main .ec-bloque-cheques  table thead th {
           border-top: 0 !important;
           border-bottom: 0.6pt solid #8a94a6 !important;
         }
         /* Los dos renglones que cierran (pie de tabla y bloque del TOTAL) se
            quedan un poco más marcados: son los que la vista busca. */
-        main .ec-bloque-facturas table tfoot td,
-        main .ec-bloque-cheques  table tfoot td {
+        :root:not(.dark) main .ec-bloque-facturas table tfoot td,
+        :root:not(.dark) main .ec-bloque-cheques  table tfoot td {
           border-top: 0.6pt solid #8a94a6 !important;
           border-bottom: 0 !important;
         }
-        main .ec-cierre, main .ec-cierre-total,
-        main .ec-ch-total-cobrar {
+        :root:not(.dark) main .ec-cierre,
+        :root:not(.dark) main .ec-cierre-total,
+        :root:not(.dark) main .ec-ch-total-cobrar {
           border-top: 0.6pt solid #8a94a6 !important;
           border-bottom: 0 !important;
         }
