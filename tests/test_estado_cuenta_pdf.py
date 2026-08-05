@@ -602,9 +602,17 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     bloque = tpl[tpl.index("ec-bloque-facturas"):tpl.index("</thead>")]
     assert "<colgroup>" in bloque, "sin colgroup el ancho vuelve a depender del CSS"
     assert 'style="table-layout: fixed; width: 100%;"' in bloque
-    anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)%?"', bloque)]
+    anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)pt"', bloque)]
     assert len(anchos) == 7, (
         f"el colgroup tiene {len(anchos)} columnas; en el papel la tabla tiene 7 "
         "(Tipo y Stat no se generan)"
     )
-    assert sum(anchos) == 100, f"los <col> suman {sum(anchos)}%, no 100"
+    # En PUNTOS, no en porcentaje: un % se resuelve contra el ancho de la tabla,
+    # que en el motor de PDF no llega a 100% — medido, 473,2 de 537,7.
+    # Con `table-layout: fixed` la tabla crece hasta la suma de sus columnas.
+    ANCHO_UTIL = 537.7   # 28,5 → 566,2 pt, medido en A4 con los márgenes actuales
+    total = sum(anchos)
+    assert 530 <= total <= ANCHO_UTIL, (
+        f"los <col> suman {total} pt; el ancho útil de la hoja es {ANCHO_UTIL} pt "
+        "(por debajo queda hoja sin usar; por encima desborda)"
+    )

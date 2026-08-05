@@ -43,13 +43,31 @@
        porcentajes no podían arreglar eso: los porcentajes se reparten sobre lo
        que QUEDA. Una columna que no va al papel no se esconde, no se genera.
 
-       Son SIETE columnas y el colgroup suma 100. #}
+       ⚠️ Y los anchos van en PUNTOS, no en porcentaje. MEDIDO con pdfplumber
+       sobre el PDF, después de sacar las columnas fantasma: la tabla seguía en
+       473,2 pt de 537,7 (88 %) y las siete columnas conservaban EXACTAMENTE
+       los mismos anchos que antes. O sea que las fantasma nunca fueron la
+       causa: el `width: 100%` de la tabla no se aplica en el motor de PDF, y
+       un porcentaje se resuelve contra el ancho de la TABLA — 473 — así que
+       por más que se reajusten siempre dan el mismo 88 %. Nueve intentos de
+       mover porcentajes no podían funcionar.
+
+       Con `table-layout: fixed` la tabla crece hasta la SUMA de sus columnas,
+       así que en puntos el ancho queda fijado desde el HTML y no depende de
+       que se resuelva ningún 100 %:
+
+           64,4 + 64,4 + 91,3 + 91,3 + 91,3 + 91,3 + 43,0 = 537,0 pt
+
+       537,7 pt es el ancho útil medido en la hoja (28,5 → 566,2 en A4 con los
+       márgenes actuales). Se deja 0,7 pt de aire para no desbordar. Si algún
+       día se cambia el tamaño de papel o el margen, hay que rehacer esta suma
+       —y hay un test que la verifica—. #}
     {% if not interactivo %}
     <table class="w-full text-sm" style="table-layout: fixed; width: 100%;">
       <colgroup>
-        <col style="width:12%"><col style="width:12%"><col style="width:17%">
-        <col style="width:17%"><col style="width:17%"><col style="width:17%">
-        <col style="width:8%">
+        <col style="width:64.4pt"><col style="width:64.4pt"><col style="width:91.3pt">
+        <col style="width:91.3pt"><col style="width:91.3pt"><col style="width:91.3pt">
+        <col style="width:43.0pt">
       </colgroup>
     {% else %}
     <table class="w-full text-sm">
