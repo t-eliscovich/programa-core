@@ -2061,3 +2061,46 @@ def test_requieren_atencion_muestra_el_CODIGO_del_cliente(app, monkeypatch):
     assert '<div class="ini cod">RTU</div>' in bloque
     # Y ya no las iniciales del nombre.
     assert '<div class="ini">RT</div>' not in bloque
+
+
+# ---------------------------------------------------------------------------
+# El portal tiene que dejar SALIR (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"¿cómo me deslogueo de un usuario? ejemplo de un vendedor"*. No se podía:
+# no había ni botón ni link. Tipear /logout a mano o borrar la cookie, con
+# sesiones de 31 días.
+
+
+def test_el_vendedor_puede_cerrar_sesion(vendedor_logueado, monkeypatch):
+    """La otra mitad del bug del 2026-08-03: ese día se arregló que quien
+    entraba con "👁 Ver como" pudiera volver, y quedó abierto el caso de una
+    sesión REAL — el vendedor en su propio celular.
+
+    El botón va en el tabbar, que es la barra que ya usa: en un celular no hay
+    menú donde esconderlo.
+    """
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
+    monkeypatch.setattr(q, "ventas_kg_por_semana", lambda *a, **k: [])
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_mes", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
+
+    html = vendedor_logueado.get("/mi-cartera").data.decode()
+    tabbar = html.split('<nav class="tabbar">')[1].split("</nav>")[0]
+    assert "/logout" in tabbar and "Salir" in tabbar
+    # POST y con CSRF: un GET a /logout lo dispara cualquier <img> de un mail.
+    assert 'method="post"' in tabbar
+    assert "csrf_token" in tabbar
+
+
+def test_la_ruta_de_salida_no_esta_bloqueada_por_el_allowlist():
+    """Un botón que da 404 es peor que no tener botón. `/logout` tiene que
+    seguir en PREFIJOS_INFRA — si alguien lo saca, el vendedor queda
+    encerrado con el botón puesto."""
+    from scope_vendedor import PREFIJOS_INFRA
+
+    assert "/logout" in PREFIJOS_INFRA
