@@ -661,7 +661,10 @@ def test_el_papel_no_lleva_el_rayado_negro_de_pantalla():
     for regla in css.split("}"):
         for sel in regla.split("{")[0].split(","):
             if ":root" in sel:
-                assert ".ec-" in sel, (
+                # `.cli-block` es del lote/PDF del estado de cuenta; `.ec-…`
+                # del cuerpo. Cualquier otra cosa (p. ej. `.max-w-6xl`, que es
+                # Tailwind genérico) alcanzaría a toda la app al imprimir.
+                assert ".ec-" in sel or ".cli-block" in sel, (
                     f"selector con :root fuera del estado de cuenta: {sel.strip()}"
                 )
 
@@ -694,5 +697,10 @@ def test_el_papel_no_lleva_scroll_ni_tablas_a_medio_ancho():
     assert "scrollbar-width: none !important" in css
     assert "::-webkit-scrollbar" in css
     for prop in ("width: 100% !important", "max-height: none !important",
-                 "overflow: visible !important"):
+                 "overflow: visible !important", "display: block !important"):
         assert prop in css, prop
+    # El CONTENEDOR también lleva ancho: si el motor lo encoge, el `width:100%`
+    # de la tabla se resuelve contra un ancho encogido y sale corta igual.
+    bloque = css[css.index(".ec-bloque-facturas,"):]
+    bloque = bloque[:bloque.index("}")]
+    assert "width: 100% !important" in bloque

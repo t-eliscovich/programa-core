@@ -549,6 +549,27 @@
           overflow: visible !important;
           max-height: none !important;
           scrollbar-width: none !important;
+          /* TMT 2026-08-05, 2ª vuelta. El contenedor también: si el motor lo
+             trata como shrink-to-fit, el `width: 100%` de la tabla se resuelve
+             contra un ancho encogido y la tabla sale corta aunque diga 100%.
+             Es la única explicación que sobrevive a la evidencia: medido en el
+             navegador con las @media print activas y el documento forzado a
+             700/760/790/816/900/1000/1152/1300 px, la tabla da 100% en TODOS.
+             El hueco aparece sólo en el Chromium headless de `pdf_motor`. */
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          float: none !important;
+        }
+        /* Y el contenedor de cada cliente, por la misma razón.
+           ⚠️ Sólo `.cli-block`, que es del lote/PDF del estado de cuenta. NO
+           `.max-w-6xl`: es una clase genérica de Tailwind y la regla se
+           aplicaría al imprimir CUALQUIER pantalla de la app. Lo cazó el test
+           que exige que todo selector con `:root` quede acotado. */
+        :root:not(.dark) main .cli-block {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
         }
         :root:not(.dark) main .ec-bloque-facturas table,
         :root:not(.dark) main .ec-bloque-cheques  table {
