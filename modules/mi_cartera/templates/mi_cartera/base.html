@@ -33,7 +33,20 @@
     --bad:#B91C1C;  --bad-soft:#FCEDED;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
+  /* ⭐ min-height y NO height. `height:100%` deja el <body> con el alto de UNA
+     pantalla aunque el contenido mida diez, y `position:sticky` está preso
+     dentro de su bloque contenedor: apenas scrolleás más allá de esa primera
+     pantalla, el appbar se despega y se va con la lista.
+
+     O sea que el appbar decía `position:sticky` desde el día uno y NUNCA lo
+     fue de verdad. No daba error, no daba warning, y en el inspector la regla
+     se ve aplicada — sólo se ve scrolleando con datos reales: con los 94
+     clientes de PPR el body medía 667 px contra 6.034 de documento.
+
+     El tabbar de abajo sí funcionaba, y por eso el bug pasó desapercibido:
+     `bottom:0` queda pegado igual mientras el bloque contenedor llegue hasta
+     ahí abajo. Que un sticky ande no dice nada del otro. */
+  html,body{min-height:100%}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
     background:var(--surface-2); color:var(--ink);

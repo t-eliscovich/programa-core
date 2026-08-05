@@ -1368,3 +1368,29 @@ def test_enter_no_recarga_la_pantalla_ya_filtrada(
     # Pero el form SIGUE siendo un form: sin JS, Enter manda y el servidor
     # filtra. Sacarlo dejaría a un celular sin JS sin ninguna búsqueda.
     assert 'id="form-buscar"' in html and 'method="get"' in html
+
+
+def test_el_appbar_queda_pegado_arriba_con_la_lista_larga():
+    """⭐ El appbar decía `position:sticky` desde el día uno y NUNCA lo fue.
+
+    `html,body{height:100%}` deja el <body> con el alto de UNA pantalla aunque
+    el contenido mida diez, y un `sticky` está preso dentro de su bloque
+    contenedor: pasada la primera pantalla se despega y se va con el scroll.
+    Sin error, sin warning, y en el inspector la regla se ve aplicada.
+
+    Se destapó el 2026-08-05 al mudar el buscador al appbar para que dejara de
+    irse con el scroll — y comprobando en vivo que se iba igual. Con los 94
+    clientes de PPR: body 667 px, documento 6.034 px.
+
+    El tabbar de abajo sí andaba (`bottom:0` queda pegado igual), y por eso el
+    bug pasó desapercibido meses. Que un sticky funcione no dice nada del otro.
+    """
+    from pathlib import Path
+
+    css = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
+    assert "html,body{min-height:100%}" in css
+    assert "html,body{height:100%}" not in css, \
+        "height:100% en el body vuelve a romper el sticky del appbar"
+    # Y el appbar tiene que seguir declarándose sticky: las dos cosas juntas
+    # son el arreglo, ninguna alcanza sola.
+    assert "position:sticky; top:0" in css
