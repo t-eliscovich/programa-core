@@ -159,9 +159,6 @@
         Tela que nos costaba <strong>$ {{ r.costo_despachado | num_es(0) }}</strong>
         la vendimos en <strong>$ {{ r.ventas.us | num_es(0) }}</strong>: quedaron
         <strong>$ {{ r.margen | num_es(0) }}</strong>.
-      {% elif e.dia_parcial %}
-        Tramo corto: falta la foto de ayer, así que no son 24 h y no se compara
-        contra otros días.
       {% else %}
         24 horas de fábrica, del cierre de ayer al de hoy.
       {% endif %}
@@ -198,7 +195,8 @@
     </div>
 
     <div class="dia-meta">
-      <span>{{ e.desde.hora }} → {{ e.hasta.hora }} ·
+      <span>{{ e.desde.hora }} → {{ e.hasta.hora }}{% if e.dia_parcial and not e.ventana_nula %}
+        · <strong class="dia-amb">tramo corto, no son 24 h</strong>{% endif %} ·
         {% if e.ok %}<strong style="color:rgb(51 65 85);">explicado al 100 %</strong>
         {% else %}<strong class="dia-amb">explicado {{ e.explicado_pct }} %</strong>{% endif %}
         {% if e.residuo and (e.residuo | abs) >= 1 %} ·

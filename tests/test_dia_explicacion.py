@@ -1136,6 +1136,26 @@ def test_con_ventana_nula_la_pantalla_NO_afirma_sobre_el_dia(app, fake_db):
     assert "125.659" in cuerpo               # lo facturado es real y queda
 
 
+def test_el_aviso_de_tramo_corto_no_lo_tapa_la_frase_del_margen(app, fake_db):
+    """🚨 El aviso vivía en el subtítulo, detrás de la frase del margen: un día
+    con ventas se lo comía y la pantalla presentaba un tramo de 8 h como si
+    fuera el día. Es metadata de la VENTANA, va con las horas."""
+    c = _login(app, fake_db)
+    e = _explicado(dia_parcial=True)
+    res = {"ok": True, "d_utilidad": 1.0, "d_stock": 0.0, "por_tarifa": 0.0,
+           "desde": {"vsto": 1.0}, "hasta": {"vsto": 1.0}, "cobrado": 1.0,
+           "ventas": {"n": 92, "kg": 13459.0, "us": 116406.0},
+           "compras": {"n": 0, "kg": 0.0, "us": 0.0}, "etapas": [],
+           "margen": 45834.0, "margen_pct": 39.4, "costo_despachado": 70573.0,
+           "produccion": {"disponible": False}}
+    with patch.object(dia, "explicar", return_value=e), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "no son 24 h" in cuerpo          # el aviso
+    assert "nos costaba" in cuerpo          # Y la frase del margen: conviven
+
+
 # ── El mensaje de WhatsApp ──────────────────────────────────────────────────
 # TMT 2026-08-05: *"me gustaría también mostrar la utilidad hasta hoy, algo
 # para mandar chiquito e informativo a mí, andres y federico por whatsapp"*.
