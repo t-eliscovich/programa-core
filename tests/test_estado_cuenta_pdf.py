@@ -617,7 +617,13 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     # Los pt fijan la PROPORCIÓN y sirven de piso; el ancho final lo pone el
     # `min-width: 100%`. No pueden pasarse del útil del papel más angosto que
     # se use (A4 = 537,7 pt), o desbordan si el min-width no resolviera.
-    total = sum(anchos)
-    assert 520 <= total <= 537.7, f"los <col> suman {total} pt"
+    # LA SUMA ES EL ANCHO DE LA TABLA: en el motor de PDF ni `width:100%` ni
+    # `min-width:100%` se resuelven (los dos probados inline y medidos). 554,0
+    # es el útil de la hoja Letter con los márgenes actuales.
+    total = round(sum(anchos), 1)
+    assert 552 <= total <= 556, (
+        f"los <col> suman {total} pt; el útil de la hoja es 554,0. "
+        "Por debajo queda hoja sin usar, por encima desborda."
+    )
     # Y la proporción tiene que ser la acordada: Días es la más angosta.
     assert anchos[-1] == min(anchos)

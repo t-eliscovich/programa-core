@@ -58,24 +58,31 @@
 
            64,4 + 64,4 + 91,3 + 91,3 + 91,3 + 91,3 + 43,0 = 537,0 pt
 
-       ⚠️ Los pt son un PISO, no el ancho final: el `min-width: 100%` inline
-       es el que estira la tabla hasta el contenedor. Hace falta porque el
-       `width: 100%` NO se resuelve en este motor —medido: con los pt solos la
-       tabla salía exactamente 537, o sea la suma de las columnas, no el 100%
-       del contenedor—.
+       ⚠️ LA SUMA DE LOS pt ES EL ANCHO DE LA TABLA. No es una aproximación:
+       en este motor NI `width: 100%` NI `min-width: 100%` se resuelven —los
+       dos probados inline, medidos sobre el PDF, sin efecto—. La tabla mide
+       exactamente lo que suman sus columnas.
 
-       Y los 537 estaban atados al papel equivocado: se midieron sobre un PDF
-       en A4 (ancho útil 537,7) y el servidor genera LETTER, donde el útil es
-       ~554. Por eso quedaba al 96,9 %: 537/554. Con `min-width` el ancho lo
-       pone el contenedor y deja de depender del tamaño de hoja; los pt sólo
-       fijan la PROPORCIÓN entre columnas (12·12·17·17·17·17·8) y sirven de
-       respaldo si el min-width tampoco resolviera. #}
+       Por eso los 537 pt de la versión anterior la dejaban al 96,9 %: se
+       midieron sobre un PDF en A4 (útil 537,7) y el servidor genera LETTER,
+       donde el útil es ~554. 537/554 = 0,969, el número exacto que daba la
+       medición.
+
+       La suma es 554,0 pt = el ancho útil de la hoja Letter con los márgenes
+       actuales, medido contra la tabla de CHEQUES, que sí llena la hoja:
+       facturas daba 717 unidades de dispositivo por 537 pt y cheques 740 ⇒
+       740 × (537/717) = 554,3.
+
+       🚨 Si se cambia el papel o el margen de `@page`, hay que rehacer esta
+       suma. La forma de medirla: bajar el PDF, descomprimir el content stream
+       y comparar la extensión de las filas de las dos tablas. Hay un test que
+       fija el total. #}
     {% if not interactivo %}
     <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
       <colgroup>
-        <col style="width:64.4pt"><col style="width:64.4pt"><col style="width:91.3pt">
-        <col style="width:91.3pt"><col style="width:91.3pt"><col style="width:91.3pt">
-        <col style="width:43.0pt">
+        <col style="width:66.5pt"><col style="width:66.5pt"><col style="width:94.2pt">
+        <col style="width:94.2pt"><col style="width:94.2pt"><col style="width:94.2pt">
+        <col style="width:44.2pt">
       </colgroup>
     {% else %}
     <table class="w-full text-sm">
