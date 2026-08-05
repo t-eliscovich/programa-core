@@ -2005,3 +2005,23 @@ def test_el_link_del_menu_se_gatea_con_su_propio_permiso():
     tabs = Path("templates/_partials/tabs_comisiones.html").read_text()
     assert "tiene_permiso(permiso)" in tabs
     assert "'comisiones.ver'" in tabs and "'metas.editar'" in tabs
+
+
+
+def test_hay_migracion_que_saca_los_permisos_de_la_BASE():
+    """🚨 `config/roles.py` es la fuente canónica, pero el que manda en runtime
+    es `seguridad.permiso` en la base: `auth.load_logged_in_user` hace
+    `SELECT nombre_opcion FROM seguridad.permiso WHERE id_rol = %s`.
+
+    Editar `roles.py` y no correr nada deja la producción EXACTAMENTE IGUAL —
+    y el código pasa todos los tests, incluido el que verifica roles.py. Sin
+    esta migración, el cambio existía sólo en el repo.
+    """
+    from pathlib import Path
+
+    mig = Path("migrations/0164_comisiones_y_metas_solo_duenos.py").read_text()
+    assert "DELETE FROM seguridad.permiso" in mig
+    assert "comisiones.ver" in mig and "metas.editar" in mig
+    # Y no puede borrar de más: sólo esos dos permisos, de todos los roles.
+    where = mig.split("DELETE FROM seguridad.permiso")[1].split('"""')[0]
+    assert "nombre_opcion = ANY" in where
