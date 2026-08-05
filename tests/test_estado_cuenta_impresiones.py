@@ -621,3 +621,44 @@ def test_estado_cuenta_marca_por_cobrar_en_TODAS_las_filas(monkeypatch):
     # Y la marca coincide con la lista compartida, no con una lista escrita a mano.
     for c in data["cheques"]:
         assert c["por_cobrar"] is (c["stat"] in iq.STATS_CHEQUE_POR_COBRAR)
+
+
+def test_el_papel_no_lleva_el_rayado_negro_de_pantalla():
+    """Las líneas del estado de cuenta impreso son finas y grises.
+
+    Dueña 2026-08-05: "podés hacer las líneas más finitas y menos negras".
+    `base.html` pide gris para el papel, pero unas líneas más arriba fuerza
+    `:root:not(.dark) td { border-color: rgb(15 23 42) !important }` — el
+    pedido de contraste de PANTALLA ("LINEAS DE LOS RECUADROS EN NEGRO, MI
+    PAPA NO LAS VE"). Con los dos `!important` gana el de más especificidad,
+    así que la regla del papel tiene que arrancar en `main .ec-bloque-…` para
+    pasarla. Si alguien la reescribe como `td { … }` a secas, vuelve a salir
+    negro y no se nota hasta que está impreso.
+    """
+    import re
+
+    bloque = IMPRESO[IMPRESO.index("@media print"):]
+    # Los comentarios CITAN el selector de base.html para explicar el porqué;
+    # lo que se audita es el CSS, no la prosa.
+    css = re.sub(r"/\*.*?\*/", "", bloque, flags=re.S)
+    for sel in ("main .ec-bloque-facturas table tbody td",
+                "main .ec-bloque-cheques  table tbody td"):
+        assert sel in css, f"falta el selector que pasa el override: {sel}"
+    assert "border-bottom: 0.3pt solid #b8c0cc !important" in css
+    # Y NO se generaliza: en pantalla y en el resto de la app siguen negros.
+    assert ":root" not in css, (
+        "el override del rayado no puede salirse del estado de cuenta impreso"
+    )
+
+
+def test_sin_numero_de_cheque_la_celda_queda_vacia():
+    """Ni el id interno ni una raya: vacía.
+
+    2ª vuelta del 05/08 — en FET son 18 filas seguidas y una columna de rayas
+    apiladas pesa más que el dato que falta. Y el dato no va a llegar: ninguno
+    de los cinco DBF de cheques del dBase tiene columna de número.
+    """
+    assert "'#' ~ c.id_cheque" not in IMPRESO, "volvió el id interno de la base"
+    frag = IMPRESO[IMPRESO.index("{% set _num_ch %}"):]
+    frag = frag[:frag.index("{% endset %}")]
+    assert "mdash" not in frag and "—" not in frag

@@ -256,8 +256,18 @@
            de SU cheque. Globalmente 681 de 1.234 cheques en cartera no tienen
            número cargado. Va una raya, como cualquier otra celda vacía de la
            hoja: la fila se identifica por fecha + importe + banco, que es como
-           los nombra la cartera. El link a la ficha sigue estando (la raya es
-           clickeable) así que la oficina no pierde el acceso. #}
+           los nombra la cartera.
+
+           TMT 2026-08-05, 2ª vuelta (dueña, mirando el papel: "número de cheque
+           se sigue viendo bastante feo"): la celda va VACÍA, ni siquiera una
+           raya. En FET son 18 filas seguidas y una columna de rayas apiladas
+           pesa más que el dato que falta. Y el dato NO va a aparecer: se
+           verificó contra los cinco DBF de cheques del dBase (CHEQUES,
+           XCHEQUES con 53.174 filas, YCHEQUES, ZCHEQUES, PASACHEQ) y NINGUNO
+           tiene columna de número — el legacy nunca lo guardó. Correlación en
+           producción: 1.802 cheques `dbf-import` → 100% sin número; 1.370
+           cargados por las pantallas de PC → 0%. Se vacían solos a medida que
+           los viejos se van depositando. #}
         {% set no_ch_str = (c.no_cheque | cleanstr) if c.no_cheque else None %}
         {# TMT 2026-08-03: `dia_ingreso` lo calcula el SQL con la MISMA expresión
            que /cheques y la ficha. Antes caía a `fecha_crea` y los ~3.200
@@ -288,7 +298,7 @@
             {# TMT 2026-08-03: para un VENDEDOR la ficha del cheque no existe
                (scope_vendedor.py la 404ea) — el número va en texto plano en
                vez de un link muerto. Para todos los demás, igual que siempre. #}
-            {% set _num_ch %}{% if no_ch_str %}{{ no_ch_str }}{% else %}<span class="text-slate-400">&mdash;</span>{% endif %}{% endset %}
+            {% set _num_ch %}{% if no_ch_str %}{{ no_ch_str }}{% endif %}{% endset %}
             {% if es_vendedor(g.get('user')) %}
               {{ _num_ch }}
             {% else %}
@@ -477,5 +487,47 @@
         main .ec-bloque-cheques table tbody td:nth-child(7) { width: 24% !important; }
         main .ec-bloque-cheques table th:nth-child(8),
         main .ec-bloque-cheques table tbody td:nth-child(8) { width: 6% !important; }
+
+        /* ── Rayado fino y gris, SÓLO en el papel del estado de cuenta ──
+           Dueña 2026-08-05: "podés hacer las líneas más finitas y menos
+           negras".
+
+           El print stylesheet de `base.html` ya pedía `0.5pt solid #cbd5e1`,
+           pero nunca llegaba: unas líneas más arriba, el MISMO archivo tiene
+
+               :root:not(.dark) table, :root:not(.dark) th, :root:not(.dark) td
+                 { border-color: rgb(15 23 42) !important; }
+
+           que es el pedido de contraste de pantalla ("LINEAS DE LOS RECUADROS
+           EN NEGRO, MI PAPA NO LAS VE"). Los dos llevan `!important`, así que
+           gana el de más especificidad (0,1,1 contra 0,0,1) — y el papel salía
+           negro aunque la regla de impresión dijera gris. Por eso esto arranca
+           en `main .ec-bloque-…` (0,2,3): para pasarla.
+
+           ⚠️ Es a propósito que el override quede ACOTADO al estado de cuenta
+           impreso: en pantalla, y en todo el resto de la app, los bordes
+           siguen negros. Si se generaliza, se rompe el pedido de contraste. */
+        main .ec-bloque-facturas table tbody td,
+        main .ec-bloque-cheques  table tbody td {
+          border-top: 0 !important;
+          border-bottom: 0.3pt solid #b8c0cc !important;
+        }
+        main .ec-bloque-facturas table thead th,
+        main .ec-bloque-cheques  table thead th {
+          border-top: 0 !important;
+          border-bottom: 0.6pt solid #8a94a6 !important;
+        }
+        /* Los dos renglones que cierran (pie de tabla y bloque del TOTAL) se
+           quedan un poco más marcados: son los que la vista busca. */
+        main .ec-bloque-facturas table tfoot td,
+        main .ec-bloque-cheques  table tfoot td {
+          border-top: 0.6pt solid #8a94a6 !important;
+          border-bottom: 0 !important;
+        }
+        main .ec-cierre, main .ec-cierre-total,
+        main .ec-ch-total-cobrar {
+          border-top: 0.6pt solid #8a94a6 !important;
+          border-bottom: 0 !important;
+        }
       }
     </style>

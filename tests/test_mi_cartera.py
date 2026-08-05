@@ -651,7 +651,10 @@ def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
     TMT 2026-08-05 (Andrés: "los números de los cheques se ven feo"): el
     fallback NO puede ser el id interno de la base. El vendedor le muestra
     esta pantalla al cliente y "#4242" se lee como si fuera el número de SU
-    cheque. Va una raya; la fila se identifica por fecha, importe y banco.
+    cheque. La celda queda VACÍA (2ª vuelta: una columna de rayas apiladas pesa
+    más que el dato que falta) y la fila se identifica por fecha, importe y
+    banco. El dato no va a aparecer: ningún DBF de cheques del dBase tiene
+    columna de número.
     """
     from modules.mi_cartera import views
 
@@ -671,7 +674,6 @@ def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
     r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")
     assert r.status_code == 200
     assert b"#4242" not in r.data, "el id interno de la base no va en pantalla"
-    assert "—".encode() in r.data
     assert "Ch. ·".encode() not in r.data
 
 

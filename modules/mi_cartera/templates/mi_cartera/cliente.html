@@ -234,7 +234,7 @@
              NO el id interno de la base — el vendedor le muestra esta pantalla
              al cliente y "#98707" se lee como si fuera el número de su cheque.
              Misma decisión que la hoja de la oficina. #}
-          {% set no_ch = (c.no_cheque|cleanstr) or '—' %}
+          {% set no_ch = (c.no_cheque|cleanstr) or '' %}
           {% set fechad_orig = c.fechad_original or c.fechad %}
           {% set depositado = (c.fechaout or c.fechaing) if stat_u in ('B','A','1','2','3','R') else None %}
           <tr class="{{ 'pagada' if anulado }}">
