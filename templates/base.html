@@ -950,7 +950,11 @@
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('dolares.lista', 'Anticipos', 'money') }}{% endif %}
         {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
            (pedido dueña: "no debe estar colgada de informes"). #}
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
+        {# El link se gatea con el permiso de SU pantalla, no con informes.ver:
+           si no, a quien tiene informes.ver y no comisiones.ver le aparece el
+           link y le da 404 al clickearlo. Mordió el 2026-08-05 al cerrarle
+           Comisiones a los roles operativos. #}
+        {% if tiene_permiso('comisiones.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
 
         {# TMT 2026-07-09 (dueña): Lista de precios movida a Modificar (última posición), desde Datos base. #}
         {{ nav_link('precios.lista', 'Lista de precios', 'money') }}

@@ -1947,3 +1947,61 @@ def test_lo_que_dimensiona_la_grilla_esta_en_css_propio():
     css = Path("modules/mi_cartera/templates/mi_cartera/metas.html").read_text()
     css = css.split("<style>")[1]
     assert ".mt-in{" in css and "width:" in css.split(".mt-in{")[1].split("}")[0]
+
+
+# ---------------------------------------------------------------------------
+# Comisiones y Metas son dato de DUEÑOS (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"podés dejar que comisiones y metas no lo vean usuarios INTELA"* → que las
+# vean sólo Accionista y Administrador. Sueldos y metas del equipo comercial
+# no son dato operativo.
+
+
+def test_ningun_rol_operativo_ve_comisiones_ni_metas():
+    """`comisiones.ver` y `metas.editar` no cuelgan de NINGÚN rol: los únicos
+    que pasan son los wildcard (Accionista y Administrador).
+
+    Se mira `config/roles.py`, que es la fuente única — no la base, que se
+    siembra desde ahí.
+    """
+    from config.roles import ROLES
+
+    for nombre, permisos in ROLES:
+        if "*" in permisos:
+            continue
+        assert "comisiones.ver" not in permisos, f"{nombre} todavía ve Comisiones"
+        assert "metas.editar" not in permisos, f"{nombre} todavía carga Metas"
+
+
+def test_el_vendedor_sigue_viendo_SU_comision():
+    """⭐ Lo que NO se puede romper al cerrar Comisiones: cada vendedor sigue
+    viendo la suya. `/mi-cartera/comision` cuelga de `micartera.ver`, no de
+    `comisiones.ver` — son dos pantallas distintas sobre los mismos datos, y
+    ésa es exactamente la razón por la que se puede cerrar una sin tocar la
+    otra.
+    """
+    from config.roles import ROLES
+
+    vendedor = dict(ROLES)["Vendedor"]
+    assert "micartera.ver" in vendedor
+    assert "comisiones.ver" not in vendedor
+
+
+def test_el_link_del_menu_se_gatea_con_su_propio_permiso():
+    """Un link que aparece y da 404 es peor que no tener el link.
+
+    El del menú se gateaba con `informes.ver`, que NO es el permiso de la
+    pantalla: al cerrarle Comisiones a los roles operativos, a Gerente y
+    Contabilidad les habría quedado el link puesto y muerto.
+    """
+    from pathlib import Path
+
+    menu = Path("templates/base.html").read_text()
+    linea = [x for x in menu.splitlines() if "comisiones.lista" in x and "nav_link" in x]
+    assert linea, "no encontré el link de Comisiones en el menú"
+    assert "tiene_permiso('comisiones.ver')" in linea[0]
+
+    # Y las pestañas, igual: cada una detrás del permiso de SU pantalla.
+    tabs = Path("templates/_partials/tabs_comisiones.html").read_text()
+    assert "tiene_permiso(permiso)" in tabs
+    assert "'comisiones.ver'" in tabs and "'metas.editar'" in tabs

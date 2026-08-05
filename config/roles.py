@@ -100,9 +100,15 @@ ROLES: list[tuple[str, list[str]]] = [
             "retiros.ver",
             "historia.ver",
             "iniciales.ver",
-            "comisiones.ver",
-            # TMT 2026-08-03: cargar las metas de venta de los vendedores.
-            "metas.editar",
+            # TMT 2026-08-05 (dueña): *"podés dejar que comisiones y metas no
+            # lo vean usuarios INTELA"* → que las vean SÓLO Accionista y
+            # Administrador. Sueldos y metas del equipo comercial son dato de
+            # dueños. Sacado de Gerente, Contabilidad, INT y Lectura.
+            # Revierte el 2026-05-21 ("comisiones, ventas-año y gastos
+            # clasificados SÍ" para el rol operativo) y el 2026-08-03 (metas
+            # para Gerente): las dos fueron decisiones de ella, esta también.
+            # (Un vendedor SIGUE viendo la suya propia: /mi-cartera/comision
+            # cuelga de `micartera.ver`, no de `comisiones.ver`.)
         ],
     ),
     (
@@ -150,7 +156,6 @@ ROLES: list[tuple[str, list[str]]] = [
             "flujo.ver",
             "sri.ver",
             "sri.emitir",
-            "comisiones.ver",
         ],
     ),
     (
@@ -301,9 +306,11 @@ ROLES: list[tuple[str, list[str]]] = [
             # Iniciales editable para que pueda actualizar saldos bancos/caja.
             "iniciales.editar",
             # TMT 2026-05-21 dueña update: comisiones, ventas-año y gastos
-            # clasificados SÍ. Estas 3 vistas viven bajo /informes/* pero ya
+            # clasificados SÍ. Estas vistas viven bajo /informes/* pero ya
             # tienen permisos granulares — Alex las ve sin tener informes.ver.
-            "comisiones.ver",
+            # TMT 2026-08-05 (dueña): comisiones YA NO — *"podés dejar que
+            # comisiones y metas no lo vean usuarios INTELA"*. Ventas-año y
+            # gastos siguen igual.
             "ventas.ver",
             "gastos.ver",
             # TMT 2026-07-01 (dueña, review accesos): Alex también OPERA gastos
@@ -362,7 +369,6 @@ ROLES: list[tuple[str, list[str]]] = [
             "capital.ver",
             "posdat.ver",
             "sri.ver",
-            "comisiones.ver",
         ],
     ),
 ]
