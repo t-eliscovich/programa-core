@@ -87,6 +87,29 @@
 </p>
 {% endif %}
 
+{# Las que NO tienen decorador pero se controlan solas. Van aparte y en ámbar:
+   no son un agujero, pero conviene saber que su candado está escrito a mano y
+   no lo protege ningún test. #}
+{% if control_propio %}
+<div style="margin-top:22px;border:1px solid #FDE8C8;background:#FFFBF3;
+            border-radius:8px;padding:13px 15px">
+  <div style="font-size:12px;font-weight:700;color:#B45309;text-transform:uppercase;
+              letter-spacing:.05em">
+    {{ control_propio | length }} rutas controladas por dentro
+  </div>
+  <p style="font-size:12.5px;color:#78350F;margin:6px 0 9px;line-height:1.45">
+    No llevan el candado estándar, pero chequean permiso adentro de la función
+    —por ejemplo <code>/impersonate</code>, que pide Accionista con un
+    <code>if</code>—. No son un agujero; sí son un candado escrito a mano, que
+    nadie vigila si alguien lo saca.
+  </p>
+  <div style="font-size:10.5px;color:#92400E;font-family:ui-monospace,Menlo,monospace;
+              line-height:1.6">
+    {% for c in control_propio %}{{ c.ruta }} <span style="opacity:.6">({{ c['señal'] }})</span>{% if not loop.last %}  ·  {% endif %}{% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {# La auditoría del 03/08, corriendo sola cada vez que se abre la pantalla. #}
 {% if sin_permiso %}
 <div style="margin-top:22px;border:1px solid #FCD9D9;background:#FEF6F6;
@@ -96,11 +119,12 @@
     {{ sin_permiso | length }} rutas sin permiso
   </div>
   <p style="font-size:12.5px;color:#7F1D1D;margin:6px 0 9px;line-height:1.45">
-    Las abre <strong>cualquier usuario logueado</strong>, sea del rol que sea —
-    sólo piden estar adentro. No es un problema hoy porque todas las cuentas
-    son de confianza; lo es el día que exista una que no lo sea. Los vendedores
-    quedan afuera por otra vía (<code>scope_vendedor.py</code> sólo les deja
-    <code>/mi-cartera</code>).
+    Ni decorador ni chequeo adentro: las abre <strong>cualquier usuario
+    logueado</strong>, sea del rol que sea. Varias son de ESCRITURA
+    (deshacer un depósito, anular por error de carga, reversos). No es un
+    problema hoy porque todas las cuentas son de confianza; lo es el día que
+    exista una que no lo sea. Los vendedores quedan afuera por otra vía
+    (<code>scope_vendedor.py</code> sólo les deja <code>/mi-cartera</code>).
   </p>
   <div style="font-size:10.5px;color:#991B1B;font-family:ui-monospace,Menlo,monospace;
               line-height:1.5;max-height:190px;overflow:auto">

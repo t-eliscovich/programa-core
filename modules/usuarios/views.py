@@ -243,6 +243,7 @@ def mapa_accesos():
         "usuarios/accesos.html",
         grupos=m["grupos"],
         sin_permiso=m["sin_permiso"],
+        control_propio=m["control_propio"],
         roles=con_gente,
         roles_vacios=vacios,
         puede=_accesos.puede,

@@ -2293,3 +2293,62 @@ def test_dentro_del_grupo_las_acciones_van_por_PODER(app):
     acciones = [p["permiso"].split(".", 1)[1] for p in grupos["posdat"]["permisos"]]
     esperado = [a for a in ("ver", "crear", "editar", "anular") if a in acciones]
     assert acciones[:len(esperado)] == esperado
+
+
+def test_no_se_acusa_a_las_rutas_que_chequean_por_dentro(app):
+    """⭐ Una ruta sin `requiere_permiso` no es necesariamente una ruta
+    abierta: varias chequean adentro. `/impersonate` pide Accionista con un
+    `if`; `/dolares`, `/historial`, `/operaciones` y `/informes/deudas` llaman
+    a `tiene_permiso` a mano.
+
+    Meterlas en la misma lista roja que las que no chequean NADA es lo que
+    convierte un aviso en decoración: 30 rutas acusadas, seis inocentes, y
+    nadie la mira dos veces. Van en un bloque aparte.
+    """
+    from modules.usuarios import accesos
+
+    m = accesos.mapa(app)
+    propias = {c["ruta"] for c in m["control_propio"]}
+
+    assert "/impersonate/<int:id_usuario>" in propias
+    assert "/dolares" in propias
+    # Y no pueden estar en los dos lados a la vez.
+    assert not (propias & set(m["sin_permiso"]))
+
+
+def test_abort_404_no_cuenta_como_control_de_permiso(app):
+    """🚨 La trampa del detector, y por qué está calibrado hacia la alarma.
+
+    Casi todas las vistas tienen un `abort(404)` para "ese cheque no existe",
+    que no tiene NADA que ver con permisos. Contarlo como control marcaba
+    como seguras a `/cheques/<id>/deshacer-deposito`,
+    `/cheques/<id>/anular-error-carga` y compañía — que son ESCRITURAS y no
+    chequean nada.
+
+    Ante la duda la ruta se queda en rojo: una alarma de más se revisa y se
+    descarta en un minuto; una de menos esconde el agujero para siempre, y
+    encima con la pantalla diciendo que está todo bien.
+    """
+    from modules.usuarios import accesos
+
+    assert "abort(404)" not in accesos._SEÑALES_DE_CONTROL
+    sin = set(accesos.mapa(app)["sin_permiso"])
+    assert "/cheques/<int:id_cheque>/deshacer-deposito" in sin
+    assert "/cheques/<int:id_cheque>/anular-error-carga" in sin
+
+
+def test_el_control_interno_se_lee_del_codigo_de_la_vista():
+    """Se inspecciona la FUNCIÓN, no un listado aparte: si alguien le saca el
+    `if` a una vista, la pantalla lo nota sola."""
+    from modules.usuarios import accesos
+
+    def con_control():  # pragma: no cover — se inspecciona, no se ejecuta
+        if not tiene_permiso("x.ver"):  # noqa: F821
+            return None
+        return "ok"
+
+    def sin_nada():  # pragma: no cover
+        return "ok"
+
+    assert accesos._control_interno(con_control) == "tiene_permiso"
+    assert accesos._control_interno(sin_nada) is None

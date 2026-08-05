@@ -51,10 +51,52 @@ def _es_pantalla(regla) -> bool:
     return "GET" in (regla.methods or set())
 
 
+# Señales de que la vista se controla SOLA, sin decorador. Una ruta sin
+# `requiere_permiso` no es necesariamente una ruta abierta: varias chequean
+# adentro (`/impersonate` pide Accionista con un `if`, `/dolares` llama a
+# `tiene_permiso`). Meterlas en la misma lista roja que las que no chequean
+# NADA es exactamente el error que convierte un aviso en decoración —
+# 30 rutas acusadas, la mitad inocentes, y nadie la mira dos veces.
+_SEÑALES_DE_CONTROL = (
+    "tiene_permiso",     # el helper de siempre, usado a mano
+    "g.permisos",        # el set crudo
+    "nombre_rol",        # "solo un Accionista puede…"
+    "es_vendedor",       # el portal
+)
+
+# ⚠ `abort(404)` NO cuenta como control, aunque lo parezca. La mayoría de las
+# vistas lo usan para "ese cheque no existe", no para "vos no podés". Contarlo
+# marcaba como controladas a `/cheques/<id>/deshacer-deposito` y compañía, que
+# son ESCRITURAS y no chequean nada.
+#
+# ⭐ Ante la duda, la ruta se queda en la lista roja. Una alarma de más se
+# revisa y se descarta en un minuto; una alarma de menos esconde el agujero
+# para siempre, y encima con la pantalla diciendo que está todo bien.
+
+
+def _control_interno(vista) -> str | None:
+    """Qué chequeo hace la vista por su cuenta, si hace alguno.
+
+    Se lee el CÓDIGO de la función (no un listado aparte) para que esto no se
+    despegue: si alguien le saca el `if` a una vista, acá se nota solo.
+    """
+    import inspect
+
+    try:
+        src = inspect.getsource(inspect.unwrap(vista))
+    except (OSError, TypeError):  # pragma: no cover — builtins, parciales
+        return None
+    for señal in _SEÑALES_DE_CONTROL:
+        if señal in src:
+            return señal
+    return None
+
+
 def mapa(app) -> dict:
-    """{permisos, sin_permiso, roles} — todo derivado, nada hardcodeado."""
+    """{permisos, grupos, sin_permiso, control_propio} — todo derivado."""
     por_permiso: dict[str, set[str]] = defaultdict(set)
     sin_permiso: set[str] = set()
+    control_propio: dict[str, str] = {}
 
     for regla in app.url_map.iter_rules():
         if not _es_pantalla(regla):
@@ -63,6 +105,10 @@ def mapa(app) -> dict:
         permiso = getattr(vista, "_permiso", None)
         if permiso:
             por_permiso[permiso].add(str(regla.rule))
+            continue
+        señal = _control_interno(vista)
+        if señal:
+            control_propio[str(regla.rule)] = señal
         else:
             sin_permiso.add(str(regla.rule))
 
@@ -74,6 +120,9 @@ def mapa(app) -> dict:
         "permisos": permisos,
         "grupos": agrupar(permisos),
         "sin_permiso": sorted(sin_permiso),
+        "control_propio": [
+            {"ruta": r, "señal": control_propio[r]} for r in sorted(control_propio)
+        ],
     }
 
 
