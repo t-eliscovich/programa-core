@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 
 if not hasattr(_dt, "UTC"):  # py3.10
-    _dt.UTC = _dt.timezone.utc
+    _dt.UTC = _dt.timezone.utc  # noqa: UP017 — py3.10 no tiene el alias
 
 ROOT = Path(__file__).resolve().parent.parent
 PG_BIN = Path(os.environ.get("PG_BIN", "/tmp/pgbin/bin"))
@@ -62,7 +62,7 @@ def asegurar_postgres() -> None:
         )
     subprocess.Popen(
         [PG_BIN / "postgres", "-D", PGDATA, "-p", PORT, "-k", SOCKET_DIR],
-        stdout=open("/tmp/pg.log", "ab"), stderr=subprocess.STDOUT,
+        stdout=open("/tmp/pg.log", "ab"), stderr=subprocess.STDOUT,  # noqa: SIM115
         start_new_session=True,
     )
     for _ in range(50):
