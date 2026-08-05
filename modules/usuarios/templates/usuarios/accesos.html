@@ -34,26 +34,47 @@
       </tr>
     </thead>
     <tbody>
-      {% for p in permisos %}
-      <tr style="border-top:1px solid #F1F5F9">
-        <td style="padding:6px 10px">
-          <div style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:600">{{ p.permiso }}</div>
-          <div style="font-size:10.5px;color:#94A3B8;margin-top:2px;line-height:1.35">
-            {{ p.rutas | join('  ·  ') }}
-          </div>
-        </td>
-        {% for r in roles %}
-          {# ✓ verde = entra; · gris = 404. Nunca vacío: una celda en blanco
-             no se distingue de un dato que no se cargó. #}
-          <td style="padding:6px 8px;text-align:center">
-            {% if puede(r, p.permiso) %}
-              <span style="color:#15803D;font-weight:700">✓</span>
-            {% else %}
-              <span style="color:#CBD5E1">·</span>
-            {% endif %}
+      {# Agrupado por el sustantivo del permiso (dueña 2026-08-05: "me podés
+         agrupar"). 58 filas alfabéticas se leen como un log: `posdat.anular`
+         y `posdat.ver` quedaban a ocho renglones y había que ir y volver para
+         contestar "¿quién toca posdatados?".
+
+         Dentro del grupo las acciones van por PODER (ver → anular), no
+         alfabéticas: leer no es lo mismo que borrar y la fila que importa
+         mirar es la última. #}
+      {% for g in grupos %}
+        <tr style="background:#F8FAFC;border-top:1px solid #E2E8F0">
+          <td colspan="{{ roles|length + 1 }}"
+              style="padding:5px 10px;font-size:11px;font-weight:700;
+                     letter-spacing:.06em;text-transform:uppercase;color:#475569">
+            {{ g.nombre }}
+            <span style="font-weight:400;color:#94A3B8;text-transform:none;
+                         letter-spacing:0">
+              · {{ g.permisos|length }} acci{{ 'ón' if g.permisos|length == 1 else 'ones' }}
+            </span>
           </td>
+        </tr>
+        {% for p in g.permisos %}
+        <tr style="border-top:1px solid #F1F5F9">
+          <td style="padding:5px 10px 5px 22px">
+            <div style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:600">{{ p.permiso.split('.')[1:] | join('.') }}</div>
+            <div style="font-size:10.5px;color:#94A3B8;margin-top:2px;line-height:1.35">
+              {{ p.rutas | join('  ·  ') }}
+            </div>
+          </td>
+          {% for r in roles %}
+            {# ✓ verde = entra; · gris = 404. Nunca vacío: una celda en blanco
+               no se distingue de un dato que no se cargó. #}
+            <td style="padding:5px 8px;text-align:center">
+              {% if puede(r, p.permiso) %}
+                <span style="color:#15803D;font-weight:700">✓</span>
+              {% else %}
+                <span style="color:#CBD5E1">·</span>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
         {% endfor %}
-      </tr>
       {% endfor %}
     </tbody>
   </table>

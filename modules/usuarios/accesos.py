@@ -66,13 +66,49 @@ def mapa(app) -> dict:
         else:
             sin_permiso.add(str(regla.rule))
 
+    permisos = sorted(
+        ({"permiso": p, "rutas": sorted(r)} for p, r in por_permiso.items()),
+        key=lambda x: x["permiso"],
+    )
     return {
-        "permisos": sorted(
-            ({"permiso": p, "rutas": sorted(r)} for p, r in por_permiso.items()),
-            key=lambda x: x["permiso"],
-        ),
+        "permisos": permisos,
+        "grupos": agrupar(permisos),
         "sin_permiso": sorted(sin_permiso),
     }
+
+
+def agrupar(permisos: list[dict]) -> list[dict]:
+    """Los 58 permisos, juntados por el sustantivo que tienen adelante.
+
+    TMT 2026-08-05 (dueña, viendo la primera versión): *"me podés agrupar"*.
+    Cincuenta y ocho filas alfabéticas se leen como un log, no como una tabla:
+    `posdat.anular` y `posdat.ver` quedaban a ocho renglones de distancia y
+    había que ir y volver para contestar "¿quién toca posdatados?".
+
+    ⭐ El grupo sale del NOMBRE del permiso (`posdat.ver` → `posdat`), no de un
+    mapa escrito a mano de secciones. Un mapa habría quedado más lindo —
+    "Cobranza", "Producción"— y se habría desactualizado con el primer permiso
+    nuevo, que es justo lo que esta pantalla existe para evitar. La convención
+    `sustantivo.accion` ya está en los 58, así que el agrupamiento es gratis y
+    no puede mentir.
+
+    Dentro de cada grupo las acciones van en orden de PODER (ver, crear,
+    editar, anular, admin) y no alfabético: leer no es lo mismo que borrar, y
+    la fila que importa mirar es la última.
+    """
+    ORDEN = {"ver": 0, "crear": 1, "editar": 2, "anular": 3, "admin": 4}
+    grupos: dict[str, list[dict]] = defaultdict(list)
+    for p in permisos:
+        grupos[p["permiso"].split(".")[0]].append(p)
+    salida = []
+    for nombre in sorted(grupos):
+        filas = sorted(
+            grupos[nombre],
+            key=lambda x: (ORDEN.get(x["permiso"].split(".", 1)[-1], 9),
+                           x["permiso"]),
+        )
+        salida.append({"nombre": nombre, "permisos": filas})
+    return salida
 
 
 def roles_con_permisos() -> list[dict]:

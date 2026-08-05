@@ -2253,3 +2253,43 @@ def test_desde_usuarios_se_llega_al_mapa():
 
     tpl = Path("modules/usuarios/templates/usuarios/lista.html").read_text()
     assert "usuarios.mapa_accesos" in tpl
+
+
+def test_los_permisos_van_agrupados_por_sustantivo(app):
+    """Dueña 2026-08-05: *"me podés agrupar"*. 58 filas alfabéticas se leen
+    como un log: `posdat.anular` y `posdat.ver` quedaban a ocho renglones de
+    distancia y había que ir y volver para contestar "¿quién toca
+    posdatados?".
+
+    ⭐ El grupo sale del NOMBRE del permiso, no de un mapa de secciones escrito
+    a mano. Un mapa habría quedado más lindo —"Cobranza", "Producción"— y se
+    habría desactualizado con el primer permiso nuevo, que es justo lo que
+    esta pantalla existe para evitar.
+    """
+    from modules.usuarios import accesos
+
+    m = accesos.mapa(app)
+    grupos = {g["nombre"]: g for g in m["grupos"]}
+
+    assert len(m["grupos"]) < len(m["permisos"]), "agrupar tiene que juntar algo"
+    # Todos los posdat.* caen en el mismo grupo y ninguno se pierde.
+    assert {p["permiso"] for p in grupos["posdat"]["permisos"]} == {
+        p["permiso"] for p in m["permisos"] if p["permiso"].startswith("posdat.")
+    }
+    # Y el total se conserva: agrupar no puede comerse una fila.
+    assert sum(len(g["permisos"]) for g in m["grupos"]) == len(m["permisos"])
+
+
+def test_dentro_del_grupo_las_acciones_van_por_PODER(app):
+    """ver → crear → editar → anular, no alfabético.
+
+    Leer no es lo mismo que borrar: alfabéticamente `anular` va primero y
+    `ver` último, que es exactamente al revés de como se lee una tabla de
+    permisos. La fila que importa mirar es la última.
+    """
+    from modules.usuarios import accesos
+
+    grupos = {g["nombre"]: g for g in accesos.mapa(app)["grupos"]}
+    acciones = [p["permiso"].split(".", 1)[1] for p in grupos["posdat"]["permisos"]]
+    esperado = [a for a in ("ver", "crear", "editar", "anular") if a in acciones]
+    assert acciones[:len(esperado)] == esperado

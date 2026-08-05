@@ -241,7 +241,7 @@ def mapa_accesos():
     vacios = [r for r in roles if r["usuarios"] == 0]
     return render_template(
         "usuarios/accesos.html",
-        permisos=m["permisos"],
+        grupos=m["grupos"],
         sin_permiso=m["sin_permiso"],
         roles=con_gente,
         roles_vacios=vacios,
