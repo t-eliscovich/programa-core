@@ -566,10 +566,19 @@ def test_las_columnas_que_no_se_imprimen_estan_anuladas_en_las_8_celdas():
     tpl = Path("modules/informes/templates/informes/"
                "_estado_cuenta_impreso.html").read_text()
     # 2 th + 2 celdas de la fila normal + 2 de la fila "Totalizada" + 2 del pie
-    assert tpl.count("ec-c-off") == 8 + 1, (
-        "faltan celdas marcadas (o sobra alguna): la columna vuelve a existir "
-        "en el papel y se come el ancho"
-    )
+    # Las 8 celdas de las dos columnas ocultas + la regla CSS de respaldo.
+    assert tpl.count("ec-c-off") == 8 + 1
+    # Y NINGUNA se genera en el papel: van detrás de {% if interactivo %}.
+    # Medido con pdfplumber: escondidas con `no-print` seguían ocupando 32 pt
+    # cada una (64,5 pt de tabla vacía a la derecha) porque el `display:none`
+    # no se les aplica en el motor de PDF.
+    import re
+    for m in re.finditer(r'<t[dh] class="ec-c-off', tpl):
+        antes = tpl[:m.start()].rstrip()
+        assert antes.endswith("{% if interactivo %}"), (
+            "una celda de columna oculta no está gateada por `interactivo`: "
+            "en el papel ocupa ancho aunque no se vea"
+        )
     css = tpl.split("@media print", 1)[1]
     assert "main .ec-bloque-facturas table .ec-c-off {" in css
     for prop in ("display: none !important", "width: 0 !important",
@@ -594,7 +603,8 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     assert "<colgroup>" in bloque, "sin colgroup el ancho vuelve a depender del CSS"
     assert 'style="table-layout: fixed; width: 100%;"' in bloque
     anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)%?"', bloque)]
-    assert len(anchos) == 9, f"el colgroup tiene {len(anchos)} columnas, la tabla 9"
+    assert len(anchos) == 7, (
+        f"el colgroup tiene {len(anchos)} columnas; en el papel la tabla tiene 7 "
+        "(Tipo y Stat no se generan)"
+    )
     assert sum(anchos) == 100, f"los <col> suman {sum(anchos)}%, no 100"
-    # Tipo (3ª) y Stat (8ª) no se imprimen.
-    assert anchos[2] == 0 and anchos[7] == 0

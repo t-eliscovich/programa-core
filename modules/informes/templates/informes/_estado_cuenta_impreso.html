@@ -34,13 +34,22 @@
        en la versión NO interactiva —la del papel y el PDF—; en pantalla la
        tabla sigue como estaba, con sus nueve columnas.
 
-       Tipo (3) y Stat (8) van en 0: no se imprimen. El resto suma 100. #}
+       ⚠️ Y Tipo y Stat NO se generan (van detrás de `{% if interactivo %}`),
+       en vez de esconderse con `no-print`. MEDIDO sobre el PDF con pdfplumber:
+       el `tfoot` de la tabla medía 537,7 pt —toda la hoja— pero sus columnas
+       sumaban 473,2. Sobraban **64,5 pt de tabla vacía a la derecha**, o sea
+       32 pt por cada columna oculta: el `display:none` no se les aplicaba en
+       ese motor y seguían ocupando su padding. Ocho intentos de reajustar
+       porcentajes no podían arreglar eso: los porcentajes se reparten sobre lo
+       que QUEDA. Una columna que no va al papel no se esconde, no se genera.
+
+       Son SIETE columnas y el colgroup suma 100. #}
     {% if not interactivo %}
     <table class="w-full text-sm" style="table-layout: fixed; width: 100%;">
       <colgroup>
-        <col style="width:12%"><col style="width:12%"><col style="width:0">
+        <col style="width:12%"><col style="width:12%"><col style="width:17%">
         <col style="width:17%"><col style="width:17%"><col style="width:17%">
-        <col style="width:17%"><col style="width:0"><col style="width:8%">
+        <col style="width:8%">
       </colgroup>
     {% else %}
     <table class="w-full text-sm">
@@ -49,12 +58,12 @@
         <tr>
           <th class="ec-c-fecha px-4 py-3 text-left font-medium">Fecha</th>
           <th class="ec-c-num px-4 py-3 text-left font-medium">Número</th>
-          <th class="ec-c-off px-4 py-3 text-left font-medium no-print">Tipo</th>
+          {% if interactivo %}<th class="ec-c-off px-4 py-3 text-left font-medium no-print">Tipo</th>{% endif %}
           <th class="ec-c-imp px-4 py-3 text-right font-medium">Importe</th>
           <th class="ec-c-abo px-4 py-3 text-right font-medium">Abonado</th>
           <th class="ec-c-sal px-4 py-3 text-right font-medium">Saldo</th>
           <th class="ec-c-acum px-4 py-3 text-right font-medium" title="Saldo acumulado leído de arriba hacia abajo (sumando esta factura y todas las anteriores en la lista).">Acum.</th>
-          <th class="ec-c-off px-4 py-3 text-left font-medium no-print" title="En pantalla; no se imprime (en la impresión queda Días)">Stat</th>
+          {% if interactivo %}<th class="ec-c-off px-4 py-3 text-left font-medium no-print" title="En pantalla; no se imprime (en la impresión queda Días)">Stat</th>{% endif %}
           <th class="ec-c-dias px-4 py-3 text-right font-medium" title="Días entre hoy y la fecha de emisión de la factura">Días</th>
         </tr>
       </thead>
@@ -75,11 +84,12 @@
              rotulan "Nota de crédito", no "Devolución": no volvió mercadería. #}
           {% set _es_nc = ((f.tipo or '') | string | upper) == 'NC' %}
           {% set _neg = (f.importe or 0) < 0 %}
-          <td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '') }}">{{ 'Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura') }}</td>
+          {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '') }}">{{ 'Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura') }}</td>{% endif %}
           <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
           <td class="ec-c-abo px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="ec-c-sal px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="ec-c-acum px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s < 0 else 'text-slate-900 dark:text-slate-100' }}">{{ acum.s | money_es }}</td>
+          {% if interactivo %}
           <td class="ec-c-off px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap no-print">
             {# TMT 2026-07-21 (dueña): dropdown por fila Z/A/T/X (antes era un
                lapicito solo A/Z→T). Solo interactivo + con permiso amplio. #}
@@ -87,6 +97,7 @@
               {{ stat_select(f.stat, data.cliente.codigo_cli, f.id_factura, f.numf) }}
             {% else %}{{ f.stat }}{% endif %}
           </td>
+          {% endif %}
           <td class="ec-c-dias px-4 py-2 text-right text-mono text-slate-500" title="Días desde la emisión">{{ f.fecha | dias_desde }}</td>
         </tr>
         {% else %}
@@ -100,11 +111,12 @@
           <tr class="ec-trow no-print border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 text-slate-400" style="display:none;">
             <td class="ec-c-fecha px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
             <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
-            <td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>
+            {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>{% endif %}
             <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
             <td class="ec-c-abo px-4 py-2 text-right text-mono">{{ f.abono | money_es }}</td>
             <td class="ec-c-sal px-4 py-2 text-right text-mono">0,00</td>
             <td class="ec-c-acum px-4 py-2 text-right text-mono">—</td>
+            {% if interactivo %}
             <td class="ec-c-off px-4 py-2 font-mono text-xs whitespace-nowrap">
               {# TMT 2026-07-21 (dueña): dropdown Z/A/T/X también en las
                  totalizadas → permite reabrir (T→A/Z) o anular (X). #}
@@ -112,6 +124,7 @@
                 {{ stat_select(f.stat, data.cliente.codigo_cli, f.id_factura, f.numf) }}
               {% else %}T{% endif %}
             </td>
+            {% endif %}
             <td class="ec-c-dias px-4 py-2 text-right text-mono text-slate-500">{{ f.fecha | dias_desde }}</td>
           </tr>
           {% endfor %}
@@ -139,12 +152,12 @@
              desaparece junto con su columna. Ahora el pie tiene las 9 celdas
              de la tabla, no 8. #}
           <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="2">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
-          <td class="ec-c-off no-print"></td>
+          {% if interactivo %}<td class="ec-c-off no-print"></td>{% endif %}
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-900 dark:text-slate-100">{{ t.saldo | money_es }}</td>
           <td></td>
-          <td class="ec-c-off no-print"></td>
+          {% if interactivo %}<td class="ec-c-off no-print"></td>{% endif %}
           <td></td>
         </tr>
       </tfoot>
