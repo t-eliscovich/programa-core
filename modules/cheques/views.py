@@ -465,6 +465,58 @@ def nuevo():
         nos = [c["no_cheque"].upper() for c in cheques_in if c.get("no_cheque")]
         if len(nos) != len(set(nos)):
             errores.append("Hay N° de cheque repetidos en el formulario.")
+        # ── FRENO 1 (TMT 2026-08-05, caso BAN 730): posible duplicado
+        # contra lo YA GUARDADO. El diagnóstico de duplicados sólo caza
+        # cargas del mismo día; BAN se cargó dos veces con dos semanas de
+        # diferencia y nadie lo vio hasta la conciliación. Ahora el alta
+        # avisa y pide tildar «Es otro cheque» para guardar igual.
+        # Dos cheques iguales EN EL MISMO guardado siguen siendo legítimos
+        # (dueña 04/08: "si pongo 100 y otro cheque de 100 en la misma
+        # cobranza claramente no va a ser error") — por eso se compara SOLO
+        # contra la base, nunca entre los bloques del form.
+        _confirmado_dup = (
+            (request.form.get("confirmar_no_duplicado") or "").strip()
+            in ("1", "true", "on")
+        )
+        if not _confirmado_dup and codigo_cli:
+            from filters import fecha_es as _fed
+            from filters import money_es as _medup
+
+            from . import duplicados as _dup
+
+            _imps_vistos: set[float] = set()
+            for ch in cheques_in:
+                imp = ch.get("importe")
+                # Sólo cobros positivos reales: negativos (correcciones/NC)
+                # y el 95 (cancela anticipo, no entra plata) quedan afuera.
+                if imp is None or imp <= 0.005 or ch.get("no_banco") == 95:
+                    continue
+                _k = round(float(imp), 2)
+                if _k in _imps_vistos:
+                    continue  # mismo guardado = legítimo; un aviso alcanza
+                _imps_vistos.add(_k)
+                try:
+                    _sim = _dup.similares_activos(codigo_cli, float(imp))
+                except Exception:  # noqa: BLE001
+                    _sim = []  # el aviso nunca puede tumbar una cobranza
+                for s in _sim:
+                    _num = (s.get("no_cheque") or "").strip() or f"id {s['id_cheque']}"
+                    errores.append(
+                        f"⚠ Posible duplicado: ya existe un cheque de "
+                        f"{codigo_cli.upper().strip()} por "
+                        f"$ {_medup(float(imp))} — N° {_num}, del "
+                        f"{_fed(s.get('fecha_recibido') or s.get('fecha'))}, "
+                        f"estado {(s.get('stat') or '?').upper()}, cargado por "
+                        f"{s.get('usuario_crea') or '?'}."
+                    )
+                if _sim:
+                    form["pedir_confirmar_duplicado"] = True
+            if form.get("pedir_confirmar_duplicado"):
+                errores.append(
+                    "Si es OTRO cheque de verdad, tildá «Es otro cheque, no "
+                    "es duplicado» (arriba del botón Guardar) y volvé a "
+                    "guardar."
+                )
     if no_banco is None and not banco_texto:
         errores.append("Banco requerido (elegir o escribir).")
 

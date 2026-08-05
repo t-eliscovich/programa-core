@@ -301,3 +301,48 @@ def estado_actual_depositos(firmas: list[str]) -> dict[str, dict]:
             "id_transaccion": r["id_transaccion"],
         }
     return out
+
+def emparejar_interno(ids: list[int], *, no_banco: int, motivo: str,
+                      usuario: str, conn=None) -> str:
+    """Concilia N movimientos del PROGRAMA entre sí como INTERNOS.
+
+    ⭐ TMT 2026-08-05. Mismo mecanismo que banco-v2 → descartar-programa
+    (`_conciliar_pc_interno`): un `banco_conciliacion_match` estado='matched'
+    con metodo='interno:<motivo>' por cada movimiento, TODOS bajo el mismo
+    `confirm_batch_id` (así el deshacer los revierte juntos, lección del
+    03/08: agrupar por batch, no por transacción), y stat='*' en la
+    transacción para que salga de los pendientes "según PC".
+
+    Pensado para pares que netean a cero y que por construcción NUNCA van a
+    estar en el extracto: la anulación por error de carga y su depósito
+    original (casos CG3 +1.136,48 / ELF −301,96 del 05/08 — las "mitades
+    sueltas" que nadie sabía con qué conciliar). Reversible desde
+    'Deshacer conciliados' como cualquier match.
+    """
+    import uuid
+
+    batch_id = uuid.uuid4().hex
+    metodo = f"interno:{motivo}"[:40]
+    for pc_id in ids:
+        db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match (
+                no_banco, estado, metodo,
+                id_transaccion, tx_firma, confirm_batch_id, usuario
+            ) VALUES (%s, 'matched', %s, %s,
+                      scintela.compute_tx_firma(%s), %s, %s)
+            """,
+            (int(no_banco), metodo, int(pc_id), int(pc_id), batch_id, usuario),
+            conn=conn,
+        )
+        db.execute(
+            """
+            UPDATE scintela.transacciones_bancarias
+               SET stat = '*'
+             WHERE id_transaccion = %s AND no_banco = %s
+            """,
+            (int(pc_id), int(no_banco)),
+            conn=conn,
+        )
+    return batch_id
+

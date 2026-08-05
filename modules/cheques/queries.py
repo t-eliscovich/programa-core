@@ -1194,6 +1194,56 @@ def anular_por_error_de_carga(
         importe = float(ch["importe"] or 0)
         compensacion = None
 
+        # ── FRENO 2 (TMT 2026-08-05, caso MSS 1.100,93): si el movimiento
+        # bancario de este cheque ya está CONCILIADO (contra el extracto o
+        # interno), anular acá deja el match apuntando a un cheque anulado:
+        # el crédito real del banco queda "explicado" por plata que según PC
+        # no existe, y la ND compensatoria aparece después en la conciliación
+        # como una mitad suelta que nadie sabe aparear. Primero se deshace la
+        # conciliación (Conciliación → Deshacer conciliados), después se
+        # anula. El match vivo es estado='matched' + deshecho_en IS NULL —
+        # misma definición que usa banco_v2.
+        _links_banco = db.fetch_all(
+            """
+            SELECT tb.id_transaccion, tb.no_banco, tb.fecha, tb.documento,
+                   tb.concepto, tb.importe
+              FROM scintela.chequextransaccion cxt
+              JOIN scintela.transacciones_bancarias tb
+                ON tb.id_transaccion = cxt.id_transaccion
+             WHERE cxt.id_cheque = %s
+            """,
+            (id_cheque,),
+            conn=conn,
+        ) or []
+        if _links_banco:
+            _conc = db.fetch_all(
+                """
+                SELECT m.id_transaccion, m.metodo, m.real_fecha,
+                       m.creado_en::date AS conciliado_el
+                  FROM scintela.banco_conciliacion_match m
+                 WHERE m.id_transaccion = ANY(%s)
+                   AND m.estado = 'matched'
+                   AND m.deshecho_en IS NULL
+                """,
+                ([int(x["id_transaccion"]) for x in _links_banco],),
+                conn=conn,
+            ) or []
+            if _conc:
+                _m0 = _conc[0]
+                _es_interno = str(_m0.get("metodo") or "").startswith("interno")
+                _f = _m0.get("conciliado_el")
+                _f_txt = _f.strftime("%d/%m/%Y") if _f else "?"
+                raise ValueError(
+                    "El depósito de este cheque ya está CONCILIADO "
+                    + ("(interno" if _es_interno else "con el extracto del banco")
+                    + f", el {_f_txt}"
+                    + (")" if _es_interno else "")
+                    + ". Anularlo ahora dejaría esa conciliación apuntando a "
+                    "un cheque anulado y una compensación suelta sin pareja. "
+                    "Primero deshacé la conciliación en Conciliación → "
+                    "Deshacer conciliados, y después anulá."
+                )
+
         # --- Reverse de aplicaciones a facturas (igual que reversar()) ---
         aplic = db.fetch_all(
             "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact WHERE id_cheque = %s",
@@ -1270,6 +1320,40 @@ def anular_por_error_de_carga(
                 usuario=usuario,
             )
             compensacion = {"tipo": "banco", "id": res["id_transaccion"]}
+
+            # ── FRENO 3 (TMT 2026-08-05, casos CG3/ELF): la ND compensatoria
+            # y el depósito original se cancelan entre sí — NINGUNO va a
+            # aparecer jamás en el extracto, así que dejarlos sueltos siembra
+            # dos mitades en la conciliación que semanas después nadie sabe
+            # aparear. Si el depósito era de ESTE cheque solo (mismo banco,
+            # mismo importe) y sigue sin conciliar (freno 2 ya lo garantizó),
+            # quedan EMPAREJADOS como interno — auditable y reversible desde
+            # 'Deshacer conciliados'. Depósitos consolidados (dep.N ch.)
+            # quedan afuera: ahí la ND compensa una PARTE y el pareo es
+            # manual.
+            _dep_solo = [
+                x for x in _links_banco
+                if int(x.get("no_banco") or 0) == int(banco)
+                and abs(float(x.get("importe") or 0) - abs(importe)) <= 0.01
+                and str(x.get("documento") or "").strip().upper() == "DE"
+            ]
+            if len(_dep_solo) == 1:
+                try:
+                    from modules.conciliacion.queries import emparejar_interno
+
+                    emparejar_interno(
+                        [int(_dep_solo[0]["id_transaccion"]),
+                         int(res["id_transaccion"])],
+                        no_banco=int(banco),
+                        motivo="anulacion",
+                        usuario=usuario,
+                        conn=conn,
+                    )
+                    compensacion["conciliado_interno"] = True
+                except Exception:  # noqa: BLE001
+                    # El pareo es un mimo, no un requisito: si falla (schema
+                    # viejo, lo que sea), la anulación tiene que salir igual.
+                    pass
         elif stat_prev == "C":
             import caja_helpers
 
