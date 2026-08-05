@@ -2025,3 +2025,39 @@ def test_hay_migracion_que_saca_los_permisos_de_la_BASE():
     # Y no puede borrar de más: sólo esos dos permisos, de todos los roles.
     where = mig.split("DELETE FROM seguridad.permiso")[1].split('"""')[0]
     assert "nombre_opcion = ANY" in where
+
+
+def test_requieren_atencion_muestra_el_CODIGO_del_cliente(app, monkeypatch):
+    """Dueña 2026-08-05: *"acá poné el código de cliente que son 3 letras"*.
+
+    El círculo tenía las INICIALES DEL NOMBRE: decorativas, dos letras que el
+    vendedor no usa para nada. El código es el handle real — el que dice por
+    teléfono y el que busca.
+
+    Y en esta lista es el único lugar donde puede aparecer: el renglón de
+    abajo dice "N facturas abiertas", no el código.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 5))
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 100.0)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
+    monkeypatch.setattr(q, "ventas_kg_por_semana", lambda *a, **k: [])
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_mes", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Edgar Ramirez")
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 1})
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [
+        {"codigo_cli": "RTU", "nombre": "ROSA TUAPANTA", "provincia": "PICHINCHA",
+         "saldo": 75947.37, "vencido": 53574.60, "vence_mas_viejo": date(2026, 6, 1),
+         "n_facturas": 23},
+    ])
+    with app.test_request_context("/mi-cartera?vend=EDG&periodo=mes"):
+        g.user, g.permisos = {"vend": "EDG"}, {"micartera.ver"}
+        html = views.inicio()
+
+    bloque = html.split("Requieren atención")[1]
+    assert '<div class="ini cod">RTU</div>' in bloque
+    # Y ya no las iniciales del nombre.
+    assert '<div class="ini">RT</div>' not in bloque

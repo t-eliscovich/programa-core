@@ -98,7 +98,13 @@
   <div class="card-t">Requieren atención</div>
   {% for c in alertas %}
     <a class="rowitem" href="{{ url_for('mi_cartera.cliente', codigo_cli=c.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
-      {% set _p = (c.nombre or c.codigo_cli).split() %}<div class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</div>
+      {# TMT 2026-08-05 (dueña): *"acá poné el código de cliente que son 3
+         letras"*. Estaban las INICIALES DEL NOMBRE — decorativas: dos letras
+         que el vendedor no usa para nada. El código es el handle real, el que
+         dice por teléfono y el que busca. Y en esta lista es el único lugar
+         donde puede aparecer: el renglón de abajo dice "N facturas abiertas",
+         no el código (en Mis clientes sí está, debajo del nombre). #}
+      <div class="ini cod">{{ c.codigo_cli|upper }}</div>
       <div class="nm">
         <b>{{ c.nombre }}</b>
         <span>{{ c.n_facturas }} factura{{ '' if c.n_facturas == 1 else 's' }} abierta{{ '' if c.n_facturas == 1 else 's' }}</span>
@@ -124,6 +130,9 @@
 <style>
   /* La unidad va pegada al número pero más chica y gris: se lee "3.667,80 kg"
      de un vistazo y el kg no compite con la cifra. */
+  /* Tres letras no entran al tamaño de dos: el círculo mide 36 px. */
+  .ini.cod{font-size:10.5px;letter-spacing:-.02em}
+
   .meta-lines .big .u{font-style:normal;font-size:13px;font-weight:600;
                       color:var(--ink-3);letter-spacing:0;margin-left:2px}
   .bars-t{font-size:10px;font-weight:700;letter-spacing:.06em;
