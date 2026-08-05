@@ -519,3 +519,34 @@ def test_los_anchos_de_las_dos_tablas_suman_100_sobre_lo_que_SE_IMPRIME():
         assert n not in anchos["facturas"], (
             f"la columna {n} de facturas es no-print: no puede llevar ancho"
         )
+
+
+def test_dias_no_se_come_un_sexto_de_la_hoja():
+    """Que la tabla mida 100% no alcanza: hay que USAR el ancho.
+
+    Con DÍAS en 16% las líneas llegaban al borde pero los números quedaban
+    apretados a la izquierda y sobraba un hueco muerto a la derecha — una
+    columna de dos dígitos no necesita un sexto de la hoja. Dueña:
+    "facturas tiene que ocupar todo horizontalmente".
+    """
+    import re
+    from pathlib import Path
+
+    css = Path("modules/informes/templates/informes/"
+               "_estado_cuenta_impreso.html").read_text().split("@media print", 1)[1]
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    anchos = {}
+    for selectores, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        m = re.search(r"(?:^|[;\s])width:\s*([\d.]+)\s*%", cuerpo)
+        if not m:
+            continue
+        for n in re.findall(
+                r"\.ec-bloque-facturas table (?:th|tbody td):nth-child\((\d+)\)",
+                selectores):
+            anchos[int(n)] = float(m.group(1))
+    # 9 = Días: dos dígitos, no puede llevarse más que una columna de importes.
+    assert anchos[9] <= 10, f"Días en {anchos[9]}%: deja un hueco muerto a la derecha"
+    for n in (4, 5, 6, 7):   # Importe, Abonado, Saldo, Acum.
+        assert anchos[n] >= anchos[9], (
+            f"la columna {n} (plata) es más angosta que Días"
+        )

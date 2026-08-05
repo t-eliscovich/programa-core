@@ -525,22 +525,30 @@
            ⚠️ Si alguna vez se agrega o se saca una columna, hay que rehacer la
            suma: si no da 100, la tabla vuelve a salir corta EN EL PDF —en el
            navegador se ve bien igual, que es lo que hace difícil de ver este
-           bug. Hay un test que la verifica. */
+           bug. Hay un test que la verifica.
+
+           ⚠️ Y el REPARTO importa tanto como la suma. Con DÍAS en 16% las
+           líneas llegaban al borde pero los números quedaban todos apretados a
+           la izquierda y sobraba un hueco muerto a la derecha: una columna de
+           dos dígitos no necesita un sexto de la hoja. Dueña: *"facturas tiene
+           que ocupar todo horizontalmente"* — no alcanza con que la tabla mida
+           100%, tiene que USARSE el ancho. DÍAS baja a 8% y ese espacio va a
+           las cuatro columnas de plata, que son las que se leen. */
         main .ec-bloque-facturas table { table-layout: fixed !important; }
         main .ec-bloque-facturas table th:nth-child(1),
         main .ec-bloque-facturas table tbody td:nth-child(1) { width: 12% !important; }
         main .ec-bloque-facturas table th:nth-child(2),
         main .ec-bloque-facturas table tbody td:nth-child(2) { width: 12% !important; }
         main .ec-bloque-facturas table th:nth-child(4),
-        main .ec-bloque-facturas table tbody td:nth-child(4) { width: 15% !important; }
+        main .ec-bloque-facturas table tbody td:nth-child(4) { width: 17% !important; }
         main .ec-bloque-facturas table th:nth-child(5),
-        main .ec-bloque-facturas table tbody td:nth-child(5) { width: 14% !important; }
+        main .ec-bloque-facturas table tbody td:nth-child(5) { width: 17% !important; }
         main .ec-bloque-facturas table th:nth-child(6),
-        main .ec-bloque-facturas table tbody td:nth-child(6) { width: 15% !important; }
+        main .ec-bloque-facturas table tbody td:nth-child(6) { width: 17% !important; }
         main .ec-bloque-facturas table th:nth-child(7),
-        main .ec-bloque-facturas table tbody td:nth-child(7) { width: 16% !important; }
+        main .ec-bloque-facturas table tbody td:nth-child(7) { width: 17% !important; }
         main .ec-bloque-facturas table th:nth-child(9),
-        main .ec-bloque-facturas table tbody td:nth-child(9) { width: 16% !important; }
+        main .ec-bloque-facturas table tbody td:nth-child(9) { width: 8% !important; }
 
         /* Cheques: 10+10+13+10+11+16 = 70% hasta el final de Importe. Banco se
            queda con 24%, de sobra para el nombre más largo que hay en la base
