@@ -1131,11 +1131,18 @@ def buscar(
         -- (fecha NULL -> date.min, numf NULL -> 0, fila por fila sin peers).
         SELECT fi.*,
                SUM(COALESCE(fi.saldo, 0)) OVER (
-                 ORDER BY fi.fecha ASC NULLS FIRST, fi.numf ASC NULLS FIRST
+                 ORDER BY fi.fecha ASC NULLS FIRST, fi.numf ASC NULLS FIRST,
+                          fi.id_factura ASC
                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                ) AS saldo_acumulado
           FROM filtradas fi
-        ORDER BY fi.fecha DESC, fi.numf DESC
+        -- El desempate por id_factura NO es cosmetico: hay numf REPETIDOS
+        -- (10719, 10724 x3, ...). Con (fecha, numf) empatados el orden de la
+        -- window y el del LIMIT/OFFSET se resuelven por separado, asi que el
+        -- corrido puede saltar en el borde de pagina y la paginacion puede
+        -- saltear o repetir una fila. Los dos ORDER BY tienen que ser
+        -- exactamente inversos y totales.
+        ORDER BY fi.fecha DESC, fi.numf DESC, fi.id_factura DESC
         LIMIT %(limite)s OFFSET %(offset)s
         """.replace("__NOMBRE_CLI__", _nom_sql or "FALSE"),
         {
@@ -1169,7 +1176,8 @@ def buscar(
     # filas sin fecha queden al final (el SQL las pondria primero) y para
     # no depender del orden que devuelva el driver.
     rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
-                                           r.get("numf") or 0))
+                                           r.get("numf") or 0,
+                                           r.get("id_factura") or 0))
     for r in rows_asc:
         r["saldo_acumulado"] = float(r.get("saldo_acumulado") or 0)
     return list(reversed(rows_asc))

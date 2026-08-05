@@ -81,3 +81,36 @@ def test_sin_paginar_el_ultimo_acum_es_la_suma_de_todo():
     with patch.object(db, "fetch_all", lambda *a, **kw: list(filas)):
         out = fq.buscar()
     assert out[0]["saldo_acumulado"] == sum(f["saldo"] for f in filas)
+
+
+def test_el_orden_desempata_por_id_factura():
+    """Hay numf REPETIDOS (10719, 10724 x3...). Sin un desempate total, el
+    orden de la window y el del LIMIT/OFFSET se resuelven por separado: el
+    corrido salta en el borde de página y la paginación puede saltear filas.
+    """
+    visto = {}
+
+    def _spy(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split()).lower()
+        return []
+
+    with patch.object(db, "fetch_all", _spy):
+        fq.buscar()
+
+    sql = visto["sql"]
+    assert ("order by fi.fecha asc nulls first, fi.numf asc nulls first, "
+            "fi.id_factura asc") in sql, "la window necesita desempate total"
+    assert "order by fi.fecha desc, fi.numf desc, fi.id_factura desc" in sql, \
+        "el orden de la página tiene que ser el inverso EXACTO de la window"
+
+
+def test_el_reorden_python_respeta_el_desempate():
+    """El re-sort de Python (para el orden de pantalla) usa la misma clave."""
+    a = _fila(10724, 5, 10.0, 10.0)
+    a["id_factura"] = 7
+    b = _fila(10724, 5, 20.0, 30.0)   # mismo numf y misma fecha
+    b["id_factura"] = 9
+    with patch.object(db, "fetch_all", lambda *ar, **kw: [b, a]):
+        out = fq.buscar()
+    assert [r["id_factura"] for r in out] == [9, 7]
+    assert [r["saldo_acumulado"] for r in out] == [30.0, 10.0]
