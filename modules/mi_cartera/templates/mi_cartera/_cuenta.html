@@ -1,0 +1,32 @@
+{# El avatar con el menú de la cuenta — hoy sólo tiene Salir.
+
+   TMT 2026-08-05 (dueña, viendo la primera versión): *"el salir debería ser un
+   botón desde el nombre, no siempre visible ahí abajo"*. Tenía razón: el
+   tabbar es para lo que se usa TODOS LOS DÍAS —Inicio, Clientes, Comisión— y
+   cerrar sesión se hace una vez cada mucho. Un cuarto tab le robaba un 25% de
+   ancho permanente a los tres que importan, y encima ponía la acción
+   destructiva al lado de las de navegar, donde se toca sin querer.
+
+   ⭐ Es un `<details>`, no JavaScript. El desplegable nativo abre y cierra
+   solo, funciona con el teclado, y no depende de que cargue un script — que
+   en un celular con mala señal es exactamente cuando uno quiere salir. El
+   portal ya evita JS donde puede.
+
+   `preview` = la dueña mirando con `?vend=`: ahí no hay sesión de vendedor que
+   cerrar y el botón la sacaría de la suya, así que no se dibuja. #}
+{% if not preview %}
+<details class="cuenta">
+  <summary aria-label="Mi cuenta">
+    <span class="avatar">{{ iniciales }}</span>
+  </summary>
+  <div class="cuenta-menu">
+    <div class="cuenta-quien">{{ vend_nombre }}<small>{{ vend }}</small></div>
+    <form method="post" action="{{ url_for('auth.logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">⏻ Salir</button>
+    </form>
+  </div>
+</details>
+{% else %}
+<span class="avatar">{{ iniciales }}</span>
+{% endif %}

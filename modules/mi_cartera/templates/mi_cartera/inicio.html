@@ -8,7 +8,7 @@
       <h1>Hola, {{ vend_nombre.split()[0] if vend_nombre else vend }}</h1>
       <div class="sub">{{ vend }} · {{ pendiente.n_clientes }} cliente{{ '' if pendiente.n_clientes == 1 else 's' }} con saldo</div>
     </div>
-    <div class="avatar">{{ iniciales }}</div>
+    {% include "mi_cartera/_cuenta.html" %}
   </div>
 {% endblock %}
 

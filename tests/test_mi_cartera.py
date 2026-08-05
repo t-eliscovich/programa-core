@@ -2076,8 +2076,12 @@ def test_el_vendedor_puede_cerrar_sesion(vendedor_logueado, monkeypatch):
     entraba con "👁 Ver como" pudiera volver, y quedó abierto el caso de una
     sesión REAL — el vendedor en su propio celular.
 
-    El botón va en el tabbar, que es la barra que ya usa: en un celular no hay
-    menú donde esconderlo.
+    ⭐ TMT 2026-08-05, sobre la primera versión: *"el salir debería ser un
+    botón desde el nombre, no siempre visible ahí abajo"*. Estaba como cuarta
+    pestaña del tabbar y eso está mal por dos razones: el tabbar es para lo
+    que se usa TODOS LOS DÍAS —Inicio, Clientes, Comisión— y cerrar sesión se
+    hace una vez cada mucho; y ponía la acción destructiva al lado de las de
+    navegar, donde se toca sin querer. Ahora cuelga del avatar.
     """
     monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
     monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
@@ -2090,11 +2094,20 @@ def test_el_vendedor_puede_cerrar_sesion(vendedor_logueado, monkeypatch):
                         lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
 
     html = vendedor_logueado.get("/mi-cartera").data.decode()
+
+    # El tabbar vuelve a tener SÓLO las tres de navegar.
     tabbar = html.split('<nav class="tabbar">')[1].split("</nav>")[0]
-    assert "/logout" in tabbar and "Salir" in tabbar
+    assert "/logout" not in tabbar
+    assert tabbar.count("<a ") == 3
+
+    # Y la salida cuelga del avatar, en un <details> nativo (sin JS: en un
+    # celular con mala señal es justo cuando uno quiere poder salir).
+    cuenta = html.split('<details class="cuenta">')[1].split("</details>")[0]
+    assert "/logout" in cuenta and "Salir" in cuenta
+    assert 'class="avatar"' in cuenta
     # POST y con CSRF: un GET a /logout lo dispara cualquier <img> de un mail.
-    assert 'method="post"' in tabbar
-    assert "csrf_token" in tabbar
+    assert 'method="post"' in cuenta
+    assert "csrf_token" in cuenta
 
 
 def test_la_ruta_de_salida_no_esta_bloqueada_por_el_allowlist():
@@ -2399,3 +2412,67 @@ def test_recientes_gatea_cada_tipo_con_su_permiso():
     bloque = menu.split("{% set url = None %}")[1].split("{% if url %}")[0]
     assert "tiene_permiso('posdat.editar')" in bloque
     assert "tiene_permiso('retenciones.anular')" in bloque
+
+
+def test_la_salida_no_depende_de_javascript(vendedor_logueado, monkeypatch):
+    """Es un `<details>` nativo, no un dropdown con script.
+
+    Abre y cierra solo, anda con teclado, y no depende de que cargue un JS —
+    que en un celular con mala señal es exactamente cuando uno quiere poder
+    salir. El portal ya evita JS donde puede.
+    """
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Felipe Lopez")
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
+    monkeypatch.setattr(q, "ventas_kg_por_semana", lambda *a, **k: [])
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_mes", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
+
+    html = vendedor_logueado.get("/mi-cartera").data.decode()
+    cuenta = html.split('<details class="cuenta">')[1].split("</details>")[0]
+    assert "onclick" not in cuenta and "<script" not in cuenta
+    assert "<summary" in cuenta
+    # El menú dice de quién es la sesión: si se cierra la equivocada, no hay
+    # deshacer.
+    assert "Felipe Lopez" in cuenta
+
+
+def test_en_la_vista_previa_no_hay_boton_de_salir(app, monkeypatch):
+    """Con `?vend=` la que mira es la dueña: no hay sesión de vendedor que
+    cerrar y el botón la sacaría de la suya."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 5))
+    for f, v in (("ventas_kg", 0.0), ("cobrado", 0.0), ("comision_mes", 0.0)):
+        monkeypatch.setattr(q, f, lambda *a, _v=v, **k: _v)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
+    monkeypatch.setattr(q, "ventas_kg_por_semana", lambda *a, **k: [])
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Felipe Lopez")
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
+
+    with app.test_request_context("/mi-cartera?vend=FL1"):
+        g.user, g.permisos = {"username": "tamara"}, {"*"}
+        html = views.inicio()
+    assert "/logout" not in html
+    assert '<details class="cuenta">' not in html
+    assert 'class="avatar"' in html      # el círculo sigue, sin menú
+
+
+def test_hay_migracion_0167_para_cupos():
+    """El cupo lo tocan sólo Andrés y accionistas — decisión del 2026-07-09
+    que quedó a medias: la mig 0123 se lo sacó a Cobranzas, Ventas y QC pero
+    no a INT, que entonces se llamaba "Alex".
+
+    Lo destapó /usuarios/accesos al cruzar el repo con la base: 35 permisos en
+    producción contra 34 en el archivo. Esa diferencia de uno era ésta.
+    """
+    from pathlib import Path
+
+    mig = Path("migrations/0167_cupos_editar_fuera_de_int.py").read_text()
+    assert "DELETE FROM seguridad.permiso" in mig
+    assert "cupos.editar" in mig

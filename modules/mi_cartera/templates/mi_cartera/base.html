@@ -183,15 +183,24 @@
   .tabbar a.on{color:var(--accent)}
   .tabbar em{display:block;font-size:17px;font-style:normal;margin-bottom:3px;opacity:.55}
   .tabbar a.on em{opacity:1}
-  /* El botón de Salir se ve y se toca igual que las tres pestañas: mismo
-     ancho, mismo alto, misma tipografía. Un <button> dentro de un <form> no
-     hereda nada de eso. */
-  .tabbar .salir{flex:1;display:flex}
-  .tabbar .salir button{flex:1;background:none;border:0;padding:0;cursor:pointer;
-                        font:inherit;font-size:10.5px;font-weight:600;
-                        color:var(--ink-3);text-align:center}
-  .tabbar .salir em{display:block;font-size:17px;font-style:normal;
-                    margin-bottom:3px;opacity:.55}
+  /* El menú de la cuenta: un <details> nativo colgado del avatar. Sin JS —
+     ver el comentario de _cuenta.html. */
+  .cuenta{position:relative;flex:0 0 auto}
+  .cuenta > summary{list-style:none;cursor:pointer;display:block}
+  .cuenta > summary::-webkit-details-marker{display:none}
+  .cuenta[open] > summary .avatar{box-shadow:0 0 0 3px var(--accent-soft)}
+  .cuenta-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;
+               min-width:186px;background:var(--surface);border:1px solid var(--line);
+               border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,.13);
+               padding:6px;overflow:hidden}
+  .cuenta-quien{padding:8px 10px 9px;font-size:13px;font-weight:600;
+                border-bottom:1px solid var(--line);margin-bottom:5px;line-height:1.25}
+  .cuenta-quien small{display:block;font-size:10.5px;font-weight:500;
+                      color:var(--ink-3);margin-top:2px;letter-spacing:.04em}
+  .cuenta-menu button{width:100%;text-align:left;background:none;border:0;
+                      font:inherit;font-size:13.5px;font-weight:600;color:var(--bad);
+                      padding:9px 10px;border-radius:8px;cursor:pointer}
+  .cuenta-menu button:active{background:var(--bad-soft)}
 
   .banner{background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:600;
           padding:7px 14px;text-align:center}
@@ -230,28 +239,6 @@
      class="{% if seccion == 'clientes' %}on{% endif %}"><em>☰</em>Clientes</a>
   <a href="{{ url_for('mi_cartera.comision') }}{{ qp }}"
      class="{% if seccion == 'comision' %}on{% endif %}"><em>◆</em>Comisión</a>
-  {# ⭐ TMT 2026-08-05 (dueña): *"¿cómo me deslogueo de un usuario? ejemplo de
-     un vendedor"*. No se podía: el portal NO tenía salida — ni botón ni link.
-     La única forma era tipear /logout a mano o borrar la cookie, y la sesión
-     dura 31 DÍAS.
-
-     Es la otra mitad del bug del 03/08: ese día se arregló que quien entraba
-     con "👁 Ver como" pudiera volver (el banner de arriba), y quedó abierto
-     el caso de una sesión REAL — que es el del vendedor en su propio celular.
-     El candado tiene que dejar entrar Y salir por las dos puertas.
-
-     Va en el tabbar y no escondido en el appbar: es la barra que el vendedor
-     ya usa, y en un celular no hay menú donde meterlo. `/logout` ya estaba en
-     PREFIJOS_INFRA de scope_vendedor.py, así que la ruta pasa.
-
-     Como POST con CSRF: un GET a /logout lo dispara cualquier <img> de un
-     mail y te saca de la sesión sin tocar nada. #}
-  {% if not preview %}
-  <form method="post" action="{{ url_for('auth.logout') }}" class="salir">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit"><em>⏻</em>Salir</button>
-  </form>
-  {% endif %}
 </nav>
 
 </body>
