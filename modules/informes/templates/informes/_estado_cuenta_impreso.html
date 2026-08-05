@@ -25,12 +25,12 @@
         <tr>
           <th class="ec-c-fecha px-4 py-3 text-left font-medium">Fecha</th>
           <th class="ec-c-num px-4 py-3 text-left font-medium">Número</th>
-          <th class="px-4 py-3 text-left font-medium no-print">Tipo</th>
+          <th class="ec-c-off px-4 py-3 text-left font-medium no-print">Tipo</th>
           <th class="ec-c-imp px-4 py-3 text-right font-medium">Importe</th>
           <th class="ec-c-abo px-4 py-3 text-right font-medium">Abonado</th>
           <th class="ec-c-sal px-4 py-3 text-right font-medium">Saldo</th>
           <th class="ec-c-acum px-4 py-3 text-right font-medium" title="Saldo acumulado leído de arriba hacia abajo (sumando esta factura y todas las anteriores en la lista).">Acum.</th>
-          <th class="px-4 py-3 text-left font-medium no-print" title="En pantalla; no se imprime (en la impresión queda Días)">Stat</th>
+          <th class="ec-c-off px-4 py-3 text-left font-medium no-print" title="En pantalla; no se imprime (en la impresión queda Días)">Stat</th>
           <th class="ec-c-dias px-4 py-3 text-right font-medium" title="Días entre hoy y la fecha de emisión de la factura">Días</th>
         </tr>
       </thead>
@@ -51,12 +51,12 @@
              rotulan "Nota de crédito", no "Devolución": no volvió mercadería. #}
           {% set _es_nc = ((f.tipo or '') | string | upper) == 'NC' %}
           {% set _neg = (f.importe or 0) < 0 %}
-          <td class="px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '') }}">{{ 'Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura') }}</td>
+          <td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '') }}">{{ 'Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura') }}</td>
           <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
           <td class="ec-c-abo px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="ec-c-sal px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="ec-c-acum px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s < 0 else 'text-slate-900 dark:text-slate-100' }}">{{ acum.s | money_es }}</td>
-          <td class="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap no-print">
+          <td class="ec-c-off px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap no-print">
             {# TMT 2026-07-21 (dueña): dropdown por fila Z/A/T/X (antes era un
                lapicito solo A/Z→T). Solo interactivo + con permiso amplio. #}
             {% if interactivo|default(false) and (tiene_permiso('facturas.ver') or tiene_permiso('clientes.ver') or tiene_permiso('facturas.editar')) %}
@@ -76,12 +76,12 @@
           <tr class="ec-trow no-print border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 text-slate-400" style="display:none;">
             <td class="ec-c-fecha px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
             <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
-            <td class="px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>
+            <td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>
             <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
             <td class="ec-c-abo px-4 py-2 text-right text-mono">{{ f.abono | money_es }}</td>
             <td class="ec-c-sal px-4 py-2 text-right text-mono">0,00</td>
             <td class="ec-c-acum px-4 py-2 text-right text-mono">—</td>
-            <td class="px-4 py-2 font-mono text-xs whitespace-nowrap">
+            <td class="ec-c-off px-4 py-2 font-mono text-xs whitespace-nowrap">
               {# TMT 2026-07-21 (dueña): dropdown Z/A/T/X también en las
                  totalizadas → permite reabrir (T→A/Z) o anular (X). #}
               {% if tiene_permiso('facturas.ver') or tiene_permiso('clientes.ver') or tiene_permiso('facturas.editar') %}
@@ -115,12 +115,12 @@
              desaparece junto con su columna. Ahora el pie tiene las 9 celdas
              de la tabla, no 8. #}
           <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="2">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
-          <td class="no-print"></td>
+          <td class="ec-c-off no-print"></td>
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-900 dark:text-slate-100">{{ t.saldo | money_es }}</td>
           <td></td>
-          <td class="no-print"></td>
+          <td class="ec-c-off no-print"></td>
           <td></td>
         </tr>
       </tfoot>
@@ -551,6 +551,26 @@
         main .ec-bloque-facturas table .ec-c-sal   { width: 17% !important; }
         main .ec-bloque-facturas table .ec-c-acum  { width: 17% !important; }
         main .ec-bloque-facturas table .ec-c-dias  { width:  8% !important; }
+
+        /* Las columnas que NO se imprimen (Tipo y Stat), anuladas por clase.
+           TMT 2026-08-05, 7ª vuelta — y la causa del último 12% que faltaba.
+
+           `no-print` no alcanzaba: en la fila "Totalizada" la celda de Stat ni
+           siquiera lo llevaba, así que la columna existía igual y se comía su
+           parte del ancho. Con `table-layout: fixed`, una columna que existe
+           sin ancho declarado toma su mínimo de contenido y ESE espacio sale
+           de las otras: la tabla quedaba en 88% de la hoja.
+
+           Van las tres propiedades a propósito: `display:none` la saca, y si
+           por lo que sea no se aplicara, `width`/`padding` en cero evitan que
+           igual ocupe. Marcadas las OCHO celdas de la columna: los dos `th`,
+           las dos filas del cuerpo (normal y "Totalizada") y las dos del pie. */
+        main .ec-bloque-facturas table .ec-c-off {
+          display: none !important;
+          width: 0 !important;
+          padding: 0 !important;
+          border: 0 !important;
+        }
 
         /* Cheques: 10+10+13+10+11+16 = 70% hasta el final de Importe. Banco se
            queda con 24%, de sobra para el nombre más largo que hay en la base

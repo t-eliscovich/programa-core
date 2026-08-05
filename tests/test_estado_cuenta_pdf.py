@@ -550,3 +550,28 @@ def test_dias_no_se_come_un_sexto_de_la_hoja():
         f'Días en {anchos["ec-c-dias"]}%: deja un hueco muerto a la derecha')
     for c in ("ec-c-imp", "ec-c-abo", "ec-c-sal", "ec-c-acum"):
         assert anchos[c] >= anchos["ec-c-dias"], f"{c} más angosta que Días"
+
+
+def test_las_columnas_que_no_se_imprimen_estan_anuladas_en_las_8_celdas():
+    """El último 12% que le faltaba a facturas para llenar la hoja.
+
+    `no-print` no alcanzaba: en la fila "Totalizada" la celda de Stat ni
+    siquiera lo llevaba, así que la columna existía igual. Con
+    `table-layout: fixed`, una columna que existe sin ancho declarado toma su
+    mínimo de contenido y ese espacio sale de las otras — la tabla quedaba en
+    88% de la hoja.
+    """
+    from pathlib import Path
+
+    tpl = Path("modules/informes/templates/informes/"
+               "_estado_cuenta_impreso.html").read_text()
+    # 2 th + 2 celdas de la fila normal + 2 de la fila "Totalizada" + 2 del pie
+    assert tpl.count("ec-c-off") == 8 + 1, (
+        "faltan celdas marcadas (o sobra alguna): la columna vuelve a existir "
+        "en el papel y se come el ancho"
+    )
+    css = tpl.split("@media print", 1)[1]
+    assert "main .ec-bloque-facturas table .ec-c-off {" in css
+    for prop in ("display: none !important", "width: 0 !important",
+                 "padding: 0 !important"):
+        assert prop in css, prop
