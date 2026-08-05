@@ -171,7 +171,14 @@ def editar(id_usuario: int):
     # Siempre string (nunca None) para que "sacarle el vendedor" a un usuario
     # llegue a queries.editar como '' → NULL, y no como "no lo toques".
     vend = (request.form.get("vend") or "").strip().upper()
-    activo = (request.form.get("activo") or "").strip() == "1"
+    # ⚠ El form manda DOS inputs con name="activo": un hidden value="0" y el
+    # checkbox value="1" (patrón clásico para que "destildado" viaje). El
+    # navegador postea AMBOS —"activo=0&activo=1"— cuando está tildado, y
+    # `request.form.get()` devuelve el PRIMERO, o sea "0" SIEMPRE. Resultado:
+    # cualquier guardada de esta pantalla DESACTIVABA al usuario, aunque el
+    # checkbox se viera tildado. Se le cambió la contraseña a maribel el
+    # 2026-08-05 y desapareció del listado. Hay que mirar TODOS los valores.
+    activo = "1" in request.form.getlist("activo")
     password = request.form.get("password") or ""
     password_confirm = request.form.get("password_confirm") or ""
 
