@@ -63,8 +63,11 @@ Cargar los cupos reales o la columna es decoración.
 La rama de "cobros no-cheque" suma contra una tabla que nadie escribe
 (1 fila, de 2024). O se llena o se saca.
 
-### [XS] Regla nueva pendiente de la dueña: cheque que rebota en el mes siguiente
-La comisión se pagó sobre plata que no entró. ¿Se netea en el mes del rebote?
+### [S] Comisiones: cheque que rebota en el mes siguiente (PENDIENTE, dueña 05/08)
+La comisión se pagó sobre plata que no entró. Inclinación de la dueña
+(05/08, preliminar): **descontar el día/mes en que rebota** — confirmar con
+ella el detalle antes de implementar (¿resta de la cobranza del mes del
+rebote? ¿y si vuelve a cobrarse después?).
 
 ### [S] Capturas 07:00/19:00 de /informes/dia
 Verificar en unos días que las capturas programadas corren solas en producción
