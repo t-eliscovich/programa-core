@@ -2245,9 +2245,12 @@ def lista():
     # consume `estado`).
     estado_filtro = estados_filtro[0] if len(estados_filtro) == 1 else ""
     # TMT 2026-05-22 — paginación server-side. Default 500/página para que
-    # el render sea rápido. ?por_pagina=N (max 5000) y ?page=N. Con paginación
-    # ACUM solo refleja la página visible — el header sigue mostrando el total
-    # del UNIVERSO filtrado, calculado por contar_filtrado().
+    # el render sea rápido. ?por_pagina=N (max 5000) y ?page=N.
+    # TMT 2026-08-05 (dueña: "a nadie le importa la pagina visible") — el ACUM
+    # ya NO es de la página: queries.buscar() lo calcula con una window sobre
+    # el universo filtrado entero, así que la fila más nueva de la página 1
+    # cierra con el total del header (contar_filtrado()) y el corrido sigue
+    # siendo continuo al pasar de página.
     # Casos especiales: si export=csv, traemos TODO (sin paginar) para que
     # el CSV sea completo; si solo_huerfanas, también traemos todo porque el
     # filtro post-enriquecimiento corta filas y la paginación SQL no aplica.

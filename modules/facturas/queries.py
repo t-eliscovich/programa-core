@@ -1045,6 +1045,7 @@ def buscar(
     cliente_like = f"%{cliente}%" if cliente else None
     rows = db.fetch_all(
         """
+        WITH filtradas AS (
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
                f.codigo_cli, COALESCE(c.nombre, '') AS cliente,
                f.kg, f.importe, f.abono, f.saldo, f.stat, f.condic, f.tipo
@@ -1118,7 +1119,23 @@ def buscar(
                  AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
              OR f.stat = ANY(%(estados_para_in)s::text[])
           )
-        ORDER BY f.fecha DESC, f.numf DESC
+        )
+        -- TMT 2026-08-05 (dueña: "a nadie le importa la pagina visible") —
+        -- el ACUM se calcula con una window sobre el UNIVERSO filtrado
+        -- ENTERO, antes del LIMIT/OFFSET. Antes se acumulaba en Python
+        -- sobre las filas de la pagina, asi que con paginacion la fila de
+        -- arriba mostraba el corrido de esas 500 y no cerraba nunca con el
+        -- total del header. Ahora la fila mas nueva de la pagina 1 = total
+        -- del header, y el corrido sigue siendo continuo pagina a pagina.
+        -- NULLS FIRST + ROWS replica exactamente el orden que hacia Python
+        -- (fecha NULL -> date.min, numf NULL -> 0, fila por fila sin peers).
+        SELECT fi.*,
+               SUM(COALESCE(fi.saldo, 0)) OVER (
+                 ORDER BY fi.fecha ASC NULLS FIRST, fi.numf ASC NULLS FIRST
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+               ) AS saldo_acumulado
+          FROM filtradas fi
+        ORDER BY fi.fecha DESC, fi.numf DESC
         LIMIT %(limite)s OFFSET %(offset)s
         """.replace("__NOMBRE_CLI__", _nom_sql or "FALSE"),
         {
@@ -1139,24 +1156,22 @@ def buscar(
             "offset": offset,
         },
     ) or []
-    # Running total cronológico (ascendente).
-    # TMT 2026-05-20 v2 — el ACUM ahora acumula SALDO (no importe), para
-    # que el último valor coincida con el header (que muestra SUM(saldo)
-    # del bucket cartera). Pedido dueña: "el total de arriba no coincide
-    # con el acumulado. es porque no tenes en cuenta las negativas".
-    # Devoluciones y sobrepagos (saldo negativo) restan del corrido, lo
-    # mismo que hacen en el header — total visible = último ACUM.
+    # El ACUM (`saldo_acumulado`) lo calcula el SQL de arriba con una window
+    # sobre el universo filtrado entero — ver el comentario del CTE.
+    # TMT 2026-05-20 v2 — acumula SALDO (no importe), para que cierre con el
+    # header (que muestra SUM(saldo) del bucket cartera). Pedido dueña: "el
+    # total de arriba no coincide con el acumulado. es porque no tenes en
+    # cuenta las negativas". Devoluciones y sobrepagos (saldo negativo)
+    # restan del corrido, lo mismo que hacen en el header.
     from datetime import date as _date
-    # Calculamos el acum en orden ASC cronológico (running total).
+    # La pantalla muestra las facturas en orden DESC (pedido dueña
+    # 2026-05-21: las nuevas arriba). Reordenamos en Python para que las
+    # filas sin fecha queden al final (el SQL las pondria primero) y para
+    # no depender del orden que devuelva el driver.
     rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
                                            r.get("numf") or 0))
-    acum = 0.0
     for r in rows_asc:
-        acum += float(r.get("saldo") or 0)
-        r["saldo_acumulado"] = acum
-    # Pero la pantalla muestra las facturas en orden DESC (pedido dueña
-    # 2026-05-21: las nuevas arriba). El SQL ya devuelve DESC; lo único
-    # que necesitamos hacer es invertir el resultado del sort ASC.
+        r["saldo_acumulado"] = float(r.get("saldo_acumulado") or 0)
     return list(reversed(rows_asc))
 
 
