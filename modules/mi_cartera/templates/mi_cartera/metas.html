@@ -4,8 +4,13 @@
 {% block breadcrumb %}<a href="{{ url_for('comisiones.lista') }}" class="hover:underline">Comisiones</a> / <strong>Metas</strong>{% endblock %}
 {% block content %}
 <div class="max-w-7xl">
-{{ page_hero('Metas de venta por vendedor',
-             'Se carga una meta por MES. La del año se suma sola y la de la semana se prorratea. Dejar vacío = sin meta (el vendedor ve el facturado, sin anillo de progreso).') }}
+{{ page_hero('Metas de venta por vendedor · en KILOS',
+             'Las metas se miden en KILOS facturados, no en dólares. Se carga una meta por MES: la del año se suma sola y la de la semana se prorratea por días hábiles. Dejar vacío = sin meta (el vendedor ve los kilos facturados, sin anillo de progreso).') }}
+
+{# ⚠ La columna se llamaba `monto` y guardaba dólares hasta la migración 0163,
+   que la renombra a `kg` y borra las metas viejas — convertir dólares a kilos
+   dividiendo por un precio promedio inventaría un número que nadie decidió.
+   Si esta grilla aparece vacía, es eso: hay que recargarla en kilos. #}
 
 {% set tab_activa = 'metas' %}
 {% include "_partials/tabs_comisiones.html" %}
@@ -26,7 +31,7 @@
         <tr>
           <th class="px-3 py-2">Vendedor</th>
           {% for m in range(1, 13) %}<th class="px-2 py-2 text-right">{{ '%02d'|format(m) }}</th>{% endfor %}
-          <th class="px-3 py-2 text-right">Año</th>
+          <th class="px-3 py-2 text-right">Año (kg)</th>
         </tr>
       </thead>
       <tbody class="divide-y">
@@ -43,11 +48,13 @@
             <td class="px-1 py-1">
               <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
                      value="{{ val if val is not none else '' }}"
+                     title="Kilos facturados · meta de {{ v.nombre }} para el mes {{ '%02d'|format(m) }}"
+                     placeholder="kg"
                      class="border rounded px-1 py-1 w-20 text-right text-xs
                             {% if m == hoy.month and anio == hoy.year %}bg-indigo-50{% endif %}">
             </td>
           {% endfor %}
-          <td class="px-3 py-2 text-right font-medium">{{ fila|sum|money_es }}</td>
+          <td class="px-3 py-2 text-right font-medium">{{ fila|sum|kg_es }} kg</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -55,7 +62,7 @@
   </div>
   <div class="mt-4">
     <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
-      Guardar metas {{ anio }}
+      Guardar metas {{ anio }} (en kilos)
     </button>
   </div>
 </form>

@@ -381,7 +381,8 @@ def ficha(vendedor_logueado, monkeypatch):
 
 def test_la_ficha_tiene_las_columnas_del_estado_de_cuenta(ficha):
     """Los mismos rótulos que `informes/_estado_cuenta_impreso.html`."""
-    for rotulo in ("Fecha", "Número", "Importe", "Saldo", "Acum.", "Totales"):
+    for rotulo in ("Fecha", "Número", "Importe", "Abonado", "Saldo", "Acum.",
+                   "Totales"):
         assert rotulo in ficha, f"falta la columna «{rotulo}»"
 
 
@@ -396,27 +397,40 @@ def test_el_acumulado_corre_y_la_ultima_fila_da_el_saldo(ficha):
     import re
 
     nums = re.findall(r">\s*([\d.]+,\d\d)\s*</td>", ficha)
-    # (importe, saldo, acum) por fila, en orden.
-    assert nums[0:3] == ["1.000,00", "0,00", "0,00"]
-    assert nums[3:6] == ["500,00", "300,00", "300,00"]
-    assert nums[6:9] == ["250,00", "250,00", "550,00"]
+    # (importe, abonado, saldo, acum) por fila, en orden. La tercera factura
+    # no tiene abono: ahí va un guión, así que no aporta número.
+    assert nums[0:4] == ["1.000,00", "1.000,00", "0,00", "0,00"]
+    assert nums[4:8] == ["500,00", "200,00", "300,00", "300,00"]
+    assert nums[8:11] == ["250,00", "250,00", "550,00"]
     # Y el pie, con el total de la oficina.
     assert "Totales (3)" in ficha
     assert "1.750,00" in ficha
 
 
-def test_el_abonado_sale_solo_cuando_hay_abono(ficha):
-    """La decisión de diseño que hace entrar la tabla en 390 px.
+def test_el_abonado_es_una_columna_y_sin_abono_va_un_guion(ficha):
+    """Dueña 2026-08-05: *"agregar la columna de abono"*.
 
-    En la oficina «Abonado» es una columna fija; acá es un renglón que aparece
-    únicamente en las filas que tienen abono. La información no se pierde
-    —perderla sería inaceptable, es la respuesta a "pero yo te pagué"— pero
-    diecisiete «0,00» no pueden costar el ancho de una columna que sí habla.
+    Estuvo como renglón suelto bajo cada fila para ahorrar ancho en 390 px, y
+    eso hacía lo contrario de lo que buscaba: el abono es el dato que el
+    vendedor CONTRASTA contra el importe cuando el cliente le discute un
+    saldo, y contrastar dos números exige tenerlos uno al lado del otro. Un
+    renglón debajo se lee como una nota al pie.
+
+    Sin abono va un guión y no «0,00»: un cero alineado con las cifras pide la
+    misma atención que ellas y no dice nada. Ese era el motivo REAL de la
+    decisión vieja, y sobrevive — sin costar la columna.
     """
-    assert ficha.count("Abonado $") == 3   # dos filas con abono + el pie
-    assert "Abonado $ 200,00" in ficha
-    assert "Abonado $ 1.000,00" in ficha
-    assert "Abonado $ 1.200,00" in ficha   # total
+    import re
+
+    # Ya no existe el renglón suelto: si vuelve, el dato queda duplicado.
+    assert "Abonado $" not in ficha
+    assert "sub-ab" not in ficha
+
+    filas = re.findall(r"<tr[^>]*>(.*?)</tr>", ficha, re.S)
+    abonos = [re.search(r'class="mono ab">(.*?)</td>', f).group(1).strip()
+              for f in filas if 'class="mono ab"' in f]
+    # Dos facturas con abono, una sin, y el pie con el total.
+    assert abonos == ["1.000,00", "200,00", "—", "1.200,00"]
 
 
 def test_el_numero_de_factura_es_el_mismo_que_en_la_oficina(ficha):
@@ -583,8 +597,8 @@ def test_meta_del_anio_a_medio_cargar_se_compara_like_con_like(app, monkeypatch)
 
     monkeypatch.setattr(q, "meta_anio", lambda vend, anio: 10_000.0)
     monkeypatch.setattr(q, "meses_con_meta", lambda vend, anio: [8])
-    monkeypatch.setattr(q, "ventas", lambda *a, **k: 334_524.01)
-    monkeypatch.setattr(q, "ventas_en_meses", lambda vend, anio, meses: 750.34)
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 334_524.01)
+    monkeypatch.setattr(q, "ventas_kg_en_meses", lambda vend, anio, meses: 750.34)
 
     ctx = views._anio_vs_meta("RMY", date(2026, 8, 3))
     assert ctx["vendido_anio"] == 750.34
@@ -600,7 +614,7 @@ def test_con_los_12_meses_cargados_es_el_anio_entero(app, monkeypatch):
 
     monkeypatch.setattr(q, "meta_anio", lambda vend, anio: 120_000.0)
     monkeypatch.setattr(q, "meses_con_meta", lambda vend, anio: list(range(1, 13)))
-    monkeypatch.setattr(q, "ventas", lambda *a, **k: 90_000.0)
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 90_000.0)
     ctx = views._anio_vs_meta("RMY", date(2026, 8, 3))
     assert ctx["vendido_anio"] == 90_000.0 and ctx["nota_anio"] == ""
 
@@ -611,7 +625,7 @@ def test_sin_meta_no_hay_nota_ni_anillo(app, monkeypatch):
     from modules.mi_cartera import views
 
     monkeypatch.setattr(q, "meta_anio", lambda vend, anio: None)
-    monkeypatch.setattr(q, "ventas", lambda *a, **k: 5.0)
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 5.0)
     ctx = views._anio_vs_meta("RMY", date(2026, 8, 3))
     assert ctx["meta_anio"] is None and ctx["nota_anio"] == ""
 
@@ -627,7 +641,7 @@ def test_meses_con_meta_ignora_los_ceros(monkeypatch):
 
     monkeypatch.setattr(q.db, "fetch_all", _fetch_all)
     assert q.meses_con_meta("RMY", 2026) == [8]
-    assert "coalesce(monto, 0) <> 0" in vistos["sql"]
+    assert "coalesce(monto, 0) <> 0" in vistos["sql"]  # sin migrar aún
 
 
 def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
@@ -715,7 +729,7 @@ def test_una_sola_semana_no_dibuja_barras(app, monkeypatch):
     from modules.mi_cartera import views
 
     monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 3))
-    monkeypatch.setattr(q, "ventas", lambda *a, **k: 750.34)
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 750.34)
     monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
     monkeypatch.setattr(q, "cobrado", lambda *a, **k: 0.0)
     monkeypatch.setattr(q, "comision", lambda *a, **k: 0.0)
@@ -724,14 +738,14 @@ def test_una_sola_semana_no_dibuja_barras(app, monkeypatch):
     monkeypatch.setattr(q, "por_cobrar",
                         lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
 
-    monkeypatch.setattr(q, "ventas_por_semana",
+    monkeypatch.setattr(q, "ventas_kg_por_semana",
                         lambda *a, **k: [{"semana": date(2026, 8, 3), "total": 750.34}])
     with app.test_request_context("/mi-cartera?vend=RMY"):
         g.user, g.permisos = {"vend": "RMY"}, {"micartera.ver"}
         assert 'class="bars"' not in views.inicio()
 
     monkeypatch.setattr(
-        q, "ventas_por_semana",
+        q, "ventas_kg_por_semana",
         lambda *a, **k: [{"semana": date(2026, 8, 3), "total": 750.34},
                          {"semana": date(2026, 8, 10), "total": 1200.0}])
     with app.test_request_context("/mi-cartera?vend=RMY"):
@@ -1028,3 +1042,329 @@ def test_en_la_comision_el_cheque_sin_numero_tampoco_queda_pelado(monkeypatch):
     monkeypatch.setattr(q, "_pct_comision", lambda vend: 1.0)
     cobro = q.comision_por_cliente("RMY", 2026, 8)[0]["cobros"][0]
     assert cobro["doc"] is None and cobro["id_origen"] == 9001
+
+
+# ---------------------------------------------------------------------------
+# La venta del vendedor se mide en KILOS (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"En las ventas de mes por favor poner los kilos, las metas se mide en
+# kilos (esto arreglas en la app y en metas que ponemos en el programa)"*.
+#
+# El kilo es la unidad en la que se negocia el precio, se planifica la
+# producción y se pone la meta. En dólares, "vendió 10% más" mezcla dos
+# noticias distintas: vendió más tela, o vendió la misma tela más cara.
+
+
+def _captura_sql(monkeypatch, filas):
+    """Devuelve un dict que se va llenando con el SQL que la query ejecutó."""
+    visto = {}
+
+    def _one(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split()).lower()
+        return filas
+
+    monkeypatch.setattr(q.db, "fetch_one", _one)
+    return visto
+
+
+def test_las_ventas_del_portal_suman_kilos_y_no_dolares(monkeypatch):
+    """El corazón del cambio: la columna que se suma es `f.kg`.
+
+    Es lo único que no se ve mirando la pantalla — kilos y dólares son dos
+    números que se suman igual, y una tarjeta que dijera "3.667,80 kg"
+    sumando importes no tendría ningún síntoma.
+    """
+    visto = _captura_sql(monkeypatch, {"total": 3667.8})
+    assert q.ventas_kg("PPR", date(2026, 8, 1), date(2026, 8, 31)) == 3667.8
+    assert "sum(f.kg)" in visto["sql"]
+    assert "sum(f.importe)" not in visto["sql"]
+    # Y sigue sin contar anuladas ni el backfill de Asinfo.
+    assert "f.stat <> 'x'" in visto["sql"]
+    assert "asinfo-backfill" in visto["sql"]
+
+
+def test_las_barras_por_semana_estan_en_la_misma_unidad_que_el_anillo(monkeypatch):
+    """Si el anillo dijera kilos y las barras dólares, la barra más alta
+    podría no ser la semana en la que más se vendió."""
+    visto = {}
+
+    def _all(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split()).lower()
+        return [{"semana": date(2026, 8, 3), "total": 900.5}]
+
+    monkeypatch.setattr(q.db, "fetch_all", _all)
+    assert q.ventas_kg_por_semana("PPR", date(2026, 8, 1), date(2026, 8, 31)) == [
+        {"semana": date(2026, 8, 3), "total": 900.5}
+    ]
+    assert "sum(f.kg)" in visto["sql"] and "sum(f.importe)" not in visto["sql"]
+
+
+def test_el_anio_a_medio_cargar_tambien_se_compara_en_kilos(monkeypatch):
+    visto = _captura_sql(monkeypatch, {"total": 44738.3})
+    assert q.ventas_kg_en_meses("PPR", 2026, [7]) == 44738.3
+    assert "sum(f.kg)" in visto["sql"] and "sum(f.importe)" not in visto["sql"]
+
+
+def _inicio_render(app, monkeypatch, *, vendido, meta, semanas=None):
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: date(2026, 8, 5))
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: vendido)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: meta)
+    monkeypatch.setattr(q, "ventas_kg_por_semana", lambda *a, **k: semanas or [])
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 12345.67)
+    monkeypatch.setattr(q, "comision", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_mes", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
+    with app.test_request_context("/mi-cartera?vend=PPR&periodo=mes"):
+        g.user, g.permisos = {"vend": "PPR"}, {"micartera.ver"}
+        return views.inicio()
+
+
+def test_la_tarjeta_de_ventas_dice_kilos_y_no_pesos(app, monkeypatch):
+    """La unidad va escrita AL LADO del número, no sólo en el título.
+
+    El vendedor mira esta tarjeta pegada a Cobrado, Por cobrar y Comisión,
+    que siguen en dólares. Un número grande sin unidad, rodeado de pesos, se
+    lee como pesos — y 3.667 kg leídos como $3.667 es una conversación
+    imposible con la dueña.
+    """
+    html = _inicio_render(app, monkeypatch, vendido=3667.8, meta=5000.0)
+    ventas = html.split("Ventas en kilos")[1].split('<div class="kpis">')[0]
+    assert "3.667,80" in ventas and "kg" in ventas
+    assert "de 5.000,00 kg" in ventas
+    # Ni un signo de dólar dentro de la tarjeta de ventas.
+    assert "$" not in ventas
+    # Pero abajo, Cobrado sigue siendo plata.
+    assert "$ 12.345,67" in html
+
+
+def test_el_ritmo_tambien_habla_en_kilos(app, monkeypatch):
+    """"$ 4.100 arriba del ritmo" con una meta en kilos no significa nada."""
+    html = _inicio_render(app, monkeypatch, vendido=3667.8, meta=5000.0)
+    assert "kg arriba del ritmo" in html or "kg abajo del ritmo" in html
+
+
+def test_sin_meta_cargada_igual_se_ven_los_kilos(app, monkeypatch):
+    """Sin meta no hay anillo (un 0% falso es peor que nada), pero el
+    facturado del período tiene que seguir a la vista — y en kilos."""
+    html = _inicio_render(app, monkeypatch, vendido=3667.8, meta=None)
+    ventas = html.split("Ventas en kilos")[1].split('<div class="kpis">')[0]
+    assert "3.667,80" in ventas and "kg" in ventas
+    assert "$" not in ventas
+    assert "sin meta cargada" in ventas
+
+
+# ── La meta se GUARDA en kilos ─────────────────────────────────────────────
+
+
+def test_la_columna_de_la_meta_se_resuelve_en_runtime(monkeypatch):
+    """El deploy NO corre migraciones: entre que el código llega al server y
+    que alguien aprieta "Aplicar pendientes", la columna todavía se llama
+    `monto`. Hardcodear `kg` dejaría la pantalla de metas rota justo en esa
+    ventana, que es cuando nadie está mirando.
+    """
+    q._reset_cache_columna_meta()
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: None)
+    assert q._columna_meta() == "monto"
+
+    q._reset_cache_columna_meta()
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: {"ok": 1})
+    assert q._columna_meta() == "kg"
+    q._reset_cache_columna_meta()
+
+
+def test_el_negativo_de_la_columna_caduca_y_el_positivo_no(monkeypatch):
+    """⭐ El bug del 2026-08-03 con `usuario.vend`: la migración se aplicó
+    bien (exit 0) y la app siguió convencida de que la columna no existía,
+    porque había guardado el "no está" para toda la vida del proceso. Único
+    síntoma: un guardado que se rechaza pidiendo correr una migración que ya
+    corriste. Nada en los logs.
+
+    Una columna que existe no desaparece → el positivo es definitivo. El
+    negativo cambia solo en el momento en que alguien aprieta "Aplicar
+    pendientes" → tiene que caducar.
+    """
+    q._reset_cache_columna_meta()
+    llamadas = {"n": 0}
+    reloj = {"t": 1000.0}
+
+    # ⚠ El reloj se mueve de verdad, no se pisa el timestamp guardado. Poner
+    # `_COL_META_CHEQUEADO_EN = 0` saltea el chequeo del TTL en vez de
+    # ejercitarlo: con esa versión, un TTL de mil millones de segundos pasaba
+    # el test igual. (Mutante que sobrevivió al escribirlo, 2026-08-05.)
+    monkeypatch.setattr(q.time, "monotonic", lambda: reloj["t"])
+
+    def _one(*a, **k):
+        llamadas["n"] += 1
+        return None
+
+    monkeypatch.setattr(q.db, "fetch_one", _one)
+    assert q._columna_meta() == "monto" and llamadas["n"] == 1
+    # Dentro del TTL no vuelve a preguntar…
+    reloj["t"] += q._COL_META_TTL_NEGATIVO / 2
+    assert q._columna_meta() == "monto" and llamadas["n"] == 1
+    # …pero pasado el TTL sí, y ahí ve la columna nueva.
+    reloj["t"] += q._COL_META_TTL_NEGATIVO
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: {"ok": 1})
+    assert q._columna_meta() == "kg"
+
+    # Y el TTL tiene que ser CORTO: un negativo que dura una hora es lo mismo
+    # que uno que dura para siempre, porque la migración se corre y se prueba
+    # en el mismo minuto.
+    assert q._COL_META_TTL_NEGATIVO <= 300
+
+    # Y el positivo ya no se vuelve a preguntar nunca.
+    def _explota(*a, **k):
+        raise AssertionError("el positivo no se re-consulta")
+
+    monkeypatch.setattr(q.db, "fetch_one", _explota)
+    assert q._columna_meta() == "kg"
+    q._reset_cache_columna_meta()
+
+
+def test_guardar_meta_escribe_kilos_en_la_columna_que_existe(monkeypatch):
+    q._reset_cache_columna_meta()
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: {"ok": 1})
+    visto = {}
+
+    def _exec(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split()).lower()
+        visto["params"] = params
+
+    monkeypatch.setattr(q.db, "execute", _exec)
+    q.guardar_meta("rmy", 2026, 8, "1200", usuario="tamara")
+    assert "insert into scintela.vendedor_meta" in visto["sql"]
+    assert "(codigo, anio, mes, kg," in visto["sql"]
+    assert "monto" not in visto["sql"]
+    assert visto["params"][:4] == ("RMY", 2026, 8, "1200")
+    q._reset_cache_columna_meta()
+
+
+def test_la_migracion_0163_renombra_y_no_convierte_dolares_a_kilos():
+    """Convertir la meta vieja ($10.000 de RMY) a kilos dividiéndola por un
+    precio promedio inventaría un número que nadie decidió. Se borra y la
+    dueña la recarga.
+
+    Y se RENOMBRA la columna en vez de agregar una al lado: una tabla con
+    `monto` y `kg` a la vez es una invitación a que la mitad del código lea
+    la equivocada, y el nombre viejo no dejaría rastro de que el significado
+    cambió.
+    """
+    from pathlib import Path
+
+    sql = Path("migrations/0163_vendedor_meta_en_kilos.sql").read_text()
+    assert "rename column monto to kg" in sql.lower()
+    assert "delete from scintela.vendedor_meta" in sql.lower()
+    # El DELETE NO puede ser pelado: entre el deploy y la migración la dueña
+    # ya puede haber cargado kilos, y un DELETE sin WHERE se los lleva.
+    borrado = sql.lower().split("delete from scintela.vendedor_meta")[1]
+    assert "where" in borrado.split(";")[0]
+    # Idempotente: si ya corrió, no vuelve a borrar.
+    assert "not exists" in sql.lower() and "column_name  = 'kg'" in sql
+
+
+def test_la_pantalla_de_metas_de_la_oficina_dice_kilos():
+    """Dueña: *"esto arreglas en la app y en metas que ponemos en el
+    programa"*. Una grilla de doce cajas vacías sin unidad se llena en
+    dólares por costumbre — y el error recién se ve en el celular del
+    vendedor, semanas después."""
+    from pathlib import Path
+
+    tpl = Path("modules/mi_cartera/templates/mi_cartera/metas.html").read_text()
+    assert "KILOS" in tpl
+    assert 'placeholder="kg"' in tpl
+    assert "kg_es" in tpl and "money_es" not in tpl
+
+
+# ---------------------------------------------------------------------------
+# El buscador de clientes (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"la opción de buscar el cliente para que no tengan que desplazarse para
+# encontrar"*. El buscador YA existía: el problema era que con 94 clientes se
+# iba con el scroll y encima había que apretar Enter y esperar la recarga.
+
+
+_CLIENTES_DEMO = [
+    {"codigo_cli": "LMS", "nombre": "LUIS ALBERTO MIRANDA SADAREAGA",
+     "provincia": "TUNGURAHUA", "saldo": 64161.49, "vencido": 64161.49,
+     "vence_mas_viejo": date(2026, 6, 1), "n_facturas": 12},
+    {"codigo_cli": "BAN", "nombre": "BASILIO NAULA", "provincia": "TUNGURAHUA",
+     "saldo": 42495.92, "vencido": 0.0, "vence_mas_viejo": None,
+     "n_facturas": 5},
+]
+
+
+def _clientes_html(vendedor_logueado, monkeypatch, url="/mi-cartera/clientes"):
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: _CLIENTES_DEMO)
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
+    r = vendedor_logueado.get(url)
+    assert r.status_code == 200
+    return r.data.decode()
+
+
+def test_el_buscador_vive_en_el_appbar_para_no_irse_con_el_scroll(
+        vendedor_logueado, monkeypatch):
+    """El appbar ya es `position:sticky`. Hacer sticky el `<form>` dentro de
+    `main` obligaría a clavarle un `top:` igual al alto del appbar, que cambia
+    con el largo del nombre del vendedor: una constante mágica que se rompe
+    sola.
+    """
+    html = _clientes_html(vendedor_logueado, monkeypatch)
+    appbar = html.split('<header class="appbar">')[1].split("</header>")[0]
+    assert 'id="q"' in appbar and 'name="q"' in appbar, \
+        "el buscador tiene que estar DENTRO del appbar sticky"
+
+
+def test_el_buscador_filtra_al_tipear_sin_volver_al_servidor(
+        vendedor_logueado, monkeypatch):
+    """Las 94 filas ya están en la página: buscar entre ellas es esconder
+    nodos, no una consulta."""
+    html = _clientes_html(vendedor_logueado, monkeypatch)
+    assert "addEventListener('input'" in html
+    # Cada fila lleva con qué se la busca y cuánto suma al total.
+    assert 'data-buscar="luis alberto miranda sadareaga lms"' in html
+    assert 'data-saldo="64161.49"' in html
+
+
+def test_el_filtro_al_tipear_mira_lo_mismo_que_el_del_servidor(
+        vendedor_logueado, monkeypatch):
+    """Si miraran campos distintos, tipear y apretar Enter daría dos listas
+    diferentes — y el vendedor deja de creerle a las dos.
+
+    El del servidor mira nombre + código, en minúsculas, por subcadena.
+    """
+    html = _clientes_html(vendedor_logueado, monkeypatch)
+    for fila in _CLIENTES_DEMO:
+        esperado = f"{fila['nombre']} {fila['codigo_cli']}".lower()
+        assert f'data-buscar="{esperado}"' in html
+    # Y el servidor sigue filtrando igual (sin JS, con Enter).
+    cuerpo = _clientes_html(vendedor_logueado, monkeypatch,
+                            "/mi-cartera/clientes?q=basilio")
+    assert "BASILIO NAULA" in cuerpo and "LUIS ALBERTO" not in cuerpo
+
+
+def test_el_encabezado_cuenta_lo_que_se_ve_no_lo_que_se_cargo(
+        vendedor_logueado, monkeypatch):
+    """Un encabezado que dice "94 con saldo · $551.674" sobre una lista de
+    tres filas es peor que no tener contador. Ya pasó el 2026-08-03 con el
+    filtro Vencidos, que decía "22 con saldo"."""
+    html = _clientes_html(vendedor_logueado, monkeypatch)
+    assert 'id="sub-conteo"' in html
+    # El JS lo reescribe con las filas visibles y el total recalculado.
+    assert "sub.textContent" in html
+    assert "por cobrar" in html
+
+
+def test_enter_no_recarga_la_pantalla_ya_filtrada(
+        vendedor_logueado, monkeypatch):
+    """La lista ya está filtrada: una vuelta al servidor sólo agrega medio
+    segundo y hace saltar el scroll al tope."""
+    html = _clientes_html(vendedor_logueado, monkeypatch)
+    assert "preventDefault()" in html
+    # Pero el form SIGUE siendo un form: sin JS, Enter manda y el servidor
+    # filtra. Sacarlo dejaría a un celular sin JS sin ninguna búsqueda.
+    assert 'id="form-buscar"' in html and 'method="get"' in html

@@ -23,10 +23,15 @@
    acumulado, que corre igual que allá.
 
    Lo único que cambia es cómo entra en 390 px:
-     · "Abonado" no es una columna sino un renglón bajo la fila, y sólo
-       aparece cuando hay un abono. En la oficina la columna existe siempre
-       porque una grilla de escritorio la banca; en el celular serían
-       diecisiete "0,00" ocupando el lugar de algo que sí importa.
+     · "Abonado" ES una columna, igual que en la oficina y en el papel —
+       dueña 2026-08-05: *"agregar la columna de abono"*. Estuvo como renglón
+       suelto bajo la fila para ahorrar ancho, y en la práctica hacía lo
+       contrario de lo que buscaba: el abono es el dato que el vendedor
+       CONTRASTA contra el importe cuando el cliente le discute un saldo, y
+       contrastar dos números exige tenerlos en la misma fila, uno al lado
+       del otro. Un renglón debajo se lee como una nota al pie.
+       Cuando no hay abono va un guión, no "0,00": diecisiete ceros alineados
+       piden la misma atención que una cifra y no dicen nada.
      · "Días" va bajo la fecha, en la misma celda.
      · "Tipo" y "Stat" no van: Stat es un control de edición de la oficina, y
        Tipo se dice con el color y el signo (una nota de crédito se ve roja y
@@ -130,6 +135,7 @@
           <th class="l">Fecha</th>
           <th class="l">Número</th>
           <th>Importe</th>
+          <th>Abonado</th>
           <th>Saldo</th>
           <th title="Saldo acumulado leído de arriba hacia abajo">Acum.</th>
         </tr>
@@ -158,26 +164,22 @@
               {% elif vencida %}<small class="venc">Vencida</small>{% endif %}
             </td>
             <td class="mono">{{ f.importe|money_es }}</td>
+            {# Sin abono va un guión: un "0,00" ocupa el mismo lugar visual que
+               una cifra real y obliga a leerlo para descubrir que no dice nada. #}
+            <td class="mono ab">{% if f.abono and f.abono != 0 %}{{ f.abono|money_es }}{% else %}—{% endif %}</td>
             <td class="mono fuerte">{{ f.saldo|money_es }}</td>
             <td class="mono {{ 'venc' if acum.s < 0 }}">{{ acum.s|money_es }}</td>
           </tr>
-          {# "Abonado" sólo cuando existe. Ver el comentario de arriba: en el
-             celular una columna de ceros cuesta el ancho de una que sí habla. #}
-          {% if f.abono and f.abono != 0 %}
-          <tr class="sub-ab"><td colspan="5">Abonado $ {{ f.abono|money_es }}</td></tr>
-          {% endif %}
         {% endfor %}
       </tbody>
       <tfoot>
         <tr>
           <td class="l" colspan="2">Totales ({{ facturas|length }})</td>
           <td class="mono">{{ t.importe|money_es }}</td>
+          <td class="mono ab">{% if t.abono and t.abono != 0 %}{{ t.abono|money_es }}{% else %}—{% endif %}</td>
           <td class="mono fuerte">{{ t.saldo|money_es }}</td>
           <td></td>
         </tr>
-        {% if t.abono and t.abono != 0 %}
-        <tr class="sub-ab"><td colspan="5">Abonado $ {{ t.abono|money_es }}</td></tr>
-        {% endif %}
       </tfoot>
     </table>
 
@@ -287,14 +289,17 @@
      hacia abajo como una columna —que es TODO el punto de un estado de
      cuenta— y las etiquetas secundarias (días, "vencida", el banco) van
      dentro de la celda en vez de robar una columna. */
-  .ec{width:100%;border-collapse:collapse;font-size:11.5px;
+  .ec{width:100%;border-collapse:collapse;font-size:10.4px;
       font-variant-numeric:tabular-nums}
-  .ec th{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-         color:var(--ink-3);text-align:right;padding:0 0 6px 6px;
+  .ec th{font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+         color:var(--ink-3);text-align:right;padding:0 0 6px 4px;
          border-bottom:1px solid var(--line);white-space:nowrap}
   .ec th.l,.ec td.l{text-align:left;padding-left:0}
-  .ec td{text-align:right;padding:7px 0 7px 6px;border-bottom:1px solid var(--line);
+  .ec td{text-align:right;padding:7px 0 7px 4px;border-bottom:1px solid var(--line);
          vertical-align:top;line-height:1.25}
+  /* Abonado es un dato de CONTRASTE, no un protagonista: se lee contra el
+     importe de al lado. Va en gris, como en la hoja de la oficina. */
+  .ec td.ab{color:var(--ink-2)}
   .ec tbody tr:last-child td{border-bottom:0}
   .ec .mono{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .ec .fuerte{font-weight:700}
@@ -306,14 +311,10 @@
   .ec td small.post,.ec .post{color:var(--warn)}
   .ec td small.nc{color:var(--bad);font-weight:700}
   .ec tr.pagada{opacity:.5}
-  .ec tr.sub-ab td{text-align:left;font-size:10px;color:var(--ink-2);
-                   padding:0 0 7px;border-bottom:1px solid var(--line)}
   .ec tfoot td{border-top:2px solid var(--ink);border-bottom:0;
-               padding-top:9px;font-weight:700;font-size:12px}
-  .ec tfoot td.l{font-size:9px;letter-spacing:.05em;text-transform:uppercase;
+               padding-top:9px;font-weight:700;font-size:11px}
+  .ec tfoot td.l{font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;
                  color:var(--ink-3);font-weight:700}
-  .ec tfoot tr.sub-ab td{border-top:0;font-weight:500;font-size:10px;
-                         text-transform:none;letter-spacing:0;padding-top:4px}
 
   /* Los tres renglones del cierre, alineados a la derecha como en el dBase. */
   .cierre{margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-3);
@@ -354,8 +355,8 @@
 
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
   @media (max-width: 374px){
-    .ec{font-size:10.6px}
-    .ec td,.ec th{padding-left:4px}
+    .ec{font-size:9.6px}
+    .ec td,.ec th{padding-left:3px}
   }
 </style>
 {% endblock %}

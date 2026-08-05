@@ -20,8 +20,18 @@
   {% endfor %}
 </div>
 
+{# ⭐ La tarjeta de ventas va en KILOS, no en dólares (dueña 2026-08-05: "En
+   las ventas de mes por favor poner los kilos, las metas se mide en kilos").
+   El kilo es la unidad en la que se negocia el precio, se planifica la
+   producción y se pone la meta; en dólares, "vendí 10% más" no distingue si
+   vendió más tela o la misma tela más cara.
+
+   La unidad va escrita AL LADO de cada número, no sólo en el título: el
+   vendedor mira esta pantalla al lado de las de Cobrado, Por cobrar y
+   Comisión, que siguen en dólares. Un número grande sin unidad, rodeado de
+   pesos, se lee como pesos. #}
 <div class="card">
-  <div class="card-t">Ventas · {{ etiqueta }}</div>
+  <div class="card-t">Ventas en kilos · {{ etiqueta }}</div>
   {% if meta %}
     {# Anillo sólo si hay meta cargada: un 0% falso es peor que no mostrar nada. #}
     {% set pct = [pct_meta, 100]|min %}
@@ -36,12 +46,12 @@
         <div class="mid"><b>{{ pct_meta }}%</b></div>
       </div>
       <div class="meta-lines">
-        <div class="big">$ {{ vendido|money_es }}</div>
-        <div class="of">de $ {{ meta|money_es }}{% if nota_meta %} · {{ nota_meta }}{% endif %}</div>
+        <div class="big">{{ vendido|kg_es }} <em class="u">kg</em></div>
+        <div class="of">de {{ meta|kg_es }} kg{% if nota_meta %} · {{ nota_meta }}{% endif %}</div>
         {% if delta_ritmo is not none %}
           <span class="pill {{ 'good' if delta_ritmo >= 0 else 'warn' }}">
-            {% if delta_ritmo >= 0 %}$ {{ delta_ritmo|money_es }} arriba del ritmo
-            {% else %}$ {{ (-delta_ritmo)|money_es }} abajo del ritmo{% endif %}
+            {% if delta_ritmo >= 0 %}{{ delta_ritmo|kg_es }} kg arriba del ritmo
+            {% else %}{{ (-delta_ritmo)|kg_es }} kg abajo del ritmo{% endif %}
           </span>
           {# El ritmo va por días hábiles: sin el denominador a la vista el
              número no se puede verificar, y entonces no se le cree. #}
@@ -51,15 +61,16 @@
     </div>
   {% else %}
     <div class="meta-lines">
-      <div class="big">$ {{ vendido|money_es }}</div>
-      <div class="of">facturado {{ etiqueta|lower }}</div>
+      <div class="big">{{ vendido|kg_es }} <em class="u">kg</em></div>
+      <div class="of">facturados {{ etiqueta|lower }} · sin meta cargada</div>
     </div>
   {% endif %}
 
   {% if barras %}
+    <div class="bars-t">Kilos por semana del mes</div>
     <div class="bars">
       {% for b in barras %}
-        <div class="b {% if b.actual %}on{% endif %}">
+        <div class="b {% if b.actual %}on{% endif %}" title="{{ b.total|kg_es }} kg">
           <i style="height:{{ b.pct }}%"></i><span>{{ b.rotulo }}</span>
         </div>
       {% endfor %}
@@ -109,3 +120,12 @@
   </div>
 </div>
 {% endblock %}
+
+<style>
+  /* La unidad va pegada al número pero más chica y gris: se lee "3.667,80 kg"
+     de un vistazo y el kg no compite con la cifra. */
+  .meta-lines .big .u{font-style:normal;font-size:13px;font-weight:600;
+                      color:var(--ink-3);letter-spacing:0;margin-left:2px}
+  .bars-t{font-size:10px;font-weight:700;letter-spacing:.06em;
+          text-transform:uppercase;color:var(--ink-3);margin-top:14px}
+</style>

@@ -1,3 +1,32 @@
+{# Mis clientes — la lista, con el buscador SIEMPRE a la vista.
+
+   TMT 2026-08-05 (dueña): *"la opción de buscar el cliente para que no tengan
+   que desplazarse para encontrar"*.
+
+   El buscador ya existía; el problema era otro y no se veía leyendo el
+   código. PPR tiene **94 clientes con saldo**: la barra estaba arriba de la
+   lista, así que a dos dedos de scroll desaparecía, y volver a ella costaba
+   subir noventa filas. Encima había que apretar Enter y esperar una recarga
+   entera del servidor. O sea: existía, y aun así el camino corto seguía
+   siendo scrollear.
+
+   Dos cambios, los dos sobre el mismo problema:
+     1. La barra se muda AL APPBAR, que ya es `position:sticky` — queda fija
+        arriba sin importar dónde esté el scroll. No se hace sticky el
+        `<form>` dentro de `main` porque habría que clavarle un `top:` igual
+        al alto del appbar, que cambia con el largo del nombre del vendedor:
+        una constante mágica que se rompe sola.
+     2. Filtra MIENTRAS SE TIPEA, sin ida al servidor. Las 94 filas ya están
+        en la página; buscar entre ellas es esconder nodos, no una consulta.
+
+   El filtrado por servidor (`?q=`) SIGUE existiendo y es el que manda si no
+   hay JavaScript: el form se puede mandar con Enter igual. El JS sólo lo
+   adelanta.
+
+   ⚠ El contador del encabezado y el total por cobrar se recalculan con lo
+   que quedó VISIBLE. Un encabezado que dice "94 con saldo · $551.674" sobre
+   una lista de tres filas es peor que no tener contador — ya pasó el 03/08
+   con el filtro Vencidos, que decía "22 con saldo". #}
 {% extends "mi_cartera/base.html" %}
 {% set seccion = 'clientes' %}
 {% block title %}Mis clientes{% endblock %}
@@ -8,7 +37,8 @@
       <h1>Mis clientes</h1>
       {# El rótulo tiene que decir lo que se está mostrando: con el filtro
          "Vencidos" puesto decía "22 con saldo", que es otra cosa. #}
-      <div class="sub">
+      <div class="sub" id="sub-conteo"
+           data-rot-saldo="con saldo" data-rot-venc="con vencido">
         {{ filas|length }}
         {%- if q %} encontrado{{ '' if filas|length == 1 else 's' }}
         {%- elif filtro == 'vencidos' %} con vencido
@@ -19,17 +49,18 @@
     <a class="iconbtn" title="Imprimir toda mi cartera" target="_blank" rel="noopener"
        href="{{ url_for('mi_cartera.imprimir_todos') }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙</a>
   </div>
+
+  {# Dentro del appbar = fijo arriba. Ver el comentario de cabecera. #}
+  <form class="search" method="get" id="form-buscar">
+    {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+    <input type="hidden" name="f" value="{{ filtro }}">
+    <input type="search" id="q" name="q" value="{{ q }}" placeholder="Buscar cliente…"
+           autocomplete="off" enterkeyhint="search" aria-label="Buscar cliente">
+  </form>
 {% endblock %}
 
 {% block content %}
 {% set qv = ('&vend=' ~ vend) if preview else '' %}
-<form class="search" method="get">
-  {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
-  <input type="hidden" name="f" value="{{ filtro }}">
-  <input type="search" name="q" value="{{ q }}" placeholder="Buscar cliente…"
-         autocomplete="off" enterkeyhint="search">
-</form>
-
 <div class="seg">
   {% for f, rot in [('saldo','Con saldo'), ('vencidos','Vencidos')] %}
     <a href="?f={{ f }}{% if q %}&q={{ q }}{% endif %}{{ qv }}"
@@ -38,9 +69,15 @@
 </div>
 
 {% if filas %}
-<div class="card">
+<div class="card" id="lista">
   {% for c in filas %}
-    <a class="rowitem" href="{{ url_for('mi_cartera.cliente', codigo_cli=c.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
+    {# `data-buscar` lleva el mismo texto que mira el filtro del servidor
+       (nombre + código), ya en minúsculas: si los dos miraran campos
+       distintos, tipear y apretar Enter daría dos listas diferentes. #}
+    <a class="rowitem" data-saldo="{{ '%.2f'|format(c.saldo|float) }}"
+       data-vencido="{{ '1' if c.vencido > 0 else '0' }}"
+       data-buscar="{{ ((c.nombre or '') ~ ' ' ~ (c.codigo_cli or ''))|lower }}"
+       href="{{ url_for('mi_cartera.cliente', codigo_cli=c.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
       {% set _p = (c.nombre or c.codigo_cli).split() %}<div class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</div>
       <div class="nm">
         <b>{{ c.nombre }}</b>
@@ -57,6 +94,11 @@
     </a>
   {% endfor %}
 </div>
+{# Aparece sólo cuando el filtro al tipear no deja ninguna fila. Con la
+   búsqueda del servidor la lista viene vacía y se usa el bloque de abajo. #}
+<div class="vacio" id="sin-resultados" hidden>
+  No encontré ningún cliente con “<span id="eco-q"></span>”.
+</div>
 {% else %}
   <div class="vacio">
     {% if q %}No encontré ningún cliente con “{{ q }}”.
@@ -64,4 +106,72 @@
     {% else %}No tenés clientes con saldo abierto.{% endif %}
   </div>
 {% endif %}
+
+<style>
+  /* El buscador vive en el appbar: separado del título y a todo el ancho. */
+  .appbar .search{margin:10px 0 0}
+  /* 15px y no 14: por debajo de 16px iOS hace zoom al enfocar un input. 15 es
+     el máximo que entra sin agrandar el appbar. */
+  .appbar .search input{padding:9px 12px;font-size:15px}
+</style>
+
+<script>
+/* Filtrado en el cliente. Las 94 filas ya están en la página: buscar entre
+   ellas es esconder nodos, no volver al servidor.
+
+   Es un ADELANTO del filtro del servidor, no un reemplazo — mismo campo
+   (nombre + código) y misma regla (subcadena, sin distinguir mayúsculas),
+   así que tipear y apretar Enter tiene que devolver exactamente esta lista.
+   Si algún día divergen, el vendedor ve que la lista cambia sola al apretar
+   Enter y deja de confiar en las dos. */
+(function () {
+  var input = document.getElementById('q');
+  var lista = document.getElementById('lista');
+  var sub   = document.getElementById('sub-conteo');
+  if (!input || !lista || !sub) { return; }
+
+  var form  = document.getElementById('form-buscar');
+  var vacio = document.getElementById('sin-resultados');
+  var eco   = document.getElementById('eco-q');
+  var filas = Array.prototype.slice.call(lista.querySelectorAll('.rowitem'));
+  var rotSaldo = sub.getAttribute('data-rot-saldo') || 'con saldo';
+  var rotVenc  = sub.getAttribute('data-rot-venc')  || 'con vencido';
+  var esVencidos = /[?&]f=vencidos/.test(window.location.search);
+
+  /* Formato EU/Ecuador: punto para miles, coma para decimales. El resto de la
+     app lo hace con el filtro money_es; acá no hay Jinja, así que se arma a
+     mano — y tiene que dar IGUAL, o el total salta de formato al tipear. */
+  function money(n) {
+    var s = Math.abs(n).toFixed(2).split('.');
+    s[0] = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return (n < 0 ? '-' : '') + s[0] + ',' + s[1];
+  }
+
+  function aplicar() {
+    var q = (input.value || '').trim().toLowerCase();
+    var visibles = 0, total = 0;
+    for (var i = 0; i < filas.length; i++) {
+      var f = filas[i];
+      var ok = !q || (f.getAttribute('data-buscar') || '').indexOf(q) !== -1;
+      f.hidden = !ok;
+      if (ok) { visibles++; total += parseFloat(f.getAttribute('data-saldo') || '0'); }
+    }
+    /* El encabezado habla de lo que se ve, no de lo que se cargó. */
+    var rot = q ? (visibles === 1 ? 'encontrado' : 'encontrados')
+                : (esVencidos ? rotVenc : rotSaldo);
+    sub.textContent = visibles + ' ' + rot + ' · $ ' + money(total) + ' por cobrar';
+    lista.hidden = visibles === 0;
+    if (vacio) { vacio.hidden = visibles !== 0; }
+    if (eco) { eco.textContent = input.value; }
+  }
+
+  input.addEventListener('input', aplicar);
+  /* Enter no tiene que recargar: la lista ya está filtrada y una vuelta al
+     servidor sólo agrega medio segundo y hace saltar el scroll. */
+  if (form) {
+    form.addEventListener('submit', function (ev) { ev.preventDefault(); input.blur(); });
+  }
+  aplicar();
+})();
+</script>
 {% endblock %}

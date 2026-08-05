@@ -81,21 +81,21 @@ def _ctx_base(vend: str) -> dict:
 
 
 def _anio_vs_meta(vend: str, hoy) -> dict:
-    """Lo vendido y la meta del año, comparables entre sí.
+    """Los KILOS vendidos y la meta del año, comparables entre sí.
 
     Si la dueña cargó sólo algunos meses, se comparan ESOS meses contra esas
     metas. Comparar el año entero contra media meta daba 3345% (2026-08-03).
     """
     meta = queries.meta_anio(vend, hoy.year)
     if not meta:
-        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
+        return {"vendido_anio": queries.ventas_kg(vend, hoy.replace(month=1, day=1), hoy),
                 "meta_anio": None, "nota_anio": ""}
     meses = queries.meses_con_meta(vend, hoy.year)
     if len(meses) >= 12:
-        return {"vendido_anio": queries.ventas(vend, hoy.replace(month=1, day=1), hoy),
+        return {"vendido_anio": queries.ventas_kg(vend, hoy.replace(month=1, day=1), hoy),
                 "meta_anio": meta, "nota_anio": ""}
     return {
-        "vendido_anio": queries.ventas_en_meses(vend, hoy.year, meses),
+        "vendido_anio": queries.ventas_kg_en_meses(vend, hoy.year, meses),
         "meta_anio": meta,
         "nota_anio": (f"{len(meses)} mes cargado" if len(meses) == 1
                       else f"{len(meses)} meses cargados"),
@@ -111,7 +111,11 @@ def inicio():
     periodo = _periodo()
     desde, hasta, etiqueta = queries.rango_periodo(periodo, hoy)
 
-    vendido = queries.ventas(vend, desde, hasta)
+    # ⭐ TODO lo de esta tarjeta va en KILOS — lo vendido, la meta, las barras
+    # y el ritmo. Dueña 2026-08-05: *"las metas se mide en kilos"*. Mezclar
+    # unidades acá sería peor que no tenerlas: el % del anillo saldría de
+    # dividir kilos por dólares.
+    vendido = queries.ventas_kg(vend, desde, hasta)
     meta = queries.meta_periodo(vend, periodo, hoy)
     esperado = queries.avance_esperado(desde, hasta, hoy)
     nota_meta = ""
@@ -136,7 +140,7 @@ def inicio():
     barras = []
     if periodo != "anio":
         d_mes, h_mes, _ = queries.rango_periodo("mes", hoy)
-        semanas = queries.ventas_por_semana(vend, d_mes, h_mes)
+        semanas = queries.ventas_kg_por_semana(vend, d_mes, h_mes)
         tope = max([s["total"] for s in semanas] or [0]) or 1
         lunes_actual = hoy - timedelta(days=hoy.weekday())
         barras = [
@@ -412,7 +416,7 @@ def metas():
         return redirect(url_for("mi_cartera.metas", anio=anio))
 
     vendedores = queries.vendedores_activos()
-    cargadas = {(m["codigo"], int(m["mes"])): m["monto"] for m in queries.metas_del_anio(anio)}
+    cargadas = {(m["codigo"], int(m["mes"])): m["kg"] for m in queries.metas_del_anio(anio)}
     return render_template(
         "mi_cartera/metas.html", anio=anio, vendedores=vendedores, cargadas=cargadas,
         hoy=hoy,

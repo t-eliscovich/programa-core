@@ -19,6 +19,7 @@ las dos pantallas:
 from __future__ import annotations
 
 import calendar
+import time
 from datetime import date, timedelta
 
 import db
@@ -196,11 +197,29 @@ def nombre_vendedor(vend: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def ventas(vend: str, desde: date, hasta: date) -> float:
-    """Facturado del período a los clientes del vendedor (sin anuladas)."""
+def ventas_kg(vend: str, desde: date, hasta: date) -> float:
+    """KILOS facturados del período a los clientes del vendedor (sin anuladas).
+
+    ⭐ La venta del vendedor se mide en KILOS, no en dólares — dueña
+    2026-08-05: *"En las ventas de mes por favor poner los kilos, las metas se
+    mide en kilos"*. Es la unidad en la que se negocia (el precio es por
+    kilo), en la que se planifica la producción y en la que la dueña le pone
+    la meta a cada uno. Medida en dólares, "vendió 10% más" mezcla dos
+    noticias distintas: vendió más tela, o vendió la misma tela más cara.
+
+    El nombre dice `_kg` a propósito. La función se llamaba `ventas()` y
+    devolvía plata; si sólo se le cambiaba el cuerpo, cualquiera que la leyera
+    el mes que viene seguiría entendiendo dólares y el error no daría ningún
+    síntoma — los dos son números que se suman igual.
+
+    `factura.kg` está cargado: sobre las ~1.500 facturas de los 6 vendedores
+    entre junio y agosto de 2026 hay 21 sin kg (1,4%), todas de importes
+    chicos. No se excluyen — suman 0 kg, que es exactamente lo que el dato
+    dice.
+    """
     row = db.fetch_one(
         f"""
-        SELECT COALESCE(SUM(f.importe), 0) AS total
+        SELECT COALESCE(SUM(f.kg), 0) AS total
           FROM scintela.factura f
           JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
          WHERE {_ES_MI_CLIENTE}
@@ -271,12 +290,17 @@ def por_cobrar(vend: str) -> dict:
     }
 
 
-def ventas_por_semana(vend: str, desde: date, hasta: date) -> list[dict]:
-    """Facturado agrupado por semana del período — las barritas del Inicio."""
+def ventas_kg_por_semana(vend: str, desde: date, hasta: date) -> list[dict]:
+    """KILOS facturados por semana del período — las barritas del Inicio.
+
+    Misma unidad que el anillo de arriba (ver `ventas_kg`): si el anillo
+    dijera kilos y las barras dólares, la barra más alta podría no ser la
+    semana en que más se vendió.
+    """
     filas = db.fetch_all(
         f"""
         SELECT date_trunc('week', f.fecha)::date AS semana,
-               COALESCE(SUM(f.importe), 0)       AS total
+               COALESCE(SUM(f.kg), 0)            AS total
           FROM scintela.factura f
           JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
          WHERE {_ES_MI_CLIENTE}
@@ -292,16 +316,72 @@ def ventas_por_semana(vend: str, desde: date, hasta: date) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Metas
+# Metas — EN KILOS (migración 0163)
 # ---------------------------------------------------------------------------
+# La columna se llamaba `monto` y guardaba dólares; la 0163 la renombra a `kg`.
+#
+# ⚠ El deploy NO corre migraciones. Entre que este código llega al server y
+# que alguien aprieta "Aplicar pendientes" en /admin/migraciones, la columna
+# todavía se llama `monto`. Por eso el nombre se resuelve en runtime en vez de
+# ir hardcodeado: si no, la pantalla de metas quedaría rota justo en esa
+# ventana — que es exactamente cuando nadie la está mirando.
+#
+# ⭐ El positivo se cachea PARA SIEMPRE y el negativo 60 segundos. Una columna
+# que existe no desaparece; una que no existe aparece en el momento en que la
+# dueña corre la migración. Darles la misma vida es el bug del 2026-08-03 con
+# `usuario.vend`: la migración se aplicó bien (exit 0) y la app siguió
+# convencida de que la columna no estaba, sin una sola línea en los logs y con
+# un único síntoma, un guardado que se rechazaba pidiendo correr una migración
+# que ya estaba corrida.
+_COL_META_KG: bool = False
+_COL_META_CHEQUEADO_EN: float = 0.0
+_COL_META_TTL_NEGATIVO = 60.0  # segundos
+
+
+def _columna_meta() -> str:
+    """`'kg'` si ya corrió la migración 0163; `'monto'` mientras tanto.
+
+    El VALOR guardado son kilos en los dos casos — lo único que cambia es
+    cómo se llama la columna. Las metas viejas, que sí eran dólares, las
+    borra la propia migración.
+    """
+    global _COL_META_KG, _COL_META_CHEQUEADO_EN
+    if _COL_META_KG:
+        return "kg"
+    ahora = time.monotonic()
+    if (_COL_META_CHEQUEADO_EN
+            and (ahora - _COL_META_CHEQUEADO_EN) < _COL_META_TTL_NEGATIVO):
+        return "monto"
+    _COL_META_CHEQUEADO_EN = ahora
+    try:
+        _COL_META_KG = bool(db.fetch_one(
+            """
+            SELECT 1 AS ok FROM information_schema.columns
+             WHERE table_schema = 'scintela'
+               AND table_name   = 'vendedor_meta'
+               AND column_name  = 'kg'
+            """
+        ))
+    except Exception:  # noqa: BLE001 — sin DB o sin permisos: asumimos que no
+        _COL_META_KG = False
+    return "kg" if _COL_META_KG else "monto"
+
+
+def _reset_cache_columna_meta() -> None:
+    """Sólo para tests."""
+    global _COL_META_KG, _COL_META_CHEQUEADO_EN
+    _COL_META_KG = False
+    _COL_META_CHEQUEADO_EN = 0.0
 
 
 def meta_mes(vend: str, anio: int, mes: int) -> float | None:
-    """Meta cargada para ese mes. None = sin meta (la pantalla la omite)."""
+    """Meta de KILOS cargada para ese mes. None = sin meta (no se dibuja el
+    anillo: un 0% falso es peor que no mostrar nada)."""
+    col = _columna_meta()
     try:
         row = db.fetch_one(
-            """
-            SELECT monto FROM scintela.vendedor_meta
+            f"""
+            SELECT {col} AS kg FROM scintela.vendedor_meta
              WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(%s))
                AND anio = %s AND mes = %s
             """,
@@ -309,19 +389,19 @@ def meta_mes(vend: str, anio: int, mes: int) -> float | None:
         )
     except Exception:  # noqa: BLE001 — tabla todavía no creada (migración 0154)
         return None
-    if not row or row.get("monto") is None:
+    if not row or row.get("kg") is None:
         return None
-    return float(row["monto"])
+    return float(row["kg"])
 
 
 def meses_con_meta(vend: str, anio: int) -> list[int]:
     """Meses del año que tienen una meta cargada. [] si ninguno."""
     try:
         filas = db.fetch_all(
-            """
+            f"""
             SELECT mes FROM scintela.vendedor_meta
              WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(%s)) AND anio = %s
-               AND COALESCE(monto, 0) <> 0
+               AND COALESCE({_columna_meta()}, 0) <> 0
              ORDER BY mes
             """,
             (vend, int(anio)),
@@ -341,12 +421,13 @@ def meta_anio(vend: str, anio: int) -> float | None:
     `ventas_en_meses()` + `meses_con_meta()`.
     """
     try:
+        col = _columna_meta()
         row = db.fetch_one(
-            """
-            SELECT COALESCE(SUM(monto), 0) AS total, COUNT(*) AS n
+            f"""
+            SELECT COALESCE(SUM({col}), 0) AS total, COUNT(*) AS n
               FROM scintela.vendedor_meta
              WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(%s)) AND anio = %s
-               AND COALESCE(monto, 0) <> 0
+               AND COALESCE({col}, 0) <> 0
             """,
             (vend, int(anio)),
         )
@@ -357,8 +438,8 @@ def meta_anio(vend: str, anio: int) -> float | None:
     return float(row["total"] or 0)
 
 
-def ventas_en_meses(vend: str, anio: int, meses: list[int]) -> float:
-    """Facturado del año restringido a ciertos MESES.
+def ventas_kg_en_meses(vend: str, anio: int, meses: list[int]) -> float:
+    """KILOS facturados del año restringidos a ciertos MESES.
 
     Es la mitad que faltaba para que el anillo del año signifique algo con la
     meta a medio cargar: se compara lo vendido en los meses que TIENEN meta
@@ -369,7 +450,7 @@ def ventas_en_meses(vend: str, anio: int, meses: list[int]) -> float:
     return float(
         (db.fetch_one(
             f"""
-            SELECT COALESCE(SUM(f.importe), 0) AS total
+            SELECT COALESCE(SUM(f.kg), 0) AS total
               FROM scintela.factura f
               JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
              WHERE {_ES_MI_CLIENTE}
@@ -384,7 +465,7 @@ def ventas_en_meses(vend: str, anio: int, meses: list[int]) -> float:
 
 
 def meta_periodo(vend: str, periodo: str, hoy: date) -> float | None:
-    """Meta del período elegido.
+    """Meta del período elegido, en KILOS.
 
     La dueña carga UNA meta por mes. La del año se suma; la de la semana se
     prorratea — no se carga aparte, para no pedirle 52 números por vendedor
@@ -417,8 +498,8 @@ def metas_del_anio(anio: int) -> list[dict]:
     """Grilla vendedor × mes para la pantalla de carga de la dueña."""
     try:
         return db.fetch_all(
-            """
-            SELECT UPPER(TRIM(codigo)) AS codigo, mes, monto
+            f"""
+            SELECT UPPER(TRIM(codigo)) AS codigo, mes, {_columna_meta()} AS kg
               FROM scintela.vendedor_meta
              WHERE anio = %s
             """,
@@ -428,14 +509,14 @@ def metas_del_anio(anio: int) -> list[dict]:
         return []
 
 
-def guardar_meta(codigo: str, anio: int, mes: int, monto, usuario: str = "web") -> None:
-    """Alta/edición de una meta. `monto` None o '' borra la fila."""
+def guardar_meta(codigo: str, anio: int, mes: int, kg, usuario: str = "web") -> None:
+    """Alta/edición de una meta EN KILOS. `kg` None o '' borra la fila."""
     cod = (codigo or "").strip().upper()[:3]
     if not cod:
         raise ValueError("Falta el código de vendedor.")
     if not (1 <= int(mes) <= 12):
         raise ValueError("Mes fuera de rango.")
-    if monto in (None, ""):
+    if kg in (None, ""):
         db.execute(
             """
             DELETE FROM scintela.vendedor_meta
@@ -444,17 +525,18 @@ def guardar_meta(codigo: str, anio: int, mes: int, monto, usuario: str = "web") 
             (cod, int(anio), int(mes)),
         )
         return
+    col = _columna_meta()
     db.execute(
-        """
+        f"""
         INSERT INTO scintela.vendedor_meta
-            (codigo, anio, mes, monto, usuario_actualiza, fecha_actualiza)
+            (codigo, anio, mes, {col}, usuario_actualiza, fecha_actualiza)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (codigo, anio, mes) DO UPDATE
-           SET monto             = EXCLUDED.monto,
+           SET {col}             = EXCLUDED.{col},
                usuario_actualiza = EXCLUDED.usuario_actualiza,
                fecha_actualiza   = CURRENT_TIMESTAMP
         """,
-        (cod, int(anio), int(mes), monto, (usuario or "web")[:30]),
+        (cod, int(anio), int(mes), kg, (usuario or "web")[:30]),
     )
 
 
