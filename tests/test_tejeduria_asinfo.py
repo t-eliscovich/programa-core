@@ -187,7 +187,7 @@ def test_resumen_fail_soft_asinfo_no_disponible():
 
 
 def test_tab_renderiza_200(app, fake_db):
-    rid = fake_db.add_role("Tester", ["compras.ver"])
+    rid = fake_db.add_role("Tester", ["tejeduria.ver"])
     uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
@@ -475,7 +475,7 @@ def test_avisa_duplicado_por_importe_pero_no_bloquea():
 
 
 def test_preview_renderiza_200(app, fake_db):
-    rid = fake_db.add_role("Tester", ["compras.ver", "compras.crear"])
+    rid = fake_db.add_role("Tester", ["tejeduria.ver", "compras.crear"])
     uid = fake_db.add_user("test2", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
@@ -493,7 +493,7 @@ def test_auto_carga_al_abrir_la_pantalla(app, fake_db):
     """Dueña 2026-07-26: 'que cada ingreso genere un pasivo'. Abrir la tab en el
     MES EN CURSO crea sola la compra+pasivo de las OFs pendientes."""
     import datetime as _dt
-    rid = fake_db.add_role("Tester3", ["compras.ver", "compras.crear"])
+    rid = fake_db.add_role("Tester3", ["tejeduria.ver", "compras.crear"])
     uid = fake_db.add_user("test3", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
@@ -515,7 +515,7 @@ def test_auto_carga_al_abrir_la_pantalla(app, fake_db):
 def test_auto_carga_NO_dispara_en_meses_pasados(app, fake_db):
     """Navegar a un mes viejo no puede crear compras retroactivas."""
     import datetime as _dt
-    rid = fake_db.add_role("Tester4", ["compras.ver", "compras.crear"])
+    rid = fake_db.add_role("Tester4", ["tejeduria.ver", "compras.crear"])
     uid = fake_db.add_user("test4", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
@@ -533,9 +533,14 @@ def test_auto_carga_NO_dispara_en_meses_pasados(app, fake_db):
 
 
 def test_auto_carga_requiere_permiso_de_crear(app, fake_db):
-    """Quien sólo mira (compras.ver) no crea pasivos por abrir la pantalla."""
+    """Quien sólo mira (tejeduria.ver) no crea pasivos por abrir la pantalla.
+
+    ⭐ El permiso de MIRAR se separó de `compras.ver` el 2026-08-05 para que
+    INT viera producción sin ver el libro de compras; el de CREAR no se
+    tocó, y este test es el que lo vigila.
+    """
     import datetime as _dt
-    rid = fake_db.add_role("SoloVer", ["compras.ver"])
+    rid = fake_db.add_role("SoloVer", ["tejeduria.ver"])
     uid = fake_db.add_user("solover", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
@@ -575,7 +580,7 @@ def _asinfo_estable():
 def _cliente_solo_ver(app, fake_db, nombre):
     """Cliente logueado que sólo puede MIRAR — así el GET de la tab no dispara
     la auto-carga y podemos testear el render del filtro en aislamiento."""
-    rid = fake_db.add_role(f"Ver-{nombre}", ["compras.ver"])
+    rid = fake_db.add_role(f"Ver-{nombre}", ["tejeduria.ver"])
     uid = fake_db.add_user(nombre, b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:

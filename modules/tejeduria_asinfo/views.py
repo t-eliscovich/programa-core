@@ -39,9 +39,22 @@ def _anio_mes():
     return anio, max(1, min(mes, 12))
 
 
+# TMT 2026-08-05 (dueña): *"INT sí tiene que poder ver todo lo de stock,
+# tejeduría, Asinfo también"*, el mismo día que le sacamos `compras.*`.
+#
+# La pantalla pedía `compras.ver` porque cada OF de tejeduría CREA una compra
+# — pero eso es de dónde salen los datos, no quién debería mirarlos. Ver la
+# producción por tejedor (kilos, tarifas, OFs) no es lo mismo que ver el libro
+# de compras de la empresa, y atarlas al mismo permiso obligaba a elegir entre
+# darle las dos o ninguna.
+#
+# ⭐ Permiso propio: `tejeduria.ver`. Lo tienen los cinco roles que ya
+# entraban por `compras.ver` (mig 0168), así que para ellos no cambia nada.
+# LO QUE ESCRIBE sigue pidiendo `compras.crear` / `tarifas.editar`: INT mira,
+# no carga.
 @tejeduria_asinfo_bp.route("/produccion-tejeduria-asinfo")
 @requiere_login
-@requiere_permiso("compras.ver")
+@requiere_permiso("tejeduria.ver")
 def tab():
     anio, mes = _anio_mes()
 

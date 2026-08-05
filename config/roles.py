@@ -84,6 +84,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "facturas.ver",
             "cheques.ver",
             "compras.ver",
+            "tejeduria.ver",
             "bancos.ver",
             "cartera.ver",
             "deudas.ver",
@@ -129,6 +130,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "cheques.aplicar",
             "cheques.anular",
             "compras.ver",
+            "tejeduria.ver",
             "compras.editar",
             "bancos.ver",
             "bancos.conciliar",
@@ -164,6 +166,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "proveedores.crear",
             "proveedores.editar",
             "compras.ver",
+            "tejeduria.ver",
             "compras.crear",
             "compras.anular",
             "provisiones.ver",
@@ -217,6 +220,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "stock.ver",
             "stock.mover",
             "compras.ver",
+            "tejeduria.ver",
         ],
     ),
     (
@@ -249,6 +253,10 @@ ROLES: list[tuple[str, list[str]]] = [
             # la lectura. Al rol le quedan 34: cobranza, cheques, facturas,
             # bancos, caja, clientes, proveedores y tintorería.
             "stock.ver",
+            # TMT 2026-08-05 (dueña): "INT sí tiene que poder ver todo lo
+            # de stock, tejeduría, Asinfo". Ve la producción por tejedor
+            # sin recuperar /compras — por eso el permiso es propio.
+            "tejeduria.ver",
             # Operativa diaria — todo el flujo de cheques, caja, bancos.
             "caja.ver",
             "caja.crear",
@@ -339,6 +347,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "facturas.ver",
             "cheques.ver",
             "compras.ver",
+            "tejeduria.ver",
             "bancos.ver",
             "cartera.ver",
             "deudas.ver",

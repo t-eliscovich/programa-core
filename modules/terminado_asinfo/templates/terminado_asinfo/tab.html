@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Producción Terminado Asinfo {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
-  <a href="{{ url_for('tejeduria_asinfo.tab', anio=anio, mes=mes) }}" class="hover:underline">Tejeduría Asinfo</a> /
+  {# Terminado pide `stock.ver` y Tejeduría `tejeduria.ver`: son distintos, así
+     que el breadcrumb puede llevar a un 404. Sin permiso queda el rótulo. #}
+  {% if tiene_permiso('tejeduria.ver') %}<a href="{{ url_for('tejeduria_asinfo.tab', anio=anio, mes=mes) }}" class="hover:underline">Tejeduría Asinfo</a>{% else %}Tejeduría Asinfo{% endif %} /
   <strong>Terminado Asinfo</strong>
 {% endblock %}
 

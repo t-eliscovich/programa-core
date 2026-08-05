@@ -2476,3 +2476,65 @@ def test_hay_migracion_0167_para_cupos():
     mig = Path("migrations/0167_cupos_editar_fuera_de_int.py").read_text()
     assert "DELETE FROM seguridad.permiso" in mig
     assert "cupos.editar" in mig
+
+
+# ---------------------------------------------------------------------------
+# INT ve producción sin ver compras (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"INT sí tiene que poder ver todo lo de stock, tejeduría, Asinfo también"* —
+# el mismo día en que le sacamos `compras.*`.
+
+
+def test_tejeduria_tiene_permiso_propio_y_no_cuelga_de_compras():
+    """⭐ La pantalla pedía `compras.ver` porque cada OF de tejeduría CREA una
+    compra. Pero eso es de dónde salen los datos, no quién debería mirarlos:
+    ver la producción por tejedor no es ver el libro de compras de la empresa.
+
+    Atadas al mismo permiso había que elegir entre darle las dos a INT o
+    ninguna — que es exactamente el problema que aparece cuando un permiso
+    nombra el ORIGEN del dato en vez de la pantalla.
+    """
+    from pathlib import Path
+
+    src = Path("modules/tejeduria_asinfo/views.py").read_text()
+    tab = src.split("def tab(")[0]
+    assert 'requiere_permiso("tejeduria.ver")' in tab
+    assert 'requiere_permiso("compras.ver")' not in tab
+    # Lo que ESCRIBE no se aflojó: INT mira, no carga.
+    assert 'requiere_permiso("compras.crear")' in src
+    assert 'requiere_permiso("tarifas.editar")' in src
+
+
+def test_int_ve_stock_tejeduria_y_asinfo():
+    """Las seis pantallas de "Producción y stocks" que sí le tocan."""
+    from config.roles import ROLES
+
+    d = dict(ROLES)
+    for p in ("stock.ver",        # Terminado Asinfo, Inventario, Ingreso de hilado
+              "tintura.ver",      # Stock químicos, Producción Tintorería
+              "tejeduria.ver"):   # Tejeduría Asinfo
+        assert p in d["INT"], f"INT necesita {p}"
+    # Y sigue SIN compras: ese era el punto.
+    assert not [x for x in d["INT"] if x.startswith("compras.")]
+
+
+def test_los_que_ya_veian_tejeduria_no_la_pierden():
+    """Cambiar el decorador sin darles el permiso nuevo les corta el acceso —
+    el mismo error que la 0044 evitó cuando `comisiones.ver` se separó de
+    `informes.ver`."""
+    from config.roles import ROLES
+
+    d = dict(ROLES)
+    for rol in ("Gerente", "Contabilidad", "Compras", "Bodega", "Lectura"):
+        assert "compras.ver" in d[rol]
+        assert "tejeduria.ver" in d[rol], f"{rol} perdería Tejeduría"
+
+
+def test_hay_migracion_0168_que_no_deja_a_nadie_afuera():
+    from pathlib import Path
+
+    mig = Path("migrations/0168_tejeduria_ver.py").read_text()
+    # Hereda de compras.ver Y suma INT aparte.
+    assert "WHERE nombre_opcion = 'compras.ver'" in mig
+    assert "nombre_rol = 'INT'" in mig
+    assert "ON CONFLICT" in mig
