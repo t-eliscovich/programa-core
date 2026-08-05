@@ -458,8 +458,37 @@
            Las dos columnas que no se imprimen (Tipo y Stat de facturas) van a
            0: con `table-layout: fixed` el navegador les daría ancho igual y
            correría todo lo demás. */
-        main .ec-bloque-facturas table,
         main .ec-bloque-cheques table { table-layout: fixed !important; }
+
+        /* ⚠️ TMT 2026-08-05, 4ª vuelta (dueña: "ves que hay un espacio vacío a
+           la derecha de facturas? debería usar todo el ancho de la hoja").
+
+           FACTURAS va con layout AUTOMÁTICO. Los porcentajes de abajo siguen,
+           como pista de reparto, pero el ancho total deja de depender de que
+           sumen 100.
+
+           Qué se descartó midiendo, no mirando:
+             · No es el rayado ni la especificidad (eso era 3116a247).
+             · No es el contenedor: forzarle width/display tampoco cambió nada.
+             · No es la hoja de estilos: con las @media print activas y el
+               documento forzado a 700/760/790/816/900/1000/1152/1300 px, en el
+               navegador la tabla da 100% en LOS OCHO anchos.
+             · Midiendo el PDF, las siete columnas visibles respetan sus
+               porcentajes exactos… contra una tabla de 590 px sobre 790 de
+               hoja. O sea que en el Chromium headless de `pdf_motor` el
+               `width:100%` de la tabla no se aplica, y ese motor no se puede
+               inspeccionar desde acá.
+
+           `table-layout: fixed` congela el ancho a partir de la primera fila;
+           el automático lo recalcula con el contenido y con el `width:100%`.
+           CHEQUES —que en el MISMO papel sí ocupa todo— se deja como está: si
+           anda, no se toca.
+
+           Ojo con una cosa que el comentario viejo decía mal: Tipo y Stat NO
+           son columnas de ancho 0 en el papel. Llevan `no-print`, así que
+           `display:none` las saca del layout. El `width: 0` de más abajo es
+           inofensivo pero no es lo que las esconde. */
+        main .ec-bloque-facturas table { table-layout: auto !important; }
 
         /* Facturas: 13+13+0+15+14+15 = 70% hasta el final de Saldo. */
         main .ec-bloque-facturas table th:nth-child(1),
