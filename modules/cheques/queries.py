@@ -42,10 +42,41 @@ from . import concepto_cobro as _concepto_cobro
 # informes del mismo día dan totales distintos y nadie se entera.
 #
 #   · `fecha_recibido` — lo cargado por las pantallas de PC (el alta hace
-#     `fecha = fecha_recibido`, así que siempre está).
-#   · `fechaing` SOLO si la fila nació del dBase: ahí es FECHING = ingreso.
-#     (En las filas de PC `fechaing` es la fecha de depósito — no sirve.)
-#   · `fecha` de último recurso.
+#     `fecha = fecha_recibido`, así que siempre está). PC NUNCA lo reescribe:
+#     ni el depósito, ni el rebote, ni "volver a cartera" lo tocan.
+#   · `fechaing` SOLO si la fila nació del dBase Y sigue siendo el FECHING que
+#     trajo el import — ver abajo.
+#   · `fecha` de último recurso, y SÓLO para filas que no nacieron del dBase.
+#
+# ⚠ TMT 2026-08-05 (Alex: "todo lo que dice CHEQUE y sin aplicar facturas… no
+# ingresé ayer"). El resumen del 04/08 imprimía 58 cheques por $79.182,97
+# cuando Alex había tipeado 12 por $5.017,16: los otros 46 ($74.165,81) eran
+# cheques del dBase importados el 12/07 que él DEPOSITÓ el 04/08. Y salían
+# todos "sin aplicar a facturas" porque el import nunca trajo las
+# aplicaciones — o sea, la hoja que va a contabilidad decía que entraron
+# $74.165 de cobranza sin destino que nadie había cobrado ese día.
+#
+# La causa: `fechaing` carga DOS significados a la vez y PC pisa uno con el
+# otro. En el dBase FECHING es el día de INGRESO a cartera (`ALTAS.PRG` L30)
+# y la salida es FECHOUT (`BANCOS.PRG` L1234); pero las rutas de depósito de
+# PC (`depositar_lote`, la transición Z→B) escriben la fecha DE DEPÓSITO en
+# `fechaing`. Depositar un cheque del dBase le borra el día en que entró y le
+# escribe el de hoy → aparece como cobranza de hoy. Medido en producción:
+# **459 cheques** con el FECHING pisado, ensuciando TODOS los días desde el
+# 13/07 (30/07: 45 · 27/07: 50 · 04/08: 46 …).
+#
+# El discriminante es exacto y no necesita el DBF: un FECHING de verdad es
+# SIEMPRE anterior o igual al momento en que el import creó la fila (no se
+# puede haber recibido un cheque después de haberlo importado). Un valor
+# pisado por un depósito es SIEMPRE posterior. Por eso la condición
+# `c.fechaing <= c.fecha_crea`.
+#
+# Y cuando el FECHING está pisado o falta, la fila NO cae a `c.fecha`: en el
+# dBase `fecha` es la fecha DEL CHEQUE (posdatada), así que el fallback no
+# arreglaba el fantasma, lo MUDABA a otro día — es el mismo bug del 03/08 por
+# la otra punta. Sin día de ingreso confiable, el cobro no es de ningún día y
+# no se imprime en ninguna hoja.
+
 # Qué cuenta como CHEQUE — la misma partición por medio que usa el resumen de
 # cobranza (réplica de FINAL, ALTAS.PRG): NB 90/91 = depósito directo, NB 99 =
 # efectivo, todo lo demás (banco emisor real, y el 98 = espejo de anticipo) es
@@ -53,13 +84,18 @@ from . import concepto_cobro as _concepto_cobro
 # resumen NO puedan dar números distintos para el mismo día.
 SQL_ES_CHEQUE = "COALESCE(c.no_banco, 0) NOT IN (90, 91, 99)"
 
-SQL_DIA_INGRESO = """COALESCE(
-                       c.fecha_recibido,
-                       CASE WHEN COALESCE(c.usuario_crea, '')
-                                 IN ('dbf-import', 'reconcile-dbf')
-                            THEN c.fechaing END,
-                       c.fecha
-                     )"""
+SQL_DIA_INGRESO = """CASE
+                       WHEN c.fecha_recibido IS NOT NULL
+                            THEN c.fecha_recibido
+                       WHEN COALESCE(c.usuario_crea, '')
+                            IN ('dbf-import', 'reconcile-dbf')
+                            THEN CASE
+                                   WHEN c.fechaing
+                                        <= COALESCE(c.fecha_crea, c.fechaing)
+                                   THEN c.fechaing
+                                 END
+                       ELSE c.fecha
+                     END"""
 
 
 # scintela.cliente.observacion es varchar(200). Al trazar rebotes en la

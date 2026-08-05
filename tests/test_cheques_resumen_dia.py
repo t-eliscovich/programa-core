@@ -218,20 +218,32 @@ def _sql_del_resumen(monkeypatch) -> str:
     return capturado["sql"]
 
 
+# El import del dBase corrió el 12/07: toda fila `dbf-import` nació ese día.
+_IMPORT = "2026-07-12 21:59:11"
+
 _CHEQUES_SQLITE = [
-    # (id, usuario_crea, fecha, fecha_recibido, fechaing) — fechas ISO
+    # (id, usuario_crea, fecha, fecha_recibido, fechaing, fecha_crea) — ISO
     # 1) dbf-import: recibido 09/06, POSDATADO al 03/08 → NO es cobranza del 03/08
-    (1, "dbf-import", "2026-08-03", None, "2026-06-09"),
-    # 2) dbf-import: recibido el 03/08 en el dBase → SÍ entra
-    (2, "dbf-import", "2026-09-15", None, "2026-08-03"),
+    (1, "dbf-import", "2026-08-03", None, "2026-06-09", _IMPORT),
+    # 2) dbf-import: FECHING 03/08 pero POSTERIOR al import → lo pisó un
+    #    depósito de PC, no es el día de ingreso. NO entra (TMT 2026-08-05).
+    (2, "dbf-import", "2026-09-15", None, "2026-08-03", _IMPORT),
     # 3) PC (andres, caso KOR): fecha_recibido = 03/08 → SÍ entra
-    (3, "andres", "2026-08-03", "2026-08-03", None),
-    # 4) PC: cheque recibido el 03/08 pero con fechad futura → SÍ entra
-    (4, "andres", "2026-08-03", "2026-08-03", "2026-08-20"),
+    (3, "andres", "2026-08-03", "2026-08-03", None, "2026-08-03 09:00:00"),
+    # 4) PC: cheque recibido el 03/08 pero con fechad futura → SÍ entra.
+    #    `fechaing` = fecha de depósito y NO puede desviarlo (fecha_recibido gana).
+    (4, "andres", "2026-08-03", "2026-08-03", "2026-08-20", "2026-08-03 09:00:00"),
     # 5) PC: recibido otro día → NO entra
-    (5, "andres", "2026-07-30", "2026-07-30", None),
-    # 6) dbf-import sin FECHING → fallback a `fecha` → entra
-    (6, "dbf-import", "2026-08-03", None, None),
+    (5, "andres", "2026-07-30", "2026-07-30", None, "2026-07-30 09:00:00"),
+    # 6) dbf-import sin FECHING → NO cae a `fecha` (que es la fecha DEL cheque,
+    #    posdatada): sin día de ingreso confiable no se imprime en ningún día.
+    (6, "dbf-import", "2026-08-03", None, None, _IMPORT),
+    # 7) dbf-import con FECHING anterior al import y ADEMÁS depositado por PC:
+    #    el caso sano — el FECHING original sobrevivió → entra en SU día (09/06).
+    (7, "dbf-import", "2026-08-30", None, "2026-06-09", _IMPORT),
+    # 8) EL CASO DE ALEX (04/08): dbf-import importado el 12/07, depositado por
+    #    PC el 04/08 → `fechaing` quedó en 04/08. No lo cobró nadie ese día.
+    (8, "dbf-import", "2026-07-22", None, "2026-08-04", _IMPORT),
 ]
 
 
@@ -249,12 +261,13 @@ def _ids_que_devuelve(sql: str, fecha_iso: str) -> set[int]:
         "fechaing TEXT, fechaout TEXT, banco TEXT, codigo_cli TEXT)"
     )
     con.execute("CREATE TABLE cliente (codigo_cli TEXT, nombre TEXT)")
-    for idc, usr, fecha, frec, fing in _CHEQUES_SQLITE:
+    for idc, usr, fecha, frec, fing, fcrea in _CHEQUES_SQLITE:
         con.execute(
             "INSERT INTO cheque (id_cheque, importe, fecha, fechad, no_banco, "
-            "stat, usuario_crea, fecha_recibido, fechaing, banco, codigo_cli) "
-            "VALUES (?, 100, ?, ?, 10, 'Z', ?, ?, ?, 'PICHINCHA', 'KOR')",
-            (idc, fecha, fecha, usr, frec, fing),
+            "stat, usuario_crea, fecha_recibido, fechaing, fecha_crea, "
+            "banco, codigo_cli) "
+            "VALUES (?, 100, ?, ?, 10, 'Z', ?, ?, ?, ?, 'PICHINCHA', 'KOR')",
+            (idc, fecha, fecha, usr, frec, fing, fcrea),
         )
     con.commit()
 
@@ -270,13 +283,55 @@ def _ids_que_devuelve(sql: str, fecha_iso: str) -> set[int]:
 def test_resumen_dia_no_trae_posdatados_del_dbase(monkeypatch):
     """Un cheque del dBase posdatado a HOY no es cobranza de HOY (FECHING manda)."""
     sql = _sql_del_resumen(monkeypatch)
-    assert _ids_que_devuelve(sql, "2026-08-03") == {2, 3, 4, 6}
+    assert _ids_que_devuelve(sql, "2026-08-03") == {3, 4}
 
 
 def test_resumen_dia_trae_el_dbf_import_en_su_dia_de_ingreso(monkeypatch):
     """El posdatado sí aparece el día que ENTRÓ (FECHING = 09/06)."""
     sql = _sql_del_resumen(monkeypatch)
-    assert _ids_que_devuelve(sql, "2026-06-09") == {1}
+    assert _ids_que_devuelve(sql, "2026-06-09") == {1, 7}
+
+
+# ---------------------------------------------------------------------------
+# TMT 2026-08-05 (Alex, por WhatsApp: "todo lo q dice cheque y sin aplicar
+# facturas — No ingresé ayer. Apenas ingresé esto").
+#
+# La hoja del 04/08 que va a contabilidad decía CHEQUES (58) $79.182,97. Alex
+# había tipeado 12 cheques por $5.017,16. Los 46 restantes ($74.165,81) eran
+# cheques del dBase importados el 12/07 que él DEPOSITÓ el 04/08: las rutas de
+# depósito de PC escriben la fecha de depósito en `fechaing`, que para una
+# fila del dBase ES el día de ingreso (FECHING). Depositar borra el día en que
+# el cheque entró y lo reemplaza por hoy.
+#
+# 459 cheques en producción tenían el FECHING pisado, ensuciando todos los
+# días desde el 13/07. El discriminante no necesita el DBF: un FECHING real es
+# anterior o igual al momento del import; uno pisado es posterior.
+# ---------------------------------------------------------------------------
+
+
+def test_depositar_un_cheque_del_dbase_no_lo_convierte_en_cobranza_de_hoy(
+    monkeypatch,
+):
+    """El caso de Alex: `fechaing` pisado por el depósito ≠ día de ingreso."""
+    sql = _sql_del_resumen(monkeypatch)
+    # Ni el 04/08 (el día del depósito)...
+    assert 8 not in _ids_que_devuelve(sql, "2026-08-04")
+    # ...ni el 22/07 (la fecha DEL cheque, que era el fallback viejo).
+    assert 8 not in _ids_que_devuelve(sql, "2026-07-22")
+
+
+def test_dbf_import_sin_feching_no_cae_a_la_fecha_del_cheque(monkeypatch):
+    """Sin FECHING confiable el cobro no es de ningún día — no lo inventa."""
+    sql = _sql_del_resumen(monkeypatch)
+    assert 6 not in _ids_que_devuelve(sql, "2026-08-03")
+
+
+def test_el_deposito_no_puede_desviar_un_cobro_cargado_por_pc(monkeypatch):
+    """En las filas de PC manda `fecha_recibido`, que ninguna ruta reescribe."""
+    sql = _sql_del_resumen(monkeypatch)
+    # El id 4 tiene fechaing = 20/08 (depósito) y fecha_recibido = 03/08.
+    assert 4 in _ids_que_devuelve(sql, "2026-08-03")
+    assert 4 not in _ids_que_devuelve(sql, "2026-08-20")
 
 
 # ---------------------------------------------------------------------------
