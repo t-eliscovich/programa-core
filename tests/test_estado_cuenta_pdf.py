@@ -575,3 +575,26 @@ def test_las_columnas_que_no_se_imprimen_estan_anuladas_en_las_8_celdas():
     for prop in ("display: none !important", "width: 0 !important",
                  "padding: 0 !important"):
         assert prop in css, prop
+
+
+def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
+    """Las reglas del `@media print` no le llegan a esa tabla en el motor de PDF.
+
+    Medido sobre la hoja impresa: las columnas tenían ancho de CONTENIDO, no
+    los porcentajes declarados. Siete intentos de reajustar porcentajes en el
+    CSS no cambiaron nada. El ancho va en el HTML —`<colgroup>` y
+    `table-layout: fixed` inline— en la versión no interactiva (papel/PDF).
+    """
+    import re
+    from pathlib import Path
+
+    tpl = Path("modules/informes/templates/informes/"
+               "_estado_cuenta_impreso.html").read_text()
+    bloque = tpl[tpl.index("ec-bloque-facturas"):tpl.index("</thead>")]
+    assert "<colgroup>" in bloque, "sin colgroup el ancho vuelve a depender del CSS"
+    assert 'style="table-layout: fixed; width: 100%;"' in bloque
+    anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)%?"', bloque)]
+    assert len(anchos) == 9, f"el colgroup tiene {len(anchos)} columnas, la tabla 9"
+    assert sum(anchos) == 100, f"los <col> suman {sum(anchos)}%, no 100"
+    # Tipo (3ª) y Stat (8ª) no se imprimen.
+    assert anchos[2] == 0 and anchos[7] == 0

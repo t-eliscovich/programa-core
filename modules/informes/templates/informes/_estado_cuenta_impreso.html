@@ -20,7 +20,31 @@
     {% endif %}
   </div>
   <div class="ec-bloque-facturas bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-8">
+    {# TMT 2026-08-05, 8ª y última vuelta sobre el ancho de esta tabla.
+
+       Medido sobre la hoja impresa: las columnas tenían ancho de CONTENIDO
+       (Fecha 88 px, Número 120, Días 55), no los porcentajes declarados en el
+       `@media print`. O sea que esas reglas NO le llegan a esta tabla en el
+       motor de PDF — por eso siete intentos de reajustar porcentajes no
+       cambiaron nada, y por eso la de cheques sí llena la hoja: sus títulos
+       son largos ("F. DEPÓSITO (ORIG.)", "POSTERGADA") y la estiran solos.
+
+       El ancho pasa al HTML, donde ninguna hoja de estilos puede fallar: un
+       `<colgroup>` con los porcentajes y `table-layout: fixed` inline. Va sólo
+       en la versión NO interactiva —la del papel y el PDF—; en pantalla la
+       tabla sigue como estaba, con sus nueve columnas.
+
+       Tipo (3) y Stat (8) van en 0: no se imprimen. El resto suma 100. #}
+    {% if not interactivo %}
+    <table class="w-full text-sm" style="table-layout: fixed; width: 100%;">
+      <colgroup>
+        <col style="width:12%"><col style="width:12%"><col style="width:0">
+        <col style="width:17%"><col style="width:17%"><col style="width:17%">
+        <col style="width:17%"><col style="width:0"><col style="width:8%">
+      </colgroup>
+    {% else %}
     <table class="w-full text-sm">
+    {% endif %}
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="ec-c-fecha px-4 py-3 text-left font-medium">Fecha</th>
