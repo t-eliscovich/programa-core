@@ -670,3 +670,119 @@ def refrescar_mails_asinfo():
         return jsonify(mail_asinfo.refrescar())
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)[:300]}), 500
+
+
+# ---------------------------------------------------------------------------
+# Carga masiva de cupos — TMT 2026-08-05.
+#
+# La dueña completó el Excel "clientes-sin-cupo" (423 filas) con la columna
+# CUPO A CARGAR y pidió subirlos todos ("los vacíos quedan en 0"). Cargar 423
+# fichas a mano por /clientes/<cod>/editar es inviable → esta pantalla
+# (regla operar-por-la-ui: si sólo se puede scripteando, falta UI).
+#
+# Flujo en dos pasos, mismo patrón que la carga de tejeduría: subir el xlsx →
+# PREVIEW (qué cambia, qué queda igual, qué código no existe) → Confirmar.
+# Nada se escribe hasta el Confirmar, y la escritura va por queries.editar()
+# (misma función que la ficha: IS DISTINCT FROM, usuario_modifica, bitácora).
+# ---------------------------------------------------------------------------
+
+@clientes_bp.route("/clientes/cupos-carga", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cupos.editar")
+def cupos_carga():
+    from .cupos_xlsx import parse_cupos_xlsx
+
+    if request.method == "GET":
+        return render_template("clientes/cupos_carga.html", paso="subir", avisos=[])
+
+    f = request.files.get("archivo")
+    if f is None or not f.filename:
+        return render_template(
+            "clientes/cupos_carga.html", paso="subir",
+            avisos=["Elegí un archivo .xlsx antes de subir."],
+        ), 400
+    filas, avisos = parse_cupos_xlsx(f.read())
+    if not filas:
+        return render_template(
+            "clientes/cupos_carga.html", paso="subir", avisos=avisos,
+        ), 400
+
+    codigos = [x.codigo for x in filas]
+    fichas = db.fetch_all(
+        "SELECT codigo_cli, nombre, cupo FROM scintela.cliente "
+        "WHERE codigo_cli = ANY(%s)",
+        (codigos,),
+    )
+    por_codigo: dict[str, list[dict]] = {}
+    for ficha in fichas:
+        por_codigo.setdefault(ficha["codigo_cli"], []).append(ficha)
+
+    preview = []
+    for x in filas:
+        encontradas = por_codigo.get(x.codigo, [])
+        if not encontradas:
+            estado = "no_encontrado"
+            nombre, cupo_actual = None, None
+        else:
+            nombre = encontradas[0]["nombre"]
+            cupo_actual = encontradas[0]["cupo"]
+            # Código duplicado en la base (pares abiertos de la mig 0155):
+            # el UPDATE va por codigo_cli, las DOS fichas quedan con el cupo.
+            estado = "igual" if all(
+                (ficha["cupo"] or 0) == x.cupo for ficha in encontradas
+            ) else "cambia"
+        preview.append({
+            "codigo": x.codigo, "cupo_nuevo": x.cupo, "nombre": nombre,
+            "cupo_actual": cupo_actual, "estado": estado,
+            "fichas": len(encontradas),
+        })
+    orden = {"no_encontrado": 0, "cambia": 1, "igual": 2}
+    preview.sort(key=lambda p: (orden[p["estado"]], p["codigo"]))
+    resumen = {
+        "cambia": sum(1 for p in preview if p["estado"] == "cambia"),
+        "igual": sum(1 for p in preview if p["estado"] == "igual"),
+        "no_encontrado": sum(1 for p in preview if p["estado"] == "no_encontrado"),
+    }
+    # El payload que viaja al Confirmar: sólo códigos que EXISTEN. Formato
+    # COD=ENTERO por línea; el aplicar lo re-valida línea a línea.
+    payload = "\n".join(
+        f"{p['codigo']}={p['cupo_nuevo']}" for p in preview
+        if p["estado"] != "no_encontrado"
+    )
+    return render_template(
+        "clientes/cupos_carga.html", paso="confirmar", avisos=avisos,
+        preview=preview, resumen=resumen, payload=payload,
+        archivo=f.filename,
+    )
+
+
+@clientes_bp.route("/clientes/cupos-carga/aplicar", methods=["POST"])
+@requiere_login
+@requiere_permiso("cupos.editar")
+def cupos_carga_aplicar():
+    import re as _re
+
+    lineas = [ln.strip() for ln in (request.form.get("payload") or "").splitlines() if ln.strip()]
+    items: list[tuple[str, int]] = []
+    for ln in lineas:
+        m = _re.fullmatch(r"([A-Z0-9]{1,10})=(\d{1,9})", ln)
+        if not m:
+            abort(400)
+        items.append((m.group(1), int(m.group(2))))
+    if not items:
+        flash("No había nada para aplicar.", "warn")
+        return redirect(url_for("clientes.cupos_carga"))
+
+    usuario = (g.user or {}).get("username", "web")
+    cambiados = 0
+    for codigo, cupo in items:
+        cambiados += queries.editar(codigo, cupo=cupo, usuario=usuario)
+    registrar_bitacora(
+        modulo="clientes", accion="cupos_carga_masiva",
+        payload={"filas": len(items), "cambiados": cambiados},
+    )
+    flash(
+        f"Cupos cargados: {cambiados} ficha(s) actualizadas de {len(items)} filas del archivo.",
+        "ok",
+    )
+    return redirect(url_for("clientes.lista"))

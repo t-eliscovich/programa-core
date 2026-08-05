@@ -18,6 +18,10 @@
       </form>
       <a href="{{ url_for('clientes.lista', q=q, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      {% if tiene_permiso('cupos.editar') %}
+      <a href="{{ url_for('clientes.cupos_carga') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Carga masiva de cupos</a>
+      {% endif %}
       {% if tiene_permiso('clientes.crear') %}
       <a href="{{ url_for('clientes.nuevo') }}"
          class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">

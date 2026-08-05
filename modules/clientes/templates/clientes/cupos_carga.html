@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Carga masiva de cupos{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('clientes.lista') }}" class="hover:underline">Clientes</a> › <strong>Carga masiva de cupos</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  {{ page_hero('Carga masiva de cupos', 'Subí el Excel con las columnas CÓDIGO y CUPO A CARGAR') }}
+
+  {% for a in avisos %}
+    <div class="mt-4 px-4 py-3 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 text-sm">⚠ {{ a }}</div>
+  {% endfor %}
+
+  {% if paso == 'subir' %}
+  <form method="post" enctype="multipart/form-data" class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">
+      Las filas con <strong>CUPO A CARGAR vacío</strong> se cargan con cupo <strong>0</strong>
+      (cliente sin crédito). Antes de escribir nada vas a ver una vista previa.
+    </p>
+    <input type="file" name="archivo" accept=".xlsx" required
+           class="text-sm mb-4 block">
+    <button class="text-sm px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white">Subir y ver vista previa</button>
+  </form>
+
+  {% else %}
+  <div class="mt-6 mb-4 flex gap-3 flex-wrap text-sm">
+    <div class="px-4 py-2 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"><strong>{{ resumen.cambia }}</strong> cambian</div>
+    <div class="px-4 py-2 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><strong>{{ resumen.igual }}</strong> ya estaban así</div>
+    <div class="px-4 py-2 rounded {% if resumen.no_encontrado %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200{% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300{% endif %}"><strong>{{ resumen.no_encontrado }}</strong> sin ficha (no se tocan)</div>
+  </div>
+
+  <form method="post" action="{{ url_for('clientes.cupos_carga_aplicar') }}" class="mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <textarea name="payload" class="hidden" hidden>{{ payload }}</textarea>
+    <button class="text-sm px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white">
+      Confirmar y cargar {{ resumen.cambia + resumen.igual }} cupos
+    </button>
+    <a href="{{ url_for('clientes.cupos_carga') }}" class="ml-2 text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-block">Cancelar</a>
+    <span class="ml-3 text-xs text-slate-400">{{ archivo }}</span>
+  </form>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Cliente</th>
+          <th class="px-4 py-3 text-right font-medium">Cupo actual</th>
+          <th class="px-4 py-3 text-right font-medium">Cupo nuevo</th>
+          <th class="px-4 py-3 text-left font-medium">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in preview %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if p.estado == 'no_encontrado' %}bg-red-50 dark:bg-red-900/20{% endif %}">
+          <td class="px-4 py-2 font-mono">{{ p.codigo }}</td>
+          <td class="px-4 py-2">{{ p.nombre or '—' }}{% if p.fichas > 1 %} <span class="text-xs text-amber-600 dark:text-amber-300">({{ p.fichas }} fichas con este código: las dos quedan con el cupo)</span>{% endif %}</td>
+          <td class="px-4 py-2 text-right">{{ p.cupo_actual|num_es(0) if p.cupo_actual is not none else "—" }}</td>
+          <td class="px-4 py-2 text-right font-medium">{{ p.cupo_nuevo|num_es(0) }}</td>
+          <td class="px-4 py-2">
+            {% if p.estado == 'cambia' %}<span class="text-sky-700 dark:text-sky-300">cambia</span>
+            {% elif p.estado == 'igual' %}<span class="text-slate-400">ya estaba así</span>
+            {% else %}<span class="text-red-700 dark:text-red-300">sin ficha en Programa Core</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
