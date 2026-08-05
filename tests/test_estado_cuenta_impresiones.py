@@ -706,3 +706,26 @@ def test_facturas_no_lleva_ancho_fijo_en_el_papel():
     )
     # Cheques sí se queda con ancho fijo: no tiene columnas no-print.
     assert "ec-bloque-cheques table { table-layout: fixed !important; }" in css
+
+
+def test_el_estado_de_cuenta_esta_apretado_para_entrar_en_una_hoja():
+    """Dueña 05/08: "si entran en una mejor".
+
+    A 7,5pt un cliente de ~70 renglones se iba a dos hojas. Medido sobre los
+    67 clientes de un vendedor (con las @media print activas y el documento a
+    816 px, ancho de papel), con este ajuste 66 de 67 entran en UNA. El que no
+    entra tiene 66 facturas abiertas: ahí dos hojas es lo correcto.
+
+    Las cuatro piezas van juntas — si alguien sube el cuerpo de letra o repone
+    la franja "por prolijidad", vuelve la segunda hoja y no se nota hasta que
+    está impreso.
+    """
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", IMPRESO[IMPRESO.index("@media print"):], flags=re.S)
+    assert "font-size: 7pt !important" in css, "el cuerpo de la tabla volvió a crecer"
+    assert "line-height: 1.02 !important" in css
+    # La franja de códigos internos (Z/P/D, 1/2/3/R/9) no va al papel.
+    assert "main .ec-ch-resumen { display: none !important; }" in css
+    # 11 px de alto útil que salen del margen vertical.
+    assert "@page { margin: 7mm 8mm; }" in css

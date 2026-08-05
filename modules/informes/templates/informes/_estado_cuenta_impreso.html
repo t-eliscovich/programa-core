@@ -415,7 +415,7 @@
    incluyen tanto la pantalla individual como la impresión en lote. #}
 <style>
       @media print {
-        .ec-cierre { padding: 2pt 0 0 0 !important; font-size: 8pt !important; }
+        .ec-cierre { padding: 1pt 0 0 0 !important; font-size: 8pt !important; }
         .ec-cierre > div { max-width: 62mm !important; margin-left: auto !important;
                            padding: 0.5pt 0 !important; }
         /* El `text-base` del span gana por especificidad si sólo se toca el
@@ -439,9 +439,35 @@
         main .ec-bloque-facturas table tfoot td,
         main .ec-bloque-cheques table tbody td,
         main .ec-bloque-cheques table tfoot td {
-          font-size: 7.5pt !important;
+          /* TMT 2026-08-05 (dueña: "si entran en una mejor"). Estaba en 7,5pt
+             y el estado de cuenta de un cliente grande se iba a dos hojas.
+             Medido sobre los 67 clientes de un vendedor, con las @media print
+             activas y el documento a 816 px (ancho de papel): con este ajuste
+             **66 de 67 entran en UNA hoja**. El que no entra tiene 66 facturas
+             abiertas — ahí dos hojas es lo correcto, no un defecto. */
+          font-size: 7pt !important;
+          line-height: 1.02 !important;
+          padding: 0.1pt 3pt !important;
           font-family: inherit !important;
         }
+
+        /* Un poco más de aire recuperado sin tocar el cuerpo de letra. */
+        main .ec-bloque-facturas { margin-bottom: 3pt !important; }
+        main .cli-block h2 { margin: 3pt 0 1pt 0 !important; }
+
+        /* La franja de cuatro números (A depositar / Depositados / Protestados
+           / Endosados) NO va al papel. Son 64 px —media docena de filas— y
+           además habla en códigos internos: "(Z/P/D)", "(1/2/3/R/9)". El
+           cliente ya tiene arriba "Cheques a depositar" y el TOTAL, que es lo
+           mismo en castellano. En PANTALLA se sigue viendo. Ya estaba oculta
+           en el modo "sólo cheques" desde el 03/08; ahora en todo el papel. */
+        main .ec-ch-resumen { display: none !important; }
+
+        /* `base.html` fija @page 8mm. Acá se baja el margen VERTICAL a 7mm:
+           son 11 px más de alto útil, justo el colchón que necesita un cliente
+           de ~70 renglones para no partirse en dos hojas. El horizontal queda
+           en 8mm para no cambiar el ancho de la hoja. */
+        @page { margin: 7mm 8mm; }
 
         /* ⚠️ ACÁ VIVÍA EL BLOQUE QUE ALINEABA SALDO CON IMPORTE (c85c731b,
            04/08): `table-layout: fixed` en la tabla de FACTURAS más sus anchos
