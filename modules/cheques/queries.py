@@ -5261,6 +5261,7 @@ def buscar(
     # codigo_cli tenía fanout > 1 en scintela.cliente, los cheques se
     # duplicaban (1.851.871 mostrado vs 1.840.030 real, diff 8 cheques).
     sql_buscar_cheques = """
+        WITH filtrados AS (
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
                c.fecha_recibido, c.fecha_crea,
                -- TMT 2026-08-03 (dueña: "cargado me muestra solo 12/07 sin
@@ -5369,7 +5370,22 @@ def buscar(
           AND (%(stats)s::text[] IS NULL OR c.stat = ANY(%(stats)s::text[]))
           -- Excluir eliminados (stat='X') cuando el filtro es "todos".
           AND (NOT %(excluir_eliminados)s OR COALESCE(c.stat, '') <> 'X')
-        __ORDER_BY__
+        )
+        -- TMT 2026-08-05 (dueña: "a nadie le importa la pagina visible") — el
+        -- ACUM sale de una window sobre el UNIVERSO filtrado, antes del
+        -- LIMIT/OFFSET. Antes se acumulaba en Python sobre las filas de la
+        -- pagina, asi que con 500/pag el corrido se reiniciaba en cada
+        -- pagina. La window usa EXACTAMENTE el mismo orden que la pagina
+        -- que la pagina, que es lo que hace que el corrido sea continuo
+        -- al pasar de pagina: los dos ORDER BY tienen que ser el MISMO y
+        -- ser total (todos terminan en id_cheque).
+        SELECT fi.*,
+               SUM(COALESCE(fi.importe, 0)) OVER (
+                 ORDER BY __ORDER_EXPR__
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+               ) AS saldo_acumulado
+          FROM filtrados fi
+        ORDER BY __ORDER_EXPR__
         LIMIT %(limite)s OFFSET %(offset)s
         """
     # TMT 2026-06-16 dueña: ordenar por IMPORTE de mayor a menor (server-side,
@@ -5380,19 +5396,28 @@ def buscar(
     # cheques en Cartera total, pedir "Cargado ↓" mostraba el máximo DE LA
     # PÁGINA (27/07) y los de hoy quedaban en otra página, invisibles. Por eso
     # CARGADO necesita orden server-side propio, igual que Importe.
+    # TMT 2026-08-05 — la expresion de orden se escribe UNA sola vez y se usa
+    # en los DOS lugares (la window del ACUM y el ORDER BY de la pagina).
+    # Va sobre el alias del CTE (`fi.`), asi que `dia_ingreso` se referencia
+    # por el nombre de la columna ya calculada, no repitiendo el CASE.
+    # El orden por defecto es COALESCE(fechad, fecha) — la fecha que la
+    # pantalla realmente muestra y por la que Python reordenaba despues de
+    # paginar (antes el SQL paginaba por `fecha` y reordenaba por `fechad`
+    # DENTRO de la pagina: un cheque podia verse fuera de orden entre dos
+    # paginas).
     _orden = (orden or "").lower()
     if _orden == "importe_desc":
-        _order_sql = "ORDER BY c.importe DESC NULLS LAST, c.id_cheque DESC"
+        _order_expr = "fi.importe DESC NULLS LAST, fi.id_cheque DESC"
     elif _orden == "importe_asc":
-        _order_sql = "ORDER BY c.importe ASC NULLS LAST, c.id_cheque ASC"
+        _order_expr = "fi.importe ASC NULLS LAST, fi.id_cheque ASC"
     elif _orden == "cargado_desc":
-        _order_sql = "ORDER BY __DIA_INGRESO__ DESC NULLS LAST, c.id_cheque DESC"
+        _order_expr = "fi.dia_ingreso DESC NULLS LAST, fi.id_cheque DESC"
     elif _orden == "cargado_asc":
-        _order_sql = "ORDER BY __DIA_INGRESO__ ASC NULLS LAST, c.id_cheque ASC"
+        _order_expr = "fi.dia_ingreso ASC NULLS LAST, fi.id_cheque ASC"
     else:
-        _order_sql = "ORDER BY c.fecha ASC, c.id_cheque ASC"
-    _order_sql = _order_sql.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
-    sql_buscar_cheques = sql_buscar_cheques.replace("__ORDER_BY__", _order_sql)
+        _order_expr = ("COALESCE(fi.fechad, fi.fecha) ASC NULLS FIRST, "
+                       "fi.id_cheque ASC")
+    sql_buscar_cheques = sql_buscar_cheques.replace("__ORDER_EXPR__", _order_expr)
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
     sql_buscar_cheques = sql_buscar_cheques.replace(
         "__NOMBRE_CLI__", _nom_cli or "FALSE")
@@ -5422,28 +5447,13 @@ def buscar(
         )
         or []
     )
-    # Running total. Por importe (dueña) o cronológico (default).
-    from datetime import date as _date
-
-    if _orden in ("cargado_desc", "cargado_asc"):
-        rows_out = sorted(
-            rows,
-            key=lambda r: (r.get("dia_ingreso") or _date.min, r.get("id_cheque") or 0),
-            reverse=(_orden == "cargado_desc"),
-        )
-    elif _orden in ("importe_desc", "importe_asc"):
-        rows_out = sorted(
-            rows, key=lambda r: float(r.get("importe") or 0),
-            reverse=(_orden == "importe_desc"),
-        )
-    else:
-        rows_out = sorted(
-            rows, key=lambda r: (r.get("fechad") or r.get("fecha") or _date.min, r.get("id_cheque") or 0)
-        )
-    acum = 0.0
+    # TMT 2026-08-05 — el orden y el running total los hace el SQL (ver el
+    # CTE de arriba). Antes se reordenaba y se acumulaba ACA, sobre las filas
+    # que habian llegado: con paginacion de 500 eso reordenaba solo la pagina
+    # y el corrido arrancaba de cero en cada una.
+    rows_out = list(rows)
     for r in rows_out:
-        acum += float(r.get("importe") or 0)
-        r["saldo_acumulado"] = acum
+        r["saldo_acumulado"] = float(r.get("saldo_acumulado") or 0)
     return rows_out
 
 
