@@ -11,7 +11,11 @@
    - Se cotiza por KG, pero el usuario ingresa una CANTIDAD según el tipo:
        resto de telas → piezas × 22 kg;  cuellos → cant ÷ 33;
        puños → cant ÷ 45 (precio = cuellos);  rib → directo en kg.
-   - Descuento por volumen + contado 5% fijo, en cascada. #}
+   - Descuento por volumen + contado 5% fijo, en cascada.
+   - PRECIOS CON IVA (dueña 2026-08-05: "en la proforma está reflejando los
+     valores sin IVA" → "con IVA siempre"). La matriz llega ya con IVA desde
+     queries.matriz_precios(); acá NO se multiplica por nada. #}
+
 <div class="page-shell page-shell--xl">
   <header class="page-header">
     <h1 class="page-title">{{ titulo | default('Nueva cotización') }}</h1>
@@ -64,7 +68,7 @@
             <th class="px-2 py-1 text-left font-medium">Piezas/Cant</th>
             <th class="px-2 py-1 text-right font-medium">{{ 'Kg' if es_pedido else 'Cantidad' }}</th>
             {% if not es_pedido %}<th class="px-2 py-1 text-right font-medium">Kg</th>{% endif %}
-            <th class="px-2 py-1 text-right font-medium">Precio</th>
+            <th class="px-2 py-1 text-right font-medium">Precio c/IVA</th>
             <th class="px-2 py-1 text-right font-medium">Importe</th>
             <th class="px-2 py-1 no-print"></th>
           </tr>
@@ -117,6 +121,7 @@
         <div class="flex justify-between text-lg font-semibold border-t border-slate-200 dark:border-slate-800 pt-2 mt-2">
           <span>Total</span><span class="font-mono" id="t-total">0,00</span>
         </div>
+        <div class="text-xs text-slate-400 text-right">IVA {{ (matriz.iva_pct | default(15)) | int }}% incluido</div>
       </div>
     </div>
 
@@ -137,6 +142,8 @@
   const body = document.getElementById('lineas-body');
   // PEDIDO: se ingresan los KILOS EXACTOS (sin multiplicar). COTIZACIÓN: cantidad→kg.
   const ES_PEDIDO = {{ es_pedido | tojson }};
+  // Solo para ROTULAR: los precios de MATRIZ ya vienen con IVA del servidor.
+  const IVA_PCT_TXT = String(MATRIZ.iva_pct != null ? MATRIZ.iva_pct : 15).replace(/\.0$/, '');
 
   // Mapa por NOMBRE y por CÓDIGO (UPPER) → {cod, color, clase, clase_desc}
   const COLORES_MAP = {};
@@ -172,7 +179,8 @@
   ];
   // TMT 2026-08-04 (dueña: "a proforma y precios agregar esto") — telas de
   // PRECIO ÚNICO (scintela.precio_plano). Se suman a la lista de siempre:
-  //   · `plano` != null  → esa cifra para cualquier color (SIN IVA).
+  //   · `plano` != null  → esa cifra para cualquier color (ya CON IVA, igual
+  //                        que MATRIZ.precios).
   //   · `col` != null    → cobran lo que esa columna de la matriz (JERSEY 3,5
   //                        y JERSEY 3 = JERSEY), o sea varían por clase.
   // La conversión asumida es la del jersey (piezas x 22) hasta que la dueña
@@ -600,10 +608,11 @@
     <div style="text-align:right"><h1>${DOCNOM}</h1><div class="muted">${esc(fecha)}</div></div>
   </div>
   <div class="cli"><strong>Cliente:</strong> ${esc(codigo)}${nombre ? ' — ' + esc(nombre) : ''}</div>
-  <table><thead><tr><th>Tipo</th><th>Color</th>${thCant}<th class="r">Kg</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>
+  <table><thead><tr><th>Tipo</th><th>Color</th>${thCant}<th class="r">Kg</th><th class="r">Precio c/IVA</th><th class="r">Importe</th></tr></thead>
   <tbody>${filasHtml}</tbody></table>
   <div class="tot">${totHtml}</div>
   ${obs ? `<div class="obs"><strong>Observaciones:</strong> ${esc(obs)}</div>` : ''}
+  <div class="pie">Precios en USD por kilo, IVA ${IVA_PCT_TXT}% incluido.</div>
 </div></body></html>`;
 
     const win = window.open('', 'cotizacion', 'width=900,height=1100');

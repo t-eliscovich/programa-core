@@ -50,8 +50,18 @@ def matriz_precios() -> dict:
           "clases": [{"clase": 1, "descripcio": "BLANCO"}, ...],
           "telas":  [{"col": "jersey", "label": "JERSEY"}, ...],
           "precios": {"1": {"jersey": 9.12, ...}, ...},
+          "iva_pct": 15.0,
         }
+
+    🚨 Los precios salen de acá CON IVA. En scintela.precios están guardados
+    NETOS, pero la proforma es el papel que ve el CLIENTE y tiene que hablar
+    el mismo idioma que la hoja de precios que se le entrega (dueña
+    2026-08-05: "en la proforma está reflejando los valores sin IVA" → "con
+    IVA siempre"). El IVA lo pone `precios.precio_con_iva`, nunca un `* 1.15`
+    escrito acá.
     """
+    from modules.precios import queries as precios_queries
+
     cols = ", ".join(col for col, _ in TELAS)
     filas = db.fetch_all(
         f"SELECT clase, descripcio, {cols} FROM scintela.precios ORDER BY clase ASC"
@@ -60,7 +70,11 @@ def matriz_precios() -> dict:
     precios: dict[str, dict] = {}
     for f in filas:
         precios[str(int(f["clase"]))] = {
-            col: (float(f[col]) if f.get(col) is not None else None)
+            col: (
+                round(precios_queries.precio_con_iva(float(f[col])), 4)
+                if f.get(col) is not None
+                else None
+            )
             for col, _ in TELAS
         }
     return {
@@ -68,6 +82,7 @@ def matriz_precios() -> dict:
         "telas": [{"col": c, "label": lab} for c, lab in TELAS],
         "precios": precios,
         "planos": telas_planas(),
+        "iva_pct": precios_queries.IVA_PCT,
     }
 
 
@@ -76,11 +91,16 @@ def telas_planas() -> list[dict]:
 
     Pedido de la dueña 2026-08-04 ("a proforma y precios agregar esto"): son
     telas que no tienen precio por clase de color. Dos formas:
-      - `precio` (SIN IVA, igual que la matriz) → misma cifra para todo color.
+      - `precio` → misma cifra para todo color.
       - `col` (JERSEY 3,5 / JERSEY 3) → cobran lo que esa columna de la
         matriz, así que el precio SÍ varía por clase y sale de PRECIOS.
     Fail-soft: si la tabla no está, la proforma sigue andando con las 12 de
     siempre.
+
+    🚨 `precio` sale de acá CON IVA, igual que la matriz de `matriz_precios`
+    — en la tabla está guardado NETO. Las dos ramas tienen que estar en la
+    MISMA escala o el mismo formulario cotizaría unas telas con IVA y otras
+    sin.
     """
     from modules.precios import queries as precios_queries
 
@@ -96,7 +116,7 @@ def telas_planas() -> list[dict]:
                 "label": str(f["tela"]).upper(),
                 "col": f.get("ref_col"),
                 "precio": (
-                    float(f["precio"])
+                    round(precios_queries.precio_con_iva(float(f["precio"])), 4)
                     if f.get("precio") is not None and not f.get("ref_col")
                     else None
                 ),

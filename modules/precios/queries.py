@@ -151,6 +151,19 @@ TRAMOS_DESCUENTO: list[tuple[str, float]] = [
 IVA_PCT: float = 15.0
 
 
+def precio_con_iva(monto: float | None) -> float | None:
+    """Un precio NETO (como se guarda) llevado a precio CON IVA (como se le
+    muestra al cliente: la hoja impresa y la Factura Proforma).
+
+    Es la ÚNICA forma de agregarle IVA a un número en toda la app — junto con
+    `factor_hoja`, que la usa para la hoja. Nunca escribir `* 1.15` suelto:
+    así se coló un IVA de más más de una vez.
+    """
+    if monto is None:
+        return None
+    return float(monto) * (1.0 + IVA_PCT / 100.0)
+
+
 # ---------------------------------------------------------------------------
 # Telas de PRECIO ÚNICO (scintela.precio_plano) — migración 0159.
 #

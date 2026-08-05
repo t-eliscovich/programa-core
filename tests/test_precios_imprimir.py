@@ -227,13 +227,18 @@ def test_resolver_plano_muestra_el_rango_del_jersey():
 
 
 def test_proformas_ofrece_las_telas_de_precio_unico(monkeypatch):
-    """La proforma tiene que poder cotizar SCUBA y JERSEY 3,5."""
+    """La proforma tiene que poder cotizar SCUBA y JERSEY 3,5.
+
+    Ojo con la cifra: en la tabla SCUBA vale 11,25 NETO, pero la proforma
+    cotiza CON IVA (dueña 2026-08-05) → 12,9375. Ver
+    tests/test_proformas_iva.py.
+    """
     from modules.proformas import queries as pq
 
     monkeypatch.setattr(queries, "precio_plano", lambda: PLANOS)
     planas = pq.telas_planas()
     por_label = {p["label"]: p for p in planas}
-    assert por_label["SCUBA"]["precio"] == 11.25
+    assert por_label["SCUBA"]["precio"] == pytest.approx(11.25 * 1.15)
     assert por_label["SCUBA"]["col"] is None
     # JERSEY 3,5 no lleva cifra: la saca de la columna jersey de la matriz.
     assert por_label["JERSEY 3,5"]["precio"] is None
