@@ -1,0 +1,91 @@
+{# Mapa de accesos — ver el docstring de modules/usuarios/accesos.py.
+
+   Dueña 2026-08-05: *"¿tenemos una lista de las páginas y accesos?"*. No la
+   había. Ésta no se escribe a mano: sale del `url_map` de Flask cruzado con
+   `seguridad.permiso`, así que si mañana alguien cambia un decorador, la
+   pantalla cambia sola.
+
+   ⚠ static/tailwind.css es un build CONGELADO → lo que dimensiona va inline. #}
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Accesos por rol{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('usuarios.lista') }}" class="hover:underline">Usuarios</a> / <strong>Accesos</strong>{% endblock %}
+{% block content %}
+<div class="max-w-7xl">
+{{ page_hero('Qué ve cada rol',
+             'Sale de las rutas reales de la app cruzadas con los permisos de cada rol — no es una lista escrita a mano. Sólo se listan los roles que hoy tienen gente.') }}
+
+<div style="overflow-x:auto;border:1px solid #E2E8F0;border-radius:8px;background:#fff">
+  <table class="w-full text-sm" style="border-collapse:collapse">
+    <thead style="background:#F8FAFC;border-bottom:1px solid #E2E8F0">
+      <tr>
+        <th style="padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase;
+                   letter-spacing:.05em;color:#64748B">Permiso · pantallas</th>
+        {% for r in roles %}
+          <th style="padding:7px 8px;text-align:center;font-size:11px;white-space:nowrap;
+                     letter-spacing:.03em;color:#334155">
+            {{ r.nombre }}
+            <div style="font-size:10px;font-weight:400;color:#94A3B8">
+              {{ r.usuarios }} usuario{{ '' if r.usuarios == 1 else 's' }}
+              {%- if r.wildcard %} · todo{% endif %}
+            </div>
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in permisos %}
+      <tr style="border-top:1px solid #F1F5F9">
+        <td style="padding:6px 10px">
+          <div style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:600">{{ p.permiso }}</div>
+          <div style="font-size:10.5px;color:#94A3B8;margin-top:2px;line-height:1.35">
+            {{ p.rutas | join('  ·  ') }}
+          </div>
+        </td>
+        {% for r in roles %}
+          {# ✓ verde = entra; · gris = 404. Nunca vacío: una celda en blanco
+             no se distingue de un dato que no se cargó. #}
+          <td style="padding:6px 8px;text-align:center">
+            {% if puede(r, p.permiso) %}
+              <span style="color:#15803D;font-weight:700">✓</span>
+            {% else %}
+              <span style="color:#CBD5E1">·</span>
+            {% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if roles_vacios %}
+<p style="font-size:12px;color:#94A3B8;margin-top:10px">
+  Roles del catálogo que hoy no usa nadie (no se muestran):
+  {{ roles_vacios | map(attribute='nombre') | join(', ') }}.
+</p>
+{% endif %}
+
+{# La auditoría del 03/08, corriendo sola cada vez que se abre la pantalla. #}
+{% if sin_permiso %}
+<div style="margin-top:22px;border:1px solid #FCD9D9;background:#FEF6F6;
+            border-radius:8px;padding:13px 15px">
+  <div style="font-size:12px;font-weight:700;color:#B91C1C;text-transform:uppercase;
+              letter-spacing:.05em">
+    {{ sin_permiso | length }} rutas sin permiso
+  </div>
+  <p style="font-size:12.5px;color:#7F1D1D;margin:6px 0 9px;line-height:1.45">
+    Las abre <strong>cualquier usuario logueado</strong>, sea del rol que sea —
+    sólo piden estar adentro. No es un problema hoy porque todas las cuentas
+    son de confianza; lo es el día que exista una que no lo sea. Los vendedores
+    quedan afuera por otra vía (<code>scope_vendedor.py</code> sólo les deja
+    <code>/mi-cartera</code>).
+  </p>
+  <div style="font-size:10.5px;color:#991B1B;font-family:ui-monospace,Menlo,monospace;
+              line-height:1.5;max-height:190px;overflow:auto">
+    {{ sin_permiso | join('  ·  ') }}
+  </div>
+</div>
+{% endif %}
+</div>
+{% endblock %}

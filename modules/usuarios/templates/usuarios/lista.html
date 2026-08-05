@@ -7,9 +7,17 @@
 <div class="max-w-5xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Usuarios', 'Cuentas con acceso al sistema. Asigná rol y permisos al crear.') }}
-    <div class="no-print">
+    <div class="no-print" style="display:flex;gap:8px;align-items:center">
+      {# El mapa de accesos va JUNTO al alta: es la pantalla que contesta
+         "¿y qué le estoy dando si le pongo este rol?" (dueña 2026-08-05). #}
+      <a href="{{ url_for('usuarios.mapa_accesos') }}"
+         style="font-size:13px;padding:6px 12px;border-radius:6px;border:1px solid #CBD5E1;
+                color:#334155;text-decoration:none;white-space:nowrap">
+        Ver accesos por rol
+      </a>
       <a href="{{ url_for('usuarios.nuevo') }}"
-         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white shadow-sm">
+         class="text-sm px-3 rounded bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+         style="padding-top:6px;padding-bottom:6px">
         + Nuevo usuario
       </a>
     </div>

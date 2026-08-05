@@ -2167,3 +2167,79 @@ def test_ningun_link_a_posdat_queda_suelto():
         if "tiene_permiso('posdat." not in txt:
             sueltos.append(str(tpl))
     assert not sueltos, f"linkean a posdat sin gatear: {sueltos}"
+
+
+# ---------------------------------------------------------------------------
+# El mapa de accesos (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"¿tenemos una lista de las páginas y accesos?"*. No la había: para saber
+# quién ve qué había que leer `config/roles.py` y cruzarlo a mano con los
+# decoradores de cada vista.
+
+
+def test_el_permiso_queda_anotado_en_la_vista():
+    """⭐ La pieza que hace que la lista no pueda mentir: `requiere_permiso`
+    deja el permiso en la función envuelta.
+
+    Sin esto habría que leer el código con expresiones regulares, y una lista
+    escrita a mano se desactualiza el día que alguien cambia un decorador y
+    nadie se entera.
+    """
+    from auth import requiere_permiso
+
+    @requiere_permiso("algo.ver")
+    def _vista():  # pragma: no cover — no se ejecuta, se inspecciona
+        return "ok"
+
+    assert _vista._permiso == "algo.ver"
+
+
+def test_el_mapa_sale_de_las_rutas_reales(app):
+    """Se arma recorriendo el `url_map`, no una constante. Si mañana se agrega
+    una pantalla con `@requiere_permiso`, aparece sola."""
+    from modules.usuarios import accesos
+
+    m = accesos.mapa(app)
+    porp = {p["permiso"]: p["rutas"] for p in m["permisos"]}
+
+    assert "/mi-cartera" in porp["micartera.ver"]
+    assert "/usuarios" in porp["usuarios.admin"]
+    # Y las que cerramos hoy siguen apareciendo, con su ruta.
+    assert any("/comisiones" in r for r in porp["comisiones.ver"])
+    assert any("/posdat" in r for r in porp["posdat.ver"])
+
+
+def test_el_mapa_denuncia_las_rutas_sin_permiso(app):
+    """La auditoría del 2026-08-03 —31 rutas alcanzables por cualquier usuario
+    logueado— corriendo sola cada vez que se abre la pantalla, en vez de una
+    vez y a mano.
+    """
+    from modules.usuarios import accesos
+
+    m = accesos.mapa(app)
+    assert m["sin_permiso"], "o se arreglaron todas, o el detector dejó de mirar"
+    # Estáticos y healthchecks no cuentan como 'pantalla sin permiso'.
+    for r in m["sin_permiso"]:
+        assert not r.startswith(("/static", "/healthz", "/_healthz", "/favicon"))
+
+
+def test_el_wildcard_abre_todo_y_un_rol_pelado_no():
+    """`puede()` tiene que respetar el `*`, que es como entran Accionista y
+    Administrador — si no, la tabla mostraría en gris justo a los dos que sí
+    pueden."""
+    from modules.usuarios import accesos
+
+    duena = {"wildcard": True, "permisos": set()}
+    operativo = {"wildcard": False, "permisos": {"cheques.ver"}}
+    assert accesos.puede(duena, "posdat.ver")
+    assert accesos.puede(operativo, "cheques.ver")
+    assert not accesos.puede(operativo, "posdat.ver")
+
+
+def test_desde_usuarios_se_llega_al_mapa():
+    """Una ruta sin pantalla es una función que no existe. El link va JUNTO al
+    alta, que es donde aparece la pregunta "¿qué le doy con este rol?"."""
+    from pathlib import Path
+
+    tpl = Path("modules/usuarios/templates/usuarios/lista.html").read_text()
+    assert "usuarios.mapa_accesos" in tpl

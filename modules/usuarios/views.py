@@ -16,6 +16,7 @@ from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from parsers import parse_int
 
+from . import accesos as _accesos
 from . import queries
 
 _LOG = logging.getLogger("programa_core.usuarios")
@@ -218,3 +219,31 @@ def toggle_activo(id_usuario: int):
     except Exception as e:
         flash_exc("No pude cambiar estado", e)
     return redirect(url_for("usuarios.lista"))
+
+
+@usuarios_bp.route("/usuarios/accesos")
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def mapa_accesos():
+    """Qué pantalla abre cada rol — ver el docstring de `accesos.py`.
+
+    Va detrás de `usuarios.admin` (Accionista / Administrador): es el mismo
+    permiso que da de alta la gente, y esta pantalla dice exactamente qué le
+    estás dando cuando elegís un rol.
+    """
+    from flask import current_app
+
+    m = _accesos.mapa(current_app)
+    roles = _accesos.roles_con_permisos()
+    # Los roles sin un solo usuario activo van aparte: existen en el catálogo
+    # pero hoy no los usa nadie, y mezclarlos infla la tabla a diez columnas.
+    con_gente = [r for r in roles if r["usuarios"] > 0]
+    vacios = [r for r in roles if r["usuarios"] == 0]
+    return render_template(
+        "usuarios/accesos.html",
+        permisos=m["permisos"],
+        sin_permiso=m["sin_permiso"],
+        roles=con_gente,
+        roles_vacios=vacios,
+        puede=_accesos.puede,
+    )

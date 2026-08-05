@@ -260,6 +260,14 @@ def requiere_permiso(nombre_opcion: str):
                 return render_template("404.html"), 404
             return view(*args, **kwargs)
 
+        # TMT 2026-08-05: el permiso queda ANOTADO en la función envuelta.
+        # Sin esto, saber qué exige cada ruta obliga a leer el código con
+        # expresiones regulares — y una lista de accesos escrita a mano se
+        # desactualiza el día que alguien cambia un decorador. Con el
+        # atributo, /usuarios/accesos recorre el `url_map` real y no puede
+        # mentir. Es sólo metadata: no cambia una sola respuesta.
+        wrapped._permiso = nombre_opcion  # noqa: SLF001
+
         return wrapped
 
     return decorator
