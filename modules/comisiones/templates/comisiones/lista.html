@@ -20,18 +20,20 @@
     <label class="flex flex-col">
       <span class="text-xs text-slate-600">Año</span>
       <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
-             class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
+             class="cm-f border rounded px-2 py-1 font-mono text-sm w-24">
     </label>
     <label class="flex flex-col">
       <span class="text-xs text-slate-600">Mes</span>
-      <select name="mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
+      <select name="mes" class="cm-f border rounded px-2 py-1 text-sm bg-white dark:bg-slate-900 w-32">
         {% set meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'] %}
         {% for m in range(1, 13) %}
           <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ m }} — {{ meses[m-1] }}</option>
         {% endfor %}
       </select>
     </label>
-    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Ver</button>
+    {# `py-1.5` no existe en el build congelado: este botón venía sin padding
+       vertical desde siempre. Va por `.cm-btn`. #}
+    <button class="cm-btn text-sm px-4 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Ver</button>
     <a href="{{ url_for('comisiones.lista', anio=anio, mes=mes, export='csv') }}"
        class="text-sm text-slate-500 hover:underline self-center ml-auto">Exportar CSV</a>
   </form>
@@ -88,12 +90,12 @@
              existe, y el día que entre un vendedor nuevo hay que poder
              nombrarlo—: aparece abierto sólo donde falta el nombre, y si no,
              detrás del lapicito. #}
-          <td class="px-3 py-1.5 whitespace-nowrap">
+          <td class="cm-td px-3 whitespace-nowrap">
             <a href="{{ url_for('comisiones.detalle', codigo=f.codigo, anio=anio, mes=mes) }}"
                class="text-sky-700 hover:underline font-mono text-sm font-semibold"
                title="Ver cobranzas y ventas del vendedor">{{ f.codigo }}</a>
           </td>
-          <td class="px-3 py-1.5 whitespace-nowrap">
+          <td class="cm-td px-3 whitespace-nowrap">
             {% set _nom = (f.nombre or '') | trim %}
             {% set _fila_nom = 'nom-' ~ f.codigo %}
             <form method="post" action="{{ url_for('comisiones.actualizar_nombre', codigo=f.codigo) }}"
@@ -105,7 +107,7 @@
               <input type="text" name="nombre" maxlength="100"
                      value="{{ _nom if _nom|upper != f.codigo|upper else '' }}"
                      placeholder="— sin nombre —"
-                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-sm w-48">
+                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 cm-nom rounded px-2 text-sm">
               <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nombre">✓</button>
             </form>
             {% if _nom and _nom|upper != f.codigo|upper %}
@@ -120,7 +122,7 @@
             </span>
             {% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right">
+          <td class="cm-td px-3 text-right">
             {# Inline edit del % #}
             <form method="post" action="{{ url_for('comisiones.actualizar_pct', codigo=f.codigo) }}"
                   class="inline-flex items-center gap-1 justify-end">
@@ -129,16 +131,16 @@
               <input type="hidden" name="mes" value="{{ mes }}">
               <input type="number" step="0.01" min="0" max="100" name="pct_comision"
                      value="{{ f.pct_comision or 0 }}"
-                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-right text-sm w-16 tabular-nums">
+                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 cm-pct rounded px-2 text-right text-sm tabular-nums">
               <span class="text-slate-400">%</span>
               <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nuevo %">✓</button>
             </form>
           </td>
-          <td class="px-3 py-1.5 text-right tabular-nums text-slate-500"
+          <td class="cm-td px-3 text-right tabular-nums text-slate-500"
               title="Clientes distintos que cobraron este mes (sumando a la comisión)">{{ f.n_clientes or '—' }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
+          <td class="cm-td px-3 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
+          <td class="cm-td px-3 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
+          <td class="cm-td px-3 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
             {{ (f.comision_mes or 0) | num_es(2) }}
           </td>
         </tr>
@@ -163,4 +165,16 @@
     </table>
   </div>
 </div>
+
+{# ⚠ `static/tailwind.css` es un build JIT CONGELADO: `py-1.5`, `py-0.5` y
+   `w-16` NO existen en él y no renderizan — y no avisan. El alto de fila y el
+   ancho de los inputs van acá. #}
+<style>
+  .cm-td{padding-top:5px;padding-bottom:5px}
+  .cm-pct{padding-top:2px;padding-bottom:2px;width:64px}
+  .cm-nom{padding-top:2px;padding-bottom:2px;width:190px}
+  .cm-btn{padding-top:6px;padding-bottom:6px}
+  .cm-f{margin-top:2px}
+</style>
+
 {% endblock %}

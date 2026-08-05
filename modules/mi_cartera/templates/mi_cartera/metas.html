@@ -53,18 +53,17 @@
   <input type="hidden" name="anio" value="{{ anio }}">
   <div class="bg-white border rounded-lg shadow-sm overflow-x-auto">
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-400">
+      <thead class="bg-slate-50 border-b text-left uppercase tracking-wider text-slate-400">
         {# `data-no-sort`: es una grilla de CARGA, no un listado. Ordenar por
            "el mes 04" no significa nada y las flechitas ↕ sobre doce números
            son ruido puro. #}
         <tr>
-          <th class="px-2 py-1.5" data-no-sort>Vend.</th>
+          <th class="mt-th mt-th-l" data-no-sort>Vend.</th>
           {% for m in range(1, 13) %}
-            <th class="px-1 py-1.5 text-right font-normal
-                       {% if m == mes_en_curso %}text-indigo-600 font-semibold{% endif %}"
+            <th class="mt-th{% if m == mes_en_curso %} mt-th-hoy{% endif %}"
                 data-no-sort>{{ '%02d'|format(m) }}</th>
           {% endfor %}
-          <th class="px-2 py-1.5 text-right" data-no-sort>Año</th>
+          <th class="mt-th" data-no-sort>Año</th>
         </tr>
       </thead>
       <tbody class="divide-y">
@@ -73,7 +72,7 @@
         <tr>
           {# Sólo el código: son seis y la dueña los conoce de memoria. El
              nombre completo queda en el title, por si entra alguien nuevo. #}
-          <td class="px-2 py-1 whitespace-nowrap font-mono text-xs font-semibold"
+          <td class="mt-cod"
               title="{{ v.nombre }}">{{ v.codigo }}</td>
           {% set real = [] %}
           {% for m in range(1, 13) %}
@@ -88,7 +87,7 @@
                input — ahí el Decimal imprime "44000.00" y el float "44000.0",
                y lo que la dueña ve en la caja no tiene por qué cambiar. #}
             {% set valf = val|float if val else 0 %}
-            <td class="px-1 py-1">
+            <td class="mt-c">
               <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
                      {# ⚠ El value NO se formatea con `kg_es`: este input se
                         MANDA de vuelta y `guardar_meta` lo pasa tal cual al
@@ -100,21 +99,20 @@
                      value="{{ val|round|int if val and val == val|round else (val if val is not none else '') }}"
                      title="Meta de {{ v.nombre }} para el mes {{ '%02d'|format(m) }}, en kilos"
                      placeholder="kg"
-                     class="border rounded px-1 py-0.5 w-[68px] text-right text-xs tabular-nums
-                            {% if m == mes_en_curso %}bg-indigo-50 border-indigo-300{% endif %}">
+                     class="mt-in{% if m == mes_en_curso %} mt-hoy{% endif %}">
               {# ⭐ Vendido y % en UN SOLO renglón. Con dos, esta celda medía un
                  renglón más que sus hermanas y estiraba la fila entera. Va
                  aunque no haya meta cargada: si no, un mes sin meta parecería
                  un mes sin ventas. #}
-              <div class="text-[10px] leading-none mt-1 text-right whitespace-nowrap tabular-nums">
+              <div class="mt-sub">
                 {% if paso %}
-                  <span class="text-slate-400" title="Kilos realmente facturados">{{ (kg or 0)|num_es(0) }}</span>
+                  <span class="mt-real" title="Kilos realmente facturados">{{ (kg or 0)|num_es(0) }}</span>
                   {% if val %}
                     {% set pct = (kg or 0)|float * 100 / valf %}
                     {# Verde ≥100, ámbar ≥80, rojo debajo. El mes en curso va en
                        gris: su % es parcial y pintarlo de rojo el día 5 es una
                        alarma falsa todos los meses. #}
-                    <span class="ml-1 {% if m == mes_en_curso %}text-slate-400
+                    <span class="mt-pct {% if m == mes_en_curso %}text-slate-400
                                 {%- elif pct >= 100 %}text-emerald-600 font-semibold
                                 {%- elif pct >= 80 %}text-amber-600
                                 {%- else %}text-red-600{% endif %}"
@@ -136,13 +134,13 @@
               {% set _ = meta_corrida.append(cargadas.get((v.codigo, m))|float) %}
             {% endif %}
           {% endfor %}
-          <td class="px-2 py-1 text-right whitespace-nowrap tabular-nums border-l">
-            <div class="text-xs font-semibold">{{ fila|sum|num_es(0) }}</div>
-            <div class="text-[10px] leading-none mt-1">
+          <td class="mt-anio">
+            <div class="mt-anio-t">{{ fila|sum|num_es(0) }}</div>
+            <div class="mt-sub">
               {% if meta_corrida %}
                 {% set pct_anio = real|sum|float * 100 / meta_corrida|sum %}
-                <span class="text-slate-400">{{ real|sum|num_es(0) }}</span>
-                <span class="ml-1 {% if pct_anio >= 100 %}text-emerald-600 font-semibold
+                <span class="mt-real">{{ real|sum|num_es(0) }}</span>
+                <span class="mt-pct {% if pct_anio >= 100 %}text-emerald-600 font-semibold
                             {%- elif pct_anio >= 80 %}text-amber-600{% else %}text-red-600{% endif %}"
                       title="{{ real|sum|kg_es }} kg vendidos sobre los {{ meta_corrida|length }} mes(es) con meta que ya pasaron">
                   {{ pct_anio|num_es(0) }}%
@@ -156,11 +154,38 @@
     </table>
   </div>
   <div class="mt-3 flex items-center gap-3">
-    <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-1.5 rounded text-sm shadow-sm">
+    <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 rounded text-sm shadow-sm mt-btn">
       Guardar metas {{ anio }}
     </button>
-    <span class="text-xs text-slate-400">* mes en curso: el % es parcial</span>
+    <span class="text-xs mt-real">* mes en curso: el % es parcial</span>
   </div>
 </form>
 </div>
+
+{# ⚠ `static/tailwind.css` es un build JIT CONGELADO: las clases que no
+   existían el día del build NO renderizan, y no avisan. `w-[68px]`,
+   `text-[10px]`, `py-1.5`, `w-16` y `border-l` no están — los inputs salían
+   con el ancho por defecto del navegador (~177 px) y la grilla se cortaba en
+   el mes 06. Por eso el tamaño va acá, en CSS propio. #}
+<style>
+  .mt-th{padding:5px 4px;font-size:10px;text-align:right;font-weight:400;white-space:nowrap}
+  .mt-th-l{text-align:left;padding-left:8px}
+  .mt-th-hoy{color:#4338CA;font-weight:600}
+  .mt-cod{padding:3px 8px;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:11px;font-weight:600}
+  .mt-c{padding:3px 2px}
+  .mt-in{border:1px solid var(--tw-border,#CBD5E1);border-radius:4px;padding:2px 4px;
+         width:64px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums;
+         background:transparent}
+  .mt-hoy{background:#EEF2FF;border-color:#A5B4FC}
+  .mt-sub{font-size:9.5px;line-height:1;margin-top:3px;text-align:right;
+          white-space:nowrap;font-variant-numeric:tabular-nums}
+  .mt-real{color:#94A3B8}
+  .mt-pct{margin-left:4px}
+  .mt-anio{padding:3px 8px;text-align:right;white-space:nowrap;
+           font-variant-numeric:tabular-nums;border-left:1px solid #E2E8F0}
+  .mt-anio-t{font-size:11px;font-weight:600}
+  .mt-btn{padding-top:5px;padding-bottom:5px}
+</style>
+
 {% endblock %}

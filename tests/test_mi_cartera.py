@@ -1904,3 +1904,46 @@ def test_el_value_del_input_se_puede_volver_a_guardar(app, fake_db, monkeypatch)
         if valor:
             float(valor)   # revienta si tiene punto de miles o coma decimal
     assert 'value="44000"' in html
+
+def test_las_pantallas_no_usan_clases_que_el_tailwind_congelado_no_tiene():
+    """🚨 `static/tailwind.css` es un build JIT CONGELADO: una clase que no
+    existía el día del build NO renderiza, y no avisa por ningún lado —
+    no hay error, no hay warning, y en el inspector el elemento tiene la clase
+    puesta.
+
+    Mordió el 2026-08-05 rediseñando esta grilla: `w-[68px]`, `text-[10px]`,
+    `py-1.5`, `w-16` y `border-l` no están en el build. Los inputs salieron con
+    el ancho por defecto del navegador (~177 px en vez de 64) y la tabla se
+    cortaba en el mes 06 — exactamente el problema que el rediseño venía a
+    arreglar.
+
+    Este test recorre las dos plantillas y falla si aparece una clase Tailwind
+    con valor arbitrario (`algo-[...]`) o una de las que ya sabemos que
+    faltan. Lo que haya que dimensionar va en el `<style>` propio de la
+    plantilla, que siempre funciona.
+    """
+    import re
+    from pathlib import Path
+
+    # Verificadas contra static/tailwind.css el 2026-08-05.
+    FALTAN = ("py-1.5", "py-0.5", "mt-0.5", "w-16", "border-l", "leading-none")
+    for ruta in ("modules/mi_cartera/templates/mi_cartera/metas.html",
+                 "modules/comisiones/templates/comisiones/lista.html"):
+        txt = Path(ruta).read_text()
+        cuerpo = txt.split("<style>")[0]        # el CSS propio no se revisa
+        arbitrarias = re.findall(r'class="[^"]*?\b[a-z-]+\[[^\]]+\]', cuerpo)
+        assert not arbitrarias, f"{ruta}: clases arbitrarias {arbitrarias}"
+        for clase in FALTAN:
+            assert f" {clase}" not in cuerpo and f'"{clase}' not in cuerpo, \
+                f"{ruta}: «{clase}» no existe en el build congelado de Tailwind"
+
+
+def test_lo_que_dimensiona_la_grilla_esta_en_css_propio():
+    """El corolario del test de arriba: si el ancho del input no está en el
+    `<style>` de la plantilla, está en una clase de Tailwind que puede no
+    existir — y entonces no está en ningún lado."""
+    from pathlib import Path
+
+    css = Path("modules/mi_cartera/templates/mi_cartera/metas.html").read_text()
+    css = css.split("<style>")[1]
+    assert ".mt-in{" in css and "width:" in css.split(".mt-in{")[1].split("}")[0]
