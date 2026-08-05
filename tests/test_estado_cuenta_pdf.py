@@ -473,26 +473,19 @@ def test_el_arreglo_de_impresion_vale_para_TODAS_las_pantallas():
         assert regla in parcial, regla
 
 
-def test_facturas_usa_toda_la_hoja_aunque_pierda_la_alineacion():
-    """Reemplaza a `test_saldo_de_facturas_e_importe_de_cheques_terminan_igual`.
+def test_los_anchos_de_las_dos_tablas_suman_100_sobre_lo_que_SE_IMPRIME():
+    """Lo único que le da ancho a una tabla en el motor de PDF.
 
-    El 04/08 la dueña pidió alinear la columna Saldo de facturas con Importe
-    de cheques, y `c85c731b` lo resolvió con `table-layout: fixed` + anchos por
-    `nth-child` en las DOS tablas. Este test verificaba esa suma.
+    En ese motor el `width:100%` de la tabla no se aplica: lo único que la
+    estira es `table-layout: fixed` con porcentajes que sumen 100. Y tienen
+    que sumar 100 **sobre las columnas que se imprimen**: Tipo (3) y Stat (8)
+    de facturas son `no-print` ⇒ `display:none`, no existen en el papel, así
+    que si se les declara un ancho ese porcentaje se pierde y la tabla sale
+    corta. Cheques nunca tuvo el problema porque imprime sus 8 columnas.
 
-    El 05/08 el pedido cambió, mirando el papel: *"ves que hay un espacio
-    vacío a la derecha de facturas? debería usar todo el ancho de la hoja"* y
-    *"sólo quería que imprima sin ese blanco y ANTES lo hacía bien"*.
-
-    Por qué eran incompatibles: dos de las nueve columnas de facturas (Tipo y
-    Stat) llevan `no-print` ⇒ `display:none`. Con ancho fijo desaparecen del
-    layout pero siguen contando en el reparto, y en el motor del PDF la tabla
-    quedaba en 590 px sobre 790 de hoja — un cuarto de página en blanco.
-    CHEQUES, que no tiene columnas ocultas, ocupaba todo con las mismas reglas.
-
-    Se prioriza usar la hoja entera. El test se DA VUELTA (no se borra): fija
-    la decisión nueva y deja el porqué, para que nadie reponga los anchos
-    creyendo que arregla la alineación.
+    Costó cinco vueltas (dueña: "facturas tiene que ocupar todo
+    horizontalmente"). En el navegador se ve bien igual — por eso el test mira
+    la SUMA en el CSS y no el render.
     """
     import re
     from pathlib import Path
@@ -501,23 +494,28 @@ def test_facturas_usa_toda_la_hoja_aunque_pierda_la_alineacion():
                "_estado_cuenta_impreso.html").read_text().split("@media print", 1)[1]
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
-    assert not re.search(r"\.ec-bloque-facturas table\s*\{[^}]*table-layout", css), (
-        "facturas volvió a ancho fijo: vuelve el cuarto de hoja en blanco"
-    )
-    assert ".ec-bloque-facturas table th:nth-child" not in css, (
-        "volvieron los anchos por nth-child de facturas"
-    )
-    # Cheques conserva el ancho fijo y sus anchos: ahí no hay columnas ocultas
-    # y en el papel ocupa la hoja entera.
-    assert "ec-bloque-cheques table { table-layout: fixed !important; }" in css
-    anchos = {}
+    anchos = {"facturas": {}, "cheques": {}}
     for selectores, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
         m = re.search(r"(?:^|[;\s])width:\s*([\d.]+)\s*%", cuerpo)
         if not m:
             continue
-        for n in re.findall(r"\.ec-bloque-cheques table (?:th|tbody td):nth-child\((\d+)\)",
-                            selectores):
-            anchos[int(n)] = float(m.group(1))
-    assert sum(anchos.values()) == 100, (
-        f"los anchos de cheques ya no suman 100%: {sum(anchos.values())}"
-    )
+        for bloque, n in re.findall(
+                r"\.ec-bloque-(facturas|cheques) table (?:th|tbody td)"
+                r":nth-child\((\d+)\)", selectores):
+            anchos[bloque][int(n)] = float(m.group(1))
+
+    for bloque in ("facturas", "cheques"):
+        assert f"ec-bloque-{bloque} table {{ table-layout: fixed !important; }}" in css, (
+            f"{bloque} sin table-layout fijo: en el PDF sale corta"
+        )
+        total = sum(anchos[bloque].values())
+        assert total == 100, (
+            f"los anchos de {bloque} suman {total}%, no 100 ⇒ la tabla sale "
+            f"corta en el PDF (en el navegador se ve bien igual)"
+        )
+    # Y a las columnas que no se imprimen no se les declara ancho: si se les
+    # declara, su porcentaje se pierde del reparto.
+    for n in (3, 8):
+        assert n not in anchos["facturas"], (
+            f"la columna {n} de facturas es no-print: no puede llevar ancho"
+        )

@@ -501,6 +501,47 @@
            el papel ocupa la hoja entera. Si anda, no se toca. */
         main .ec-bloque-cheques table { table-layout: fixed !important; }
 
+        /* ── FACTURAS: el MISMO trato que cheques ─────────────────────────
+           TMT 2026-08-05, 5ª vuelta (dueña: "me sigue imprimiendo mal, ¿te
+           das cuenta? facturas tiene que ocupar todo horizontalmente").
+
+           La evidencia estaba a la vista desde el principio y la leí mal tres
+           veces: en el MISMO papel, cheques ocupa el 100% y facturas no. La
+           diferencia NO era el motor de PDF ni el contenedor ni la
+           especificidad: es que en ese motor el `width:100%` de la tabla no se
+           aplica, y lo ÚNICO que le da ancho es `table-layout: fixed` con
+           porcentajes que suman 100. Cheques los tiene sobre sus 8 columnas,
+           todas impresas. Facturas los tenía repartidos entre NUEVE, con dos
+           en `width: 0` — y esas dos son `no-print`, o sea `display:none`: no
+           existen en el papel, así que su 0% no lo compensa nadie y la tabla
+           quedaba corta. Al sacarle el `fixed` (6e048ea9) pasó a encogerse al
+           contenido: 58%, peor todavía.
+
+           Ahora los porcentajes se reparten SÓLO entre las siete columnas que
+           se imprimen (1 Fecha · 2 Número · 4 Importe · 5 Abonado · 6 Saldo ·
+           7 Acum. · 9 Días) y suman 100. A las ocultas (3 Tipo · 8 Stat) no se
+           les declara ancho: las saca `no-print` y no participan del reparto.
+
+           ⚠️ Si alguna vez se agrega o se saca una columna, hay que rehacer la
+           suma: si no da 100, la tabla vuelve a salir corta EN EL PDF —en el
+           navegador se ve bien igual, que es lo que hace difícil de ver este
+           bug. Hay un test que la verifica. */
+        main .ec-bloque-facturas table { table-layout: fixed !important; }
+        main .ec-bloque-facturas table th:nth-child(1),
+        main .ec-bloque-facturas table tbody td:nth-child(1) { width: 12% !important; }
+        main .ec-bloque-facturas table th:nth-child(2),
+        main .ec-bloque-facturas table tbody td:nth-child(2) { width: 12% !important; }
+        main .ec-bloque-facturas table th:nth-child(4),
+        main .ec-bloque-facturas table tbody td:nth-child(4) { width: 15% !important; }
+        main .ec-bloque-facturas table th:nth-child(5),
+        main .ec-bloque-facturas table tbody td:nth-child(5) { width: 14% !important; }
+        main .ec-bloque-facturas table th:nth-child(6),
+        main .ec-bloque-facturas table tbody td:nth-child(6) { width: 15% !important; }
+        main .ec-bloque-facturas table th:nth-child(7),
+        main .ec-bloque-facturas table tbody td:nth-child(7) { width: 16% !important; }
+        main .ec-bloque-facturas table th:nth-child(9),
+        main .ec-bloque-facturas table tbody td:nth-child(9) { width: 16% !important; }
+
         /* Cheques: 10+10+13+10+11+16 = 70% hasta el final de Importe. Banco se
            queda con 24%, de sobra para el nombre más largo que hay en la base
            ("BANECUADOR", 10 letras). */

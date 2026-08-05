@@ -682,31 +682,26 @@ def test_sin_numero_de_cheque_la_celda_queda_vacia():
     assert "mdash" not in frag and "—" not in frag
 
 
-def test_facturas_no_lleva_ancho_fijo_en_el_papel():
-    """El bloque que alineaba Saldo con Importe dejaba un cuarto de hoja en blanco.
+def test_facturas_y_cheques_llenan_la_hoja_con_el_mismo_mecanismo():
+    """Reemplaza a `test_facturas_no_lleva_ancho_fijo_en_el_papel`, que fijaba
+    una conclusión equivocada mía.
 
-    `c85c731b` (04/08) le puso `table-layout: fixed` + anchos por `nth-child` a
-    la tabla de FACTURAS. Dos de sus nueve columnas (Tipo y Stat) son
-    `no-print` ⇒ `display:none`: desaparecen del layout pero siguen contando en
-    el reparto, y en el motor del PDF la tabla terminaba a 590 px sobre 790 de
-    hoja. La de CHEQUES, sin columnas ocultas, ocupaba todo con las mismas
-    reglas — esa era la asimetría.
+    Creí que el ancho fijo era la CAUSA del hueco y lo saqué; la tabla pasó a
+    encogerse al contenido y quedó peor (58% de la hoja contra 75%). La causa
+    real: en el motor de PDF el `width:100%` de la tabla no se aplica y lo
+    único que la estira es `table-layout: fixed` con porcentajes que sumen 100
+    sobre las columnas QUE SE IMPRIMEN. Facturas los repartía entre nueve, con
+    dos en `width: 0` que son `no-print` — ese 0% no lo compensaba nadie.
 
-    Dueña 05/08: "sólo quería que imprima sin ese blanco y ANTES lo hacía
-    bien". Si alguien vuelve a ponerle ancho fijo a facturas, vuelve el hueco.
+    La suma la verifica `test_estado_cuenta_pdf.py`; acá se fija el mecanismo.
     """
     import re
 
     css = re.sub(r"/\*.*?\*/", "", IMPRESO[IMPRESO.index("@media print"):], flags=re.S)
-    assert "ec-bloque-facturas table { table-layout" not in css, (
-        "facturas con table-layout fijo: vuelve el cuarto de hoja en blanco"
-    )
-    assert "ec-bloque-facturas table th:nth-child" not in css, (
-        "los anchos por nth-child de facturas son los que encogían la tabla"
-    )
-    # Cheques sí se queda con ancho fijo: no tiene columnas no-print.
-    assert "ec-bloque-cheques table { table-layout: fixed !important; }" in css
-
+    for bloque in ("facturas", "cheques"):
+        assert f"ec-bloque-{bloque} table {{ table-layout: fixed !important; }}" in css, (
+            f"{bloque} sin ancho fijo: en el PDF sale corta"
+        )
 
 def test_el_estado_de_cuenta_esta_apretado_para_entrar_en_una_hoja():
     """Dueña 05/08: "si entran en una mejor".
