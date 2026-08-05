@@ -143,7 +143,8 @@ def test_alta_el_aviso_no_puede_tumbar_la_cobranza():
 def test_template_tiene_el_tilde_dentro_del_form():
     """El checkbox tiene que viajar en el POST: si quedara en el recuadro de
     errores (que está FUERA del <form>), no se enviaría nunca."""
-    html = open(_TPL_NUEVO).read()
+    with open(_TPL_NUEVO) as _fh:
+        html = _fh.read()
     assert 'name="confirmar_no_duplicado"' in html
     i_form = html.index('<form method="post" id="cheque-form"')
     i_chk = html.index('name="confirmar_no_duplicado"')
