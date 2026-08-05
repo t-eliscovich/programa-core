@@ -451,7 +451,9 @@
              seguidas — ruido. Link de Pasivos sigue yendo a /posdat
              para drill-down. #}
           <tr class="fila-total">
-            <td class="label-cell"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
+            {# Sin `posdat.ver` el drill-down es un 404: queda el rótulo sin
+               link, que sigue diciendo lo mismo. #}
+            <td class="label-cell">{% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a>{% else %}Pasivos{% endif %}</td>
             <td class="num-cell neg">{{ b.totp | num_es(0) }}</td>
           </tr>
 

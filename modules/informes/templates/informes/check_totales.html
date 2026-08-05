@@ -93,10 +93,12 @@
        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">
       Ir a Deudas
     </a>
+    {% if tiene_permiso('posdat.ver') %}
     <a href="{{ url_for('posdat.lista') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">
       Ir a Posdat
     </a>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

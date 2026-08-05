@@ -34,8 +34,13 @@
           <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-medium">Importe</div>
           <div class="text-lg font-mono font-semibold mt-0.5">$ {{ posdat_target.importe | num_es(2) }}</div>
         </div>
+        {# Sólo si puede volver: este bloque se muestra cuando el cheque se
+           emite DESDE un posdatado, así que en la práctica el que llegó acá
+           tiene el permiso — pero el link no puede depender de eso. #}
+        {% if tiene_permiso('posdat.ver') %}
         <a href="{{ url_for('posdat.lista', prov=posdat_target.prov or '') }}"
            class="text-xs text-slate-600 dark:text-slate-400 hover:underline">← Volver a posdat</a>
+        {% endif %}
       </div>
     </div>
   {% endif %}

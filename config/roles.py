@@ -94,7 +94,6 @@ ROLES: list[tuple[str, list[str]]] = [
             "provisiones.ver",
             "proformas.ver",
             "capital.ver",
-            "posdat.ver",
             "ventas.ver",
             "gastos.ver",
             "retiros.ver",
@@ -141,7 +140,6 @@ ROLES: list[tuple[str, list[str]]] = [
             "capital.ver",
             "capital.crear",
             "provisiones.ver",
-            "posdat.ver",
             "activos.ver",
             "activos.crear",
             "activos.amortizar",
@@ -171,10 +169,6 @@ ROLES: list[tuple[str, list[str]]] = [
             "provisiones.ver",
             "provisiones.crear",
             "provisiones.editar",
-            "posdat.ver",
-            "posdat.crear",
-            "posdat.editar",
-            "posdat.anular",
             "deudas.ver",
             "bancos.ver",
         ],
@@ -264,10 +258,6 @@ ROLES: list[tuple[str, list[str]]] = [
             # saldos de un banco (mantenimiento). Antes solo conciliaba.
             "bancos.editar",
             "cartera.ver",
-            "posdat.ver",
-            "posdat.crear",
-            "posdat.editar",
-            "posdat.anular",
             # Clientes / proveedores / cobranza.
             "clientes.ver",
             "clientes.crear",
@@ -305,6 +295,11 @@ ROLES: list[tuple[str, list[str]]] = [
             "activos.amortizar",
             # Iniciales editable para que pueda actualizar saldos bancos/caja.
             "iniciales.editar",
+            # TMT 2026-08-05 (dueña): *"posdatados también sólo andres y
+            # accionistas"*. INT pierde posdat entero — ver, crear, editar y
+            # anular. Se lo pregunté explícitamente porque acá no era sólo
+            # lectura: Alex OPERABA posdatados. De ahora en más los carga y
+            # los anula ella o Andrés (Administrador).
             # TMT 2026-05-21 dueña update: comisiones, ventas-año y gastos
             # clasificados SÍ. Estas vistas viven bajo /informes/* pero ya
             # tienen permisos granulares — Alex las ve sin tener informes.ver.
@@ -367,7 +362,6 @@ ROLES: list[tuple[str, list[str]]] = [
             "provisiones.ver",
             "proformas.ver",
             "capital.ver",
-            "posdat.ver",
             "sri.ver",
         ],
     ),

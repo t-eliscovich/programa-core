@@ -71,12 +71,15 @@
             </tr>
             {% set ns.prev_cat = f.categoria_orden %}
           {% endif %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
-              onclick="window.location='{{ url_for('posdat.lista', prov=f.codigo_prov) }}'">
+          {# La fila entera lleva a /posdat. Sin permiso no se hace clickeable:
+             una fila que parece un botón y devuelve 404 es peor que una fila
+             quieta (dueña 2026-08-05). #}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if tiene_permiso('posdat.ver') %}cursor-pointer{% endif %}"
+              {% if tiene_permiso('posdat.ver') %}onclick="window.location='{{ url_for('posdat.lista', prov=f.codigo_prov) }}'"{% endif %}>
             <td class="px-4 py-1.5 font-mono text-xs" style="white-space: nowrap;">{{ f.codigo_prov }}</td>
             <td class="px-4 py-1.5">
-              <a href="{{ url_for('posdat.lista', prov=f.codigo_prov) }}"
-                 class="hover:text-sky-600 hover:underline">{{ f.nombre }}</a>
+              {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista', prov=f.codigo_prov) }}"
+                 class="hover:text-sky-600 hover:underline">{{ f.nombre }}</a>{% else %}{{ f.nombre }}{% endif %}
             </td>
             <td class="px-2 py-1.5 text-center font-mono text-xs text-slate-500">{{ f.tipo or '' }}</td>
             <td class="px-4 py-1.5 text-right text-mono">{{ f.saldo_total | money_es }}</td>

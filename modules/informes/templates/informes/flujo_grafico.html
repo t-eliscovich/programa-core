@@ -463,7 +463,7 @@
           <span class="gf-sub">
             Pasivos con <code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=9</code>
             — proyecciones internas (no son deudas a proveedor). Editables desde
-            <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
+            {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.
             <strong id="gf-total">$ 0</strong>
           </span>
         </div>
@@ -720,7 +720,7 @@
           <span class="gf-sub">
             Deudas a proveedor (<code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=0</code>)
             que el flujo va restando a su vencimiento — de acá sale cada bajada del gráfico. Editables desde
-            <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
+            {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.
             <strong>$ {{ _total_pd0 | num_es(0) }}</strong>
           </span>
         </div>

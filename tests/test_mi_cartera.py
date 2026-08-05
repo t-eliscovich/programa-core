@@ -2104,3 +2104,66 @@ def test_la_ruta_de_salida_no_esta_bloqueada_por_el_allowlist():
     from scope_vendedor import PREFIJOS_INFRA
 
     assert "/logout" in PREFIJOS_INFRA
+
+
+# ---------------------------------------------------------------------------
+# Posdatados: sólo Accionista y Administrador (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"posdatados también sólo andres y accionistas"*. Andrés tiene el rol
+# Administrador, que es wildcard, así que son los mismos dos roles que
+# Comisiones y Metas.
+
+
+def test_ningun_rol_conserva_permisos_de_posdat():
+    """⚠ No era sólo lectura: INT (Alex, Irene, Maribel) tenía
+    crear/editar/anular, o sea que OPERABA posdatados. Se preguntó antes de
+    sacarlo y la decisión fue cerrarlo del todo.
+    """
+    from config.roles import ROLES
+
+    for nombre, permisos in ROLES:
+        if "*" in permisos:
+            continue
+        sobran = [p for p in permisos if p.startswith("posdat.")]
+        assert not sobran, f"{nombre} todavía tiene {sobran}"
+
+
+def test_hay_migracion_0165_para_la_base():
+    """Igual que la 0164: `config/roles.py` no manda en runtime. Sin la
+    migración el cambio existe sólo en el repo y producción queda idéntica,
+    con los tests en verde."""
+    from pathlib import Path
+
+    mig = Path("migrations/0165_posdat_solo_duenos.py").read_text()
+    assert "DELETE FROM seguridad.permiso" in mig
+    for p in ("posdat.ver", "posdat.crear", "posdat.editar", "posdat.anular"):
+        assert p in mig
+
+
+def test_ningun_link_a_posdat_queda_suelto():
+    """Un link que aparece y da 404 es peor que no tener el link.
+
+    A /posdat se llega desde SIETE pantallas que otros roles siguen viendo:
+    el menú, Balance (el rótulo "Pasivos"), Flujo (dos menciones), Deudas (la
+    fila entera es clickeable, más el nombre del proveedor), Provisiones,
+    check-totales, la vuelta desde Emitir cheque, y "Recientes" del menú
+    —que guarda lo que cada uno abrió ANTES de perder el permiso—.
+
+    Este test recorre las plantillas y exige que toda referencia a una ruta de
+    posdat esté dentro de un `tiene_permiso`. Es la parte que no se ve
+    cambiando permisos: la ruta queda cerrada y las puertas siguen pintadas.
+    """
+    import re
+    from pathlib import Path
+
+    raiz = Path(".")
+    sueltos = []
+    for tpl in list(raiz.glob("templates/**/*.html")) + list(raiz.glob("modules/**/*.html")):
+        if "modules/posdat/" in str(tpl):
+            continue          # adentro del módulo la ruta ya está gateada
+        txt = tpl.read_text()
+        if "url_for('posdat." not in txt:
+            continue
+        if "tiene_permiso('posdat." not in txt:
+            sueltos.append(str(tpl))
+    assert not sueltos, f"linkean a posdat sin gatear: {sueltos}"

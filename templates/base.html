@@ -1046,7 +1046,11 @@
           {% elif r.tipo == 'proveedor' %}
             {% set url = url_for('proveedores.editar', codigo_prov=r.id_ref) %}
           {% elif r.tipo == 'posdat' %}
-            {% set url = url_for('posdat.editar', id_posdat=r.id_ref) %}
+            {# "Recientes" guarda lo que cada uno abrió. Si se le sacó el
+               permiso después, el link queda en su historial y da 404. #}
+            {% if tiene_permiso('posdat.editar') %}
+              {% set url = url_for('posdat.editar', id_posdat=r.id_ref) %}
+            {% endif %}
           {% elif r.tipo == 'retencion' %}
             {% set url = url_for('retenciones.confirmar_anulacion', id_retencion=r.id_ref) %}
           {% endif %}
