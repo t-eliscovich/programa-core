@@ -360,6 +360,61 @@
     {% endif %}
   </div>
 
+  {# ── Para mandar por WhatsApp ─────────────────────────────────────────── #}
+  {# TMT 2026-08-05: "algo para mandar chiquito e informativo a mí, andres y
+     federico por whatsapp". Programa Core NO manda nada: genera el texto y
+     el botón abre TU WhatsApp con el mensaje puesto. Vos apretás enviar. #}
+  {% if wa %}
+  <div class="my-4 border rounded bg-white" style="border-color:rgb(226 232 240);">
+    <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
+         style="background:rgb(248 250 252);color:rgb(100 116 139);">
+      Para mandar por WhatsApp
+    </div>
+    <pre id="wa-txt" style="margin:0;padding:.85rem 1rem;font-size:13px;
+         line-height:1.6;white-space:pre-wrap;word-break:break-word;
+         font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+         color:rgb(30 41 59);">{{ wa }}</pre>
+    <div class="px-3 py-2 flex items-center gap-2 flex-wrap"
+         style="border-top:1px solid rgb(241 245 249);">
+      <button type="button" id="wa-copiar" class="px-3 py-1.5 rounded border text-xs"
+              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">
+        Copiar
+      </button>
+      <a id="wa-abrir" href="#" target="_blank" rel="noopener"
+         class="px-3 py-1.5 rounded border text-xs"
+         style="border-color:rgb(34 197 94);background:rgb(240 253 244);
+                color:rgb(21 128 61);font-weight:600;text-decoration:none;">
+        Abrir WhatsApp
+      </a>
+      <span id="wa-ok" style="font-size:11px;color:rgb(21 128 61);"></span>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var pre = document.getElementById('wa-txt');
+      if (!pre) return;
+      var txt = pre.textContent;
+      document.getElementById('wa-abrir').href =
+        'https://wa.me/?text=' + encodeURIComponent(txt);
+      document.getElementById('wa-copiar').addEventListener('click', function () {
+        var ok = document.getElementById('wa-ok');
+        function listo() { ok.textContent = 'copiado';
+                           setTimeout(function () { ok.textContent = ''; }, 2000); }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(listo, seleccionar);
+        } else { seleccionar(); }
+        // Sin permiso de portapapeles (http, o el navegador lo bloquea) al
+        // menos se deja el texto seleccionado para copiar a mano.
+        function seleccionar() {
+          var r = document.createRange(); r.selectNodeContents(pre);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          ok.textContent = 'seleccionado — Cmd+C';
+        }
+      });
+    })();
+  </script>
+  {% endif %}
+
   {# ── La nota ──────────────────────────────────────────────────────────── #}
   <form method="post" action="{{ url_for('informes.dia_nota') }}"
         class="my-4 border rounded bg-white px-3 py-3" style="border-color:rgb(226 232 240);">

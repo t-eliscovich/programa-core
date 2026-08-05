@@ -909,3 +909,114 @@ def test_la_pantalla_muestra_el_resumen(app, fake_db):
     assert "no hay nada de revaluación adentro" in cuerpo   # tarifa quieta
     assert "3,0437" in cuerpo                               # y el $/kg a la vista
     assert "Resultado del día" in cuerpo
+
+
+# ── El mensaje de WhatsApp ──────────────────────────────────────────────────
+# TMT 2026-08-05: *"me gustaría también mostrar la utilidad hasta hoy, algo
+# para mandar chiquito e informativo a mí, andres y federico por whatsapp"*.
+
+def _res_ok(**over):
+    r = {
+        "ok": True, "dia_parcial": False,
+        "hasta": {"utilidad": 125331.0}, "d_utilidad": 56568.0,
+        "ventas": {"n": 116, "kg": 16138.0, "us": 138369.0},
+        "compras": {"n": 3, "kg": 0.0, "us": 9708.0},
+        "cobrado": 61847.0, "margen_pct": 38.1, "margen": 52698.0,
+        "produccion": {"disponible": True, "sin_fila": False,
+                       "producido": 12837.75, "despachado": 16337.85,
+                       "mes": {"producido": 30822.45, "vendido": 32992.1}},
+    }
+    r.update(over)
+    return r
+
+
+def test_el_titular_del_whatsapp_es_la_utilidad_DEL_MES():
+    """⭐ La `utilidad` del balance YA ES la del mes acumulada (PATR − PATANT +
+    retiros). No hay que calcularla: lo que cambia es el encuadre — el titular
+    es el acumulado y el día pasa a ser su aporte."""
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert "*Utilidad de ago: $ 125.331*" in m
+    assert "Hoy +$ 56.568" in m
+
+
+def test_el_whatsapp_no_lleva_tablas_ni_markdown_que_whatsapp_no_entienda():
+    """WhatsApp sólo entiende *negrita* y _cursiva_. Una tabla con pipes o un
+    encabezado markdown se ven como basura en un teléfono."""
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert "|" not in m
+    assert "#" not in m
+    assert "**" not in m
+    # El límite va como LITERAL a propósito: medir contra `dia.ANCHO_WA` sería
+    # circular —el código define la constante y el test la acepta, así que
+    # subirla haría pasar el test sin arreglar nada. 34 caracteres es lo que
+    # entra sin que WhatsApp corte la línea por su cuenta en un teléfono.
+    for linea in m.split("\n"):
+        assert len(linea) <= 34, f"línea larga para un celular: {linea!r}"
+
+
+def test_el_whatsapp_es_corto():
+    """"Chiquito". Si no entra de un vistazo en el celular, no lo lee nadie."""
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert len(m.split("\n")) <= 12
+
+
+def test_el_whatsapp_no_pone_lineas_de_relleno():
+    """Un dato que no está no lleva línea: un cero o un guión ocupan lo mismo
+    que un número y no dicen nada."""
+    with patch.object(dia, "resumen", return_value=_res_ok(
+            ventas={"n": 0, "kg": 0.0, "us": 0.0}, cobrado=0.0,
+            margen_pct=None,
+            produccion={"disponible": True, "sin_fila": True})), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert "Ventas" not in m
+    assert "Producción" not in m
+    assert "Cobrado" not in m
+    assert "Utilidad de ago" in m       # el titular siempre va
+
+
+def test_el_whatsapp_avisa_si_el_tramo_no_es_de_24h():
+    with patch.object(dia, "resumen", return_value=_res_ok(dia_parcial=True)), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 1, "kg": 1.0, "us": 1.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert "no son 24 h" in m
+
+
+def test_sin_dia_que_explicar_no_hay_mensaje():
+    """Vacío y no un texto con ceros: mandar 'utilidad $0' sería peor que no
+    mandar nada."""
+    with patch.object(dia, "resumen", return_value={"ok": False}):
+        assert dia.mensaje_whatsapp(date(2026, 8, 4)) == ""
+
+
+def test_las_ventas_del_mes_van_del_1_hasta_el_dia():
+    with patch.object(dia, "_rows", return_value=[{"n": 5, "kg": 10, "us": 100}]) as rows:
+        dia.ventas_del_mes(date(2026, 8, 4))
+    sql = rows.call_args[0][0]
+    assert "date_trunc('month'" in sql and "fecha <= %s" in sql
+    assert "NOT IN ('X', 'Y')" in sql
+
+
+def test_la_pantalla_trae_el_bloque_de_whatsapp(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value={"ok": False}), \
+         patch.object(dia, "mensaje_whatsapp",
+                      return_value="*INTELA · mar 4 ago*\n\n*Utilidad de ago: $ 125.331*"), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "Para mandar por WhatsApp" in cuerpo
+    assert "Utilidad de ago" in cuerpo
+    # El botón abre el WhatsApp de quien aprieta. Programa Core no manda nada.
+    assert "https://wa.me/?text=" in cuerpo

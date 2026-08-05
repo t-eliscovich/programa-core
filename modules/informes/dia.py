@@ -929,6 +929,98 @@ def resumen(fecha=None) -> dict:
     return out
 
 
+# ── El mensaje de WhatsApp ──────────────────────────────────────────────────
+# TMT 2026-08-05: *"me gustaría también mostrar la utilidad hasta hoy, algo para
+# mandar chiquito e informativo a mí, andres y federico por whatsapp"*.
+#
+# ⭐ La utilidad del balance YA ES la del mes acumulada — `PATR − PATANT +
+# retiros`, contra el último cierre. O sea que "la utilidad hasta hoy" no hay
+# que calcularla: es el mismo número que la pantalla muestra arriba. Lo que
+# cambia es el encuadre: el titular pasa a ser el ACUMULADO y el día queda
+# como el aporte de la jornada.
+#
+# Se genera el texto y se muestra para copiar. **Programa Core no manda nada**:
+# el mensaje sale del teléfono de quien aprieta, con su WhatsApp y su cuenta.
+
+#: Ancho cómodo de lectura en un teléfono. Más que esto y WhatsApp corta las
+#: líneas por su cuenta, en el lugar equivocado.
+ANCHO_WA = 34
+
+_MESES = ("ene", "feb", "mar", "abr", "may", "jun",
+          "jul", "ago", "sep", "oct", "nov", "dic")
+_DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+
+
+def ventas_del_mes(fecha) -> dict:
+    """Lo facturado en el mes hasta `fecha` inclusive."""
+    r = _rows(
+        """
+        SELECT COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg,
+               COALESCE(SUM(importe), 0) AS us
+          FROM scintela.factura
+         WHERE fecha >= date_trunc('month', %s::date)::date
+           AND fecha <= %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """, (fecha, fecha))
+    d = r[0] if r else {}
+    return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
+
+
+def _n(v, dec: int = 0) -> str:
+    from filters import num_es
+    return num_es(round(_f(v), dec), dec)
+
+
+def mensaje_whatsapp(fecha=None) -> str:
+    """El resumen del día en texto plano, listo para pegar en WhatsApp.
+
+    Reglas de formato que importan y no son obvias:
+    · **Nada de tablas ni markdown raro.** WhatsApp sólo entiende `*negrita*`
+      y `_cursiva_`. Una tabla con pipes se ve como basura en un teléfono.
+    · **Una idea por línea**, ordenadas de más a menos importante: quien lo
+      lee en el celular corta a la tercera.
+    · **Sin líneas de relleno.** Si un dato no está, la línea no va — un cero
+      o un guión ocupan lo mismo que un número y no dicen nada.
+    """
+    fecha = fecha or hoy_ec()
+    r = resumen(fecha)
+    if not r.get("ok"):
+        return ""
+
+    h = r["hasta"]
+    rot = f"{_DIAS[fecha.weekday()]} {fecha.day} {_MESES[fecha.month - 1]}"
+    L = [f"*INTELA · {rot}*", ""]
+
+    # El titular es el ACUMULADO del mes; el día, su aporte.
+    L.append(f"*Utilidad de {_MESES[fecha.month - 1]}: "
+             f"$ {_n(h.get('utilidad'), 0)}*")
+    d = r["d_utilidad"]
+    L.append(f"{'Hoy +' if d >= 0 else 'Hoy −'}$ {_n(abs(d), 0)}")
+    if r.get("dia_parcial"):
+        L.append("_(tramo corto, no son 24 h)_")
+    L.append("")
+
+    p = r.get("produccion") or {}
+    if p.get("disponible") and not p.get("sin_fila"):
+        linea = f"Producción  {_n(p.get('producido'))} kg"
+        mes = p.get("mes") or {}
+        if mes.get("producido"):
+            linea += f" · mes {_n(mes['producido'])}"
+        L.append(linea)
+
+    v, vm = r["ventas"], ventas_del_mes(fecha)
+    if v["n"]:
+        L.append(f"Ventas      $ {_n(v['us'])} · {_n(v['kg'])} kg")
+    if vm["us"]:
+        L.append(f"  mes       $ {_n(vm['us'])} · {_n(vm['kg'])} kg")
+    if r.get("margen_pct") is not None:
+        L.append(f"Margen      {_n(r['margen_pct'], 1)} %")
+    if r.get("cobrado"):
+        L.append(f"Cobrado     $ {_n(r['cobrado'])}")
+
+    return "\n".join(L).rstrip()
+
+
 # ── Lectura: la explicación ─────────────────────────────────────────────────
 
 def capturas(fecha) -> list[dict]:
