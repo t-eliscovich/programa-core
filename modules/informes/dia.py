@@ -983,6 +983,67 @@ def _n(v, dec: int = 0) -> str:
     return num_es(round(_f(v), dec), dec)
 
 
+def motores_del_dia(fecha, n: int = 3) -> list[dict]:
+    """Las `n` reglas que MÁS movieron la utilidad del día, con su aporte.
+
+    TMT 2026-08-05: la nota tiene que contestar *por qué* subió, no sólo
+    *cuánto*. El motor ya lo sabe — `explicar()` agrupa cada movimiento por
+    regla — así que esto es puro recorte y orden, sin una consulta nueva.
+
+    ⭐ **Sólo entran las familias que mueven el resultado.** Un `traspaso`
+    (cobranza, depósito, pago) netea cero *de a pares*, así que mostrar una
+    punta sola —"Cheque recibido +$ 61.847"— haría parecer que la cobranza
+    generó utilidad. No la genera: la cambia de lugar.
+
+    ⭐ **`sin_explicar` SÍ entra.** Si lo que más movió la utilidad es un
+    `#ajuste`, esconderlo sería mentir sobre el porqué justo el día que más
+    importa saberlo. Es la misma regla que en la pantalla, donde el `#ajuste`
+    baja el `explicado_pct` en vez de disimularse.
+    """
+    try:
+        e = explicar(fecha)
+    except Exception as exc:  # noqa: BLE001
+        # La nota es un extra: si la explicación se cae, el resumen igual sale.
+        _LOG.warning("dia: no pude armar los motores del día (%s)", exc)
+        return []
+    filas = [r for r in (e.get("reglas") or [])
+             if r.get("familia") in ("utilidad", "sin_explicar")
+             and abs(_f(r.get("aporte"))) >= 1]
+    filas.sort(key=lambda r: abs(_f(r.get("aporte"))), reverse=True)
+    return filas[:max(0, n)]
+
+
+def _lineas_motores(motores: list[dict]) -> list[str]:
+    """Las filas del bloque *Lo movió hoy*, de ANCHO_WA exacto.
+
+    Dos detalles que sólo se ven en un teléfono:
+    · **Los importes se alinean entre sí**, no cada uno contra el borde. El
+      ancho del número se calcula sobre el bloque entero, así `$ 41.200` y
+      `$  3.532` quedan en columna y se comparan de un vistazo. Alinear cada
+      línea por su cuenta deja el `$` bailando.
+    · **El nombre se corta con puntos suspensivos** si no entra: una línea de
+      35 caracteres la parte WhatsApp donde se le antoja y el bloque deja de
+      leerse en columna.
+    """
+    if not motores:
+        return []
+    nums = [_n(abs(_f(m.get("aporte")))) for m in motores]
+    ancho_num = max(len(n) for n in nums)
+    out = []
+    for m, num in zip(motores, nums):  # noqa: B905
+        signo = "+" if _f(m.get("aporte")) >= 0 else "−"
+        monto = f"{signo}$ {num:>{ancho_num}}"
+        sitio = ANCHO_WA - len(monto) - 1
+        if sitio < 1:                  # un importe absurdo: que vaya solo
+            out.append(monto[:ANCHO_WA])
+            continue
+        nombre = m.get("regla") or "—"
+        if len(nombre) > sitio:
+            nombre = nombre[:sitio - 1].rstrip() + "…"
+        out.append(f"{nombre:<{sitio}} {monto}")
+    return out
+
+
 def mensaje_whatsapp(fecha=None) -> str:
     """El resumen del día en texto plano, listo para pegar en WhatsApp.
 
@@ -1011,6 +1072,16 @@ def mensaje_whatsapp(fecha=None) -> str:
     if r.get("dia_parcial"):
         L.append("_(tramo corto, no son 24 h)_")
     L.append("")
+
+    # El porqué va ARRIBA de los kilos: es lo que un accionista pregunta
+    # apenas ve el número, y el que lee en el celular corta a la tercera
+    # línea. Si el día no movió nada explicable, el bloque entero no va —
+    # misma regla que el resto: un título con nada abajo no dice nada.
+    motores = motores_del_dia(fecha)
+    if motores:
+        L.append("*Lo movió hoy*")
+        L.extend(_lineas_motores(motores))
+        L.append("")
 
     p = r.get("produccion") or {}
     # Un 0 acá casi nunca significa "no se produjo": significa que todavía no

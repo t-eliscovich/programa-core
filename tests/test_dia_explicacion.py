@@ -960,13 +960,133 @@ def test_el_whatsapp_no_lleva_tablas_ni_markdown_que_whatsapp_no_entienda():
         assert len(linea) <= 34, f"línea larga para un celular: {linea!r}"
 
 
+def _motores(*filas):
+    """Las reglas que `explicar()` devolvería, para el bloque *Lo movió hoy*."""
+    return [{"regla": r, "familia": f, "aporte": a, "n": 1} for r, f, a in filas]
+
+
+_MOTORES_TIPICOS = _motores(
+    ("Venta facturada", "utilidad", 41200.0),
+    ("Stock", "utilidad", 18900.0),
+    ("Amortización del día", "utilidad", -3532.0),
+)
+
+
 def test_el_whatsapp_es_corto():
-    """"Chiquito". Si no entra de un vistazo en el celular, no lo lee nadie."""
+    """"Chiquito". Si no entra de un vistazo en el celular, no lo lee nadie.
+
+    El tope subió de 12 a 16 el 05/08, cuando la nota pasó a contestar *por
+    qué* subió la utilidad y no sólo *cuánto*: tres líneas de motores más el
+    título y el aire. 16 sigue entrando en una pantalla de teléfono sin
+    scrollear, que es lo que "chiquito" quiere decir.
+    """
     with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia", return_value=_MOTORES_TIPICOS), \
          patch.object(dia, "ventas_del_mes",
                       return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
         m = dia.mensaje_whatsapp(date(2026, 8, 4))
-    assert len(m.split("\n")) <= 12
+    assert len(m.split("\n")) <= 16
+
+
+# ── *Lo movió hoy*: la nota contesta el porqué ──────────────────────────────
+# TMT 2026-08-05: *"quiero un poco mejor"* sobre la nota diaria para Andrés y
+# los accionistas. Lo que faltaba no era otro número: era el porqué del que ya
+# está.
+
+def test_el_whatsapp_dice_QUE_movio_la_utilidad():
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia", return_value=_MOTORES_TIPICOS), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert "*Lo movió hoy*" in m
+    assert "Venta facturada" in m
+    assert "+$ 41.200" in m
+    # El signo menos es el U+2212, no un guión. Y el importe corto va con
+    # relleno adelante: los tres montos quedan en columna, no cada uno pegado
+    # al borde con el `$` bailando.
+    assert "−$  3.532" in m
+    assert "Stock                    +$ 18.900" in m
+
+
+def test_el_porque_va_ARRIBA_de_los_kilos():
+    """El que lee en el celular corta a la tercera línea: primero el porqué."""
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia", return_value=_MOTORES_TIPICOS), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert m.index("*Lo movió hoy*") < m.index("Producción")
+
+
+def test_las_lineas_del_bloque_entran_en_el_celular():
+    """Un nombre de regla largo se corta: 35 caracteres los parte WhatsApp
+    donde quiere y el bloque deja de leerse en columna."""
+    largos = _motores(
+        ("Anticipos cuya mercadería ya entró al stock", "utilidad", 12345.67),
+        ("Cheques emitidos sin debitar del banco", "utilidad", -890.1),
+    )
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia", return_value=largos), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    for linea in m.split("\n"):
+        assert len(linea) <= 34, f"línea larga para un celular: {linea!r}"
+    assert "…" in m                  # se cortó, no se tiró la fila entera
+    assert "$ 12.346" in m           # y el importe llegó entero
+
+
+def test_un_dia_sin_motores_no_deja_un_titulo_colgado():
+    """Misma regla que el resto: si el dato no dice nada, la línea no va."""
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia", return_value=[]), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4))
+    assert "Lo movió hoy" not in m
+    assert "Utilidad de ago" in m
+
+
+def test_los_traspasos_NO_entran_como_motores():
+    """⭐ Un traspaso netea cero DE A PARES (factura −1.000 / cheque +1.000).
+    Mostrar una punta sola —"Cheque recibido +$ 61.847"— haría parecer que la
+    cobranza generó utilidad. No la genera: la cambia de lugar."""
+    reglas = [
+        {"regla": "Cheque recibido", "familia": "traspaso", "aporte": 61847.0},
+        {"regla": "Abono a factura", "familia": "traspaso", "aporte": -61847.0},
+        {"regla": "Venta facturada", "familia": "utilidad", "aporte": 138369.0},
+    ]
+    with patch.object(dia, "explicar", return_value={"reglas": reglas}):
+        out = dia.motores_del_dia(date(2026, 8, 4))
+    assert [r["regla"] for r in out] == ["Venta facturada"]
+
+
+def test_un_ajuste_grande_SI_sale_en_la_nota():
+    """🚨 Si lo que más movió la utilidad es un `#ajuste`, esconderlo sería
+    mentir sobre el porqué justo el día que más importa saberlo."""
+    reglas = [
+        {"regla": "Venta facturada", "familia": "utilidad", "aporte": 1000.0},
+        {"regla": "Sin explicar todavía", "familia": "sin_explicar",
+         "aporte": -40000.0},
+    ]
+    with patch.object(dia, "explicar", return_value={"reglas": reglas}):
+        out = dia.motores_del_dia(date(2026, 8, 4))
+    assert out[0]["regla"] == "Sin explicar todavía"     # ordenado por |aporte|
+
+
+def test_los_motores_van_ordenados_por_tamano_y_son_a_lo_sumo_tres():
+    reglas = [{"regla": f"R{i}", "familia": "utilidad", "aporte": float(i)}
+              for i in range(1, 8)]
+    with patch.object(dia, "explicar", return_value={"reglas": reglas}):
+        out = dia.motores_del_dia(date(2026, 8, 4))
+    assert [r["regla"] for r in out] == ["R7", "R6", "R5"]
+
+
+def test_si_la_explicacion_se_cae_la_nota_igual_sale():
+    """La nota es un extra: no puede tumbar el resumen del día."""
+    with patch.object(dia, "explicar", side_effect=RuntimeError("sin db")):
+        assert dia.motores_del_dia(date(2026, 8, 4)) == []
 
 
 def test_el_whatsapp_no_pone_lineas_de_relleno():
