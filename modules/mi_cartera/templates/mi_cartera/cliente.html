@@ -53,7 +53,6 @@
          `wa_label_cargando`: acá el botón es un cuadradito y, mientras
          genera, el ancho queda clavado — "Generando…" no entra. #}
       {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
-              wa_numero = cliente.telefono | wa_tel,
               wa_nombre = cliente.nombre,
               wa_clase = 'iconbtn wa',
               wa_label = '⤴',

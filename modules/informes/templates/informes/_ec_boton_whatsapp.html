@@ -8,8 +8,6 @@
    Contexto que espera:
      · `pdf_url`   — la ruta del PDF (cada pantalla pasa la suya; las dos
                      devuelven el mismo archivo, cambia sólo quién puede)
-     · `wa_numero` — teléfono ya normalizado con el filtro `wa_tel` ('' si no
-                     hay uno usable)
      · `wa_nombre` — nombre del cliente, para el nombre del archivo
      · `wa_clase`  — clases CSS del botón (el portal y la oficina no comparten
                      hoja de estilos)
@@ -19,31 +17,42 @@
                      del botón queda CLAVADO durante la espera, así que en un
                      botón-ícono este texto tiene que ser corto o se corta
 
+   ⭐ TMT 2026-08-05 (dueña): *"¿podés solucionar que enviar por WhatsApp me
+   deje seleccionar a quién?"* → *"a quien yo quiera de mis contactos"*,
+   *"eso lo elijo en WhatsApp"*.
+
+   El destinatario NO se elige acá. La versión anterior abría directo el chat
+   del cliente (`wa.me/<telefono>`), y eso es exactamente lo que estorbaba: el
+   estado de cuenta muchas veces va al contador del cliente, a un socio o a
+   ella misma. Se evaluó poner un selector propio (los números del cliente, un
+   campo para tipear, un buscador) y lo descartó: el selector bueno ya existe y
+   es el de WhatsApp, que tiene TODOS sus contactos y lo conoce de memoria.
+
+   Así que este botón hace una sola cosa: prepara el PDF y **deja a WhatsApp
+   abierto en la lista de chats**. Elegir es de WhatsApp.
+
    Cómo se comporta, y por qué:
 
    En el CELULAR usa `navigator.share` con el archivo: se abre el menú de
-   compartir del sistema y WhatsApp aparece ahí con el PDF adjunto. Es un
-   toque y el vendedor no sale de la pantalla.
+   compartir del sistema, ella toca WhatsApp y WhatsApp le muestra su lista de
+   contactos para elegir a quién. Un toque y sin salir de la pantalla.
 
-   En la COMPUTADORA baja el PDF y abre WhatsApp al lado para que lo arrastre:
-   la conversación del cliente si tiene teléfono cargado, WhatsApp a secas si
-   no — que además es lo que hace falta cuando el estado de cuenta va para
-   otra persona (el contador del cliente, un socio). No se puede adjuntar un
+   En la COMPUTADORA baja el PDF y abre WhatsApp Web al lado, en la lista de
+   chats, para que elija la conversación y lo arrastre. No se puede adjuntar un
    archivo por link —`wa.me` sólo acepta texto— y fingir que sí sería un botón
    que promete algo que no hace.
 
    El nombre del archivo lo pone el servidor ("Estado de cuenta - CLIENTE.pdf")
-   y acá se respeta: es lo primero que ve el cliente en el chat. #}
+   y acá se respeta: es lo primero que ve quien lo recibe en el chat. #}
 {# Sin motor de PDF en el servidor no se dibuja: un botón que siempre falla
    es peor que no tenerlo. Quien llegue igual por la URL recibe un 503 que
    explica qué falta. #}
 {% if pdf_disponible() %}
 <button type="button" class="{{ wa_clase }}" data-wa-pdf
         data-url="{{ pdf_url }}"
-        data-tel="{{ wa_numero }}"
         data-nombre="{{ wa_nombre }}"
         data-cargando="{{ wa_label_cargando | default('Generando…', true) }}"
-        title="{% if wa_numero %}Genera el estado de cuenta en PDF y lo manda por WhatsApp{% else %}Genera el estado de cuenta en PDF para compartirlo (este cliente no tiene teléfono cargado){% endif %}">
+        title="Genera el estado de cuenta en PDF y abre WhatsApp para que elijas a quién mandárselo">
   <span data-wa-txt>{{ wa_label | default('Enviar por WhatsApp', true) }}</span>
 </button>
 <script>
@@ -85,23 +94,20 @@
     return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   }
 
+  // ⭐ TMT 2026-08-05: la lista de chats, SIEMPRE. Nunca `wa.me/<numero>`:
+  // eso salta directo a una conversación y le saca la elección de las manos.
+  var WHATSAPP = 'https://web.whatsapp.com/';
+
   document.addEventListener('click', async function (ev) {
     var btn = ev.target.closest('[data-wa-pdf]');
     if (!btn) return;
     var txt = btn.querySelector('[data-wa-txt]');
     var original = txt.textContent;
-    var tel = btn.dataset.tel;
     var porMenu = esTelefono() && !!navigator.canShare;
 
     // La pestaña de WhatsApp se abre ACÁ, en el click. Si se abriera después
     // del `await`, Safari la bloquea por popup y el botón baja el PDF sin
     // abrir nada — que es medio botón.
-    //
-    // Se abre SIEMPRE, tenga o no teléfono el cliente. TMT 2026-08-04 (dueña):
-    // *"igual quizás se lo quiero mandar a otra persona"* — al contador del
-    // cliente, a un socio, a ella misma. Si hay número, se abre esa
-    // conversación; si no, WhatsApp a secas y elige el chat. Antes, sin
-    // teléfono cargado no se abría nada y el botón parecía roto.
     var ventana = porMenu ? null : window.open('', '_blank');
 
     // El texto cambia de largo y, sin clavar el ancho, se corre TODA la fila
@@ -110,7 +116,7 @@
     // largo o más corto que el original según la pantalla.
     btn.style.width = btn.getBoundingClientRect().width + 'px';
     btn.disabled = true;
-    txt.textContent = btn.dataset.cargando || 'Generando\u2026';
+    txt.textContent = btn.dataset.cargando || 'Generando…';
     try {
       var resp = await fetch(btn.dataset.url, { credentials: 'same-origin' });
       if (!resp.ok) {
@@ -147,16 +153,15 @@
         }
       }
 
-      // Escritorio: el PDF a la carpeta de descargas y la conversación del
-      // cliente abierta al lado, para arrastrarlo. `wa.me` sólo acepta texto,
-      // así que adjuntarlo por link no se puede — y un botón que dijera que sí
-      // estaría mintiendo.
+      // Escritorio: el PDF a la carpeta de descargas y WhatsApp Web abierto al
+      // lado en la lista de chats, para que elija la conversación y lo
+      // arrastre. `wa.me` sólo acepta texto, así que adjuntarlo por link no se
+      // puede — y un botón que dijera que sí estaría mintiendo.
       descargar(blob, nombre);
-      var destino = tel ? ('https://wa.me/' + tel) : 'https://web.whatsapp.com/';
       if (ventana) {
-        ventana.location = destino;
+        ventana.location = WHATSAPP;
       } else {
-        window.open(destino, '_blank', 'noopener');
+        window.open(WHATSAPP, '_blank', 'noopener');
       }
     } catch (e) {
       if (ventana) ventana.close();

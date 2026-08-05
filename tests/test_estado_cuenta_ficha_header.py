@@ -298,13 +298,16 @@ def test_totalizar_se_distingue_de_imprimir():
     assert "ec-btn-amb" in _ficha()
 
 
-def test_whatsapp_recibe_su_clase_y_su_telefono():
+def test_whatsapp_recibe_su_clase_y_su_pdf_pero_NO_un_telefono():
+    """Dueña 2026-08-05: el destinatario lo elige ella en WhatsApp, así que la
+    ficha ya no le pasa al botón el teléfono del cliente — pasárselo sería
+    volver a elegir por ella."""
     ficha = _ficha()
     i = ficha.index("_ec_boton_whatsapp.html")
     contexto = ficha[ficha.rfind("{% with", 0, i):i]
     assert "wa_clase = 'ec-btn ec-btn-wa'" in contexto
-    assert "telefono | wa_tel" in contexto, "el filtro que normaliza el número"
     assert "estado_cuenta_pdf_cliente" in contexto
+    assert "wa_numero" not in contexto
 
 
 # ─────────────────────────── la parte de "elegante" ───────────────────────────

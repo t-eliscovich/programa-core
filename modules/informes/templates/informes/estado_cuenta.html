@@ -463,7 +463,6 @@
          al lado, pasada por el motor de impresión del navegador. Va LLENO: de
          todo lo que hay en esta barra es lo que más se usa. #}
       {% with pdf_url = url_for('informes.estado_cuenta_pdf_cliente', codigo_cli=data.cliente.codigo_cli),
-              wa_numero = data.cliente.telefono | wa_tel,
               wa_nombre = data.cliente.nombre,
               wa_clase = 'ec-btn ec-btn-wa' %}
         {% include "informes/_ec_boton_whatsapp.html" %}

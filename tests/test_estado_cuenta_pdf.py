@@ -348,7 +348,7 @@ def _boton(app, **ctx):
 
     with app.test_request_context("/"):
         app.jinja_env.globals["pdf_disponible"] = lambda: True
-        args = {"pdf_url": "/x/pdf", "wa_numero": "593989506447",
+        args = {"pdf_url": "/x/pdf",
                 "wa_nombre": "LUIS ENRIQUE", "wa_clase": "btn", **ctx}
         con = ", ".join(f'{k}="{v}"' for k, v in args.items())
         return render_template_string(
@@ -372,7 +372,7 @@ def test_el_boton_decide_por_el_TIPO_DE_APARATO_y_no_por_canShare(app):
     """
     html = _boton(app)
     assert "pointer: coarse" in html, "ya no distingue teléfono de escritorio"
-    assert "wa.me/" in html, "en escritorio tiene que abrir WhatsApp Web"
+    assert "web.whatsapp.com" in html, "en escritorio tiene que abrir WhatsApp Web"
 
 
 def test_la_pestania_de_whatsapp_se_abre_en_el_click_y_no_despues(app):
@@ -384,18 +384,30 @@ def test_la_pestania_de_whatsapp_se_abre_en_el_click_y_no_despues(app):
     assert "window.open('', '_blank')" in antes_del_fetch
 
 
-def test_siempre_abre_whatsapp_aunque_el_cliente_no_tenga_telefono(app):
-    """Dueña 2026-08-04: *"igual quizás se lo quiero mandar a otra persona"*.
+def test_el_destinatario_lo_elige_ella_en_whatsapp_y_no_el_programa(app):
+    """⭐ Dueña 2026-08-05: *"¿podés solucionar que enviar por WhatsApp me deje
+    seleccionar a quién?"* → *"a quien yo quiera de mis contactos"*, *"eso lo
+    elijo en WhatsApp"*.
 
-    Antes, sin teléfono cargado no se abría nada y el botón parecía roto —
-    que es lo que ella vio con LUIS ENRIQUE. Ahora abre siempre: la
-    conversación del cliente si hay número, y WhatsApp a secas si no, para
-    que elija el chat (el contador del cliente, un socio, ella misma).
+    La versión del 04/08 abría `wa.me/<telefono del cliente>`: caía adentro de
+    esa conversación y le sacaba la elección de las manos. Y el estado de
+    cuenta muchas veces NO va al cliente — va al contador del cliente, a un
+    socio, a ella misma.
+
+    Se descartó poner un selector propio (los números del cliente, un campo
+    para tipear, un buscador): el selector bueno ya existe, tiene TODOS sus
+    contactos y es el de WhatsApp. El programa deja WhatsApp abierto en la
+    lista de chats y no elige por ella.
     """
     html = _boton(app)
-    assert "wa.me/" in html
     assert "web.whatsapp.com" in html
-    # La ventana se abre sin condicionarla al teléfono.
+    # ⭐ El candado: NINGÚN link que salte a una conversación concreta. `wa.me`
+    # puede quedar nombrado en los comentarios (explican por qué NO se usa),
+    # así que se busca el link armado, que es lo que rompe la elección.
+    assert "wa.me/' +" not in html
+    assert "wa.me/{{" not in html
+    assert "data-tel" not in html, "el botón ya no necesita el teléfono"
+    # La ventana se abre siempre, sin condicionarla a nada.
     assert "var ventana = porMenu ? null : window.open" in html
 
 
@@ -429,7 +441,7 @@ def test_sin_motor_de_pdf_no_se_dibuja_nada(app):
     with app.test_request_context("/"):
         app.jinja_env.globals["pdf_disponible"] = lambda: False
         html = render_template_string(
-            '{% with pdf_url="/x", wa_numero="", wa_nombre="X", wa_clase="b" %}'
+            '{% with pdf_url="/x", wa_nombre="X", wa_clase="b" %}'
             '{% include "informes/_ec_boton_whatsapp.html" %}{% endwith %}')
     assert "data-wa-pdf" not in html
 
