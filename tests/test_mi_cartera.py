@@ -2218,9 +2218,19 @@ def test_el_mapa_denuncia_las_rutas_sin_permiso(app):
 
     m = accesos.mapa(app)
     assert m["sin_permiso"], "o se arreglaron todas, o el detector dejó de mirar"
-    # Estáticos y healthchecks no cuentan como 'pantalla sin permiso'.
+
+    # ⭐ Y NO acusa a lo que a propósito no pide permiso. Un aviso rojo con
+    # `/login` y `/logout` adentro enseña a ignorar el aviso rojo — mismo
+    # criterio que el ⚠ que se sacó del panel de coherencia el 30/07.
+    # La lista se REUSA de scope_vendedor: dos listas para la misma idea se
+    # despegan a la primera que alguien edite.
+    from scope_vendedor import PREFIJOS_INFRA
+
     for r in m["sin_permiso"]:
-        assert not r.startswith(("/static", "/healthz", "/_healthz", "/favicon"))
+        assert not r.startswith(PREFIJOS_INFRA), f"{r} no pide permiso a propósito"
+    # Pero las pantallas de verdad sin gate SÍ se denuncian.
+    assert any(r.startswith("/operaciones") or r.startswith("/tablero")
+               for r in m["sin_permiso"])
 
 
 def test_el_wildcard_abre_todo_y_un_rol_pelado_no():

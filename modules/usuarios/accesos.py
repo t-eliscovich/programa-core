@@ -26,14 +26,26 @@ from __future__ import annotations
 from collections import defaultdict
 
 import db
+from scope_vendedor import PREFIJOS_INFRA as _INFRA_A_PROPOSITO
 
-# Rutas que NO son pantallas: infraestructura, healthchecks y estáticos. No
-# tiene sentido listarlas como "acceso" de nadie.
-_IGNORAR = ("/static", "/healthz", "/_healthz", "/favicon")
+# Lo que a propósito NO pide permiso: login, logout, cambio de contraseña,
+# estáticos, healthchecks y la salida del "👁 Ver como".
+#
+# ⭐ Se REUSA `scope_vendedor.PREFIJOS_INFRA` en vez de escribir otra lista.
+# Esa constante ya es la definición canónica de "esto lo puede tocar
+# cualquiera a propósito" — es la que deja salir al vendedor del portal. Dos
+# listas para la misma idea se despegan a la primera que alguien edite, y acá
+# despegarse significa que la pantalla acusa a `/logout` de ser un agujero.
+#
+# Que no aparezcan importa: un aviso rojo con cuatro falsos positivos adentro
+# enseña a ignorar el aviso rojo. Mismo criterio que el ⚠ que se sacó del
+# panel de coherencia el 2026-07-30.
+
+
 
 
 def _es_pantalla(regla) -> bool:
-    if any(str(regla.rule).startswith(p) for p in _IGNORAR):
+    if any(str(regla.rule).startswith(p) for p in _INFRA_A_PROPOSITO):
         return False
     # Sólo lo que se puede ABRIR con el navegador.
     return "GET" in (regla.methods or set())
