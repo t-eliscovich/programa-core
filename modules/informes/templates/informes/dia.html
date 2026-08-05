@@ -13,7 +13,7 @@
 
   {{ page_hero(
       'Por qué se movió la utilidad',
-      descripcion='Comparación entre la foto de la mañana y la del cierre, documento por documento.',
+      descripcion='24 horas de fábrica: del cierre de ayer al cierre de hoy, documento por documento.',
       kpi_valor=(('$ ' ~ (e.d_utilidad | num_es(2))) if e.hasta else '—'),
       kpi_extra=('· ' ~ e.fecha.strftime('%d/%m/%Y'))
   ) }}
@@ -35,8 +35,8 @@
       </button>
     </form>
     <span style="color:rgb(100 116 139);">
-      Las capturas automáticas son a las {{ '%02d' | format(hora_manana) }}:00 y a las
-      {{ '%02d' | format(hora_cierre) }}:00 de Ecuador.
+      El día son 24 h: del cierre de ayer al de hoy. Capturas automáticas a las
+      {{ '%02d' | format(hora_manana) }}:00 y {{ '%02d' | format(hora_cierre) }}:00 de Ecuador.
       {% if racha %}<strong style="color:rgb(21 128 61);">{{ racha }} día{{ '' if racha == 1 else 's' }} seguido{{ '' if racha == 1 else 's' }} explicando el 100%.</strong>{% endif %}
     </span>
   </div>
@@ -46,7 +46,7 @@
          style="border-color:rgb(226 232 240);color:rgb(100 116 139);">
       {{ e.motivo }}
       {% if e.desde %}
-        <br>La foto de la mañana ({{ e.desde.hora }}) está tomada: utilidad
+        <br>La última foto ({{ e.desde.hora }}) está tomada: utilidad
         <strong>$ {{ e.desde.utilidad | num_es(2) }}</strong>.
       {% endif %}
     </div>
@@ -61,54 +61,87 @@
   <div class="my-4 border rounded" style="border-color:rgb(203 213 225);background:rgb(248 250 252);">
     <div class="px-4 py-2 text-[11px] uppercase tracking-wider" style="color:rgb(100 116 139);">
       El día en pocas líneas
+      {% if e.dia_parcial %}
+        <span style="color:rgb(180 83 9);text-transform:none;letter-spacing:0;">
+          · tramo corto: falta la foto de ayer, no son 24 h
+        </span>
+      {% endif %}
     </div>
     <div class="px-4 pb-4" style="font-size:15px;line-height:1.75;color:rgb(30 41 59);">
 
+      {# ⭐ TMT 2026-08-05: "¿qué quiere decir que la fábrica no acompañó? se
+         produce 24/7, algo no sabés". La producción NO se deriva del stock —
+         se lee de las órdenes que cerraron (ver dia.produccion_del_dia). #}
+      {% set p = r.produccion %}
+      {% if p and p.disponible and not p.sin_fila %}
+        <strong>Producción.</strong>
+        Se terminaron <strong>{{ p.producido | num_es(0) }} kg</strong>
+        en {{ p.n_ofs }} {{ 'orden' if p.n_ofs == 1 else 'órdenes' }}
+        {%- if p.desperdicio_kg %}, con {{ p.desperdicio_kg | num_es(0) }} kg de
+        desperdicio{% if p.desperdicio_pct %} ({{ p.desperdicio_pct }} %){% endif %}
+        {%- endif %}.
+        {% if p.promedio_dia %}
+          El promedio de los días con producción de este mes es
+          {{ p.promedio_dia | num_es(0) }} kg.
+        {% endif %}
+        Se despacharon <strong>{{ p.despachado | num_es(0) }} kg</strong>{% if p.producido and p.despachado %},
+        o sea que se produjo el
+        <strong>{{ ((100 * p.producido / p.despachado) | round | int) }} %</strong>
+        de lo que salió{% endif %}.
+        {% if p.mes and p.mes.producido %}
+          En lo que va del mes: {{ p.mes.producido | num_es(0) }} kg producidos
+          contra {{ p.mes.vendido | num_es(0) }} despachados
+          {%- if p.mes.vendido %} ({{ ((100 * p.mes.producido / p.mes.vendido) | round | int) }} %){% endif %}.
+        {% endif %}
+        <br><br>
+      {% elif p and p.disponible %}
+        <strong>Producción.</strong> No cerró ninguna orden de fabricación.
+        Los kilos se imputan al día en que la orden <em>cierra</em>, así que un
+        día en cero casi siempre quiere decir eso y no que la planta parara.
+        <br><br>
+      {% endif %}
+
+      <strong>Ventas.</strong>
       {% if r.ventas.n %}
-        Se vendieron <strong>{{ r.ventas.kg | num_es(0) }} kg</strong> en
         {{ r.ventas.n }} factura{{ '' if r.ventas.n == 1 else 's' }} por
-        <strong>$ {{ r.ventas.us | num_es(2) }}</strong>.
+        <strong>$ {{ r.ventas.us | num_es(2) }}</strong>
+        — {{ r.ventas.kg | num_es(0) }} kg
+        {%- if r.precio_kg %} a $ {{ r.precio_kg | num_es(2) }}/kg{% endif %}.
+        {% if r.margen is defined and r.margen_pct %}
+          Esa tela costaba $ {{ r.costo_despachado | num_es(0) }} en stock, así
+          que la venta dejó <strong>$ {{ r.margen | num_es(0) }}</strong>
+          ({{ r.margen_pct }} %).
+        {% endif %}
       {% else %}
         No se facturó nada.
       {% endif %}
-      {% if r.produccion_kg is not none and r.produccion_kg > 0 %}
-        Salieron de producción unos <strong>{{ r.produccion_kg | num_es(0) }} kg</strong>
-        de tela terminada.
-      {% endif %}
-      {% if r.consumo_hilado_kg is not none and r.consumo_hilado_kg > 0 %}
-        Se consumieron unos <strong>{{ r.consumo_hilado_kg | num_es(0) }} kg</strong> de hilado{% if r.compras.kg %},
-        y entraron {{ r.compras.kg | num_es(0) }} kg comprados por
-        $ {{ r.compras.us | num_es(2) }}{% endif %}.
-      {% elif r.compras.n %}
-        Se compraron {{ r.compras.kg | num_es(0) }} kg por $ {{ r.compras.us | num_es(2) }}.
+      {% if r.compras.n %}
+        Se compraron {{ r.compras.kg | num_es(0) }} kg por
+        $ {{ r.compras.us | num_es(2) }}.
       {% endif %}
 
       <br><br>
 
+      <strong>Stock y plata.</strong>
       El stock de fábrica pasó de
       <strong>$ {{ (r.desde.vsto or 0) | num_es(0) }}</strong> a
       <strong>$ {{ (r.hasta.vsto or 0) | num_es(0) }}</strong>
       ({{ '+' if r.d_stock > 0 else '' }}$ {{ r.d_stock | num_es(0) }}).
       {% if r.tarifa_quieta %}
         Todo ese cambio son <strong>kilos</strong>: el costo del hilado no se
-        movió en todo el día (queda en $ {{ r.etapas[0].p1 | num_es(4) }}/kg),
+        movió{% if r.etapas %} (queda en $ {{ r.etapas[0].p1 | num_es(4) }}/kg){% endif %},
         así que no hay nada de revaluación adentro.
       {% elif r.por_tarifa and (r.por_tarifa | abs) > 1 %}
-        De ahí, <strong>$ {{ r.por_kilos | num_es(0) }}</strong> son kilos que
-        entraron o salieron y <strong>$ {{ r.por_tarifa | num_es(0) }}</strong>
-        es <em>revaluación</em>: cambió el costo del hilado y con él el valor de
-        todo el stock, sin que se produjera ni se vendiera nada por eso.
+        De ahí, <strong>$ {{ r.por_kilos | num_es(0) }}</strong> son kilos y
+        <strong>$ {{ r.por_tarifa | num_es(0) }}</strong> es <em>revaluación</em>:
+        cambió el costo del hilado y con él el valor de todo el stock, sin que
+        se produjera ni se vendiera nada por eso.
       {% endif %}
-
-      <br><br>
-
       Se cobró aproximadamente <strong>$ {{ r.cobrado | num_es(2) }}</strong>
       {%- if r.d_deuda and (r.d_deuda | abs) > 1 %}
         y {{ 'se tomó deuda nueva por' if r.d_deuda > 0 else 'se bajó deuda por' }}
         <strong>$ {{ (r.d_deuda | abs) | num_es(2) }}</strong>
       {%- endif %}.
-      Cobrar no genera utilidad — la plata pasa de la cartera al banco — pero
-      es la que paga la fábrica.
 
       <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid rgb(226 232 240);
                   font-size:17px;">
@@ -161,10 +194,15 @@
     {% endif %}
 
     <p class="px-4 py-2" style="font-size:11px;color:rgb(100 116 139);line-height:1.5;">
-      Los kilos producidos y consumidos, y la plata cobrada, son
-      <strong>estimados</strong>: salen de la variación del stock más lo
-      vendido/comprado, así que un ajuste de inventario los corre. Lo vendido,
-      lo comprado y el resultado son exactos.
+      <strong>Los kilos producidos y despachados son medidos</strong>, no
+      estimados: salen de las órdenes de fabricación que cerraron y de los
+      despachos físicos (bodega 53 de Asinfo), con el desperdicio aparte.
+      Ojo con una cosa: los kilos se imputan al día en que la orden
+      <em>cierra</em>, no a los días en que se produjo — una orden que tejió
+      tres días descarga todo en uno. Por eso el diario es grumoso aunque la
+      planta no pare, y al lado va el acumulado del mes, que es donde ese ruido
+      se promedia. Lo cobrado sí es estimado (facturado menos lo que creció la
+      cartera); lo facturado, lo comprado y el resultado son exactos.
     </p>
   </div>
   {% endif %}

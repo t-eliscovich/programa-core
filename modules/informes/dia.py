@@ -787,6 +787,73 @@ def compras_del_dia(fecha) -> dict:
     return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
 
 
+def produccion_del_dia(fecha) -> dict:
+    """Kilos PRODUCIDOS, DESPACHADOS y DESPERDICIADOS ese día.
+
+    ⭐ TMT 2026-08-05: *"se produce 24/7, algo no sabés"*. Tenía razón.
+
+    La primera versión DERIVABA la producción del stock
+    (`Δ kg terminado + kg vendidos`). Está mal por tres motivos, y el error
+    medido fue de 2,4× (5.280 kg derivados contra 12.838 reales el 04/08):
+
+    1. **Hay medida directa**: `cantidad_fabricada` de las órdenes de
+       fabricación que cierran en bodega 53. No hay por qué derivar nada.
+    2. **El saldo de bodega no cuadra** contra producido − despachado: la
+       pantalla `/produccion-terminado-asinfo` tiene una columna
+       *"diferencia de medición"* que en agosto acumulaba +11.539 kg, más de
+       un tercio de la producción del mes. Cualquier derivación arrastra eso.
+    3. **Falta el desperdicio** — ~5 % en terminado. No está ni en el stock ni
+       en las ventas: se evapora entre las dos puntas.
+
+    Así que esto NO calcula nada: lee la fila del día de
+    `terminado_asinfo.resumen()`, que ya modela
+    `INICIAL + PRODUCIDO − VENDIDO = FINAL` con el desperdicio al costado.
+    Duplicar la cuenta habría sido inventar un segundo número que discute con
+    el primero.
+
+    ⚠ Los kg se imputan al día en que la orden **CIERRA**, no a los días en
+    que se produjo. Una orden que tejió tres días descarga todo en uno, así
+    que el diario es grumoso aunque la planta no pare: un día en cero
+    normalmente significa "no cerró ninguna orden", no "no se trabajó". Por
+    eso se devuelve también el acumulado del mes, que es donde el ruido se
+    promedia.
+    """
+    vacio = {"disponible": False}
+    try:
+        from modules.terminado_asinfo import service as _term
+        r = _term.resumen(fecha.year, fecha.month)
+    except Exception as e:  # noqa: BLE001 -- Asinfo caído no tumba la pantalla
+        _LOG.warning("dia: no pude leer la producción (%s)", e)
+        return vacio
+    if not (r or {}).get("disponible"):
+        return vacio
+    dias = ((r.get("dias") or {}).get("filas")) or []
+    clave = fecha.isoformat()
+    hoy = next((f for f in dias if f.get("periodo") == clave), None)
+    mes = (r.get("dias") or {}).get("total") or {}
+    # Promedio de los días que SÍ cerraron órdenes: sin meta contra la cual
+    # medir (la dueña: *"no tenemos meta"*), la referencia es la propia
+    # tendencia. Los días en cero la hundirían sin significar nada.
+    con_prod = [f for f in dias if _f(f.get("producido")) > 0]
+    prom = (round(sum(_f(f["producido"]) for f in con_prod) / len(con_prod), 2)
+            if con_prod else None)
+    if not hoy:
+        return {"disponible": True, "sin_fila": True, "mes": mes,
+                "promedio_dia": prom, "dias_con_produccion": len(con_prod)}
+    return {
+        "disponible": True, "sin_fila": False,
+        "producido": _f(hoy.get("producido")),
+        "despachado": _f(hoy.get("vendido")),
+        "desperdicio_kg": _f(hoy.get("desperdicio_kg")),
+        "desperdicio_pct": hoy.get("desperdicio_pct"),
+        "n_ofs": int(hoy.get("n_ofs") or 0),
+        "inicial": hoy.get("inicial"), "final": hoy.get("final"),
+        "otros": hoy.get("otros"),
+        "mes": mes, "promedio_dia": prom,
+        "dias_con_produccion": len(con_prod),
+    }
+
+
 def _etapa(desde: dict, hasta: dict, et: str) -> dict:
     """Una etapa de stock entre dos capturas, con el valor partido en kilos y
     tarifa. `None` si esa captura no guardó los kilos (capturas viejas, o
@@ -832,19 +899,33 @@ def resumen(fecha=None) -> dict:
     d_deuda = round(_f(h.get("totp")) - _f(d.get("totp")), 2)
     d_util = round(_f(h.get("utilidad")) - _f(d.get("utilidad")), 2)
 
-    term = etapas.get("terminado") or {}
     hil = etapas.get("hilado") or {}
+    prod = produccion_del_dia(fecha)
     out.update({
         "ok": True, "desde": d, "hasta": h,
         "d_utilidad": d_util, "ventas": v, "compras": c,
         "d_stock": d_stock, "por_kilos": por_kilos, "por_tarifa": por_tarifa,
         "d_cartera": d_cartera, "d_deuda": d_deuda,
-        # Las tres derivadas. ESTIMADAS: un ajuste de inventario las corre.
-        "produccion_kg": (round(term["d_kg"] + v["kg"], 2) if term else None),
-        "consumo_hilado_kg": (round(c["kg"] - hil["d_kg"], 2) if hil else None),
+        "produccion": prod,
+        # Lo cobrado sigue siendo derivado (facturado − Δ cartera), pero acá la
+        # identidad es exacta salvo retenciones y NC — se cruzó contra la plata
+        # que entró a bancos+caja+cheques y dio $292 de diferencia sobre
+        # $61.847. La producción, en cambio, ya NO se deriva: ver
+        # `produccion_del_dia`.
         "cobrado": round(v["us"] - d_cartera, 2),
         "tarifa_quieta": abs(_f(hil.get("d_p"))) < 0.00005 if hil else None,
+        # Precio realizado y margen: los dos números con los que se dirige una
+        # fábrica. El costo de lo despachado se valúa a la tarifa de terminado.
+        "precio_kg": (round(v["us"] / v["kg"], 4) if v["kg"] else None),
     })
+    ter = etapas.get("terminado") or {}
+    kg_sal = _f((prod or {}).get("despachado")) or v["kg"]
+    if ter.get("p1") and kg_sal:
+        costo = round(kg_sal * _f(ter["p1"]), 2)
+        out["costo_despachado"] = costo
+        out["margen"] = round(v["us"] - costo, 2)
+        out["margen_pct"] = (round(100.0 * out["margen"] / v["us"], 1)
+                             if v["us"] else None)
     return out
 
 
@@ -860,28 +941,63 @@ def capturas(fecha) -> list[dict]:
         """, (fecha,))
 
 
+def ventana(fecha) -> tuple[dict | None, dict | None]:
+    """Las dos puntas del día: el cierre de AYER y el cierre de HOY.
+
+    ⭐ TMT 2026-08-05, corrigiendo el diseño original: *"se produce 24/7"*.
+    La primera versión comparaba la foto de las 07:00 contra la de las 19:00 —
+    doce horas. Eso sirve para una oficina; para una planta que no para deja
+    afuera el turno noche entero, que es donde cierra buena parte de las
+    órdenes de fabricación. Peor: las ventas y las compras del día SÍ son de
+    24 h, así que la comparación mezclaba dos ventanas distintas y hacía
+    parecer que la fábrica producía la mitad de lo que produce.
+
+    Ahora el día son **24 horas**: la última captura de ayer contra la última
+    de hoy. Si no hay captura de ayer (el primer día, o el server estuvo
+    caído), cae en la primera de hoy y se avisa, porque ese tramo es más corto
+    y los números no son comparables contra los de otros días.
+    """
+    hoy = capturas(fecha)
+    if not hoy:
+        return None, None
+    ayer = _rows(
+        """
+        SELECT *, TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil', 'HH24:MI') AS hora
+          FROM scintela.dia_captura
+         WHERE fecha_ec < %s
+         ORDER BY creado_en DESC
+         LIMIT 1
+        """, (fecha,))
+    if ayer:
+        return ayer[0], hoy[-1]
+    return (hoy[0], hoy[-1]) if len(hoy) > 1 else (None, None)
+
+
 def explicar(fecha=None) -> dict:
     """La explicación del día: Δ utilidad, quién lo movió, y qué falta explicar.
 
-    Compara la PRIMERA captura del día contra la ÚLTIMA. Si sólo hay una, no
-    hay día que explicar todavía (a las 08:00 sólo existe la de la mañana).
+    La ventana son **24 horas** — cierre de ayer contra cierre de hoy. Ver
+    `ventana()` para por qué no son las 07:00→19:00 del diseño original.
     """
     fecha = fecha or hoy_ec()
     caps = capturas(fecha)
     out = {
         "fecha": fecha, "capturas": caps, "ok": False, "motivo": "",
-        "desde": None, "hasta": None, "d_utilidad": 0.0,
+        "desde": None, "hasta": None, "d_utilidad": 0.0, "dia_parcial": False,
         "componentes": [], "movimientos": [], "familias": [],
         "sin_explicar": [], "residuo": 0.0, "explicado_pct": 100.0,
     }
-    if len(caps) < 2:
-        out["motivo"] = ("Todavía no hay con qué comparar: falta la captura de las "
-                         f"{_hora('DIA_HORA_CIERRE', HORA_CIERRE):02d}:00.")
+    desde, hasta = ventana(fecha)
+    if not desde or not hasta:
+        out["motivo"] = ("Todavía no hay con qué comparar: hace falta una captura "
+                         "de ayer o una segunda de hoy.")
         if caps:
             out["desde"] = caps[0]
         return out
 
-    desde, hasta = caps[0], caps[-1]
+    # Si el arranque es del mismo día, el tramo es más corto que 24 h y los
+    # números no se pueden comparar contra los de otros días.
+    out["dia_parcial"] = bool(desde.get("fecha_ec") == hasta.get("fecha_ec"))
     out["desde"], out["hasta"] = desde, hasta
     out["d_utilidad"] = round(_f(hasta.get("utilidad")) - _f(desde.get("utilidad")), 2)
 
@@ -895,12 +1011,14 @@ def explicar(fecha=None) -> dict:
         })
     out["componentes"].sort(key=lambda x: abs(x["aporte"]), reverse=True)
 
-    # Los movimientos son los de TODAS las capturas posteriores a la primera:
-    # los de la primera pertenecen al tramo de la noche anterior.
-    ids = [c["id_captura"] for c in caps[1:]]
+    # Todos los movimientos de la ventana: las capturas POSTERIORES al
+    # arranque y hasta el cierre, inclusive. Cruza la medianoche, así que se
+    # filtra por id_captura y no por fecha_ec.
     movs = _rows(
-        "SELECT * FROM scintela.dia_movimiento WHERE id_captura = ANY(%s) "
-        "ORDER BY ABS(aporte) DESC", (ids,)) if ids else []
+        "SELECT * FROM scintela.dia_movimiento "
+        " WHERE id_captura > %s AND id_captura <= %s "
+        " ORDER BY ABS(aporte) DESC",
+        (desde["id_captura"], hasta["id_captura"]))
     out["movimientos"] = movs
 
     por_fam: dict[str, dict] = {}

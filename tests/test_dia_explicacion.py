@@ -309,21 +309,53 @@ def test_la_hora_de_ecuador_no_es_la_del_server():
 # ── La explicación ──────────────────────────────────────────────────────────
 
 def _caps(u0, u1, **comp):
-    c0 = {"id_captura": 1, "hora": "07:00", "utilidad": u0, "nota": None}
-    c1 = {"id_captura": 2, "hora": "19:00", "utilidad": u1, "nota": None}
+    c0 = {"id_captura": 1, "hora": "19:00", "utilidad": u0, "nota": None,
+          "fecha_ec": date(2026, 8, 3)}
+    c1 = {"id_captura": 2, "hora": "19:00", "utilidad": u1, "nota": None,
+          "fecha_ec": date(2026, 8, 4)}
     for c, _s in dia.COMPONENTES:
         c0[c] = 0.0
         c1[c] = comp.get(c, 0.0)
     return [c0, c1]
 
 
-def test_explicar_sin_segunda_captura_lo_dice_en_castellano():
-    with patch.object(dia, "capturas", return_value=[{"id_captura": 1, "hora": "07:00",
-                                                      "utilidad": 10.0}]):
+def test_explicar_sin_con_que_comparar_lo_dice_en_castellano():
+    """Una sola foto y ninguna de ayer: no hay ventana."""
+    caps = [{"id_captura": 1, "hora": "07:00", "utilidad": 10.0}]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "_rows", return_value=[]):
         e = dia.explicar(date(2026, 8, 4))
     assert e["hasta"] is None
-    assert "19:00" in e["motivo"]
+    assert "ayer" in e["motivo"]
     assert e["desde"]["hora"] == "07:00"
+
+
+def test_la_ventana_es_de_24_horas_contra_el_cierre_de_ayer():
+    """⭐ TMT 2026-08-05: "se produce 24/7". Comparar 07:00→19:00 dejaba fuera
+    el turno noche y hacía parecer que la fábrica producía la mitad."""
+    ayer = {"id_captura": 9, "hora": "19:00", "fecha_ec": date(2026, 8, 3)}
+    hoy = [{"id_captura": 10, "hora": "07:00", "fecha_ec": date(2026, 8, 4)},
+           {"id_captura": 11, "hora": "19:00", "fecha_ec": date(2026, 8, 4)}]
+    with patch.object(dia, "capturas", return_value=hoy), \
+         patch.object(dia, "_rows", return_value=[ayer]):
+        d, h = dia.ventana(date(2026, 8, 4))
+    assert d["id_captura"] == 9      # el cierre de AYER, no la mañana de hoy
+    assert h["id_captura"] == 11
+
+
+def test_sin_foto_de_ayer_el_tramo_queda_marcado_como_parcial():
+    """Sin la punta de ayer el tramo es más corto que un día y no se puede
+    comparar contra otros días. Se avisa en vez de disimularlo."""
+    hoy = [{"id_captura": 1, "hora": "07:00", "fecha_ec": date(2026, 8, 4), "utilidad": 0.0},
+           {"id_captura": 2, "hora": "19:00", "fecha_ec": date(2026, 8, 4), "utilidad": 100.0}]
+    for c, _s in dia.COMPONENTES:
+        hoy[0][c] = 0.0
+        hoy[1][c] = 0.0
+    with patch.object(dia, "capturas", return_value=hoy), \
+         patch.object(dia, "_rows", side_effect=[[], []]):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["dia_parcial"] is True
+    assert e["d_utilidad"] == 100.0
 
 
 def test_explicar_cierra_sin_residuo_y_marca_el_cien_por_ciento():
@@ -337,7 +369,9 @@ def test_explicar_cierra_sin_residuo_y_marca_el_cien_por_ciento():
         {"aporte": 1000.0, "familia": "traspaso", "regla": "Cheque recibido",
          "componente": "cheques"},
     ]
-    with patch.object(dia, "capturas", return_value=_caps(0.0, 1700.0, facturas=1000.0)), \
+    caps = _caps(0.0, 1700.0, facturas=1000.0)
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
          patch.object(dia, "_rows", return_value=movs):
         e = dia.explicar(date(2026, 8, 4))
     assert e["d_utilidad"] == 1700.0
@@ -358,7 +392,9 @@ def test_explicar_baja_el_porcentaje_cuando_hay_algo_sin_explicar():
         {"aporte": 100.0, "familia": "sin_explicar", "regla": "Sin explicar todavía",
          "componente": "vqx", "etiqueta": "Químicos: sin explicar"},
     ]
-    with patch.object(dia, "capturas", return_value=_caps(0.0, 1000.0)), \
+    caps = _caps(0.0, 1000.0)
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
          patch.object(dia, "_rows", return_value=movs):
         e = dia.explicar(date(2026, 8, 4))
     assert e["residuo"] == 0.0          # la cuenta cierra igual...
@@ -370,7 +406,9 @@ def test_explicar_baja_el_porcentaje_cuando_hay_algo_sin_explicar():
 def test_explicar_denuncia_el_descuadre_si_lo_hubiera():
     """Si el Δ de la utilidad no coincide con la suma de los movimientos hay un
     bug. Tiene que salir en la pantalla, no quedar tapado."""
-    with patch.object(dia, "capturas", return_value=_caps(0.0, 5000.0)), \
+    caps = _caps(0.0, 5000.0)
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
          patch.object(dia, "_rows", return_value=[
              {"aporte": 1000.0, "familia": "utilidad", "regla": "Venta facturada",
               "componente": "facturas"}]):
@@ -380,9 +418,9 @@ def test_explicar_denuncia_el_descuadre_si_lo_hubiera():
 
 
 def test_los_componentes_salen_ordenados_por_cuanto_pesaron():
-    with patch.object(dia, "capturas",
-                      return_value=_caps(0.0, 0.0, facturas=100.0, totp=5000.0,
-                                         caja=-20.0)), \
+    caps = _caps(0.0, 0.0, facturas=100.0, totp=5000.0, caja=-20.0)
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
          patch.object(dia, "_rows", return_value=[]):
         e = dia.explicar(date(2026, 8, 4))
     assert [c["col"] for c in e["componentes"]] == ["totp", "facturas", "caja"]
@@ -681,34 +719,76 @@ def _cap(u, **k):
     return d
 
 
-def test_resumen_estima_la_produccion_de_tela():
-    """Lo que el accionista quiere leer: cuánta tela salió.
+def _prod(producido=12837.75, vendido=16337.85, desp=680.0, pct=5.03, ofs=79):
+    return {"disponible": True,
+            "dias": {"filas": [{"periodo": "2026-08-04", "producido": producido,
+                                "vendido": vendido, "desperdicio_kg": desp,
+                                "desperdicio_pct": pct, "n_ofs": ofs,
+                                "inicial": 330616.43, "final": 325233.93,
+                                "otros": -1882.4},
+                               {"periodo": "2026-08-03", "producido": 17984.7,
+                                "vendido": 15894.55, "desperdicio_kg": 1048.42,
+                                "desperdicio_pct": 5.51, "n_ofs": 92,
+                                "inicial": 334518.38, "final": 330616.43,
+                                "otros": -5992.1},
+                               {"periodo": "2026-08-01", "producido": 0.0,
+                                "vendido": 0.0, "desperdicio_kg": 0.0,
+                                "desperdicio_pct": None, "n_ofs": 0,
+                                "inicial": 317784.93, "final": 323891.18,
+                                "otros": 6106.25}],
+                     "total": {"producido": 30822.45, "vendido": 32992.1,
+                               "desperdicio_kg": 1728.42, "n_ofs": 171}}}
 
-    No hay tabla de producción en PC, pero la identidad la da:
-        producción ≈ Δ kg terminado + kg vendidos
-    Si el stock terminado subió 2.000 kg y encima se vendieron 13.000, la
-    fábrica sacó ~15.000 kg.
+
+def test_la_produccion_se_MIDE_no_se_deriva_del_stock():
+    """⭐ TMT 2026-08-05: *"se produce 24/7, algo no sabés"*.
+
+    La versión anterior hacía `Δ kg terminado + kg vendidos` y el 04/08 daba
+    5.280 kg contra 12.838 reales — un error de 2,4×. Ahora sale de las
+    órdenes de fabricación que cerraron, que es donde está medido.
     """
-    caps = [_cap(0.0, terminado_kg=100000.0, terminado_ukg=5.0),
-            _cap(1000.0, terminado_kg=102000.0, terminado_ukg=5.0)]
-    with patch.object(dia, "capturas", return_value=caps), \
-         patch.object(dia, "ventas_del_dia", return_value={"n": 113, "kg": 13000.0, "us": 116230.0}), \
-         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
-        r = dia.resumen(date(2026, 8, 4))
-    assert r["ok"] is True
-    assert r["produccion_kg"] == 15000.0
+    with patch("modules.terminado_asinfo.service.resumen", return_value=_prod()):
+        p = dia.produccion_del_dia(date(2026, 8, 4))
+    assert p["disponible"] is True
+    assert p["producido"] == 12837.75
+    assert p["despachado"] == 16337.85
+    assert p["n_ofs"] == 79
 
 
-def test_resumen_estima_el_consumo_de_hilado():
-    """consumo ≈ kg comprados − Δ kg hilado. Entraron 5.000, el stock subió
-    1.000 → la tejeduría se comió 4.000."""
-    caps = [_cap(0.0, hilado_kg=50000.0, hilado_ukg=3.0),
-            _cap(0.0, hilado_kg=51000.0, hilado_ukg=3.0)]
-    with patch.object(dia, "capturas", return_value=caps), \
-         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
-         patch.object(dia, "compras_del_dia", return_value={"n": 2, "kg": 5000.0, "us": 15000.0}):
-        r = dia.resumen(date(2026, 8, 4))
-    assert r["consumo_hilado_kg"] == 4000.0
+def test_la_produccion_trae_el_desperdicio():
+    """~5% del terminado se evapora entre las dos puntas. Ni el stock ni las
+    ventas lo muestran; si no viene explícito, no existe."""
+    with patch("modules.terminado_asinfo.service.resumen", return_value=_prod()):
+        p = dia.produccion_del_dia(date(2026, 8, 4))
+    assert p["desperdicio_kg"] == 680.0
+    assert p["desperdicio_pct"] == 5.03
+
+
+def test_el_promedio_ignora_los_dias_sin_ordenes_cerradas():
+    """Los kg se imputan al día en que la orden CIERRA. Un día en cero casi
+    siempre significa "no cerró ninguna orden", no "no se trabajó": meterlo en
+    el promedio lo hunde sin significar nada.
+
+    Días con producción: 12.837,75 y 17.984,70 → promedio 15.411,23.
+    """
+    with patch("modules.terminado_asinfo.service.resumen", return_value=_prod()):
+        p = dia.produccion_del_dia(date(2026, 8, 4))
+    assert p["dias_con_produccion"] == 2
+    assert p["promedio_dia"] == pytest.approx(15411.23, abs=0.01)
+
+
+def test_sin_asinfo_la_produccion_no_inventa_un_cero():
+    """Un cero se lee como "no se produjo nada", que es otra cosa que "no sé"."""
+    with patch("modules.terminado_asinfo.service.resumen",
+               side_effect=RuntimeError("Metabase caído")):
+        assert dia.produccion_del_dia(date(2026, 8, 4)) == {"disponible": False}
+
+
+def test_un_dia_sin_ordenes_cerradas_se_distingue_de_uno_sin_datos():
+    with patch("modules.terminado_asinfo.service.resumen", return_value=_prod()):
+        p = dia.produccion_del_dia(date(2026, 8, 2))     # no está en las filas
+    assert p["disponible"] is True and p["sin_fila"] is True
+    assert p["mes"]["producido"] == 30822.45
 
 
 def test_resumen_estima_lo_cobrado():
@@ -716,6 +796,7 @@ def test_resumen_estima_lo_cobrado():
     subió 40.000 → entraron 60.000."""
     caps = [_cap(0.0, facturas=1000000.0), _cap(0.0, facturas=1040000.0)]
     with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
          patch.object(dia, "ventas_del_dia", return_value={"n": 5, "kg": 0.0, "us": 100000.0}), \
          patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
         r = dia.resumen(date(2026, 8, 4))
@@ -734,6 +815,7 @@ def test_resumen_separa_produccion_de_revaluacion():
     caps = [_cap(0.0, hilado_kg=1000.0, hilado_ukg=3.0),
             _cap(0.0, hilado_kg=1200.0, hilado_ukg=3.5)]
     with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
          patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
          patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
         r = dia.resumen(date(2026, 8, 4))
@@ -748,6 +830,7 @@ def test_resumen_avisa_cuando_la_tarifa_no_se_movio():
     caps = [_cap(0.0, hilado_kg=1000.0, hilado_ukg=3.0437),
             _cap(0.0, hilado_kg=1200.0, hilado_ukg=3.0437)]
     with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
          patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
          patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
         r = dia.resumen(date(2026, 8, 4))
@@ -761,14 +844,16 @@ def test_resumen_sin_kilos_guardados_no_inventa():
     'no se produjo nada', que es una afirmación falsa."""
     caps = [_cap(0.0), _cap(500.0)]
     with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
          patch.object(dia, "ventas_del_dia", return_value={"n": 1, "kg": 10.0, "us": 100.0}), \
          patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
         r = dia.resumen(date(2026, 8, 4))
     assert r["ok"] is True
     assert r["etapas"] == []
-    assert r["produccion_kg"] is None
-    assert r["consumo_hilado_kg"] is None
     assert r["tarifa_quieta"] is None
+    # Sin la tarifa del terminado tampoco hay margen: se omite la clave en vez
+    # de publicar un 0, que se leería como "vendimos sin ganar nada".
+    assert "margen" not in r
 
 
 def test_resumen_sin_dos_capturas_no_dice_nada():
@@ -796,7 +881,14 @@ def test_la_pantalla_muestra_el_resumen(app, fake_db):
         "d_cartera": 76523.0, "d_deuda": 43007.0, "cobrado": 39707.0,
         "ventas": {"n": 113, "kg": 13565.0, "us": 116230.0},
         "compras": {"n": 2, "kg": 5000.0, "us": 15000.0},
-        "produccion_kg": 15000.0, "consumo_hilado_kg": 4000.0,
+        "precio_kg": 8.57, "margen": 52698.0, "margen_pct": 38.1,
+        "costo_despachado": 85671.0,
+        "produccion": {"disponible": True, "sin_fila": False,
+                       "producido": 12837.75, "despachado": 16337.85,
+                       "desperdicio_kg": 680.0, "desperdicio_pct": 5.03,
+                       "n_ofs": 79, "promedio_dia": 15411.23,
+                       "dias_con_produccion": 2,
+                       "mes": {"producido": 30822.45, "vendido": 32992.1}},
         "etapas": [{"clave": "hilado", "rotulo": "Hilado", "kg0": 1899100.0,
                     "kg1": 1880000.0, "d_kg": -19100.0, "p0": 3.0437,
                     "p1": 3.0437, "d_p": 0.0, "us0": 5780000.0,
@@ -809,9 +901,11 @@ def test_la_pantalla_muestra_el_resumen(app, fake_db):
         cuerpo = c.get("/informes/dia").data.decode()
     assert "El día en pocas líneas" in cuerpo
     assert "113 facturas" in cuerpo
-    assert "15.000 kg" in cuerpo            # producción estimada
+    assert "12.838 kg" in cuerpo            # producción MEDIDA
+    assert "79 órdenes" in cuerpo
+    assert "680 kg de" in cuerpo            # el desperdicio, explícito
     # Ojo: el texto del template viene cortado en varias líneas, así que la
     # aserción no puede cruzar un salto de línea del fuente.
-    assert "movió en todo el día" in cuerpo         # tarifa quieta
-    assert "3,0437" in cuerpo                       # y el $/kg a la vista
+    assert "no hay nada de revaluación adentro" in cuerpo   # tarifa quieta
+    assert "3,0437" in cuerpo                               # y el $/kg a la vista
     assert "Resultado del día" in cuerpo
