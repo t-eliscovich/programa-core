@@ -601,7 +601,11 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
                "_estado_cuenta_impreso.html").read_text()
     bloque = tpl[tpl.index("ec-bloque-facturas"):tpl.index("</thead>")]
     assert "<colgroup>" in bloque, "sin colgroup el ancho vuelve a depender del CSS"
-    assert 'style="table-layout: fixed; width: 100%;"' in bloque
+    assert 'style="table-layout: fixed; width: 100%; min-width: 100%;"' in bloque, (
+        "sin `min-width: 100%` la tabla se queda en la SUMA de sus columnas "
+        "(el width:100% no se resuelve en el motor de PDF) y el ancho queda "
+        "atado al tamaño de papel con el que se calcularon los pt"
+    )
     anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)pt"', bloque)]
     assert len(anchos) == 7, (
         f"el colgroup tiene {len(anchos)} columnas; en el papel la tabla tiene 7 "
@@ -610,9 +614,10 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     # En PUNTOS, no en porcentaje: un % se resuelve contra el ancho de la tabla,
     # que en el motor de PDF no llega a 100% — medido, 473,2 de 537,7.
     # Con `table-layout: fixed` la tabla crece hasta la suma de sus columnas.
-    ANCHO_UTIL = 537.7   # 28,5 → 566,2 pt, medido en A4 con los márgenes actuales
+    # Los pt fijan la PROPORCIÓN y sirven de piso; el ancho final lo pone el
+    # `min-width: 100%`. No pueden pasarse del útil del papel más angosto que
+    # se use (A4 = 537,7 pt), o desbordan si el min-width no resolviera.
     total = sum(anchos)
-    assert 530 <= total <= ANCHO_UTIL, (
-        f"los <col> suman {total} pt; el ancho útil de la hoja es {ANCHO_UTIL} pt "
-        "(por debajo queda hoja sin usar; por encima desborda)"
-    )
+    assert 520 <= total <= 537.7, f"los <col> suman {total} pt"
+    # Y la proporción tiene que ser la acordada: Días es la más angosta.
+    assert anchos[-1] == min(anchos)

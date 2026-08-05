@@ -58,12 +58,20 @@
 
            64,4 + 64,4 + 91,3 + 91,3 + 91,3 + 91,3 + 43,0 = 537,0 pt
 
-       537,7 pt es el ancho útil medido en la hoja (28,5 → 566,2 en A4 con los
-       márgenes actuales). Se deja 0,7 pt de aire para no desbordar. Si algún
-       día se cambia el tamaño de papel o el margen, hay que rehacer esta suma
-       —y hay un test que la verifica—. #}
+       ⚠️ Los pt son un PISO, no el ancho final: el `min-width: 100%` inline
+       es el que estira la tabla hasta el contenedor. Hace falta porque el
+       `width: 100%` NO se resuelve en este motor —medido: con los pt solos la
+       tabla salía exactamente 537, o sea la suma de las columnas, no el 100%
+       del contenedor—.
+
+       Y los 537 estaban atados al papel equivocado: se midieron sobre un PDF
+       en A4 (ancho útil 537,7) y el servidor genera LETTER, donde el útil es
+       ~554. Por eso quedaba al 96,9 %: 537/554. Con `min-width` el ancho lo
+       pone el contenedor y deja de depender del tamaño de hoja; los pt sólo
+       fijan la PROPORCIÓN entre columnas (12·12·17·17·17·17·8) y sirven de
+       respaldo si el min-width tampoco resolviera. #}
     {% if not interactivo %}
-    <table class="w-full text-sm" style="table-layout: fixed; width: 100%;">
+    <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
       <colgroup>
         <col style="width:64.4pt"><col style="width:64.4pt"><col style="width:91.3pt">
         <col style="width:91.3pt"><col style="width:91.3pt"><col style="width:91.3pt">
