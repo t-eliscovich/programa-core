@@ -780,8 +780,33 @@ def _breaks_cadena(no_banco: int, desde) -> list[dict]:
 
 
 def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
-                    derivado=None):
-    """Arma el stat y las alertas de UN banco. Pura — se testea sin Flask."""
+                    derivado=None, origen=None, columna_running=None):
+    """Arma el stat y las alertas de UN banco. Pura — se testea sin Flask.
+
+    ⭐ TMT 2026-08-05 — `stored` ES EL NÚMERO QUE EL BALANCE PUBLICA, no la
+    columna `saldo`. Durante un día este chequeo recibió `saldo_stored` (la
+    columna running leída con el filtro `ABS(saldo) > 0.5`) y la rotulaba
+    `saldo_usado_por_el_balance`. Dejó de ser cierto el 04/08, cuando
+    `saldo_bancos()` pasó a calcular el saldo como APERTURA + suma firmada:
+    desde entonces la columna es decoración de la pantalla de banco.
+
+    Caso testigo: DEP.PICH. (90) tiene 2 filas — un ND de 455,89 del 23/06 y
+    su reverso NC del 25/06 — cadena PERFECTA y saldo real 0,00. El filtro
+    `ABS > 0.5` saltea la última fila por valer cero y devuelve −455,89, así
+    que el health alertaba **−455,89 de patrimonio corrido que no existía** y
+    mandaba a `/bancos/reencadenar`, que para ese banco es un no-op literal
+    ("filas que cambian: 0"). Un ⚠ diario por algo legítimo entrena a ignorar
+    el panel entero — y encima este mandaba a apretar un botón inútil.
+
+    Ahora:
+      - `stored`           = el saldo que el Balance publica (`b["saldo"]`).
+      - `columna_running`  = la columna `saldo` (decoración) — sólo stat.
+      - la alerta HIGH salta cuando el Balance publica un número que NO se
+        deriva de apertura + movimientos, que es la única forma de que haya
+        plata de verdad corrida. Si el banco cae a la escalera vieja
+        (`origen != 'derivado'`) el que manda es la columna: ahí sí, el
+        drift de la columna ES el drift del Balance.
+    """
     def _gap(r):
         # Criterio FIRMADO (ver `_breaks_cadena`). Sobre el break real del
         # 03/08 da 155.193,23 y no 155.187,31: la diferencia son los 2×2,96
@@ -809,6 +834,16 @@ def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
         "saldo_signed": signed,
         "apertura_implicita": (
             None if derivado is None else round(derivado - signed, 2)),
+        # ⭐ La columna `saldo` de transacciones_bancarias, tal como la lee la
+        # pantalla del banco. Desde el 04/08 el Balance NO la usa. Se publica
+        # como stat —no como alerta— para que se vea que /bancos/<n> puede
+        # estar mostrando otro número, sin prender un ⚠ que nadie va a poder
+        # apagar (planchar la columna es una decisión aparte de la dueña).
+        "saldo_origen": origen,
+        "saldo_columna_running": columna_running,
+        "delta_columna_vs_derivado": (
+            None if (derivado is None or columna_running is None)
+            else round(float(columna_running) - derivado, 2)),
         "n_breaks": len(breaks),
         "gap_total": gap_total,
         "saldos_null": int(n_nulls or 0),
@@ -825,10 +860,22 @@ def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
         } for r in breaks[:15]],
     }
     alerts = []
-    # El invariante DE VERDAD: el running que publica el balance tiene que
+    # El invariante DE VERDAD: el número que el BALANCE publica tiene que
     # valer lo mismo que apertura + suma de los movimientos. Con esto, el
     # 03/08 se cazaba solo en vez de a ojo mirando el listado.
+    #
+    # Si el banco cae a la escalera vieja (sin apertura guardada), el Balance
+    # publica la columna running: ahí el drift de la columna ES plata, y hay
+    # que mirarlo aunque `stored` ya venga de esa misma columna.
     if derivado is not None and abs(stored - derivado) > 1.0:
+        # El consejo importa: re-encadenar sólo arregla algo si la cadena
+        # está partida. Con 0 quiebres el re-encadenado es un no-op y mandar
+        # a apretarlo hace perder una tarde (pasó el 05/08 con DEP.PICH.).
+        _como = ("Re-encadenar en /bancos/reencadenar."
+                 if breaks else
+                 "OJO: la cadena no tiene quiebres, así que re-encadenar no "
+                 "cambia nada — lo que está mal es la APERTURA guardada del "
+                 "banco. Afirmala en /bancos/reencadenar.")
         alerts.append({
             "severity": "high",
             "category": "saldo_no_derivable",
@@ -836,8 +883,7 @@ def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
                 f"{nombre}: el saldo que usa el BALANCE ({stored:,.2f}) no "
                 f"coincide con apertura + movimientos ({derivado:,.2f}) — "
                 f"difieren {stored - derivado:,.2f}. Ese es el patrimonio y "
-                f"la utilidad corridos por esa plata. Re-encadenar en "
-                f"/bancos/reencadenar."
+                f"la utilidad corridos por esa plata. {_como}"
             ),
         })
     if gap_total > 1.0:
@@ -908,7 +954,14 @@ def cadena_saldos():
             stat, al = _evaluar_cadena(
                 no_banco=no_banco,
                 nombre=nombre,
-                stored=float(b.get("saldo_stored") or 0),
+                # ⭐ TMT 2026-08-05 — `b["saldo"]` es lo que el Balance
+                # PUBLICA; `b["saldo_stored"]` es la columna running, que
+                # desde el 04/08 el Balance ya no mira. Pasar la columna acá
+                # hacía que el health denunciara como "patrimonio corrido"
+                # una plata que el Balance nunca vio (DEP.PICH., −455,89).
+                stored=float(b.get("saldo") or 0),
+                columna_running=float(b.get("saldo_stored") or 0),
+                origen=b.get("saldo_origen"),
                 signed=float(b.get("saldo_signed") or 0),
                 derivado=(None if b.get("saldo_derivado") is None
                           else float(b.get("saldo_derivado") or 0)),
@@ -984,8 +1037,8 @@ def _evaluar_pendientes(*, no_banco, nombre, filas, saldo_banco):
                 f"{stat['monto_rotulos']:,.2f} que NO son movimientos — son "
                 f"líneas del RESUMEN contable del propio Excel de pendientes "
                 f"(" + ", ".join(r["rotulo"] for r in rotulos[:4]) + "). "
-                f"Entran al subir con «Hacer prevalecer» un export sin la hoja "
-                f"RESUMEN separada. Borralos con la ✕ en /conciliacion/banco-v2."
+                "Entran al subir con «Hacer prevalecer» un export sin la hoja "
+                "RESUMEN separada. Borralos con la ✕ en /conciliacion/banco-v2."
             ),
         })
     if gigantes:
