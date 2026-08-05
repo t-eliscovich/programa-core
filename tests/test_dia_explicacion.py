@@ -664,3 +664,154 @@ def test_db_una_cartera_grande_entra_en_lotes(db_real):
     assert r["ok"] and r["movimientos"] == 1200
     assert dia._rows("SELECT COUNT(*) AS n FROM scintela.dia_detalle")[0]["n"] == 1200
     assert dia._rows("SELECT COUNT(*) AS n FROM scintela.dia_movimiento")[0]["n"] == 1200
+
+
+# ── El resumen para accionistas ─────────────────────────────────────────────
+# TMT 2026-08-05: *"se produjo tanta tela, eso cambió de valor de x a x. se
+# vendió tanto etc. algo más senior resumido digestible para accionistas"*.
+#
+# El desglose contable contesta "¿de dónde salió cada peso?". Esto contesta
+# "¿qué pasó en la fábrica?", que es otra pregunta y se contesta en KILOS.
+
+def _cap(u, **k):
+    d = {"utilidad": u, "vsto": 0.0, "facturas": 0.0, "totp": 0.0,
+         "hilado_kg": None, "hilado_ukg": None, "tejido_kg": None,
+         "tejido_ukg": None, "terminado_kg": None, "terminado_ukg": None}
+    d.update(k)
+    return d
+
+
+def test_resumen_estima_la_produccion_de_tela():
+    """Lo que el accionista quiere leer: cuánta tela salió.
+
+    No hay tabla de producción en PC, pero la identidad la da:
+        producción ≈ Δ kg terminado + kg vendidos
+    Si el stock terminado subió 2.000 kg y encima se vendieron 13.000, la
+    fábrica sacó ~15.000 kg.
+    """
+    caps = [_cap(0.0, terminado_kg=100000.0, terminado_ukg=5.0),
+            _cap(1000.0, terminado_kg=102000.0, terminado_ukg=5.0)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 113, "kg": 13000.0, "us": 116230.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["ok"] is True
+    assert r["produccion_kg"] == 15000.0
+
+
+def test_resumen_estima_el_consumo_de_hilado():
+    """consumo ≈ kg comprados − Δ kg hilado. Entraron 5.000, el stock subió
+    1.000 → la tejeduría se comió 4.000."""
+    caps = [_cap(0.0, hilado_kg=50000.0, hilado_ukg=3.0),
+            _cap(0.0, hilado_kg=51000.0, hilado_ukg=3.0)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 2, "kg": 5000.0, "us": 15000.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["consumo_hilado_kg"] == 4000.0
+
+
+def test_resumen_estima_lo_cobrado():
+    """cobrado ≈ facturado − Δ cartera. Se facturó 100.000 y la cartera sólo
+    subió 40.000 → entraron 60.000."""
+    caps = [_cap(0.0, facturas=1000000.0), _cap(0.0, facturas=1040000.0)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 5, "kg": 0.0, "us": 100000.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["cobrado"] == 60000.0
+
+
+def test_resumen_separa_produccion_de_revaluacion():
+    """LA distinción que le importa a un accionista: la tela vale más porque
+    se produjo, o porque cambió el costo del hilado.
+
+    1.000 kg a $3 → 1.200 kg a $3,50:
+        por kilos  = 200 × 3,00    = +600
+        por tarifa = 1200 × 0,50   = +600
+    El valor subió 1.200 pero la mitad no la produjo nadie.
+    """
+    caps = [_cap(0.0, hilado_kg=1000.0, hilado_ukg=3.0),
+            _cap(0.0, hilado_kg=1200.0, hilado_ukg=3.5)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["por_kilos"] == 600.0
+    assert r["por_tarifa"] == 600.0
+    assert r["tarifa_quieta"] is False
+
+
+def test_resumen_avisa_cuando_la_tarifa_no_se_movio():
+    """El caso limpio: si el $/kg quedó quieto, TODO el cambio de stock son
+    kilos de verdad. Vale decirlo — es lo que deja leer el número sin asterisco."""
+    caps = [_cap(0.0, hilado_kg=1000.0, hilado_ukg=3.0437),
+            _cap(0.0, hilado_kg=1200.0, hilado_ukg=3.0437)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["tarifa_quieta"] is True
+    assert r["por_tarifa"] == 0.0
+
+
+def test_resumen_sin_kilos_guardados_no_inventa():
+    """Las capturas anteriores a la mig 0162 no tienen los kilos. El resumen
+    tiene que salir sin la parte de producción, no con ceros —un cero dice
+    'no se produjo nada', que es una afirmación falsa."""
+    caps = [_cap(0.0), _cap(500.0)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 1, "kg": 10.0, "us": 100.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["ok"] is True
+    assert r["etapas"] == []
+    assert r["produccion_kg"] is None
+    assert r["consumo_hilado_kg"] is None
+    assert r["tarifa_quieta"] is None
+
+
+def test_resumen_sin_dos_capturas_no_dice_nada():
+    with patch.object(dia, "capturas", return_value=[]):
+        assert dia.resumen(date(2026, 8, 4))["ok"] is False
+
+
+def test_las_ventas_del_dia_excluyen_anuladas():
+    with patch.object(dia, "_rows", return_value=[{"n": 3, "kg": 10, "us": 100}]) as rows:
+        v = dia.ventas_del_dia(date(2026, 8, 4))
+    sql = rows.call_args[0][0]
+    assert "NOT IN ('X', 'Y')" in sql
+    # Por fecha del DOCUMENTO: `fecha_crea` la pisa el sync del dBase.
+    assert "WHERE fecha = %s" in sql and "fecha_crea" not in sql
+    assert v == {"n": 3, "kg": 10.0, "us": 100.0}
+
+
+def test_la_pantalla_muestra_el_resumen(app, fake_db):
+    c = _login(app, fake_db)
+    res = {
+        "fecha": date(2026, 8, 4), "ok": True,
+        "desde": {"vsto": 8538696.0}, "hasta": {"vsto": 8468758.0},
+        "d_utilidad": 23268.0, "d_stock": -69938.0,
+        "por_kilos": -69938.0, "por_tarifa": 0.0, "tarifa_quieta": True,
+        "d_cartera": 76523.0, "d_deuda": 43007.0, "cobrado": 39707.0,
+        "ventas": {"n": 113, "kg": 13565.0, "us": 116230.0},
+        "compras": {"n": 2, "kg": 5000.0, "us": 15000.0},
+        "produccion_kg": 15000.0, "consumo_hilado_kg": 4000.0,
+        "etapas": [{"clave": "hilado", "rotulo": "Hilado", "kg0": 1899100.0,
+                    "kg1": 1880000.0, "d_kg": -19100.0, "p0": 3.0437,
+                    "p1": 3.0437, "d_p": 0.0, "us0": 5780000.0,
+                    "us1": 5721000.0, "d_us": -59000.0,
+                    "por_kilos": -59000.0, "por_tarifa": 0.0}],
+    }
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "El día en pocas líneas" in cuerpo
+    assert "113 facturas" in cuerpo
+    assert "15.000 kg" in cuerpo            # producción estimada
+    # Ojo: el texto del template viene cortado en varias líneas, así que la
+    # aserción no puede cruzar un salto de línea del fuente.
+    assert "movió en todo el día" in cuerpo         # tarifa quieta
+    assert "3,0437" in cuerpo                       # y el $/kg a la vista
+    assert "Resultado del día" in cuerpo

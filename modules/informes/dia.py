@@ -634,6 +634,14 @@ def capturar(momento: str = "manual", bal: dict | None = None) -> dict:
                 "patr_neto": round(_f(comp.get("patr")) - _f(comp.get("uret")), 2)}
         for c, _s in COMPONENTES:
             fila[c] = _f(comp.get(_CLAVE_BALANCE[c]))
+        # Los KILOS por etapa (mig 0162). Van guardados y no calculados al
+        # leer porque NO se pueden reconstruir para atrás: salen de Asinfo en
+        # vivo (saldo de bodega) o del cuadro del dBase del mes corriente.
+        etapas = (bal or {}).get("stock_etapas") or {}
+        for et in ("hilado", "tejido", "terminado"):
+            e = etapas.get(et) or {}
+            fila[f"{et}_kg"] = _f(e.get("kg")) or None
+            fila[f"{et}_ukg"] = _f(e.get("ukg")) or None
 
         nueva = detalle(bal)
         vieja = _foto_guardada()
@@ -725,6 +733,119 @@ def correr_si_toca() -> dict:
         _LOG.warning("dia: correr_si_toca (%s)", e)
         res["motivo"] = str(e)[:150]
     return res
+
+
+# ── El resumen para accionistas ─────────────────────────────────────────────
+# TMT 2026-08-05 (dueña, viendo la primera versión): *"la explicación debería
+# ser más: se produjo tanta tela, eso cambió de valor de x a x. se vendió tanto
+# etc. algo más senior resumido digestible para accionistas"*.
+#
+# El desglose por componente y por documento contesta "¿de dónde salió cada
+# peso?" — la pregunta del que audita. El accionista hace otra: **qué pasó en
+# la fábrica**. Esa se contesta en KILOS y en tres frases, no en once
+# componentes contables.
+#
+# Las tres cifras derivadas de abajo son la parte que hace que el resumen
+# suene a fábrica y no a balance. Cada una sale de una identidad simple, y
+# cada una lleva su supuesto escrito al lado — se marcan como ESTIMADAS en la
+# pantalla porque un ajuste de inventario las corre sin avisar:
+#
+#   producción terminada ≈ Δ kg terminado + kg vendidos
+#   consumo de hilado    ≈ kg comprados  − Δ kg hilado
+#   cobrado              ≈ $ facturado   − Δ cartera de facturas
+
+ETAPAS = (("hilado", "Hilado"), ("tejido", "Tejido crudo"),
+          ("terminado", "Tela terminada"))
+
+
+def ventas_del_dia(fecha) -> dict:
+    """Lo facturado ESE día: {n, kg, us}. Por `fecha` del documento, no por
+    `fecha_crea` (que el sync del dBase pisa). Las anuladas no cuentan, así que
+    un resumen que se vuelve a mirar meses después dice la verdad de hoy."""
+    r = _rows(
+        """
+        SELECT COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg,
+               COALESCE(SUM(importe), 0) AS us
+          FROM scintela.factura
+         WHERE fecha = %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """, (fecha,))
+    d = r[0] if r else {}
+    return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
+
+
+def compras_del_dia(fecha) -> dict:
+    """Lo comprado ESE día: {n, kg, us}. Mismo criterio de fecha."""
+    r = _rows(
+        """
+        SELECT COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg,
+               COALESCE(SUM(importe), 0) AS us
+          FROM scintela.compra
+         WHERE fecha = %s
+        """, (fecha,))
+    d = r[0] if r else {}
+    return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
+
+
+def _etapa(desde: dict, hasta: dict, et: str) -> dict:
+    """Una etapa de stock entre dos capturas, con el valor partido en kilos y
+    tarifa. `None` si esa captura no guardó los kilos (capturas viejas, o
+    Asinfo caído)."""
+    kg0, kg1 = desde.get(f"{et}_kg"), hasta.get(f"{et}_kg")
+    p0, p1 = desde.get(f"{et}_ukg"), hasta.get(f"{et}_ukg")
+    if kg0 is None or kg1 is None or p0 is None or p1 is None:
+        return {}
+    kg0, kg1, p0, p1 = _f(kg0), _f(kg1), _f(p0), _f(p1)
+    return {
+        "kg0": kg0, "kg1": kg1, "d_kg": round(kg1 - kg0, 2),
+        "p0": p0, "p1": p1, "d_p": round(p1 - p0, 4),
+        "us0": round(kg0 * p0, 2), "us1": round(kg1 * p1, 2),
+        "d_us": round(kg1 * p1 - kg0 * p0, 2),
+        "por_kilos": round((kg1 - kg0) * p0, 2),
+        "por_tarifa": round(kg1 * (p1 - p0), 2),
+    }
+
+
+def resumen(fecha=None) -> dict:
+    """El día contado como se lo cuenta a un accionista: qué se produjo, qué se
+    vendió, cuánto cambió de valor la tela y qué quedó de resultado."""
+    fecha = fecha or hoy_ec()
+    caps = capturas(fecha)
+    out = {"fecha": fecha, "ok": False, "etapas": [], "frases": []}
+    if len(caps) < 2:
+        return out
+    d, h = caps[0], caps[-1]
+    v, c = ventas_del_dia(fecha), compras_del_dia(fecha)
+
+    etapas = {}
+    for et, rot in ETAPAS:
+        e = _etapa(d, h, et)
+        if e:
+            e["rotulo"] = rot
+            etapas[et] = e
+            out["etapas"].append(dict(e, clave=et))
+
+    por_kilos = round(sum(e["por_kilos"] for e in etapas.values()), 2)
+    por_tarifa = round(sum(e["por_tarifa"] for e in etapas.values()), 2)
+    d_stock = round(_f(h.get("vsto")) - _f(d.get("vsto")), 2)
+    d_cartera = round(_f(h.get("facturas")) - _f(d.get("facturas")), 2)
+    d_deuda = round(_f(h.get("totp")) - _f(d.get("totp")), 2)
+    d_util = round(_f(h.get("utilidad")) - _f(d.get("utilidad")), 2)
+
+    term = etapas.get("terminado") or {}
+    hil = etapas.get("hilado") or {}
+    out.update({
+        "ok": True, "desde": d, "hasta": h,
+        "d_utilidad": d_util, "ventas": v, "compras": c,
+        "d_stock": d_stock, "por_kilos": por_kilos, "por_tarifa": por_tarifa,
+        "d_cartera": d_cartera, "d_deuda": d_deuda,
+        # Las tres derivadas. ESTIMADAS: un ajuste de inventario las corre.
+        "produccion_kg": (round(term["d_kg"] + v["kg"], 2) if term else None),
+        "consumo_hilado_kg": (round(c["kg"] - hil["d_kg"], 2) if hil else None),
+        "cobrado": round(v["us"] - d_cartera, 2),
+        "tarifa_quieta": abs(_f(hil.get("d_p"))) < 0.00005 if hil else None,
+    })
+    return out
 
 
 # ── Lectura: la explicación ─────────────────────────────────────────────────

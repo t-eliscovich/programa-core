@@ -52,6 +52,123 @@
     </div>
   {% else %}
 
+  {# ── El día en tres líneas ────────────────────────────────────────────── #}
+  {# TMT 2026-08-05 (dueña): "se produjo tanta tela, eso cambió de valor de x a
+     x. se vendió tanto etc. algo más senior resumido digestible para
+     accionistas". Va ARRIBA de todo: el desglose contable es el drill-down,
+     no el titular. #}
+  {% if r.ok %}
+  <div class="my-4 border rounded" style="border-color:rgb(203 213 225);background:rgb(248 250 252);">
+    <div class="px-4 py-2 text-[11px] uppercase tracking-wider" style="color:rgb(100 116 139);">
+      El día en pocas líneas
+    </div>
+    <div class="px-4 pb-4" style="font-size:15px;line-height:1.75;color:rgb(30 41 59);">
+
+      {% if r.ventas.n %}
+        Se vendieron <strong>{{ r.ventas.kg | num_es(0) }} kg</strong> en
+        {{ r.ventas.n }} factura{{ '' if r.ventas.n == 1 else 's' }} por
+        <strong>$ {{ r.ventas.us | num_es(2) }}</strong>.
+      {% else %}
+        No se facturó nada.
+      {% endif %}
+      {% if r.produccion_kg is not none and r.produccion_kg > 0 %}
+        Salieron de producción unos <strong>{{ r.produccion_kg | num_es(0) }} kg</strong>
+        de tela terminada.
+      {% endif %}
+      {% if r.consumo_hilado_kg is not none and r.consumo_hilado_kg > 0 %}
+        Se consumieron unos <strong>{{ r.consumo_hilado_kg | num_es(0) }} kg</strong> de hilado{% if r.compras.kg %},
+        y entraron {{ r.compras.kg | num_es(0) }} kg comprados por
+        $ {{ r.compras.us | num_es(2) }}{% endif %}.
+      {% elif r.compras.n %}
+        Se compraron {{ r.compras.kg | num_es(0) }} kg por $ {{ r.compras.us | num_es(2) }}.
+      {% endif %}
+
+      <br><br>
+
+      El stock de fábrica pasó de
+      <strong>$ {{ (r.desde.vsto or 0) | num_es(0) }}</strong> a
+      <strong>$ {{ (r.hasta.vsto or 0) | num_es(0) }}</strong>
+      ({{ '+' if r.d_stock > 0 else '' }}$ {{ r.d_stock | num_es(0) }}).
+      {% if r.tarifa_quieta %}
+        Todo ese cambio son <strong>kilos</strong>: el costo del hilado no se
+        movió en todo el día (queda en $ {{ r.etapas[0].p1 | num_es(4) }}/kg),
+        así que no hay nada de revaluación adentro.
+      {% elif r.por_tarifa and (r.por_tarifa | abs) > 1 %}
+        De ahí, <strong>$ {{ r.por_kilos | num_es(0) }}</strong> son kilos que
+        entraron o salieron y <strong>$ {{ r.por_tarifa | num_es(0) }}</strong>
+        es <em>revaluación</em>: cambió el costo del hilado y con él el valor de
+        todo el stock, sin que se produjera ni se vendiera nada por eso.
+      {% endif %}
+
+      <br><br>
+
+      Se cobró aproximadamente <strong>$ {{ r.cobrado | num_es(2) }}</strong>
+      {%- if r.d_deuda and (r.d_deuda | abs) > 1 %}
+        y {{ 'se tomó deuda nueva por' if r.d_deuda > 0 else 'se bajó deuda por' }}
+        <strong>$ {{ (r.d_deuda | abs) | num_es(2) }}</strong>
+      {%- endif %}.
+      Cobrar no genera utilidad — la plata pasa de la cartera al banco — pero
+      es la que paga la fábrica.
+
+      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid rgb(226 232 240);
+                  font-size:17px;">
+        <strong>Resultado del día:
+          <span style="color:{% if r.d_utilidad < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
+            {{ '+' if r.d_utilidad >= 0 else '−' }}$ {{ (r.d_utilidad | abs) | num_es(2) }}
+          </span>
+        </strong>
+      </div>
+    </div>
+
+    {% if r.etapas %}
+    <table class="w-full text-sm" style="border-top:1px solid rgb(226 232 240);">
+      <thead class="text-[11px] uppercase tracking-wider" style="color:rgb(148 163 184);">
+        <tr>
+          <th class="px-4 py-2 text-left font-medium">Etapa</th>
+          <th class="px-3 py-2 text-right font-medium">Kilos</th>
+          <th class="px-3 py-2 text-right font-medium">$/kg</th>
+          <th class="px-3 py-2 text-right font-medium">Valor</th>
+          <th class="px-3 py-2 text-right font-medium">Por kilos</th>
+          <th class="px-4 py-2 text-right font-medium">Por tarifa</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in r.etapas %}
+        <tr style="border-top:1px solid rgb(241 245 249);">
+          <td class="px-4 py-2">{{ e.rotulo }}</td>
+          <td class="px-3 py-2 text-right" style="white-space:nowrap;">
+            {{ e.kg0 | num_es(0) }} → <strong>{{ e.kg1 | num_es(0) }}</strong>
+            <span style="color:{% if e.d_kg < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};font-size:12px;">
+              ({{ '+' if e.d_kg > 0 else '' }}{{ e.d_kg | num_es(0) }})</span>
+          </td>
+          <td class="px-3 py-2 text-right" style="white-space:nowrap;">
+            {% if e.d_p %}{{ e.p0 | num_es(4) }} → {{ e.p1 | num_es(4) }}
+            {% else %}{{ e.p1 | num_es(4) }}{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right" style="white-space:nowrap;">
+            {{ e.us0 | num_es(0) }} → <strong>{{ e.us1 | num_es(0) }}</strong>
+          </td>
+          <td class="px-3 py-2 text-right" style="white-space:nowrap;color:rgb(71 85 105);">
+            {{ '+' if e.por_kilos > 0 else '' }}{{ e.por_kilos | num_es(0) }}
+          </td>
+          <td class="px-4 py-2 text-right" style="white-space:nowrap;color:rgb(71 85 105);">
+            {{ '+' if e.por_tarifa > 0 else '' }}{{ e.por_tarifa | num_es(0) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <p class="px-4 py-2" style="font-size:11px;color:rgb(100 116 139);line-height:1.5;">
+      Los kilos producidos y consumidos, y la plata cobrada, son
+      <strong>estimados</strong>: salen de la variación del stock más lo
+      vendido/comprado, así que un ajuste de inventario los corre. Lo vendido,
+      lo comprado y el resultado son exactos.
+    </p>
+  </div>
+  {% endif %}
+
   {# ── El titular ───────────────────────────────────────────────────────── #}
   <div class="my-4 border rounded bg-white px-4 py-4"
        style="border-color:rgb(226 232 240);">
