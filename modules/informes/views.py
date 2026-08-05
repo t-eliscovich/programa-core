@@ -1285,6 +1285,7 @@ def dia():
         tejido=_dia.tejido_del_dia(fecha),
         porque=_dia.porque_subio(_e),
         etiquetas=_dia.ETIQUETAS,
+        MESES_LARGOS=_dia.MESES_LARGOS,
         racha=_dia.racha_limpia(),
         hora_manana=_dia._hora("DIA_HORA_MANANA", _dia.HORA_MANANA),
         hora_cierre=_dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),

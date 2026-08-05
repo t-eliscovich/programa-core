@@ -855,38 +855,43 @@ def produccion_del_dia(fecha) -> dict:
 
 
 def tejido_del_dia(fecha) -> dict:
-    """Kilos de tela CRUDA que cerraron ese día (tejeduría, bodega 52).
+    """Kilos de tela CRUDA que ENTRARON a bodega 52 ese día (tejeduría).
 
     TMT 2026-08-05: *"en producción deberíamos decir cuánto se tejió y cuánto
-    se terminó"*. Son dos etapas distintas de la misma fábrica y hasta ahora
-    la pantalla sólo mostraba la segunda: el hilo se teje (crudo) y recién
+    se terminó"*. Son dos etapas distintas: el hilo se teje (crudo) y recién
     después se tiñe y se termina. Un día puede tejer mucho y terminar poco.
 
-    ⭐ **No se deriva del stock, se MIDE** — misma regla que
-    `produccion_del_dia`: sale de `cantidad_fabricada` de las OFs hoja
-    cerradas en bodega 52, que es la fuente que ya usa
-    `/produccion-tejeduria-asinfo`. Duplicar la cuenta sería inventar un
-    segundo número que discute con el primero.
+    🚨 **La fuente es el INGRESO A BODEGA, no las OFs cerradas.** La primera
+    versión sumaba `cantidad_fabricada` de las OFs hoja cerradas en bodega 52
+    y daba **0 kg** el 05/08 contra los **7.623** que mostraba
+    `/produccion-tejeduria-asinfo` — dos números distintos para la misma
+    pregunta, en dos pantallas de la misma app. Las OFs **subcuentan**: dejan
+    afuera lo que está en máquina sin cerrar. La dueña ya había zanjado esto
+    el 20/07 para el diario de tejeduría: *"tiene que sumar el ingreso a
+    bodega (179.704), no las OFs cerradas (207.623)"*.
 
-    ⚠ Mismo sesgo que terminado: los kg se imputan al día en que la orden
-    **cierra**. Por eso va también el acumulado del mes.
+    Por eso esto llama a la **misma función** que esa pantalla
+    (`asinfo.ingreso_bodega_por_dia(52, …)`) en vez de escribir una consulta
+    propia: si mañana cambia el criterio, cambia en los dos lados a la vez.
     """
     vacio = {"disponible": False}
     try:
+        from datetime import date as _date
+
         from modules.asinfo import service as _asinfo
-        r = _asinfo.produccion_tejeduria_mes(fecha.year, fecha.month)
+        dias = _asinfo.ingreso_bodega_por_dia(
+            52, _date(fecha.year, fecha.month, 1)) or []
     except Exception as e:  # noqa: BLE001 -- Asinfo caído no tumba la pantalla
         _LOG.warning("dia: no pude leer la tejeduría (%s)", e)
         return vacio
-    if not (r or {}).get("disponible"):
+    if not dias:
         return vacio
     clave = fecha.isoformat()
-    deldia = [o for o in (r.get("ofs") or []) if str(o.get("dia") or "") == clave]
+    hoy = next((d for d in dias if str(d.get("dia") or "")[:10] == clave), None)
     return {
         "disponible": True,
-        "kg": round(sum(_f(o.get("kg")) for o in deldia), 2),
-        "n_ofs": len(deldia),
-        "mes_kg": _f(r.get("total_kg")),
+        "kg": _f((hoy or {}).get("kg")),
+        "mes_kg": round(sum(_f(d.get("kg")) for d in dias), 2),
     }
 
 
@@ -997,6 +1002,12 @@ ANCHO_WA = 34
 _MESES = ("ene", "feb", "mar", "abr", "may", "jun",
           "jul", "ago", "sep", "oct", "nov", "dic")
 _DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+
+#: Nombres largos para el titular de la pantalla. `strftime('%B')` sale en
+#: inglés salvo que el server tenga el locale es_* instalado — y no lo tiene.
+MESES_LARGOS = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo",
+                6: "junio", 7: "julio", 8: "agosto", 9: "septiembre",
+                10: "octubre", 11: "noviembre", 12: "diciembre"}
 
 
 def ventas_del_mes(fecha) -> dict:
@@ -1267,6 +1278,7 @@ def explicar(fecha=None) -> dict:
         "desde": None, "hasta": None, "d_utilidad": 0.0, "dia_parcial": False,
         "componentes": [], "movimientos": [], "familias": [],
         "sin_explicar": [], "residuo": 0.0, "explicado_pct": 100.0,
+        "ventana_nula": False,
     }
     desde, hasta = ventana(fecha)
     if not desde or not hasta:
@@ -1279,6 +1291,18 @@ def explicar(fecha=None) -> dict:
     # Si el arranque es del mismo día, el tramo es más corto que 24 h y los
     # números no se pueden comparar contra los de otros días.
     out["dia_parcial"] = bool(desde.get("fecha_ec") == hasta.get("fecha_ec"))
+    # 🚨 VENTANA NULA — las dos fotos son del MISMO minuto.
+    # Pasa todos los días: la captura automática de la mañana y un "Capturar
+    # ahora" caen juntos, o la app levanta y toma dos seguidas. Ahí el Δ de la
+    # utilidad es 0 por construcción, pero las ventas y la producción del día
+    # SÍ tienen números — y la pantalla los mostraba al lado, así que decía
+    # "la utilidad quedó igual" arriba y "la venta dejó $ 49.226" abajo. Las
+    # dos frases no pueden ser ciertas a la vez.
+    # Con esta bandera la pantalla deja de afirmar sobre el día: el titular
+    # pasa al acumulado del mes y lo derivado del Δ (lo cobrado, el porqué) no
+    # se muestra. Lo MEDIDO del día —facturado, kilos, deuda— sigue.
+    out["ventana_nula"] = bool(desde.get("hora") and
+                               desde.get("hora") == hasta.get("hora"))
     out["desde"], out["hasta"] = desde, hasta
     out["d_utilidad"] = round(_f(hasta.get("utilidad")) - _f(desde.get("utilidad")), 2)
 

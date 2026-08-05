@@ -21,13 +21,13 @@
    🚨 Tailwind está CONGELADO (build JIT): una clase nueva NO renderiza y no
    avisa. Todo el estilo vive en este <style>, con prefijo `dia-`. #}
 <style>
-  .dia { max-width:760px; font-variant-numeric:tabular-nums; color:rgb(30 41 59);
+  .dia { max-width:1040px; font-variant-numeric:tabular-nums; color:rgb(15 23 42);
          font-size:13.5px; line-height:1.5; }
   .dia-cap { font-size:10px; letter-spacing:.09em; text-transform:uppercase;
-             color:rgb(148 163 184); font-weight:700; }
+             color:rgb(71 85 105); font-weight:700; }
 
   .dia-barra { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
-               margin:0 0 .8rem; font-size:11.5px; color:rgb(148 163 184); }
+               margin:0 0 .8rem; font-size:11.5px; color:rgb(100 116 139); }
   .dia-barra form { display:flex; align-items:center; gap:.35rem; margin:0; }
   .dia-in { border:1px solid rgb(203 213 225); border-radius:7px;
             padding:.22rem .5rem; font-size:11.5px; background:#fff; }
@@ -36,38 +36,39 @@
              background:#fff; color:rgb(51 65 85); cursor:pointer;
              text-decoration:none; display:inline-block; }
   .dia-btn:hover { background:rgb(248 250 252); }
-  .dia-btn-wa { border-color:rgb(134 239 172); background:rgb(240 253 244);
-                color:rgb(21 128 61); }
+  .dia-btn-wa { border-color:rgb(203 213 225); }
 
   .dia-hero { border:1px solid rgb(226 232 240); border-radius:14px;
-              padding:15px 17px; background:#fff; }
-  .dia-big { font-size:23px; font-weight:700; line-height:1.15; margin:7px 0 3px; }
-  .dia-sub { color:rgb(100 116 139); font-size:13.5px; }
+              padding:13px 16px; background:#fff; }
+  .dia-big { font-size:22px; font-weight:700; line-height:1.15; margin:6px 0 3px;
+             color:rgb(15 23 42); }
+  .dia-sub { color:rgb(51 65 85); font-size:14px; }
   .dia-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px;
-              margin-top:14px; padding-top:13px;
+              margin-top:11px; padding-top:11px;
               border-top:1px solid rgb(238 242 247); }
   .dia-k .l { font-size:9.5px; letter-spacing:.07em; text-transform:uppercase;
-              color:rgb(148 163 184); font-weight:700; }
+              color:rgb(71 85 105); font-weight:700; }
   .dia-k .v { font-size:16.5px; font-weight:650; line-height:1.25; margin-top:1px; }
-  .dia-k .s { font-size:11px; color:rgb(148 163 184); }
+  .dia-k .s { font-size:11px; color:rgb(100 116 139); }
   .dia-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-              margin-top:13px; padding-top:11px; font-size:11.5px;
-              border-top:1px solid rgb(238 242 247); color:rgb(148 163 184); }
+              margin-top:11px; padding-top:9px; font-size:11.5px;
+              border-top:1px solid rgb(238 242 247); color:rgb(71 85 105); }
   .dia-crece { flex:1 1 auto; }
 
-  .dia-sec { margin-top:20px; }
+  .dia-sec { margin-top:15px; }
   .dia-sec > .dia-cap { display:block; margin-bottom:6px; }
+  .dia-par > div > .dia-cap { display:block; margin-bottom:6px; }
   .dia-fila { display:flex; justify-content:space-between; gap:14px;
-              padding:4.5px 0; border-bottom:1px solid rgb(241 245 249); }
+              padding:3.5px 0; border-bottom:1px solid rgb(241 245 249); }
   .dia-fila:last-child { border-bottom:none; }
   .dia-total { border-top:1.5px solid rgb(203 213 225); border-bottom:none;
                font-weight:700; }
   .dia-n { white-space:nowrap; font-weight:600; }
-  .dia-pos { color:rgb(21 128 61); }
-  .dia-neg { color:rgb(185 28 28); }
-  .dia-amb { color:rgb(180 83 9); }
-  .dia-mut { color:rgb(148 163 184); font-weight:400; }
-  .dia-nota { font-size:11.5px; color:rgb(148 163 184); margin-top:6px; }
+  .dia-pos { color:rgb(15 23 42); }
+  .dia-neg { color:rgb(166 52 52); }
+  .dia-amb { color:rgb(146 64 14); }
+  .dia-mut { color:rgb(100 116 139); font-weight:400; }
+  .dia-nota { font-size:11.5px; color:rgb(100 116 139); margin-top:6px; }
 
   .dia-aviso { border:1px solid rgb(251 191 36); background:rgb(255 251 235);
                border-radius:12px; padding:11px 14px; margin-top:20px;
@@ -79,22 +80,26 @@
              padding:.45rem .6rem; font-size:13px; font-family:inherit;
              margin-top:.35rem; }
 
-  .dia-det { margin-top:22px; border-top:1px solid rgb(238 242 247); }
+  .dia-par { display:grid; grid-template-columns:repeat(3,1fr); gap:30px;
+             align-items:start; }
+  @media (max-width:900px) { .dia-par { grid-template-columns:1fr 1fr; gap:24px; } }
+  @media (max-width:600px) { .dia-par { grid-template-columns:1fr; gap:0; } }
+  .dia-det { margin-top:16px; border-top:1px solid rgb(238 242 247); }
   .dia-det > summary { padding:11px 2px; font-size:12.5px; font-weight:600;
-                       color:rgb(71 85 105); cursor:pointer; list-style:none; }
+                       color:rgb(30 41 59); cursor:pointer; list-style:none; }
   .dia-det > summary::-webkit-details-marker { display:none; }
   .dia-det > summary::after { content:'\00A0\2192'; color:rgb(148 163 184); }
   .dia-det[open] > summary::after { content:'\00A0\2193'; }
   .dia-t { width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:18px; }
   .dia-t caption { text-align:left; font-size:10px; letter-spacing:.09em;
-                   text-transform:uppercase; color:rgb(148 163 184);
+                   text-transform:uppercase; color:rgb(71 85 105);
                    font-weight:700; padding:14px 0 5px; }
   .dia-t th { font-size:10px; text-transform:uppercase; letter-spacing:.05em;
-              color:rgb(148 163 184); font-weight:600; text-align:left;
+              color:rgb(71 85 105); font-weight:600; text-align:left;
               padding:.35rem .5rem; }
   .dia-t td { padding:.3rem .5rem; border-top:1px solid rgb(241 245 249); }
   .dia-t .r { text-align:right; white-space:nowrap; }
-  .dia-ayuda { font-size:12.5px; line-height:1.7; color:rgb(71 85 105);
+  .dia-ayuda { font-size:12.5px; line-height:1.7; color:rgb(30 41 59);
                padding-bottom:16px; }
   .dia-ayuda p { margin:0 0 .7rem; }
 
@@ -120,7 +125,7 @@
       <button class="dia-btn">Capturar ahora</button>
     </form>
     <span class="dia-crece"></span>
-    {% if racha %}<span class="dia-pos" style="font-weight:600;">{{ racha }} día{{ '' if racha == 1 else 's' }} seguido{{ '' if racha == 1 else 's' }} explicando el 100 %</span>{% endif %}
+    {% if racha %}<span style="font-weight:600;color:rgb(71 85 105);">{{ racha }} día{{ '' if racha == 1 else 's' }} seguido{{ '' if racha == 1 else 's' }} explicando el 100 %</span>{% endif %}
   </div>
 
   {% if not e.hasta %}
@@ -133,16 +138,24 @@
   {# ── CAPA 1 · el resumen ──────────────────────────────────────────────── #}
   <div class="dia-hero">
     <span class="dia-cap">El día · {{ e.fecha.strftime('%d/%m/%Y') }}</span>
-    <div class="dia-big {{ 'dia-neg' if e.d_utilidad < 0 else ('dia-pos' if e.d_utilidad > 0 else 'dia-mut') }}">
-      {% if e.d_utilidad > 0 %}La utilidad subió $ {{ e.d_utilidad | num_es(0) }}
+    <div class="dia-big">
+      {% if e.ventana_nula or (e.d_utilidad == 0 and not e.movimientos) %}
+        {{ MESES_LARGOS[e.fecha.month] | capitalize }} va $ {{ e.hasta.utilidad | num_es(0) }}
+      {% elif e.d_utilidad > 0 %}La utilidad subió $ {{ e.d_utilidad | num_es(0) }}
       {% elif e.d_utilidad < 0 %}La utilidad bajó $ {{ (e.d_utilidad | abs) | num_es(0) }}
-      {% else %}La utilidad quedó igual{% endif %}
+      {% else %}La utilidad del día quedó en cero{% endif %}
     </div>
     {# ⭐ TMT 2026-08-05: "tela que valía x para nosotros la vendimos a tanto,
        margen = esto — escribilo". La cuenta va acá, en castellano, porque es
        lo primero que se lee. NO en la tabla de abajo: ahí tiene que cuadrar. #}
     <div class="dia-sub">
-      {% if r.ok and r.get('margen_pct') and r.get('costo_despachado') %}
+      {% if e.ventana_nula %}
+        Del día todavía no se puede decir nada: las dos fotos son de las
+        {{ e.hasta.hora }}. El cierre entra a las {{ '%02d' | format(hora_cierre) }}:00 y ahí se compara.
+      {% elif e.d_utilidad == 0 and not e.movimientos %}
+        Hoy todavía no hay movimiento que comparar: hay una sola foto
+        ({{ e.hasta.hora }}). El cierre entra a las {{ '%02d' | format(hora_cierre) }}:00.
+      {% elif r.ok and r.get('margen_pct') and r.get('costo_despachado') %}
         Tela que nos costaba <strong>$ {{ r.costo_despachado | num_es(0) }}</strong>
         la vendimos en <strong>$ {{ r.ventas.us | num_es(0) }}</strong>: quedaron
         <strong>$ {{ r.margen | num_es(0) }}</strong>.
@@ -156,9 +169,14 @@
 
     <div class="dia-kpis">
       <div class="dia-k"><div class="l">Del día</div>
-        <div class="v {{ 'dia-neg' if e.d_utilidad < 0 else 'dia-pos' }}">
-          {{ '+' if e.d_utilidad >= 0 else '−' }}$ {{ (e.d_utilidad | abs) | num_es(0) }}</div>
-        <div class="s">mes: $ {{ e.hasta.utilidad | num_es(0) }}</div></div>
+        {% if e.ventana_nula %}
+          <div class="v dia-mut">—</div>
+          <div class="s">falta el cierre</div>
+        {% else %}
+          <div class="v {{ 'dia-neg' if e.d_utilidad < 0 else 'dia-pos' }}">
+            {{ '+' if e.d_utilidad >= 0 else '−' }}$ {{ (e.d_utilidad | abs) | num_es(0) }}</div>
+          <div class="s">mes: $ {{ e.hasta.utilidad | num_es(0) }}</div>
+        {% endif %}</div>
 
       <div class="dia-k"><div class="l">Facturado</div>
         {% if r.ok and r.get('ventas') and r.ventas.n %}
@@ -181,7 +199,7 @@
 
     <div class="dia-meta">
       <span>{{ e.desde.hora }} → {{ e.hasta.hora }} ·
-        {% if e.ok %}<strong class="dia-pos">explicado al 100 %</strong>
+        {% if e.ok %}<strong style="color:rgb(51 65 85);">explicado al 100 %</strong>
         {% else %}<strong class="dia-amb">explicado {{ e.explicado_pct }} %</strong>{% endif %}
         {% if e.residuo and (e.residuo | abs) >= 1 %} ·
           <strong class="dia-neg">descuadre de $ {{ e.residuo | num_es(2) }}</strong>, avisá{% endif %}</span>
@@ -189,14 +207,15 @@
       {% if wa %}
         <button type="button" id="wa-copiar" class="dia-btn">Copiar la nota</button>
         <a id="wa-abrir" href="#" target="_blank" rel="noopener" class="dia-btn dia-btn-wa">WhatsApp</a>
-        <span id="wa-ok" class="dia-pos"></span>
+        <span id="wa-ok"></span>
       {% endif %}
     </div>
   </div>
 
   {# ── CAPA 2 · un tema por vez ─────────────────────────────────────────── #}
-  {% if porque %}
-  <div class="dia-sec">
+  <div class="dia-sec dia-par">
+  {% if porque and not e.ventana_nula %}
+  <div>
     <span class="dia-cap">Por qué subió</span>
     {% for f in porque %}
     <div class="dia-fila">
@@ -216,7 +235,7 @@
   {% endif %}
 
   {% if r.ok %}
-  <div class="dia-sec">
+  <div>
     <span class="dia-cap">La fábrica</span>
     {% if tejido and tejido.disponible %}
     <div class="dia-fila"><span>Se tejió <span class="dia-mut">— tela cruda</span></span>
@@ -235,8 +254,10 @@
     <div class="dia-fila"><span>Se terminó</span>
       <span class="dia-n dia-mut">no cerró ninguna orden</span></div>
     {% endif %}
+    {% if not e.ventana_nula %}
     <div class="dia-fila"><span>Se cobró</span>
       <span class="dia-n">$ {{ r.get('cobrado', 0) | num_es(0) }}</span></div>
+    {% endif %}
     {% if p and p.disponible and not p.get('sin_fila') %}
     <div class="dia-nota">
       {% if p.n_ofs %}{{ p.n_ofs }} {{ 'orden cerrada' if p.n_ofs == 1 else 'órdenes cerradas' }}{% if p.desperdicio_kg %},
@@ -256,7 +277,7 @@
      utilidad (`totp` aporta con signo −1), pero el NIVEL y el VENCIMIENTO no
      salían en ningún lado del día. #}
   {% if deuda and deuda.total %}
-  <div class="dia-sec">
+  <div>
     <span class="dia-cap">Posdatados</span>
     <div class="dia-fila"><span>Deuda total</span>
       <span class="dia-n">$ {{ deuda.total | num_es(0) }}
@@ -278,6 +299,7 @@
     {% endif %}
   </div>
   {% endif %}
+  </div>{# /dia-par #}
 
   {% if e.sin_explicar %}
   <div class="dia-aviso">
@@ -295,14 +317,6 @@
   </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('informes.dia_nota') }}" class="dia-sec">
-    <span class="dia-cap">Nota del día</span>
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="id_captura" value="{{ e.hasta.id_captura }}">
-    <textarea name="nota" rows="2" class="dia-txt"
-              placeholder="Lo que vos sabés y el sistema todavía no.">{{ e.hasta.nota or '' }}</textarea>
-    <button class="dia-btn" style="margin-top:.45rem;">Guardar nota</button>
-  </form>
 
   {# ── CAPA 3 · UN solo desplegable ─────────────────────────────────────── #}
   {# Antes eran cuatro tarjetas abiertas compitiendo con el resumen. Todo el

@@ -1010,23 +1010,34 @@ def test_el_porque_no_inventa_un_resto_de_cero():
     assert [f["familia"] for f in dia.porque_subio(e)] == ["utilidad", "utilidad"]
 
 
-def test_el_tejido_es_del_DIA_y_sale_de_la_bodega_52():
-    """Se mide, no se deriva: son las OFs cerradas en tejeduría. Y el día es el
-    día — una OF de ayer no puede contarse hoy."""
-    prod = {"disponible": True, "total_kg": 38684.52, "ofs": [
-        {"numero": 1, "dia": "2026-08-05", "kg": 7000.0},
-        {"numero": 2, "dia": "2026-08-05", "kg": 622.72},
-        {"numero": 3, "dia": "2026-08-04", "kg": 11471.18},
-    ]}
-    with patch("modules.asinfo.service.produccion_tejeduria_mes", return_value=prod):
+def test_el_tejido_sale_del_INGRESO_A_BODEGA_no_de_las_OFs_cerradas():
+    """🚨 Las OFs cerradas SUBCUENTAN — dejan afuera lo que está en máquina sin
+    cerrar. La primera versión las usaba y daba 0 kg el 05/08 contra los 7.623
+    que mostraba /produccion-tejeduria-asinfo: dos números para la misma
+    pregunta en dos pantallas de la misma app. Se llama a la MISMA función que
+    esa pantalla, así el criterio no puede irse por ramas."""
+    dias = [{"dia": "2026-08-05", "kg": 7622.72},
+            {"dia": "2026-08-04", "kg": 11471.18},
+            {"dia": "2026-08-03", "kg": 10906.25}]
+    with patch("modules.asinfo.service.ingreso_bodega_por_dia",
+               return_value=dias) as f:
         t = dia.tejido_del_dia(date(2026, 8, 5))
+    assert f.call_args[0][0] == 52                      # la bodega de tejeduría
+    assert f.call_args[0][1] == date(2026, 8, 1)        # el corte, 1° del mes
     assert t["kg"] == pytest.approx(7622.72, abs=0.01)
-    assert t["n_ofs"] == 2
-    assert t["mes_kg"] == pytest.approx(38684.52, abs=0.01)
+    assert t["mes_kg"] == pytest.approx(30000.15, abs=0.01)
+
+
+def test_un_dia_sin_ingreso_a_bodega_da_cero_no_el_del_mes():
+    dias = [{"dia": "2026-08-04", "kg": 11471.18}]
+    with patch("modules.asinfo.service.ingreso_bodega_por_dia", return_value=dias):
+        t = dia.tejido_del_dia(date(2026, 8, 5))
+    assert t["disponible"] is True
+    assert t["kg"] == 0.0
 
 
 def test_si_asinfo_se_cae_la_tejeduria_no_tumba_la_pantalla():
-    with patch("modules.asinfo.service.produccion_tejeduria_mes",
+    with patch("modules.asinfo.service.ingreso_bodega_por_dia",
                side_effect=RuntimeError("Asinfo caído")):
         assert dia.tejido_del_dia(date(2026, 8, 5)) == {"disponible": False}
 
@@ -1043,7 +1054,7 @@ def test_la_pantalla_separa_TEJIDO_de_TERMINADO(app, fake_db):
                           "producido": 6974.0, "despachado": 13898.0,
                           "n_ofs": 37, "mes": {"producido": 37796.0,
                                                "vendido": 46130.0}}}
-    tej = {"disponible": True, "kg": 7622.72, "n_ofs": 4, "mes_kg": 38684.52}
+    tej = {"disponible": True, "kg": 7622.72, "mes_kg": 38684.52}
     with patch.object(dia, "explicar", return_value=_explicado()), \
          patch.object(dia, "resumen", return_value=res), \
          patch.object(dia, "tejido_del_dia", return_value=tej), \
@@ -1052,6 +1063,77 @@ def test_la_pantalla_separa_TEJIDO_de_TERMINADO(app, fake_db):
     assert "Se tejió" in cuerpo and "7.623 kg" in cuerpo
     assert "Se terminó" in cuerpo and "6.974 kg" in cuerpo
     assert "Se despachó" in cuerpo
+
+
+def test_un_dia_sin_movimiento_no_titula_con_una_no_noticia(app, fake_db):
+    """TMT 2026-08-05: *"La utilidad quedó igual — esto dice título"*. Un
+    titular que no dice nada es peor que no tenerlo, y pasa siempre que hay una
+    sola foto: a media mañana, o después de un restart. En ese caso el titular
+    lo toma el acumulado del mes, que sí es un número."""
+    c = _login(app, fake_db)
+    e = _explicado(d_utilidad=0.0, movimientos=[], reglas=[], componentes=[])
+    e["hasta"]["utilidad"] = 102472.0
+    with patch.object(dia, "explicar", return_value=e), \
+         patch.object(dia, "resumen", return_value={"ok": False}), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "quedó igual" not in cuerpo
+    assert "102.472" in cuerpo
+    assert "todavía no hay movimiento" in cuerpo
+
+
+# ── Ventana nula: las dos fotos del mismo minuto ────────────────────────────
+# TMT 2026-08-05, mirando la pantalla en vivo: *"está mal lo que dice"*. Decía
+# **"La utilidad quedó igual"** arriba y **"la venta dejó $ 49.226"** abajo. Las
+# dos frases no pueden ser ciertas a la vez: el Δ salía de dos capturas del
+# MISMO minuto (0 por construcción) y las ventas eran del día entero.
+
+def test_dos_capturas_del_mismo_minuto_no_son_una_ventana():
+    caps = [{"id_captura": 1, "hora": "09:05", "fecha_ec": date(2026, 8, 5),
+             "utilidad": 102472.0},
+            {"id_captura": 2, "hora": "09:05", "fecha_ec": date(2026, 8, 5),
+             "utilidad": 102472.0}]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 8, 5))
+    assert e["ventana_nula"] is True
+
+
+def test_dos_capturas_de_horas_distintas_SI_son_una_ventana():
+    caps = [{"id_captura": 1, "hora": "07:00", "fecha_ec": date(2026, 8, 5),
+             "utilidad": 100000.0},
+            {"id_captura": 2, "hora": "19:00", "fecha_ec": date(2026, 8, 5),
+             "utilidad": 102472.0}]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 8, 5))
+    assert e["ventana_nula"] is False
+
+
+def test_con_ventana_nula_la_pantalla_NO_afirma_sobre_el_dia(app, fake_db):
+    """Ni "quedó igual", ni "+$ 0", ni un cobrado que es igual al facturado
+    porque la cartera no se movió. Lo MEDIDO del día (facturado, kilos) sí
+    queda: eso no depende de la ventana."""
+    c = _login(app, fake_db)
+    e = _explicado(d_utilidad=0.0, movimientos=[], reglas=[], componentes=[],
+                   ventana_nula=True)
+    e["hasta"]["utilidad"] = 102472.0
+    e["hasta"]["hora"] = "09:05"
+    res = {"ok": True, "d_utilidad": 0.0, "d_stock": 0.0, "por_tarifa": 0.0,
+           "desde": {"vsto": 1.0}, "hasta": {"vsto": 1.0}, "cobrado": 125659.0,
+           "ventas": {"n": 99, "kg": 14576.0, "us": 125659.0},
+           "compras": {"n": 0, "kg": 0.0, "us": 0.0}, "etapas": [],
+           "margen": 49226.0, "margen_pct": 39.2, "costo_despachado": 76433.0,
+           "produccion": {"disponible": False}}
+    with patch.object(dia, "explicar", return_value=e), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "quedó igual" not in cuerpo
+    assert "+$ 0<" not in cuerpo
+    assert "Se cobró" not in cuerpo          # seria exactamente lo facturado
+    assert "Agosto va $ 102.472" in cuerpo   # el mes SÍ es un número
+    assert "125.659" in cuerpo               # lo facturado es real y queda
 
 
 # ── El mensaje de WhatsApp ──────────────────────────────────────────────────
