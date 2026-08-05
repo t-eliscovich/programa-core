@@ -86,12 +86,6 @@ Verificar en unos días que las capturas programadas corren solas en producción
 
 ## Proceso
 
-### [M] Instancia LOCAL contra un snapshot de la RDS
-El ciclo actual de prueba es el deploy: 5 min de CI + verificación por Chrome
-por el IP-lock. Ya costó 3 deploys por una regresión de PDF y fixes de CSS a
-ciegas. Con el Dockerfile existente + un dump de la RDS el ciclo baja a
-segundos. Entregable: `docker-compose up` + receta para refrescar el dump.
-
 ### [S] Checks de drift en /admin/health/all
 Cada par de fuentes que debe coincidir, con check automático:
 `config/roles.py` ↔ `seguridad.permiso` (drift ya visto: `cupos.editar`),
