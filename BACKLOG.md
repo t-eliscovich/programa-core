@@ -59,11 +59,6 @@ Pantallas: `/admin/clientes-asinfo`, `cambiar-codigo`.
 La ficha muestra cupo y descuento (38f900bb) pero el dato está casi vacío.
 Cargar los cupos reales o la columna es decoración.
 
-### [S] Comisiones: el estado 'C' (cobrado en caja) no suma
-$109.854 de cobranza de julio sin comisionar (casi todo PPR). Fix conocido:
-`STATS_COBRADO = STATS_DEPOSITADO + ('C',)` SOLO en
-`modules/comisiones/queries.py`. Ver skill comisiones-vendedores.
-
 ### [S] Comisiones: `scintela.cobro` vacía
 La rama de "cobros no-cheque" suma contra una tabla que nadie escribe
 (1 fila, de 2024). O se llena o se saca.
