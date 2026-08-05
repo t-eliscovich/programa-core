@@ -36,19 +36,25 @@
        class="text-sm text-slate-500 hover:underline self-center ml-auto">Exportar CSV</a>
   </form>
 
-  {# Card grande con totales del mes #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Ventas del mes</div>
-      <div class="text-xl font-bold tabular-nums mt-1">$ {{ totales.ventas | num_es(0) }}</div>
+  {# TMT 2026-08-05 (dueña): *"esto no debería ocupar más de una pantalla…
+     hacelo elegante lindo simple"*.
+
+     Eran tres tarjetas de 80 px de alto para tres números que además se
+     repiten al pie de la tabla. Ahora es una franja de un renglón: los mismos
+     tres números, sin robarle la pantalla a la tabla, que es lo que se viene
+     a mirar. La comisión sigue destacada porque es la que se paga. #}
+  <div class="flex flex-wrap items-baseline gap-x-8 gap-y-1 mb-3 px-1">
+    <div>
+      <span class="text-xs uppercase tracking-wider text-slate-500">Ventas</span>
+      <span class="text-base font-semibold tabular-nums ml-2">$ {{ totales.ventas | num_es(0) }}</span>
     </div>
-    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cobranzas del mes</div>
-      <div class="text-xl font-bold tabular-nums mt-1">$ {{ totales.cobranzas | num_es(0) }}</div>
+    <div>
+      <span class="text-xs uppercase tracking-wider text-slate-500">Cobranzas</span>
+      <span class="text-base font-semibold tabular-nums ml-2">$ {{ totales.cobranzas | num_es(0) }}</span>
     </div>
-    <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Comisión total a pagar</div>
-      <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">$ {{ totales.comision | num_es(2) }}</div>
+    <div>
+      <span class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Comisión a pagar</span>
+      <span class="text-lg font-bold text-emerald-800 dark:text-emerald-200 tabular-nums ml-2">$ {{ totales.comision | num_es(2) }}</span>
     </div>
   </div>
 
@@ -59,66 +65,62 @@
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3 text-left font-medium">Vendedor</th>
-          <th class="px-4 py-3 text-right font-medium" style="white-space:nowrap;">% Comisión</th>
-          <th class="px-4 py-3 text-right font-medium" style="white-space:nowrap;">N° clientes</th>
-          <th class="px-4 py-3 text-right font-medium">Ventas mes</th>
-          <th class="px-4 py-3 text-right font-medium">Cobranzas mes</th>
-          <th class="px-4 py-3 text-right font-medium">Comisión $</th>
+          <th class="px-3 py-2 text-left font-medium">Cód.</th>
+          <th class="px-3 py-2 text-left font-medium">Vendedor</th>
+          <th class="px-3 py-2 text-right font-medium" style="white-space:nowrap;">% Comisión</th>
+          <th class="px-3 py-2 text-right font-medium" style="white-space:nowrap;">N° clientes</th>
+          <th class="px-3 py-2 text-right font-medium">Ventas mes</th>
+          <th class="px-3 py-2 text-right font-medium">Cobranzas mes</th>
+          <th class="px-3 py-2 text-right font-medium">Comisión $</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2">
+          {# TMT 2026-08-05 (dueña): *"el nombre entraba como otra columna, no
+             hacía falta doble altura"*. Tenía razón: el código y el nombre
+             estaban APILADOS, y con el formulario de edición debajo cada fila
+             medía tres renglones. Seis filas de tres renglones son media
+             pantalla para seis vendedores.
+
+             Ahora son dos columnas y una sola altura. El campo para editar el
+             nombre NO se borra —una ruta sin pantalla es una función que no
+             existe, y el día que entre un vendedor nuevo hay que poder
+             nombrarlo—: aparece abierto sólo donde falta el nombre, y si no,
+             detrás del lapicito. #}
+          <td class="px-3 py-1.5 whitespace-nowrap">
             <a href="{{ url_for('comisiones.detalle', codigo=f.codigo, anio=anio, mes=mes) }}"
-               class="text-sky-700 hover:underline font-mono text-base font-semibold"
+               class="text-sky-700 hover:underline font-mono text-sm font-semibold"
                title="Ver cobranzas y ventas del vendedor">{{ f.codigo }}</a>
-            {# TMT 2026-08-03 — el NOMBRE se podía guardar (la ruta
-               `comisiones.actualizar_nombre` existe y dice "inline edit desde
-               la lista") pero ninguna pantalla tenía el campo: los 6 vendedores
-               quedaron con el nombre vacío desde que se sembraron en mayo, y el
-               portal del vendedor saludaba "Hola, RMY".
-
-               TMT 2026-08-04 (dueña): *"no me hagas editable los nombres,
-               dejalos como están"*. Los seis ya están cargados; seis cajas de
-               texto abiertas en la pantalla que se mira todos los meses no
-               agregan nada y sí ofrecen pisar un nombre sin querer.
-
-               Ahora el nombre es TEXTO. La caja aparece sola sólo donde falta
-               algo que llenar —nombre vacío, o nombre igual al código, que es
-               como quedaron los sembrados de mayo— y, si no, detrás del
-               lapicito. Sacar el campo del todo sería volver al problema de
-               ayer: una ruta sin pantalla es una función que no existe, y el
-               día que se dé de alta un vendedor nuevo no habría dónde
-               ponerle el nombre. #}
+          </td>
+          <td class="px-3 py-1.5 whitespace-nowrap">
             {% set _nom = (f.nombre or '') | trim %}
             {% set _fila_nom = 'nom-' ~ f.codigo %}
             <form method="post" action="{{ url_for('comisiones.actualizar_nombre', codigo=f.codigo) }}"
                   id="{{ _fila_nom }}-form"
-                  class="{{ 'inline-flex' if not _nom or _nom|upper == f.codigo|upper else 'hidden' }} items-center gap-1 mt-1">
+                  class="{{ 'inline-flex' if not _nom or _nom|upper == f.codigo|upper else 'hidden' }} items-center gap-1">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="anio" value="{{ anio }}">
               <input type="hidden" name="mes" value="{{ mes }}">
               <input type="text" name="nombre" maxlength="100"
                      value="{{ _nom if _nom|upper != f.codigo|upper else '' }}"
                      placeholder="— sin nombre —"
-                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-sm w-52">
+                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-sm w-48">
               <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nombre">✓</button>
             </form>
             {% if _nom and _nom|upper != f.codigo|upper %}
-            <div id="{{ _fila_nom }}-txt" class="flex items-center gap-1 mt-1">
-              <span class="text-sm text-slate-700 dark:text-slate-300">{{ _nom }}</span>
+            <span id="{{ _fila_nom }}-txt" class="inline-flex items-center gap-1">
+              <span class="text-sm text-slate-600 dark:text-slate-300">{{ _nom }}</span>
               <button type="button" title="Corregir el nombre"
                       class="text-xs text-slate-300 hover:text-sky-600"
                       onclick="document.getElementById('{{ _fila_nom }}-txt').classList.add('hidden');
                                var f=document.getElementById('{{ _fila_nom }}-form');
                                f.classList.remove('hidden');f.classList.add('inline-flex');
                                f.querySelector('input[name=nombre]').focus();">✎</button>
-            </div>
+            </span>
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-right">
+          <td class="px-3 py-1.5 text-right">
             {# Inline edit del % #}
             <form method="post" action="{{ url_for('comisiones.actualizar_pct', codigo=f.codigo) }}"
                   class="inline-flex items-center gap-1 justify-end">
@@ -127,34 +129,34 @@
               <input type="hidden" name="mes" value="{{ mes }}">
               <input type="number" step="0.01" min="0" max="100" name="pct_comision"
                      value="{{ f.pct_comision or 0 }}"
-                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-right text-sm w-20 tabular-nums">
+                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-right text-sm w-16 tabular-nums">
               <span class="text-slate-400">%</span>
               <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nuevo %">✓</button>
             </form>
           </td>
-          <td class="px-4 py-2 text-right tabular-nums text-slate-500"
+          <td class="px-3 py-1.5 text-right tabular-nums text-slate-500"
               title="Clientes distintos que cobraron este mes (sumando a la comisión)">{{ f.n_clientes or '—' }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
-          <td class="px-4 py-2 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
-          <td class="px-4 py-2 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
             {{ (f.comision_mes or 0) | num_es(2) }}
           </td>
         </tr>
         {% else %}
-        {{ empty_row(6, 'Sin vendedores cargados.',
+        {{ empty_row(7, 'Sin vendedores cargados.',
                      sugerencia='El backfill inicial debería haber traído los códigos desde cliente.vend.') }}
         {% endfor %}
       </tbody>
       {% if filas %}
       <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
         <tr>
-          <td class="px-4 py-3" colspan="3">
-            <span class="text-base font-bold">Total</span>
+          <td class="px-3 py-2" colspan="4">
+            <span class="text-sm font-bold">Total</span>
             <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} vendedores)</span>
           </td>
-          <td class="px-4 py-3 text-right tabular-nums text-base font-semibold">{{ totales.ventas | num_es(0) }}</td>
-          <td class="px-4 py-3 text-right tabular-nums text-base font-semibold">{{ totales.cobranzas | num_es(0) }}</td>
-          <td class="px-4 py-3 text-right tabular-nums text-lg font-bold text-emerald-900 dark:text-emerald-100">{{ totales.comision | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-sm font-semibold">{{ totales.ventas | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-sm font-semibold">{{ totales.cobranzas | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-base font-bold text-emerald-800 dark:text-emerald-200">{{ totales.comision | num_es(2) }}</td>
         </tr>
       </tfoot>
       {% endif %}

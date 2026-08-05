@@ -4,8 +4,8 @@
 {% block breadcrumb %}<a href="{{ url_for('comisiones.lista') }}" class="hover:underline">Comisiones</a> / <strong>Metas</strong>{% endblock %}
 {% block content %}
 <div class="max-w-7xl">
-{{ page_hero('Metas de venta por vendedor · en KILOS',
-             'Las metas se miden en KILOS facturados, no en dólares. Debajo de cada meta van los kilos realmente vendidos y el % de cumplimiento. Se carga una meta por MES: la del año se suma sola y la de la semana se prorratea por días hábiles. Dejar vacío = sin meta (el vendedor ve los kilos facturados, sin anillo de progreso).') }}
+{{ page_hero('Metas de venta · en KILOS',
+             'Bajo cada meta, en gris, los kilos vendidos y el % de cumplimiento. Vacío = sin meta.') }}
 
 {# ⚠ La columna se llamaba `monto` y guardaba dólares hasta la migración 0163,
    que la renombra a `kg` y borra las metas viejas — convertir dólares a kilos
@@ -16,6 +16,23 @@
    2026-08-05). Una meta sin el real al lado es un número que nadie vuelve a
    mirar: hay que ir a otra pantalla a averiguar si se cumplió, y entonces no
    se averigua.
+
+   ⭐ TMT 2026-08-05, sobre la primera versión: *"feos los dos diseños, esto no
+   debería ocupar más de una pantalla… de las metas sacá el nombre del
+   vendedor, agosto se disparan los bloques, hacelo elegante lindo simple"*.
+
+   Las tres cosas eran la misma: la grilla crecía sin necesidad.
+     · El NOMBRE del vendedor sobraba — son seis códigos que ella conoce de
+       memoria, y ocupaban el ancho de dos meses.
+     · Agosto "se disparaba" porque su celda tenía TRES renglones (input +
+       vendido + %) contra dos de las demás: la fila entera se estira al alto
+       de la celda más alta, así que UNA celda distinta desalinea toda la
+       tabla. Ahora vendido y % van en el MISMO renglón — todas las celdas
+       miden igual y nada se dispara.
+     · Sin nombre y con una línea menos, los 12 meses entran sin scroll.
+
+   Regla que queda: en una grilla, si una celda necesita más renglones que sus
+   hermanas, el que está mal es el diseño de la celda, no la fila.
 
    Los meses que todavía no pasaron NO llevan real ni %: un 0% en diciembre no
    dice que el vendedor va mal, dice que diciembre no llegó. El mes en curso sí
@@ -36,21 +53,28 @@
   <input type="hidden" name="anio" value="{{ anio }}">
   <div class="bg-white border rounded-lg shadow-sm overflow-x-auto">
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 border-b text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-400">
+        {# `data-no-sort`: es una grilla de CARGA, no un listado. Ordenar por
+           "el mes 04" no significa nada y las flechitas ↕ sobre doce números
+           son ruido puro. #}
         <tr>
-          <th class="px-3 py-2">Vendedor</th>
-          {% for m in range(1, 13) %}<th class="px-2 py-2 text-right">{{ '%02d'|format(m) }}</th>{% endfor %}
-          <th class="px-3 py-2 text-right">Año (kg)</th>
+          <th class="px-2 py-1.5" data-no-sort>Vend.</th>
+          {% for m in range(1, 13) %}
+            <th class="px-1 py-1.5 text-right font-normal
+                       {% if m == mes_en_curso %}text-indigo-600 font-semibold{% endif %}"
+                data-no-sort>{{ '%02d'|format(m) }}</th>
+          {% endfor %}
+          <th class="px-2 py-1.5 text-right" data-no-sort>Año</th>
         </tr>
       </thead>
       <tbody class="divide-y">
         {% for v in vendedores %}
         {% set fila = [] %}
         <tr>
-          <td class="px-3 py-2 whitespace-nowrap">
-            <span class="font-mono text-xs">{{ v.codigo }}</span>
-            <span class="text-slate-500 ml-1">{{ v.nombre }}</span>
-          </td>
+          {# Sólo el código: son seis y la dueña los conoce de memoria. El
+             nombre completo queda en el title, por si entra alguien nuevo. #}
+          <td class="px-2 py-1 whitespace-nowrap font-mono text-xs font-semibold"
+              title="{{ v.nombre }}">{{ v.codigo }}</td>
           {% set real = [] %}
           {% for m in range(1, 13) %}
             {% set val = cargadas.get((v.codigo, m)) %}
@@ -64,34 +88,42 @@
                input — ahí el Decimal imprime "44000.00" y el float "44000.0",
                y lo que la dueña ve en la caja no tiene por qué cambiar. #}
             {% set valf = val|float if val else 0 %}
-            <td class="px-1 py-1 align-top">
+            <td class="px-1 py-1">
               <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
-                     value="{{ val if val is not none else '' }}"
-                     title="Kilos facturados · meta de {{ v.nombre }} para el mes {{ '%02d'|format(m) }}"
+                     {# ⚠ El value NO se formatea con `kg_es`: este input se
+                        MANDA de vuelta y `guardar_meta` lo pasa tal cual al
+                        NUMERIC. "44.000,00" no es un número válido para
+                        Postgres y el guardado explotaría — un cambio de
+                        formato que rompe una escritura. Se muestra entero
+                        cuando es entero (que es como se cargan las metas) y,
+                        si algún día alguien pone decimales, tal cual vino. #}
+                     value="{{ val|round|int if val and val == val|round else (val if val is not none else '') }}"
+                     title="Meta de {{ v.nombre }} para el mes {{ '%02d'|format(m) }}, en kilos"
                      placeholder="kg"
-                     class="border rounded px-1 py-1 w-20 text-right text-xs
-                            {% if m == mes_en_curso %}bg-indigo-50{% endif %}">
-              {# Lo vendido de verdad, debajo de la meta. Va SIEMPRE que el mes
-                 haya pasado, aunque no haya meta cargada: si no, un mes sin
-                 meta parecería un mes sin ventas. #}
-              {% if paso %}
-                <div class="text-[10px] leading-tight mt-1 text-right whitespace-nowrap">
-                  <span class="text-slate-500" title="Kilos realmente facturados">{{ (kg or 0)|kg_es }}</span>
+                     class="border rounded px-1 py-0.5 w-[68px] text-right text-xs tabular-nums
+                            {% if m == mes_en_curso %}bg-indigo-50 border-indigo-300{% endif %}">
+              {# ⭐ Vendido y % en UN SOLO renglón. Con dos, esta celda medía un
+                 renglón más que sus hermanas y estiraba la fila entera. Va
+                 aunque no haya meta cargada: si no, un mes sin meta parecería
+                 un mes sin ventas. #}
+              <div class="text-[10px] leading-none mt-1 text-right whitespace-nowrap tabular-nums">
+                {% if paso %}
+                  <span class="text-slate-400" title="Kilos realmente facturados">{{ (kg or 0)|num_es(0) }}</span>
                   {% if val %}
                     {% set pct = (kg or 0)|float * 100 / valf %}
                     {# Verde ≥100, ámbar ≥80, rojo debajo. El mes en curso va en
                        gris: su % es parcial y pintarlo de rojo el día 5 es una
                        alarma falsa todos los meses. #}
-                    <div class="{% if m == mes_en_curso %}text-slate-400
+                    <span class="ml-1 {% if m == mes_en_curso %}text-slate-400
                                 {%- elif pct >= 100 %}text-emerald-600 font-semibold
                                 {%- elif pct >= 80 %}text-amber-600
                                 {%- else %}text-red-600{% endif %}"
-                         title="{{ (kg or 0)|kg_es }} kg vendidos sobre una meta de {{ val|kg_es }} kg{% if m == mes_en_curso %} · mes en curso, parcial{% endif %}">
-                      {{ pct|num_es(0) }} %{% if m == mes_en_curso %} *{% endif %}
-                    </div>
+                          title="{{ (kg or 0)|kg_es }} kg vendidos sobre una meta de {{ val|kg_es }} kg{% if m == mes_en_curso %} · mes en curso, parcial{% endif %}">
+                      {{ pct|num_es(0) }}%{% if m == mes_en_curso %}*{% endif %}
+                    </span>
                   {% endif %}
-                </div>
-              {% endif %}
+                {% else %}&nbsp;{% endif %}
+              </div>
             </td>
           {% endfor %}
           {# El año compara like con like: sólo los meses que YA pasaron y que
@@ -104,27 +136,30 @@
               {% set _ = meta_corrida.append(cargadas.get((v.codigo, m))|float) %}
             {% endif %}
           {% endfor %}
-          <td class="px-3 py-2 text-right align-top whitespace-nowrap">
-            <div class="font-medium">{{ fila|sum|kg_es }} kg</div>
-            {% if meta_corrida %}
-              {% set pct_anio = real|sum|float * 100 / meta_corrida|sum %}
-              <div class="text-[11px] text-slate-500 mt-0.5">{{ real|sum|kg_es }} vendidos</div>
-              <div class="text-xs mt-0.5 {% if pct_anio >= 100 %}text-emerald-600 font-semibold
-                          {%- elif pct_anio >= 80 %}text-amber-600{% else %}text-red-600{% endif %}"
-                   title="Sobre los {{ meta_corrida|length }} mes(es) con meta que ya pasaron">
-                {{ pct_anio|num_es(0) }} % acumulado
-              </div>
-            {% endif %}
+          <td class="px-2 py-1 text-right whitespace-nowrap tabular-nums border-l">
+            <div class="text-xs font-semibold">{{ fila|sum|num_es(0) }}</div>
+            <div class="text-[10px] leading-none mt-1">
+              {% if meta_corrida %}
+                {% set pct_anio = real|sum|float * 100 / meta_corrida|sum %}
+                <span class="text-slate-400">{{ real|sum|num_es(0) }}</span>
+                <span class="ml-1 {% if pct_anio >= 100 %}text-emerald-600 font-semibold
+                            {%- elif pct_anio >= 80 %}text-amber-600{% else %}text-red-600{% endif %}"
+                      title="{{ real|sum|kg_es }} kg vendidos sobre los {{ meta_corrida|length }} mes(es) con meta que ya pasaron">
+                  {{ pct_anio|num_es(0) }}%
+                </span>
+              {% else %}&nbsp;{% endif %}
+            </div>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <div class="mt-4">
-    <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
-      Guardar metas {{ anio }} (en kilos)
+  <div class="mt-3 flex items-center gap-3">
+    <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-1.5 rounded text-sm shadow-sm">
+      Guardar metas {{ anio }}
     </button>
+    <span class="text-xs text-slate-400">* mes en curso: el % es parcial</span>
   </div>
 </form>
 </div>

@@ -1771,9 +1771,11 @@ def _metas_html(app, fake_db, monkeypatch, hoy=None):
 def test_la_grilla_de_metas_muestra_lo_vendido_y_el_cumplimiento(
         app, fake_db, monkeypatch):
     html = _metas_html(app, fake_db, monkeypatch)
-    # Julio: 54.535,10 sobre 50.000 = 109 %, y en verde porque pasó la meta.
-    assert "54.535,10" in html
-    assert "109 %" in html
+    # Julio: 54.535 sobre 50.000 = 109 %, y en verde porque pasó la meta.
+    # Los kilos van SIN decimales: en una grilla de 12 meses, los centavos de
+    # un kilo cuestan ancho y no cambian ninguna decisión.
+    assert "54.535" in html
+    assert "109%" in html
     assert "text-emerald-600" in html
 
 
@@ -1781,9 +1783,9 @@ def test_el_mes_en_curso_no_se_pinta_de_rojo(app, fake_db, monkeypatch):
     """Agosto va 6.571 de 44.000 = 15 %: pintarlo de rojo el día 5 es una
     alarma falsa todos los meses. Va en gris y con un asterisco."""
     html = _metas_html(app, fake_db, monkeypatch)
-    assert "6.571,50" in html
-    assert "15 % *" in html
-    fila_agosto = html.split("6.571,50")[1].split("</td>")[0]
+    assert "6.572" in html
+    assert "15%*" in html
+    fila_agosto = html.split("6.572")[1].split("</td>")[0]
     assert "text-slate-400" in fila_agosto and "text-red-600" not in fila_agosto
 
 
@@ -1792,7 +1794,7 @@ def test_los_meses_que_no_pasaron_no_llevan_ni_real_ni_porcentaje(
     """Diciembre tiene meta cargada (38.000) y todavía no llegó. Un 0% ahí no
     dice que el vendedor va mal: dice que diciembre no llegó."""
     html = _metas_html(app, fake_db, monkeypatch)
-    assert 'value="38000.00"' in html   # la meta sí se ve, es editable
+    assert 'value="38000"' in html   # la meta sí se ve, es editable
     # …pero la celda de diciembre no lleva ni el real ni el %.
     dic = html.split('name="meta_EDG_12"')[1].split("</td>")[0]
     assert "%" not in dic and "text-slate-500" not in dic
@@ -1807,8 +1809,11 @@ def test_el_acumulado_del_anio_compara_like_con_like(app, fake_db, monkeypatch):
     portal, que llegó a marcar 3345 %.
     """
     html = _metas_html(app, fake_db, monkeypatch)
-    assert "61.106,60" in html
-    assert "65 % acumulado" in html
+    # La última celda de la fila: la columna Año.
+    fila = html.split('name="meta_EDG_1"')[1].split("</tr>")[0]
+    anio = fila.split('name="meta_EDG_12"')[1].split("</td>")[1]
+    assert "61.107" in anio          # lo vendido en los meses con meta
+    assert "65%" in anio
 
 
 def test_una_sola_query_para_los_kilos_de_todo_el_ano(monkeypatch):
@@ -1839,3 +1844,63 @@ def test_los_kilos_de_la_grilla_se_cuentan_igual_que_los_del_portal(monkeypatch)
     assert "sum(f.kg)" in visto["sql"] and "sum(f.importe)" not in visto["sql"]
     assert "f.stat <> 'x'" in visto["sql"]
     assert "asinfo-backfill" in visto["sql"]
+
+
+
+# ---------------------------------------------------------------------------
+# El rediseño de la grilla (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"feos los dos diseños, esto no debería ocupar más de una pantalla… de las
+# metas sacá el nombre del vendedor, agosto se disparan los bloques, hacelo
+# elegante lindo simple"*.
+
+
+def test_la_grilla_no_lleva_el_nombre_del_vendedor(app, fake_db, monkeypatch):
+    """Son seis códigos que ella conoce de memoria y ocupaban el ancho de dos
+    meses. El nombre queda en el `title`, por si entra alguien nuevo."""
+    html = _metas_html(app, fake_db, monkeypatch)
+    grilla = html.split("<tbody")[1].split("</tbody>")[0]
+    assert "EDG" in grilla
+    assert ">Edgar Ramirez<" not in grilla
+    assert 'title="Edgar Ramirez"' in grilla
+
+
+def test_todas_las_celdas_de_mes_miden_lo_mismo(app, fake_db, monkeypatch):
+    """⭐ Agosto "se disparaba" porque su celda tenía TRES renglones (input +
+    vendido + %) contra dos de las demás, y una fila se estira al alto de su
+    celda más alta: UNA celda distinta desalinea la tabla entera.
+
+    Ahora vendido y % van en el MISMO renglón, así que cada celda tiene
+    exactamente dos: el input y una línea de texto. El test cuenta los `<div>`
+    de la celda de agosto (la que tiene meta Y vendido) y los compara con los
+    de julio (meta sin cargar, sólo vendido).
+    """
+    html = _metas_html(app, fake_db, monkeypatch)
+    fila = html.split('name="meta_EDG_1"')[1].split("</tr>")[0]
+    agosto = fila.split('name="meta_EDG_8"')[1].split("</td>")[0]
+    julio = fila.split('name="meta_EDG_7"')[1].split("</td>")[0]
+    assert agosto.count("<div") == julio.count("<div") == 1
+
+
+def test_los_meses_no_se_pueden_ordenar(app, fake_db, monkeypatch):
+    """Es una grilla de CARGA, no un listado. Ordenar por "el mes 04" no
+    significa nada y las flechitas ↕ sobre doce números son ruido."""
+    html = _metas_html(app, fake_db, monkeypatch)
+    thead = html.split("<thead")[1].split("</thead>")[0]
+    assert thead.count("data-no-sort") == 14   # Vend. + 12 meses + Año
+
+
+def test_el_value_del_input_se_puede_volver_a_guardar(app, fake_db, monkeypatch):
+    """🚨 El `value` de este input se MANDA de vuelta y `guardar_meta` lo pasa
+    tal cual al NUMERIC. Formatearlo con `kg_es` lo dejaría como "44.000,00",
+    que Postgres no acepta: un cambio de formato que rompe una escritura.
+
+    Se muestra entero cuando es entero — que es como se cargan las metas.
+    """
+    import re
+
+    html = _metas_html(app, fake_db, monkeypatch)
+    for valor in re.findall(r'name="meta_[A-Z0-9]+_\d+"[^>]*?value="([^"]*)"', html):
+        if valor:
+            float(valor)   # revienta si tiene punto de miles o coma decimal
+    assert 'value="44000"' in html
