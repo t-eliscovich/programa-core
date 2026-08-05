@@ -58,6 +58,12 @@
             {% set kg = vendido.get((v.codigo, m)) %}
             {% set paso = m <= ultimo_mes %}
             {% if paso and val %}{% set _ = real.append(kg or 0) %}{% endif %}
+            {# ⚠ `val` viene de Postgres como Decimal (NUMERIC) y `kg` como
+               float: en Jinja `float / Decimal` es un TypeError y la pantalla
+               da 500. Se pasa a float en cada cuenta, no en el `value=` del
+               input — ahí el Decimal imprime "44000.00" y el float "44000.0",
+               y lo que la dueña ve en la caja no tiene por qué cambiar. #}
+            {% set valf = val|float if val else 0 %}
             <td class="px-1 py-1 align-top">
               <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
                      value="{{ val if val is not none else '' }}"
@@ -72,7 +78,7 @@
                 <div class="text-[10px] leading-tight mt-1 text-right whitespace-nowrap">
                   <span class="text-slate-500" title="Kilos realmente facturados">{{ (kg or 0)|kg_es }}</span>
                   {% if val %}
-                    {% set pct = (kg or 0) * 100 / val %}
+                    {% set pct = (kg or 0)|float * 100 / valf %}
                     {# Verde ≥100, ámbar ≥80, rojo debajo. El mes en curso va en
                        gris: su % es parcial y pintarlo de rojo el día 5 es una
                        alarma falsa todos los meses. #}
@@ -95,13 +101,13 @@
           {% set meta_corrida = [] %}
           {% for m in range(1, 13) %}
             {% if m <= ultimo_mes and cargadas.get((v.codigo, m)) %}
-              {% set _ = meta_corrida.append(cargadas.get((v.codigo, m))) %}
+              {% set _ = meta_corrida.append(cargadas.get((v.codigo, m))|float) %}
             {% endif %}
           {% endfor %}
           <td class="px-3 py-2 text-right align-top whitespace-nowrap">
             <div class="font-medium">{{ fila|sum|kg_es }} kg</div>
             {% if meta_corrida %}
-              {% set pct_anio = real|sum * 100 / meta_corrida|sum %}
+              {% set pct_anio = real|sum|float * 100 / meta_corrida|sum %}
               <div class="text-[11px] text-slate-500 mt-0.5">{{ real|sum|kg_es }} vendidos</div>
               <div class="text-xs mt-0.5 {% if pct_anio >= 100 %}text-emerald-600 font-semibold
                           {%- elif pct_anio >= 80 %}text-amber-600{% else %}text-red-600{% endif %}"

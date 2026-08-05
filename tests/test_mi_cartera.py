@@ -14,6 +14,7 @@ Lo que protegen estos tests, en orden de gravedad:
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import bcrypt
 import pytest
@@ -1746,10 +1747,14 @@ def _metas_html(app, fake_db, monkeypatch, hoy=None):
     monkeypatch.setattr(views, "today_ec", lambda: hoy or _date(2026, 8, 5))
     monkeypatch.setattr(q, "vendedores_activos",
                         lambda: [{"codigo": "EDG", "nombre": "Edgar Ramirez"}])
+    # ⭐ Decimal, NO int: `vendedor_meta.kg` es NUMERIC y psycopg lo devuelve
+    # como Decimal. Con enteros de mentira el test pasaba y la pantalla daba
+    # 500 en producción — `float / Decimal` es un TypeError en Jinja. El fake
+    # tiene que traer el MISMO tipo que la base o no prueba la pantalla.
     monkeypatch.setattr(q, "metas_del_anio",
-                        lambda anio: [{"codigo": "EDG", "mes": 7, "kg": 50000},
-                                      {"codigo": "EDG", "mes": 8, "kg": 44000},
-                                      {"codigo": "EDG", "mes": 12, "kg": 38000}])
+                        lambda anio: [{"codigo": "EDG", "mes": 7, "kg": Decimal("50000.00")},
+                                      {"codigo": "EDG", "mes": 8, "kg": Decimal("44000.00")},
+                                      {"codigo": "EDG", "mes": 12, "kg": Decimal("38000.00")}])
     monkeypatch.setattr(q, "ventas_kg_por_vendedor_mes",
                         lambda anio: {("EDG", 7): 54535.1, ("EDG", 8): 6571.5})
 
@@ -1787,7 +1792,7 @@ def test_los_meses_que_no_pasaron_no_llevan_ni_real_ni_porcentaje(
     """Diciembre tiene meta cargada (38.000) y todavía no llegó. Un 0% ahí no
     dice que el vendedor va mal: dice que diciembre no llegó."""
     html = _metas_html(app, fake_db, monkeypatch)
-    assert 'value="38000"' in html   # la meta sí se ve, es editable
+    assert 'value="38000.00"' in html   # la meta sí se ve, es editable
     # …pero la celda de diciembre no lleva ni el real ni el %.
     dic = html.split('name="meta_EDG_12"')[1].split("</td>")[0]
     assert "%" not in dic and "text-slate-500" not in dic
