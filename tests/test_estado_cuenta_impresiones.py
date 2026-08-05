@@ -724,3 +724,20 @@ def test_el_estado_de_cuenta_esta_apretado_para_entrar_en_una_hoja():
     assert "main .ec-ch-resumen { display: none !important; }" in css
     # 11 px de alto útil que salen del margen vertical.
     assert "@page { margin: 7mm 8mm; }" in css
+
+
+def test_no_se_dibujan_barras_de_scroll_en_el_papel():
+    """Dueña 05/08, señalando el control ▲ ═ ▼ al costado de cheques:
+    "esto en cheques borrar".
+
+    El Chromium de `pdf_motor` pinta la barra de los contenedores con
+    `overflow` DENTRO del papel. Ya se había sacado una vez y se perdió al
+    revertir otros cambios, así que queda fijado acá.
+    """
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", IMPRESO[IMPRESO.index("@media print"):], flags=re.S)
+    assert "scrollbar-width: none !important" in css
+    assert "::-webkit-scrollbar" in css, "falta la sintaxis de Chromium"
+    for bloque in ("facturas", "cheques"):
+        assert f"main .ec-bloque-{bloque}::-webkit-scrollbar" in css, bloque

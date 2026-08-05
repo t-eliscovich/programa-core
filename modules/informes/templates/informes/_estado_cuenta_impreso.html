@@ -647,6 +647,32 @@
         main .ec-bloque-cheques table th:nth-child(8),
         main .ec-bloque-cheques table tbody td:nth-child(8) { width: 6% !important; }
 
+        /* Ninguna barra de scroll dibujada dentro de la hoja.
+           Dueña 2026-08-05, señalando el control ▲ ═ ▼ al costado de la tabla
+           de cheques: "esto en cheques borrar".
+
+           El Chromium de `pdf_motor` PINTA la barra de los contenedores con
+           `overflow` dentro del papel — en pantalla es normal, impresa es
+           basura. Ya la había sacado una vez (8f7bdde6) y se perdió cuando
+           reverti mis intentos fallidos del ancho (6e048ea9). Va sobre los dos
+           bloques y sus tablas, con las dos sintaxis: `scrollbar-width` para
+           el estándar y `::-webkit-scrollbar` para Chromium. */
+        :root:not(.dark) main .ec-bloque-facturas,
+        :root:not(.dark) main .ec-bloque-cheques,
+        :root:not(.dark) main .ec-bloque-facturas table,
+        :root:not(.dark) main .ec-bloque-cheques  table {
+          overflow: visible !important;
+          scrollbar-width: none !important;
+        }
+        main .ec-bloque-facturas ::-webkit-scrollbar,
+        main .ec-bloque-cheques  ::-webkit-scrollbar,
+        main .ec-bloque-facturas::-webkit-scrollbar,
+        main .ec-bloque-cheques::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+
         /* ── Rayado fino y gris, SÓLO en el papel del estado de cuenta ──
            Dueña 2026-08-05: "podés hacer las líneas más finitas y menos
            negras".
