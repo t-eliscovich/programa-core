@@ -1234,6 +1234,70 @@ def traza_ahora():
     return redirect(url_for("informes.traza"))
 
 
+# ── La explicación del día ─────────────────────────────────────────────────
+# TMT 2026-08-04 (dueña): "quiero agregar un check diario, quiero que cada día
+# puedas darme una explicación de por qué subió la utilidad. comparás balance de
+# mañana y a fin de día" + "no debería haber residuo.. y tenemos que ir
+# entrenando esto" + "por ahora solo visible para mí".
+#
+# SIN LINK EN EL MENÚ a propósito, por pedido de la dueña: se entra por URL
+# mientras se entrena. No es seguridad (los roles con `*` entran a todo igual);
+# es no ponerla en la cara de nadie hasta que explique el 100%.
+
+@informes_bp.route("/dia")
+@requiere_login
+@requiere_permiso("informes.ver")
+def dia():
+    """Por qué se movió la utilidad hoy, documento por documento."""
+    from modules.informes import dia as _dia
+
+    f = (request.args.get("fecha") or "").strip()
+    try:
+        fecha = date.fromisoformat(f) if f else _dia.hoy_ec()
+    except ValueError:
+        fecha = _dia.hoy_ec()
+    return render_template(
+        "informes/dia.html",
+        e=_dia.explicar(fecha),
+        etiquetas=_dia.ETIQUETAS,
+        racha=_dia.racha_limpia(),
+        hora_manana=_dia._hora("DIA_HORA_MANANA", _dia.HORA_MANANA),
+        hora_cierre=_dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),
+    )
+
+
+@informes_bp.route("/dia/capturar", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def dia_capturar():
+    """Captura manual, sin esperar a las 07:00 ni a las 19:00."""
+    from modules.informes import dia as _dia
+
+    r = _dia.capturar("manual")
+    if r.get("ok"):
+        flash(f"Captura tomada: {r.get('movimientos', 0)} movimiento(s).", "success")
+    else:
+        flash(f"No se pudo capturar: {r.get('motivo') or 'error'}", "error")
+    return redirect(url_for("informes.dia"))
+
+
+@informes_bp.route("/dia/nota", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def dia_nota():
+    """Guarda lo que la dueña sabe y el sistema todavía no."""
+    from modules.informes import dia as _dia
+
+    try:
+        idc = int(request.form.get("id_captura") or 0)
+    except (TypeError, ValueError):
+        idc = 0
+    if idc:
+        _dia.guardar_nota(idc, request.form.get("nota") or "")
+        flash("Nota guardada.", "success")
+    return redirect(url_for("informes.dia"))
+
+
 @informes_bp.route("/balance/utilidad-debug")
 @requiere_login
 @requiere_permiso("informes.ver")

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Explicación del día{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Explicación del día</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-08-04 (dueña): "quiero que cada día puedas darme una explicación de
+   por qué subió la utilidad. comparás balance de mañana y a fin de día" — y
+   "no debería haber residuo.. y tenemos que ir entrenando esto".
+   Sin link en el menú a propósito: se entra por URL mientras se entrena.
+   Tailwind está congelado (build JIT) → estilos inline. #}
+<div class="max-w-full" style="font-variant-numeric:tabular-nums;">
+
+  {{ page_hero(
+      'Por qué se movió la utilidad',
+      descripcion='Comparación entre la foto de la mañana y la del cierre, documento por documento.',
+      kpi_valor=(('$ ' ~ (e.d_utilidad | num_es(2))) if e.hasta else '—'),
+      kpi_extra=('· ' ~ e.fecha.strftime('%d/%m/%Y'))
+  ) }}
+
+  {# ── Barra: fecha, captura manual, racha ─────────────────────────────── #}
+  <div class="my-4 flex items-center gap-3 flex-wrap text-xs">
+    <form method="get" class="inline flex items-center gap-2">
+      <label style="color:rgb(100 116 139);">Día</label>
+      <input type="date" name="fecha" value="{{ e.fecha.isoformat() }}"
+             class="px-2 py-1 rounded border" style="border-color:rgb(203 213 225);">
+      <button class="px-3 py-1.5 rounded border"
+              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Ver</button>
+    </form>
+    <form method="post" action="{{ url_for('informes.dia_capturar') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="px-3 py-1.5 rounded border"
+              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">
+        Capturar ahora
+      </button>
+    </form>
+    <span style="color:rgb(100 116 139);">
+      Las capturas automáticas son a las {{ '%02d' | format(hora_manana) }}:00 y a las
+      {{ '%02d' | format(hora_cierre) }}:00 de Ecuador.
+      {% if racha %}<strong style="color:rgb(21 128 61);">{{ racha }} día{{ '' if racha == 1 else 's' }} seguido{{ '' if racha == 1 else 's' }} explicando el 100%.</strong>{% endif %}
+    </span>
+  </div>
+
+  {% if not e.hasta %}
+    <div class="my-4 border rounded bg-white px-4 py-6 text-sm"
+         style="border-color:rgb(226 232 240);color:rgb(100 116 139);">
+      {{ e.motivo }}
+      {% if e.desde %}
+        <br>La foto de la mañana ({{ e.desde.hora }}) está tomada: utilidad
+        <strong>$ {{ e.desde.utilidad | num_es(2) }}</strong>.
+      {% endif %}
+    </div>
+  {% else %}
+
+  {# ── El titular ───────────────────────────────────────────────────────── #}
+  <div class="my-4 border rounded bg-white px-4 py-4"
+       style="border-color:rgb(226 232 240);">
+    <div style="font-size:13px;color:rgb(100 116 139);">
+      De las {{ e.desde.hora }} ($ {{ e.desde.utilidad | num_es(2) }})
+      a las {{ e.hasta.hora }} ($ {{ e.hasta.utilidad | num_es(2) }})
+    </div>
+    <div style="font-size:30px;font-weight:700;line-height:1.2;
+                color:{% if e.d_utilidad < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
+      {{ '+' if e.d_utilidad >= 0 else '' }}$ {{ e.d_utilidad | num_es(2) }}
+    </div>
+    <div style="font-size:13px;color:rgb(71 85 105);margin-top:.35rem;">
+      {% if e.ok %}
+        <span style="color:rgb(21 128 61);font-weight:600;">Explicado al 100 %.</span>
+        Cada peso de ese movimiento tiene un documento con nombre abajo.
+      {% else %}
+        <span style="color:rgb(180 83 9);font-weight:600;">Explicado {{ e.explicado_pct }} %.</span>
+        Queda plata sin atribuir a ningún documento — está listada abajo en
+        <em>Falta explicar</em>. Eso es lo que hay que entrenar.
+      {% endif %}
+      {% if e.residuo and (e.residuo | abs) >= 1 %}
+        <br><strong style="color:rgb(185 28 28);">Descuadre de $ {{ e.residuo | num_es(2) }}</strong>
+        entre el Δ de la utilidad y la suma de los movimientos. Esto no debería
+        pasar nunca: avisá.
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Qué lo movió, por regla ──────────────────────────────────────────── #}
+  <div class="my-4 grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;">
+
+    <div class="border rounded bg-white" style="border-color:rgb(226 232 240);">
+      <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
+           style="background:rgb(248 250 252);color:rgb(100 116 139);">Qué lo movió</div>
+      <table class="w-full text-sm">
+        <tbody>
+          {% for r in e.reglas %}
+          <tr class="border-t" style="border-color:rgb(241 245 249);">
+            <td class="px-3 py-2">
+              {{ r.regla }}
+              <span style="font-size:11px;color:rgb(148 163 184);">· {{ r.n }}</span>
+              {% if r.familia == 'traspaso' and (r.aporte | abs) < 1 %}
+                <span style="font-size:11px;color:rgb(100 116 139);">— cambió de lugar, no de valor</span>
+              {% elif r.familia == 'sin_explicar' %}
+                <span style="font-size:11px;color:rgb(180 83 9);">— sin explicar</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-right" style="white-space:nowrap;font-weight:600;
+                color:{% if r.aporte < 0 %}rgb(185 28 28){% elif r.aporte > 0 %}rgb(21 128 61){% else %}rgb(148 163 184){% endif %};">
+              {{ '+' if r.aporte > 0 else '' }}{{ r.aporte | num_es(2) }}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="px-3 py-4 text-sm" style="color:rgb(148 163 184);">Nada se movió.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="border rounded bg-white" style="border-color:rgb(226 232 240);">
+      <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
+           style="background:rgb(248 250 252);color:rgb(100 116 139);">Por componente del balance</div>
+      <table class="w-full text-sm">
+        <tbody>
+          {% for c in e.componentes %}
+          <tr class="border-t" style="border-color:rgb(241 245 249);">
+            <td class="px-3 py-2">{{ c.label }}
+              {% if c.col == 'totp' %}<span style="font-size:11px;color:rgb(148 163 184);">(pasivo: sube → utilidad baja)</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-right" style="color:rgb(100 116 139);white-space:nowrap;">
+              {{ '+' if c.delta > 0 else '' }}{{ c.delta | num_es(2) }}
+            </td>
+            <td class="px-3 py-2 text-right" style="white-space:nowrap;font-weight:600;
+                color:{% if c.aporte < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
+              {{ '+' if c.aporte > 0 else '' }}{{ c.aporte | num_es(2) }}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="px-3 py-4 text-sm" style="color:rgb(148 163 184);">Ningún componente se movió.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Lo que falta explicar ────────────────────────────────────────────── #}
+  {% if e.sin_explicar %}
+  <div class="my-4 border rounded" style="border-color:rgb(251 191 36);background:rgb(255 251 235);">
+    <div class="px-3 py-2 text-[11px] uppercase tracking-wider" style="color:rgb(146 64 14);">
+      Falta explicar — esto es lo que hay que entrenar
+    </div>
+    <table class="w-full text-sm">
+      <tbody>
+        {% for m in e.sin_explicar %}
+        <tr class="border-t" style="border-color:rgb(254 243 199);">
+          <td class="px-3 py-2">{{ m.etiqueta }}</td>
+          <td class="px-3 py-2 text-right" style="font-weight:600;white-space:nowrap;
+              color:{% if m.aporte < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
+            {{ '+' if m.aporte > 0 else '' }}{{ m.aporte | num_es(2) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="px-3 py-2" style="font-size:11.5px;color:rgb(146 64 14);line-height:1.5;">
+      Un renglón acá significa que ese pedazo del componente no se pudo atribuir
+      a ninguna fila concreta. No es un descuadre — la cuenta cierra igual — es
+      una pregunta abierta.
+    </p>
+  </div>
+  {% endif %}
+
+  {# ── Documento por documento ──────────────────────────────────────────── #}
+  <div class="my-4 border rounded bg-white" style="border-color:rgb(226 232 240);overflow-x:auto;">
+    <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
+         style="background:rgb(248 250 252);color:rgb(100 116 139);">
+      Documento por documento · {{ e.movimientos | length }} movimiento{{ '' if (e.movimientos | length) == 1 else 's' }}
+    </div>
+    <table class="w-full text-sm">
+      <thead class="text-[11px] uppercase tracking-wider" style="color:rgb(148 163 184);">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium" style="width:9rem;">Componente</th>
+          <th class="px-3 py-2 text-left font-medium">Qué</th>
+          <th class="px-3 py-2 text-left font-medium" style="width:14rem;">Regla</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Δ</th>
+          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Aporte</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in e.movimientos[:400] %}
+        <tr class="border-t" style="border-color:rgb(241 245 249);
+            {% if m.familia == 'sin_explicar' %}background:rgb(255 251 235);{% endif %}">
+          <td class="px-3 py-1.5 text-xs" style="color:rgb(100 116 139);">{{ etiquetas.get(m.componente, m.componente) }}</td>
+          <td class="px-3 py-1.5" style="font-size:12.5px;">{{ m.etiqueta }}</td>
+          <td class="px-3 py-1.5 text-xs" style="color:rgb(100 116 139);">{{ m.regla }}</td>
+          <td class="px-3 py-1.5 text-right" style="color:rgb(100 116 139);white-space:nowrap;">
+            {{ '+' if m.delta > 0 else '' }}{{ m.delta | num_es(2) }}
+          </td>
+          <td class="px-3 py-1.5 text-right" style="white-space:nowrap;font-weight:600;
+              color:{% if m.aporte < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
+            {{ '+' if m.aporte > 0 else '' }}{{ m.aporte | num_es(2) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if (e.movimientos | length) > 400 %}
+      <p class="px-3 py-2" style="font-size:11px;color:rgb(148 163 184);">
+        Se muestran los 400 de mayor aporte de {{ e.movimientos | length }}.
+      </p>
+    {% endif %}
+  </div>
+
+  {# ── La nota ──────────────────────────────────────────────────────────── #}
+  <form method="post" action="{{ url_for('informes.dia_nota') }}"
+        class="my-4 border rounded bg-white px-3 py-3" style="border-color:rgb(226 232 240);">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="id_captura" value="{{ e.hasta.id_captura }}">
+    <label class="text-[11px] uppercase tracking-wider" style="color:rgb(100 116 139);">
+      Nota del día
+    </label>
+    <textarea name="nota" rows="2" class="w-full mt-1 px-2 py-1.5 rounded border text-sm"
+              style="border-color:rgb(203 213 225);"
+              placeholder="Lo que vos sabés y el sistema todavía no.">{{ e.hasta.nota or '' }}</textarea>
+    <button class="mt-2 px-3 py-1.5 rounded border text-xs"
+            style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Guardar nota</button>
+  </form>
+
+  {% endif %}
+
+  <p class="mt-3 text-xs" style="color:rgb(100 116 139);line-height:1.6;">
+    <strong>Cómo leerla.</strong> La utilidad es la variación del patrimonio, así
+    que todo lo que mueve un componente del balance mueve la utilidad — con una
+    excepción importante: los <em>traspasos</em>. Una cobranza baja la cartera y
+    sube los cheques por el mismo importe, así que netea cero sola. Cuando una
+    cobranza <em>no</em> netea cero, esa diferencia es una retención, un
+    descuento o una nota de crédito, y ahí sí hay que mirar. Los
+    <em>Pasivos</em> aportan con el signo dado vuelta: si suben, la utilidad
+    baja. La <em>Maquinaria</em> baja un poco todos los días porque la
+    amortización se prorratea por día del mes — eso es normal, no un error.
+  </p>
+</div>
+{% endblock %}

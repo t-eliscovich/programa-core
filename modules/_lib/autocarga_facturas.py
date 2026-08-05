@@ -152,6 +152,20 @@ def _loop() -> None:
                 _traza.registrar_si_toca()
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("traza de la utilidad (fondo): %s", e)
+            # TMT 2026-08-04 (dueña): "quiero agregar un check diario... comparás
+            # balance de mañana y a fin de día". Las dos capturas ancla (07:00 y
+            # 19:00 de ECUADOR) con la foto de detalle documento por documento.
+            # La grabadora de arriba no alcanza para esto: guarda agregados, y
+            # además el sync del dBase borra POSDAT/COMPRA/DOLARES/ACTIVOS/
+            # RETIROS enteras, así que "qué se cargó hoy" sólo se puede
+            # contestar diffeando una foto propia. Idempotente por el índice
+            # único (fecha_ec, momento) — no por una variable de proceso, que
+            # se pierde en cada restart.
+            try:
+                from modules.informes import dia as _dia
+                _dia.correr_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("explicación del día (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)

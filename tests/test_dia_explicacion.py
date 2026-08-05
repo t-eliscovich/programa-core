@@ -1,0 +1,666 @@
+"""La explicación del día (TMT 2026-08-04).
+
+Dueña: *"quiero agregar un check diario, quiero que cada día puedas darme una
+explicación de por qué subió la utilidad. comparás balance de mañana y a fin de
+día"*. Y, sobre el residuo, sin lugar a interpretación: *"no debería haber
+residuo.. y tenemos que ir entrenando esto"*.
+
+Lo que estos tests fijan:
+
+  · **El invariante.** Δ utilidad = Σ aportes de los movimientos, al centavo.
+    Es la promesa entera del sistema: si no cierra, la pantalla miente.
+  · **El `#ajuste` no es cuadratura de conveniencia.** Aparece SÓLO cuando el
+    detalle por documento no llega al componente, y queda marcado
+    `sin_explicar` para que baje el % explicado. Un sistema que cuadra
+    escondiendo lo que no entiende es peor que uno que no cuadra.
+  · **Los pasivos aportan al revés.** Deuda que sube = utilidad que baja.
+  · **El stock se parte en kilos y tarifa**, sin perder un centavo en el
+    redondeo. Son dos noticias distintas y una de ellas (la tarifa) no produjo
+    ni vendió nada.
+  · **Las capturas ancla son idempotentes por la DB**, no por una variable de
+    proceso: el server reinicia y la variable se pierde.
+"""
+from __future__ import annotations
+
+import os
+from datetime import date
+from unittest.mock import patch
+
+import pytest
+
+from modules.informes import dia
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+def _bal(**comp) -> dict:
+    base = {
+        "utilidad": 100.0, "patr": 1000.0,
+        "salcaj": 0.0, "salbanc_total": 0.0, "totc": 0.0, "totf": 0.0,
+        "antic": 0.0, "vsto": 0.0, "vqx": 0.0, "umaq": 0.0, "uact": 0.0,
+        "totp": 0.0, "uret": 0.0,
+    }
+    base.update(comp)
+    return {"diagnostico": {"componentes": base}, "stock_etapas": {}}
+
+
+def _foto(filas: list[dict]) -> dict:
+    return {(f["componente"], f["doc_id"]): f for f in filas}
+
+
+def _fila(comp, doc, imp, etiqueta="x", cantidad=None, precio=None) -> dict:
+    return {"componente": comp, "doc_id": doc, "importe": imp,
+            "etiqueta": etiqueta, "cantidad": cantidad, "precio": precio}
+
+
+# ── El invariante ───────────────────────────────────────────────────────────
+
+def test_delta_utilidad_es_la_suma_de_los_aportes():
+    """La promesa entera: cada peso del Δ tiene un documento con nombre.
+
+    Escenario de un día real: se cobró una factura de $1.000 con un cheque, se
+    facturó una venta nueva de $2.000 y entró una deuda de $300.
+
+        cobranza  → −1.000 (factura) + 1.000 (cheque) = 0   ← traspaso
+        venta     → +2.000                                   ← utilidad
+        deuda     → +300 de pasivo, que aporta −300          ← utilidad
+
+    Δ utilidad esperado: +1.700.
+    """
+    vieja = _foto([
+        _fila("facturas", "f1", 1000.0),
+        _fila("totp", "p1", 500.0),
+    ])
+    nueva = [
+        _fila("facturas", "f2", 2000.0),          # venta nueva
+        _fila("cheques", "c1", 1000.0),           # el cheque de la cobranza
+        _fila("totp", "p1", 500.0),               # la deuda vieja sigue
+        _fila("totp", "p2", 300.0),               # deuda nueva
+    ]
+    movs = dia._diff(nueva, vieja)
+    assert round(sum(m["aporte"] for m in movs), 2) == 1700.0
+
+    # ...y cada pata está por separado, no netada de antemano.
+    por_doc = {m["doc_id"]: m for m in movs}
+    assert por_doc["f1"]["aporte"] == -1000.0
+    assert por_doc["c1"]["aporte"] == 1000.0
+    assert por_doc["f2"]["aporte"] == 2000.0
+    assert por_doc["p2"]["aporte"] == -300.0      # pasivo: al revés
+
+
+def test_pasivo_que_sube_baja_la_utilidad():
+    movs = dia._diff([_fila("totp", "p9", 1000.0)], {})
+    assert movs[0]["delta"] == 1000.0
+    assert movs[0]["aporte"] == -1000.0
+
+
+def test_pasivo_que_se_paga_sube_la_utilidad():
+    movs = dia._diff([], _foto([_fila("totp", "p9", 1000.0)]))
+    assert movs[0]["tipo"] == "baja"
+    assert movs[0]["aporte"] == 1000.0
+
+
+def test_el_ruido_de_centavos_no_genera_movimiento():
+    vieja = _foto([_fila("facturas", "f1", 1000.00)])
+    assert dia._diff([_fila("facturas", "f1", 1000.005)], vieja) == []
+
+
+# ── El #ajuste: honesto, no cosmético ───────────────────────────────────────
+
+def test_ajuste_aparece_cuando_el_detalle_no_llega_al_componente():
+    """Si los documentos suman $800 y el balance dice $1.000, faltan $200 y
+    tienen que quedar A LA VISTA, no repartidos ni escondidos."""
+    with patch.object(dia, "_det_facturas", return_value=[
+            {"doc_id": "f1", "etiqueta": "F1", "importe": 800.0}]), \
+         patch.object(dia, "_det_cheques", return_value=[]), \
+         patch.object(dia, "_det_caja", return_value=[]), \
+         patch.object(dia, "_det_bancos", return_value=[]), \
+         patch.object(dia, "_det_antic", return_value=[]), \
+         patch.object(dia, "_det_totp", return_value=[]), \
+         patch.object(dia, "_det_uret", return_value=[]), \
+         patch.object(dia, "_det_activos", return_value=[]):
+        det = dia.detalle(_bal(totf=1000.0))
+    aj = [d for d in det if d["doc_id"] == "#ajuste:facturas"]
+    assert len(aj) == 1
+    assert aj[0]["importe"] == 200.0
+    # Y la suma del componente cierra contra el balance.
+    assert round(sum(d["importe"] for d in det if d["componente"] == "facturas"), 2) == 1000.0
+
+
+def test_sin_ajuste_cuando_los_documentos_ya_explican_todo():
+    with patch.object(dia, "_det_facturas", return_value=[
+            {"doc_id": "f1", "etiqueta": "F1", "importe": 1000.0}]), \
+         patch.object(dia, "_det_cheques", return_value=[]), \
+         patch.object(dia, "_det_caja", return_value=[]), \
+         patch.object(dia, "_det_bancos", return_value=[]), \
+         patch.object(dia, "_det_antic", return_value=[]), \
+         patch.object(dia, "_det_totp", return_value=[]), \
+         patch.object(dia, "_det_uret", return_value=[]), \
+         patch.object(dia, "_det_activos", return_value=[]):
+        det = dia.detalle(_bal(totf=1000.0))
+    assert not [d for d in det if str(d["doc_id"]).startswith("#ajuste")]
+
+
+def test_el_ajuste_no_se_hace_pasar_por_explicado():
+    """Un `#ajuste` tiene que salir marcado `sin_explicar`. Si se contara como
+    explicado, la cuadratura taparía justamente lo que hay que entrenar."""
+    movs = dia._diff([_fila("facturas", "#ajuste:facturas", 200.0)], {})
+    assert movs[0]["familia"] == "sin_explicar"
+    assert movs[0]["regla"] == "Sin explicar todavía"
+
+
+def test_una_fuente_caida_no_tumba_la_captura():
+    """Si Asinfo o formulas_app no contestan, el componente queda sin detalle
+    pero el `#ajuste` lo absorbe entero y la foto igual se toma."""
+    with patch.object(dia, "_det_facturas", side_effect=RuntimeError("Asinfo caído")), \
+         patch.object(dia, "_det_cheques", return_value=[]), \
+         patch.object(dia, "_det_caja", return_value=[]), \
+         patch.object(dia, "_det_bancos", return_value=[]), \
+         patch.object(dia, "_det_antic", return_value=[]), \
+         patch.object(dia, "_det_totp", return_value=[]), \
+         patch.object(dia, "_det_uret", return_value=[]), \
+         patch.object(dia, "_det_activos", return_value=[]):
+        det = dia.detalle(_bal(totf=5000.0))
+    aj = [d for d in det if d["doc_id"] == "#ajuste:facturas"]
+    assert aj and aj[0]["importe"] == 5000.0
+
+
+# ── Stock: kilos vs tarifa ──────────────────────────────────────────────────
+
+def test_el_stock_se_parte_en_kilos_y_tarifa_sin_perder_plata():
+    """1.000 kg a $2 → 1.200 kg a $2,50.
+
+        Δ total   = 3.000 − 2.000 = +1.000
+        por kilos = (1200 − 1000) × 2,00 =   +400
+        por tarifa=  1200 × (2,50 − 2,00) =  +600
+    """
+    vieja = _foto([_fila("vsto", "#hilado", 2000.0, "Stock hilado", 1000.0, 2.0)])
+    nueva = [_fila("vsto", "#hilado", 3000.0, "Stock hilado", 1200.0, 2.5)]
+    movs = dia._diff(nueva, vieja)
+    assert round(sum(m["aporte"] for m in movs), 2) == 1000.0
+    subs = {m["doc_id"]: m for m in movs}
+    assert subs["#hilado:kilos"]["delta"] == 400.0
+    assert subs["#hilado:tarifa"]["delta"] == 600.0
+
+
+def test_stock_solo_tarifa_no_dice_que_entraron_kilos():
+    """Una revaluación no produjo ni vendió nada. Si la pantalla dijera
+    'entraron kilos' estaría mintiendo sobre la fábrica."""
+    vieja = _foto([_fila("vsto", "#hilado", 2000.0, "Stock hilado", 1000.0, 2.0)])
+    nueva = [_fila("vsto", "#hilado", 2100.0, "Stock hilado", 1000.0, 2.1)]
+    movs = dia._diff(nueva, vieja)
+    assert len(movs) == 1
+    assert movs[0]["doc_id"] == "#hilado:tarifa"
+    assert "$/kg" in movs[0]["regla"]
+
+
+def test_la_particion_del_stock_no_pierde_centavos():
+    """Con números feos el redondeo de las dos patas puede no dar el Δ exacto.
+    Lo que sobra sale como 'resto' — jamás se descarta, porque descartarlo
+    rompería el invariante."""
+    vieja = _foto([_fila("vsto", "#hilado", 3333.33, "Stock hilado", 1111.11, 3.0)])
+    nueva = [_fila("vsto", "#hilado", 3777.77, "Stock hilado", 1234.567, 3.0599)]
+    movs = dia._diff(nueva, vieja)
+    assert round(sum(m["delta"] for m in movs), 2) == round(3777.77 - 3333.33, 2)
+
+
+# ── Reglas ──────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize(("comp", "tipo", "doc", "delta", "familia"), [
+    ("facturas", "alta", "f1", 500.0, "utilidad"),      # venta
+    ("facturas", "cambio", "f1", -500.0, "traspaso"),   # abono
+    ("cheques", "alta", "c1", 500.0, "traspaso"),       # cobranza
+    ("caja", "alta", "k1", -50.0, "utilidad"),          # gasto
+    ("caja", "alta", "#apertura", 50.0, "traspaso"),
+    ("totp", "alta", "p1", 500.0, "utilidad"),          # deuda nueva
+    ("totp", "baja", "p1", -500.0, "traspaso"),         # deuda pagada
+    ("umaq", "cambio", "a1", -12.0, "utilidad"),        # amortización
+    ("uret", "alta", "r1", 900.0, "traspaso"),
+    ("facturas", "alta", "#ajuste:facturas", 1.0, "sin_explicar"),
+])
+def test_familia_de_cada_regla(comp, tipo, doc, delta, familia):
+    _nombre, fam = dia.regla(comp, tipo, doc, delta)
+    assert fam == familia
+    assert fam in dia.FAMILIAS
+
+
+def test_la_amortizacion_diaria_tiene_nombre_propio():
+    """La maquinaria baja sola todos los días (MENU.PRG prorratea por día del
+    mes). Sin un nombre, cada mañana parece una pérdida misteriosa."""
+    nombre, _ = dia.regla("umaq", "cambio", "a1", -37.5)
+    assert nombre == "Amortización del día"
+
+
+def test_una_cobranza_netea_cero_sin_emparejar_documentos():
+    """Nadie matchea el cheque con la factura: cada pata aporta con el signo de
+    su componente y la suma da cero sola."""
+    movs = dia._diff(
+        [_fila("cheques", "c1", 1000.0)],
+        _foto([_fila("facturas", "f1", 1000.0)]),
+    )
+    assert round(sum(m["aporte"] for m in movs), 2) == 0.0
+
+
+def test_una_cobranza_con_retencion_no_netea_y_esa_es_la_noticia():
+    """La factura baja $1.000 pero sólo entran $970 de cheque: los $30 de
+    retención son exactamente la pérdida del día."""
+    movs = dia._diff(
+        [_fila("cheques", "c1", 970.0)],
+        _foto([_fila("facturas", "f1", 1000.0)]),
+    )
+    assert round(sum(m["aporte"] for m in movs), 2) == -30.0
+
+
+# ── Horarios: Ecuador, no el server ─────────────────────────────────────────
+
+def test_antes_de_las_siete_no_captura():
+    with patch.object(dia, "ahora_ec") as a:
+        a.return_value.hour = 6
+        assert dia.correr_si_toca()["motivo"] == "todavía no son las 7"
+
+
+def test_a_las_ocho_captura_la_de_la_manana():
+    with patch.object(dia, "ahora_ec") as a, \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 4)), \
+         patch.object(dia, "_rows", return_value=[]), \
+         patch.object(dia, "capturar", return_value={"ok": True, "movimientos": 3}) as cap:
+        a.return_value.hour = 8
+        assert dia.correr_si_toca()["capturado"] == "manana"
+        cap.assert_called_once_with("manana")
+
+
+def test_a_las_veinte_captura_el_cierre_primero():
+    """El cierre va primero: si el server estuvo caído todo el día y arranca a
+    las 20:00, la captura que importa es la del cierre."""
+    with patch.object(dia, "ahora_ec") as a, \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 4)), \
+         patch.object(dia, "_rows", return_value=[]), \
+         patch.object(dia, "capturar", return_value={"ok": True, "movimientos": 0}) as cap:
+        a.return_value.hour = 20
+        assert dia.correr_si_toca()["capturado"] == "cierre"
+        cap.assert_called_once_with("cierre")
+
+
+def test_no_repite_la_captura_que_ya_esta_hecha():
+    with patch.object(dia, "ahora_ec") as a, \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 4)), \
+         patch.object(dia, "_rows", return_value=[{"momento": "manana"}]), \
+         patch.object(dia, "capturar") as cap:
+        a.return_value.hour = 10
+        dia.correr_si_toca()
+        cap.assert_not_called()
+
+
+def test_se_puede_apagar_por_env():
+    with patch.dict(os.environ, {"DIA_EXPLICACION": "0"}):
+        assert dia.correr_si_toca()["motivo"] == "apagado"
+
+
+def test_la_hora_de_ecuador_no_es_la_del_server():
+    """El server corre en UTC. A las 23:00 UTC en Ecuador son las 18:00 del
+    mismo día — si se usara la hora del server, el cierre saldría un día
+    corrido y compararía contra la foto equivocada."""
+    from datetime import UTC, datetime
+    with patch("modules.informes.dia.datetime") as dt:
+        dt.now.return_value = datetime(2026, 8, 4, 23, 0, tzinfo=UTC)
+        assert dia.ahora_ec().hour == 18
+        assert dia.hoy_ec() == date(2026, 8, 4)
+
+
+# ── La explicación ──────────────────────────────────────────────────────────
+
+def _caps(u0, u1, **comp):
+    c0 = {"id_captura": 1, "hora": "07:00", "utilidad": u0, "nota": None}
+    c1 = {"id_captura": 2, "hora": "19:00", "utilidad": u1, "nota": None}
+    for c, _s in dia.COMPONENTES:
+        c0[c] = 0.0
+        c1[c] = comp.get(c, 0.0)
+    return [c0, c1]
+
+
+def test_explicar_sin_segunda_captura_lo_dice_en_castellano():
+    with patch.object(dia, "capturas", return_value=[{"id_captura": 1, "hora": "07:00",
+                                                      "utilidad": 10.0}]):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["hasta"] is None
+    assert "19:00" in e["motivo"]
+    assert e["desde"]["hora"] == "07:00"
+
+
+def test_explicar_cierra_sin_residuo_y_marca_el_cien_por_ciento():
+    movs = [
+        {"aporte": 2000.0, "familia": "utilidad", "regla": "Venta facturada",
+         "componente": "facturas"},
+        {"aporte": -300.0, "familia": "utilidad", "regla": "Deuda nueva cargada",
+         "componente": "totp"},
+        {"aporte": -1000.0, "familia": "traspaso", "regla": "Abono a factura",
+         "componente": "facturas"},
+        {"aporte": 1000.0, "familia": "traspaso", "regla": "Cheque recibido",
+         "componente": "cheques"},
+    ]
+    with patch.object(dia, "capturas", return_value=_caps(0.0, 1700.0, facturas=1000.0)), \
+         patch.object(dia, "_rows", return_value=movs):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["d_utilidad"] == 1700.0
+    assert e["residuo"] == 0.0
+    assert e["explicado_pct"] == 100.0
+    assert e["ok"] is True
+    assert e["sin_explicar"] == []
+    # Los traspasos netean cero y quedan visibles como familia.
+    fam = {f["familia"]: f["aporte"] for f in e["familias"]}
+    assert fam["traspaso"] == 0.0
+    assert fam["utilidad"] == 1700.0
+
+
+def test_explicar_baja_el_porcentaje_cuando_hay_algo_sin_explicar():
+    movs = [
+        {"aporte": 900.0, "familia": "utilidad", "regla": "Venta facturada",
+         "componente": "facturas"},
+        {"aporte": 100.0, "familia": "sin_explicar", "regla": "Sin explicar todavía",
+         "componente": "vqx", "etiqueta": "Químicos: sin explicar"},
+    ]
+    with patch.object(dia, "capturas", return_value=_caps(0.0, 1000.0)), \
+         patch.object(dia, "_rows", return_value=movs):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["residuo"] == 0.0          # la cuenta cierra igual...
+    assert e["explicado_pct"] == 90.0   # ...pero no se hace la desentendida
+    assert e["ok"] is False
+    assert len(e["sin_explicar"]) == 1
+
+
+def test_explicar_denuncia_el_descuadre_si_lo_hubiera():
+    """Si el Δ de la utilidad no coincide con la suma de los movimientos hay un
+    bug. Tiene que salir en la pantalla, no quedar tapado."""
+    with patch.object(dia, "capturas", return_value=_caps(0.0, 5000.0)), \
+         patch.object(dia, "_rows", return_value=[
+             {"aporte": 1000.0, "familia": "utilidad", "regla": "Venta facturada",
+              "componente": "facturas"}]):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["residuo"] == 4000.0
+    assert e["ok"] is False
+
+
+def test_los_componentes_salen_ordenados_por_cuanto_pesaron():
+    with patch.object(dia, "capturas",
+                      return_value=_caps(0.0, 0.0, facturas=100.0, totp=5000.0,
+                                         caja=-20.0)), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 8, 4))
+    assert [c["col"] for c in e["componentes"]] == ["totp", "facturas", "caja"]
+    # El pasivo entra con el signo dado vuelta.
+    assert e["componentes"][0]["delta"] == 5000.0
+    assert e["componentes"][0]["aporte"] == -5000.0
+
+
+def test_racha_limpia_se_corta_en_el_primer_dia_con_algo_sin_explicar():
+    with patch.object(dia, "_rows", return_value=[
+            {"fecha_ec": date(2026, 8, 3), "ciegos": 0},
+            {"fecha_ec": date(2026, 8, 2), "ciegos": 0},
+            {"fecha_ec": date(2026, 8, 1), "ciegos": 4},
+            {"fecha_ec": date(2026, 7, 31), "ciegos": 0}]):
+        assert dia.racha_limpia() == 2
+
+
+# ── Contra Postgres de verdad ───────────────────────────────────────────────
+# El diff en memoria es una cosa; el round-trip (insertar movimientos, pisar la
+# foto rodante, que el índice único frene la segunda captura del mismo momento)
+# es otra, y es donde una migración mal escrita se nota. Corre solo si hay una
+# DB a mano: `DIA_TEST_DSN=postgresql://... pytest tests/test_dia_explicacion.py`
+
+_DSN = os.environ.get("DIA_TEST_DSN", "")
+sin_db = pytest.mark.skipif(not _DSN, reason="sin DIA_TEST_DSN")
+
+
+@pytest.fixture()
+def pg():
+    import psycopg2
+    conn = psycopg2.connect(_DSN)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE scintela.dia_captura, scintela.dia_movimiento, "
+                    "scintela.dia_detalle RESTART IDENTITY CASCADE")
+    yield conn
+    conn.close()
+
+
+@pytest.fixture()
+def db_real(pg, monkeypatch):
+    """Apunta `db` del módulo a la DB de prueba, respetando conn= y tx()."""
+    import contextlib
+
+    import psycopg2.extras
+
+    def fetch_all(sql, params=None, conn=None):
+        c = conn or pg
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params) if params else cur.execute(sql)
+            return [dict(r) for r in cur.fetchall()]
+
+    def execute(sql, params=None, conn=None):
+        c = conn or pg
+        with c.cursor() as cur:
+            cur.execute(sql, params) if params else cur.execute(sql)
+            return cur.rowcount
+
+    def execute_returning(sql, params=None, conn=None):
+        c = conn or pg
+        with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params) if params else cur.execute(sql)
+            r = cur.fetchone()
+            return dict(r) if r else None
+
+    @contextlib.contextmanager
+    def tx():
+        yield pg
+
+    monkeypatch.setattr(dia.db, "fetch_all", fetch_all)
+    monkeypatch.setattr(dia.db, "execute", execute)
+    monkeypatch.setattr(dia.db, "execute_returning", execute_returning)
+    monkeypatch.setattr(dia.db, "tx", tx)
+    return pg
+
+
+@sin_db
+def test_db_captura_diffea_y_pisa_la_foto_rodante(db_real):
+    """Dos capturas seguidas: la segunda tiene que ver lo que cambió respecto
+    de la primera, y la foto rodante tiene que quedar con el estado nuevo."""
+    with patch.object(dia, "detalle", return_value=[]):
+        dia.capturar("manual", bal=_bal())          # la primera no diffea nunca
+    with patch.object(dia, "detalle", return_value=[
+            _fila("facturas", "f1", 1000.0, "Factura 1")]):
+        r1 = dia.capturar("manana", bal=_bal(utilidad=0.0, totf=1000.0))
+    assert r1["ok"] and r1["movimientos"] == 1
+
+    with patch.object(dia, "detalle", return_value=[
+            _fila("facturas", "f2", 3000.0, "Factura 2")]):
+        r2 = dia.capturar("cierre", bal=_bal(utilidad=2000.0, totf=3000.0))
+    assert r2["ok"]
+
+    movs = dia._rows("SELECT * FROM scintela.dia_movimiento WHERE id_captura = %s",
+                     (r2["id_captura"],))
+    por_doc = {m["doc_id"]: m for m in movs}
+    assert float(por_doc["f1"]["aporte"]) == -1000.0   # se fue
+    assert float(por_doc["f2"]["aporte"]) == 3000.0    # entró
+    assert round(sum(float(m["aporte"]) for m in movs), 2) == 2000.0
+
+    foto = dia._rows("SELECT doc_id FROM scintela.dia_detalle")
+    assert [f["doc_id"] for f in foto] == ["f2"]
+
+
+@sin_db
+def test_db_no_hay_dos_capturas_del_mismo_momento(db_real):
+    """El hilo de fondo pasa cada 2 minutos: entre las 19:00 y la medianoche
+    llama 150 veces. Tiene que entrar UNA — y la guarda es el índice único, no
+    una variable de proceso, porque el server reinicia."""
+    with patch.object(dia, "detalle", return_value=[]):
+        a = dia.capturar("cierre", bal=_bal())
+        b = dia.capturar("cierre", bal=_bal())
+    assert a["ok"] is True
+    assert b["ok"] is False
+    assert b["motivo"] == "ya había captura de este momento"
+    n = dia._rows("SELECT COUNT(*) AS n FROM scintela.dia_captura")[0]["n"]
+    assert n == 1
+
+
+@sin_db
+def test_db_las_manuales_no_estan_limitadas(db_real):
+    """El índice único es parcial a propósito: capturar a mano dos veces
+    seguidas para mirar algo tiene que poder hacerse."""
+    with patch.object(dia, "detalle", return_value=[]):
+        assert dia.capturar("manual", bal=_bal())["ok"]
+        assert dia.capturar("manual", bal=_bal())["ok"]
+
+
+@sin_db
+def test_db_el_invariante_sobrevive_al_round_trip(db_real):
+    """El test que resume todo: guardar y volver a leer no puede cambiar el
+    número. Δ utilidad = Σ aportes, leído de la base."""
+    with patch.object(dia, "detalle", return_value=[
+            _fila("facturas", "f1", 1000.0, "Factura 1"),
+            _fila("totp", "p1", 500.0, "Deuda 1")]):
+        dia.capturar("manana", bal=_bal(utilidad=0.0, totf=1000.0, totp=500.0))
+    with patch.object(dia, "detalle", return_value=[
+            _fila("facturas", "f1", 0.0, "Factura 1"),
+            _fila("cheques", "c1", 1000.0, "Cheque 1"),
+            _fila("facturas", "f2", 2000.0, "Factura 2"),
+            _fila("totp", "p1", 500.0, "Deuda 1"),
+            _fila("totp", "p2", 300.0, "Deuda 2")]):
+        dia.capturar("cierre", bal=_bal(utilidad=1700.0, totf=2000.0, totc=1000.0,
+                                        totp=800.0))
+    e = dia.explicar(dia.hoy_ec())
+    assert e["d_utilidad"] == 1700.0
+    assert e["residuo"] == 0.0
+    assert e["ok"] is True
+
+
+# ── La pantalla ─────────────────────────────────────────────────────────────
+# Jinja falla en runtime, no en import: sin un render de verdad, un typo en el
+# template se descubre en producción. Estos tests lo renderizan entero.
+
+def _login(app, fake_db, permisos=("informes.ver",)):
+    rid = fake_db.add_role("Informes", list(permisos))
+    uid = fake_db.add_user("u", b"$2b$12$fake", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
+
+
+def _explicado(**over):
+    e = {
+        "fecha": date(2026, 8, 4), "capturas": [], "ok": True, "motivo": "",
+        "desde": {"id_captura": 1, "hora": "07:00", "utilidad": 100.0, "nota": None},
+        "hasta": {"id_captura": 2, "hora": "19:00", "utilidad": 1800.0, "nota": None},
+        "d_utilidad": 1700.0,
+        "componentes": [{"col": "totp", "label": "Pasivos", "delta": 300.0,
+                         "aporte": -300.0},
+                        {"col": "facturas", "label": "Facturas", "delta": 1000.0,
+                         "aporte": 1000.0}],
+        "movimientos": [{"componente": "facturas", "tipo": "alta", "doc_id": "f2",
+                         "etiqueta": "Factura 2 · ABC", "regla": "Venta facturada",
+                         "delta": 2000.0, "aporte": 2000.0, "familia": "utilidad"}],
+        "familias": [{"familia": "utilidad", "aporte": 1700.0, "n": 2}],
+        "reglas": [{"regla": "Venta facturada", "familia": "utilidad",
+                    "aporte": 2000.0, "n": 1}],
+        "sin_explicar": [], "residuo": 0.0, "explicado_pct": 100.0,
+    }
+    e.update(over)
+    return e
+
+
+def test_la_pantalla_del_dia_renderiza(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "racha_limpia", return_value=3):
+        r = c.get("/informes/dia")
+    assert r.status_code == 200, r.data[:400]
+    cuerpo = r.data.decode()
+    assert "Venta facturada" in cuerpo
+    assert "Explicado al 100" in cuerpo
+    assert "3 días seguidos" in cuerpo
+
+
+def test_la_pantalla_muestra_lo_que_falta_explicar(app, fake_db):
+    """Lo que no se entiende tiene que estar en la cara, no en un log."""
+    c = _login(app, fake_db)
+    e = _explicado(ok=False, explicado_pct=88.0, sin_explicar=[
+        {"componente": "vqx", "etiqueta": "Stock Químicos: sin explicar por documento",
+         "aporte": -240.0, "delta": -240.0, "regla": "Sin explicar todavía",
+         "familia": "sin_explicar", "tipo": "cambio", "doc_id": "#ajuste:vqx"}])
+    with patch.object(dia, "explicar", return_value=e), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        r = c.get("/informes/dia")
+    cuerpo = r.data.decode()
+    assert r.status_code == 200
+    assert "Falta explicar" in cuerpo
+    assert "Stock Químicos: sin explicar" in cuerpo
+    assert "Explicado 88.0" in cuerpo
+
+
+def test_la_pantalla_avisa_cuando_todavia_no_hay_cierre(app, fake_db):
+    c = _login(app, fake_db)
+    e = _explicado(hasta=None, motivo="Todavía no hay con qué comparar: falta la "
+                                      "captura de las 19:00.")
+    with patch.object(dia, "explicar", return_value=e), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        r = c.get("/informes/dia")
+    assert r.status_code == 200
+    assert "falta la captura" in r.data.decode()
+
+
+def test_la_fecha_invalida_no_rompe_la_pantalla(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(dia, "explicar", return_value=_explicado()) as ex, \
+         patch.object(dia, "racha_limpia", return_value=0), \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 4)):
+        assert c.get("/informes/dia?fecha=no-es-fecha").status_code == 200
+    assert ex.call_args[0][0] == date(2026, 8, 4)
+
+
+def test_sin_permiso_la_pantalla_no_existe(app, fake_db):
+    """El repo gatea por operación y devuelve 404 (no 403) a propósito."""
+    c = _login(app, fake_db, permisos=("cheques.ver",))
+    assert c.get("/informes/dia").status_code == 404
+
+
+# ── El arranque y el volumen ────────────────────────────────────────────────
+
+@sin_db
+def test_db_la_primera_captura_no_inventa_un_dia_gigante(db_real):
+    """Sin foto anterior no hay con qué comparar. Si se diffeara contra la
+    nada, cada factura viva de la cartera saldría como 'venta de hoy' y el
+    primer día mostraría un Δ del tamaño del balance entero."""
+    with patch.object(dia, "detalle", return_value=[
+            _fila("facturas", "f1", 1000.0, "Factura 1"),
+            _fila("facturas", "f2", 2000.0, "Factura 2")]):
+        r = dia.capturar("manana", bal=_bal(totf=3000.0))
+    assert r["ok"] and r["primera"] is True
+    assert r["movimientos"] == 0
+    # ...pero la foto SÍ queda guardada: mañana ya hay contra qué comparar.
+    assert len(dia._rows("SELECT doc_id FROM scintela.dia_detalle")) == 2
+
+
+@sin_db
+def test_db_la_segunda_captura_ya_diffea(db_real):
+    with patch.object(dia, "detalle", return_value=[_fila("facturas", "f1", 1000.0)]):
+        dia.capturar("manana", bal=_bal(totf=1000.0))
+    with patch.object(dia, "detalle", return_value=[_fila("facturas", "f1", 1500.0)]):
+        r = dia.capturar("cierre", bal=_bal(totf=1500.0))
+    assert r["primera"] is False
+    assert r["movimientos"] == 1
+
+
+@sin_db
+def test_db_una_cartera_grande_entra_en_lotes(db_real):
+    """La cartera viva son miles de documentos. Una fila por INSERT dejaría la
+    transacción abierta demasiado tiempo en el hilo de fondo de producción."""
+    grande = [_fila("facturas", f"f{i}", 10.0, f"Factura {i}") for i in range(1200)]
+    with patch.object(dia, "detalle", return_value=[]):
+        # Semilla: la foto queda VACÍA a propósito. "Primera" se decide por si
+        # hubo alguna captura, no por si la foto tiene filas — si no, una foto
+        # legítimamente vacía haría descartar la captura siguiente entera.
+        dia.capturar("manana", bal=_bal())
+    with patch.object(dia, "detalle", return_value=grande):
+        r = dia.capturar("cierre", bal=_bal(totf=12000.0))
+    assert r["ok"] and r["movimientos"] == 1200
+    assert dia._rows("SELECT COUNT(*) AS n FROM scintela.dia_detalle")[0]["n"] == 1200
+    assert dia._rows("SELECT COUNT(*) AS n FROM scintela.dia_movimiento")[0]["n"] == 1200
