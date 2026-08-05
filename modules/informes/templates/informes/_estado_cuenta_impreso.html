@@ -443,73 +443,37 @@
           font-family: inherit !important;
         }
 
-        /* ── SALDO (facturas) e IMPORTE (cheques), en la misma vertical ──
-           Dueña 2026-08-04. Poner Importe antes que Banco los acercó pero no
-           alcanzaba: son dos tablas y cada una repartía el ancho midiendo su
-           propio contenido, así que caían cerca y nunca encima — que es peor
-           que estar lejos, porque parece que debería alinear y no alinea.
+        /* ⚠️ ACÁ VIVÍA EL BLOQUE QUE ALINEABA SALDO CON IMPORTE (c85c731b,
+           04/08): `table-layout: fixed` en la tabla de FACTURAS más sus anchos
+           por `nth-child`. Se sacó el 05/08.
 
-           Lo único que se fija es dónde TERMINA esa columna: el 70% del ancho,
-           en las dos tablas. Facturas llega ahí con cinco columnas y cheques
-           con seis, así que cada una reparte ese 70% a su manera. El resto de
-           la hoja —el bloque del TOTAL, los subtotales de cheques— queda como
-           estaba.
+           Dueña: *"ves que hay un espacio vacío a la derecha de facturas?
+           debería usar todo el ancho de la hoja"* y, cuando me fui por las
+           ramas persiguiendo al motor de PDF, *"no lo estás haciendo muy
+           complicado? sólo quería que imprima sin ese blanco y ANTES LO HACÍA
+           BIEN"*. Esa frase era el dato: no era cómo renderiza el Chromium
+           headless, era una regresión del día anterior.
 
-           Las dos columnas que no se imprimen (Tipo y Stat de facturas) van a
-           0: con `table-layout: fixed` el navegador les daría ancho igual y
-           correría todo lo demás. */
+           Mecanismo: con `table-layout: fixed`, DOS de las nueve columnas de
+           facturas (Tipo y Stat) son `no-print` ⇒ `display:none`. Desaparecen
+           del layout pero siguen contando en el reparto, y en el motor del PDF
+           la tabla terminaba a 590 px sobre 790 de hoja: un cuarto de página
+           en blanco. La de CHEQUES, que no tiene ninguna columna oculta,
+           ocupaba todo con las mismas reglas — esa era la asimetría.
+
+           Sin el bloque, facturas vuelve al layout automático con `w-full` y
+           usa la hoja entera, como antes del 04/08. SE PIERDE que Saldo caiga
+           exactamente sobre Importe de cheques; se prioriza no desperdiciar un
+           cuarto del papel.
+
+           📌 Para recuperar la alineación algún día: NO con `table-layout:
+           fixed` sobre una tabla con columnas `no-print`. Primero habría que
+           dejar de emitirlas en el HTML cuando la hoja va a papel, y ajustar
+           los `colspan` del pie, que también tiene celdas `no-print`. */
+
+        /* CHEQUES sí se queda con ancho fijo: no tiene columnas ocultas y en
+           el papel ocupa la hoja entera. Si anda, no se toca. */
         main .ec-bloque-cheques table { table-layout: fixed !important; }
-
-        /* ⚠️ TMT 2026-08-05, 4ª vuelta (dueña: "ves que hay un espacio vacío a
-           la derecha de facturas? debería usar todo el ancho de la hoja").
-
-           FACTURAS va con layout AUTOMÁTICO. Los porcentajes de abajo siguen,
-           como pista de reparto, pero el ancho total deja de depender de que
-           sumen 100.
-
-           Qué se descartó midiendo, no mirando:
-             · No es el rayado ni la especificidad (eso era 3116a247).
-             · No es el contenedor: forzarle width/display tampoco cambió nada.
-             · No es la hoja de estilos: con las @media print activas y el
-               documento forzado a 700/760/790/816/900/1000/1152/1300 px, en el
-               navegador la tabla da 100% en LOS OCHO anchos.
-             · Midiendo el PDF, las siete columnas visibles respetan sus
-               porcentajes exactos… contra una tabla de 590 px sobre 790 de
-               hoja. O sea que en el Chromium headless de `pdf_motor` el
-               `width:100%` de la tabla no se aplica, y ese motor no se puede
-               inspeccionar desde acá.
-
-           `table-layout: fixed` congela el ancho a partir de la primera fila;
-           el automático lo recalcula con el contenido y con el `width:100%`.
-           CHEQUES —que en el MISMO papel sí ocupa todo— se deja como está: si
-           anda, no se toca.
-
-           Ojo con una cosa que el comentario viejo decía mal: Tipo y Stat NO
-           son columnas de ancho 0 en el papel. Llevan `no-print`, así que
-           `display:none` las saca del layout. El `width: 0` de más abajo es
-           inofensivo pero no es lo que las esconde. */
-        main .ec-bloque-facturas table { table-layout: auto !important; }
-
-        /* Facturas: 13+13+0+15+14+15 = 70% hasta el final de Saldo. */
-        main .ec-bloque-facturas table th:nth-child(1),
-        main .ec-bloque-facturas table tbody td:nth-child(1) { width: 13% !important; }
-        main .ec-bloque-facturas table th:nth-child(2),
-        main .ec-bloque-facturas table tbody td:nth-child(2) { width: 13% !important; }
-        main .ec-bloque-facturas table th:nth-child(3),
-        main .ec-bloque-facturas table tbody td:nth-child(3),
-        main .ec-bloque-facturas table th:nth-child(8),
-        main .ec-bloque-facturas table tbody td:nth-child(8) { width: 0 !important;
-                                                               padding: 0 !important; }
-        main .ec-bloque-facturas table th:nth-child(4),
-        main .ec-bloque-facturas table tbody td:nth-child(4) { width: 15% !important; }
-        main .ec-bloque-facturas table th:nth-child(5),
-        main .ec-bloque-facturas table tbody td:nth-child(5) { width: 14% !important; }
-        main .ec-bloque-facturas table th:nth-child(6),
-        main .ec-bloque-facturas table tbody td:nth-child(6) { width: 15% !important; }
-        main .ec-bloque-facturas table th:nth-child(7),
-        main .ec-bloque-facturas table tbody td:nth-child(7) { width: 16% !important; }
-        main .ec-bloque-facturas table th:nth-child(9),
-        main .ec-bloque-facturas table tbody td:nth-child(9) { width: 14% !important; }
 
         /* Cheques: 10+10+13+10+11+16 = 70% hasta el final de Importe. Banco se
            queda con 24%, de sobra para el nombre más largo que hay en la base
@@ -558,55 +522,6 @@
            ⚠️ Es a propósito que el override quede ACOTADO al estado de cuenta
            impreso: en pantalla, y en todo el resto de la app, los bordes
            siguen negros. Si se generaliza, se rompe el pedido de contraste. */
-        /* ── Nada de barras de scroll ni tablas a medio ancho en el papel ──
-           Dueña 2026-08-05, marcando con una X el hueco blanco a la derecha
-           de las facturas: *"esa parte en blanco está de eliminar porfa, no sé
-           por qué la pusiste"*.
-
-           No estaba puesta a propósito ni venía del HTML: el layout impreso
-           medido en el navegador da la tabla a 816 de 816 px, sin scroll. El
-           hueco —y una barra de scroll PINTADA dentro de la hoja— los mete el
-           Chromium headless que genera el PDF (`pdf_motor`, `--print-to-pdf`),
-           que no rinde igual que el print del navegador.
-
-           Por eso va explícito en vez de confiar en el default: los bloques no
-           scrollean ni se recortan, y las dos tablas ocupan el ancho completo.
-           `scrollbar-width: none` es lo que evita que la barra se dibuje en el
-           papel. Todo dentro de `@media print` y acotado al estado de cuenta. */
-        :root:not(.dark) main .ec-bloque-facturas,
-        :root:not(.dark) main .ec-bloque-cheques {
-          overflow: visible !important;
-          max-height: none !important;
-          scrollbar-width: none !important;
-          /* TMT 2026-08-05, 2ª vuelta. El contenedor también: si el motor lo
-             trata como shrink-to-fit, el `width: 100%` de la tabla se resuelve
-             contra un ancho encogido y la tabla sale corta aunque diga 100%.
-             Es la única explicación que sobrevive a la evidencia: medido en el
-             navegador con las @media print activas y el documento forzado a
-             700/760/790/816/900/1000/1152/1300 px, la tabla da 100% en TODOS.
-             El hueco aparece sólo en el Chromium headless de `pdf_motor`. */
-          display: block !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          float: none !important;
-        }
-        /* Y el contenedor de cada cliente, por la misma razón.
-           ⚠️ Sólo `.cli-block`, que es del lote/PDF del estado de cuenta. NO
-           `.max-w-6xl`: es una clase genérica de Tailwind y la regla se
-           aplicaría al imprimir CUALQUIER pantalla de la app. Lo cazó el test
-           que exige que todo selector con `:root` quede acotado. */
-        :root:not(.dark) main .cli-block {
-          display: block !important;
-          width: 100% !important;
-          max-width: 100% !important;
-        }
-        :root:not(.dark) main .ec-bloque-facturas table,
-        :root:not(.dark) main .ec-bloque-cheques  table {
-          width: 100% !important;
-          min-width: 100% !important;
-          max-width: none !important;
-        }
-        main *::-webkit-scrollbar { display: none !important; width: 0 !important; }
 
         :root:not(.dark) main .ec-bloque-facturas table tbody td,
         :root:not(.dark) main .ec-bloque-cheques  table tbody td {

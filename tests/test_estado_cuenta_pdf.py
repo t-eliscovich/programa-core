@@ -473,45 +473,51 @@ def test_el_arreglo_de_impresion_vale_para_TODAS_las_pantallas():
         assert regla in parcial, regla
 
 
-def test_saldo_de_facturas_e_importe_de_cheques_terminan_igual():
-    """Dueña 2026-08-04: alinear la columna Saldo de facturas con la columna
-    Importe de cheques.
+def test_facturas_usa_toda_la_hoja_aunque_pierda_la_alineacion():
+    """Reemplaza a `test_saldo_de_facturas_e_importe_de_cheques_terminan_igual`.
 
-    Son dos tablas: cada una repartía el ancho midiendo su propio contenido,
-    así que las dos columnas caían cerca y nunca encima — peor que estar
-    lejos, porque parece que debería alinear y no alinea. Se les fija dónde
-    TERMINA esa columna; el reparto de cada tabla hasta ahí es distinto y no
-    importa.
+    El 04/08 la dueña pidió alinear la columna Saldo de facturas con Importe
+    de cheques, y `c85c731b` lo resolvió con `table-layout: fixed` + anchos por
+    `nth-child` en las DOS tablas. Este test verificaba esa suma.
 
-    Este test hace la suma sobre el CSS: si alguien toca un ancho de un lado
-    y se olvida del otro, se rompe acá y no en la impresora.
+    El 05/08 el pedido cambió, mirando el papel: *"ves que hay un espacio
+    vacío a la derecha de facturas? debería usar todo el ancho de la hoja"* y
+    *"sólo quería que imprima sin ese blanco y ANTES lo hacía bien"*.
+
+    Por qué eran incompatibles: dos de las nueve columnas de facturas (Tipo y
+    Stat) llevan `no-print` ⇒ `display:none`. Con ancho fijo desaparecen del
+    layout pero siguen contando en el reparto, y en el motor del PDF la tabla
+    quedaba en 590 px sobre 790 de hoja — un cuarto de página en blanco.
+    CHEQUES, que no tiene columnas ocultas, ocupaba todo con las mismas reglas.
+
+    Se prioriza usar la hoja entera. El test se DA VUELTA (no se borra): fija
+    la decisión nueva y deja el porqué, para que nadie reponga los anchos
+    creyendo que arregla la alineación.
     """
     import re
     from pathlib import Path
 
     css = Path("modules/informes/templates/informes/"
                "_estado_cuenta_impreso.html").read_text().split("@media print", 1)[1]
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
-    anchos = {"facturas": {}, "cheques": {}}
+    assert not re.search(r"\.ec-bloque-facturas table\s*\{[^}]*table-layout", css), (
+        "facturas volvió a ancho fijo: vuelve el cuarto de hoja en blanco"
+    )
+    assert ".ec-bloque-facturas table th:nth-child" not in css, (
+        "volvieron los anchos por nth-child de facturas"
+    )
+    # Cheques conserva el ancho fijo y sus anchos: ahí no hay columnas ocultas
+    # y en el papel ocupa la hoja entera.
+    assert "ec-bloque-cheques table { table-layout: fixed !important; }" in css
+    anchos = {}
     for selectores, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
-        # `width: 0` va sin unidad; `max-width` no cuenta.
-        m = re.search(r"(?:^|[;\s])width:\s*([\d.]+)\s*%?", cuerpo)
+        m = re.search(r"(?:^|[;\s])width:\s*([\d.]+)\s*%", cuerpo)
         if not m:
             continue
-        for bloque, n in re.findall(
-                r"\.ec-bloque-(facturas|cheques) table (?:th|tbody td)"
-                r":nth-child\((\d+)\)", selectores):
-            anchos[bloque][int(n)] = float(m.group(1))
-
-    # Tipo (3) y Stat (8) de facturas no se imprimen: con `fixed` el navegador
-    # les daría ancho igual y correría todo lo demás.
-    for n in (3, 8):
-        assert anchos["facturas"].get(n) == 0
-
-    hasta_saldo = sum(anchos["facturas"][n] for n in range(1, 7))     # …Saldo
-    hasta_importe = sum(anchos["cheques"][n] for n in range(1, 7))    # …Importe
-    assert hasta_saldo == hasta_importe, (
-        f"Saldo termina en {hasta_saldo}% e Importe en {hasta_importe}%")
-    # Y ninguna tabla queda más angosta que la otra.
-    assert sum(anchos["facturas"].values()) == 100
-    assert sum(anchos["cheques"].values()) == 100
+        for n in re.findall(r"\.ec-bloque-cheques table (?:th|tbody td):nth-child\((\d+)\)",
+                            selectores):
+            anchos[int(n)] = float(m.group(1))
+    assert sum(anchos.values()) == 100, (
+        f"los anchos de cheques ya no suman 100%: {sum(anchos.values())}"
+    )

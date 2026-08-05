@@ -682,25 +682,27 @@ def test_sin_numero_de_cheque_la_celda_queda_vacia():
     assert "mdash" not in frag and "—" not in frag
 
 
-def test_el_papel_no_lleva_scroll_ni_tablas_a_medio_ancho():
-    """Dueña 05/08, marcando con una X el hueco blanco: "esa parte en blanco
-    está de eliminar porfa, no sé por qué la pusiste".
+def test_facturas_no_lleva_ancho_fijo_en_el_papel():
+    """El bloque que alineaba Saldo con Importe dejaba un cuarto de hoja en blanco.
 
-    No venía del HTML: el layout impreso medido en el navegador da la tabla al
-    100%. Lo mete el Chromium headless de `pdf_motor` (`--print-to-pdf`), que
-    además pinta una barra de scroll DENTRO de la hoja. Por eso el ancho y el
-    no-scroll van explícitos en vez de confiar en el default.
+    `c85c731b` (04/08) le puso `table-layout: fixed` + anchos por `nth-child` a
+    la tabla de FACTURAS. Dos de sus nueve columnas (Tipo y Stat) son
+    `no-print` ⇒ `display:none`: desaparecen del layout pero siguen contando en
+    el reparto, y en el motor del PDF la tabla terminaba a 590 px sobre 790 de
+    hoja. La de CHEQUES, sin columnas ocultas, ocupaba todo con las mismas
+    reglas — esa era la asimetría.
+
+    Dueña 05/08: "sólo quería que imprima sin ese blanco y ANTES lo hacía
+    bien". Si alguien vuelve a ponerle ancho fijo a facturas, vuelve el hueco.
     """
     import re
 
     css = re.sub(r"/\*.*?\*/", "", IMPRESO[IMPRESO.index("@media print"):], flags=re.S)
-    assert "scrollbar-width: none !important" in css
-    assert "::-webkit-scrollbar" in css
-    for prop in ("width: 100% !important", "max-height: none !important",
-                 "overflow: visible !important", "display: block !important"):
-        assert prop in css, prop
-    # El CONTENEDOR también lleva ancho: si el motor lo encoge, el `width:100%`
-    # de la tabla se resuelve contra un ancho encogido y sale corta igual.
-    bloque = css[css.index(".ec-bloque-facturas,"):]
-    bloque = bloque[:bloque.index("}")]
-    assert "width: 100% !important" in bloque
+    assert "ec-bloque-facturas table { table-layout" not in css, (
+        "facturas con table-layout fijo: vuelve el cuarto de hoja en blanco"
+    )
+    assert "ec-bloque-facturas table th:nth-child" not in css, (
+        "los anchos por nth-child de facturas son los que encogían la tabla"
+    )
+    # Cheques sí se queda con ancho fijo: no tiene columnas no-print.
+    assert "ec-bloque-cheques table { table-layout: fixed !important; }" in css
