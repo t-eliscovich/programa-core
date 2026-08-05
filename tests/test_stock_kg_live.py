@@ -33,7 +33,11 @@ class _FakeDB:
     def fetch_one(self, sql, params=None):
         s = " ".join(sql.split()).lower()
         self.calls.append((s, tuple(params or ())))
-        if "from scintela.historia" in s and "order by fecha desc" in s:
+        # `historia_ultimo_mes()` pasó a ser un CTE (WITH prior … ult_mes) con
+        # el ORDER BY del CIERRE CONGELADO, así que ya no alcanza con buscar
+        # "order by fecha desc": el stub sólo tiene que reconocer que la
+        # consulta lee `scintela.historia`.
+        if "scintela.historia" in s:
             return self.historia
         if "from scintela.compra" in s:
             return {"kg": self.kg_com}

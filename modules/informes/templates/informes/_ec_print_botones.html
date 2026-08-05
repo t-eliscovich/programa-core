@@ -13,20 +13,34 @@
      .ec-bloque-facturas · .ec-bloque-cheques · tr.ec-ch-cobrado (= NO por cobrar)
    .ec-ch-total-todos · .ec-ch-resumen · .ec-ch-total-cobrar
    y, sólo en el lote, de `data-n-ch-cobrar` en el `.cli-block` para saltear a
-   los clientes que no tienen nada que mostrar en "sólo cheques". #}
+   los clientes que no tienen nada que mostrar en "sólo cheques".
+
+   `ec_btn_clase` (opcional) — con qué clase se dibujan los tres botones. Existe
+   porque el 04/08 la pantalla individual los metió adentro de un menú
+   "Imprimir ▾" (eran tres cajas outline en fila, un tercio de la barra de
+   acciones para una sola idea) y ahí van como ítems de menú, mientras el LOTE
+   los sigue mostrando como botones sueltos. Es lo ÚNICO que cambia entre las
+   dos: el orden, qué oculta cada uno y todo el CSS de papel siguen saliendo de
+   este archivo, que es el motivo por el que se compartió.
+
+   `ec_btn_corto` (opcional) — "Todo / Facturas / Cheques" en vez de "Imprimir
+   todo / …". Va con un ícono de impresora al lado (dueña 04/08: *"imprimir que
+   ya estén los botones. Pone el ícono de impresora y luego cada opción"*):
+   con el ícono adelante, repetir "Imprimir" tres veces es ruido. El LOTE no lo
+   pasa y sigue con los rótulos largos, que ahí no tienen ícono. #}
 <style>
   /* El total "por cobrar" existe SÓLO para la hoja de cheques del cliente. */
   .ec-ch-total-cobrar { display: none; }
 </style>
 <button type="button" onclick="ecImprimir('todo')"
-        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        title="Facturas y cheques, todo junto">Imprimir todo</button>
+        class="{{ ec_btn_clase | default('text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800', true) }}"
+        title="Facturas y cheques, todo junto">{{ 'Todo' if ec_btn_corto else 'Imprimir todo' }}</button>
 <button type="button" onclick="ecImprimir('facturas')"
-        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        title="Sólo la hoja de facturas, con el total de cheques por cobrar al pie">Imprimir facturas</button>
+        class="{{ ec_btn_clase | default('text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800', true) }}"
+        title="Sólo la hoja de facturas, con el total de cheques por cobrar al pie">{{ 'Facturas' if ec_btn_corto else 'Imprimir facturas' }}</button>
 <button type="button" onclick="ecImprimir('cheques')"
-        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-        title="Sólo el listado de cheques por cobrar, sin los ya depositados (para mandarle al cliente)">Imprimir cheques</button>
+        class="{{ ec_btn_clase | default('text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800', true) }}"
+        title="Sólo el listado de cheques por cobrar, sin los ya depositados (para mandarle al cliente)">{{ 'Cheques' if ec_btn_corto else 'Imprimir cheques' }}</button>
 <script>
   function ecImprimir(que) {
     var b = document.body;

@@ -200,6 +200,15 @@ def test_historia_ultimo_mes_desempata_por_id_historia(monkeypatch):
     3, con patrimonios que diferían 153.549. `ORDER BY fecha DESC LIMIT 1`
     devolvía una cualquiera — y el legacy RELEE ese snapshot y no lo
     recalcula nunca.
+
+    Federico 2026-08-05 (CIERRE CONGELADO) le agregó claves de orden ADELANTE
+    (`_ORDER_CIERRE_CONGELADO`: primero las fotos tomadas antes de medianoche
+    del cierre, después `fecha_crea DESC`). Eso está bien y no afecta este
+    invariante: lo que este test cuida es que `id_historia DESC` siga siendo
+    el ÚLTIMO desempate, justo detrás de `fecha DESC`. Por eso chequeamos la
+    COLA del ORDER BY y no el ORDER BY entero — si mañana se agrega otra
+    clave de prioridad, este test no tiene que romperse, pero si alguien
+    borra el desempate, sí.
     """
     import db as db_mod
     from modules.informes import queries as iq
@@ -213,9 +222,10 @@ def test_historia_ultimo_mes_desempata_por_id_historia(monkeypatch):
     monkeypatch.setattr(db_mod, "fetch_one", _fake_fetch_one)
     iq.historia_ultimo_mes()
 
-    assert "ORDER BY fecha DESC, id_historia DESC" in visto["sql"], (
+    assert "fecha DESC, id_historia DESC LIMIT 1" in visto["sql"], (
         "historia_ultimo_mes() volvió a quedar sin desempate: con dos fotos "
-        "del último día del mes, el PATANT es no-determinista"
+        "del último día del mes, el PATANT es no-determinista.\n"
+        f"ORDER BY actual: {visto['sql'].split('ORDER BY')[-1].strip()}"
     )
 
 

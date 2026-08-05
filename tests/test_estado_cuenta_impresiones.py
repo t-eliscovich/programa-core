@@ -98,8 +98,14 @@ def test_el_pie_replica_los_IF_del_PRG():
 
 
 def test_hay_tres_botones_de_impresion():
-    for etiqueta in (">Imprimir todo<", ">Imprimir facturas<", ">Imprimir cheques<"):
-        assert etiqueta in BOTONES, etiqueta
+    """TMT 2026-08-04: el rótulo tiene dos formas. La pantalla individual los
+    pone detrás de un ícono de impresora y pide los cortos ("Todo / Facturas /
+    Cheques", `ec_btn_corto`); el lote no tiene ícono y sigue con los largos.
+    Los dos salen de acá — el que se rompe si alguien toca uno solo."""
+    for corto, largo in (("Todo", "Imprimir todo"),
+                         ("Facturas", "Imprimir facturas"),
+                         ("Cheques", "Imprimir cheques")):
+        assert f">{{{{ '{corto}' if ec_btn_corto else '{largo}' }}}}<" in BOTONES, largo
     assert "ecImprimir('todo')" in BOTONES
     assert "ecImprimir('facturas')" in BOTONES
     assert "ecImprimir('cheques')" in BOTONES

@@ -113,229 +113,390 @@
             class="shrink-0 text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Imprimir resultado</button>
   </div>
   {% endif %}
-  {# TMT 2026-07-09 (dueña): cargar el estado de cuenta de OTRO cliente sin
-     volver a la cartera. Escribí el código (o elegí del listado) → Enter/Ver. #}
-  <form class="no-print flex items-end gap-2 mb-4"
-        onsubmit="event.preventDefault(); var c=(document.getElementById('ec-nuevo').value||'').trim().toUpperCase(); if(c){ window.location.href='{{ url_for('informes.estado_cuenta', codigo_cli='XCODEX') }}'.replace('XCODEX', encodeURIComponent(c)); }">
-    <label class="flex flex-col">
-      <span class="text-[11px] uppercase tracking-wider text-slate-500">Nuevo estado de cuenta</span>
-      <input id="ec-nuevo" type="text" list="ec-clientes-dl" autocomplete="off"
-             placeholder="Código del cliente (ej. BED)"
-             class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 mt-0.5 text-sm font-mono uppercase w-64 bg-white dark:bg-slate-950"
-             oninput="this.value=this.value.toUpperCase()">
-    </label>
-    <button type="submit" class="text-sm px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white">Ver</button>
-    {% if clientes_datalist %}
-    <datalist id="ec-clientes-dl">
-      {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>{% endfor %}
-    </datalist>
-    {% endif %}
-  </form>
+  {# ══════════════════════════════════════════════════════════════════════════
+     FICHA DEL CLIENTE — TMT 2026-08-04 (dueña, con la captura de IJM al lado):
+     *"cuando veo el estado de cuenta del cliente, el nombre y tantos botones
+     sin diseño está todo feo, me podés ayudar a crear algo simple elegante sin
+     perder funcionalidad?"*
 
-  {# no-print: en papel lo reemplaza el .print-header de arriba. #}
-  <div class="no-print flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
-    <div class="no-print flex items-center gap-2">
-      {# TMT 2026-05-18 — volver a la cartera total (pedido de la dueña) #}
-      <a href="{{ url_for('cartera.aging') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
-         title="Volver al listado de la cartera">
-        ← Volver a Cartera
-      </a>
-      {# TMT 2026-08-03. Dueña: "cuando saco la impresión del estado de cuenta
-         del cliente, podemos generar igual dos botones — 1, que diga imprimir
-         facturas y salga esto". Alex, por WhatsApp: "que sea para imprimir
-         SOLO listado de cheques… de momento se imprime incluso los
-         depositados y para enviar eso al cliente viene a ser innecesario".
-         Tres botones: todo (el de siempre), sólo facturas, sólo cheques —
-         y el de cheques deja afuera los ya cobrados (B/A), que es lo que
-         sobra cuando el papel se le manda al cliente. #}
-      {% include "informes/_ec_print_botones.html" %}
-      {# TMT 2026-08-04 (dueña): *"dejá esto de enviar por WhatsApp para todos
-         los usuarios, no sólo vendedores — quizás Alex le puede mandar al
-         cliente también"*. El PDF es la MISMA hoja que imprimen los botones de
-         al lado, pasada por el motor de impresión del navegador. #}
-      {% with pdf_url = url_for('informes.estado_cuenta_pdf_cliente', codigo_cli=data.cliente.codigo_cli),
-              wa_numero = data.cliente.telefono | wa_tel,
-              wa_nombre = data.cliente.nombre,
-              wa_clase = 'text-sm px-3 py-1.5 rounded border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100' %}
-        {% include "informes/_ec_boton_whatsapp.html" %}
-      {% endwith %}
-      {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
-         (réplica mejorada del dBase CUENTA.PRG rama 'Y'). El GET es solo la
-         pantalla de confirmación; ahí se ve lo que va a quedar. #}
-      {# TMT 2026-07-09: el estado de cuenta lo ven todos, pero TOTALIZAR
-         re-liquida (escribe) → solo con permiso clientes.ver. #}
-      {% if data.facturas and tiene_permiso('clientes.ver') %}
-      <a href="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}"
-         class="text-sm px-3 py-1.5 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-         title="Re-liquidar la cuenta FIFO: junta todos los abonos y los redistribuye de la factura más vieja a la más nueva. Abre una pantalla de confirmación.">
-        Totalizar (re-liquidar FIFO)
-      </a>
-      {% endif %}
-    </div>
-  </div>
+     Lo que había arriba de la primera factura eran NUEVE bloques sueltos: el
+     form de "nuevo estado de cuenta" flotando solo, el nombre en un h1 grande
+     que con "ISRAEL JONNATHAN MIRANDA MADRI" se partía en TRES renglones, al
+     lado SEIS botones outline del MISMO peso visual (Volver / Imprimir todo /
+     Imprimir facturas / Imprimir cheques / WhatsApp / Totalizar) que se
+     acomodaban en dos filas, después la grilla de contacto, después una tira de
+     pestañas con UNA sola pestaña, después 4 tiles y después 3 tiles más.
 
-  {# TMT 2026-06-07: bloque de contacto prominente — la dueña pidió que el
-     estado de cuenta clásico sirva también a los empleados (dirección / RUC /
-     tel claros y legibles). Solo va acá (no se repite en la cuenta corriente).
-     TMT 2026-07-07 (dueña): en la IMPRESIÓN no va — no-print. #}
-  {# TMT 2026-08-03 (dueña): VENDEDOR + MAIL. Van en una SEGUNDA columna, en el
-     hueco vacío que queda a la derecha de la dirección, para no achicar los
-     datos que ya estaban. #}
+     Ahora es UNA ficha con cuatro franjas: identidad · datos · números ·
+     acciones. Elegida por la dueña entre tres maquetas (04/08).
+
+     ⭐ SEGUNDA VUELTA, y es la lección del día. La primera versión puso Forma de
+     pago, Descuento y Stop como CHIPS chiquitos al lado del nombre, y encima
+     detrás de un `{% if %}`: sin dato cargado, el chip no se dibujaba. Ella
+     miró y dijo *"falta crédito, descuento"* — y cuando le mostré que sí
+     estaban, *"ah sí está pero no me gusta"*. Las dos mitades del mismo error:
+     un dato que hay que CAZAR en un chip de 11 px está, pero no se ve; y un
+     campo que desaparece cuando está vacío no se distingue de uno que no
+     existe. Por eso ahora TODOS los datos van con su rótulo, en la grilla, y
+     SIEMPRE — el que no tiene valor muestra "—", que es información: dice
+     "esto está sin cargar, cargalo en Editar cliente".
+
+     No se perdió nada de lo que había (hay un inventario que lo enforcea:
+     tests/test_estado_cuenta_ficha_header.py):
+       · Los 3 botones de impresión siguen siendo el MISMO include compartido
+         con la impresión en lote (`_ec_print_botones.html`) — se les pasa otra
+         clase y el rótulo corto, pero el papel lo sigue definiendo un solo
+         archivo, que era el punto de compartirlo.
+       · Totalizar y "Editar cliente" siguen gateados por el mismo permiso.
+       · Los 16 campos que mostraba el header viejo siguen los 16.
+     La jerarquía la marca el COLOR y no el borde: WhatsApp va lleno porque es
+     lo que más se usa, el resto es texto, y Totalizar queda en ámbar porque
+     ESCRIBE (re-liquida la cuenta) y no debería parecerse a "imprimir".
+
+     ⭐ EL PATRÓN NO ES INVENTADO — dueña: *"buscá algún demo que ya tenga estas
+     informaciones de clientes y copiate"*. Sale de dos pantallas que ya
+     existen:
+       · `admin_dbase/clientes_asinfo_detalle.html` — rótulo chico gris ARRIBA
+         y el valor abajo (`text-xs text-slate-500` + valor), con "—" cuando no
+         hay dato. Es de dónde sale la forma de cada campo.
+       · `clientes/contactos.html` (Directorio de contactos) — TELÉFONO y EMAIL
+         van pegados, en ese orden, como dos columnas vecinas. Por eso acá el
+         mail va inmediatamente a la derecha del teléfono y no cruzado en la
+         otra punta de la grilla (dueña: *"mail y teléfono deberían estar más
+         juntos"*). Se leen juntos porque se USAN juntos: cuando hay que
+         llamar a un cliente se mira uno o el otro.
+     El orden de la grilla agrupa por para-qué-sirve: dónde está (dirección,
+     ciudad) · cómo se le escribe (RUC, teléfono, mail) · con quién y cómo se
+     le vende (vendedor, forma de pago, descuento, stop).
+
+     GOTCHA repo: `static/tailwind.css` es un build JIT CONGELADO — una clase
+     Tailwind nueva no renderiza. Todo esto va en CSS propio con prefijo `ec-`.
+     Y `base.html` pinta de NEGRO cualquier `.border-slate-*` (pedido de la
+     dueña: "mi papá no las ve"), así que la ficha lleva su propio borde oscuro
+     en vez de depender de esas clases y quedar a merced de ese override. #}
+  <style>
+    .ec-ficha { border: 1px solid #0f172a; border-radius: 12px; background: #fff;
+                margin-bottom: 1.5rem; box-shadow: 0 1px 2px rgba(15,23,42,.06); }
+
+    /* — Identidad — */
+    .ec-cab { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+              padding: .85rem 1.15rem; border-bottom: 1px solid #e2e8f0; }
+    .ec-nombre { margin: 0; flex: 1 1 18rem; min-width: 0; font-size: 1.45rem; line-height: 1.2;
+                 font-weight: 600; letter-spacing: -.015em; color: #0f172a; }
+    /* TMT 2026-08-04 (dueña): *"me gustaría que el código de cliente se vea
+       más"*. Era un chip gris de 12,8 px al lado del nombre. Ahora es una placa
+       oscura ANTES del nombre y en el tamaño del nombre: el código es como ella
+       nombra a los clientes (IJM, BED, PPR) — se lee primero, no se caza. */
+    .ec-cod { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+              font-size: 1.35rem; line-height: 1.2; letter-spacing: .12em; font-weight: 700;
+              color: #fff; background: #0f172a; border-radius: 8px;
+              padding: .3rem .7rem .3rem .8rem; white-space: nowrap; flex: 0 0 auto; }
+    .ec-buscar { display: flex; align-items: center; gap: .3rem; flex: 0 0 auto; }
+    .ec-buscar input { width: 15rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                       font-size: .8125rem; text-transform: uppercase; padding: .35rem .6rem;
+                       border: 1px solid #0f172a; border-radius: 7px; background: #fff; }
+    .ec-buscar input::placeholder { font-family: system-ui, sans-serif; text-transform: none;
+                                    letter-spacing: 0; color: #94a3b8; }
+    .ec-buscar button { font-size: .8125rem; padding: .38rem .8rem; border-radius: 7px;
+                        border: 1px solid #0f172a; background: #0f172a; color: #fff; cursor: pointer; }
+    .ec-buscar button:hover { background: #334155; }
+
+    /* — Datos del cliente —
+       TMT 2026-08-04, tercera vuelta. La dueña mandó el recorte del bloque de
+       contacto VIEJO: *"me gusta más esta parte de la antigua"*. Y tiene razón:
+       "Dirección: CORAZON 199" en una línea se lee de un vistazo; el mismo dato
+       partido en rótulo-arriba/valor-abajo ocupa el doble de alto y obliga a
+       saltar con la vista. El rótulo inline gris + valor oscuro es más denso y
+       más rápido de barrer. Lo que SÍ se corrige de la vieja es lo otro que
+       pidió: los campos que faltaban (pago / descuento / stop) y que teléfono y
+       mail queden pegados — arriba de la segunda columna, uno debajo del otro.
+       Medidas calcadas de la versión anterior: 0.875rem, leading-relaxed,
+       rótulo en slate-400 y valor en slate-700. */
+    .ec-datos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0 2rem; padding: .8rem 1.15rem .9rem;
+                font-size: .875rem; line-height: 1.625; color: #334155; }
+    .ec-datos > div { min-width: 0; }
+    .ec-lbl { color: #94a3b8; }
+    .ec-vacio { color: #cbd5e1; }
+    .ec-ok { color: #047857; }
+    .ec-bloq { color: #b91c1c; font-weight: 600; }
+    .ec-mail { overflow-wrap: anywhere; }
+    .ec-datos a { color: #0369a1; text-decoration: none; }
+    .ec-datos a:hover { text-decoration: underline; }
+    .ec-nota { font-size: .75rem; color: #64748b; overflow-wrap: anywhere; }
+    .ec-nota-amb { color: #b45309; }
+
+    /* — Los cuatro números, en una franja partida — */
+    .ec-nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+               border-top: 1px solid #e2e8f0; background: #f8fafc; }
+    .ec-num { padding: .6rem 1.15rem .7rem; border-left: 1px solid #e2e8f0; min-width: 0; }
+    .ec-num:first-child { border-left: 0; }
+    .ec-num-l { font-size: .6875rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; }
+    .ec-num-v { margin-top: .1rem; font-size: 1.25rem; font-weight: 700; color: #0f172a;
+                font-variant-numeric: tabular-nums; }
+    .ec-num-x { font-size: .75rem; margin-top: .1rem; }
+    @media (max-width: 900px) {
+      .ec-datos { grid-template-columns: minmax(0, 1fr); }
+      .ec-nums  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ec-num:nth-child(3) { border-left: 0; }
+      .ec-num:nth-child(n+3) { border-top: 1px solid #e2e8f0; }
+      .ec-buscar input { width: 11rem; }
+    }
+
+    /* — Barra de acciones al pie — */
+    .ec-acciones { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap;
+                   padding: .5rem .8rem; border-top: 1px solid #e2e8f0;
+                   border-radius: 0 0 11px 11px; }
+    .ec-btn { display: inline-flex; align-items: center; gap: .35rem; font: inherit;
+              font-size: .8125rem; line-height: 1.35rem; padding: .25rem .7rem; border-radius: 7px;
+              border: 1px solid transparent; background: transparent; color: #334155;
+              cursor: pointer; text-decoration: none; white-space: nowrap; }
+    .ec-btn:hover { background: #e2e8f0; color: #0f172a; }
+    .ec-btn-wa { background: #059669; border-color: #047857; color: #fff; font-weight: 500; }
+    .ec-btn-wa:hover { background: #047857; color: #fff; }
+    .ec-btn-amb { color: #b45309; }
+    .ec-btn-amb:hover { background: #fef3c7; color: #92400e; }
+    .ec-sep { flex: 1 1 auto; }
+
+    /* — Impresión: ícono de impresora + las tres opciones —
+       TMT 2026-08-04 (dueña): *"imprimir que ya estén los botones. Pone el
+       ícono de impresora y luego cada opción"*. Antes de esto probamos un menú
+       "Imprimir ▾" que colapsaba las tres: ahorraba ancho pero costaba un
+       click y escondía que existen tres hojas distintas. Con el ícono adelante
+       el grupo se lee de un vistazo y no hace falta repetir "Imprimir" en cada
+       botón. Los tres van pegados, en un solo control segmentado, para que se
+       lean como UNA cosa con tres variantes y no como tres acciones sueltas
+       (que es como se veían en la pantalla que ella llamó "fea"). */
+    .ec-print { display: inline-flex; align-items: stretch; border: 1px solid #cbd5e1;
+                border-radius: 8px; overflow: hidden; background: #fff; }
+    .ec-print-ico { display: inline-flex; align-items: center; padding: 0 .5rem 0 .6rem;
+                    background: #f1f5f9; border-right: 1px solid #cbd5e1; color: #475569; }
+    .ec-print-ico svg { width: 1.05rem; height: 1.05rem; display: block; }
+    .ec-print-b { font: inherit; font-size: .8125rem; line-height: 1.35rem; padding: .25rem .7rem;
+                  border: 0; border-left: 1px solid #e2e8f0; background: transparent;
+                  color: #334155; cursor: pointer; white-space: nowrap; }
+    .ec-print-b:first-of-type { border-left: 0; }
+    .ec-print-b:hover { background: #e2e8f0; color: #0f172a; }
+  </style>
+
   {% set _vend = data.cliente.vend | cleanstr %}
   {# TMT 2026-08-03: el mail ya viene RESUELTO desde Python (ficha >
      Observación completa > Asinfo). Ver modules/clientes/mail_asinfo.py. #}
   {% set _m = data.cliente.mail or {} %}
   {% set _mail = _m.mail %}
-  {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono
-        or (_vend and _vend | trim) or _mail or _m.incompleto %}
-  <div class="no-print mb-5 grid sm:grid-cols-2 gap-x-8 max-w-3xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-    <div>
-      {# TMT 2026-06-07: el dBase guarda la dirección en DOS renglones
-         (direccion1 + direccion2). Mostramos ambos. #}
-      {% set _d1 = data.cliente.direccion1 | cleanstr %}
-      {% set _d2 = data.cliente.direccion2 | cleanstr %}
-      {% if _d1 and _d1 | trim %}<div><span class="text-slate-400">Dirección:</span> {{ _d1 }}</div>{% endif %}
-      {% if _d2 and _d2 | trim %}<div><span class="text-slate-400">Dirección (2):</span> {{ _d2 }}</div>{% endif %}
-      {% if data.cliente.canton or data.cliente.provincia %}<div><span class="text-slate-400">Ciudad:</span> {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}</div>{% endif %}
+  {# El dBase guarda la dirección en DOS renglones (direccion1 + direccion2). #}
+  {% set _d1 = data.cliente.direccion1 | cleanstr %}
+  {% set _d2 = data.cliente.direccion2 | cleanstr %}
+  {% set _ciudad = [data.cliente.canton, data.cliente.provincia] | select | join(', ') %}
+  {% set _ruc = data.cliente.ruc | cleanstr %}
+  {% set _tel = data.cliente.telefono | cleanstr %}
+  {% set cupo = (data.cliente.cupo or 0) | float %}
+  {% set _total_fc = (_saldo_neto or 0) + (t.cheques_por_cobrar or 0) %}
+
+  <div class="ec-ficha no-print">
+    <div class="ec-cab">
+      <span class="ec-cod" title="Código del cliente">{{ data.cliente.codigo_cli }}</span>
+      <h1 class="ec-nombre">{{ data.cliente.nombre | cleanstr }}</h1>
+      {# TMT 2026-07-09 (dueña): cargar el estado de cuenta de OTRO cliente sin
+         volver a la cartera. Escribí el código (o elegí del listado) → Enter/Ver.
+         TMT 2026-08-04: entra en la ficha, en el hueco que quedaba a la derecha
+         del nombre, en vez de flotar arriba de todo con su propio label. #}
+      <form class="ec-buscar"
+            onsubmit="event.preventDefault(); var c=(document.getElementById('ec-nuevo').value||'').trim().toUpperCase(); if(c){ window.location.href='{{ url_for('informes.estado_cuenta', codigo_cli='XCODEX') }}'.replace('XCODEX', encodeURIComponent(c)); }">
+        <input id="ec-nuevo" type="text" list="ec-clientes-dl" autocomplete="off"
+               placeholder="Ver otro cliente (ej. BED)"
+               title="Código del cliente — Enter para abrir su estado de cuenta"
+               oninput="this.value=this.value.toUpperCase()">
+        <button type="submit">Ver</button>
+        {% if clientes_datalist %}
+        <datalist id="ec-clientes-dl">
+          {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>{% endfor %}
+        </datalist>
+        {% endif %}
+      </form>
+    </div>
+
+    {# Los datos del cliente, en DOS columnas como en la pantalla vieja.
+       Columna 1 = dónde está y con qué RUC factura. Columna 2 = cómo se lo
+       contacta (TEL y MAIL pegados, arriba del todo — dueña: *"mail y teléfono
+       deberían estar más juntos"*; el Directorio de contactos, `clientes/
+       contactos.html`, ya los tiene así) y con qué condiciones se le vende.
+
+       ⭐ TODOS los campos se dibujan SIEMPRE. La primera versión del rediseño
+       los colgó de un `{% if %}` y la dueña reportó *"falta crédito,
+       descuento"*: un campo que desaparece cuando está vacío no se distingue de
+       uno que no existe. El "—" es información — dice "esto está sin cargar,
+       cargalo en Editar cliente". Importa: el 03/08, de 3.973 clientes había
+       UNO solo con el mail cargado. #}
+    <div class="ec-datos">
       <div>
-        {% if data.cliente.ruc %}<span class="text-slate-400">RUC:</span> {{ data.cliente.ruc | cleanstr }}{% endif %}
-        {% if data.cliente.ruc and data.cliente.telefono %} &nbsp;·&nbsp; {% endif %}
-        {% if data.cliente.telefono %}<span class="text-slate-400">Tel:</span> {{ data.cliente.telefono | cleanstr }}{% endif %}
+        <div><span class="ec-lbl">Dirección:</span>
+          {% if _d1 and _d1 | trim %}{{ _d1 }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        <div><span class="ec-lbl">Dirección (2):</span>
+          {% if _d2 and _d2 | trim %}{{ _d2 }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        <div><span class="ec-lbl">Ciudad:</span>
+          {% if _ciudad %}{{ _ciudad }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        <div><span class="ec-lbl">RUC:</span>
+          {% if _ruc %}{{ _ruc }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+      </div>
+      <div>
+        <div><span class="ec-lbl">Tel:</span>
+          {% if _tel %}{{ _tel }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        <div class="ec-mail"><span class="ec-lbl">Mail:</span>
+          {% if _mail %}<a href="mailto:{{ _mail }}" title="{{ _m.etiqueta }}">{{ _mail }}</a>
+          {% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        {# TMT 2026-08-03 (dueña, "muestro los dos"): cuando Asinfo tiene un
+           contacto DISTINTO al cargado a mano, se muestran los dos y elige la
+           persona. Nunca se decide por ella cuál es "el bueno". #}
+        {% if _m.alternativo %}
+        <div class="ec-nota">también en Asinfo:
+          <a href="mailto:{{ _m.alternativo }}">{{ _m.alternativo }}</a></div>
+        {% endif %}
+        {# El fragmento que quedó cortado a los 30 caracteres del dBase. Se
+           muestra tal cual, marcado, para que se vea que hay algo a medio
+           cargar en vez de hacerlo pasar por un mail válido. #}
+        {% if _m.incompleto %}
+        <div class="ec-nota ec-nota-amb"
+             title="El campo Observación del dBase corta a los 30 caracteres. Cargalo completo en Editar cliente.">
+          en Observación quedó cortado: {{ _m.incompleto }}…
+          {# TMT 2026-08-03 (dueña: "puedes intentar adivinar los mails que
+             faltan?"). Cuando lo único que falta es el final de un dominio
+             masivo, se deduce — pero se muestra como PREGUNTA, no como dato, y
+             sin mailto: que alguien lo confirme antes de escribirle. #}
+          {% if _m.sugerido %}<br>¿será <strong>{{ _m.sugerido }}</strong>? — deducido, confirmalo antes de usarlo{% endif %}
+        </div>
+        {% endif %}
+        <div><span class="ec-lbl">Vendedor:</span>
+          {% if _vend and _vend | trim %}{{ _vend }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        <div><span class="ec-lbl">Forma de pago:</span>
+          {% if data.cliente.pago %}{{ data.cliente.pago }}{% else %}<span class="ec-vacio">—</span>{% endif %}
+          &nbsp;·&nbsp; <span class="ec-lbl">Descuento:</span> {{ data.cliente.descuento | num_es(1) }} %
+          &nbsp;·&nbsp; <span class="ec-lbl">Stop:</span>
+          {% if data.cliente.stop == 'S' %}<span class="ec-bloq">Bloqueado</span>
+          {% else %}<span class="ec-ok">OK</span>{% endif %}</div>
       </div>
     </div>
-    <div>
-      <div><span class="text-slate-400">Vendedor:</span>
-        {% if _vend and _vend | trim %}{{ _vend }}{% else %}<span class="text-slate-400">—</span>{% endif %}
-      </div>
-      <div class="break-all"><span class="text-slate-400">Mail:</span>
-        {% if _mail %}<a href="mailto:{{ _mail }}"
-             class="text-sky-700 dark:text-sky-400 hover:underline"
-             title="{{ _m.etiqueta }}">{{ _mail }}</a>{% else %}<span class="text-slate-400">—</span>{% endif %}
-      </div>
-      {# TMT 2026-08-03 (dueña, "muestro los dos"): cuando Asinfo tiene un
-         contacto DISTINTO al cargado a mano, se muestran los dos y elige la
-         persona. Nunca se decide por ella cuál es "el bueno". #}
-      {% if _m.alternativo %}
-      <div class="break-all text-xs text-slate-500 mt-0.5">
-        también en Asinfo:
-        <a href="mailto:{{ _m.alternativo }}" class="hover:underline">{{ _m.alternativo }}</a>
-      </div>
-      {% endif %}
-      {# El fragmento que quedó cortado a los 30 caracteres del dBase. Se
-         muestra tal cual, marcado, para que se vea que hay algo a medio
-         cargar en vez de hacerlo pasar por un mail válido. #}
-      {% if _m.incompleto %}
-      <div class="break-all text-xs text-amber-600 mt-0.5"
-           title="El campo Observación del dBase corta a los 30 caracteres. Cargalo completo en Editar cliente.">
-        en Observación quedó cortado: {{ _m.incompleto }}…
-        {# TMT 2026-08-03 (dueña: "puedes intentar adivinar los mails que
-           faltan?"). Cuando lo único que falta es el final de un dominio
-           masivo, se deduce — pero se muestra como PREGUNTA, no como dato, y
-           sin mailto: que alguien lo confirme antes de escribirle. #}
-        {% if _m.sugerido %}<br><span class="text-slate-500">¿será</span>
-        <span class="font-medium">{{ _m.sugerido }}</span><span class="text-slate-500">? — deducido, confirmalo antes de usarlo</span>{% endif %}
-      </div>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
 
-  {# TMT 2026-06-07: tabs cuenta del cliente — clásica (activa) + timeline.
-     Unifica las dos vistas que antes eran páginas separadas. #}
-  {# TMT 2026-07-09 (dueña): sacada la pestaña "Cuenta corriente" (no se usa).
-     Botón "Editar cliente" → ficha editable (datos + cupo) en /clientes/editar. #}
-  <div class="flex gap-1 items-center border-b border-slate-200 dark:border-slate-800 mb-5 no-print">
-    <span class="px-4 py-2 text-sm font-medium border-b-2 border-sky-600 text-sky-700">Estado de cuenta</span>
-    {% if tiene_permiso('clientes.editar') %}
-    <a href="{{ url_for('clientes.editar', codigo_cli=data.cliente.codigo_cli, next=url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli)) }}"
-       class="ml-auto mb-1 px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800">Editar cliente</a>
-    {% endif %}
-  </div>
-
-  {# TMT 2026-05-17: tile principal — saldo del cliente.
-     Antes decía "Nos debe", cambiado a "Saldo cliente" para tono profesional. #}
-  {# `t` y `_saldo_neto` ya vienen seteados arriba (los usa el print-header).
-     TMT 2026-07-07 (dueña): tiles SALDO/CHEQUES/CUPO fuera de la impresión. #}
-  <div class="no-print grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-    {# TMT 2026-05-20 PASADA 6 Federico #14 — drift entre header
-       SALDO CLIENTE y último ACUM de la tabla.
-       Root cause: `saldo_vivo` solo suma facturas Z/A con saldo>0.
-       El ACUM acumula TODOS los saldos (incluye sobrepagos negativos
-       y facturas T canceladas con saldo residual). Para que el
-       cliente vea una sola fuente de verdad, mostramos el NETO
-       (saldo total, mismo que último ACUM) como número grande y
-       agregamos un detalle pequeño con el desglose. #}
-    {# TMT 2026-06-23 (dueña): el SALDO grande netea el saldo a favor (anticipos
-       NB=98). Antes el espejo de anticipo quedaba escondido entre los cheques y
-       el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
-    {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo facturas</div>
-      <div class="mt-0.5 text-lg font-semibold text-mono">
-        {{ _saldo_neto | money_es }}
+    {# — Los cuatro números. Antes eran 4 cajas sueltas con borde negro. — #}
+    <div class="ec-nums">
+      {# TMT 2026-05-20 PASADA 6 Federico #14 — drift entre el SALDO del header
+         y el último ACUM de la tabla: `saldo_vivo` sólo suma facturas Z/A con
+         saldo>0 y el ACUM acumula TODOS los saldos. Se muestra el NETO, que es
+         el mismo número que cierra la tabla, para no tener dos verdades.
+         TMT 2026-06-23 (dueña): el saldo grande NETEA el saldo a favor
+         (anticipos NB=98); antes el espejo quedaba escondido entre los cheques
+         y el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
+      <div class="ec-num">
+        <div class="ec-num-l">Saldo facturas</div>
+        <div class="ec-num-v">{{ _saldo_neto | money_es }}</div>
       </div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       {# TMT 2026-08-03 tarde: decía `cheques_cartera` (Z/P) mientras el pie de
          ESTA MISMA pantalla cerraba con Z/P/D + 1/2/3/R/9 — para un cliente con
          cheques rebotados los dos números diferían en decenas de miles, y el %
-         de cupo (que cuelga del tile) subestimaba el riesgo. Un cheque rebotado
+         de cupo (que cuelga de acá) subestimaba el riesgo. Un cheque rebotado
          ocupa cupo MÁS que uno en cartera, no menos. #}
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Cheques por cobrar</div>
-      <div class="mt-0.5 text-lg font-semibold text-mono">{{ t.cheques_por_cobrar | money_es }}</div>
+      <div class="ec-num">
+        <div class="ec-num-l">Cheques por cobrar</div>
+        <div class="ec-num-v">{{ t.cheques_por_cobrar | money_es }}</div>
+      </div>
+      {# TMT 2026-07-09 (dueña): total = saldo cliente + cheques en cartera. #}
+      <div class="ec-num">
+        <div class="ec-num-l">Total (facturas + cheques)</div>
+        <div class="ec-num-v">{{ _total_fc | money_es }}</div>
+      </div>
+      <div class="ec-num">
+        <div class="ec-num-l">Cupo</div>
+        {# TMT 2026-07-09 (dueña): cupo YA en $ reales en la base (migración 0122
+           lo multiplicó ×1000). Se muestra con $ y el % va sobre el cupo real. #}
+        <div class="ec-num-v">$ {{ cupo | num_es(0) }}</div>
+        {# TMT 2026-08-03 (dueña): "acá el porcentaje está mal, debería ser más
+           del 100%: es 3159/3000". El % iba sobre `t.saldo_vivo` (sólo facturas
+           vivas) mientras el número de al lado mostraba TOTAL (facturas +
+           cheques) — dos números distintos pegados, y el % siempre MENOR que el
+           riesgo real: los cheques en cartera todavía no se cobraron, así que
+           ocupan cupo. Ahora el % es del MISMO `_total_fc` que se ve. #}
+        {% if cupo > 0 %}
+          {% set pct = ((_total_fc or 0) / cupo * 100) %}
+          <div class="ec-num-x {{ 'text-red-600' if pct >= 100 else ('text-amber-600' if pct >= 80 else 'text-slate-500') }}"
+               title="Total (facturas + cheques) {{ _total_fc | money_es }} sobre el cupo de $ {{ cupo | num_es(0) }}">
+            {{ pct | num_es(0) }} % usado
+          </div>
+        {% endif %}
+      </div>
     </div>
-    {# TMT 2026-07-09 (dueña): total = saldo cliente + cheques en cartera. #}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Total (facturas + cheques)</div>
-      {% set _total_fc = (_saldo_neto or 0) + (t.cheques_por_cobrar or 0) %}
-      <div class="mt-0.5 text-lg font-semibold text-mono">{{ _total_fc | money_es }}</div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Cupo</div>
-      {# TMT 2026-07-09 (dueña): cupo YA en $ reales en la base (migración 0122
-         lo multiplicó ×1000). Se muestra con $ y el % usado va sobre el cupo real. #}
-      {% set cupo = (data.cliente.cupo or 0) | float %}
-      <div class="mt-0.5 text-lg font-semibold text-mono">$ {{ cupo | num_es(0) }}</div>
-      {# TMT 2026-08-03 (dueña): "acá el porcentaje está mal, debería ser más
-         del 100%: es 3159/3000". El % iba sobre `t.saldo_vivo` (sólo facturas
-         vivas) mientras el tile de al lado mostraba TOTAL (facturas +
-         cheques) — dos números distintos pegados, y el % siempre MENOR que
-         el riesgo real: los cheques en cartera todavía no se cobraron, así
-         que ocupan cupo. Ahora el % es del MISMO `_total_fc` que se ve. #}
-      {% if cupo > 0 %}
-        {% set pct = ((_total_fc or 0) / cupo * 100) %}
-        <div class="mt-1 text-xs {{ 'text-red-600' if pct >= 100 else ('text-amber-600' if pct >= 80 else 'text-slate-500') }}"
-             title="Total (facturas + cheques) {{ _total_fc | money_es }} sobre el cupo de $ {{ cupo | num_es(0) }}">
-          {{ pct | num_es(0) }} % usado
-        </div>
+
+    <div class="ec-acciones">
+      {# TMT 2026-05-18 — volver a la cartera total (pedido de la dueña). #}
+      <a href="{{ url_for('cartera.aging') }}" class="ec-btn"
+         title="Volver al listado de la cartera">← Cartera</a>
+
+      {# TMT 2026-08-03. Dueña: "cuando saco la impresión del estado de cuenta
+         del cliente, podemos generar igual dos botones — 1, que diga imprimir
+         facturas y salga esto". Alex, por WhatsApp: "que sea para imprimir SOLO
+         listado de cheques… de momento se imprime incluso los depositados y
+         para enviar eso al cliente viene a ser innecesario".
+         TMT 2026-08-04: los tres eran tres botones outline en fila — un tercio
+         de la barra para una sola idea ("imprimir"). Ahora es UN botón con
+         menú. El include es el mismo que usa la impresión en LOTE: sólo se le
+         pasa la clase de los ítems por `ec_btn_clase`, así el papel lo sigue
+         definiendo un solo archivo. #}
+      <span class="ec-print">
+        {# Ícono inline: no hay set de íconos en el proyecto y `tailwind.css` es
+           un build congelado, así que el SVG va a mano. `aria-hidden` porque el
+           texto de los botones ya dice qué hacen. #}
+        <span class="ec-print-ico" title="Imprimir" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9V3h12v6"></path>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="7" rx="1"></rect>
+          </svg>
+        </span>
+        {% with ec_btn_clase = 'ec-print-b', ec_btn_corto = true %}
+          {% include "informes/_ec_print_botones.html" %}
+        {% endwith %}
+      </span>
+
+      {# TMT 2026-08-04 (dueña): *"dejá esto de enviar por WhatsApp para todos
+         los usuarios, no sólo vendedores — quizás Alex le puede mandar al
+         cliente también"*. El PDF es la MISMA hoja que imprimen las opciones de
+         al lado, pasada por el motor de impresión del navegador. Va LLENO: de
+         todo lo que hay en esta barra es lo que más se usa. #}
+      {% with pdf_url = url_for('informes.estado_cuenta_pdf_cliente', codigo_cli=data.cliente.codigo_cli),
+              wa_numero = data.cliente.telefono | wa_tel,
+              wa_nombre = data.cliente.nombre,
+              wa_clase = 'ec-btn ec-btn-wa' %}
+        {% include "informes/_ec_boton_whatsapp.html" %}
+      {% endwith %}
+
+      <span class="ec-sep"></span>
+
+      {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
+         (réplica mejorada del dBase CUENTA.PRG rama 'Y'). El GET es sólo la
+         pantalla de confirmación; ahí se ve lo que va a quedar.
+         TMT 2026-07-09: el estado de cuenta lo ven todos, pero TOTALIZAR
+         re-liquida (ESCRIBE) → sólo con permiso clientes.ver. Por eso va en
+         ámbar: es la acción de esta barra que más cambia datos.
+         TMT 2026-08-04 (dueña): *"editar cliente debería ir después de
+         totalizar"*. Las dos escriben, así que van juntas en la punta derecha,
+         lejos de imprimir y de WhatsApp; entre ellas manda la frecuencia —
+         Totalizar se usa seguido y "Editar cliente" casi nunca, así que el que
+         se busca queda más cerca del borde donde la vista ya está parada. #}
+      {% if data.facturas and tiene_permiso('clientes.ver') %}
+      <a class="ec-btn ec-btn-amb"
+         href="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}"
+         title="Re-liquidar la cuenta FIFO: junta todos los abonos y los redistribuye de la factura más vieja a la más nueva. Abre una pantalla de confirmación.">
+        Totalizar (re-liquidar FIFO)
+      </a>
+      {% endif %}
+      {% if tiene_permiso('clientes.editar') %}
+      <a class="ec-btn"
+         href="{{ url_for('clientes.editar', codigo_cli=data.cliente.codigo_cli, next=url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli)) }}"
+         title="Datos del cliente, cupo, mail">Editar cliente</a>
       {% endif %}
     </div>
   </div>
 
-  {# Estado / forma de pago / descuento — secundario.
-     TMT 2026-07-07 (dueña): fuera de la impresión (no-print). #}
-  <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2.5">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Stop</div>
-      <div class="mt-1">
-        {% if data.cliente.stop == 'S' %}
-          <span class="text-red-600 font-semibold">Bloqueado</span>
-        {% else %}
-          <span class="text-emerald-600">OK</span>
-        {% endif %}
-      </div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2.5">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Forma de pago</div>
-      <div class="mt-1">{{ data.cliente.pago or '—' }}</div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2.5">
-      <div class="text-[11px] uppercase tracking-wider text-slate-500">Descuento</div>
-      <div class="mt-1 text-mono">{{ data.cliente.descuento | num_es(1) }} %</div>
-    </div>
-  </div>
 
   {# TMT 2026-07-09 (dueña): en la vista individual el cuerpo es INTERACTIVO
      — lapicito por factura para cambiar A↔T. El lote de impresión incluye el

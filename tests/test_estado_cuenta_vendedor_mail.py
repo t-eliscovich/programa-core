@@ -77,33 +77,50 @@ def test_el_vendedor_es_el_CODIGO_sin_joinear_la_tabla_de_vendedores():
     )
 
 
-def test_el_bloque_de_contacto_es_de_dos_columnas():
-    """Lo pidió explícito: 'en otra columna', no debajo."""
+def _grilla() -> str:
+    """El bloque `.ec-datos` de la ficha — los datos del cliente."""
     html = _TPL.read_text(encoding="utf-8")
-    i = html.index("Dirección (2)")
-    # El <div> que abre el bloque está justo arriba de las direcciones.
-    j = html.rfind('class="no-print mb-5', 0, i)
-    assert j > 0, "no encontré el contenedor del bloque de contacto"
-    contenedor = html[j:html.index(">", j)]
-    assert "grid" in contenedor and "grid-cols-2" in contenedor, (
-        f"el bloque de contacto dejó de ser una grilla de 2 columnas: {contenedor}"
-    )
+    abre = '<div class="ec-datos">'
+    i = html.index(abre) + len(abre)
+    return html[i:html.index("{# — Los cuatro números", i)]
 
 
-def test_vendedor_y_mail_estan_en_la_segunda_columna():
-    html = _TPL.read_text(encoding="utf-8")
-    i_dir = html.index("Dirección (2)")
-    i_tel = html.index("Tel:</span>", i_dir)
-    i_vend = html.index("Vendedor:</span>", i_dir)
-    i_mail = html.index("Mail:</span>", i_dir)
-    assert i_tel < i_vend < i_mail, (
-        "Vendedor y Mail van DESPUÉS de la primera columna (dirección/RUC/tel)"
+def test_vendedor_y_mail_estan_en_el_mismo_bloque_que_la_direccion():
+    """El pedido del 03/08 era *"en otra columna, no quiero que tanto espacio
+    nos quite información"*: Vendedor y Mail tenían que aprovechar el hueco de
+    la derecha y NO colgarse debajo de la dirección alargando el bloque.
+
+    El 04/08 el header se rediseñó y este bloque terminó volviendo al formato
+    compacto de siempre (dueña: *"me gusta más esta parte de la antigua"*),
+    dentro de la ficha. Sigue siendo de dos columnas y Vendedor/Mail siguen en
+    la segunda — que es lo que este test protege.
+    """
+    grilla = _grilla()
+    for campo in ("Dirección:", "Vendedor:", "Mail:"):
+        assert f'<span class="ec-lbl">{campo}</span>' in grilla, f"«{campo}» salió del bloque"
+    assert "grid-template-columns: repeat(2" in _TPL.read_text(encoding="utf-8"), (
+        "el bloque de contacto dejó de ser de dos columnas"
     )
-    # Entre el teléfono y el vendedor tiene que cerrar una columna y abrir otra.
-    entre = html[i_tel:i_vend]
-    assert "</div>" in entre and "<div>" in entre, (
-        "Vendedor/Mail quedaron dentro de la MISMA columna que la dirección"
-    )
+    # Vendedor y Mail van en la MISMA columna (la segunda), no en un apéndice.
+    i_col2 = grilla.index('>Tel:</span>')
+    assert grilla.index('>Vendedor:</span>') > i_col2
+    assert grilla.index('>Mail:</span>') > i_col2
+
+
+def test_el_mail_va_pegado_al_telefono():
+    """Dueña 04/08: *"mail y teléfono deberían estar más juntos"*. El orden sale
+    del Directorio de contactos (`clientes/contactos.html`), donde son columnas
+    vecinas: se leen juntos porque se usan juntos."""
+    grilla = _grilla()
+    assert grilla.index('>Tel:</span>') < grilla.index('>Mail:</span>')
+
+
+def test_las_dos_direcciones_del_dBase_se_siguen_mostrando():
+    """El dBase guarda la dirección en DOS renglones (direccion1 + direccion2).
+    Las DOS tienen que salir: la segunda suele traer la referencia de entrega."""
+    grilla = _grilla()
+    assert "_d1" in grilla and "_d2" in grilla
+    assert '<span class="ec-lbl">Dirección (2):</span>' in grilla
 
 
 def test_la_query_trae_las_TRES_fuentes_del_mail_sin_decidir():
@@ -160,14 +177,22 @@ def test_el_mail_es_clickeable():
     )
 
 
-def test_el_bloque_aparece_aunque_solo_haya_vendedor_o_mail():
-    """El `{% if %}` de guarda no puede seguir mirando sólo dirección/RUC/tel.
+def test_vendedor_y_mail_se_muestran_siempre_aunque_esten_vacios():
+    """Antes el bloque entero colgaba de un `{% if %}` que miraba dirección /
+    RUC / tel: a un cliente al que sólo le cargaron el mail no se lo veía nunca.
+    Y en la primera versión del rediseño los campos volvían a esconderse solos.
 
-    Si no, un cliente al que sólo le cargaron el mail no lo ve nunca.
+    Ahora cada campo se dibuja siempre; sin dato muestra "—". Que el hueco se
+    VEA es la mitad del punto: el 03/08 había 1 solo cliente con correo cargado
+    de 3.973, y el "—" es lo que hace obvio que falta cargarlo desde "Editar
+    cliente".
     """
-    html = _TPL.read_text(encoding="utf-8")
-    i = html.index("Dirección (2)")
-    guarda = html[html.rfind("{% if", 0, html.rfind('class="no-print mb-5', 0, i)):i]
-    assert "_vend" in guarda and "_mail" in guarda, (
-        "la condición que muestra el bloque de contacto ignora vendedor/mail"
-    )
+    grilla = _grilla()
+    for campo in ("Vendedor:", "Mail:"):
+        antes = grilla[:grilla.index(f'>{campo}</span>')]
+        assert antes.count("{% if") == antes.count("{% endif %}"), (
+            f"{campo} quedó dentro de un {{% if %}}: un cliente sin ese dato "
+            f"deja de ver el renglón y no se entera de que falta cargarlo"
+        )
+        resto = grilla[grilla.index(f'>{campo}</span>'):]
+        assert "—" in resto[:resto.index("</div>")], f"{campo} sin dato tiene que mostrar —"
