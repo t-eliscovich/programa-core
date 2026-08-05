@@ -245,7 +245,21 @@
 
            Los anulados (X) tampoco son `por_cobrar`, así que dejan de
            listarse — antes salían tachados en gris (TMT 2026-07-06, caso EDU
-           cheque N°51). Siguen visibles en /cheques. #}
+           cheque N°51). Eso NO es una excepción nuestra: es lo que hace el
+           dBase. `CUENTA.PRG` **L31**, antes de imprimir nada:
+
+               DELE ALL FOR .NOT. STAT $'ZPD12IK'
+
+           o sea que los anulados, los depositados, el cobrado en caja y los
+           endosados ni siquiera entran a la tabla de trabajo de la hoja. La
+           dueña, 05/08: *"si dbase no muestra anulados entonces nosotros
+           tampoco"*. Siguen visibles en /cheques.
+
+           (La lista de L31 deja pasar I y K, que L379 después no suma —
+           serían filas listadas que no entran en el total, justo la
+           contradicción que este cambio vino a sacar. Es discusión teórica:
+           en la base no hay ninguna fila I/J/K/W. Estados vivos al 05/08:
+           B 1.814 · Z 1.232 · X 150 · C 118 · P 64 · 1 18 · V 14 · D 2.) #}
         {% set _ch_en_cartera = data.cheques | selectattr('por_cobrar') | list %}
         {% set nch = namespace(activos=0) %}
         {% for c in _ch_en_cartera %}
