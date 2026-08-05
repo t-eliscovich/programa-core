@@ -16,7 +16,7 @@ import time
 import uuid
 from datetime import timedelta
 
-from flask import Flask, g, redirect, request, url_for
+from flask import Flask, flash, g, redirect, request, url_for
 
 import db
 import filters
@@ -799,6 +799,44 @@ def create_app() -> Flask:
     @app.errorhandler(404)
     def _not_found(_exc):
         return _render("404.html"), 404
+
+    # CSRF vencido — TMT 2026-08-05 (patricio: *"Bad Request. The CSRF tokens
+    # do not match"* al intentar entrar). Sin este handler, Flask-WTF devuelve
+    # la página cruda de Werkzeug: fondo blanco, texto en inglés, sin un link
+    # a ningún lado. Para el que la ve es un CALLEJÓN SIN SALIDA — y encima el
+    # remedio (recargar la página de login para que le den un token nuevo) es
+    # justo lo que nadie adivina, porque el botón de atrás devuelve la MISMA
+    # página vieja con el MISMO token muerto.
+    #
+    # Un token que no matchea casi siempre significa que la pestaña estaba
+    # abierta desde antes. No es un ataque ni un error del que lo escribió:
+    # se re-renderiza el login (con token FRESCO, porque el template llama a
+    # `csrf_token()` de nuevo) y se le pide que reintente. Así el segundo
+    # intento entra solo.
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def _csrf_vencido(_exc):
+        flash(
+            "La página había quedado abierta un rato largo y se venció. "
+            "Escribí tu usuario y contraseña de nuevo.",
+            "info",
+        )
+        if request.path.rstrip("/").endswith("/login"):
+            return _render("login.html"), 400
+        # En el resto de las pantallas el usuario SÍ está logueado: lo
+        # devolvemos a donde estaba en vez de escupirle un 400 pelado.
+        destino = request.referrer or url_for("auth.login")
+        return redirect(destino), 302
+
+    # La página de login NO se cachea: una copia guardada trae un token de
+    # CSRF ya muerto y el POST rebota con el error de arriba. `no-store` es
+    # lo que evita que el navegador (o un proxy) la sirva vieja.
+    @app.after_request
+    def _login_sin_cache(resp):
+        if request.path.rstrip("/").endswith("/login"):
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
 
     @app.errorhandler(500)
     def _internal_error(exc):
