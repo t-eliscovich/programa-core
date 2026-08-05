@@ -3648,7 +3648,7 @@ def diag_depositados_sin_movimiento():
             """
             SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
                    c.no_banco, c.banco,
-                   COALESCE(c.fechaing, c.fechad, c.fecha) AS fecha,
+                   COALESCE(c.fechaout, c.fechaing, c.fechad, c.fecha) AS fecha,
                    c.usuario_crea
               FROM scintela.cheque c
              WHERE UPPER(COALESCE(c.stat, '')) = ANY(%s)
@@ -3660,7 +3660,7 @@ def diag_depositados_sin_movimiento():
                       WHERE cxt.id_cheque = c.id_cheque
                         AND UPPER(COALESCE(tb.documento, '')) = 'DE'
                )
-             ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) DESC NULLS LAST,
+             ORDER BY COALESCE(c.fechaout, c.fechaing, c.fechad, c.fecha) DESC NULLS LAST,
                       c.id_cheque DESC
             """,
             (stats,),
@@ -3710,7 +3710,9 @@ def diag_cliente_cheques():
                    c.no_banco, c.banco,
                    c.fecha  AS cargado,
                    c.fechad AS a_depositar,
-                   c.fechaing AS depositado,
+                   -- TMT 2026-08-05: `fechaout` primero — en las filas del
+                   -- dBase `fechaing` es el día de INGRESO, no el de depósito.
+                   COALESCE(c.fechaout, c.fechaing) AS depositado,
                    c.usuario_crea,
                    EXISTS (
                      SELECT 1 FROM scintela.chequextransaccion cxt

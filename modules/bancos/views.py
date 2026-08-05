@@ -1444,8 +1444,12 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
                 # 1) Cheques vivos depositados → vuelven a cartera (Z).
                 for ch in cheques_vivos:
                     _db.execute(
+                        # TMT 2026-08-05: limpia `fechaout` (la salida de
+                        # cartera), no `fechaing`. En las filas del dBase
+                        # `fechaing` es el día que el cheque ENTRÓ y borrarlo
+                        # lo deja sin día de ingreso para siempre.
                         "UPDATE scintela.cheque "
-                        "   SET stat = 'Z', fechaing = NULL, "
+                        "   SET stat = 'Z', fechaout = NULL, "
                         "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
                         " WHERE id_cheque = %s",
                         (usuario, ch.get("id_cheque")), conn=conn,

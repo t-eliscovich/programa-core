@@ -84,6 +84,20 @@ from . import concepto_cobro as _concepto_cobro
 # resumen NO puedan dar números distintos para el mismo día.
 SQL_ES_CHEQUE = "COALESCE(c.no_banco, 0) NOT IN (90, 91, 99)"
 
+# Día en que el cheque SALIÓ de cartera (depósito, cobro en efectivo, endoso,
+# anulación). UNA definición, importada — no copiada — igual que
+# SQL_DIA_INGRESO. `fechaout` primero porque es la columna correcta en los dos
+# orígenes: FECHOUT en el dBase (`BANCOS.PRG` L1234) y, desde el 05/08/2026,
+# también lo que escribe PC al depositar.
+#
+# ⚠ El fallback a `fechaing` es para las ~1.200 filas depositadas por PC ANTES
+# del 05/08/2026, cuando el depósito escribía la fecha ahí. No se migran: en
+# esas filas `fechaing` ES la fecha de depósito, así que el COALESCE devuelve
+# lo correcto sin tocar un solo dato. En las filas del dBase `fechaing` es
+# FECHING (ingreso) — pero ahí `fechaout` está cargado y gana, que es
+# justamente para lo que sirve el orden.
+SQL_DIA_SALIDA = "COALESCE(c.fechaout, c.fechaing)"
+
 SQL_DIA_INGRESO = """CASE
                        WHEN c.fecha_recibido IS NOT NULL
                             THEN c.fecha_recibido
@@ -917,8 +931,16 @@ def transicionar_stat(
             )
             side_effect_id = res["id_transaccion"]
             db.execute(
+                # TMT 2026-08-05: la fecha de depósito va a `fechaout`, NO a
+                # `fechaing`. Depositar es una SALIDA de cartera y las otras once
+                # salidas (C, 9, X, E, T y sus deshacer) ya escriben `fechaout`;
+                # el depósito era el único que no. En las filas del dBase
+                # `fechaing` es FECHING = el día que el cheque ENTRÓ, así que
+                # escribir ahí borraba ese dato y el cheque reaparecía como
+                # cobranza del día del depósito (hoja del 04/08: 46 cheques
+                # fantasma por $74.165,81).
                 "UPDATE scintela.cheque "
-                "SET stat=%s, fechaing=%s, no_banco=%s, "
+                "SET stat=%s, fechaout=%s, no_banco=%s, "
                 "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
                 "WHERE id_cheque=%s",
                 (stat_destino, fecha, banco_destino, usuario, id_cheque),
@@ -2299,7 +2321,10 @@ def depositar_lote(
             f"""
             UPDATE scintela.cheque
                SET stat = CASE WHEN stat IN ('1','2','3') THEN 'V' ELSE 'B' END,
-                   fechaing = %s,
+                   -- TMT 2026-08-05: la fecha de depósito va a `fechaout`
+                   -- (salida de cartera), no a `fechaing` (ingreso). Ver
+                   -- SQL_DIA_SALIDA arriba.
+                   fechaout = %s,
                    no_banco = %s,
                    banco = %s,
                    usuario_modifica = %s,
@@ -3015,8 +3040,13 @@ def deshacer_deposito_cheque(
             # Postergar: fija la nueva fechad y registra la postergación (igual
             # que postergar()). fechad_original = snapshot de la fechad previa.
             db.execute(
+                # TMT 2026-08-05: se limpia `fechaout` (volvió a cartera), NO
+                # `fechaing`: en las filas del dBase ese campo es el día que el
+                # cheque ENTRÓ y borrarlo lo deja sin día de ingreso para
+                # siempre. La columna "Depositado" ya no lo muestra porque el
+                # template la gatea por `stat`.
                 "UPDATE scintela.cheque "
-                "   SET stat = 'P', fechaing = NULL, fechad = %s, "
+                "   SET stat = 'P', fechaout = NULL, fechad = %s, "
                 "       fecha_postergacion = CURRENT_DATE, "
                 "       fechad_original = COALESCE(fechad_original, fechad), "
                 "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
@@ -3026,7 +3056,7 @@ def deshacer_deposito_cheque(
         else:
             db.execute(
                 "UPDATE scintela.cheque "
-                "   SET stat = %s, fechaing = NULL, "
+                "   SET stat = %s, fechaout = NULL, "
                 "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
                 " WHERE id_cheque = %s",
                 (stat_destino, usuario, id_cheque), conn=conn,
@@ -5209,10 +5239,16 @@ def buscar(
     # depósito es FECHOUT (→ `fechaout`); `fechaing` es FECHING = el día de
     # INGRESO a cartera, y 697 de las 1.615 filas depositadas del DBF las
     # tienen distintas (mediana 41 días). Sin esto, "Depositados + hoy" se
-    # comía cheques y traía otros. PC nunca escribe `fechaout` en B/A/V — lo
-    # usa para X/C/9/E — así que el COALESCE sirve para los dos orígenes.
+    # comía cheques y traía otros. TMT 2026-08-05: desde hoy PC TAMBIÉN
+    # escribe `fechaout` al depositar (antes escribía `fechaing`), así que el
+    # fallback a `fechaing` queda sólo para las ~1.200 filas depositadas por PC
+    # antes de esa fecha — ahí `fechaing` ES la fecha de depósito y el COALESCE
+    # devuelve lo correcto sin migrar un solo dato.
     # Misma columna que muestra la pantalla (ver lista.html, "Depositado").
-    _COL_DEPOSITO = "COALESCE(c.fechaout, c.fechaing, c.fechad, c.fecha)"
+    # TMT 2026-08-05: se apoya en SQL_DIA_SALIDA (definición compartida) y
+    # mantiene fechad/fecha como último recurso para las filas viejas sin
+    # ninguna de las dos.
+    _COL_DEPOSITO = f"COALESCE({SQL_DIA_SALIDA[len('COALESCE('):-1]}, c.fechad, c.fecha)"
     fecha_col_por_estado = {
         "depositados": _COL_DEPOSITO,
         "devueltos": _COL_DEPOSITO,

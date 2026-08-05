@@ -34,6 +34,7 @@ from modules._lib import busqueda
 # (SQL_DIA_INGRESO). Se importa, no se copia: si divergen, el estado de cuenta
 # que se le manda al cliente dice una fecha y la pantalla otra.
 from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
+from modules.cheques.queries import SQL_DIA_SALIDA as _SQL_DIA_SALIDA_CHEQUE  # noqa: E402
 from modules.posdat import (
     POSDAT_DEUDA_VIVA_WHERE,
     POSDAT_EGRESO_FLUJO_WHERE,
@@ -7626,8 +7627,13 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           AND COALESCE(c.no_banco, 0) <> 98
         -- TMT 2026-06-11 (dueña): mismo criterio que facturas — del más
         -- antiguo al más actual.
-        ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) ASC, c.id_cheque ASC
-        """.replace("__DIA_INGRESO__", _SQL_DIA_INGRESO_CHEQUE),
+        -- TMT 2026-08-05: ordenaba por `fechaing` y MOSTRABA `fechaout` — en
+        -- las filas del dBase son cosas distintas (ingreso vs. depósito), así
+        -- que el papel salía con las fechas desordenadas. Misma expresión que
+        -- la columna Depositado (SQL_DIA_SALIDA), importada.
+        ORDER BY COALESCE(__DIA_SALIDA__, c.fechad, c.fecha) ASC, c.id_cheque ASC
+        """.replace("__DIA_INGRESO__", _SQL_DIA_INGRESO_CHEQUE)
+             .replace("__DIA_SALIDA__", _SQL_DIA_SALIDA_CHEQUE),
         (codigo_cli,),
     )
 

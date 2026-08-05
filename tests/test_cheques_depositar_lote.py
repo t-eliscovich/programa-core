@@ -159,3 +159,40 @@ def test_postdatado_p_es_depositable(stub_db, stub_periodo_guard):
     ]
     r = q.depositar_lote(ids_cheques=[1], no_banco=1)
     assert r["n_depositados"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TMT 2026-08-05 — el depósito escribe `fechaout`, NO `fechaing`.
+#
+# `scintela.cheque.fechaing` significaba DOS cosas: en las filas del dBase es
+# FECHING = el día que el cheque ENTRÓ a cartera (`ALTAS.PRG` L30), y las dos
+# rutas de depósito de PC escribían ahí la fecha de SALIDA. Depositar un
+# cheque viejo le borraba el día en que entró, y el resumen de cobranza —que
+# agrupa por día de ingreso— lo imprimía como cobranza del día del depósito:
+# la hoja del 04/08 que va a contabilidad salió con 46 cheques fantasma por
+# $74.165,81 (459 filas afectadas desde el 13/07).
+#
+# El depósito es una SALIDA de cartera y las otras once salidas (C, 9, X, E,
+# T y sus deshacer) ya escribían `fechaout`. Era el único que no.
+# ---------------------------------------------------------------------------
+
+
+def test_depositar_lote_escribe_fechaout_y_no_toca_fechaing():
+    """La fecha de depósito va a `fechaout`; `fechaing` queda intacto.
+
+    Se inspecciona el FUENTE y no la ejecución: los dos happy-path de este
+    archivo están XFAIL por deuda del stub (`_DBStub` no implementa
+    `execute_returning`), así que un test que corriera la función pasaría en
+    verde por la razón equivocada.
+    """
+    import inspect
+    import re
+
+    from modules.cheques import queries as q
+    src = " ".join(inspect.getsource(q.depositar_lote).split()).lower()
+    assert "fechaout = %s" in src, "el depósito tiene que escribir fechaout"
+    assert not re.search(r"fechaing\s*=\s*%s", src), (
+        "el depósito NO puede escribir en fechaing: en las filas del dBase es "
+        "el día de INGRESO y pisarlo las convierte en cobranza del día del "
+        "depósito (hoja del 04/08: 46 fantasmas por $74.165,81)"
+    )

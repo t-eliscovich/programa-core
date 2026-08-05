@@ -172,7 +172,10 @@ def debug():
         SELECT
             COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechad)=%(yy)s AND EXTRACT(MONTH FROM ch.fechad)=%(mm)s) AS n_fechad,
             COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fecha)=%(yy)s AND EXTRACT(MONTH FROM ch.fecha)=%(mm)s) AS n_fecha,
-            COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechaing)=%(yy)s AND EXTRACT(MONTH FROM ch.fechaing)=%(mm)s) AS n_fechaing
+            COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechaing)=%(yy)s AND EXTRACT(MONTH FROM ch.fechaing)=%(mm)s) AS n_fechaing,
+            -- TMT 2026-08-05: `fechaout` es la fecha de depósito en los dos
+            -- orígenes; `fechaing` sólo lo es en las filas viejas de PC.
+            COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechaout)=%(yy)s AND EXTRACT(MONTH FROM ch.fechaout)=%(mm)s) AS n_fechaout
           FROM scintela.cheque ch
          WHERE ch.stat IN ('B','V','W','I','J','K','A','C')
         """,

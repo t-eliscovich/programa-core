@@ -18,6 +18,8 @@ TMT 2026-06-10.
 """
 from __future__ import annotations
 
+from datetime import date as _dt_date
+
 from flask import Blueprint, jsonify, request
 
 import db
@@ -1054,6 +1056,12 @@ def _evaluar_pendientes(*, no_banco, nombre, filas, saldo_banco):
     return stat, alerts
 
 
+# Día en que el depósito pasó a escribir `fechaout` en vez de pisar
+# `fechaing` (SHA del fix del 05/08/2026). Las filas anteriores tienen la
+# fecha de depósito en `fechaing` y están bien: no se vigilan ni se migran.
+_CORTE_FECHAOUT = _dt_date(2026, 8, 5)
+
+
 @bp.route("/pendientes-conciliacion", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -1255,6 +1263,75 @@ def saldo_derivado():
     return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
 
 
+@bp.route("/deposito-sin-fechaout", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def deposito_sin_fechaout():
+    """¿Algún camino de depósito volvió a olvidarse de escribir `fechaout`?
+
+    ⭐ POR QUÉ (TMT 2026-08-05). `scintela.cheque.fechaing` significaba DOS
+    cosas a la vez: en las filas del dBase es FECHING = el día que el cheque
+    ENTRÓ a cartera, y las dos rutas de depósito de PC escribían ahí la fecha
+    de SALIDA. Depositar un cheque viejo le borraba el día en que entró, y el
+    resumen de cobranza —que agrupa por día de ingreso— lo imprimía como
+    cobranza del día del depósito. La hoja del 04/08 que va a contabilidad
+    salió con 46 cheques fantasma por $74.165,81, todos "sin aplicar a
+    facturas". 459 filas afectadas desde el 13/07.
+
+    Desde el 05/08 el depósito escribe `fechaout`, igual que las otras once
+    salidas de cartera (C, 9, X, E, T y sus deshacer). Esto vigila que siga
+    siendo así: **un cheque con un movimiento bancario 'DE' posterior al
+    corte tiene que tener `fechaout`**. Si mañana aparece una ruta nueva de
+    depósito que se olvida, salta acá al día siguiente en vez de aparecer en
+    una hoja impresa dos semanas después.
+
+    No mira las filas viejas a propósito: las ~1.200 depositadas antes del
+    corte tienen la fecha en `fechaing` y ahí ese valor ES la fecha de
+    depósito — están bien y no se migran. Un ⚠ diario por algo legítimo
+    entrena a ignorar el panel.
+
+    Solo lectura. NO cambia ningún cálculo.
+    """
+    alerts: list[dict] = []
+    filas = db.fetch_all(
+        """
+        SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
+               MIN(tb.fecha)::text AS fecha_deposito
+          FROM scintela.cheque c
+          JOIN scintela.chequextransaccion cxt ON cxt.id_cheque = c.id_cheque
+          JOIN scintela.transacciones_bancarias tb
+            ON tb.id_transaccion = cxt.id_transaccion
+         WHERE UPPER(COALESCE(tb.documento, '')) = 'DE'
+           AND tb.fecha >= %s
+           AND UPPER(COALESCE(c.stat, '')) IN ('B', 'A', 'V')
+           AND c.fechaout IS NULL
+         GROUP BY c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat
+         ORDER BY 6 DESC, c.id_cheque
+         LIMIT 50
+        """,
+        (_CORTE_FECHAOUT,),
+    ) or []
+    if filas:
+        alerts.append({
+            "nivel": "HIGH",
+            "que": f"{len(filas)} cheque(s) depositados desde el "
+                   f"{_CORTE_FECHAOUT:%d/%m/%Y} sin fecha de salida de cartera",
+            "por_que": "alguna ruta de depósito está escribiendo la fecha en "
+                       "`fechaing` (el día de INGRESO) en vez de `fechaout`. "
+                       "Eso los convierte en cobranza del día del depósito en "
+                       "/cheques/resumen-dia.",
+            "filas": filas[:20],
+        })
+    return jsonify({
+        "ok": not alerts,
+        "alerts": alerts,
+        "stats": {
+            "corte": _CORTE_FECHAOUT.isoformat(),
+            "n_sin_fechaout": len(filas),
+        },
+    })
+
+
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -1272,12 +1349,14 @@ def health_all():
     resp4 = snapshot_diario_health()
     resp6 = cadena_saldos()
     resp7 = pendientes_conciliacion()
+    resp9 = deposito_sin_fechaout()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
     data4 = json.loads(resp4.get_data(as_text=True))
     data6 = json.loads(resp6.get_data(as_text=True))
     data7 = json.loads(resp7.get_data(as_text=True))
+    data9 = json.loads(resp9.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -1292,7 +1371,7 @@ def health_all():
     data8 = _refrescar_mails_asinfo_cron()
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
-               and data6["ok"] and data7["ok"]),
+               and data6["ok"] and data7["ok"] and data9["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -1301,6 +1380,7 @@ def health_all():
         "cadena_saldos": data6,
         "pendientes_conciliacion": data7,
         "mails_asinfo": data8,
+        "deposito_sin_fechaout": data9,
     })
 
 

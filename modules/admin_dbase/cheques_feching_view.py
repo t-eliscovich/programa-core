@@ -8,7 +8,10 @@ dBase. Un cheque depositado en el dBase DESPUÉS del último sync queda en PC
 sin ninguna de las dos → "—" en pantalla.
 
 ⚠ TMT 2026-08-03 (dueña: "cambiá la columna"). Esta pantalla leía **FECHING**
-y la escribía en `fechaing` como si fuera la fecha de depósito. En el dBase
+y la escribía en `fechaing` como si fuera la fecha de depósito. Se corrigió de
+qué columna LEE (ahora FECHOUT) pero siguió escribiendo en `fechaing` — o sea
+seguía fabricando el mismo problema: metía una fecha de SALIDA en la columna
+de ENTRADA. **TMT 2026-08-05: escribe en `fechaout`.** En el dBase
 FECHING es el día de INGRESO a cartera (`ALTAS.PRG` L30 `FECHING WITH DD`) y
 el depósito es **FECHOUT** (`BANCOS.PRG` L1234 `FECHOUT WITH DATE()`). Medido
 sobre CHEQUES.DBF: de 1.615 depositados/rebotados, **697 tienen FECHOUT ≠
@@ -17,7 +20,7 @@ de lo que escribía era una fecha equivocada, y encima `fechaing` es la columna
 que `informes` usa para decidir qué seguía en cartera a una fecha dada.
 
 Política CONSERVADORA (display-only, no toca estados/banco/saldos):
-  - Solo cheques PC con stat B/A y fechaing IS NULL.
+  - Solo cheques PC con stat B/A y fechaout IS NULL.
   - Solo filas del DBF con FECHOUT y STAT depositado (B/V/A/W/I/J/K —
     V/W/I/J/K = variantes legacy de depositado del FoxPro).
   - Match por (CLIENTE, IMPORTE, BANCO); si el DBF tiene varias candidatas,
@@ -26,7 +29,7 @@ Política CONSERVADORA (display-only, no toca estados/banco/saldos):
 
 Lee CHEQUES.DBF del tarball ya subido a /admin/dbase-compare (mismo
 EXTRACT_DIR) — no hace falta subir nada de nuevo si el compare está fresco.
-GET = vista previa; POST /aplicar = escribe SOLO fechaing.
+GET = vista previa; POST /aplicar = escribe SOLO fechaout.
 """
 from __future__ import annotations
 
@@ -78,7 +81,7 @@ def _leer_dbf_cheques() -> tuple[list[dict], str | None, str | None]:
 def calcular_propuestas(pc_rows: list[dict], dbf_rows: list[dict]) -> dict:
     """Función PURA (testeable): matchea y devuelve propuestas + salteados.
 
-    pc_rows:  filas de scintela.cheque (stat B/A, fechaing NULL).
+    pc_rows:  filas de scintela.cheque (stat B/A, fechaout NULL).
     dbf_rows: filas crudas del DBF (dicts con CLIENTE/IMPORTE/BANCO/NB/STAT/FECHOUT).
 
     TMT 2026-08-03: se lee **FECHOUT**, no FECHING. Ver el docstring del
@@ -142,7 +145,7 @@ def _cargar_lados():
         SELECT id_cheque, no_cheque, codigo_cli, importe, banco, no_banco,
                stat, fecha, fechad
           FROM scintela.cheque
-         WHERE UPPER(COALESCE(stat,'')) = ANY(%s) AND fechaing IS NULL
+         WHERE UPPER(COALESCE(stat,'')) = ANY(%s) AND fechaout IS NULL
         """,
         (list(_PC_STATS),),
     ) or []
@@ -156,7 +159,7 @@ _TPL = """
 <div class="max-w-4xl mx-auto p-4">
   <h1 class="text-xl font-bold mb-1">Fechas de depósito desde el dBase</h1>
   <p class="text-sm text-slate-500 mb-4">
-    Completa SOLO la columna Depositado (fechaing) de cheques B/A que no la
+    Completa SOLO la columna Depositado (fechaout) de cheques B/A que no la
     tienen, leyendo FECHOUT de CHEQUES.DBF{% if mtime %} (tarball del {{ mtime }}){% endif %}.
     No toca estados ni saldos.
   </p>
@@ -250,9 +253,9 @@ def aplicar():
             n += db.execute(
                 """
                 UPDATE scintela.cheque
-                   SET fechaing = %s, usuario_modifica = %s,
+                   SET fechaout = %s, usuario_modifica = %s,
                        fecha_modifica = CURRENT_TIMESTAMP
-                 WHERE id_cheque = %s AND fechaing IS NULL
+                 WHERE id_cheque = %s AND fechaout IS NULL
                    AND UPPER(COALESCE(stat,'')) = ANY(%s)
                 """,
                 (feching, usuario, c["id_cheque"], list(_PC_STATS)),

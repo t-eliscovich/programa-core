@@ -745,10 +745,21 @@ def _asof_dia_overrides(comp: dict, as_of) -> None:
          WHERE (fecha_crea IS NULL OR fecha_crea::date <= %s)
            AND (fecha_recibido IS NULL OR fecha_recibido <= %s)
            AND ( stat IN ('Z','1','2','3','P','D')
-                 OR (stat IN ('B','A') AND fechaing IS NOT NULL AND fechaing > %s)
+                 -- TMT 2026-08-05. Desde hoy el depósito escribe `fechaout`
+                 -- (antes escribía `fechaing`). La condición es ADITIVA a
+                 -- propósito, no un reemplazo: si acá dijera
+                 -- COALESCE(fechaout, fechaing) las filas viejas que tienen
+                 -- las DOS cargadas cambiarían de lado y se moverían números
+                 -- históricos (medido: −4.468,63 al 31/07, dos cheques del
+                 -- dBase cuyo `fechaing` pisó un depósito de PC). Con el OR,
+                 -- lo ya impreso da idéntico y los depósitos nuevos —que sólo
+                 -- tendrán `fechaout`— también cuentan.
+                 OR (stat IN ('B','A')
+                     AND ( (fechaing  IS NOT NULL AND fechaing  > %s)
+                        OR (fechaout IS NOT NULL AND fechaout > %s) ))
                  OR (stat IN ('C','9','E','T') AND fechaout IS NOT NULL AND fechaout > %s) )
         """,
-        (as_of, as_of, as_of, as_of),
+        (as_of, as_of, as_of, as_of, as_of),
     ) or {}
     # TOTF con rewind de abonos PC: cada aplicación hecha POR EL PROGRAMA
     # queda fechada en scintela.chequesxfact (fechaing) — se re-suman las
