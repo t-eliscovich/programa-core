@@ -173,6 +173,35 @@ CIERRES_MENSUALES_SQL = """
 """
 
 # ---------------------------------------------------------------------------
+# CIERRE CONGELADO — Federico 2026-08-05
+# ---------------------------------------------------------------------------
+# El patrimonio de un mes CERRADO debe quedar fijo "como una estatua": es la
+# ÚLTIMA foto REGISTRADA (fecha_crea) ANTES de la medianoche (hora Ecuador,
+# UTC-5) del último día del mes. Así una foto fresca del 31/07 tomada el 03/08
+# (al entrar a /historico-12m) NO puede cambiar el cierre de julio.
+#
+#   · fecha_crea se guarda en UTC (CURRENT_TIMESTAMP). La medianoche de fin de
+#     mes en Ecuador = primer día del mes siguiente 00:00 EC = +5h en UTC, o
+#     sea `date_trunc('month', fecha) + 1 month + 5 hours`.
+#   · Preferimos las filas registradas ANTES de ese corte (bool DESC), y entre
+#     ellas la de fecha_crea más nueva → "la última registrada antes de las 12".
+#     Si la última pre-medianoche es del día 29 (nadie entró el 30/31), esa gana.
+#   · RESPALDO (dueña 2026-08-05: "la última foto del mes aunque sea el día 29"):
+#     si NINGUNA foto quedó antes del corte, o son filas viejas sin fecha_crea,
+#     cae a la última foto del mes por fecha/id (comportamiento previo).
+#
+# MISMO criterio en los dos lugares que definen el cierre de un mes: PATANT
+# (historia_ultimo_mes → alimenta la UTILIDAD) y la columna del Historial
+# (_cargar_snapshots → /historico-12m). Así Utilidad y Historial coinciden.
+_ORDER_CIERRE_CONGELADO = """
+    (fecha_crea < date_trunc('month', fecha)::timestamp
+                  + INTERVAL '1 month' + INTERVAL '5 hours') DESC NULLS LAST,
+    fecha_crea DESC NULLS LAST,
+    fecha DESC,
+    id_historia DESC
+"""
+
+# ---------------------------------------------------------------------------
 # Constantes del PRG legacy (INFORMES.PRG líneas 5-6)
 # ---------------------------------------------------------------------------
 
@@ -1616,17 +1645,32 @@ def historia_ultimo_mes() -> dict | None:
     snapshot y no lo recalcula nunca, así que un día de flapeo quedaba
     como un cierre mal para siempre.
 
-    Gana la ÚLTIMA guardada: es la misma regla del FoxPro
-    (`DELE ALL FOR DAY(FECHA)<=DDD .AND. RECNO()<RECC()`, INFORMES.PRG
-    L1336-1546) y la de la pantalla del Historial ("una foto por mes gana").
+    ⭐ Federico 2026-08-05 — CIERRE CONGELADO. El desempate por `id_historia
+    DESC` dejaba que una foto fresca del 31/07 (tomada el 03/08 al entrar a
+    /historico-12m) le cambiara el PATANT a agosto, y con él saltaba la
+    UTILIDAD sin que se movieran ni el patrimonio ni los dividendos. Ahora
+    PATANT = la ÚLTIMA foto registrada ANTES de la medianoche (EC) del último
+    día del mes cerrado (ver `_ORDER_CIERRE_CONGELADO`). Primero acotamos al
+    último MES cerrado (no a la última fecha global, que podría ser una foto
+    post-medianoche de un mes viejo), y dentro de ese mes aplicamos el
+    congelado. Mismo valor que muestra la columna del Historial para ese mes.
     [[project_2026_08_03_utilidad_37k]]
     """
     return db.fetch_one(
-        """
+        f"""
+        WITH prior AS (
+            SELECT *
+            FROM scintela.historia
+            WHERE fecha < date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::date
+        ),
+        ult_mes AS (
+            SELECT *
+            FROM prior
+            WHERE date_trunc('month', fecha) = (SELECT MAX(date_trunc('month', fecha)) FROM prior)
+        )
         SELECT *
-        FROM scintela.historia
-        WHERE fecha < date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::date
-        ORDER BY fecha DESC, id_historia DESC
+        FROM ult_mes
+        ORDER BY {_ORDER_CIERRE_CONGELADO}
         LIMIT 1
         """
     )
@@ -7970,18 +8014,24 @@ def _valor_para_linea(key: str, snap: dict | None) -> float | None:
 
 
 def _cargar_snapshots(meses: list[tuple[int, int]]) -> dict[tuple[int, int], dict]:
-    """Lee scintela.historia y devuelve {(a,m): row} para los meses dados."""
+    """Lee scintela.historia y devuelve {(a,m): row} para los meses dados.
+
+    Federico 2026-08-05 — CIERRE CONGELADO: cada mes cerrado se resuelve con el
+    MISMO criterio que PATANT (`_ORDER_CIERRE_CONGELADO`): la última foto
+    registrada antes de la medianoche (EC) del último día del mes. Así la
+    columna del Historial y la UTILIDAD siempre muestran el mismo cierre.
+    """
     out: dict[tuple[int, int], dict] = {}
     for a_, m_ in meses:
         row = db.fetch_one(
-            """
+            f"""
             SELECT fecha, banco, cart, deuda, ustock, uqui, anticipos,
                    maquinaria, realty, patrimonio, uvent, ucom, gasto,
                    usret, usuti, kvent, kcom
               FROM scintela.historia
              WHERE EXTRACT(YEAR FROM fecha) = %s
                AND EXTRACT(MONTH FROM fecha) = %s
-             ORDER BY fecha DESC
+             ORDER BY {_ORDER_CIERRE_CONGELADO}
              LIMIT 1
             """,
             (a_, m_),
