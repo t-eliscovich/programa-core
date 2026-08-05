@@ -366,8 +366,24 @@ def comision():
 
     ant = date(anio, mes, 1) - timedelta(days=1)
     sig = date(anio, mes, ultimo) + timedelta(days=1)
+
+    # El mes a mes quedaba al pie, debajo del desglose de cobranzas — que es
+    # tan largo como clientes le cobró el vendedor. Dueña 2026-08-05: *"este
+    # mes a mes está muy abajo, pongamos arriba otra tab o algo así"*. Sube a
+    # una pestaña, con el MISMO control segmentado que Semana/Mes/Año del
+    # Inicio (ella mandó esa captura como referencia): un componente que ya
+    # sabe usar, en vez de un patrón nuevo para lo mismo.
+    tab = "meses" if (request.args.get("tab") or "").strip().lower() == "meses" else "mes"
+
+    # Los meses SIN comisión no se listan. Enero a mayo daban cinco filas de
+    # "$ 0,00" que ocupaban media pantalla y empujaban abajo los meses que sí
+    # tienen plata. Un cero pide la misma atención que una cifra y no dice
+    # nada — mismo criterio que el guión de la columna Abonado.
+    meses_todos = queries.comision_meses(vend, hoy.year, hoy.month)
     return render_template(
         "mi_cartera/comision.html",
+        tab=tab,
+        n_meses_sin_comision=sum(1 for m in meses_todos if not m["monto"]),
         anio=anio,
         mes=mes,
         etiqueta=f"{MESES[mes - 1]} {anio}",
@@ -379,7 +395,7 @@ def comision():
         mes_anterior=(ant.year, ant.month),
         mes_siguiente=((sig.year, sig.month)
                        if (sig.year, sig.month) <= (hoy.year, hoy.month) else None),
-        meses=queries.comision_meses(vend, hoy.year, hoy.month),
+        meses=[m for m in meses_todos if m["monto"]],
         es_mes_actual=(anio, mes) == (hoy.year, hoy.month),
         nombres_meses=MESES,
         **_ctx_base(vend),

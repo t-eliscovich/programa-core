@@ -1,3 +1,15 @@
+{# Mi comisión — dos pestañas: el mes abierto y el año mes a mes.
+
+   TMT 2026-08-05 (dueña): *"este mes a mes está muy abajo, pongamos arriba
+   otra tab o algo así"*. Tenía razón y el motivo es estructural: el mes a mes
+   estaba al pie, debajo del desglose "De qué cobranzas", que mide tanto como
+   clientes le cobró el vendedor — con veinte clientes queda a media pantalla
+   de scroll. Un dato de resumen no puede vivir detrás de un detalle de largo
+   variable.
+
+   El control es el MISMO `.seg` de Semana/Mes/Año del Inicio; ella mandó esa
+   captura como referencia. No se inventa un patrón nuevo para hacer lo mismo
+   que la app ya hace en la pantalla de al lado. #}
 {% extends "mi_cartera/base.html" %}
 {% set seccion = 'comision' %}
 {% block title %}Mi comisión{% endblock %}
@@ -14,16 +26,28 @@
 
 {% block content %}
 {% set qv = ('&vend=' ~ vend) if preview else '' %}
+{% set qm = '&anio=' ~ anio ~ '&mes=' ~ mes %}
+
+{# Las pestañas van PRIMERO: son la respuesta a "¿qué estoy mirando?". El mes
+   elegido viaja en los dos links para que cambiar de pestaña no te devuelva
+   al mes actual — perder el mes que estabas mirando al tocar una pestaña es
+   el motivo por el que la gente deja de usarlas. #}
+<div class="seg">
+  <a href="?tab=mes{{ qm }}{{ qv }}" class="{% if tab != 'meses' %}on{% endif %}">Este mes</a>
+  <a href="?tab=meses{{ qm }}{{ qv }}" class="{% if tab == 'meses' %}on{% endif %}">Mes a mes</a>
+</div>
+
+{% if tab != 'meses' %}
 
 {# Navegación mes a mes. La comisión se paga por MES: no hay selector de
    semana ni de año (dueña 2026-08-03: "comisión solo necesito mensual"). #}
 <div class="seg" style="align-items:center;">
-  <a href="?anio={{ mes_anterior[0] }}&mes={{ mes_anterior[1] }}{{ qv }}"
+  <a href="?tab=mes&anio={{ mes_anterior[0] }}&mes={{ mes_anterior[1] }}{{ qv }}"
      style="flex:0 0 44px;">‹</a>
   <span style="flex:1;text-align:center;font-size:13.5px;font-weight:700;
                padding:8px 0;">{{ etiqueta }}</span>
   {% if mes_siguiente %}
-    <a href="?anio={{ mes_siguiente[0] }}&mes={{ mes_siguiente[1] }}{{ qv }}"
+    <a href="?tab=mes&anio={{ mes_siguiente[0] }}&mes={{ mes_siguiente[1] }}{{ qv }}"
        style="flex:0 0 44px;">›</a>
   {% else %}
     <span style="flex:0 0 44px;"></span>
@@ -87,12 +111,17 @@
   {% endfor %}
 </div>
 
+{% else %}
+
+{# La otra pestaña: el año entero. Tocar un mes abre su detalle — o sea que
+   esta lista es además la navegación, y por eso el `tab=mes` en el link. #}
 <div class="card">
-  <div class="card-t">Mes a mes · {{ meses[0].anio if meses else '' }}</div>
+  <div class="card-t">Mes a mes · {{ meses[0].anio if meses else anio }}</div>
   {% for m in meses %}
-    <a class="rowitem" href="?anio={{ m.anio }}&mes={{ m.mes }}{{ qv }}">
+    <a class="rowitem" href="?tab=mes&anio={{ m.anio }}&mes={{ m.mes }}{{ qv }}">
       <div class="nm">
         <b>{{ nombres_meses[m.mes - 1] }}</b>
+        {% if (m.anio, m.mes) == (anio, mes) %}<span>el que estás viendo</span>{% endif %}
       </div>
       <div class="amt"><b>$ {{ m.monto|money_es }}</b></div>
     </a>
@@ -100,4 +129,15 @@
     <div class="vacio">Todavía no hay comisiones este año.</div>
   {% endfor %}
 </div>
+
+{# Los meses en cero no se listan (ver la vista), pero SÍ se dicen: sin esta
+   línea, un año que arranca en junio parece que perdió los meses de antes. #}
+{% if n_meses_sin_comision %}
+<div class="of" style="text-align:center;font-size:11.5px;color:var(--ink-3);
+                       margin:-4px 0 12px;">
+  {{ n_meses_sin_comision }} mes{{ '' if n_meses_sin_comision == 1 else 'es' }} sin comisión, no se muestra{{ '' if n_meses_sin_comision == 1 else 'n' }}
+</div>
+{% endif %}
+
+{% endif %}
 {% endblock %}

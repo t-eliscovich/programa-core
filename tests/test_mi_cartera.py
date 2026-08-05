@@ -1418,3 +1418,96 @@ def test_el_atributo_hidden_le_gana_al_display_del_portal():
     css = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
     assert "[hidden]{display:none!important}" in css, \
         "sin este guard, cualquier `display:` del cascarón anula los `hidden`"
+
+
+# ---------------------------------------------------------------------------
+# Mi comisión: dos pestañas (dueña 2026-08-05)
+# ---------------------------------------------------------------------------
+# *"este mes a mes está muy abajo, pongamos arriba otra tab o algo así"*.
+# El mes a mes estaba al pie, debajo del desglose "De qué cobranzas", que mide
+# tanto como clientes le cobró el vendedor: con veinte clientes queda a media
+# pantalla de scroll. Un dato de resumen no puede vivir detrás de un detalle
+# de largo variable.
+
+
+_MESES_DEMO = [
+    {"anio": 2026, "mes": 8, "monto": 591.26},
+    {"anio": 2026, "mes": 7, "monto": 3062.75},
+    {"anio": 2026, "mes": 6, "monto": 1531.96},
+    {"anio": 2026, "mes": 5, "monto": 0.0},
+    {"anio": 2026, "mes": 4, "monto": 0.0},
+    {"anio": 2026, "mes": 3, "monto": 0.0},
+    {"anio": 2026, "mes": 2, "monto": 0.0},
+    {"anio": 2026, "mes": 1, "monto": 0.0},
+]
+
+
+def _comision_html(vendedor_logueado, monkeypatch, url="/mi-cartera/comision"):
+    monkeypatch.setattr(q, "comision_meses", lambda *a, **k: _MESES_DEMO)
+    monkeypatch.setattr(q, "comision_por_cliente", lambda *a, **k: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
+    r = vendedor_logueado.get(url)
+    assert r.status_code == 200
+    return r.data.decode()
+
+
+def _seg(html):
+    """El bloque del control segmentado — el primero de la pantalla."""
+    return html.split('<div class="seg">')[1].split("</div>")[0]
+
+
+def test_la_comision_abre_en_el_mes_con_las_dos_pestanas_arriba(
+        vendedor_logueado, monkeypatch):
+    """Las pestañas van ANTES que todo: son la respuesta a "¿qué miro?"."""
+    html = _comision_html(vendedor_logueado, monkeypatch)
+    seg = _seg(html)
+    assert "Este mes" in seg and "Mes a mes" in seg
+    # Arranca en el mes, y esa pestaña es la marcada.
+    assert 'class="on"' in seg.split("Mes a mes")[0]
+    # El mes a mes ya NO está al pie de la pantalla del mes.
+    assert "Mes a mes ·" not in html
+    # Y el desglose, que es lo largo, sigue estando.
+    assert "De qué cobranzas" in html
+
+
+def test_la_pestana_mes_a_mes_muestra_el_ano_y_no_el_desglose(
+        vendedor_logueado, monkeypatch):
+    html = _comision_html(vendedor_logueado, monkeypatch,
+                          "/mi-cartera/comision?tab=meses")
+    assert "Mes a mes ·" in html
+    assert "Agosto" in html and "Julio" in html and "Junio" in html
+    # La otra pestaña no se renderiza a la vez: si estuviera, el usuario
+    # scrollearía igual y las pestañas no habrían resuelto nada.
+    assert "De qué cobranzas" not in html
+
+
+def test_los_meses_sin_comision_no_se_listan_pero_se_dicen(
+        vendedor_logueado, monkeypatch):
+    """Enero a mayo daban cinco filas de "$ 0,00" que ocupaban media pantalla
+    y empujaban abajo los meses que sí tienen plata. Un cero pide la misma
+    atención que una cifra y no dice nada — mismo criterio que el guión de la
+    columna Abonado.
+
+    Pero se AVISA cuántos son: sin la línea, un año que arranca en junio
+    parece haber perdido los meses de antes.
+    """
+    html = _comision_html(vendedor_logueado, monkeypatch,
+                          "/mi-cartera/comision?tab=meses")
+    for mes_cero in ("Enero", "Febrero", "Marzo", "Abril", "Mayo"):
+        assert mes_cero not in html, f"{mes_cero} está en 0 y no debería listarse"
+    assert "5 meses sin comisión" in html
+
+
+def test_cambiar_de_pestana_no_te_saca_del_mes_que_estabas_mirando(
+        vendedor_logueado, monkeypatch):
+    """Perder el mes al tocar una pestaña es el motivo por el que la gente
+    deja de tocarlas."""
+    html = _comision_html(vendedor_logueado, monkeypatch,
+                          "/mi-cartera/comision?anio=2026&mes=6")
+    seg = _seg(html)
+    assert "anio=2026&amp;mes=6" in seg or "anio=2026&mes=6" in seg
+    # Y desde el mes a mes, volver al detalle abre el mes elegido, no el de hoy.
+    otra = _comision_html(vendedor_logueado, monkeypatch,
+                          "/mi-cartera/comision?tab=meses&anio=2026&mes=6")
+    assert "tab=mes&amp;anio=2026&amp;mes=7" in otra \
+        or "tab=mes&anio=2026&mes=7" in otra
