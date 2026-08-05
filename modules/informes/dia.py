@@ -71,8 +71,16 @@ import db
 _LOG = logging.getLogger("programa_core.dia")
 
 #: Horas de Ecuador en las que se clavan las dos capturas ancla.
+#: TMT 2026-08-05: *"quiero este resumen a las 6.10"* — 18:10 de Quito. El
+#: cierre pasa de las 19:00 a las 18:00 EC (la captura entra en el primer tick
+#: del hilo después de la hora, así que sale ~18:00-18:02).
+#: ⚠ El cierre más temprano deja fuera la última hora de fábrica, así que el
+#: día de HOY y los anteriores no son estrictamente comparables. La ventana
+#: sigue siendo de 24 h: es cierre-a-cierre, sólo que corrida una hora.
+#: Se puede pisar por entorno con DIA_HORA_MANANA / DIA_HORA_CIERRE sin tocar
+#: código, que es como se prueba un horario nuevo antes de fijarlo acá.
 HORA_MANANA = 7
-HORA_CIERRE = 19
+HORA_CIERRE = 18
 
 #: Debajo de esto un Δ es ruido de centavos y no se guarda como movimiento.
 UMBRAL = 0.01
@@ -696,7 +704,7 @@ def capturar(momento: str = "manual", bal: dict | None = None) -> dict:
 
 
 def correr_si_toca() -> dict:
-    """Entrada del hilo de fondo. Clava las capturas de 07:00 y 19:00 EC.
+    """Entrada del hilo de fondo. Clava las dos capturas ancla del día.
 
     La idempotencia NO se apoya en una variable de proceso (se pierde en cada
     restart, y el server reinicia): la garantiza el índice único

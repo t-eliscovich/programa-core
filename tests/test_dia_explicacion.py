@@ -1156,6 +1156,20 @@ def test_el_aviso_de_tramo_corto_no_lo_tapa_la_frase_del_margen(app, fake_db):
     assert "nos costaba" in cuerpo          # Y la frase del margen: conviven
 
 
+def test_el_cierre_es_a_las_18_de_ecuador():
+    """TMT 2026-08-05: *"quiero este resumen a las 6.10"*, 18:10 de Quito. El
+    literal va acá a propósito: medirlo contra `dia.HORA_CIERRE` sería circular
+    —el código define la constante y el test la acepta—, así que mover el
+    horario tendría que ser una decisión, no un descuido."""
+    assert dia.HORA_CIERRE == 18
+    assert dia.HORA_MANANA == 7
+
+
+def test_el_horario_se_puede_probar_por_entorno_sin_tocar_codigo():
+    with patch.dict(os.environ, {"DIA_HORA_CIERRE": "21"}):
+        assert dia._hora("DIA_HORA_CIERRE", dia.HORA_CIERRE) == 21
+
+
 # ── El mensaje de WhatsApp ──────────────────────────────────────────────────
 # TMT 2026-08-05: *"me gustaría también mostrar la utilidad hasta hoy, algo
 # para mandar chiquito e informativo a mí, andres y federico por whatsapp"*.
