@@ -983,6 +983,42 @@ def _n(v, dec: int = 0) -> str:
     return num_es(round(_f(v), dec), dec)
 
 
+def deuda_hoy(fecha=None) -> dict:
+    """La deuda a proveedores (posdatados) y cuánto de eso vence pronto.
+
+    TMT 2026-08-05: *"no decís nada de posdatados"*. La utilidad ya los tiene
+    adentro — `totp` aporta con signo −1, una deuda nueva la baja — pero el
+    **nivel** y el **vencimiento** no salían en ningún lado del día, y son la
+    otra mitad de la pregunta de un accionista: no sólo *cuánto ganamos*, sino
+    *cuánto hay que pagar y cuándo*.
+
+    ⭐ Pasivos = `posdat` con **`banc = 0`** (los `banc = 9` son cheques ya
+    emitidos, no deuda abierta). Es la misma definición que usa el Balance:
+    si un día no coinciden, el que está mal es éste.
+    """
+    fecha = fecha or hoy_ec()
+    r = _rows(
+        """
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(importe), 0) AS total,
+               COALESCE(SUM(importe) FILTER (WHERE fechad < %s), 0) AS vencido,
+               COALESCE(SUM(importe) FILTER (
+                   WHERE fechad >= %s AND fechad < %s + 7), 0) AS prox7,
+               COALESCE(SUM(importe) FILTER (
+                   WHERE fechad >= %s AND fechad < %s + 30), 0) AS prox30
+          FROM scintela.posdat
+         WHERE banc = 0 AND NOT COALESCE(anulada, FALSE)
+        """, (fecha, fecha, fecha, fecha, fecha))
+    d = r[0] if r else {}
+    return {
+        "n": int(d.get("n") or 0),
+        "total": _f(d.get("total")),
+        "vencido": _f(d.get("vencido")),
+        "prox7": _f(d.get("prox7")),
+        "prox30": _f(d.get("prox30")),
+    }
+
+
 def motores_del_dia(fecha, n: int = 3) -> list[dict]:
     """Las `n` reglas que MÁS movieron la utilidad del día, con su aporte.
 

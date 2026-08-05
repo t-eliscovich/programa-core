@@ -613,7 +613,7 @@ def test_la_pantalla_del_dia_renderiza(app, fake_db):
     assert r.status_code == 200, r.data[:400]
     cuerpo = r.data.decode()
     assert "Venta facturada" in cuerpo
-    assert "Explicado al 100" in cuerpo
+    assert "explicado al 100" in cuerpo
     assert "3 días seguidos" in cuerpo
 
 
@@ -631,7 +631,7 @@ def test_la_pantalla_muestra_lo_que_falta_explicar(app, fake_db):
     assert r.status_code == 200
     assert "Falta explicar" in cuerpo
     assert "Stock Químicos: sin explicar" in cuerpo
-    assert "Explicado 88.0" in cuerpo
+    assert "explicado 88.0" in cuerpo
 
 
 def test_la_pantalla_avisa_cuando_todavia_no_hay_cierre(app, fake_db):
@@ -899,7 +899,7 @@ def test_la_pantalla_muestra_el_resumen(app, fake_db):
          patch.object(dia, "resumen", return_value=res), \
          patch.object(dia, "racha_limpia", return_value=0):
         cuerpo = c.get("/informes/dia").data.decode()
-    assert "El día en pocas líneas" in cuerpo
+    assert "El día contado" in cuerpo
     assert "113 facturas" in cuerpo
     assert "12.838 kg" in cuerpo            # producción MEDIDA
     assert "79 órdenes" in cuerpo
@@ -908,7 +908,70 @@ def test_la_pantalla_muestra_el_resumen(app, fake_db):
     # aserción no puede cruzar un salto de línea del fuente.
     assert "no hay nada de revaluación adentro" in cuerpo   # tarifa quieta
     assert "3,0437" in cuerpo                               # y el $/kg a la vista
-    assert "Resultado del día" in cuerpo
+    # El resultado del día vive arriba de todo, en la cinta de KPIs, y la
+    # ventana horaria al pie de la tarjeta. Antes había TRES lugares con el
+    # mismo número (hero, "Resultado del día" y "El titular"); quedó uno.
+    assert "Utilidad del día" in cuerpo
+
+
+# ── La deuda (posdatados) y la cuenta del margen, escritas ──────────────────
+# TMT 2026-08-05: *"no decís nada de posdatados"* y *"tela que valía x para
+# nosotros la vendimos a tanto, margen = esto — me encanta esto pero escribilo"*.
+
+def test_la_deuda_son_los_posdatados_con_banc_0_y_sin_anular():
+    """Misma definición que el Balance. Los `banc = 9` son cheques ya emitidos,
+    no deuda abierta: contarlos duplicaría el pasivo."""
+    with patch.object(dia, "_rows", return_value=[{}]) as rows:
+        dia.deuda_hoy(date(2026, 8, 5))
+    sql = rows.call_args[0][0]
+    assert "banc = 0" in sql
+    assert "NOT COALESCE(anulada, FALSE)" in sql
+
+
+def test_la_pantalla_cuenta_el_margen_en_una_frase(app, fake_db):
+    """La cuenta en castellano, no sólo el porcentaje: es lo que hace que se
+    entienda que la venta aporta el MARGEN y no el importe de la factura."""
+    c = _login(app, fake_db)
+    res = {"ok": True, "d_utilidad": 100.0, "d_stock": 0.0, "d_deuda": 0.0,
+           "desde": {"vsto": 1.0}, "hasta": {"vsto": 1.0}, "cobrado": 1.0,
+           "ventas": {"n": 92, "kg": 13459.0, "us": 116406.0},
+           "compras": {"n": 0, "kg": 0.0, "us": 0.0},
+           "margen": 45834.0, "margen_pct": 39.4, "costo_despachado": 70573.0,
+           "produccion": {"disponible": False}, "etapas": []}
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "deuda_hoy", return_value={"n": 0, "total": 0.0}), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "nos costaba" in cuerpo
+    assert "la vendimos en" in cuerpo
+    assert "70.573" in cuerpo and "45.834" in cuerpo
+
+
+def test_la_pantalla_habla_de_la_deuda(app, fake_db):
+    c = _login(app, fake_db)
+    deuda = {"n": 152, "total": 3531577.0, "vencido": 524828.0,
+             "prox7": 125699.0, "prox30": 264585.0}
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value={"ok": False}), \
+         patch.object(dia, "deuda_hoy", return_value=deuda), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "3.531.577" in cuerpo          # el nivel
+    assert "264.585" in cuerpo            # y CUÁNDO hay que pagarlo
+
+
+def test_el_porcentaje_explicado_sobrevive_a_un_dia_sin_relato(app, fake_db):
+    """🚨 La ventana y el % explicado son propiedades de la EXPLICACIÓN, no del
+    relato. Vivían al pie de la tarjeta de la prosa y un día sin `resumen()`
+    se los llevaba puestos: la pantalla dejaba de decir cuánto entendió."""
+    c = _login(app, fake_db)
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value={"ok": False}), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "explicado al 100" in cuerpo
+    assert "Utilidad del día" in cuerpo
 
 
 # ── El mensaje de WhatsApp ──────────────────────────────────────────────────
@@ -1136,7 +1199,7 @@ def test_la_pantalla_trae_el_bloque_de_whatsapp(app, fake_db):
                       return_value="*INTELA · mar 4 ago*\n\n*Utilidad de ago: $ 125.331*"), \
          patch.object(dia, "racha_limpia", return_value=0):
         cuerpo = c.get("/informes/dia").data.decode()
-    assert "Para mandar por WhatsApp" in cuerpo
+    assert "Para mandar" in cuerpo
     assert "Utilidad de ago" in cuerpo
     # El botón abre el WhatsApp de quien aprieta. Programa Core no manda nada.
     assert "https://wa.me/?text=" in cuerpo

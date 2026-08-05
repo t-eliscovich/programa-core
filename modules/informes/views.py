@@ -1280,6 +1280,7 @@ def dia():
         e=_dia.explicar(fecha),
         r=_dia.resumen(fecha),
         wa=_dia.mensaje_whatsapp(fecha),
+        deuda=_dia.deuda_hoy(fecha),
         etiquetas=_dia.ETIQUETAS,
         racha=_dia.racha_limpia(),
         hora_manana=_dia._hora("DIA_HORA_MANANA", _dia.HORA_MANANA),

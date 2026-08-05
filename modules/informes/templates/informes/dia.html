@@ -1,392 +1,358 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_hero %}
-{% block title %}Explicación del día{% endblock %}
-{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Explicación del día</strong>{% endblock %}
+{% block title %}El día{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>El día</strong>{% endblock %}
 
 {% block content %}
 {# TMT 2026-08-04 (dueña): "quiero que cada día puedas darme una explicación de
-   por qué subió la utilidad. comparás balance de mañana y a fin de día" — y
-   "no debería haber residuo.. y tenemos que ir entrenando esto".
+   por qué subió la utilidad" · "no debería haber residuo.. y tenemos que ir
+   entrenando esto". TMT 2026-08-05: "limpiá la página, está fea".
    Sin link en el menú a propósito: se entra por URL mientras se entrena.
-   Tailwind está congelado (build JIT) → estilos inline. #}
-<div class="max-w-full" style="font-variant-numeric:tabular-nums;">
+
+   🚨 Tailwind está CONGELADO (build JIT): una clase nueva NO renderiza y no
+   avisa. Todo el estilo de esta pantalla vive en el <style> de abajo, con
+   prefijo `dia-` para no pisar nada del resto de la app. #}
+<style>
+  .dia { font-variant-numeric:tabular-nums; color:rgb(30 41 59); }
+  .dia-bar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+             font-size:12px; margin:1rem 0; color:rgb(100 116 139); }
+  .dia-bar form { display:flex; align-items:center; gap:.4rem; margin:0; }
+  .dia-in { border:1px solid rgb(203 213 225); border-radius:8px;
+            padding:.3rem .55rem; font-size:12px; background:#fff; }
+  .dia-btn { border:1px solid rgb(203 213 225); border-radius:8px;
+             padding:.32rem .75rem; font-size:12px; font-weight:600;
+             background:rgb(248 250 252); color:rgb(51 65 85); cursor:pointer; }
+  .dia-btn:hover { background:rgb(241 245 249); }
+  .dia-sep { flex:1 1 auto; }
+
+  /* Los cinco números del día, en una sola cinta. */
+  .dia-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+              gap:1px; background:rgb(226 232 240); border:1px solid rgb(226 232 240);
+              border-radius:14px; overflow:hidden; margin:1rem 0; }
+  .dia-kpi { background:#fff; padding:.8rem 1rem; }
+  .dia-kpi .k { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+                color:rgb(148 163 184); font-weight:600; }
+  .dia-kpi .v { font-size:20px; font-weight:650; line-height:1.3; margin-top:.15rem; }
+  .dia-kpi .s { font-size:11.5px; color:rgb(100 116 139); margin-top:.05rem; }
+
+  .dia-linea { margin:-.35rem 0 1rem; padding:0 .2rem; font-size:12.5px;
+               color:rgb(100 116 139); line-height:1.6; }
+  .dia-card { background:#fff; border:1px solid rgb(226 232 240);
+              border-radius:14px; margin:1rem 0; overflow:hidden; }
+  .dia-h { padding:.6rem 1.15rem; font-size:10.5px; text-transform:uppercase;
+           letter-spacing:.06em; color:rgb(100 116 139); font-weight:600;
+           background:rgb(248 250 252); border-bottom:1px solid rgb(238 242 247); }
+  .dia-prosa { padding:1.1rem 1.15rem; font-size:15px; line-height:1.8; }
+  .dia-prosa p { margin:0 0 1rem; }
+  .dia-prosa p:last-child { margin-bottom:0; }
+  .dia-prosa b { font-weight:650; }
+  .dia-tag { display:block; font-size:10.5px; text-transform:uppercase;
+             letter-spacing:.06em; color:rgb(148 163 184); font-weight:600;
+             margin-bottom:.1rem; }
+  .dia-pie { padding:.7rem 1.15rem; font-size:12.5px; color:rgb(100 116 139);
+             border-top:1px solid rgb(238 242 247); background:rgb(252 253 254); }
+
+  .dia-t { width:100%; border-collapse:collapse; font-size:13px; }
+  .dia-t th { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+              color:rgb(148 163 184); font-weight:600; text-align:left;
+              padding:.5rem 1rem; }
+  .dia-t td { padding:.45rem 1rem; border-top:1px solid rgb(241 245 249); }
+  .dia-t tbody tr:first-child td { border-top:none; }
+  .dia-t .r { text-align:right; white-space:nowrap; }
+  .dia-t .num { font-weight:600; white-space:nowrap; text-align:right; }
+  .dia-mini { font-size:11px; color:rgb(148 163 184); }
+  .dia-pos { color:rgb(21 128 61); }
+  .dia-neg { color:rgb(185 28 28); }
+  .dia-cero { color:rgb(148 163 184); }
+  .dia-amb { color:rgb(180 83 9); }
+  .dia-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
+              gap:1rem; margin:1rem 0; }
+
+  .dia-det { border:1px solid rgb(226 232 240); border-radius:14px;
+             background:#fff; margin:1rem 0; }
+  .dia-det > summary { padding:.7rem 1.15rem; font-size:12.5px; font-weight:600;
+                       color:rgb(71 85 105); cursor:pointer; list-style:none; }
+  .dia-det > summary::-webkit-details-marker { display:none; }
+  .dia-det > summary::before { content:'\25B8\00A0'; color:rgb(148 163 184); }
+  .dia-det[open] > summary::before { content:'\25BE\00A0'; }
+  .dia-det[open] > summary { border-bottom:1px solid rgb(238 242 247); }
+  .dia-det .dia-ayuda { padding:1rem 1.15rem; font-size:13px; line-height:1.75;
+                        color:rgb(71 85 105); }
+  .dia-det .dia-ayuda p { margin:0 0 .8rem; }
+  .dia-det .dia-ayuda p:last-child { margin-bottom:0; }
+
+  .dia-wa { margin:0; padding:1.1rem 1.15rem; font-size:13px; line-height:1.7;
+            white-space:pre-wrap; word-break:break-word; color:rgb(30 41 59);
+            font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .dia-wa-pie { padding:.65rem 1.15rem; border-top:1px solid rgb(241 245 249);
+                display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  .dia-wa-ir { border:1px solid rgb(134 239 172); background:rgb(240 253 244);
+               color:rgb(21 128 61); text-decoration:none; }
+  .dia-txt { width:100%; border:1px solid rgb(203 213 225); border-radius:8px;
+             padding:.5rem .65rem; font-size:13px; font-family:inherit;
+             margin-top:.4rem; }
+  .dia-vacio { padding:1.2rem 1.15rem; font-size:13px; color:rgb(148 163 184); }
+</style>
+
+<div class="dia">
 
   {{ page_hero(
-      'Por qué se movió la utilidad',
-      descripcion='24 horas de fábrica: del cierre de ayer al cierre de hoy, documento por documento.',
-      kpi_valor=(('$ ' ~ (e.d_utilidad | num_es(2))) if e.hasta else '—'),
+      'El día',
+      descripcion='24 horas de fábrica — del cierre de ayer al de hoy, documento por documento.',
+      kpi_valor=((('+' if e.d_utilidad >= 0 else '−') ~ '$ ' ~ ((e.d_utilidad | abs) | num_es(2))) if e.hasta else '—'),
       kpi_extra=('· ' ~ e.fecha.strftime('%d/%m/%Y'))
   ) }}
 
-  {# ── Barra: fecha, captura manual, racha ─────────────────────────────── #}
-  <div class="my-4 flex items-center gap-3 flex-wrap text-xs">
-    <form method="get" class="inline flex items-center gap-2">
-      <label style="color:rgb(100 116 139);">Día</label>
-      <input type="date" name="fecha" value="{{ e.fecha.isoformat() }}"
-             class="px-2 py-1 rounded border" style="border-color:rgb(203 213 225);">
-      <button class="px-3 py-1.5 rounded border"
-              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Ver</button>
+  {# ── Barra de control ─────────────────────────────────────────────────── #}
+  <div class="dia-bar">
+    <form method="get">
+      <label>Día</label>
+      <input type="date" name="fecha" value="{{ e.fecha.isoformat() }}" class="dia-in">
+      <button class="dia-btn">Ver</button>
     </form>
-    <form method="post" action="{{ url_for('informes.dia_capturar') }}" class="inline">
+    <form method="post" action="{{ url_for('informes.dia_capturar') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="px-3 py-1.5 rounded border"
-              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">
-        Capturar ahora
-      </button>
+      <button class="dia-btn">Capturar ahora</button>
     </form>
-    <span style="color:rgb(100 116 139);">
-      El día son 24 h: del cierre de ayer al de hoy. Capturas automáticas a las
-      {{ '%02d' | format(hora_manana) }}:00 y {{ '%02d' | format(hora_cierre) }}:00 de Ecuador.
-      {% if racha %}<strong style="color:rgb(21 128 61);">{{ racha }} día{{ '' if racha == 1 else 's' }} seguido{{ '' if racha == 1 else 's' }} explicando el 100%.</strong>{% endif %}
-    </span>
+    <span class="dia-sep"></span>
+    {% if racha %}<strong class="dia-pos">{{ racha }} día{{ '' if racha == 1 else 's' }} seguido{{ '' if racha == 1 else 's' }} explicando el 100 %</strong>{% endif %}
   </div>
 
   {% if not e.hasta %}
-    <div class="my-4 border rounded bg-white px-4 py-6 text-sm"
-         style="border-color:rgb(226 232 240);color:rgb(100 116 139);">
+    <div class="dia-card"><div class="dia-vacio">
       {{ e.motivo }}
-      {% if e.desde %}
-        <br>La última foto ({{ e.desde.hora }}) está tomada: utilidad
-        <strong>$ {{ e.desde.utilidad | num_es(2) }}</strong>.
-      {% endif %}
-    </div>
+      {% if e.desde %}<br>La última foto ({{ e.desde.hora }}) está tomada:
+        utilidad <strong>$ {{ e.desde.utilidad | num_es(2) }}</strong>.{% endif %}
+    </div></div>
   {% else %}
 
-  {# ── El día en tres líneas ────────────────────────────────────────────── #}
-  {# TMT 2026-08-05 (dueña): "se produjo tanta tela, eso cambió de valor de x a
-     x. se vendió tanto etc. algo más senior resumido digestible para
-     accionistas". Va ARRIBA de todo: el desglose contable es el drill-down,
-     no el titular. #}
-  {% if r.ok %}
-  <div class="my-4 border rounded" style="border-color:rgb(203 213 225);background:rgb(248 250 252);">
-    <div class="px-4 py-2 text-[11px] uppercase tracking-wider" style="color:rgb(100 116 139);">
-      El día en pocas líneas
-      {% if e.dia_parcial %}
-        <span style="color:rgb(180 83 9);text-transform:none;letter-spacing:0;">
-          · tramo corto: falta la foto de ayer, no son 24 h
-        </span>
-      {% endif %}
+  {# ── Los cinco números ────────────────────────────────────────────────── #}
+  {# "Si el dato no dice nada, no ocupa lugar": misma regla que en el WhatsApp.
+     Un KPI en cero ocupa igual que uno con plata y no informa. #}
+  <div class="dia-kpis">
+    <div class="dia-kpi">
+      <div class="k">Utilidad del día</div>
+      <div class="v {{ 'dia-neg' if e.d_utilidad < 0 else 'dia-pos' }}">
+        {{ '+' if e.d_utilidad >= 0 else '−' }}$ {{ (e.d_utilidad | abs) | num_es(0) }}</div>
+      <div class="s">{{ e.desde.hora }} → {{ e.hasta.hora }}</div>
     </div>
-    <div class="px-4 pb-4" style="font-size:15px;line-height:1.75;color:rgb(30 41 59);">
+    {% if r.ok and r.produccion and r.produccion.disponible and r.produccion.producido %}
+    <div class="dia-kpi">
+      <div class="k">Producción</div>
+      <div class="v">{{ r.produccion.producido | num_es(0) }} kg</div>
+      <div class="s">{% if r.produccion.mes and r.produccion.mes.producido %}mes
+        {{ r.produccion.mes.producido | num_es(0) }} kg{% endif %}</div>
+    </div>
+    {% endif %}
+    {% if r.ok and r.ventas.n %}
+    <div class="dia-kpi">
+      <div class="k">Facturado</div>
+      <div class="v">$ {{ r.ventas.us | num_es(0) }}</div>
+      <div class="s">{{ r.ventas.kg | num_es(0) }} kg · {{ r.ventas.n }}
+        factura{{ '' if r.ventas.n == 1 else 's' }}</div>
+    </div>
+    {% endif %}
+    {% if r.ok and r.margen_pct is not none %}
+    <div class="dia-kpi">
+      <div class="k">Margen</div>
+      <div class="v {{ 'dia-neg' if r.margen < 0 else '' }}">$ {{ r.margen | num_es(0) }}</div>
+      <div class="s">{{ r.margen_pct | num_es(1) }} % de lo facturado</div>
+    </div>
+    {% endif %}
+    {% if deuda and deuda.total %}
+    <div class="dia-kpi">
+      <div class="k">Deuda a proveedores</div>
+      <div class="v">$ {{ deuda.total | num_es(0) }}</div>
+      <div class="s">{% if deuda.prox30 %}vencen $ {{ deuda.prox30 | num_es(0) }}
+        en 30 días{% else %}{{ deuda.n }} posdatados{% endif %}</div>
+    </div>
+    {% endif %}
+  </div>
 
-      {# ⭐ TMT 2026-08-05: "¿qué quiere decir que la fábrica no acompañó? se
-         produce 24/7, algo no sabés". La producción NO se deriva del stock —
-         se lee de las órdenes que cerraron (ver dia.produccion_del_dia). #}
+  {# ⭐ La ventana y el % explicado van acá y no al pie del relato: son
+     propiedades de la EXPLICACIÓN. Si viven dentro de la tarjeta de la prosa,
+     un día sin `resumen()` se los lleva puestos y la pantalla deja de decir
+     cuánto entendió. #}
+  <div class="dia-linea">
+    De las {{ e.desde.hora }} ($ {{ e.desde.utilidad | num_es(2) }}) a las
+    {{ e.hasta.hora }} ($ {{ e.hasta.utilidad | num_es(2) }}) ·
+    {% if e.ok %}<strong class="dia-pos">explicado al 100 %</strong> — cada peso
+      tiene un documento con nombre
+    {% else %}<strong class="dia-amb">explicado {{ e.explicado_pct }} %</strong> —
+      lo que falta está más abajo, en <em>Falta explicar</em>{% endif %}
+    {% if e.residuo and (e.residuo | abs) >= 1 %}
+      · <strong class="dia-neg">descuadre de $ {{ e.residuo | num_es(2) }}</strong>:
+      esto no debería pasar nunca, avisá{% endif %}
+  </div>
+
+  {# ── El día contado ───────────────────────────────────────────────────── #}
+  {# TMT 2026-08-05: "algo más senior resumido digestible para accionistas".
+     Va ARRIBA del desglose contable: el detalle es el drill-down, no el
+     titular. #}
+  {% if r.ok %}
+  <div class="dia-card">
+    <div class="dia-h">El día contado
+      {% if e.dia_parcial %}<span class="dia-amb" style="text-transform:none;letter-spacing:0;">
+        · tramo corto: falta la foto de ayer, no son 24 h</span>{% endif %}
+    </div>
+    <div class="dia-prosa">
+
+      {# ⭐ La producción NO se deriva del stock — se lee de las órdenes que
+         cerraron (ver dia.produccion_del_dia). "Se produce 24/7". #}
       {% set p = r.produccion %}
       {% if p and p.disponible and not p.sin_fila %}
-        <strong>Producción.</strong>
-        Se terminaron <strong>{{ p.producido | num_es(0) }} kg</strong>
+      <p><span class="dia-tag">Producción</span>
+        Se terminaron <b>{{ p.producido | num_es(0) }} kg</b>
         en {{ p.n_ofs }} {{ 'orden' if p.n_ofs == 1 else 'órdenes' }}
         {%- if p.desperdicio_kg %}, con {{ p.desperdicio_kg | num_es(0) }} kg de
-        desperdicio{% if p.desperdicio_pct %} ({{ p.desperdicio_pct }} %){% endif %}
-        {%- endif %}.
-        {% if p.promedio_dia %}
-          El promedio de los días con producción de este mes es
-          {{ p.promedio_dia | num_es(0) }} kg.
-        {% endif %}
-        Se despacharon <strong>{{ p.despachado | num_es(0) }} kg</strong>{% if p.producido and p.despachado %},
-        o sea que se produjo el
-        <strong>{{ ((100 * p.producido / p.despachado) | round | int) }} %</strong>
+        desperdicio{% if p.desperdicio_pct %} ({{ p.desperdicio_pct }} %){% endif %}{% endif %}.
+        {% if p.promedio_dia %}El promedio de los días con producción de este mes
+        es {{ p.promedio_dia | num_es(0) }} kg.{% endif %}
+        Se despacharon <b>{{ p.despachado | num_es(0) }} kg</b>{% if p.producido and p.despachado %},
+        o sea que se produjo el {{ ((100 * p.producido / p.despachado) | round | int) }} %
         de lo que salió{% endif %}.
-        {% if p.mes and p.mes.producido %}
-          En lo que va del mes: {{ p.mes.producido | num_es(0) }} kg producidos
-          contra {{ p.mes.vendido | num_es(0) }} despachados
-          {%- if p.mes.vendido %} ({{ ((100 * p.mes.producido / p.mes.vendido) | round | int) }} %){% endif %}.
-        {% endif %}
-        <br><br>
+        {% if p.mes and p.mes.producido %}En lo que va del mes:
+        {{ p.mes.producido | num_es(0) }} kg producidos contra
+        {{ p.mes.vendido | num_es(0) }} despachados
+        {%- if p.mes.vendido %} ({{ ((100 * p.mes.producido / p.mes.vendido) | round | int) }} %){% endif %}.{% endif %}
+      </p>
       {% elif p and p.disponible %}
-        <strong>Producción.</strong> No cerró ninguna orden de fabricación.
-        Los kilos se imputan al día en que la orden <em>cierra</em>, así que un
-        día en cero casi siempre quiere decir eso y no que la planta parara.
-        <br><br>
+      <p><span class="dia-tag">Producción</span>
+        No cerró ninguna orden de fabricación. Los kilos se imputan al día en
+        que la orden <em>cierra</em>, así que un día en cero casi siempre quiere
+        decir eso y no que la planta parara.</p>
       {% endif %}
 
-      <strong>Ventas.</strong>
-      {% if r.ventas.n %}
-        {{ r.ventas.n }} factura{{ '' if r.ventas.n == 1 else 's' }} por
-        <strong>$ {{ r.ventas.us | num_es(2) }}</strong>
-        — {{ r.ventas.kg | num_es(0) }} kg
-        {%- if r.precio_kg %} a $ {{ r.precio_kg | num_es(2) }}/kg{% endif %}.
-        {% if r.margen is defined and r.margen_pct %}
-          Esa tela costaba $ {{ r.costo_despachado | num_es(0) }} en stock, así
-          que la venta dejó <strong>$ {{ r.margen | num_es(0) }}</strong>
-          ({{ r.margen_pct }} %).
-        {% endif %}
-      {% else %}
-        No se facturó nada.
-      {% endif %}
-      {% if r.compras.n %}
-        Se compraron {{ r.compras.kg | num_es(0) }} kg por
-        $ {{ r.compras.us | num_es(2) }}.
-      {% endif %}
+      <p><span class="dia-tag">Ventas</span>
+        {% if r.ventas.n %}
+          {{ r.ventas.n }} factura{{ '' if r.ventas.n == 1 else 's' }} por
+          <b>$ {{ r.ventas.us | num_es(2) }}</b> — {{ r.ventas.kg | num_es(0) }} kg
+          {%- if r.precio_kg %} a $ {{ r.precio_kg | num_es(2) }}/kg{% endif %}.
+          {# ⭐ TMT 2026-08-05: "tela que valía x para nosotros la vendimos a
+             tanto, margen = esto — escribilo". La cuenta, en una frase. #}
+          {% if r.margen is defined and r.margen_pct %}
+            Tela que a nosotros nos costaba <b>$ {{ r.costo_despachado | num_es(0) }}</b>
+            la vendimos en <b>$ {{ r.ventas.us | num_es(0) }}</b>: quedaron
+            <b>$ {{ r.margen | num_es(0) }}</b> de margen, el
+            {{ r.margen_pct | num_es(1) }} % de lo facturado. El resto ya era
+            nuestro — estaba en forma de tela.
+          {% endif %}
+        {% else %}No se facturó nada.{% endif %}
+        {% if r.compras.n %}Se compraron {{ r.compras.kg | num_es(0) }} kg por
+        $ {{ r.compras.us | num_es(2) }}.{% endif %}
+      </p>
 
-      <br><br>
-
-      <strong>Stock y plata.</strong>
-      El stock de fábrica pasó de
-      <strong>$ {{ (r.desde.vsto or 0) | num_es(0) }}</strong> a
-      <strong>$ {{ (r.hasta.vsto or 0) | num_es(0) }}</strong>
-      ({{ '+' if r.d_stock > 0 else '' }}$ {{ r.d_stock | num_es(0) }}).
-      {% if r.tarifa_quieta %}
-        Todo ese cambio son <strong>kilos</strong>: el costo del hilado no se
-        movió{% if r.etapas %} (queda en $ {{ r.etapas[0].p1 | num_es(4) }}/kg){% endif %},
+      <p><span class="dia-tag">Stock y plata</span>
+        El stock de fábrica pasó de <b>$ {{ (r.desde.vsto or 0) | num_es(0) }}</b>
+        a <b>$ {{ (r.hasta.vsto or 0) | num_es(0) }}</b>
+        ({{ '+' if r.d_stock > 0 else '' }}$ {{ r.d_stock | num_es(0) }}).
+        {% if r.tarifa_quieta %}Todo ese cambio son <b>kilos</b>: el costo del
+        hilado no se movió{% if r.etapas %} (queda en $ {{ r.etapas[0].p1 | num_es(4) }}/kg){% endif %},
         así que no hay nada de revaluación adentro.
-      {% elif r.por_tarifa and (r.por_tarifa | abs) > 1 %}
-        De ahí, <strong>$ {{ r.por_kilos | num_es(0) }}</strong> son kilos y
-        <strong>$ {{ r.por_tarifa | num_es(0) }}</strong> es <em>revaluación</em>:
-        cambió el costo del hilado y con él el valor de todo el stock, sin que
-        se produjera ni se vendiera nada por eso.
+        {% elif r.por_tarifa and (r.por_tarifa | abs) > 1 %}De ahí,
+        <b>$ {{ r.por_kilos | num_es(0) }}</b> son kilos y
+        <b>$ {{ r.por_tarifa | num_es(0) }}</b> es <em>revaluación</em>: cambió el
+        costo del hilado y con él el valor de todo el stock, sin que se
+        produjera ni se vendiera nada por eso.{% endif %}
+        Se cobró aproximadamente <b>$ {{ r.cobrado | num_es(2) }}</b> — cobrar no
+        sube la utilidad, sólo mueve la plata de la cartera a los cheques.
+      </p>
+
+      {# ⭐ TMT 2026-08-05: "no decís nada de posdatados". La deuda YA estaba
+         adentro de la utilidad (totp aporta con signo −1), pero el nivel y el
+         vencimiento no salían en ningún lado. #}
+      {% if deuda and deuda.total %}
+      <p><span class="dia-tag">Deuda</span>
+        Debemos <b>$ {{ deuda.total | num_es(0) }}</b> a proveedores, repartidos
+        en {{ deuda.n }} posdatado{{ '' if deuda.n == 1 else 's' }}.
+        {% if deuda.vencido %}Ya venció <b class="dia-neg">$ {{ deuda.vencido | num_es(0) }}</b>.{% endif %}
+        {% if deuda.prox7 %}Esta semana vencen $ {{ deuda.prox7 | num_es(0) }}{% if deuda.prox30 %}
+        y en 30 días, $ {{ deuda.prox30 | num_es(0) }}{% endif %}.
+        {% elif deuda.prox30 %}En los próximos 30 días vencen
+        $ {{ deuda.prox30 | num_es(0) }}.{% endif %}
+        {% if r.d_deuda and (r.d_deuda | abs) > 1 %}Hoy
+        {{ 'se tomó deuda nueva por' if r.d_deuda > 0 else 'se bajó deuda por' }}
+        <b>$ {{ (r.d_deuda | abs) | num_es(2) }}</b>{% if r.d_deuda > 0 %} — eso
+        baja la utilidad del día{% else %} — pagar no la sube: cambia una deuda
+        por menos plata{% endif %}.{% endif %}
+      </p>
       {% endif %}
-      Se cobró aproximadamente <strong>$ {{ r.cobrado | num_es(2) }}</strong>
-      {%- if r.d_deuda and (r.d_deuda | abs) > 1 %}
-        y {{ 'se tomó deuda nueva por' if r.d_deuda > 0 else 'se bajó deuda por' }}
-        <strong>$ {{ (r.d_deuda | abs) | num_es(2) }}</strong>
-      {%- endif %}.
-
-      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid rgb(226 232 240);
-                  font-size:17px;">
-        <strong>Resultado del día:
-          <span style="color:{% if r.d_utilidad < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
-            {{ '+' if r.d_utilidad >= 0 else '−' }}$ {{ (r.d_utilidad | abs) | num_es(2) }}
-          </span>
-        </strong>
-      </div>
     </div>
-
-    {% if r.etapas %}
-    <table class="w-full text-sm" style="border-top:1px solid rgb(226 232 240);">
-      <thead class="text-[11px] uppercase tracking-wider" style="color:rgb(148 163 184);">
-        <tr>
-          <th class="px-4 py-2 text-left font-medium">Etapa</th>
-          <th class="px-3 py-2 text-right font-medium">Kilos</th>
-          <th class="px-3 py-2 text-right font-medium">$/kg</th>
-          <th class="px-3 py-2 text-right font-medium">Valor</th>
-          <th class="px-3 py-2 text-right font-medium">Por kilos</th>
-          <th class="px-4 py-2 text-right font-medium">Por tarifa</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for e in r.etapas %}
-        <tr style="border-top:1px solid rgb(241 245 249);">
-          <td class="px-4 py-2">{{ e.rotulo }}</td>
-          <td class="px-3 py-2 text-right" style="white-space:nowrap;">
-            {{ e.kg0 | num_es(0) }} → <strong>{{ e.kg1 | num_es(0) }}</strong>
-            <span style="color:{% if e.d_kg < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};font-size:12px;">
-              ({{ '+' if e.d_kg > 0 else '' }}{{ e.d_kg | num_es(0) }})</span>
-          </td>
-          <td class="px-3 py-2 text-right" style="white-space:nowrap;">
-            {% if e.d_p %}{{ e.p0 | num_es(4) }} → {{ e.p1 | num_es(4) }}
-            {% else %}{{ e.p1 | num_es(4) }}{% endif %}
-          </td>
-          <td class="px-3 py-2 text-right" style="white-space:nowrap;">
-            {{ e.us0 | num_es(0) }} → <strong>{{ e.us1 | num_es(0) }}</strong>
-          </td>
-          <td class="px-3 py-2 text-right" style="white-space:nowrap;color:rgb(71 85 105);">
-            {{ '+' if e.por_kilos > 0 else '' }}{{ e.por_kilos | num_es(0) }}
-          </td>
-          <td class="px-4 py-2 text-right" style="white-space:nowrap;color:rgb(71 85 105);">
-            {{ '+' if e.por_tarifa > 0 else '' }}{{ e.por_tarifa | num_es(0) }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-
-    <p class="px-4 py-2" style="font-size:11px;color:rgb(100 116 139);line-height:1.5;">
-      <strong>Los kilos producidos y despachados son medidos</strong>, no
-      estimados: salen de las órdenes de fabricación que cerraron y de los
-      despachos físicos (bodega 53 de Asinfo), con el desperdicio aparte.
-      Ojo con una cosa: los kilos se imputan al día en que la orden
-      <em>cierra</em>, no a los días en que se produjo — una orden que tejió
-      tres días descarga todo en uno. Por eso el diario es grumoso aunque la
-      planta no pare, y al lado va el acumulado del mes, que es donde ese ruido
-      se promedia. Lo cobrado sí es estimado (facturado menos lo que creció la
-      cartera); lo facturado, lo comprado y el resultado son exactos.
-    </p>
   </div>
   {% endif %}
 
-  {# ── El titular ───────────────────────────────────────────────────────── #}
-  <div class="my-4 border rounded bg-white px-4 py-4"
-       style="border-color:rgb(226 232 240);">
-    <div style="font-size:13px;color:rgb(100 116 139);">
-      De las {{ e.desde.hora }} ($ {{ e.desde.utilidad | num_es(2) }})
-      a las {{ e.hasta.hora }} ($ {{ e.hasta.utilidad | num_es(2) }})
-    </div>
-    <div style="font-size:30px;font-weight:700;line-height:1.2;
-                color:{% if e.d_utilidad < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
-      {{ '+' if e.d_utilidad >= 0 else '' }}$ {{ e.d_utilidad | num_es(2) }}
-    </div>
-    <div style="font-size:13px;color:rgb(71 85 105);margin-top:.35rem;">
-      {% if e.ok %}
-        <span style="color:rgb(21 128 61);font-weight:600;">Explicado al 100 %.</span>
-        Cada peso de ese movimiento tiene un documento con nombre abajo.
-      {% else %}
-        <span style="color:rgb(180 83 9);font-weight:600;">Explicado {{ e.explicado_pct }} %.</span>
-        Queda plata sin atribuir a ningún documento — está listada abajo en
-        <em>Falta explicar</em>. Eso es lo que hay que entrenar.
-      {% endif %}
-      {% if e.residuo and (e.residuo | abs) >= 1 %}
-        <br><strong style="color:rgb(185 28 28);">Descuadre de $ {{ e.residuo | num_es(2) }}</strong>
-        entre el Δ de la utilidad y la suma de los movimientos. Esto no debería
-        pasar nunca: avisá.
-      {% endif %}
-    </div>
-  </div>
-
-  {# ── Qué lo movió, por regla ──────────────────────────────────────────── #}
-  <div class="my-4 grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;">
-
-    <div class="border rounded bg-white" style="border-color:rgb(226 232 240);">
-      <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
-           style="background:rgb(248 250 252);color:rgb(100 116 139);">Qué lo movió</div>
-      <table class="w-full text-sm">
-        <tbody>
-          {% for r in e.reglas %}
-          <tr class="border-t" style="border-color:rgb(241 245 249);">
-            <td class="px-3 py-2">
-              {{ r.regla }}
-              <span style="font-size:11px;color:rgb(148 163 184);">· {{ r.n }}</span>
-              {% if r.familia == 'traspaso' and (r.aporte | abs) < 1 %}
-                <span style="font-size:11px;color:rgb(100 116 139);">— cambió de lugar, no de valor</span>
-              {% elif r.familia == 'sin_explicar' %}
-                <span style="font-size:11px;color:rgb(180 83 9);">— sin explicar</span>
-              {% endif %}
-            </td>
-            <td class="px-3 py-2 text-right" style="white-space:nowrap;font-weight:600;
-                color:{% if r.aporte < 0 %}rgb(185 28 28){% elif r.aporte > 0 %}rgb(21 128 61){% else %}rgb(148 163 184){% endif %};">
-              {{ '+' if r.aporte > 0 else '' }}{{ r.aporte | num_es(2) }}
-            </td>
-          </tr>
-          {% else %}
-          <tr><td class="px-3 py-4 text-sm" style="color:rgb(148 163 184);">Nada se movió.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="border rounded bg-white" style="border-color:rgb(226 232 240);">
-      <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
-           style="background:rgb(248 250 252);color:rgb(100 116 139);">Por componente del balance</div>
-      <table class="w-full text-sm">
-        <tbody>
-          {% for c in e.componentes %}
-          <tr class="border-t" style="border-color:rgb(241 245 249);">
-            <td class="px-3 py-2">{{ c.label }}
-              {% if c.col == 'totp' %}<span style="font-size:11px;color:rgb(148 163 184);">(pasivo: sube → utilidad baja)</span>{% endif %}
-            </td>
-            <td class="px-3 py-2 text-right" style="color:rgb(100 116 139);white-space:nowrap;">
-              {{ '+' if c.delta > 0 else '' }}{{ c.delta | num_es(2) }}
-            </td>
-            <td class="px-3 py-2 text-right" style="white-space:nowrap;font-weight:600;
-                color:{% if c.aporte < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
-              {{ '+' if c.aporte > 0 else '' }}{{ c.aporte | num_es(2) }}
-            </td>
-          </tr>
-          {% else %}
-          <tr><td class="px-3 py-4 text-sm" style="color:rgb(148 163 184);">Ningún componente se movió.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {# ── Lo que falta explicar ────────────────────────────────────────────── #}
-  {% if e.sin_explicar %}
-  <div class="my-4 border rounded" style="border-color:rgb(251 191 36);background:rgb(255 251 235);">
-    <div class="px-3 py-2 text-[11px] uppercase tracking-wider" style="color:rgb(146 64 14);">
-      Falta explicar — esto es lo que hay que entrenar
-    </div>
-    <table class="w-full text-sm">
-      <tbody>
-        {% for m in e.sin_explicar %}
-        <tr class="border-t" style="border-color:rgb(254 243 199);">
-          <td class="px-3 py-2">{{ m.etiqueta }}</td>
-          <td class="px-3 py-2 text-right" style="font-weight:600;white-space:nowrap;
-              color:{% if m.aporte < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
-            {{ '+' if m.aporte > 0 else '' }}{{ m.aporte | num_es(2) }}
-          </td>
+  {# ── Qué lo movió ─────────────────────────────────────────────────────── #}
+  <div class="dia-grid">
+    <div class="dia-card">
+      <div class="dia-h">Qué lo movió</div>
+      <table class="dia-t"><tbody>
+        {% for g in e.reglas %}
+        <tr>
+          <td>{{ g.regla }} <span class="dia-mini">· {{ g.n }}</span>
+            {% if g.familia == 'traspaso' and (g.aporte | abs) < 1 %}
+              <span class="dia-mini">— cambió de lugar, no de valor</span>
+            {% elif g.familia == 'sin_explicar' %}
+              <span class="dia-mini dia-amb">— sin explicar</span>{% endif %}</td>
+          <td class="num {{ 'dia-neg' if g.aporte < 0 else ('dia-pos' if g.aporte > 0 else 'dia-cero') }}">
+            {{ '+' if g.aporte > 0 else '' }}{{ g.aporte | num_es(2) }}</td>
         </tr>
+        {% else %}
+        <tr><td class="dia-cero">Nada se movió.</td></tr>
         {% endfor %}
-      </tbody>
-    </table>
-    <p class="px-3 py-2" style="font-size:11.5px;color:rgb(146 64 14);line-height:1.5;">
+      </tbody></table>
+    </div>
+
+    <div class="dia-card">
+      <div class="dia-h">Por componente del balance</div>
+      <table class="dia-t"><tbody>
+        {% for c in e.componentes %}
+        <tr>
+          <td>{{ c.label }}
+            {% if c.col == 'totp' %}<span class="dia-mini">(pasivo: sube → utilidad baja)</span>{% endif %}</td>
+          <td class="r dia-mini">{{ '+' if c.delta > 0 else '' }}{{ c.delta | num_es(2) }}</td>
+          <td class="num {{ 'dia-neg' if c.aporte < 0 else 'dia-pos' }}">
+            {{ '+' if c.aporte > 0 else '' }}{{ c.aporte | num_es(2) }}</td>
+        </tr>
+        {% else %}
+        <tr><td class="dia-cero">Ningún componente se movió.</td></tr>
+        {% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+
+  {# ── Falta explicar ───────────────────────────────────────────────────── #}
+  {% if e.sin_explicar %}
+  <div class="dia-card" style="border-color:rgb(251 191 36);">
+    <div class="dia-h" style="background:rgb(255 251 235);color:rgb(146 64 14);
+         border-bottom-color:rgb(254 243 199);">Falta explicar — esto es lo que hay que entrenar</div>
+    <table class="dia-t"><tbody>
+      {% for m in e.sin_explicar %}
+      <tr><td>{{ m.etiqueta }}</td>
+        <td class="num {{ 'dia-neg' if m.aporte < 0 else 'dia-pos' }}">
+          {{ '+' if m.aporte > 0 else '' }}{{ m.aporte | num_es(2) }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    <div class="dia-pie" style="color:rgb(146 64 14);background:rgb(255 251 235);
+         border-top-color:rgb(254 243 199);">
       Un renglón acá significa que ese pedazo del componente no se pudo atribuir
       a ninguna fila concreta. No es un descuadre — la cuenta cierra igual — es
       una pregunta abierta.
-    </p>
+    </div>
   </div>
   {% endif %}
 
-  {# ── Documento por documento ──────────────────────────────────────────── #}
-  <div class="my-4 border rounded bg-white" style="border-color:rgb(226 232 240);overflow-x:auto;">
-    <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
-         style="background:rgb(248 250 252);color:rgb(100 116 139);">
-      Documento por documento · {{ e.movimientos | length }} movimiento{{ '' if (e.movimientos | length) == 1 else 's' }}
-    </div>
-    <table class="w-full text-sm">
-      <thead class="text-[11px] uppercase tracking-wider" style="color:rgb(148 163 184);">
-        <tr>
-          <th class="px-3 py-2 text-left font-medium" style="width:9rem;">Componente</th>
-          <th class="px-3 py-2 text-left font-medium">Qué</th>
-          <th class="px-3 py-2 text-left font-medium" style="width:14rem;">Regla</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Δ</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Aporte</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in e.movimientos[:400] %}
-        <tr class="border-t" style="border-color:rgb(241 245 249);
-            {% if m.familia == 'sin_explicar' %}background:rgb(255 251 235);{% endif %}">
-          <td class="px-3 py-1.5 text-xs" style="color:rgb(100 116 139);">{{ etiquetas.get(m.componente, m.componente) }}</td>
-          <td class="px-3 py-1.5" style="font-size:12.5px;">{{ m.etiqueta }}</td>
-          <td class="px-3 py-1.5 text-xs" style="color:rgb(100 116 139);">{{ m.regla }}</td>
-          <td class="px-3 py-1.5 text-right" style="color:rgb(100 116 139);white-space:nowrap;">
-            {{ '+' if m.delta > 0 else '' }}{{ m.delta | num_es(2) }}
-          </td>
-          <td class="px-3 py-1.5 text-right" style="white-space:nowrap;font-weight:600;
-              color:{% if m.aporte < 0 %}rgb(185 28 28){% else %}rgb(21 128 61){% endif %};">
-            {{ '+' if m.aporte > 0 else '' }}{{ m.aporte | num_es(2) }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if (e.movimientos | length) > 400 %}
-      <p class="px-3 py-2" style="font-size:11px;color:rgb(148 163 184);">
-        Se muestran los 400 de mayor aporte de {{ e.movimientos | length }}.
-      </p>
-    {% endif %}
-  </div>
-
-  {# ── Para mandar por WhatsApp ─────────────────────────────────────────── #}
+  {# ── Para mandar ──────────────────────────────────────────────────────── #}
   {# TMT 2026-08-05: "algo para mandar chiquito e informativo a mí, andres y
-     federico por whatsapp". Programa Core NO manda nada: genera el texto y
-     el botón abre TU WhatsApp con el mensaje puesto. Vos apretás enviar. #}
+     federico". Programa Core NO manda nada: arma el texto y el botón abre TU
+     WhatsApp con el mensaje puesto. Vos apretás enviar. #}
   {% if wa %}
-  <div class="my-4 border rounded bg-white" style="border-color:rgb(226 232 240);">
-    <div class="px-3 py-2 text-[11px] uppercase tracking-wider"
-         style="background:rgb(248 250 252);color:rgb(100 116 139);">
-      Para mandar por WhatsApp
-    </div>
-    <pre id="wa-txt" style="margin:0;padding:.85rem 1rem;font-size:13px;
-         line-height:1.6;white-space:pre-wrap;word-break:break-word;
-         font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-         color:rgb(30 41 59);">{{ wa }}</pre>
-    <div class="px-3 py-2 flex items-center gap-2 flex-wrap"
-         style="border-top:1px solid rgb(241 245 249);">
-      <button type="button" id="wa-copiar" class="px-3 py-1.5 rounded border text-xs"
-              style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">
-        Copiar
-      </button>
-      <a id="wa-abrir" href="#" target="_blank" rel="noopener"
-         class="px-3 py-1.5 rounded border text-xs"
-         style="border-color:rgb(34 197 94);background:rgb(240 253 244);
-                color:rgb(21 128 61);font-weight:600;text-decoration:none;">
-        Abrir WhatsApp
-      </a>
-      <span id="wa-ok" style="font-size:11px;color:rgb(21 128 61);"></span>
+  <div class="dia-card">
+    <div class="dia-h">Para mandar</div>
+    <pre id="wa-txt" class="dia-wa">{{ wa }}</pre>
+    <div class="dia-wa-pie">
+      <button type="button" id="wa-copiar" class="dia-btn">Copiar</button>
+      <a id="wa-abrir" href="#" target="_blank" rel="noopener" class="dia-btn dia-wa-ir">Abrir WhatsApp</a>
+      <span id="wa-ok" class="dia-mini dia-pos"></span>
     </div>
   </div>
   <script>
@@ -400,9 +366,6 @@
         var ok = document.getElementById('wa-ok');
         function listo() { ok.textContent = 'copiado';
                            setTimeout(function () { ok.textContent = ''; }, 2000); }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(txt).then(listo, seleccionar);
-        } else { seleccionar(); }
         // Sin permiso de portapapeles (http, o el navegador lo bloquea) al
         // menos se deja el texto seleccionado para copiar a mano.
         function seleccionar() {
@@ -410,38 +373,116 @@
           var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
           ok.textContent = 'seleccionado — Cmd+C';
         }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(listo, seleccionar);
+        } else { seleccionar(); }
       });
     })();
   </script>
   {% endif %}
 
-  {# ── La nota ──────────────────────────────────────────────────────────── #}
-  <form method="post" action="{{ url_for('informes.dia_nota') }}"
-        class="my-4 border rounded bg-white px-3 py-3" style="border-color:rgb(226 232 240);">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="id_captura" value="{{ e.hasta.id_captura }}">
-    <label class="text-[11px] uppercase tracking-wider" style="color:rgb(100 116 139);">
-      Nota del día
-    </label>
-    <textarea name="nota" rows="2" class="w-full mt-1 px-2 py-1.5 rounded border text-sm"
-              style="border-color:rgb(203 213 225);"
-              placeholder="Lo que vos sabés y el sistema todavía no.">{{ e.hasta.nota or '' }}</textarea>
-    <button class="mt-2 px-3 py-1.5 rounded border text-xs"
-            style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Guardar nota</button>
+  {# ── La nota de la dueña ──────────────────────────────────────────────── #}
+  <form method="post" action="{{ url_for('informes.dia_nota') }}" class="dia-card">
+    <div class="dia-h">Nota del día</div>
+    <div style="padding:.9rem 1.15rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="id_captura" value="{{ e.hasta.id_captura }}">
+      <textarea name="nota" rows="2" class="dia-txt"
+                placeholder="Lo que vos sabés y el sistema todavía no.">{{ e.hasta.nota or '' }}</textarea>
+      <button class="dia-btn" style="margin-top:.55rem;">Guardar nota</button>
+    </div>
   </form>
+
+  {# ── Los drill-downs, plegados ────────────────────────────────────────── #}
+  {# La pantalla arriba contesta la pregunta; abajo está la evidencia. Plegado
+     porque tres tablas y dos párrafos grises abiertos hacían que no se leyera
+     ninguno. #}
+  {% if r.ok and r.etapas %}
+  <details class="dia-det">
+    <summary>El stock, etapa por etapa</summary>
+    <table class="dia-t">
+      <thead><tr>
+        <th>Etapa</th><th class="r">Kilos</th><th class="r">$/kg</th>
+        <th class="r">Valor</th><th class="r">Por kilos</th><th class="r">Por tarifa</th>
+      </tr></thead>
+      <tbody>
+        {% for et in r.etapas %}
+        <tr>
+          <td>{{ et.rotulo }}</td>
+          <td class="r">{{ et.kg0 | num_es(0) }} → <b>{{ et.kg1 | num_es(0) }}</b>
+            <span class="dia-mini {{ 'dia-neg' if et.d_kg < 0 else 'dia-pos' }}">
+              ({{ '+' if et.d_kg > 0 else '' }}{{ et.d_kg | num_es(0) }})</span></td>
+          <td class="r">{% if et.d_p %}{{ et.p0 | num_es(4) }} → {{ et.p1 | num_es(4) }}
+            {% else %}{{ et.p1 | num_es(4) }}{% endif %}</td>
+          <td class="r">{{ et.us0 | num_es(0) }} → <b>{{ et.us1 | num_es(0) }}</b></td>
+          <td class="r dia-mini">{{ '+' if et.por_kilos > 0 else '' }}{{ et.por_kilos | num_es(0) }}</td>
+          <td class="r dia-mini">{{ '+' if et.por_tarifa > 0 else '' }}{{ et.por_tarifa | num_es(0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
+  <details class="dia-det">
+    <summary>Documento por documento · {{ e.movimientos | length }}
+      movimiento{{ '' if (e.movimientos | length) == 1 else 's' }}</summary>
+    <div style="overflow-x:auto;">
+      <table class="dia-t">
+        <thead><tr>
+          <th style="width:9rem;">Componente</th><th>Qué</th>
+          <th style="width:14rem;">Regla</th>
+          <th class="r" style="width:8rem;">Δ</th>
+          <th class="r" style="width:8rem;">Aporte</th>
+        </tr></thead>
+        <tbody>
+          {% for m in e.movimientos[:400] %}
+          <tr {% if m.familia == 'sin_explicar' %}style="background:rgb(255 251 235);"{% endif %}>
+            <td class="dia-mini">{{ etiquetas.get(m.componente, m.componente) }}</td>
+            <td style="font-size:12.5px;">{{ m.etiqueta }}</td>
+            <td class="dia-mini">{{ m.regla }}</td>
+            <td class="r dia-mini">{{ '+' if m.delta > 0 else '' }}{{ m.delta | num_es(2) }}</td>
+            <td class="num {{ 'dia-neg' if m.aporte < 0 else 'dia-pos' }}">
+              {{ '+' if m.aporte > 0 else '' }}{{ m.aporte | num_es(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if (e.movimientos | length) > 400 %}
+      <div class="dia-pie">Se muestran los 400 de mayor aporte de {{ e.movimientos | length }}.</div>
+    {% endif %}
+  </details>
 
   {% endif %}
 
-  <p class="mt-3 text-xs" style="color:rgb(100 116 139);line-height:1.6;">
-    <strong>Cómo leerla.</strong> La utilidad es la variación del patrimonio, así
-    que todo lo que mueve un componente del balance mueve la utilidad — con una
-    excepción importante: los <em>traspasos</em>. Una cobranza baja la cartera y
-    sube los cheques por el mismo importe, así que netea cero sola. Cuando una
-    cobranza <em>no</em> netea cero, esa diferencia es una retención, un
-    descuento o una nota de crédito, y ahí sí hay que mirar. Los
-    <em>Pasivos</em> aportan con el signo dado vuelta: si suben, la utilidad
-    baja. La <em>Maquinaria</em> baja un poco todos los días porque la
-    amortización se prorratea por día del mes — eso es normal, no un error.
-  </p>
+  <details class="dia-det">
+    <summary>Cómo se lee esta pantalla</summary>
+    <div class="dia-ayuda">
+      <p><b>La utilidad es la variación del patrimonio</b>, así que todo lo que
+      mueve un componente del balance la mueve — con una excepción importante:
+      los <em>traspasos</em>. Una cobranza baja la cartera y sube los cheques
+      por el mismo importe, así que netea cero sola. Cuando una cobranza
+      <em>no</em> netea cero, esa diferencia es una retención, un descuento o
+      una nota de crédito, y ahí sí hay que mirar. Los <em>pasivos</em> aportan
+      con el signo dado vuelta: si suben, la utilidad baja. La
+      <em>maquinaria</em> baja un poco todos los días porque la amortización se
+      prorratea por día del mes — eso es normal, no un error.</p>
+
+      <p><b>Los kilos producidos y despachados son medidos</b>, no estimados:
+      salen de las órdenes de fabricación que cerraron y de los despachos
+      físicos (bodega 53 de Asinfo), con el desperdicio aparte. Ojo con una
+      cosa: se imputan al día en que la orden <em>cierra</em>, no a los días en
+      que se produjo — una orden que tejió tres días descarga todo en uno. Por
+      eso el diario es grumoso aunque la planta no pare, y al lado va el
+      acumulado del mes, que es donde ese ruido se promedia.</p>
+
+      <p><b>Lo cobrado es estimado</b> (facturado menos lo que creció la
+      cartera). Lo facturado, lo comprado, la deuda y el resultado son exactos.
+      El día son 24 horas: del cierre de ayer al de hoy, con capturas
+      automáticas a las {{ '%02d' | format(hora_manana) }}:00 y
+      {{ '%02d' | format(hora_cierre) }}:00 de Ecuador.</p>
+    </div>
+  </details>
 </div>
 {% endblock %}
