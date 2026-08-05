@@ -55,6 +55,21 @@
   }
   a{color:inherit;text-decoration:none}
 
+  /* 🚨 El atributo `hidden` vale display:none, pero lo trae la hoja del
+     NAVEGADOR — y cualquier regla de acá, por poco específica que sea, le
+     gana. `.rowitem{display:flex}` dejaba el `hidden` sin efecto: el
+     buscador marcaba bien las filas, el contador decía "1 encontrado" y la
+     lista seguía mostrando los 94 clientes enteros.
+
+     Un `[hidden]` global y con !important cierra el agujero para TODO el
+     portal, no sólo para la fila que lo destapó: cualquier elemento al que
+     se le ponga display en este archivo tendría el mismo problema.
+
+     ⚠ Y por eso `elemento.hidden` NO sirve para verificar que algo se
+     esconde: devuelve el atributo, no lo que se ve. Se comprueba con
+     `offsetParent === null` o `getClientRects().length === 0`. */
+  [hidden]{display:none!important}
+
   .appbar{
     position:sticky; top:0; z-index:10; flex:0 0 auto;
     background:var(--surface); border-bottom:1px solid var(--line);

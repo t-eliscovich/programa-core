@@ -1394,3 +1394,27 @@ def test_el_appbar_queda_pegado_arriba_con_la_lista_larga():
     # Y el appbar tiene que seguir declarándose sticky: las dos cosas juntas
     # son el arreglo, ninguna alcanza sola.
     assert "position:sticky; top:0" in css
+
+
+def test_el_atributo_hidden_le_gana_al_display_del_portal():
+    """🚨 `hidden` vale display:none, pero lo trae la hoja del NAVEGADOR — y
+    cualquier regla del cascarón le gana por origen, no por especificidad.
+
+    `.rowitem{display:flex}` dejaba el `hidden` del buscador sin ningún
+    efecto: el filtro marcaba bien las filas, el encabezado decía "1
+    encontrado · $ 42.495,92" y abajo seguían los 94 clientes. Lo reportó la
+    dueña el 2026-08-05 — *"el filtro no funciona: me dice 1 pero no me
+    filtra abajo los clientes"*.
+
+    ⭐ Se me escapó porque verifiqué `elemento.hidden`, que devuelve el
+    ATRIBUTO, no si el elemento se ve. Lo que hay que mirar es
+    `offsetParent === null`.
+
+    El guard es global y con `!important` a propósito: el problema no es de
+    `.rowitem`, es de cualquier selector de este archivo que fije `display`.
+    """
+    from pathlib import Path
+
+    css = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
+    assert "[hidden]{display:none!important}" in css, \
+        "sin este guard, cualquier `display:` del cascarón anula los `hidden`"
