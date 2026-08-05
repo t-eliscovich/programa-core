@@ -225,14 +225,27 @@ def _cargar_cliente(vend: str, codigo_cli: str) -> dict:
 
     El guard va ANTES de tocar la base: sin él, tipear el código de un cliente
     ajeno en la barra de direcciones sería una fuga directa.
+
+    ⚖️ EL CUPO SÍ VIAJA — decisión REVERTIDA el 2026-08-05. El 03/08 la dueña
+    había dicho que el vendedor no lo viera y acá había un `pop("cupo")` con
+    su test. Andrés, por WhatsApp: *"por favor es clave eso, mostrar cupos y
+    descuentos del cliente / los vendedores tienen apegarse a los cupos y
+    ordenar a los clientes"*, y ella lo aprobó.
+
+    El cambio de opinión tiene sentido: esconder el cupo protege el dato, pero
+    el que decide cuánto cargarle a un cliente es el vendedor, parado en el
+    local. Si no lo ve, "apegarse al cupo" es una instrucción sin instrumento.
+
+    ⚠ Lo que sigue abierto: el cupo está cargado en el ~10% de los clientes
+    (EDG 29 de 339, JQU 5 de 192, PPR 24 de 235; sólo FL1 llega a 78 de 216).
+    Por eso la ficha dice "sin cupo asignado" y NO "$ 0" — un cero se lee como
+    "no puede comprar nada", que es lo contrario de lo que pasa.
     """
     if not queries.cliente_es_mio(vend, codigo_cli):
         abort(404)
     data = informes_queries.estado_cuenta_cliente(codigo_cli)
     if not data.get("cliente"):
         abort(404)
-    # La dueña 2026-08-03: el vendedor NO ve el cupo del cliente.
-    data["cliente"].pop("cupo", None)
     return data
 
 
@@ -323,7 +336,9 @@ def imprimir_todos():
     for f in filas:
         d = informes_queries.estado_cuenta_cliente(f["codigo_cli"])
         if d and d.get("cliente"):
-            d["cliente"].pop("cupo", None)
+            # El cupo ya no se saca — ver `_cargar_cliente`. (La hoja impresa
+            # es la de la oficina y no lo dibuja, pero el dato viaja igual y
+            # tiene que hacerlo por el mismo camino en las dos rutas.)
             clientes.append(d)
     return render_template(
         "informes/estado_cuenta_lote_print.html",
@@ -433,7 +448,17 @@ def metas():
 
     vendedores = queries.vendedores_activos()
     cargadas = {(m["codigo"], int(m["mes"])): m["kg"] for m in queries.metas_del_anio(anio)}
+    # Andrés 2026-08-05: *"le pongas los kilos vendidos reales y el % de
+    # cumplimiento de las ventas de cada vendedor"*. Una meta sin el real al
+    # lado es un número que nadie vuelve a mirar.
+    vendido = queries.ventas_kg_por_vendedor_mes(anio)
+    # Los meses que TODAVÍA NO PASARON no llevan real ni %: un 0% en diciembre
+    # no dice que el vendedor va mal, dice que diciembre no llegó. Y el mes en
+    # curso se marca, porque su % es parcial por definición.
+    ultimo_mes = hoy.month if anio == hoy.year else (12 if anio < hoy.year else 0)
     return render_template(
         "mi_cartera/metas.html", anio=anio, vendedores=vendedores, cargadas=cargadas,
+        vendido=vendido, ultimo_mes=ultimo_mes, mes_en_curso=(
+            hoy.month if anio == hoy.year else None),
         hoy=hoy,
     )

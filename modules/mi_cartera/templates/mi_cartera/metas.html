@@ -5,12 +5,21 @@
 {% block content %}
 <div class="max-w-7xl">
 {{ page_hero('Metas de venta por vendedor · en KILOS',
-             'Las metas se miden en KILOS facturados, no en dólares. Se carga una meta por MES: la del año se suma sola y la de la semana se prorratea por días hábiles. Dejar vacío = sin meta (el vendedor ve los kilos facturados, sin anillo de progreso).') }}
+             'Las metas se miden en KILOS facturados, no en dólares. Debajo de cada meta van los kilos realmente vendidos y el % de cumplimiento. Se carga una meta por MES: la del año se suma sola y la de la semana se prorratea por días hábiles. Dejar vacío = sin meta (el vendedor ve los kilos facturados, sin anillo de progreso).') }}
 
 {# ⚠ La columna se llamaba `monto` y guardaba dólares hasta la migración 0163,
    que la renombra a `kg` y borra las metas viejas — convertir dólares a kilos
    dividiendo por un precio promedio inventaría un número que nadie decidió.
-   Si esta grilla aparece vacía, es eso: hay que recargarla en kilos. #}
+   Si esta grilla aparece vacía, es eso: hay que recargarla en kilos.
+
+   Debajo de cada meta va lo REALMENTE vendido y el % de cumplimiento (Andrés
+   2026-08-05). Una meta sin el real al lado es un número que nadie vuelve a
+   mirar: hay que ir a otra pantalla a averiguar si se cumplió, y entonces no
+   se averigua.
+
+   Los meses que todavía no pasaron NO llevan real ni %: un 0% en diciembre no
+   dice que el vendedor va mal, dice que diciembre no llegó. El mes en curso sí
+   lo lleva, marcado, porque su % es parcial por definición. #}
 
 {% set tab_activa = 'metas' %}
 {% include "_partials/tabs_comisiones.html" %}
@@ -42,19 +51,65 @@
             <span class="font-mono text-xs">{{ v.codigo }}</span>
             <span class="text-slate-500 ml-1">{{ v.nombre }}</span>
           </td>
+          {% set real = [] %}
           {% for m in range(1, 13) %}
             {% set val = cargadas.get((v.codigo, m)) %}
             {% if val is not none %}{% set _ = fila.append(val) %}{% endif %}
-            <td class="px-1 py-1">
+            {% set kg = vendido.get((v.codigo, m)) %}
+            {% set paso = m <= ultimo_mes %}
+            {% if paso and val %}{% set _ = real.append(kg or 0) %}{% endif %}
+            <td class="px-1 py-1 align-top">
               <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
                      value="{{ val if val is not none else '' }}"
                      title="Kilos facturados · meta de {{ v.nombre }} para el mes {{ '%02d'|format(m) }}"
                      placeholder="kg"
                      class="border rounded px-1 py-1 w-20 text-right text-xs
-                            {% if m == hoy.month and anio == hoy.year %}bg-indigo-50{% endif %}">
+                            {% if m == mes_en_curso %}bg-indigo-50{% endif %}">
+              {# Lo vendido de verdad, debajo de la meta. Va SIEMPRE que el mes
+                 haya pasado, aunque no haya meta cargada: si no, un mes sin
+                 meta parecería un mes sin ventas. #}
+              {% if paso %}
+                <div class="text-[10px] leading-tight mt-1 text-right whitespace-nowrap">
+                  <span class="text-slate-500" title="Kilos realmente facturados">{{ (kg or 0)|kg_es }}</span>
+                  {% if val %}
+                    {% set pct = (kg or 0) * 100 / val %}
+                    {# Verde ≥100, ámbar ≥80, rojo debajo. El mes en curso va en
+                       gris: su % es parcial y pintarlo de rojo el día 5 es una
+                       alarma falsa todos los meses. #}
+                    <div class="{% if m == mes_en_curso %}text-slate-400
+                                {%- elif pct >= 100 %}text-emerald-600 font-semibold
+                                {%- elif pct >= 80 %}text-amber-600
+                                {%- else %}text-red-600{% endif %}"
+                         title="{{ (kg or 0)|kg_es }} kg vendidos sobre una meta de {{ val|kg_es }} kg{% if m == mes_en_curso %} · mes en curso, parcial{% endif %}">
+                      {{ pct|num_es(0) }} %{% if m == mes_en_curso %} *{% endif %}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endif %}
             </td>
           {% endfor %}
-          <td class="px-3 py-2 text-right font-medium">{{ fila|sum|kg_es }} kg</td>
+          {# El año compara like con like: sólo los meses que YA pasaron y que
+             TIENEN meta. Sumar la meta de doce meses contra lo vendido en ocho
+             da un % que no significa nada — es el mismo error del anillo del
+             portal, que llegó a marcar 3345%. #}
+          {% set meta_corrida = [] %}
+          {% for m in range(1, 13) %}
+            {% if m <= ultimo_mes and cargadas.get((v.codigo, m)) %}
+              {% set _ = meta_corrida.append(cargadas.get((v.codigo, m))) %}
+            {% endif %}
+          {% endfor %}
+          <td class="px-3 py-2 text-right align-top whitespace-nowrap">
+            <div class="font-medium">{{ fila|sum|kg_es }} kg</div>
+            {% if meta_corrida %}
+              {% set pct_anio = real|sum * 100 / meta_corrida|sum %}
+              <div class="text-[11px] text-slate-500 mt-0.5">{{ real|sum|kg_es }} vendidos</div>
+              <div class="text-xs mt-0.5 {% if pct_anio >= 100 %}text-emerald-600 font-semibold
+                          {%- elif pct_anio >= 80 %}text-amber-600{% else %}text-red-600{% endif %}"
+                   title="Sobre los {{ meta_corrida|length }} mes(es) con meta que ya pasaron">
+                {{ pct_anio|num_es(0) }} % acumulado
+              </div>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

@@ -96,6 +96,70 @@
     <b>$ {{ (t.saldo - t.saldo_vencido)|money_es }}</b></div>
 </div>
 
+{# CRÉDITO — cupo, descuento, forma de pago y bloqueo.
+
+   Andrés 2026-08-05, por WhatsApp: *"por favor es clave eso, mostrar cupos y
+   descuentos del cliente"* + *"los vendedores tienen apegarse a los cupos y
+   ordenar a los clientes"*. Revierte la decisión del 03/08 de esconder el
+   cupo; la dueña lo aprobó. El razonamiento: el que decide cuánto cargarle a
+   un cliente es el vendedor, parado en el local — si no ve el cupo,
+   "apegarse al cupo" es una instrucción sin instrumento.
+
+   Va ARRIBA del contacto y debajo de los saldos, que es el orden en que se
+   usa: cuánto debe → cuánto puede deber → cómo ubicarlo.
+
+   ⭐ El % usado sale de la MISMA cuenta que la ficha de la oficina
+   (`_total_fc` = saldo neto + cheques por cobrar, sobre el cupo), con los
+   mismos cortes 80/100. Un cheque en cartera todavía no se cobró: ocupa cupo.
+   Si el vendedor y la dueña vieran dos porcentajes distintos del mismo
+   cliente, la discusión no se puede tener.
+
+   ⚠ Sin cupo cargado dice "sin cupo asignado", NO "$ 0". Hoy el cupo está en
+   ~10% de los clientes, y un cero se lee como "no puede comprar nada" — lo
+   contrario de lo que pasa. Para bloquear está `stop`, que es otro campo. #}
+{% set _cupo = (cliente.cupo or 0)|float %}
+{% set _usado = saldo_neto + (t.cheques_por_cobrar or 0) %}
+{% set _desc = (cliente.descuento or 0)|float %}
+{% set _bloq = (cliente.stop|cleanstr|upper) == 'S' %}
+<div class="card">
+  <div class="card-t">Crédito</div>
+  {% if _bloq %}
+    <div class="bloq">⛔ Cliente bloqueado — no despachar sin autorización</div>
+  {% endif %}
+  <div class="cred">
+    <div>
+      <small>Cupo</small>
+      {% if _cupo > 0 %}
+        <b>$ {{ _cupo|num_es(0) }}</b>
+      {% else %}
+        <b class="na">sin cupo asignado</b>
+      {% endif %}
+    </div>
+    <div>
+      <small>Usado</small>
+      <b>$ {{ _usado|money_es }}</b>
+      {% if _cupo > 0 %}
+        {% set _pct = _usado * 100 / _cupo %}
+        <i class="{{ 'mal' if _pct >= 100 else ('ojo' if _pct >= 80 else 'bien') }}">
+          {{ _pct|num_es(0) }} % del cupo</i>
+      {% endif %}
+    </div>
+    <div>
+      <small>Descuento</small>
+      {% if _desc %}<b>{{ _desc|num_es(1) }} %</b>{% else %}<b class="na">—</b>{% endif %}
+    </div>
+    <div>
+      <small>Forma de pago</small>
+      {% if cliente.pago %}<b>{{ cliente.pago|cleanstr }}</b>{% else %}<b class="na">—</b>{% endif %}
+    </div>
+  </div>
+  {% if _cupo > 0 %}
+    {% set _pct = _usado * 100 / _cupo %}
+    <div class="barra"><i class="{{ 'mal' if _pct >= 100 else ('ojo' if _pct >= 80 else 'bien') }}"
+                          style="width:{{ [_pct, 100]|min|round(1) }}%"></i></div>
+  {% endif %}
+</div>
+
 {# Contacto — dueña 2026-08-04. Es lo que la hoja de la oficina tiene en el
    encabezado y lo que un vendedor necesita para ir a ver al cliente. El
    teléfono y el mail son tocables: desde el celular, llamar es un toque. #}
@@ -353,6 +417,26 @@
   .franja i{font-style:normal;color:var(--ink-3)}
   .franja b{display:block;font-size:12.5px;color:var(--ink);margin-top:1px;
             font-variant-numeric:tabular-nums}
+
+  /* Crédito: cuatro datos en dos columnas, que es como se leen de a pares
+     (cupo↔usado, descuento↔forma de pago). */
+  .cred{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
+  .cred small{display:block;font-size:9.5px;font-weight:700;letter-spacing:.05em;
+              text-transform:uppercase;color:var(--ink-3)}
+  .cred b{display:block;font-size:15px;letter-spacing:-.02em;margin-top:2px;
+          font-variant-numeric:tabular-nums}
+  .cred b.na{font-size:12.5px;font-weight:500;color:var(--ink-3);letter-spacing:0}
+  .cred i{display:block;font-style:normal;font-size:11px;font-weight:700;margin-top:2px}
+  .cred i.bien,.barra i.bien{color:var(--good)}
+  .cred i.ojo,.barra i.ojo{color:var(--warn)}
+  .cred i.mal,.barra i.mal{color:var(--bad)}
+  .barra{height:5px;border-radius:99px;background:#EDEFF4;margin-top:11px;overflow:hidden}
+  .barra i{display:block;height:100%;border-radius:99px}
+  .barra i.bien{background:var(--good)}
+  .barra i.ojo{background:var(--warn)}
+  .barra i.mal{background:var(--bad)}
+  .bloq{background:var(--bad-soft);color:var(--bad);font-size:12px;font-weight:700;
+        border-radius:9px;padding:8px 10px;margin-bottom:11px}
 
   .ficha div{display:flex;gap:10px;padding:5px 0;font-size:12.5px;
              border-bottom:1px solid var(--line)}

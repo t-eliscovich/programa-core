@@ -494,6 +494,40 @@ def meta_periodo(vend: str, periodo: str, hoy: date) -> float | None:
     return m
 
 
+def ventas_kg_por_vendedor_mes(anio: int) -> dict[tuple[str, int], float]:
+    """KILOS facturados por vendedor y mes del año — para la grilla de metas.
+
+    Pedido de Andrés 2026-08-05: *"en la parte donde tenemos las metas le
+    pongas los kilos vendidos reales y el % de cumplimiento de las ventas de
+    cada vendedor"*. Una meta sin el real al lado es un número que nadie
+    vuelve a mirar.
+
+    ⚡ UNA query para los 6 vendedores × 12 meses. Llamar a `ventas_kg()` en
+    un loop serían 72 consultas por carga de pantalla — el mismo error que ya
+    costó 3.190 ms en la pantalla de comisión.
+
+    Mismo criterio que `ventas_kg()` (sin anuladas, sin el backfill de
+    Asinfo): si la grilla de la dueña y el portal del vendedor contaran
+    distinto, la conversación del mes siguiente es imposible.
+    """
+    filas = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(COALESCE(c.vend, ''))) AS vend,
+               EXTRACT(MONTH FROM f.fecha)::int  AS mes,
+               COALESCE(SUM(f.kg), 0)            AS kg
+          FROM scintela.factura f
+          JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+         WHERE EXTRACT(YEAR FROM f.fecha) = %(anio)s
+           AND (f.stat IS NULL OR f.stat <> 'X')
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+           AND COALESCE(c.vend, '') <> ''
+         GROUP BY 1, 2
+        """,
+        {"anio": int(anio)},
+    ) or []
+    return {(f["vend"], int(f["mes"])): float(f["kg"] or 0) for f in filas}
+
+
 def metas_del_anio(anio: int) -> list[dict]:
     """Grilla vendedor × mes para la pantalla de carga de la dueña."""
     try:

@@ -5,8 +5,9 @@ Lo que protegen estos tests, en orden de gravedad:
      código en la barra de direcciones (`cliente_es_mio`).
   2. Que el código de vendedor salga de la SESIÓN y no del querystring — que
      `?vend=OTRO` no haga nada si el que lo manda es un vendedor.
-  3. Que el vendedor NO vea el cupo del cliente ni su % de comisión (decisión
-     de la dueña 2026-08-03).
+  3. Que el vendedor NO vea su % de comisión (decisión de la dueña
+     2026-08-03). El CUPO sí lo ve desde el 2026-08-05 — ver
+     `test_el_cupo_y_el_descuento_le_llegan_al_vendedor`.
   4. Que los períodos (semana comercial / mes / año) y el prorrateo de la meta
      den lo que dicen que dan.
 """
@@ -239,19 +240,34 @@ def test_la_raiz_lo_manda_a_su_portal(vendedor_logueado):
     assert r.headers["Location"].endswith("/mi-cartera")
 
 
-def test_el_cupo_del_cliente_no_sale_del_backend(app, monkeypatch):
-    """No alcanza con no pintarlo en el template: no tiene que salir del server."""
+def test_el_cupo_y_el_descuento_le_llegan_al_vendedor(app, monkeypatch):
+    """⚖️ DECISIÓN REVERTIDA el 2026-08-05.
+
+    El 03/08 la dueña decidió que el vendedor NO viera el cupo, y acá había un
+    `pop("cupo")` con su test. Andrés, por WhatsApp: *"por favor es clave eso,
+    mostrar cupos y descuentos del cliente / los vendedores tienen apegarse a
+    los cupos y ordenar a los clientes"*, y ella lo aprobó.
+
+    El razonamiento del cambio: el que decide cuánto cargarle a un cliente es
+    el vendedor, parado en el local. Si no ve el cupo, "apegarse al cupo" es
+    una instrucción sin instrumento.
+
+    Este test existe para que la reversión sea EXPLÍCITA: si mañana alguien
+    vuelve a poner el `pop`, falla acá y encuentra por qué se sacó.
+    """
     from modules.mi_cartera import views
 
     monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
     monkeypatch.setattr(
         views.informes_queries,
         "estado_cuenta_cliente",
-        lambda cod: {"cliente": {"codigo_cli": cod, "nombre": "X", "cupo": 20000}},
+        lambda cod: {"cliente": {"codigo_cli": cod, "nombre": "X", "cupo": 20000,
+                                 "descuento": 8.5}},
     )
     with app.test_request_context("/mi-cartera/cliente/TDV"):
         data = views._cargar_cliente("PPR", "TDV")
-    assert "cupo" not in data["cliente"]
+    assert data["cliente"]["cupo"] == 20000
+    assert data["cliente"]["descuento"] == 8.5
 
 
 @pytest.mark.parametrize(
@@ -307,8 +323,9 @@ def test_la_ficha_del_cliente_renderiza(vendedor_logueado, monkeypatch):
     r = vendedor_logueado.get("/mi-cartera/cliente/TDV")
     assert r.status_code == 200
     assert b"Textiles del Valle" in r.data
-    # El cupo no viaja al navegador.
-    assert b"20000" not in r.data and b"20.000" not in r.data
+    # El cupo SÍ se muestra desde el 2026-08-05 (ver
+    # test_el_cupo_y_el_descuento_le_llegan_al_vendedor).
+    assert b"20.000" in r.data
 
     # La impresión usa EL MISMO template que la de la oficina
     # (/informes/estado-cuenta/imprimir) — dueña 2026-08-03: "Imprimir tiene
@@ -450,8 +467,8 @@ def test_la_ficha_cierra_como_el_dbase(ficha):
     assert "630,00" in ficha
 
 
-def test_el_vendedor_ve_como_contactar_al_cliente_pero_no_su_cupo(ficha):
-    """Dueña 2026-08-04: el contacto sí (va a visitarlo); el cupo no."""
+def test_el_vendedor_ve_como_contactar_al_cliente(ficha):
+    """Dueña 2026-08-04: el contacto sí, va a visitarlo."""
     assert "AV. AMAZONAS N32-14" in ficha
     assert "QUITO, PICHINCHA" in ficha
     assert "1790012345001" in ficha
@@ -463,8 +480,6 @@ def test_el_vendedor_ve_como_contactar_al_cliente_pero_no_su_cupo(ficha):
     # Python — "{'mail': '...', 'origen': 'asinfo_completa', 'etiqueta': ...}"
     # — en el renglón del mail. Se muestra la dirección, no la estructura.
     assert "origen" not in ficha and "'mail':" not in ficha
-    # Y la línea que no se cruza.
-    assert "20000" not in ficha and "20.000" not in ficha
 
 
 def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeypatch):
@@ -1577,3 +1592,245 @@ def test_cambiar_de_pestana_no_te_saca_del_mes_que_estabas_mirando(
                           "/mi-cartera/comision?tab=meses&anio=2026&mes=6")
     assert "tab=mes&amp;anio=2026&amp;mes=7" in otra \
         or "tab=mes&anio=2026&mes=7" in otra
+
+
+
+# ---------------------------------------------------------------------------
+# La tarjeta de CRÉDITO — cupo, % usado, descuento, bloqueo
+# ---------------------------------------------------------------------------
+# Andrés 2026-08-05: *"por favor es clave eso, mostrar cupos y descuentos del
+# cliente"* + *"los vendedores tienen apegarse a los cupos y ordenar a los
+# clientes"*.
+
+
+def test_la_ficha_muestra_cupo_usado_y_descuento(ficha):
+    """El fixture: cupo 20.000, saldo neto 550 + 80 de cheques = 630 usado.
+
+    El % sale de la MISMA cuenta que la ficha de la oficina —saldo neto MÁS
+    cheques por cobrar, sobre el cupo—, no del saldo de facturas a secas. Un
+    cheque en cartera todavía no se cobró: ocupa cupo. Si el vendedor y la
+    dueña vieran dos porcentajes distintos del mismo cliente, la discusión no
+    se puede tener.
+    """
+    assert "Crédito" in ficha
+    assert "20.000" in ficha          # el cupo
+    assert "630,00" in ficha          # lo usado = 550 + 80
+    assert "3 % del cupo" in ficha    # 630 / 20.000 = 3,15 %
+
+
+def test_los_cheques_en_cartera_OCUPAN_cupo(vendedor_logueado, monkeypatch):
+    """⭐ Un cheque en cartera todavía no se cobró: ocupa cupo.
+
+    `_usado` = saldo neto MÁS cheques por cobrar, igual que `_total_fc` de la
+    ficha de la oficina. Si el vendedor contara sólo las facturas, vería un
+    riesgo MENOR que el real justo en los clientes que más cheques tienen
+    dando vueltas — y la dueña, mirando la otra pantalla, vería otro número.
+    (Es el mismo bug que la oficina tuvo el 03/08 con `cheques_cartera`.)
+
+    Números elegidos para que las dos cuentas se distingan de verdad: sobre un
+    cupo de 1.000, con 500 de facturas y 300 en cheques, contar todo da 80 %
+    —ámbar, la primera señal— y contar sólo facturas da 50 %, en verde. Con el
+    fixture general (630 sobre 20.000) las dos daban 3 % y el test no probaba
+    nada: el mutante sobrevivió.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "Con Cheques SA", "cupo": 1000},
+            "facturas": [], "cheques": [], "anticipos": [],
+            "totales": _totales(saldo=500.0, saldo_neto=500.0,
+                                cheques_por_cobrar=300.0),
+        },
+    )
+    html = vendedor_logueado.get("/mi-cartera/cliente/CCH").data.decode()
+    assert "800,00" in html            # 500 + 300
+    assert "80 % del cupo" in html
+    assert "50 % del cupo" not in html
+    # Y a 80 % ya avisa: ámbar, no verde.
+    cred = html.split('class="cred"')[1].split("</div></div>")[0]
+    assert 'class="ojo"' in cred and 'class="bien"' not in cred
+
+
+def test_sin_cupo_cargado_dice_sin_cupo_asignado_y_no_cero(
+        vendedor_logueado, monkeypatch):
+    """⚠ El cupo está cargado en el ~10% de los clientes (EDG 29 de 339, JQU 5
+    de 192). Un "$ 0" se lee como "no puede comprar nada", que es lo contrario
+    de lo que pasa — y para bloquear existe `stop`, que es otro campo.
+
+    Sin cupo tampoco se dibuja el % ni la barra: no hay contra qué medir.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "Sin Cupo SA", "cupo": 0,
+                        "descuento": 0},
+            "facturas": [], "cheques": [], "anticipos": [],
+            "totales": _totales(saldo=1000.0, saldo_neto=1000.0),
+        },
+    )
+    html = vendedor_logueado.get("/mi-cartera/cliente/SCS").data.decode()
+    assert "sin cupo asignado" in html
+    assert "% del cupo" not in html
+    assert 'class="barra"' not in html
+
+
+def test_el_cliente_bloqueado_se_avisa_arriba_de_todo(
+        vendedor_logueado, monkeypatch):
+    """`stop = 'S'` es el campo con el que la oficina frena a un cliente.
+    Andrés: *"los vendedores tienen apegarse a los cupos y ordenar a los
+    clientes"* — enterarse de que está bloqueado DESPUÉS de tomarle el pedido
+    no sirve de nada."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "Frenado SA", "cupo": 5000,
+                        "stop": "S", "descuento": 10},
+            "facturas": [], "cheques": [], "anticipos": [],
+            "totales": _totales(),
+        },
+    )
+    html = vendedor_logueado.get("/mi-cartera/cliente/FRE").data.decode()
+    assert "Cliente bloqueado" in html
+    assert "10,0 %" in html   # el descuento igual se ve
+
+
+def test_pasado_el_cupo_el_porcentaje_se_pinta_de_rojo(
+        vendedor_logueado, monkeypatch):
+    """Un 118% en gris no es un aviso. Los cortes son los MISMOS que la ficha
+    de la oficina: ámbar desde 80, rojo desde 100."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "Pasado SA", "cupo": 1000},
+            "facturas": [], "cheques": [], "anticipos": [],
+            "totales": _totales(saldo=1180.0, saldo_neto=1180.0),
+        },
+    )
+    html = vendedor_logueado.get("/mi-cartera/cliente/PAS").data.decode()
+    assert "118 % del cupo" in html
+    assert 'class="mal"' in html
+    # La barra se topea en 100: una barra de 118% se sale de la tarjeta.
+    assert "width:118" not in html
+    assert 'class="barra"><i class="mal"' in html.replace("\n", " ")
+    import re
+    assert re.search(r'class="barra">.*?width:100%', html, re.S)
+
+
+# ---------------------------------------------------------------------------
+# La grilla de metas de la oficina: vendido real y % de cumplimiento
+# ---------------------------------------------------------------------------
+# Andrés 2026-08-05: *"me gustaría que en la parte donde tenemos las metas le
+# pongas los kilos vendidos reales y el % de cumplimiento de las ventas de cada
+# vendedor"*. Una meta sin el real al lado es un número que nadie vuelve a
+# mirar: hay que ir a otra pantalla a averiguar si se cumplió, y entonces no
+# se averigua.
+
+
+def _metas_html(app, fake_db, monkeypatch, hoy=None):
+    from datetime import date as _date
+
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(views, "today_ec", lambda: hoy or _date(2026, 8, 5))
+    monkeypatch.setattr(q, "vendedores_activos",
+                        lambda: [{"codigo": "EDG", "nombre": "Edgar Ramirez"}])
+    monkeypatch.setattr(q, "metas_del_anio",
+                        lambda anio: [{"codigo": "EDG", "mes": 7, "kg": 50000},
+                                      {"codigo": "EDG", "mes": 8, "kg": 44000},
+                                      {"codigo": "EDG", "mes": 12, "kg": 38000}])
+    monkeypatch.setattr(q, "ventas_kg_por_vendedor_mes",
+                        lambda anio: {("EDG", 7): 54535.1, ("EDG", 8): 6571.5})
+
+    rid = fake_db.add_role("Jefa", ["metas.editar"])
+    uid = fake_db.add_user("jefa2", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess["user_id"] = uid
+    r = c.get("/comisiones/metas")
+    assert r.status_code == 200
+    return r.data.decode()
+
+
+def test_la_grilla_de_metas_muestra_lo_vendido_y_el_cumplimiento(
+        app, fake_db, monkeypatch):
+    html = _metas_html(app, fake_db, monkeypatch)
+    # Julio: 54.535,10 sobre 50.000 = 109 %, y en verde porque pasó la meta.
+    assert "54.535,10" in html
+    assert "109 %" in html
+    assert "text-emerald-600" in html
+
+
+def test_el_mes_en_curso_no_se_pinta_de_rojo(app, fake_db, monkeypatch):
+    """Agosto va 6.571 de 44.000 = 15 %: pintarlo de rojo el día 5 es una
+    alarma falsa todos los meses. Va en gris y con un asterisco."""
+    html = _metas_html(app, fake_db, monkeypatch)
+    assert "6.571,50" in html
+    assert "15 % *" in html
+    fila_agosto = html.split("6.571,50")[1].split("</td>")[0]
+    assert "text-slate-400" in fila_agosto and "text-red-600" not in fila_agosto
+
+
+def test_los_meses_que_no_pasaron_no_llevan_ni_real_ni_porcentaje(
+        app, fake_db, monkeypatch):
+    """Diciembre tiene meta cargada (38.000) y todavía no llegó. Un 0% ahí no
+    dice que el vendedor va mal: dice que diciembre no llegó."""
+    html = _metas_html(app, fake_db, monkeypatch)
+    assert 'value="38000"' in html   # la meta sí se ve, es editable
+    # …pero la celda de diciembre no lleva ni el real ni el %.
+    dic = html.split('name="meta_EDG_12"')[1].split("</td>")[0]
+    assert "%" not in dic and "text-slate-500" not in dic
+
+
+def test_el_acumulado_del_anio_compara_like_con_like(app, fake_db, monkeypatch):
+    """Sólo los meses que YA pasaron y que TIENEN meta.
+
+    Julio (54.535 sobre 50.000) y agosto (6.571 sobre 44.000) → 61.106 sobre
+    94.000 = 65 %. Si entrara diciembre —que tiene meta y no llegó— el
+    denominador sería 132.000 y daría 46 %: el mismo error del anillo del
+    portal, que llegó a marcar 3345 %.
+    """
+    html = _metas_html(app, fake_db, monkeypatch)
+    assert "61.106,60" in html
+    assert "65 % acumulado" in html
+
+
+def test_una_sola_query_para_los_kilos_de_todo_el_ano(monkeypatch):
+    """72 celdas = 72 consultas si se llama a `ventas_kg()` en un loop. Es el
+    mismo error que costó 3.190 ms en la pantalla de comisión."""
+    llamadas = {"n": 0}
+
+    def _all(sql, params=None, conn=None):
+        llamadas["n"] += 1
+        return [{"vend": "EDG", "mes": 7, "kg": 54535.1}]
+
+    monkeypatch.setattr(q.db, "fetch_all", _all)
+    assert q.ventas_kg_por_vendedor_mes(2026) == {("EDG", 7): 54535.1}
+    assert llamadas["n"] == 1
+
+
+def test_los_kilos_de_la_grilla_se_cuentan_igual_que_los_del_portal(monkeypatch):
+    """Si la grilla de la dueña y el portal del vendedor contaran distinto, la
+    conversación del mes siguiente es imposible."""
+    visto = {}
+
+    def _all(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split()).lower()
+        return []
+
+    monkeypatch.setattr(q.db, "fetch_all", _all)
+    q.ventas_kg_por_vendedor_mes(2026)
+    assert "sum(f.kg)" in visto["sql"] and "sum(f.importe)" not in visto["sql"]
+    assert "f.stat <> 'x'" in visto["sql"]
+    assert "asinfo-backfill" in visto["sql"]
