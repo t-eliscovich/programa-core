@@ -242,6 +242,12 @@ ROLES: list[tuple[str, list[str]]] = [
         # existente Alex→INT preservando id_rol/permisos/usuarios.
         "INT",
         [
+            # TMT 2026-08-05 (dueña): *"quitá activos y quitá compras,
+            # quitá gastos, quitá iniciales, quitá provisiones, quitá
+            # retenciones de INT"*. Se van los 18 permisos de esos seis
+            # módulos — incluida la operativa (crear/editar/anular), no sólo
+            # la lectura. Al rol le quedan 34: cobranza, cheques, facturas,
+            # bancos, caja, clientes, proveedores y tintorería.
             "stock.ver",
             # Operativa diaria — todo el flujo de cheques, caja, bancos.
             "caja.ver",
@@ -273,28 +279,14 @@ ROLES: list[tuple[str, list[str]]] = [
             "facturas.crear",
             "facturas.editar",
             "facturas.anular",
-            "compras.ver",
-            "compras.crear",
-            "compras.editar",
-            "compras.anular",
             "deudas.ver",
-            "provisiones.ver",
-            "provisiones.crear",
-            "provisiones.editar",
-            "retenciones.ver",
-            "retenciones.emitir",
-            "retenciones.anular",
             # SRI / proformas (operativas).
             "sri.ver",
             "sri.emitir",
             "proformas.ver",
             "proformas.crear",
             # Activos (operativa de altas/amortización).
-            "activos.ver",
-            "activos.crear",
-            "activos.amortizar",
             # Iniciales editable para que pueda actualizar saldos bancos/caja.
-            "iniciales.editar",
             # TMT 2026-08-05 (dueña): *"posdatados también sólo andres y
             # accionistas"*. INT pierde posdat entero — ver, crear, editar y
             # anular. Se lo pregunté explícitamente porque acá no era sólo
@@ -307,12 +299,8 @@ ROLES: list[tuple[str, list[str]]] = [
             # comisiones y metas no lo vean usuarios INTELA"*. Ventas-año y
             # gastos siguen igual.
             "ventas.ver",
-            "gastos.ver",
             # TMT 2026-07-01 (dueña, review accesos): Alex también OPERA gastos
             # (clasificar caja→gasto, crear, editar, anular), no solo verlos.
-            "gastos.crear",
-            "gastos.editar",
-            "gastos.anular",
             # TMT 2026-05-26 dueña: agregar Tintorería para Alex (comparativa
             # PC vs formulas_app + stock químicos).
             "tintura.ver",

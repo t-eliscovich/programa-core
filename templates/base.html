@@ -1036,6 +1036,11 @@
       <details class="sidebar-section" data-key="recientes">
         <summary>Recientes</summary>
         {% for r in recientes_usuario %}
+          {# ⚠ "Recientes" guarda lo que CADA UNO abrió, así que sobrevive a
+             que le saquen el permiso: el link queda en su historial y da 404.
+             Cada tipo va detrás del permiso de SU pantalla. Mordió el
+             2026-08-05 dos veces, sacándole posdat y después retenciones al
+             rol INT. #}
           {% set url = None %}
           {% if r.tipo == 'factura' %}
             {% set url = url_for('facturas.detalle', id_factura=r.id_ref) %}
@@ -1046,13 +1051,13 @@
           {% elif r.tipo == 'proveedor' %}
             {% set url = url_for('proveedores.editar', codigo_prov=r.id_ref) %}
           {% elif r.tipo == 'posdat' %}
-            {# "Recientes" guarda lo que cada uno abrió. Si se le sacó el
-               permiso después, el link queda en su historial y da 404. #}
             {% if tiene_permiso('posdat.editar') %}
               {% set url = url_for('posdat.editar', id_posdat=r.id_ref) %}
             {% endif %}
           {% elif r.tipo == 'retencion' %}
-            {% set url = url_for('retenciones.confirmar_anulacion', id_retencion=r.id_ref) %}
+            {% if tiene_permiso('retenciones.anular') %}
+              {% set url = url_for('retenciones.confirmar_anulacion', id_retencion=r.id_ref) %}
+            {% endif %}
           {% endif %}
           {% if url %}
             <a href="{{ url }}" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 truncate" title="{{ r.etiqueta or r.id_ref }}">

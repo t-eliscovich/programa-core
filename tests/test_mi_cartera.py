@@ -2352,3 +2352,50 @@ def test_el_control_interno_se_lee_del_codigo_de_la_vista():
 
     assert accesos._control_interno(con_control) == "tiene_permiso"
     assert accesos._control_interno(sin_nada) is None
+
+
+def test_int_pierde_activos_compras_gastos_iniciales_provisiones_retenciones():
+    """Dueña 2026-08-05: *"quitá activos y quitá compras, quitá gastos, quitá
+    iniciales, quitá provisiones, quitá retenciones de INT"*.
+
+    Son 18 permisos de seis módulos, y NO es sólo lectura: se va también la
+    operativa (compras.crear/editar/anular, gastos.*, activos.crear, etc.).
+    Al rol le quedan 34: cobranza, cheques, facturas, bancos, caja, clientes,
+    proveedores y tintorería.
+    """
+    from config.roles import ROLES
+
+    d = dict(ROLES)
+    fuera = ("activos.", "compras.", "gastos.", "iniciales.",
+             "provisiones.", "retenciones.")
+    assert not [p for p in d["INT"] if p.startswith(fuera)]
+    # Lo que NO se tocó: sigue siendo el rol operativo de cobranza.
+    for queda in ("cheques.ver", "facturas.ver", "bancos.ver", "caja.ver",
+                  "clientes.ver"):
+        assert queda in d["INT"], f"a INT no había que sacarle {queda}"
+    # Y los otros roles quedan intactos.
+    assert "compras.ver" in d["Compras"] and "activos.ver" in d["Contabilidad"]
+
+
+def test_hay_migracion_0166():
+    from pathlib import Path
+
+    mig = Path("migrations/0166_int_sin_activos_compras_gastos.py").read_text()
+    assert "DELETE FROM seguridad.permiso" in mig
+    # Acotada al rol INT: si borrara por prefijo sin filtrar el rol, se
+    # llevaría puesto a Contabilidad, Compras y Gerente.
+    borrado = mig.split("DELETE FROM seguridad.permiso")[1].split('"""')[0]
+    assert "id_rol = %s" in borrado
+
+
+def test_recientes_gatea_cada_tipo_con_su_permiso():
+    """"Recientes" guarda lo que CADA UNO abrió, así que sobrevive a que le
+    saquen el permiso: el link queda en su historial y da 404. Mordió dos
+    veces el mismo día — sacándole posdat y después retenciones al rol INT.
+    """
+    from pathlib import Path
+
+    menu = Path("templates/base.html").read_text()
+    bloque = menu.split("{% set url = None %}")[1].split("{% if url %}")[0]
+    assert "tiene_permiso('posdat.editar')" in bloque
+    assert "tiene_permiso('retenciones.anular')" in bloque
