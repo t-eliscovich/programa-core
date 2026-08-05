@@ -854,6 +854,42 @@ def produccion_del_dia(fecha) -> dict:
     }
 
 
+def tejido_del_dia(fecha) -> dict:
+    """Kilos de tela CRUDA que cerraron ese día (tejeduría, bodega 52).
+
+    TMT 2026-08-05: *"en producción deberíamos decir cuánto se tejió y cuánto
+    se terminó"*. Son dos etapas distintas de la misma fábrica y hasta ahora
+    la pantalla sólo mostraba la segunda: el hilo se teje (crudo) y recién
+    después se tiñe y se termina. Un día puede tejer mucho y terminar poco.
+
+    ⭐ **No se deriva del stock, se MIDE** — misma regla que
+    `produccion_del_dia`: sale de `cantidad_fabricada` de las OFs hoja
+    cerradas en bodega 52, que es la fuente que ya usa
+    `/produccion-tejeduria-asinfo`. Duplicar la cuenta sería inventar un
+    segundo número que discute con el primero.
+
+    ⚠ Mismo sesgo que terminado: los kg se imputan al día en que la orden
+    **cierra**. Por eso va también el acumulado del mes.
+    """
+    vacio = {"disponible": False}
+    try:
+        from modules.asinfo import service as _asinfo
+        r = _asinfo.produccion_tejeduria_mes(fecha.year, fecha.month)
+    except Exception as e:  # noqa: BLE001 -- Asinfo caído no tumba la pantalla
+        _LOG.warning("dia: no pude leer la tejeduría (%s)", e)
+        return vacio
+    if not (r or {}).get("disponible"):
+        return vacio
+    clave = fecha.isoformat()
+    deldia = [o for o in (r.get("ofs") or []) if str(o.get("dia") or "") == clave]
+    return {
+        "disponible": True,
+        "kg": round(sum(_f(o.get("kg")) for o in deldia), 2),
+        "n_ofs": len(deldia),
+        "mes_kg": _f(r.get("total_kg")),
+    }
+
+
 def _etapa(desde: dict, hasta: dict, et: str) -> dict:
     """Una etapa de stock entre dos capturas, con el valor partido en kilos y
     tarifa. `None` si esa captura no guardó los kilos (capturas viejas, o
@@ -981,6 +1017,37 @@ def ventas_del_mes(fecha) -> dict:
 def _n(v, dec: int = 0) -> str:
     from filters import num_es
     return num_es(round(_f(v), dec), dec)
+
+
+def porque_subio(e: dict, n: int = 3) -> list[dict]:
+    """Las `n` líneas que explican el día + un "Resto", **sumando exacto**.
+
+    Es el bloque *Por qué subió* de la pantalla. La última fila tiene que dar
+    `e["d_utilidad"]` o el lector deja de creerle a la tabla: por eso el resto
+    NO se descarta ni se redondea, se calcula como la diferencia contra el
+    total. Ahí adentro caen los movimientos chicos y los traspasos, que netean
+    cero de a pares.
+
+    🚨 Las etiquetas son las que da el motor (`Venta facturada`, `Stock`,
+    `Amortización del día`). Tentación a evitar: poner acá *"Costo de la tela
+    vendida −$ 70.573"*, que es el número del margen. No es un movimiento: el
+    componente de stock se mueve por lo que se produjo Y por lo que salió, y
+    mezclarlos rompería la suma. La cuenta del margen va en el titular, en
+    castellano, donde no promete cuadrar con nada.
+    """
+    total = _f((e or {}).get("d_utilidad"))
+    filas = [r for r in ((e or {}).get("reglas") or [])
+             if r.get("familia") in ("utilidad", "sin_explicar")
+             and abs(_f(r.get("aporte"))) >= 1]
+    filas.sort(key=lambda r: abs(_f(r.get("aporte"))), reverse=True)
+    top = filas[:max(0, n)]
+    out = [{"label": r.get("regla") or "—", "monto": round(_f(r.get("aporte")), 2),
+            "familia": r.get("familia")} for r in top]
+    resto = round(total - sum(x["monto"] for x in out), 2)
+    if abs(resto) >= 1:
+        out.append({"label": "Resto — stock, caja, bancos", "monto": resto,
+                    "familia": "resto"})
+    return out
 
 
 def deuda_hoy(fecha=None) -> dict:

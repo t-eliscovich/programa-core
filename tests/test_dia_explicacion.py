@@ -899,15 +899,18 @@ def test_la_pantalla_muestra_el_resumen(app, fake_db):
          patch.object(dia, "resumen", return_value=res), \
          patch.object(dia, "racha_limpia", return_value=0):
         cuerpo = c.get("/informes/dia").data.decode()
-    assert "El día contado" in cuerpo
+    assert "La fábrica" in cuerpo          # la seccion, no una tarjeta con titulo
     assert "113 facturas" in cuerpo
     assert "12.838 kg" in cuerpo            # producción MEDIDA
-    assert "79 órdenes" in cuerpo
+    assert "79 órdenes cerradas" in cuerpo
     assert "680 kg de" in cuerpo            # el desperdicio, explícito
+    # ⭐ La revaluación se avisa SOLO el día que la hay. Antes salía siempre,
+    # también para decir "hoy no hubo": un renglón que aparece todos los días
+    # entrena a no leerlo. Acá la tarifa está quieta, así que NO va.
+    assert "revaluación" not in cuerpo
     # Ojo: el texto del template viene cortado en varias líneas, así que la
     # aserción no puede cruzar un salto de línea del fuente.
-    assert "no hay nada de revaluación adentro" in cuerpo   # tarifa quieta
-    assert "3,0437" in cuerpo                               # y el $/kg a la vista
+    assert "3,0437" in cuerpo               # el $/kg, en el detalle
     # El resultado del día vive arriba de todo, en la cinta de KPIs, y la
     # ventana horaria al pie de la tarjeta. Antes había TRES lugares con el
     # mismo número (hero, "Resultado del día" y "El titular"); quedó uno.
@@ -958,7 +961,10 @@ def test_la_pantalla_habla_de_la_deuda(app, fake_db):
          patch.object(dia, "racha_limpia", return_value=0):
         cuerpo = c.get("/informes/dia").data.decode()
     assert "3.531.577" in cuerpo          # el nivel
-    assert "264.585" in cuerpo            # y CUÁNDO hay que pagarlo
+    # y CUÁNDO hay que pagarlo. Los 30 días los sacó la dueña ("elimina"):
+    # lo accionable es lo ya vencido y lo de esta semana.
+    assert "524.828" in cuerpo
+    assert "125.699" in cuerpo
 
 
 def test_el_porcentaje_explicado_sobrevive_a_un_dia_sin_relato(app, fake_db):
@@ -972,6 +978,80 @@ def test_el_porcentaje_explicado_sobrevive_a_un_dia_sin_relato(app, fake_db):
         cuerpo = c.get("/informes/dia").data.decode()
     assert "explicado al 100" in cuerpo
     assert "Utilidad del día" in cuerpo
+
+
+# ── El bloque "Por qué subió" y la tejeduría ────────────────────────────────
+# TMT 2026-08-05: *"el resumen tiene que estar arriba, después todo el resto"* y
+# *"en producción deberíamos decir cuánto se tejió y cuánto se terminó"*.
+
+def test_el_porque_SUMA_exacto_la_utilidad_del_dia():
+    """🚨 La última fila tiene que dar `d_utilidad`. Si no cierra, el lector
+    deja de creerle a la tabla entera — y con razón. Por eso el "Resto" se
+    calcula como la diferencia contra el total, no como una suma de sobras."""
+    e = {"d_utilidad": 42231.0, "reglas": [
+        {"regla": "Venta facturada", "familia": "utilidad", "aporte": 116406.0},
+        {"regla": "Stock", "familia": "utilidad", "aporte": -70573.0},
+        {"regla": "Amortización del día", "familia": "utilidad", "aporte": -3532.0},
+        {"regla": "Gasto de caja", "familia": "utilidad", "aporte": -70.0},
+        {"regla": "Cheque recibido", "familia": "traspaso", "aporte": 61847.0},
+    ]}
+    filas = dia.porque_subio(e)
+    assert sum(f["monto"] for f in filas) == pytest.approx(42231.0, abs=0.01)
+    assert filas[-1]["familia"] == "resto"
+    assert filas[-1]["monto"] == pytest.approx(-70.0, abs=0.01)
+
+
+def test_el_porque_no_inventa_un_resto_de_cero():
+    """Si las tres primeras ya explican todo, no va una fila 'Resto $ 0'."""
+    e = {"d_utilidad": 1500.0, "reglas": [
+        {"regla": "Venta facturada", "familia": "utilidad", "aporte": 1000.0},
+        {"regla": "Stock", "familia": "utilidad", "aporte": 500.0},
+    ]}
+    assert [f["familia"] for f in dia.porque_subio(e)] == ["utilidad", "utilidad"]
+
+
+def test_el_tejido_es_del_DIA_y_sale_de_la_bodega_52():
+    """Se mide, no se deriva: son las OFs cerradas en tejeduría. Y el día es el
+    día — una OF de ayer no puede contarse hoy."""
+    prod = {"disponible": True, "total_kg": 38684.52, "ofs": [
+        {"numero": 1, "dia": "2026-08-05", "kg": 7000.0},
+        {"numero": 2, "dia": "2026-08-05", "kg": 622.72},
+        {"numero": 3, "dia": "2026-08-04", "kg": 11471.18},
+    ]}
+    with patch("modules.asinfo.service.produccion_tejeduria_mes", return_value=prod):
+        t = dia.tejido_del_dia(date(2026, 8, 5))
+    assert t["kg"] == pytest.approx(7622.72, abs=0.01)
+    assert t["n_ofs"] == 2
+    assert t["mes_kg"] == pytest.approx(38684.52, abs=0.01)
+
+
+def test_si_asinfo_se_cae_la_tejeduria_no_tumba_la_pantalla():
+    with patch("modules.asinfo.service.produccion_tejeduria_mes",
+               side_effect=RuntimeError("Asinfo caído")):
+        assert dia.tejido_del_dia(date(2026, 8, 5)) == {"disponible": False}
+
+
+def test_la_pantalla_separa_TEJIDO_de_TERMINADO(app, fake_db):
+    """Son dos etapas distintas de la misma fábrica: el hilo se teje (crudo) y
+    recién después se termina. Un día puede tejer mucho y terminar poco."""
+    c = _login(app, fake_db)
+    res = {"ok": True, "d_utilidad": 1.0, "d_stock": 0.0, "d_deuda": 0.0,
+           "por_tarifa": 0.0, "desde": {"vsto": 1.0}, "hasta": {"vsto": 1.0},
+           "cobrado": 1.0, "ventas": {"n": 0, "kg": 0.0, "us": 0.0},
+           "compras": {"n": 0, "kg": 0.0, "us": 0.0}, "etapas": [],
+           "produccion": {"disponible": True, "sin_fila": False,
+                          "producido": 6974.0, "despachado": 13898.0,
+                          "n_ofs": 37, "mes": {"producido": 37796.0,
+                                               "vendido": 46130.0}}}
+    tej = {"disponible": True, "kg": 7622.72, "n_ofs": 4, "mes_kg": 38684.52}
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "tejido_del_dia", return_value=tej), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "Se tejió" in cuerpo and "7.623 kg" in cuerpo
+    assert "Se terminó" in cuerpo and "6.974 kg" in cuerpo
+    assert "Se despachó" in cuerpo
 
 
 # ── El mensaje de WhatsApp ──────────────────────────────────────────────────
@@ -1199,7 +1279,9 @@ def test_la_pantalla_trae_el_bloque_de_whatsapp(app, fake_db):
                       return_value="*INTELA · mar 4 ago*\n\n*Utilidad de ago: $ 125.331*"), \
          patch.object(dia, "racha_limpia", return_value=0):
         cuerpo = c.get("/informes/dia").data.decode()
-    assert "Para mandar" in cuerpo
+    # La nota ya no es una tarjeta propia: los botones van en la cinta del
+    # titular (es la accion del dia) y el texto vive dentro del detalle.
+    assert "Copiar la nota" in cuerpo
     assert "Utilidad de ago" in cuerpo
     # El botón abre el WhatsApp de quien aprieta. Programa Core no manda nada.
     assert "https://wa.me/?text=" in cuerpo
