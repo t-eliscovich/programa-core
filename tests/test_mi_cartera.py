@@ -645,8 +645,14 @@ def test_meses_con_meta_ignora_los_ceros(monkeypatch):
 
 
 def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
-    """Hay filas sin N° de cheque (depósitos directos del dBase). Sin
-    fallback, la ficha mostraba «Ch. · DEP.PICH.» — visto en vivo con MWI."""
+    """Hay filas sin N° de cheque (depósitos directos del dBase).
+
+    Sin fallback la ficha mostraba «Ch. · DEP.PICH.» — visto en vivo con MWI.
+    TMT 2026-08-05 (Andrés: "los números de los cheques se ven feo"): el
+    fallback NO puede ser el id interno de la base. El vendedor le muestra
+    esta pantalla al cliente y "#4242" se lee como si fuera el número de SU
+    cheque. Va una raya; la fila se identifica por fecha, importe y banco.
+    """
     from modules.mi_cartera import views
 
     monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
@@ -656,16 +662,74 @@ def test_cheque_sin_numero_no_queda_pelado(vendedor_logueado, monkeypatch):
             "cliente": {"codigo_cli": cod, "nombre": "X", "provincia": ""},
             "facturas": [],
             "cheques": [{"id_cheque": 4242, "no_cheque": "  ", "importe": 10.0,
-                         "stat": "B", "fechad": None, "fechaout": None,
-                         "nombre_banco": "DEP.PICH."}],
+                         "stat": "Z", "fechad": None, "fechaout": None,
+                         "por_cobrar": True, "nombre_banco": "DEP.PICH."}],
             "anticipos": [],
-            "totales": _totales(cheques_total=10.0, cheques_depositados=10.0),
+            "totales": _totales(cheques_total=10.0, cheques_por_cobrar=10.0),
         },
     )
     r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")
     assert r.status_code == 200
-    assert b"#4242" in r.data
+    assert b"#4242" not in r.data, "el id interno de la base no va en pantalla"
+    assert "—".encode() in r.data
     assert "Ch. ·".encode() not in r.data
+
+
+def test_el_portal_solo_lista_los_cheques_en_cartera(vendedor_logueado, monkeypatch):
+    """El portal imprime la MISMA hoja que la oficina, así que corta igual.
+
+    TMT 2026-08-05 (Andrés). Un cheque ya depositado no es plata que el
+    cliente deba: listarlo hace pensar que se le cobra dos veces.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "X", "provincia": ""},
+            "facturas": [],
+            "cheques": [
+                {"id_cheque": 1, "no_cheque": "111", "importe": 10.0,
+                 "stat": "Z", "fechad": None, "fechaout": None,
+                 "por_cobrar": True, "nombre_banco": "PICHINCHA"},
+                {"id_cheque": 2, "no_cheque": "222", "importe": 99.0,
+                 "stat": "B", "fechad": None, "fechaout": None,
+                 "por_cobrar": False, "nombre_banco": "PICHINCHA"},
+            ],
+            "anticipos": [],
+            "totales": _totales(cheques_total=109.0, cheques_por_cobrar=10.0),
+        },
+    )
+    r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")
+    assert r.status_code == 200
+    assert b"111" in r.data
+    assert b"222" not in r.data, "el cheque depositado no va en la hoja del cliente"
+    assert "Total (1 cheque)".encode() in r.data
+
+
+def test_sin_cheques_en_cartera_no_dice_que_no_tiene_ninguno(
+    vendedor_logueado, monkeypatch,
+):
+    """Un cliente con todo cobrado no "no tiene cheques cargados"."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_cliente",
+        lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "X", "provincia": ""},
+            "facturas": [],
+            "cheques": [{"id_cheque": 2, "no_cheque": "222", "importe": 99.0,
+                         "stat": "B", "fechad": None, "fechaout": None,
+                         "por_cobrar": False, "nombre_banco": "PICHINCHA"}],
+            "anticipos": [],
+            "totales": _totales(cheques_total=99.0, cheques_depositados=99.0),
+        },
+    )
+    r = vendedor_logueado.get("/mi-cartera/cliente/X?tab=cheques")
+    assert "No tiene cheques en cartera".encode() in r.data
+    assert "no tiene cheques cargados".encode() not in r.data
 
 
 def test_el_rotulo_dice_lo_que_se_esta_mostrando(vendedor_logueado, monkeypatch):

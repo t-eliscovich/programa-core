@@ -208,7 +208,13 @@
     {% endif %}
 
   {% else %}
-    {% if cheques %}
+    {# TMT 2026-08-05 (Andrés): el portal muestra la MISMA hoja que la
+       oficina, así que corta igual — sólo los cheques que siguen en cartera
+       (`por_cobrar` = STATS_CHEQUE_POR_COBRAR, la partición de CUENTA.PRG
+       L376 `STAT $ "ZP12D"` más los protestados que agregó PC). Un cheque ya
+       depositado no es plata que el cliente deba. #}
+    {% set _ch_en_cartera = cheques | selectattr('por_cobrar') | list %}
+    {% if _ch_en_cartera %}
     {% set nch = namespace(activos=0) %}
     <table class="ec">
       <thead>
@@ -219,14 +225,16 @@
         </tr>
       </thead>
       <tbody>
-        {% for c in cheques %}
+        {% for c in _ch_en_cartera %}
           {% set stat_u = (c.stat or '')|string|trim|upper %}
           {% set anulado = stat_u == 'X' %}
           {% if not anulado %}{% set nch.activos = nch.activos + 1 %}{% endif %}
           {# Hay filas sin N° (depósitos directos que vienen del dBase): sin
-             respaldo quedaba un "Ch. ·" pelado. La hoja de la oficina cae al
-             id interno — acá se hace lo mismo. #}
-          {% set no_ch = (c.no_cheque|cleanstr) or ('#' ~ c.id_cheque) %}
+             respaldo quedaba un "Ch. ·" pelado. TMT 2026-08-05: va una raya y
+             NO el id interno de la base — el vendedor le muestra esta pantalla
+             al cliente y "#98707" se lee como si fuera el número de su cheque.
+             Misma decisión que la hoja de la oficina. #}
+          {% set no_ch = (c.no_cheque|cleanstr) or '—' %}
           {% set fechad_orig = c.fechad_original or c.fechad %}
           {% set depositado = (c.fechaout or c.fechaing) if stat_u in ('B','A','1','2','3','R') else None %}
           <tr class="{{ 'pagada' if anulado }}">
@@ -255,8 +263,11 @@
       </tbody>
       <tfoot>
         <tr>
+          {# TMT 2026-08-05: cuenta y suma lo que se LISTA. Con
+             `cheques_total` el pie sumaba también los ya cobrados y no cuadraba
+             con las filas de arriba. #}
           <td class="l" colspan="2">Total ({{ nch.activos }} cheque{{ '' if nch.activos == 1 else 's' }})</td>
-          <td class="mono fuerte">{{ t.cheques_total|money_es }}</td>
+          <td class="mono fuerte">{{ t.cheques_por_cobrar|money_es }}</td>
         </tr>
       </tfoot>
     </table>
@@ -271,7 +282,16 @@
       <div>Endosados <i>(E)</i><b class="mono">{{ t.cheques_endosados|money_es }}</b></div>
     </div>
     {% else %}
-      <div class="vacio">Este cliente no tiene cheques cargados.</div>
+      {# TMT 2026-08-05: la lista corta por "en cartera", así que el vacío
+         tiene que distinguir "nunca tuvo" de "los cobramos todos" — si no, un
+         cliente con 18 cheques ya depositados leía "no tiene cheques
+         cargados", que es falso. #}
+      {% if cheques %}
+        <div class="vacio">No tiene cheques en cartera. Los {{ cheques|length }} que
+          están cargados ya se cobraron o se anularon.</div>
+      {% else %}
+        <div class="vacio">Este cliente no tiene cheques cargados.</div>
+      {% endif %}
     {% endif %}
   {% endif %}
 </div>

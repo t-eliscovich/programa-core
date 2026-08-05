@@ -227,14 +227,37 @@
         </tr>
       </thead>
       <tbody>
-        {# TMT 2026-07-06 (dueña, caso EDU cheque N°51): los X (anulados) se
-           LISTAN pero tachados en gris y NO cuentan ni en el total (el SQL ya
-           los excluía) ni en el contador — antes decía "3 cheques" sumando
-           solo el B vivo. #}
+        {# TMT 2026-08-05 (Andrés, por WhatsApp: "en la parte de cheques
+           aparecen todos los cheques independiente del estado… solo tienen que
+           aparecer los estados Z P 1 2, o lo que es lo mismo los que están en
+           cartera"). Esta hoja se le manda al CLIENTE: un cheque ya depositado
+           no es plata que él siga debiendo, y verlo listado hace pensar que se
+           le está cobrando dos veces. En el caso FET eran 18 filas B por
+           $46.908,67 sobre 58.
+
+           El corte NO se escribe acá: es `por_cobrar`, que calcula
+           `estado_cuenta_cliente` con STATS_CHEQUE_POR_COBRAR. Contra
+           `CUENTA.PRG` L376 (`STAT $ "ZP12D"`) eso es Z/P/D + los protestados
+           1/2/3/R/9 — o sea **la D (devuelto) también entra**, que es la que
+           falta en la lista de memoria, y la 3 que Andrés preguntaba. La
+           franja de abajo sigue mostrando "Depositados (B/A): $X" para que el
+           dato no se pierda, y la lista completa vive en /cheques por cliente.
+
+           Los anulados (X) tampoco son `por_cobrar`, así que dejan de
+           listarse — antes salían tachados en gris (TMT 2026-07-06, caso EDU
+           cheque N°51). Siguen visibles en /cheques. #}
+        {% set _ch_en_cartera = data.cheques | selectattr('por_cobrar') | list %}
         {% set nch = namespace(activos=0) %}
-        {% for c in data.cheques %}
-        {# N° de cheque — si no_cheque está NULL (data legacy o anticipo),
-           cae a #id_cheque para que la dueña pueda identificarlo. TMT 2026-05-16. #}
+        {% for c in _ch_en_cartera %}
+        {# N° de cheque. TMT 2026-08-05 (Andrés: "los números de los cheques
+           se ven feo"): cuando `no_cheque` viene NULL esto caía a `#id_cheque`,
+           que es la clave interna de la base — en la hoja de FET eran 18 de 40
+           filas diciendo "#98707", y el cliente lo lee como si fuera el número
+           de SU cheque. Globalmente 681 de 1.234 cheques en cartera no tienen
+           número cargado. Va una raya, como cualquier otra celda vacía de la
+           hoja: la fila se identifica por fecha + importe + banco, que es como
+           los nombra la cartera. El link a la ficha sigue estando (la raya es
+           clickeable) así que la oficina no pierde el acceso. #}
         {% set no_ch_str = (c.no_cheque | cleanstr) if c.no_cheque else None %}
         {# TMT 2026-08-03: `dia_ingreso` lo calcula el SQL con la MISMA expresión
            que /cheques y la ficha. Antes caía a `fecha_crea` y los ~3.200
@@ -265,7 +288,7 @@
             {# TMT 2026-08-03: para un VENDEDOR la ficha del cheque no existe
                (scope_vendedor.py la 404ea) — el número va en texto plano en
                vez de un link muerto. Para todos los demás, igual que siempre. #}
-            {% set _num_ch %}{% if no_ch_str %}{{ no_ch_str }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}{% endset %}
+            {% set _num_ch %}{% if no_ch_str %}{{ no_ch_str }}{% else %}<span class="text-slate-400">&mdash;</span>{% endif %}{% endset %}
             {% if es_vendedor(g.get('user')) %}
               {{ _num_ch }}
             {% else %}
@@ -297,14 +320,17 @@
           </td>
         </tr>
         {% else %}
-        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="8">Sin cheques.</td></tr>
+        {# TMT 2026-08-05: distinguir "nunca tuvo cheques" de "los cobramos
+           todos" — FET tenía 18 depositados y con un "Sin cheques." pelado
+           parecía que faltaba data. #}
+        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="8">{% if data.cheques %}Sin cheques en cartera — los {{ data.cheques | length }} cargados ya se cobraron o se anularon.{% else %}Sin cheques.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
-      {% if data.cheques %}
-      {# TMT 2026-08-03: este pie cuenta TODOS los cheques del cliente. En
-         "Imprimir cheques" las filas ya cobradas no se imprimen, así que este
-         total contradiría la lista (2 filas y "Total (3 cheques)") → se
-         esconde y en su lugar sale `ec-ch-total-cobrar`, que sí cuadra. #}
+      {% if _ch_en_cartera %}
+      {# TMT 2026-08-05: el pie cuenta y suma EXACTAMENTE las filas que se
+         listan. Antes contaba todos los cheques del cliente y sumaba
+         `cheques_total`, así que con las filas ya cobradas fuera del papel el
+         pie contradecía la lista (2 filas y "Total (3 cheques)"). #}
       <tfoot class="ec-ch-total-todos bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
           {# El rótulo abarca hasta Depositado: el total tiene que caer bajo
@@ -313,10 +339,10 @@
              tuvo dos veces. #}
           <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="5">
             Total ({{ nch.activos }} cheque{{ '' if nch.activos == 1 else 's' }})
-            {%- set n_anulados = data.cheques | length - nch.activos %}
-            {%- if n_anulados > 0 %} <span class="normal-case tracking-normal text-slate-400 font-normal">· {{ n_anulados }} anulado{{ '' if n_anulados == 1 else 's' }} sin sumar</span>{% endif %}
+            {%- set n_fuera = (data.cheques | length) - (_ch_en_cartera | length) %}
+            {%- if n_fuera > 0 %} <span class="normal-case tracking-normal text-slate-400 font-normal">· {{ n_fuera }} ya cobrado{{ '' if n_fuera == 1 else 's' }} o anulado{{ '' if n_fuera == 1 else 's' }}, no se listan</span>{% endif %}
           </td>
-          <td class="px-4 py-3 text-right text-mono">{{ t.cheques_total | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono">{{ t.cheques_por_cobrar | money_es }}</td>
           <td></td>
           <td></td>
         </tr>

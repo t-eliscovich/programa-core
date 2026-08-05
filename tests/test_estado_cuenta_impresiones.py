@@ -207,17 +207,49 @@ def test_el_total_por_cobrar_del_SQL_usa_la_misma_lista(monkeypatch):
 
 
 def test_el_total_impreso_es_LA_SUMA_de_las_filas_que_quedan(app, fake_db, monkeypatch):
-    """No alcanza con que el total exista: tiene que ser la suma de lo que se
-    ve. Cheques de $50: Z, P (se imprimen) + B, X, C, E (no) → 100,00."""
+    """No alcanza con que el total exista: tiene que ser la suma de lo que se ve.
+
+    TMT 2026-08-05 (Andrés: "en la parte de cheques aparecen todos los cheques
+    independiente del estado… solo tienen que aparecer los que están en
+    cartera"). Antes las filas ya cobradas se RENDERIZABAN con la clase
+    `ec-ch-cobrado` y sólo se escondían por CSS en el modo "sólo cheques" — o
+    sea que en "imprimir todo", que es lo que se le manda al cliente, salían.
+    Ahora directamente no se emiten.
+    """
     html = _get_lote(app, fake_db, monkeypatch, [
         _cliente_fake("SUMA", facturas=1, cheques=["Z", "P", "B", "X", "C", "E", "9"]),
     ])
     bloque = html[html.index("CLIENTE SUMA"):]
     bloque = bloque[:bloque.index("Total cheques por cobrar") + 400]
-    # 4 filas por cobrar (Z, P, 9 … y ninguna más) → las otras llevan la marca.
-    assert bloque.count("ec-ch-cobrado") == 4, "B/X/C/E tienen que quedar marcados"
+    # Los que siguen en cartera se listan…
+    for st in ("Z", "P", "9"):
+        assert f'data-ec-stat="{st}"' in bloque, f"falta la fila {st}"
+    # …y los demás NO están en el HTML, ni siquiera escondidos por CSS.
+    for st in ("B", "X", "C", "E"):
+        assert f'data-ec-stat="{st}"' not in bloque, (
+            f"la fila {st} sigue saliendo en el papel que se le manda al cliente"
+        )
+    assert "ec-ch-cobrado" not in bloque, (
+        "ya no se emiten filas marcadas como cobradas: se filtran en el for"
+    )
     assert "150,00" in bloque.split("Total cheques por cobrar")[1], (
         "el total impreso no es la suma de Z + P + 9"
+    )
+
+
+def test_el_pie_no_cuenta_ni_suma_lo_que_no_lista(app, fake_db, monkeypatch):
+    """El pie "Total (N cheques)" tiene que cuadrar con las filas de arriba."""
+    html = _get_lote(app, fake_db, monkeypatch, [
+        _cliente_fake("PIE", facturas=1, cheques=["Z", "P", "B", "X", "C", "E", "9"]),
+    ])
+    bloque = html[html.index("CLIENTE PIE"):]
+    bloque = bloque[:bloque.index("Total cheques por cobrar") + 400]
+    assert "Total (3 cheques)" in bloque, (
+        "el pie cuenta cheques que no está listando"
+    )
+    assert "4 ya cobrados o anulados, no se listan" in bloque, (
+        "hay que decir cuántas filas quedaron afuera — un número que baja sin "
+        "explicación se lee como dato perdido"
     )
 
 
@@ -558,3 +590,34 @@ def test_no_se_tocaron_los_anchos_de_impresion():
     dejaría de terminar en el 70% y se despegaría del Saldo de facturas."""
     html = _parcial_impreso()
     assert "table th:nth-child(7),\n        main .ec-bloque-cheques table tbody td:nth-child(7) { width: 24% !important; }" in html
+
+
+def test_estado_cuenta_marca_por_cobrar_en_TODAS_las_filas(monkeypatch):
+    """El filtro de la hoja es fail-closed: sin la marca, la fila desaparece.
+
+    TMT 2026-08-05. Las plantillas ahora hacen
+    `cheques | selectattr('por_cobrar')`. Si `estado_cuenta_cliente` dejara de
+    marcar aunque sea una fila, esa fila no se lista y NO hay error: el estado
+    de cuenta de un cliente sale con cheques de menos y nadie se entera hasta
+    que el cliente reclama. Este test fija que la marca se pone SIEMPRE, para
+    todos los estados, incluidos los raros.
+    """
+    import db
+    from modules.informes import queries as iq
+
+    cheques = [{"id_cheque": i, "stat": st, "importe": 10.0}
+               for i, st in enumerate("ZP123D9RBACEXVWIJK")]
+
+    def _fetch_all(sql, params=None, conn=None):
+        return cheques if "from scintela.cheque c" in " ".join(sql.split()).lower() else []
+
+    monkeypatch.setattr(db, "fetch_all", _fetch_all)
+    monkeypatch.setattr(db, "fetch_one",
+                        lambda *a, **k: {"codigo_cli": "ZZZ", "nombre": "N"})
+    data = iq.estado_cuenta_cliente("ZZZ")
+    for c in data["cheques"]:
+        assert "por_cobrar" in c, f"stat {c['stat']} salió sin la marca"
+        assert isinstance(c["por_cobrar"], bool)
+    # Y la marca coincide con la lista compartida, no con una lista escrita a mano.
+    for c in data["cheques"]:
+        assert c["por_cobrar"] is (c["stat"] in iq.STATS_CHEQUE_POR_COBRAR)
