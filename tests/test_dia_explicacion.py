@@ -1020,3 +1020,61 @@ def test_la_pantalla_trae_el_bloque_de_whatsapp(app, fake_db):
     assert "Utilidad de ago" in cuerpo
     # El botón abre el WhatsApp de quien aprieta. Programa Core no manda nada.
     assert "https://wa.me/?text=" in cuerpo
+
+
+# ── Los tres bugs que sólo se vieron mirando el mensaje REAL ────────────────
+# Verificado en vivo el 05/08 con la pantalla ya deployada. Ninguno de los tres
+# lo cazaban los tests con datos inventados: los tres nacen de que la realidad
+# tiene combinaciones que uno no piensa.
+
+def test_el_margen_usa_los_kilos_FACTURADOS_no_los_despachados():
+    """05/08 en vivo: 545 kg facturados, 2.069 despachados → margen −134,7 %.
+
+    La mercadería sale un día y se factura otro, así que son dos universos.
+    La plata viene de la factura: el costo tiene que salir de LOS MISMOS kilos
+    de esa factura, o el margen es una resta entre cosas distintas.
+    """
+    caps = [_cap(0.0, terminado_kg=1000.0, terminado_ukg=5.2437),
+            _cap(0.0, terminado_kg=1000.0, terminado_ukg=5.2437)]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "produccion_del_dia", return_value={
+             "disponible": True, "sin_fila": False, "producido": 0.0,
+             "despachado": 2069.0, "mes": {}}), \
+         patch.object(dia, "ventas_del_dia",
+                      return_value={"n": 4, "kg": 545.0, "us": 4622.0}), \
+         patch.object(dia, "compras_del_dia",
+                      return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 5))
+    # 545 × 5,2437 = 2.857,82 → margen 1.764,18 sobre 4.622 = 38,2 %
+    assert r["costo_despachado"] == pytest.approx(2857.82, abs=0.01)
+    assert r["margen_pct"] == pytest.approx(38.2, abs=0.1)
+    assert r["margen_pct"] > 0, "un margen negativo acá es la resta mal hecha"
+
+
+def test_dia_parcial_llega_hasta_el_mensaje_de_whatsapp():
+    """Lo seteaba `explicar()` y el mensaje lo leía de `resumen()`, así que
+    nunca llegaba: se mandaba un tramo corto sin avisar que no eran 24 h."""
+    caps = [_cap(0.0), _cap(500.0)]
+    caps[0]["fecha_ec"] = caps[1]["fecha_ec"] = date(2026, 8, 5)   # mismo día
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 5))
+    assert r["dia_parcial"] is True
+    with patch.object(dia, "resumen", return_value=r), \
+         patch.object(dia, "ventas_del_mes", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        assert "no son 24 h" in dia.mensaje_whatsapp(date(2026, 8, 5))
+
+
+def test_produccion_en_cero_no_ocupa_una_linea_del_whatsapp():
+    """A media mañana siempre es 0 porque todavía no cerró ninguna orden.
+    Poner "Producción 0 kg" es afirmar que la planta no hizo nada."""
+    with patch.object(dia, "resumen", return_value=_res_ok(
+            produccion={"disponible": True, "sin_fila": False, "producido": 0.0,
+                        "despachado": 0.0, "mes": {"producido": 30822.45}})), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 5))
+    assert "Producción" not in m
+    assert "Utilidad de ago" in m        # el titular sigue yendo

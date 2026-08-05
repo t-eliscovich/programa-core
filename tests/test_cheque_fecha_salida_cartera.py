@@ -74,5 +74,19 @@ def test_balance_as_of_es_aditivo_para_no_mover_historico():
     """
     from modules.informes import views
     src = " ".join(inspect.getsource(views._asof_dia_overrides).split()).lower()
-    assert "(fechaing is not null and fechaing > %s) or (fechaout is not null and fechaout > %s)" in src
+    # La implementación quedó MÁS fina que este literal: cada rama va gateada
+    # por su `stat` (B/A para el depósito, C/9/E/T para la salida terminal),
+    # así que la cadena exacta que se pedía antes ya no aparece de corrido.
+    # Lo que este test tiene que garantizar no es la redacción sino las tres
+    # propiedades: que estén las DOS condiciones, que sumen como ramas OR (y
+    # no se reemplacen), y que NO se use el COALESCE —que es justo el que
+    # movería los números ya impresos.
+    assert "fechaing is not null and fechaing > %s" in src
+    assert "fechaout is not null and fechaout > %s" in src
+    i, j = src.index("fechaing is not null"), src.index("fechaout is not null")
+    assert " or " in src[i:j], (
+        "la condición de fechaout tiene que SUMAR a la de fechaing, no "
+        "reemplazarla: si no, las filas con las dos cargadas cambian de lado "
+        "y se mueven números históricos (medido: −4.468,63 al 31/07)"
+    )
     assert "coalesce(fechaout, fechaing) >" not in src

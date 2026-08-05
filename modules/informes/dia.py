@@ -878,7 +878,8 @@ def resumen(fecha=None) -> dict:
     vendió, cuánto cambió de valor la tela y qué quedó de resultado."""
     fecha = fecha or hoy_ec()
     caps = capturas(fecha)
-    out = {"fecha": fecha, "ok": False, "etapas": [], "frases": []}
+    out = {"fecha": fecha, "ok": False, "dia_parcial": False,
+           "etapas": [], "frases": []}
     if len(caps) < 2:
         return out
     d, h = caps[0], caps[-1]
@@ -903,6 +904,11 @@ def resumen(fecha=None) -> dict:
     prod = produccion_del_dia(fecha)
     out.update({
         "ok": True, "desde": d, "hasta": h,
+        # Lo setea `ventana()`: si el arranque es del mismo día, el tramo es
+        # más corto que 24 h. Tiene que llegar hasta el mensaje de WhatsApp o
+        # se manda un número que no se puede comparar contra otros días sin
+        # que nadie lo sepa.
+        "dia_parcial": bool(d.get("fecha_ec") == h.get("fecha_ec")),
         "d_utilidad": d_util, "ventas": v, "compras": c,
         "d_stock": d_stock, "por_kilos": por_kilos, "por_tarifa": por_tarifa,
         "d_cartera": d_cartera, "d_deuda": d_deuda,
@@ -919,9 +925,15 @@ def resumen(fecha=None) -> dict:
         "precio_kg": (round(v["us"] / v["kg"], 4) if v["kg"] else None),
     })
     ter = etapas.get("terminado") or {}
-    kg_sal = _f((prod or {}).get("despachado")) or v["kg"]
-    if ter.get("p1") and kg_sal:
-        costo = round(kg_sal * _f(ter["p1"]), 2)
+    # ⚠ El costo se valúa con los kilos FACTURADOS, no con los despachados.
+    # Verificado en vivo el 05/08: se habían facturado 545 kg pero despachado
+    # 2.069 físicos (la mercadería sale un día y se factura otro), y el margen
+    # salía **−134,7 %**. Son dos universos distintos: la plata viene de la
+    # factura, así que el costo tiene que venir de los mismos kilos que esa
+    # factura. Los despachados siguen contándose aparte, en la línea de
+    # producción, que es donde significan algo.
+    if ter.get("p1") and v["kg"]:
+        costo = round(v["kg"] * _f(ter["p1"]), 2)
         out["costo_despachado"] = costo
         out["margen"] = round(v["us"] - costo, 2)
         out["margen_pct"] = (round(100.0 * out["margen"] / v["us"], 1)
@@ -1001,7 +1013,10 @@ def mensaje_whatsapp(fecha=None) -> str:
     L.append("")
 
     p = r.get("produccion") or {}
-    if p.get("disponible") and not p.get("sin_fila"):
+    # Un 0 acá casi nunca significa "no se produjo": significa que todavía no
+    # cerró ninguna orden. A media mañana es siempre 0. Misma regla que el
+    # resto: si el dato no dice nada, la línea no va.
+    if p.get("disponible") and not p.get("sin_fila") and _f(p.get("producido")):
         linea = f"Producción  {_n(p.get('producido'))} kg"
         mes = p.get("mes") or {}
         if mes.get("producido"):
