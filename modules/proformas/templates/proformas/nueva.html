@@ -562,16 +562,59 @@
     const total = subCont - montoVol + flete;
     const obs = (document.querySelector('textarea[name="observaciones"]').value || '').trim();
 
-    const filasHtml = rows.map(r =>
-      `<tr><td>${esc(r.tipo)}</td><td>${esc(r.color)}</td>` +
-      (ES_PEDIDO ? '' : `<td class="r">${r.cant ? fmtCant(r.cant) + ' ' + esc(r.unidad) : ''}</td>`) +
-      `<td class="r">${fmt(r.kg)}</td><td class="r">${fmt(r.pu)}</td>` +
-      `<td class="r">${fmt(r.imp)}</td></tr>`).join('');
+    // ── Agrupar SOLO para el papel: bloque por TIPO, subbloque por COLOR ──
+    // Dueña 2026-08-05: "ingresaron fleece abajo pero al momento de imprimir
+    // se podría agrupar por tipo". En PANTALLA las filas no se mueven — Alex
+    // tipea en el orden que quiere y nada le salta bajo el cursor; el
+    // agrupado pasa recién acá.
+    // No alfabetiza: respeta el orden de PRIMERA APARICIÓN de cada tipo y de
+    // cada color, así el papel se parece a lo que se cargó. Tampoco funde
+    // filas: dos entradas de FLEECE/NEGRO siguen siendo dos líneas (son dos
+    // rollos), sólo quedan pegadas.
+    function agruparParaHoja(filas) {
+      const orden = [], porTipo = new Map();
+      filas.forEach(r => {
+        if (!porTipo.has(r.tipo)) {
+          porTipo.set(r.tipo, {tipo: r.tipo, colores: [], porColor: new Map(), kg: 0, imp: 0});
+          orden.push(r.tipo);
+        }
+        const g = porTipo.get(r.tipo);
+        g.kg += r.kg; g.imp += r.imp;
+        if (!g.porColor.has(r.color)) {
+          const c = {color: r.color, filas: [], kg: 0, imp: 0};
+          g.porColor.set(r.color, c); g.colores.push(c);
+        }
+        const c = g.porColor.get(r.color);
+        c.filas.push(r); c.kg += r.kg; c.imp += r.imp;
+      });
+      return orden.map(t => porTipo.get(t));
+    }
+
+    const NCOLS = ES_PEDIDO ? 4 : 5;
+    const totalKg = rows.reduce((a, r) => a + r.kg, 0);
+    const filasHtml = agruparParaHoja(rows).map(g => {
+      const cuerpo = g.colores.map((c, ci) => c.filas.map((r, ri) =>
+        `<tr${(ri === 0 && ci > 0) ? ' class="sep"' : ''}>` +
+        `<td class="c">${ri === 0 ? esc(c.color) : ''}</td>` +
+        (ES_PEDIDO ? '' : `<td class="r">${r.cant ? fmtCant(r.cant) + ' ' + esc(r.unidad) : ''}</td>`) +
+        `<td class="r">${fmt(r.kg)}</td><td class="r">${fmt(r.pu)}</td>` +
+        `<td class="r">${fmt(r.imp)}</td></tr>`
+      ).join('')).join('');
+      // Un tipo con una sola línea no lleva subtotal: repetiría el mismo número.
+      const nfilas = g.colores.reduce((a, c) => a + c.filas.length, 0);
+      const sub = nfilas > 1
+        ? `<tr class="sub"><td>Subtotal ${esc(g.tipo)}</td>` +
+          (ES_PEDIDO ? '' : '<td></td>') +
+          `<td class="r">${fmt(g.kg)}</td><td></td><td class="r">${fmt(g.imp)}</td></tr>`
+        : '';
+      return `<tr class="gt"><td colspan="${NCOLS}">${esc(g.tipo)}</td></tr>` + cuerpo + sub;
+    }).join('');
 
     const DOCNOM = ES_PEDIDO ? 'Factura Proforma' : 'COTIZACIÓN';
     const thCant = ES_PEDIDO ? '' : '<th class="r">Cantidad</th>';
 
-    let totHtml = `<div><span>Subtotal</span><span>${fmt(subtotal)}</span></div>`;
+    let totHtml = `<div><span>Kilos</span><span>${fmt(totalKg)}</span></div>`;
+    totHtml += `<div><span>Subtotal</span><span>${fmt(subtotal)}</span></div>`;
     if (montoCont > 0) {
       totHtml += `<div><span>Descuento por pronto pago (5%)</span><span>-${fmt(montoCont)}</span></div>`;
       totHtml += `<div><span>Subtotal c/desc</span><span>${fmt(subCont)}</span></div>`;
@@ -595,8 +638,16 @@
   .brand small{display:block;font-size:9px;color:#666;font-weight:normal;letter-spacing:0}
   h1{font-size:16px;margin:0} .muted{color:#666}
   .cli{margin-top:12px} table{width:100%;border-collapse:collapse;margin-top:10px}
-  th,td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:12px}
-  th{text-align:left;background:#f3f4f6;text-transform:uppercase;font-size:10px;letter-spacing:.5px;color:#555}
+  th,td{padding:3px 8px;font-size:12px}
+  th{text-align:left;background:#f3f4f6;text-transform:uppercase;font-size:10px;letter-spacing:.5px;color:#555;border-bottom:1px solid #ddd}
+  /* Bloque por TIPO y subbloque por COLOR, "ligeramente marcadas" (dueña):
+     el rayado fila por fila se sacó — las únicas líneas que quedan son las
+     que separan un grupo del siguiente. */
+  tr.gt td{padding:10px 8px 2px;font-weight:bold;letter-spacing:1px;color:#c0392b;border-bottom:1px solid #eee}
+  tbody tr.gt:first-child td{padding-top:4px}
+  tr.sep td{border-top:1px dotted #e6e6e6}
+  tr.sub td{border-top:1px solid #eee;color:#777;font-size:11px}
+  td.c{padding-left:18px;color:#333}
   td.r,th.r{text-align:right} .tot{margin-top:12px;width:300px;margin-left:auto}
   .tot div{display:flex;justify-content:space-between;padding:2px 0;color:#444}
   .tot .total{font-weight:bold;font-size:15px;color:#111;border-top:2px solid #111;margin-top:5px;padding-top:5px}
@@ -608,7 +659,7 @@
     <div style="text-align:right"><h1>${DOCNOM}</h1><div class="muted">${esc(fecha)}</div></div>
   </div>
   <div class="cli"><strong>Cliente:</strong> ${esc(codigo)}${nombre ? ' — ' + esc(nombre) : ''}</div>
-  <table><thead><tr><th>Tipo</th><th>Color</th>${thCant}<th class="r">Kg</th><th class="r">Precio c/IVA</th><th class="r">Importe</th></tr></thead>
+  <table><thead><tr><th>Tipo / Color</th>${thCant}<th class="r">Kg</th><th class="r">Precio c/IVA</th><th class="r">Importe</th></tr></thead>
   <tbody>${filasHtml}</tbody></table>
   <div class="tot">${totHtml}</div>
   ${obs ? `<div class="obs"><strong>Observaciones:</strong> ${esc(obs)}</div>` : ''}

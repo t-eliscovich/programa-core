@@ -78,3 +78,37 @@ def test_la_lista_de_precios_en_pantalla_sigue_NETA(matriz_fake):
     el IVA moviéndolo a la tabla, este test cae."""
     assert precios_queries.factor_hoja(0, con_iva=False) == 1.0
     assert precios_queries.factor_hoja(0, con_iva=True) == pytest.approx(1.15)
+
+
+# ---------------------------------------------------------------------------
+# La hoja impresa agrupa por TIPO y subagrupa por COLOR (dueña 2026-08-05:
+# "ingresaron fleece abajo pero al momento de imprimir se podría agrupar por
+# tipo?"). El armado es JS del lado del cliente, así que acá sólo se ata que
+# las piezas sigan estando: el render se verifica corriendo el template en
+# jsdom (ver skill precios-lista).
+# ---------------------------------------------------------------------------
+_NUEVA = "modules/proformas/templates/proformas/nueva.html"
+
+
+def _plantilla() -> str:
+    from pathlib import Path
+    return Path(_NUEVA).read_text(encoding="utf-8")
+
+
+def test_la_hoja_agrupa_por_tipo_y_color():
+    t = _plantilla()
+    assert "function agruparParaHoja" in t
+    # El tipo dejó de ser una columna: ahora es la banda del grupo.
+    assert "<th>Tipo / Color</th>" in t
+    assert "tr class=\"gt\"" in t          # banda del tipo
+    assert "Subtotal ${esc(g.tipo)}" in t  # cierre de cada bloque
+
+
+def test_la_pantalla_NO_se_reordena_mientras_se_carga():
+    """Alex tipea en el orden que quiere: si las filas se ordenaran solas, se
+    le moverían bajo el cursor. `recalc` recorre el tbody tal cual está."""
+    t = _plantilla()
+    cuerpo = t.split("function recalc()")[1].split("function ")[0]
+    assert "body.querySelectorAll('tr').forEach" in cuerpo
+    assert "sort" not in cuerpo
+    assert "agruparParaHoja" not in cuerpo
