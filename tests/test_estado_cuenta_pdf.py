@@ -503,6 +503,8 @@ def test_los_anchos_de_las_dos_tablas_suman_100_sobre_lo_que_SE_IMPRIME():
                 r"\.ec-bloque-(facturas|cheques) table (?:th|tbody td)"
                 r":nth-child\((\d+)\)", selectores):
             anchos[bloque][int(n)] = float(m.group(1))
+        for n in re.findall(r"\.ec-bloque-facturas table \.(ec-c-[a-z]+)", selectores):
+            anchos["facturas"][n] = float(m.group(1))
 
     for bloque in ("facturas", "cheques"):
         assert f"ec-bloque-{bloque} table {{ table-layout: fixed !important; }}" in css, (
@@ -515,10 +517,12 @@ def test_los_anchos_de_las_dos_tablas_suman_100_sobre_lo_que_SE_IMPRIME():
         )
     # Y a las columnas que no se imprimen no se les declara ancho: si se les
     # declara, su porcentaje se pierde del reparto.
-    for n in (3, 8):
-        assert n not in anchos["facturas"], (
-            f"la columna {n} de facturas es no-print: no puede llevar ancho"
-        )
+    # Y facturas reparte por NOMBRE de columna, no por posición: tiene 9
+    # columnas en pantalla y 7 en el papel, así que `nth-child` cae en la
+    # columna equivocada según de dónde salga la hoja.
+    assert not any(isinstance(k, int) for k in anchos["facturas"]), (
+        "facturas volvió a repartir por nth-child"
+    )
 
 
 def test_dias_no_se_come_un_sexto_de_la_hoja():
@@ -540,13 +544,9 @@ def test_dias_no_se_come_un_sexto_de_la_hoja():
         m = re.search(r"(?:^|[;\s])width:\s*([\d.]+)\s*%", cuerpo)
         if not m:
             continue
-        for n in re.findall(
-                r"\.ec-bloque-facturas table (?:th|tbody td):nth-child\((\d+)\)",
-                selectores):
-            anchos[int(n)] = float(m.group(1))
-    # 9 = Días: dos dígitos, no puede llevarse más que una columna de importes.
-    assert anchos[9] <= 10, f"Días en {anchos[9]}%: deja un hueco muerto a la derecha"
-    for n in (4, 5, 6, 7):   # Importe, Abonado, Saldo, Acum.
-        assert anchos[n] >= anchos[9], (
-            f"la columna {n} (plata) es más angosta que Días"
-        )
+        for c in re.findall(r"\.ec-bloque-facturas table \.(ec-c-[a-z]+)", selectores):
+            anchos[c] = float(m.group(1))
+    assert anchos["ec-c-dias"] <= 10, (
+        f'Días en {anchos["ec-c-dias"]}%: deja un hueco muerto a la derecha')
+    for c in ("ec-c-imp", "ec-c-abo", "ec-c-sal", "ec-c-acum"):
+        assert anchos[c] >= anchos["ec-c-dias"], f"{c} más angosta que Días"
