@@ -529,6 +529,35 @@
            ⚠️ Es a propósito que el override quede ACOTADO al estado de cuenta
            impreso: en pantalla, y en todo el resto de la app, los bordes
            siguen negros. Si se generaliza, se rompe el pedido de contraste. */
+        /* ── Nada de barras de scroll ni tablas a medio ancho en el papel ──
+           Dueña 2026-08-05, marcando con una X el hueco blanco a la derecha
+           de las facturas: *"esa parte en blanco está de eliminar porfa, no sé
+           por qué la pusiste"*.
+
+           No estaba puesta a propósito ni venía del HTML: el layout impreso
+           medido en el navegador da la tabla a 816 de 816 px, sin scroll. El
+           hueco —y una barra de scroll PINTADA dentro de la hoja— los mete el
+           Chromium headless que genera el PDF (`pdf_motor`, `--print-to-pdf`),
+           que no rinde igual que el print del navegador.
+
+           Por eso va explícito en vez de confiar en el default: los bloques no
+           scrollean ni se recortan, y las dos tablas ocupan el ancho completo.
+           `scrollbar-width: none` es lo que evita que la barra se dibuje en el
+           papel. Todo dentro de `@media print` y acotado al estado de cuenta. */
+        :root:not(.dark) main .ec-bloque-facturas,
+        :root:not(.dark) main .ec-bloque-cheques {
+          overflow: visible !important;
+          max-height: none !important;
+          scrollbar-width: none !important;
+        }
+        :root:not(.dark) main .ec-bloque-facturas table,
+        :root:not(.dark) main .ec-bloque-cheques  table {
+          width: 100% !important;
+          min-width: 100% !important;
+          max-width: none !important;
+        }
+        main *::-webkit-scrollbar { display: none !important; width: 0 !important; }
+
         :root:not(.dark) main .ec-bloque-facturas table tbody td,
         :root:not(.dark) main .ec-bloque-cheques  table tbody td {
           border-top: 0 !important;

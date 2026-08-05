@@ -677,3 +677,22 @@ def test_sin_numero_de_cheque_la_celda_queda_vacia():
     frag = IMPRESO[IMPRESO.index("{% set _num_ch %}"):]
     frag = frag[:frag.index("{% endset %}")]
     assert "mdash" not in frag and "—" not in frag
+
+
+def test_el_papel_no_lleva_scroll_ni_tablas_a_medio_ancho():
+    """Dueña 05/08, marcando con una X el hueco blanco: "esa parte en blanco
+    está de eliminar porfa, no sé por qué la pusiste".
+
+    No venía del HTML: el layout impreso medido en el navegador da la tabla al
+    100%. Lo mete el Chromium headless de `pdf_motor` (`--print-to-pdf`), que
+    además pinta una barra de scroll DENTRO de la hoja. Por eso el ancho y el
+    no-scroll van explícitos en vez de confiar en el default.
+    """
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", IMPRESO[IMPRESO.index("@media print"):], flags=re.S)
+    assert "scrollbar-width: none !important" in css
+    assert "::-webkit-scrollbar" in css
+    for prop in ("width: 100% !important", "max-height: none !important",
+                 "overflow: visible !important"):
+        assert prop in css, prop
