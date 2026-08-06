@@ -1211,23 +1211,38 @@
             </button>
             <div id="campanita-pop"
                  class="hidden absolute right-0 mt-2 bg-white z-50"
-                 style="width:22rem;border:1px solid rgb(226 232 240);border-radius:10px;box-shadow:0 10px 24px -6px rgb(15 23 42 / .18);overflow:hidden;">
+                 style="width:26rem;border:1px solid rgb(226 232 240);border-radius:10px;box-shadow:0 10px 24px -6px rgb(15 23 42 / .18);overflow:hidden;">
               <div style="padding:8px 12px;background:rgb(248 250 252);border-bottom:1px solid rgb(241 245 249);display:flex;align-items:center;justify-content:space-between;">
                 <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgb(100 116 139);font-weight:600;">Novedades</span>
                 {% if _ab.n %}<span style="font-size:10px;color:rgb(148 163 184);">{{ _ab.n }} nueva{{ '' if _ab.n == 1 else 's' }}</span>{% endif %}
               </div>
               <div style="max-height:19rem;overflow-y:auto;">
                 {% for a in _ab['items'] %}
-                <div style="padding:9px 12px;display:flex;align-items:flex-start;gap:8px;{% if not loop.last %}border-bottom:1px solid rgb(241 245 249);{% endif %}">
+                {# TMT 2026-08-06 (dueña): si el aviso trae url, el item ES el
+                   link — como el "ver →" de la pantalla Novedades, pero acá
+                   con la fila entera clickeable (ej: "cargarle cupo y
+                   descuento" te lleva derecho a editar el cliente).
+                   Tailwind congelado → hover por onmouseover, no clase. #}
+                {% set _fila = 'padding:9px 12px;display:flex;align-items:flex-start;gap:8px;' ~ ('' if loop.last else 'border-bottom:1px solid rgb(241 245 249);') %}
+                {% if a.url %}
+                <a href="{{ a.url }}"
+                   style="{{ _fila }}text-decoration:none;cursor:pointer;"
+                   onmouseover="this.style.background='rgb(248 250 252)'"
+                   onmouseout="this.style.background=''">
+                {% else %}
+                <div style="{{ _fila }}">
+                {% endif %}
                   <span style="font-size:13px;line-height:1.3;">{{ a.icono }}</span>
                   <div style="flex:1 1 auto;min-width:0;">
-                    <div style="font-size:12.5px;font-weight:600;color:rgb(30 41 59);line-height:1.35;">{{ a.titulo }}</div>
+                    {# TMT 2026-08-06 (dueña): "que ocupe menos lugar" — sin la
+                       línea "ver →": el TÍTULO se pinta de link cuando hay url. #}
+                    <div style="font-size:12.5px;font-weight:600;color:rgb({{ '3 105 161' if a.url else '30 41 59' }});line-height:1.35;">{{ a.titulo }}</div>
                     {% if a.detalle %}
                     <div style="font-size:11.5px;color:rgb(100 116 139);line-height:1.35;margin-top:1px;">{{ a.detalle }}</div>
                     {% endif %}
                   </div>
                   <span style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;">{{ a.cuando or a.creado_en }}</span>
-                </div>
+                {% if a.url %}</a>{% else %}</div>{% endif %}
                 {% else %}
                 <div style="padding:14px 12px;font-size:11.5px;color:rgb(100 116 139);line-height:1.45;">
                   Sin novedades. Acá te aviso cuando el programa carga solo

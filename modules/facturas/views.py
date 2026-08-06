@@ -3,6 +3,7 @@ import threading as _threading
 import time as _time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote as _urlquote
 
 from flask import (
     Blueprint,
@@ -1758,7 +1759,9 @@ def _resolver_cliente_asinfo(
                 nivel="alerta",
                 titulo=f"Cliente nuevo {nuevo} — cargarle cupo y descuento",
                 detalle=(nombre or "")[:150],
-                url=f"/clientes?q={nuevo}",
+                # Directo a EDITAR (ahí viven cupo y descuento) — misma
+                # URL que arma el sync. TMT 2026-08-06 (dueña).
+                url=f"/clientes/{_urlquote(nuevo)}/editar",
                 clave=f"cliente-nuevo-{nuevo}",
             )
         except Exception:  # noqa: BLE001 — el aviso nunca frena la carga

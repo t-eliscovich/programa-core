@@ -41,6 +41,7 @@ import re
 import threading
 import time as _time
 from datetime import UTC, datetime
+from urllib.parse import quote as _quote
 
 import db
 
@@ -271,7 +272,11 @@ def _alta(a: dict, usuario: str) -> bool:
         nivel="alerta",
         titulo=f"Cliente nuevo {a['cod']} — cargarle cupo y descuento",
         detalle=(a["nombre"] or "")[:150],
-        url=f"/clientes?q={a['cod']}",
+        # Directo a la pantalla de EDITAR, que es donde se cargan cupo y
+        # descuento — no a la lista filtrada. TMT 2026-08-06 (dueña): el
+        # click de la campanita te tiene que llevar derecho a cargarlos.
+        # quote() porque hay códigos con caracteres raros (D´J existe).
+        url=f"/clientes/{_quote(a['cod'])}/editar",
         clave=f"cliente-nuevo-{a['cod']}",
     )
     return True

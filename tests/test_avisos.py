@@ -318,6 +318,17 @@ def test_la_campanita_lee_el_buzon_global_y_apunta_a_novedades():
     assert "url_for(\"avisos.leidos\")" in base  # abrir = leer
 
 
+def test_la_campanita_hace_click_al_url_del_aviso():
+    """TMT 2026-08-06 (dueña): "en las notificaciones hay un clic de ver;
+    acá también debería llevarte directo a la página" — la fila del popup
+    con `url` es un <a>, igual que el `ver →` de la pantalla Novedades."""
+    from pathlib import Path
+
+    base = Path("templates/base.html").read_text()
+    assert '{% if a.url %}' in base
+    assert '<a href="{{ a.url }}"' in base
+
+
 def test_el_insert_del_aviso_COMMITEA():
     """El bug que dejó el buzón vacío desde que se estrenó (TMT 2026-07-30).
 

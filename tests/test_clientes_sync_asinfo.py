@@ -124,7 +124,9 @@ def test_alta_nueva_crea_y_deja_campanita(monkeypatch):
     aviso = cap["avisos"][0]
     assert aviso["clave"] == "cliente-nuevo-VA2"
     assert "cupo y descuento" in aviso["titulo"]
-    assert aviso["url"] == "/clientes?q=VA2"
+    # TMT 2026-08-06 (dueña): el click te lleva DERECHO a editar el
+    # cliente (ahí viven cupo y descuento), no a la lista filtrada.
+    assert aviso["url"] == "/clientes/VA2/editar"
 
 
 def test_ruc_repetido_es_conflicto_no_alta(monkeypatch):
