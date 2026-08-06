@@ -85,6 +85,25 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("tejeduría (fondo): %s", e)
+            # TMT 2026-08-05 (dueña): el sync del maestro de CLIENTES con
+            # Asinfo corre solo a las 11:00 y 16:00 EC — sin cron del EC2,
+            # igual que todo lo demás de este ciclo. El guard de ventana vive
+            # en el log del sync (una corrida manual dentro de la ventana
+            # también cuenta). SYNC_CLIENTES_AUTO=0 lo apaga.
+            try:
+                from modules.clientes import sync_asinfo as _sync_cli
+                sc = _sync_cli.correr_si_toca()
+                if sc.get("corrio"):
+                    rep = sc.get("reporte") or {}
+                    _LOG.info(
+                        "sync clientes (fondo): %s actualizados, altas: %s, "
+                        "%s conflictos",
+                        rep.get("actualizados", 0),
+                        ", ".join(rep.get("altas") or []) or "ninguna",
+                        len(rep.get("conflictos") or []),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("sync clientes (fondo): %s", e)
             # TMT 2026-07-30 (dueña): las COMPRAS LOCALES de hilo (HY, EP) se
             # cargan solas cuando Asinfo marca la recepción — no tienen anticipo,
             # así que el pasivo nace al recibir. Mismo patrón que tejeduría: kg de

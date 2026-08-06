@@ -7,6 +7,8 @@ descuento jamás, alta nueva → campanita, RUC repetido → conflicto sin alta.
 """
 from __future__ import annotations
 
+from datetime import UTC
+
 import db
 from modules.clientes import sync_asinfo as sa
 
@@ -188,3 +190,68 @@ def test_auto_create_de_facturas_deja_campanita(monkeypatch):
     assert (cod, creado) == ("ZZZ", True)
     assert avisos and avisos[0]["clave"] == "cliente-nuevo-ZZZ"
     assert "cupo y descuento" in avisos[0]["titulo"]
+
+
+# ─── correr_si_toca: las ventanas 11:00/16:00 EC sin cron del EC2 ──────────
+
+def _reset_freno(monkeypatch):
+    monkeypatch.setattr(sa, "_auto_ultimo_check", 0.0)
+
+
+def test_ventana_utc():
+    from datetime import datetime
+    def mk(h, m=0):
+        return datetime(2026, 8, 5, h, m)
+
+    assert sa._inicio_ventana_utc(mk(10)) is None            # 05:00 EC: nada
+    assert sa._inicio_ventana_utc(mk(16, 5)) == mk(16)       # 11:05 EC → ventana 11
+    assert sa._inicio_ventana_utc(mk(20, 59)) == mk(16)      # 15:59 EC → sigue la de 11
+    assert sa._inicio_ventana_utc(mk(21, 1)) == mk(21)       # 16:01 EC → ventana 16
+    assert sa._inicio_ventana_utc(mk(23, 59)) == mk(21)
+
+
+def test_correr_si_toca_respeta_ventana_y_log(monkeypatch):
+    _reset_freno(monkeypatch)
+    corridas = []
+    monkeypatch.setattr(sa, "sincronizar", lambda usuario: corridas.append(usuario) or {"ok": True})
+    monkeypatch.setattr(sa, "asegurar_tabla", lambda: None)
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: None)  # no corrió aún
+
+    from datetime import datetime, timezone
+
+    class _FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 8, 5, 16, 10, tzinfo=UTC)  # 11:10 EC
+
+    monkeypatch.setattr(sa, "datetime", _FakeDT)
+    r = sa.correr_si_toca()
+    assert r["corrio"] is True and corridas == ["auto-sync-clientes"]
+
+    # segunda pasada: el log ya tiene una corrida en la ventana → no repite
+    _reset_freno(monkeypatch)
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: {"x": 1})
+    r2 = sa.correr_si_toca()
+    assert r2["corrio"] is False and len(corridas) == 1
+
+
+def test_correr_si_toca_fuera_de_ventana_no_corre(monkeypatch):
+    _reset_freno(monkeypatch)
+    corridas = []
+    monkeypatch.setattr(sa, "sincronizar", lambda usuario: corridas.append(usuario))
+
+    from datetime import datetime, timezone
+
+    class _FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 8, 5, 12, 0, tzinfo=UTC)  # 07:00 EC
+
+    monkeypatch.setattr(sa, "datetime", _FakeDT)
+    assert sa.correr_si_toca()["corrio"] is False and corridas == []
+
+
+def test_correr_si_toca_apagado(monkeypatch):
+    _reset_freno(monkeypatch)
+    monkeypatch.setenv("SYNC_CLIENTES_AUTO", "0")
+    assert sa.correr_si_toca()["corrio"] is False

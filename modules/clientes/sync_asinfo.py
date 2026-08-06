@@ -36,7 +36,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import threading
+import time as _time
+from datetime import UTC, datetime
 
 import db
 
@@ -331,3 +335,68 @@ def ultimas_corridas(limite: int = 10) -> list[dict]:
         except (ValueError, TypeError):
             r["reporte"] = {}
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Corre SOLO, sin cron del EC2 — TMT 2026-08-05 (dueña: "las importaciones y
+# las facturas no están hechas por EC2, no hacemos eso"). Mismo patrón que la
+# autocarga de facturas / tejeduría / químicos: el hilo de fondo de
+# modules/_lib/autocarga_facturas.py llama `correr_si_toca()` cada ~2 min y
+# ACÁ se decide si toca. Ventanas pedidas: 11:00 y 16:00 hora Ecuador
+# (= 16:00 y 21:00 UTC; el server y Postgres están en UTC).
+#
+# El guard de "ya corrió en esta ventana" NO es en memoria: mira el log
+# (`clientes_sync_asinfo_log`), así un restart del server no lo repite y una
+# corrida MANUAL dentro de la ventana también cuenta. SYNC_CLIENTES_AUTO=0
+# lo apaga.
+# ---------------------------------------------------------------------------
+
+_VENTANAS_UTC = (16, 21)  # 11:00 y 16:00 Ecuador (UTC-5)
+_CHECK_MIN_SECS = 300     # mirar el log a lo sumo cada 5 min
+_auto_lock = threading.Lock()
+_auto_ultimo_check = 0.0
+
+
+def _inicio_ventana_utc(ahora_utc: datetime) -> datetime | None:
+    """El comienzo de la ventana vigente, o None si todavía no abrió ninguna.
+
+    Después de medianoche UTC (19:00 EC) no abre ninguna: las dos corridas
+    del día ya pasaron.
+    """
+    inicio = None
+    for h in _VENTANAS_UTC:
+        cand = ahora_utc.replace(hour=h, minute=0, second=0, microsecond=0)
+        if cand <= ahora_utc:
+            inicio = cand
+    return inicio
+
+
+def correr_si_toca() -> dict:
+    """Entrada del hilo de fondo. Nunca levanta."""
+    res = {"corrio": False}
+    if os.environ.get("SYNC_CLIENTES_AUTO", "1") == "0":
+        return res
+    global _auto_ultimo_check
+    ahora_mono = _time.monotonic()
+    with _auto_lock:
+        if _auto_ultimo_check and (ahora_mono - _auto_ultimo_check) < _CHECK_MIN_SECS:
+            return res
+        _auto_ultimo_check = ahora_mono
+    try:
+        ahora_utc = datetime.now(UTC)
+        inicio = _inicio_ventana_utc(ahora_utc)
+        if inicio is None:
+            return res
+        asegurar_tabla()
+        ya = db.fetch_one(
+            "SELECT 1 AS x FROM scintela.clientes_sync_asinfo_log "
+            "WHERE ok AND corrido >= %s LIMIT 1",
+            (inicio.replace(tzinfo=None),),
+        )
+        if ya:
+            return res
+        res["corrio"] = True
+        res["reporte"] = sincronizar(usuario="auto-sync-clientes")
+    except Exception as e:  # noqa: BLE001 — el hilo no se cae por esto
+        _LOG.warning("sync clientes (fondo): %s", e)
+    return res

@@ -1,16 +1,19 @@
-"""Entrypoint del cron: sync del maestro de clientes Asinfo → PC.
+"""Corrida MANUAL del sync de clientes Asinfo → PC (para debug en el server).
 
-Corre 2× por día en el EC2 (Scheduled Task "Intela-Sync-Clientes-Asinfo",
-11:00 y 16:00 hora Ecuador = 16:00 y 21:00 UTC). No va por HTTP: carga el
-.env (python-dotenv, igual que check_salud_dia.py), abre el pool y llama a
-`modules.clientes.sync_asinfo.sincronizar()` directo — el mismo código que
-el botón "Sincronizar ahora" de /clientes/sync-asinfo.
+⚠ NO hay Scheduled Task del EC2 para esto (dueña 05/08/2026: "no hacemos
+eso" — nada de este ciclo va por cron del EC2). Las corridas automáticas de
+las 11:00 y 16:00 EC las hace el hilo de fondo de la app
+(`modules/_lib/autocarga_facturas.py` → `sync_asinfo.correr_si_toca()`).
+
+Este script queda como entrypoint manual: carga el .env (python-dotenv,
+igual que check_salud_dia.py), abre el pool y llama a `sincronizar()` —
+el mismo código que el botón "Sincronizar ahora" de /clientes/sync-asinfo.
 
 Exit code 0 si el pase corrió (aunque haya conflictos: son para personas),
 1 si ni siquiera pudo correr (Metabase caído, DB caída). Imprime el reporte
-en JSON para el log del Scheduled Task.
+en JSON.
 
-Uso manual:
+Uso:
     python scripts/sync_clientes_asinfo.py
 """
 from __future__ import annotations
