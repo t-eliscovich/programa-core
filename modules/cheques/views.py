@@ -41,27 +41,6 @@ def _conceptos_cobro_ctx():
     }
 
 
-def no_banco_efectivo(no_banco: int | None, medio: int | None) -> int | None:
-    """Banco REAL de un cobro. Para un anticipo (97) lo fija el MEDIO.
-
-    TMT 2026-08-06 (dueña): el medio `97 · SIN MOVIMIENTO (ajuste)` significa
-    *"entró plata que no sabemos por dónde"* — el cliente paga algo que no
-    está facturado. El banco queda en 97 y por lo tanto **no se genera
-    movimiento de banco**: sólo los medios 90/91 lo hacen (ver
-    `queries::_genera_mov_banco`), y el 99 abre caja.
-
-    Antes el medio era OBLIGATORIO y no existía esta opción, así que para
-    cargar el ajuste había que elegir caja o un banco — inventando plata que
-    la conciliación después levantaba como pendiente fantasma.
-    """
-    if no_banco != 97:
-        return no_banco
-    # Medio vacío o el propio 97 → el anticipo no toca banco ni caja.
-    if medio and medio != 97:
-        return medio
-    return 97
-
-
 def fechad_por_defecto(
     *,
     es_deposito: bool,
@@ -326,7 +305,8 @@ def nuevo():
         _medio = None
         if nb_clean == 97:
             _medio = parse_int(medios_anticipo_raw[i]) if i < len(medios_anticipo_raw) else None
-            nb_clean = no_banco_efectivo(nb_clean, _medio)
+            if _medio:
+                nb_clean = _medio
         # Para bancos depósito: si N° cheque vacío, lo dejamos vacío (no req).
         # Pero si NO es depósito, el N° cheque queda como vino.
         es_deposito = (nb_clean in _BANCOS_DEPOSITO)

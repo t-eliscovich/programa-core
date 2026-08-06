@@ -275,21 +275,13 @@
                       <option value="99">99 · EFECTIVO</option>
                       <option value="90">90 · DEP.PICH.</option>
                       <option value="91">91 · DEP. INTER.</option>
-                      {# TMT 2026-08-06 (dueña): el cliente paga algo que no
-                         está facturado y no sabemos por dónde entró. Antes el
-                         medio era obligatorio y forzaba a elegir caja o banco,
-                         inventando plata que la conciliación después marcaba
-                         como pendiente fantasma. Con 97 el no_banco queda en
-                         97 (ANTICIPO) y NO se genera mov de banco — sólo los
-                         medios 90/91 lo hacen (queries.py::_genera_mov_banco). #}
-                      <option value="97">97 · SIN MOVIMIENTO (ajuste)</option>
                       {% for b in bancos %}
                         {% if b.no_banco|int < 90 %}
                         <option value="{{ b.no_banco }}">{{ b.no_banco }} · {{ b.nombre }}</option>
                         {% endif %}
                       {% endfor %}
                     </select>
-                    <span class="text-[11px] text-slate-500 mt-0.5">Si no aplicás a ninguna factura abajo, queda como <strong>anticipo</strong> (saldo a favor). <strong>Sin movimiento</strong> = entró plata que no sabemos por dónde: no toca banco ni caja.</span>
+                    <span class="text-[11px] text-slate-500 mt-0.5">Si no aplicás a ninguna factura abajo, queda como <strong>anticipo</strong> (saldo a favor).</span>
                   </label>
                 </div>
               </div>
