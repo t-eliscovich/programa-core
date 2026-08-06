@@ -68,14 +68,24 @@
        donde el útil es ~554. 537/554 = 0,969, el número exacto que daba la
        medición.
 
-       La suma es 537,6 pt = el ancho útil de la hoja **A4** con los márgenes
-       actuales, medido sobre la hoja que imprime la dueña: el texto y la tabla
-       de cheques van de 28,5 a 566,2 (márgenes de 10,1 mm a cada lado).
+       ⚠️ Los anchos van en **vw**, no en pt ni en %, y esa es la clave:
 
-       ⚠️ Y el papel se fija con `size: A4` arriba. Sin eso hay DOS salidas con
-       anchos distintos —el navegador imprime A4 y el endpoint /pdf sale Letter—
-       y un número absoluto no puede servir para las dos: se ajusta una y se
-       rompe la otra. Eso fue exactamente lo que pasó.
+         · `%` NO sirve: se resuelve contra el ancho de la TABLA, que en este
+           motor es justamente lo que no llega al 100%. Circular.
+         · `pt` NO sirve: el número queda atado al PAPEL. Hay DOS salidas con
+           anchos distintos —la dueña imprime desde el navegador en A4 (595 pt)
+           y el endpoint /pdf sale en LETTER (612 pt), porque `--print-to-pdf`
+           IGNORA el `size: A4` del CSS (verificado: el MediaBox dice 612x792)—.
+           Cualquier valor fijo acierta en una y falla en la otra, y eso fue lo
+           que pasó dos veces: 537 dejaba 3% sin usar en Letter, 554 desbordaba
+           en A4.
+         · `vw` en medios paginados se resuelve contra el ANCHO DE LA PÁGINA,
+           así que escala solo con el papel.
+
+       Suma = 92,0vw. El útil es 92,4% en A4 y 92,6% en Letter con los márgenes
+       de `@page` (8 mm), o sea prácticamente el mismo porcentaje en las dos:
+       por eso un solo número sirve. Se dejan ~0,4 puntos de aire para no
+       desbordar.
 
        🚨 Si se cambia el papel o el margen de `@page`, hay que rehacer esta
        suma. La forma de medirla: bajar el PDF, descomprimir el content stream
@@ -84,9 +94,9 @@
     {% if not interactivo %}
     <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
       <colgroup>
-        <col style="width:64.5pt"><col style="width:64.5pt"><col style="width:91.4pt">
-        <col style="width:91.4pt"><col style="width:91.4pt"><col style="width:91.4pt">
-        <col style="width:43.0pt">
+        <col style="width:11.04vw"><col style="width:11.04vw"><col style="width:15.64vw">
+        <col style="width:15.64vw"><col style="width:15.64vw"><col style="width:15.64vw">
+        <col style="width:7.36vw">
       </colgroup>
     {% else %}
     <table class="w-full text-sm">
