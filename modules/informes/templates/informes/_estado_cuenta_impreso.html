@@ -94,7 +94,25 @@
         <col style="width:43.9pt">
       </colgroup>
     {% else %}
-    <table class="w-full text-sm">
+    {# PANTALLA: las MISMAS medidas, pero con las dos columnas que no se
+       imprimen (Tipo = 3ª, Stat = 8ª) en 0 — en pantalla existen, en el papel
+       las esconde `no-print` y su 0 no le quita ancho a nadie.
+
+       ⚠️ Esto es lo que faltaba. El `colgroup` estaba SÓLO en la rama no
+       interactiva —la del endpoint /pdf, que era la que yo medía— así que la
+       dueña, que imprime desde la PANTALLA con el botón Imprimir, seguía
+       viendo el layout viejo del 88%. Dos rutas de impresión y yo arreglaba
+       una sola: por eso mis mediciones daban 1,000 y su hoja no cambiaba.
+       En pantalla los anchos se neutralizan con `@media screen`. #}
+    <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
+      <colgroup>
+        <col class="ec-col" style="width:65.9pt"><col class="ec-col" style="width:65.9pt">
+        <col class="ec-col" style="width:0">
+        <col class="ec-col" style="width:93.3pt"><col class="ec-col" style="width:93.3pt">
+        <col class="ec-col" style="width:93.3pt"><col class="ec-col" style="width:93.3pt">
+        <col class="ec-col" style="width:0">
+        <col class="ec-col" style="width:43.9pt">
+      </colgroup>
     {% endif %}
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
@@ -493,6 +511,13 @@
    de impresión"— porque este parcial es el cuerpo del estado de cuenta y lo
    incluyen tanto la pantalla individual como la impresión en lote. #}
 <style>
+  /* En PANTALLA la tabla de facturas queda como estaba: los anchos del
+     `colgroup` son para el PAPEL. Sin esto la vista interactiva quedaría con
+     las columnas fijas y Tipo/Stat en cero. */
+  @media screen {
+    .ec-bloque-facturas table { table-layout: auto !important; }
+    .ec-bloque-facturas col.ec-col { width: auto !important; }
+  }
       @media print {
         .ec-cierre { padding: 1pt 0 0 0 !important; font-size: 8pt !important; }
         .ec-cierre > div { max-width: 62mm !important; margin-left: auto !important;

@@ -600,7 +600,11 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     tpl = Path("modules/informes/templates/informes/"
                "_estado_cuenta_impreso.html").read_text()
     bloque = tpl[tpl.index("ec-bloque-facturas"):tpl.index("</thead>")]
-    assert "<colgroup>" in bloque, "sin colgroup el ancho vuelve a depender del CSS"
+    assert bloque.count("</colgroup>") == 2, (
+        "el colgroup tiene que estar en las DOS ramas: /pdf usa la no "
+        "interactiva y el botón Imprimir de la pantalla usa la interactiva. "
+        "Con una sola, una de las dos rutas imprime mal."
+    )
     assert 'style="table-layout: fixed; width: 100%; min-width: 100%;"' in bloque, (
         "sin `min-width: 100%` la tabla se queda en la SUMA de sus columnas "
         "(el width:100% no se resuelve en el motor de PDF) y el ancho queda "
