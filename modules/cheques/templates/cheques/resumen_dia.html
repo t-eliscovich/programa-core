@@ -78,6 +78,15 @@
   .badge-t { color:#047857; border-color:#047857; background:#ecfdf5; }
   .badge-a { color:#b45309; border-color:#b45309; background:#fffbeb; }
   .neg { color:#b91c1c; }
+  /* TMT 2026-08-06 (Alex): observación libre de Alex. Va al pie de la celda
+     "Facturas que paga" (última col — la única que ya expande varias líneas),
+     en cursiva chica y gris, para no descuadrar las columnas de la izquierda.
+     El @media print la deja negra chica igual que el resto del texto de la hoja. */
+  .obs { display:block; font-size:10.5px; color:#475569; font-style:italic;
+         margin-top:3px; white-space:normal; word-wrap:break-word; }
+  @media print {
+    .obs { font-size: 7.5pt !important; color: #000 !important; font-style: italic; }
+  }
 </style>
 
 {% set activo = 'resumen' %}
@@ -217,6 +226,9 @@
               <span class="facts">anticipo · saldo a favor del cliente</span>
             {% else %}
               <span class="facts">— sin aplicar a facturas</span>
+            {% endif %}
+            {% if c.nota_usuario %}
+              <span class="obs" data-testid="res-obs">{{ c.nota_usuario | cleanstr }}</span>
             {% endif %}
           </td>
         </tr>

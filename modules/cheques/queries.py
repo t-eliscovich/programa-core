@@ -34,6 +34,7 @@ from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
 from . import concepto_cobro as _concepto_cobro
+from . import nota_usuario as _nota_usuario
 
 # Día de INGRESO de un cobro — la fecha con la que el dBase arma sus listados
 # del día (`FECHING`). Es UNA sola definición porque hay DOS pantallas que la
@@ -323,6 +324,7 @@ def editar(
     *,
     concepto: str | None = None,
     observacion: str | None = None,
+    nota_usuario: str | None = None,
     fechad: date | None = None,
     importe: float | None = None,
     no_cheque: str | None = None,
@@ -416,6 +418,14 @@ def editar(
         _concepto_cobro.bootstrap_columna()
         sql_set.append("concepto=%s")
         params.append(_concepto_col)
+    # TMT 2026-08-06 (Alex): observación de texto libre EDITABLE (`nota_usuario`).
+    # Va a columna propia — NO al append de `observacion`, que es una bitácora
+    # de tags del sistema. Ver `modules/cheques/nota_usuario.py`. Si el form
+    # manda "" (string vacío tras strip), se guarda como NULL (borrado).
+    if nota_usuario is not None:
+        _nota_usuario.bootstrap_columna()
+        sql_set.append("nota_usuario=%s")
+        params.append(_nota_usuario.limpiar(nota_usuario))
     if obs_marca:
         sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
         params.append(obs_marca)
@@ -2263,6 +2273,9 @@ def por_id(id_cheque: int) -> dict | None:
     real en la URL (ej. 1234) en lugar del id_cheque interno. Esta función
     acepta ambos — prioriza no_cheque si hay match y fallback a id_cheque.
     """
+    # TMT 2026-08-06: `nota_usuario` es columna nueva y el deploy no corre
+    # migraciones — bootstrap en caliente antes de SELECTearla.
+    _nota_usuario.bootstrap_columna()
     return db.fetch_one(
         """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
@@ -2274,6 +2287,7 @@ def por_id(id_cheque: int) -> dict | None:
                -- TMT 2026-05-27 dueña: doc_banco editable inline (separado
                -- del no_cheque). Card propio en detalle.
                c.doc_banco,
+               c.nota_usuario,
                COALESCE(cli.nombre, '') AS cliente,
                cli.ruc, cli.telefono,
                -- TMT 2026-07-07: espejo de anticipo (NB=98 negativo o banco
@@ -5296,6 +5310,9 @@ def buscar(
                      cuando estado='todos'. Tab "Eliminados" siempre los
                      muestra. Pedido TMT 2026-05-14 (#40 audit).
     """
+    # TMT 2026-08-06: `nota_usuario` es columna nueva y el deploy no corre
+    # migraciones — bootstrap en caliente antes de SELECTearla en la lista.
+    _nota_usuario.bootstrap_columna()
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     # Nombre de cliente / proveedor endosado: match por PALABRAS sueltas.
@@ -5378,6 +5395,7 @@ def buscar(
                -- Es el N° de comprobante/depósito (varchar(40)) — separado
                -- del no_cheque, alimentado al alta y al inline edit.
                c.doc_banco,
+               c.nota_usuario,
                c.no_banco, c.banco AS banco_nombre,
                -- TMT 2026-07-07 (dueña, caso CLR): los espejos de anticipo
                -- (NB=98 negativos / banco texto 'ANTICIPO') mostraban 'UKN'
@@ -5588,13 +5606,17 @@ def resumen_cobranza_dia(fecha) -> dict:
     saldo que quedó en ESE momento, no el saldo vivo de hoy.
     """
     # `concepto` es columna nueva (TMT 2026-08-04) y el deploy no corre
-    # migraciones: asegurarla antes de SELECTearla.
+    # migraciones: asegurarla antes de SELECTearla. `nota_usuario` (TMT
+    # 2026-08-06) va por el mismo carril — bootstrap en caliente antes del
+    # SELECT porque el deploy no aplica 0170_cheque_nota_usuario.sql solo.
     _concepto_cobro.bootstrap_columna()
+    _nota_usuario.bootstrap_columna()
     rows = (
         db.fetch_all(
             """
             SELECT c.id_cheque, c.no_cheque, c.importe, c.fecha, c.fechad,
                    c.no_banco, c.stat, c.doc_banco, c.concepto,
+                   c.nota_usuario,
                    c.fecha_crea, c.usuario_crea, c.clave,
                    c.fecha_recibido, c.fechaing,
                    COALESCE(c.banco, '') AS banco_emisor,
@@ -5749,9 +5771,13 @@ def cheques_ingresados_dia(fecha) -> dict:
 
     Solo lectura. Devuelve {fecha, filas, total, n, n_fuera, total_fuera}.
     """
+    # TMT 2026-08-06: `nota_usuario` es columna nueva y el deploy no corre
+    # migraciones — bootstrap en caliente antes de SELECTearla.
+    _nota_usuario.bootstrap_columna()
     sql = """
         SELECT c.id_cheque, c.no_cheque, c.fechad, c.fecha, c.importe,
                c.stat, c.no_banco, c.codigo_cli,
+               c.nota_usuario,
                -- TMT 2026-08-03 (dueña: "banco es el banco del cheque, y
                -- estás seguro que esto está bien??"). `cheque.banco` es TEXTO
                -- y viene NULL en casi todo lo que carga PC (el banco real vive

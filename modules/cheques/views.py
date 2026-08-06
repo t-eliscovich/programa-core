@@ -2712,6 +2712,16 @@ def actualizar(id_cheque: int):
     observacion = None
     if "observacion" in request.form:
         observacion = (request.form.get("observacion") or "").strip() or None
+    # TMT 2026-08-06 (Alex): observación libre EDITABLE, columna propia
+    # `nota_usuario`. Distinta de `observacion` (bitácora append-only con
+    # tags del sistema). Si el form la manda vacía, se guarda NULL (borrado).
+    # Se acepta tanto vacía como con contenido — el "None" del outer scope
+    # es el sentinel de "no vino en el form".
+    nota_usuario = None
+    nota_usuario_changed = False
+    if "nota_usuario" in request.form:
+        nota_usuario = (request.form.get("nota_usuario") or "").strip()
+        nota_usuario_changed = True
 
     # Fechad — parseo y validación; si vino vacío, no se cambia.
     fechad = None
@@ -2782,6 +2792,7 @@ def actualizar(id_cheque: int):
             id_cheque,
             concepto=concepto,
             observacion=observacion,
+            nota_usuario=nota_usuario if nota_usuario_changed else None,
             fechad=fechad,
             importe=importe_nuevo,
             no_cheque=no_cheque_nuevo,

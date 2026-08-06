@@ -341,6 +341,39 @@
     </p>
   </div>
 
+  {# TMT 2026-08-06 (Alex): observación libre EDITABLE, columna propia
+     `nota_usuario`. Card SIEMPRE visible (no atada al modo edición del
+     resto de campos) porque Alex la va a tocar seguido — el pedido fue
+     "quiero dejar una observación en el cheque". Form propio con solo
+     nota_usuario para no arrastrar el resto del edit form. Gateado por el
+     MISMO permiso `cheques.editar` que ya cubre `actualizar`. #}
+  {% if tiene_permiso('cheques.editar') %}
+  <div class="mb-6 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-md p-3">
+    <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
+          class="space-y-2" data-testid="ch-nota-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">
+      <label class="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+        <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
+        Observación
+        {% if ch.nota_usuario %}
+          <span class="text-red-600 font-bold" title="Este cheque tiene una observación cargada — se marca con * rojo en la lista y se imprime en las hojas.">*</span>
+        {% endif %}
+      </label>
+      <textarea name="nota_usuario" rows="2"
+                placeholder="Notas del cliente / motivo del postergado / recordatorio…"
+                class="w-full rounded border border-slate-300 dark:border-slate-600 px-2 py-1 text-sm bg-white dark:bg-slate-900"
+                style="min-height: 44px; resize: vertical;">{{ ch.nota_usuario or '' }}</textarea>
+      <div class="flex items-center justify-between">
+        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+          Se muestra como <span class="text-red-600 font-bold">*</span> rojo en /cheques y se imprime en la hoja de "cheques ingresados" y en el resumen de cobranza del día.
+        </p>
+        <button type="submit" class="text-xs px-3 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white">Guardar observación</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
   {# Banner de postergación — sólo si está postergado o tiene historia de postergación #}
   {% if ch.fecha_postergacion or ch.fechad_original %}
   <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 mb-6 flex items-start gap-3">

@@ -55,6 +55,15 @@
   .neg  { color:#b91c1c; }
   .kpi  { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:.03em; }
   .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; color:#0f172a; }
+  /* TMT 2026-08-06 (Alex): observación libre de Alex. Renglón chico en cursiva
+     bajo el cliente. No agregamos columna nueva para no descuadrar el layout
+     de la hoja (ancho 980px, table-layout auto acá pero con anchos fijos por
+     celda). Ver comentario gemelo en resumen_dia.html. */
+  .obs { display:block; font-size:10px; color:#475569; font-style:italic;
+         margin-top:2px; white-space:normal; word-wrap:break-word; }
+  @media print {
+    .obs { font-size: 7.5pt !important; color: #000 !important; font-style: italic; }
+  }
 </style>
 
 {% set activo = 'ingresados' %}
@@ -112,6 +121,9 @@
         <td>
           <strong class="mono">{{ f.codigo_cli }}</strong>
           <span class="cli-nombre text-slate-500">{{ f.cliente | cleanstr }}</span>
+          {% if f.nota_usuario %}
+            <span class="obs" data-testid="ing-obs">{{ f.nota_usuario | cleanstr }}</span>
+          {% endif %}
         </td>
         <td class="num {% if (f.importe or 0) < 0 %}neg{% endif %}">{{ f.importe | money_es }}</td>
         <td>{{ f.banco_emisor | cleanstr }}</td>

@@ -256,7 +256,7 @@ def _ids_que_devuelve(sql: str, fecha_iso: str) -> set[int]:
     con.execute(
         "CREATE TABLE cheque (id_cheque INT, no_cheque TEXT, importe REAL, "
         "fecha TEXT, fechad TEXT, no_banco INT, stat TEXT, doc_banco TEXT, "
-        "concepto TEXT, "
+        "concepto TEXT, nota_usuario TEXT, "
         "fecha_crea TEXT, usuario_crea TEXT, clave TEXT, fecha_recibido TEXT, "
         "fechaing TEXT, fechaout TEXT, banco TEXT, codigo_cli TEXT)"
     )

@@ -677,6 +677,17 @@
             {% else %}
               {{ c.importe | money_es }}
             {% endif %}
+            {# TMT 2026-08-06 (Alex): `*` rojo si hay observación libre. Se pega
+               al lado del importe (el lugar más visible que no descuadra la
+               tabla — la columna es text-right y el asterisco ocupa 6px).
+               Tooltip nativo con el texto (truncado 140 char). En impresión
+               NO sale (chq-print-hide) porque las hojas ya llevan el texto
+               completo debajo del cheque. #}
+            {% if c.nota_usuario %}
+              <span class="text-red-600 font-bold ml-1 chq-print-hide"
+                    title="{{ c.nota_usuario | truncate(140, True, '…') }}"
+                    data-testid="ch-nota-asterisco">*</span>
+            {% endif %}
           </td>
           {# TMT 2026-05-18 — Cliente movido a col 2 (arriba) #}
           <td class="px-1.5 py-1.5 text-slate-500">{{ c.banco or '' }}</td>
