@@ -627,8 +627,11 @@
         if (inpImp) {
           inpImp.addEventListener('change', () => {
             const n = parseFloat(inpImp.value);
-            if (!isFinite(n) || n <= 0) {
-              alert('Importe inválido (debe ser > 0).');
+            // TMT 2026-08-06 dueña: los ajustes (OP, NC de proveedor) son
+            // NEGATIVOS por naturaleza → se permite cualquier signo, igual
+            // que el backend (api_editar sólo rechaza 0).
+            if (!isFinite(n) || n === 0) {
+              alert('Importe inválido (no puede ser cero).');
               inpImp.value = inpImp.dataset.orig;
               return;
             }
