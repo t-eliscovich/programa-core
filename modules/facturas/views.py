@@ -1735,7 +1735,7 @@ def _resolver_cliente_asinfo(
         ruc = (f.get("ruc") or "").strip() or None
     except Exception:  # noqa: BLE001
         pass
-    db.execute(
+    creado = db.execute(
         """
         INSERT INTO scintela.cliente (codigo_cli, nombre, ruc, usuario_crea)
         SELECT %s, %s, %s, %s
@@ -1745,6 +1745,24 @@ def _resolver_cliente_asinfo(
         """,
         (nuevo, nombre, ruc, (usuario or "asinfo")[:50], nuevo),
     )
+    if creado:
+        # TMT 2026-08-05 (dueña): el cliente nuevo tiene que sonar la
+        # campanita para que Andrés le cargue CUPO y DESCUENTO — esos dos
+        # campos sólo existen en PC y nadie más se entera del alta. Misma
+        # clave idempotente que usa el sync (modules/clientes/sync_asinfo):
+        # si el sync ya avisó, esto no duplica, y viceversa.
+        try:
+            from modules.avisos.queries import avisar
+            avisar(
+                fuente="clientes",
+                nivel="alerta",
+                titulo=f"Cliente nuevo {nuevo} — cargarle cupo y descuento",
+                detalle=(nombre or "")[:150],
+                url=f"/clientes?q={nuevo}",
+                clave=f"cliente-nuevo-{nuevo}",
+            )
+        except Exception:  # noqa: BLE001 — el aviso nunca frena la carga
+            pass
     return nuevo, True
 
 

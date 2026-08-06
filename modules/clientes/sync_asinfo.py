@@ -1,0 +1,333 @@
+"""Sync del maestro de clientes Asinfo → Programa Core.
+
+⭐ POR QUÉ (TMT 2026-08-05, pedido de la dueña). Con el dBase retirado, los
+clientes nuevos nacen en Asinfo (el ERP que factura contra el SRI) y PC se
+enteraba tarde y mal: la ficha llegaba pelada por el auto-create de la carga
+de facturas, y nadie le cargaba cupo ni descuento hasta que algo se rompía.
+
+Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
+
+- **"Lo nuevo vale más"**: NOMBRE y RUC se pisan con Asinfo. El nombre queda
+  en formato fiscal "APELLIDO NOMBRE" (3.388 de 3.603 diferían sólo por el
+  orden). Asinfo es la autoridad del RUC (68 diferían; varios eran typos PC).
+- **Cupo y descuento sólo existen en PC** → este sync NO los toca nunca.
+  Tampoco `vend` (mueve las comisiones), ni `correo` (ya existe el espejo
+  `cliente_mail_asinfo`, con su propio filtro de mails de la casa), ni la
+  dirección (Asinfo no tiene texto de dirección: 0 de 3.635), ni
+  observación/pago/stop.
+- **Teléfono: PC gana.** 2.640 de 3.635 teléfonos de Asinfo son basura
+  (`2222222` o <7 dígitos) y PC tiene 3.833 reales. Sólo se RELLENA el
+  teléfono cuando PC está vacío y el de Asinfo parece real.
+- **Cliente nuevo limpio → alta automática + campanita** para que Andrés le
+  cargue cupo y descuento.
+- **Cliente nuevo cuyo RUC YA está en PC bajo otro código → NO se importa**
+  (patrón sucursal/recodificación: duplicaría plata). Queda como conflicto en
+  /clientes/sync-asinfo con aviso, y lo decide una persona. Ídem los códigos
+  que Asinfo tiene duplicados internamente (AR1, PRE al 05/08).
+
+En Asinfo el código de 3 letras vive en `empresa.nombre_comercial`
+(`empresa.codigo` ES el RUC — ver skill clientes-codigos-duplicados) y el
+teléfono en `direccion_empresa` (la fila principal activa).
+
+Corre 2× por día (11:00 y 16:00 EC) vía `scripts/sync_clientes_asinfo.py`
+en el EC2, y a demanda desde la pantalla /clientes/sync-asinfo.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+
+import db
+
+_LOG = logging.getLogger("programa_core.clientes.sync_asinfo")
+
+#: Códigos de cliente válidos: 1 a 4 caracteres visibles. No se exige
+#: [A-Z0-9] porque en producción existen códigos con caracteres raros
+#: (`D´J`) que el resto del sistema maneja bien (todo JOINea por el string).
+_MAX_COD = 4
+
+_SQL_ASINFO = """
+SELECT UPPER(LTRIM(RTRIM(COALESCE(e.nombre_comercial, '')))) AS cod,
+       LTRIM(RTRIM(COALESCE(e.identificacion, '')))          AS ruc,
+       LTRIM(RTRIM(COALESCE(e.nombre_fiscal, '')))           AS nombre,
+       LTRIM(RTRIM(COALESCE(d.telefono1, '')))               AS tel1,
+       LTRIM(RTRIM(COALESCE(d.telefono2, '')))               AS tel2
+  FROM empresa e
+  LEFT JOIN direccion_empresa d
+         ON d.id_empresa = e.id_empresa
+        AND d.indicador_direccion_principal = 1
+        AND d.activo = 1
+ WHERE e.indicador_cliente = 1
+   AND e.activo = 1
+"""
+
+_BOOTSTRAP_SQL = """
+CREATE TABLE IF NOT EXISTS scintela.clientes_sync_asinfo_log (
+    id_corrida  SERIAL PRIMARY KEY,
+    corrido     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    usuario     VARCHAR(60),
+    ok          BOOLEAN NOT NULL,
+    resumen     TEXT
+)
+"""
+
+
+def ruc10(valor: str | None) -> str:
+    """Los 10 primeros dígitos del RUC — la clave de cruce PC↔Asinfo."""
+    digitos = re.sub(r"\D", "", valor or "")
+    return digitos[:10] if len(digitos) >= 10 else ""
+
+
+def telefono_util(tel: str | None) -> str:
+    """El teléfono de Asinfo, sólo si parece real.
+
+    Asinfo rellena con `2222222` (y variantes de un solo dígito repetido)
+    cuando el cliente no dio teléfono. Eso NO puede pisar ni rellenar nada.
+    """
+    tel = (tel or "").strip()
+    digitos = re.sub(r"\D", "", tel)
+    if len(digitos) < 7:
+        return ""
+    if len(set(digitos)) == 1 or "2222222" in digitos:
+        return ""
+    return tel[:30]
+
+
+def _norm_nombre(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip()).upper()
+
+
+def asegurar_tabla() -> None:
+    db.execute(_BOOTSTRAP_SQL)
+
+
+def traer_asinfo() -> tuple[list[dict], bool]:
+    """Maestro de clientes activos de Asinfo. `(filas, contestó)`.
+
+    `contestó=False` = Metabase caído/sin config — que NO es lo mismo que
+    "Asinfo no tiene clientes". Con False no se toca nada.
+    """
+    from modules._lib import metabase_client as mc
+
+    if not mc.disponible():
+        return [], False
+    filas, contesto = mc.fetch_dataset_estado(2, _SQL_ASINFO, max_results=20000)
+    return list(filas or []), bool(contesto)
+
+
+def sincronizar(usuario: str = "sync-asinfo") -> dict:
+    """Un pase completo, idempotente. Nunca levanta: devuelve el reporte.
+
+    Reporte: {ok, actualizados, altas: [cod], conflictos: [...],
+    dup_asinfo: [cod], sin_tocar, leidas_de_asinfo, error?}.
+    """
+    try:
+        return _sincronizar(usuario)
+    except Exception as e:  # noqa: BLE001 — el cron no puede morir a mitad
+        _LOG.exception("sync_asinfo murió")
+        reporte = {"ok": False, "error": str(e)[:300]}
+        _guardar_log(usuario, reporte)
+        return reporte
+
+
+def _sincronizar(usuario: str) -> dict:
+    filas, contesto = traer_asinfo()
+    if not contesto:
+        reporte = {"ok": False, "error": "Metabase no contestó", "leidas_de_asinfo": 0}
+        _guardar_log(usuario, reporte)
+        return reporte
+
+    # ── Lado Asinfo: depurar ────────────────────────────────────────────
+    por_cod: dict[str, dict] = {}
+    duplicados: set[str] = set()
+    for f in filas:
+        cod = str(f.get("cod") or "").strip().upper()
+        if not (0 < len(cod) <= _MAX_COD):
+            continue
+        if cod in por_cod:
+            duplicados.add(cod)
+            continue
+        por_cod[cod] = {
+            "cod": cod,
+            "ruc": str(f.get("ruc") or "").strip()[:16],
+            "nombre": str(f.get("nombre") or "").strip()[:200],
+            "tel": telefono_util(f.get("tel1")) or telefono_util(f.get("tel2")),
+        }
+    # Un código que Asinfo tiene repetido no se puede sincronizar: no hay
+    # forma de saber cuál de las dos empresas es "la" del código.
+    for cod in duplicados:
+        por_cod.pop(cod, None)
+
+    # ── Lado PC ─────────────────────────────────────────────────────────
+    pc_rows = db.fetch_all(
+        "SELECT id_cliente, UPPER(TRIM(codigo_cli)) AS cod, nombre, ruc, telefono "
+        "FROM scintela.cliente"
+    ) or []
+    pc_por_cod = {r["cod"]: r for r in pc_rows if r.get("cod")}
+    pc_por_ruc: dict[str, list[str]] = {}
+    for r in pc_rows:
+        clave = ruc10(r.get("ruc"))
+        if clave and r.get("cod"):
+            pc_por_ruc.setdefault(clave, []).append(r["cod"])
+
+    # ── Fichas existentes: pisar nombre/RUC, rellenar teléfono ─────────
+    cambios: list[tuple] = []  # (cod, nombre|None, ruc|None, tel|None)
+    for cod, a in por_cod.items():
+        p = pc_por_cod.get(cod)
+        if p is None:
+            continue
+        nombre_nuevo = a["nombre"] if (
+            a["nombre"] and _norm_nombre(a["nombre"]) != _norm_nombre(p.get("nombre"))
+        ) else None
+        ruc_nuevo = a["ruc"] if (
+            a["ruc"]
+            and re.sub(r"\D", "", a["ruc"]) != re.sub(r"\D", "", p.get("ruc") or "")
+        ) else None
+        tel_nuevo = a["tel"] if (a["tel"] and not (p.get("telefono") or "").strip()) else None
+        if nombre_nuevo or ruc_nuevo or tel_nuevo:
+            cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo))
+
+    actualizados = _aplicar_cambios(cambios, usuario) if cambios else 0
+
+    # ── Altas ───────────────────────────────────────────────────────────
+    altas: list[str] = []
+    conflictos: list[dict] = []
+    for cod, a in por_cod.items():
+        if cod in pc_por_cod:
+            continue
+        ocupantes = pc_por_ruc.get(ruc10(a["ruc"]), [])
+        if ocupantes:
+            # El RUC ya vive en PC bajo otro código → sucursal o
+            # recodificación. Importarlo a ciegas duplicaría la plata del
+            # cliente (todo JOINea por código). Lo decide una persona.
+            conflictos.append({
+                "cod": cod, "ruc": a["ruc"], "nombre": a["nombre"],
+                "en_pc": sorted(set(ocupantes)),
+            })
+            continue
+        if not a["nombre"]:
+            conflictos.append({"cod": cod, "ruc": a["ruc"], "nombre": "",
+                               "en_pc": [], "motivo": "sin nombre en Asinfo"})
+            continue
+        if _alta(a, usuario):
+            altas.append(cod)
+
+    _avisar_conflictos(conflictos, duplicados)
+
+    reporte = {
+        "ok": True,
+        "leidas_de_asinfo": len(filas),
+        "clientes_asinfo": len(por_cod),
+        "actualizados": actualizados,
+        "altas": sorted(altas),
+        "conflictos": conflictos,
+        "dup_asinfo": sorted(duplicados),
+        "sin_tocar": len(por_cod) - len(cambios) - len(altas) - len(conflictos),
+    }
+    _guardar_log(usuario, reporte)
+    return reporte
+
+
+def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
+    """UN solo UPDATE con VALUES — un viaje por fila a RDS ya tiró un 502
+    en el cron de mails (TMT 2026-08-03); acá el primer pase toca ~3.400."""
+    marcadores = ",".join(["(%s, %s, %s, %s)"] * len(cambios))
+    planos = [v for fila in cambios for v in fila]
+    return db.execute(
+        f"""
+        UPDATE scintela.cliente c
+           SET nombre   = COALESCE(v.nombre, c.nombre),
+               ruc      = COALESCE(v.ruc, c.ruc),
+               telefono = COALESCE(v.telefono, c.telefono),
+               fecha_modifica   = CURRENT_TIMESTAMP,
+               usuario_modifica = %s
+          FROM (VALUES {marcadores}) AS v(cod, nombre, ruc, telefono)
+         WHERE UPPER(TRIM(c.codigo_cli)) = v.cod
+        """,
+        tuple([usuario[:60], *planos]),
+    )
+
+
+def _alta(a: dict, usuario: str) -> bool:
+    """INSERT del cliente nuevo + campanita para el cupo/descuento."""
+    from modules.avisos.queries import avisar
+    from modules.clientes import queries as cli_q
+
+    try:
+        cli_q.crear(
+            codigo_cli=a["cod"], nombre=a["nombre"], ruc=a["ruc"] or None,
+            telefono=a["tel"] or None, usuario=usuario[:50],
+        )
+    except Exception as e:  # noqa: BLE001 — una alta rota no frena las demás
+        _LOG.warning("alta de %s falló: %s", a["cod"], e)
+        return False
+    avisar(
+        fuente="clientes",
+        nivel="alerta",
+        titulo=f"Cliente nuevo {a['cod']} — cargarle cupo y descuento",
+        detalle=(a["nombre"] or "")[:150],
+        url=f"/clientes?q={a['cod']}",
+        clave=f"cliente-nuevo-{a['cod']}",
+    )
+    return True
+
+
+def _avisar_conflictos(conflictos: list[dict], dup_asinfo: set[str]) -> None:
+    from modules.avisos.queries import avisar
+
+    for c in conflictos:
+        en_pc = ", ".join(c.get("en_pc") or [])
+        detalle = (
+            f"RUC {c['ruc']} ya está en PC como {en_pc}" if en_pc
+            else c.get("motivo", "")
+        )
+        avisar(
+            fuente="clientes",
+            nivel="alerta",
+            titulo=f"Cliente Asinfo {c['cod']} no se importó — revisar",
+            detalle=detalle[:200],
+            url="/clientes/sync-asinfo",
+            clave=f"cliente-conflicto-{c['cod']}",
+        )
+    for cod in sorted(dup_asinfo):
+        avisar(
+            fuente="clientes",
+            nivel="alerta",
+            titulo=f"Asinfo tiene el código {cod} duplicado — no se sincroniza",
+            detalle="Dos empresas activas comparten el código en Asinfo.",
+            url="/clientes/sync-asinfo",
+            clave=f"cliente-dup-asinfo-{cod}",
+        )
+
+
+def _guardar_log(usuario: str, reporte: dict) -> None:
+    try:
+        asegurar_tabla()
+        db.execute(
+            "INSERT INTO scintela.clientes_sync_asinfo_log (usuario, ok, resumen) "
+            "VALUES (%s, %s, %s)",
+            (usuario[:60], bool(reporte.get("ok")), json.dumps(reporte)[:8000]),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude guardar el log del sync: %s", e)
+
+
+def ultimas_corridas(limite: int = 10) -> list[dict]:
+    try:
+        asegurar_tabla()
+        rows = db.fetch_all(
+            "SELECT corrido, usuario, ok, resumen "
+            "FROM scintela.clientes_sync_asinfo_log "
+            "ORDER BY id_corrida DESC LIMIT %s",
+            (limite,),
+        ) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude leer el log del sync: %s", e)
+        return []
+    for r in rows:
+        try:
+            r["reporte"] = json.loads(r.pop("resumen") or "{}")
+        except (ValueError, TypeError):
+            r["reporte"] = {}
+    return rows

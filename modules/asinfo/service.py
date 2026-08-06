@@ -1872,19 +1872,27 @@ def cliente_ficha(codigos: list[str]) -> dict[str, dict]:
     in_list = ", ".join(f"'{c}'" for c in cods)
     # `identificacion` puede no existir en todas las versiones del schema —
     # probamos con RUC y caemos a sin-RUC si la query falla.
+    # TMT 2026-08-05: en Asinfo `empresa.codigo` ES el RUC — el código corto
+    # de 3 letras vive en `nombre_comercial` (ver /admin/clientes-asinfo).
+    # Buscar sólo por `codigo` hacía que esta ficha casi nunca matcheara y el
+    # auto-create de facturas dejaba clientes sin nombre. Y el NOMBRE que se
+    # devuelve es el FISCAL ("APELLIDO NOMBRE"), decisión dueña 05/08: "lo
+    # nuevo vale más" — antes devolvía nombre_comercial, que es el código.
     sql_con_ruc = f"""
-        SELECT e.codigo,
-               COALESCE(NULLIF(e.nombre_comercial, ''), e.nombre_fiscal, '') AS nombre,
+        SELECT UPPER(LTRIM(RTRIM(COALESCE(NULLIF(e.nombre_comercial, ''), e.codigo)))) AS codigo,
+               COALESCE(NULLIF(e.nombre_fiscal, ''), e.nombre_comercial, '') AS nombre,
                COALESCE(e.identificacion, '') AS ruc
           FROM empresa e
          WHERE e.codigo IN ({in_list})
+            OR UPPER(LTRIM(RTRIM(e.nombre_comercial))) IN ({in_list})
     """
     sql_sin_ruc = f"""
-        SELECT e.codigo,
-               COALESCE(NULLIF(e.nombre_comercial, ''), e.nombre_fiscal, '') AS nombre,
+        SELECT UPPER(LTRIM(RTRIM(COALESCE(NULLIF(e.nombre_comercial, ''), e.codigo)))) AS codigo,
+               COALESCE(NULLIF(e.nombre_fiscal, ''), e.nombre_comercial, '') AS nombre,
                '' AS ruc
           FROM empresa e
          WHERE e.codigo IN ({in_list})
+            OR UPPER(LTRIM(RTRIM(e.nombre_comercial))) IN ({in_list})
     """
     rows = metabase_client.fetch_dataset(2, sql_con_ruc, max_results=len(cods) + 5)
     if not rows:

@@ -304,6 +304,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(clientes_bp)
 
+    # Sync del maestro de clientes con Asinfo — pisa nombre/RUC, alta de
+    # nuevos con campanita para cupo/descuento. TMT 2026-08-05.
+    from modules.clientes.sync_asinfo_view import bp as clientes_sync_asinfo_bp
+
+    app.register_blueprint(clientes_sync_asinfo_bp)
+
     from modules.proveedores.views import proveedores_bp
 
     app.register_blueprint(proveedores_bp)
