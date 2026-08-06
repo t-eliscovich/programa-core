@@ -99,8 +99,18 @@ try {
 Write-Output "=== Deploy OK ==="
 PSEOF
 )
-PS=${PS//__URL__/$URL}
-PS=${PS//__SHA__/$SHA}
+# Sustitución con python3, NUNCA con ${PS//x/$URL}: en bash 5.2 (CloudShell)
+# el & del reemplazo se expande al patrón y rompe la presigned URL (400 del
+# primer intento, 06/08/2026).
+PS=$(printf '%s' "$PS" | URL="$URL" SHA="$SHA" python3 -c \
+  'import os,sys; print(sys.stdin.read().replace("__URL__",os.environ["URL"]).replace("__SHA__",os.environ["SHA"]))')
+
+# Pre-check: la URL tiene que responder ANTES de gastar el viaje por SSM
+# (range-GET de 1 byte; la firma es para GET, un HEAD daría 403).
+if ! curl -fsS -r 0-0 -o /dev/null "$URL"; then
+  echo "ERROR: la presigned URL no responde desde CloudShell — no mando el SSM."
+  exit 1
+fi
 
 # 4. Mandar por SSM (base64 → Invoke-Expression, igual que deploy.yml)
 B64=$(printf '%s' "$PS" | base64 -w0)
