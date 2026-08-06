@@ -95,6 +95,42 @@ def test_preview_encuentra_por_numf_cuando_numf_completo_es_null(monkeypatch):
     assert out["resumen"]["via_numf"] == 1
 
 
+def test_preview_suma_al_abono_previo(monkeypatch):
+    """TMT 2026-08-06: abono manual previo + retención → el preview proyecta
+    el saldo SUMANDO (10 manual + 15 retención = abono 25), igual que el
+    aplicador."""
+    from modules.retenciones import queries as q
+    stub = _FetchAllStub(
+        por_completo=[_fac(1234, "001-099-000001234", importe=100.0,
+                           abono=10.0, saldo=90.0, stat="A")],
+        clientes=[{"codigo_cli": "EDU", "nombre": "EDUARDO"}],
+    )
+    _patch(monkeypatch, stub, {"001-099-000001234": {"ret_total": 15.0}})
+    out = q.preview_retenciones_asinfo("2026-08-01", "2026-08-06")
+    fila = out["filas"][0]
+    assert fila["estado"] == "se_aplica"
+    assert fila["saldo_nuevo"] == 75.0  # 100 - (10 + 15)
+    assert out["resumen"]["se_aplica"] == 1
+
+
+def test_preview_rete_gt_saldo(monkeypatch):
+    """Espejo del freno del aplicador: la retención dejaría el saldo negativo
+    → 'rete_gt_saldo', no tildable."""
+    from modules.retenciones import queries as q
+    stub = _FetchAllStub(
+        por_completo=[_fac(1234, "001-099-000001234", importe=100.0,
+                           abono=90.0, saldo=10.0, stat="A")],
+        clientes=[{"codigo_cli": "EDU", "nombre": "EDUARDO"}],
+    )
+    _patch(monkeypatch, stub, {"001-099-000001234": {"ret_total": 27.01}})
+    out = q.preview_retenciones_asinfo("2026-08-01", "2026-08-06")
+    fila = out["filas"][0]
+    assert fila["estado"] == "rete_gt_saldo"
+    assert fila["saldo_nuevo"] is None
+    assert out["resumen"]["rete_gt_saldo"] == 1
+    assert out["resumen"]["se_aplica"] == 0
+
+
 def test_preview_por_numf_tambien_se_puede_aplicar(monkeypatch):
     """Encontrada por numf y SIN retención registrada → se aplica (no queda
     escondida en 'sin factura', que no es tildable)."""

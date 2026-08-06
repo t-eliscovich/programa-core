@@ -244,7 +244,10 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
     """Registra scintela.retencion + baja el saldo de la factura `numero`.
 
     Devuelve: 'aplicada' | 'ya' (ya tenía retención) | 'sin_factura' |
-    'rete_0' | 'rete_gt_importe'.
+    'rete_0' | 'rete_gt_importe' | 'rete_gt_saldo'.
+
+    Nota 2026-08-06: 'registrada' ya no se devuelve — era la rama "el dBase
+    ya aplicó el abono" y el dBase se retiró. La retención siempre SUMA.
     """
     rete = round(float(rete or 0), 2)
     if rete <= 0.005:
@@ -266,6 +269,12 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
             return "ya"
         abono = round(float(f["abono"] or 0), 2)
         saldo = round(float(f["saldo"] or 0), 2)
+        # TMT 2026-08-06 (dueña): freno — si la retención es más grande que lo
+        # que queda por cobrar, el saldo quedaría negativo. No se aplica sola;
+        # va a n_error para mirarla a mano. (Después del guard `ya`, así una
+        # retención ya aplicada nunca cae acá al re-correr el cron.)
+        if rete > saldo + 0.01:
+            return "rete_gt_saldo"
         stat_prev = (f["stat"] or "").strip()
         rrow = db.execute_returning(
             "INSERT INTO scintela.retencion "
@@ -276,38 +285,30 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
             conn=conn,
         ) or {}
         id_ret = rrow.get("id_retencion")
-        # TMT 2026-07-23 (dueña): NO DUPLICAR. El dBase legacy (RETENCIO.PRG)
-        # ya aplica la retención del cliente como abono (abono+=rete,
-        # saldo-=rete, stat 'A') y ese abono entra a PC por el sync. Si la
-        # factura YA tiene abono, la retención ya está reflejada en el saldo
-        # → sólo REGISTRAMOS scintela.retencion (para el informe/SRI y el
-        # guard anti-reaplicación) y NO tocamos abono/saldo. Sólo bajamos el
-        # saldo cuando la factura no tiene abono (fresca de Asinfo, el dBase
-        # todavía no la aplicó). Antes se sumaba siempre → doble conteo del
-        # abono en toda factura que venía del dBase con la retención adentro.
-        if abono <= 0.005:
-            abono_new = round(abono + rete, 2)
-            saldo_new = round(importe - abono_new, 2)
-            stat_new = "T" if saldo_new <= 0.005 else "A"
-            db.execute(
-                "UPDATE scintela.factura "
-                "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
-                " WHERE id_factura = %s",
-                (abono_new, saldo_new, stat_new, usuario, f["id_factura"]),
-                conn=conn,
-            )
-            aplicado = True
-            concepto = (
-                f"RETENCIÓN Asinfo {rete:.2f} aplicada a "
-                f"{numero} {f['codigo_cli']} — saldo {saldo:.2f}→{saldo_new:.2f}"
-            )
-        else:
-            # dBase ya aplicó el abono → sólo dejamos registrada la retención.
-            aplicado = False
-            concepto = (
-                f"RETENCIÓN Asinfo {rete:.2f} REGISTRADA (el dBase ya aplicó "
-                f"el abono) — {numero} {f['codigo_cli']}, abono {abono:.2f}"
-            )
+        # TMT 2026-08-06 (dueña): la retención SIEMPRE se suma al abono que
+        # tenga la factura (manual 10 + retención 15 = abono 25). Esto REVIERTE
+        # la regla del 23/07 ("si ya hay abono, sólo registrar"): aquella
+        # evitaba duplicar el abono que el dBase legacy (RETENCIO.PRG) metía
+        # por el sync — y el dBase se retiró el 05/08/2026, así que un abono
+        # preexistente ahora es un pago real (efectivo/cheque/manual), no una
+        # retención ya contada. El guard anti-doble que queda es `ya` (una
+        # retención registrada nunca se re-aplica) + el freno rete>saldo.
+        abono_new = round(abono + rete, 2)
+        saldo_new = round(importe - abono_new, 2)
+        stat_new = "T" if saldo_new <= 0.005 else "A"
+        db.execute(
+            "UPDATE scintela.factura "
+            "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+            " WHERE id_factura = %s",
+            (abono_new, saldo_new, stat_new, usuario, f["id_factura"]),
+            conn=conn,
+        )
+        aplicado = True
+        concepto = (
+            f"RETENCIÓN Asinfo {rete:.2f} aplicada a "
+            f"{numero} {f['codigo_cli']} — abono {abono:.2f}→{abono_new:.2f}, "
+            f"saldo {saldo:.2f}→{saldo_new:.2f}"
+        )
         _md.registrar(
             conn=conn,
             tipo="retencion_asinfo_aplicada",
@@ -366,7 +367,7 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
                 res["sin_factura"].append({
                     "numero": numero, "numf": _numf_sri(numero), "rete": rete,
                 })
-        elif estado in ("rete_0", "rete_gt_importe"):
+        elif estado in ("rete_0", "rete_gt_importe", "rete_gt_saldo"):
             res["n_error"] += 1
     res["total_sin_factura"] = round(
         sum(float(x["rete"] or 0) for x in res["sin_factura"]), 2)
@@ -411,7 +412,7 @@ def aplicar_retenciones_asinfo_seleccion(
             res["n_ya"] += 1
         elif estado == "sin_factura":
             res["n_sin_factura"] += 1
-        elif estado in ("rete_0", "rete_gt_importe"):
+        elif estado in ("rete_0", "rete_gt_importe", "rete_gt_saldo"):
             res["n_error"] += 1
     return res
 
@@ -619,13 +620,14 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
     Devuelve {"filas": [...], "resumen": {...}}. Cada fila:
       numero, ret_fuente, ret_iva, ret_total, estado, codigo_cli, cliente,
       numf, importe, saldo_actual, saldo_nuevo, stat_nuevo.
-    estado ∈ {se_aplica, ya, sin_factura, rete_gt_importe, rete_0}.
+    estado ∈ {se_aplica, ya, sin_factura, rete_gt_importe, rete_gt_saldo, rete_0}.
     """
     from modules.asinfo import service as asinfo_service
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     resumen = {
         "n_total": len(ret_map), "se_aplica": 0, "ya": 0, "sin_factura": 0,
-        "rete_gt_importe": 0, "rete_0": 0, "total_a_aplicar": 0.0, "via_numf": 0,
+        "rete_gt_importe": 0, "rete_gt_saldo": 0, "rete_0": 0,
+        "total_a_aplicar": 0.0, "via_numf": 0,
         "total_periodo": round(
             sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
     }
@@ -735,6 +737,11 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
             elif f"{f['codigo_cli']}|{f['numf']}" in ya_set:
                 fila["estado"] = "ya"
                 resumen["ya"] += 1
+            elif rete > saldo + 0.01:
+                # Espejo del freno del aplicador (2026-08-06): dejaría el
+                # saldo negativo → no se aplica sola.
+                fila["estado"] = "rete_gt_saldo"
+                resumen["rete_gt_saldo"] += 1
             else:
                 saldo_new = round(importe - round(abono + rete, 2), 2)
                 fila["saldo_nuevo"] = saldo_new
@@ -745,6 +752,7 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
         filas.append(fila)
 
     # Orden: primero lo que se aplica, después ya, después los que no entran.
-    orden = {"se_aplica": 0, "ya": 1, "rete_gt_importe": 2, "sin_factura": 3, "rete_0": 4}
+    orden = {"se_aplica": 0, "ya": 1, "rete_gt_importe": 2, "rete_gt_saldo": 2,
+             "sin_factura": 3, "rete_0": 4}
     filas.sort(key=lambda x: (orden.get(x["estado"], 9), -(x["ret_total"] or 0)))
     return {"filas": filas, "resumen": resumen}

@@ -159,22 +159,55 @@ def test_aplicar_una_idempotente(monkeypatch):
     assert not stub.updates and not stub.inserts_ret
 
 
-def test_aplicar_una_registra_si_abono_previo(monkeypatch):
-    """TMT 2026-07-23: si la factura YA tiene abono (el dBase legacy ya aplicó
-    la retención), PC sólo REGISTRA scintela.retencion y NO vuelve a bajar el
-    saldo — así no se duplica el abono."""
+def test_aplicar_una_suma_al_abono_previo(monkeypatch):
+    """TMT 2026-08-06 (dueña): la retención SIEMPRE suma al abono existente
+    (manual 10 + retención 15 = 25). Revierte la regla del 23/07 ("si ya hay
+    abono, sólo registrar"): con el dBase retirado (05/08), un abono previo es
+    un pago real, no una retención ya contada por el sync."""
     from modules.retenciones import queries as q
-    stub = _DBStub(_fac(100.0, 51.98, 48.02, "A"))  # abono>0 = dBase ya lo aplicó
+    stub = _DBStub(_fac(100.0, 51.98, 48.02, "A"))  # abono manual previo
     _patch(monkeypatch, stub)
     r = q._aplicar_una_por_numero("001-099-000179161", 27.01, "tester")
-    assert r == "registrada"
-    # registró la retención (para el informe/SRI + guard)
+    assert r == "aplicada"
+    # registró la retención (informe/SRI + guard anti-reaplicación)
     assert stub.inserts_ret and stub.inserts_ret[0][2] == 27.01
-    # pero NO tocó abono/saldo de la factura
-    assert not stub.updates
-    # el mov_doble queda con aplicado=False
+    # y sumó: abono 51.98+27.01=78.99, saldo 100-78.99=21.01, sigue A
+    upd = stub.updates[0]
+    assert upd[0] == 78.99 and upd[1] == 21.01 and upd[2] == "A"
     md = stub.mov_dobles[0]
     assert md[1] == "retencion_asinfo_aplicada"
+
+
+def test_aplicar_una_suma_y_cierra_T(monkeypatch):
+    """Abono previo + retención = importe → saldo 0, stat T."""
+    from modules.retenciones import queries as q
+    stub = _DBStub(_fac(100.0, 90.0, 10.0, "A"))
+    _patch(monkeypatch, stub)
+    r = q._aplicar_una_por_numero("001-099-000179161", 10.0, "t")
+    assert r == "aplicada"
+    assert stub.updates[0][0] == 100.0 and stub.updates[0][1] == 0.0
+    assert stub.updates[0][2] == "T"
+
+
+def test_aplicar_una_rete_gt_saldo(monkeypatch):
+    """Freno 2026-08-06: si la retención dejaría el saldo negativo, no se
+    aplica sola (va a n_error para mirarla a mano)."""
+    from modules.retenciones import queries as q
+    stub = _DBStub(_fac(100.0, 90.0, 10.0, "A"))
+    _patch(monkeypatch, stub)
+    assert q._aplicar_una_por_numero("001-099-000179161", 27.01, "t") == "rete_gt_saldo"
+    assert not stub.updates and not stub.inserts_ret
+
+
+def test_aplicar_una_ya_gana_a_rete_gt_saldo(monkeypatch):
+    """Una retención YA aplicada bajó el saldo; al re-correr el cron, `ya`
+    tiene que ganar antes del freno rete>saldo (si no, cada corrida la
+    contaría como error)."""
+    from modules.retenciones import queries as q
+    stub = _DBStub(_fac(100.0, 60.0, 40.0, "A"), existing_ret=True)
+    _patch(monkeypatch, stub)
+    assert q._aplicar_una_por_numero("001-099-000179161", 60.0, "t") == "ya"
+    assert not stub.updates and not stub.inserts_ret
 
 
 def test_aplicar_una_sin_factura(monkeypatch):
