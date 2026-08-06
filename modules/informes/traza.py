@@ -202,8 +202,11 @@ COLUMNAS_DELTA = ("caja", "bancos", "cheques", "facturas", "antic",
 #: sólo para el hilado, así que el valor de tejido y terminado no se puede
 #: reconstruir). Acá sí va el nivel, porque un stock de tela es un número que
 #: se mira, no un movimiento.
-COLUMNAS_KG = (("hilado_kg", "Hilado kg"), ("tejido_kg", "Tejido kg"),
-               ("terminado_kg", "Terminado kg"))
+#: TMT 2026-08-06: *"hilado tejido y terminado puede aparecer en vez de
+#: 1.939.121, 1.939 y ya"*. Son toneladas: 1.939.121 kg = 1.939 t. Siete
+#: dígitos por columna para una cifra que se mira de reojo es ancho tirado.
+COLUMNAS_KG = (("hilado_kg", "Hilado t"), ("tejido_kg", "Tejido t"),
+               ("terminado_kg", "Terminado t"))
 
 #: Lo que la grilla vigila para saber si un kilo o la tarifa se movieron. El
 #: $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de

@@ -10,7 +10,7 @@
   <div style="color:rgb(100 116 139);margin-bottom:.4rem;">
     {% if f.anterior %}{{ f.anterior.utilidad | num_es(0) }} → {{ f.utilidad | num_es(0) }}{% endif %}
     {%- if not f.sin_registro %} · {{ f.movimientos | length }} mov{% endif %}
-    {%- if f.sin_registro %} · sin detalle por documento (foto anterior a la grabadora)
+    {%- if f.sin_registro %} · sin detalle (foto vieja)
     {%- elif f.residuo is not none and f.residuo | abs >= 1 %}
       · <span style="color:rgb(185 28 28);">{{ f.residuo | num_es(2) }} sin explicar</span>
     {%- endif %}
@@ -39,14 +39,14 @@
     </table>
   {% else %}
     {% if f.sin_registro %}
-      {# Lo que sí se sabe de una foto vieja: el desglose por componente, que
-         es exactamente lo que mostraba la columna "Qué se movió". #}
+      {# Sin párrafo: la línea de arriba ya dice que no hay detalle por
+         documento. Acá van los componentes y nada más. #}
       <table style="width:100%;">
         <tbody>
           {% for m in f.movio %}
           <tr>
             <td style="padding:.1rem 0;border-top:1px solid rgb(226 232 240);">{{ m.label }}</td>
-            <td style="padding:.1rem 0;border-top:1px solid rgb(226 232 240);text-align:right;width:7rem;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">{{ m.aporte | num_es(2) }}</td>
+            <td style="padding:.1rem 0;border-top:1px solid rgb(226 232 240);text-align:right;white-space:nowrap;width:7rem;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">{{ m.aporte | num_es(2) }}</td>
           </tr>
           {% else %}
           <tr><td style="color:rgb(148 163 184);">Nada se movió más de un peso.</td></tr>
