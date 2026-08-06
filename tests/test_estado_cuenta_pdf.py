@@ -600,17 +600,17 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     tpl = Path("modules/informes/templates/informes/"
                "_estado_cuenta_impreso.html").read_text()
     bloque = tpl[tpl.index("ec-bloque-facturas"):tpl.index("</thead>")]
-    assert bloque.count("</colgroup>") == 2, (
-        "el colgroup tiene que estar en las DOS ramas: /pdf usa la no "
-        "interactiva y el botón Imprimir de la pantalla usa la interactiva. "
-        "Con una sola, una de las dos rutas imprime mal."
+    assert bloque.count("</colgroup>") == 1, "tiene que haber UN solo colgroup"
+    assert bloque.count("<table ") == 1, (
+        "UNA sola tabla para pantalla y papel. Con dos ramas, un arreglo entra "
+        "en una y no en la otra y no se nota hasta que se imprime la hoja."
     )
     assert 'style="table-layout: fixed; width: 100%; min-width: 100%;"' in bloque, (
         "sin `min-width: 100%` la tabla se queda en la SUMA de sus columnas "
         "(el width:100% no se resuelve en el motor de PDF) y el ancho queda "
         "atado al tamaño de papel con el que se calcularon los pt"
     )
-    anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)pt"', bloque)]
+    anchos = [float(x) for x in re.findall(r'<col[^>]*style="width:([\d.]+)pt"', bloque)]
     assert len(anchos) == 7, (
         f"el colgroup tiene {len(anchos)} columnas; en el papel la tabla tiene 7 "
         "(Tipo y Stat no se generan)"

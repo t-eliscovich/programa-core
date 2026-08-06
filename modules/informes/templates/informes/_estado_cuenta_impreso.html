@@ -86,34 +86,30 @@
        Y el papel TIENE que quedar fijo: sin `size: A4` el navegador imprime A4
        y el endpoint /pdf sale Letter, y un número absoluto no puede servir a
        los dos. #}
-    {% if not interactivo %}
-    <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
-      <colgroup>
-        <col style="width:65.9pt"><col style="width:65.9pt"><col style="width:93.3pt">
-        <col style="width:93.3pt"><col style="width:93.3pt"><col style="width:93.3pt">
-        <col style="width:43.9pt">
-      </colgroup>
-    {% else %}
-    {# PANTALLA: las MISMAS medidas, pero con las dos columnas que no se
-       imprimen (Tipo = 3ª, Stat = 8ª) en 0 — en pantalla existen, en el papel
-       las esconde `no-print` y su 0 no le quita ancho a nadie.
+    {# UNA sola tabla y UN solo colgroup para pantalla y papel. TMT 2026-08-05,
+       pedido de la dueña: *"debería ser única igual para no causar problema"*.
 
-       ⚠️ Esto es lo que faltaba. El `colgroup` estaba SÓLO en la rama no
-       interactiva —la del endpoint /pdf, que era la que yo medía— así que la
-       dueña, que imprime desde la PANTALLA con el botón Imprimir, seguía
-       viendo el layout viejo del 88%. Dos rutas de impresión y yo arreglaba
-       una sola: por eso mis mediciones daban 1,000 y su hoja no cambiaba.
-       En pantalla los anchos se neutralizan con `@media screen`. #}
+       Antes había dos ramas con su propio `<table>` y su propio `colgroup`: el
+       endpoint /pdf usaba una y el botón Imprimir de la pantalla usaba la otra,
+       así que un arreglo entraba en una y no en la otra — y no se notaba hasta
+       que alguien mandaba la hoja. Costó catorce intentos: yo medía la ruta del
+       /pdf y ella imprimía la otra.
+
+       Lo único condicional que queda son los DOS `<col>` de las columnas que
+       sólo existen en pantalla (Tipo y Stat), en 0 — y cuelgan del MISMO
+       `interactivo` que sus celdas, así que no pueden desincronizarse.
+
+       Los pt suman 548,9 = el útil de A4 (595 − 2×8 mm) con `@page size: A4`.
+       En pantalla se neutralizan con `@media screen`. #}
     <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
       <colgroup>
         <col class="ec-col" style="width:65.9pt"><col class="ec-col" style="width:65.9pt">
-        <col class="ec-col" style="width:0">
+        {% if interactivo %}<col class="ec-col" style="width:0">{% endif %}
         <col class="ec-col" style="width:93.3pt"><col class="ec-col" style="width:93.3pt">
         <col class="ec-col" style="width:93.3pt"><col class="ec-col" style="width:93.3pt">
-        <col class="ec-col" style="width:0">
+        {% if interactivo %}<col class="ec-col" style="width:0">{% endif %}
         <col class="ec-col" style="width:43.9pt">
       </colgroup>
-    {% endif %}
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="ec-c-fecha px-4 py-3 text-left font-medium">Fecha</th>
@@ -512,6 +508,12 @@
    incluyen tanto la pantalla individual como la impresión en lote. #}
 <style>
   /* En PANTALLA la tabla de facturas queda como estaba: los anchos del
+     `colgroup` son para el PAPEL. */
+  @media screen {
+    .ec-bloque-facturas table { table-layout: auto !important; }
+    .ec-bloque-facturas col.ec-col { width: auto !important; }
+  }
+  /* En PANTALLA la tabla de facturas queda como estaba: los anchos del
      `colgroup` son para el PAPEL. Sin esto la vista interactiva quedaría con
      las columnas fijas y Tipo/Stat en cero. */
   @media screen {
@@ -550,8 +552,15 @@
              **66 de 67 entran en UNA hoja**. El que no entra tiene 66 facturas
              abiertas — ahí dos hojas es lo correcto, no un defecto. */
           font-size: 7pt !important;
-          line-height: 1.02 !important;
-          padding: 0.1pt 3pt !important;
+          /* TMT 2026-08-05 (dueña: "los números se pisan y tapan las líneas").
+             Al apretar la hoja para que entrara en una página dejé el
+             interlineado en 1,02 y el relleno en 0,1 pt — prácticamente cero,
+             así que los números quedaban montados sobre el renglón de abajo.
+             1,12 y 0,7 pt dan aire suficiente para que el texto no toque la
+             línea, y cuestan ~11% de alto: los clientes de hasta ~60 renglones
+             siguen entrando en una hoja. La legibilidad gana. */
+          line-height: 1.12 !important;
+          padding: 0.7pt 3pt !important;
           font-family: inherit !important;
         }
 

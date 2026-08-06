@@ -719,7 +719,12 @@ def test_el_estado_de_cuenta_esta_apretado_para_entrar_en_una_hoja():
 
     css = re.sub(r"/\*.*?\*/", "", IMPRESO[IMPRESO.index("@media print"):], flags=re.S)
     assert "font-size: 7pt !important" in css, "el cuerpo de la tabla volvió a crecer"
-    assert "line-height: 1.02 !important" in css
+    assert "line-height: 1.12 !important" in css
+    # Y relleno vertical > 0: con 0,1 pt los números se montaban sobre la
+    # línea del renglón de abajo (dueña 05/08: "se pisan y tapan las líneas").
+    import re as _re
+    pad = _re.search(r"padding:\s*([\d.]+)pt", css)
+    assert pad and float(pad.group(1)) >= 0.5, "sin relleno el texto toca la línea"
     # La franja de códigos internos (Z/P/D, 1/2/3/R/9) no va al papel.
     assert "main .ec-ch-resumen { display: none !important; }" in css
     # 11 px de alto útil que salen del margen vertical.
