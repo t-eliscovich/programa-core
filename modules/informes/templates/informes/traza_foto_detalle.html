@@ -10,11 +10,16 @@
     {% if f.anterior %}
       La utilidad pasó de <strong>{{ f.anterior.utilidad | num_es(0) }}</strong>
       ({{ f.anterior.cuando }}) a <strong>{{ f.utilidad | num_es(0) }}</strong>
-      ({{ f.cuando }}) en {{ f.movimientos | length }} movimiento{{ '' if (f.movimientos | length) == 1 else 's' }}.
+      ({{ f.cuando }}){% if not f.sin_registro %} en {{ f.movimientos | length }} movimiento{{ '' if (f.movimientos | length) == 1 else 's' }}{% endif %}.
     {% else %}
       Es la primera foto: no hay una anterior contra la cual compararla.
     {% endif %}
-    {% if f.residuo is not none %}
+    {% if f.sin_registro %}
+      {# No hay detalle por documento porque la foto es anterior a la
+         grabadora. Lo que sí hay —el desglose por componente— se muestra
+         abajo; el residuo no se informa porque acá no falta explicar nada:
+         falta haber registrado. #}
+    {% elif f.residuo is not none %}
       {% if f.residuo | abs < 1 %}
         Los documentos de abajo explican el movimiento entero.
       {% else %}
@@ -69,8 +74,41 @@
       </table>
     </div>
   {% else %}
-    <div class="text-sm" style="color:rgb(100 116 139);">
-      En esta ventana no se movió ningún documento.
-    </div>
+    {% if f.sin_registro %}
+      {# El desglose por componente existe para TODAS las fotos: sale de los
+         once totales que la grabadora guarda desde el 31/07. Es exactamente
+         lo que mostraba la columna "Qué se movió". #}
+      <div class="border border-slate-200 rounded bg-white">
+        <div class="px-3 py-1.5 border-b border-slate-100 text-sm"
+             style="background:rgb(248 250 252);color:rgb(100 116 139);">
+          Esta foto es anterior a la grabadora de detalle, así que no hay
+          documentos guardados. Lo que sí se sabe es qué componentes se
+          movieron:
+        </div>
+        <table class="w-full" style="font-size:12px;">
+          <tbody>
+            {% for m in f.movio %}
+            <tr class="border-t border-slate-100">
+              <td class="px-3 py-1.5">{{ m.label }}</td>
+              <td class="px-3 py-1.5 text-right"
+                  style="width:9rem;font-weight:600;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
+                {{ m.aporte | num_es(2) }}
+              </td>
+            </tr>
+            {% else %}
+            <tr class="border-t border-slate-100">
+              <td class="px-3 py-1.5" style="color:rgb(100 116 139);">
+                Ningún componente se movió más de un peso.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-sm" style="color:rgb(100 116 139);">
+        En esta ventana no se movió ningún documento.
+      </div>
+    {% endif %}
   {% endfor %}
 </div>

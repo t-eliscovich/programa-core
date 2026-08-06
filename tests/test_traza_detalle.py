@@ -287,7 +287,41 @@ def test_las_columnas_de_la_grilla_existen_en_la_foto():
     renderiza vacío sin avisar. Acá avisa."""
     from modules.informes.traza import _fila_desde_balance
     campos = set(_fila_desde_balance({"diagnostico": {"componentes": {}}}))
-    for col in t.COLUMNAS_SALDO:
+    for col in t.COLUMNAS_DELTA:
         assert col in campos, f"la grilla pide {col} y la foto no lo guarda"
     for col, _label in t.COLUMNAS_KG:
         assert col in campos, f"la grilla pide {col} y la foto no lo guarda"
+
+
+def test_la_grilla_trae_el_delta_por_componente():
+    """TMT 2026-08-06: *"el formato no me gustó pero claramente necesitamos más
+    columnas"*. La celda muestra el Δ —que ya es la respuesta— y queda vacía
+    cuando ese componente no se movió."""
+    viejo = {"utilidad": 100.0, "facturas": 1000.0, "totp": 500.0, "caja": 50.0}
+    nuevo = {"utilidad": 1900.0, "facturas": 3000.0, "totp": 600.0, "caja": 50.0}
+    fila = t.con_deltas([nuevo, viejo])[0]
+    assert fila["delta"]["facturas"] == 2000.0
+    assert fila["delta"]["totp"] == -100.0        # pasivo: aporta al revés
+    assert "caja" not in fila["delta"]            # no se movió → celda vacía
+
+
+def test_una_ventana_vieja_no_dice_que_no_se_movio_nada():
+    """🚨 "Sin movimientos" y "sin registro" no son lo mismo. Una ventana
+    anterior a la grabadora de detalle se ve igual que una en la que de verdad
+    no pasó nada —las dos con la lista vacía— y decirle a la dueña "no se movió
+    ningún documento" sobre una ventana de $2.000 es mentirle."""
+    par = [{"id_traza": 5, "utilidad": 2000.0, "facturas": 2000.0, "cuando": "17:23"},
+           {"id_traza": 4, "utilidad": 0.0, "facturas": 0.0, "cuando": "17:17"}]
+    with patch.object(t.db, "fetch_all", return_value=par), \
+         patch.object(t, "movimientos", return_value=[]), \
+         patch.object(t, "_desde_cuando_hay_detalle", return_value=99):
+        vieja = t.una(5)
+    assert vieja["sin_registro"] is True
+    # …y el desglose por componente, que SÍ existe, queda a la vista.
+    assert any(m["col"] == "facturas" for m in vieja["movio"])
+
+    with patch.object(t.db, "fetch_all", return_value=par), \
+         patch.object(t, "movimientos", return_value=[]), \
+         patch.object(t, "_desde_cuando_hay_detalle", return_value=1):
+        nueva = t.una(5)
+    assert nueva["sin_registro"] is False   # la grabadora ya estaba: no pasó nada

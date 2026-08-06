@@ -184,25 +184,29 @@ ETIQUETAS = {
 }
 
 
-#: Las columnas de SALDO que muestra la grilla, en el orden del balance.
-#: TMT 2026-08-06: *"dividendos, maquinaria, terrenos no necesito, agregame los
-#: distintos stocks"*. Los tres que salieron no desaparecieron del modelo —
-#: siguen en el balance y en el detalle de cada foto (la amortización del día
-#: aparece ahí, en Maquinaria); lo que pasa es que en una grilla minuto a
-#: minuto son tres columnas que no se mueven nunca y le comen el ancho a las
-#: que sí.
-COLUMNAS_SALDO = ("caja", "bancos", "cheques", "facturas", "antic",
+#: Las columnas de la grilla. Muestran el Δ del componente, no su saldo.
+#:
+#: TMT 2026-08-06, en dos pasos. Primero *"pongamos más columnas, ahora que hay
+#: detalle ya es inútil el que se movió"*; se probó con los SALDOS y la
+#: respuesta fue *"el formato no me gustó pero claramente necesitamos más
+#: columnas"*. El problema del saldo es que son catorce cifras de siete dígitos
+#: casi idénticas fila contra fila: para encontrar el movimiento hay que restar
+#: a ojo. El Δ ya ES la respuesta, y la celda queda vacía cuando no pasó nada,
+#: así que el ojo cae solo sobre lo que se movió.
+#:
+#: Los saldos no se pierden: están en el Balance, y en el detalle de cada foto.
+COLUMNAS_DELTA = ("caja", "bancos", "cheques", "facturas", "antic",
                   "vsto", "vqx", "totp")
 
-#: Las etapas del stock. Van en KILOS y no en pesos porque es lo que guarda la
-#: foto: la tarifa está sólo para el hilado (`hilado_ukg`), así que el valor de
-#: tejido y de terminado no se puede reconstruir. El peso total ya está en la
-#: columna Stock MP+Prod.
+#: Las etapas del stock, en KILOS: es lo que guarda la foto (la tarifa está
+#: sólo para el hilado, así que el valor de tejido y terminado no se puede
+#: reconstruir). Acá sí va el nivel, porque un stock de tela es un número que
+#: se mira, no un movimiento.
 COLUMNAS_KG = (("hilado_kg", "Hilado kg"), ("tejido_kg", "Tejido kg"),
                ("terminado_kg", "Terminado kg"))
 
-#: Todo lo que la grilla vigila para saber si un número se movió o quedó igual.
-#: El $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de
+#: Lo que la grilla vigila para saber si un kilo o la tarifa se movieron. El
+#: $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de
 #: milésimas revalúa el stock entero.
 _VIGILADAS = tuple(c for c, _l in COLUMNAS_KG) + ("hilado_ukg",)
 
@@ -244,6 +248,7 @@ def con_deltas(filas: list[dict]) -> list[dict]:
             fila["d_utilidad"] = None
             fila["movio"] = []
             fila["movidas"] = set()
+            fila["delta"] = {}
             out.append(fila)
             continue
         try:
@@ -279,6 +284,9 @@ def con_deltas(filas: list[dict]) -> list[dict]:
             except (TypeError, ValueError):
                 continue
         fila["movidas"] = movidas
+        # El Δ de cada componente, indexado por columna: la grilla muestra
+        # esto y deja la celda vacía cuando no hay nada.
+        fila["delta"] = {m["col"]: m["aporte"] for m in movs}
         out.append(fila)
     return out
 
@@ -370,6 +378,24 @@ def movimientos(id_traza: int) -> list[dict]:
     return out
 
 
+def _desde_cuando_hay_detalle() -> int | None:
+    """La primera foto que dejó movimientos, o None si todavía no hay ninguna.
+
+    Las fotos anteriores a la mig 0171 guardaron los once totales y nada más:
+    el detalle por documento no se puede reconstruir para atrás —aplicar un
+    cheque ni siquiera sella `fecha_modifica` en la factura— así que para esas
+    ventanas lo honesto es mostrar el desglose por COMPONENTE, que sí existe, y
+    decir desde cuándo empieza el detalle fino.
+    """
+    try:
+        r = db.fetch_one("SELECT MIN(id_traza) AS m FROM scintela.dia_movimiento "
+                         "WHERE id_traza IS NOT NULL")
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("traza_utilidad: no pude ver desde cuándo hay detalle (%s)", e)
+        return None
+    return int(r["m"]) if r and r.get("m") else None
+
+
 def una(id_traza: int) -> dict | None:
     """UNA foto con su Δ contra la anterior y el detalle que lo explica.
 
@@ -413,6 +439,14 @@ def una(id_traza: int) -> dict | None:
         g["movimientos"].append(m)
     fila["por_componente"] = sorted(
         por_comp.values(), key=lambda g: abs(g["aporte"]), reverse=True)
+
+    # 🚨 "Sin movimientos" y "sin registro" NO son lo mismo. Una ventana en la
+    # que de verdad no se movió nada y una anterior a que existiera la
+    # grabadora de detalle se ven idénticas —las dos con la lista vacía— y
+    # decirle a la dueña "no se movió ningún documento" sobre una ventana de
+    # 2.000 dólares es mentirle.
+    desde = _desde_cuando_hay_detalle()
+    fila["sin_registro"] = bool(not movs and (desde is None or id_traza < desde))
 
     total = round(sum(float(m.get("aporte") or 0) for m in movs), 2)
     fila["explicado"] = total

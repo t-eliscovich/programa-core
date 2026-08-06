@@ -1241,7 +1241,7 @@ def traza():
         intervalo=_traza._intervalo(),
         # Las etiquetas salen del mismo diccionario que usa el detalle, para
         # que una columna y su renglón se llamen igual.
-        componentes=[(c, _traza.ETIQUETAS.get(c, c)) for c in _traza.COLUMNAS_SALDO],
+        deltas=[(c, _traza.ETIQUETAS.get(c, c)) for c in _traza.COLUMNAS_DELTA],
         kilos=_traza.COLUMNAS_KG,
     )
 
