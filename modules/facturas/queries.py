@@ -46,6 +46,22 @@ def _stat_desde_saldo(importe: float, abono: float) -> str:
     return "A"
 
 
+#: Plazo default de vencimiento cuando el cliente no tiene `pago` numérico.
+#: TMT 2026-08-05 (dueña): 30 → 90 días; la mig 0169 recalculó las impagas.
+DIAS_VENCIMIENTO_DEFAULT = 90
+
+
+def dias_vencimiento(pago_raw) -> int:
+    """Días de plazo a partir de `cliente.pago`.
+
+    Bug D fix (TMT 2026-05-16): 3545 clientes legacy tienen pago='C'
+    (contado), 'X', '+', '.', '', etc. — strings que int() no parsea.
+    Si no es numérico, fallback a DIAS_VENCIMIENTO_DEFAULT.
+    """
+    _pago_str = str(pago_raw or "").strip()
+    return int(_pago_str) if _pago_str.isdigit() else DIAS_VENCIMIENTO_DEFAULT
+
+
 def proximo_numf() -> int:
     """Siguiente número de factura (MAX+1). Fallback a 1 si no hay."""
     row = db.fetch_one("SELECT COALESCE(MAX(numf), 0) + 1 AS siguiente FROM scintela.factura")
@@ -88,12 +104,7 @@ def crear(
             "SELECT pago FROM scintela.cliente WHERE codigo_cli = %s",
             (codigo_cli,),
         )
-        # Bug D fix (TMT 2026-05-16): 3545 clientes legacy tienen pago='C'
-        # (contado), 'X', '+', '.', '', etc. — strings que int() no parsea.
-        # Si no es numérico, fallback a 30 días.
-        _pago_raw = (row.get("pago") if row else None) or ""
-        _pago_str = str(_pago_raw).strip()
-        dias = int(_pago_str) if _pago_str.isdigit() else 30
+        dias = dias_vencimiento(row.get("pago") if row else None)
         vencimiento = fecha + timedelta(days=dias)
 
     with db.tx() as conn:

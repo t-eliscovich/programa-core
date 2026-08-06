@@ -219,7 +219,7 @@ def nueva():
     """Crear una factura nueva. Preserva reglas de ALTAS.PRG:
 
     - stat inicial 'A', saldo = importe, abono = 0
-    - vencimiento = fecha + cliente.pago días (default 30) si no se indica
+    - vencimiento = fecha + cliente.pago días (default 90) si no se indica
     - numf auto = MAX(numf)+1 si se deja vacío
     """
     errores: list[str] = []
@@ -3062,7 +3062,7 @@ def backfill_asinfo_endpoint():
             "numf": numf, "fecha": fecha_obj, "codigo_cli": cli_pc_trunc,
             "kg": kg, "importe": importe, "abono": importe, "saldo": 0,
             "stat": "T", "condic": "CC", "tipo": tipo_pc,
-            "vencimiento": fecha_obj + timedelta(days=30),
+            "vencimiento": fecha_obj + timedelta(days=90),
             "numf_completo": numero or None, "clave": None,
             "usuario_crea": MARKER,
         })
