@@ -5,7 +5,12 @@
    palabras que metiste". Un renglón por movimiento, en UNA línea, sin
    envolver. Nada de párrafos, nada de plomería interna (el redondeo de la
    partición se dobla en el renglón que lo generó, no sale a la pantalla). #}
-<div style="font-variant-numeric:tabular-nums;font-size:12px;">
+{# 🚨 La celda del expandido abarca TODA la tabla, que es mucho más ancha que
+   la pantalla: sin esto el importe queda a la derecha del todo, fuera de la
+   vista, y la dueña ve el concepto sin el número. `position:sticky;left:0` lo
+   clava al borde visible aunque la tabla esté scrolleada al costado. #}
+<div style="font-variant-numeric:tabular-nums;font-size:11px;
+            position:sticky;left:0;max-width:min(920px, 94vw);">
 
   {# TMT 2026-08-06: *"esto tampoco hace falta repetir. 228.423 → 228.497 · 2
      mov, dale"*. La fila de arriba ya muestra la utilidad y el Δ; repetirlos
