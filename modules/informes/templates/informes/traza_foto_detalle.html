@@ -7,14 +7,15 @@
    partición se dobla en el renglón que lo generó, no sale a la pantalla). #}
 <div style="font-variant-numeric:tabular-nums;font-size:12px;">
 
-  <div style="color:rgb(100 116 139);margin-bottom:.4rem;">
-    {% if f.anterior %}{{ f.anterior.utilidad | num_es(0) }} → {{ f.utilidad | num_es(0) }}{% endif %}
-    {%- if not f.sin_registro %} · {{ f.movimientos | length }} mov{% endif %}
-    {%- if f.sin_registro %} · sin detalle (foto vieja)
-    {%- elif f.residuo is not none and f.residuo | abs >= 1 %}
-      · <span style="color:rgb(185 28 28);">{{ f.residuo | num_es(2) }} sin explicar</span>
-    {%- endif %}
-  </div>
+  {# TMT 2026-08-06: *"esto tampoco hace falta repetir. 228.423 → 228.497 · 2
+     mov, dale"*. La fila de arriba ya muestra la utilidad y el Δ; repetirlos
+     acá es ocupar la primera línea con algo que la dueña acaba de leer. Sólo
+     queda lo que la fila NO puede decir. #}
+  {% if f.sin_registro %}
+    <div style="color:rgb(148 163 184);margin-bottom:.3rem;">Sin detalle por documento — foto vieja.</div>
+  {% elif f.residuo is not none and f.residuo | abs >= 1 %}
+    <div style="color:rgb(185 28 28);margin-bottom:.3rem;">{{ f.residuo | num_es(2) }} sin explicar.</div>
+  {% endif %}
 
   {% for g in f.por_componente %}
     <div style="display:flex;justify-content:space-between;padding:.2rem 0 .1rem;

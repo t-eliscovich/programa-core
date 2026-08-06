@@ -179,8 +179,8 @@ def test_el_stock_se_parte_en_kilos_y_tarifa_sin_perder_plata():
     movs = dia._diff(nueva, vieja)
     assert round(sum(m["aporte"] for m in movs), 2) == 1000.0
     subs = {m["doc_id"]: m for m in movs}
-    assert subs["#hilado:kilos"]["delta"] == 400.0
-    assert subs["#hilado:tarifa"]["delta"] == 600.0
+    assert subs["#stock:hilado:kilos"]["delta"] == 400.0
+    assert subs["#stock:hilado:tarifa"]["delta"] == 600.0
 
 
 def test_stock_solo_tarifa_no_dice_que_entraron_kilos():
@@ -190,8 +190,8 @@ def test_stock_solo_tarifa_no_dice_que_entraron_kilos():
     nueva = [_fila("vsto", "#hilado", 2100.0, "Stock hilado", 1000.0, 2.1)]
     movs = dia._diff(nueva, vieja)
     assert len(movs) == 1
-    assert movs[0]["doc_id"] == "#hilado:tarifa"
-    assert "$/kg" in movs[0]["regla"]
+    assert movs[0]["doc_id"] == "#stock:hilado:tarifa"
+    assert "→" in movs[0]["etiqueta"]        # el hecho va en la etiqueta
 
 
 def test_la_particion_del_stock_no_pierde_centavos():

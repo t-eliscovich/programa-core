@@ -85,9 +85,9 @@ def test_el_stock_se_abre_por_caudal_cuando_los_numeros_cierran():
              _caudal("tejido", "egreso", 2400.0)]       # −400 en la ventana
     movs = motor.diff(nueva, vieja)
 
-    reglas = {m["regla"]: m["aporte"] for m in movs}
-    assert reglas["Stock tejido: se tejió tela cruda"] == 2000.0     # 1.000 kg × $2
-    assert reglas["Stock tejido: salió tela cruda a tintorería"] == -800.0
+    etiquetas = {m["etiqueta"]: m["aporte"] for m in movs}
+    assert any("se tejió tela cruda" in e for e in etiquetas)
+    assert any("salió tela cruda a tintorería" in e for e in etiquetas)
     # Y sigue cerrando contra el Δ del componente.
     assert round(sum(m["aporte"] for m in movs), 2) == 1200.0
 
@@ -105,7 +105,7 @@ def test_si_los_caudales_no_cierran_no_se_parte_el_delta():
              _caudal("tejido", "egreso", 2000.0)]
     movs = motor.diff(nueva, vieja)
 
-    kilos = [m for m in movs if m["regla"].endswith("entraron/salieron kilos")]
+    kilos = [m for m in movs if m["doc_id"].endswith(":kilos")]
     assert len(kilos) == 1
     assert kilos[0]["aporte"] == 1200.0
     # El caudal que sí se conoce no se tira: va en la etiqueta.
@@ -120,8 +120,8 @@ def test_la_tarifa_se_informa_aparte_de_los_kilos():
     nueva = [_etapa("hilado", 1000.0, 3.05)]
     movs = motor.diff(nueva, vieja)
     assert len(movs) == 1
-    assert movs[0]["regla"] == "Stock hilado: cambió el $/kg"
     assert movs[0]["aporte"] == 50.0
+    assert "→" in movs[0]["etiqueta"]
     assert "3,0000" in movs[0]["etiqueta"]        # formato Ecuador, no yanqui
 
 
@@ -133,9 +133,9 @@ def test_una_tarifa_que_no_cambio_a_la_vista_no_es_un_renglon():
     vieja = _guardada([_etapa("terminado", 300000.0, 5.25910)])
     nueva = [{**_etapa("terminado", 300042.85, 5.25911)}]
     movs = motor.diff(nueva, vieja)
-    reglas = [m["regla"] for m in movs]
-    assert not any("cambió el $/kg" in r for r in reglas)
-    assert not any("redondeo" in r for r in reglas)
+    etiq = [m["etiqueta"] or "" for m in movs]
+    assert not any("→" in e for e in etiq)
+    assert not any("redondeo" in e for e in etiq)
     # …y el Δ del componente sigue cerrando al centavo.
     d = round(_f(nueva[0]["importe"]) - _f(vieja[("vsto", "#terminado")]["importe"]), 2)
     assert round(sum(m["aporte"] for m in movs), 2) == d
@@ -152,7 +152,7 @@ def test_el_redondeo_de_la_particion_no_es_un_renglon_propio():
              _caudal("tejido", "ingreso", 333.0),
              _caudal("tejido", "egreso", 0.0)]
     movs = motor.diff(nueva, vieja)
-    assert not any("redondeo" in m["regla"] for m in movs)
+    assert not any("redondeo" in (m["etiqueta"] or "") for m in movs)
     d = round(_f(nueva[0]["importe"]) - _f(vieja[("vsto", "#tejido")]["importe"]), 2)
     assert round(sum(m["aporte"] for m in movs), 2) == d
 
@@ -359,3 +359,28 @@ def test_una_ventana_vieja_no_dice_que_no_se_movio_nada():
          patch.object(t, "_desde_cuando_hay_detalle", return_value=1):
         nueva = t.una(5)
     assert nueva["sin_registro"] is False   # la grabadora ya estaba: no pasó nada
+
+
+def test_los_kilos_que_pasan_de_una_etapa_a_la_siguiente_son_UN_renglon():
+    """🚨 TMT 2026-08-06, mirando cuatro renglones para explicar $ 36:
+    *"ejemplo esto, +21kg de tejido a terminado. listo, todo el resto no
+    entiendo para qué"*.
+
+    La tela que se termina sale de tejido y entra a terminado en el mismo
+    instante. Contarlo como dos movimientos es la contabilidad hablando sola;
+    lo que aporta a la utilidad es la diferencia de precio entre las etapas —
+    el valor que le agregó el proceso.
+    """
+    vieja = _guardada([_etapa("tejido", 299659.25, 3.5591),
+                       _etapa("terminado", 312486.53, 5.2591)])
+    nueva = [_etapa("tejido", 299637.60, 3.5591),
+             _etapa("terminado", 312508.18, 5.2591)]
+    movs = motor.diff(nueva, vieja)
+
+    assert len(movs) == 1, [m["etiqueta"] for m in movs]
+    assert movs[0]["etiqueta"] == "21,65 kg de tejido a terminado"
+    assert movs[0]["aporte"] == pytest.approx(21.65 * (5.2591 - 3.5591), abs=0.02)
+    # Y sigue cerrando contra el Δ del componente, al centavo.
+    d = round(sum(_f(f["importe"]) for f in nueva)
+              - sum(_f(v["importe"]) for v in vieja.values()), 2)
+    assert round(sum(m["aporte"] for m in movs), 2) == d
