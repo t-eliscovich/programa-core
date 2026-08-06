@@ -198,6 +198,15 @@ ETIQUETAS = {
 COLUMNAS_DELTA = ("caja", "bancos", "cheques", "facturas", "antic",
                   "vsto", "vqx", "totp")
 
+#: Rótulos cortos para la grilla. Con `table-layout:fixed` el ancho lo fija el
+#: CSS, pero un encabezado largo igual obliga a envolver en dos líneas y empuja
+#: la tabla fuera de la pantalla. En el detalle siguen con el nombre completo.
+ETIQUETAS_CORTAS = {
+    "caja": "Caja", "bancos": "Bancos", "cheques": "Cheq.",
+    "facturas": "Fact.", "antic": "Antic.", "vsto": "Stock",
+    "vqx": "Quím.", "totp": "Pasivos",
+}
+
 #: Las etapas del stock, en KILOS: es lo que guarda la foto (la tarifa está
 #: sólo para el hilado, así que el valor de tejido y terminado no se puede
 #: reconstruir). Acá sí va el nivel, porque un stock de tela es un número que
@@ -205,8 +214,8 @@ COLUMNAS_DELTA = ("caja", "bancos", "cheques", "facturas", "antic",
 #: TMT 2026-08-06: *"hilado tejido y terminado puede aparecer en vez de
 #: 1.939.121, 1.939 y ya"*. Son toneladas: 1.939.121 kg = 1.939 t. Siete
 #: dígitos por columna para una cifra que se mira de reojo es ancho tirado.
-COLUMNAS_KG = (("hilado_kg", "Hilado t"), ("tejido_kg", "Tejido t"),
-               ("terminado_kg", "Terminado t"))
+COLUMNAS_KG = (("hilado_kg", "Hil. t"), ("tejido_kg", "Tej. t"),
+               ("terminado_kg", "Term. t"))
 
 #: Lo que la grilla vigila para saber si un kilo o la tarifa se movieron. El
 #: $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de

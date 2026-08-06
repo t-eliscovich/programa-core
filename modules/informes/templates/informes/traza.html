@@ -45,23 +45,23 @@
   </div>
 
   <div class="border border-slate-200 rounded bg-white" style="overflow-x:auto;">
-    <table id="traza-tabla" class="w-full" style="font-size:11px;border-collapse:separate;border-spacing:0;">
+    <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:fixed;width:auto;">
       <thead style="background:rgb(248 250 252);">
-        <tr style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:rgb(100 116 139);">
+        <tr style="font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;color:rgb(100 116 139);white-space:nowrap;">
           {# La hora queda fija al scrollear al costado. #}
           <th class="px-3 py-2 text-left"
-              style="width:5.2rem;position:sticky;left:0;z-index:2;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
-          <th class="px-2 py-1.5 text-right" style="width:4.8rem;font-weight:500;">Utilidad</th>
+              style="width:4.6rem;position:sticky;left:0;z-index:2;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
+          <th class="px-2 py-1.5 text-right" style="width:4.2rem;font-weight:500;">Utilidad</th>
           <th class="px-2 py-2 text-right"
-              style="width:3.8rem;font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
+              style="width:3.4rem;font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
           {% for col, label in deltas %}
-            <th class="px-1 py-1 text-right" style="width:4.1rem;font-weight:500;">{{ label }}</th>
+            <th class="px-1 py-1 text-right" style="width:3.6rem;font-weight:500;">{{ label }}</th>
           {% endfor %}
           {% for col, label in kilos %}
             <th class="px-1 py-1 text-right"
-                style="width:3.5rem;font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
+                style="width:2.9rem;font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
           {% endfor %}
-          <th class="px-1 py-1 text-right" style="width:3.8rem;font-weight:500;">$/kg hilado</th>
+          <th class="px-1 py-1 text-right" style="width:3.2rem;font-weight:500;">$/kg</th>
         </tr>
       </thead>
       <tbody>
