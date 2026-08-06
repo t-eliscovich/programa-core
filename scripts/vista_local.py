@@ -62,7 +62,7 @@ def asegurar_postgres() -> None:
         )
     subprocess.Popen(
         [PG_BIN / "postgres", "-D", PGDATA, "-p", PORT, "-k", SOCKET_DIR],
-        stdout=open("/tmp/pg.log", "ab"), stderr=subprocess.STDOUT,  # noqa: SIM115
+        stdout=open(f"{PGDATA}.log", "ab"), stderr=subprocess.STDOUT,  # noqa: SIM115 — log junto al PGDATA propio: /tmp/pg.log puede ser de OTRO usuario del sandbox
         start_new_session=True,
     )
     for _ in range(50):

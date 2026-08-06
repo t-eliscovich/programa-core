@@ -302,6 +302,13 @@
   .flujo-wrap .gf-panel.gf-full .gf-head .gf-sub strong {
     color: var(--bad); font-size: 16px;
     font-variant-numeric: tabular-nums; margin-left: auto;
+    white-space: nowrap;
+  }
+  /* TMT 2026-08-06: la frase del subtítulo va en un span propio para que
+     wrapee como prosa — suelta en el flex, cada fragmento era un flex-item
+     y se partía en cualquier lado ("(", "/posdat ." cortados). */
+  .flujo-wrap .gf-panel.gf-full .gf-head .gf-sub .gf-sub-txt {
+    flex: 1 1 auto; min-width: 0;
   }
   /* Lista GRANDE (~340px, scroll si hace falta). */
   .flujo-wrap .gf-panel .gf-list {
@@ -457,14 +464,16 @@
       {% for e in egresos_lista if e.banc == 9 %}
         {% set _ = _gf_filas.append(e) %}
       {% endfor %}
+      {% set _ns_gf = namespace(total=0) %}
+      {% for e in _gf_filas %}{% set _ns_gf.total = _ns_gf.total + (e.importe or 0) %}{% endfor %}
       <section class="panel gf-panel gf-full">
         <div class="gf-head">
           <h3>Gastos forzados</h3>
           <span class="gf-sub">
-            Pasivos con <code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=9</code>
+            <span class="gf-sub-txt">Pasivos con <code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=9</code>
             — proyecciones internas (no son deudas a proveedor). Editables desde
-            {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.
-            <strong id="gf-total">$ 0</strong>
+            {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.</span>
+            <strong id="gf-total">$ {{ _ns_gf.total | num_es(0) }}</strong>
           </span>
         </div>
 
@@ -474,8 +483,6 @@
            NO persiste afuera del loop, así que _total_pd quedaba en 0 y el JS
            mostraba sólo manualTotal. Con namespace la suma sí persiste; el JS
            hace POSDAT_TOTAL (banc=9) + manuales. #}
-        {% set _ns_gf = namespace(total=0) %}
-        {% for e in _gf_filas %}{% set _ns_gf.total = _ns_gf.total + (e.importe or 0) %}{% endfor %}
         {% set _total_pd = _ns_gf.total %}
         {# TMT 2026-05-19 v8 — dueña: "borra columna forzado y dejame editar
            fechas y montos. elimina vencido y saca el color rojo".
@@ -712,16 +719,19 @@
          /posdat. Fechas DD/MM/AAAA (slicing del ISO, sin type=date gringo). #}
       {# Ordenados por fecha de vencimiento (dueña 2026-07-09). #}
       {% set _pd_filas = posdat_filas or [] %}
-      {% set _total_pd0 = 0 %}
-      {% for e in _pd_filas %}{% set _total_pd0 = _total_pd0 + e.importe %}{% endfor %}
+      {# TMT 2026-08-06 (dueña: "dice 0 arriba de todo"): mismo bug de scoping
+         que el panel Gastos forzados arregló el 15/07 — un {% set %} adentro
+         del {% for %} no persiste, el total quedaba en 0. Namespace. #}
+      {% set _ns_pd0 = namespace(total=0) %}
+      {% for e in _pd_filas %}{% set _ns_pd0.total = _ns_pd0.total + (e.importe or 0) %}{% endfor %}
       <section class="panel gf-panel gf-full" style="margin-bottom:16px;">
         <div class="gf-head">
           <h3>Posdatados contabilizados</h3>
           <span class="gf-sub">
-            Deudas a proveedor (<code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=0</code>)
+            <span class="gf-sub-txt">Deudas a proveedor (<code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=0</code>)
             que el flujo va restando a su vencimiento — de acá sale cada bajada del gráfico. Editables desde
-            {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.
-            <strong>$ {{ _total_pd0 | num_es(0) }}</strong>
+            {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.</span>
+            <strong>$ {{ _ns_pd0.total | num_es(0) }}</strong>
           </span>
         </div>
         <div style="max-height:320px;overflow-y:auto;border:1px solid var(--grid);border-radius:6px;background:var(--panel-hi);">
