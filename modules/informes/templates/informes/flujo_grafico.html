@@ -1199,6 +1199,8 @@ function buildChart(q) {
           grid: { color: toRgba(gridCol.startsWith('#') ? gridCol : '#e2e8f0', 0.5), drawTicks: false },
           ticks: {
             color: txtMuted,
+            // TMT 2026-08-06 Andres: escala de 500k (antes Chart.js elegia 1M solo)
+            stepSize: 500000,
             callback: v => '$ ' + (v / 1000).toFixed(0) + 'k',
             font: { size: 11 }, padding: 10,
           },
