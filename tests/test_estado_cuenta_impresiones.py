@@ -723,7 +723,7 @@ def test_el_estado_de_cuenta_esta_apretado_para_entrar_en_una_hoja():
     # La franja de códigos internos (Z/P/D, 1/2/3/R/9) no va al papel.
     assert "main .ec-ch-resumen { display: none !important; }" in css
     # 11 px de alto útil que salen del margen vertical.
-    assert "@page { margin: 7mm 8mm; }" in css
+    assert "@page { size: A4; margin: 7mm 8mm; }" in css
 
 
 def test_no_se_dibujan_barras_de_scroll_en_el_papel():

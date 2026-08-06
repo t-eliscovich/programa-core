@@ -621,9 +621,16 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     # `min-width:100%` se resuelven (los dos probados inline y medidos). 554,0
     # es el útil de la hoja Letter con los márgenes actuales.
     total = round(sum(anchos), 1)
-    assert 552 <= total <= 556, (
-        f"los <col> suman {total} pt; el útil de la hoja es 554,0. "
+    assert 535 <= total <= 537.7, (
+        f"los <col> suman {total} pt; el útil de la hoja A4 es 537,7. "
         "Por debajo queda hoja sin usar, por encima desborda."
+    )
+    # Y el papel tiene que estar FIJO: si no, el navegador imprime A4 y el
+    # endpoint /pdf sale Letter, y un ancho absoluto no puede servir a los dos.
+    css = Path("modules/informes/templates/informes/"
+               "_estado_cuenta_impreso.html").read_text()
+    assert "@page { size: A4; margin: 7mm 8mm; }" in css, (
+        "sin `size: A4` hay dos salidas con anchos distintos"
     )
     # Y la proporción tiene que ser la acordada: Días es la más angosta.
     assert anchos[-1] == min(anchos)
