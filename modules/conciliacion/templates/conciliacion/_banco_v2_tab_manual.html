@@ -313,6 +313,8 @@
                 <input type="checkbox" name="bancsis_id" value="{{ m.id_transaccion }}"
                        data-monto="{{ m.importe|float }}" data-tipo="{{ m.documento }}"
                        data-signo="{{ _signo }}"
+                       data-concepto="{{ (m.concepto or '')|e }}"
+                       data-id-tx="{{ m.id_transaccion }}"
                        class="accent-sky-600 cb-programa w-3 h-3">
               </td>
               <td class="px-1 py-0 text-slate-500 text-[9px]">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
@@ -394,9 +396,45 @@
   // internos, sin contraparte de banco. Espejo de descartarBancoSeleccionados.
   // Caso típico: corrección de un negativo / asiento OP interno (INOP) que
   // netea y no toca el banco.
+  // Freno 4 (TMT 2026-08-06): si entre lo seleccionado hay ND/NC de
+  // "ANUL <ch> err carga", proponer eliminar por papelera antes que interno.
+  // El err carga no tiene contraparte de banco: marcarlo interno desalinea
+  // la diferencia (casos MSS/CG3/ELF, 06/08).
+  function _errCargaSel(){
+    var out = [];
+    document.querySelectorAll('input.cb-programa:checked').forEach(function(cb){
+      var c = (cb.getAttribute('data-concepto') || '').toUpperCase();
+      if (c.indexOf('ANUL') === 0 && c.indexOf('ERR CARGA') !== -1){
+        out.push({id: cb.getAttribute('data-id-tx') || cb.value,
+                  monto: cb.getAttribute('data-monto'),
+                  concepto: cb.getAttribute('data-concepto')});
+      }
+    });
+    return out;
+  }
+
   window.descartarProgramaSeleccionados = function(){
     var p = read('programa');
     if (!p.count){ alert('No marcaste ningún mov del programa.'); return; }
+    var _err = _errCargaSel();
+    var _confirmar_err = false;
+    if (_err.length){
+      var lineas = _err.map(function(r){
+        return '  • #' + r.id + ' — «' + r.concepto + '» ($' + r.monto + ')\n' +
+               '    → papelera: /bancos/10/tx/' + r.id + '/eliminar';
+      }).join('\n');
+      var msg =
+        '⚠ Detecté ' + _err.length + ' mov(s) de «err carga» seleccionados.\n\n' +
+        lineas + '\n\n' +
+        'Un err carga no tiene contraparte de banco: marcarlo interno lo saca ' +
+        'de pendientes pero lo DEJA en el saldo → desalinea la diferencia\n' +
+        '(bug MSS/CG3/ELF, 06/08 — sumó $266,41 al desvío).\n\n' +
+        'Lo recomendado es ELIMINARLO por la papelera (30 días, reversible).\n\n' +
+        'ACEPTAR → continuar igual como interno (drift aceptado)\n' +
+        'CANCELAR → cancelar el interno para ir a eliminar por papelera';
+      if (!confirm(msg)) return;
+      _confirmar_err = true;
+    }
     var motivo = prompt(
       '¿Por qué conciliar como INTERNO estos ' + p.count + ' mov(s) de programa?\n\n' +
       'Ejemplos:\n' +
@@ -426,6 +464,7 @@
     add('sesion_id', document.querySelector('input[name=sesion_id]').value);
     add('bancsis_ids', p.ids.join(','));
     add('motivo', motivo);
+    if (_confirmar_err) add('confirmar_err_carga', '1');
     document.body.appendChild(form);
     form.submit();
   };

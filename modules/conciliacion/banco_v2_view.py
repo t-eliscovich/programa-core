@@ -1694,6 +1694,56 @@ def banco_descartar_programa():
 
     usuario = _usuario_actual()
     no_banco = _BANCO_PICHINCHA
+
+    # ── FRENO 4 (TMT 2026-08-06, dueña — casos MSS/CG3/ELF) ─────────────
+    # Un ND/NC generado por "anular por error de carga" (concepto
+    # "ANUL ch<n> err carga") es una compensación de un mov de PC que jamás
+    # tuvo contraparte en el banco. Marcarlo interno lo saca de pendientes
+    # pero lo DEJA en el saldo running → cada uno agrega |importe| al skew
+    # de saldo_esperado y desalinea la diferencia. El 06/08 costó $266,41
+    # (MSS 1.100,93 + CG3 −1.136,48 + ELF 301,96, diferencia saltó a −$259,22).
+    # La forma correcta de sacar un err carga del libro es la PAPELERA
+    # (30 días de retención, reversible) — no dejarlo posando como asiento
+    # interno. Bloqueamos la vía y ofrecemos el link. Si la dueña acepta
+    # el drift a ojo, tildar `confirmar_err_carga=1` desbloquea.
+    if request.form.get("confirmar_err_carga") != "1":
+        rows_err = _db.fetch_all(
+            """
+            SELECT id_transaccion, documento, importe, concepto
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+               AND id_transaccion = ANY(%s)
+               AND concepto ILIKE 'ANUL%% err carga%%'
+            """,
+            (no_banco, bancsis_ids),
+        ) or []
+        if rows_err:
+            def _fmt(v):
+                try:
+                    return f"{float(v):,.2f}"
+                except (TypeError, ValueError):
+                    return str(v)
+            partes = [
+                f"#{r['id_transaccion']} · {r['documento']} · "
+                f"${_fmt(r['importe'])} · eliminá por papelera → "
+                + url_for("bancos.eliminar_movimiento_pc",
+                          no_banco=no_banco,
+                          id_transaccion=int(r["id_transaccion"]))
+                for r in rows_err
+            ]
+            flash(
+                f"⚠ Detecté {len(rows_err)} mov(s) de «err carga» en tu "
+                f"selección. Marcar interno un err carga sin contraparte "
+                f"deja la tx en el saldo running y desalinea la diferencia "
+                f"(bug MSS/CG3/ELF, 06/08 — sumaron $266,41 al desvío). "
+                f"Sacalos por la PAPELERA (30 días, reversible) en vez de "
+                f"marcarlos interno:\n" + "\n".join(partes),
+                "error",
+            )
+            return redirect(
+                url_for("conciliacion.banco_post_procesar",
+                        sesion_id=sesion_id))
+
     import uuid as _uuid
     batch_id = _uuid.uuid4().hex
 
