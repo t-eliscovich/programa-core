@@ -606,7 +606,7 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
         "(el width:100% no se resuelve en el motor de PDF) y el ancho queda "
         "atado al tamaño de papel con el que se calcularon los pt"
     )
-    anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)vw"', bloque)]
+    anchos = [float(x) for x in re.findall(r'<col style="width:([\d.]+)pt"', bloque)]
     assert len(anchos) == 7, (
         f"el colgroup tiene {len(anchos)} columnas; en el papel la tabla tiene 7 "
         "(Tipo y Stat no se generan)"
@@ -623,10 +623,12 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     # En vw, que se resuelve contra el ancho de la PÁGINA: así el mismo número
     # sirve para A4 (útil 92,4%) y Letter (92,6%). Ni `%` (circular, se resuelve
     # contra la tabla) ni `pt` (atado al papel) funcionan — los dos probados.
-    total = round(sum(anchos), 2)
-    assert 91.5 <= total <= 92.4, (
-        f"los <col> suman {total}vw; el útil de la página es ~92,4% en A4 y "
-        "~92,6% en Letter. Por debajo queda hoja sin usar, por encima desborda."
+    # La suma ES el ancho de la tabla (ni width:100% ni min-width:100% ni %
+    # ni vw se resuelven en este motor — los cuatro probados y medidos).
+    # A4 = 595 pt, `@page` deja 8 mm por lado ⇒ 595 − 2×22,68 = 549,6 útiles.
+    total = round(sum(anchos), 1)
+    assert 546 <= total <= 549.6, (
+        f"los <col> suman {total} pt; el útil de A4 con margen 8 mm es 549,6"
     )
     # Y el papel tiene que estar FIJO: si no, el navegador imprime A4 y el
     # endpoint /pdf sale Letter, y un ancho absoluto no puede servir a los dos.

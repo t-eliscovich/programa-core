@@ -68,35 +68,30 @@
        donde el útil es ~554. 537/554 = 0,969, el número exacto que daba la
        medición.
 
-       ⚠️ Los anchos van en **vw**, no en pt ni en %, y esa es la clave:
+       ⚠️ Los anchos van en pt y la suma ES el ancho de la tabla: en este motor
+       ni `width:100%` ni `min-width:100%` se resuelven (los dos probados
+       inline y medidos sobre el PDF), y un `%` de columna se resuelve contra
+       el ancho de la TABLA — circular. También se probó `vw`: se resolvió
+       peor (93,9%), así que tampoco.
 
-         · `%` NO sirve: se resuelve contra el ancho de la TABLA, que en este
-           motor es justamente lo que no llega al 100%. Circular.
-         · `pt` NO sirve: el número queda atado al PAPEL. Hay DOS salidas con
-           anchos distintos —la dueña imprime desde el navegador en A4 (595 pt)
-           y el endpoint /pdf sale en LETTER (612 pt), porque `--print-to-pdf`
-           IGNORA el `size: A4` del CSS (verificado: el MediaBox dice 612x792)—.
-           Cualquier valor fijo acierta en una y falla en la otra, y eso fue lo
-           que pasó dos veces: 537 dejaba 3% sin usar en Letter, 554 desbordaba
-           en A4.
-         · `vw` en medios paginados se resuelve contra el ANCHO DE LA PÁGINA,
-           así que escala solo con el papel.
+       El número sale de ARITMÉTICA, no de medir: con `size: A4` arriba —que
+       SÍ toma efecto, verificado en el MediaBox del PDF: 594,96 x 841,92— la
+       página mide 595 pt y `@page` deja 8 mm de margen a cada lado:
 
-       Suma = 92,0vw. El útil es 92,4% en A4 y 92,6% en Letter con los márgenes
-       de `@page` (8 mm), o sea prácticamente el mismo porcentaje en las dos:
-       por eso un solo número sirve. Se dejan ~0,4 puntos de aire para no
-       desbordar.
+           595 − 2 × 22,68 = 549,6 pt de ancho útil
 
-       🚨 Si se cambia el papel o el margen de `@page`, hay que rehacer esta
-       suma. La forma de medirla: bajar el PDF, descomprimir el content stream
-       y comparar la extensión de las filas de las dos tablas. Hay un test que
-       fija el total. #}
+       Suma = 548,9 pt, con 0,7 de aire. Reparto 12·12·17·17·17·17·8.
+
+       🚨 Si se toca `size` o el margen de `@page`, hay que rehacer esta cuenta.
+       Y el papel TIENE que quedar fijo: sin `size: A4` el navegador imprime A4
+       y el endpoint /pdf sale Letter, y un número absoluto no puede servir a
+       los dos. #}
     {% if not interactivo %}
     <table class="w-full text-sm" style="table-layout: fixed; width: 100%; min-width: 100%;">
       <colgroup>
-        <col style="width:11.04vw"><col style="width:11.04vw"><col style="width:15.64vw">
-        <col style="width:15.64vw"><col style="width:15.64vw"><col style="width:15.64vw">
-        <col style="width:7.36vw">
+        <col style="width:65.9pt"><col style="width:65.9pt"><col style="width:93.3pt">
+        <col style="width:93.3pt"><col style="width:93.3pt"><col style="width:93.3pt">
+        <col style="width:43.9pt">
       </colgroup>
     {% else %}
     <table class="w-full text-sm">
