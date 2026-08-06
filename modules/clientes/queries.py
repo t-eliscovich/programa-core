@@ -125,6 +125,7 @@ def crear(
     parroquia: str | None = None,
     pago: str | None = None,
     cupo: int | None = None,
+    descuento: float | None = None,
     vend: str | None = None,
     observacion: str | None = None,
     clave: str | None = None,
@@ -165,11 +166,11 @@ def crear(
         INSERT INTO scintela.cliente
             (codigo_cli, nombre, telefono, ruc, correo,
              direccion1, direccion2, provincia, canton, parroquia,
-             pago, cupo, vend,
+             pago, cupo, descuento, vend,
              observacion, clave, stop, usuario_crea)
         VALUES (%s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
-                %s, %s, %s,
+                %s, %s, %s, %s,
                 %s, %s, 'N', %s)
         RETURNING id_cliente, codigo_cli
         """,
@@ -181,7 +182,7 @@ def crear(
             (provincia or None) and provincia[:30],
             (canton or None) and canton[:30],
             (parroquia or None) and parroquia[:30],
-            (pago or None) and pago[:2], cupo,
+            (pago or None) and pago[:2], cupo, descuento,
             (vend or None) and vend[:50],
             (observacion or None) and observacion[:200],
             (clave or None) and clave[:3],
@@ -204,6 +205,7 @@ def editar(
     parroquia: str | None = None,
     pago: str | None = None,
     cupo: "int | _Vaciar | None" = None,
+    descuento: "float | _Vaciar | None" = None,
     vend: str | None = None,
     observacion: str | None = None,
     stop: str | None = None,
@@ -263,6 +265,14 @@ def editar(
         sets.append("cupo = %s")
         valores.append(None if isinstance(cupo, _Vaciar) else cupo)
         distintos.append("cupo IS DISTINCT FROM %s")
+    # TMT 2026-08-06: el DESCUENTO nunca tuvo pantalla (venía del dBase). La
+    # campanita del sync dice "cargarle cupo y descuento" — sin esto, la
+    # mitad del pedido era imposible de cumplir. Misma semántica que cupo:
+    # None = no tocar, VACIAR = poner NULL.
+    if descuento is not None:
+        sets.append("descuento = %s")
+        valores.append(None if isinstance(descuento, _Vaciar) else descuento)
+        distintos.append("descuento IS DISTINCT FROM %s")
     if not sets:
         return 0
     sets.append("usuario_modifica = %s")

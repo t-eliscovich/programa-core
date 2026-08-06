@@ -43,9 +43,21 @@ def _form_from_request() -> dict:
         "parroquia": (request.form.get("parroquia") or "").strip(),
         "pago": (request.form.get("pago") or "").strip(),
         "cupo": request.form.get("cupo") or "",
+        "descuento": (request.form.get("descuento") or "").strip(),
         "vend": (request.form.get("vend") or "").strip(),
         "observacion": (request.form.get("observacion") or "").strip(),
     }
+
+
+def _parse_descuento(raw: str) -> float | None:
+    """'7' o '7,5' → float. Vacío/basura → None (el caller decide VACIAR)."""
+    raw = (raw or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _safe_next_url(raw: str | None) -> str | None:
@@ -88,6 +100,7 @@ def nuevo():
     form = _form_from_request()
     # Solo Andrés / accionistas setean el cupo (perm cupos.editar). TMT 2026-07-09.
     cupo = parse_int(form["cupo"]) if tiene_permiso("cupos.editar") else None
+    descuento = _parse_descuento(form["descuento"]) if tiene_permiso("cupos.editar") else None
     # POST también puede traer `next` como hidden — preferir ese sobre el
     # query string porque sobrevive al re-render con errores.
     next_url = _safe_next_url(request.form.get("next") or request.args.get("next"))
@@ -122,6 +135,7 @@ def nuevo():
             parroquia=form["parroquia"] or None,
             pago=form["pago"] or None,
             cupo=cupo,
+            descuento=descuento,
             vend=form["vend"] or None,
             observacion=form["observacion"] or None,
             clave=clave,
@@ -177,6 +191,7 @@ def editar(codigo_cli: str):
             "parroquia": cli.get("parroquia") or "",
             "pago": cli.get("pago") or "",
             "cupo": cli.get("cupo") or "",
+            "descuento": ("" if cli.get("descuento") is None else cli.get("descuento")),
             "vend": cli.get("vend") or "",
             "observacion": cli.get("observacion") or "",
             "stop": cli.get("stop") or "N",
@@ -194,8 +209,10 @@ def editar(codigo_cli: str):
     # toques" — mismo agujero que el vendedor de KET (ver queries.editar).
     if tiene_permiso("cupos.editar"):
         cupo = parse_int(form["cupo"]) if form["cupo"].strip() else queries.VACIAR
+        descuento = _parse_descuento(form["descuento"]) if form["descuento"] else queries.VACIAR
     else:
         cupo = cli.get("cupo")
+        descuento = cli.get("descuento")
 
     if not form["nombre"]:
         errores.append("Nombre requerido.")
@@ -224,6 +241,7 @@ def editar(codigo_cli: str):
             parroquia=form["parroquia"],
             pago=form["pago"],
             cupo=cupo,
+            descuento=descuento,
             vend=form["vend"],
             observacion=form["observacion"],
             usuario=usuario,
