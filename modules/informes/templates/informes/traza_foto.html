@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Qué movió la utilidad · {{ f.cuando }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <a href="{{ url_for('informes.traza') }}">Traza</a> / <strong>{{ f.cuando }}</strong>{% endblock %}
+
+{% block content %}
+{# La MISMA foto que se abre adentro de la fila de la traza, servida como
+   pantalla para poder compartir el link de una ventana puntual. El flujo
+   normal no pasa por acá: la fila se abre en el lugar. #}
+<div style="max-width:1040px;">
+  {{ page_hero(
+      'Qué movió la utilidad',
+      descripcion='La ventana que cerró a las ' ~ f.cuando ~ '. Cada renglón es un documento; la suma de los aportes es el Δ.',
+      kpi_valor=(('%+d' | format(f.d_utilidad | round | int)) if f.d_utilidad is not none else '—'),
+      kpi_extra='· ' ~ (f.movimientos | length) ~ ' movimientos'
+  ) }}
+  <div class="my-4">
+    {% include "informes/traza_foto_detalle.html" %}
+  </div>
+  <p class="mt-4 text-xs">
+    <a href="{{ url_for('informes.traza') }}" style="color:rgb(30 64 175);">← Volver a la traza</a>
+  </p>
+</div>
+{% endblock %}

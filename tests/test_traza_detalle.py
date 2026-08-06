@@ -1,0 +1,293 @@
+"""La traza baja a DOCUMENTO — y el stock, a CAUDAL.
+
+TMT 2026-08-06 (dueña, mirando /informes/traza): *"¿podés explicarme mejor el
+movimiento exacto que causó la movida?"* y, sobre el stock: *"pero stock
+también, por qué sube y por qué baja"*.
+
+Hasta la mig 0171 la grabadora guardaba once totales cada cinco minutos y la
+explicación por documento corría dos veces por día. Estos tests cubren lo que
+cambió: el motor de la foto (`modules/informes/foto.py`) corriendo a la
+cadencia de la traza, los caudales del stock, y que los links del detalle
+apunten a pantallas que existen.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from unittest.mock import patch
+from urllib.parse import urlsplit
+
+import pytest
+from werkzeug.exceptions import MethodNotAllowed, NotFound
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from modules.informes import foto as motor  # noqa: E402
+from modules.informes import traza as t  # noqa: E402
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+def _guardada(filas: list[dict]) -> dict:
+    return {(f["componente"], f["doc_id"]): f for f in filas}
+
+
+def _fila(comp, doc, imp, etiqueta="x", cantidad=None, precio=None) -> dict:
+    return {"componente": comp, "doc_id": doc, "importe": imp,
+            "etiqueta": etiqueta, "cantidad": cantidad, "precio": precio}
+
+
+def _caudal(etapa, sentido, kg, mes="2026-08") -> dict:
+    return {"componente": motor.FLUJO, "doc_id": f"{etapa}:{sentido}:{mes}",
+            "etiqueta": motor.CAUDALES[(etapa, sentido)],
+            "importe": 0.0, "cantidad": kg, "precio": None}
+
+
+def _etapa(nombre, kg, ukg) -> dict:
+    return _fila("vsto", f"#{nombre}", round(kg * ukg, 2),
+                 etiqueta=f"Stock {nombre}", cantidad=kg, precio=ukg)
+
+
+# ── El invariante, ahora cada cinco minutos ─────────────────────────────────
+
+def test_el_invariante_se_cumple_en_una_ventana_de_cinco_minutos():
+    """La ventana se achicó de doce horas a cinco minutos; la promesa no.
+
+    Reproduce la fila real del 06/08 16:14, donde la traza mostraba
+    "Facturas +11.399" sin decir de quién: tres facturas que suman 11.399,30.
+    """
+    vieja = _guardada([_fila("facturas", "f1", 5000.0)])
+    nueva = [
+        _fila("facturas", "f1", 5000.0),                       # sin cambios
+        _fila("facturas", "f2", 162.17, "Factura … · GBC"),
+        _fila("facturas", "f3", 495.67, "Factura … · SAC"),
+        _fila("facturas", "f4", 10741.46, "Factura … · AJT"),
+    ]
+    movs = motor.diff(nueva, vieja)
+    assert round(sum(m["aporte"] for m in movs), 2) == 11399.30
+    assert {m["doc_id"] for m in movs} == {"f2", "f3", "f4"}
+    # Y la más grande queda primera: es la que contesta la pregunta.
+    assert movs[0]["doc_id"] == "f4"
+
+
+# ── El stock: por qué sube y por qué baja ───────────────────────────────────
+
+def test_el_stock_se_abre_por_caudal_cuando_los_numeros_cierran():
+    """1.000 kg tejidos y 400 despachados no son "el stock se movió +600":
+    son dos noticias, y una es buena y la otra es normal."""
+    vieja = _guardada([_etapa("tejido", 10000.0, 2.0),
+                       _caudal("tejido", "ingreso", 5000.0),
+                       _caudal("tejido", "egreso", 2000.0)])
+    nueva = [_etapa("tejido", 10600.0, 2.0),
+             _caudal("tejido", "ingreso", 6000.0),      # +1.000 en la ventana
+             _caudal("tejido", "egreso", 2400.0)]       # −400 en la ventana
+    movs = motor.diff(nueva, vieja)
+
+    reglas = {m["regla"]: m["aporte"] for m in movs}
+    assert reglas["Stock tejido: se tejió tela cruda"] == 2000.0     # 1.000 kg × $2
+    assert reglas["Stock tejido: salió tela cruda a tintorería"] == -800.0
+    # Y sigue cerrando contra el Δ del componente.
+    assert round(sum(m["aporte"] for m in movs), 2) == 1200.0
+
+
+def test_si_los_caudales_no_cierran_no_se_parte_el_delta():
+    """Los caudales y el saldo salen de dos lecturas de Asinfo con cachés
+    propias: en cinco minutos se desfasan. Partir el Δ con números que no
+    cierran sería fabricar una precisión que no tenemos — así que se informa
+    de a un renglón, con los caudales de nota al pie."""
+    vieja = _guardada([_etapa("tejido", 10000.0, 2.0),
+                       _caudal("tejido", "ingreso", 5000.0),
+                       _caudal("tejido", "egreso", 2000.0)])
+    nueva = [_etapa("tejido", 10600.0, 2.0),
+             _caudal("tejido", "ingreso", 5100.0),      # sólo +100: no explica los +600
+             _caudal("tejido", "egreso", 2000.0)]
+    movs = motor.diff(nueva, vieja)
+
+    kilos = [m for m in movs if m["regla"].endswith("entraron/salieron kilos")]
+    assert len(kilos) == 1
+    assert kilos[0]["aporte"] == 1200.0
+    # El caudal que sí se conoce no se tira: va en la etiqueta.
+    assert "se tejió tela cruda 100 kg" in kilos[0]["etiqueta"]
+    assert round(sum(m["aporte"] for m in movs), 2) == 1200.0
+
+
+def test_la_tarifa_se_informa_aparte_de_los_kilos():
+    """Un cambio de $/kg revalúa TODO el stock de un saque sin que se haya
+    producido ni vendido nada. Mezclarlo con los kilos borra la diferencia."""
+    vieja = _guardada([_etapa("hilado", 1000.0, 3.00)])
+    nueva = [_etapa("hilado", 1000.0, 3.05)]
+    movs = motor.diff(nueva, vieja)
+    assert len(movs) == 1
+    assert movs[0]["regla"] == "Stock hilado: cambió el $/kg"
+    assert movs[0]["aporte"] == 50.0
+
+
+def test_los_caudales_no_son_plata_y_no_generan_movimiento_propio():
+    """Si un caudal se contara como movimiento, los kilos entrarían dos veces
+    en la suma y el invariante se rompería."""
+    vieja = _guardada([_caudal("terminado", "ingreso", 1000.0)])
+    nueva = [_caudal("terminado", "ingreso", 4000.0)]
+    assert motor.diff(nueva, vieja) == []
+
+
+def test_el_cambio_de_mes_no_parece_una_baja_gigante():
+    """El acumulado del caudal se reinicia el 1°. Si la clave no llevara el mes
+    adentro, el Δ del primer minuto de septiembre sería el mes de agosto en
+    negativo."""
+    vieja = _guardada([_caudal("tejido", "ingreso", 90000.0, mes="2026-08")])
+    nueva = [_caudal("tejido", "ingreso", 120.0, mes="2026-09")]
+    assert motor.diff(nueva, vieja) == []
+
+
+# ── La primera foto ─────────────────────────────────────────────────────────
+
+def test_la_primera_foto_se_reconoce_por_la_marca_y_no_por_estar_vacia():
+    """🚨 Si "primera" se decidiera por si la tabla está vacía, una foto
+    legítimamente vacía —todo cobrado, todo pagado— haría que la vuelta
+    siguiente diffeara contra la nada y cada factura viva de la cartera
+    saliera como "venta de este minuto"."""
+    assert motor.es_primera({}) is True
+    assert motor.es_primera(_guardada([
+        {"componente": motor.META, "doc_id": "iniciada", "importe": 0.0},
+    ])) is False
+    # Una foto sin documentos pero YA iniciada no es la primera.
+    vacia_pero_iniciada = _guardada([
+        {"componente": motor.META, "doc_id": "iniciada", "importe": 0.0}])
+    assert motor.es_primera(vacia_pero_iniciada) is False
+
+
+def test_la_marca_viaja_en_cada_foto():
+    with patch.object(motor, "_det_flujo", return_value=[]), \
+         patch.object(motor, "_rows", return_value=[]), \
+         patch.object(motor, "_det_bancos", return_value=[]):
+        det = motor.detalle({"diagnostico": {"componentes": {}}})
+    assert (motor.META, "iniciada") in {(d["componente"], d["doc_id"]) for d in det}
+
+
+# ── La foto se actualiza por diferencia, no a lo bruto ──────────────────────
+
+class _ConnFalso:
+    def __init__(self):
+        self.sql = []
+
+
+def test_aplicar_toca_solo_lo_que_cambio():
+    """🚨 Son ~7.100 filas y 288 vueltas por día. Borrar y reescribir la foto
+    entera —como hacía la versión de dos capturas diarias— serían dos millones
+    de escrituras diarias para mover, en una vuelta típica, menos de
+    cincuenta."""
+    vieja = _guardada([
+        _fila("facturas", "f1", 1000.0),      # queda igual
+        _fila("facturas", "f2", 500.0),       # cambia
+        _fila("facturas", "f3", 300.0),       # desaparece
+    ])
+    nueva = [
+        _fila("facturas", "f1", 1000.0),
+        _fila("facturas", "f2", 250.0),
+        _fila("facturas", "f4", 900.0),       # nace
+    ]
+    ejecutadas = []
+    with patch.object(motor.db, "execute",
+                      side_effect=lambda sql, *a, **k: ejecutadas.append(sql)):
+        res = motor.aplicar(_ConnFalso(), nueva, vieja)
+
+    assert res == {"altas": 1, "cambios": 1, "bajas": 1}
+    # Una sentencia para el upsert (alta + cambio) y una para la baja. Y
+    # ningún DELETE sin WHERE: la fila que no se movió no se toca.
+    assert len(ejecutadas) == 2
+    assert any(s.startswith("INSERT INTO scintela.traza_detalle") for s in ejecutadas)
+    assert any(s.startswith("DELETE FROM scintela.traza_detalle WHERE") for s in ejecutadas)
+    assert not any(s.strip() == "DELETE FROM scintela.traza_detalle" for s in ejecutadas)
+
+
+def test_un_cambio_por_debajo_del_umbral_igual_actualiza_la_foto():
+    """No genera movimiento (es ruido de centavos) pero SÍ se guarda: si no,
+    un documento que se corre medio centavo por vuelta nunca alcanzaría el
+    umbral y la foto se iría quedando atrás en silencio."""
+    vieja = _guardada([_fila("facturas", "f1", 1000.000)])
+    nueva = [_fila("facturas", "f1", 1000.005)]
+    assert motor.diff(nueva, vieja) == []                 # no es noticia
+    with patch.object(motor.db, "execute"):
+        assert motor.aplicar(_ConnFalso(), nueva, vieja)["cambios"] == 1
+
+
+# ── Los links del detalle apuntan a pantallas que existen ───────────────────
+
+def test_el_doc_id_se_traduce_a_la_tabla_de_origen():
+    assert t._ref("f123") == ("factura", 123)
+    assert t._ref("c7") == ("cheque", 7)
+    assert t._ref("#hilado:tarifa") == (None, None)       # sintética
+    assert t._ref("") == (None, None)
+    assert t._ref("z9") == (None, None)                   # prefijo desconocido
+
+
+def test_los_links_del_detalle_resuelven_contra_el_url_map(app):
+    """🚨 Los links de este repo son strings hardcodeados, no `url_for`: una
+    ruta que no existe no se ve desde el código, sólo como 404 al clickear
+    (TMT 2026-08-03: *"cuando clické el link de compra 473 me dice 404"*).
+    Este test recorre TODOS los prefijos que el detalle sabe linkear. Si mañana
+    alguien agrega uno sin pantalla, falla acá y no en la cara de la dueña.
+    """
+    from modules.historial.queries import link_origen
+
+    adaptador = app.url_map.bind("localhost")
+    rotos = []
+    for prefijo in sorted(t.PREFIJO_TABLA):
+        tabla, rid = t._ref(f"{prefijo}473")
+        assert tabla, f"el prefijo {prefijo!r} no mapea a ninguna tabla"
+        url, etiqueta = link_origen({"origen_table": tabla, "origen_id": rid})
+        assert etiqueta, f"{tabla}: etiqueta vacía"
+        if url is None:
+            continue                                      # sin ficha, a propósito
+        try:
+            adaptador.match(urlsplit(url).path, method="GET")
+        except MethodNotAllowed:
+            pass                                          # la ruta existe
+        except NotFound:
+            rotos.append((prefijo, tabla, url))
+    assert rotos == [], (
+        "estos links del detalle de la traza dan 404: "
+        + ", ".join(f"{p} ({tb}) → {u}" for p, tb, u in rotos))
+
+
+def test_los_caudales_se_pueden_apagar_sin_tocar_codigo():
+    """Son tres consultas a Asinfo por vuelta. Si alguna vez le pesan al ERP,
+    se apagan por entorno y el stock vuelve a informarse en un solo renglón —
+    la pantalla sigue andando, sólo dice menos."""
+    with patch.dict(os.environ, {"TRAZA_CAUDALES": "0"}):
+        assert motor._det_flujo() == []
+
+
+# ── La grilla de saldos: apagar lo que no se movió ──────────────────────────
+
+def test_la_grilla_marca_los_kilos_y_la_tarifa_que_se_movieron():
+    """TMT 2026-08-06: *"agregame los distintos stocks"*. La grilla muestra
+    SALDOS, y un saldo de siete dígitos que no cambió pesa lo mismo que el que
+    sí: sin marcar cuál se movió habría que restar a ojo, fila contra fila."""
+    viejo = {"utilidad": 100.0, "hilado_kg": 1899100.0, "tejido_kg": 294986.0,
+             "terminado_kg": 313339.0, "hilado_ukg": 3.0513}
+    nuevo = dict(viejo, utilidad=150.0, tejido_kg=296136.0, hilado_ukg=3.0591)
+    fila = t.con_deltas([nuevo, viejo])[0]
+    assert "tejido_kg" in fila["movidas"]
+    assert "hilado_ukg" in fila["movidas"]          # la 4ª decimal cuenta
+    assert "hilado_kg" not in fila["movidas"]
+    assert "terminado_kg" not in fila["movidas"]
+
+
+def test_la_foto_mas_vieja_no_tiene_nada_marcado():
+    """No hay contra qué compararla: marcar todo sería mentir."""
+    fila = t.con_deltas([{"utilidad": 100.0}])[0]
+    assert fila["d_utilidad"] is None
+    assert fila["movidas"] == set()
+
+
+def test_las_columnas_de_la_grilla_existen_en_la_foto():
+    """Si alguien agrega una columna que la tabla no guarda, la pantalla
+    renderiza vacío sin avisar. Acá avisa."""
+    from modules.informes.traza import _fila_desde_balance
+    campos = set(_fila_desde_balance({"diagnostico": {"componentes": {}}}))
+    for col in t.COLUMNAS_SALDO:
+        assert col in campos, f"la grilla pide {col} y la foto no lo guarda"
+    for col, _label in t.COLUMNAS_KG:
+        assert col in campos, f"la grilla pide {col} y la foto no lo guarda"

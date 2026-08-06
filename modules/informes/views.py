@@ -1239,7 +1239,35 @@ def traza():
         filas=filas,
         bajadas=_traza.bajadas(filas),
         intervalo=_traza._intervalo(),
+        # Las etiquetas salen del mismo diccionario que usa el detalle, para
+        # que una columna y su renglón se llamen igual.
+        componentes=[(c, _traza.ETIQUETAS.get(c, c)) for c in _traza.COLUMNAS_SALDO],
+        kilos=_traza.COLUMNAS_KG,
     )
+
+
+@informes_bp.route("/traza/<int:id_traza>")
+@requiere_login
+@requiere_permiso("informes.ver")
+def traza_foto(id_traza: int):
+    """Qué documentos movieron la utilidad en esa ventana de cinco minutos.
+
+    TMT 2026-08-06 (dueña, sobre /informes/traza): *"¿podés explicarme mejor el
+    movimiento exacto que causó la movida?"*. La tabla contesta qué COMPONENTE
+    se movió; esta pantalla contesta qué DOCUMENTO — la factura, el cheque, la
+    deuda— y, en el stock, por qué caudal entraron o salieron los kilos.
+    """
+    from modules.informes import traza as _traza
+
+    foto = _traza.una(id_traza)
+    if not foto:
+        abort(404)
+    # `?fragmento=1` devuelve el bloque solo, sin la cáscara de la app: es lo
+    # que la tabla se trae para abrir la fila en el lugar. La misma ruta sirve
+    # la pantalla entera para poder compartir el link de una ventana puntual.
+    plantilla = ("informes/traza_foto_detalle.html" if request.args.get("fragmento")
+                 else "informes/traza_foto.html")
+    return render_template(plantilla, f=foto)
 
 
 @informes_bp.route("/traza/ahora", methods=["POST"])

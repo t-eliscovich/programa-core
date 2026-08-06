@@ -97,26 +97,62 @@ def _fila_desde_balance(bal: dict) -> dict:
     }
 
 
-def registrar(origen: str = "manual", bal: dict | None = None) -> bool:
-    """Guarda UNA foto. True si se insertó. Nunca lanza."""
+def registrar(origen: str = "manual", bal: dict | None = None,
+              momento: str = "foto") -> dict:
+    """Guarda UNA foto: los totales, el detalle por documento, y el diff.
+
+    Hasta la mig 0171 esto guardaba sólo los once totales, así que la pantalla
+    podía decir *"Facturas +11.399"* y ahí se terminaba. Ahora, en la misma
+    vuelta y contra el MISMO balance, saca la foto a nivel documento
+    (`foto.detalle`), la compara con la de hace cinco minutos y guarda qué se
+    movió. Esa es la diferencia entre *"se movieron las facturas"* y *"la
+    factura 001-099-000181251 de AJT, $ 10.741,46"*.
+
+    Devuelve un dict (antes devolvía un bool) porque el ancla del día necesita
+    el `id_traza` y el balance ya calculado: `dia.capturar()` cuelga de esta
+    misma foto en vez de leer el balance una segunda vez.
+
+    Nunca lanza: la grabadora no puede tumbar nada.
+    """
+    res: dict = {"ok": False, "id_traza": None, "movimientos": 0,
+                 "primera": False, "motivo": "", "bal": bal}
     try:
         if bal is None:
             from modules.informes import queries as _q
             bal = _q.informe_balance()
+        res["bal"] = bal
         fila = _fila_desde_balance(bal)
         if fila.get("utilidad") is None:
-            return False                      # balance sin componentes: no sirve
+            res["motivo"] = "balance sin componentes"
+            return res                        # balance sin componentes: no sirve
         fila["origen"] = (origen or "manual")[:20]
+        fila["momento"] = (momento or "foto")[:20]
+
+        from modules.informes import foto as _foto
+        nueva = _foto.detalle(bal)
+        vieja = _foto.guardada()
+        primera = _foto.es_primera(vieja)
+        movs = [] if primera else _foto.diff(nueva, vieja)
+
         cols = list(fila.keys())
-        db.execute(
-            "INSERT INTO scintela.traza_utilidad (%s) VALUES (%s)" % (
-                ", ".join(cols), ", ".join(f"%({c})s" for c in cols)),
-            fila,
-        )
-        return True
+        campos = ", ".join(cols)
+        marcas = ", ".join(f"%({c})s" for c in cols)
+        # Una sola transacción: la foto, sus movimientos y el estado nuevo del
+        # detalle entran juntos o no entra nada. Si el detalle avanzara sin que
+        # entren los movimientos, esos documentos quedarían sin explicación
+        # para siempre — la vuelta siguiente ya los vería como "iguales".
+        with db.tx() as conn:
+            r = db.execute_returning(
+                f"INSERT INTO scintela.traza_utilidad ({campos}) "
+                f"VALUES ({marcas}) RETURNING id_traza", fila, conn=conn)
+            idt = r["id_traza"]
+            _foto.guardar_movimientos(conn, idt, movs)
+            _foto.aplicar(conn, nueva, vieja)
+        res.update(ok=True, id_traza=idt, movimientos=len(movs), primera=primera)
     except Exception as e:  # noqa: BLE001 -- la grabadora no puede tumbar nada
         _LOG.warning("traza_utilidad: no se pudo guardar la foto (%s)", e)
-        return False
+        res["motivo"] = str(e)[:150]
+    return res
 
 
 def registrar_si_toca(origen: str = "loop") -> bool:
@@ -126,7 +162,7 @@ def registrar_si_toca(origen: str = "loop") -> bool:
     if (ahora - _ultimo_ts) < _intervalo():
         return False
     _ultimo_ts = ahora
-    return registrar(origen=origen)
+    return bool(registrar(origen=origen).get("ok"))
 
 
 # ── Lectura ────────────────────────────────────────────────────────────────
@@ -146,6 +182,29 @@ ETIQUETAS = {
     "vqx": "Stock Químicos", "umaq": "Maquinaria", "uact": "Terrenos/Edif.",
     "totp": "Pasivos", "uret": "Dividendos",
 }
+
+
+#: Las columnas de SALDO que muestra la grilla, en el orden del balance.
+#: TMT 2026-08-06: *"dividendos, maquinaria, terrenos no necesito, agregame los
+#: distintos stocks"*. Los tres que salieron no desaparecieron del modelo —
+#: siguen en el balance y en el detalle de cada foto (la amortización del día
+#: aparece ahí, en Maquinaria); lo que pasa es que en una grilla minuto a
+#: minuto son tres columnas que no se mueven nunca y le comen el ancho a las
+#: que sí.
+COLUMNAS_SALDO = ("caja", "bancos", "cheques", "facturas", "antic",
+                  "vsto", "vqx", "totp")
+
+#: Las etapas del stock. Van en KILOS y no en pesos porque es lo que guarda la
+#: foto: la tarifa está sólo para el hilado (`hilado_ukg`), así que el valor de
+#: tejido y de terminado no se puede reconstruir. El peso total ya está en la
+#: columna Stock MP+Prod.
+COLUMNAS_KG = (("hilado_kg", "Hilado kg"), ("tejido_kg", "Tejido kg"),
+               ("terminado_kg", "Terminado kg"))
+
+#: Todo lo que la grilla vigila para saber si un número se movió o quedó igual.
+#: El $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de
+#: milésimas revalúa el stock entero.
+_VIGILADAS = tuple(c for c, _l in COLUMNAS_KG) + ("hilado_ukg",)
 
 
 def ultimas(n: int = 120) -> list[dict]:
@@ -184,6 +243,7 @@ def con_deltas(filas: list[dict]) -> list[dict]:
         if not prev:
             fila["d_utilidad"] = None
             fila["movio"] = []
+            fila["movidas"] = set()
             out.append(fila)
             continue
         try:
@@ -205,6 +265,20 @@ def con_deltas(filas: list[dict]) -> list[dict]:
                 })
         movs.sort(key=lambda m: abs(m["aporte"]), reverse=True)
         fila["movio"] = movs
+        # ⭐ Cuáles se movieron, para que la grilla de SALDOS pueda apagar los
+        # que quedaron iguales. Una columna de saldos es ilegible si los siete
+        # dígitos que no cambiaron pesan lo mismo que el que sí: la dueña
+        # tendría que restar a ojo, fila contra fila, para encontrar el
+        # movimiento. Con los repetidos en gris claro, el que cambió salta.
+        movidas = {m["col"] for m in movs}
+        for col in _VIGILADAS:
+            umbral = 0.00005 if col.endswith("_ukg") else 1.0
+            try:
+                if abs(float(f.get(col) or 0) - float(prev.get(col) or 0)) >= umbral:
+                    movidas.add(col)
+            except (TypeError, ValueError):
+                continue
+        fila["movidas"] = movidas
         out.append(fila)
     return out
 
@@ -217,3 +291,132 @@ def bajadas(filas: list[dict], umbral: float = 1000.0) -> list[dict]:
     """
     return [f for f in (filas or [])
             if f.get("d_utilidad") is not None and f["d_utilidad"] <= -abs(umbral)]
+
+
+# ── El detalle de UNA foto: qué documentos movieron ese Δ ───────────────────
+
+#: Prefijo del `doc_id` → tabla de origen, para reusar `historial.link_origen`
+#: y no inventar una segunda tabla de links.
+#: 🚨 Los links de este repo son strings hardcodeados, no `url_for`: una ruta
+#: que no existe no se ve desde el código, sólo como 404 al clickear. Por eso
+#: se delega en la función que YA tiene un test recorriendo todo el mapeo
+#: contra el `url_map` real (`tests/test_historial_links_resuelven.py`).
+PREFIJO_TABLA = {
+    "f": "factura", "c": "cheque", "k": "caja", "d": "dolares",
+    "p": "posdat", "r": "retiros",
+}
+
+
+def _ref(doc_id: str) -> tuple[str | None, int | None]:
+    """(tabla, id interno) de un doc_id, o (None, None) si es sintético."""
+    doc_id = (doc_id or "").split(":")[0]
+    if not doc_id or doc_id.startswith("#"):
+        return None, None
+    tabla = PREFIJO_TABLA.get(doc_id[0])
+    try:
+        return (tabla, int(doc_id[1:])) if tabla else (None, None)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _numeros_visibles(movs: list[dict]) -> tuple[dict, dict]:
+    """id interno → número que la dueña reconoce, en dos queries.
+
+    ⭐ La URL va por número visible (`numf`, `no_cheque`) y no por id interno,
+    igual que en el historial: la dueña nombra las cosas por su número.
+    """
+    ids: dict[str, set] = {"factura": set(), "cheque": set()}
+    for m in movs or []:
+        tabla, rid = _ref(m.get("doc_id"))
+        if tabla in ids and rid:
+            ids[tabla].add(rid)
+    numfs, nos = {}, {}
+    if ids["factura"]:
+        for r in db.fetch_all(
+                "SELECT id_factura, numf FROM scintela.factura "
+                "WHERE id_factura = ANY(%s)", (list(ids["factura"]),)) or []:
+            numfs[int(r["id_factura"])] = r.get("numf")
+    if ids["cheque"]:
+        for r in db.fetch_all(
+                "SELECT id_cheque, no_cheque FROM scintela.cheque "
+                "WHERE id_cheque = ANY(%s)", (list(ids["cheque"]),)) or []:
+            nos[int(r["id_cheque"])] = r.get("no_cheque")
+    return numfs, nos
+
+
+def movimientos(id_traza: int) -> list[dict]:
+    """Los documentos que movieron esa foto, con su link a la ficha."""
+    try:
+        movs = db.fetch_all(
+            "SELECT * FROM scintela.dia_movimiento "
+            " WHERE id_traza = %s ORDER BY ABS(aporte) DESC", (int(id_traza),)) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("traza_utilidad: no se pudieron leer los movimientos (%s)", e)
+        return []
+    try:
+        from modules.historial.queries import link_origen
+        numfs, nos = _numeros_visibles(movs)
+    except Exception as e:  # noqa: BLE001 -- sin links la pantalla igual sirve
+        _LOG.warning("traza_utilidad: sin links (%s)", e)
+        return [dict(m, url=None) for m in movs]
+    out = []
+    for m in movs:
+        tabla, rid = _ref(m.get("doc_id"))
+        url = None
+        if tabla and rid:
+            url, _rot = link_origen({"origen_table": tabla, "origen_id": rid},
+                                    factura_numfs=numfs, cheque_nos=nos)
+        out.append(dict(m, url=url))
+    return out
+
+
+def una(id_traza: int) -> dict | None:
+    """UNA foto con su Δ contra la anterior y el detalle que lo explica.
+
+    El residuo es la parte del Δ que los documentos no llegaron a explicar. A
+    esta cadencia debería ser cero: si no lo es, la ventana de cinco minutos
+    en la que se rompió el invariante queda señalada con nombre y hora.
+    """
+    try:
+        id_traza = int(id_traza)
+    except (TypeError, ValueError):
+        return None
+    try:
+        par = db.fetch_all(
+            """
+            SELECT *,
+                   TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
+                           'DD/MM HH24:MI') AS cuando
+              FROM scintela.traza_utilidad
+             WHERE id_traza <= %s
+             ORDER BY creado_en DESC, id_traza DESC
+             LIMIT 2
+            """, (id_traza,)) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("traza_utilidad: no se pudo leer la foto (%s)", e)
+        return None
+    if not par or int(par[0].get("id_traza") or 0) != id_traza:
+        return None
+    fila = con_deltas(par)[0]
+    fila["anterior"] = par[1] if len(par) > 1 else None
+    movs = movimientos(id_traza)
+    fila["movimientos"] = movs
+
+    # Por componente, para poder poner los documentos abajo del renglón que ya
+    # muestra la tabla de arriba.
+    por_comp: dict[str, dict] = {}
+    for m in movs:
+        c = m.get("componente") or "?"
+        g = por_comp.setdefault(c, {"col": c, "label": ETIQUETAS.get(c, c),
+                                    "aporte": 0.0, "movimientos": []})
+        g["aporte"] = round(g["aporte"] + float(m.get("aporte") or 0), 2)
+        g["movimientos"].append(m)
+    fila["por_componente"] = sorted(
+        por_comp.values(), key=lambda g: abs(g["aporte"]), reverse=True)
+
+    total = round(sum(float(m.get("aporte") or 0) for m in movs), 2)
+    fila["explicado"] = total
+    fila["residuo"] = (round(float(fila.get("d_utilidad") or 0) - total, 2)
+                       if fila.get("d_utilidad") is not None else None)
+    fila["ciegos"] = [m for m in movs if m.get("familia") == "sin_explicar"]
+    return fila

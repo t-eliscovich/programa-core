@@ -1,0 +1,76 @@
+{# El detalle de UNA foto, sin cáscara: se usa tal cual adentro de la fila de
+   la traza (TMT 2026-08-06: "el detalle solo dentro de cada mov, no otra
+   pantalla") y también lo sirve /informes/traza/<id> como página, para poder
+   compartir el link de una ventana puntual.
+   El "cómo leerla" NO va acá: repetido en cada fila abierta es ruido, así que
+   vive una sola vez al pie de la tabla. #}
+<div style="font-variant-numeric:tabular-nums;">
+
+  <div class="text-sm" style="line-height:1.6;margin-bottom:.75rem;">
+    {% if f.anterior %}
+      La utilidad pasó de <strong>{{ f.anterior.utilidad | num_es(0) }}</strong>
+      ({{ f.anterior.cuando }}) a <strong>{{ f.utilidad | num_es(0) }}</strong>
+      ({{ f.cuando }}) en {{ f.movimientos | length }} movimiento{{ '' if (f.movimientos | length) == 1 else 's' }}.
+    {% else %}
+      Es la primera foto: no hay una anterior contra la cual compararla.
+    {% endif %}
+    {% if f.residuo is not none %}
+      {% if f.residuo | abs < 1 %}
+        Los documentos de abajo explican el movimiento entero.
+      {% else %}
+        {# El residuo no se esconde: es la ventana exacta en la que se rompió
+           el invariante Δ utilidad = Σ aportes, con hora y todo. #}
+        <span style="color:rgb(185 28 28);">Quedan
+        <strong>{{ f.residuo | num_es(2) }}</strong> sin explicar por documento.</span>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {% if f.ciegos %}
+    <div class="border rounded px-3 py-2 text-sm"
+         style="border-color:rgb(252 211 77);background:rgb(255 251 235);line-height:1.5;margin-bottom:.75rem;">
+      <strong>Falta explicar.</strong> Esto se movió y todavía no sabemos por
+      qué documento. No es un error de cuadratura — es la lista de lo que hay
+      que entrenar.
+      {% for m in f.ciegos %}
+        <div style="margin-top:.25rem;">{{ m.etiqueta }} · <strong>{{ m.aporte | num_es(2) }}</strong></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% for g in f.por_componente %}
+    <div class="border border-slate-200 rounded bg-white" style="margin-bottom:.5rem;">
+      <div class="px-3 py-1.5 border-b border-slate-100 flex items-baseline justify-between"
+           style="background:rgb(248 250 252);">
+        <strong style="font-size:12px;">{{ g.label }}</strong>
+        <span style="font-size:12px;font-weight:600;{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
+          {{ '%+d' | format(g.aporte | round | int) }}
+        </span>
+      </div>
+      <table class="w-full" style="font-size:12px;">
+        <tbody>
+          {% for m in g.movimientos %}
+          <tr class="border-t border-slate-100">
+            <td class="px-3 py-1.5" style="width:14rem;color:rgb(100 116 139);">{{ m.regla }}</td>
+            <td class="px-2 py-1.5" style="line-height:1.4;">
+              {% if m.url %}
+                <a href="{{ m.url }}" style="color:rgb(30 64 175);">{{ m.etiqueta }}</a>
+              {% else %}
+                {{ m.etiqueta or '—' }}
+              {% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right"
+                style="width:8rem;font-weight:600;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
+              {{ m.aporte | num_es(2) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="text-sm" style="color:rgb(100 116 139);">
+      En esta ventana no se movió ningún documento.
+    </div>
+  {% endfor %}
+</div>

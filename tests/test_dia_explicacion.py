@@ -29,6 +29,7 @@ from unittest.mock import patch
 import pytest
 
 from modules.informes import dia
+from modules.informes import foto as motor
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -109,15 +110,15 @@ def test_el_ruido_de_centavos_no_genera_movimiento():
 def test_ajuste_aparece_cuando_el_detalle_no_llega_al_componente():
     """Si los documentos suman $800 y el balance dice $1.000, faltan $200 y
     tienen que quedar A LA VISTA, no repartidos ni escondidos."""
-    with patch.object(dia, "_det_facturas", return_value=[
+    with patch.object(motor, "_det_facturas", return_value=[
             {"doc_id": "f1", "etiqueta": "F1", "importe": 800.0}]), \
-         patch.object(dia, "_det_cheques", return_value=[]), \
-         patch.object(dia, "_det_caja", return_value=[]), \
-         patch.object(dia, "_det_bancos", return_value=[]), \
-         patch.object(dia, "_det_antic", return_value=[]), \
-         patch.object(dia, "_det_totp", return_value=[]), \
-         patch.object(dia, "_det_uret", return_value=[]), \
-         patch.object(dia, "_det_activos", return_value=[]):
+         patch.object(motor, "_det_cheques", return_value=[]), \
+         patch.object(motor, "_det_caja", return_value=[]), \
+         patch.object(motor, "_det_bancos", return_value=[]), \
+         patch.object(motor, "_det_antic", return_value=[]), \
+         patch.object(motor, "_det_totp", return_value=[]), \
+         patch.object(motor, "_det_uret", return_value=[]), \
+         patch.object(motor, "_det_activos", return_value=[]):
         det = dia.detalle(_bal(totf=1000.0))
     aj = [d for d in det if d["doc_id"] == "#ajuste:facturas"]
     assert len(aj) == 1
@@ -127,15 +128,15 @@ def test_ajuste_aparece_cuando_el_detalle_no_llega_al_componente():
 
 
 def test_sin_ajuste_cuando_los_documentos_ya_explican_todo():
-    with patch.object(dia, "_det_facturas", return_value=[
+    with patch.object(motor, "_det_facturas", return_value=[
             {"doc_id": "f1", "etiqueta": "F1", "importe": 1000.0}]), \
-         patch.object(dia, "_det_cheques", return_value=[]), \
-         patch.object(dia, "_det_caja", return_value=[]), \
-         patch.object(dia, "_det_bancos", return_value=[]), \
-         patch.object(dia, "_det_antic", return_value=[]), \
-         patch.object(dia, "_det_totp", return_value=[]), \
-         patch.object(dia, "_det_uret", return_value=[]), \
-         patch.object(dia, "_det_activos", return_value=[]):
+         patch.object(motor, "_det_cheques", return_value=[]), \
+         patch.object(motor, "_det_caja", return_value=[]), \
+         patch.object(motor, "_det_bancos", return_value=[]), \
+         patch.object(motor, "_det_antic", return_value=[]), \
+         patch.object(motor, "_det_totp", return_value=[]), \
+         patch.object(motor, "_det_uret", return_value=[]), \
+         patch.object(motor, "_det_activos", return_value=[]):
         det = dia.detalle(_bal(totf=1000.0))
     assert not [d for d in det if str(d["doc_id"]).startswith("#ajuste")]
 
@@ -151,14 +152,14 @@ def test_el_ajuste_no_se_hace_pasar_por_explicado():
 def test_una_fuente_caida_no_tumba_la_captura():
     """Si Asinfo o formulas_app no contestan, el componente queda sin detalle
     pero el `#ajuste` lo absorbe entero y la foto igual se toma."""
-    with patch.object(dia, "_det_facturas", side_effect=RuntimeError("Asinfo caído")), \
-         patch.object(dia, "_det_cheques", return_value=[]), \
-         patch.object(dia, "_det_caja", return_value=[]), \
-         patch.object(dia, "_det_bancos", return_value=[]), \
-         patch.object(dia, "_det_antic", return_value=[]), \
-         patch.object(dia, "_det_totp", return_value=[]), \
-         patch.object(dia, "_det_uret", return_value=[]), \
-         patch.object(dia, "_det_activos", return_value=[]):
+    with patch.object(motor, "_det_facturas", side_effect=RuntimeError("Asinfo caído")), \
+         patch.object(motor, "_det_cheques", return_value=[]), \
+         patch.object(motor, "_det_caja", return_value=[]), \
+         patch.object(motor, "_det_bancos", return_value=[]), \
+         patch.object(motor, "_det_antic", return_value=[]), \
+         patch.object(motor, "_det_totp", return_value=[]), \
+         patch.object(motor, "_det_uret", return_value=[]), \
+         patch.object(motor, "_det_activos", return_value=[]):
         det = dia.detalle(_bal(totf=5000.0))
     aj = [d for d in det if d["doc_id"] == "#ajuste:facturas"]
     assert aj and aj[0]["importe"] == 5000.0
@@ -300,7 +301,7 @@ def test_la_hora_de_ecuador_no_es_la_del_server():
     mismo día — si se usara la hora del server, el cierre saldría un día
     corrido y compararía contra la foto equivocada."""
     from datetime import UTC, datetime
-    with patch("modules.informes.dia.datetime") as dt:
+    with patch("modules.informes.foto.datetime") as dt:
         dt.now.return_value = datetime(2026, 8, 4, 23, 0, tzinfo=UTC)
         assert dia.ahora_ec().hour == 18
         assert dia.hoy_ec() == date(2026, 8, 4)

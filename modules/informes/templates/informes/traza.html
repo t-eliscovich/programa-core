@@ -1,18 +1,26 @@
 {% extends "base.html" %}
-{% from "_ui.html" import page_hero, empty_row %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Traza de la utilidad{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Traza</strong>{% endblock %}
 
 {% block content %}
 {# TMT 2026-07-31 (dueña): "guardá la data y fijate en un rato también. no
-   podemos tener utilidad menor a la mañana". Cada fila es una foto del balance;
-   la columna Δ dice cuánto se movió la utilidad desde la foto anterior y la
-   última columna QUÉ la movió. Tailwind está congelado → estilos inline. #}
+   podemos tener utilidad menor a la mañana". Cada fila es una foto del balance.
+
+   TMT 2026-08-06, después de que la fila se volviera clickeable: "pongamos más
+   columnas, ahora que hay detalle ya es inútil el que se movió". La columna de
+   texto era el resumen de urgencia de cuando no había dónde más mirar; ahora
+   el porqué está a un click y el ancho rinde más como grilla de SALDOS.
+
+   🚨 Una grilla de saldos es ilegible si los siete dígitos que no cambiaron
+   pesan igual que el que sí: habría que restar a ojo, fila contra fila. Por
+   eso el saldo REPETIDO va en gris claro y sólo el que se movió va en negro.
+   Tailwind está congelado (build JIT) → todo el estilo va inline. #}
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
 
   {{ page_hero(
       'Traza de la utilidad',
-      descripcion='Una foto del balance cada pocos minutos. Cuando la utilidad se mueve, acá se ve qué la movió.',
+      descripcion='Una foto del balance cada pocos minutos. Tocá la hora para ver qué documentos movieron la utilidad en esa ventana.',
       kpi_valor=(filas | length) ~ ' fotos',
       kpi_extra=('· ' ~ (bajadas | length) ~ ' bajadas de más de $ 1.000' if bajadas else '· sin bajadas')
   ) }}
@@ -36,44 +44,64 @@
   </div>
 
   <div class="border border-slate-200 rounded bg-white" style="overflow-x:auto;">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-3 py-2 text-left font-medium" style="width:7rem;">Cuándo</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Utilidad</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:7rem;">Δ</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Stock MP+Prod.</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:6rem;">$/kg hilado</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Anticipos</th>
-          <th class="px-3 py-2 text-right font-medium" style="width:8rem;">Pasivos</th>
-          <th class="px-3 py-2 text-left font-medium">Qué se movió</th>
+    <table id="traza-tabla" class="w-full" style="font-size:12px;border-collapse:separate;border-spacing:0;">
+      <thead style="background:rgb(248 250 252);">
+        <tr style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:rgb(100 116 139);">
+          {# La hora queda fija al scrollear al costado: sin eso, quince
+             columnas adentro ya no se sabe de qué foto es la fila. #}
+          <th class="px-3 py-2 text-left"
+              style="width:6.5rem;position:sticky;left:0;z-index:2;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
+          <th class="px-3 py-2 text-right" style="width:7rem;font-weight:500;">Utilidad</th>
+          <th class="px-2 py-2 text-right" style="width:5.5rem;font-weight:500;">Δ</th>
+          {% for col, label in componentes %}
+            <th class="px-2 py-2 text-right" style="width:7rem;font-weight:500;">{{ label }}</th>
+          {% endfor %}
+          {% for col, label in kilos %}
+            <th class="px-2 py-2 text-right"
+                style="width:6.5rem;font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
+          {% endfor %}
+          <th class="px-2 py-2 text-right" style="width:5.5rem;font-weight:500;">$/kg hilado</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
-        <tr class="border-t border-slate-100"
-            style="{% if f.d_utilidad is not none and f.d_utilidad <= -1000 %}background:rgb(254 242 242);{% endif %}">
-          <td class="px-3 py-2 text-xs text-slate-500" style="white-space:nowrap;">
-            {{ f.cuando }}{% if f.origen != 'loop' %} <span style="font-size:10px;color:rgb(148 163 184);">{{ f.origen }}</span>{% endif %}
+        {% set roja = f.d_utilidad is not none and f.d_utilidad <= -1000 %}
+        {% set fondo = 'rgb(254 242 242)' if roja else 'rgb(255 255 255)' %}
+        <tr class="border-t border-slate-100" style="background:{{ fondo }};">
+          <td class="px-3 py-1.5"
+              style="white-space:nowrap;position:sticky;left:0;z-index:1;background:{{ fondo }};">
+            <a href="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
+               data-foto="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
+               aria-expanded="false" style="color:rgb(30 64 175);"
+               ><span class="traza-caret" aria-hidden="true"
+                      style="display:inline-block;width:.7rem;color:rgb(148 163 184);">›</span>{{ f.cuando }}</a>{% if f.origen != 'loop' %}
+              <span style="font-size:10px;color:rgb(148 163 184);">{{ f.origen }}</span>{% endif %}
           </td>
-          <td class="px-3 py-2 text-right" style="font-weight:600;">{{ f.utilidad | num_es(0) }}</td>
-          <td class="px-3 py-2 text-right"
-              style="{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
+          <td class="px-3 py-1.5 text-right" style="font-weight:600;">{{ f.utilidad | num_es(0) }}</td>
+          <td class="px-2 py-1.5 text-right"
+              style="font-weight:600;{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
             {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
           </td>
-          <td class="px-3 py-2 text-right">{{ f.vsto | num_es(0) }}</td>
-          <td class="px-3 py-2 text-right">{{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '—' }}</td>
-          <td class="px-3 py-2 text-right">{{ f.antic | num_es(0) }}</td>
-          <td class="px-3 py-2 text-right">{{ f.totp | num_es(0) }}</td>
-          <td class="px-3 py-2" style="font-size:11.5px;color:rgb(71 85 105);line-height:1.4;">
-            {% for m in f.movio[:4] %}
-              <span style="white-space:nowrap;">{{ m.label }}
-                <strong style="{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">{{ '%+d' | format(m.aporte | round | int) }}</strong></span>{% if not loop.last %} · {% endif %}
-            {% else %}
-              <span style="color:rgb(148 163 184);">—</span>
-            {% endfor %}
+          {% for col, label in componentes %}
+            {# El saldo que no se movió se apaga: así el ojo cae sobre el que sí. #}
+            {% set movido = col in f.movidas %}
+            <td class="px-2 py-1.5 text-right"
+                style="{% if movido %}color:rgb(15 23 42);font-weight:600;{% else %}color:rgb(203 213 225);{% endif %}">
+              {{ f[col] | num_es(0) }}
+            </td>
+          {% endfor %}
+          {% for col, label in kilos %}
+            {% set movido = col in f.movidas %}
+            <td class="px-2 py-1.5 text-right"
+                style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if movido %}color:rgb(15 23 42);font-weight:600;{% else %}color:rgb(203 213 225);{% endif %}">
+              {{ f[col] | num_es(0) if f[col] else '—' }}
+            </td>
+          {% endfor %}
+          <td class="px-2 py-1.5 text-right"
+              style="{% if 'hilado_ukg' in f.movidas %}color:rgb(15 23 42);font-weight:600;{% elif not f.hilado_ukg %}color:rgb(203 213 225);{% else %}color:rgb(203 213 225);{% endif %}">
+            {{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '—' }}
             {% if f.kg_sin_costo and f.kg_sin_costo > 0 %}
-              <span style="color:rgb(180 83 9);"> · {{ f.kg_sin_costo | num_es(0) }} kg esperando su compra</span>
+              <div style="font-size:10px;color:rgb(180 83 9);white-space:nowrap;">{{ f.kg_sin_costo | num_es(0) }} kg s/compra</div>
             {% endif %}
           </td>
         </tr>
@@ -83,14 +111,71 @@
   </div>
 
   <p class="mt-3 text-xs text-slate-500" style="line-height:1.5;">
-    <strong>Cómo leerla.</strong> Cada fila es una foto del balance. <em>Δ</em> es
-    cuánto se movió la utilidad desde la foto de arriba hacia abajo (la anterior
-    en el tiempo). <em>Qué se movió</em> muestra los componentes ordenados por
-    cuánto aportaron a ese Δ — Pasivos va con el signo dado vuelta, porque si
-    suben la utilidad baja. Las filas en rojo son bajadas de más de $ 1.000.
-    El <em>$/kg del hilado</em> está aparte a propósito: el stock se valúa a
-    promedio ponderado, así que ese número mueve el valor de TODO el stock de
-    un saque — si cambió él y no cambiaron los kilos, el salto es de tarifa.
+    <strong>Cómo leerla.</strong> Cada fila es una foto del balance y cada
+    columna, el <em>saldo</em> de ese componente en ese momento. A la derecha de
+    la línea, las tres etapas del stock en <em>kilos</em> — van en kilos y no en
+    pesos porque la foto guarda la tarifa sólo del hilado; el peso total ya está
+    en Stock MP+Prod. Los saldos que
+    quedaron iguales que en la foto anterior van en gris claro: lo que está en
+    negro es lo que se movió. <em>Δ</em> es cuánto cambió la utilidad desde la
+    foto de abajo; las filas en rojo son bajadas de más de $ 1.000.
+    <strong>Tocá la hora</strong> y la fila se abre acá mismo con los documentos
+    que lo movieron: la factura, el cheque, la deuda. El <em>aporte</em> de cada
+    uno ya lleva el signo dado vuelta donde corresponde — una deuda que sube
+    hace bajar la utilidad. Una cobranza aparece dos veces y netea cero (la
+    factura baja, el cheque sube) porque la plata cambia de lugar sin crear
+    resultado; cuando NO netea cero, esa diferencia es la noticia: una
+    retención, un descuento, una nota de crédito. El stock se abre en los kilos
+    que entraron o salieron —y por qué caudal— y en el cambio de $/kg, que
+    revalúa todo de un saque sin que se haya producido ni vendido nada.
+    El <em>$/kg del hilado</em> está aparte a propósito: el
+    stock se valúa a promedio ponderado, así que ese número mueve el valor de
+    TODO el stock de un saque — si cambió él y no cambiaron los kilos, el salto
+    es de tarifa.
   </p>
 </div>
+
+{# La fila se abre en el lugar (TMT 2026-08-06: "el detalle solo dentro de cada
+   mov, no otra pantalla"). El detalle se trae recién al abrir: son 200 fotos y
+   cada una puede tener decenas de movimientos — renderizarlos todos de entrada
+   sería mandar miles de renglones que nadie va a mirar. Una vez traído queda
+   en el DOM, así que cerrar y volver a abrir no vuelve a pedirlo. #}
+<script>
+(function () {
+  var tabla = document.getElementById('traza-tabla');
+  if (!tabla) { return; }
+  var COLUMNAS = {{ 4 + (componentes | length) + (kilos | length) }};
+  tabla.addEventListener('click', function (ev) {
+    var a = ev.target.closest ? ev.target.closest('a[data-foto]') : null;
+    if (!a) { return; }
+    ev.preventDefault();
+    var fila = a.closest('tr');
+    var sig = fila.nextElementSibling;
+    if (sig && sig.getAttribute('data-detalle') === '1') {
+      sig.parentNode.removeChild(sig);
+      a.setAttribute('aria-expanded', 'false');
+      a.querySelector('.traza-caret').textContent = '\u203A';
+      return;
+    }
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-detalle', '1');
+    var td = document.createElement('td');
+    td.colSpan = COLUMNAS;
+    td.style.cssText = 'padding:.75rem 1rem;background:rgb(248 250 252);' +
+                       'border-top:1px solid rgb(226 232 240);';
+    td.textContent = 'Buscando qué lo movió…';
+    td.style.color = 'rgb(100 116 139)';
+    tr.appendChild(td);
+    fila.parentNode.insertBefore(tr, fila.nextSibling);
+    a.setAttribute('aria-expanded', 'true');
+    a.querySelector('.traza-caret').textContent = '\u02C5';
+    fetch(a.getAttribute('data-foto') + '?fragmento=1', { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
+      .then(function (html) { td.style.color = ''; td.innerHTML = html; })
+      .catch(function () {
+        td.textContent = 'No se pudo traer el detalle de esta foto.';
+      });
+  });
+})();
+</script>
 {% endblock %}

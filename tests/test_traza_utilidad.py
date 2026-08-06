@@ -59,20 +59,30 @@ def test_la_foto_sale_del_balance():
     assert f["patr_neto"] == pytest.approx(21368271.0 - 211393.12)
 
 
+# ⭐ Desde la mig 0171 `registrar()` devuelve un DICT y no un bool: el ancla del
+# día (`dia.capturar`) necesita el `id_traza` de la foto y el balance ya
+# calculado, para colgarse de esa misma foto en vez de leer el balance dos
+# veces. `registrar_si_toca()` sigue devolviendo bool — es lo único que el
+# hilo de fondo mira.
+
 def test_un_balance_vacio_no_se_guarda():
     """Sin componentes no hay foto que valga: mejor ninguna que una en cero."""
     with patch.object(t.db, "execute") as ex:
-        assert t.registrar(bal={}) is False
+        res = t.registrar(bal={})
+    assert res["ok"] is False
+    assert res["motivo"] == "balance sin componentes"
     ex.assert_not_called()
 
 
 def test_si_la_base_falla_la_grabadora_no_rompe_nada():
     with patch.object(t.db, "execute", side_effect=RuntimeError("sin tabla")):
-        assert t.registrar(bal=BALANCE) is False      # no levanta
+        res = t.registrar(bal=BALANCE)                # no levanta
+    assert res["ok"] is False
+    assert res["motivo"]                              # queda por qué falló
 
 
 def test_guarda_una_sola_vez_por_intervalo():
-    with patch.object(t, "registrar", return_value=True) as reg:
+    with patch.object(t, "registrar", return_value={"ok": True}) as reg:
         assert t.registrar_si_toca() is True
         for _ in range(10):
             assert t.registrar_si_toca() is False
@@ -80,7 +90,7 @@ def test_guarda_una_sola_vez_por_intervalo():
 
 
 def test_pasado_el_intervalo_vuelve_a_guardar():
-    with patch.object(t, "registrar", return_value=True) as reg:
+    with patch.object(t, "registrar", return_value={"ok": True}) as reg:
         t.registrar_si_toca()
         t._ultimo_ts -= t._intervalo() + 1
         assert t.registrar_si_toca() is True
