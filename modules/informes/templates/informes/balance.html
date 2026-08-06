@@ -143,6 +143,11 @@
     background: rgb(248 250 252);
     color: rgb(15 23 42);
   }
+  /* Federico 2026-08-06 — el $ negrita se corre de Costo Total a Utilidad Real.
+     Solo la fila Costo Total del cuadro de costos (no las otras fila-total de la
+     página) pierde el bold; Utilidad Real (única fila-celeste) lo gana. */
+  .informe-balance tr.fila-costo-total td { font-weight: 400 !important; }
+  .informe-balance tr.fila-celeste td { font-weight: 700 !important; }
   .informe-balance tr.fila-key td.num-cell.pos { color: rgb(74 222 128); }
   .informe-balance tr.fila-key td.num-cell.neg { color: rgb(248 113 113); }
   .dark .informe-balance tr.fila-key td.num-cell.pos { color: rgb(22 163 74); }
@@ -323,7 +328,7 @@
             <th class="seccion-header" style="text-align:left" colspan="5">{{ row.label }}</th>
           </tr>
             {% else %}
-          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}{% if row.label == 'Utilidad Real' %} fila-celeste{% endif %}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
+          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}{% if row.label == 'Utilidad Real' %} fila-celeste{% endif %}{% if row.label == 'Costo Total' %} fila-costo-total{% endif %}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
             <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.label == 'Proyección' %}<span id="vp-status" class="vp-status no-print"></span>{% endif %}</td>
             {# Federico 2026-07-22 — badge "parcial · N días" eliminado del cuadro
                (ocupaba una fila extra bajo Utilidad Real; no hace falta). #}
