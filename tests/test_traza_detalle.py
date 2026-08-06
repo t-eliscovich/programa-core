@@ -26,6 +26,7 @@ if _REPO_ROOT not in sys.path:
 
 from modules.informes import foto as motor  # noqa: E402
 from modules.informes import traza as t  # noqa: E402
+from modules.informes.foto import _f  # noqa: E402
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,39 @@ def test_la_tarifa_se_informa_aparte_de_los_kilos():
     assert len(movs) == 1
     assert movs[0]["regla"] == "Stock hilado: cambió el $/kg"
     assert movs[0]["aporte"] == 50.0
+    assert "3,0000" in movs[0]["etiqueta"]        # formato Ecuador, no yanqui
+
+
+def test_una_tarifa_que_no_cambio_a_la_vista_no_es_un_renglon():
+    """🚨 TMT 2026-08-06: la pantalla decía "cambió el $/kg: $ 5,2591 →
+    $ 5,2591". Con 300.000 kg, una diferencia en la quinta decimal da varios
+    dólares y generaba un renglón que no dice nada. Esos centavos no se
+    pierden: los absorbe el renglón de kilos."""
+    vieja = _guardada([_etapa("terminado", 300000.0, 5.25910)])
+    nueva = [{**_etapa("terminado", 300042.85, 5.25911)}]
+    movs = motor.diff(nueva, vieja)
+    reglas = [m["regla"] for m in movs]
+    assert not any("cambió el $/kg" in r for r in reglas)
+    assert not any("redondeo" in r for r in reglas)
+    # …y el Δ del componente sigue cerrando al centavo.
+    d = round(_f(nueva[0]["importe"]) - _f(vieja[("vsto", "#terminado")]["importe"]), 2)
+    assert round(sum(m["aporte"] for m in movs), 2) == d
+
+
+def test_el_redondeo_de_la_particion_no_es_un_renglon_propio():
+    """Tiene que existir para que el invariante cierre, pero "Stock: redondeo
+    de la partición" no significa nada para nadie: se dobla en la parte que lo
+    generó."""
+    vieja = _guardada([_etapa("tejido", 10000.0, 2.3333),
+                       _caudal("tejido", "ingreso", 0.0),
+                       _caudal("tejido", "egreso", 0.0)])
+    nueva = [_etapa("tejido", 10333.0, 2.7777),
+             _caudal("tejido", "ingreso", 333.0),
+             _caudal("tejido", "egreso", 0.0)]
+    movs = motor.diff(nueva, vieja)
+    assert not any("redondeo" in m["regla"] for m in movs)
+    d = round(_f(nueva[0]["importe"]) - _f(vieja[("vsto", "#tejido")]["importe"]), 2)
+    assert round(sum(m["aporte"] for m in movs), 2) == d
 
 
 def test_los_caudales_no_son_plata_y_no_generan_movimiento_propio():

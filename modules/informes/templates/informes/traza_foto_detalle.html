@@ -1,114 +1,60 @@
-{# El detalle de UNA foto, sin cáscara: se usa tal cual adentro de la fila de
-   la traza (TMT 2026-08-06: "el detalle solo dentro de cada mov, no otra
-   pantalla") y también lo sirve /informes/traza/<id> como página, para poder
-   compartir el link de una ventana puntual.
-   El "cómo leerla" NO va acá: repetido en cada fila abierta es ruido, así que
-   vive una sola vez al pie de la tabla. #}
-<div style="font-variant-numeric:tabular-nums;">
+{# El detalle de UNA foto. Se usa adentro de la fila de la traza y también lo
+   sirve /informes/traza/<id> como pantalla.
 
-  <div class="text-sm" style="line-height:1.6;margin-bottom:.75rem;">
-    {% if f.anterior %}
-      La utilidad pasó de <strong>{{ f.anterior.utilidad | num_es(0) }}</strong>
-      ({{ f.anterior.cuando }}) a <strong>{{ f.utilidad | num_es(0) }}</strong>
-      ({{ f.cuando }}){% if not f.sin_registro %} en {{ f.movimientos | length }} movimiento{{ '' if (f.movimientos | length) == 1 else 's' }}{% endif %}.
-    {% else %}
-      Es la primera foto: no hay una anterior contra la cual compararla.
-    {% endif %}
-    {% if f.sin_registro %}
-      {# No hay detalle por documento porque la foto es anterior a la
-         grabadora. Lo que sí hay —el desglose por componente— se muestra
-         abajo; el residuo no se informa porque acá no falta explicar nada:
-         falta haber registrado. #}
-    {% elif f.residuo is not none %}
-      {% if f.residuo | abs < 1 %}
-        Los documentos de abajo explican el movimiento entero.
-      {% else %}
-        {# El residuo no se esconde: es la ventana exacta en la que se rompió
-           el invariante Δ utilidad = Σ aportes, con hora y todo. #}
-        <span style="color:rgb(185 28 28);">Quedan
-        <strong>{{ f.residuo | num_es(2) }}</strong> sin explicar por documento.</span>
-      {% endif %}
-    {% endif %}
+   🚨 TMT 2026-08-06: "chiquito, una línea con + y -, sacá la cantidad de
+   palabras que metiste". Un renglón por movimiento, en UNA línea, sin
+   envolver. Nada de párrafos, nada de plomería interna (el redondeo de la
+   partición se dobla en el renglón que lo generó, no sale a la pantalla). #}
+<div style="font-variant-numeric:tabular-nums;font-size:12px;">
+
+  <div style="color:rgb(100 116 139);margin-bottom:.4rem;">
+    {% if f.anterior %}{{ f.anterior.utilidad | num_es(0) }} → {{ f.utilidad | num_es(0) }}{% endif %}
+    {%- if not f.sin_registro %} · {{ f.movimientos | length }} mov{% endif %}
+    {%- if f.sin_registro %} · sin detalle por documento (foto anterior a la grabadora)
+    {%- elif f.residuo is not none and f.residuo | abs >= 1 %}
+      · <span style="color:rgb(185 28 28);">{{ f.residuo | num_es(2) }} sin explicar</span>
+    {%- endif %}
   </div>
 
-  {% if f.ciegos %}
-    <div class="border rounded px-3 py-2 text-sm"
-         style="border-color:rgb(252 211 77);background:rgb(255 251 235);line-height:1.5;margin-bottom:.75rem;">
-      <strong>Falta explicar.</strong> Esto se movió y todavía no sabemos por
-      qué documento. No es un error de cuadratura — es la lista de lo que hay
-      que entrenar.
-      {% for m in f.ciegos %}
-        <div style="margin-top:.25rem;">{{ m.etiqueta }} · <strong>{{ m.aporte | num_es(2) }}</strong></div>
-      {% endfor %}
-    </div>
-  {% endif %}
-
   {% for g in f.por_componente %}
-    <div class="border border-slate-200 rounded bg-white" style="margin-bottom:.5rem;">
-      <div class="px-3 py-1.5 border-b border-slate-100 flex items-baseline justify-between"
-           style="background:rgb(248 250 252);">
-        <strong style="font-size:12px;">{{ g.label }}</strong>
-        <span style="font-size:12px;font-weight:600;{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
-          {{ '%+d' | format(g.aporte | round | int) }}
-        </span>
-      </div>
-      <table class="w-full" style="font-size:12px;">
+    <div style="display:flex;justify-content:space-between;padding:.2rem 0 .1rem;
+                border-top:1px solid rgb(226 232 240);font-weight:600;">
+      <span>{{ g.label }}</span>
+      <span style="{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">{{ '%+d' | format(g.aporte | round | int) }}</span>
+    </div>
+    <table style="width:100%;">
+      <tbody>
+        {% for m in g.movimientos %}
+        <tr>
+          <td style="padding:.1rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;width:100%;">
+            {% if m.url %}<a href="{{ m.url }}" style="color:rgb(30 64 175);">{{ m.etiqueta or m.regla }}</a>{% else %}{{ m.etiqueta or m.regla }}{% endif %}
+            <span style="color:rgb(148 163 184);">· {{ m.regla }}</span>
+          </td>
+          <td style="padding:.1rem 0;text-align:right;white-space:nowrap;width:7rem;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
+            {{ m.aporte | num_es(2) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    {% if f.sin_registro %}
+      {# Lo que sí se sabe de una foto vieja: el desglose por componente, que
+         es exactamente lo que mostraba la columna "Qué se movió". #}
+      <table style="width:100%;">
         <tbody>
-          {% for m in g.movimientos %}
-          <tr class="border-t border-slate-100">
-            <td class="px-3 py-1.5" style="width:14rem;color:rgb(100 116 139);">{{ m.regla }}</td>
-            <td class="px-2 py-1.5" style="line-height:1.4;">
-              {% if m.url %}
-                <a href="{{ m.url }}" style="color:rgb(30 64 175);">{{ m.etiqueta }}</a>
-              {% else %}
-                {{ m.etiqueta or '—' }}
-              {% endif %}
-            </td>
-            <td class="px-3 py-1.5 text-right"
-                style="width:8rem;font-weight:600;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
-              {{ m.aporte | num_es(2) }}
-            </td>
+          {% for m in f.movio %}
+          <tr>
+            <td style="padding:.1rem 0;border-top:1px solid rgb(226 232 240);">{{ m.label }}</td>
+            <td style="padding:.1rem 0;border-top:1px solid rgb(226 232 240);text-align:right;width:7rem;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">{{ m.aporte | num_es(2) }}</td>
           </tr>
+          {% else %}
+          <tr><td style="color:rgb(148 163 184);">Nada se movió más de un peso.</td></tr>
           {% endfor %}
         </tbody>
       </table>
-    </div>
-  {% else %}
-    {% if f.sin_registro %}
-      {# El desglose por componente existe para TODAS las fotos: sale de los
-         once totales que la grabadora guarda desde el 31/07. Es exactamente
-         lo que mostraba la columna "Qué se movió". #}
-      <div class="border border-slate-200 rounded bg-white">
-        <div class="px-3 py-1.5 border-b border-slate-100 text-sm"
-             style="background:rgb(248 250 252);color:rgb(100 116 139);">
-          Esta foto es anterior a la grabadora de detalle, así que no hay
-          documentos guardados. Lo que sí se sabe es qué componentes se
-          movieron:
-        </div>
-        <table class="w-full" style="font-size:12px;">
-          <tbody>
-            {% for m in f.movio %}
-            <tr class="border-t border-slate-100">
-              <td class="px-3 py-1.5">{{ m.label }}</td>
-              <td class="px-3 py-1.5 text-right"
-                  style="width:9rem;font-weight:600;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
-                {{ m.aporte | num_es(2) }}
-              </td>
-            </tr>
-            {% else %}
-            <tr class="border-t border-slate-100">
-              <td class="px-3 py-1.5" style="color:rgb(100 116 139);">
-                Ningún componente se movió más de un peso.
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
     {% else %}
-      <div class="text-sm" style="color:rgb(100 116 139);">
-        En esta ventana no se movió ningún documento.
-      </div>
+      <div style="color:rgb(148 163 184);">Ningún documento se movió.</div>
     {% endif %}
   {% endfor %}
 </div>

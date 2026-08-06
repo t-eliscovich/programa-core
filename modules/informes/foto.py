@@ -116,6 +116,17 @@ def hoy_ec():
     return ahora_ec().date()
 
 
+def _n(v: float, dec: int = 2, signo: bool = False) -> str:
+    """Número en formato Ecuador: punto de miles, coma decimal.
+
+    🚨 El f-string con `:,` imprime `312,486.53` — formato yanqui. Toda la app
+    usa `num_es`; acá no se puede (esto arma texto, no renderiza), así que se
+    da vuelta a mano.
+    """
+    crudo = f"{v:+,.{dec}f}" if signo else f"{v:,.{dec}f}"
+    return crudo.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
 def _f(v) -> float:
     try:
         return float(v or 0)
@@ -543,7 +554,7 @@ def regla(componente: str, tipo: str, doc_id: str, delta: float) -> tuple[str, s
 def _nota_caudales(etapa: str, ent: float, sal: float) -> str:
     """Los caudales en castellano, para colgar de una etiqueta."""
     trozos = [
-        f"{CAUDALES[(etapa, sentido)]} {abs(kg):,.0f} kg"
+        f"{CAUDALES[(etapa, sentido)]} {_n(abs(kg), 0)} kg"
         for sentido, kg in (("ingreso", ent), ("egreso", sal))
         if abs(kg) >= 1 and (etapa, sentido) in CAUDALES
     ]
@@ -573,7 +584,7 @@ def _partir_kilos(etapa: str, d_kg: float, p0: float, d_valor: float,
         return [{
             "sub": "kilos", "delta": d_valor,
             "regla": f"{rot}: entraron/salieron kilos",
-            "detalle": f"{d_kg:+,.2f} kg a $ {p0:,.4f}/kg"
+            "detalle": f"{_n(d_kg, 2, signo=True)} kg a $ {_n(p0, 4)}/kg"
                        + _nota_caudales(etapa, ent, sal),
         }]
     out = []
@@ -583,7 +594,7 @@ def _partir_kilos(etapa: str, d_kg: float, p0: float, d_valor: float,
         out.append({
             "sub": sentido, "delta": round(kg * p0, 2),
             "regla": f"{rot}: {CAUDALES[(etapa, sentido)]}",
-            "detalle": f"{kg:+,.2f} kg a $ {p0:,.4f}/kg",
+            "detalle": f"{_n(kg, 2, signo=True)} kg a $ {_n(p0, 4)}/kg",
         })
     return out
 
@@ -609,10 +620,16 @@ def _partir_stock(fila: dict, antes: dict, caudales: dict | None = None) -> list
     out = []
     if abs(d_kg) >= UMBRAL:
         out.extend(_partir_kilos(etapa, kg1 - kg0, p0, d_kg, rot, caudales or {}))
-    if abs(d_pr) >= UMBRAL:
+    # 🚨 Sólo se informa la tarifa si CAMBIÓ a la vista. Con 300.000 kg, una
+    # diferencia en la quinta decimal del $/kg da varios dólares y generaba un
+    # renglón que decía "cambió el $/kg: $ 5,2591 → $ 5,2591" — o sea, nada.
+    # Esos centavos no se pierden: los absorbe el renglón de kilos (`diff`
+    # doblа el resto en la última parte), así el invariante se mantiene con UN
+    # renglón en vez de tres.
+    if abs(d_pr) >= UMBRAL and round(p0, 4) != round(p1, 4):
         out.append({"sub": "tarifa", "delta": d_pr,
                     "regla": f"{rot}: cambió el $/kg",
-                    "detalle": f"$ {p0:,.4f} → $ {p1:,.4f} sobre {kg1:,.2f} kg"})
+                    "detalle": f"$ {_n(p0, 4)} → $ {_n(p1, 4)} sobre {_n(kg1)} kg"})
     return out
 
 
@@ -676,6 +693,13 @@ def diff(nueva: list[dict], vieja: dict) -> list[dict]:
         if f["componente"] == "vsto" and antes:
             partes = _partir_stock(f, antes, caudales)
             if partes:
+                # El redondeo de la partición no puede perder plata, pero
+                # tampoco merece un renglón propio que diga "Stock: redondeo
+                # de la partición" y no signifique nada para nadie: se dobla
+                # en la última parte. El invariante se mantiene igual.
+                resto = round(d - sum(p["delta"] for p in partes), 2)
+                if abs(resto) >= UMBRAL:
+                    partes[-1]["delta"] = round(partes[-1]["delta"] + resto, 2)
                 for p in partes:
                     movs.append({
                         "componente": "vsto", "tipo": "cambio",
@@ -684,16 +708,6 @@ def diff(nueva: list[dict], vieja: dict) -> list[dict]:
                         "importe_antes": None, "importe_despues": None,
                         "delta": p["delta"], "aporte": p["delta"],
                         "regla": p["regla"], "familia": "utilidad",
-                    })
-                # El redondeo de la partición no puede perder plata.
-                resto = round(d - sum(p["delta"] for p in partes), 2)
-                if abs(resto) >= UMBRAL:
-                    movs.append({
-                        "componente": "vsto", "tipo": "cambio",
-                        "doc_id": f"{f['doc_id']}:resto", "etiqueta": f.get("etiqueta"),
-                        "importe_antes": imp0, "importe_despues": imp1,
-                        "delta": resto, "aporte": resto,
-                        "regla": "Stock: redondeo de la partición", "familia": "utilidad",
                     })
                 continue
         r, fam = regla(f["componente"], tipo, f["doc_id"], d)
