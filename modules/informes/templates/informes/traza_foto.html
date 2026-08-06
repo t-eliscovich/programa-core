@@ -12,7 +12,7 @@
       'Qué movió la utilidad',
       descripcion='La ventana que cerró a las ' ~ f.cuando ~ '. Cada renglón es un documento; la suma de los aportes es el Δ.',
       kpi_valor=(('%+d' | format(f.d_utilidad | round | int)) if f.d_utilidad is not none else '—'),
-      kpi_extra='· ' ~ (f.movimientos | length) ~ ' movimientos'
+      kpi_extra='· ' ~ (f.movimientos | length) ~ ' mov'
   ) }}
   <div class="my-4">
     {% include "informes/traza_foto_detalle.html" %}
