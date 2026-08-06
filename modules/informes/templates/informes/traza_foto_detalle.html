@@ -1,38 +1,57 @@
-{# El detalle de UNA foto: un renglón por movimiento y nada más.
+{# El detalle de una foto: FILAS DE LA MISMA TABLA.
 
-   🚨 TMT 2026-08-06, en cuatro correcciones seguidas: "chiquito, una línea con
-   + y -", "sacá la cantidad de palabras que metiste", "esto tampoco hace falta
-   repetir: 228.423 → 228.497 · 2 mov", "solo un mini renglón para todo esto,
-   no 5". Se fueron el encabezado (la fila de arriba ya muestra la utilidad y
-   el Δ), los recuadros, y los títulos por componente: con los traspasos
-   unificados un movimiento ES un renglón, y ponerle un título arriba lo
-   duplicaba.
+   🚨 TMT 2026-08-06: *"cuando expando el renglón, que se note que es la misma
+   tabla"*. Antes era un bloque pegado adentro de una celda que abarcaba todo
+   el ancho, y se leía como otra pantalla metida a la fuerza. Ahora cada
+   importe cae en la COLUMNA de su componente: se ve de dónde salió sin leer
+   una palabra, y de paso el expandido explica la fila de arriba columna por
+   columna.
 
-   🚨 `position:sticky;left:0`: esta celda abarca TODA la tabla, que es más
-   ancha que la pantalla. Sin esto el importe queda fuera de la vista y se lee
-   el concepto sin el número. #}
-<div style="font-variant-numeric:tabular-nums;font-size:11px;
-            position:sticky;left:0;max-width:min(920px, 94vw);">
-  {% if f.sin_registro %}
-    <div style="color:rgb(148 163 184);">Sin detalle por documento — foto vieja.</div>
-  {% elif f.residuo is not none and f.residuo | abs >= 1 %}
-    <div style="color:rgb(185 28 28);">{{ f.residuo | num_es(2) }} sin explicar.</div>
-  {% endif %}
-  <table style="width:100%;">
-    <tbody>
-      {% for m in (f.movimientos if not f.sin_registro else f.movio) %}
-      <tr>
-        <td style="padding:.05rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;width:100%;">
-          {% if m.url %}<a href="{{ m.url }}" style="color:rgb(30 64 175);">{{ m.etiqueta }}</a>{% else %}{{ m.etiqueta or m.label }}{% endif %}
-          {%- if m.regla %} <span style="color:rgb(148 163 184);">· {{ m.regla }}</span>{% endif %}
+   🚨 Y resumido, no documento por documento (TMT: *"pedí detalle pero resumí…
+   ejemplo dos cheques por X monto, facturas por X monto"*). Tres facturas
+   nuevas son un renglón que dice "3 facturas nuevas". #}
+{% if f.sin_registro %}
+  <tr data-detalle="1" class="border-t border-slate-100">
+    <td colspan="3" class="px-1.5 py-1"
+        style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;
+               position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);">
+      sin detalle — foto vieja
+    </td>
+    {% for col, label in deltas %}
+      {% set m = (f.movio | selectattr('col', 'equalto', col) | list | first) %}
+      <td class="px-1 py-1 text-right" style="font-size:10.5px;{% if m and m.aporte < 0 %}color:rgb(185 28 28);{% elif m %}color:rgb(21 128 61);{% endif %}">
+        {% if m %}{{ m.aporte | num_es(0) }}{% endif %}
+      </td>
+    {% endfor %}
+    <td colspan="{{ (kilos | length) + 1 }}"></td>
+  </tr>
+{% else %}
+  {% set columnas = deltas | map(attribute=0) | list %}
+  {% for g in f.resumen %}
+    {% set propia = g.col in columnas %}
+    <tr data-detalle="1" class="border-t border-slate-100">
+      <td colspan="3" class="px-1.5 py-1"
+          style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;
+                 position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);"
+          title="{{ g.texto }}">
+        <span style="color:rgb(203 213 225);padding-left:.35rem;">└</span>
+        {% if g.url %}<a href="{{ g.url }}" style="color:rgb(30 64 175);">{{ g.texto }}</a>{% else %}{{ g.texto }}{% endif %}
+      </td>
+      {% for col, label in deltas %}
+        <td class="px-1 py-1 text-right"
+            style="{% if propia and g.col == col %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+          {% if propia and g.col == col %}{{ g.aporte | num_es(0) }}{% endif %}
         </td>
-        <td style="padding:.05rem 0;text-align:right;white-space:nowrap;width:6rem;{% if m.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}">
-          {{ m.aporte | num_es(2) }}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td style="color:rgb(148 163 184);">Nada se movió.</td></tr>
       {% endfor %}
-    </tbody>
-  </table>
-</div>
+      <td colspan="{{ (kilos | length) + 1 }}" class="px-1 py-1 text-right"
+          style="{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+        {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr data-detalle="1" class="border-t border-slate-100">
+      <td colspan="{{ 4 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
+          style="font-size:10.5px;color:rgb(148 163 184);">nada se movió</td>
+    </tr>
+  {% endfor %}
+{% endif %}

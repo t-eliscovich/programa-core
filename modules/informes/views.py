@@ -1267,7 +1267,13 @@ def traza_foto(id_traza: int):
     # la pantalla entera para poder compartir el link de una ventana puntual.
     plantilla = ("informes/traza_foto_detalle.html" if request.args.get("fragmento")
                  else "informes/traza_foto.html")
-    return render_template(plantilla, f=foto)
+    # Las columnas van igual que en la grilla: el fragmento son FILAS de esa
+    # misma tabla, así que los colspan y el orden tienen que coincidir.
+    return render_template(
+        plantilla, f=foto,
+        deltas=[(c, _traza.ETIQUETAS_CORTAS.get(c, c)) for c in _traza.COLUMNAS_DELTA],
+        kilos=_traza.COLUMNAS_KG,
+    )
 
 
 @informes_bp.route("/traza/ahora", methods=["POST"])

@@ -601,7 +601,7 @@ def _partir_kilos(etapa: str, d_kg: float, p0: float, d_valor: float,
             continue
         out.append({
             "sub": f"{etapa}:{sentido}", "delta": round(kg * p0, 2), "regla": rot,
-            "detalle": f"{CAUDALES[(etapa, sentido)]} · {_n(kg, 2, signo=True)} kg",
+            "detalle": f"{_n(kg, 0, signo=True)} kg · {CAUDALES[(etapa, sentido)]}",
         })
     return out
 
@@ -664,7 +664,7 @@ def _traspasos(est: dict) -> list[dict]:
             "sub": f"{a_et}-{b_et}",
             "delta": round(kg * (b["p0"] - a["p0"]), 2),
             "regla": "Stock",
-            "detalle": f"{_n(kg)} kg de {a_et} a {b_et}",
+            "detalle": f"{_n(kg, 0)} kg {a_et}→{b_et}",
         })
         a["dkg"] += kg
         b["dkg"] -= kg

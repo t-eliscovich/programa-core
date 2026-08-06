@@ -408,6 +408,113 @@ def _desde_cuando_hay_detalle() -> int | None:
     return int(r["m"]) if r and r.get("m") else None
 
 
+#: Debajo de esto un movimiento no se muestra: es redondeo, no una noticia.
+#: TMT 2026-08-06, viendo un renglón que decía "-0,00 kg · Stock hilado −0,01":
+#: *"no movió nada '0', ¿por qué lo mostrás?"*. Lo que se saca no se pierde —
+#: se junta en un solo renglón "otros menores" si en conjunto llega a pesar.
+UMBRAL_VISIBLE = 1.0
+
+#: Cómo se dice en plural cada regla, para poder resumir. TMT 2026-08-06:
+#: *"pedí detalle pero resumí… ejemplo: dos cheques por X monto, facturas por X
+#: monto"*. Una ventana con doce documentos son doce renglones que nadie lee;
+#: agrupados por lo que SON, son tres.
+PLURALES = {
+    "Venta facturada": "facturas nuevas",
+    "Cheque recibido": "cheques recibidos",
+    "Cheque depositado o dado de baja": "cheques depositados",
+    "Cheque corregido": "cheques corregidos",
+    "Abono a factura": "abonos a facturas",
+    "Factura corregida en más": "facturas corregidas",
+    "Factura cancelada del todo": "facturas canceladas",
+    "Movimiento bancario": "movimientos bancarios",
+    "Ingreso de caja": "ingresos de caja",
+    "Gasto de caja": "gastos de caja",
+    "Deuda nueva cargada": "deudas nuevas",
+    "Deuda pagada o dada de baja": "deudas pagadas",
+    "Deuda corregida": "deudas corregidas",
+    "Anticipo entregado": "anticipos entregados",
+    "Anticipo aplicado": "anticipos aplicados",
+    "Retiro de dividendos": "retiros",
+    "Sin explicar todavía": "sin explicar",
+}
+
+
+def _quien(etiqueta: str | None) -> str:
+    """El cliente (o proveedor) que hay al final de la etiqueta, si lo hay.
+
+    Las etiquetas de documento vienen como "Factura 001-099-000181251 · AJT" o
+    "Cheque 0004512 · PGQ": el código va último. Un concepto largo
+    —"Caja S · FLETE MERCADERIA QUITO"— no es un código y se descarta.
+    """
+    partes = [p.strip() for p in (etiqueta or "").split("·")]
+    if len(partes) < 2:
+        return ""
+    q = partes[-1]
+    return q if 0 < len(q) <= 8 else ""
+
+
+def resumir(movs: list[dict], d_utilidad: float | None) -> list[dict]:
+    """Los movimientos agrupados por lo que SON, no uno por documento.
+
+    Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
+    renglones con el número de cada una. Cuando el grupo es uno solo, se
+    muestra el documento —ahí sí sirve saber cuál—.
+
+    Lo que pesa menos de un peso no sale: se junta al final, y sólo si entre
+    todos llegan a pesar. Si igual queda una diferencia contra el Δ, sale como
+    "resto": la suma de lo que se ve tiene que dar el total, o la tabla deja de
+    ser creíble.
+    """
+    grupos: dict[str, dict] = {}
+    for m in movs or []:
+        r = (m.get("regla") or "—").strip()
+        g = grupos.setdefault(r, {"regla": r, "aporte": 0.0, "n": 0,
+                                  "etiqueta": m.get("etiqueta"),
+                                  "url": m.get("url"),
+                                  "col": m.get("componente"),
+                                  "quienes": {},
+                                  "familia": m.get("familia")})
+        if g["col"] != m.get("componente"):
+            g["col"] = None                    # el grupo cruza componentes
+        ap = float(m.get("aporte") or 0)
+        g["aporte"] = round(g["aporte"] + ap, 2)
+        g["n"] += 1
+        q = _quien(m.get("etiqueta"))
+        if q:
+            g["quienes"][q] = round(g["quienes"].get(q, 0.0) + ap, 2)
+    out, menores = [], 0.0
+    for g in sorted(grupos.values(), key=lambda x: abs(x["aporte"]), reverse=True):
+        if abs(g["aporte"]) < UMBRAL_VISIBLE:
+            menores = round(menores + g["aporte"], 2)
+            continue
+        if g["n"] > 1:
+            # ⭐ TMT 2026-08-06: *"decime algo de las facturas, de los abonos…
+            # ¿clientes quizás?"*. "3 facturas nuevas" no dice nada; "3
+            # facturas · AJT, SAC, GBC" dice de quién es la venta. Van los tres
+            # que más pesan, que es lo que se mira.
+            quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
+                             reverse=True)
+            nombres = ", ".join(quienes[:3])
+            if len(quienes) > 3:
+                nombres += f" +{len(quienes) - 3}"
+            g["texto"] = f"{g['n']} {PLURALES.get(g['regla'], g['regla'].lower())}"
+            if nombres:
+                g["texto"] += f" · {nombres}"
+            g["url"] = None                    # son varios: ninguna ficha sola
+        else:
+            g["texto"] = g.get("etiqueta") or g["regla"]
+        out.append(g)
+    if abs(menores) >= UMBRAL_VISIBLE:
+        out.append({"texto": "otros menores", "aporte": menores, "n": 0,
+                    "url": None, "col": None, "familia": "utilidad"})
+    if d_utilidad is not None:
+        resto = round(d_utilidad - sum(g["aporte"] for g in out), 2)
+        if abs(resto) >= UMBRAL_VISIBLE:
+            out.append({"texto": "resto", "aporte": resto, "n": 0,
+                        "url": None, "col": None, "familia": "sin_explicar"})
+    return out
+
+
 def una(id_traza: int) -> dict | None:
     """UNA foto con su Δ contra la anterior y el detalle que lo explica.
 
@@ -440,17 +547,7 @@ def una(id_traza: int) -> dict | None:
     movs = movimientos(id_traza)
     fila["movimientos"] = movs
 
-    # Por componente, para poder poner los documentos abajo del renglón que ya
-    # muestra la tabla de arriba.
-    por_comp: dict[str, dict] = {}
-    for m in movs:
-        c = m.get("componente") or "?"
-        g = por_comp.setdefault(c, {"col": c, "label": ETIQUETAS.get(c, c),
-                                    "aporte": 0.0, "movimientos": []})
-        g["aporte"] = round(g["aporte"] + float(m.get("aporte") or 0), 2)
-        g["movimientos"].append(m)
-    fila["por_componente"] = sorted(
-        por_comp.values(), key=lambda g: abs(g["aporte"]), reverse=True)
+    fila["resumen"] = resumir(movs, fila.get("d_utilidad"))
 
     # 🚨 "Sin movimientos" y "sin registro" NO son lo mismo. Una ventana en la
     # que de verdad no se movió nada y una anterior a que existiera la

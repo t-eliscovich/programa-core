@@ -127,41 +127,48 @@
   </p>
 </div>
 
-{# El detalle se trae recién al abrir: son 200 fotos y cada una puede tener
-   decenas de movimientos. Una vez traído queda en el DOM. #}
+{# El detalle se trae recién al abrir —200 fotos por decenas de movimientos
+   serían miles de renglones que nadie va a mirar— y se inserta como FILAS de
+   esta misma tabla, no como un bloque adentro de una celda: así los importes
+   caen en la columna de su componente. #}
 <script>
 (function () {
   var tabla = document.getElementById('traza-tabla');
   if (!tabla) { return; }
-  var COLUMNAS = {{ 4 + (deltas | length) + (kilos | length) }};
+  function cerrar(fila, a) {
+    var sig = fila.nextElementSibling;
+    while (sig && sig.getAttribute('data-detalle') === '1') {
+      var muere = sig; sig = sig.nextElementSibling;
+      muere.parentNode.removeChild(muere);
+    }
+    a.setAttribute('aria-expanded', 'false');
+    a.querySelector('.traza-caret').textContent = '›';
+  }
   tabla.addEventListener('click', function (ev) {
     var a = ev.target.closest ? ev.target.closest('a[data-foto]') : null;
     if (!a) { return; }
     ev.preventDefault();
     var fila = a.closest('tr');
-    var caret = a.querySelector('.traza-caret');
     var sig = fila.nextElementSibling;
-    if (sig && sig.getAttribute('data-detalle') === '1') {
-      sig.parentNode.removeChild(sig);
-      a.setAttribute('aria-expanded', 'false');
-      caret.textContent = '›';
-      return;
-    }
-    var tr = document.createElement('tr');
-    tr.setAttribute('data-detalle', '1');
-    var td = document.createElement('td');
-    td.colSpan = COLUMNAS;
-    td.style.cssText = 'padding:.75rem 1rem;background:rgb(248 250 252);' +
-                       'border-top:1px solid rgb(226 232 240);color:rgb(100 116 139);';
-    td.textContent = 'Buscando qué lo movió…';
-    tr.appendChild(td);
-    fila.parentNode.insertBefore(tr, fila.nextSibling);
+    if (sig && sig.getAttribute('data-detalle') === '1') { cerrar(fila, a); return; }
     a.setAttribute('aria-expanded', 'true');
-    caret.textContent = '˅';
+    a.querySelector('.traza-caret').textContent = '˅';
+    fila.insertAdjacentHTML('afterend',
+      '<tr data-detalle="1" class="border-t border-slate-100">' +
+      '<td colspan="' + fila.children.length + '" class="px-1.5 py-1" ' +
+      'style="color:rgb(148 163 184);">buscando…</td></tr>');
     fetch(a.getAttribute('data-foto') + '?fragmento=1', { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
-      .then(function (html) { td.style.color = ''; td.innerHTML = html; })
-      .catch(function () { td.textContent = 'No se pudo traer el detalle de esta foto.'; });
+      .then(function (html) {
+        cerrar(fila, a);
+        a.setAttribute('aria-expanded', 'true');
+        a.querySelector('.traza-caret').textContent = '˅';
+        fila.insertAdjacentHTML('afterend', html);
+      })
+      .catch(function () {
+        var t = fila.nextElementSibling;
+        if (t) { t.querySelector('td').textContent = 'no se pudo traer el detalle'; }
+      });
   });
 })();
 </script>

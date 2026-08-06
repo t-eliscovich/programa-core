@@ -378,9 +378,45 @@ def test_los_kilos_que_pasan_de_una_etapa_a_la_siguiente_son_UN_renglon():
     movs = motor.diff(nueva, vieja)
 
     assert len(movs) == 1, [m["etiqueta"] for m in movs]
-    assert movs[0]["etiqueta"] == "21,65 kg de tejido a terminado"
+    assert movs[0]["etiqueta"] == "22 kg tejido→terminado"
     assert movs[0]["aporte"] == pytest.approx(21.65 * (5.2591 - 3.5591), abs=0.02)
     # Y sigue cerrando contra el Δ del componente, al centavo.
     d = round(sum(_f(f["importe"]) for f in nueva)
               - sum(_f(v["importe"]) for v in vieja.values()), 2)
     assert round(sum(m["aporte"] for m in movs), 2) == d
+
+
+def test_el_resumen_dice_de_que_clientes_es():
+    """TMT 2026-08-06: *"decime algo de las facturas, de los abonos, eso es un
+    poco más importante. ¿clientes quizás?"*. "3 facturas nuevas" no dice nada;
+    de quién son sí."""
+    movs = [
+        {"regla": "Venta facturada", "aporte": 10741.46, "componente": "facturas",
+         "etiqueta": "Factura 001-099-000181251 · AJT"},
+        {"regla": "Venta facturada", "aporte": 495.67, "componente": "facturas",
+         "etiqueta": "Factura 001-099-000181250 · SAC"},
+        {"regla": "Venta facturada", "aporte": 162.17, "componente": "facturas",
+         "etiqueta": "Factura 001-099-000181249 · GBC"},
+    ]
+    g = t.resumir(movs, 11399.30)[0]
+    assert g["texto"] == "3 facturas nuevas · AJT, SAC, GBC"   # el mayor primero
+    assert g["aporte"] == 11399.30
+
+
+def test_un_concepto_largo_no_se_confunde_con_un_cliente():
+    """"Caja S · FLETE MERCADERIA QUITO" tiene un "·" pero lo de atrás no es
+    un código de cliente."""
+    assert t._quien("Factura 172916 · PGQ") == "PGQ"
+    assert t._quien("Caja S · FLETE MERCADERIA QUITO") == ""
+    assert t._quien("22 kg tejido→terminado") == ""
+
+
+def test_un_centavo_no_es_un_renglon():
+    """TMT 2026-08-06, viendo "-0,00 kg · Stock hilado  −0,01": *"no movió nada
+    '0', ¿por qué lo mostrás?"*."""
+    movs = [{"regla": "Venta facturada", "aporte": 5000.0, "componente": "facturas",
+             "etiqueta": "Factura 1 · AAA"},
+            {"regla": "Stock hilado", "aporte": -0.01, "componente": "vsto",
+             "etiqueta": "-0 kg"}]
+    textos = [g["texto"] for g in t.resumir(movs, 4999.99)]
+    assert textos == ["Factura 1 · AAA"]      # el centavo no sale
