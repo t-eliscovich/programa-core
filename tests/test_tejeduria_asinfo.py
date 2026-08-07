@@ -167,6 +167,90 @@ def test_resumen_diario_pivotea_por_tejedor():
     assert out["por_dia"][0]["dia"] == "2026-07-14"
 
 
+# ---------------------------------------------------------------------------
+# Diario de ingreso a bodega: UNA COLUMNA POR TERCERIZADO
+#
+# TMT 2026-08-07 (dueña: *"nos falta la columna para UN"*). El diario tenía dos
+# columnas hardcodeadas (Reyes y Ponce) y calculaba INTELA = ingreso − esas dos,
+# así que los kg de UN (Unda) quedaban SUMADOS adentro de la columna INTELA. En
+# julio 2026 eso hacía que el diario dijera INTELA 328.690,09 y el cuadro de
+# arriba 327.443,94: los 1.246,15 kg de Unda escondidos.
+# ---------------------------------------------------------------------------
+
+_PROD_CON_UN = {
+    "disponible": True, "anio": 2026, "mes": 7, "total_kg": 4300.0,
+    "ofs": [
+        {"numero": "OFT-2", "dia": "2026-07-08", "kg": 1621.25,
+         "descripcion": "A PONCE KW20", "cod": "AP", "label": "Ponce", "es_intela": False},
+        {"numero": "OFT-4", "dia": "2026-07-08", "kg": 811.45,
+         "descripcion": "M REYES KW22", "cod": "RY", "label": "Reyes", "es_intela": False},
+        {"numero": "OFT-5", "dia": "2026-07-08", "kg": 500.00,
+         "descripcion": "R UNDA HY10", "cod": "UN", "label": "Unda", "es_intela": False},
+        {"numero": "OFT-1", "dia": "2026-07-14", "kg": 1867.30,
+         "descripcion": "MQ16 F-96", "cod": "KK", "label": "INTELA", "es_intela": True},
+    ],
+    "por_tejedor": [],
+}
+
+
+def _run_resumen_con_un(ingreso_dias, ingreso_bodega):
+    """resumen_mes con Unda produciendo y un ingreso a bodega conocido."""
+    import datetime as _dt
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
+                      return_value=_PROD_CON_UN), \
+         patch.object(tsvc.asinfo_service, "movimiento_bodega_mes",
+                      return_value={"ingreso": ingreso_bodega, "egreso": 0.0}), \
+         patch.object(tsvc, "_ingreso_por_dia", return_value=ingreso_dias), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=[]), \
+         patch.object(tsvc, "falta_acumulada", return_value={}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
+        return tsvc.resumen_mes(2026, 7)
+
+
+def test_diario_tiene_columna_para_cada_tercerizado():
+    out = _run_resumen_con_un(
+        [{"dia": "2026-07-08", "kg": 4000.0}, {"dia": "2026-07-14", "kg": 300.0}],
+        4300.0,
+    )
+    cods = [c["cod"] for c in out["columnas_diario"]]
+    assert cods == ["RY", "AP", "UN"]            # orden fijo, UN incluido
+    assert [c["label"] for c in out["columnas_diario"]] == ["Reyes", "Ponce", "Unda"]
+
+
+def test_diario_saca_los_kg_de_unda_de_la_columna_intela():
+    # El 08/07 entraron 4.000 kg a bodega: 811,45 Reyes + 1.621,25 Ponce +
+    # 500 Unda ⇒ INTELA = 1.067,30 (NO 1.567,30, que era el bug).
+    out = _run_resumen_con_un(
+        [{"dia": "2026-07-08", "kg": 4000.0}, {"dia": "2026-07-14", "kg": 300.0}],
+        4300.0,
+    )
+    dia = {d["dia"]: d for d in out["ingreso_por_dia"]}["2026-07-08"]
+    assert dia["terc_kg"]["UN"] == pytest.approx(500.00)
+    assert dia["terc_kg"]["RY"] == pytest.approx(811.45)
+    assert dia["terc_kg"]["AP"] == pytest.approx(1621.25)
+    assert dia["intela_kg"] == pytest.approx(1067.30)
+    # invariante de la fila: tercerizados + INTELA = ingresado a bodega
+    assert sum(dia["terc_kg"].values()) + dia["intela_kg"] == pytest.approx(dia["kg"])
+
+
+def test_diario_intela_cierra_con_el_cuadro_por_tejedor():
+    """El INTELA del TOTAL del diario tiene que ser el MISMO que el de arriba.
+
+    Es el síntoma que vio la dueña: dos tablas de la misma pantalla dando dos
+    INTELA distintos, y la diferencia era exactamente lo de Unda.
+    """
+    out = _run_resumen_con_un(
+        [{"dia": "2026-07-08", "kg": 4000.0}, {"dia": "2026-07-14", "kg": 300.0}],
+        4300.0,
+    )
+    intela_arriba = next(t for t in out["tejedores"] if t["es_intela"])["kg"]
+    assert out["totales_diario"]["intela_kg"] == pytest.approx(intela_arriba)
+    assert out["totales_diario"]["terc"]["UN"] == pytest.approx(500.00)
+    assert out["totales_diario"]["kg"] == pytest.approx(4300.0)
+
+
 def test_resumen_fail_soft_asinfo_no_disponible():
     prod_off = {"disponible": False, "anio": 2026, "mes": 7, "total_kg": 0.0,
                 "ofs": [], "por_tejedor": []}

@@ -223,7 +223,7 @@
     {# Abre sola SÓLO si hay algo que hacer. Si dice «0 para cargar» queda
        plegada: el número del título ya te dice todo. #}
     <details {% if data.pendientes %}open{% endif %}>
-    <summary>Tercerizado por OF · Reyes / Ponce
+    <summary>Tercerizado por OF · Reyes / Ponce / Unda
         ({{ data.pendientes|length }} para cargar)</summary>
 
     {% if data.pendientes and tiene_permiso('compras.crear') %}
@@ -303,7 +303,7 @@
     {% elif solo_pendientes %}
       <p class="note ok">No queda ninguna OF pendiente en el mes — todas ya tienen su compra y su pasivo.</p>
     {% else %}
-      <p class="note ok">No hay producción tercerizada (Reyes/Ponce) este mes.</p>
+      <p class="note ok">No hay producción tercerizada (Reyes/Ponce/Unda) este mes.</p>
     {% endif %}
     </details>
 
@@ -378,26 +378,34 @@
     <summary>Diario · ingreso a bodega (kg) <span class="muted" style="font-weight:normal; font-size:11px; text-transform:none; letter-spacing:0">— tela cruda que ENTRÓ a la bodega cada día · la suma del mes = el TOTAL de arriba · {{ data.ingreso_por_dia|length }} días</span></summary>
     <table>
       <thead>
-        <tr><th>Día</th><th>Reyes</th><th>Ponce</th><th>Intela</th><th>Ingresado a bodega (kg)</th></tr>
+        {#- Una columna por tercerizado (Reyes/Ponce/Unda...) + Intela = el resto.
+            Salen de data.columnas_diario: si manana entra un tejedor nuevo, la
+            columna aparece sola en vez de esconderse adentro de Intela, que es
+            lo que le paso a UN. TMT 2026-08-07 (duena). -#}
+        <tr><th>Día</th>
+            {% for c in data.columnas_diario %}<th>{{ c.label }}</th>{% endfor %}
+            <th>Intela</th><th>Ingresado a bodega (kg)</th></tr>
       </thead>
       <tbody>
         {% for d in data.ingreso_por_dia %}
           <tr>
             <td>{{ d.dia|fecha_es }}</td>
-            <td>{{ d.reyes_kg|num_es if d.reyes_kg else '' }}</td>
-            <td>{{ d.ponce_kg|num_es if d.ponce_kg else '' }}</td>
+            {% for c in data.columnas_diario %}
+              <td>{{ d.terc_kg[c.cod]|num_es if d.terc_kg[c.cod] else '' }}</td>
+            {% endfor %}
             <td>{{ d.intela_kg|num_es if d.intela_kg else '' }}</td>
             <td>{{ d.kg|num_es }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="muted">Sin datos de bodega (Asinfo no respondió).</td></tr>
+          <tr><td colspan="{{ data.columnas_diario|length + 3 }}" class="muted">Sin datos de bodega (Asinfo no respondió).</td></tr>
         {% endfor %}
         <tr class="tot">
           <td>TOTAL {{ '%02d/%d' % (mes, anio) }}</td>
-          <td>{{ data.ingreso_por_dia|sum(attribute='reyes_kg')|num_es }}</td>
-          <td>{{ data.ingreso_por_dia|sum(attribute='ponce_kg')|num_es }}</td>
-          <td>{{ data.ingreso_por_dia|sum(attribute='intela_kg')|num_es }}</td>
-          <td>{{ data.ingreso_por_dia|sum(attribute='kg')|num_es }}</td>
+          {% for c in data.columnas_diario %}
+            <td>{{ data.totales_diario.terc[c.cod]|num_es }}</td>
+          {% endfor %}
+          <td>{{ data.totales_diario.intela_kg|num_es }}</td>
+          <td>{{ data.totales_diario.kg|num_es }}</td>
         </tr>
       </tbody>
     </table>

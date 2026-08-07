@@ -45,6 +45,19 @@ MARCADOR_CARGA = "asinfo-tejeduria"
 # modules/asinfo/service.py.
 TERCERIZADOS_VALIDOS = {"RY", "AP", "UN"}
 
+# Orden FIJO de las columnas de tercerizados en el diario de ingreso a bodega.
+# Fijo y no `sorted(TERCERIZADOS_VALIDOS)` para que las columnas no se muevan de
+# lugar entre un mes y otro (la dueña las lee siempre en el mismo orden). Un
+# tercerizado que esté en TERCERIZADOS_VALIDOS y NO acá igual aparece: se
+# agrega al final. Así el próximo tejedor nuevo no vuelve a caer en silencio
+# adentro de la columna INTELA — que es exactamente lo que le pasó a UN.
+ORDEN_COLUMNAS_DIARIO = ("RY", "AP", "UN")
+
+# Etiqueta de respaldo para el encabezado cuando el mes no tiene ninguna OF de
+# ese tejedor (sin OFs no hay label que sacar de Asinfo, y la columna igual se
+# dibuja para que la tabla tenga siempre las mismas columnas).
+LABEL_TERCERIZADO = {"RY": "Reyes", "AP": "Ponce", "UN": "Unda"}
+
 
 def _compras_k_por_prov(anio: int, mes: int) -> dict:
     """{codigo_prov: {kg, importe, n}} de scintela.compra tipo K del mes
@@ -389,21 +402,52 @@ def resumen_mes(anio: int, mes: int) -> dict:
     )
     pendientes = [o for o in tercerizado_ofs if o["estado"] == "pendiente"]
 
-    # ── TMT 2026-07-21 (dueña): sumar columnas Reyes (RY) y Ponce (AP) al diario
-    # de ingreso a bodega. El desglose por tejedor sale de por_dia (OFs cerradas);
+    # ── TMT 2026-07-21 (dueña): sumar columnas de tercerizados al diario de
+    # ingreso a bodega. El desglose por tejedor sale de por_dia (OFs cerradas);
     # se cruza por día (YYYY-MM-DD) contra el ingreso a bodega 52. Aproximado: el
     # día de cierre de la OF puede no calzar exacto con el día de ingreso a bodega.
+    #
+    # ⭐ TMT 2026-08-07 (dueña: *"nos falta la columna para UN"*): las columnas
+    # eran DOS hardcodeadas (Reyes y Ponce) y el INTELA del diario se calculaba
+    # como `ingreso − Reyes − Ponce`. Cuando en julio entró UN (Unda), sus kg
+    # quedaron adentro de la columna INTELA: el diario decía INTELA 328.690,09 y
+    # el cuadro de arriba 327.443,94 — la diferencia eran los 1.246,15 kg de
+    # Unda. Ahora las columnas salen de ORDEN_COLUMNAS_DIARIO ∪
+    # TERCERIZADOS_VALIDOS y el residuo INTELA descuenta a TODOS, así las dos
+    # tablas dicen el mismo INTELA y un tejedor nuevo no se esconde.
+    _labels_tej = {t["cod"]: t["label"] for t in tejedores if t.get("cod")}
+    _cods_diario = list(ORDEN_COLUMNAS_DIARIO) + sorted(
+        TERCERIZADOS_VALIDOS - set(ORDEN_COLUMNAS_DIARIO))
+    columnas_diario = [
+        {"cod": _c,
+         "label": _labels_tej.get(_c) or LABEL_TERCERIZADO.get(_c) or _c}
+        for _c in _cods_diario
+    ]
     _terc_dia = {str(_d.get("dia"))[:10]: (_d.get("kg") or {}) for _d in por_dia}
     ingreso_por_dia = _ingreso_por_dia(anio, mes)
+    totales_diario = {"terc": {_c["cod"]: 0.0 for _c in columnas_diario},
+                      "intela_kg": 0.0, "kg": 0.0}
     for _row in ingreso_por_dia:
         _kg = _terc_dia.get(str(_row.get("dia"))[:10], {})
-        _row["reyes_kg"] = round(float(_kg.get("RY", 0.0) or 0.0), 2)
-        _row["ponce_kg"] = round(float(_kg.get("AP", 0.0) or 0.0), 2)
-        # INTELA (autoprod) = lo RESTANTE: ingreso a bodega − Reyes − Ponce.
-        # Así Reyes+Ponce+INTELA = Ingresado en cada fila, y la suma del mes
-        # matchea el INTELA del cuadro de arriba. TMT 2026-07-21 (dueña).
+        _row["terc_kg"] = {
+            _c["cod"]: round(float(_kg.get(_c["cod"], 0.0) or 0.0), 2)
+            for _c in columnas_diario
+        }
+        # INTELA (autoprod) = lo RESTANTE: ingreso a bodega − TODOS los
+        # tercerizados. Así tercerizados + INTELA = Ingresado en cada fila, y la
+        # suma del mes matchea el INTELA del cuadro de arriba. TMT 2026-07-21.
         _row["intela_kg"] = round(
-            float(_row.get("kg", 0.0) or 0.0) - _row["reyes_kg"] - _row["ponce_kg"], 2)
+            float(_row.get("kg", 0.0) or 0.0) - sum(_row["terc_kg"].values()), 2)
+        # Alias de compatibilidad (los usa quien lea el dict desde afuera).
+        _row["reyes_kg"] = _row["terc_kg"].get("RY", 0.0)
+        _row["ponce_kg"] = _row["terc_kg"].get("AP", 0.0)
+        for _c in columnas_diario:
+            totales_diario["terc"][_c["cod"]] = round(
+                totales_diario["terc"][_c["cod"]] + _row["terc_kg"][_c["cod"]], 2)
+        totales_diario["intela_kg"] = round(
+            totales_diario["intela_kg"] + _row["intela_kg"], 2)
+        totales_diario["kg"] = round(
+            totales_diario["kg"] + float(_row.get("kg", 0.0) or 0.0), 2)
 
     return {
         "disponible": disponible,
@@ -424,6 +468,10 @@ def resumen_mes(anio: int, mes: int) -> dict:
         # la suma de los días = total_kg exacto (misma fuente). Reemplaza en
         # la pantalla al diario por OFs cerradas (que sumaba 207k ≠ 179k).
         "ingreso_por_dia": ingreso_por_dia,
+        # Columnas de tercerizados del diario (cod + label) y sus totales, para
+        # que la plantilla no hardcodee ningún tejedor. TMT 2026-08-07.
+        "columnas_diario": columnas_diario,
+        "totales_diario": totales_diario,
         "pendientes": pendientes,
         "tercerizado_ofs": tercerizado_ofs,
         # Tarifas $/kg editables (mig 0133) + cuánto falta por proveedor.
