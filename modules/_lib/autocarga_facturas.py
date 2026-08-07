@@ -158,6 +158,15 @@ def _loop() -> None:
             try:
                 from modules.facturas import aviso_ventas as _ventas
                 _ventas.correr_si_toca()
+                # TMT 2026-08-07 (dueña): "otra notificación cuando la venta
+                # del día sobrepase 10kg y cuando sobrepase 15kg y luego 20kg"
+                # (miles de kilos) — "entre la jornada laboral", 08:00-18:00 de
+                # Ecuador. Va DESPUÉS del cierre: si son las 18 el que habla es
+                # el cierre y este devuelve "fuera de la jornada".
+                uk = _ventas.correr_umbrales_kg()
+                if uk.get("avisado"):
+                    _LOG.info("ventas del día (fondo): cruzó los %s kg",
+                              uk.get("umbral"))
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("ventas del día (fondo): %s", e)
             # TMT 2026-07-31 (dueña): "guardá la data y fijate en un rato
