@@ -332,13 +332,32 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
         )
         abono = round(float(f["abono"] or 0), 2)
         retencion = round(float(f["retencion"] or 0), 2)
+        falta_fila = None      # sólo se usa al COMPLETAR una parcial
         if ya:
             # Ya hay retención registrada: sólo se sigue si el usuario pidió
-            # COMPLETAR y lo que falta es de verdad (más de un centavo).
-            falta = round(rete - retencion, 2)
-            if not completar or falta <= 0.005:
+            # COMPLETAR y lo que falta es de verdad.
+            #
+            # 🚨 Hay DOS faltantes distintos y no son el mismo número:
+            #   · en la COLUMNA `factura.retencion` — es lo que hay que
+            #     descontar del saldo;
+            #   · en la TABLA `scintela.retencion` — es lo que hay que
+            #     registrar como comprobante.
+            # El caso que lo destapó (07/08, AL1 177629): el cron ya había
+            # guardado la fila con el TOTAL de Asinfo (125,60) y lo único
+            # atrasado era la columna (53,83, topeada por el `LEAST` del
+            # backfill de la 0179). Insertar "lo que falta" en las dos dejó la
+            # tabla en 197,37 — más de lo que el cliente retuvo. Hubo que
+            # anular 4 filas a mano.
+            falta_columna = round(rete - retencion, 2)
+            if not completar or falta_columna <= 0.005:
                 return "ya"
-            rete = falta
+            ya_registrado = db.fetch_one(
+                "SELECT COALESCE(SUM(rete), 0) AS s FROM scintela.retencion "
+                " WHERE codigo_cli = %s AND numf = %s",
+                (f["codigo_cli"], f["numf"]), conn=conn,
+            ) or {}
+            falta_fila = round(rete - float(ya_registrado.get("s") or 0), 2)
+            rete = falta_columna
         saldo = round(float(f["saldo"] or 0), 2)
         # TMT 2026-08-06 (dueña): freno — si la retención es más grande que lo
         # que queda por cobrar, el saldo quedaría negativo. No se aplica sola;
@@ -349,15 +368,21 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
         if solo_sin_abono and abono > 0.005:
             return "tiene_abono"
         stat_prev = (f["stat"] or "").strip()
-        rrow = db.execute_returning(
-            "INSERT INTO scintela.retencion "
-            "  (codigo_cli, numf, rete, fecha, usuario_crea) "
-            "VALUES (%s, %s, %s, CURRENT_DATE, %s) "
-            "RETURNING id_retencion",
-            (f["codigo_cli"], f["numf"], rete, usuario),
-            conn=conn,
-        ) or {}
-        id_ret = rrow.get("id_retencion")
+        # `falta_fila` sólo tiene valor cuando se está completando una
+        # parcial: es lo que le falta a la TABLA, que puede ser 0 aunque a la
+        # columna le falte plata. Sin completar, la fila entera es nueva.
+        a_registrar = rete if falta_fila is None else falta_fila
+        id_ret = None
+        if a_registrar > 0.005:
+            rrow = db.execute_returning(
+                "INSERT INTO scintela.retencion "
+                "  (codigo_cli, numf, rete, fecha, usuario_crea) "
+                "VALUES (%s, %s, %s, CURRENT_DATE, %s) "
+                "RETURNING id_retencion",
+                (f["codigo_cli"], f["numf"], a_registrar, usuario),
+                conn=conn,
+            ) or {}
+            id_ret = rrow.get("id_retencion")
         # TMT 2026-08-07 (dueña): la retención BAJA el saldo igual que antes,
         # pero YA NO se suma al abono — va a su propia columna
         # `factura.retencion` (migración 0179), así el estado de cuenta puede
