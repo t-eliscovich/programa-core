@@ -172,7 +172,55 @@ def _cuentas(evs: list[dict]) -> dict[str, dict]:
     return out
 
 
-def indice(evs: list[dict]) -> dict[str, dict]:
+def transacciones(desde, hasta) -> dict[str, dict]:
+    """`b<no_banco>` → lo que se cargó en esa cuenta, salga o no de `mov_doble`.
+
+    🚨 TMT 2026-08-07, sobre un renglón que decía sólo *"Banco PICHINCHA
+    759"*: *"fijate si identificás"*. `_cuentas()` sólo alcanza a los
+    movimientos que dejaron `mov_doble` con `no_banco`; los que se cargan
+    derecho por la pantalla de Bancos no dejan ninguno, y ésos son justo los
+    que quedaban sin nombre. Acá se lee la tabla de transacciones por su
+    `fecha_crea` —el momento en que se CARGÓ, no la fecha del movimiento, que
+    puede ser vieja— y el concepto tipeado se usa como renglón.
+
+    Fail-soft: sin esto el renglón vuelve a decir el nombre del banco y nada
+    más, que es como estaba.
+    """
+    if not desde or not hasta:
+        return {}
+    try:
+        filas = db.fetch_all(
+            """
+            SELECT no_banco, documento, concepto, importe,
+                   (fecha_crea AT TIME ZONE 'America/Guayaquil')::date AS dia
+              FROM scintela.transacciones_bancarias
+             WHERE fecha_crea >  %s
+               AND fecha_crea <= %s
+               AND no_banco IS NOT NULL
+             ORDER BY id_transaccion
+            """, (desde, hasta)) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("eventos: no pude leer transacciones_bancarias (%s)", e)
+        return {}
+    por_cuenta: dict[str, list[dict]] = {}
+    for r in filas:
+        por_cuenta.setdefault(f"b{int(r['no_banco'])}", []).append(r)
+    out: dict[str, dict] = {}
+    for doc, lista in por_cuenta.items():
+        conceptos = [(r.get("concepto") or "").strip() for r in lista]
+        conceptos = [c for c in conceptos if c]
+        if len(lista) == 1 and conceptos:
+            texto = conceptos[0]
+        else:
+            texto = f"BC · {len(lista)} movimientos"
+        out[doc] = {"tipo": "banco_cargado", "grupo": doc, "docs": [doc],
+                    "label": "Movimiento de banco", "texto": texto[:60],
+                    "concepto": " · ".join(dict.fromkeys(conceptos)),
+                    "meta": {}, "dia": lista[0].get("dia")}
+    return out
+
+
+def indice(evs: list[dict], cuentas: dict | None = None) -> dict[str, dict]:
     """`doc_id` de la foto → el evento que lo tocó.
 
     Si dos eventos tocan el mismo documento en la misma ventana gana el ÚLTIMO:
@@ -182,5 +230,8 @@ def indice(evs: list[dict]) -> dict[str, dict]:
     for ev in evs or []:
         for d in ev.get("docs") or []:
             idx[d] = ev
+    # Primero lo que se cargó en la cuenta (alcanza a TODO), después lo que
+    # `mov_doble` sabe (que además une el banco con el otro lado del hecho).
+    idx.update(cuentas or {})
     idx.update(_cuentas(evs))
     return idx

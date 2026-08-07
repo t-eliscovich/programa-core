@@ -273,3 +273,78 @@ def test_las_etapas_se_abrevian_tambien_en_las_fotos_ya_guardadas():
              "regla": "Stock", "familia": "utilidad",
              "etiqueta": "salió de hilado y tejido y terminado"}]
     assert t.resumir(movs, -370.0, {})[0]["texto"] == "salió de hil. y tej. y term."
+
+
+def test_un_cheque_aplicado_a_una_factura_no_dice_dos():
+    """🚨 El paréntesis cuenta HECHOS, no documentos. Un cheque aplicado a una
+    factura toca dos documentos y es UN hecho: salía "CH GSS → FA (2)", que se
+    lee como dos cheques.
+    """
+    idx = ev.indice(_con_label([
+        _ev("cheque_aplicado_a_factura", "cheque", 700, "factura", 800,
+            importe=470.0)]))
+    movs = [
+        {"doc_id": "c700", "componente": "cheques", "aporte": 470.0,
+         "regla": "Cheque recibido", "etiqueta": "Cheque 9 · GSS",
+         "familia": "traspaso"},
+        {"doc_id": "f800", "componente": "facturas", "aporte": -470.0,
+         "regla": "Abono a factura", "etiqueta": "Factura 1 · GSS",
+         "familia": "traspaso"},
+    ]
+    g = t.resumir(movs, 0.0, idx)[0]
+    assert g["texto"] == "CH GSS → FA"
+    assert g["n"] == 2                       # dos documentos…
+    assert len(g["hechos"]) == 1             # …un solo hecho
+
+
+def test_el_banco_cargado_a_mano_tambien_se_identifica():
+    """🚨 TMT 2026-08-07, sobre "Banco PICHINCHA 759": *"fijate si
+    identificás"*. Los movimientos cargados derecho por la pantalla de Bancos
+    NO dejan `mov_doble`, así que `_cuentas()` no los alcanzaba y el renglón
+    se quedaba con el nombre del banco. Se leen de `transacciones_bancarias`
+    por `fecha_crea` — el momento en que se CARGÓ, no la fecha del movimiento.
+    """
+    filas = [{"no_banco": 10, "documento": "TR", "importe": 759.0,
+              "concepto": "TRANSFERENCIA RECIBIDA JVL", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("2026-08-07 18:28+00", "2026-08-07 18:33+00")
+    movs = [{"doc_id": "b10", "componente": "bancos", "aporte": 759.0,
+             "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
+             "familia": "traspaso"}]
+    g = t.resumir(movs, 759.0, ev.indice([], cuentas))[0]
+    assert g["texto"] == "TRANSFERENCIA RECIBIDA JVL"
+
+
+def test_si_la_cuenta_tuvo_varias_cargas_dice_cuantas():
+    filas = [{"no_banco": 10, "documento": "TR", "importe": 759.0,
+              "concepto": "UNO", "dia": "2026-08-07"},
+             {"no_banco": 10, "documento": "ND", "importe": -289.0,
+              "concepto": "DOS", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "BC · 2 movimientos"
+    assert cuentas["b10"]["concepto"] == "UNO · DOS"
+
+
+def test_sin_ventana_no_se_leen_transacciones():
+    assert ev.transacciones(None, "b") == {}
+
+
+def test_si_transacciones_falla_el_detalle_sigue():
+    with patch.object(ev.db, "fetch_all", side_effect=RuntimeError("boom")):
+        assert ev.transacciones("a", "b") == {}
+
+
+def test_el_hecho_con_nombre_le_gana_a_la_carga_del_banco():
+    """`mov_doble` además UNE el banco con el otro lado; la transacción sola
+    no sabe con qué se empareja. Si los dos conocen la cuenta, manda el hecho.
+    """
+    filas = [{"no_banco": 10, "documento": "ND", "importe": -370.0,
+              "concepto": "TIPEADO A MANO", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    evs = _con_label([_ev("nota_debito", "transacciones_bancarias", 900,
+                          "posdat", 44, importe=-370.0,
+                          concepto="COMISIONES E IMPUESTOS",
+                          metadata={"no_banco": 10})])
+    assert ev.indice(evs, cuentas)["b10"]["tipo"] == "nota_debito"

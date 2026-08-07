@@ -58,7 +58,10 @@
           style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;
                  background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);"
           data-tz="1"
-          title="{{ g.texto }}">
+          {# 🚨 `g.titulo` se calculaba desde el 07/08 y el template mostraba
+             `g.texto`: el tooltip repetía el renglón en vez de traer el
+             concepto largo del hecho, que es lo que lo identifica. #}
+          title="{{ g.titulo or g.texto }}">
         <span style="color:rgb(203 213 225);padding-left:.35rem;">└</span>
         {% if g.url %}<a href="{{ g.url }}" style="color:rgb(30 64 175);">{{ g.texto }}</a>{% else %}{{ g.texto }}{% endif %}
       </td>

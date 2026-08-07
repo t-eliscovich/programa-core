@@ -616,6 +616,17 @@ def _abreviar_etapas(texto: str) -> str:
     return _RE_ETAPAS.sub(lambda m: _ABREV[m.group(1)], texto or "")
 
 
+#: Los tipos que llegan de a montones y se muestran en UN renglón con la
+#: cuenta y los clientes. Medido sobre 200 ventanas: `factura_emitida` es el
+#: renglón más repetido (51 de ~300) y `cheque_aplicado_a_factura` el que arma
+#: las ventanas largas. Los demás tipos siguen con un renglón por hecho: una
+#: nota de débito o una compra pasan de a una y ahí el detalle SÍ importa.
+TIPOS_QUE_SE_JUNTAN = {
+    "factura_emitida": "FA",
+    "cheque_aplicado_a_factura": "CH → FA",
+}
+
+
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
@@ -644,7 +655,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # ("3 anticipos → compra N° 10130").
         ev = (eventos or {}).get(m.get("doc_id") or "")
         if ev:
-            clave = ("ev", ev["grupo"])
+            # 🚨 TMT 2026-08-07: *"idealmente facturas en uno, cobranzas en
+            # otro"*. Hay tipos que llegan de a montones —en la ventana de las
+            # 13:33 había cinco facturas nuevas y tres cheques aplicados, ocho
+            # renglones de doce— y uno por hecho es la lista de documentos otra
+            # vez, que es justo lo que la pantalla no quiere ser. Esos se
+            # juntan por TIPO; el resto sigue siendo un renglón por hecho.
+            clave = (("tipo", ev["tipo"]) if ev["tipo"] in TIPOS_QUE_SE_JUNTAN
+                     else ("ev", ev["grupo"]))
         elif m.get("familia") == "sin_explicar":
             clave = (r, m.get("componente"))
         else:
@@ -656,7 +674,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                   "por_col": {},
                                   "quienes": {},
                                   "evento": ev,
+                                  "hechos": set(),
                                   "familia": m.get("familia")})
+        # 🚨 Cuántos HECHOS hay en el grupo, no cuántos documentos. Un cheque
+        # aplicado a una factura toca dos documentos y es UN hecho: salía
+        # "CH GSS → FA (2)", que se lee como dos cheques. Un depósito toca
+        # ocho cheques y una cuenta y son ocho hechos, uno por cheque.
+        if ev and ev.get("id_mov_doble"):
+            g["hechos"].add(ev["id_mov_doble"])
         if g["col"] != m.get("componente"):
             g["col"] = None                    # el grupo cruza componentes
         ap = float(m.get("aporte") or 0)
@@ -702,7 +727,15 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             # La contraparte que sabe el evento manda sobre la que se adivina
             # de la etiqueta.
             quien = (md.get("codigo_prov") or (quienes[0] if quienes else ""))
-            if ev.get("texto"):
+            if ev["tipo"] in TIPOS_QUE_SE_JUNTAN and len(g["hechos"]) > 1:
+                nombres = ", ".join(quienes[:3])
+                if len(quienes) > 3:
+                    nombres += f" +{len(quienes) - 3}"
+                g["texto"] = (f"{len(g['hechos'])} "
+                              f"{TIPOS_QUE_SE_JUNTAN[ev['tipo']]}"
+                              + (f" · {nombres}" if nombres else ""))
+                cerrado = True
+            elif ev.get("texto"):
                 # El evento ya trae su renglón escrito (la cuenta bancaria con
                 # varios hechos): no hay tipo que traducir.
                 g["texto"] = ev["texto"]
@@ -748,10 +781,15 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             # qué compra fueron, que es lo que /historial muestra y acá faltaba.
             if md.get("numero_compra"):
                 g["texto"] += f" {md['numero_compra']}"
-            if g["n"] > 1 and not ev.get("texto") and not cerrado:
-                g["texto"] += (f" · {g['n']} facturas"
+            # Cuando el hecho ES uno solo pero abarca varios documentos, el
+            # número lo dice la metadata (`3 anticipos → compra 10130`); si no,
+            # se cuentan los hechos.
+            hechos = int(md.get("n_anticipos") or md.get("n_grupo") or 0) \
+                or len(g["hechos"]) or g["n"]
+            if hechos > 1 and not ev.get("texto") and not cerrado:
+                g["texto"] += (f" · {hechos} facturas"
                                if ev["tipo"] == "retencion_asinfo_aplicada"
-                               else f" ({g['n']})")
+                               else f" ({hechos})")
             g["titulo"] = ev["label"] + (f" · {ev['concepto']}"
                                          if ev.get("concepto") else "")
             # Al Historial, filtrado por ese tipo y ese día: ahí están los
@@ -858,8 +896,10 @@ def una(id_traza: int) -> dict | None:
     # cartel ámbar de arriba ya lo dice.
     from modules.informes import eventos as _ev
 
-    idx = _ev.indice(_ev.de_la_ventana(
-        (fila.get("anterior") or {}).get("creado_en"), fila.get("creado_en")))
+    _desde = (fila.get("anterior") or {}).get("creado_en")
+    _hasta = fila.get("creado_en")
+    idx = _ev.indice(_ev.de_la_ventana(_desde, _hasta),
+                     _ev.transacciones(_desde, _hasta))
     fila["resumen"] = resumir(
         movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx)
     fila["d_kg"] = fila.get("d_kg") or {}
