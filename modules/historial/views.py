@@ -896,12 +896,13 @@ _REVERSO_DISPATCH = {
 _REVERSO_DE_REVERSO_OK = {"reverso_cheque_administrativo"}
 
 _REVERSO_BLOQUEADO = {
-    "retencion_asinfo_aplicada": (
-        "Las retenciones de Asinfo se deshacen por PERÍODO, no de a una: "
-        "Facturas → Desde Asinfo → «Deshacer retenciones» del rango. "
-        "Eso restaura abono/saldo/stat de cada factura y borra las "
-        "retenciones."
-    ),
+    # TMT 2026-08-07: `retencion_asinfo_aplicada` salió de acá. El consejo era
+    # "deshacelas por período", y sirve para una corrida entera que salió mal —
+    # pero para UNA retención aplicada por error deshacer el mes se lleva
+    # puestas todas las que sí estaban bien. Ahora tiene reverso propio
+    # (`retenciones.queries.desaplicar_por_mov`), que va por id_mov_doble
+    # porque el reverso por número no encuentra las facturas de origen dBase
+    # (numf_completo NULL).
     "dolares_anticipo": (
         "Deshacelo desde /dolares con la ✕ del anticipo #{origen_id}. "
         "Cancela el anticipo y revierte también el movimiento bancario "
@@ -1020,6 +1021,8 @@ def reversar_mov(id_mov_doble: int):
 # tipo → permiso de la operación (el que se necesita para reversarla inline).
 _PERMISO_REVERSO_INLINE = {
     "cheque_aplicado_a_factura": "cheques.aplicar",
+    # Deshacer UNA retención aplicada por error. Mismo permiso que aplicarlas.
+    "retencion_asinfo_aplicada": "facturas.crear",
     # TMT 2026-07-06 (Andrés): "Tipo 'retiro_op' aún no tiene reverso
     # automatizado" — ahora sí: deshacer_op (borra retiro + imputación y
     # devuelve el monto a la fila posdat OP si el retiro la había bajado).
@@ -1078,6 +1081,24 @@ def reversar_mov_inline(id_mov_doble: int):
         return render_template("404.html"), 404
 
     usuario = (g.user or {}).get("username", "web")
+
+    # TMT 2026-08-07: la retención tiene su propio reverso atómico, que
+    # restaura abono/retención/saldo/stat del snapshot y borra la fila de
+    # scintela.retencion. Maneja su tx (no entra al db.tx() genérico de abajo).
+    if tipo == "retencion_asinfo_aplicada":
+        from modules.retenciones import queries as _ret_q
+        try:
+            res = _ret_q.desaplicar_por_mov(id_mov_doble, usuario=usuario)
+            flash(
+                f"Retención deshecha: la factura {res['numf']} "
+                f"({res['codigo_cli']}) vuelve a deber "
+                f"$ {res['saldo_restaurado']:,.2f} y queda en "
+                f"{res['stat_restaurado']}.", "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude deshacer la retención (rollback total)", e)
+        return redirect(_next_seguro())
 
     # TMT 2026-07-06: retiro_op tiene reverso atómico propio — deshacer_op
     # maneja su propia transacción (no entra al db.tx() genérico de abajo).

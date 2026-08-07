@@ -143,10 +143,12 @@ def test_aplicar_una_aplica(monkeypatch):
     assert r == "aplicada"
     # retencion insertada con rete
     assert stub.inserts_ret[0][2] == 27.01
-    # TMT 2026-08-07: la retención va a factura.retencion, NO al abono.
-    # UPDATE ... SET retencion=%s, saldo=%s, stat=%s → (27.01, 72.99, 'A')
+    # TMT 2026-08-07: la retención va a factura.retencion, NO al abono, y la
+    # factura NO pasa a 'A': nadie abonó nada, sólo debe menos. (Este test
+    # pedía 'A' hasta esta fecha; se da vuelta, no se borra — ver
+    # tests/test_retencion_stat_y_reverso_puntual.py.)
     upd = stub.updates[0]
-    assert upd[0] == 27.01 and upd[1] == 72.99 and upd[2] == "A"
+    assert upd[0] == 27.01 and upd[1] == 72.99 and upd[2] == "Z"
     # mov_doble registrado
     assert stub.mov_dobles[0][1] == "retencion_asinfo_aplicada"
 

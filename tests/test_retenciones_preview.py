@@ -145,7 +145,8 @@ def test_preview_por_numf_tambien_se_puede_aplicar(monkeypatch):
     out = q.preview_retenciones_asinfo("2026-06-04", "2026-08-03")
     fila = out["filas"][0]
     assert fila["estado"] == "se_aplica"
-    assert fila["saldo_nuevo"] == 900.0 and fila["stat_nuevo"] == "A"
+    # 'Z': sin abono, la retención baja el saldo pero no abona nada (07/08).
+    assert fila["saldo_nuevo"] == 900.0 and fila["stat_nuevo"] == "Z"
     assert out["resumen"]["se_aplica"] == 1
     assert out["resumen"]["total_a_aplicar"] == 100.0
 
