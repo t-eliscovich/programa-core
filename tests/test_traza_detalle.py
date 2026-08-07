@@ -388,3 +388,30 @@ def test_el_filtro_por_componente_no_toca_los_deltas():
     assert [f["cuando"] for f in t.filtrar_por_componente(filas, "facturas")] == ["3", "1"]
     assert t.filtrar_por_componente(filas, "") == filas       # sin filtro, todo
     assert t.filtrar_por_componente(filas, "inventado") == filas
+
+
+# ── Las fotos viejas, reconstruidas ─────────────────────────────────────────
+
+def test_un_movimiento_reconstruido_no_cuenta_como_registro_real():
+    """🚨 Si contara, `sin_registro` se apagaría para las 200 fotos viejas y el
+    aviso de "ventanas que no cierran" las tomaría como problemas: 200 tareas
+    inventadas tapando las de verdad. Lo reconstruido sale de `fecha_crea` y le
+    falta todo lo aplicado — aplicar un cheque no dejaba fecha."""
+    with patch.object(t.db, "fetch_one", return_value={"m": 500}) as fo:
+        assert t._desde_cuando_hay_detalle() == 500
+    assert "tipo <> 'reconstruido'" in fo.call_args[0][0]
+
+
+def test_una_foto_vieja_con_reconstruccion_se_marca_como_tal():
+    par = [{"id_traza": 5, "utilidad": 2000.0, "cuando": "10:05"},
+           {"id_traza": 4, "utilidad": 0.0, "cuando": "10:00"}]
+    movs = [{"componente": "facturas", "aporte": 1200.0, "regla": "Venta facturada",
+             "etiqueta": "Factura 1 · AAA", "tipo": "reconstruido"}]
+    with patch.object(t.db, "fetch_all", return_value=par), \
+         patch.object(t, "movimientos", return_value=movs), \
+         patch.object(t, "_desde_cuando_hay_detalle", return_value=99):
+        f = t.una(5)
+    assert f["sin_registro"] is True
+    assert f["reconstruido"] is True
+    # Y no se le exige que cierre: le falta lo aplicado, por definición.
+    assert f["residuo"] is None

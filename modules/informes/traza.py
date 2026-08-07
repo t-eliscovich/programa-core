@@ -477,8 +477,12 @@ def _desde_cuando_hay_detalle() -> int | None:
     decir desde cuándo empieza el detalle fino.
     """
     try:
+        # 🚨 Los reconstruidos NO cuentan: si contaran, `sin_registro` se
+        # apagaría para las 200 fotos viejas y el aviso de "ventanas que no
+        # cierran" las tomaría como problemas. Serían 200 tareas inventadas
+        # tapando las de verdad.
         r = db.fetch_one("SELECT MIN(id_traza) AS m FROM scintela.dia_movimiento "
-                         "WHERE id_traza IS NOT NULL")
+                         "WHERE id_traza IS NOT NULL AND tipo <> 'reconstruido'")
     except Exception as e:  # noqa: BLE001
         _LOG.warning("traza_utilidad: no pude ver desde cuándo hay detalle (%s)", e)
         return None
@@ -633,11 +637,17 @@ def una(id_traza: int) -> dict | None:
     # decirle a la dueña "no se movió ningún documento" sobre una ventana de
     # 2.000 dólares es mentirle.
     desde = _desde_cuando_hay_detalle()
-    fila["sin_registro"] = bool(not movs and (desde is None or id_traza < desde))
+    fila["sin_registro"] = bool(desde is None or id_traza < desde)
+    # Una foto vieja con movimientos es una foto RECONSTRUIDA: lo que hay salió
+    # de `fecha_crea`, no de un diff, y le falta todo lo que se aplicó.
+    fila["reconstruido"] = bool(fila["sin_registro"] and movs)
 
     total = round(sum(float(m.get("aporte") or 0) for m in movs), 2)
     fila["explicado"] = total
-    fila["residuo"] = (round(float(fila.get("d_utilidad") or 0) - total, 2)
-                       if fila.get("d_utilidad") is not None else None)
+    # A una foto sin registro —o reconstruida, que es lo mismo con más datos—
+    # no se le puede exigir que cierre: le falta lo aplicado por definición.
+    fila["residuo"] = (
+        None if (fila["sin_registro"] or fila.get("d_utilidad") is None)
+        else round(float(fila["d_utilidad"]) - total, 2))
     fila["ciegos"] = [m for m in movs if m.get("familia") == "sin_explicar"]
     return fila

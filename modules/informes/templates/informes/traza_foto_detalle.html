@@ -10,7 +10,7 @@
    🚨 Y resumido, no documento por documento (TMT: *"pedí detalle pero resumí…
    ejemplo dos cheques por X monto, facturas por X monto"*). Tres facturas
    nuevas son un renglón que dice "3 facturas nuevas". #}
-{% if f.sin_registro %}
+{% if f.sin_registro and not f.reconstruido %}
   <tr data-detalle="1" class="border-t border-slate-100">
     <td colspan="3" class="px-1.5 py-1"
         style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;
@@ -26,6 +26,19 @@
     <td colspan="{{ kilos | length }}"></td>
   </tr>
 {% else %}
+  {% if f.reconstruido %}
+    {# Lo que hay salió de `fecha_crea`, no de un diff: están las altas y falta
+       todo lo aplicado (aplicar un cheque no dejaba fecha hasta la mig 0172).
+       Decirlo es la diferencia entre un dato y una mentira. #}
+    <tr data-detalle="1" class="border-t border-slate-100">
+      <td colspan="3" class="px-1.5 py-1"
+          style="font-size:10.5px;color:rgb(180 83 9);white-space:nowrap;
+                 position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(252 211 77);">
+        reconstruido — puede faltar lo cobrado
+      </td>
+      <td colspan="{{ (deltas | length) + (kilos | length) }}"></td>
+    </tr>
+  {% endif %}
   {% set columnas = deltas | map(attribute=0) | list %}
   {% set visto = namespace(stock=false) %}
   {% for g in f.resumen %}
