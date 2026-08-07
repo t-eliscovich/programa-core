@@ -627,6 +627,13 @@ def _abreviar_etapas(texto: str) -> str:
 TIPOS_QUE_SE_JUNTAN = {
     "factura_emitida": ("FA", ""),
     "cheque_aplicado_a_factura": ("CH → FA", ""),
+    # Segunda pasada, 07/08: las devoluciones caían de a una (10 renglones en
+    # el día, cuatro de ellas en la MISMA ventana que las 13 facturas nuevas)
+    # y las compras de una importación también (tres "CP AQ → DE 1013x"
+    # seguidas). Van aparte de las facturas nuevas: el signo es al revés y
+    # mezclarlas escondería una devolución grande adentro de un neto.
+    "factura_devolucion": ("FA dev", ""),
+    "compra_a_posdat": ("CP → DE", ""),
     # 🚨 TMT 2026-08-07, viendo ocho renglones seguidos de "RT TNZ ✗ FA":
     # *"esto también juntalo, retenciones es un solo movimiento"*. La
     # DESaplicada no lleva `batch_id` —la aplicada sí, por eso ésa ya salía en
@@ -809,7 +816,9 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 g["texto"] = _corto(ev["tipo"], quien)
             # El destino, cuando el evento lo sabe: "AN AI → CP 10130" dice a
             # qué compra fueron, que es lo que /historial muestra y acá faltaba.
-            if md.get("numero_compra"):
+            # …salvo en un renglón juntado: el número de UNA de las compras al
+            # lado de "3 CP → DE" se lee como si fueran todas esa.
+            if md.get("numero_compra") and not cerrado:
                 g["texto"] += f" {md['numero_compra']}"
             # Cuando el hecho ES uno solo pero abarca varios documentos, el
             # número lo dice la metadata (`3 anticipos → compra 10130`); si no,

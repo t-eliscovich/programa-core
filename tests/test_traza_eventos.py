@@ -396,3 +396,44 @@ def test_no_repite_la_palabra_si_el_concepto_ya_la_dice():
     with patch.object(ev.db, "fetch_all", return_value=filas):
         cuentas = ev.transacciones("a", "b")
     assert cuentas["b10"]["texto"] == "TRANSFERENCIA RECIBIDA JVL"
+
+
+def test_las_devoluciones_van_juntas_pero_aparte_de_las_ventas():
+    """Segunda pasada 07/08: cuatro devoluciones sueltas en la misma ventana
+    que trece facturas nuevas. Se juntan entre ellas, NO con las ventas: el
+    signo es al revés y una devolución grande quedaría escondida en el neto.
+    """
+    devs = [("11614", "PUE", -900.0), ("11615", "CLR", -300.0),
+            ("11616", "ERA", -200.0)]
+    filas = [_ev("factura_devolucion", "factura", 9000 + i, "factura", 9000 + i,
+                 importe=v, metadata={"numf": n, "codigo_cli": c})
+             for i, (n, c, v) in enumerate(devs)]
+    filas.append(_ev("factura_emitida", "factura", 9500, "factura", 9500,
+                     importe=5000.0, metadata={"numf": "181310", "codigo_cli": "RRV"}))
+    idx = ev.indice(_con_label(filas))
+    movs = [{"doc_id": f"f{9000 + i}", "componente": "facturas", "aporte": v,
+             "regla": "Factura corregida", "etiqueta": f"Factura {n} · {c}",
+             "familia": "utilidad"} for i, (n, c, v) in enumerate(devs)]
+    movs.append({"doc_id": "f9500", "componente": "facturas", "aporte": 5000.0,
+                 "regla": "Venta facturada", "etiqueta": "Factura 181310 · RRV",
+                 "familia": "utilidad"})
+    textos = [g["texto"] for g in t.resumir(movs, 3600.0, idx)]
+    assert textos == ["FA #181310 RRV", "3 FA dev · PUE, CLR, ERA"], textos
+
+
+def test_tres_compras_de_una_importacion_en_un_renglon_sin_el_numero_de_una():
+    """Tres "CP AQ → DE 1013x" seguidas eran tres renglones. Juntadas, el
+    número de UNA de las compras al lado de "3 CP → DE" se leería como si
+    fueran todas esa: no va.
+    """
+    filas = [_ev("compra_a_posdat", "posdat", 400 + i, "posdat", 400 + i,
+                 importe=-v, metadata={"codigo_prov": "AQ",
+                                       "numero_compra": 10131 + i})
+             for i, v in enumerate([8546.0, 7275.0, 5025.0])]
+    idx = ev.indice(_con_label(filas))
+    movs = [{"doc_id": f"p{400 + i}", "componente": "totp", "aporte": -v,
+             "regla": "Deuda nueva cargada", "etiqueta": f"Posdat AQ · {i}",
+             "familia": "utilidad"} for i, v in enumerate([8546.0, 7275.0, 5025.0])]
+    g = t.resumir(movs, -20846.0, idx)[0]
+    assert g["texto"] == "3 CP → DE · AQ"
+    assert g["aporte"] == -20846.0
