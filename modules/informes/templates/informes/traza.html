@@ -104,9 +104,14 @@
      El ▲ en la columna Δ alcanza para encontrar la fila cuando se la busca, y
      el contador del encabezado dice lo mismo sin gritarlo. Donde SÍ va es en
      la nota del cierre: ahí es un resumen del día que se mira una vez. #}
+  {# 🚨 TMT 2026-08-07: *"el scroll que no quiero es para los costados; sí para
+     abajo. Y que ocupe toda la pantalla"*. `overflow-x` en `auto` es la
+     válvula: con la tabla en 914 px de mínimo y `width:100%` nunca aparece,
+     pero si alguien abre esto en una ventana angosta se puede scrollear en vez
+     de perder columnas. El vertical sí es de todos los días: 200 fotos. #}
   <div class="border border-slate-200 rounded bg-white"
-       style="overflow:auto;max-height:calc(100vh - 15rem);">
-    <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:auto;width:auto;white-space:nowrap;">
+       style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 15rem);">
+    <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:auto;width:100%;white-space:nowrap;">
       <thead>
         <tr style="font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;color:rgb(100 116 139);white-space:nowrap;">
           {# Las tres primeras quedan fijas también al costado: sin eso, al
