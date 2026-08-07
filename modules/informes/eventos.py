@@ -175,6 +175,23 @@ def _grupo_por_meta(r: dict) -> str:
     return f"{campo}:{valor}" if valor else ""
 
 
+def _varios(conceptos: list[str], n: int) -> str:
+    """El renglón de una cuenta con VARIOS movimientos.
+
+    🚨 TMT 2026-08-07: *"banco no sé qué movimiento es todavía"*. Decía
+    "BC · 3 movimientos" y los conceptos —que son lo único que identifica al
+    movimiento— vivían en el tooltip, donde no se ven. Van en el renglón: si
+    no entran, se cortan con "+N", que sigue siendo más que un número pelado.
+    """
+    vistos = [c for c in dict.fromkeys(conceptos) if c]
+    if not vistos:
+        return f"BC · {n} movimientos"
+    texto = "BC · " + ", ".join(vistos[:3])
+    if len(vistos) > 3:
+        texto += f" +{len(vistos) - 3}"
+    return texto
+
+
 def _cuentas(evs: list[dict]) -> dict[str, dict]:
     """`b<no_banco>` → el hecho que movió esa cuenta en la ventana.
 
@@ -212,12 +229,12 @@ def _cuentas(evs: list[dict]) -> dict[str, dict]:
         if len(grupos) == 1:
             out[doc] = lista[0]
             continue
+        conceptos = [(e.get("concepto") or "").strip() for e in lista]
+        conceptos = [c for c in dict.fromkeys(conceptos) if c]
         out[doc] = {"tipo": "banco_varios", "grupo": doc, "docs": [doc],
                     "label": f"{len(grupos)} movimientos de la cuenta",
-                    "texto": f"BC · {len(grupos)} movimientos",
-                    "concepto": " · ".join(
-                        sorted({(e.get("concepto") or "").strip()
-                                for e in lista if e.get("concepto")})),
+                    "texto": _varios(conceptos, len(grupos)),
+                    "concepto": " · ".join(conceptos),
                     "meta": {}, "dia": lista[0].get("dia")}
     return out
 
@@ -279,7 +296,7 @@ def transacciones(desde, hasta) -> dict[str, dict]:
                 que = ""
             texto = " · ".join(x for x in (que, conceptos[0]) if x)
         else:
-            texto = f"BC · {len(lista)} movimientos"
+            texto = _varios(conceptos, len(lista))
         out[doc] = {"tipo": "banco_cargado", "grupo": doc, "docs": [doc],
                     "label": "Movimiento de banco", "texto": texto[:60],
                     "concepto": " · ".join(dict.fromkeys(conceptos)),

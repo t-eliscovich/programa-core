@@ -667,6 +667,12 @@ TIPOS_QUE_SE_JUNTAN = {
     # *"esto también juntalo, retenciones es un solo movimiento"*. La
     # DESaplicada no lleva `batch_id` —la aplicada sí, por eso ésa ya salía en
     # un renglón— así que caía de a una.
+    # 🚨 TMT 2026-08-07, viendo cuatro renglones "retenciones · 17 / · 4 / · 2"
+    # en la misma ventana: *"se nos separaron de vuelta"*. La APLICADA lleva
+    # `batch_id` —una por corrida del cron— y con eso se juntaba… por batch.
+    # Si el cron corre tres veces en cinco minutos son tres renglones que
+    # dicen lo mismo. Se juntan por TIPO, como todo lo demás.
+    "retencion_asinfo_aplicada": ("retenciones", "facturas"),
     "retencion_asinfo_desaplicada": ("retenciones revertidas", "facturas"),
     "reverso_retencion_asinfo_aplicada": ("retenciones revertidas", "facturas"),
     # La corrección de la mig 0179 (la retención sale del abono) también llega

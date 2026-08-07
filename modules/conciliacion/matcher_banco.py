@@ -1633,6 +1633,17 @@ def crear_transaccion_desde_real(
             ancla_id=int(new_id),
         )
 
+        # 🚨 TMT 2026-08-07, sobre un renglón de la traza que decía sólo "BC ·
+        # 3 movimientos": *"banco no sé qué movimiento es todavía"*. Hacer
+        # prevalecer el extracto CREA una fila bancaria y no dejaba ninguna
+        # huella en `mov_doble`: la plata aparecía en el banco sin hecho que
+        # la explicara, no salía en /historial y no se podía revertir con el
+        # ↺. Se registra como cualquier otro movimiento.
+        _registrar_mov_doble_extracto(
+            conn, id_transaccion=new_id, no_banco=no_banco, documento=doc,
+            importe=float(real.monto), fecha=real.fecha, concepto=concepto,
+            usuario=usuario, n_reales=1)
+
         # Persistir match en la misma tx.
         n = confirmar_match(
             no_banco=no_banco,
@@ -1651,6 +1662,45 @@ def crear_transaccion_desde_real(
         "documento": doc,
         "match_insertado": bool(n),
     }
+
+
+def _registrar_mov_doble_extracto(conn, *, id_transaccion, no_banco, documento,
+                                  importe, fecha, concepto, usuario,
+                                  n_reales=1) -> None:
+    """Deja la huella en `mov_doble` de una fila creada desde el extracto.
+
+    Auto-referencia (banco → banco), igual que `factura_emitida`: la
+    contraparte no se conoce —por eso la fila estaba sólo en el banco—, pero
+    el HECHO sí, y con él el movimiento aparece en /historial, se puede
+    revertir con el ↺ y la traza lo nombra en vez de decir "BC · 3
+    movimientos".
+
+    Fail-soft: si el registro falla, la conciliación NO se cae. La fila
+    bancaria y su match valen más que la huella.
+    """
+    if not id_transaccion:
+        return
+    try:
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="banco_desde_extracto",
+            origen_table="transacciones_bancarias",
+            origen_id=int(id_transaccion),
+            destino_table="transacciones_bancarias",
+            destino_id=int(id_transaccion),
+            importe=float(importe or 0),
+            fecha=fecha,
+            concepto=f"{documento} {concepto}".strip()[:200],
+            usuario=usuario,
+            metadata={"no_banco": int(no_banco),
+                      "documento": (documento or "").upper(),
+                      "desde_extracto": True,
+                      "n_reales": int(n_reales)},
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("conciliacion: sin mov_doble para la tx %s (%s)",
+                     id_transaccion, e)
 
 
 def crear_transaccion_agrupada_desde_reals(
@@ -1752,6 +1802,11 @@ def crear_transaccion_agrupada_desde_reals(
             no_cta=None,
             ancla_id=int(new_id),
         )
+
+        _registrar_mov_doble_extracto(
+            conn, id_transaccion=new_id, no_banco=no_banco,
+            documento=documento, importe=importe_abs, fecha=fecha_tx,
+            concepto=concepto, usuario=usuario, n_reales=len(reals))
 
         # Conciliar las N filas N:1 contra esta misma tx.
         # TMT 2026-05-29 E2E test descubrió que con conn compartida, si UNA

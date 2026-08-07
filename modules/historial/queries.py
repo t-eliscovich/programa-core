@@ -32,6 +32,8 @@ TIPOS_LABEL = {
     "banco_nc_directo":          "Banco: nota de crédito",
     "banco_ac_directo":          "Banco: acreditación",
     "banco_mov_directo":         "Banco: movimiento (sin documento)",
+    "banco_desde_extracto":      "Banco: creado desde el extracto",
+    "reverso_banco_desde_extracto": "Reverso: creado desde el extracto",
     # reversos de caja
     "reverso_caja_s_to_transfer_banco":   "Reverso: Caja → Banco",
     "reverso_caja_s_to_retiro_socio":     "Reverso: Caja → Retiro",
@@ -563,6 +565,7 @@ TIPOS_CORTO = {
     "banco_nc_directo": ("BC", "nota de crédito"),
     "banco_ac_directo": ("BC", "acreditación"),
     "banco_mov_directo": ("BC", "movimiento"),
+    "banco_desde_extracto": ("BC", "del extracto"),
     "banco_clasificado_gasto": ("BC", "→ GS"),
     "nota_debito": ("BC", "nota de débito"),
     "transfer_banco_banco": ("BC", "→ BC"),

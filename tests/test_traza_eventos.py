@@ -253,7 +253,9 @@ def test_si_la_cuenta_tuvo_varios_hechos_no_se_le_atribuye_a_uno():
              "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
              "familia": "traspaso"}]
     g = t.resumir(movs, 7340.15, idx)[0]
-    assert g["texto"] == "BC · 2 movimientos"
+    # 07/08: los conceptos van en el RENGLÓN, no en el tooltip — "banco no sé
+    # qué movimiento es todavía".
+    assert g["texto"] == "BC · ND, TR"
     assert g["url"] is None
     assert "ND" in g["titulo"] and "TR" in g["titulo"]
 
@@ -324,7 +326,7 @@ def test_si_la_cuenta_tuvo_varias_cargas_dice_cuantas():
               "concepto": "DOS", "dia": "2026-08-07"}]
     with patch.object(ev.db, "fetch_all", return_value=filas):
         cuentas = ev.transacciones("a", "b")
-    assert cuentas["b10"]["texto"] == "BC · 2 movimientos"
+    assert cuentas["b10"]["texto"] == "BC · UNO, DOS"
     assert cuentas["b10"]["concepto"] == "UNO · DOS"
 
 
@@ -559,3 +561,40 @@ def test_no_se_unen_dos_patas_si_el_par_es_ambiguo():
          "etiqueta": "Caja S · X", "familia": "traspaso"},
     ]
     assert len(t.resumir(movs, -500.0, {})) == 3
+
+
+def test_una_cuenta_con_muchos_movimientos_corta_en_tres():
+    filas = [{"no_banco": 10, "documento": "ND", "importe": -1.0,
+              "concepto": c, "dia": "2026-08-07"}
+             for c in ("GS ALMAGRO", "GS LICENCIA", "KK ARAUJO", "GS LUZ")]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "BC · GS ALMAGRO, GS LICENCIA, KK ARAUJO +1"
+
+
+def test_una_cuenta_sin_conceptos_cae_al_numero():
+    filas = [{"no_banco": 10, "documento": "", "importe": 1.0,
+              "concepto": "", "dia": "2026-08-07"} for _ in range(2)]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "BC · 2 movimientos"
+
+
+def test_las_retenciones_de_varias_corridas_del_cron_son_un_renglon():
+    """🚨 TMT 2026-08-07: *"se nos separaron de vuelta"* — cuatro renglones
+    "retenciones · 17 / · 4 / · 2 / retenciones" en la misma ventana. La
+    aplicada lleva `batch_id` (uno por corrida del cron) y se juntaba POR
+    BATCH: tres corridas en cinco minutos = tres renglones que dicen lo mismo.
+    """
+    filas = []
+    for batch, ids in (("aa", (1, 2, 3)), ("bb", (4, 5))):
+        for i in ids:
+            filas.append(_ev("retencion_asinfo_aplicada", "factura", 8000 + i,
+                             "factura", 8000 + i, importe=-10.0, batch=batch))
+    idx = ev.indice(_con_label(filas))
+    movs = [{"doc_id": f"f{8000 + i}", "componente": "facturas",
+             "aporte": -10.0, "regla": "Abono a factura",
+             "etiqueta": f"Factura {i} · TNZ", "familia": "traspaso"}
+            for i in range(1, 6)]
+    out = t.resumir(movs, -50.0, idx)
+    assert [g["texto"] for g in out] == ["retenciones · 5 facturas"], out

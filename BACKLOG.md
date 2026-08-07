@@ -9,18 +9,6 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ---
 
-## Traza de la utilidad
-
-### [S] Depositar desde la pantalla de Bancos no deja `mov_doble`
-El depósito en LOTE (`/cheques` → depositar) registra un `cheque_depositado`
-por cheque, con `no_banco` y `id_transaccion` en la metadata. El depósito que
-se carga a mano desde Bancos no registra nada: el cheque desaparece de cartera
-sin hecho que lo explique, y el único `mov_doble` que le queda pegado es el
-`cheque_aplicado_a_factura` de cuando entró. La traza lo tapa
-(`HECHO_NO_EXPLICA_BAJA` + `_unir_las_dos_patas`, 07/08), pero el hecho sigue
-sin existir: en `/historial` ese depósito no aparece y no se puede revertir con
-el ↺. `modules/bancos/queries.py`.
-
 ## Urgente / destapado por el retiro del dBase
 
 ### [M] Tintura del mes en curso sin fuente
