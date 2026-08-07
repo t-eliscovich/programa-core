@@ -724,3 +724,43 @@ def test_los_quimicos_dicen_que_paso_y_no_de_donde_salen():
     entra = t.resumir([dict(base, aporte=101.0)], 101.0, {})[0]
     assert sale["texto"] == "salió de químicos"
     assert entra["texto"] == "entró a químicos"
+
+
+def test_la_cuenta_con_varios_hechos_usa_el_concepto_que_se_escribio():
+    """🚨 TMT 2026-08-07: *"acá me falta el número de AC 15 o AI 15"*.
+
+    El `mov_doble` de un anticipo dice "Anticipo USD AC $ 1256.29 (ND
+    Pichincha)" — el IMPORTE en el lugar del número, y el importe ya está en la
+    columna. La FILA BANCARIA sí guarda lo que la persona escribió
+    ("ANTICIPO AC 15"), así que cuando la cuenta tuvo varios hechos distintos
+    —que es cuando el renglón se arma con conceptos— mandan los de la tabla de
+    transacciones.
+    """
+    tx = [{"no_banco": 10, "documento": "ND", "importe": -v,
+           "concepto": "ANTICIPO AC 15", "dia": "2026-08-07"}
+          for v in (1256.29, 1407.14, 124.20)]
+    with patch.object(ev.db, "fetch_all", return_value=tx):
+        cuentas = ev.transacciones("a", "b")
+    evs = _con_label([
+        _ev("dolares_anticipo", "dolares", 900 + i, "transacciones_bancarias",
+            700 + i, importe=-v,
+            concepto=f"Anticipo USD AC $ {v} (ND Pichincha)",
+            metadata={"no_banco": 10})
+        for i, v in enumerate((1256.29, 1407.14, 124.20))])
+    idx = ev.indice(evs, cuentas)
+    assert idx["b10"]["tipo"] == "banco_varios"
+    assert "15" in idx["b10"]["texto"], idx["b10"]["texto"]
+    assert "$" not in idx["b10"]["texto"], idx["b10"]["texto"]
+
+
+def test_con_UN_solo_hecho_manda_el_nombre_del_hecho_y_no_el_concepto():
+    """"CH → BC" dice más que "1 ch.KRH", que es lo que se tipeó en el banco."""
+    tx = [{"no_banco": 10, "documento": "DE", "importe": 7000.0,
+           "concepto": "1 ch.KRH", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=tx):
+        cuentas = ev.transacciones("a", "b")
+    evs = _con_label([
+        _ev("cheque_depositado", "cheque", 5000, "transacciones_bancarias",
+            7788, importe=7000.0, metadata={"no_banco": 10,
+                                            "id_transaccion": 7788})])
+    assert ev.indice(evs, cuentas)["b10"]["tipo"] == "cheque_depositado"

@@ -370,5 +370,18 @@ def indice(evs: list[dict], cuentas: dict | None = None) -> dict[str, dict]:
     # Primero lo que se cargó en la cuenta (alcanza a TODO), después lo que
     # `mov_doble` sabe (que además une el banco con el otro lado del hecho).
     idx.update(cuentas or {})
-    idx.update(_cuentas(evs))
+    for doc, hecho in _cuentas(evs).items():
+        # 🚨 TMT 2026-08-07: *"acá me falta el número de AC 15 o AI 15"*.
+        # Cuando la cuenta tuvo VARIOS hechos distintos, el renglón se arma con
+        # los conceptos — y el del `mov_doble` de un anticipo dice "Anticipo
+        # USD AC $ 1256.29", con el importe en el lugar del número. La FILA
+        # BANCARIA sí guarda lo que la persona escribió ("ANTICIPO AC 15"), así
+        # que para ese caso mandan los conceptos de la tabla de transacciones.
+        # Cuando el hecho es UNO solo no se toca: ahí el nombre del hecho vale
+        # más que el concepto ("CH → BC" en vez de "1 ch.KRH").
+        base = (cuentas or {}).get(doc)
+        if hecho.get("tipo") == "banco_varios" and base:
+            hecho = dict(hecho, texto=base.get("texto") or hecho["texto"],
+                         concepto=base.get("concepto") or hecho.get("concepto"))
+        idx[doc] = hecho
     return idx
