@@ -43,7 +43,18 @@
           {% if propia and g.col == col %}{{ g.aporte | num_es(0) }}{% endif %}
         </td>
       {% endfor %}
-      <td colspan="{{ (kilos | length) + 1 }}" class="px-1 py-1 text-right"
+      {# 🚨 TMT 2026-08-06: *"podría ser 'pasó de terminada a cruda', + en una
+         columna y − en la otra. that is it"*. En el renglón del stock, los
+         kilos que salieron y los que entraron van cada uno en la columna de su
+         etapa: no hace falta que coincidan (nunca coinciden del todo) y la
+         diferencia queda a la vista sin explicarla de más. #}
+      {% for col, label in kilos %}
+        <td class="px-1 py-1 text-right"
+            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if g.col == 'vsto' and f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+          {% if g.col == 'vsto' and f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
+        </td>
+      {% endfor %}
+      <td class="px-1 py-1 text-right"
           style="{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
         {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
       </td>

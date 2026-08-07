@@ -24,18 +24,18 @@ Dos cosas que parecen detalles y no lo son:
   diarias— serían dos millones de escrituras diarias para mover, en una vuelta
   típica, menos de cincuenta filas. `aplicar()` toca sólo lo que cambió.
 
-· **El stock se explica por CAUDALES.** TMT 2026-08-06: *"pero stock también,
-  por qué sube y por qué baja"*. El valor de una etapa se mueve por dos motivos
-  distintos —entraron/salieron kilos, o cambió el $/kg— y los kilos, a su vez,
-  se mueven por producción y por despacho. Los caudales se guardan en la foto
-  como filas `#flujo` (importe 0: no suman al balance, sólo se diffean) y salen
-  del movimiento REAL de bodega de Asinfo, que es el que cierra con el stock.
+· **El stock se cuenta en UN renglón.** TMT 2026-08-06: *"podría ser 'pasó de
+  terminada a cruda', + en una columna y − en la otra. that is it"*. Los kilos
+  que salen de una etapa y los que entran a la siguiente nunca coinciden del
+  todo (mermas, timing de Asinfo), así que cualquier lógica de "esto es un
+  traspaso" o los rechaza o miente. Poniendo cada Δ en la columna de su etapa
+  no hace falta que coincidan. La única excepción con renglón propio es el
+  cambio de $/kg: revalúa todo el stock de un saque sin producir ni vender.
 """
 from __future__ import annotations
 
 import logging
-import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import db
 
@@ -68,12 +68,6 @@ _CLAVE_BALANCE = {
     "umaq": "umaq", "uact": "uact", "totp": "totp", "uret": "uret",
 }
 
-#: El pseudo-componente donde viven los caudales del stock. NO está en
-#: COMPONENTES a propósito: no suma al balance y nunca genera un movimiento
-#: propio — sólo sirve para poder decir, al diffear, por qué se movieron los
-#: kilos de una etapa.
-FLUJO = "#flujo"
-
 #: Dónde vive la marca de que la foto ya se sacó alguna vez.
 #: 🚨 "Primera foto" NO se decide por si la tabla está vacía. Una foto
 #: legítimamente vacía —todo cobrado, todo pagado, sin activos— haría que la
@@ -82,27 +76,6 @@ FLUJO = "#flujo"
 #: se escribe con la primera foto y no se borra nunca. (Mismo criterio que
 #: usaba `dia.capturar()` con la existencia de una captura.)
 META = "#meta"
-
-#: Qué bodega de Asinfo mide el movimiento físico de cada etapa del stock.
-#: 51 = materia prima (hilado) · 52 = tela cruda (tejido) · 53 = terminado.
-BODEGA_ETAPA = {"hilado": 51, "tejido": 52, "terminado": 53}
-
-#: Cómo se llama, en castellano, que una etapa reciba o entregue kilos.
-CAUDALES = {
-    ("hilado", "ingreso"):    "entró materia prima",
-    ("hilado", "egreso"):     "se consumió hilado en tejeduría",
-    ("tejido", "ingreso"):    "se tejió tela cruda",
-    ("tejido", "egreso"):     "salió tela cruda a tintorería",
-    ("terminado", "ingreso"): "entró tela terminada",
-    ("terminado", "egreso"):  "se despachó tela a clientes",
-}
-
-#: Cuánto puede fallarle a los caudales antes de que dejemos de usarlos para
-#: PARTIR el Δ de kilos y pasen a ser sólo una nota al pie. Los caudales y el
-#: saldo de las etapas salen de dos lecturas distintas de Asinfo con cachés
-#: propias: en una ventana de cinco minutos se desfasan seguido, y partir el Δ
-#: con números que no cierran fabricaría precisión que no tenemos.
-TOLERANCIA_CAUDAL = 0.005          # 0,5 % del Δ de kilos
 
 #: Las etapas en el orden en que la tela las recorre. La tela se teje, después
 #: se tiñe y se termina: si en una ventana el tejido baja lo mismo que sube el
@@ -383,61 +356,6 @@ def _det_vqx(bal: dict) -> list[dict]:
              "importe": v}] if v else []
 
 
-def _det_flujo() -> list[dict]:
-    """Los CAUDALES de cada etapa del stock, acumulados desde el 1° del mes.
-
-    TMT 2026-08-06: *"pero stock también, por qué sube y por qué baja"*.
-
-    `_det_vsto` dice cuánto vale cada etapa; esto dice por dónde entró y por
-    dónde salió. Se usa `movimiento_bodega_mes`, que mide el movimiento REAL de
-    la bodega a partir de los deltas del saldo por lote y **cierra por
-    construcción con el stock** (identidad telescópica): no la producción
-    declarada, que subcuenta, ni el despacho documento, que corre por delante
-    del saldo. Es la misma función que alimenta el Flujo de producción.
-
-    Van con `importe = 0`: no son plata, no entran en ningún componente y no
-    generan movimientos propios. Están en la foto sólo para poder diffearlas —
-    la diferencia entre dos fotos es lo que se movió en esa ventana.
-
-    ⚠ El acumulado se reinicia el 1°. Por eso el mes va DENTRO del `doc_id`: al
-    cambiar de mes la clave vieja desaparece (y las bajas de `#flujo` se
-    ignoran) y la nueva nace en casi cero, en vez de aparecer un Δ negativo del
-    tamaño del mes entero.
-    """
-    # ⚠ Son tres consultas a Asinfo por vuelta (bodegas 51/52/53) con un LAG
-    # sobre `saldo_producto_lote`. Las cachea el service 5 minutos —la misma
-    # cadencia de la traza, así que sale una por bodega y por ventana— pero si
-    # alguna vez le pesan al ERP, `TRAZA_CAUDALES=0` las apaga sin tocar código
-    # y el stock vuelve a informarse en un solo renglón.
-    if os.environ.get("TRAZA_CAUDALES", "1").strip() == "0":
-        return []
-    hoy = hoy_ec()
-    corte = date(hoy.year, hoy.month, 1)
-    mes = f"{hoy.year:04d}-{hoy.month:02d}"
-    try:
-        from modules.asinfo import service as _asvc
-    except Exception as e:  # noqa: BLE001 -- fail-soft
-        _LOG.warning("foto: no pude importar asinfo (%s)", e)
-        return []
-    out: list[dict] = []
-    for etapa, bodega in BODEGA_ETAPA.items():
-        try:
-            mov = _asvc.movimiento_bodega_mes(bodega, corte) or {}
-        except Exception as e:  # noqa: BLE001 -- fail-soft
-            _LOG.warning("foto: sin movimiento de bodega %s (%s)", bodega, e)
-            continue
-        for sentido in ("ingreso", "egreso"):
-            out.append({
-                "componente": FLUJO,
-                "doc_id": f"{etapa}:{sentido}:{mes}",
-                "etiqueta": CAUDALES.get((etapa, sentido), f"{etapa} {sentido}"),
-                "importe": 0.0,
-                "cantidad": round(_f(mov.get(sentido)), 2),
-                "precio": None,
-            })
-    return out
-
-
 def detalle(bal: dict) -> list[dict]:
     """La foto completa: componente + documento + importe.
 
@@ -474,10 +392,6 @@ def detalle(bal: dict) -> list[dict]:
             out.append({"componente": c, "doc_id": f"#ajuste:{c}",
                         "etiqueta": f"{ETIQUETAS[c]}: sin explicar por documento",
                         "importe": falta, "cantidad": None, "precio": None})
-    try:
-        out.extend(_det_flujo())
-    except Exception as e:  # noqa: BLE001 -- los caudales son opcionales
-        _LOG.warning("foto: sin caudales de stock (%s)", e)
     out.append({"componente": META, "doc_id": "iniciada",
                 "etiqueta": "La foto ya se sacó alguna vez",
                 "importe": 0.0, "cantidad": None, "precio": None})
@@ -558,159 +472,74 @@ def regla(componente: str, tipo: str, doc_id: str, delta: float) -> tuple[str, s
     return ETIQUETAS.get(componente, componente), "utilidad"
 
 
-# ── Partir el Δ del stock: kilos vs tarifa, y por qué se movieron los kilos ──
+# ── El stock: UN renglón, y los kilos en la columna de cada etapa ──────────
 
-def _nota_caudales(etapa: str, ent: float, sal: float) -> str:
-    """Los caudales en castellano, para colgar de una etiqueta."""
-    trozos = [
-        f"{CAUDALES[(etapa, sentido)]} {_n(abs(kg), 0)} kg"
-        for sentido, kg in (("ingreso", ent), ("egreso", sal))
-        if abs(kg) >= 1 and (etapa, sentido) in CAUDALES
-    ]
-    return (" · " + " · ".join(trozos)) if trozos else ""
+def _texto_stock(est: dict) -> str:
+    """De dónde a dónde se movió la tela, en tres palabras.
 
+    🚨 TMT 2026-08-06, después de cinco intentos: *"podría ser 'pasó de
+    terminada a cruda', + en una columna y − en la otra. that is it"*.
 
-def _partir_kilos(etapa: str, d_kg: float, p0: float, d_valor: float,
-                  rot: str, caudales: dict) -> list[dict]:
-    """El Δ de KILOS de una etapa, abierto por caudal cuando se puede.
-
-    TMT 2026-08-06: *"por qué sube y por qué baja"*. Una etapa sube porque le
-    entraron kilos y baja porque se los llevaron; decir "el stock de tejido se
-    movió +3.520" no contesta ninguna de las dos.
-
-    Los caudales salen de una lectura de Asinfo distinta de la del saldo y con
-    su propia caché de 5 minutos, así que en una ventana corta se desfasan.
-    Cuando `ingreso − egreso` NO reconstruye el Δ físico dentro de la
-    tolerancia, **no se parte**: sale un solo movimiento como antes y los
-    caudales van de nota al pie. Partir con números que no cierran sería
-    inventar una precisión que no tenemos.
+    Esa forma resuelve de una lo que la partición no podía: cuando salen 68,16
+    kg de tejido y entran 65,40 a terminado, los números NO coinciden (mermas,
+    timing de Asinfo) y cualquier lógica de "esto es un traspaso" los rechaza o
+    miente. Poniendo cada Δ en la columna de su etapa no hace falta que
+    coincidan: se ve lo que salió, lo que entró, y la diferencia queda a la
+    vista sin que nadie la explique de más.
     """
-    ent = _f(caudales.get((etapa, "ingreso")))
-    sal = _f(caudales.get((etapa, "egreso")))
-    cierra = (abs(ent) >= UMBRAL or abs(sal) >= UMBRAL) and abs(
-        (ent - sal) - d_kg) <= max(abs(d_kg) * TOLERANCIA_CAUDAL, UMBRAL)
-    if not cierra:
-        return [{
-            "sub": f"{etapa}:kilos", "delta": d_valor, "regla": rot,
-            "detalle": f"{_n(d_kg, 2, signo=True)} kg"
-                       + _nota_caudales(etapa, ent, sal),
-        }]
-    out = []
-    for sentido, kg in (("ingreso", ent), ("egreso", -sal)):
-        if abs(kg) < UMBRAL:
-            continue
-        out.append({
-            "sub": f"{etapa}:{sentido}", "delta": round(kg * p0, 2), "regla": rot,
-            "detalle": f"{_n(kg, 0, signo=True)} kg · {CAUDALES[(etapa, sentido)]}",
-        })
-    return out
+    bajaron = [e for e in ORDEN_ETAPAS if est.get(e, {}).get("dkg", 0) < -1]
+    subieron = [e for e in ORDEN_ETAPAS if est.get(e, {}).get("dkg", 0) > 1]
+    if bajaron and subieron:
+        return f"{' y '.join(bajaron)} → {' y '.join(subieron)}"
+    if subieron:
+        return f"entró a {' y '.join(subieron)}"
+    if bajaron:
+        return f"salió de {' y '.join(bajaron)}"
+    return "movimiento de stock"
 
 
-def _partir_stock(fila: dict, antes: dict, caudales: dict | None = None) -> list[dict]:
-    """Parte el Δ de UNA etapa en kilos y tarifa.
+def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
+    """Lo que se movió en el stock, en uno o dos renglones.
 
-        Δvalor = Δkg × precio_viejo  +  kg_nuevos × Δprecio
+    Uno para la tela —de dónde a dónde— y otro SÓLO el día que la tarifa
+    cambia a la vista, porque una revaluación no produjo ni vendió nada y
+    mezclarla con los kilos borra la diferencia. El resto del tiempo, uno.
 
-    Son dos noticias distintas: los kilos son producción real, la tarifa es una
-    revaluación que mueve todo el stock de un saque sin producir ni vender.
     """
-    kg0, kg1 = _f(antes.get("cantidad")), _f(fila.get("cantidad"))
-    p0, p1 = _f(antes.get("precio")), _f(fila.get("precio"))
-    if not (kg0 or kg1) or not (p0 or p1):
-        return []
-    d_kg = round((kg1 - kg0) * p0, 2)
-    d_pr = round(kg1 * (p1 - p0), 2)
-    rot = fila.get("etiqueta") or "Stock"
-    etapa = (fila.get("doc_id") or "").lstrip("#")
-    out = []
-    if abs(d_kg) >= UMBRAL:
-        out.extend(_partir_kilos(etapa, kg1 - kg0, p0, d_kg, rot, caudales or {}))
-    # 🚨 Sólo se informa la tarifa si CAMBIÓ a la vista. Con 300.000 kg, una
-    # diferencia en la quinta decimal del $/kg da varios dólares y generaba un
-    # renglón que decía "cambió el $/kg: $ 5,2591 → $ 5,2591" — o sea, nada.
-    if abs(d_pr) >= UMBRAL and round(p0, 4) != round(p1, 4):
-        out.append({"sub": f"{etapa}:tarifa", "delta": d_pr, "regla": rot,
-                    "detalle": f"$ {_n(p0, 4)} → $ {_n(p1, 4)}/kg"})
-    return out
-
-
-def _traspasos(est: dict) -> list[dict]:
-    """Los kilos que pasaron de una etapa a la SIGUIENTE, como un solo hecho.
-
-    🚨 TMT 2026-08-06, mirando cuatro renglones para explicar $ 36:
-    *"ejemplo esto, +21kg de tejido a terminado. listo, todo el resto no
-    entiendo para qué"*.
-
-    Tenía razón. La tela que se termina sale de tejido y entra a terminado en
-    el mismo instante; contarlo como "salieron 21 kg de tejido (−77,05)" más
-    "entraron 21 kg a terminado (+113,86)" es la contabilidad hablando sola.
-    Es UN movimiento, y lo que aporta a la utilidad es la diferencia de precio
-    entre las dos etapas — el valor que le agregó el proceso.
-
-    Muta `est`: descuenta del Δ de cada etapa los kilos ya explicados, así lo
-    que queda después son entradas o salidas de verdad.
-    """
-    out = []
-    for a_et, b_et in zip(ORDEN_ETAPAS, ORDEN_ETAPAS[1:], strict=False):
-        a, b = est.get(a_et), est.get(b_et)
-        if not a or not b:
-            continue
-        if a["dkg"] >= -UMBRAL or b["dkg"] <= UMBRAL:
-            continue                       # tiene que bajar una y subir la otra
-        kg = min(-a["dkg"], b["dkg"])
-        if abs(a["dkg"] + b["dkg"]) > max(kg * TOLERANCIA_TRASPASO, UMBRAL):
-            continue                       # no se corresponden: no es traspaso
-        out.append({
-            "sub": f"{a_et}-{b_et}",
-            "delta": round(kg * (b["p0"] - a["p0"]), 2),
-            "regla": "Stock",
-            "detalle": f"{_n(kg, 0)} kg {a_et}→{b_et}",
-        })
-        a["dkg"] += kg
-        b["dkg"] -= kg
-    return out
-
-
-def _mov_stock(etapas: dict, vieja: dict, caudales: dict) -> list[dict]:
-    """Todo lo que se movió en el stock, en la menor cantidad de renglones.
-
-    Primero los traspasos entre etapas (un renglón por cada uno), y recién
-    después, con lo que sobra, las entradas y salidas de verdad y los cambios
-    de tarifa. El redondeo se dobla en el renglón más grande: tiene que existir
-    para que Δ = Σ aportes cierre, pero no merece una línea propia.
-    """
-    est, objetivo = {}, 0.0
+    est, objetivo, d_tarifa = {}, 0.0, 0.0
     for et in ORDEN_ETAPAS:
         f = etapas.get(et)
         a = vieja.get(("vsto", f"#{et}")) if f else None
         if not f or not a:
             continue
-        est[et] = {"fila": f, "antes": a, "p0": _f(a.get("precio")),
-                   "dkg": _f(f.get("cantidad")) - _f(a.get("cantidad"))}
+        kg0, kg1 = _f(a.get("cantidad")), _f(f.get("cantidad"))
+        p0, p1 = _f(a.get("precio")), _f(f.get("precio"))
+        est[et] = {"dkg": kg1 - kg0}
         objetivo += _f(f.get("importe")) - _f(a.get("importe"))
+        # Sólo cuenta como revaluación si el $/kg cambió en las cuatro
+        # decimales que se muestran; más abajo es redondeo y se lo lleva la
+        # tela, que es donde nadie lo va a extrañar.
+        if round(p0, 4) != round(p1, 4):
+            d_tarifa += kg1 * (p1 - p0)
     if not est:
         return []
-    objetivo = round(objetivo, 2)
+    objetivo, d_tarifa = round(objetivo, 2), round(d_tarifa, 2)
 
-    partes = _traspasos(est)
-    for e in est.values():
-        # Lo que quedó después de descontar el traspaso: kilos que entraron o
-        # salieron de verdad, más la tarifa.
-        fila = dict(e["fila"])
-        fila["cantidad"] = _f(e["antes"].get("cantidad")) + e["dkg"]
-        partes.extend(_partir_stock(fila, e["antes"], caudales))
-    if not partes:
-        return []
-    resto = round(objetivo - sum(p["delta"] for p in partes), 2)
-    if abs(resto) >= UMBRAL:
-        mayor = max(partes, key=lambda p: abs(p["delta"]))
-        mayor["delta"] = round(mayor["delta"] + resto, 2)
-    return [{
-        "componente": "vsto", "tipo": "cambio", "doc_id": f"#stock:{p['sub']}",
-        "etiqueta": p["detalle"], "importe_antes": None, "importe_despues": None,
-        "delta": p["delta"], "aporte": p["delta"],
-        "regla": p["regla"], "familia": "utilidad",
-    } for p in partes if abs(p["delta"]) >= UMBRAL]
+    movs = []
+    if abs(d_tarifa) >= UMBRAL:
+        movs.append({
+            "componente": "vsto", "tipo": "cambio", "doc_id": "#stock:tarifa",
+            "etiqueta": "cambió el $/kg", "importe_antes": None,
+            "importe_despues": None, "delta": d_tarifa, "aporte": d_tarifa,
+            "regla": "Stock", "familia": "utilidad"})
+    tela = round(objetivo - d_tarifa, 2)
+    if abs(tela) >= UMBRAL:
+        movs.append({
+            "componente": "vsto", "tipo": "cambio", "doc_id": "#stock",
+            "etiqueta": _texto_stock(est), "importe_antes": None,
+            "importe_despues": None, "delta": tela, "aporte": tela,
+            "regla": "Stock", "familia": "utilidad"})
+    return movs
 
 
 # ── Diff: qué se movió entre dos fotos ──────────────────────────────────────
@@ -727,27 +556,6 @@ def guardada() -> dict[tuple[str, str], dict]:
     return {(r["componente"], r["doc_id"]): r for r in filas}
 
 
-def _caudales(nueva: list[dict], vieja: dict) -> dict[tuple[str, str], float]:
-    """Cuántos kilos entraron y salieron de cada etapa EN ESTA VENTANA.
-
-    Las filas `#flujo` guardan el acumulado del mes, así que el caudal de la
-    ventana es la diferencia entre las dos fotos. Una clave que no estaba en la
-    foto vieja (el 1° de cada mes, cuando el acumulado se reinicia) arranca
-    desde cero, que es justamente lo que corresponde.
-    """
-    out: dict[tuple[str, str], float] = {}
-    for f in nueva:
-        if f.get("componente") != FLUJO:
-            continue
-        partes = (f.get("doc_id") or "").split(":")
-        if len(partes) < 2:
-            continue
-        antes = vieja.get((FLUJO, f["doc_id"]))
-        d = round(_f(f.get("cantidad")) - _f((antes or {}).get("cantidad")), 2)
-        out[(partes[0], partes[1])] = d
-    return out
-
-
 def diff(nueva: list[dict], vieja: dict) -> list[dict]:
     """Movimientos entre la foto vieja y la nueva.
 
@@ -755,18 +563,17 @@ def diff(nueva: list[dict], vieja: dict) -> list[dict]:
     decir "el stock subió $80.000" no explica nada y decir "se tejieron
     12.000 kg" sí.
     """
-    caudales = _caudales(nueva, vieja)
     etapas = {(f.get("doc_id") or "").lstrip("#"): f for f in nueva
               if f["componente"] == "vsto"
               and (f.get("doc_id") or "").lstrip("#") in ORDEN_ETAPAS}
     # El stock se resuelve entero y de una: un traspaso entre etapas toca DOS
     # filas de la foto y hay que verlas juntas para saber que es un solo hecho.
-    movs: list[dict] = _mov_stock(etapas, vieja, caudales)
+    movs: list[dict] = _mov_stock(etapas, vieja)
     vistas = set()
     for f in nueva:
         clave = (f["componente"], f["doc_id"])
         vistas.add(clave)
-        if f["componente"] not in SIGNO:      # las filas #flujo no son plata
+        if f["componente"] not in SIGNO:      # #meta no es plata
             continue
         if f["componente"] == "vsto" and (f.get("doc_id") or "").lstrip("#") in ORDEN_ETAPAS:
             continue                          # ya lo resolvió `_mov_stock`
@@ -789,7 +596,7 @@ def diff(nueva: list[dict], vieja: dict) -> list[dict]:
         if clave in vistas:
             continue
         comp = clave[0]
-        if comp not in SIGNO:                 # #flujo: el cambio de mes no es una baja
+        if comp not in SIGNO:                 # #meta no es plata
             continue
         imp0 = _f(a.get("importe"))
         if abs(imp0) < UMBRAL:

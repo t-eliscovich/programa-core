@@ -167,31 +167,17 @@ def test_una_fuente_caida_no_tumba_la_captura():
 
 # ── Stock: kilos vs tarifa ──────────────────────────────────────────────────
 
-def test_el_stock_se_parte_en_kilos_y_tarifa_sin_perder_plata():
-    """1.000 kg a $2 → 1.200 kg a $2,50.
-
-        Δ total   = 3.000 − 2.000 = +1.000
-        por kilos = (1200 − 1000) × 2,00 =   +400
-        por tarifa=  1200 × (2,50 − 2,00) =  +600
-    """
+def test_el_stock_es_un_renglon_y_la_tarifa_otro():
+    """La tela y la revaluación son dos noticias distintas: una produjo, la
+    otra no. Todo lo demás del stock va en un solo renglón (TMT 2026-08-06:
+    *"+ en una columna y − en la otra, that is it"*)."""
     vieja = _foto([_fila("vsto", "#hilado", 2000.0, "Stock hilado", 1000.0, 2.0)])
-    nueva = [_fila("vsto", "#hilado", 3000.0, "Stock hilado", 1200.0, 2.5)]
+    nueva = [_fila("vsto", "#hilado", 2310.0, "Stock hilado", 1100.0, 2.1)]
     movs = dia._diff(nueva, vieja)
-    assert round(sum(m["aporte"] for m in movs), 2) == 1000.0
     subs = {m["doc_id"]: m for m in movs}
-    assert subs["#stock:hilado:kilos"]["delta"] == 400.0
-    assert subs["#stock:hilado:tarifa"]["delta"] == 600.0
-
-
-def test_stock_solo_tarifa_no_dice_que_entraron_kilos():
-    """Una revaluación no produjo ni vendió nada. Si la pantalla dijera
-    'entraron kilos' estaría mintiendo sobre la fábrica."""
-    vieja = _foto([_fila("vsto", "#hilado", 2000.0, "Stock hilado", 1000.0, 2.0)])
-    nueva = [_fila("vsto", "#hilado", 2100.0, "Stock hilado", 1000.0, 2.1)]
-    movs = dia._diff(nueva, vieja)
-    assert len(movs) == 1
-    assert movs[0]["doc_id"] == "#stock:hilado:tarifa"
-    assert "→" in movs[0]["etiqueta"]        # el hecho va en la etiqueta
+    assert subs["#stock:tarifa"]["delta"] == 110.0        # 1.100 kg × $ 0,10
+    assert subs["#stock"]["delta"] == 200.0               # el resto es tela
+    assert round(sum(m["aporte"] for m in movs), 2) == 310.0
 
 
 def test_la_particion_del_stock_no_pierde_centavos():

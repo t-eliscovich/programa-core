@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
@@ -37,12 +38,6 @@ def _guardada(filas: list[dict]) -> dict:
 def _fila(comp, doc, imp, etiqueta="x", cantidad=None, precio=None) -> dict:
     return {"componente": comp, "doc_id": doc, "importe": imp,
             "etiqueta": etiqueta, "cantidad": cantidad, "precio": precio}
-
-
-def _caudal(etapa, sentido, kg, mes="2026-08") -> dict:
-    return {"componente": motor.FLUJO, "doc_id": f"{etapa}:{sentido}:{mes}",
-            "etiqueta": motor.CAUDALES[(etapa, sentido)],
-            "importe": 0.0, "cantidad": kg, "precio": None}
 
 
 def _etapa(nombre, kg, ukg) -> dict:
@@ -72,106 +67,37 @@ def test_el_invariante_se_cumple_en_una_ventana_de_cinco_minutos():
     assert movs[0]["doc_id"] == "f4"
 
 
-# ── El stock: por qué sube y por qué baja ───────────────────────────────────
+# ── El stock: un renglón, y los kilos en la columna de cada etapa ──────────
 
-def test_el_stock_se_abre_por_caudal_cuando_los_numeros_cierran():
-    """1.000 kg tejidos y 400 despachados no son "el stock se movió +600":
-    son dos noticias, y una es buena y la otra es normal."""
-    vieja = _guardada([_etapa("tejido", 10000.0, 2.0),
-                       _caudal("tejido", "ingreso", 5000.0),
-                       _caudal("tejido", "egreso", 2000.0)])
-    nueva = [_etapa("tejido", 10600.0, 2.0),
-             _caudal("tejido", "ingreso", 6000.0),      # +1.000 en la ventana
-             _caudal("tejido", "egreso", 2400.0)]       # −400 en la ventana
+def test_el_stock_es_un_renglon_que_dice_de_donde_a_donde():
+    """🚨 TMT 2026-08-06, después de cinco intentos: *"podría ser 'pasó de
+    terminada a cruda', + en una columna y − en la otra. that is it"*.
+
+    Y el caso que rompía todo lo anterior: salen 68,16 kg de tejido y entran
+    65,40 a terminado. NO coinciden —merma, timing de Asinfo— así que la lógica
+    de "esto es un traspaso" los rechazaba y salían tres renglones. Con los Δ
+    en la columna de cada etapa no hace falta que coincidan.
+    """
+    vieja = _guardada([_etapa("tejido", 299700.00, 3.5591),
+                       _etapa("terminado", 312440.00, 5.2591)])
+    nueva = [_etapa("tejido", 299631.84, 3.5591),
+             _etapa("terminado", 312505.40, 5.2591)]
     movs = motor.diff(nueva, vieja)
 
-    etiquetas = {m["etiqueta"]: m["aporte"] for m in movs}
-    assert any("se tejió tela cruda" in e for e in etiquetas)
-    assert any("salió tela cruda a tintorería" in e for e in etiquetas)
-    # Y sigue cerrando contra el Δ del componente.
-    assert round(sum(m["aporte"] for m in movs), 2) == 1200.0
+    assert len(movs) == 1, [m["etiqueta"] for m in movs]
+    assert movs[0]["etiqueta"] == "tejido → terminado"
+    d = round(sum(_f(f["importe"]) for f in nueva)
+              - sum(_f(v["importe"]) for v in vieja.values()), 2)
+    assert movs[0]["aporte"] == d              # cierra al centavo, sin resto
 
 
-def test_si_los_caudales_no_cierran_no_se_parte_el_delta():
-    """Los caudales y el saldo salen de dos lecturas de Asinfo con cachés
-    propias: en cinco minutos se desfasan. Partir el Δ con números que no
-    cierran sería fabricar una precisión que no tenemos — así que se informa
-    de a un renglón, con los caudales de nota al pie."""
-    vieja = _guardada([_etapa("tejido", 10000.0, 2.0),
-                       _caudal("tejido", "ingreso", 5000.0),
-                       _caudal("tejido", "egreso", 2000.0)])
-    nueva = [_etapa("tejido", 10600.0, 2.0),
-             _caudal("tejido", "ingreso", 5100.0),      # sólo +100: no explica los +600
-             _caudal("tejido", "egreso", 2000.0)]
-    movs = motor.diff(nueva, vieja)
-
-    kilos = [m for m in movs if m["doc_id"].endswith(":kilos")]
-    assert len(kilos) == 1
-    assert kilos[0]["aporte"] == 1200.0
-    # El caudal que sí se conoce no se tira: va en la etiqueta.
-    assert "se tejió tela cruda 100 kg" in kilos[0]["etiqueta"]
-    assert round(sum(m["aporte"] for m in movs), 2) == 1200.0
-
-
-def test_la_tarifa_se_informa_aparte_de_los_kilos():
-    """Un cambio de $/kg revalúa TODO el stock de un saque sin que se haya
-    producido ni vendido nada. Mezclarlo con los kilos borra la diferencia."""
-    vieja = _guardada([_etapa("hilado", 1000.0, 3.00)])
-    nueva = [_etapa("hilado", 1000.0, 3.05)]
-    movs = motor.diff(nueva, vieja)
-    assert len(movs) == 1
-    assert movs[0]["aporte"] == 50.0
-    assert "→" in movs[0]["etiqueta"]
-    assert "3,0000" in movs[0]["etiqueta"]        # formato Ecuador, no yanqui
-
-
-def test_una_tarifa_que_no_cambio_a_la_vista_no_es_un_renglon():
-    """🚨 TMT 2026-08-06: la pantalla decía "cambió el $/kg: $ 5,2591 →
-    $ 5,2591". Con 300.000 kg, una diferencia en la quinta decimal da varios
-    dólares y generaba un renglón que no dice nada. Esos centavos no se
-    pierden: los absorbe el renglón de kilos."""
-    vieja = _guardada([_etapa("terminado", 300000.0, 5.25910)])
-    nueva = [{**_etapa("terminado", 300042.85, 5.25911)}]
-    movs = motor.diff(nueva, vieja)
-    etiq = [m["etiqueta"] or "" for m in movs]
-    assert not any("→" in e for e in etiq)
-    assert not any("redondeo" in e for e in etiq)
-    # …y el Δ del componente sigue cerrando al centavo.
-    d = round(_f(nueva[0]["importe"]) - _f(vieja[("vsto", "#terminado")]["importe"]), 2)
-    assert round(sum(m["aporte"] for m in movs), 2) == d
-
-
-def test_el_redondeo_de_la_particion_no_es_un_renglon_propio():
-    """Tiene que existir para que el invariante cierre, pero "Stock: redondeo
-    de la partición" no significa nada para nadie: se dobla en la parte que lo
-    generó."""
-    vieja = _guardada([_etapa("tejido", 10000.0, 2.3333),
-                       _caudal("tejido", "ingreso", 0.0),
-                       _caudal("tejido", "egreso", 0.0)])
-    nueva = [_etapa("tejido", 10333.0, 2.7777),
-             _caudal("tejido", "ingreso", 333.0),
-             _caudal("tejido", "egreso", 0.0)]
-    movs = motor.diff(nueva, vieja)
-    assert not any("redondeo" in (m["etiqueta"] or "") for m in movs)
-    d = round(_f(nueva[0]["importe"]) - _f(vieja[("vsto", "#tejido")]["importe"]), 2)
-    assert round(sum(m["aporte"] for m in movs), 2) == d
-
-
-def test_los_caudales_no_son_plata_y_no_generan_movimiento_propio():
-    """Si un caudal se contara como movimiento, los kilos entrarían dos veces
-    en la suma y el invariante se rompería."""
-    vieja = _guardada([_caudal("terminado", "ingreso", 1000.0)])
-    nueva = [_caudal("terminado", "ingreso", 4000.0)]
-    assert motor.diff(nueva, vieja) == []
-
-
-def test_el_cambio_de_mes_no_parece_una_baja_gigante():
-    """El acumulado del caudal se reinicia el 1°. Si la clave no llevara el mes
-    adentro, el Δ del primer minuto de septiembre sería el mes de agosto en
-    negativo."""
-    vieja = _guardada([_caudal("tejido", "ingreso", 90000.0, mes="2026-08")])
-    nueva = [_caudal("tejido", "ingreso", 120.0, mes="2026-09")]
-    assert motor.diff(nueva, vieja) == []
+def test_si_solo_entra_o_solo_sale_lo_dice_asi():
+    entra = motor.diff([_etapa("terminado", 312505.0, 5.2591)],
+                       _guardada([_etapa("terminado", 312440.0, 5.2591)]))
+    assert entra[0]["etiqueta"] == "entró a terminado"
+    sale = motor.diff([_etapa("tejido", 299631.0, 3.5591)],
+                      _guardada([_etapa("tejido", 299700.0, 3.5591)]))
+    assert sale[0]["etiqueta"] == "salió de tejido"
 
 
 # ── La primera foto ─────────────────────────────────────────────────────────
@@ -192,8 +118,7 @@ def test_la_primera_foto_se_reconoce_por_la_marca_y_no_por_estar_vacia():
 
 
 def test_la_marca_viaja_en_cada_foto():
-    with patch.object(motor, "_det_flujo", return_value=[]), \
-         patch.object(motor, "_rows", return_value=[]), \
+    with patch.object(motor, "_rows", return_value=[]), \
          patch.object(motor, "_det_bancos", return_value=[]):
         det = motor.detalle({"diagnostico": {"componentes": {}}})
     assert (motor.META, "iniciada") in {(d["componente"], d["doc_id"]) for d in det}
@@ -285,16 +210,6 @@ def test_los_links_del_detalle_resuelven_contra_el_url_map(app):
         + ", ".join(f"{p} ({tb}) → {u}" for p, tb, u in rotos))
 
 
-def test_los_caudales_se_pueden_apagar_sin_tocar_codigo():
-    """Son tres consultas a Asinfo por vuelta. Si alguna vez le pesan al ERP,
-    se apagan por entorno y el stock vuelve a informarse en un solo renglón —
-    la pantalla sigue andando, sólo dice menos."""
-    with patch.dict(os.environ, {"TRAZA_CAUDALES": "0"}):
-        assert motor._det_flujo() == []
-
-
-# ── La grilla de saldos: apagar lo que no se movió ──────────────────────────
-
 def test_la_grilla_marca_los_kilos_y_la_tarifa_que_se_movieron():
     """TMT 2026-08-06: *"agregame los distintos stocks"*. La grilla muestra
     SALDOS, y un saldo de siete dígitos que no cambió pesa lo mismo que el que
@@ -361,31 +276,6 @@ def test_una_ventana_vieja_no_dice_que_no_se_movio_nada():
     assert nueva["sin_registro"] is False   # la grabadora ya estaba: no pasó nada
 
 
-def test_los_kilos_que_pasan_de_una_etapa_a_la_siguiente_son_UN_renglon():
-    """🚨 TMT 2026-08-06, mirando cuatro renglones para explicar $ 36:
-    *"ejemplo esto, +21kg de tejido a terminado. listo, todo el resto no
-    entiendo para qué"*.
-
-    La tela que se termina sale de tejido y entra a terminado en el mismo
-    instante. Contarlo como dos movimientos es la contabilidad hablando sola;
-    lo que aporta a la utilidad es la diferencia de precio entre las etapas —
-    el valor que le agregó el proceso.
-    """
-    vieja = _guardada([_etapa("tejido", 299659.25, 3.5591),
-                       _etapa("terminado", 312486.53, 5.2591)])
-    nueva = [_etapa("tejido", 299637.60, 3.5591),
-             _etapa("terminado", 312508.18, 5.2591)]
-    movs = motor.diff(nueva, vieja)
-
-    assert len(movs) == 1, [m["etiqueta"] for m in movs]
-    assert movs[0]["etiqueta"] == "22 kg tejido→terminado"
-    assert movs[0]["aporte"] == pytest.approx(21.65 * (5.2591 - 3.5591), abs=0.02)
-    # Y sigue cerrando contra el Δ del componente, al centavo.
-    d = round(sum(_f(f["importe"]) for f in nueva)
-              - sum(_f(v["importe"]) for v in vieja.values()), 2)
-    assert round(sum(m["aporte"] for m in movs), 2) == d
-
-
 def test_el_resumen_dice_de_que_clientes_es():
     """TMT 2026-08-06: *"decime algo de las facturas, de los abonos, eso es un
     poco más importante. ¿clientes quizás?"*. "3 facturas nuevas" no dice nada;
@@ -420,3 +310,41 @@ def test_un_centavo_no_es_un_renglon():
              "etiqueta": "-0 kg"}]
     textos = [g["texto"] for g in t.resumir(movs, 4999.99)]
     assert textos == ["Factura 1 · AAA"]      # el centavo no sale
+
+
+# ── El link desde Resultados ────────────────────────────────────────────────
+
+def test_resultados_ofrece_el_link_a_trazabilidad(app):
+    """TMT 2026-08-06: *"¿podés poner un link desde resultados que se llame
+    trazabilidad así pueden entrar el resto?"*. La pantalla vivía sólo por URL.
+
+    🚨 Y el link tiene que resolver: en este repo son strings hardcodeados y una
+    ruta que no existe sólo se ve como 404 al clickear."""
+    plantilla = app.jinja_env.loader.get_source(
+        app.jinja_env, "informes/balance.html")[0]
+    assert "informes.traza" in plantilla
+    assert "Trazabilidad" in plantilla
+    # Gateado por el mismo permiso que la ruta: nada de ofrecer un 404.
+    assert "tiene_permiso('informes.ver')" in plantilla
+    app.url_map.bind("localhost").match("/informes/traza", method="GET")
+
+
+# ── `fecha_modifica` se sella sola ──────────────────────────────────────────
+
+def test_la_migracion_0172_no_lista_las_tablas_a_mano():
+    """🚨 El bug que arregla es "alguien se olvidó de escribir la columna". Si
+    la migración llevara la lista de tablas escrita a mano, el próximo que
+    agregue una tabla se olvidaría igual: la lista sale de information_schema.
+
+    Origen: la cobranza de PGQ del 06/08 canceló tres facturas y las tres
+    quedaron con `usuario_modifica = 'alex'` y `fecha_modifica` en NULL — no
+    había forma de preguntar qué se cobró entre las 17:17 y las 17:23.
+    """
+    sql = (Path(_REPO_ROOT) / "migrations" / "0172_sellar_fecha_modifica.sql").read_text(
+        encoding="utf8")
+    assert "information_schema.columns" in sql
+    assert "fecha_modifica" in sql
+    assert "BEFORE UPDATE" in sql
+    # Idempotente: la migración se puede volver a correr sin romper nada.
+    assert "DROP TRIGGER IF EXISTS" in sql
+    assert "CREATE OR REPLACE FUNCTION" in sql

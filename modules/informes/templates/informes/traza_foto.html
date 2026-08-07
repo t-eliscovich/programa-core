@@ -22,8 +22,10 @@
           {% for col, label in deltas %}
             <th class="px-1 py-1 text-right" style="width:3.6rem;font-weight:500;">{{ label }}</th>
           {% endfor %}
-          <th colspan="{{ (kilos | length) + 1 }}" class="px-1 py-1 text-right"
-              style="width:6rem;font-weight:500;">Otros</th>
+          {% for col, label in kilos %}
+            <th class="px-1 py-1 text-right" style="width:2.9rem;font-weight:500;">{{ label }}</th>
+          {% endfor %}
+          <th class="px-1 py-1 text-right" style="width:3.2rem;font-weight:500;">Otros</th>
         </tr>
       </thead>
       <tbody>

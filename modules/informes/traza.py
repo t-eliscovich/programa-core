@@ -261,6 +261,7 @@ def con_deltas(filas: list[dict]) -> list[dict]:
             fila["movio"] = []
             fila["movidas"] = set()
             fila["delta"] = {}
+            fila["d_kg"] = {}
             out.append(fila)
             continue
         try:
@@ -299,6 +300,18 @@ def con_deltas(filas: list[dict]) -> list[dict]:
         # El Δ de cada componente, indexado por columna: la grilla muestra
         # esto y deja la celda vacía cuando no hay nada.
         fila["delta"] = {m["col"]: m["aporte"] for m in movs}
+        # Los kilos que se movieron en cada etapa, para poder poner el − y el +
+        # en su columna (TMT 2026-08-06: *"+ en una columna y − en la otra"*).
+        # Salen de las dos fotos, así que no hay que guardarlos en el
+        # movimiento.
+        fila["d_kg"] = {}
+        for col, _lab in COLUMNAS_KG:
+            try:
+                d = round(float(f.get(col) or 0) - float(prev.get(col) or 0), 2)
+            except (TypeError, ValueError):
+                continue
+            if abs(d) >= 1:
+                fila["d_kg"][col] = d
         out.append(fila)
     return out
 
@@ -548,6 +561,7 @@ def una(id_traza: int) -> dict | None:
     fila["movimientos"] = movs
 
     fila["resumen"] = resumir(movs, fila.get("d_utilidad"))
+    fila["d_kg"] = fila.get("d_kg") or {}
 
     # 🚨 "Sin movimientos" y "sin registro" NO son lo mismo. Una ventana en la
     # que de verdad no se movió nada y una anterior a que existiera la
