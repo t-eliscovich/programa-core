@@ -183,8 +183,16 @@ _ESTADO_IN_RE = re.compile(
 )
 
 
-def _card_facturas_get():
-    """Baja la card ASINFO_CARD_FACTURAS por API. → (card, sql, path, err)."""
+def _card_facturas_get(card_id: str | None = None):
+    """Baja una card de Metabase por API. → (card, sql, path, err).
+
+    Sin `card_id` trae la de facturas (ASINFO_CARD_FACTURAS, 199 por default).
+    Con `card_id` trae la que se pida: sirve para LEER la consulta de cualquier
+    card sin entrar a Metabase — p.ej. la 202, la de retenciones, para saber
+    qué columnas trae de verdad y sobre qué fecha filtra. TMT 2026-08-07: la
+    dueña preguntó si la retención dice en algún lado si está pagada, y la
+    respuesta estaba en el SQL de la card. Es read-only.
+    """
     import os
 
     import requests
@@ -192,7 +200,8 @@ def _card_facturas_get():
     from modules._lib import metabase_client as mc
 
     url = (os.environ.get("METABASE_URL") or "").strip().rstrip("/")
-    card_id = (os.environ.get("ASINFO_CARD_FACTURAS") or "199").strip()
+    card_id = (str(card_id).strip() if card_id
+               else (os.environ.get("ASINFO_CARD_FACTURAS") or "199").strip())
     token = mc._session_token or mc._login(requests)
     if not (url and token):
         return None, None, None, "Metabase no configurado o login fallo"
@@ -212,6 +221,32 @@ def _card_facturas_get():
     if stages and isinstance((stages[0] or {}).get("native"), str):
         return card, stages[0]["native"], "stages[0].native", None
     return card, None, None, "no encontre SQL nativo en la card"
+
+
+@bp.route("/card-sql", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def card_sql():
+    """La consulta SQL de una card de Asinfo, tal cual está en Metabase.
+
+    `?card=202` (retenciones), `?card=199` (facturas)… Read-only: sólo muestra
+    el SQL y los nombres de las columnas que devuelve. Sirve para contestar
+    "¿este dato existe del otro lado?" sin adivinar ni pedirle a nadie que
+    entre a Metabase.
+    """
+    card_id = (request.args.get("card") or "").strip() or None
+    card, sql, path, err = _card_facturas_get(card_id)
+    if err:
+        return _json({"ok": False, "card_id": card_id, "error": err})
+    cols = [c.get("name") for c in ((card or {}).get("result_metadata") or [])]
+    return _json({
+        "ok": True,
+        "card_id": (card or {}).get("id"),
+        "card_name": (card or {}).get("name"),
+        "columnas_que_devuelve": cols,
+        "sql_path": path,
+        "sql": sql,
+    })
 
 
 @bp.route("/card-estado", methods=["GET"])
