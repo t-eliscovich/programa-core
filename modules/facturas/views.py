@@ -2011,8 +2011,6 @@ def preview_retenciones_asinfo():
     de PC iría cada una y qué pasaría (se aplica / ya estaba / sin factura / no
     entra), sin mutar nada. Read-only; los botones Aplicar/Deshacer siguen en la
     pantalla de origen."""
-    from datetime import date as _date
-
     from modules.retenciones import queries as ret_q
     hoy = today_ec()
     desde = _parse_date(request.args.get("desde") or "") or hoy.replace(day=1)
@@ -2070,6 +2068,47 @@ def preview_retencion_en_abono():
         desde=desde.isoformat(), hasta=hasta.isoformat(),
         filas=data["filas"], resumen=data["resumen"], error=error,
     )
+
+
+@facturas_bp.route("/facturas/mover-retencion-del-abono", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def mover_retencion_del_abono():
+    """Saca la retención de adentro del abono en las facturas TILDADAS.
+
+    No toca el saldo: esa plata ya estaba descontada. Ver
+    `retenciones.queries.mover_retencion_del_abono` para el porqué de cada
+    freno. Vuelve a la misma pantalla con el rango puesto.
+    """
+    from modules.retenciones import queries as ret_q
+    desde, hasta = _rango_retenciones(con_piso=False)
+    numeros = request.form.getlist("numeros")
+    usuario = (
+        getattr(g, "user", {}).get("username")
+        if hasattr(g, "user") and isinstance(g.user, dict) else "web")
+    if not numeros:
+        flash("No tildaste ninguna retención para separar del abono.", "warn")
+    else:
+        try:
+            r = ret_q.mover_retencion_del_abono(
+                desde, hasta, numeros=numeros, usuario=usuario)
+            partes = [
+                f"{r['n_movidas']} retenciones separadas del abono "
+                f"({r['total_movido']:,.2f}). El saldo no cambió."]
+            if r.get("n_ya"):
+                partes.append(f"{r['n_ya']} ya estaban separadas")
+            if r.get("n_cerrada"):
+                partes.append(f"{r['n_cerrada']} se cerraron mientras tanto")
+            if r.get("n_abono_corto"):
+                partes.append(f"{r['n_abono_corto']} sin abono suficiente")
+            if r.get("n_error"):
+                partes.append(f"{r['n_error']} con error")
+            flash(" · ".join(partes), "ok")
+        except Exception as e:
+            flash_exc("No pude separar las retenciones del abono", e)
+    return redirect(url_for(
+        "facturas.preview_retencion_en_abono",
+        desde=desde.isoformat(), hasta=hasta.isoformat()))
 
 
 @facturas_bp.route("/facturas/aplicar-retenciones-asinfo", methods=["POST"])

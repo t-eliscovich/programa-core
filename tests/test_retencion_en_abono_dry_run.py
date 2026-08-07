@@ -12,6 +12,8 @@ operación válida es MOVER: abono −= rete, retencion += rete, saldo IGUAL.
 """
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 
@@ -161,10 +163,145 @@ def test_no_escribe_nada(monkeypatch, escenario):
     assert q.preview_retencion_en_abono("2026-01-01", "2026-05-31")["filas"] == []
 
 
-def test_la_pantalla_no_tiene_boton_de_aplicar():
-    """Todavía no se decidió aplicarlo: la pantalla es sólo para mirar."""
+def test_la_pantalla_separa_pero_no_aplica():
+    """El botón MUEVE (no aplica). Aplicar descuenta del saldo y acá el saldo ya
+    está descontado: apuntar este form al aplicador dejaría a cada cliente
+    debiendo de menos dos veces. (Este test pedía que no hubiera ningún POST
+    hasta que la dueña aprobó el movimiento el 07/08.)"""
     from pathlib import Path
     tpl = Path("modules/facturas/templates/facturas/"
                "retencion_en_abono.html").read_text(encoding="utf-8")
-    assert "<form" in tpl and 'method="GET"' in tpl
-    assert 'method="post"' not in tpl.lower(), "el dry run no postea nada"
+    assert "facturas.mover_retencion_del_abono" in tpl
+    assert "aplicar_retenciones" not in tpl, (
+        "esta pantalla NO puede postear al aplicador: duplicaría el descuento")
+
+
+# ── el movimiento de verdad (ya no es sólo dry run) ────────────────────────
+
+class _MoverStub:
+    """Base para `_mover_una`: la factura y si ya tiene fila de retención."""
+
+    def __init__(self, factura, ya_tiene_retencion=False):
+        self.factura = factura
+        self.ya = ya_tiene_retencion
+        self.updates = []
+        self.inserts = []
+        self.movs = []
+
+    def fetch_one(self, sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.factura" in s:
+            return dict(self.factura)
+        if "from scintela.retencion" in s:
+            return {"x": 1} if self.ya else None
+        return None
+
+    def fetch_all(self, sql, params=None, conn=None):
+        return []
+
+    def execute(self, sql, params=None, conn=None):
+        if "update scintela.factura" in " ".join(sql.split()).lower():
+            self.updates.append(tuple(params))
+        return 1
+
+    def execute_returning(self, sql, params=None, conn=None):
+        if "insert into scintela.retencion" in " ".join(sql.split()).lower():
+            self.inserts.append(tuple(params))
+            return {"id_retencion": 99}
+        return {}
+
+    @contextlib.contextmanager
+    def tx(self):
+        yield object()
+
+
+def _fila(rete=128.22, numf=174101, cli="DEM"):
+    return {"numero": f"001-099-{numf:09d}", "ret_total": rete,
+            "codigo_cli": cli, "numf": numf, "estado": "se_mueve"}
+
+
+def _factura(importe=4213.06, abono=128.22, retencion=0.0, stat="A", saldo=None):
+    return {"id_factura": 1, "importe": importe, "abono": abono,
+            "retencion": retencion,
+            "saldo": importe - abono if saldo is None else saldo, "stat": stat}
+
+
+@pytest.fixture
+def mover(monkeypatch):
+    import db
+    from modules.retenciones import queries as q
+    s = _MoverStub(_factura())
+    for a in ("fetch_one", "fetch_all", "execute", "execute_returning", "tx"):
+        monkeypatch.setattr(db, a, getattr(s, a))
+    monkeypatch.setattr(q._md, "registrar",
+                        lambda **k: s.movs.append(k) or {"id_mov_doble": 1})
+    return s
+
+
+def test_mover_no_toca_el_saldo(mover):
+    """El invariante de toda esta operación: la plata ya estaba descontada."""
+    from modules.retenciones import queries as q
+    saldo_antes = mover.factura["saldo"]
+    assert q._mover_una(_fila(), "t") == "movida"
+    abono_new, retencion_new = mover.updates[0][0], mover.updates[0][1]
+    assert abono_new == 0.0 and retencion_new == 128.22
+    # el UPDATE ni menciona el saldo
+    assert saldo_antes == mover.factura["saldo"]
+
+
+def test_si_el_abono_queda_en_cero_la_factura_vuelve_a_Z(mover):
+    """Estaba en 'A' por un abono que no era un pago. Sin abono, es Z."""
+    from modules.retenciones import queries as q
+    q._mover_una(_fila(), "t")
+    assert mover.updates[0][2] == "Z"
+
+
+def test_si_habia_un_pago_real_se_conserva_y_sigue_en_A(mover):
+    """264,99 abonados de los cuales 14,26 eran retención → quedan 250,73."""
+    from modules.retenciones import queries as q
+    mover.factura = _factura(importe=936.89, abono=264.99)
+    assert q._mover_una(_fila(rete=14.26), "t") == "movida"
+    assert mover.updates[0][0] == 250.73
+    assert mover.updates[0][2] == "A"
+
+
+def test_deja_la_fila_en_scintela_retencion(mover):
+    """Sin esto el barrido del cron la vería como "nunca aplicada" — el abono
+    quedó en 0, así que ni el freno `solo_sin_abono` la salva — y la
+    descontaría de nuevo."""
+    from modules.retenciones import queries as q
+    q._mover_una(_fila(), "t")
+    assert mover.inserts, "tiene que registrar la retención"
+    assert mover.inserts[0][2] == 128.22
+
+
+def test_el_movimiento_queda_con_su_propio_tipo(mover):
+    """No comparte tipo con `retencion_asinfo_aplicada`: aquella descuenta del
+    saldo y ésta no, así que un reverso equivocado devolvería plata que nunca
+    se movió."""
+    from modules.retenciones import queries as q
+    q._mover_una(_fila(), "t")
+    assert mover.movs[0]["tipo"] == q.TIPO_MOV_MOVIDA
+    meta = mover.movs[0]["metadata"]
+    assert meta["abono_previo"] == 128.22 and meta["saldo_previo"] == 4084.84
+
+
+def test_revalida_adentro_de_la_transaccion(mover):
+    """La pantalla puede tener minutos: si mientras tanto la factura se cobró,
+    se cerró o ya le aplicaron la retención, no se toca."""
+    from modules.retenciones import queries as q
+
+    mover.ya = True
+    assert q._mover_una(_fila(), "t") == "ya"
+    mover.ya = False
+
+    mover.factura = _factura(stat="T", saldo=0.0)
+    assert q._mover_una(_fila(), "t") == "cerrada"
+
+    mover.factura = _factura(abono=5.0)
+    assert q._mover_una(_fila(), "t") == "abono_corto"
+
+    mover.factura = _factura(retencion=50.0)
+    assert q._mover_una(_fila(), "t") == "ya"
+
+    assert not mover.updates, "no podía escribir en ninguno de esos casos"

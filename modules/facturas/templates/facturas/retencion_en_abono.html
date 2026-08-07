@@ -76,10 +76,29 @@
     </div>
   </div>
 
+  <form method="POST" action="{{ url_for('facturas.mover_retencion_del_abono') }}" id="form-mover">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="desde" value="{{ desde }}">
+    <input type="hidden" name="hasta" value="{{ hasta }}">
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      Tildá las que quieras separar y apretá el botón. Sólo se pueden tildar las
+      que dicen <strong class="text-violet-700 dark:text-violet-300">Se mueve</strong>.
+    </p>
+    <button type="submit"
+            class="px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium">
+      Separar las tildadas (<span id="n-tildadas">0</span>)
+    </button>
+  </div>
+
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
+          <th class="px-2 py-2 text-center font-medium">
+            <input type="checkbox" id="tildar-todas" title="Tildar todas las que se pueden mover">
+          </th>
           <th class="px-3 py-2 text-left font-medium">Qué pasaría</th>
           <th class="px-3 py-2 text-left font-medium">Factura</th>
           <th class="px-3 py-2 text-left font-medium">Cliente</th>
@@ -94,6 +113,11 @@
       <tbody>
         {% for f in filas %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-2 py-1.5 text-center">
+            {% if f.estado == 'se_mueve' %}
+            <input type="checkbox" name="numeros" value="{{ f.numero }}" class="chk-mover">
+            {% endif %}
+          </td>
           <td class="px-3 py-1.5">
             {% if f.estado == 'se_mueve' %}
               <span class="inline-block px-2 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-300 text-xs">Se mueve</span>
@@ -133,15 +157,48 @@
           <td class="px-3 py-1.5 text-right text-mono text-slate-500">{{ f.saldo | money_es if f.saldo is not none else '' }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'No hay retenciones de Asinfo en ese período.') }}
+        {{ empty_row(10, 'No hay retenciones de Asinfo en ese período.') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
+  </form>
 
   <p class="text-xs text-slate-500 mt-3">
-    Esto es sólo una simulación. Todavía no hay botón para aplicarla: primero se
-    mira, después se decide.
+    Separar no mueve plata: el saldo de cada factura queda igual y la cartera
+    también. Lo que cambia es de qué columna cuelga el número — y, si el abono
+    queda en cero, la factura vuelve a <strong>Z</strong> (emitida), porque
+    nadie la abonó. Cada movimiento queda en el historial y se deshace de a uno.
   </p>
+
+<script>
+(function () {
+  var form = document.getElementById('form-mover');
+  if (!form) return;
+  var chks = [].slice.call(form.querySelectorAll('.chk-mover'));
+  var todas = document.getElementById('tildar-todas');
+  var cuenta = document.getElementById('n-tildadas');
+  function refrescar() {
+    var n = chks.filter(function (c) { return c.checked; }).length;
+    cuenta.textContent = n;
+    if (todas) todas.checked = (n > 0 && n === chks.length);
+  }
+  chks.forEach(function (c) { c.addEventListener('change', refrescar); });
+  if (todas) todas.addEventListener('change', function () {
+    chks.forEach(function (c) { c.checked = todas.checked; });
+    refrescar();
+  });
+  form.addEventListener('submit', function (e) {
+    var n = chks.filter(function (c) { return c.checked; }).length;
+    if (!n) { e.preventDefault(); return; }
+    if (!confirm('Separar ' + n + ' retenciones del abono?\n\n' +
+                 'El saldo de las facturas NO cambia: la plata ya estaba ' +
+                 'descontada. Se puede deshacer de a una desde el historial.')) {
+      e.preventDefault();
+    }
+  });
+  refrescar();
+})();
+</script>
 </div>
 {% endblock %}

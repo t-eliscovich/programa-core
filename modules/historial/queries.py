@@ -102,6 +102,7 @@ TIPOS_LABEL = {
     "posdat_anulada":           "Posdat: anulada",
     "posdat_edit_importe":      "Posdat: edit de importe",
     "factura_abono_manual":     "Factura: abono manual",
+    "retencion_movida_del_abono": "Retención separada del abono",
 }
 
 
@@ -539,6 +540,7 @@ TIPOS_CORTO = {
     "factura_reabierta_de_t": ("FA", "reabierta"),
     "factura_stat_cambio": ("FA", "cambio de estado"),
     "retencion_asinfo_aplicada": ("RT", "→ FA"),
+    "retencion_movida_del_abono": ("RT", "sale del abono"),
     "retencion_asinfo_desaplicada": ("RT", "✗ FA"),
     "retencion_doble_corregida": ("RT", "corregida"),
     "caja_e_simple": ("CJ", "entra"),

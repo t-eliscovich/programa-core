@@ -27,7 +27,9 @@ import pytest
     (100.0, 50.0, "Z", "A"),     # el pago la mueve a abonada
     (0.0, 0.0, "Z", "T"),        # la retención la terminó de cubrir
     (0.004, 0.0, "Z", "T"),      # centavos
-    (100.0, 0.0, "A", "A"),      # ya estaba abonada: no la degrada
+    # Estaba en 'A' pero el abono es 0: la 'A' no se sostiene. Es el caso de
+    # las que pierden el abono al separarles la retención (07/08).
+    (100.0, 0.0, "A", "Z"),
 ])
 def test_stat_tras_retencion(saldo, abono, previo, esperado):
     from modules.retenciones.queries import _stat_tras_retencion

@@ -1032,6 +1032,7 @@ _PERMISO_REVERSO_INLINE = {
     "cheque_aplicado_a_factura": "cheques.aplicar",
     # Deshacer UNA retención aplicada por error. Mismo permiso que aplicarlas.
     "retencion_asinfo_aplicada": "facturas.crear",
+    "retencion_movida_del_abono": "facturas.crear",
     # TMT 2026-07-06 (Andrés): "Tipo 'retiro_op' aún no tiene reverso
     # automatizado" — ahora sí: deshacer_op (borra retiro + imputación y
     # devuelve el monto a la fila posdat OP si el retiro la había bajado).
@@ -1094,7 +1095,7 @@ def reversar_mov_inline(id_mov_doble: int):
     # TMT 2026-08-07: la retención tiene su propio reverso atómico, que
     # restaura abono/retención/saldo/stat del snapshot y borra la fila de
     # scintela.retencion. Maneja su tx (no entra al db.tx() genérico de abajo).
-    if tipo == "retencion_asinfo_aplicada":
+    if tipo in ("retencion_asinfo_aplicada", "retencion_movida_del_abono"):
         from modules.retenciones import queries as _ret_q
         try:
             res = _ret_q.desaplicar_por_mov(id_mov_doble, usuario=usuario)
@@ -1102,7 +1103,8 @@ def reversar_mov_inline(id_mov_doble: int):
                 f"Retención deshecha: la factura {res['numf']} "
                 f"({res['codigo_cli']}) vuelve a deber "
                 f"$ {res['saldo_restaurado']:,.2f} y queda en "
-                f"{res['stat_restaurado']}.", "ok")
+                f"{res['stat_restaurado']}. (Si estaba separada del abono, la "
+                f"plata volvió a Abonado.)", "ok")
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:

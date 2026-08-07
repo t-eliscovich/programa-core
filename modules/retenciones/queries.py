@@ -259,14 +259,19 @@ def _stat_tras_retencion(saldo: float, abono: float, stat_previo: str = "") -> s
 
         saldo ≈ 0        → 'T' (cancelada; la retención la terminó de cubrir)
         hay abono        → 'A'
-        sin abono        → 'Z' (o el estado que ya tenía, si era Z/vacío)
+        sin abono        → 'Z'
+
+    Devuelve lo que los números DICEN, no lo que la factura traía: si el abono
+    es 0, el estado es Z aunque estuviera en 'A'. Hace falta así para separar la
+    retención del abono — ahí el abono se va y la 'A' se queda sin sustento (126
+    facturas de enero a mayo son ese caso exacto). `stat_previo` sólo se usa
+    para no inventar un estado cuando la fila viene sin ninguno.
     """
     if saldo <= 0.005:
         return "T"
     if abono > 0.005:
         return "A"
-    prev = (stat_previo or "").strip().upper()
-    return prev if prev in ("Z", "A") else "Z"
+    return "Z"
 
 
 def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
@@ -589,6 +594,165 @@ def _desaplicar_una_por_numero(numero: str, usuario: str) -> str:
     return "revertida"
 
 
+#: El movimiento que saca la retención de adentro del abono. Tipo propio (no
+#: `retencion_asinfo_aplicada`) porque NO descuenta nada: la plata ya estaba
+#: descontada, sólo cambia de columna. Mezclarlos haría que un reverso
+#: equivocado devuelva el saldo que nunca se tocó.
+TIPO_MOV_MOVIDA = "retencion_movida_del_abono"
+
+
+def mover_retencion_del_abono(desde, hasta, numeros=None,
+                              usuario: str = "web") -> dict:
+    """Saca la retención de adentro del abono y la pone en su columna.
+    **El saldo no se toca.**
+
+    TMT 2026-08-07 (dueña). Mientras el dBase fue la fuente de verdad,
+    RETENCIO.PRG sumaba la retención al abono de la factura y no dejaba fila en
+    `scintela.retencion`. Resultado: 135 facturas de enero a mayo muestran como
+    "Abonado" plata que el cliente no pagó — se la retuvo.
+
+        abono -= rete · retencion += rete · saldo IGUAL · stat recalculado
+
+    ⚠️ Esto NO es aplicar una retención. Aplicar descuenta del saldo; acá el
+    saldo ya está descontado desde que entró como abono. Por eso el movimiento
+    tiene su propio tipo de `mov_doble` y su propia función: si alguien lo hace
+    con el aplicador, cada cliente queda debiendo de menos dos veces.
+
+    ⭐ Inserta la fila en `scintela.retencion`. No es decorativo: es lo que hace
+    que el guard `ya` la proteja para siempre. Sin eso, el barrido de meses
+    viejos del cron la vería como "retención nunca aplicada" (el abono quedó en
+    0, así que ni el freno `solo_sin_abono` la salva) y la descontaría de nuevo.
+
+    ⭐ Y recalcula el estado: si el abono era SÓLO la retención, después del
+    movimiento queda en 0 y la factura vuelve a **Z** — nadie la abonó. Dejarla
+    en 'A' sería repetir el problema que la dueña marcó el mismo día.
+
+    `numeros` = lista de N° SRI a mover (los tildados). None = todos los que la
+    pantalla clasifica como `se_mueve`.
+
+    Devuelve {n_movidas, total_movido, n_ya, n_cerrada, n_abono_corto,
+    n_error, batch_id}.
+    """
+    seleccion = {str(n).strip() for n in (numeros or []) if str(n).strip()} or None
+    data = preview_retencion_en_abono(desde, hasta)
+    res = {"n_movidas": 0, "total_movido": 0.0, "n_ya": 0, "n_cerrada": 0,
+           "n_abono_corto": 0, "n_error": 0, "batch_id": None}
+    candidatas = [f for f in data["filas"] if f["estado"] == "se_mueve"
+                  and (seleccion is None or f["numero"] in seleccion)]
+    if not candidatas:
+        return res
+    batch_id = str(_uuid.uuid4())
+    res["batch_id"] = batch_id
+    for fila in candidatas:
+        try:
+            estado = _mover_una(fila, usuario, batch_id)
+        except Exception:  # noqa: BLE001 -- una fila mala no frena la tanda
+            res["n_error"] += 1
+            continue
+        if estado == "movida":
+            res["n_movidas"] += 1
+            res["total_movido"] = round(res["total_movido"] + fila["ret_total"], 2)
+        elif estado == "ya":
+            res["n_ya"] += 1
+        elif estado == "cerrada":
+            res["n_cerrada"] += 1
+        elif estado == "abono_corto":
+            res["n_abono_corto"] += 1
+        else:
+            res["n_error"] += 1
+    if res["n_movidas"]:
+        try:
+            from filters import today_ec as _hoy
+            from modules.avisos import queries as _av
+            _n = res["n_movidas"]
+            _av.avisar(
+                fuente="retenciones",
+                titulo=(f"Se separaron {_n} retencion{'es' if _n != 1 else ''} "
+                        f"del abono por $ {_money(res['total_movido'])}"),
+                importe=res["total_movido"], cantidad=_n,
+                url="/facturas/retenciones-en-abono",
+                clave=f"retenciones-mover:{_hoy()}:{batch_id}",
+            )
+        except Exception:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+            pass
+    return res
+
+
+def _mover_una(fila: dict, usuario: str, batch_id: str | None = None) -> str:
+    """Una factura. RE-VALIDA todo adentro de la transacción: la pantalla puede
+    tener minutos de antigüedad y mientras tanto alguien pudo cobrar, anular o
+    aplicarle la retención. Lo que decide es el estado de la base, no la fila
+    que llegó del form."""
+    rete = round(float(fila.get("ret_total") or 0), 2)
+    codigo_cli, numf = fila.get("codigo_cli"), fila.get("numf")
+    if rete <= 0.005 or not codigo_cli or numf is None:
+        return "error"
+    with db.tx() as conn:
+        f = db.fetch_one(
+            "SELECT id_factura, importe, abono, retencion, saldo, stat "
+            "  FROM scintela.factura "
+            " WHERE codigo_cli = %s AND numf = %s ORDER BY id_factura LIMIT 1 "
+            "   FOR UPDATE",
+            (codigo_cli, numf), conn=conn,
+        )
+        if not f:
+            return "error"
+        ya = db.fetch_one(
+            "SELECT 1 AS x FROM scintela.retencion "
+            " WHERE codigo_cli = %s AND numf = %s",
+            (codigo_cli, numf), conn=conn,
+        )
+        if ya:
+            return "ya"
+        abono = round(float(f["abono"] or 0), 2)
+        retencion = round(float(f["retencion"] or 0), 2)
+        saldo = round(float(f["saldo"] or 0), 2)
+        stat_prev = (f["stat"] or "").strip()
+        if retencion > 0.005:
+            return "ya"
+        if stat_prev.upper() == "T" or abs(saldo) <= 0.005:
+            return "cerrada"
+        if abono + 0.01 < rete:
+            return "abono_corto"
+
+        abono_new = round(abono - rete, 2)
+        stat_new = _stat_tras_retencion(saldo, abono_new, stat_prev)
+        db.execute(
+            "UPDATE scintela.factura "
+            "   SET abono = %s, retencion = %s, stat = %s, usuario_modifica = %s "
+            " WHERE id_factura = %s",
+            (abono_new, rete, stat_new, usuario, f["id_factura"]),
+            conn=conn,
+        )
+        rrow = db.execute_returning(
+            "INSERT INTO scintela.retencion "
+            "  (codigo_cli, numf, rete, fecha, usuario_crea) "
+            "VALUES (%s, %s, %s, CURRENT_DATE, %s) "
+            "RETURNING id_retencion",
+            (codigo_cli, numf, rete, usuario), conn=conn,
+        ) or {}
+        _md.registrar(
+            conn=conn,
+            tipo=TIPO_MOV_MOVIDA,
+            origen_table="factura", origen_id=f["id_factura"],
+            destino_table="factura", destino_id=f["id_factura"],
+            importe=rete,
+            fecha=today_ec(),
+            concepto=(
+                f"Retención $ {_money(rete)} separada del abono en la factura "
+                f"{numf} {codigo_cli} — abonado $ {_money(abono)} → "
+                f"$ {_money(abono_new)}, saldo sin cambios "
+                f"$ {_money(saldo)}")[:200],
+            usuario=usuario,
+            batch_id=batch_id,
+            metadata={"id_retencion": rrow.get("id_retencion"),
+                      "codigo_cli": codigo_cli, "numf": numf, "rete": rete,
+                      "abono_previo": abono, "retencion_previa": retencion,
+                      "saldo_previo": saldo, "stat_previo": stat_prev},
+        )
+    return "movida"
+
+
 def desaplicar_por_mov(id_mov_doble: int, usuario: str = "web") -> dict:
     """Deshace UNA aplicación de retención, la del `mov_doble` que se pasa.
 
@@ -615,10 +779,11 @@ def desaplicar_por_mov(id_mov_doble: int, usuario: str = "web") -> dict:
         )
         if not mv:
             raise ValueError(f"No existe el movimiento #{id_mov_doble}.")
-        if (mv.get("tipo") or "") != "retencion_asinfo_aplicada":
+        if (mv.get("tipo") or "") not in ("retencion_asinfo_aplicada",
+                                          TIPO_MOV_MOVIDA):
             raise ValueError(
                 f"El movimiento #{id_mov_doble} no es una retención aplicada "
-                f"(es {mv.get('tipo')}).")
+                f"ni separada del abono (es {mv.get('tipo')}).")
         if (mv.get("estado") or "") != "activo":
             raise ValueError(
                 f"Ese movimiento ya está {mv.get('estado')}: no se puede "
