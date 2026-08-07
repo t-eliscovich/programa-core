@@ -342,9 +342,17 @@ def nuevo_anticipo():
                 origen_table="dolares", origen_id=id_dolares,
                 destino_table="transacciones_bancarias", destino_id=id_tx,
                 importe=importe, fecha=fecha,
-                concepto=(f"Anticipo USD {cta} $ {importe:.2f} (ND Pichincha)")[:200],
+                # 🚨 TMT 2026-08-07, viendo "BC · 3 × Anticipo USD AI" en la
+                # traza: *"acá me falta número de AI"*. El concepto del
+                # `mov_doble` tiraba lo que la persona escribió —que es donde
+                # va el número de la importación— y lo reemplazaba por el
+                # IMPORTE, que ya está en la columna de al lado. La fila
+                # bancaria sí lo guarda ("ANTICIPO AI 15"); el hecho no.
+                concepto=(f"Anticipo USD {cta} {concepto}".strip()
+                          + " (ND Pichincha)")[:200],
                 usuario=usuario,
-                metadata={"cta": cta, "no_banco": _BANCO_PICHINCHA, "id_transaccion": id_tx},
+                metadata={"cta": cta, "concepto": concepto,
+                          "no_banco": _BANCO_PICHINCHA, "id_transaccion": id_tx},
             )
         flash(f"Anticipo {cta} $ {importe:,.2f} registrado — ND Pichincha (resta del banco).", "ok")
     except Exception as e:  # noqa: BLE001

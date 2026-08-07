@@ -82,6 +82,16 @@ jobs:
           Write-Output "=== Deploy commit \$sha ==="
           \$ProgressPreference = 'SilentlyContinue'
 
+          # 0. Huella de la SECRET_KEY ANTES de tocar nada. TMT 2026-08-07
+          #    (y ya el 2026-07-06): *"¿por qué se sale de mi sesión?"*. Si la
+          #    clave rota en el reinicio, TODAS las cookies dejan de valer y se
+          #    desloguea todo el mundo — y sin este par de líneas la única
+          #    forma de saberlo era acordarse de mirar /healthz a mano justo
+          #    antes y justo después. Ahora queda en el log del deploy.
+          \$fpAntes = '?'
+          try { \$fpAntes = (Invoke-WebRequest -UseBasicParsing http://localhost:5002/healthz -TimeoutSec 10).Content | ConvertFrom-Json | Select -ExpandProperty secret_fp } catch {}
+          Write-Output "SECRET_KEY antes: \$fpAntes"
+
           # 1. Backup del previous .env (por las dudas, aunque no lo deberíamos tocar).
           if (Test-Path C:\programa-core\.env) { Copy-Item C:\programa-core\.env C:\tmp\dotenv.backup -Force }
 
@@ -151,6 +161,12 @@ jobs:
           } catch {
               Write-Output "Health FAIL: \$_"
               exit 1
+          }
+          \$fpDespues = '?'
+          try { \$fpDespues = (Invoke-WebRequest -UseBasicParsing http://localhost:5002/healthz -TimeoutSec 10).Content | ConvertFrom-Json | Select -ExpandProperty secret_fp } catch {}
+          Write-Output "SECRET_KEY despues: \$fpDespues"
+          if (\$fpAntes -ne '?' -and \$fpDespues -ne '?' -and \$fpAntes -ne \$fpDespues) {
+              Write-Output "AVISO: la SECRET_KEY ROTO en este deploy (\$fpAntes -> \$fpDespues) — todas las sesiones se cerraron. Revisar C:\programa-core\.secret_key"
           }
           Write-Output "=== Deploy OK ==="
           PSEOF
