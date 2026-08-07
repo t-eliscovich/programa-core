@@ -7,7 +7,7 @@
 {% set puede_editar = tiene_permiso('precios.editar') %}
 <div class="max-w-6xl solo-pantalla">
   <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
-    {{ page_hero('Lista de precios', 'Precio USD/kg por tipo de tela y clase de color (replica de PRECIOS.DBF).') }}
+    {{ page_hero('Lista de precios', 'Precio USD/kg por tipo de tela y clase de color. Con IVA 15% incluido.') }}
     <div class="no-print flex items-center gap-2">
       {% if puede_editar %}
       <button type="button" id="btn-editar"
@@ -185,7 +185,7 @@
       <div class="text-right">
         <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Descuentos</h2>
         <p class="text-xs text-slate-500 dark:text-slate-400">
-          Basico = precio de lista. Los descuentos son <b>sucesivos</b> (en cascada):
+          <b>Con IVA 15% incluido.</b> Basico = precio de lista. Los descuentos son <b>sucesivos</b> (en cascada):
           5%+9% es 5% y despu&eacute;s otro 9% sobre el ya rebajado (&times;0,95 &times;0,91),
           no un 14% de una.
         </p>

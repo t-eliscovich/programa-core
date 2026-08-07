@@ -397,34 +397,51 @@ def tabla_impresion(
     return out
 
 
-def tabla_descuentos_columna(filas: list[dict], col: dict) -> list[dict]:
+def tabla_descuentos_columna(
+    filas: list[dict], col: dict, con_iva: bool = False
+) -> list[dict]:
     """Igual que `tabla_descuentos` pero para una columna de `columnas_hoja`.
 
     Sirve tanto para una tela de la matriz (el precio cambia por clase) como
     para una de precio único (`fijo`: la misma cifra en las 5 clases), así el
     selector de la pantalla las ofrece a todas por igual.
+
+    Si `con_iva=True`, los precios devueltos ya vienen con el IVA aplicado
+    (misma escala que la hoja imprimible). Federico, 2026-08-07: *"El prg
+    muestra con IVA y sin IVA. Eso está fuera de nuestra historia. Siempre es
+    con IVA incluido"*. En la BD siguen NETOS.
     """
+    iva_mult = (1.0 + IVA_PCT / 100.0) if con_iva else 1.0
     if col.get("fijo") is not None:
         fijo = float(col["fijo"])
         return [
             {
                 "clase": int(f["clase"]),
                 "descripcio": f["descripcio"],
-                "lista": fijo,
-                "netos": [round(fijo * factor, 2) for _, factor in TRAMOS_DESCUENTO],
+                "lista": round(fijo * iva_mult, 2),
+                "netos": [
+                    round(fijo * factor * iva_mult, 2)
+                    for _, factor in TRAMOS_DESCUENTO
+                ],
             }
             for f in filas
         ]
-    return tabla_descuentos(filas, col["col"])
+    return tabla_descuentos(filas, col["col"], con_iva=con_iva)
 
 
-def tabla_descuentos(filas: list[dict], columna: str) -> list[dict]:
+def tabla_descuentos(
+    filas: list[dict], columna: str, con_iva: bool = False
+) -> list[dict]:
     """Precio de lista (Basico) y neto a los 4 tramos en cascada (5%, 5%+9%,
     5%+14%), por clase de color, para UNA tela (`columna`). Solo lectura -- los
     descuentos son derivados, no se guardan.
+
+    Si `con_iva=True`, los valores devueltos vienen con el IVA aplicado (misma
+    escala que la hoja imprimible). Los precios en BD siempre están NETOS.
     """
     if columna not in COLUMNAS_TELA:
         raise ValueError(f"columna invalida: {columna!r}")
+    iva_mult = (1.0 + IVA_PCT / 100.0) if con_iva else 1.0
     out: list[dict] = []
     for f in filas:
         lista = f.get(columna)
@@ -432,14 +449,16 @@ def tabla_descuentos(filas: list[dict], columna: str) -> list[dict]:
         if lista is not None:
             lista = float(lista)
             for _, factor in TRAMOS_DESCUENTO:
-                netos.append(round(lista * factor, 2))
+                netos.append(round(lista * factor * iva_mult, 2))
+            lista_display = round(lista * iva_mult, 2)
         else:
             netos = [None for _ in TRAMOS_DESCUENTO]
+            lista_display = None
         out.append(
             {
                 "clase": int(f["clase"]),
                 "descripcio": f["descripcio"],
-                "lista": lista,
+                "lista": lista_display,
                 "netos": netos,
             }
         )

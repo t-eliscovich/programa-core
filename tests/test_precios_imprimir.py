@@ -392,3 +392,89 @@ def test_la_proforma_no_ofrece_medical_como_tipo():
 
     tpl = Path("modules/proformas/templates/proformas/nueva.html").read_text()
     assert "label:'MEDICAL'" not in tpl.replace(" ", "")
+
+
+# ---------------------------------------------------------------------------
+# 7. La matriz de DESCUENTOS del cuerpo también muestra con IVA
+# (Federico, 2026-08-07, grupo Intela x 3: "El prg muestra con IVA y sin IVA.
+# Eso está fuera de nuestra historia. Siempre es con IVA incluido").
+# La BD sigue NETO — sólo lo que ve el humano cambia de escala.
+# ---------------------------------------------------------------------------
+
+
+def test_tabla_descuentos_por_default_es_neta():
+    """Compat: si nadie pasa `con_iva`, sale igual que antes (NETO)."""
+    out = queries.tabla_descuentos([_fila(jersey=7.93)], "jersey")
+    assert out[0]["lista"] == 7.93
+    assert out[0]["netos"][0] == 7.93  # Basico = precio de lista
+
+
+def test_tabla_descuentos_con_iva_multiplica_todos_los_tramos():
+    """7,93 NETO -> 9,12 con IVA (el numero del Excel "LISTA DE PRECIOS IVA 15%").
+    Y el 5% arranca de ahi: 7,93 x 0,95 x 1,15 = 8,66."""
+    out = queries.tabla_descuentos([_fila(jersey=7.93)], "jersey", con_iva=True)
+    assert out[0]["lista"] == 9.12
+    assert out[0]["netos"][0] == 9.12  # Basico
+    # tramo 1 = 5%
+    idx_5 = [i for i, (lbl, _f) in enumerate(queries.TRAMOS_DESCUENTO) if lbl == "5%"][0]
+    assert out[0]["netos"][idx_5] == round(7.93 * 0.95 * 1.15, 2)
+
+
+def test_tabla_descuentos_columna_con_iva_para_tela_de_matriz():
+    """La entrada del selector es una columna de `columnas_hoja`."""
+    filas = [_fila(jersey=7.93)]
+    cols = queries.columnas_hoja(filas, [])
+    jersey_col = [c for c in cols if c["label"] == "JERSEY"][0]
+    out = queries.tabla_descuentos_columna(filas, jersey_col, con_iva=True)
+    assert out[0]["lista"] == 9.12
+    assert out[0]["netos"][0] == 9.12
+
+
+def test_tabla_descuentos_columna_con_iva_para_tela_de_precio_unico():
+    """SCUBA vale 11,25 NETO -> 12,94 con IVA (el numero del Excel)."""
+    filas = [_fila(jersey=7.93)]
+    cols = queries.columnas_hoja(filas, PLANOS)
+    scuba = [c for c in cols if c["label"] == "SCUBA"][0]
+    out = queries.tabla_descuentos_columna(filas, scuba, con_iva=True)
+    # 11,25 x 1,15 = 12,9375 -> redondea a 12,94
+    assert out[0]["lista"] == 12.94
+    assert out[0]["netos"][0] == 12.94
+
+
+def test_la_matriz_de_descuentos_en_pantalla_va_con_iva(cliente_logueado):
+    """El body de /precios (matriz de descuentos, no la hoja imprimible)
+    muestra JERSEY BLANCO Basico = 10,20 (= 8,87 x 1,15), no 8,87. Federico:
+    "siempre es con IVA incluido"."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
+    # Y la leyenda avisa que va con IVA:
+    assert "Con IVA 15% incluido" in html
+    # Y el numero base (Basico) coincide con la hoja imprimible: 10,20.
+    # (No hay dos numeros distintos para el mismo producto).
+    assert html.count("10,20") >= 2
+
+
+def test_los_precios_en_bd_siguen_netos():
+    """Regla del skill precios-lista, protegida contra regresion: la matriz
+    LEIDA de la BD (`queries.matriz`) devuelve el valor NETO tal cual, sin
+    ningun factor de IVA aplicado. Lo confirmamos leyendo el SQL que arma
+    matriz(): no debe multiplicar por 1.15 ni parecidos. La transformacion a
+    IVA la hace SOLO la capa de vista (`tabla_descuentos`/`tabla_impresion`
+    con `con_iva=True`)."""
+    capturado = {}
+
+    def fake_fetch_all(sql, *a, **kw):
+        capturado["sql"] = sql
+        return [{"clase": 1, "descripcio": "BLANCO", **{c: 7.93 for c, _ in queries.TELAS}}]
+
+    import db
+    original = db.fetch_all
+    db.fetch_all = fake_fetch_all
+    try:
+        filas = queries.matriz()
+    finally:
+        db.fetch_all = original
+    # 1) La BD devuelve NETO: matriz() no lo toca.
+    assert filas[0]["jersey"] == 7.93
+    # 2) El SQL no aplica IVA a la mano.
+    sql = capturado["sql"]
+    assert "1.15" not in sql and "* 1.1" not in sql

@@ -61,8 +61,15 @@ def lista():
             opciones[0]["key"] if opciones else "jersey"
         )
     try:
+        # Federico, 2026-08-07 (grupo Intela x 3): *"El prg muestra con IVA y
+        # sin IVA. Eso está fuera de nuestra historia. Siempre es con IVA
+        # incluido"*. La matriz de descuentos ahora sale con IVA — misma
+        # escala que la hoja imprimible al pie. En BD sigue todo NETO; el
+        # modo Editar también, por la regla del skill precios-lista.
         descuentos = (
-            queries.tabla_descuentos_columna(filas, por_key[tela_sel])
+            queries.tabla_descuentos_columna(
+                filas, por_key[tela_sel], con_iva=True
+            )
             if filas and tela_sel in por_key
             else []
         )
