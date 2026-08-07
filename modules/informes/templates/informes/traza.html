@@ -95,25 +95,26 @@
              scrollear a la derecha la columna de la hora tapaba a Utilidad y
              se leía "DAD". #}
           <th class="px-1.5 py-1 text-left"
-              style="width:5.8em;position:sticky;top:0;left:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
+              style="width:5em;position:sticky;top:0;left:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
           <th class="px-1.5 py-1 text-right"
-              style="width:5.2em;position:sticky;top:0;left:5.8em;z-index:4;background:rgb(248 250 252);font-weight:500;">Utilidad</th>
+              style="width:5.6em;position:sticky;top:0;left:5em;z-index:4;background:rgb(248 250 252);font-weight:500;">Utilidad</th>
           <th class="px-1 py-1 text-right"
-              style="width:4em;position:sticky;top:0;left:11em;z-index:4;background:rgb(248 250 252);font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
+              style="width:4.2em;position:sticky;top:0;left:10.6em;z-index:4;background:rgb(248 250 252);font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
           {% for col, label in deltas %}
             <th class="px-1 py-1 text-right"
-                style="width:4.2em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
+                style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
           {% endfor %}
           {% for col, label in kilos %}
             <th class="px-1 py-1 text-right"
                 style="width:3.4em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
           {% endfor %}
-          <th class="px-1 py-1 text-right"
-              style="width:3.8em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">$/kg</th>
         </tr>
       </thead>
       <tbody>
+        {% set dia = namespace(ultimo='') %}
         {% for f in filas %}
+        {% set _fecha = f.cuando[:5] %}
+        {% set _hora = f.cuando[6:] %}
         {% set roja = f.d_utilidad is not none and f.d_utilidad <= -1000 %}
         {% set fondo = 'rgb(254 242 242)' if roja else 'rgb(255 255 255)' %}
         <tr class="border-t border-slate-100" style="background:{{ fondo }};">
@@ -123,12 +124,13 @@
                data-foto="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                aria-expanded="false" style="color:rgb(30 64 175);"
                ><span class="traza-caret" aria-hidden="true"
-                      style="display:inline-block;width:.7rem;color:rgb(148 163 184);">&rsaquo;</span>{{ f.cuando }}</a>
+                      style="display:inline-block;width:.7rem;color:rgb(148 163 184);">&rsaquo;</span>{% if _fecha != dia.ultimo %}<span
+              style="color:rgb(148 163 184);">{{ _fecha }}</span> {% endif %}{{ _hora }}</a>{% set dia.ultimo = _fecha %}
           </td>
           <td class="px-1.5 py-0.5 text-right"
-              style="font-weight:600;position:sticky;left:5.8em;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
+              style="font-weight:600;position:sticky;left:5em;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
           <td class="px-1 py-0.5 text-right"
-              style="font-weight:600;position:sticky;left:11em;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
+              style="font-weight:600;position:sticky;left:10.6em;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
             {% if f.residuo is not none and (f.residuo | abs) >= 1 %}<span
               title="Los documentos no explican {{ f.residuo | num_es(2) }}"
               style="color:rgb(180 83 9);">▲</span>{% endif -%}
@@ -150,9 +152,6 @@
               {% if f[col] %}{{ (f[col] / 1000) | num_es(0) }}k{% endif %}
             </td>
           {% endfor %}
-          <td class="px-1 py-0.5 text-right" style="color:rgb(51 65 85);">
-            {{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '' }}
-          </td>
         </tr>
         {% endfor %}
       </tbody>

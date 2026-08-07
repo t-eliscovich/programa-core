@@ -23,7 +23,7 @@
         {% if m %}{{ m.aporte | num_es(0) }}{% endif %}
       </td>
     {% endfor %}
-    <td colspan="{{ (kilos | length) + 1 }}"></td>
+    <td colspan="{{ kilos | length }}"></td>
   </tr>
 {% else %}
   {% set columnas = deltas | map(attribute=0) | list %}
@@ -52,7 +52,7 @@
       {% set pinta_kg = (g.col == 'vsto' and not visto.stock) %}
       {% for col, label in kilos %}
         <td class="px-1 py-1 text-right"
-            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if pinta_kg and f.d_kg.get(col) %}color:rgb(51 65 85);{% endif %}">
+            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if pinta_kg and f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
           {% if pinta_kg and f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
         </td>
       {% endfor %}
@@ -64,7 +64,7 @@
     </tr>
   {% else %}
     <tr data-detalle="1" class="border-t border-slate-100">
-      <td colspan="{{ 4 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
+      <td colspan="{{ 3 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
           style="font-size:10.5px;color:rgb(148 163 184);">nada se movió</td>
     </tr>
   {% endfor %}
