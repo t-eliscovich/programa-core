@@ -2025,6 +2025,42 @@ def preview_retenciones_asinfo():
     )
 
 
+@facturas_bp.route("/facturas/retenciones-en-abono", methods=["GET"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def preview_retencion_en_abono():
+    """DRY RUN de las retenciones VIEJAS que quedaron adentro del abono.
+
+    TMT 2026-08-07 (dueña: *"todas las retenciones están en abono"*, y después
+    *"hacéme un dry run primero de cómo quedaría"*). Read-only: no escribe una
+    fila. Muestra, cruzando contra Asinfo, cuánto se movería de Abonado a
+    Retención en cada factura — **sin tocar el saldo**, porque esa plata ya está
+    descontada desde que el dBase la metió en el abono.
+
+    Sin el piso 2026-06-01 de `/facturas/retenciones-asinfo`: justamente lo que
+    hay que mirar acá es lo ANTERIOR a que PC empezara a registrar retenciones.
+    """
+    from datetime import date as _date
+
+    from modules.retenciones import queries as ret_q
+    hoy = today_ec()
+    desde = _parse_date(request.args.get("desde") or "") or _date(2026, 1, 1)
+    hasta = _parse_date(request.args.get("hasta") or "") or _date(2026, 5, 31)
+    if hasta > hoy:
+        hasta = hoy
+    try:
+        data = ret_q.preview_retencion_en_abono(desde, hasta)
+        error = None
+    except Exception as e:
+        data = {"filas": [], "resumen": {}}
+        error = str(e)
+    return render_template(
+        "facturas/retencion_en_abono.html",
+        desde=desde.isoformat(), hasta=hasta.isoformat(),
+        filas=data["filas"], resumen=data["resumen"], error=error,
+    )
+
+
 @facturas_bp.route("/facturas/aplicar-retenciones-asinfo", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.crear")

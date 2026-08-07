@@ -644,35 +644,28 @@ def corregir_doble_retenciones(usuario: str = "web", dry_run: bool = True) -> di
     return res
 
 
-def preview_retenciones_asinfo(desde, hasta) -> dict:
-    """Read-only: por cada retención de Asinfo del período, dice A QUÉ factura de
-    PC iría y QUÉ pasaría, SIN mutar nada. Espeja la clasificación de
-    `_aplicar_una_por_numero` pero en batch (una query por cosa).
+def _match_asinfo_a_facturas(numeros: list[str]) -> tuple[dict, set, set, dict]:
+    """Para una lista de N° SRI de Asinfo, devuelve a qué factura de PC va cada uno.
 
-    Devuelve {"filas": [...], "resumen": {...}}. Cada fila:
-      numero, ret_fuente, ret_iva, ret_total, estado, codigo_cli, cliente,
-      numf, importe, saldo_actual, saldo_nuevo, stat_nuevo.
-    estado ∈ {se_aplica, ya, sin_factura, rete_gt_importe, rete_gt_saldo, rete_0}.
+    Es el MISMO match que hace `_factura_por_numero` de a una, pero en batch: por
+    `numf_completo` y, si no aparece, por el último grupo de dígitos del SRI (las
+    facturas de origen dBase tienen `numf_completo` NULL). Vive en un solo lugar
+    porque ya se pagó el precio de tenerlo duplicado: cuando el aplicador ganó la
+    segunda rama y la pantalla no, el preview daba 896 "sin factura en PC" falsas
+    contra 45 reales (03/08/2026).
+
+    Devuelve `(fac_by_num, via_numf, ya_set, nombres)`:
+      · `fac_by_num` — {numero_sri: fila de factura}
+      · `via_numf`   — los que matchearon por el fallback (para el badge)
+      · `ya_set`     — {"codigo_cli|numf"} que YA tienen fila en scintela.retencion
+      · `nombres`    — {codigo_cli: nombre del cliente}
     """
-    from modules.asinfo import service as asinfo_service
-    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
-    resumen = {
-        "n_total": len(ret_map), "se_aplica": 0, "ya": 0, "sin_factura": 0,
-        "rete_gt_importe": 0, "rete_gt_saldo": 0, "rete_0": 0,
-        "total_a_aplicar": 0.0, "via_numf": 0,
-        "total_periodo": round(
-            sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
-    }
-    if not ret_map:
-        return {"filas": [], "resumen": resumen}
-
-    numeros = list(ret_map.keys())
     # Facturas vivas de PC por numf_completo (mismo filtro que _factura_por_numero:
     # no backfill, no anulada 'X'). ORDER BY id_factura → nos quedamos con la 1ra.
     fac_rows = db.fetch_all(
         """
-        SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
-               retencion, saldo, stat
+        SELECT id_factura, codigo_cli, numf, numf_completo, fecha,
+               importe, abono, retencion, saldo, stat
           FROM scintela.factura
          WHERE numf_completo = ANY(%s)
            AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
@@ -698,8 +691,8 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
         por_numf: dict = {}
         for f in db.fetch_all(
             """
-            SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
-                   retencion, saldo, stat
+            SELECT id_factura, codigo_cli, numf, numf_completo, fecha,
+                   importe, abono, retencion, saldo, stat
               FROM scintela.factura
              WHERE numf = ANY(%s)
                AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
@@ -733,6 +726,128 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
             (codigos,),
         ):
             nombres[cr["codigo_cli"]] = cr["nombre"]
+
+    return fac_by_num, via_numf, ya_set, nombres
+
+
+def preview_retencion_en_abono(desde, hasta) -> dict:
+    """DRY RUN, no escribe nada: las retenciones VIEJAS que quedaron adentro del
+    abono y cuánto se movería a la columna Retención.
+
+    El problema (dueña, 07/08/2026: *"todas las retenciones están en abono"*):
+    mientras el dBase fue la fuente de verdad, RETENCIO.PRG sumaba la retención
+    al abono de la factura y Programa Core nunca se enteró de que ese pedazo del
+    abono era una retención — no hay fila en `scintela.retencion`. La migración
+    0179 sólo pudo separar las que sí tenían fila (1.461). El resto sigue
+    diciendo "Abonado" cuando en realidad el cliente retuvo esa plata.
+
+    ⚠️ Estas NO se pueden "aplicar" como una retención nueva: el aplicador
+    DESCUENTA del saldo, y acá el saldo ya está descontado (el abono lo bajó en
+    su momento). Lo único correcto es MOVER: `abono -= rete`, `retencion +=
+    rete`, y el saldo queda EXACTAMENTE igual — la misma operación que hizo el
+    backfill de la 0179. Por eso esta pantalla es su propio preview y no reusa
+    el de `/facturas/retenciones-asinfo`.
+
+    Quién dice cuánto es: **Asinfo**, no un porcentaje. Se cruza el N° SRI y se
+    usa el importe exacto que retuvo el cliente. Nada se deduce de que el abono
+    "parezca" un 1,74%.
+
+    Devuelve {"filas": [...], "resumen": {...}}. Estados:
+      · `se_mueve`     — hay abono suficiente: se mueve `rete` de abono a
+                         retención y el saldo no cambia.
+      · `ya_separada`  — ya tiene su fila / su columna: no hay nada que hacer.
+      · `abono_corto`  — el abono es menor que la retención de Asinfo: mover
+                         dejaría el abono negativo. Va a mano (¿pago parcial?
+                         ¿la retención nunca entró?).
+      · `sin_factura`  — no está en PC.
+    """
+    from modules.asinfo import service as asinfo_service
+
+    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
+    resumen = {
+        "n_total": len(ret_map), "se_mueve": 0, "ya_separada": 0,
+        "abono_corto": 0, "sin_factura": 0, "via_numf": 0,
+        "total_a_mover": 0.0,
+        "total_periodo": round(
+            sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
+    }
+    if not ret_map:
+        return {"filas": [], "resumen": resumen}
+
+    fac_by_num, via_numf, ya_set, nombres = _match_asinfo_a_facturas(
+        list(ret_map.keys()))
+
+    filas: list = []
+    for numero, r in ret_map.items():
+        rete = round(float((r or {}).get("ret_total") or 0), 2)
+        f = fac_by_num.get(numero)
+        fila = {
+            "numero": numero, "ret_total": rete, "via_numf": numero in via_numf,
+            "codigo_cli": None, "cliente": None, "numf": None, "fecha": None,
+            "importe": None, "abono_actual": None, "abono_nuevo": None,
+            "retencion_nueva": None, "saldo": None, "estado": None,
+        }
+        if fila["via_numf"]:
+            resumen["via_numf"] += 1
+        if rete <= 0.005 or not f:
+            fila["estado"] = "sin_factura"
+            resumen["sin_factura"] += 1
+            filas.append(fila)
+            continue
+        importe = round(float(f["importe"] or 0), 2)
+        abono = round(float(f["abono"] or 0), 2)
+        retencion = round(float(f["retencion"] or 0), 2)
+        saldo = round(float(f["saldo"] or 0), 2)
+        fila.update({
+            "codigo_cli": f["codigo_cli"],
+            "cliente": nombres.get(f["codigo_cli"], ""),
+            "numf": f["numf"], "fecha": f.get("fecha"),
+            "importe": importe, "abono_actual": abono, "saldo": saldo,
+        })
+        if retencion > 0.005 or f"{f['codigo_cli']}|{f['numf']}" in ya_set:
+            fila["estado"] = "ya_separada"
+            resumen["ya_separada"] += 1
+        elif abono + 0.01 < rete:
+            fila["estado"] = "abono_corto"
+            resumen["abono_corto"] += 1
+        else:
+            fila["estado"] = "se_mueve"
+            fila["abono_nuevo"] = round(abono - rete, 2)
+            fila["retencion_nueva"] = rete
+            resumen["se_mueve"] += 1
+            resumen["total_a_mover"] = round(resumen["total_a_mover"] + rete, 2)
+        filas.append(fila)
+
+    orden = {"se_mueve": 0, "abono_corto": 1, "ya_separada": 2, "sin_factura": 3}
+    filas.sort(key=lambda x: (orden.get(x["estado"], 9), -(x["ret_total"] or 0)))
+    return {"filas": filas, "resumen": resumen}
+
+
+def preview_retenciones_asinfo(desde, hasta) -> dict:
+    """Read-only: por cada retención de Asinfo del período, dice A QUÉ factura de
+    PC iría y QUÉ pasaría, SIN mutar nada. Espeja la clasificación de
+    `_aplicar_una_por_numero` pero en batch (una query por cosa).
+
+    Devuelve {"filas": [...], "resumen": {...}}. Cada fila:
+      numero, ret_fuente, ret_iva, ret_total, estado, codigo_cli, cliente,
+      numf, importe, saldo_actual, saldo_nuevo, stat_nuevo.
+    estado ∈ {se_aplica, ya, sin_factura, rete_gt_importe, rete_gt_saldo, rete_0}.
+    """
+    from modules.asinfo import service as asinfo_service
+    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
+    resumen = {
+        "n_total": len(ret_map), "se_aplica": 0, "ya": 0, "sin_factura": 0,
+        "rete_gt_importe": 0, "rete_gt_saldo": 0, "rete_0": 0,
+        "total_a_aplicar": 0.0, "via_numf": 0,
+        "total_periodo": round(
+            sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
+    }
+    if not ret_map:
+        return {"filas": [], "resumen": resumen}
+
+    # `via_numf` lo cuenta el bucle de abajo, fila por fila.
+    fac_by_num, via_numf, ya_set, nombres = _match_asinfo_a_facturas(
+        list(ret_map.keys()))
 
     filas: list = []
     for numero, r in ret_map.items():
