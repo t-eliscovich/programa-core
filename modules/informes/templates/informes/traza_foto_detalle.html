@@ -33,7 +33,7 @@
     <tr data-detalle="1" class="border-t border-slate-100">
       <td colspan="3" class="px-1.5 py-1"
           style="font-size:10.5px;color:rgb(180 83 9);white-space:nowrap;
-                 position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(252 211 77);">
+                 background:#fff;box-shadow:inset 3px 0 0 rgb(252 211 77);">
         reconstruido — puede faltar lo cobrado
       </td>
       <td colspan="{{ (deltas | length) + (kilos | length) + 2 }}"></td>
@@ -50,13 +50,13 @@
          es y se me va de la tabla"*). #}
       <td colspan="2" class="px-1.5 py-1"
           style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;
-                 position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);"
+                 background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);"
+          data-tz="1"
           title="{{ g.texto }}">
         <span style="color:rgb(203 213 225);padding-left:.35rem;">└</span>
         {% if g.url %}<a href="{{ g.url }}" style="color:rgb(30 64 175);">{{ g.texto }}</a>{% else %}{{ g.texto }}{% endif %}
       </td>
-      <td class="px-1 py-1 text-right"
-          style="position:sticky;left:10.6em;background:#fff;{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+      <td class="px-1 py-1 text-right tz-3" style="background:#fff;{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
         {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
       </td>
       {% for col, label in deltas %}

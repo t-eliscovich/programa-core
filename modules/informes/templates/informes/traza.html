@@ -18,6 +18,19 @@
    Balance y adentro del detalle de cada foto.
    Tailwind está congelado (build JIT) → todo el estilo va inline. #}
 <style>
+  /* 🚨 Los offsets del sticky NO se escriben a mano. Estaban en `em` y la
+     tabla pasó a ancho automático: ahí el ancho de cada columna lo fija su
+     CONTENIDO, así que los números quedaron viejos y las tres primeras
+     columnas se pisaban entre sí al scrollear al costado — la hora tapada por
+     la utilidad, "CUÁNDO" cortado. Los mide el navegador al cargar y quedan
+     en estas variables. Es exacto con cualquier tipografía, zoom o contenido,
+     y no se puede volver a desincronizar. */
+  #traza-tabla { --tz1: 0px; --tz2: 0px; }
+  .tz-1 { position: sticky; left: 0; }
+  .tz-2 { position: sticky; left: var(--tz1); }
+  .tz-3 { position: sticky; left: calc(var(--tz1) + var(--tz2));
+          /* el borde del bloque fijo, para que se vea qué pasa por debajo */
+          box-shadow: 2px 0 0 -1px rgb(226 232 240); }
   /* El signo de pregunta vive escondido y aparece con el hover de la fila.
      `visibility` y no `display` para que no corra el número al aparecer. */
   .traza-porque { visibility: hidden; cursor: pointer; margin-right: .25rem;
@@ -83,12 +96,9 @@
           {# Las tres primeras quedan fijas también al costado: sin eso, al
              scrollear a la derecha la columna de la hora tapaba a Utilidad y
              se leía "DAD". #}
-          <th class="px-1.5 py-1 text-left"
-              style="width:5em;position:sticky;top:0;left:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
-          <th class="px-1.5 py-1 text-right"
-              style="width:5.6em;position:sticky;top:0;left:5em;z-index:4;background:rgb(248 250 252);font-weight:500;">Utilidad</th>
-          <th class="px-1 py-1 text-right"
-              style="width:4.2em;position:sticky;top:0;left:10.6em;z-index:4;background:rgb(248 250 252);font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
+          <th class="px-1.5 py-1 text-left tz-1" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
+          <th class="px-1.5 py-1 text-right tz-2" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Utilidad</th>
+          <th class="px-1 py-1 text-right tz-3" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
           {% for col, label in deltas %}
             <th class="px-1 py-1 text-right"
                 style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
@@ -116,8 +126,7 @@
         {% set roja = f.d_utilidad is not none and f.d_utilidad <= -1000 %}
         {% set fondo = 'rgb(254 242 242)' if roja else 'rgb(255 255 255)' %}
         <tr class="border-t border-slate-100" style="background:{{ fondo }};">
-          <td class="px-1.5 py-0.5"
-              style="white-space:nowrap;position:sticky;left:0;z-index:1;background:{{ fondo }};">
+          <td class="px-1.5 py-0.5 tz-1" style="white-space:nowrap;position:sticky;z-index:1;background:{{ fondo }};">
             <a href="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                data-foto="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                aria-expanded="false" style="color:rgb(30 64 175);"
@@ -125,10 +134,8 @@
                       style="display:inline-block;width:.7rem;color:rgb(148 163 184);">&rsaquo;</span>{% if _fecha != dia.ultimo %}<span
               style="color:rgb(148 163 184);">{{ _fecha }}</span> {% endif %}{{ _hora }}</a>{% set dia.ultimo = _fecha %}
           </td>
-          <td class="px-1.5 py-0.5 text-right"
-              style="font-weight:600;position:sticky;left:5em;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
-          <td class="px-1 py-0.5 text-right"
-              style="font-weight:600;position:sticky;left:10.6em;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
+          <td class="px-1.5 py-0.5 text-right tz-2" style="font-weight:600;position:sticky;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
+          <td class="px-1 py-0.5 text-right tz-3" style="font-weight:600;position:sticky;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
             {% if f.residuo is not none and (f.residuo | abs) >= 1 %}<span
               title="Los documentos no explican {{ f.residuo | num_es(2) }}"
               style="color:rgb(180 83 9);">▲</span>{% endif -%}
@@ -201,6 +208,17 @@
 (function () {
   var tabla = document.getElementById('traza-tabla');
   if (!tabla) { return; }
+  // Mide las dos primeras columnas y deja el ancho REAL en las variables que
+  // usa el sticky. Se recalcula al redimensionar: cambiar el zoom o la
+  // ventana cambia los anchos.
+  function medir() {
+    var th = tabla.tHead && tabla.tHead.rows[0];
+    if (!th || th.cells.length < 2) { return; }
+    tabla.style.setProperty('--tz1', th.cells[0].offsetWidth + 'px');
+    tabla.style.setProperty('--tz2', th.cells[1].offsetWidth + 'px');
+  }
+  medir();
+  window.addEventListener('resize', medir);
   function cerrar(fila, a) {
     var sig = fila.nextElementSibling;
     while (sig && (sig.getAttribute('data-detalle') === '1'
