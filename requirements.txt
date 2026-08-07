@@ -23,3 +23,4 @@ ruff==0.6.3
 pytest-postgresql>=6.1
 psycopg[binary]>=3.2.10
 dbfread>=2.0   # importador DBF → Postgres (proceso de transición; ver docs/RUNBOOK_sync_dbf.md)
+boto3>=1.34

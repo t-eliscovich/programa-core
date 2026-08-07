@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Nota del cierre por mail{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Nota del cierre</strong>{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;">
+  {{ page_hero(
+      'Nota del cierre por mail',
+      descripcion='Sale sola con la foto de las 18:00 de Ecuador, a los destinatarios activos.',
+      kpi_valor=(destinatarios | selectattr('activo') | list | length) ~ ' activos'
+  ) }}
+
+  {% if motivo %}
+    <div class="my-3 border rounded px-3 py-2 text-sm"
+         style="border-color:rgb(252 211 77);background:rgb(255 251 235);">
+      <strong>Todavía no puede mandar.</strong> {{ motivo }}
+    </div>
+  {% endif %}
+
+  <div class="my-4 border border-slate-200 rounded bg-white">
+    <table class="w-full text-sm">
+      <tbody>
+        {% for d in destinatarios %}
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2">{{ d.correo }}{% if d.nombre %}
+            <span class="text-slate-500">· {{ d.nombre }}</span>{% endif %}</td>
+          <td class="px-3 py-2 text-right" style="width:9rem;">
+            <form method="post" class="inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="id" value="{{ d.id_destinatario }}">
+              <input type="hidden" name="accion" value="{{ 'desactivar' if d.activo else 'activar' }}">
+              <button class="text-xs px-2 py-1 rounded border"
+                      style="border-color:rgb(203 213 225);{% if not d.activo %}color:rgb(148 163 184);{% endif %}">
+                {{ 'Recibe' if d.activo else 'No recibe' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="px-3 py-4 text-sm text-slate-500">Nadie todavía.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" class="my-3 flex items-center gap-2 flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="accion" value="agregar">
+    <input name="correo" type="email" required placeholder="correo@ejemplo.com"
+           class="text-sm px-2 py-1.5 rounded border border-slate-300" style="min-width:16rem;">
+    <input name="nombre" placeholder="nombre (opcional)"
+           class="text-sm px-2 py-1.5 rounded border border-slate-300">
+    <button class="text-sm px-3 py-1.5 rounded border"
+            style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Agregar</button>
+  </form>
+
+  <form method="post" class="my-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="accion" value="probar">
+    <button class="text-sm px-3 py-1.5 rounded border"
+            style="border-color:rgb(148 163 184);">Mandarla ahora (prueba)</button>
+    <span class="text-xs text-slate-500" style="margin-left:.5rem;">Sale de {{ remitente }}.</span>
+  </form>
+
+  <div class="my-4">
+    <div class="text-xs text-slate-500" style="margin-bottom:.25rem;">Así se ve hoy:</div>
+    <pre class="border border-slate-200 rounded bg-white px-3 py-2"
+         style="font-size:12px;white-space:pre-wrap;">{{ vista_previa }}</pre>
+  </div>
+</div>
+{% endblock %}

@@ -142,13 +142,15 @@
             </td>
           {% endfor %}
           {% for col, label in kilos %}
+            {# Un nivel de stock no es bueno ni malo: va sin color y sin
+               apagar. La "k" en el mismo tono que el número — pintarla de gris
+               la hacía parecer otra cosa. #}
             <td class="px-1 py-0.5 text-right"
-                style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if col not in f.movidas %}color:rgb(148 163 184);{% endif %}">
-              {% if f[col] %}{{ (f[col] / 1000) | num_es(0) }}<span style="color:rgb(148 163 184);">k</span>{% endif %}
+                style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}color:rgb(51 65 85);">
+              {% if f[col] %}{{ (f[col] / 1000) | num_es(0) }}k{% endif %}
             </td>
           {% endfor %}
-          <td class="px-1 py-0.5 text-right"
-              style="{% if 'hilado_ukg' not in f.movidas %}color:rgb(148 163 184);{% endif %}">
+          <td class="px-1 py-0.5 text-right" style="color:rgb(51 65 85);">
             {{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '' }}
           </td>
         </tr>

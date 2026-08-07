@@ -216,6 +216,10 @@ def correr_si_toca() -> dict:
             r = capturar(m)
             if r.get("ok"):
                 res["capturado"] = m
+                if m == "cierre":
+                    # La nota sale con la foto del cierre, no antes: es lo que
+                    # esa foto explica.
+                    res["nota"] = enviar_nota(hoy)
                 _LOG.info("dia: captura '%s' de %s (%s movimientos)",
                           m, hoy, r.get("movimientos"))
                 break
@@ -713,6 +717,104 @@ def mensaje_whatsapp(fecha=None) -> str:
 
 
 # ── Lectura: la explicación ─────────────────────────────────────────────────
+
+# ── La nota del cierre, por mail ────────────────────────────────────────────
+
+def destinatarios() -> list[dict]:
+    """A quién le llega la nota. Se administran POR PANTALLA."""
+    return _rows(
+        "SELECT id_destinatario, correo, nombre, activo "
+        "  FROM scintela.nota_destinatario ORDER BY activo DESC, correo")
+
+
+def agregar_destinatario(correo: str, nombre: str, usuario: str) -> tuple[bool, str]:
+    correo = (correo or "").strip().lower()
+    if "@" not in correo or " " in correo or len(correo) > 200:
+        return False, "Ese correo no parece un correo."
+    try:
+        db.execute(
+            "INSERT INTO scintela.nota_destinatario (correo, nombre, usuario_crea) "
+            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (correo, (nombre or "").strip()[:80] or None, (usuario or "")[:40]))
+        return True, f"{correo} agregado."
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("dia: no pude agregar destinatario (%s)", e)
+        return False, "No se pudo agregar."
+
+
+def cambiar_destinatario(id_destinatario: int, activo: bool) -> bool:
+    try:
+        db.execute("UPDATE scintela.nota_destinatario SET activo = %s "
+                   " WHERE id_destinatario = %s", (bool(activo), int(id_destinatario)))
+        return True
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("dia: no pude cambiar el destinatario (%s)", e)
+        return False
+
+
+def enviar_nota(fecha=None, forzar: bool = False) -> dict:
+    """Manda la nota del día por mail. Nunca lanza.
+
+    🚨 La idempotencia la da la BASE (`dia_captura.nota_enviada_en`), no una
+    variable de proceso: el hilo de fondo pasa cada dos minutos y el server
+    reinicia, así que cualquier memoria en RAM manda el mail dos veces. Misma
+    lección que el índice único de las capturas ancla.
+
+    El sello se pone ANTES de mandar y sólo si el UPDATE agarra la fila —así
+    dos procesos simultáneos no pueden mandar los dos—. Si después el envío
+    falla, se limpia para poder reintentar.
+    """
+    from modules._lib import mailer
+
+    fecha = fecha or hoy_ec()
+    res = {"ok": False, "motivo": "", "destinatarios": 0, "id": ""}
+    try:
+        cierre = _rows(
+            "SELECT id_captura, nota_enviada_en FROM scintela.dia_captura "
+            " WHERE fecha_ec = %s AND momento = 'cierre' LIMIT 1", (fecha,))
+        if not cierre:
+            res["motivo"] = "todavía no hay captura de cierre"
+            return res
+        idc = cierre[0]["id_captura"]
+        if cierre[0].get("nota_enviada_en") and not forzar:
+            res["motivo"] = "la nota de hoy ya se mandó"
+            return res
+
+        correos = [d["correo"] for d in destinatarios() if d.get("activo")]
+        if not correos:
+            res["motivo"] = "no hay destinatarios activos"
+            return res
+        if not mailer.habilitado():
+            res["motivo"] = mailer.motivo_no_disponible()
+            return res
+
+        if not forzar:
+            tomada = db.execute(
+                "UPDATE scintela.dia_captura SET nota_enviada_en = CURRENT_TIMESTAMP "
+                " WHERE id_captura = %s AND nota_enviada_en IS NULL", (idc,))
+            if not tomada:
+                res["motivo"] = "la nota de hoy ya se mandó"
+                return res
+
+        texto = mensaje_whatsapp(fecha)
+        dia_txt = fecha.strftime("%d/%m") if hasattr(fecha, "strftime") else str(fecha)
+        env = mailer.enviar(f"INTELA · cierre del {dia_txt}", texto, correos)
+        if not env.get("ok"):
+            if not forzar:
+                # Se libera para poder reintentar en la vuelta siguiente.
+                db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = NULL "
+                           " WHERE id_captura = %s", (idc,))
+            res["motivo"] = env.get("motivo") or "no se pudo mandar"
+            return res
+        if forzar:
+            db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = "
+                       "CURRENT_TIMESTAMP WHERE id_captura = %s", (idc,))
+        res.update(ok=True, destinatarios=len(correos), id=env.get("id") or "")
+    except Exception as e:  # noqa: BLE001 -- cuelga del hilo de fondo
+        _LOG.warning("dia: no pude mandar la nota (%s)", e)
+        res["motivo"] = str(e)[:150]
+    return res
+
 
 def capturas(fecha) -> list[dict]:
     return _rows(

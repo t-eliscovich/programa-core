@@ -52,7 +52,7 @@
       {% set pinta_kg = (g.col == 'vsto' and not visto.stock) %}
       {% for col, label in kilos %}
         <td class="px-1 py-1 text-right"
-            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if pinta_kg and f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if pinta_kg and f.d_kg.get(col) %}color:rgb(51 65 85);{% endif %}">
           {% if pinta_kg and f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
         </td>
       {% endfor %}

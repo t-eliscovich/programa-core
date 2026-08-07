@@ -1254,6 +1254,45 @@ def traza():
     )
 
 
+@informes_bp.route("/dia/nota", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def dia_nota_destinatarios():
+    """A quién le llega la nota del cierre, y un botón para probarla.
+
+    TMT 2026-08-06: *"la nota diaria por mail… hacelo con
+    teliscovich@gmail.com"*. Los destinatarios van por PANTALLA y no por
+    variable de entorno: sumar a un accionista no puede requerir un deploy.
+    """
+    from modules._lib import mailer
+    from modules.informes import dia as _dia
+
+    if request.method == "POST":
+        accion = (request.form.get("accion") or "").strip()
+        usuario = (getattr(g, "user", None) or {}).get("username") or ""
+        if accion == "agregar":
+            ok, msg = _dia.agregar_destinatario(
+                request.form.get("correo"), request.form.get("nombre"), usuario)
+            flash(msg, "success" if ok else "error")
+        elif accion in ("activar", "desactivar"):
+            _dia.cambiar_destinatario(request.form.get("id"), accion == "activar")
+        elif accion == "probar":
+            # `forzar` saltea la idempotencia: es a pedido, no la automática.
+            r = _dia.enviar_nota(forzar=True)
+            flash(f"Nota mandada a {r['destinatarios']} destinatario(s)."
+                  if r.get("ok") else f"No salió: {r.get('motivo')}",
+                  "success" if r.get("ok") else "error")
+        return redirect(url_for("informes.dia_nota_destinatarios"))
+
+    return render_template(
+        "informes/dia_nota.html",
+        destinatarios=_dia.destinatarios(),
+        vista_previa=_dia.mensaje_whatsapp(),
+        remitente=mailer.remitente(),
+        motivo=mailer.motivo_no_disponible(),
+    )
+
+
 @informes_bp.route("/traza/<int:id_traza>")
 @requiere_login
 @requiere_permiso("informes.ver")
