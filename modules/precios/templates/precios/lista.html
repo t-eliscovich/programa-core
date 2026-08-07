@@ -383,8 +383,8 @@
       <div style="min-width:0;">
         <img src="{{ url_for('static', filename='intela-logo.png') }}" alt="Intela"
              style="height:34px; width:auto; display:block; margin-bottom:10px;">
-        <h1 style="margin:0; color:#0f172a; font-size:18px; font-weight:700; letter-spacing:.02em;">
-          LISTA DE PRECIOS · IVA INCLUIDO
+        <h1 class="text-2xl font-semibold tracking-tight" style="margin:0; color:#0f172a;">
+          Lista de precios · IVA incluido
         </h1>
         <p style="margin:3px 0 0; color:#475569; font-size:12px;">
           {% if tramo_idx == 0 %}Precio de lista (sin descuento){% else %}Descuento {{ tramo_label }}{% endif %}
