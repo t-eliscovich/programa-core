@@ -245,11 +245,21 @@ def _factura_por_numero(numero: str, conn):
 
 
 def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
-                            batch_id: str | None = None) -> str:
+                            batch_id: str | None = None,
+                            solo_sin_abono: bool = False) -> str:
     """Registra scintela.retencion + baja el saldo de la factura `numero`.
 
     Devuelve: 'aplicada' | 'ya' (ya tenía retención) | 'sin_factura' |
-    'rete_0' | 'rete_gt_importe' | 'rete_gt_saldo'.
+    'rete_0' | 'rete_gt_importe' | 'rete_gt_saldo' | 'tiene_abono'.
+
+    `solo_sin_abono` es el freno del BARRIDO de períodos viejos: en las facturas
+    de la época del dBase la retención puede estar ya sumada adentro del abono
+    (RETENCIO.PRG la metía ahí y no dejaba fila en `scintela.retencion`, así que
+    el guard `ya` no la ve). Aplicarla otra vez le descontaría el saldo DOS
+    veces al cliente, en silencio. Con el freno puesto, cualquier factura que
+    tenga algún abono se saltea y sale por la pantalla
+    `/facturas/retenciones-en-abono`, que la mira de a una. Si el abono es 0 no
+    hay nada adentro que pueda estar duplicado, y aplicar es seguro.
 
     Nota 2026-08-06: 'registrada' ya no se devuelve — era la rama "el dBase
     ya aplicó el abono" y el dBase se retiró. La retención siempre SUMA.
@@ -281,6 +291,8 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
         # retención ya aplicada nunca cae acá al re-correr el cron.)
         if rete > saldo + 0.01:
             return "rete_gt_saldo"
+        if solo_sin_abono and abono > 0.005:
+            return "tiene_abono"
         stat_prev = (f["stat"] or "").strip()
         rrow = db.execute_returning(
             "INSERT INTO scintela.retencion "
@@ -338,7 +350,8 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
     return "aplicada" if aplicado else "registrada"
 
 
-def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
+def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web",
+                               solo_sin_abono: bool = False) -> dict:
     """Trae las retenciones de Asinfo del período y las aplica a las facturas
     de PC (registra scintela.retencion + baja el saldo). Idempotente.
 
@@ -349,7 +362,8 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     res = {
         "n_aplicadas": 0, "n_registradas": 0, "n_ya": 0, "n_sin_factura": 0,
-        "n_error": 0, "total_aplicado": 0.0, "n_retenciones_asinfo": len(ret_map),
+        "n_error": 0, "n_tiene_abono": 0,
+        "total_aplicado": 0.0, "n_retenciones_asinfo": len(ret_map),
         # TMT 2026-08-03: un CONTADOR no se puede investigar. Las que no
         # encuentran factura salían por un `return "sin_factura"` que no dejaba
         # log, ni mov_doble, ni fila: eran 45 invisibles. Ahora se listan.
@@ -365,7 +379,8 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
     for numero, r in ret_map.items():
         rete = round(float((r or {}).get("ret_total") or 0), 2)
         try:
-            estado = _aplicar_una_por_numero(numero, rete, usuario, batch_id)
+            estado = _aplicar_una_por_numero(
+                numero, rete, usuario, batch_id, solo_sin_abono=solo_sin_abono)
         except Exception:
             res["n_error"] += 1
             continue
@@ -376,6 +391,9 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
             res["n_registradas"] += 1
         elif estado == "ya":
             res["n_ya"] += 1
+        elif estado == "tiene_abono":
+            # No es un error: es el freno del barrido. Se mira por pantalla.
+            res["n_tiene_abono"] += 1
         elif estado == "sin_factura":
             res["n_sin_factura"] += 1
             if len(res["sin_factura"]) < _MAX_DETALLE:

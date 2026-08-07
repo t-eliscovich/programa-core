@@ -260,7 +260,7 @@ def test_lote_tally(monkeypatch):
     })
     outcomes = {"A": "aplicada", "B": "aplicada", "C": "ya", "D": "sin_factura"}
     monkeypatch.setattr(q, "_aplicar_una_por_numero",
-                        lambda numero, rete, usuario, batch_id=None: outcomes[numero])
+                        lambda numero, rete, usuario, batch_id=None, solo_sin_abono=False: outcomes[numero])
     r = q.aplicar_retenciones_asinfo("2026-07-01", "2026-07-08", usuario="t")
     assert r["n_aplicadas"] == 2 and r["total_aplicado"] == 30.0
     assert r["n_ya"] == 1 and r["n_sin_factura"] == 1

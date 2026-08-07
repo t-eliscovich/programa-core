@@ -237,7 +237,7 @@ def test_lote_lista_las_sin_factura(monkeypatch):
                 "001-099-000176816": "sin_factura",
                 "001-099-000180758": "ya"}
     monkeypatch.setattr(q, "_aplicar_una_por_numero",
-                        lambda numero, rete, usuario, batch_id=None: outcomes[numero])
+                        lambda numero, rete, usuario, batch_id=None, solo_sin_abono=False: outcomes[numero])
     r = q.aplicar_retenciones_asinfo("2026-06-04", "2026-08-03", usuario="cron")
     assert r["n_sin_factura"] == 2
     assert r["sin_factura"] == [
@@ -255,7 +255,7 @@ def test_lote_topea_el_detalle(monkeypatch):
     monkeypatch.setattr(svc, "retenciones_periodo", lambda d, h: {
         f"001-099-{i:09d}": {"ret_total": 1.0} for i in range(n)})
     monkeypatch.setattr(q, "_aplicar_una_por_numero",
-                        lambda numero, rete, usuario, batch_id=None: "sin_factura")
+                        lambda numero, rete, usuario, batch_id=None, solo_sin_abono=False: "sin_factura")
     r = q.aplicar_retenciones_asinfo("2026-06-04", "2026-08-03")
     assert r["n_sin_factura"] == n
     assert len(r["sin_factura"]) == q._MAX_DETALLE

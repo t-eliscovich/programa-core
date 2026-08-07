@@ -1983,15 +1983,22 @@ def cargar_desde_asinfo():
     return redirect(url_for("facturas.desde_asinfo"))
 
 
-def _rango_retenciones():
-    """Lee desde/hasta del form para las acciones de retenciones (mismo piso
-    2026-06-01 que la vista)."""
+def _rango_retenciones(con_piso: bool = True):
+    """Lee desde/hasta del form para las acciones de retenciones.
+
+    `con_piso=True` (default) corta en 2026-06-01: es el freno para las
+    acciones que aplican TODO un período de una. `con_piso=False` es para la
+    aplicación de las TILDADAS, donde una persona eligió fila por fila — ahí sí
+    se puede ir a buscar una retención vieja que quedó huérfana (TMT
+    2026-08-07: las de febrero a mayo que nadie miraba, ver
+    `_aplicar_retenciones_asinfo_cron`).
+    """
     from datetime import date as _date
     hoy = today_ec()
     desde = _parse_date(request.form.get("desde") or "") or (
         hoy.replace(day=1))
     hasta = _parse_date(request.form.get("hasta") or "") or hoy
-    if desde < _date(2026, 6, 1):
+    if con_piso and desde < _date(2026, 6, 1):
         desde = _date(2026, 6, 1)
     return desde, hasta
 
@@ -2010,8 +2017,12 @@ def preview_retenciones_asinfo():
     hoy = today_ec()
     desde = _parse_date(request.args.get("desde") or "") or hoy.replace(day=1)
     hasta = _parse_date(request.args.get("hasta") or "") or hoy
-    if desde < _date(2026, 6, 1):
-        desde = _date(2026, 6, 1)
+    # TMT 2026-08-07: se saca el piso 2026-06-01 de ESTA pantalla. Es read-only
+    # y es la única forma de VER (y después tildar) las retenciones viejas que
+    # quedaron huérfanas cuando PC tomó la posta del dBase y sólo miró 60 días
+    # para atrás. El freno sigue donde importa: aplicar TODO un período de una
+    # sigue cortando en junio (`_rango_retenciones`), porque en lo anterior la
+    # retención puede estar ya sumada adentro del abono.
     try:
         data = ret_q.preview_retenciones_asinfo(desde, hasta)
         error = None
@@ -2093,7 +2104,10 @@ def aplicar_retenciones_asinfo_seleccion():
     """Aplica SOLO las retenciones tildadas en la pantalla de detalle. Form:
     numeros[] (facturas SRI) + desde/hasta. Vuelve a la pantalla de detalle."""
     from modules.retenciones import queries as ret_q
-    desde, hasta = _rango_retenciones()
+    # Sin piso: acá una persona tildó fila por fila, así que puede ir a buscar
+    # una retención vieja que quedó huérfana. El bloque de arriba (aplicar TODO
+    # el período) sí conserva el piso 2026-06-01. TMT 2026-08-07.
+    desde, hasta = _rango_retenciones(con_piso=False)
     numeros = request.form.getlist("numeros")
     usuario = (
         getattr(g, "user", {}).get("username")

@@ -1531,7 +1531,29 @@ def _refrescar_mails_asinfo_cron() -> dict:
 
 
 def _aplicar_retenciones_asinfo_cron(dias: int = 60) -> dict:
-    """Aplica (idempotente) las retenciones de Asinfo de los últimos `dias`.
+    """Aplica (idempotente) las retenciones de Asinfo de los últimos `dias`,
+    y de paso barre UN mes viejo por día.
+
+    🚨 EL AGUJERO QUE ESTO TAPA (TMT 2026-08-07). La consulta a Asinfo filtra
+    por la fecha de la **FACTURA**, no por la del cobro — medido: pidiendo el
+    1–10/05 vuelven sólo facturas del 4 al 8/05, ninguna de afuera. Como el
+    cron pide siempre los últimos 60 días, una retención que Asinfo registre
+    hoy contra una factura de hace tres meses **no la mira nadie, nunca**: ni
+    el cron ni la pantalla (que además tenía piso 2026-06-01). Así quedaron
+    huérfanas las de febrero a mayo, de cuando PC tomó la posta del dBase y
+    sólo miró 60 días para atrás.
+
+    El barrido recorre un mes viejo por día, rotando por el día del mes, así
+    que en un mes cubre el año. Va de a un mes por dos razones medidas: pedirle
+    a Asinfo un rango grande tarda 10-30 s (y un mes entero llegó a colgar la
+    app con 502), y el cron no puede quedarse esperando.
+
+    ⚠️ El barrido va con `solo_sin_abono=True`: en las facturas viejas la
+    retención puede estar ya sumada adentro del abono (RETENCIO.PRG del dBase
+    la metía ahí sin dejar fila en `scintela.retencion`, así que el guard `ya`
+    no la ve) y aplicarla otra vez descontaría el saldo dos veces. Las que
+    tienen abono se saltean y se miran de a una en
+    `/facturas/retenciones-en-abono`.
 
     Para el cron diario (/admin/health/all). Fail-soft: cualquier excepción se
     devuelve como {ok:False, error:...} sin romper el health check.
@@ -1545,9 +1567,61 @@ def _aplicar_retenciones_asinfo_cron(dias: int = 60) -> dict:
         r = ret_q.aplicar_retenciones_asinfo(
             hoy - timedelta(days=dias), hoy, usuario="cron-retenciones")
         r["ok"] = True
+        r["barrido"] = _barrer_un_mes_viejo(hoy, dias)
         return r
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+
+
+#: Cuántos meses para atrás recorre el barrido, uno por día.
+BARRIDO_MESES = 12
+
+
+def _mes_del_barrido(hoy, dias_ventana: int = 60):
+    """Qué mes viejo le toca hoy: `(primero, ultimo)` del mes elegido.
+
+    Rota por el día del mes (1→el más viejo, 2→el siguiente…), así que no
+    depende de que el cron haya corrido ayer ni de guardar estado en ningún
+    lado: mirando la fecha se sabe qué le tocó. Nunca devuelve un mes que ya
+    cubra la ventana de los últimos `dias_ventana`, para no pedir dos veces lo
+    mismo en la misma corrida.
+    """
+    import calendar as _cal
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    piso = hoy - _td(days=dias_ventana)
+    # meses_atras va de BARRIDO_MESES (el más viejo) hacia 1
+    meses_atras = BARRIDO_MESES - ((hoy.day - 1) % BARRIDO_MESES)
+    y, m = hoy.year, hoy.month - meses_atras
+    while m <= 0:
+        m += 12
+        y -= 1
+    primero = _date(y, m, 1)
+    ultimo = _date(y, m, _cal.monthrange(y, m)[1])
+    if ultimo >= piso:
+        return None
+    return primero, ultimo
+
+
+def _barrer_un_mes_viejo(hoy, dias_ventana: int = 60) -> dict:
+    """Aplica las retenciones huérfanas de UN mes viejo. Fail-soft."""
+    rango = _mes_del_barrido(hoy, dias_ventana)
+    if not rango:
+        return {"ok": True, "salteado": "el mes del turno cae dentro de la ventana"}
+    desde, hasta = rango
+    try:
+        from modules.retenciones import queries as ret_q
+        r = ret_q.aplicar_retenciones_asinfo(
+            desde, hasta, usuario="cron-retenciones-viejas", solo_sin_abono=True)
+        r["ok"] = True
+        r["mes"] = desde.strftime("%Y-%m")
+        # `sin_factura` de un mes viejo es ruido conocido (facturas que PC nunca
+        # cargó): no se arrastra al health, que ya tiene su propio bloque.
+        r.pop("sin_factura", None)
+        return r
+    except Exception as e:
+        return {"ok": False, "mes": desde.strftime("%Y-%m"), "error": str(e)[:200]}
 
 
 @bp.route("/hilado-stock-debug", methods=["GET"])
