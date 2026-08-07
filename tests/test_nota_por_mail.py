@@ -130,3 +130,22 @@ def test_el_correo_se_guarda_en_minusculas():
         ok, _ = dia.agregar_destinatario("  Teliscovich@Gmail.COM ", "Tamara", "tamara")
     assert ok is True
     assert ex.call_args[0][1][0] == "teliscovich@gmail.com"
+
+
+# ── El aviso de lo que no cerró ─────────────────────────────────────────────
+
+def test_las_fotos_viejas_no_cuentan_como_que_no_cierran():
+    """⭐ No es que no cierren: nunca tuvieron registro. Contarlas sería meter
+    200 problemas inventados en la nota que la dueña lee una vez por día."""
+    filas = [{"id_traza": 1, "d": 5000.0, "explicado": 0.0, "recon": 2, "n": 2},
+             {"id_traza": 2, "d": 1000.0, "explicado": 400.0, "recon": 0, "n": 3}]
+    with patch.object(dia, "_rows", return_value=filas):
+        r = dia.ventanas_sin_cerrar()
+    assert r["n"] == 1                 # sólo la segunda
+    assert r["monto"] == 600.0
+
+
+def test_la_linea_solo_aparece_si_hay_algo_que_decir():
+    """Una línea que sale todos los días entrena a no leerla."""
+    with patch.object(dia, "_rows", return_value=[]):
+        assert dia.ventanas_sin_cerrar()["n"] == 0

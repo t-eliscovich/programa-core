@@ -31,6 +31,12 @@ import db
 
 _LOG = logging.getLogger("programa_core.eventos")
 
+#: Tipos que NO se muestran en la traza. `retencion_doble_corregida` fue una
+#: limpieza de una sola vez al principio (837 filas): mostrarla todos los días
+#: es ensuciar la pantalla con algo que ya pasó y no va a volver a pasar.
+#: TMT 2026-08-07: *"esto no me muestres, fue una corrección hecha al principio"*.
+TIPOS_OCULTOS = {"retencion_doble_corregida", "reverso_retencion_doble_corregida"}
+
 #: Tabla de `mov_doble` → prefijo del `doc_id` de la foto. Las que no están
 #: (transacciones_bancarias, compra, xgast) no tienen fila propia en la foto:
 #: el diff las ve dentro del saldo del banco o del componente, no como
@@ -61,7 +67,7 @@ def de_la_ventana(desde, hasta) -> list[dict]:
     try:
         filas = db.fetch_all(
             """
-            SELECT id_mov_doble, batch_id::text AS batch_id, tipo,
+            SELECT id_mov_doble, batch_id::text AS batch_id, tipo, metadata,
                    origen_table, origen_id, destino_table, destino_id,
                    importe, concepto, usuario, estado,
                    (fecha_creacion AT TIME ZONE 'America/Guayaquil')::date AS dia
@@ -75,10 +81,24 @@ def de_la_ventana(desde, hasta) -> list[dict]:
         return []
     out = []
     for r in filas:
+        if (r.get("tipo") or "") in TIPOS_OCULTOS:
+            continue
         r = dict(r)
         r["label"] = TIPOS_LABEL.get(r.get("tipo"), (r.get("tipo") or "").replace("_", " "))
-        r["docs"] = [d for d in (_doc(r.get("origen_table"), r.get("origen_id")),
-                                 _doc(r.get("destino_table"), r.get("destino_id"))) if d]
+        r["label"] = r["label"]
+        docs = [_doc(r.get("origen_table"), r.get("origen_id")),
+                _doc(r.get("destino_table"), r.get("destino_id"))]
+        # 🚨 Una conversión de anticipos registra UNA sola `mov_doble` con
+        # `origen_id` = el PRIMER anticipo ("representativo") y sin batch_id;
+        # los otros N−1 viven sólo en `metadata.ids_anticipos`. Sin esto, de
+        # tres anticipos uno matcheaba el evento y dos caían al camino sin
+        # nombre: el mismo hecho salía en dos renglones.
+        md = r.get("metadata") or {}
+        if isinstance(md, dict):
+            for i in (md.get("ids_anticipos") or []):
+                docs.append(_doc("dolares", i))
+        r["docs"] = [d for d in docs if d]
+        r["meta"] = md if isinstance(md, dict) else {}
         # Un batch agrupa el hecho entero ("3 anticipos → compra N° 10130");
         # sin batch, el hecho es el movimiento solo.
         r["grupo"] = r.get("batch_id") or f"m{r['id_mov_doble']}"

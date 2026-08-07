@@ -17,6 +17,14 @@
    pasó nada hace que el ojo caiga solo donde hay algo. Los saldos siguen en el
    Balance y adentro del detalle de cada foto.
    Tailwind está congelado (build JIT) → todo el estilo va inline. #}
+<style>
+  /* El signo de pregunta vive escondido y aparece con el hover de la fila.
+     `visibility` y no `display` para que no corra el número al aparecer. */
+  .traza-porque { visibility: hidden; cursor: pointer; margin-right: .25rem;
+                  color: rgb(148 163 184); font-weight: 400; }
+  tr:hover .traza-porque, .traza-porque:focus { visibility: visible; }
+  .traza-porque:hover { color: rgb(30 64 175); }
+</style>
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
 
   {{ nav_resultados('traza') }}
@@ -60,35 +68,16 @@
     {% endfor %}
   </div>
 
-  {% if sin_cerrar %}
-    {# ⭐ La métrica del entrenamiento es el residuo, así que tiene que
-       perseguirla a ella. Antes había que abrir fila por fila para
-       descubrirlo. #}
-    <div class="my-2 border rounded px-3 py-2"
-         style="border-color:rgb(252 211 77);background:rgb(255 251 235);font-size:11.5px;">
-      <strong>{{ sin_cerrar | length }} ventana{{ '' if (sin_cerrar | length) == 1 else 's' }}
-      sin explicar del todo.</strong> Los documentos no llegan a dar el Δ —
-      están marcadas con
-      <span style="color:rgb(180 83 9);font-weight:600;">▲</span> en la columna Δ.
-      {% for f in sin_cerrar[:6] %}
-        <a href="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
-           style="color:rgb(30 64 175);margin-left:.4rem;">{{ f.cuando }} ({{ f.residuo | num_es(0) }})</a>
-      {% endfor %}
-    </div>
-  {% endif %}
-
-  {# 🚨 Anchos en `em`, no en `rem`: `rem` va contra los 16 px de la raíz, así
-     que bajar la tipografía de la tabla a 11 px no achicaba una sola columna
-     (TMT: *"todavía no me entra todo en la pantalla"*). En `em` las columnas
-     escalan con la letra de la tabla y el total pasa de ~850 px a ~690.
-
-     El contenedor scrollea en los DOS ejes para que el encabezado pueda
-     quedarse fijo al bajar (TMT: *"cuando voy para abajo los títulos se
-     mantengan fijos"*): con `position:sticky` sobre la página no alcanza,
-     porque el `overflow-x` ya lo convierte en contenedor de scroll. #}
+  {# 🚨 Acá había un cartel permanente: "1 ventana sin explicar del todo…".
+     TMT 2026-08-07: *"esto no me gusta, me genera mucha duda"*. Y tiene razón
+     de fondo: un aviso que está siempre y no dice qué hacer no es información,
+     es ansiedad — sobre todo en la pantalla que existe para dejar de adivinar.
+     El ▲ en la columna Δ alcanza para encontrar la fila cuando se la busca, y
+     el contador del encabezado dice lo mismo sin gritarlo. Donde SÍ va es en
+     la nota del cierre: ahí es un resumen del día que se mira una vez. #}
   <div class="border border-slate-200 rounded bg-white"
        style="overflow:auto;max-height:calc(100vh - 15rem);">
-    <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:fixed;width:auto;">
+    <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:auto;width:auto;white-space:nowrap;">
       <thead>
         <tr style="font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;color:rgb(100 116 139);white-space:nowrap;">
           {# Las tres primeras quedan fijas también al costado: sin eso, al
@@ -105,12 +94,18 @@
                 style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
           {% endfor %}
           <th class="px-1 py-1 text-right"
-              style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;"
+              style="position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;"
               title="Maquinaria, Terrenos y Dividendos">Otros</th>
           {% for col, label in kilos %}
             <th class="px-1 py-1 text-right"
-                style="width:3.4em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
+                style="position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
           {% endfor %}
+          {# TMT 2026-08-07: *"me sacaste el valor del hilo"*. Lo había sacado
+             para ganar ancho — cambió dos veces en 200 fotos— pero es el
+             número que revalúa TODO el stock de un saque, así que vale su
+             columna. Con el ancho automático ya no cuesta lo que costaba. #}
+          <th class="px-1 py-1 text-right"
+              style="position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">$/kg</th>
         </tr>
       </thead>
       <tbody>
@@ -137,7 +132,14 @@
             {% if f.residuo is not none and (f.residuo | abs) >= 1 %}<span
               title="Los documentos no explican {{ f.residuo | num_es(2) }}"
               style="color:rgb(180 83 9);">▲</span>{% endif -%}
-            {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
+            {# 🚨 TMT 2026-08-07: *"quiero A pero que esté hidden y no me agregue
+               un renglón más sin apretar"*. El signo aparece sólo al pasar el
+               mouse por la fila y no ocupa lugar propio: comparte celda con el
+               Δ. Al tocarlo sí aparece un renglón — pero recién ahí. #}
+            <span class="traza-porque" role="button" tabindex="0"
+                  data-frase="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
+                  title="¿Por qué?" aria-label="Por qué se movió">?</span
+            >{% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
           </td>
           {% for col, label in deltas %}
             {% set d = f.delta.get(col) %}
@@ -164,6 +166,9 @@
               {% if f[col] %}{{ (f[col] / 1000) | num_es(0) }}k{% endif %}
             </td>
           {% endfor %}
+          <td class="px-1 py-0.5 text-right" style="color:rgb(51 65 85);">
+            {{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '' }}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -198,14 +203,33 @@
   if (!tabla) { return; }
   function cerrar(fila, a) {
     var sig = fila.nextElementSibling;
-    while (sig && sig.getAttribute('data-detalle') === '1') {
+    while (sig && (sig.getAttribute('data-detalle') === '1'
+                   || sig.getAttribute('data-frase') === '1')) {
       var muere = sig; sig = sig.nextElementSibling;
       muere.parentNode.removeChild(muere);
     }
     a.setAttribute('aria-expanded', 'false');
     a.querySelector('.traza-caret').textContent = '›';
   }
+  function frase(q) {
+    var fila = q.closest('tr');
+    var sig = fila.nextElementSibling;
+    if (sig && sig.getAttribute('data-frase') === '1') {
+      sig.parentNode.removeChild(sig); return;
+    }
+    fila.insertAdjacentHTML('afterend',
+      '<tr data-frase="1" class="border-t border-slate-100"><td colspan="' +
+      fila.children.length + '" class="px-3 py-1.5" ' +
+      'style="color:rgb(51 65 85);white-space:normal;">buscando…</td></tr>');
+    var celda = fila.nextElementSibling.querySelector('td');
+    fetch(q.getAttribute('data-frase') + '?frase=1', { credentials: 'same-origin' })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { celda.textContent = t || 'Sin nada que contar.'; })
+      .catch(function () { celda.textContent = 'No se pudo traer la explicación.'; });
+  }
   tabla.addEventListener('click', function (ev) {
+    var q = ev.target.closest ? ev.target.closest('.traza-porque') : null;
+    if (q) { ev.preventDefault(); frase(q); return; }
     var a = ev.target.closest ? ev.target.closest('a[data-foto]') : null;
     if (!a) { return; }
     ev.preventDefault();

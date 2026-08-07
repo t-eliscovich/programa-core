@@ -562,7 +562,7 @@ PLURALES = {
 _RE_CODIGO = re.compile(r"^[A-Z0-9]{2,4}$")
 
 
-def _quien(etiqueta: str | None) -> str:
+def _quien(etiqueta: str | None, comp: str | None = None) -> str:
     """El cliente (o proveedor) que hay al final de la etiqueta, si lo hay.
 
     Las etiquetas de documento vienen como "Factura 001-099-000181251 · AJT" o
@@ -572,7 +572,17 @@ def _quien(etiqueta: str | None) -> str:
     partes = [p.strip() for p in (etiqueta or "").split("·")]
     if len(partes) < 2:
         return ""
-    q = partes[-1]
+    # 🚨 En facturas y cheques la contraparte va ÚLTIMA ("Factura 123 · AJT"),
+    # pero en anticipos, deudas y retiros el último segmento es el CONCEPTO
+    # ("Anticipo AI · 21" daba "21", que no significa nada). Ahí la contraparte
+    # es el segundo token del primer segmento.
+    if comp in ("antic", "totp", "uret"):
+        cabeza = partes[0].split()
+        q = cabeza[1] if len(cabeza) > 1 else ""
+    elif comp in ("caja", "bancos"):
+        return ""                          # un concepto no es una contraparte
+    else:
+        q = partes[-1]
     # 🚨 Un concepto corto no es un código. "Caja S · LUZ" daba "LUZ" y el
     # resumen terminaba diciendo "4 gastos de caja · LUZ, AGUA, TAXI". Los
     # códigos de cliente y de proveedor son 2 a 4 caracteres en mayúscula o
@@ -625,7 +635,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         ap = float(m.get("aporte") or 0)
         g["aporte"] = round(g["aporte"] + ap, 2)
         g["n"] += 1
-        q = _quien(m.get("etiqueta"))
+        q = _quien(m.get("etiqueta"), m.get("componente"))
         if q:
             g["quienes"][q] = round(g["quienes"].get(q, 0.0) + ap, 2)
     out, menores = [], 0.0
@@ -637,20 +647,38 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             continue
         ev = g.get("evento")
         if ev:
+            from modules.historial.queries import corto as _corto
+
             g["regla"] = ev["label"]
             quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
                              reverse=True)
-            g["texto"] = ev["label"]
+            md = ev.get("meta") or {}
+            # La contraparte que sabe el evento manda sobre la que se adivina
+            # de la etiqueta.
+            quien = (md.get("codigo_prov") or (quienes[0] if quienes else ""))
+            if ev["tipo"] == "retencion_asinfo_aplicada":
+                # ⭐ TMT 2026-08-07: *"sólo quiero saber que se aplicaron x
+                # monto total a x facturas por retenciones"*. El cliente no
+                # aporta acá: lo que explica el cambio de utilidad es cuánto
+                # se retuvo y sobre cuántas facturas.
+                g["texto"] = "retenciones"
+            else:
+                g["texto"] = _corto(ev["tipo"], quien)
+            # El destino, cuando el evento lo sabe: "AN AI → CP 10130" dice a
+            # qué compra fueron, que es lo que /historial muestra y acá faltaba.
+            if md.get("numero_compra"):
+                g["texto"] += f" {md['numero_compra']}"
             if g["n"] > 1:
-                g["texto"] = f"{g['n']} · {ev['label']}"
-            if quienes:
-                g["texto"] += " · " + ", ".join(quienes[:3])
+                g["texto"] += (f" · {g['n']} facturas"
+                               if ev["tipo"] == "retencion_asinfo_aplicada"
+                               else f" ({g['n']})")
+            g["titulo"] = ev["label"] + (f" · {ev['concepto']}"
+                                         if ev.get("concepto") else "")
             # Al Historial, filtrado por ese tipo y ese día: ahí están los
             # movimientos uno por uno, que es como a la dueña le gusta verlos.
             g["url"] = (f"/historial?tipo={ev['tipo']}"
                         f"&desde={ev['dia']}&hasta={ev['dia']}")
-            if g["n"] == 1 and not quienes and ev.get("concepto"):
-                g["texto"] += " · " + str(ev["concepto"])[:48]
+
         elif g["n"] > 1:
             # ⭐ TMT 2026-08-06: *"decime algo de las facturas, de los abonos…
             # ¿clientes quizás?"*. "3 facturas nuevas" no dice nada; "3

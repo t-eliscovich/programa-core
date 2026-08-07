@@ -23,7 +23,7 @@
         {% if m %}{{ m.aporte | num_es(0) }}{% endif %}
       </td>
     {% endfor %}
-    <td colspan="{{ (kilos | length) + 1 }}"></td>
+    <td colspan="{{ (kilos | length) + 2 }}"></td>
   </tr>
 {% else %}
   {% if f.reconstruido %}
@@ -36,7 +36,7 @@
                  position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(252 211 77);">
         reconstruido — puede faltar lo cobrado
       </td>
-      <td colspan="{{ (deltas | length) + (kilos | length) + 1 }}"></td>
+      <td colspan="{{ (deltas | length) + (kilos | length) + 2 }}"></td>
     </tr>
   {% endif %}
   {% set columnas = deltas | map(attribute=0) | list %}
@@ -89,11 +89,12 @@
       {% else %}
         <td colspan="{{ kilos | length }}"></td>
       {% endif %}
+      <td></td>
       {% if g.col == 'vsto' %}{% set visto.stock = true %}{% endif %}
     </tr>
   {% else %}
     <tr data-detalle="1" class="border-t border-slate-100">
-      <td colspan="{{ 4 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
+      <td colspan="{{ 5 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
           style="font-size:10.5px;color:rgb(148 163 184);">nada se movió</td>
     </tr>
   {% endfor %}

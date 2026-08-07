@@ -24,9 +24,10 @@ from modules.informes import eventos as ev  # noqa: E402
 from modules.informes import traza as t  # noqa: E402
 
 
-def _ev(tipo, origen, oid, destino, did, importe=0.0, batch=None, concepto=""):
+def _ev(tipo, origen, oid, destino, did, importe=0.0, batch=None, concepto="",
+        metadata=None):
     return {"id_mov_doble": abs(hash((tipo, oid, did))) % 10000,
-            "batch_id": batch, "tipo": tipo,
+            "batch_id": batch, "tipo": tipo, "metadata": metadata or {},
             "origen_table": origen, "origen_id": oid,
             "destino_table": destino, "destino_id": did,
             "importe": importe, "concepto": concepto, "usuario": "alex",
@@ -84,9 +85,8 @@ def test_un_cheque_depositado_es_UN_renglon_y_no_dos():
     out = t.resumir(movs, 0.0, idx)
     # El cheque cae en el hecho; el banco no tiene documento propio y queda
     # aparte — pero el hecho ya está nombrado, que es lo que se quería.
-    from modules.historial.queries import TIPOS_LABEL
-    assert any(g["texto"].startswith(TIPOS_LABEL["cheque_depositado"]) for g in out), \
-        [g["texto"] for g in out]
+    textos = [g["texto"] for g in out]
+    assert any(x.startswith("CH ") and x.endswith("→ BC") for x in textos), textos
 
 
 def test_la_devolucion_aparece_con_nombre():
@@ -99,8 +99,9 @@ def test_la_devolucion_aparece_con_nombre():
              "regla": "Abono a factura", "etiqueta": "Factura 11611 · PUE",
              "familia": "traspaso"}]
     g = t.resumir(movs, -907.97, idx)[0]
-    assert g["texto"].startswith("Factura: devolución")
-    assert "PUE" in g["texto"]
+    # 🚨 Corto y con el cliente: "barely can read cheque cancelado por anticipo"
+    assert g["texto"] == "FA PUE devolución"
+    assert "Factura: devolución" in g["titulo"]     # el largo, en el tooltip
     assert g["aporte"] == -907.97
     assert "tipo=factura_devolucion" in g["url"]
 
@@ -109,19 +110,21 @@ def test_los_tres_anticipos_de_una_compra_son_un_renglon_con_el_numero():
     """TMT: *"anticipos e historial me gusta"* — el Historial los muestra como
     "3 anticipo(s) → compra N° 10130" con el link para verlos uno por uno."""
     idx = ev.indice(_con_label([
-        _ev("compra_anticipo_dolares", "dolares", 2970, "compra", 10130,
-            batch="b-1", concepto="AI 21 · 3 anticipo(s) → compra N° 10130"),
-        _ev("compra_anticipo_dolares", "dolares", 2971, "compra", 10130,
-            batch="b-1"),
-        _ev("compra_anticipo_dolares", "dolares", 2972, "compra", 10130,
-            batch="b-1"),
+        _ev("bap_anticipo_a_compra", "dolares", 2970, "compra", 555,
+            concepto="AI 21 · 3 anticipo(s) → compra N° 10130",
+            metadata={"codigo_prov": "AI", "numero_compra": 10130,
+                      "ids_anticipos": [2970, 2971, 2972], "n_anticipos": 3}),
     ]))
     movs = [{"doc_id": f"d{i}", "componente": "antic", "aporte": -1000.0,
              "regla": "Anticipo aplicado", "etiqueta": f"Anticipo AI · {i}",
              "familia": "traspaso"} for i in (2970, 2971, 2972)]
     out = t.resumir(movs, -3000.0, idx)
+    # 🚨 Los tres caen en el MISMO hecho: el mov_doble registra uno
+    # "representativo" y los otros dos viven en metadata.ids_anticipos. Sin
+    # leer esa metadata, de tres anticipos uno matcheaba y dos caían aparte —
+    # el mismo hecho salía en dos renglones.
     assert len(out) == 1
-    assert out[0]["texto"].startswith("3 · ")
+    assert out[0]["texto"] == "AN AI → CP 10130 (3)"
     assert out[0]["aporte"] == -3000.0
 
 

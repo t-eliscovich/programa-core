@@ -371,6 +371,30 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
             res["n_error"] += 1
     res["total_sin_factura"] = round(
         sum(float(x["rete"] or 0) for x in res["sin_factura"]), 2)
+    # ⭐ La campanita. TMT 2026-08-07: *"hagamos una campanita para eso"*. Una
+    # retención baja el saldo de la factura SIN que entre un peso: mueve la
+    # utilidad y no la mueve nadie desde una pantalla, así que si no avisa, no
+    # se entera. La `clave` la hace idempotente por día — el cron pasa todos
+    # los días y sin eso el buzón se llena de repetidos.
+    if res.get("n_aplicadas"):
+        try:
+            from filters import today_ec as _hoy
+            from modules.avisos import queries as _av
+
+            _av.avisar(
+                fuente="retenciones",
+                titulo=(f"Se aplicaron $ {res['total_aplicado']:,.2f} en "
+                        f"retenciones a {res['n_aplicadas']} factura"
+                        f"{'' if res['n_aplicadas'] == 1 else 's'}"
+                        .replace(",", "\x00").replace(".", ",")
+                        .replace("\x00", ".")),
+                detalle="Bajan el saldo de la factura sin que entre plata.",
+                importe=res["total_aplicado"], cantidad=res["n_aplicadas"],
+                url="/facturas/retenciones-asinfo",
+                clave=f"retenciones:{_hoy()}",
+            )
+        except Exception:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+            pass
     return res
 
 

@@ -465,6 +465,101 @@ def conteos(
     }
 
 
+#: Nombres CORTOS para la traza, partidos en (objeto, acción).
+#:
+#: TMT 2026-08-07: *"barely can read cheque cancelado por anticipo… lo otro se
+#: puede acortar mucho más: CH BED → cancela anticipo"*.
+#:
+#: 🚨 La causa real de que se leyera mal no era sólo el ancho: 25 tipos de
+#: `mov_doble` no tenían entrada en TIPOS_LABEL y caían al fallback
+#: `tipo.replace("_", " ")`, que produce la cadena MÁS LARGA posible, en
+#: minúscula, en la columna más angosta. `cheque_cancelado_por_anticipo` era
+#: uno; `retencion_asinfo_aplicada`, que corre todos los días por el cron,
+#: otro.
+#:
+#: El objeto va en dos letras mayúsculas y la acción en minúscula; entre los
+#: dos se mete el código de la contraparte: "CH" + "BED" + "→ cancela AN".
+#: `/historial` sigue usando el nombre largo — ahí el ancho sobra— y el corto
+#: lleva el largo en su `title`, así que no se pierde nada.
+TIPOS_CORTO = {
+    "cheque_creado": ("CH", "alta"),
+    "cheque_aplicado_a_factura": ("CH", "→ FA"),
+    "cheque_depositado": ("CH", "→ BC"),
+    "cheque_cancelado_por_anticipo": ("CH", "→ cancela AN"),
+    "cheque_anticipo_espejo": ("CH", "espejo AN"),
+    "cheque_reemplazo": ("CH", "reemplazo"),
+    "cheque_efectivo_to_caja": ("CH", "→ CJ"),
+    "cheque_emitido_proveedor": ("CH", "→ proveedor"),
+    "cheque_emitido_retiro": ("CH", "→ DV"),
+    "cheque_emitido_caja": ("CH", "→ CJ"),
+    "cheque_emitido_gasto": ("CH", "→ GS"),
+    "endoso_cheque_a_proveedor": ("CH", "endoso"),
+    "anticipo_neteado": ("CH", "✗ AN"),
+    "factura_emitida": ("FA", "nueva"),
+    "factura_devolucion": ("FA", "devolución"),
+    "factura_cerrada_a_t": ("FA", "cerrada"),
+    "factura_reabierta_de_t": ("FA", "reabierta"),
+    "factura_stat_cambio": ("FA", "cambio de estado"),
+    "retencion_asinfo_aplicada": ("RT", "→ FA"),
+    "retencion_asinfo_desaplicada": ("RT", "✗ FA"),
+    "retencion_doble_corregida": ("RT", "corregida"),
+    "caja_e_simple": ("CJ", "entra"),
+    "caja_s_simple": ("CJ", "sale"),
+    "caja_cb_simple": ("CJ", "contra BC"),
+    "caja_e_directo": ("CJ", "entra"),
+    "caja_s_directo": ("CJ", "sale"),
+    "caja_cb_directo": ("CJ", "contra BC"),
+    "caja_s_to_transfer_banco": ("CJ", "→ BC"),
+    "caja_e_to_transfer_banco": ("CJ", "← BC"),
+    "caja_s_to_retiro_socio": ("CJ", "→ DV"),
+    "caja_s_to_dolares": ("CJ", "→ AN"),
+    "caja_e_to_dolares": ("CJ", "← AN"),
+    "caja_s_to_compra_proveedor": ("CJ", "→ CP"),
+    "caja_s_to_xgast": ("CJ", "→ GS"),
+    "banco_de_directo": ("BC", "depósito"),
+    "banco_ch_directo": ("BC", "→ CH"),
+    "banco_tr_directo": ("BC", "transferencia"),
+    "banco_nd_directo": ("BC", "nota de débito"),
+    "banco_nc_directo": ("BC", "nota de crédito"),
+    "banco_ac_directo": ("BC", "acreditación"),
+    "banco_mov_directo": ("BC", "movimiento"),
+    "banco_clasificado_gasto": ("BC", "→ GS"),
+    "nota_debito": ("BC", "nota de débito"),
+    "transfer_banco_banco": ("BC", "→ BC"),
+    "compra_a_posdat": ("CP", "→ DE"),
+    "compra_saldo_a_posdat": ("CP", "saldo → DE"),
+    "compra_pagada_caja": ("CP", "← CJ"),
+    "compra_pagada_pichincha": ("CP", "← BC"),
+    "compra_pagada_internacional": ("CP", "← BC"),
+    "compra_pago_parcial": ("CP", "pago parcial"),
+    "compra_anticipo_dolares": ("CP", "→ AN"),
+    "compra_backfill": ("CP", "backfill"),
+    "bap_anticipo_a_compra": ("AN", "→ CP"),
+    "dolares_anticipo": ("AN", "alta"),
+    "retiro_op": ("DV", "OP"),
+    "totalizar_estado_cuenta": ("FA", "totalizar"),
+}
+
+
+def corto(tipo: str, quien: str = "") -> str:
+    """El nombre corto de un tipo, con el código de la contraparte en el medio.
+
+    "cheque_cancelado_por_anticipo" + "BED"  →  "CH BED → cancela AN"
+
+    Un reverso lleva ↩ adelante y hereda el corto del tipo original. Si el tipo
+    no está mapeado cae al nombre largo, que es feo pero nunca miente.
+    """
+    tipo = (tipo or "").strip()
+    vuelta = ""
+    if tipo.startswith("reverso_"):
+        vuelta, tipo = "↩ ", tipo[len("reverso_"):]
+    par = TIPOS_CORTO.get(tipo)
+    if not par:
+        return vuelta + TIPOS_LABEL.get(tipo, tipo.replace("_", " "))
+    objeto, accion = par
+    return vuelta + " ".join(x for x in (objeto, quien, accion) if x)
+
+
 def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None) -> tuple[str | None, str]:
     """Devuelve (url, etiqueta) para el lado origen del mov.
 

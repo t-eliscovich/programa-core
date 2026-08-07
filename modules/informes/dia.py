@@ -664,6 +664,44 @@ def _lineas_motores(motores: list[dict]) -> list[str]:
     return out
 
 
+def ventanas_sin_cerrar(fecha=None) -> dict:
+    """Las ventanas del día cuyos documentos no llegaron a dar el Δ.
+
+    ⭐ TMT 2026-08-07, sobre el mismo aviso en la pantalla: *"esto no me gusta,
+    me genera mucha duda"*. Un cartel permanente que no dice qué hacer es
+    ansiedad; en la nota del cierre, en cambio, es un resumen del día que se
+    mira una vez y se cierra. Mismo dato, distinto lugar.
+
+    Las fotos anteriores a la grabadora NO cuentan: no es que no cierren, es
+    que nunca tuvieron registro. Meterlas sería inventar 200 problemas.
+    """
+    fecha = fecha or hoy_ec()
+    filas = _rows(
+        """
+        WITH v AS (
+            SELECT t.id_traza, t.utilidad,
+                   LAG(t.utilidad) OVER (ORDER BY t.creado_en, t.id_traza) AS ant
+              FROM scintela.traza_utilidad t
+             WHERE (t.creado_en AT TIME ZONE 'America/Guayaquil')::date = %s
+        )
+        SELECT v.id_traza,
+               ROUND((v.utilidad - v.ant)::numeric, 2)          AS d,
+               ROUND(COALESCE(SUM(m.aporte), 0)::numeric, 2)    AS explicado,
+               COUNT(m.id_mov) FILTER (WHERE m.tipo = 'reconstruido') AS recon,
+               COUNT(m.id_mov)                                   AS n
+          FROM v
+          LEFT JOIN scintela.dia_movimiento m ON m.id_traza = v.id_traza
+         WHERE v.ant IS NOT NULL
+         GROUP BY v.id_traza, v.utilidad, v.ant
+        """, (fecha,))
+    sueltas = [f for f in filas
+               if int(f.get("n") or 0) > int(f.get("recon") or 0)
+               and abs(_f(f.get("d")) - _f(f.get("explicado"))) >= 1]
+    return {"n": len(sueltas),
+            "monto": round(sum(abs(_f(f["d"]) - _f(f["explicado"]))
+                               for f in sueltas), 2)}
+
+
 def mensaje_whatsapp(fecha=None) -> str:
     """El resumen del día en texto plano, listo para pegar en WhatsApp.
 
@@ -723,6 +761,14 @@ def mensaje_whatsapp(fecha=None) -> str:
         L.append(f"Margen      {_n(r['margen_pct'], 1)} %")
     if r.get("cobrado"):
         L.append(f"Cobrado     $ {_n(r['cobrado'])}")
+
+    # Lo que no se pudo explicar por documento. Va al final y sólo si lo hay:
+    # una línea que aparece todos los días entrena a no leerla.
+    sc = ventanas_sin_cerrar(fecha)
+    if sc["n"]:
+        L.append("")
+        L.append(f"_{sc['n']} ventana{'' if sc['n'] == 1 else 's'} sin explicar "
+                 f"· $ {_n(sc['monto'])}_")
 
     return "\n".join(L).rstrip()
 
