@@ -47,8 +47,12 @@
      tiene que entrar en la pantalla sin scrollear"*. Con dieciséis columnas el
      ancho lo fijan los TÍTULOS y el padding, no los números. El `id` le gana a
      las clases px-1/px-1.5 sin tocar Tailwind, que está congelado. */
-  #traza-tabla th, #traza-tabla td { padding-left: 3px; padding-right: 3px; }
-  #traza-tabla th { font-size: 9px; }
+  /* 🚨 El `!important` NO es pereza: las utilidades px-1/px-1.5 del build de
+     Tailwind vienen con `!important`, así que `#traza-tabla td` —que le gana
+     por especificidad— igual perdía. Medido en el navegador: sin el
+     `!important` la tabla queda en 1.202 px; con él, en 914. */
+  #traza-tabla th, #traza-tabla td {
+    padding-left: 3px !important; padding-right: 3px !important; }
 </style>
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
 
