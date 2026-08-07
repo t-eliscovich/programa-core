@@ -83,10 +83,12 @@ def test_un_cheque_depositado_es_UN_renglon_y_no_dos():
          "familia": "traspaso"},
     ]
     out = t.resumir(movs, 0.0, idx)
-    # El cheque cae en el hecho; el banco no tiene documento propio y queda
-    # aparte — pero el hecho ya está nombrado, que es lo que se quería.
+    # 07/08: el banco YA no queda aparte. Sin `mov_doble` que los una, la
+    # señal es que los importes son exactamente opuestos y tocan componentes
+    # distintos — `_unir_las_dos_patas`. Un renglón, con las dos columnas.
     textos = [g["texto"] for g in out]
-    assert any(x.startswith("CH ") and x.endswith("→ BC") for x in textos), textos
+    assert textos == ["CH → BC · LEG"], textos
+    assert out[0]["por_col"] == {"cheques": -1251.87, "bancos": 1251.87}
 
 
 def test_la_devolucion_aparece_con_nombre():
@@ -498,3 +500,62 @@ def test_sin_reverso_no_se_consulta_el_mov_deshecho():
     with patch.object(ev.db, "fetch_all", side_effect=_fake):
         ev.de_la_ventana("a", "b")
     assert len(llamadas) == 1
+
+
+def test_aplicar_un_cheque_no_lo_saca_de_cartera():
+    """🚨 TMT 2026-08-07, viendo "8 CH → FA · KRH" con −$7.000 en Cheq.:
+    aplicar un cheque a una factura NO lo saca de cartera. Si Cheq. bajó es
+    porque se depositó — y el depósito cargado a mano por la pantalla de
+    Bancos no deja `mov_doble`, así que el único hecho pegado al documento era
+    el "aplicado a factura" de cuando entró. No es un nombre pobre: es FALSO.
+    Cuando el hecho contradice lo que el diff vio, gana el diff.
+    """
+    idx = ev.indice(_con_label([
+        _ev("cheque_aplicado_a_factura", "cheque", 700, "factura", 800)]))
+    movs = [{"doc_id": "c700", "componente": "cheques", "aporte": -7000.0,
+             "tipo": "baja", "regla": "Cheque depositado o dado de baja",
+             "etiqueta": "Cheque 9 · KRH", "familia": "traspaso"}]
+    g = t.resumir(movs, -7000.0, idx)[0]
+    # Sin el hecho falso queda el documento pelado — dice menos, no miente.
+    # En la vida real el renglón se une con su otra pata (el banco) y termina
+    # diciendo "CH → BC · KRH": ver el test de acá abajo.
+    assert "→ FA" not in g["texto"]
+    assert g["texto"] == "CH #9 KRH"
+
+
+def test_las_dos_patas_de_un_deposito_sin_mov_doble_son_un_renglon():
+    """*"esto también podría ser un renglón, ¿te das cuenta?"* — el depósito
+    de KRH: banco +7.000 y cheques −7.000, mismo importe, distinta columna."""
+    filas = [{"no_banco": 10, "documento": "DE", "importe": 7000.0,
+              "concepto": "1 ch.KRH", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    movs = [
+        {"doc_id": "b10", "componente": "bancos", "aporte": 7000.0,
+         "tipo": "cambio", "regla": "Movimiento bancario",
+         "etiqueta": "Banco PICHINCHA", "familia": "traspaso"},
+        {"doc_id": "c700", "componente": "cheques", "aporte": -7000.0,
+         "tipo": "baja", "regla": "Cheque depositado o dado de baja",
+         "etiqueta": "Cheque 9 · KRH", "familia": "traspaso"},
+    ]
+    out = t.resumir(movs, 0.0, ev.indice([], cuentas))
+    assert [g["texto"] for g in out] == ["CH → BC · KRH"], out
+    assert out[0]["por_col"] == {"bancos": 7000.0, "cheques": -7000.0}
+    assert out[0]["aporte"] == 0.0
+
+
+def test_no_se_unen_dos_patas_si_el_par_es_ambiguo():
+    """Unir de más sería inventar un hecho: con dos candidatos del mismo
+    importe no hay forma de saber cuál va con cuál."""
+    movs = [
+        {"doc_id": "b10", "componente": "bancos", "aporte": 500.0,
+         "tipo": "cambio", "regla": "Movimiento bancario",
+         "etiqueta": "Banco PICHINCHA", "familia": "traspaso"},
+        {"doc_id": "c1", "componente": "cheques", "aporte": -500.0,
+         "tipo": "baja", "regla": "Cheque depositado o dado de baja",
+         "etiqueta": "Cheque 1 · AAA", "familia": "traspaso"},
+        {"doc_id": "k1", "componente": "caja", "aporte": -500.0,
+         "tipo": "baja", "regla": "Gasto de caja",
+         "etiqueta": "Caja S · X", "familia": "traspaso"},
+    ]
+    assert len(t.resumir(movs, -500.0, {})) == 3

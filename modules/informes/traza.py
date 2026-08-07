@@ -690,6 +690,82 @@ def _corto_etiqueta(etiqueta: str) -> str:
     return f"{_OBJETO[m.group(1)]} #{m.group(2)} {m.group(3)}"
 
 
+#: (hecho, componente) donde el hecho NO puede explicar que el documento SALGA
+#: de ese componente.
+#:
+#: 🚨 TMT 2026-08-07, viendo "8 CH → FA · KRH" con −$7.000 en Cheq.: aplicar un
+#: cheque a una factura **no lo saca de cartera**. Si Cheq. bajó es porque los
+#: cheques se depositaron — y el depósito se cargó a mano por la pantalla de
+#: Bancos, que no deja `mov_doble`, así que el único hecho pegado al documento
+#: era el "aplicado a factura" de cuando entró. La traza le puso ese nombre a
+#: plata que se fue al banco: no es un nombre pobre, es un nombre FALSO.
+#:
+#: Cuando el hecho contradice lo que el diff vio, gana el diff: "8 cheques
+#: depositados" dice menos, pero no miente.
+HECHO_NO_EXPLICA_BAJA = {
+    ("cheque_aplicado_a_factura", "cheques"),
+    ("cheque_creado", "cheques"),
+    ("factura_emitida", "facturas"),
+}
+
+#: El código de dos letras de cada componente, para nombrar un traspaso por sus
+#: dos patas: "CH → BC". Es el mismo vocabulario de `TIPOS_CORTO`.
+COD_COMPONENTE = {
+    "caja": "CJ", "bancos": "BC", "cheques": "CH", "facturas": "FA",
+    "antic": "AN", "totp": "DE", "uret": "DV", "vsto": "STK", "vqx": "QX",
+}
+
+
+def _unir_las_dos_patas(grupos: dict) -> None:
+    """Dos renglones que son las dos patas del MISMO movimiento van en uno.
+
+    🚨 TMT 2026-08-07: *"esto también podría ser un renglón, ¿te das cuenta?"*,
+    sobre "depósito · 1 ch.KRH +7.000" y "8 CH → FA · KRH −7.000".
+
+    Cuando el hecho tiene `mov_doble` los dos lados ya caen en el mismo grupo
+    (es lo que hace `eventos._cuentas`). Esto es para cuando NO lo tiene: la
+    única señal que queda es que los importes son exactamente opuestos y tocan
+    componentes distintos. Se une SÓLO si el par es inequívoco —un solo
+    candidato de cada lado—: unir de más sería inventar un hecho.
+    """
+    candidatos = [g for g in grupos.values()
+                  if abs(g["aporte"]) >= UMBRAL_VISIBLE
+                  and g.get("familia") == "traspaso"
+                  and len(g["por_col"]) == 1]
+    usados: set[int] = set()
+    for a in candidatos:
+        if id(a) in usados or a["aporte"] <= 0:
+            continue
+        pares = [b for b in candidatos
+                 if id(b) not in usados and b is not a
+                 and abs(a["aporte"] + b["aporte"]) < 0.01
+                 and not (set(a["por_col"]) & set(b["por_col"]))]
+        if len(pares) != 1:
+            continue                          # ambiguo: no se inventa
+        b = pares[0]
+        usados.update({id(a), id(b)})
+        destino, origen = a, b                # a recibe, b entrega
+        cod_o = COD_COMPONENTE.get(next(iter(origen["por_col"])), "")
+        cod_d = COD_COMPONENTE.get(next(iter(destino["por_col"])), "")
+        if not (cod_o and cod_d):
+            continue
+        quienes = dict(origen["quienes"])
+        for k, v in destino["quienes"].items():
+            quienes[k] = quienes.get(k, 0.0) + v
+        nombres = ", ".join(sorted(quienes, key=lambda k: abs(quienes[k]),
+                                   reverse=True)[:3])
+        n = max(len(origen["hechos"]), origen["n"])
+        destino["texto_unido"] = (
+            f"{n if n > 1 else ''} {cod_o} → {cod_d}".strip()
+            + (f" · {nombres}" if nombres else ""))
+        destino["aporte"] = round(destino["aporte"] + origen["aporte"], 2)
+        destino["por_col"].update(origen["por_col"])
+        destino["n"] += origen["n"]
+        destino["hechos"] |= origen["hechos"]
+        destino["url"] = destino.get("url") or origen.get("url")
+        origen["fundido"] = True
+
+
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
@@ -717,6 +793,9 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # UN depósito, no dos cosas sueltas. Y un batch agrupa el hecho entero
         # ("3 anticipos → compra N° 10130").
         ev = (eventos or {}).get(m.get("doc_id") or "")
+        if (ev and m.get("tipo") == "baja"
+                and (ev["tipo"], m.get("componente")) in HECHO_NO_EXPLICA_BAJA):
+            ev = None                          # el hecho no explica la salida
         if ev:
             # 🚨 TMT 2026-08-07: *"idealmente facturas en uno, cobranzas en
             # otro"*. Hay tipos que llegan de a montones —en la ventana de las
@@ -767,10 +846,13 @@ def resumir(movs: list[dict], d_utilidad: float | None,
     for g in grupos.values():
         # Lo que el grupo MOVIÓ, aunque no haya aportado: el lado más grande.
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
+    _unir_las_dos_patas(grupos)
     out, menores = [], 0.0
     for g in sorted(grupos.values(),
                     key=lambda x: max(abs(x["aporte"]), x["bruto"]),
                     reverse=True):
+        if g.get("fundido"):
+            continue                           # ya salió con su otra pata
         ev = g.get("evento")
         # Lo ciego no se esconde por chico: es la lista de tareas. Y un
         # traspaso grande tampoco: aporta cero, pero es la noticia.
@@ -896,6 +978,8 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                           f": sin explicar por documento").strip(": ")
         else:
             g["texto"] = _corto_etiqueta(g.get("etiqueta") or g["regla"])
+        if g.get("texto_unido"):
+            g["texto"] = g["texto_unido"]
         g["texto"] = _abreviar_etapas(g.get("texto") or "")
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
