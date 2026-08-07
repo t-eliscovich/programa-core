@@ -79,7 +79,12 @@ def test_preview_encuentra_por_numf_cuando_numf_completo_es_null(monkeypatch):
     from modules.retenciones import queries as q
     stub = _FetchAllStub(
         por_completo=[],                                   # no matchea por SRI
-        por_numf=[_fac(178485, None)],                     # sí por numf entero
+        # TMT 2026-08-07: la factura lleva la retención YA cargada por el
+        # mismo importe que dice Asinfo. Antes alcanzaba con que existiera la
+        # fila para decir "ya estaba"; ahora se compara el IMPORTE, porque una
+        # fila con menos plata de la que dice Asinfo es una retención a medias
+        # (estado `parcial`), no una completa.
+        por_numf=[_fac(178485, None, retencion=382.40)],   # sí por numf entero
         retenciones=[{"codigo_cli": "EDU", "numf": 178485}],
         clientes=[{"codigo_cli": "EDU", "nombre": "EDUARDO"}],
     )
@@ -168,7 +173,7 @@ def test_preview_numf_completo_gana_y_no_marca_via_numf(monkeypatch):
     """Si matchea por SRI completo, esa gana y no se marca 'por N°'."""
     from modules.retenciones import queries as q
     stub = _FetchAllStub(
-        por_completo=[_fac(180758, "001-099-000180758")],
+        por_completo=[_fac(180758, "001-099-000180758", retencion=276.85)],
         por_numf=[_fac(999, None, codigo_cli="OTRO", id_factura=99)],
         retenciones=[{"codigo_cli": "EDU", "numf": 180758}],
         clientes=[{"codigo_cli": "EDU", "nombre": "EDUARDO"}],

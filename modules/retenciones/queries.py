@@ -287,11 +287,20 @@ def _stat_tras_retencion(saldo: float, abono: float, stat_previo: str = "") -> s
 
 def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
                             batch_id: str | None = None,
-                            solo_sin_abono: bool = False) -> str:
+                            solo_sin_abono: bool = False,
+                            completar: bool = False) -> str:
     """Registra scintela.retencion + baja el saldo de la factura `numero`.
 
     Devuelve: 'aplicada' | 'ya' (ya tenía retención) | 'sin_factura' |
     'rete_0' | 'rete_gt_importe' | 'rete_gt_saldo' | 'tiene_abono'.
+
+    `completar` (sólo para las TILDADAS a mano, nunca el cron): si la factura
+    ya tiene retención pero por MENOS de lo que dice Asinfo, aplica la
+    diferencia en vez de contestar 'ya'. Pasa cuando Asinfo tiene dos
+    comprobantes por la misma factura (fuente e IVA) y acá entró uno solo, o
+    cuando el backfill de la mig 0179 topeó la retención al abono disponible.
+    Va apagado por default a propósito: automatizarlo haría que el cron toque
+    saldos viejos sin que nadie lo mire.
 
     `solo_sin_abono` es el freno del BARRIDO de períodos viejos: en las facturas
     de la época del dBase la retención puede estar ya sumada adentro del abono
@@ -321,10 +330,15 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
             (f["codigo_cli"], f["numf"]),
             conn=conn,
         )
-        if ya:
-            return "ya"
         abono = round(float(f["abono"] or 0), 2)
         retencion = round(float(f["retencion"] or 0), 2)
+        if ya:
+            # Ya hay retención registrada: sólo se sigue si el usuario pidió
+            # COMPLETAR y lo que falta es de verdad (más de un centavo).
+            falta = round(rete - retencion, 2)
+            if not completar or falta <= 0.005:
+                return "ya"
+            rete = falta
         saldo = round(float(f["saldo"] or 0), 2)
         # TMT 2026-08-06 (dueña): freno — si la retención es más grande que lo
         # que queda por cobrar, el saldo quedaría negativo. No se aplica sola;
@@ -481,7 +495,7 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web",
 
 
 def aplicar_retenciones_asinfo_seleccion(
-    desde, hasta, numeros, usuario: str = "web",
+    desde, hasta, numeros, usuario: str = "web", completar: bool = True,
 ) -> dict:
     """Como aplicar_retenciones_asinfo pero SOLO para los `numeros` (facturas SRI)
     elegidos por el usuario. Los importes salen igual de Asinfo (fuente de verdad),
@@ -506,13 +520,17 @@ def aplicar_retenciones_asinfo_seleccion(
             continue
         rete = round(float((r or {}).get("ret_total") or 0), 2)
         try:
-            estado = _aplicar_una_por_numero(numero, rete, usuario, batch_id)
+            estado = _aplicar_una_por_numero(
+                numero, rete, usuario, batch_id, completar=completar)
         except Exception:
             res["n_error"] += 1
             continue
         if estado == "aplicada":
             res["n_aplicadas"] += 1
-            res["total_aplicado"] = round(res["total_aplicado"] + rete, 2)
+            # Si completó una parcial, lo aplicado es la DIFERENCIA, no el
+            # total de Asinfo: sumar `rete` acá inflaría el número del flash.
+            res["total_aplicado"] = round(
+                res["total_aplicado"] + _ultimo_aplicado(numero, rete), 2)
         elif estado == "registrada":
             res["n_registradas"] += 1
         elif estado == "ya":
@@ -522,6 +540,22 @@ def aplicar_retenciones_asinfo_seleccion(
         elif estado in ("rete_0", "rete_gt_importe", "rete_gt_saldo"):
             res["n_error"] += 1
     return res
+
+
+def _ultimo_aplicado(numero: str, rete_asinfo: float) -> float:
+    """Cuánto descontó de verdad la última aplicación de `numero`.
+
+    Cuando se COMPLETA una retención parcial se aplica la diferencia, no el
+    total que dice Asinfo. El importe real quedó en el mov_doble; leerlo de ahí
+    evita que el mensaje prometa más de lo que pasó."""
+    row = db.fetch_one(
+        "SELECT importe FROM scintela.mov_doble "
+        " WHERE tipo = 'retencion_asinfo_aplicada' AND estado = 'activo' "
+        "   AND metadata->>'numero' = %s "
+        " ORDER BY id_mov_doble DESC LIMIT 1",
+        (numero,),
+    )
+    return round(float((row or {}).get("importe") or rete_asinfo), 2)
 
 
 def _desaplicar_una_por_numero(numero: str, usuario: str) -> str:
@@ -1170,6 +1204,7 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     resumen = {
         "n_total": len(ret_map), "se_aplica": 0, "ya": 0, "sin_factura": 0,
+        "parcial": 0,
         "rete_gt_importe": 0, "rete_gt_saldo": 0, "rete_0": 0,
         "total_a_aplicar": 0.0, "via_numf": 0,
         "total_periodo": round(
@@ -1191,7 +1226,7 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
             "numero": numero, "ret_fuente": rf, "ret_iva": ri, "ret_total": rete,
             "codigo_cli": None, "cliente": None, "numf": None,
             "importe": None, "saldo_actual": None, "saldo_nuevo": None,
-            "stat_nuevo": None, "estado": None,
+            "stat_nuevo": None, "estado": None, "falta": None,
             "via_numf": numero in via_numf,
         }
         if fila["via_numf"]:
@@ -1217,8 +1252,26 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
                 fila["estado"] = "rete_gt_importe"
                 resumen["rete_gt_importe"] += 1
             elif f"{f['codigo_cli']}|{f['numf']}" in ya_set:
-                fila["estado"] = "ya"
-                resumen["ya"] += 1
+                # TMT 2026-08-07: "ya" no siempre es "está completa". Si Asinfo
+                # dice MÁS de lo que tiene la factura, falta la diferencia —
+                # pasa cuando hay dos comprobantes (fuente e IVA) y entró uno
+                # solo, o cuando el backfill de la 0179 topeó la retención al
+                # abono disponible. Antes esto se contaba como "ya estaba" y no
+                # había forma de verlo ni de arreglarlo.
+                falta = round(rete - retencion, 2)
+                if falta > 0.005 and falta <= saldo + 0.01:
+                    fila["estado"] = "parcial"
+                    fila["falta"] = falta
+                    fila["saldo_nuevo"] = _fact_q.saldo_de(
+                        importe, abono, retencion + falta)
+                    fila["stat_nuevo"] = _stat_tras_retencion(
+                        fila["saldo_nuevo"], abono, f.get("stat"))
+                    resumen["parcial"] += 1
+                    resumen["total_a_aplicar"] = round(
+                        resumen["total_a_aplicar"] + falta, 2)
+                else:
+                    fila["estado"] = "ya"
+                    resumen["ya"] += 1
             elif rete > saldo + 0.01:
                 # Espejo del freno del aplicador (2026-08-06): dejaría el
                 # saldo negativo → no se aplica sola.
@@ -1237,7 +1290,8 @@ def preview_retenciones_asinfo(desde, hasta) -> dict:
         filas.append(fila)
 
     # Orden: primero lo que se aplica, después ya, después los que no entran.
-    orden = {"se_aplica": 0, "ya": 1, "rete_gt_importe": 2, "rete_gt_saldo": 2,
+    orden = {"se_aplica": 0, "parcial": 1, "ya": 2, "rete_gt_importe": 3,
+             "rete_gt_saldo": 3,
              "sin_factura": 3, "rete_0": 4}
     filas.sort(key=lambda x: (orden.get(x["estado"], 9), -(x["ret_total"] or 0)))
     return {"filas": filas, "resumen": resumen}

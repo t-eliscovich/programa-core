@@ -40,7 +40,7 @@
   {# ───── Resumen de lo que va a pasar ───── #}
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5 text-sm">
     <div class="rounded border border-emerald-300 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-900/15 p-3">
-      <div class="text-2xl font-semibold text-emerald-800 dark:text-emerald-300">{{ resumen.se_aplica or 0 }}</div>
+      <div class="text-2xl font-semibold text-emerald-800 dark:text-emerald-300">{{ (resumen.se_aplica or 0) + (resumen.parcial or 0) }}</div>
       <div class="text-xs text-slate-600 dark:text-slate-300">se aplican ahora</div>
       <div class="text-xs text-emerald-700 dark:text-emerald-400 mt-1">{{ (resumen.total_a_aplicar or 0) | money_es }}</div>
     </div>
@@ -68,7 +68,8 @@
 
   {# ───── Tabla de detalle ───── #}
   {% if filas %}
-  {% set n_aplicables = filas | selectattr('estado', 'equalto', 'se_aplica') | list | length %}
+  {% set n_aplicables = (filas | selectattr('estado', 'equalto', 'se_aplica') | list | length)
+                        + (filas | selectattr('estado', 'equalto', 'parcial') | list | length) %}
   <form id="form-sel" method="POST" action="{{ url_for('facturas.aplicar_retenciones_asinfo_seleccion') }}"
         onsubmit="return confirmarSeleccion();">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -112,13 +113,20 @@
         {% for f in filas %}
         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30">
           <td class="px-3 py-2 text-center">
-            {% if f.estado == 'se_aplica' %}
+            {% if f.estado in ('se_aplica', 'parcial') %}
               <input type="checkbox" class="chk-ret" name="numeros" value="{{ f.numero }}" onclick="actualizarConteo()">
             {% endif %}
           </td>
           <td class="px-3 py-2">
             {% if f.estado == 'se_aplica' %}
               <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">Se aplica</span>
+            {% elif f.estado == 'parcial' %}
+              {# TMT 2026-08-07: Asinfo dice MÁS de lo que tiene la factura.
+                 Pasa con dos comprobantes (fuente e IVA) donde entró uno solo,
+                 o cuando el backfill de la 0179 topeó la retención al abono.
+                 Se tilda igual que las nuevas y aplica SÓLO la diferencia. #}
+              <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-300"
+                    title="Ya tiene retención cargada, pero por menos de lo que dice Asinfo. Al tildarla se aplica sólo lo que falta.">Falta {{ f.falta | money_es }}</span>
             {% elif f.estado == 'ya' %}
               <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500">Ya estaba</span>
             {% elif f.estado == 'sin_factura' %}
@@ -152,7 +160,7 @@
           <td class="px-3 py-2 text-right font-mono">
             {% if f.saldo_actual is not none %}
               <span class="text-slate-500">{{ f.saldo_actual | money_es }}</span>
-              {% if f.estado == 'se_aplica' %}
+              {% if f.estado in ('se_aplica', 'parcial') %}
                 <span class="text-slate-400">→</span>
                 <span class="text-emerald-700 dark:text-emerald-400 font-semibold">{{ f.saldo_nuevo | money_es }}</span>
                 <span class="text-[10px] text-slate-400">({{ f.stat_nuevo }})</span>
