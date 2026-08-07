@@ -72,10 +72,14 @@ def test_telas_de_precio_unico_tambien_salen_con_iva(monkeypatch):
     assert planos["JERSEY 3,5"]["col"] == "jersey"
 
 
-def test_la_lista_de_precios_en_pantalla_sigue_NETA(matriz_fake):
-    """El fix es SOLO de la proforma: /precios se edita y se muestra neto, y
-    el IVA lo agrega la hoja al imprimir (factor_hoja). Si alguien "arregla"
-    el IVA moviéndolo a la tabla, este test cae."""
+def test_la_tabla_de_precios_sigue_guardando_NETO(matriz_fake):
+    """Lo GUARDADO es neto; el IVA lo agregan `factor_hoja` y `precio_con_iva`.
+
+    TMT 2026-08-07: la PANTALLA de /precios pasó a mostrarse c/IVA (antes era
+    neta), así que el nombre viejo de este test —"en pantalla sigue NETA"— ya
+    no describía lo que verifica. Lo que no puede cambiar es la TABLA: si
+    alguien "arregla" el IVA guardándolo en la base, este test cae.
+    """
     assert precios_queries.factor_hoja(0, con_iva=False) == 1.0
     assert precios_queries.factor_hoja(0, con_iva=True) == pytest.approx(1.15)
 
