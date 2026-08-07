@@ -191,10 +191,14 @@ def subir_porcentaje():
                 f"No entendí el monto «{monto_raw}». Usá formato 0,10.", "error"
             )
             return redirect(url_for("precios.lista"))
+        # El input viene EN LA ESCALA c/IVA (asi lo tipea el dueno, igual que
+        # ve la matriz editable y la hoja imprimible). La BD guarda NETO, asi
+        # que dividimos por 1,15 antes de mandar. Federico 2026-08-07.
         try:
-            queries.sumar_monto(float(monto), usuario)
+            monto_neto = float(monto) / (1.0 + queries.IVA_PCT / 100.0)
+            queries.sumar_monto(monto_neto, usuario)
             signo = "+" if float(monto) >= 0 else ""
-            flash(f"Sumado {signo}{monto} a todos los precios.", "ok")
+            flash(f"Sumado {signo}{monto} (c/IVA) a todos los precios.", "ok")
         except Exception as e:  # noqa: BLE001
             flash_exc("No pude sumar el monto a los precios", e)
         return redirect(url_for("precios.lista"))
@@ -234,6 +238,13 @@ def guardar():
         flash_exc("No pude leer la lista de precios", e)
         return redirect(url_for("precios.lista"))
 
+    # Los inputs vienen EN LA ESCALA c/IVA (asi los tipea el dueno). La BD
+    # guarda NETO, asi que dividimos por 1,15 antes de comparar y escribir.
+    # Federico 2026-08-07: "El prg muestra con IVA y sin IVA. Eso esta fuera
+    # de nuestra historia. Siempre es con IVA incluido." Guardamos con 4
+    # decimales para que el redondeo del round-trip c/IVA <-> NETO no genere
+    # drift visible (si alguien abre y guarda sin tocar nada, no debe cambiar).
+    IVA_FACTOR = 1.0 + queries.IVA_PCT / 100.0
     cambios = 0
     errores = []
     for fila in actuales:
@@ -243,24 +254,33 @@ def guardar():
             if campo not in request.form:
                 continue
             raw = (request.form.get(campo) or "").strip()
-            nuevo = parse_monto(raw)
-            if raw and nuevo is None:
+            nuevo_iva = parse_monto(raw)
+            if raw and nuevo_iva is None:
                 errores.append(f"«{raw}»")
                 continue
             actual = fila.get(col)
-            # Comparar como float para no re-escribir por formato.
             act_f = float(actual) if actual is not None else None
-            nue_f = float(nuevo) if nuevo is not None else None
-            if act_f == nue_f:
+            # Convertir input c/IVA a NETO con 4 decimales (mismo criterio del
+            # skill precios-lista: "guardar con 4 decimales para que al
+            # re-multiplicar vuelva exacto el numero original").
+            nue_neto = (
+                round(float(nuevo_iva) / IVA_FACTOR, 4)
+                if nuevo_iva is not None else None
+            )
+            # "Sin cambios" se juzga en la escala que ve el usuario (2 dec c/IVA).
+            act_iva_2 = round(act_f * IVA_FACTOR, 2) if act_f is not None else None
+            nue_iva_2 = round(float(nuevo_iva), 2) if nuevo_iva is not None else None
+            if act_iva_2 == nue_iva_2:
                 continue
             try:
-                queries.actualizar_precio(clase, col, nuevo, usuario)
+                queries.actualizar_precio(clase, col, nue_neto, usuario)
                 cambios += 1
             except Exception:  # noqa: BLE001
                 errores.append(f"{clase}/{col}")
 
-    # Telas de precio único: campo `pp_<id>`. Lo que se tipea es el precio SIN
-    # IVA (es lo que se muestra en la pantalla de edición).
+    # Telas de precio único: campo `pp_<id>`. El input viene c/IVA (igual que
+    # la matriz de arriba y la hoja de abajo). Se convierte a NETO y se guarda
+    # con 4 decimales para que el round-trip c/IVA <-> NETO no drifteé.
     try:
         planos = queries.precio_plano()
     except Exception:  # noqa: BLE001
@@ -272,22 +292,22 @@ def guardar():
         if campo not in request.form:
             continue
         raw = (request.form.get(campo) or "").strip()
-        nuevo = parse_monto(raw)
-        if raw and nuevo is None:
+        nuevo_iva = parse_monto(raw)
+        if raw and nuevo_iva is None:
             errores.append(f"«{raw}»")
             continue
         actual = float(p["precio"]) if p.get("precio") is not None else None
-        nue_f = float(nuevo) if nuevo is not None else None
-        # Se compara con los 2 decimales que se MUESTRAN: el valor guardado
-        # tiene 4 (viene de dividir por 1,15) y si no, abrir y guardar sin
-        # tocar nada lo truncaría solo.
-        if actual is not None and nue_f is not None:
-            if round(actual, 2) == round(nue_f, 2):
-                continue
-        elif actual == nue_f:
+        nue_neto = (
+            round(float(nuevo_iva) / IVA_FACTOR, 4)
+            if nuevo_iva is not None else None
+        )
+        # "Sin cambios" se juzga en la escala que ve el usuario (2 dec c/IVA).
+        act_iva_2 = round(actual * IVA_FACTOR, 2) if actual is not None else None
+        nue_iva_2 = round(float(nuevo_iva), 2) if nuevo_iva is not None else None
+        if act_iva_2 == nue_iva_2:
             continue
         try:
-            queries.actualizar_precio_plano(int(p["id"]), nuevo, usuario)
+            queries.actualizar_precio_plano(int(p["id"]), nue_neto, usuario)
             cambios += 1
         except Exception:  # noqa: BLE001
             errores.append(str(p["tela"]))

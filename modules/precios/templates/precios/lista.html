@@ -47,6 +47,7 @@
           <span class="text-sm text-slate-500">$</span>
           <input type="text" name="monto" id="monto-input" placeholder="0,10"
                  class="w-20 text-right rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+          <span class="text-xs text-slate-500">(c/IVA)</span>
         </span>
         <button type="submit"
                 class="rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1 font-medium">
@@ -77,6 +78,7 @@
       <div class="mb-2">
         <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Editar todos los basicos</h2>
         <p class="text-xs text-slate-500 dark:text-slate-400">
+          <b>Con IVA 15% incluido</b> — los números son los que ve el cliente en la hoja de abajo.
           Cada celda es el precio de lista (Basico). En <span class="text-amber-600 dark:text-amber-400 font-medium">ambar</span>
           se muestra cómo queda con el <b>aumento</b> de arriba (% o $ fijo, según lo elegido) — vista previa, no se guarda.
         </p>
@@ -99,12 +101,16 @@
               </td>
               {% for col, label in telas %}
               {% set val = f[col] %}
+              {# Federico 2026-08-07: la matriz editable se ve con IVA, igual
+                 que la hoja imprimible. En BD sigue NETO — guardar() divide
+                 por 1,15 antes de escribir (ver views.py). #}
+              {% set val_iva = (val * 1.15) if val is not none else none %}
               <td class="px-1 py-1 text-center align-top" style="width:82px;">
                 <input type="text"
                        name="p_{{ f.clase }}_{{ col }}"
                        class="celda-matriz text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm tabular-nums"
                        style="width:74px;"
-                       value="{{ val | num_es if val is not none else '' }}"
+                       value="{{ val_iva | round(2) | num_es if val_iva is not none else '' }}"
                        autocomplete="off">
                 <div class="preview-descuento tabular-nums text-amber-600 dark:text-amber-400 mt-0.5 text-right pr-1"
                      style="font-size:11px; line-height:1.1; min-height:0.9rem;"></div>
@@ -125,15 +131,15 @@
       <div class="mt-6" style="max-width:520px;">
         <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Telas de precio unico</h2>
         <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">
-          El mismo precio para todas las clases de color. Se tipea <b>sin IVA</b>,
-          igual que la matriz (el IVA lo agrega la hoja al imprimir).
+          El mismo precio para todas las clases de color. Se tipea <b>con IVA 15% incluido</b>,
+          igual que la matriz de arriba.
         </p>
         <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
           <table class="w-full text-sm" style="border-collapse:collapse;">
             <thead class="text-xs uppercase tracking-wider text-slate-500">
               <tr class="bg-slate-50 dark:bg-slate-800/50">
                 <th class="px-3 py-2 text-left font-medium">Tela</th>
-                <th class="px-3 py-2 text-right font-medium">Precio sin IVA</th>
+                <th class="px-3 py-2 text-right font-medium">Precio c/IVA</th>
               </tr>
             </thead>
             <tbody>
@@ -144,10 +150,11 @@
                   {% if p.ref_col %}
                   <span class="text-slate-400 text-xs">{{ p.nota }}</span>
                   {% else %}
+                  {% set pp_iva = (p.precio * 1.15) if p.precio is not none else none %}
                   <input type="text" name="pp_{{ p.id }}"
                          class="text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-2 py-0.5 text-sm tabular-nums"
                          style="width:92px;"
-                         value="{{ p.precio | num_es if p.precio is not none else '' }}"
+                         value="{{ pp_iva | round(2) | num_es if pp_iva is not none else '' }}"
                          autocomplete="off">
                   {% endif %}
                 </td>

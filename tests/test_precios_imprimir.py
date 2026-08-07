@@ -478,3 +478,146 @@ def test_los_precios_en_bd_siguen_netos():
     # 2) El SQL no aplica IVA a la mano.
     sql = capturado["sql"]
     assert "1.15" not in sql and "* 1.1" not in sql
+
+
+# ---------------------------------------------------------------------------
+# 8. Modo Editar: se ve y se edita CON IVA (Federico 2026-08-07, ronda 2).
+# Antes, la matriz editable mostraba NETO (7,93 para JERSEY/BLANCO), y la
+# hoja de abajo mostraba c/IVA (9,12). Federico: "hay diferencias, la que
+# está bien es la de abajo". Ahora las dos escalas visibles coinciden; la BD
+# sigue guardando NETO -- la view convierte al leer y al escribir.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cliente_editor(app, fake_db, monkeypatch):
+    """Usuario CON 'precios.editar': ve el modo Editar (la matriz editable)."""
+    rid = fake_db.add_role("Admin", ["precios.editar"])
+    uid = fake_db.add_user("admin", b"$2b$12$fakehash", rid)
+    monkeypatch.setattr(
+        queries,
+        "matriz",
+        lambda: [_fila(jersey=7.93, falso=8.21), _fila(clase=5, descripcio="FUERTES", jersey=9.82)],
+    )
+    monkeypatch.setattr(queries, "precio_plano", lambda: PLANOS)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user_id"] = uid
+    return client
+
+
+def test_matriz_editable_muestra_c_iva_no_neto(cliente_editor):
+    """El input de JERSEY/BLANCO tiene value 9,12 (= 7,93 x 1,15), no 7,93.
+    Federico ve el mismo numero arriba (editando) y abajo (hoja imprimible)."""
+    html = cliente_editor.get("/precios").get_data(as_text=True)
+    # value="9,12" es el input de la matriz editable (BLANCO, jersey)
+    assert 'value="9,12"' in html
+    # Y NO aparece el neto 7,93 como valor de input.
+    assert 'value="7,93"' not in html
+
+
+def test_matriz_editable_aclara_c_iva_en_la_leyenda(cliente_editor):
+    html = cliente_editor.get("/precios").get_data(as_text=True)
+    assert "Con IVA 15% incluido" in html
+
+
+def test_guardar_convierte_c_iva_a_neto_al_escribir(cliente_editor, monkeypatch):
+    """El usuario cambia JERSEY/BLANCO de 9,12 a 9,50 (c/IVA). En BD tiene
+    que quedar 9,50 / 1,15 ~ 8,2609 (NETO, 4 decimales para no drifteé)."""
+    escritos = []
+    monkeypatch.setattr(
+        queries,
+        "actualizar_precio",
+        lambda clase, col, valor, usuario: escritos.append((clase, col, float(valor))),
+    )
+    # Enviar TODOS los inputs (la view sólo escribe si cambió).
+    form = {"csrf_token": "x"}
+    # BLANCO cambia; FUERTES queda igual.
+    for col, _ in queries.TELAS:
+        form[f"p_1_{col}"] = "9,50" if col == "jersey" else ""
+        form[f"p_5_{col}"] = "11,29" if col == "jersey" else ""
+    # Tomar el csrf real (algunos tests lo requieren)
+    r = cliente_editor.get("/precios")
+    import re
+    m = re.search(r'name="csrf_token" value="([^"]+)"', r.get_data(as_text=True))
+    if m:
+        form["csrf_token"] = m.group(1)
+    cliente_editor.post("/precios/guardar", data=form)
+    # Sólo BLANCO/jersey cambió (FUERTES/jersey queda en 11,29 c/IVA = 9,82 NETO exacto)
+    assert (1, "jersey") in [(c, col) for c, col, _ in escritos]
+    val = [v for c, col, v in escritos if c == 1 and col == "jersey"][0]
+    # 9,50 / 1,15 = 8,2609 (redondeado a 4 dec)
+    assert abs(val - 8.2609) < 1e-4
+
+
+def test_guardar_no_reescribe_si_el_usuario_no_toco_nada(cliente_editor, monkeypatch):
+    """Round-trip: el usuario abre el modo Editar (valores 9,12, 11,29...) y
+    da Guardar sin cambiar nada. No debe escribir nada en BD -- el drift del
+    round c/IVA -> NETO -> c/IVA no debe disparar cambios fantasma."""
+    escritos = []
+    monkeypatch.setattr(
+        queries,
+        "actualizar_precio",
+        lambda *a, **kw: escritos.append(a),
+    )
+    monkeypatch.setattr(
+        queries,
+        "actualizar_precio_plano",
+        lambda *a, **kw: escritos.append(a),
+    )
+    r = cliente_editor.get("/precios")
+    html = r.get_data(as_text=True)
+    import re
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+    form = {"csrf_token": csrf}
+    # BLANCO/jersey: 7,93 * 1,15 = 9,1195 -> se muestra "9,12"
+    # FUERTES/jersey: 9,82 * 1,15 = 11,293 -> se muestra "11,29"
+    # BLANCO/falso (FLEECE): 8,21 * 1,15 = 9,4415 -> "9,44"
+    for col, _ in queries.TELAS:
+        v1 = _fila(jersey=7.93, falso=8.21).get(col)
+        v5 = _fila(clase=5, jersey=9.82).get(col)
+        form[f"p_1_{col}"] = f"{round(v1 * 1.15, 2):.2f}".replace(".", ",") if v1 is not None else ""
+        form[f"p_5_{col}"] = f"{round(v5 * 1.15, 2):.2f}".replace(".", ",") if v5 is not None else ""
+    # Los planos vienen c/IVA -- mismo valor que muestra el input.
+    for pp in PLANOS:
+        if pp.get("ref_col"):
+            continue
+        pn = pp["precio"]
+        form[f"pp_{pp['id']}"] = f"{round(pn * 1.15, 2):.2f}".replace(".", ",")
+    cliente_editor.post("/precios/guardar", data=form)
+    assert escritos == [], f"guardar reescribió sin necesidad: {escritos}"
+
+
+def test_subir_porcentaje_modo_monto_convierte_c_iva_a_neto(cliente_editor, monkeypatch):
+    """El usuario tipea "$ fijo 0,10 (c/IVA)" -> queries.sumar_monto recibe
+    0,10 / 1,15 ~ 0,0870 (NETO), no 0,10."""
+    llamadas = []
+    monkeypatch.setattr(
+        queries, "sumar_monto", lambda monto, usuario: llamadas.append(float(monto))
+    )
+    r = cliente_editor.get("/precios")
+    import re
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', r.get_data(as_text=True)).group(1)
+    cliente_editor.post(
+        "/precios/subir-porcentaje",
+        data={"modo": "monto", "monto": "0,10", "csrf_token": csrf},
+    )
+    assert llamadas, "sumar_monto no fue llamada"
+    assert abs(llamadas[0] - (0.10 / 1.15)) < 1e-6
+
+
+def test_subir_porcentaje_modo_pct_no_toca_iva(cliente_editor, monkeypatch):
+    """Subir 5% es multiplicativo -- indiferente a la escala. No dividir por
+    1,15 acá o el pct se aplicaría al doble."""
+    llamadas = []
+    monkeypatch.setattr(
+        queries, "subir_porcentaje", lambda pct, usuario: llamadas.append(float(pct))
+    )
+    r = cliente_editor.get("/precios")
+    import re
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', r.get_data(as_text=True)).group(1)
+    cliente_editor.post(
+        "/precios/subir-porcentaje",
+        data={"modo": "pct", "pct": "5", "csrf_token": csrf},
+    )
+    assert llamadas == [5.0]
