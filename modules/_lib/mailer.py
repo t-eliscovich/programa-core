@@ -35,7 +35,42 @@ def _region() -> str:
 
 
 def remitente() -> str:
-    return (os.environ.get("MAIL_REMITENTE") or REMITENTE_DEFAULT).strip()
+    """De qué dirección sale. Entorno primero, después la base.
+
+    El entorno manda para poder pisarlo en una emergencia sin tocar datos; la
+    base es lo normal, porque cambiar de dirección no puede requerir entrar al
+    server (mig 0176).
+    """
+    del_entorno = (os.environ.get("MAIL_REMITENTE") or "").strip()
+    if del_entorno:
+        return del_entorno
+    try:
+        import db
+
+        r = db.fetch_one("SELECT valor FROM scintela.nota_config "
+                         " WHERE clave = 'remitente'")
+        if r and (r.get("valor") or "").strip():
+            return r["valor"].strip()
+    except Exception as e:  # noqa: BLE001 -- sin base, el default
+        _LOG.warning("mailer: no pude leer el remitente (%s)", e)
+    return REMITENTE_DEFAULT
+
+
+def guardar_remitente(correo: str) -> tuple[bool, str]:
+    correo = (correo or "").strip().lower()
+    if "@" not in correo or " " in correo or len(correo) > 200:
+        return False, "Ese correo no parece un correo."
+    try:
+        import db
+
+        db.execute("INSERT INTO scintela.nota_config (clave, valor) "
+                   "VALUES ('remitente', %s) "
+                   "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+                   (correo,))
+        return True, f"Ahora sale de {correo}."
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("mailer: no pude guardar el remitente (%s)", e)
+        return False, "No se pudo guardar."
 
 
 def habilitado() -> bool:

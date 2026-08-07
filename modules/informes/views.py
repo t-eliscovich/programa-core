@@ -1276,6 +1276,9 @@ def dia_nota_destinatarios():
             flash(msg, "success" if ok else "error")
         elif accion in ("activar", "desactivar"):
             _dia.cambiar_destinatario(request.form.get("id"), accion == "activar")
+        elif accion == "remitente":
+            ok, msg = mailer.guardar_remitente(request.form.get("correo"))
+            flash(msg, "success" if ok else "error")
         elif accion == "probar":
             # `forzar` saltea la idempotencia: es a pedido, no la automática.
             r = _dia.enviar_nota(forzar=True)

@@ -55,12 +55,24 @@
             style="border-color:rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Agregar</button>
   </form>
 
+  {# SES exige que el remitente esté verificado. Va por pantalla y no por
+     variable de entorno: cambiar de dirección no puede pedir entrar al server. #}
+  <form method="post" class="my-3 flex items-center gap-2 flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="accion" value="remitente">
+    <span class="text-sm text-slate-500">Sale de:</span>
+    <input name="correo" type="email" required value="{{ remitente }}"
+           class="text-sm px-2 py-1.5 rounded border border-slate-300" style="min-width:16rem;">
+    <button class="text-sm px-3 py-1.5 rounded border" style="border-color:rgb(203 213 225);">Guardar</button>
+    <span class="text-xs text-slate-500">Tiene que estar verificado en SES.</span>
+  </form>
+
   <form method="post" class="my-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="accion" value="probar">
     <button class="text-sm px-3 py-1.5 rounded border"
             style="border-color:rgb(148 163 184);">Mandarla ahora (prueba)</button>
-    <span class="text-xs text-slate-500" style="margin-left:.5rem;">Sale de {{ remitente }}.</span>
+
   </form>
 
   <div class="my-4">
