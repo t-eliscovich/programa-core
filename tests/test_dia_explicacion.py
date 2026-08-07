@@ -149,9 +149,19 @@ def test_el_ajuste_no_se_hace_pasar_por_explicado():
     assert movs[0]["regla"] == "Sin explicar todavía"
 
 
-def test_una_fuente_caida_no_tumba_la_captura():
-    """Si Asinfo o formulas_app no contestan, el componente queda sin detalle
-    pero el `#ajuste` lo absorbe entero y la foto igual se toma."""
+def test_una_fuente_caida_arrastra_lo_que_habia_en_vez_de_vaciar():
+    """🚨 Un componente que no se pudo LEER no es un componente vacío.
+
+    Antes, una fuente caída dejaba `filas=[]` y el `#ajuste` absorbía el total.
+    Suena inofensivo hasta que se mira lo que hace `aplicar()`: borra las
+    ~4.800 filas de facturas de la foto rodante, y el diff emite una baja por
+    cada una ("Factura cancelada del todo") para devolverlas todas como ventas
+    nuevas en la vuelta siguiente. Los aportes netean, pero quedan miles de
+    movimientos falsos guardados para siempre.
+    """
+    antes = {("facturas", "f1"): {"componente": "facturas", "doc_id": "f1",
+                                  "etiqueta": "Factura 1 · AAA", "importe": 5000.0,
+                                  "cantidad": None, "precio": None}}
     with patch.object(motor, "_det_facturas", side_effect=RuntimeError("Asinfo caído")), \
          patch.object(motor, "_det_cheques", return_value=[]), \
          patch.object(motor, "_det_caja", return_value=[]), \
@@ -160,9 +170,12 @@ def test_una_fuente_caida_no_tumba_la_captura():
          patch.object(motor, "_det_totp", return_value=[]), \
          patch.object(motor, "_det_uret", return_value=[]), \
          patch.object(motor, "_det_activos", return_value=[]):
-        det = dia.detalle(_bal(totf=5000.0))
-    aj = [d for d in det if d["doc_id"] == "#ajuste:facturas"]
-    assert aj and aj[0]["importe"] == 5000.0
+        det = dia.detalle(_bal(totf=5000.0), anterior=antes)
+
+    # La factura sigue en la foto, así que el diff no ve ni un alta ni una baja.
+    assert any(d["doc_id"] == "f1" for d in det)
+    assert not [d for d in det if d["doc_id"] == "#ajuste:facturas"]
+    assert motor.diff(det, antes) == []
 
 
 # ── Stock: kilos vs tarifa ──────────────────────────────────────────────────

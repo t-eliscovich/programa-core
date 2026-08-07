@@ -160,15 +160,21 @@ def test_aplicar_toca_solo_lo_que_cambio():
     assert not any(s.strip() == "DELETE FROM scintela.traza_detalle" for s in ejecutadas)
 
 
-def test_un_cambio_por_debajo_del_umbral_igual_actualiza_la_foto():
-    """No genera movimiento (es ruido de centavos) pero SÍ se guarda: si no,
-    un documento que se corre medio centavo por vuelta nunca alcanzaría el
-    umbral y la foto se iría quedando atrás en silencio."""
+def test_un_cambio_por_debajo_de_la_precision_de_la_columna_no_es_un_cambio():
+    """Medio centavo no se puede guardar: `importe` es NUMERIC(16,2). Tratarlo
+    como cambio hacía reescribir las filas de stock y de activos en TODAS las
+    vueltas —el float en memoria nunca es idéntico al NUMERIC que volvió de la
+    base— y la actualización "por diferencia" quedaba a medias.
+
+    Un centavo entero sí es un cambio y sí se escribe.
+    """
     vieja = _guardada([_fila("facturas", "f1", 1000.000)])
-    nueva = [_fila("facturas", "f1", 1000.005)]
-    assert motor.diff(nueva, vieja) == []                 # no es noticia
+    assert motor.diff([_fila("facturas", "f1", 1000.005)], vieja) == []
     with patch.object(motor.db, "execute"):
-        assert motor.aplicar(_ConnFalso(), nueva, vieja)["cambios"] == 1
+        medio = motor.aplicar(_ConnFalso(), [_fila("facturas", "f1", 1000.005)], vieja)
+        entero = motor.aplicar(_ConnFalso(), [_fila("facturas", "f1", 1000.01)], vieja)
+    assert medio["cambios"] == 0
+    assert entero["cambios"] == 1
 
 
 # ── Los links del detalle apuntan a pantallas que existen ───────────────────
@@ -424,3 +430,53 @@ def test_el_boton_se_llama_historia_no_historial(app):
     barra = app.jinja_env.loader.get_source(app.jinja_env, "_ui.html")[0]
     assert "('historico_12m', 'Historia')" in barra
     assert "('historico_12m', 'Historial')" not in barra
+
+# ── Los tres bugs de números que encontró la auditoría ──────────────────────
+
+def test_una_etapa_nueva_no_pierde_su_delta():
+    """🚨 Una etapa que no estaba en la foto anterior se salteaba entera, y el
+    diff igual la daba por resuelta: su Δ desaparecía en silencio y caía al
+    residuo sin nombre. Pasa la primera vez que Asinfo reporta una etapa."""
+    vieja = _guardada([_etapa("hilado", 1000.0, 2.0)])
+    nueva = [_etapa("hilado", 1000.0, 2.0), _etapa("tejido", 20000.0, 2.5)]
+    movs = motor.diff(nueva, vieja)
+    assert round(sum(m["aporte"] for m in movs), 2) == 50000.0
+    assert any("tejido" in (m["etiqueta"] or "") for m in movs)
+
+
+def test_la_revaluacion_no_se_fusiona_con_la_tela():
+    """🚨 Las dos compartían la regla "Stock" y `resumir()` agrupa por regla:
+    salían como un renglón "2 stock" y se perdía la distinción entre "entraron
+    kilos" y "cambió el $/kg" — que es la razón de guardar cantidad y precio
+    por separado."""
+    vieja = _guardada([_etapa("hilado", 1000.0, 2.00)])
+    nueva = [_etapa("hilado", 1100.0, 2.10)]
+    reglas = {m["regla"] for m in motor.diff(nueva, vieja)}
+    assert reglas == {"Stock", "Revaluación de stock"}
+    textos = [g["texto"] for g in t.resumir(motor.diff(nueva, vieja), 310.0)]
+    assert not any(x.startswith("2 ") for x in textos), textos
+
+
+def test_dos_ajustes_de_componentes_distintos_no_se_netean():
+    """🚨 Los once `#ajuste` comparten la regla "Sin explicar todavía".
+    Agrupados sólo por regla, +5.000 en caja y −5.000 en bancos se netean a
+    cero: diez mil dólares de plata ciega no se muestran, y como el neto da
+    cero tampoco dispara el aviso. Justo al revés de lo que tiene que hacer."""
+    movs = [
+        {"regla": "Sin explicar todavía", "familia": "sin_explicar",
+         "componente": "caja", "aporte": 5000.0, "etiqueta": "Caja: sin explicar"},
+        {"regla": "Sin explicar todavía", "familia": "sin_explicar",
+         "componente": "bancos", "aporte": -5000.0, "etiqueta": "Bancos: sin explicar"},
+    ]
+    out = t.resumir(movs, 0.0)
+    assert len(out) == 2, [g["texto"] for g in out]
+    assert {g["col"] for g in out} == {"caja", "bancos"}
+    assert {g["aporte"] for g in out} == {5000.0, -5000.0}
+
+
+def test_lo_ciego_no_se_esconde_por_chico():
+    """Un `#ajuste` de $0,40 igual es plata que no sabemos de dónde salió: es
+    la lista de tareas del entrenamiento, no ruido."""
+    movs = [{"regla": "Sin explicar todavía", "familia": "sin_explicar",
+             "componente": "vqx", "aporte": 0.4, "etiqueta": "x"}]
+    assert [g["col"] for g in t.resumir(movs, 0.4)] == ["vqx"]

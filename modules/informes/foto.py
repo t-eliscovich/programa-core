@@ -356,8 +356,11 @@ def _det_vqx(bal: dict) -> list[dict]:
              "importe": v}] if v else []
 
 
-def detalle(bal: dict) -> list[dict]:
+def detalle(bal: dict, anterior: dict | None = None) -> list[dict]:
     """La foto completa: componente + documento + importe.
+
+    `anterior` es la foto de la vuelta pasada. Se usa sólo para arrastrar un
+    componente que no se pudo leer, y así no confundir "no pude" con "no hay".
 
     Cierra contra el balance por construcción: a cada componente se le agrega
     una fila `#ajuste:<comp>` con lo que el detalle no llegó a explicar.
@@ -371,12 +374,21 @@ def detalle(bal: dict) -> list[dict]:
         "vsto": lambda: _det_vsto(bal), "vqx": lambda: _det_vqx(bal),
     }
     out: list[dict] = []
+    # 🚨 Un componente que no se pudo LEER no es un componente vacío. Si
+    # `_det_facturas` falla y se sigue como si no hubiera facturas, `aplicar()`
+    # borra las ~4.800 filas de la foto y `diff()` emite una baja por cada una
+    # ("Factura cancelada del todo"), para devolverlas todas a la vuelta
+    # siguiente como ventas nuevas. Los aportes netean, pero la pantalla queda
+    # inservible y quedan miles de movimientos falsos guardados para siempre.
+    # Cuando una fuente falla se arrastra lo que había y no se toca nada.
+    ilegibles: set[str] = set()
     for c, _signo in COMPONENTES:
         try:
             filas = fuentes[c]() or []
         except Exception as e:  # noqa: BLE001
             _LOG.warning("foto: detalle de %s falló (%s)", c, e)
-            filas = []
+            ilegibles.add(c)
+            continue
         suma = 0.0
         for f in filas:
             f["componente"] = c
@@ -395,6 +407,8 @@ def detalle(bal: dict) -> list[dict]:
     out.append({"componente": META, "doc_id": "iniciada",
                 "etiqueta": "La foto ya se sacó alguna vez",
                 "importe": 0.0, "cantidad": None, "precio": None})
+    if ilegibles and anterior:
+        out.extend(dict(f) for (c, _d), f in anterior.items() if c in ilegibles)
     return out
 
 #: Familias que DEBERÍAN netear cero. Si no netean, esa diferencia es la
@@ -509,13 +523,19 @@ def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
     est, objetivo, d_tarifa = {}, 0.0, 0.0
     for et in ORDEN_ETAPAS:
         f = etapas.get(et)
-        a = vieja.get(("vsto", f"#{et}")) if f else None
-        if not f or not a:
+        if not f:
             continue
+        # 🚨 Una etapa que NO estaba en la foto anterior se salteaba entera, y
+        # `diff()` igual la daba por resuelta: su Δ desaparecía en silencio y
+        # caía al residuo sin nombre. Sin foto anterior, el estado previo es
+        # CERO — es un alta, no un motivo para no mirarla.
+        a = vieja.get(("vsto", f"#{et}")) or {}
         kg0, kg1 = _f(a.get("cantidad")), _f(f.get("cantidad"))
         p0, p1 = _f(a.get("precio")), _f(f.get("precio"))
         est[et] = {"dkg": kg1 - kg0}
         objetivo += _f(f.get("importe")) - _f(a.get("importe"))
+        if not a:
+            continue                       # etapa nueva: es toda tela, no tarifa
         # Sólo cuenta como revaluación si el $/kg cambió en las cuatro
         # decimales que se muestran; más abajo es redondeo y se lo lleva la
         # tela, que es donde nadie lo va a extrañar.
@@ -531,7 +551,12 @@ def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
             "componente": "vsto", "tipo": "cambio", "doc_id": "#stock:tarifa",
             "etiqueta": "cambió el $/kg", "importe_antes": None,
             "importe_despues": None, "delta": d_tarifa, "aporte": d_tarifa,
-            "regla": "Stock", "familia": "utilidad"})
+            # 🚨 Regla PROPIA, distinta de la de la tela: `resumir()` agrupa por
+            # regla, así que compartiéndola las dos se fusionaban en un renglón
+            # "2 stock" — y se perdía justo la distinción entre "entraron
+            # kilos" y "cambió el $/kg", que es la razón de guardar cantidad y
+            # precio por separado.
+            "regla": "Revaluación de stock", "familia": "utilidad"})
     tela = round(objetivo - d_tarifa, 2)
     if abs(tela) >= UMBRAL:
         movs.append({
@@ -551,8 +576,14 @@ def es_primera(vieja: dict) -> bool:
 
 def guardada() -> dict[tuple[str, str], dict]:
     """La foto rodante que quedó de la vuelta anterior."""
-    filas = _rows("SELECT componente, doc_id, etiqueta, importe, cantidad, precio "
-                  "FROM scintela.traza_detalle")
+    # 🚨 A propósito NO es fail-soft. Si el SELECT falla y devuelve `{}`, la
+    # vuelta cree que es la primera foto de la historia: no explica el Δ y
+    # —peor— `aplicar()` calcula CERO bajas, así que los documentos que ya no
+    # existen quedan en la foto y salen como bajas espurias más adelante.
+    # Mejor abortar la vuelta: la de dentro de cinco minutos anda igual.
+    filas = db.fetch_all(
+        "SELECT componente, doc_id, etiqueta, importe, cantidad, precio "
+        "FROM scintela.traza_detalle") or []
     return {(r["componente"], r["doc_id"]): r for r in filas}
 
 
@@ -642,9 +673,13 @@ def _en_lote(conn, tabla: str, cols: tuple[str, ...], filas: list[dict],
 
 
 def _cambio(a: dict, f: dict) -> bool:
-    return (_f(a.get("importe")) != _f(f.get("importe"))
-            or _f(a.get("cantidad")) != _f(f.get("cantidad"))
-            or _f(a.get("precio")) != _f(f.get("precio"))
+    # Se compara REDONDEADO a la precisión de cada columna: el float en memoria
+    # nunca es exactamente igual al NUMERIC que volvió de la base, así que sin
+    # esto las filas de stock y de activos se reescribían en TODAS las vueltas
+    # y la actualización "por diferencia" quedaba a medias.
+    return (round(_f(a.get("importe")), 2) != round(_f(f.get("importe")), 2)
+            or round(_f(a.get("cantidad")), 2) != round(_f(f.get("cantidad")), 2)
+            or round(_f(a.get("precio")), 4) != round(_f(f.get("precio")), 4)
             or (a.get("etiqueta") or "") != (f.get("etiqueta") or ""))
 
 

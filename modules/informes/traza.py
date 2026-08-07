@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 
 import db
@@ -36,6 +37,10 @@ _LOG = logging.getLogger("programa_core.traza_utilidad")
 INTERVALO_SECS = 300
 
 _ultimo_ts: float = 0.0
+
+#: Clave del advisory lock que serializa las fotos. Un número cualquiera, pero
+#: fijo: dos procesos tienen que pedir el MISMO.
+LOCK_FOTO = 817_2026
 
 
 def _intervalo() -> int:
@@ -129,8 +134,8 @@ def registrar(origen: str = "manual", bal: dict | None = None,
         fila["momento"] = (momento or "foto")[:20]
 
         from modules.informes import foto as _foto
-        nueva = _foto.detalle(bal)
         vieja = _foto.guardada()
+        nueva = _foto.detalle(bal, anterior=vieja)
         primera = _foto.es_primera(vieja)
         movs = [] if primera else _foto.diff(nueva, vieja)
 
@@ -142,6 +147,18 @@ def registrar(origen: str = "manual", bal: dict | None = None,
         # entren los movimientos, esos documentos quedarían sin explicación
         # para siempre — la vuelta siguiente ya los vería como "iguales".
         with db.tx() as conn:
+            # 🚨 `nueva` y `vieja` se leen fuera de la transacción y
+            # `dia_movimiento` no tiene unicidad: dos vueltas simultáneas —el
+            # ciclo de fondo y el botón "Sacar foto ahora"— producen dos fotos
+            # con LOS MISMOS movimientos, y la explicación del día los suma dos
+            # veces. El lock es por sesión y se suelta al cerrar la
+            # transacción; si otro lo tiene, esta vuelta se saltea.
+            tomado = db.fetch_one(
+                "SELECT pg_try_advisory_xact_lock(%s) AS ok", (LOCK_FOTO,),
+                conn=conn)
+            if not (tomado or {}).get("ok"):
+                res["motivo"] = "otra foto se está sacando ahora"
+                return res
             r = db.execute_returning(
                 f"INSERT INTO scintela.traza_utilidad ({campos}) "
                 f"VALUES ({marcas}) RETURNING id_traza", fila, conn=conn)
@@ -198,6 +215,12 @@ ETIQUETAS = {
 COLUMNAS_DELTA = ("caja", "bancos", "cheques", "facturas", "antic",
                   "vsto", "vqx", "totp")
 
+#: Los tres que la dueña sacó de la grilla ("dividendos, maquinaria, terrenos
+#: no necesito"). Siguen moviendo la utilidad —la amortización, todos los
+#: días— así que su suma va en una columna "Otros": sin ella, esas filas
+#: muestran un Δ con las ocho celdas vacías, que es el síntoma de "no cierra".
+COLUMNAS_OTROS = ("umaq", "uact", "uret")
+
 #: Rótulos cortos para la grilla. Con `table-layout:fixed` el ancho lo fija el
 #: CSS, pero un encabezado largo igual obliga a envolver en dos líneas y empuja
 #: la tabla fuera de la pantalla. En el detalle siguen con el nombre completo.
@@ -240,7 +263,7 @@ def ultimas(n: int = 120) -> list[dict]:
                    TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
                            'DD/MM HH24:MI') AS cuando
               FROM scintela.traza_utilidad
-             ORDER BY creado_en DESC
+             ORDER BY creado_en DESC, id_traza DESC
              LIMIT {n}
             """
         ) or []
@@ -304,6 +327,10 @@ def con_deltas(filas: list[dict]) -> list[dict]:
         # El Δ de cada componente, indexado por columna: la grilla muestra
         # esto y deja la celda vacía cuando no hay nada.
         fila["delta"] = {m["col"]: m["aporte"] for m in movs}
+        otros = round(sum(m["aporte"] for m in movs
+                          if m["col"] in COLUMNAS_OTROS), 2)
+        if abs(otros) >= 1:
+            fila["delta"]["otros"] = otros
         # Los kilos que se movieron en cada etapa, para poder poner el − y el +
         # en su columna (TMT 2026-08-06: *"+ en una columna y − en la otra"*).
         # Salen de las dos fotos, así que no hay que guardarlos en el
@@ -517,7 +544,22 @@ PLURALES = {
     "Anticipo aplicado": "anticipos aplicados",
     "Retiro de dividendos": "retiros",
     "Sin explicar todavía": "sin explicar",
+    # Las que faltaban: salían como "20 movimiento de caja", "37 amortización
+    # del día", "2 stock". Origen: `foto.regla()` y la reconstrucción.
+    "Movimiento de caja": "movimientos de caja",
+    "Stock": "movimientos de stock",
+    "Revaluación de stock": "revaluaciones de stock",
+    "Stock de químicos": "movimientos de químicos",
+    "Amortización del día": "activos amortizados",
+    "Activo dado de alta": "activos dados de alta",
+    "Activo dado de baja": "activos dados de baja",
+    "Cheques emitidos sin debitar": "cheques emitidos sin debitar",
+    "Apertura de caja": "aperturas de caja",
 }
+
+
+#: Un código de cliente o proveedor: 2 a 4 caracteres, mayúsculas o dígitos.
+_RE_CODIGO = re.compile(r"^[A-Z0-9]{2,4}$")
 
 
 def _quien(etiqueta: str | None) -> str:
@@ -531,10 +573,15 @@ def _quien(etiqueta: str | None) -> str:
     if len(partes) < 2:
         return ""
     q = partes[-1]
-    return q if 0 < len(q) <= 8 else ""
+    # 🚨 Un concepto corto no es un código. "Caja S · LUZ" daba "LUZ" y el
+    # resumen terminaba diciendo "4 gastos de caja · LUZ, AGUA, TAXI". Los
+    # códigos de cliente y de proveedor son 2 a 4 caracteres en mayúscula o
+    # dígitos, y sólo los llevan los componentes que tienen contraparte.
+    return q if _RE_CODIGO.match(q) else ""
 
 
-def resumir(movs: list[dict], d_utilidad: float | None) -> list[dict]:
+def resumir(movs: list[dict], d_utilidad: float | None,
+            eventos: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
 
     Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
@@ -546,14 +593,32 @@ def resumir(movs: list[dict], d_utilidad: float | None) -> list[dict]:
     "resto": la suma de lo que se ve tiene que dar el total, o la tabla deja de
     ser creíble.
     """
-    grupos: dict[str, dict] = {}
+    grupos: dict[tuple, dict] = {}
     for m in movs or []:
         r = (m.get("regla") or "—").strip()
-        g = grupos.setdefault(r, {"regla": r, "aporte": 0.0, "n": 0,
+        # 🚨 Los once `#ajuste:<comp>` comparten la regla "Sin explicar
+        # todavía". Agrupados sólo por regla, un +5.000 en caja y un −5.000 en
+        # bancos se netean a cero: diez mil dólares de plata ciega no se
+        # muestran, y como el neto da cero tampoco dispara el aviso. Justo al
+        # revés de lo que ese aviso tiene que hacer. Lo ciego se agrupa por
+        # COMPONENTE.
+        # ⭐ Si `mov_doble` conoce el documento, el hecho manda sobre la regla:
+        # el cheque que se va de cartera y la plata que aparece en el banco son
+        # UN depósito, no dos cosas sueltas. Y un batch agrupa el hecho entero
+        # ("3 anticipos → compra N° 10130").
+        ev = (eventos or {}).get(m.get("doc_id") or "")
+        if ev:
+            clave = ("ev", ev["grupo"])
+        elif m.get("familia") == "sin_explicar":
+            clave = (r, m.get("componente"))
+        else:
+            clave = (r, None)
+        g = grupos.setdefault(clave, {"regla": r, "aporte": 0.0, "n": 0,
                                   "etiqueta": m.get("etiqueta"),
                                   "url": m.get("url"),
                                   "col": m.get("componente"),
                                   "quienes": {},
+                                  "evento": ev,
                                   "familia": m.get("familia")})
         if g["col"] != m.get("componente"):
             g["col"] = None                    # el grupo cruza componentes
@@ -565,10 +630,28 @@ def resumir(movs: list[dict], d_utilidad: float | None) -> list[dict]:
             g["quienes"][q] = round(g["quienes"].get(q, 0.0) + ap, 2)
     out, menores = [], 0.0
     for g in sorted(grupos.values(), key=lambda x: abs(x["aporte"]), reverse=True):
-        if abs(g["aporte"]) < UMBRAL_VISIBLE:
+        # Lo ciego no se esconde por chico: es la lista de tareas.
+        if (abs(g["aporte"]) < UMBRAL_VISIBLE
+                and g.get("familia") != "sin_explicar"):
             menores = round(menores + g["aporte"], 2)
             continue
-        if g["n"] > 1:
+        ev = g.get("evento")
+        if ev:
+            g["regla"] = ev["label"]
+            quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
+                             reverse=True)
+            g["texto"] = ev["label"]
+            if g["n"] > 1:
+                g["texto"] = f"{g['n']} · {ev['label']}"
+            if quienes:
+                g["texto"] += " · " + ", ".join(quienes[:3])
+            # Al Historial, filtrado por ese tipo y ese día: ahí están los
+            # movimientos uno por uno, que es como a la dueña le gusta verlos.
+            g["url"] = (f"/historial?tipo={ev['tipo']}"
+                        f"&desde={ev['dia']}&hasta={ev['dia']}")
+            if g["n"] == 1 and not quienes and ev.get("concepto"):
+                g["texto"] += " · " + str(ev["concepto"])[:48]
+        elif g["n"] > 1:
             # ⭐ TMT 2026-08-06: *"decime algo de las facturas, de los abonos…
             # ¿clientes quizás?"*. "3 facturas nuevas" no dice nada; "3
             # facturas · AJT, SAC, GBC" dice de quién es la venta. Van los tres
@@ -579,19 +662,25 @@ def resumir(movs: list[dict], d_utilidad: float | None) -> list[dict]:
             if len(quienes) > 3:
                 nombres += f" +{len(quienes) - 3}"
             g["texto"] = f"{g['n']} {PLURALES.get(g['regla'], g['regla'].lower())}"
-            if nombres:
+            if g.get("familia") == "sin_explicar":
+                g["texto"] = (f"{ETIQUETAS.get(g.get('col'), '')}: "
+                              f"sin explicar por documento").strip(": ")
+            if nombres and g.get("familia") != "sin_explicar":
                 g["texto"] += f" · {nombres}"
             g["url"] = None                    # son varios: ninguna ficha sola
+        elif g.get("familia") == "sin_explicar":
+            g["texto"] = (f"{ETIQUETAS.get(g.get('col'), g.get('col') or '')}"
+                          f": sin explicar por documento").strip(": ")
         else:
             g["texto"] = g.get("etiqueta") or g["regla"]
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
-        out.append({"texto": "otros menores", "aporte": menores, "n": 0,
+        out.append({"texto": "movimientos chicos", "aporte": menores, "n": 0,
                     "url": None, "col": None, "familia": "utilidad"})
     if d_utilidad is not None:
         resto = round(d_utilidad - sum(g["aporte"] for g in out), 2)
         if abs(resto) >= UMBRAL_VISIBLE:
-            out.append({"texto": "resto", "aporte": resto, "n": 0,
+            out.append({"texto": "diferencia contra el Δ", "aporte": resto, "n": 0,
                         "url": None, "col": None, "familia": "sin_explicar"})
     return out
 
@@ -628,8 +717,6 @@ def una(id_traza: int) -> dict | None:
     movs = movimientos(id_traza)
     fila["movimientos"] = movs
 
-    fila["resumen"] = resumir(movs, fila.get("d_utilidad"))
-    fila["d_kg"] = fila.get("d_kg") or {}
 
     # 🚨 "Sin movimientos" y "sin registro" NO son lo mismo. Una ventana en la
     # que de verdad no se movió nada y una anterior a que existiera la
@@ -650,4 +737,16 @@ def una(id_traza: int) -> dict | None:
         None if (fila["sin_registro"] or fila.get("d_utilidad") is None)
         else round(float(fila["d_utilidad"]) - total, 2))
     fila["ciegos"] = [m for m in movs if m.get("familia") == "sin_explicar"]
+
+    # ⭐ El resumen se arma acá, DESPUÉS de saber si la foto es vieja: a una
+    # reconstruida no se le agrega el renglón de "sin explicar por documento",
+    # porque lo que falta es, justamente, lo que no se puede saber — y el
+    # cartel ámbar de arriba ya lo dice.
+    from modules.informes import eventos as _ev
+
+    idx = _ev.indice(_ev.de_la_ventana(
+        (fila.get("anterior") or {}).get("creado_en"), fila.get("creado_en")))
+    fila["resumen"] = resumir(
+        movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx)
+    fila["d_kg"] = fila.get("d_kg") or {}
     return fila

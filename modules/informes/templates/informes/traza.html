@@ -104,6 +104,9 @@
             <th class="px-1 py-1 text-right"
                 style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
           {% endfor %}
+          <th class="px-1 py-1 text-right"
+              style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;"
+              title="Maquinaria, Terrenos y Dividendos">Otros</th>
           {% for col, label in kilos %}
             <th class="px-1 py-1 text-right"
                 style="width:3.4em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
@@ -143,6 +146,15 @@
               {% if d %}{{ '%+d' | format(d | round | int) }}{% endif %}
             </td>
           {% endfor %}
+          {# La suma de Maquinaria, Terrenos y Dividendos: los tres salieron de
+             la grilla por pedido, pero la amortización mueve la utilidad TODOS
+             los días y sin esta columna la fila mostraba un Δ con las ocho
+             celdas vacías — el síntoma exacto de "no cierra". #}
+          {% set _otros = f.delta.get('otros') %}
+          <td class="px-1 py-0.5 text-right"
+              style="{% if _otros and _otros < 0 %}color:rgb(185 28 28);{% elif _otros %}color:rgb(21 128 61);{% endif %}">
+            {% if _otros %}{{ '%+d' | format(_otros | round | int) }}{% endif %}
+          </td>
           {% for col, label in kilos %}
             {# Un nivel de stock no es bueno ni malo: va sin color y sin
                apagar. La "k" en el mismo tono que el número — pintarla de gris

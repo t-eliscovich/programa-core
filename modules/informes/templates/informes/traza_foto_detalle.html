@@ -23,7 +23,7 @@
         {% if m %}{{ m.aporte | num_es(0) }}{% endif %}
       </td>
     {% endfor %}
-    <td colspan="{{ kilos | length }}"></td>
+    <td colspan="{{ (kilos | length) + 1 }}"></td>
   </tr>
 {% else %}
   {% if f.reconstruido %}
@@ -36,7 +36,7 @@
                  position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(252 211 77);">
         reconstruido — puede faltar lo cobrado
       </td>
-      <td colspan="{{ (deltas | length) + (kilos | length) }}"></td>
+      <td colspan="{{ (deltas | length) + (kilos | length) + 1 }}"></td>
     </tr>
   {% endif %}
   {% set columnas = deltas | map(attribute=0) | list %}
@@ -44,12 +44,20 @@
   {% for g in f.resumen %}
     {% set propia = g.col in columnas %}
     <tr data-detalle="1" class="border-t border-slate-100">
-      <td colspan="3" class="px-1.5 py-1"
+      {# El concepto ocupa las dos primeras columnas y el importe SIN columna
+         propia cae en la tercera, pegado a él. Antes se iba al borde derecho
+         de la tabla, fuera de la pantalla (TMT 2026-08-06: *"resto no sé qué
+         es y se me va de la tabla"*). #}
+      <td colspan="2" class="px-1.5 py-1"
           style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;
                  position:sticky;left:0;background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);"
           title="{{ g.texto }}">
         <span style="color:rgb(203 213 225);padding-left:.35rem;">└</span>
         {% if g.url %}<a href="{{ g.url }}" style="color:rgb(30 64 175);">{{ g.texto }}</a>{% else %}{{ g.texto }}{% endif %}
+      </td>
+      <td class="px-1 py-1 text-right"
+          style="position:sticky;left:10.6em;background:#fff;{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+        {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
       </td>
       {% for col, label in deltas %}
         <td class="px-1 py-1 text-right"
@@ -63,21 +71,29 @@
          etapa: no hace falta que coincidan (nunca coinciden del todo) y la
          diferencia queda a la vista sin explicarla de más. #}
       {% set pinta_kg = (g.col == 'vsto' and not visto.stock) %}
-      {% for col, label in kilos %}
-        <td class="px-1 py-1 text-right"
-            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if pinta_kg and f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-          {% if pinta_kg and f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
-        </td>
-      {% endfor %}
+      {# la columna "Otros" de la grilla: acá el importe sin columna propia ya
+         salió pegado al concepto, así que va vacía #}
+      <td></td>
+      {# 🚨 Sólo el renglón del stock usa las tres columnas de kilos. En los
+         demás iban tres celdas vacías con su filete a la izquierda, y en un
+         detalle de seis renglones eso dibujaba una raya vertical larga
+         atravesando un bloque en blanco (TMT 2026-08-07: *"esto está feo"*).
+         Una sola celda vacía y se termina. #}
+      {% if pinta_kg %}
+        {% for col, label in kilos %}
+          <td class="px-1 py-1 text-right"
+              style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+            {% if f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
+          </td>
+        {% endfor %}
+      {% else %}
+        <td colspan="{{ kilos | length }}"></td>
+      {% endif %}
       {% if g.col == 'vsto' %}{% set visto.stock = true %}{% endif %}
-      <td class="px-1 py-1 text-right"
-          style="{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-        {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
-      </td>
     </tr>
   {% else %}
     <tr data-detalle="1" class="border-t border-slate-100">
-      <td colspan="{{ 3 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
+      <td colspan="{{ 4 + (deltas | length) + (kilos | length) }}" class="px-1.5 py-1"
           style="font-size:10.5px;color:rgb(148 163 184);">nada se movió</td>
     </tr>
   {% endfor %}
