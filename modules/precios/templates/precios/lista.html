@@ -104,7 +104,7 @@
               {# Federico 2026-08-07: la matriz editable se ve con IVA, igual
                  que la hoja imprimible. En BD sigue NETO — guardar() divide
                  por 1,15 antes de escribir (ver views.py). #}
-              {% set val_iva = (val * 1.15) if val is not none else none %}
+              {% set val_iva = (val | float * 1.15) if val is not none else none %}
               <td class="px-1 py-1 text-center align-top" style="width:82px;">
                 <input type="text"
                        name="p_{{ f.clase }}_{{ col }}"
@@ -150,7 +150,7 @@
                   {% if p.ref_col %}
                   <span class="text-slate-400 text-xs">{{ p.nota }}</span>
                   {% else %}
-                  {% set pp_iva = (p.precio * 1.15) if p.precio is not none else none %}
+                  {% set pp_iva = (p.precio | float * 1.15) if p.precio is not none else none %}
                   <input type="text" name="pp_{{ p.id }}"
                          class="text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-2 py-0.5 text-sm tabular-nums"
                          style="width:92px;"

@@ -621,3 +621,29 @@ def test_subir_porcentaje_modo_pct_no_toca_iva(cliente_editor, monkeypatch):
         data={"modo": "pct", "pct": "5", "csrf_token": csrf},
     )
     assert llamadas == [5.0]
+
+
+def test_matriz_editable_no_rompe_con_decimal_desde_postgres(app, fake_db, monkeypatch):
+    """psycopg2 devuelve NUMERIC como decimal.Decimal. `Decimal * float` es
+    TypeError en Python -- el template tiene que castear con | float antes de
+    multiplicar por 1,15. Regresion: el 2026-08-07 se rompio /precios en
+    produccion con 500 porque el template hacia `val * 1.15` crudo."""
+    from decimal import Decimal
+    rid = fake_db.add_role("Admin", ["precios.editar"])
+    uid = fake_db.add_user("admin2", b"$2b$12$fakehash", rid)
+    fila = {c: None for c, _ in queries.TELAS}
+    fila.update({"clase": 1, "descripcio": "BLANCO", "jersey": Decimal("7.93")})
+    monkeypatch.setattr(queries, "matriz", lambda: [fila])
+    monkeypatch.setattr(queries, "precio_plano", lambda: [
+        {"id": 3, "tela": "SCUBA", "precio": Decimal("11.25"), "ref_col": None, "nota": None},
+    ])
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user_id"] = uid
+    resp = client.get("/precios")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    # 7,93 x 1,15 = 9,1195 -> "9,12"
+    assert 'value="9,12"' in html
+    # SCUBA plano: 11,25 x 1,15 = 12,9375 -> "12,94"
+    assert 'value="12,94"' in html
