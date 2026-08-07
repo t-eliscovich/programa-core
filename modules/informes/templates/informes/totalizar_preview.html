@@ -163,7 +163,7 @@
       <input type="hidden" name="hasta" value="{{ hasta or '' }}">
       <label class="flex items-start gap-2 text-sm text-slate-700 cursor-pointer select-none">
         <input type="checkbox" id="chk-entiendo" class="mt-0.5">
-        <span>Entiendo que se pierden {{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura y que <strong>esta operación no tiene deshacer</strong>.</span>
+        <span>Entiendo que se pierden {{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura de la pantalla, y que para volver atrás hay que <strong>deshacerlo desde el Historial antes de tocar estas facturas</strong>.</span>
       </label>
       <div class="mt-3 flex items-center gap-2">
         <button type="submit" id="btn-totalizar" disabled
