@@ -633,6 +633,9 @@ TIPOS_QUE_SE_JUNTAN = {
     # un renglón— así que caía de a una.
     "retencion_asinfo_desaplicada": ("retenciones revertidas", "facturas"),
     "reverso_retencion_asinfo_aplicada": ("retenciones revertidas", "facturas"),
+    # La corrección de la mig 0179 (la retención sale del abono) también llega
+    # de a montones y por el mismo motivo: se hace factura por factura.
+    "retencion_movida_del_abono": ("retenciones fuera del abono", "facturas"),
 }
 
 
