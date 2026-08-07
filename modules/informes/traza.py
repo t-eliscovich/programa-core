@@ -136,6 +136,25 @@ def registrar(origen: str = "manual", bal: dict | None = None,
         from modules.informes import foto as _foto
         vieja = _foto.guardada()
         nueva = _foto.detalle(bal, anterior=vieja)
+        # 🚨 El balance y el detalle son DOS lecturas distintas de una base que
+        # se está usando: si entre una y otra alguien aplica un cheque, el
+        # componente no cierra contra sus documentos y sale un renglón "sin
+        # explicar" que a los tres minutos aparece con el signo dado vuelta
+        # (medido el 07/08: −289 a las 13:33, +289 a las 13:36). No es plata
+        # ciega, es el reloj. Se rehace UNA vez: con la app quieta las dos
+        # lecturas coinciden y el renglón no llega a nacer. Si al segundo
+        # intento sigue sin cerrar, entonces sí hay algo que mirar y se guarda
+        # como está — para eso está el renglón.
+        if _foto.hay_desfase(nueva):
+            from modules.informes import queries as _q2
+            bal = _q2.informe_balance()
+            res["bal"] = bal
+            fila2 = _fila_desde_balance(bal)
+            if fila2.get("utilidad") is not None:
+                fila2["origen"] = fila["origen"]
+                fila2["momento"] = fila["momento"]
+                fila = fila2
+                nueva = _foto.detalle(bal, anterior=vieja)
         primera = _foto.es_primera(vieja)
         movs = [] if primera else _foto.diff(nueva, vieja)
 

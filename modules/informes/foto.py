@@ -423,6 +423,23 @@ def detalle(bal: dict, anterior: dict | None = None) -> list[dict]:
 FAMILIAS = {"utilidad", "traspaso", "sin_explicar"}
 
 
+def hay_desfase(filas: list[dict]) -> bool:
+    """¿Algún componente no cierra contra su detalle?
+
+    🚨 Medido el 07/08/2026: `Bancos: sin explicar −289 / Facturas +289` a las
+    13:33 y **los mismos dos renglones con el signo dado vuelta a las 13:36**.
+    Eso no es plata perdida: es que el balance y el detalle se leen en momentos
+    distintos —`registrar()` llama a `informe_balance()` y después `detalle()`
+    corre su propio SELECT por componente— y un cobro de $ 289 cayó en el
+    medio. A los tres minutos se acomodó solo.
+
+    No hay forma de que dos lecturas separadas de una base que se está usando
+    coincidan siempre; lo que sí se puede es no guardar la primera cuando no
+    cierra. `registrar()` usa esto para rehacer la foto UNA vez.
+    """
+    return any((f.get("doc_id") or "").startswith("#ajuste:") for f in filas)
+
+
 def regla(componente: str, tipo: str, doc_id: str, delta: float) -> tuple[str, str]:
     """(nombre en castellano, familia) de un movimiento.
 

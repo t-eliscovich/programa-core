@@ -480,3 +480,51 @@ def test_lo_ciego_no_se_esconde_por_chico():
     movs = [{"regla": "Sin explicar todavía", "familia": "sin_explicar",
              "componente": "vqx", "aporte": 0.4, "etiqueta": "x"}]
     assert [g["col"] for g in t.resumir(movs, 0.4)] == ["vqx"]
+
+
+# ── El desfase entre el balance y el detalle (07/08/2026) ───────────────────
+
+def test_hay_desfase_reconoce_el_ajuste():
+    assert motor.hay_desfase([{"doc_id": "#ajuste:bancos"}]) is True
+    assert motor.hay_desfase([{"doc_id": "f1"}, {"doc_id": "#meta"}]) is False
+    assert motor.hay_desfase([]) is False
+
+
+def test_la_foto_se_rehace_una_vez_cuando_no_cierra():
+    """🚨 Medido: "Bancos: sin explicar −289 / Facturas +289" a las 13:33 y los
+    MISMOS dos renglones con el signo dado vuelta a las 13:36. El balance y el
+    detalle son dos lecturas distintas de una base que se está usando; un cobro
+    cayó en el medio. Se rehace una vez, y con la app quieta el renglón no
+    llega a nacer.
+    """
+    from modules.informes import traza as tz
+
+    bal = {"diagnostico": {"componentes": {"salcaj": 0, "salbanc_total": 0,
+                                           "totc": 0, "totf": 0, "antic": 0,
+                                           "vsto": 0, "vqx": 0, "umaq": 0,
+                                           "uact": 0, "totp": 0, "uret": 0}},
+           "utilidad": 100.0}
+    balances, detalles = [], []
+
+    def _bal():
+        balances.append(1)
+        return bal
+
+    def _detalle(b, anterior=None):
+        detalles.append(1)
+        # La primera lectura no cierra; la segunda sí.
+        return ([{"doc_id": "#ajuste:bancos", "componente": "bancos",
+                  "importe": -289.0}] if len(detalles) == 1 else
+                [{"doc_id": "#meta", "componente": "#meta", "importe": 0.0}])
+
+    with patch.object(tz, "_fila_desde_balance",
+                      return_value={"utilidad": 100.0}), \
+         patch("modules.informes.queries.informe_balance", _bal), \
+         patch.object(motor, "detalle", _detalle), \
+         patch.object(motor, "guardada", return_value={}), \
+         patch.object(motor, "es_primera", return_value=True), \
+         patch.object(tz.db, "tx", side_effect=RuntimeError("hasta acá")):
+        tz.registrar(origen="test")
+
+    assert len(balances) == 2, "el balance se relee cuando no cierra"
+    assert len(detalles) == 2
