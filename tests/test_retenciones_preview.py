@@ -65,10 +65,10 @@ def _patch(monkeypatch, stub, ret_map):
 
 
 def _fac(numf, numf_completo=None, importe=1000.0, abono=0.0, saldo=1000.0,
-         codigo_cli="EDU", id_factura=7, stat="Z"):
+         codigo_cli="EDU", id_factura=7, stat="Z", retencion=0.0):
     return {"id_factura": id_factura, "codigo_cli": codigo_cli, "numf": numf,
             "numf_completo": numf_completo, "importe": importe, "abono": abono,
-            "saldo": saldo, "stat": stat}
+            "retencion": retencion, "saldo": saldo, "stat": stat}
 
 
 # ───────────────────── el fallback por numf (el fix) ─────────────────────
@@ -95,10 +95,11 @@ def test_preview_encuentra_por_numf_cuando_numf_completo_es_null(monkeypatch):
     assert out["resumen"]["via_numf"] == 1
 
 
-def test_preview_suma_al_abono_previo(monkeypatch):
-    """TMT 2026-08-06: abono manual previo + retención → el preview proyecta
-    el saldo SUMANDO (10 manual + 15 retención = abono 25), igual que el
-    aplicador."""
+def test_preview_con_abono_previo_proyecta_el_mismo_saldo(monkeypatch):
+    """TMT 2026-08-07: con un abono manual previo, el preview proyecta el
+    saldo restando las DOS cosas por separado (10 abonados + 15 retenidos
+    sobre 100 → 75), igual que el aplicador. El saldo no cambia respecto de la
+    regla del 06/08; lo que cambia es que el abono queda en 10, no en 25."""
     from modules.retenciones import queries as q
     stub = _FetchAllStub(
         por_completo=[_fac(1234, "001-099-000001234", importe=100.0,
@@ -109,7 +110,7 @@ def test_preview_suma_al_abono_previo(monkeypatch):
     out = q.preview_retenciones_asinfo("2026-08-01", "2026-08-06")
     fila = out["filas"][0]
     assert fila["estado"] == "se_aplica"
-    assert fila["saldo_nuevo"] == 75.0  # 100 - (10 + 15)
+    assert fila["saldo_nuevo"] == 75.0  # 100 − 10 abonados − 15 retenidos
     assert out["resumen"]["se_aplica"] == 1
 
 

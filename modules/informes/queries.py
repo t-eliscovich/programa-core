@@ -29,12 +29,15 @@ from datetime import date
 import db
 from filters import today_ec
 from modules._lib import busqueda
+from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
+from modules.cheques.queries import SQL_DIA_SALIDA as _SQL_DIA_SALIDA_CHEQUE  # noqa: E402
 
 # Día de INGRESO del cheque — la MISMA definición que usa modules/cheques
 # (SQL_DIA_INGRESO). Se importa, no se copia: si divergen, el estado de cuenta
 # que se le manda al cliente dice una fecha y la pantalla otra.
-from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
-from modules.cheques.queries import SQL_DIA_SALIDA as _SQL_DIA_SALIDA_CHEQUE  # noqa: E402
+# La fórmula del saldo (importe − abono − retención) vive en UN solo lugar.
+# Ver modules/facturas/queries.saldo_de — mig 0179, TMT 2026-08-07.
+from modules.facturas import queries as _fact_q  # noqa: E402
 from modules.posdat import (
     POSDAT_DEUDA_VIVA_WHERE,
     POSDAT_EGRESO_FLUJO_WHERE,
@@ -7483,7 +7486,8 @@ def totales_estado_cuenta_en_cero() -> dict:
     en la rama real no puede dejar atrás ni al fake ni a la rama vacía.
     """
     ceros = dict.fromkeys((
-        "kg", "importe", "abono", "saldo", "saldo_vivo", "saldo_vencido",
+        "kg", "importe", "abono", "retencion", "saldo", "saldo_vivo",
+        "saldo_vencido",
         "cheques_total", "cheques_cartera", "cheques_depositados",
         "cheques_rebotados", "cheques_endosados", "cheques_daniela",
         "cheques_por_cobrar", "cheques_a_depositar", "cheques_protestados",
@@ -7570,7 +7574,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     facturas = db.fetch_all(
         """
         SELECT id_factura, numf, numf_completo, fecha, vencimiento,
-               kg, importe, abono, saldo, stat, condic, tipo
+               kg, importe, abono, retencion, saldo, stat, condic, tipo
         FROM scintela.factura
         WHERE codigo_cli = %s
           -- TMT 2026-06-11 (dueña): las totalizadas (stat T) ya no se muestran
@@ -7660,6 +7664,9 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           COALESCE(SUM(kg), 0)                                        AS kg,
           COALESCE(SUM(importe), 0)                                   AS importe,
           COALESCE(SUM(abono), 0)                                     AS abono,
+          -- TMT 2026-08-07 (dueña): la retención es su propia columna, no
+          -- parte del abono. Ver migración 0179.
+          COALESCE(SUM(retencion), 0)                                 AS retencion,
           COALESCE(SUM(saldo), 0)                                     AS saldo,
           COALESCE(SUM(CASE
             WHEN COALESCE(saldo, 0) > 0
@@ -7751,6 +7758,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         "kg": float(tot_fac.get("kg") or 0),
         "importe": float(tot_fac.get("importe") or 0),
         "abono": float(tot_fac.get("abono") or 0),
+        "retencion": float(tot_fac.get("retencion") or 0),
         "saldo": float(tot_fac.get("saldo") or 0),
         "saldo_vivo": float(tot_fac.get("saldo_vivo") or 0),
         "saldo_vencido": float(tot_fac.get("saldo_vencido") or 0),
@@ -10505,7 +10513,7 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
 # del dBase que dejaba T con saldo=importe.
 
 _SQL_FACTURAS_TOTALIZAR = """
-    SELECT id_factura, numf, numf_completo, fecha, importe, abono, saldo, stat
+    SELECT id_factura, numf, numf_completo, fecha, importe, abono, retencion, saldo, stat
       FROM scintela.factura
      WHERE codigo_cli = %s
        -- vivas: Z (impaga) y A (abonada parcial). T/X/… quedan afuera.
@@ -10776,7 +10784,7 @@ def facturas_totalizadas_cliente(codigo_cli: str, limite: int = 300) -> list[dic
     codigo_cli = (codigo_cli or "").strip().upper()
     return db.fetch_all(
         """
-        SELECT id_factura, numf, numf_completo, fecha, importe, abono, saldo, stat
+        SELECT id_factura, numf, numf_completo, fecha, importe, abono, retencion, saldo, stat
           FROM scintela.factura
          WHERE codigo_cli = %s
            AND COALESCE(stat, '') = 'T'
@@ -10809,7 +10817,7 @@ def factura_cambiar_stat_a_t(
     with db.tx() as conn:
         f = db.fetch_one(
             "SELECT id_factura, numf, numf_completo, codigo_cli, importe, "
-            "       abono, saldo, stat "
+            "       abono, retencion, saldo, stat "
             "  FROM scintela.factura WHERE id_factura = %s FOR UPDATE",
             (id_factura,),
             conn=conn,
@@ -10824,6 +10832,7 @@ def factura_cambiar_stat_a_t(
         stat_prev = (f.get("stat") or "").strip().upper()
         importe = round(float(f.get("importe") or 0), 2)
         abono = round(float(f.get("abono") or 0), 2)
+        retencion = round(float(f.get("retencion") or 0), 2)
         saldo = round(float(f.get("saldo") or 0), 2)
 
         if stat_prev in ("Z", "A", "", " "):
@@ -10886,7 +10895,7 @@ def factura_cambiar_stat_a_t(
                 saldo_nuevo = round(float(md.get("saldo_previo") or 0), 2)
                 abono_nuevo = round(float(md.get("abono_previo") or abono), 2)
             else:
-                saldo_nuevo = round(importe - abono, 2)
+                saldo_nuevo = _fact_q.saldo_de(importe, abono, retencion)
                 abono_nuevo = abono
             db.execute(
                 "UPDATE scintela.factura "
@@ -10973,7 +10982,7 @@ def factura_set_stat(
     with db.tx() as conn:
         f = db.fetch_one(
             "SELECT id_factura, numf, numf_completo, codigo_cli, importe, "
-            "       abono, saldo, stat "
+            "       abono, retencion, saldo, stat "
             "  FROM scintela.factura WHERE id_factura=%s FOR UPDATE",
             (id_factura,), conn=conn)
         if not f:
@@ -10985,6 +10994,7 @@ def factura_set_stat(
         stat_prev = (f.get("stat") or "").strip().upper()
         importe = round(float(f.get("importe") or 0), 2)
         abono = round(float(f.get("abono") or 0), 2)
+        retencion = round(float(f.get("retencion") or 0), 2)
         saldo = round(float(f.get("saldo") or 0), 2)
         if stat_prev == target:
             return {"id_factura": id_factura, "numf": f.get("numf"),
@@ -11015,7 +11025,9 @@ def factura_set_stat(
             if md.get("abono_previo") is not None:
                 abono = round(float(md.get("abono_previo") or abono), 2)
 
-        saldo_nuevo = 0.0 if target == "T" else round(importe - abono, 2)
+        saldo_nuevo = (
+            0.0 if target == "T" else _fact_q.saldo_de(importe, abono, retencion)
+        )
 
         db.execute(
             "UPDATE scintela.factura SET stat=%s, saldo=%s, abono=%s, "

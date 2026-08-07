@@ -226,6 +226,15 @@
                         ({{ item.count_full }} mov_doble)
                       </span>
                     {% endif %}
+                    {# TMT 2026-08-07: el N del título es el del batch ENTERO
+                       (sale de la base). Si en esta página entraron menos
+                       filas, decirlo — si no, parece que faltan. #}
+                    {% if item.rows | length < item.count_full %}
+                      <span class="text-[10px] text-violet-500"
+                            title="Subí el selector de filas o pasá de página para ver el resto.">
+                        mostrando {{ item.rows | length }} de {{ item.count_full }}
+                      </span>
+                    {% endif %}
                     {% if item.estado_global == 'reversado' %}
                       <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs">Reversado entero</span>
                     {% elif item.estado_global == 'mixto' %}
@@ -233,7 +242,7 @@
                     {% endif %}
                   </div>
                   <div class="no-print">
-                    {% if item.estado_global == 'activo' %}
+                    {% if item.estado_global == 'activo' and item.reversable_en_batch %}
                       <a href="{{ url_for('historial.reversar_batch', batch_id=item.batch_id) }}"
                          class="text-sm text-rose-600 hover:text-rose-800 hover:underline font-medium"
                          title="Reversar TODA la operación ({{ item.count }} movs juntos, atómico).">
@@ -276,7 +285,18 @@
                   {{ r.usuario or '—' }}
                 </td>
                 <td class="px-2 py-0.5 text-right no-print">
-                  <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
+                  {% if not item.reversable_en_batch and r.estado == 'activo'
+                        and r.id_mov_doble and r.id_mov_doble > 0 and not r.es_terminal %}
+                    {# El batch agrupa para leer, pero el reverso de estos tipos
+                       (p.ej. retenciones) es de a uno. TMT 2026-08-07. #}
+                    <button type="button"
+                            class="js-reverso inline-flex items-center justify-center w-6 h-6 rounded text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30 leading-none"
+                            data-reverso-preview="{{ url_for('historial.reverso_preview', id_mov_doble=r.id_mov_doble) }}"
+                            title="Reversar este movimiento"
+                            aria-label="Reversar">↺</button>
+                  {% else %}
+                    <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
+                  {% endif %}
                 </td>
               </tr>
               {{ detalle_expandible(r) }}

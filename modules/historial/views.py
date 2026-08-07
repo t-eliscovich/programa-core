@@ -370,14 +370,36 @@ def lista():
     # TMT 2026-05-16: bug detectado por la dueña — batch de "5 movs · $6000"
     # cuando realmente entraron $4000 (2 cheques × $2000), las aplicaciones
     # sumaban otros $2000 de la misma plata.
+    # TMT 2026-08-07 (dueña: *"poner en el historial cuando se cargan x
+    # retenciones por x valor"*): la corrida de retenciones ya viene con
+    # batch_id, así que cae acá. Se le pone nombre propio — "12 retenciones ·
+    # $3.450,20" dice qué pasó; "12 movimientos" no.
+    _NOMBRE_PRIMARIO = [
+        ("cheque_creado", "cheque", "cheques"),
+        ("retencion_asinfo_aplicada", "retención", "retenciones"),
+        ("cheque_aplicado_a_factura", "aplicación", "aplicaciones"),
+    ]
+
     def _primary_rows(siblings: list[dict]) -> tuple[list[dict], str]:
-        creados = [x for x in siblings if x.get("tipo") == "cheque_creado"]
-        if creados:
-            return creados, "cheque" if len(creados) == 1 else "cheques"
-        aplics = [x for x in siblings if x.get("tipo") == "cheque_aplicado_a_factura"]
-        if aplics:
-            return aplics, ("aplicación" if len(aplics) == 1 else "aplicaciones")
+        for tipo_, sing, plur in _NOMBRE_PRIMARIO:
+            elegidas = [x for x in siblings if x.get("tipo") == tipo_]
+            if elegidas:
+                return elegidas, (sing if len(elegidas) == 1 else plur)
         return siblings, ("movimiento" if len(siblings) == 1 else "movimientos")
+
+    def _tipo_primario(por_tipo: dict) -> tuple[str | None, str]:
+        """Igual que `_primary_rows` pero sobre el resumen que trae la base
+        (para que el N y el $ sean los del batch ENTERO, no los de la página)."""
+        for tipo_, sing, plur in _NOMBRE_PRIMARIO:
+            if tipo_ in por_tipo:
+                n = por_tipo[tipo_][0]
+                return tipo_, (sing if n == 1 else plur)
+        return None, ""
+
+    try:
+        resumenes = queries.resumen_batches(list(groups))
+    except Exception:  # noqa: BLE001 -- el historial se abre igual
+        resumenes = {}
 
     items: list[dict] = []
     seen_batches: set = set()
@@ -401,18 +423,44 @@ def lista():
         else:
             estado_global = "mixto"
         primary, label_primary = _primary_rows(siblings)
+        # El N y el $ salen del batch ENTERO (query aparte), no de las filas
+        # que entraron en esta página: si el batch es más grande que el
+        # `limite`, contar la página daba un número más chico y creíble.
+        resumen = resumenes.get(bid_str) or {}
+        por_tipo = resumen.get("por_tipo") or {}
+        tipo_prim, label_db = _tipo_primario(por_tipo)
+        if tipo_prim:
+            count_real, total_real = por_tipo[tipo_prim]
+            label_primary = label_db
+        elif resumen:
+            count_real, total_real = resumen["n"], resumen["total"]
+            label_primary = "movimiento" if count_real == 1 else "movimientos"
+        else:  # sin resumen (batch de caja directa, o la query falló)
+            count_real = len(primary)
+            total_real = sum(float(x.get("importe") or 0) for x in primary)
         items.append(
             {
                 "type": "batch",
                 "batch_id": bid_str,
                 # `count`/`total` = plata real (sin double-counting).
-                "count": len(primary),
-                "total": sum(float(x.get("importe") or 0) for x in primary),
+                "count": count_real,
+                "total": total_real,
                 "label_primary": label_primary,
                 # `count_full` = N de mov_doble en el batch (para nota chiquita).
-                "count_full": len(siblings),
+                "count_full": resumen.get("n", len(siblings)),
                 "fecha": siblings[0].get("fecha_operacion"),
                 "estado_global": estado_global,
+                # ¿El botón "reversar todo el batch" sabe deshacer ESTOS tipos?
+                # TMT 2026-08-07: agrupar las retenciones bajo una tarjeta les
+                # sacaba el ↺ propio a las filas (los hijos del batch no traen
+                # acciones) y las mandaba a un botón que aborta, porque el
+                # reverso atómico sólo sabe de cheques. O sea: agrupar dejaba
+                # una operación sin vuelta atrás. Cuando el batch no es
+                # reversable de una, la tarjeta agrupa igual pero cada fila se
+                # queda con su reverso individual.
+                "reversable_en_batch": bool(
+                    {x.get("tipo") for x in siblings} <= _TIPOS_BATCH_REVERSABLES
+                ),
                 "rows": siblings,
             }
         )

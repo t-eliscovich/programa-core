@@ -388,6 +388,44 @@ def _filtro_fechas_sql():
     )
 
 
+def resumen_batches(batch_ids) -> dict:
+    """Cuántos movimientos y cuánta plata tiene CADA batch, entero.
+
+    TMT 2026-08-07. La tarjeta del historial armaba su "N movimientos · $X"
+    contando las filas de la PÁGINA. Mientras un batch entraba entero en las
+    25 filas del default nadie lo notó; con la corrida diaria de retenciones
+    (que puede aplicar 30 de una) la tarjeta empezaría a decir "25" cuando
+    fueron 30, y el total corto — un número redondo, creíble y falso. El
+    conteo sale de la base, sobre el batch completo; la página sigue
+    mostrando las filas que entren.
+
+    Devuelve {batch_id: {"n": int, "total": float, "por_tipo": {tipo: (n, total)}}}.
+    """
+    ids = [str(b) for b in (batch_ids or []) if b]
+    if not ids:
+        return {}
+    filas = db.fetch_all(
+        """
+        SELECT batch_id::text        AS batch_id,
+               tipo                  AS tipo,
+               COUNT(*)              AS n,
+               COALESCE(SUM(importe), 0) AS total
+          FROM scintela.mov_doble
+         WHERE batch_id = ANY(%s::uuid[])
+         GROUP BY batch_id, tipo
+        """,
+        (ids,),
+    ) or []
+    out: dict = {}
+    for f in filas:
+        b = out.setdefault(f["batch_id"], {"n": 0, "total": 0.0, "por_tipo": {}})
+        n, total = int(f["n"] or 0), float(f["total"] or 0)
+        b["por_tipo"][f["tipo"]] = (n, total)
+        b["n"] += n
+        b["total"] = round(b["total"] + total, 2)
+    return out
+
+
 def conteos(
     *,
     desde: str | None = None,

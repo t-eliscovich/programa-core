@@ -23,6 +23,10 @@ class _FakeFacturaDB:
 
     def __init__(self, fact: dict):
         self.fact = dict(fact)
+        # La columna `retencion` existe en la tabla desde la mig 0179 y NUNCA
+        # viene NULL (DEFAULT 0 NOT NULL). El fake tiene que devolver lo que
+        # devuelve la base: si el test no la nombra, es 0 — no "no existe".
+        self.fact.setdefault("retencion", 0)
         self.executes: list[tuple[str, tuple]] = []
 
     def fetch_one(self, sql: str, params: Any = None, conn=None):

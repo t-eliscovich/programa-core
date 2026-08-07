@@ -39,7 +39,11 @@ class _RecorderDB:
             return dict(self.cheque) if self.cheque else None
         if "from scintela.factura where id_factura" in s:
             id_f = params[0] if params else None
-            return dict(self.facturas[id_f]) if id_f in self.facturas else None
+            if id_f not in self.facturas:
+                return None
+            # `retencion` existe desde la mig 0179 y nunca viene NULL: el fake
+            # devuelve lo mismo que la base aunque el test no la nombre.
+            return {"retencion": 0, **dict(self.facturas[id_f])}
         # bank_helpers _saldo_previo: no_banco=X & order by fecha desc
         if "from scintela.transacciones_bancarias" in s and "order by fecha desc, id_transaccion desc" in s:
             return None  # banco vacío en estos tests

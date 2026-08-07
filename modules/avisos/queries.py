@@ -17,6 +17,10 @@ FUENTES = {
     # TMT 2026-07-30 (dueña): las compras LOCALES de hilo (HY, EP) se cargan
     # solas al recibirlas y avisan acá. Nombre en castellano llano, sin jerga.
     "hilo-local": "Hilo local",
+    # TMT 2026-08-07 (dueña): las retenciones que se aplican solas desde
+    # Asinfo. Sin esta entrada el buzón mostraba la clave cruda y el filtro
+    # por fuente no las listaba.
+    "retenciones": "Retenciones",
 }
 
 NIVELES = ("ok", "alerta", "error")

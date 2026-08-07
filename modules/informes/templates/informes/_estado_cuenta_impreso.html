@@ -116,6 +116,13 @@
           <th class="ec-c-num px-4 py-3 text-left font-medium">Número</th>
           {% if interactivo %}<th class="ec-c-off px-4 py-3 text-left font-medium no-print">Tipo</th>{% endif %}
           <th class="ec-c-imp px-4 py-3 text-right font-medium">Importe</th>
+          {# TMT 2026-08-07 (dueña): la retención se muestra APARTE del abono.
+             Hasta ayer iban sumadas en "Abonado" y el cliente no podía cuadrar
+             su propio comprobante de retención contra el estado de cuenta.
+             Orden pedido por Andrés (07/08): primero Retención, después
+             Abonado. #}
+          <th class="ec-c-ret px-4 py-3 text-right font-medium"
+              title="Retención en la fuente que nos retuvo el cliente. Descuenta del saldo igual que un pago, pero no es plata cobrada.">Retención</th>
           <th class="ec-c-abo px-4 py-3 text-right font-medium">Abonado</th>
           <th class="ec-c-sal px-4 py-3 text-right font-medium">Saldo</th>
           <th class="ec-c-acum px-4 py-3 text-right font-medium" title="Saldo acumulado leído de arriba hacia abajo (sumando esta factura y todas las anteriores en la lista).">Acum.</th>
@@ -142,6 +149,7 @@
           {% set _neg = (f.importe or 0) < 0 %}
           {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '') }}">{{ 'Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura') }}</td>{% endif %}
           <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
+          <td class="ec-c-ret px-4 py-2 text-right text-mono {{ 'text-violet-700 dark:text-violet-300' if (f.retencion or 0) > 0 else 'text-slate-300 dark:text-slate-600' }}">{{ f.retencion | money_es }}</td>
           <td class="ec-c-abo px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="ec-c-sal px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="ec-c-acum px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s < 0 else 'text-slate-900 dark:text-slate-100' }}">{{ acum.s | money_es }}</td>
@@ -157,7 +165,7 @@
           <td class="ec-c-dias px-4 py-2 text-right text-mono text-slate-500" title="Días desde la emisión">{{ f.fecha | dias_desde }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin facturas para este cliente.') }}
+        {{ empty_row(10, 'Sin facturas para este cliente.') }}
         {% endfor %}
         {# TMT 2026-07-09 (dueña): filas de facturas TOTALIZADAS (T), ocultas
            por defecto; el botón "Ver totalizadas" las muestra. Lapicito →
@@ -169,6 +177,7 @@
             <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
             {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>{% endif %}
             <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
+            <td class="ec-c-ret px-4 py-2 text-right text-mono">{{ f.retencion | money_es }}</td>
             <td class="ec-c-abo px-4 py-2 text-right text-mono">{{ f.abono | money_es }}</td>
             <td class="ec-c-sal px-4 py-2 text-right text-mono">0,00</td>
             <td class="ec-c-acum px-4 py-2 text-right text-mono">—</td>
@@ -210,6 +219,7 @@
           <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="2">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
           {% if interactivo %}<td class="ec-c-off no-print"></td>{% endif %}
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.retencion | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-900 dark:text-slate-100">{{ t.saldo | money_es }}</td>
           <td></td>
@@ -664,13 +674,19 @@
            reparto es el mismo salga por donde salga, y agregar o sacar una
            columna no descoloca a las demás.
            12 + 12 + 17 + 17 + 17 + 17 + 8 = 100. */
-        main .ec-bloque-facturas table .ec-c-fecha { width: 12% !important; }
-        main .ec-bloque-facturas table .ec-c-num   { width: 12% !important; }
-        main .ec-bloque-facturas table .ec-c-imp   { width: 17% !important; }
-        main .ec-bloque-facturas table .ec-c-abo   { width: 17% !important; }
-        main .ec-bloque-facturas table .ec-c-sal   { width: 17% !important; }
-        main .ec-bloque-facturas table .ec-c-acum  { width: 17% !important; }
-        main .ec-bloque-facturas table .ec-c-dias  { width:  8% !important; }
+        /* TMT 2026-08-07: entró RETENCIÓN. Los anchos siguen sumando 100
+           (fecha 11 + num 11 + imp 15 + ret 15 + abo 15 + sal 15 + acum 13
+           + días 5). Si mañana entra otra columna, la cuenta se rehace ACÁ:
+           en el motor de PDF el ancho de la tabla ES la suma de sus columnas,
+           y una suma > 100 se lleva la hoja fuera del papel. */
+        main .ec-bloque-facturas table .ec-c-fecha { width: 11% !important; }
+        main .ec-bloque-facturas table .ec-c-num   { width: 11% !important; }
+        main .ec-bloque-facturas table .ec-c-imp   { width: 15% !important; }
+        main .ec-bloque-facturas table .ec-c-ret   { width: 15% !important; }
+        main .ec-bloque-facturas table .ec-c-abo   { width: 15% !important; }
+        main .ec-bloque-facturas table .ec-c-sal   { width: 15% !important; }
+        main .ec-bloque-facturas table .ec-c-acum  { width: 13% !important; }
+        main .ec-bloque-facturas table .ec-c-dias  { width:  5% !important; }
 
         /* Las columnas que NO se imprimen (Tipo y Stat), anuladas por clase.
            TMT 2026-08-05, 7ª vuelta — y la causa del último 12% que faltaba.

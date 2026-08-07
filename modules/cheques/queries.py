@@ -31,6 +31,10 @@ from datetime import date, timedelta
 import db
 from filters import today_ec
 from modules._lib import busqueda
+
+# El saldo de una factura es importe − abono − retención, y esa cuenta vive en
+# UN solo lugar (mig 0179, TMT 2026-08-07).
+from modules.facturas import queries as _fact_q
 from periodo_guard import asegurar_fecha_abierta
 
 from . import concepto_cobro as _concepto_cobro
@@ -1266,14 +1270,15 @@ def anular_por_error_de_carga(
             if not id_fact:
                 continue
             f = db.fetch_one(
-                "SELECT importe, abono FROM scintela.factura WHERE id_factura = %s",
+                "SELECT importe, abono, retencion FROM scintela.factura "
+                "WHERE id_factura = %s",
                 (id_fact,),
                 conn=conn,
             )
             if not f:
                 continue
             nuevo_abono = max(float(f["abono"] or 0) - imp, 0)
-            nuevo_saldo = float(f["importe"] or 0) - nuevo_abono
+            nuevo_saldo = _fact_q.saldo_de(f["importe"], nuevo_abono, f["retencion"])
             if nuevo_abono <= 0.01:
                 nuevo_stat_f = "Z"
             elif nuevo_saldo <= 0.01:
@@ -2101,8 +2106,8 @@ def reemplazar(
             # FOR UPDATE para serializar contra aplicar/desaplicar concurrentes
             # sobre la misma factura. Orden estable (id_fact ASC) → no deadlock.
             f = db.fetch_one(
-                "SELECT id_factura, numf, importe, abono FROM scintela.factura "
-                "WHERE id_factura = %s FOR UPDATE",
+                "SELECT id_factura, numf, importe, abono, retencion "
+                "  FROM scintela.factura WHERE id_factura = %s FOR UPDATE",
                 (id_fact,),
                 conn=conn,
             )
@@ -2126,7 +2131,9 @@ def reemplazar(
             # Tras DELETE, abono lógico = abono_actual - sum_imp; tras INSERT
             # de las nuevas filas, abono lógico = abono_actual (idempotente).
             nuevo_abono = abono_actual  # neto cero
-            nuevo_saldo = importe_f - nuevo_abono
+            nuevo_saldo = _fact_q.saldo_de(
+                importe_f, nuevo_abono, f.get("retencion")
+            )
             # Criterio estricto: T sólo si saldo ≤ 0. Si la dueña quiere
             # "olvidar" un saldo residual de la aplicación, usa el toggle
             # explícito "olvidar saldo" en el form.
@@ -4131,7 +4138,8 @@ def desaplicar_factura(
     pero el cheque sigue siendo válido (no rebotó). Atómico:
 
       1. Encuentra la(s) fila(s) chequesxfact con (id_cheque, id_fact).
-      2. Recalcula factura.abono -= sum(importes), factura.saldo = importe - abono,
+      2. Recalcula factura.abono -= sum(importes) y el saldo con
+         facturas.queries.saldo_de (importe − abono − retención),
          factura.stat según saldo.
       3. BORRA las filas chequesxfact (a diferencia del reverso del cheque
          entero, que las preserva).
@@ -4175,14 +4183,17 @@ def desaplicar_factura(
 
         # Recomputar factura
         f = db.fetch_one(
-            "SELECT id_factura, numf, importe, abono FROM scintela.factura WHERE id_factura = %s",
+            "SELECT id_factura, numf, importe, abono, retencion "
+            "  FROM scintela.factura WHERE id_factura = %s",
             (id_factura,),
             conn=conn,
         )
         if not f:
             raise ValueError(f"Factura id={id_factura} no existe.")
         nuevo_abono = max(float(f.get("abono") or 0) - total_desaplicar, 0)
-        nuevo_saldo = float(f.get("importe") or 0) - nuevo_abono
+        nuevo_saldo = _fact_q.saldo_de(
+            f.get("importe"), nuevo_abono, f.get("retencion")
+        )
         if nuevo_abono <= 0.01:
             nuevo_stat = "Z"
         elif nuevo_saldo <= 0.01:
@@ -4434,7 +4445,8 @@ def aplicar_a_factura(
 
     `aplicaciones` es [{id_fact, importe}, ...]. Cada fila:
       - inserta una `chequesxfact` con el importe y el abono_f/saldo_f calculados,
-      - actualiza `factura.abono += importe`, `factura.saldo = importe - abono`,
+      - actualiza `factura.abono += importe` y el saldo con
+        `facturas.queries.saldo_de` (importe − abono − retención),
       - cierra la factura (`stat='Z'`) si el saldo llega a 0.
 
     Todo en una sola transacción. Si alguna factura no existe o el importe
@@ -4535,7 +4547,7 @@ def aplicar_a_factura(
                 if abs(imp) < 0.005:
                     raise ValueError(f"Importe inválido para factura {id_fact}.")
             f = db.fetch_one(
-                "SELECT id_factura, numf, importe, abono, saldo, stat "
+                "SELECT id_factura, numf, importe, abono, retencion, saldo, stat "
                 "FROM scintela.factura WHERE id_factura = %s",
                 (id_fact,),
                 conn=conn,
@@ -4632,7 +4644,9 @@ def aplicar_a_factura(
                             f"lo abonado."
                         )
                 nuevo_abono = abono_actual + imp
-            nuevo_saldo = float(f["importe"] or 0) - nuevo_abono
+            nuevo_saldo = _fact_q.saldo_de(
+                f["importe"], nuevo_abono, f.get("retencion")
+            )
             # Vocabulario canónico (2026-04-29, restaurado 2026-05-15):
             # El paso de confirmación puede pasar `forzar_stat='T'|'A'` por
             # aplicación. Si viene, ese gana sobre la lógica automática.
@@ -4868,14 +4882,15 @@ def reversar(
             if not id_fact:
                 continue
             f = db.fetch_one(
-                "SELECT importe, abono FROM scintela.factura WHERE id_factura = %s",
+                "SELECT importe, abono, retencion FROM scintela.factura "
+                "WHERE id_factura = %s",
                 (id_fact,),
                 conn=conn,
             )
             if not f:
                 continue
             nuevo_abono = max(float(f["abono"] or 0) - imp, 0)
-            nuevo_saldo = float(f["importe"] or 0) - nuevo_abono
+            nuevo_saldo = _fact_q.saldo_de(f["importe"], nuevo_abono, f.get("retencion"))
             # Vocabulario canónico (2026-04-29) — al reversar, restamos el
             # abono. El stat se recalcula:
             #   abono = 0    → 'Z' (factura back to emitida)
@@ -5044,7 +5059,7 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
     return db.fetch_all(
         """
         SELECT id_factura, numf, numf_completo, fecha, vencimiento,
-               importe, abono, saldo, stat
+               importe, abono, retencion, saldo, stat
         FROM scintela.factura
         WHERE codigo_cli = %s
           -- TMT 2026-06-17 (dueña, caso NJL/Bedon): excluir asinfo-backfill.
@@ -6348,12 +6363,14 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
                 if ya:
                     continue
                 f = db.fetch_one(
-                    "SELECT importe, abono FROM scintela.factura "
+                    "SELECT importe, abono, retencion FROM scintela.factura "
                     " WHERE id_factura=%s FOR UPDATE", (idf,), conn=conn)
                 if not f:
                     continue
                 nuevo_abono = round(float(f.get("abono") or 0) + imp, 2)
-                nuevo_saldo = round(float(f.get("importe") or 0) - nuevo_abono, 2)
+                nuevo_saldo = _fact_q.saldo_de(
+                    f.get("importe"), nuevo_abono, f.get("retencion")
+                )
                 nuevo_stat = "T" if nuevo_saldo <= 0.01 else "A"
                 db.execute(
                     "UPDATE scintela.factura SET abono=%s, saldo=%s, stat=%s, "

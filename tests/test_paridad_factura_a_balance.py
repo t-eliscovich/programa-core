@@ -31,7 +31,7 @@ class _ParidadDB:
             "id_factura": self.next_id, "numf": 1000,
             "codigo_cli": "JTX", "fecha": date(2026, 4, 30),
             "vencimiento": date(2026, 5, 30),
-            "importe": 0, "abono": 0, "saldo": 0,
+            "importe": 0, "abono": 0, "retencion": 0, "saldo": 0,
             "stat": "Z", "condic": "",
         }
         defaults.update(kwargs)
@@ -175,7 +175,7 @@ def test_paridad_factura_pronto_pago_5_pct(monkeypatch):
     fake = _ParidadDB()
     fake.facturas[1] = {
         "id_factura": 1, "fecha": date(2026, 4, 30),
-        "importe": 1000, "abono": 0, "saldo": 1000,
+        "importe": 1000, "abono": 0, "retencion": 0, "saldo": 1000,
         "stat": "Z", "condic": "",
     }
     fake.apply_to(monkeypatch, db_mod)

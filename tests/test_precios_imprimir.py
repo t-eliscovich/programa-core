@@ -140,9 +140,17 @@ def test_la_hoja_requiere_login(client):
 
 
 def test_la_hoja_esta_al_pie_de_precios(cliente_logueado):
-    """Una sola pantalla: la hoja va abajo de /precios, no aparte."""
+    """Una sola pantalla: la hoja va abajo de /precios, no aparte.
+
+    TMT 2026-08-07: el título de la hoja pasó a sentence case para que sea el
+    mismo formato que el `page_hero` (commit 01ceac20) y este test —que buscaba
+    "LISTA DE PRECIOS" en mayúsculas— quedó rojo en main. Lo que importa es que
+    la hoja esté al pie con su título, no cómo se capitaliza: se compara sin
+    distinguir mayúsculas. El CI estaba en rojo desde entonces, así que el
+    deploy no corría.
+    """
     html = cliente_logueado.get("/precios").get_data(as_text=True)
-    assert "LISTA DE PRECIOS" in html
+    assert "lista de precios" in html.lower()
     assert 'id="hoja"' in html
     assert "FLEECE" in html and "FALSO" not in html
     assert "BLANCO" in html and "FUERTES" in html

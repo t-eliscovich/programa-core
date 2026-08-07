@@ -17,6 +17,7 @@ queda fuera de cualquier vista (cartera, canceladas, eliminadas, estado).
 from datetime import date, timedelta
 
 import db
+from filters import money_es as _money
 from filters import today_ec
 from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
@@ -28,6 +29,27 @@ STATS_VIVOS = ("Z", "A")
 # Antes había STATS_ANULADAS = ("X","Y") como compat legacy, pero Y nunca
 # se usó en la base operativa. Se elimina del universo conocido.
 STATS_ANULADAS = ("X",)
+
+
+def saldo_de(importe, abono, retencion=0) -> float:
+    """El saldo de una factura. UNA sola fórmula, para todo el programa.
+
+    TMT 2026-08-07 (dueña): "necesitaríamos dividir esto en dos columnas,
+    retenciones y abono, no todo junto (entonces no se debería sumar más)".
+    Hasta ayer la retención se sumaba al abono (regla del 06/08, commit
+    8ed70dd) y el saldo era `importe − abono`. Ahora la retención vive en su
+    propia columna (`factura.retencion`, migración 0179) y sigue bajando la
+    deuda igual — pero se ve aparte:
+
+        saldo = importe − abono − retencion
+
+    Cada lugar que recalcula un saldo llama a esta función. Si mañana aparece
+    un tercer concepto que descuenta (una NC propia, por ejemplo), se agrega
+    acá y no en los diez lugares que antes hacían la resta a mano.
+    """
+    return round(
+        float(importe or 0) - float(abono or 0) - float(retencion or 0), 2
+    )
 
 
 def _stat_desde_saldo(importe: float, abono: float) -> str:
@@ -185,7 +207,8 @@ def editar(
     Esta función sólo permite ajustar:
 
       - `abono`: corrige el abono manual (e.g., para registrar un pago en
-        efectivo no asociado a un cheque). Recompute `saldo = importe - abono`
+        efectivo no asociado a un cheque). Recompute
+        `saldo = importe - abono - retencion`
         atomically. Si nuevo saldo ≈ 0 y stat≠'T', stampa primera vez:
         `stat='T'`, `vencim=CURRENT_DATE`.
       - `condic`: si cambia ' '→'C' aplica 5% pronto pago (importe×=0.95).
@@ -204,7 +227,8 @@ def editar(
     Devuelve `{id_factura, importe, abono, saldo, stat, condic_previa, condic_nueva}`.
     """
     fact = db.fetch_one(
-        "SELECT id_factura, fecha, importe, abono, saldo, stat, condic, vencimiento "
+        "SELECT id_factura, numf, fecha, importe, abono, retencion, saldo, "
+        "       stat, condic, vencimiento "
         "FROM scintela.factura WHERE id_factura = %s",
         (id_factura,),
     )
@@ -218,6 +242,10 @@ def editar(
 
     importe_actual = float(fact["importe"] or 0)
     abono_actual = float(fact["abono"] or 0)
+    # La retención NO se edita acá: se aplica sola desde Asinfo y vive en su
+    # propia columna (mig 0179). Pero entra en la cuenta del saldo, así que
+    # editar el abono a mano tiene que respetarla.
+    retencion_actual = float(fact["retencion"] or 0)
     condic_actual = (fact.get("condic") or "").strip()
     importe_nuevo = importe_actual
     abono_nuevo = abono_actual if abono is None else float(abono or 0)
@@ -234,12 +262,18 @@ def editar(
     # Validación: abono no puede exceder importe (con epsilon).
     if abono_nuevo < 0:
         raise ValueError("El abono no puede ser negativo.")
-    if abono_nuevo > importe_nuevo + 0.01:
+    if abono_nuevo + retencion_actual > importe_nuevo + 0.01:
+        # El mensaje nombra la retención sólo si existe — si no, decir "abono
+        # + retención 0,00" confunde al que nunca vio una.
+        _extra = (
+            f" + retención ({retencion_actual:.2f})" if retencion_actual > 0.005 else ""
+        )
         raise ValueError(
-            f"Abono ({abono_nuevo:.2f}) excede el importe ({importe_nuevo:.2f})."
+            f"Abono ({abono_nuevo:.2f}){_extra} excede el importe "
+            f"({importe_nuevo:.2f})."
         )
 
-    saldo_nuevo = round(importe_nuevo - abono_nuevo, 2)
+    saldo_nuevo = saldo_de(importe_nuevo, abono_nuevo, retencion_actual)
 
     # Stat recompute — paridad MODIFICA.PRG L443.
     if saldo_nuevo <= 0.01:
@@ -293,9 +327,15 @@ def editar(
                     destino_id=id_factura,
                     importe=round(abono_nuevo - abono_actual, 2),
                     fecha=fact.get("fecha") or today_ec(),
+                    # TMT 2026-08-07 (dueña: que el abono manual se lea en el
+                    # historial). Dos arreglos chicos y necesarios: el número
+                    # es el `numf` que ella conoce — antes el SELECT no lo
+                    # traía y el concepto mostraba el id interno ("#106" por
+                    # "176100") — y los importes van en formato de acá
+                    # (punto = miles, coma = decimales), no "250.00".
                     concepto=(
-                        f"Abono manual factura #{fact.get('numf') or id_factura} "
-                        f"{abono_actual:.2f} → {abono_nuevo:.2f}"
+                        f"Abono manual factura {fact.get('numf') or id_factura}: "
+                        f"$ {_money(abono_actual)} → $ {_money(abono_nuevo)}"
                     )[:200],
                     usuario=usuario,
                     metadata={"abono_prev": abono_actual,
@@ -415,7 +455,8 @@ def reversar_abono_manual(
                 f"importe actual de la factura ($ {importe_hoy:,.2f}): el "
                 f"importe cambió en el medio. Ajustalo a mano.")
 
-        saldo_nuevo = round(importe_hoy - abono_prev, 2)
+        retencion_hoy = round(float(fact.get("retencion") or 0), 2)
+        saldo_nuevo = saldo_de(importe_hoy, abono_prev, retencion_hoy)
         # MISMA regla que `editar()` (paridad MODIFICA.PRG L443), no
         # `_stat_desde_saldo`: con importe=0 las dos difieren (editar da 'T',
         # la otra 'Z') y el reverso tiene que dejar la factura igual a como
@@ -723,7 +764,7 @@ def por_id_interno(id_factura: int) -> dict | None:
     return db.fetch_one(
         """
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
-               f.codigo_cli, f.kg, f.importe, f.abono, f.saldo,
+               f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
                COALESCE(c.nombre, '')    AS cliente,
                c.ruc, c.telefono, c.pago
@@ -747,7 +788,7 @@ def por_id(id_factura: int) -> dict | None:
     return db.fetch_one(
         """
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
-               f.codigo_cli, f.kg, f.importe, f.abono, f.saldo,
+               f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
                COALESCE(c.nombre, '')    AS cliente,
                c.ruc, c.telefono, c.pago
@@ -1059,7 +1100,8 @@ def buscar(
         WITH filtradas AS (
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
                f.codigo_cli, COALESCE(c.nombre, '') AS cliente,
-               f.kg, f.importe, f.abono, f.saldo, f.stat, f.condic, f.tipo
+               f.kg, f.importe, f.abono, f.retencion, f.saldo, f.stat,
+               f.condic, f.tipo
         FROM scintela.factura f
         -- TMT 2026-06-10: LATERAL escalar para evitar fanout cuando un
         -- codigo_cli tiene >1 fila en scintela.cliente (drift TOTF $23k

@@ -35,7 +35,11 @@ if not hasattr(_dt, "UTC"):  # py3.10
 ROOT = Path(__file__).resolve().parent.parent
 PG_BIN = Path(os.environ.get("PG_BIN", "/tmp/pgbin/bin"))
 PGDATA = Path(os.environ.get("PGDATA_LOCAL", "/tmp/pgdata"))
-SOCKET_DIR = "/tmp"
+#: /tmp es COMPARTIDO entre sesiones del sandbox: si otra dejó un postgres
+#: escuchando en el mismo socket, éste no levanta y el error no dice por qué.
+#: Con SOCKET_DIR_LOCAL cada sesión puede usar el suyo (junto con
+#: PGDATA_LOCAL y PG_PORT_LOCAL, que ya eran configurables). TMT 2026-08-07.
+SOCKET_DIR = os.environ.get("SOCKET_DIR_LOCAL", "/tmp")
 PORT = os.environ.get("PG_PORT_LOCAL", "5433")
 DBNAME = "programa_core"
 FIXTURE = ROOT / "tests" / "fixtures" / "legacy_minimal_dump.sql"

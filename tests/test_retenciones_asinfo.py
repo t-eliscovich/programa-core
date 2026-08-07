@@ -75,6 +75,7 @@ class _DBStub:
         self.existing_ret = existing_ret
         self.mov = mov
         self.updates = []
+        self.updates_sql = []
         self.deletes = []
         self.inserts_ret = []
         self.mov_dobles = []
@@ -93,6 +94,7 @@ class _DBStub:
         s = " ".join(sql.split()).lower()
         if "update scintela.factura" in s:
             self.updates.append(tuple(params))
+            self.updates_sql.append(sql)
         elif "delete from scintela.retencion" in s:
             self.deletes.append(tuple(params))
         return 1
@@ -120,10 +122,17 @@ def _patch(monkeypatch, stub):
     monkeypatch.setattr(db, "tx", stub.tx)
 
 
-def _fac(importe=100.0, abono=0.0, saldo=100.0, stat="Z"):
+def _fac(importe=100.0, abono=0.0, saldo=100.0, stat="Z", retencion=0.0):
     return {"id_factura": 7, "codigo_cli": "EDU", "numf": 1234,
             "numf_completo": "001-099-000179161", "importe": importe,
-            "abono": abono, "saldo": saldo, "stat": stat}
+            "abono": abono, "retencion": retencion, "saldo": saldo,
+            "stat": stat}
+
+
+def _sql_updates_factura(stub):
+    """Los UPDATE de scintela.factura, con su SQL — para poder afirmar qué
+    columnas TOCA (y cuáles no)."""
+    return [s for s, _p in getattr(stub, "updates_sql", [])]
 
 
 def test_aplicar_una_aplica(monkeypatch):
@@ -134,7 +143,8 @@ def test_aplicar_una_aplica(monkeypatch):
     assert r == "aplicada"
     # retencion insertada con rete
     assert stub.inserts_ret[0][2] == 27.01
-    # factura: abono=27.01, saldo=72.99, stat A
+    # TMT 2026-08-07: la retención va a factura.retencion, NO al abono.
+    # UPDATE ... SET retencion=%s, saldo=%s, stat=%s → (27.01, 72.99, 'A')
     upd = stub.updates[0]
     assert upd[0] == 27.01 and upd[1] == 72.99 and upd[2] == "A"
     # mov_doble registrado
@@ -159,11 +169,19 @@ def test_aplicar_una_idempotente(monkeypatch):
     assert not stub.updates and not stub.inserts_ret
 
 
-def test_aplicar_una_suma_al_abono_previo(monkeypatch):
-    """TMT 2026-08-06 (dueña): la retención SIEMPRE suma al abono existente
-    (manual 10 + retención 15 = 25). Revierte la regla del 23/07 ("si ya hay
-    abono, sólo registrar"): con el dBase retirado (05/08), un abono previo es
-    un pago real, no una retención ya contada por el sync."""
+def test_aplicar_una_no_toca_el_abono_previo(monkeypatch):
+    """TMT 2026-08-07 (dueña): "dividir esto en dos columnas, retenciones y
+    abono, no todo junto (entonces no se debería sumar más)".
+
+    La retención sigue contando contra la deuda (eso lo decidió el 06/08 y no
+    cambia), pero el abono manual queda intacto: 51,98 pagados + 27,01
+    retenidos sobre 100 → saldo 21,01, y en la pantalla se leen los DOS
+    números por separado en vez de un "abonado 78,99" que no es lo que el
+    cliente pagó.
+
+    Antes este test se llamaba `test_aplicar_una_suma_al_abono_previo` y
+    exigía abono=78,99. Se da vuelta, no se borra: la regla vieja tiene que
+    quedar fallando si alguien la reintroduce."""
     from modules.retenciones import queries as q
     stub = _DBStub(_fac(100.0, 51.98, 48.02, "A"))  # abono manual previo
     _patch(monkeypatch, stub)
@@ -171,9 +189,11 @@ def test_aplicar_una_suma_al_abono_previo(monkeypatch):
     assert r == "aplicada"
     # registró la retención (informe/SRI + guard anti-reaplicación)
     assert stub.inserts_ret and stub.inserts_ret[0][2] == 27.01
-    # y sumó: abono 51.98+27.01=78.99, saldo 100-78.99=21.01, sigue A
+    # retención 27.01, saldo 100 − 51.98 − 27.01 = 21.01, sigue A
     upd = stub.updates[0]
-    assert upd[0] == 78.99 and upd[1] == 21.01 and upd[2] == "A"
+    assert upd[0] == 27.01 and upd[1] == 21.01 and upd[2] == "A"
+    # y el UPDATE no menciona `abono`: el abono manual no se toca nunca más.
+    assert "abono" not in stub.updates_sql[0].lower()
     md = stub.mov_dobles[0]
     assert md[1] == "retencion_asinfo_aplicada"
 
@@ -185,7 +205,8 @@ def test_aplicar_una_suma_y_cierra_T(monkeypatch):
     _patch(monkeypatch, stub)
     r = q._aplicar_una_por_numero("001-099-000179161", 10.0, "t")
     assert r == "aplicada"
-    assert stub.updates[0][0] == 100.0 and stub.updates[0][1] == 0.0
+    # retención 10 (el abono sigue en 90, aparte) → saldo 0 → T
+    assert stub.updates[0][0] == 10.0 and stub.updates[0][1] == 0.0
     assert stub.updates[0][2] == "T"
 
 
@@ -272,8 +293,13 @@ def test_desaplicar_una(monkeypatch):
     _patch(monkeypatch, stub)
     r = q._desaplicar_una_por_numero("001-099-000179161", "t")
     assert r == "revertida"
-    # restaura saldo 100, abono 0, stat Z
-    assert stub.updates[0][0] == 0.0 and stub.updates[0][1] == 100.0 and stub.updates[0][2] == "Z"
+    # restaura abono 0, retención 0, saldo 100, stat Z. El snapshot es VIEJO
+    # (no trae `retencion_previa`): el reverso deduce "lo de antes" restando
+    # la retención que saca — 27.01 − 27.01 = 0.
+    assert stub.updates[0][0] == 0.0            # abono
+    assert stub.updates[0][1] == 0.0            # retencion
+    assert stub.updates[0][2] == 100.0          # saldo
+    assert stub.updates[0][3] == "Z"            # stat
     # borra la retencion 55
     assert stub.deletes and stub.deletes[0][0] == 55
     # reverso mov_doble
@@ -290,8 +316,12 @@ def test_desaplicar_una_sin_aplicacion(monkeypatch):
 # ───────────────────────── corregir doble retención ────────────────────────
 
 def test_corregir_doble_solo_los_dobles(monkeypatch):
-    """Corrige SÓLO los mov_doble con abono_previo>0 (dobles). Los de
-    abono_previo=0 (sanos, el dBase no los tenía) NO se tocan."""
+    """Cuenta SÓLO los mov_doble con abono_previo>0 (dobles). Los de
+    abono_previo=0 (sanos, el dBase no los tenía) no entran.
+
+    TMT 2026-08-07: desde la mig 0179 la ejecución REAL está bloqueada — la
+    retención ya no vive adentro del abono, así que restarla de ahí dejaría el
+    abono corto y el saldo inflado. Queda sólo el dry_run."""
     import db
     from modules.retenciones import queries as q
 
@@ -325,19 +355,16 @@ def test_corregir_doble_solo_los_dobles(monkeypatch):
     monkeypatch.setattr(db, "tx", _tx)
     monkeypatch.setattr(q._md, "registrar", lambda **k: {"id_mov_doble": 9})
 
-    # dry_run: cuenta sin mutar
+    # cuenta sin mutar (es lo único que hace desde la mig 0179)
     prev = q.corregir_doble_retenciones(dry_run=True)
     assert prev["n_doble"] == 1 and prev["total_corregido"] == 51.98
     assert prev["n_skip_no_doble"] == 1
     assert not updates
 
-    # ejecución real
-    r = q.corregir_doble_retenciones(usuario="t")
-    assert r["n_corregidas"] == 1 and r["total_corregido"] == 51.98
-    # abono 103.96 − 51.98 = 51.98 ; saldo 2988.66 − 51.98 = 2936.68 ; stat A
-    assert updates and updates[0][0] == 51.98
-    assert updates[0][1] == 2936.68
-    assert updates[0][2] == "A"
+    # pedirle que corrija: bloqueado, y sin tocar una sola fila.
+    with pytest.raises(RuntimeError, match="0179"):
+        q.corregir_doble_retenciones(usuario="t", dry_run=False)
+    assert not updates
 
 
 # ───────────────────────── cron helper (health/all) ────────────────────────

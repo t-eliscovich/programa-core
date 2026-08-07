@@ -278,14 +278,15 @@
            necesita ancho de sobra. TMT 2026-07-21: quitadas las columnas Kg AI /
            USD AI de conciliación Asinfo (la dueña usa Kg e Importe). #}
         <col style="width: 8%">    <!-- N° -->
-        <col style="width: 9%">    <!-- Fecha -->
-        <col style="width: 10%">   <!-- Cliente -->
-        <col style="width: 10%">   <!-- Kg -->
-        <col style="width: 13%">   <!-- Importe -->
-        <col style="width: 6%">    <!-- Tipo -->
-        <col style="width: 13%">   <!-- Abonado -->
-        <col style="width: 13%">   <!-- Saldo -->
-        <col style="width: 13%">   <!-- Acum -->
+        <col style="width: 8%">    <!-- Fecha -->
+        <col style="width: 9%">    <!-- Cliente -->
+        <col style="width: 9%">    <!-- Kg -->
+        <col style="width: 12%">   <!-- Importe -->
+        <col style="width: 5%">    <!-- Tipo -->
+        <col style="width: 11%">   <!-- Retención -->
+        <col style="width: 12%">   <!-- Abonado -->
+        <col style="width: 12%">   <!-- Saldo -->
+        <col style="width: 9%">    <!-- Acum -->
         <col style="width: 5%">    <!-- Stat -->
       </colgroup>
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
@@ -296,6 +297,13 @@
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Kg</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
           <th class="px-2 py-2 text-center font-medium" title="Tipo de documento: F=Factura, D=Devolución, N=Nota">Tipo</th>
+          {# TMT 2026-08-07 (dueña): la retención sale del abono y se muestra
+             aparte. Lo que el cliente RETUVO no es plata que pagó — hasta ayer
+             iban sumadas en una sola columna y no se podía distinguir.
+             Orden pedido por Andrés (07/08): primero Retención, después
+             Abonado. #}
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number"
+              title="Retención en la fuente (fuente + IVA) que el cliente nos retuvo. Baja el saldo igual que un abono, pero no es plata cobrada.">Retención</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
           <th class="px-2 py-2 text-right font-medium acum-col" title="Saldo acumulado sobre TODAS las facturas del filtro (no solo esta página). La fila más nueva cierra con el total de arriba." data-no-sort>Acum.</th>
@@ -408,6 +416,9 @@
           <td class="px-2 py-1.5 text-center font-mono" title="{{ _tipo_desc }}">
             <span class="{{ _tipo_color }}">{{ _tipo_letra }}</span>
           </td>
+          {# Retención: en gris apagado cuando es 0, para que las que SÍ tienen
+             salten a la vista al recorrer la columna. #}
+          <td class="px-2 py-1.5 text-right text-mono {{ 'text-violet-700 dark:text-violet-300' if (f.retencion or 0) > 0 else 'text-slate-300 dark:text-slate-600' }}">{{ f.retencion | money_es }}</td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
@@ -423,7 +434,7 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(10, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
+        {{ empty_row(11, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
         {% endfor %}
       </tbody>
     </table>
