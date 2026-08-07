@@ -385,7 +385,9 @@ def test_resumir_un_renglon_para_el_totalizar_aunque_netee_cero():
     assert g["aporte"] == 0.0
     assert "totalizar" in g["texto"] and "MLZ" in g["texto"]
     assert g["texto"].startswith("↩")
-    assert "(3)" in g["texto"]
+    # El "(3)" pelado pasó a decir en qué unidad: "· 3 facturas". El
+    # paréntesis cuenta HECHOS y acá el hecho es UNO que abarca tres facturas.
+    assert "3 facturas" in g["texto"]
     # 🚨 lo que la dueña vio y no era cierto.
     assert "facturas nuevas" not in g["texto"]
 

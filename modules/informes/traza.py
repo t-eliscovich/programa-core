@@ -829,6 +829,11 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             # qué compra fueron, que es lo que /historial muestra y acá faltaba.
             # …salvo en un renglón juntado: el número de UNA de las compras al
             # lado de "3 CP → DE" se lee como si fueran todas esa.
+            # Un hecho que abarca N facturas lo dice: "FA MLZ totalizar · 12
+            # facturas" en vez de dejar que se adivine por el importe.
+            if md.get("n_facturas") and not cerrado:
+                g["texto"] += f" · {int(md['n_facturas'])} facturas"
+                cerrado = True
             if md.get("numero_compra") and not cerrado:
                 g["texto"] += f" {md['numero_compra']}"
             # Cuando el hecho ES uno solo pero abarca varios documentos, el

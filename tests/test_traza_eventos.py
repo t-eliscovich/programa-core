@@ -437,3 +437,25 @@ def test_tres_compras_de_una_importacion_en_un_renglon_sin_el_numero_de_una():
     g = t.resumir(movs, -20846.0, idx)[0]
     assert g["texto"] == "3 CP → DE · AQ"
     assert g["aporte"] == -20846.0
+
+
+def test_el_totalizar_se_lleva_las_facturas_que_toco():
+    """🚨 El TOTALIZAR toca N facturas y `mov_doble` guarda origen = la primera
+    y destino = la última: las del medio caían al camino sin nombre y salían
+    como "11 facturas canceladas · MLZ" AL LADO del totalizar que las causó.
+    La lista completa está en el snapshot `antes` (el que hace posible el ↺).
+    """
+    ids = [174039, 174040, 174041]
+    idx = ev.indice(_con_label([
+        _ev("totalizar_estado_cuenta", "factura", ids[0], "factura", ids[-1],
+            importe=-1747.0, concepto="TOTALIZAR estado de cuenta MLZ",
+            metadata={"codigo_cli": "MLZ", "n_facturas": 3,
+                      "antes": [{"id": i} for i in ids]})]))
+    movs = [{"doc_id": f"f{i}", "componente": "facturas", "aporte": -100.0,
+             "regla": "Factura cancelada del todo",
+             "etiqueta": f"Factura {i} · MLZ", "familia": "traspaso"}
+            for i in ids]
+    out = t.resumir(movs, -300.0, idx)
+    assert len(out) == 1, [g["texto"] for g in out]
+    assert out[0]["texto"] == "FA MLZ totalizar · 3 facturas"
+    assert out[0]["aporte"] == -300.0
