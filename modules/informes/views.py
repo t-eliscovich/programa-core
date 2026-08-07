@@ -1233,10 +1233,18 @@ def traza():
     """
     from modules.informes import traza as _traza
 
-    filas = _traza.con_deltas(_traza.ultimas(200))
+    filas = _traza.marcar_residuo(_traza.con_deltas(_traza.ultimas(200)))
+    # El filtro se aplica DESPUÉS de calcular los Δ: filtrar antes compararía
+    # cada foto contra la anterior que pasó el filtro, no contra la anterior de
+    # verdad, y todos los números saldrían mal.
+    comp = (request.args.get("comp") or "").strip()
+    visibles = _traza.filtrar_por_componente(filas, comp) if comp else filas
     return render_template(
         "informes/traza.html",
-        filas=filas,
+        filas=visibles,
+        total=len(filas),
+        comp=comp,
+        sin_cerrar=_traza.sin_cerrar(filas),
         bajadas=_traza.bajadas(filas),
         intervalo=_traza._intervalo(),
         # Las etiquetas salen del mismo diccionario que usa el detalle, para

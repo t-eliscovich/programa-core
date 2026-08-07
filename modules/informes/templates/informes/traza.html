@@ -25,7 +25,7 @@
       'Traza de la utilidad',
       descripcion='Una foto del balance cada pocos minutos. Tocá la hora para ver qué documentos movieron la utilidad en esa ventana.',
       kpi_valor=(filas | length) ~ ' fotos',
-      kpi_extra=('· ' ~ (bajadas | length) ~ ' bajadas de más de $ 1.000' if bajadas else '· sin bajadas')
+      kpi_extra=('· ' ~ (sin_cerrar | length) ~ ' sin explicar' if sin_cerrar else '· todas explicadas')
   ) }}
 
   {% if not filas %}
@@ -45,6 +45,37 @@
     </form>
     <span style="color:rgb(100 116 139);">Se guarda una sola cada {{ intervalo // 60 }} minutos.</span>
   </div>
+
+  {# Filtro por componente: con 200 filas, poder ver sólo las ventanas donde se
+     movieron las facturas es la diferencia entre buscar y encontrar. #}
+  <div class="my-2 flex items-center gap-1 flex-wrap" style="font-size:11px;">
+    <span style="color:rgb(100 116 139);margin-right:.25rem;">Ver sólo:</span>
+    <a href="{{ url_for('informes.traza') }}"
+       style="padding:.15rem .5rem;border-radius:.25rem;text-decoration:none;
+              {% if not comp %}background:rgb(30 64 175);color:#fff;{% else %}color:rgb(30 64 175);{% endif %}">todo ({{ total }})</a>
+    {% for col, label in deltas %}
+      <a href="{{ url_for('informes.traza', comp=col) }}"
+         style="padding:.15rem .5rem;border-radius:.25rem;text-decoration:none;
+                {% if comp == col %}background:rgb(30 64 175);color:#fff;{% else %}color:rgb(30 64 175);{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  {% if sin_cerrar %}
+    {# ⭐ La métrica del entrenamiento es el residuo, así que tiene que
+       perseguirla a ella. Antes había que abrir fila por fila para
+       descubrirlo. #}
+    <div class="my-2 border rounded px-3 py-2"
+         style="border-color:rgb(252 211 77);background:rgb(255 251 235);font-size:11.5px;">
+      <strong>{{ sin_cerrar | length }} ventana{{ '' if (sin_cerrar | length) == 1 else 's' }}
+      sin explicar del todo.</strong> Los documentos no llegan a dar el Δ —
+      están marcadas con
+      <span style="color:rgb(180 83 9);font-weight:600;">▲</span> en la columna Δ.
+      {% for f in sin_cerrar[:6] %}
+        <a href="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
+           style="color:rgb(30 64 175);margin-left:.4rem;">{{ f.cuando }} ({{ f.residuo | num_es(0) }})</a>
+      {% endfor %}
+    </div>
+  {% endif %}
 
   {# 🚨 Anchos en `em`, no en `rem`: `rem` va contra los 16 px de la raíz, así
      que bajar la tipografía de la tabla a 11 px no achicaba una sola columna
@@ -98,6 +129,9 @@
               style="font-weight:600;position:sticky;left:5.8em;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
           <td class="px-1 py-0.5 text-right"
               style="font-weight:600;position:sticky;left:11em;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
+            {% if f.residuo is not none and (f.residuo | abs) >= 1 %}<span
+              title="Los documentos no explican {{ f.residuo | num_es(2) }}"
+              style="color:rgb(180 83 9);">▲</span>{% endif -%}
             {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
           </td>
           {% for col, label in deltas %}
@@ -110,7 +144,7 @@
           {% for col, label in kilos %}
             <td class="px-1 py-0.5 text-right"
                 style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if col not in f.movidas %}color:rgb(148 163 184);{% endif %}">
-              {{ (f[col] / 1000) | num_es(0) if f[col] else '' }}
+              {% if f[col] %}{{ (f[col] / 1000) | num_es(0) }}<span style="color:rgb(148 163 184);">k</span>{% endif %}
             </td>
           {% endfor %}
           <td class="px-1 py-0.5 text-right"

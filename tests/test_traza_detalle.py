@@ -346,3 +346,45 @@ def test_la_migracion_0172_no_lista_las_tablas_a_mano():
     # Idempotente: la migración se puede volver a correr sin romper nada.
     assert "DROP TRIGGER IF EXISTS" in sql
     assert "CREATE OR REPLACE FUNCTION" in sql
+
+
+# ── El listado avisa cuál no cierra, y se puede filtrar ─────────────────────
+
+def test_el_listado_marca_las_ventanas_que_no_cierran():
+    """⭐ La métrica del entrenamiento es el residuo, así que tiene que
+    perseguir a la dueña y no ella a él: antes había que abrir fila por fila
+    para descubrir que una ventana no cerraba."""
+    filas = [{"id_traza": 9, "d_utilidad": 1000.0, "cuando": "17:23"},
+             {"id_traza": 8, "d_utilidad": 500.0, "cuando": "17:17"}]
+    agr = [{"id_traza": 9, "explicado": 400.0, "ciegos": 1},
+           {"id_traza": 8, "explicado": 500.0, "ciegos": 0}]
+    with patch.object(t.db, "fetch_all", return_value=agr), \
+         patch.object(t, "_desde_cuando_hay_detalle", return_value=1):
+        out = t.marcar_residuo(filas)
+    assert out[0]["residuo"] == 600.0            # 1.000 − 400
+    assert out[1]["residuo"] == 0.0
+    assert [f["cuando"] for f in t.sin_cerrar(out)] == ["17:23"]
+
+
+def test_una_foto_vieja_no_cuenta_como_que_no_cierra():
+    """No es que no cierre: es que no hay con qué. Meterla en la lista de
+    tareas sería inventar 200 problemas que no existen."""
+    filas = [{"id_traza": 2, "d_utilidad": 5000.0, "cuando": "15:43"}]
+    with patch.object(t.db, "fetch_all", return_value=[]), \
+         patch.object(t, "_desde_cuando_hay_detalle", return_value=100):
+        out = t.marcar_residuo(filas)
+    assert out[0]["sin_registro"] is True
+    assert out[0]["residuo"] is None
+    assert t.sin_cerrar(out) == []
+
+
+def test_el_filtro_por_componente_no_toca_los_deltas():
+    """🚨 El filtro se aplica DESPUÉS de calcular los Δ. Filtrar antes
+    compararía cada foto contra la anterior QUE PASÓ EL FILTRO, no contra la
+    anterior de verdad, y todos los números saldrían mal."""
+    filas = [{"cuando": "3", "movidas": {"facturas"}},
+             {"cuando": "2", "movidas": {"vsto"}},
+             {"cuando": "1", "movidas": {"facturas", "vsto"}}]
+    assert [f["cuando"] for f in t.filtrar_por_componente(filas, "facturas")] == ["3", "1"]
+    assert t.filtrar_por_componente(filas, "") == filas       # sin filtro, todo
+    assert t.filtrar_por_componente(filas, "inventado") == filas

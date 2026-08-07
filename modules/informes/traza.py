@@ -214,8 +214,12 @@ ETIQUETAS_CORTAS = {
 #: TMT 2026-08-06: *"hilado tejido y terminado puede aparecer en vez de
 #: 1.939.121, 1.939 y ya"*. Son toneladas: 1.939.121 kg = 1.939 t. Siete
 #: dígitos por columna para una cifra que se mira de reojo es ancho tirado.
-COLUMNAS_KG = (("hilado_kg", "Hil. t"), ("tejido_kg", "Tej. t"),
-               ("terminado_kg", "Term. t"))
+#: TMT 2026-08-06: *"a hilado, tejido y terminado ponéles una k en el número
+#: completo, así se diferencia de los cambios chiquitos del detalle"*. El nivel
+#: va en miles con la "k" pegada (1.939k) y el Δ del detalle en kilos pelados
+#: (−22): dos escalas en la misma columna, imposibles de confundir.
+COLUMNAS_KG = (("hilado_kg", "Hilado"), ("tejido_kg", "Tejido"),
+               ("terminado_kg", "Terminado"))
 
 #: Lo que la grilla vigila para saber si un kilo o la tarifa se movieron. El
 #: $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de
@@ -314,6 +318,66 @@ def con_deltas(filas: list[dict]) -> list[dict]:
                 fila["d_kg"][col] = d
         out.append(fila)
     return out
+
+
+def marcar_residuo(filas: list[dict]) -> list[dict]:
+    """Le pone a cada foto si sus documentos explican el Δ o no.
+
+    ⭐ TMT 2026-08-06: hasta acá había que abrir fila por fila para descubrir
+    que una ventana no cerraba. La métrica del entrenamiento es el residuo, así
+    que tiene que perseguirla a ella y no ella a él: la fila que no cierra se
+    marca en el listado.
+
+    Una consulta para todas las fotos, no una por fila. Las anteriores a la
+    grabadora quedan con `residuo = None`: no es que no cierren, es que no hay
+    con qué (`sin_registro`).
+    """
+    ids = [f.get("id_traza") for f in (filas or []) if f.get("id_traza")]
+    if not ids:
+        return filas or []
+    try:
+        agr = db.fetch_all(
+            """
+            SELECT id_traza,
+                   COALESCE(SUM(aporte), 0)                              AS explicado,
+                   COUNT(*) FILTER (WHERE familia = 'sin_explicar')      AS ciegos
+              FROM scintela.dia_movimiento
+             WHERE id_traza = ANY(%s)
+             GROUP BY id_traza
+            """, (ids,)) or []
+    except Exception as e:  # noqa: BLE001 -- el listado tiene que salir igual
+        _LOG.warning("traza_utilidad: no pude leer los residuos (%s)", e)
+        return filas
+    por_id = {int(r["id_traza"]): r for r in agr}
+    primera = _desde_cuando_hay_detalle()
+    for f in filas:
+        idt = f.get("id_traza")
+        r = por_id.get(int(idt)) if idt else None
+        f["sin_registro"] = bool(primera is None or (idt and int(idt) < primera))
+        f["ciegos"] = int((r or {}).get("ciegos") or 0)
+        if f["sin_registro"] or f.get("d_utilidad") is None:
+            f["residuo"] = None
+            continue
+        explicado = float((r or {}).get("explicado") or 0)
+        f["residuo"] = round(float(f["d_utilidad"]) - explicado, 2)
+    return filas
+
+
+def sin_cerrar(filas: list[dict], umbral: float = 1.0) -> list[dict]:
+    """Las ventanas cuyos documentos NO explican el Δ. La lista de tareas."""
+    return [f for f in (filas or [])
+            if f.get("residuo") is not None and abs(f["residuo"]) >= umbral]
+
+
+def filtrar_por_componente(filas: list[dict], col: str | None) -> list[dict]:
+    """Sólo las fotos en las que se movió ese componente.
+
+    ⭐ Con 200 filas, poder ver únicamente las ventanas donde se movieron las
+    facturas es la diferencia entre buscar y encontrar.
+    """
+    if not col or col not in dict(COMPONENTES):
+        return filas or []
+    return [f for f in (filas or []) if col in (f.get("movidas") or set())]
 
 
 def bajadas(filas: list[dict], umbral: float = 1000.0) -> list[dict]:
