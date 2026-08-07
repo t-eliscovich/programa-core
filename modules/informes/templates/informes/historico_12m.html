@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_ui.html" import nav_resultados %}
 {% from "_informes_design.html" import informes_styles %}
-{% block title %}Historial{% endblock %}
+{% block title %}Historia{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
-  <strong>Historial</strong>
+  <strong>Historia</strong>
 {% endblock %}
 
 {# ------------------------------------------------------------------
@@ -137,7 +137,7 @@
   {# ─── Header estándar (mismo patrón que provisiones/balance) ──────── #}
   <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
-      <h1 class="font-semibold">Historial</h1>
+      <h1 class="font-semibold">Historia</h1>
       <p class="text-sm text-slate-500 mt-1">
         {% if modo == 'mom' %}
           Comparación mes vs mes — elegí dos meses para ver la diferencia.
@@ -276,7 +276,7 @@
     {# Header del card — etiqueta arriba a la izquierda como en el resto. #}
     <div class="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
       <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-        Historial {% if modo == 'mom' %}· Mes vs Mes{% endif %}
+        Historia {% if modo == 'mom' %}· Mes vs Mes{% endif %}
       </div>
       <div class="text-xs text-slate-400">
         {% if modo == 'mom' %}

@@ -322,8 +322,9 @@ def test_resultados_ofrece_el_link_a_trazabilidad(app):
     ruta que no existe sólo se ve como 404 al clickear."""
     barra = app.jinja_env.loader.get_source(app.jinja_env, "_ui.html")[0]
     assert "('traza', 'Trazabilidad')" in barra
-    # Al lado de Historial, no al final (TMT: "poné el link al lado de historia").
-    assert barra.index("'Historial'") < barra.index("'Trazabilidad'") < barra.index("'Gastos del mes'")
+    # Al lado de Historia, no al final (TMT: "poné el link al lado de historia").
+    # TMT 2026-08-07: el botón pasó a llamarse "Historia" (antes "Historial").
+    assert barra.index("'Historia'") < barra.index("'Trazabilidad'") < barra.index("'Gastos del mes'")
     app.url_map.bind("localhost").match("/informes/traza", method="GET")
 
 
@@ -415,3 +416,11 @@ def test_una_foto_vieja_con_reconstruccion_se_marca_como_tal():
     assert f["reconstruido"] is True
     # Y no se le exige que cierre: le falta lo aplicado, por definición.
     assert f["residuo"] is None
+
+
+def test_el_boton_se_llama_historia_no_historial(app):
+    """TMT 2026-08-07, con una captura del botón: *"a esto, lo podes llamar
+    historia en vez de historial"*."""
+    barra = app.jinja_env.loader.get_source(app.jinja_env, "_ui.html")[0]
+    assert "('historico_12m', 'Historia')" in barra
+    assert "('historico_12m', 'Historial')" not in barra

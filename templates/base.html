@@ -1019,15 +1019,12 @@
            URL para audit/legacy, pero ya no es un destino visible. #}
       </details>
 
-      {# TMT 2026-07-15 (dueña: "sync compare visible para todos"): el comparador
-         PC vs dBase, SIN gate de permiso (requiere_login solamente) para que lo
-         vean TODOS los usuarios, no solo admin.
-         Federico 2026-07-22: "Comparación" movida acá abajo — entre "Clientes y
-         proveedores" y "Recientes". #}
-      <details class="sidebar-section" data-key="comparacion" open>
-        <summary>Comparación</summary>
-        {{ nav_link('dbase_compare.form', 'Comparación con dBase', 'report') }}
-      </details>
+      {# TMT 2026-08-07 (dueña: "podemos sacar esto del menu"): la sección
+         "Comparación" sale del sidebar. El dBase se retiró el 05/08/2026 y
+         Programa Core es la única fuente de verdad, así que comparar contra él
+         ya no es una tarea de todos los días. La ruta `dbase_compare.form`
+         SIGUE VIVA y se llega por URL — mismo criterio que "Provisiones"
+         (2026-05-20): sale del menú, no de la app. #}
 
       {# TMT 2026-05-17: Recientes ahora es una sección colapsable más
          (igual que Ingreso, Bancos, etc.). Antes era un bloque suelto

@@ -332,7 +332,7 @@
 
 {#   ─────────────── NAV RESULTADOS — barra entre pantallas ───────────────
    Federico 2026-05-22: barra de navegación persistente entre Resultados,
-   Historial, Gastos y Flujo producción. Permite saltar de una a otra sin
+   Historia, Gastos y Flujo producción. Permite saltar de una a otra sin
    volver primero a Resultados. `actual` = endpoint actual sin el prefijo
    'informes.' (balance / historico_12m / gastos / flujo_produccion).
 #}
@@ -346,7 +346,7 @@
      style="font-feature-settings: 'tnum' 1;">
   {% for _ep, _lbl in [
         ('balance', 'Resultados'),
-        ('historico_12m', 'Historial'),
+        ('historico_12m', 'Historia'),
         ('traza', 'Trazabilidad'),
         ('gastos', 'Gastos del mes')] %}
     {% if _ep == actual %}
