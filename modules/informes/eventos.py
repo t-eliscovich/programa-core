@@ -172,6 +172,14 @@ def _cuentas(evs: list[dict]) -> dict[str, dict]:
     return out
 
 
+#: El código de documento de `transacciones_bancarias`, en castellano. Es el
+#: mismo vocabulario de `TIPOS_LABEL` para los `banco_*_directo`.
+DOCUMENTO_BANCO = {
+    "DE": "depósito", "CH": "cheque emitido", "TR": "transferencia",
+    "ND": "nota de débito", "NC": "nota de crédito", "AC": "acreditación",
+}
+
+
 def transacciones(desde, hasta) -> dict[str, dict]:
     """`b<no_banco>` → lo que se cargó en esa cuenta, salga o no de `mov_doble`.
 
@@ -210,7 +218,16 @@ def transacciones(desde, hasta) -> dict[str, dict]:
         conceptos = [(r.get("concepto") or "").strip() for r in lista]
         conceptos = [c for c in conceptos if c]
         if len(lista) == 1 and conceptos:
-            texto = conceptos[0]
+            # 🚨 El concepto solo puede ser cualquier cosa: el depósito de un
+            # cheque se carga como *"1 ch.KRH"*, que no se entiende sin saber
+            # que es un depósito. El tipo de documento adelante lo ubica.
+            que = DOCUMENTO_BANCO.get(
+                (lista[0].get("documento") or "").strip().upper()) or ""
+            # …salvo que el concepto ya lo diga: "transferencia ·
+            # TRANSFERENCIA RECIBIDA JVL" es la misma palabra dos veces.
+            if que and que.split()[0] in conceptos[0].lower():
+                que = ""
+            texto = " · ".join(x for x in (que, conceptos[0]) if x)
         else:
             texto = f"BC · {len(lista)} movimientos"
         out[doc] = {"tipo": "banco_cargado", "grupo": doc, "docs": [doc],

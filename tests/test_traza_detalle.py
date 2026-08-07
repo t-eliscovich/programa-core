@@ -315,7 +315,7 @@ def test_un_centavo_no_es_un_renglon():
             {"regla": "Stock hilado", "aporte": -0.01, "componente": "vsto",
              "etiqueta": "-0 kg"}]
     textos = [g["texto"] for g in t.resumir(movs, 4999.99)]
-    assert textos == ["Factura 1 · AAA"]      # el centavo no sale
+    assert textos == ["FA #1 AAA"]            # el centavo no sale
 
 
 # ── El link desde Resultados ────────────────────────────────────────────────

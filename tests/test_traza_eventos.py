@@ -134,7 +134,7 @@ def test_sin_eventos_el_resumen_sigue_agrupando_por_regla():
     movs = [{"doc_id": "f1", "componente": "facturas", "aporte": 500.0,
              "regla": "Venta facturada", "etiqueta": "Factura 1 · AAA",
              "familia": "utilidad"}]
-    assert t.resumir(movs, 500.0, {})[0]["texto"] == "Factura 1 · AAA"
+    assert t.resumir(movs, 500.0, {})[0]["texto"] == "FA #1 AAA"
 
 
 # ── 07/08: lo que la dueña pidió mirando la pantalla ────────────────────────
@@ -305,14 +305,14 @@ def test_el_banco_cargado_a_mano_tambien_se_identifica():
     por `fecha_crea` — el momento en que se CARGÓ, no la fecha del movimiento.
     """
     filas = [{"no_banco": 10, "documento": "TR", "importe": 759.0,
-              "concepto": "TRANSFERENCIA RECIBIDA JVL", "dia": "2026-08-07"}]
+              "concepto": "RECIBIDA DE JVL", "dia": "2026-08-07"}]
     with patch.object(ev.db, "fetch_all", return_value=filas):
         cuentas = ev.transacciones("2026-08-07 18:28+00", "2026-08-07 18:33+00")
     movs = [{"doc_id": "b10", "componente": "bancos", "aporte": 759.0,
              "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
              "familia": "traspaso"}]
     g = t.resumir(movs, 759.0, ev.indice([], cuentas))[0]
-    assert g["texto"] == "TRANSFERENCIA RECIBIDA JVL"
+    assert g["texto"] == "transferencia · RECIBIDA DE JVL"
 
 
 def test_si_la_cuenta_tuvo_varias_cargas_dice_cuantas():
@@ -367,3 +367,32 @@ def test_las_retenciones_revertidas_van_en_un_renglon():
     g = t.resumir(movs, 627.0, idx)[0]
     assert g["texto"] == "retenciones revertidas · 6 facturas"
     assert g["aporte"] == 627.0
+
+
+def test_el_deposito_cargado_en_el_banco_dice_que_es_un_deposito():
+    """🚨 El concepto tipeado puede ser cualquier cosa: el depósito de un
+    cheque se carga como "1 ch.KRH", que no se entiende sin saber que es un
+    depósito. El código de documento va adelante, en castellano.
+    """
+    filas = [{"no_banco": 10, "documento": "DE", "importe": 1620.86,
+              "concepto": "1 ch.KRH", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "depósito · 1 ch.KRH"
+
+
+def test_el_documento_sin_hecho_se_escribe_como_los_demas():
+    """"Factura 174039 · MLZ" al lado de "FA #181305 JVL" son dos formas de
+    escribir lo mismo, y la larga se come el ancho de la columna."""
+    movs = [{"doc_id": "f174039", "componente": "facturas", "aporte": -321.0,
+             "regla": "Abono a factura", "etiqueta": "Factura 174039 · MLZ",
+             "familia": "traspaso"}]
+    assert t.resumir(movs, -321.0, {})[0]["texto"] == "FA #174039 MLZ"
+
+
+def test_no_repite_la_palabra_si_el_concepto_ya_la_dice():
+    filas = [{"no_banco": 10, "documento": "TR", "importe": 100.0,
+              "concepto": "TRANSFERENCIA RECIBIDA JVL", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "TRANSFERENCIA RECIBIDA JVL"

@@ -636,6 +636,21 @@ TIPOS_QUE_SE_JUNTAN = {
 }
 
 
+#: Un documento SIN hecho con nombre: la etiqueta que guardó la foto. Sale
+#: como "Factura 174039 · MLZ" al lado de renglones que dicen "FA #181305 JVL"
+#: — dos formas de escribir lo mismo, y la larga se come el ancho de la
+#: columna. TMT 2026-08-07: *"dale con todo"*.
+_RE_ETIQUETA_DOC = re.compile(r"^(Factura|Cheque)\s+(\S+)\s+·\s+(.+)$")
+_OBJETO = {"Factura": "FA", "Cheque": "CH"}
+
+
+def _corto_etiqueta(etiqueta: str) -> str:
+    m = _RE_ETIQUETA_DOC.match((etiqueta or "").strip())
+    if not m:
+        return etiqueta
+    return f"{_OBJETO[m.group(1)]} #{m.group(2)} {m.group(3)}"
+
+
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
@@ -833,7 +848,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["texto"] = (f"{ETIQUETAS.get(g.get('col'), g.get('col') or '')}"
                           f": sin explicar por documento").strip(": ")
         else:
-            g["texto"] = g.get("etiqueta") or g["regla"]
+            g["texto"] = _corto_etiqueta(g.get("etiqueta") or g["regla"])
         g["texto"] = _abreviar_etapas(g.get("texto") or "")
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
