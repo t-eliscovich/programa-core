@@ -31,22 +31,50 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 Dueña 2026-08-07: *"esos links deberían venir filtrados por lo que quiero ver;
 arrancá por este pero después quizás sea un poco más largo el trabajo de
 construir los links a todos los movimientos"*. Ya se hizo `posdat` →
-`/posdat?id=<id>` (una fila, con los filtros de deuda viva / tab / anulada
-apagados). Faltan los demás destinos de `historial.queries.link_origen`:
+`/posdat?id=<id>`. **Alcance medido el 07/08 contra producción** (volumen real
+en `mov_doble`, no filas candidatas):
 
-| tabla | hoy va a | qué le falta |
-|---|---|---|
-| `caja` | `/caja#id-<id>` | verificar que la fila tenga ese ancla y que el filtro de fecha no la esconda |
-| `transacciones_bancarias` | (sin link) | no hay pantalla que muestre UN movimiento de banco |
-| `retiros` / `capital` | `/retiros` | la pantalla entera, sin marcar cuál |
-| `dolares` | `/dolares?cta=` | idem, y el `cta=` va vacío |
-| `xgast` | `/gastos` | idem |
+| destino | movs | últ. 90d | filas | estado del link | patología MEDIDA |
+|---|---|---|---|---|---|
+| `transacciones_bancarias` | 1.862 | 1.857 | 979 | **sin link** | 167 de 371 quedan fuera del tope de 500 |
+| `xgast` → `/gastos` | 890 | 519 | 520 | pantalla entera | 36 de 526 fuera del tope |
+| `caja` → `/caja#id-<id>` | 603 | 474 | 467 | **el ancla no existe** | 52 de 466 fuera del tope |
+| `dolares` → `/dolares?cta=` | 168 | 168 | 148 | `cta=` vacío = no-op | **132 de 149 (89%) INVISIBLES** por `solo_vivos=1` |
+| `retiros` → `/retiros` | 86 | 73 | 41 | pantalla entera | ninguna fuera del tope |
+| `capital` → `/retiros` | **0** | 0 | 0 | rama muerta | 0 movimientos: se borra |
+| `activos`, `importacion_pago_mov` | 4 + 6 | | | sin link (fallthrough) | marginal |
 
-Criterio: si al clickear hay que buscar la fila a ojo, el link no está
-terminado. Ojo con el precedente de `?id=` en posdat: apagar el filtro de
-PESTAÑA hacía que la fila se contara dos veces en el hero — el filtro que
-define en qué solapa vive una fila no se saltea, se elige bien.
+**Hallazgo transversal:** `id="id-<id>"` **no existe en ningún template de la
+app** — el único lugar donde aparece la cadena es quien la genera
+(`historial/queries.py`). O sea que `/caja#id-123` no es "cae en la pantalla y
+hay que buscar la fila": es literalmente `/caja`, el browser ignora el hash.
 
+**El trabajo real no es el `WHERE`.** Es (1) apagar los filtros por default que
+esconden la fila, (2) propagar el id a TODOS los agregados de la pantalla
+(hero, KPIs, totales, badges de pestaña) o el resumen contradice a la grilla,
+(3) el ancla + resaltado. Patrón a copiar: `posdat/views.py` + `posdat/queries.py`
+(`buscar`, `resumen` Y los contadores de pestaña), con
+`tests/test_posdat_link_del_historial.py` de referencia.
+
+Orden sugerido, de barato a caro:
+
+- **[XS] `retiros`** — sin filtros por default que escondan, 41 filas, ninguna
+  fuera del tope. Y de paso: `capital` linkea a `/retiros`, que lee **sólo**
+  `scintela.retiros`; los aportes viven en `scintela.capital`, así que ese link
+  no puede funcionar ni prefiltrado. Con 0 movimientos, se borra la rama.
+- **[S] `gastos`** y **[S] `caja`** — `?id=` + ancla. Caja además pagina de a
+  500, así que el ancla sin el filtro no alcanza.
+- **[M] `dolares`** — hay que apagar `solo_vivos` (el 89% de los anticipos
+  linkeados ya está convertido/aplicado y por eso invisible: justo los que
+  generan el movimiento) y arreglar los KPIs, las cards por cuenta y
+  `conciliacion_balance`, que quedarían incongruentes con una sola fila.
+- **[L] `bancos`** — el más caro y el de más volumen. No existe ruta que muestre
+  UN movimiento; la URL necesita el `no_banco` (el historial ya joinea contra
+  `banco`, es una línea más en el SELECT); y `queries.movimientos` tiene
+  `LIMIT 500` **sin OFFSET** y la vista nunca pasa `limite`.
+
+Criterio de terminado: si al clickear hay que buscar la fila a ojo, el link no
+está terminado.
 
 ### [S] Un movimiento de banco se carga con la fecha del día, no con una vieja
 Dueña 2026-08-07, mirando el +$7.340 de la traza: *"debería ese movimiento
