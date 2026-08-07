@@ -459,3 +459,42 @@ def test_el_totalizar_se_lleva_las_facturas_que_toco():
     assert len(out) == 1, [g["texto"] for g in out]
     assert out[0]["texto"] == "FA MLZ totalizar · 3 facturas"
     assert out[0]["aporte"] == -300.0
+
+
+def test_el_reverso_del_totalizar_hereda_las_facturas_del_deshecho():
+    """🚨 El totalizar guarda el snapshot `antes` con las N facturas; su
+    REVERSO guarda sólo los contadores y un `id_mov_deshecho`. Sin resolverlo,
+    el renglón decía "↩ FA MLZ totalizar · 29 facturas" y al lado seguían
+    "11 facturas nuevas · MLZ" y "FA #174039 MLZ": las mismas facturas, dos
+    veces, y con un nombre que además miente (ninguna se emitió).
+    """
+    rev = _ev("reverso_totalizar_estado_cuenta", "factura", 174039,
+              "factura", 174041, importe=1747.0,
+              metadata={"codigo_cli": "MLZ", "n_facturas": 3,
+                        "id_mov_deshecho": 22176})
+    original = {"id_mov_doble": 22176,
+                "metadata": {"antes": [{"id": i} for i in
+                                       (174039, 174040, 174041)]}}
+    llamadas = []
+
+    def _fake(sql, args=None, *a, **k):
+        llamadas.append(sql)
+        return [original] if "id_mov_doble = ANY" in sql else [rev]
+
+    with patch.object(ev.db, "fetch_all", side_effect=_fake):
+        evs = ev.de_la_ventana("2026-08-07 00:00+00", "2026-08-07 23:59+00")
+    assert sorted(evs[0]["docs"]) == ["f174039", "f174040", "f174041"]
+
+
+def test_sin_reverso_no_se_consulta_el_mov_deshecho():
+    """Una consulta de más por ventana, en la pantalla que se abre todo el
+    día, para un caso que pasa una vez por semana."""
+    llamadas = []
+
+    def _fake(sql, args=None, *a, **k):
+        llamadas.append(sql)
+        return [_ev("factura_emitida", "factura", 1, "factura", 1)]
+
+    with patch.object(ev.db, "fetch_all", side_effect=_fake):
+        ev.de_la_ventana("a", "b")
+    assert len(llamadas) == 1

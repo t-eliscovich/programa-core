@@ -119,7 +119,43 @@ def de_la_ventana(desde, hasta) -> list[dict]:
         r["grupo"] = (r.get("batch_id") or _grupo_por_meta(r)
                       or f"m{r['id_mov_doble']}")
         out.append(r)
+    _facturas_del_deshecho(out)
     return out
+
+
+def _facturas_del_deshecho(evs: list[dict]) -> None:
+    """El reverso del totalizar hereda las facturas del movimiento que deshizo.
+
+    🚨 El totalizar guarda el snapshot `antes` con las N facturas; su REVERSO
+    guarda sólo los contadores y un `id_mov_deshecho`. Sin resolverlo, el
+    renglón decía "↩ FA MLZ totalizar · 29 facturas" y al lado seguían
+    apareciendo "11 facturas nuevas · MLZ" y "FA #174039 MLZ" — las mismas
+    facturas, contadas dos veces y con un nombre que además miente (ninguna se
+    emitió: volver de 'T' a 'Z' deja el saldo igual al importe).
+    """
+    pendientes = {int(e["meta"]["id_mov_deshecho"]): e for e in evs
+                  if (e.get("meta") or {}).get("id_mov_deshecho")}
+    if not pendientes:
+        return
+    try:
+        filas = db.fetch_all(
+            "SELECT id_mov_doble, metadata FROM scintela.mov_doble "
+            " WHERE id_mov_doble = ANY(%s)", (list(pendientes),)) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("eventos: no pude leer el mov deshecho (%s)", e)
+        return
+    for r in filas:
+        md = r.get("metadata") or {}
+        if not isinstance(md, dict):
+            continue
+        destino = pendientes.get(int(r["id_mov_doble"]))
+        if not destino:
+            continue
+        for f in (md.get("antes") or []):
+            if isinstance(f, dict) and f.get("id"):
+                d = _doc("factura", f["id"])
+                if d and d not in destino["docs"]:
+                    destino["docs"].append(d)
 
 
 #: Los tipos donde N movimientos son UNA operación aunque no compartan
