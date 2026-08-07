@@ -1336,6 +1336,142 @@ def deposito_sin_fechaout():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# El $/kg del hilado tiene que poder reconstruirse
+# ---------------------------------------------------------------------------
+#
+# El 07/08/2026 el hilado quedó valuado a 3,0717 US$/kg cuando correspondía
+# 3,0387: la APERTURA del mes salía de `stock_act_ukg` —una tarifa de CIERRE,
+# que ya tiene las compras del mes adentro— y el promedio ponderado se las
+# volvía a diluir encima. Los mismos $504.819 contados dos veces.
+#
+# Nadie se enteró durante OCHO DÍAS. El síntoma estuvo a la vista desde el
+# 31/07 a las 17:56 —la utilidad saltaba sin que se movieran los kilos— y no
+# había nada mirándolo.
+#
+# Este check no busca ESE bug: busca el SÍNTOMA, que es el mismo venga por
+# donde venga. El $/kg del hilado tiene que ser reconstruible con la
+# aritmética del promedio ponderado y nada más:
+#
+#     esperado = ((hilado_kg - compras_kg) * apertura + compras_us) / hilado_kg
+#
+# donde `apertura` es el cierre GRABADO del mes anterior (queries.
+# apertura_ukg_hilado). Si el $/kg que se muestra no se reconstruye así, algo
+# lo está moviendo por fuera del promedio ponderado.
+
+# Tolerancia EN DÓLARES sobre el hilado, no en $/kg: un centavo no dice nada y
+# lo que importa es cuánta plata mueve. Medido el 07/08 con el cálculo ya
+# corregido, la diferencia normal es ~$1.600 — viene de que los kilos "en
+# máquinas" se valúan a la apertura y no al promedio, que es la convención de
+# la app. El bug daba ~$63.700. El umbral queda lejos de los dos: ni un ⚠
+# diario por ruido, ni un agujero que pase. Ver [[feedback_flujo_chequeo_coherencia]].
+_HILADO_UKG_TOL_US = 10000.0
+
+
+@bp.route("/hilado-ukg", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def hilado_ukg_reconstruible():
+    """¿El $/kg del hilado se explica con la apertura + las compras del mes?"""
+    alerts: list = []
+    stats: dict = {}
+
+    fila = db.fetch_one(
+        """
+        SELECT creado_en, hilado_kg, hilado_ukg, compras_kg, compras_us,
+               kg_sin_costo
+          FROM scintela.traza_utilidad
+         ORDER BY creado_en DESC, id_traza DESC
+         LIMIT 1
+        """
+    )
+    if not fila:
+        alerts.append({
+            "severity": "low",
+            "category": "sin_traza",
+            "msg": "No hay fotos en scintela.traza_utilidad — no se puede chequear.",
+        })
+        return jsonify({"ok": True, "alerts": alerts, "stats": stats})
+
+    hil_kg = float(fila.get("hilado_kg") or 0)
+    ukg_real = float(fila.get("hilado_ukg") or 0)
+    com_kg = float(fila.get("compras_kg") or 0)
+    com_us = float(fila.get("compras_us") or 0)
+
+    hoy = _dt_date.today()
+    try:
+        from filters import today_ec
+        hoy = today_ec()
+    except Exception:  # noqa: BLE001 -- fail-soft
+        pass
+
+    try:
+        from modules.informes.queries import apertura_ukg_hilado
+        apertura = float(apertura_ukg_hilado(hoy.month, hoy.year) or 0)
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        alerts.append({
+            "severity": "low",
+            "category": "sin_apertura",
+            "msg": f"No se pudo leer la apertura del mes: {e}",
+        })
+        return jsonify({"ok": True, "alerts": alerts, "stats": stats})
+
+    stats.update({
+        "foto": str(fila.get("creado_en")),
+        "apertura_ukg": round(apertura, 6),
+        "hilado_kg": round(hil_kg, 2),
+        "compras_kg": round(com_kg, 2),
+        "compras_us": round(com_us, 2),
+        "kg_sin_costo": round(float(fila.get("kg_sin_costo") or 0), 2),
+        "ukg_mostrado": round(ukg_real, 6),
+    })
+
+    if apertura <= 0 or hil_kg <= 0:
+        alerts.append({
+            "severity": "low",
+            "category": "sin_datos",
+            "msg": ("Falta la apertura del mes anterior o el stock de hilado "
+                    "está en cero — no se puede reconstruir."),
+        })
+        return jsonify({"ok": True, "alerts": alerts, "stats": stats})
+
+    esperado = ((hil_kg - com_kg) * apertura + com_us) / hil_kg
+    gap_ukg = ukg_real - esperado
+    gap_us = gap_ukg * hil_kg
+    stats["ukg_esperado"] = round(esperado, 6)
+    stats["gap_ukg"] = round(gap_ukg, 6)
+    stats["gap_us"] = round(gap_us, 2)
+    stats["tolerancia_us"] = _HILADO_UKG_TOL_US
+
+    if abs(gap_us) > _HILADO_UKG_TOL_US:
+        alerts.append({
+            "severity": "high",
+            "category": "hilado_ukg_no_reconstruible",
+            "msg": (
+                f"El $/kg del hilado ({ukg_real:.4f}) no se explica con la "
+                f"apertura del mes ({apertura:.4f}) mas las compras "
+                f"({com_us:,.2f} por {com_kg:,.0f} kg): deberia dar "
+                f"{esperado:.4f}. Son {gap_ukg:+.4f} US$/kg = {gap_us:+,.2f} "
+                f"US$ sobre el hilado, y como el $/kg del hilado arrastra "
+                f"tejido (+0,5) y terminado (+2,2) el efecto sobre el "
+                f"patrimonio es mayor. Empezar por la APERTURA: tiene que ser "
+                f"el cierre del mes anterior y no puede recalcularse durante "
+                f"el mes."
+            ),
+        })
+
+    return jsonify({
+        "ok": all(a["severity"] == "low" for a in alerts),
+        "alerts": alerts,
+        "stats": stats,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Endpoint combinado: /admin/health/all (para un unico curl del cron)
+# ---------------------------------------------------------------------------
+
+
 @bp.route("/all", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -1350,6 +1486,7 @@ def health_all():
     resp6 = cadena_saldos()
     resp7 = pendientes_conciliacion()
     resp9 = deposito_sin_fechaout()
+    resp10 = hilado_ukg_reconstruible()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -1357,6 +1494,7 @@ def health_all():
     data6 = json.loads(resp6.get_data(as_text=True))
     data7 = json.loads(resp7.get_data(as_text=True))
     data9 = json.loads(resp9.get_data(as_text=True))
+    data10 = json.loads(resp10.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -1371,7 +1509,8 @@ def health_all():
     data8 = _refrescar_mails_asinfo_cron()
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
-               and data6["ok"] and data7["ok"] and data9["ok"]),
+               and data6["ok"] and data7["ok"] and data9["ok"]
+               and data10["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -1381,6 +1520,7 @@ def health_all():
         "pendientes_conciliacion": data7,
         "mails_asinfo": data8,
         "deposito_sin_fechaout": data9,
+        "hilado_ukg": data10,
     })
 
 
