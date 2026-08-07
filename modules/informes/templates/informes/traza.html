@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import page_hero %}
+{% from "_ui.html" import page_hero, nav_resultados %}
 {% block title %}Traza de la utilidad{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Traza</strong>{% endblock %}
 
@@ -18,6 +18,8 @@
    Balance y adentro del detalle de cada foto.
    Tailwind está congelado (build JIT) → todo el estilo va inline. #}
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
+
+  {{ nav_resultados('traza') }}
 
   {{ page_hero(
       'Traza de la utilidad',
@@ -44,24 +46,39 @@
     <span style="color:rgb(100 116 139);">Se guarda una sola cada {{ intervalo // 60 }} minutos.</span>
   </div>
 
-  <div class="border border-slate-200 rounded bg-white" style="overflow-x:auto;">
+  {# 🚨 Anchos en `em`, no en `rem`: `rem` va contra los 16 px de la raíz, así
+     que bajar la tipografía de la tabla a 11 px no achicaba una sola columna
+     (TMT: *"todavía no me entra todo en la pantalla"*). En `em` las columnas
+     escalan con la letra de la tabla y el total pasa de ~850 px a ~690.
+
+     El contenedor scrollea en los DOS ejes para que el encabezado pueda
+     quedarse fijo al bajar (TMT: *"cuando voy para abajo los títulos se
+     mantengan fijos"*): con `position:sticky` sobre la página no alcanza,
+     porque el `overflow-x` ya lo convierte en contenedor de scroll. #}
+  <div class="border border-slate-200 rounded bg-white"
+       style="overflow:auto;max-height:calc(100vh - 15rem);">
     <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:fixed;width:auto;">
-      <thead style="background:rgb(248 250 252);">
+      <thead>
         <tr style="font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;color:rgb(100 116 139);white-space:nowrap;">
-          {# La hora queda fija al scrollear al costado. #}
-          <th class="px-3 py-2 text-left"
-              style="width:4.6rem;position:sticky;left:0;z-index:2;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
-          <th class="px-2 py-1.5 text-right" style="width:4.2rem;font-weight:500;">Utilidad</th>
-          <th class="px-2 py-2 text-right"
-              style="width:3.4rem;font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
+          {# Las tres primeras quedan fijas también al costado: sin eso, al
+             scrollear a la derecha la columna de la hora tapaba a Utilidad y
+             se leía "DAD". #}
+          <th class="px-1.5 py-1 text-left"
+              style="width:5.8em;position:sticky;top:0;left:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
+          <th class="px-1.5 py-1 text-right"
+              style="width:5.2em;position:sticky;top:0;left:5.8em;z-index:4;background:rgb(248 250 252);font-weight:500;">Utilidad</th>
+          <th class="px-1 py-1 text-right"
+              style="width:4em;position:sticky;top:0;left:11em;z-index:4;background:rgb(248 250 252);font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
           {% for col, label in deltas %}
-            <th class="px-1 py-1 text-right" style="width:3.6rem;font-weight:500;">{{ label }}</th>
+            <th class="px-1 py-1 text-right"
+                style="width:4.2em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
           {% endfor %}
           {% for col, label in kilos %}
             <th class="px-1 py-1 text-right"
-                style="width:2.9rem;font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
+                style="width:3.4em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>
           {% endfor %}
-          <th class="px-1 py-1 text-right" style="width:3.2rem;font-weight:500;">$/kg</th>
+          <th class="px-1 py-1 text-right"
+              style="width:3.8em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">$/kg</th>
         </tr>
       </thead>
       <tbody>
@@ -75,12 +92,12 @@
                data-foto="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                aria-expanded="false" style="color:rgb(30 64 175);"
                ><span class="traza-caret" aria-hidden="true"
-                      style="display:inline-block;width:.7rem;color:rgb(148 163 184);">&rsaquo;</span>{{ f.cuando }}</a>{% if f.origen != 'loop' %}
-              <span style="font-size:10px;color:rgb(148 163 184);">{{ f.origen }}</span>{% endif %}
+                      style="display:inline-block;width:.7rem;color:rgb(148 163 184);">&rsaquo;</span>{{ f.cuando }}</a>
           </td>
-          <td class="px-1.5 py-0.5 text-right" style="font-weight:600;">{{ f.utilidad | num_es(0) }}</td>
           <td class="px-1.5 py-0.5 text-right"
-              style="font-weight:600;border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
+              style="font-weight:600;position:sticky;left:5.8em;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
+          <td class="px-1 py-0.5 text-right"
+              style="font-weight:600;position:sticky;left:11em;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
             {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
           </td>
           {% for col, label in deltas %}
@@ -99,9 +116,6 @@
           <td class="px-1 py-0.5 text-right"
               style="{% if 'hilado_ukg' not in f.movidas %}color:rgb(148 163 184);{% endif %}">
             {{ f.hilado_ukg | num_es(4) if f.hilado_ukg else '' }}
-            {% if f.kg_sin_costo and f.kg_sin_costo > 0 %}
-              <div style="font-size:10px;color:rgb(180 83 9);white-space:nowrap;">{{ f.kg_sin_costo | num_es(0) }} kg s/compra</div>
-            {% endif %}
           </td>
         </tr>
         {% endfor %}

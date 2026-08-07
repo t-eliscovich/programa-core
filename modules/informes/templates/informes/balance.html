@@ -243,16 +243,6 @@
       <a href="{{ url_for('informes.stock_inicial') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
         Stock inicial
       </a>
-      {# TMT 2026-08-06: *"¿podés poner un link desde resultados que se llame
-         trazabilidad así pueden entrar el resto?"*. La traza vivía sólo por
-         URL desde que se creó. Va gateado por el mismo permiso que la ruta
-         (`informes.ver`), para no ofrecerle un 404 a quien no puede entrar. #}
-      {% if tiene_permiso('informes.ver') %}
-      <a href="{{ url_for('informes.traza') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
-        Trazabilidad
-      </a>
-      {% endif %}
       {# Federico 2026-05-22 — navegación entre pantallas movida a la
          barra nav_resultados (arriba del título). #}
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">

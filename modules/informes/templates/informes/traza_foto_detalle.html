@@ -27,6 +27,7 @@
   </tr>
 {% else %}
   {% set columnas = deltas | map(attribute=0) | list %}
+  {% set visto = namespace(stock=false) %}
   {% for g in f.resumen %}
     {% set propia = g.col in columnas %}
     <tr data-detalle="1" class="border-t border-slate-100">
@@ -48,12 +49,14 @@
          kilos que salieron y los que entraron van cada uno en la columna de su
          etapa: no hace falta que coincidan (nunca coinciden del todo) y la
          diferencia queda a la vista sin explicarla de más. #}
+      {% set pinta_kg = (g.col == 'vsto' and not visto.stock) %}
       {% for col, label in kilos %}
         <td class="px-1 py-1 text-right"
-            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if g.col == 'vsto' and f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-          {% if g.col == 'vsto' and f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
+            style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if pinta_kg and f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+          {% if pinta_kg and f.d_kg.get(col) %}{{ '%+d' | format(f.d_kg[col] | round | int) }}{% endif %}
         </td>
       {% endfor %}
+      {% if g.col == 'vsto' %}{% set visto.stock = true %}{% endif %}
       <td class="px-1 py-1 text-right"
           style="{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
         {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}

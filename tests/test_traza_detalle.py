@@ -320,12 +320,10 @@ def test_resultados_ofrece_el_link_a_trazabilidad(app):
 
     🚨 Y el link tiene que resolver: en este repo son strings hardcodeados y una
     ruta que no existe sólo se ve como 404 al clickear."""
-    plantilla = app.jinja_env.loader.get_source(
-        app.jinja_env, "informes/balance.html")[0]
-    assert "informes.traza" in plantilla
-    assert "Trazabilidad" in plantilla
-    # Gateado por el mismo permiso que la ruta: nada de ofrecer un 404.
-    assert "tiene_permiso('informes.ver')" in plantilla
+    barra = app.jinja_env.loader.get_source(app.jinja_env, "_ui.html")[0]
+    assert "('traza', 'Trazabilidad')" in barra
+    # Al lado de Historial, no al final (TMT: "poné el link al lado de historia").
+    assert barra.index("'Historial'") < barra.index("'Trazabilidad'") < barra.index("'Gastos del mes'")
     app.url_map.bind("localhost").match("/informes/traza", method="GET")
 
 
