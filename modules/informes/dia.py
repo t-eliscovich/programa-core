@@ -940,6 +940,42 @@ def _movimientos_ventana(desde: dict, hasta: dict) -> list[dict]:
         (desde.get("id_captura"), hasta.get("id_captura")))
 
 
+def _renglones(movs: list[dict], desde: dict, hasta: dict) -> list[dict]:
+    """Los movimientos del día agrupados IGUAL que en la traza.
+
+    🚨 TMT 2026-08-07: la traza aprendió hoy a nombrar los hechos por
+    `mov_doble` —"4 FA · JVL, AJT, NIF +1", "retenciones · 24 facturas",
+    "CH → BC · KRH"— y la nota seguía agrupando por `regla`, que son los
+    baldes genéricos de antes. O sea que lo único de todo esto que SALE de la
+    app y lo leen otros tenía todos los defectos que la dueña hizo corregir en
+    la pantalla: decía "11 facturas nuevas" cuando fue un totalizar deshecho y
+    no se emitió ninguna, llamaba "Cheque depositado o dado de baja" a plata
+    que no sabía qué hizo, y no juntaba nada.
+
+    Es la regla de siempre: dos clasificadores = UNA función compartida. Acá
+    se llama a la misma `traza.resumir()` que arma la pantalla y se devuelve
+    con las claves que la nota ya usaba (`regla`, `familia`, `aporte`, `n`),
+    así los consumidores no cambian — sólo mejoran los nombres.
+
+    `d_utilidad=None` a propósito: el renglón "diferencia contra el Δ" lo pone
+    la pantalla; acá el resto lo calcula `_top()`, que ya lo hacía.
+
+    Fail-soft: si algo del agrupado falla, la nota sale con los baldes viejos.
+    """
+    try:
+        from modules.informes import eventos as _ev
+        from modules.informes import traza as _tz
+
+        d0, d1 = (desde or {}).get("creado_en"), (hasta or {}).get("creado_en")
+        idx = _ev.indice(_ev.de_la_ventana(d0, d1), _ev.transacciones(d0, d1))
+        return [{"regla": g.get("texto") or "—", "familia": g.get("familia"),
+                 "aporte": _f(g.get("aporte")), "n": int(g.get("n") or 0)}
+                for g in _tz.resumir(movs, None, idx)]
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("dia: no pude agrupar como la traza (%s)", e)
+        return []
+
+
 def explicar(fecha=None) -> dict:
     """La explicación del día: Δ utilidad, quién lo movió, y qué falta explicar.
 
@@ -1009,7 +1045,10 @@ def explicar(fecha=None) -> dict:
         r["aporte"] = round(r["aporte"] + _f(m.get("aporte")), 2)
         r["n"] += 1
     out["familias"] = sorted(por_fam.values(), key=lambda x: abs(x["aporte"]), reverse=True)
-    out["reglas"] = sorted(por_regla.values(), key=lambda x: abs(x["aporte"]), reverse=True)
+    # Los MISMOS renglones que la traza; si el agrupado falla, los baldes.
+    out["reglas"] = (_renglones(movs, desde, hasta)
+                     or sorted(por_regla.values(),
+                               key=lambda x: abs(x["aporte"]), reverse=True))
     out["sin_explicar"] = [m for m in movs if (m.get("familia") == "sin_explicar")]
 
     total = round(sum(_f(m.get("aporte")) for m in movs), 2)

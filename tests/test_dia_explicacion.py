@@ -1510,3 +1510,52 @@ def test_produccion_en_cero_no_ocupa_una_linea_del_whatsapp():
         m = dia.mensaje_whatsapp(date(2026, 8, 5))
     assert "Producción" not in m
     assert "Utilidad de ago" in m        # el titular sigue yendo
+
+
+# ── La nota lee los renglones de la traza (07/08/2026) ──────────────────────
+
+def test_la_nota_agrupa_igual_que_la_traza():
+    """🚨 La traza aprendió a nombrar los hechos por `mov_doble`; la nota
+    seguía con los baldes genéricos (`Venta facturada`, `Cheque depositado o
+    dado de baja`). Lo único de todo esto que SALE de la app y lo leen otros
+    tenía los defectos que la dueña hizo corregir en la pantalla.
+    """
+    from unittest.mock import patch
+
+    from modules.informes import dia as d
+    from modules.informes import eventos as ev
+
+    movs = [{"doc_id": f"f{9000 + i}", "componente": "facturas", "aporte": v,
+             "regla": "Venta facturada", "etiqueta": f"Factura {n} · {c}",
+             "familia": "utilidad"}
+            for i, (n, c, v) in enumerate([("181305", "JVL", 1206.0),
+                                           ("181306", "AJT", 196.0)])]
+    filas = [{"id_mov_doble": 100 + i, "batch_id": None,
+              "tipo": "factura_emitida", "metadata": {"numf": n, "codigo_cli": c},
+              "origen_table": "factura", "origen_id": 9000 + i,
+              "destino_table": "factura", "destino_id": 9000 + i,
+              "importe": v, "concepto": "", "usuario": "x", "estado": "activo",
+              "dia": "2026-08-07"}
+             for i, (n, c, v) in enumerate([("181305", "JVL", 1206.0),
+                                            ("181306", "AJT", 196.0)])]
+
+    def _fetch(sql, args=None, *a, **k):
+        return filas if "mov_doble" in sql else []
+
+    with patch.object(ev.db, "fetch_all", side_effect=_fetch):
+        out = d._renglones(movs, {"creado_en": "a"}, {"creado_en": "b"})
+    assert [r["regla"] for r in out] == ["2 FA · JVL, AJT"]
+    assert out[0]["aporte"] == 1402.0
+    assert out[0]["familia"] == "utilidad"
+
+
+def test_si_el_agrupado_falla_la_nota_sale_igual():
+    """La nota es lo que se manda por mail: no puede depender de que el
+    agrupado ande."""
+    from unittest.mock import patch
+
+    from modules.informes import dia as d
+    from modules.informes import eventos as ev
+
+    with patch.object(ev.db, "fetch_all", side_effect=RuntimeError("boom")):
+        assert d._renglones([], {"creado_en": "a"}, {"creado_en": "b"}) == []
