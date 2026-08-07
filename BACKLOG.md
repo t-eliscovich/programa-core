@@ -9,6 +9,21 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ---
 
+## Traza de la utilidad
+
+### [M] Los dos "sin explicar por documento" que aparecen de a pares
+En algunas ventanas (07/08 13:33 y 13:36) sale `Bancos: sin explicar por
+documento −289` junto a `Facturas: sin explicar por documento +289`. **No es
+un documento perdido**: `foto.detalle()` compara el total del componente en el
+balance contra la suma de su detalle por documento y, si no cierra, emite un
+`#ajuste:<comp>` con la diferencia. O sea que lo que se ve en la traza es el
+CAMBIO de una brecha estructural entre balance y detalle, no un movimiento
+suelto. Que las dos sean simétricas apunta a un cobro cuyos dos lados caen
+fuera del detalle. Lo que corresponde es medir la brecha en reposo —un bloque
+de health `balance vs detalle` por componente— y recién con eso ir a buscar
+qué la produce. `modules/informes/foto.py` (`detalle`, `_det_bancos`,
+`_det_facturas`).
+
 ## Urgente / destapado por el retiro del dBase
 
 ### [M] Tintura del mes en curso sin fuente
