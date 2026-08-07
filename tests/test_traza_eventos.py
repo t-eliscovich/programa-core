@@ -185,7 +185,10 @@ def test_ocho_cheques_depositados_de_una_sola_ida_al_banco_son_un_renglon():
     # mueve la utilidad. 🚨 Pero se muestra igual — TMT: *"¿qué es más
     # importante acá, los 40k que movieron o hilado y terminado?"*. El lado de
     # cada componente va en SU columna: −800 en Cheq., +800 en Bancos.
-    assert [g["texto"] for g in out] == ["CH → BC (8)"], out
+    # 07/08, segunda vuelta: la regla genérica (dos hechos del mismo tipo se
+    # juntan) llega antes que el caso especial del depósito y lo dice mejor —
+    # la cuenta adelante y el cliente al final, como el resto de los renglones.
+    assert [g["texto"] for g in out] == ["8 CH → BC · CLI"], out
     g = out[0]
     assert g["aporte"] == 0.0
     assert g["n"] == 9
@@ -215,7 +218,7 @@ def test_el_traspaso_grande_va_primero_aunque_aporte_cero():
          "familia": "utilidad"},
     ]
     out = t.resumir(movs, -3304.0, idx)
-    assert out[0]["texto"] == "CH → BC (2)"
+    assert out[0]["texto"] == "2 CH → BC · CLI"
     assert out[1]["texto"] == "salió de hil. y tej. y term."
 
 
@@ -598,3 +601,107 @@ def test_las_retenciones_de_varias_corridas_del_cron_son_un_renglon():
             for i in range(1, 6)]
     out = t.resumir(movs, -50.0, idx)
     assert [g["texto"] for g in out] == ["retenciones · 5 facturas"], out
+
+
+def test_dos_hechos_del_mismo_tipo_se_juntan_sin_estar_en_ninguna_lista():
+    """🚨 TMT 2026-08-07, después de mapear las 200 ventanas: la lista de tipos
+    que se juntaban se escribía A MANO y en cada pasada aparecía uno nuevo
+    haciendo lo mismo (anticipos, cheques a caja, cheques a proveedor). La
+    regla está dada vuelta: dos hechos del MISMO tipo se juntan siempre y el
+    rótulo sale de `corto()`, que ya sabe nombrar los 50 tipos.
+    """
+    idx = ev.indice(_con_label([
+        _ev("cheque_efectivo_to_caja", "cheque", 700 + i, "caja", 800 + i,
+            importe=v) for i, v in enumerate([380.0, 180.0])]))
+    movs = [{"doc_id": f"k{800 + i}", "componente": "caja", "aporte": v,
+             "regla": "Ingreso de caja", "etiqueta": f"Caja E · {c}",
+             "familia": "utilidad"}
+            for i, (v, c) in enumerate([(380.0, "AAA"), (180.0, "BBB")])]
+    g = t.resumir(movs, 560.0, idx)[0]
+    # Sin clientes: en caja el último segmento es el CONCEPTO, no un código —
+    # `_quien` los descarta a propósito ("4 gastos de caja · LUZ, AGUA, TAXI").
+    assert g["texto"] == "2 CH → CJ"
+    assert g["aporte"] == 560.0
+
+
+def test_las_cuentas_bancarias_NO_se_juntan_entre_si():
+    """La excepción: el renglón de una cuenta ya viene armado y su grupo ES la
+    cuenta. Juntar por tipo mezclaría Pichincha con Internacional."""
+    filas = [{"no_banco": 10, "documento": "TR", "importe": 100.0,
+              "concepto": "UNO", "dia": "2026-08-07"},
+             {"no_banco": 20, "documento": "TR", "importe": 200.0,
+              "concepto": "DOS", "dia": "2026-08-07"}]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    movs = [{"doc_id": "b10", "componente": "bancos", "aporte": 100.0,
+             "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
+             "familia": "traspaso"},
+            {"doc_id": "b20", "componente": "bancos", "aporte": 200.0,
+             "regla": "Movimiento bancario", "etiqueta": "Banco INTERNACI",
+             "familia": "traspaso"}]
+    textos = sorted(g["texto"] for g in t.resumir(movs, 300.0, ev.indice([], cuentas)))
+    assert textos == ["transferencia · DOS", "transferencia · UNO"], textos
+
+
+def test_las_dos_patas_se_unen_aunque_un_lado_toque_dos_componentes():
+    """⭐ La condición era `len(por_col) == 1` y con eso la cobranza que se
+    deposita —que toca cheques Y facturas— nunca entraba, justo el caso para el
+    que esto se escribió. Lo que importa es que los dos lados no COMPARTAN
+    componente."""
+    idx = ev.indice(_con_label([
+        _ev("cheque_aplicado_a_factura", "cheque", 700 + i, "factura", 800 + i,
+            importe=100.0) for i in range(2)]))
+    movs = [
+        {"doc_id": "b10", "componente": "bancos", "aporte": 2198.0,
+         "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
+         "familia": "traspaso"},
+        {"doc_id": "c700", "componente": "cheques", "aporte": 500.0,
+         "regla": "Cheque recibido", "etiqueta": "Cheque 1 · EEG",
+         "familia": "traspaso"},
+        {"doc_id": "f801", "componente": "facturas", "aporte": -2698.0,
+         "regla": "Abono a factura", "etiqueta": "Factura 1 · EEG",
+         "familia": "traspaso"},
+    ]
+    out = t.resumir(movs, 0.0, idx)
+    assert len(out) == 1, [g["texto"] for g in out]
+    assert out[0]["texto"].endswith("→ BC · EEG")
+    assert out[0]["por_col"] == {"bancos": 2198.0, "cheques": 500.0,
+                                 "facturas": -2698.0}
+
+
+# ── Lo que no explicaba (mapa del 07/08) ────────────────────────────────────
+
+def test_once_anticipos_iguales_se_dicen_una_vez():
+    """🚨 "BC · Anticipo USD AI $ 314.96 (ND Pichincha), Anticipo USD AI
+    $ 251.75 (ND Pichincha), … +8": el mismo concepto tres veces, con el
+    importe adentro, y el renglón ilegible."""
+    filas = [{"no_banco": 10, "documento": "ND", "importe": -v,
+              "concepto": f"Anticipo USD AI $ {v} (ND Pichincha)",
+              "dia": "2026-08-07"} for v in (314.96, 251.75, 304.20)]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "BC · 3 × Anticipo USD AI"
+
+
+def test_conceptos_distintos_no_se_resumen_por_una_coincidencia():
+    """Con menos de 8 caracteres el "prefijo común" es casualidad ("GS ") y
+    resumir por ahí junta cosas que no tienen nada que ver."""
+    filas = [{"no_banco": 10, "documento": "ND", "importe": -1.0,
+              "concepto": c, "dia": "2026-08-07"}
+             for c in ("GS ALMAGRO", "GS LICENCIA")]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"] == "BC · GS ALMAGRO, GS LICENCIA"
+
+
+def test_los_quimicos_dicen_que_paso_y_no_de_donde_salen():
+    """🚨 Cuarto renglón más frecuente del día (19 de 200 ventanas) y decía de
+    qué SISTEMA sale el dato. Del lado de PC es un solo número —no hay detalle
+    por colorante— pero para qué lado se movió sí se sabe."""
+    base = {"doc_id": "#quimicos", "componente": "vqx",
+            "regla": "Stock de químicos", "familia": "utilidad",
+            "etiqueta": "Stock de químicos (formulas_app)"}
+    sale = t.resumir([dict(base, aporte=-143.0)], -143.0, {})[0]
+    entra = t.resumir([dict(base, aporte=101.0)], 101.0, {})[0]
+    assert sale["texto"] == "salió de químicos"
+    assert entra["texto"] == "entró a químicos"

@@ -653,7 +653,7 @@ def _abreviar_etapas(texto: str) -> str:
 TIPOS_SIEMPRE_VISIBLES = {"totalizar_estado_cuenta",
                           "reverso_totalizar_estado_cuenta"}
 
-TIPOS_QUE_SE_JUNTAN = {
+ROTULO_JUNTADO = {
     "factura_emitida": ("FA", ""),
     "cheque_aplicado_a_factura": ("CH → FA", ""),
     # Segunda pasada, 07/08: las devoluciones caían de a una (10 renglones en
@@ -734,10 +734,15 @@ def _unir_las_dos_patas(grupos: dict) -> None:
     componentes distintos. Se une SÓLO si el par es inequívoco —un solo
     candidato de cada lado—: unir de más sería inventar un hecho.
     """
+    # ⭐ 07/08, segunda vuelta: la condición era `len(por_col) == 1` y con eso
+    # la cobranza que se deposita —que toca cheques Y facturas— nunca entraba,
+    # justo el caso para el que esto se escribió. Lo que importa no es cuántos
+    # componentes toca cada lado sino que NO COMPARTAN ninguno: si comparten,
+    # no son dos patas de un traspaso.
     candidatos = [g for g in grupos.values()
                   if abs(g["aporte"]) >= UMBRAL_VISIBLE
                   and g.get("familia") == "traspaso"
-                  and len(g["por_col"]) == 1]
+                  and g["por_col"]]
     usados: set[int] = set()
     for a in candidatos:
         if id(a) in usados or a["aporte"] <= 0:
@@ -751,8 +756,11 @@ def _unir_las_dos_patas(grupos: dict) -> None:
         b = pares[0]
         usados.update({id(a), id(b)})
         destino, origen = a, b                # a recibe, b entrega
-        cod_o = COD_COMPONENTE.get(next(iter(origen["por_col"])), "")
-        cod_d = COD_COMPONENTE.get(next(iter(destino["por_col"])), "")
+        def _mayor(g):
+            return max(g["por_col"], key=lambda k: abs(g["por_col"][k]))
+
+        cod_o = COD_COMPONENTE.get(_mayor(origen), "")
+        cod_d = COD_COMPONENTE.get(_mayor(destino), "")
         if not (cod_o and cod_d):
             continue
         quienes = dict(origen["quienes"])
@@ -770,6 +778,25 @@ def _unir_las_dos_patas(grupos: dict) -> None:
         destino["hechos"] |= origen["hechos"]
         destino["url"] = destino.get("url") or origen.get("url")
         origen["fundido"] = True
+
+
+#: 🚨 TMT 2026-08-07, sobre el cuarto renglón más frecuente del día (19 de 200
+#: ventanas): *"dice de qué sistema sale el dato, no qué pasó"*. Del lado de PC
+#: el stock de químicos es UN número —no hay detalle por colorante— así que no
+#: se puede decir cuál; lo que sí se sabe es para qué lado se movió, y se dice
+#: con la misma gramática que la tela ("entró a", "salió de"). El nombre del
+#: sistema queda en el `title`.
+#:
+#: ⭐ Se hace al RENDERIZAR y no en `foto._det_vqx`: la etiqueta se escribe
+#: cuando se saca la foto, así que tocarla allá dejaría las 200 fotos ya
+#: guardadas —las que se miran— diciendo lo de antes.
+_TXT_QUIMICOS = "Stock de químicos (formulas_app)"
+
+
+def _quimicos(texto: str, aporte: float) -> str:
+    if texto != _TXT_QUIMICOS:
+        return texto
+    return "entró a químicos" if aporte > 0 else "salió de químicos"
 
 
 def resumir(movs: list[dict], d_utilidad: float | None,
@@ -803,14 +830,15 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 and (ev["tipo"], m.get("componente")) in HECHO_NO_EXPLICA_BAJA):
             ev = None                          # el hecho no explica la salida
         if ev:
-            # 🚨 TMT 2026-08-07: *"idealmente facturas en uno, cobranzas en
-            # otro"*. Hay tipos que llegan de a montones —en la ventana de las
-            # 13:33 había cinco facturas nuevas y tres cheques aplicados, ocho
-            # renglones de doce— y uno por hecho es la lista de documentos otra
-            # vez, que es justo lo que la pantalla no quiere ser. Esos se
-            # juntan por TIPO; el resto sigue siendo un renglón por hecho.
-            clave = (("tipo", ev["tipo"]) if ev["tipo"] in TIPOS_QUE_SE_JUNTAN
-                     else ("ev", ev["grupo"]))
+            # 🚨 Dos hechos del MISMO tipo en la misma ventana se juntan
+            # SIEMPRE: uno por hecho es la lista de documentos otra vez, que es
+            # justo lo que la pantalla no quiere ser.
+            #
+            # La excepción es la cuenta bancaria: su renglón ya viene armado
+            # (`ev["texto"]`) y su grupo ES la cuenta, no el tipo — juntar por
+            # tipo mezclaría Pichincha con Internacional.
+            clave = (("ev", ev["grupo"]) if ev.get("texto")
+                     else ("tipo", ev["tipo"]))
         elif m.get("familia") == "sin_explicar":
             clave = (r, m.get("componente"))
         else:
@@ -879,8 +907,11 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             # La contraparte que sabe el evento manda sobre la que se adivina
             # de la etiqueta.
             quien = (md.get("codigo_prov") or (quienes[0] if quienes else ""))
-            if ev["tipo"] in TIPOS_QUE_SE_JUNTAN and len(g["hechos"]) > 1:
-                rotulo, unidad = TIPOS_QUE_SE_JUNTAN[ev["tipo"]]
+            if len(g["hechos"]) > 1:
+                # El rótulo sale de `corto()` salvo que el tipo se diga de otra
+                # manera; SIN la contraparte, que acá son varias.
+                rotulo, unidad = ROTULO_JUNTADO.get(
+                    ev["tipo"], (_corto(ev["tipo"]), ""))
                 if unidad:
                     g["texto"] = f"{rotulo} · {len(g['hechos'])} {unidad}"
                 else:
@@ -986,7 +1017,8 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["texto"] = _corto_etiqueta(g.get("etiqueta") or g["regla"])
         if g.get("texto_unido"):
             g["texto"] = g["texto_unido"]
-        g["texto"] = _abreviar_etapas(g.get("texto") or "")
+        g["texto"] = _quimicos(_abreviar_etapas(g.get("texto") or ""),
+                               g.get("aporte") or 0.0)
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
         out.append({"texto": "movimientos chicos", "aporte": menores, "n": 0,

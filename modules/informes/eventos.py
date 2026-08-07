@@ -186,10 +186,40 @@ def _varios(conceptos: list[str], n: int) -> str:
     vistos = [c for c in dict.fromkeys(conceptos) if c]
     if not vistos:
         return f"BC · {n} movimientos"
+    # 🚨 Once anticipos en dólares el mismo minuto daban "BC · Anticipo USD AI
+    # $ 314.96 (ND Pichincha), Anticipo USD AI $ 251.75 (ND Pichincha),
+    # Anticipo USD AI $ 304.20 (ND Pichincha) +8": el mismo concepto tres
+    # veces, con el importe adentro, y el renglón ilegible. Cuando todos
+    # empiezan igual se dice una vez y se cuenta.
+    comun = _prefijo_comun(vistos)
+    if comun and len(vistos) > 1:
+        return f"BC · {len(vistos)} × {comun}"
     texto = "BC · " + ", ".join(vistos[:3])
     if len(vistos) > 3:
         texto += f" +{len(vistos) - 3}"
     return texto
+
+
+#: Con menos de esto el "prefijo común" es una coincidencia ("GS ", "CC ") y
+#: resumir por ahí junta cosas que no tienen nada que ver.
+MIN_PREFIJO = 8
+
+
+def _prefijo_comun(textos: list[str]) -> str:
+    """La parte inicial que comparten TODOS, cortada en palabra entera."""
+    if len(textos) < 2:
+        return ""
+    comun = textos[0]
+    for t in textos[1:]:
+        i = 0
+        while i < min(len(comun), len(t)) and comun[i] == t[i]:
+            i += 1
+        comun = comun[:i]
+        if len(comun) < MIN_PREFIJO:
+            return ""
+    comun = comun.rsplit(" ", 1)[0] if " " in comun else comun
+    comun = comun.strip(" ,·-$(")
+    return comun if len(comun) >= MIN_PREFIJO else ""
 
 
 def _cuentas(evs: list[dict]) -> dict[str, dict]:

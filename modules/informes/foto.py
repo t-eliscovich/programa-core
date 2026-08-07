@@ -538,6 +538,26 @@ def _texto_stock(est: dict) -> str:
     return "movimiento de stock"
 
 
+def _texto_tarifa(tarifas: dict) -> str:
+    """"cambió el $/kg de hil.: 3,0387 → 3,0591" — las dos cifras en el renglón.
+
+    Con más de una etapa revaluada se dice cuántas: las cifras no entran y el
+    detalle por etapa está en la grilla, columna por columna.
+    """
+    if not tarifas:
+        return "cambió el $/kg"
+    def _n4(v: float) -> str:
+        # Formato Ecuador, y sólo sobre el NÚMERO: hacer el replace sobre la
+        # frase entera convertía "hil." en "hil,".
+        return f"{v:,.4f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+    if len(tarifas) == 1:
+        et, (p0, p1) = next(iter(tarifas.items()))
+        return (f"cambió el $/kg de {ABREV_ETAPA.get(et, et)}: "
+                f"{_n4(p0)} → {_n4(p1)}")
+    return f"cambió el $/kg de {len(tarifas)} etapas"
+
+
 def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
     """Lo que se movió en el stock, en uno o dos renglones.
 
@@ -547,6 +567,7 @@ def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
 
     """
     est, objetivo, d_tarifa = {}, 0.0, 0.0
+    tarifas: dict[str, tuple[float, float]] = {}
     for et in ORDEN_ETAPAS:
         f = etapas.get(et)
         if not f:
@@ -567,6 +588,7 @@ def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
         # tela, que es donde nadie lo va a extrañar.
         if round(p0, 4) != round(p1, 4):
             d_tarifa += kg1 * (p1 - p0)
+            tarifas[et] = (p0, p1)
     if not est:
         return []
     objetivo, d_tarifa = round(objetivo, 2), round(d_tarifa, 2)
@@ -575,7 +597,11 @@ def _mov_stock(etapas: dict, vieja: dict) -> list[dict]:
     if abs(d_tarifa) >= UMBRAL:
         movs.append({
             "componente": "vsto", "tipo": "cambio", "doc_id": "#stock:tarifa",
-            "etiqueta": "cambió el $/kg", "importe_antes": None,
+            # 🚨 TMT 2026-08-07: *"no dice de cuánto a cuánto, y es el renglón
+            # que más plata mueve"*. El $/kg revalúa TODO el stock de un saque
+            # —los −$84.691 del 11:35 fueron eso— y decir sólo "cambió" obliga
+            # a ir a buscar las dos cifras a la grilla, en dos filas distintas.
+            "etiqueta": _texto_tarifa(tarifas), "importe_antes": None,
             "importe_despues": None, "delta": d_tarifa, "aporte": d_tarifa,
             # 🚨 Regla PROPIA, distinta de la de la tela: `resumir()` agrupa por
             # regla, así que compartiéndola las dos se fusionaban en un renglón

@@ -588,7 +588,9 @@ TIPOS_CORTO = {
     "compra_anticipo_dolares": ("CP", "→ AN"),
     "compra_backfill": ("CP", "backfill"),
     "bap_anticipo_a_compra": ("AN", "→ CP"),
-    "dolares_anticipo": ("AN", "alta"),
+    # 🚨 TMT 2026-08-07: *"«alta» no dice que salió plata del banco"*. La
+    # regla del diff ya lo llama "Anticipo entregado"; el corto decía otra cosa.
+    "dolares_anticipo": ("AN", "entregado"),
     "retiro_op": ("DV", "OP"),
     "totalizar_estado_cuenta": ("FA", "totalizar"),
 }

@@ -528,3 +528,14 @@ def test_la_foto_se_rehace_una_vez_cuando_no_cierra():
 
     assert len(balances) == 2, "el balance se relee cuando no cierra"
     assert len(detalles) == 2
+
+
+def test_el_cambio_de_tarifa_dice_de_cuanto_a_cuanto():
+    """🚨 TMT 2026-08-07: *"no dice de cuánto a cuánto, y es el renglón que más
+    plata mueve"*. El $/kg revalúa TODO el stock de un saque — los −$84.691
+    del 11:35 fueron eso."""
+    assert motor._texto_tarifa({"hilado": (3.0387, 3.0591)}) == (
+        "cambió el $/kg de hil.: 3,0387 → 3,0591")
+    assert motor._texto_tarifa({"hilado": (1, 2), "tejido": (3, 4)}) == (
+        "cambió el $/kg de 2 etapas")
+    assert motor._texto_tarifa({}) == "cambió el $/kg"
