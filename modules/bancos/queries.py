@@ -415,6 +415,7 @@ def movimientos(
     cliente: str | None = None,
     monto: float | None = None,
     doc_num: str | None = None,
+    id_transaccion: int | None = None,
 ) -> list[dict]:
     """Lista movimientos del banco. Incluye linkage de reversos via
     mov_doble: si la fila tiene un mov_doble asociado (sea como origen o
@@ -431,9 +432,25 @@ def movimientos(
       - monto: importe exacto (match contra t.importe).
       - doc_num: substring en t.numreferencia (número del cheque emitido
         o del documento que el banco asignó).
+
+    TMT 2026-08-07 (dueña, sobre los links del historial): *"si al clickear
+    hay que buscar la fila a ojo, el link no está terminado"*. `id_transaccion`
+    deja EXACTAMENTE ese movimiento del libro y apaga los demás filtros
+    (fechas, monto, nº doc, cliente) — el link viene sin ellos, pero si el
+    usuario los tenía puestos esconderían justo la fila que pidió.
+
+    El filtro va en el WHERE **a propósito**: recortar en Python después no
+    serviría, porque la consulta trae sólo las primeras `limite` (500) filas
+    del ORDER BY fecha DESC y hay ~167 movimientos linkeados desde el
+    historial que caen más abajo de ese tope. Filtrando ANTES del LIMIT, el
+    movimiento aparece por viejo que sea.
+
+    `no_banco` NO se apaga: si el id pedido es de OTRO banco la lista sale
+    vacía, que es la verdad. Mostrar la fila igual sería mentirle a la URL.
     """
     cliente_like = f"%{(cliente or '').strip().upper()}%" if cliente else None
     doc_like = f"%{(doc_num or '').strip().upper()}%" if doc_num else None
+    id_tx = int(id_transaccion) if id_transaccion else None
     rows = db.fetch_all(
         """
         SELECT
@@ -472,12 +489,22 @@ def movimientos(
              LIMIT 1
         ) md ON TRUE
         WHERE t.no_banco = %(no_banco)s
-          AND (%(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
-          AND (%(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
-          AND (%(monto)s::numeric IS NULL OR t.importe = %(monto)s::numeric)
-          AND (%(doc_like)s IS NULL OR
+          -- TMT 2026-08-07: pedir UN movimiento por id manda sobre el resto
+          -- de los filtros (ver docstring). Va acá, en el WHERE, para que
+          -- actúe ANTES del LIMIT de abajo.
+          AND (%(id_transaccion)s::int IS NULL
+               OR t.id_transaccion = %(id_transaccion)s::int)
+          AND (%(id_transaccion)s::int IS NOT NULL
+               OR %(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
+          AND (%(id_transaccion)s::int IS NOT NULL
+               OR %(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
+          AND (%(id_transaccion)s::int IS NOT NULL
+               OR %(monto)s::numeric IS NULL OR t.importe = %(monto)s::numeric)
+          AND (%(id_transaccion)s::int IS NOT NULL
+               OR %(doc_like)s IS NULL OR
                UPPER(COALESCE(NULLIF(TRIM(t.numreferencia_manual),''), t.numreferencia::text, '')) LIKE %(doc_like)s)
-          AND (%(cliente_like)s IS NULL
+          AND (%(id_transaccion)s::int IS NOT NULL
+               OR %(cliente_like)s IS NULL
                -- TMT 2026-07-22 (dueña): el código Proveedor/Cliente que se
                -- carga a mano en un movimiento (columna prov, ej "CG3") ahora
                -- también matchea el filtro — antes solo encontraba cheques.
@@ -502,6 +529,7 @@ def movimientos(
             "monto": monto,
             "doc_like": doc_like,
             "cliente_like": cliente_like,
+            "id_transaccion": id_tx,
         },
     )
     # Enriquecer con info de conciliación bancaria (defensivo: si la tabla

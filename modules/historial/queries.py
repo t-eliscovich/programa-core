@@ -616,7 +616,8 @@ def corto(tipo: str, quien: str = "") -> str:
 
 
 def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
-                posdat_nums: dict | None = None) -> tuple[str | None, str]:
+                posdat_nums: dict | None = None,
+                banco_nos: dict | None = None) -> tuple[str | None, str]:
     """Devuelve (url, etiqueta) para el lado origen del mov.
 
     Tamara 2026-05-23: los links de factura/cheque deben usar el numero
@@ -627,9 +628,27 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
     rid = row.get("origen_id")
     if not rid:
         return None, ""
+    # TMT 2026-08-07 (dueña): *"esos links deberían venir filtrados por lo que
+    # quiero ver"*. Todos los destinos de acá abajo caen en LA FILA, no en la
+    # pantalla entera. Criterio: si al clickear hay que buscar la fila a ojo, el
+    # link no está terminado.
     if t == "caja":
-        return f"/caja#id-{rid}", f"Caja #{rid}"
+        # Antes era "/caja#id-{rid}" — un ancla que NO EXISTE en ningún template
+        # de la app (la única aparición de la cadena era esta línea, la que la
+        # generaba). O sea que el link era, literalmente, "/caja". Y /caja pagina
+        # de a 500: 52 de las 466 filas linkeadas ni siquiera estaban en la
+        # primera página.
+        return f"/caja?id={rid}", f"Caja #{rid}"
     if t == "transacciones_bancarias":
+        # 1.862 movimientos apuntan acá — el destino de MÁS volumen del
+        # historial — y hasta hoy no tenía link: sólo el nombre del banco como
+        # texto muerto. La URL necesita el `no_banco` porque la pantalla es
+        # /bancos/<no_banco>; el batch de la vista lo trae. Sin él no se puede
+        # armar una URL válida, así que se queda sin link (como antes) en vez de
+        # mandar a un banco equivocado.
+        nb = (banco_nos or {}).get(int(rid)) if rid else None
+        if nb:
+            return f"/bancos/{nb}?id={rid}", f"Banco mov #{rid}"
         return None, f"Banco mov #{rid}"
     if t == "cheque":
         # Si conocemos el no_cheque, lo usamos como path (más human-readable).
@@ -645,15 +664,21 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         if nfact and str(nfact).strip() and str(nfact).strip() != "0":
             return f"/facturas/{nfact}", f"Factura {nfact}"
         return f"/facturas/{rid}", f"Factura #{rid}"
-    # TMT 2026-08-03: /capital ya no existe — la pantalla unificada de
-    # aportes y retiros es /retiros (informes.retiros, "Dividendos",
-    # TMT 2026-05-20). Los dos links apuntaban a una ruta muerta → 404.
-    if t == "capital":
-        return "/retiros", f"Capital #{rid}"
+    # `capital` NO tiene rama a propósito (TMT 2026-08-07). Medido contra
+    # producción: **0 movimientos** de mov_doble apuntan a esa tabla. Y mandarla
+    # a /retiros era peor que inútil — /retiros lee SÓLO `scintela.retiros`,
+    # mientras que los aportes viven en `scintela.capital` (ver
+    # modules/capital/queries.py::aportar), así que con el ?id= nuevo habría
+    # mostrado OTRA fila cualquiera, silenciosamente y sin 404. Cae al
+    # `return None` del final.
     if t == "retiros":
-        return "/retiros", f"Retiro #{rid}"
+        return f"/retiros?id={rid}", f"Retiro #{rid}"
     if t == "dolares":
-        return "/dolares?cta=", f"USD #{rid}"
+        # Antes "/dolares?cta=" — con el `cta` VACÍO, o sea un no-op. Y peor: la
+        # pantalla trae solo_vivos=1 por default, que esconde todo anticipo ya
+        # convertido o aplicado… que es justamente el que genera el movimiento.
+        # Medido: 132 de 149 filas linkeadas (89%) eran invisibles.
+        return f"/dolares?id={rid}", f"USD #{rid}"
     if t == "posdat":
         # TMT 2026-08-07 (dueña: "el link me manda a proveedores y no al
         # posdatado que se menciona"). Esto decía "/proveedores" desde el
@@ -673,17 +698,18 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
             return f"/posdat?id={rid}", f"Posdat {npd}"
         return f"/posdat?id={rid}", f"Posdat #{rid}"
     if t == "xgast":
-        return "/gastos", f"Gasto #{rid}"
+        return f"/gastos?id={rid}", f"Gasto #{rid}"
     return None, f"{t} #{rid}"
 
 
 def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
-                 posdat_nums: dict | None = None) -> tuple[str | None, str]:
+                 posdat_nums: dict | None = None,
+                 banco_nos: dict | None = None) -> tuple[str | None, str]:
     """Mismo concepto para el lado destino."""
     return link_origen(
         {"origen_table": row.get("destino_table"), "origen_id": row.get("destino_id")},
         factura_numfs=factura_numfs, cheque_nos=cheque_nos,
-        posdat_nums=posdat_nums,
+        posdat_nums=posdat_nums, banco_nos=banco_nos,
     )
 
 

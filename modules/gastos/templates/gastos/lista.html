@@ -74,7 +74,7 @@
 
   {# --- Acciones --------------------------------------------------------- #}
   <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
-    <a href="{{ url_for('gastos.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
+    <a href="{{ url_for('gastos.lista', q=q, desde=desde, hasta=hasta, id=id_xgast, export='csv') }}"
        class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
       Exportar CSV
     </a>

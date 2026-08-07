@@ -16,6 +16,7 @@ def lista(
     solo_vivos: bool = True,
     limite: int = 1000,
     q: str | None = None,
+    id_dolares: int | None = None,
 ) -> list[dict]:
     """Movimientos en scintela.dolares (anticipos USD).
 
@@ -27,6 +28,11 @@ def lista(
         cualquier otra letra → aplicado/cancelado/convertido.
 
     `solo_vivos=True` filtra a los anticipos abiertos.
+
+    `id_dolares` (TMT 2026-08-07, dueña sobre los links del historial: *"si al
+    clickear hay que buscar la fila a ojo, el link no está terminado"*) deja
+    UNA fila: la que menciona el movimiento. Apaga `solo_vivos` — ver el
+    comentario del WHERE, es el corazón del asunto.
 
     `q` (TMT 2026-06-09, pedido Tamara): filtro por CONCEPTO, substring
     case-insensitive (ILIKE).
@@ -40,12 +46,22 @@ def lista(
         SELECT d.id_dolares, d.fecha, d.cta, d.concepto, d.importe,
                d.st, d.clave, d.usuario_crea
         FROM scintela.dolares d
-        WHERE (%(desde)s::date IS NULL OR d.fecha >= %(desde)s::date)
+        WHERE (%(id_dolares)s IS NULL OR d.id_dolares = %(id_dolares)s)
+          AND (%(desde)s::date IS NULL OR d.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR d.fecha <= %(hasta)s::date)
           AND (%(cta)s IS NULL OR UPPER(d.cta) = UPPER(%(cta)s))
           AND (%(q)s IS NULL
                OR d.concepto ILIKE '%%' || %(q)s || '%%')
-          AND (NOT %(solo_vivos)s
+          -- TMT 2026-08-07 — ESTA es la línea que hacía inútil el link del
+          -- historial. La pantalla trae `solo_vivos` PRENDIDO por default
+          -- (nadie lo pide) y este filtro esconde todo lo que tenga `st` no
+          -- vacío. Medido contra producción: 132 de las 149 filas linkeadas
+          -- desde el historial (el 89 por ciento) caían acá — obvio en
+          -- retrospectiva, porque el anticipo que YA se convirtió/aplicó es el que
+          -- generó el movimiento que se está mirando. Pidiéndolo por id no hay
+          -- nada que adivinar: se sabe qué fila se quiere ver.
+          AND (%(id_dolares)s IS NOT NULL
+               OR NOT %(solo_vivos)s
                OR d.st IS NULL OR d.st IN ('', ' '))
         ORDER BY d.fecha DESC, d.id_dolares DESC
         LIMIT %(limite)s
@@ -55,6 +71,7 @@ def lista(
             "cta": cta or None,
             "q": (q or "").strip() or None,
             "solo_vivos": bool(solo_vivos),
+            "id_dolares": int(id_dolares) if id_dolares else None,
             "limite": int(limite),
         },
     ) or []

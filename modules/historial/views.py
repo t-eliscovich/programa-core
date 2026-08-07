@@ -288,11 +288,12 @@ def lista():
             if num and num != "0":
                 posdat_nums[int(rp["id_posdat"])] = num
     banco_labels: dict[int, str] = {}
+    banco_nos: dict[int, int] = {}
     if id_txbanco:
         placeholder = ",".join(["%s"] * len(id_txbanco))
         rows_b = (
             db.fetch_all(
-                f"SELECT t.id_transaccion, t.documento, "
+                f"SELECT t.id_transaccion, t.documento, t.no_banco, "
                 f"       COALESCE(b.nombre, '') AS nombre "
                 f"  FROM scintela.transacciones_bancarias t "
                 f"  LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco "
@@ -302,6 +303,12 @@ def lista():
             or []
         )
         for rb in rows_b:
+            # TMT 2026-08-07: el `no_banco` para poder armar /bancos/<no>?id=<id>.
+            # La pantalla de movimientos bancarios es POR BANCO, así que sin este
+            # dato no hay URL posible — y era la única razón por la que el destino
+            # de más volumen del historial (1.862 movs) no tenía link.
+            if rb.get("no_banco") is not None:
+                banco_nos[int(rb["id_transaccion"])] = int(rb["no_banco"])
             nm = (rb.get("nombre") or "").strip().title()  # PICHINCHA → Pichincha
             (rb.get("documento") or "").upper().strip()
             # Etiqueta corta — la dueña pidió "Pichincha", no "Banco mov #X".
@@ -347,11 +354,11 @@ def lista():
         # terminal) — mostraba un modal que prometía facturas y no había.
         r["es_terminal"] = _es_terminal(r.get("tipo") or "")
         u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos,
-                                   posdat_nums=posdat_nums)
+                                   posdat_nums=posdat_nums, banco_nos=banco_nos)
         r["origen_url"] = u
         r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
         u, t = queries.link_destino(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos,
-                                    posdat_nums=posdat_nums)
+                                    posdat_nums=posdat_nums, banco_nos=banco_nos)
         r["destino_url"] = u
         r["destino_label"] = _override_label(r.get("destino_table"), r.get("destino_id"), t)
         # row_url = a dónde va el click de la fila entera. Preferimos

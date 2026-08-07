@@ -195,7 +195,11 @@
      Antes mostraba siempre el universo (resumen.total_vivos). Si Federico
      filtra por cuenta, ahora muestra el subtotal de las filas filtradas
      y agrega un caption "filtrado de TOTAL". #}
-  {% set _filtro_anticipos_activo = (cta or desde or hasta or q) %}
+  {# TMT 2026-08-07: `id_dolares` cuenta como filtro activo. Sin esto, entrar
+     por el link del historial (/dolares?id=N) dejaba el hero cantando el
+     total del universo — "US$ 45.000 · 320 anticipos vivos" — arriba de UNA
+     fila. Es el mismo contador incongruente que se arregló en /posdat. #}
+  {% set _filtro_anticipos_activo = (cta or desde or hasta or q or id_dolares) %}
   {% set _total_universo = (resumen.total_vivos | float) if (resumen and resumen.get('total_vivos') is not none) else 0 %}
   {% set _n_universo = (resumen.n_vivos | int) if (resumen and resumen.get('n_vivos') is not none) else 0 %}
   {% if _filtro_anticipos_activo %}
@@ -249,7 +253,7 @@
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
         </summary>
         <div class="absolute right-0 mt-1 z-20 min-w-[200px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
-          <a href="{{ url_for('dolares.lista', desde=desde, hasta=hasta, cta=cta, q=q, solo_vivos=('1' if solo_vivos else '0'), export='csv') }}"
+          <a href="{{ url_for('dolares.lista', desde=desde, hasta=hasta, cta=cta, q=q, id=id_dolares, solo_vivos=('1' if solo_vivos else '0'), export='csv') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">Exportar CSV</div>
           </a>

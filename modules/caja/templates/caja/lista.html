@@ -51,7 +51,9 @@
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
         </summary>
         <div class="absolute right-0 mt-1 z-20 min-w-[200px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
-          <a href="{{ url_for('caja.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
+          {# `id` viaja también al CSV: exportar desde una pantalla filtrada por el
+             link del historial tiene que bajar LO QUE SE VE, no las 603 filas. #}
+          <a href="{{ url_for('caja.lista', q=q, desde=desde, hasta=hasta, id=id_caja, export='csv') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">Exportar CSV</div>
           </a>

@@ -738,6 +738,16 @@ def movimientos(no_banco):
     doc_num_filtro = (request.args.get("doc_num") or "").strip()
     monto_raw = (request.args.get("monto") or "").strip()
     monto_filtro = parse_monto(monto_raw) if monto_raw else None
+    # TMT 2026-08-07 (dueña, sobre los links del historial): *"si al clickear
+    # hay que buscar la fila a ojo, el link no está terminado"*. El Historial
+    # tiene ~1.862 movimientos que apuntan a transacciones_bancarias y hasta
+    # hoy no linkeaban a ningún lado. ?id=<id_transaccion> deja EXACTAMENTE
+    # ese movimiento del libro. Un id que no es un número se ignora (no 500,
+    # no se cuela en el SQL).
+    try:
+        id_tx = int(request.args.get("id") or 0) or None
+    except (TypeError, ValueError):
+        id_tx = None
     try:
         banco = queries.banco_info(no_banco)
         if not banco:
@@ -765,12 +775,17 @@ def movimientos(no_banco):
             cliente=cliente_filtro or None,
             monto=float(monto_filtro) if monto_filtro is not None else None,
             doc_num=doc_num_filtro or None,
+            id_transaccion=id_tx,
         )
         # Aplicar filtro post-fetch (las filas vienen con r["conciliacion_id"]
         # gracias al enrichment en queries.movimientos).
-        if conciliado_filtro == "si":
+        # TMT 2026-08-07: pidiendo UN movimiento por id este recorte no corre.
+        # El movimiento que menciona el historial puede estar conciliado o no,
+        # y el link no sabe cuál de las dos cosas es: si el usuario venía con
+        # el combo en "sin conciliar", la fila pedida desaparecía.
+        if not id_tx and conciliado_filtro == "si":
             filas = [r for r in filas if r.get("conciliacion_id")]
-        elif conciliado_filtro == "no":
+        elif not id_tx and conciliado_filtro == "no":
             filas = [r for r in filas if not r.get("conciliacion_id")]
         error = None
     except Exception as e:
@@ -926,42 +941,51 @@ def movimientos(no_banco):
         import db as _db
         where_filt = []
         params: dict = {"no_banco": no_banco}
-        if desde:
-            where_filt.append("t.fecha >= %(desde)s::date")
-            params["desde"] = desde
-        if hasta:
-            where_filt.append("t.fecha <= %(hasta)s::date")
-            params["hasta"] = hasta
-        if monto_filtro is not None:
-            where_filt.append("t.importe = %(monto)s::numeric")
-            params["monto"] = float(monto_filtro)
-        if doc_num_filtro:
-            where_filt.append(
-                "UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s"
-            )
-            params["doc_like"] = f"%{doc_num_filtro.upper()}%"
-        if cliente_filtro:
-            where_filt.append(
-                "EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt "
-                "JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque "
-                "LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli "
-                "WHERE cxt.id_transaccion = t.id_transaccion "
-                "AND (UPPER(COALESCE(cli.nombre,'')) LIKE %(cli_like)s "
-                "OR UPPER(COALESCE(c.codigo_cli,'')) LIKE %(cli_like)s))"
-            )
-            params["cli_like"] = f"%{cliente_filtro.upper()}%"
-        if conciliado_filtro == "no":
-            # Excluir conciliados PC + conciliados dBase (stat='*')
-            where_filt.append("TRIM(COALESCE(t.stat,'')) <> '*'")
-            where_filt.append("""NOT EXISTS (
-                SELECT 1 FROM scintela.banco_conciliacion_match m
-                 WHERE m.id_transaccion = t.id_transaccion
-                   AND m.deshecho_en IS NULL)""")
-        elif conciliado_filtro == "si":
-            where_filt.append("""(TRIM(COALESCE(t.stat,'')) = '*' OR EXISTS (
-                SELECT 1 FROM scintela.banco_conciliacion_match m
-                 WHERE m.id_transaccion = t.id_transaccion
-                   AND m.deshecho_en IS NULL))""")
+        if id_tx:
+            # TMT 2026-08-07: el MISMO id que las filas. Este agregado es el
+            # que alimenta "Mostrando 1 de N movimientos" y el "Total
+            # filtrado" del encabezado: sin propagarlo, abrir un movimiento
+            # de $150 mostraba el total del banco entero arriba de una sola
+            # fila. Los demás filtros no se aplican, igual que en la lista.
+            where_filt.append("t.id_transaccion = %(id_tx)s::int")
+            params["id_tx"] = id_tx
+        else:
+            if desde:
+                where_filt.append("t.fecha >= %(desde)s::date")
+                params["desde"] = desde
+            if hasta:
+                where_filt.append("t.fecha <= %(hasta)s::date")
+                params["hasta"] = hasta
+            if monto_filtro is not None:
+                where_filt.append("t.importe = %(monto)s::numeric")
+                params["monto"] = float(monto_filtro)
+            if doc_num_filtro:
+                where_filt.append(
+                    "UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s"
+                )
+                params["doc_like"] = f"%{doc_num_filtro.upper()}%"
+            if cliente_filtro:
+                where_filt.append(
+                    "EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt "
+                    "JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque "
+                    "LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli "
+                    "WHERE cxt.id_transaccion = t.id_transaccion "
+                    "AND (UPPER(COALESCE(cli.nombre,'')) LIKE %(cli_like)s "
+                    "OR UPPER(COALESCE(c.codigo_cli,'')) LIKE %(cli_like)s))"
+                )
+                params["cli_like"] = f"%{cliente_filtro.upper()}%"
+            if conciliado_filtro == "no":
+                # Excluir conciliados PC + conciliados dBase (stat='*')
+                where_filt.append("TRIM(COALESCE(t.stat,'')) <> '*'")
+                where_filt.append("""NOT EXISTS (
+                    SELECT 1 FROM scintela.banco_conciliacion_match m
+                     WHERE m.id_transaccion = t.id_transaccion
+                       AND m.deshecho_en IS NULL)""")
+            elif conciliado_filtro == "si":
+                where_filt.append("""(TRIM(COALESCE(t.stat,'')) = '*' OR EXISTS (
+                    SELECT 1 FROM scintela.banco_conciliacion_match m
+                     WHERE m.id_transaccion = t.id_transaccion
+                       AND m.deshecho_en IS NULL))""")
         sql_agg = (
             "SELECT COUNT(*) AS n, "
             "COALESCE(SUM(CASE WHEN t.documento IN ('CH','ND','DB','GS','PA') "
@@ -996,6 +1020,13 @@ def movimientos(no_banco):
     #             concilio todo" ($2.557K para Pichincha). Cuadra con el
     #             "SALDO SISTEMA" del archivo de conciliación. Equivale a
     #             saldo_banco descontando los movs NO conciliados.
+    #
+    # TMT 2026-08-07 — ⚠ ESTOS DOS NO SE FILTRAN POR ?id=, A PROPÓSITO.
+    # `saldo_banco` (el "Saldo: $X" del encabezado) y `saldo_conciliado`
+    # ("saldo si concilio todo lo pendiente") son PLATA REAL del banco, no
+    # un total de lo que se está mirando. Filtrarlos por el movimiento
+    # pedido diría "Pichincha: $150" al abrir un movimiento de $150 — una
+    # mentira. Se quedan enteros; lo que se acota es la lista y su total.
     saldo_conciliado = 0.0
     n_conciliado = 0
     try:
@@ -1027,6 +1058,11 @@ def movimientos(no_banco):
     hay_filtro = bool(
         desde or hasta or conciliado_filtro
         or cliente_filtro or doc_num_filtro or monto_filtro is not None
+        # El ?id= también es un filtro: prende el "Total filtrado" (que ahora
+        # es el importe de ESE movimiento) y el link "Limpiar", que es la
+        # forma de volver al libro completo. Nada de carteles nuevos —
+        # decisión de la dueña 2026-08-07: "sin el cartel".
+        or id_tx
     )
 
     return render_template(
@@ -1050,6 +1086,7 @@ def movimientos(no_banco):
         saldo_post_concil=saldo_post_concil,
         saldo_conciliado=saldo_conciliado,
         n_conciliado=n_conciliado,
+        id_tx=id_tx,
     )
 
 

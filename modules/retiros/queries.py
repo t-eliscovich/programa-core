@@ -418,8 +418,17 @@ def buscar(
     hasta: str | None = None,
     de: str | None = None,
     limite: int = 500,
+    id_retiro: int | None = None,
 ) -> list[dict]:
-    """Histórico de retiros filtrable por concepto/de + fecha + banco."""
+    """Histórico de retiros filtrable por concepto/de + fecha + banco.
+
+    TMT 2026-08-07 (dueña, sobre los links del historial): *"si al clickear hay
+    que buscar la fila a ojo, el link no está terminado"*. `id_retiro` deja UNA
+    fila — la que menciona el movimiento — y apaga los demás filtros: el
+    concepto buscado, el código `de` y el rango de fechas se refieren a lo que
+    se estaba mirando ANTES, no a la fila que se pidió, y cualquiera de los
+    tres la escondería.
+    """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     return db.fetch_all(
@@ -429,12 +438,17 @@ def buscar(
                COALESCE(b.nombre, '') AS banco
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
-        WHERE (%(q)s IS NULL
+        WHERE (%(id_retiro)s IS NULL OR r.id_retiro = %(id_retiro)s)
+          AND (%(id_retiro)s IS NOT NULL
+               OR %(q)s IS NULL
                OR UPPER(COALESCE(r.concepto,'')) LIKE UPPER(%(like)s)
                OR UPPER(COALESCE(r.de,'')) LIKE UPPER(%(like)s))
-          AND (%(de)s IS NULL OR UPPER(r.de) = UPPER(%(de)s))
-          AND (%(desde)s::date IS NULL OR r.fecha >= %(desde)s::date)
-          AND (%(hasta)s::date IS NULL OR r.fecha <= %(hasta)s::date)
+          AND (%(id_retiro)s IS NOT NULL
+               OR %(de)s IS NULL OR UPPER(r.de) = UPPER(%(de)s))
+          AND (%(id_retiro)s IS NOT NULL
+               OR %(desde)s::date IS NULL OR r.fecha >= %(desde)s::date)
+          AND (%(id_retiro)s IS NOT NULL
+               OR %(hasta)s::date IS NULL OR r.fecha <= %(hasta)s::date)
         ORDER BY r.fecha DESC, r.id_retiro DESC
         LIMIT %(limite)s
         """,
@@ -442,14 +456,26 @@ def buscar(
             "q": q or None, "like": like, "de": de or None,
             "desde": desde or None, "hasta": hasta or None,
             "limite": limite,
+            "id_retiro": int(id_retiro) if id_retiro else None,
         },
     ) or []
 
 
-def totales_por_persona(desde: str | None = None, hasta: str | None = None) -> list[dict]:
-    """Cuánto retiró cada socio en el periodo. Útil para informe trimestral."""
-    desde_d = desde or (today_ec() - timedelta(days=365)).isoformat()
-    hasta_d = hasta or today_ec().isoformat()
+def totales_por_persona(desde: str | None = None, hasta: str | None = None,
+                        id_retiro: int | None = None) -> list[dict]:
+    """Cuánto retiró cada socio en el periodo. Útil para informe trimestral.
+
+    TMT 2026-08-07: `id_retiro` también acá. Alimenta los chips «Por código»
+    que van ARRIBA de la grilla; sin pasárselo, pedir un retiro por id mostraba
+    los totales del último año sobre una sola fila (el bug del hero
+    incongruente que ya se pagó en /posdat).
+    """
+    # OJO: la ventana de 365 días es un DEFAULT de esta función, no algo que
+    # mande la URL — y un retiro de hace dos años queda afuera. Pidiendo por id
+    # no se aplica ninguna ventana.
+    id_retiro = int(id_retiro) if id_retiro else None
+    desde_d = None if id_retiro else (desde or (today_ec() - timedelta(days=365)).isoformat())
+    hasta_d = None if id_retiro else (hasta or today_ec().isoformat())
     return db.fetch_all(
         """
         SELECT COALESCE(de, '(sin asignar)') AS de,
@@ -457,11 +483,13 @@ def totales_por_persona(desde: str | None = None, hasta: str | None = None) -> l
                COUNT(*)                       AS n_retiros,
                MAX(fecha)                     AS ultimo
         FROM scintela.retiros
-        WHERE fecha BETWEEN %s::date AND %s::date
+        WHERE (%(id_retiro)s IS NULL OR id_retiro = %(id_retiro)s)
+          AND (%(desde)s::date IS NULL OR fecha >= %(desde)s::date)
+          AND (%(hasta)s::date IS NULL OR fecha <= %(hasta)s::date)
         GROUP BY 1
         ORDER BY total DESC
         """,
-        (desde_d, hasta_d),
+        {"id_retiro": id_retiro, "desde": desde_d, "hasta": hasta_d},
     ) or []
 
 
@@ -481,22 +509,40 @@ def totales_por_mes(meses: int = 12) -> list[dict]:
     ) or []
 
 
-def resumen(desde: str | None = None, hasta: str | None = None) -> dict:
-    """Total + n del filtro actual."""
-    desde_d = desde or (today_ec() - timedelta(days=90)).isoformat()
-    hasta_d = hasta or today_ec().isoformat()
+def resumen(desde: str | None = None, hasta: str | None = None,
+            id_retiro: int | None = None) -> dict:
+    """Total + n del filtro actual.
+
+    TMT 2026-08-07: pedir UN retiro por id apaga la ventana de 90 días.
+    Es el filtro que muerde de verdad en esta pantalla: `buscar()` no tiene
+    default de fechas, pero el hero sí — un retiro de hace 4 meses mostraba
+    "Total retirado" de los últimos 90 días (que NO lo incluyen) arriba de la
+    fila pedida. El "Periodo" pasa a ser la fecha de esa misma fila.
+    """
+    id_retiro = int(id_retiro) if id_retiro else None
+    desde_d = None if id_retiro else (desde or (today_ec() - timedelta(days=90)).isoformat())
+    hasta_d = None if id_retiro else (hasta or today_ec().isoformat())
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(ret), 0)        AS total,
                COUNT(*)                      AS n,
-               COUNT(DISTINCT de)            AS n_personas
+               COUNT(DISTINCT de)            AS n_personas,
+               MIN(fecha)                    AS f_min,
+               MAX(fecha)                    AS f_max
         FROM scintela.retiros
-        WHERE fecha BETWEEN %s::date AND %s::date
+        WHERE (%(id_retiro)s IS NULL OR id_retiro = %(id_retiro)s)
+          AND (%(desde)s::date IS NULL OR fecha >= %(desde)s::date)
+          AND (%(hasta)s::date IS NULL OR fecha <= %(hasta)s::date)
         """,
-        (desde_d, hasta_d),
+        {"id_retiro": id_retiro, "desde": desde_d, "hasta": hasta_d},
     ) or {}
     n = int(row.get("n") or 0)
     total = float(row.get("total") or 0)
+    if id_retiro:
+        # Sin ventana no hay "desde/hasta" que mostrar: el periodo del KPI es
+        # el día del retiro pedido (o '—' si el id no existe).
+        desde_d = row.get("f_min")
+        hasta_d = row.get("f_max")
     return {
         "n":               n,
         "n_personas":      int(row.get("n_personas") or 0),

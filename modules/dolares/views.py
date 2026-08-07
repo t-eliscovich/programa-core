@@ -62,13 +62,37 @@ def lista():
     cta   = (request.args.get("cta") or "").strip() or None
     q     = (request.args.get("q") or "").strip() or None
     solo_vivos = request.args.get("solo_vivos", "1") != "0"
+    # ── ?id=<id_dolares> — UNA fila, la del movimiento del historial ────────
+    # TMT 2026-08-07 (dueña): *"si al clickear hay que buscar la fila a ojo, el
+    # link no está terminado"*. Antes el historial linkeaba a `/dolares?cta=`
+    # con `cta` VACÍO: un no-op que dejaba a la dueña buscando a ojo en la
+    # pantalla entera.
+    #
+    # Un id que no es un entero se IGNORA (no 500, no se cuela en el SQL).
+    try:
+        id_dolares = int(request.args.get("id") or 0) or None
+    except (TypeError, ValueError):
+        id_dolares = None
+    if id_dolares:
+        # EL DEFAULT QUE ESCONDÍA LA FILA: `solo_vivos` viene "1" sin que nadie
+        # lo pida, y el SQL tira todo lo que tenga `st` no vacío. Medido: 132
+        # de 149 filas linkeadas (89%) eran invisibles, porque el anticipo ya
+        # convertido/aplicado es justo el que generó el movimiento. Se apaga
+        # acá (para que el checkbox de la barra de filtros diga la verdad) y
+        # también en el SQL de queries.lista() — el que manda.
+        solo_vivos = False
+        # Los demás filtros vienen VACÍOS por default, así que ninguno esconde
+        # la fila por sí solo; igual se hacen a un lado, porque pedir un id es
+        # pedir ESA fila y no hay nada que combinar. `codigo` ni se parsea:
+        # escribe `cta` y `q`.
+        desde = hasta = cta = q = None
     # Filtro por código en UN solo campo (atajo de la dueña 2026-07-10).
     # Búsqueda flexible: toma las letras (2-3) como CUENTA y los dígitos como
     # CONCEPTO, en cualquier orden y con o sin espacio. Acepta:
     #   "AC 15" → cuenta AC + concepto 15
     #   "AC"    → sólo cuenta AC
     #   "15"    → sólo concepto 15   (TMT 2026-07-11)
-    codigo = (request.args.get("codigo") or "").strip()
+    codigo = "" if id_dolares else (request.args.get("codigo") or "").strip()
     if codigo:
         import re as _re_cod
         m_cta = _re_cod.search(r"[A-Za-z]{2,3}", codigo)
@@ -79,10 +103,14 @@ def lista():
             q = m_num.group(0).lstrip("0") or m_num.group(0)
     # Mes de recibido (la fecha de recepción se cuelga de Asinfo, se filtra en
     # Python porque no vive en scintela.dolares).
-    recibido_mes = (request.args.get("recibido_mes") or "").strip() or None
+    recibido_mes = (
+        None if id_dolares
+        else (request.args.get("recibido_mes") or "").strip() or None
+    )
     filas, error = _safe(
         lambda: queries.lista(
             desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos, q=q,
+            id_dolares=id_dolares,
         ),
         [],
     )
@@ -124,7 +152,7 @@ def lista():
     # Filtro por año — el EFECTIVO (`anio_ref` = la columna, o el `/26` del
     # concepto). "0" = los que no lo tienen por ningún lado. TMT 2026-07-31:
     # antes miraba sólo `anio_col`, así que un `49/26` caía en "sin año".
-    anio_filtro = (request.args.get("anio") or "").strip()
+    anio_filtro = "" if id_dolares else (request.args.get("anio") or "").strip()
     if anio_filtro:
         if anio_filtro == "0":
             filas = [f for f in filas if not f.get("anio_ref")]
@@ -139,6 +167,29 @@ def lista():
             f for f in filas
             if str(f.get("fecha_recepcion_im") or "").startswith(recibido_mes)
         ]
+    # ── AGREGADOS QUE **NO** SE FILTRAN POR ?id= — decisión explícita ──────
+    # TMT 2026-08-07. La regla general (aprendida en /posdat el mismo día) es
+    # propagar el id a TODOS los agregados, si no el hero canta el total de la
+    # lista entera arriba de una sola fila. Acá hay DOS excepciones a propósito:
+    #
+    #   · `por_cuenta()` = saldo VIVO por cuenta. Es plata real que el cliente
+    #     tiene a favor, no un subtotal de lo que se ve; ya hoy ignora TODOS
+    #     los filtros (con ?cta=ABC igual se dibujan las 12 cards). Filtrarla
+    #     por id la dejaría en una card de una cuenta con un saldo que no es
+    #     el saldo de esa cuenta: peor que no tocarla.
+    #
+    #   · `resumen()` (y el `conciliacion_balance` que se calcula abajo con su
+    #     total) es la CONCILIACIÓN CONTRA EL BALANCE — la tira dice, con esas
+    #     palabras, «éste es el ANTICIPOS del balance». Si la filtrara por id,
+    #     esa card mostraría el importe de un anticipo suelto afirmando que es
+    #     el ANTICIPOS del balance. Eso es exactamente el descalce de 17.900
+    #     del 31/07 (*"que nunca más vuelva a pasar que esto nos va a mover la
+    #     utilidad por 20k"*). Se queda con el universo, siempre.
+    #
+    # El que SÍ se acomoda es el hero grande de la pantalla (`page_hero`), que
+    # ya muestra el subtotal de lo filtrado cuando hay filtro activo: el id
+    # entra en `_filtro_anticipos_activo` (lista.html) para que no quede
+    # cantando el total del universo arriba de una fila.
     cuentas, _ = _safe(lambda: queries.por_cuenta(solo_vivos=True), [])
     res, _ = _safe(queries.resumen, {})
 
@@ -200,6 +251,7 @@ def lista():
         codigo=codigo or None, recibido_mes=recibido_mes,
         anio_filtro=anio_filtro, n_sin_anio=n_sin_anio,
         solo_vivos=solo_vivos, error=error,
+        id_dolares=id_dolares,
         hoy=today_ec().isoformat(),
     )
 

@@ -162,9 +162,19 @@ def lista():
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
+    # TMT 2026-08-07 (dueña, sobre los links del historial): "esos links
+    # deberían venir filtrados por lo que quiero ver". ?id=<id_xgast> deja
+    # UNA fila — la que menciona el movimiento — y apaga los filtros por
+    # default que la esconderían (la ventana de 90 días del hero y el tope
+    # de 500 filas del listado, que se comía 36 de las 526 filas linkeadas).
+    # Un id que no sea un entero se ignora: es como no haberlo mandado.
     try:
-        filas = queries.buscar(q, desde, hasta)
-        resumen = queries.resumen(desde, hasta)
+        id_xgast = int(request.args.get("id") or 0) or None
+    except (TypeError, ValueError):
+        id_xgast = None
+    try:
+        filas = queries.buscar(q, desde, hasta, id_xgast=id_xgast)
+        resumen = queries.resumen(desde, hasta, id_xgast=id_xgast)
         error = None
     except Exception as e:
         # TMT 2026-05-14 (#37): no exponer detalle crudo al template.
@@ -238,9 +248,14 @@ def lista():
     }
     suma_v_total = sum(col_v.values())
 
+    # La matriz V1..V9 y los TOTALES VISIBLES se calculan arriba desde
+    # `filas`, que ya viene filtrada por el id: la categoría de la fila
+    # pedida cae sola en su celda (`_NUM_TO_CELL`) y no hay que elegirla
+    # aparte. Si algún día la matriz pasara a salir de su propia consulta,
+    # el `id_xgast` tiene que llegar TAMBIÉN ahí.
     return render_template(
         "gastos/lista.html",
-        filas=filas, q=q, desde=desde, hasta=hasta,
+        filas=filas, q=q, desde=desde, hasta=hasta, id_xgast=id_xgast,
         total_importe=total_importe, total_saldo=total_saldo,
         resumen=resumen, error=error,
         matriz=matriz, col_v=col_v, fil_total=fil_total,

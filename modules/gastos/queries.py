@@ -484,9 +484,20 @@ def buscar(
     desde: str | None = None,
     hasta: str | None = None,
     limite: int = 500,
+    id_xgast: int | None = None,
 ) -> list[dict]:
-    """Histórico de gastos filtrable por concepto/proveedor/doc + fecha."""
+    """Histórico de gastos filtrable por concepto/proveedor/doc + fecha.
+
+    `id_xgast` deja UNA fila: la que menciona el movimiento del historial.
+    TMT 2026-08-07 (dueña): *"si al clickear hay que buscar la fila a ojo,
+    el link no está terminado"*. Buscar por `q` NO alcanzaba como atajo —
+    el buscador mira concepto/prov/doc/nombre y `CAST(g.num AS TEXT)`, y
+    `num` acá es la CATEGORÍA V1..V9, no un número de documento — y el
+    `LIMIT 500` fijo dejaba 36 de las 526 filas linkeadas fuera de la
+    página, sin nada que tipear para llegar a ellas.
+    """
     q = (q or "").strip()
+    id_xgast = int(id_xgast) if id_xgast else None
     like = f"%{q}%" if q else None
     # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
     # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
@@ -500,11 +511,20 @@ def buscar(
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.xgast g
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = g.prov
-        WHERE (%(q)s IS NULL
+        WHERE (%(id_xgast)s IS NULL OR g.id_xgast = %(id_xgast)s)
+          -- TMT 2026-08-07: pedir UN gasto por id apaga los demás filtros.
+          -- El texto y el rango de fechas son maneras de BUSCAR la fila; si
+          -- ya se sabe cuál es, filtrarla de nuevo sólo puede esconderla
+          -- (el link del historial puede apuntar a un gasto de hace dos años
+          -- o a uno anulado, y caía en una lista vacía).
+          AND (%(id_xgast)s IS NOT NULL
+               OR %(q)s IS NULL
                OR (__TEXTO_MATCH__)
                OR CAST(COALESCE(g.num, 0) AS TEXT) LIKE %(like)s)
-          AND (%(desde)s::date IS NULL OR g.fecha >= %(desde)s::date)
-          AND (%(hasta)s::date IS NULL OR g.fecha <= %(hasta)s::date)
+          AND (%(id_xgast)s IS NOT NULL
+               OR %(desde)s::date IS NULL OR g.fecha >= %(desde)s::date)
+          AND (%(id_xgast)s IS NOT NULL
+               OR %(hasta)s::date IS NULL OR g.fecha <= %(hasta)s::date)
         ORDER BY g.fecha DESC, g.id_xgast DESC
         LIMIT %(limite)s
         """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
@@ -512,6 +532,7 @@ def buscar(
                 **_txt_params,
                 "q": q or None,
                 "like": like,
+                "id_xgast": id_xgast,
                 "desde": desde or None,
                 "hasta": hasta or None,
                 "limite": limite,
@@ -742,8 +763,24 @@ def crear(
     return row
 
 
-def resumen(desde: str | None = None, hasta: str | None = None) -> dict:
-    """Total + n + ticket promedio del filtro actual."""
+def resumen(
+    desde: str | None = None,
+    hasta: str | None = None,
+    id_xgast: int | None = None,
+) -> dict:
+    """Total + n + ticket promedio del filtro actual.
+
+    TMT 2026-08-07 — `id_xgast` viaja igual que en `buscar()`. Los KPIs de
+    arriba (Total gastado / N gastos / Saldo pendiente / Ticket promedio /
+    Periodo) salen de acá: sin pasárselo, pedir un gasto por id mostraba el
+    total de los ÚLTIMOS 90 DÍAS enteros arriba de una sola fila — y si el
+    gasto era más viejo que esa ventana, el hero decía "0 gastos" con la
+    fila a la vista. Es el mismo bug que ya pasó en /posdat.
+    """
+    id_xgast = int(id_xgast) if id_xgast else None
+    # La ventana de 90 días es el default que esconde la fila pedida: con
+    # id no se aplica (el SQL de abajo la saltea) y el KPI "Periodo" pasa a
+    # mostrar la fecha del propio gasto, no un rango que no lo contiene.
     desde_d = desde or (today_ec() - timedelta(days=90)).isoformat()
     hasta_d = hasta or today_ec().isoformat()
     row = (
@@ -751,16 +788,28 @@ def resumen(desde: str | None = None, hasta: str | None = None) -> dict:
             """
         SELECT COALESCE(SUM(importe), 0) AS total,
                COALESCE(SUM(saldo), 0)   AS saldo_pendiente,
-               COUNT(*)                  AS n
+               COUNT(*)                  AS n,
+               MIN(fecha)                AS fecha_min,
+               MAX(fecha)                AS fecha_max
         FROM scintela.xgast
-        WHERE fecha BETWEEN %s::date AND %s::date
+        WHERE (%(id_xgast)s IS NULL OR id_xgast = %(id_xgast)s)
+          -- MISMA excepción que buscar(): pedir uno por id apaga el rango.
+          -- Si acá no se replicara, el hero contaría un universo distinto
+          -- al de las filas visibles.
+          AND (%(id_xgast)s IS NOT NULL
+               OR fecha BETWEEN %(desde)s::date AND %(hasta)s::date)
         """,
-            (desde_d, hasta_d),
+            {"id_xgast": id_xgast, "desde": desde_d, "hasta": hasta_d},
         )
         or {}
     )
     n = int(row.get("n") or 0)
     total = float(row.get("total") or 0)
+    if id_xgast:
+        # El "Periodo" del hero tiene que describir lo que se está viendo.
+        _min, _max = row.get("fecha_min"), row.get("fecha_max")
+        desde_d = _min.isoformat() if hasattr(_min, "isoformat") else (_min or "")
+        hasta_d = _max.isoformat() if hasattr(_max, "isoformat") else (_max or "")
     return {
         "n": n,
         "total": total,

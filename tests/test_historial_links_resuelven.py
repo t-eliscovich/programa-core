@@ -30,12 +30,23 @@ TABLAS = [
     "cheque",
     "compra",
     "factura",
-    "capital",
     "retiros",
     "dolares",
     "posdat",
     "xgast",
+    # `transacciones_bancarias` va aparte: su URL es /bancos/<no_banco>?id=<id>
+    # y el `no_banco` sólo lo sabe el batch de la vista. Sin ese dato,
+    # link_origen devuelve None a propósito (ver TABLAS_CON_MAPEO).
 ]
+
+#: Tablas cuya URL necesita un mapeo que arma la vista. Sin el mapeo, el link
+#: es None (correcto: es preferible no linkear a linkear al banco equivocado).
+TABLAS_CON_MAPEO = {
+    "transacciones_bancarias": {"banco_nos": {473: 9}},
+}
+
+# `capital` NO está en la lista: desde el 2026-08-07 no tiene rama en
+# link_origen. Ver test_capital_no_linkea_a_una_pantalla_que_no_lo_muestra.
 
 
 def _paths_de_link_origen():
@@ -45,7 +56,13 @@ def _paths_de_link_origen():
         url, etiqueta = hq.link_origen({"origen_table": tabla, "origen_id": 473})
         assert etiqueta, f"{tabla}: etiqueta vacía"
         if url is None:
-            continue  # sin link (ej. transacciones_bancarias) — válido
+            continue  # sin link — válido
+        yield tabla, url
+    for tabla, mapeo in TABLAS_CON_MAPEO.items():
+        url, etiqueta = hq.link_origen(
+            {"origen_table": tabla, "origen_id": 473}, **mapeo)
+        assert etiqueta, f"{tabla}: etiqueta vacía"
+        assert url is not None, f"{tabla}: con el mapeo tiene que haber URL"
         yield tabla, url
 
 
@@ -81,6 +98,12 @@ def test_links_del_historial_resuelven_contra_el_url_map(app):
     ("compra", "/compras/473"),
     ("factura", "/facturas/473"),
     ("cheque", "/cheques/473"),
+    # TMT 2026-08-07 (dueña: "esos links deberían venir filtrados por lo que
+    # quiero ver"). Todos caen en LA FILA, no en la pantalla entera.
+    ("caja", "/caja?id=473"),
+    ("retiros", "/retiros?id=473"),
+    ("dolares", "/dolares?id=473"),
+    ("xgast", "/gastos?id=473"),
     # TMT 2026-08-07 (dueña: "el link me manda a proveedores y no al posdatado
     # que se menciona"). Decía "/proveedores" desde el primer commit — el test
     # de arriba no lo cazaba porque /proveedores EXISTE: resolvía contra el
@@ -148,3 +171,56 @@ def test_link_destino_usa_el_mismo_mapeo():
     url, etiqueta = hq.link_destino({"destino_table": "compra", "destino_id": 473})
     assert url == "/compras/473"
     assert etiqueta == "Compra #473"
+
+
+# ── Los links que cambiaron el 2026-08-07 ────────────────────────────────────
+
+def test_el_movimiento_bancario_linkea_a_su_banco_y_a_su_fila():
+    """1.862 movimientos apuntaban acá y no tenían link ninguno: era el destino
+    de MÁS volumen del historial. La URL es POR BANCO, así que necesita el
+    `no_banco` del batch de la vista."""
+    from modules.historial import queries as hq
+
+    url, _ = hq.link_origen({"origen_table": "transacciones_bancarias",
+                             "origen_id": 8123}, banco_nos={8123: 9})
+    assert url == "/bancos/9?id=8123"
+
+
+def test_sin_saber_el_banco_prefiere_no_linkear_a_linkear_mal():
+    """Mandar a un banco equivocado es peor que no linkear: la pantalla filtra
+    por no_banco Y por id, así que saldría vacía sin decir por qué."""
+    from modules.historial import queries as hq
+
+    url, etiqueta = hq.link_origen({"origen_table": "transacciones_bancarias",
+                                    "origen_id": 8123})
+    assert url is None
+    assert etiqueta == "Banco mov #8123"
+
+
+def test_capital_no_linkea_a_una_pantalla_que_no_lo_muestra():
+    """`capital` mandaba a /retiros, que lee SÓLO `scintela.retiros` — los
+    aportes viven en `scintela.capital` (modules/capital/queries.py::aportar).
+
+    Con el `?id=` nuevo eso pasaba de inútil a peligroso: `/retiros?id=<id_capital>`
+    filtraría por `id_retiro` y mostraría OTRA fila cualquiera, en silencio y sin
+    404. Medido contra producción el 07/08: **0 movimientos** apuntan a `capital`,
+    así que la rama se borró en vez de arreglarse."""
+    from modules.historial import queries as hq
+
+    url, etiqueta = hq.link_origen({"origen_table": "capital", "origen_id": 5})
+    assert url is None
+    assert "capital" in etiqueta.lower()
+
+
+def test_ningun_link_manda_a_la_pantalla_entera():
+    """El criterio de la dueña: "si al clickear hay que buscar la fila a ojo, el
+    link no está terminado". Ningún destino puede ser una ruta pelada sin el id
+    de la fila adentro."""
+    from modules.historial import queries as hq
+
+    pelados = []
+    for tabla in TABLAS:
+        url, _ = hq.link_origen({"origen_table": tabla, "origen_id": 473})
+        if url and "473" not in url:
+            pelados.append((tabla, url))
+    assert pelados == [], f"links que caen en la pantalla entera: {pelados}"

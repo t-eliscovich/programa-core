@@ -274,12 +274,28 @@ def lista():
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
+    # TMT 2026-08-07 (dueña, sobre los links del historial): "esos links
+    # deberían venir filtrados por lo que quiero ver" — *"si al clickear hay
+    # que buscar la fila a ojo, el link no está terminado"*. ?id=<id_caja>
+    # deja UNA fila: la que menciona el movimiento.
+    # Un id que no es entero (?id=borrar-todo) se ignora: ni 500 ni SQL.
+    try:
+        id_caja = int(request.args.get("id") or 0) or None
+    except (TypeError, ValueError):
+        id_caja = None
     # TMT 2026-07-11 (dueña): flechita para avanzar. 500/página; pedimos
     # limite+1 para saber si hay página siguiente sin un COUNT extra.
     POR_PAGINA = 500
     try:
         pagina = max(1, int(request.args.get("pagina") or "1"))
     except (TypeError, ValueError):
+        pagina = 1
+    # Pidiendo UNA fila por id no hay paginación que valga: la lista va
+    # ORDER BY fecha DESC y 52 de las 466 filas que el historial linkea caen
+    # más allá de la página 1. Si el `pagina=` de la búsqueda anterior
+    # sobrevive en la URL (el paginador reenvía TODOS los args), el offset
+    # se come la única fila y la pantalla queda vacía.
+    if id_caja:
         pagina = 1
     es_export = request.args.get("export") == "csv"
     limite = 100000 if es_export else POR_PAGINA
@@ -298,11 +314,18 @@ def lista():
                 queries.recomputar_saldos()
         except Exception:
             pass
-        filas = queries.movimientos(desde, hasta, q, limite=limite + 1, offset=offset)
+        filas = queries.movimientos(
+            desde, hasta, q, limite=limite + 1, offset=offset, id_caja=id_caja,
+        )
         hay_mas = (not es_export) and len(filas) > limite
         if hay_mas:
             filas = filas[:limite]
-        resumen = queries.resumen()
+        # El MISMO id que la lista: sin esto el hero decía "· 603 movimientos"
+        # arriba de una sola fila. Ojo — `resumen(id_caja=…)` filtra SÓLO el
+        # contador; el saldo del hero sigue siendo el de TODA la caja, que es
+        # plata real y no se mueve porque alguien abra un link (ver docstring
+        # de queries.resumen).
+        resumen = queries.resumen(id_caja=id_caja)
         # Egresos del mes sin clasificar como gasto V1..V9 — pasamos sólo
         # el SET de ids; el botón "Clasificar" aparece inline en la fila
         # de cada egreso que está en este set (TMT 2026-05-15, opción B).
@@ -318,6 +341,16 @@ def lista():
         filas, resumen, error = [], {}, str(e)
         egresos_sin_clasif, ids_sin_clasif = [], set()
         hay_mas = False
+
+    # El banner "N egresos sin clasificar" manda a buscar los botones
+    # «Clasificar» EN LA LISTA DE ABAJO. Pidiendo una fila esos botones no
+    # están (salvo que sea justo esa), así que el contador se calcula sobre
+    # el universo visible. No es un cartel nuevo: es el de siempre contando
+    # lo que se ve — con 0 no se renderiza.
+    n_sin_clasif = (
+        (1 if id_caja in ids_sin_clasif else 0) if id_caja
+        else len(ids_sin_clasif)
+    )
 
     if request.args.get("export") == "csv":
         return csv_response(
@@ -344,7 +377,8 @@ def lista():
         hasta=hasta,
         error=error,
         ids_sin_clasif=ids_sin_clasif,
-        n_sin_clasif=len(ids_sin_clasif),
+        n_sin_clasif=n_sin_clasif,
+        id_caja=id_caja,
         pagina=pagina,
         hay_mas=hay_mas,
     )

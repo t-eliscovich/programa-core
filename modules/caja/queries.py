@@ -30,9 +30,29 @@ def movimientos(
     q: str = "",
     limite: int = 500,
     offset: int = 0,
+    id_caja: int | None = None,
 ) -> list[dict]:
+    """Filas del libro de caja. Con `id_caja` devuelve SOLO esa fila.
+
+    TMT 2026-08-07 (dueña, sobre los links del historial): *"si al clickear hay
+    que buscar la fila a ojo, el link no está terminado"*. El historial tiene
+    603 movimientos que apuntan a 467 filas de caja distintas; el link llevaba
+    a `/caja` a secas y había que ir a buscar la fila con el dedo.
+
+    Pedir UNA fila por id apaga los filtros de la pantalla (concepto/tipo,
+    desde, hasta): si no, el link a un movimiento de marzo con la pantalla
+    filtrada por este mes caía en una lista vacía. Quien pide un id ya sabe
+    cuál quiere ver — no hay nada que adivinar ni que filtrar.
+    """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # La caja PAGINA de a 500 (`views.lista`) con ORDER BY fecha DESC: 52 de
+    # las 466 filas linkeadas caen más allá de la primera página. Filtrar por
+    # id tiene que pasar ANTES de la paginación, o el link a una fila vieja
+    # sigue mostrando la página 1 sin ella. El `offset` se anula acá adentro
+    # para que valga para CUALQUIER caller, no sólo para la vista.
+    if id_caja:
+        offset = 0
     return db.fetch_all(
         """
         SELECT c.id_caja, c.fecha, c.tipo, c.importe, c.concepto, c.saldo,
@@ -59,9 +79,16 @@ def movimientos(
         FROM scintela.caja c
         LEFT JOIN scintela.cheque  ch  ON ch.id_cheque = c.id_cheque
         LEFT JOIN scintela.cliente cli ON cli.codigo_cli = ch.codigo_cli
-        WHERE (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
-          AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
-          AND (%(q)s IS NULL
+        WHERE (%(id_caja)s IS NULL OR c.id_caja = %(id_caja)s)
+          -- Pedir UNA fila por id apaga fechas y texto (ver docstring): el
+          -- WHERE por id es lo fácil, lo que esconde la fila son los filtros
+          -- que quedaron puestos de la búsqueda anterior.
+          AND (%(id_caja)s IS NOT NULL
+               OR %(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
+          AND (%(id_caja)s IS NOT NULL
+               OR %(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          AND (%(id_caja)s IS NOT NULL
+               OR %(q)s IS NULL
                OR UPPER(COALESCE(c.concepto,'')) LIKE UPPER(%(like)s)
                OR UPPER(COALESCE(c.tipo,'')) LIKE UPPER(%(like)s))
         ORDER BY c.fecha DESC, c.id_caja DESC
@@ -70,6 +97,7 @@ def movimientos(
         {
             "desde": desde or None, "hasta": hasta or None,
             "q": q or None, "like": like,
+            "id_caja": int(id_caja) if id_caja else None,
             "limite": limite, "offset": max(0, int(offset)),
         },
     )
@@ -425,7 +453,7 @@ def _crear_legacy_solo_caja_no_usar(
     ) or {}
 
 
-def resumen() -> dict:
+def resumen(id_caja: int | None = None) -> dict:
     """Totales de ingresos/egresos + último saldo registrado.
 
     Notas:
@@ -445,6 +473,24 @@ def resumen() -> dict:
       recalcular saldo).
     - `opening_estimado` = primer saldo running − signo×primer importe.
       Si saldo_ultimo ≈ opening_estimado + saldo_derivado, todo cuadra.
+
+    QUÉ HACE `id_caja` (TMT 2026-08-07, link del historial a UNA fila):
+    filtra el CONTADOR (`n_movimientos`) y NADA MÁS. La plata sigue siendo la
+    de toda la caja, a propósito:
+
+    - `n_movimientos` alimenta el "· N movimientos" del hero. Sin filtrarlo,
+      pedir una fila mostraba "· 603 movimientos" arriba de UNA sola — el
+      contador incongruente que ya mordió en /posdat (item 18, 2026-05-19).
+    - ingresos / egresos / opening / saldo_ultimo NO se filtran. El KPI del
+      hero es el SALDO EN CAJA — plata real contada, no el subtotal de las
+      filas visibles. Si se filtrara, mirar un movimiento de $150 diría
+      "Caja: $ 150" y eso es MENTIRA: la plata no se movió porque alguien
+      abrió un link. Mismo motivo por el que el warning de drift
+      (saldo_ultimo vs opening + Σ E − Σ S) se sigue calculando sobre el
+      universo entero: si no, saltaría en falso en cada fila.
+    - El `saldo` corrido de cada fila no pasa por acá: está persistido en la
+      columna `caja.saldo`, así que la fila muestra el saldo que había
+      DESPUÉS de ese movimiento aunque sea la única en pantalla.
     """
     row = db.fetch_one(
         """
@@ -464,9 +510,13 @@ def resumen() -> dict:
                 WHERE saldo IS NOT NULL
                 ORDER BY fecha ASC, id_caja ASC LIMIT 1) AS opening,
             MAX(fecha) AS ultima_fecha,
-            COUNT(*) AS n_movimientos
+            -- El ÚNICO agregado que respeta el filtro por id (ver docstring).
+            (SELECT COUNT(*) FROM scintela.caja f
+              WHERE %(id_caja)s IS NULL OR f.id_caja = %(id_caja)s)
+                AS n_movimientos
         FROM scintela.caja
         """,
+        {"id_caja": int(id_caja) if id_caja else None},
     )
     return row or {}
 
