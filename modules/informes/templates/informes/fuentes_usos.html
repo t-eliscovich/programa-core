@@ -89,7 +89,7 @@
     <div class="flex items-end gap-2">
       <span class="text-xs text-slate-500 self-end pb-1.5 mr-1">DESDE</span>
       <label class="flex flex-col">
-        <span class="text-xs text-slate-600">Mes</span>
+        <span class="text-xs text-slate-600">Día Mes</span>
         <select name="desde_mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
           {% for m in range(1, 13) %}
             <option value="{{ m }}" {% if desde_mes == m %}selected{% endif %}>{{ ldia(m, desde_anio) }} {{ meses[m-1] }}</option>
@@ -105,7 +105,7 @@
     <div class="flex items-end gap-2">
       <span class="text-xs text-slate-500 self-end pb-1.5 mr-1">HASTA</span>
       <label class="flex flex-col">
-        <span class="text-xs text-slate-600">Mes</span>
+        <span class="text-xs text-slate-600">Día Mes</span>
         <select name="hasta_mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
           {% for m in range(1, 13) %}
             <option value="{{ m }}" {% if hasta_mes == m %}selected{% endif %}>{% if m == hoy.month and hasta_anio == hoy.year %}{{ hoy.day }}{% else %}{{ ldia(m, hasta_anio) }}{% endif %} {{ meses[m-1] }}</option>
