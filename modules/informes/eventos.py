@@ -97,6 +97,17 @@ def de_la_ventana(desde, hasta) -> list[dict]:
         if isinstance(md, dict):
             for i in (md.get("ids_anticipos") or []):
                 docs.append(_doc("dolares", i))
+            # 🚨 Lo mismo con el TOTALIZAR y su reverso: tocan N facturas y
+            # registran UNA sola `mov_doble` que nombra la PRIMERA y la
+            # ÚLTIMA. Las otras N−2 caían al camino sin nombre y la traza las
+            # clasificaba por la FORMA del cambio — y como volver de 'T' a 'Z'
+            # deja el saldo igual al importe, once facturas del reverso de MLZ
+            # salieron rotuladas "facturas nuevas": ninguna se había emitido.
+            # La metadata las tiene todas. TMT 2026-08-07 (dueña: *"¿por qué
+            # una factura de MLZ me quedó en otro renglón?"*).
+            for f in (md.get("antes") or []):
+                if isinstance(f, dict) and f.get("id"):
+                    docs.append(_doc("factura", f["id"]))
         r["docs"] = [d for d in docs if d]
         r["meta"] = md if isinstance(md, dict) else {}
         # Un batch agrupa el hecho entero ("3 anticipos → compra N° 10130");

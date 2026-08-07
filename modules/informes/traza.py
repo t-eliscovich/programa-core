@@ -624,6 +624,16 @@ def _abreviar_etapas(texto: str) -> str:
 #: tipo → (rótulo, unidad). Con unidad, el renglón cuenta en esa unidad y no
 #: nombra clientes: *"retenciones revertidas · 8 facturas"*. Sin unidad, cuenta
 #: hechos y nombra a los tres que más pesan: *"4 FA · JVL, AJT, NIF +1"*.
+#: Hechos que NETEAN CERO POR DEFINICIÓN y aun así son noticia. El totalizar
+#: redistribuye los abonos de un cliente entre sus facturas sin crear ni borrar
+#: deuda: su aporte al Δ es siempre 0,00 y sus documentos están todos en el
+#: mismo componente, así que el `bruto` (el lado más grande de UN componente)
+#: también da 0 y el renglón se caía entero a "movimientos chicos". Un
+#: movimiento que tocó trece facturas no es un movimiento chico.
+#: TMT 2026-08-07.
+TIPOS_SIEMPRE_VISIBLES = {"totalizar_estado_cuenta",
+                          "reverso_totalizar_estado_cuenta"}
+
 TIPOS_QUE_SE_JUNTAN = {
     "factura_emitida": ("FA", ""),
     "cheque_aplicado_a_factura": ("CH → FA", ""),
@@ -742,14 +752,15 @@ def resumir(movs: list[dict], d_utilidad: float | None,
     for g in sorted(grupos.values(),
                     key=lambda x: max(abs(x["aporte"]), x["bruto"]),
                     reverse=True):
+        ev = g.get("evento")
         # Lo ciego no se esconde por chico: es la lista de tareas. Y un
         # traspaso grande tampoco: aporta cero, pero es la noticia.
         if (abs(g["aporte"]) < UMBRAL_VISIBLE
                 and g["bruto"] < UMBRAL_VISIBLE
-                and g.get("familia") != "sin_explicar"):
+                and g.get("familia") != "sin_explicar"
+                and (ev or {}).get("tipo") not in TIPOS_SIEMPRE_VISIBLES):
             menores = round(menores + g["aporte"], 2)
             continue
-        ev = g.get("evento")
         if ev:
             from modules.historial.queries import corto as _corto
 

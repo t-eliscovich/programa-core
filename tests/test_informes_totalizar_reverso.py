@@ -335,3 +335,70 @@ def test_dispatcher_del_historial_rutea_a_una_ruta_que_existe(app):
     assert endpoint == "informes.totalizar_reverso_confirmar"
     assert kwargs_fn({"id_mov_doble": 22176}) == {"id_mov_doble": 22176}
     assert endpoint in {r.endpoint for r in app.url_map.iter_rules()}
+
+
+# ───────── 8. la traza junta las N facturas del totalizar en UN renglón ────
+
+def test_eventos_expande_las_facturas_del_totalizar(monkeypatch):
+    """Sin esto, las N−2 facturas que el mov no nombra caen al camino sin
+    nombre y la traza las rotula por la FORMA del cambio: volver de 'T' a 'Z'
+    deja el saldo igual al importe y salen como "facturas nuevas"."""
+    from modules.informes import eventos as ev
+    fila = {
+        "id_mov_doble": 22253, "batch_id": None,
+        "tipo": "reverso_totalizar_estado_cuenta",
+        "origen_table": "factura", "origen_id": 1,
+        "destino_table": "factura", "destino_id": 3,
+        "importe": 10423.74, "concepto": "DESHACER totalizar MLZ",
+        "usuario": "tamara", "estado": "reverso", "dia": date(2026, 8, 7),
+        "metadata": {"codigo_cli": "MLZ", "n_facturas": 3,
+                     "antes": [{"id": 1}, {"id": 2}, {"id": 3}]},
+    }
+    monkeypatch.setattr(ev.db, "fetch_all", lambda *a, **k: [fila])
+    evs = ev.de_la_ventana("2026-08-07 00:00", "2026-08-07 23:59")
+    assert set(evs[0]["docs"]) == {"f1", "f2", "f3"}
+    # Las tres caen en el MISMO grupo ⇒ un solo renglón.
+    idx = ev.indice(evs)
+    assert len({idx[d]["grupo"] for d in ("f1", "f2", "f3")}) == 1
+
+
+def _mov_fact(doc, etiqueta, aporte, regla):
+    return {"doc_id": doc, "etiqueta": etiqueta, "aporte": aporte,
+            "componente": "facturas", "regla": regla, "familia": "traspaso"}
+
+
+def test_resumir_un_renglon_para_el_totalizar_aunque_netee_cero():
+    from modules.informes import traza
+    evento = {"tipo": "reverso_totalizar_estado_cuenta", "grupo": "m22253",
+              "label": "Deshacer totalizar", "concepto": "DESHACER MLZ",
+              "dia": date(2026, 8, 7),
+              "meta": {"codigo_cli": "MLZ", "n_facturas": 3}}
+    movs = [
+        _mov_fact("f1", "Factura 169218 · MLZ", 1747.01, "Venta facturada"),
+        _mov_fact("f2", "Factura 174039 · MLZ", 321.26, "Factura corregida en más"),
+        _mov_fact("f3", "Factura 170918 · MLZ", -2068.27, "Venta facturada"),
+    ]
+    out = traza.resumir(movs, None, {"f1": evento, "f2": evento, "f3": evento})
+    assert len(out) == 1
+    g = out[0]
+    # Netea cero — y aun así se muestra: tocó tres facturas.
+    assert g["aporte"] == 0.0
+    assert "totalizar" in g["texto"] and "MLZ" in g["texto"]
+    assert g["texto"].startswith("↩")
+    assert "(3)" in g["texto"]
+    # 🚨 lo que la dueña vio y no era cierto.
+    assert "facturas nuevas" not in g["texto"]
+
+
+def test_resumir_sin_evento_es_el_renglon_partido_de_antes():
+    """Mutante de control: sin el índice de eventos vuelve el bug — tres
+    renglones, uno de ellos rotulado "facturas nuevas"."""
+    from modules.informes import traza
+    movs = [
+        _mov_fact("f1", "Factura 169218 · MLZ", 1747.01, "Venta facturada"),
+        _mov_fact("f2", "Factura 174039 · MLZ", 321.26, "Factura corregida en más"),
+        _mov_fact("f3", "Factura 170918 · MLZ", -2068.27, "Venta facturada"),
+    ]
+    out = traza.resumir(movs, None, {})
+    assert len(out) == 2                       # se agrupan por REGLA, no por hecho
+    assert any("facturas nuevas" in g["texto"] for g in out)
