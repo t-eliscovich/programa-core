@@ -753,6 +753,7 @@ def buscar(
     hasta: str | None = None,
     limite: int = 500,
     tab: str = "posdatados",
+    id_posdat: int | None = None,
 ) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -779,22 +780,36 @@ def buscar(
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
-        WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
+        WHERE (%(id_posdat)s IS NULL OR pd.id_posdat = %(id_posdat)s)
+          AND (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
           AND (%(q)s IS NULL
                OR (__TEXTO_MATCH__))
-          AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
+          -- TMT 2026-08-07: pedir UN posdatado por id apaga los demás filtros.
+          -- Si no, el link del historial a un posdatado ya PAGADO (banc<>0),
+          -- de prov YY/RT o anulado caía en una lista vacía y parecía que el
+          -- movimiento apuntaba a la nada. Al pedirlo por id se sabe cuál se
+          -- quiere ver: no hay nada que adivinar ni que filtrar.
+          AND (%(id_posdat)s IS NOT NULL
+               OR NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
           AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
           -- TMT 2026-05-20: filtro de tab (YY vs resto).
           -- TMT 2026-05-27 dueña: prov='RT' (retenciones) también cuenta
           -- como provisión YY. 'hace que con las migraciones esto ya no
           -- se toque' → filtro a nivel código, no migrar data.
+          -- El filtro de TAB vale SIEMPRE, también pidiendo por id: si se
+          -- saltea, un posdat YY entra en las dos pestañas y el hero lo suma
+          -- dos veces (Total = Posdatados + YY). Quien pide un id se encarga
+          -- de mandar el tab que le corresponde — lo hace la vista.
           AND (
                 (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
              OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
           )
-          -- Filtro de soft-delete (migración 0027): siempre excluye anuladas.
-          AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+          -- Filtro de soft-delete (migración 0027): siempre excluye anuladas…
+          -- salvo que se esté pidiendo ESA fila por id (ver arriba): el
+          -- movimiento "Posdat: anulada" del historial linkea justo a una.
+          AND (%(id_posdat)s IS NOT NULL
+               OR pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         ORDER BY pd.fechad, pd.id_posdat
         LIMIT %(limite)s
         """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
@@ -802,6 +817,7 @@ def buscar(
             **_txt_params,
             "prov": prov or None,
             "q": q or None, "like": like,
+            "id_posdat": int(id_posdat) if id_posdat else None,
             "solo_abiertas": solo_abiertas,
             "desde": desde or None, "hasta": hasta or None,
             "limite": limite,
@@ -845,6 +861,7 @@ def resumen(
     desde: str | None = None,
     hasta: str | None = None,
     tab: str = "posdatados",
+    id_posdat: int | None = None,
 ) -> dict:
     """Total de deuda abierta y número de partidas.
 
@@ -878,7 +895,7 @@ def resumen(
         from decimal import Decimal as _Dec
         filas = buscar(
             prov=prov, q=q_s, solo_abiertas=solo_abiertas,
-            desde=desde, hasta=hasta, tab="yy",
+            desde=desde, hasta=hasta, tab="yy", id_posdat=id_posdat,
         )
         # TMT 2026-06-08: incluir RT además de YY. La fila RT (retenciones,
         # provisión) aparece en el tab YY pero antes el resumen la descartaba
@@ -906,25 +923,33 @@ def resumen(
                COUNT(*)                     AS partidas_abiertas
           FROM scintela.posdat pd
           LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
-         WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
+         WHERE (%(id_posdat)s IS NULL OR pd.id_posdat = %(id_posdat)s)
+           AND (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
            AND (%(q)s IS NULL
                 OR (__TEXTO_MATCH__))
-           AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
+           -- MISMA excepción que buscar(): pedir uno por id apaga el resto de
+           -- los filtros. Si acá no se replicara, el hero diría "0 partidas"
+           -- arriba de una fila visible.
+           AND (%(id_posdat)s IS NOT NULL
+                OR NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
            AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
            AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
            -- TMT 2026-06-03 audit fix: resumen() debe usar la misma
            -- regla que buscar() — RT también es tab=yy (memoria 2026-05-27).
            -- Antes resumen contaba RT como posdatado → total ≠ filas visibles.
+           -- MISMA regla que buscar(): el tab no se saltea ni pidiendo por id.
            AND (
                 (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
              OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
            )
-           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+           AND (%(id_posdat)s IS NOT NULL
+                OR pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
             **_txt_params,
             "prov": prov or None,
             "q": q_s or None, "like": like,
+            "id_posdat": int(id_posdat) if id_posdat else None,
             "solo_abiertas": solo_abiertas,
             "desde": desde or None, "hasta": hasta or None,
             "tab": tab_norm,

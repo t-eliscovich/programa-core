@@ -440,6 +440,14 @@ def lista():
             "persistir_acumulacion_yy FALLÓ — Pasivos YY van a driftear vs dBase"
         )
     q = request.args.get("q", "").strip()
+    # TMT 2026-08-07 (dueña, sobre el link del historial): "esos links deberían
+    # venir filtrados por lo que quiero ver". ?id=<id_posdat> deja UNA fila —
+    # la que menciona el movimiento — y apaga los demás filtros, así el
+    # posdatado pagado, anulado o de prov YY/RT también aparece.
+    try:
+        id_posdat = int(request.args.get("id") or 0) or None
+    except (TypeError, ValueError):
+        id_posdat = None
     prov = (request.args.get("prov") or "").strip().upper() or None
     # TMT 2026-05-20 v2 — vuelve default solo_abiertas=True (pedido
     # dueña: "aca solo hay que tomar banc=0"). Sin checkbox visible:
@@ -455,6 +463,20 @@ def lista():
     if tab not in ("posdatados", "yy"):
         tab = "posdatados"
 
+    # Pedir UN posdatado por id manda sobre la pestaña: si es de prov YY/RT
+    # vive en "Provisiones" y en la otra no existe. Sin esto, el link del
+    # historial a una provisión caía en la pestaña Posdatados y no mostraba
+    # nada. (El filtro de tab NO se saltea a nivel SQL a propósito: saltearlo
+    # hacía que la fila se contara en las dos pestañas y el hero la sumara
+    # dos veces.)
+    if id_posdat:
+        try:
+            _pd = queries.por_id(id_posdat) or {}
+            tab = ("yy" if (_pd.get("prov") or "").strip().upper() in ("YY", "RT")
+                   else "posdatados")
+        except Exception:  # noqa: BLE001 -- ante la duda, la pestaña pedida
+            pass
+
     try:
         filas = queries.buscar(
             prov=prov,
@@ -463,6 +485,7 @@ def lista():
             desde=desde,
             hasta=hasta,
             tab=tab,
+            id_posdat=id_posdat,
         )
         # TMT 2026-05-19 — item 18: el resumen recibe los MISMOS filtros que
         # buscar() para que "X partidas" del hero coincida con las filas
@@ -475,10 +498,16 @@ def lista():
             desde=desde,
             hasta=hasta,
             tab=tab,
+            id_posdat=id_posdat,
         )
         # TMT 2026-05-20 — conteos por tab para los badges del switcher.
         # Defensivo: si falla, dejamos 0 y la UI sigue.
         try:
+            # TMT 2026-08-07: el `id_posdat` también va acá. Estos conteos
+            # alimentan el HERO (Total / Posdatados / YY) y los badges de las
+            # pestañas; sin pasárselo, pedir un posdatado por id mostraba el
+            # total de TODA la lista arriba de una sola fila — justo el
+            # contador incongruente que el item 18 (2026-05-19) vino a matar.
             conteos_tab = {
                 "posdatados": queries.resumen(
                     prov=prov,
@@ -487,6 +516,7 @@ def lista():
                     desde=desde,
                     hasta=hasta,
                     tab="posdatados",
+                    id_posdat=id_posdat,
                 ),
                 "yy": queries.resumen(
                     prov=prov,
@@ -495,6 +525,7 @@ def lista():
                     desde=desde,
                     hasta=hasta,
                     tab="yy",
+                    id_posdat=id_posdat,
                 ),
             }
         except Exception:  # noqa: BLE001
@@ -605,6 +636,7 @@ def lista():
         resumen=resumen,
         q=q,
         prov=prov,
+        id_posdat=id_posdat,
         desde=desde,
         hasta=hasta,
         solo_abiertas=solo_abiertas,

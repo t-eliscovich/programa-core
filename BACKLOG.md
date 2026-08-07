@@ -27,6 +27,27 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 
 ## Aprobado por la dueña, pendiente de ejecutar
 
+### [M] Los links del Historial tienen que caer PRE-FILTRADOS en lo que se busca
+Dueña 2026-08-07: *"esos links deberían venir filtrados por lo que quiero ver;
+arrancá por este pero después quizás sea un poco más largo el trabajo de
+construir los links a todos los movimientos"*. Ya se hizo `posdat` →
+`/posdat?id=<id>` (una fila, con los filtros de deuda viva / tab / anulada
+apagados). Faltan los demás destinos de `historial.queries.link_origen`:
+
+| tabla | hoy va a | qué le falta |
+|---|---|---|
+| `caja` | `/caja#id-<id>` | verificar que la fila tenga ese ancla y que el filtro de fecha no la esconda |
+| `transacciones_bancarias` | (sin link) | no hay pantalla que muestre UN movimiento de banco |
+| `retiros` / `capital` | `/retiros` | la pantalla entera, sin marcar cuál |
+| `dolares` | `/dolares?cta=` | idem, y el `cta=` va vacío |
+| `xgast` | `/gastos` | idem |
+
+Criterio: si al clickear hay que buscar la fila a ojo, el link no está
+terminado. Ojo con el precedente de `?id=` en posdat: apagar el filtro de
+PESTAÑA hacía que la fila se contara dos veces en el hero — el filtro que
+define en qué solapa vive una fila no se saltea, se elige bien.
+
+
 ### [S] Un movimiento de banco se carga con la fecha del día, no con una vieja
 Dueña 2026-08-07, mirando el +$7.340 de la traza: *"debería ese movimiento
 armarse con la fecha de hoy, no con el 05/08"*.

@@ -613,7 +613,8 @@ def corto(tipo: str, quien: str = "") -> str:
     return vuelta + " ".join(x for x in (objeto, quien, accion) if x)
 
 
-def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None) -> tuple[str | None, str]:
+def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
+                posdat_nums: dict | None = None) -> tuple[str | None, str]:
     """Devuelve (url, etiqueta) para el lado origen del mov.
 
     Tamara 2026-05-23: los links de factura/cheque deben usar el numero
@@ -652,17 +653,35 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
     if t == "dolares":
         return "/dolares?cta=", f"USD #{rid}"
     if t == "posdat":
-        return "/proveedores", f"Posdat #{rid}"
+        # TMT 2026-08-07 (dueña: "el link me manda a proveedores y no al
+        # posdatado que se menciona"). Esto decía "/proveedores" desde el
+        # primer commit: nunca llevó al posdatado, y como los links son
+        # strings a mano no se veía desde el código. Va a la lista pedida por
+        # id — que apaga los filtros de deuda viva / tab / anulada, así el
+        # posdatado del movimiento aparece siempre.
+        #
+        # La URL va por id INTERNO y la etiqueta por el `num` visible (mismo
+        # criterio que factura/compra/cheque): un `num` puede coincidir con el
+        # id de OTRO posdatado. Ojo que el CONCEPTO del movimiento ya venía
+        # escrito con el `num` (posdat/queries.py "Edit importe posdat #…"),
+        # así que sin este mapeo la fila mostraba DOS números distintos con la
+        # misma pinta.
+        npd = (posdat_nums or {}).get(int(rid)) if rid else None
+        if npd and str(npd).strip():
+            return f"/posdat?id={rid}", f"Posdat {npd}"
+        return f"/posdat?id={rid}", f"Posdat #{rid}"
     if t == "xgast":
         return "/gastos", f"Gasto #{rid}"
     return None, f"{t} #{rid}"
 
 
-def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None) -> tuple[str | None, str]:
+def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
+                 posdat_nums: dict | None = None) -> tuple[str | None, str]:
     """Mismo concepto para el lado destino."""
     return link_origen(
         {"origen_table": row.get("destino_table"), "origen_id": row.get("destino_id")},
         factura_numfs=factura_numfs, cheque_nos=cheque_nos,
+        posdat_nums=posdat_nums,
     )
 
 

@@ -192,6 +192,7 @@ def lista():
     id_facturas: set[int] = set()
     id_txbanco: set[int] = set()
     id_compras: set[int] = set()
+    id_posdats: set[int] = set()
     for r in filas:
         ot, oid = r.get("origen_table"), r.get("origen_id")
         dt, did = r.get("destino_table"), r.get("destino_id")
@@ -211,6 +212,10 @@ def lista():
             id_txbanco.add(int(oid))
         if dt == "transacciones_bancarias" and did:
             id_txbanco.add(int(did))
+        if ot == "posdat" and oid:
+            id_posdats.add(int(oid))
+        if dt == "posdat" and did:
+            id_posdats.add(int(did))
     cheque_labels: dict[int, str] = {}
     if id_cheques:
         placeholder = ",".join(["%s"] * len(id_cheques))
@@ -262,6 +267,26 @@ def lista():
             num = (rc.get("numero") or "").strip()
             if num and num != "0":
                 compra_numeros[int(rc["id_compra"])] = num
+    # TMT 2026-08-07 (dueña) — el posdatado tiene UN número visible (`num`, el
+    # de la columna N° de /posdat) y el historial mostraba el id interno. Peor:
+    # el CONCEPTO del movimiento ya venía escrito con el `num`, así que la fila
+    # tenía dos "#134" que no eran el mismo número. Sólo cambia la ETIQUETA —
+    # la URL sigue yendo por id_posdat, igual que compras.
+    posdat_nums: dict[int, str] = {}
+    if id_posdats:
+        placeholder = ",".join(["%s"] * len(id_posdats))
+        rows_pd = (
+            db.fetch_all(
+                f"SELECT id_posdat, COALESCE(num::text, '') AS num "
+                f"FROM scintela.posdat WHERE id_posdat IN ({placeholder})",
+                tuple(id_posdats),
+            )
+            or []
+        )
+        for rp in rows_pd:
+            num = (rp.get("num") or "").strip()
+            if num and num != "0":
+                posdat_nums[int(rp["id_posdat"])] = num
     banco_labels: dict[int, str] = {}
     if id_txbanco:
         placeholder = ",".join(["%s"] * len(id_txbanco))
@@ -321,10 +346,12 @@ def lista():
         # TMT 2026-07-11 (dueña): no ofrecer "reversar" sobre un reverso (mov
         # terminal) — mostraba un modal que prometía facturas y no había.
         r["es_terminal"] = _es_terminal(r.get("tipo") or "")
-        u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos)
+        u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos,
+                                   posdat_nums=posdat_nums)
         r["origen_url"] = u
         r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
-        u, t = queries.link_destino(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos)
+        u, t = queries.link_destino(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos,
+                                    posdat_nums=posdat_nums)
         r["destino_url"] = u
         r["destino_label"] = _override_label(r.get("destino_table"), r.get("destino_id"), t)
         # row_url = a dónde va el click de la fila entera. Preferimos

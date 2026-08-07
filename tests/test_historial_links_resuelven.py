@@ -81,6 +81,12 @@ def test_links_del_historial_resuelven_contra_el_url_map(app):
     ("compra", "/compras/473"),
     ("factura", "/facturas/473"),
     ("cheque", "/cheques/473"),
+    # TMT 2026-08-07 (dueña: "el link me manda a proveedores y no al posdatado
+    # que se menciona"). Decía "/proveedores" desde el primer commit — el test
+    # de arriba no lo cazaba porque /proveedores EXISTE: resolvía contra el
+    # url_map, sólo que llevaba a la pantalla equivocada. Un link puede estar
+    # roto sin dar 404.
+    ("posdat", "/posdat?id=473"),
 ])
 def test_forma_de_los_links_principales(tabla, esperado):
     from modules.historial import queries as hq
