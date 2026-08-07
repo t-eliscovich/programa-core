@@ -31,12 +31,20 @@
   .tz-3 { position: sticky; left: calc(var(--tz1) + var(--tz2));
           /* el borde del bloque fijo, para que se vea qué pasa por debajo */
           box-shadow: 2px 0 0 -1px rgb(226 232 240); }
-  /* El signo de pregunta vive escondido y aparece con el hover de la fila.
-     `visibility` y no `display` para que no corra el número al aparecer. */
-  .traza-porque { visibility: hidden; cursor: pointer; margin-right: .25rem;
-                  color: rgb(148 163 184); font-weight: 400; }
-  tr:hover .traza-porque, .traza-porque:focus { visibility: visible; }
-  .traza-porque:hover { color: rgb(30 64 175); }
+  /* 🚨 TMT 2026-08-07: *"está muy largo la flechita de trazabilidad y el signo
+     de pregunta, deberíamos tenerlo más unificado… menos lleno de cosas"*.
+     Antes había DOS controles que contestaban la misma pregunta: el caret traía
+     los documentos y el `?` traía la frase — y la frase resultó ser un resumen
+     en prosa de esas MISMAS filas, o sea la misma información dos veces detrás
+     de dos botones. Ahora hay uno solo: la hora. En reposo la grilla no tiene
+     ni un símbolo; la fila abierta se marca con una barra a la izquierda. */
+  .traza-abierta > td:first-child { box-shadow: inset 2px 0 0 rgb(30 64 175); }
+  .traza-abierta .traza-hora { font-weight: 600; }
+  /* Los renglones que cuelgan de una fila abierta llevan la misma barra, así
+     se ve dónde empieza y dónde termina el bloque sin líneas de más. */
+  tr[data-frase="1"] > td:first-child,
+  tr[data-detalle="1"] > td:first-child { box-shadow: inset 2px 0 0 rgb(191 219 254); }
+  tr[data-frase="1"] > td { color: rgb(30 41 59); white-space: normal; }
 </style>
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
 
@@ -130,23 +138,18 @@
             <a href="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                data-foto="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                aria-expanded="false" style="color:rgb(30 64 175);"
-               ><span class="traza-caret" aria-hidden="true"
-                      style="display:inline-block;width:.7rem;color:rgb(148 163 184);">&rsaquo;</span>{% if _fecha != dia.ultimo %}<span
-              style="color:rgb(148 163 184);">{{ _fecha }}</span> {% endif %}{{ _hora }}</a>{% set dia.ultimo = _fecha %}
+               ><span class="traza-hora">{% if _fecha != dia.ultimo %}<span
+              style="color:rgb(148 163 184);">{{ _fecha }}</span> {% endif %}{{ _hora }}</span></a>{% set dia.ultimo = _fecha %}
           </td>
           <td class="px-1.5 py-0.5 text-right tz-2" style="font-weight:600;position:sticky;z-index:1;background:{{ fondo }};">{{ f.utilidad | num_es(0) }}</td>
           <td class="px-1 py-0.5 text-right tz-3" style="font-weight:600;position:sticky;z-index:1;background:{{ fondo }};border-right:1px solid rgb(226 232 240);{% if f.d_utilidad is not none and f.d_utilidad < 0 %}color:rgb(185 28 28);{% elif f.d_utilidad %}color:rgb(21 128 61);{% else %}color:rgb(148 163 184);{% endif %}">
             {% if f.residuo is not none and (f.residuo | abs) >= 1 %}<span
               title="Los documentos no explican {{ f.residuo | num_es(2) }}"
               style="color:rgb(180 83 9);">▲</span>{% endif -%}
-            {# 🚨 TMT 2026-08-07: *"quiero A pero que esté hidden y no me agregue
-               un renglón más sin apretar"*. El signo aparece sólo al pasar el
-               mouse por la fila y no ocupa lugar propio: comparte celda con el
-               Δ. Al tocarlo sí aparece un renglón — pero recién ahí. #}
-            <span class="traza-porque" role="button" tabindex="0"
-                  data-frase="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
-                  title="¿Por qué?" aria-label="Por qué se movió">?</span
-            >{% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
+            {# El `?` se fue el 07/08: la frase ahora encabeza el mismo panel que
+               abre la hora. El ▲ del residuo queda como único glifo de la
+               celda, que es justo cuando se ve. #}
+            {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
           </td>
           {% for col, label in deltas %}
             {% set d = f.delta.get(col) %}
@@ -190,8 +193,9 @@
     A la derecha, el stock por etapa en <em>toneladas</em> y el $/kg del
     hilado, en gris cuando quedaron iguales que en la foto anterior. Las filas en rojo son
     bajadas de más de $ 1.000.
-    <strong>Tocá la hora</strong> y la fila se abre acá mismo con los documentos
-    que la movieron. Una cobranza aparece dos veces y netea cero —la factura
+    <strong>Tocá la hora</strong> y la fila se abre acá mismo: primero la
+    explicación en una línea y debajo los documentos que la movieron, cada
+    importe en la columna de su componente. Una cobranza aparece dos veces y netea cero —la factura
     baja, el cheque sube— porque la plata cambia de lugar sin crear resultado;
     cuando NO netea cero, esa diferencia es la noticia: una retención, un
     descuento, una nota de crédito. El <em>$/kg del hilado</em> mueve el valor
@@ -219,6 +223,9 @@
   }
   medir();
   window.addEventListener('resize', medir);
+  // Un solo control: la hora. Abre UN panel con la frase arriba y los
+  // documentos abajo. Los dos fetch salen juntos; la frase llega primero
+  // porque es una línea, y el detalle se acomoda cuando llega.
   function cerrar(fila, a) {
     var sig = fila.nextElementSibling;
     while (sig && (sig.getAttribute('data-detalle') === '1'
@@ -227,50 +234,45 @@
       muere.parentNode.removeChild(muere);
     }
     a.setAttribute('aria-expanded', 'false');
-    a.querySelector('.traza-caret').textContent = '›';
+    fila.classList.remove('traza-abierta');
   }
-  function frase(q) {
-    var fila = q.closest('tr');
-    var sig = fila.nextElementSibling;
-    if (sig && sig.getAttribute('data-frase') === '1') {
-      sig.parentNode.removeChild(sig); return;
-    }
-    fila.insertAdjacentHTML('afterend',
-      '<tr data-frase="1" class="border-t border-slate-100"><td colspan="' +
-      fila.children.length + '" class="px-3 py-1.5" ' +
-      'style="color:rgb(51 65 85);white-space:normal;">buscando…</td></tr>');
-    var celda = fila.nextElementSibling.querySelector('td');
-    fetch(q.getAttribute('data-frase') + '?frase=1', { credentials: 'same-origin' })
-      .then(function (r) { return r.text(); })
-      .then(function (t) { celda.textContent = t || 'Sin nada que contar.'; })
-      .catch(function () { celda.textContent = 'No se pudo traer la explicación.'; });
+  function filaFrase(fila, texto) {
+    return '<tr data-frase="1" class="border-t border-slate-100">' +
+      '<td colspan="' + fila.children.length + '" class="px-3 py-1.5">' +
+      texto + '</td></tr>';
   }
   tabla.addEventListener('click', function (ev) {
-    var q = ev.target.closest ? ev.target.closest('.traza-porque') : null;
-    if (q) { ev.preventDefault(); frase(q); return; }
     var a = ev.target.closest ? ev.target.closest('a[data-foto]') : null;
     if (!a) { return; }
     ev.preventDefault();
     var fila = a.closest('tr');
     var sig = fila.nextElementSibling;
-    if (sig && sig.getAttribute('data-detalle') === '1') { cerrar(fila, a); return; }
+    if (sig && (sig.getAttribute('data-frase') === '1'
+                || sig.getAttribute('data-detalle') === '1')) {
+      cerrar(fila, a); return;
+    }
     a.setAttribute('aria-expanded', 'true');
-    a.querySelector('.traza-caret').textContent = '˅';
-    fila.insertAdjacentHTML('afterend',
-      '<tr data-detalle="1" class="border-t border-slate-100">' +
-      '<td colspan="' + fila.children.length + '" class="px-1.5 py-1" ' +
-      'style="color:rgb(148 163 184);">buscando…</td></tr>');
-    fetch(a.getAttribute('data-foto') + '?fragmento=1', { credentials: 'same-origin' })
+    fila.classList.add('traza-abierta');
+    var base = a.getAttribute('data-foto');
+    fila.insertAdjacentHTML('afterend', filaFrase(fila, 'buscando\u2026'));
+    var celda = fila.nextElementSibling.querySelector('td');
+    fetch(base + '?frase=1', { credentials: 'same-origin' })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { celda.textContent = t || 'Sin nada que contar.'; })
+      .catch(function () { celda.textContent = 'No se pudo traer la explicación.'; });
+    fetch(base + '?fragmento=1', { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
       .then(function (html) {
-        cerrar(fila, a);
-        a.setAttribute('aria-expanded', 'true');
-        a.querySelector('.traza-caret').textContent = '˅';
-        fila.insertAdjacentHTML('afterend', html);
+        var frase = fila.nextElementSibling;
+        if (!frase || frase.getAttribute('data-frase') !== '1') { return; }
+        frase.insertAdjacentHTML('afterend', html);
       })
       .catch(function () {
-        var t = fila.nextElementSibling;
-        if (t) { t.querySelector('td').textContent = 'no se pudo traer el detalle'; }
+        var frase = fila.nextElementSibling;
+        if (frase) {
+          frase.insertAdjacentHTML('afterend',
+            filaFrase(fila, 'no se pudo traer el detalle'));
+        }
       });
   });
 })();
