@@ -647,3 +647,100 @@ def test_matriz_editable_no_rompe_con_decimal_desde_postgres(app, fake_db, monke
     assert 'value="9,12"' in html
     # SCUBA plano: 11,25 x 1,15 = 12,9375 -> "12,94"
     assert 'value="12,94"' in html
+
+
+# ---------------------------------------------------------------------------
+# La hoja impresa contra PRECIOS.DBF (migración 0177)
+#
+# TMT 2026-08-07, la dueña: "tenemos algunos centavos distintos del dbase en
+# precios" → "pone los centavos como dbase".
+#
+# La matriz se guarda NETA y la hoja re-multiplica por 1,15. Cuando la columna
+# era numeric(9,2) el neto exacto no entraba (10,77 / 1,15 = 9,3652 se guardaba
+# 9,37) y volvía un centavo cambiado. Cuatro celdas de 55 salían distintas del
+# dBase: JASPEADOS/PIQUE, FUERTES/PIQUE, FUERTES/CUELLOS y FUERTES/LYCRA.
+#
+# Este test congela las 55 celdas del papel contra PRECIOS.DBF — la última
+# lista que emitió el dBase antes de retirarse (DBF actualizado el 28/04/2026).
+# Si alguien vuelve a bajar la precisión de la matriz, o toca el redondeo del
+# IVA, acá se cae.
+# ---------------------------------------------------------------------------
+
+# Lo que imprimía el dBase, CON IVA 15% (una fila por clase, en el orden de
+# queries.TELAS). MEDICAL no está: salió de la lista el 04/08/2026.
+_HOJA_DBASE = {
+    1: [9.12, 9.23, 9.28, 8.35, 9.81, 12.43, 11.95, 9.44, 8.88, 8.88, 8.88],
+    2: [9.84, 9.94, 9.40, 8.35, 10.55, 13.17, 12.73, 9.56, 8.88, 8.88, 8.88],
+    3: [10.57, 10.67, 9.81, 8.35, 11.32, 13.89, 12.73, 9.99, 8.88, 8.88, 8.88],
+    4: [10.66, 10.77, 9.51, 8.35, 11.01, 13.63, 12.73, 10.41, 8.88, 8.88, 8.88],
+    5: [11.29, 11.39, 10.48, 8.35, 12.09, 14.61, 13.15, 10.64, 8.88, 8.88, 8.88],
+}
+
+# Los NETOS que deja la migración 0177 en scintela.precios. Los cuatro con 4
+# decimales son los que no entraban en numeric(9,2).
+_NETOS = {
+    1: [7.93, 8.03, 8.07, 7.26, 8.53, 10.81, 10.39, 8.21, 7.72, 7.72, 7.72],
+    2: [8.56, 8.64, 8.17, 7.26, 9.17, 11.45, 11.07, 8.31, 7.72, 7.72, 7.72],
+    3: [9.19, 9.28, 8.53, 7.26, 9.84, 12.08, 11.07, 8.69, 7.72, 7.72, 7.72],
+    4: [9.27, 9.3652, 8.27, 7.26, 9.57, 11.85, 11.07, 9.05, 7.72, 7.72, 7.72],
+    5: [9.82, 9.9043, 9.11, 7.26, 10.51, 12.7043, 11.4348, 9.25, 7.72, 7.72, 7.72],
+}
+
+_CLASES = {1: "BLANCO", 2: "BAJOS", 3: "MEDIOS", 4: "JASPEADOS", 5: "FUERTES"}
+
+
+def _filas_como_la_0177():
+    cols = [c for c, _ in queries.TELAS]
+    return [
+        {"clase": c, "descripcio": _CLASES[c], **dict(zip(cols, _NETOS[c]))}
+        for c in sorted(_NETOS)
+    ]
+
+
+def test_la_hoja_imprime_exactamente_los_precios_del_dbase():
+    """Las 55 celdas del papel, una por una, contra PRECIOS.DBF."""
+    cols = [c for c, _ in queries.TELAS]
+    tabla = queries.tabla_impresion(_filas_como_la_0177(), 0, con_iva=True)
+    distintas = [
+        f"{_CLASES[f['clase']]}/{cols[i].upper()}: "
+        f"hoja {f['valores'][i]:.2f} vs dBase {_HOJA_DBASE[f['clase']][i]:.2f}"
+        for f in tabla
+        for i in range(len(cols))
+        if abs(f["valores"][i] - _HOJA_DBASE[f["clase"]][i]) >= 0.005
+    ]
+    assert not distintas, "la hoja se despegó del dBase: " + "; ".join(distintas)
+
+
+@pytest.mark.parametrize(
+    "clase,col,neto",
+    [(4, "pique", 9.3652), (5, "pique", 9.9043),
+     (5, "cuellos", 12.7043), (5, "lycra", 11.4348)],
+)
+def test_los_cuatro_netos_necesitan_mas_de_dos_decimales(clase, col, neto):
+    """Con el neto recortado a 2 decimales la hoja da un centavo distinto.
+
+    Es la prueba de que la 0177 tenía que agrandar la columna y no alcanzaba
+    con reescribir el número: si algún día alguien vuelve a numeric(9,2), este
+    test explica qué se rompe.
+    """
+    i = [c for c, _ in queries.TELAS].index(col)
+    esperado = _HOJA_DBASE[clase][i]
+    fila = dict(_filas_como_la_0177()[clase - 1])
+
+    con_4 = queries.tabla_impresion([fila], 0, con_iva=True)[0]["valores"][i]
+    assert abs(con_4 - esperado) < 0.005
+
+    fila[col] = round(neto, 2)
+    con_2 = queries.tabla_impresion([fila], 0, con_iva=True)[0]["valores"][i]
+    assert abs(con_2 - esperado) >= 0.005
+
+
+def test_un_aumento_general_no_aplasta_los_decimales():
+    """`subir_porcentaje` y `sumar_monto` redondean a 4, no a 2.
+
+    Si vuelven a 2, el próximo aumento de lista se lleva puesta la corrección
+    de la 0177 en silencio y reaparecen los centavos.
+    """
+    fuente = __import__("inspect").getsource(queries)
+    assert "ROUND({col} * %(factor)s::numeric, 4)" in fuente
+    assert "ROUND({col} + %(monto)s::numeric, 4)" in fuente

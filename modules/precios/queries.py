@@ -66,12 +66,17 @@ def subir_porcentaje(pct: float, usuario: str) -> None:
     """Sube TODOS los precios de la matriz un `pct` % (× (1 + pct/100)).
 
     Es la forma normal de actualizar la lista: se aplica a las 12 columnas de
-    tela en todas las clases de color, redondeando a 2 decimales. Las celdas
+    tela en todas las clases de color, redondeando a 4 decimales. Las celdas
     vacías (NULL) quedan como están.
+
+    🚨 Cuatro decimales, no dos (migración 0177): la matriz se guarda NETA
+    y la hoja la re-multiplica por 1,15. Con dos decimales el redondeo se
+    come hasta un centavo al volver — así fue como 4 celdas dejaron de dar
+    igual que el dBase.
     """
     factor = 1.0 + (float(pct) / 100.0)
     sets = ", ".join(
-        f"{col} = ROUND({col} * %(factor)s::numeric, 2)" for col, _ in TELAS
+        f"{col} = ROUND({col} * %(factor)s::numeric, 4)" for col, _ in TELAS
     )
     db.execute(
         f"""
@@ -102,10 +107,11 @@ def sumar_monto(monto: float, usuario: str) -> None:
 
     Alternativa al aumento porcentual: agrega el mismo importe (p.ej. 0,10 =
     diez centavos) a las 12 columnas de tela en todas las clases, redondeando a
-    2 decimales. Las celdas vacías (NULL) quedan como están (NULL + n = NULL).
+    4 decimales (ver `subir_porcentaje`). Las celdas vacías (NULL) quedan como
+    están (NULL + n = NULL).
     """
     sets = ", ".join(
-        f"{col} = ROUND({col} + %(monto)s::numeric, 2)" for col, _ in TELAS
+        f"{col} = ROUND({col} + %(monto)s::numeric, 4)" for col, _ in TELAS
     )
     db.execute(
         f"""
