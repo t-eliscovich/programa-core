@@ -348,3 +348,22 @@ def test_el_hecho_con_nombre_le_gana_a_la_carga_del_banco():
                           concepto="COMISIONES E IMPUESTOS",
                           metadata={"no_banco": 10})])
     assert ev.indice(evs, cuentas)["b10"]["tipo"] == "nota_debito"
+
+
+def test_las_retenciones_revertidas_van_en_un_renglon():
+    """🚨 TMT 2026-08-07, viendo ocho "RT TNZ ✗ FA" seguidos: *"esto también
+    juntalo, retenciones es un solo movimiento"*. La DESaplicada no lleva
+    `batch_id` —la aplicada sí, por eso ésa ya salía junta— así que caía de a
+    una. Cuenta FACTURAS y no nombra al cliente: son todas del mismo.
+    """
+    filas = [_ev("retencion_asinfo_desaplicada", "factura", 8000 + i,
+                 "factura", 8000 + i, importe=v)
+             for i, v in enumerate([174.0, 140.0, 129.0, 78.0, 68.0, 38.0])]
+    idx = ev.indice(_con_label(filas))
+    movs = [{"doc_id": f"f{8000 + i}", "componente": "facturas", "aporte": v,
+             "regla": "Factura corregida en más",
+             "etiqueta": f"Factura {i} · TNZ", "familia": "traspaso"}
+            for i, v in enumerate([174.0, 140.0, 129.0, 78.0, 68.0, 38.0])]
+    g = t.resumir(movs, 627.0, idx)[0]
+    assert g["texto"] == "retenciones revertidas · 6 facturas"
+    assert g["aporte"] == 627.0

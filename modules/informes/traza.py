@@ -621,9 +621,18 @@ def _abreviar_etapas(texto: str) -> str:
 #: renglón más repetido (51 de ~300) y `cheque_aplicado_a_factura` el que arma
 #: las ventanas largas. Los demás tipos siguen con un renglón por hecho: una
 #: nota de débito o una compra pasan de a una y ahí el detalle SÍ importa.
+#: tipo → (rótulo, unidad). Con unidad, el renglón cuenta en esa unidad y no
+#: nombra clientes: *"retenciones revertidas · 8 facturas"*. Sin unidad, cuenta
+#: hechos y nombra a los tres que más pesan: *"4 FA · JVL, AJT, NIF +1"*.
 TIPOS_QUE_SE_JUNTAN = {
-    "factura_emitida": "FA",
-    "cheque_aplicado_a_factura": "CH → FA",
+    "factura_emitida": ("FA", ""),
+    "cheque_aplicado_a_factura": ("CH → FA", ""),
+    # 🚨 TMT 2026-08-07, viendo ocho renglones seguidos de "RT TNZ ✗ FA":
+    # *"esto también juntalo, retenciones es un solo movimiento"*. La
+    # DESaplicada no lleva `batch_id` —la aplicada sí, por eso ésa ya salía en
+    # un renglón— así que caía de a una.
+    "retencion_asinfo_desaplicada": ("retenciones revertidas", "facturas"),
+    "reverso_retencion_asinfo_aplicada": ("retenciones revertidas", "facturas"),
 }
 
 
@@ -728,12 +737,15 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             # de la etiqueta.
             quien = (md.get("codigo_prov") or (quienes[0] if quienes else ""))
             if ev["tipo"] in TIPOS_QUE_SE_JUNTAN and len(g["hechos"]) > 1:
-                nombres = ", ".join(quienes[:3])
-                if len(quienes) > 3:
-                    nombres += f" +{len(quienes) - 3}"
-                g["texto"] = (f"{len(g['hechos'])} "
-                              f"{TIPOS_QUE_SE_JUNTAN[ev['tipo']]}"
-                              + (f" · {nombres}" if nombres else ""))
+                rotulo, unidad = TIPOS_QUE_SE_JUNTAN[ev["tipo"]]
+                if unidad:
+                    g["texto"] = f"{rotulo} · {len(g['hechos'])} {unidad}"
+                else:
+                    nombres = ", ".join(quienes[:3])
+                    if len(quienes) > 3:
+                        nombres += f" +{len(quienes) - 3}"
+                    g["texto"] = (f"{len(g['hechos'])} {rotulo}"
+                                  + (f" · {nombres}" if nombres else ""))
                 cerrado = True
             elif ev.get("texto"):
                 # El evento ya trae su renglón escrito (la cuenta bancaria con
