@@ -257,18 +257,29 @@ def _stat_tras_retencion(saldo: float, abono: float, stat_previo: str = "") -> s
     aplicador siguió poniendo 'A' a mano, sin mirar si había abono, y el estado
     quedó mintiendo.
 
-        saldo ≈ 0        → 'T' (cancelada; la retención la terminó de cubrir)
+        |saldo| ≈ 0      → 'T' (cancelada; la retención la terminó de cubrir)
+        saldo NEGATIVO   → 'A' (crédito a favor VIVO — no está cancelada)
         hay abono        → 'A'
         sin abono        → 'Z'
 
     Devuelve lo que los números DICEN, no lo que la factura traía: si el abono
     es 0, el estado es Z aunque estuviera en 'A'. Hace falta así para separar la
-    retención del abono — ahí el abono se va y la 'A' se queda sin sustento (126
+    retención del abono — ahí el abono se va y la 'A' se queda sin sustento (125
     facturas de enero a mayo son ese caso exacto). `stat_previo` sólo se usa
     para no inventar un estado cuando la fila viene sin ninguno.
+
+    🚨 El saldo NEGATIVO va por valor absoluto a propósito. Con `saldo <= 0`
+    los sobrepagos caían en 'T' y el crédito del cliente DESAPARECÍA de la
+    cartera y del estado de cuenta (las T no se listan). Es exactamente el bug
+    que la dueña hizo arreglar el 01/07/2026 en la aplicación de cheques
+    (*"el crédito −42,08 se iba a 'T' y desaparecía"*), y volvió a entrar por
+    acá el 07/08: 4 facturas de DSN y JEB con $886,44 a favor se marcaron
+    canceladas. Una factura con saldo a favor está VIVA.
     """
-    if saldo <= 0.005:
+    if abs(saldo) <= 0.005:
         return "T"
+    if saldo < 0:
+        return "A"
     if abono > 0.005:
         return "A"
     return "Z"

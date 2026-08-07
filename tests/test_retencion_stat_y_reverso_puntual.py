@@ -30,6 +30,12 @@ import pytest
     # Estaba en 'A' pero el abono es 0: la 'A' no se sostiene. Es el caso de
     # las que pierden el abono al separarles la retención (07/08).
     (100.0, 0.0, "A", "Z"),
+    # 🚨 SOBREPAGO: el cliente tiene saldo a FAVOR. La factura está viva, no
+    # cancelada. Con `saldo <= 0` caía en 'T' y el crédito desaparecía de la
+    # cartera y del estado de cuenta — el mismo bug que se arregló el 01/07 en
+    # los cheques y que volvió a entrar por acá (4 facturas, $886,44).
+    (-262.32, 0.0, "A", "A"),
+    (-0.004, 0.0, "A", "T"),     # centavos: eso sí es cancelada
 ])
 def test_stat_tras_retencion(saldo, abono, previo, esperado):
     from modules.retenciones.queries import _stat_tras_retencion
