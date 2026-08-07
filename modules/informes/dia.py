@@ -411,14 +411,25 @@ def _etapa(desde: dict, hasta: dict, et: str) -> dict:
 
 def resumen(fecha=None) -> dict:
     """El día contado como se lo cuenta a un accionista: qué se produjo, qué se
-    vendió, cuánto cambió de valor la tela y qué quedó de resultado."""
+    vendió, cuánto cambió de valor la tela y qué quedó de resultado.
+
+    🚨 TMT 2026-08-07: la ventana es la MISMA que la de la pantalla —
+    `ventana()`, cierre de ayer contra cierre de hoy, 24 h—. Antes esta
+    función comparaba la primera contra la última foto del MISMO día
+    (07:00→18:00, once horas): la misma ventana de doce horas que `ventana()`
+    había corregido el 05/08 por dejar afuera el turno noche. El error no se
+    veía en pantalla porque el Δ utilidad grande sale de `explicar()`, que sí
+    usaba `ventana()`; asomó cuando la nota del cierre por mail empezó a salir
+    de acá y decía un "Hoy" distinto al de la pantalla, y encima siempre con
+    el cartel *"tramo corto, no son 24 h"* — porque con las dos puntas del
+    mismo día `dia_parcial` daba True SIEMPRE.
+    """
     fecha = fecha or hoy_ec()
-    caps = capturas(fecha)
     out = {"fecha": fecha, "ok": False, "dia_parcial": False,
            "etapas": [], "frases": []}
-    if len(caps) < 2:
+    d, h = ventana(fecha)
+    if not d or not h:
         return out
-    d, h = caps[0], caps[-1]
     v, c = ventas_del_dia(fecha), compras_del_dia(fecha)
 
     etapas = {}

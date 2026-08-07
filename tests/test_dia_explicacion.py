@@ -848,6 +848,57 @@ def test_resumen_sin_dos_capturas_no_dice_nada():
         assert dia.resumen(date(2026, 8, 4))["ok"] is False
 
 
+def test_el_resumen_usa_LA_MISMA_ventana_de_24_h_que_la_pantalla():
+    """🚨 TMT 2026-08-07. `resumen()` arrancaba en la PRIMERA foto de hoy
+    (07:00) y la pantalla en el cierre de AYER: dos "Hoy" distintos en el
+    mismo producto. Se ve acá: la utilidad de ayer al cierre es 100, la de
+    las 07:00 de hoy 130 y la del cierre de hoy 180. El día son 80, no 50."""
+    ayer = _cap(100.0, fecha_ec=date(2026, 8, 3))
+    hoy = [_cap(130.0, fecha_ec=date(2026, 8, 4)),
+           _cap(180.0, fecha_ec=date(2026, 8, 4))]
+    with patch.object(dia, "capturas", return_value=hoy), \
+         patch.object(dia, "_rows", return_value=[ayer]), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["ok"] is True
+    assert r["d_utilidad"] == 80.0
+    # Y con cierre de ayer el tramo SÍ son 24 h: el cartel de "tramo corto" no
+    # puede salir siempre, o deja de querer decir algo.
+    assert r["dia_parcial"] is False
+
+
+def test_sin_cierre_de_ayer_el_resumen_avisa_que_el_tramo_es_corto():
+    """El otro lado del mismo invariante: si no hay foto de ayer (server
+    caído, primer día), el tramo es más corto y se marca."""
+    hoy = [_cap(130.0, fecha_ec=date(2026, 8, 4)),
+           _cap(180.0, fecha_ec=date(2026, 8, 4))]
+    with patch.object(dia, "capturas", return_value=hoy), \
+         patch.object(dia, "_rows", return_value=[]), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["ok"] is True and r["d_utilidad"] == 50.0
+    assert r["dia_parcial"] is True
+
+
+def test_a_media_manana_la_nota_del_mail_ya_tiene_algo_que_decir():
+    """Con UNA sola foto de hoy y el cierre de ayer ya hay ventana: antes
+    `resumen()` pedía dos del MISMO día y la vista previa de
+    /informes/dia/nota quedaba en blanco toda la mañana."""
+    ayer = _cap(100.0, fecha_ec=date(2026, 8, 3))
+    hoy = [_cap(130.0, fecha_ec=date(2026, 8, 4))]
+    with patch.object(dia, "capturas", return_value=hoy), \
+         patch.object(dia, "_rows", return_value=[ayer]), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["ok"] is True and r["d_utilidad"] == 30.0
+
+
 def test_las_ventas_del_dia_excluyen_anuladas():
     with patch.object(dia, "_rows", return_value=[{"n": 3, "kg": 10, "us": 100}]) as rows:
         v = dia.ventas_del_dia(date(2026, 8, 4))
