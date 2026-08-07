@@ -366,8 +366,8 @@
         <label for="papel" class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Papel</label>
         <select name="papel" id="papel" onchange="this.form.submit()"
                 class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-100">
-          <option value="v" {% if not apaisado %}selected{% endif %}>Vertical</option>
           <option value="h" {% if apaisado %}selected{% endif %}>Horizontal</option>
+          <option value="v" {% if not apaisado %}selected{% endif %}>Vertical</option>
         </select>
       </div>
     </form>
@@ -418,7 +418,7 @@
             <th style="text-align:left; padding:6px 4px; font-size:9.5px; font-weight:600; letter-spacing:.06em;
                        text-transform:uppercase; color:#64748b; border-bottom:1.5px solid #94a3b8;">Color</th>
             {% for c in opciones %}
-            <th style="text-align:right; padding:6px 3px; font-size:9.5px; font-weight:600; letter-spacing:0;
+            <th style="text-align:center; padding:6px 3px; font-size:9.5px; font-weight:600; letter-spacing:0;
                        color:#64748b; border-bottom:1.5px solid #94a3b8;">{{ c.label }}</th>
             {% endfor %}
           </tr>
@@ -430,7 +430,7 @@
                 style="padding:6px 4px; font-weight:600; color:#0f172a;
                        border-bottom:1px solid #e2e8f0; white-space:nowrap;">{{ f.descripcio }}</td>
             {% for v in f.valores %}
-            <td style="padding:6px 3px; text-align:right; color:#0f172a;
+            <td style="padding:6px 3px; text-align:center; color:#0f172a;
                        border-bottom:1px solid #e2e8f0; white-space:nowrap;">
               {% if v is not none %}{{ v | num_es }}{% else %}<span style="color:#cbd5e1;">–</span>{% endif %}
             </td>
@@ -469,8 +469,13 @@
      van las VERTICALES, en gris claro, para que la hoja se lea como una
      grilla (pedido de la dueña 07/08). Por clase y no inline porque en print
      base.html le gana a un `style=`. Sin marco exterior: sólo las internas. */
-  .hoja-precios table th + th,
-  .hoja-precios table td + td { border-left: 1px solid #e2e8f0 !important; }
+  /* 🚨 El `:root` NO es decorativo: base.html trae
+     `:root:not(.dark) table, th, td { border-color: #0f172a !important }`, que
+     con (0,2,1) le gana a `.hoja-precios table td + td` (0,1,3) — sin él las
+     líneas salían NEGRAS en el papel aunque acá dijera gris. Verificado con
+     getComputedStyle sobre la hoja viva, no a ojo. */
+  :root .hoja-precios table th + th,
+  :root .hoja-precios table td + td { border-left: 1px solid #e2e8f0 !important; }
 
   @media print {
     /* Del resto de la pantalla (matriz, descuentos, botones) no va NADA al
@@ -494,12 +499,6 @@
     .hoja-precios h1 { font-size: 17pt !important; }
     @page { size: A4 landscape; margin: 10mm; }
     {% else %}
-    /* Vertical: el ancho es lo que manda (hoy son 16 columnas). Con anchos
-       fijos y parejos la tabla ya no puede desbordar el papel: cada tela se
-       lleva 91,5/15 = 6,1% del ancho útil (≈45 px en A4 con márgenes de
-       6 mm). Lo que sí hay que cuidar es que el CONTENIDO entre en esos
-       45 px — de ahí estos cuerpos, medidos en Chrome sobre la hoja viva.
-       Al agregar una tela, RE-MEDIR: el recorte no se ve desde la pantalla. */
     /* Vertical: queda como opción, pero con 16 columnas el papel da 733 px
        (≈45 por tela) y ahí no entra un título como ALEMANIA. La letra baja y
        los títulos largos cortan en dos líneas en vez de pisarse. Para
