@@ -54,8 +54,16 @@
          propia cae en la tercera, pegado a él. Antes se iba al borde derecho
          de la tabla, fuera de la pantalla (TMT 2026-08-06: *"resto no sé qué
          es y se me va de la tabla"*). #}
-      <td colspan="2" class="px-1.5 py-1"
-          style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;
+      {# 🚨 TMT 2026-08-07: el concepto vivía en dos columnas cuyo ancho lo
+         fijan el reloj y la utilidad —202 px medidos— para textos que piden
+         447: "BC · GAS PADILLA EXPRES, GAS QUILUMBA, GS ECUACOPIA +1" se
+         cortaba justo donde dice QUÉ fue, que es toda la noticia. Ahora se
+         lleva también la columna del Δ y, si aun así no entra, DOBLA en vez
+         de truncar: un renglón de dos líneas se lee, uno cortado con "…" no.
+         El importe sin columna propia se corre a la columna "Otros", que
+         estaba vacía. #}
+      <td colspan="3" class="px-1.5 py-1"
+          style="white-space:normal;line-height:1.25;
                  background:#fff;box-shadow:inset 3px 0 0 rgb(226 232 240);"
           data-tz="1"
           {# 🚨 `g.titulo` se calculaba desde el 07/08 y el template mostraba
@@ -64,9 +72,6 @@
           title="{{ g.titulo or g.texto }}">
         <span style="color:rgb(203 213 225);padding-left:.35rem;">└</span>
         {% if g.url %}<a href="{{ g.url }}" style="color:rgb(30 64 175);">{{ g.texto }}</a>{% else %}{{ g.texto }}{% endif %}
-      </td>
-      <td class="px-1 py-1 text-right tz-3" style="background:#fff;{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-        {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
       </td>
       {% for col, label in deltas %}
         {% set v = (g.por_col | default({})).get(col) %}
@@ -81,9 +86,12 @@
          etapa: no hace falta que coincidan (nunca coinciden del todo) y la
          diferencia queda a la vista sin explicarla de más. #}
       {% set pinta_kg = (g.col == 'vsto' and not visto.stock) %}
-      {# la columna "Otros" de la grilla: acá el importe sin columna propia ya
-         salió pegado al concepto, así que va vacía #}
-      <td></td>
+      {# la columna "Otros" de la grilla: acá cae el importe que no tiene
+         columna propia (el resto, los movimientos chicos). #}
+      <td class="px-1 py-1 text-right"
+          style="{% if not propia %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+        {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
+      </td>
       {# 🚨 Sólo el renglón del stock usa las tres columnas de kilos. En los
          demás iban tres celdas vacías con su filete a la izquierda, y en un
          detalle de seis renglones eso dibujaba una raya vertical larga
