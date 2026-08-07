@@ -261,15 +261,30 @@
     var base = a.getAttribute('data-foto');
     fila.insertAdjacentHTML('afterend', filaAviso(fila, 'buscando\u2026'));
     var espera = fila.nextElementSibling;
-    fetch(base + '?fragmento=1', { credentials: 'same-origin' })
-      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
-      .then(function (html) {
-        espera.insertAdjacentHTML('afterend', html);
-        espera.parentNode.removeChild(espera);
-      })
-      .catch(function () {
-        espera.querySelector('td').textContent = 'no se pudo traer el detalle';
-      });
+    // 🚨 TMT 2026-08-07, dos veces: *"todo dice esto: no se pudo traer el
+    // detalle"*. Un deploy reinicia la app y corta los fetch abiertos —
+    // segundos, pero la pantalla se llenaba de errores y parecía rota. Un
+    // reintento a los dos segundos tapa la ventana del reinicio; si el segundo
+    // también falla, ahí sí es un problema y lo dice.
+    function traer(reintento) {
+      fetch(base + '?fragmento=1', { credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
+        .then(function (html) {
+          if (!espera.parentNode) { return; }
+          espera.insertAdjacentHTML('afterend', html);
+          espera.parentNode.removeChild(espera);
+        })
+        .catch(function () {
+          if (!espera.parentNode) { return; }
+          if (reintento) {
+            espera.querySelector('td').textContent = 'no se pudo traer el detalle';
+            return;
+          }
+          espera.querySelector('td').textContent = 'reintentando\u2026';
+          setTimeout(function () { traer(true); }, 2000);
+        });
+    }
+    traer(false);
   });
 })();
 </script>
