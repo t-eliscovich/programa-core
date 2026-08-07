@@ -178,26 +178,47 @@ def _grupo_por_meta(r: dict) -> str:
 def _varios(conceptos: list[str], n: int) -> str:
     """El renglón de una cuenta con VARIOS movimientos.
 
-    🚨 TMT 2026-08-07: *"banco no sé qué movimiento es todavía"*. Decía
-    "BC · 3 movimientos" y los conceptos —que son lo único que identifica al
-    movimiento— vivían en el tooltip, donde no se ven. Van en el renglón: si
-    no entran, se cortan con "+N", que sigue siendo más que un número pelado.
+    🚨 TMT 2026-08-07: *"banco no sé qué movimiento es todavía"*. Decía "BC · 3
+    movimientos" y los conceptos —que son lo único que identifica al
+    movimiento— vivían en el tooltip, donde no se ven.
+
+    🚨 Y después: once movimientos daban *"BC · Anticipo USD AI $ 314.96 (ND
+    Pichincha), Anticipo USD AI $ 251.75 (ND Pichincha), Anticipo USD AI
+    $ 304.20 (ND Pichincha) +8"* — el mismo concepto tres veces, con el importe
+    adentro. Los que empiezan igual se dicen UNA vez y se cuentan; los sueltos
+    van tal cual. El primer intento resumía sólo si TODOS compartían prefijo, y
+    en la ventana real había ocho anticipos y tres gastos de CC: no compartían
+    nada y no resumía nada.
     """
     vistos = [c for c in dict.fromkeys(conceptos) if c]
     if not vistos:
         return f"BC · {n} movimientos"
-    # 🚨 Once anticipos en dólares el mismo minuto daban "BC · Anticipo USD AI
-    # $ 314.96 (ND Pichincha), Anticipo USD AI $ 251.75 (ND Pichincha),
-    # Anticipo USD AI $ 304.20 (ND Pichincha) +8": el mismo concepto tres
-    # veces, con el importe adentro, y el renglón ilegible. Cuando todos
-    # empiezan igual se dice una vez y se cuenta.
-    comun = _prefijo_comun(vistos)
-    if comun and len(vistos) > 1:
-        return f"BC · {len(vistos)} × {comun}"
-    texto = "BC · " + ", ".join(vistos[:3])
-    if len(vistos) > 3:
-        texto += f" +{len(vistos) - 3}"
-    return texto
+    grupos: dict[str, list[str]] = {}
+    for c in vistos:
+        grupos.setdefault(" ".join(c.split()[:2]).upper(), []).append(c)
+    partes = []
+    for miembros in grupos.values():
+        if len(miembros) > 1:
+            rot = _prefijo_comun(miembros) or " ".join(miembros[0].split()[:2])
+            partes.append((len(miembros), f"{len(miembros)} × {rot}"))
+        else:
+            partes.append((1, miembros[0]))
+    # El grupo más grande primero — es la regla de toda la pantalla — y a
+    # igualdad de tamaño, el texto más corto: entran más antes del "+N".
+    partes = [p for _n, p in sorted(partes, key=lambda x: (-x[0], len(x[1])))]
+    texto, sobran = "BC · ", 0
+    for k, parte in enumerate(partes):
+        if len(texto) + len(parte) > ANCHO_RENGLON and k:
+            sobran = len(partes) - k
+            break
+        texto += ("" if texto.endswith("· ") else ", ") + parte
+    return texto + (f" +{sobran}" if sobran else "")
+
+
+#: Hasta dónde se estira el renglón de la cuenta antes de cortar con "+N". La
+#: columna del concepto se lleva tres columnas y dobla, así que entra bastante
+#: — pero un renglón de cuatro líneas ya es un párrafo.
+ANCHO_RENGLON = 62
 
 
 #: Con menos de esto el "prefijo común" es una coincidencia ("GS ", "CC ") y
@@ -327,8 +348,10 @@ def transacciones(desde, hasta) -> dict[str, dict]:
             texto = " · ".join(x for x in (que, conceptos[0]) if x)
         else:
             texto = _varios(conceptos, len(lista))
+        # El ancho lo controla `_varios`: cortar acá dejaba el renglón partido
+        # al medio de una palabra y sin el "+N" que avisa que falta algo.
         out[doc] = {"tipo": "banco_cargado", "grupo": doc, "docs": [doc],
-                    "label": "Movimiento de banco", "texto": texto[:60],
+                    "label": "Movimiento de banco", "texto": texto,
                     "concepto": " · ".join(dict.fromkeys(conceptos)),
                     "meta": {}, "dia": lista[0].get("dia")}
     return out

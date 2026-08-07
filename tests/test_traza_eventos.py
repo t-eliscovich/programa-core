@@ -566,13 +566,32 @@ def test_no_se_unen_dos_patas_si_el_par_es_ambiguo():
     assert len(t.resumir(movs, -500.0, {})) == 3
 
 
-def test_una_cuenta_con_muchos_movimientos_corta_en_tres():
+def test_una_cuenta_con_muchos_movimientos_corta_con_mas_n():
+    """El renglón se estira hasta `ANCHO_RENGLON` y corta con "+N": la columna
+    del concepto dobla, pero un renglón de cuatro líneas ya es un párrafo."""
     filas = [{"no_banco": 10, "documento": "ND", "importe": -1.0,
               "concepto": c, "dia": "2026-08-07"}
-             for c in ("GS ALMAGRO", "GS LICENCIA", "KK ARAUJO", "GS LUZ")]
+             for c in ("GS ALMAGRO SEGURIDAD", "GS LICENCIA ANUAL",
+                       "KK ARAUJO MONTACARGA", "CC MEDIO AMBIENTE")]
     with patch.object(ev.db, "fetch_all", return_value=filas):
         cuentas = ev.transacciones("a", "b")
-    assert cuentas["b10"]["texto"] == "BC · GS ALMAGRO, GS LICENCIA, KK ARAUJO +1"
+    txt = cuentas["b10"]["texto"]
+    assert txt.startswith("BC · ") and txt.endswith("+1"), txt
+    assert len(txt) <= ev.ANCHO_RENGLON + 4, txt
+
+
+def test_el_grupo_mas_grande_de_la_cuenta_va_primero():
+    """Ocho anticipos y tres gastos sueltos: el bloque de ocho encabeza. Es la
+    misma regla que en el resto de la pantalla."""
+    conceptos = [f"Anticipo USD AI $ {v} (ND Pichincha)" for v in
+                 (314.96, 251.75, 304.20, 332.41, 306.70, 312.28)]
+    conceptos += ["CC MERA ARREGLO GENERADOR", "CC ING MORA"]
+    filas = [{"no_banco": 10, "documento": "ND", "importe": -1.0,
+              "concepto": c, "dia": "2026-08-07"} for c in conceptos]
+    with patch.object(ev.db, "fetch_all", return_value=filas):
+        cuentas = ev.transacciones("a", "b")
+    assert cuentas["b10"]["texto"].startswith("BC · 6 × Anticipo USD"), \
+        cuentas["b10"]["texto"]
 
 
 def test_una_cuenta_sin_conceptos_cae_al_numero():
