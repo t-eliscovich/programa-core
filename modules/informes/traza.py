@@ -743,16 +743,6 @@ def una(id_traza: int) -> dict | None:
     fila = con_deltas(par)[0]
     fila["anterior"] = par[1] if len(par) > 1 else None
     movs = movimientos(id_traza)
-    # 🚨 Primero el HECHO con nombre, la firma por componentes como fallback.
-    # `mov_doble` ya guarda qué pasó (cobranza, depósito, anticipo que cancela
-    # un cheque) con cliente, documento e importe; la traza lo re-deducía de
-    # los saldos y por eso salían adivinanzas tipo "Cheque depositado o dado de
-    # baja". Ver modules/informes/catalogo.py. Fail-soft: sin hechos, queda lo
-    # de siempre.
-    from modules.informes import catalogo as _cat
-    _ant = par[1] if len(par) > 1 else None
-    movs = _cat.aplicar(movs, (_ant or {}).get("creado_en"),
-                        par[0].get("creado_en"))
     fila["movimientos"] = movs
 
 
