@@ -120,18 +120,6 @@
   {# TMT 2026-05-19 v7 — pedido dueña: "filtro de proveedor antes que
      concepto" (orden de relevancia: filtra primero por quién, después por
      qué). #}
-  {# TMT 2026-08-07 (dueña) — el historial linkea a UN posdatado con ?id=. Sin
-     este cartel la pantalla se ve como la lista de siempre pero con una sola
-     fila, y no hay forma de saber que está filtrada ni cómo salir. #}
-  {% if id_posdat %}
-    <div class="mb-3 px-3 py-2 rounded border border-amber-300 bg-amber-50
-                text-sm text-amber-900 flex items-center gap-2">
-      <span>Mostrando un solo posdatado (el del movimiento).</span>
-      <a href="{{ url_for('posdat.lista') }}"
-         class="underline hover:no-underline">ver todos</a>
-    </div>
-  {% endif %}
-
   <form method="get" class="flex flex-wrap gap-2 mb-3 items-end">
     <input type="text" name="prov" value="{{ prov or '' }}" placeholder="Proveedor"
            class="border rounded px-2 py-1 text-sm uppercase" size="6">

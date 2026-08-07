@@ -36,8 +36,8 @@ if str(ROOT) not in sys.path:
 from modules.historial import queries as hq  # noqa: E402
 from modules.posdat import queries as pq  # noqa: E402
 
-
 # ── 1) el link ───────────────────────────────────────────────────────────────
+
 
 def test_el_link_ya_no_manda_a_proveedores():
     url, _ = hq.link_origen({"origen_table": "posdat", "origen_id": 134})
@@ -203,10 +203,15 @@ def test_pedir_por_id_lleva_a_la_pestana_donde_vive_ese_posdatado(
     assert vistos["tab"] == tab_esperado
 
 
-def test_la_pantalla_avisa_que_esta_filtrada_y_ofrece_salir(
-        app_logueada, monkeypatch):
-    """Si no, se ve como la lista de siempre con una sola fila y no hay forma
-    de saber que está filtrada ni cómo volver."""
+def test_la_pantalla_filtrada_no_agrega_ningun_cartel(app_logueada, monkeypatch):
+    """DECISIÓN DE LA DUEÑA (2026-08-07): *"sin el cartel pero el resto
+    perfecto"*.
+
+    La primera versión ponía un aviso amarillo «Mostrando un solo posdatado ·
+    ver todos». Este test está dado vuelta a propósito, no borrado: si mañana
+    alguien vuelve a meter el cartel, que falle acá y lea esta decisión antes
+    de re-discutirla. La pantalla filtrada se ve igual que siempre, con una
+    fila."""
     from modules.posdat import views as pv
 
     monkeypatch.setattr(pv.queries, "por_id", lambda i: {"prov": "CO"})
@@ -215,12 +220,8 @@ def test_la_pantalla_avisa_que_esta_filtrada_y_ofrece_salir(
     monkeypatch.setattr(pv.queries, "persistir_acumulacion_yy", lambda: None)
 
     html = app_logueada.test_client().get("/posdat?id=134").get_data(as_text=True)
-    assert "Mostrando un solo posdatado" in html
-    assert "ver todos" in html
-
-    # …y sin ?id= la pantalla no dice nada de eso.
-    limpio = app_logueada.test_client().get("/posdat").get_data(as_text=True)
-    assert "Mostrando un solo posdatado" not in limpio
+    assert "Mostrando un solo posdatado" not in html
+    assert html.count("<table") >= 1      # la grilla de siempre, sin adornos
 
 
 def test_un_id_que_no_es_un_numero_se_ignora(app_logueada, monkeypatch):

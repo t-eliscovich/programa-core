@@ -636,7 +636,6 @@ def lista():
         resumen=resumen,
         q=q,
         prov=prov,
-        id_posdat=id_posdat,
         desde=desde,
         hasta=hasta,
         solo_abiertas=solo_abiertas,
