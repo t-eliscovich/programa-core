@@ -64,12 +64,16 @@
     Nada que totalizar: los abonos de las facturas vivas suman <strong>0,00</strong> y no hay notas de crédito para redistribuir.
   </div>
 {% elif data.filas %}
-  {# ─── Warning IRREVERSIBLE — solo pantalla ─── #}
+  {# ─── Qué va a pasar — solo pantalla ─── #}
+  {# TMT 2026-08-07: decía "Esta operación no tiene deshacer". Dejó de ser
+     cierto: el movimiento guarda el estado previo y se deshace con el ↺ del
+     Historial mientras nadie toque las facturas después. #}
   <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-amber-50 border-2 border-amber-400 text-amber-900 px-4 py-3">
-    <div class="font-semibold mb-1">⚠ Esta operación no tiene deshacer.</div>
+    <div class="font-semibold mb-1">⚠ Antes de confirmar</div>
     <ul class="text-sm list-disc ml-5 space-y-0.5">
       <li>Se juntan <strong>todos los abonos</strong> ({{ data.pool | money_es }}) de las {{ data.filas | length }} facturas vivas y se redistribuyen de la más vieja a la más nueva (FIFO). El total adeudado <strong>no cambia</strong>.</li>
       <li>Se pierden <strong>{{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura</strong>: después no se va a poder ver qué cheque pagó qué factura (los cheques quedan intactos).</li>
+      <li><strong>Se puede deshacer</strong> desde el ↺ del Historial: vuelve todo como está ahora, vínculos incluidos. Deja de poderse en cuanto alguien cobre o cambie el estado de alguna de estas facturas.</li>
       {% if data.hay_nc %}<li>Las notas de crédito / devoluciones <strong>entran</strong> a la redistribución (mejora sobre el dBase): su crédito cubre facturas siguientes.</li>{% endif %}
     </ul>
   </div>

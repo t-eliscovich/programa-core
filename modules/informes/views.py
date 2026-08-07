@@ -3828,6 +3828,72 @@ def factura_cambio_stat_deshacer(id_mov_doble: int):
     return redirect(url_for("historial.lista"))
 
 
+# TMT 2026-08-07 (dueña, sobre el ↺ de #22176 "Reverso no disponible desde
+# acá"): el totalizar dejó de ser irreversible. Mismo gate que totalizar
+# (clientes.ver): quien puede totalizar tiene que poder deshacerlo — si no, la
+# pantalla arregla la cuenta y no la desarregla.
+@informes_bp.route("/estado-cuenta/totalizar/<int:id_mov_doble>/deshacer",
+                   methods=["GET"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def totalizar_reverso_confirmar(id_mov_doble: int):
+    """Pantalla de confirmación del ↺ de un totalizar (con los números)."""
+    prev = queries.totalizar_reverso_preview(id_mov_doble)
+    if not prev:
+        abort(404)
+    if prev.get("bloqueo"):
+        flash(prev["bloqueo"], "warn")
+        return redirect(url_for("historial.lista"))
+    n_links = prev["n_links"]
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer el totalizar",
+        mensaje=(
+            f"Las {len(prev['filas'])} facturas de {prev['codigo_cli']} vuelven "
+            "al abono, al saldo y al estado que tenían antes de totalizar. El "
+            "total adeudado no cambia."),
+        detalle_registro={
+            "Cliente": prev["codigo_cli"],
+            "Facturas": f"{len(prev['filas'])} ({prev['n_cambian']} cambian)",
+            "Vínculos cheque↔factura": (
+                f"se reponen {n_links}" if n_links else "no había"),
+        },
+        saldo_preview=[{"label": "Σ Saldo del cliente",
+                        "antes": prev["sum_saldo_actual"],
+                        "despues": prev["sum_saldo_destino"]}],
+        accion_url=url_for("informes.totalizar_reverso_deshacer",
+                           id_mov_doble=id_mov_doble),
+        volver_url=url_for("historial.lista"),
+        motivo_requerido=False,
+        confirm_label="Deshacer el totalizar",
+    )
+
+
+@informes_bp.route("/estado-cuenta/totalizar/<int:id_mov_doble>/deshacer",
+                   methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def totalizar_reverso_deshacer(id_mov_doble: int):
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    codigo_up = ""
+    try:
+        res = queries.totalizar_reverso_ejecutar(id_mov_doble, usuario=usuario)
+        codigo_up = res.get("codigo_cli") or ""
+        _lk = res.get("n_links_repuestos") or 0
+        flash(
+            f"Totalizar deshecho: {res.get('n_restauradas')} de "
+            f"{res.get('n_facturas')} facturas restauradas"
+            + (f" y {_lk} vínculo(s) cheque↔factura repuesto(s)" if _lk else "")
+            + ".", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude deshacer el totalizar", e)
+    if codigo_up:
+        return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+    return redirect(url_for("historial.lista"))
+
+
 @informes_bp.route("/estado-cuenta/<codigo_cli>/neteo/<int:id_evento>/deshacer",
                    methods=["POST"])
 @requiere_login

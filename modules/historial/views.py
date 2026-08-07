@@ -869,6 +869,15 @@ _REVERSO_DISPATCH = {
         "informes.factura_cambio_stat_confirmar",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # TOTALIZAR estado de cuenta. TMT 2026-08-07 (dueña, sobre el ↺ de #22176):
+    # nació irreversible y el dispatcher contestaba "aún no tiene reverso
+    # automatizado". Desde este commit el mov snapshotea `antes`/`despues`/
+    # `links` ⇒ el reverso es EXACTO. Los totalizar viejos (sin snapshot) los
+    # frena el propio wizard con un mensaje que lo explica.
+    "totalizar_estado_cuenta": (
+        "informes.totalizar_reverso_confirmar",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
 }
 
 # Tipos que NO se reversan desde acá — el dispatcher muestra un toast

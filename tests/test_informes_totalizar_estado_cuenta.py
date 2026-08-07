@@ -130,14 +130,19 @@ def test_invariante_sigma_saldo_y_abono(importes, pool):
 class _DBStub:
     """Stub mínimo de db para ejecutar() — captura updates/deletes/inserts."""
 
-    def __init__(self, facturas):
+    def __init__(self, facturas, links=None):
         self.facturas = facturas
+        self.links = links or []
         self.updates: list[tuple] = []
         self.deletes: list[tuple] = []
         self.mov_dobles: list[tuple] = []
 
     def fetch_all(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
+        if "from scintela.chequesxfact" in s:
+            # Snapshot de los vínculos ANTES del DELETE (reverso del ↺).
+            assert "delete" not in s
+            return [dict(x) for x in self.links]
         assert "for update" in s  # lock dentro de la tx
         return [dict(f) for f in self.facturas]
 

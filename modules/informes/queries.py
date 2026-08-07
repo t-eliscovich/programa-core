@@ -25,6 +25,7 @@ Schema realities (verified against intela12042026.sql):
 """
 
 from datetime import date
+from decimal import Decimal
 
 import db
 from filters import today_ec
@@ -10512,6 +10513,38 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
 # Las T salen NORMALIZADAS (abono=importe, saldo=0) — NO se replica el quirk
 # del dBase que dejaba T con saldo=importe.
 
+# Columnas de chequesxfact que se snapshotean antes de borrar el vínculo.
+# `id_chequexfact` NO entra: al reponer el link se genera uno nuevo (la
+# secuencia manda) — lo que importa es a qué cheque y a qué factura apuntaba.
+_COLS_LINK_TOTALIZAR = (
+    " id_chequexfact, id_cheque, id_fact, fechaing, codigo_cli, importe,"
+    " no_banco, tipo, stat_f, fecha_venci_f, abono_f, saldo_f, usuario_crea "
+)
+
+_CAMPOS_LINK_TOTALIZAR = (
+    "id_cheque", "id_fact", "fechaing", "codigo_cli", "importe", "no_banco",
+    "tipo", "stat_f", "fecha_venci_f", "abono_f", "saldo_f", "usuario_crea",
+)
+
+
+def _link_a_json(row: dict) -> dict:
+    """Una fila de chequesxfact lista para dormir en un jsonb.
+
+    Las fechas van en ISO y los Decimal en float: `json.dumps` no sabe
+    serializar ni `date` ni `Decimal`, y el mov_doble se guardaría sin
+    metadata (o explotaría) justo en la operación que la necesita.
+    """
+    out = {}
+    for k in _CAMPOS_LINK_TOTALIZAR:
+        v = row.get(k)
+        if hasattr(v, "isoformat"):     # date / datetime
+            v = v.isoformat()
+        elif isinstance(v, Decimal):
+            v = float(v)
+        out[k] = v
+    return out
+
+
 _SQL_FACTURAS_TOTALIZAR = """
     SELECT id_factura, numf, numf_completo, fecha, importe, abono, retencion, saldo, stat
       FROM scintela.factura
@@ -10664,7 +10697,7 @@ def totalizar_estado_cuenta_preview(codigo_cli: str, hasta=None) -> dict:
 
 def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                                      hasta=None) -> dict:
-    """Ejecuta el TOTALIZAR en UNA transacción. IRREVERSIBLE.
+    """Ejecuta el TOTALIZAR en UNA transacción. REVERSIBLE desde 2026-08-07.
 
     1. Lockea las facturas vivas del cliente (FOR UPDATE) y recalcula la
        redistribución adentro de la tx (no confía en la preview: si alguien
@@ -10673,7 +10706,8 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
        cierra, aborta TODO (ValueError → rollback).
     3. UPDATE por factura (abono/saldo/stat + usuario_modifica).
     4. DELETE de scintela.chequesxfact de esas facturas (decisión dueña #1).
-    5. UN mov_doble 'totalizar_estado_cuenta' con la metadata del resumen.
+    5. UN mov_doble 'totalizar_estado_cuenta' con la metadata del resumen MÁS
+       el snapshot `antes`/`despues`/`links` que hace posible el ↺.
 
     Devuelve el resumen {n_facturas, pool, n_T, n_A, n_Z, n_links_borrados}.
     """
@@ -10718,10 +10752,18 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                 conn=conn,
             )
             n_upd += 1
-        # Vínculos cheque↔factura: se PIERDEN (aceptado por la dueña, la
-        # confirmación lo avisa). El abono redistribuido ya no mapea 1-a-1
-        # con los cheques originales, dejar los links sería mentir.
+        # Vínculos cheque↔factura: se PIERDEN de la tabla viva (aceptado por
+        # la dueña, la confirmación lo avisa). El abono redistribuido ya no
+        # mapea 1-a-1 con los cheques originales, dejar los links sería
+        # mentir. Pero se GUARDAN en la metadata antes de borrarlos: es lo
+        # único que permite reponerlos si se deshace el totalizar.
         ids = [f["id_factura"] for f in facturas]
+        links = db.fetch_all(
+            "SELECT " + _COLS_LINK_TOTALIZAR
+            + "  FROM scintela.chequesxfact WHERE id_fact = ANY(%s)"
+            "  ORDER BY id_chequexfact",
+            (ids,), conn=conn,
+        ) or []
         n_links = db.execute(
             "DELETE FROM scintela.chequesxfact WHERE id_fact = ANY(%s)",
             (ids,), conn=conn,
@@ -10753,6 +10795,28 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                 "pool": calc["pool"],
                 "n_T": calc["n_T"], "n_A": calc["n_A"], "n_Z": calc["n_Z"],
                 "n_links_borrados": n_links,
+                # Snapshot que hace posible el ↺ (ver totalizar_reverso_*).
+                "antes": [
+                    {
+                        "id": int(f["id_factura"]),
+                        "numf": f.get("numf_completo") or f.get("numf"),
+                        "importe": round(float(f["importe"] or 0), 2),
+                        "abono": round(float(f["abono"] or 0), 2),
+                        "saldo": round(float(f["saldo"] or 0), 2),
+                        "stat": (f["stat"] or "").strip(),
+                    }
+                    for f in facturas
+                ],
+                "despues": [
+                    {
+                        "id": int(f["id_factura"]),
+                        "abono": n["abono"],
+                        "saldo": n["saldo"],
+                        "stat": n["stat"],
+                    }
+                    for f, n in zip(facturas, calc["nuevos"], strict=True)
+                ],
+                "links": [_link_a_json(x) for x in links],
             },
         )
         return {
@@ -10764,6 +10828,221 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
             "n_links_borrados": n_links,
             "saldo": calc["sum_saldo_despues"],
         }
+
+
+# ---------------------------------------------------------------------------
+# DESHACER un TOTALIZAR — reverso exacto desde el snapshot del mov_doble
+# ---------------------------------------------------------------------------
+# TMT 2026-08-07 (dueña, sobre el ↺ de #22176): el totalizar nació
+# IRREVERSIBLE — pisaba abono/saldo/stat de N facturas y borraba los vínculos
+# cheque↔factura sin guardar nada, así que el dispatcher del historial no
+# tenía qué restaurar y contestaba "aún no tiene reverso automatizado".
+#
+# Ahora `totalizar_estado_cuenta_ejecutar` snapshotea `antes` (por factura:
+# importe/abono/saldo/stat), `despues` (lo que escribió) y `links` (las filas
+# de chequesxfact que borró). Con eso el reverso es EXACTO y verificable:
+#
+#   · `antes`   → lo que se restaura.
+#   · `despues` → el CANDADO. Si una factura hoy no está como la dejó el
+#                 totalizar, alguien la tocó después (cobranza, retención,
+#                 cambio de estado) y restaurar el `antes` pisaría esa
+#                 operación real. Se bloquea y se dice cuál factura.
+#   · `links`   → se reponen los vínculos, salteando los que ya volvieron a
+#                 existir (re-aplicación posterior del mismo cheque).
+#
+# Los totalizar ANTERIORES a este commit no tienen snapshot: el preview lo
+# dice con todas las letras en vez de inventar un reverso aproximado.
+
+_MSG_TOTALIZAR_SIN_SNAPSHOT = (
+    "Ese totalizar es anterior al reverso automático (07/08/2026): se hizo "
+    "sin guardar el estado previo de las facturas, así que no hay nada exacto "
+    "que restaurar. Los totalizar nuevos sí se pueden deshacer desde acá."
+)
+
+
+def _md_dict(mov: dict) -> dict:
+    """metadata del mov_doble como dict (psycopg puede darla como texto)."""
+    md = mov.get("metadata") or {}
+    if isinstance(md, str):
+        import json as _json
+        try:
+            md = _json.loads(md)
+        except Exception:  # noqa: BLE001
+            md = {}
+    return md if isinstance(md, dict) else {}
+
+
+def totalizar_reverso_preview(id_mov_doble: int) -> dict:
+    """Qué pasa si se deshace ESE totalizar. No escribe nada.
+
+    Devuelve {id_mov_doble, codigo_cli, filas[], n_links, n_cambian,
+    sum_saldo_actual, sum_saldo_destino, bloqueo}. `bloqueo` es None si se
+    puede deshacer, o el motivo en castellano.
+    """
+    mov = db.fetch_one(
+        "SELECT id_mov_doble, tipo, estado, metadata "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s", (id_mov_doble,))
+    if not mov or (mov.get("tipo") or "") != "totalizar_estado_cuenta":
+        return {}
+    md = _md_dict(mov)
+    out = {
+        "id_mov_doble": id_mov_doble,
+        "codigo_cli": (md.get("codigo_cli") or "").strip().upper(),
+        "filas": [],
+        "n_links": 0,
+        "n_cambian": 0,
+        "sum_saldo_actual": 0.0,
+        "sum_saldo_destino": 0.0,
+        "bloqueo": None,
+    }
+    antes = md.get("antes") or []
+    despues = {int(d["id"]): d for d in (md.get("despues") or [])}
+    if not antes or not despues:
+        out["bloqueo"] = _MSG_TOTALIZAR_SIN_SNAPSHOT
+        return out
+    if (mov.get("estado") or "") != "activo":
+        out["bloqueo"] = (
+            f"Ese totalizar ya está {mov.get('estado')} — no se puede deshacer "
+            "dos veces.")
+        return out
+    ids = [int(a["id"]) for a in antes]
+    vivas = {
+        int(f["id_factura"]): f
+        for f in (db.fetch_all(
+            "SELECT id_factura, numf, numf_completo, abono, saldo, stat "
+            "  FROM scintela.factura WHERE id_factura = ANY(%s)",
+            (ids,)) or [])
+    }
+    for a in antes:
+        fid = int(a["id"])
+        f = vivas.get(fid)
+        if not f:
+            out["bloqueo"] = (
+                f"La factura {a.get('numf') or fid} ya no está en la base: "
+                "no se puede restaurar el totalizar completo.")
+            return out
+        ab_hoy = round(float(f.get("abono") or 0), 2)
+        sa_hoy = round(float(f.get("saldo") or 0), 2)
+        st_hoy = (f.get("stat") or "").strip()
+        d = despues[fid]
+        # CANDADO: ¿sigue como la dejó el totalizar?
+        if (abs(ab_hoy - round(float(d["abono"]), 2)) > 0.005
+                or abs(sa_hoy - round(float(d["saldo"]), 2)) > 0.005
+                or st_hoy != (d["stat"] or "").strip()):
+            out["bloqueo"] = (
+                f"La factura {a.get('numf') or fid} cambió después del "
+                f"totalizar (hoy {st_hoy} abono {ab_hoy:,.2f} saldo "
+                f"{sa_hoy:,.2f}; el totalizar la dejó en {d['stat']} abono "
+                f"{float(d['abono']):,.2f} saldo {float(d['saldo']):,.2f}). "
+                "Deshacé primero ese movimiento.")
+            return out
+        ab_dest = round(float(a.get("abono") or 0), 2)
+        sa_dest = round(float(a.get("saldo") or 0), 2)
+        st_dest = (a.get("stat") or "").strip()
+        cambia = (abs(ab_hoy - ab_dest) > 0.005
+                  or abs(sa_hoy - sa_dest) > 0.005
+                  or st_hoy != st_dest)
+        out["filas"].append({
+            "id_factura": fid,
+            "numf": a.get("numf") or f.get("numf_completo") or f.get("numf"),
+            "importe": round(float(a.get("importe") or 0), 2),
+            "abono_actual": ab_hoy, "saldo_actual": sa_hoy, "stat_actual": st_hoy,
+            "abono_destino": ab_dest, "saldo_destino": sa_dest,
+            "stat_destino": st_dest,
+            "cambia": cambia,
+        })
+        out["n_cambian"] += 1 if cambia else 0
+        out["sum_saldo_actual"] = round(out["sum_saldo_actual"] + sa_hoy, 2)
+        out["sum_saldo_destino"] = round(out["sum_saldo_destino"] + sa_dest, 2)
+    out["n_links"] = len(md.get("links") or [])
+    return out
+
+
+def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
+    """Deshace UN totalizar: restaura las facturas y repone los vínculos.
+
+    Todo en UNA transacción. Marca el mov original como reversado (vía
+    `id_original`) para que el ↺ no se ofrezca dos veces.
+    """
+    prev = totalizar_reverso_preview(id_mov_doble)
+    if not prev:
+        raise ValueError(
+            f"El movimiento #{id_mov_doble} no es un totalizar de estado de "
+            "cuenta.")
+    if prev.get("bloqueo"):
+        raise ValueError(prev["bloqueo"])
+    mov = db.fetch_one(
+        "SELECT metadata FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,))
+    links = (_md_dict(mov or {}).get("links") or [])
+    n_upd = 0
+    n_links = 0
+    with db.tx() as conn:
+        for f in prev["filas"]:
+            if not f["cambia"]:
+                continue  # sin cambios — no ensuciar usuario_modifica
+            db.execute(
+                "UPDATE scintela.factura "
+                "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+                " WHERE id_factura = %s",
+                (f["abono_destino"], f["saldo_destino"], f["stat_destino"],
+                 usuario, f["id_factura"]),
+                conn=conn,
+            )
+            n_upd += 1
+        for lk in links:
+            # El cheque puede haberse anulado, o el link puede haber vuelto a
+            # existir (re-aplicación posterior): en los dos casos NO se repone.
+            existe = db.fetch_one(
+                "SELECT 1 AS x FROM scintela.chequesxfact "
+                " WHERE id_cheque = %s AND id_fact = %s",
+                (lk.get("id_cheque"), lk.get("id_fact")), conn=conn)
+            if existe:
+                continue
+            hay_cheque = db.fetch_one(
+                "SELECT 1 AS x FROM scintela.cheque WHERE id_cheque = %s",
+                (lk.get("id_cheque"),), conn=conn)
+            if not hay_cheque:
+                continue
+            db.execute(
+                "INSERT INTO scintela.chequesxfact "
+                "  (id_cheque, id_fact, fechaing, codigo_cli, importe, "
+                "   no_banco, tipo, stat_f, fecha_venci_f, abono_f, saldo_f, "
+                "   usuario_crea) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                tuple(lk.get(c) for c in _CAMPOS_LINK_TOTALIZAR),
+                conn=conn,
+            )
+            n_links += 1
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_totalizar_estado_cuenta",
+            id_original=id_mov_doble,
+            origen_table="factura", origen_id=prev["filas"][0]["id_factura"],
+            destino_table="factura", destino_id=prev["filas"][-1]["id_factura"],
+            importe=abs(prev["sum_saldo_destino"]) or 1.0,
+            fecha=today_ec(),
+            concepto=(
+                f"DESHACER totalizar estado de cuenta {prev['codigo_cli']} — "
+                f"{len(prev['filas'])} fact., {n_upd} restaurada(s), "
+                f"{n_links} vínculo(s) repuesto(s)")[:200],
+            usuario=usuario,
+            metadata={
+                "codigo_cli": prev["codigo_cli"],
+                "id_mov_deshecho": id_mov_doble,
+                "n_facturas": len(prev["filas"]),
+                "n_restauradas": n_upd,
+                "n_links_repuestos": n_links,
+            },
+        )
+    return {
+        "codigo_cli": prev["codigo_cli"],
+        "n_facturas": len(prev["filas"]),
+        "n_restauradas": n_upd,
+        "n_links_repuestos": n_links,
+        "saldo": prev["sum_saldo_destino"],
+    }
 
 
 # ---------------------------------------------------------------------------
