@@ -39,9 +39,14 @@ def escenario(monkeypatch):
         sri(1003): _fac(1003, sri(1003), 800.0, 0.0, retencion=24.35),
         # el abono no llega a cubrir la retención de Asinfo
         sri(1004): _fac(1004, sri(1004), 500.0, 5.00),
+        # ya cancelada: saldo 0 (la dueña: "no la toques")
+        sri(1005): _fac(1005, sri(1005), 900.0, 900.0, saldo=0.0),
+        # totalizada a mano: stat T aunque la resta no dé 0 (drift del dBase)
+        sri(1006): dict(_fac(1006, sri(1006), 700.0, 21.31, saldo=0.0), stat="T"),
     }
     retes = {sri(1001): {"ret_total": 30.44}, sri(1002): {"ret_total": 60.88},
              sri(1003): {"ret_total": 24.35}, sri(1004): {"ret_total": 15.22},
+             sri(1005): {"ret_total": 27.40}, sri(1006): {"ret_total": 21.31},
              sri(9999): {"ret_total": 12.00}}  # no existe en PC
 
     monkeypatch.setattr(asinfo, "retenciones_periodo", lambda d, h: retes)
@@ -113,13 +118,33 @@ def test_la_que_no_esta_en_pc_no_rompe(escenario):
     assert out["resumen"]["sin_factura"] == 1
 
 
+def test_una_factura_cerrada_no_se_toca(escenario):
+    """TMT 2026-08-07 (dueña): *"si la factura ya fue totalizada o cancelada no
+    la toques"*. Y no se pierde nada: las totalizadas ni siquiera se listan en
+    el estado de cuenta, y con saldo 0 la cuenta cierra igual antes y después
+    — el movimiento no se vería en ningún lado."""
+    out, _ = escenario
+    for numf in (1005, 1006):
+        fila = _por_numf(out, numf)
+        assert fila["estado"] == "cerrada", numf
+        assert fila["abono_nuevo"] is None and fila["retencion_nueva"] is None
+    assert out["resumen"]["cerrada"] == 2
+    assert out["resumen"]["total_cerradas"] == round(27.40 + 21.31, 2)
+
+
+def test_la_cerrada_no_entra_en_la_plata_a_mover(escenario):
+    """Si entrara, el número de arriba prometería más de lo que va a pasar."""
+    out, _ = escenario
+    assert out["resumen"]["total_a_mover"] == round(30.44 + 60.88, 2)
+
+
 def test_el_resumen_cuenta_y_suma_lo_que_se_moveria(escenario):
     out, _ = escenario
     r = out["resumen"]
     assert r["se_mueve"] == 2
     assert r["total_a_mover"] == round(30.44 + 60.88, 2)
     assert r["ya_separada"] == 1 and r["abono_corto"] == 1
-    assert r["n_total"] == 5
+    assert r["n_total"] == 7
 
 
 def test_no_escribe_nada(monkeypatch, escenario):

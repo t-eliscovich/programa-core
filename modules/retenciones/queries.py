@@ -755,6 +755,11 @@ def preview_retencion_en_abono(desde, hasta) -> dict:
     Devuelve {"filas": [...], "resumen": {...}}. Estados:
       · `se_mueve`     — hay abono suficiente: se mueve `rete` de abono a
                          retención y el saldo no cambia.
+      · `cerrada`      — la factura ya está totalizada o cancelada (stat T, o
+                         saldo 0). **No se toca** (dueña, 07/08/2026), y no
+                         hay nada que ganar: las T no se listan en el estado de
+                         cuenta, y con saldo 0 la resta da igual antes y
+                         después — el movimiento no se vería en ningún lado.
       · `ya_separada`  — ya tiene su fila / su columna: no hay nada que hacer.
       · `abono_corto`  — el abono es menor que la retención de Asinfo: mover
                          dejaría el abono negativo. Va a mano (¿pago parcial?
@@ -766,8 +771,8 @@ def preview_retencion_en_abono(desde, hasta) -> dict:
     ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
     resumen = {
         "n_total": len(ret_map), "se_mueve": 0, "ya_separada": 0,
-        "abono_corto": 0, "sin_factura": 0, "via_numf": 0,
-        "total_a_mover": 0.0,
+        "abono_corto": 0, "sin_factura": 0, "via_numf": 0, "cerrada": 0,
+        "total_a_mover": 0.0, "total_cerradas": 0.0,
         "total_periodo": round(
             sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
     }
@@ -807,6 +812,16 @@ def preview_retencion_en_abono(desde, hasta) -> dict:
         if retencion > 0.005 or f"{f['codigo_cli']}|{f['numf']}" in ya_set:
             fila["estado"] = "ya_separada"
             resumen["ya_separada"] += 1
+        elif (f.get("stat") or "").strip().upper() == "T" or abs(saldo) <= 0.005:
+            # TMT 2026-08-07 (dueña): *"si la factura ya fue totalizada o
+            # cancelada no la toques"*, y tiene razón por partida doble: las T
+            # ni siquiera se listan en el estado de cuenta (filtro del
+            # 11/06), y con saldo 0 la cuenta cierra igual antes y después
+            # — mover ahí es tocar una factura cerrada sin que nadie vea la
+            # diferencia.
+            fila["estado"] = "cerrada"
+            resumen["cerrada"] += 1
+            resumen["total_cerradas"] = round(resumen["total_cerradas"] + rete, 2)
         elif abono + 0.01 < rete:
             fila["estado"] = "abono_corto"
             resumen["abono_corto"] += 1
@@ -818,7 +833,8 @@ def preview_retencion_en_abono(desde, hasta) -> dict:
             resumen["total_a_mover"] = round(resumen["total_a_mover"] + rete, 2)
         filas.append(fila)
 
-    orden = {"se_mueve": 0, "abono_corto": 1, "ya_separada": 2, "sin_factura": 3}
+    orden = {"se_mueve": 0, "abono_corto": 1, "cerrada": 2, "ya_separada": 3,
+             "sin_factura": 4}
     filas.sort(key=lambda x: (orden.get(x["estado"], 9), -(x["ret_total"] or 0)))
     return {"filas": filas, "resumen": resumen}
 
