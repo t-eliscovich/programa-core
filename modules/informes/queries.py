@@ -1812,6 +1812,35 @@ def tarifa_um_mes_anterior(mesnum: int, yy: int) -> float:
     return tarifa_iniciales_mes_anterior(mesnum, yy, "um")
 
 
+def apertura_ukg_hilado(mesnum: int, yy: int) -> float:
+    """$/kg de APERTURA del hilado del mes = el CIERRE del mes ANTERIOR.
+
+    Sale de `iniciales.um` del mes previo: el "stock act." con que ese mes
+    cerró, grabado UNA vez al cerrarlo. Durante todo el mes en curso no se
+    vuelve a tocar.
+
+    🚨 REGLA (dueña, 2026-08-07): *"el inicial no se puede recalcular"* —
+    *"el inicial se recalcula con el actual del fin de mes anterior"*. O sea:
+    la apertura SÍ viene de un cierre, pero del cierre del mes ANTERIOR y una
+    sola vez. Lo prohibido es tomar el cierre del mes EN CURSO, que se
+    recalcula en cada pantalla y sube con cada compra.
+    Acá NO puede entrar ninguna tarifa que contenga las compras del mes en
+    curso — ni `stock_act_ukg` del mov, ni el promedio ponderado vivo, ni
+    `iniciales.um` del MISMO mes (el write-back diario lo pisa con el $/kg
+    vivo). Si la apertura tiene las compras del mes adentro, el promedio
+    ponderado se las vuelve a diluir encima y el stock entero se revalúa de
+    gratis.
+
+    Eso fue exactamente el bug de agosto 2026: `views.py` pasaba
+    `stock_act_ukg` (una tarifa de CIERRE) como apertura, así que los
+    $504.819 de compras del mes se contaban dos veces. El hilado quedó en
+    3,0717 US$/kg cuando correspondía 3,0387 — $85.278 de stock, sobre
+    2,6 millones de kg (el $/kg del hilado arrastra tejido y terminado, que
+    salen de él con offsets fijos +0,5 y +2,2).
+    """
+    return tarifa_iniciales_mes_anterior(mesnum, yy, "um")
+
+
 def ventas_mes_corriente_resultado() -> dict:
     """Ventas del mes EN CURSO calculadas live desde scintela.factura.
 
@@ -5218,8 +5247,14 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     if _stock_fuente == "asinfo":
         try:
             from modules.asinfo import service as _asvc_hval
+            # La APERTURA va congelada (cierre del mes anterior). Antes se
+            # pasaba `_mov_hil_ukg` = stock_act_ukg, que YA tiene las compras
+            # del mes adentro → mov_hilado_valuacion se las diluía otra vez.
+            # Ver apertura_ukg_hilado(). Fallback sólo si no hay mes anterior.
+            _apert = apertura_ukg_hilado(_hoy_ec_bal.month, _hoy_ec_bal.year)
             _hval = _asvc_hval.mov_hilado_valuacion(
-                _hoy_ec_bal.year, _hoy_ec_bal.month, _mov_hil_ukg or h_um)
+                _hoy_ec_bal.year, _hoy_ec_bal.month,
+                _apert or _mov_hil_ukg or h_um)
             if _hval.get("disponible") and float(_hval.get("stock_act_ukg") or 0) > 0:
                 h_um = float(_hval["stock_act_ukg"])  # = variable del FLUJO (2,954)
         except Exception:  # noqa: BLE001 -- fail-soft, deja la tarifa del mov

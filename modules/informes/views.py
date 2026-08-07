@@ -270,7 +270,18 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     # cierre (stock_act_ukg ≈ 2,951) + las compras del mes al promedio, la tarifa
     # queda ≈ 2,954, pegada al dBase (decisión dueña: "dejá el 2954 estamos ok").
     # El promedio de importaciones queda de FALLBACK si no hay costo de stock.
-    _open_ukg = _f(hl, "stock_act_ukg") or _f(hl, "stock_inic_ukg")
+    # 2026-08-07 — la APERTURA se toma GRABADA (cierre del mes anterior), no
+    # de `stock_act_ukg`: esa es una tarifa de CIERRE y ya tiene las compras
+    # del mes adentro, así que el promedio ponderado se las volvía a diluir.
+    # Ver queries.apertura_ukg_hilado(). Fallbacks en orden de confianza.
+    _open_ukg = 0.0
+    if anio and mes:
+        try:
+            _open_ukg = queries.apertura_ukg_hilado(int(mes), int(anio)) or 0.0
+        except Exception:  # noqa: BLE001 -- fail-soft: nunca romper el flujo
+            _open_ukg = 0.0
+    if not _open_ukg:
+        _open_ukg = _f(hl, "stock_inic_ukg") or _f(hl, "stock_act_ukg")
     if not _open_ukg:
         try:
             from modules.importaciones import service as _impsvc2
