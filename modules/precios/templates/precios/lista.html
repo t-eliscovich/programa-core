@@ -448,10 +448,6 @@
       </table>
     </div>
 
-    <p style="margin:14px 0 0; color:#94a3b8; font-size:10px;">
-      Industria Textil Latinoamericana C. Ltda. &nbsp;·&nbsp; Precios en USD por kilo,
-      IVA {{ iva_pct | int }}% incluido. Sujetos a cambio sin previo aviso.
-    </p>
   </div>
 </div>
 
@@ -479,17 +475,43 @@
 
   @media print {
     /* Del resto de la pantalla (matriz, descuentos, botones) no va NADA al
-       papel: sólo la hoja. `visibility` en vez de `display` para no pelearse
-       con las reglas de base.html. */
+       papel: sólo la hoja. */
+    {% if not apaisado %}
+    /* 🚨 En la GIRADA el resto de la pantalla se esconde con `display`, NO con
+       `visibility`: con el truco de `visibility` el `<img>` del logo se pinta
+       IGNORANDO la transform del contenedor y sale derecho arriba a la
+       izquierda mientras todo lo demás gira. Medido en un PDF real (chromium
+       headless), no a ojo. */
+    aside, header, nav, .solo-pantalla { display: none !important; }
+    main > *:not(#hoja) { display: none !important; }
+    {% else %}
+    /* Horizontal: `visibility` en vez de `display` para no pelearse con las
+       reglas de base.html. */
     body * { visibility: hidden !important; }
     .hoja-precios, .hoja-precios * { visibility: visible !important; }
-    .hoja-precios { position: absolute !important; left: 0; top: 0; width: 100%; }
     .solo-pantalla { display: none !important; }
+    {% endif %}
+    .hoja-precios { position: absolute !important; left: 0; top: 0; width: 100%; }
 
     .hoja-precios { padding: 0 !important; box-shadow: none !important; }
     /* El wrapper con scroll es de pantalla: en papel no puede recortar. */
     .hoja-precios .tabla-wrap { overflow: visible !important; }
-    {% if apaisado %}
+    {% if not apaisado %}
+    /* GIRADA: la misma hoja ancha (mismos cuerpos que la horizontal) rotada
+       90° sobre una página vertical. El ancho de la hoja pasa a ser el ALTO
+       útil del A4 y su alto, el ancho útil; `rotate(90deg) translateY(-100%)`
+       con origen arriba a la izquierda la deja apoyada dentro de la página. */
+    .hoja-precios thead th { font-size: 7.5pt !important; padding: 7px 3px !important; }
+    .hoja-precios tbody td { font-size: 11pt !important; padding: 11px 3px !important; }
+    .hoja-precios tbody td.col-color { font-size: 10pt !important; }
+    .hoja-precios h1 { font-size: 17pt !important; }
+    .hoja-precios {
+      width: 279mm !important; height: 192mm !important;
+      transform-origin: top left !important;
+      transform: rotate(90deg) translateY(-100%) !important;
+    }
+    @page { size: A4 portrait; margin: 8mm; }
+    {% else %}
     /* Con las 16 columnas parejas cada tela mide ~63 px: los títulos van en
        7,5pt (ALEMANIA, el más largo, pide 64 px en 8,5pt y se montaba sobre
        el vecino). Medido en Chrome sobre la hoja viva, sin desbordes. */
@@ -498,17 +520,6 @@
     .hoja-precios tbody td.col-color { font-size: 10pt !important; }
     .hoja-precios h1 { font-size: 17pt !important; }
     @page { size: A4 landscape; margin: 10mm; }
-    {% else %}
-    /* Vertical: queda como opción, pero con 16 columnas el papel da 733 px
-       (≈45 por tela) y ahí no entra un título como ALEMANIA. La letra baja y
-       los títulos largos cortan en dos líneas en vez de pisarse. Para
-       imprimir de verdad, la horizontal. */
-    .hoja-precios thead th { font-size: 6.5pt !important; padding: 7px 2px !important;
-                             overflow-wrap: anywhere; }
-    .hoja-precios tbody td { font-size: 9pt !important; padding: 9px 2px !important; }
-    .hoja-precios tbody td.col-color { font-size: 8.5pt !important; }
-    .hoja-precios h1 { font-size: 16pt !important; }
-    @page { size: A4 portrait; margin: 12mm 8mm; }
     {% endif %}
   }
 </style>

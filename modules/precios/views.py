@@ -102,7 +102,18 @@ def lista():
     # dueña lo vio en su impresión). Horizontal da 1047 px y entran las 16
     # enteras, en UNA sola tabla — decisión de ella: *"un solo bloque… que
     # entre en A4 horizontal, te va a dar más lugar"*.
-    apaisado = request.args.get("papel", "h") == "h"
+    #
+    # TMT 2026-08-07 (después): **"Vertical" imprime la hoja GIRADA 90°** sobre
+    # una página vertical — dueña: *"girala 90 grados"* + *"eso me gusta"*. La
+    # versión derecha con la letra chiquita se fue: no se leía. Sirve además
+    # cuando el diálogo de impresión se quedó en vertical (el `@page` sólo
+    # PROPONE la orientación: si el usuario ya la tocó a mano, Chrome respeta
+    # la suya). Sale igual de grande que la horizontal; se gira el papel.
+    # Sólo dos opciones, decisión de ella: *"horizontal y vertical, nada mas"*.
+    papel = request.args.get("papel", "h")
+    if papel not in ("h", "v"):
+        papel = "h"
+    apaisado = papel == "h"
     try:
         hoja = (
             queries.tabla_impresion(filas, tramo_idx, True, opciones)
@@ -126,6 +137,7 @@ def lista():
         tramo_idx=tramo_idx,
         tramo_label=queries.TRAMOS_DESCUENTO[tramo_idx][0],
         apaisado=apaisado,
+        papel=papel,
         iva_pct=queries.IVA_PCT,
         hoy=today_ec(),
     )

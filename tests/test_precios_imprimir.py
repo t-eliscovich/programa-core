@@ -192,10 +192,39 @@ def test_la_hoja_arranca_en_horizontal_y_de_una_sola_tabla(cliente_logueado):
     assert hoja.count(">Color</th>") == 1
 
 
-def test_la_vertical_sigue_disponible(cliente_logueado):
-    """Queda como opción (con la letra más chica), pero no es el default."""
+def test_vertical_imprime_la_hoja_girada_90(cliente_logueado):
+    """"Vertical" = la misma hoja ancha ROTADA 90° sobre una página vertical
+    (dueña 07/08: *"girala 90 grados"* → *"eso me gusta"*). La versión derecha
+    con la letra chiquita se fue: con 16 columnas no se leía. Sólo hay dos
+    opciones de papel — *"horizontal y vertical, nada mas"*.
+
+    🚨 En la girada el resto de la pantalla se esconde con `display`, NO con
+    `visibility`: con `visibility` el `<img>` del logo se pinta ignorando la
+    transform y sale derecho mientras todo lo demás gira (visto en un PDF
+    real). Si alguien unifica los dos caminos, el logo se rompe y no lo cuenta
+    nadie."""
     html = cliente_logueado.get("/precios?papel=v").get_data(as_text=True)
+    assert 'value="v" selected' in html
     assert "A4 portrait" in html
+    assert "rotate(90deg) translateY(-100%)" in html
+    assert "body * { visibility: hidden !important; }" not in html
+    assert "main > *:not(#hoja) { display: none !important; }" in html
+
+
+def test_el_papel_tiene_solo_dos_opciones(cliente_logueado):
+    """Horizontal y Vertical, nada más (dueña 07/08)."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
+    hoja = html[html.index('id="papel"') :]
+    hoja = hoja[: hoja.index("</select>")]
+    assert hoja.count("<option") == 2
+
+
+def test_la_hoja_no_lleva_la_letra_chica_del_pie(cliente_logueado):
+    """Dueña 07/08: *"quita en todas la letra chiquita de abajo"*."""
+    for url in ("/precios", "/precios?papel=v"):
+        html = cliente_logueado.get(url).get_data(as_text=True)
+        hoja = html[html.index('<div class="hoja-precios"') :]
+        assert "Sujetos a cambio sin previo aviso" not in hoja
 
 
 def test_las_columnas_de_la_hoja_tienen_ancho_fijo_y_parejo(cliente_logueado):
