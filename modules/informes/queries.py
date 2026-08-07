@@ -11034,6 +11034,12 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
                 "n_facturas": len(prev["filas"]),
                 "n_restauradas": n_upd,
                 "n_links_repuestos": n_links,
+                # 🚨 Las N facturas del lote, para que la traza sepa que son
+                # UN hecho. Sin esto el mov sólo nombra la primera y la
+                # última, y las del medio se clasifican por la FORMA del
+                # cambio: volver de 'T' a 'Z' deja el saldo igual al importe y
+                # salen rotuladas "facturas nuevas". TMT 2026-08-07.
+                "ids_facturas": [f["id_factura"] for f in prev["filas"]],
             },
         )
     return {

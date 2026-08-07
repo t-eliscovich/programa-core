@@ -108,6 +108,9 @@ def de_la_ventana(desde, hasta) -> list[dict]:
             for f in (md.get("antes") or []):
                 if isinstance(f, dict) and f.get("id"):
                     docs.append(_doc("factura", f["id"]))
+            # El reverso no repite el snapshot entero: guarda sólo los ids.
+            for i in (md.get("ids_facturas") or []):
+                docs.append(_doc("factura", i))
         r["docs"] = [d for d in docs if d]
         r["meta"] = md if isinstance(md, dict) else {}
         # Un batch agrupa el hecho entero ("3 anticipos → compra N° 10130");

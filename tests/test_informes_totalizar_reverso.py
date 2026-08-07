@@ -305,7 +305,10 @@ def test_ejecutar_restaura_repone_links_y_registra(monkeypatch):
     mv = stub.mov_dobles[0]
     assert mv[1] == "reverso_totalizar_estado_cuenta"
     assert mv[10] == 22176
-    assert json.loads(mv[_MD_IDX])["id_mov_deshecho"] == 22176
+    md = json.loads(mv[_MD_IDX])
+    assert md["id_mov_deshecho"] == 22176
+    # Las N facturas del lote, para que la traza las junte en UN renglón.
+    assert md["ids_facturas"] == [1, 2, 3]
 
 
 def test_ejecutar_sin_snapshot_explota_con_el_motivo(monkeypatch):
@@ -352,7 +355,7 @@ def test_eventos_expande_las_facturas_del_totalizar(monkeypatch):
         "importe": 10423.74, "concepto": "DESHACER totalizar MLZ",
         "usuario": "tamara", "estado": "reverso", "dia": date(2026, 8, 7),
         "metadata": {"codigo_cli": "MLZ", "n_facturas": 3,
-                     "antes": [{"id": 1}, {"id": 2}, {"id": 3}]},
+                     "ids_facturas": [1, 2, 3]},
     }
     monkeypatch.setattr(ev.db, "fetch_all", lambda *a, **k: [fila])
     evs = ev.de_la_ventana("2026-08-07 00:00", "2026-08-07 23:59")
