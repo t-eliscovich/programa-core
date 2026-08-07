@@ -178,6 +178,47 @@ def test_tramo_basura_no_rompe(cliente_logueado):
     assert "10,20" in resp.get_data(as_text=True)
 
 
+def test_la_hoja_arranca_en_horizontal_y_de_una_sola_tabla(cliente_logueado):
+    """TMT 2026-08-07. Con las telas de precio único la hoja quedó en 16
+    columnas y en A4 VERTICAL ya no entra: la tabla pide ~1030 px contra los
+    733 del papel y se caían SCUBA/SUPLEX/BELTIS/NATY (la dueña lo vio en su
+    impresión). Horizontal da 1047 px y entran las 16, en UNA sola tabla
+    —decisión de ella: *"un solo bloque… que entre en A4 horizontal"*."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
+    assert 'value="h" selected' in html
+    assert "A4 landscape" in html
+    hoja = html[html.index('<div class="hoja-precios"') :]
+    assert hoja.count("<colgroup>") == 1
+    assert hoja.count(">Color</th>") == 1
+
+
+def test_la_vertical_sigue_disponible(cliente_logueado):
+    """Queda como opción (con la letra más chica), pero no es el default."""
+    html = cliente_logueado.get("/precios?papel=v").get_data(as_text=True)
+    assert "A4 portrait" in html
+
+
+def test_las_columnas_de_la_hoja_tienen_ancho_fijo_y_parejo(cliente_logueado):
+    """Dueña 07/08: *"hace el color un poco mas chico y los otros grids
+    parejos, esta muy desordenado"*. Con `table-layout` automático cada
+    columna medía lo que su título (ALEMANIA ancha, RIB finita); con anchos
+    fijos la columna Color queda angosta y las telas todas iguales — y de
+    paso la tabla ya no puede desbordar el papel."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
+    hoja = html[html.index('<div class="hoja-precios"') :]
+    assert "table-layout:fixed" in hoja
+    assert 'style="width:10%;"' in hoja  # la de Color, la más angosta
+
+
+def test_la_hoja_lleva_lineas_verticales(cliente_logueado):
+    """Cuadrícula (pedido de la dueña 07/08): sin las verticales, un número
+    bajo un título ancho (ALEMANIA) parece de la columna de al lado — ella
+    leyó la hoja como si ALEMANIA estuviera vacía."""
+    html = cliente_logueado.get("/precios").get_data(as_text=True)
+    assert ".hoja-precios table th + th" in html
+    assert "border-left: 1px solid #e2e8f0" in html
+
+
 def test_la_ruta_vieja_de_imprimir_redirige(cliente_logueado):
     """Los links de este sistema son strings hardcodeados: la ruta vieja no
     puede empezar a dar 404."""

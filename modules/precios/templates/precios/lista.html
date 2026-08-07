@@ -396,25 +396,41 @@
       </p>
     </div>
 
+    {# ---------------------------------------------------------------
+       Anchos FIJOS y parejos: la columna Color angosta y las telas todas
+       iguales. Dueña 07/08: *"hace el color un poco mas chico y los otros
+       grids parejos, esta muy desordenado"*. Con anchos `auto` cada columna
+       medía lo que su título (ALEMANIA ancha, RIB finita) y además la tabla
+       podía desbordar el papel; con anchos fijos no puede.
+       --------------------------------------------------------------- #}
+    {% set en_bloque = opciones | length %}
     <div class="tabla-wrap" style="overflow-x:auto; margin-top:18px;">
-      <table style="width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums;">
+      <table style="width:100%; table-layout:fixed; border-collapse:collapse;
+                    font-variant-numeric:tabular-nums;">
+        <colgroup>
+          <col style="width:10%;">
+          {% for c in opciones %}
+          <col style="width:{{ (90.0 / en_bloque) | round(4) }}%;">
+          {% endfor %}
+        </colgroup>
         <thead>
           <tr>
-            <th style="text-align:left; padding:6px 8px; font-size:9.5px; font-weight:600; letter-spacing:.06em;
+            <th style="text-align:left; padding:6px 4px; font-size:9.5px; font-weight:600; letter-spacing:.06em;
                        text-transform:uppercase; color:#64748b; border-bottom:1.5px solid #94a3b8;">Color</th>
             {% for c in opciones %}
-            <th style="text-align:right; padding:6px 5px; font-size:9.5px; font-weight:600; letter-spacing:.04em;
-                       color:#64748b; border-bottom:1.5px solid #94a3b8; white-space:nowrap;">{{ c.label }}</th>
+            <th style="text-align:right; padding:6px 3px; font-size:9.5px; font-weight:600; letter-spacing:0;
+                       color:#64748b; border-bottom:1.5px solid #94a3b8;">{{ c.label }}</th>
             {% endfor %}
           </tr>
         </thead>
         <tbody>
           {% for f in hoja %}
           <tr>
-            <td style="padding:6px 8px; font-size:11.5px; font-weight:600; color:#0f172a;
+            <td class="col-color"
+                style="padding:6px 4px; font-weight:600; color:#0f172a;
                        border-bottom:1px solid #e2e8f0; white-space:nowrap;">{{ f.descripcio }}</td>
             {% for v in f.valores %}
-            <td style="padding:6px 5px; font-size:11.5px; text-align:right; color:#0f172a;
+            <td style="padding:6px 3px; text-align:right; color:#0f172a;
                        border-bottom:1px solid #e2e8f0; white-space:nowrap;">
               {% if v is not none %}{{ v | num_es }}{% else %}<span style="color:#cbd5e1;">–</span>{% endif %}
             </td>
@@ -422,7 +438,7 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="{{ (opciones | length) + 1 }}"
+            <td colspan="{{ en_bloque + 1 }}"
                 style="padding:26px; text-align:center; color:#94a3b8; font-size:12px;">
               Sin precios cargados.
             </td>
@@ -446,6 +462,15 @@
      de clase (más específicos). */
   .hoja-precios thead th { font-size: 10px !important; }
   .hoja-precios tbody td { font-size: 12px !important; }
+  /* La columna Color es rótulo, no cifra: va un punto más chica. */
+  .hoja-precios tbody td.col-color { font-size: 11px !important; }
+
+  /* Cuadrícula: las horizontales ya las ponen los `border-bottom` inline; acá
+     van las VERTICALES, en gris claro, para que la hoja se lea como una
+     grilla (pedido de la dueña 07/08). Por clase y no inline porque en print
+     base.html le gana a un `style=`. Sin marco exterior: sólo las internas. */
+  .hoja-precios table th + th,
+  .hoja-precios table td + td { border-left: 1px solid #e2e8f0 !important; }
 
   @media print {
     /* Del resto de la pantalla (matriz, descuentos, botones) no va NADA al
@@ -460,16 +485,29 @@
     /* El wrapper con scroll es de pantalla: en papel no puede recortar. */
     .hoja-precios .tabla-wrap { overflow: visible !important; }
     {% if apaisado %}
-    .hoja-precios thead th { font-size: 8.5pt !important; padding: 7px 4px !important; }
-    .hoja-precios tbody td { font-size: 11pt !important; padding: 11px 4px !important; }
+    /* Con las 16 columnas parejas cada tela mide ~63 px: los títulos van en
+       7,5pt (ALEMANIA, el más largo, pide 64 px en 8,5pt y se montaba sobre
+       el vecino). Medido en Chrome sobre la hoja viva, sin desbordes. */
+    .hoja-precios thead th { font-size: 7.5pt !important; padding: 7px 3px !important; }
+    .hoja-precios tbody td { font-size: 11pt !important; padding: 11px 3px !important; }
+    .hoja-precios tbody td.col-color { font-size: 10pt !important; }
     .hoja-precios h1 { font-size: 17pt !important; }
     @page { size: A4 landscape; margin: 10mm; }
     {% else %}
-    /* Vertical: el ancho es lo que manda (son ~18 columnas), así que la letra
-       baja. Verificado contra el PDF real — con 11pt se caía la última
-       columna fuera de la hoja. */
-    .hoja-precios thead th { font-size: 7.5pt !important; padding: 7px 3px !important; }
-    .hoja-precios tbody td { font-size: 9.5pt !important; padding: 9px 3px !important; }
+    /* Vertical: el ancho es lo que manda (hoy son 16 columnas). Con anchos
+       fijos y parejos la tabla ya no puede desbordar el papel: cada tela se
+       lleva 91,5/15 = 6,1% del ancho útil (≈45 px en A4 con márgenes de
+       6 mm). Lo que sí hay que cuidar es que el CONTENIDO entre en esos
+       45 px — de ahí estos cuerpos, medidos en Chrome sobre la hoja viva.
+       Al agregar una tela, RE-MEDIR: el recorte no se ve desde la pantalla. */
+    /* Vertical: queda como opción, pero con 16 columnas el papel da 733 px
+       (≈45 por tela) y ahí no entra un título como ALEMANIA. La letra baja y
+       los títulos largos cortan en dos líneas en vez de pisarse. Para
+       imprimir de verdad, la horizontal. */
+    .hoja-precios thead th { font-size: 6.5pt !important; padding: 7px 2px !important;
+                             overflow-wrap: anywhere; }
+    .hoja-precios tbody td { font-size: 9pt !important; padding: 9px 2px !important; }
+    .hoja-precios tbody td.col-color { font-size: 8.5pt !important; }
     .hoja-precios h1 { font-size: 16pt !important; }
     @page { size: A4 portrait; margin: 12mm 8mm; }
     {% endif %}

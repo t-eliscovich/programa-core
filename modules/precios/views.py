@@ -93,9 +93,16 @@ def lista():
     # Orientación del papel. Primero fue apaisada ("imprimir en horizontal que
     # va a quedar mejor") y después quiso probar la vertical ("perdon imprimi
     # vertical a ver si sale mejor") → en vez de elegir por ella, queda un
-    # selector. Default: vertical, que es lo último que pidió y con las telas
-    # de hoy entra cómoda.
-    apaisado = request.args.get("papel") == "h"
+    # selector.
+    #
+    # TMT 2026-08-07: el default pasa a HORIZONTAL. Con las telas de precio
+    # único la hoja quedó en 16 columnas y en A4 vertical ya no entran de una
+    # sola tabla: la tabla pedía ~1030 px contra los 733 del papel y se caían
+    # SCUBA, SUPLEX, BELTIS y NATY (medido en Chrome sobre la hoja viva; la
+    # dueña lo vio en su impresión). Horizontal da 1047 px y entran las 16
+    # enteras, en UNA sola tabla — decisión de ella: *"un solo bloque… que
+    # entre en A4 horizontal, te va a dar más lugar"*.
+    apaisado = request.args.get("papel", "h") == "h"
     try:
         hoja = (
             queries.tabla_impresion(filas, tramo_idx, True, opciones)
