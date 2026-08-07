@@ -110,7 +110,7 @@
      pero si alguien abre esto en una ventana angosta se puede scrollear en vez
      de perder columnas. El vertical sí es de todos los días: 200 fotos. #}
   <div class="border border-slate-200 rounded bg-white"
-       style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 15rem);">
+       style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 10rem);">
     <table id="traza-tabla" style="font-size:11px;border-collapse:separate;border-spacing:0;table-layout:auto;width:100%;white-space:nowrap;">
       <thead>
         <tr style="font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;color:rgb(100 116 139);white-space:nowrap;">
@@ -199,23 +199,11 @@
     </table>
   </div>
 
-  <p class="mt-3 text-xs text-slate-500" style="line-height:1.5;">
-    <strong>Cómo leerla.</strong> Cada fila es una foto del balance. Las
-    columnas del medio son <em>cuánto aportó cada componente</em> a ese Δ, ya
-    con el signo dado vuelta donde corresponde: si los Pasivos suben, la
-    utilidad baja. La celda vacía quiere decir que ese componente no se movió.
-    A la derecha, el stock por etapa en <em>toneladas</em> y el $/kg del
-    hilado, en gris cuando quedaron iguales que en la foto anterior. Las filas en rojo son
-    bajadas de más de $ 1.000.
-    <strong>Tocá la hora</strong> y la fila se abre acá mismo con los documentos
-    que la movieron, cada importe en la columna de su componente.
-    Una cobranza aparece dos veces y netea cero —la factura
-    baja, el cheque sube— porque la plata cambia de lugar sin crear resultado;
-    cuando NO netea cero, esa diferencia es la noticia: una retención, un
-    descuento, una nota de crédito. El <em>$/kg del hilado</em> mueve el valor
-    de TODO el stock de un saque: si cambió él y no cambiaron los kilos, el
-    salto es de tarifa y no se produjo ni se vendió nada.
-  </p>
+  {# 🚨 TMT 2026-08-07: *"esto saca"*. El bloque "Cómo leerla" eran doce
+     renglones de instrucciones debajo de la tabla: se leen una vez y después
+     comen la mitad del alto todos los días. Lo que hay que saber está en la
+     pantalla —el signo, la celda vacía, la fila roja— y lo que no, se
+     descubre tocando la hora. #}
 </div>
 
 {# El detalle se trae recién al abrir —200 fotos por decenas de movimientos
