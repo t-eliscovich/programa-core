@@ -27,6 +27,29 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 
 ## Aprobado por la dueña, pendiente de ejecutar
 
+### [S] Un movimiento de banco se carga con la fecha del día, no con una vieja
+Dueña 2026-08-07, mirando el +$7.340 de la traza: *"debería ese movimiento
+armarse con la fecha de hoy, no con el 05/08"*.
+
+Los dos movimientos de *Comisiones e impuestos 17/06-05/08* (NC $7.404,88 y ND
+$64,73) los cargó Alex el **07/08 a las 12:00** con `fecha = 2026-08-05`. Mueven
+la utilidad de HOY pero viven en la fila de anteayer, así que quien los busca
+por la fecha del salto no los encuentra — le pasó a la dueña en la pantalla de
+PICHINCHA. Es la misma trampa que costó el día del 03/08.
+
+Dos pedazos, y conviene el segundo primero:
+
+1. **Que no vuelva a pasar** — la pantalla de carga propone HOY por defecto y
+   pide confirmación explícita si la fecha es anterior. `modules/bancos/`.
+2. **Corregir esas dos filas** — por la pantalla de bancos, no por SQL.
+   🚨 `transacciones_bancarias.saldo` es un saldo corrido ALMACENADO: cambiar
+   la fecha reordena las filas y reescribe la cadena hacia adelante. Verificar
+   con `/admin/health/cadena-saldos` antes y después.
+
+Mientras tanto, la traza debería decir de qué FECHA es el movimiento bancario y
+no sólo el importe.
+
+
 ### [M] Rebuild de static/tailwind.css (aprobado 05/08)
 El build está congelado: 745 clases definidas vs 1.581 usadas → **~488 clases
 fantasma** que no renderizan sin avisar (`leading-none` ×21, `w-16` ×18,
