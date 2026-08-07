@@ -100,9 +100,75 @@ def de_la_ventana(desde, hasta) -> list[dict]:
         r["docs"] = [d for d in docs if d]
         r["meta"] = md if isinstance(md, dict) else {}
         # Un batch agrupa el hecho entero ("3 anticipos → compra N° 10130");
-        # sin batch, el hecho es el movimiento solo.
-        r["grupo"] = r.get("batch_id") or f"m{r['id_mov_doble']}"
+        # sin batch, el hecho es el movimiento solo… salvo que la metadata
+        # delate que varios movimientos son UNA sola operación.
+        r["grupo"] = (r.get("batch_id") or _grupo_por_meta(r)
+                      or f"m{r['id_mov_doble']}")
         out.append(r)
+    return out
+
+
+#: Los tipos donde N movimientos son UNA operación aunque no compartan
+#: `batch_id`, y por qué campo de la metadata se reconocen.
+#:
+#: 🚨 El depósito consolidado escribe una `mov_doble` POR CHEQUE (ocho cheques
+#: al banco = ocho filas) y no pasa `batch_id`, así que la traza los mostraba
+#: como ocho renglones de una ida sola al banco. Comparten `id_transaccion`:
+#: es literalmente el mismo depósito en la cuenta.
+GRUPO_POR_META = {"cheque_depositado": "id_transaccion",
+                  "reverso_cheque_depositado": "id_transaccion"}
+
+
+def _grupo_por_meta(r: dict) -> str:
+    campo = GRUPO_POR_META.get((r.get("tipo") or "").strip())
+    valor = (r.get("meta") or {}).get(campo) if campo else None
+    return f"{campo}:{valor}" if valor else ""
+
+
+def _cuentas(evs: list[dict]) -> dict[str, dict]:
+    """`b<no_banco>` → el hecho que movió esa cuenta en la ventana.
+
+    🚨 TMT 2026-08-07, sobre un renglón que decía sólo *"Banco PICHINCHA
+    −370"*: *"ahí tenemos un banco pichincha solo, no se está mostrando bien
+    lo que queremos"*. Y tenía razón: la foto guarda los bancos por CUENTA y
+    no por transacción (`saldo_bancos()` resuelve un running saldo), así que
+    el "documento" del diff es la cuenta y su nombre es todo lo que se sabía.
+
+    `mov_doble` sí sabe qué pasó, pero su lado banco es `transacciones_
+    bancarias`, que no tiene prefijo en la foto — el puente es el `no_banco`
+    de la metadata.
+
+    ⭐ Cuando el único hecho de la cuenta es también el del otro lado (un
+    depósito de cheques, una nota de débito contra un posdat), se devuelve EL
+    MISMO evento: los dos lados caen en el mismo grupo y salen en un renglón
+    que netea cero, que es lo que un traspaso es. Si la cuenta tuvo varios
+    hechos distintos no se elige uno —sería atribuirle el Δ entero al que
+    quedó— y el renglón dice cuántos fueron.
+    """
+    por_cuenta: dict[str, list[dict]] = {}
+    for ev in evs or []:
+        if "transacciones_bancarias" not in (ev.get("origen_table"),
+                                             ev.get("destino_table")):
+            continue
+        nb = (ev.get("meta") or {}).get("no_banco")
+        try:
+            doc = f"b{int(nb)}"
+        except (TypeError, ValueError):
+            continue
+        por_cuenta.setdefault(doc, []).append(ev)
+    out: dict[str, dict] = {}
+    for doc, lista in por_cuenta.items():
+        grupos = {e.get("grupo") for e in lista}
+        if len(grupos) == 1:
+            out[doc] = lista[0]
+            continue
+        out[doc] = {"tipo": "banco_varios", "grupo": doc, "docs": [doc],
+                    "label": f"{len(grupos)} movimientos de la cuenta",
+                    "texto": f"BC · {len(grupos)} movimientos",
+                    "concepto": " · ".join(
+                        sorted({(e.get("concepto") or "").strip()
+                                for e in lista if e.get("concepto")})),
+                    "meta": {}, "dia": lista[0].get("dia")}
     return out
 
 
@@ -116,4 +182,5 @@ def indice(evs: list[dict]) -> dict[str, dict]:
     for ev in evs or []:
         for d in ev.get("docs") or []:
             idx[d] = ev
+    idx.update(_cuentas(evs))
     return idx

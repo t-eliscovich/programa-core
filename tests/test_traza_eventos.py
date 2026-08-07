@@ -100,7 +100,7 @@ def test_la_devolucion_aparece_con_nombre():
              "familia": "traspaso"}]
     g = t.resumir(movs, -907.97, idx)[0]
     # 🚨 Corto y con el cliente: "barely can read cheque cancelado por anticipo"
-    assert g["texto"] == "FA PUE devolución"
+    assert g["texto"] == "FA PUE dev"
     assert "Factura: devolución" in g["titulo"]     # el largo, en el tooltip
     assert g["aporte"] == -907.97
     assert "tipo=factura_devolucion" in g["url"]
@@ -135,3 +135,130 @@ def test_sin_eventos_el_resumen_sigue_agrupando_por_regla():
              "regla": "Venta facturada", "etiqueta": "Factura 1 · AAA",
              "familia": "utilidad"}]
     assert t.resumir(movs, 500.0, {})[0]["texto"] == "Factura 1 · AAA"
+
+
+# ── 07/08: lo que la dueña pidió mirando la pantalla ────────────────────────
+
+def test_la_factura_sale_con_su_numero_y_el_codigo_del_cliente():
+    """🚨 TMT 2026-08-07: la factura es el hecho N° 1 de la traza (7.451) y
+    salía como "FA KLC nueva": el cliente sí, el número no. Con cinco facturas
+    en la misma ventana no hay forma de saber cuál es cuál.
+
+    El importe NO se repite en el texto: ya está en la columna Fact.
+    """
+    idx = ev.indice(_con_label([
+        _ev("factura_emitida", "factura", 9001, "factura", 9001,
+            importe=1641.22, concepto="Factura #181301 KLC",
+            metadata={"numf": "181301", "codigo_cli": "KLC"})]))
+    movs = [{"doc_id": "f9001", "componente": "facturas", "aporte": 1641.22,
+             "regla": "Venta facturada", "etiqueta": "Factura 181301 · KLC",
+             "familia": "utilidad"}]
+    g = t.resumir(movs, 1641.22, idx)[0]
+    assert g["texto"] == "FA #181301 KLC"
+
+
+def test_ocho_cheques_depositados_de_una_sola_ida_al_banco_son_un_renglon():
+    """🚨 El depósito consolidado escribe UNA `mov_doble` por cheque y NO pasa
+    `batch_id`: ocho cheques al banco salían como ocho renglones. Comparten
+    `id_transaccion` — es el mismo depósito en la cuenta.
+
+    El paréntesis cuenta CHEQUES (`n_grupo`), no documentos: en el grupo
+    también está el renglón de la cuenta bancaria.
+    """
+    meta = {"id_transaccion": 7788, "no_banco": 10, "consolidado": True,
+            "n_grupo": 8, "banco_nombre": "Pichincha"}
+    filas = [_ev("cheque_depositado", "cheque", 5000 + i,
+                 "transacciones_bancarias", 7788, importe=100.0,
+                 concepto=f"Dep. cheque {i}", metadata=meta) for i in range(8)]
+    idx = ev.indice(_con_label(filas))
+    movs = [{"doc_id": f"c{5000 + i}", "componente": "cheques", "aporte": -100.0,
+             "regla": "Cheque depositado o dado de baja",
+             "etiqueta": f"Cheque {i} · CLI", "familia": "traspaso"}
+            for i in range(8)]
+    movs.append({"doc_id": "b10", "componente": "bancos", "aporte": 800.0,
+                 "regla": "Movimiento bancario", "etiqueta": "Banco Pichincha",
+                 "familia": "traspaso"})
+    out = t.resumir(movs, 0.0, idx)
+    # Un solo renglón para los nueve documentos, y aporta CERO: un depósito no
+    # mueve la utilidad. 🚨 Pero se muestra igual — TMT: *"¿qué es más
+    # importante acá, los 40k que movieron o hilado y terminado?"*. El lado de
+    # cada componente va en SU columna: −800 en Cheq., +800 en Bancos.
+    assert [g["texto"] for g in out] == ["CH → BC (8)"], out
+    g = out[0]
+    assert g["aporte"] == 0.0
+    assert g["n"] == 9
+    assert g["por_col"] == {"cheques": -800.0, "bancos": 800.0}
+    assert g["bruto"] == 800.0
+
+
+def test_el_traspaso_grande_va_primero_aunque_aporte_cero():
+    """🚨 TMT 2026-08-07: *"siempre mostrar el cambio más grande primero"*.
+    Ordenado por el aporte, el depósito de $41.729 valía 0 y quedaba último —
+    o directamente afuera, por debajo del umbral de un peso.
+    """
+    meta = {"id_transaccion": 7788, "no_banco": 10, "n_grupo": 2}
+    idx = ev.indice(_con_label([
+        _ev("cheque_depositado", "cheque", 5000 + i, "transacciones_bancarias",
+            7788, importe=20864.5, metadata=meta) for i in range(2)]))
+    movs = [{"doc_id": f"c{5000 + i}", "componente": "cheques", "aporte": -20864.5,
+             "regla": "Cheque depositado o dado de baja",
+             "etiqueta": f"Cheque {i} · CLI", "familia": "traspaso"}
+            for i in range(2)]
+    movs += [
+        {"doc_id": "b10", "componente": "bancos", "aporte": 41729.0,
+         "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
+         "familia": "traspaso"},
+        {"doc_id": "#vsto", "componente": "vsto", "aporte": -3304.0,
+         "regla": "Stock", "etiqueta": "salió de hil. y tej. y term.",
+         "familia": "utilidad"},
+    ]
+    out = t.resumir(movs, -3304.0, idx)
+    assert out[0]["texto"] == "CH → BC (2)"
+    assert out[1]["texto"] == "salió de hil. y tej. y term."
+
+
+def test_la_cuenta_bancaria_se_une_con_su_hecho():
+    """🚨 TMT 2026-08-07: *"ahí tenemos un banco pichincha solo, no se está
+    mostrando bien lo que queremos"*. La foto guarda los bancos por CUENTA, así
+    que el renglón sabía el nombre del banco y nada más. El puente es el
+    `no_banco` de la metadata de `mov_doble`.
+    """
+    idx = ev.indice(_con_label([
+        _ev("nota_debito", "transacciones_bancarias", 900, "posdat", 44,
+            importe=-370.0, concepto="COMISIONES E IMPUESTOS",
+            metadata={"no_banco": 10, "documento": "ND"})]))
+    movs = [{"doc_id": "b10", "componente": "bancos", "aporte": -370.0,
+             "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
+             "familia": "traspaso"}]
+    g = t.resumir(movs, -370.0, idx)[0]
+    assert g["texto"] == "COMISIONES E IMPUESTOS"
+
+
+def test_si_la_cuenta_tuvo_varios_hechos_no_se_le_atribuye_a_uno():
+    """Elegir uno sería colgarle el Δ entero de la cuenta al que quedó último.
+    El renglón dice cuántos fueron y no lleva link: `banco_varios` no es un
+    tipo de `mov_doble` y filtrar por él daría una pantalla vacía.
+    """
+    idx = ev.indice(_con_label([
+        _ev("banco_nd_directo", "transacciones_bancarias", 900,
+            "transacciones_bancarias", 900, importe=-64.73, concepto="ND",
+            metadata={"no_banco": 10}),
+        _ev("banco_tr_directo", "transacciones_bancarias", 901,
+            "transacciones_bancarias", 901, importe=7404.88, concepto="TR",
+            metadata={"no_banco": 10}),
+    ]))
+    movs = [{"doc_id": "b10", "componente": "bancos", "aporte": 7340.15,
+             "regla": "Movimiento bancario", "etiqueta": "Banco PICHINCHA",
+             "familia": "traspaso"}]
+    g = t.resumir(movs, 7340.15, idx)[0]
+    assert g["texto"] == "BC · 2 movimientos"
+    assert g["url"] is None
+    assert "ND" in g["titulo"] and "TR" in g["titulo"]
+
+
+def test_una_cuenta_sin_numero_de_banco_no_rompe_el_indice():
+    """Metadata sin `no_banco` (o con basura): el renglón queda como estaba."""
+    idx = ev.indice(_con_label([
+        _ev("banco_mov_directo", "transacciones_bancarias", 900,
+            "transacciones_bancarias", 900, metadata={"no_banco": "ahí"})]))
+    assert idx == {}

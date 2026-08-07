@@ -82,6 +82,13 @@ META = "#meta"
 #: terminado, no pasaron dos cosas — pasó UNA.
 ORDEN_ETAPAS = ("hilado", "tejido", "terminado")
 
+#: Cómo se abrevia cada etapa EN EL RENGLÓN de la traza. TMT 2026-08-07:
+#: *"hilado tejido y terminado acotalos, ejemplo term., porque no entran en
+#: una pantalla"*. "hilado → tejido y terminado" son 27 caracteres para una
+#: columna que tiene ~95 px útiles: la frase se cortaba con "…" justo en la
+#: parte que dice a dónde fue la tela, que es toda la noticia.
+ABREV_ETAPA = {"hilado": "hil.", "tejido": "tej.", "terminado": "term."}
+
 #: Cuánto pueden diferir los kilos que salen de una etapa y los que entran a la
 #: siguiente para seguir llamándolo traspaso.
 TOLERANCIA_TRASPASO = 0.01         # 1 %
@@ -501,8 +508,10 @@ def _texto_stock(est: dict) -> str:
     coincidan: se ve lo que salió, lo que entró, y la diferencia queda a la
     vista sin que nadie la explique de más.
     """
-    bajaron = [e for e in ORDEN_ETAPAS if est.get(e, {}).get("dkg", 0) < -1]
-    subieron = [e for e in ORDEN_ETAPAS if est.get(e, {}).get("dkg", 0) > 1]
+    bajaron = [ABREV_ETAPA[e] for e in ORDEN_ETAPAS
+               if est.get(e, {}).get("dkg", 0) < -1]
+    subieron = [ABREV_ETAPA[e] for e in ORDEN_ETAPAS
+                if est.get(e, {}).get("dkg", 0) > 1]
     if bajaron and subieron:
         return f"{' y '.join(bajaron)} → {' y '.join(subieron)}"
     if subieron:

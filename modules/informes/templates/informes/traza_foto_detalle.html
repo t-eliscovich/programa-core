@@ -42,7 +42,13 @@
   {% set columnas = deltas | map(attribute=0) | list %}
   {% set visto = namespace(stock=false) %}
   {% for g in f.resumen %}
-    {% set propia = g.col in columnas %}
+    {# 🚨 TMT 2026-08-07: *"siempre mostrar el cambio más grande primero — ¿qué
+       es más importante acá, los 40k que movieron o hilado y terminado?"*. Un
+       depósito de cheques es UN hecho que toca DOS componentes: −41.729 en
+       Cheq. y +41.729 en Bancos, aporte cero. Con un solo importe por renglón
+       el hecho más grande de la ventana valía 0 y se caía por chico. Ahora
+       cada componente del grupo pinta en SU columna. #}
+    {% set propia = (g.por_col | default({}) | select('in', columnas) | list | length) > 0 %}
     <tr data-detalle="1" class="border-t border-slate-100">
       {# El concepto ocupa las dos primeras columnas y el importe SIN columna
          propia cae en la tercera, pegado a él. Antes se iba al borde derecho
@@ -60,9 +66,10 @@
         {% if not propia %}{{ g.aporte | num_es(0) }}{% endif %}
       </td>
       {% for col, label in deltas %}
+        {% set v = (g.por_col | default({})).get(col) %}
         <td class="px-1 py-1 text-right"
-            style="{% if propia and g.col == col %}{% if g.aporte < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-          {% if propia and g.col == col %}{{ g.aporte | num_es(0) }}{% endif %}
+            style="{% if v %}{% if v < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+          {% if v %}{{ v | num_es(0) }}{% endif %}
         </td>
       {% endfor %}
       {# 🚨 TMT 2026-08-06: *"podría ser 'pasó de terminada a cruda', + en una

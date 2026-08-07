@@ -85,7 +85,7 @@ def test_el_stock_es_un_renglon_que_dice_de_donde_a_donde():
     movs = motor.diff(nueva, vieja)
 
     assert len(movs) == 1, [m["etiqueta"] for m in movs]
-    assert movs[0]["etiqueta"] == "tejido → terminado"
+    assert movs[0]["etiqueta"] == "tej. → term."
     d = round(sum(_f(f["importe"]) for f in nueva)
               - sum(_f(v["importe"]) for v in vieja.values()), 2)
     assert movs[0]["aporte"] == d              # cierra al centavo, sin resto
@@ -94,10 +94,10 @@ def test_el_stock_es_un_renglon_que_dice_de_donde_a_donde():
 def test_si_solo_entra_o_solo_sale_lo_dice_asi():
     entra = motor.diff([_etapa("terminado", 312505.0, 5.2591)],
                        _guardada([_etapa("terminado", 312440.0, 5.2591)]))
-    assert entra[0]["etiqueta"] == "entró a terminado"
+    assert entra[0]["etiqueta"] == "entró a term."
     sale = motor.diff([_etapa("tejido", 299631.0, 3.5591)],
                       _guardada([_etapa("tejido", 299700.0, 3.5591)]))
-    assert sale[0]["etiqueta"] == "salió de tejido"
+    assert sale[0]["etiqueta"] == "salió de tej."
 
 
 # ── La primera foto ─────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ def test_una_etapa_nueva_no_pierde_su_delta():
     nueva = [_etapa("hilado", 1000.0, 2.0), _etapa("tejido", 20000.0, 2.5)]
     movs = motor.diff(nueva, vieja)
     assert round(sum(m["aporte"] for m in movs), 2) == 50000.0
-    assert any("tejido" in (m["etiqueta"] or "") for m in movs)
+    assert any("tej." in (m["etiqueta"] or "") for m in movs)
 
 
 def test_la_revaluacion_no_se_fusiona_con_la_tela():

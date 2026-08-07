@@ -1323,13 +1323,8 @@ def traza_foto(id_traza: int):
     foto = _traza.una(id_traza)
     if not foto:
         abort(404)
-    # `?frase=1` devuelve SÓLO la ventana contada en castellano, en texto
-    # plano. Es lo que trae el signo de pregunta de la grilla: la respuesta
-    # corta, sin abrir los movimientos.
-    if request.args.get("frase"):
-        from modules.informes import frase as _frase
-
-        return Response(_frase.explicar(foto), mimetype="text/plain")
+    # 🚨 El `?frase=1` se fue el 07/08 con `frase.py`: la línea en prosa repetía
+    # el Δ de la grilla y los renglones del detalle (TMT: *"repeticiones 0"*).
     # `?fragmento=1` devuelve el bloque solo, sin la cáscara de la app: es lo
     # que la tabla se trae para abrir la fila en el lugar. La misma ruta sirve
     # la pantalla entera para poder compartir el link de una ventana puntual.

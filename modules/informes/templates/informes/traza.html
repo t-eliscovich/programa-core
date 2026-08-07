@@ -42,9 +42,7 @@
   .traza-abierta .traza-hora { font-weight: 600; }
   /* Los renglones que cuelgan de una fila abierta llevan la misma barra, así
      se ve dónde empieza y dónde termina el bloque sin líneas de más. */
-  tr[data-frase="1"] > td:first-child,
   tr[data-detalle="1"] > td:first-child { box-shadow: inset 2px 0 0 rgb(191 219 254); }
-  tr[data-frase="1"] > td { color: rgb(30 41 59); white-space: normal; }
 </style>
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
 
@@ -193,9 +191,9 @@
     A la derecha, el stock por etapa en <em>toneladas</em> y el $/kg del
     hilado, en gris cuando quedaron iguales que en la foto anterior. Las filas en rojo son
     bajadas de más de $ 1.000.
-    <strong>Tocá la hora</strong> y la fila se abre acá mismo: primero la
-    explicación en una línea y debajo los documentos que la movieron, cada
-    importe en la columna de su componente. Una cobranza aparece dos veces y netea cero —la factura
+    <strong>Tocá la hora</strong> y la fila se abre acá mismo con los documentos
+    que la movieron, cada importe en la columna de su componente.
+    Una cobranza aparece dos veces y netea cero —la factura
     baja, el cheque sube— porque la plata cambia de lugar sin crear resultado;
     cuando NO netea cero, esa diferencia es la noticia: una retención, un
     descuento, una nota de crédito. El <em>$/kg del hilado</em> mueve el valor
@@ -223,21 +221,25 @@
   }
   medir();
   window.addEventListener('resize', medir);
-  // Un solo control: la hora. Abre UN panel con la frase arriba y los
-  // documentos abajo. Los dos fetch salen juntos; la frase llega primero
-  // porque es una línea, y el detalle se acomoda cuando llega.
+  // Un solo control y UN solo contenido: la hora abre los documentos.
+  // 🚨 TMT 2026-08-07: *"ya sabemos que la utilidad bajó, daaaahh —
+  // repeticiones 0"*. Arriba del detalle iba una línea en prosa ("La utilidad
+  // bajó $ 423: hilado → tejido (−$ 53)") que decía DOS veces lo que ya estaba
+  // en pantalla: el importe es la celda del Δ y los hechos son los renglones
+  // de abajo, alineados por componente. Y encima mentía por omisión —se comía
+  // los traspasos, así que en esa ventana no nombraba el Banco de −370, que
+  // era el movimiento grande—. Se fue la frase, el fetch y la ruta.
   function cerrar(fila, a) {
     var sig = fila.nextElementSibling;
-    while (sig && (sig.getAttribute('data-detalle') === '1'
-                   || sig.getAttribute('data-frase') === '1')) {
+    while (sig && sig.getAttribute('data-detalle') === '1') {
       var muere = sig; sig = sig.nextElementSibling;
       muere.parentNode.removeChild(muere);
     }
     a.setAttribute('aria-expanded', 'false');
     fila.classList.remove('traza-abierta');
   }
-  function filaFrase(fila, texto) {
-    return '<tr data-frase="1" class="border-t border-slate-100">' +
+  function filaAviso(fila, texto) {
+    return '<tr data-detalle="1" class="border-t border-slate-100">' +
       '<td colspan="' + fila.children.length + '" class="px-3 py-1.5">' +
       texto + '</td></tr>';
   }
@@ -247,32 +249,22 @@
     ev.preventDefault();
     var fila = a.closest('tr');
     var sig = fila.nextElementSibling;
-    if (sig && (sig.getAttribute('data-frase') === '1'
-                || sig.getAttribute('data-detalle') === '1')) {
+    if (sig && sig.getAttribute('data-detalle') === '1') {
       cerrar(fila, a); return;
     }
     a.setAttribute('aria-expanded', 'true');
     fila.classList.add('traza-abierta');
     var base = a.getAttribute('data-foto');
-    fila.insertAdjacentHTML('afterend', filaFrase(fila, 'buscando\u2026'));
-    var celda = fila.nextElementSibling.querySelector('td');
-    fetch(base + '?frase=1', { credentials: 'same-origin' })
-      .then(function (r) { return r.text(); })
-      .then(function (t) { celda.textContent = t || 'Sin nada que contar.'; })
-      .catch(function () { celda.textContent = 'No se pudo traer la explicación.'; });
+    fila.insertAdjacentHTML('afterend', filaAviso(fila, 'buscando\u2026'));
+    var espera = fila.nextElementSibling;
     fetch(base + '?fragmento=1', { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
       .then(function (html) {
-        var frase = fila.nextElementSibling;
-        if (!frase || frase.getAttribute('data-frase') !== '1') { return; }
-        frase.insertAdjacentHTML('afterend', html);
+        espera.insertAdjacentHTML('afterend', html);
+        espera.parentNode.removeChild(espera);
       })
       .catch(function () {
-        var frase = fila.nextElementSibling;
-        if (frase) {
-          frase.insertAdjacentHTML('afterend',
-            filaFrase(fila, 'no se pudo traer el detalle'));
-        }
+        espera.querySelector('td').textContent = 'no se pudo traer el detalle';
       });
   });
 })();

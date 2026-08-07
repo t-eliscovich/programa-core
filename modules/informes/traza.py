@@ -627,6 +627,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                   "etiqueta": m.get("etiqueta"),
                                   "url": m.get("url"),
                                   "col": m.get("componente"),
+                                  "por_col": {},
                                   "quienes": {},
                                   "evento": ev,
                                   "familia": m.get("familia")})
@@ -634,14 +635,32 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["col"] = None                    # el grupo cruza componentes
         ap = float(m.get("aporte") or 0)
         g["aporte"] = round(g["aporte"] + ap, 2)
+        # 🚨 TMT 2026-08-07, sobre el depósito de $41.729 que la pantalla no
+        # nombraba: *"siempre mostrar el cambio más grande primero — ¿qué es
+        # más importante acá, los 40k que movieron o hilado y terminado?"*.
+        # Un traspaso APORTA cero a la utilidad pero MUEVE lo más grande del
+        # día; con un solo total el renglón valía 0 y se caía por chico. Se
+        # guarda el movimiento de cada componente por separado: la fila dice
+        # −41.729 en Cheq. y +41.729 en Bancos, y su aporte al Δ sigue siendo
+        # cero, que es la verdad.
+        c = m.get("componente")
+        if c:
+            g["por_col"][c] = round(g["por_col"].get(c, 0.0) + ap, 2)
         g["n"] += 1
         q = _quien(m.get("etiqueta"), m.get("componente"))
         if q:
             g["quienes"][q] = round(g["quienes"].get(q, 0.0) + ap, 2)
+    for g in grupos.values():
+        # Lo que el grupo MOVIÓ, aunque no haya aportado: el lado más grande.
+        g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
     out, menores = [], 0.0
-    for g in sorted(grupos.values(), key=lambda x: abs(x["aporte"]), reverse=True):
-        # Lo ciego no se esconde por chico: es la lista de tareas.
+    for g in sorted(grupos.values(),
+                    key=lambda x: max(abs(x["aporte"]), x["bruto"]),
+                    reverse=True):
+        # Lo ciego no se esconde por chico: es la lista de tareas. Y un
+        # traspaso grande tampoco: aporta cero, pero es la noticia.
         if (abs(g["aporte"]) < UMBRAL_VISIBLE
+                and g["bruto"] < UMBRAL_VISIBLE
                 and g.get("familia") != "sin_explicar"):
             menores = round(menores + g["aporte"], 2)
             continue
@@ -653,22 +672,57 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
                              reverse=True)
             md = ev.get("meta") or {}
+            cerrado = False        # el texto ya cuenta cuántos son
             # La contraparte que sabe el evento manda sobre la que se adivina
             # de la etiqueta.
             quien = (md.get("codigo_prov") or (quienes[0] if quienes else ""))
-            if ev["tipo"] == "retencion_asinfo_aplicada":
+            if ev.get("texto"):
+                # El evento ya trae su renglón escrito (la cuenta bancaria con
+                # varios hechos): no hay tipo que traducir.
+                g["texto"] = ev["texto"]
+            elif ev["tipo"] == "retencion_asinfo_aplicada":
                 # ⭐ TMT 2026-08-07: *"sólo quiero saber que se aplicaron x
                 # monto total a x facturas por retenciones"*. El cliente no
                 # aporta acá: lo que explica el cambio de utilidad es cuánto
                 # se retuvo y sobre cuántas facturas.
                 g["texto"] = "retenciones"
+            elif ev["tipo"] in ("factura_emitida", "factura_devolucion"):
+                # 🚨 TMT 2026-08-07: la factura es lo que más sale en la traza
+                # (7.451 hechos, el tipo N° 1) y salía como "FA KLC nueva" —
+                # el cliente sí, pero NINGÚN número. Con cinco facturas en la
+                # misma ventana no hay forma de saber cuál es cuál ni de
+                # buscarla en Asinfo. El número va primero porque es lo que se
+                # busca; el importe ya está en la columna Fact., así que no se
+                # repite.
+                numf = str(md.get("numf") or "").strip()
+                g["texto"] = " ".join(
+                    x for x in ("FA", f"#{numf}" if numf else "",
+                                md.get("codigo_cli") or quien,
+                                "dev" if ev["tipo"] == "factura_devolucion" else "")
+                    if x)
+            elif ev["tipo"].endswith("cheque_depositado") and md.get("n_grupo"):
+                # 🚨 Un depósito consolidado escribe UNA `mov_doble` por cheque:
+                # ocho cheques al banco salían como ocho renglones de una sola
+                # ida al banco. Ahora es uno — y el código del PRIMER cheque no
+                # va, porque son ocho clientes distintos. El paréntesis cuenta
+                # CHEQUES (`n_grupo`), no documentos: en el grupo también está
+                # el renglón de la cuenta bancaria.
+                g["texto"] = f"{_corto(ev['tipo'])} ({int(md['n_grupo'])})"
+                cerrado = True
+            elif ev["tipo"].startswith("banco_") or ev["tipo"] == "nota_debito":
+                # ⭐ Del lado del banco el NOMBRE del tipo no dice nada ("BC
+                # movimiento", "BC nota de débito"): lo que la dueña reconoce
+                # es el concepto que se tipeó en la pantalla de Bancos. El
+                # nombre largo del tipo sigue en el `title`.
+                g["texto"] = ((ev.get("concepto") or "").strip()
+                              or _corto(ev["tipo"], quien))
             else:
                 g["texto"] = _corto(ev["tipo"], quien)
             # El destino, cuando el evento lo sabe: "AN AI → CP 10130" dice a
             # qué compra fueron, que es lo que /historial muestra y acá faltaba.
             if md.get("numero_compra"):
                 g["texto"] += f" {md['numero_compra']}"
-            if g["n"] > 1:
+            if g["n"] > 1 and not ev.get("texto") and not cerrado:
                 g["texto"] += (f" · {g['n']} facturas"
                                if ev["tipo"] == "retencion_asinfo_aplicada"
                                else f" ({g['n']})")
@@ -676,7 +730,10 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                          if ev.get("concepto") else "")
             # Al Historial, filtrado por ese tipo y ese día: ahí están los
             # movimientos uno por uno, que es como a la dueña le gusta verlos.
-            g["url"] = (f"/historial?tipo={ev['tipo']}"
+            # `banco_varios` no es un tipo de `mov_doble` — filtrar por él daría
+            # una pantalla vacía, así que ese renglón no lleva link.
+            g["url"] = (None if ev["tipo"] == "banco_varios" else
+                        f"/historial?tipo={ev['tipo']}"
                         f"&desde={ev['dia']}&hasta={ev['dia']}")
 
         elif g["n"] > 1:
@@ -704,12 +761,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
         out.append({"texto": "movimientos chicos", "aporte": menores, "n": 0,
-                    "url": None, "col": None, "familia": "utilidad"})
+                    "url": None, "col": None, "por_col": {}, "bruto": 0.0,
+                    "familia": "utilidad"})
     if d_utilidad is not None:
         resto = round(d_utilidad - sum(g["aporte"] for g in out), 2)
         if abs(resto) >= UMBRAL_VISIBLE:
             out.append({"texto": "diferencia contra el Δ", "aporte": resto, "n": 0,
-                        "url": None, "col": None, "familia": "sin_explicar"})
+                        "url": None, "col": None, "por_col": {}, "bruto": 0.0,
+                        "familia": "sin_explicar"})
     return out
 
 
