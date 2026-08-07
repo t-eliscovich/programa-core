@@ -837,6 +837,27 @@ def _banco_operativo(needle: str, conn=None) -> int | None:
     return int(match["no_banco"]) if match else None
 
 
+#: Cómo se llama, en `mov_doble`, cada salto de la máquina de estados del
+#: cheque. TMT 2026-08-07: *"hacé todas"*.
+#:
+#: 🚨 `transicionar_stat` mueve plata en el BANCO —deposita, compensa un
+#: rebote, descuenta un devuelto— y no dejaba ninguna huella: esos movimientos
+#: no salían en /historial, no se podían revertir con el ↺, y en la traza el
+#: banco aparecía sin hecho que lo explicara. El depósito en LOTE sí la deja
+#: (`cheque_depositado`), así que el mismo cheque depositado de dos maneras
+#: distintas se contaba distinto.
+TIPO_MD_TRANSICION = {
+    "B": "cheque_depositado", "V": "cheque_depositado", "I": "cheque_depositado",
+    "C": "cheque_efectivo_to_caja",
+    "9": "cheque_rebotado",
+    "1": "cheque_devuelto", "2": "cheque_devuelto", "3": "cheque_devuelto",
+}
+
+#: Cuando el salto no mueve plata (X, T, P, Z, D…) igual queda la huella del
+#: cambio de estado: es lo que contesta "¿quién lo pasó a anulado y cuándo?".
+TIPO_MD_TRANSICION_OTRO = "cheque_stat_cambio"
+
+
 def transicionar_stat(
     id_cheque: int,
     *,
@@ -899,6 +920,7 @@ def transicionar_stat(
             )
 
         side_effect_id = None
+        banco_destino = None
         importe = float(ch["importe"] or 0)
 
         # --- depositado: B (cartera→Pichincha), V (re-depósito de un devuelto→
@@ -1135,6 +1157,41 @@ def transicionar_stat(
                 tuple(params),
                 conn=conn,
             )
+
+        # La huella, UNA por transición y adentro de la misma tx: si el
+        # cheque se movió, el hecho existe; si el registro falla, no se movió
+        # nada. `no_banco` en la metadata es lo que le permite a la traza unir
+        # este hecho con el renglón del banco.
+        import mov_doble as _md
+
+        _tipo_md = TIPO_MD_TRANSICION.get(stat_destino, TIPO_MD_TRANSICION_OTRO)
+        _md.registrar(
+            conn=conn,
+            tipo=_tipo_md,
+            origen_table="cheque",
+            origen_id=int(id_cheque),
+            destino_table=("transacciones_bancarias" if side_effect_id
+                           and stat_destino in ("B", "V", "I") else "cheque"),
+            destino_id=(int(side_effect_id) if side_effect_id
+                        and stat_destino in ("B", "V", "I") else int(id_cheque)),
+            importe=importe,
+            fecha=fecha,
+            concepto=(f"{stat_prev or '?'}→{stat_destino} cheque "
+                      f"{ch.get('no_cheque') or '#' + str(id_cheque)} "
+                      f"{ch.get('codigo_cli') or ''}").strip()[:200],
+            usuario=usuario,
+            metadata={k: v for k, v in {
+                "id_cheque": int(id_cheque),
+                "stat_prev": stat_prev,
+                "stat_destino": stat_destino,
+                "codigo_cli": (ch.get("codigo_cli") or "").strip() or None,
+                "no_banco": int(banco_destino) if banco_destino else None,
+                "id_transaccion": (int(side_effect_id)
+                                   if side_effect_id
+                                   and stat_destino in ("B", "V", "I") else None),
+                "motivo": (motivo or "").strip() or None,
+            }.items() if v is not None},
+        )
 
     return {
         "id_cheque": id_cheque,

@@ -253,3 +253,39 @@ def test_8_cobrar_efectivo_Z_a_C(setup):
 
     chq.transicionar_stat(id_ch, stat_destino="C", usuario="test")
     assert _stat(conn, id_ch) == "C"
+
+
+# ── La huella en mov_doble (07/08/2026) ─────────────────────────────────────
+
+def test_cada_transicion_deja_su_huella_en_mov_doble(monkeypatch):
+    """🚨 `transicionar_stat` mueve plata en el BANCO —deposita, compensa un
+    rebote, descuenta un devuelto— y no dejaba ninguna huella: esos
+    movimientos no salían en /historial, no se podían revertir con el ↺, y en
+    la traza el banco aparecía sin hecho que lo explicara. El depósito en LOTE
+    sí la deja, así que el mismo cheque depositado de dos maneras distintas se
+    contaba distinto.
+    """
+    from modules.cheques import queries as chq
+
+    assert chq.TIPO_MD_TRANSICION["B"] == "cheque_depositado"
+    assert chq.TIPO_MD_TRANSICION["V"] == "cheque_depositado"
+    assert chq.TIPO_MD_TRANSICION["I"] == "cheque_depositado"
+    assert chq.TIPO_MD_TRANSICION["C"] == "cheque_efectivo_to_caja"
+    assert chq.TIPO_MD_TRANSICION["9"] == "cheque_rebotado"
+    for d in ("1", "2", "3"):
+        assert chq.TIPO_MD_TRANSICION[d] == "cheque_devuelto"
+    # Un salto que no mueve plata igual deja huella: contesta quién lo pasó a
+    # anulado y cuándo.
+    assert chq.TIPO_MD_TRANSICION.get("X") is None
+    assert chq.TIPO_MD_TRANSICION_OTRO == "cheque_stat_cambio"
+
+
+def test_los_tipos_nuevos_tienen_nombre_en_el_historial_y_en_la_traza():
+    """Un tipo sin entrada cae al fallback `tipo.replace('_',' ')`, que produce
+    la cadena más larga posible en la columna más angosta."""
+    from modules.cheques import queries as chq
+    from modules.historial.queries import TIPOS_CORTO, TIPOS_LABEL
+
+    for t in set(chq.TIPO_MD_TRANSICION.values()) | {chq.TIPO_MD_TRANSICION_OTRO}:
+        assert t in TIPOS_LABEL, t
+        assert t in TIPOS_CORTO, t
