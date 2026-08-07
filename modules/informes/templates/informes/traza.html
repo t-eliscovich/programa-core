@@ -43,6 +43,12 @@
   /* Los renglones que cuelgan de una fila abierta llevan la misma barra, así
      se ve dónde empieza y dónde termina el bloque sin líneas de más. */
   tr[data-detalle="1"] > td:first-child { box-shadow: inset 2px 0 0 rgb(191 219 254); }
+  /* 🚨 TMT 2026-08-07: *"achicá las columnas, abreviá si es necesario, sí o sí
+     tiene que entrar en la pantalla sin scrollear"*. Con dieciséis columnas el
+     ancho lo fijan los TÍTULOS y el padding, no los números. El `id` le gana a
+     las clases px-1/px-1.5 sin tocar Tailwind, que está congelado. */
+  #traza-tabla th, #traza-tabla td { padding-left: 3px; padding-right: 3px; }
+  #traza-tabla th { font-size: 9px; }
 </style>
 <div class="max-w-full" style="font-variant-numeric:tabular-nums;">
 
@@ -102,16 +108,17 @@
           {# Las tres primeras quedan fijas también al costado: sin eso, al
              scrollear a la derecha la columna de la hora tapaba a Utilidad y
              se leía "DAD". #}
-          <th class="px-1.5 py-1 text-left tz-1" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Cuándo</th>
-          <th class="px-1.5 py-1 text-right tz-2" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;">Utilidad</th>
+          <th class="px-1.5 py-1 text-left tz-1" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;" title="Cuándo se sacó la foto">Hora</th>
+          <th class="px-1.5 py-1 text-right tz-2" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;" title="Utilidad">Util.</th>
           <th class="px-1 py-1 text-right tz-3" style="position:sticky;top:0;z-index:4;background:rgb(248 250 252);font-weight:500;border-right:1px solid rgb(226 232 240);">Δ</th>
           {% for col, label in deltas %}
             <th class="px-1 py-1 text-right"
-                style="width:3.9em;position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
+                title="{{ titulos.get(col, label) }}"
+                style="position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;">{{ label }}</th>
           {% endfor %}
           <th class="px-1 py-1 text-right"
               style="position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;"
-              title="Maquinaria, Terrenos y Dividendos">Otros</th>
+              title="Maquinaria, Terrenos y Dividendos">Otr.</th>
           {% for col, label in kilos %}
             <th class="px-1 py-1 text-right"
                 style="position:sticky;top:0;z-index:3;background:rgb(248 250 252);font-weight:500;{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}">{{ label }}</th>

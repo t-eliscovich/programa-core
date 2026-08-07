@@ -230,6 +230,20 @@ ETIQUETAS_CORTAS = {
     "vqx": "Quím.", "totp": "Pasivos",
 }
 
+#: Los MISMOS rótulos, recortados para el encabezado de la grilla. 🚨 TMT
+#: 2026-08-07: *"achicá las columnas, abreviá si es necesario, sí o sí tiene
+#: que entrar en la pantalla sin scrollear"*. Con dieciséis columnas el ancho
+#: lo fijan los TÍTULOS, no los números: "Terminado" pide 110 px para mostrar
+#: "-549". Medido en el navegador: 1.325 px de tabla contra 1.241 de caja.
+#: El nombre largo sigue en el `title` de cada columna, y `ETIQUETAS_CORTAS`
+#: —que también arma los renglones "Bancos: sin explicar por documento"— no se
+#: toca: ahí el ancho sobra.
+ETIQUETAS_GRILLA = {
+    "caja": "Caja", "bancos": "Bco.", "cheques": "Chq.",
+    "facturas": "Fac.", "antic": "Ant.", "vsto": "Stk.",
+    "vqx": "Quí.", "totp": "Pas.",
+}
+
 #: Las etapas del stock, en KILOS: es lo que guarda la foto (la tarifa está
 #: sólo para el hilado, así que el valor de tejido y terminado no se puede
 #: reconstruir). Acá sí va el nivel, porque un stock de tela es un número que
@@ -241,8 +255,8 @@ ETIQUETAS_CORTAS = {
 #: completo, así se diferencia de los cambios chiquitos del detalle"*. El nivel
 #: va en miles con la "k" pegada (1.939k) y el Δ del detalle en kilos pelados
 #: (−22): dos escalas en la misma columna, imposibles de confundir.
-COLUMNAS_KG = (("hilado_kg", "Hilado"), ("tejido_kg", "Tejido"),
-               ("terminado_kg", "Terminado"))
+COLUMNAS_KG = (("hilado_kg", "Hil."), ("tejido_kg", "Tej."),
+               ("terminado_kg", "Term."))
 
 #: Lo que la grilla vigila para saber si un kilo o la tarifa se movieron. El
 #: $/kg entra con umbral propio: se mueve en la cuarta decimal y un salto de
