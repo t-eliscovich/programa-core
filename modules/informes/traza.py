@@ -590,6 +590,18 @@ def _quien(etiqueta: str | None, comp: str | None = None) -> str:
     return q if _RE_CODIGO.match(q) else ""
 
 
+#: 🚨 El texto del renglón de stock se escribe cuando se SACA la foto
+#: (`foto._texto_stock`), no cuando se muestra: abreviarlo allá dejaba las 200
+#: fotos que ya están guardadas con "hilado → tejido y terminado" — justo las
+#: que la dueña mira. Se abrevia también al RENDERIZAR, que es donde se ve.
+_RE_ETAPAS = re.compile(r"\b(hilado|tejido|terminado)\b")
+_ABREV = {"hilado": "hil.", "tejido": "tej.", "terminado": "term."}
+
+
+def _abreviar_etapas(texto: str) -> str:
+    return _RE_ETAPAS.sub(lambda m: _ABREV[m.group(1)], texto or "")
+
+
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
@@ -758,6 +770,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                           f": sin explicar por documento").strip(": ")
         else:
             g["texto"] = g.get("etiqueta") or g["regla"]
+        g["texto"] = _abreviar_etapas(g.get("texto") or "")
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
         out.append({"texto": "movimientos chicos", "aporte": menores, "n": 0,

@@ -262,3 +262,14 @@ def test_una_cuenta_sin_numero_de_banco_no_rompe_el_indice():
         _ev("banco_mov_directo", "transacciones_bancarias", 900,
             "transacciones_bancarias", 900, metadata={"no_banco": "ahí"})]))
     assert idx == {}
+
+
+def test_las_etapas_se_abrevian_tambien_en_las_fotos_ya_guardadas():
+    """🚨 El texto del stock se escribe al SACAR la foto, no al mostrarla:
+    abreviarlo sólo en `foto._texto_stock` dejaba las 200 fotos guardadas con
+    "hilado → tejido y terminado", que son justo las que la dueña mira.
+    """
+    movs = [{"doc_id": "#vsto", "componente": "vsto", "aporte": -370.0,
+             "regla": "Stock", "familia": "utilidad",
+             "etiqueta": "salió de hilado y tejido y terminado"}]
+    assert t.resumir(movs, -370.0, {})[0]["texto"] == "salió de hil. y tej. y term."
