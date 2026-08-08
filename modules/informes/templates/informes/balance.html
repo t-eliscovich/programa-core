@@ -336,7 +336,7 @@
             <td class="num-cell">{% if row.label == 'Proyección' %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span>{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
-            <td class="num-cell" style="color:#64748b"{% if row.proy_ayuda %} title="{{ row.proy_ayuda }}"{% endif %}>{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
+            <td class="num-cell" style="color:#64748b"{% if row.proy_ayuda %} title="{{ row.proy_ayuda }}"{% endif %}>{% if row.proy %}{% if row.label == 'Proyección' %}kg. {% endif %}{{ row.proy | num_es(0) }}{% endif %}</td>
           </tr>
             {% endif %}
           {% endfor %}
