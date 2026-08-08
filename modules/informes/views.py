@@ -958,6 +958,40 @@ def balance():
                         "unitarios) × 1,045 = 4,5% de desperdicio)."
                     )
                     break
+
+            # Federico 2026-08-08 — kg de VENTA por RITMO en la columna
+            # "Proyecciones" de la fila Proyección: cuánto se vendería a fin de
+            # mes si se mantiene el ritmo de venta actual.
+            #     kg vendidos × días hábiles del mes / días hábiles transcurridos
+            # Día hábil = lunes a viernes MENOS los feriados nacionales de
+            # Ecuador y el local de Quito (Fundación de Quito). Ver
+            # modules/informes/feriados.py. Es un valor CALCULADO, distinto del
+            # kg editable de la columna Kg (la meta manual del mes).
+            try:
+                from calendar import monthrange
+                from modules.informes.feriados import dias_habiles_ec
+
+                _hoy = today_ec()
+                _prim = _hoy.replace(day=1)
+                _ult = _hoy.replace(day=monthrange(_hoy.year, _hoy.month)[1])
+                _hab_mes = dias_habiles_ec(_prim, _ult)
+                _hab_transc = dias_habiles_ec(_prim, _hoy)
+                _venta_kg = _cell("Venta", "kg")
+                if _hab_transc > 0 and _venta_kg > 0:
+                    _ritmo_kg = _venta_kg * _hab_mes / _hab_transc
+                    for _r in _tabla:
+                        if _r.get("label") == "Proyección":
+                            _r["proy"] = _ritmo_kg
+                            _r["proy_ayuda"] = (
+                                "Kg de venta proyectada al ritmo actual: kg "
+                                "vendidos × días hábiles del mes / días hábiles "
+                                f"transcurridos ({_venta_kg:,.0f} × {_hab_mes} / "
+                                f"{_hab_transc}). Días hábiles = lunes a viernes "
+                                "menos feriados de Ecuador y de Quito."
+                            )
+                            break
+            except Exception:  # noqa: BLE001 — no romper el balance por esto
+                pass
     except Exception:  # noqa: BLE001 — no romper el balance por esto
         pass
 

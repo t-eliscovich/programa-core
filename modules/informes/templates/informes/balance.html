@@ -309,10 +309,11 @@
             <th class="col-header" style="text-align:right">U$</th>
             {# TMT 2026-06-23 (dueña): columna Proyectado = presupuesto de gastos
                de Iniciales (GS.PROY del dBase), al lado del gasto real (U$). #}
-            {# TMT 2026-08-04 — en el celu "GS. PROYECTADOS" es una palabra
-               indivisible de ~90px: sola empujaba la tabla fuera de pantalla.
+            {# Federico 2026-08-08 — renombrada "Proyecciones". Además del gasto
+               proyectado de las filas de COSTOS, ahora muestra en la fila
+               Proyección el kg de venta al RITMO actual (ver views.balance).
                Abreviada SOLO en celular (ver `.solo-movil` en base.html). #}
-            <th class="col-header" style="text-align:right"><span class="solo-escritorio">Gs. Proyectados</span><span class="solo-movil">Gs.Proy.</span></th>
+            <th class="col-header" style="text-align:right"><span class="solo-escritorio">Proyecciones</span><span class="solo-movil">Proyec.</span></th>
           </tr>
         </thead>
         <tbody>
@@ -335,7 +336,7 @@
             <td class="num-cell">{% if row.label == 'Proyección' %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span>{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
-            <td class="num-cell" style="color:#64748b">{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
+            <td class="num-cell" style="color:#64748b"{% if row.proy_ayuda %} title="{{ row.proy_ayuda }}"{% endif %}>{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
           </tr>
             {% endif %}
           {% endfor %}
