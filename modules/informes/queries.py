@@ -7010,11 +7010,13 @@ def retiros_recientes(dias: int = 180) -> list[dict]:
     )
 
 
-def retiros_del_mes_actual() -> list[dict]:
-    """Retiros del mes corriente — para la tab 'Dividendos del mes'.
+def retiros_del_mes_actual(anio: int | None = None, mes: int | None = None) -> list[dict]:
+    """Retiros de un mes — para la tab 'Dividendos del mes'.
 
     TMT 2026-05-20 — pedido dueña: unificar /informes/retiros con tabs
     mes/año. Replaces el filtro 'últimos N días' que era poco intuitivo.
+    2026-08-08 (Federico): `anio`/`mes` opcionales para poder mirar un mes
+    pasado; sin argumentos = mes corriente (COALESCE con CURRENT_DATE).
     """
     return db.fetch_all(
         """
@@ -7036,15 +7038,19 @@ def retiros_del_mes_actual() -> list[dict]:
                       ) AS anulada
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
-        WHERE EXTRACT(YEAR FROM r.fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
-          AND EXTRACT(MONTH FROM r.fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
+        WHERE EXTRACT(YEAR FROM r.fecha)  = COALESCE(%s, EXTRACT(YEAR FROM CURRENT_DATE))
+          AND EXTRACT(MONTH FROM r.fecha) = COALESCE(%s, EXTRACT(MONTH FROM CURRENT_DATE))
         ORDER BY r.fecha DESC, r.id_retiro DESC
-        """
+        """,
+        (anio, mes),
     )
 
 
-def retiros_del_anio_actual() -> list[dict]:
-    """Retiros del año corriente — para la tab 'Dividendos del año'."""
+def retiros_del_anio_actual(anio: int | None = None) -> list[dict]:
+    """Retiros de un año — para la tab 'Dividendos del año'.
+
+    2026-08-08 (Federico): `anio` opcional; sin argumento = año corriente.
+    """
     return db.fetch_all(
         """
         SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto, r.clave,
@@ -7065,35 +7071,52 @@ def retiros_del_anio_actual() -> list[dict]:
                       ) AS anulada
         FROM scintela.retiros r
         LEFT JOIN scintela.banco b ON b.no_banco = r.nb
-        WHERE EXTRACT(YEAR FROM r.fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+        WHERE EXTRACT(YEAR FROM r.fecha) = COALESCE(%s, EXTRACT(YEAR FROM CURRENT_DATE))
         ORDER BY r.fecha DESC, r.id_retiro DESC
-        """
+        """,
+        (anio,),
     )
 
 
-def retiros_total_mes_actual() -> float:
+def retiros_anios_disponibles() -> list[int]:
+    """Años distintos con retiros cargados — para el selector de la pantalla."""
+    rows = db.fetch_all(
+        """
+        SELECT DISTINCT EXTRACT(YEAR FROM fecha)::int AS anio
+        FROM scintela.retiros
+        WHERE fecha IS NOT NULL
+        ORDER BY anio DESC
+        """
+    )
+    return [int(r["anio"]) for r in rows if r.get("anio") is not None]
+
+
+def retiros_total_mes_actual(anio: int | None = None, mes: int | None = None) -> float:
     # TMT 2026-06-10 revert: filtro asinfo-backfill removido (convención
     # "no contar Asinfo hasta cierre" descartada).
+    # 2026-08-08 (Federico): anio/mes opcionales; sin args = mes corriente.
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(ret), 0) AS total
         FROM scintela.retiros
-        WHERE EXTRACT(YEAR FROM fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
-          AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
+        WHERE EXTRACT(YEAR FROM fecha)  = COALESCE(%s, EXTRACT(YEAR FROM CURRENT_DATE))
+          AND EXTRACT(MONTH FROM fecha) = COALESCE(%s, EXTRACT(MONTH FROM CURRENT_DATE))
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-        """
+        """,
+        (anio, mes),
     )
     return float(row["total"] or 0) if row else 0.0
 
 
-def retiros_total_anual() -> float:
+def retiros_total_anual(anio: int | None = None) -> float:
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(ret), 0) AS total
         FROM scintela.retiros
-        WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+        WHERE EXTRACT(YEAR FROM fecha) = COALESCE(%s, EXTRACT(YEAR FROM CURRENT_DATE))
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-        """
+        """,
+        (anio,),
     )
     return float(row["total"] or 0) if row else 0.0
 

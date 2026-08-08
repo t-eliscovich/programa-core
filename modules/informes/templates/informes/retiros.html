@@ -15,7 +15,7 @@
     <a href="{{ url_for('capital.retirar') }}"
        class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#e11d48;">− Retiro</a>
   {% endif %}
-  <a href="{{ url_for('informes.retiros', tab=tab, export='csv') }}"
+  <a href="{{ url_for('informes.retiros', tab=tab, anio=anio, mes=mes, export='csv') }}"
      class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
   <button onclick="window.print()"
           class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
@@ -33,31 +33,66 @@
     </div>
   {% endif %}
 
+  {# 2026-08-08 (Federico): selector de mes/año para mirar periodos pasados. #}
+  {% set nombres_mes = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'] %}
+
   {# KPIs (ambos siempre — el tab activo destaca el primario) #}
   {{ informes_kpi_row([
     {"label": "Dividendos del mes",
      "value": total_mes | money_es,
-     "sub": (n_mes ~ ' retiro' ~ ('' if n_mes == 1 else 's') ~ ' en el mes corriente'),
+     "sub": (n_mes ~ ' retiro' ~ ('' if n_mes == 1 else 's') ~ (' en el mes corriente' if es_mes_corriente else ' en ' ~ nombres_mes[mes] ~ ' ' ~ anio)),
      "primary": (tab == 'mes')},
     {"label": "Dividendos del año",
      "value": total_anual | money_es,
-     "sub": (n_anio ~ ' retiro' ~ ('' if n_anio == 1 else 's') ~ ' en el año en curso'),
+     "sub": (n_anio ~ ' retiro' ~ ('' if n_anio == 1 else 's') ~ (' en el año en curso' if es_anio_corriente else ' en ' ~ anio)),
      "primary": (tab == 'anio')},
   ]) }}
 
-  {# Switcher de tabs #}
+  {# Switcher de tabs (preserva el periodo elegido) #}
   <div class="no-print border-b border-slate-200 mb-4 flex items-end gap-1">
-    <a href="{{ url_for('informes.retiros', tab='mes') }}"
+    <a href="{{ url_for('informes.retiros', tab='mes', anio=anio, mes=mes) }}"
        class="px-4 py-2 text-sm border-b-2 -mb-px transition
               {% if tab == 'mes' %}border-sky-600 text-sky-700 font-semibold{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
       Mes <span class="ml-1 text-xs text-slate-400">{{ n_mes }}</span>
     </a>
-    <a href="{{ url_for('informes.retiros', tab='anio') }}"
+    <a href="{{ url_for('informes.retiros', tab='anio', anio=anio, mes=mes) }}"
        class="px-4 py-2 text-sm border-b-2 -mb-px transition
               {% if tab == 'anio' %}border-sky-600 text-sky-700 font-semibold{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
       Año <span class="ml-1 text-xs text-slate-400">{{ n_anio }}</span>
     </a>
   </div>
+
+  {# Filtro de periodo. En la tab 'Año' sólo aplica el año. #}
+  <form method="get" class="no-print flex flex-wrap items-end gap-2 mb-4">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% if tab == 'mes' %}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Mes</label>
+      <select name="mes"
+              class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm">
+        {% for m in range(1, 13) %}
+        <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ nombres_mes[m] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Año</label>
+      <select name="anio"
+              class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm">
+        {% for a in anios %}
+        <option value="{{ a }}" {% if a == anio %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+            class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">Ver</button>
+    {% if (tab == 'mes' and not es_mes_corriente) or (tab == 'anio' and not es_anio_corriente) %}
+      <a href="{{ url_for('informes.retiros', tab=tab) }}"
+         class="text-sm px-3 py-1.5 text-slate-500 hover:underline">Volver al actual</a>
+    {% endif %}
+  </form>
 
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
     <table class="info-table">

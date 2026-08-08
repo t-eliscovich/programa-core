@@ -3113,12 +3113,28 @@ def retiros():
     if tab not in ("mes", "anio"):
         tab = "mes"
 
+    # 2026-08-08 (Federico): selector de periodo. `anio`/`mes` opcionales; si
+    # no vienen (o son inválidos) se usa el mes/año corriente. Así la pantalla
+    # sigue abriendo en el mes actual pero permite mirar meses pasados.
+    hoy = date.today()
+
+    def _arg_int(nombre, lo, hi, default):
+        try:
+            v = int(request.args.get(nombre))
+        except (TypeError, ValueError):
+            return default
+        return v if lo <= v <= hi else default
+
+    anio = _arg_int("anio", 2000, 2100, hoy.year)
+    mes = _arg_int("mes", 1, 12, hoy.month)
+
     if tab == "anio":
-        filas, error = _safe(queries.retiros_del_anio_actual, [])
+        filas, error = _safe(lambda: queries.retiros_del_anio_actual(anio), [])
     else:
-        filas, error = _safe(queries.retiros_del_mes_actual, [])
+        filas, error = _safe(lambda: queries.retiros_del_mes_actual(anio, mes), [])
 
     if request.args.get("export") == "csv":
+        _suf = f"{anio}" if tab == "anio" else f"{anio}-{mes:02d}"
         return csv_response(
             filas,
             columnas=[
@@ -3126,19 +3142,25 @@ def retiros():
                 ("concepto", "Concepto"),
                 ("ret", "Importe"),
             ],
-            filename=f"dividendos_{tab}.csv",
+            filename=f"dividendos_{tab}_{_suf}.csv",
         )
 
-    # KPIs — siempre mes + año (visibles en ambas tabs).
-    total_mes, _ = _safe(queries.retiros_total_mes_actual, 0.0)
-    total_anual, _ = _safe(queries.retiros_total_anual, 0.0)
+    # KPIs — mes + año del periodo elegido (visibles en ambas tabs).
+    total_mes, _ = _safe(lambda: queries.retiros_total_mes_actual(anio, mes), 0.0)
+    total_anual, _ = _safe(lambda: queries.retiros_total_anual(anio), 0.0)
 
     # Conteos para los badges del switcher de tabs (best-effort).
     try:
-        n_mes = len(queries.retiros_del_mes_actual())
-        n_anio = len(queries.retiros_del_anio_actual())
+        n_mes = len(queries.retiros_del_mes_actual(anio, mes))
+        n_anio = len(queries.retiros_del_anio_actual(anio))
     except Exception:  # noqa: BLE001
         n_mes, n_anio = 0, 0
+
+    # Años con datos, para el <select>. Aseguramos que el elegido esté en la
+    # lista aunque no tenga retiros (para no perder la selección).
+    anios, _ = _safe(queries.retiros_anios_disponibles, [])
+    if anio not in anios:
+        anios = sorted(set(anios) | {anio}, reverse=True)
 
     return render_template(
         "informes/retiros.html",
@@ -3148,6 +3170,11 @@ def retiros():
         total_anual=total_anual,
         n_mes=n_mes,
         n_anio=n_anio,
+        anio=anio,
+        mes=mes,
+        anios=anios,
+        es_mes_corriente=(anio == hoy.year and mes == hoy.month),
+        es_anio_corriente=(anio == hoy.year),
         error=error,
     )
 
