@@ -132,6 +132,9 @@ TIPOS_LABEL = {
     "importacion_anticipo":     "Anticipo de importación",
     "banco_clasificado_gasto":  "Banco → Gasto",
     "factura_cerrada_a_t":      "Factura cerrada (T)",
+    "reverso_retiro_op":        "Reverso: retiro OP",
+    "reverso_retiro_dbase":     "Reverso: retiro",
+    "reverso_cheque_emitido":   "Reverso: cheque emitido",
 }
 
 

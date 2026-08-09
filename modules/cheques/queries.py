@@ -127,6 +127,16 @@ def etiqueta_cobro(row: dict | None) -> str:
     no = str(row.get("no_cheque") or "").strip()
     if no and no != "0":
         return f"Cheque {no}"
+    # 🚨 El 98 se llama "UKN" en el catálogo de bancos y no dice nada, pero
+    # NO es un desconocido: es el espejo del saldo a favor del cliente (la
+    # contrapartida negativa de un anticipo). Medido el 09/08: 175 filas, TODAS
+    # con importe negativo. Antes salían como "Cheque #<id interno>".
+    try:
+        nb = int(row.get("no_banco") or 0)
+    except (TypeError, ValueError):
+        nb = 0
+    if nb == 98:
+        return "Saldo a favor"
     nombre = (row.get("banco_nombre") or "").strip().upper()
     if nombre in _BANCO_SIN_NOMBRE:
         return ""
@@ -3567,7 +3577,7 @@ def crear(
                 fecha=fecha,
                 # "Cheque 102345 de TNZ" o, cuando no hay número escrito
                 # porque no es un cheque, "Dep. Pich. de TNZ" (TMT 2026-08-09).
-                concepto=(f"{etiqueta_cobro({'no_cheque': no_cheque, 'banco_nombre': _nombre_banco(no_banco, conn=conn)}) or 'Cobro'}"
+                concepto=(f"{etiqueta_cobro({'no_cheque': no_cheque, 'no_banco': no_banco, 'banco_nombre': _nombre_banco(no_banco, conn=conn)}) or 'Cobro'}"
                           f" de {codigo_cli.upper().strip()}")[:200],
                 usuario=usuario,
                 metadata={

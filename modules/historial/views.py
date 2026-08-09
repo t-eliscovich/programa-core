@@ -1,5 +1,7 @@
 """Historial unificado de movimientos dobles."""
 
+import re
+
 from flask import (
     Blueprint,
     abort,
@@ -257,6 +259,7 @@ def lista():
         rows_ch = (
             db.fetch_all(
                 f"SELECT c.id_cheque, COALESCE(c.no_cheque::text, '') AS no_cheque, "
+                f"       COALESCE(c.no_banco, 0) AS no_banco, "
                 f"       COALESCE(b.nombre, '') AS banco_nombre "
                 f"  FROM scintela.cheque c "
                 f"  LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco "
@@ -549,6 +552,9 @@ def lista():
         # lee "OP · AC 17-35 → Retiro #17", que es justo lo que la dueña pidió
         # el 14/07 y no se toca. Y se marca en vez de borrar `destino_label`
         # porque el confirm de "deshacer reverso" lo nombra.
+        # Lo último: la limpieza general del texto (después de los reemplazos
+        # específicos, que ya pusieron el nombre del cheque o del posdatado).
+        r["concepto"] = _concepto_legible(r.get("concepto"))
         r["destino_repetido"] = bool(
             r.get("destino_label")
             and r.get("destino_label") == r.get("origen_label"))
@@ -741,6 +747,43 @@ def lista():
 # cheques, bancos). El dispatcher route según tipo al handler existente
 # y, si no hay handler específico, redirige al caller con instrucciones.
 # =====================================================================
+
+
+# 🚨 TMT 2026-08-09, barriendo el historial entero: *"¿algo más? mostrame
+# ejemplos"*. Medido sobre los 19.465 movimientos activos:
+#   · 15.539 conceptos escriben "#" delante de un número que casi siempre es
+#     el VISIBLE (numf, no_cheque) — el "#" lo hace pasar por id interno, que
+#     es exactamente la confusión de hoy;
+#   · 4.508 terminan con el importe entre paréntesis, en formato de afuera
+#     ("(155.10)") y repitiendo la columna Importe;
+#   · 5.402 arrancan con "[backfill]", que es el nombre del proceso que los
+#     cargó, no información;
+#   · 480 dicen "#0" (las facturas del dBase que llegaron sin número);
+#   · 177 dicen "Gasto #1", donde el 1 es la CATEGORÍA V1, no un correlativo.
+# Todo se limpia al MOSTRAR: la columna `concepto` de mov_doble es el audit y
+# no se toca.
+_RE_BACKFILL = re.compile(r"^\[backfill\]\s*")
+_RE_CLASIFICAR = re.compile(r"^Clasificar caja #\d+ como gasto (V\d)\s*:\s*")
+_RE_GASTO_DOC = re.compile(r"\bGasto #([1-9])\s+\S+\s+—\s+")
+_RE_GASTO_CAT = re.compile(r"\bGasto #([1-9])\b")
+_RE_SIN_NUMERO = re.compile(r"\b(Factura|Cheque|Compra) #0\b")
+_RE_NUMERAL = re.compile(r"\b(factura|cheque|compra|posdat) #(\d+)", re.I)
+_RE_IMPORTE_AL_FINAL = re.compile(r"\s*\(\d+(?:\.\d+)?\)\s*$")
+
+
+def _concepto_legible(texto: str | None) -> str:
+    """El concepto del audit, escrito como lo lee una persona."""
+    t = (texto or "").strip()
+    if not t:
+        return t
+    t = _RE_BACKFILL.sub("", t)
+    t = _RE_CLASIFICAR.sub(r"Caja → Gasto \1 · ", t)
+    t = _RE_GASTO_DOC.sub(r"Gasto V\1 · ", t)
+    t = _RE_GASTO_CAT.sub(r"Gasto V\1", t)
+    t = _RE_SIN_NUMERO.sub(r"\1 s/n ·", t)
+    t = _RE_NUMERAL.sub(r"\1 \2", t)
+    t = _RE_IMPORTE_AL_FINAL.sub("", t)
+    return " ".join(t.split())
 
 
 def _concepto_edit_importe(row: dict, nombres: dict) -> str:

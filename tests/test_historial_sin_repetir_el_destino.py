@@ -170,3 +170,18 @@ def test_el_mismo_proveedor_de_los_dos_lados_se_escribe_una_vez(app, fake_db):
             destino_table="posdat", destino_id=926)])
     assert "Compra SY · Seyquin Cia.Ltda." in html
     assert html.count("Seyquin Cia.Ltda.") == 2   # sólo el origen (title + texto)
+
+
+def test_el_espejo_98_se_llama_saldo_a_favor(app, fake_db):
+    """🚨 El banco 98 se llama "UKN" en el catálogo y parece un desconocido,
+    pero es el espejo del saldo a favor del cliente: 175 filas, todas con
+    importe negativo. Salían como "Cheque #<id interno>"."""
+    html = _con_cheque(
+        app, fake_db,
+        [{"id_cheque": 90210, "no_cheque": "", "no_banco": 98,
+          "banco_nombre": "UKN"}],
+        _mov(tipo="cheque_anticipo_espejo", origen_table="cheque",
+             origen_id=90210, destino_table="cheque", destino_id=90210,
+             concepto="espejo"))
+    assert "Saldo a favor" in html
+    assert "Cheque #90210" not in html
