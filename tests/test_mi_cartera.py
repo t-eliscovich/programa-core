@@ -2230,7 +2230,13 @@ def test_el_mapa_denuncia_las_rutas_sin_permiso(app):
     from modules.usuarios import accesos
 
     m = accesos.mapa(app)
-    assert m["sin_permiso"], "o se arreglaron todas, o el detector dejó de mirar"
+    # TMT 2026-08-09: `sin_permiso` pasó a significar "sin candado Y SIN
+    # REVISAR". Las conocidas se miraron una por una y viven en ACEPTADAS con
+    # su motivo, así que hoy esta lista está VACÍA a propósito — es la señal
+    # de que no hay nada nuevo. Lo que el detector tiene que seguir viendo es
+    # el conjunto entero, y eso es lo que se afirma acá.
+    detectadas = set(m["sin_permiso"]) | {a["ruta"] for a in m["aceptadas"]}
+    assert detectadas, "o se arreglaron todas, o el detector dejó de mirar"
 
     # ⭐ Y NO acusa a lo que a propósito no pide permiso. Un aviso rojo con
     # `/login` y `/logout` adentro enseña a ignorar el aviso rojo — mismo
@@ -2239,11 +2245,13 @@ def test_el_mapa_denuncia_las_rutas_sin_permiso(app):
     # despegan a la primera que alguien edite.
     from scope_vendedor import PREFIJOS_INFRA
 
-    for r in m["sin_permiso"]:
+    for r in detectadas:
         assert not r.startswith(PREFIJOS_INFRA), f"{r} no pide permiso a propósito"
-    # Pero las pantallas de verdad sin gate SÍ se denuncian.
-    assert any(r.startswith("/operaciones") or r.startswith("/tablero")
-               for r in m["sin_permiso"])
+    # Pero las pantallas de verdad sin gate SÍ se denuncian. El ejemplo
+    # cambió el 2026-08-09: `/tablero` sólo redirige y `/operaciones` filtra
+    # card por card, así que ninguna de las dos era una pantalla "sin gate" —
+    # el estado de cuenta sí lo es, y es la que hay que ver.
+    assert any(r.startswith("/informes/estado-cuenta") for r in detectadas)
 
 
 def test_el_wildcard_abre_todo_y_un_rol_pelado_no():
@@ -2345,9 +2353,17 @@ def test_abort_404_no_cuenta_como_control_de_permiso(app):
     from modules.usuarios import accesos
 
     assert "abort(404)" not in accesos._SEÑALES_DE_CONTROL
-    sin = set(accesos.mapa(app)["sin_permiso"])
-    assert "/cheques/<int:id_cheque>/deshacer-deposito" in sin
-    assert "/cheques/<int:id_cheque>/anular-error-carga" in sin
+    m = accesos.mapa(app)
+    # Siguen detectadas como "sin candado" — lo que cambió el 2026-08-09 es
+    # que la dueña las revisó y decidió dejarlas, así que salen del rojo y
+    # entran en ACEPTADAS con el motivo escrito. Detectarlas es lo que este
+    # test protege; qué se hace con ellas es una decisión, no un invariante.
+    detectadas = set(m["sin_permiso"]) | {a["ruta"] for a in m["aceptadas"]}
+    assert "/cheques/<int:id_cheque>/deshacer-deposito" in detectadas
+    assert "/cheques/<int:id_cheque>/anular-error-carga" in detectadas
+    assert not any(
+        c["ruta"].endswith("/deshacer-deposito") for c in m["control_propio"]
+    ), "un abort(404) de 'no existe' no puede pasar por control de permiso"
 
 
 def test_el_control_interno_se_lee_del_codigo_de_la_vista():

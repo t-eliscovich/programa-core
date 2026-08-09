@@ -246,12 +246,20 @@ def mapa_accesos():
     # pero hoy no los usa nadie, y mezclarlos infla la tabla a diez columnas.
     con_gente = [r for r in roles if r["usuarios"] > 0]
     vacios = [r for r in roles if r["usuarios"] == 0]
+    # ?tecnicas=1 muestra también los JSON, los debug y las descargas. Por
+    # defecto no: la pregunta de esta pantalla es "qué VE cada rol" y esas
+    # rutas no las abre nadie. TMT 2026-08-09 ("¿podemos simplificar esta
+    # lista?"), con el contador siempre a la vista para que se sepa qué falta.
+    ver_tecnicas = request.args.get("tecnicas") == "1"
     return render_template(
         "usuarios/accesos.html",
         grupos=m["grupos"],
         sin_permiso=m["sin_permiso"],
+        aceptadas=m["aceptadas"],
         control_propio=m["control_propio"],
         roles=con_gente,
         roles_vacios=vacios,
         puede=_accesos.puede,
+        ver_tecnicas=ver_tecnicas,
+        n_tecnicas=sum(len(p["tecnicas"]) for g in m["grupos"] for p in g["permisos"]),
     )

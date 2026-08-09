@@ -50,6 +50,12 @@ PREFIJOS_INFRA: tuple[str, ...] = (
     "/login",
     "/logout",
     "/password",
+    # El flow OAuth de Google: /auth/google/login redirige al consent screen y
+    # /auth/google/callback vuelve con el code. Los dos corren ANTES de que
+    # exista una sesión, así que pedirles permiso es imposible por
+    # construcción: sería preguntarle los permisos a un usuario que todavía no
+    # se sabe quién es. Estaban acusados de "ruta sin permiso". TMT 2026-08-09.
+    "/auth/google",
     # ⭐ Sin esto, la dueña que usa "👁 Ver como" sobre un vendedor queda
     # ENCERRADA: el botón "Volver a mi cuenta" postea acá y el allowlist se
     # lo comía con un 404, sin más salida que borrar la cookie de sesión.

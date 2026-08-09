@@ -15,6 +15,19 @@
 {{ page_hero('Qué ve cada rol',
              'Sale de las rutas reales de la app cruzadas con los permisos de cada rol — no es una lista escrita a mano. Sólo se listan los roles que hoy tienen gente.') }}
 
+{# Dueña 2026-08-09: "¿podemos simplificar esta lista?". Se listan las
+   PANTALLAS; los JSON internos, los debug y las descargas se cuentan acá y se
+   ven con ?tecnicas=1. Ocultarlas sin decir cuántas sería mentir igual. #}
+<div style="display:flex;align-items:baseline;gap:8px;margin:0 0 9px;font-size:12px;color:#64748B">
+  {% if ver_tecnicas %}
+    <span>Mostrando <strong>todas</strong> las rutas, incluidas las {{ n_tecnicas }} técnicas.</span>
+    <a href="{{ url_for('usuarios.mapa_accesos') }}" style="color:#2563EB">ver sólo las pantallas</a>
+  {% else %}
+    <span>Sólo pantallas. Quedan afuera {{ n_tecnicas }} rutas técnicas (JSON internos, diagnóstico y descargas).</span>
+    <a href="{{ url_for('usuarios.mapa_accesos') }}?tecnicas=1" style="color:#2563EB">ver todas</a>
+  {% endif %}
+</div>
+
 <div style="overflow-x:auto;border:1px solid #E2E8F0;border-radius:8px;background:#fff">
   <table class="w-full text-sm" style="border-collapse:collapse">
     <thead style="background:#F8FAFC;border-bottom:1px solid #E2E8F0">
@@ -60,6 +73,13 @@
             <div style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:600">{{ p.permiso.split('.')[1:] | join('.') }}</div>
             <div style="font-size:10.5px;color:#94A3B8;margin-top:2px;line-height:1.35">
               {{ p.rutas | join('  ·  ') }}
+              {%- if p.tecnicas %}
+                {%- if ver_tecnicas %}
+                  <span style="color:#CBD5E1">  ·  {{ p.tecnicas | join('  ·  ') }}</span>
+                {%- else %}
+                  <span style="color:#CBD5E1">{% if p.rutas %}  ·  {% endif %}+{{ p.tecnicas|length }} técnica{{ '' if p.tecnicas|length == 1 else 's' }}</span>
+                {%- endif %}
+              {%- endif %}
             </div>
           </td>
           {% for r in roles %}
@@ -110,20 +130,43 @@
 </div>
 {% endif %}
 
+{# Las revisadas una por una (dueña 2026-08-09). Van en gris y APAGADAS: el
+   valor de la lista roja es que signifique "esto es nuevo y nadie lo miró".
+   Cada una lleva el motivo, así se puede discutir en vez de heredarse. #}
+{% if aceptadas %}
+<details style="margin-top:22px;border:1px solid #E2E8F0;background:#F8FAFC;
+                border-radius:8px;padding:11px 15px">
+  <summary style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;
+                  letter-spacing:.05em;cursor:pointer">
+    {{ aceptadas | length }} rutas sin candado, ya revisadas
+  </summary>
+  <p style="font-size:12.5px;color:#475569;margin:8px 0 9px;line-height:1.45">
+    Se miraron una por una y se decidió dejarlas: redirects, pantallas abiertas
+    a propósito, lecturas, y unas escrituras que Tamara aceptó el 09/08 porque
+    hoy todas las cuentas son de confianza. Están acá y no en rojo para que el
+    rojo quiera decir <strong>"esto apareció y nadie lo miró"</strong>.
+  </p>
+  <div style="font-size:11px;line-height:1.7">
+    {% for a in aceptadas %}
+      <div><code style="color:#334155">{{ a.ruta }}</code>
+        <span style="color:#94A3B8">— {{ a.motivo }}</span></div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
 {# La auditoría del 03/08, corriendo sola cada vez que se abre la pantalla. #}
 {% if sin_permiso %}
 <div style="margin-top:22px;border:1px solid #FCD9D9;background:#FEF6F6;
             border-radius:8px;padding:13px 15px">
   <div style="font-size:12px;font-weight:700;color:#B91C1C;text-transform:uppercase;
               letter-spacing:.05em">
-    {{ sin_permiso | length }} rutas sin permiso
+    {{ sin_permiso | length }} rutas sin permiso y sin revisar
   </div>
   <p style="font-size:12.5px;color:#7F1D1D;margin:6px 0 9px;line-height:1.45">
-    Ni decorador ni chequeo adentro: las abre <strong>cualquier usuario
-    logueado</strong>, sea del rol que sea. Varias son de ESCRITURA
-    (deshacer un depósito, anular por error de carga, reversos). No es un
-    problema hoy porque todas las cuentas son de confianza; lo es el día que
-    exista una que no lo sea. Los vendedores quedan afuera por otra vía
+    Ni decorador ni chequeo adentro, y no están en la lista de revisadas: las
+    abre <strong>cualquier usuario logueado</strong>. Si alguna escribe, hay
+    que mirarla hoy. Los vendedores quedan afuera por otra vía
     (<code>scope_vendedor.py</code> sólo les deja <code>/mi-cartera</code>).
   </p>
   <div style="font-size:10.5px;color:#991B1B;font-family:ui-monospace,Menlo,monospace;
@@ -131,6 +174,10 @@
     {{ sin_permiso | join('  ·  ') }}
   </div>
 </div>
+{% else %}
+<p style="margin-top:16px;font-size:12.5px;color:#15803D">
+  Ninguna ruta nueva sin permiso. Las conocidas están arriba, con su motivo.
+</p>
 {% endif %}
 </div>
 {% endblock %}
