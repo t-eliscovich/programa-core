@@ -193,3 +193,44 @@ def test_vuelve_a_medir_cuando_la_columna_cambia_de_ancho():
     t_ = _plantilla_traza()
     assert "new ResizeObserver(medir)" in t_
     assert t_.count("ro.observe(") == 2
+
+
+# ---------------------------------------------------------------------------
+# Ir más atrás que las últimas 200 fotos (TMT 2026-08-09: "¿cuán atrás podemos
+# ir? porque quizás quiero ver un finde también")
+# ---------------------------------------------------------------------------
+def test_el_rango_pide_los_dias_y_un_ancla_anterior():
+    """La foto extra NO es un bonus: sin ella la fila más vieja no tiene Δ.
+
+    `con_deltas` compara cada foto contra la de abajo. Si el rango arranca
+    justo el sábado a las 00:04, esa fila es la última de la lista y quedaría
+    con el Δ vacío — que es justo la que cuenta qué pasó durante la noche.
+    """
+    visto = {}
+
+    def _fake(sql, params=None):
+        visto["sql"], visto["params"] = sql, params
+        return [{"id_traza": 2, "en_rango": True},
+                {"id_traza": 1, "en_rango": False}]
+
+    with patch.object(t.db, "fetch_all", side_effect=_fake):
+        filas = t.entre("2026-08-01", "2026-08-02")
+    assert [f["en_rango"] for f in filas] == [True, False]
+    # El ancla se pide por creado_en, no por fecha: la foto anterior al rango
+    # puede ser de otro día y hasta de otro mes.
+    assert "creado_en < (SELECT MIN(creado_en) FROM rango)" in visto["sql"]
+    assert visto["params"] == ("2026-08-01", "2026-08-02",
+                               "2026-08-01", "2026-08-02")
+
+
+def test_el_rango_tiene_tope():
+    """Pedir del 31/07 a hoy son miles de filas: se muestran las más nuevas."""
+    with patch.object(t.db, "fetch_all", return_value=[]) as f:
+        t.entre("2026-07-31", "2026-08-09", n=99999)
+    assert f"LIMIT {t.TOPE_RANGO}" in f.call_args[0][0]
+
+
+def test_si_la_base_falla_el_rango_no_rompe_la_pantalla():
+    with patch.object(t.db, "fetch_all", side_effect=RuntimeError("boom")):
+        assert t.entre("2026-08-01", "2026-08-02") == []
+        assert t.primera_foto() is None

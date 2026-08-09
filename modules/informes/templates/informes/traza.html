@@ -60,15 +60,20 @@
 
   {{ page_hero(
       'Traza de la utilidad',
-      descripcion='Una foto del balance cada pocos minutos. Tocá la hora para ver qué documentos movieron la utilidad en esa ventana.',
+      descripcion=('Una foto del balance cada pocos minutos. Tocá la hora para ver qué documentos movieron la utilidad en esa ventana.'
+                   if not desde else
+                   ('Del ' ~ desde[8:10] ~ '/' ~ desde[5:7] ~ ' al ' ~ hasta[8:10] ~ '/' ~ hasta[5:7]
+                    ~ '. Tocá la hora para ver qué documentos movieron la utilidad en esa ventana.')),
       kpi_valor=(filas | length) ~ ' fotos',
       kpi_extra=('· ' ~ (sin_cerrar | length) ~ ' sin explicar' if sin_cerrar else '· todas explicadas')
   ) }}
 
   {% if not filas %}
     <div class="my-4 border border-slate-200 rounded bg-white px-4 py-6 text-sm text-slate-500">
-      Todavía no hay fotos guardadas. La primera entra sola dentro de unos
-      minutos; si querés una ahora, tocá <em>Sacar foto ahora</em>.
+      {% if desde %}No hay fotos entre esas dos fechas.{% if primera %} La
+        primera que se guardó es del {{ primera[8:10] }}/{{ primera[5:7] }}.{% endif %}
+      {% else %}Todavía no hay fotos guardadas. La primera entra sola dentro de unos
+      minutos; si querés una ahora, tocá <em>Sacar foto ahora</em>.{% endif %}
     </div>
   {% endif %}
 
@@ -83,15 +88,45 @@
     <span style="color:rgb(100 116 139);">Se guarda una sola cada {{ intervalo // 60 }} minutos.</span>
   </div>
 
+  {# 🚨 TMT 2026-08-09: *"¿cuán atrás podemos ir? porque quizás quiero ver un
+     finde también"*. Las últimas 200 fotos son ~20 h, pero guardadas están
+     TODAS desde el 31/07 (nada se purga). Dos fechas y el fin de semana
+     entero entra en una pantalla. Vacío = las últimas 200, como siempre. #}
+  <form method="get" class="my-2 flex items-center gap-1 flex-wrap"
+        style="font-size:11px;">
+    {% if comp %}<input type="hidden" name="comp" value="{{ comp }}">{% endif %}
+    <span style="color:rgb(100 116 139);margin-right:.25rem;">Días:</span>
+    <input type="date" name="desde" value="{{ desde }}"
+           {% if primera %}min="{{ primera }}"{% endif %} max="{{ hoy }}"
+           style="border:1px solid rgb(203 213 225);border-radius:.25rem;padding:.1rem .3rem;font-size:11px;">
+    <span style="color:rgb(100 116 139);">a</span>
+    <input type="date" name="hasta" value="{{ hasta }}"
+           {% if primera %}min="{{ primera }}"{% endif %} max="{{ hoy }}"
+           style="border:1px solid rgb(203 213 225);border-radius:.25rem;padding:.1rem .3rem;font-size:11px;">
+    <button style="padding:.15rem .5rem;border-radius:.25rem;border:1px solid rgb(148 163 184);background:rgb(241 245 249);font-weight:600;">Ver</button>
+    {% if desde %}
+      <a href="{{ url_for('informes.traza', comp=comp or none) }}"
+         style="color:rgb(30 64 175);text-decoration:none;padding:.15rem .4rem;">volver a lo último</a>
+    {% endif %}
+    {% if primera %}<span style="color:rgb(148 163 184);">hay fotos desde el {{ primera[8:10] }}/{{ primera[5:7] }}</span>{% endif %}
+  </form>
+
+  {% if tope %}
+    <div class="my-1" style="font-size:11px;color:rgb(180 83 9);">
+      El rango tiene más fotos de las que entran: muestro las {{ total }} más
+      nuevas. Achicá los días para ver el resto.
+    </div>
+  {% endif %}
+
   {# Filtro por componente: con 200 filas, poder ver sólo las ventanas donde se
      movieron las facturas es la diferencia entre buscar y encontrar. #}
   <div class="my-2 flex items-center gap-1 flex-wrap" style="font-size:11px;">
     <span style="color:rgb(100 116 139);margin-right:.25rem;">Ver sólo:</span>
-    <a href="{{ url_for('informes.traza') }}"
+    <a href="{{ url_for('informes.traza', desde=desde or none, hasta=hasta or none) }}"
        style="padding:.15rem .5rem;border-radius:.25rem;text-decoration:none;
               {% if not comp %}background:rgb(30 64 175);color:#fff;{% else %}color:rgb(30 64 175);{% endif %}">todo ({{ total }})</a>
     {% for col, label in deltas %}
-      <a href="{{ url_for('informes.traza', comp=col) }}"
+      <a href="{{ url_for('informes.traza', comp=col, desde=desde or none, hasta=hasta or none) }}"
          style="padding:.15rem .5rem;border-radius:.25rem;text-decoration:none;
                 {% if comp == col %}background:rgb(30 64 175);color:#fff;{% else %}color:rgb(30 64 175);{% endif %}">{{ label }}</a>
     {% endfor %}

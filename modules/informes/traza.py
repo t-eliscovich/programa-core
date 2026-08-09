@@ -305,6 +305,78 @@ def ultimas(n: int = 120) -> list[dict]:
         return []
 
 
+#: Techo de fotos por rango. Un día son ~240; cinco días entran holgados y
+#: 1.200 filas todavía se scrollean sin que el navegador sufra.
+TOPE_RANGO = 1200
+
+
+def entre(desde: str, hasta: str, n: int = TOPE_RANGO) -> list[dict]:
+    """Las fotos de un rango de DÍAS (fechas de Ecuador), la más nueva primero.
+
+    TMT 2026-08-09: *"¿cuán atrás podemos ir? porque quizás quiero ver un finde
+    también"*. Guardadas están todas —nada se purga: 2.216 fotos desde el 31/07
+    al 09/08, ~240 por día, sábados y domingos incluidos—; lo que faltaba era
+    cómo pedirlas. La pantalla mostraba siempre las últimas 200, que son ~20 h.
+
+    🚨 Trae UNA foto MÁS VIEJA que el rango, marcada `en_rango = False`.
+    `con_deltas` compara cada foto contra la de abajo, así que sin ese ancla la
+    primera foto del sábado saldría con el Δ vacío — y es justo la que dice qué
+    pasó durante la noche del viernes. El que llama la descarta DESPUÉS de
+    calcular los Δ.
+    """
+    try:
+        n = max(1, min(TOPE_RANGO, int(n)))
+    except (TypeError, ValueError):
+        n = TOPE_RANGO
+    try:
+        return db.fetch_all(
+            f"""
+            WITH rango AS (
+                SELECT *
+                  FROM scintela.traza_utilidad
+                 WHERE (creado_en AT TIME ZONE 'America/Guayaquil')::date
+                       BETWEEN %s AND %s
+                 ORDER BY creado_en DESC, id_traza DESC
+                 LIMIT {n}
+            ), ancla AS (
+                SELECT *
+                  FROM scintela.traza_utilidad
+                 WHERE creado_en < (SELECT MIN(creado_en) FROM rango)
+                 ORDER BY creado_en DESC, id_traza DESC
+                 LIMIT 1
+            )
+            SELECT x.*,
+                   TO_CHAR(x.creado_en AT TIME ZONE 'America/Guayaquil',
+                           'DD/MM HH24:MI') AS cuando,
+                   ((x.creado_en AT TIME ZONE 'America/Guayaquil')::date
+                    BETWEEN %s AND %s) AS en_rango
+              FROM (SELECT * FROM rango UNION ALL SELECT * FROM ancla) x
+             ORDER BY x.creado_en DESC, x.id_traza DESC
+            """, (desde, hasta, desde, hasta)) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("traza_utilidad: no se pudo leer el rango (%s)", e)
+        return []
+
+
+def primera_foto() -> str | None:
+    """El día de la foto más vieja que hay guardada (para el `min` del input).
+
+    Sin esto la pantalla deja elegir 2019 y devuelve una tabla vacía sin decir
+    por qué: la grabadora arrancó el 31/07/2026 y antes no hay nada.
+    """
+    try:
+        r = db.fetch_all(
+            """
+            SELECT MIN((creado_en AT TIME ZONE 'America/Guayaquil')::date) AS d
+              FROM scintela.traza_utilidad
+            """) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("traza_utilidad: no se pudo leer la primera foto (%s)", e)
+        return None
+    d = (r[0] or {}).get("d") if r else None
+    return d.isoformat() if d else None
+
+
 def con_deltas(filas: list[dict]) -> list[dict]:
     """Agrega a cada foto el Δ contra la ANTERIOR (la de abajo en la lista) y
     quién explica ese Δ.

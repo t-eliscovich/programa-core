@@ -1276,9 +1276,34 @@ def traza():
     `scintela.historia` guarda una sola fila por día: un salto de las 09:16 a
     las 10:34 no dejaba rastro en ningún lado. Acá queda.
     """
+    from datetime import date as _date
+
     from modules.informes import traza as _traza
 
-    filas = _traza.marcar_residuo(_traza.con_deltas(_traza.ultimas(200)))
+    # TMT 2026-08-09: *"¿cuán atrás podemos ir? porque quizás quiero ver un
+    # finde también"*. Las últimas 200 fotos son ~20 h; guardadas están todas
+    # desde el 31/07. Con desde/hasta se pide el día (o el fin de semana) que
+    # se quiera; sin ellas la pantalla arranca como siempre.
+    def _fecha(nombre):
+        v = (request.args.get(nombre) or "").strip()
+        try:
+            return _date.fromisoformat(v).isoformat()
+        except ValueError:
+            return ""
+
+    desde, hasta = _fecha("desde"), _fecha("hasta")
+    # Una sola punta es un día suelto: pedir "desde el sábado" y que conteste
+    # hasta hoy sería una tabla de mil filas que nadie pidió.
+    desde, hasta = (desde or hasta), (hasta or desde)
+    if desde and hasta and desde > hasta:
+        desde, hasta = hasta, desde
+    if desde:
+        # El ancla (una foto anterior al rango) existe sólo para que la fila
+        # más vieja tenga Δ; se va apenas los Δ están calculados.
+        crudas = _traza.marcar_residuo(_traza.con_deltas(_traza.entre(desde, hasta)))
+        filas = [f for f in crudas if f.get("en_rango")]
+    else:
+        filas = _traza.marcar_residuo(_traza.con_deltas(_traza.ultimas(200)))
     # El filtro se aplica DESPUÉS de calcular los Δ: filtrar antes compararía
     # cada foto contra la anterior que pasó el filtro, no contra la anterior de
     # verdad, y todos los números saldrían mal.
@@ -1289,6 +1314,13 @@ def traza():
         filas=visibles,
         total=len(filas),
         comp=comp,
+        desde=desde,
+        hasta=hasta,
+        # El contenedor está en UTC y Ecuador en UTC−5: con date.today() el
+        # tope del calendario se iba a mañana todas las noches.
+        hoy=today_ec().isoformat(),
+        primera=_traza.primera_foto(),
+        tope=(desde and len(filas) >= _traza.TOPE_RANGO),
         sin_cerrar=_traza.sin_cerrar(filas),
         bajadas=_traza.bajadas(filas),
         intervalo=_traza._intervalo(),
