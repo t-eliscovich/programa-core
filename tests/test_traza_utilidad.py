@@ -155,3 +155,41 @@ def test_las_bajadas_son_las_que_hay_que_mirar():
 def test_sin_fotos_no_explota():
     assert t.con_deltas([]) == []
     assert t.bajadas([]) == []
+
+
+# ---------------------------------------------------------------------------
+# El sticky de las tres primeras columnas (TMT 2026-08-09: "corregir estos
+# espacios en blanco que quedaron")
+# ---------------------------------------------------------------------------
+def _plantilla_traza() -> str:
+    from pathlib import Path
+    return Path("modules/informes/templates/informes/traza.html").read_text(
+        encoding="utf-8")
+
+
+def test_el_offset_del_sticky_se_mide_con_el_ancho_fraccionario():
+    """`offsetWidth` REDONDEA, y medio píxel de más empuja la columna.
+
+    Medido en producción el 09/08: `--tz1` valía 144 px contra una columna de
+    131 → el sticky clavaba la celda 13 px a la derecha de su lugar (así
+    funciona: si la posición natural queda antes de `left`, la corre), dejaba
+    blanco atrás y tapaba la columna de al lado.
+    """
+    t_ = _plantilla_traza()
+    assert "cells[0].getBoundingClientRect().width" in t_
+    assert "cells[1].getBoundingClientRect().width" in t_
+    assert "cells[0].offsetWidth" not in t_, "offsetWidth redondea: se desfasa"
+    assert "cells[1].offsetWidth" not in t_
+
+
+def test_vuelve_a_medir_cuando_la_columna_cambia_de_ancho():
+    """La medición no estaba mal: quedaba VIEJA.
+
+    Corre al parsear, con la tipografía de respaldo; cuando entra Inter las
+    columnas se angostan y el `resize` de la ventana no se dispara. Un
+    ResizeObserver sobre las dos celdas cubre la fuente, el zoom, la ventana y
+    cualquier cambio de contenido.
+    """
+    t_ = _plantilla_traza()
+    assert "new ResizeObserver(medir)" in t_
+    assert t_.count("ro.observe(") == 2

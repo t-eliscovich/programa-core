@@ -215,16 +215,38 @@
   var tabla = document.getElementById('traza-tabla');
   if (!tabla) { return; }
   // Mide las dos primeras columnas y deja el ancho REAL en las variables que
-  // usa el sticky. Se recalcula al redimensionar: cambiar el zoom o la
-  // ventana cambia los anchos.
+  // usa el sticky.
+  // 🚨 TMT 2026-08-09: *"corregir estos espacios en blanco que quedaron"*. Se
+  // veían dos franjas blancas en el encabezado, a la derecha de HORA y de
+  // UTIL. No eran un borde ni un padding: eran el sticky corriendo las
+  // columnas de lugar. Medido en producción: `--tz1` valía 144 px y la
+  // columna medía 131. Un `left` MAYOR que el ancho real empuja la celda a la
+  // derecha incluso con la tabla sin scrollear (sticky clava el borde
+  // izquierdo en `left` cuando la posición natural queda antes) — y deja
+  // blanco atrás y tapa 22 px de la columna siguiente.
+  // ⭐ La medición no estaba mal: quedaba VIEJA. Corre al parsear, con la
+  // tipografía de respaldo; cuando entra Inter las columnas se angostan y
+  // nadie volvía a medir (el `resize` no se dispara por eso). Por eso ahora
+  // mide un ResizeObserver sobre las dos celdas: cualquier cosa que les
+  // cambie el ancho —la fuente al cargar, el zoom, la ventana, un título más
+  // largo— vuelve a medir sola. Y el ancho se lee con
+  // getBoundingClientRect(): `offsetWidth` redondea, y medio píxel de más es
+  // media franja blanca.
   function medir() {
     var th = tabla.tHead && tabla.tHead.rows[0];
     if (!th || th.cells.length < 2) { return; }
-    tabla.style.setProperty('--tz1', th.cells[0].offsetWidth + 'px');
-    tabla.style.setProperty('--tz2', th.cells[1].offsetWidth + 'px');
+    tabla.style.setProperty('--tz1', th.cells[0].getBoundingClientRect().width + 'px');
+    tabla.style.setProperty('--tz2', th.cells[1].getBoundingClientRect().width + 'px');
   }
   medir();
   window.addEventListener('resize', medir);
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(medir);
+    ro.observe(tabla.tHead.rows[0].cells[0]);
+    ro.observe(tabla.tHead.rows[0].cells[1]);
+  } else if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(medir);
+  }
   // Un solo control y UN solo contenido: la hora abre los documentos.
   // 🚨 TMT 2026-08-07: *"ya sabemos que la utilidad bajó, daaaahh —
   // repeticiones 0"*. Arriba del detalle iba una línea en prosa ("La utilidad
