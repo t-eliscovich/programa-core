@@ -110,6 +110,34 @@ jobs:
           Set-Location C:\programa-core
           & C:\Python312\python.exe -m pip install -r requirements.txt --quiet --disable-pip-version-check 2>&1 | Select -Last 3
 
+          # 4b. MIGRACIONES, antes del restart. TMT 2026-08-09 (dueña):
+          #     *"¿podríamos hacer que las migraciones corran junto con el
+          #     deploy?"*. Hasta hoy había que acordarse de abrir
+          #     /admin/migraciones y apretar el botón, y olvidarse daba un
+          #     deploy VERDE con el cambio a medias: el código nuevo arriba y
+          #     la base sin tocar. Nada se rompe — el cambio simplemente no
+          #     pasó, que es la forma más difícil de notarlo. Ocurrió el mismo
+          #     09/08 con la 0182.
+          #
+          #     ⭐ ANTES del restart, no después: el proceso nuevo tiene que
+          #     nacer contra el schema que espera. Quedan ~20 s en los que el
+          #     proceso VIEJO ve el schema nuevo — inofensivo para lo que
+          #     agrega o para permisos, que es casi todo lo que escribimos, y
+          #     es el mismo riesgo que ya corría el botón a mano con la app
+          #     andando.
+          #
+          #     ⚠ Si una migración falla, SE CORTA ACÁ y no se reinicia nada:
+          #     queda el código viejo con el schema viejo, la única de las
+          #     cuatro combinaciones que es coherente. Reiniciar igual dejaría
+          #     el código nuevo contra una base a medio migrar. migrate.py es
+          #     idempotente: arreglar y volver a deployar es seguro.
+          Write-Output "=== Migraciones ==="
+          & C:\Python312\python.exe scripts\migrate.py 2>&1 | Select -Last 20
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Output "ERROR: migrate.py salió \$LASTEXITCODE — NO se reinicia la app (queda el código viejo con el schema viejo). Mirá /admin/migraciones."
+            exit 1
+          }
+
           # 5. Restart task. TMT 2026-06-07: matar el python.exe HUÉRFANO que
           #    queda tomando el puerto 5002. Stop-ScheduledTask para la TAREA
           #    pero no siempre mata el proceso hijo; el python nuevo entonces
