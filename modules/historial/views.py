@@ -404,6 +404,19 @@ def lista():
         if (r.get("tipo") or "") == "retiro_op":
             _cta = _op_cuentas.get(int(r["origen_id"])) if r.get("origen_id") else ""
             r["origen_label"] = ("OP · " + _cta) if _cta else "OP"
+        # 🚨 TMT 2026-08-09: *"repetimos mucho sueldos"*. Un montón de
+        # movimientos son de UN solo documento (la factura que se emite, el
+        # cheque que se crea, el posdatado al que le editan el importe): el
+        # mov_doble los guarda con el mismo origen y destino, y la grilla
+        # escribía dos veces lo mismo al lado, comiéndose el ancho de lo que
+        # sí informa. Medido: ~11.000 filas activas.
+        # ⭐ Se compara la ETIQUETA, no el id: `retiro_op` es self-ref pero se
+        # lee "OP · AC 17-35 → Retiro #17", que es justo lo que la dueña pidió
+        # el 14/07 y no se toca. Y se marca en vez de borrar `destino_label`
+        # porque el confirm de "deshacer reverso" lo nombra.
+        r["destino_repetido"] = bool(
+            r.get("destino_label")
+            and r.get("destino_label") == r.get("origen_label"))
 
     # ──────────────────────────────────────────────────────────────────
     # Construir `items` — una lista de "tarjetas" para el template.
@@ -585,7 +598,7 @@ def lista():
 
 
 def _concepto_edit_importe(row: dict, nombres: dict) -> str:
-    """"Edit importe de SUELDOS: 152.000,00 → 32.000,00".
+    """"152.000,00 → 32.000,00" — de cuánto a cuánto quedó el posdatado.
 
     Sale de la METADATA del movimiento (`importe_prev` / `importe_nuevo`, que
     el audit guarda desde el día uno) y del nombre del posdatado. Si falta
@@ -609,7 +622,12 @@ def _concepto_edit_importe(row: dict, nombres: dict) -> str:
     nombre = (nombres or {}).get(int(rid)) if rid else ""
     if not nombre:
         return ""
-    return f"Edit importe de {nombre}: {money_es(prev)} → {money_es(nuevo)}"
+    # 🚨 TMT 2026-08-09, segunda pasada: *"repetimos mucho sueldos pero nunca
+    # veo de cuánto a cuánto cambió"*. El nombre salía TRES veces en la misma
+    # fila (origen, destino y concepto) y con eso el dato que importa —los dos
+    # importes— no entraba en la columna: "47.900,00 → 100,…". El nombre ya
+    # está en ORIGEN; acá van los números y nada más.
+    return f"{money_es(prev)} → {money_es(nuevo)}"
 
 
 def _es_terminal(tipo: str) -> bool:

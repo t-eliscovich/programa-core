@@ -293,12 +293,17 @@ def _fila_edit(meta):
             "metadata": meta}
 
 
-def test_el_concepto_dice_de_cual_y_con_la_plata_formateada():
+def test_el_concepto_dice_de_cuanto_a_cuanto_y_nada_mas():
+    """🚨 TMT 2026-08-09, segunda pasada: *"repetimos mucho sueldos pero nunca
+    veo de cuánto a cuánto cambió"*. El nombre salía tres veces en la fila
+    (origen, destino y concepto) y empujaba fuera los importes:
+    "47.900,00 → 100,…". El nombre vive en ORIGEN."""
     from modules.historial import views as hv
     txt = hv._concepto_edit_importe(
         _fila_edit({"importe_prev": 152000.0, "importe_nuevo": 32000.0}),
         {133: "SUELDOS"})
-    assert txt == "Edit importe de SUELDOS: 152.000,00 → 32.000,00"
+    assert txt == "152.000,00 → 32.000,00"
+    assert "SUELDOS" not in txt
 
 
 def test_la_metadata_tambien_puede_venir_como_texto():
@@ -306,7 +311,7 @@ def test_la_metadata_tambien_puede_venir_como_texto():
     txt = hv._concepto_edit_importe(
         _fila_edit('{"importe_prev": 47900.0, "importe_nuevo": 100.0}'),
         {133: "14 DEC.CUAR+RES"})
-    assert txt == "Edit importe de 14 DEC.CUAR+RES: 47.900,00 → 100,00"
+    assert txt == "47.900,00 → 100,00"
 
 
 @pytest.mark.parametrize("meta", [None, "no soy json", {}, {"importe_prev": 1}])

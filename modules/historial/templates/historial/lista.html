@@ -271,8 +271,11 @@
                   {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
                   {% else %}{{ r.origen_label }}{% endif %}
                 </td>
-                <td class="px-2 py-0.5 text-xs truncate" title="{{ r.destino_label }}">
-                  {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
+                <td class="px-2 py-0.5 text-xs truncate" title="{{ '' if r.destino_repetido else r.destino_label }}">
+                  {# El destino que dice lo MISMO que el origen no se escribe
+                     (TMT 2026-08-09: "repetimos mucho sueldos"). #}
+                  {% if r.destino_repetido %}
+                  {% elif r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                   {% else %}{{ r.destino_label }}{% endif %}
                 </td>
                 <td class="px-2 py-0.5 text-right tabular-nums font-mono whitespace-nowrap">
@@ -326,8 +329,9 @@
                 {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
                 {% else %}{{ r.origen_label }}{% endif %}
               </td>
-              <td class="px-2 py-0.5 text-xs truncate" title="{{ r.destino_label }}">
-                {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
+              <td class="px-2 py-0.5 text-xs truncate" title="{{ '' if r.destino_repetido else r.destino_label }}">
+                {% if r.destino_repetido %}
+                {% elif r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                 {% else %}{{ r.destino_label }}{% endif %}
               </td>
               <td class="px-2 py-0.5 text-right tabular-nums font-mono whitespace-nowrap">
