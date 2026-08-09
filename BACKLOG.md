@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-05 (reescrito entero; la versión anterior era del 18/05 y listaba como faltante cosas hechas hace meses)._
+_Última actualización: 2026-08-09._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -72,11 +72,50 @@ paso de CI o make target, y **smoke visual pantalla por pantalla** después
 (488 clases activándose de golpe pueden mover layouts).
 
 ### [L] Limpieza del código dBase — SEPTIEMBRE 2026, no antes
-~15k líneas: `modules/admin_dbase/` (35 views, mayoría debug de la migración),
-`scripts/sync_dbase_actual.py` (919), el boot-sync de PICHINCH.xlsx en `app.py`
-(~L172) que corre en cada arranque, `/admin/dbase-sync`, `/admin/dbase-compare/*`.
-**OJO**: `sql_console_view`, `salud_view`, `migraciones_view`, `deploy_view`,
-`health_audit_view` viven en ese módulo pero NO son dbase — separarlos primero.
+
+Reconfirmado el 2026-08-09: **se hace en septiembre**, no antes. Lo que sigue
+es el inventario ya hecho (se ensayó entero ese día sobre un clon y la suite
+quedó en verde: −9.128 líneas), para que en septiembre sea ejecutar y no
+volver a investigar.
+
+**Borrar** (`modules/admin_dbase/`, ~7.500 líneas; ninguno tiene fuente desde
+el 05/08): `dbase_compare_view` · `views` (`/admin/dbase-sync`) ·
+`debug_dbase_compras_view` · `cheques_feching_view` · `clientes_import_view` ·
+`proveedores_import_view` · `facturas_reconcile_view` · `posdat_reconcile_view` ·
+`totf_1a1_view` · `abonos_historicos_view` · `debug_ustock_view` ·
+`debug_yy_view` · `marcar_asinfo_view`. Más `scripts/sync_dbase_actual.py`,
+`scripts/sync_stat_from_xlsx*.py`, `data/dbase_snapshots/` y el boot-sync de
+`app.py` (~L172) que corre en CADA arranque contra un xlsx congelado.
+Tests que se van con ellos: `test_dbase_compare_signos`,
+`test_cheques_feching_backfill`, `test_clientes_import`,
+`test_facturas_reconcile`, `test_posdat_reconcile`, `test_sync_regresion_guard`,
+y los seis `test_dbase_compare_*` de `test_stock_vivo_prg.py`.
+
+**NO borrar** — viven en ese módulo y no tienen nada de dBase: `sql_console_view`,
+`salud_view`, `health_audit_view` (el cron diario), `migraciones_view`,
+`deploy_view`, `clientes_asinfo_view` + `_detalle`, `ficha_asinfo_view`,
+`import_sin_plata_view`, `auto_match_view`, `balance_view`,
+`regen_snapshot_view`, y los ocho `debug_*` de Asinfo/producción (la dueña los
+deja: 2026-08-09).
+
+🚨 **La trampa**: `tinto_costos_sync.py` tiene DOS funciones y sólo una es del
+dBase. `refresh_from_dir()` lee `TINTO.DBF`/`COSTOS.DBF` de un tarball y se va;
+`refresh_from_formulas_app()` lee la base VIVA de tintorería y es la que se
+usa. Su ruta cuelga de la pantalla que hay que borrar
+(`/admin/dbase-sync/tinto-costos/from-formulas`), así que hay que **mudarla a
+su propia URL antes** de borrar la pantalla. Lo mismo con su template
+(`tinto_costos.html` tiene los dos formularios en la misma página).
+
+**Después**: el módulo deja de tener nada de dBase → renombrarlo
+(`admin_dbase` → `admin_tools`, también `templates/admin_dbase/`). Un módulo
+llamado `admin_dbase` que contiene la consola SQL y el deploy es la razón por
+la que nadie lo limpió antes.
+
+**Guardas que avisan solas si algo se rompe**: `test_ninguna_aceptada_sobra`
+(falla si borrás una ruta que está en `accesos.ACEPTADAS` — hay que sacar de
+ahí `/admin/dbase-compare/` y `/vivo`), `test_routes_smoke` (renderiza todo
+GET) y `test_scope_vendedor`, que nombra `/admin/dbase-sync` como ejemplo de
+pantalla cerrada y hay que cambiarle el ejemplo.
 
 ---
 
@@ -111,8 +150,13 @@ Verificar en unos días que las capturas programadas corren solas en producción
 
 ## Decisiones registradas (NO reabrir)
 
-- Las 26 rutas sin control de permisos (8 de escritura) quedan ABIERTAS a
-  propósito — "está bien que puedan" (05/08).
+- Las rutas sin control de permisos quedan ABIERTAS a propósito — "está bien
+  que puedan" (05/08, reconfirmado el 09/08). Auditadas una por una el 09/08:
+  de las 26 que se contaban, **doce no eran un agujero** (redirects, el flow
+  de Google que corre antes del login, y las que chequean con un helper). Las
+  demás viven en `modules/usuarios/accesos.py::ACEPTADAS` con el motivo
+  escrito, y un test impide que esa lista se pudra. La lista roja de
+  `/usuarios/accesos` ahora significa "esto apareció y nadie lo miró".
 - Compras con kg=0 desde Asinfo: aceptado. Activos sin tipo (~$655k): aceptado.
 - No se cargan más aliases cliente Asinfo↔PC: sucursales por dirección.
 
