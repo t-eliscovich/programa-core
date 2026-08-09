@@ -63,6 +63,24 @@ CATEGORIAS_V19 = (
     (9, "V9 — Gs. varios admin"),
 )
 
+#: 🚨 TMT 2026-08-09, viendo "Caja #896 → Gasto #553" en el historial:
+#: *"quiero que se vea concepto de gasto, a qué V1, V2, etc fue aplicado"*.
+#: El `num` del gasto NO es un correlativo —es la categoría— así que un
+#: "Gasto #7" se lee como "el gasto número 7" cuando en realidad es V7.
+#: `nombre_categoria(7)` → "V7 · Personal admin".
+_NOMBRE_V19 = {n: t.split("—", 1)[1].strip() for n, t in CATEGORIAS_V19}
+
+
+def nombre_categoria(num) -> str:
+    """"V7 · Personal admin". '' si el número no es una categoría válida."""
+    try:
+        n = int(num)
+    except (TypeError, ValueError):
+        return ""
+    nombre = _NOMBRE_V19.get(n)
+    return f"V{n} · {nombre}" if nombre else ""
+
+
 # Keywords → num. El primero que matchea gana. Match por substring case-
 # insensitive sobre el concepto entero. Las palabras-multipalabra (ej.
 # "SUELDO TEJ") priman sobre las simples (ej. "SUELDO") porque están más

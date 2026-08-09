@@ -146,3 +146,27 @@ def test_sin_numero_y_sin_banco_con_nombre_queda_el_id(app, fake_db):
         _mov(tipo="cheque_creado", origen_table="cheque", origen_id=77,
              destino_table="cheque", destino_id=77, concepto="Cheque # de AAA"))
     assert "Cheque #77" in html
+
+
+def test_el_mismo_proveedor_de_los_dos_lados_se_escribe_una_vez(app, fake_db):
+    """"Compra SY · Seyquin Cia.Ltda. → Posdat SY · Seyquin Cia.Ltda." no son
+    la misma etiqueta, pero lo único distinto es QUÉ es cada lado: el
+    proveedor está escrito dos veces. Queda "→ Posdat" a secas."""
+    orig = db.fetch_all
+
+    def _fake(sql, params=None, *a, **k):
+        if "FROM scintela.compra c" in (sql or ""):
+            return [{"id_compra": 496, "numero": "10144", "fecha": None,
+                     "tipo": "Q", "concepto": "22758",
+                     "prov": "SY", "proveedor": "SEYQUIN CIA.LTDA."}]
+        if "FROM scintela.posdat p" in (sql or ""):
+            return [{"id_posdat": 926, "num": "10144", "concepto": "22758",
+                     "prov": "SY", "proveedor": "SEYQUIN CIA.LTDA."}]
+        return orig(sql, params, *a, **k) if callable(orig) else []
+
+    with patch.object(db, "fetch_all", side_effect=_fake):
+        html = _filas(app, fake_db, [_mov(
+            tipo="compra_a_posdat", origen_table="compra", origen_id=496,
+            destino_table="posdat", destino_id=926)])
+    assert "Compra SY · Seyquin Cia.Ltda." in html
+    assert html.count("Seyquin Cia.Ltda.") == 2   # sólo el origen (title + texto)

@@ -112,6 +112,26 @@ TIPOS_LABEL = {
     "posdat_edit_importe":      "Posdat: edit de importe",
     "factura_abono_manual":     "Factura: abono manual",
     "retencion_movida_del_abono": "Retención separada del abono",
+    # 🚨 TMT 2026-08-09, viendo "Caja S To Gasto": los tipos que faltaban acá
+    # caían al nombre técnico con los guiones bajos en mayúsculas. Medido:
+    # 17 tipos, 1.342 filas activas.
+    "retencion_asinfo_aplicada": "Retención aplicada",
+    "caja_s_to_gasto":          "Caja → Gasto",
+    "caja_s_to_xgast":          "Caja → Gasto",
+    "caja_e_to_gasto":          "Gasto devuelto → Caja",
+    "dolares_anticipo":         "Anticipo en dólares",
+    "nota_debito":              "Nota de débito",
+    "nota_credito":             "Nota de crédito",
+    "deposito":                 "Depósito",
+    "cheque_cancelado_por_anticipo": "Anticipo cancela el cheque",
+    "anticipo_neteado":         "Anticipo neteado",
+    "posdat_yy_cierre_mes":     "Provisión: cierre de mes",
+    "factura_stat_cambio":      "Factura: cambio de estado",
+    "neteo_estado_cuenta":      "Neteo del estado de cuenta",
+    "cheque_emitido_otro":      "Cheque emitido → otro",
+    "importacion_anticipo":     "Anticipo de importación",
+    "banco_clasificado_gasto":  "Banco → Gasto",
+    "factura_cerrada_a_t":      "Factura cerrada (T)",
 }
 
 
@@ -638,7 +658,12 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         # generaba). O sea que el link era, literalmente, "/caja". Y /caja pagina
         # de a 500: 52 de las 466 filas linkeadas ni siquiera estaban en la
         # primera página.
-        return f"/caja?id={rid}", f"Caja #{rid}"
+        # 🚨 TMT 2026-08-09: *"Caja tampoco sé el concepto exacto"*. Una fila
+        # de caja no tiene número: su identidad es fecha + concepto + importe,
+        # y las tres ya están en la fila del historial. El id interno no
+        # agregaba nada, así que la etiqueta es "Caja" a secas (el link sigue
+        # llevando a LA fila).
+        return f"/caja?id={rid}", "Caja"
     if t == "transacciones_bancarias":
         # 1.862 movimientos apuntan acá — el destino de MÁS volumen del
         # historial — y hasta hoy no tenía link: sólo el nombre del banco como
@@ -704,6 +729,11 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         return f"/posdat?id={rid}", f"Posdat #{rid}"
     if t == "xgast":
         return f"/gastos?id={rid}", f"Gasto #{rid}"
+    if t == "importacion_pago_mov":
+        # 2 movimientos. No tenía rama: salía "Importacion Pago Mov #id" por el
+        # fallback genérico. Sin link porque no hay pantalla que muestre ESA
+        # fila (mandar a /importaciones sería el bug del 07/08 otra vez).
+        return None, "Pago de importación"
     return None, f"{t} #{rid}"
 
 

@@ -526,6 +526,16 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
             filename="compras.csv",
         )
 
+    # 🚨 TMT 2026-08-09, señalando la celda Concepto de esta misma pantalla
+    # ("22758 7"): el número final NO es parte de la factura, es el DÍA del
+    # mes pegado por el formato de ancho fijo del dBase (ALTAS.PRG L649). La
+    # fecha ya está en la primera columna. La COLUMNA no se toca —el puente de
+    # fórmulas matchea por el primer token del concepto—: se limpia al MOSTRAR,
+    # y el historial usa la misma función, así que las dos pantallas dicen lo
+    # mismo.
+    for _f in filas:
+        _f["concepto_ref"] = queries.referencia(_f.get("concepto"), _f.get("fecha"))
+
     # TMT 2026-05-20 PASADA 6 Federico #15 — total real del filtro sin
     # LIMIT. Si las filas visibles == universo, no hay diferencia. Si
     # están truncadas a 500 (limit), el header sigue mostrando el total

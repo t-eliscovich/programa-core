@@ -251,26 +251,36 @@ def test_un_id_que_no_es_un_numero_se_ignora(app_logueada, monkeypatch):
 
 
 def test_una_provision_sin_numero_se_llama_por_su_concepto():
-    fila = {"num": 0, "proveedor": "", "concepto": "SUELDOS"}
+    """YY/RT no son un proveedor: son la provisión. Ahí manda el concepto."""
+    fila = {"num": 0, "prov": "YY", "concepto": "SUELDOS"}
     assert pq.nombre_visible(fila) == "SUELDOS"
     assert pq.etiqueta(fila) == "SUELDOS"
 
 
-def test_con_proveedor_manda_el_proveedor_y_el_numero_va_adelante():
-    fila = {"num": 10096, "proveedor": "HILTEXPOY S.A.", "concepto": "37711"}
-    # El concepto de un posdatado de proveedor suele ser el N° de factura:
-    # "Hiltexpoy" dice más que "37711".
-    assert pq.nombre_visible(fila) == "Hiltexpoy S.A."
-    assert pq.etiqueta(fila) == "10096 · Hiltexpoy S.A."
+def test_con_proveedor_va_el_codigo_y_la_razon_social():
+    """🚨 TMT 2026-08-09: *"¿no se anota como SY?"* y *"esto tmbn SY · Seyquin
+    Cia.Ltda."*. La celda Proveedor de /compras escribe el CÓDIGO y al lado el
+    nombre: la etiqueta dice lo mismo que la pantalla a la que lleva el link.
+
+    🚨 Y el `num` NO entra: es un correlativo interno que la lista de /compras
+    ni siquiera muestra (*"¿y el 10144 es importante?"*)."""
+    fila = {"num": 10096, "prov": "HY", "proveedor": "HILTEXPOY S.A.",
+            "concepto": "37711"}
+    assert pq.nombre_visible(fila) == "HY · Hiltexpoy S.A."
+    assert pq.etiqueta(fila) == "HY · Hiltexpoy S.A."
+
+
+def test_sin_razon_social_queda_el_codigo_solo():
+    assert pq.etiqueta({"num": 3, "prov": "CHM", "proveedor": ""}) == "CHM"
 
 
 def test_num_cero_no_es_un_numero():
-    assert pq.etiqueta({"num": 0, "proveedor": "", "concepto": "X"}) == "X"
+    assert pq.etiqueta({"num": 0, "prov": "YY", "concepto": "X"}) == "X"
 
 
 def test_sin_nada_que_mostrar_la_etiqueta_queda_vacia():
     """Y ahí —y sólo ahí— el historial cae al "#id"."""
-    assert pq.etiqueta({"num": 0, "proveedor": "", "concepto": ""}) == ""
+    assert pq.etiqueta({"num": 0, "prov": "", "concepto": ""}) == ""
     assert pq.etiqueta(None) == ""
     _, etq = hq.link_origen({"origen_table": "posdat", "origen_id": 133})
     assert etq == "Posdat #133"
@@ -339,7 +349,7 @@ def test_al_editar_el_importe_el_audit_ya_nace_con_el_nombre(monkeypatch):
 
     monkeypatch.setattr(_db, "fetch_one", lambda *a, **k: {
         "id_posdat": 133, "importe": 152000.0, "fecha": None,
-        "concepto": "SUELDOS", "prov": "YY", "num": 0, "proveedor": ""})
+        "concepto": "SUELDOS", "prov": "YY", "num": 0})
     monkeypatch.setattr(_db, "tx", lambda *a, **k: contextlib.nullcontext(object()))
     monkeypatch.setattr(_db, "execute", lambda *a, **k: 1)
     visto = {}

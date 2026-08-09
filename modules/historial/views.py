@@ -12,11 +12,14 @@ from flask import (
 )
 
 import db
+import labels as _LBL
 from auth import requiere_login, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import money_es
 from modules.cheques import queries as _cheques_q
+from modules.compras import queries as _compras_q
+from modules.gastos import queries as _gastos_q
 from modules.posdat import queries as _posdat_q
 
 from . import queries
@@ -196,6 +199,9 @@ def lista():
     id_txbanco: set[int] = set()
     id_compras: set[int] = set()
     id_posdats: set[int] = set()
+    id_xgast: set[int] = set()
+    id_dolares: set[int] = set()
+    id_retiros: set[int] = set()
     for r in filas:
         ot, oid = r.get("origen_table"), r.get("origen_id")
         dt, did = r.get("destino_table"), r.get("destino_id")
@@ -219,6 +225,22 @@ def lista():
             id_posdats.add(int(oid))
         if dt == "posdat" and did:
             id_posdats.add(int(did))
+        # 🚨 TMT 2026-08-09: *"Caja #896 → Gasto #553"*. Estas cuatro tablas no
+        # tenían batch: la etiqueta caía al id interno, que no aparece en
+        # ninguna pantalla. Medido: gastos 882 celdas, caja 590, USD 194,
+        # retiros 80.
+        if ot == "xgast" and oid:
+            id_xgast.add(int(oid))
+        if dt == "xgast" and did:
+            id_xgast.add(int(did))
+        if ot == "dolares" and oid:
+            id_dolares.add(int(oid))
+        if dt == "dolares" and did:
+            id_dolares.add(int(did))
+        if ot == "retiros" and oid:
+            id_retiros.add(int(oid))
+        if dt == "retiros" and did:
+            id_retiros.add(int(did))
     # 🚨 TMT 2026-08-09: *"¿el número de cheque que se muestra es del cheque
     # real o del programa?"* — y era las dos cosas según la fila, que es lo
     # peor. La mitad de la cobranza NO son cheques (NB 90/91 depósito directo,
@@ -273,20 +295,45 @@ def lista():
     # OJO: esto cambia sólo la ETIQUETA. La URL sigue yendo por id_compra,
     # porque un `numero` puede coincidir con el id de OTRA compra.
     compra_numeros: dict[int, str] = {}
+    compra_etiquetas: dict[int, str] = {}
+    compra_conceptos: dict[int, str] = {}
     if id_compras:
         placeholder = ",".join(["%s"] * len(id_compras))
         rows_c = (
             db.fetch_all(
-                f"SELECT id_compra, COALESCE(numero::text, '') AS numero "
-                f"FROM scintela.compra WHERE id_compra IN ({placeholder})",
+                f"SELECT c.id_compra, COALESCE(c.numero::text, '') AS numero, "
+                f"       c.fecha, COALESCE(c.tipo, '') AS tipo, "
+                f"       COALESCE(c.concepto, '') AS concepto, "
+                f"       COALESCE(c.codigo_prov, '') AS prov, "
+                f"       COALESCE(pr.nombre, '') AS proveedor "
+                f"  FROM scintela.compra c "
+                f"  LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = c.codigo_prov "
+                f" WHERE c.id_compra IN ({placeholder})",
                 tuple(id_compras),
             )
             or []
         )
         for rc in rows_c:
+            idc = int(rc["id_compra"])
             num = (rc.get("numero") or "").strip()
+            # La referencia sin el día pegado del dBase (ver compras.referencia).
+            ref = _compras_q.referencia(rc.get("concepto"), rc.get("fecha"))
+            compra_conceptos[idc] = " · ".join(
+                x for x in (_LBL.TIPOS_COMPRA_LABEL.get((rc.get("tipo") or "").upper()),
+                            (f"fact. {ref}" if ref else "")) if x)
+            # El mismo "SY · Seyquin Cia.Ltda." que arma el posdatado.
+            prov = _posdat_q.nombre_visible(
+                {"prov": rc.get("prov"), "proveedor": rc.get("proveedor")})
             if num and num != "0":
-                compra_numeros[int(rc["id_compra"])] = num
+                # 🚨 El N° NO va en la etiqueta: es un correlativo interno que
+                # la lista de /compras ni siquiera muestra (TMT 2026-08-09).
+                compra_numeros[idc] = prov or f"#{idc}"
+                continue
+            # 232 compras (todas dbf-import) no tienen número: se las nombra
+            # por su proveedor y su referencia, no por el id interno.
+            resto = " · ".join(x for x in (prov, ref) if x)
+            if resto:
+                compra_etiquetas[idc] = f"Compra {resto}"
     # TMT 2026-08-07 (dueña) — el posdatado tiene UN número visible (`num`, el
     # de la columna N° de /posdat) y el historial mostraba el id interno. Peor:
     # el CONCEPTO del movimiento ya venía escrito con el `num`, así que la fila
@@ -306,7 +353,8 @@ def lista():
             db.fetch_all(
                 f"SELECT p.id_posdat, COALESCE(p.num::text, '') AS num, "
                 f"       COALESCE(p.concepto, '') AS concepto, "
-                f"       COALESCE(pr.nombre, '')  AS proveedor "
+                f"       COALESCE(p.prov, '') AS prov, "
+                f"       COALESCE(pr.nombre, '') AS proveedor "
                 f"  FROM scintela.posdat p "
                 f"  LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = p.prov "
                 f" WHERE p.id_posdat IN ({placeholder})",
@@ -356,6 +404,48 @@ def lista():
             else:
                 banco_labels[int(rb["id_transaccion"])] = f"Banco #{rb['id_transaccion']}"
 
+    # 🚨 TMT 2026-08-09: *"quiero que se vea concepto de gasto, a qué V1, V2,
+    # etc fue aplicado"*. El `num` del gasto NO es un correlativo: es la
+    # CATEGORÍA V1..V9 del legacy, la que arma GTEJ/GTIN/GGF en el balance. Un
+    # "Gasto #553" era el id interno, y un "Gasto #7" se leía como el gasto
+    # número siete cuando quería decir V7.
+    gasto_etiquetas: dict[int, str] = {}
+    if id_xgast:
+        placeholder = ",".join(["%s"] * len(id_xgast))
+        rows_g = (
+            db.fetch_all(
+                f"SELECT id_xgast, num FROM scintela.xgast "
+                f"WHERE id_xgast IN ({placeholder})",
+                tuple(id_xgast),
+            )
+            or []
+        )
+        for rg in rows_g:
+            cat = _gastos_q.nombre_categoria(rg.get("num"))
+            if cat:
+                gasto_etiquetas[int(rg["id_xgast"])] = f"Gasto {cat}"
+    # El anticipo en dólares se identifica por su CUENTA (la columna `cta`,
+    # que es por la que filtra /dolares); el retiro, por el Cód. de 2 letras
+    # de /retiros.
+    dolares_etiquetas: dict[int, str] = {}
+    if id_dolares:
+        placeholder = ",".join(["%s"] * len(id_dolares))
+        for rd in (db.fetch_all(
+                f"SELECT id_dolares, COALESCE(cta, '') AS cta FROM scintela.dolares "
+                f"WHERE id_dolares IN ({placeholder})", tuple(id_dolares)) or []):
+            cta = (rd.get("cta") or "").strip().upper()
+            if cta:
+                dolares_etiquetas[int(rd["id_dolares"])] = f"USD {cta}"
+    retiro_etiquetas: dict[int, str] = {}
+    if id_retiros:
+        placeholder = ",".join(["%s"] * len(id_retiros))
+        for rr in (db.fetch_all(
+                f'SELECT id_retiro, COALESCE("de", \'\') AS de FROM scintela.retiros '
+                f"WHERE id_retiro IN ({placeholder})", tuple(id_retiros)) or []):
+            de = (rr.get("de") or "").strip().upper()
+            if de:
+                retiro_etiquetas[int(rr["id_retiro"])] = f"Retiro {de}"
+
     def _override_label(t: str | None, rid, default_label: str) -> str:
         if t == "cheque" and rid and int(rid) in cheque_etiquetas:
             return cheque_etiquetas[int(rid)]
@@ -364,7 +454,15 @@ def lista():
         if t == "transacciones_bancarias" and rid and int(rid) in banco_labels:
             return banco_labels[int(rid)]
         if t == "compra" and rid and int(rid) in compra_numeros:
-            return f"Compra N° {compra_numeros[int(rid)]}"
+            return f"Compra {compra_numeros[int(rid)]}"
+        if t == "compra" and rid and int(rid) in compra_etiquetas:
+            return compra_etiquetas[int(rid)]
+        if t == "xgast" and rid and int(rid) in gasto_etiquetas:
+            return gasto_etiquetas[int(rid)]
+        if t == "dolares" and rid and int(rid) in dolares_etiquetas:
+            return dolares_etiquetas[int(rid)]
+        if t == "retiros" and rid and int(rid) in retiro_etiquetas:
+            return retiro_etiquetas[int(rid)]
         return default_label
 
     # Mapeo id_factura → numf (solo si tiene numf válido) y id_cheque → no_cheque.
@@ -418,6 +516,16 @@ def lista():
         # Factura #172730" y "Cheque # de TNZ" (1.410 filas medidas, sin
         # número porque no eran cheques). Se reescribe al mostrar con la misma
         # etiqueta de la columna ORIGEN, así la fila dice UNA sola cosa.
+        # 🚨 TMT 2026-08-09, sobre "22758         7": *"no puede ser ese número
+        # lo importante del movimiento"*. Era el N° de factura del proveedor
+        # con el DÍA del mes pegado (formato de ancho fijo del dBase). Ahora la
+        # fila dice QUÉ se compró y dónde mirar la factura: "Químicos ·
+        # fact. 22758". La columna `compra.concepto` NO se toca — el dedup del
+        # puente de fórmulas matchea por su primer token.
+        _kid = (r.get("origen_id") if r.get("origen_table") == "compra"
+                else (r.get("destino_id") if r.get("destino_table") == "compra" else None))
+        if _kid and compra_conceptos.get(int(_kid)):
+            r["concepto"] = compra_conceptos[int(_kid)]
         _cid = r.get("origen_id") if r.get("origen_table") == "cheque" else None
         if _cid and r.get("concepto") and int(_cid) in cheque_etiquetas:
             _etq = cheque_etiquetas[int(_cid)]
@@ -444,6 +552,17 @@ def lista():
         r["destino_repetido"] = bool(
             r.get("destino_label")
             and r.get("destino_label") == r.get("origen_label"))
+        # 🚨 Y el caso hermano: "Compra SY · Seyquin Cia.Ltda. → Posdat SY ·
+        # Seyquin Cia.Ltda.". No son la misma etiqueta, pero lo único distinto
+        # es la primera palabra —qué es— y el resto es el mismo proveedor
+        # escrito dos veces. Se deja el sustantivo solo: "→ Posdat".
+        # Son 408 filas (compra_a_posdat 231 + gasto_a_posdat 177).
+        if not r["destino_repetido"]:
+            _o, _d = (r.get("origen_label") or ""), (r.get("destino_label") or "")
+            _op, _, _oresto = _o.partition(" ")
+            _dp, _, _dresto = _d.partition(" ")
+            if _oresto and _oresto == _dresto:
+                r["destino_label"] = _dp
 
     # ──────────────────────────────────────────────────────────────────
     # Construir `items` — una lista de "tarjetas" para el template.

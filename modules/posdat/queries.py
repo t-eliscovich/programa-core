@@ -292,14 +292,25 @@ def por_id(id_posdat: int) -> dict | None:
 #: fila diría dos cosas distintas del mismo posdatado (ya pasó con el `num` vs
 #: el id, 07/08).
 def nombre_visible(row: dict | None) -> str:
-    """Cómo se llama un posdatado para la dueña. '' si no hay con qué."""
+    """Cómo se llama un posdatado para la dueña. '' si no hay con qué.
+
+    🚨 TMT 2026-08-09, viendo "Posdat 10144 · Seyquin Cia.Ltda.": *"¿no se
+    anota como SY?"*. Sí: la columna **Prov** de /posdat muestra el CÓDIGO, y
+    /compras muestra código + nombre. El nombre largo no coincide con lo que
+    ella lee en pantalla (y come el ancho de la columna). ⭐ La etiqueta tiene
+    que decir lo mismo que la pantalla a la que lleva el link.
+    """
     if not row:
         return ""
-    prov = (row.get("proveedor") or "").strip()
-    if prov:
-        # PICHINCHA → Pichincha, igual que los bancos del historial.
-        prov = prov.title()
-    return prov or (row.get("concepto") or "").strip()
+    prov = (row.get("prov") or "").strip().upper()
+    # Las provisiones (YY/RT) no son un proveedor: ahí manda su concepto —
+    # SUELDOS, 14 DEC.CUAR+RES.
+    if prov in ("", "YY", "RT"):
+        return (row.get("concepto") or "").strip() or prov
+    # "SY · Seyquin Cia.Ltda." — el código Y la razón social, igual que la
+    # celda Proveedor de /compras (TMT 2026-08-09, textual).
+    nombre = (row.get("proveedor") or "").strip().title()
+    return f"{prov} · {nombre}" if nombre else prov
 
 
 def etiqueta(row: dict | None) -> str:
@@ -308,10 +319,11 @@ def etiqueta(row: dict | None) -> str:
     que llama decide el fallback)."""
     if not row:
         return ""
-    num = str(row.get("num") or "").strip()
-    if num in ("", "0"):
-        num = ""
-    return " · ".join(x for x in (num, nombre_visible(row)) if x)
+    # 🚨 TMT 2026-08-09: *"¿y el 10144 es importante?"*. No: `numero`/`num` es
+    # un correlativo interno que la LISTA de /compras ni siquiera muestra (sólo
+    # vive en la ficha, que es a donde lleva el link). Lo que reconoce a la
+    # fila es el proveedor, así que el número no ocupa lugar en la etiqueta.
+    return nombre_visible(row)
 
 
 def _nombre_o_id(row: dict | None, id_posdat) -> str:

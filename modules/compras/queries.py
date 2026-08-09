@@ -25,6 +25,7 @@ La discriminación compras vs producción es:
     COMPRAS     ⟺ todo lo demás (H, Q, C, K-sin-kg, A, I)
 """
 
+import re
 from datetime import date, timedelta
 
 import db
@@ -35,6 +36,34 @@ from periodo_guard import asegurar_fecha_abierta
 # TMT 2026-05-19 — agregado 'I' (IN = Anticipo máquinas, pedido Tamara).
 # Importante: C ahora significa TINTORERÍA (no "Consumibles"/"Otros").
 TIPOS_VALIDOS = ("K", "H", "Q", "C", "A", "I")
+
+#: 🚨 TMT 2026-08-09, sobre el concepto "22758         7" de una compra:
+#: *"esto no entendí pero no puede ser ese número lo importante del
+#: movimiento"*. Y tenía razón por partida doble:
+#:   · el "22758" es el N° de factura DEL PROVEEDOR (lo trae el puente de
+#:     formulas_app, normalizado a la convención del programa);
+#:   · el "7" es **el día del mes**, que la fila ya muestra en su columna
+#:     Fecha. Viene de ALTAS.PRG L649 (`LEFT(CONCEPTO,13)+STR(DAY(FECHA),2)`),
+#:     el formato de ancho fijo del dBase, y `formulas_bridge.concepto_pc()`
+#:     lo sigue escribiendo igual.
+#: La columna NO se toca —el dedup del puente matchea por el primer token del
+#: concepto— pero al MOSTRARLA se le saca el día.
+_RE_CONCEPTO_DBASE = re.compile(r"^(.{1,13}?)\s{2,}(\d{1,2})$")
+
+
+def referencia(concepto: str | None, fecha=None) -> str:
+    """El concepto de la compra sin el día pegado del dBase.
+
+    Sólo lo saca si el número final ES el día de la compra: si no coincide,
+    ese número quiere decir otra cosa y se deja tal cual.
+    """
+    txt = (concepto or "").strip()
+    m = _RE_CONCEPTO_DBASE.match(txt)
+    if not m:
+        return " ".join(txt.split())
+    if fecha is not None and getattr(fecha, "day", None) != int(m.group(2)):
+        return " ".join(txt.split())
+    return m.group(1).strip()
 
 # Etiquetas legibles para la UI — fuente única en labels.py para mantener
 # consistencia con todo el resto del programa (TMT 2026-05-12).
