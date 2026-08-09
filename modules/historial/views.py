@@ -290,7 +290,12 @@ def lista():
         )
         for rf in rows_f:
             num = (rf.get("numf") or "").strip()
-            factura_labels[int(rf["id_factura"])] = num or f"#{rf['id_factura']}"
+            # 🚨 538 facturas importadas del dBase tienen `numf = 0`: escribir
+            # "Factura 0" es mostrar un número que no existe (el chequeo del
+            # "0" estaba en link_origen pero no acá). TMT 2026-08-09.
+            if num in ("", "0"):
+                num = "s/n"
+            factura_labels[int(rf["id_factura"])] = num
     # TMT 2026-08-03 (dueña, mismo pedido que ya se hizo con facturas): la
     # compra tiene UN número visible — el `numero` de la pantalla Compras. El
     # historial mostraba "Compra #473", que es el id INTERNO y no aparece en
@@ -555,6 +560,14 @@ def lista():
         # Lo último: la limpieza general del texto (después de los reemplazos
         # específicos, que ya pusieron el nombre del cheque o del posdatado).
         r["concepto"] = _concepto_legible(r.get("concepto"))
+        # 🚨 Y una vez limpio, el concepto de "Cheque → Factura aplicada"
+        # quedó diciendo exactamente lo mismo que las dos columnas de al lado
+        # ("Dep. Pich. → Factura 172730"). Son 5.038 filas: la frase se va.
+        # Tercera vez que aparece la misma regla hoy: repetir no informa.
+        _o, _d = (r.get("origen_label") or ""), (r.get("destino_label") or "")
+        if _o and _d and (r.get("concepto") or "").casefold() == \
+                f"{_o} → {_d}".casefold():
+            r["concepto"] = ""
         r["destino_repetido"] = bool(
             r.get("destino_label")
             and r.get("destino_label") == r.get("origen_label"))
