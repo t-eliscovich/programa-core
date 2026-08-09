@@ -73,8 +73,9 @@ def test_los_reversos_que_faltaban_tienen_castellano():
 def test_el_concepto_que_solo_repite_origen_y_destino_se_va(app, fake_db):
     """Una vez limpio, "Dep. Pich. → Factura 172730" decía exactamente lo
     mismo que las columnas ORIGEN y DESTINO. Son 5.038 filas."""
-    import db
     from unittest.mock import patch
+
+    import db
 
     def _fake(sql, params=None, *a, **k):
         if "FROM scintela.cheque c" in (sql or ""):
@@ -110,8 +111,9 @@ def test_el_concepto_que_solo_repite_origen_y_destino_se_va(app, fake_db):
 def test_una_factura_sin_numero_no_se_llama_cero(app, fake_db):
     """`numf = 0` son las 538 importadas del dBase: "Factura 0" es un número
     que no existe."""
-    import db
     from unittest.mock import patch
+
+    import db
 
     def _fake(sql, params=None, *a, **k):
         if "FROM scintela.factura" in (sql or ""):
