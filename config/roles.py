@@ -268,9 +268,15 @@ ROLES: list[tuple[str, list[str]]] = [
             "cheques.anular",
             "bancos.ver",
             "bancos.conciliar",
-            # TMT 2026-07-01 (dueña, review accesos): recalcular la cadena de
-            # saldos de un banco (mantenimiento). Antes solo conciliaba.
-            "bancos.editar",
+            # ⛔ `bancos.editar` SE SACÓ el 2026-08-09 (dueña: "reencadenar
+            # sólo accionistas"). Se lo habíamos dado el 2026-07-01 para
+            # re-encadenar la cadena de saldos; en el medio —el 2026-08-04— la
+            # apertura pasó a colgar del MISMO permiso, y la apertura no es
+            # mantenimiento: es el único número guardado del que sale el saldo
+            # del banco, o sea el patrimonio y la utilidad. Corregirla en
+            # $10.000 mueve la utilidad $10.000 sin que entre ni salga plata.
+            # Se le preguntó explícitamente antes de sacarlo. Queda en los dos
+            # roles wildcard (Accionista y Administrador = Andrés).
             "cartera.ver",
             # Clientes / proveedores / cobranza.
             "clientes.ver",

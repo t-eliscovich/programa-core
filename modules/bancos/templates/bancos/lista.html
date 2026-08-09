@@ -104,6 +104,12 @@
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       Cargar varias
     </a>
+    {# TMT 2026-08-09 (dueña): "reencadenar sólo accionistas", y la apertura
+       con más razón —es el único número guardado del que cuelga el saldo del
+       banco, y por lo tanto el patrimonio—. Los dos botones van detrás del
+       permiso: una ruta cerrada sin gatear su link le da 404 en la cara a
+       quien no puede entrar. #}
+    {% if tiene_permiso('bancos.editar') %}
     {# TMT 2026-08-03: el saldo corrido guardado es lo que el Balance usa como
        BANCOS. Si la cadena se corta, el patrimonio y la conciliación se corren
        por esa plata — y hasta hoy no había forma de verlo ni de repararlo por
@@ -123,6 +129,7 @@
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12h18"/><path d="M12 3v18"/></svg>
       Saldos de apertura
     </a>
+    {% endif %}
   </div>
   {% endif %}
   {% endif %}{# fin banco_actual #}
