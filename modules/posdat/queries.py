@@ -3,7 +3,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 
 import db
-from filters import today_ec
+from filters import money_es, today_ec
 from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
 
@@ -280,6 +280,46 @@ def por_id(id_posdat: int) -> dict | None:
     )
 
 
+#: 🚨 TMT 2026-08-09, mirando dos ediciones de importe de Andrés en el
+#: historial: *"quiero que me diga es sueldos, si no cómo sé? a mí posdat 133
+#: no me dice nada"*. Los posdatados de provisión (YY/RT) NO tienen número
+#: —`num` es 0— así que la pantalla caía al id interno, que no es un dato que
+#: exista para nadie fuera del código. Lo que los nombra es el PROVEEDOR y,
+#: cuando no hay proveedor cargado, su propio concepto: SUELDOS,
+#: "14 DEC.CUAR+RES".
+#: ⭐ UNA sola función para los dos lados: la etiqueta que muestra el historial
+#: y el concepto que se graba al editar. Si se escribieran por separado, la
+#: fila diría dos cosas distintas del mismo posdatado (ya pasó con el `num` vs
+#: el id, 07/08).
+def nombre_visible(row: dict | None) -> str:
+    """Cómo se llama un posdatado para la dueña. '' si no hay con qué."""
+    if not row:
+        return ""
+    prov = (row.get("proveedor") or "").strip()
+    if prov:
+        # PICHINCHA → Pichincha, igual que los bancos del historial.
+        prov = prov.title()
+    return prov or (row.get("concepto") or "").strip()
+
+
+def etiqueta(row: dict | None) -> str:
+    """El número visible y el nombre, lo que haya: "10096 · Hiltexpoy S.A.",
+    "SUELDOS". Vacío si el posdatado no tiene ni una cosa ni la otra (ahí el
+    que llama decide el fallback)."""
+    if not row:
+        return ""
+    num = str(row.get("num") or "").strip()
+    if num in ("", "0"):
+        num = ""
+    return " · ".join(x for x in (num, nombre_visible(row)) if x)
+
+
+def _nombre_o_id(row: dict | None, id_posdat) -> str:
+    """El nombre del posdatado o, si no tiene ninguno, el id (mejor eso que
+    nada: al menos el link de la fila lleva a la fila)."""
+    return nombre_visible(row) or f"posdat #{id_posdat}"
+
+
 def proximo_num() -> int:
     row = db.fetch_one("SELECT COALESCE(MAX(num), 0) + 1 AS n FROM scintela.posdat")
     return int(row["n"]) if row else 1
@@ -428,8 +468,13 @@ def editar(
     # Leer el estado actual ANTES de armar el UPDATE para poder auditar
     # los cambios de importe y construir el concepto con la marca.
     actual = db.fetch_one(
-        "SELECT id_posdat, importe, fecha, concepto, prov, num "
-        "FROM scintela.posdat WHERE id_posdat = %s",
+        # El nombre del proveedor viaja para que el concepto del audit diga de
+        # QUÉ posdatado se editó el importe (TMT 2026-08-09).
+        "SELECT p.id_posdat, p.importe, p.fecha, p.concepto, p.prov, p.num, "
+        "       COALESCE(pr.nombre, '') AS proveedor "
+        "  FROM scintela.posdat p "
+        "  LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = p.prov "
+        " WHERE p.id_posdat = %s",
         (id_posdat,),
     )
     if not actual:
@@ -527,9 +572,11 @@ def editar(
                     # posdatado. Si no, en el historial la edición sale con la
                     # fecha (a veces futura) del posdat y queda siempre arriba.
                     fecha=today_ec(),
+                    # "Edit importe de SUELDOS: 152.000,00 → 32.000,00".
+                    # Antes decía "posdat #133", que no le dice nada a nadie.
                     concepto=(
-                        f"Edit importe posdat #{actual.get('num') or id_posdat} "
-                        f"{importe_prev:.2f} → {importe_nuevo:.2f}"
+                        f"Edit importe de {_nombre_o_id(actual, id_posdat)}: "
+                        f"{money_es(importe_prev)} → {money_es(importe_nuevo)}"
                     )[:200],
                     usuario=usuario,
                     metadata={"importe_prev": importe_prev,

@@ -15,6 +15,8 @@ import db
 from auth import requiere_login, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import money_es
+from modules.posdat import queries as _posdat_q
 
 from . import queries
 
@@ -272,21 +274,39 @@ def lista():
     # el CONCEPTO del movimiento ya venía escrito con el `num`, así que la fila
     # tenía dos "#134" que no eran el mismo número. Sólo cambia la ETIQUETA —
     # la URL sigue yendo por id_posdat, igual que compras.
-    posdat_nums: dict[int, str] = {}
+    #
+    # 🚨 TMT 2026-08-09, sobre dos ediciones de importe de Andrés: *"quiero que
+    # me diga es sueldos, si no cómo sé? a mí posdat 133 no me dice nada"*. Los
+    # posdatados de provisión (YY/RT) NO tienen `num` —es 0—, así que caían al
+    # id interno. Ahora la etiqueta lleva el NOMBRE: el proveedor, o el
+    # concepto del posdatado cuando no hay proveedor cargado.
+    posdat_etiquetas: dict[int, str] = {}
+    posdat_nombres: dict[int, str] = {}
     if id_posdats:
         placeholder = ",".join(["%s"] * len(id_posdats))
         rows_pd = (
             db.fetch_all(
-                f"SELECT id_posdat, COALESCE(num::text, '') AS num "
-                f"FROM scintela.posdat WHERE id_posdat IN ({placeholder})",
+                f"SELECT p.id_posdat, COALESCE(p.num::text, '') AS num, "
+                f"       COALESCE(p.concepto, '') AS concepto, "
+                f"       COALESCE(pr.nombre, '')  AS proveedor "
+                f"  FROM scintela.posdat p "
+                f"  LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = p.prov "
+                f" WHERE p.id_posdat IN ({placeholder})",
                 tuple(id_posdats),
             )
             or []
         )
         for rp in rows_pd:
-            num = (rp.get("num") or "").strip()
-            if num and num != "0":
-                posdat_nums[int(rp["id_posdat"])] = num
+            idp = int(rp["id_posdat"])
+            # La MISMA función que usa el audit al grabar el concepto: si se
+            # escribieran por separado, la fila diría dos cosas distintas del
+            # mismo posdatado.
+            etiqueta = _posdat_q.etiqueta(rp)
+            if etiqueta:
+                posdat_etiquetas[idp] = etiqueta
+            nombre = _posdat_q.nombre_visible(rp)
+            if nombre:
+                posdat_nombres[idp] = nombre
     banco_labels: dict[int, str] = {}
     banco_nos: dict[int, int] = {}
     if id_txbanco:
@@ -354,11 +374,11 @@ def lista():
         # terminal) — mostraba un modal que prometía facturas y no había.
         r["es_terminal"] = _es_terminal(r.get("tipo") or "")
         u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos,
-                                   posdat_nums=posdat_nums, banco_nos=banco_nos)
+                                   posdat_etiquetas=posdat_etiquetas, banco_nos=banco_nos)
         r["origen_url"] = u
         r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
         u, t = queries.link_destino(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos,
-                                    posdat_nums=posdat_nums, banco_nos=banco_nos)
+                                    posdat_etiquetas=posdat_etiquetas, banco_nos=banco_nos)
         r["destino_url"] = u
         r["destino_label"] = _override_label(r.get("destino_table"), r.get("destino_id"), t)
         # row_url = a dónde va el click de la fila entera. Preferimos
@@ -372,6 +392,15 @@ def lista():
         # el mov_doble del retiro OP es self-ref sobre `retiros`, así que ambas
         # columnas salían "Retiro #N". Forzamos el ORIGEN a "OP" → se lee como
         # doble asiento OP → Retiro, sin bloque de explicación extra.
+        # 🚨 TMT 2026-08-09: la columna CONCEPTO decía "Edit importe posdat
+        # #133 152000.00 → 32000.00" — el id interno y la plata sin formato.
+        # Las filas viejas ya están grabadas así, y son las que ella está
+        # mirando: se reescribe al MOSTRAR, con el nombre del posdatado y los
+        # importes que el propio movimiento guardó en su metadata.
+        if (r.get("tipo") or "") == "posdat_edit_importe":
+            _cpt = _concepto_edit_importe(r, posdat_nombres)
+            if _cpt:
+                r["concepto"] = _cpt
         if (r.get("tipo") or "") == "retiro_op":
             _cta = _op_cuentas.get(int(r["origen_id"])) if r.get("origen_id") else ""
             r["origen_label"] = ("OP · " + _cta) if _cta else "OP"
@@ -553,6 +582,34 @@ def lista():
 # cheques, bancos). El dispatcher route según tipo al handler existente
 # y, si no hay handler específico, redirige al caller con instrucciones.
 # =====================================================================
+
+
+def _concepto_edit_importe(row: dict, nombres: dict) -> str:
+    """"Edit importe de SUELDOS: 152.000,00 → 32.000,00".
+
+    Sale de la METADATA del movimiento (`importe_prev` / `importe_nuevo`, que
+    el audit guarda desde el día uno) y del nombre del posdatado. Si falta
+    cualquiera de las dos cosas, devuelve "" y la fila muestra el concepto tal
+    como se grabó: mejor el texto viejo que un renglón a medias.
+    """
+    import json as _json
+
+    meta = row.get("metadata")
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            return ""
+    if not isinstance(meta, dict):
+        return ""
+    prev, nuevo = meta.get("importe_prev"), meta.get("importe_nuevo")
+    if prev is None or nuevo is None:
+        return ""
+    rid = row.get("origen_id") or row.get("destino_id")
+    nombre = (nombres or {}).get(int(rid)) if rid else ""
+    if not nombre:
+        return ""
+    return f"Edit importe de {nombre}: {money_es(prev)} → {money_es(nuevo)}"
 
 
 def _es_terminal(tipo: str) -> bool:

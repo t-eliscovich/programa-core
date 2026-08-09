@@ -616,7 +616,7 @@ def corto(tipo: str, quien: str = "") -> str:
 
 
 def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
-                posdat_nums: dict | None = None,
+                posdat_etiquetas: dict | None = None,
                 banco_nos: dict | None = None) -> tuple[str | None, str]:
     """Devuelve (url, etiqueta) para el lado origen del mov.
 
@@ -693,7 +693,12 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         # escrito con el `num` (posdat/queries.py "Edit importe posdat #…"),
         # así que sin este mapeo la fila mostraba DOS números distintos con la
         # misma pinta.
-        npd = (posdat_nums or {}).get(int(rid)) if rid else None
+        # 🚨 TMT 2026-08-09: *"quiero que me diga es sueldos, si no cómo sé? a
+        # mí posdat 133 no me dice nada"*. La etiqueta ya no es sólo el `num`
+        # (las provisiones YY/RT no tienen): es el número Y el nombre —
+        # "10096 · Hiltexpoy S.A.", "SUELDOS"—. El "#id" queda como último
+        # recurso, para un posdatado sin número, sin proveedor y sin concepto.
+        npd = (posdat_etiquetas or {}).get(int(rid)) if rid else None
         if npd and str(npd).strip():
             return f"/posdat?id={rid}", f"Posdat {npd}"
         return f"/posdat?id={rid}", f"Posdat #{rid}"
@@ -703,13 +708,13 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
 
 
 def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
-                 posdat_nums: dict | None = None,
+                 posdat_etiquetas: dict | None = None,
                  banco_nos: dict | None = None) -> tuple[str | None, str]:
     """Mismo concepto para el lado destino."""
     return link_origen(
         {"origen_table": row.get("destino_table"), "origen_id": row.get("destino_id")},
         factura_numfs=factura_numfs, cheque_nos=cheque_nos,
-        posdat_nums=posdat_nums, banco_nos=banco_nos,
+        posdat_etiquetas=posdat_etiquetas, banco_nos=banco_nos,
     )
 
 

@@ -49,7 +49,7 @@ def test_la_url_va_por_id_interno_y_la_etiqueta_por_el_num_visible():
     """Mismo criterio que compras: un `num` puede ser el id de OTRO posdatado."""
     url, etiqueta = hq.link_origen(
         {"origen_table": "posdat", "origen_id": 134},
-        posdat_nums={134: "877"},
+        posdat_etiquetas={134: "877"},
     )
     assert url == "/posdat?id=134"      # id interno en la URL
     assert etiqueta == "Posdat 877"     # número visible en la etiqueta
@@ -61,11 +61,11 @@ def test_sin_num_conocido_cae_al_id_con_numeral():
 
 
 def test_el_lado_destino_usa_el_mismo_mapeo():
-    """link_destino delega en link_origen: si no le pasa posdat_nums, la
+    """link_destino delega en link_origen: si no le pasa posdat_etiquetas, la
     columna DESTINO mostraría el id interno y la ORIGEN el num."""
     url, etiqueta = hq.link_destino(
         {"destino_table": "posdat", "destino_id": 134},
-        posdat_nums={134: "877"},
+        posdat_etiquetas={134: "877"},
     )
     assert url == "/posdat?id=134" and etiqueta == "Posdat 877"
 
@@ -241,3 +241,107 @@ def test_un_id_que_no_es_un_numero_se_ignora(app_logueada, monkeypatch):
     r = app_logueada.test_client().get("/posdat?id=borrar-todo")
     assert r.status_code == 200
     assert vistos.get("id") is None
+
+
+# ── 3) el NOMBRE del posdatado (TMT 2026-08-09) ──────────────────────────────
+# *"quiero que me diga es sueldos, si no cómo sé? a mí posdat 133 no me dice
+# nada"*. Las provisiones YY/RT no tienen `num` (es 0), así que la etiqueta
+# caía al id interno. Lo que las nombra es el proveedor o, cuando no hay
+# proveedor cargado, su propio concepto.
+
+
+def test_una_provision_sin_numero_se_llama_por_su_concepto():
+    fila = {"num": 0, "proveedor": "", "concepto": "SUELDOS"}
+    assert pq.nombre_visible(fila) == "SUELDOS"
+    assert pq.etiqueta(fila) == "SUELDOS"
+
+
+def test_con_proveedor_manda_el_proveedor_y_el_numero_va_adelante():
+    fila = {"num": 10096, "proveedor": "HILTEXPOY S.A.", "concepto": "37711"}
+    # El concepto de un posdatado de proveedor suele ser el N° de factura:
+    # "Hiltexpoy" dice más que "37711".
+    assert pq.nombre_visible(fila) == "Hiltexpoy S.A."
+    assert pq.etiqueta(fila) == "10096 · Hiltexpoy S.A."
+
+
+def test_num_cero_no_es_un_numero():
+    assert pq.etiqueta({"num": 0, "proveedor": "", "concepto": "X"}) == "X"
+
+
+def test_sin_nada_que_mostrar_la_etiqueta_queda_vacia():
+    """Y ahí —y sólo ahí— el historial cae al "#id"."""
+    assert pq.etiqueta({"num": 0, "proveedor": "", "concepto": ""}) == ""
+    assert pq.etiqueta(None) == ""
+    _, etq = hq.link_origen({"origen_table": "posdat", "origen_id": 133})
+    assert etq == "Posdat #133"
+
+
+def test_la_etiqueta_del_link_dice_el_nombre():
+    _, etq = hq.link_origen({"origen_table": "posdat", "origen_id": 133},
+                            posdat_etiquetas={133: "SUELDOS"})
+    assert etq == "Posdat SUELDOS"
+
+
+# ── 4) el concepto de la fila, reescrito al mostrar ──────────────────────────
+# Las filas viejas ya están grabadas con "Edit importe posdat #133 152000.00 →
+# 32000.00" y son las que la dueña está mirando: el historial las reescribe al
+# renderizar, con la metadata que el audit guardó desde el día uno.
+
+
+def _fila_edit(meta):
+    return {"tipo": "posdat_edit_importe", "origen_id": 133, "destino_id": 133,
+            "metadata": meta}
+
+
+def test_el_concepto_dice_de_cual_y_con_la_plata_formateada():
+    from modules.historial import views as hv
+    txt = hv._concepto_edit_importe(
+        _fila_edit({"importe_prev": 152000.0, "importe_nuevo": 32000.0}),
+        {133: "SUELDOS"})
+    assert txt == "Edit importe de SUELDOS: 152.000,00 → 32.000,00"
+
+
+def test_la_metadata_tambien_puede_venir_como_texto():
+    from modules.historial import views as hv
+    txt = hv._concepto_edit_importe(
+        _fila_edit('{"importe_prev": 47900.0, "importe_nuevo": 100.0}'),
+        {133: "14 DEC.CUAR+RES"})
+    assert txt == "Edit importe de 14 DEC.CUAR+RES: 47.900,00 → 100,00"
+
+
+@pytest.mark.parametrize("meta", [None, "no soy json", {}, {"importe_prev": 1}])
+def test_sin_datos_no_inventa_el_renglon(meta):
+    """Mejor el texto viejo que un renglón a medias."""
+    from modules.historial import views as hv
+    assert hv._concepto_edit_importe(_fila_edit(meta), {133: "SUELDOS"}) == ""
+
+
+def test_sin_nombre_tampoco_lo_reescribe():
+    from modules.historial import views as hv
+    assert hv._concepto_edit_importe(
+        _fila_edit({"importe_prev": 1.0, "importe_nuevo": 2.0}), {}) == ""
+
+
+# ── 5) y el que se graba de ahora en más ─────────────────────────────────────
+def test_al_editar_el_importe_el_audit_ya_nace_con_el_nombre(monkeypatch):
+    """El concepto viejo ("Edit importe posdat #133 152000.00 → 32000.00") era
+    el id interno y la plata sin formato. Se graba con el MISMO nombre que
+    muestra el historial: una sola función para los dos lados."""
+    import contextlib
+
+    import db as _db
+    import mov_doble as _md
+
+    monkeypatch.setattr(_db, "fetch_one", lambda *a, **k: {
+        "id_posdat": 133, "importe": 152000.0, "fecha": None,
+        "concepto": "SUELDOS", "prov": "YY", "num": 0, "proveedor": ""})
+    monkeypatch.setattr(_db, "tx", lambda *a, **k: contextlib.nullcontext(object()))
+    monkeypatch.setattr(_db, "execute", lambda *a, **k: 1)
+    visto = {}
+    monkeypatch.setattr(_md, "registrar", lambda **kw: visto.update(kw))
+    monkeypatch.setattr(pq, "_baseline_col_exists", lambda: False)
+
+    pq.editar(133, importe=32000.0, usuario="andres")
+
+    assert visto["tipo"] == "posdat_edit_importe"
+    assert visto["concepto"] == "Edit importe de SUELDOS: 152.000,00 → 32.000,00"
