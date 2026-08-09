@@ -82,6 +82,57 @@ from . import nota_usuario as _nota_usuario
 # la otra punta. Sin día de ingreso confiable, el cobro no es de ningún día y
 # no se imprime en ninguna hoja.
 
+#: 🚨 TMT 2026-08-09: *"el número de cheque que se muestra es del cheque real o
+#: del programa?"* — y después: *"poné dep pich más que cheque #x"*. La mitad
+#: de las filas de cobranza NO son cheques: NB 90/91 son depósito directo y NB
+#: 99 es efectivo, y esos no tienen número. La pantalla igual los llamaba
+#: "Cheque #102090" con el ID INTERNO, que se lee como si fuera el número
+#: escrito en el papel. Medido: 1.116 sin número en DEP.PICH., 134 en EFECTIVO,
+#: y 1.410 movimientos con el concepto "Cheque # de XXX", sin número.
+#: ⭐ El nombre del banco ES el medio de cobro: DEP.PICH. → "Dep. Pich.".
+_BANCO_SIN_NOMBRE = {"", "UKN"}      # 98 = legacy unknown: no dice nada
+
+
+def _prolijo(nombre: str) -> str:
+    """DEP.PICH. → Dep. Pich. · EFECTIVO → Efectivo."""
+    txt = (nombre or "").strip().title().replace(".", ". ")
+    return " ".join(txt.split()).strip()
+
+
+def _nombre_banco(no_banco, conn=None) -> str:
+    """Nombre del banco/medio (DEP.PICH., EFECTIVO, PICHINCHA…). '' si no está."""
+    try:
+        r = db.fetch_one(
+            "SELECT COALESCE(nombre, '') AS nombre FROM scintela.banco "
+            "WHERE no_banco = %s",
+            (int(no_banco),), conn=conn)
+    except Exception:  # noqa: BLE001 -- el alta no se cae por una etiqueta
+        return ""
+    return (r or {}).get("nombre") or ""
+
+
+def etiqueta_cobro(row: dict | None) -> str:
+    """Cómo se llama una fila de cobranza en pantalla.
+
+    "Cheque 102345" cuando hay número escrito; si no, el MEDIO ("Dep. Pich.",
+    "Efectivo", "Pichincha"). Vacío si no hay ni número ni banco con nombre —
+    ahí el que llama decide (el historial cae al "#id").
+
+    ⭐ UNA función para la etiqueta del historial y para el concepto que se
+    graba al dar de alta: escribir dos veces la misma regla es cómo se llega a
+    una fila que dice dos cosas distintas del mismo documento.
+    """
+    if not row:
+        return ""
+    no = str(row.get("no_cheque") or "").strip()
+    if no and no != "0":
+        return f"Cheque {no}"
+    nombre = (row.get("banco_nombre") or "").strip().upper()
+    if nombre in _BANCO_SIN_NOMBRE:
+        return ""
+    return _prolijo(nombre)
+
+
 # Qué cuenta como CHEQUE — la misma partición por medio que usa el resumen de
 # cobranza (réplica de FINAL, ALTAS.PRG): NB 90/91 = depósito directo, NB 99 =
 # efectivo, todo lo demás (banco emisor real, y el 98 = espejo de anticipo) es
@@ -3514,7 +3565,10 @@ def crear(
                 destino_id=row["id_cheque"],
                 importe=importe_principal,
                 fecha=fecha,
-                concepto=(f"Cheque #{(no_cheque or '').strip()} de {codigo_cli.upper().strip()}")[:200],
+                # "Cheque 102345 de TNZ" o, cuando no hay número escrito
+                # porque no es un cheque, "Dep. Pich. de TNZ" (TMT 2026-08-09).
+                concepto=(f"{etiqueta_cobro({'no_cheque': no_cheque, 'banco_nombre': _nombre_banco(no_banco, conn=conn)}) or 'Cobro'}"
+                          f" de {codigo_cli.upper().strip()}")[:200],
                 usuario=usuario,
                 metadata={
                     "codigo_cli": codigo_cli.upper().strip(),

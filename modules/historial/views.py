@@ -16,6 +16,7 @@ from auth import requiere_login, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import money_es
+from modules.cheques import queries as _cheques_q
 from modules.posdat import queries as _posdat_q
 
 from . import queries
@@ -218,20 +219,37 @@ def lista():
             id_posdats.add(int(oid))
         if dt == "posdat" and did:
             id_posdats.add(int(did))
-    cheque_labels: dict[int, str] = {}
+    # 🚨 TMT 2026-08-09: *"¿el número de cheque que se muestra es del cheque
+    # real o del programa?"* — y era las dos cosas según la fila, que es lo
+    # peor. La mitad de la cobranza NO son cheques (NB 90/91 depósito directo,
+    # NB 99 efectivo) y no tienen número: ahí la pantalla escribía
+    # "Cheque #102090" con el ID INTERNO, que se lee igual que un número de
+    # cheque. *"Poné dep pich más que cheque #x"*.
+    # `cheque_etiquetas` es TEXTO PARA LEER ("Cheque 102345", "Dep. Pich.");
+    # `cheque_nos` sigue siendo sólo el número real, porque de ahí sale la URL
+    # /cheques/<no> y un "Dep. Pich." en una URL es un 404.
+    cheque_etiquetas: dict[int, str] = {}
+    cheque_nos_reales: dict[int, str] = {}
     if id_cheques:
         placeholder = ",".join(["%s"] * len(id_cheques))
         rows_ch = (
             db.fetch_all(
-                f"SELECT id_cheque, COALESCE(no_cheque::text, '') AS no_cheque "
-                f"FROM scintela.cheque WHERE id_cheque IN ({placeholder})",
+                f"SELECT c.id_cheque, COALESCE(c.no_cheque::text, '') AS no_cheque, "
+                f"       COALESCE(b.nombre, '') AS banco_nombre "
+                f"  FROM scintela.cheque c "
+                f"  LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco "
+                f" WHERE c.id_cheque IN ({placeholder})",
                 tuple(id_cheques),
             )
             or []
         )
         for rc in rows_ch:
+            idc = int(rc["id_cheque"])
             no = (rc.get("no_cheque") or "").strip()
-            cheque_labels[int(rc["id_cheque"])] = no or f"#{rc['id_cheque']}"
+            if no and no != "0":
+                cheque_nos_reales[idc] = no
+            # La MISMA función que usa el alta para escribir el concepto.
+            cheque_etiquetas[idc] = _cheques_q.etiqueta_cobro(rc) or f"Cheque #{idc}"
     factura_labels: dict[int, str] = {}
     if id_facturas:
         # TMT 2026-05-15: cast a text — `numf` puede ser INTEGER en data
@@ -339,8 +357,8 @@ def lista():
                 banco_labels[int(rb["id_transaccion"])] = f"Banco #{rb['id_transaccion']}"
 
     def _override_label(t: str | None, rid, default_label: str) -> str:
-        if t == "cheque" and rid and int(rid) in cheque_labels:
-            return f"Cheque {cheque_labels[int(rid)]}"
+        if t == "cheque" and rid and int(rid) in cheque_etiquetas:
+            return cheque_etiquetas[int(rid)]
         if t == "factura" and rid and int(rid) in factura_labels:
             return f"Factura {factura_labels[int(rid)]}"
         if t == "transacciones_bancarias" and rid and int(rid) in banco_labels:
@@ -357,11 +375,10 @@ def lista():
         for k, v in factura_labels.items()
         if v and not v.startswith("#")  # solo cuando es numf real, no fallback "#id"
     }
-    cheque_nos = {
-        k: v
-        for k, v in cheque_labels.items()
-        if v and not v.startswith("#")
-    }
+    # Antes esto se deducía de la etiqueta ("si no empieza con # es un
+    # número"): con "Dep. Pich." adentro, esa heurística armaba /cheques/Dep.
+    # Pich. El número real ya viene aparte.
+    cheque_nos = dict(cheque_nos_reales)
     # TMT 2026-07-14 (dueña "en origen podría decir de qué cuenta de OP"): batch
     # de las cuentas OP de los retiros presentes, para que el origen del retiro
     # OP diga "OP · <cuenta>" (ej "OP · AC 17-35") en vez de sólo "OP".
@@ -397,6 +414,16 @@ def lista():
         # Las filas viejas ya están grabadas así, y son las que ella está
         # mirando: se reescribe al MOSTRAR, con el nombre del posdatado y los
         # importes que el propio movimiento guardó en su metadata.
+        # 🚨 El concepto TAMBIÉN lleva el id adentro: "Cheque #102090 →
+        # Factura #172730" y "Cheque # de TNZ" (1.410 filas medidas, sin
+        # número porque no eran cheques). Se reescribe al mostrar con la misma
+        # etiqueta de la columna ORIGEN, así la fila dice UNA sola cosa.
+        _cid = r.get("origen_id") if r.get("origen_table") == "cheque" else None
+        if _cid and r.get("concepto") and int(_cid) in cheque_etiquetas:
+            _etq = cheque_etiquetas[int(_cid)]
+            r["concepto"] = (r["concepto"]
+                             .replace(f"Cheque #{int(_cid)}", _etq)
+                             .replace("Cheque # ", _etq + " "))
         if (r.get("tipo") or "") == "posdat_edit_importe":
             _cpt = _concepto_edit_importe(r, posdat_nombres)
             if _cpt:

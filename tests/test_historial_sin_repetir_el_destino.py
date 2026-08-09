@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import db  # noqa: E402
 from modules.historial import queries  # noqa: E402
 
 
@@ -87,3 +88,61 @@ def test_retiro_op_sigue_mostrando_las_dos_patas(app, fake_db):
         destino_table="retiros", destino_id=17)])
     assert "OP" in html
     assert "Retiro #17" in html
+
+
+# ── El medio de cobro, no un "#id" disfrazado de número de cheque ────────────
+# TMT 2026-08-09: *"¿el número de cheque que se muestra es del cheque real o
+# del programa?"* → *"poné dep pich más que cheque #x"*. La mitad de la
+# cobranza no son cheques (NB 90/91 depósito directo, NB 99 efectivo) y no
+# tienen número: la pantalla escribía el id interno con la misma pinta que un
+# número de cheque.
+
+
+def _con_cheque(app, fake_db, filas_cheque, mov):
+    """Monkeypatch del batch de cheques del historial."""
+    orig = db.fetch_all
+
+    def _fake(sql, params=None, *a, **k):
+        if "FROM scintela.cheque c" in (sql or ""):
+            return filas_cheque
+        return orig(sql, params, *a, **k) if callable(orig) else []
+
+    with patch.object(db, "fetch_all", side_effect=_fake):
+        return _filas(app, fake_db, [mov])
+
+
+def test_un_deposito_directo_se_llama_dep_pich(app, fake_db):
+    html = _con_cheque(
+        app, fake_db,
+        [{"id_cheque": 102090, "no_cheque": "", "banco_nombre": "DEP.PICH."}],
+        _mov(tipo="cheque_creado", origen_table="cheque", origen_id=102090,
+             destino_table="cheque", destino_id=102090,
+             concepto="Cheque # de TNZ"))
+    assert "Dep. Pich." in html
+    assert "Cheque #102090" not in html
+    # Y el concepto deja de tener el numeral huérfano.
+    assert "Cheque # de TNZ" not in html
+    assert "Dep. Pich. de TNZ" in html
+
+
+def test_un_cheque_de_verdad_muestra_su_numero(app, fake_db):
+    html = _con_cheque(
+        app, fake_db,
+        [{"id_cheque": 55, "no_cheque": "102345", "banco_nombre": "PICHINCHA"}],
+        _mov(tipo="cheque_creado", origen_table="cheque", origen_id=55,
+             destino_table="cheque", destino_id=55,
+             concepto="Cheque #102345 de TNZ"))
+    assert "Cheque 102345" in html
+    # El link sigue yendo por el número real.
+    assert "/cheques/102345" in html
+
+
+def test_sin_numero_y_sin_banco_con_nombre_queda_el_id(app, fake_db):
+    """El 98 se llama "UKN" en el catálogo: no dice nada, así que ahí sí es
+    honesto mostrar el id interno con su numeral."""
+    html = _con_cheque(
+        app, fake_db,
+        [{"id_cheque": 77, "no_cheque": "", "banco_nombre": "UKN"}],
+        _mov(tipo="cheque_creado", origen_table="cheque", origen_id=77,
+             destino_table="cheque", destino_id=77, concepto="Cheque # de AAA"))
+    assert "Cheque #77" in html
