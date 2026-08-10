@@ -213,8 +213,12 @@ def _url_del_aviso(tipo: str, id_compra) -> str:
     except Exception:  # noqa: BLE001 -- un link nunca rompe un aviso
         r = None
     num = (r or {}).get("numero")
-    # El buscador de /compras toma los dígitos como número de compra.
-    return f"/compras?q={int(num)}" if num else f"/compras/{int(id_compra)}"
+    # 🚨 El parámetro es `codigo`, NO `q`: `q` es la búsqueda de texto (no mira
+    # la columna `numero`) y devolvía "Sin compras en el filtro" — un link roto
+    # que no da 404. `codigo` es el buscador flexible que parsea los dígitos
+    # como número de compra. Verificado abriendo el link: /compras?codigo=10145
+    # trae UNA fila, la de AC 33.
+    return f"/compras?codigo={int(num)}" if num else f"/compras/{int(id_compra)}"
 
 
 ICONOS = {"conversion": "✅", "freno": "⛔", "error": "⚠️"}

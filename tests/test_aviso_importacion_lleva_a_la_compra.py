@@ -26,7 +26,9 @@ from modules.importaciones import autobap  # noqa: E402
 
 def test_la_conversion_lleva_a_compras_filtrado():
     with patch.object(autobap.db, "fetch_one", return_value={"numero": 10144}):
-        assert autobap._url_del_aviso("conversion", 496) == "/compras?q=10144"
+        # 🚨 `codigo`, NO `q`: `q` es búsqueda de texto y no mira la columna
+        # `numero` — /compras?q=10145 devolvía "Sin compras en el filtro".
+        assert autobap._url_del_aviso("conversion", 496) == "/compras?codigo=10144"
 
 
 def test_sin_numero_cae_en_la_ficha_de_la_compra():
@@ -45,12 +47,16 @@ def test_si_la_base_falla_el_link_no_rompe_el_aviso():
         assert autobap._url_del_aviso("conversion", 496) == "/compras/496"
 
 
-def test_la_migracion_reapunta_las_viejas_por_la_clave():
+def test_las_migraciones_reapuntan_las_novedades_ya_emitidas():
     """La `clave` ya guarda el id ("importaciones:compra:<id>"), así que las
-    novedades ya emitidas se arreglan sin adivinar."""
-    sql = Path("migrations/0183_avisos_importacion_al_compra.sql").read_text(
+    viejas se arreglan sin adivinar. La 0183 las sacó de la pantalla del
+    proceso; la 0184 corrigió el parámetro (`q` no filtra por número)."""
+    sql83 = Path("migrations/0183_avisos_importacion_al_compra.sql").read_text(
         encoding="utf-8")
-    assert "importaciones:compra:%" in sql
-    assert "split_part(a.clave, ':', 3)" in sql
+    assert "importaciones:compra:%" in sql83
+    assert "split_part(a.clave, ':', 3)" in sql83
     # y NO toca los frenos ni los errores
-    assert "AND a.url = '/importaciones/automatico'" in sql
+    assert "AND a.url = '/importaciones/automatico'" in sql83
+    sql84 = Path("migrations/0184_avisos_importacion_codigo.sql").read_text(
+        encoding="utf-8")
+    assert "'/compras?codigo='" in sql84
