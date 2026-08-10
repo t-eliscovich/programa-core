@@ -186,10 +186,35 @@ def _al_buzon(kw: dict) -> None:
             nivel=_NIVEL_POR_TIPO.get(tipo, "ok"),
             titulo=r["titulo"], detalle=r["detalle"],
             importe=kw.get("importe"), cantidad=kw.get("n_anticipos"),
-            url="/importaciones/automatico", clave=clave,
+            url=_url_del_aviso(tipo, kw.get("id_compra")), clave=clave,
         )
     except Exception as e:  # noqa: BLE001 -- avisar nunca rompe al que avisa
         _LOG.warning("no pude mandar el aviso a novedades: %s", e)
+
+
+def _url_del_aviso(tipo: str, id_compra) -> str:
+    """A dónde lleva el "ver →" de la novedad.
+
+    🚨 TMT 2026-08-09: *"el link acá de ver me debería llevar a la pantalla
+    compras ya filtrada. No acá: /importaciones/automatico"*. El aviso dice
+    "Se cargó a compras" y llevaba a la pantalla del proceso, donde hay que
+    volver a buscar la compra a ojo. Es la misma regla del 07/08: si al
+    clickear hay que buscar la fila, el link no está terminado.
+
+    Los frenos y los errores SÍ son del proceso: esos se quedan en
+    /importaciones/automatico.
+    """
+    if tipo != "conversion" or not id_compra:
+        return "/importaciones/automatico"
+    try:
+        r = db.fetch_one(
+            "SELECT numero FROM scintela.compra WHERE id_compra = %s",
+            (int(id_compra),))
+    except Exception:  # noqa: BLE001 -- un link nunca rompe un aviso
+        r = None
+    num = (r or {}).get("numero")
+    # El buscador de /compras toma los dígitos como número de compra.
+    return f"/compras?q={int(num)}" if num else f"/compras/{int(id_compra)}"
 
 
 ICONOS = {"conversion": "✅", "freno": "⛔", "error": "⚠️"}

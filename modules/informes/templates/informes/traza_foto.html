@@ -11,7 +11,7 @@
   {{ page_hero(
       'Qué movió la utilidad',
       descripcion='La ventana que cerró a las ' ~ f.cuando ~ '.',
-      kpi_valor=(('%+d' | format(f.d_utilidad | round | int)) if f.d_utilidad is not none else '—'),
+      kpi_valor=((f.d_utilidad | delta_es or '0') if f.d_utilidad is not none else '—'),
       kpi_extra='· ' ~ (f.movimientos | length) ~ ' mov'
   ) }}
   <div class="my-4 border border-slate-200 rounded bg-white" style="overflow-x:auto;">

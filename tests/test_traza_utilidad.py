@@ -234,3 +234,21 @@ def test_si_la_base_falla_el_rango_no_rompe_la_pantalla():
     with patch.object(t.db, "fetch_all", side_effect=RuntimeError("boom")):
         assert t.entre("2026-08-01", "2026-08-02") == []
         assert t.primera_foto() is None
+
+
+def test_los_deltas_de_la_grilla_llevan_separador_de_miles():
+    """🚨 TMT 2026-08-09, mirando la traza: *"¿podríamos revisar por qué
+    algunos tienen punto y otros no?"*. La grilla escribía los Δ con
+    `'%+d'|format` —"−73984"— y el detalle de la MISMA fila con `num_es`
+    —"−73.984"—: dos formatos de número, uno arriba del otro. `%+d` es formato
+    de C, no de Ecuador."""
+    from filters import delta_es
+    assert delta_es(-73984) == "-73.984"
+    assert delta_es(1042) == "+1.042"
+    assert delta_es(0) == "" and delta_es(None) == ""
+    from pathlib import Path
+    for nombre in ("traza.html", "traza_foto_detalle.html", "traza_foto.html"):
+        txt = Path("modules/informes/templates/informes").joinpath(
+            nombre).read_text(encoding="utf-8")
+        assert "'%+d'" not in txt, f"{nombre} sigue con formato de C"
+        assert "delta_es" in txt

@@ -198,13 +198,13 @@
             {# El `?` se fue el 07/08: la frase ahora encabeza el mismo panel que
                abre la hora. El ▲ del residuo queda como único glifo de la
                celda, que es justo cuando se ve. #}
-            {% if f.d_utilidad is none %}—{% else %}{{ '%+d' | format(f.d_utilidad | round | int) }}{% endif %}
+            {% if f.d_utilidad is none %}—{% else %}{{ f.d_utilidad | delta_es or '0' }}{% endif %}
           </td>
           {% for col, label in deltas %}
             {% set d = f.delta.get(col) %}
             <td class="px-1 py-0.5 text-right"
                 style="{% if d and d < 0 %}color:rgb(185 28 28);{% elif d %}color:rgb(21 128 61);{% endif %}">
-              {% if d %}{{ '%+d' | format(d | round | int) }}{% endif %}
+              {{ d | delta_es }}
             </td>
           {% endfor %}
           {# La suma de Maquinaria, Terrenos y Dividendos: los tres salieron de
@@ -214,7 +214,7 @@
           {% set _otros = f.delta.get('otros') %}
           <td class="px-1 py-0.5 text-right"
               style="{% if _otros and _otros < 0 %}color:rgb(185 28 28);{% elif _otros %}color:rgb(21 128 61);{% endif %}">
-            {% if _otros %}{{ '%+d' | format(_otros | round | int) }}{% endif %}
+            {{ _otros | delta_es }}
           </td>
           {% for col, label in kilos %}
             {# Un nivel de stock no es bueno ni malo: va sin color y sin

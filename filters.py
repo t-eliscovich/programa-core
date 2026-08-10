@@ -52,6 +52,24 @@ def num_es(value, decimales: int = 2) -> str:
     return s.replace(",", "@").replace(".", ",").replace("@", ".")
 
 
+#: 🚨 TMT 2026-08-09, mirando la traza: *"¿podríamos revisar por qué algunos
+#: tienen punto y otros no?"*. La grilla escribía los Δ con `'%+d'|format`
+#: —"−73984", "+22881"— y el detalle de la misma fila con `num_es`
+#: —"−73.984"—: dos formatos de número en la misma pantalla, uno arriba del
+#: otro. `%+d` es formato de C, no de Ecuador.
+def delta_es(value, decimales: int = 0) -> str:
+    """Un Δ con signo Y separador de miles: "+1.042", "−73.984". '' si es 0."""
+    if value is None or value == "":
+        return ""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if round(n, decimales) == 0:
+        return ""
+    return ("+" if n > 0 else "") + num_es(round(n, decimales), decimales)
+
+
 def kg_es(value) -> str:
     """Format kilos: 2 decimales."""
     return num_es(value, 2)
@@ -269,6 +287,7 @@ def register(app):
     app.jinja_env.globals["pdf_disponible"] = _pdf_disponible
     app.jinja_env.filters["wa_tel"] = wa_tel
     app.jinja_env.filters["num_es"] = num_es
+    app.jinja_env.filters["delta_es"] = delta_es
     app.jinja_env.filters["kg_es"] = kg_es
     app.jinja_env.filters["money_es"] = money_es
     app.jinja_env.filters["fecha_es"] = fecha_es
