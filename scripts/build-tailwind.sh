@@ -44,6 +44,16 @@ module.exports = {
     'bg-rose-50',     'border-rose-200',    'text-rose-900',    'dark:bg-rose-900/20',    'dark:border-rose-800',    'dark:text-rose-200',
     'bg-amber-50',    'border-amber-200',   'text-amber-900',   'dark:bg-amber-900/20',   'dark:border-amber-800',   'dark:text-amber-200',
     'bg-violet-50',   'border-violet-200',  'text-violet-900',  'dark:bg-violet-900/20',  'dark:border-violet-800',  'dark:text-violet-200',
+    // Chip de estado de la conciliacion (_banco_v2_tab_conciliados.html arma
+    // `bg-{{ _color }}-100 text-{{ _color }}-800 dark:bg-{{ _color }}-900/40
+    // dark:text-{{ _color }}-200` con purple/emerald/sky/amber/slate). Sin esto
+    // el JIT no ve ninguna y el chip 'historico' queda sin color de texto —
+    // asi estuvo hasta el 10/08/2026.
+    'bg-purple-100',  'text-purple-800',  'dark:bg-purple-900/40',  'dark:text-purple-200',
+    'bg-emerald-100', 'text-emerald-800', 'dark:bg-emerald-900/40', 'dark:text-emerald-200',
+    'bg-sky-100',     'text-sky-800',     'dark:bg-sky-900/40',     'dark:text-sky-200',
+    'bg-amber-100',   'text-amber-800',   'dark:bg-amber-900/40',   'dark:text-amber-200',
+    'bg-slate-100',   'text-slate-800',   'dark:bg-slate-900/40',   'dark:text-slate-200',
     // KPI card tonos (kpi_card macro en _ui.html)
     'text-slate-500', 'text-slate-900', 'dark:text-slate-100',
     'text-emerald-300', 'text-emerald-700/80', 'dark:text-emerald-300/80', 'dark:text-emerald-100',
