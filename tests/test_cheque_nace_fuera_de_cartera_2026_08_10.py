@@ -353,3 +353,27 @@ def test_la_migracion_pregunta_por_el_ESTADO_no_por_el_camino():
     assert "usuario_modifica" not in mod.SELECT_OBJETIVO.lower().split(
         "set")[0], "el SELECT no puede filtrar por quién la tocó"
     assert set(mod.EN_CARTERA) == {"Z", "P", "D", "1", "2", "3"}
+
+
+def test_el_vigia_tampoco_pregunta_por_quien_toco_la_fila():
+    """El vigía mira el ESTADO, igual que el fix y que la mig 0185.
+
+    La rama (b) filtraba `usuario_modifica IS NULL`. Con eso, editarle el
+    concepto a un cheque roto lo volvía invisible aunque siguiera fuera de
+    cartera y sin fecha de salida: una puerta de atrás que se abre sola con el
+    uso normal del sistema.
+    """
+    from modules.admin_dbase import health_audit_view
+
+    src = " ".join(inspect.getsource(
+        health_audit_view.deposito_sin_fechaout).split())
+    sin_comentarios = re.sub(r"#[^\n]*", "", inspect.getsource(
+        health_audit_view.deposito_sin_fechaout))
+
+    assert "usuario_modifica IS NULL" not in sin_comentarios, (
+        "eso pregunta por el CAMINO (quién tocó la fila), no por el estado"
+    )
+    assert "usuario_crea" in src, (
+        "el vigía sigue diciendo de qué usuario vienen — eso es informar, no "
+        "filtrar"
+    )

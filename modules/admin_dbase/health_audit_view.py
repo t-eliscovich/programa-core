@@ -1335,7 +1335,17 @@ def deposito_sin_fechaout():
         ) or [],
         # (b) EL INVARIANTE, sin depender del movimiento bancario. Un cheque
         # que NACE fuera de cartera salió el día que entró y tiene que llevar
-        # `fechaout`. La rama (a) no ve el efectivo (99 → 'C'): va a CAJA, no
+        # `fechaout`.
+        #
+        # TMT 2026-08-10 (2a pasada). Acá había un `usuario_modifica IS NULL`.
+        # Servía para MEDIR —probaba que ninguna otra ruta había tocado esas
+        # filas— pero como criterio del vigía pregunta por el CAMINO, que es el
+        # error que arrastra todo este tema: una fila a la que alguien le editó
+        # el concepto por cualquier motivo se volvía invisible AUNQUE siguiera
+        # fuera de cartera y sin fecha de salida. La pregunta es sobre el
+        # ESTADO. Medido el 10/08: da lo mismo con y sin el filtro (117 y 117
+        # antes de la mig 0185, 0 y 0 después), así que sacarlo no enciende
+        # nada — sólo cierra la puerta de atrás. La rama (a) no ve el efectivo (99 → 'C'): va a CAJA, no
         # genera un 'DE', y por eso 13 cobros en efectivo estuvieron sin
         # NINGUNA de las dos fechas sin que nadie se enterara. Este criterio
         # no le pregunta a la plata por dónde salió.
@@ -1345,7 +1355,6 @@ def deposito_sin_fechaout():
               FROM scintela.cheque
              WHERE fecha_crea::date >= %s
                AND UPPER(COALESCE(stat, '')) NOT IN ('Z','P','D','1','2','3')
-               AND usuario_modifica IS NULL
                AND fechaout IS NULL
             """,
             (_CORTE_FECHAOUT,),
@@ -1358,7 +1367,6 @@ def deposito_sin_fechaout():
               FROM scintela.cheque
              WHERE fecha_crea::date >= %s
                AND UPPER(COALESCE(stat, '')) NOT IN ('Z','P','D','1','2','3')
-               AND usuario_modifica IS NULL
                AND fechaout IS NULL
              ORDER BY fecha_crea DESC, id_cheque
              LIMIT 20
