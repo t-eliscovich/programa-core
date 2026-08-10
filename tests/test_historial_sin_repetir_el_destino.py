@@ -185,3 +185,28 @@ def test_el_espejo_98_se_llama_saldo_a_favor(app, fake_db):
              concepto="espejo"))
     assert "Saldo a favor" in html
     assert "Cheque #90210" not in html
+
+
+def test_el_tipo_no_dice_cheque_de_lo_que_no_es_un_cheque(app, fake_db):
+    """🚨 TMT 2026-08-10: la fila decía "Cheque: alta" y al lado, en Origen,
+    "Dep. Pich." — se contradecía sola. Medido: 856 altas y 1.373 aplicaciones
+    a factura que no son cheques (NB 90/91 depósito directo, NB 99 efectivo).
+    El medio exacto ya lo dice Origen, así que el tipo va genérico."""
+    html = _con_cheque(
+        app, fake_db,
+        [{"id_cheque": 102090, "no_cheque": "", "no_banco": 90,
+          "banco_nombre": "DEP.PICH."}],
+        _mov(tipo="cheque_creado", origen_table="cheque", origen_id=102090,
+             destino_table="cheque", destino_id=102090, concepto="x"))
+    assert "Cobro: alta" in html
+    assert "Cheque: alta" not in html
+
+
+def test_un_cheque_de_verdad_sigue_diciendo_cheque(app, fake_db):
+    html = _con_cheque(
+        app, fake_db,
+        [{"id_cheque": 55, "no_cheque": "102345", "no_banco": 10,
+          "banco_nombre": "PICHINCHA"}],
+        _mov(tipo="cheque_creado", origen_table="cheque", origen_id=55,
+             destino_table="cheque", destino_id=55, concepto="x"))
+    assert "Cheque: alta" in html

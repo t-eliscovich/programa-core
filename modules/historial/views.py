@@ -254,6 +254,12 @@ def lista():
     # /cheques/<no> y un "Dep. Pich." en una URL es un 404.
     cheque_etiquetas: dict[int, str] = {}
     cheque_nos_reales: dict[int, str] = {}
+    # 🚨 TMT 2026-08-10: la columna TIPO decía "Cheque: alta" al lado de un
+    # origen que decía "Dep. Pich." — la fila se contradecía sola. La
+    # partición es la que ya usa la cobranza (`SQL_ES_CHEQUE`): NB 90/91 es
+    # depósito directo y NB 99 es efectivo. Medido: 856 altas y 1.373
+    # aplicaciones a factura que NO son un cheque.
+    cheque_no_es_cheque: set[int] = set()
     if id_cheques:
         placeholder = ",".join(["%s"] * len(id_cheques))
         rows_ch = (
@@ -273,6 +279,8 @@ def lista():
             no = (rc.get("no_cheque") or "").strip()
             if no and no != "0":
                 cheque_nos_reales[idc] = no
+            if int(rc.get("no_banco") or 0) in (90, 91, 99):
+                cheque_no_es_cheque.add(idc)
             # La MISMA función que usa el alta para escribir el concepto.
             cheque_etiquetas[idc] = _cheques_q.etiqueta_cobro(rc) or f"Cheque #{idc}"
     factura_labels: dict[int, str] = {}
@@ -493,6 +501,13 @@ def lista():
     )
     for r in filas:
         r["label"] = queries.label(r.get("tipo") or "")
+        # El TIPO no puede decir "Cheque" de algo que no lo es: el medio
+        # exacto lo dice la columna Origen ("Dep. Pich.", "Efectivo"), así que
+        # acá va la palabra genérica. "Cheque: alta" → "Cobro: alta".
+        _oid = r.get("origen_id") if r.get("origen_table") == "cheque" else None
+        if (_oid and int(_oid) in cheque_no_es_cheque
+                and r["label"].startswith("Cheque")):
+            r["label"] = "Cobro" + r["label"][len("Cheque"):]
         # TMT 2026-07-11 (dueña): no ofrecer "reversar" sobre un reverso (mov
         # terminal) — mostraba un modal que prometía facturas y no había.
         r["es_terminal"] = _es_terminal(r.get("tipo") or "")
