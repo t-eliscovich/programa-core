@@ -852,6 +852,87 @@ def _unir_las_dos_patas(grupos: dict) -> None:
         origen["fundido"] = True
 
 
+#: La etiqueta sintética que escribe `foto._det_antic` al cruzar los anticipos
+#: con el stock de Asinfo. Es el ÚNICO renglón de `antic` que no es un
+#: documento, así que sirve de ancla para reconocer el par.
+TXT_ANTICIPO_RECIBIDO = "Menos anticipos cuya mercadería ya está en stock"
+
+
+def _importacion_del_anticipo(monto: float, hasta) -> str:
+    """"AC 33" — la importación que explica ese anticipo, o "" si no es una sola.
+
+    🚨 El anticipo baja cuando **Asinfo** muestra la mercadería recibida, y la
+    compra la crea el automático DESPUÉS (medido el 10/08: el anticipo cayó en
+    la foto de las 11:26 y la compra `bap-auto` nació 11:38). Por eso no se
+    busca por la ventana sino por el IMPORTE, que coincide al centavo.
+    ⭐ Un solo candidato o no se nombra: nombrar de más sería inventar.
+    """
+    if not monto or not hasta:
+        return ""
+    try:
+        filas = db.fetch_all(
+            """
+            SELECT codigo_prov, concepto
+              FROM scintela.compra
+             WHERE usuario_crea LIKE 'bap%%'
+               AND ABS(importe - %s) < 0.01
+               AND fecha_crea BETWEEN %s - interval '5 days' AND %s + interval '5 days'
+            """, (abs(monto), hasta, hasta)) or []
+    except Exception as e:  # noqa: BLE001 -- un renglón nunca rompe la pantalla
+        _LOG.warning("traza: no pude nombrar la importación (%s)", e)
+        return ""
+    if len(filas) != 1:
+        return ""
+    cod = (filas[0].get("codigo_prov") or "").strip().upper()
+    ref = " ".join((filas[0].get("concepto") or "").split())
+    return f"{cod} {ref}".strip()
+
+
+def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
+    """El anticipo que sale y la mercadería que entra son UN movimiento.
+
+    🚨 TMT 2026-08-10, sobre una ventana con −73.984 en Ant. y +75.026 en Stk.:
+    *"en el mismo bucket entra mercadería y sale anticipo, ¿no?"*. Sí: el
+    anticipo de la importación se volvió stock. Salían tres renglones —el
+    anticipo, la tela y la revaluación del $/kg— y había que sumarlos a ojo
+    para ver que era una sola cosa.
+
+    ⭐ La revaluación entra en el MISMO renglón a propósito. Partirla en
+    "entró tanto" y "se revaluó tanto" hacía aparecer una diferencia
+    ("entró 4.111 abajo del anticipo") que NO es un hecho: es la aritmética
+    del promedio ponderado. Los kilos entraron a $3,2334 con el stock a
+    $3,0405, así que parte del costo se reparte sobre lo que ya había. El
+    $/kg queda como nota al pie, que es lo que explica el signo.
+    """
+    ant = next((g for g in grupos.values()
+                if (g.get("etiqueta") or "") == TXT_ANTICIPO_RECIBIDO
+                and not g.get("fundido")), None)
+    tela = next((g for g in grupos.values()
+                 if g.get("regla") == "Stock" and not g.get("fundido")), None)
+    if not ant or not tela or ant["aporte"] >= 0 or tela["aporte"] <= 0:
+        return
+    tarifa = next((g for g in grupos.values()
+                   if g.get("regla") == "Revaluación de stock"
+                   and not g.get("fundido")), None)
+    cod = _importacion_del_anticipo(ant["aporte"], hasta)
+    ant["texto_unido"] = ("entró la mercadería del anticipo " + cod if cod
+                          else "entró la mercadería de los anticipos")
+    for otro in (tela, tarifa):
+        if not otro:
+            continue
+        ant["aporte"] = round(ant["aporte"] + otro["aporte"], 2)
+        for c, v in otro["por_col"].items():
+            ant["por_col"][c] = round(ant["por_col"].get(c, 0.0) + v, 2)
+        ant["n"] += otro["n"]
+        otro["fundido"] = True
+    # Los kilos se pintan en el renglón del stock: éste ahora ES el del stock.
+    ant["col"] = "vsto"
+    ant["bruto"] = max((abs(v) for v in ant["por_col"].values()), default=0.0)
+    # El $/kg no desaparece: baja a la nota, que es lo que explica el signo.
+    if tarifa:
+        ant["nota"] = tarifa.get("etiqueta") or ""
+
+
 #: 🚨 TMT 2026-08-07, sobre el cuarto renglón más frecuente del día (19 de 200
 #: ventanas): *"dice de qué sistema sale el dato, no qué pasó"*. Del lado de PC
 #: el stock de químicos es UN número —no hay detalle por colorante— así que no
@@ -872,7 +953,7 @@ def _quimicos(texto: str, aporte: float) -> str:
 
 
 def resumir(movs: list[dict], d_utilidad: float | None,
-            eventos: dict | None = None) -> list[dict]:
+            eventos: dict | None = None, hasta=None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
 
     Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
@@ -953,6 +1034,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # Lo que el grupo MOVIÓ, aunque no haya aportado: el lado más grande.
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
     _unir_las_dos_patas(grupos)
+    _unir_anticipo_con_mercaderia(grupos, hasta)
     out, menores = [], 0.0
     for g in sorted(grupos.values(),
                     key=lambda x: max(abs(x["aporte"]), x["bruto"]),
@@ -1169,6 +1251,7 @@ def una(id_traza: int) -> dict | None:
     idx = _ev.indice(_ev.de_la_ventana(_desde, _hasta),
                      _ev.transacciones(_desde, _hasta))
     fila["resumen"] = resumir(
-        movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx)
+        movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx,
+        hasta=_hasta)
     fila["d_kg"] = fila.get("d_kg") or {}
     return fila
