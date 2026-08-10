@@ -1596,6 +1596,99 @@ def hilado_ukg_reconstruible():
 
 
 # ---------------------------------------------------------------------------
+# El permiso que existe en el repo y no en la base
+# ---------------------------------------------------------------------------
+#
+# `config/roles.py` se declara a sí mismo "the single source of truth", pero el
+# que manda en runtime es `seguridad.permiso`. Cambiar el archivo sin migración
+# deja producción EXACTAMENTE IGUAL y los tests en verde — pasó con las migs
+# 0164/0165 y con `cupos.editar`. Un rol al que el repo le da un permiso que la
+# base no tiene es un cambio que alguien cree hecho y no está.
+#
+# Al revés también importa, pero menos: un permiso que la base tiene y el
+# archivo no declara es alguien que lo agregó a mano (o una migración que no
+# volvió al repo). No apaga nada hoy, así que va como aviso y no como alerta —
+# un ⚠ diario por algo que no rompe entrena a ignorar el panel.
+#
+# ⭐ Este es el único de los tres chequeos de drift que necesita la base VIVA.
+# Los otros dos —clases de Tailwind sin compilar y links a pantallas que no
+# existen— son estáticos y se atajan en el CI, donde frenan el merge en vez de
+# avisar al día siguiente: `tests/test_drift_estatico.py`.
+
+
+def _evaluar_drift_permisos(codigo: dict, base: dict) -> tuple[list[dict], dict]:
+    """Parte pura: dos dicts {rol: set(permisos)} → (alertas, stats)."""
+    alerts: list[dict] = []
+
+    roles_faltantes = sorted(set(codigo) - set(base))
+    if roles_faltantes:
+        alerts.append({
+            "nivel": "HIGH",
+            "que": f"{len(roles_faltantes)} rol(es) declarados en "
+                   f"config/roles.py que NO existen en seguridad.rol",
+            "por_que": "el rol vive sólo en el repo: nadie lo puede tener.",
+            "filas": roles_faltantes,
+        })
+
+    solo_codigo = {
+        rol: sorted(codigo[rol] - base.get(rol, set()))
+        for rol in sorted(set(codigo) & set(base))
+        if codigo[rol] - base.get(rol, set())
+    }
+    if solo_codigo:
+        alerts.append({
+            "nivel": "HIGH",
+            "que": f"{sum(len(v) for v in solo_codigo.values())} permiso(s) "
+                   f"que el repo le da a un rol y la base no",
+            "por_que": "el que manda en runtime es `seguridad.permiso`. Un "
+                       "cambio en config/roles.py sin migración deja "
+                       "producción igual, con los tests en verde.",
+            "filas": [{"rol": r, "permisos": p} for r, p in solo_codigo.items()],
+        })
+
+    solo_base = {
+        rol: sorted(base[rol] - codigo.get(rol, set()))
+        for rol in sorted(base)
+        if base[rol] - codigo.get(rol, set())
+    }
+
+    return alerts, {
+        "roles_codigo": len(codigo),
+        "roles_base": len(base),
+        "permisos_solo_en_el_codigo": sum(len(v) for v in solo_codigo.values()),
+        "permisos_solo_en_la_base": sum(len(v) for v in solo_base.values()),
+        # Aviso, no alerta: no apaga ninguna pantalla.
+        "detalle_solo_en_la_base": [
+            {"rol": r, "permisos": p} for r, p in solo_base.items()
+        ],
+    }
+
+
+@bp.route("/permisos-drift", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def permisos_drift():
+    """`config/roles.py` contra `seguridad.permiso`. Sólo lectura."""
+    from config.roles import ROLES
+
+    codigo = {rol: set(perms) for rol, perms in ROLES}
+    filas = db.fetch_all(
+        """
+        SELECT r.nombre_rol, p.nombre_opcion
+          FROM seguridad.rol r
+          JOIN seguridad.permiso p ON p.id_rol = r.id_rol
+        """
+    ) or []
+    base: dict[str, set] = {}
+    for f in filas:
+        base.setdefault(f["nombre_rol"], set()).add(f["nombre_opcion"])
+
+    alerts, stats = _evaluar_drift_permisos(codigo, base)
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -1616,6 +1709,7 @@ def health_all():
     resp9 = deposito_sin_fechaout()
     resp10 = hilado_ukg_reconstruible()
     resp11 = traza_fresca()
+    resp12 = permisos_drift()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -1625,6 +1719,7 @@ def health_all():
     data9 = json.loads(resp9.get_data(as_text=True))
     data10 = json.loads(resp10.get_data(as_text=True))
     data11 = json.loads(resp11.get_data(as_text=True))
+    data12 = json.loads(resp12.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -1640,7 +1735,7 @@ def health_all():
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
-               and data10["ok"] and data11["ok"]),
+               and data10["ok"] and data11["ok"] and data12["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -1652,6 +1747,7 @@ def health_all():
         "deposito_sin_fechaout": data9,
         "hilado_ukg": data10,
         "traza_fresca": data11,
+        "permisos_drift": data12,
     })
 
 
