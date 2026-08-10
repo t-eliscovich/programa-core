@@ -93,7 +93,13 @@ def _fila_desde_balance(bal: dict) -> dict:
         "hilado_kg": _f(hilado, "kg"),
         "hilado_ukg": _f(hilado, "ukg"),
         "tejido_kg": _f(tejido, "kg"),
+        # 🚨 El $/kg de cada etapa (mig 0185). Hasta hoy sólo se guardaba el
+        # del hilado y por eso "el valor de tejido y terminado no se podía
+        # reconstruir": con el de terminado, cada venta puede decir su margen
+        # sin esperar a que Asinfo descuente el stock (TMT 2026-08-10).
+        "tejido_ukg": _f(tejido, "ukg"),
         "terminado_kg": _f(term, "kg"),
+        "terminado_ukg": _f(term, "ukg"),
         "compras_kg": _f(hil, "compras"),
         "compras_us": _f(hil, "compras_us"),
         "kg_sin_costo": _f(hil, "kg_sin_costo"),
@@ -888,6 +894,36 @@ def _importacion_del_anticipo(monto: float, hasta) -> str:
     return f"{cod} {ref}".strip()
 
 
+def _num(v, dec: int) -> str:
+    from filters import num_es
+    return num_es(v, dec)
+
+
+def _nota_del_margen(venta: dict | None) -> str:
+    """"3.100 kg a $ 3,03 el kilo de terminado → margen 3.107 (25%)".
+
+    🚨 TMT 2026-08-10: *"¿se puede? porque Asinfo saca un poco más tarde el
+    stock real que la factura"*. Sí, pero NO pareando: medido, sólo 68 de 137
+    ventanas con facturación tienen la salida de stock en la misma ventana. El
+    margen sale de la venta misma —kg × $/kg de terminado— así que no depende
+    del reloj de Asinfo.
+
+    ⭐ Es un margen APROXIMADO: el costo es el promedio del terminado, no el de
+    esa tela en particular. Y sólo existe desde la mig 0185: las fotos viejas
+    no guardaron el precio.
+    """
+    if not venta:
+        return ""
+    kg, us, ukg = venta.get("kg") or 0, venta.get("us") or 0, venta.get("ukg") or 0
+    if kg <= 0 or us <= 0 or ukg <= 0:
+        return ""
+    costo = kg * ukg
+    margen = us - costo
+    pct = round(margen / us * 100) if us else 0
+    return (f"{_num(kg, 0)} kg a $ {_num(ukg, 4)} el kilo de terminado → "
+            f"margen {_num(margen, 0)} ({pct}%)")
+
+
 def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
     """El anticipo que sale y la mercadería que entra son UN movimiento.
 
@@ -953,7 +989,8 @@ def _quimicos(texto: str, aporte: float) -> str:
 
 
 def resumir(movs: list[dict], d_utilidad: float | None,
-            eventos: dict | None = None, hasta=None) -> list[dict]:
+            eventos: dict | None = None, hasta=None,
+            venta: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
 
     Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
@@ -1035,6 +1072,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
     _unir_las_dos_patas(grupos)
     _unir_anticipo_con_mercaderia(grupos, hasta)
+    # La venta se explica sola: el renglón de las facturas se lleva el margen.
+    _nota = _nota_del_margen(venta)
+    if _nota:
+        vendido = next((g for g in grupos.values()
+                        if g.get("col") == "facturas" and g["aporte"] > 0
+                        and not g.get("fundido")), None)
+        if vendido:
+            vendido["nota"] = _nota
     out, menores = [], 0.0
     for g in sorted(grupos.values(),
                     key=lambda x: max(abs(x["aporte"]), x["bruto"]),
@@ -1250,8 +1295,21 @@ def una(id_traza: int) -> dict | None:
     _hasta = fila.get("creado_en")
     idx = _ev.indice(_ev.de_la_ventana(_desde, _hasta),
                      _ev.transacciones(_desde, _hasta))
+    # Los kg y los dólares vendidos en la ventana salen de la foto misma
+    # (`venta_kg` / `venta_us` son acumulados), y el costo del $/kg de
+    # terminado de la foto nueva (mig 0185). Sin las dos fotos no hay Δ.
+    _ant = fila.get("anterior") or {}
+    _venta = {"kg": _f({"a": fila.get("venta_kg")}, "a") or 0, "us": 0.0,
+              "ukg": _f({"a": fila.get("terminado_ukg")}, "a") or 0}
+    if _ant:
+        _venta["kg"] = round((_f({"a": fila.get("venta_kg")}, "a") or 0)
+                             - (_f({"a": _ant.get("venta_kg")}, "a") or 0), 2)
+        _venta["us"] = round((_f({"a": fila.get("venta_us")}, "a") or 0)
+                             - (_f({"a": _ant.get("venta_us")}, "a") or 0), 2)
+    else:
+        _venta = None
     fila["resumen"] = resumir(
         movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx,
-        hasta=_hasta)
+        hasta=_hasta, venta=_venta)
     fila["d_kg"] = fila.get("d_kg") or {}
     return fila

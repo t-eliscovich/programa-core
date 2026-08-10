@@ -100,3 +100,45 @@ def test_el_stock_solo_tampoco_se_toca():
     out = _resumen(_movs()[1:], d_utilidad=None)
     assert len(out) == 2
     assert all(g.get("texto_unido") is None for g in out)
+
+
+# ── El margen de la venta (TMT 2026-08-10) ──────────────────────────────────
+# *"¿se puede? porque Asinfo saca un poco más tarde el stock real que la
+# factura"*. Medido: sólo 68 de 137 ventanas con facturación tienen la salida
+# de stock en la misma ventana, y por día tampoco (2 de 4). Así que el margen
+# NO sale de parear las dos patas: sale de la venta misma, kg × $/kg de
+# terminado, que no depende del reloj de Asinfo.
+
+
+def test_el_margen_sale_de_la_venta_no_del_stock():
+    n = t._nota_del_margen({"kg": 3100, "us": 12500, "ukg": 3.0300})
+    assert n == "3.100 kg a $ 3,0300 el kilo de terminado → margen 3.107 (25%)"
+
+
+def test_sin_los_tres_datos_no_hay_nota():
+    """Las fotos anteriores a la mig 0185 no guardaron el $/kg de terminado:
+    ahí el renglón queda como estaba, sin inventar un margen."""
+    assert t._nota_del_margen({"kg": 3100, "us": 12500, "ukg": 0}) == ""
+    assert t._nota_del_margen({"kg": 0, "us": 12500, "ukg": 3.03}) == ""
+    assert t._nota_del_margen(None) == ""
+
+
+def test_la_nota_cuelga_del_renglon_de_las_facturas():
+    movs = [{"componente": "facturas", "doc_id": "f1", "tipo": "alta",
+             "etiqueta": "Factura 181295 · JVL", "regla": "Venta facturada",
+             "aporte": 12500.0, "familia": "utilidad"}]
+    with patch.object(t.db, "fetch_all", return_value=[]):
+        out = t.resumir(movs, 12500.0, {},
+                        venta={"kg": 3100, "us": 12500, "ukg": 3.03})
+    assert out[0]["nota"].startswith("3.100 kg a $ 3,0300 el kilo")
+
+
+def test_la_foto_guarda_el_precio_de_cada_etapa():
+    """Sin esto el margen no existe: el balance lo tiene, la foto lo tiraba."""
+    bal = {"diagnostico": {"componentes": {"utilidad": 1.0}},
+           "stock_etapas": {"hilado": {"kg": 10.0, "ukg": 3.0},
+                            "tejido": {"kg": 5.0, "ukg": 4.0},
+                            "terminado": {"kg": 2.0, "ukg": 5.0}}}
+    f = t._fila_desde_balance(bal)
+    assert f["tejido_ukg"] == 4.0
+    assert f["terminado_ukg"] == 5.0
