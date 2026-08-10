@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-09._
+_Última actualización: 2026-08-10._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -120,6 +120,17 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 ---
 
 ## Deuda conocida
+
+### [S] `STATS_VIVOS` está definido dos veces, con miembros distintos
+`modules/cheques/queries.py` L2818 (`Z,B,1,2,3,D,P,A`) y L4092
+(`Z,1,2,3,P,D`): gana el de abajo, que es el que quisieron los dos únicos usos
+(cancelar un cheque por anticipo 97). O sea que hoy el comportamiento es el
+correcto — pero el de arriba, con su comentario explicando por qué incluye la
+`A` legacy, **miente**, y ruff no avisa de una constante redefinida. Con
+`STATS_EN_CARTERA` (10/08) ya son cuatro tuplas del mismo concepto en el mismo
+archivo. Consolidar en UNA con nombre que diga qué pregunta responde, o dejar
+las dos con nombres distintos. Detectado 10/08 auditando `00d11d9`; no es
+urgente porque no cambia ningún número hoy.
 
 ### [S] `autobap_log` global → por persona
 Las novedades de proveedores son por persona desde el 31/07 (mig 0147), pero

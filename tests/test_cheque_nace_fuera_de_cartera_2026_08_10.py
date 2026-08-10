@@ -229,3 +229,127 @@ def test_sin_nada_colgado_el_detector_se_calla():
     assert alerts == []
     assert stats["n_sin_fechaout"] == 0
     assert stats["n_nacidos_fuera_de_cartera_sin_fechaout"] == 0
+
+
+def test_el_COUNT_del_detector_sale_de_su_propia_consulta():
+    """⭐ El bug del `LIMIT` disfrazado de medición, cerrado desde el código.
+
+    Los tres tests de arriba le pasan el universo a `_evaluar_fechaout` a
+    mano, así que ninguno se entera si el CALL SITE vuelve a contar la lista
+    ya recortada. Este mira ahí: los dos totales tienen que salir de un
+    `COUNT` propio y nunca de un `len(...)` sobre la muestra.
+    """
+    from modules.admin_dbase import health_audit_view
+
+    src = " ".join(inspect.getsource(
+        health_audit_view.deposito_sin_fechaout).split())
+
+    for arg in ("n_con_mov", "n_nace_afuera"):
+        assert not re.search(rf"{arg}\s*=\s*len\s*\(", src), (
+            f"`{arg}` volvió a contar la lista recortada por el LIMIT — eso "
+            f"es lo que hacía publicar 50 cuando eran 104"
+        )
+    assert src.lower().count("select count(") >= 2, (
+        "cada rama necesita su propio COUNT sobre el universo entero"
+    )
+
+
+# ── La migración 0185: el backfill de las 117 ───────────────────────────
+
+def _migracion_0185():
+    import importlib.util
+    from pathlib import Path
+
+    ruta = (Path(__file__).resolve().parent.parent / "migrations"
+            / "0185_backfill_fechaout_nacidos_afuera.py")
+    spec = importlib.util.spec_from_file_location("mig0185", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _CursorFake:
+    def __init__(self, filas):
+        self.filas = filas
+        self.updates: list[tuple[str, tuple]] = []
+
+    def execute(self, sql, params=None):
+        s = " ".join(sql.split()).lower()
+        if s.lstrip().startswith("select"):
+            self.select_params = params
+        else:
+            self.updates.append((s, params or ()))
+
+    def fetchall(self):
+        return self.filas
+
+    def close(self):
+        pass
+
+
+class _ConnFake:
+    def __init__(self, filas):
+        self.cur = _CursorFake(filas)
+
+    def cursor(self):
+        return self.cur
+
+
+def test_la_migracion_escribe_la_fecha_de_salida_de_cada_fila():
+    mod = _migracion_0185()
+    conn = _ConnFake([
+        (102082, "B", 90, 5901.45, date(2026, 8, 8)),
+        (102500, "C", 99, 1200.00, date(2026, 8, 7)),
+    ])
+    mod.run(conn)
+
+    assert len(conn.cur.updates) == 2
+    ids = [u[1][-1] for u in conn.cur.updates]
+    assert ids == [102082, 102500]
+    assert [u[1][0] for u in conn.cur.updates] == [date(2026, 8, 8),
+                                                   date(2026, 8, 7)]
+
+
+def test_la_migracion_es_idempotente_y_no_toca_fechaing():
+    """`fechaout IS NULL` en el WHERE = correrla dos veces no repisa nada."""
+    mod = _migracion_0185()
+    conn = _ConnFake([(102082, "B", 90, 5901.45, date(2026, 8, 8))])
+    mod.run(conn)
+
+    sql = conn.cur.updates[0][0]
+    assert "and fechaout is null" in sql, "sin esto deja de ser idempotente"
+    assert "fechaing" not in sql, (
+        "el resumen de cobranza del día agrupa por día de INGRESO y se "
+        "imprime para contabilidad — esta migración no lo toca"
+    )
+
+
+def test_la_fila_sin_fecha_se_saltea_pero_no_voltea_el_deploy():
+    """Media limpieza, sí; deploy caído por una fila rara, no.
+
+    El script original abortaba entero. Una migración que aborta deja la app
+    sin reiniciar, así que acá la fila sin fecha se saltea — y no queda
+    escondida: el vigía la sigue marcando en HIGH.
+    """
+    mod = _migracion_0185()
+    conn = _ConnFake([
+        (102082, "B", 90, 5901.45, date(2026, 8, 8)),
+        (999999, "B", 90, 10.00, None),
+    ])
+    mod.run(conn)
+
+    assert len(conn.cur.updates) == 1
+    assert conn.cur.updates[0][1][-1] == 102082
+
+
+def test_la_migracion_pregunta_por_el_ESTADO_no_por_el_camino():
+    """No filtra por `usuario_modifica`: eso pregunta por el camino.
+
+    Así se MIDIÓ (para probar que nadie más las había tocado), pero como
+    criterio dejaría afuera una fila que alguien editó en el medio — y esa
+    fila sigue estando fuera de cartera sin fecha de salida.
+    """
+    mod = _migracion_0185()
+    assert "usuario_modifica" not in mod.SELECT_OBJETIVO.lower().split(
+        "set")[0], "el SELECT no puede filtrar por quién la tocó"
+    assert set(mod.EN_CARTERA) == {"Z", "P", "D", "1", "2", "3"}
