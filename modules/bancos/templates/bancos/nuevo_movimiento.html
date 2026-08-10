@@ -161,6 +161,38 @@
       </div>
     </div>
 
+    {% if pregunta_fecha %}
+    {# TMT 2026-08-10 (dueña 07/08): cargar un movimiento con fecha vieja tiene
+       que ser deliberado. Mueve la utilidad de HOY pero queda archivado en el
+       día que se tipeó, y después no se lo encuentra buscando por el día del
+       salto. No se bloquea —cargar el de ayer es legítimo—: se confirma.
+       Nada se grabó todavía. #}
+    <div class="rounded-lg border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 p-4">
+      <div class="font-mono font-semibold text-amber-800 dark:text-amber-300 mb-1">¿FECHA VIEJA?</div>
+      <p class="text-sm text-amber-800 dark:text-amber-200 mb-3">
+        Lo estás cargando con fecha <strong class="font-mono">{{ pregunta_fecha.strftime('%d/%m/%Y') }}</strong>
+        y hoy es <strong class="font-mono">{{ hoy_es }}</strong>.
+        <span class="text-amber-700/80 dark:text-amber-300/80">
+          Va a quedar archivado en ese día, no en el de hoy — quien lo busque por
+          la fecha en que se movió la plata no lo va a encontrar.
+        </span>
+      </p>
+      <div class="flex gap-3">
+        <button type="submit" name="confirmar_fecha" value="1"
+                class="text-sm px-5 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-semibold">
+          Sí, es de esa fecha
+        </button>
+        {# OJO: el botón NO puede llamarse `fecha` — el <input type="date"> de
+           arriba ya usa ese name y `request.form.get()` devuelve el PRIMERO,
+           así que el botón no pisaría nada. Va con nombre propio. #}
+        <button type="submit" name="usar_hoy" value="1"
+                class="text-sm px-5 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-semibold">
+          No, ponele la de hoy
+        </button>
+      </div>
+    </div>
+    {% endif %}
+
     {% if pregunta_activa %}
     {# Réplica del prompt "ACTIVA?" de dBase BANCOS.PRG (~216): el concepto
        matchea una cuenta de anticipos USD. S = banco baja + anticipo se

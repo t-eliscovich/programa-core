@@ -1765,11 +1765,18 @@ def nuevo_movimiento():
         flash_exc("No pude listar bancos", e)
 
     pregunta_activa = None  # cuenta USD pendiente de ACTIVA? (paridad dBase)
+    pregunta_fecha = None   # fecha anterior a hoy pendiente de confirmar
 
     if request.method == "POST":
         no_banco = parse_int(request.form.get("no_banco"))
         importe = parse_monto(request.form.get("importe"))
         fecha = parse_date(request.form.get("fecha")) or today_ec()
+        # El botón "No, ponele la de hoy" del bloque ¿FECHA VIEJA?. Lleva
+        # nombre propio a propósito: si se llamara `fecha` como el input
+        # de arriba, `form.get()` devolvería el PRIMERO y el botón no
+        # pisaría nada.
+        if (request.form.get("usar_hoy") or "") == "1":
+            fecha = today_ec()
         concepto = (request.form.get("concepto") or "").strip()
         prov = (request.form.get("beneficiario") or "").strip().upper() or None
         usuario = (g.user or {}).get("username", "web")
@@ -1801,60 +1808,76 @@ def nuevo_movimiento():
             elif mov_destino == "posdat":
                 concepto = ("INOP " + _p2 + " " + _desc).strip()
             prov = None
-        try:
-            r = queries.crear_movimiento_simple(
-                no_banco=no_banco,
-                documento=doc,
-                importe=importe,
-                fecha=fecha,
-                concepto=concepto,
-                prov=prov,
-                usuario=usuario,
-                permitir_duplicado=permitir_dup,
-                activa=activa,
-                anticipo_prov=anticipo_prov,
-            )
-            if r.get("dedupe"):
-                # TMT 2026-06-09: dedupe silencioso — el mov ya estaba.
-                msg = (
-                    f"{label} por $ {r['importe']:.2f} ya estaba cargada "
-                    f"(mov #{r['id_transaccion']}) — no se duplicó."
+        # TMT 2026-08-10 (dueña 07/08, mirando el +$7.340 de la traza:
+        # *"debería ese movimiento armarse con la fecha de hoy, no con el
+        # 05/08"*). Los dos movimientos de Comisiones e impuestos los cargó
+        # Alex el 07/08 con `fecha = 05/08`: mueven la utilidad de HOY pero
+        # viven en la fila de anteayer, así que quien los busca por el día del
+        # salto no los encuentra.
+        #
+        # El form ya proponía HOY. Lo que faltaba es que poner una fecha vieja
+        # sea un acto DELIBERADO y no un enter de más. No se BLOQUEA —cargar el
+        # movimiento de ayer es legítimo y pasa seguido—: se re-pregunta, con
+        # el mismo patrón que ACTIVA?, y NADA se graba hasta que confirmen.
+        pregunta_fecha = None
+        if fecha < today_ec() and (request.form.get("confirmar_fecha") or "") != "1":
+            pregunta_fecha = fecha
+
+        if pregunta_fecha is None:
+            try:
+                r = queries.crear_movimiento_simple(
+                    no_banco=no_banco,
+                    documento=doc,
+                    importe=importe,
+                    fecha=fecha,
+                    concepto=concepto,
+                    prov=prov,
+                    usuario=usuario,
+                    permitir_duplicado=permitir_dup,
+                    activa=activa,
+                    anticipo_prov=anticipo_prov,
                 )
-            else:
-                msg = f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}."
-            if r.get("side_effect"):
-                # TMT 2026-06-09 paridad dBase: contraparte creada a la vez
-                # (anticipo USD / retiro / caja).
-                msg += f" {r['side_effect']}."
-            # TMT 2026-07-30 (dueña: "pero si hago ND no puedo mandar a gasto").
-            # Un cargo del banco —comisión, ISI, chequera— es un gasto, y hasta
-            # ahora había que crear la ND acá y después ir a la lista de
-            # movimientos a apretar el `→$`. Dos pantallas para una sola cosa.
-            # El gasto es OPCIONAL y sólo para salidas: si no se elige categoría
-            # no pasa nada. Si falla, la ND YA quedó creada — se avisa y se
-            # puede clasificar después desde la lista.
-            _num_gasto = parse_int(request.form.get("gasto_num"))
-            if _num_gasto and doc in ("ND", "DB"):
-                try:
-                    _g = queries.clasificar_tx_como_gasto(
-                        id_transaccion=r["id_transaccion"], num=_num_gasto,
-                        concepto=concepto, prov=prov, usuario=usuario,
+                if r.get("dedupe"):
+                    # TMT 2026-06-09: dedupe silencioso — el mov ya estaba.
+                    msg = (
+                        f"{label} por $ {r['importe']:.2f} ya estaba cargada "
+                        f"(mov #{r['id_transaccion']}) — no se duplicó."
                     )
-                    msg += (f" Gasto #{_g['id_xgast']} V{_num_gasto} creado "
-                            f"(no toca caja).")
-                except Exception as _e:  # noqa: BLE001
-                    msg += (f" OJO: no pude crear el gasto ({_e}); "
-                            f"clasificalo desde la lista de movimientos.")
-            flash(msg, "ok")
-            return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
-        except queries.ActivaRequerida as e:
-            # Réplica del prompt dBase: nada se grabó — re-render con la
-            # pregunta y los valores tal como vinieron.
-            pregunta_activa = e.cta
-        except ValueError as e:
-            flash(str(e), "warn")
-        except Exception as e:
-            flash_exc(f"No pude registrar la {label.lower()}", e)
+                else:
+                    msg = f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}."
+                if r.get("side_effect"):
+                    # TMT 2026-06-09 paridad dBase: contraparte creada a la vez
+                    # (anticipo USD / retiro / caja).
+                    msg += f" {r['side_effect']}."
+                # TMT 2026-07-30 (dueña: "pero si hago ND no puedo mandar a gasto").
+                # Un cargo del banco —comisión, ISI, chequera— es un gasto, y hasta
+                # ahora había que crear la ND acá y después ir a la lista de
+                # movimientos a apretar el `→$`. Dos pantallas para una sola cosa.
+                # El gasto es OPCIONAL y sólo para salidas: si no se elige categoría
+                # no pasa nada. Si falla, la ND YA quedó creada — se avisa y se
+                # puede clasificar después desde la lista.
+                _num_gasto = parse_int(request.form.get("gasto_num"))
+                if _num_gasto and doc in ("ND", "DB"):
+                    try:
+                        _g = queries.clasificar_tx_como_gasto(
+                            id_transaccion=r["id_transaccion"], num=_num_gasto,
+                            concepto=concepto, prov=prov, usuario=usuario,
+                        )
+                        msg += (f" Gasto #{_g['id_xgast']} V{_num_gasto} creado "
+                                f"(no toca caja).")
+                    except Exception as _e:  # noqa: BLE001
+                        msg += (f" OJO: no pude crear el gasto ({_e}); "
+                                f"clasificalo desde la lista de movimientos.")
+                flash(msg, "ok")
+                return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
+            except queries.ActivaRequerida as e:
+                # Réplica del prompt dBase: nada se grabó — re-render con la
+                # pregunta y los valores tal como vinieron.
+                pregunta_activa = e.cta
+            except ValueError as e:
+                flash(str(e), "warn")
+            except Exception as e:
+                flash_exc(f"No pude registrar la {label.lower()}", e)
 
     # GET o POST con error
     import contextlib as _ctx
@@ -1906,7 +1929,9 @@ def nuevo_movimiento():
         proveedores=proveedores,
         cuentas_op=cuentas_op,
         hoy=today_ec().isoformat(),
+        hoy_es=today_ec().strftime("%d/%m/%Y"),
         pregunta_activa=pregunta_activa,
+        pregunta_fecha=pregunta_fecha,
         form_vals=form_vals,
     )
 
