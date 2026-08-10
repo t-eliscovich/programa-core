@@ -1454,6 +1454,48 @@ def _evaluar_fechaout(*, n_con_mov, filas_con_mov, n_nace_afuera,
 _HILADO_UKG_TOL_US = 10000.0
 
 
+#: Cuántos minutos puede tener la última foto antes de encender la luz. El
+#: intervalo es de 5 min y en la práctica sale una cada ~6; 20 deja pasar un
+#: deploy (la app reinicia y el hilo arranca de nuevo) sin encender nada.
+_TRAZA_FRESCA_MIN = 20
+
+
+@bp.route("/traza-fresca", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def traza_fresca():
+    """¿Hay foto nueva de la traza, o la grabadora dejó de guardar?
+
+    🚨 TMT 2026-08-10: *"y también algo que avise si no está guardando"*. Ese
+    día la foto empezó a insertar una columna que no existía y la grabadora
+    —fail-soft por diseño— dejó de guardar EN SILENCIO durante diez minutos.
+    Hubo un aviso en la campanita recién cuando se agregó; esto es el otro
+    lado: no pregunta "¿explotó?" sino **"¿hay foto nueva?"**, así que caza
+    cualquier motivo —el hilo de fondo muerto, el lock trabado, el proceso
+    caído— y no sólo la excepción que alguien pensó en atrapar.
+    """
+    alerts: list = []
+    fila = db.fetch_one(
+        "SELECT creado_en, EXTRACT(EPOCH FROM (now() - creado_en)) / 60 AS min "
+        "FROM scintela.traza_utilidad ORDER BY creado_en DESC, id_traza DESC LIMIT 1")
+    if not fila:
+        return jsonify({"ok": True, "alerts": [{
+            "severity": "low", "category": "sin_traza",
+            "msg": "Todavía no hay ninguna foto guardada."}], "stats": {}})
+    edad = round(float(fila.get("min") or 0), 1)
+    ok = edad <= _TRAZA_FRESCA_MIN
+    if not ok:
+        alerts.append({
+            "severity": "high", "category": "traza_congelada",
+            "msg": (f"La última foto de la traza es de hace {edad:.0f} minutos "
+                    f"(el tope son {_TRAZA_FRESCA_MIN}). La grabadora no está "
+                    f"guardando.")})
+    return jsonify({"ok": ok, "alerts": alerts,
+                    "stats": {"ultima": str(fila.get("creado_en")),
+                              "edad_min": edad,
+                              "tope_min": _TRAZA_FRESCA_MIN}})
+
+
 @bp.route("/hilado-ukg", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -1573,6 +1615,7 @@ def health_all():
     resp7 = pendientes_conciliacion()
     resp9 = deposito_sin_fechaout()
     resp10 = hilado_ukg_reconstruible()
+    resp11 = traza_fresca()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -1581,6 +1624,7 @@ def health_all():
     data7 = json.loads(resp7.get_data(as_text=True))
     data9 = json.loads(resp9.get_data(as_text=True))
     data10 = json.loads(resp10.get_data(as_text=True))
+    data11 = json.loads(resp11.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -1596,7 +1640,7 @@ def health_all():
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
-               and data10["ok"]),
+               and data10["ok"] and data11["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -1607,6 +1651,7 @@ def health_all():
         "mails_asinfo": data8,
         "deposito_sin_fechaout": data9,
         "hilado_ukg": data10,
+        "traza_fresca": data11,
     })
 
 

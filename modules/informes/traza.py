@@ -194,7 +194,32 @@ def registrar(origen: str = "manual", bal: dict | None = None,
     except Exception as e:  # noqa: BLE001 -- la grabadora no puede tumbar nada
         _LOG.warning("traza_utilidad: no se pudo guardar la foto (%s)", e)
         res["motivo"] = str(e)[:150]
+        _avisar_que_no_guarda(res["motivo"])
     return res
+
+
+def _avisar_que_no_guarda(motivo: str) -> None:
+    """La grabadora no puede tumbar nada, pero tampoco puede callarse.
+
+    🚨 TMT 2026-08-10, después de que la traza dejara de guardar diez minutos
+    por una columna que no existía: *"y también algo que avise si no está
+    guardando"*. El fail-soft estaba bien —la app no se cae por una foto— pero
+    el único rastro era una línea de log que no mira nadie: el error se
+    escribió cien veces y la pantalla siguió como si nada.
+
+    ⭐ La clave lleva el DÍA: el hilo reintenta cada seis minutos y sin eso el
+    buzón se llenaría de cien avisos iguales. Uno por día alcanza para que se
+    entere.
+    """
+    try:
+        from filters import today_ec
+        from modules import avisos as _av
+        _av.avisar(fuente="traza", nivel="alerta",
+                   titulo="La traza dejó de guardar fotos",
+                   detalle=(motivo or "")[:200], url="/informes/traza",
+                   clave=f"traza:falla:{today_ec()}")
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+        _LOG.warning("traza_utilidad: no pude avisar la falla (%s)", e)
 
 
 def registrar_si_toca(origen: str = "loop") -> bool:
