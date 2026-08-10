@@ -1292,44 +1292,122 @@ def deposito_sin_fechaout():
 
     Solo lectura. NO cambia ningún cálculo.
     """
+    alerts, stats = _evaluar_fechaout(
+        # (a) EL SÍNTOMA CLÁSICO: depositado, con su movimiento bancario 'DE',
+        # y sin fecha de salida. Es lo que cazó las dos rutas del 05/08.
+        # ⚠ El COUNT sale de su propia consulta: antes se contaban las filas
+        # YA recortadas por el LIMIT y `n_sin_fechaout` se clavaba en 50 —
+        # el 10/08 dijo 50 cuando eran 104. Un detector que subreporta hace
+        # que el arreglo parezca más chico de lo que es.
+        n_con_mov=int((db.fetch_one(
+            """
+            SELECT COUNT(DISTINCT c.id_cheque) AS n
+              FROM scintela.cheque c
+              JOIN scintela.chequextransaccion cxt ON cxt.id_cheque = c.id_cheque
+              JOIN scintela.transacciones_bancarias tb
+                ON tb.id_transaccion = cxt.id_transaccion
+             WHERE UPPER(COALESCE(tb.documento, '')) = 'DE'
+               AND tb.fecha >= %s
+               AND UPPER(COALESCE(c.stat, '')) IN ('B', 'A', 'V')
+               AND c.fechaout IS NULL
+            """,
+            (_CORTE_FECHAOUT,),
+        ) or {}).get("n") or 0),
+        filas_con_mov=db.fetch_all(
+            """
+            SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
+                   c.no_banco, COALESCE(c.usuario_crea, '') AS usuario_crea,
+                   MIN(tb.fecha)::text AS fecha_deposito
+              FROM scintela.cheque c
+              JOIN scintela.chequextransaccion cxt ON cxt.id_cheque = c.id_cheque
+              JOIN scintela.transacciones_bancarias tb
+                ON tb.id_transaccion = cxt.id_transaccion
+             WHERE UPPER(COALESCE(tb.documento, '')) = 'DE'
+               AND tb.fecha >= %s
+               AND UPPER(COALESCE(c.stat, '')) IN ('B', 'A', 'V')
+               AND c.fechaout IS NULL
+             GROUP BY c.id_cheque, c.no_cheque, c.codigo_cli, c.importe,
+                      c.stat, c.no_banco, c.usuario_crea
+             ORDER BY 8 DESC, c.id_cheque
+             LIMIT 20
+            """,
+            (_CORTE_FECHAOUT,),
+        ) or [],
+        # (b) EL INVARIANTE, sin depender del movimiento bancario. Un cheque
+        # que NACE fuera de cartera salió el día que entró y tiene que llevar
+        # `fechaout`. La rama (a) no ve el efectivo (99 → 'C'): va a CAJA, no
+        # genera un 'DE', y por eso 13 cobros en efectivo estuvieron sin
+        # NINGUNA de las dos fechas sin que nadie se enterara. Este criterio
+        # no le pregunta a la plata por dónde salió.
+        n_nace_afuera=int((db.fetch_one(
+            """
+            SELECT COUNT(*) AS n
+              FROM scintela.cheque
+             WHERE fecha_crea::date >= %s
+               AND UPPER(COALESCE(stat, '')) NOT IN ('Z','P','D','1','2','3')
+               AND usuario_modifica IS NULL
+               AND fechaout IS NULL
+            """,
+            (_CORTE_FECHAOUT,),
+        ) or {}).get("n") or 0),
+        filas_nace_afuera=db.fetch_all(
+            """
+            SELECT id_cheque, no_cheque, codigo_cli, importe, stat, no_banco,
+                   COALESCE(usuario_crea, '') AS usuario_crea,
+                   fecha_crea::date::text AS nacio
+              FROM scintela.cheque
+             WHERE fecha_crea::date >= %s
+               AND UPPER(COALESCE(stat, '')) NOT IN ('Z','P','D','1','2','3')
+               AND usuario_modifica IS NULL
+               AND fechaout IS NULL
+             ORDER BY fecha_crea DESC, id_cheque
+             LIMIT 20
+            """,
+            (_CORTE_FECHAOUT,),
+        ) or [],
+    )
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
+def _evaluar_fechaout(*, n_con_mov, filas_con_mov, n_nace_afuera,
+                      filas_nace_afuera) -> tuple[list[dict], dict]:
+    """Parte pura — sin base, para poder testear las dos ramas."""
     alerts: list[dict] = []
-    filas = db.fetch_all(
-        """
-        SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
-               MIN(tb.fecha)::text AS fecha_deposito
-          FROM scintela.cheque c
-          JOIN scintela.chequextransaccion cxt ON cxt.id_cheque = c.id_cheque
-          JOIN scintela.transacciones_bancarias tb
-            ON tb.id_transaccion = cxt.id_transaccion
-         WHERE UPPER(COALESCE(tb.documento, '')) = 'DE'
-           AND tb.fecha >= %s
-           AND UPPER(COALESCE(c.stat, '')) IN ('B', 'A', 'V')
-           AND c.fechaout IS NULL
-         GROUP BY c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat
-         ORDER BY 6 DESC, c.id_cheque
-         LIMIT 50
-        """,
-        (_CORTE_FECHAOUT,),
-    ) or []
-    if filas:
+    if n_con_mov:
         alerts.append({
             "nivel": "HIGH",
-            "que": f"{len(filas)} cheque(s) depositados desde el "
+            "que": f"{n_con_mov} cheque(s) depositados desde el "
                    f"{_CORTE_FECHAOUT:%d/%m/%Y} sin fecha de salida de cartera",
             "por_que": "alguna ruta de depósito está escribiendo la fecha en "
                        "`fechaing` (el día de INGRESO) en vez de `fechaout`. "
                        "Eso los convierte en cobranza del día del depósito en "
                        "/cheques/resumen-dia.",
-            "filas": filas[:20],
+            "donde_mirar": sorted({
+                f"banco {f.get('no_banco')} · {f.get('usuario_crea') or '?'}"
+                for f in filas_con_mov
+            }),
+            "filas": filas_con_mov,
         })
-    return jsonify({
-        "ok": not alerts,
-        "alerts": alerts,
-        "stats": {
-            "corte": _CORTE_FECHAOUT.isoformat(),
-            "n_sin_fechaout": len(filas),
-        },
-    })
+    if n_nace_afuera:
+        alerts.append({
+            "nivel": "HIGH",
+            "que": f"{n_nace_afuera} cheque(s) NACIERON fuera de cartera desde "
+                   f"el {_CORTE_FECHAOUT:%d/%m/%Y} y no tienen fecha de salida",
+            "por_que": "un cheque que se crea ya depositado (90/91 → 'B') o ya "
+                       "cobrado en caja (99 → 'C') entró y salió el mismo día: "
+                       "le falta `fechaout`. Mirar el INSERT de "
+                       "`cheques.queries.crear()`, no las rutas de depósito.",
+            "donde_mirar": sorted({
+                f"banco {f.get('no_banco')} · stat {f.get('stat')}"
+                for f in filas_nace_afuera
+            }),
+            "filas": filas_nace_afuera,
+        })
+    return alerts, {
+        "corte": _CORTE_FECHAOUT.isoformat(),
+        "n_sin_fechaout": n_con_mov,
+        "n_nacidos_fuera_de_cartera_sin_fechaout": n_nace_afuera,
+    }
 
 
 # Endpoint combinado: /admin/health/all (para un único curl del cron)

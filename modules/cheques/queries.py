@@ -202,6 +202,11 @@ TOLERANCIA_CENTAVOS_USD = 5.00
 # Stats donde el cheque está depositado en banco (lockean campos duros).
 STATS_DEPOSITADO = ("B", "V", "W", "I", "J", "K", "A")
 
+# Estados en los que el cheque TODAVÍA está en cartera (vivo, aplicable a
+# facturas). Todo lo demás es una salida: depositado, cobrado en caja,
+# endosado, anulado. TMT 2026-08-10 — ver `crear()`, bloque `fechaout`.
+STATS_EN_CARTERA = ("Z", "P", "D", "1", "2", "3")
+
 # Stats terminales — no se puede editar nada. 'E' = endosado (cheque ya
 # salió de nuestra cartera, no nos pertenece más).
 STATS_TERMINALES_EDIT = ("X", "T", "R", "3", "E")
@@ -3529,12 +3534,12 @@ def crear(
             INSERT INTO scintela.cheque
                 (no_cheque, fecha, fechad, fecha_recibido,
                  codigo_cli, importe, no_banco,
-                 banco, stat, fechaing, prov, clave, doc_banco, concepto,
-                 usuario_crea)
+                 banco, stat, fechaing, fechaout, prov, clave, doc_banco,
+                 concepto, usuario_crea)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s,
-                    %s)
+                    %s, %s)
             RETURNING id_cheque, no_cheque
             """,
                 (
@@ -3550,6 +3555,31 @@ def crear(
                     # TMT 2026-06-11 paridad dBase: depósito directo (90/91,
                     # stat B) lleva fechaing = fecha de paso por banco.
                     (fecha if (no_banco in (90, 91) and (stat or "").upper() == "B") else None),
+                    # TMT 2026-08-10 — LA TERCERA RUTA DE DEPÓSITO.
+                    # El 05/08 se arreglaron las dos rutas que SACAN un cheque
+                    # de cartera (`depositar_lote`, `transicionar_stat`): la
+                    # fecha del depósito pasó de `fechaing` a `fechaout`. Esta
+                    # no saca nada de cartera —el cheque NACE afuera, ya
+                    # depositado (90/91 → 'B') o ya cobrado en caja (99 →
+                    # 'C')— así que no entraba en "las dos rutas de depósito"
+                    # y quedó escribiendo sólo `fechaing`. 104 cheques por
+                    # $116.459,12 entre el 05 y el 08/08 (más 13 efectivos sin
+                    # NINGUNA de las dos fechas) los cazó
+                    # /admin/health/deposito-sin-fechaout.
+                    #
+                    # Un cheque que nace afuera ENTRÓ Y SALIÓ EL MISMO DÍA:
+                    # `fechaout` = `fecha`, igual que las otras once salidas.
+                    # No mueve ningún número — SQL_DIA_SALIDA ya devolvía este
+                    # mismo día por el COALESCE, y el balance as-of tiene la
+                    # rama `fechaout > as_of` desde el 05/08. Lo que arregla es
+                    # que el invariante "depositado ⇒ tiene fechaout" valga sin
+                    # excepciones: una excepción acá es una puerta para la
+                    # próxima ruta que nazca olvidándose.
+                    #
+                    # `fechaing` NO se toca: cambiarlo movería el resumen de
+                    # cobranza del día, que agrupa por día de INGRESO y se
+                    # imprime para contabilidad.
+                    (fecha if (stat or "").upper() not in STATS_EN_CARTERA else None),
                     (prov or None),
                     (clave or None) and clave[:5],
                     (doc_banco or None),
