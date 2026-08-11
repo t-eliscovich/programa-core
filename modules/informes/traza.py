@@ -722,6 +722,51 @@ PLURALES = {
 _RE_CODIGO = re.compile(r"^[A-Z0-9]{2,4}$")
 
 
+def _url_del_grupo(g: dict, ev: dict) -> str | None:
+    """A dónde lleva el renglón al clickearlo.
+
+    🚨 TMT 2026-08-11: *"cuando lo clickeo me debería llevar sólo a esas
+    facturas"*. Iba a `/historial?tipo=…&desde=hoy&hasta=hoy` — las 37 facturas
+    del día para explicar cuatro. Un link que obliga a buscar la fila a ojo no
+    está terminado.
+
+    Ahora van los `id_mov_doble` EXACTOS del grupo. El filtro por tipo y día
+    queda de respaldo para las fotos anteriores a la grabadora de detalle, que
+    no los guardaron: ahí un link amplio es mejor que ninguno.
+
+    `banco_varios` no es un tipo de `mov_doble` — filtrar por él daría una
+    pantalla vacía, así que ese renglón sigue sin link.
+    """
+    if (ev or {}).get("tipo") == "banco_varios":
+        return None
+    ids = ",".join(str(h) for h in sorted(g.get("hechos") or []) if h)
+    if ids:
+        return f"/historial?ids={ids}"
+    return (f"/historial?tipo={ev['tipo']}"
+            f"&desde={ev['dia']}&hasta={ev['dia']}")
+
+
+def _nombres(g: dict, tope: int = 3) -> str:
+    """"CLR ×2, MHE, MPO" — los que más pesan, con el ×N si alguno repite.
+
+    🚨 TMT 2026-08-11: *"4 facturas pero acá dicen solo 3 nombres"*. `quienes`
+    es un dict por cliente, así que dos facturas del mismo cliente colapsan en
+    un nombre y el renglón queda peleando con su propio número. El ×2 lo cierra
+    sin alargar el texto ni mentir el conteo.
+    """
+    orden = sorted(g.get("quienes") or {},
+                   key=lambda k: abs((g["quienes"] or {})[k]), reverse=True)
+    # El ×N sólo cuando hay VARIOS nombres. Con uno solo el renglón ya dice
+    # cuántos son ("8 CH → BC · CLI") y el ×8 es ruido que repite el número.
+    cuantos = (g.get("cuantos") or {}) if len(orden) > 1 else {}
+    partes = [f"{k} ×{cuantos[k]}" if cuantos.get(k, 1) > 1 else k
+              for k in orden[:tope]]
+    txt = ", ".join(partes)
+    if len(orden) > tope:
+        txt += f" +{len(orden) - tope}"
+    return txt
+
+
 def _quien(etiqueta: str | None, comp: str | None = None) -> str:
     """El cliente (o proveedor) que hay al final de la etiqueta, si lo hay.
 
@@ -891,6 +936,9 @@ def _unir_las_dos_patas(grupos: dict) -> None:
         if not (cod_o and cod_d):
             continue
         quienes = dict(origen["quienes"])
+        for k, v in origen.get("cuantos", {}).items():
+            destino.setdefault("cuantos", {})
+            destino["cuantos"][k] = destino["cuantos"].get(k, 0) + v
         for k, v in destino["quienes"].items():
             quienes[k] = quienes.get(k, 0.0) + v
         nombres = ", ".join(sorted(quienes, key=lambda k: abs(quienes[k]),
@@ -1176,6 +1224,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                   "col": m.get("componente"),
                                   "por_col": {},
                                   "quienes": {},
+                                  "cuantos": {},
                                   "evento": ev,
                                   "hechos": set(),
                                   "familia": m.get("familia")})
@@ -1204,6 +1253,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         q = _quien(m.get("etiqueta"), m.get("componente"))
         if q:
             g["quienes"][q] = round(g["quienes"].get(q, 0.0) + ap, 2)
+            g["cuantos"][q] = g["cuantos"].get(q, 0) + 1
     for g in grupos.values():
         # Lo que el grupo MOVIÓ, aunque no haya aportado: el lado más grande.
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
@@ -1237,9 +1287,9 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             from modules.historial.queries import corto as _corto
 
             g["regla"] = ev["label"]
+            md = ev.get("meta") or {}
             quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
                              reverse=True)
-            md = ev.get("meta") or {}
             cerrado = False        # el texto ya cuenta cuántos son
             # La contraparte que sabe el evento manda sobre la que se adivina
             # de la etiqueta.
@@ -1252,9 +1302,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 if unidad:
                     g["texto"] = f"{rotulo} · {len(g['hechos'])} {unidad}"
                 else:
-                    nombres = ", ".join(quienes[:3])
-                    if len(quienes) > 3:
-                        nombres += f" +{len(quienes) - 3}"
+                    nombres = _nombres(g)
                     g["texto"] = (f"{len(g['hechos'])} {rotulo}"
                                   + (f" · {nombres}" if nombres else ""))
                 cerrado = True
@@ -1338,20 +1386,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             # movimientos uno por uno, que es como a la dueña le gusta verlos.
             # `banco_varios` no es un tipo de `mov_doble` — filtrar por él daría
             # una pantalla vacía, así que ese renglón no lleva link.
-            g["url"] = (None if ev["tipo"] == "banco_varios" else
-                        f"/historial?tipo={ev['tipo']}"
-                        f"&desde={ev['dia']}&hasta={ev['dia']}")
+            g["url"] = _url_del_grupo(g, ev)
 
         elif g["n"] > 1:
             # ⭐ TMT 2026-08-06: *"decime algo de las facturas, de los abonos…
             # ¿clientes quizás?"*. "3 facturas nuevas" no dice nada; "3
             # facturas · AJT, SAC, GBC" dice de quién es la venta. Van los tres
             # que más pesan, que es lo que se mira.
-            quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
-                             reverse=True)
-            nombres = ", ".join(quienes[:3])
-            if len(quienes) > 3:
-                nombres += f" +{len(quienes) - 3}"
+            nombres = _nombres(g)
             g["texto"] = f"{g['n']} {PLURALES.get(g['regla'], g['regla'].lower())}"
             if g.get("familia") == "sin_explicar":
                 g["texto"] = (f"{ETIQUETAS.get(g.get('col'), '')}: "

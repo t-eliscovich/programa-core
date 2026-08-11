@@ -101,6 +101,14 @@ def lista():
     estado = request.args.get("estado") or None
     q = (request.args.get("q") or "").strip() or None
     mis_origenes = request.args.get("mis_origenes") == "1"
+    # TMT 2026-08-11 (dueña): la traza manda los `id_mov_doble` exactos de un
+    # renglón para que la pantalla muestre ESOS movimientos y no el día entero.
+    ids = []
+    for _t in (request.args.get("ids") or "").split(","):
+        try:
+            ids.append(int(_t.strip()))
+        except (TypeError, ValueError):
+            continue
 
     # Mapeo origen_table → permiso requerido. Si el user tiene el permiso,
     # ese origen entra en su lista de visibles.
@@ -168,6 +176,7 @@ def lista():
             tipo=tipo,
             estado=estado,
             q=q,
+            ids=ids or None,
             origenes_permitidos=origenes_permitidos,
             limite=limite + 1,
             offset=offset,

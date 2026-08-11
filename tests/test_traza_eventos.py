@@ -122,7 +122,7 @@ def test_la_devolucion_aparece_con_nombre():
     assert g["texto"] == "FA PUE dev"
     assert "Factura: devolución" in g["titulo"]     # el largo, en el tooltip
     assert g["aporte"] == -907.97
-    assert "tipo=factura_devolucion" in g["url"]
+    assert "/historial?ids=" in g["url"]
 
 
 def test_los_tres_anticipos_de_una_compra_son_un_renglon_con_el_numero():
@@ -876,3 +876,26 @@ def test_cinco_retenciones_cuentan_cinco_sin_depender_de_la_suerte():
             for i in range(1, 6)]
     out = t.resumir(movs, -50.0, ev.indice(_con_label(filas)))
     assert [g["texto"] for g in out] == ["retenciones · 5 facturas"], out
+
+
+# ── "4 FA" y tres nombres no pueden pelearse ───────────────────────────────
+
+def test_el_cliente_que_repite_lleva_su_xN():
+    """🚨 TMT 2026-08-11: *"4 facturas pero acá dicen sólo 3 nombres"*. Dos
+    facturas del mismo cliente colapsaban en un nombre y el renglón quedaba
+    peleando con su propio número."""
+    g = {"quienes": {"CLR": -300.0, "MHE": -200.0, "MPO": -100.0},
+         "cuantos": {"CLR": 2, "MHE": 1, "MPO": 1}}
+    assert t._nombres(g) == "CLR ×2, MHE, MPO"
+
+
+def test_sin_repetidos_no_se_agrega_ruido():
+    g = {"quienes": {"AJT": -300.0, "SAC": -200.0},
+         "cuantos": {"AJT": 1, "SAC": 1}}
+    assert t._nombres(g) == "AJT, SAC"
+
+
+def test_mas_de_tres_clientes_se_cortan_con_el_mas():
+    g = {"quienes": {"A": -50.0, "B": -40.0, "C": -30.0, "D": -20.0},
+         "cuantos": {"A": 1, "B": 1, "C": 1, "D": 1}}
+    assert t._nombres(g) == "A, B, C +1"

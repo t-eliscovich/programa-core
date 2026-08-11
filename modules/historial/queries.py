@@ -151,6 +151,7 @@ def listar(
     estado: str | None = None,
     q: str | None = None,
     usuario: str | None = None,
+    ids: list[int] | None = None,
     origenes_permitidos: list[str] | None = None,
     limite: int = 500,
     offset: int = 0,
@@ -268,6 +269,12 @@ def listar(
           FROM unificado u
          WHERE (%(desde)s::date IS NULL OR u.fecha_operacion >= %(desde)s::date)
            AND (%(hasta)s::date IS NULL OR u.fecha_operacion <= %(hasta)s::date)
+           -- TMT 2026-08-11 (dueña, desde la traza): *"cuando lo clickeo me
+           -- debería llevar sólo a esas facturas"*. Con `ids` la pantalla
+           -- muestra EXACTAMENTE los movimientos del renglón, en vez del día
+           -- entero filtrado por tipo.
+           AND (%(ids)s::bigint[] IS NULL
+                OR u.id_mov_doble = ANY(%(ids)s::bigint[]))
            AND (%(tipo)s IS NULL OR u.tipo = %(tipo)s OR u.tipo LIKE %(tipo_like)s)
            AND (%(estado)s IS NULL OR u.estado = %(estado)s)
            AND (%(q)s IS NULL
@@ -309,6 +316,7 @@ def listar(
             "estado": estado or None,
             "q": q or None, "qlike": f"%{q}%" if q else None,
             "usuario": usuario or None,
+            "ids": [int(i) for i in ids] if ids else None,
             "origenes_permitidos": list(origenes_permitidos) if origenes_permitidos else None,
             "limite": int(limite),
             "offset": max(0, int(offset)),
