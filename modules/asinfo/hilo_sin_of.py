@@ -330,13 +330,29 @@ def _resolver_avisos(abiertos_ahora: set[str]) -> int:
 
     `abiertos_ahora` son los OSM que siguen sin orden. Todo aviso vivo cuya
     clave `hilo-sin-of:<osm>` no esté ahí describe algo que se arregló: pasa a
-    ✅ con el número de la orden que lo resolvió. `resolver()` sólo toca los que
-    todavía están en `alerta`, así que pasar cien veces no lo repite.
+    ✅ con el número de la orden que lo resolvió.
+
+    🚨 Esto se consulta DIRECTO y no por `avisos.listar()`. La primera versión
+    usaba `listar(fuente="stock")` y no resolvía nunca: `listar` no devuelve la
+    columna `clave` — devuelve id, fuente, nivel, título, detalle, importe,
+    cantidad y poco más—, así que la comparación se hacía siempre contra un
+    string vacío y ningún aviso matcheaba. Fallaba en silencio, que es lo peor:
+    la campanita seguía en ⚠ y nada en los logs. Antes de leer un campo de un
+    helper ajeno, mirar su SELECT.
+
+    `nivel <> 'ok'` hace de freno: los ya resueltos no se vuelven a tocar.
     """
-    from modules.avisos import queries as avisos
+    import db
 
     try:
-        vivos = avisos.listar(solo_no_leidos=False, limite=200, fuente="stock")
+        vivos = db.fetch_all(
+            """
+            SELECT id_aviso, clave, cantidad
+              FROM scintela.aviso
+             WHERE clave LIKE 'hilo-sin-of:%%'
+               AND nivel <> 'ok'
+            """
+        ) or []
     except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
         _LOG.warning("no pude leer los avisos abiertos: %s", e)
         return 0
@@ -344,20 +360,24 @@ def _resolver_avisos(abiertos_ahora: set[str]) -> int:
     mios = {}
     for a in vivos:
         clave = str(a.get("clave") or "")
+        # El prefijo se vuelve a chequear en Python aunque el SQL ya filtre:
+        # el día que alguien reuse esta función con otro WHERE, `split(":")`
+        # sobre una clave ajena devolvería basura y la daría por nuestra.
         if not clave.startswith("hilo-sin-of:"):
             continue
-        osm = clave.split(":", 1)[1]
+        osm = clave.split(":", 1)[1].strip()
         if osm and osm not in abiertos_ahora:
             mios[osm] = a
     if not mios:
         return 0
 
+    from modules.avisos import queries as avisos
+
     ofts = ordenes_de(set(mios))
     n = 0
     for osm, a in mios.items():
         oft = ofts.get(osm)
-        kg = a.get("cantidad") or 0
-        titulo = f"{_kg_txt(kg)} kg de hilo — orden cargada"
+        titulo = f"{_kg_txt(a.get('cantidad') or 0)} kg de hilo — orden cargada"
         detalle = f"{osm} → {oft}" if oft else osm
         try:
             if avisos.resolver(int(a["id_aviso"]), titulo=titulo,

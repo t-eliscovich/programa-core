@@ -33,10 +33,17 @@ def _sin_freno(monkeypatch):
 
 
 def _correr(casos, vivos=(), ofts=None):
+    """`vivos` son filas de `scintela.aviso` TAL COMO LAS DEVUELVE LA BASE.
+
+    🚨 A propósito se mockea `db.fetch_all` y no `avisos.listar()`: la primera
+    versión leía por `listar`, que NO devuelve la columna `clave`, y por eso no
+    resolvía nunca. Un fake con la forma de la tabla lo habría cazado.
+    """
+    import db as _db
     puestos, resueltos = [], []
     with patch.object(hs, "despachos_sin_of", return_value=casos), \
          patch.object(hs, "ordenes_de", return_value=dict(ofts or {})), \
-         patch("modules.avisos.queries.listar", return_value=list(vivos)), \
+         patch.object(_db, "fetch_all", return_value=list(vivos)), \
          patch("modules.avisos.queries.resolver",
                side_effect=lambda i, **kw: resueltos.append((i, kw)) or True), \
          patch("modules.avisos.queries.avisar",
@@ -211,4 +218,31 @@ def test_no_toca_avisos_de_otra_cosa():
     """`fuente="stock"` trae más que esto: sólo son nuestros los de la clave."""
     ajeno = {"id_aviso": 9, "clave": "otra-cosa:123", "cantidad": 1}
     _, _p, resueltos = _correr([_caso()], vivos=[ajeno])
+    assert resueltos == []
+
+
+def test_la_consulta_pide_la_clave_que_listar_NO_devuelve():
+    """El bug del 11/08: se leía por `avisos.listar()`, que no trae `clave`, y
+    la comparación era siempre contra un string vacío — no resolvía nunca y no
+    dejaba ni un error. El SELECT propio tiene que pedir clave y cantidad, y
+    saltear los ya resueltos."""
+    import db as _db
+    visto = {}
+    with patch.object(hs, "despachos_sin_of", return_value=[]), \
+         patch.object(_db, "fetch_all",
+                      side_effect=lambda sql, *a, **k: visto.update(sql=sql) or []):
+        hs.revisar_si_toca()
+    sql = visto["sql"]
+    # La PROYECCIÓN, no cualquier mención: el bug era que `clave` no venía en
+    # el SELECT (aunque estuviera en el WHERE), y el dict llegaba sin la key.
+    assert "SELECT id_aviso, clave, cantidad" in sql
+    assert "hilo-sin-of:" in sql
+    assert "nivel <> 'ok'" in sql
+
+
+def test_una_fila_sin_clave_no_resuelve_nada():
+    """La firma exacta del bug: así llegaban las filas de `avisos.listar()`.
+    Sin `clave` no se puede saber de qué despacho habla — y resolver a ciegas
+    sería peor que no resolver."""
+    _, _p, resueltos = _correr([], vivos=[{"id_aviso": 77, "cantidad": 3240}])
     assert resueltos == []
