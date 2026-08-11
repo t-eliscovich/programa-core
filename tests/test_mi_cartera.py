@@ -534,6 +534,36 @@ def test_la_lista_de_clientes_sale_alfabetica_por_codigo(vendedor_logueado, monk
     assert html.index("Zapatería") < html.index("Almacén")
 
 
+def test_el_cuadradito_de_la_lista_dice_el_CODIGO_de_3_letras(
+        vendedor_logueado, monkeypatch):
+    """TMT 2026-08-11: *"todos lados donde aparece el código, mantené nuestros
+    códigos que tienen 3 letras, no de a dos"*.
+
+    Eran las iniciales del NOMBRE: dos letras decorativas. Mismo cambio que ya
+    se había hecho en el Inicio el 05/08.
+    """
+    monkeypatch.setattr(
+        q, "mis_clientes",
+        lambda vend: [{"codigo_cli": "RTU", "nombre": "ROSA TUAPANTA",
+                       "saldo": 100.0, "vencido": 0, "provincia": "PICHINCHA",
+                       "n_facturas": 1, "vence_mas_viejo": None}],
+    )
+    html = vendedor_logueado.get("/mi-cartera/clientes").data.decode()
+    assert '<div class="ini cod">RTU</div>' in html
+    assert '<div class="ini">RT</div>' not in html
+
+
+def test_el_redondel_de_la_cuenta_dice_el_codigo_del_vendedor(
+        vendedor_logueado, monkeypatch):
+    """El avatar decía "PP" (iniciales de Patricio Proaño). Su código es PPR."""
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
+    monkeypatch.setattr(q, "comision_meses", lambda *a, **k: _MESES_DEMO)
+    monkeypatch.setattr(q, "comision_por_cliente", lambda *a, **k: [])
+    html = vendedor_logueado.get("/mi-cartera/comision").data.decode()
+    assert '<span class="avatar">PPR</span>' in html
+    assert '<span class="avatar">PP</span>' not in html
+
+
 def test_las_alertas_del_inicio_siguen_yendo_por_vencido(vendedor_logueado, monkeypatch):
     """El Inicio muestra los 5 de MAYOR vencido.
 
@@ -1603,6 +1633,23 @@ def test_la_comision_abre_en_el_mes_con_las_dos_pestanas_arriba(
     assert "Mes a mes ·" not in html
     # Y el desglose, que es lo largo, sigue estando.
     assert "De qué cobranzas" in html
+
+
+def test_el_desglose_de_la_comision_dice_el_CODIGO_de_3_letras(
+        vendedor_logueado, monkeypatch):
+    """Mismo pedido del 11/08 que la lista y el Inicio: tres letras, no dos."""
+    monkeypatch.setattr(q, "comision_meses", lambda *a, **k: _MESES_DEMO)
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
+    monkeypatch.setattr(
+        q, "comision_por_cliente",
+        lambda *a, **k: [{"codigo_cli": "RTU", "nombre": "ROSA TUAPANTA",
+                          "cobrado": 100.0, "comision": 3.0,
+                          "cobros": [{"fecha": date(2026, 8, 3), "doc": "1",
+                                      "banco": "PICHINCHA", "importe": 100.0}]}],
+    )
+    html = vendedor_logueado.get("/mi-cartera/comision").data.decode()
+    assert '<span class="ini cod">RTU</span>' in html
+    assert '<span class="ini">RT</span>' not in html
 
 
 def test_la_pestana_mes_a_mes_muestra_el_ano_y_no_el_desglose(

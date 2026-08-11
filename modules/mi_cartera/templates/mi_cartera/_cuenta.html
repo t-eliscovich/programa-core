@@ -17,7 +17,7 @@
 {% if not preview %}
 <details class="cuenta">
   <summary aria-label="Mi cuenta">
-    <span class="avatar">{{ iniciales }}</span>
+    <span class="avatar">{{ vend }}</span>
   </summary>
   <div class="cuenta-menu">
     <div class="cuenta-quien">{{ vend_nombre }}<small>{{ vend }}</small></div>
@@ -28,5 +28,5 @@
   </div>
 </details>
 {% else %}
-<span class="avatar">{{ iniciales }}</span>
+<span class="avatar">{{ vend }}</span>
 {% endif %}

@@ -78,7 +78,13 @@
        data-vencido="{{ '1' if c.vencido > 0 else '0' }}"
        data-buscar="{{ ((c.nombre or '') ~ ' ' ~ (c.codigo_cli or ''))|lower }}"
        href="{{ url_for('mi_cartera.cliente', codigo_cli=c.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
-      {% set _p = (c.nombre or c.codigo_cli).split() %}<div class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</div>
+      {# TMT 2026-08-11 (dueña): *"todos lados donde aparece el código,
+         mantené nuestros códigos que tienen 3 letras, no de a dos"*. Eran las
+         INICIALES DEL NOMBRE: dos letras decorativas que nadie usa. El código
+         es el handle real —el que dice por teléfono y por el que ahora se
+         ordena la lista—, así que el cuadradito lo dice entero. Mismo cambio
+         que ya se había hecho en el Inicio el 05/08. #}
+      <div class="ini cod">{{ c.codigo_cli|upper }}</div>
       <div class="nm">
         <b>{{ c.nombre }}</b>
         <span>{{ c.codigo_cli }}{% if c.provincia %} · {{ c.provincia }}{% endif %}</span>

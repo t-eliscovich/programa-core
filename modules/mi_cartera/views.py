@@ -65,15 +65,20 @@ def _periodo() -> str:
 
 
 def _ctx_base(vend: str) -> dict:
-    """Lo que necesita el cascarón (nombre, iniciales, link de preview)."""
-    nombre = queries.nombre_vendedor(vend)
-    partes = [p for p in nombre.replace(".", " ").split() if p]
-    iniciales = (partes[0][0] + (partes[1][0] if len(partes) > 1 else "")).upper() \
-        if partes else vend[:2].upper()
+    """Lo que necesita el cascarón (nombre, código, link de preview).
+
+    ⭐ El redondel de la cuenta lleva el CÓDIGO del vendedor —tres letras—, no
+    dos iniciales de su nombre. TMT 2026-08-11: *"todos lados donde aparece el
+    código, mantené nuestros códigos que tienen 3 letras, no de a dos"*. Las
+    iniciales eran decoración; el código es el handle con el que la fábrica lo
+    nombra. Se borró la variable `iniciales` en vez de rellenarla con el
+    código: dejar el nombre viejo apuntando a otro dato es exactamente cómo se
+    lee la equivocada dentro de seis meses. El template usa `vend`, que ya
+    estaba acá.
+    """
     return {
-        "vend": vend,
-        "vend_nombre": nombre,
-        "iniciales": iniciales,
+        "vend": (vend or "").upper(),
+        "vend_nombre": queries.nombre_vendedor(vend),
         # Los dueños navegan en modo preview: hay que arrastrar ?vend= en
         # cada link o el segundo click los saca del preview.
         "preview": not vendedor_de(g.get("user")),

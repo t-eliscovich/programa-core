@@ -128,6 +128,11 @@
   .rowitem:first-child{padding-top:2px}
   .ini{width:36px;height:36px;border-radius:10px;background:#EEF1F6;color:var(--ink-2);
        display:grid;place-items:center;font-size:11.5px;font-weight:700;flex:0 0 auto}
+  /* El cuadradito lleva el CÓDIGO del cliente, que son TRES letras. Vivía en
+     el <style> de inicio.html; al usarlo también Mis clientes y Comisión pasó
+     al cascarón — la misma regla escrita en tres pantallas se corrige en una
+     sola y las otras dos quedan distintas sin que nadie lo note. */
+  .ini.cod{font-size:10.5px;letter-spacing:-.02em}
   .rowitem .nm{flex:1;min-width:0}
   .rowitem .nm b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;
                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

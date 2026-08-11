@@ -72,8 +72,9 @@
              style="border-bottom:1px solid var(--line);padding:10px 0;">
       <summary style="display:flex;align-items:center;gap:11px;cursor:pointer;
                       list-style:none;">
-        {% set _p = (g.nombre or g.codigo_cli).split() %}
-        <span class="ini">{{ (_p[0][0] ~ (_p[1][0] if _p|length > 1 else _p[0][1:2]))|upper }}</span>
+        {# El código, TRES letras — no las iniciales del nombre. Ver el
+           comentario de clientes.html. #}
+        <span class="ini cod">{{ g.codigo_cli|upper }}</span>
         <span style="flex:1;min-width:0;">
           <b style="display:block;font-size:14px;font-weight:600;
                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ g.nombre }}</b>
