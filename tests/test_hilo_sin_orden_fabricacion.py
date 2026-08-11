@@ -65,7 +65,7 @@ def test_el_titulo_es_el_texto_que_pidio_la_duena():
     res, puestos, _arch = _correr([_caso()])
     assert res["avisados"] == 1
     a = puestos[0]
-    assert a["titulo"] == ("Salieron 4.860 kg de hilo — "
+    assert a["titulo"] == ("Salieron 4.860 kg de hilo a Ponce — "
                            "falta cargar orden de fabricación")
     assert a["clave"] == "hilo-sin-of:OSM-000010458"
     assert a["nivel"] == "alerta"
@@ -246,3 +246,28 @@ def test_una_fila_sin_clave_no_resuelve_nada():
     sería peor que no resolver."""
     _, _p, resueltos = _correr([], vivos=[{"id_aviso": 77, "cantidad": 3240}])
     assert resueltos == []
+
+
+# ── el destino sale de la glosa, y sólo de ahí ──────────────────────────────
+
+def test_el_destino_sale_de_la_glosa():
+    """Dueña 2026-08-11: *"si decía Ponce, ponéselo; si no, vacío"*."""
+    assert hs.destino_de("A PONCE PENDIENTE 180/C KW22") == "Ponce"
+    assert hs.destino_de("A RIVADENEIRA 90/C") == "Rivadeneira"
+
+
+def test_sin_glosa_no_se_inventa_destino():
+    """Asinfo no guarda a quién se despachó: no hay destino, ni transportista,
+    ni centro de costo. Fuera de la glosa no hay de dónde sacarlo, y dos de los
+    seis despachos del 11/08 la tenían vacía."""
+    assert hs.destino_de("") == ""
+    assert hs.destino_de("MQ02 OF40515") == ""
+    assert hs.destino_de("A 40517") == ""          # un número no es un nombre
+    assert hs.destino_de("APONCE") == ""           # sin la "A" suelta, no
+
+
+def test_sin_destino_el_titulo_queda_como_estaba():
+    _, puestos, _ = _correr([_caso(numero="OSM-000010465", kg=910.0,
+                                   descripcion="")])
+    assert puestos[0]["titulo"] == ("Salieron 910 kg de hilo — "
+                                    "falta cargar orden de fabricación")

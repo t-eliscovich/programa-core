@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time as _t
 from datetime import UTC, datetime, timedelta
@@ -274,11 +275,31 @@ def esperando_orden_kg() -> dict[int, float]:
     return out
 
 
+#: "A PONCE PENDIENTE 180/C KW22" → "Ponce". Sólo la palabra en MAYÚSCULAS que
+#: viene justo después de una "A " sola: es la forma en que la persona que
+#: despacha escribe el destino, y la única pista que hay.
+#:
+#: 🚨 Deliberadamente conservador (dueña 2026-08-11: *"si decía Ponce, ponéselo;
+#: si no, vacío"*). Asinfo NO guarda a quién se despachó —no hay destino, ni
+#: transportista, ni centro de costo, está mirado— así que fuera de la glosa no
+#: hay de dónde sacarlo. Dos de los seis despachos del día la tienen VACÍA, y
+#: ahí el aviso no dice destino en vez de inventarlo.
+_RE_DESTINO = re.compile(r"^A\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ]{2,})\b")
+
+
+def destino_de(glosa: str) -> str:
+    """"A PONCE PENDIENTE 180/C" → "Ponce". "" cuando no se puede saber."""
+    m = _RE_DESTINO.match((glosa or "").strip())
+    return m.group(1).capitalize() if m else ""
+
+
 def _titulo(caso: dict) -> str:
     """El texto que pidió la dueña, palabra por palabra (2026-08-11)."""
     from filters import num_es
-    return (f"Salieron {num_es(caso['kg'], 0)} kg de {caso['material']} — "
-            "falta cargar orden de fabricación")
+    destino = destino_de(caso.get("descripcion") or "")
+    a_quien = f" a {destino}" if destino else ""
+    return (f"Salieron {num_es(caso['kg'], 0)} kg de {caso['material']}"
+            f"{a_quien} — falta cargar orden de fabricación")
 
 
 def _detalle(caso: dict) -> str:
@@ -377,7 +398,8 @@ def _resolver_avisos(abiertos_ahora: set[str]) -> int:
     n = 0
     for osm, a in mios.items():
         oft = ofts.get(osm)
-        titulo = f"{_kg_txt(a.get('cantidad') or 0)} kg de hilo — orden cargada"
+        titulo = (f"{_kg_txt(a.get('cantidad') or 0)} kg de hilo — "
+                  "orden cargada")
         detalle = f"{osm} → {oft}" if oft else osm
         try:
             if avisos.resolver(int(a["id_aviso"]), titulo=titulo,
