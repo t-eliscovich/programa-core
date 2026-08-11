@@ -100,9 +100,14 @@
        class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-4 py-2">
       Cancelar
     </a>
-    <form method="POST" action="{{ url_for('conciliacion.banco_impuestos_confirmar') }}" class="m-0">
+    {# TMT 2026-08-11: onsubmit deshabilita el botón. El 07/08 este mismo
+       form entró DOS VECES con 0,66 s de diferencia y la segunda agrupó
+       otras filas — el tab ya tenía esta guarda, el preview no. #}
+    <form method="POST" action="{{ url_for('conciliacion.banco_impuestos_confirmar') }}" class="m-0"
+          onsubmit="var b=this.querySelector('button'); if(b.disabled) return false; b.disabled=true; b.textContent='Procesando…'; return true;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+      <input type="hidden" name="real_sigs" value="{{ real_sigs_csv }}">
       <input type="hidden" name="real_idxs" value="{{ real_idxs_csv }}">
       <input type="hidden" name="fecha" value="{{ fecha }}">
       <input type="hidden" name="concepto" value="{{ concepto }}">

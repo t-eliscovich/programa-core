@@ -1712,6 +1712,7 @@ def crear_transaccion_agrupada_desde_reals(
     prov: str | None = None,
     usuario: str = "web",
     confirm_batch_id: str | None = None,
+    permitir_no_comision: bool = False,
 ) -> dict:
     """Crea UNA tx BANCSIS con la suma de N reals y los concilia N:1.
 
@@ -1739,12 +1740,46 @@ def crear_transaccion_agrupada_desde_reals(
         concepto: concepto del mov BANCSIS. Default auto.
         prov: cliente/proveedor a poner. Default vacío.
         usuario: para auditoría.
+        permitir_no_comision: escape hatch. Por default RECHAZA filas que no
+            categoricen como COMISION (ver backstop en el cuerpo).
+
+    Raises:
+        ValueError: si las filas se compensan a cero, o si alguna no es
+            comisión/impuesto.
 
     Returns:
         {id_transaccion, saldo_nuevo, documento, n_matches, monto_neto}
     """
     if not reals:
         raise ValueError("reals vacío — necesito al menos 1 mov para agrupar.")
+
+    # ⛔ BACKSTOP 2026-08-11 — el agrupado es SÓLO para comisiones/impuestos.
+    #
+    # El 07/08 este endpoint creó una NC de $7.404,88 rotulada "Comisiones e
+    # impuestos" que en realidad eran CINCO cobranzas de clientes (Oñate,
+    # Marroquín, Dayío, Erazo). La causa fue un corrimiento de índices, ya
+    # arreglado con firmas; esto es el cinturón además de los tirantes: aunque
+    # algo vuelva a mandar las filas equivocadas, si no son comisiones no se
+    # agrupan. Una transferencia de un cliente es plata de alguien: tiene que
+    # entrar por Cobranza y aplicarse a sus facturas, no desaparecer adentro
+    # de un bulto.
+    if not permitir_no_comision:
+        from modules.conciliacion.categorizar import categorizar
+        intrusos = []
+        for r in reals:
+            cat = categorizar(r.concepto or "", (r.tipo or "").upper())
+            if (getattr(cat, "grupo", "") or "").upper() != "COMISION":
+                intrusos.append(f"{(r.concepto or '?')[:40]} (${float(r.monto or 0):,.2f})")
+        if intrusos:
+            raise ValueError(
+                "El agrupado es sólo para comisiones e impuestos, y "
+                f"{len(intrusos)} de los movimientos marcados no lo son: "
+                + "; ".join(intrusos[:5])
+                + (" …" if len(intrusos) > 5 else "")
+                + ". Si es una cobranza, cargala por Cobranza y aplicala a "
+                "las facturas del cliente."
+            )
+
     import bank_helpers
 
     # Sumas signadas.

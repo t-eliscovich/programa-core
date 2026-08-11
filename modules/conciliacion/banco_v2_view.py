@@ -2414,6 +2414,39 @@ def banco_diferencia_confirmar():
 # ─── Endpoint Tab Impuestos ───────────────────────────────────────────
 
 
+def _resolver_reals_impuestos(movs, real_sigs, real_idxs, *, etapa: str):
+    """Resuelve las filas del banco elegidas en el tab Impuestos.
+
+    Firma como PRIMARIO (no se corre); el índice queda sólo como fallback
+    para un front viejo cacheado, y en ese caso se re-corre el matcher como
+    antes. Ver `sesion.resolver_por_firmas` para la historia del bug.
+
+    Returns:
+        (subset, faltantes)
+    """
+    if real_sigs:
+        subset, faltantes = _sesion.resolver_por_firmas(movs, real_sigs)
+        _LOG.info(
+            "impuestos %s: resolución por firma %d/%d",
+            etapa, len(subset), len(real_sigs),
+        )
+        return subset, faltantes
+
+    from modules.conciliacion.matcher_banco import matchear_extracto_banco
+    try:
+        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
+        real_only = res.real_only or []
+    except Exception as e:
+        _LOG.exception("re-match para %s impuestos falló: %s", etapa, e)
+        real_only = []
+    subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+    _LOG.info(
+        "impuestos %s: resolución por idx (front viejo) %d/%d sobre real_only[%d]",
+        etapa, len(subset), len(real_idxs), len(real_only),
+    )
+    return subset, []
+
+
 @conciliacion_bp.route("/banco-v2/impuestos/preview", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
@@ -2430,23 +2463,28 @@ def banco_impuestos_preview():
         flash("Sesión inválida o cerrada.", "error")
         return redirect(url_for("conciliacion.hub"))
 
+    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
+    real_sigs = [x for x in real_sigs_csv.split("||") if x.strip()]
     try:
         real_idxs = [int(x) for x in (request.form.get("real_idxs") or "").split(",") if x.strip()]
     except ValueError:
         real_idxs = []
-    if not real_idxs:
+    if not real_sigs and not real_idxs:
         flash("No marcaste ningún movimiento.", "warn")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
 
-    from modules.conciliacion.matcher_banco import matchear_extracto_banco
     movs = _sesion.cargar_movs(sesion)
-    try:
-        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
-        real_only = res.real_only or []
-    except Exception as e:
-        _LOG.exception("re-match para preview impuestos falló: %s", e)
-        real_only = []
-    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+    real_subset, faltantes = _resolver_reals_impuestos(
+        movs, real_sigs, real_idxs, etapa="preview",
+    )
+    if faltantes:
+        flash(
+            f"{len(faltantes)} de los movimientos marcados ya no están como "
+            "pendientes (alguien los concilió mientras tenías la pantalla "
+            "abierta). Volvé a abrir el tab Impuestos y marcalos de nuevo.",
+            "error",
+        )
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
     if not real_subset:
         flash("Los movimientos seleccionados ya no existen.", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
@@ -2509,6 +2547,9 @@ def banco_impuestos_preview():
         balance_before=balance_before,
         balance_after=balance_after,
         real_idxs_csv=",".join(str(i) for i in real_idxs),
+        # Las firmas salen del subset YA RESUELTO: lo que se confirma es
+        # exactamente lo que se muestra en esta pantalla.
+        real_sigs_csv="||".join(_sesion.firma_mov(m) for m in real_subset),
     )
 
 
@@ -2525,38 +2566,33 @@ def banco_impuestos_confirmar():
         flash("Sesión inválida o cerrada.", "error")
         return redirect(url_for("conciliacion.hub"))
 
+    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
+    real_sigs = [x for x in real_sigs_csv.split("||") if x.strip()]
     try:
         real_idxs = [int(x) for x in (request.form.get("real_idxs") or "").split(",") if x.strip()]
     except ValueError:
         real_idxs = []
-    if not real_idxs:
+    if not real_sigs and not real_idxs:
         flash("No marcaste ningún movimiento.", "warn")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
 
-    # CRITICAL FIX 2026-05-29: re-correr el matcher para que los idxs
-    # apunten a res.real_only (filtrado), NO a la lista cruda del extracto.
-    # Antes movs[i] devolvía un mov COMPLETAMENTE DISTINTO (depósitos por
-    # $15K) en lugar del impuesto de \$0.05 → suma 67K en lugar de 14.
-    from modules.conciliacion.matcher_banco import matchear_extracto_banco
+    # TMT 2026-08-11 — ver _resolver_reals_impuestos: las POSICIONES se
+    # corren solas y el 07/08 agruparon 5 transferencias de clientes
+    # ($7.404,88) creyendo que eran las comisiones tildadas.
     movs = _sesion.cargar_movs(sesion)
-    try:
-        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
-        real_only = res.real_only or []
-    except Exception as e:
-        _LOG.exception("re-match para confirmar impuestos falló: %s", e)
-        real_only = []
-    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+    real_subset, faltantes = _resolver_reals_impuestos(
+        movs, real_sigs, real_idxs, etapa="confirmar",
+    )
+    if faltantes:
+        flash(
+            f"{len(faltantes)} de los movimientos marcados ya no están como "
+            "pendientes. No creé nada — volvé a marcarlos en el tab Impuestos.",
+            "error",
+        )
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
     if not real_subset:
         flash("Los movimientos seleccionados ya no existen en la sesión.", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
-
-    # Sanity check: si la suma supera $1000 lo más probable es que la
-    # dueña seleccionó cosas grandes por error (default checked roto).
-    # Pedimos confirmación adicional en backend levantando warning.
-    total_signed = sum(float(r.monto) for r in real_subset if (r.tipo or '').upper()=='C') \
-                 - sum(float(r.monto) for r in real_subset if (r.tipo or '').upper()=='D')
-    if abs(total_signed) > 1000:
-        _LOG.warning("Impuestos confirmar con neto inusual: %.2f n=%d", total_signed, len(real_subset))
 
     fecha_str = (request.form.get("fecha") or "").strip()
     concepto = (request.form.get("concepto") or "").strip() or None

@@ -54,6 +54,11 @@
                      data-fecha="{{ m.fecha.isoformat() if m.fecha else '' }}"
                      data-doc="{{ m.documento or '' }}"
                      data-concepto="{{ (m.concepto or '')|truncate(80,True,'') }}"
+                     {# TMT 2026-08-11: la FIRMA es lo que se manda al server.
+                        El value (índice) es sólo fallback de front viejo — las
+                        posiciones se corren y el 07/08 agruparon 5 cobranzas
+                        de clientes por $7.404,88. #}
+                     data-sig="{{ (m.fecha.isoformat() if m.fecha else '') }}|{{ m.documento or '' }}|{{ '%.2f'|format(m.monto|float) }}|{{ m.tipo or '' }}"
                      class="accent-amber-600">
             </td>
             <td class="px-2 py-1 text-slate-500">{{ m.fecha.strftime('%Y-%m-%d') if m.fecha else '—' }}</td>
@@ -80,6 +85,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
     <input type="hidden" name="real_idxs" id="imp-real-idxs" value="">
+    <input type="hidden" name="real_sigs" id="imp-real-sigs" value="">
 
     <div class="grid grid-cols-3 gap-3 text-xs">
       <label class="block">
@@ -116,16 +122,17 @@
 (function(){
   function getSel(){
     var sec = document.querySelector('[data-panel="impuestos"]');
-    if (!sec) return {idxs: [], total: 0, count: 0, fechas: []};
-    var idxs = [], total = 0, fechas = [];
+    if (!sec) return {idxs: [], sigs: [], total: 0, count: 0, fechas: []};
+    var idxs = [], sigs = [], total = 0, fechas = [];
     sec.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
       if (!cb.dataset.monto) return;
       idxs.push(cb.value);
+      if (cb.dataset.sig) sigs.push(cb.dataset.sig);
       var signo = (cb.dataset.tipo === 'C') ? 1 : -1;
       total += signo * (parseFloat(cb.dataset.monto)||0);
       if (cb.dataset.fecha) fechas.push(cb.dataset.fecha);
     });
-    return {idxs: idxs, total: total, count: idxs.length, fechas: fechas};
+    return {idxs: idxs, sigs: sigs, total: total, count: idxs.length, fechas: fechas};
   }
   function updateUI(){
     var s = getSel();
@@ -163,6 +170,7 @@
       btn.disabled = true;
       btn.textContent = 'Procesando…';
       document.getElementById('imp-real-idxs').value = s.idxs.join(',');
+      document.getElementById('imp-real-sigs').value = s.sigs.join('||');
       document.getElementById('imp-form').submit();
     });
   }

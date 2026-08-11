@@ -673,6 +673,56 @@ def restaurar_movs_extracto(sesion_id: int) -> int:
 # ─── Bucketización del resultado del matcher ──────────────────────────
 
 
+def firma_mov(mov) -> str:
+    """Firma estable de un movimiento del extracto: fecha|documento|monto|tipo.
+
+    TMT 2026-08-11: es la MISMA firma que ya usaban manual/confirmar,
+    descartar-banco y cruzar, cada uno con su copia local. Vive acá una
+    sola vez para que las cuatro pantallas no puedan divergir.
+    """
+    fecha = getattr(mov, "fecha", None)
+    return "|".join([
+        fecha.isoformat() if fecha else "",
+        getattr(mov, "documento", "") or "",
+        f"{float(getattr(mov, 'monto', 0) or 0):.2f}",
+        getattr(mov, "tipo", "") or "",
+    ])
+
+
+def resolver_por_firmas(movs, sigs) -> tuple[list, list]:
+    """Resuelve firmas contra el payload CRUDO de la sesión.
+
+    ⚠ POR QUÉ EXISTE (bug del 07/08/2026, $7.404,88):
+    el tab Impuestos mandaba POSICIONES dentro de `real_only`, la lista de
+    filas del banco sin match. El endpoint re-corre el matcher en cada POST,
+    así que apenas algo se concilia esa lista se ACORTA y las mismas
+    posiciones pasan a apuntar a OTRAS filas. Un doble submit del botón
+    Confirmar (0,66 s de diferencia) agrupó 5 transferencias de clientes
+    creyendo que eran las comisiones tildadas, y las tapó con una NC de
+    $7.404,88 rotulada "Comisiones e impuestos".
+
+    La firma no se corre: identifica la fila por su contenido.
+
+    Returns:
+        (subset, faltantes) — `faltantes` son las firmas que ya no están en
+        el extracto. El que llama TIENE que frenar si hay faltantes: una
+        firma que no resuelve significa que la fila cambió de estado desde
+        que se renderizó la pantalla, y seguir de largo es exactamente el
+        silencio que causó el bug.
+    """
+    sig_a_mov = {}
+    for m in movs or []:
+        sig_a_mov[firma_mov(m)] = m
+    subset, faltantes = [], []
+    for sig in (sigs or []):
+        mov = sig_a_mov.get(sig)
+        if mov is None:
+            faltantes.append(sig)
+        else:
+            subset.append(mov)
+    return subset, faltantes
+
+
 def _es_comision(cat) -> bool:
     """True si la categoría es COMISION (impuestos bancarios, comisiones, SENAE)."""
     if not cat:
