@@ -198,7 +198,7 @@ Cada par de fuentes que debe coincidir, con check automático:
 clases de templates ↔ tailwind.css, links hardcodeados ↔ url_map
 (generalizar `test_historial_links_resuelven` a TODOS los templates).
 
-## Cheques — dos cosas que salieron a la luz el 11/08/2026
+## Cheques — lo que salió a la luz el 11/08/2026
 
 - **El GS del cheque protestado no se cobra.** `MODIFICA.PRG` (L314-318): cuando
   el dBase emitía la ND de un cheque devuelto, metía ADEMÁS un segundo renglón
@@ -209,11 +209,6 @@ clases de templates ↔ tailwind.css, links hardcodeados ↔ url_map
   Verificar cuántos protestos hay desde el 12/07 antes de decidir si se
   backfillea o sólo se agrega de acá en adelante.
 
-- **El aviso de duplicado de /cheques/nuevo hace retipear todo** (reporte de
-  Alex, 11/08): cuando salta "Posible duplicado", tildar «Es otro cheque, no es
-  duplicado» y volver a guardar pierde el **banco emisor** y el **N° de doc.
-  banco** ya cargados, y hay que ingresarlos de nuevo. El aviso está bien; lo
-  que está mal es que el re-render no repueble esos dos campos.
 
 ---
 

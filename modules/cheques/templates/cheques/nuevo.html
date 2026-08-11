@@ -184,9 +184,26 @@
               {# header del bloque — JS lo rellena con "#N · × quitar" cuando hay
                  más de un cheque. Vacío en el primero. #}
               <div class="bloque-header hidden mb-1 text-[10px] text-slate-500 flex items-center justify-end gap-2"></div>
+              {# ⭐ TMT 2026-08-11 (Alex): el PRIMER bloque se re-poblaba desde
+                 `form.no_cheque` / `form.importe` / `form.no_banco` sueltos, y
+                 esos tres son lo único que el backend dejaba ahí. `no_banco` a
+                 secas ni siquiera existe en el POST —el form manda `no_banco[]`—
+                 así que volvía None, y `stat` y `doc_banco` no se guardaban en
+                 ningún lado. El JS que re-arma los bloques (#cheques-restore)
+                 arranca con `lista.length <= 1: return`, o sea que con UN cheque
+                 —el caso normal— no restauraba nada.
+
+                 Resultado: cada vez que el form volvía con un error (típico: el
+                 aviso de posible duplicado, que obliga a tildar y volver a
+                 guardar) había que retipear banco emisor, doc. banco y estado.
+
+                 `form.cheques[0]` ya trae los seis campos crudos. Los sueltos
+                 quedan de fallback porque el alta desde /clientes/nuevo vuelve
+                 por querystring, sin `cheques`. #}
+              {% set c0 = (form.cheques or [{}])[0] %}
               <div class="cobranza-chq-row">
                 {# Importe #}
-                <input type="text" name="importe[]" value="{{ form.importe or '' }}"
+                <input type="text" name="importe[]" value="{{ c0.importe or form.importe or '' }}"
                        class="w-full border rounded px-2 py-1 text-right font-mono text-sm cheque-imp" required
                        placeholder="0,00" aria-label="Importe">
                 {# Banco emisor (por cheque). 90/91/95/97/99 = depósitos/efectivo/anticipo. #}
@@ -194,21 +211,21 @@
                   <option value="">— banco —</option>
                   {% for b in bancos %}
                     <option value="{{ b.no_banco }}"
-                            {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
+                            {% set _b0 = c0.no_banco or form.no_banco %}{% if _b0 and _b0|string == b.no_banco|string %}selected{% endif %}>
                       {{ b.no_banco }} · {{ b.nombre }}
                     </option>
                   {% endfor %}
                 </select>
                 {# N° cheque — celda SIEMPRE presente (visibility) para no desalinear. #}
                 <div class="cheque-num-wrap">
-                  <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
+                  <input type="text" name="no_cheque[]" value="{{ c0.no_cheque or form.no_cheque or '' }}"
                          class="w-full border rounded px-2 py-1 font-mono text-sm cheque-num" maxlength="10" required
                          placeholder="N°" aria-label="N° cheque">
                   <span class="cheque-num-req hidden"></span>
                 </div>
                 {# A depositar #}
                 <div class="cheque-fechad-wrap">
-                  <input type="date" name="fechad[]" value="{{ form.fechad_iso or form.fechad or '' }}"
+                  <input type="date" name="fechad[]" value="{{ ((c0.fechad or form.fechad_iso or form.fechad or '')|string)[:10] }}"
                          class="w-full border rounded px-2 py-1 text-sm cheque-fechad" aria-label="A depositar">
                   <span class="cheque-fechad-req hidden"></span>
                 </div>
@@ -220,18 +237,19 @@
                    que se guardaba. El JS la sincroniza con el banco elegido. #}
                 <select name="stat[]" class="w-full border rounded px-1 py-1 text-sm cheque-stat" aria-label="Estado"
                         title="Z=En cartera · P=Postdatado · D=Daniela · B=Depositado · C=Efectivo (caja) · X=Anulado · 1/2=Devuelto">
-                  <option value="Z" {% if not form.stat or form.stat == 'Z' %}selected{% endif %}>Z</option>
-                  <option value="P" {% if form.stat == 'P' %}selected{% endif %}>P</option>
-                  <option value="D" {% if form.stat == 'D' %}selected{% endif %}>D</option>
-                  <option value="B" {% if form.stat == 'B' %}selected{% endif %}>B</option>
-                  <option value="C" {% if form.stat == 'C' %}selected{% endif %}>C</option>
-                  <option value="X" {% if form.stat == 'X' %}selected{% endif %}>X</option>
-                  <option value="1" {% if form.stat == '1' %}selected{% endif %}>1</option>
-                  <option value="2" {% if form.stat == '2' %}selected{% endif %}>2</option>
+                  {% set _s0 = c0.stat or form.stat or 'Z' %}
+<option value="Z" {% if _s0 == 'Z' %}selected{% endif %}>Z</option>
+                  <option value="P" {% if _s0 == 'P' %}selected{% endif %}>P</option>
+                  <option value="D" {% if _s0 == 'D' %}selected{% endif %}>D</option>
+                  <option value="B" {% if _s0 == 'B' %}selected{% endif %}>B</option>
+                  <option value="C" {% if _s0 == 'C' %}selected{% endif %}>C</option>
+                  <option value="X" {% if _s0 == 'X' %}selected{% endif %}>X</option>
+                  <option value="1" {% if _s0 == '1' %}selected{% endif %}>1</option>
+                  <option value="2" {% if _s0 == '2' %}selected{% endif %}>2</option>
                 </select>
                 {# Doc. banco — N° de depósito/transferencia. Para depósito/efectivo
                    es el campo que importa (la dueña: "que pase directo al doc banco"). #}
-                <input type="text" name="doc_banco[]" value="{{ form.doc_banco or '' }}"
+                <input type="text" name="doc_banco[]" value="{{ c0.doc_banco or form.doc_banco or '' }}"
                        class="w-full border rounded px-2 py-1 font-mono text-sm cheque-docbanco"
                        maxlength="40" placeholder="N° depósito/transf." aria-label="Doc. banco">
                 {# Concepto — TMT 2026-08-04 (Alex: "podemos colocar de forma
@@ -252,7 +270,7 @@
                    Ahora sale sólo con banco 97·ANTICIPO. Ver el toggle en
                    `configurarBloque`. #}
                 <div class="chq-full cheque-concepto-wrap hidden">
-                  <input type="text" name="concepto[]" value="{{ form.concepto or '' }}"
+                  <input type="text" name="concepto[]" value="{{ c0.concepto or form.concepto or '' }}"
                          list="conceptos-cobro" autocomplete="off"
                          class="w-full border rounded px-2 py-1 text-sm cheque-concepto"
                          maxlength="{{ conceptos_max_len }}"
@@ -2508,6 +2526,8 @@
     if (!dataEl) return;
     let lista;
     try { lista = JSON.parse(dataEl.textContent) || []; } catch (e) { return; }
+    // Con UN cheque el primer bloque ya viene poblado por Jinja (c0);
+    // acá sólo hay que CLONAR los bloques 2..N. TMT 2026-08-11.
     if (!Array.isArray(lista) || lista.length <= 1) return;
     const base = chequesList.querySelector('.cheque-bloque');
     if (!base) return;
