@@ -44,20 +44,46 @@ un retiro puntual y `/retiros` se borra ("no tenemos que tener basura",
 Dueña 2026-08-07, mirando el +$7.340 de la traza: *"debería ese movimiento
 armarse con la fecha de hoy, no con el 05/08"*.
 
-Los dos movimientos de *Comisiones e impuestos 17/06-05/08* (NC $7.404,88 y ND
-$64,73) los cargó Alex el **07/08 a las 12:00** con `fecha = 2026-08-05`. Mueven
-la utilidad de HOY pero viven en la fila de anteayer, así que quien los busca
-por la fecha del salto no los encuentra — le pasó a la dueña en la pantalla de
-PICHINCHA. Es la misma trampa que costó el día del 03/08.
+El ND de *Comisiones e impuestos 17/06-05/08* ($64,73) lo cargó Alex el **07/08
+a las 17:00** con `fecha = 2026-08-05`. Mueve la utilidad de HOY pero vive en la
+fila de anteayer, así que quien lo busca por la fecha del salto no lo encuentra
+— le pasó a la dueña en la pantalla de PICHINCHA. Es la misma trampa que costó
+el día del 03/08.
 
 Dos pedazos, y conviene el segundo primero:
 
 1. **Que no vuelva a pasar** — la pantalla de carga propone HOY por defecto y
    pide confirmación explícita si la fecha es anterior. `modules/bancos/`.
-2. **Corregir esas dos filas** — por la pantalla de bancos, no por SQL.
+2. **Corregir esa fila** — por la pantalla de bancos, no por SQL.
    🚨 `transacciones_bancarias.saldo` es un saldo corrido ALMACENADO: cambiar
    la fecha reordena las filas y reescribe la cadena hacia adelante. Verificar
    con `/admin/health/cadena-saldos` antes y después.
+
+⚠ El OTRO movimiento de ese par (la NC de $7.404,88, tx 45429) **ya no existe**:
+el 11/08 se descubrió que no eran comisiones sino CINCO cobranzas de clientes
+del 05/08 que el agrupado se tragó por un corrimiento de índices, y se anuló por
+`/conciliacion/banco-v2/deshacer`. El bug de código está arreglado; lo que queda
+es cargar esas cobranzas — ver abajo.
+
+### [M] Cargar las 5 cobranzas del 05/08 que estaban adentro de la NC $7.404,88
+
+Los cinco créditos del extracto del 05/08 volvieron a quedar **pendientes de
+banco** en la sesión abierta (panel Banco). Ninguno está aplicado a facturas, así
+que hoy esos clientes figuran debiendo plata que ya pagaron. Tamara (11/08): las
+carga Alex por Cobranza, no por script.
+
+| Extracto (doc) | Monto | Cliente | Contra qué |
+|---|---|---|---|
+| 53443956 | 1.142,96 | MMA · Marroquín Espinosa | FIFO (debe 38.066,95) |
+| 56804542 | 72,30 | ❓ sin identificar | — |
+| 71519723 | 3.099,52 | ADO · Oñate Oñate | factura 180981, importe idéntico |
+| 55685078 | 2.568,54 | DYS · Dayío Sports | sus 4 facturas abiertas, suman exacto |
+| 59356148 | 521,56 | YGE · Erazo Melendrez | **ya cargada** el 11/08 (cheque 102153) |
+
+Dos notas: el crédito de YGE **no se vuelve a cargar** — su depósito ya está en
+el libro con fecha 11/08 y lo que falta es cruzarlo contra el crédito del 05/08
+en el panel de conciliación. Y los $72,30 no tienen cliente reconocible en el
+concepto: hay que preguntarle al banco o buscar un saldo de ese importe.
 
 Mientras tanto, la traza debería decir de qué FECHA es el movimiento bancario y
 no sólo el importe.
