@@ -17,6 +17,7 @@ Dos defensas, un test para cada una:
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -136,3 +137,48 @@ def test_el_neto_cero_sigue_explotando_por_su_propio_motivo():
 def test_reals_vacio_sigue_explotando():
     with pytest.raises(ValueError, match="vacío"):
         crear_transaccion_agrupada_desde_reals(no_banco=10, reals=[], usuario="test")
+
+
+# ── El espejo: la firma del HTML y la del server tienen que ser LA MISMA ──
+
+
+def test_la_firma_del_template_es_igual_a_la_del_server():
+    """`data-sig` se arma en Jinja y `firma_mov` en Python: son dos
+    implementaciones de la misma cosa. Si una cambia el formato (el `%.2f`,
+    el orden, el separador), las firmas dejan de resolver y todo el tab cae
+    silenciosamente al fallback por índice — o sea, vuelve el bug.
+    """
+    import pathlib
+
+    from jinja2 import Environment, FileSystemLoader
+
+    import filters as _filters
+
+    dirs = [str(p) for p in pathlib.Path(".").glob("modules/*/templates")] + ["templates"]
+    env = Environment(loader=FileSystemLoader(dirs), autoescape=True)
+    env.globals.update(url_for=lambda *a, **k: "#", csrf_token=lambda: "x")
+    for nombre in dir(_filters):
+        fn = getattr(_filters, nombre)
+        if callable(fn) and not nombre.startswith("_"):
+            env.filters[nombre] = fn
+
+    tpl = env.get_template("conciliacion/_banco_v2_tab_impuestos.html")
+    # Los montos tienen que incluir casos donde el formato IMPORTA: un
+    # Decimal("12.5") crudo imprime "12.5" y el server firma "12.50". Con
+    # montos de dos decimales exactos el test no distingue nada.
+    casos = [
+        COMISIONES[0], COMISIONES[2], COBRANZAS[3],
+        _mov("COMISION REDONDA", "12.5", "9100", tipo="D"),
+        _mov("IVA COMISION", "40", "9101", tipo="D"),
+        _mov("IMPUESTO", "1234.5", "9102", tipo="D"),
+    ]
+    for mov in casos:
+        html = tpl.render(
+            buckets={"impuestos": [{"mov": mov, "cat": None, "idx": 0}]},
+            sesion={"id": 1},
+        )
+        sig_html = re.search(r'data-sig="([^"]+)"', html)
+        assert sig_html, "el checkbox perdió el data-sig"
+        assert sig_html.group(1) == _sesion.firma_mov(mov), (
+            "la firma del HTML y la del server se desincronizaron"
+        )
