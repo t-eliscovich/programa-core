@@ -551,6 +551,10 @@ def test_el_cuadradito_de_la_lista_dice_el_CODIGO_de_3_letras(
     html = vendedor_logueado.get("/mi-cartera/clientes").data.decode()
     assert '<div class="ini cod">RTU</div>' in html
     assert '<div class="ini">RT</div>' not in html
+    # Y el renglón de abajo NO lo repite: quedó sólo la provincia.
+    fila = html.split('class="rowitem"')[1]
+    assert "<span>RTU" not in fila
+    assert "<span>PICHINCHA</span>" in fila
 
 
 def test_el_redondel_de_la_cuenta_dice_el_codigo_del_vendedor(

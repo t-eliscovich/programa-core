@@ -87,7 +87,11 @@
       <div class="ini cod">{{ c.codigo_cli|upper }}</div>
       <div class="nm">
         <b>{{ c.nombre }}</b>
-        <span>{{ c.codigo_cli }}{% if c.provincia %} · {{ c.provincia }}{% endif %}</span>
+        {# El código NO se repite acá: ya lo dice el cuadradito de la
+           izquierda, entero y en negrita. TMT 2026-08-11, después de subirlo
+           al cuadradito. Sin provincia no se dibuja el renglón — un <span>
+           vacío deja un hueco que no se entiende. #}
+        {% if c.provincia %}<span>{{ c.provincia }}</span>{% endif %}
       </div>
       <div class="amt">
         <b>$ {{ c.saldo|money_es }}</b>
