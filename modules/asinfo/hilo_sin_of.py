@@ -307,23 +307,20 @@ def _titulo(caso: dict) -> str:
 
 
 def _detalle(caso: dict) -> str:
-    from filters import num_es
+    """Dos renglones y se acabó.
 
+    🚨 TMT 2026-08-11, viendo la campanita: *"está muy largo el mensaje"*. La
+    primera versión explicaba el mecanismo entero —qué es el material en
+    proceso, por qué la bodega baja— arriba de un título que ya lo decía todo.
+    En un buzón, lo que no se lee de un vistazo no se lee. Queda sólo lo que
+    hace falta para ir a arreglarlo: cuál despacho, de quién, a qué hora.
+    """
     partes = [caso["numero"]]
     if caso.get("descripcion"):
         partes.append(caso["descripcion"])
     if caso.get("creado"):
-        partes.append(caso["creado"])
-    cabeza = " · ".join(partes)
-
-    return (
-        f"{cabeza}\n\n"
-        f"El {caso['material']} despachado sin orden de fabricación no cuenta "
-        f"como material en proceso: la bodega baja {num_es(caso['kg'], 0)} kg y "
-        "no entran a ningún lado.\n\n"
-        "Se arregla creando la orden en Asinfo y colgándole este despacho. "
-        "En la foto siguiente los kilos vuelven."
-    )
+        partes.append(caso["creado"][-5:])       # la hora; el día ya está arriba
+    return " · ".join(partes) + "\nCargale la orden en Asinfo y vuelven."
 
 
 def _archivar_resueltos(abiertos_ahora: set[str]) -> int:

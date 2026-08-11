@@ -119,6 +119,9 @@ def _titulo(casos: list[dict]) -> str:
 
 
 def _detalle(casos: list[dict]) -> str:
+    """La lista pelada. El título ya dice cuántos y cuántos kilos son, y en un
+    buzón lo que no se lee de un vistazo no se lee (dueña 2026-08-11: *"está
+    muy largo el mensaje"*)."""
     from filters import num_es
 
     lineas = []
@@ -126,11 +129,7 @@ def _detalle(casos: list[dict]) -> str:
         nota = f" · {c['nota']}" if c["nota"] else ""
         lineas.append(f"{c['creado']} · {c['numero']} · "
                       f"{num_es(c['kg'], 1)} kg{nota}")
-    return (
-        "\n".join(lineas)
-        + "\n\nLa bodega bajó esos kilos y todavía no hay factura que los "
-          "respalde. Nueve de cada diez despachos se facturan dentro de la hora."
-    )
+    return "\n".join(lineas)
 
 
 def correr_si_toca() -> dict:

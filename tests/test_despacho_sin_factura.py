@@ -57,8 +57,8 @@ def test_el_detalle_lista_cada_despacho_con_hora_numero_y_glosa():
     """Sin el número no se puede ir a buscarlo; sin la glosa no se sabe cuál es."""
     _, puestos = _correr(CASOS)
     d = puestos[0]["detalle"]
-    assert "10:07 · DES-000095134 · 987,8 kg · TONO CEN S/M ADJUNTO FOTO" in d
-    assert "09:41 · DES-000095133 · 47,6 kg" in d
+    assert d == ("10:07 · DES-000095134 · 987,8 kg · TONO CEN S/M ADJUNTO FOTO\n"
+                 "09:41 · DES-000095133 · 47,6 kg")
 
 
 def test_antes_de_las_17_no_dice_nada():

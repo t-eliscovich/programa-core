@@ -68,9 +68,9 @@ def test_el_detalle_lleva_el_numero_de_despacho_y_la_glosa():
     ir a Asinfo y encontrar EXACTAMENTE ese despacho."""
     _, puestos, _arch = _correr([_caso()])
     d = puestos[0]["detalle"]
-    assert "OSM-000010458" in d
-    assert "A PONCE PENDIENTE 180/C KW22" in d
-    assert "2026-08-11 07:33" in d
+    assert d == ("OSM-000010458 · A PONCE PENDIENTE 180/C KW22 · 07:33\n"
+                 "Cargale la orden en Asinfo y vuelven.")
+    assert len(d) < 120      # dueña: "está muy largo el mensaje"
 
 
 def test_habla_en_KILOS_y_de_la_BODEGA_nunca_de_la_utilidad():
@@ -78,8 +78,7 @@ def test_habla_en_KILOS_y_de_la_BODEGA_nunca_de_la_utilidad():
     Quien recibe el aviso es quien despacha: lo que puede arreglar son kilos."""
     _, puestos, _arch = _correr([_caso()])
     a = puestos[0]
-    assert "la bodega baja 4.860 kg" in a["detalle"]
-    assert "utilidad" not in a["detalle"].lower()
+    assert "utilidad" not in (a["titulo"] + a["detalle"]).lower()
     assert "$" not in a["detalle"]
     assert a.get("importe") is None
     assert a["cantidad"] == 4860
