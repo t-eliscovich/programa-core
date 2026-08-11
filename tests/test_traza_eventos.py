@@ -23,10 +23,27 @@ if _REPO_ROOT not in sys.path:
 from modules.informes import eventos as ev  # noqa: E402
 from modules.informes import traza as t  # noqa: E402
 
+#: Ids fabricados para los `mov_doble` de mentira. Estables (misma clave →
+#: mismo id) y ÚNICOS (claves distintas → ids distintos).
+#:
+#: 🚨 Antes era `abs(hash((tipo, oid, did))) % 10000`, y ahí vivía el flaky que
+#: puso el CI en rojo el 11/08/2026 con "retenciones · 4 facturas" en vez de 5.
+#: `hash()` de una tupla con strings está ALEATORIZADO por proceso
+#: (PYTHONHASHSEED), así que dos eventos distintos podían caer en el mismo id
+#: según la corrida — y el renglón cuenta los hechos con `len(g["hechos"])`,
+#: que es un SET de `id_mov_doble` (traza.py:1187). Dos ids iguales = un hecho
+#: menos. La plata seguía dando bien (−50,00, los cinco movimientos) y sólo
+#: mentía el número: por eso fallaba una de cada mil corridas y nunca a mano.
+_IDS: dict[tuple, int] = {}
+
+
+def _id_mov(clave: tuple) -> int:
+    return _IDS.setdefault(clave, len(_IDS) + 1)
+
 
 def _ev(tipo, origen, oid, destino, did, importe=0.0, batch=None, concepto="",
         metadata=None):
-    return {"id_mov_doble": abs(hash((tipo, oid, did))) % 10000,
+    return {"id_mov_doble": _id_mov((tipo, oid, did)),
             "batch_id": batch, "tipo": tipo, "metadata": metadata or {},
             "origen_table": origen, "origen_id": oid,
             "destino_table": destino, "destino_id": did,
@@ -831,3 +848,31 @@ def test_la_frase_de_lo_cargado_se_arma_sin_base():
     assert fr([{"k": "compra", "quien": "AVQ", "n": 1, "q": 200},
                {"k": "ajuste", "quien": "", "n": 2, "q": 30}]) == \
         "se cargaron una compra a AVQ (200 u.) y 2 ajustes de inventario"
+
+
+# ── el guardián del flaky ───────────────────────────────────────────────────
+
+def test_los_ids_de_mentira_son_unicos_y_estables():
+    """El renglón cuenta los hechos con un SET de `id_mov_doble`: dos ids
+    iguales son un hecho menos, y el test falla una de cada mil corridas.
+    Estables (misma clave → mismo id) para no romper los que comparan dos
+    llamadas; únicos para que no vuelva a pasar."""
+    a = _ev("retencion_asinfo_aplicada", "factura", 8001, "factura", 8001)
+    b = _ev("retencion_asinfo_aplicada", "factura", 8002, "factura", 8002)
+    c = _ev("retencion_asinfo_aplicada", "factura", 8001, "factura", 8001)
+    assert a["id_mov_doble"] != b["id_mov_doble"]
+    assert a["id_mov_doble"] == c["id_mov_doble"]
+
+
+def test_cinco_retenciones_cuentan_cinco_sin_depender_de_la_suerte():
+    """El caso exacto que rojo el CI el 11/08."""
+    filas = [_ev("retencion_asinfo_aplicada", "factura", 8000 + i, "factura",
+                 8000 + i, importe=-10.0, batch="aa" if i <= 3 else "bb")
+             for i in range(1, 6)]
+    assert len({f["id_mov_doble"] for f in filas}) == 5
+    movs = [{"doc_id": f"f{8000 + i}", "componente": "facturas",
+             "aporte": -10.0, "regla": "Abono a factura",
+             "etiqueta": f"Factura {i} · TNZ", "familia": "traspaso"}
+            for i in range(1, 6)]
+    out = t.resumir(movs, -50.0, ev.indice(_con_label(filas)))
+    assert [g["texto"] for g in out] == ["retenciones · 5 facturas"], out
