@@ -726,7 +726,13 @@ def test_los_quimicos_dicen_que_paso_y_no_de_donde_salen():
             "etiqueta": "Stock de químicos (formulas_app)"}
     sale = t.resumir([dict(base, aporte=-143.0)], -143.0, {})[0]
     entra = t.resumir([dict(base, aporte=101.0)], 101.0, {})[0]
-    assert sale["texto"] == "salió de químicos"
+    # 🚨 TMT 2026-08-11: *"esto debería ser consumo en químicos, x órdenes
+    # terminadas"*. No es interpretación: el stock que PC lee de formulas_app
+    # es compras + ajustes − consumo de las órdenes con `fecha_terminado`, así
+    # que la BAJA es exactamente eso.
+    assert sale["texto"] == "consumo de químicos por órdenes terminadas"
+    # La suba se queda genérica a propósito: puede ser compra o ajuste, y
+    # decir "compra" cuando fue un ajuste sería inventar.
     assert entra["texto"] == "entró a químicos"
 
 

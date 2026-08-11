@@ -1103,9 +1103,22 @@ _TXT_QUIMICOS = "Stock de químicos (formulas_app)"
 
 
 def _quimicos(texto: str, aporte: float) -> str:
+    """🚨 TMT 2026-08-11: *"esto debería ser consumo en químicos, x órdenes
+    terminadas"*, sobre "salió de químicos".
+
+    Y es literal, no una interpretación: el stock de químicos que PC lee de
+    formulas_app se arma como compras + ajustes − CONSUMO de las órdenes con
+    `fecha_terminado` (`quimico_inv_formulas`). Cuando la columna baja, lo que
+    pasó es que se cerraron órdenes y su consumo se imputó ese día.
+
+    ⭐ La suba se queda en "entró a químicos": ahí no se puede afirmar tanto
+    —puede ser una compra o un ajuste de inventario— y decir "compra" cuando
+    fue un ajuste sería inventar.
+    """
     if texto != _TXT_QUIMICOS:
         return texto
-    return "entró a químicos" if aporte > 0 else "salió de químicos"
+    return ("entró a químicos" if aporte > 0
+            else "consumo de químicos por órdenes terminadas")
 
 
 def resumir(movs: list[dict], d_utilidad: float | None,
