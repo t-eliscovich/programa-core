@@ -3,7 +3,6 @@
 {% from "_informes_design.html" import informes_styles %}
 {% block title %}Flujo producción {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
-{% include "_partials/hilo_esperando_orden.html" %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
   <strong>Flujo producción</strong>
 {% endblock %}

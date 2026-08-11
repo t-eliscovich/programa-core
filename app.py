@@ -769,24 +769,6 @@ def create_app() -> Flask:
 
         return {"novedades": _novedades}
 
-    # TMT 2026-08-11 (dueña): *"podés en todos lados que mostramos hilo poner un
-    # anuncio, por ejemplo en la pantalla de tejeduría"*. Se inyecta como
-    # FUNCIÓN —igual que la campanita— para que sólo pegue contra Asinfo en las
-    # pantallas que incluyen el partial, y no en todas las de todos.
-    @app.context_processor
-    def _inject_hilo_esperando_orden():
-        def _resumen():
-            try:
-                if not g.get("user"):
-                    return {"kg": 0.0, "n": 0, "material": "hilo"}
-                from modules.asinfo import hilo_sin_of as _hso
-
-                return _hso.resumen_de_hoy()
-            except Exception:  # noqa: BLE001 -- nunca rompe una pantalla
-                return {"kg": 0.0, "n": 0, "material": "hilo"}
-
-        return {"hilo_esperando_orden": _resumen}
-
     @app.route("/")
     def index():
         if not g.get("user"):

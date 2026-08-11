@@ -217,32 +217,6 @@ def _limpiar(descripcion) -> str:
     return s.replace("|Matriz|", "").replace("|", " ").strip(" ·-").strip()
 
 
-def resumen_de_hoy() -> dict:
-    """{kg, n, material} de lo despachado HOY sin orden. Para el anuncio.
-
-    Devuelve `{"kg": 0, "n": 0}` cuando no hay nada — el partial no pinta nada
-    en ese caso, a propósito: un cartel permanente deja de leerse a la semana.
-
-    Fail-soft por partida doble: si Asinfo no contesta, `despachos_sin_of()` ya
-    devuelve [] y acá sale el cero. Un anuncio que no puede leer no inventa.
-    """
-    try:
-        casos = [c for c in despachos_sin_of(dias=0) if c.get("kg")]
-    except Exception as e:  # noqa: BLE001 -- nunca rompe la pantalla que lo llama
-        _LOG.warning("resumen_de_hoy: %s", e)
-        return {"kg": 0.0, "n": 0, "material": "hilo"}
-    if not casos:
-        return {"kg": 0.0, "n": 0, "material": "hilo"}
-    materiales = {c["material"] for c in casos}
-    return {
-        "kg": round(sum(c["kg"] for c in casos), 2),
-        "n": len(casos),
-        # Con las dos bodegas encendidas el anuncio no puede decir "hilo" a
-        # secas: diría una cosa por otra la mitad de las veces.
-        "material": materiales.pop() if len(materiales) == 1 else "material",
-    }
-
-
 #: Hora de Ecuador a la que el placeholder deja de sostener los kilos. Dueña
 #: 2026-08-11: *"al final del día si no fue cargada manda nuevamente aviso y
 #: ahí sí proceder a bajarla"*. A las 18 y no a medianoche: así la baja cae en
