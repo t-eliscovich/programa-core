@@ -119,6 +119,11 @@ def mis_clientes(vend: str) -> list[dict]:
 
     Mismo criterio de saldo que `informes.queries.estado_cuenta_clientes_saldos`
     — si divergen, el vendedor y la dueña discuten sobre números distintos.
+
+    ⚠ El ORDER BY de acá (más vencido primero) NO es el orden de ninguna
+    pantalla: cada una pide el suyo — la lista de clientes por nombre, la hoja
+    impresa por código, las alertas del Inicio por vencido. Es sólo un orden
+    determinístico para que la lista no salga distinta en dos cargas.
     """
     return db.fetch_all(
         f"""

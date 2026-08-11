@@ -508,8 +508,61 @@ def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeyp
     r = vendedor_logueado.get("/mi-cartera/imprimir")
     assert r.status_code == 200
     assert b"Imprimir estados de cuenta" in r.data
-    # Mismo orden que el lote de la oficina: saldo descendente.
-    assert vistos == ["BBB", "AAA"]
+    # Mismo orden que el lote de la oficina: ALFABÉTICO POR CÓDIGO desde el
+    # 04/08 (pedido de Alex). Acá había quedado por saldo descendente —
+    # BBB (900) antes que AAA (100)— y las dos rutas rendean la MISMA hoja.
+    assert vistos == ["AAA", "BBB"]
+
+
+def test_la_lista_de_clientes_sale_alfabetica_por_codigo(vendedor_logueado, monkeypatch):
+    """TMT 2026-08-11: *"que se ordene alfabéticamente"* + *"ordena por codigo todo"*.
+
+    Por CÓDIGO — el MISMO orden que la hoja impresa. Los dos clientes de acá
+    tienen el código y el nombre cruzados a propósito: si se ordenara por
+    nombre, la lista saldría al revés y el test no lo notaría.
+    """
+    monkeypatch.setattr(
+        q, "mis_clientes",
+        lambda vend: [{"codigo_cli": "ZZZ", "nombre": "Almacén", "saldo": 900.0,
+                       "vencido": 900.0, "provincia": "", "n_facturas": 1,
+                       "vence_mas_viejo": None},
+                      {"codigo_cli": "AAA", "nombre": "Zapatería", "saldo": 100.0,
+                       "vencido": 0, "provincia": "", "n_facturas": 1,
+                       "vence_mas_viejo": None}],
+    )
+    html = vendedor_logueado.get("/mi-cartera/clientes").data.decode()
+    assert html.index("Zapatería") < html.index("Almacén")
+
+
+def test_las_alertas_del_inicio_siguen_yendo_por_vencido(vendedor_logueado, monkeypatch):
+    """El Inicio muestra los 5 de MAYOR vencido.
+
+    Colgaba del ORDER BY de `mis_clientes`. Al ordenar la lista de clientes
+    alfabéticamente, si el orden se heredara de la query el Inicio pasaría a
+    mostrar cinco vencidos cualesquiera — sin error y sin síntoma.
+    """
+    from modules.mi_cartera import views
+
+    def _fila(cod, nombre, venc):
+        return {"codigo_cli": cod, "nombre": nombre, "saldo": venc,
+                "vencido": venc, "provincia": "", "n_facturas": 1,
+                "vence_mas_viejo": None}
+
+    monkeypatch.setattr(
+        q, "mis_clientes",
+        lambda vend: [_fila("AAA", "Almacén", 10.0), _fila("ZZZ", "Zapatería", 900.0)],
+    )
+    capturado = {}
+    orig = views.render_template
+
+    def _render(nombre_tpl, **ctx):
+        if nombre_tpl == "mi_cartera/inicio.html":
+            capturado["alertas"] = ctx["alertas"]
+        return orig(nombre_tpl, **ctx)
+
+    monkeypatch.setattr(views, "render_template", _render)
+    vendedor_logueado.get("/mi-cartera")
+    assert [c["codigo_cli"] for c in capturado["alertas"]] == ["ZZZ", "AAA"]
 
 
 def test_el_contador_del_inicio_usa_el_mismo_criterio_que_la_lista(monkeypatch):

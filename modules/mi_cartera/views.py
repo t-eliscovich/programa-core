@@ -182,7 +182,16 @@ def inicio():
         cobrado=queries.cobrado(vend, desde, hasta),
         pendiente=pend,
         barras=barras,
-        alertas=[c for c in queries.mis_clientes(vend) if c["vencido"] > 0][:5],
+        # Las 5 alertas son las de MAYOR vencido. El orden se pide acá y no
+        # se hereda del ORDER BY de la query: la lista de Mis clientes la
+        # ordena alfabéticamente y, si esto colgara del orden de la query,
+        # el Inicio habría pasado a mostrar cinco vencidos cualesquiera sin
+        # que se rompiera nada.
+        alertas=sorted(
+            (c for c in queries.mis_clientes(vend) if c["vencido"] > 0),
+            key=lambda c: float(c.get("vencido") or 0),
+            reverse=True,
+        )[:5],
         # Para el mes se usa la MISMA cuenta que la pantalla de comisión
         # (suma del desglose). Si el Inicio dijera 7,73 y Comisión 7,74, el
         # vendedor no sabe a cuál creerle.
@@ -201,7 +210,23 @@ def clientes():
     filtro = (request.args.get("f") or "saldo").strip().lower()
     q = (request.args.get("q") or "").strip().lower()
 
-    filas = queries.mis_clientes(vend)
+    # TMT 2026-08-11 (dueña): *"en la app de los vendedores también puedes
+    # habilitar que se ordene alfabéticamente"* + *"ordena por codigo todo"*.
+    #
+    # Por CÓDIGO, no por nombre: es el mismo orden con el que sale la hoja
+    # impresa —la de la oficina desde el 04/08— y el vendedor tiene la lista
+    # en el celular y el papel en la mano al mismo tiempo. Dos alfabéticos
+    # distintos en las dos superficies del mismo dato es peor que uno solo,
+    # aunque en pantalla el código se lea chiquito.
+    #
+    # Con 94 clientes, "lo que más debe primero" servía para mirar la cartera,
+    # no para encontrar a alguien — que es a lo que se entra a esta pantalla.
+    # El vencido no se pierde: sigue el tag rojo, el filtro Vencidos y las
+    # alertas del Inicio, que sí van por monto.
+    filas = sorted(
+        queries.mis_clientes(vend),
+        key=lambda c: (c.get("codigo_cli") or "").upper(),
+    )
     if filtro == "vencidos":
         filas = [c for c in filas if c["vencido"] > 0]
     if q:
@@ -323,14 +348,21 @@ def imprimir_todos():
 
     Es el equivalente exacto de
     /informes/estado-cuenta/imprimir?por=vendedor&sel=<código> — mismo
-    template, mismo orden (por saldo descendente), mismo cuerpo por cliente.
-    La diferencia es que el vendedor no elige el `sel`: sale de su sesión.
+    template, MISMO ORDEN, mismo cuerpo por cliente. La diferencia es que el
+    vendedor no elige el `sel`: sale de su sesión.
+
+    ⚠ El orden es ALFABÉTICO POR CÓDIGO porque así imprime la oficina desde el
+    2026-08-04 (pedido de Alex: *"al momento de imprimir vuelve a detectar el
+    orden descendente"*). Acá había quedado por saldo descendente: las dos
+    rutas rendean la misma hoja y venían saliendo en orden distinto, que es
+    justo lo que "imprimir tiene que imprimir lo mismo que acá" no quiere.
+    Por CÓDIGO, igual que la lista de la pantalla: el vendedor tiene las dos
+    cosas delante a la vez.
     """
     vend = _vend_actual()
     filas = sorted(
         queries.mis_clientes(vend),
-        key=lambda r: float(r.get("saldo") or 0),
-        reverse=True,
+        key=lambda r: (r.get("codigo_cli") or "").upper(),
     )
     clientes = []
     for f in filas:
