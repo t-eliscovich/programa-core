@@ -88,12 +88,36 @@ def _chequesxfact_count(conn, id_cheque):
 
 
 def _nd_count(conn, id_cheque):
-    """Notas de débito (ND) compensatorias emitidas para este cheque."""
+    """Notas de débito (ND) COMPENSATORIAS emitidas para este cheque.
+
+    TMT 2026-08-11: un cheque protestado genera DOS movimientos 'ND' con el
+    mismo `numreferencia` — la que compensa el depósito y la del gasto que
+    cobra el banco (`GS. cheq.`, paridad MODIFICA.PRG L314-318). Lo que estos
+    tests protegen es que la COMPENSACIÓN no se duplique, así que el gasto se
+    excluye por su concepto. El prefijo sale del módulo, no copiado acá: es el
+    mismo filtro que usa tests/test_cheques_devuelto_compensa_banco.py.
+    """
+    from modules.cheques.queries import CONCEPTO_GS_PROTESTO
+
     cur = conn.cursor()
     cur.execute(
         "SELECT COUNT(*) FROM scintela.transacciones_bancarias "
-        "WHERE numreferencia=%s AND UPPER(TRIM(COALESCE(documento,'')))='ND'",
-        (id_cheque,),
+        "WHERE numreferencia=%s AND UPPER(TRIM(COALESCE(documento,'')))='ND' "
+        "  AND COALESCE(concepto,'') NOT LIKE %s",
+        (id_cheque, CONCEPTO_GS_PROTESTO + "%"),
+    )
+    return cur.fetchone()[0]
+
+
+def _gs_count(conn, id_cheque):
+    """El gasto bancario del protesto. Tiene que haber UNO por compensación."""
+    from modules.cheques.queries import CONCEPTO_GS_PROTESTO
+
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM scintela.transacciones_bancarias "
+        "WHERE numreferencia=%s AND COALESCE(concepto,'') LIKE %s",
+        (id_cheque, CONCEPTO_GS_PROTESTO + "%"),
     )
     return cur.fetchone()[0]
 

@@ -107,6 +107,12 @@ def test_la_comision_va_con_la_fecha_de_su_nota_de_debito():
 
 
 def test_el_concepto_es_el_del_dbase():
-    """`GS. cheq. <cliente>` — es lo que la dueña busca en el extracto."""
+    """`GS. cheq. <cliente>` — es lo que la dueña busca en el extracto.
+
+    Y es además el discriminante con el que los tests separan el gasto de la ND
+    del cheque (las dos son 'ND' con el mismo `numreferencia`), así que vive en
+    el módulo y no copiado en cada archivo.
+    """
+    assert queries.CONCEPTO_GS_PROTESTO == "GS. cheq."
     src = _fuente(queries._insertar_gs_protesto)
-    assert "GS. cheq." in src
+    assert "CONCEPTO_GS_PROTESTO" in src

@@ -84,11 +84,21 @@ def _nd_del_cheque(rec):
     separarlas — si no, el test no distingue una compensación duplicada (el
     bug que protege) de la comisión legítima.
     """
-    return [n for n in rec.nds if not str(n.get("concepto", "")).startswith("GS. cheq.")]
+    from modules.cheques.queries import CONCEPTO_GS_PROTESTO
+
+    return [
+        n for n in rec.nds
+        if not str(n.get("concepto", "")).startswith(CONCEPTO_GS_PROTESTO)
+    ]
 
 
 def _gs_del_protesto(rec):
-    return [n for n in rec.nds if str(n.get("concepto", "")).startswith("GS. cheq.")]
+    from modules.cheques.queries import CONCEPTO_GS_PROTESTO
+
+    return [
+        n for n in rec.nds
+        if str(n.get("concepto", "")).startswith(CONCEPTO_GS_PROTESTO)
+    ]
 
 
 def test_compensa_genera_nd_y_desagrupa(monkeypatch):

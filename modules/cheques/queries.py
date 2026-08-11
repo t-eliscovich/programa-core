@@ -725,6 +725,12 @@ TRANSICIONES_VALIDAS = {
 # TMT 2026-08-11 (dueña: "hacelo, no es un monto grande").
 GS_PROTESTO_PICHINCHA = 2.0
 GS_PROTESTO_OTRO_BANCO = 5.0
+#: Con qué empieza el concepto del gasto. Es el discriminante para separarlo de
+#: la ND del cheque: las dos son documento 'ND' y las dos llevan
+#: `numreferencia = id_cheque`, así que contar "las ND del cheque" sin filtrar
+#: por acá da 2 donde antes daba 1. Vive en el módulo —y no copiado en cada
+#: test— porque ya rompió dos archivos de tests distintos. TMT 2026-08-11.
+CONCEPTO_GS_PROTESTO = "GS. cheq."
 
 
 def gs_protesto_de(nombre_banco: str | None) -> float:
@@ -786,7 +792,7 @@ def _insertar_gs_protesto(
         fecha=fecha,
         documento="ND",
         importe=gasto,
-        concepto=f"GS. cheq. {(codigo_cli or '').strip()}".strip()[:50],
+        concepto=f"{CONCEPTO_GS_PROTESTO} {(codigo_cli or '').strip()}".strip()[:50],
         prov=codigo_cli,
         numreferencia=id_cheque,
         usuario=usuario,
