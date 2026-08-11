@@ -2675,6 +2675,7 @@ def detalle(id_cheque: int):
         # TMT 2026-07-11 (dueña): dropdown de estado UNIFICADO con la lista —
         # mismas transiciones consistentes (transiciones_para).
         transiciones=queries.transiciones_para(ch.get("stat") or ""),
+        texto_estado=queries.texto_opcion_estado,
     )
 
 
@@ -3560,6 +3561,10 @@ def lista():
         # TMT 2026-07-11 (dueña): mapa EXPANDIDO — cada estado ofrece todos los
         # estados sin movimiento (además de las transiciones con efecto).
         transiciones_legales=queries.transiciones_map(),
+        # UNA sola definición de cómo se LEE cada opción del menú de estado —
+        # la comparten la lista y la ficha. TMT 2026-08-11.
+        texto_estado=queries.texto_opcion_estado,
+        texto_estado_completo=queries.texto_opcion_estado_completo,
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
         hoy_iso=today_ec().isoformat(),

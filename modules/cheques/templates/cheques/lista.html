@@ -714,84 +714,37 @@
                   class="inline ch-trans-form" style="margin:0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="next" value="{{ request.full_path }}">
-              {# TMT 2026-07-20 (dueña): pasar a 1 (protestado) pregunta la
-                 nueva fecha de cobro (hoy o futura) — se guarda en POSTERGADA
-                 sin pisar F.DEP. Input oculto hasta que se elige →1. #}
-              <input type="date" name="fecha_postergada" value=""
-                     class="hidden font-mono text-xs border border-amber-400 rounded px-0.5 py-0 mt-0.5"
-                     style="width:118px"
-                     title="Nueva fecha de cobro del protestado">
-              {# TMT 2026-05-20 — dropdown compacto: solo letras en las
-                 options (no labels largos). Ancho ~36px en vez de ~140px.
-                 El title del select muestra el label completo del stat
-                 actual en hover por si la dueña necesita confirmar. #}
+              {# ⭐ TMT 2026-08-11 — el menú de estado de la LISTA usa las MISMAS
+                 definiciones que la ficha del cheque (queries.LABEL_CORTO_ESTADO).
+                 Antes dibujaba sólo la letra y el rebote (9) se disfrazaba de "→1":
+                 desde un cheque depositado salían DOS "→1" idénticos, y el de
+                 arriba era un link a un asistente que ni cambiaba el estado.
+                 Ahora cada opción dice letra + qué hace, como en la ficha.
+                 Dueña: "no podemos tener una opción que no funciona". #}
+              {# El paso de 1 (protestado) pide la nueva fecha de cobro — pedido
+                 dueña 2026-07-20. Antes eso vivía en un <input type=date> de 118px
+                 con class="hidden" que aparecía sin avisar al lado del select: si
+                 no la cargabas, el select QUEDABA MOSTRANDO "→1" con el cheque
+                 todavía en B, o sea la pantalla mentía. Ahora es un panel visible
+                 con su botón Guardar, y el select vuelve al estado REAL hasta que
+                 se guarde de verdad. #}
               <select name="stat_destino"
-                      onchange="(function(sel){
-                        const v = sel.value;
-                        if (!v) return;
-                        if (v.startsWith('WIZARD:')) {
-                          window.location.href = v.slice(7);
-                          return;
-                        }
-                        // TMT 2026-06-29 (dueña): depositar (→B) crea un mov de
-                        // banco — pedimos 1 confirmación antes de mandarlo.
-                        if (v === 'B' && !confirm('¿Depositar este cheque en Pichincha con fecha de hoy?')) {
-                          sel.value = '';
-                          return;
-                        }
-                        // TMT 2026-07-31 (dueña): "siempre se deposita en
-                        // Pichincha" → si alguien elige INTERNACIONAL hay que
-                        // hacerlo confirmar, porque es la excepción y ya nos
-                        // costó un depósito perdido. Aviso explícito.
-                        if (v === 'I' && !confirm(
-                              'OJO: esto NO va a Pichincha.\n\n' +
-                              'Vas a depositar este cheque en el banco INTERNACIONAL, ' +
-                              'con fecha de hoy.\n\n¿Seguro?')) {
-                          sel.value = '';
-                          return;
-                        }
-                        // TMT 2026-07-31 (dueña): V (protestado vuelto a
-                        // depositar) TAMBIÉN crea el movimiento en el banco —
-                        // antes lo hacía sin avisar. Mismo cartel que →B.
-                        if (v === 'V' && !confirm(
-                              '¿Volver a depositar este cheque protestado en Pichincha, ' +
-                              'con fecha de hoy?')) {
-                          sel.value = '';
-                          return;
-                        }
-                        // TMT 2026-07-20 (dueña): →1 pregunta la nueva fecha de
-                        // cobro (hoy o futura) antes de mandar.
-                        if (v === '1') {
-                          const inp = sel.form.querySelector('input[name=fecha_postergada]');
-                          if (inp && !inp.value) {
-                            const d = new Date();
-                            d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-                            inp.min = d.toISOString().slice(0, 10);
-                            inp.classList.remove('hidden');
-                            inp.focus();
-                            try { if (inp.showPicker) inp.showPicker(); } catch (e) {}
-                            inp.onchange = function () { if (inp.value) sel.form.submit(); };
-                            inp.onkeydown = function (ev) {
-                              if (ev.key === 'Escape') { inp.classList.add('hidden'); sel.value = ''; }
-                            };
-                            return;
-                          }
-                        }
-                        sel.form.submit();
-                      })(this)"
-                      class="font-mono text-xs border border-slate-300 rounded px-0.5 py-0 bg-white hover:bg-slate-50 cursor-pointer w-10"
+                      onchange="chqEstado(this)"
+                      data-stat="{{ s }}"
+                      data-importe="{{ '%.2f'|format(c.importe or 0) }}"
+                      class="font-mono text-xs border border-slate-300 rounded px-1 py-0 bg-white hover:bg-slate-50 cursor-pointer"
                       title="Cambiar estado">
                 <option value="" selected>{{ s or '—' }}</option>
                 {% for t in transs %}
-                  {% set _disp = t.destino_real if t.destino_real else t.stat_destino %}
+                  {% set _opt = texto_estado_completo(t) %}
                   {% if t.kind == 'WIZARD' %}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
-                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">→{{ _disp }}</option>
+                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">{{ _opt }}</option>
                     {% else %}
-                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque, **(t.url_args or {})) }}" title="{{ t.label }}">→{{ _disp }}</option>
+                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque, **(t.url_args or {})) }}" title="{{ t.label }}">{{ _opt }}</option>
                     {% endif %}
                   {% else %}
-                    <option value="{{ t.stat_destino }}" title="{{ t.label }}">→{{ _disp }}</option>
+                    <option value="{{ t.stat_destino }}" title="{{ t.label }}">{{ _opt }}</option>
                   {% endif %}
                 {% endfor %}
               </select>
@@ -923,6 +876,66 @@
        al tocar Imprimir y solo se ve en @media print con body.printing-deposito. #}
     <div id="dep-print-area" aria-hidden="true"></div>
   {% endif %}
+
+  {# ⭐ TMT 2026-08-11 — el menú de estado, en UNA función (antes eran ~55
+     líneas de JS inline REPETIDAS en cada fila de la tabla).
+
+     Lo que arregla, sobre un cheque depositado de CVA que la dueña no podía
+     pasar a 1: pasar a 1 abría un <input type=date> de 118px con class="hidden"
+     al lado del select y NO mandaba nada hasta cargarlo. Si no lo veías —y no
+     se veía— el select quedaba mostrando "→1" con el cheque todavía en B: la
+     pantalla decía un estado que no se había guardado.
+
+     Verificado contra MODIFICA.PRG: el dBase nunca pidió esa fecha. Mostraba
+     FECHAD, IMPORTE y ESTADO juntos y editables, con su valor actual. Así que
+     el cambio de estado va derecho y la fecha se sigue editando donde siempre
+     (columna Postergada). Lo único que se pregunta es lo que mueve plata. #}
+  <script>
+    var DEPOSITADOS = ['B', 'V', 'W', 'I', 'J', 'K', 'A'];
+
+    function chqEstado(sel) {
+      const v = sel.value;
+      if (!v) return;
+      const form = sel.form;
+      if (v.startsWith('WIZARD:')) { window.location.href = v.slice(7); return; }
+      // Depositar (→B) crea un mov de banco — 1 confirmación. TMT 2026-06-29.
+      if (v === 'B' && !confirm('¿Depositar este cheque en Pichincha con fecha de hoy?')) {
+        sel.selectedIndex = 0; return;
+      }
+      // "Siempre se deposita en Pichincha" → el Internacional es la excepción y
+      // ya nos costó un depósito perdido. Aviso explícito. TMT 2026-07-31.
+      if (v === 'I' && !confirm(
+            'OJO: esto NO va a Pichincha.\n\n' +
+            'Vas a depositar este cheque en el banco INTERNACIONAL, ' +
+            'con fecha de hoy.\n\n¿Seguro?')) {
+        sel.selectedIndex = 0; return;
+      }
+      // V (protestado vuelto a depositar) TAMBIÉN mueve el banco. TMT 2026-07-31.
+      if (v === 'V' && !confirm(
+            '¿Volver a depositar este cheque protestado en Pichincha, con fecha de hoy?')) {
+        sel.selectedIndex = 0; return;
+      }
+      // TMT 2026-08-11 (dueña, verificado contra MODIFICA.PRG): el dBase NO
+      // pedía una fecha para pasar a 1. Mostraba FECHAD, IMPORTE y ESTADO en la
+      // misma línea, siempre editables y con su valor actual — la fecha era un
+      // campo más, nunca un paso obligatorio. Acá la fecha se sigue editando en
+      // la columna Postergada, como cualquier otro día.
+      //
+      // Lo único que se avisa es la plata: marcar devuelto un cheque que está
+      // DEPOSITADO emite la nota de débito en el banco (si no, el importe queda
+      // contado dos veces: en el banco y en la cartera viva).
+      if (v === '1' && DEPOSITADOS.indexOf(sel.dataset.stat || '') >= 0) {
+        if (!confirm('Este cheque está depositado.\n\n' +
+                     'Marcarlo devuelto descuenta $ ' + (sel.dataset.importe || '') +
+                     ' del banco con una nota de débito.\n\n¿Seguro?')) {
+          sel.selectedIndex = 0;
+          return;
+        }
+      }
+      form.submit();
+    }
+
+  </script>
 
   {# Filas clickeables: navegar a la URL en data-href cuando se hace click,
      respetando los <a data-stop="1"> internos. TMT 2026-05-13.

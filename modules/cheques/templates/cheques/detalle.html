@@ -167,21 +167,25 @@
              sin el texto largo ("depositar en Pichincha (hoy)" etc). El código
              manda; el hover/title tiene el detalle. #}
           {% set _clase = 'flex items-center gap-2 w-full text-left px-4 py-1.5 text-sm border-b border-slate-100 dark:border-slate-800' %}
-          {% set _corto = {'B':'Depositar','C':'Caja','P':'Postergar','D':'Daniela','1':'Devuelto','2':'Devuelto 2°','3':'Rechazo 3°','Z':'Cartera','V':'Re-depositar','X':'Anular','9':'Sin fondos','E':'Endosar'} %}
+          {# ⭐ TMT 2026-08-11: el mapa dejó de estar escrito a mano acá. El
+             texto de cada opción lo arma queries.texto_opcion_estado() y lo usa
+             TAMBIÉN la lista, que antes armaba el suyo y por eso mostraba dos
+             "→1" iguales. Hay un test que prueba que ningún menú ofrece dos
+             opciones que se leen igual. #}
           {% macro chip(code) %}<span class="inline-flex items-center justify-center w-5 h-5 shrink-0 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-mono font-semibold text-slate-600 dark:text-slate-300">{{ code }}</span>{% endmacro %}
           {% for t in transiciones %}
             {% if t.stat_destino == '9' %}
               <button type="button" title="{{ t.label }}"
                  class="js-reverso {{ _clase }} hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300"
                  data-reverso-preview="{{ url_for('cheques.reverso_preview', id_cheque=ch.id_cheque) }}">
-                {{ chip('9') }}<span>Sin fondos</span>
+                {{ chip('9') }}<span>{{ texto_estado(t) }}</span>
               </button>
             {% elif t.kind == 'POSTERGAR' %}
               <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque) }}" title="{{ t.label }}"
-                 class="{{ _clase }} hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-700 dark:text-amber-300">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></a>
+                 class="{{ _clase }} hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-700 dark:text-amber-300">{{ chip(t.stat_destino) }}<span>{{ texto_estado(t) }}</span></a>
             {% elif t.kind == 'WIZARD' %}
               <a href="{{ url_for(t.endpoint, id_cheque=ch.id_cheque, **(t.url_args or {})) }}" title="{{ t.label }}"
-                 class="{{ _clase }} hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">{{ chip(t.stat_destino) }}<span>{{ t.corto if t.corto else _corto.get(t.stat_destino, t.label) }}</span></a>
+                 class="{{ _clase }} hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">{{ chip(t.stat_destino) }}<span>{{ texto_estado(t) }}</span></a>
             {% else %}
               <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=ch.id_cheque) }}"
                     {% if t.stat_destino == 'B' %}onsubmit="return confirm('Depositar en Pichincha por $ {{ ch.importe }}? (crea el movimiento de banco)');"
@@ -193,7 +197,7 @@
                                 else ('text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20' if t.stat_destino == 'C'
                                 else ('text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20' if t.stat_destino in ('1','2','3')
                                 else 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800')) %}
-                <button type="submit" title="{{ t.label }}" class="{{ _clase }} {{ _color }}">{{ chip(t.stat_destino) }}<span>{{ _corto.get(t.stat_destino, t.label) }}</span></button>
+                <button type="submit" title="{{ t.label }}" class="{{ _clase }} {{ _color }}">{{ chip(t.stat_destino) }}<span>{{ texto_estado(t) }}</span></button>
               </form>
             {% endif %}
           {% endfor %}

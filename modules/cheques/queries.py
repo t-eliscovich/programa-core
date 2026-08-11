@@ -3003,6 +3003,29 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
 }
 
 
+# ⭐ UNA sola definición de cómo se llama cada estado en los menús de cambiar
+# estado. La ficha del cheque (detalle.html) tenía este mismo mapa escrito a
+# mano en Jinja y la lista no usaba ninguno: dibujaba sólo la letra, y así el
+# wizard de rebote (9) y el cambio plano a 1 salían los DOS como "→1", dos
+# opciones idénticas de las que una no hacía lo que decía. Los dos templates
+# leen de acá. TMT 2026-08-11 (dueña: "ya teníamos las definiciones, fijate
+# qué dejamos" + "no podemos tener una opción que no funciona").
+LABEL_CORTO_ESTADO = {
+    "B": "Depositar",
+    "C": "Caja",
+    "P": "Postergar",
+    "D": "Daniela",
+    "1": "Devuelto",
+    "2": "Devuelto 2°",
+    "3": "Rechazo 3°",
+    "Z": "Cartera",
+    "V": "Re-depositar",
+    "X": "Anular",
+    "9": "Sin fondos",
+    "E": "Endosar",
+}
+
+
 # Etiquetas legibles por estado destino (para las opciones auto-generadas del
 # dropdown). Los estados con movimiento tienen su propia entrada curada arriba.
 _LABEL_ESTADO_DEST = {
@@ -3080,21 +3103,68 @@ def transiciones_para(stat: str) -> list[dict]:
         })
     # TMT 2026-07-14 (dueña "que pueda seleccionar 1"): el rebote (wizard de
     # reverso) muestra "→9" pero el estado RESULTANTE lo decide
-    # _stat_destino_reversa (depositado B/A → 1 primer rebote; 1/2 → 3). Mostramos
-    # el destino REAL en el dropdown en vez del confuso "9". Solo para rebote real
-    # (B/A/1/2); Z/D/P/V es reversa administrativa (→X) y queda como está.
+    # _stat_destino_reversa (depositado B/A → 1 primer rebote; 1/2 → 3). La
+    # dueña no entendía a dónde iba el "9", así que se lo hicimos MOSTRAR "1".
+    #
+    # 🚨 TMT 2026-08-11 — eso creaba DOS opciones idénticas. Desde un cheque
+    # depositado (B) el menú ofrece el rebote (9, que muestra "1") Y el cambio
+    # plano a "1": la lista dibujaba las dos como "→1", una al lado de la otra,
+    # y la de arriba ni siquiera cambiaba el estado (es un link a un asistente).
+    # `destino_real` sigue calculándose porque contesta la pregunta real de la
+    # dueña —"¿en qué estado queda?"— pero va al TEXTO de la opción, no a la
+    # letra: la letra es la ACCIÓN. Los dos templates lo rinden como
+    # "9 Sin fondos (queda en 1)" vs "1 Devuelto".
+    #
+    # 🚨 Y `destino_real` se guardaba SÓLO cuando era rebote real. Desde Z/P/D/I
+    # el mismo asistente hace una reversa ADMINISTRATIVA y el cheque termina en
+    # 'X', pero el menú seguía diciendo "Sin fondos" y sin decir a dónde iba: la
+    # opción prometía un estado al que no llegaba. La pantalla del asistente
+    # distinguía bien los dos casos (_reverso_preview_cheque); el menú no.
+    # Ahora el destino se guarda SIEMPRE y `es_rebote` decide cómo se llama.
     for o in base:
         if o.get("endpoint") == "cheques.confirmar_reverso":
             try:
                 _d, _es_reb = _stat_destino_reversa(s)
-                if _es_reb:
-                    # `destino_real` es SOLO para el display del dropdown; el
-                    # stat_destino (9) se mantiene = la ACCIÓN válida del backend
-                    # (el wizard de reverso decide el estado final vía reversar).
-                    o["destino_real"] = _d
+                o["destino_real"] = _d
+                o["es_rebote"] = _es_reb
             except Exception:  # noqa: BLE001
                 pass
     return base
+
+
+def texto_opcion_estado(t: dict) -> str:
+    """Cómo se LEE una opción del menú de cambiar estado.
+
+    Existe para que la lista y la ficha no puedan divergir: eran dos armados
+    distintos del mismo menú y por eso la lista terminó ofreciendo dos "→1"
+    idénticos mientras la ficha mostraba bien "9 Sin fondos" y "1 Devuelto".
+    Con una sola función, el invariante *ningún menú ofrece dos opciones que se
+    leen igual* se puede PROBAR para todos los estados, no sólo para el que
+    reportó la dueña. TMT 2026-08-11.
+    """
+    dest = t.get("stat_destino") or ""
+    corto = (
+        t.get("corto")
+        or LABEL_CORTO_ESTADO.get(dest)
+        or t.get("label")
+        or dest
+    )
+    # El mismo asistente ('9') hace dos cosas distintas según de dónde venga:
+    # rebote real (el banco lo rechazó) desde un depositado o un devuelto, o
+    # reversa administrativa ("me confundí al cargarlo") desde cartera. Se
+    # llaman distinto porque son distintas.
+    if t.get("endpoint") == "cheques.confirmar_reverso" and not t.get("es_rebote", True):
+        corto = "Reversar (me confundí)"
+    # `destino_real` contesta "¿y en qué estado queda?" para el wizard de rebote
+    # (9 → 1 si estaba depositado). Va en el TEXTO; la letra es la ACCIÓN.
+    if t.get("destino_real"):
+        corto = f"{corto} (queda en {t['destino_real']})"
+    return corto
+
+
+def texto_opcion_estado_completo(t: dict) -> str:
+    """La opción como se lee entera en la lista: letra + qué hace."""
+    return f"→{t.get('stat_destino') or ''} {texto_opcion_estado(t)}".strip()
 
 
 def transiciones_map() -> dict[str, list[dict]]:
