@@ -65,14 +65,6 @@ del 05/08 que el agrupado se tragó por un corrimiento de índices, y se anuló 
 `/conciliacion/banco-v2/deshacer`. El bug de código está arreglado; lo que queda
 es cargar esas cobranzas — ver abajo.
 
-### [S] La fecha de los paneles de conciliación entra en UNA línea
-
-Tamara 2026-08-11, mirando `/conciliacion/banco-v2`: *"hay que poder la fecha en
-una línea así no nos ocupa dos rows"*. Hoy la columna FECHA es angosta y `07-20`
-se parte en dos renglones, así que cada fila mide el doble de alto y entran la
-mitad de los movimientos en pantalla. Pasa en los DOS paneles (Banco y
-Programa). Es ensanchar la columna y `whitespace-nowrap`, no rediseñar la tabla.
-
 ### [M] Cargar las 5 cobranzas del 05/08 que estaban adentro de la NC $7.404,88
 
 Los cinco créditos del extracto del 05/08 volvieron a quedar **pendientes de

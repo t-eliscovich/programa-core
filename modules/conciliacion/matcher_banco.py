@@ -1703,6 +1703,37 @@ def _registrar_mov_doble_extracto(conn, *, id_transaccion, no_banco, documento,
                      id_transaccion, e)
 
 
+def intrusos_no_comision(reals) -> list[str]:
+    """Los movs de `reals` que NO son comisión/impuesto, descriptos para la UI.
+
+    Vive afuera del creador para que la pantalla de PREVIEW pueda avisar
+    ANTES de que la dueña apriete Confirmar, en vez de explotar después.
+    """
+    from modules.conciliacion.categorizar import categorizar
+
+    fuera = []
+    for r in reals or []:
+        cat = categorizar(getattr(r, "concepto", "") or "", (getattr(r, "tipo", "") or "").upper())
+        if (getattr(cat, "grupo", "") or "").upper() != "COMISION":
+            fuera.append(
+                f"{(getattr(r, 'concepto', '') or '?')[:40]} "
+                f"(${float(getattr(r, 'monto', 0) or 0):,.2f})"
+            )
+    return fuera
+
+
+def mensaje_intrusos(intrusos: list[str]) -> str:
+    """El mismo texto en el preview y en el confirmar."""
+    return (
+        "El agrupado es sólo para comisiones e impuestos, y "
+        f"{len(intrusos)} de los movimientos marcados no lo son: "
+        + "; ".join(intrusos[:5])
+        + (" …" if len(intrusos) > 5 else "")
+        + ". Si es una cobranza, cargala por Cobranza y aplicala a "
+        "las facturas del cliente."
+    )
+
+
 def crear_transaccion_agrupada_desde_reals(
     no_banco: int,
     reals: list[MovBanco],
@@ -1764,21 +1795,9 @@ def crear_transaccion_agrupada_desde_reals(
     # entrar por Cobranza y aplicarse a sus facturas, no desaparecer adentro
     # de un bulto.
     if not permitir_no_comision:
-        from modules.conciliacion.categorizar import categorizar
-        intrusos = []
-        for r in reals:
-            cat = categorizar(r.concepto or "", (r.tipo or "").upper())
-            if (getattr(cat, "grupo", "") or "").upper() != "COMISION":
-                intrusos.append(f"{(r.concepto or '?')[:40]} (${float(r.monto or 0):,.2f})")
+        intrusos = intrusos_no_comision(reals)
         if intrusos:
-            raise ValueError(
-                "El agrupado es sólo para comisiones e impuestos, y "
-                f"{len(intrusos)} de los movimientos marcados no lo son: "
-                + "; ".join(intrusos[:5])
-                + (" …" if len(intrusos) > 5 else "")
-                + ". Si es una cobranza, cargala por Cobranza y aplicala a "
-                "las facturas del cliente."
-            )
+            raise ValueError(mensaje_intrusos(intrusos))
 
     import bank_helpers
 

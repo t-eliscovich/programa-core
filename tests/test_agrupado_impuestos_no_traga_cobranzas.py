@@ -182,3 +182,18 @@ def test_la_firma_del_template_es_igual_a_la_del_server():
         assert sig_html.group(1) == _sesion.firma_mov(mov), (
             "la firma del HTML y la del server se desincronizaron"
         )
+
+
+def test_el_preview_puede_avisar_sin_crear_nada():
+    """`intrusos_no_comision` es lo que deja al preview frenar ANTES del
+    botón. Si sólo viviera adentro del creador, la dueña vería una pantalla
+    de confirmación perfectamente normal por $7.404,88."""
+    from modules.conciliacion.matcher_banco import (
+        intrusos_no_comision,
+        mensaje_intrusos,
+    )
+
+    assert intrusos_no_comision(COMISIONES) == []
+    fuera = intrusos_no_comision(COMISIONES + COBRANZAS)
+    assert len(fuera) == len(COBRANZAS)
+    assert "Cobranza" in mensaje_intrusos(fuera)

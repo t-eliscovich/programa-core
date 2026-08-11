@@ -2489,6 +2489,16 @@ def banco_impuestos_preview():
         flash("Los movimientos seleccionados ya no existen.", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
 
+    # Mismo backstop que el confirmar, pero acá se ve ANTES de apretar nada.
+    from modules.conciliacion.matcher_banco import (
+        intrusos_no_comision,
+        mensaje_intrusos,
+    )
+    intrusos = intrusos_no_comision(real_subset)
+    if intrusos:
+        flash(mensaje_intrusos(intrusos), "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
+
     fecha_str = (request.form.get("fecha") or "").strip()
     concepto = (request.form.get("concepto") or "").strip()
     prov = (request.form.get("prov") or "").strip()
