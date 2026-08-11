@@ -112,7 +112,15 @@
       {% else %}
         <td colspan="{{ kilos | length }}"></td>
       {% endif %}
-      <td></td>
+      {# 🚨 TMT 2026-08-11: *"podrías poner el cambio de $/kg en su columna
+         +x"*. La celda estaba SIEMPRE vacía y el cambio vivía en la nota gris
+         del renglón. Va en la misma fila que los kilos —la del stock— porque
+         es el mismo movimiento, y con cuatro decimales: a dos, +0,0027 se
+         escribe "+0,00". #}
+      <td class="px-1 py-1 text-right"
+          style="{% if pinta_kg and f.d_ukg %}{% if f.d_ukg < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+        {% if pinta_kg %}{{ f.d_ukg | delta_es(4) }}{% endif %}
+      </td>
       {% if g.col == 'vsto' %}{% set visto.stock = true %}{% endif %}
     </tr>
   {% else %}

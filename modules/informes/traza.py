@@ -425,6 +425,7 @@ def con_deltas(filas: list[dict]) -> list[dict]:
             fila["movidas"] = set()
             fila["delta"] = {}
             fila["d_kg"] = {}
+            fila["d_ukg"] = None
             out.append(fila)
             continue
         try:
@@ -479,8 +480,31 @@ def con_deltas(filas: list[dict]) -> list[dict]:
                 continue
             if abs(d) >= 1:
                 fila["d_kg"][col] = d
+        fila["d_ukg"] = _d_ukg(f, prev)
         out.append(fila)
     return out
+
+
+def _d_ukg(f: dict, prev: dict | None) -> float | None:
+    """Cuánto cambió el $/kg del hilado entre las dos fotos.
+
+    🚨 TMT 2026-08-11: *"podrías poner el cambio de $/kg en su columna +x"*. La
+    columna $/kg mostraba el NIVEL (3,0443) y el cambio vivía en una nota gris
+    del renglón ("cambió el $/kg de 3 etapas"): para saber de cuánto había que
+    restar dos filas a ojo. Es el número que revalúa TODO el stock de un saque,
+    así que va con su signo en su columna.
+
+    Cuatro decimales porque es la escala en la que se mueve: a dos, +0,0027
+    sería "+0,00".
+    """
+    if not prev:
+        return None
+    try:
+        d = round(float(f.get("hilado_ukg") or 0)
+                  - float(prev.get("hilado_ukg") or 0), 4)
+    except (TypeError, ValueError):
+        return None
+    return d or None
 
 
 def marcar_residuo(filas: list[dict]) -> list[dict]:
@@ -1421,4 +1445,6 @@ def una(id_traza: int) -> dict | None:
         movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx,
         hasta=_hasta, venta=_venta)
     fila["d_kg"] = fila.get("d_kg") or {}
+    if fila.get("d_ukg") is None:
+        fila["d_ukg"] = _d_ukg(fila, _ant)
     return fila

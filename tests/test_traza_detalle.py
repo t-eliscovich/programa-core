@@ -230,6 +230,31 @@ def test_la_grilla_marca_los_kilos_y_la_tarifa_que_se_movieron():
     assert "terminado_kg" not in fila["movidas"]
 
 
+def test_el_cambio_de_ukg_sale_con_signo_en_su_columna():
+    """🚨 TMT 2026-08-11: *"podrías poner el cambio de $/kg en su columna +x"*.
+
+    La columna mostraba el NIVEL (3,0443) y el cambio vivía en una nota gris:
+    para saber de cuánto había que restar dos filas a ojo. Cuatro decimales,
+    que es la escala en la que se mueve — a dos, +0,0027 sería "+0,00".
+    """
+    from filters import delta_es
+
+    viejo = {"utilidad": 100.0, "hilado_ukg": 3.0416}
+    nuevo = dict(viejo, utilidad=150.0, hilado_ukg=3.0443)
+    fila = t.con_deltas([nuevo, viejo])[0]
+    assert fila["d_ukg"] == 0.0027
+    assert delta_es(fila["d_ukg"], 4) == "+0,0027"
+
+
+def test_el_ukg_que_no_se_movio_deja_la_celda_vacia():
+    """Un nivel repetido no es un cambio: `None`, no 0 (0 pintaría un "0")."""
+    viejo = {"utilidad": 100.0, "hilado_ukg": 3.0443}
+    fila = t.con_deltas([dict(viejo, utilidad=150.0), viejo])[0]
+    assert fila["d_ukg"] is None
+    # Y la foto más vieja no tiene contra qué compararse.
+    assert t.con_deltas([viejo])[0]["d_ukg"] is None
+
+
 def test_la_foto_mas_vieja_no_tiene_nada_marcado():
     """No hay contra qué compararla: marcar todo sería mentir."""
     fila = t.con_deltas([{"utilidad": 100.0}])[0]
