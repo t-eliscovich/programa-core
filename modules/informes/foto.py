@@ -554,7 +554,7 @@ def regla(componente: str, tipo: str, doc_id: str, delta: float) -> tuple[str, s
 # ── El stock: UN renglón, y los kilos en la columna de cada etapa ──────────
 
 def _texto_stock(est: dict) -> str:
-    """De dónde a dónde se movió la tela, en tres palabras.
+    """De dónde a dónde se movió la tela, respetando el sentido del flujo.
 
     🚨 TMT 2026-08-06, después de cinco intentos: *"podría ser 'pasó de
     terminada a cruda', + en una columna y − en la otra. that is it"*.
@@ -565,18 +565,48 @@ def _texto_stock(est: dict) -> str:
     miente. Poniendo cada Δ en la columna de su etapa no hace falta que
     coincidan: se ve lo que salió, lo que entró, y la diferencia queda a la
     vista sin que nadie la explique de más.
+
+    🚨 TMT 2026-08-11, sobre un renglón que decía "hil. y term. → tej.":
+    *"este renglón no tiene sentido"*. Tenía razón. La primera versión listaba
+    TODO lo que bajó como origen y TODO lo que subió como destino, sin mirar el
+    orden del flujo — y esa ventana (hilado −45, tejido +26, terminado −1.706)
+    salía como si la tela terminada se hubiera convertido en tela cruda. No
+    existe: el flujo va hilado → tejido → terminado y nunca al revés.
+
+    Y el costo no era la frase rara: era que **tapaba la noticia**. Los 1.706 kg
+    de terminado no se transformaron en nada, se fueron por la puerta en un
+    despacho a cliente. Presentarlos como un traspaso interno escondía el único
+    hecho de la ventana que valía $ 8.947.
+
+    Ahora una baja sólo se cuenta como traspaso si hay una suba AGUAS ABAJO que
+    la pueda recibir. Lo que baja sin destino salió; lo que sube sin origen
+    entró. Los tres pedazos conviven en el renglón cuando hace falta:
+
+        hil. → tej. · salió de term.
     """
-    bajaron = [ABREV_ETAPA[e] for e in ORDEN_ETAPAS
-               if est.get(e, {}).get("dkg", 0) < -1]
-    subieron = [ABREV_ETAPA[e] for e in ORDEN_ETAPAS
-                if est.get(e, {}).get("dkg", 0) > 1]
-    if bajaron and subieron:
-        return f"{' y '.join(bajaron)} → {' y '.join(subieron)}"
-    if subieron:
-        return f"entró a {' y '.join(subieron)}"
-    if bajaron:
-        return f"salió de {' y '.join(bajaron)}"
-    return "movimiento de stock"
+    idx = {e: i for i, e in enumerate(ORDEN_ETAPAS)}
+    bajaron = [e for e in ORDEN_ETAPAS if est.get(e, {}).get("dkg", 0) < -1]
+    subieron = [e for e in ORDEN_ETAPAS if est.get(e, {}).get("dkg", 0) > 1]
+
+    # Una baja se explica por una suba río abajo (el hilado se vuelve tejido),
+    # y una suba por una baja río arriba. Lo que queda sin pareja no es un
+    # traspaso: es material que entró o salió de la fábrica.
+    paso = [e for e in bajaron if any(idx[s] > idx[e] for s in subieron)]
+    destino = [s for s in subieron if any(idx[b] < idx[s] for b in bajaron)]
+    salio = [e for e in bajaron if e not in paso]
+    entro = [s for s in subieron if s not in destino]
+
+    def _ab(etapas):
+        return " y ".join(ABREV_ETAPA[e] for e in etapas)
+
+    partes = []
+    if paso and destino:
+        partes.append(f"{_ab(paso)} → {_ab(destino)}")
+    if salio:
+        partes.append(f"salió de {_ab(salio)}")
+    if entro:
+        partes.append(f"entró a {_ab(entro)}")
+    return " · ".join(partes) or "movimiento de stock"
 
 
 def _texto_tarifa(tarifas: dict) -> str:

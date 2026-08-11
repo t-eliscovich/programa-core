@@ -1,0 +1,353 @@
+"""Hilo que sale de bodega SIN orden de fabricación — aviso a la campanita.
+
+TMT 2026-08-11. La dueña vio la utilidad caer $ 24.327 en una hora, en dos
+escalones (07:35 −14.624 y 08:32 −9.703) y preguntó si era un bug.
+
+No lo era, y el diagnóstico vale escribirlo porque el aviso nace de él:
+
+    El stock de hilado del balance NO es el saldo de la bodega 51 a secas:
+
+        hilado = bodega 51  +  EN PROCESO
+
+    donde "en proceso" = material despachado a órdenes de fabricación ABIERTAS
+    y todavía no devuelto como tela (`asinfo.service.fabricacion_proceso(52)`).
+    Esa cuenta se arma arrancando desde las ÓRDENES: le pregunta a cada OFT
+    abierta cuánto hilo le despacharon. Un despacho sin orden no lo reclama
+    nadie — sale de la bodega y no entra a ningún lado. Deja de ser un activo.
+
+Ese día salieron a Ponce 8.100 kg en dos despachos marcados `#OF:NR`
+("A PONCE PENDIENTE 180/C KW22"): el hilo se mandó al telar antes de crear la
+orden. El circuito normal es al revés — primero la OFT con los kilos
+planificados, después el despacho colgado de ella, y calzan exactos
+(30/07: OFT-000040127 planificó 4.050 → OSM-000010333 despachó 4.050).
+
+**Por qué esto no se había visto nunca.** La regla vive desde el 12/07
+(`4217dc91`, el balance pasó a leer `inventario_por_etapa`), pero en todo 2026
+los despachos de hilo sin orden fueron 1 en enero (97 kg), 3 en junio (2.934) y
+2 en julio (21). Contra 279-381 despachos POR MES, todos con su orden. 8.100 kg
+en un día no tiene precedente: la regla nunca se había puesto a prueba.
+
+**El síntoma que lo distingue de un bache normal: NO REBOTA.** Un despacho CON
+orden también hace un pozo — la bodega baja al instante y el "en proceso" tarda
+hasta 10 minutos (el caché de `fabricacion_proceso`), así que la foto del medio
+ve el hueco. Pero se recompone en 1-3 fotos. Las 20 bajas de más de 700 kg de
+`traza_utilidad` desde el 31/07 rebotaron TODAS (03/08 −4.590→+3.567, 04/08
+−3.398→+3.241, 06/08 −2.484→+2.371, 07/08 −1.368→+1.323, 09/08 −1.394→+1.327…)
+menos las dos del 11/08, cuyo mayor rebote en tres fotos fue 0,00.
+
+Decisiones de este aviso:
+
+· **Va a la CAMPANITA**, no al balance — mismo criterio que las importaciones
+  sin plata (dueña 2026-07-31: *"nada de rojo en resultados, en la campanita"*).
+· **Piso de kilos.** Con `_MIN_KG` en 200 los ocho meses de 2026 habrían dado
+  cinco avisos. Sin piso, un despacho de 21 kg encendería la campanita por
+  US$ 64 y entrenaría a ignorarla.
+· **Ventana de días**, para que el estreno no vuelque un backlog. La vigilancia
+  de importaciones aprendió eso rompiéndolo: sin techo, 200+ avisos a los tres
+  minutos de deployar.
+· **Se preguntan las DOS junctions** (la de cabecera, que es la que alimenta el
+  balance, y la de detalle) y sólo se avisa si las dos están vacías. Una sola
+  daría falsos positivos el día que Asinfo cambie por cuál cuelga la orden.
+· **Clave idempotente por número de OSM**: se dice una vez y no vuelve, aunque
+  el ciclo pase cuatro veces por hora.
+· **Se habla en KILOS, no en plata** (dueña 2026-08-11: *"no digas la utilidad,
+  decí la bodega baja x kg"*). Quien recibe este aviso es quien despacha, y lo
+  que puede arreglar son los kilos que faltan cargar — la plata es una
+  consecuencia que se mira en otra pantalla y acá sólo agrega ruido.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time as _t
+from datetime import UTC, datetime, timedelta
+
+_LOG = logging.getLogger("programa_core.asinfo.hilo_sin_of")
+
+# Bodegas de Asinfo cuyo material, al salir sin orden, se cae del balance.
+# 51 = Hilo (entra a "en proceso" de tejeduría) · 52 = Tela Cruda (a tintura).
+MATERIAL_POR_BODEGA = {51: "hilo", 52: "tela cruda"}
+
+# Se vigila SÓLO el hilo. La tela cruda sale sin orden casi todos los días
+# (medido: 13 despachos en los primeros 11 días de agosto, 200-500 kg cada uno)
+# y avisar de eso sería un ⚠ diario, que es la forma más rápida de que la
+# campanita se vuelva invisible. Que la tela cruda también se caiga del balance
+# es un hallazgo aparte, para decidir con la dueña — no se mete de contrabando
+# en el aviso que pidió. `HILO_SIN_OF_BODEGAS=51,52` la enciende sin deploy.
+BODEGAS_DEFAULT = (51,)
+
+# Piso de kilos para avisar. Medido sobre 2026: con 200 kg salen cinco avisos
+# en ocho meses; sin piso, tres de ellos serían de 21, 37 y 97 kg.
+_MIN_KG_DEFAULT = 200.0
+
+# Sólo se miran los despachos de los últimos N días. No es un inventario
+# histórico: es "esto pasó y todavía se puede arreglar".
+_DIAS_DEFAULT = 7
+
+_FRENO_SECS = 15 * 60          # cuatro chances por hora: alcanza para el día
+_ultima_corrida = 0.0
+_lock = threading.Lock()
+
+
+def _min_kg() -> float:
+    try:
+        v = float(os.environ.get("HILO_SIN_OF_MIN_KG", _MIN_KG_DEFAULT))
+        return v if v > 0 else _MIN_KG_DEFAULT
+    except (TypeError, ValueError):
+        return _MIN_KG_DEFAULT
+
+
+def _dias() -> int:
+    try:
+        v = int(os.environ.get("HILO_SIN_OF_DIAS", _DIAS_DEFAULT))
+        return v if v >= 1 else _DIAS_DEFAULT
+    except (TypeError, ValueError):
+        return _DIAS_DEFAULT
+
+
+def _bodegas() -> tuple[int, ...]:
+    """Las bodegas vigiladas. `HILO_SIN_OF_BODEGAS=51,52` suma la tela cruda."""
+    crudo = (os.environ.get("HILO_SIN_OF_BODEGAS") or "").strip()
+    if not crudo:
+        return BODEGAS_DEFAULT
+    vals = []
+    for parte in crudo.split(","):
+        try:
+            v = int(parte.strip())
+        except (TypeError, ValueError):
+            continue
+        if v in MATERIAL_POR_BODEGA:
+            vals.append(v)
+    return tuple(sorted(set(vals))) if vals else BODEGAS_DEFAULT
+
+
+def despachos_sin_of(dias: int | None = None,
+                     min_kg: float | None = None) -> list[dict]:
+    """Despachos de hilo/tela cruda sin NINGUNA orden de fabricación colgada.
+
+    Fail-soft: [] si Asinfo no contesta. Una alarma que no puede leer no
+    inventa — el mismo criterio que el resto de los bridges.
+    """
+    from modules._lib import metabase_client
+
+    dias = int(dias if dias is not None else _dias())
+    min_kg = float(min_kg if min_kg is not None else _min_kg())
+    bodegas = ", ".join(str(b) for b in _bodegas())
+
+    # Las dos junctions: `orden_fabricacion_orden_salida_material` es la que
+    # alimenta el balance (fabricacion_proceso); la de detalle es la que usa
+    # stock_en_proceso(). Se exige que las DOS estén vacías.
+    sql = f"""
+        WITH desp AS (
+            SELECT osm.id_orden_salida_material  AS id_osm,
+                   osm.numero                    AS numero,
+                   osm.fecha_creacion            AS creado,
+                   osm.usuario_creacion          AS usuario,
+                   osm.descripcion               AS descripcion,
+                   d.id_bodega                   AS id_bodega,
+                   SUM(ISNULL(d.cantidad_despachada, 0)) AS kg
+              FROM orden_salida_material osm
+              JOIN detalle_orden_salida_material d
+                ON d.id_orden_salida_material = osm.id_orden_salida_material
+             WHERE osm.fecha_creacion >= DATEADD(day, -{dias}, CAST(GETDATE() AS date))
+               AND d.id_bodega IN ({bodegas})
+             GROUP BY osm.id_orden_salida_material, osm.numero, osm.fecha_creacion,
+                      osm.usuario_creacion, osm.descripcion, d.id_bodega
+        )
+        SELECT x.numero, x.id_bodega, x.kg, x.usuario, x.descripcion,
+               CONVERT(varchar(16), x.creado, 120) AS creado
+          FROM desp x
+         WHERE x.kg >= {min_kg}
+           AND NOT EXISTS (SELECT 1 FROM orden_fabricacion_orden_salida_material j
+                            WHERE j.id_orden_salida_material = x.id_osm)
+           AND NOT EXISTS (SELECT 1
+                             FROM detalle_orden_salida_material dd
+                             JOIN detalle_orden_salida_material_orden_fabricacion jd
+                               ON jd.id_detalle_orden_salida_material
+                                = dd.id_detalle_orden_salida_material
+                            WHERE dd.id_orden_salida_material = x.id_osm)
+         ORDER BY x.creado DESC
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=500)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude leer los despachos sin orden: %s", e)
+        return []
+
+    out = []
+    for r in rows or []:
+        try:
+            kg = float(r.get("kg") or 0)
+            bodega = int(r.get("id_bodega") or 0)
+        except (TypeError, ValueError):
+            continue
+        if kg < min_kg:
+            continue
+        out.append({
+            "numero": str(r.get("numero") or "").strip(),
+            "id_bodega": bodega,
+            "material": MATERIAL_POR_BODEGA.get(bodega, "material"),
+            "kg": round(kg, 2),
+            "usuario": str(r.get("usuario") or "").strip(),
+            "descripcion": _limpiar(r.get("descripcion")),
+            "creado": str(r.get("creado") or "").strip(),
+        })
+    return out
+
+
+def _limpiar(descripcion) -> str:
+    """Saca el `[#OF:NR]` y las barras del pipe que Asinfo mete en la glosa.
+
+    Lo que queda es lo que escribió la persona ("A PONCE PENDIENTE 180/C KW22"),
+    que es el único pedazo que sirve para ir a buscar el despacho.
+    """
+    s = str(descripcion or "").strip()
+    if not s:
+        return ""
+    if "]" in s:
+        s = s.split("]", 1)[1]
+    return s.replace("|Matriz|", "").replace("|", " ").strip(" ·-").strip()
+
+
+def resumen_de_hoy() -> dict:
+    """{kg, n, material} de lo despachado HOY sin orden. Para el anuncio.
+
+    Devuelve `{"kg": 0, "n": 0}` cuando no hay nada — el partial no pinta nada
+    en ese caso, a propósito: un cartel permanente deja de leerse a la semana.
+
+    Fail-soft por partida doble: si Asinfo no contesta, `despachos_sin_of()` ya
+    devuelve [] y acá sale el cero. Un anuncio que no puede leer no inventa.
+    """
+    try:
+        casos = [c for c in despachos_sin_of(dias=0) if c.get("kg")]
+    except Exception as e:  # noqa: BLE001 -- nunca rompe la pantalla que lo llama
+        _LOG.warning("resumen_de_hoy: %s", e)
+        return {"kg": 0.0, "n": 0, "material": "hilo"}
+    if not casos:
+        return {"kg": 0.0, "n": 0, "material": "hilo"}
+    materiales = {c["material"] for c in casos}
+    return {
+        "kg": round(sum(c["kg"] for c in casos), 2),
+        "n": len(casos),
+        # Con las dos bodegas encendidas el anuncio no puede decir "hilo" a
+        # secas: diría una cosa por otra la mitad de las veces.
+        "material": materiales.pop() if len(materiales) == 1 else "material",
+    }
+
+
+#: Hora de Ecuador a la que el placeholder deja de sostener los kilos. Dueña
+#: 2026-08-11: *"al final del día si no fue cargada manda nuevamente aviso y
+#: ahí sí proceder a bajarla"*. A las 18 y no a medianoche: así la baja cae en
+#: horario, en la traza del día que corresponde, después del aviso de las 17 y
+#: ANTES de la foto de cierre — el mes nunca se cierra con el placeholder
+#: adentro.
+HORA_CORTE = 18
+
+
+def _ahora_ec() -> datetime:
+    """Ahora en Ecuador (UTC−5, sin horario de verano) — igual que today_ec()."""
+    return datetime.now(UTC) - timedelta(hours=5)
+
+
+def _hora_corte() -> int:
+    try:
+        h = int(os.environ.get("HILO_PLACEHOLDER_CORTE", str(HORA_CORTE)))
+    except (TypeError, ValueError):
+        return HORA_CORTE
+    return h if 0 <= h <= 23 else HORA_CORTE
+
+
+def placeholder_activo() -> bool:
+    """¿Está encendido el placeholder? Apagado por defecto.
+
+    Se deploya OSCURO a propósito: cambia la utilidad, así que se enciende por
+    env recién después de que la dueña vea el dry-run.
+    """
+    return os.environ.get("HILO_PLACEHOLDER", "0").strip() == "1"
+
+
+def esperando_orden_kg() -> dict[int, float]:
+    """{bodega: kg} que el balance sostiene hasta el corte. `{}` si está apagado.
+
+    Devuelve `{}` —y no ceros— en tres casos que NO son lo mismo y conviene no
+    confundir: apagado, pasada la hora de corte, o Asinfo mudo. En los tres el
+    llamador suma cero, pero sólo el tercero merece el "último valor bueno".
+    """
+    if not placeholder_activo():
+        return {}
+    if _ahora_ec().hour >= _hora_corte():
+        return {}                      # el corte del día ya pasó: se dan de baja
+    out: dict[int, float] = {}
+    # ⚠ dias=0 es HOY. Con dias=1 el rango arranca AYER a las 00:00 y el
+    # placeholder sostendría despachos de otro día — justo lo que la dueña
+    # descartó ("no vamos para atrás de agosto", y el corte es diario).
+    for c in despachos_sin_of(dias=0):
+        out[c["id_bodega"]] = out.get(c["id_bodega"], 0.0) + float(c["kg"] or 0)
+    return out
+
+
+def _titulo(caso: dict) -> str:
+    """El texto que pidió la dueña, palabra por palabra (2026-08-11)."""
+    from filters import num_es
+    return (f"Salieron {num_es(caso['kg'], 0)} kg de {caso['material']} — "
+            "falta cargar orden de fabricación")
+
+
+def _detalle(caso: dict) -> str:
+    from filters import num_es
+
+    partes = [caso["numero"]]
+    if caso.get("descripcion"):
+        partes.append(caso["descripcion"])
+    if caso.get("creado"):
+        partes.append(caso["creado"])
+    cabeza = " · ".join(partes)
+
+    return (
+        f"{cabeza}\n\n"
+        f"El {caso['material']} despachado sin orden de fabricación no cuenta "
+        f"como material en proceso: la bodega baja {num_es(caso['kg'], 0)} kg y "
+        "no entran a ningún lado.\n\n"
+        "Se arregla creando la orden en Asinfo y colgándole este despacho. "
+        "En la foto siguiente los kilos vuelven."
+    )
+
+
+def revisar_si_toca() -> dict:
+    """Corre cada `_FRENO_SECS` y deja un aviso por despacho. Nunca levanta."""
+    global _ultima_corrida
+    if os.environ.get("HILO_SIN_OF", "1").strip() == "0":
+        return {"corrio": False, "motivo": "apagado"}
+    ahora = _t.time()
+    with _lock:
+        if (ahora - _ultima_corrida) < _FRENO_SECS:
+            return {"corrio": False, "motivo": "freno"}
+        _ultima_corrida = ahora
+
+    try:
+        casos = despachos_sin_of()
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("revisión falló: %s", e)
+        return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
+
+    from modules.avisos import queries as avisos
+
+    n = 0
+    for c in casos:
+        if not c["numero"]:
+            continue
+        if avisos.avisar(
+            fuente="stock",
+            nivel="alerta",
+            titulo=_titulo(c)[:200],
+            detalle=_detalle(c),
+            cantidad=int(c["kg"]),
+            url="/stock/fabricacion-tc",
+            clave=f"hilo-sin-of:{c['numero']}",
+        ):
+            n += 1
+    if n:
+        _LOG.info("hilo sin orden de fabricación: %s aviso(s) nuevos de %s caso(s)",
+                  n, len(casos))
+    return {"corrio": True, "casos": len(casos), "avisados": n}

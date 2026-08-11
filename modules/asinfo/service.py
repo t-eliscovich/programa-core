@@ -1315,8 +1315,12 @@ def inventario_por_etapa() -> dict:
                          (saldo de fabricacion_proceso(52)).
         en_proceso_pt  — kg de TC despachados a tinturar/confeccionar aún no
                          devueltos como PT (saldo de fabricacion_proceso(53)).
-        hilo_total     — hilo + en_proceso_tc.
-        cruda_total    — tela_cruda + en_proceso_pt.
+        esperando_orden_hilo — kg despachados HOY sin orden de fabricación que
+                         el balance sostiene hasta las 18:00 EC (0 si el
+                         placeholder está apagado o ya pasó el corte).
+        esperando_orden_cruda — ídem para tela cruda.
+        hilo_total     — hilo + en_proceso_tc + esperando_orden_hilo.
+        cruda_total    — tela_cruda + en_proceso_pt + esperando_orden_cruda.
         total          — cadena completa (hilo + tc_wip + cruda + pt_wip + PT).
 
     Todos los valores son 0.0 cuando disponible es False. Nunca lanza.
@@ -1332,6 +1336,7 @@ def inventario_por_etapa() -> dict:
         "hilo": 0.0, "tela_cruda": 0.0, "terminada": 0.0,
         "en_proceso_tc": 0.0, "en_proceso_pt": 0.0,
         "hilo_total": 0.0, "cruda_total": 0.0, "total": 0.0,
+        "esperando_orden_hilo": 0.0, "esperando_orden_cruda": 0.0,
     }
     if not disponible():
         return vacio
@@ -1362,6 +1367,18 @@ def inventario_por_etapa() -> dict:
     hilo = por_bodega.get(51, 0.0)
     tela_cruda = por_bodega.get(52, 0.0)
     terminada = por_bodega.get(53, 0.0)
+    # TMT 2026-08-11 (dueña): el material despachado HOY sin orden de
+    # fabricación sigue siendo nuestro —está en el telar— pero no lo reclama
+    # ninguna OFT, así que sin esto la bodega lo descuenta entero en el acto.
+    # Lo sostiene hasta las 18:00 EC; ahí se da de baja, avisada. Apagado por
+    # defecto (`HILO_PLACEHOLDER=1` lo enciende) porque mueve la utilidad.
+    try:
+        from modules.asinfo import hilo_sin_of as _hso
+        _esperando = _hso.esperando_orden_kg()
+    except Exception:  # noqa: BLE001 -- nunca romper el inventario
+        _esperando = {}
+    esperando_hilo = max(0.0, float(_esperando.get(51, 0.0)))
+    esperando_cruda = max(0.0, float(_esperando.get(52, 0.0)))
     # Sólo saldos WIP positivos suman stock (ídem stock_en_proceso()).
     wip_tc = max(0.0, wip_tc)
     wip_pt = max(0.0, wip_pt)
@@ -1401,9 +1418,12 @@ def inventario_por_etapa() -> dict:
         "terminada": terminada,
         "en_proceso_tc": wip_tc,
         "en_proceso_pt": wip_pt,
-        "hilo_total": hilo + wip_tc,
-        "cruda_total": tela_cruda + wip_pt,
-        "total": hilo + wip_tc + tela_cruda + wip_pt + terminada,
+        "esperando_orden_hilo": esperando_hilo,
+        "esperando_orden_cruda": esperando_cruda,
+        "hilo_total": hilo + wip_tc + esperando_hilo,
+        "cruda_total": tela_cruda + wip_pt + esperando_cruda,
+        "total": (hilo + wip_tc + esperando_hilo
+                  + tela_cruda + wip_pt + esperando_cruda + terminada),
     }
     _cache_put(_INVENTARIO_ETAPA_CACHE, "all", out, True,
                _INVENTARIO_ETAPA_TTL_SECS)

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Producción Tejeduría Asinfo {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
+{% include "_partials/hilo_esperando_orden.html" %}
   <a href="{{ url_for('compras.produccion_tejeduria') }}" class="hover:underline">Producción Tejeduría</a> /
   <strong>Asinfo</strong>
 {% endblock %}

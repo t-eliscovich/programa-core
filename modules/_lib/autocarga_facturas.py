@@ -175,6 +175,29 @@ def _loop() -> None:
             # 10:34 deje rastro y se pueda mirar QUÉ se movió en vez de
             # discutir hipótesis. Va última a propósito: es la que menos
             # importa del ciclo y no tiene por qué demorar a las otras.
+            # TMT 2026-08-11 (dueña): *"hacelo 5pm, así les das tiempo de
+            # cargar"*. A las 17:00 EC, la lista de lo que salió hoy y todavía
+            # no tiene factura — 99,2 % se facturan dentro de las 4 h, medido.
+            try:
+                from modules.asinfo import despacho_sin_factura as _dsf
+                ds = _dsf.correr_si_toca()
+                if ds.get("avisado"):
+                    _LOG.info("despachos sin factura (fondo): %s", ds.get("casos"))
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("despachos sin factura (fondo): %s", e)
+            # TMT 2026-08-11 (dueña): el hilo que sale de bodega SIN orden de
+            # fabricación no entra a "en proceso" y se cae del balance — el
+            # 11/08 fueron 8.100 kg a Ponce y $ 24.327 de utilidad. Va a la
+            # campanita para enterarse por ahí y no por la utilidad. Freno
+            # propio de 15 min, un aviso por despacho, HILO_SIN_OF=0 lo apaga.
+            try:
+                from modules.asinfo import hilo_sin_of as _hsof
+                hs = _hsof.revisar_si_toca()
+                if hs.get("avisados"):
+                    _LOG.info("hilo sin orden de fabricación (fondo): %s aviso(s)",
+                              hs.get("avisados"))
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("hilo sin orden de fabricación (fondo): %s", e)
             try:
                 from modules.informes import traza as _traza
                 _traza.registrar_si_toca()
