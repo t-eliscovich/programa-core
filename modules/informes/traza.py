@@ -994,6 +994,77 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
         ant["nota"] = tarifa.get("etiqueta") or ""
 
 
+def _nombre_de_fabrica(concepto: str) -> str:
+    """"AI 16" — el pedazo del concepto que la fábrica reconoce.
+
+    `dolares.queries.convertir_a_compra` ya escribe el concepto empezando por
+    ahí ("AI 16 · 4 anticipo(s) → compra #10148"), justo porque el 31/07 la
+    dueña preguntó *"acá nada dice AC 22, ¿cómo sé qué anticipo es?"*. La traza
+    no lo usaba: armaba el suyo con el tipo y salía "AN AI → CP 10148" — el
+    código del proveedor sin el número, y un número que es el de la compra.
+    """
+    return ((concepto or "").split("·")[0].split("—")[0]).strip()
+
+
+def _texto_conversion(tipo: str, n_anticipos) -> str:
+    """"4 anticipos pasaron a la compra" — el número va porque son documentos
+    distintos.
+
+    🚨 TMT 2026-08-11: *"me gusta el 4 para saber que había 4 distintos"*. Una
+    importación se paga en varias cuotas y cada una es un anticipo suyo; el
+    total ya está en la columna, lo que el número agrega es en cuántos pedazos
+    vino. Con uno solo no se dice "1": se dice "el anticipo".
+    """
+    n = int(n_anticipos or 0)
+    cuantos = f"{n} anticipos" if n > 1 else "el anticipo"
+    if tipo == "bap_anticipo_a_compra":
+        return (f"{cuantos} pasaron a la compra" if n > 1
+                else "el anticipo pasó a la compra")
+    return f"se deshizo el pase de {cuantos} a la compra"
+
+
+def _unir_conversion_del_anticipo(grupos: dict) -> None:
+    """El anticipo que se vuelve compra es UN renglón, y no mueve plata.
+
+    🚨 TMT 2026-08-11, mirando la ventana de las 09:52: dos renglones que se
+    anulan —"Menos anticipos cuya mercadería ya está en stock" +73.127 y
+    "AN AI → CP 10148 (4)" −73.127— y ninguno de los dos nombra la
+    importación. *"no sé qué es CP y ese número, quiero ver el AI 16"*.
+
+    Los dos son la MISMA formalidad: el anticipo sale de `dolares` y, en el
+    mismo instante, el descuento sintético que lo tapaba deja de aplicar. La
+    plata ya se había movido antes, cuando Asinfo marcó la recepción —eso es el
+    otro renglón, el de `_unir_anticipo_con_mercaderia`—.
+
+    ⭐ El renglón queda con aporte CERO y se muestra igual: `bruto` guarda lo
+    que movió. Esconderlo por chico dejaría la conversión sin rastro, y es lo
+    que la campanita acaba de avisar.
+    """
+    ant = next((g for g in grupos.values()
+                if (g.get("etiqueta") or "") == TXT_ANTICIPO_RECIBIDO
+                and not g.get("fundido") and g["aporte"] > 0), None)
+    conv = next((g for g in grupos.values()
+                 if ((g.get("evento") or {}).get("tipo")
+                     == "bap_anticipo_a_compra")
+                 and not g.get("fundido") and g["aporte"] < 0), None)
+    if not ant or not conv or abs(ant["aporte"] + conv["aporte"]) >= 0.01:
+        return
+    bruto = max(ant["bruto"], conv["bruto"])
+    ev = conv.get("evento") or {}
+    nombre = _nombre_de_fabrica(ev.get("concepto") or "")
+    que = _texto_conversion(ev.get("tipo") or "",
+                            (ev.get("meta") or {}).get("n_anticipos"))
+    conv["texto_unido"] = f"{nombre} · {que}" if nombre else que
+    conv["nota"] = "no mueve plata: la mercadería ya había entrado"
+    conv["aporte"] = round(conv["aporte"] + ant["aporte"], 2)
+    for c, v in ant["por_col"].items():
+        conv["por_col"][c] = round(conv["por_col"].get(c, 0.0) + v, 2)
+    conv["n"] += ant["n"]
+    conv["hechos"] |= ant["hechos"]
+    conv["bruto"] = bruto              # aporta 0, pero movió 73.127
+    ant["fundido"] = True
+
+
 #: 🚨 TMT 2026-08-07, sobre el cuarto renglón más frecuente del día (19 de 200
 #: ventanas): *"dice de qué sistema sale el dato, no qué pasó"*. Del lado de PC
 #: el stock de químicos es UN número —no hay detalle por colorante— así que no
@@ -1097,6 +1168,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
     _unir_las_dos_patas(grupos)
     _unir_anticipo_con_mercaderia(grupos, hasta)
+    _unir_conversion_del_anticipo(grupos)
     # La venta se explica sola: el renglón de las facturas se lleva el margen.
     _nota = _nota_del_margen(venta)
     if _nota:
@@ -1169,6 +1241,18 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                 md.get("codigo_cli") or quien,
                                 "dev" if ev["tipo"] == "factura_devolucion" else "")
                     if x)
+            elif ev["tipo"] in ("bap_anticipo_a_compra",
+                                "bap_anticipo_a_compra_reverso"):
+                # 🚨 TMT 2026-08-11: *"no sé qué es CP y ese número, quiero ver
+                # el AI 16"*. Salía "AN AI → CP 10148": el código del proveedor
+                # SIN el número de la importación, y un número que es el de la
+                # compra. El nombre que usa la fábrica ya viene escrito en el
+                # concepto (lo puso `convertir_a_compra` el 31/07, por este
+                # mismo reclamo); acá sólo faltaba usarlo.
+                nombre = _nombre_de_fabrica(ev.get("concepto") or "")
+                _que = _texto_conversion(ev["tipo"], md.get("n_anticipos"))
+                g["texto"] = f"{nombre} · {_que}" if nombre else _que
+                cerrado = True
             elif ev["tipo"].endswith("cheque_depositado") and md.get("n_grupo"):
                 # 🚨 Un depósito consolidado escribe UNA `mov_doble` por cheque:
                 # ocho cheques al banco salían como ocho renglones de una sola

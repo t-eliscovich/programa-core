@@ -126,7 +126,11 @@ def test_los_tres_anticipos_de_una_compra_son_un_renglon_con_el_numero():
     # leer esa metadata, de tres anticipos uno matcheaba y dos caían aparte —
     # el mismo hecho salía en dos renglones.
     assert len(out) == 1
-    assert out[0]["texto"] == "AN AI → CP 10130 (3)"
+    # 🚨 TMT 2026-08-11: antes decía "AN AI → CP 10130 (3)" — el código del
+    # proveedor SIN el número de la importación, y un número que es el de la
+    # compra. *"no sé qué es CP y ese número, quiero ver el AI 16"*. El nombre
+    # de la fábrica ya venía en el concepto; ahora se usa.
+    assert out[0]["texto"] == "AI 21 · 3 anticipos pasaron a la compra"
     assert out[0]["aporte"] == -3000.0
 
 

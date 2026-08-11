@@ -142,3 +142,91 @@ def test_la_foto_guarda_el_precio_de_cada_etapa():
     f = t._fila_desde_balance(bal)
     assert f["tejido_ukg"] == 4.0
     assert f["terminado_ukg"] == 5.0
+
+
+# ── La CONVERSIÓN: la otra mitad, la que no mueve plata ─────────────────────
+#
+# 🚨 TMT 2026-08-11, ventana de las 09:52 del AI 16: dos renglones que se
+# anulan —"Menos anticipos cuya mercadería ya está en stock" +73.127 y
+# "AN AI → CP 10148 (4)" −73.127— y ninguno nombra la importación.
+# *"no sé qué es CP y ese número, quiero ver el AI 16"*.
+
+def _movs_conversion():
+    """El anticipo sale de `dolares` y el descuento sintético deja de aplicar."""
+    return [
+        # El descuento que tapaba el anticipo desaparece: +73.127.
+        {"componente": "antic", "doc_id": "#recibidos", "tipo": "cambio",
+         "etiqueta": t.TXT_ANTICIPO_RECIBIDO, "regla": "Anticipos",
+         "aporte": 73127.25, "familia": "utilidad"},
+        # Los 4 anticipos se van a la compra: −73.127.
+        {"componente": "antic", "doc_id": "d901", "tipo": "baja",
+         "etiqueta": "Anticipo AI · 16 SALDO", "regla": "Anticipos",
+         "aporte": -73127.25, "familia": "utilidad"},
+    ]
+
+
+_EV_CONVERSION = {
+    "d901": {"tipo": "bap_anticipo_a_compra", "grupo": "g1",
+             "label": "Anticipo → Compra", "id_mov_doble": 77, "dia": "2026-08-11",
+             "concepto": "AI 16 · 4 anticipo(s) → compra #10148",
+             "meta": {"codigo_prov": "AI", "numero_compra": 10148,
+                      "n_anticipos": 4}},
+}
+
+
+def _resumen_conv(movs, eventos, d_utilidad=0.0):
+    with patch.object(t.db, "fetch_all", return_value=[]):
+        return t.resumir(movs, d_utilidad, eventos, hasta="2026-08-11T14:52:28")
+
+
+def test_la_conversion_es_un_solo_renglon_que_dice_AI_16():
+    out = _resumen_conv(_movs_conversion(), _EV_CONVERSION)
+    assert len(out) == 1, [g["texto"] for g in out]
+    g = out[0]
+    assert g["texto"] == "AI 16 · 4 anticipos pasaron a la compra"
+    assert "CP" not in g["texto"] and "10148" not in g["texto"]
+    # No movió plata: aporta cero…
+    assert g["aporte"] == 0.0
+    # …pero NO se cae por chico: el bruto guarda lo que movió.
+    assert g["bruto"] == 73127.25
+    assert g["nota"] == "no mueve plata: la mercadería ya había entrado"
+
+
+def test_la_conversion_sola_tambien_dice_AI_16():
+    """Sin la pata del descuento (ventanas donde sólo llega la conversión)."""
+    movs = [m for m in _movs_conversion() if m["doc_id"] == "d901"]
+    out = _resumen_conv(movs, _EV_CONVERSION)
+    assert out[0]["texto"] == "AI 16 · 4 anticipos pasaron a la compra"
+
+
+def test_el_reverso_dice_que_se_deshizo():
+    ev = {"d901": {**_EV_CONVERSION["d901"],
+                   "tipo": "bap_anticipo_a_compra_reverso"}}
+    movs = [m for m in _movs_conversion() if m["doc_id"] == "d901"]
+    out = _resumen_conv(movs, ev)
+    assert out[0]["texto"] == "AI 16 · se deshizo el pase de 4 anticipos a la compra"
+    # El reverso NO se funde con el descuento: no es la misma formalidad.
+    out2 = _resumen_conv(_movs_conversion(), ev)
+    assert len(out2) == 2, [g["texto"] for g in out2]
+
+
+def test_sin_concepto_no_inventa_un_nombre():
+    ev = {"d901": {**_EV_CONVERSION["d901"], "concepto": ""}}
+    out = _resumen_conv(_movs_conversion(), ev)
+    assert out[0]["texto"] == "4 anticipos pasaron a la compra"
+
+
+def test_si_no_se_anulan_no_se_funden():
+    """Dos cosas distintas que caen juntas siguen siendo dos renglones."""
+    movs = _movs_conversion()
+    movs[0]["aporte"] = 50000.0        # ya no cancela al de la conversión
+    out = _resumen_conv(movs, _EV_CONVERSION, d_utilidad=-23127.25)
+    assert len(out) == 2, [g["texto"] for g in out]
+
+
+def test_un_solo_anticipo_no_dice_uno():
+    """Con uno solo el número estorba: "el anticipo", no "1 anticipo"."""
+    ev = {"d901": {**_EV_CONVERSION["d901"],
+                   "meta": {**_EV_CONVERSION["d901"]["meta"], "n_anticipos": 1}}}
+    out = _resumen_conv(_movs_conversion(), ev)
+    assert out[0]["texto"] == "AI 16 · el anticipo pasó a la compra"
