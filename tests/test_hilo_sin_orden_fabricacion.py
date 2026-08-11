@@ -32,13 +32,16 @@ def _sin_freno(monkeypatch):
     monkeypatch.delenv("HILO_SIN_OF_MIN_KG", raising=False)
 
 
-def _correr(casos):
-    puestos = []
+def _correr(casos, vivos=()):
+    puestos, archivados = [], []
     with patch.object(hs, "despachos_sin_of", return_value=casos), \
+         patch("modules.avisos.queries.listar", return_value=list(vivos)), \
+         patch("modules.avisos.queries.archivar",
+               side_effect=lambda i, **kw: archivados.append(i) or True), \
          patch("modules.avisos.queries.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
         res = hs.revisar_si_toca()
-    return res, puestos
+    return res, puestos, archivados
 
 
 def _caso(**kw):
@@ -51,7 +54,7 @@ def _caso(**kw):
 
 
 def test_el_titulo_es_el_texto_que_pidio_la_duena():
-    res, puestos = _correr([_caso()])
+    res, puestos, _arch = _correr([_caso()])
     assert res["avisados"] == 1
     a = puestos[0]
     assert a["titulo"] == ("Salieron 4.860 kg de hilo — "
@@ -63,7 +66,7 @@ def test_el_titulo_es_el_texto_que_pidio_la_duena():
 def test_el_detalle_lleva_el_numero_de_despacho_y_la_glosa():
     """Sin el número y la glosa el aviso no se puede accionar: hay que poder
     ir a Asinfo y encontrar EXACTAMENTE ese despacho."""
-    _, puestos = _correr([_caso()])
+    _, puestos, _arch = _correr([_caso()])
     d = puestos[0]["detalle"]
     assert "OSM-000010458" in d
     assert "A PONCE PENDIENTE 180/C KW22" in d
@@ -73,7 +76,7 @@ def test_el_detalle_lleva_el_numero_de_despacho_y_la_glosa():
 def test_habla_en_KILOS_y_de_la_BODEGA_nunca_de_la_utilidad():
     """Dueña 2026-08-11: *"no digas la utilidad, decí la bodega baja x kg"*.
     Quien recibe el aviso es quien despacha: lo que puede arreglar son kilos."""
-    _, puestos = _correr([_caso()])
+    _, puestos, _arch = _correr([_caso()])
     a = puestos[0]
     assert "la bodega baja 4.860 kg" in a["detalle"]
     assert "utilidad" not in a["detalle"].lower()
@@ -83,7 +86,7 @@ def test_habla_en_KILOS_y_de_la_BODEGA_nunca_de_la_utilidad():
 
 
 def test_un_aviso_por_despacho_no_uno_por_dia():
-    res, puestos = _correr([_caso(),
+    res, puestos, _arch = _correr([_caso(),
                             _caso(numero="OSM-000010460", kg=3240.0,
                                   descripcion="A PONCE PENDIENTE 120/C KW20")])
     assert res["avisados"] == 2
@@ -93,14 +96,14 @@ def test_un_aviso_por_despacho_no_uno_por_dia():
 
 def test_apagado_por_env_no_avisa(monkeypatch):
     monkeypatch.setenv("HILO_SIN_OF", "0")
-    res, puestos = _correr([_caso()])
+    res, puestos, _arch = _correr([_caso()])
     assert res == {"corrio": False, "motivo": "apagado"}
     assert puestos == []
 
 
 def test_el_freno_no_deja_correr_dos_veces_seguidas():
-    _, _ = _correr([_caso()])
-    res2, puestos2 = _correr([_caso()])
+    _correr([_caso()])
+    res2, puestos2, _ = _correr([_caso()])
     assert res2 == {"corrio": False, "motivo": "freno"}
     assert puestos2 == []
 
@@ -168,3 +171,29 @@ def test_la_glosa_sale_sin_el_OFNR_ni_las_barras():
     assert casos[0]["descripcion"] == "A PONCE PENDIENTE 180/C KW22"
     assert casos[0]["material"] == "hilo"
     assert casos[0]["kg"] == 4860.0
+
+
+# ── el aviso se cae solo cuando cargan la orden ────────────────────────────
+
+def test_si_cargan_la_orden_el_aviso_se_archiva():
+    """Dueña 2026-08-11: *"y si cargan la oft, también saldría en campanita
+    no?"*. Sí — y quedaría colgado diciendo "falta cargar" sobre algo ya
+    cargado, que es como se enseña a no creerle a la campanita."""
+    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010458"}
+    res, _puestos, archivados = _correr([_caso(numero="OSM-000010462")],
+                                        vivos=[vivo])
+    assert archivados == [77]
+    assert res["archivados"] == 1
+
+
+def test_el_que_sigue_sin_orden_no_se_archiva():
+    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010458"}
+    _, _p, archivados = _correr([_caso()], vivos=[vivo])
+    assert archivados == []
+
+
+def test_no_toca_avisos_de_otra_cosa():
+    """`fuente="stock"` trae más que esto: sólo son nuestros los de la clave."""
+    ajeno = {"id_aviso": 9, "clave": "otra-cosa:123"}
+    _, _p, archivados = _correr([_caso()], vivos=[ajeno])
+    assert archivados == []

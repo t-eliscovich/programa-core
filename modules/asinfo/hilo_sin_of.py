@@ -50,6 +50,12 @@ Decisiones de este aviso:
   daría falsos positivos el día que Asinfo cambie por cuál cuelga la orden.
 · **Clave idempotente por número de OSM**: se dice una vez y no vuelve, aunque
   el ciclo pase cuatro veces por hora.
+· **Y se ARCHIVA solo cuando cargan la orden** (dueña 2026-08-11: *"y si cargan
+  la oft, también saldría en campanita no?"*). Sí, y quedaría colgado diciendo
+  "falta cargar" sobre algo ya cargado — que es la forma más rápida de que la
+  campanita deje de creerse. El mismo barrido que avisa compara lo que sigue sin
+  orden contra los avisos abiertos: el que ya no está en la lista se archiva. No
+  se borra (la fila queda, y `archivar(deshacer=True)` lo devuelve).
 · **Se habla en KILOS, no en plata** (dueña 2026-08-11: *"no digas la utilidad,
   decí la bodega baja x kg"*). Quien recibe este aviso es quien despacha, y lo
   que puede arreglar son los kilos que faltan cargar — la plata es una
@@ -259,12 +265,18 @@ def _hora_corte() -> int:
 
 
 def placeholder_activo() -> bool:
-    """¿Está encendido el placeholder? Apagado por defecto.
+    """¿Está encendido el placeholder? ENCENDIDO desde el 11/08/2026.
 
-    Se deploya OSCURO a propósito: cambia la utilidad, así que se enciende por
-    env recién después de que la dueña vea el dry-run.
+    Nació apagado a propósito —cambia la utilidad— y se prendió recién con el
+    dry-run aprobado por la dueña: última foto 10:58, utilidad 64.001,66,
+    hilado 2.014.809,4 kg a 3,0443. Los cuatro despachos del día suman
+    12.291,5 kg = 37.419,01, y ese es EXACTAMENTE el efecto de encenderlo.
+
+    `HILO_PLACEHOLDER=0` lo apaga sin deploy, que es el motivo de que la llave
+    siga existiendo: si algún día sostiene algo que no debía, se baja en el
+    acto y la bodega vuelve a ser el saldo puro de Asinfo.
     """
-    return os.environ.get("HILO_PLACEHOLDER", "0").strip() == "1"
+    return os.environ.get("HILO_PLACEHOLDER", "1").strip() != "0"
 
 
 def esperando_orden_kg() -> dict[int, float]:
@@ -314,6 +326,38 @@ def _detalle(caso: dict) -> str:
     )
 
 
+def _archivar_resueltos(abiertos_ahora: set[str]) -> int:
+    """Archiva los avisos de despachos que YA tienen su orden cargada.
+
+    `abiertos_ahora` son los OSM que siguen sin orden. Todo aviso vivo cuya
+    clave `hilo-sin-of:<osm>` no esté en ese conjunto describe algo que ya se
+    arregló. Fail-soft: si la migración 0145 no está, `archivar()` avisa y
+    devuelve False, y acá no pasa nada.
+    """
+    from modules.avisos import queries as avisos
+
+    n = 0
+    try:
+        vivos = avisos.listar(solo_no_leidos=False, limite=200, fuente="stock")
+    except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+        _LOG.warning("no pude leer los avisos abiertos: %s", e)
+        return 0
+    for a in vivos:
+        clave = str(a.get("clave") or "")
+        if not clave.startswith("hilo-sin-of:"):
+            continue
+        if clave.split(":", 1)[1] in abiertos_ahora:
+            continue                   # sigue sin orden: el aviso sigue valiendo
+        try:
+            if avisos.archivar(int(a["id_aviso"]), usuario="hilo-sin-of"):
+                n += 1
+        except Exception as e:  # noqa: BLE001
+            _LOG.warning("no pude archivar %s: %s", clave, e)
+    if n:
+        _LOG.info("hilo sin orden: %s aviso(s) archivados (ya tienen su orden)", n)
+    return n
+
+
 def revisar_si_toca() -> dict:
     """Corre cada `_FRENO_SECS` y deja un aviso por despacho. Nunca levanta."""
     global _ultima_corrida
@@ -333,6 +377,9 @@ def revisar_si_toca() -> dict:
 
     from modules.avisos import queries as avisos
 
+    # Primero limpiar: si cargaron la orden, el aviso viejo dejó de ser cierto.
+    archivados = _archivar_resueltos({c["numero"] for c in casos if c["numero"]})
+
     n = 0
     for c in casos:
         if not c["numero"]:
@@ -350,4 +397,5 @@ def revisar_si_toca() -> dict:
     if n:
         _LOG.info("hilo sin orden de fabricación: %s aviso(s) nuevos de %s caso(s)",
                   n, len(casos))
-    return {"corrio": True, "casos": len(casos), "avisados": n}
+    return {"corrio": True, "casos": len(casos), "avisados": n,
+            "archivados": archivados}

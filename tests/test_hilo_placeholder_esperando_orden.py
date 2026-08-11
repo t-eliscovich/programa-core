@@ -33,10 +33,17 @@ def _kg(hora_ec, casos, encendido=True, monkeypatch=None):
         return hs.esperando_orden_kg()
 
 
-def test_apagado_por_defecto_no_sostiene_nada(monkeypatch):
-    """Se deploya OSCURO: mueve la utilidad, se enciende después del dry-run."""
+def test_encendido_desde_el_dry_run_aprobado():
+    """Nació apagado (mueve la utilidad) y se prendió con el dry-run aprobado
+    el 11/08. La llave sigue existiendo para poder bajarlo sin deploy."""
+    assert hs.placeholder_activo() is True
+
+
+def test_la_llave_lo_apaga_sin_deploy(monkeypatch):
+    monkeypatch.setenv("HILO_PLACEHOLDER", "0")
     assert hs.placeholder_activo() is False
-    assert _kg(10, [_caso()], encendido=False, monkeypatch=monkeypatch) == {}
+    with patch.object(hs, "despachos_sin_of", return_value=[_caso()]):
+        assert hs.esperando_orden_kg() == {}
 
 
 def test_durante_el_dia_sostiene_los_kilos(monkeypatch):
