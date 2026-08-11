@@ -110,8 +110,8 @@
       <tbody>
         {% for f in filas or [] %}
           <tr{{ ' class="total-row"' | safe if f.bold }}>
-            <td>{{ f.label or '—' }}</td>
-            <td class="num">{{ (f.kg or 0) | num_es(0) }}</td>
+            <td{{ ' style="color:#92400e"' | safe if f.espera }}>{{ f.label or '—' }}</td>
+            <td class="num"{{ ' style="color:#92400e"' | safe if f.espera }}>{{ (f.kg or 0) | num_es(0) }}</td>
           </tr>
         {% endfor %}
       </tbody>

@@ -93,8 +93,21 @@ def tab():
     solo_pendientes = (request.values.get("solo") or "").strip().lower() in (
         "pend", "pendientes", "1", "si", "sí",
     )
+    # TMT 2026-08-11 (dueña): *"si necesito algo que lo muestre en tejeduría,
+    # pero distinto — quizás en hilo hay 9k que ya salieron pero no se
+    # descontaron hasta que esté la OFT"*. Acá es donde alguien va a crear esa
+    # orden, así que el dato tiene que estar a la vista. En kilos y hablando de
+    # la bodega, nunca de la utilidad.
+    try:
+        from modules.asinfo import hilo_sin_of as _hso
+        _esp = _hso.esperando_orden_kg()
+    except Exception:  # noqa: BLE001 -- nunca romper la pantalla
+        _esp = {}
+    esperando_kg = float(_esp.get(51) or 0)
+
     return render_template(
-        "tejeduria_asinfo/tab.html", data=data, anio=anio, mes=mes,
+        "tejeduria_asinfo/tab.html",
+        esperando_kg=esperando_kg, data=data, anio=anio, mes=mes,
         solo_pendientes=solo_pendientes,
     )
 

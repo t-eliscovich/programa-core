@@ -84,6 +84,19 @@
 {% endblock %}
 
 {% block content %}
+{% if esperando_kg %}
+  {# 🚨 TMT 2026-08-11: hilo que ya salió de bodega y todavía cuenta porque no
+     tiene su orden. Acá es donde se crea esa orden, así que el número va
+     arriba de todo. En KILOS y hablando de la bodega — la plata se mira en
+     otra pantalla y acá sólo agregaría ruido. #}
+  <div style="margin:0 0 14px;padding:8px 12px;border-radius:6px;
+              background:rgb(255 251 235);border:1px solid rgb(252 211 77);
+              font-size:12.5px;line-height:1.4;color:rgb(120 53 15);">
+    <b style="font-weight:600;">{{ esperando_kg | num_es(0) }} kg de hilo</b>
+    salieron de bodega y siguen contando hasta que tengan su orden de fabricación.
+    <span style="color:rgb(146 64 14);">A las 18 se descuentan.</span>
+  </div>
+{% endif %}
 <div class="ta">
 
   <form class="sel" method="get">

@@ -251,6 +251,23 @@
             <td class="num" style="color:rgb(100 116 139);" title="Químico dosificado en órdenes sin cerrar la tela — RESTA en la cuenta (todavía no está costeado en la tabla de tintorería); el hilado/crudo en máquinas SUMA (sigue siendo stock)">{% if aco.get('maquinas_us') %}({{ aco.get('maquinas_us') | num_es(0) }}){% else %}—{% endif %}</td>
           </tr>
           {% endif %}
+          {% if espera_hilado or espera_crudo %}
+          {# 🚨 TMT 2026-08-11: el hilo despachado sin orden de fabricación se
+             sostiene hasta las 18 (`hilo_sin_of`). Sin este renglón el "Stock
+             act." cierra por un número que no está escrito en la tabla. Va con
+             el mismo tono apagado que "En máquinas" —es composición del stock,
+             no una alarma: la alarma es la campanita. #}
+          <tr>
+            <td class="lbl" style="color:rgb(146 64 14);">Esperando orden de fabricación</td>
+            <td class="num" style="color:rgb(146 64 14);">{% if espera_hilado %}+{{ espera_hilado | num_es(0) }}{% else %}—{% endif %}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num" style="color:rgb(146 64 14);">{% if espera_crudo %}+{{ espera_crudo | num_es(0) }}{% else %}—{% endif %}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+          </tr>
+          {% endif %}
           <tr>
             <td class="lbl">Egresos</td>
             <td class="num">{{ ahl.get('egresos_kg') | num_es(0) if ahl.get('egresos_kg') else '—' }}</td>

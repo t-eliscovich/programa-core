@@ -504,6 +504,20 @@ def _fabricacion_page(proceso: str):
     def _lotes(b):
         return int((_tot.get(b) or {}).get("lotes") or 0)
 
+    # TMT 2026-08-11 (dueña): *"quizás en hilo hay 9k que ya salieron pero no se
+    # descontaron hasta que esté la OFT"*. El material despachado hoy sin orden
+    # se sostiene hasta las 18 (ver `hilo_sin_of`), y sin este renglón el
+    # "Hilo total" cierra por un número que no está escrito en ningún lado. Va
+    # como UN ESLABÓN MÁS de la cadena —no como alarma: la alarma es la
+    # campanita— y desaparece solo cuando no hay nada esperando.
+    try:
+        from modules.asinfo import hilo_sin_of as _hso
+        _esperando = _hso.esperando_orden_kg()
+    except Exception:  # noqa: BLE001 -- nunca romper la pantalla
+        _esperando = {}
+    esp_hilo = float(_esperando.get(51) or 0)
+    esp_cruda = float(_esperando.get(52) or 0)
+
     cadena = [
         {"label": "Hilo", "kg": _kg(51), "sub": f"{_lotes(51):,} lotes".replace(",", "."),
          "url": url_for("stock_asinfo.lote", bodega=51), "actual": False},
@@ -523,8 +537,8 @@ def _fabricacion_page(proceso: str):
     # Métricas combinadas pedidas por la dueña (2026-06-26):
     #   Hilo total  = Hilo (bodega 51) + En proceso TC (hilo despachado a tejer)
     #   Cruda total = Tela Cruda (bodega 52) + En proceso PT (TC despachada a tinturar)
-    hilo_total = _kg(51) + float(saldo_tc.get("saldo") or 0)
-    cruda_total = _kg(52) + float(saldo_pt.get("saldo") or 0)
+    hilo_total = _kg(51) + float(saldo_tc.get("saldo") or 0) + esp_hilo
+    cruda_total = _kg(52) + float(saldo_pt.get("saldo") or 0) + esp_cruda
 
     # TMT 2026-07-08 (dueña): "encolumná acá como stock: columna por etapa pero
     # no a lo largo, que sea para abajo también." → la cadena horizontal pasa a
@@ -532,14 +546,21 @@ def _fabricacion_page(proceso: str):
     # reusan EXACTAMENTE los mismos kg de la cadena/combos; no se recalcula nada.
     # TMT 2026-07-08 (dueña): sin nº de bodega en las etiquetas + fila TOTAL al
     # final (total_kg = toda la cadena Hilo→proc→Cruda→proc→Terminado).
+    # El renglón "Despachado, esperando orden de fabricación" sólo aparece
+    # cuando hay algo esperando. Sin él, "Hilo total" cerraría por un número
+    # que no está escrito en ninguna parte de la tabla.
+    _espera = {"label": "Despachado, esperando orden de fabricación",
+               "bold": False, "espera": True}
     filas = [
         {"label": "Hilo", "kg": _kg(51), "bold": False},
         {"label": "En proceso (Hilo → Tela Cruda)",
          "kg": float(saldo_tc.get("saldo") or 0), "bold": False},
+        *([dict(_espera, kg=esp_hilo)] if esp_hilo > 0 else []),
         {"label": "Hilo total", "kg": hilo_total, "bold": True},
         {"label": "Tela Cruda", "kg": _kg(52), "bold": False},
         {"label": "En proceso (Tela Cruda → Terminada)",
          "kg": float(saldo_pt.get("saldo") or 0), "bold": False},
+        *([dict(_espera, kg=esp_cruda)] if esp_cruda > 0 else []),
         {"label": "Cruda total", "kg": cruda_total, "bold": True},
         {"label": "Prod. Terminado", "kg": _kg(53), "bold": False},
         {"label": "TOTAL", "kg": total_kg, "bold": True, "grand": True},

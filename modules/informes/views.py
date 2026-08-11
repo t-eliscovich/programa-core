@@ -2753,6 +2753,18 @@ def flujo_produccion():
         _fab_pt, _e_fpt = _f_fab_pt.result()
     _timings["fetch_paralelo_3"] = round(_time_fp.perf_counter() - _s, 3)
 
+    # TMT 2026-08-11 (dueña): *"quizás en hilo hay 9k que ya salieron pero no se
+    # descontaron hasta que esté la OFT"*. Renglón propio, al lado de "En
+    # máquinas": el que mira esta columna tiene que poder ver de qué está hecho
+    # el stock actual sin ir a buscar el número a otro lado.
+    try:
+        from modules.asinfo import hilo_sin_of as _hso
+        _espera_kg = _hso.esperando_orden_kg()
+    except Exception:  # noqa: BLE001 -- nunca romper la pantalla
+        _espera_kg = {}
+    espera_hilado = float(_espera_kg.get(51) or 0)
+    espera_crudo = float(_espera_kg.get(52) or 0)
+
     inv_en_proceso_tc = (_fab_tc or {}).get("resumen") or {}
     inv_en_proceso_pt = (_fab_pt or {}).get("resumen") or {}
 
@@ -2895,6 +2907,8 @@ def flujo_produccion():
         prod_tej_asinfo=prod_tej_asinfo,
         coherencia=coherencia,
         inv_en_proceso_tc=inv_en_proceso_tc,
+        espera_hilado=espera_hilado,
+        espera_crudo=espera_crudo,
         inv_en_proceso_pt=inv_en_proceso_pt,
         kg_vendidos_terminado=kg_vendidos_terminado,
     )
