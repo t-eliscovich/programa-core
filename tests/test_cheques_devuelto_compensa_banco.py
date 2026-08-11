@@ -74,6 +74,23 @@ def _tiene_delete_link(executes):
     )
 
 
+def _nd_del_cheque(rec):
+    """La ND que compensa el depósito, sin contar la del gasto bancario.
+
+    TMT 2026-08-11: desde que Programa Core emite también el `GS. cheq.` del
+    protesto (paridad `MODIFICA.PRG` L314-318), el banco recibe DOS 'ND' por
+    un cheque devuelto: la del importe y la de la comisión. Estos tests
+    contaban "las ND" como proxy de "la compensación", así que hay que
+    separarlas — si no, el test no distingue una compensación duplicada (el
+    bug que protege) de la comisión legítima.
+    """
+    return [n for n in rec.nds if not str(n.get("concepto", "")).startswith("GS. cheq.")]
+
+
+def _gs_del_protesto(rec):
+    return [n for n in rec.nds if str(n.get("concepto", "")).startswith("GS. cheq.")]
+
+
 def test_compensa_genera_nd_y_desagrupa(monkeypatch):
     """Con depósito 'DE' vivo y sin ND previa → inserta ND por el importe y
     borra el link al depósito."""
@@ -93,8 +110,9 @@ def test_compensa_genera_nd_y_desagrupa(monkeypatch):
     )
 
     assert monto == 21508.62
-    assert len(rec.nds) == 1
-    nd = rec.nds[0]
+    assert len(_nd_del_cheque(rec)) == 1, "una sola compensación del depósito"
+    assert len(_gs_del_protesto(rec)) == 1, "y su comisión bancaria"
+    nd = _nd_del_cheque(rec)[0]
     assert nd["documento"] == "ND"
     assert nd["importe"] == 21508.62
     assert nd["no_banco"] == 10
@@ -163,7 +181,8 @@ def test_compensa_segundo_rebote_con_nd_vieja(monkeypatch):
     )
 
     assert monto == 21508.62
-    assert len(rec.nds) == 1  # se crea la ND #2
+    assert len(_nd_del_cheque(rec)) == 1  # se crea la ND #2
+    assert len(_gs_del_protesto(rec)) == 1  # con su comisión
     assert _tiene_delete_link(rec.executes)
 
 

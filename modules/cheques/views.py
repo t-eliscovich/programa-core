@@ -399,6 +399,13 @@ def nuevo():
             )
             return redirect(url_for("clientes.nuevo", codigo=codigo_cli, next=next_url))
         errores.append(f"El cliente {codigo_cli!r} no existe.")
+    # "Ya miré los duplicados y es otro cheque". Se lee acá arriba —y no
+    # adentro de una rama— porque lo necesita TAMBIÉN la pantalla de
+    # confirmación, ochocientas líneas más abajo. TMT 2026-08-11.
+    _confirmado_dup = (
+        (request.form.get("confirmar_no_duplicado") or "").strip()
+        in ("1", "true", "on")
+    )
     # Validación multi-cheque: TODOS los bloques deben tener n° y importe>0.
     if not cheques_in:
         # TMT 2026-07-30 (dueña: "pasa algo si no está?"): con banco 95 el
@@ -474,10 +481,6 @@ def nuevo():
         # (dueña 04/08: "si pongo 100 y otro cheque de 100 en la misma
         # cobranza claramente no va a ser error") — por eso se compara SOLO
         # contra la base, nunca entre los bloques del form.
-        _confirmado_dup = (
-            (request.form.get("confirmar_no_duplicado") or "").strip()
-            in ("1", "true", "on")
-        )
         if not _confirmado_dup and codigo_cli:
             from filters import fecha_es as _fed
             from filters import money_es as _medup
@@ -904,6 +907,14 @@ def nuevo():
             aprobar_dif=aprobar_dif,
             motivo_dif=motivo_dif,
             aplicar_t_used=((request.form.get("aplicar_t_used") or "").strip() == "1"),
+            # ⭐ TMT 2026-08-11 (Alex): el freno de duplicados (05/08) volvió a
+            # caer en el mismo pozo que describe el comentario de arriba. Con el
+            # tilde puesto el alta pasaba el freno y llegaba a esta pantalla,
+            # pero el POST de "Confirmar" NO lo reenviaba: el freno saltaba de
+            # nuevo en `paso=ejecutar` y devolvía al form. O sea que un cheque
+            # marcado como "no es duplicado" NO SE PODÍA GUARDAR NUNCA — el
+            # retipeo que él reportó era el síntoma de arriba, no el problema.
+            confirmado_dup=_confirmado_dup,
             # TMT 2026-07-01 (duena): si el sobrante se puede imputar a UNA sola
             # factura, la pantalla ofrece "dejarlo como saldo a favor en esa
             # factura (nota de credito)" ademas del anticipo. numf para el label.

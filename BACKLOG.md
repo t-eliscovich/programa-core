@@ -198,17 +198,25 @@ Cada par de fuentes que debe coincidir, con check automático:
 clases de templates ↔ tailwind.css, links hardcodeados ↔ url_map
 (generalizar `test_historial_links_resuelven` a TODOS los templates).
 
-## Cheques — lo que salió a la luz el 11/08/2026
+## Cheques — abierto desde el 11/08/2026
 
-- **El GS del cheque protestado no se cobra.** `MODIFICA.PRG` (L314-318): cuando
-  el dBase emitía la ND de un cheque devuelto, metía ADEMÁS un segundo renglón
-  en el banco, `GS. cheq. <cliente>`, por **$2 en Pichincha / $5 en
-  Internacional** (`GCR`), con `STAT '*'`. Es la comisión que el banco cobra por
-  el protesto. `compensar_deposito_devuelto` sólo emite la ND. En el extracto la
-  comisión aparece igual, así que hoy sale como diferencia de conciliación.
-  Verificar cuántos protestos hay desde el 12/07 antes de decidir si se
-  backfillea o sólo se agrega de acá en adelante.
+- **Un cheque depositado en INTERNACIONAL que rebota se ELIMINA en vez de
+  quedar devuelto.** `_stat_destino_reversa` mapea `B`→1 y `A`→1, pero
+  `I`/`W`/`J`/`K` —que también están en `STATS_DEPOSITADO`— caen en el default
+  `("X", False)`: reversa administrativa. Contradice al dBase y a la propia
+  docstring de la función (*"un cheque DEPOSITADO sólo puede rebotar a 1/2 —
+  NUNCA a X"*, `MODIFICA.PRG` FIL3, `ENBANC='BVWIJK'`).
 
+  Medido end-to-end el 11/08 contra base local: depositar en Internacional →
+  reversar deja el cheque en `X`. La nota de débito y el gasto SÍ se emiten
+  bien, así que el banco queda correcto; lo que queda mal es el cheque, que
+  desaparece de la cartera en vez de figurar como devuelto.
+
+  El menú de estado ya lo dice honesto desde hoy (*"→9 Reversar (me confundí)
+  (queda en X)"*), así que no sorprende a nadie — pero el comportamiento
+  seguramente está mal. **No lo toqué: cambia la máquina de estados y hay que
+  decidirlo, no deducirlo.** Al arreglarlo, `I`/`W`/`J`/`K` deberían devolver
+  `("1", True)` como `B`.
 
 ---
 

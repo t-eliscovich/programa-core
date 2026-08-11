@@ -717,6 +717,83 @@ TRANSICIONES_VALIDAS = {
 }
 
 
+# ── Comisión del banco por un cheque protestado ──────────────────────────────
+# dBase MODIFICA.PRG L314-318: junto con la ND del cheque devuelto va un SEGUNDO
+# renglón, "GS. cheq. <cliente>", por `GCR` = **2 en Pichincha / 5 en el resto**.
+# Programa Core emitía sólo la ND, así que la comisión aparecía en el extracto y
+# no en el libro: salía como diferencia de conciliación en cada protesto.
+# TMT 2026-08-11 (dueña: "hacelo, no es un monto grande").
+GS_PROTESTO_PICHINCHA = 2.0
+GS_PROTESTO_OTRO_BANCO = 5.0
+
+
+def gs_protesto_de(nombre_banco: str | None) -> float:
+    """Cuánto cobra el banco por protestar un cheque.
+
+    Se decide por el NOMBRE, no por el número: los `no_banco` son de un
+    catálogo legacy y no son estables (Pichincha es 10 en la data 2026, era 1
+    en el dBase). Un número hardcodeado ya nos mandó un depósito a un banco
+    inexistente (caso ch14778 BYG, 31/07).
+    """
+    return (
+        GS_PROTESTO_PICHINCHA
+        if "PICHINC" in (nombre_banco or "").upper()
+        else GS_PROTESTO_OTRO_BANCO
+    )
+
+
+def _insertar_gs_protesto(
+    conn,
+    *,
+    no_banco: int,
+    codigo_cli: str | None,
+    fecha: date,
+    id_cheque: int,
+    usuario: str = "web",
+) -> float:
+    """El renglón del gasto, al lado de la ND. Devuelve lo debitado.
+
+    Va SIEMPRE pegado a una ND recién insertada (los dos caminos del protesto:
+    el rebote real '9' y el cambio plano a 1/2/3), así que hereda la
+    idempotencia de la ND — si la ND no se emitió porque ya estaba compensada,
+    acá tampoco se llega.
+
+    Dos cosas que el dBase hace y NO se replican, a propósito:
+
+    · `STAT '*'`. En el dBase es una marca de control; en Programa Core '*' en
+      `transacciones_bancarias` significa **conciliado** (lo escribe el matcher
+      de /conciliacion y el sync de PICHINCH). Copiarlo daría por cruzado con el
+      banco un movimiento que nadie matcheó. Queda en el default 'A'.
+
+    · `FECHA WITH FD` (la fecha de depósito del cheque, o sea una fecha pasada).
+      El gasto va con la MISMA fecha que su ND: insertar al medio deja el saldo
+      running de todas las filas posteriores mal hasta correr
+      `recompute_saldos_desde()`, y el banco cobra la comisión el día del
+      protesto, no el día en que el cheque estaba fechado.
+    """
+    fila = db.fetch_one(
+        "SELECT COALESCE(nombre,'') AS nombre FROM scintela.banco WHERE no_banco = %s",
+        (int(no_banco),),
+        conn=conn,
+    )
+    gasto = gs_protesto_de(fila.get("nombre") if fila else None)
+    import bank_helpers
+
+    bank_helpers.insert_movimiento_bancario(
+        conn,
+        no_banco=int(no_banco),
+        no_cta=None,
+        fecha=fecha,
+        documento="ND",
+        importe=gasto,
+        concepto=f"GS. cheq. {(codigo_cli or '').strip()}".strip()[:50],
+        prov=codigo_cli,
+        numreferencia=id_cheque,
+        usuario=usuario,
+    )
+    return gasto
+
+
 def compensar_deposito_devuelto(
     conn,
     *,
@@ -837,6 +914,15 @@ def compensar_deposito_devuelto(
         ).strip()[:50],
         prov=codigo_cli,
         numreferencia=id_cheque,
+        usuario=usuario,
+    )
+    # …y la comisión que el banco cobra por el protesto, como el dBase.
+    _insertar_gs_protesto(
+        conn,
+        no_banco=banco_orig,
+        codigo_cli=codigo_cli,
+        fecha=fecha,
+        id_cheque=id_cheque,
         usuario=usuario,
     )
     # Desagrupar: borrar los links del cheque a su(s) depósito(s) 'DE'.
@@ -1104,6 +1190,17 @@ def transicionar_stat(
                     ).strip()[:50],
                     prov=ch.get("codigo_cli"),
                     numreferencia=id_cheque,
+                    usuario=usuario,
+                )
+                # …y la comisión del banco por el protesto (dBase MODIFICA.PRG
+                # L314-318). El rebote real y el cambio plano a 1/2/3 son los
+                # dos caminos del MISMO hecho, así que los dos la emiten.
+                _insertar_gs_protesto(
+                    conn,
+                    no_banco=int(banco_orig),
+                    codigo_cli=ch.get("codigo_cli"),
+                    fecha=fecha,
+                    id_cheque=id_cheque,
                     usuario=usuario,
                 )
 

@@ -2,6 +2,26 @@
 {% block title %}Confirmar cheque{% endblock %}
 
 {% block content %}
+{# ⭐ TMT 2026-08-11 — LAS RESPUESTAS QUE EL USUARIO YA DIO, en UN solo lugar.
+
+   Esta pantalla tiene TRES formularios (con facturas, sin facturas, y volver a
+   editar) y cada flag se venía agregando a mano a uno o dos de ellos. Ya falló
+   dos veces: `aprobar_diferencia` el 16/06 (la cobranza con flete rebotaba
+   "supera por más de $50" con el tilde puesto) y `confirmar_no_duplicado` el
+   11/08 (Alex: el freno de duplicados volvía a saltar en `paso=ejecutar`, así
+   que un cheque marcado "no es duplicado" NO SE PODÍA GUARDAR).
+
+   Una respuesta que el usuario ya dio tiene que sobrevivir hasta el guardado.
+   Si mañana aparece otro tilde, va ACÁ y entra en los tres formularios solo.
+   Hay un test que lo verifica: tests/test_confirmacion_no_pierde_respuestas_2026_08_11.py #}
+{% macro respuestas_ya_dadas() %}
+  {%- if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
+  {%- if aprobar_dif %}<input type="hidden" name="aprobar_diferencia" value="1">{% endif %}
+  {%- if motivo_dif %}<input type="hidden" name="motivo_diferencia" value="{{ motivo_dif }}">{% endif %}
+  {%- if aplicar_t_used %}<input type="hidden" name="aplicar_t_used" value="1">{% endif %}
+  {%- if confirmado_dup %}<input type="hidden" name="confirmar_no_duplicado" value="1">{% endif %}
+{% endmacro %}
+
 <div class="max-w-5xl">
   <h1 class="text-xl font-semibold mb-1">Confirmá los cambios</h1>
   <p class="text-sm text-slate-500 mb-4">
@@ -61,6 +81,7 @@
     <form method="post" id="confirmar-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="paso" value="ejecutar">
+      {{ respuestas_ya_dadas() }}
 
       {# Re-enviar TODOS los datos del form original como hidden inputs #}
       <input type="hidden" name="codigo_cli" value="{{ codigo_cli }}">
@@ -68,7 +89,6 @@
       <input type="hidden" name="no_banco" value="{{ no_banco or '' }}">
       <input type="hidden" name="banco_texto" value="{{ banco_texto }}">
       <input type="hidden" name="prov" value="{{ prov }}">
-      {% if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
       {% for c in cheques_in %}
         <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
         <input type="hidden" name="importe[]" value="{{ c.importe }}">
@@ -91,9 +111,6 @@
          (flete/retencion) y el flag T. Sin esto, el POST de "Confirmar y
          guardar" perdia aprobar_diferencia y la cobranza con cheque corto
          rebotaba "supera por mas de $50 / no pude distribuir". #}
-      {% if aprobar_dif %}<input type="hidden" name="aprobar_diferencia" value="1">{% endif %}
-      {% if motivo_dif %}<input type="hidden" name="motivo_diferencia" value="{{ motivo_dif }}">{% endif %}
-      {% if aplicar_t_used %}<input type="hidden" name="aplicar_t_used" value="1">{% endif %}
 
       {# TMT 2026-06-15: sobrante de cobranza (cheques > facturas) — preguntar
          ACTIVAMENTE si va como anticipo del cliente. >= $1 muestra la pregunta
@@ -215,11 +232,11 @@
     <form method="POST" action="{{ url_for('cheques.nuevo') }}" id="volver-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="paso" value="editar">
+      {{ respuestas_ya_dadas() }}
       <input type="hidden" name="codigo_cli" value="{{ codigo_cli }}">
       <input type="hidden" name="fecha_recibido" value="{{ fecha_recibido.isoformat() if fecha_recibido else '' }}">
       <input type="hidden" name="banco_texto" value="{{ banco_texto }}">
       <input type="hidden" name="prov" value="{{ prov }}">
-      {% if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
       {% for c in cheques_in %}
         <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
         <input type="hidden" name="importe[]" value="{{ c.importe }}">
@@ -245,12 +262,12 @@
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="paso" value="ejecutar">
+      {{ respuestas_ya_dadas() }}
       <input type="hidden" name="codigo_cli" value="{{ codigo_cli }}">
       <input type="hidden" name="fecha_recibido" value="{{ fecha_recibido.isoformat() if fecha_recibido else '' }}">
       <input type="hidden" name="no_banco" value="{{ no_banco or '' }}">
       <input type="hidden" name="banco_texto" value="{{ banco_texto }}">
       <input type="hidden" name="prov" value="{{ prov }}">
-      {% if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
       {% for c in cheques_in %}
         <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
         <input type="hidden" name="importe[]" value="{{ c.importe }}">
