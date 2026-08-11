@@ -285,6 +285,32 @@ def n_no_leidos() -> int:
         return 0
 
 
+def resolver(id_aviso: int, *, titulo: str, detalle: str | None = None) -> bool:
+    """Da vuelta un aviso: lo que era un problema quedó resuelto.
+
+    TMT 2026-08-11 (dueña, viendo que el anuncio bajó de 4 a 3 sin que nadie se
+    lo dijera): *"será que uno se cargó? porque no avisamos"* → *"claro,
+    campanita"*. Archivarlo lo apaga en silencio y el que lo leyó nunca se
+    entera de que se arregló; avisar aparte duplica los renglones. Se reescribe
+    el MISMO aviso —pasa a nivel `ok`, cambia el título, y vuelve a no leído
+    para que suba— así queda un renglón por hecho, de punta a punta.
+
+    Devuelve True si tocó una fila.
+    """
+    try:
+        return bool(db.execute(
+            """
+            UPDATE scintela.aviso
+               SET nivel = 'ok', titulo = %s, detalle = %s, leido = FALSE
+             WHERE id_aviso = %s AND nivel <> 'ok'
+            """,
+            ((titulo or "")[:200], (detalle or None), id_aviso),
+        ))
+    except Exception as e:  # noqa: BLE001 -- resolver nunca rompe al que resuelve
+        _LOG.warning("no pude resolver el aviso %s: %s", id_aviso, e)
+        return False
+
+
 def archivar(id_aviso: int, usuario: str = "web", *, deshacer: bool = False) -> bool:
     """Saca (o devuelve) un aviso de la lista. Devuelve True si tocó una fila.
 

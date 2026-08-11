@@ -30,4 +30,5 @@ from .queries import (  # noqa: F401
     listar,
     marcar_leidos,
     n_no_leidos,
+    resolver,
 )

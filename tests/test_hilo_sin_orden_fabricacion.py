@@ -32,16 +32,17 @@ def _sin_freno(monkeypatch):
     monkeypatch.delenv("HILO_SIN_OF_MIN_KG", raising=False)
 
 
-def _correr(casos, vivos=()):
-    puestos, archivados = [], []
+def _correr(casos, vivos=(), ofts=None):
+    puestos, resueltos = [], []
     with patch.object(hs, "despachos_sin_of", return_value=casos), \
+         patch.object(hs, "ordenes_de", return_value=dict(ofts or {})), \
          patch("modules.avisos.queries.listar", return_value=list(vivos)), \
-         patch("modules.avisos.queries.archivar",
-               side_effect=lambda i, **kw: archivados.append(i) or True), \
+         patch("modules.avisos.queries.resolver",
+               side_effect=lambda i, **kw: resueltos.append((i, kw)) or True), \
          patch("modules.avisos.queries.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
         res = hs.revisar_si_toca()
-    return res, puestos, archivados
+    return res, puestos, resueltos
 
 
 def _caso(**kw):
@@ -172,27 +173,42 @@ def test_la_glosa_sale_sin_el_OFNR_ni_las_barras():
     assert casos[0]["kg"] == 4860.0
 
 
-# ── el aviso se cae solo cuando cargan la orden ────────────────────────────
+# ── el aviso se da vuelta cuando cargan la orden ───────────────────────────
 
-def test_si_cargan_la_orden_el_aviso_se_archiva():
+def test_si_cargan_la_orden_el_aviso_pasa_a_resuelto():
     """Dueña 2026-08-11: *"y si cargan la oft, también saldría en campanita
-    no?"*. Sí — y quedaría colgado diciendo "falta cargar" sobre algo ya
-    cargado, que es como se enseña a no creerle a la campanita."""
-    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010458"}
-    res, _puestos, archivados = _correr([_caso(numero="OSM-000010462")],
-                                        vivos=[vivo])
-    assert archivados == [77]
-    assert res["archivados"] == 1
+    no?"* → *"claro, campanita"*. Archivarlo lo apagaba en silencio y ella veía
+    el anuncio bajar de 4 a 3 sin que nadie se lo dijera."""
+    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010460",
+            "cantidad": 3240}
+    res, _p, resueltos = _correr([_caso(numero="OSM-000010462")],
+                                 vivos=[vivo],
+                                 ofts={"OSM-000010460": "OFT-000040516"})
+    assert res["resueltos"] == 1
+    _id, kw = resueltos[0]
+    assert _id == 77
+    assert kw["titulo"] == "3.240 kg de hilo — orden cargada"
+    assert kw["detalle"] == "OSM-000010460 → OFT-000040516"
 
 
-def test_el_que_sigue_sin_orden_no_se_archiva():
-    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010458"}
-    _, _p, archivados = _correr([_caso()], vivos=[vivo])
-    assert archivados == []
+def test_sin_saber_la_orden_igual_se_cierra():
+    """Si Asinfo no contesta el número de la OFT, el aviso se cierra lo mismo:
+    dejarlo en rojo diciendo 'falta cargar' sería peor que no nombrarla."""
+    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010460",
+            "cantidad": 3240}
+    _, _p, resueltos = _correr([], vivos=[vivo], ofts={})
+    assert resueltos[0][1]["detalle"] == "OSM-000010460"
+
+
+def test_el_que_sigue_sin_orden_no_se_toca():
+    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010458",
+            "cantidad": 4860}
+    _, _p, resueltos = _correr([_caso()], vivos=[vivo])
+    assert resueltos == []
 
 
 def test_no_toca_avisos_de_otra_cosa():
     """`fuente="stock"` trae más que esto: sólo son nuestros los de la clave."""
-    ajeno = {"id_aviso": 9, "clave": "otra-cosa:123"}
-    _, _p, archivados = _correr([_caso()], vivos=[ajeno])
-    assert archivados == []
+    ajeno = {"id_aviso": 9, "clave": "otra-cosa:123", "cantidad": 1}
+    _, _p, resueltos = _correr([_caso()], vivos=[ajeno])
+    assert resueltos == []

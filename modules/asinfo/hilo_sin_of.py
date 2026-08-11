@@ -50,12 +50,13 @@ Decisiones de este aviso:
   daría falsos positivos el día que Asinfo cambie por cuál cuelga la orden.
 · **Clave idempotente por número de OSM**: se dice una vez y no vuelve, aunque
   el ciclo pase cuatro veces por hora.
-· **Y se ARCHIVA solo cuando cargan la orden** (dueña 2026-08-11: *"y si cargan
-  la oft, también saldría en campanita no?"*). Sí, y quedaría colgado diciendo
-  "falta cargar" sobre algo ya cargado — que es la forma más rápida de que la
-  campanita deje de creerse. El mismo barrido que avisa compara lo que sigue sin
-  orden contra los avisos abiertos: el que ya no está en la lista se archiva. No
-  se borra (la fila queda, y `archivar(deshacer=True)` lo devuelve).
+· **Y se DA VUELTA solo cuando cargan la orden** (dueña 2026-08-11: *"y si
+  cargan la oft, también saldría en campanita no?"*, y después *"claro,
+  campanita"*). Quedaría colgado diciendo "falta cargar" sobre algo ya cargado
+  — la forma más rápida de que la campanita deje de creerse. Pero archivarlo
+  en silencio tampoco: ella vio el anuncio bajar de 4 a 3 sin que nadie se lo
+  dijera. Así que el mismo barrido reescribe EL MISMO aviso —pasa a ✅ y dice
+  con qué orden se resolvió—, y queda un renglón por despacho de punta a punta.
 · **Se habla en KILOS, no en plata** (dueña 2026-08-11: *"no digas la utilidad,
   decí la bodega baja x kg"*). Quien recibe este aviso es quien despacha, y lo
   que puede arreglar son los kilos que faltan cargar — la plata es una
@@ -323,36 +324,81 @@ def _detalle(caso: dict) -> str:
     return " · ".join(partes) + "\nCargale la orden en Asinfo y vuelven."
 
 
-def _archivar_resueltos(abiertos_ahora: set[str]) -> int:
-    """Archiva los avisos de despachos que YA tienen su orden cargada.
+def ordenes_de(numeros: set[str]) -> dict[str, str]:
+    """{OSM: OFT} de los despachos que YA tienen orden colgada. Fail-soft: {}."""
+    from modules._lib import metabase_client
+
+    limpios = [n.replace("'", "") for n in numeros if n]
+    if not limpios:
+        return {}
+    lista = ", ".join(f"'{n}'" for n in limpios)
+    sql = f"""
+        SELECT osm.numero AS osm, MIN(ofr.numero) AS oft
+          FROM orden_salida_material osm
+          JOIN orden_fabricacion_orden_salida_material j
+            ON j.id_orden_salida_material = osm.id_orden_salida_material
+          JOIN orden_fabricacion ofr
+            ON ofr.id_orden_fabricacion = j.id_orden_fabricacion
+         WHERE osm.numero IN ({lista})
+         GROUP BY osm.numero
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=500)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude leer las órdenes cargadas: %s", e)
+        return {}
+    return {str(r.get("osm") or "").strip(): str(r.get("oft") or "").strip()
+            for r in rows or [] if r.get("osm")}
+
+
+def _resolver_avisos(abiertos_ahora: set[str]) -> int:
+    """Da vuelta los avisos de despachos que YA tienen su orden cargada.
 
     `abiertos_ahora` son los OSM que siguen sin orden. Todo aviso vivo cuya
-    clave `hilo-sin-of:<osm>` no esté en ese conjunto describe algo que ya se
-    arregló. Fail-soft: si la migración 0145 no está, `archivar()` avisa y
-    devuelve False, y acá no pasa nada.
+    clave `hilo-sin-of:<osm>` no esté ahí describe algo que se arregló: pasa a
+    ✅ con el número de la orden que lo resolvió. `resolver()` sólo toca los que
+    todavía están en `alerta`, así que pasar cien veces no lo repite.
     """
     from modules.avisos import queries as avisos
 
-    n = 0
     try:
         vivos = avisos.listar(solo_no_leidos=False, limite=200, fuente="stock")
     except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
         _LOG.warning("no pude leer los avisos abiertos: %s", e)
         return 0
+
+    mios = {}
     for a in vivos:
         clave = str(a.get("clave") or "")
         if not clave.startswith("hilo-sin-of:"):
             continue
-        if clave.split(":", 1)[1] in abiertos_ahora:
-            continue                   # sigue sin orden: el aviso sigue valiendo
+        osm = clave.split(":", 1)[1]
+        if osm and osm not in abiertos_ahora:
+            mios[osm] = a
+    if not mios:
+        return 0
+
+    ofts = ordenes_de(set(mios))
+    n = 0
+    for osm, a in mios.items():
+        oft = ofts.get(osm)
+        kg = a.get("cantidad") or 0
+        titulo = f"{_kg_txt(kg)} kg de hilo — orden cargada"
+        detalle = f"{osm} → {oft}" if oft else osm
         try:
-            if avisos.archivar(int(a["id_aviso"]), usuario="hilo-sin-of"):
+            if avisos.resolver(int(a["id_aviso"]), titulo=titulo,
+                               detalle=detalle):
                 n += 1
         except Exception as e:  # noqa: BLE001
-            _LOG.warning("no pude archivar %s: %s", clave, e)
+            _LOG.warning("no pude resolver %s: %s", osm, e)
     if n:
-        _LOG.info("hilo sin orden: %s aviso(s) archivados (ya tienen su orden)", n)
+        _LOG.info("hilo sin orden: %s aviso(s) resueltos", n)
     return n
+
+
+def _kg_txt(kg) -> str:
+    from filters import num_es
+    return num_es(kg, 0)
 
 
 def revisar_si_toca() -> dict:
@@ -374,8 +420,8 @@ def revisar_si_toca() -> dict:
 
     from modules.avisos import queries as avisos
 
-    # Primero limpiar: si cargaron la orden, el aviso viejo dejó de ser cierto.
-    archivados = _archivar_resueltos({c["numero"] for c in casos if c["numero"]})
+    # Primero cerrar los que se arreglaron: el aviso viejo dejó de ser cierto.
+    resueltos = _resolver_avisos({c["numero"] for c in casos if c["numero"]})
 
     n = 0
     for c in casos:
@@ -395,4 +441,4 @@ def revisar_si_toca() -> dict:
         _LOG.info("hilo sin orden de fabricación: %s aviso(s) nuevos de %s caso(s)",
                   n, len(casos))
     return {"corrio": True, "casos": len(casos), "avisados": n,
-            "archivados": archivados}
+            "resueltos": resueltos}
