@@ -177,7 +177,21 @@ def test_apagado_el_ciclo_no_hace_nada():
     assert r["convertidas"] == 0
 
 
-def test_el_freno_de_30_minutos_no_encima_corridas():
+def test_el_intervalo_no_baja_del_cache_de_asinfo():
+    """🚨 TMT 2026-08-11 (AI 16): la recepción salió 09:34 y la corrida anterior
+    había sido 09:24 ⇒ media hora sin campanita ni nombre en la traza.
+
+    ⭐ El piso es el TTL del caché de importaciones de Asinfo: por debajo de eso
+    se pregunta más seguido para recibir la misma foto. Si alguien baja el TTL
+    y no el intervalo (o al revés), este test lo canta.
+    """
+    from modules.asinfo import service as _asinfo
+
+    assert autobap._INTERVALO_MIN >= _asinfo._IMPORT_TTL_SECS
+    assert autobap._INTERVALO_MIN <= 600, "media hora de silencio otra vez, no"
+
+
+def test_el_freno_entre_corridas_no_encima_corridas():
     autobap._ultimo_ts = -1e9  # monotonic() puede ser chico en el contenedor
     with patch.object(autobap, "config", return_value=_CFG), \
          patch.object(autobap, "correr",

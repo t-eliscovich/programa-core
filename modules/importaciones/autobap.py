@@ -39,7 +39,21 @@ USUARIO_AUTOBAP = "bap-auto"
 
 _LOCK = threading.Lock()
 _ultimo_ts = 0.0
-_INTERVALO_MIN = 1800.0  # 30 min entre corridas (freno propio dentro del ciclo)
+
+#: Cada cuánto se fija si llegó una importación nueva.
+#:
+#: 🚨 TMT 2026-08-11, sobre el AI 16: *"esto pasó sin campanita"*. La recepción
+#: apareció 09:34 y la corrida anterior había sido 09:24, así que la compra —y
+#: con ella la 🔔 y el nombre "AI 16" en la traza— se quedaban esperando media
+#: hora, mientras la pantalla del día ya mostraba los $ 73.127 moviéndose de
+#: anticipos a stock. Media hora de silencio arriba de un movimiento así es
+#: mucho.
+#:
+#: ⭐ 5 minutos y no menos: la lista de importaciones de Asinfo está cacheada
+#: 5 min (`asinfo.service._IMPORT_TTL_SECS`), así que preguntar más seguido
+#: devolvería la MISMA foto. Es el piso útil, no un número redondo cualquiera.
+#: El ciclo que lo llama pasa cada 2 min, así que en la práctica son ~6.
+_INTERVALO_MIN = float(os.environ.get("AUTOBAP_INTERVALO_SECS") or 300)
 
 # Topes por corrida. NO gatean la operación normal: están para que un dato raro
 # de Asinfo no dispare una conversión masiva. Dimensionados sobre lo real (una

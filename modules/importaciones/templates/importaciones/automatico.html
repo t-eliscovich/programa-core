@@ -24,7 +24,8 @@
         <div class="text-xs text-slate-600 mt-1" style="max-width:60rem;line-height:1.5;">
           Cuando Asinfo marca <strong>recibida</strong> una importación, el programa pasa
           solo sus anticipos vivos a una compra y te avisa por la 🔔.
-          Corre cada 30 minutos.
+          Corre cada {{ cada_min }} minuto{{ '' if cada_min == 1 else 's' }},
+          y si no querés esperar está «Convertir ahora».
           {% if cfg.fecha_corte %}
           Sólo mira recepciones <strong>desde el {{ cfg.fecha_corte }}</strong>
           (lo anterior queda como está).

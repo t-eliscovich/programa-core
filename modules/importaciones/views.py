@@ -579,6 +579,9 @@ def automatico():
     return render_template(
         "importaciones/automatico.html",
         cfg=cfg, prev=prev,
+        # 🚨 El cartel decía "cada 30 minutos" a mano y quedó mintiendo el día
+        # que se acortó el ciclo. Sale del mismo número que lo frena.
+        cada_min=round(autobap._INTERVALO_MIN / 60),
         historial=autobap.avisos(solo_no_leidos=False, limite=50),
     )
 
