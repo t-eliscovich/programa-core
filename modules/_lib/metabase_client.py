@@ -7,7 +7,7 @@ Cómo usarlo:
 Diseño:
 - Login lazy + refresh on 401 (token Metabase vence en 14 días por default).
 - Siempre fail-soft: cualquier excepción se loguea como WARNING y devuelve [].
-- Una sola implementación de auth, reusada por MetabaseAdapter (costos_ot)
+- Una sola implementación de auth, reusada por los bridges de Asinfo
   y por cualquier módulo nuevo que lea de Asinfo (DB 2) o formulas_app
   (DB 3) vía card guardada.
 

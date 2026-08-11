@@ -453,9 +453,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(sri_bp)
 
-    from modules.costos_ot.views import costos_ot_bp
 
-    app.register_blueprint(costos_ot_bp)
 
     # banco_v2_view registra los endpoints /conciliacion/banco-v2/* — Reforma
     # Sprint 1 (2026-05-28). Coexiste con /conciliacion/hub vigente hasta swap.

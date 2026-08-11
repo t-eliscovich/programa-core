@@ -179,17 +179,5 @@
     </table>
   </div>
 
-  {# Puente con formulas_app — OTs cerradas del cliente. El fragment es
-     resiliente: si el adapter está caído, renderiza la tabla vacía con
-     un mensaje amigable, nunca rompe el detalle de factura. #}
-  {% if fact.codigo_cli %}
-    <div hx-get="{{ url_for('costos_ot.por_cliente_fragment', codigo_cli=fact.codigo_cli) }}"
-         hx-trigger="load"
-         hx-swap="innerHTML">
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-4 py-3 mb-6 text-sm text-slate-400">
-        Cargando órdenes de tintura del cliente…
-      </div>
-    </div>
-  {% endif %}
 </div>
 {% endblock %}
