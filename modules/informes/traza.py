@@ -1102,23 +1102,27 @@ def _unir_conversion_del_anticipo(grupos: dict) -> None:
 _TXT_QUIMICOS = "Stock de químicos (formulas_app)"
 
 
-def _quimicos(texto: str, aporte: float) -> str:
-    """🚨 TMT 2026-08-11: *"esto debería ser consumo en químicos, x órdenes
-    terminadas"*, sobre "salió de químicos".
+def _quimicos(texto: str, aporte: float) -> tuple[str, str]:
+    """El renglón de químicos: (qué pasó con la plata, qué se cargó).
 
-    Y es literal, no una interpretación: el stock de químicos que PC lee de
-    formulas_app se arma como compras + ajustes − CONSUMO de las órdenes con
-    `fecha_terminado` (`quimico_inv_formulas`). Cuando la columna baja, lo que
-    pasó es que se cerraron órdenes y su consumo se imputó ese día.
+    🚨 TMT 2026-08-11: *"esto debería ser consumo en químicos, x órdenes
+    terminadas"*, sobre "salió de químicos". Y es literal: el stock que PC lee
+    de formulas_app es compras + ajustes − CONSUMO de las órdenes con
+    `fecha_terminado` (`quimico_inv_formulas`), así que la baja ES eso.
 
-    ⭐ La suba se queda en "entró a químicos": ahí no se puede afirmar tanto
-    —puede ser una compra o un ajuste de inventario— y decir "compra" cuando
-    fue un ajuste sería inventar.
+    ⭐ Pero la causa NO se deduce del signo, y eso está medido: el 04/08 a las
+    14:27 se cargó una compra a QSI de 60 u. y la ventana bajó −135,17 igual,
+    porque el consumo de las órdenes que cerraron pesó más. Por eso el hecho
+    —lo que se cargó— lo guarda la FOTO (`foto._causa_quimicos`, pegado al
+    rótulo) y acá sólo se lo despega: arriba el neto, abajo la causa en gris.
+    Las fotos anteriores al 11/08 no lo guardaron y quedan sin la nota.
     """
-    if texto != _TXT_QUIMICOS:
-        return texto
-    return ("entró a químicos" if aporte > 0
+    if not texto.startswith(_TXT_QUIMICOS):
+        return texto, ""
+    causa = texto[len(_TXT_QUIMICOS):].lstrip(" ·").strip()
+    neto = ("entró a químicos" if aporte > 0
             else "consumo de químicos por órdenes terminadas")
+    return neto, causa
 
 
 def resumir(movs: list[dict], d_utilidad: float | None,
@@ -1362,8 +1366,12 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["texto"] = _corto_etiqueta(g.get("etiqueta") or g["regla"])
         if g.get("texto_unido"):
             g["texto"] = g["texto_unido"]
-        g["texto"] = _quimicos(_abreviar_etapas(g.get("texto") or ""),
-                               g.get("aporte") or 0.0)
+        g["texto"], _causa = _quimicos(_abreviar_etapas(g.get("texto") or ""),
+                                       g.get("aporte") or 0.0)
+        # La nota que ya traía el grupo (el $/kg del anticipo, el margen de la
+        # venta) manda: la causa de químicos sólo llena una nota vacía.
+        if _causa and not g.get("nota"):
+            g["nota"] = _causa
         out.append(g)
     if abs(menores) >= UMBRAL_VISIBLE:
         out.append({"texto": "movimientos chicos", "aporte": menores, "n": 0,

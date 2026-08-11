@@ -355,12 +355,52 @@ def _det_vsto(bal: dict) -> list[dict]:
     return out
 
 
-def _det_vqx(bal: dict) -> list[dict]:
-    """Stock de químicos. Viene de formulas_app en vivo y sin caché: hoy es un
-    solo número y no hay detalle por colorante del lado de PC."""
+#: Lo que separa el rótulo del componente de la CAUSA que se le cuelga.
+#: `traza_detalle` guarda una sola columna de texto por documento, así que el
+#: hecho ("se cargó una compra a AVQ") viaja pegado al rótulo y `traza._quimicos`
+#: lo vuelve a partir al renderizar: arriba el neto, abajo la causa en gris.
+SEP_CAUSA = " · "
+TXT_QUIMICOS = "Stock de químicos (formulas_app)"
+
+
+def _causa_quimicos(bal: dict, anterior: dict | None) -> str:
+    """"se cargó una compra a AVQ (1.605 u.)" — sólo si el número se movió.
+
+    🚨 TMT 2026-08-11: el signo NO es la causa. Medido sobre las 9 subas
+    grabadas desde el 31/07: 7 son compras, 1 son ajustes y 1 es el reloj
+    (el +48,16 del 03/08 15:20 devuelve el −48,16 de las 15:05). Y al revés:
+    el 04/08 14:27 se cargó una compra a QSI de 60 u. y la ventana BAJÓ
+    −135,17, porque el consumo de las órdenes que cerraron pesó más.
+
+    ⭐ Se pregunta SÓLO cuando el importe cambió contra la foto anterior. En
+    2.563 de 2.711 ventanas el químico no se movió: preguntar siempre sería
+    una consulta a formulas_app cada cinco minutos para escuchar "nada".
+    """
     v = _f(((bal or {}).get("diagnostico") or {}).get("componentes", {}).get("vqx"))
-    return [{"doc_id": "#quimicos", "etiqueta": "Stock de químicos (formulas_app)",
-             "importe": v}] if v else []
+    prev = (anterior or {}).get(("vqx", "#quimicos")) or {}
+    if not prev or round(_f(prev.get("importe")) - v, 2) == 0:
+        return ""
+    try:
+        from modules.informes.quimico_inv_formulas import cargado_desde
+        r = db.fetch_one(
+            "SELECT MAX(creado_en) AS t FROM scintela.traza_utilidad") or {}
+        return cargado_desde(r.get("t"))
+    except Exception as e:  # noqa: BLE001 -- la foto nunca se cae por esto
+        _LOG.warning("foto: no pude ver qué se cargó en químicos (%s)", e)
+        return ""
+
+
+def _det_vqx(bal: dict, anterior: dict | None = None) -> list[dict]:
+    """Stock de químicos. Viene de formulas_app en vivo y sin caché: hoy es un
+    solo número y no hay detalle por colorante del lado de PC — pero cuando se
+    mueve sí se puede decir QUÉ se cargó, y eso se cuelga del rótulo."""
+    v = _f(((bal or {}).get("diagnostico") or {}).get("componentes", {}).get("vqx"))
+    if not v:
+        return []
+    causa = _causa_quimicos(bal, anterior)
+    return [{"doc_id": "#quimicos",
+             "etiqueta": TXT_QUIMICOS + (SEP_CAUSA + causa if causa else ""),
+             "importe": v}]
 
 
 def detalle(bal: dict, anterior: dict | None = None) -> list[dict]:
@@ -378,7 +418,8 @@ def detalle(bal: dict, anterior: dict | None = None) -> list[dict]:
         "bancos": _det_bancos, "antic": _det_antic, "totp": _det_totp,
         "uret": _det_uret,
         "umaq": lambda: _det_activos("umaq"), "uact": lambda: _det_activos("uact"),
-        "vsto": lambda: _det_vsto(bal), "vqx": lambda: _det_vqx(bal),
+        "vsto": lambda: _det_vsto(bal),
+        "vqx": lambda: _det_vqx(bal, anterior),
     }
     out: list[dict] = []
     # 🚨 Un componente que no se pudo LEER no es un componente vacío. Si

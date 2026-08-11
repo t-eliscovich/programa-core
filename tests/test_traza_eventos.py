@@ -774,3 +774,60 @@ def test_con_UN_solo_hecho_manda_el_nombre_del_hecho_y_no_el_concepto():
             7788, importe=7000.0, metadata={"no_banco": 10,
                                             "id_transaccion": 7788})])
     assert ev.indice(evs, cuentas)["b10"]["tipo"] == "cheque_depositado"
+
+
+# ── Químicos: el neto arriba, lo que se cargó abajo ─────────────────────────
+#
+# 🚨 TMT 2026-08-11, tras el deep dive de las 9 subas grabadas desde el 31/07:
+# 7 son compras, 1 son ajustes, 1 es el reloj. Y al revés: el 04/08 14:27 se
+# cargó una compra a QSI de 60 u. y la ventana BAJÓ −135,17, porque el consumo
+# de las órdenes que cerraron pesó más. El signo es el neto, no la causa.
+
+_QX = {"doc_id": "#quimicos", "componente": "vqx",
+       "regla": "Stock de químicos", "familia": "utilidad"}
+
+
+def _qx(etiqueta, aporte):
+    return t.resumir([dict(_QX, etiqueta=etiqueta, aporte=aporte)], aporte, {})[0]
+
+
+def test_la_compra_de_quimicos_se_nombra_aunque_la_ventana_baje():
+    """El caso del 04/08 14:27: compra a QSI y la columna igual bajó."""
+    g = _qx(t._TXT_QUIMICOS + " · se cargó una compra a QSI (60 u.)", -135.17)
+    assert g["texto"] == "consumo de químicos por órdenes terminadas"
+    assert g["nota"] == "se cargó una compra a QSI (60 u.)"
+
+
+def test_la_suba_con_compra_lo_dice():
+    g = _qx(t._TXT_QUIMICOS + " · se cargó 11 compras a AVQ (1.605 u.)", 7044.27)
+    assert g["texto"] == "entró a químicos"
+    assert g["nota"] == "se cargó 11 compras a AVQ (1.605 u.)"
+
+
+def test_sin_causa_guardada_no_hay_nota():
+    """Las fotos anteriores al 11/08 no la guardaron: sin nota, no inventada."""
+    g = _qx(t._TXT_QUIMICOS, -530.0)
+    assert g["texto"] == "consumo de químicos por órdenes terminadas"
+    assert not g.get("nota")
+
+
+def test_la_frase_de_lo_cargado_se_arma_sin_base():
+    from modules.informes.quimico_inv_formulas import _frase_de_lo_cargado as fr
+
+    assert fr([]) == ""
+    assert fr([{"k": "compra", "quien": "AVQ", "n": 1, "q": 200}]) == \
+        "se cargó una compra a AVQ (200 u.)"
+    # Dos proveedores en la misma ventana: se nombran los dos.
+    assert fr([{"k": "compra", "quien": "AVQ", "n": 2, "q": 400},
+               {"k": "compra", "quien": "SEY", "n": 1, "q": 1000}]) == \
+        "se cargaron 3 compras a AVQ y SEY (1.400 u.)"
+    # El 03/08: tres ajustes, ninguna compra.
+    assert fr([{"k": "ajuste", "quien": "", "n": 3, "q": 29.55}]) == \
+        "se cargaron 3 ajustes de inventario"
+    # Un conteo físico también mueve el número, y no es ni compra ni ajuste.
+    assert fr([{"k": "conteo", "quien": "", "n": 1, "q": 5}]) == \
+        "se cargó conteo físico"
+    # Compra Y ajuste en la misma ventana: se dicen las dos cosas.
+    assert fr([{"k": "compra", "quien": "AVQ", "n": 1, "q": 200},
+               {"k": "ajuste", "quien": "", "n": 2, "q": 30}]) == \
+        "se cargaron una compra a AVQ (200 u.) y 2 ajustes de inventario"

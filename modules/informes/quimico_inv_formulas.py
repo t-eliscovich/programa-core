@@ -450,3 +450,96 @@ def quimico_totales_por_tipo(desde: date, hasta: date) -> dict | None:
         tot["consumido"] += cons_per * us * iva
         tot["final"] += final_kg * us * iva
     return {k: round(v, 2) for k, v in tot.items()}
+
+
+# ---------------------------------------------------------------------------
+# Qué se cargó en formulas_app desde la foto anterior
+# ---------------------------------------------------------------------------
+#
+# 🚨 TMT 2026-08-11, sobre el renglón de químicos: *"si creo que me gustaría"*
+# (nombrar también la suba). El deep dive de las 9 subas grabadas desde el
+# 31/07 dio: 7 son compras, 1 son ajustes de inventario y 1 no es nada —el
+# +48,16 del 03/08 15:20 es la vuelta exacta del −48,16 de las 15:05—.
+#
+# ⭐ Y dio la razón para NO deducirlo del signo: el 04/08 a las 14:27 se cargó
+# una compra a QSI de 60 u. y esa ventana **bajó** −135,17, porque el consumo
+# de las órdenes que cerraron pesó más. Hubo compra y el signo decía consumo.
+# El neto es el neto; la causa hay que ir a buscarla.
+#
+# `created_at` es TEXT en formulas_app (igual que `fecha`), así que se compara
+# CASTEADO: el formato guardado ('2026-08-04 17:30:50.997256+00') no ordena
+# lexicográficamente contra un ISO de Python ('2026-08-04T17:30:50+00:00'),
+# y la comparación fallaría en silencio justo en la 'T'.
+_SQL_CARGADO = """
+SELECT 'compra' AS k, COALESCE(NULLIF(TRIM(proveedor), ''), '?') AS quien,
+       COUNT(*) AS n, SUM(cantidad) AS q
+  FROM compras
+ WHERE NULLIF(TRIM(created_at), '') IS NOT NULL
+   AND created_at::timestamptz > %(desde)s::timestamptz
+ GROUP BY 1, 2
+UNION ALL
+SELECT 'ajuste', '', COUNT(*), SUM(cantidad)
+  FROM inventario_ajustes
+ WHERE NULLIF(TRIM(created_at), '') IS NOT NULL
+   AND created_at::timestamptz > %(desde)s::timestamptz
+HAVING COUNT(*) > 0
+UNION ALL
+SELECT 'conteo', '', COUNT(*), SUM(cantidad)
+  FROM inventario
+ WHERE NULLIF(TRIM(created_at), '') IS NOT NULL
+   AND created_at::timestamptz > %(desde)s::timestamptz
+HAVING COUNT(*) > 0
+"""
+
+
+def cargado_desde(desde) -> str:
+    """"una compra a AVQ (1.605 u.)" — lo que se cargó después de esa marca.
+
+    '' si no se cargó nada, o si formulas_app no contesta: una frase que dice
+    "no se cargó nada" cuando en realidad no se pudo mirar sería peor que el
+    silencio.
+    """
+    if not desde:
+        return ""
+    try:
+        rows = formulas_db.fetch_all(_SQL_CARGADO, {"desde": str(desde)}) or []
+    except Exception as e:  # noqa: BLE001 -- nunca romper la foto
+        _LOG.warning("cargado_desde %s: %s", desde, e)
+        return ""
+    return _frase_de_lo_cargado(rows)
+
+
+def _frase_de_lo_cargado(rows: list[dict]) -> str:
+    """Las filas crudas → la frase. Separada para poder testearla sin base.
+
+    ⭐ El plural se escribe entero y no pegando una "s": "3 ajustes de
+    inventario", no "3 ajuste de inventarios".
+    """
+    from filters import num_es
+
+    _PLURAL = {"ajuste": ("ajuste de inventario", "ajustes de inventario"),
+               "conteo": ("conteo físico", "conteos físicos")}
+    compras = [r for r in rows if (r.get("k") or "") == "compra"]
+    otros = {(r.get("k") or ""): r for r in rows if (r.get("k") or "") != "compra"}
+    partes: list[str] = []
+    total = 0
+    if compras:
+        # Con más de un proveedor se nombran todos: son compras distintas.
+        quienes = sorted({(r.get("quien") or "?").strip() for r in compras})
+        n = sum(int(r.get("n") or 0) for r in compras)
+        q = sum(float(r.get("q") or 0) for r in compras)
+        total += n
+        partes.append(
+            f"{'una compra' if n == 1 else f'{n} compras'} a "
+            f"{' y '.join(quienes)} ({num_es(q, 0)} u.)")
+    for clave in ("ajuste", "conteo"):
+        r = otros.get(clave)
+        if not r:
+            continue
+        n = int(r.get("n") or 0)
+        total += n
+        uno, varios = _PLURAL[clave]
+        partes.append(uno if n == 1 else f"{n} {varios}")
+    if not partes:
+        return ""
+    return ("se cargó " if total == 1 else "se cargaron ") + " y ".join(partes)
