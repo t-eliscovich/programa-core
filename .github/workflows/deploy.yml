@@ -13,9 +13,22 @@ name: Deploy to EC2
 # Auth: asume el IAM role `programa-core-deploy` via OIDC (sin keys hardcodeadas).
 # El role ARN está en el secret AWS_DEPLOY_ROLE_ARN del repo.
 
+# TMT 2026-08-10 (dueña): *"podemos hacer un future stop para que esto no
+# pase"*. Hasta hoy este workflow arrancaba del MISMO push que el CI y corría
+# EN PARALELO, así que el CI no frenaba nada: el 10/08 el run de `bef582b`
+# quedó rojo y el deploy salió igual, con el código ya en producción. El CI
+# era un aviso, no un freno — y si nadie mira el aviso, no existe.
+#
+# Ahora el disparador es el CI TERMINADO. Si el CI no pasó, no se deploya.
+#   - `workflow_dispatch` sigue existiendo: redeploy a mano sin esperar a nadie
+#     (y es la salida si un test flaky bloquea un deploy urgente).
+#   - ⚠ El costo: el deploy ahora empieza cuando el CI termina (~4-5 min más).
+#   - ⚠ `workflow_run` sólo dispara desde el workflow de la rama default.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches: [main]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -26,10 +39,23 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # A mano siempre; automático SÓLO si el CI dio verde.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    env:
+      # ⭐ En un `workflow_run`, `github.sha` NO es el commit que se testeó:
+      # apunta a la punta de la rama default cuando se dispara el evento. El
+      # commit real es `workflow_run.head_sha` — deployar otra cosa que la que
+      # el CI aprobó sería exactamente el agujero que estamos tapando.
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -69,7 +95,7 @@ jobs:
         id: deploy
         env:
           DOWNLOAD_URL: ${{ steps.upload.outputs.url }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ env.DEPLOY_SHA }}
         run: |
           # Construímos el PowerShell que va a correr en el EC2.
           # Pasamos URL y SHA como vars al script.
@@ -243,3 +269,18 @@ jobs:
             echo "Deploy failed (final status: $STATUS)"
             exit 1
           fi
+
+  # Sin esto, un CI rojo dejaría el deploy en "skipped" — gris, sin mail, y
+  # equivalente a que no pase nada. Este job existe para que el freno se VEA.
+  bloqueado:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion != 'success'
+    steps:
+      - name: Avisar que el deploy NO salió
+        run: |
+          echo "DEPLOY BLOQUEADO: el CI de ${{ github.event.workflow_run.head_sha }} terminó en '${{ github.event.workflow_run.conclusion }}'."
+          echo "El código NO llegó a producción. Arreglá el CI y volvé a pushear,"
+          echo "o corré este workflow a mano (Run workflow) si hay que salir igual."
+          exit 1
