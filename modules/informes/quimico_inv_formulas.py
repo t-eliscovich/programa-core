@@ -509,6 +509,25 @@ def cargado_desde(desde) -> str:
     return _frase_de_lo_cargado(rows)
 
 
+def _prov_pc(quien: str) -> str:
+    """El código de proveedor de formulas_app traducido al de Programa Core.
+
+    🚨 TMT 2026-08-11: la traza mostraba dos renglones del MISMO hecho con dos
+    nombres distintos —"CP PO → DE 10149" y "se cargó una compra a PRO"— y
+    parecían dos compras. PRO y PO son PROVITEX; el diccionario ya existía
+    (`compras.formulas_bridge.PROV_MAP`, el que usa el puente para crear la
+    compra), así que se reusa en vez de escribir otro que se desincronice.
+
+    Un proveedor que formulas agrega y todavía no está mapeado se muestra tal
+    cual: mejor su código de allá que un guión.
+    """
+    try:
+        from modules.compras.formulas_bridge import PROV_MAP
+    except Exception:  # noqa: BLE001 -- la frase nunca se cae por esto
+        return quien
+    return PROV_MAP.get((quien or "").strip().upper(), quien)
+
+
 def _frase_de_lo_cargado(rows: list[dict]) -> str:
     """Las filas crudas → la frase. Separada para poder testearla sin base.
 
@@ -525,7 +544,8 @@ def _frase_de_lo_cargado(rows: list[dict]) -> str:
     total = 0
     if compras:
         # Con más de un proveedor se nombran todos: son compras distintas.
-        quienes = sorted({(r.get("quien") or "?").strip() for r in compras})
+        quienes = sorted({_prov_pc((r.get("quien") or "?").strip())
+                          for r in compras})
         n = sum(int(r.get("n") or 0) for r in compras)
         q = sum(float(r.get("q") or 0) for r in compras)
         total += n

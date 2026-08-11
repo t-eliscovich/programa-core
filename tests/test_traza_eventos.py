@@ -832,12 +832,15 @@ def test_la_frase_de_lo_cargado_se_arma_sin_base():
     from modules.informes.quimico_inv_formulas import _frase_de_lo_cargado as fr
 
     assert fr([]) == ""
+    # 🚨 TMT 2026-08-11: el proveedor sale con el código de Programa Core
+    # (AVQ de formulas → AQ acá), por `formulas_bridge.PROV_MAP`. Antes la
+    # misma compra aparecía con dos nombres en dos renglones de la traza.
     assert fr([{"k": "compra", "quien": "AVQ", "n": 1, "q": 200}]) == \
-        "se cargó una compra a AVQ (200 u.)"
+        "se cargó una compra a AQ (200 u.)"
     # Dos proveedores en la misma ventana: se nombran los dos.
     assert fr([{"k": "compra", "quien": "AVQ", "n": 2, "q": 400},
                {"k": "compra", "quien": "SEY", "n": 1, "q": 1000}]) == \
-        "se cargaron 3 compras a AVQ y SEY (1.400 u.)"
+        "se cargaron 3 compras a AQ y SY (1.400 u.)"
     # El 03/08: tres ajustes, ninguna compra.
     assert fr([{"k": "ajuste", "quien": "", "n": 3, "q": 29.55}]) == \
         "se cargaron 3 ajustes de inventario"
@@ -847,7 +850,7 @@ def test_la_frase_de_lo_cargado_se_arma_sin_base():
     # Compra Y ajuste en la misma ventana: se dicen las dos cosas.
     assert fr([{"k": "compra", "quien": "AVQ", "n": 1, "q": 200},
                {"k": "ajuste", "quien": "", "n": 2, "q": 30}]) == \
-        "se cargaron una compra a AVQ (200 u.) y 2 ajustes de inventario"
+        "se cargaron una compra a AQ (200 u.) y 2 ajustes de inventario"
 
 
 # ── el guardián del flaky ───────────────────────────────────────────────────
