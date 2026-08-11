@@ -62,15 +62,6 @@ Dos pedazos, y conviene el segundo primero:
 Mientras tanto, la traza debería decir de qué FECHA es el movimiento bancario y
 no sólo el importe.
 
-
-### [M] Rebuild de static/tailwind.css (aprobado 05/08)
-El build está congelado: 745 clases definidas vs 1.581 usadas → **~488 clases
-fantasma** que no renderizan sin avisar (`leading-none` ×21, `w-16` ×18,
-`text-[9px]` ×27, casi todos los `dark:`/`file:`/`focus:`). Regenerar con la
-CLI de Tailwind escaneando `templates/**` + `modules/**/templates/**`, agregar
-paso de CI o make target, y **smoke visual pantalla por pantalla** después
-(488 clases activándose de golpe pueden mover layouts).
-
 ### [L] Limpieza del código dBase — SEPTIEMBRE 2026, no antes
 
 Reconfirmado el 2026-08-09: **se hace en septiembre**, no antes. Lo que sigue
