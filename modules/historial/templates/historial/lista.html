@@ -260,8 +260,11 @@
                          {% if r.estado == 'reverso' %}italic opacity-70{% endif %}
                          {% if r.row_url %}cursor-pointer{% endif %}"
                   {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
-                <td class="px-2 py-0.5 whitespace-nowrap pl-4">
-                  <div class="text-xs text-violet-700">↳ #{{ r.id_mov_doble }}</div>
+                {# Ídem: la flechita marca que es hijo del lote; el número
+                   interno no aportaba nada (TMT 2026-08-11). #}
+                <td class="px-2 py-0.5 whitespace-nowrap pl-4"
+                    title="#{{ r.id_mov_doble }}">
+                  <div class="text-xs text-violet-700">↳</div>
                 </td>
                 <td class="px-2 py-0.5 truncate" title="{{ r.label }}">
                   <div class="font-medium truncate">{{ r.label }}</div>
@@ -315,11 +318,15 @@
                        {% if r.estado == 'reverso' %}bg-slate-50/60 italic{% endif %}
                        {% if r.row_url %}cursor-pointer{% endif %}"
                 {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
-              <td class="px-2 py-0.5 whitespace-nowrap">
+              {# 🚨 TMT 2026-08-11: *"este numerito no hace falta mostrar"*. Debajo
+                 de cada fecha iba el `id_mov_doble` (#23046) — el número interno
+                 de la fila, que no se usa para nada de afuera: los links entran
+                 por `?ids=`, el reverso por su propia URL y la búsqueda por
+                 concepto. Queda en el `title` por si alguna vez hace falta
+                 para soporte, sin ocupar un renglón en cada fila. #}
+              <td class="px-2 py-0.5 whitespace-nowrap"
+                  title="#{{ r.id_mov_doble }}">
                 {{ r.fecha_operacion | fecha_es }}
-                <div class="text-[10px] text-slate-400 truncate" title="#{{ r.id_mov_doble }}">
-                  #{{ r.id_mov_doble }}
-                </div>
               </td>
               <td class="px-2 py-0.5 truncate" title="{{ r.label }}">
                 <div class="font-medium truncate">{{ r.label }}</div>
