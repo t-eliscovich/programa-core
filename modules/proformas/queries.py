@@ -584,6 +584,25 @@ def _pct_txt(v) -> str:
     return str(int(f)) if f == int(f) else ("%.2f" % f).replace(".", ",")
 
 
+def eliminar(id_proforma: int) -> bool:
+    """Borra UNA proforma con su detalle. Devuelve False si ya no estaba.
+
+    Alex la cargó mal y no quiere que le quede colgada una semana (dueña
+    2026-08-11). Una proforma es un papel de trabajo: no toca stock, facturas
+    ni utilidad, así que se borra de verdad — no hay nada que reversar. El
+    detalle se borra a mano por lo mismo que en `purgar_viejas`.
+    """
+    with db.tx() as conn:
+        db.execute(
+            "DELETE FROM scintela.proforma_detalle WHERE id_proforma = %s",
+            (int(id_proforma),), conn=conn,
+        )
+        return bool(db.execute(
+            "DELETE FROM scintela.proforma_cabecera WHERE id_proforma = %s",
+            (int(id_proforma),), conn=conn,
+        ))
+
+
 def purgar_viejas(dias: int = 7) -> int:
     """Borra las proformas de más de `dias` días y devuelve cuántas.
 

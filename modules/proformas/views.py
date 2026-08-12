@@ -2,10 +2,13 @@
 from flask import (
     Blueprint,
     abort,
+    flash,
     g,
     jsonify,
+    redirect,
     render_template,
     request,
+    url_for,
 )
 
 from auth import requiere_login, requiere_permiso
@@ -224,3 +227,53 @@ def guardar():
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)}), 500
     return jsonify({"ok": True, **res})
+
+
+@proformas_bp.route("/proformas/<int:id_proforma>/confirmar-eliminacion")
+@requiere_login
+@requiere_permiso("proformas.crear")
+def confirmar_eliminacion(id_proforma: int):
+    """Paso 1 de 2 antes de borrar (misma pantalla que el resto de la app).
+
+    Gateado por `proformas.crear` y no por un permiso nuevo: el que la hace es
+    el que la borra, y una proforma no es un documento contable — no mueve
+    stock, facturas ni utilidad, y en 7 días se va sola igual.
+    """
+    data = queries.detalle(id_proforma)
+    if not data:
+        abort(404)
+    cab = data["cabecera"]
+    return render_template(
+        "_confirmar_accion.html",
+        titulo=f"Eliminar proforma N° {id_proforma}",
+        mensaje=(
+            f"Vas a eliminar la proforma N° {id_proforma} de "
+            f"{cab.get('cliente') or cab.get('codigo_cli') or '(sin cliente)'}. "
+            "No se puede deshacer."
+        ),
+        detalle_registro={
+            "Documento": "Factura Proforma" if cab.get("es_pedido") else "Cotización",
+            "Cliente": f"{cab.get('codigo_cli') or ''} {cab.get('cliente') or ''}".strip(),
+            "Fecha": cab.get("fecha_emision"),
+            "Líneas": len(data["items"]),
+            "Total": f"$ {cab.get('total_final') or 0}",
+        },
+        accion_url=url_for("proformas.eliminar", id_proforma=id_proforma),
+        volver_url=url_for("proformas.lista"),
+        motivo_requerido=False,
+        confirm_label="Confirmar eliminación",
+    )
+
+
+@proformas_bp.route("/proformas/<int:id_proforma>/eliminar", methods=["POST"])
+@requiere_login
+@requiere_permiso("proformas.crear")
+def eliminar(id_proforma: int):
+    try:
+        if queries.eliminar(id_proforma):
+            flash(f"Proforma N° {id_proforma} eliminada.", "ok")
+        else:
+            flash(f"La proforma N° {id_proforma} ya no estaba.", "warn")
+    except Exception as e:  # noqa: BLE001
+        flash(f"No pude eliminar la proforma N° {id_proforma}: {e}", "error")
+    return redirect(url_for("proformas.lista"))

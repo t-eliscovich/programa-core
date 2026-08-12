@@ -28,6 +28,8 @@
       {% if tiene_permiso('proformas.crear') %}
       <a href="{{ url_for('proformas.editar', id_proforma=cabecera.id_proforma) }}"
          class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white shadow-sm">Modificar</a>
+      <a href="{{ url_for('proformas.confirmar_eliminacion', id_proforma=cabecera.id_proforma) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-500 hover:text-red-600 hover:border-red-300">Eliminar</a>
       {% endif %}
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
     </div>

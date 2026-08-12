@@ -398,3 +398,43 @@ def test_la_migracion_0188_dejo_la_cascade(migrated_db):
         """
     )
     assert fila and fila["confdeltype"] == "c", "la FK tiene que ser ON DELETE CASCADE"
+
+
+@pytest.mark.db
+def test_eliminar_una_proforma_por_la_pantalla(cliente_web, cliente_prueba):
+    """Alex la cargó mal: la borra y no le queda a la vista una semana."""
+    import db
+
+    id1 = cliente_web.post("/proformas/guardar", json=_payload()).get_json()["id_proforma"]
+
+    # Paso 1: la pantalla de confirmación dice QUÉ se va a borrar.
+    conf = cliente_web.get(f"/proformas/{id1}/confirmar-eliminacion")
+    assert conf.status_code == 200
+    assert f"N° {id1}".encode() in conf.data
+
+    # Paso 2: el POST.
+    r = cliente_web.post(f"/proformas/{id1}/eliminar", follow_redirects=True)
+    assert r.status_code == 200
+
+    from modules.proformas import queries as Q
+    assert Q.detalle(id1) is None
+    huerfanas = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.proforma_detalle WHERE id_proforma = %s",
+        (id1,),
+    )["n"]
+    assert huerfanas == 0, "el detalle se tiene que ir con la cabecera"
+
+
+@pytest.mark.db
+def test_eliminar_una_que_no_existe_no_rompe(cliente_web, cliente_prueba):
+    assert cliente_web.get("/proformas/99999999/confirmar-eliminacion").status_code == 404
+    # El POST directo sobre una que ya no está avisa, no explota.
+    assert cliente_web.post("/proformas/99999999/eliminar",
+                            follow_redirects=True).status_code == 200
+
+
+@pytest.mark.db
+def test_la_lista_ofrece_eliminar(cliente_web, cliente_prueba):
+    id1 = cliente_web.post("/proformas/guardar", json=_payload()).get_json()["id_proforma"]
+    html = cliente_web.get("/proformas").data.decode("utf8")
+    assert f"/proformas/{id1}/confirmar-eliminacion" in html
