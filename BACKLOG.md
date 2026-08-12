@@ -194,9 +194,13 @@ Verificar en unos días que las capturas programadas corren solas en producción
 
 ### [S] Checks de drift en /admin/health/all
 Cada par de fuentes que debe coincidir, con check automático:
-`config/roles.py` ↔ `seguridad.permiso` (drift ya visto: `cupos.editar`),
-clases de templates ↔ tailwind.css, links hardcodeados ↔ url_map
-(generalizar `test_historial_links_resuelven` a TODOS los templates).
+`config/roles.py` ↔ `seguridad.permiso` (drift ya visto: `cupos.editar`).
+
+✅ Hechos: clases de templates ↔ tailwind.css · links hardcodeados ↔ url_map
+(`test_drift_estatico`, ya generalizado a TODOS los templates) · valores de
+filtro ↔ vocabulario de la pantalla destino (12/08: la traza mandaba
+`/historial?tipo=banco_cargado`, que no existe, y abría una pantalla vacía —
+`test_links_de_la_traza_no_caen_en_vacio_2026_08_12`).
 
 ---
 
