@@ -10,21 +10,23 @@
   .imp .page-title { font-size: 22px; font-weight: 800; color: rgb(15 23 42); letter-spacing: -0.01em; }
   .dark .imp .page-title { color: rgb(241 245 249); }
 
-  /* ── KPI cards con acento de color ──────────────────────────── */
-  .imp .kpi { background: #fff; border: 1px solid rgb(226 232 240); border-left: 4px solid rgb(203 213 225);
-              border-radius: 12px; padding: 13px 16px; transition: box-shadow .15s ease, transform .15s ease; }
-  .imp .kpi:hover { box-shadow: 0 6px 18px -8px rgb(15 23 42 / .18); transform: translateY(-1px); }
-  .imp .kpi-label { color: rgb(100 116 139); font-size: 10.5px; text-transform: uppercase;
-                    letter-spacing: .06em; font-weight: 700; }
-  .imp .kpi-val { font-size: 25px; font-weight: 800; margin-top: 2px; color: rgb(15 23 42); line-height: 1.05; }
-  .imp .kpi--total { border-left-color: rgb(100 116 139); }
-  .imp .kpi--recib { border-left-color: rgb(16 185 129); }
+  /* ── KPI cards ────────────────────────────────────────────────
+     TMT 2026-08-12 (Federico): mismo estilo que los recuadros de Posdatados —
+     borde fino uniforme (2px slate-200, sin la barra izquierda gruesa de color),
+     label xs uppercase y valor 24px semibold con tabular-nums. Se mantienen los
+     colores semánticos de los números (emerald / azul / ámbar). */
+  .imp .kpi { background: #fff; border: 2px solid rgb(226 232 240);
+              border-radius: 6px; padding: 18px 20px; transition: border-color .15s ease; }
+  .imp .kpi:hover { border-color: rgb(148 163 184); }
+  .imp .kpi-label { color: rgb(100 116 139); font-size: 12px; text-transform: uppercase;
+                    letter-spacing: .05em; font-weight: 400; }
+  .imp .kpi-val { font-size: 24px; font-weight: 600; margin-top: 8px; color: rgb(15 23 42);
+                  line-height: 1.2; font-variant-numeric: tabular-nums; }
   .imp .kpi--recib .kpi-val { color: rgb(5 150 105); }
-  .imp .kpi--ant { border-left-color: rgb(2 132 199); }
   .imp .kpi--ant .kpi-val { color: rgb(2 132 199); }
-  .imp .kpi--kg { border-left-color: rgb(217 119 6); }
   .imp .kpi--kg .kpi-val { color: rgb(180 83 9); }
   .dark .imp .kpi { background: rgb(15 23 42); border-color: rgb(51 65 85); }
+  .dark .imp .kpi:hover { border-color: rgb(100 116 139); }
   .dark .imp .kpi-val { color: rgb(241 245 249); }
 
   /* ── Tabla ──────────────────────────────────────────────────── */
