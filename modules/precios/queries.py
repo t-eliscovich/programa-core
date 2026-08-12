@@ -755,4 +755,7 @@ def asignar_clase_color(cod: str, clase: int, usuario: str) -> None:
         "usuario_modifica=%s WHERE UPPER(TRIM(cod))=%s",
         (clase, usuario, cod),
     )
-    _COLORES_CACHE.pop("v1", None)
+    # 🚨 Limpiar TODO, no una clave por nombre: cuando la consulta pasó de
+    # `v1` a `v2` este pop quedó apuntando a la clave vieja y el color seguía
+    # figurando como pendiente hasta cinco minutos después de corregirlo.
+    _COLORES_CACHE.clear()

@@ -308,13 +308,21 @@ def test_una_clase_invalida_no_se_graba(duenia, clase):
 
 
 def test_asignar_clase_color_escribe_y_limpia_la_cache(fake_db):
-    queries._COLORES_CACHE["v1"] = (9e9, ["basura"])
+    """La caché se vacía ENTERA, no una clave por nombre.
+
+    REGRESIÓN (12/08/2026): el limpiador decía `pop("v1")` y la consulta ya
+    guardaba en `v2`, así que un color corregido seguía apareciendo como
+    pendiente hasta 5 minutos. El test viejo escribía y miraba `"v1"`, o sea
+    tenía la FORMA del bug y pasaba igual. Por eso ahora se ensucia con una
+    clave cualquiera y se exige que no quede NADA.
+    """
+    queries._COLORES_CACHE["cualquier_clave"] = (9e9, ["basura"])
     with patch("db.execute") as fake:
         queries.asignar_clase_color(" coa ", 3, "tamara")
     sql, params = fake.call_args[0]
     assert "UPDATE scintela.tinto_costos" in sql
     assert params == (3, "tamara", "COA")
-    assert "v1" not in queries._COLORES_CACHE, "si queda cacheado, el color sigue apareciendo como pendiente"
+    assert queries._COLORES_CACHE == {}, "si queda cacheado, el color sigue apareciendo como pendiente"
 
 
 def test_asignar_clase_color_rechaza_lo_invalido():
