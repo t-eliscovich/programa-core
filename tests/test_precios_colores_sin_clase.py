@@ -482,3 +482,19 @@ def test_la_ruta_devuelve_los_dos_grupos(duenia):
     queries._COLORES_CACHE.clear()
     assert data["discrepan"][0]["cod"] == "AVE"
     assert data["faltan"] == []
+
+
+def test_el_bloque_es_tan_ancho_como_la_matriz(duenia):
+    """Los 5 botones tienen que ENTRAR en el recuadro.
+
+    REGRESIÓN (12/08/2026): el bloque nació `max-w-4xl` mientras la matriz de
+    arriba es `max-w-6xl`. Los 5 botones pedían hasta x=1204 contra un recuadro
+    que terminaba en 1128, así que **FUERTES quedaba cortado** — justo el que
+    hay que apretar en AVELLANA y PURPURA. No lo vio ni la suite ni el render
+    en jsdom (ninguno de los dos hace layout): apareció en una captura de la
+    pantalla viva.
+    """
+    html = duenia.get("/precios").get_data(as_text=True)
+    bloque = html[html.index('<details id="colores-asinfo"'):][:400]
+    assert "max-w-6xl" in bloque
+    assert "max-w-4xl" not in bloque

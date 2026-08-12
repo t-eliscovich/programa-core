@@ -342,7 +342,7 @@
    que se vea todo el tiempo" → nace CERRADO y la consulta a Asinfo sale recién
    al abrirlo.
    ======================================================================== #}
-<details id="colores-asinfo" class="no-print solo-pantalla max-w-4xl mt-10 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+<details id="colores-asinfo" class="no-print solo-pantalla max-w-6xl mt-10 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
   <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
     Colores a revisar contra Asinfo
     <span class="ml-2 font-normal text-xs text-slate-500 dark:text-slate-400">
@@ -364,7 +364,11 @@
           <tr class="bg-slate-50 dark:bg-slate-800/50">
             <th class="px-3 py-1.5 text-left font-medium">Color</th>
             <th class="px-3 py-1.5 text-left font-medium">Lo que dice Asinfo</th>
-            <th class="px-3 py-1.5 text-left font-medium">{% if puede_editar %}Ponerle la clase{% else %}Clase sugerida{% endif %}</th>
+            {# Los 5 botones son el PUNTO de la tabla: la columna se queda con
+               el ancho que necesita y lo que cede es la evidencia, que es
+               texto. Antes la tabla era max-w-4xl y FUERTES —justo el que hay
+               que apretar— quedaba cortado fuera del recuadro. #}
+            <th class="px-3 py-1.5 text-left font-medium whitespace-nowrap" style="width:1%;">{% if puede_editar %}Ponerle la clase{% else %}Clase sugerida{% endif %}</th>
           </tr>
         </thead>
         <tbody id="colores-asinfo-filas"></tbody>
@@ -391,12 +395,12 @@
                     '</span> <span class="text-slate-400 text-xs">' + c.cod + '</span>';
 
     var td2 = document.createElement('td');
-    td2.className = 'px-3 py-1 text-xs whitespace-nowrap ' +
+    td2.className = 'px-3 py-1 text-xs ' +
       (esDiscrepancia ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400');
     td2.textContent = c.evidencia;
 
     var td3 = document.createElement('td');
-    td3.className = 'px-3 py-1';
+    td3.className = 'px-3 py-1 whitespace-nowrap';
     if (!PUEDE) {
       td3.innerHTML = c.sugerida
         ? '<span class="font-medium text-slate-700 dark:text-slate-300">' + c.sugerida_desc + '</span>'
