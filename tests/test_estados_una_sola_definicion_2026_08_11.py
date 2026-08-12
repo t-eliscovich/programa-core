@@ -137,3 +137,55 @@ def test_todo_estado_que_el_menu_ofrece_esta_en_la_tabla():
     }
     huerfanos = sorted(ofrecidos - set(estados.ESTADOS))
     assert not huerfanos, f"El menú ofrece estados que la tabla no conoce: {huerfanos}"
+
+
+# ---------------------------------------------------------------------------
+# La matriz de transiciones contra la del dBase
+# ---------------------------------------------------------------------------
+
+def test_toda_diferencia_con_el_dbase_esta_declarada():
+    """Apartarse del dBase se puede; hacerlo sin decirlo, no.
+
+    Dueña 11/08/2026: "tiene que imitar al dbase". Copiarlo letra por letra
+    sacaría cosas que ella pidió (marcar devuelto desde cartera, el asistente
+    de rebote) y agregaría transiciones de estados muertos. Así que lo que se
+    exige es que CADA diferencia tenga su motivo escrito: una divergencia pasa
+    a ser una decisión, no un olvido.
+
+    Si mañana alguien agrega o saca una transición, este test le pide que diga
+    por qué — en `estados.DIFERENCIAS_TRANSICIONES`.
+    """
+    r = estados.diferencias_con_el_dbase(queries.TRANSICIONES_VALIDAS)
+    sin_motivo = [f"{a}→{b}" for a, b in r["sin_declarar"]]
+    assert not sin_motivo, (
+        "Estas transiciones difieren del dBase y nadie dijo por qué: "
+        f"{sin_motivo}. Declaralas en estados.DIFERENCIAS_TRANSICIONES."
+    )
+
+
+def test_los_filtros_del_dbase_estan_bien_transcriptos():
+    """Casos textuales de MODIFICA.PRG, para que el comparador no mienta."""
+    # FIL6: desde cartera NO se puede marcar devuelto (es la que PC rompe a propósito)
+    assert not estados.dbase_permite("Z", "1")
+    assert not estados.dbase_permite("P", "2")
+    # FIL3: un depositado sólo va a sí mismo, 1, 2, P o D
+    assert estados.dbase_permite("B", "1")
+    assert estados.dbase_permite("B", "P")
+    assert not estados.dbase_permite("B", "X")
+    # FIL5: de cobrado en caja no se sale
+    assert not estados.dbase_permite("C", "Z")
+    # FIL4: desde 9 sólo 9 o 3
+    assert estados.dbase_permite("9", "3")
+    assert not estados.dbase_permite("9", "1")
+    # FIL1: destino inexistente
+    assert not estados.dbase_permite("Z", "Q")
+
+
+def test_no_hay_diferencias_declaradas_que_ya_no_existan():
+    """Una declaración que sobra es un comentario que envejece."""
+    r = estados.diferencias_con_el_dbase(queries.TRANSICIONES_VALIDAS)
+    reales = set(r["de_mas"]) | set(r["de_menos"])
+    sobran = sorted(set(estados.DIFERENCIAS_TRANSICIONES) - reales)
+    assert not sobran, (
+        f"Estas diferencias están declaradas pero ya no existen: {sobran}"
+    )

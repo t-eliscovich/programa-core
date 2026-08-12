@@ -111,3 +111,121 @@ def que_es(letra: str) -> str:
     """Una línea explicando el estado. Para no escribirla en cada template."""
     e = ESTADOS.get((letra or "").upper().strip())
     return e.que_es if e else "Estado desconocido"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LA MATRIZ DEL dBASE, Y EN QUÉ NOS APARTAMOS DE ELLA
+# ═══════════════════════════════════════════════════════════════════════════
+# `MODIFICA.PRG` no guarda una tabla de transiciones: guarda seis filtros que
+# RECHAZAN el cambio. Si alguno da verdadero, el dBase muestra el error y no
+# graba (`IF &FIL1 .OR. … .OR. &FIL6 → DO ERROR`).
+#
+#     FIL1 = .NOT. STF $ CART+ENBANC+'9XC'      destino inexistente
+#     FIL2 = STI $ '123'  .AND. .NOT. STF $ STI+'XVJCP'
+#     FIL3 = STI $ ENBANC .AND. .NOT. STF $ STI+'12PD'
+#     FIL4 = STI = '9'    .AND. .NOT. STF $ '93'
+#     FIL5 = STI = 'C'    .AND. STF # 'C'
+#     FIL6 = STI $ 'ZPD'  .AND. STF $ '123'
+#
+# (En FoxPro `$` es SUBSTRING: `STF $ "12"` = "STF está contenido en '12'".)
+
+
+def dbase_permite(sti: str, stf: str) -> bool:
+    """¿El dBase dejaba pasar de `sti` a `stf`? Los seis filtros, literales."""
+    sti = (sti or "").upper().strip()
+    stf = (stf or "").upper().strip()
+    fil1 = stf not in (DBASE_CART + DBASE_ENBANC + DBASE_OTROS)
+    fil2 = (sti in "123") and (stf not in sti + "XVJCP")
+    fil3 = (sti in DBASE_ENBANC) and (stf not in sti + "12PD")
+    fil4 = (sti == "9") and (stf not in "93")
+    fil5 = (sti == "C") and (stf != "C")
+    fil6 = (sti in "ZPD") and (stf in "123")
+    return not (fil1 or fil2 or fil3 or fil4 or fil5 or fil6)
+
+
+#: Cómo se lee el primer valor de cada diferencia:
+#:   "decidido"  → así queda, con el motivo al lado
+#:   "a_decidir" → la dueña todavía no lo resolvió; el test la deja pasar pero
+#:                 la lista sale por pantalla en `/admin/health` y acá
+DIFERENCIAS_TRANSICIONES: dict[tuple[str, str], tuple[str, str]] = {
+    # ── Programa Core PERMITE y el dBase no ────────────────────────────────
+    ("Z", "1"): ("decidido", "dueña 2026-05-20 'no veo 1 y 2 en el dropdown': "
+                             "marcar devuelto sin pasar por depósito+reverso. FIL6 lo prohibía."),
+    ("P", "1"): ("decidido", "idem Z→1 (dueña 2026-05-20)."),
+    ("D", "1"): ("decidido", "idem Z→1 (dueña 2026-05-20)."),
+    ("1", "2"): ("decidido", "la secuencia de devueltos 1→2→3 es de Programa Core; "
+                             "el dBase la manejaba a mano."),
+    ("2", "3"): ("decidido", "idem 1→2."),
+    ("1", "Z"): ("decidido", "volver a cartera un devuelto que el cliente regularizó."),
+    ("2", "Z"): ("decidido", "idem 1→Z."),
+    ("3", "Z"): ("decidido", "idem 1→Z."),
+    ("1", "D"): ("decidido", "pasarle el devuelto a Daniela para gestión."),
+    ("2", "D"): ("decidido", "idem 1→D."),
+    ("3", "D"): ("decidido", "idem 1→D."),
+    ("1", "9"): ("decidido", "el asistente de rebote también corre sobre un devuelto "
+                             "(2° rebote): emite la ND y marca al cliente."),
+    ("2", "9"): ("decidido", "idem 1→9."),
+    ("B", "9"): ("decidido", "el asistente de rebote: el dBase pedía cargar la ND a mano "
+                             "en BANCOS.PRG; acá la emite el mismo paso."),
+    ("I", "9"): ("decidido", "idem B→9."),
+    ("B", "X"): ("decidido", "anular por error de carga compensa el depósito en el banco "
+                             "(`anular_por_error_de_carga`); el dBase no tenía ese camino."),
+    ("I", "X"): ("decidido", "idem B→X."),
+
+    # ── El dBase PERMITE y Programa Core no ────────────────────────────────
+    # a) Salir de un depositado por un cambio de etiqueta pelado dejaría el
+    #    depósito colgado en el banco. Es la regla explícita de PC: de un
+    #    depositado sólo se sale por rebote (9), anulación (X) o devuelto (1),
+    #    que son los tres que TOCAN el banco.
+    **{(a, b): ("decidido", "salir de un depositado sin tocar el banco dejaría el "
+                            "depósito colgado; PC sale por 9/X/1, que compensan.")
+       for a in "BIV" for b in "2DP"},
+    # b) Restaurar un eliminado a cualquier cosa. PC lo deja volver sólo a
+    #    cartera (Z/P/D), donde no hay plata que reconstruir.
+    **{("X", b): ("decidido", "un eliminado vuelve sólo a cartera: revivirlo directo a "
+                              "depositado o a caja tendría que rehacer movimientos de plata.")
+       for b in "123 9BCIV".replace(" ", "")},
+    ("9", "3"): ("decidido", "en PC el 9 no es un estado donde el cheque se queda: el "
+                             "asistente ya lo deja en 1 o en 3 según de dónde venía."),
+    ("D", "9"): ("decidido", "un cheque en cartera nunca fue al banco: no puede rebotar. "
+                             "Su reverso es administrativo (→X)."),
+    ("P", "9"): ("decidido", "idem D→9."),
+
+    # ── Sin decidir: se las llevo a la dueña ───────────────────────────────
+    ("1", "C"): ("a_decidir", "cobrar EN EFECTIVO un cheque devuelto (el cliente lo paga "
+                              "en plata). El dBase lo dejaba; PC no lo ofrece."),
+    ("2", "C"): ("a_decidir", "idem 1→C."),
+    ("3", "C"): ("a_decidir", "idem 1→C."),
+    ("2", "V"): ("a_decidir", "volver a depositar un devuelto de 2ª. Hoy PC sólo deja "
+                              "re-depositar desde 1."),
+    ("3", "V"): ("a_decidir", "idem 2→V, desde un rechazo de 3ª."),
+    ("Z", "V"): ("a_decidir", "depositar marcando 'V' directo desde cartera. En PC 'V' "
+                              "significa re-depósito de un devuelto, así que desde Z se usa B."),
+    ("D", "V"): ("a_decidir", "idem Z→V."),
+    ("P", "V"): ("a_decidir", "idem Z→V."),
+}
+
+
+def diferencias_con_el_dbase(transiciones_pc: dict[str, set[str]]) -> dict:
+    """Compara la matriz de PC contra la del dBase, sobre el alfabeto común.
+
+    Devuelve {"de_mas": [...], "de_menos": [...], "sin_declarar": [...]}.
+    El alfabeto común excluye los estados que sólo tiene uno de los dos: esos
+    ya están explicados en NO_USADOS / AGREGADOS.
+    """
+    dbase_alfabeto = set(DBASE_CART) | set(DBASE_ENBANC) | set(DBASE_OTROS)
+    comun = sorted(set(ESTADOS) & dbase_alfabeto)
+    de_mas, de_menos = [], []
+    for a in comun:
+        pc = set(transiciones_pc.get(a, ())) & set(comun)
+        db = {b for b in comun if b != a and dbase_permite(a, b)}
+        de_mas += [(a, b) for b in sorted(pc - db)]
+        de_menos += [(a, b) for b in sorted(db - pc)]
+    todas = de_mas + de_menos
+    return {
+        "de_mas": de_mas,
+        "de_menos": de_menos,
+        "sin_declarar": [t for t in todas if t not in DIFERENCIAS_TRANSICIONES],
+        "a_decidir": [t for t in todas
+                      if DIFERENCIAS_TRANSICIONES.get(t, ("", ""))[0] == "a_decidir"],
+    }
