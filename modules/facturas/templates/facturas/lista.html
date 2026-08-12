@@ -213,11 +213,14 @@
       <input type="date" name="hasta" id="fecha-hasta-input" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
-    {# TMT 2026-05-26 dueña: shortcut "Hoy" para filtrar el día actual sin
-       tipear fechas. Setea ambos campos = hoy y dispara filtrar. #}
+    {# TMT 2026-05-26 dueña: shortcut "Hoy" para filtrar el día actual sin tipear
+       fechas. Federico 2026-08-12: igual que "Este mes" pero con la fecha de hoy —
+       va a la vista 'facturado' (mismo universo que Resultados: cualquier estado
+       salvo eliminadas, sin backfill, sin filtro de saldo). #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">&nbsp;</label>
-      <button type="button" onclick="(function(){var d=new Date().toISOString().slice(0,10);document.getElementById('fecha-desde-input').value=d;document.getElementById('fecha-hasta-input').value=d;document.querySelector('form button[class*=bg-slate-900]').click();})()"
+      <button type="button" title="Todo lo facturado de hoy (cualquier estado salvo eliminadas), mismo universo que la Venta de Resultados"
+              onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var d=iso(n);var u=new URL(window.location.pathname,window.location.origin);u.searchParams.set('vista','facturado');u.searchParams.set('desde',d);u.searchParams.set('hasta',d);window.location.href=u.toString();})()"
               class="text-sm px-3 py-1.5 rounded border border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/50">
         Hoy
       </button>
