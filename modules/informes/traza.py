@@ -775,12 +775,26 @@ def _url_del_grupo(g: dict, ev: dict) -> str | None:
     `banco_varios` no es un tipo de `mov_doble` — filtrar por él daría una
     pantalla vacía, así que ese renglón sigue sin link.
     """
+    # `banco_varios` sigue sin link aunque traiga hechos: es un renglón que
+    # junta movimientos de varias cuentas y mandar a un subconjunto engaña.
     if (ev or {}).get("tipo") == "banco_varios":
         return None
     ids = ",".join(str(h) for h in sorted(g.get("hechos") or []) if h)
     if ids:
         return f"/historial?ids={ids}"
-    return (f"/historial?tipo={ev['tipo']}"
+    # 🚨 TMT 2026-08-12: el respaldo filtra el historial POR TIPO, y varios
+    # renglones de la traza llevan etiquetas que el historial no conoce
+    # ("banco_cargado", "banco_varios"): el link abría una pantalla vacía —
+    # roto sin dar 404. En vez de ir tachándolos a mano —así se coló
+    # `banco_cargado`— se le PREGUNTA al historial si conoce el tipo. El de
+    # banco manda el suyo por documento (`banco_de_directo`…) en
+    # `tipo_historial`.
+    from modules.historial.queries import TIPOS_LABEL
+
+    tipo = (ev or {}).get("tipo_historial") or (ev or {}).get("tipo")
+    if not tipo or tipo not in TIPOS_LABEL:
+        return None
+    return (f"/historial?tipo={tipo}"
             f"&desde={ev['dia']}&hasta={ev['dia']}")
 
 

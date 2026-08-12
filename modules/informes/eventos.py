@@ -350,7 +350,15 @@ def transacciones(desde, hasta) -> dict[str, dict]:
             texto = _varios(conceptos, len(lista))
         # El ancho lo controla `_varios`: cortar acá dejaba el renglón partido
         # al medio de una palabra y sin el "+N" que avisa que falta algo.
+        # ⭐ TMT 2026-08-12: a dónde lleva el renglón al clickearlo. "banco_cargado"
+        # es una etiqueta INTERNA de la traza, no un tipo de `mov_doble`, así que
+        # filtrar el historial por ella daba "Sin movimientos en este filtro".
+        # El historial sí conoce el movimiento por su DOCUMENTO
+        # (`banco_de_directo`, `banco_nd_directo`, …), que es lo que se manda.
+        _doc_banco = (lista[0].get("documento") or "").strip().lower()
         out[doc] = {"tipo": "banco_cargado", "grupo": doc, "docs": [doc],
+                    "tipo_historial": (f"banco_{_doc_banco}_directo"
+                                       if _doc_banco else None),
                     "label": "Movimiento de banco", "texto": texto,
                     "concepto": " · ".join(dict.fromkeys(conceptos)),
                     "meta": {}, "dia": lista[0].get("dia")}
