@@ -158,3 +158,31 @@ def test_desde_internacional_se_marca_devuelto_igual_que_pichincha():
     textos = [_texto(t) for t in queries.transiciones_para("I")]
     assert "→1 Devuelto" in textos, textos
     assert "→9 Sin fondos (queda en 1)" in textos, textos
+
+
+def test_postergar_desde_un_devuelto_muestra_la_letra_en_la_que_QUEDA():
+    """Postergar un devuelto no lo saca de devuelto — decisión dueña 16/06.
+
+    Si pasara a 'P' se iría de la solapa Devueltos y saldría de CHEQUES
+    PROTESTADOS en el estado de cuenta: la hoja del cliente lo mostraría como
+    un cheque normal esperando su fecha, no como uno que ya rebotó. Así que la
+    opción muestra la letra en la que el cheque QUEDA, no una 'P' a la que no
+    va — el menú sigue siendo letras (dueña 11/08: "que sigan siendo letras").
+    """
+    for origen in ("1", "2", "D"):
+        posterg = [t for t in queries.transiciones_para(origen)
+                   if t["kind"] == "POSTERGAR"]
+        assert posterg, f"desde {origen} tiene que poder cambiarse la fecha"
+        op = posterg[0]
+        assert op["stat_destino"] == origen, (
+            f"desde {origen} la opción promete el estado {op['stat_destino']!r} "
+            "y el cheque no se mueve de donde está"
+        )
+        assert "Nueva fecha" in queries.texto_opcion_estado(op)
+
+
+def test_postergar_desde_cartera_si_lleva_a_P():
+    """Desde Z el cheque SÍ pasa a postergado: ahí la 'P' es verdad."""
+    posterg = [t for t in queries.transiciones_para("Z") if t["kind"] == "POSTERGAR"]
+    assert posterg and posterg[0]["stat_destino"] == "P"
+    assert "Postergar" in queries.texto_opcion_estado(posterg[0])

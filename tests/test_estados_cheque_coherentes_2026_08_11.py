@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from modules.cheques import queries
+from modules.cheques import queries as q  # alias corto para los dos últimos
 
 FUENTE = Path(queries.__file__).read_text(encoding="utf8")
 
@@ -117,3 +118,38 @@ def test_no_hay_constantes_de_estado_muertas_que_mientan():
         "Volvió STATS_TERMINALES. Si hace falta, tiene que derivarse de "
         "TRANSICIONES_VALIDAS (terminal = sin salidas), no escribirse a mano."
     )
+
+
+def test_pedir_el_menu_no_le_deja_nada_pegado_al_siguiente():
+    """`transiciones_para` no puede escribir sobre las entradas del módulo.
+
+    Las listas curadas (`TRANSICIONES_LEGALES`) son objetos compartidos. La
+    función les agregaba campos calculados —`destino_real`, y desde el 11/08
+    también `stat_destino`/`corto` para el postergar que no cambia de estado—
+    escribiendo ENCIMA del original. El dato quedaba pegado para la llamada
+    siguiente y para todo el proceso: un test que pasa solo y falla en la
+    suite, según qué se haya pedido antes.
+    """
+    orden_a = [q.transiciones_para(e) for e in ("1", "Z", "D", "2", "P", "B")]
+    orden_b = [q.transiciones_para(e) for e in ("B", "P", "2", "D", "Z", "1")]
+    resumen = lambda ops: [(o["stat_destino"], q.texto_opcion_estado(o)) for o in ops]  # noqa: E731
+    assert [resumen(x) for x in orden_a] == [resumen(x) for x in reversed(orden_b)], (
+        "El menú cambia según en qué orden se pidió: alguien está escribiendo "
+        "sobre las entradas compartidas en vez de copiarlas."
+    )
+
+
+def test_las_entradas_curadas_no_se_ensucian():
+    """El original queda como estaba, sin los campos calculados."""
+    from modules.cheques.queries import TRANSICIONES_LEGALES
+
+    for _ in range(3):
+        for estado in TRANSICIONES_LEGALES:
+            q.transiciones_para(estado)
+    sucias = [
+        (estado, o)
+        for estado, ops in TRANSICIONES_LEGALES.items()
+        for o in ops
+        if "destino_real" in o or "es_rebote" in o
+    ]
+    assert not sucias, f"entradas del módulo con datos calculados encima: {sucias}"

@@ -3185,8 +3185,12 @@ def transiciones_para(stat: str) -> list[dict]:
     #    Excepción: entradas con `siempre` (wizards que validan por su cuenta,
     #    ej. B→P por deshacer_deposito) se muestran aunque el destino no esté en
     #    TRANSICIONES_VALIDAS. TMT 2026-07-15.
+    # ⭐ `dict(o)`: COPIA. Las entradas curadas son objetos del módulo, así que
+    # escribirles encima (`destino_real`, `stat_destino`, `corto`) les dejaba el
+    # dato pegado para la próxima llamada — y para todo el proceso. Se veía como
+    # un test que pasa solo y falla en la suite. TMT 2026-08-11.
     base = [
-        o for o in TRANSICIONES_LEGALES.get(s, [])
+        dict(o) for o in TRANSICIONES_LEGALES.get(s, [])
         if o.get("siempre") or o["stat_destino"] in permit
     ]
     ya = {o["stat_destino"] for o in base}
@@ -3250,6 +3254,17 @@ def transiciones_para(stat: str) -> list[dict]:
     # opción prometía un estado al que no llegaba. La pantalla del asistente
     # distinguía bien los dos casos (_reverso_preview_cheque); el menú no.
     # Ahora el destino se guarda SIEMPRE y `es_rebote` decide cómo se llama.
+    # ⭐ TMT 2026-08-11 (dueña): postergar desde un DEVUELTO (1/2) o desde
+    # Daniela (D) NO cambia el estado — decisión suya del 16/06: mover la fecha
+    # de cobro no borra que el cheque rebotó. Si pasara a 'P' se iría de la
+    # solapa Devueltos y, peor, saldría de CHEQUES PROTESTADOS en el estado de
+    # cuenta del cliente: la hoja lo mostraría como un cheque normal esperando
+    # su fecha. Así que la opción muestra la letra en la que QUEDA, no una 'P'
+    # a la que no va. La letra sigue siendo el idioma del menú.
+    for o in base:
+        if o.get("kind") == "POSTERGAR" and s not in ("Z", "P"):
+            o["stat_destino"] = s
+            o["corto"] = "Nueva fecha"
     for o in base:
         if o.get("endpoint") == "cheques.confirmar_reverso":
             try:
