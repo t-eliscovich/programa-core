@@ -1250,6 +1250,35 @@ function buildChart(q) {
       },
       afterDatasetsDraw(chart) {
         const { ctx, scales } = chart;
+
+        // TMT 2026-08-12 (dueña): etiquetar con el valor del saldo ~cada 5
+        // barras, para leer la magnitud sin pasar el cursor. Se saltea la
+        // barra del mínimo (ya lleva su pill "MÍN $X") para no encimar.
+        const minIdx = rows.indexOf(minRow);
+        const STEP = 5;
+        ctx.save();
+        ctx.font = '600 10px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.75);
+        rows.forEach((r, i) => {
+          if (i % STEP !== 0) return;
+          if (i === minIdx) return;
+          const bx = scales.x.getPixelForValue(i);
+          const by = scales.y.getPixelForValue(r.saldo);
+          const txt = '$ ' + fmt(r.saldo);
+          // Positivo → etiqueta arriba de la barra; negativo → abajo.
+          if (r.saldo >= 0) {
+            const ty = Math.max(by - 6, chart.chartArea.top + 9);
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(txt, bx, ty);
+          } else {
+            const ty = Math.min(by + 6, chart.chartArea.bottom - 3);
+            ctx.textBaseline = 'top';
+            ctx.fillText(txt, bx, ty);
+          }
+        });
+        ctx.restore();
+
         const idx = rows.indexOf(minRow);
         if (idx < 0 || !minRow) return;
         const x = scales.x.getPixelForValue(idx);
