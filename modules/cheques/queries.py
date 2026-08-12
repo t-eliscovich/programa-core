@@ -712,7 +712,9 @@ TRANSICIONES_VALIDAS = {
     "X": {"Z", "P", "D"},
     # Estados CON movimiento: salida sólo por rebote/anulación (compensan banco).
     "B": {"9", "X", "1"},
-    "I": {"9", "X"},
+    # I (INTERNACIONAL) se maneja igual que B — dueña 2026-08-11. Era el único
+    # depósito al que no se le podía marcar el devuelto de una.
+    "I": {"9", "X", "1"},
     "A": {"9", "X"},
 }
 
@@ -5095,8 +5097,18 @@ def _stat_destino_reversa(stat_prev: str) -> tuple[str, bool]:
     Anular un V mal cargado va por `anular_por_error_de_carga`, no por acá.
     """
     s = (stat_prev or "").upper()
-    # Depositado feliz (B nuevo o A legacy): primer rebote → 1.
-    if s in ("B", "A"):
+    # Depositado feliz: primer rebote → 1. B es el depósito de hoy; A/W/I/J/K
+    # son los depositados legacy del DBF (I = INTERNACIONAL).
+    #
+    # ⭐ TMT 2026-08-11 (dueña: "internacional se tiene que manejar igual que
+    # pichincha"). W/I/J/K caían en el default de abajo y volvían ("X", False):
+    # un cheque depositado en Internacional que el banco devolvía terminaba
+    # ELIMINADO en vez de quedar en cartera como devuelto. La nota de débito y
+    # el gasto salían bien —el banco quedaba correcto—, pero el cheque
+    # desaparecía y el cliente dejaba de deberlo. Contra el dBase, que trata a
+    # los seis igual (`ENBANC='BVWIJK'`, MODIFICA.PRG FIL3: un depositado sólo
+    # rebota a 1/2, NUNCA a X) y contra la propia docstring de acá arriba.
+    if s in ("B", "A", "W", "I", "J", "K"):
         return "1", True
     # V = re-depósito de un devuelto (DEPOSITADO). Su rebote es REBOTE REAL: crea
     # ND y vuelve a cartera como devuelto (2° rebote). NO es anulación a X.

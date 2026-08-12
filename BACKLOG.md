@@ -198,26 +198,6 @@ Cada par de fuentes que debe coincidir, con check automático:
 clases de templates ↔ tailwind.css, links hardcodeados ↔ url_map
 (generalizar `test_historial_links_resuelven` a TODOS los templates).
 
-## Cheques — abierto desde el 11/08/2026
-
-- **Un cheque depositado en INTERNACIONAL que rebota se ELIMINA en vez de
-  quedar devuelto.** `_stat_destino_reversa` mapea `B`→1 y `A`→1, pero
-  `I`/`W`/`J`/`K` —que también están en `STATS_DEPOSITADO`— caen en el default
-  `("X", False)`: reversa administrativa. Contradice al dBase y a la propia
-  docstring de la función (*"un cheque DEPOSITADO sólo puede rebotar a 1/2 —
-  NUNCA a X"*, `MODIFICA.PRG` FIL3, `ENBANC='BVWIJK'`).
-
-  Medido end-to-end el 11/08 contra base local: depositar en Internacional →
-  reversar deja el cheque en `X`. La nota de débito y el gasto SÍ se emiten
-  bien, así que el banco queda correcto; lo que queda mal es el cheque, que
-  desaparece de la cartera en vez de figurar como devuelto.
-
-  El menú de estado ya lo dice honesto desde hoy (*"→9 Reversar (me confundí)
-  (queda en X)"*), así que no sorprende a nadie — pero el comportamiento
-  seguramente está mal. **No lo toqué: cambia la máquina de estados y hay que
-  decidirlo, no deducirlo.** Al arreglarlo, `I`/`W`/`J`/`K` deberían devolver
-  `("1", True)` como `B`.
-
 ---
 
 _Mantener al día: al cerrar un item, borrarlo de acá en el MISMO commit._

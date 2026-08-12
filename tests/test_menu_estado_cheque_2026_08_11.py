@@ -128,3 +128,33 @@ def test_pasar_a_devuelto_no_esta_atado_a_cargar_una_fecha():
     assert op, "Desde B tiene que poder marcarse devuelto."
     assert op[0]["kind"] == "POST", "Un click, no un asistente."
     assert op[0]["endpoint"] == "cheques.transicionar"
+
+
+def test_ningun_cheque_depositado_se_elimina_al_rebotar():
+    """Internacional se maneja igual que Pichincha (dueña 11/08/2026).
+
+    `W`, `I`, `J` y `K` —los depositados legacy del DBF, `I` = INTERNACIONAL—
+    caían en el default de `_stat_destino_reversa` y volvían `("X", False)`: el
+    cheque que el banco devolvía terminaba ELIMINADO en vez de quedar en
+    cartera como devuelto. La nota de débito y el gasto salían bien, así que el
+    banco quedaba correcto; el que desaparecía era el cheque, y con él la deuda
+    del cliente.
+
+    dBase `MODIFICA.PRG` FIL3: `ENBANC='BVWIJK'` — los seis son "en banco" y un
+    depositado sólo puede rebotar a 1/2, nunca a X.
+    """
+    culpables = []
+    for stat in queries.STATS_DEPOSITADO:
+        destino, es_rebote = queries._stat_destino_reversa(stat)
+        if destino == "X" or not es_rebote:
+            culpables.append(f"{stat} → {destino}")
+    assert not culpables, (
+        "Estos cheques DEPOSITADOS se eliminan al rebotar en vez de quedar "
+        f"devueltos: {culpables}"
+    )
+
+
+def test_desde_internacional_se_marca_devuelto_igual_que_pichincha():
+    textos = [_texto(t) for t in queries.transiciones_para("I")]
+    assert "→1 Devuelto" in textos, textos
+    assert "→9 Sin fondos (queda en 1)" in textos, textos
