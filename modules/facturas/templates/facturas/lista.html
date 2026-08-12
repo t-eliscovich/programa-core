@@ -222,12 +222,15 @@
         Hoy
       </button>
     </div>
-    {# Federico 2026-08-12: shortcut "Este mes" — del día 1 al último día del mes
-       actual. Fechas armadas con getFullYear/Month/Date locales (no toISOString,
-       que es UTC y cerca de medianoche corre un día). #}
+    {# Federico 2026-08-12: shortcut "Este mes" — muestra TODO lo facturado del mes
+       (cobrado + pendiente + cancelado, menos eliminadas y backfill), igual que la
+       "Venta del mes" de Resultados. Va a la vista 'facturado' (no cartera) con las
+       fechas del día 1 al último del mes. Fechas armadas con getFullYear/Month/Date
+       locales (no toISOString, que es UTC y cerca de medianoche corre un día). #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">&nbsp;</label>
-      <button type="button" onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var a=new Date(n.getFullYear(),n.getMonth(),1);var b=new Date(n.getFullYear(),n.getMonth()+1,0);document.getElementById('fecha-desde-input').value=iso(a);document.getElementById('fecha-hasta-input').value=iso(b);document.querySelector('form button[class*=bg-slate-900]').click();})()"
+      <button type="button" title="Todo lo facturado del mes (cualquier estado salvo eliminadas), igual que la Venta de Resultados"
+              onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var a=new Date(n.getFullYear(),n.getMonth(),1);var b=new Date(n.getFullYear(),n.getMonth()+1,0);var u=new URL(window.location.pathname,window.location.origin);u.searchParams.set('vista','facturado');u.searchParams.set('desde',iso(a));u.searchParams.set('hasta',iso(b));window.location.href=u.toString();})()"
               class="text-sm px-3 py-1.5 rounded border border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/50">
         Este mes
       </button>

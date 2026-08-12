@@ -1161,6 +1161,14 @@ def buscar(
                  AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat = 'X')
+             -- Federico 2026-08-12: vista 'facturado' = MISMO universo que la
+             -- "Venta del mes" de Resultados (ventas_mes_corriente_resultado):
+             -- todas las facturas menos eliminadas (stat X) y menos backfill
+             -- Asinfo, sin filtro de saldo (cobradas + pendientes + canceladas).
+             -- Usada por el botón "Este mes" para que el total cuadre con Resultados.
+             OR (%(vista)s = 'facturado'
+                 AND (f.stat IS NULL OR f.stat <> 'X')
+                 AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
           )
           -- TMT 2026-05-19 v8 — filtro multi-estado (lista de stats).
           -- Si la lista está vacía → no filtra (lo marcamos con flag
@@ -1339,6 +1347,11 @@ def contar_filtrado(
                  AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat = 'X')
+             -- Federico 2026-08-12: 'facturado' = universo de la Venta del mes de
+             -- Resultados (stat ≠ X + sin backfill, sin filtro de saldo).
+             OR (%(vista)s = 'facturado'
+                 AND (f.stat IS NULL OR f.stat <> 'X')
+                 AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
           )
           AND (
                 %(estados_vacia)s

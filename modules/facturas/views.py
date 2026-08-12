@@ -2337,7 +2337,7 @@ def lista():
     # Back-compat: si todavía llega ?vista=todas, lo mapeamos a 'estado'.
     if vista == "todas":
         vista = "estado"
-    if vista not in ("cartera", "estado", "canceladas", "eliminadas"):
+    if vista not in ("cartera", "estado", "canceladas", "eliminadas", "facturado"):
         vista = "cartera"
     # Filtro de estado (solo aplica en vista='estado'). Acepta los stats
     # canónicos: Z (cartera), A (parcial), T (cancelada), X (eliminada).
