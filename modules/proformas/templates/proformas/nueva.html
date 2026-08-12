@@ -20,11 +20,10 @@
      valores sin IVA" → "con IVA siempre"). La matriz llega ya con IVA desde
      queries.matriz_precios(); acá NO se multiplica por nada. #}
 
-<div class="page-shell page-shell--xl">
-  <header class="page-header">
-    <h1 class="page-title">{{ titulo | default('Nueva cotización') }}</h1>
-  </header>
-
+<div class="page-shell page-shell--xl proforma-compacta">
+  {# TMT 2026-08-11 (dueña): "que entre en una pantalla y no haya que scrollear".
+     Lo primero que sale es el H1: la tira de tabs de abajo y la barra de arriba
+     ya dicen "Factura Proforma" — eran TRES veces el mismo título. #}
   {% set tab = 'form' %}{% set tab_titulo = titulo %}{% set tab_href = request.path %}
   {% include "proformas/_tabs.html" with context %}
 
@@ -76,7 +75,7 @@
     </div>
 
     {# ── Grilla de líneas ──────────────────────────────────────────── #}
-    <div class="mt-3 overflow-x-auto">
+    <div class="mt-2 overflow-x-auto">
       <table class="w-full text-sm" id="lineas-tabla">
         <thead class="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
           <tr>
@@ -93,34 +92,32 @@
         <tbody id="lineas-body"><!-- filas se agregan por JS --></tbody>
       </table>
     </div>
-    <div class="mt-2 no-print">
+    <div class="mt-1 no-print">
       <button type="button" id="add-linea" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">+ Agregar línea</button>
       <span class="text-xs text-slate-400 ml-2">ENTER pasa al siguiente campo; en Precio agrega otra línea. {% if es_pedido %}Ingresá los kilos exactos (sin multiplicar).{% else %}La cantidad se pone en piezas (cuellos/puños por unidad, rib en kg).{% endif %}</span>
     </div>
 
     {# ── Descuentos + totales (cascada FACTURO) ────────────────────── #}
-    <div class="grid md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-      <div class="space-y-2">
-        {# TMT 2026-07-09 (dueña): el contado 5% va SIEMPRE (sin checkbox) y
-           va arriba; el descuento por volumen (editable) va debajo. #}
-        <div class="text-sm text-slate-700 dark:text-slate-300">
-          Descuento por contado: <strong>5%</strong>
-          <span class="text-xs text-slate-400">(siempre aplicado)</span>
-        </div>
-        <label class="flex flex-col max-w-xs">
+    <div class="grid md:grid-cols-2 gap-4 mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+      {# TMT 2026-08-11 (dueña): los tres campos van en UNA fila. Apilados se
+         llevaban tres renglones y empujaban los botones abajo del pliegue.
+         El contado 5% (dueña 2026-07-09: va SIEMPRE, sin checkbox) dejó de
+         ocupar un renglón propio: ya lo dice el bloque de totales. #}
+      <div class="grid grid-cols-3 gap-2 self-start">
+        <label class="flex flex-col">
           <span class="text-xs text-slate-600">Descuento por volumen (%)</span>
           <input name="descuento_volumen" id="desc-vol" type="text" inputmode="decimal"
                  value="{{ form.descuento_volumen or '0' }}" placeholder="0"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
         </label>
         {% if es_pedido %}
-        <label class="flex flex-col max-w-xs">
+        <label class="flex flex-col">
           <span class="text-xs text-slate-600">Flete (USD)</span>
           <input name="flete" id="flete" type="text" inputmode="decimal" value="0" placeholder="0"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
         </label>
         {% endif %}
-        <label class="flex flex-col">
+        <label class="flex flex-col{% if not es_pedido %} col-span-2{% endif %}">
           <span class="text-xs text-slate-600">Observaciones</span>
           <textarea name="observaciones" rows="1"
                     class="border rounded px-2 py-1 mt-0.5 text-sm">{{ form.observaciones or '' }}</textarea>
@@ -142,7 +139,7 @@
       </div>
     </div>
 
-    <div class="flex items-center justify-between mt-3 pt-3 border-t no-print gap-3 flex-wrap">
+    <div class="flex items-center justify-between mt-2 pt-2 border-t no-print gap-3 flex-wrap">
       <button type="button" id="btn-limpiar" class="text-slate-500 hover:text-slate-700">Limpiar</button>
       <div class="flex items-center gap-3 ml-auto">
         {# El N° que le tocó, para que Alex lo tenga a mano sin ir al papel. #}
@@ -155,6 +152,16 @@
   </form>
 </div>
 
+<style>
+  /* TMT 2026-08-11 (dueña): "que entre en una pantalla nada más". Sólo aire:
+     ni un tamaño de letra ni un ancho de columna cambian, así la hoja impresa
+     y la lectura quedan como estaban. */
+  .proforma-compacta .page-card { padding: 12px 14px; }
+  .proforma-compacta table th { padding-top: 2px; padding-bottom: 2px; }
+  .proforma-compacta table td { padding-top: 2px; padding-bottom: 2px; }
+  .proforma-compacta input, .proforma-compacta textarea { padding-top: 3px; padding-bottom: 3px; }
+  .proforma-compacta .pc-tabs { margin-bottom: 8px; }
+</style>
 <script id="matriz-data" type="application/json">{{ matriz | tojson }}</script>
 <script id="guardada-data" type="application/json">{{ (lineas_guardadas | default([], true)) | tojson }}</script>
 <script id="colores-data" type="application/json">{{ colores | tojson }}</script>
