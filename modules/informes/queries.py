@@ -5263,6 +5263,25 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
                 h_um = float(_hval["stock_act_ukg"])  # = variable del FLUJO (2,954)
         except Exception:  # noqa: BLE001 -- fail-soft, deja la tarifa del mov
             pass
+    # El $/kg del hilado arrastra tejido (+0,5) y terminado (+2,2): mover la
+    # tarifa revalúa TODO el stock de un saque. Si los insumos que la arman no
+    # llegaron, mov_hilado_valuacion sostiene la anterior — pero eso se dice,
+    # no se esconde (el 12/08 la utilidad bajó 64.393 sin que nadie avisara).
+    if _hval.get("tarifa_motivo"):
+        if _hval.get("tarifa_congelada"):
+            advertencias.append(
+                f"⚠ HILADO: {_hval['tarifa_motivo']}. El $/kg se mantiene en el "
+                f"último bueno ({h_um:,.4f}) y el stock NO se revaluó — el "
+                "número es bueno, pero puede tardar en reflejar una compra "
+                "nueva. Se acomoda solo cuando Asinfo vuelva a contestar."
+            )
+        else:
+            advertencias.append(
+                f"⚠ HILADO: {_hval['tarifa_motivo']}, y no hay una tarifa "
+                "anterior del mes con la que sostenerlo: el stock se está "
+                "valuando a la tarifa de APERTURA y quedó revaluado entero. "
+                "No leer la utilidad hasta que Asinfo conteste."
+            )
     h_uk = h_um + 0.5
     h_uf = h_uk + 1.7
 

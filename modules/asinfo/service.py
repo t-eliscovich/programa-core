@@ -1559,6 +1559,86 @@ def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
     return out
 
 
+# ── La tarifa del hilado NO se recalcula cuando la fuente no contestó ──────
+# TMT 2026-08-12 (dueña, viendo la utilidad en 78.149: *"esto nunca pero nunca
+# puede pasar"*). A las 08:30 Asinfo dejó de contestar y las compras de hilado
+# del mes —243.546 kg / 787.554 US$— se fueron a CERO, porque la lista de
+# importaciones que las cruza vive allá. Sin compras el promedio ponderado no
+# se diluye y el $/kg vuelve al de apertura: 3,0443 → 3,0201. Esos 2,42
+# centavos por kilo × 2.660.021 kg de stock = −64.393 de utilidad, inventados
+# por una consulta que no contestó.
+#
+# El guard de asimetría del 31/07 no lo agarra: mira "kilos sin dólares" y
+# "dólares sin kilos", y acá vinieron LOS DOS en cero, que desde adentro se ve
+# igual que un mes sin compras. El vigía `/admin/health/hilado-ukg` tampoco:
+# compara el $/kg mostrado contra el esperado CON compras=0 — valida la
+# cuenta, no los insumos. Dijo ok:true todo el tiempo.
+#
+# Regla (dueña 2026-08-12): **el $/kg se queda en el de la foto anterior**. Si
+# las compras vienen en cero pero en NUESTRA base hay dólares de hilo del mes,
+# no se revalúa nada: se sostiene la última tarifa buena hasta que Asinfo
+# vuelva, y el balance lo dice. Mismo patrón que `_ULTIMO_INVENTARIO_BUENO`
+# para los kilos: un número quieto es mejor que uno fresco y equivocado.
+_ULTIMA_TARIFA_HILADO: dict | None = None
+
+
+def dolares_hilo_del_mes(yy: int, mm: int) -> float:
+    """US$ de compras de hilo (tipo H) del mes según NUESTRA base.
+
+    No pasa por Asinfo: es el testigo de que el mes SÍ tuvo compras aunque el
+    cruce las devuelva vacías. Fail-soft: 0.0 si no se puede leer (sin testigo
+    no se congela nada, que es el comportamiento de siempre).
+    """
+    try:
+        import db as _db
+        from modules.informes.queries import NO_BACKFILL_WHERE as _nb
+        r = _db.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(COALESCE(importe, 0)), 0) AS us
+              FROM scintela.compra
+             WHERE fecha >= make_date(%s, %s, 1)
+               AND fecha <  make_date(%s, %s, 1) + INTERVAL '1 month'
+               AND UPPER(TRIM(tipo)) = 'H'
+               AND COALESCE(stat, '') NOT IN ('X', 'Y')
+               AND {_nb}
+            """,
+            (int(yy), int(mm), int(yy), int(mm)),
+        ) or {}
+        return float(r.get("us") or 0)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return 0.0
+
+
+def _tarifa_hilado_previa(yy: int, mm: int) -> float:
+    """El último $/kg de hilado calculado CON las compras a la vista.
+
+    Primero la memoria del proceso; si está vacía (recién arrancado), la
+    última foto de `scintela.traza_utilidad` que tenía compras — la foto con
+    `compras_us = 0` es justamente la enferma, así que no sirve de ancla.
+    0.0 si no hay ninguna.
+    """
+    prev = _ULTIMA_TARIFA_HILADO
+    if prev and prev.get("yy") == int(yy) and prev.get("mm") == int(mm):
+        return float(prev.get("ukg") or 0)
+    try:
+        import db as _db
+        r = _db.fetch_one(
+            """
+            SELECT hilado_ukg
+              FROM scintela.traza_utilidad
+             WHERE creado_en >= make_date(%s, %s, 1)
+               AND COALESCE(compras_us, 0) > 0
+               AND COALESCE(hilado_ukg, 0) > 0
+             ORDER BY creado_en DESC, id_traza DESC
+             LIMIT 1
+            """,
+            (int(yy), int(mm)),
+        ) or {}
+        return float(r.get("hilado_ukg") or 0)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return 0.0
+
+
 def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     """$/kg y $ del HILADO del cuadro FLUJO — promedio ponderado apertura+compras.
 
@@ -1580,6 +1660,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     Fail-soft: si Asinfo no está disponible devuelve stock_act_ukg = open_ukg
     (nunca lanza, nunca rompe el balance ni el flujo)."""
     from datetime import date as _date
+    global _ULTIMA_TARIFA_HILADO
     _open = float(open_ukg or 0)
     _fallback = {
         "disponible": False,
@@ -1655,19 +1736,41 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     # compra H con importe y sin kg del 16/07 (+83k de utilidad falsa), al
     # revés. Ante la asimetría NO se diluye: queda la tarifa de apertura.
     _asimetrico = (compras > 0 and compras_us <= 0) or (compras_us > 0 and compras <= 0)
+    # Y el caso que nos costó 64.393 el 12/08: cero kg Y cero dólares mientras
+    # NUESTRA base tiene hilo comprado este mes. Desde adentro se ve igual que
+    # un mes sin compras; el testigo de que no lo es está en scintela.compra.
+    _sin_compras = (compras <= 0 and compras_us <= 0
+                    and dolares_hilo_del_mes(yy, mm) > 0)
+    _motivo = ""
     if _asimetrico:
-        _LOG.warning(
-            "mov_hilado_valuacion %s-%s: kg y dólares no se corresponden "
-            "(compras=%s kg, compras_us=%s) — dejo la tarifa de apertura %s",
-            yy, mm, compras, compras_us, _open,
-        )
-        avg = _open
-    else:
-        avg = (((hi0 * _open + compras_us) / (hi0 + compras))
-               if (hi0 + compras) else _open)
+        _motivo = (f"los kg y los dólares de las compras del mes no se "
+                   f"corresponden ({compras:,.0f} kg / {compras_us:,.2f} US$)")
+    elif _sin_compras:
+        _motivo = ("Asinfo no contestó las compras de hilado del mes: vinieron "
+                   "en cero y en el programa hay compras de hilo cargadas")
+
     act_kg = hi1 + maq
-    act_us = hi1 * avg + maq * _open
-    act_ukg = (act_us / act_kg) if act_kg else avg
+    _congelada = _tarifa_hilado_previa(yy, mm) if _motivo else 0.0
+    if _motivo:
+        _LOG.warning(
+            "mov_hilado_valuacion %s-%s: %s — %s", yy, mm, _motivo,
+            (f"sostengo el $/kg anterior ({_congelada:.4f})" if _congelada > 0
+             else f"sin tarifa anterior: uso la apertura ({_open:.4f})"),
+        )
+    if _congelada > 0:
+        # El $/kg se queda EXACTO donde estaba (dueña 2026-08-12). No se
+        # remezcla con la apertura ni se rearma con insumos que no llegaron:
+        # cualquier recálculo acá revalúa 2,6 millones de kilos.
+        avg = act_ukg = _congelada
+        act_us = act_kg * _congelada
+    else:
+        avg = (_open if _motivo else
+               (((hi0 * _open + compras_us) / (hi0 + compras))
+                if (hi0 + compras) else _open))
+        act_us = hi1 * avg + maq * _open
+        act_ukg = (act_us / act_kg) if act_kg else avg
+        if not _motivo and act_ukg > 0:
+            _ULTIMA_TARIFA_HILADO = {"yy": int(yy), "mm": int(mm), "ukg": act_ukg}
     return {
         "disponible": True,
         "stock_act_kg": act_kg, "stock_act_us": act_us, "stock_act_ukg": act_ukg,
@@ -1680,6 +1783,12 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "compras_fisicas": compras_fisicas,
         "kg_sin_costo": kg_sin_costo,
         "asimetrico": _asimetrico,
+        # Con qué cara sale este $/kg: si `tarifa_motivo` no está vacío, los
+        # insumos no eran de fiar. `tarifa_congelada` dice si además hubo una
+        # tarifa anterior con la que sostenerlo (si no, cayó a la apertura y
+        # el stock SÍ se revaluó — eso hay que gritarlo).
+        "tarifa_congelada": bool(_congelada > 0),
+        "tarifa_motivo": _motivo,
     }
 
 

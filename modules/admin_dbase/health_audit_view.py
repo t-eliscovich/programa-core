@@ -1554,6 +1554,35 @@ def hilado_ukg_reconstruible():
         "ukg_mostrado": round(ukg_real, 6),
     })
 
+    # 🚨 El chequeo de abajo compara el $/kg contra el esperado CON ESTAS
+    # MISMAS compras: si las compras vienen en cero, el esperado también da la
+    # apertura y cierra perfecto. El 12/08 dijo ok:true mientras la utilidad
+    # estaba 64.393 abajo por exactamente eso. Lo que hay que mirar es el
+    # INSUMO: cero compras del mes mientras el programa tiene hilo comprado
+    # significa que Asinfo no contestó, no que no se compró.
+    if com_kg <= 0 and com_us <= 0:
+        try:
+            from modules.asinfo.service import dolares_hilo_del_mes
+            us_propios = dolares_hilo_del_mes(hoy.year, hoy.month)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            us_propios = 0.0
+        stats["compras_us_en_el_programa"] = round(us_propios, 2)
+        if us_propios > 0:
+            alerts.append({
+                "severity": "high",
+                "category": "compras_del_mes_en_cero",
+                "msg": (
+                    f"La ultima foto tiene las compras de hilado del mes en "
+                    f"CERO, pero en scintela.compra hay {us_propios:,.2f} US$ "
+                    f"de hilo comprado este mes: Asinfo no esta contestando el "
+                    f"cruce de importaciones. Sin compras el promedio ponderado "
+                    f"no se diluye y el $/kg cae al de apertura, revaluando "
+                    f"TODO el stock hacia abajo. El balance sostiene la tarifa "
+                    f"anterior, pero mientras dure no entra ninguna compra "
+                    f"nueva a la valuacion."
+                ),
+            })
+
     if apertura <= 0 or hil_kg <= 0:
         alerts.append({
             "severity": "low",
