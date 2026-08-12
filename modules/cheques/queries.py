@@ -204,11 +204,13 @@ TOLERANCIA_CENTAVOS_USD = 5.00
 # dBase — CART='Z123PD' y ENBANC='BVWIJK', menos los estados muertos, que están
 # declarados uno por uno con su motivo. TMT 2026-08-11 (dueña: "tiene que estar
 # definida en un lugar... y tiene que imitar al dbase").
+from .estados import (  # noqa: E402
+    DESTINOS_DEPOSITO,  # a cuáles se puede depositar HOY
+    EN_CAJA,
+    LABEL_CORTO_ESTADO,  # cómo se llama cada estado en los menús
+)
 from .estados import EN_BANCO as STATS_DEPOSITADO  # noqa: E402
 from .estados import EN_CARTERA as STATS_EN_CARTERA  # noqa: E402
-from .estados import LABEL_CORTO_ESTADO  # noqa: E402  (cómo se llama cada uno)
-from .estados import DESTINOS_DEPOSITO  # noqa: E402  (a cuáles se puede depositar HOY)
-from .estados import EN_CAJA  # noqa: E402
 
 # Stats terminales para EDITAR — es otra pregunta que "de qué lado está":
 # son los que ya no admiten tocar ningún campo. '3' está en cartera y sin
