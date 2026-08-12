@@ -4,8 +4,12 @@
 
 {% block content %}
 {# TMT 2026-07-09 (dueña): recrear Proformas de Ingresos como el dBase
-   (FACTURAR.PRG), campo a campo con ENTER. SOLO para cotizar e IMPRIMIR — no
-   factura, no stock, no contabilidad, NO se guarda.
+   (FACTURAR.PRG), campo a campo con ENTER. Cotiza e imprime — no factura, no
+   stock, no contabilidad.
+   TMT 2026-08-11 (Alex, aprobado por la dueña): AHORA SE GUARDA. El mismo
+   botón que abre la hoja graba primero, porque después de abrirla la app no se
+   entera de nada: el navegador ofrece papel o PDF y ninguna de las dos vuelve.
+   Lo que se guarda es el acto de generarla. Se conservan 7 días.
    - El COLOR determina la CLASE (categoría de formulas_app) → precio de la
      matriz de precios (clase × tela). Sin selector de clase suelto.
    - Se cotiza por KG, pero el usuario ingresa una CANTIDAD según el tipo:
@@ -21,6 +25,18 @@
     <h1 class="page-title">{{ titulo | default('Nueva cotización') }}</h1>
   </header>
 
+  {% set tab = 'form' %}{% set tab_titulo = titulo %}{% set tab_href = request.path %}
+  {% include "proformas/_tabs.html" with context %}
+
+  {% if id_origen %}
+  <div class="mb-3 px-3 py-2 rounded text-sm"
+       style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a">
+    Estás modificando la proforma <strong>N° {{ id_origen }}</strong>. Al
+    guardar queda una <strong>nueva</strong>: la que el cliente ya tiene no se
+    toca. Los precios son los de esa proforma, no los de la lista de hoy.
+  </div>
+  {% endif %}
+
   {% if errores %}
     <div class="page-error">
       <p>Revisá estos datos:</p>
@@ -28,8 +44,9 @@
     </div>
   {% endif %}
 
-  {# NO se guarda — solo se imprime. El form no postea. #}
+  {# El form no postea a lo clásico: graba por fetch y abre la hoja. #}
   <form class="page-card" id="prof-form" onsubmit="return false">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {# ── Cabecera: cliente + fecha ─────────────────────────────────── #}
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -43,7 +60,7 @@
                oninput="this.value=this.value.toUpperCase()">
         <div id="clientes-dd"
              class="hidden absolute left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto rounded border border-slate-300 bg-white shadow-lg z-50 text-sm dark:bg-slate-900 dark:border-slate-700"></div>
-        <span id="cli-nombre" class="text-xs text-slate-500 mt-0.5"></span>
+        <span id="cli-nombre" class="text-xs text-slate-500 mt-0.5">{{ form.cliente or '' }}</span>
         {% if clientes_datalist %}
         <script id="clientes-data" type="application/json">{{ clientes_datalist | tojson }}</script>
         {% endif %}
@@ -125,14 +142,21 @@
       </div>
     </div>
 
-    <div class="flex items-center justify-between mt-3 pt-3 border-t no-print">
+    <div class="flex items-center justify-between mt-3 pt-3 border-t no-print gap-3 flex-wrap">
       <button type="button" id="btn-limpiar" class="text-slate-500 hover:text-slate-700">Limpiar</button>
-      <button type="button" id="btn-imprimir" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">Imprimir {{ 'Factura Proforma' if es_pedido else 'cotización' }}</button>
+      <div class="flex items-center gap-3 ml-auto">
+        {# El N° que le tocó, para que Alex lo tenga a mano sin ir al papel. #}
+        <span id="prof-estado" class="text-sm text-slate-500"></span>
+        <button type="button" id="btn-guardar"
+                class="px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Guardar</button>
+        <button type="button" id="btn-imprimir" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">Imprimir {{ 'Factura Proforma' if es_pedido else 'cotización' }}</button>
+      </div>
     </div>
   </form>
 </div>
 
 <script id="matriz-data" type="application/json">{{ matriz | tojson }}</script>
+<script id="guardada-data" type="application/json">{{ (lineas_guardadas | default([], true)) | tojson }}</script>
 <script id="colores-data" type="application/json">{{ colores | tojson }}</script>
 <script>
 (function () {
@@ -502,10 +526,75 @@
     tr.querySelector('.js-tipo').focus();
   });
 
-  // Arrancar con 2 filas; el foco inicial va en Cliente (dueña 2026-07-09).
-  agregarFila(); agregarFila();
+  // ── Reabrir una proforma guardada ────────────────────────────────
+  // Alex 2026-08-11: el cliente pide agregar o sacar algo y hoy hay que
+  // repetir la proforma entera. Acá se rellenan las líneas tal como se
+  // guardaron. El PRECIO que se pone es el guardado (es el que el cliente
+  // tiene en el papel), no el de la lista de hoy — por eso queda 'touched'.
+  const GUARDADAS = JSON.parse(document.getElementById('guardada-data').textContent) || [];
+  const ID_ORIGEN = {{ (id_origen or 0) | tojson }};
+
+  // Kg → cantidad, la vuelta de kgDesdePiezas (para filas viejas sin cantidad).
+  function cantDesdeKg(t, kg) {
+    if (!t || !kg) return null;
+    if (t.op === 'x') return t.factor ? kg / t.factor : null;
+    if (t.op === '/') return kg * t.factor;
+    return kg;
+  }
+
+  function cargarGuardadas() {
+    GUARDADAS.forEach(ln => {
+      const tr = agregarFila();
+      const selTipo = tr.querySelector('.js-tipo');
+      const inColor = tr.querySelector('.js-color');
+      const inPiezas = tr.querySelector('.js-piezas');
+      const inCant = tr.querySelector('.js-cant');
+      const inPrecio = tr.querySelector('.js-precio');
+
+      selTipo.value = (ln.label || ln.tela || '').toUpperCase();
+      selTipo.dispatchEvent(new Event('change'));
+      inColor.value = (ln.color || '').toUpperCase();
+      inColor.dispatchEvent(new Event('change'));
+
+      const t = tipoObjDe(selTipo.value);
+      const cant = (ln.cantidad != null) ? ln.cantidad : cantDesdeKg(t, ln.kg);
+      if (ES_PEDIDO) {
+        if (cant != null) inPiezas.value = fmtCant(cant);
+        inCant.value = fmt(ln.kg);
+        inCant.dataset.manual = '1';   // el kg guardado manda
+      } else {
+        if (cant != null) inCant.value = fmtCant(cant);
+      }
+      inPrecio.value = fmt(ln.precio);
+      inPrecio.dataset.touched = '1';  // no pisarlo con el precio de hoy
+
+      // Si la lista de precios cambió desde que se guardó, marcarlo — sin
+      // tocar la cifra: la que vale es la que el cliente tiene en la mano.
+      const clase = tr.querySelector('.js-clase').value;
+      const hoy = (t && t.plano != null) ? t.plano
+                : ((clase && t && t.col) ? (PRECIOS[clase] || {})[t.col] : null);
+      if (hoy != null && Math.abs(hoy - ln.precio) >= 0.005) {
+        inPrecio.style.borderColor = '#d97706';
+        inPrecio.title = 'Precio de la proforma: ' + fmt(ln.precio)
+                       + '. Hoy la lista dice ' + fmt(hoy) + '.';
+      }
+    });
+    recalc();
+  }
+
+  if (GUARDADAS.length) {
+    cargarGuardadas();
+    agregarFila();   // una vacía al final para seguir agregando
+  } else {
+    // Arrancar con 2 filas; el foco inicial va en Cliente (dueña 2026-07-09).
+    agregarFila(); agregarFila();
+  }
   recalc();
-  const _cli = document.getElementById('codigo-cli-input'); if (_cli) _cli.focus();
+  // Al reabrir, el nombre del cliente ya viene pintado del servidor y el
+  // descuento es el de ESA proforma: no se llama al prefill del cliente, que
+  // lo pisaría con el descuento que el cliente tiene hoy.
+  const _cli = document.getElementById('codigo-cli-input');
+  if (_cli && !_cli.value) _cli.focus();
 
   // ── Prefill de descuentos al elegir cliente ──────────────────────
   window.__profPrefillCliente = function (codigo) {
@@ -522,7 +611,92 @@
       }).catch(() => {});
   };
 
-  // ── Imprimir (SIN guardar) ───────────────────────────────────────
+  // ── Guardar ──────────────────────────────────────────────────────
+  // TMT 2026-08-11 (Alex, aprobado por la dueña). La app no puede enterarse de
+  // lo que pasa DESPUÉS de abrir la hoja: el navegador ofrece imprimir en
+  // papel o "Guardar como PDF" y ninguna de las dos vuelve a avisar. Por eso
+  // se graba ANTES de abrirla — lo que se guarda es el acto de generarla.
+  const CSRF = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+  let ID_PROFORMA = null;   // el N° que le tocó a ESTA pantalla
+  let EN_VUELO = false;     // dos clicks seguidos no graban dos veces
+
+  function lineasPayload() {
+    const out = [];
+    body.querySelectorAll('tr').forEach(tr => {
+      const txtTipo = (tr.querySelector('.js-tipo').value || '').trim();
+      const t = tipoObjDe(txtTipo);
+      const cantTipeada = parseNum(tr.querySelector('.js-cant').value);
+      const kg = kgDe(t, cantTipeada);
+      const pu = parseNum(tr.querySelector('.js-precio').value);
+      if (kg === 0 && pu === 0) return;
+      // `cantidad` = las piezas/unidades que se tipearon; `cantidad_kilos` =
+      // los kilos. En Factura Proforma las piezas van en su propia casilla y
+      // el kg se ingresa exacto; en cotización la cantidad ES la que se
+      // convierte a kg.
+      const piezas = ES_PEDIDO ? parseNum(tr.querySelector('.js-piezas').value) : cantTipeada;
+      out.push({
+        tela: t ? t.v : '',
+        nombre_producto: t ? t.label : txtTipo,
+        color: (tr.querySelector('.js-color').value || '').trim(),
+        clase: tr.querySelector('.js-clase').value || null,
+        cantidad: piezas || null,
+        cantidad_kilos: kg,
+        precio_unitario: pu
+      });
+    });
+    return out;
+  }
+
+  function payloadActual() {
+    const fleteEl = document.getElementById('flete');
+    return {
+      id_proforma: ID_PROFORMA,
+      id_origen: ID_ORIGEN || null,
+      es_pedido: ES_PEDIDO,
+      codigo_cli: (document.getElementById('codigo-cli-input').value || '').trim(),
+      fecha: (document.querySelector('input[name="fecha"]').value || '').trim(),
+      descuento_volumen: parseNum(document.getElementById('desc-vol').value),
+      flete: (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0,
+      observaciones: (document.querySelector('textarea[name="observaciones"]').value || '').trim(),
+      lineas: lineasPayload()
+    };
+  }
+
+  function estado(txt, error) {
+    const el = document.getElementById('prof-estado');
+    if (!el) return;
+    el.textContent = txt || '';
+    el.style.color = error ? '#b91c1c' : '';
+  }
+
+  // Devuelve el N° (o null si no se pudo). NUNCA tira: que la proforma no se
+  // pueda guardar no puede dejar al cliente sin su papel.
+  function guardar() {
+    if (EN_VUELO) return Promise.resolve(ID_PROFORMA);
+    const p = payloadActual();
+    if (!p.codigo_cli) { estado('Falta el cliente.', true); return Promise.resolve(null); }
+    if (!p.lineas.length) { estado('No hay ninguna línea cargada.', true); return Promise.resolve(null); }
+    EN_VUELO = true;
+    estado('Guardando…');
+    return fetch('{{ url_for("proformas.guardar") }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+      body: JSON.stringify(p)
+    }).then(r => r.json().catch(() => null)).then(d => {
+      if (!d || !d.ok) {
+        estado('No se pudo guardar' + (d && d.error ? ': ' + d.error : '') + '.', true);
+        return null;
+      }
+      ID_PROFORMA = d.id_proforma;
+      estado('Guardada · N° ' + d.id_proforma);
+      return d.id_proforma;
+    }).catch(() => {
+      estado('No se pudo guardar (sin conexión).', true);
+      return null;
+    }).finally(() => { EN_VUELO = false; });
+  }
+
+  // ── Imprimir (guarda primero) ────────────────────────────────────
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -627,7 +801,7 @@
     }
     totHtml += `<div class="total"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
 
-    const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+    const armarDoc = (n) => `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <title>${DOCNOM}</title><style>
   @page { size: A4; margin: 10mm; }
   *{box-sizing:border-box} html,body{margin:0;padding:0}
@@ -656,7 +830,9 @@
 </style></head><body><div id="sheet">
   <div class="head">
     <div class="brand">INTELA<small>INDUSTRIA TEXTIL LATINOAMERICANA C. LTDA.</small></div>
-    <div style="text-align:right"><h1>${DOCNOM}</h1><div class="muted">${esc(fecha)}</div></div>
+    <div style="text-align:right"><h1>${DOCNOM}</h1>
+      ${n ? `<div class="muted">N° ${esc(n)}</div>` : ''}
+      <div class="muted">${esc(fecha)}</div></div>
   </div>
   <div class="cli"><strong>Cliente:</strong> ${esc(codigo)}${nombre ? ' — ' + esc(nombre) : ''}</div>
   <table><thead><tr><th>Tipo / Color</th>${thCant}<th class="r">Kg</th><th class="r">Precio c/IVA</th><th class="r">Importe</th></tr></thead>
@@ -666,29 +842,44 @@
   <div class="pie">Precios en USD por kilo, IVA ${IVA_PCT_TXT}% incluido.</div>
 </div></body></html>`;
 
+    // La ventana se abre ACÁ, dentro del click: si se abriera recién cuando
+    // vuelve el guardado, el navegador la trataría como popup y la bloquearía.
+    // Mientras tanto muestra "Guardando…" y después se reescribe con el N°.
     const win = window.open('', 'cotizacion', 'width=900,height=1100');
-    if (!win) { window.print(); return; }  // popup bloqueado → fallback
-    win.document.open();
-    win.document.write(doc);
-    win.document.close();
-    // Forzar UNA sola hoja: si el contenido excede el alto útil de A4 se
-    // escala hacia abajo (nunca agranda).
-    const ajustar = () => {
-      try {
-        const sheet = win.document.getElementById('sheet');
-        if (sheet) {
-          const avail = 1040;
-          const h = sheet.scrollHeight;
-          if (h > avail) sheet.style.transform = 'scale(' + (avail / h) + ')';
-        }
-      } catch (e) {}
-      win.focus();
-      win.print();
+    const pintar = (n) => {
+      if (!win) { window.print(); return; }   // popup bloqueado → fallback
+      win.document.open();
+      win.document.write(armarDoc(n));
+      win.document.close();
+      // Forzar UNA sola hoja: si el contenido excede el alto útil de A4 se
+      // escala hacia abajo (nunca agranda).
+      const ajustar = () => {
+        try {
+          const sheet = win.document.getElementById('sheet');
+          if (sheet) {
+            const avail = 1040;
+            const h = sheet.scrollHeight;
+            if (h > avail) sheet.style.transform = 'scale(' + (avail / h) + ')';
+          }
+        } catch (e) {}
+        win.focus();
+        win.print();
+      };
+      setTimeout(ajustar, 300);
     };
-    setTimeout(ajustar, 300);
+    if (win) {
+      win.document.open();
+      win.document.write('<!doctype html><meta charset="utf-8">'
+        + '<body style="font:14px Arial;color:#666;padding:24px">Guardando…</body>');
+      win.document.close();
+    }
+    // Si el guardado falla, la hoja sale IGUAL (sin N°): que la base tenga un
+    // mal día no puede dejar al cliente esperando el papel.
+    guardar().then(pintar);
   }
 
   document.getElementById('btn-imprimir').addEventListener('click', imprimir);
+  document.getElementById('btn-guardar').addEventListener('click', () => { guardar(); });
   document.getElementById('btn-limpiar').addEventListener('click', () => location.reload());
 })();
 

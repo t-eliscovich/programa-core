@@ -197,18 +197,27 @@ def cliente_defaults(codigo_cli: str) -> dict | None:
 def calcular_totales(
     lineas: list[dict],
     pct_volumen: float = 0.0,
-    aplica_contado: bool = False,
+    aplica_contado: bool = True,
     pct_contado: float = 5.0,
+    flete: float = 0.0,
 ) -> dict:
-    """Réplica de la cascada de PROCEDURE FACTURO (dBase), función PURA.
+    """La cascada de descuentos, función PURA (no toca la DB).
 
-    subtotal            = Σ (kg × precio)
-    desc. volumen       = subtotal × pct_volumen/100
-    subtotal c/desc     = subtotal − desc. volumen
-    desc. contado       = (subtotal c/desc) × pct_contado/100   [si aplica]
-    total               = subtotal c/desc − desc. contado
+        subtotal        = Σ (kg × precio)
+        desc. contado   = subtotal × 5%            [siempre, dueña 2026-07-09]
+        subtotal c/desc = subtotal − desc. contado
+        desc. volumen   = (subtotal c/desc) × pct_volumen/100
+        total           = subtotal c/desc − desc. volumen + flete
 
-    No toca la DB — testeable en aislamiento (el sandbox no corre contra RDS).
+    ⚠️ El ORDEN es CONTADO primero y volumen después, que es el de la pantalla
+    y el del papel que recibe el cliente. Hasta el 2026-08-11 esta función lo
+    hacía al revés (volumen → contado, como PROCEDURE FACTURO del dBase)
+    mientras la pantalla ya hacía contado → volumen. Nunca se notó porque la
+    cascada es conmutativa: el TOTAL da igual en los dos órdenes. Lo que
+    cambiaba era el desglose — cuánto se le atribuye a cada descuento — y eso
+    empieza a importar ahora que se GUARDA: el renglón grabado tiene que decir
+    lo mismo que el papel. El flete tampoco existía acá (es de la Factura
+    Proforma) y se sumaba sólo en el browser.
     """
     subtotal = 0.0
     for ln in lineas:
@@ -217,15 +226,17 @@ def calcular_totales(
         subtotal += kg * pu
     subtotal = round(subtotal, 2)
 
-    pct_volumen = max(0.0, float(pct_volumen or 0))
-    monto_vol = round(subtotal * pct_volumen / 100.0, 2)
-    subtotal_desc = round(subtotal - monto_vol, 2)
-
     monto_contado = 0.0
     if aplica_contado:
         pct_contado = max(0.0, float(pct_contado or 0))
-        monto_contado = round(subtotal_desc * pct_contado / 100.0, 2)
-    total = round(subtotal_desc - monto_contado, 2)
+        monto_contado = round(subtotal * pct_contado / 100.0, 2)
+    subtotal_desc = round(subtotal - monto_contado, 2)
+
+    pct_volumen = max(0.0, float(pct_volumen or 0))
+    monto_vol = round(subtotal_desc * pct_volumen / 100.0, 2)
+
+    flete = round(float(flete or 0), 2)
+    total = round(subtotal_desc - monto_vol + flete, 2)
 
     return {
         "subtotal": subtotal,
@@ -234,7 +245,69 @@ def calcular_totales(
         "subtotal_con_descuento": subtotal_desc,
         "aplica_descuento_contado": bool(aplica_contado),
         "monto_descuento_contado": monto_contado,
+        "flete": flete,
         "total_final": total,
+    }
+
+
+def _lineas_limpias(lineas: list[dict]) -> list[dict]:
+    """Normaliza las líneas que manda la pantalla y calcula el importe de cada
+    una. Compartida por `crear` y `actualizar` — la misma proforma tiene que
+    quedar igual se grabe por donde se grabe.
+    """
+    limpias: list[dict] = []
+    for ln in lineas:
+        kg = float(ln.get("cantidad_kilos") or 0)
+        pu = float(ln.get("precio_unitario") or 0)
+        if kg == 0 and pu == 0:
+            continue  # línea vacía — la ignoramos (como el KG=0 del dBase)
+        tela = (ln.get("tela") or "").strip().lower()[:20]
+        nombre = (ln.get("nombre_producto") or _LABEL_POR_COL.get(tela, "") or "").strip()
+        clase = ln.get("clase")
+        try:
+            clase = int(clase) if clase not in (None, "") else None
+        except (TypeError, ValueError):
+            clase = None
+        cant = ln.get("cantidad")
+        try:
+            cant = round(float(cant), 2) if cant not in (None, "") else None
+        except (TypeError, ValueError):
+            cant = None
+        limpias.append({
+            "tela": tela or None,
+            "nombre_producto": nombre[:60],
+            "color": (ln.get("color") or "").strip()[:60],
+            "clase": clase,
+            "cantidad": cant,
+            "cantidad_kilos": round(kg, 2),
+            "precio_unitario": round(pu, 4),
+            "precio_total": round(kg * pu, 2),
+        })
+    if not limpias:
+        raise ValueError("La proforma no tiene ninguna línea con datos.")
+    return limpias
+
+
+_SQL_INSERT_DETALLE = """
+    INSERT INTO scintela.proforma_detalle
+        (id_proforma, tela, nombre_producto, color, clase,
+         cantidad, cantidad_kilos, precio_unitario, precio_total)
+    VALUES (%(id)s, %(tela)s, %(nombre)s, %(color)s, %(clase)s,
+            %(cant)s, %(kg)s, %(pu)s, %(pt)s)
+"""
+
+
+def _params_detalle(id_proforma: int, ln: dict) -> dict:
+    return {
+        "id": id_proforma,
+        "tela": ln["tela"],
+        "nombre": ln["nombre_producto"],
+        "color": ln["color"],
+        "clase": ln["clase"],
+        "cant": ln["cantidad"],
+        "kg": ln["cantidad_kilos"],
+        "pu": ln["precio_unitario"],
+        "pt": ln["precio_total"],
     }
 
 
@@ -244,47 +317,32 @@ def crear(
     fecha,
     lineas: list[dict],
     pct_volumen: float = 0.0,
-    aplica_contado: bool = False,
+    aplica_contado: bool = True,
     pct_contado: float = 5.0,
+    flete: float = 0.0,
+    es_pedido: bool = False,
+    id_origen: int | None = None,
     observaciones: str | None = None,
     usuario: str = "web",
 ) -> dict:
-    """Inserta una cotización (cabecera + detalle) en una sola transacción.
+    """Inserta una proforma (cabecera + detalle) en una sola transacción.
 
-    `lineas` = [{tela, nombre_producto, color, clase, cantidad_kilos,
+    `lineas` = [{tela, nombre_producto, color, clase, cantidad, cantidad_kilos,
     precio_unitario}, ...]. El importe por línea y los totales se calculan acá
     (no se confía en lo que mande el browser). Devuelve {id_proforma}.
+
+    `id_origen` = de qué proforma viene esta versión, cuando se reabrió una
+    guardada y se le cambió algo (Alex 2026-08-11: el cliente pide agregar o
+    sacar). Se guarda una NUEVA y la anterior queda como estaba — el papel
+    viejo ya está en manos del cliente.
     """
     cli = cliente_defaults(codigo_cli)
     if not cli:
         raise ValueError(f"El cliente {codigo_cli!r} no existe.")
 
-    limpias: list[dict] = []
-    for ln in lineas:
-        kg = float(ln.get("cantidad_kilos") or 0)
-        pu = float(ln.get("precio_unitario") or 0)
-        if kg == 0 and pu == 0:
-            continue  # línea vacía — la ignoramos (como el KG=0 del dBase)
-        tela = (ln.get("tela") or "").strip().lower()
-        nombre = (ln.get("nombre_producto") or _LABEL_POR_COL.get(tela, "") or "").strip()
-        clase = ln.get("clase")
-        try:
-            clase = int(clase) if clase not in (None, "") else None
-        except (TypeError, ValueError):
-            clase = None
-        limpias.append({
-            "nombre_producto": nombre[:60],
-            "color": (ln.get("color") or "").strip()[:60],
-            "clase": clase,
-            "cantidad_kilos": round(kg, 2),
-            "precio_unitario": round(pu, 4),
-            "precio_total": round(kg * pu, 2),
-        })
+    limpias = _lineas_limpias(lineas)
 
-    if not limpias:
-        raise ValueError("La cotización no tiene ninguna línea con datos.")
-
-    tot = calcular_totales(limpias, pct_volumen, aplica_contado, pct_contado)
+    tot = calcular_totales(limpias, pct_volumen, aplica_contado, pct_contado, flete)
 
     with db.tx() as conn:
         cab = db.execute_returning(
@@ -293,10 +351,12 @@ def crear(
                 (id_cliente, fecha_emision, subtotal,
                  porcentaje_descuento_volumen, monto_descuento_volumen,
                  subtotal_con_descuento, aplica_descuento_contado,
-                 monto_descuento_contado, total_final, observaciones, usuario_crea)
+                 monto_descuento_contado, flete, total_final, es_pedido,
+                 id_origen, observaciones, usuario_crea)
             VALUES (%(id_cliente)s, %(fecha)s, %(subtotal)s,
                     %(pct_vol)s, %(monto_vol)s, %(sub_desc)s, %(aplica)s,
-                    %(monto_cont)s, %(total)s, %(obs)s, %(usuario)s)
+                    %(monto_cont)s, %(flete)s, %(total)s, %(es_pedido)s,
+                    %(id_origen)s, %(obs)s, %(usuario)s)
             RETURNING id_proforma
             """,
             {
@@ -308,7 +368,10 @@ def crear(
                 "sub_desc": tot["subtotal_con_descuento"],
                 "aplica": tot["aplica_descuento_contado"],
                 "monto_cont": tot["monto_descuento_contado"],
+                "flete": tot["flete"],
                 "total": tot["total_final"],
+                "es_pedido": bool(es_pedido),
+                "id_origen": int(id_origen) if id_origen else None,
                 "obs": (observaciones or "").strip() or None,
                 "usuario": usuario,
             },
@@ -316,26 +379,80 @@ def crear(
         )
         id_proforma = cab["id_proforma"]
         for ln in limpias:
-            db.execute(
-                """
-                INSERT INTO scintela.proforma_detalle
-                    (id_proforma, nombre_producto, color, clase,
-                     cantidad_kilos, precio_unitario, precio_total)
-                VALUES (%(id)s, %(nombre)s, %(color)s, %(clase)s,
-                        %(kg)s, %(pu)s, %(pt)s)
-                """,
-                {
-                    "id": id_proforma,
-                    "nombre": ln["nombre_producto"],
-                    "color": ln["color"],
-                    "clase": ln["clase"],
-                    "kg": ln["cantidad_kilos"],
-                    "pu": ln["precio_unitario"],
-                    "pt": ln["precio_total"],
-                },
-                conn=conn,
-            )
-    return {"id_proforma": id_proforma}
+            db.execute(_SQL_INSERT_DETALLE, _params_detalle(id_proforma, ln), conn=conn)
+    return {"id_proforma": id_proforma, **tot}
+
+
+def actualizar(
+    id_proforma: int,
+    *,
+    codigo_cli: str,
+    fecha,
+    lineas: list[dict],
+    pct_volumen: float = 0.0,
+    aplica_contado: bool = True,
+    pct_contado: float = 5.0,
+    flete: float = 0.0,
+    observaciones: str | None = None,
+) -> dict:
+    """Regraba una proforma que se acaba de guardar desde la MISMA pantalla.
+
+    Para qué existe: Alex aprieta Imprimir, ve un error en el papel, lo corrige
+    y vuelve a apretar. Sin esto quedarían dos proformas casi iguales por cada
+    dedazo. La pantalla se queda con el número que le tocó y regraba ese —
+    número NUEVO sólo cuando reabre una guardada desde la lista, que es lo que
+    la dueña decidió (2026-08-11).
+
+    No toca `es_pedido` ni `id_origen`: la pantalla es la que es.
+    """
+    cli = cliente_defaults(codigo_cli)
+    if not cli:
+        raise ValueError(f"El cliente {codigo_cli!r} no existe.")
+    limpias = _lineas_limpias(lineas)
+    tot = calcular_totales(limpias, pct_volumen, aplica_contado, pct_contado, flete)
+
+    with db.tx() as conn:
+        tocadas = db.execute(
+            """
+            UPDATE scintela.proforma_cabecera
+               SET id_cliente = %(id_cliente)s, fecha_emision = %(fecha)s,
+                   subtotal = %(subtotal)s,
+                   porcentaje_descuento_volumen = %(pct_vol)s,
+                   monto_descuento_volumen = %(monto_vol)s,
+                   subtotal_con_descuento = %(sub_desc)s,
+                   aplica_descuento_contado = %(aplica)s,
+                   monto_descuento_contado = %(monto_cont)s,
+                   flete = %(flete)s, total_final = %(total)s,
+                   observaciones = %(obs)s
+             WHERE id_proforma = %(id)s
+            """,
+            {
+                "id": id_proforma,
+                "id_cliente": cli["id_cliente"],
+                "fecha": fecha,
+                "subtotal": tot["subtotal"],
+                "pct_vol": tot["porcentaje_descuento_volumen"],
+                "monto_vol": tot["monto_descuento_volumen"],
+                "sub_desc": tot["subtotal_con_descuento"],
+                "aplica": tot["aplica_descuento_contado"],
+                "monto_cont": tot["monto_descuento_contado"],
+                "flete": tot["flete"],
+                "total": tot["total_final"],
+                "obs": (observaciones or "").strip() or None,
+            },
+            conn=conn,
+        )
+        if not tocadas:
+            # Se la llevó el barrido de los 7 días mientras la pantalla estaba
+            # abierta: no hay nada que regrabar.
+            raise LookupError(f"La proforma {id_proforma} ya no existe.")
+        db.execute(
+            "DELETE FROM scintela.proforma_detalle WHERE id_proforma = %s",
+            (id_proforma,), conn=conn,
+        )
+        for ln in limpias:
+            db.execute(_SQL_INSERT_DETALLE, _params_detalle(id_proforma, ln), conn=conn)
+    return {"id_proforma": id_proforma, **tot}
 
 
 def buscar(
@@ -344,6 +461,11 @@ def buscar(
     hasta: str | None = None,
     limite: int = 300,
 ) -> list[dict]:
+    """Las proformas guardadas, la última creada arriba.
+
+    No hace falta filtrar por "últimos 7 días": las de más de 7 días ya no
+    están (las borra `purgar_viejas`, decisión de la dueña 2026-08-11).
+    """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     # TMT 2026-08-04 (dueña "no funciona si solo busco condor"): match por
@@ -352,12 +474,16 @@ def buscar(
         q, ("c.nombre", "c.codigo_cli"), prefijo="bqt")
     return db.fetch_all(
         """
-        SELECT h.id_proforma, h.fecha_emision, h.id_cliente,
+        SELECT h.id_proforma, h.fecha_emision, h.id_cliente, h.creado_en,
                COALESCE(c.codigo_cli, '') AS codigo_cli,
                COALESCE(c.nombre, '')     AS cliente,
                h.subtotal, h.monto_descuento_volumen, h.subtotal_con_descuento,
-               h.aplica_descuento_contado, h.monto_descuento_contado, h.total_final,
-               h.observaciones
+               h.aplica_descuento_contado, h.monto_descuento_contado,
+               h.flete, h.total_final, h.es_pedido, h.id_origen,
+               h.usuario_crea, h.observaciones,
+               (SELECT COALESCE(SUM(d.cantidad_kilos), 0)
+                  FROM scintela.proforma_detalle d
+                 WHERE d.id_proforma = h.id_proforma) AS kilos
         FROM scintela.proforma_cabecera h
         LEFT JOIN scintela.cliente c ON c.id_cliente = h.id_cliente
         WHERE (%(q)s IS NULL
@@ -365,7 +491,7 @@ def buscar(
                OR CAST(h.id_proforma AS TEXT) LIKE %(like)s)
           AND (%(desde)s::date IS NULL OR h.fecha_emision >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR h.fecha_emision <= %(hasta)s::date)
-        ORDER BY h.fecha_emision DESC, h.id_proforma DESC
+        ORDER BY h.creado_en DESC NULLS LAST, h.id_proforma DESC
         LIMIT %(limite)s
         """.replace("__TEXTO_MATCH__", _txt_sql or "FALSE"),
         {
@@ -391,12 +517,85 @@ def detalle(id_proforma: int) -> dict | None:
         return None
     items = db.fetch_all(
         """
-        SELECT id_detalle, nombre_producto, color,
-               cantidad_kilos, precio_unitario, precio_total
+        SELECT id_detalle, tela, nombre_producto, color, clase,
+               cantidad, cantidad_kilos, precio_unitario, precio_total
         FROM scintela.proforma_detalle
         WHERE id_proforma = %s
         ORDER BY id_detalle
         """,
         (id_proforma,),
     )
-    return {"cabecera": cabecera, "items": items}
+    # ¿La versión de la que salió sigue viva? Si se la llevó el barrido de los
+    # 7 días, el número se muestra como texto y NO como link (un link que da
+    # 404 es peor que no tenerlo).
+    origen_vive = False
+    if cabecera.get("id_origen"):
+        origen_vive = bool(db.fetch_one(
+            "SELECT 1 FROM scintela.proforma_cabecera WHERE id_proforma = %s",
+            (cabecera["id_origen"],),
+        ))
+    return {"cabecera": cabecera, "items": items, "origen_vive": origen_vive}
+
+
+def para_formulario(id_proforma: int) -> dict | None:
+    """Una proforma guardada, en la forma que espera la PANTALLA (no la que
+    devuelve la DB): fecha DD/MM/AAAA, porcentajes como texto y las líneas con
+    la etiqueta de tela que el formulario sabe resolver.
+
+    Es lo que hace posible reabrirla y cambiarle algo sin volver a tipearla.
+    """
+    data = detalle(id_proforma)
+    if not data:
+        return None
+    cab = data["cabecera"]
+    lineas = [
+        {
+            "tela": (ln.get("tela") or ""),
+            "label": (ln.get("nombre_producto") or ""),
+            "color": ln.get("color") or "",
+            "clase": ln.get("clase"),
+            "cantidad": float(ln["cantidad"]) if ln.get("cantidad") is not None else None,
+            "kg": float(ln.get("cantidad_kilos") or 0),
+            "precio": float(ln.get("precio_unitario") or 0),
+        }
+        for ln in data["items"]
+    ]
+    return {
+        "id_origen": cab["id_proforma"],
+        "es_pedido": bool(cab.get("es_pedido")),
+        "form": {
+            "codigo_cli": cab.get("codigo_cli") or "",
+            "cliente": cab.get("cliente") or "",
+            "fecha": cab["fecha_emision"].strftime("%d/%m/%Y") if cab.get("fecha_emision") else "",
+            "descuento_volumen": _pct_txt(cab.get("porcentaje_descuento_volumen")),
+            "flete": _pct_txt(cab.get("flete")),
+            "observaciones": cab.get("observaciones") or "",
+        },
+        "lineas": lineas,
+    }
+
+
+def _pct_txt(v) -> str:
+    """Número → texto para un input: sin decimales si es entero (5, no 5,00)."""
+    try:
+        f = float(v or 0)
+    except (TypeError, ValueError):
+        return "0"
+    return str(int(f)) if f == int(f) else ("%.2f" % f).replace(".", ",")
+
+
+def purgar_viejas(dias: int = 7) -> int:
+    """Borra las proformas de más de `dias` días y devuelve cuántas.
+
+    Decisión de la dueña (2026-08-11): las proformas se guardan UNA SEMANA.
+    El detalle se va solo por el ON DELETE CASCADE de la migración 0119.
+    Se mide contra `creado_en` (cuándo se guardó de verdad) y no contra
+    `fecha_emision`, que el usuario puede tipear a mano.
+    """
+    return db.execute(
+        """
+        DELETE FROM scintela.proforma_cabecera
+         WHERE creado_en < (NOW() - MAKE_INTERVAL(days => %s))
+        """,
+        (int(dias),),
+    )

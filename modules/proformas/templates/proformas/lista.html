@@ -1,17 +1,20 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero %}
-{% block title %}Proformas{% endblock %}
-{% block breadcrumb %}<strong>Proformas</strong>{% endblock %}
+{% block title %}Proformas recientes{% endblock %}
+{% block breadcrumb %}<strong>Proformas recientes</strong>{% endblock %}
 
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 — page_hero con descripcion_safe para HTML. #}
 <div class="max-w-7xl">
+  {% set tab = 'recientes' %}
+  {% include "proformas/_tabs.html" with context %}
+
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Proformas', descripcion_safe='Mostrando ' ~ (filas | length) ~ ' · Total cotizado <strong>' ~ (total | money_es) ~ '</strong>') }}
+    {{ page_hero('Proformas recientes', descripcion_safe='Mostrando ' ~ (filas | length) ~ ' · Total <strong>' ~ (total | money_es) ~ '</strong> · se guardan 7 días') }}
     <div class="no-print flex items-center gap-2">
       {% if tiene_permiso('proformas.crear') %}
-      <a href="{{ url_for('proformas.nueva') }}"
-         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white shadow-sm">+ Nueva cotización</a>
+      <a href="{{ url_for('proformas.pedido_nuevo') }}"
+         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white shadow-sm">+ Nueva</a>
       {% endif %}
       <a href="{{ url_for('proformas.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
@@ -49,12 +52,12 @@
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-3 py-3 text-right font-medium">N°</th>
-          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">Guardada</th>
           <th class="px-3 py-3 text-left font-medium">Cliente</th>
-          <th class="px-3 py-3 text-right font-medium">Subtotal</th>
-          <th class="px-3 py-3 text-right font-medium">Desc. vol.</th>
-          <th class="px-3 py-3 text-right font-medium">Desc. contado</th>
+          <th class="px-3 py-3 text-left font-medium">Documento</th>
+          <th class="px-3 py-3 text-right font-medium">Kilos</th>
           <th class="px-3 py-3 text-right font-medium">Total</th>
+          <th class="px-3 py-3 no-print"></th>
         </tr>
       </thead>
       <tbody>
@@ -63,18 +66,29 @@
           <td class="px-3 py-2 text-right font-mono text-xs">
             <a href="{{ url_for('proformas.detalle', id_proforma=p.id_proforma) }}" class="hover:text-blue-600">{{ p.id_proforma }}</a>
           </td>
-          <td class="px-3 py-2" style="white-space: nowrap;">{{ p.fecha_emision | fecha_es }}</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">
+            {{ p.creado_en | fecha_hora_ec if p.creado_en else (p.fecha_emision | fecha_es) }}
+            {% if p.usuario_crea %}<span class="text-xs text-slate-400 ml-1">{{ p.usuario_crea }}</span>{% endif %}
+          </td>
           <td class="px-3 py-2">
             <span class="font-mono text-xs text-slate-500">{{ p.codigo_cli }}</span>
             <span class="ml-1">{{ p.cliente }}</span>
           </td>
-          <td class="px-3 py-2 text-right text-mono">{{ p.subtotal | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ p.monto_descuento_volumen | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ p.monto_descuento_contado | money_es if p.aplica_descuento_contado else '' }}</td>
+          <td class="px-3 py-2 text-slate-600 dark:text-slate-300">
+            {{ 'Factura Proforma' if p.es_pedido else 'Cotización' }}
+            {% if p.id_origen %}<span class="text-xs text-slate-400">· viene de la N° {{ p.id_origen }}</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ p.kilos | kg_es }}</td>
           <td class="px-3 py-2 text-right text-mono font-semibold">{{ p.total_final | money_es }}</td>
+          <td class="px-3 py-2 text-right no-print">
+            {% if tiene_permiso('proformas.crear') %}
+            <a href="{{ url_for('proformas.editar', id_proforma=p.id_proforma) }}"
+               class="text-sm text-sky-600 hover:text-sky-700">Modificar</a>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
-        {{ empty_row(7, 'Sin proformas.') }}
+        {{ empty_row(7, 'Todavía no hay proformas guardadas. Las de más de 7 días se borran solas.') }}
         {% endfor %}
       </tbody>
     </table>

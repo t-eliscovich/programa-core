@@ -1,0 +1,43 @@
+{# Tira de tabs de Proformas — Alex 2026-08-11: "que aparezca ver recientes
+   dentro de esto". La lista NO va al menú lateral: se entra desde la misma
+   pantalla donde se arma la proforma, que es donde él ya está parado.
+
+   CSS inline a propósito: static/tailwind.css es un build JIT y una clase que
+   no esté ya compilada no pinta nada. #}
+<style>
+  .pc-tabs { display: flex; gap: 2px; border-bottom: 1px solid #e2e8f0; margin: 0 0 14px; }
+  .pc-tab {
+    display: inline-block; padding: 7px 16px; font-size: 14px; line-height: 1.2;
+    color: #64748b; text-decoration: none; border: 1px solid transparent;
+    border-bottom: none; border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  }
+  .pc-tab:hover { color: #0f172a; background: #f1f5f9; }
+  .pc-tab.is-active {
+    color: #0f172a; font-weight: 600; background: #fff;
+    border-color: #e2e8f0; border-bottom: 1px solid #fff;
+  }
+  .pc-tab .pc-tab-n { color: #94a3b8; font-weight: 400; }
+  @media (prefers-color-scheme: dark) {
+    .pc-tabs { border-bottom-color: #1e293b; }
+    .pc-tab { color: #94a3b8; }
+    .pc-tab:hover { color: #f1f5f9; background: #1e293b; }
+    .pc-tab.is-active {
+      color: #f1f5f9; background: #0f172a;
+      border-color: #1e293b; border-bottom-color: #0f172a;
+    }
+  }
+  @media print { .pc-tabs { display: none; } }
+</style>
+{# `tab_titulo`/`tab_href`: la pantalla de armado desde la que se entró
+   (Factura Proforma o Cotización). Desde la lista se vuelve a la Factura
+   Proforma, que es la que está en el menú. #}
+<nav class="pc-tabs no-print">
+  {% if tiene_permiso('proformas.crear') %}
+  <a class="pc-tab{% if tab != 'recientes' %} is-active{% endif %}"
+     href="{{ tab_href | default(url_for('proformas.pedido_nuevo'), true) }}">{{ tab_titulo | default('Factura Proforma', true) }}</a>
+  {% endif %}
+  {% if tiene_permiso('proformas.ver') %}
+  <a class="pc-tab{% if tab == 'recientes' %} is-active{% endif %}"
+     href="{{ url_for('proformas.lista') }}">Ver recientes</a>
+  {% endif %}
+</nav>

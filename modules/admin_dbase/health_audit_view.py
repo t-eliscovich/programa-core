@@ -1732,6 +1732,11 @@ def health_all():
     # Metabase esté caído un día no es un problema contable y no tiene que
     # encender el panel. Ver [[feedback_flujo_chequeo_coherencia]].
     data8 = _refrescar_mails_asinfo_cron()
+    # TMT 2026-08-11 (dueña): las proformas se guardan UNA SEMANA. Va acá y no
+    # en un cron nuevo — es el mismo pase diario idempotente que las
+    # retenciones y los mails. NO entra al `ok`: borrar cero proformas es el
+    # caso normal, no una alarma.
+    data13 = _purgar_proformas_cron()
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
@@ -1748,7 +1753,28 @@ def health_all():
         "hilado_ukg": data10,
         "traza_fresca": data11,
         "permisos_drift": data12,
+        "proformas_purga": data13,
     })
+
+
+def _purgar_proformas_cron(dias: int = 7) -> dict:
+    """Borra las proformas de más de `dias` días y dice cuántas quedan vivas.
+
+    Las proformas son un papel de trabajo, no un documento contable: no tocan
+    stock, facturas ni utilidad. La dueña las quiso con fecha de vencimiento
+    (2026-08-11) para que la lista de recientes sea corta y útil. Fail-soft:
+    si esto falla, el health sigue.
+    """
+    try:
+        from modules.proformas import queries as _prof
+        borradas = _prof.purgar_viejas(dias)
+        vivas = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.proforma_cabecera"
+        ) or {}
+        return {"ok": True, "dias": dias, "borradas": borradas,
+                "vivas": int(vivas.get("n") or 0)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
 
 
 def _refrescar_mails_asinfo_cron() -> dict:
