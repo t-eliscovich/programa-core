@@ -199,16 +199,20 @@ TOLERANCIA_CIERRE_USD = 50.0
 TOLERANCIA_CENTAVOS_USD = 5.00
 
 
-# Stats donde el cheque está depositado en banco (lockean campos duros).
-STATS_DEPOSITADO = ("B", "V", "W", "I", "J", "K", "A")
+# ⭐ Las familias NO se escriben acá: salen de `estados.py`, que es la tabla
+# única (letra · qué significa · de qué lado está) y copia la estructura del
+# dBase — CART='Z123PD' y ENBANC='BVWIJK', menos los estados muertos, que están
+# declarados uno por uno con su motivo. TMT 2026-08-11 (dueña: "tiene que estar
+# definida en un lugar... y tiene que imitar al dbase").
+from .estados import EN_BANCO as STATS_DEPOSITADO  # noqa: E402
+from .estados import EN_CARTERA as STATS_EN_CARTERA  # noqa: E402
+from .estados import LABEL_CORTO_ESTADO  # noqa: E402  (cómo se llama cada uno)
+from .estados import DESTINOS_DEPOSITO  # noqa: E402  (a cuáles se puede depositar HOY)
+from .estados import EN_CAJA  # noqa: E402
 
-# Estados en los que el cheque TODAVÍA está en cartera (vivo, aplicable a
-# facturas). Todo lo demás es una salida: depositado, cobrado en caja,
-# endosado, anulado. TMT 2026-08-10 — ver `crear()`, bloque `fechaout`.
-STATS_EN_CARTERA = ("Z", "P", "D", "1", "2", "3")
-
-# Stats terminales — no se puede editar nada. 'E' = endosado (cheque ya
-# salió de nuestra cartera, no nos pertenece más).
+# Stats terminales para EDITAR — es otra pregunta que "de qué lado está":
+# son los que ya no admiten tocar ningún campo. '3' está en cartera y sin
+# embargo no se edita.
 STATS_TERMINALES_EDIT = ("X", "T", "R", "3", "E")
 
 
@@ -1088,7 +1092,7 @@ def transicionar_stat(
         # el movimiento de banco (DE) igual que 'B' — antes era etiqueta plana y
         # esperaba el sync de PICHINCH.DBF. dBase (BANCOS.PRG DEPOBAN) deposita
         # un devuelto igual que uno de cartera; solo cambia la letra. ---
-        if stat_destino in ("B", "V", "I"):
+        if stat_destino in DESTINOS_DEPOSITO:
             import bank_helpers
 
             # TMT 2026-07-31 (dueña, caso ch14778 BYG): el fallback era
@@ -1342,9 +1346,9 @@ def transicionar_stat(
             origen_table="cheque",
             origen_id=int(id_cheque),
             destino_table=("transacciones_bancarias" if side_effect_id
-                           and stat_destino in ("B", "V", "I") else "cheque"),
+                           and stat_destino in DESTINOS_DEPOSITO else "cheque"),
             destino_id=(int(side_effect_id) if side_effect_id
-                        and stat_destino in ("B", "V", "I") else int(id_cheque)),
+                        and stat_destino in DESTINOS_DEPOSITO else int(id_cheque)),
             importe=importe,
             fecha=fecha,
             concepto=(f"{stat_prev or '?'}→{stat_destino} cheque "
@@ -1359,7 +1363,7 @@ def transicionar_stat(
                 "no_banco": int(banco_destino) if banco_destino else None,
                 "id_transaccion": (int(side_effect_id)
                                    if side_effect_id
-                                   and stat_destino in ("B", "V", "I") else None),
+                                   and stat_destino in DESTINOS_DEPOSITO else None),
                 "motivo": (motivo or "").strip() or None,
             }.items() if v is not None},
         )
@@ -1535,7 +1539,7 @@ def anular_por_error_de_carga(
             )
 
         # --- Compensación bancaria/caja según stat actual ---
-        if stat_prev in ("B", "V", "W", "I", "J", "K", "A"):
+        if stat_prev in STATS_DEPOSITADO:
             import bank_helpers
 
             banco = ch.get("no_banco") or (10 if stat_prev == "B" else 32)
@@ -2902,7 +2906,12 @@ STATS = {
     # TMT 2026-07-31 (dueña): V (protestado vuelto a depositar) TAMBIÉN es
     # un depósito — crea su DE en el banco. Sin esto no aparecía en NINGUNA
     # solapa (ni Depositados ni Cartera total): sólo en "Todos los estados".
-    "depositados": ("B", "A", "C", "V"),  # B nuevo + A legacy + C efectivo + V re-depósito
+    # ⭐ TMT 2026-08-11: se derivaba de una tupla escrita a mano y le faltaba la
+    # `I` — un cheque depositado en el INTERNACIONAL no aparecía en esta solapa
+    # (ni en ninguna otra: sólo en "Todos los estados"). Es el mismo agujero que
+    # tuvo la V hasta el 31/07. Ahora sale de la tabla: todo lo que está en
+    # banco, más el efectivo, que también salió de cartera.
+    "depositados": STATS_DEPOSITADO + EN_CAJA,
     "devueltos": ("1", "2", "3", "R"),  # rebotes (3=segundo rebote)
     "daniela": ("D",),  # gestión Daniela
     "postergados": ("P",),  # postergados con fecha nueva
@@ -3111,28 +3120,9 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
 }
 
 
-# ⭐ UNA sola definición de cómo se llama cada estado en los menús de cambiar
-# estado. La ficha del cheque (detalle.html) tenía este mismo mapa escrito a
-# mano en Jinja y la lista no usaba ninguno: dibujaba sólo la letra, y así el
-# wizard de rebote (9) y el cambio plano a 1 salían los DOS como "→1", dos
-# opciones idénticas de las que una no hacía lo que decía. Los dos templates
-# leen de acá. TMT 2026-08-11 (dueña: "ya teníamos las definiciones, fijate
-# qué dejamos" + "no podemos tener una opción que no funciona").
-LABEL_CORTO_ESTADO = {
-    "B": "Depositar",
-    "C": "Caja",
-    "P": "Postergar",
-    "D": "Daniela",
-    "1": "Devuelto",
-    "2": "Devuelto 2°",
-    "3": "Rechazo 3°",
-    "Z": "Cartera",
-    "V": "Re-depositar",
-    "X": "Anular",
-    "9": "Sin fondos",
-    "E": "Endosar",
-}
-
+# (El mapa de etiquetas vive en `estados.py`, junto con el significado de cada
+# estado y su familia — se importa arriba. Estaba escrito a mano en dos
+# templates distintos hasta el 11/08/2026.)
 
 # Etiquetas legibles por estado destino (para las opciones auto-generadas del
 # dropdown). Los estados con movimiento tienen su propia entrada curada arriba.
@@ -5130,7 +5120,7 @@ def _stat_destino_reversa(stat_prev: str) -> tuple[str, bool]:
     # desaparecía y el cliente dejaba de deberlo. Contra el dBase, que trata a
     # los seis igual (`ENBANC='BVWIJK'`, MODIFICA.PRG FIL3: un depositado sólo
     # rebota a 1/2, NUNCA a X) y contra la propia docstring de acá arriba.
-    if s in ("B", "A", "W", "I", "J", "K"):
+    if s in STATS_DEPOSITADO and s != "V":
         return "1", True
     # V = re-depósito de un devuelto (DEPOSITADO). Su rebote es REBOTE REAL: crea
     # ND y vuelve a cartera como devuelto (2° rebote). NO es anulación a X.

@@ -56,7 +56,14 @@ from filters import today_ec
 # 'I', 'J', 'K' y 'A' no aparecen en ningún dato real (ni en el DBF ni en
 # scintela.cheque); se dejan por paridad con el PRG y con la lista de
 # cheques. 'W' existe en el DBF y el sync lo mapea a 'B'.
-STATS_COBRADO = ("B", "V", "W", "I", "J", "K", "A", "C")
+# Depositado en banco + cobrado en caja = la plata entró. Las familias salen de
+# la tabla única de estados (modules/cheques/estados.py), no se re-escriben:
+# tenían W/J/K, códigos de bancos viejos del DBF con 0 cheques, y cuando la
+# familia cambiaba acá no se enteraba. TMT 2026-08-11.
+from modules.cheques.estados import EN_BANCO as _EN_BANCO
+from modules.cheques.estados import EN_CAJA as _EN_CAJA
+
+STATS_COBRADO = _EN_BANCO + _EN_CAJA
 
 # Fragmento SQL, armado UNA sola vez desde la constante para que las
 # apariciones no puedan volver a divergir entre sí.

@@ -2862,7 +2862,7 @@ def transicionar(id_cheque: int):
     # también crea un DE en Pichincha — faltaba en esta lista, así que llegaba a
     # queries con no_banco=None y caía en el hardcode legacy (banco 1, que no
     # existe). El movimiento quedaba huérfano y no entraba a conciliación.
-    if stat_destino in ("B", "I", "V"):
+    if stat_destino in queries.DESTINOS_DEPOSITO:
         needle = "INTER" if stat_destino == "I" else "PICHINC"
         all_b = (
             db.fetch_all(

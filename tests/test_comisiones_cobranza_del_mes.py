@@ -59,8 +59,24 @@ def test_stats_cobrado_incluye_C():
 
 
 def test_stats_cobrado_cubre_todo_lo_que_el_dbase_considera_cobrado():
-    """Paridad MODIFICA.PRG L1830: STAT $ "BWVCIK"."""
-    assert set("BWVCIK") <= set(q.STATS_COBRADO)
+    """Paridad MODIFICA.PRG: STAT $ "BWVCIK" — menos los estados muertos.
+
+    TMT 2026-08-11: `W` y `K` son códigos de bancos viejos del DBF con CERO
+    cheques en producción (censo sobre 3.753). La dueña decidió sacarlos, así
+    que la paridad se mide contra el dBase descontando lo que está declarado
+    como no usado en `modules/cheques/estados.py` — si alguien los resucita sin
+    declararlo, este test cae igual.
+    """
+    from modules.cheques import estados
+
+    del_dbase = set("BWVCIK")
+    esperado = del_dbase - set(estados.NO_USADOS)
+    assert esperado <= set(q.STATS_COBRADO), (
+        f"falta {sorted(esperado - set(q.STATS_COBRADO))} en STATS_COBRADO"
+    )
+    # Y lo que sacamos, sacado a propósito y con motivo escrito.
+    for muerto in del_dbase - esperado:
+        assert estados.NO_USADOS[muerto], f"{muerto} sin motivo declarado"
 
 
 def test_stats_cobrado_no_agrega_nada_que_el_dbase_excluya():
@@ -96,9 +112,17 @@ def test_cheques_STATS_DEPOSITADO_sigue_sin_C():
     ],
 )
 def test_toda_query_de_cobranza_filtra_por_STATS_COBRADO(sql_de, caso):
+    """Las tres queries usan LA MISMA lista, sea cual sea.
+
+    TMT 2026-08-11: el fragmento esperado se ARMA desde `q.STATS_COBRADO` en
+    vez de estar tipeado. Antes decía `('B','V','W','I','J','K','A','C')` a
+    mano, así que sacar dos estados muertos rompía un test que no habla de esos
+    estados: habla de que las tres queries filtren por la misma definición.
+    """
     nombre, invocar = caso
     sql = invocar(lambda *a, **k: sql_de(getattr(q, nombre), *a, **k))
-    assert "ch.stat IN ('B', 'V', 'W', 'I', 'J', 'K', 'A', 'C')" in sql
+    esperado = "ch.stat IN (" + ", ".join(f"'{s}'" for s in q.STATS_COBRADO) + ")"
+    assert esperado in sql, f"{nombre} no filtra por STATS_COBRADO ({esperado})"
 
 
 def test_ninguna_lista_de_stats_quedo_hardcodeada_en_el_fuente():
