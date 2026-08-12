@@ -32,6 +32,7 @@ import pytest
 
 from modules.precios import queries
 
+
 # Matriz de juguete con la forma de la real: JERSEY distingue las cinco clases,
 # ALEMANIA cobra lo mismo en todas (que es lo que pasa de verdad).
 def _fila(clase, descripcio, jersey, rib):
@@ -87,14 +88,23 @@ def test_una_tela_sin_precio_cargado_no_rompe():
 # ---------------------------------------------------------------------------
 
 
-def _corre(rows, sin_clase):
+def _cat(d):
+    """{cod: nombre} → la forma que devuelve _catalogo_colores (sin clase)."""
+    return {k: (v, None) for k, v in d.items()}
+
+
+def _corre(rows, catalogo):
     with patch.object(queries, "matriz", return_value=MATRIZ), \
-            patch.object(queries, "_codigos_sin_clase", return_value=sin_clase), \
+            patch.object(queries, "_catalogo_colores", return_value=catalogo), \
             patch("modules._lib.metabase_client.fetch_dataset", return_value=rows):
         queries._COLORES_CACHE.clear()
-        out = queries.colores_sin_clase()
+        out = queries.colores_para_revisar()
     queries._COLORES_CACHE.clear()
     return out
+
+
+def _faltan(rows, sin_clase):
+    return _corre(rows, _cat(sin_clase))["faltan"]
 
 
 def test_gana_la_clase_con_mas_productos_no_la_ultima():
@@ -107,7 +117,7 @@ def test_gana_la_clase_con_mas_productos_no_la_ultima():
         {"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 5, "lineas": 5},
         {"cod": "COA", "categoria": "Jersey", "precio": 9.82, "n": 2, "lineas": 2},
     ]
-    out = _corre(rows, {"COA": "COCOA"})
+    out = _faltan(rows, {"COA": "COCOA"})
     assert len(out) == 1
     assert out[0]["sugerida"] == 3
     assert out[0]["sugerida_desc"] == "MEDIOS"
@@ -119,7 +129,7 @@ def test_el_color_que_solo_se_vende_en_tela_de_precio_plano_queda_sin_sugerencia
     Antes que inventar una clase, que la elija una persona.
     """
     rows = [{"cod": "ACP", "categoria": "Alemania", "precio": 7.26, "n": 9, "lineas": 45}]
-    out = _corre(rows, {"ACP": "ACERO PES"})
+    out = _faltan(rows, {"ACP": "ACERO PES"})
     assert len(out) == 1, "el color se vende: tiene que aparecer para decidirlo"
     assert out[0]["sugerida"] is None
     assert "no distingue la clase" in out[0]["evidencia"]
@@ -128,14 +138,13 @@ def test_el_color_que_solo_se_vende_en_tela_de_precio_plano_queda_sin_sugerencia
 def test_el_color_que_no_se_vende_no_entra():
     """350 de los 374 sin clase nunca se facturaron: no hay nada que decidir."""
     rows = [{"cod": "OTRO", "categoria": "Jersey", "precio": 9.82, "n": 3, "lineas": 3}]
-    out = _corre(rows, {"NADIE": "COLOR QUE NO SE VENDE"})
-    assert out == []
+    assert _faltan(rows, {"NADIE": "COLOR QUE NO SE VENDE"}) == []
 
 
 def test_un_color_que_ya_tiene_clase_no_aparece():
     """La tabla es de los que FALTAN; si aparecieran los 692 no se podría usar."""
     rows = [{"cod": "BLA", "categoria": "Jersey", "precio": 7.94, "n": 30, "lineas": 900}]
-    assert _corre(rows, {"COA": "COCOA"}) == []
+    assert _faltan(rows, {"COA": "COCOA"}) == []
 
 
 def test_los_sin_sugerencia_van_al_final():
@@ -144,21 +153,21 @@ def test_los_sin_sugerencia_van_al_final():
         {"cod": "ACP", "categoria": "Alemania", "precio": 7.26, "n": 9, "lineas": 45},
         {"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 5, "lineas": 1389},
     ]
-    out = _corre(rows, {"ACP": "ACERO PES", "COA": "COCOA"})
+    out = _faltan(rows, {"ACP": "ACERO PES", "COA": "COCOA"})
     assert [c["cod"] for c in out] == ["COA", "ACP"]
 
 
 def test_si_asinfo_no_contesta_devuelve_vacio_y_no_explota():
     """Fail-soft: /precios no se puede caer porque el puente tosió."""
-    assert _corre([], {"COA": "COCOA"}) == []
+    assert _faltan([], {"COA": "COCOA"}) == []
 
 
-def test_sin_colores_sin_clase_ni_pregunta_a_asinfo():
+def test_sin_catalogo_ni_pregunta_a_asinfo():
     with patch.object(queries, "matriz", return_value=MATRIZ), \
-            patch.object(queries, "_codigos_sin_clase", return_value={}), \
+            patch.object(queries, "_catalogo_colores", return_value={}), \
             patch("modules._lib.metabase_client.fetch_dataset") as fake:
         queries._COLORES_CACHE.clear()
-        assert queries.colores_sin_clase() == []
+        assert queries.colores_para_revisar() == {"faltan": [], "discrepan": []}
     fake.assert_not_called()
     queries._COLORES_CACHE.clear()
 
@@ -237,19 +246,20 @@ def test_precios_no_le_pregunta_a_asinfo_al_cargar(duenia):
 
 def test_la_ruta_devuelve_los_colores_y_si_puede_editar(duenia):
     rows = [{"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 5, "lineas": 1389}]
-    with patch.object(queries, "_codigos_sin_clase", return_value={"COA": "COCOA"}), \
+    with patch.object(queries, "_catalogo_colores", return_value=_cat({"COA": "COCOA"})), \
             patch("modules._lib.metabase_client.fetch_dataset", return_value=rows):
         queries._COLORES_CACHE.clear()
         data = duenia.get("/precios/colores-asinfo").get_json()
     queries._COLORES_CACHE.clear()
     assert data["ok"] is True
     assert data["puede_editar"] is True
-    assert data["colores"][0]["cod"] == "COA"
-    assert data["colores"][0]["sugerida"] == 3
+    assert data["faltan"][0]["cod"] == "COA"
+    assert data["faltan"][0]["sugerida"] == 3
+    assert data["discrepan"] == []
 
 
 def test_el_vendedor_ve_la_lista_pero_no_los_botones(vendedor):
-    with patch.object(queries, "_codigos_sin_clase", return_value={"COA": "COCOA"}), \
+    with patch.object(queries, "_catalogo_colores", return_value=_cat({"COA": "COCOA"})), \
             patch("modules._lib.metabase_client.fetch_dataset", return_value=[]):
         queries._COLORES_CACHE.clear()
         data = vendedor.get("/precios/colores-asinfo").get_json()
@@ -259,10 +269,10 @@ def test_el_vendedor_ve_la_lista_pero_no_los_botones(vendedor):
 
 def test_si_la_consulta_explota_la_ruta_contesta_igual(duenia):
     """Fail-soft con el motivo, no un 500 en la cara del usuario."""
-    with patch.object(queries, "colores_sin_clase", side_effect=RuntimeError("boom")):
+    with patch.object(queries, "colores_para_revisar", side_effect=RuntimeError("boom")):
         data = duenia.get("/precios/colores-asinfo").get_json()
     assert data["ok"] is False
-    assert data["colores"] == []
+    assert data["faltan"] == [] and data["discrepan"] == []
 
 
 def test_asignar_la_clase_la_graba(duenia, fake_db):
@@ -326,25 +336,25 @@ def test_el_nombre_pierde_la_categoria_que_le_pega_el_sync_de_formulas():
     sería mandar dos respuestas distintas a la misma pregunta.
     """
     filas = [
-        {"cod": " ccr ", "color": "COCOA RIB · Color Bajo"},
-        {"cod": "COA", "color": "COCOA"},
-        {"cod": "XXX", "color": ""},
-        {"cod": "", "color": "sin codigo"},
+        {"cod": " ccr ", "color": "COCOA RIB · Color Bajo", "clase": None},
+        {"cod": "COA", "color": "COCOA", "clase": 3},
+        {"cod": "XXX", "color": "", "clase": 0},
+        {"cod": "", "color": "sin codigo", "clase": 5},
     ]
     with patch("db.fetch_all", return_value=filas):
-        out = queries._codigos_sin_clase()
-    assert out == {"CCR": "COCOA RIB", "COA": "COCOA", "XXX": "XXX"}
+        out = queries._catalogo_colores()
+    assert out == {"CCR": ("COCOA RIB", None), "COA": ("COCOA", 3), "XXX": ("XXX", None)}
 
 
 def test_la_segunda_lectura_sale_de_la_cache_sin_tocar_asinfo():
     """/precios lo abre cualquiera: la consulta pesada va una vez cada 5 min."""
     rows = [{"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 5, "lineas": 9}]
     with patch.object(queries, "matriz", return_value=MATRIZ), \
-            patch.object(queries, "_codigos_sin_clase", return_value={"COA": "COCOA"}), \
+            patch.object(queries, "_catalogo_colores", return_value=_cat({"COA": "COCOA"})), \
             patch("modules._lib.metabase_client.fetch_dataset", return_value=rows) as fake:
         queries._COLORES_CACHE.clear()
-        primera = queries.colores_sin_clase()
-        segunda = queries.colores_sin_clase()
+        primera = queries.colores_para_revisar()
+        segunda = queries.colores_para_revisar()
     queries._COLORES_CACHE.clear()
     assert primera == segunda
     assert fake.call_count == 1
@@ -353,10 +363,10 @@ def test_la_segunda_lectura_sale_de_la_cache_sin_tocar_asinfo():
 def test_sin_matriz_no_se_pregunta_nada():
     """Sin precios cargados no hay con qué comparar; preguntar sería al pedo."""
     with patch.object(queries, "matriz", return_value=[]), \
-            patch.object(queries, "_codigos_sin_clase", return_value={"COA": "COCOA"}), \
+            patch.object(queries, "_catalogo_colores", return_value=_cat({"COA": "COCOA"})), \
             patch("modules._lib.metabase_client.fetch_dataset") as fake:
         queries._COLORES_CACHE.clear()
-        assert queries.colores_sin_clase() == []
+        assert queries.colores_para_revisar() == {"faltan": [], "discrepan": []}
     fake.assert_not_called()
     queries._COLORES_CACHE.clear()
 
@@ -367,7 +377,7 @@ def test_una_fila_con_basura_se_saltea_sin_tirar_abajo_la_tabla():
         {"cod": "COA", "categoria": "Jersey", "precio": "no es un numero", "n": 1, "lineas": 1},
         {"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 5, "lineas": 1389},
     ]
-    out = _corre(rows, {"COA": "COCOA"})
+    out = _faltan(rows, {"COA": "COCOA"})
     assert len(out) == 1
     assert out[0]["sugerida"] == 3
     assert out[0]["lineas"] == 1389
@@ -376,7 +386,7 @@ def test_una_fila_con_basura_se_saltea_sin_tirar_abajo_la_tabla():
 def test_el_color_con_precio_de_lista_pero_sin_ventas_igual_aparece():
     """Producto nuevo con precio puesto y todavía sin facturar: ya se cotiza."""
     rows = [{"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 2, "lineas": 0}]
-    out = _corre(rows, {"COA": "COCOA"})
+    out = _faltan(rows, {"COA": "COCOA"})
     assert len(out) == 1
     assert out[0]["lineas"] == 0
     assert out[0]["evidencia"] == "2 a MEDIOS"
@@ -388,4 +398,87 @@ def test_el_color_sin_ventas_y_con_precio_que_no_dice_nada_no_entra():
     justamente para tener pocas filas.
     """
     rows = [{"cod": "ACP", "categoria": "Alemania", "precio": 7.26, "n": 4, "lineas": 0}]
-    assert _corre(rows, {"ACP": "ACERO PES"}) == []
+    assert _faltan(rows, {"ACP": "ACERO PES"}) == []
+
+
+# ---------------------------------------------------------------------------
+# Los que YA tienen clase pero se facturan a otra
+# ---------------------------------------------------------------------------
+# Dueña 2026-08-12: *"como lo cotice asinfo en las facturas reales"*. El
+# catálogo puede quedar viejo: AVELLANA y PURPURA estaban como MEDIOS y se
+# facturan FUERTES desde 2024 (413 de 413 y 42 de 42 líneas), o sea que la
+# proforma los cotizaba 0,67 US/kg por debajo de lo que después se cobraba.
+
+
+def _con_clase(cod, nombre, clase):
+    return {cod: (nombre, clase)}
+
+
+def test_el_color_que_se_factura_a_otra_clase_sale_en_discrepan():
+    rows = [{"cod": "AVE", "categoria": "Rib", "precio": 10.51, "n": 413, "lineas": 413}]
+    out = _corre(rows, _con_clase("AVE", "AVELLANA", 3))
+    assert out["faltan"] == []
+    d = out["discrepan"]
+    assert len(d) == 1
+    assert (d[0]["clase_hoy"], d[0]["sugerida"]) == (3, 5)
+    assert d[0]["evidencia"] == "cargado MEDIOS · se factura FUERTES en 413 de 413"
+
+
+def test_el_que_coincide_no_molesta():
+    """199 de 201 coinciden: si aparecieran, la tabla sería inusable."""
+    rows = [{"cod": "NEG", "categoria": "Rib", "precio": 10.51, "n": 300, "lineas": 300}]
+    out = _corre(rows, _con_clase("NEG", "NEGRO", 5))
+    assert out == {"faltan": [], "discrepan": []}
+
+
+def test_una_venta_suelta_a_precio_raro_no_reclasifica_un_color():
+    """El freno que importa: sin él, UNA factura con descuento raro que caiga
+    justo en otra fila de la matriz haría cambiar de clase a un color que se
+    vende bien hace años.
+    """
+    rows = [
+        {"cod": "NEG", "categoria": "Rib", "precio": 10.51, "n": 300, "lineas": 300},
+        {"cod": "NEG", "categoria": "Rib", "precio": 9.84, "n": 1, "lineas": 1},
+    ]
+    assert _corre(rows, _con_clase("NEG", "NEGRO", 5))["discrepan"] == []
+
+
+def test_con_pocas_lineas_no_alcanza_aunque_sean_todas_iguales():
+    """4 líneas a otro precio pueden ser una punta de rollo, no una lista."""
+    rows = [{"cod": "NEG", "categoria": "Rib", "precio": 9.84, "n": 4, "lineas": 4}]
+    assert _corre(rows, _con_clase("NEG", "NEGRO", 5))["discrepan"] == []
+    rows[0]["n"] = rows[0]["lineas"] = 5
+    assert len(_corre(rows, _con_clase("NEG", "NEGRO", 5))["discrepan"]) == 1
+
+
+def test_si_las_lineas_estan_repartidas_no_es_discrepancia():
+    """Mitad y mitad no dice nada: no se toca lo que ya está decidido."""
+    rows = [
+        {"cod": "NEG", "categoria": "Rib", "precio": 9.84, "n": 10, "lineas": 10},
+        {"cod": "NEG", "categoria": "Rib", "precio": 10.51, "n": 9, "lineas": 9},
+    ]
+    assert _corre(rows, _con_clase("NEG", "NEGRO", 5))["discrepan"] == []
+
+
+def test_los_dos_grupos_conviven_y_el_mas_facturado_va_primero():
+    rows = [
+        {"cod": "AVE", "categoria": "Rib", "precio": 10.51, "n": 413, "lineas": 413},
+        {"cod": "PUR", "categoria": "Rib", "precio": 10.51, "n": 42, "lineas": 42},
+        {"cod": "COA", "categoria": "Jersey", "precio": 9.20, "n": 71, "lineas": 652},
+    ]
+    catalogo = {"AVE": ("AVELLANA", 3), "PUR": ("PURPURA", 3), "COA": ("COCOA", None)}
+    out = _corre(rows, catalogo)
+    assert [c["cod"] for c in out["discrepan"]] == ["AVE", "PUR"]
+    assert [c["cod"] for c in out["faltan"]] == ["COA"]
+
+
+def test_la_ruta_devuelve_los_dos_grupos(duenia):
+    rows = [{"cod": "AVE", "categoria": "Rib", "precio": 10.51, "n": 413, "lineas": 413}]
+    with patch.object(queries, "_catalogo_colores",
+                      return_value=_con_clase("AVE", "AVELLANA", 3)), \
+            patch("modules._lib.metabase_client.fetch_dataset", return_value=rows):
+        queries._COLORES_CACHE.clear()
+        data = duenia.get("/precios/colores-asinfo").get_json()
+    queries._COLORES_CACHE.clear()
+    assert data["discrepan"][0]["cod"] == "AVE"
+    assert data["faltan"] == []

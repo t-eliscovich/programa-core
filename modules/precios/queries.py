@@ -515,6 +515,15 @@ CATEGORIA_ASINFO_A_TELA: dict[str, str] = {
 _COLORES_TTL_SECS = 300
 _COLORES_CACHE: dict = {}
 
+#: Para decir que un color YA CARGADO está en la clase equivocada no alcanza
+#: con una factura suelta: una venta a precio raro no puede reclasificar un
+#: color. Se pide que TODAS las líneas que caen en una fila de la matriz caigan
+#: en la misma, y que sean unas cuantas. Con estos valores, el 12/08/2026
+#: saltaron exactamente 2 colores sobre 201 comparables: AVELLANA (413 de 413)
+#: y PURPURA (42 de 42), los dos al 100%.
+DISCREPANCIA_MIN_LINEAS = 5
+DISCREPANCIA_MIN_PUREZA = 0.9
+
 
 def _precio_a_clase_por_tela(filas: list[dict]) -> dict[tuple[str, float], int]:
     """{(categoria_asinfo, precio_redondeado): clase} — sólo los precios que
@@ -539,54 +548,68 @@ def _precio_a_clase_por_tela(filas: list[dict]) -> dict[tuple[str, float], int]:
     return out
 
 
-def _codigos_sin_clase() -> dict[str, str]:
-    """{cod: nombre del color} de los colores del catálogo que no tienen clase."""
+def _catalogo_colores() -> dict[str, tuple[str, int | None]]:
+    """{cod: (nombre, clase o None)} de TODO el catálogo de colores.
+
+    Hacen falta también los que YA tienen clase: son los que pueden estar
+    cargados con una clase distinta de la que Asinfo factura (ver
+    `colores_para_revisar`).
+    """
     rows = db.fetch_all(
-        "SELECT cod, COALESCE(color,'') AS color FROM scintela.tinto_costos "
-        "WHERE clase IS NULL AND cod IS NOT NULL AND TRIM(cod) <> ''"
+        "SELECT cod, COALESCE(color,'') AS color, clase FROM scintela.tinto_costos "
+        "WHERE cod IS NOT NULL AND TRIM(cod) <> ''"
     ) or []
-    out = {}
+    out: dict[str, tuple[str, int | None]] = {}
     for r in rows:
         cod = (r["cod"] or "").strip().upper()
-        if cod:
-            # El sync de formulas_app le anexa " · Categoria" al nombre; para
-            # esta pantalla alcanza con el color.
-            out[cod] = (r["color"] or "").split(" · ")[0].strip() or cod
+        if not cod:
+            continue
+        # El sync de formulas_app le anexa " · Categoria" al nombre; para esta
+        # pantalla alcanza con el color.
+        nombre = (r["color"] or "").split(" · ")[0].strip() or cod
+        clase = r.get("clase")
+        out[cod] = (nombre, int(clase) if clase in (1, 2, 3, 4, 5) else None)
     return out
 
 
-def colores_sin_clase() -> list[dict]:
-    """Colores del catálogo sin clase que Asinfo VENDE, con la clase que sugiere
-    el precio.
+def colores_para_revisar() -> dict[str, list[dict]]:
+    """Los colores que Asinfo VENDE y que en el catálogo no están como se
+    facturan. Dos grupos:
 
-    Cada fila: {cod, color, sugerida, sugerida_desc, votos, evidencia, lineas}.
-    `sugerida` es None cuando el color se vende pero el precio no alcanza para
-    decidir; la fila igual aparece, para ponerle la clase a mano.
+      `faltan`   — sin clase: la Factura Proforma no los puede cotizar.
+      `discrepan`— con una clase distinta de la que Asinfo cobra. Dueña
+                   2026-08-12: *"como lo cotice asinfo en las facturas reales"*.
 
-    🚨 Dos fuentes, sumadas: la FICHA del producto (`precio_ultima_venta`, que
-    es la lista de hoy) y las LÍNEAS DE FACTURA de los últimos 12 meses. Hace
-    falta las dos: de los 19.640 productos de Asinfo sólo 5.082 tienen precio
-    en la ficha, así que sola se pierde la mayoría; y las facturas solas dejan
-    de matchear el día que sube la lista, hasta que se acumulen ventas nuevas.
+    Cada fila: {cod, color, clase_hoy, sugerida, sugerida_desc, votos,
+    evidencia, lineas}.  `sugerida` es None cuando el color se vende pero el
+    precio no alcanza para decidir; la fila igual aparece, para ponerla a mano.
+
+    🚨 Dos fuentes de precio, sumadas: la FICHA del producto
+    (`precio_ultima_venta`, la lista de hoy) y las LÍNEAS DE FACTURA de los
+    últimos 12 meses. Hace falta las dos: de los 19.640 productos de Asinfo
+    sólo 5.082 tienen precio en la ficha, así que sola se pierde la mayoría; y
+    las facturas solas dejan de matchear el día que sube la lista, hasta que se
+    acumulen ventas nuevas.
 
     Los colores que NO se venden no entran: son fórmulas de tintura que nunca
     se cotizaron (350 de los 374 sin clase) y no hay nada que decidir sobre
     ellos.
 
-    Fail-soft: si Asinfo no contesta devuelve [] y la pantalla lo dice.
+    Fail-soft: si Asinfo no contesta devuelve las dos listas vacías.
     """
     import time as _time
 
-    cached = _COLORES_CACHE.get("v1")
+    cached = _COLORES_CACHE.get("v2")
     if cached and (_time.time() - cached[0]) < _COLORES_TTL_SECS:
         return cached[1]
 
-    sin_clase = _codigos_sin_clase()
-    if not sin_clase:
-        return []
+    vacio: dict[str, list[dict]] = {"faltan": [], "discrepan": []}
+    catalogo = _catalogo_colores()
+    if not catalogo:
+        return vacio
     tabla = _precio_a_clase_por_tela(matriz())
     if not tabla:
-        return []
+        return vacio
 
     from modules._lib import metabase_client
 
@@ -622,13 +645,13 @@ def colores_sin_clase() -> list[dict]:
     """
     rows = metabase_client.fetch_dataset(2, sql, max_results=60000)
     if not rows:
-        return []
+        return vacio
 
     votos: dict[str, dict[int, int]] = {}
     lineas: dict[str, int] = {}
     for r in rows:
         cod = (str(r.get("cod") or "")).strip().upper()
-        if cod not in sin_clase:
+        if cod not in catalogo:
             continue
         try:
             precio = round(float(r.get("precio") or 0), 2)
@@ -644,25 +667,57 @@ def colores_sin_clase() -> list[dict]:
         v = votos.setdefault(cod, {})
         v[clase] = v.get(clase, 0) + n
 
-    out: list[dict] = []
+    faltan: list[dict] = []
+    discrepan: list[dict] = []
     for cod, lin in lineas.items():
-        if lin <= 0 and cod not in votos:
-            continue
         v = votos.get(cod) or {}
+        if lin <= 0 and not v:
+            continue
+        nombre, clase_hoy = catalogo[cod]
         sugerida = max(v.items(), key=lambda kv: (kv[1], -kv[0]))[0] if v else None
-        out.append({
+        fila = {
             "cod": cod,
-            "color": sin_clase[cod],
+            "color": nombre,
+            "clase_hoy": clase_hoy,
+            "clase_hoy_desc": CLASES_DESC.get(clase_hoy, "") if clase_hoy else "",
             "sugerida": sugerida,
             "sugerida_desc": CLASES_DESC.get(sugerida, "") if sugerida else "",
             "votos": v,
             "lineas": lin,
             "evidencia": _frase_evidencia(v, lin),
-        })
-    # Los que el precio no resuelve van al final: son los que piden una decisión.
-    out.sort(key=lambda d: (d["sugerida"] is None, d["sugerida"] or 0, -d["lineas"]))
-    _COLORES_CACHE["v1"] = (_time.time(), out)
+        }
+        if clase_hoy is None:
+            faltan.append(fila)
+        elif sugerida is not None and sugerida != clase_hoy and _es_discrepancia(v):
+            fila["evidencia"] = _frase_discrepancia(clase_hoy, sugerida, v)
+            discrepan.append(fila)
+
+    # Los sin sugerencia van al final: son los que piden una decisión.
+    faltan.sort(key=lambda d: (d["sugerida"] is None, d["sugerida"] or 0, -d["lineas"]))
+    discrepan.sort(key=lambda d: -sum(d["votos"].values()))
+    out = {"faltan": faltan, "discrepan": discrepan}
+    _COLORES_CACHE["v2"] = (_time.time(), out)
     return out
+
+
+def _es_discrepancia(votos: dict[int, int]) -> bool:
+    """¿Alcanza la evidencia para decir que un color ya cargado está mal?
+
+    Una venta suelta a precio raro NO puede reclasificar un color: se pide
+    volumen y que casi todas las líneas caigan en la MISMA fila de la matriz.
+    """
+    total = sum(votos.values())
+    if total < DISCREPANCIA_MIN_LINEAS:
+        return False
+    return (max(votos.values()) / total) >= DISCREPANCIA_MIN_PUREZA
+
+
+def _frase_discrepancia(clase_hoy: int, sugerida: int, votos: dict[int, int]) -> str:
+    """"cargado MEDIOS · se factura FUERTES en 413 de 413"."""
+    total = sum(votos.values())
+    n = votos.get(sugerida, 0)
+    return (f"cargado {CLASES_DESC.get(clase_hoy, clase_hoy)} · se factura "
+            f"{CLASES_DESC.get(sugerida, sugerida)} en {n} de {total}")
 
 
 #: Los nombres que ve el usuario. Mismo orden que scintela.precios.

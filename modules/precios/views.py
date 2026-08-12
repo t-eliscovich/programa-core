@@ -353,17 +353,20 @@ def guardar():
 @precios_bp.route("/precios/colores-asinfo")
 @requiere_login
 def colores_asinfo():
-    """Los colores del catálogo sin clase que tienen precio en Asinfo, con la
-    clase que ese precio sugiere. JSON, para el bloque plegado del pie."""
+    """Los colores que hay que revisar contra lo que Asinfo factura: los que no
+    tienen clase y los que están cargados con otra. JSON, para el bloque
+    plegado del pie."""
     from flask import jsonify
 
     try:
-        filas = queries.colores_sin_clase()
+        grupos = queries.colores_para_revisar()
     except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(e), "colores": []})
+        return jsonify({"ok": False, "error": str(e),
+                        "faltan": [], "discrepan": []})
     return jsonify({
         "ok": True,
-        "colores": filas,
+        "faltan": grupos["faltan"],
+        "discrepan": grupos["discrepan"],
         "puede_editar": tiene_permiso("precios.editar"),
     })
 
