@@ -347,3 +347,54 @@ def test_reabrir_rellena_el_formulario_con_lo_guardado(cliente_web, cliente_prue
     assert "JERSEY" in html and "9.12" in html
     # La tira de tabs tiene que estar también acá.
     assert "Ver recientes" in html
+
+
+@pytest.mark.db
+def test_el_barrido_no_depende_del_CASCADE(cliente_prueba):
+    """El caso real de producción: la FK sin ON DELETE CASCADE.
+
+    Las tablas de producción son anteriores a la migración 0119, así que su FK
+    quedó sin cascade y el primer barrido se cayó con un `violates foreign key
+    constraint`. Acá se reproduce sacando la cascade a propósito: el barrido
+    tiene que seguir funcionando igual, porque borra el detalle él mismo.
+    """
+    import db
+
+    from modules.proformas import queries as Q
+
+    vieja = _crear()
+    db.execute(
+        "UPDATE scintela.proforma_cabecera SET creado_en = NOW() - INTERVAL '8 days' "
+        "WHERE id_proforma = %s", (vieja["id_proforma"],),
+    )
+    # La FK como estaba en producción, sin cascade.
+    db.execute("ALTER TABLE scintela.proforma_detalle "
+               "DROP CONSTRAINT IF EXISTS proforma_detalle_id_proforma_fkey")
+    db.execute("ALTER TABLE scintela.proforma_detalle "
+               "ADD CONSTRAINT proforma_detalle_id_proforma_fkey "
+               "FOREIGN KEY (id_proforma) "
+               "REFERENCES scintela.proforma_cabecera(id_proforma)")
+    try:
+        assert Q.purgar_viejas(7) == 1
+        assert Q.detalle(vieja["id_proforma"]) is None
+    finally:
+        db.execute("ALTER TABLE scintela.proforma_detalle "
+                   "DROP CONSTRAINT IF EXISTS proforma_detalle_id_proforma_fkey")
+        db.execute("ALTER TABLE scintela.proforma_detalle "
+                   "ADD CONSTRAINT proforma_detalle_id_proforma_fkey "
+                   "FOREIGN KEY (id_proforma) "
+                   "REFERENCES scintela.proforma_cabecera(id_proforma) ON DELETE CASCADE")
+
+
+@pytest.mark.db
+def test_la_migracion_0188_dejo_la_cascade(migrated_db):
+    """Y que la FK correcta esté puesta, para el resto de los caminos."""
+    import db
+
+    fila = db.fetch_one(
+        """
+        SELECT confdeltype FROM pg_constraint
+         WHERE conname = 'proforma_detalle_id_proforma_fkey'
+        """
+    )
+    assert fila and fila["confdeltype"] == "c", "la FK tiene que ser ON DELETE CASCADE"

@@ -588,14 +588,30 @@ def purgar_viejas(dias: int = 7) -> int:
     """Borra las proformas de más de `dias` días y devuelve cuántas.
 
     Decisión de la dueña (2026-08-11): las proformas se guardan UNA SEMANA.
-    El detalle se va solo por el ON DELETE CASCADE de la migración 0119.
     Se mide contra `creado_en` (cuándo se guardó de verdad) y no contra
     `fecha_emision`, que el usuario puede tipear a mano.
+
+    ⚠️ El detalle se borra ACÁ, explícitamente, aunque la FK diga ON DELETE
+    CASCADE. La primera corrida en producción se cayó justamente por eso: las
+    tablas eran anteriores a la migración 0119 y su FK no tenía cascade (ver
+    migración 0188, que la arregla). Borrar el detalle a mano hace que este
+    barrido no dependa de una constraint que puede no estar — y si está, el
+    DELETE de abajo no encuentra nada que cascadear.
     """
-    return db.execute(
-        """
-        DELETE FROM scintela.proforma_cabecera
-         WHERE creado_en < (NOW() - MAKE_INTERVAL(days => %s))
-        """,
-        (int(dias),),
-    )
+    with db.tx() as conn:
+        db.execute(
+            """
+            DELETE FROM scintela.proforma_detalle d
+             USING scintela.proforma_cabecera h
+             WHERE d.id_proforma = h.id_proforma
+               AND h.creado_en < (NOW() - MAKE_INTERVAL(days => %s))
+            """,
+            (int(dias),), conn=conn,
+        )
+        return db.execute(
+            """
+            DELETE FROM scintela.proforma_cabecera
+             WHERE creado_en < (NOW() - MAKE_INTERVAL(days => %s))
+            """,
+            (int(dias),), conn=conn,
+        )
