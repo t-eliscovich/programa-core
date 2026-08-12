@@ -246,3 +246,104 @@ def test_una_proforma_sin_lineas_no_se_guarda(cliente_prueba):
         _crear(lineas=[{"cantidad_kilos": 0, "precio_unitario": 0}])
     with pytest.raises(ValueError):
         Q.crear(codigo_cli="NOEXISTE", fecha=date(2026, 8, 11), lineas=LINEAS)
+
+
+# ---------------------------------------------------------------------------
+# La RUTA — no alcanza con que `actualizar` funcione: hay que probar que la
+# pantalla la usa. Un mutante que hacía a la ruta llamar a `crear()` en vez de
+# `actualizar()` pasaba TODOS los tests de arriba: dos clicks dejaban dos
+# proformas y nadie se enteraba. Por eso estos entran por el POST real.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def cliente_web(migrated_db):
+    """App con sesión falsa de Accionista (mismo truco que vista_local.py: un
+    before_request propio DESPUÉS de create_app, porque a esa altura
+    `auth.load_logged_in_user` ya está importado y no se puede pisar)."""
+    from flask import g
+
+    from app import create_app
+
+    app = create_app()
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+
+    @app.before_request
+    def _login():
+        g.user = {"id_usuario": 0, "username": "alex", "id_rol": 0,
+                  "nombre_rol": "Accionista", "activo": True, "vend": None}
+        g.permisos = {"*"}
+
+    return app.test_client()
+
+
+def _payload(**kw):
+    base = {
+        "codigo_cli": CODIGO, "fecha": "11/08/2026", "es_pedido": True,
+        "descuento_volumen": 10, "flete": 25, "observaciones": "",
+        "id_proforma": None, "id_origen": None,
+        "lineas": [dict(ln) for ln in LINEAS],
+    }
+    base.update(kw)
+    return base
+
+
+@pytest.mark.db
+def test_la_pantalla_apretada_dos_veces_deja_UNA_proforma(cliente_web, cliente_prueba):
+    """Alex imprime, ve un dedazo, corrige y vuelve a imprimir."""
+    import db
+
+    r1 = cliente_web.post("/proformas/guardar", json=_payload())
+    assert r1.status_code == 200
+    id1 = r1.get_json()["id_proforma"]
+
+    # Segundo click: la pantalla ya sabe su número y lo manda de vuelta.
+    r2 = cliente_web.post("/proformas/guardar", json=_payload(id_proforma=id1, flete=0))
+    assert r2.status_code == 200
+    assert r2.get_json()["id_proforma"] == id1, "no puede salir un número nuevo"
+
+    n = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.proforma_cabecera WHERE id_cliente = %s",
+        (cliente_prueba,),
+    )["n"]
+    assert n == 1
+    assert float(db.fetch_one(
+        "SELECT flete FROM scintela.proforma_cabecera WHERE id_proforma = %s", (id1,)
+    )["flete"]) == 0.0, "y tiene que quedar la corrección, no lo viejo"
+
+
+@pytest.mark.db
+def test_reabrir_desde_la_lista_SI_saca_numero_nuevo(cliente_web, cliente_prueba):
+    """La diferencia con el de arriba: acá viaja `id_origen` (vengo de la
+    lista), no `id_proforma` (soy la misma pantalla)."""
+    r1 = cliente_web.post("/proformas/guardar", json=_payload())
+    id1 = r1.get_json()["id_proforma"]
+
+    r2 = cliente_web.post("/proformas/guardar", json=_payload(id_origen=id1))
+    id2 = r2.get_json()["id_proforma"]
+    assert id2 != id1
+
+    ficha = cliente_web.get(f"/proformas/{id2}")
+    assert ficha.status_code == 200
+    assert f"N° {id1}".encode() in ficha.data, "la ficha dice de dónde viene"
+
+
+@pytest.mark.db
+def test_guardar_sin_cliente_no_rompe_la_pantalla(cliente_web, cliente_prueba):
+    """Devuelve el error para que la hoja salga igual, sin 500."""
+    r = cliente_web.post("/proformas/guardar", json=_payload(codigo_cli="NOEXISTE"))
+    assert r.status_code == 400
+    assert r.get_json()["ok"] is False
+
+
+@pytest.mark.db
+def test_reabrir_rellena_el_formulario_con_lo_guardado(cliente_web, cliente_prueba):
+    """La pantalla de edición trae las líneas y el aviso de que sale una nueva."""
+    id1 = cliente_web.post("/proformas/guardar", json=_payload()).get_json()["id_proforma"]
+
+    html = cliente_web.get(f"/proformas/{id1}/editar").data.decode("utf8")
+    assert "Estás modificando la proforma" in html
+    assert f"N° {id1}" in html
+    assert "JERSEY" in html and "9.12" in html
+    # La tira de tabs tiene que estar también acá.
+    assert "Ver recientes" in html
