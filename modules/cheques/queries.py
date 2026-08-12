@@ -2920,7 +2920,10 @@ STATS = {
 # son los que todavía nos representan algo a cobrar (incluye legacy A para
 # compatibilidad — facturas viejas referencian estos cheques). 'E' (endosado)
 # NO está vivo — ya salió de nuestra cartera.
-STATS_VIVOS = ("Z", "B", "1", "2", "3", "D", "P", "A")
+# (Acá había un STATS_VIVOS con OTROS miembros: Python se queda con el último
+# binding del módulo, así que el de más abajo —("Z","1","2","3","P","D"), el que
+# quieren sus dos usos— era el que mandaba y éste sólo confundía al que leía.
+# Borrado el 11/08/2026; ruff no avisa de una constante redefinida.)
 
 
 # Transiciones legales por stat actual — TMT 2026-05-19, pedido Tamara.
@@ -3144,6 +3147,22 @@ _LABEL_ESTADO_DEST = {
 }
 
 
+def es_rebote_real(stat_prev: str) -> bool:
+    """¿Reversar un cheque en `stat_prev` es un rebote de verdad?
+
+    Rebote real = el banco lo rechazó: vuelve a cartera como devuelto y el
+    cliente queda con stop. Lo contrario es la reversa administrativa ("me
+    confundí al cargarlo"), que lo elimina y no toca al cliente.
+
+    La respuesta sale SIEMPRE de `_stat_destino_reversa`, que es la que
+    ejecuta. Antes esto era una tupla aparte y se atrasó. TMT 2026-08-11.
+    """
+    try:
+        return _stat_destino_reversa(stat_prev)[1]
+    except ValueError:
+        return False  # estado terminal: no se reversa, ni real ni administrativa
+
+
 def transiciones_para(stat: str) -> list[dict]:
     """Transiciones que se ofrecen en el dropdown desde `stat`.
 
@@ -3288,17 +3307,20 @@ STATS_DEPOSITABLES = ("Z", "P", "1", "2")  # TMT 2026-06-16 dueña: re-depositar
 # Stats desde los que se puede postergar (Z, ver invariante 4 del addendum).
 STATS_POSTERGABLES = ("Z",)
 
-# Stats desde los que un reversar() representa un REBOTE REAL (banco lo
-# rechazó), no una anulación administrativa. Dispara stop automático del
-# cliente. Incluye:
-#   - 'B' = depositado en Pichincha (rebote de primera vez)
-#   - '1', '2' = ya rebotado una vez (un segundo intento de cobro que rebota)
-#   - 'A' = legacy acreditado (rebote tardío en datos viejos)
-STATS_REBOTE_REAL = ("B", "1", "2", "A")
-
-# Stats considerados terminales — no admiten transiciones salvo reversa.
-# 'B' = depositado feliz; 'T' no aplica a cheques (es factura).
-STATS_TERMINALES = ("B",)
+# ⭐ TMT 2026-08-11 — acá vivían DOS constantes escritas a mano que se habían
+# quedado atrás de la realidad:
+#
+# · `STATS_REBOTE_REAL = ("B","1","2","A")` decidía el texto de la pantalla de
+#   confirmación del reverso. Pero quién es un rebote real lo decide
+#   `_stat_destino_reversa`, y ahí V/W/I/J/K TAMBIÉN lo son. La pantalla le
+#   decía "reversión administrativa, no afecta al cliente" a un cheque de
+#   Internacional que en realidad iba a rebotar de verdad y a ponerle stop al
+#   cliente. Ahora se pregunta con `es_rebote_real()`, que llama a la función:
+#   una lista que hay que mantener en paralelo se atrasa; una que se deriva, no.
+#
+# · `STATS_TERMINALES = ("B",)` decía que un depositado es terminal cuando
+#   `TRANSICIONES_VALIDAS["B"]` ofrece tres salidas. No lo usaba nadie —era una
+#   trampa esperando al próximo que la leyera de buena fe—, así que se va.
 
 
 def _relabel_dep_concepto(concepto: str, n: int) -> str:

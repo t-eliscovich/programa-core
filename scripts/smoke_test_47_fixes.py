@@ -476,17 +476,21 @@ def test_10_compras_anular_bloquea_posdat_pagada() -> int:
 
 
 def test_11_confirmar_reverso_usa_stats_rebote_real() -> int:
-    """FIX #11: cheques.confirmar_reverso usa STATS_REBOTE_REAL."""
+    """FIX #11: la confirmación del reverso distingue rebote real de admin.
+
+    TMT 2026-08-11: era `STATS_REBOTE_REAL`, una tupla escrita a mano en
+    paralelo a `_stat_destino_reversa` — y se atrasó: decía "reversión
+    administrativa, no afecta al cliente" para un cheque de Internacional que
+    iba a rebotar de verdad y a ponerle stop al cliente. Ahora se le pregunta a
+    la función que ejecuta, vía `es_rebote_real()`.
+    """
     p = ROOT / "modules" / "cheques" / "views.py"
     txt = p.read_text()
-    assert "queries.STATS_REBOTE_REAL" in txt, \
-        "confirmar_reverso no usa STATS_REBOTE_REAL"
-    # Constante existe en queries.
+    assert "queries.es_rebote_real(" in txt, \
+        "el preview del reverso no usa es_rebote_real()"
     from modules.cheques import queries as qch
-    assert hasattr(qch, "STATS_REBOTE_REAL")
-    # Debe incluir B (depositado moderno), no sólo D/A legacy.
-    assert "B" in qch.STATS_REBOTE_REAL, \
-        f"STATS_REBOTE_REAL no incluye B: {qch.STATS_REBOTE_REAL}"
+    assert qch.es_rebote_real("B"), "un depositado que rebota es rebote real"
+    assert not qch.es_rebote_real("Z"), "un cheque en cartera nunca fue al banco"
     return 3
 
 

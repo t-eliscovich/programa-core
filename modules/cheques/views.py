@@ -1748,7 +1748,10 @@ def _reverso_preview_cheque(id_cheque: int) -> dict | None:
     if not ch or ch.get("stat") == "R":
         return None
     stat_prev = ch.get("stat") or ""
-    es_rebote = stat_prev in queries.STATS_REBOTE_REAL
+    # Se le pregunta a la función que ejecuta, no a una lista paralela: con la
+    # lista, la pantalla de confirmación decía "reversión administrativa" para
+    # un cheque de Internacional que iba a rebotar de verdad. TMT 2026-08-11.
+    es_rebote = queries.es_rebote_real(stat_prev)
     no_ch = ch.get("no_cheque") or f"#{id_cheque}"
     importe = ch.get("importe") or 0
     cliente = ch.get("codigo_cli", "")
