@@ -672,28 +672,22 @@ CLASES_DESC: dict[int, str] = {
 
 
 def _frase_evidencia(votos: dict[int, int], lineas: int = 0) -> str:
-    """Por qué el sistema sugiere esa clase, en castellano.
+    """Por qué el sistema sugiere esa clase. CORTA: entra en un renglón.
 
-    Sin votos la frase dice que el color SE VENDE pero que su precio no
-    distingue la clase — pasa cuando sólo se vende en ALEMANIA, KIANA, MICRO o
-    JAMES, que cobran lo mismo en las cinco. Ahí hay que ponerla a mano, y la
-    frase tiene que decirlo en vez de dejar la celda vacía.
+    Dueña 2026-08-12: *"cada fila es muy grande"* — la frase larga hacía que
+    cada color ocupara tres líneas y la tabla no se pudiera barrer de un
+    vistazo. Queda lo que decide: a qué precio se vendió y cuántas veces.
+
+    Sin votos dice que el color SE VENDE pero que su precio no distingue la
+    clase — pasa cuando sólo sale en ALEMANIA, KIANA, MICRO o JAMES, que
+    cobran lo mismo en las cinco.
     """
-    vendido = (f"{lineas:,}".replace(",", ".") + " facturas" if lineas > 1
-               else "1 factura") if lineas else ""
+    fact = f"{lineas:,}".replace(",", ".") + " fact." if lineas else ""
     if not votos:
-        return (f"Se vende ({vendido}) pero el precio no distingue la clase: "
-                "las telas en las que sale cobran lo mismo para las cinco.")
+        return "el precio no distingue la clase" + (f" · {fact}" if fact else "")
     partes = sorted(votos.items(), key=lambda kv: (-kv[1], kv[0]))
-    trozos = []
-    for i, (clase, n) in enumerate(partes):
-        nombre = CLASES_DESC.get(clase, str(clase))
-        if i == 0:
-            trozos.append(f"{n} al precio de {nombre}")
-        else:
-            trozos.append(f"{n} al de {nombre}")
-    frase = ", ".join(trozos)
-    return f"{frase}" + (f" · {vendido}" if vendido else "")
+    frase = ", ".join(f"{n} a {CLASES_DESC.get(c, c)}" for c, n in partes)
+    return frase + (f" · {fact}" if fact else "")
 
 
 def asignar_clase_color(cod: str, clase: int, usuario: str) -> None:
