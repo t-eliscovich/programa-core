@@ -13,7 +13,7 @@ from flask import (
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
-from filters import today_ec
+from filters import fecha_es, money_es, today_ec
 from parsers import parse_date
 
 from . import queries
@@ -254,9 +254,11 @@ def confirmar_eliminacion(id_proforma: int):
         detalle_registro={
             "Documento": "Factura Proforma" if cab.get("es_pedido") else "Cotización",
             "Cliente": f"{cab.get('codigo_cli') or ''} {cab.get('cliente') or ''}".strip(),
-            "Fecha": cab.get("fecha_emision"),
+            # Formato EU/Ecuador — los filtros de siempre, no str() pelado:
+            # acá se pasa un dict ya renderizado y Jinja no los aplica solo.
+            "Fecha": fecha_es(cab.get("fecha_emision")),
             "Líneas": len(data["items"]),
-            "Total": f"$ {cab.get('total_final') or 0}",
+            "Total": f"$ {money_es(cab.get('total_final') or 0)}",
         },
         accion_url=url_for("proformas.eliminar", id_proforma=id_proforma),
         volver_url=url_for("proformas.lista"),

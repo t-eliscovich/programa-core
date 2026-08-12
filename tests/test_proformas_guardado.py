@@ -438,3 +438,25 @@ def test_la_lista_ofrece_eliminar(cliente_web, cliente_prueba):
     id1 = cliente_web.post("/proformas/guardar", json=_payload()).get_json()["id_proforma"]
     html = cliente_web.get("/proformas").data.decode("utf8")
     assert f"/proformas/{id1}/confirmar-eliminacion" in html
+
+
+@pytest.mark.db
+def test_la_confirmacion_muestra_los_numeros_a_la_ecuatoriana(cliente_web, cliente_prueba):
+    """`detalle_registro` viaja ya renderizado: Jinja no le aplica los filtros.
+
+    La primera versión mostraba "2026-08-11" y "$ 2359.61" — fecha ISO y punto
+    decimal, las dos formas que en esta casa no se usan.
+    """
+    id1 = cliente_web.post("/proformas/guardar", json=_payload()).get_json()["id_proforma"]
+    html = cliente_web.get(f"/proformas/{id1}/confirmar-eliminacion").data.decode("utf8")
+    assert "11/08/2026" in html
+    assert "2026-08-11" not in html
+    # 2200×9,12 + 10×12,50 = 20.189,00 → −5% contado → −3% volumen → +25 flete
+    from modules.proformas import queries as Q
+    esperado = Q.calcular_totales(
+        [{"cantidad_kilos": 2200, "precio_unitario": 9.12},
+         {"cantidad_kilos": 10, "precio_unitario": 12.50}],
+        pct_volumen=10, aplica_contado=True, pct_contado=5.0, flete=25,
+    )["total_final"]
+    entero = f"{int(esperado):,}".replace(",", ".")
+    assert entero in html, f"el total tendría que verse como {entero},xx"
