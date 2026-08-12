@@ -556,15 +556,22 @@ def _codigos_sin_clase() -> dict[str, str]:
 
 
 def colores_sin_clase() -> list[dict]:
-    """Colores del catálogo sin clase que TIENEN precio en Asinfo, con la clase
-    que ese precio sugiere.
+    """Colores del catálogo sin clase que Asinfo VENDE, con la clase que sugiere
+    el precio.
 
-    Cada fila: {cod, color, sugerida, sugerida_desc, votos, evidencia}.
-    `votos` = {clase: cuántos productos de Asinfo se venden a ese precio}.
+    Cada fila: {cod, color, sugerida, sugerida_desc, votos, evidencia, lineas}.
+    `sugerida` es None cuando el color se vende pero el precio no alcanza para
+    decidir; la fila igual aparece, para ponerle la clase a mano.
 
-    Los colores sin ningún producto vendido NO entran: son fórmulas de tintura
-    que nunca se cotizaron, y llenarían la tabla con 350 filas sobre las que no
-    hay nada que decidir.
+    🚨 Dos fuentes, sumadas: la FICHA del producto (`precio_ultima_venta`, que
+    es la lista de hoy) y las LÍNEAS DE FACTURA de los últimos 12 meses. Hace
+    falta las dos: de los 19.640 productos de Asinfo sólo 5.082 tienen precio
+    en la ficha, así que sola se pierde la mayoría; y las facturas solas dejan
+    de matchear el día que sube la lista, hasta que se acumulen ventas nuevas.
+
+    Los colores que NO se venden no entran: son fórmulas de tintura que nunca
+    se cotizaron (350 de los 374 sin clase) y no hay nada que decidir sobre
+    ellos.
 
     Fail-soft: si Asinfo no contesta devuelve [] y la pantalla lo dice.
     """
@@ -584,24 +591,41 @@ def colores_sin_clase() -> list[dict]:
     from modules._lib import metabase_client
 
     # El color va al final del nombre del producto ("Jersey 3.5 BLA").
-    sql = """
-        SELECT UPPER(RIGHT(LTRIM(RTRIM(p.nombre)),
-                     CHARINDEX(' ', REVERSE(LTRIM(RTRIM(p.nombre))) + ' ') - 1)) AS cod,
-               cp.nombre                                  AS categoria,
-               ROUND(p.precio_ultima_venta, 2)            AS precio,
-               COUNT(*)                                   AS n
-          FROM producto p
-          JOIN categoria_producto cp ON cp.id_categoria_producto = p.id_categoria_producto
-         WHERE p.precio_ultima_venta > 0
-         GROUP BY UPPER(RIGHT(LTRIM(RTRIM(p.nombre)),
-                        CHARINDEX(' ', REVERSE(LTRIM(RTRIM(p.nombre))) + ' ') - 1)),
-                  cp.nombre, ROUND(p.precio_ultima_venta, 2)
+    col_expr = ("UPPER(RIGHT(LTRIM(RTRIM(p.nombre)), "
+                "CHARINDEX(' ', REVERSE(LTRIM(RTRIM(p.nombre))) + ' ') - 1))")
+    sql = f"""
+        SELECT cod, categoria, precio, SUM(n) AS n, SUM(lineas) AS lineas FROM (
+            SELECT {col_expr} AS cod, cp.nombre AS categoria,
+                   ROUND(p.precio_ultima_venta, 2) AS precio,
+                   COUNT(*) AS n, 0 AS lineas
+              FROM producto p
+              JOIN categoria_producto cp
+                ON cp.id_categoria_producto = p.id_categoria_producto
+             WHERE p.precio_ultima_venta > 0
+             GROUP BY {col_expr}, cp.nombre, ROUND(p.precio_ultima_venta, 2)
+            UNION ALL
+            SELECT {col_expr} AS cod, cp.nombre AS categoria,
+                   ROUND(dfc.precio, 2) AS precio,
+                   COUNT(*) AS n, COUNT(*) AS lineas
+              FROM detalle_factura_cliente dfc
+              JOIN factura_cliente fc
+                ON fc.id_factura_cliente = dfc.id_factura_cliente
+              JOIN producto p ON p.id_producto = dfc.id_producto
+              JOIN categoria_producto cp
+                ON cp.id_categoria_producto = p.id_categoria_producto
+             WHERE fc.id_documento = 7 AND fc.estado IN (1, 4, 16)
+               AND fc.fecha >= DATEADD(month, -12, GETDATE())
+               AND dfc.precio > 0
+             GROUP BY {col_expr}, cp.nombre, ROUND(dfc.precio, 2)
+        ) u
+        GROUP BY cod, categoria, precio
     """
-    rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    rows = metabase_client.fetch_dataset(2, sql, max_results=60000)
     if not rows:
         return []
 
     votos: dict[str, dict[int, int]] = {}
+    lineas: dict[str, int] = {}
     for r in rows:
         cod = (str(r.get("cod") or "")).strip().upper()
         if cod not in sin_clase:
@@ -609,8 +633,11 @@ def colores_sin_clase() -> list[dict]:
         try:
             precio = round(float(r.get("precio") or 0), 2)
             n = int(r.get("n") or 0)
+            lin = int(r.get("lineas") or 0)
         except (TypeError, ValueError):
             continue
+        # Se vende: cuenta aunque el precio no diga la clase.
+        lineas[cod] = lineas.get(cod, 0) + max(lin, 0)
         clase = tabla.get((str(r.get("categoria") or "").strip(), precio))
         if clase is None or n <= 0:
             continue
@@ -618,17 +645,22 @@ def colores_sin_clase() -> list[dict]:
         v[clase] = v.get(clase, 0) + n
 
     out: list[dict] = []
-    for cod, v in votos.items():
-        sugerida = max(v.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+    for cod, lin in lineas.items():
+        if lin <= 0 and cod not in votos:
+            continue
+        v = votos.get(cod) or {}
+        sugerida = max(v.items(), key=lambda kv: (kv[1], -kv[0]))[0] if v else None
         out.append({
             "cod": cod,
             "color": sin_clase[cod],
             "sugerida": sugerida,
-            "sugerida_desc": CLASES_DESC.get(sugerida, ""),
+            "sugerida_desc": CLASES_DESC.get(sugerida, "") if sugerida else "",
             "votos": v,
-            "evidencia": _frase_evidencia(v),
+            "lineas": lin,
+            "evidencia": _frase_evidencia(v, lin),
         })
-    out.sort(key=lambda d: (d["sugerida"], d["color"]))
+    # Los que el precio no resuelve van al final: son los que piden una decisión.
+    out.sort(key=lambda d: (d["sugerida"] is None, d["sugerida"] or 0, -d["lineas"]))
     _COLORES_CACHE["v1"] = (_time.time(), out)
     return out
 
@@ -639,18 +671,29 @@ CLASES_DESC: dict[int, str] = {
 }
 
 
-def _frase_evidencia(votos: dict[int, int]) -> str:
-    """"5 productos al precio de MEDIOS, 2 al de FUERTES" — en castellano, que
-    es lo que le dice a la dueña por qué el sistema sugiere esa clase."""
+def _frase_evidencia(votos: dict[int, int], lineas: int = 0) -> str:
+    """Por qué el sistema sugiere esa clase, en castellano.
+
+    Sin votos la frase dice que el color SE VENDE pero que su precio no
+    distingue la clase — pasa cuando sólo se vende en ALEMANIA, KIANA, MICRO o
+    JAMES, que cobran lo mismo en las cinco. Ahí hay que ponerla a mano, y la
+    frase tiene que decirlo en vez de dejar la celda vacía.
+    """
+    vendido = (f"{lineas:,}".replace(",", ".") + " facturas" if lineas > 1
+               else "1 factura") if lineas else ""
+    if not votos:
+        return (f"Se vende ({vendido}) pero el precio no distingue la clase: "
+                "las telas en las que sale cobran lo mismo para las cinco.")
     partes = sorted(votos.items(), key=lambda kv: (-kv[1], kv[0]))
     trozos = []
     for i, (clase, n) in enumerate(partes):
         nombre = CLASES_DESC.get(clase, str(clase))
         if i == 0:
-            trozos.append(f"{n} producto{'s' if n != 1 else ''} al precio de {nombre}")
+            trozos.append(f"{n} al precio de {nombre}")
         else:
             trozos.append(f"{n} al de {nombre}")
-    return ", ".join(trozos)
+    frase = ", ".join(trozos)
+    return f"{frase}" + (f" · {vendido}" if vendido else "")
 
 
 def asignar_clase_color(cod: str, clase: int, usuario: str) -> None:
