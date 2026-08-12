@@ -469,3 +469,198 @@ def tabla_descuentos(
             }
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Colores sin CLASE de precio — sugerida por el precio de lista de Asinfo
+# ---------------------------------------------------------------------------
+# TMT 2026-08-12. Alex: *"hay tonos nuevos por ejemplo un cocoa no existe en el
+# listado"* → *"puedes adicionarlos desde ASINFO?"*.
+#
+# El listado de colores de la proforma sale de scintela.tinto_costos FILTRADO
+# por `clase BETWEEN 1 AND 5`: un color sin clase no se puede cotizar (no hay
+# de qué fila de la matriz sacarle el precio) y por eso NO APARECE. De 692
+# colores del catálogo, 374 están así.
+#
+# La clase vivía sólo en COSTOS.DBF, que se retiró el 05/08. Asinfo no tiene
+# una columna "clase" y la `categoria` de formulas_app tampoco sirve: no
+# distingue MEDIOS (COCOA figura ahí como "Color Bajo" y se vende como MEDIO).
+#
+# 🚨 Lo que SÍ tiene Asinfo es el PRECIO: cada producto es tela + color y trae
+# `precio_ultima_venta`, que es el precio de LISTA de esa tela para la clase
+# del color. Comparado contra la matriz, la fila que coincide ES la clase.
+# Verificado contra los 318 colores que ya tenían clase cargada: 205 aciertos
+# sobre 207 comparables (99,0%).
+#
+# ⚠️ Sólo se cuenta un precio cuando identifica UNA sola clase en esa tela.
+# ALEMANIA, KIANA, MICRO y JAMES cobran lo mismo en las cinco clases, y LYCRA
+# comparte cifra entre BAJOS/MEDIOS/JASPEADOS: ahí el precio no dice nada y la
+# fila se descarta sola, sin lista negra que mantener.
+
+#: Categoría de producto en Asinfo → columna de tela en scintela.precios.
+CATEGORIA_ASINFO_A_TELA: dict[str, str] = {
+    "Jersey": "jersey",
+    "Pique": "pique",
+    "Toper": "toper",
+    "Alemania": "alemania",
+    "Rib": "rib",
+    "Cuellos": "cuellos",
+    "Lycra": "lycra",
+    "Fleece": "falso",   # `falso` es el nombre de columna de PRECIOS.DBF; la tela es FLEECE
+    "Kiana": "kiana",
+    "Micro": "micro",
+    "James": "james",
+}
+
+_COLORES_TTL_SECS = 300
+_COLORES_CACHE: dict = {}
+
+
+def _precio_a_clase_por_tela(filas: list[dict]) -> dict[tuple[str, float], int]:
+    """{(categoria_asinfo, precio_redondeado): clase} — sólo los precios que
+    identifican UNA sola clase dentro de esa tela.
+
+    Los precios de la matriz están NETOS, que es la misma escala en la que
+    Asinfo guarda `precio_ultima_venta` (el IVA lo suma la factura aparte).
+    """
+    por_tela: dict[str, dict[float, list[int]]] = {}
+    for f in filas or []:
+        clase = int(f["clase"])
+        for categoria, col in CATEGORIA_ASINFO_A_TELA.items():
+            val = f.get(col)
+            if val is None:
+                continue
+            por_tela.setdefault(categoria, {}).setdefault(round(float(val), 2), []).append(clase)
+    out: dict[tuple[str, float], int] = {}
+    for categoria, precios in por_tela.items():
+        for precio, clases in precios.items():
+            if len(set(clases)) == 1:
+                out[(categoria, precio)] = clases[0]
+    return out
+
+
+def _codigos_sin_clase() -> dict[str, str]:
+    """{cod: nombre del color} de los colores del catálogo que no tienen clase."""
+    rows = db.fetch_all(
+        "SELECT cod, COALESCE(color,'') AS color FROM scintela.tinto_costos "
+        "WHERE clase IS NULL AND cod IS NOT NULL AND TRIM(cod) <> ''"
+    ) or []
+    out = {}
+    for r in rows:
+        cod = (r["cod"] or "").strip().upper()
+        if cod:
+            # El sync de formulas_app le anexa " · Categoria" al nombre; para
+            # esta pantalla alcanza con el color.
+            out[cod] = (r["color"] or "").split(" · ")[0].strip() or cod
+    return out
+
+
+def colores_sin_clase() -> list[dict]:
+    """Colores del catálogo sin clase que TIENEN precio en Asinfo, con la clase
+    que ese precio sugiere.
+
+    Cada fila: {cod, color, sugerida, sugerida_desc, votos, evidencia}.
+    `votos` = {clase: cuántos productos de Asinfo se venden a ese precio}.
+
+    Los colores sin ningún producto vendido NO entran: son fórmulas de tintura
+    que nunca se cotizaron, y llenarían la tabla con 350 filas sobre las que no
+    hay nada que decidir.
+
+    Fail-soft: si Asinfo no contesta devuelve [] y la pantalla lo dice.
+    """
+    import time as _time
+
+    cached = _COLORES_CACHE.get("v1")
+    if cached and (_time.time() - cached[0]) < _COLORES_TTL_SECS:
+        return cached[1]
+
+    sin_clase = _codigos_sin_clase()
+    if not sin_clase:
+        return []
+    tabla = _precio_a_clase_por_tela(matriz())
+    if not tabla:
+        return []
+
+    from modules._lib import metabase_client
+
+    # El color va al final del nombre del producto ("Jersey 3.5 BLA").
+    sql = """
+        SELECT UPPER(RIGHT(LTRIM(RTRIM(p.nombre)),
+                     CHARINDEX(' ', REVERSE(LTRIM(RTRIM(p.nombre))) + ' ') - 1)) AS cod,
+               cp.nombre                                  AS categoria,
+               ROUND(p.precio_ultima_venta, 2)            AS precio,
+               COUNT(*)                                   AS n
+          FROM producto p
+          JOIN categoria_producto cp ON cp.id_categoria_producto = p.id_categoria_producto
+         WHERE p.precio_ultima_venta > 0
+         GROUP BY UPPER(RIGHT(LTRIM(RTRIM(p.nombre)),
+                        CHARINDEX(' ', REVERSE(LTRIM(RTRIM(p.nombre))) + ' ') - 1)),
+                  cp.nombre, ROUND(p.precio_ultima_venta, 2)
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    if not rows:
+        return []
+
+    votos: dict[str, dict[int, int]] = {}
+    for r in rows:
+        cod = (str(r.get("cod") or "")).strip().upper()
+        if cod not in sin_clase:
+            continue
+        try:
+            precio = round(float(r.get("precio") or 0), 2)
+            n = int(r.get("n") or 0)
+        except (TypeError, ValueError):
+            continue
+        clase = tabla.get((str(r.get("categoria") or "").strip(), precio))
+        if clase is None or n <= 0:
+            continue
+        v = votos.setdefault(cod, {})
+        v[clase] = v.get(clase, 0) + n
+
+    out: list[dict] = []
+    for cod, v in votos.items():
+        sugerida = max(v.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+        out.append({
+            "cod": cod,
+            "color": sin_clase[cod],
+            "sugerida": sugerida,
+            "sugerida_desc": CLASES_DESC.get(sugerida, ""),
+            "votos": v,
+            "evidencia": _frase_evidencia(v),
+        })
+    out.sort(key=lambda d: (d["sugerida"], d["color"]))
+    _COLORES_CACHE["v1"] = (_time.time(), out)
+    return out
+
+
+#: Los nombres que ve el usuario. Mismo orden que scintela.precios.
+CLASES_DESC: dict[int, str] = {
+    1: "BLANCO", 2: "BAJOS", 3: "MEDIOS", 4: "JASPEADOS", 5: "FUERTES",
+}
+
+
+def _frase_evidencia(votos: dict[int, int]) -> str:
+    """"5 productos al precio de MEDIOS, 2 al de FUERTES" — en castellano, que
+    es lo que le dice a la dueña por qué el sistema sugiere esa clase."""
+    partes = sorted(votos.items(), key=lambda kv: (-kv[1], kv[0]))
+    trozos = []
+    for i, (clase, n) in enumerate(partes):
+        nombre = CLASES_DESC.get(clase, str(clase))
+        if i == 0:
+            trozos.append(f"{n} producto{'s' if n != 1 else ''} al precio de {nombre}")
+        else:
+            trozos.append(f"{n} al de {nombre}")
+    return ", ".join(trozos)
+
+
+def asignar_clase_color(cod: str, clase: int, usuario: str) -> None:
+    """Graba la clase de precio de un color del catálogo."""
+    cod = (cod or "").strip().upper()
+    if not cod or clase not in CLASES_DESC:
+        raise ValueError("Color o clase inválidos.")
+    db.execute(
+        "UPDATE scintela.tinto_costos SET clase=%s, fecha_modifica=CURRENT_TIMESTAMP, "
+        "usuario_modifica=%s WHERE UPPER(TRIM(cod))=%s",
+        (clase, usuario, cod),
+    )
+    _COLORES_CACHE.pop("v1", None)

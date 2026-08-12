@@ -16,7 +16,7 @@ from flask import (
     url_for,
 )
 
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from filters import today_ec
 from parsers import parse_monto
@@ -338,3 +338,52 @@ def guardar():
     elif not errores:
         flash("Sin cambios.", "ok")
     return redirect(url_for("precios.lista"))
+
+
+# ---------------------------------------------------------------------------
+# Colores sin clase de precio — el bloque plegado al pie de /precios
+# ---------------------------------------------------------------------------
+# TMT 2026-08-12, dueña: *"ponela como detalle de asinfo precios o algo asi con
+# un boton, no que se vea todo el tiempo"*. Por eso el bloque nace CERRADO y la
+# consulta a Asinfo (~0,5 s) sale recién cuando alguien lo abre: /precios es la
+# pantalla que mira todo el mundo y no puede pagar ese medio segundo por una
+# tabla que casi nadie necesita.
+
+
+@precios_bp.route("/precios/colores-asinfo")
+@requiere_login
+def colores_asinfo():
+    """Los colores del catálogo sin clase que tienen precio en Asinfo, con la
+    clase que ese precio sugiere. JSON, para el bloque plegado del pie."""
+    from flask import jsonify
+
+    try:
+        filas = queries.colores_sin_clase()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e), "colores": []})
+    return jsonify({
+        "ok": True,
+        "colores": filas,
+        "puede_editar": tiene_permiso("precios.editar"),
+    })
+
+
+@precios_bp.route("/precios/color-clase", methods=["POST"])
+@requiere_login
+@requiere_permiso("precios.editar")
+def color_clase():
+    """Asigna la clase de precio a un color del catálogo."""
+    from parsers import parse_int
+
+    cod = (request.form.get("cod") or "").strip().upper()
+    clase = parse_int(request.form.get("clase"))
+    try:
+        queries.asignar_clase_color(cod, clase, (g.user or {}).get("username", "web"))
+        flash(
+            f"{cod} quedó como {queries.CLASES_DESC.get(clase, '')}. "
+            "Ya se puede elegir en la Factura Proforma.",
+            "success",
+        )
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude guardar la clase de ese color", e)
+    return redirect(url_for("precios.lista", _anchor="colores-asinfo"))
