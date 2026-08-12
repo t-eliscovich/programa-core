@@ -960,7 +960,8 @@ def balance():
                     break
 
             # Federico 2026-08-08 — kg de VENTA por RITMO en la columna
-            # "Proyecciones" de la fila Proyección: cuánto se vendería a fin de
+            # "Proyecciones". Federico 2026-08-12: va en la fila VENTA (antes
+            # estaba en la fila Proyección): cuánto se vendería a fin de
             # mes si se mantiene el ritmo de venta actual.
             #     kg vendidos × días hábiles del mes / días hábiles transcurridos
             # Día hábil = lunes a viernes MENOS los feriados nacionales de
@@ -980,7 +981,7 @@ def balance():
                 if _hab_transc > 0 and _venta_kg > 0:
                     _ritmo_kg = _venta_kg * _hab_mes / _hab_transc
                     for _r in _tabla:
-                        if _r.get("label") == "Proyección":
+                        if _r.get("label") == "Venta":
                             _r["proy"] = _ritmo_kg
                             _r["proy_ayuda"] = (
                                 "Kg de venta proyectada al ritmo actual: kg "
