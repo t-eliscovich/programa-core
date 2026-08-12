@@ -1884,17 +1884,26 @@ def cancelar_por_anticipo(
                 f"El cheque #{id_cheque} tiene importe {importe:.2f} — las "
                 "notas de crédito / espejos no se cancelan por anticipo."
             )
-        aplic = db.fetch_all(
-            "SELECT id_chequexfact FROM scintela.chequesxfact WHERE id_cheque = %s",
-            (id_cheque,),
-            conn=conn,
-        ) or []
-        if aplic:
-            raise ValueError(
-                f"El cheque #{id_cheque} ya está aplicado a factura(s) — "
-                "desaplicalo desde su ficha y volvé a intentar (cancelarlo "
-                "acá reabriría las facturas sin compensación del anticipo)."
-            )
+        # ⭐ TMT 2026-08-12 — acá había un freno: si el cheque ya estaba aplicado
+        # a facturas, no dejaba cancelarlo, "porque cancelarlo acá reabriría las
+        # facturas sin compensación del anticipo".
+        #
+        # Ese peligro no existe: esta función NO toca `chequesxfact` ni los
+        # saldos de las facturas. Sólo marca el cheque 'X', borra el posdatado
+        # hermano y deja el mov_doble. El freno lo escribió el mismo commit que
+        # creó la función (6429255e, 06/07) como precaución, sobre una premisa
+        # que el código de al lado nunca cumplió.
+        #
+        # Y el caso que bloqueaba es el NORMAL (Alex, GLI, 12/08): el cliente
+        # había dado cheques a fecha que ya dejaron sus facturas pagadas, trae
+        # la plata y se lleva los cheques. La factura sigue pagada — lo que
+        # cambia es qué la respalda: antes el cheque, ahora el anticipo.
+        #
+        # Medido de punta a punta antes de sacarlo (ver
+        # tests/test_anticipo_cancela_cheque_aplicado_2026_08_12.py): la
+        # posición del cliente —cartera + facturas abiertas + caja— queda
+        # IDÉNTICA, la factura sigue en 'T' con saldo 0 y el cheque sale de
+        # cartera.
 
         # posdat hermana (cheques postdatados viven también en el flujo posdat)
         #

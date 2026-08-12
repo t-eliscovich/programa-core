@@ -309,14 +309,23 @@ def test_cancelar_importe_negativo_error(monkeypatch):
         q.cancelar_por_anticipo(id_cheque=777, codigo_cli="JTX", monto_anticipo=100.0)
 
 
-def test_cancelar_con_aplicaciones_error(monkeypatch):
+def test_cancelar_un_cheque_YA_APLICADO_se_puede(monkeypatch):
+    """TMT 2026-08-12: el freno de "ya está aplicado a factura(s)" se sacó.
+
+    Lo puso el mismo commit que creó la función (06/07) diciendo que cancelar
+    "reabriría las facturas". No es cierto — no toca `chequesxfact` ni los
+    saldos — y bloqueaba el caso NORMAL: el cliente pagó con cheques a fecha,
+    las facturas ya figuran canceladas, trae la plata y se lleva los cheques
+    (Alex, GLI, 12/08). La cuenta se verifica contra una base real en
+    tests/test_anticipo_cancela_cheque_aplicado_2026_08_12.py.
+    """
     from modules.cheques import queries as q
     _wire(monkeypatch, _DBStubCancelar(
         cheque_row=_cheque_vivo(),
         aplicaciones=[{"id_chequexfact": 1}],
     ))
-    with pytest.raises(ValueError, match="aplicado a factura"):
-        q.cancelar_por_anticipo(id_cheque=777, codigo_cli="JTX", monto_anticipo=100.0)
+    r = q.cancelar_por_anticipo(id_cheque=777, codigo_cli="JTX", monto_anticipo=100.0)
+    assert r["stat_nuevo"] == "X"
 
 
 def test_cancelar_stats_vivos_todos_pasan(monkeypatch):
