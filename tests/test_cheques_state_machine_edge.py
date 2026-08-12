@@ -101,13 +101,18 @@ def test_dropdown_ofrece_efectivo_donde_el_backend_lo_permite():
     el backend aceptaba Z→C pero el dropdown nunca lo generaba)."""
     from modules.cheques import queries as chq
 
-    for s in ("Z", "P", "D"):
+    # TMT 2026-08-11: los estados NO van tipeados. El invariante es que el
+    # dropdown y el backend digan lo mismo — cuáles sean depende de la matriz,
+    # y la matriz cambia por decisión de la dueña (ese día habilitó cobrar en
+    # efectivo un cheque DEVUELTO, 1/2/3→C, que el dBase ya dejaba). Con la
+    # lista escrita a mano, ese cambio rompía un test que no habla de eso.
+    for s in chq.TRANSICIONES_VALIDAS:
         dests = {o["stat_destino"] for o in chq.transiciones_para(s)}
-        assert "C" in dests, f"falta 'Cobrar en efectivo' (C) en el dropdown de {s}"
-    # Y NO debe aparecer donde el backend no lo permite (devueltos, depositados).
-    for s in ("1", "2", "3", "B", "V"):
-        dests = {o["stat_destino"] for o in chq.transiciones_para(s)}
-        assert "C" not in dests, f"'C' no debería estar en el dropdown de {s}"
+        permite = "C" in chq.TRANSICIONES_VALIDAS.get(s, set())
+        assert ("C" in dests) == permite, (
+            f"desde {s!r}: el backend {'permite' if permite else 'NO permite'} "
+            f"cobrar en efectivo y el dropdown dice lo contrario"
+        )
 
 
 # ── B. DEPOSITAR LOTE MIXTO (Z + devuelto en la misma llamada) ─────────

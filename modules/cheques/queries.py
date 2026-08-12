@@ -689,14 +689,19 @@ _CARTERA = {"Z", "P", "D"}  # sin resolver — intercambiables
 #     anulación (X), que compensan el banco — nunca por un cambio de etiqueta
 #     pelado (dejaría el depósito colgado). Para volver a cartera se usa
 #     "deshacer depósito".
+# ⭐ TMT 2026-08-11 (dueña, sobre las 8 que el dBase dejaba y PC no): las
+# aprobó todas. Cobrar EN EFECTIVO un devuelto (1/2/3→C), re-depositar un
+# devuelto de 2ª o 3ª (2/3→V) y depositar marcando V desde cartera (Z/P/D→V).
+# Las tres eran del dBase; volvieron con su motivo escrito en
+# `estados.DIFERENCIAS_TRANSICIONES` (o sea: dejaron de ser una diferencia).
 TRANSICIONES_VALIDAS = {
     # Cartera → dentro de cartera, marcar devuelto 1° (inicio de la secuencia),
     # eliminar, o entrar a estados con movimiento.
-    "Z": {"P", "D", "1", "X"} | {"B", "C", "9", "I"},
-    "P": {"Z", "D", "1", "X"} | {"B", "C", "I"},
-    "D": {"Z", "P", "1", "X"} | {"B", "C", "I"},
+    "Z": {"P", "D", "1", "X"} | {"B", "C", "9", "I", "V"},
+    "P": {"Z", "D", "1", "X"} | {"B", "C", "I", "V"},
+    "D": {"Z", "P", "1", "X"} | {"B", "C", "I", "V"},
     # Devuelto 1°: escalar a 2°, volver a cartera, re-depositar (V), rebote, eliminar.
-    "1": {"2", "Z", "P", "D", "V", "X"} | {"9"},
+    "1": {"2", "Z", "P", "D", "V", "X"} | {"9", "C"},
     # TMT 2026-07-21 (dueña, casos CJE/NIF): un DEPOSITADO que el banco devolvió
     # DESPUÉS puede pasar a "1" (devuelto 1°) como cambio de etiqueta PLANO, con
     # nueva fecha de cobro. El ND del protesto NO se genera acá: llega por el
@@ -704,9 +709,9 @@ TRANSICIONES_VALIDAS = {
     # original queda en la historia del cheque. Para el rebote CON ND automático
     # sigue existiendo B→9. Desde "1" ya se puede volver a Z/P (cartera).
     # Devuelto 2°: escalar a 3°, volver a cartera, rebote, eliminar. (NO vuelve a 1°.)
-    "2": {"3", "Z", "P", "D", "X"} | {"9"},
+    "2": {"3", "Z", "P", "D", "V", "X"} | {"9", "C"},
     # Devuelto 3° (segundo rechazo): volver a cartera para gestión, o eliminar.
-    "3": {"Z", "P", "D", "X"},
+    "3": {"Z", "P", "D", "V", "X"} | {"C"},
     # V = protestado vuelto a depositar (dueña 2026-06-30). Si el banco lo
     # protesta OTRA vez → vuelve a "1" (dueña 2026-07-20: "el cheque de CG3
     # necesito colocar en estado 1"). Cambio de etiqueta plano: la V nueva no
@@ -2958,6 +2963,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # transiciones ("no veo 1 y 2 en el dropdown"). Permiten marcar el
     # cheque como devuelto directo sin pasar por deposito + reverso.
     "Z": [
+        {"stat_destino": "V", "label": "Depositar marcando V (Pichincha, hoy)", "corto": "Depositar (V)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             # TMT 2026-06-29 (dueña): el →B del dropdown debe DEPOSITAR el cheque
             # directo (Pichincha, hoy) con 1 confirmación, no mandar al wizard de
@@ -3068,6 +3074,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
         },
     ],
     "2": [
+        {"stat_destino": "V", "label": "Protestado vuelto a depositar", "corto": "Re-depositar", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             "stat_destino": "P",
             "label": "Postergar fecha",
@@ -3086,6 +3093,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # TMT 2026-07-09 (dueña): agregar →B (depositar) — TRANSICIONES_VALIDAS['D']
     # ya lo permite; faltaba en el dropdown (Daniela trajo el cheque, se deposita).
     "D": [
+        {"stat_destino": "V", "label": "Depositar marcando V (Pichincha, hoy)", "corto": "Depositar (V)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "B", "label": "Depositar en Pichincha (hoy)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             "stat_destino": "P",
@@ -3100,6 +3108,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # en Pichincha hoy). El backend (TRANSICIONES_VALIDAS['P']) ya lo permitía;
     # solo faltaba ofrecerlo en la UI. Va primero, con confirmación (como Z).
     "P": [
+        {"stat_destino": "V", "label": "Depositar marcando V (Pichincha, hoy)", "corto": "Depositar (V)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "B", "label": "Depositar en Pichincha (hoy)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
@@ -3112,7 +3121,11 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
         {"stat_destino": "2", "label": "Devuelto (2°)", "kind": "POST", "endpoint": "cheques.transicionar"},
     ],
     # Estados terminales — sin transiciones disponibles.
-    "3": [],  # 2do rebote terminal
+    # TMT 2026-08-11 (dueña): el rechazo de 3ª deja de ser terminal — se puede
+    # volver a depositar, como en el dBase.
+    "3": [
+        {"stat_destino": "V", "label": "Protestado vuelto a depositar", "corto": "Re-depositar", "kind": "POST", "endpoint": "cheques.transicionar"},
+    ],
     "R": [],  # rebote terminal legacy
     "E": [],  # endosado — vive en /historial para reverso
     "X": [],  # eliminado/anulado

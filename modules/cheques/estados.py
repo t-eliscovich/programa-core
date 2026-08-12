@@ -191,18 +191,10 @@ DIFERENCIAS_TRANSICIONES: dict[tuple[str, str], tuple[str, str]] = {
                              "Su reverso es administrativo (→X)."),
     ("P", "9"): ("decidido", "idem D→9."),
 
-    # ── Sin decidir: se las llevo a la dueña ───────────────────────────────
-    ("1", "C"): ("a_decidir", "cobrar EN EFECTIVO un cheque devuelto (el cliente lo paga "
-                              "en plata). El dBase lo dejaba; PC no lo ofrece."),
-    ("2", "C"): ("a_decidir", "idem 1→C."),
-    ("3", "C"): ("a_decidir", "idem 1→C."),
-    ("2", "V"): ("a_decidir", "volver a depositar un devuelto de 2ª. Hoy PC sólo deja "
-                              "re-depositar desde 1."),
-    ("3", "V"): ("a_decidir", "idem 2→V, desde un rechazo de 3ª."),
-    ("Z", "V"): ("a_decidir", "depositar marcando 'V' directo desde cartera. En PC 'V' "
-                              "significa re-depósito de un devuelto, así que desde Z se usa B."),
-    ("D", "V"): ("a_decidir", "idem Z→V."),
-    ("P", "V"): ("a_decidir", "idem Z→V."),
+    # (Las 8 que quedaban "a_decidir" las aprobó la dueña el 11/08/2026, así que
+    # dejaron de ser diferencias: cobrar en efectivo un devuelto (1/2/3→C),
+    # re-depositar un devuelto de 2ª o 3ª (2/3→V) y depositar marcando V desde
+    # cartera (Z/P/D→V). Las tres eran del dBase.)
 }
 
 
