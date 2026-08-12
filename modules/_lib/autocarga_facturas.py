@@ -175,14 +175,19 @@ def _loop() -> None:
             # 10:34 deje rastro y se pueda mirar QUÉ se movió en vez de
             # discutir hipótesis. Va última a propósito: es la que menos
             # importa del ciclo y no tiene por qué demorar a las otras.
-            # TMT 2026-08-11 (dueña): *"hacelo 5pm, así les das tiempo de
-            # cargar"*. A las 17:00 EC, la lista de lo que salió hoy y todavía
-            # no tiene factura — 99,2 % se facturan dentro de las 4 h, medido.
+            # TMT 2026-08-11 (dueña): *"al día siguiente si no se cargó"*. Un
+            # despacho sin factura a media tarde es la tarde normal — el 93 %
+            # se factura dentro de la hora — y avisarlo ahí quedó feo: *"no me
+            # gustó el aviso, parecía que algo estaba mal cuando no era el
+            # caso"*. Lo del día en curso se cuenta como CONTEXTO en el
+            # renglón de /informes/dia; acá sólo va lo que amaneció sin
+            # cargar, que sí es un problema. Un aviso por despacho.
             try:
                 from modules.asinfo import despacho_sin_factura as _dsf
-                ds = _dsf.correr_si_toca()
-                if ds.get("avisado"):
-                    _LOG.info("despachos sin factura (fondo): %s", ds.get("casos"))
+                ds = _dsf.revisar_si_toca()
+                if ds.get("avisados"):
+                    _LOG.info("despachos sin factura (fondo): %s aviso(s)",
+                              ds.get("avisados"))
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("despachos sin factura (fondo): %s", e)
             # TMT 2026-08-11 (dueña): el hilo que sale de bodega SIN orden de
