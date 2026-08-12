@@ -124,3 +124,88 @@ def test_solo_se_recuerda_la_tarifa_calculada_con_las_compras_a_la_vista():
     assert buena and buena["mm"] == 8
     _valuar(0.0, 0.0, dolares_propios=813_806.10, previa=buena["ukg"])
     assert buena == sv._ULTIMA_TARIFA_HILADO, "la foto enferma no puede ser el ancla"
+
+
+# ── Los KILOS también se quedan quietos (TMT 2026-08-12, tarde) ────────────
+# El fix de arriba salió a producción con Asinfo todavía caído, y el reinicio
+# del deploy dejó a la vista la puerta de al lado: sin inventario y sin
+# memoria, el balance caía a los kilos estilo dBase (apertura del mes ±
+# movimientos) y la utilidad SUBIÓ de 78.149 a 172.565 — hilado 2.015.927 →
+# 1.895.247 kg pero valuado a 3,4495 en vez de 3,0201. Dueña: *"subió de más,
+# fijate. dbase no puede ser"* → *"tomar los kilos de la última foto de la
+# traza, exactamente esto quiero"*.
+
+from modules.informes import traza as _traza  # noqa: E402
+
+
+def test_la_foto_ancla_ignora_las_sacadas_sin_asinfo():
+    """`compras_us = 0` es justo la foto enferma: no puede ser el ancla."""
+    fila = {"hilado_kg": 2_015_927.0, "hilado_ukg": 3.0443,
+            "tejido_kg": 298_518.0, "terminado_kg": 345_576.0}
+    with patch.object(_traza.db, "fetch_one", return_value=fila) as f:
+        assert _traza.foto_stock_buena() == fila
+    sql = f.call_args[0][0]
+    assert "COALESCE(compras_us, 0) > 0" in sql
+    assert "date_trunc" in sql, "el ancla tiene que ser del MES en curso"
+
+
+def test_sin_foto_no_inventa_nada():
+    with patch.object(_traza.db, "fetch_one", side_effect=RuntimeError("sin base")):
+        assert _traza.foto_stock_buena() is None
+
+
+def test_el_balance_prefiere_la_foto_antes_que_los_kilos_del_dbase():
+    """El orden importa: primero el ancla, el dBase sólo si no hay ninguna."""
+    import inspect
+
+    from modules.informes import queries as q
+    src = inspect.getsource(q.informe_balance)
+    assert "foto_stock_buena()" in src
+    i_foto = src.index("foto_stock_buena()")
+    i_dbase = src.index("valuando con los kilos del dBase")
+    assert i_foto < i_dbase, "el dBase tiene que ser el último recurso"
+    # Y los kilos de la foto no pueden viajar con la tarifa de otra fuente.
+    assert '_stock_fuente == "traza" and _foto_stk' in src
+    assert 'h_um = float(_foto_stk["hilado_ukg"])' in src
+
+
+# ── Y el balance de verdad, no sólo su código fuente ───────────────────────
+
+from tests.test_balance_conciliacion import fake_balance_db  # noqa: E402,F401
+
+FOTO = {
+    "creado_en": None,
+    "hilado_kg": 2_015_927.0, "hilado_ukg": 3.0443,
+    "tejido_kg": 298_518.0, "terminado_kg": 345_576.0,
+}
+
+
+def _balance_sin_asinfo(monkeypatch, foto):
+    from modules.asinfo import service as asvc
+    from modules.informes import queries as q
+    from modules.informes import traza as tz
+    monkeypatch.setattr(asvc, "inventario_por_etapa",
+                        lambda: {"disponible": False, "hilo_total": 0.0,
+                                 "cruda_total": 0.0, "terminada": 0.0})
+    monkeypatch.setattr(tz, "foto_stock_buena", lambda: foto)
+    return q.informe_balance()
+
+
+def test_sin_asinfo_el_balance_se_queda_en_la_foto(fake_balance_db, monkeypatch):
+    b = _balance_sin_asinfo(monkeypatch, dict(FOTO))
+    et = b["stock_etapas"]
+    assert b["stock_fuente"] == "traza"
+    assert et["hilado"]["kg"] == pytest.approx(2_015_927.0)
+    assert et["tejido"]["kg"] == pytest.approx(298_518.0)
+    assert et["terminado"]["kg"] == pytest.approx(345_576.0)
+    # los kilos de la foto NO pueden viajar con la tarifa de otra fuente
+    assert et["hilado"]["ukg"] == pytest.approx(3.0443)
+    assert et["tejido"]["ukg"] == pytest.approx(3.5443)
+    assert et["terminado"]["ukg"] == pytest.approx(5.2443)
+
+
+def test_sin_foto_el_balance_avisa_que_valua_con_el_dbase(fake_balance_db, monkeypatch):
+    b = _balance_sin_asinfo(monkeypatch, None)
+    assert b["stock_fuente"] == "dbase"
+    avisos = (b.get("diagnostico") or {}).get("advertencias") or []
+    assert any("kilos del dBase" in a for a in avisos), avisos

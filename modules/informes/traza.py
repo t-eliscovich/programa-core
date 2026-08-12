@@ -108,6 +108,44 @@ def _fila_desde_balance(bal: dict) -> dict:
     }
 
 
+def foto_stock_buena() -> dict | None:
+    """La última foto con el stock LEÍDO DE VERDAD (kg por etapa + $/kg).
+
+    TMT 2026-08-12 (dueña: *"tomar los kilos de la última foto de la traza,
+    exactamente esto quiero"*). Cuando Asinfo no contesta el inventario, el
+    balance caía a los kilos estilo dBase — apertura del mes ± movimientos —
+    y eso mueve el stock ~460.000 US$ de un saque, hacia arriba. Es la misma
+    trampa que el $/kg: en vez de quedarse quieto, el balance se agarra de
+    otra base. Acá está el ancla persistente (la traza sobrevive al reinicio,
+    la memoria del proceso no).
+
+    "Buena" = con `compras_us > 0`: las compras del mes vienen por el mismo
+    puente que el inventario, así que una foto que las tiene es una foto que
+    se sacó con Asinfo vivo. Sirve dentro del MES en curso: los kilos de un
+    mes anterior no son el stock de hoy.
+
+    Devuelve None si no hay ninguna (mes recién arrancado, tabla vacía): ahí
+    el balance sigue con el camino de siempre. Nunca lanza.
+    """
+    try:
+        return db.fetch_one(
+            """
+            SELECT creado_en, hilado_kg, hilado_ukg, tejido_kg, terminado_kg
+              FROM scintela.traza_utilidad
+             WHERE creado_en >= date_trunc(
+                       'month', (CURRENT_TIMESTAMP - INTERVAL '5 hours'))
+               AND COALESCE(compras_us, 0) > 0
+               AND COALESCE(hilado_kg, 0) > 0
+               AND COALESCE(hilado_ukg, 0) > 0
+             ORDER BY creado_en DESC, id_traza DESC
+             LIMIT 1
+            """
+        )
+    except Exception as e:  # noqa: BLE001 -- la grabadora no puede tumbar nada
+        _LOG.warning("traza_utilidad: no pude leer la foto de stock (%s)", e)
+        return None
+
+
 def registrar(origen: str = "manual", bal: dict | None = None,
               momento: str = "foto") -> dict:
     """Guarda UNA foto: los totales, el detalle por documento, y el diff.

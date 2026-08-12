@@ -5193,17 +5193,44 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # pantalla mostraba el número del dBase como si nada. Alex vio la utilidad
     # saltar 576 → 545 → 609 → 688 en diez minutos y no había dónde mirar.
     _stock_aviso = ""
+    _foto_stk = None
     if _stock_src == "asinfo":
         try:
             from modules.asinfo import service as _asinfo_svc
             _inv = _asinfo_svc.inventario_por_etapa()
             if not _inv.get("disponible"):
-                _stock_aviso = (
-                    "⚠ ASINFO no contestó el inventario: el stock se está "
-                    "valuando con los kilos del dBase, así que esta utilidad NO "
-                    "es comparable con la de hace un rato (entre las dos bases "
-                    "hay unos 460.000 de diferencia). Reintentá en un minuto."
-                )
+                # El stock se QUEDA QUIETO (dueña 2026-08-12). Antes caía a los
+                # kilos estilo dBase —apertura del mes ± movimientos— y eso
+                # mueve el stock ~460.000 US$ para arriba: el 12/08, con el
+                # login de Asinfo caído, un reinicio llevó la utilidad de
+                # 78.149 a 172.565 sin que pasara nada en la fábrica. La foto
+                # de la traza es el mismo stock que se venía mostrando, y
+                # sobrevive al reinicio.
+                from modules.informes import traza as _traza_stk
+                _foto_stk = _traza_stk.foto_stock_buena()
+                if _foto_stk:
+                    kg_hilado = float(_foto_stk["hilado_kg"])
+                    kg_tejido = float(_foto_stk["tejido_kg"] or 0) or kg_tejido
+                    kg_term = float(_foto_stk["terminado_kg"] or 0) or kg_term
+                    _stock_fuente = "traza"
+                    from filters import hora_ec as _hora_ec
+                    _foto_hora = _hora_ec(_foto_stk.get("creado_en"), "%H:%M")
+                    _stock_aviso = (
+                        "⚠ ASINFO no contestó el inventario: el stock se quedó "
+                        f"en la última foto buena, la de las {_foto_hora}. No se "
+                        "revaluó nada — el número es bueno, pero no refleja lo "
+                        "que entró o salió de bodega desde entonces. Se acomoda "
+                        "solo cuando Asinfo vuelva a contestar."
+                    )
+                else:
+                    _stock_aviso = (
+                        "⚠ ASINFO no contestó el inventario y no hay ninguna "
+                        "foto del mes con la que sostener el stock: se está "
+                        "valuando con los kilos del dBase, así que esta utilidad "
+                        "NO es comparable con la de hace un rato (entre las dos "
+                        "bases hay unos 460.000 de diferencia). Reintentá en un "
+                        "minuto."
+                    )
             elif _inv.get("de_cache_vieja"):
                 _stock_aviso = (
                     "⚠ ASINFO contestó a medias: se está usando el último "
@@ -5248,6 +5275,10 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # distingue "entraron kilos" de "cambió el $/kg" — y el $/kg mueve el valor
     # de TODO el stock de un saque. TMT 2026-07-31.
     _hval: dict = {}
+    if _stock_fuente == "traza" and _foto_stk:
+        # Kilos de la foto con tarifa de otra fuente = revaluación igual. Van
+        # juntos o no van. (h_uk/h_uf se derivan abajo, como siempre.)
+        h_um = float(_foto_stk["hilado_ukg"])
     if _stock_fuente == "asinfo":
         try:
             from modules.asinfo import service as _asvc_hval
