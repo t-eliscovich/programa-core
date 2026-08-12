@@ -8,8 +8,9 @@
    editar) y cada flag se venía agregando a mano a uno o dos de ellos. Ya falló
    dos veces: `aprobar_diferencia` el 16/06 (la cobranza con flete rebotaba
    "supera por más de $50" con el tilde puesto) y `confirmar_no_duplicado` el
-   11/08 (Alex: el freno de duplicados volvía a saltar en `paso=ejecutar`, así
-   que un cheque marcado "no es duplicado" NO SE PODÍA GUARDAR).
+   11/08 (el freno de duplicados volvía a saltar en `paso=ejecutar`, así que un
+   cheque marcado "no es duplicado" NO SE PODÍA GUARDAR — ese freno se sacó el
+   12/08, pero la lección de que las respuestas viajan por acá queda).
 
    Una respuesta que el usuario ya dio tiene que sobrevivir hasta el guardado.
    Si mañana aparece otro tilde, va ACÁ y entra en los tres formularios solo.
@@ -19,7 +20,6 @@
   {%- if aprobar_dif %}<input type="hidden" name="aprobar_diferencia" value="1">{% endif %}
   {%- if motivo_dif %}<input type="hidden" name="motivo_diferencia" value="{{ motivo_dif }}">{% endif %}
   {%- if aplicar_t_used %}<input type="hidden" name="aplicar_t_used" value="1">{% endif %}
-  {%- if confirmado_dup %}<input type="hidden" name="confirmar_no_duplicado" value="1">{% endif %}
 {% endmacro %}
 
 <div class="max-w-5xl">

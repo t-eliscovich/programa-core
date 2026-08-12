@@ -68,7 +68,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import db
-from filters import today_ec
 from modules.comisiones.queries import STATS_COBRADO
 
 # Dos altas de la MISMA cobranza pasan por una sola transacción. Medido sobre
@@ -385,46 +384,8 @@ def revisar(desde: date, hasta: date) -> list[dict]:
     veredictos = veredicto_extracto(ids)
     return [resumir(g, veredictos) for g in grupos]
 
-def similares_activos(codigo_cli: str, importe: float, *, dias: int = 30,
-                      conn=None) -> list[dict]:
-    """Cheques ACTIVOS del mismo cliente por el mismo importe, recientes.
-
-    ⭐ FRENO 1 del alta (TMT 2026-08-05, caso BAN 730). El diagnóstico de
-    arriba (`revisar`) caza cargas duplicadas del MISMO día; BAN se cargó dos
-    veces con DOS SEMANAS de diferencia (07/07 por el import del dBase, 21/07
-    a mano) y nadie lo vio hasta que la conciliación mostró un +730 sin
-    contraparte. Este es el chequeo BARATO que corre en el alta: mismo
-    cliente + mismo importe + cualquier fecha del cheque dentro de la
-    ventana → el alta pide confirmación explícita antes de guardar.
-
-    No decide nada solo: es un aviso con checkbox, porque dos cheques
-    iguales pueden ser legítimos (cuotas). Incluye a propósito las filas del
-    dBase (BAN era una) — acá no hay alarma que gritar 50 veces por día,
-    sólo una pregunta en el momento exacto de la carga.
-
-    Activo = stat fuera de X/T/R (anulado/terminal). La ventana compara la
-    fecha MÁS RECIENTE de la fila (fechad, fecha_recibido o fecha) contra
-    hoy − `dias`, así también avisa sobre cheques posdatados a futuro.
-    """
-    codigo = (codigo_cli or "").strip().upper()
-    if not codigo or importe is None:
-        return []
-    corte = today_ec() - timedelta(days=dias)
-    return db.fetch_all(
-        """
-        SELECT c.id_cheque, c.no_cheque, c.codigo_cli, c.importe, c.stat,
-               c.fecha, c.fechad, c.fecha_recibido, c.usuario_crea
-          FROM scintela.cheque c
-         WHERE UPPER(TRIM(COALESCE(c.codigo_cli, ''))) = %s
-           AND ABS(c.importe - %s) < 0.005
-           AND UPPER(TRIM(COALESCE(c.stat, ''))) NOT IN ('X', 'T', 'R')
-           AND GREATEST(COALESCE(c.fechad, c.fecha),
-                        COALESCE(c.fecha_recibido, c.fecha),
-                        c.fecha) >= %s
-         ORDER BY c.id_cheque DESC
-         LIMIT 5
-        """,
-        (codigo, float(importe), corte),
-        conn=conn,
-    ) or []
-
+# (Acá vivía `similares_activos`, el chequeo barato del alta: mismo cliente +
+# mismo importe + 30 días. Lo puso el caso BAN 730 del 05/08 y la dueña lo
+# mandó sacar el 12/08/2026 — molestaba en la carga diaria más de lo que
+# atajaba. `revisar()`, el diagnóstico de /cheques/diag/cobros-duplicados, se
+# queda: buscar duplicados DESPUÉS sigue estando bien.)

@@ -6,8 +6,11 @@ que eran las cicatrices de tres agujeros del código:
 
 1. **BAN +730**: el mismo cheque cargado dos veces con DOS SEMANAS de
    diferencia. El detector de duplicados sólo miraba cargas del mismo día.
-   → FRENO 1: el alta avisa (mismo cliente + importe activo, ±30 días) y pide
-   tildar «Es otro cheque» para guardar igual.
+   → FRENO 1: el alta avisaba (mismo cliente + importe activo, ±30 días) y
+   pedía tildar «Es otro cheque». **SACADO el 12/08/2026 por decisión de la
+   dueña**: molestaba en la carga diaria más de lo que atajaba. Queda el
+   diagnóstico `/cheques/diag/cobros-duplicados` para buscarlos después, y
+   los tests de acá abajo protegen que ESE siga andando.
 2. **MSS −1.100,93**: se anuló por "error de carga" un cheque cuyo depósito ya
    estaba conciliado contra un crédito REAL del extracto (28/07). El crédito
    del banco quedó explicado por plata que según PC no existe.
@@ -41,117 +44,26 @@ _TPL_NUEVO = os.path.join(
 )
 
 
-# ─── FRENO 1: aviso de duplicado en el alta ──────────────────────────────
+# ─── FRENO 1: SACADO el 12/08/2026 ───────────────────────────────────────
+# El alta ya no mira duplicados. Lo único que se protege es que no vuelva por
+# accidente y que el diagnóstico posterior siga en pie.
 
 
-def test_similares_activos_excluye_los_terminales():
-    """Un cheque anulado (X) o terminado (T/R) no es un duplicado posible."""
-    src = inspect.getsource(duplicados.similares_activos)
-    assert "NOT IN ('X', 'T', 'R')" in src
+def test_el_alta_no_frena_por_duplicado():
+    """Dueña 12/08/2026: "eliminar lo de duplicados"."""
+    src = inspect.getsource(v.nuevo)
+    for rastro in ("confirmar_no_duplicado", "similares_activos",
+                   "pedir_confirmar_duplicado"):
+        assert rastro not in src, f"volvió el freno de duplicados ({rastro})"
 
 
-def test_similares_activos_incluye_al_dbase():
-    """BAN 730: la primera carga era del import del dBase. Si el filtro
-    excluyera usuario_crea='dbf-import' (como hace el diagnóstico, con razón),
-    el caso que motivó todo esto pasaría de largo otra vez."""
-    src = inspect.getsource(duplicados.similares_activos)
-    assert "dbf-import" not in src
-    assert "usuario_crea" not in src.split("WHERE")[1].split("ORDER BY")[0]
-
-
-def test_similares_activos_ventana_por_la_fecha_mas_reciente():
-    """La ventana compara la fecha MÁS RECIENTE de la fila (GREATEST de
-    fechad / fecha_recibido / fecha): un posdatado a futuro también avisa."""
-    src = inspect.getsource(duplicados.similares_activos)
-    assert "GREATEST(" in src
-    assert "timedelta(days=dias)" in src
-
-
-def test_similares_activos_sin_cliente_o_importe_no_consulta():
-    capturado = {}
-
-    def _fake_fetch_all(sql, params=None, conn=None):  # pragma: no cover
-        capturado["sql"] = sql
-        return []
-
-    orig = duplicados.db.fetch_all
-    duplicados.db.fetch_all = _fake_fetch_all
-    try:
-        assert duplicados.similares_activos("", 100.0) == []
-        assert duplicados.similares_activos("BAN", None) == []
-        assert "sql" not in capturado, "sin datos no debe tocar la base"
-    finally:
-        duplicados.db.fetch_all = orig
-
-
-def test_similares_activos_normaliza_el_codigo():
-    capturado = {}
-
-    def _fake_fetch_all(sql, params=None, conn=None):
-        capturado["params"] = params
-        return [{"id_cheque": 1}]
-
-    orig = duplicados.db.fetch_all
-    duplicados.db.fetch_all = _fake_fetch_all
-    try:
-        filas = duplicados.similares_activos("  ban ", 730.0)
-        assert filas == [{"id_cheque": 1}]
-        assert capturado["params"][0] == "BAN"
-        assert capturado["params"][1] == 730.0
-    finally:
-        duplicados.db.fetch_all = orig
-
-
-def _src_nuevo() -> str:
-    return inspect.getsource(v.nuevo)
-
-
-def test_alta_pide_confirmacion_ante_posible_duplicado():
-    src = _src_nuevo()
-    assert "confirmar_no_duplicado" in src
-    assert "similares_activos" in src
-    assert "pedir_confirmar_duplicado" in src
-
-
-def test_alta_solo_compara_contra_la_base_no_entre_bloques():
-    """Dueña 04/08: dos cheques iguales en la MISMA cobranza son legítimos.
-    El freno compara contra lo guardado; los importes repetidos dentro del
-    propio form se saltean (un aviso por importe alcanza)."""
-    src = _src_nuevo()
-    i = src.index("FRENO 1")
-    bloque = src[i : i + 3000]
-    assert "_imps_vistos" in bloque
-    assert "continue  # mismo guardado" in bloque
-
-
-def test_alta_ignora_negativos_y_banco_95():
-    src = _src_nuevo()
-    i = src.index("FRENO 1")
-    bloque = src[i : i + 3000]
-    assert 'imp <= 0.005 or ch.get("no_banco") == 95' in bloque
-
-
-def test_alta_el_aviso_no_puede_tumbar_la_cobranza():
-    """Si la consulta falla, la carga sigue: el freno es un aviso, no una
-    dependencia dura."""
-    src = _src_nuevo()
-    i = src.index("FRENO 1")
-    bloque = src[i : i + 3000]
-    assert "_sim = []  # el aviso nunca puede tumbar una cobranza" in bloque
-
-
-def test_template_tiene_el_tilde_dentro_del_form():
-    """El checkbox tiene que viajar en el POST: si quedara en el recuadro de
-    errores (que está FUERA del <form>), no se enviaría nunca."""
-    with open(_TPL_NUEVO) as _fh:
-        html = _fh.read()
-    assert 'name="confirmar_no_duplicado"' in html
-    i_form = html.index('<form method="post" id="cheque-form"')
-    i_chk = html.index('name="confirmar_no_duplicado"')
-    assert i_chk > i_form
-    i_endform = html.index("</form>", i_form)
-    assert i_chk < i_endform
-    assert "pedir_confirmar_duplicado" in html
+def test_el_diagnostico_de_duplicados_sigue_existiendo():
+    """Buscar duplicados DESPUÉS sigue estando bien — es el alta la que no frena."""
+    assert hasattr(duplicados, "revisar")
+    assert not hasattr(duplicados, "similares_activos"), (
+        "similares_activos era sólo para el freno del alta; si vuelve, alguien "
+        "está reponiendo el freno."
+    )
 
 
 # ─── FRENO 2: no se anula un cheque ya conciliado ────────────────────────

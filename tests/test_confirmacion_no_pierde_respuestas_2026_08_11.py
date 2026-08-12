@@ -34,12 +34,14 @@ TEMPLATE = (
 
 #: Los tildes/valores que el usuario contesta en el paso 1 y el backend vuelve
 #: a leer en el paso 2. Si agregás uno nuevo al alta, va en el macro.
+#: (`confirmar_no_duplicado` estaba en esta lista hasta el 12/08/2026, cuando
+#: la dueña mandó sacar el freno de duplicados. La lección por la que existe
+#: este archivo no cambia: el que venga después va acá.)
 RESPUESTAS = [
     "es_anticipo",
     "aprobar_diferencia",
     "motivo_diferencia",
     "aplicar_t_used",
-    "confirmar_no_duplicado",
 ]
 
 
@@ -80,16 +82,4 @@ def test_las_respuestas_no_se_repiten_sueltas_fuera_del_macro(fuente):
     assert not sueltas, (
         f"Estos campos quedaron escritos a mano fuera del macro: {sueltas}. "
         "Con dos lugares, el próximo cambio se olvida de uno."
-    )
-
-
-def test_el_backend_le_pasa_a_la_pantalla_el_tilde_de_duplicado():
-    """El macro no puede emitir lo que la vista no manda."""
-    from pathlib import Path as _P
-    views = (_P(__file__).resolve().parent.parent
-             / "modules" / "cheques" / "views.py").read_text(encoding="utf8")
-    render = views[views.index('"cheques/nuevo_confirmar.html"'):]
-    render = render[: render.index("\n        )")]
-    assert "confirmado_dup=" in render, (
-        "La confirmación no recibe si el usuario ya dijo «es otro cheque»."
     )

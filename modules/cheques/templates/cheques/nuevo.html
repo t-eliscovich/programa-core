@@ -42,20 +42,6 @@
        en la columna QUEDA y el sobrante en el recuadro ámbar de abajo. #}
     <input type="hidden" name="paso" value="ejecutar">
 
-    {# FRENO 1 (TMT 2026-08-05): el backend detectó un cheque igual ya
-       guardado (mismo cliente + importe, ±30 días) y frenó el alta. El
-       tilde confirma que es OTRO cheque y deja guardar. Sólo aparece
-       después del aviso — nunca en una carga limpia. #}
-    {% if form.pedir_confirmar_duplicado %}
-      <label style="display:flex;align-items:center;gap:8px;margin:0 0 14px;
-                    padding:10px 12px;border:1px solid #f59e0b;
-                    background:#fffbeb;border-radius:8px;font-weight:600;
-                    color:#92400e;cursor:pointer">
-        <input type="checkbox" name="confirmar_no_duplicado" value="1">
-        Es otro cheque, no es duplicado — guardar igual
-      </label>
-    {% endif %}
-
     {# TMT 2026-08-03 — este cobro en efectivo YA está en la caja como entrada
        suelta `CH.<cliente>` (se llegó acá por el botón "⚠ sin cobranza" de
        /caja). Sin este hidden el dato se pierde al postear y el alta crearía
