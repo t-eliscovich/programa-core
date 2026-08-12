@@ -460,7 +460,10 @@ def lista():
     # TMT 2026-05-20 — tab='posdatados' (default) excluye prov='YY';
     # tab='yy' solo trae los gastos forzados / provisiones.
     tab = (request.args.get("tab") or "posdatados").strip().lower()
-    if tab not in ("posdatados", "yy"):
+    # TMT 2026-08-12 (Federico): 'todos' = Posdatados + YY juntos (recuadro
+    # Total clickeable). Los conteos del hero se siguen calculando por tab por
+    # separado, así que no hay doble conteo.
+    if tab not in ("posdatados", "yy", "todos"):
         tab = "posdatados"
 
     # Pedir UN posdatado por id manda sobre la pestaña: si es de prov YY/RT
@@ -586,7 +589,9 @@ def lista():
     # Saldo OP (over-price/aporte) para el panel + botón de retiro a accionistas.
     # Sólo se muestra en el tab posdatados. Best-effort: si falla, no rompe.
     saldo_op = None
-    if tab == "posdatados":
+    # TMT 2026-08-12 (Federico): 'todos' también enriquece las filas OP (line_key,
+    # restante, imputaciones) para que rendericen con su sub-tabla de retiros.
+    if tab in ("posdatados", "todos"):
         try:
             from modules.retiros import queries as _ret
             saldo_op = _ret.saldo_op()

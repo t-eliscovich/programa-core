@@ -860,9 +860,12 @@ def buscar(
           -- saltea, un posdat YY entra en las dos pestañas y el hero lo suma
           -- dos veces (Total = Posdatados + YY). Quien pide un id se encarga
           -- de mandar el tab que le corresponde — lo hace la vista.
+          -- TMT 2026-08-12 (Federico): tab='todos' = ambos (Total = Posdatados + YY),
+          -- para el recuadro Total clickeable. No filtra por prov.
           AND (
                 (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
              OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
+             OR (%(tab)s = 'todos')
           )
           -- Filtro de soft-delete (migración 0027): siempre excluye anuladas…
           -- salvo que se esté pidiendo ESA fila por id (ver arriba): el
@@ -997,9 +1000,11 @@ def resumen(
            -- regla que buscar() — RT también es tab=yy (memoria 2026-05-27).
            -- Antes resumen contaba RT como posdatado → total ≠ filas visibles.
            -- MISMA regla que buscar(): el tab no se saltea ni pidiendo por id.
+           -- TMT 2026-08-12 (Federico): tab='todos' = ambos (recuadro Total clickeable).
            AND (
                 (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
              OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
+             OR (%(tab)s = 'todos')
            )
            AND (%(id_posdat)s IS NOT NULL
                 OR pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
