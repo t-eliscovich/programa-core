@@ -93,13 +93,29 @@ test-db:
 restore-test-db:
 	$(PY) scripts/restaurar_test_legacy_dump.py --allow-reset
 
+# TMT 2026-08-13: los dos pytest corren A LA VEZ. El de `not db` tarda ~60 s y
+# el de `db` ~11 s, y no se pisan: el primero usa el FakeDB monkeypatcheado y el
+# segundo un Postgres real. Antes se hacían uno después del otro.
+#   ⚠ Cada uno escribe su coverage en SU PROPIA carpeta. Si compartieran el
+#   directorio se pisarían: pytest-cov llama a `combine` al terminar cada
+#   corrida, así que el que termina primero se llevaría puestos los archivos
+#   a medio escribir del otro. Por eso van dos COVERAGE_FILE y un solo
+#   `coverage combine` nuestro al final, ya con las dos corridas terminadas.
+#   ⚠ El `wait` con su exit code explícito NO es adorno: sin eso, un fallo del
+#   pytest de fondo se pierde y el gate queda verde con tests rojos.
+# Ya no se genera `coverage html`: en CI no lo mira nadie. Para verlo local:
+#   make test-coverage && python3 -m coverage html
 test-coverage:
-	$(PY) -m coverage erase
-	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
-	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
+	rm -rf .cov && mkdir -p .cov/unit .cov/db
+	  COVERAGE_FILE=.cov/unit/.coverage $(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= & \
+	  UNIT_PID=$$!; \
+	  COVERAGE_FILE=.cov/db/.coverage $(PY) -m pytest -q -m db --cov --cov-report=; DB_RC=$$?; \
+	  wait $$UNIT_PID; UNIT_RC=$$?; \
+	  echo "pytest not-db -> $$UNIT_RC ; pytest db -> $$DB_RC"; \
+	  [ $$UNIT_RC -eq 0 ] && [ $$DB_RC -eq 0 ]
+	$(PY) -m coverage combine .cov/unit/.coverage .cov/db/.coverage
 	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage xml
-	$(PY) -m coverage html
 
 ci: test-coverage
 
