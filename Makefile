@@ -10,6 +10,21 @@ PIP    := $(VENV)/bin/pip
 PY     := $(VENV)/bin/python
 COVERAGE_FAIL_UNDER ?= 100
 
+# TMT 2026-08-13 (dueña): *"tarda mucho el deploy cada vez que hago cambios"*.
+# El deploy en sí tarda 50s; lo que tardaba era el CI, y dentro del CI un
+# único `pytest` serial de 4.303 tests: 3m57s de los 5m35s totales de
+# push→producción. Los tests `not db` no tocan Postgres (usan el FakeDB
+# monkeypatcheado del conftest), así que reparten sin compartir estado.
+#   --dist loadfile = agrupa POR ARCHIVO, no por test suelto. Los tests de
+#   este repo comparten fixtures a nivel módulo y hay dependencias de orden
+#   conocidas (ver el monkeypatch permanente del conftest y el gotcha de
+#   app.py/auth en el skill): mantener el archivo entero en un mismo worker
+#   preserva ese orden.
+# Los `-m db` siguen SERIALES a propósito: son 63, tardan 14s y sí tocan una
+# base real compartida.
+# Para volver a serial (debug de un flaky, o comparar tiempos): `make ci PYTEST_PAR=`
+PYTEST_PAR ?= -n auto --dist loadfile
+
 help:
 	@echo "Targets disponibles:"
 	@echo "  setup          - crear venv y instalar requirements"
@@ -62,7 +77,7 @@ test-uv:
 	/tmp/v311/bin/python -m pytest tests -q
 
 test-unit:
-	$(PY) -m pytest -q -m "not db" --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
 
 test-db:
 	$(PY) -m pytest -q -m db
@@ -72,7 +87,7 @@ restore-test-db:
 
 test-coverage:
 	$(PY) -m coverage erase
-	$(PY) -m pytest -q -m "not db" --cov --cov-report= --cov-append
+	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
 	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
 	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage xml

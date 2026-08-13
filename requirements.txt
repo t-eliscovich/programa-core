@@ -15,6 +15,12 @@ openpyxl>=3.1  # Excel export — comisiones, bancos/movimientos. TMT 2026-05-20
 # dev / test
 pytest==8.2.2
 pytest-cov==5.0.0
+# TMT 2026-08-13 (dueña): *"tarda mucho el deploy cada vez que hago cambios"*.
+# Medido sobre los últimos 30 runs: de los 5m35s de push→producción, 3m57s
+# eran los 4.303 tests `not db` corriendo en UN SOLO proceso mientras el
+# runner tenía sus otros cores al pedo. xdist los reparte; el .coveragerc ya
+# venía con parallel=True, así que el gate de 100% no se toca.
+pytest-xdist==3.6.1
 coverage[toml]==7.6.1
 ruff==0.6.3
 # pytest-postgresql permite correr tests marcados @pytest.mark.db contra una DB
