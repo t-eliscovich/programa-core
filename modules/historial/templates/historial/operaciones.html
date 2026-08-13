@@ -33,9 +33,10 @@
        sobre el despachado en la línea de abajo. #}
     <div class="ventas-hoy-fila">
       <span class="ventas-hoy-rot">Despachado</span>
-      <span class="ventas-hoy-kg">
-        <span data-campo="kg_despachado">{{ ventas_hoy.despachado.kg | kg_es if ventas_hoy.despachado.kg is not none else '—' }}</span>{{ ' kg' if ventas_hoy.despachado.kg is not none }}
-      </span>
+      {# El número y su unidad van JUNTOS en el span: el despachado lo escribe
+         el fetch, y si el "kg" quedara afuera se vería "12.357,40" pelado
+         (pasó en producción el 13/08) o "— kg" cuando no hay dato. #}
+      <span class="ventas-hoy-kg" data-campo="kg_despachado">{{ (ventas_hoy.despachado.kg | kg_es ~ ' kg') if ventas_hoy.despachado.kg is not none else '—' }}</span>
     </div>
     {# El despachado vive en Asinfo: NO se pide mientras se dibuja la pantalla
        (ver resumen_hoy). Nace en "—" y lo completa el fetch de abajo, que sale
@@ -203,7 +204,7 @@
     q('importe').textContent = fmt(d.importe, 2);
     q('n').textContent = d.n;
     var dsp = d.despachado || {};
-    q('kg_despachado').textContent = typeof dsp.kg === 'number' ? fmt(dsp.kg, 2) : '—';
+    q('kg_despachado').textContent = typeof dsp.kg === 'number' ? fmt(dsp.kg, 2) + ' kg' : '—';
     q('desp_pie').textContent = dsp.kg === null || dsp.kg === undefined
       ? 'sin dato de Asinfo'
       : (dsp.fresco ? 'salió de la fábrica' : 'medido ' + (dsp.hora || ''));

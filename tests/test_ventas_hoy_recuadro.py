@@ -210,3 +210,14 @@ def test_el_pin_y_el_recuadro_rinden_en_modo_render_y_completan_por_fetch():
     assert "con_despacho=False" in inspect.getsource(app_mod.create_app)
     # El JSON, en cambio, SÍ trae el despacho (es el que llama el fetch).
     assert "con_despacho" not in inspect.getsource(fviews.totales_hoy_json)
+
+
+def test_el_despachado_muestra_su_unidad_junto_al_numero():
+    """En producción salió "12.357,40" pelado: el "kg" estaba fuera del span
+    que escribe el fetch, y el render (que no tiene el dato) no lo pintaba."""
+    from pathlib import Path
+
+    html = Path(
+        "modules/historial/templates/historial/operaciones.html").read_text()
+    assert "data-campo=\"kg_despachado\">{{ (ventas_hoy.despachado.kg | kg_es ~ ' kg')" in html
+    assert "fmt(dsp.kg, 2) + ' kg'" in html
