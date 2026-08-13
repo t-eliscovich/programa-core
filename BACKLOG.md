@@ -176,6 +176,18 @@ rebote? ¿y si vuelve a cobrarse después?).
 Verificar en unos días que las capturas programadas corren solas en producción
 (la tabla arrancó el 04/08).
 
+### [M] 50 tests dependen del orden en que corren
+Medido el 13/08 con la suite en orden aleatorio (4 semillas): 50 tests pasan o
+fallan según qué corrió antes, **37 de ellos en `test_mi_cartera.py`** y casi
+todos de permisos/login ("sin permiso → 404"). En el orden de siempre pasan, así
+que hoy están apoyados en algo que les dejó otro test, no en su propio setup.
+Hoy lo tapa `--dist loadfile` (mantiene junto cada archivo); por eso el Makefile
+NO usa `worksteal` aunque sea ~6 s más rápido. Atacarlo por archivo: 37 de 50
+son uno solo, casi seguro es una sola causa. Lista completa y cómo reproducir:
+`docs/tests_dependientes_del_orden.md`.
+
+---
+
 ## Decisiones registradas (NO reabrir)
 
 - Las rutas sin control de permisos quedan ABIERTAS a propósito — "está bien

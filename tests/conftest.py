@@ -206,21 +206,83 @@ def fake_db(monkeypatch):
     return fake
 
 
-@pytest.fixture
-def app(fake_db, monkeypatch):
-    """Flask app with CSRF + rate limit DISABLED for most tests."""
-    # Prevent app.init_pool() from actually connecting.
+@pytest.fixture(scope="session")
+def _app_de_la_sesion():
+    """UNA sola app por sesión (por worker de xdist), no una por test.
+
+    TMT 2026-08-13, buscando bajar el CI. Medido: `create_app()` tarda 43 ms
+    en caliente y se llamaba 433 veces — ~25 s de los ~59 s de CPU de la suite,
+    el 40 %. Perfilado, el 99 % es Flask registrando 385 blueprints / 2.535
+    rutas, y adentro Werkzeug compilando cada regla. No hay nada tonto que
+    memoizar: la única salida es construir la app menos veces.
+
+    `create_app()` no lee la base al arrancar (sólo llama a los `init_pool`,
+    que acá están anulados), así que la app no se queda con datos de ningún
+    test. Lo que sí puede ensuciarse es su ESTADO MUTABLE — y de eso se ocupa
+    la fixture `app` de abajo.
+    """
     import db
-    monkeypatch.setattr(db, "init_pool", lambda: None)
 
-    from app import create_app
-    from extensions import csrf, limiter
+    init_pool_original = db.init_pool
+    db.init_pool = lambda: None
+    try:
+        from app import create_app
 
-    app = create_app()
+        return create_app()
+    finally:
+        db.init_pool = init_pool_original
+
+
+@pytest.fixture
+def app(_app_de_la_sesion, fake_db, monkeypatch):
+    """Flask app with CSRF + rate limit DISABLED for most tests.
+
+    La app es COMPARTIDA (ver `_app_de_la_sesion`), así que acá se le saca una
+    foto a todo lo que un test puede ensuciar y se restaura al terminar.
+
+    ⭐ El caso que obliga a esto: 17 archivos de test hacen `@app.before_request`
+    para simular el login (es el patrón recomendado, porque `app.py` ya importó
+    `auth.load_logged_in_user` y pisarlo no sirve). **Flask no tiene API para
+    desregistrar un `before_request`**: sin esta restauración, el login falso de
+    un test le seguiría seteando `g.user` al siguiente, y los tests de permisos
+    empezarían a pasar por el motivo equivocado.
+
+    Si algún test necesita una app REALMENTE virgen (registrar un blueprint,
+    cambiar algo que se lee en `create_app()`), que se arme la suya con
+    `create_app()` en vez de pedir esta fixture.
+    """
+    from extensions import limiter
+
+    app = _app_de_la_sesion
+
+    config_previa = dict(app.config)
+    before_previos = {k: list(v) for k, v in app.before_request_funcs.items()}
+    after_previos = {k: list(v) for k, v in app.after_request_funcs.items()}
+    teardown_previos = {k: list(v) for k, v in app.teardown_request_funcs.items()}
+    limiter_previo = limiter.enabled
+
+    # Flask 3 prohíbe registrar `before_request` una vez que la app atendió su
+    # primer request ("has already handled its first request"). Con una app por
+    # test eso nunca pasaba; con una compartida, se cae el 2º test que quiera
+    # registrar su login falso. Como acá SÍ restauramos los hooks al terminar,
+    # la razón de ser de ese candado no aplica: lo bajamos por test.
+    app._got_first_request = False
+
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
     limiter.enabled = False
-    return app
+    try:
+        yield app
+    finally:
+        app.config.clear()
+        app.config.update(config_previa)
+        app.before_request_funcs.clear()
+        app.before_request_funcs.update(before_previos)
+        app.after_request_funcs.clear()
+        app.after_request_funcs.update(after_previos)
+        app.teardown_request_funcs.clear()
+        app.teardown_request_funcs.update(teardown_previos)
+        limiter.enabled = limiter_previo
 
 
 @pytest.fixture

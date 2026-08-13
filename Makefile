@@ -31,7 +31,14 @@ COVERAGE_FAIL_UNDER ?= 100
 #
 # --maxfail: un CI ROJO cortaba igual a los ~4 min. Con esto avisa apenas
 # junta 3 fallas. NO acelera el caso verde (ahi hay que correr todo igual).
-PYTEST_PAR ?= -n auto --dist worksteal --maxfail=3
+# ⚠ `loadfile`, NO `worksteal`. worksteal reparte más parejo (61 s contra ~67 s)
+# pero puede mandar tests del MISMO archivo a workers distintos, y el 13/08
+# medimos que esta suite tiene 50 tests que dependen del orden en que corren
+# (37 de ellos en test_mi_cartera.py). Ver docs/tests_dependientes_del_orden.md.
+# Mientras esa lista exista, agrupar por archivo es lo que sostiene el verde:
+# los seis segundos son el precio de no comerse un rojo que no es un bug.
+# Cuando la lista esté limpia, volver a worksteal y medir de nuevo.
+PYTEST_PAR ?= -n auto --dist loadfile --maxfail=3
 
 help:
 	@echo "Targets disponibles:"
