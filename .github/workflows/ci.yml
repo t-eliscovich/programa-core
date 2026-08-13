@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # TMT 2026-08-13: los runners arm64 (Cobalt 100) son GRATIS en repos
+    # públicos como éste, y son bastante más rápidos que los x86 estándar.
+    # Si algún día el repo se hace privado, esto hay que volverlo a
+    # `ubuntu-latest` o el workflow falla.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     services:
       postgres:
