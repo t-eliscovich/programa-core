@@ -535,6 +535,31 @@ def banco_post_procesar():
         flash("Subí un extracto para empezar la conciliación.", "info")
         return redirect(url_for("conciliacion.hub"))
 
+    # TMT 2026-08-13 (bug reportado por Alex): una sesión huérfana con
+    # payload vacío (creada antes del fix cuando un re-upload dedupeaba todo)
+    # revienta esta pantalla. Cerramos silenciosamente para desbloquear.
+    try:
+        _movs_apertura = _sesion.cargar_movs(sesion)
+    except Exception:
+        _movs_apertura = None
+    if (_movs_apertura == []
+            and int(sesion.get("matches_hechos") or 0) == 0):
+        try:
+            _db.execute(
+                "UPDATE scintela.banco_conciliacion_sesion "
+                "SET cerrada_en = NOW(), cerrada_por = %s "
+                "WHERE id = %s AND cerrada_en IS NULL",
+                (_usuario_actual()[:50], int(sesion["id"])),
+            )
+        except Exception:
+            _LOG.exception(
+                "no pude cerrar sesión huérfana #%s", sesion.get("id"))
+        flash(
+            "Subí un extracto para empezar la conciliación.",
+            "info",
+        )
+        return redirect(url_for("conciliacion.hub"))
+
     # TMT 2026-06-03: el contador sesion.matches_hechos venía desincronizado
     # con la realidad (decía 14 con 0 matches reales). Lo recomputamos live
     # desde banco_conciliacion_match. Single source of truth.
@@ -810,6 +835,18 @@ def banco_crear_sesion():
         extracto_hash=None,  # ya no se usa para dedupe
         extracto_nombre=f.filename,
     )
+
+    # TMT 2026-08-13: si no había sesión abierta Y todas las filas se
+    # dedupearon, `crear_sesion` devuelve sid=0 (no crea sesión fantasma con
+    # payload vacío). Cortamos acá con un flash amigable en vez de seguir a
+    # `banco_post_procesar`, que reventaba 500.
+    if not sesion_id:
+        flash(
+            f"El archivo ya estaba cargado ({n_skipped} filas) — nada nuevo "
+            "para agregar. No se abrió sesión nueva.",
+            "info",
+        )
+        return redirect(url_for("conciliacion.hub"))
 
     # TMT 2026-06-26 (dueña: el saldo objetivo tomaba un valor del medio del
     # día / de un día viejo). Capturamos el saldo REAL del extracto = saldo de
