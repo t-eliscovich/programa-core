@@ -18,10 +18,10 @@ def _a_las(hora_ec: int) -> datetime:
     return datetime(2026, 7, 30, hora_ec, 0, tzinfo=UTC)
 
 
-def test_a_las_18_de_ecuador_avisa_con_la_plata_adelante(monkeypatch):
+def test_a_las_19_de_ecuador_avisa_con_la_plata_adelante(monkeypatch):
     _reset(monkeypatch)
     puestos = []
-    with patch.object(av, "_ahora_ec", return_value=_a_las(18)), \
+    with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
          patch.object(av, "today_ec", return_value=date(2026, 7, 30)), \
          patch.object(av, "totales_dia",
                       return_value={"n": 113, "importe": 116230.45, "kg": 13565.54}), \
@@ -99,7 +99,7 @@ def test_se_puede_apagar_y_correr_la_hora_por_ambiente(monkeypatch):
     monkeypatch.setenv("VENTAS_AVISO_HORA", "20")
     assert av._hora_aviso() == 20
     monkeypatch.setenv("VENTAS_AVISO_HORA", "no-es-un-numero")
-    assert av._hora_aviso() == 18
+    assert av._hora_aviso() == 19
 
 
 def test_el_universo_es_lo_facturado_del_dia_sin_anuladas():
@@ -199,8 +199,8 @@ def test_debajo_del_primer_umbral_no_dice_nada():
 
 
 def test_fuera_de_la_jornada_laboral_no_avisa_umbrales():
-    """Antes de las 8 no hay a quién avisarle; de 18 en adelante manda el cierre."""
-    for hora in (7, 18, 19, 23):
+    """Antes de las 8 no hay a quién avisarle; de 19 en adelante manda el cierre."""
+    for hora in (7, 19, 20, 23):
         r, puestos = _umbral_corrido(hora, kg=21_000.0)
         assert r["avisado"] is False, hora
         assert "jornada" in r["motivo"], hora
@@ -237,11 +237,11 @@ def test_el_hasta_donde_avise_se_lee_de_la_BASE_no_de_una_variable():
         assert av.ultimo_umbral_avisado("2026-08-07") == 0.0
 
 
-def test_el_cierre_de_las_18_sigue_usando_su_propia_clave(monkeypatch):
+def test_el_cierre_de_las_19_sigue_usando_su_propia_clave(monkeypatch):
     """Los dos avisos conviven: claves distintas, no se pisan entre sí."""
     _reset(monkeypatch)
     puestos = []
-    with patch.object(av, "_ahora_ec", return_value=_a_las(18)), \
+    with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
          patch.object(av, "today_ec", return_value=date(2026, 8, 7)), \
          patch.object(av, "totales_dia",
                       return_value={"n": 9, "importe": 1.0, "kg": 21_000.0}), \

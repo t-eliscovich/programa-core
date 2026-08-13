@@ -96,8 +96,14 @@ def motivo_no_disponible() -> str:
     return ""
 
 
-def enviar(asunto: str, texto: str, destinatarios: list[str]) -> dict:
-    """Manda UN mail de texto plano. Nunca lanza.
+def enviar(asunto: str, texto: str, destinatarios: list[str],
+           html: str = "") -> dict:
+    """Manda UN mail. Nunca lanza.
+
+    Si viene `html`, el mail va en las DOS versiones: el cliente moderno pinta
+    el HTML y el viejo —o el que tiene las imágenes y el formato apagados— lee
+    el texto plano. Nunca se manda HTML solo: un mail sin alternativa de texto
+    puntúa peor en los filtros de spam, y este mail ya tuvo ese problema.
 
     Devuelve `{"ok": bool, "motivo": str, "id": str}` — el `id` es el
     MessageId de SES, que es lo único que sirve si después hay que rastrear
@@ -114,12 +120,15 @@ def enviar(asunto: str, texto: str, destinatarios: list[str]) -> dict:
     try:
         import boto3
 
+        cuerpo = {"Text": {"Data": texto, "Charset": "UTF-8"}}
+        if (html or "").strip():
+            cuerpo["Html"] = {"Data": html, "Charset": "UTF-8"}
         r = boto3.client("ses", region_name=_region()).send_email(
             Source=remitente(),
             Destination={"ToAddresses": destinos},
             Message={
                 "Subject": {"Data": asunto[:200], "Charset": "UTF-8"},
-                "Body": {"Text": {"Data": texto, "Charset": "UTF-8"}},
+                "Body": cuerpo,
             },
         )
         res.update(ok=True, id=str(r.get("MessageId") or ""))

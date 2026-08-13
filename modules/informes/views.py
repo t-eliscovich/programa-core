@@ -1369,7 +1369,7 @@ def dia_nota_destinatarios():
     return render_template(
         "informes/dia_nota.html",
         destinatarios=_dia.destinatarios(),
-        vista_previa=_dia.mensaje_whatsapp(),
+        vista_html=_dia.nota_html(),
         remitente=mailer.remitente(),
         motivo=mailer.motivo_no_disponible(),
     )

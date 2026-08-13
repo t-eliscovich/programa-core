@@ -1207,12 +1207,14 @@ def test_el_aviso_de_tramo_corto_no_lo_tapa_la_frase_del_margen(app, fake_db):
     assert "nos costaba" in cuerpo          # Y la frase del margen: conviven
 
 
-def test_el_cierre_es_a_las_18_de_ecuador():
-    """TMT 2026-08-05: *"quiero este resumen a las 6.10"*, 18:10 de Quito. El
-    literal va acá a propósito: medirlo contra `dia.HORA_CIERRE` sería circular
-    —el código define la constante y el test la acepta—, así que mover el
-    horario tendría que ser una decisión, no un descuido."""
-    assert dia.HORA_CIERRE == 18
+def test_el_cierre_es_a_las_19_de_ecuador():
+    """TMT 2026-08-13: *"quizás mejor 19 hs, porque a veces se pasan de horario
+    para facturar"*. El literal va acá a propósito: medirlo contra
+    `dia.HORA_CIERRE` sería circular —el código define la constante y el test
+    la acepta—, así que mover el horario tendría que ser una decisión, no un
+    descuido. Ojo: la campanita de ventas del día
+    (`facturas.aviso_ventas.HORA_AVISO`) va con la MISMA hora."""
+    assert dia.HORA_CIERRE == 19
     assert dia.HORA_MANANA == 7
 
 
@@ -1356,6 +1358,48 @@ def test_un_dia_sin_motores_no_deja_un_titulo_colgado():
         m = dia.mensaje_whatsapp(date(2026, 8, 4))
     assert "Lo movió hoy" not in m
     assert "Utilidad de ago" in m
+
+
+def test_por_MAIL_el_bloque_lo_movio_hoy_NO_va():
+    """TMT 2026-08-13, citando a un accionista: *"la parte de lo movió hoy, yo
+    no la preciso"*. Sale del MAIL solamente: la pantalla y el texto de
+    WhatsApp lo siguen mostrando, que ahí el detalle es el punto.
+
+    Ojo con el ahorro fácil: `motores_del_dia()` no se llama siquiera, así que
+    el mail no paga esa consulta."""
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia") as motores, \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}):
+        m = dia.mensaje_whatsapp(date(2026, 8, 4), con_motores=False)
+    motores.assert_not_called()
+    assert "Lo movió hoy" not in m
+    # …y lo que el accionista SÍ pidió sigue entero.
+    assert "Utilidad de ago" in m
+    assert "Producción" in m
+    assert "Margen" in m
+
+
+def test_la_nota_por_mail_sale_sin_el_bloque_y_el_de_pantalla_con_el():
+    """El que manda el mail y el que pinta la pantalla son la MISMA función:
+    si algún día alguien saca el `con_motores=False`, este test lo grita."""
+    vistos = []
+
+    def _fake(fecha=None, con_motores=True):
+        vistos.append(con_motores)
+        return "texto"
+
+    with patch.object(dia, "mensaje_whatsapp", side_effect=_fake), \
+         patch.object(dia, "_rows", return_value=[
+             {"id_captura": 7, "nota_enviada_en": None}]), \
+         patch.object(dia, "destinatarios", return_value=[
+             {"correo": "a@b.com", "activo": True}]), \
+         patch("modules._lib.mailer.habilitado", return_value=True), \
+         patch("modules._lib.mailer.enviar",
+               return_value={"ok": True, "id": "x"}), \
+         patch.object(dia.db, "execute", return_value=1):
+        assert dia.enviar_nota(date(2026, 8, 13), forzar=True)["ok"]
+    assert vistos == [False]
 
 
 def test_los_traspasos_NO_entran_como_motores():

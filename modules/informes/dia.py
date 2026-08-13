@@ -102,16 +102,18 @@ from modules.informes.foto import guardada as _foto_guardada  # noqa: F401
 _LOG = logging.getLogger("programa_core.dia")
 
 #: Horas de Ecuador en las que se clavan las dos capturas ancla.
-#: TMT 2026-08-05: *"quiero este resumen a las 6.10"* — 18:10 de Quito. El
-#: cierre pasa de las 19:00 a las 18:00 EC (la captura entra en el primer tick
-#: del hilo después de la hora, así que sale ~18:00-18:02).
-#: ⚠ El cierre más temprano deja fuera la última hora de fábrica, así que el
-#: día de HOY y los anteriores no son estrictamente comparables. La ventana
-#: sigue siendo de 24 h: es cierre-a-cierre, sólo que corrida una hora.
+#: TMT 2026-08-05 lo bajó de 19:00 a 18:00 (*"quiero este resumen a las
+#: 6.10"*), y TMT 2026-08-13 lo devolvió a las 19:00: *"a veces se pasan de
+#: horario para facturar"* — con el cierre a las 18 esas facturas caían recién
+#: en el día siguiente. La captura entra en el primer tick del hilo después de
+#: la hora, así que sale ~19:00-19:02.
+#: ⚠ El día del cambio NO es comparable con los anteriores: esa ventana dura
+#: 25 h (cierre de las 18 de ayer → cierre de las 19 de hoy). De ahí en más
+#: vuelven a ser 24 h, cierre a cierre.
 #: Se puede pisar por entorno con DIA_HORA_MANANA / DIA_HORA_CIERRE sin tocar
 #: código, que es como se prueba un horario nuevo antes de fijarlo acá.
 HORA_MANANA = 7
-HORA_CIERRE = 18
+HORA_CIERRE = 19
 
 
 def _hora(env: str, default: int) -> int:
@@ -508,6 +510,9 @@ ANCHO_WA = 34
 _MESES = ("ene", "feb", "mar", "abr", "may", "jun",
           "jul", "ago", "sep", "oct", "nov", "dic")
 _DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+#: Los largos son para el MAIL en HTML, que no tiene que entrar en 34 columnas.
+_DIAS_LARGOS = ("lunes", "martes", "miércoles", "jueves", "viernes",
+                "sábado", "domingo")
 
 #: Nombres largos para el titular de la pantalla. `strftime('%B')` sale en
 #: inglés salvo que el server tenga el locale es_* instalado — y no lo tiene.
@@ -702,7 +707,7 @@ def ventanas_sin_cerrar(fecha=None) -> dict:
                                for f in sueltas), 2)}
 
 
-def mensaje_whatsapp(fecha=None) -> str:
+def mensaje_whatsapp(fecha=None, con_motores: bool = True) -> str:
     """El resumen del día en texto plano, listo para pegar en WhatsApp.
 
     Reglas de formato que importan y no son obvias:
@@ -712,6 +717,11 @@ def mensaje_whatsapp(fecha=None) -> str:
       lee en el celular corta a la tercera.
     · **Sin líneas de relleno.** Si un dato no está, la línea no va — un cero
       o un guión ocupan lo mismo que un número y no dicen nada.
+
+    `con_motores=False` saca el bloque *Lo movió hoy*: es como sale POR MAIL
+    desde el 13/08/2026, a pedido de un accionista (*"la parte de lo movió
+    hoy, yo no la preciso"*). En la pantalla y en el texto de WhatsApp sigue
+    entero — ahí el detalle es justamente el punto.
     """
     fecha = fecha or hoy_ec()
     r = resumen(fecha)
@@ -735,7 +745,7 @@ def mensaje_whatsapp(fecha=None) -> str:
     # apenas ve el número, y el que lee en el celular corta a la tercera
     # línea. Si el día no movió nada explicable, el bloque entero no va —
     # misma regla que el resto: un título con nada abajo no dice nada.
-    motores = motores_del_dia(fecha)
+    motores = motores_del_dia(fecha) if con_motores else []
     if motores:
         L.append("*Lo movió hoy*")
         L.extend(_lineas_motores(motores))
@@ -771,6 +781,102 @@ def mensaje_whatsapp(fecha=None) -> str:
                  f"· $ {_n(sc['monto'])}_")
 
     return "\n".join(L).rstrip()
+
+
+
+# ── La misma nota, en HTML, para el mail ────────────────────────────────────
+
+#: Paleta fija: un mail NO tiene variables CSS ni modo oscuro que valga —
+#: Gmail y Outlook tiran a la basura todo lo que no sea estilo en línea.
+_TINTA = "#1f1f1d"
+_GRIS = "#6b6b66"
+_LINEA = "#e4e2dc"
+_VERDE = "#3b6d11"
+_ROJO = "#a32d2d"
+
+
+def _fila_html(rot: str, val: str) -> str:
+    return (f'<tr><td style="padding:7px 0;color:{_GRIS};font-size:13px">{rot}</td>'
+            f'<td style="padding:7px 0;text-align:right;font-size:13px;'
+            f'color:{_TINTA}">{val}</td></tr>')
+
+
+def nota_html(fecha=None) -> str:
+    """La nota del cierre en HTML, para que el mail no muestre los asteriscos.
+
+    TMT 2026-08-13: *"los * en el mail se siguen viendo como asteriscos"* — y
+    es cierto: `*negrita*` es sintaxis de WhatsApp, en un mail es basura.
+
+    Reglas que importan y no son obvias:
+    · **Todo el estilo va EN LÍNEA y con colores literales.** Gmail y Outlook
+      borran los `<style>` y no saben de `var(--...)`; una hoja de estilos
+      elegante llega como texto pelado.
+    · **Mismos datos y mismo criterio que `mensaje_whatsapp()`**: si un dato no
+      está, la fila no va. Dos formatos, una sola verdad.
+    · **El texto plano se sigue mandando** como alternativa: es lo que ve un
+      cliente viejo, y lo que queda si el HTML no carga.
+    · Sin `<img>`, sin fuentes externas: un logo remoto lo bloquea el cliente y
+      deja un cuadradito roto en el lugar más visible del mail.
+
+    Devuelve `""` si no hay resumen — el que llama manda igual el texto plano.
+    """
+    fecha = fecha or hoy_ec()
+    r = resumen(fecha)
+    if not r.get("ok"):
+        return ""
+
+    h = r["hasta"]
+    mes = MESES_LARGOS[fecha.month]
+    rot = (f"{_DIAS_LARGOS[fecha.weekday()]} {fecha.day} "
+           f"de {MESES_LARGOS[fecha.month]}")
+    d = r["d_utilidad"]
+    signo = "▲" if d >= 0 else "▼"
+    color = _VERDE if d >= 0 else _ROJO
+    mas = "+" if d >= 0 else "−"
+
+    filas = []
+    p = r.get("produccion") or {}
+    if p.get("disponible") and not p.get("sin_fila") and _f(p.get("producido")):
+        filas.append(_fila_html("Producción", f"{_n(p.get('producido'))} kg"))
+    v = r["ventas"]
+    if v["n"]:
+        filas.append(_fila_html("Ventas", f"$ {_n(v['us'])} · {_n(v['kg'])} kg"))
+    if r.get("margen_pct") is not None:
+        filas.append(_fila_html("Margen", f"{_n(r['margen_pct'], 1)} %"))
+    if r.get("cobrado"):
+        filas.append(_fila_html("Cobrado", f"$ {_n(r['cobrado'])}"))
+
+    vm = ventas_del_mes(fecha)
+    pie = []
+    pm = (p.get("mes") or {}).get("producido")
+    if pm:
+        pie.append(f"{_n(pm)} kg producidos")
+    if vm.get("us"):
+        pie.append(f"$ {_n(vm['us'])} vendidos")
+
+    L = [
+        '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
+        f'max-width:420px;color:{_TINTA}">',
+        f'<div style="font-size:12px;letter-spacing:.08em;color:{_GRIS}">INTELA</div>',
+        f'<div style="font-size:13px;color:{_GRIS};padding-bottom:14px">{rot}</div>',
+        f'<div style="font-size:13px;color:{_GRIS}">Utilidad de '
+        f'{MESES_LARGOS[fecha.month]}</div>',
+        f'<div style="font-size:26px;padding:2px 0">$ {_n(h.get("utilidad"), 0)}</div>',
+        f'<div style="font-size:14px;color:{color};padding-bottom:14px">'
+        f'{signo} hoy {mas}$ {_n(abs(d), 0)}</div>',
+    ]
+    if r.get("dia_parcial"):
+        L.append(f'<div style="font-size:12px;color:{_GRIS};padding-bottom:10px">'
+                 '<i>tramo corto, no son 24 h</i></div>')
+    if filas:
+        L.append(f'<table style="width:100%;border-collapse:collapse;'
+                 f'border-top:1px solid {_LINEA}">{"".join(filas)}</table>')
+    if pie:
+        L.append(f'<div style="font-size:12px;color:{_GRIS};'
+                 f'border-top:1px solid {_LINEA};padding-top:10px;margin-top:12px">'
+                 f'Mes de {mes}: {" · ".join(pie)}</div>')
+    L.append("</div>")
+    return "".join(L)
 
 
 # ── Lectura: la explicación ─────────────────────────────────────────────────
@@ -853,9 +959,10 @@ def enviar_nota(fecha=None, forzar: bool = False) -> dict:
                 res["motivo"] = "la nota de hoy ya se mandó"
                 return res
 
-        texto = mensaje_whatsapp(fecha)
+        texto = mensaje_whatsapp(fecha, con_motores=False)
         dia_txt = fecha.strftime("%d/%m") if hasattr(fecha, "strftime") else str(fecha)
-        env = mailer.enviar(f"INTELA · cierre del {dia_txt}", texto, correos)
+        env = mailer.enviar(f"INTELA · cierre del {dia_txt}", texto, correos,
+                            html=nota_html(fecha))
         if not env.get("ok"):
             if not forzar:
                 # Se libera para poder reintentar en la vuelta siguiente.

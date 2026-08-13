@@ -1,4 +1,4 @@
-"""Avisos de VENTAS del día: los umbrales de kilos y el cierre de las 18.
+"""Avisos de VENTAS del día: los umbrales de kilos y el cierre de las 19.
 
 TMT 2026-07-30 (dueña): *"agregar en la campanita, a fin de día, venta total kg
 y total facturas $"* → y, viendo el borrador: *"plata arriba"*, *"18 hs
@@ -37,7 +37,7 @@ día normal cierra en 13.500-16.000 kg, así que la escalera tiene sentido).
 
 Decisiones que valen la pena recordar:
 
-· **Sólo entre las 08:00 y las 18:00 de Ecuador.** De 18 en adelante manda el
+· **Sólo entre las 08:00 y las 19:00 de Ecuador.** De 19 en adelante manda el
   cierre del día, que no se toca; antes de las 8 no hay a quién avisarle.
 · **Se avisa el umbral MÁS ALTO cruzado, no todos.** Si a las 9 entra un lote
   que salta de 4.000 a 16.000 kg de una, sale UN aviso (el de 15.000), no dos.
@@ -63,7 +63,9 @@ from filters import num_es, today_ec
 _LOG = logging.getLogger("programa_core.aviso_ventas")
 
 # Hora de Ecuador a partir de la cual se manda el cierre del día.
-HORA_AVISO = 18
+# TMT 2026-08-13: pasa de 18 a 19, junto con el cierre de la utilidad
+# (`dia.HORA_CIERRE`) — *"a veces se pasan de horario para facturar"*.
+HORA_AVISO = 19
 
 # Umbrales de kilos vendidos en el día (dueña 2026-08-07). Ordenados de menor a
 # mayor: el código se apoya en eso para quedarse con el más alto cruzado.
@@ -73,7 +75,7 @@ UMBRALES_KG = (10_000.0, 15_000.0, 20_000.0)
 # coincide con HORA_AVISO a propósito — a las 18 en punto el que habla es el
 # cierre del día, y no queremos los dos avisos en el mismo minuto.
 HORA_DESDE_KG = 8
-HORA_HASTA_KG = 18
+HORA_HASTA_KG = 19
 
 _ultimo_dia_avisado: str | None = None
 

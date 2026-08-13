@@ -149,3 +149,100 @@ def test_la_linea_solo_aparece_si_hay_algo_que_decir():
     """Una línea que sale todos los días entrena a no leerla."""
     with patch.object(dia, "_rows", return_value=[]):
         assert dia.ventanas_sin_cerrar()["n"] == 0
+
+
+# ── El mail en HTML ─────────────────────────────────────────────────────────
+# TMT 2026-08-13: *"los * en el mail se siguen viendo como asteriscos, podemos
+# ver de que el formato nos quede mas lindo?"*.
+
+_RES_OK = {"ok": True, "dia_parcial": False,
+           "hasta": {"utilidad": 200538.0}, "d_utilidad": 43482.0,
+           "ventas": {"n": 118, "kg": 15809.0, "us": 133547.0},
+           "margen_pct": 37.9, "cobrado": 118132.0,
+           "produccion": {"disponible": True, "producido": 11808.0,
+                          "mes": {"producido": 116052.0}}}
+_VM = {"n": 900, "kg": 105667.0, "us": 917352.0}
+
+
+def _html(**over):
+    from datetime import date
+    res = {**_RES_OK, **over}
+    with patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "ventas_del_mes", return_value=_VM):
+        return dia.nota_html(date(2026, 8, 12))
+
+
+def test_el_mail_no_lleva_asteriscos_de_whatsapp():
+    """`*negrita*` es sintaxis de WhatsApp: en un mail se ve como un asterisco
+    al lado de cada título."""
+    h = _html()
+    assert "*" not in h
+    assert "<div" in h and "$ 200.538" in h
+
+
+def test_el_html_no_depende_de_nada_externo():
+    """Gmail y Outlook borran los <style> y bloquean las imágenes remotas: todo
+    el estilo va en línea, con colores literales, y no hay ni un <img>."""
+    h = _html()
+    assert "<style" not in h and "<img" not in h
+    assert "var(--" not in h
+    assert h.count("style=\"") >= 5
+
+
+def test_el_dia_en_verde_y_en_rojo():
+    assert "▲ hoy +$ 43.482" in _html()
+    assert "▼ hoy −$ 43.482" in _html(d_utilidad=-43482.0)
+
+
+def test_si_un_dato_no_esta_la_fila_no_va():
+    """Mismo criterio que el texto de WhatsApp: una fila en cero no dice nada."""
+    h = _html(produccion={"disponible": False}, cobrado=0,
+              ventas={"n": 0, "kg": 0, "us": 0}, margen_pct=None)
+    for rot in ("Producción", "Ventas", "Margen", "Cobrado"):
+        assert rot not in h
+    assert "$ 200.538" in h          # el titular queda igual
+
+
+def test_el_tramo_corto_se_avisa_tambien_en_el_mail():
+    assert "no son 24 h" in _html(dia_parcial=True)
+
+
+def test_sin_resumen_el_html_es_vacio_y_el_mail_sale_igual():
+    """El texto plano es el que manda: si el HTML no se puede armar, no se
+    manda HTML y listo."""
+    from datetime import date
+    with patch.object(dia, "resumen", return_value={"ok": False}):
+        assert dia.nota_html(date(2026, 8, 12)) == ""
+
+
+def test_ses_recibe_las_DOS_versiones():
+    """Nunca HTML solo: sin alternativa de texto el mail puntúa peor en los
+    filtros de spam, y este mail ya se comió ese problema."""
+    class _Cli:
+        def __init__(self): self.msg = None
+        def send_email(self, **kw):
+            self.msg = kw["Message"]
+            return {"MessageId": "abc"}
+
+    cli = _Cli()
+    with patch.dict(os.environ, {"MAIL_ENVIAR": "1"}), \
+         patch("boto3.client", return_value=cli):
+        r = mailer.enviar("asunto", "texto plano", ["a@b.com"],
+                          html="<div>hola</div>")
+    assert r["ok"] and r["id"] == "abc"
+    assert cli.msg["Body"]["Text"]["Data"] == "texto plano"
+    assert cli.msg["Body"]["Html"]["Data"] == "<div>hola</div>"
+
+
+def test_un_html_vacio_no_agrega_la_parte_html():
+    class _Cli:
+        def __init__(self): self.msg = None
+        def send_email(self, **kw):
+            self.msg = kw["Message"]
+            return {"MessageId": "abc"}
+
+    cli = _Cli()
+    with patch.dict(os.environ, {"MAIL_ENVIAR": "1"}), \
+         patch("boto3.client", return_value=cli):
+        mailer.enviar("asunto", "texto", ["a@b.com"], html="   ")
+    assert "Html" not in cli.msg["Body"]
