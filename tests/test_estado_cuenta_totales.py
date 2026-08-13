@@ -23,6 +23,9 @@ import re
 from pathlib import Path
 
 _BACKFILL_WHERE = "<> 'asinfo-backfill'"
+#: el marcador que comparten la lista y los totales (ver
+#: `_SQL_ESTADO_CUENTA_STAT_VIVO` en modules/informes/queries.py).
+_STAT_VIVO_PLACEHOLDER = "__STAT_VIVO__"
 
 _TPL = (
     Path(__file__).resolve().parents[1]
@@ -36,17 +39,49 @@ def _src_estado_cuenta():
 
 
 def test_totales_facturas_mismo_filtro_que_la_lista():
-    """El pie de facturas suma EXACTAMENTE lo listado: sin T, sin backfill."""
+    """El pie de facturas suma EXACTAMENTE lo listado: mismo universo.
+
+    TMT 2026-08-13 — este test antes buscaba el literal `<> 'T'`, o sea la
+    FORMA del bug de julio y no el invariante. Pasaba en verde mientras las
+    ANULADAS se colaban por el mismo agujero (caso #176817 de CTE). Ahora fija
+    lo que de verdad importa: la lista y los totales comparten LITERALMENTE el
+    criterio de stat, así que no pueden divergir aunque cambie.
+    """
     src = _src_estado_cuenta()
-    # la query de totales (la que tiene SUM(kg)) debe excluir stat T y backfill
-    i = src.find("SUM(kg)")
-    assert i > 0, "no encontré la query de totales de facturas"
-    tot_sql = src[i:src.find('"""', i)]
-    assert "<> 'T'" in tot_sql, (
-        "los totales del pie deben excluir stat T (igual que la lista) — "
-        "sino 'Totales (N facturas)' suma facturas que no están en la tabla"
+    i_lista = src.find("SELECT id_factura")
+    i_tot = src.find("SUM(kg)")
+    assert i_lista > 0 and i_tot > 0, "no encontré las dos queries de facturas"
+    lista_sql = src[i_lista:src.find('"""', i_lista)]
+    tot_sql = src[i_tot:src.find('"""', i_tot)]
+    assert _STAT_VIVO_PLACEHOLDER in lista_sql, (
+        "la lista de facturas dejó de usar el criterio de stat compartido"
+    )
+    assert _STAT_VIVO_PLACEHOLDER in tot_sql, (
+        "los totales del pie deben usar EL MISMO criterio de stat que la "
+        "lista — sino 'Totales (N facturas)' suma facturas que no están en "
+        "la tabla y el último ACUM deja de cerrar con el pie"
     )
     assert _BACKFILL_WHERE in tot_sql, "totales del pie sin filtro backfill"
+
+
+def test_criterio_de_stat_deja_afuera_totalizadas_y_anuladas():
+    """El criterio compartido es una LISTA BLANCA: T y X quedan afuera.
+
+    Las dos exclusiones tienen dueña y fecha: las totalizadas (stat T) desde
+    el 11/06/2026, las ANULADAS (stat X) desde el 13/08/2026 — *"las facturas
+    anuladas en Asinfo reflejan aún en los estados de cuenta... no deberíamos
+    reflejar anuladas en ningún lado"*. Es lista blanca a propósito: un stat
+    nuevo NO se muestra hasta que alguien lo agregue a mano.
+    """
+    from modules.informes import queries as iq
+    criterio = iq._SQL_ESTADO_CUENTA_STAT_VIVO
+    assert "IN ('Z','A','',' ')" in criterio.replace(" IN (", " IN ("), (
+        "el criterio dejó de ser la lista blanca canónica de cartera"
+    )
+    for muerto in ("'T'", "'X'"):
+        assert muerto not in criterio.split("IN (")[1], (
+            f"stat {muerto} volvió a entrar al estado de cuenta"
+        )
 
 
 def test_lista_facturas_excluye_backfill():

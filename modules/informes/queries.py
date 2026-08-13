@@ -7571,6 +7571,37 @@ def totales_estado_cuenta_en_cero() -> dict:
     return ceros
 
 
+# TMT 2026-08-13 (dueña, caso #176817 de CTE): "las facturas anuladas en Asinfo
+# reflejan aún en los estados de cuenta... no deberíamos reflejar anuladas en
+# ningún lado".
+#
+# El estado de cuenta filtraba con una LISTA NEGRA de dos ítems (T + backfill)
+# mientras el RESTO de la app usa la lista blanca canónica `stat IN ('Z','A')`,
+# que deja afuera la X sin nombrarla. Por eso la anulada se colaba SÓLO acá: no
+# era un filtro roto, era un filtro que nunca existió. La #176817 la anuló la
+# migración 0098 el 11/06 — o sea PC SÍ sabía que estaba anulada.
+#
+# Y no era sólo el renglón: el MISMO criterio alimenta el pie de totales, el
+# ACUM, "Saldo facturas", "Total (facturas + cheques)" y el % de cupo — y por
+# la misma función salen el PDF que se le manda al cliente, la impresión en
+# lote y la ficha del portal de vendedores. Medido el 13/08 contra producción:
+# 17 facturas anuladas visibles en 11 clientes, $12.153,78 de saldo fantasma.
+# TJC mostraba 9.153,97 contra los 3.895,95 de /cartera (135% inflado).
+#
+# Va como CONSTANTE y no copiado dos veces a propósito: la lista y los totales
+# tienen que mirar el mismo universo o el pie deja de cerrar con la tabla (ese
+# bug ya pasó el 06/07, caso EDU — ver el comentario del bloque de totales).
+#
+# Se filtra por lista blanca y no por `<> 'X'`: si mañana aparece otro stat
+# muerto, el default tiene que ser NO mostrarlo.
+_SQL_ESTADO_CUENTA_STAT_VIVO = """
+          -- TMT 2026-06-11 (dueña): las totalizadas (stat T) no se muestran.
+          -- TMT 2026-08-13 (dueña): las ANULADAS (stat X) tampoco — ni en el
+          -- renglón, ni en el ACUM, ni en los totales, ni en el PDF.
+          AND (stat IS NULL OR stat IN ('Z','A','',' '))
+"""
+
+
 def estado_cuenta_cliente(codigo_cli: str) -> dict:
     """Facturas + cheques aplicados de un cliente, con totales para el resumen.
 
@@ -7651,9 +7682,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                kg, importe, abono, retencion, saldo, stat, condic, tipo
         FROM scintela.factura
         WHERE codigo_cli = %s
-          -- TMT 2026-06-11 (dueña): las totalizadas (stat T) ya no se muestran
-          -- en el estado de cuenta.
-          AND COALESCE(stat, '') <> 'T'
+          __STAT_VIVO__
           -- TMT 2026-07-06: excluir asinfo-backfill también acá (criterio
           -- canónico de cartera; ya lo hacía la cuenta corriente hermana en
           -- clientes.cuenta_corriente desde el fix NJL 2026-07-02).
@@ -7662,7 +7691,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         -- el ACUM corre como un libro mayor y la última fila = saldo hoy.
         -- (Reemplaza el orden DESC del 2026-05-17.)
         ORDER BY fecha ASC, numf ASC
-        """,
+        """.replace("__STAT_VIVO__", _SQL_ESTADO_CUENTA_STAT_VIVO),
         (codigo_cli,),
     )
     cheques = db.fetch_all(
@@ -7766,9 +7795,9 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           -- 161.092 kg / 1.431.257,37 de importe eran el HISTÓRICO completo,
           -- no las 66 facturas listadas). Mismo filtro que la lista, así el
           -- pie == Σ(filas visibles) y el último ACUM == saldo del pie.
-          AND COALESCE(stat, '') <> 'T'
+          __STAT_VIVO__
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-        """,
+        """.replace("__STAT_VIVO__", _SQL_ESTADO_CUENTA_STAT_VIVO),
             (codigo_cli,),
         )
         or {}
