@@ -1269,9 +1269,10 @@
                   <span style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;">{{ a.cuando or a.creado_en }}</span>
                 {% if a.url %}</a>{% else %}</div>{% endif %}
                 {% else %}
-                <div style="padding:14px 12px;font-size:11.5px;color:rgb(100 116 139);line-height:1.45;">
-                  Sin novedades. Acá te aviso cuando el programa carga solo
-                  tejeduría, químicos o una importación, y cuando ve algo raro.
+                {# TMT 2026-08-13 (dueña): *"que diga solo «sin novedades»"* —
+                   el párrafo que explicaba qué avisa la campanita sobraba. #}
+                <div style="padding:14px 12px;font-size:11.5px;color:rgb(100 116 139);">
+                  Sin novedades.
                 </div>
                 {% endfor %}
               </div>

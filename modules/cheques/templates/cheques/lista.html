@@ -422,8 +422,52 @@
   {# TMT 2026-05-20 — tabla compactada (pedido dueña: "que entre en una
      pantalla"). text-xs + py-1 + headers en text-[10px]. Mismo patrón
      que /activos. Columna Estado angosta (~50px). #}
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+  {# ⭐ TMT 2026-08-13 (dueña): *"no llego a ver todos los cheques acá, se me
+     corta la tabla"*. El contenedor tenía `overflow-hidden`: con el menú
+     abierto la tabla es más ancha que la pantalla y la última columna (Acc.,
+     con el ↺) quedaba CORTADA, sin forma de llegar a ella — no había scroll,
+     estaba tapada. Ahora scrollea en horizontal. #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded chq-wrap"
+       style="overflow-x:auto;">
     <style>
+      /* La cabecera acompaña el scroll: con 500 filas, a la mitad de la lista
+         ya no se sabía qué columna era cuál. */
+      table.chq-table thead th {
+        position: sticky; top: 0; z-index: 5;
+        background: rgb(248 250 252);
+        box-shadow: inset 0 -1px 0 rgb(226 232 240);
+      }
+      .dark table.chq-table thead th {
+        background: rgb(30 41 59);
+        box-shadow: inset 0 -1px 0 rgb(51 65 85);
+      }
+      /* Filas alternadas + hover más marcado: 500 renglones de números se leen
+         mejor con una guía horizontal. */
+      table.chq-table tbody tr:nth-child(even) { background: rgb(250 250 251); }
+      .dark table.chq-table tbody tr:nth-child(even) { background: rgb(15 23 42 / .35); }
+      table.chq-table tbody tr:hover { background: rgb(239 246 255) !important; }
+      .dark table.chq-table tbody tr:hover { background: rgb(30 58 138 / .25) !important; }
+      /* Los inputs de la grilla dejan de parecer cajas sueltas: se ven planos
+         hasta que se los toca. */
+      table.chq-table tbody input[type="text"],
+      table.chq-table tbody input[type="date"],
+      table.chq-table tbody input[type="number"] {
+        border-color: transparent; background: transparent;
+      }
+      table.chq-table tbody tr:hover input[type="text"],
+      table.chq-table tbody tr:hover input[type="date"],
+      table.chq-table tbody tr:hover input[type="number"] {
+        border-color: rgb(203 213 225); background: rgb(255 255 255);
+      }
+      table.chq-table tbody input:focus {
+        border-color: rgb(56 189 248) !important;
+        background: rgb(255 255 255) !important;
+      }
+      .dark table.chq-table tbody tr:hover input[type="text"],
+      .dark table.chq-table tbody tr:hover input[type="date"],
+      .dark table.chq-table tbody tr:hover input[type="number"] {
+        border-color: rgb(71 85 105); background: rgb(15 23 42);
+      }
       /* TMT 2026-07-07 dueña: "no veo los montos en los cheques" al imprimir.
          La columna Importe estaba a la derecha de todo y en vertical se salia
          de la hoja (table-layout:auto la empujaba fuera de pagina). Forzamos
@@ -442,7 +486,28 @@
     </style>
     {# TMT 2026-07-23 (dueña): al filtrar por un cliente, su nombre y vendedor
        van UNA sola vez acá (en vez de repetirse en cada fila). #}
-    {% if cliente and filas %}
+    {# TMT 2026-08-13 (dueña: *"no llego a ver todos los cheques acá"*). La lista
+     trae de a 500 y el paginador estaba SÓLO abajo, después de 500 renglones:
+     desde arriba no había forma de saber que faltaban dos páginas. #}
+  {% if page is defined and (page > 1 or tiene_mas_pag) %}
+    {% set _pag_args = request.args.to_dict() %}
+    {% set _ = _pag_args.pop('page', None) %}
+    <div class="no-print flex items-center justify-between gap-3 px-3 py-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-xs text-slate-500">
+      <span class="tabular-nums">
+        Mostrando {{ ((page - 1) * por_pagina + 1) }}–{{ ((page - 1) * por_pagina + (filas|length)) }}
+        de {{ n_total }} · la lista trae de a {{ por_pagina }}
+      </span>
+      <span class="flex items-center gap-2">
+        {% if page > 1 %}
+          <a class="text-sky-700 dark:text-sky-300" href="?{{ _pag_args|urlencode }}&page={{ page - 1 }}">← Anteriores</a>
+        {% endif %}
+        {% if tiene_mas_pag %}
+          <a class="text-sky-700 dark:text-sky-300" href="?{{ _pag_args|urlencode }}&page={{ page + 1 }}">Siguientes →</a>
+        {% endif %}
+      </span>
+    </div>
+  {% endif %}
+  {% if cliente and filas %}
     <div class="px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
       <span class="font-mono text-xs text-slate-500">{{ filas[0].codigo_cli or (cliente | upper) }}</span>
       {% if filas[0].cliente %}<span class="font-semibold text-sm ml-1">{{ filas[0].cliente }}</span>{% endif %}
