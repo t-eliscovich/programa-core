@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -51,18 +52,23 @@ KNOWN_FAILING_NODEIDS = {
     # no eran deuda de fixture, los rompía el monkeypatch permanente de
     # test_routes_smoke.py (ya restaurado con try/finally).
     #
-    # ⚠ 2026-08-13 — ÉSTE NO ES DEUDA DE FIXTURE, ES UNA FUGA ENTRE TESTS, y está
-    # acá sólo para no dejar el deploy bloqueado. Falla ~1 de cada 10 corridas,
-    # siempre con `assert 0.0 == 40.0`, y el rastro que lo delata es:
-    #     with conn.cursor() as _cur:
-    #     AttributeError: 'object' object has no attribute 'cursor'
-    # o sea que a `_build_mov_asinfo` le llega una conexión que es un `object()`
-    # pelado — el stub de OTRO test (varios hacen `tx()` que hace
-    # `yield object()`), que en algún camino sobrevive a su monkeypatch. La
-    # consulta explota, alguien se come la excepción, y los egresos quedan en 0.
-    # No confundir con el arreglo del mismo día (el mock mandaba la forma vieja
-    # del dict, sin `kg_con_costo`): ese era real y bajó las fallas de casi
-    # siempre a 1 de cada 10, pero no cerró este otro canal.
+    # ⚠ 2026-08-13 — ÉSTE NO ES DEUDA DE FIXTURE. Falla ~1 de cada 10 corridas
+    # con `assert 0.0 == 40.0` (los egresos del hilado quedan en cero), y una de
+    # esas veces cayó en el CI de main y dejó el deploy bloqueado para todos.
+    # Está acá para no seguir frenando a nadie, NO porque se entienda.
+    #
+    # Lo que YA se descartó, para no repetir el camino:
+    #   · El mock mandaba la forma vieja del dict (sin `kg_con_costo`) y por eso
+    #     tomaba la rama del guard de asimetría. ARREGLADO — bajó de fallar casi
+    #     siempre a 1 de cada 10, pero no lo cerró.
+    #   · El global `_ULTIMA_TARIFA_HILADO` de modules/asinfo/service.py: hay una
+    #     fixture autouse que lo resetea. No es eso.
+    #   · Que algún test dejara pisado el módulo `db` (fetch_one/tx/execute…):
+    #     el detector `_no_dejar_db_pisado` de más abajo, en modo estricto sobre
+    #     la suite entera, da CERO. No es eso.
+    #   · El `AttributeError: 'object' object has no attribute 'cursor'` que
+    #     aparece en el log de CI NO es de este test: sale de la sección
+    #     XFAILURES, es de test_paridad_factura_a_balance. Falsa pista.
     # Contexto y lista hermana: docs/tests_dependientes_del_orden.md
     "tests/test_flujo_produccion_costo.py::test_hilado_cierra_por_movimiento_de_bodega_y_baja_ukg",
 }
@@ -205,6 +211,47 @@ def _reset_tarifa_hilado_global():
         yield
     finally:
         _asvc._ULTIMA_TARIFA_HILADO = previo
+
+
+# ── Detector de FUGAS del módulo `db` ────────────────────────────────────────
+# TMT 2026-08-13. El test del hilado fallaba 1 de cada 10 corridas con
+# `AttributeError: 'object' object has no attribute 'cursor'`: le llegaba una
+# conexión que era un `object()` pelado, el stub de OTRO test que sobrevivía a
+# su monkeypatch. El problema de estas fugas es que la falla aparece LEJOS del
+# culpable — diez tests después, en otro archivo, y en paralelo ni siquiera
+# siempre en el mismo.
+#
+# Esto le saca una foto a `db` antes de cada test y la compara al terminar.
+# Corre DESPUÉS del `monkeypatch` (los finalizadores van al revés del setup, y
+# esta fixture es autouse, o sea que se arma primero y se desarma última), así
+# que lo que quede pisado acá es lo que el test NO devolvió.
+#
+# Por defecto sólo AVISA, para no volver rojo el CI de un día para el otro.
+# Para cazar culpables:
+#     PC_TEST_FUGAS=estricto pytest -q -m "not db" -p no:randomly
+# y el test que ensucia falla en el acto, con el nombre del atributo.
+# Cuando la lista esté en cero, cambiar el default a estricto y sacar el env.
+_DB_VIGILADOS = ("fetch_one", "fetch_all", "execute", "execute_returning",
+                 "tx", "get_conn", "init_pool", "close_pool")
+
+
+@pytest.fixture(autouse=True)
+def _no_dejar_db_pisado(request):
+    import db as _db
+
+    antes = {n: getattr(_db, n, None) for n in _DB_VIGILADOS}
+    yield
+    sucios = [n for n in _DB_VIGILADOS if getattr(_db, n, None) is not antes[n]]
+    if not sucios:
+        return
+    for n in sucios:                      # devolverlo, así no contagia al resto
+        setattr(_db, n, antes[n])
+    aviso = (f"FUGA: {request.node.nodeid} dejó pisado db.{', db.'.join(sucios)} "
+             f"al terminar. Restaurá con `monkeypatch.setattr` o un "
+             f"`try/finally`, no asignando directo.")
+    if os.environ.get("PC_TEST_FUGAS") == "estricto":
+        pytest.fail(aviso, pytrace=False)
+    warnings.warn(aviso, stacklevel=1)
 
 
 @pytest.fixture

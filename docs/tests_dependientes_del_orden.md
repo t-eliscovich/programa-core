@@ -48,24 +48,42 @@ caerse **1 de cada 10 corridas**, incluso con `loadfile` — y una de esas veces
 cayó en el CI de main y dejó el deploy bloqueado. Está en `KNOWN_FAILING_NODEIDS`
 para no seguir frenando a nadie, **pero no es deuda de fixture: es una fuga**.
 
-El rastro que lo delata, del run de CI del 13/08:
+**Lo que ya se descartó** (para no repetir el camino):
+
+- El mock mandaba la forma vieja del dict, sin `kg_con_costo`, y por eso tomaba
+  la rama del guard de asimetría. Arreglado: bajó de fallar casi siempre a 1 de
+  cada 10. No lo cerró.
+- El global `_ULTIMA_TARIFA_HILADO` de `modules/asinfo/service.py`: hay una
+  fixture autouse que lo resetea. No es eso.
+- Que algún test dejara pisado el módulo `db`: el detector
+  `_no_dejar_db_pisado` del conftest, en modo estricto sobre la suite entera,
+  da **cero**. No es eso.
+- El `AttributeError: 'object' object has no attribute 'cursor'` del log de CI
+  **no es de este test**: sale de la sección XFAILURES y es de
+  `test_paridad_factura_a_balance`. Fue una falsa pista que costó una vuelta.
+
+Sigue abierto por dónde se contagia.
+
+## El detector de fugas del módulo `db`
+
+`tests/conftest.py::_no_dejar_db_pisado` le saca una foto a `db.fetch_one`,
+`fetch_all`, `execute`, `execute_returning`, `tx`, `get_conn`, `init_pool` y
+`close_pool` antes de cada test y las compara al terminar. Corre DESPUÉS del
+`monkeypatch`, así que lo que quede pisado ahí es lo que el test no devolvió.
+
+Hoy da **cero** sobre la suite entera: nadie está ensuciando el módulo `db`.
+Queda igual porque es la clase de bug más difícil de rastrear a mano — la falla
+aparece diez tests después, en otro archivo, y en paralelo ni siquiera siempre
+en el mismo.
+
+Por defecto sólo AVISA (no vuelve rojo el CI). Para cazar un culpable:
 
 ```
-with conn.cursor() as _cur:
-AttributeError: 'object' object has no attribute 'cursor'
+PC_TEST_FUGAS=estricto pytest -q -m "not db"
 ```
 
-A `_build_mov_asinfo` le llega una **conexión que es un `object()` pelado**. Ese
-`object()` sale de los stubs de otros tests: varios definen un `tx()` que hace
-`yield object()` (`test_activos_reversar_activacion.py`,
-`test_anticipos_a_dolares.py`, y los `conn=object()` de `test_bank_helpers.py`).
-Alguno sobrevive a su `monkeypatch` por algún camino. La consulta explota,
-alguien se come la excepción sin avisar, y los egresos quedan en 0.
-
-**Por dónde seguir:** buscar quién deja `db.tx` (o la conexión) pisada después
-de su test. Un `conftest` que, al terminar cada test, verifique que `db.tx`,
-`db.fetch_one`, `db.execute`… siguen siendo los originales, lo cazaría en el
-acto y de paso serviría para todos los demás de la lista.
+Como hoy la lista está en cero, se puede considerar pasar el default a
+estricto: sería un candado que impide que aparezca la primera fuga.
 
 ## La lista
 
