@@ -50,11 +50,9 @@
     {% set _hero_fac_precio = (_hero_fac_total / _hero_fac_kg) if _hero_fac_kg else 0 %}
     <div class="flex-1 min-w-0">
       <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Facturas</h1>
+      {# Federico 2026-08-13: orden KG · PRECIO · FACTURADO, igual que las columnas
+         de Resultados (Kg | U$/kg | U$). #}
       <div class="mt-3 flex flex-wrap items-end gap-3">
-        <div class="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded p-4">
-          <div class="text-xs uppercase tracking-wider text-slate-500">Facturado</div>
-          <div class="mt-1 text-2xl font-semibold tabular-nums text-slate-900 dark:text-slate-100">$ {{ _hero_fac_total | num_es(0) }}</div>
-        </div>
         {% if _hero_fac_kg %}
         <div class="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded p-4">
           <div class="text-xs uppercase tracking-wider text-slate-500">Kilos</div>
@@ -65,6 +63,10 @@
           <div class="mt-1 text-2xl font-semibold tabular-nums text-slate-900 dark:text-slate-100">$ {{ _hero_fac_precio | num_es(2) }} /kg</div>
         </div>
         {% endif %}
+        <div class="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded p-4">
+          <div class="text-xs uppercase tracking-wider text-slate-500">Facturado</div>
+          <div class="mt-1 text-2xl font-semibold tabular-nums text-slate-900 dark:text-slate-100">$ {{ _hero_fac_total | num_es(0) }}</div>
+        </div>
         <div class="pb-1 text-sm text-slate-500">· {{ _hero_fac_n | string }} factura{{ '' if _hero_fac_n == 1 else 's' }}</div>
       </div>
     </div>
