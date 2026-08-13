@@ -24,6 +24,8 @@ COVERAGE_FAIL_UNDER ?= 100
 # base real compartida.
 # Para volver a serial (debug de un flaky, o comparar tiempos): `make ci PYTEST_PAR=`
 PYTEST_PAR ?= -n auto --dist loadfile
+# Temporal (13/08): ver si el tiempo se va en `call` o en `setup` (= la fixture app).
+PYTEST_DURATIONS ?= --durations=40 --durations-min=0.01
 
 help:
 	@echo "Targets disponibles:"
@@ -87,7 +89,7 @@ restore-test-db:
 
 test-coverage:
 	$(PY) -m coverage erase
-	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
+	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) $(PYTEST_DURATIONS) --cov --cov-report= --cov-append
 	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
 	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage xml
