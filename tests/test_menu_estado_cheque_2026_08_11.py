@@ -41,11 +41,12 @@ def test_ningun_menu_de_estado_ofrece_dos_opciones_que_se_leen_igual():
     )
 
 
-def test_ninguna_opcion_se_lee_solo_como_una_letra():
-    """Una opción que dice sólo "→1" no explica qué va a hacer.
+def test_en_la_ficha_ninguna_opcion_se_lee_solo_como_una_letra():
+    """En la FICHA cada opción dice letra + qué hace.
 
-    Es lo que tenía la lista: el mismo menú que la ficha, pero dibujado sin
-    palabras. Dos acciones distintas se volvían indistinguibles.
+    Es donde se mira UN cheque y hay lugar para las palabras. La LISTA va con
+    la letra pelada (dueña, 13/08/2026) y la explicación en el `title` — el
+    test de abajo cubre ese menú.
     """
     pelados = [
         (stat, _texto(t))
@@ -54,6 +55,50 @@ def test_ninguna_opcion_se_lee_solo_como_una_letra():
         if not re.search(r"[A-Za-zÁÉÍÓÚáéíóúñÑ]{3}", _texto(t))
     ]
     assert not pelados, f"Opciones sin texto que las explique: {pelados}"
+
+
+def test_en_la_lista_las_letras_solas_siguen_siendo_distinguibles():
+    """El menú corto de /cheques: sólo la letra, y ninguna repetida.
+
+    Dueña 13/08/2026 (2ª vez): *"dejá sólo la letra y súper chiquito el
+    dropdown"*. Volver a la letra pelada es seguro SÓLO mientras la letra sea
+    la de la ACCIÓN (`stat_destino`) y no la del estado en el que el cheque
+    QUEDA: dibujar el resultado fue lo que creó los dos "→1" idénticos del
+    11/08. Si mañana dos acciones distintas comparten destino desde un mismo
+    estado, este test se pone rojo ANTES de que la dueña vea dos opciones
+    iguales — y ahí la lista tendrá que volver al texto largo.
+    """
+    culpables: list[str] = []
+    for stat in queries.transiciones_map():
+        cortos = [
+            queries.texto_opcion_estado_corto(t)
+            for t in queries.transiciones_para(stat)
+        ]
+        repetidos = {x for x in cortos if cortos.count(x) > 1}
+        if repetidos:
+            culpables.append(f"desde {stat!r}: {sorted(repetidos)} en {cortos}")
+    assert not culpables, (
+        "Con la letra sola estos menús ofrecen dos opciones idénticas:\n  "
+        + "\n  ".join(culpables)
+    )
+
+
+def test_la_letra_sola_siempre_viaja_con_su_explicacion():
+    """La opción corta es la letra; el texto largo va en el tooltip.
+
+    Si alguna vez el corto y el largo dejan de hablar de la misma letra, el
+    tooltip estaría explicando otra cosa que la que se va a ejecutar.
+    """
+    for stat in queries.transiciones_map():
+        for t in queries.transiciones_para(stat):
+            corto = queries.texto_opcion_estado_corto(t)
+            largo = queries.texto_opcion_estado_completo(t)
+            assert corto == f"→{t.get('stat_destino') or ''}", (stat, corto)
+            assert largo.startswith(corto), (stat, corto, largo)
+            assert len(largo) > len(corto), (
+                f"desde {stat!r} la opción {corto!r} no tiene nada que mostrar "
+                "en el tooltip"
+            )
 
 
 def test_la_letra_de_la_opcion_es_la_accion_no_el_resultado():

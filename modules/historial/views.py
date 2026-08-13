@@ -1143,6 +1143,15 @@ _REVERSO_DISPATCH = {
         "cheques.deshacer_deposito",
         lambda r: {"id_cheque": r["origen_id"]},
     ),
+    # Protesto marcado por error (B→1). TMT 2026-08-13 (dueña: "protesté por
+    # confusión … y sigue protestado"). El cheque vuelve a su estado anterior y
+    # la ND del protesto + su gasto se cancelan con NC. Va por id_mov_doble
+    # porque la metadata de ESE protesto es la que dice de dónde venía: un
+    # cheque puede protestarse, re-depositarse y protestarse de nuevo.
+    "cheque_devuelto": (
+        "cheques.deshacer_devuelto",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
     # Gasto V1..V9 creado desde un movimiento de banco. Misma forma exacta que
     # `caja_s_to_xgast`: destino_id ES el id_xgast. Desclasificar anula el
     # gasto y deja el movimiento de banco libre para re-asignar — NO toca el

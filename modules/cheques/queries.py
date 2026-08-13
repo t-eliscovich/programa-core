@@ -769,6 +769,7 @@ def _insertar_gs_protesto(
     fecha: date,
     id_cheque: int,
     usuario: str = "web",
+    registro: dict | None = None,
 ) -> float:
     """El renglón del gasto, al lado de la ND. Devuelve lo debitado.
 
@@ -798,7 +799,7 @@ def _insertar_gs_protesto(
     gasto = gs_protesto_de(fila.get("nombre") if fila else None)
     import bank_helpers
 
-    bank_helpers.insert_movimiento_bancario(
+    _res = bank_helpers.insert_movimiento_bancario(
         conn,
         no_banco=int(no_banco),
         no_cta=None,
@@ -810,6 +811,9 @@ def _insertar_gs_protesto(
         numreferencia=id_cheque,
         usuario=usuario,
     )
+    if registro is not None:
+        registro["id_gs"] = _res.get("id_transaccion")
+        registro["importe_gs"] = gasto
     return gasto
 
 
@@ -822,6 +826,7 @@ def compensar_deposito_devuelto(
     no_cheque: str | None,
     fecha: date,
     usuario: str = "web",
+    registro: dict | None = None,
 ) -> float:
     """Descuenta del banco el importe de un cheque DEPOSITADO que fue devuelto.
 
@@ -853,6 +858,13 @@ def compensar_deposito_devuelto(
 
     Devuelve el importe compensado (0.0 si no hizo nada). Corre dentro de la
     transacción del caller (usa su `conn`).
+
+    ⭐ `registro` (dict opcional) se llena con lo que ESTA corrida hizo: el id de
+    la ND, el del gasto de protesto y los depósitos de los que se desagrupó. No
+    cambia el valor de retorno (hay tres callers que lo usan como número), pero
+    es lo que le permite a `deshacer_devuelto` revertir el protesto EXACTO en
+    vez de salir a adivinar cuál ND era. TMT 2026-08-13: los seis protestos del
+    12/08 se hicieron sin esto y hubo que reconocerlos por el concepto.
     """
     imp = float(importe or 0)
     if imp <= 0:
@@ -917,11 +929,14 @@ def compensar_deposito_devuelto(
                 (id_cheque, lk["id_transaccion"]),
                 conn=conn,
             )
+        if registro is not None:
+            registro["links"] = [int(lk["id_transaccion"]) for lk in links]
+            registro["nd_ya_existia"] = True
         return 0.0
     import bank_helpers
 
     banco_orig = int(links[0]["no_banco"])
-    bank_helpers.insert_movimiento_bancario(
+    _res_nd = bank_helpers.insert_movimiento_bancario(
         conn,
         no_banco=banco_orig,
         no_cta=None,
@@ -935,6 +950,10 @@ def compensar_deposito_devuelto(
         numreferencia=id_cheque,
         usuario=usuario,
     )
+    if registro is not None:
+        registro["id_nd"] = _res_nd.get("id_transaccion")
+        registro["importe_nd"] = imp
+        registro["no_banco"] = banco_orig
     # …y la comisión que el banco cobra por el protesto, como el dBase.
     _insertar_gs_protesto(
         conn,
@@ -943,6 +962,7 @@ def compensar_deposito_devuelto(
         fecha=fecha,
         id_cheque=id_cheque,
         usuario=usuario,
+        registro=registro,
     )
     # Desagrupar: borrar los links del cheque a su(s) depósito(s) 'DE'.
     for lk in links:
@@ -952,6 +972,8 @@ def compensar_deposito_devuelto(
             (id_cheque, lk["id_transaccion"]),
             conn=conn,
         )
+    if registro is not None:
+        registro["links"] = [int(lk["id_transaccion"]) for lk in links]
     return imp
 
 
@@ -1093,6 +1115,14 @@ def transicionar_stat(
         side_effect_id = None
         banco_destino = None
         importe = float(ch["importe"] or 0)
+        # ⭐ Lo que este salto MUEVE, anotado mientras se hace: la ND del
+        # protesto, su gasto, los depósitos de los que desagrupó y la fecha de
+        # cobro que pisó. Va a la metadata del mov_doble y es lo que le permite
+        # a `deshacer_devuelto` revertirlo EXACTO. Sin esto hay que reconocer la
+        # ND por el texto del concepto, que es adivinar. TMT 2026-08-13.
+        _comp_registro: dict = {}
+        _fechad_previa = ch.get("fechad")
+        _fechad_nueva = None
 
         # --- depositado: B (cartera→Pichincha), V (re-depósito de un devuelto→
         # Pichincha) o I (Internacional). TMT 2026-07-25 (dueña): 'V' ahora CREA
@@ -1313,6 +1343,7 @@ def transicionar_stat(
                     no_cheque=ch.get("no_cheque"),
                     fecha=fecha,
                     usuario=usuario,
+                    registro=_comp_registro,
                 )
             # TMT 2026-07-20 (dueña): al pasar a 1 (protestado) se pregunta la
             # NUEVA fecha de cobro (hoy o futura). Se guarda en fechad (columna
@@ -1330,6 +1361,7 @@ def transicionar_stat(
                     "fechad_original=COALESCE(fechad_original, fechad)"
                 )
                 params.append(nueva_fechad)
+                _fechad_nueva = nueva_fechad
             params += [usuario, id_cheque]
             db.execute(
                 "UPDATE scintela.cheque "
@@ -1372,6 +1404,11 @@ def transicionar_stat(
                                    if side_effect_id
                                    and stat_destino in DESTINOS_DEPOSITO else None),
                 "motivo": (motivo or "").strip() or None,
+                "compensacion": _comp_registro or None,
+                "fechad_previa": (_fechad_previa.isoformat()
+                                  if _fechad_previa else None),
+                "fechad_nueva": (_fechad_nueva.isoformat()
+                                 if _fechad_nueva else None),
             }.items() if v is not None},
         )
 
@@ -3318,6 +3355,23 @@ def texto_opcion_estado(t: dict) -> str:
 def texto_opcion_estado_completo(t: dict) -> str:
     """La opción como se lee entera en la lista: letra + qué hace."""
     return f"→{t.get('stat_destino') or ''} {texto_opcion_estado(t)}".strip()
+
+
+def texto_opcion_estado_corto(t: dict) -> str:
+    """La opción como se lee en la LISTA: sólo la letra a la que va.
+
+    Pedido de la dueña (13/08/2026, segunda vez): en /cheques el menú de estado
+    va con la letra pelada y el select angosto — la lista tiene 20 filas a la
+    vista y cada renglón de texto ahí es ruido. La explicación no se pierde:
+    viaja en el `title` de cada opción (`texto_opcion_estado_completo`) y la
+    ficha del cheque sigue mostrando el menú largo.
+
+    ⭐ Esto NO revive el bug del 11/08 (dos "→1" idénticos): ahí la letra que se
+    dibujaba era `destino_real` —en qué estado QUEDA— y dos acciones distintas
+    caían en el mismo estado. Acá la letra es siempre `stat_destino`, o sea la
+    ACCIÓN, que es única por menú. El test lo prueba para TODOS los estados.
+    """
+    return f"→{t.get('stat_destino') or ''}".strip()
 
 
 def transiciones_map() -> dict[str, list[dict]]:
@@ -7085,3 +7139,343 @@ def deshacer_anulacion_error_carga(
             if sin_snapshot_aplic else 0),
         "compensacion": compensacion_nueva,
     }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DESHACER UN PROTESTO — TMT 2026-08-13 (dueña: *"protesté por confusión y
+# sigue protestado"*)
+# ═══════════════════════════════════════════════════════════════════════════
+# Marcar un cheque devuelto (B→1) era un camino de ida: `TRANSICIONES_VALIDAS`
+# no ofrece 1→B —y no debería: volver a "depositado" NO es una transición del
+# negocio, es deshacer un error— y el ↺ de /historial contestaba "Tipo
+# 'cheque_devuelto' aún no tiene reverso automatizado". El cheque quedaba en
+# cartera como deuda viva de un cliente que ya había pagado, y en el banco con
+# la ND del protesto restando plata que nunca se fue.
+#
+# ⭐ Lo que se deshace NO se borra: la ND se cancela con una NC y el gasto de
+# protesto con la suya, igual que en el resto de los reversos de la app. El
+# extracto del banco no cambia; el saldo vuelve a donde estaba.
+_CONCEPTO_REV_PROTESTO = "REV PROT"
+
+
+def _compensacion_del_protesto(mv: dict, meta: dict, id_cheque: int) -> dict:
+    """Qué movimientos de banco dejó ESTE protesto, para poder revertirlos.
+
+    Dos fuentes, en este orden:
+
+    1. `meta['compensacion']` — lo que anotó el propio protesto. Es exacto:
+       trae el id de la ND, el del gasto y de qué depósitos se desagrupó.
+    2. Reconocerlos por el concepto. Sólo para los protestos anteriores al
+       13/08/2026, que se hicieron sin anotar nada (los seis del 12/08). Se
+       buscan las ND del cheque emitidas desde el día del protesto con los dos
+       conceptos que escribe `compensar_deposito_devuelto`.
+
+    En los dos casos se descartan las que YA se compensaron (si existe una NC
+    'REV PROT' de este cheque posterior a la ND), así que deshacer dos veces no
+    duplica la plata. La pantalla de confirmación muestra esta lista con los
+    números ANTES de tocar nada.
+    """
+    comp = meta.get("compensacion") or {}
+    ids: list[int] = []
+    if comp.get("id_nd"):
+        ids.append(int(comp["id_nd"]))
+    if comp.get("id_gs"):
+        ids.append(int(comp["id_gs"]))
+    exacto = bool(ids)
+    if not exacto:
+        desde = mv.get("fecha_operacion") or mv.get("fecha_creacion")
+        if hasattr(desde, "date"):
+            desde = desde.date()
+        filas = db.fetch_all(
+            "SELECT id_transaccion FROM scintela.transacciones_bancarias "
+            " WHERE numreferencia = %s "
+            "   AND UPPER(TRIM(COALESCE(documento,''))) = 'ND' "
+            "   AND ( COALESCE(concepto,'') ILIKE 'ch.devuelto%%' "
+            "         OR COALESCE(concepto,'') ILIKE %s ) "
+            "   AND fecha >= %s "
+            " ORDER BY id_transaccion",
+            (id_cheque, f"{CONCEPTO_GS_PROTESTO}%", desde),
+        ) or []
+        ids = [int(f["id_transaccion"]) for f in filas]
+    if not ids:
+        return {"exacto": exacto, "movimientos": [], "links": [
+            int(x) for x in (comp.get("links") or [])]}
+    filas = db.fetch_all(
+        "SELECT tb.id_transaccion, tb.no_banco, tb.fecha, tb.importe, "
+        "       COALESCE(tb.concepto,'') AS concepto, "
+        "       COALESCE(bk.nombre,'') AS banco_nombre, "
+        "       EXISTS (SELECT 1 FROM scintela.transacciones_bancarias nc "
+        "                WHERE nc.numreferencia = tb.numreferencia "
+        "                  AND UPPER(TRIM(COALESCE(nc.documento,''))) = 'NC' "
+        "                  AND COALESCE(nc.concepto,'') ILIKE %s "
+        "                  AND nc.id_transaccion > tb.id_transaccion) AS ya_revertido "
+        "  FROM scintela.transacciones_bancarias tb "
+        "  LEFT JOIN scintela.banco bk ON bk.no_banco = tb.no_banco "
+        " WHERE tb.id_transaccion = ANY(%s) "
+        " ORDER BY tb.id_transaccion",
+        (f"{_CONCEPTO_REV_PROTESTO}%", ids),
+    ) or []
+    return {
+        "exacto": exacto,
+        "movimientos": [f for f in filas if not f.get("ya_revertido")],
+        "ya_revertidos": [f for f in filas if f.get("ya_revertido")],
+        "links": [int(x) for x in (comp.get("links") or [])],
+    }
+
+
+def protesto_deshacible(id_cheque: int, stat_hoy: str | None = None) -> int | None:
+    """El protesto que se puede deshacer de este cheque, si hay alguno.
+
+    Existe para que el botón viva en la FICHA del cheque y no sólo en el ↺ de
+    /historial: cuando la dueña se da cuenta del error está mirando el cheque,
+    no el listado de movimientos. Devuelve el id del último `cheque_devuelto`
+    activo que dejó al cheque en el estado en el que está hoy — si alguien lo
+    movió después, no hay nada que deshacer desde acá.
+    """
+    stat = (stat_hoy or "").strip().upper()
+    if not stat:
+        fila = db.fetch_one(
+            "SELECT stat FROM scintela.cheque WHERE id_cheque = %s",
+            (int(id_cheque),),
+        )
+        stat = ((fila or {}).get("stat") or "").strip().upper()
+    if stat not in ("1", "2", "3"):
+        return None
+    fila = db.fetch_one(
+        "SELECT id_mov_doble FROM scintela.mov_doble "
+        " WHERE tipo = 'cheque_devuelto' AND estado = 'activo' "
+        "   AND origen_table = 'cheque' AND origen_id = %s "
+        "   AND COALESCE(metadata->>'stat_destino', '1') = %s "
+        " ORDER BY id_mov_doble DESC LIMIT 1",
+        (int(id_cheque), stat),
+    )
+    return int(fila["id_mov_doble"]) if fila else None
+
+
+def plan_deshacer_devuelto(id_mov_doble: int) -> dict:
+    """Qué va a pasar si se deshace este protesto. NO escribe nada.
+
+    La pantalla de confirmación se arma con esto: el estado al que vuelve el
+    cheque, la fecha de cobro que se restaura y los movimientos de banco que se
+    van a compensar, con importe y banco. *"Igualar no es explicar"* (31/07):
+    el que confirma tiene que poder ver la plata antes de tocar el botón.
+    """
+    import json as _json
+
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, estado, origen_id, importe, metadata, "
+        "       fecha_creacion, fecha_operacion "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not mv:
+        raise ValueError("No encuentro ese movimiento.")
+    if (mv.get("tipo") or "") != "cheque_devuelto":
+        raise ValueError(
+            f"Ese movimiento es '{mv.get('tipo')}', no un cheque marcado como "
+            "devuelto.")
+    if (mv.get("estado") or "") == "reversado":
+        raise ValueError("Ese protesto ya se deshizo — no se deshace dos veces.")
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            meta = {}
+    id_cheque = int(mv.get("origen_id") or 0)
+    ch = db.fetch_one(
+        "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, banco, "
+        "       no_banco, fecha, fechad, fechad_original, fecha_postergacion "
+        "  FROM scintela.cheque WHERE id_cheque = %s",
+        (id_cheque,),
+    )
+    if not ch:
+        raise ValueError("El cheque de ese movimiento ya no existe.")
+    stat_prev = (meta.get("stat_prev") or "").strip().upper()
+    if not stat_prev:
+        raise ValueError(
+            "La metadata no dice de qué estado venía el cheque. No lo restauro "
+            "a ciegas — cambialo a mano desde su ficha.")
+    stat_marcado = (meta.get("stat_destino") or "1").strip().upper()
+    stat_hoy = (ch.get("stat") or "").strip().upper()
+    comp = _compensacion_del_protesto(mv, meta, id_cheque)
+    return {
+        "id_mov_doble": int(id_mov_doble),
+        "id_cheque": id_cheque,
+        "cheque": ch,
+        "stat_hoy": stat_hoy,
+        "stat_prev": stat_prev,
+        "stat_marcado": stat_marcado,
+        "puede": stat_hoy == stat_marcado,
+        "fechad_restaurada": _fechad_a_restaurar(ch, stat_prev),
+        "compensacion": comp,
+        "fecha_protesto": (mv.get("fecha_operacion")
+                           or mv.get("fecha_creacion")),
+    }
+
+
+def _fechad_a_restaurar(ch: dict, stat_prev: str):
+    """La fecha de cobro que hay que devolverle al cheque, o None.
+
+    Un cheque que vuelve al banco (`STATS_DEPOSITADO` = B/V/I/A) ya se depositó: su "a depositar" es
+    el día en que se depositó, no la fecha futura que se le puso mientras
+    estuvo protestado. `fechad_original` la guarda. Si el cheque vuelve a
+    cartera (Z/P/D) la fecha futura SÍ es la que vale —es cuándo se va a
+    cobrar— y no se toca.
+    """
+    if stat_prev not in STATS_DEPOSITADO:
+        return None
+    orig = ch.get("fechad_original")
+    if not orig or orig == ch.get("fechad"):
+        return None
+    return orig
+
+
+def deshacer_devuelto(
+    id_mov_doble: int, *, usuario: str = "web", motivo: str = ""
+) -> dict:
+    """Deshace un protesto: el cheque vuelve al estado del que salió.
+
+    Todo en UNA transacción:
+
+      1. el cheque vuelve a `stat_prev` (de la metadata del protesto) y, si
+         venía de estar depositado, recupera su fecha de cobro original;
+      2. la ND del protesto y su gasto se compensan con NC por el mismo
+         importe — las filas originales NO se borran;
+      3. si el protesto lo había sacado de un depósito agrupado, se lo vuelve
+         a enganchar (sólo cuando el protesto anotó de cuál: los anteriores al
+         13/08/2026 no lo anotaron y ahí el cheque queda sin el link, que es
+         historia, no plata).
+
+    Se niega, SIN escribir nada, si el cheque ya no está en el estado que dejó
+    el protesto: alguien lo movió después y restaurarlo a ciegas pisaría ese
+    cambio.
+    """
+    import mov_doble as _md
+
+    plan = plan_deshacer_devuelto(id_mov_doble)
+    if not plan["puede"]:
+        raise ValueError(
+            f"El cheque está en estado '{plan['stat_hoy']}', no en "
+            f"'{plan['stat_marcado']}': alguien lo movió después del protesto. "
+            "Deshacé primero ese cambio.")
+
+    id_cheque = plan["id_cheque"]
+    ch = plan["cheque"]
+    stat_prev = plan["stat_prev"]
+    fechad_nueva = plan["fechad_restaurada"]
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+
+    with db.tx() as conn:
+        # Releer con lock: entre el plan y el UPDATE alguien pudo moverlo.
+        actual = db.fetch_one(
+            "SELECT stat FROM scintela.cheque WHERE id_cheque = %s FOR UPDATE",
+            (id_cheque,), conn=conn,
+        )
+        if (actual or {}).get("stat", "").strip().upper() != plan["stat_marcado"]:
+            raise ValueError(
+                "El cheque cambió de estado mientras confirmabas. Volvé a "
+                "abrir la pantalla.")
+
+        set_fecha = ""
+        params: list = [stat_prev]
+        if fechad_nueva:
+            set_fecha = (", fechad=%s, fechad_original=NULL, "
+                         "fecha_postergacion=NULL")
+            params.append(fechad_nueva)
+        params += [
+            ("[R] protesto deshecho" + (f": {motivo[:60]}" if motivo else "")),
+            usuario, id_cheque,
+        ]
+        db.execute(
+            "UPDATE scintela.cheque "
+            "   SET stat=%s" + set_fecha + ", "
+            "       observacion = RIGHT("
+            "           COALESCE(observacion || ' | ', '') || %s, 200), "
+            "       usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+            " WHERE id_cheque=%s",
+            tuple(params),
+            conn=conn,
+        )
+
+        # 2. las notas de débito del protesto, canceladas con su opuesta.
+        compensados = []
+        if plan["compensacion"]["movimientos"]:
+            import bank_helpers
+            for m in plan["compensacion"]["movimientos"]:
+                res = bank_helpers.insert_movimiento_bancario(
+                    conn,
+                    no_banco=int(m["no_banco"]),
+                    no_cta=None,
+                    fecha=fecha,
+                    documento="NC",
+                    importe=abs(float(m["importe"] or 0)),
+                    concepto=(
+                        f"{_CONCEPTO_REV_PROTESTO} ch"
+                        f"{(ch.get('no_cheque') or '').strip() or id_cheque} "
+                        f"{(ch.get('codigo_cli') or '').strip()}"
+                    ).strip()[:50],
+                    prov=ch.get("codigo_cli"),
+                    numreferencia=id_cheque,
+                    usuario=usuario,
+                )
+                compensados.append({
+                    "id_nd": int(m["id_transaccion"]),
+                    "id_nc": res.get("id_transaccion"),
+                    "importe": float(m["importe"] or 0),
+                })
+
+        # 3. de vuelta adentro del depósito del que lo sacamos.
+        relinkeados = 0
+        for id_tx in plan["compensacion"].get("links") or []:
+            ya = db.fetch_one(
+                "SELECT 1 AS x FROM scintela.chequextransaccion "
+                " WHERE id_cheque=%s AND id_transaccion=%s",
+                (id_cheque, int(id_tx)), conn=conn,
+            )
+            if ya:
+                continue
+            db.execute(
+                "INSERT INTO scintela.chequextransaccion "
+                "    (id_cheque, id_transaccion, fecha, stat_ch, usuario_crea) "
+                "VALUES (%s, %s, %s, 'D', %s)",
+                (id_cheque, int(id_tx), fecha, usuario), conn=conn,
+            )
+            relinkeados += 1
+
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_cheque_devuelto",
+            origen_table="cheque", origen_id=id_cheque,
+            destino_table="cheque", destino_id=id_cheque,
+            importe=float(ch.get("importe") or 0) or 1.0,
+            fecha=fecha,
+            concepto=(
+                f"DESHECHO el protesto — ch "
+                f"{(ch.get('no_cheque') or '').strip() or '#' + str(id_cheque)} "
+                f"{(ch.get('codigo_cli') or '').strip()} "
+                f"{plan['stat_marcado']}→{stat_prev}"
+                + (f" ({motivo})" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_mov_protesto": int(id_mov_doble),
+                "stat_restaurado": stat_prev,
+                "fechad_restaurada": (fechad_nueva.isoformat()
+                                      if fechad_nueva else None),
+                "compensados": compensados,
+                "relinkeados": relinkeados,
+                "motivo": motivo or "",
+            },
+            id_original=id_mov_doble,
+        )
+
+    return {
+        "id_cheque": id_cheque,
+        "no_cheque": (ch.get("no_cheque") or "").strip(),
+        "stat_restaurado": stat_prev,
+        "fechad_restaurada": fechad_nueva,
+        "compensados": compensados,
+        "relinkeados": relinkeados,
+    }
+

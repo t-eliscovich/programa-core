@@ -714,13 +714,16 @@
                   class="inline ch-trans-form" style="margin:0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="next" value="{{ request.full_path }}">
-              {# ⭐ TMT 2026-08-11 — el menú de estado de la LISTA usa las MISMAS
-                 definiciones que la ficha del cheque (queries.LABEL_CORTO_ESTADO).
-                 Antes dibujaba sólo la letra y el rebote (9) se disfrazaba de "→1":
-                 desde un cheque depositado salían DOS "→1" idénticos, y el de
-                 arriba era un link a un asistente que ni cambiaba el estado.
-                 Ahora cada opción dice letra + qué hace, como en la ficha.
-                 Dueña: "no podemos tener una opción que no funciona". #}
+              {# ⭐ TMT 2026-08-13 (dueña, 2ª vez): en la LISTA el menú va con la
+                 LETRA PELADA y el select angosto — 20 filas a la vista, cada
+                 renglón de texto acá es ruido. La explicación no se pierde: va
+                 en el `title` de cada opción (letra + qué hace) y la FICHA del
+                 cheque sigue con el menú largo.
+                 El bug del 11/08 (dos "→1" idénticos) NO vuelve: aquella letra
+                 era `destino_real` —en qué estado QUEDA— y dos acciones caían
+                 en el mismo; ésta es `stat_destino`, la ACCIÓN, única por menú.
+                 tests/test_menu_estado_cheque_2026_08_11.py lo prueba para
+                 todos los estados, con la letra Y con el texto largo. #}
               {# El paso de 1 (protestado) pide la nueva fecha de cobro — pedido
                  dueña 2026-07-20. Antes eso vivía en un <input type=date> de 118px
                  con class="hidden" que aparecía sin avisar al lado del select: si
@@ -733,18 +736,20 @@
                       data-stat="{{ s }}"
                       data-importe="{{ '%.2f'|format(c.importe or 0) }}"
                       class="font-mono text-xs border border-slate-300 rounded px-1 py-0 bg-white hover:bg-slate-50 cursor-pointer"
+                      style="width:3.4rem"
                       title="Cambiar estado">
                 <option value="" selected>{{ s or '—' }}</option>
                 {% for t in transs %}
-                  {% set _opt = texto_estado_completo(t) %}
+                  {% set _opt = texto_estado_corto(t) %}
+                  {% set _tip = texto_estado_completo(t) %}
                   {% if t.kind == 'WIZARD' %}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
-                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">{{ _opt }}</option>
+                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ _tip }}">{{ _opt }}</option>
                     {% else %}
-                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque, **(t.url_args or {})) }}" title="{{ t.label }}">{{ _opt }}</option>
+                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque, **(t.url_args or {})) }}" title="{{ _tip }}">{{ _opt }}</option>
                     {% endif %}
                   {% else %}
-                    <option value="{{ t.stat_destino }}" title="{{ t.label }}">{{ _opt }}</option>
+                    <option value="{{ t.stat_destino }}" title="{{ _tip }}">{{ _opt }}</option>
                   {% endif %}
                 {% endfor %}
               </select>

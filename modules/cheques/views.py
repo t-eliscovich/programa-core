@@ -2634,6 +2634,11 @@ def detalle(id_cheque: int):
         # mismas transiciones consistentes (transiciones_para).
         transiciones=queries.transiciones_para(ch.get("stat") or ""),
         texto_estado=queries.texto_opcion_estado,
+        # TMT 2026-08-13 (dueña): si el cheque está protestado por error, el
+        # botón para deshacerlo tiene que estar ACÁ — es donde ella se da
+        # cuenta, no en el listado de movimientos.
+        id_mov_protesto=queries.protesto_deshacible(
+            id_cheque, ch.get("stat")),
     )
 
 
@@ -3523,6 +3528,7 @@ def lista():
         # la comparten la lista y la ficha. TMT 2026-08-11.
         texto_estado=queries.texto_opcion_estado,
         texto_estado_completo=queries.texto_opcion_estado_completo,
+        texto_estado_corto=queries.texto_opcion_estado_corto,
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
         hoy_iso=today_ec().isoformat(),
@@ -3993,6 +3999,108 @@ def deshacer_anulacion_error_carga(id_mov_doble: int):
         volver_url=volver,
         motivo_requerido=False,
         confirm_label="Devolver el cheque",
+    )
+
+
+@cheques_bp.route("/cheques/protesto/<int:id_mov_doble>/deshacer",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.transicionar")
+def deshacer_devuelto(id_mov_doble: int):
+    """Deshace un protesto marcado por error (el cheque vuelve a donde estaba).
+
+    TMT 2026-08-13 (dueña: *"protesté por confusión y después reversé, pero
+    veo que sigue protestado"*). Marcar devuelto era un camino de ida: el ↺ de
+    /historial contestaba "Tipo 'cheque_devuelto' aún no tiene reverso
+    automatizado" y desde el estado 1 el menú no ofrece volver a depositado —
+    ni debería: volver a 'B' no es una transición del negocio, es deshacer un
+    error, y por eso va por su propia pantalla que muestra los números.
+    """
+    volver = request.values.get("next") or url_for("historial.lista")
+
+    if request.method == "POST":
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            res = queries.deshacer_devuelto(
+                id_mov_doble, usuario=usuario,
+                motivo=(request.form.get("motivo") or "").strip(),
+            )
+            msg = (
+                f"Cheque {res['no_cheque'] or ('#' + str(res['id_cheque']))} "
+                f"de vuelta en estado {res['stat_restaurado']}."
+            )
+            if res.get("fechad_restaurada"):
+                msg += (" Recuperó su fecha de cobro "
+                        f"{res['fechad_restaurada'].strftime('%d/%m/%Y')}.")
+            if res.get("compensados"):
+                from filters import money_es as _money
+                _tot = sum(abs(float(c["importe"] or 0))
+                           for c in res["compensados"])
+                msg += (f" Se compensaron {len(res['compensados'])} "
+                        f"movimiento(s) del banco por {_money(_tot)}.")
+            flash(msg, "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude deshacer el protesto", e)
+        return redirect(request.form.get("next") or volver)
+
+    try:
+        plan = queries.plan_deshacer_devuelto(id_mov_doble)
+    except ValueError as e:
+        flash(str(e), "warn")
+        return redirect(volver)
+
+    from filters import money_es as _money
+
+    ch = plan["cheque"]
+    _movs = plan["compensacion"]["movimientos"]
+    detalle = {
+        "Cheque": (ch.get("no_cheque") or "").strip() or f"#{plan['id_cheque']}",
+        "Cliente": (ch.get("codigo_cli") or "—"),
+        "Importe": _money(ch.get("importe") or 0),
+        "Estado": f"{plan['stat_marcado']} → {plan['stat_prev']}",
+        "Fecha de cobro": (
+            f"{ch.get('fechad').strftime('%d/%m/%Y')} → "
+            f"{plan['fechad_restaurada'].strftime('%d/%m/%Y')} (la original)"
+            if plan["fechad_restaurada"] and ch.get("fechad")
+            else (ch.get("fechad").strftime("%d/%m/%Y")
+                  + " (no se toca)" if ch.get("fechad") else "—")
+        ),
+        "Movimientos de banco a compensar": (
+            " · ".join(
+                f"{m['concepto'].strip()} {_money(m['importe'] or 0)} "
+                f"({m['banco_nombre'] or m['no_banco']})" for m in _movs)
+            if _movs else "ninguno — este protesto no movió el banco"
+        ),
+        "Vuelve al depósito del que salió": (
+            f"sí ({len(plan['compensacion'].get('links') or [])})"
+            if plan["compensacion"].get("links")
+            else ("no — el protesto es anterior al 13/08/2026 y no anotó de "
+                  "qué depósito lo sacó" if _movs else "no hacía falta")
+        ),
+    }
+    if not plan["puede"]:
+        flash(
+            f"El cheque está en estado '{plan['stat_hoy']}' y el protesto lo "
+            f"había dejado en '{plan['stat_marcado']}': alguien lo movió "
+            "después. Deshacé primero ese cambio.", "warn")
+        return redirect(volver)
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer el protesto",
+        mensaje=(
+            "El cheque vuelve al estado del que salió y las notas de débito "
+            "que dejó el protesto se cancelan con una NC por el mismo importe "
+            "— las filas originales no se borran, el extracto del banco sigue "
+            "cuadrando."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("cheques.deshacer_devuelto",
+                           id_mov_doble=id_mov_doble, next=volver),
+        volver_url=volver,
+        motivo_requerido=False,
+        confirm_label="Deshacer el protesto",
     )
 
 

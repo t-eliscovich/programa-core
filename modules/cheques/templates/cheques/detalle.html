@@ -151,6 +151,18 @@
         </button>
       {% endif %}
 
+      {# TMT 2026-08-13 (dueña: "protesté por confusión … y sigue protestado").
+         Deshacer un protesto NO es una transición del menú: 1→B no es un paso
+         del negocio, es borrar un error. Por eso es su propio botón, con su
+         pantalla de confirmación que muestra la plata que se compensa. #}
+      {% if id_mov_protesto and tiene_permiso('cheques.transicionar') %}
+        <a href="{{ url_for('cheques.deshacer_devuelto', id_mov_doble=id_mov_protesto, next=request.full_path) }}"
+           class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:bg-amber-900/20"
+           title="El cheque vuelve al estado del que salió y se compensa la nota de débito del protesto">
+          ↺ Deshacer el protesto
+        </a>
+      {% endif %}
+
       {% if hay_transiciones %}
       <details class="relative">
         <summary class="list-none cursor-pointer text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90 inline-flex items-center gap-1.5 font-medium">
