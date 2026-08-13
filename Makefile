@@ -93,27 +93,20 @@ test-db:
 restore-test-db:
 	$(PY) scripts/restaurar_test_legacy_dump.py --allow-reset
 
-# TMT 2026-08-13: los dos pytest corren A LA VEZ. El de `not db` tarda ~60 s y
-# el de `db` ~11 s, y no se pisan: el primero usa el FakeDB monkeypatcheado y el
-# segundo un Postgres real. Antes se hacían uno después del otro.
-#   ⚠ Cada uno escribe su coverage en SU PROPIA carpeta. Si compartieran el
-#   directorio se pisarían: pytest-cov llama a `combine` al terminar cada
-#   corrida, así que el que termina primero se llevaría puestos los archivos
-#   a medio escribir del otro. Por eso van dos COVERAGE_FILE y un solo
-#   `coverage combine` nuestro al final, ya con las dos corridas terminadas.
-#   ⚠ El `wait` con su exit code explícito NO es adorno: sin eso, un fallo del
-#   pytest de fondo se pierde y el gate queda verde con tests rojos.
-# Ya no se genera `coverage html`: en CI no lo mira nadie. Para verlo local:
-#   make test-coverage && python3 -m coverage html
+# TMT 2026-08-13 — MEDIDO Y DESCARTADO: correr los dos pytest A LA VEZ (uno de
+# fondo con `&` y `wait`) NO sirve. Probado en CI: el de `not db` pasó de 61 s a
+# 70 s y el de `db` de 11 s a 28 s, porque `-n auto` ya tiene los 4 cores
+# ocupados y el segundo proceso no encuentra CPU libre — le roba a los workers.
+# Total 73 s contra 74 s: un segundo y medio, a cambio de dos COVERAGE_FILE
+# separados y un `wait` con exit code a mano. No vale la pena; si a alguien se
+# le ocurre de nuevo, ya está medido.
+#
+# `coverage html` SÍ salió: en CI no lo mira nadie y se generaba y subía en cada
+# corrida. Para verlo local: `make test-coverage && python3 -m coverage html`.
 test-coverage:
-	rm -rf .cov && mkdir -p .cov/unit .cov/db
-	  COVERAGE_FILE=.cov/unit/.coverage $(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= & \
-	  UNIT_PID=$$!; \
-	  COVERAGE_FILE=.cov/db/.coverage $(PY) -m pytest -q -m db --cov --cov-report=; DB_RC=$$?; \
-	  wait $$UNIT_PID; UNIT_RC=$$?; \
-	  echo "pytest not-db -> $$UNIT_RC ; pytest db -> $$DB_RC"; \
-	  [ $$UNIT_RC -eq 0 ] && [ $$DB_RC -eq 0 ]
-	$(PY) -m coverage combine .cov/unit/.coverage .cov/db/.coverage
+	$(PY) -m coverage erase
+	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
+	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
 	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage xml
 
