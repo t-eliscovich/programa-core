@@ -430,6 +430,18 @@
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded chq-wrap"
        style="overflow-x:auto;">
     <style>
+      /* ⭐ TMT 2026-08-13 (dueña): *"achicá campos, no saques ninguna"*. La
+         tabla medía 1.314 px contra 1.241 px de pantalla —se pasaba por 73,
+         justo la columna del ↺—, así que en vez de esconder columnas se
+         achican los campos: menos aire a los lados de cada celda y las cajas
+         de fecha/texto al ancho de su contenido. Ninguna columna se va. */
+      table.chq-table th, table.chq-table td {
+        padding-left: 5px !important; padding-right: 5px !important;
+      }
+      table.chq-table input[type="date"] {
+        width: 102px; font-size: 11px; padding-left: 2px; padding-right: 0;
+      }
+      table.chq-table tbody input[type="text"] { max-width: 88px; }
       /* La cabecera acompaña el scroll: con 500 filas, a la mitad de la lista
          ya no se sabía qué columna era cuál. */
       table.chq-table thead th {
