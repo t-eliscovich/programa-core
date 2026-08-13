@@ -194,26 +194,40 @@ jobs:
             \$owners | ForEach-Object { Stop-Process -Id \$_ -Force -ErrorAction SilentlyContinue }
             Start-Sleep 1
           }
-          Start-Sleep 3
+          # TMT 2026-08-13: era `Start-Sleep 3` fijo. Ahora se PREGUNTA si el
+          # puerto quedó libre, hasta 8 veces por segundo de espera: en el caso
+          # normal sale en 0-1 s, y si tarda más espera más que antes.
+          for (\$i = 0; \$i -lt 8; \$i++) {
+            if (-not (Get-NetTCPConnection -LocalPort 5002 -State Listen -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep 1
+          }
           # Verificar que el 5002 quedó LIBRE antes de arrancar; si sigue tomado, el
           # nuevo no bindea y volvemos al no-op → fallar el deploy para que se vea.
           \$still = Get-NetTCPConnection -LocalPort 5002 -State Listen -ErrorAction SilentlyContinue
           if (\$still) { Write-Output "ERROR: puerto 5002 sigue tomado por PID(s) \$(\$still.OwningProcess -join ',') — no se pudo liberar"; exit 1 }
           Start-ScheduledTask -TaskName ProgramaCoreApp
-          # TMT 2026-06-07: 15s (antes 6/8) — Waitress + imports tardan más;
-          # con 6s el health check daba falso negativo ("Failed") aunque el
-          # deploy se aplicaba bien.
-          Start-Sleep 15
 
-          # 6. Health check
+          # 6. Health check. TMT 2026-08-13 (dueña: *"necesito todavía más
+          #    corto"*): acá había un `Start-Sleep 15` fijo y RECIÉN DESPUÉS se
+          #    preguntaba. Los 15 s salieron del 2026-06-07 porque con 6 s el
+          #    check daba falso negativo — pero el problema nunca fue el número,
+          #    era esperar a ciegas. Ahora se pregunta cada segundo hasta 40:
+          #    en el caso normal corta apenas Waitress contesta (~5-8 s), y si
+          #    algún día tarda 30 s espera 30 en vez de fallar como antes.
+          \$code = 0
+          \$espera = 0
+          for (\$i = 1; \$i -le 40; \$i++) {
+              Start-Sleep 1
+              try {
+                  \$code = (Invoke-WebRequest -UseBasicParsing http://localhost:5002/login -TimeoutSec 5).StatusCode
+              } catch { \$code = 0 }
+              if (\$code -eq 200) { \$espera = \$i; break }
+          }
           \$state = (Get-ScheduledTask -TaskName ProgramaCoreApp).State
           Write-Output "Task state: \$state"
-          try {
-              \$code = (Invoke-WebRequest -UseBasicParsing http://localhost:5002/login -TimeoutSec 10).StatusCode
-              Write-Output "Health: HTTP \$code"
-              if (\$code -ne 200) { exit 1 }
-          } catch {
-              Write-Output "Health FAIL: \$_"
+          Write-Output "Health: HTTP \$code (contesto a los \$espera s)"
+          if (\$code -ne 200) {
+              Write-Output "Health FAIL: la app no contesto 200 en 40s"
               exit 1
           }
           \$fpDespues = '?'
@@ -242,8 +256,10 @@ jobs:
           echo "Command ID: $CMD_ID"
 
           # Poll cada 5s, máximo 4 minutos
-          for i in {1..48}; do
-            sleep 5
+          # TMT 2026-08-13: era `sleep 5` (hasta 5 s de retraso en enterarse
+          # de que ya terminó). Mismo techo de 4 min, mejor resolución.
+          for i in {1..120}; do
+            sleep 2
             STATUS=$(aws ssm get-command-invocation \
               --region us-east-2 \
               --instance-id i-0fcca4d7029f08489 \
