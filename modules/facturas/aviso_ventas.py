@@ -32,8 +32,10 @@ laboral"* — o sea: enterarse de cómo viene el día SIN esperar a las 18.
     ✅  Ventas del día · $ 128.410,20              07/08 11:24
         15.410,50 kg · 104 facturas
 
-Los umbrales son **10.000 / 15.000 / 20.000 kg** (confirmado por la dueña: un
-día normal cierra en 13.500-16.000 kg, así que la escalera tiene sentido).
+Los umbrales son **5.000 / 10.000 / 15.000 / 20.000 kg** (un día normal cierra
+en 13.500-16.000 kg, así que la escalera tiene sentido). El 5.000 lo pidió la
+dueña el 2026-08-13: quiere el primer parte de la mañana, sin esperar a los
+10.000.
 
 Decisiones que valen la pena recordar:
 
@@ -67,9 +69,10 @@ _LOG = logging.getLogger("programa_core.aviso_ventas")
 # (`dia.HORA_CIERRE`) — *"a veces se pasan de horario para facturar"*.
 HORA_AVISO = 19
 
-# Umbrales de kilos vendidos en el día (dueña 2026-08-07). Ordenados de menor a
-# mayor: el código se apoya en eso para quedarse con el más alto cruzado.
-UMBRALES_KG = (10_000.0, 15_000.0, 20_000.0)
+# Umbrales de kilos vendidos en el día (dueña 2026-08-07; el 5.000 lo agregó el
+# 2026-08-13). Ordenados de menor a mayor: el código se apoya en eso para
+# quedarse con el más alto cruzado.
+UMBRALES_KG = (5_000.0, 10_000.0, 15_000.0, 20_000.0)
 
 # La jornada laboral: fuera de esta franja no se avisan umbrales. El tope
 # coincide con HORA_AVISO a propósito — a las 18 en punto el que habla es el

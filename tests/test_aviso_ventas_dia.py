@@ -158,7 +158,8 @@ def _umbral_corrido(hora_ec, kg, *, ya=0.0, n=104, importe=128410.20):
 
 
 def test_al_cruzar_los_10000_kg_avisa_con_el_mismo_formato_que_el_cierre():
-    r, puestos = _umbral_corrido(11, kg=10_240.5, importe=86_120.0, n=71)
+    r, puestos = _umbral_corrido(11, kg=10_240.5, importe=86_120.0, n=71,
+                                 ya=5_000.0)
     assert r["avisado"] is True and r["umbral"] == 10_000.0
     a = puestos[0]
     assert a["fuente"] == "ventas"
@@ -168,9 +169,18 @@ def test_al_cruzar_los_10000_kg_avisa_con_el_mismo_formato_que_el_cierre():
     assert a["clave"] == "ventas-kg:2026-08-07:10000"
 
 
-def test_los_tres_umbrales_son_10000_15000_y_20000_kg():
-    """Miles de kilos: un día normal cierra en 13.500-16.000 kg."""
-    assert av.UMBRALES_KG == (10_000.0, 15_000.0, 20_000.0)
+def test_los_umbrales_son_5000_10000_15000_y_20000_kg():
+    """Miles de kilos: un día normal cierra en 13.500-16.000 kg.
+
+    El 5.000 (dueña, 2026-08-13) es el parte temprano de la mañana.
+    """
+    assert av.UMBRALES_KG == (5_000.0, 10_000.0, 15_000.0, 20_000.0)
+
+
+def test_al_cruzar_los_5000_kg_avisa_sin_haber_avisado_nada_antes():
+    r, puestos = _umbral_corrido(9, kg=5_120.0, ya=0.0)
+    assert r["avisado"] is True and r["umbral"] == 5_000.0
+    assert puestos[0]["clave"] == "ventas-kg:2026-08-07:5000"
 
 
 def test_el_15000_avisa_recien_cuando_ya_se_habia_avisado_el_10000():
@@ -194,7 +204,7 @@ def test_no_repite_el_umbral_que_ya_aviso():
 
 
 def test_debajo_del_primer_umbral_no_dice_nada():
-    r, puestos = _umbral_corrido(10, kg=9_999.0)
+    r, puestos = _umbral_corrido(10, kg=4_999.0)
     assert r["avisado"] is False and puestos == []
 
 
