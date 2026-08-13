@@ -53,10 +53,17 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      # TMT 2026-08-13: `uv` en vez de `pip`. Resuelve e instala lo mismo (lee
+      # el requirements.txt tal cual) pero tarda ~3 s en vez de ~10 s.
+      # `--system` = lo instala en el Python del setup-python de arriba, así
+      # `python -m pytest` / `python -m ruff` siguen encontrándolo igual.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+        run: uv pip install --system -r requirements.txt
 
       - name: Run Ruff legacy check
         continue-on-error: true
@@ -73,7 +80,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports
-          path: |
-            coverage.xml
-            htmlcov/
+          path: coverage.xml
           if-no-files-found: ignore

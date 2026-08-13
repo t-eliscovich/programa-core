@@ -132,9 +132,33 @@ jobs:
           tar -xzf C:\tmp\deploy.tar.gz -C C:\programa-core
           if (\$LASTEXITCODE -ne 0) { Write-Output "ERROR: tar exit \$LASTEXITCODE"; exit 1 }
 
-          # 4. pip install (silencioso, solo lo que cambió)
+          # 4. pip install. TMT 2026-08-13 (dueña: *"necesito todavía más
+          #    corto"*): corría SIEMPRE, aunque requirements.txt no hubiera
+          #    cambiado — y no cambia casi nunca. Ahora se guarda el hash del
+          #    archivo en C:\programa-core\.deps_hash (que no viaja en el
+          #    tarball, vive en el server) y sólo se instala si difiere.
+          #    Si algo quedara desincronizado, borrar ese archivo fuerza el
+          #    install en el próximo deploy.
+          #
+          #    ⭐ Y de paso: antes esto era `pip ... | Select -Last 3`, y el
+          #    exit code de un pipe en PowerShell es el del ÚLTIMO comando
+          #    (Select), no el de pip. O sea que un pip que fallaba pasaba
+          #    DESAPERCIBIDO y el deploy seguía como si nada. Ahora se guarda
+          #    el \$LASTEXITCODE de pip antes de imprimir nada.
           Set-Location C:\programa-core
-          & C:\Python312\python.exe -m pip install -r requirements.txt --quiet --disable-pip-version-check 2>&1 | Select -Last 3
+          \$reqHash = (Get-FileHash C:\programa-core\requirements.txt -Algorithm SHA256).Hash
+          \$hashPrevio = ''
+          if (Test-Path C:\programa-core\.deps_hash) { \$hashPrevio = (Get-Content C:\programa-core\.deps_hash -Raw).Trim() }
+          if (\$reqHash -ne \$hashPrevio) {
+              Write-Output "requirements.txt cambio -> pip install"
+              \$pipOut = & C:\Python312\python.exe -m pip install -r requirements.txt --quiet --disable-pip-version-check 2>&1
+              \$pipRC = \$LASTEXITCODE
+              \$pipOut | Select-Object -Last 3
+              if (\$pipRC -ne 0) { Write-Output "ERROR: pip install salio \$pipRC — no se reinicia nada"; exit 1 }
+              Set-Content -Path C:\programa-core\.deps_hash -Value \$reqHash
+          } else {
+              Write-Output "requirements.txt sin cambios -> salteo pip"
+          }
 
           # 4b. MIGRACIONES, antes del restart. TMT 2026-08-09 (dueña):
           #     *"¿podríamos hacer que las migraciones corran junto con el
