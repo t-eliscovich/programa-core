@@ -7,7 +7,7 @@
 <div style="max-width:760px;">
   {{ page_hero(
       'Nota del cierre por mail',
-      descripcion='Sale sola con la foto de las 18:00 de Ecuador, a los destinatarios activos.',
+      descripcion='Sale sola con la foto de las ' ~ ('%02d' | format(hora_cierre)) ~ ':00 de Ecuador, a los destinatarios activos.',
       kpi_valor=(destinatarios | selectattr('activo') | list | length) ~ ' activos'
   ) }}
 

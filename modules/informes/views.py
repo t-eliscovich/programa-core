@@ -1370,6 +1370,7 @@ def dia_nota_destinatarios():
         "informes/dia_nota.html",
         destinatarios=_dia.destinatarios(),
         vista_html=_dia.nota_html(),
+        hora_cierre=_dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),
         remitente=mailer.remitente(),
         motivo=mailer.motivo_no_disponible(),
     )
