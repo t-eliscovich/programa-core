@@ -765,7 +765,32 @@ def create_app() -> Flask:
             except Exception:  # noqa: BLE001 -- nunca rompe una pantalla
                 return {"n": 0, "items": []}
 
-        return {"novedades": _novedades}
+        def _ventas_hoy_pin():
+            """Los kilos de hoy, fijos arriba de la campanita.
+
+            TMT 2026-08-13 (dueña): *"me gustaría que hagas pin acá el de
+            ventas"* — el aviso de ventas se leía y se iba; el número del día
+            tiene que estar SIEMPRE, aunque no haya novedades. Mismos números
+            que el recuadro del inicio (y que el aviso), para que no puedan
+            contradecirse. Nunca rompe una pantalla: si algo falla, no se
+            muestra el renglón.
+            """
+            try:
+                if not g.get("user"):
+                    return None
+                from auth import tiene_permiso as _tp
+                if not _tp("facturas.ver"):
+                    return None
+                from modules.facturas.views import resumen_hoy
+
+                # Sin Asinfo: el pin está en TODAS las pantallas y el render no
+                # puede quedar colgado del ERP. El despachado lo completa el
+                # fetch al abrir la campanita.
+                return resumen_hoy(con_despacho=False)
+            except Exception:  # noqa: BLE001 -- nunca rompe una pantalla
+                return None
+
+        return {"novedades": _novedades, "ventas_hoy_pin": _ventas_hoy_pin}
 
     @app.route("/")
     def index():

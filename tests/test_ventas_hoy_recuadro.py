@@ -138,3 +138,75 @@ def test_la_vista_es_fail_soft_si_el_modulo_de_asinfo_explota():
     with patch.object(service, "despacho_fisico_dia_info",
                       side_effect=RuntimeError("boom")):
         assert fviews._despachado_hoy(DIA)["kg"] is None
+
+
+# ── resumen_hoy: UNA función para los tres lugares ──────────────────────────
+
+def _resumen(kg_fact, desp, *, n=53, importe=95833.45):
+    with patch("modules.facturas.aviso_ventas.totales_dia",
+               return_value={"n": n, "importe": importe, "kg": kg_fact}), \
+         patch.object(fviews, "_despachado_hoy", return_value=desp):
+        return fviews.resumen_hoy(DIA)
+
+
+def test_resumen_hoy_arma_el_porcentaje_facturado_sobre_despachado():
+    out = _resumen(11508.65, {"kg": 11947.0, "hora": None, "fresco": True})
+    assert out["kg"] == 11508.65
+    assert out["despachado"]["kg"] == 11947.0
+    assert out["pct"] == 96
+    assert out["fecha"] == "2026-08-13"
+
+
+def test_el_porcentaje_pasa_de_100_cuando_se_factura_lo_de_ayer():
+    assert _resumen(11000.0, {"kg": 10000.0, "hora": None,
+                              "fresco": True})["pct"] == 110
+
+
+def test_sin_dato_de_despacho_no_hay_porcentaje_y_no_explota():
+    out = _resumen(11508.65, {"kg": None, "hora": None, "fresco": False})
+    assert out["pct"] is None and out["despachado"]["kg"] is None
+
+
+def test_los_tres_lugares_llaman_a_la_MISMA_funcion():
+    """El recuadro del inicio, el pin de la campanita y el JSON que los
+    refresca salen de `resumen_hoy`. Si alguno se armara por su cuenta, dos
+    pantallas de la misma app dirían cosas distintas el mismo minuto."""
+    import inspect
+    from pathlib import Path
+
+    import app as app_mod
+    from modules.historial import views as hviews
+
+    assert "resumen_hoy" in inspect.getsource(hviews.operaciones)
+    assert "resumen_hoy" in inspect.getsource(app_mod.create_app)
+    assert "resumen_hoy()" in inspect.getsource(fviews.totales_hoy_json)
+    # …y el pin está en la campanita, arriba de la lista de avisos.
+    base = Path("templates/base.html").read_text()
+    assert "ventas_hoy_pin()" in base
+    assert base.index("ventas_hoy_pin()") < base.index("_ab['items']")
+
+
+# ── Ninguna pantalla le pregunta a Asinfo mientras se dibuja ────────────────
+
+def test_el_modo_render_no_toca_asinfo():
+    """El pin va en base.html (TODAS las pantallas): si el render pidiera el
+    despacho, un Metabase lento haría esperar a la app entera."""
+    with patch("modules.facturas.aviso_ventas.totales_dia",
+               return_value={"n": 3, "importe": 10.0, "kg": 5.0}), \
+         patch.object(fviews, "_despachado_hoy") as desp:
+        out = fviews.resumen_hoy(DIA, con_despacho=False)
+    desp.assert_not_called()
+    assert out["despachado"]["kg"] is None and out["pct"] is None
+    assert out["kg"] == 5.0          # lo local sí sale en el render
+
+
+def test_el_pin_y_el_recuadro_rinden_en_modo_render_y_completan_por_fetch():
+    import inspect
+
+    import app as app_mod
+    from modules.historial import views as hviews
+
+    assert "con_despacho=False" in inspect.getsource(hviews.operaciones)
+    assert "con_despacho=False" in inspect.getsource(app_mod.create_app)
+    # El JSON, en cambio, SÍ trae el despacho (es el que llama el fetch).
+    assert "con_despacho" not in inspect.getsource(fviews.totales_hoy_json)

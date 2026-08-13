@@ -27,38 +27,34 @@
      href="/facturas?desde={{ ventas_hoy.fecha }}&hasta={{ ventas_hoy.fecha }}"
      data-url="{{ url_for('facturas.totales_hoy_json') }}">
     <div class="ventas-hoy-tit">Hoy</div>
-    <div class="ventas-hoy-pares">
-      <div>
-        <div class="ventas-hoy-rot">Facturado</div>
-        <div class="ventas-hoy-kg"><span data-campo="kg">{{ ventas_hoy.kg | kg_es }}</span> kg</div>
-        <div class="ventas-hoy-sub">
-          $ <span data-campo="importe">{{ ventas_hoy.importe | num_es(2) }}</span>
-          · <span data-campo="n">{{ ventas_hoy.n }}</span>
-          <span data-campo="n_lab">factura{{ '' if ventas_hoy.n == 1 else 's' }}</span>
-        </div>
-      </div>
-      {# TMT 2026-08-13 (dueña): *"a veces se despacha más que facturado"*. Son
-         dos hechos distintos (mercadería que salió vs. documento), así que van
-         uno al lado del otro y NO se suman. #}
-      <div class="ventas-hoy-desp">
-        <div class="ventas-hoy-rot">Despachado</div>
-        <div class="ventas-hoy-kg">
-          <span data-campo="kg_despachado">{{ ventas_hoy.despachado.kg | kg_es if ventas_hoy.despachado.kg is not none else '—' }}</span>
-          {{ 'kg' if ventas_hoy.despachado.kg is not none else '' }}
-        </div>
-        {# Si Asinfo no contestó se muestra la última lectura buena CON su hora
-           (dueña 13/08): un cero se leería como "no salió nada". #}
-        <div class="ventas-hoy-sub" data-campo="desp_pie">
-          {%- if ventas_hoy.despachado.kg is none -%}
-            sin dato de Asinfo
-          {%- elif not ventas_hoy.despachado.fresco -%}
-            medido {{ ventas_hoy.despachado.hora }}
-          {%- else -%}
-            salió de la fábrica
-          {%- endif -%}
-        </div>
-      </div>
+    {# TMT 2026-08-13 (dueña), sobre la primera versión en dos columnas: *"no se
+       entiende bien esto… todo pegado, separá, o uno abajo del otro o ponele %
+       a lo facturado"*. Quedó una fila por número, con el % del facturado
+       sobre el despachado en la línea de abajo. #}
+    <div class="ventas-hoy-fila">
+      <span class="ventas-hoy-rot">Despachado</span>
+      <span class="ventas-hoy-kg">
+        <span data-campo="kg_despachado">{{ ventas_hoy.despachado.kg | kg_es if ventas_hoy.despachado.kg is not none else '—' }}</span>{{ ' kg' if ventas_hoy.despachado.kg is not none }}
+      </span>
     </div>
+    {# El despachado vive en Asinfo: NO se pide mientras se dibuja la pantalla
+       (ver resumen_hoy). Nace en "—" y lo completa el fetch de abajo, que sale
+       apenas carga. Si Asinfo no contesta se muestra la última lectura buena
+       con su hora (dueña 13/08): un cero se leería como "no salió nada". #}
+    <div class="ventas-hoy-pie" data-campo="desp_pie">buscando en Asinfo…</div>
+
+    <div class="ventas-hoy-sep"></div>
+
+    <div class="ventas-hoy-fila">
+      <span class="ventas-hoy-rot">Facturado</span>
+      <span class="ventas-hoy-kg"><span data-campo="kg">{{ ventas_hoy.kg | kg_es }}</span> kg</span>
+    </div>
+    <div class="ventas-hoy-pie">
+      <span data-campo="pct">{{ ventas_hoy.pct ~ ' % de lo despachado · ' if ventas_hoy.pct is not none }}</span>$ <span data-campo="importe">{{ ventas_hoy.importe | num_es(2) }}</span>
+      · <span data-campo="n">{{ ventas_hoy.n }}</span>
+      <span data-campo="n_lab">factura{{ '' if ventas_hoy.n == 1 else 's' }}</span>
+    </div>
+
     {# La barra sigue lo DESPACHADO, que es lo que dispara los avisos de la
        campanita (5.000 / 10.000 / 15.000 / 20.000 kg). #}
     {% set _kg_barra = ventas_hoy.despachado.kg or 0 %}
@@ -70,7 +66,7 @@
       {% endfor %}
     </div>
     <div class="ventas-hoy-escala">
-      {% for _m, _t in [(5000, '5.000'), (10000, '10.000'), (15000, '15.000'), (20000, '20.000 kg')] %}
+      {% for _m, _t in [(5000, '5.000'), (10000, '10.000'), (15000, '15.000'), (20000, '20.000')] %}
         <span style="left: {{ (_m / 20000 * 100) | round(1) }}%">{{ _t }}</span>
       {% endfor %}
     </div>
@@ -124,34 +120,33 @@
     border-radius: 0.75rem;
     background: rgb(255 255 255);
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    text-align: center;
   }
   .ventas-hoy:hover { border-color: rgb(148 163 184); }
   .dark .ventas-hoy { background: rgb(30 41 59); border-color: rgb(71 85 105); }
   .ventas-hoy-tit {
     font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
-    color: rgb(100 116 139); font-weight: 600;
+    color: rgb(100 116 139); font-weight: 600; text-align: center;
   }
-  .ventas-hoy-pares {
-    display: flex; gap: 1rem; margin-top: 0.35rem;
+  .ventas-hoy-fila {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 0.75rem; margin-top: 0.2rem;
   }
-  .ventas-hoy-pares > div { flex: 1 1 0; }
-  .ventas-hoy-desp { border-left: 1px solid rgb(226 232 240); }
-  .dark .ventas-hoy-desp { border-left-color: rgb(71 85 105); }
-  .ventas-hoy-rot {
-    font-size: 0.7rem; color: rgb(100 116 139); font-weight: 600;
-  }
+  .ventas-hoy-rot { font-size: 0.8rem; color: rgb(100 116 139); }
   .ventas-hoy-kg {
-    font-size: 1.5rem; font-weight: 600; line-height: 1.15;
-    font-variant-numeric: tabular-nums; color: rgb(15 23 42); margin-top: 0.15rem;
+    font-size: 1.5rem; font-weight: 600; line-height: 1.2;
+    font-variant-numeric: tabular-nums; color: rgb(15 23 42);
   }
   .dark .ventas-hoy-kg { color: rgb(241 245 249); }
-  .ventas-hoy-sub {
-    font-size: 0.75rem; color: rgb(100 116 139); font-variant-numeric: tabular-nums;
+  .ventas-hoy-pie {
+    font-size: 0.75rem; color: rgb(148 163 184); text-align: right;
+    font-variant-numeric: tabular-nums;
   }
-  .dark .ventas-hoy-sub { color: rgb(148 163 184); }
+  .ventas-hoy-sep {
+    height: 1px; background: rgb(226 232 240); margin: 0.7rem 0 0.5rem;
+  }
+  .dark .ventas-hoy-sep { background: rgb(71 85 105); }
   .ventas-hoy-barra {
-    position: relative; height: 0.4rem; margin-top: 0.8rem;
+    position: relative; height: 0.5rem; margin-top: 1.25rem;
     background: rgb(226 232 240); border-radius: 999px; overflow: hidden;
   }
   .dark .ventas-hoy-barra { background: rgb(51 65 85); }
@@ -167,7 +162,7 @@
   /* Los rótulos van DEBAJO de su marca (no repartidos a espacios iguales:
      el 5.000 está al 25% de la barra, no en el borde izquierdo). */
   .ventas-hoy-escala {
-    position: relative; height: 0.9rem; margin-top: 0.25rem;
+    position: relative; height: 1rem; margin-top: 0.45rem;
     font-size: 0.65rem; color: rgb(148 163 184); font-variant-numeric: tabular-nums;
   }
   .ventas-hoy-escala span {
@@ -212,6 +207,7 @@
     q('desp_pie').textContent = dsp.kg === null || dsp.kg === undefined
       ? 'sin dato de Asinfo'
       : (dsp.fresco ? 'salió de la fábrica' : 'medido ' + (dsp.hora || ''));
+    q('pct').textContent = typeof d.pct === 'number' ? d.pct + ' % de lo despachado · ' : '';
     q('barra').style.width = Math.min(100, (dsp.kg || 0) / 20000 * 100).toFixed(1) + '%';
     q('n_lab').textContent = d.n === 1 ? 'factura' : 'facturas';
 
@@ -222,6 +218,7 @@
       .then(function (d) { if (d) pintar(d); })
       .catch(function () {});
   }
+  refrescar();                       // el despachado sale por acá, no del render
   setInterval(refrescar, 60000);
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) refrescar();

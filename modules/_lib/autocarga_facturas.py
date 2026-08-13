@@ -157,16 +157,11 @@ def _loop() -> None:
             # solo por día (la clave del aviso lo garantiza).
             try:
                 from modules.facturas import aviso_ventas as _ventas
+                # TMT 2026-08-13 (dueña): los avisos de umbral (5/10/15/20
+                # mil kg) se RETIRARON — *"si está pinned, ya no necesitamos
+                # anuncio por cada 5k, 10k, 15k y 20k goal"*: el número del día
+                # está fijo arriba de la campanita. Queda sólo el cierre.
                 _ventas.correr_si_toca()
-                # TMT 2026-08-07 (dueña): "otra notificación cuando la venta
-                # del día sobrepase 10kg y cuando sobrepase 15kg y luego 20kg"
-                # (miles de kilos) — "entre la jornada laboral", 08:00-18:00 de
-                # Ecuador. Va DESPUÉS del cierre: si son las 18 el que habla es
-                # el cierre y este devuelve "fuera de la jornada".
-                uk = _ventas.correr_umbrales_kg()
-                if uk.get("avisado"):
-                    _LOG.info("ventas del día (fondo): cruzó los %s kg",
-                              uk.get("umbral"))
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("ventas del día (fondo): %s", e)
             # TMT 2026-07-31 (dueña): "guardá la data y fijate en un rato

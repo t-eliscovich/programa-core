@@ -69,12 +69,10 @@ def operaciones():
     ventas_hoy = None
     if tiene_permiso("facturas.ver"):
         try:
-            from filters import today_ec as _hoy_ec
-            from modules.facturas.aviso_ventas import totales_dia as _tot_dia
-            ventas_hoy = _tot_dia(_hoy_ec())
-            ventas_hoy["fecha"] = _hoy_ec().isoformat()
-            from modules.facturas.views import _despachado_hoy
-            ventas_hoy["despachado"] = _despachado_hoy(_hoy_ec())
+            from modules.facturas.views import resumen_hoy
+            # Sin Asinfo en el render (ver resumen_hoy): el despachado lo trae
+            # el fetch de /facturas/totales-hoy.json apenas carga la pantalla.
+            ventas_hoy = resumen_hoy(con_despacho=False)
         except Exception:  # noqa: BLE001 -- la landing nunca se cae por esto
             ventas_hoy = None
 

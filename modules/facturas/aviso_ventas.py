@@ -1,4 +1,4 @@
-"""Avisos de VENTAS del día: los umbrales de kilos y el cierre de las 19.
+"""Aviso de VENTAS del día: el cierre de las 19.
 
 TMT 2026-07-30 (dueña): *"agregar en la campanita, a fin de día, venta total kg
 y total facturas $"* → y, viendo el borrador: *"plata arriba"*, *"18 hs
@@ -22,52 +22,19 @@ Decisiones que valen la pena recordar:
   igual. Las notas de crédito del día restan, así que el número es la venta
   NETA.
 
-── UMBRALES DE KILOS (TMT 2026-08-07, dueña) ────────────────────────────────
+── LOS UMBRALES DE KILOS SE RETIRARON (TMT 2026-08-13) ──────────────────────
 
-*"otra notificación de facturas cuando la venta del día sobrepase 10kg y
-cuando sobrepase 15kg y luego 20kg… si se acumula, una notificación que diga
-ventas del día x 15.410kg por x$ como la del final de día pero entre la jornada
-laboral"* — o sea: enterarse de cómo viene el día SIN esperar a las 18.
+Entre el 07/08 y el 13/08 esto también avisaba al cruzar 5.000 / 10.000 /
+15.000 / 20.000 kg durante la jornada. Se retiró el mismo día que el número
+del día quedó **fijo arriba de la campanita** y en la pantalla de inicio:
+*"si está pinned, ya no necesitamos anuncio por cada 5k, 10k, 15k y 20k goal"*.
 
-    ✅  Ventas del día · $ 128.410,20              07/08 11:24
-        15.410,50 kg · 104 facturas
-
-Los umbrales son **5.000 / 10.000 / 15.000 / 20.000 kg** (un día normal cierra
-en 13.500-16.000 kg, así que la escalera tiene sentido). El 5.000 lo pidió la
-dueña el 2026-08-13: quiere el primer parte de la mañana, sin esperar a los
-10.000.
-
-⭐ **La escalera se mide por lo DESPACHADO, no por lo facturado** (dueña,
-13/08: *"a veces se despacha más que facturado"* … *"en notificaciones que esté
-fijo 10k kg despachados 90 % facturado"*). El despacho es el hecho físico —la
-mercadería que salió por la puerta— y va ADELANTE de la factura, que es el
-documento y puede entrar horas después o al día siguiente. Avisar por el
-documento hacía llegar tarde el parte de un día que ya había cargado los
-camiones. El aviso queda:
-
-    ✅  10.000 kg despachados                      13/08 11:24
-        90 % facturado · $ 86.120,20 · 104 facturas
-
-El % es facturado/despachado del día y **puede pasar de 100** (se factura hoy
-lo que salió ayer): eso no es un error, es el orden natural de los dos hechos.
-Si Asinfo no contesta, `despacho_fisico_dia` devuelve la última lectura buena;
-si nunca hubo una, el aviso no sale (0 kg) y entra en la pasada siguiente.
-
-Decisiones que valen la pena recordar:
-
-· **Sólo entre las 08:00 y las 19:00 de Ecuador.** De 19 en adelante manda el
-  cierre del día, que no se toca; antes de las 8 no hay a quién avisarle.
-· **Se avisa el umbral MÁS ALTO cruzado, no todos.** Si a las 9 entra un lote
-  que salta de 4.000 a 16.000 kg de una, sale UN aviso (el de 15.000), no dos.
-  Los de abajo se dan por vistos: la campanita informa, no lleva la cuenta.
-· **La memoria del "hasta dónde ya avisé" está en la BASE, no en una variable
-  de proceso** — se lee del `clave` de los avisos ya puestos
-  (`ventas-kg:<fecha>:<umbral>`). Un restart del server a media mañana no tiene
-  que hacer que la campanita repita los umbrales de la mañana. Y aunque los
-  repitiera, el `ON CONFLICT (clave)` de `avisar()` los frena igual: son DOS
-  candados, a propósito.
-· **Mismo universo y mismo formato que el cierre** — la dueña compara los dos
-  números de un vistazo, así que salen de la MISMA función (`totales_dia`).
+Vale la pena recordar por qué: un aviso sirve para enterarse de algo que no
+estás mirando. Cuando el dato pasa a estar SIEMPRE a la vista, el aviso deja de
+informar y sólo interrumpe. Si alguna vez vuelve, el andamiaje está en el
+historial de git (commits `2aeea21e`, `b174f090`, `087f35e2`): la escalera se
+medía por lo DESPACHADO, con la memoria del "hasta dónde ya avisé" en la base
+(clave `ventas-kg:<fecha>:<umbral>`), no en una variable de proceso.
 """
 from __future__ import annotations
 
@@ -85,16 +52,6 @@ _LOG = logging.getLogger("programa_core.aviso_ventas")
 # (`dia.HORA_CIERRE`) — *"a veces se pasan de horario para facturar"*.
 HORA_AVISO = 19
 
-# Umbrales de kilos DESPACHADOS en el día (dueña 2026-08-07; el 5.000 y el
-# cambio de facturado a despachado, el 2026-08-13). Ordenados de menor a mayor:
-# el código se apoya en eso para quedarse con el más alto cruzado.
-UMBRALES_KG = (5_000.0, 10_000.0, 15_000.0, 20_000.0)
-
-# La jornada laboral: fuera de esta franja no se avisan umbrales. El tope
-# coincide con HORA_AVISO a propósito — a las 18 en punto el que habla es el
-# cierre del día, y no queremos los dos avisos en el mismo minuto.
-HORA_DESDE_KG = 8
-HORA_HASTA_KG = 19
 
 _ultimo_dia_avisado: str | None = None
 
@@ -110,38 +67,6 @@ def _hora_aviso() -> int:
     except (TypeError, ValueError):
         return HORA_AVISO
     return h if 0 <= h <= 23 else HORA_AVISO
-
-
-def _umbrales_kg() -> tuple[float, ...]:
-    """Los umbrales, de menor a mayor. `VENTAS_KG_UMBRALES=8000,12000` los pisa."""
-    crudo = (os.environ.get("VENTAS_KG_UMBRALES") or "").strip()
-    if not crudo:
-        return UMBRALES_KG
-    vals = []
-    for parte in crudo.split(","):
-        try:
-            v = float(parte.strip())
-        except (TypeError, ValueError):
-            continue
-        if v > 0:
-            vals.append(v)
-    return tuple(sorted(set(vals))) if vals else UMBRALES_KG
-
-
-def _franja_kg() -> tuple[int, int]:
-    """(desde, hasta) en hora de Ecuador. Si vienen al revés, se ignoran."""
-    def _leer(nombre: str, x: int) -> int:
-        try:
-            v = int(os.environ.get(nombre, str(x)))
-        except (TypeError, ValueError):
-            return x
-        return v if 0 <= v <= 23 else x
-
-    desde = _leer("VENTAS_KG_DESDE", HORA_DESDE_KG)
-    hasta = _leer("VENTAS_KG_HASTA", HORA_HASTA_KG)
-    if desde >= hasta:
-        return HORA_DESDE_KG, HORA_HASTA_KG
-    return desde, hasta
 
 
 def totales_dia(fecha) -> dict:
@@ -166,101 +91,6 @@ def totales_dia(fecha) -> dict:
         "importe": float(row.get("importe") or 0),
         "kg": float(row.get("kg") or 0),
     }
-
-
-def _clave_umbral(clave_dia: str, umbral: float) -> str:
-    return f"ventas-kg:{clave_dia}:{int(umbral)}"
-
-
-def ultimo_umbral_avisado(clave_dia: str) -> float:
-    """Hasta qué umbral de kilos ya avisamos HOY, leído de los avisos puestos.
-
-    Se pregunta a la base y no a una variable de módulo a propósito: el server
-    se reinicia (deploy, restart del Scheduled Task) y una variable de proceso
-    volvería a cero a media mañana, con lo que la campanita repetiría los
-    umbrales que ya cantó. Fail-soft a 0 sin miedo: el segundo candado es el
-    `ON CONFLICT (clave)` de `avisar()`, que igual no deja entrar el repetido.
-    """
-    try:
-        row = db.fetch_one(
-            """
-            SELECT MAX(NULLIF(SPLIT_PART(clave, ':', 3), '')::numeric) AS u
-              FROM scintela.aviso
-             WHERE clave LIKE %s
-            """,
-            (f"ventas-kg:{clave_dia}:%",),
-        ) or {}
-    except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
-        _LOG.warning("no pude leer el último umbral avisado: %s", e)
-        return 0.0
-    return float(row.get("u") or 0)
-
-
-def kg_despachados(fecha) -> float:
-    """Kg que salieron de la fábrica ese día (Asinfo). Fail-soft: 0.0."""
-    try:
-        from modules.asinfo.service import despacho_fisico_dia
-        return float(despacho_fisico_dia(fecha) or 0.0)
-    except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
-        _LOG.warning("no pude leer los kilos despachados: %s", e)
-        return 0.0
-
-
-def correr_umbrales_kg() -> dict:
-    """Avisa cuando los kilos DESPACHADOS del día cruzan un umbral. Nunca levanta.
-
-    Manda UN aviso por cruce: el del umbral más alto superado que todavía no se
-    haya avisado hoy. Los de abajo quedan tapados (si el día salta de 4.000 a
-    16.000 kg de un lote, sale el de 15.000 y nada más).
-    """
-    res = {"avisado": False, "umbral": 0.0, "motivo": ""}
-    if os.environ.get("VENTAS_AVISO", "1").strip() == "0":
-        res["motivo"] = "apagado"
-        return res
-    try:
-        desde, hasta = _franja_kg()
-        h = _ahora_ec().hour
-        if not (desde <= h < hasta):
-            res["motivo"] = f"fuera de la jornada ({desde}-{hasta})"
-            return res
-
-        hoy = today_ec()
-        clave_dia = hoy.isoformat()
-        kg_desp = kg_despachados(hoy)
-        if not kg_desp:
-            res["motivo"] = "sin despachos"
-            return res
-
-        ya = ultimo_umbral_avisado(clave_dia)
-        cruzados = [u for u in _umbrales_kg() if kg_desp >= u > ya]
-        if not cruzados:
-            res["motivo"] = "no cruzó ningún umbral nuevo"
-            return res
-        umbral = max(cruzados)
-
-        # El % es facturado/despachado: cómo viene la facturación de lo que ya
-        # salió. Puede pasar de 100 (hoy se factura lo de ayer) — se muestra
-        # tal cual, redondeado, porque el 110 % también dice algo.
-        t = totales_dia(hoy)
-        pct = round(t["kg"] / kg_desp * 100) if kg_desp else 0
-
-        from modules.avisos import avisar
-
-        avisar(
-            fuente="ventas",
-            titulo=f"{num_es(kg_desp, 2)} kg despachados",
-            detalle=(f"{pct} % facturado · $ {num_es(t['importe'], 2)} · "
-                     f"{t['n']} factura{'' if t['n'] == 1 else 's'}"),
-            importe=round(t["importe"], 2), cantidad=t["n"],
-            url=f"/facturas?desde={clave_dia}&hasta={clave_dia}",
-            clave=_clave_umbral(clave_dia, umbral),
-        )
-        res["avisado"] = True
-        res["umbral"] = umbral
-    except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
-        _LOG.warning("aviso de umbral de kilos: %s", e)
-        res["motivo"] = str(e)[:120]
-    return res
 
 
 def correr_si_toca() -> dict:

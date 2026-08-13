@@ -829,32 +829,53 @@ def _despachado_hoy(fecha) -> dict:
             "fresco": bool(info.get("fresco"))}
 
 
-@facturas_bp.route("/facturas/totales-hoy.json")
-@requiere_login
-@requiere_permiso("facturas.ver")
-def totales_hoy_json():
-    """Los kilos y la plata facturados HOY, para el recuadro del inicio.
+def resumen_hoy(fecha=None, con_despacho: bool = True) -> dict:
+    """{fecha, kg, importe, n, despachado, pct} de lo facturado y despachado HOY.
 
-    TMT 2026-08-13 (dueña): *"cómo podríamos ir teniendo cantidad kg vendidos
-    en el día y que se vaya acumulando"* → el número a la vista en la pantalla
-    de inicio, sin depender de que llegue el aviso de la campanita.
+    UNA sola función para los TRES lugares que muestran el número (el recuadro
+    del inicio, el pin de la campanita y el JSON que los refresca): si cada uno
+    lo armara por su cuenta, dos pantallas de la misma app terminarían diciendo
+    cosas distintas el mismo minuto.
 
-    Sale de la MISMA función que la campanita y el cierre de las 19
-    (`aviso_ventas.totales_dia`): las tres cifras tienen que ser LA MISMA, o
-    la de la pantalla y la del aviso se contradicen a los cinco minutos.
-    Fail-soft: si la consulta falla devuelve ceros, nunca un 500.
+    ⭐ `con_despacho=False` es el modo de RENDER: sólo la parte local (una
+    query a nuestra base). El despacho vive en Asinfo y **ninguna pantalla lo
+    pide mientras se dibuja** — lo trae después el JSON, por fetch. El pin va
+    en `base.html`, o sea en TODAS las pantallas: con Metabase lento, pedirlo
+    en el render haría esperar a la app entera. Es el mismo invariante que
+    protege `test_precios_no_le_pregunta_a_asinfo_al_cargar`.
+
+    `pct` es facturado/despachado — cómo viene la facturación de lo que ya
+    salió — y puede pasar de 100 (hoy se factura lo de ayer). Es None si no
+    hay dato de despacho.
     """
     from modules.facturas.aviso_ventas import totales_dia
 
-    hoy = today_ec()
+    hoy = fecha or today_ec()
     t = totales_dia(hoy)
-    return jsonify({
+    desp = (_despachado_hoy(hoy) if con_despacho
+            else {"kg": None, "hora": None, "fresco": False})
+    kg_desp = desp.get("kg")
+    return {
         "fecha": hoy.isoformat(),
         "kg": round(t["kg"], 2),
         "importe": round(t["importe"], 2),
         "n": t["n"],
-        "despachado": _despachado_hoy(hoy),
-    })
+        "despachado": desp,
+        "pct": round(t["kg"] / kg_desp * 100) if kg_desp else None,
+    }
+
+
+@facturas_bp.route("/facturas/totales-hoy.json")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def totales_hoy_json():
+    """Los kilos de hoy, para que el recuadro del inicio se refresque solo.
+
+    TMT 2026-08-13 (dueña): *"cómo podríamos ir teniendo cantidad kg vendidos
+    en el día y que se vaya acumulando"* → el número a la vista en la pantalla
+    de inicio, sin depender de que llegue el aviso de la campanita.
+    """
+    return jsonify(resumen_hoy())
 
 
 @facturas_bp.route("/facturas/diag-cartera")
