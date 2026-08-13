@@ -137,19 +137,25 @@ def test_la_hora_sale_del_reloj_de_ECUADOR_no_del_servidor():
     assert av._ahora_ec().hour == (ahora_utc - timedelta(hours=5)).hour
 
 
-# ── Umbrales de kilos durante la jornada (TMT 2026-08-07) ────────────────────
+# ── Umbrales de kilos durante la jornada (TMT 2026-08-07 / 2026-08-13) ───────
 # Dueña: *"otra notificación de facturas cuando la venta del día sobrepase
 # 10kg y cuando sobrepase 15kg y luego 20kg… entre la jornada laboral"*
-# (miles de kilos, confirmado en el chat).
+# (miles de kilos, confirmado en el chat). El 13/08 la escalera pasó a medirse
+# por lo DESPACHADO: *"a veces se despacha más que facturado"* … *"en
+# notificaciones que esté fijo 10k kg despachados 90 % facturado"*.
 
-def _umbral_corrido(hora_ec, kg, *, ya=0.0, n=104, importe=128410.20):
-    """Corre correr_umbrales_kg() con el reloj, los totales y el "ya avisado"
-    puestos a mano. Devuelve (resultado, avisos_puestos)."""
+def _umbral_corrido(hora_ec, kg, *, ya=0.0, n=104, importe=128410.20,
+                    kg_fact=None):
+    """Corre correr_umbrales_kg() con el reloj, los kilos y el "ya avisado"
+    puestos a mano. `kg` son los DESPACHADOS (los que disparan); `kg_fact` los
+    facturados (por defecto, los mismos). Devuelve (resultado, avisos)."""
     puestos = []
     with patch.object(av, "_ahora_ec", return_value=_a_las(hora_ec)), \
          patch.object(av, "today_ec", return_value=date(2026, 8, 7)), \
+         patch.object(av, "kg_despachados", return_value=kg), \
          patch.object(av, "totales_dia",
-                      return_value={"n": n, "importe": importe, "kg": kg}), \
+                      return_value={"n": n, "importe": importe,
+                                    "kg": kg if kg_fact is None else kg_fact}), \
          patch.object(av, "ultimo_umbral_avisado", return_value=ya), \
          patch("modules.avisos.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
@@ -157,16 +163,32 @@ def _umbral_corrido(hora_ec, kg, *, ya=0.0, n=104, importe=128410.20):
     return r, puestos
 
 
-def test_al_cruzar_los_10000_kg_avisa_con_el_mismo_formato_que_el_cierre():
-    r, puestos = _umbral_corrido(11, kg=10_240.5, importe=86_120.0, n=71,
-                                 ya=5_000.0)
+def test_al_cruzar_los_10000_kg_despachados_avisa_con_el_pct_facturado():
+    r, puestos = _umbral_corrido(11, kg=10_240.5, kg_fact=9_216.45,
+                                 importe=86_120.0, n=71, ya=5_000.0)
     assert r["avisado"] is True and r["umbral"] == 10_000.0
     a = puestos[0]
     assert a["fuente"] == "ventas"
-    assert a["titulo"] == "Ventas del día · $ 86.120,00"    # la plata, arriba
-    assert a["detalle"] == "10.240,50 kg · 71 facturas"
+    assert a["titulo"] == "10.240,50 kg despachados"
+    assert a["detalle"] == "90 % facturado · $ 86.120,00 · 71 facturas"
     assert a["url"] == "/facturas?desde=2026-08-07&hasta=2026-08-07"
     assert a["clave"] == "ventas-kg:2026-08-07:10000"
+
+
+def test_facturar_mas_de_lo_despachado_da_mas_de_100_por_ciento():
+    """Hoy se factura lo que salió ayer: el % pasa de 100 y NO se recorta."""
+    r, puestos = _umbral_corrido(11, kg=10_000.0, kg_fact=11_000.0, ya=5_000.0)
+    assert r["avisado"] is True
+    assert puestos[0]["detalle"].startswith("110 % facturado")
+
+
+def test_los_kilos_del_aviso_son_los_DESPACHADOS_no_los_facturados():
+    """El disparador es el despacho: 12.000 kg afuera con 3.000 facturados
+    cruza el umbral de 10.000 igual."""
+    r, puestos = _umbral_corrido(11, kg=12_000.0, kg_fact=3_000.0, ya=5_000.0)
+    assert r["umbral"] == 10_000.0
+    assert puestos[0]["titulo"] == "12.000,00 kg despachados"
+    assert puestos[0]["detalle"].startswith("25 % facturado")
 
 
 def test_los_umbrales_son_5000_10000_15000_y_20000_kg():
@@ -186,7 +208,7 @@ def test_al_cruzar_los_5000_kg_avisa_sin_haber_avisado_nada_antes():
 def test_el_15000_avisa_recien_cuando_ya_se_habia_avisado_el_10000():
     r, puestos = _umbral_corrido(14, kg=15_410.5, ya=10_000.0)
     assert r["umbral"] == 15_000.0
-    assert puestos[0]["detalle"].startswith("15.410,50 kg")
+    assert puestos[0]["titulo"] == "15.410,50 kg despachados"
     assert puestos[0]["clave"] == "ventas-kg:2026-08-07:15000"
 
 
@@ -220,15 +242,22 @@ def test_fuera_de_la_jornada_laboral_no_avisa_umbrales():
     assert r["avisado"] is True and r["umbral"] == 20_000.0
 
 
-def test_un_dia_sin_facturas_no_enciende_la_campanita_por_umbral():
+def test_un_dia_sin_despachos_no_enciende_la_campanita_por_umbral():
+    """Y lo mismo si Asinfo no contesta: kg_despachados() devuelve 0.0 y el
+    aviso no sale (entra en la pasada siguiente, no miente un cero)."""
     with patch.object(av, "_ahora_ec", return_value=_a_las(11)), \
          patch.object(av, "today_ec", return_value=date(2026, 8, 7)), \
-         patch.object(av, "totales_dia",
-                      return_value={"n": 0, "importe": 0.0, "kg": 0.0}), \
+         patch.object(av, "kg_despachados", return_value=0.0), \
          patch("modules.avisos.avisar") as avisar:
         r = av.correr_umbrales_kg()
-    assert r["motivo"] == "sin facturas"
+    assert r["motivo"] == "sin despachos"
     avisar.assert_not_called()
+
+
+def test_kg_despachados_es_fail_soft_si_asinfo_no_contesta():
+    with patch("modules.asinfo.service.despacho_fisico_dia",
+               side_effect=RuntimeError("metabase 500")):
+        assert av.kg_despachados(date(2026, 8, 7)) == 0.0
 
 
 def test_el_hasta_donde_avise_se_lee_de_la_BASE_no_de_una_variable():

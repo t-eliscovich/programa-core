@@ -20,6 +20,62 @@
   {% else %}
     <p class="landing-greeting">Elegí una opción del menú de la izquierda.</p>
   {% endif %}
+  {% if ventas_hoy %}
+  {# TMT 2026-08-13 (dueña): los kilos del día a la vista, sin esperar la
+     campanita. Se refresca solo cada minuto (y al volver a la pestaña). #}
+  <a class="ventas-hoy" id="ventas-hoy"
+     href="/facturas?desde={{ ventas_hoy.fecha }}&hasta={{ ventas_hoy.fecha }}"
+     data-url="{{ url_for('facturas.totales_hoy_json') }}">
+    <div class="ventas-hoy-tit">Hoy</div>
+    <div class="ventas-hoy-pares">
+      <div>
+        <div class="ventas-hoy-rot">Facturado</div>
+        <div class="ventas-hoy-kg"><span data-campo="kg">{{ ventas_hoy.kg | kg_es }}</span> kg</div>
+        <div class="ventas-hoy-sub">
+          $ <span data-campo="importe">{{ ventas_hoy.importe | num_es(2) }}</span>
+          · <span data-campo="n">{{ ventas_hoy.n }}</span>
+          <span data-campo="n_lab">factura{{ '' if ventas_hoy.n == 1 else 's' }}</span>
+        </div>
+      </div>
+      {# TMT 2026-08-13 (dueña): *"a veces se despacha más que facturado"*. Son
+         dos hechos distintos (mercadería que salió vs. documento), así que van
+         uno al lado del otro y NO se suman. #}
+      <div class="ventas-hoy-desp">
+        <div class="ventas-hoy-rot">Despachado</div>
+        <div class="ventas-hoy-kg">
+          <span data-campo="kg_despachado">{{ ventas_hoy.despachado.kg | kg_es if ventas_hoy.despachado.kg is not none else '—' }}</span>
+          {{ 'kg' if ventas_hoy.despachado.kg is not none else '' }}
+        </div>
+        {# Si Asinfo no contestó se muestra la última lectura buena CON su hora
+           (dueña 13/08): un cero se leería como "no salió nada". #}
+        <div class="ventas-hoy-sub" data-campo="desp_pie">
+          {%- if ventas_hoy.despachado.kg is none -%}
+            sin dato de Asinfo
+          {%- elif not ventas_hoy.despachado.fresco -%}
+            medido {{ ventas_hoy.despachado.hora }}
+          {%- else -%}
+            salió de la fábrica
+          {%- endif -%}
+        </div>
+      </div>
+    </div>
+    {# La barra sigue lo DESPACHADO, que es lo que dispara los avisos de la
+       campanita (5.000 / 10.000 / 15.000 / 20.000 kg). #}
+    {% set _kg_barra = ventas_hoy.despachado.kg or 0 %}
+    <div class="ventas-hoy-barra">
+      <div class="ventas-hoy-lleno" data-campo="barra"
+           style="width: {{ [ (_kg_barra / 20000 * 100) | round(1), 100 ] | min }}%"></div>
+      {% for _m in [5000, 10000, 15000] %}
+        <span class="ventas-hoy-marca" style="left: {{ (_m / 20000 * 100) | round(1) }}%"></span>
+      {% endfor %}
+    </div>
+    <div class="ventas-hoy-escala">
+      {% for _m, _t in [(5000, '5.000'), (10000, '10.000'), (15000, '15.000'), (20000, '20.000 kg')] %}
+        <span style="left: {{ (_m / 20000 * 100) | round(1) }}%">{{ _t }}</span>
+      {% endfor %}
+    </div>
+  </a>
+  {% endif %}
   {% if aviso_migracion %}
     <div class="landing-warn">{{ aviso_migracion }}</div>
   {% endif %}
@@ -57,6 +113,67 @@
     font-weight: 600;
   }
   .dark .landing-greeting strong { color: rgb(241 245 249); }
+  /* Ventas de hoy — TMT 2026-08-13. Sin clases de Tailwind: el build está
+     congelado (ver skill programa-core), así que va todo acá. */
+  .ventas-hoy {
+    display: block;
+    text-decoration: none;
+    width: min(26rem, 90%);
+    padding: 1rem 1.25rem 0.9rem;
+    border: 1px solid rgb(203 213 225);
+    border-radius: 0.75rem;
+    background: rgb(255 255 255);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    text-align: center;
+  }
+  .ventas-hoy:hover { border-color: rgb(148 163 184); }
+  .dark .ventas-hoy { background: rgb(30 41 59); border-color: rgb(71 85 105); }
+  .ventas-hoy-tit {
+    font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgb(100 116 139); font-weight: 600;
+  }
+  .ventas-hoy-pares {
+    display: flex; gap: 1rem; margin-top: 0.35rem;
+  }
+  .ventas-hoy-pares > div { flex: 1 1 0; }
+  .ventas-hoy-desp { border-left: 1px solid rgb(226 232 240); }
+  .dark .ventas-hoy-desp { border-left-color: rgb(71 85 105); }
+  .ventas-hoy-rot {
+    font-size: 0.7rem; color: rgb(100 116 139); font-weight: 600;
+  }
+  .ventas-hoy-kg {
+    font-size: 1.5rem; font-weight: 600; line-height: 1.15;
+    font-variant-numeric: tabular-nums; color: rgb(15 23 42); margin-top: 0.15rem;
+  }
+  .dark .ventas-hoy-kg { color: rgb(241 245 249); }
+  .ventas-hoy-sub {
+    font-size: 0.75rem; color: rgb(100 116 139); font-variant-numeric: tabular-nums;
+  }
+  .dark .ventas-hoy-sub { color: rgb(148 163 184); }
+  .ventas-hoy-barra {
+    position: relative; height: 0.4rem; margin-top: 0.8rem;
+    background: rgb(226 232 240); border-radius: 999px; overflow: hidden;
+  }
+  .dark .ventas-hoy-barra { background: rgb(51 65 85); }
+  .ventas-hoy-lleno {
+    height: 100%; background: rgb(37 99 235); border-radius: 999px;
+    transition: width 0.4s ease;
+  }
+  .ventas-hoy-marca {
+    position: absolute; top: 0; width: 1px; height: 100%;
+    background: rgb(255 255 255 / 0.9);
+  }
+  .dark .ventas-hoy-marca { background: rgb(15 23 42 / 0.9); }
+  /* Los rótulos van DEBAJO de su marca (no repartidos a espacios iguales:
+     el 5.000 está al 25% de la barra, no en el borde izquierdo). */
+  .ventas-hoy-escala {
+    position: relative; height: 0.9rem; margin-top: 0.25rem;
+    font-size: 0.65rem; color: rgb(148 163 184); font-variant-numeric: tabular-nums;
+  }
+  .ventas-hoy-escala span {
+    position: absolute; transform: translateX(-50%); white-space: nowrap;
+  }
+  .ventas-hoy-escala span:last-child { transform: translateX(-100%); }
   .landing-warn {
     margin-top: 1rem;
     padding: 0.75rem 1rem;
@@ -74,4 +191,41 @@
     border-color: rgb(234 179 8 / 0.3);
   }
 </style>
+{# El recuadro se refresca solo: cada minuto y cada vez que la pestaña vuelve
+   al frente (así el número está fresco al volver a la ventana). Fail-soft:
+   si el fetch falla, se queda con el último número bueno. #}
+<script>
+(function () {
+  var caja = document.getElementById('ventas-hoy');
+  if (!caja) return;
+  var url = caja.dataset.url;
+  function fmt(n, dec) {
+    return n.toLocaleString('es-EC', {minimumFractionDigits: dec, maximumFractionDigits: dec});
+  }
+  function pintar(d) {
+    var q = function (c) { return caja.querySelector('[data-campo="' + c + '"]'); };
+    q('kg').textContent = fmt(d.kg, 2);
+    q('importe').textContent = fmt(d.importe, 2);
+    q('n').textContent = d.n;
+    var dsp = d.despachado || {};
+    q('kg_despachado').textContent = typeof dsp.kg === 'number' ? fmt(dsp.kg, 2) : '—';
+    q('desp_pie').textContent = dsp.kg === null || dsp.kg === undefined
+      ? 'sin dato de Asinfo'
+      : (dsp.fresco ? 'salió de la fábrica' : 'medido ' + (dsp.hora || ''));
+    q('barra').style.width = Math.min(100, (dsp.kg || 0) / 20000 * 100).toFixed(1) + '%';
+    q('n_lab').textContent = d.n === 1 ? 'factura' : 'facturas';
+
+  }
+  function refrescar() {
+    fetch(url, {headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) pintar(d); })
+      .catch(function () {});
+  }
+  setInterval(refrescar, 60000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) refrescar();
+  });
+})();
+</script>
 {% endblock %}

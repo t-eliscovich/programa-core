@@ -416,6 +416,7 @@ def reset_flujo_caches() -> None:
     deploy que invalidó la fuente. Ver /informes/flujo-produccion."""
     _FABRICACION_FLUJO_CACHE.clear()
     _DESPACHO_CACHE.clear()
+    _DESPACHO_HOY_CACHE.clear()
     _MOVIMIENTO_BODEGA_CACHE.clear()
 
 
@@ -2471,6 +2472,68 @@ def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
         return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return 0.0
+
+
+_DESPACHO_HOY_TTL_SECS = 120  # el recuadro del inicio se refresca cada minuto
+_DESPACHO_HOY_CACHE: dict = {}
+
+
+def despacho_fisico_dia_info(fecha, id_bodega: int = 53) -> dict:
+    """{kg, medido_ts, fresco} de lo despachado a cliente EN UN DÍA.
+
+    TMT 2026-08-13 (dueña): *"podemos poner otro número que sea el despachado,
+    a veces se despacha más que facturado"* — el recuadro del inicio muestra
+    los dos, porque la mercadería puede salir hoy y facturarse mañana.
+
+    Mismo WHERE que `despacho_fisico_mes` (misma fuente, anulados afuera,
+    bodega 53 = Producto Terminado), así que el día suma dentro del mes sin
+    sorpresas. La fecha va como literal calculado en Python a propósito: el
+    `GETDATE()` de Asinfo está en UTC y correría el día cinco horas (ver
+    `despacho_sin_factura`).
+
+    ⭐ **Si Asinfo no contesta se devuelve el ÚLTIMO NÚMERO BUENO** (decisión de
+    la dueña, 13/08), con `fresco=False` y la hora en que se midió, para que la
+    pantalla pueda decir "11:24" en vez de mostrar un cero que se lee como "no
+    se despachó nada". Un fracaso NUNCA se guarda como valor (lección del
+    29/07: cachear el fracaso de Metabase dejó la utilidad rota por horas).
+    `kg=None` sólo cuando todavía no hubo ninguna lectura buena del día.
+    """
+    dia = str(fecha)[:10]
+    cache_key = (dia, int(id_bodega))
+    now = _time.time()
+    cached = _DESPACHO_HOY_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _DESPACHO_HOY_TTL_SECS:
+        return {"kg": cached[1], "medido_ts": cached[0], "fresco": True}
+
+    def _viejo() -> dict:
+        if cached:
+            return {"kg": cached[1], "medido_ts": cached[0], "fresco": False}
+        return {"kg": None, "medido_ts": None, "fresco": False}
+
+    sql = f"""
+        SELECT SUM(ISNULL(dd.cantidad, 0)) AS kg
+          FROM despacho_cliente dc
+          JOIN detalle_despacho_cliente dd
+            ON dd.id_despacho_cliente = dc.id_despacho_cliente
+         WHERE dc.fecha = '{dia}'
+           AND dc.fecha_anulacion IS NULL
+           AND dd.id_bodega = {int(id_bodega)}
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=10)
+    except Exception:  # noqa: BLE001 -- fail-soft: la pantalla no se cae
+        return _viejo()
+    if not rows:
+        return _viejo()
+    out = round(float((rows[0] or {}).get("kg") or 0.0), 2)
+    _DESPACHO_HOY_CACHE[cache_key] = (now, out)
+    return {"kg": out, "medido_ts": now, "fresco": True}
+
+
+def despacho_fisico_dia(fecha, id_bodega: int = 53) -> float:
+    """Sólo los kilos de `despacho_fisico_dia_info`. 0.0 si nunca se pudo leer."""
+    kg = despacho_fisico_dia_info(fecha, id_bodega).get("kg")
+    return float(kg) if kg is not None else 0.0
 
 
 # ---------------------------------------------------------------------------

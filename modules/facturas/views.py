@@ -802,6 +802,61 @@ def detalle(id_factura: int):
     )
 
 
+def _despachado_hoy(fecha) -> dict:
+    """{kg, hora, fresco} de lo que SALIÓ hoy por la puerta (Asinfo).
+
+    TMT 2026-08-13 (dueña): *"a veces se despacha más que facturado"* — el
+    despacho y la factura son dos hechos distintos y el de la mercadería va
+    adelante. Es un dato de Asinfo, así que nunca puede tumbar la pantalla.
+
+    Si el ERP no contesta se muestra la ÚLTIMA lectura buena con la hora en que
+    se tomó (decisión de la dueña): un cero se leería como "no se despachó
+    nada". `kg=None` sólo si todavía no hubo ninguna lectura del día — ahí la
+    pantalla pone un guión, no un cero.
+    """
+    try:
+        from modules.asinfo.service import despacho_fisico_dia_info
+        info = despacho_fisico_dia_info(fecha)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return {"kg": None, "hora": None, "fresco": False}
+    hora = None
+    ts = info.get("medido_ts")
+    if ts:
+        from datetime import UTC, datetime, timedelta
+        hora = (datetime.fromtimestamp(ts, UTC)
+                - timedelta(hours=5)).strftime("%H:%M")
+    return {"kg": info.get("kg"), "hora": hora,
+            "fresco": bool(info.get("fresco"))}
+
+
+@facturas_bp.route("/facturas/totales-hoy.json")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def totales_hoy_json():
+    """Los kilos y la plata facturados HOY, para el recuadro del inicio.
+
+    TMT 2026-08-13 (dueña): *"cómo podríamos ir teniendo cantidad kg vendidos
+    en el día y que se vaya acumulando"* → el número a la vista en la pantalla
+    de inicio, sin depender de que llegue el aviso de la campanita.
+
+    Sale de la MISMA función que la campanita y el cierre de las 19
+    (`aviso_ventas.totales_dia`): las tres cifras tienen que ser LA MISMA, o
+    la de la pantalla y la del aviso se contradicen a los cinco minutos.
+    Fail-soft: si la consulta falla devuelve ceros, nunca un 500.
+    """
+    from modules.facturas.aviso_ventas import totales_dia
+
+    hoy = today_ec()
+    t = totales_dia(hoy)
+    return jsonify({
+        "fecha": hoy.isoformat(),
+        "kg": round(t["kg"], 2),
+        "importe": round(t["importe"], 2),
+        "n": t["n"],
+        "despachado": _despachado_hoy(hoy),
+    })
+
+
 @facturas_bp.route("/facturas/diag-cartera")
 @requiere_login
 @requiere_permiso("facturas.ver")

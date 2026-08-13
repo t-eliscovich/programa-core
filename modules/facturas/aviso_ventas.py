@@ -37,6 +37,22 @@ en 13.500-16.000 kg, así que la escalera tiene sentido). El 5.000 lo pidió la
 dueña el 2026-08-13: quiere el primer parte de la mañana, sin esperar a los
 10.000.
 
+⭐ **La escalera se mide por lo DESPACHADO, no por lo facturado** (dueña,
+13/08: *"a veces se despacha más que facturado"* … *"en notificaciones que esté
+fijo 10k kg despachados 90 % facturado"*). El despacho es el hecho físico —la
+mercadería que salió por la puerta— y va ADELANTE de la factura, que es el
+documento y puede entrar horas después o al día siguiente. Avisar por el
+documento hacía llegar tarde el parte de un día que ya había cargado los
+camiones. El aviso queda:
+
+    ✅  10.000 kg despachados                      13/08 11:24
+        90 % facturado · $ 86.120,20 · 104 facturas
+
+El % es facturado/despachado del día y **puede pasar de 100** (se factura hoy
+lo que salió ayer): eso no es un error, es el orden natural de los dos hechos.
+Si Asinfo no contesta, `despacho_fisico_dia` devuelve la última lectura buena;
+si nunca hubo una, el aviso no sale (0 kg) y entra en la pasada siguiente.
+
 Decisiones que valen la pena recordar:
 
 · **Sólo entre las 08:00 y las 19:00 de Ecuador.** De 19 en adelante manda el
@@ -69,9 +85,9 @@ _LOG = logging.getLogger("programa_core.aviso_ventas")
 # (`dia.HORA_CIERRE`) — *"a veces se pasan de horario para facturar"*.
 HORA_AVISO = 19
 
-# Umbrales de kilos vendidos en el día (dueña 2026-08-07; el 5.000 lo agregó el
-# 2026-08-13). Ordenados de menor a mayor: el código se apoya en eso para
-# quedarse con el más alto cruzado.
+# Umbrales de kilos DESPACHADOS en el día (dueña 2026-08-07; el 5.000 y el
+# cambio de facturado a despachado, el 2026-08-13). Ordenados de menor a mayor:
+# el código se apoya en eso para quedarse con el más alto cruzado.
 UMBRALES_KG = (5_000.0, 10_000.0, 15_000.0, 20_000.0)
 
 # La jornada laboral: fuera de esta franja no se avisan umbrales. El tope
@@ -180,8 +196,18 @@ def ultimo_umbral_avisado(clave_dia: str) -> float:
     return float(row.get("u") or 0)
 
 
+def kg_despachados(fecha) -> float:
+    """Kg que salieron de la fábrica ese día (Asinfo). Fail-soft: 0.0."""
+    try:
+        from modules.asinfo.service import despacho_fisico_dia
+        return float(despacho_fisico_dia(fecha) or 0.0)
+    except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+        _LOG.warning("no pude leer los kilos despachados: %s", e)
+        return 0.0
+
+
 def correr_umbrales_kg() -> dict:
-    """Avisa cuando los kilos del día cruzan un umbral. Nunca levanta.
+    """Avisa cuando los kilos DESPACHADOS del día cruzan un umbral. Nunca levanta.
 
     Manda UN aviso por cruce: el del umbral más alto superado que todavía no se
     haya avisado hoy. Los de abajo quedan tapados (si el día salta de 4.000 a
@@ -200,25 +226,31 @@ def correr_umbrales_kg() -> dict:
 
         hoy = today_ec()
         clave_dia = hoy.isoformat()
-        t = totales_dia(hoy)
-        if not t["n"]:
-            res["motivo"] = "sin facturas"
+        kg_desp = kg_despachados(hoy)
+        if not kg_desp:
+            res["motivo"] = "sin despachos"
             return res
 
         ya = ultimo_umbral_avisado(clave_dia)
-        cruzados = [u for u in _umbrales_kg() if t["kg"] >= u > ya]
+        cruzados = [u for u in _umbrales_kg() if kg_desp >= u > ya]
         if not cruzados:
             res["motivo"] = "no cruzó ningún umbral nuevo"
             return res
         umbral = max(cruzados)
 
+        # El % es facturado/despachado: cómo viene la facturación de lo que ya
+        # salió. Puede pasar de 100 (hoy se factura lo de ayer) — se muestra
+        # tal cual, redondeado, porque el 110 % también dice algo.
+        t = totales_dia(hoy)
+        pct = round(t["kg"] / kg_desp * 100) if kg_desp else 0
+
         from modules.avisos import avisar
 
         avisar(
             fuente="ventas",
-            titulo=f"Ventas del día · $ {num_es(t['importe'], 2)}",
-            detalle=(f"{num_es(t['kg'], 2)} kg · {t['n']} "
-                     f"factura{'' if t['n'] == 1 else 's'}"),
+            titulo=f"{num_es(kg_desp, 2)} kg despachados",
+            detalle=(f"{pct} % facturado · $ {num_es(t['importe'], 2)} · "
+                     f"{t['n']} factura{'' if t['n'] == 1 else 's'}"),
             importe=round(t["importe"], 2), cantidad=t["n"],
             url=f"/facturas?desde={clave_dia}&hasta={clave_dia}",
             clave=_clave_umbral(clave_dia, umbral),

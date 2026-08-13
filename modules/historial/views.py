@@ -61,6 +61,23 @@ def operaciones():
     except Exception:  # noqa: BLE001 -- nunca romper la landing por la auto-carga
         pass
 
+    # TMT 2026-08-13 (dueña): *"cómo podríamos ir teniendo cantidad kg
+    # vendidos en el día y que se vaya acumulando"* → el recuadro de ventas de
+    # hoy, acá arriba. Se pinta con el número ya calculado (para que esté a la
+    # vista al abrir) y después se refresca solo contra
+    # /facturas/totales-hoy.json. Mismo universo que la campanita y el cierre.
+    ventas_hoy = None
+    if tiene_permiso("facturas.ver"):
+        try:
+            from filters import today_ec as _hoy_ec
+            from modules.facturas.aviso_ventas import totales_dia as _tot_dia
+            ventas_hoy = _tot_dia(_hoy_ec())
+            ventas_hoy["fecha"] = _hoy_ec().isoformat()
+            from modules.facturas.views import _despachado_hoy
+            ventas_hoy["despachado"] = _despachado_hoy(_hoy_ec())
+        except Exception:  # noqa: BLE001 -- la landing nunca se cae por esto
+            ventas_hoy = None
+
     aviso_migracion = None
     try:
         kpis = queries.conteos()
@@ -78,6 +95,7 @@ def operaciones():
         "historial/operaciones.html",
         kpis=kpis,
         aviso_migracion=aviso_migracion,
+        ventas_hoy=ventas_hoy,
     )
 
 
