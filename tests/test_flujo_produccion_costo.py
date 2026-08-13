@@ -35,7 +35,8 @@ def test_ingreso_hilado_importacion_es_referencia_costo():
          patch("modules.asinfo.service.ventas_facturado_kg", return_value=0.0), \
          patch("modules.importaciones.service.promedio_hilado_usd_kg", return_value=_OPEN), \
          patch("modules.importaciones.service.costo_hilado_recibido_mes",
-               return_value={"us": 58629.40, "kg": 24494.0, "usd_kg": 2.394}):
+               return_value={"us": 58629.40, "kg": 24494.0,
+                             "kg_con_costo": 24494.0, "usd_kg": 2.394}):
         mov = _build_mov_asinfo(_data(), _inv(), _inv(), anio=2026, mes=7)
     hl = mov["hilado"]
     assert hl["ingresos_kg"] == 24494.0                          # movimiento de bodega
@@ -72,7 +73,8 @@ def test_hilado_cierra_por_movimiento_de_bodega_y_baja_ukg():
          patch("modules.asinfo.service.ventas_facturado_kg", return_value=0.0), \
          patch("modules.importaciones.service.promedio_hilado_usd_kg", return_value=_OPEN), \
          patch("modules.importaciones.service.costo_hilado_recibido_mes",
-               return_value={"us": 160.0, "kg": 80.0, "usd_kg": 2.0}):
+               return_value={"us": 160.0, "kg": 80.0,
+                             "kg_con_costo": 80.0, "usd_kg": 2.0}):
         mov = _build_mov_asinfo(data, inic, act, anio=2026, mes=7)
     hl = mov["hilado"]
     maq = mov["maquinas"]
@@ -117,7 +119,7 @@ def test_crudo_cierra_por_movimiento_de_bodega():
          patch("modules.asinfo.service.ventas_facturado_kg", return_value=0.0), \
          patch("modules.importaciones.service.promedio_hilado_usd_kg", return_value=_OPEN), \
          patch("modules.importaciones.service.costo_hilado_recibido_mes",
-               return_value={"us": 0.0, "kg": 0.0, "usd_kg": None}):
+               return_value={"us": 0.0, "kg": 0.0, "kg_con_costo": 0.0, "usd_kg": None}):
         mov = _build_mov_asinfo(data, inic, act, anio=2026, mes=7)
     tj = mov["tejido"]
     maq = mov["maquinas"]
@@ -138,7 +140,7 @@ def test_ingreso_hilado_sin_costo_queda_en_cero():
          patch("modules.asinfo.service.ventas_facturado_kg", return_value=0.0), \
          patch("modules.importaciones.service.promedio_hilado_usd_kg", return_value=_OPEN), \
          patch("modules.importaciones.service.costo_hilado_recibido_mes",
-               return_value={"us": 0.0, "kg": 0.0, "usd_kg": None}):
+               return_value={"us": 0.0, "kg": 0.0, "kg_con_costo": 0.0, "usd_kg": None}):
         mov = _build_mov_asinfo(_data(), _inv(), _inv(), anio=2026, mes=7)
     hl = mov["hilado"]
     assert hl["ingresos_us"] == 0.0

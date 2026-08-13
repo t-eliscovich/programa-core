@@ -23,9 +23,15 @@ COVERAGE_FAIL_UNDER ?= 100
 # Los `-m db` siguen SERIALES a propósito: son 63, tardan 14s y sí tocan una
 # base real compartida.
 # Para volver a serial (debug de un flaky, o comparar tiempos): `make ci PYTEST_PAR=`
-PYTEST_PAR ?= -n auto --dist loadfile
-# Temporal (13/08): ver si el tiempo se va en `call` o en `setup` (= la fixture app).
-PYTEST_DURATIONS ?= --durations=40 --durations-min=0.01
+# `worksteal` en vez de `loadfile`: con loadfile la ganancia medida fue 1,69x
+# sobre 4 cores (237s -> 140s) porque los 305 archivos son muy desparejos y
+# el worker que agarra el mas gordo marca el ritmo. worksteal arranca igual
+# (bloques por archivo) pero un worker que se queda sin trabajo le ROBA
+# tests al que va atrasado, asi que la cola no la fija el archivo mas largo.
+#
+# --maxfail: un CI ROJO cortaba igual a los ~4 min. Con esto avisa apenas
+# junta 3 fallas. NO acelera el caso verde (ahi hay que correr todo igual).
+PYTEST_PAR ?= -n auto --dist worksteal --maxfail=3
 
 help:
 	@echo "Targets disponibles:"
@@ -89,7 +95,7 @@ restore-test-db:
 
 test-coverage:
 	$(PY) -m coverage erase
-	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) $(PYTEST_DURATIONS) --cov --cov-report= --cov-append
+	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
 	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
 	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage xml
