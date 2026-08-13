@@ -44,9 +44,28 @@ E   assert 200 in (302, 401)      # un request ANÓNIMO devolvió 200
 El 13/08 se le arregló la causa principal (el mock mandaba la forma vieja del
 dict, sin `kg_con_costo`, y eso lo hacía tomar la rama del guard de asimetría en
 vez de la del promedio ponderado). Con eso pasó de caerse casi siempre a
-caerse **1 de cada 10 corridas**, incluso con `loadfile`. O sea que queda otro
-canal de contagio sin identificar. Está anotado acá para que no se dé por
-cerrado: es el mismo pecado de la lista de abajo.
+caerse **1 de cada 10 corridas**, incluso con `loadfile` — y una de esas veces
+cayó en el CI de main y dejó el deploy bloqueado. Está en `KNOWN_FAILING_NODEIDS`
+para no seguir frenando a nadie, **pero no es deuda de fixture: es una fuga**.
+
+El rastro que lo delata, del run de CI del 13/08:
+
+```
+with conn.cursor() as _cur:
+AttributeError: 'object' object has no attribute 'cursor'
+```
+
+A `_build_mov_asinfo` le llega una **conexión que es un `object()` pelado**. Ese
+`object()` sale de los stubs de otros tests: varios definen un `tx()` que hace
+`yield object()` (`test_activos_reversar_activacion.py`,
+`test_anticipos_a_dolares.py`, y los `conn=object()` de `test_bank_helpers.py`).
+Alguno sobrevive a su `monkeypatch` por algún camino. La consulta explota,
+alguien se come la excepción sin avisar, y los egresos quedan en 0.
+
+**Por dónde seguir:** buscar quién deja `db.tx` (o la conexión) pisada después
+de su test. Un `conftest` que, al terminar cada test, verifique que `db.tx`,
+`db.fetch_one`, `db.execute`… siguen siendo los originales, lo cazaría en el
+acto y de paso serviría para todos los demás de la lista.
 
 ## La lista
 
