@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-10._
+_Última actualización: 2026-08-13._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -175,6 +175,19 @@ rebote? ¿y si vuelve a cobrarse después?).
 ### [S] Capturas 07:00/19:00 de /informes/dia
 Verificar en unos días que las capturas programadas corren solas en producción
 (la tabla arrancó el 04/08).
+
+### [S] Mocks de `costo_hilado_recibido_mes` sin `kg_con_costo`
+Desde el 31/07 la valuación del hilado lee `kg_con_costo`, no `kg`
+(`modules/asinfo/service.py:1712`). Varios tests siguen mockeando la forma
+vieja (`{"us","kg","usd_kg"}`), así que le hacen tomar a producción la rama del
+GUARD de asimetría en vez de la del promedio ponderado: pasan, pero por el
+camino equivocado. El testigo bueno es `tests/test_hilado_tarifa_congelada.py`,
+que sí manda `kg_con_costo`. A revisar: `test_flujo_produccion_costo.py`,
+`test_apertura_hilado_no_se_recalcula.py`, `test_utilidad_estable.py`,
+`test_quimicos_banda_formulas.py`. Salió a la luz el 13/08 al paralelizar la
+suite.
+
+---
 
 ## Decisiones registradas (NO reabrir)
 

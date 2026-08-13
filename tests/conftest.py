@@ -164,6 +164,34 @@ class FakeDB:
     def close_pool(self): pass
 
 
+@pytest.fixture(autouse=True)
+def _reset_tarifa_hilado_global():
+    """Aislar el $/kg de hilado que `modules.asinfo.service` cachea EN EL PROCESO.
+
+    TMT 2026-08-13, al paralelizar la suite: `_ULTIMA_TARIFA_HILADO` es un
+    global de módulo (service.py:1582) que guarda la última tarifa sana del
+    mes. En producción eso es a propósito — es el freno del 12/08 que evita
+    revaluar 2,6 millones de kilos cuando Asinfo no contesta. Pero dentro de
+    la suite significa que un test le deja la tarifa puesta al siguiente: si
+    hay tarifa previa, `mov_hilado_valuacion` toma la rama "congelada" y si no
+    hay, toma la del promedio ponderado. Cuál de las dos te toca dependía de
+    qué archivo hubiera corrido antes.
+
+    En serie el orden era siempre el mismo y nadie lo notaba;
+    `test_flujo_produccion_costo.py::test_hilado_cierra_por_movimiento_de_
+    bodega_y_baja_ukg` se cayó apenas los tests se repartieron en workers.
+    No es un bug de producción: es un test que no estaba aislado.
+    """
+    from modules.asinfo import service as _asvc
+
+    previo = _asvc._ULTIMA_TARIFA_HILADO
+    _asvc._ULTIMA_TARIFA_HILADO = None
+    try:
+        yield
+    finally:
+        _asvc._ULTIMA_TARIFA_HILADO = previo
+
+
 @pytest.fixture
 def fake_db(monkeypatch):
     """Patch the db module with an in-memory fake."""
