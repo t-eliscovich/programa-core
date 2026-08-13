@@ -219,8 +219,11 @@
        salvo eliminadas, sin backfill, sin filtro de saldo). #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">&nbsp;</label>
+      {# OJO: en un onclick inline `URL` resuelve a document.URL (string), NO al
+         constructor global → `new URL(...)` tira "URL is not a constructor" y el
+         botón no hace nada. Por eso armamos la URL como string. (Federico 2026-08-12) #}
       <button type="button" title="Todo lo facturado de hoy (cualquier estado salvo eliminadas), mismo universo que la Venta de Resultados"
-              onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var d=iso(n);var u=new URL(window.location.pathname,window.location.origin);u.searchParams.set('vista','facturado');u.searchParams.set('desde',d);u.searchParams.set('hasta',d);window.location.href=u.toString();})()"
+              onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var d=iso(n);window.location.href=window.location.pathname+'?vista=facturado&desde='+d+'&hasta='+d;})()"
               class="text-sm px-3 py-1.5 rounded border border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/50">
         Hoy
       </button>
@@ -232,8 +235,9 @@
        locales (no toISOString, que es UTC y cerca de medianoche corre un día). #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">&nbsp;</label>
+      {# String directo, NO `new URL`: en onclick inline `URL` = document.URL. #}
       <button type="button" title="Todo lo facturado del mes (cualquier estado salvo eliminadas), igual que la Venta de Resultados"
-              onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var a=new Date(n.getFullYear(),n.getMonth(),1);var b=new Date(n.getFullYear(),n.getMonth()+1,0);var u=new URL(window.location.pathname,window.location.origin);u.searchParams.set('vista','facturado');u.searchParams.set('desde',iso(a));u.searchParams.set('hasta',iso(b));window.location.href=u.toString();})()"
+              onclick="(function(){var n=new Date();function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}var a=new Date(n.getFullYear(),n.getMonth(),1);var b=new Date(n.getFullYear(),n.getMonth()+1,0);window.location.href=window.location.pathname+'?vista=facturado&desde='+iso(a)+'&hasta='+iso(b);})()"
               class="text-sm px-3 py-1.5 rounded border border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/50">
         Este mes
       </button>
