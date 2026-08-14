@@ -1,21 +1,25 @@
 {% extends "base.html" %}
 {% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
-{% block title %}Eliminar movimiento{% endblock %}
+{% block title %}Reversar movimiento{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
   <a href="{{ url_for('bancos.movimientos', no_banco=tx.no_banco) }}" class="hover:underline">{{ tx.banco_nombre }}</a> /
-  <strong>Eliminar movimiento</strong>
+  <strong>Reversar movimiento</strong>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-2xl">
-  {% set ico %}<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>{% endset %}
-  {{ wizard_hero('rose', 'Eliminar movimiento cargado en PC',
-                 'Este movimiento se cargó en PC (no viene del dBase) y no tiene reverso automático. Eliminarlo lo saca del banco y recalcula los saldos. El dBase no se toca.',
+  {# TMT 2026-08-14 (dueña): esta pantalla se llamaba "eliminar" y asustaba.
+     Lo que hace es REVERSAR: deshace el movimiento, devuelve el cheque a
+     cartera y guarda una copia 30 días. El ícono es la flechita de deshacer,
+     la misma ↺ del reverso de un cheque emitido. #}
+  {% set ico %}<path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/>{% endset %}
+  {{ wizard_hero('rose', 'Reversar un movimiento cargado por error',
+                 'Deshace el movimiento: lo saca del banco, devuelve a cartera el cheque que se hubiera depositado y recalcula el saldo. Queda una copia 30 días en la papelera por si hay que restaurarlo. El dBase no se toca.',
                  ico) }}
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-5 shadow-sm">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">Movimiento a eliminar</div>
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">Movimiento a reversar</div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
       <div><div class="text-xs text-slate-500">N° transacción</div><div class="font-mono font-semibold mt-0.5">#{{ tx.id_transaccion }}</div></div>
       <div><div class="text-xs text-slate-500">Banco</div><div class="mt-0.5">{{ tx.banco_nombre }}</div></div>
@@ -52,13 +56,14 @@
         <li>Se limpia(n) {{ n_links }} enlace(s) cheque↔transacción huérfano(s)
             (el cheque real ya está correcto desde el dBase)</li>
         {% endif %}
-        <li>DELETE del movimiento <strong>#{{ tx.id_transaccion }}</strong> en {{ tx.banco_nombre }}</li>
-        <li>Recalcular el saldo corrido del banco</li>
+        <li>Se saca el movimiento <strong>#{{ tx.id_transaccion }}</strong> de {{ tx.banco_nombre }}</li>
+        <li>Se recalcula el saldo corrido del banco</li>
+        <li>Queda una copia <strong>30 días en la papelera</strong> por si hay que restaurarlo</li>
       </ul>
       Solo para movimientos cargados en PC, sin conciliar y sin reverso propio (mov_doble).
     {% endset %}
     {{ wizard_info('rose', info) }}
-    {{ wizard_footer(url_for('bancos.movimientos', no_banco=tx.no_banco), 'Eliminar movimiento →', 'rose') }}
+    {{ wizard_footer(url_for('bancos.movimientos', no_banco=tx.no_banco), 'Reversar movimiento →', 'rose') }}
   </form>
 </div>
 {% endblock %}

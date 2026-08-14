@@ -1558,15 +1558,18 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
                     )
             extra = (f" {len(cheques_vivos)} cheque(s) devuelto(s) a cartera."
                      if cheques_vivos else "")
+            # TMT 2026-08-14 (dueña): el mensaje habla el mismo idioma que el
+            # botón — acá es "reversado" (el cheque volvió a cartera). Eliminar
+            # de verdad es la OTRA ruta, eliminar_error_carga.
             flash(
-                f"Movimiento #{id_transaccion} eliminado "
+                f"Movimiento #{id_transaccion} reversado "
                 f"({tx.get('concepto') or ''} {float(tx.get('importe') or 0):,.2f})."
                 + extra
                 + " Queda en la papelera 30 días por si hay que restaurarlo.",
                 "ok",
             )
         except Exception as e:
-            flash_exc("No pude eliminar el movimiento", e)
+            flash_exc("No pude reversar el movimiento", e)
         return redirect(url_for("bancos.movimientos", no_banco=no_banco))
 
     return render_template(
@@ -1574,6 +1577,187 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
         tx=tx,
         cheques_vivos=cheques_vivos,
         n_links=len(links),
+    )
+
+
+@bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/error-carga",
+                 methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def eliminar_error_carga(no_banco: int, id_transaccion: int):
+    """Elimina un movimiento de banco Y ANULA el cheque que colgaba de el.
+
+    TMT 2026-08-14 (duena): *"no queria que vuelva a cartera, queria
+    directamente eliminarlo. error de carga. pensa que se cargo directo como
+    un deposito"*.
+
+    LA DIFERENCIA CON `eliminar_movimiento_pc` (el reverso) -- son dos
+    operaciones distintas y la duena las nombra distinto:
+
+      Reversar  -> el cheque EXISTE y estaba en cartera; se deposito mal.
+                   Vuelve a cartera (Z) y sigue vivo para depositarlo bien.
+      Eliminar  -> el cheque NACIO como este deposito (`crear()` con no_banco
+                   90/91 lo deja en B sin pasar por cartera) y no existio
+                   nunca. Mandarlo "de vuelta" a cartera le inventa un pasado
+                   que no tuvo, y deja un cheque fantasma que aparece en la
+                   cartera y en las comisiones.
+
+    Por que NO se reusa `cheques.anular_error_carga` a secas: ese camino no
+    borra el deposito, le suma una **ND compensatoria**. Quedan dos renglones
+    que se anulan entre si -- correcto cuando el movimiento no se puede tocar
+    (viene del dBase), pero aca el movimiento SI se borra, asi que la ND
+    moveria el saldo dos veces y hablaria de un deposito que ya no esta. Por
+    eso va con `sin_compensacion_bancaria`.
+
+    Frenos (los mismos que el reverso, mas el del cheque): solo movimientos
+    cargados en PC, sin conciliar y sin mov_doble activo; y el freno del
+    05/08 (caso MSS) que impide anular un cheque cuyo deposito ya esta
+    conciliado -- ese lo aplica `anular_por_error_de_carga`, que mira los
+    enlaces cheque-transaccion. Por eso anular va ANTES de soltarlos.
+    """
+    import bank_helpers
+    import db as _db
+    from modules.cheques import queries as _chq
+
+    tx = _db.fetch_one(
+        """
+        SELECT t.id_transaccion, t.no_banco, t.fecha, t.documento, t.importe,
+               t.concepto, t.usuario_crea,
+               COALESCE(b.nombre, '') AS banco_nombre
+          FROM scintela.transacciones_bancarias t
+          LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco
+         WHERE t.id_transaccion = %s AND t.no_banco = %s
+        """,
+        (id_transaccion, no_banco),
+    )
+    if not tx:
+        abort(404)
+
+    usuario_crea = (tx.get("usuario_crea") or "").strip().lower()
+    if (not usuario_crea) or usuario_crea in _USUARIOS_SYNC:
+        flash("Este movimiento viene del dBase (sync) - no se borra desde aca. "
+              "Corregilo en el dBase y re-sincroniza.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    if _db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (id_transaccion,),
+    ):
+        flash("Este movimiento esta conciliado - desconcilia primero.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    if _db.fetch_one(
+        "SELECT id_mov_doble FROM scintela.mov_doble "
+        "WHERE destino_table = 'transacciones_bancarias' AND destino_id = %s "
+        "  AND estado = 'activo' LIMIT 1",
+        (id_transaccion,),
+    ):
+        flash("Este movimiento tiene reverso propio (mov_doble) - reversalo "
+              "desde /historial, no se borra a mano.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    # Cheques colgados. Los ya cerrados (X/T/R) no se vuelven a anular: se
+    # desengancha el link y listo, si no `anular_por_error_de_carga` levanta.
+    cheques_a_anular, cheques_cerrados = [], []
+    for lk in _db.fetch_all(
+        "SELECT id_cheque FROM scintela.chequextransaccion "
+        "WHERE id_transaccion = %s", (id_transaccion,),
+    ) or []:
+        ch = _db.fetch_one(
+            "SELECT id_cheque, no_cheque, stat, importe, codigo_cli "
+            "FROM scintela.cheque WHERE id_cheque = %s", (lk.get("id_cheque"),),
+        )
+        if not ch:
+            continue
+        if (ch.get("stat") or "").upper() in ("X", "T", "R"):
+            cheques_cerrados.append(ch)
+        else:
+            cheques_a_anular.append(ch)
+
+    if request.method == "POST":
+        usuario = (g.user or {}).get("username", "web")
+        motivo = (request.form.get("motivo") or "").strip()
+        try:
+            with _db.tx() as conn:
+                # 1) Anular los cheques. VA PRIMERO: ver docstring.
+                for ch in cheques_a_anular:
+                    _chq.anular_por_error_de_carga(
+                        int(ch["id_cheque"]),
+                        motivo=motivo or (
+                            f"Cargado por error como deposito en "
+                            f"{tx.get('banco_nombre') or ''}"),
+                        usuario=usuario,
+                        sin_compensacion_bancaria=True,
+                        conn=conn,
+                    )
+                # 2) Soltar los enlaces (anulados y cerrados/huerfanos).
+                _db.execute(
+                    "DELETE FROM scintela.chequextransaccion "
+                    "WHERE id_transaccion = %s", (id_transaccion,), conn=conn,
+                )
+                # 3) Copia a la papelera (30 dias) ANTES de sacarlo: el
+                #    snapshot lee la fila con to_jsonb, si el DELETE ya corrio
+                #    la papelera queda vacia.
+                _db.execute(
+                    """
+                    INSERT INTO scintela.papelera_movimiento_banco
+                        (id_transaccion, no_banco, banco_nombre, documento,
+                         importe, fecha, concepto, prov, snapshot, borrado_por)
+                    SELECT t.id_transaccion, t.no_banco, %s, t.documento,
+                           t.importe, t.fecha, t.concepto, t.prov,
+                           to_jsonb(t), %s
+                      FROM scintela.transacciones_bancarias t
+                     WHERE t.id_transaccion = %s
+                    """,
+                    (tx.get("banco_nombre") or "", usuario, id_transaccion),
+                    conn=conn,
+                )
+                _db.execute(
+                    "DELETE FROM scintela.papelera_movimiento_banco "
+                    "WHERE restaurado_en IS NULL "
+                    "  AND borrado_en < NOW() - INTERVAL '30 days'",
+                    conn=conn,
+                )
+                # 4) Sacar el movimiento.
+                _db.execute(
+                    "DELETE FROM scintela.transacciones_bancarias "
+                    "WHERE id_transaccion = %s AND no_banco = %s",
+                    (id_transaccion, no_banco), conn=conn,
+                )
+                # 5) Recompute del saldo corrido (ancla = 2da fila mas vieja).
+                anc = _db.fetch_one(
+                    "SELECT id_transaccion AS ancla "
+                    "  FROM scintela.transacciones_bancarias "
+                    " WHERE no_banco = %s "
+                    " ORDER BY fecha ASC, id_transaccion ASC OFFSET 1 LIMIT 1",
+                    (no_banco,), conn=conn,
+                )
+                if anc and anc.get("ancla"):
+                    bank_helpers.recompute_saldos_desde(
+                        conn, no_banco=no_banco, no_cta=None,
+                        ancla_id=int(anc["ancla"]),
+                    )
+            nros = ", ".join(str(c.get("no_cheque") or c["id_cheque"])
+                             for c in cheques_a_anular)
+            extra = (f" Cheque(s) {nros} anulado(s) por error de carga."
+                     if cheques_a_anular else "")
+            flash(
+                f"Movimiento #{id_transaccion} eliminado "
+                f"({tx.get('concepto') or ''} "
+                f"{float(tx.get('importe') or 0):,.2f})." + extra
+                + " Queda en la papelera 30 dias por si hay que restaurarlo.",
+                "ok",
+            )
+        except Exception as e:
+            flash_exc("No pude eliminar el movimiento", e)
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    return render_template(
+        "bancos/eliminar_error_carga.html",
+        tx=tx,
+        cheques_a_anular=cheques_a_anular,
+        cheques_cerrados=cheques_cerrados,
     )
 
 

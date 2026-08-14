@@ -1444,6 +1444,7 @@ def anular_por_error_de_carga(
     motivo: str,
     id_reemplazo: int | None = None,
     usuario: str = "web",
+    sin_compensacion_bancaria: bool = False,
     conn=None,
 ) -> dict:
     """Anular un cheque mal cargado, con compensaciones automáticas.
@@ -1468,6 +1469,13 @@ def anular_por_error_de_carga(
 
     Después la persona usa "Nuevo cheque" para cargar el correcto.
     `id_reemplazo` (opcional) se appendea a la observacion para enlazar.
+
+    `sin_compensacion_bancaria` (TMT 2026-08-14, dueña): NO insertar la ND.
+    Lo usa /bancos cuando el depósito NO se compensa sino que se BORRA de
+    verdad (el cheque nació como depósito directo y no existió nunca): ahí la
+    ND movería el saldo dos veces y dejaría un renglón hablando de un depósito
+    que ya no está. El freno de conciliado sigue corriendo igual — es el que
+    impide anular algo que el banco ya explicó.
 
     Todo en una sola transacción.
     """
@@ -1600,7 +1608,13 @@ def anular_por_error_de_carga(
             )
 
         # --- Compensación bancaria/caja según stat actual ---
-        if stat_prev in STATS_DEPOSITADO:
+        if stat_prev in STATS_DEPOSITADO and sin_compensacion_bancaria:
+            # El caller borra el movimiento del banco él mismo (ver
+            # bancos.eliminar_error_carga). Compensar acá sería contarlo dos
+            # veces. Los demás side-effects (facturas, posdat, observación,
+            # stat X) YA corrieron arriba y siguen valiendo.
+            compensacion = {"tipo": "banco", "id": None, "omitida": True}
+        elif stat_prev in STATS_DEPOSITADO:
             import bank_helpers
 
             banco = ch.get("no_banco") or (10 if stat_prev == "B" else 32)

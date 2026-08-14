@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
+{# TMT 2026-08-14 (dueña): *"no quería que vuelva a cartera, quería
+   directamente eliminarlo. error de carga. pensá que se cargó directo como un
+   depósito"*. Pantalla hermana de eliminar_mov.html (el ↺ Reversar), pero la
+   otra mitad de la moneda: allá el cheque VUELVE a cartera y sigue vivo, acá
+   el cheque NUNCA existió y se anula con el movimiento. #}
+{% block title %}Eliminar por error de carga{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
+  <a href="{{ url_for('bancos.movimientos', no_banco=tx.no_banco) }}" class="hover:underline">{{ tx.banco_nombre }}</a> /
+  <strong>Eliminar por error de carga</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  {% set ico %}<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>{% endset %}
+  {{ wizard_hero('rose', 'Eliminar por error de carga',
+                 'Este movimiento no debería existir. Sale del banco y, si nació con un cheque colgado, ese cheque también se anula — no vuelve a cartera, porque nunca estuvo ahí. Queda una copia 30 días en la papelera.',
+                 ico) }}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-5 shadow-sm">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">Movimiento a eliminar</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div><div class="text-xs text-slate-500">N° transacción</div><div class="font-mono font-semibold mt-0.5">#{{ tx.id_transaccion }}</div></div>
+      <div><div class="text-xs text-slate-500">Banco</div><div class="mt-0.5">{{ tx.banco_nombre }}</div></div>
+      <div><div class="text-xs text-slate-500">Importe</div><div class="font-mono font-semibold text-rose-700 mt-0.5">{{ tx.importe | money_es }}</div></div>
+      <div><div class="text-xs text-slate-500">Fecha</div><div class="font-mono mt-0.5">{{ tx.fecha | fecha_es }}</div></div>
+    </div>
+    <div class="mt-3 text-xs text-slate-600 dark:text-slate-400">
+      {% set _resta = (tx.documento or '')|upper in ['CH', 'ND', 'DB'] %}
+      <span class="text-slate-500 uppercase tracking-wider font-semibold">Tipo:</span>
+      <span class="font-mono">{{ (tx.documento or '—')|upper }}</span>
+      <span class="{% if _resta %}text-red-600{% else %}text-emerald-700{% endif %}">({% if _resta %}resta −{% else %}suma +{% endif %})</span>
+      <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Concepto:</span> {{ tx.concepto or '—' }}
+      <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Cargado por:</span> <span class="font-mono">{{ tx.usuario_crea }}</span>
+    </div>
+  </div>
+
+  {# La salida de emergencia: si el cheque SÍ existe y sólo se depositó mal,
+     esta pantalla es la equivocada. El link va a la otra. #}
+  {% if cheques_a_anular %}
+  <div class="mb-5 -mt-1 text-sm">
+    ¿El cheque existe y sólo se depositó mal?
+    <a href="{{ url_for('bancos.eliminar_movimiento_pc', no_banco=tx.no_banco, id_transaccion=tx.id_transaccion) }}"
+       class="text-sky-600 hover:text-sky-800 hover:underline font-medium">↺ Mejor reversar: que vuelva a cartera →</a>
+  </div>
+  {% endif %}
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% set info %}
+      Esto va a ejecutar en una sola transacción:
+      <ul class="list-disc list-inside mt-1 text-[13px] space-y-0.5">
+        {% if cheques_a_anular %}
+        <li><strong>{{ cheques_a_anular|length }} cheque(s) se anula(n) por error de carga</strong>
+            (stat → X): {{ cheques_a_anular | map(attribute='no_cheque') | join(', ') }}.
+            <span class="text-[12px]">No vuelven a cartera.</span></li>
+        <li>Se deshace lo que colgara de esos cheques: aplicaciones a facturas
+            (el abono vuelve atrás) y la posdatada hermana, si la hubiera</li>
+        {% endif %}
+        {% if cheques_cerrados %}
+        <li>{{ cheques_cerrados|length }} cheque(s) ya cerrado(s) sólo se
+            desenganchan (no se vuelven a anular):
+            {{ cheques_cerrados | map(attribute='no_cheque') | join(', ') }}</li>
+        {% endif %}
+        <li>Se saca el movimiento <strong>#{{ tx.id_transaccion }}</strong> de {{ tx.banco_nombre }}</li>
+        <li>Se recalcula el saldo corrido del banco</li>
+        <li>Queda una copia <strong>30 días en la papelera</strong> por si hay que restaurarlo</li>
+      </ul>
+      {% if cheques_a_anular %}
+      <div class="mt-2 text-[13px]">
+        <strong>No se agrega ninguna nota de débito compensatoria.</strong> El
+        depósito se borra de verdad, así que compensarlo movería el saldo dos
+        veces.
+      </div>
+      {% endif %}
+      Solo para movimientos cargados en PC, sin conciliar y sin reverso propio (mov_doble).
+    {% endset %}
+    {{ wizard_info('rose', info) }}
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1" for="motivo">Motivo (opcional, queda en la observación del cheque)</label>
+      <input type="text" name="motivo" id="motivo" maxlength="120"
+             placeholder="p. ej. se cargó dos veces el mismo depósito"
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+
+    {{ wizard_footer(url_for('bancos.movimientos', no_banco=tx.no_banco), 'Eliminar por error de carga →', 'rose') }}
+  </form>
+</div>
+{% endblock %}

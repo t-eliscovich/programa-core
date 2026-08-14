@@ -427,9 +427,29 @@
                       and (m.usuario_crea or '') != ''
                       and (m.usuario_crea or '')|lower not in ['dbf-import', 'asinfo-carga', 'asinfo-backfill']
                       and not m.conciliacion_id %}
+                  {# TMT 2026-08-14 (dueña): *"vuelve a cartera Z y eliminado,
+                   no es lo mismo"*. Antes había UN botón (🗑) que hacía las dos
+                   cosas según la fila, y el nombre mentía en la mitad de los
+                   casos. Ahora son dos, y sólo aparece el que aplica:
+
+                     ↺  el cheque existe y se depositó mal → vuelve a cartera Z
+                     🗑  el cheque nació como este depósito y no existió nunca
+                         → se anula con el movimiento (no vuelve a cartera)
+
+                   El ↺ sólo tiene sentido si hay un cheque que devolver. #}
+                {% if m.n_cheques %}
                 <a href="{{ url_for('bancos.eliminar_movimiento_pc', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
+                   {# ámbar para no confundirlo con el 🗑 rojo de al lado.
+                      Sin variante hover: `hover:text-amber-*` no existe en el
+                      build congelado de tailwind (ver skill programa-core). #}
+                   class="text-sm text-amber-600"
+                   title="Reversar: el cheque existe y se depositó mal. Vuelve a cartera y el movimiento sale del banco.">
+                  ↺
+                </a>
+                {% endif %}
+                <a href="{{ url_for('bancos.eliminar_error_carga', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
                    class="text-sm text-rose-600 hover:text-rose-800"
-                   title="Eliminar este movimiento cargado en PC (no viene del dBase)">
+                   title="Eliminar por error de carga: el movimiento no debería existir. Sale del banco y el cheque que colgara de él se anula (no vuelve a cartera).">
                   🗑
                 </a>
               {% endif %}
