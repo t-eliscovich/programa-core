@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
+{# TMT 2026-08-14 (dueña): *"antes de hacer lo que hagas quiero que corras un
+   dry run para no dañar nada… fijate los totales, no pueden cambiar. ni del
+   total ni por cliente"*. Esta pantalla ES el dry run: lo que ves acá es
+   literalmente el mismo CASE que va a correr el botón. #}
+{% block title %}Unificar los tipos de documento{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+  <strong>Unificar tipos</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  {% set ico %}<path d="M4 7h16M4 12h16M4 17h10"/>{% endset %}
+  {{ wizard_hero('sky', 'Unificar los tipos de documento',
+                 'La columna quedó escrita en dos idiomas: el importador viejo ponía una letra (F/N/C/D/X) y el nuevo dos (FA/NT/NC/DE). Esto los deja a todos en un vocabulario solo: F · Devolución D · NTEN N · NC financiera NC · NCNT.',
+                 ico) }}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-5 shadow-sm">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">
+      Qué haría, fila por fila
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
+          <th class="text-left py-1.5">Hoy</th>
+          <th class="text-left py-1.5">Queda</th>
+          <th class="text-right py-1.5">Facturas</th>
+          <th class="text-right py-1.5">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in plan %}
+        {% set _hoy = r.ahora if r.ahora != '(sin tipo)' else '' %}
+        {% set _cambia = (r.queda or '') != _hoy %}
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <td class="py-1.5 font-mono {% if _cambia %}font-semibold{% endif %}">{{ r.ahora }}</td>
+          <td class="py-1.5 font-mono {% if _cambia %}font-semibold text-sky-700 dark:text-sky-300{% endif %}">
+            {% if r.queda %}{{ r.queda }} · {{ tipo_doc.etiqueta(r.queda) }}{% else %}<span class="text-slate-400">sin clasificar</span>{% endif %}
+          </td>
+          <td class="py-1.5 text-right tabular-nums">{{ '{:,}'.format(r.n) }}</td>
+          <td class="py-1.5 text-right tabular-nums text-slate-500">{{ r.importe | money_es }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% set info %}
+      <ul class="list-disc list-inside text-[13px] space-y-0.5">
+        <li><strong>{{ '{:,}'.format(cambian) }} facturas</strong> cambian de código</li>
+        <li><strong>{{ '{:,}'.format(sin_clasificar) }}</strong> quedan sin clasificar (no tienen de dónde deducirlo) — se buscan con la opción «Sin clasificar» del filtro</li>
+        <li>Ninguna factura pierde la clasificación que ya tenía</li>
+        <li>Se toca <strong>únicamente la columna del tipo</strong>: ni kilos, ni importe, ni abonado, ni retención, ni saldo</li>
+      </ul>
+      <div class="mt-2 text-[13px]">
+        Y no hay que creerme: antes y después del cambio, <strong>dentro de la
+        misma transacción</strong>, se saca la huella del cuadro por cliente
+        (facturas, kilos, importe, abonado, retención y saldo de cada uno de los
+        1.379 clientes). Si esa huella cambia aunque sea en un centavo,
+        <strong>se deshace todo solo</strong> y no se guarda nada.
+      </div>
+    {% endset %}
+    {{ wizard_info('sky', info) }}
+    {{ wizard_footer(url_for('facturas.lista'), 'Unificar los tipos →', 'sky') }}
+  </form>
+</div>
+{% endblock %}

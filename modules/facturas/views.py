@@ -23,7 +23,7 @@ from error_messages import flash_exc, humanize
 from exports import csv_response
 from filters import today_ec
 
-from . import queries
+from . import queries, tipo_doc
 
 facturas_bp = Blueprint("facturas", __name__, template_folder="templates")
 
@@ -175,7 +175,7 @@ def _auto_cargar_facturas_hoy() -> dict:
                 queries.crear(
                     fecha=fecha, codigo_cli=cli_uso, kg=kg, importe=importe,
                     numf=numf, numf_completo=numero or None,
-                    tipo=tipo[:2],
+                    tipo=tipo_doc.normalizar(tipo, kg=kg, numf_completo=numero),
                     usuario='asinfo-carga',  # cuenta en cartera igual que el botón
                 )
                 if numero:
@@ -270,7 +270,9 @@ def nueva():
     numf = int(numf_raw) if numf_raw.isdigit() else None
     venci = _parse_date(request.form.get("vencimiento"))
     condic = (request.form.get("condic") or "").strip()[:2] or None
-    tipo = (request.form.get("tipo") or "").strip()[:2] or None
+    # TMT 2026-08-14: normalizado al vocabulario único (antes `[:2]`, que
+    # partía NC_FINANCIERA y NCNT por la mitad y las dejaba iguales).
+    tipo = tipo_doc.normalizar(request.form.get("tipo"))
     numf_completo = (request.form.get("numf_completo") or "").strip() or None
     # Devolución: el dBase la trata como factura con kg/importe negativos
     # (MODIFICA.PRG:1195 — NT.DEVOL = NUMF>0 AND IMPORTE<0). Si el usuario
@@ -1969,7 +1971,8 @@ def cargar_desde_asinfo_bulk():
                 importe=importe,
                 numf=_numf_de_numero(numf_completo),  # numero REAL, no MAX+1
                 numf_completo=numf_completo or None,
-                tipo=tipo_asinfo[:2],
+                tipo=tipo_doc.normalizar(tipo_asinfo, kg=kg,
+                                         numf_completo=numf_completo),
                 usuario='asinfo-carga',  # botón Cargar = a propósito → CUENTA (mig 0087)
             )
             ok += 1
@@ -2064,7 +2067,13 @@ def cargar_desde_asinfo():
             importe=importe,
             numf=_numf_de_numero(numf_completo),  # numero REAL, no MAX+1
             numf_completo=numf_completo or None,
-            tipo=tipo_asinfo[:2],  # 'FA', 'NT'
+            # TMT 2026-08-14 (dueña): antes el tipo se guardaba recortado a
+            # dos caracteres, porque la columna era varchar(2). Ese recorte
+            # convertía NC_FINANCIERA y NCNT en la misma "NC" (235 + 18 filas
+            # mezcladas). Ahora la columna admite 4 y el código sale del
+            # vocabulario único (ver mig 0192 y modules/facturas/tipo_doc.py).
+            tipo=tipo_doc.normalizar(tipo_asinfo, kg=kg,
+                                     numf_completo=numf_completo),
             usuario='asinfo-carga',  # botón Cargar = a propósito → CUENTA (mig 0087)
         )
         flash(f"Factura {numf_completo or '#'+str(res.get('numf'))} cargada desde Asinfo.", "ok")
@@ -2479,6 +2488,7 @@ def lista():
             cliente=cliente, monto_min=monto_min, monto_max=monto_max,
             estado=estado_filtro,
             estados=estados_filtro,
+            tipo=tipo_ai_filtro or None,
         )
         conteos = queries.conteos_por_vista()
         # Total del universo filtrado (sin LIMIT/OFFSET) — para el contador.
@@ -2492,6 +2502,7 @@ def lista():
                 vista=vista, cliente=cliente,
                 monto_min=monto_min, monto_max=monto_max,
                 estado=estado_filtro, estados=estados_filtro,
+                tipo=tipo_ai_filtro or None,
                 )
         error = None
     except Exception as e:
@@ -2771,17 +2782,12 @@ def lista():
             and not (f.get("numf_completo") or "").startswith("#")
         ]
 
-    # TMT 2026-05-22 — filtro por tipo Asinfo (post-enriquecimiento).
-    if tipo_ai_filtro:
-        _MAP_TIPO = {
-            "F": "FACTURA",
-            "D": "DEVOLUCION",
-            "N": "NTEN",
-            "NC": "NC_FINANCIERA",
-            "NCNT": "NCNT",
-        }
-        tipo_buscado = _MAP_TIPO.get(tipo_ai_filtro, tipo_ai_filtro)
-        filas = [f for f in filas if f.get("asinfo_tipo") == tipo_buscado]
+    # TMT 2026-08-14 — el filtro por tipo se MUDÓ al WHERE de queries.buscar()
+    # (y al de contar_filtrado). Acá estaba recortando en Python DESPUÉS de
+    # traer la página y DESPUÉS de calcular los totales: en la pestaña Estado
+    # el enriquecimiento Asinfo ni corre, así que `asinfo_tipo` era None en
+    # todas las filas y filtrar daba CERO sobre 35.526 facturas. Ahora sale de
+    # `factura.tipo`, que es dato propio y está siempre.
 
     if request.args.get("export") == "csv":
         return csv_response(
@@ -2818,6 +2824,7 @@ def lista():
         asinfo_intentado=_asinfo_intentado,
         solo_huerfanas=solo_huerfanas,
         tipo_ai_filtro=tipo_ai_filtro,
+        tipo_doc=tipo_doc,
         # TMT 2026-05-22 — paginación
         page=page,
         por_pagina=por_pagina,
@@ -2845,6 +2852,121 @@ def lista():
 #   - score >= 0.15 → dejar para revisión manual
 
 _BACKFILL_SCORE_MAX = 0.15
+
+
+_CASE_TIPO_UNIFICADO = """
+    CASE
+      WHEN TRIM(COALESCE(tipo,'')) IN ('F','FA')  THEN 'F'
+      WHEN TRIM(COALESCE(tipo,'')) IN ('N','NT')  THEN 'N'
+      WHEN TRIM(COALESCE(tipo,'')) IN ('D','DE')  THEN 'D'
+      WHEN TRIM(COALESCE(tipo,'')) = 'C'          THEN 'NC'
+      WHEN TRIM(COALESCE(tipo,'')) = 'X'          THEN 'NCNT'
+      -- El unico ambiguo: el importador viejo guardaba `tipo[:2]`, asi que
+      -- NC_FINANCIERA y NCNT caian las dos en 'NC'. Las separa la mercaderia.
+      WHEN TRIM(COALESCE(tipo,'')) = 'NC'
+           AND (UPPER(COALESCE(numf_completo,'')) LIKE 'NCNT%%' OR kg < 0)
+                                                  THEN 'NCNT'
+      WHEN TRIM(COALESCE(tipo,'')) = 'NC'         THEN 'NC'
+      -- Sin tipo: lo unico que se puede deducir sin inventar es la numeracion.
+      WHEN UPPER(COALESCE(numf_completo,'')) LIKE 'NCNT%%' THEN 'NCNT'
+      WHEN UPPER(COALESCE(numf_completo,'')) LIKE 'NTEN%%' THEN 'N'
+      ELSE NULL
+    END
+"""
+
+# La huella del cuadro por cliente. Si esto cambia, se toco plata.
+_SQL_HUELLA = """
+    WITH por_cliente AS (
+      SELECT codigo_cli, COUNT(*) n,
+             ROUND(SUM(kg)::numeric,2) kg, ROUND(SUM(importe)::numeric,2) imp,
+             ROUND(SUM(COALESCE(abono,0))::numeric,2) ab,
+             ROUND(SUM(COALESCE(retencion,0))::numeric,2) ret,
+             ROUND(SUM(COALESCE(saldo,0))::numeric,2) sal
+        FROM scintela.factura GROUP BY codigo_cli)
+    SELECT md5(string_agg(codigo_cli||'|'||n||'|'||kg||'|'||imp||'|'||ab||'|'||ret||'|'||sal,
+                          ',' ORDER BY codigo_cli)) AS huella,
+           COUNT(*) AS clientes
+      FROM por_cliente
+"""
+
+
+@facturas_bp.route("/facturas/tipos-unificar", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def unificar_tipos():
+    """Deja `factura.tipo` en UN solo vocabulario: F / D / N / NC / NCNT.
+
+    TMT 2026-08-14 (dueña). La columna venia escrita en dos idiomas — el
+    importador viejo ponia una letra (F/N/C/D/X) y el nuevo dos (FA/NT/NC/DE),
+    porque era `varchar(2)` y guardaba `tipo_asinfo[:2]`. Ese recorte metia
+    NC_FINANCIERA y NCNT en la misma "NC". Medido el 14/08: 4.694 filas hay que
+    remapear, 26.118 ya estan bien, y ninguna pierde clasificacion.
+
+    GET = DRY RUN: el mismo cuadro que se va a ejecutar, sin escribir. Pedido
+    explicito de la duena: *"antes de hacer lo que hagas quiero que corras un
+    dry run para no danar nada... fijate los totales, no pueden cambiar. ni del
+    total ni por cliente"*.
+
+    POST = ejecuta, y se AUTO-VERIFICA: saca la huella md5 del cuadro por
+    cliente (n, kg, importe, abono, retencion, saldo de los 1.379 clientes)
+    antes y despues DENTRO de la misma transaccion. Si cambio, hace rollback.
+    Un UPDATE de la columna `tipo` no puede mover un importe; si lo movio, algo
+    esta muy mal y es mejor no enterarse por el balance del mes que viene.
+    """
+    import db as _db
+
+    plan = _db.fetch_all(
+        f"""
+        SELECT COALESCE(NULLIF(TRIM(tipo),''),'(sin tipo)') AS ahora,
+               {_CASE_TIPO_UNIFICADO} AS queda,
+               COUNT(*) AS n,
+               ROUND(SUM(importe)::numeric,2) AS importe
+          FROM scintela.factura
+         GROUP BY 1, 2
+         ORDER BY COUNT(*) DESC
+        """
+    ) or []
+    cambian = sum(r["n"] for r in plan
+                  if (r["queda"] or "") != (r["ahora"] if r["ahora"] != "(sin tipo)" else ""))
+    sin_clasificar = sum(r["n"] for r in plan if not r["queda"])
+
+    if request.method == "POST":
+        try:
+            with _db.tx() as conn:
+                antes = _db.fetch_one(_SQL_HUELLA, conn=conn) or {}
+                n = _db.execute(
+                    f"""
+                    UPDATE scintela.factura
+                       SET tipo = {_CASE_TIPO_UNIFICADO}
+                     WHERE {_CASE_TIPO_UNIFICADO} IS NOT NULL
+                       AND {_CASE_TIPO_UNIFICADO} IS DISTINCT FROM TRIM(COALESCE(tipo,''))
+                    """,
+                    conn=conn,
+                )
+                despues = _db.fetch_one(_SQL_HUELLA, conn=conn) or {}
+                if antes.get("huella") != despues.get("huella"):
+                    raise RuntimeError(
+                        "La huella del cuadro por cliente CAMBIO "
+                        f"({antes.get('huella')} -> {despues.get('huella')}). "
+                        "Se deshizo todo: un UPDATE de `tipo` no puede mover un "
+                        "importe."
+                    )
+            flash(
+                f"Listo: {n} facturas remapeadas al vocabulario unico "
+                f"(F / D / N / NC / NCNT). Los totales por cliente quedaron "
+                f"identicos — huella {str(antes.get('huella'))[:8]}… sobre "
+                f"{antes.get('clientes')} clientes.",
+                "ok",
+            )
+            return redirect(url_for("facturas.lista"))
+        except Exception as e:
+            flash_exc("No pude unificar los tipos", e)
+
+    return render_template(
+        "facturas/tipos_unificar.html",
+        plan=plan, cambian=cambian, sin_clasificar=sin_clasificar,
+        tipo_doc=tipo_doc,
+    )
 
 
 @facturas_bp.route("/facturas/backfill-asinfo", methods=["GET"])

@@ -1032,6 +1032,7 @@ def buscar(
     monto_max: float | None = None,
     estado: str = "",
     estados: list[str] | None = None,
+    tipo: str | None = None,
 ) -> list[dict]:
     """Filtros:
         q             — busqueda libre (numero, numf_completo, nombre)
@@ -1143,6 +1144,15 @@ def buscar(
           -- Filtro por monto USD (importe).
           AND (%(monto_min)s::numeric IS NULL OR COALESCE(f.importe, 0) >= %(monto_min)s::numeric)
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(f.importe, 0) <= %(monto_max)s::numeric)
+          -- TMT 2026-08-14 (dueña "no anda el filtro"): el TIPO se filtra
+          -- ACÁ, en el WHERE. Antes se recortaba en Python después de traer
+          -- la página, así que en la pestaña Estado (72 páginas) daba cero
+          -- y los totales del encabezado —que salen de este mismo WHERE—
+          -- nunca lo veían. `__SIN__` pide las que no tienen tipo, que es
+          -- una pregunta legítima y antes no se podía hacer.
+          AND (%(tipo)s::text IS NULL
+               OR (%(tipo)s = '__SIN__' AND NULLIF(TRIM(COALESCE(f.tipo,'')),'') IS NULL)
+               OR UPPER(TRIM(COALESCE(f.tipo,''))) = %(tipo)s)
           AND (%(desde)s::date IS NULL OR f.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR f.fecha <= %(hasta)s::date)
           AND (NOT %(solo_abiertas)s OR COALESCE(f.saldo, 0) > 0)
@@ -1218,6 +1228,7 @@ def buscar(
             "solo_abiertas": solo_abiertas,
             "vista": vista,
             "estado": estado,
+            "tipo": (tipo or "").strip().upper() or None,
             "estados_vacia": not estados_lista,
             "estado_incluye_z": estado_incluye_z,
             "estados_para_in": estados_para_in,
@@ -1256,6 +1267,7 @@ def contar_filtrado(
     monto_max: float | None = None,
     estado: str = "",
     estados: list[str] | None = None,
+    tipo: str | None = None,
 ) -> dict:
     """COUNT(*) + SUM(saldo) + SUM(importe) con los MISMOS filtros que `buscar()`.
 
@@ -1335,6 +1347,15 @@ def contar_filtrado(
               )
           AND (%(monto_min)s::numeric IS NULL OR COALESCE(f.importe, 0) >= %(monto_min)s::numeric)
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(f.importe, 0) <= %(monto_max)s::numeric)
+          -- TMT 2026-08-14 (dueña "no anda el filtro"): el TIPO se filtra
+          -- ACÁ, en el WHERE. Antes se recortaba en Python después de traer
+          -- la página, así que en la pestaña Estado (72 páginas) daba cero
+          -- y los totales del encabezado —que salen de este mismo WHERE—
+          -- nunca lo veían. `__SIN__` pide las que no tienen tipo, que es
+          -- una pregunta legítima y antes no se podía hacer.
+          AND (%(tipo)s::text IS NULL
+               OR (%(tipo)s = '__SIN__' AND NULLIF(TRIM(COALESCE(f.tipo,'')),'') IS NULL)
+               OR UPPER(TRIM(COALESCE(f.tipo,''))) = %(tipo)s)
           AND (%(desde)s::date IS NULL OR f.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR f.fecha <= %(hasta)s::date)
           AND (NOT %(solo_abiertas)s OR COALESCE(f.saldo, 0) > 0)
@@ -1372,6 +1393,7 @@ def contar_filtrado(
             "solo_abiertas": solo_abiertas,
             "vista": vista,
             "estado": estado,
+            "tipo": (tipo or "").strip().upper() or None,
             "estados_vacia": not estados_lista,
             "estado_incluye_z": estado_incluye_z,
             "estados_para_in": estados_para_in,

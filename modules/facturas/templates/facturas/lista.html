@@ -257,11 +257,12 @@
       <label class="block text-xs text-slate-500 mb-1">Tipo</label>
       <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
-        <option value="F" {% if tipo_ai_filtro == 'F' %}selected{% endif %}>F · Factura</option>
-        <option value="D" {% if tipo_ai_filtro == 'D' %}selected{% endif %}>D · Devolución</option>
-        <option value="N" {% if tipo_ai_filtro == 'N' %}selected{% endif %}>N · NTEN</option>
-        <option value="NC" {% if tipo_ai_filtro == 'NC' %}selected{% endif %}>NC · NC Financiera</option>
-        <option value="NCNT" {% if tipo_ai_filtro == 'NCNT' %}selected{% endif %}>NCNT</option>
+        {# TMT 2026-08-14: las opciones salen del vocabulario único, no
+           escritas a mano — si mañana nace un tipo nuevo, aparece solo. #}
+        {% for _c in tipo_doc.CODIGOS %}
+        <option value="{{ _c }}" {% if tipo_ai_filtro == _c %}selected{% endif %}>{{ _c }} · {{ tipo_doc.etiqueta(_c) }}</option>
+        {% endfor %}
+        <option value="__SIN__" {% if tipo_ai_filtro == '__SIN__' %}selected{% endif %}>Sin clasificar</option>
       </select>
     </div>
 
@@ -437,25 +438,16 @@
               <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
             </span>
           </td>
-          {# Tipo del documento SEGÚN PC (siempre disponible — antes salía de
-             Asinfo y quedaba "—" con +6000 filas). N=Nota (tipo empieza con N);
-             D=Devolución (tipo empieza con D o importe/kg negativo); F=Factura.
-             TMT 2026-07-21 (dueña "¿por qué no hay tipo?"). #}
-          {% set _t = (f.tipo or '') | string | upper %}
-          {% set _neg = (f.importe is not none and f.importe | float < 0) or (f.kg is not none and f.kg | float < 0) %}
-          {% if _t[:2] == 'NC' %}
-            {# TMT 2026-07-28: nota de crédito financiera (descuento / devolución
-               sin mercadería). kg=0 e importe negativo. #}
-            {% set _tipo_letra, _tipo_color, _tipo_desc = 'NC', 'text-rose-600', 'Nota de crédito' %}
-          {% elif _t[:1] == 'N' %}
-            {% set _tipo_letra, _tipo_color, _tipo_desc = 'N', 'text-sky-600', 'Nota' %}
-          {% elif _t[:1] == 'D' or _neg %}
-            {% set _tipo_letra, _tipo_color, _tipo_desc = 'D', 'text-amber-600', 'Devolución' %}
-          {% else %}
-            {% set _tipo_letra, _tipo_color, _tipo_desc = 'F', 'text-slate-400', 'Factura' %}
-          {% endif %}
-          <td class="px-2 py-1.5 text-center font-mono" title="{{ _tipo_desc }}">
-            <span class="{{ _tipo_color }}">{{ _tipo_letra }}</span>
+          {# TMT 2026-08-14 (dueña): esto adivinaba el tipo comparando las
+             primeras letras de la columna, con dos idiomas conviviendo adentro
+             (F/N/C/D/X del importador viejo, FA/NT/NC/DE del nuevo). Las 263
+             NCNT (tipo 'X') no le encajaban en ninguna regla y caían en el
+             `or negativo` del final: se mostraban como D · Devolución. Ahora
+             la letra sale del MISMO clasificador que usa el filtro. #}
+          {% set _cod = tipo_doc.normalizar(f.tipo, kg=f.kg, numf_completo=f.numf_completo) %}
+          <td class="px-2 py-1.5 text-center font-mono"
+              title="{{ tipo_doc.etiqueta(_cod) or 'Sin clasificar' }}">
+            <span class="{{ tipo_doc.color(_cod) }}">{{ _cod or '—' }}</span>
           </td>
           {# Retención: en gris apagado cuando es 0, para que las que SÍ tienen
              salten a la vista al recorrer la columna. #}
