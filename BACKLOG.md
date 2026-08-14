@@ -9,6 +9,49 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ---
 
+## Barrido de "cosas que nadie miraba"
+
+### [M] Seguir buscando lo que falla en silencio
+Pedido de la dueña el 13/08, después de una tarde en que casi todo lo que
+apareció tenía la misma forma: **algo que no anda y no avisa**. En un día
+salieron cinco así, ninguno reportado por nadie:
+
+- dos migraciones que nunca corrieron porque su número ya estaba usado
+  (`0062`, `0064`) — el migrador las daba por aplicadas;
+- cinco archivos de migración fantasma en el server, de renumeraciones de
+  junio/julio, porque el deploy nunca borra lo que el repo dejó de tener;
+- el chip de cliente mostraba `prov` fuera lo que fuera, y en 161 filas eso
+  no era ningún cliente (`EQUE` salía de "Cheque");
+- la oficina faltaba en las 189 pendientes sin que nada lo dijera;
+- el concepto se recorta a 50 caracteres sin avisar (6 movimientos cortados).
+
+Los cinco están cerrados **con su candado** (test, guard o freno de deploy).
+Lo que queda es el método, que rinde: buscar dónde el sistema *podría* estar
+callándose. Pistas concretas todavía sin mirar:
+
+- ~~Cruzar TODA columna que el código nombra en un INSERT/UPDATE contra el
+  esquema~~ **HECHO 13/08**: 668 pares (tabla, columna) de INSERT/UPDATE en
+  74 tablas, cruzados contra `information_schema`. Cero fantasmas más allá
+  del `codigo` que ya se arregló (los 10 que marcó el barrido son SQL armado
+  con f-strings, falsos positivos del regex). Esa superficie está limpia.
+- **Los `except Exception: pass`: 132 en 54 archivos, y 17 de ellos envuelven
+  una ESCRITURA a la base** (medido 13/08). Cada uno de esos 17 es un lugar
+  donde un INSERT/UPDATE puede fallar y la pantalla sigue como si nada. La
+  mayoría son best-effort a propósito (snapshots, auditoría), así que NO se
+  tocan en masa: hay que mirarlos de a uno y decidir cuál merece al menos un
+  `_LOG.warning`. Los más cargados:
+  `modules/facturas/views.py` (16 en total), `conciliacion/banco_v2_view.py`
+  (11), `conciliacion/matcher_banco.py` (9). Lista completa: regrabar el
+  barrido, es un grep de 20 líneas.
+- Los campos con `[:N]` que recortan texto del usuario sin decirlo (el
+  `concepto` a 50 es uno; ver si hay otros).
+- Las 135 filas con `prov` de 2 letras (AC, NC, OP…): códigos de concepto
+  guardados en el campo de cliente. De dónde salen.
+- 🟡 La diferencia de **$10,18** entre "Saldo banco esperado" (1.875.988,98) y
+  el saldo del extracto (1.875.978,80).
+
+---
+
 ## Urgente / destapado por el retiro del dBase
 
 ### [M] Tintura del mes en curso sin fuente
