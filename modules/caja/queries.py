@@ -144,13 +144,54 @@ def recomputar_saldos() -> dict:
     haciendo falta para planchar la historia que quedó de antes y lo que
     escriba cualquier camino que todavía no pase por el helper.
 
-    Esta función recorre todas las filas en orden (fecha, id_caja), arranca
-    del opening (saldo de la 1ra fila − su propio movimiento firmado) y
-    reescribe cada `saldo`. Es idempotente: si ya está todo cronológico no
-    cambia nada. NO cambia importes ni tipos — sólo la columna `saldo`.
+    ⭐ TMT 2026-08-14 — ACÁ VIVÍA UN SEGUNDO WALK-FORWARD. Este cuerpo
+    recorría la tabla y reescribía los saldos con un `_signed` propio, en
+    paralelo a `caja_helpers.recompute_saldos_desde`. Dos definiciones del
+    MISMO saldo conviviendo es la trampa que la caja ya pagó con el SIGNO:
+    había cuatro definiciones, una peleada con las otras tres, y el candado
+    nuevo la habría "corregido" restando plata que sí entró
+    [[feedback_espejo_clasificador_compartido]]. Queda UNA: el walk del
+    helper. Lo que esta función conserva es su CRITERIO DE ARRANQUE, que no
+    es el mismo, y ahí estaba la diferencia que importaba:
+
+    · EL OPENING. Esta versión arrancaba en `saldo(1ra fila) − delta(1ra
+      fila)`; el helper arranca en el saldo de la fila ANTERIOR al ancla. Son
+      la misma cuenta si el ancla es la SEGUNDA fila, porque la primera es un
+      punto fijo: `opening + delta(1ra) = saldo(1ra)`, o sea este walk nunca
+      la tocaba. Por eso el ancla es la segunda fila y NO `ancla_fecha` de la
+      fecha más vieja: con esa, el helper no encuentra fila anterior, arranca
+      de 0 y le come el opening a la caja entera — son los 80.053,99 que la
+      mig 0092 tuvo que reponer a mano cuando la 0091 hizo justo eso. En caja
+      la PRIMERA FILA ES LA DECLARACIÓN DE LA APERTURA (`saldo_actual()` e
+      `informes.queries.salcaj()` calculan el opening igual, y no hay ningún
+      segundo número que la desmienta), así que se respeta tal cual.
+    · EL SIGNO. No diferían: las dos usaban el importe CRUDO, sin `abs()`
+      (E→+, S→−, resto→+). El `_signed` local se borra y queda
+      `caja_helpers._delta_firmado`. La nota que lo justificaba vale igual y
+      está allá: las 8 filas legacy del 17→30/04 traen `importe` NEGATIVO (6
+      'E' y 2 'S') y las dos lecturas de las que sale la plata publicada las
+      suman tal cual; con `abs()` el running se les da vuelta. Es exactamente
+      lo que hizo la mig 0091 (offset −40.752,52) y lo que la 0092 corrigió.
+    · EL CANDADO. Esta versión no tenía: reflotaba y commiteaba aunque el
+      resultado quedara partido. El helper cierra con `assert_cadena_intacta`,
+      así que ahora tampoco el reflote puede guardar una caja que miente.
+    · QUÉ ESCRIBE. Esta versión sólo tocaba las filas cuyo saldo cambiaba; el
+      helper reescribe todas las que camina y les sella `fecha_modifica`
+      (nadie lee esa columna en caja). El `cambios` que devolvemos se sigue
+      midiendo comparando el antes contra el después, que es el número que la
+      pantalla informa — no la cantidad de UPDATEs.
+    · FILAS SIN FECHA. Este walk las caminaba al final (ORDER BY ... NULLS
+      LAST); el del helper las deja afuera, igual que el candado y que
+      `caja_helpers.saldo_actual()`. Es el criterio correcto: la cadena se
+      ordena por (fecha, id_caja) y una fila sin fecha no tiene lugar en ella.
+      Hoy no hay ninguna.
+
+    Sigue siendo idempotente en el saldo (si ya está todo cronológico, ningún
+    importe se mueve) y NO cambia importes ni tipos — sólo la columna `saldo`.
     """
     with db.tx() as conn:
-        # Mismo advisory lock que crear() — serializa contra inserts.
+        # Mismo advisory lock que crear() — serializa contra inserts. El
+        # helper no lo toma (lo toma quien lo llama), así que se queda acá.
         try:
             db.execute(
                 "SELECT pg_advisory_xact_lock(hashtext('scintela.caja.running'))",
@@ -159,39 +200,44 @@ def recomputar_saldos() -> dict:
         except (AttributeError, TypeError) as _e:
             from modules._lib.silencios import avisar
             avisar(__name__, "recomputar_saldos", _e, nivel="debug")
-        filas = db.fetch_all(
+        antes = db.fetch_all(
             """
-            SELECT id_caja, tipo, importe, saldo
+            SELECT id_caja, saldo
               FROM scintela.caja
              ORDER BY fecha ASC, id_caja ASC
             """,
             (), conn=conn,
         ) or []
-        if not filas:
+        if not antes:
+            # El helper sin ancla revienta a propósito (rebobinar desde 0
+            # borra el opening). Con la caja vacía no hay nada que anclar ni
+            # que re-encadenar, y esta función devuelve dict, no un contador.
             return {"filas": 0, "saldo_final": 0.0, "cambios": 0}
 
-        def _signed(r) -> float:
-            # IMPORTE CRUDO (NO abs) — idéntico al CASE de saldo_actual().
-            # Las filas legacy Apr 17→30 traen importe<0 (ver docstring del
-            # módulo); con abs() el running divergía de saldo_actual y dejaba
-            # saldos negativos. El running debe cerrar en saldo_actual().
-            imp = float(r.get("importe") or 0)
-            t = (r.get("tipo") or "").strip().upper()
-            return imp if t == "E" else (-imp if t == "S" else imp)
+        if len(antes) > 1:
+            # Ancla = la SEGUNDA fila. La primera se deja intacta porque ES
+            # el opening declarado (ver docstring).
+            caja_helpers.recompute_saldos_desde(
+                conn, ancla_id=int(antes[1]["id_caja"]))
 
-        opening = float(filas[0].get("saldo") or 0) - _signed(filas[0])
-        running = opening
-        cambios = 0
-        for r in filas:
-            running += _signed(r)
-            nuevo = round(running, 2)
-            if abs(float(r.get("saldo") or 0) - nuevo) > 0.005:
-                db.execute(
-                    "UPDATE scintela.caja SET saldo=%s WHERE id_caja=%s",
-                    (nuevo, r["id_caja"]), conn=conn,
-                )
-                cambios += 1
-        return {"filas": len(filas), "saldo_final": round(running, 2),
+        previos = {int(r["id_caja"]): float(r.get("saldo") or 0) for r in antes}
+        despues = db.fetch_all(
+            """
+            SELECT id_caja, saldo
+              FROM scintela.caja
+             ORDER BY fecha ASC, id_caja ASC
+            """,
+            (), conn=conn,
+        ) or []
+        cambios = sum(
+            1 for r in despues
+            if abs(float(r.get("saldo") or 0)
+                   - previos.get(int(r["id_caja"]), 0.0)) > 0.005
+        )
+        # El cierre de la cadena, leído de la base: el MISMO número que
+        # publica el arqueo. [[feedback_mostrar_lo_guardado]]
+        saldo_final = caja_helpers.saldo_actual(conn=conn)
+        return {"filas": len(despues), "saldo_final": round(saldo_final, 2),
                 "cambios": cambios}
 
 
@@ -495,20 +541,12 @@ def _crear_legacy_solo_caja_no_usar(
     raise RuntimeError(
         "_crear_legacy_solo_caja_no_usar fue llamada — debe ser crear()"
     )
-    # Código original (referencia, no se ejecuta):
-    return db.execute_returning(
-        """
-        INSERT INTO scintela.caja
-            (fecha, tipo, importe, concepto, saldo, clave, id_cheque, usuario_crea)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id_caja
-        """,
-        (
-            fecha, tipo, importe, (concepto or "")[:80],
-            None, (clave or None) and clave[:3],
-            id_cheque, usuario,
-        ),
-    ) or {}
+    # TMT 2026-08-14 — acá abajo vivía el INSERT original, "de referencia".
+    # Lo saqué porque es inalcanzable (el `raise` está arriba) y aparecía en
+    # todo grep de `INSERT INTO scintela.caja`: al barrer los lugares que
+    # escribían la caja sin pasar por `caja_helpers`, éste se colaba en la
+    # lista y había que abrirlo para descubrir que era letra muerta. El
+    # historial de git lo tiene si alguien lo necesita.
 
 
 def resumen(id_caja: int | None = None) -> dict:

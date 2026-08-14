@@ -1917,14 +1917,59 @@ def reversar_movimiento_simple(
         id_caja = meta.get("id_caja")
         if id_caja:
             import caja_helpers
+
+            # ⭐ TMT 2026-08-14 — EL ANCLA ES LA FECHA, Y SE LEE ANTES DEL
+            # DELETE. La caja se camina por (fecha, id_caja) en todos lados
+            # —`saldo_actual()`, `salcaj()`, el walk y el candado—, así que
+            # anclar por id deja afuera del re-encadenado a las filas de fecha
+            # posterior que se cargaron ANTES: quedan con el saldo del estado
+            # viejo y la cadena se parte en dos tramos, cada uno coherente por
+            # su lado, que es la forma en que este bug no se ve. Es el mismo
+            # ancla que ya usan `insert_movimiento_caja` y `/caja/nuevo`, y el
+            # mismo bug que en bancos costó los 155.187,31 del 03/08.
+            # [[project_2026_08_03_utilidad_37k]]
+            _fila_caja = db.fetch_one(
+                "SELECT fecha FROM scintela.caja WHERE id_caja = %s",
+                (int(id_caja),), conn=conn,
+            )
             db.execute(
                 "DELETE FROM scintela.caja WHERE id_caja = %s",
                 (id_caja,), conn=conn,
             )
-            try:
-                caja_helpers.recompute_saldos_desde(conn, ancla_id=int(id_caja))
-            except Exception:
-                pass  # sin filas posteriores no hay nada que recomputar
+            if _fila_caja and _fila_caja.get("fecha"):
+                try:
+                    caja_helpers.recompute_saldos_desde(
+                        conn, ancla_fecha=_fila_caja["fecha"],
+                    )
+                except caja_helpers.CadenaCajaRotaError:
+                    # ⭐ TMT 2026-08-14 — ESTE error NO se atrapa: sube y el
+                    # `db.tx()` de arriba hace ROLLBACK del reverso entero.
+                    #
+                    # Acá había un `except Exception: pass` que decía "sin
+                    # filas posteriores no hay nada que recomputar". Desde el
+                    # commit 83f6adf el recompute cierra con
+                    # `assert_cadena_intacta`, así que ese `pass` pasó a
+                    # comerse justo el error que el candado existe para dar:
+                    # el candado estaba puesto y en este punto no podía frenar
+                    # nada NI dejar rastro.
+                    #
+                    # Frena la operación ENTERA —no avisa y sigue— porque esto
+                    # es un REVERSO: un asiento contable nuevo, no una limpieza
+                    # best-effort. Si se dejara pasar, el banco quedaría con la
+                    # compensación grabada y la caja con la cadena partida; el
+                    # arqueo de /caja mostraría una plata que no está y nadie
+                    # se enteraría hasta contar los billetes. Preferimos que la
+                    # persona vea "no pude guardar esto" y vuelva a intentar
+                    # con la caja sana, que es la misma decisión que ya toma
+                    # `insert_movimiento_caja`.
+                    raise
+                except Exception as _e:
+                    # Cualquier OTRA cosa (la tabla que no está en un entorno a
+                    # medias, un problema de plomería) mantiene la tolerancia
+                    # que tenía este bloque —el reverso bancario ya está hecho
+                    # y vale— pero deja UN renglón en el log en vez de nada.
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "reversar_movimiento_simple/caja", _e)
 
         # mov_doble del reverso, linkeado al original via id_original.
         id_md_rev = _md.registrar(
@@ -2793,15 +2838,38 @@ def deshacer_reverso_cheque_emitido(
             elif stipo == "caja_compensada" and side.get("id_caja_compensacion"):
                 import caja_helpers
                 cid = int(side["id_caja_compensacion"])
+                # ⭐ TMT 2026-08-14 — EL ANCLA VA POR FECHA, NO POR
+                # `MIN(id_caja) > cid`.
+                #
+                # El id es orden de CARGA; el walk de caja camina por
+                # (fecha, id_caja). Con el ancla por id, las filas de fecha
+                # INTERMEDIA pero id MENOR al ancla quedaban fuera del walk y
+                # conservaban el saldo viejo: la cadena partida justo donde el
+                # recompute creía haber pasado. Y si la fila compensatoria era
+                # la última cargada (id máximo) con fecha atrasada —el caso
+                # típico, porque el reverso se hace después—, `MIN(id_caja) >
+                # cid` daba NULL y NO SE RE-ENCADENABA NADA.
+                #
+                # La fecha de la fila que se borra es el ancla correcta: es
+                # donde arranca el tramo que queda corrido. Se lee ANTES del
+                # DELETE porque después ya no está. Mismo criterio que
+                # `/caja/nuevo` (abdd732) y que `bank_helpers` (b10100f); en
+                # bancos el equivalente costó los 155.187,31 del 03/08.
+                # [[project_2026_08_03_utilidad_37k]]
+                fila_c = db.fetch_one(
+                    "SELECT fecha FROM scintela.caja WHERE id_caja=%s",
+                    (cid,), conn=conn,
+                )
                 db.execute(
                     "DELETE FROM scintela.caja WHERE id_caja=%s", (cid,), conn=conn,
                 )
-                anc_c = db.fetch_one(
-                    "SELECT MIN(id_caja) AS ancla FROM scintela.caja "
-                    "WHERE id_caja > %s", (cid,), conn=conn,
-                )
-                if anc_c and anc_c.get("ancla"):
-                    caja_helpers.recompute_saldos_desde(conn, ancla_id=int(anc_c["ancla"]))
+                if fila_c and fila_c.get("fecha"):
+                    # Sin try: si el candado dice que la caja quedaría
+                    # partida, el `db.tx()` hace rollback y no se deshace el
+                    # reverso a medias.
+                    caja_helpers.recompute_saldos_desde(
+                        conn, ancla_fecha=fila_c["fecha"],
+                    )
                 restaurado = {"tipo": "caja_compensacion_borrada", "id_caja": cid}
             elif stipo == "anticipo_usd_anulado" and side.get("id_dolares"):
                 db.execute(

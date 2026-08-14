@@ -38,6 +38,15 @@ class _StubCrear:
     def fetch_one(self, sql, params=None, conn=None):
         return None
 
+    def fetch_all(self, sql, params=None, conn=None):
+        # TMT 2026-08-14: desde que la fila de caja la escribe
+        # `caja_helpers.insert_movimiento_caja`, el alta pasa por el candado
+        # de la cadena (`contar_quiebres`), que lee con `fetch_all`. Acá no hay
+        # base: devolver [] es decir "la cadena está sana", que es lo correcto
+        # para un stub — lo que este archivo protege es el SIGNO, y la cadena
+        # tiene sus propios tests `-m db`.
+        return []
+
     def execute(self, sql, params=None, conn=None):
         return 1
 
@@ -63,6 +72,7 @@ def _crear(monkeypatch):
     import periodo_guard
     s = _StubCrear()
     monkeypatch.setattr(db, "fetch_one", s.fetch_one)
+    monkeypatch.setattr(db, "fetch_all", s.fetch_all)
     monkeypatch.setattr(db, "execute", s.execute)
     monkeypatch.setattr(db, "execute_returning", s.execute_returning)
     monkeypatch.setattr(db, "tx", s.tx)
@@ -82,7 +92,9 @@ def test_efectivo_negativo_sale_de_caja_como_S(_crear):
             no_banco=99, usuario="test")
     ins = _caja_insert(_crear)
     assert ins is not None, "el efectivo negativo no generó fila de caja"
-    # (fecha, tipo, importe, concepto, clave, id_cheque, usuario)
+    # (fecha, tipo, importe, concepto, saldo, clave, id_cheque, usuario) — el
+    # `saldo` entró a la tupla el 2026-08-14 al pasar por el helper; las tres
+    # posiciones que mira este archivo son las mismas de antes.
     assert ins[1][1] == "S", "una devolución tiene que ser SALIDA de caja"
     assert ins[1][2] == 1679.26, "el importe de caja va SIEMPRE positivo"
     assert ins[1][3].startswith("DEV."), "se lee qué es sin abrir el cheque"

@@ -82,6 +82,14 @@ def _crear(monkeypatch, *, no_banco, stat):
 
     cap = _DBCaptura()
     monkeypatch.setattr(q, "db", cap)
+    # TMT 2026-08-14: el cobro en efectivo (99) dejó de insertar la fila de
+    # caja a mano y la escribe por `caja_helpers.insert_movimiento_caja` —el
+    # INSERT crudo no re-encadenaba los saldos de abajo. El helper tiene su
+    # propio `import db`, así que pisar sólo `q.db` le dejaba llegar una
+    # conexión de mentira a Postgres de verdad. Le damos el MISMO stub: lo que
+    # este archivo mira son las columnas del INSERT del cheque, no la caja.
+    import caja_helpers
+    monkeypatch.setattr(caja_helpers, "db", cap)
     monkeypatch.setattr(q, "asegurar_fecha_abierta", lambda *a, **k: None)
     monkeypatch.setattr(q, "_banco_real_para_deposito", lambda *a, **k: 10)
     monkeypatch.setattr(q._concepto_cobro, "bootstrap_columna",

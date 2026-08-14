@@ -4096,10 +4096,10 @@ def crear(
 
         # TMT 2026-05-19 v8 — banco=99 EFECTIVO: insert en scintela.caja
         # (tipo='E') para que la plata entre realmente al saldo de caja.
-        # Saldo running: pasamos NULL, el trigger
-        # `trg_caja_set_saldo` (mig 0022) lo computa BEFORE INSERT.
         # NO usamos caja.queries.crear() acá para evitar la cascada de
-        # side-effects basados en concepto_parser (riesgo de match falso).
+        # side-effects basados en concepto_parser (riesgo de match falso):
+        # bajamos un escalón, al helper compartido, que es la parte que sí
+        # queremos compartir. Ver el comentario del INSERT. TMT 2026-08-14.
         if no_banco == 99 and row.get("id_cheque") and abs(importe_principal) > 0.005:
             # TMT 2026-07-30: el efectivo NEGATIVO es una SALIDA de caja. El
             # trigger `fn_caja_set_saldo` toma el signo del campo `tipo` y usa
@@ -4152,27 +4152,52 @@ def crear(
                     )
                 caja_row = {"id_caja": int(caja_existente_id)}
             else:
-                caja_row = (
-                    db.execute_returning(
-                        """
-                INSERT INTO scintela.caja
-                    (fecha, tipo, importe, concepto, saldo, clave,
-                     id_cheque, usuario_crea)
-                VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
-                RETURNING id_caja
-                """,
-                        (
-                            fecha,
-                            _tipo_caja,
-                            _importe_caja,
-                            concepto_caja,
-                            (clave or None) and clave[:3],
-                            row["id_cheque"],
-                            usuario,
-                        ),
-                        conn=conn,
-                    )
-                    or {}
+                # ⭐ TMT 2026-08-14 — LA FILA DE CAJA VA POR EL HELPER.
+                #
+                # Hasta hoy este INSERT mandaba `saldo = NULL` y dejaba que el
+                # trigger `trg_caja_set_saldo` (mig 0022) lo estampara. El
+                # trigger encadena bien la fila NUEVA, pero es un BEFORE INSERT
+                # de una fila sola: no sabe que abajo pueden quedar filas cuyo
+                # saldo se calculó sobre un estado que esta fila acaba de
+                # cambiar, y no las re-encadena. Un cobro en efectivo cargado
+                # con fecha ATRASADA —que es lo normal cuando Alex pone al día
+                # la caja— partía la cadena en dos tramos, cada uno coherente
+                # por su lado, que es la forma en que este bug no se ve. Es el
+                # mismo que en bancos costó los 155.187,31 del 03/08
+                # [[project_2026_08_03_utilidad_37k]] y el que se acaba de
+                # cerrar en `/caja/nuevo` (`caja.queries.crear`).
+                #
+                # Se DELEGA, no se recalcula acá: `insert_movimiento_caja` ya
+                # trae las tres piezas —saldo previo por (fecha, id_caja), que
+                # es el orden en que lee la caja todo el resto del sistema;
+                # re-encadenado de lo que queda debajo; y el candado
+                # `assert_cadena_intacta`— y es por donde ya entran la
+                # anulación por error de carga, el reverso y la migración de
+                # depósito directo de este MISMO archivo. Escribir una segunda
+                # cuenta del saldo sería repetir lo que ya pasó con el SIGNO de
+                # la caja: cuatro definiciones conviviendo y una equivocada.
+                # [[feedback_espejo_clasificador_compartido]]
+                #
+                # Va con el `conn` del `_tx` de arriba a propósito: la fila de
+                # caja tiene que caer en la MISMA transacción que el cheque y
+                # sus aplicaciones. Si el candado revienta, se rollbackea el
+                # cobro entero — preferimos "no pude guardar esto" a un cheque
+                # cobrado contra una caja que miente.
+                #
+                # El `tipo` y el importe NO se tocan: siguen saliendo de
+                # `_tipo_caja` / `_importe_caja` (el signo vive en el tipo,
+                # decisión del 2026-07-30 unas líneas más arriba).
+                import caja_helpers
+
+                caja_row = caja_helpers.insert_movimiento_caja(
+                    conn,
+                    fecha=fecha,
+                    tipo=_tipo_caja,
+                    importe=_importe_caja,
+                    concepto=concepto_caja,
+                    clave=(clave or None) and clave[:3],
+                    id_cheque=row["id_cheque"],
+                    usuario=usuario,
                 )
             # mov_doble linkea cheque ↔ caja para que el reverso del
             # cheque pueda compensar la entrada de caja en automático.

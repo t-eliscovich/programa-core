@@ -71,6 +71,14 @@ def env(monkeypatch):
 
         stub = _DBStub(espejo_95=espejo_95)
         monkeypatch.setattr(cq, "db", stub)
+        # TMT 2026-08-14: la entrada de caja del 99 la escribe ahora
+        # `caja_helpers.insert_movimiento_caja` (el INSERT crudo dejaba el
+        # saldo en NULL y no re-encadenaba lo de abajo). El helper importa `db`
+        # por su cuenta: sin pisarlo también, la paridad PASOCAJA salía a
+        # buscar Postgres con un `conn` de mentira. El INSERT que este archivo
+        # inspecciona sigue pasando por el mismo `execute_returning`.
+        import caja_helpers
+        monkeypatch.setattr(caja_helpers, "db", stub)
         monkeypatch.setattr(cq, "asegurar_fecha_abierta", lambda *a, **kw: None)
         monkeypatch.setattr(mov_doble, "registrar", lambda **kw: None)
         bank_calls = []

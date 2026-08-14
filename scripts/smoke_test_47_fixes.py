@@ -103,7 +103,38 @@ def cleanup(verbose: bool = False) -> None:
     _try("DELETE FROM scintela.retiros WHERE de = %s", (SOCIO_TEST,))
     _try("DELETE FROM scintela.transacciones_bancarias WHERE concepto LIKE %s",
          (f"%{SMOKE_TAG}%",))
+    # ⭐ LA CAJA ES UNA CADENA, no una lista. TMT 2026-08-14.
+    # `caja.saldo` es el acumulado hasta esa fila: borrar las filas que sembró
+    # el smoke corre el saldo de TODAS las que quedaron debajo, y el arqueo de
+    # /caja pasa a mostrar una plata que no está. Este cleanup borraba y se
+    # iba. Ahora re-encadena por el mismo helper que usa la app —el ancla es
+    # la fecha MÁS VIEJA que estamos por borrar, leída ANTES del DELETE—, así
+    # el smoke deja la caja como la encontró. Es literalmente el caso que el
+    # candado de `caja_helpers` frena: sin esto, la próxima alta de caja
+    # (la del smoke siguiente o la de la oficina) revienta con
+    # CadenaCajaRotaError por un borrado que hicimos nosotros.
+    _desde_caja = None
+    try:
+        _r = db.fetch_one(
+            "SELECT MIN(fecha) AS f FROM scintela.caja WHERE concepto LIKE %s",
+            (f"%{SMOKE_TAG}%",),
+        )
+        _desde_caja = (_r or {}).get("f")
+    except Exception as e:
+        print(f"    ⚠ no pude leer la fecha más vieja de la caja del smoke: {e}")
     _try("DELETE FROM scintela.caja WHERE concepto LIKE %s", (f"%{SMOKE_TAG}%",))
+    if _desde_caja is not None:
+        try:
+            import caja_helpers
+            with db.tx() as _conn_caja:
+                caja_helpers.recompute_saldos_desde(
+                    _conn_caja, ancla_fecha=_desde_caja)
+            if verbose:
+                print(f"    cleanup: caja re-encadenada desde {_desde_caja}")
+        except Exception as e:
+            # Ruidoso SIEMPRE, aunque no sea --verbose: los demás fallos de
+            # cleanup dejan una fila de más, éste deja la caja mintiendo.
+            print(f"    ⚠ la caja quedó SIN re-encadenar desde {_desde_caja}: {e}")
     _try("DELETE FROM scintela.xgast WHERE concepto LIKE %s", (f"%{SMOKE_TAG}%",))
     _try("DELETE FROM scintela.posdat WHERE prov = %s", (PROV_TEST,))
     _try("DELETE FROM scintela.compra WHERE codigo_prov = %s", (PROV_TEST,))

@@ -185,6 +185,33 @@ def aplicar(fecha: _date, plan: dict) -> None:
             except Exception as e:
                 print(f"   ⚠ Recompute falló: {e} — ejecutalo manual desde /bancos.")
 
+        # ⭐ Re-encadenar la CAJA. TMT 2026-08-14.
+        #
+        # Hasta hoy este script borraba la caja del día y recomputaba SÓLO los
+        # bancos: la caja quedaba con la cadena partida. `caja.saldo` es el
+        # acumulado hasta esa fila, así que sacar las filas de un día corre el
+        # saldo de TODAS las que quedan debajo — y el arqueo de /caja empieza a
+        # mostrar una plata que no está, sin fecha ni dueño, hasta que alguien
+        # cuenta los billetes. Es el mismo agujero que el bloque de arriba
+        # tapa para el banco.
+        #
+        # El ancla es `fecha` (la purgada) por la MISMA razón que allá: el walk
+        # arranca del cierre del día ANTERIOR, que ya trae el opening adentro.
+        # Sin ancla, `recompute_saldos_desde` revienta a propósito.
+        #
+        # A propósito SIN try/except, al revés que el bloque del banco: si el
+        # re-encadenado no cierra, el candado (`assert_cadena_intacta`) levanta
+        # y la purga entera hace rollback. Preferimos no borrar nada a dejar la
+        # caja mintiendo — total, esto siempre se corre con el dry-run delante.
+        if plan.get("caja"):
+            print()
+            print(f"▶ Re-encadenando la caja desde {fecha.isoformat()}…")
+            import caja_helpers
+            n_caja = caja_helpers.recompute_saldos_desde(
+                conn, ancla_fecha=fecha,
+            )
+            print(f"   • caja: {n_caja} fila(s) re-encadenadas")
+
     print()
     print("✓ Listo. Refrescá /bancos, /caja, /historial para verificar.")
 

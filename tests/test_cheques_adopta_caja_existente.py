@@ -46,13 +46,22 @@ def test_crear_acepta_caja_existente_id():
 
 
 def test_con_caja_existente_no_inserta_una_segunda_fila():
-    """El INSERT tiene que quedar en la rama `else` — si no, se duplica la plata."""
+    """El alta de la fila tiene que quedar en el `else` — si no, se duplica la plata.
+
+    TMT 2026-08-14: lo que se busca dejó de ser el texto `INSERT INTO
+    scintela.caja` porque el alta pasó a `caja_helpers.insert_movimiento_caja`
+    (el INSERT crudo no encadenaba el saldo de las filas de abajo). El
+    invariante es el mismo y es el que importa: hay UNA sola escritura que
+    crea fila, y vive en la rama en que NO se adoptó nada.
+    """
     b = _fuente_bloque_caja()
     i_if = b.index("if caja_existente_id:")
     i_else = b.index("else:", i_if)
-    i_insert = b.index("INSERT INTO scintela.caja")
-    assert i_insert > i_else, "el INSERT quedó fuera del else — duplicaría la caja"
+    i_insert = b.index("insert_movimiento_caja(")
+    assert i_insert > i_else, "el alta quedó fuera del else — duplicaría la caja"
     assert "UPDATE scintela.caja" in b[i_if:i_else]
+    assert "insert_movimiento_caja(" not in b[i_if:i_else], (
+        "adoptar una fila que ya existe no puede crear otra")
 
 
 def test_la_adopcion_exige_que_la_fila_siga_libre_y_calce():
@@ -78,8 +87,42 @@ def test_si_no_adopta_exactamente_una_fila_aborta():
 def test_sin_caja_existente_el_comportamiento_es_el_de_siempre():
     b = _fuente_bloque_caja()
     i_else = b.index("else:")
-    assert "INSERT INTO scintela.caja" in b[i_else:]
-    assert "RETURNING id_caja" in b[i_else:]
+    assert "insert_movimiento_caja(" in b[i_else:]
+    # El helper devuelve el dict con `id_caja`, que es de lo que cuelga el
+    # `_md.registrar` de más abajo (el link cheque ↔ caja).
+    assert "caja_row = caja_helpers.insert_movimiento_caja(" in b[i_else:]
+
+
+def test_la_fila_de_caja_no_se_escribe_a_mano():
+    """⭐ TMT 2026-08-14 — el saldo de la caja se calcula en UN solo lugar.
+
+    Hasta hoy este bloque insertaba con `saldo = NULL` y dejaba que el trigger
+    `trg_caja_set_saldo` (mig 0022) lo estampara. El trigger encadena la fila
+    nueva pero NO re-encadena las que quedan debajo: un cobro en efectivo con
+    fecha atrasada partía la cadena, el mismo bug que en bancos costó los
+    155.187,31 del 03/08 y que se acaba de cerrar en `/caja/nuevo`.
+
+    Que no vuelva un INSERT a mano acá: la caja ya tuvo cuatro definiciones
+    del signo conviviendo y una estaba mal; el saldo tiene una sola.
+    """
+    b = _fuente_bloque_caja()
+    assert "INSERT INTO scintela.caja" not in b, (
+        "volvió el INSERT crudo — el saldo se calcula en caja_helpers")
+    assert "saldo" not in b.split("insert_movimiento_caja(")[1][:400], (
+        "el saldo no se pasa desde acá: lo calcula el helper")
+
+
+def test_la_caja_cae_en_la_misma_transaccion_que_el_cheque():
+    """El primer argumento del helper es el `conn` del `with _tx as conn`.
+
+    Si la fila de caja se escribiera en una transacción aparte, un cobro que
+    revienta después (el candado de la cadena, una aplicación a factura que
+    falla) dejaría la plata en la caja sin cheque que la explique.
+    TMT 2026-08-14.
+    """
+    b = _fuente_bloque_caja()
+    llamada = b[b.index("insert_movimiento_caja("):][:200]
+    assert llamada.split("(", 1)[1].lstrip().startswith("conn,")
 
 
 @pytest.mark.parametrize("importe,tipo", [(400.0, "E"), (-400.0, "S")])
