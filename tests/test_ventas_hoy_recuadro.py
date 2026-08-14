@@ -292,3 +292,25 @@ def test_totales_dia_separa_las_dos_poblaciones_en_UNA_query():
     assert out["kg_fact"] == 1000.0 and out["kg_devuelto"] == 228.0
     sql = f.call_args[0][0]
     assert "FILTER (WHERE kg > 0)" in sql and "FILTER (WHERE kg < 0)" in sql
+
+
+# ── /login con la sesión ya abierta ─────────────────────────────────────────
+
+def test_login_logueada_va_al_inicio(app, fake_db):
+    """TMT 2026-08-14 (dueña): *"esta pantalla, si estoy logueada, está vacía;
+    pongamos lo mismo que al inicio"*. Con sesión viva, /login redirige al
+    menú en vez de mostrar un formulario que no lleva a ningún lado."""
+    rid = fake_db.add_role("Accionista", ["*"])
+    uid = fake_db.add_user("tamara", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess["user_id"] = uid
+    r = c.get("/login")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/operaciones")
+
+
+def test_login_sin_sesion_sigue_mostrando_el_formulario(app):
+    r = app.test_client().get("/login")
+    assert r.status_code == 200
+    assert "password" in r.get_data(as_text=True)

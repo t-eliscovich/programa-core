@@ -380,6 +380,13 @@ def registrar_bitacora_after_request(response):
     error_message="Demasiados intentos. Esperá unos minutos y volvé a probar.",
 )
 def login():
+    # TMT 2026-08-14 (dueña): *"esta pantalla, si estoy logueada, está vacía;
+    # pongamos lo mismo que al inicio"*. Entrar a /login ya logueada mostraba
+    # el formulario de siempre (o, con la sesión viva, una pantalla que no
+    # lleva a ningún lado). Si ya hay sesión, va derecho al inicio.
+    if request.method == "GET" and g.get("user"):
+        return redirect(url_for("historial.operaciones"))
+
     # TMT 2026-05-22 dueña: tener OAuth activo ya no apaga el form
     # user/pass. Alex y Andrés todavía no tienen Gmail asociado y necesitan
     # entrar con usuario + password. El template muestra ambas opciones.
