@@ -576,8 +576,21 @@
   // TMT 2026-05-29 dueña: 'no es necesario comas'. Normalizamos comas/signos
   // del query Y del contenido — así '1200' matchea con '1,200.00', y al revés.
   function norm(s){
+    // TMT 2026-08-14 (dueña: "mirá el caso de 1000"). Esta función estaba
+    // escrita para formato americano: borraba la COMA y dejaba el PUNTO. Pero
+    // los importes se muestran como acá — 1.234,56 — así que borraba el
+    // separador DECIMAL y conservaba el de MILES. Buscando "1000":
+    //    100,00  ->  10000   ← aparecía, y no es mil
+    //     10,00  ->   1000   ← aparecía, y no es mil
+    //  1.000,00  ->  1.00000 ← NO aparecía, y era el único que sí era mil
+    // Ahora se saca el punto de miles y la coma decimal pasa a punto, que
+    // deja el número comparable como texto: 1000.00 contiene "1000", 100.00
+    // no. Lo cuida tests/test_buscador_conciliacion_2026_08_14.py, que corre
+    // ESTA función con node.
     return (s||'').toLowerCase()
-      .replace(/[,$+\-−]/g,'')   // quita comas, $, +, − unicode y ascii
+      .replace(/(\d)\.(?=\d{3}(\D|$))/g, '$1')      // 1.000 -> 1000
+      .replace(/(\d),(\d{1,2})(?=\D|$)/g, '$1.$2')  // 1000,00 -> 1000.00
+      .replace(/[,$+\-−]/g,'')   // lo que quede: $, +, − unicode y ascii
       .replace(/\s+/g,' ').trim();
   }
   var filtroEl = document.getElementById('manual-filtro');
