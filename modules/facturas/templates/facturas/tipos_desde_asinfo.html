@@ -48,6 +48,12 @@
         {% endif %}
       </tbody>
     </table>
+    {% if por_via %}
+    <div class="mt-3 text-xs text-slate-500">
+      Cómo se encontraron:
+      {% for via, n in por_via|dictsort %}<span class="font-mono">{{ n }}</span> por {{ via }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+    {% endif %}
     <div class="mt-3 text-xs text-slate-500">
       Se miraron {{ n_candidatas | num_es }} facturas sin clasificar con fecha
       desde 2025 (antes de eso Asinfo no tiene data limpia, no hay a quién

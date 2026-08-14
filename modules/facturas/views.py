@@ -3005,7 +3005,6 @@ def tipos_desde_asinfo():
         SELECT id_factura, numf, fecha, codigo_cli, kg, importe
           FROM scintela.factura
          WHERE (NULLIF(TRIM(COALESCE(tipo,'')),'') IS NULL OR TRIM(tipo) = '1')
-           AND numf IS NOT NULL
            AND fecha >= %s
          ORDER BY fecha
         """,
@@ -3013,6 +3012,7 @@ def tipos_desde_asinfo():
     ) or []
 
     plan: dict[str, int] = {}
+    por_via: dict[str, int] = {}
     sin_match: list[dict] = []
     ambiguas = 0
     asignaciones: list[tuple[int, str]] = []
@@ -3022,8 +3022,9 @@ def tipos_desde_asinfo():
         try:
             mn = min(f["fecha"] for f in filas)
             mx = max(f["fecha"] for f in filas)
+            asinfo_rows_todos = asinfo_service.facturas_periodo(mn, mx) or []
             por_sufijo: dict[int, list[dict]] = {}
-            for r in asinfo_service.facturas_periodo(mn, mx) or []:
+            for r in asinfo_rows_todos:
                 numero = (r.get("numero") or "").strip()
                 if not numero:
                     continue
@@ -3032,16 +3033,55 @@ def tipos_desde_asinfo():
                     por_sufijo.setdefault(int(suf), []).append(r)
                 except (TypeError, ValueError):
                     continue
-            for f in filas:
-                cands = por_sufijo.get(int(f["numf"]), [])
+            # PASADA 2 (TMT 2026-08-14, duena: "fijate si podes hacer cliente
+            # monto$ y kg"): 546 filas del sync vinieron con numf = 0, asi que
+            # por numero no hay con que cruzarlas. Se reusa LA MISMA huella
+            # que el enriquecimiento de la lista viene usando desde 2026-05-22
+            # —(cliente, fecha, kg) con desempate por dolares— en vez de
+            # inventar una variante. Se compara en VALOR ABSOLUTO porque el
+            # signo es justo lo que estamos tratando de averiguar.
+            # Tolerancia en los dolares: el importe de PC puede llevar IVA y el
+            # de Asinfo no. En kilos NO hay tolerancia: es la parte dura de la
+            # huella.
+            por_cliente_kg: dict[tuple, list[dict]] = {}
+            for r in asinfo_rows_todos:
+                cli = (r.get("cliente_codigo") or "").strip().upper()
+                try:
+                    k = round(abs(float(r.get("kg") or 0)), 2)
+                except (TypeError, ValueError):
+                    continue
+                if cli and r.get("fecha"):
+                    por_cliente_kg.setdefault((cli, str(r["fecha"])[:10], k), []).append(r)
+
+            def _tipo_unico(cands):
                 tipos = {tipo_doc.normalizar(c.get("tipo")) for c in cands}
                 tipos.discard(None)
-                if len(tipos) == 1:
-                    cod = tipos.pop()
+                return tipos.pop() if len(tipos) == 1 else (False if tipos else None)
+
+            for f in filas:
+                cands = por_sufijo.get(int(f["numf"]), []) if f["numf"] else []
+                via = "numero"
+                if not cands:
+                    cli = (f.get("codigo_cli") or "").strip().upper()
+                    k = round(abs(float(f.get("kg") or 0)), 2)
+                    pc_usd = abs(float(f.get("importe") or 0))
+                    posibles = por_cliente_kg.get(
+                        (cli, str(f.get("fecha"))[:10], k), [])
+                    # El |usd| tiene que parecerse: margen para el IVA, con un
+                    # piso para que en cifras chicas no entre cualquier cosa.
+                    cands = [
+                        c for c in posibles
+                        if abs(abs(float(c.get("usd") or 0)) - pc_usd)
+                        <= max(pc_usd * 0.15, 5.0)
+                    ]
+                    via = "cliente+fecha+kg+importe"
+                cod = _tipo_unico(cands)
+                if cod:
                     asignaciones.append((int(f["id_factura"]), cod))
                     plan[cod] = plan.get(cod, 0) + 1
-                elif len(tipos) > 1:
-                    ambiguas += 1          # mismo numero, dos tipos: no tocar
+                    por_via[via] = por_via.get(via, 0) + 1
+                elif cod is False:
+                    ambiguas += 1          # dos candidatos de tipos distintos
                 else:
                     sin_match.append(f)
         except Exception as e:  # noqa: BLE001
@@ -3076,7 +3116,7 @@ def tipos_desde_asinfo():
 
     return render_template(
         "facturas/tipos_desde_asinfo.html",
-        n_candidatas=len(filas), plan=sorted(plan.items()),
+        n_candidatas=len(filas), plan=sorted(plan.items()), por_via=por_via,
         total=len(asignaciones), sin_match=sin_match[:50],
         n_sin_match=len(sin_match), ambiguas=ambiguas, error=error,
         tipo_doc=tipo_doc,
