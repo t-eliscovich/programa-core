@@ -20,6 +20,7 @@ están así y `resumen()` también):
 """
 from datetime import date
 
+import caja_helpers
 import db
 from periodo_guard import asegurar_fecha_abierta
 
@@ -134,10 +135,14 @@ def saldo_actual() -> float:
 def recomputar_saldos() -> dict:
     """Reflota el running `saldo` de TODA la caja en orden CRONOLÓGICO.
 
-    El `saldo` se persiste al insertar como `saldo_prev + delta`, tomando
-    `saldo_prev` de la fila con MAX(id_caja) (orden de inserción), no de
-    fecha. Un movimiento cargado con fecha ATRASADA deja los saldos de las
-    filas posteriores sin recalcular → drift en el arqueo (ver resumen()).
+    Hasta el 2026-08-14 el `saldo` se persistía tomando el previo de la fila
+    con MAX(id_caja) (orden de INSERCIÓN, no de fecha): un movimiento cargado
+    con fecha ATRASADA dejaba los saldos de las filas posteriores sin
+    recalcular → drift en el arqueo (ver resumen()). Eso ya no pasa —las altas
+    van por `caja_helpers.insert_movimiento_caja`, que encadena por
+    (fecha, id_caja) y re-encadena lo de abajo—, pero esta función sigue
+    haciendo falta para planchar la historia que quedó de antes y lo que
+    escriba cualquier camino que todavía no pase por el helper.
 
     Esta función recorre todas las filas en orden (fecha, id_caja), arranca
     del opening (saldo de la 1ra fila − su propio movimiento firmado) y
@@ -211,7 +216,11 @@ def crear(
     El SIGNO viene del `tipo`, NUNCA de `importe`. Si el caller pasa un
     importe negativo, esta función toma el ABS y deja `tipo` como vino.
 
-    Actualiza el saldo running: saldo_prev + (importe firmado por tipo).
+    El saldo running NO se calcula acá: lo escribe
+    `caja_helpers.insert_movimiento_caja`, que lo toma en el orden
+    (fecha, id_caja) —el mismo en que lee la caja todo el resto del sistema—,
+    re-encadena lo que queda debajo si el alta cae al medio, y cierra por el
+    candado. Ver el comentario del paso 1. TMT 2026-08-14.
     """
     if not tipo:
         raise ValueError("Tipo requerido.")
@@ -227,24 +236,19 @@ def crear(
     if importe == 0:
         raise ValueError("Importe debe ser distinto de cero.")
 
-    # Signo aritmético sólo para chequear que el saldo no quede negativo
-    # y para actualizar el running saldo. NUNCA se persiste negativo.
-    #
     # #34 (TMT 2026-05-14): interacción Python vs trigger DB.
     # `scintela.caja` tiene un BEFORE INSERT trigger
     # (migration 0022_auto_saldo_trigger_caja.sql) que setea `saldo`
-    # SI viene NULL. Este Python computa `saldo_nuevo` y lo INCLUYE en
-    # el INSERT — por lo tanto el trigger ve `NEW.saldo IS NOT NULL` y
-    # respeta el valor (early-return en la función). No hay double-update.
-    # La validación de "no negativo" se hace acá en Python (saldo_actual
-    # + delta). Si en el futuro alguien deja `saldo=NULL`, el trigger lo
-    # llena pero esta validación se saltea — por eso siempre pasamos saldo.
-    importe_firmado = importe if tipo == "E" else (-importe if tipo == "S" else importe)
-    # TMT 2026-06-03 audit fix: el cálculo de saldo_prev/saldo_nuevo se
-    # mueve DENTRO del with db.tx() (línea 178+) con un advisory lock para
-    # serializar inserts concurrentes. Antes leíamos saldo_actual() acá
-    # afuera — dos requests simultáneas computaban el mismo saldo y
-    # ambas INSERTaban con saldo igual, corrompiendo el running balance.
+    # SI viene NULL. El saldo se manda SIEMPRE calculado (hoy lo calcula
+    # `caja_helpers.insert_movimiento_caja`), así que el trigger ve
+    # `NEW.saldo IS NOT NULL` y respeta el valor — early-return, no hay
+    # double-update. Que siga siendo así: el trigger sabe encadenar la fila
+    # nueva, pero NO re-encadena las que le quedan debajo, y una carga con
+    # fecha atrasada las tiene.
+    # TMT 2026-06-03 audit fix: el saldo se calcula DENTRO del with db.tx()
+    # y del advisory lock, para serializar inserts concurrentes. Antes se
+    # leía el saldo acá afuera — dos requests simultáneas computaban el mismo
+    # y ambas INSERTaban con saldo igual, corrompiendo el running balance.
 
     # Side effects automáticos basados en el concepto (TMT 2026-05-12).
     # "Concept-driven double entries": si el concepto matchea un patrón
@@ -292,39 +296,91 @@ def crear(
         except (AttributeError, TypeError) as _e:
             from modules._lib.silencios import avisar
             avisar(__name__, "crear", _e, nivel="debug")
-        # 1) Computar saldo_prev DENTRO de la tx + del lock.
-        sp_row = db.fetch_one(
-            """
-            SELECT COALESCE(saldo, 0) AS s
-              FROM scintela.caja
-             ORDER BY id_caja DESC
-             LIMIT 1
-            """,
-            (), conn=conn,
-        ) or {}
-        saldo_prev = float(sp_row.get("s") or 0)
-        saldo_nuevo = saldo_prev + importe_firmado
-        if saldo_nuevo < -0.01:
-            raise ValueError(
-                f"El movimiento dejaría la caja en negativo ({saldo_nuevo:.2f})."
-            )
-        # 2) INSERT en caja con saldo running calculado.
-        row = db.execute_returning(
-            """
-            INSERT INTO scintela.caja
-                (fecha, tipo, importe, concepto, saldo, clave, id_cheque, usuario_crea)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id_caja
-            """,
-            (
-                fecha, tipo, importe, (concepto or "")[:80],
-                saldo_nuevo, (clave or None) and clave[:3].upper(),
-                id_cheque, usuario,
-            ),
-            conn=conn,
-        ) or {}
+        # 1) INSERT + saldo running, POR EL HELPER COMPARTIDO.
+        #
+        # ⭐ TMT 2026-08-14 — acá vivía la misma trampa que en bancos costó los
+        # 155.187,31 del 03/08 [[project_2026_08_03_utilidad_37k]]: el saldo
+        # anterior salía de `ORDER BY id_caja DESC`, o sea de la ÚLTIMA FILA
+        # CARGADA, mientras que la caja la lee todo el resto del sistema por
+        # (fecha, id_caja) — `saldo_actual()`, `informes.queries.salcaj()`,
+        # `caja_helpers.recompute_saldos_desde` y el candado. Un alta con
+        # fecha atrasada se estampaba con el saldo de una fila que va DESPUÉS
+        # de ella en el tiempo, y las que le quedaban abajo conservaban el
+        # saldo del estado viejo: la cadena partida en dos tramos coherentes
+        # cada uno por su lado, que es la forma en que este bug no se ve.
+        #
+        # El orden NO se arregla acá: se DELEGA. `insert_movimiento_caja` ya
+        # hace las tres cosas —saldo previo por (fecha, id_caja), re-encadenar
+        # lo de abajo cuando el alta cae al medio, y cerrar por
+        # `assert_cadena_intacta`— y es por donde ya entran cheques, compras,
+        # gastos, capital, bancos y la carga masiva de /caja/cargar. Escribir
+        # una segunda cuenta del saldo acá sería repetir lo que ya pasó con el
+        # SIGNO de la caja: cuatro definiciones conviviendo y una equivocada.
+        # [[feedback_espejo_clasificador_compartido]]
+        #
+        # El advisory lock de arriba se queda: serializa las altas concurrentes
+        # que si no computan el mismo saldo previo.
+        mov = caja_helpers.insert_movimiento_caja(
+            conn,
+            fecha=fecha,
+            tipo=tipo,
+            importe=importe,
+            # [:80] es el ancho histórico del concepto de caja (la columna
+            # aguanta 100): lo respetamos para que una fila cargada por esta
+            # pantalla se siga viendo igual que las 722 del dBase.
+            concepto=(concepto or "")[:80],
+            clave=clave,
+            id_cheque=id_cheque,
+            usuario=usuario,
+        )
+        row = {"id_caja": mov.get("id_caja")}
+        # El saldo que devolvemos es el que quedó GUARDADO en la fila, ya
+        # re-encadenado. [[feedback_mostrar_lo_guardado]]
+        saldo_nuevo = float(mov.get("saldo_nuevo") or 0)
 
-        # 2) Side effect: si caja egresa (S), la plata entra al destino.
+        # 2) LA CAJA NO PUEDE QUEDAR EN NEGATIVO. ¿La de cuándo?
+        #
+        # ⭐ TMT 2026-08-14 — es una REGLA DE NEGOCIO, y al pasar el saldo a
+        # orden (fecha, id_caja) hubo que elegirla, porque ahora hay dos
+        # números distintos que la frase podría querer decir:
+        #   (a) el saldo EN LA FECHA del movimiento, y
+        #   (b) el saldo de HOY (el final de la cadena, ya re-encadenado).
+        # Para una carga del día son el mismo número; para una carga atrasada
+        # no, y pueden dar de signos opuestos.
+        #
+        # Elegimos (b). Es el único de los dos que se puede desmentir contando
+        # los billetes: es el que publica el arqueo de /caja, el que devuelven
+        # `saldo_actual()` y `salcaj()`, y el que le da de comer al flujo. Una
+        # salida que deja la caja de hoy en rojo es plata que no está, y eso se
+        # frena siempre, con la fecha que sea.
+        #
+        # (a) queda deliberadamente SIN chequear. Adentro de un mismo día las
+        # filas se ordenan por id_caja —orden de CARGA, no de reloj—, así que
+        # un negativo intermedio puede ser puro artefacto de en qué orden se
+        # tipearon dos movimientos del mismo día: frenar por eso sería
+        # bloquear la corrección de una historia que ya pasó para protegernos
+        # de algo que no ocurrió [[project_2026_08_12_frenos_que_estorbaban]].
+        # Y además se ve solo: el saldo intermedio está impreso en la lista,
+        # renglón por renglón. [[feedback_el_dato_a_la_vista_mata_al_aviso]]
+        #
+        # Va DESPUÉS del insert (antes se chequeaba antes) porque el saldo de
+        # hoy sólo existe una vez re-encadenado lo de abajo. El raise vive
+        # adentro del `db.tx()`, así que hace rollback de todo: no queda nada.
+        saldo_final = caja_helpers.saldo_actual(conn=conn)
+        if saldo_final < -0.01:
+            aclaracion = ""
+            if abs(saldo_final - saldo_nuevo) > 0.005:
+                aclaracion = (
+                    f" Con fecha {fecha} el saldo queda en {saldo_nuevo:.2f}, "
+                    f"pero lo que no puede quedar en rojo es la caja de HOY, "
+                    f"que es la que se cuenta."
+                )
+            raise ValueError(
+                f"El movimiento dejaría la caja en negativo "
+                f"({saldo_final:.2f}).{aclaracion}"
+            )
+
+        # 3) Side effect: si caja egresa (S), la plata entra al destino.
         #    Si caja ingresa (E), la plata sale del destino.
         origen = ("caja_egreso" if tipo == "S"
                   else "caja_ingreso" if tipo == "E"
@@ -347,7 +403,7 @@ def crear(
                 "El movimiento de caja NO se aplicó."
             ) from e
 
-        # 3) Registrar en mov_doble (historial unificado, Fase H/I 2026-05-12).
+        # 4) Registrar en mov_doble (historial unificado, Fase H/I 2026-05-12).
         # TMT 2026-05-12 follow-up: SIEMPRE registrar — con o sin side effect.
         # Los simples apuntan a sí mismos (caja→caja) y se tipan
         # "caja_simple_<tipo>" para que aparezcan en el historial general.
@@ -377,7 +433,7 @@ def crear(
                               "tiene_side_effect": bool(side_effect_result)},
                 )
 
-        # 4) TMT 2026-05-19 v4 audit — clasificación atómica como gasto
+        # 5) TMT 2026-05-19 v4 audit — clasificación atómica como gasto
         # V1..V9 si se pidió. DENTRO de la misma tx: si la clasif falla,
         # rollback total (caja + side_effect + xgast). Antes esto se hacía
         # en una tx separada en views.py y dejaba caja huérfana on failure.

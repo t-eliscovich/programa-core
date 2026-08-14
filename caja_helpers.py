@@ -29,10 +29,10 @@ def signo_tipo(tipo: str) -> int:
     """+1 entra plata a la caja, −1 sale. LA regla de signo de la caja.
 
     ⭐ TMT 2026-08-14 — antes era `+1 sólo si 'E'`, todo lo demás −1. Para lo
-    que este módulo ESCRIBE daba igual (`insert_movimiento_caja` rechaza
-    cualquier tipo que no sea E o S), pero no da igual para lo que este módulo
-    LEE y re-encadena: `caja.queries.crear()` admite además `'CB'` (cobro con
-    cheque) y lo estampa SUMANDO — igual que el trigger `trg_caja_set_saldo`
+    que este módulo escribía daba igual (arrancó aceptando sólo E y S), pero
+    no da igual para lo que LEE, re-encadena y —desde hoy— también escribe:
+    `caja.queries.crear()` admite además `'CB'` (cobro con cheque) y lo
+    estampa SUMANDO — igual que el trigger `trg_caja_set_saldo`
     (mig 0022) y que las dos lecturas de las que cuelga la plata,
     `caja.queries.saldo_actual()` e `informes.queries.salcaj()`, las dos
     `E→+, S→−, resto→+`. Con la regla vieja el candado de más abajo habría
@@ -122,8 +122,9 @@ def insert_movimiento_caja(
 
     Devuelve `{id_caja, saldo_nuevo, saldo_anterior, signo}`.
 
-    `tipo` debe ser 'E' (entrada) o 'S' (salida). Importe siempre positivo.
-    El signo se aplica internamente.
+    `tipo` debe ser 'E' (entrada), 'S' (salida) o 'CB' (cobro con cheque, que
+    suma como una entrada). Importe siempre positivo: el signo se aplica
+    internamente, y sale de `signo_tipo` — LA regla, la única.
 
     Si la fila cae al MEDIO del ledger (fecha vieja), re-encadena lo que queda
     debajo antes de terminar, y en cualquier caso cierra pasando por el
@@ -131,8 +132,19 @@ def insert_movimiento_caja(
     `db.tx()` del caller hace rollback. TMT 2026-08-14.
     """
     tipo_norm = (tipo or "").upper().strip()
-    if tipo_norm not in ("E", "S"):
-        raise ValueError(f"tipo debe ser 'E' o 'S' (recibido: {tipo!r})")
+    # 'CB' entra a esta lista el 2026-08-14, cuando `caja.queries.crear()` —el
+    # alta de /caja/nuevo, que es LA pantalla de caja— dejó de calcularse el
+    # saldo por su cuenta y pasó a escribir por acá. No es aflojar la
+    # validación: la lista está para atajar un tipo tipeado mal, y 'CB' es uno
+    # de los TRES tipos que la tabla realmente tiene (docstring de
+    # modules/caja/queries.py y trigger `trg_caja_set_saldo` de la mig 0022).
+    # Su signo no se decide acá — sale de `signo_tipo`, que ya lo tenía en +1
+    # y que es la misma regla del trigger, de `saldo_actual()` y de `salcaj()`.
+    # Seguir rechazándolo obligaba a `crear()` a estampar el saldo por afuera,
+    # que es justo lo que se vino a sacar.
+    if tipo_norm not in ("E", "S", "CB"):
+        raise ValueError(
+            f"tipo debe ser 'E', 'S' o 'CB' (recibido: {tipo!r})")
     importe_f = float(importe or 0)
     if importe_f <= 0:
         raise ValueError(f"importe debe ser > 0 (recibido: {importe!r})")
