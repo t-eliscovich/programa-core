@@ -143,3 +143,68 @@ def test_la_pantalla_renderea_con_sesion_sin_extracto(app_logueada, monkeypatch)
     body = rv.get_data(as_text=True)
     assert "pendientes" in body
     assert "2" in body, "el pill tiene que contar los 2 históricos pendientes"
+
+
+# ── Empezar sin extracto (el botón que pidió la dueña el 13/08) ───────
+
+@pytest.fixture
+def app_post(app):
+    """Para los POST: la app del conftest, que viene con CSRF apagado.
+
+    `build_app` (el de arriba) deja CSRF prendido y un POST sin token cae
+    en /login, que no es lo que estos tests quieren medir.
+    """
+    @app.before_request
+    def _login_falso():  # pragma: no cover - infra de test
+        from flask import g, session
+        session["usuario_id"] = 1
+        g.user = {"id_usuario": 1, "username": "alex", "id_rol": 1,
+                  "nombre_rol": "Accionista", "activo": True}
+        g.permisos = {"*"}
+
+    return app
+
+
+def test_empezar_sin_extracto_abre_sesion_con_los_pendientes(app_post, monkeypatch):
+    """TMT 2026-08-13 (dueña): *'tenemos que dejar empezar automatico si no
+    hay archivo'*.
+
+    Hasta hoy la única puerta para abrir sesión era subir un extracto: con el
+    banco sin movimientos nuevos, el operador quedaba trabado o subía un
+    archivo viejo sólo para destrabar.
+    """
+    from modules.conciliacion import banco_v2_view as v
+
+    monkeypatch.setattr(v._sesion, "sesion_abierta", lambda nb, usuario=None: None)
+    visto = {}
+
+    def _crear(**kw):
+        visto.update(kw)
+        return (77, 0, 0)
+    monkeypatch.setattr(v._sesion, "crear_sesion", _crear)
+
+    rv = app_post.test_client().post(
+        "/conciliacion/banco-v2/empezar-sin-extracto", follow_redirects=False)
+
+    assert rv.status_code == 302
+    assert "banco-v2" in rv.headers["Location"], "va a la pantalla de conciliar"
+    assert list(visto["movs"]) == [], "abre sin filas de extracto"
+    assert visto["no_banco"] == v._BANCO_PICHINCHA
+
+
+def test_empezar_sin_extracto_no_abre_una_segunda_sesion(app_post, monkeypatch):
+    """UNA sesión por banco: si ya hay una abierta, entra a ésa."""
+    from modules.conciliacion import banco_v2_view as v
+
+    monkeypatch.setattr(v._sesion, "sesion_abierta",
+                        lambda nb, usuario=None: {"id": 64})
+
+    def _no_llamar(**kw):  # pragma: no cover - debe no llamarse
+        raise AssertionError("no debe abrir una sesión nueva")
+    monkeypatch.setattr(v._sesion, "crear_sesion", _no_llamar)
+
+    rv = app_post.test_client().post(
+        "/conciliacion/banco-v2/empezar-sin-extracto", follow_redirects=False)
+
+    assert rv.status_code == 302
+    assert "banco-v2" in rv.headers["Location"]

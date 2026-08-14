@@ -225,17 +225,17 @@
                 class="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm whitespace-nowrap">
           Procesar →
         </button>
+        {# TMT 2026-08-13 (dueña): 'dejar empezar automatico si no hay archivo'.
+           Mismo form, otro action: `formnovalidate` saltea el `required` del
+           input de archivo, que acá no hace falta. #}
+        <button type="submit" formnovalidate
+                formaction="{{ url_for('conciliacion.banco_empezar_sin_extracto') }}"
+                class="px-4 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm whitespace-nowrap">
+          Empezar sin extracto →
+        </button>
       </div>
     </label>
 
-    {# TMT 2026-06-02 dueña: 'que compare numero de documento de banco y
-       si ya esta en nuestra lista, no agregarse'. El dedupe es ahora
-       row-level por número de documento (no por hash de archivo). Subir
-       el mismo archivo dos veces es seguro: las filas ya cargadas se
-       omiten silenciosamente. #}
-    <p class="text-xs text-slate-500 dark:text-slate-400">
-      Subir varias veces es seguro — las filas con número de documento ya cargado se omiten.
-    </p>
   </form>
 
   {# TMT 2026-07-31 (dueña: "no tengo ese documento"): agregar a mano una fila

@@ -860,6 +860,50 @@ def banco_crear_sesion():
     return redirect(url_for("conciliacion.banco_post_procesar"))
 
 
+@conciliacion_bp.route("/banco-v2/empezar-sin-extracto", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_empezar_sin_extracto():
+    """Abrir la conciliación SIN subir nada, contra el backlog de pendientes.
+
+    TMT 2026-08-13 (dueña, después del 500 de Alex): *"tenemos que dejar
+    empezar automático si no hay archivo"*. Hasta hoy la única puerta para
+    abrir sesión era subir un extracto, así que cuando el banco todavía no
+    publicaba movimientos nuevos el operador quedaba mirando la pantalla sin
+    poder arrancar — o subiendo de nuevo un archivo viejo sólo para destrabar.
+
+    Del lado del modelo no hay nada nuevo: `estado_sesion` ya tiene una rama
+    para la sesión sin extracto y `crear_sesion` acepta `movs=[]`. Lo único
+    que faltaba era el botón.
+    """
+    r = _migracion_lista_o_redirect()
+    if r:
+        return r
+    no_banco = _BANCO_PICHINCHA
+
+    abierta = _sesion.sesion_abierta(no_banco)
+    if abierta:
+        # No abrimos una segunda: la convención es UNA sesión por banco.
+        flash(f"Ya había una conciliación abierta (sesión #{abierta['id']}).",
+              "info")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+
+    sesion_id, _n_added, _n_skipped = _sesion.crear_sesion(
+        no_banco=no_banco,
+        usuario=_usuario_actual(),
+        movs=[],
+        extracto_hash=None,
+        extracto_nombre="(sin extracto)",
+    )
+    flash(
+        f"Sesión #{sesion_id}: empezaste sin extracto. Están los pendientes "
+        "que ya tenías cargados; cuando subas el archivo del banco se suman "
+        "a esta misma sesión.",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.banco_post_procesar"))
+
+
 # ─── Preview antes de confirmar match (tab Manual) ────────────────────
 
 
