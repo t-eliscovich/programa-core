@@ -931,6 +931,14 @@ def enviar_nota(fecha=None, forzar: bool = False) -> dict:
 
     fecha = fecha or hoy_ec()
     res = {"ok": False, "motivo": "", "destinatarios": 0, "id": ""}
+    # TMT 2026-08-14: *"solo lun-viernes mandar mail diario"*. El freno va acá
+    # y no en `correr_si_toca` para que valga para CUALQUIER llamador
+    # automático; el botón "Mandarla ahora (prueba)" pasa `forzar=True` y sigue
+    # andando el fin de semana. La CAPTURA del cierre se sigue tomando todos
+    # los días: lo que se apaga es el mail, no la foto.
+    if not forzar and fecha.weekday() >= 5:
+        res["motivo"] = "sábado o domingo: la nota sale de lunes a viernes"
+        return res
     try:
         cierre = _rows(
             "SELECT id_captura, nota_enviada_en FROM scintela.dia_captura "

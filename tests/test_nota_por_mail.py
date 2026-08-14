@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import date
 from unittest.mock import patch
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,6 +48,12 @@ def test_un_error_de_ses_no_levanta():
 
 # ── La idempotencia ─────────────────────────────────────────────────────────
 
+# Un día hábil cualquiera: sin fecha explícita, `enviar_nota()` toma HOY y los
+# tests de idempotencia se caerían solos un sábado (la nota sale lun-vie).
+_JUEVES = date(2026, 8, 13)
+_SABADO = date(2026, 8, 15)
+
+
 def _cierre(enviada=None):
     return [{"id_captura": 7, "nota_enviada_en": enviada}]
 
@@ -62,7 +69,7 @@ def test_la_nota_sale_una_sola_vez_por_dia():
          patch.object(dia, "mensaje_whatsapp", return_value="hola"), \
          patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
          patch.object(dia.db, "execute", return_value=1) as ex:
-        r = dia.enviar_nota()
+        r = dia.enviar_nota(_JUEVES)
     assert r["ok"] is True and r["destinatarios"] == 1
     env.assert_called_once()
     # El sello se toma con un UPDATE que exige que esté en NULL.
@@ -72,7 +79,7 @@ def test_la_nota_sale_una_sola_vez_por_dia():
 def test_si_ya_se_mando_no_se_manda_de_nuevo():
     with patch.object(dia, "_rows", return_value=_cierre(enviada="2026-08-06")), \
          patch.object(mailer, "enviar") as env:
-        r = dia.enviar_nota()
+        r = dia.enviar_nota(_JUEVES)
     assert r["ok"] is False and "ya se mandó" in r["motivo"]
     env.assert_not_called()
 
@@ -86,7 +93,7 @@ def test_si_otro_proceso_gano_la_carrera_este_no_manda():
          patch.object(mailer, "habilitado", return_value=True), \
          patch.object(dia.db, "execute", return_value=0), \
          patch.object(mailer, "enviar") as env:
-        r = dia.enviar_nota()
+        r = dia.enviar_nota(_JUEVES)
     assert r["ok"] is False and "ya se mandó" in r["motivo"]
     env.assert_not_called()
 
@@ -102,7 +109,7 @@ def test_si_el_envio_falla_se_libera_para_reintentar():
          patch.object(mailer, "enviar", return_value={"ok": False, "motivo": "red"}), \
          patch.object(dia.db, "execute",
                       side_effect=lambda sql, *a, **k: ejecutadas.append(sql) or 1):
-        r = dia.enviar_nota()
+        r = dia.enviar_nota(_JUEVES)
     assert r["ok"] is False
     assert "nota_enviada_en = NULL" in ejecutadas[-1]
 
@@ -112,7 +119,7 @@ def test_sin_destinatarios_activos_ni_se_intenta():
          patch.object(dia, "destinatarios",
                       return_value=[{"correo": "a@b.com", "activo": False}]), \
          patch.object(mailer, "enviar") as env:
-        r = dia.enviar_nota()
+        r = dia.enviar_nota(_JUEVES)
     assert "destinatarios" in r["motivo"]
     env.assert_not_called()
 
@@ -246,3 +253,33 @@ def test_un_html_vacio_no_agrega_la_parte_html():
          patch("boto3.client", return_value=cli):
         mailer.enviar("asunto", "texto", ["a@b.com"], html="   ")
     assert "Html" not in cli.msg["Body"]
+
+
+# ── Lunes a viernes ─────────────────────────────────────────────────────────
+
+def test_el_fin_de_semana_la_nota_no_sale(): 
+    """TMT 2026-08-14: *"solo lun-viernes mandar mail diario"*. Ni se mira la
+    base: el freno corta antes de tomar el sello, así que el lunes la captura
+    del sábado sigue sin sello y nadie manda la nota de un día viejo."""
+    for d in (_SABADO, date(2026, 8, 16)):  # sábado y domingo
+        with patch.object(dia, "_rows") as rows, patch.object(mailer, "enviar") as env:
+            r = dia.enviar_nota(d)
+        assert r["ok"] is False and "lunes a viernes" in r["motivo"], d
+        rows.assert_not_called()
+        env.assert_not_called()
+
+
+def test_el_boton_de_prueba_manda_igual_un_sabado():
+    """El freno es para el envío AUTOMÁTICO. Si ella aprieta "Mandarla ahora",
+    sale — es su decisión, y probar un sábado tiene que poder hacerse."""
+    with patch.object(dia, "_rows", return_value=_cierre()), \
+         patch.object(dia, "destinatarios",
+                      return_value=[{"correo": "a@b.com", "activo": True}]), \
+         patch.object(mailer, "habilitado", return_value=True), \
+         patch.object(dia, "mensaje_whatsapp", return_value="hola"), \
+         patch.object(dia, "nota_html", return_value="<p>hola</p>"), \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(dia.db, "execute", return_value=1):
+        r = dia.enviar_nota(_SABADO, forzar=True)
+    assert r["ok"] is True
+    env.assert_called_once()
