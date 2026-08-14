@@ -37,6 +37,15 @@ def _fila(**kw):
 
 @pytest.fixture
 def setup(real_db_conn, migrated_db):
+    # La tabla de la papelera NO la crea ninguna migración: nace sola la
+    # primera vez que alguien la usa (`_bootstrap`). Sin esta llamada el
+    # fixture borra sobre una tabla que todavía no existe — pasa local, donde
+    # una corrida anterior ya la creó, y revienta en CI, que arranca limpio.
+    from modules.conciliacion import papelera_pendientes as _pap
+    _pap._bootstrapped = False
+    _pap._bootstrap()
+    real_db_conn.commit()
+
     cur = real_db_conn.cursor()
     cur.execute("DELETE FROM scintela.banco_pendientes_papelera WHERE no_banco = %s",
                 (NO_BANCO,))
