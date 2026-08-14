@@ -119,7 +119,8 @@ def test_totales_dia_fail_soft():
         raise RuntimeError("timeout")
 
     with patch.object(av.db, "fetch_one", explota):
-        assert av.totales_dia(date(2026, 7, 30)) == {"n": 0, "importe": 0.0, "kg": 0.0}
+        assert av.totales_dia(date(2026, 7, 30)) == {"n": 0, "importe": 0.0,
+                                                 "kg": 0.0, "kg_devuelto": 0.0}
 
 
 def test_el_hilo_de_fondo_lo_llama():

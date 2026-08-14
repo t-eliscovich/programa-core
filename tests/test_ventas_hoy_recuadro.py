@@ -221,3 +221,53 @@ def test_el_despachado_muestra_su_unidad_junto_al_numero():
         "modules/historial/templates/historial/operaciones.html").read_text()
     assert "data-campo=\"kg_despachado\">{{ (ventas_hoy.despachado.kg | kg_es ~ ' kg')" in html
     assert "fmt(dsp.kg, 2) + ' kg'" in html
+
+
+# ── Las devoluciones se restan de los DOS lados ─────────────────────────────
+
+def test_la_devolucion_tambien_baja_el_despachado():
+    """TMT 2026-08-13: los 228 kg que no cerraban eran 7 devoluciones. El
+    facturado es venta NETA (ya las resta); si el despachado quedara bruto,
+    los dos números nunca se podrían comparar de frente. Decisión de la dueña:
+    restarlas también del despacho."""
+    with patch("modules.facturas.aviso_ventas.totales_dia",
+               return_value={"n": 108, "importe": 145687.86, "kg": 17458.0,
+                             "kg_devuelto": 228.0}), \
+         patch.object(fviews, "_despachado_hoy",
+                      return_value={"kg": 17686.0, "hora": None, "fresco": True}):
+        out = fviews.resumen_hoy(DIA)
+    assert out["despachado"]["kg"] == 17458.0     # 17.686 − 228
+    assert out["kg"] == 17458.0
+    assert out["pct"] == 100                      # y el % cierra
+    assert out["kg_devuelto"] == 228.0
+
+
+def test_sin_devoluciones_el_despachado_queda_como_vino():
+    with patch("modules.facturas.aviso_ventas.totales_dia",
+               return_value={"n": 10, "importe": 100.0, "kg": 900.0,
+                             "kg_devuelto": 0.0}), \
+         patch.object(fviews, "_despachado_hoy",
+                      return_value={"kg": 1000.0, "hora": None, "fresco": True}):
+        out = fviews.resumen_hoy(DIA)
+    assert out["despachado"]["kg"] == 1000.0
+    assert out["pct"] == 90
+
+
+def test_sin_dato_de_despacho_la_devolucion_no_inventa_un_numero():
+    with patch("modules.facturas.aviso_ventas.totales_dia",
+               return_value={"n": 10, "importe": 100.0, "kg": 900.0,
+                             "kg_devuelto": 228.0}), \
+         patch.object(fviews, "_despachado_hoy",
+                      return_value={"kg": None, "hora": None, "fresco": False}):
+        out = fviews.resumen_hoy(DIA)
+    assert out["despachado"]["kg"] is None and out["pct"] is None
+
+
+def test_totales_dia_devuelve_los_kilos_devueltos_en_positivo():
+    from modules.facturas import aviso_ventas as av
+    with patch.object(av.db, "fetch_one",
+                      return_value={"n": 3, "importe": 10.0, "kg": 772.0,
+                                    "kg_devuelto": 228.0}) as f:
+        out = av.totales_dia(DIA)
+    assert out["kg_devuelto"] == 228.0
+    assert "WHEN kg < 0 THEN -kg" in f.call_args[0][0]

@@ -70,13 +70,21 @@ def _hora_aviso() -> int:
 
 
 def totales_dia(fecha) -> dict:
-    """{n, importe, kg} de lo facturado ese día. Fail-soft: ceros."""
+    """{n, importe, kg, kg_devuelto} de lo facturado ese día. Fail-soft: ceros.
+
+    `kg` es la venta NETA: las devoluciones y las NC del día vienen con kilos
+    NEGATIVOS y ya están restadas. `kg_devuelto` es esa parte negativa dicha en
+    positivo — el 13/08/2026 hicieron falta para explicar por qué el despachado
+    no coincidía con el facturado (eran 228 kg de 7 devoluciones).
+    """
     try:
         row = db.fetch_one(
             """
             SELECT COUNT(*)                    AS n,
                    COALESCE(SUM(importe), 0)   AS importe,
-                   COALESCE(SUM(kg), 0)        AS kg
+                   COALESCE(SUM(kg), 0)        AS kg,
+                   COALESCE(SUM(CASE WHEN kg < 0 THEN -kg ELSE 0 END), 0)
+                                               AS kg_devuelto
               FROM scintela.factura
              WHERE fecha = %s
                AND COALESCE(stat, '') <> 'X'
@@ -85,11 +93,12 @@ def totales_dia(fecha) -> dict:
         ) or {}
     except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
         _LOG.warning("no pude calcular las ventas del día: %s", e)
-        return {"n": 0, "importe": 0.0, "kg": 0.0}
+        return {"n": 0, "importe": 0.0, "kg": 0.0, "kg_devuelto": 0.0}
     return {
         "n": int(row.get("n") or 0),
         "importe": float(row.get("importe") or 0),
         "kg": float(row.get("kg") or 0),
+        "kg_devuelto": float(row.get("kg_devuelto") or 0),
     }
 
 
