@@ -2828,6 +2828,77 @@ def depositar_lote(
                         },
                     )
 
+        # 3) Los NEGATIVOS. TMT 2026-08-14 (dueña: "¡cómo vas a ignorar
+        # negativo en silencio!"). Hasta hoy este bloque no existía: el lote
+        # filtraba `positivos` y a los de importe negativo —el espejo de una
+        # devolución o de un saldo a favor— les cambiaba el estado a
+        # depositado y NO les creaba el movimiento. El cheque quedaba marcado
+        # como si hubiera entrado al banco, sin plata detrás y sin nada que
+        # conciliar: peor que fallar, porque no falla, miente.
+        #
+        # No se consolidan como los positivos: un depósito agrupa varios
+        # cheques en UN crédito, pero cada devolución es un cargo propio del
+        # banco, con su propia línea en el extracto. Uno por cheque, así se
+        # cruzan de a uno.
+        negativos = [r for r in rows if float(r.get("importe") or 0) < 0]
+        for r in negativos:
+            imp = float(r.get("importe") or 0)
+            mov_neg = bank_helpers.insert_movimiento_bancario(
+                conn,
+                no_banco=no_banco,
+                no_cta=None,
+                fecha=fecha_deposito,
+                # ND: el banco CARGA una devolución, no la deposita. Mismo
+                # criterio que `transicionar_stat`.
+                documento="ND",
+                importe=abs(imp),
+                concepto=(
+                    f"Devol. cheque {r.get('no_cheque') or ''} "
+                    f"{r.get('codigo_cli') or ''}"
+                ).strip()[:50],
+                prov=r.get("codigo_cli"),
+                numreferencia=(r.get("doc_banco") or "").strip()
+                              or str(r["id_cheque"]),
+                stat="A",
+                usuario=usuario,
+            )
+            id_tn = mov_neg.get("id_transaccion")
+            if not id_tn:
+                continue
+            id_tn = int(id_tn)
+            id_transacciones.append(id_tn)
+            cur.execute(
+                """
+                INSERT INTO scintela.chequextransaccion
+                    (id_cheque, id_transaccion, fecha, stat_ch, usuario_crea)
+                VALUES (%s, %s, %s, 'D', %s)
+                """,
+                (r["id_cheque"], id_tn, fecha_deposito, usuario[:50]),
+            )
+            _md.registrar(
+                conn=conn,
+                tipo="cheque_depositado",
+                origen_table="cheque",
+                origen_id=int(r["id_cheque"]),
+                destino_table="transacciones_bancarias",
+                destino_id=id_tn,
+                importe=imp,
+                fecha=fecha_deposito,
+                concepto=(
+                    f"Devol. cheque {r.get('no_cheque') or '#' + str(r['id_cheque'])} "
+                    f"{r.get('codigo_cli') or ''}"
+                ).strip()[:200],
+                usuario=usuario,
+                metadata={
+                    "id_cheque": int(r["id_cheque"]),
+                    "id_transaccion": id_tn,
+                    "no_banco": no_banco,
+                    "banco_nombre": banco_nombre,
+                    "consolidado": False,
+                    "negativo": True,
+                },
+            )
+
     return {
         "n_depositados": len(rows),
         "total": total,

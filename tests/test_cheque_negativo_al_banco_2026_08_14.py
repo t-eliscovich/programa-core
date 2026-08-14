@@ -112,3 +112,80 @@ def test_la_fuente_arma_el_documento_segun_el_signo():
         "transicionar_stat volvió a armar siempre un depósito"
     )
     assert "importe=abs(_imp)" in src, "el importe tiene que ir en magnitud"
+
+
+# ── El lote: los negativos NO se pueden ignorar ───────────────────────
+#
+# TMT 2026-08-14, la dueña: *"¡cómo vas a ignorar negativo en silencio!"*.
+# `depositar_lote` filtraba `positivos` y a los negativos les cambiaba el
+# estado a depositado SIN crearles el movimiento: el cheque quedaba marcado
+# como si hubiera entrado al banco, sin plata detrás y sin nada que
+# conciliar. Es peor que fallar — no falla, miente.
+
+def _seed(conn, no_banco=79):
+    cur = conn.cursor()
+    cur.execute("DELETE FROM scintela.chequextransaccion WHERE id_cheque IN "
+                "(SELECT id_cheque FROM scintela.cheque WHERE codigo_cli='ZZB')")
+    cur.execute("DELETE FROM scintela.cheque WHERE codigo_cli='ZZB'")
+    cur.execute("DELETE FROM scintela.transacciones_bancarias WHERE no_banco=%s",
+                (no_banco,))
+    cur.execute("INSERT INTO scintela.banco (no_banco, nombre) VALUES (%s,'TEST NEG') "
+                "ON CONFLICT (no_banco) DO NOTHING", (no_banco,))
+    cur.execute("INSERT INTO scintela.cliente (id_cliente, codigo_cli, nombre, stop, pago, cupo, activo) "
+                "VALUES (DEFAULT,'ZZB','Cliente neg','N',30,100000,TRUE) "
+                "ON CONFLICT (codigo_cli) DO NOTHING")
+    ids = []
+    for imp, nch in ((1000.00, 9001), (-1000.00, 9002)):
+        cur.execute(
+            "INSERT INTO scintela.cheque (no_cheque, fecha, fechad, codigo_cli, importe,"
+            " no_banco, banco, stat, usuario_crea) "
+            "VALUES (%s, DATE '2026-08-12', DATE '2026-08-12', 'ZZB', %s, 90, 'DEP.PICH.', 'Z', 'test') "
+            "RETURNING id_cheque", (nch, imp))
+        ids.append(cur.fetchone()[0])
+    conn.commit()
+    return ids
+
+
+@pytest.mark.db
+def test_el_lote_con_un_negativo_crea_LOS_DOS_movimientos(real_db_conn, migrated_db):
+    """Lo que la dueña no quiere ver nunca: el cheque marcado como depositado
+    y sin plata detrás. Un lote de +1.000 y −1.000 tiene que dejar el crédito
+    del depósito Y el cargo de la devolución."""
+    from datetime import date as _d
+
+    from modules.cheques import queries as q
+
+    ids = _seed(real_db_conn)
+    q.depositar_lote(ids_cheques=ids, no_banco=79,
+                     fecha_deposito=_d(2026, 8, 12), usuario="tamara")
+    real_db_conn.commit()
+
+    cur = real_db_conn.cursor()
+    cur.execute("SELECT documento, importe FROM scintela.transacciones_bancarias "
+                " WHERE no_banco=79 ORDER BY documento")
+    movs = cur.fetchall()
+    assert len(movs) == 2, f"faltó un movimiento: {movs}"
+    docs = {d: float(i) for d, i in movs}
+    assert docs.get("DE") == 1000.0, "el depósito del positivo"
+    assert docs.get("ND") == 1000.0, "el CARGO de la devolución, en magnitud"
+
+
+@pytest.mark.db
+def test_el_negativo_queda_enlazado_a_su_movimiento(real_db_conn, migrated_db):
+    """Sin el enlace, el cheque figura depositado pero nadie puede rastrear
+    contra qué movimiento del banco fue."""
+    from datetime import date as _d
+
+    from modules.cheques import queries as q
+
+    ids = _seed(real_db_conn)
+    q.depositar_lote(ids_cheques=ids, no_banco=79,
+                     fecha_deposito=_d(2026, 8, 12), usuario="tamara")
+    real_db_conn.commit()
+
+    cur = real_db_conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM scintela.chequextransaccion cxt "
+        "  JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque "
+        " WHERE ch.codigo_cli = 'ZZB' AND ch.importe < 0")
+    assert cur.fetchone()[0] == 1, "el cheque negativo quedó sin enlace"
