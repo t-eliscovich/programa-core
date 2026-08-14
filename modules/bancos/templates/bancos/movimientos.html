@@ -145,28 +145,13 @@
     {% endif %}
   </div>
 
-  {# TMT 2026-05-27 dueña: 'Tambien nos falta el saldo del banco antes de
-     conciliar y despues, esto lo tenia dbase'. Solo cuando filtro = sin
-     conciliar: 3 cards lado a lado mostrando como cambia el saldo si se
-     concilian todas las pendientes. #}
-  {% if conciliado_filtro == 'no' and n_filtrado > 0 %}
-  <div class="grid grid-cols-3 gap-3 mb-4">
-    <div class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2.5">
-      <div class="text-[10px] uppercase tracking-wider text-slate-500">Saldo actual del banco</div>
-      <div class="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_banco) }}</div>
-    </div>
-    <div class="rounded-lg border border-amber-300 dark:border-amber-700 px-4 py-2.5 bg-amber-50/50 dark:bg-amber-900/10">
-      <div class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400">Pendiente de conciliar</div>
-      <div class="text-lg font-semibold tabular-nums {% if saldo_pre_concil >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
-        {% if saldo_pre_concil >= 0 %}+{% endif %}$ {{ '{:,.2f}'.format(saldo_pre_concil) }}
-      </div>
-    </div>
-    <div class="rounded-lg border border-sky-300 dark:border-sky-700 px-4 py-2.5 bg-sky-50/50 dark:bg-sky-900/10">
-      <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Saldo si concilio todo (real)</div>
-      <div class="text-lg font-semibold tabular-nums text-sky-900 dark:text-sky-100">$ {{ '{:,.2f}'.format(saldo_post_concil) }}</div>
-    </div>
-  </div>
-  {% endif %}
+  {# TMT 2026-08-14 (dueña, sobre estas 3 tarjetas): *"no me gusta, ya estaba
+     arriba"*. Y tenía razón hacía tres meses: las pidió el 27/05 ("nos falta el
+     saldo del banco antes de conciliar y después, esto lo tenía dbase") y al
+     día siguiente, el 28/05, el renglón "Saldo conciliado: $X (N pendientes)"
+     del encabezado pasó a decir lo mismo. Nadie sacó las tarjetas. Los tres
+     números siguen calculándose en la vista (saldo_banco, saldo_pre_concil,
+     saldo_post_concil): el de arriba usa el primero y el tercero. #}
 
   {# TMT 2026-07-23 (dueña "los renglones siguen mal / se corta a la derecha"):
      el contenedor tenía overflow-hidden → la tabla (más ancha que la pantalla
