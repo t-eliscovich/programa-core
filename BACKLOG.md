@@ -9,6 +9,43 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ---
 
+## Poner red donde no hay
+
+### [L] Cobertura real de la conciliación
+Medido el 14/08 sacando el `include` de `.coveragerc` (sólo para medir, no se
+commiteó): **el repo está al 45,43% — 22.686 líneas sin ningún test que las
+pase**. Y el "gate de cobertura 100%" del CI mide **14 archivos** de una
+whitelist, no el repo: `banco_v2_view.py` (4.824 líneas) no está.
+
+Decisión de la dueña (14/08): **arrancar por la conciliación**, que es donde
+salió todo lo de estos dos días y es lo que Alex usa a diario.
+
+| archivo | cubierto | sin cubrir |
+|---|---|---|
+| `conciliacion/banco_v2_view.py` | 21% | 1.518 |
+| `conciliacion/views.py` | **7%** | 759 |
+| `conciliacion/matcher_banco.py` | 24% | 639 |
+| `conciliacion/sesion.py` | 41% | 301 |
+
+Orden acordado, siempre **empezando por los caminos que ESCRIBEN** (un test
+sobre una pantalla que sólo muestra vale mucho menos):
+
+1. Subir extracto / abrir sesión: archivo vacío, archivo que no es un
+   extracto, todo dedupeado, filas nuevas, merge en sesión abierta.
+2. Conciliar y deshacer (`views.py`, el del 7%): confirmar match, deshacer,
+   N:1, hacer prevalecer.
+3. Borrar pendiente y papelera — el camino que el 13/08 estaba roto y **no
+   tenía ni un test**.
+4. Recién ahí, sumar los 4 archivos al `include` con un piso por archivo,
+   para que no puedan volver a bajar. Sin este paso el trabajo se deshace
+   solo con el tiempo.
+
+Los otros grandes descubiertos, para cuando toque: `facturas/views.py` (24%,
+1.282), `cheques/views.py` (37%, 1.001), `bancos/views.py` (20%, 744),
+`informes/views.py` (31%, 1.138).
+
+---
+
 ## Barrido de "cosas que nadie miraba"
 
 ### [M] Seguir buscando lo que falla en silencio
