@@ -77,8 +77,11 @@
        van en bruto y ella va acá, en su propio renglón y sólo si hubo. #}
     <div class="ventas-hoy-fila ventas-hoy-devol" data-campo="devol_fila"
          style="{{ '' if ventas_hoy.devoluciones.kg else 'display:none' }}">
-      <span class="ventas-hoy-rot">Devoluciones</span>
-      <span class="ventas-hoy-devol-kg" data-campo="devol">−{{ ventas_hoy.devoluciones.kg | kg_es }} kg · {{ ventas_hoy.devoluciones.n }}</span>
+      {# TMT 2026-08-14: *"esto que diga 8 devoluciones, no el 8 al final"*. El
+         cuántas son ES el rótulo: repetir la palabra al lado del importe la
+         dejaba dos veces en el mismo renglón. #}
+      <span class="ventas-hoy-rot" data-campo="devol_rot">{{ ventas_hoy.devoluciones.n }} devoluci{{ 'ón' if ventas_hoy.devoluciones.n == 1 else 'ones' }}</span>
+      <span class="ventas-hoy-devol-kg" data-campo="devol">−{{ ventas_hoy.devoluciones.kg | kg_es }} kg</span>
     </div>
 
   </a>
@@ -241,7 +244,10 @@
     q('pct').textContent = typeof d.pct === 'number' ? d.pct + ' % de lo despachado · ' : '';
     var dev = d.devoluciones || {};
     q('devol_fila').style.display = dev.kg ? '' : 'none';
-    if (dev.kg) { q('devol').textContent = '−' + fmt(dev.kg, 2) + ' kg · ' + dev.n; }
+    if (dev.kg) {
+      q('devol').textContent = '−' + fmt(dev.kg, 2) + ' kg';
+      q('devol_rot').textContent = dev.n + (dev.n === 1 ? ' devolución' : ' devoluciones');
+    }
     q('barra').style.width = Math.min(100, (dsp.kg || 0) / 20000 * 100).toFixed(1) + '%';
     q('n_lab').textContent = d.n === 1 ? 'factura' : 'facturas';
 

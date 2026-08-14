@@ -1243,7 +1243,10 @@
                 </div>
                 {# TMT 2026-08-14: las devoluciones, aparte de la venta. #}
                 <div id="pin-devol" style="display:{{ '' if _vp.devoluciones.kg else 'none' }};font-size:10.5px;color:rgb(180 83 9);text-align:right;">
-                  Devoluciones −{{ _vp.devoluciones.kg | kg_es }} kg · {{ _vp.devoluciones.n }}
+                  {# TMT 2026-08-14: *"esto que diga 8 devoluciones, no el 8 al
+                     final"*. El número suelto al final no decía de qué era, y con
+                     la palabra al lado el rótulo "Devoluciones" de adelante sobra. #}
+                  {{ _vp.devoluciones.n }} devoluci{{ 'ón' if _vp.devoluciones.n == 1 else 'ones' }} · −{{ _vp.devoluciones.kg | kg_es }} kg
                 </div>
               </a>
               {% endif %}
