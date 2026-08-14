@@ -141,6 +141,97 @@ def aperturas() -> dict[int, float]:
     return {int(f["no_banco"]): float(f["saldo_apertura"] or 0) for f in filas}
 
 
+# ⭐ TMT 2026-08-14 — QUÉ APERTURA PUEDE DESMENTIR A LA PRIMERA FILA DEL BANCO.
+#
+# `bank_helpers.contar_quiebres` arrancaba en la SEGUNDA fila (`saldo_prev IS
+# NOT NULL`): un saldo mal estampado en la fila más VIEJA no lo veía nadie —
+# ni el alta de un movimiento ni `/admin/health/all`— porque una fila sin
+# predecesora no puede mostrar un salto. Nos costó una sesión: una ND huérfana
+# como primera fila de Pichincha pasaba desapercibida en base virgen y sólo
+# aparecía cuando dejaba de ser la primera.
+#
+# Contra qué contrastarla: la apertura guardada acá. Pero NO cualquiera —
+# tiene que ser un número que NO salga de las transacciones, o el chequeo es
+# circular y da OK siempre (un candado que no se puede activar se ve igual que
+# uno que anda). [[feedback_el_dato_a_la_vista_mata_al_aviso]]
+#
+#   · `'afirmada'` — la puso una PERSONA por `/bancos/apertura` o confirmando
+#     el re-encadenado hacia atrás contra el extracto. Es una afirmación
+#     externa: sirve. En producción la de Pichincha (10) y la de DEP.PICH. (90).
+#   · `'siembra'`  — la calculó `_SIEMBRA_SQL` como `saldo de la última fila −
+#     suma de los movimientos`, o sea DESDE las transacciones. Con ella, la
+#     cuenta de la primera fila queda implicada por los eslabones de adentro:
+#     si todos encadenan, cierra sola (no mide nada); y si hay UN quiebre
+#     interno de X, la resta lo devuelve como un −X en la primera fila, o sea
+#     le echa la culpa a la fila más vieja de algo que pasó en el medio. Peor
+#     que no chequear. En producción es el caso de INTERNACI (32).
+#
+# Un banco con apertura sembrada, entonces, SIGUE con el hueco abierto, y eso
+# se dice en voz alta: `apertura_para_candado` devuelve el motivo y el health
+# lo publica en `primera_fila_chequeada`. Es un hueco declarado, no heredado en
+# silencio. Se cierra el día que alguien afirme esa apertura por la pantalla —
+# no hace falta tocar código.
+ORIGENES_QUE_AFIRMAN_LA_APERTURA: frozenset[str] = frozenset({"afirmada"})
+
+
+def apertura_para_candado(no_banco: int, conn=None) -> tuple[float | None, str]:
+    """La apertura contra la cual SÍ se puede chequear la primera fila.
+
+    Devuelve `(apertura, motivo)`. Con `apertura=None` el candado se comporta
+    como hasta el 14/08 (arranca en la segunda fila) y `motivo` dice por qué
+    ese banco no se puede autochequear — para que quede escrito y visible.
+
+    Deliberadamente NO llama a `_bootstrap()`: esto lo consulta el alta de un
+    movimiento, adentro de su `db.tx()`. Una lectura que se pone a crear
+    tablas y a sembrar filas dentro del write de otro no es una lectura. Si la
+    tabla todavía no existe, no hay apertura y listo.
+
+    El `to_regclass` de arriba no es adorno: si la tabla no existe, el SELECT
+    falla y en Postgres una sentencia fallida **aborta la transacción entera**
+    — el `try/except` atraparía el error pero el `db.tx()` del caller ya no
+    podría commitear nada. Preguntar primero es lo que hace que este chequeo
+    no pueda romper el alta que vino a cuidar. TMT 2026-08-14.
+    """
+    # ⭐ TMT 2026-08-14 (Tamara) — los códigos 90/91 NO son bancos: son medios de
+    # cobranza. "DEP.PICH." no es otro banco, es que se depositó DIRECTO en
+    # Pichincha; el movimiento real cae en el banco 10 (ver
+    # `cheques.queries._banco_real_para_deposito`, paridad ALTAS.PRG L171
+    # `BASE = IIF(NB=90,'PICHINCHA','INTER')`). La convención `no_banco < 90` ya
+    # vive en cuatro lugares del código.
+    #
+    # Importa acá porque un rubro de cobranza no tiene saldo corriente que
+    # cuidar: las 2 filas que hoy cuelgan de DEP.PICH. son residuo conocido
+    # (−455,89 que el Balance nunca vio), no un ledger. Chequearles la "primera
+    # fila" contra una apertura de 0 sería inventarle una cadena a algo que no
+    # la tiene, y en el health saldría como si esa cuenta estuviera vigilada.
+    if int(no_banco) >= 90:
+        return None, (f"el código {no_banco} es un medio de cobranza, no una "
+                      f"cuenta bancaria: no tiene saldo corriente que chequear")
+    try:
+        existe = _db.fetch_one(
+            "SELECT to_regclass('scintela.banco_apertura') AS t", conn=conn)
+        if not (existe and existe.get("t")):
+            return None, "todavía no existe scintela.banco_apertura"
+        fila = _db.fetch_one(
+            "SELECT saldo_apertura, origen FROM scintela.banco_apertura "
+            " WHERE no_banco = %s",
+            (int(no_banco),), conn=conn,
+        )
+    except Exception as exc:  # noqa: BLE001 — fail-soft: nunca frenar un alta
+        _LOG.exception("no pude leer la apertura del banco %s: %s", no_banco, exc)
+        return None, "no pude leer banco_apertura"
+    if not fila or fila.get("saldo_apertura") is None:
+        return None, (f"el banco {no_banco} no tiene apertura declarada: su "
+                      f"primera fila no se contrasta contra nada")
+    origen = (fila.get("origen") or "").strip().lower()
+    if origen not in ORIGENES_QUE_AFIRMAN_LA_APERTURA:
+        return None, (f"la apertura del banco {no_banco} es de origen "
+                      f"'{origen or 'sin origen'}', calculada desde las "
+                      f"transacciones: chequear la primera fila contra ella "
+                      f"sería circular")
+    return round(float(fila["saldo_apertura"]), 2), "afirmada"
+
+
 def fijar(no_banco: int, saldo_apertura: float, *, usuario: str = "",
           nota: str = "", origen: str = "afirmada", conn=None) -> None:
     """Deja asentado que una PERSONA afirma la apertura de este banco.

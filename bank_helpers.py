@@ -171,7 +171,27 @@ def _saldo_previo(
         (no_banco, no_cta, no_cta, *params_fecha),
         conn=conn,
     )
-    return float(fallback["saldo"]) if fallback else 0.0
+    suma_previa = float(fallback["saldo"]) if fallback else 0.0
+    # ⭐ TMT 2026-08-14 — ACÁ ARRANCA DESDE LA APERTURA, NO DESDE CERO.
+    #
+    # Este camino es el de "no hay ninguna fila anterior con saldo", o sea el
+    # de la PRIMERA fila del banco: una carga con fecha más vieja que todo lo
+    # cargado, o el walk-forward anclado ahí. Devolver 0 estampaba la cadena
+    # entera **sin la plata que el banco tenía antes** — la forma suave del
+    # desastre del 2026-05-12 (Pichincha en −917.651,96), sólo que en vez de
+    # explotar corría toda la columna en silencio por el valor de la apertura.
+    #
+    # Y desde hoy además daba un FALSO POSITIVO: el candado, que ya mira la
+    # primera fila, veía la cadena aterrizando 2.962.335,77 abajo de la
+    # apertura afirmada y rebotaba una carga backdated perfectamente legítima.
+    # El candado tiene que proteger de un ledger partido, no de cargar una
+    # fecha vieja — la misma regla que ya cumple el insert al re-encadenar lo
+    # que queda debajo.
+    #
+    # Sólo aplica a los bancos con apertura AFIRMADA (ver
+    # `modules.bancos.apertura`); el resto se comporta como siempre.
+    ap = apertura_para_candado(conn, no_banco=no_banco)
+    return round((ap or 0.0) + suma_previa, 2)
 
 
 def insert_movimiento_bancario(
@@ -347,8 +367,18 @@ def insert_movimiento_bancario(
     # ⭐ TMT 2026-08-04 — CANDADO DE COMMIT. Ver `CadenaRotaError`.
     # Acotado a `fecha` para adelante: un quiebre histórico que todavía no se
     # limpió no tiene por qué frenarle una carga de hoy a la oficina.
+    #
+    # ⭐ TMT 2026-08-14 — con la APERTURA del banco, además, entra la PRIMERA
+    # fila. Le muerde al caso que no tenía candado: el primer movimiento de un
+    # banco (o uno backdated más viejo que todo lo cargado) queda contrastado
+    # contra la plata que el banco declara haber tenido antes de empezar. Con
+    # el ledger normal —la carga de hoy sobre un banco con historia— la
+    # primera fila queda fuera de `desde_fecha` y esto no cambia nada: medido
+    # el 14/08 sobre los 3 bancos con movimientos, los tres cuadran al
+    # centavo, así que prenderlo no le frena la carga a nadie.
     assert_cadena_intacta(
         conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=fecha,
+        apertura=apertura_para_candado(conn, no_banco=no_banco),
         contexto=f"Alta de {(documento or '').upper().strip()} "
                  f"{(concepto or '').strip()[:30]}")
 
@@ -560,8 +590,14 @@ def recompute_saldos_desde(
     # Si el walk hacia adelante dejó una costura (típico: el ancla cayó al
     # medio de un tramo con fechas fuera de orden), esto lo frena ACÁ en vez
     # de que aparezca mañana en el health con el balance ya publicado.
+    # La apertura acá vale doble: un walk que arranca ANTES de la primera fila
+    # la re-estampa partiendo de cero, o sea DESTRUYE el opening del banco —
+    # exactamente el desastre del 2026-05-12 (Pichincha en −917.651,96). Hasta
+    # hoy la guarda contra eso era pedir un ancla; ahora, además, el resultado
+    # se contrasta contra la apertura declarada y no commitea. TMT 2026-08-14.
     assert_cadena_intacta(
         conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=fecha_guarda,
+        apertura=apertura_para_candado(conn, no_banco=no_banco),
         contexto="Re-encadenado hacia adelante")
     return len(plan)
 
@@ -637,6 +673,7 @@ def contar_quiebres(
     no_banco: int,
     no_cta: str | None = None,
     desde_fecha: date | None = None,
+    apertura: float | None = None,
 ) -> list[dict]:
     """Filas donde el `saldo` guardado NO se movió por su delta firmado.
 
@@ -655,13 +692,45 @@ def contar_quiebres(
     (saldo estampado por `id`, leído por `(fecha, id)`), no los signos.
     Firmado además caza un caso que ABS deja pasar: la fila que se mueve el
     importe correcto para el lado equivocado.
+
+    ⭐ LA PRIMERA FILA — el punto ciego que se cierra hoy (TMT 2026-08-14).
+    Sin `apertura`, el `LAG` de la fila más VIEJA es NULL y el filtro
+    `saldo_prev IS NOT NULL` la deja afuera: el candado arrancaba en la
+    SEGUNDA fila de cada banco. Una fila sin predecesora no puede mostrar un
+    salto, así que si la más vieja estaba mal estampada no la veía nadie — ni
+    el alta de un movimiento ni `/admin/health/all`. Nos costó una sesión: una
+    ND huérfana como primera fila de Pichincha pasaba desapercibida en base
+    virgen y recién aparecía cuando dejaba de ser la primera.
+
+    Con `apertura=` la primera fila entra al chequeo como cualquier otra: su
+    "anterior" pasa a ser la plata que el banco tenía ANTES de la primera fila
+    cargada. Es el mismo `COALESCE(LAG(...), apertura)` que
+    `caja_helpers.contar_quiebres` — que las dos mitades se lean igual vale
+    más que cualquier mejora local.
+
+    La diferencia con la caja es la que hace que acá SÍ se pueda prender: en
+    caja la primera fila ES la declaración de la apertura (no hay con qué
+    desmentirla), y en banco existe `scintela.banco_apertura`. Quién puede
+    pasarla y quién no, en `modules/bancos/apertura.apertura_para_candado` —
+    una apertura calculada DESDE las transacciones no sirve de testigo.
+
+    Las filas que devuelve traen `es_primera`: los dos problemas son
+    distintos («la primera fila no cuadra con la apertura declarada» vs «el
+    saldo saltó entre dos filas») y se arreglan distinto, así que el mensaje
+    del candado los separa.
     """
+    ap = None if apertura is None else round(float(apertura), 2)
     return db.fetch_all(
         f"""
         WITH w AS (
           SELECT id_transaccion, fecha, documento, concepto, importe, saldo,
                  {_sql_signed_delta('t')} AS sgn,
-                 LAG(saldo)    OVER (ORDER BY fecha, id_transaccion) AS saldo_prev,
+                 COALESCE(
+                   LAG(saldo) OVER (ORDER BY fecha, id_transaccion),
+                   %s::numeric
+                 ) AS saldo_prev,
+                 (LAG(saldo) OVER (ORDER BY fecha, id_transaccion) IS NULL)
+                   AS es_primera,
                  LAG(fecha)    OVER (ORDER BY fecha, id_transaccion) AS fecha_prev,
                  LAG(concepto) OVER (ORDER BY fecha, id_transaccion) AS concepto_prev
             FROM scintela.transacciones_bancarias t
@@ -675,9 +744,32 @@ def contar_quiebres(
            AND (%s::date IS NULL OR fecha >= %s::date)
          ORDER BY fecha, id_transaccion
         """,
-        (no_banco, no_cta, no_cta, desde_fecha, desde_fecha),
+        (ap, no_banco, no_cta, no_cta, desde_fecha, desde_fecha),
         conn=conn,
     ) or []
+
+
+def apertura_para_candado(conn=None, *, no_banco: int) -> float | None:
+    """La apertura AFIRMADA del banco, o `None` si no se puede autochequear.
+
+    ⭐ TMT 2026-08-14. Los callers que tienen el banco a mano (el alta de un
+    movimiento, el re-encadenado, el health) le pasan esto a
+    `assert_cadena_intacta` para que la PRIMERA fila también entre al candado.
+
+    Cuándo da `None` —y por qué ese banco se queda con el hueco abierto— lo
+    decide `modules.bancos.apertura.apertura_para_candado`, que es quien
+    conoce el `origen`. Acá sólo se envuelve: import LOCAL (ese módulo importa
+    `DOCS_ENTRADA` de éste, así que a nivel de módulo sería circular) y
+    fail-soft, porque **este chequeo no puede ser el que frene una carga**: si
+    no se puede leer la apertura, el candado sigue arrancando en la segunda
+    fila, que es como venía funcionando.
+    """
+    try:
+        from modules.bancos.apertura import apertura_para_candado as _ap
+        valor, _motivo = _ap(int(no_banco), conn=conn)
+        return valor
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def assert_cadena_intacta(
@@ -686,6 +778,7 @@ def assert_cadena_intacta(
     no_banco: int,
     no_cta: str | None = None,
     desde_fecha: date | None = None,
+    apertura: float | None = None,
     contexto: str = "",
 ) -> None:
     """Candado de commit: si el write dejó un quiebre, revienta y rollback.
@@ -694,16 +787,42 @@ def assert_cadena_intacta(
     quiebre histórico que todavía no se limpió bloquee una carga de hoy. Sin
     ese recorte el candado no se podría prender hasta terminar de planchar
     la historia, y mientras tanto la oficina no podría trabajar.
+
+    `apertura` mete la PRIMERA fila del banco al chequeo (ver
+    `contar_quiebres`). Sin ella el candado arranca en la segunda, que era el
+    punto ciego hasta el 14/08.
     """
     rotas = contar_quiebres(
-        conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=desde_fecha)
+        conn, no_banco=no_banco, no_cta=no_cta, desde_fecha=desde_fecha,
+        apertura=apertura)
     if not rotas:
         return
     r = rotas[0]
+    quien = (f"id {r['id_transaccion']} {r['fecha']} "
+             f"{(r.get('documento') or '').strip()} "
+             f"{(r.get('concepto') or '')[:30]}")
+    # ⭐ DOS PROBLEMAS DISTINTOS, DOS MENSAJES. TMT 2026-08-14. Que la primera
+    # fila no cuadre con la apertura declarada no se arregla re-encadenando
+    # (el walk preserva justamente lo que está en discusión): o falta un
+    # movimiento antes de esa fila, o la apertura afirmada está mal. Mandar a
+    # apretar el botón de re-encadenar ahí hace perder una tarde — ya pasó con
+    # DEP.PICH. el 05/08 (ver `_evaluar_cadena` en el health).
+    if r.get("es_primera"):
+        ap_txt = float(r["saldo_prev"])
+        deberia = round(ap_txt + float(r["sgn"]), 2)
+        raise CadenaRotaError(
+            f"{contexto or 'Movimiento bancario'}: la PRIMERA fila del banco "
+            f"{no_banco} no cuadra con la apertura declarada — {quien} deja el "
+            f"saldo en {float(r['saldo']):,.2f}, y la apertura "
+            f"({ap_txt:,.2f}) más lo que esa fila mueve ({float(r['sgn']):,.2f}) "
+            f"dan {deberia:,.2f}: sobran "
+            f"{float(r['saldo']) - deberia:,.2f}. No se guardó nada. Esto NO se "
+            f"arregla re-encadenando: o falta un movimiento antes de esa fila, "
+            f"o la apertura del banco está mal afirmada — miralas contra el "
+            f"extracto y corregí la que sea en /bancos/apertura."
+        )
     detalle = (
-        f"id {r['id_transaccion']} {r['fecha']} "
-        f"{(r.get('documento') or '').strip()} "
-        f"{(r.get('concepto') or '')[:30]}: el saldo saltó "
+        f"{quien}: el saldo saltó "
         f"{float(r['saldo']) - float(r['saldo_prev']):,.2f} "
         f"cuando el movimiento vale {float(r['sgn']):,.2f}"
     )
@@ -844,8 +963,15 @@ def reencadenar_retro(
             (f["saldo_nuevo"], f["id_transaccion"]),
             conn=conn,
         )
+    # Si el caller AFIRMÓ la apertura, el candado la usa: los dos extremos
+    # quedan clavados (el cierre por construcción, la apertura por acá) y el
+    # re-encadenado no puede inventar plata ni por arriba ni por abajo. Si no
+    # la afirmó, se usa la guardada — que es lo mismo que alguien afirmó otro
+    # día. TMT 2026-08-14.
     assert_cadena_intacta(
         conn, no_banco=no_banco, no_cta=no_cta,
+        apertura=(float(apertura) if apertura is not None
+                  else apertura_para_candado(conn, no_banco=no_banco)),
         contexto="Re-encadenado hacia atrás")
     return len(cambios)
 

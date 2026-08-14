@@ -138,23 +138,35 @@ class _FakeBankDB:
         # el candado de commit se ejerza en TODOS los tests que insertan.
         if s.startswith("with w as"):
             import bank_helpers as _bh
-            no_banco = params[0]
-            desde = params[3] if len(params) >= 4 else None
+            # TMT 2026-08-14: la apertura entra PRIMERA en los params (el
+            # COALESCE del LAG está en el SELECT, antes del WHERE), igual que
+            # en `caja_helpers`. Si el orden se corre, esto lee el banco donde
+            # va la apertura y el fake miente en silencio.
+            apertura = params[0] if params else None
+            no_banco = params[1]
+            desde = params[4] if len(params) >= 5 else None
             filas = sorted(
                 [f for f in self.filas
                  if f["no_banco"] == no_banco and f.get("saldo") is not None],
                 key=lambda f: (f["fecha"], f["id_transaccion"]))
             out = []
-            for prev, cur in zip(filas, filas[1:]):
+            previas = [None] + filas[:-1]
+            for prev, cur in zip(previas, filas, strict=True):
                 sgn = _bh.signo_documento(cur.get("documento") or "") * float(
                     cur.get("importe") or 0)
-                if abs((float(cur["saldo"]) - float(prev["saldo"])) - sgn) <= 0.02:
+                saldo_prev = (float(prev["saldo"]) if prev is not None
+                              else (None if apertura is None else float(apertura)))
+                if saldo_prev is None:
+                    continue
+                if abs((float(cur["saldo"]) - saldo_prev) - sgn) <= 0.02:
                     continue
                 if desde is not None and cur["fecha"] < desde:
                     continue
-                out.append({**cur, "sgn": sgn, "saldo_prev": prev["saldo"],
-                            "fecha_prev": prev["fecha"],
-                            "concepto_prev": prev.get("concepto")})
+                out.append({**cur, "sgn": sgn, "saldo_prev": saldo_prev,
+                            "es_primera": prev is None,
+                            "fecha_prev": prev["fecha"] if prev else None,
+                            "concepto_prev": (prev.get("concepto")
+                                              if prev else None)})
             return out
         # walk-forward fetch all rows after ancla
         if "from scintela.transacciones_bancarias" in s and "order by fecha, id_transaccion" in s:

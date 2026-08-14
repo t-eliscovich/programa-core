@@ -761,7 +761,7 @@ def simulacro_cierre():
 # ---------------------------------------------------------------------------
 
 
-def _breaks_cadena(no_banco: int, desde) -> list[dict]:
+def _breaks_cadena(no_banco: int, desde, apertura=None) -> list[dict]:
     """Filas donde el running `saldo` GUARDADO no encadena con la anterior.
 
     ⭐ TMT 2026-08-04 — UNA SOLA REGLA DE SIGNOS. Esto tenía su propio SQL con
@@ -776,13 +776,36 @@ def _breaks_cadena(no_banco: int, desde) -> list[dict]:
     Con criterio firmado además se caza un caso que el ABS deja pasar: la
     fila cuyo saldo se mueve el importe correcto pero **para el lado
     equivocado**. Fuente única: `bank_helpers.contar_quiebres`.
+
+    ⭐ TMT 2026-08-14 — con `apertura`, la PRIMERA fila del banco también se
+    mira. Sin ella el chequeo arrancaba en la segunda: un saldo mal en la fila
+    más vieja no lo veía ni este panel ni el candado del alta. Quién puede
+    pasar una apertura y quién se queda con el hueco abierto lo decide
+    `modules.bancos.apertura.apertura_para_candado` — una apertura calculada
+    desde las transacciones no puede desmentir a las transacciones.
     """
     import bank_helpers
-    return bank_helpers.contar_quiebres(no_banco=no_banco, desde_fecha=desde)
+    return bank_helpers.contar_quiebres(
+        no_banco=no_banco, desde_fecha=desde, apertura=apertura)
+
+
+def _apertura_candado(no_banco: int):
+    """`(apertura, motivo)` para chequear la PRIMERA fila. Fail-soft.
+
+    Envoltorio del de `modules.bancos.apertura` — si algo falla, el panel
+    sigue midiendo lo de siempre (de la segunda fila para abajo) en vez de
+    quedarse sin chequeo. TMT 2026-08-14.
+    """
+    try:
+        from modules.bancos.apertura import apertura_para_candado
+        return apertura_para_candado(int(no_banco))
+    except Exception as exc:  # noqa: BLE001
+        return None, f"no pude leer la apertura: {str(exc)[:80]}"
 
 
 def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
-                    derivado=None, origen=None, columna_running=None):
+                    derivado=None, origen=None, columna_running=None,
+                    apertura_candado=None, motivo_apertura=""):
     """Arma el stat y las alertas de UN banco. Pura — se testea sin Flask.
 
     ⭐ TMT 2026-08-05 — `stored` ES EL NÚMERO QUE EL BALANCE PUBLICA, no la
@@ -848,6 +871,15 @@ def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
             else round(float(columna_running) - derivado, 2)),
         "n_breaks": len(breaks),
         "gap_total": gap_total,
+        # ⭐ TMT 2026-08-14 — ¿la PRIMERA fila de este banco está mirada o no?
+        # Va como STAT y no como alerta a propósito: un banco sin apertura
+        # afirmada no tiene nada malo HOY, tiene un chequeo de menos. Con el
+        # dato a la vista no hace falta un ⚠ diario que nadie puede apagar.
+        # [[feedback_el_dato_a_la_vista_mata_al_aviso]]
+        "primera_fila_chequeada": apertura_candado is not None,
+        "apertura_del_candado": apertura_candado,
+        "primera_fila_por_que_no": ("" if apertura_candado is not None
+                                    else (motivo_apertura or "")),
         "saldos_null": int(n_nulls or 0),
         "breaks": [{
             "id_transaccion": r.get("id_transaccion"),
@@ -858,6 +890,10 @@ def _evaluar_cadena(*, no_banco, nombre, stored, signed, breaks, n_nulls, dias,
             "saldo_prev": float(r["saldo_prev"]),
             "saldo": float(r["saldo"]),
             "gap": round(_gap(r), 2),
+            # Con `es_primera` el que lee sabe cuál de los dos problemas es:
+            # la primera fila contra la apertura declarada no se arregla
+            # re-encadenando, se arregla mirando el extracto.
+            "es_primera": bool(r.get("es_primera")),
             "fila_anterior": (r.get("concepto_prev") or "")[:40],
         } for r in breaks[:15]],
     }
@@ -947,7 +983,8 @@ def cadena_saldos():
         for b in saldo_bancos():
             no_banco = int(b["no_banco"])
             nombre = (b.get("nombre") or f"Banco {no_banco}").strip()
-            breaks = _breaks_cadena(no_banco, desde)
+            ap_candado, motivo_ap = _apertura_candado(no_banco)
+            breaks = _breaks_cadena(no_banco, desde, apertura=ap_candado)
             n_nulls = (db.fetch_one(
                 "SELECT COUNT(*) AS n FROM scintela.transacciones_bancarias "
                 " WHERE no_banco = %s AND fecha >= %s AND saldo IS NULL",
@@ -970,6 +1007,8 @@ def cadena_saldos():
                 breaks=breaks,
                 n_nulls=n_nulls,
                 dias=dias,
+                apertura_candado=ap_candado,
+                motivo_apertura=motivo_ap,
             )
             stat["saldo_origen"] = b.get("saldo_origen")
             stats["bancos"].append(stat)
