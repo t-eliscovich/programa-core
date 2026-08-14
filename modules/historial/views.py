@@ -570,10 +570,15 @@ def lista():
         # fila dice QUÉ se compró y dónde mirar la factura: "Químicos ·
         # fact. 22758". La columna `compra.concepto` NO se toca — el dedup del
         # puente de fórmulas matchea por su primer token.
-        _kid = (r.get("origen_id") if r.get("origen_table") == "compra"
-                else (r.get("destino_id") if r.get("destino_table") == "compra" else None))
-        if _kid and compra_conceptos.get(int(_kid)):
-            r["concepto"] = compra_conceptos[int(_kid)]
+        # 🚨 TMT 2026-08-14, sobre el pase de la importación AC 38 (la fila
+        # decía "Hilado · fact. 38"): *"acá quiero que diga AC y el número"*.
+        # La regla de arriba se comía el nombre de la importación: el
+        # `mov_doble` YA lo trae —`_nombrar_conversiones` lo escribe desde el
+        # 31/07, por este mismo pedido— y acá se pisaba con el concepto de la
+        # compra creada, que no nombra el anticipo por ningún lado.
+        _cpt_compra = concepto_de_la_compra(r, compra_conceptos)
+        if _cpt_compra:
+            r["concepto"] = _cpt_compra
         _cid = r.get("origen_id") if r.get("origen_table") == "cheque" else None
         if _cid and r.get("concepto") and int(_cid) in cheque_etiquetas:
             _etq = cheque_etiquetas[int(_cid)]
@@ -822,6 +827,37 @@ _RE_GASTO_CAT = re.compile(r"\bGasto #([1-9])\b")
 _RE_SIN_NUMERO = re.compile(r"\b(Factura|Cheque|Compra) #0\b")
 _RE_NUMERAL = re.compile(r"\b(factura|cheque|compra|posdat) #(\d+)", re.I)
 _RE_IMPORTE_AL_FINAL = re.compile(r"\s*\(\d+(?:\.\d+)?\)\s*$")
+
+
+#: Los movimientos cuyo concepto NO se reescribe con el de la compra: el suyo
+#: nombra la importación ("AC 38 · 4 anticipo(s) → compra N° 10176") y el de la
+#: compra ("Hilado · fact. 38") no dice de qué anticipo salió.
+CONCEPTO_PROPIO = frozenset({
+    "bap_anticipo_a_compra",
+    "bap_anticipo_a_compra_reverso",
+})
+
+
+def concepto_de_la_compra(row: dict, compra_conceptos: dict) -> str:
+    """El concepto de la compra que toca la fila, o "" si no corresponde pisar.
+
+    🚨 TMT 2026-08-09, sobre el concepto "22758         7": *"no puede ser ese
+    número lo importante del movimiento"*. Desde entonces la fila que toca una
+    compra dice QUÉ se compró ("Químicos · fact. 22758").
+
+    🚨 TMT 2026-08-14, sobre el pase de la importación AC 38, que salía
+    "Hilado · fact. 38": *"acá quiero que diga AC y el número"*. Esa regla se
+    comía el nombre de la importación — el `mov_doble` YA lo trae (lo escribe
+    `_nombrar_conversiones` desde el 31/07, por este mismo pedido) y acá se
+    pisaba con el de la compra creada, que no nombra el anticipo por ningún
+    lado. El pase se queda con el suyo.
+    """
+    if (row.get("tipo") or "") in CONCEPTO_PROPIO:
+        return ""
+    kid = (row.get("origen_id") if row.get("origen_table") == "compra"
+           else (row.get("destino_id") if row.get("destino_table") == "compra"
+                 else None))
+    return (compra_conceptos.get(int(kid)) or "") if kid else ""
 
 
 def _concepto_legible(texto: str | None) -> str:
