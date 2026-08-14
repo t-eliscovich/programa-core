@@ -337,11 +337,20 @@
               <td class="px-1 py-0 text-slate-500 font-mono text-[9px]">{{ (m.numreferencia or '')|string|truncate(10,True,'') }}</td>
               <td class="px-1 py-0 text-slate-600 dark:text-slate-300 truncate" title="{{ item.dep_titulo or m.prov_nombre or m.concepto }}">
                 {% if item.dep_display %}
-                  {# TMT 2026-07-22: depósito consolidado "dep.N ch." → cliente(s)+cheque(s) ligados #}
+                  {# TMT 2026-07-22: depósito consolidado "dep.N ch." → cliente(s)+cheque(s) ligados.
+                     TMT 2026-08-13 (dueña: "acá falta que diga 25 cheques"): el conteo va
+                     PRIMERO y con nowrap. Iba último, detrás de un chip por cliente, y con
+                     25 cheques el `truncate` de la celda lo cortaba antes de mostrarlo. #}
+                  <span class="whitespace-nowrap mr-1">{{ item.dep_display }}</span>
                   {% for _c in (item.dep_clientes or []) %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[8px]">{{ _c }}</span>{% endfor %}
-                  {{ item.dep_display }}
                 {% else %}
-                  {% if m.prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[8px]">{{ m.prov }}</span>{% endif %}
+                  {# TMT 2026-08-13 (dueña: "tiene 4 letras el código? eso no existe").
+                     El chip salía con `prov` fuera lo que fuera, y `prov` no siempre es
+                     un cliente: 135 filas traen códigos de concepto (AC, NC, OP…) y 25
+                     traen un recorte del texto (EQUE de "Cheque", ALAN de "CHALAN").
+                     Ahora el chip aparece SÓLO si el código resolvió a un cliente real
+                     — que es exactamente cuando `prov_nombre` viene con algo. #}
+                  {% if m.prov and m.prov_nombre %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[8px]">{{ m.prov }}</span>{% endif %}
                   {{ m.prov_nombre or m.concepto or '' }}
                 {% endif %}
               </td>

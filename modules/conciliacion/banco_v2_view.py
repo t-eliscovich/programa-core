@@ -498,18 +498,20 @@ def _enriquecer_clientes_depositos(items: list[dict]) -> None:
             no_ch = (r0.get("no_cheque") or "").strip()
             cli = (r0.get("codigo_cli") or "").strip()
             nom = (r0.get("nombre") or "").strip()
-            partes = []
-            if no_ch:
-                partes.append(f"ch. {no_ch}")
-            if cli:
-                partes.append(cli)
-            base = " · ".join(partes)
-            it["dep_display"] = base
-            it["dep_titulo"] = (f"{base} {nom}").strip() or None
+            # TMT 2026-08-13 (dueña: "acá falta que diga 25 cheques"). El
+            # cliente ya se ve en el chip de al lado; el texto se queda con
+            # lo que el chip NO dice. Así el dato entra en la celda.
+            it["dep_display"] = f"ch. {no_ch}" if no_ch else (cli or "")
+            partes = [x for x in (f"ch. {no_ch}" if no_ch else "", cli, nom) if x]
+            it["dep_titulo"] = " · ".join(partes) or None
         else:
-            etiqueta = ", ".join(clientes[:4]) + ("…" if len(clientes) > 4 else "")
-            it["dep_display"] = f"{len(chs)} cheques" + (f" · {etiqueta}" if etiqueta else "")
-            it["dep_titulo"] = it["dep_display"]
+            # El CONTEO primero y solo: los códigos de cliente van en los
+            # chips. Antes el texto repetía los códigos y, con 25 cheques,
+            # la celda se cortaba justo antes de decir cuántos eran.
+            it["dep_display"] = f"{len(chs)} cheques"
+            etiqueta = ", ".join(clientes[:6]) + ("…" if len(clientes) > 6 else "")
+            it["dep_titulo"] = (f"{len(chs)} cheques"
+                                + (f" · {etiqueta}" if etiqueta else ""))
         it["dep_clientes"] = clientes
 
 

@@ -630,3 +630,113 @@ def test_caja_saldo_actual(monkeypatch):
     fake.apply_to(monkeypatch, db_mod)
 
     assert ch.saldo_actual() == 70.0
+
+
+# ── El código de cliente que se auto-extrae del concepto ──────────────
+#
+# TMT 2026-08-13. La dueña vio en la conciliación un chip "EQUE" al lado de
+# un movimiento cuyo concepto era "Cheque": *"este cheque tiene 4 letras el
+# código? eso no existe"* (los códigos de cliente son de 3 letras).
+#
+# La regex de `insert_movimiento_bancario` tenía el punto OPCIONAL (`ch\.?`)
+# y aceptaba de 3 a 5 letras, así que enganchaba el "ch" de adentro de una
+# palabra y guardaba la cola como si fuera un cliente. En producción quedaron
+# 25 filas del banco 10 así:
+#     "CC CHALAN EMPAQUES" → ALAN     "Cheque"        → EQUE
+#     "CC CHALNA VARIOS"   → ALNA     "SU LIQ CHAMBA" → AMBA
+# Ahora hace falta un separador después del marcador, el código tiene que
+# medir EXACTAMENTE 3 letras, y además tiene que existir en scintela.cliente.
+
+class _FakeBankDBConClientes(_FakeBankDB):
+    """El fake de siempre, más el padrón de clientes que la nueva
+    validación consulta."""
+
+    CLIENTES = {"LTM", "SJG", "MSS"}
+
+    def fetch_one(self, sql, params=None, conn=None):
+        s = " ".join((sql or "").split()).lower()
+        if "from scintela.cliente" in s:
+            cod = (params or ("",))[0]
+            return {"ok": 1} if cod in self.CLIENTES else None
+        return super().fetch_one(sql, params, conn)
+
+
+def _insertar_con_concepto(monkeypatch, concepto: str):
+    import bank_helpers as bh
+    import db as db_mod
+
+    fake = _FakeBankDBConClientes(filas_pre=[])
+    fake.apply_to(monkeypatch, db_mod)
+    bh.insert_movimiento_bancario(
+        conn=object(), no_banco=10, no_cta=None,
+        fecha=date(2026, 7, 16), documento="CH", importe=505.50,
+        concepto=concepto, usuario="andres",
+    )
+    return fake.filas[-1]["prov"]
+
+
+@pytest.mark.parametrize("concepto", [
+    "Cheque",                       # → EQUE
+    "CC CHALAN EMPAQUES",           # → ALAN
+    "CC CHALNA VARIOS ACCESORIOS",  # → ALNA
+    "SU LIQ CHAMBA",                # → AMBA
+    "PROTESTO CHEQUE",
+])
+def test_no_inventa_codigo_comiendose_el_ch_de_una_palabra(monkeypatch, concepto):
+    """Las 4 basuras reales de producción, más una prima."""
+    assert _insertar_con_concepto(monkeypatch, concepto) is None, (
+        f"{concepto!r} no nombra a ningún cliente — no se guarda código"
+    )
+
+
+@pytest.mark.parametrize(("concepto", "esperado"), [
+    ("1 ch.LTM", "LTM"),
+    ("3 ch. SJG", "SJG"),
+    ("dep. ch.LTM", "LTM"),
+    ("tr.MSS", "MSS"),
+])
+def test_sigue_sacando_el_codigo_cuando_el_concepto_lo_nombra(
+        monkeypatch, concepto, esperado):
+    """Lo que la extracción vino a resolver en 2026-05-23 sigue andando."""
+    assert _insertar_con_concepto(monkeypatch, concepto) == esperado
+
+
+def test_tres_letras_que_no_son_un_cliente_no_se_guardan(monkeypatch):
+    """La regex sola no alcanza: "1 ch. por deposito" da POR, que es una
+    palabra, no un cliente. Por eso se confirma contra el padrón."""
+    assert _insertar_con_concepto(monkeypatch, "1 ch. por deposito") is None
+
+
+class _FakeBankDBTodoEsCliente(_FakeBankDB):
+    """Padrón que acepta CUALQUIER código: deja a la regex sola frente al
+    concepto. Sin esto, la validación contra `cliente` tapa el agujero y el
+    test pasa igual con la regex vieja puesta — o sea, no prueba nada."""
+
+    def fetch_one(self, sql, params=None, conn=None):
+        s = " ".join((sql or "").split()).lower()
+        if "from scintela.cliente" in s:
+            return {"ok": 1}
+        return super().fetch_one(sql, params, conn)
+
+
+@pytest.mark.parametrize("concepto", [
+    "Cheque",                       # la vieja sacaba EQUE
+    "CC CHALAN EMPAQUES",           # ALAN
+    "CC CHALNA VARIOS ACCESORIOS",  # ALNA
+    "SU LIQ CHAMBA",                # AMBA
+])
+def test_la_regex_sola_ya_no_muerde_adentro_de_una_palabra(monkeypatch, concepto):
+    """El candado sobre la REGEX, con el padrón desactivado a propósito."""
+    import bank_helpers as bh
+    import db as db_mod
+
+    fake = _FakeBankDBTodoEsCliente(filas_pre=[])
+    fake.apply_to(monkeypatch, db_mod)
+    bh.insert_movimiento_bancario(
+        conn=object(), no_banco=10, no_cta=None,
+        fecha=date(2026, 7, 16), documento="CH", importe=505.50,
+        concepto=concepto, usuario="andres",
+    )
+    assert fake.filas[-1]["prov"] is None, (
+        f"{concepto!r}: la regex volvió a comerse el 'ch' de adentro de una palabra"
+    )

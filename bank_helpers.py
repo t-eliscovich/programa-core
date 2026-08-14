@@ -265,15 +265,34 @@ def insert_movimiento_bancario(
     # Cubre el caso típico "1 ch.LTM" → prov="LTM". Mejora cobertura
     # del JOIN con scintela.cliente en la conciliación. Fix Tamara
     # 2026-05-23. Solo cuando prov venga vacío — el caller explícito gana.
+    #
+    # TMT 2026-08-13 (dueña: "este cheque tiene 4 letras el código? eso no
+    # existe"). La versión anterior tenía el punto OPCIONAL (`ch\.?`) y
+    # aceptaba de 3 a 5 letras, así que se comía el "ch" de adentro de una
+    # palabra y guardaba el resto como si fuera un cliente:
+    #     "CC CHALAN EMPAQUES" → ALAN      "Cheque"          → EQUE
+    #     "CC CHALNA VARIOS"   → ALNA      "SU LIQ CHAMBA"   → AMBA
+    # Son las 4 basuras que quedaron en producción (25 filas del banco 10).
+    # Ahora: separador OBLIGATORIO después del marcador, EXACTAMENTE 3
+    # letras (los códigos de cliente son de 3), y además se confirma contra
+    # scintela.cliente — si no es un cliente de verdad, no se guarda nada.
     if not prov:
         try:
             import re as _re
-            m = _re.search(r"(?:^|\s)(?:\d+\s+)?(?:ch\.?|tr\.?|nc\.?|trf\.?|dep\.?\s*ch\.?)\s*([A-Za-z]{3,5})\b",
-                           (concepto or ""), _re.IGNORECASE)
-            if m:
-                prov = m.group(1).upper().strip()
+            m = _re.search(
+                r"(?:^|\s)(?:\d+\s+)?(?:dep\.\s*)?(?:ch|tr|nc|trf)[.\s]\s*([A-Za-z]{3})\b",
+                (concepto or ""), _re.IGNORECASE)
+            cand = m.group(1).upper().strip() if m else ""
+            if cand:
+                existe = db.fetch_one(
+                    "SELECT 1 AS ok FROM scintela.cliente "
+                    " WHERE UPPER(TRIM(codigo_cli)) = %s LIMIT 1",
+                    (cand,), conn=conn,
+                )
+                if existe:
+                    prov = cand
         except Exception:
-            pass  # fail-graceful
+            pass  # fail-graceful: sin prov se ve el concepto, que ya alcanza
 
     row = db.execute_returning(
         """
