@@ -1922,6 +1922,13 @@ def banco_deshacer():
             from modules._lib.silencios import avisar
             avisar(__name__, "banco_deshacer", _e)
         # Decrementar matches_hechos de la sesión abierta (counter UX).
+        # TMT 2026-08-14: iba filtrado por `usuario`, de cuando la sesión era
+        # una por banco Y POR USUARIO. Desde la mig 0189 hay UNA sola por
+        # banco, así que si Alex deshacía sobre la sesión que abrió otro, el
+        # UPDATE no encontraba fila y el contador quedaba inflado en silencio
+        # — exactamente el síntoma que la dueña reportó el 03/06 ("decía 14
+        # con 0 matches reales") y que se tapó haciendo que la pantalla lo
+        # recalcule sola.
         try:
             import db as _db
             _db.execute(
@@ -1929,10 +1936,9 @@ def banco_deshacer():
                 UPDATE scintela.banco_conciliacion_sesion
                    SET matches_hechos = GREATEST(0, matches_hechos - 1)
                  WHERE no_banco = %s
-                   AND usuario = %s
                    AND cerrada_en IS NULL
                 """,
-                (_BANCO_PICHINCHA, _usuario_actual()[:50]),
+                (_BANCO_PICHINCHA,),
             )
         except Exception as _e:
             from modules._lib.silencios import avisar
@@ -1997,10 +2003,9 @@ def banco_rehacer():
                 UPDATE scintela.banco_conciliacion_sesion
                    SET matches_hechos = matches_hechos + %s
                  WHERE no_banco = %s
-                   AND usuario = %s
                    AND cerrada_en IS NULL
                 """,
-                (int(n), _BANCO_PICHINCHA, _usuario_actual()[:50]),
+                (int(n), _BANCO_PICHINCHA),
             )
         except Exception as _e:
             from modules._lib.silencios import avisar
