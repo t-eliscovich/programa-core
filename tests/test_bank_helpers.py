@@ -230,6 +230,26 @@ class _FakeCajaDB:
     def fetch_one(self, sql: str, params: Any = None, conn=None):
         s = " ".join((sql or "").split()).lower()
         params = tuple(params or ())
+        # --- insert_movimiento_caja: ¿quedó alguna fila DEBAJO de la nueva?
+        # TMT 2026-08-14. El fake tiene que contestarla de verdad: si contesta
+        # siempre "no", el re-encadenado posterior al insert backdated nunca
+        # se ejerce en los tests y el candado se prueba sobre un caso que en
+        # producción no existe.
+        if s.startswith("select 1 as hay from scintela.caja"):
+            fecha, _, id_nuevo = params
+            for f in self.filas:
+                if f["fecha"] > fecha or (
+                    f["fecha"] == fecha and f["id_caja"] > id_nuevo
+                ):
+                    return {"hay": 1}
+            return None
+        # relectura del saldo GUARDADO de la fila recién insertada
+        if s.startswith("select saldo from scintela.caja where id_caja"):
+            (cid,) = params
+            for f in self.filas:
+                if f["id_caja"] == cid:
+                    return {"saldo": f["saldo"]}
+            return None
         # --- ancla por (fecha, id) — fix TMT 2026-08-03 -------------------
         if s.startswith("select fecha from scintela.caja"):
             (ancla,) = params
@@ -265,6 +285,23 @@ class _FakeCajaDB:
                 return None
             row = max(self.filas, key=lambda f: (f["fecha"] or date.min, f["id_caja"]))
             return {"saldo": row["saldo"]}
+        # _saldo_previo ESTRICTO (solo_dias_anteriores=True) — 1 param.
+        # TMT 2026-08-14: el fake no tenía esta forma (en banco son 4 params,
+        # en caja 1) y devolvía None, o sea el walk-forward arrancaba de CERO.
+        # Nadie lo notó mientras el fake ignoraba los UPDATE; en cuanto los
+        # escribe, el re-encadenado tira toda la cadena al piso.
+        if (
+            "from scintela.caja" in s
+            and "order by fecha desc, id_caja desc" in s
+            and len(params) == 1
+            and isinstance(params[0], date)
+        ):
+            (fecha,) = params
+            candidatos = [f for f in self.filas if f["fecha"] < fecha]
+            if not candidatos:
+                return None
+            row = max(candidatos, key=lambda f: (f["fecha"], f["id_caja"]))
+            return {"saldo": row["saldo"]}
         # _saldo_previo — 4 params (fecha, fecha, excluir, excluir)
         if (
             "from scintela.caja" in s
@@ -286,6 +323,34 @@ class _FakeCajaDB:
     def fetch_all(self, sql: str, params: Any = None, conn=None):
         s = " ".join((sql or "").split()).lower()
         params = tuple(params or ())
+        # caja_helpers.contar_quiebres — VA ANTES del walk-forward, porque
+        # los dos terminan en "order by fecha, id_caja". Implementarlo de
+        # verdad (y no devolver []) es lo que hace que el candado de commit
+        # se ejerza en TODOS los tests que insertan en caja. TMT 2026-08-14.
+        if s.startswith("with w as"):
+            import caja_helpers as _cj
+            apertura = params[0] if params else None
+            desde = params[1] if len(params) >= 2 else None
+            filas = sorted(
+                [f for f in self.filas if f.get("saldo") is not None],
+                key=lambda f: (f["fecha"], f["id_caja"]))
+            out = []
+            previas = [None] + filas[:-1]
+            for prev, cur in zip(previas, filas, strict=True):
+                sgn = _cj._delta_firmado(cur.get("tipo") or "",
+                                         cur.get("importe") or 0)
+                saldo_prev = (float(prev["saldo"]) if prev is not None
+                              else (None if apertura is None else float(apertura)))
+                if saldo_prev is None:
+                    continue
+                if abs((float(cur["saldo"]) - saldo_prev) - sgn) <= 0.02:
+                    continue
+                if desde is not None and cur["fecha"] < desde:
+                    continue
+                out.append({**cur, "sgn": sgn, "saldo_prev": saldo_prev,
+                            "fecha_prev": prev["fecha"] if prev else None,
+                            "concepto_prev": prev.get("concepto") if prev else None})
+            return out
         if "from scintela.caja" in s and "order by fecha, id_caja" in s:
             todas = list(self.filas)
             if len(params) >= 2:
@@ -299,6 +364,15 @@ class _FakeCajaDB:
 
     def execute(self, sql: str, params: Any = None, conn=None):
         self.executes.append((sql, tuple(params or ())))
+        s = " ".join((sql or "").split()).lower()
+        # TMT 2026-08-14: el fake ignoraba el UPDATE del walk-forward, así que
+        # las filas quedaban con el saldo viejo y el re-encadenado se
+        # "probaba" sin que nada se moviera. Ahora escribe.
+        if "update scintela.caja" in s and "set saldo" in s:
+            saldo, cid = params[0], params[1]
+            for f in self.filas:
+                if f["id_caja"] == cid:
+                    f["saldo"] = saldo
         return 1
 
     def execute_returning(self, sql: str, params: Any = None, conn=None):
