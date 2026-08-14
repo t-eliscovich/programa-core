@@ -284,7 +284,10 @@ def test_crear_sesion_abre_igual_aunque_todo_se_dedupee(monkeypatch):
 
     insertados = []
     def fake_execute_returning(sql, params=None, conn=None):
-        insertados.append((sql, params))
+        # Sólo el INSERT de la sesión: con una base viva, el snapshot de
+        # apertura mete el suyo y el conteo dejaba de medir lo que dice.
+        if "banco_conciliacion_sesion" in str(sql):
+            insertados.append((sql, params))
         return {"id": 999}
     monkeypatch.setattr(_sesion.db, "execute_returning", fake_execute_returning)
 

@@ -110,11 +110,22 @@ restore-test-db:
 #
 # `coverage html` SÍ salió: en CI no lo mira nadie y se generaba y subía en cada
 # corrida. Para verlo local: `make test-coverage && python3 -m coverage html`.
+# TMT 2026-08-14: DOS gates sobre la MISMA corrida (no cuesta CI extra).
+#   1. Los archivos historicos siguen al 100% clavado.
+#   2. La conciliacion tiene su propio PISO, que arranco en lo medido el
+#      14/08 y solo puede subir. Sin esto el trabajo de cobertura se deshace
+#      solo: alguien agrega 300 lineas sin tests y nadie se entera.
+# El piso se sube A MANO cuando se gana terreno — es la unica forma de que
+# el numero signifique algo.
+COVERAGE_CORE ?= config/roles.py,csv_upload.py,error_messages.py,exports.py,extensions.py,ip_allowlist.py,modules/_lib/formulas_db.py,modules/conciliacion/matcher.py,modules/diag/views.py,modules/healthz/views.py,modules/recientes/queries.py,modules/tintura/service.py,modules/two_fa/core.py,scope_vendedor.py
+COVERAGE_CONCILIACION_MIN ?= 29
+
 test-coverage:
 	$(PY) -m coverage erase
 	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
 	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
-	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m coverage report --include=$(COVERAGE_CORE) --fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m coverage report --include='modules/conciliacion/*' --fail-under=$(COVERAGE_CONCILIACION_MIN)
 	$(PY) -m coverage xml
 
 ci: test-coverage

@@ -11,6 +11,14 @@ include =
     ip_allowlist.py
     modules/_lib/formulas_db.py
     modules/conciliacion/matcher.py
+# TMT 2026-08-14 — el piso de la conciliación. Estos 4 NO estan al 100%
+# (banco_v2_view arranco en 21%); van con su propio --fail-under en el
+# Makefile, sacado de la MISMA corrida, para que el numero sólo pueda
+# subir. Ver el target `ci` y BACKLOG.md.
+    modules/conciliacion/banco_v2_view.py
+    modules/conciliacion/views.py
+    modules/conciliacion/sesion.py
+    modules/conciliacion/matcher_banco.py
     modules/diag/views.py
     modules/healthz/views.py
     modules/recientes/queries.py
