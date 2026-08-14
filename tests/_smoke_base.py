@@ -92,10 +92,16 @@ class Barrido:
 
 
 def _conectar(dbname: str | None = None):
+    # `password` NO es opcional: el Postgres embebido de `vista_local` corre con
+    # `--auth=trust` y anda sin ella, pero el `postgres:16-alpine` del CI pide
+    # contraseña y contesta "fe_sendauth: no password supplied". Un CI rojo por
+    # esto, el 14/08 — la clase de diferencia que sólo se ve corriendo contra
+    # una base que se comporte como la de allá.
     return psycopg2.connect(
         host=os.environ["DB_HOST"],
         port=os.environ["DB_PORT"],
         user=os.environ["DB_USER"],
+        password=os.environ.get("DB_PASSWORD") or None,
         dbname=dbname or os.environ["DB_NAME"],
         cursor_factory=psycopg2.extras.RealDictCursor,
     )
