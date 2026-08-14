@@ -191,9 +191,23 @@ def test_vigia_corre_aunque_asinfo_no_tenga_facturas_de_hoy(monkeypatch):
     Antes `_auto_cargar_facturas_hoy` cortaba ahí y el vigía no corría hasta
     la primera factura del día. Ahora el ciclo sigue.
     """
+    import threading as _th
+
     from modules.facturas import views as fv
 
+    # TMT 2026-08-13: este test cayó en el CI de main con `assert 0 == 1` y
+    # dejó el deploy bloqueado. `_auto_cargar_facturas_hoy` tiene DOS frenos
+    # antes de llamar al vigía y el test sólo neutralizaba uno:
+    #   · el throttle de 60 s contra `_time.monotonic()` — y monotonic() es
+    #     el uptime del host, no del proceso: en una VM recién arrancada
+    #     puede ser < 60 y el throttle muerde aunque el ts esté en 0.
+    #   · el lock no-bloqueante `_AUTO_CARGA_LOCK`, que otro test o el hilo
+    #     de fondo pueden estar teniendo.
+    # Los dos devuelven `corrio=False` en silencio, que es exactamente el
+    # síntoma. Se fijan los dos para que el test mida lo que dice medir.
+    monkeypatch.setattr(fv._time, "monotonic", lambda: 10_000.0)
     monkeypatch.setattr(fv, "_auto_carga_ultimo_ts", 0.0)
+    monkeypatch.setattr(fv, "_AUTO_CARGA_LOCK", _th.Lock())
     monkeypatch.setattr(svc, "facturas_periodo", lambda d, h: [])
     monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [])
     llamado = {"n": 0}
