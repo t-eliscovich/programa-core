@@ -1073,6 +1073,46 @@ def _nota_del_margen(venta: dict | None) -> str:
             f"margen {_num(margen, 0)} ({pct}%)")
 
 
+def _texto_mercaderia(n_anticipos) -> str:
+    """"entró la mercadería de 4 anticipos" — el número, igual que en el pase.
+
+    🚨 TMT 2026-08-11: *"me gusta el 4 para saber que había 4 distintos"*. Una
+    importación se paga en cuotas y cada una es un anticipo suyo.
+    """
+    n = int(n_anticipos or 0)
+    return (f"entró la mercadería de {n} anticipos" if n > 1
+            else "entró la mercadería del anticipo")
+
+
+def _ancla_del_anticipo(grupos: dict) -> tuple[dict | None, dict | None]:
+    """El renglón del anticipo que se volvió mercadería, y su evento si lo hay.
+
+    Hay DOS maneras de que el anticipo se vaya, según qué tan rápido pase todo:
+
+    - Asinfo muestra la mercadería recibida y el descuento sintético
+      (`TXT_ANTICIPO_RECIBIDO`) tapa el anticipo; la compra `bap-auto` nace
+      después. Ése es el caso del 10/08 (anticipo 11:26, compra 11:38).
+    - 🚨 TMT 2026-08-14, ventana de las 08:40 (AC 38): las dos cosas caen
+      DENTRO de la misma foto de 5 minutos, así que el descuento sintético
+      nunca llega a aparecer y lo que se ve es el pase a la compra
+      (`bap_anticipo_a_compra`) −74.769 contra el hilo que entra +74.379.
+      *"me gustaría que la entrada de hilo aparezca arriba con el anticipo"*.
+
+    Es el mismo hecho con dos anclas distintas. El sintético manda: si está,
+    el pase es la OTRA formalidad y la une `_unir_conversion_del_anticipo`.
+    """
+    ant = next((g for g in grupos.values()
+                if (g.get("etiqueta") or "") == TXT_ANTICIPO_RECIBIDO
+                and not g.get("fundido")), None)
+    if ant:
+        return ant, None
+    conv = next((g for g in grupos.values()
+                 if ((g.get("evento") or {}).get("tipo")
+                     == "bap_anticipo_a_compra")
+                 and not g.get("fundido")), None)
+    return (conv, conv.get("evento")) if conv else (None, None)
+
+
 def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
     """El anticipo que sale y la mercadería que entra son UN movimiento.
 
@@ -1089,9 +1129,7 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
     $3,0405, así que parte del costo se reparte sobre lo que ya había. El
     $/kg queda como nota al pie, que es lo que explica el signo.
     """
-    ant = next((g for g in grupos.values()
-                if (g.get("etiqueta") or "") == TXT_ANTICIPO_RECIBIDO
-                and not g.get("fundido")), None)
+    ant, ev = _ancla_del_anticipo(grupos)
     tela = next((g for g in grupos.values()
                  if g.get("regla") == "Stock" and not g.get("fundido")), None)
     if not ant or not tela or ant["aporte"] >= 0 or tela["aporte"] <= 0:
@@ -1099,9 +1137,16 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
     tarifa = next((g for g in grupos.values()
                    if g.get("regla") == "Revaluación de stock"
                    and not g.get("fundido")), None)
-    cod = _importacion_del_anticipo(ant["aporte"], hasta)
-    ant["texto_unido"] = ("entró la mercadería del anticipo " + cod if cod
-                          else "entró la mercadería de los anticipos")
+    if ev:
+        # El renglón de la conversión ya sabe cómo se llama la importación y
+        # en cuántos anticipos vino: no hay que salir a buscarla por importe.
+        nombre = _nombre_de_fabrica(ev.get("concepto") or "")
+        que = _texto_mercaderia((ev.get("meta") or {}).get("n_anticipos"))
+        ant["texto_unido"] = f"{nombre} · {que}" if nombre else que
+    else:
+        cod = _importacion_del_anticipo(ant["aporte"], hasta)
+        ant["texto_unido"] = ("entró la mercadería del anticipo " + cod if cod
+                              else "entró la mercadería de los anticipos")
     for otro in (tela, tarifa):
         if not otro:
             continue
