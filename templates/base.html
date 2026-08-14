@@ -775,7 +775,12 @@
          rojo + "INDUSTRIA TEXTIL LATINOAMERICANA C. LTDA." abajo, así que
          el subtítulo "Programa Core" se mueve a un text discreto debajo.
          En modo colapsado, mostramos solo la "i" del logo (initial). #}
-      <div class="min-w-0 flex items-center gap-2 w-full">
+      {# TMT 2026-08-14 (dueña): *"que si clickeo acá arriba a la izquierda
+         también me mande a la pantalla inicial"* — el logo es el link a casa,
+         como en cualquier sitio. El botón de colapsar queda AFUERA del <a>,
+         si no colapsar la barra te sacaría de la pantalla. #}
+      <a href="{{ url_for('historial.operaciones') }}" title="Ir al inicio"
+         class="min-w-0 flex items-center gap-2 w-full">
         {# Versión colapsada: bloque chico estilizado con "i" cursiva roja
            (paridad con el logo, sin necesidad de cargar la imagen recortada). #}
         <div class="sidebar-brand-initial hidden w-9 h-9 rounded-lg bg-white border border-slate-200 items-center justify-center shrink-0">
@@ -789,7 +794,7 @@
                class="sidebar-brand-img block max-w-full h-auto"
                style="max-height: 2.5rem; width: 100%; object-fit: contain;">
         </div>
-      </div>
+      </a>
       <button id="sidebar-toggle" type="button" aria-label="Colapsar sidebar"
               class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 text-slate-400 hover:text-slate-600">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"

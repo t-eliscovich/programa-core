@@ -314,3 +314,17 @@ def test_login_sin_sesion_sigue_mostrando_el_formulario(app):
     r = app.test_client().get("/login")
     assert r.status_code == 200
     assert "password" in r.get_data(as_text=True)
+
+
+def test_el_logo_del_sidebar_lleva_al_inicio():
+    """TMT 2026-08-14 (dueña): *"que si clickeo acá al tope izquierdo también
+    me mande a la pantalla inicial"*. Y el botón de colapsar la barra queda
+    AFUERA del link: si no, colapsar te sacaría de la pantalla."""
+    from pathlib import Path
+
+    base = Path("templates/base.html").read_text()
+    i = base.index("sidebar-brand-img")
+    trozo = base[i - 1200:i]
+    assert 'href="{{ url_for(\'historial.operaciones\') }}"' in trozo
+    assert base.index('id="sidebar-toggle"') > base.index("sidebar-brand-img")
+    assert "</a>" in base[i:i + 600]
