@@ -59,10 +59,15 @@ def test_auto_carga_no_duplica_ni_carga_dias_previos(monkeypatch):
     por_numf = {c["numf"]: c for c in creadas}
     assert set(por_numf) == {501, 502}
     assert por_numf[501]["usuario"] == "asinfo-carga"  # cuenta en cartera
-    # La devolución entra con kg/importe negativos y tipo 'DE'.
+    # La devolución entra con kg/importe negativos y tipo 'D'.
+    # TMT 2026-08-14: antes acá decía 'DE' — el importador guardaba
+    # `tipo_asinfo[:2]` porque la columna era varchar(2), y ese recorte dejaba
+    # la base escrita en dos idiomas (D/DE, N/NT, C/NC…) y metía
+    # NC_FINANCIERA y NCNT en la misma "NC". Ahora se guarda el código del
+    # vocabulario único (modules/facturas/tipo_doc.py).
     assert float(por_numf[502]["kg"]) < 0
     assert float(por_numf[502]["importe"]) < 0
-    assert por_numf[502]["tipo"] == "DE"
+    assert por_numf[502]["tipo"] == "D"
     # Retenciones de hoy aplicadas.
     assert res["ret"] == 2
 

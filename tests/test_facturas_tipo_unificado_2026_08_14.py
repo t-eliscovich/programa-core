@@ -32,7 +32,6 @@ if str(ROOT) not in sys.path:
 
 from modules.facturas import tipo_doc  # noqa: E402
 
-
 # ── 1) el vocabulario ────────────────────────────────────────────────────────
 
 def test_los_codigos_entran_en_la_columna():
@@ -176,6 +175,6 @@ def test_el_importador_ya_no_recorta_el_tipo():
     for fn in (fv.cargar_desde_asinfo, fv.cargar_desde_asinfo_bulk):
         src = inspect.getsource(fn)
         # Se mira el CÓDIGO, no los comentarios (que hablan del bug viejo).
-        codigo = "\n".join(l.split("#")[0] for l in src.split("\n"))
+        codigo = "\n".join(x.split("#")[0] for x in src.split("\n"))
         assert "[:2]" not in codigo, fn.__name__
         assert "tipo_doc.normalizar" in codigo, fn.__name__
