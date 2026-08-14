@@ -1053,11 +1053,28 @@ def emitir_cheque(
             # dólares. La fila en `scintela.dolares` representa el anticipo
             # entregado (cuando llegue la factura del proveedor, se aplica vía
             # BAP). `beneficiario` es el código de cuenta USD (2 letras, ej. MP).
-            cta_usd = (beneficiario or "")[:5].upper()
+            # TMT 2026-08-14 — acá había un `[:5]` contra `scintela.dolares.cta`,
+            # que es VARCHAR(3): un código de 4 o 5 letras entraba, llegaba al
+            # INSERT y explotaba con `StringDataRightTruncation`. El usuario veía
+            # "No pude emitir el cheque: …" sin entender qué había escrito mal.
+            #
+            # El arreglo NO es truncar a 3: eso convierte un error de tipeo en
+            # una cuenta que no existe, y el anticipo queda imputado a otro lado
+            # sin que nadie se entere. Las 3.205 filas del histórico tienen la
+            # cta de 2 letras (26 cuentas distintas: MH, AI, AC, KX, GP, TN…), y
+            # el comentario de arriba y el mensaje de error ya decían "2 letras".
+            # Que rebote con el motivo a la vista.
+            cta_usd = (beneficiario or "").strip().upper()
             if not cta_usd:
                 raise ValueError(
                     "Anticipo USD requiere código de cuenta dólares (2 letras, "
                     "ej. MP). Usá el campo beneficiario o tipeá IN.<CT> en concepto."
+                )
+            if len(cta_usd) > 3:
+                raise ValueError(
+                    f"«{cta_usd}» no es un código de cuenta dólares. Son 2 letras "
+                    f"(MH, AI, AC, KX, GP, TN…), no el nombre del proveedor. "
+                    f"Si no sabés cuál es, miralo en Dólares."
                 )
             cur.execute(
                 """

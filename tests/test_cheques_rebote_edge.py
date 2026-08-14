@@ -134,19 +134,74 @@ def _de_link_vivo(conn, id_cheque):
     return cur.fetchone()[0]
 
 
+# ── Lo que este archivo llama "lo propio" ──────────────────────────────
+# El banco es COMPARTIDO con los demás archivos de cheques: `assert_cadena_intacta`
+# revisa la cadena de saldos del banco ENTERA antes de aceptar un alta.
+CLI = "REB"          # el cliente que siembra este archivo
+PREFIJO = "R000%"    # sus cheques: R0001, R0002
+BANCO_PRUEBA = 1     # PICHINCHA
+
+
+def _mis_movimientos_de_banco(cur):
+    """Los movimientos bancarios que dejó una corrida ANTERIOR de este archivo.
+
+    Devuelve (ids, fecha_más_vieja): la fecha es el ancla del re-encadenado.
+    """
+    cur.execute(
+        """
+        SELECT t.id_transaccion, t.fecha
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s
+           AND (t.numreferencia IN (SELECT id_cheque FROM scintela.cheque
+                                     WHERE no_cheque LIKE %s)
+                OR t.id_transaccion IN (SELECT id_transaccion
+                                          FROM scintela.chequextransaccion
+                                         WHERE id_cheque IN (
+                                               SELECT id_cheque FROM scintela.cheque
+                                                WHERE no_cheque LIKE %s)))
+        """,
+        (BANCO_PRUEBA, PREFIJO, PREFIJO),
+    )
+    filas = cur.fetchall()
+    return [f[0] for f in filas], (min(f[1] for f in filas) if filas else None)
+
+
+def _limpiar(conn) -> None:
+    """Borra lo que sembró ESTE archivo y deja la cadena del banco sana.
+
+    ⭐ TMT 2026-08-14 — este escenario NO netea a cero: cada protesto cobra un
+    gasto de $2 ("GS. cheq. REB") que es plata que sale de verdad. Borrar el
+    bloque a mano corría el saldo de TODAS las filas de abajo —las de los otros
+    archivos de cheques, que depositan en el mismo banco— y el siguiente depósito
+    moría en el candado de commit con "el saldo saltó 798,00 cuando el movimiento
+    vale 800,00". Re-encadenar después de borrar es lo que hace la app cuando se
+    elimina un movimiento (modules/bancos/queries.py).
+    """
+    cur = conn.cursor()
+    ids, desde = _mis_movimientos_de_banco(cur)
+    cur.execute(
+        "DELETE FROM scintela.chequextransaccion WHERE id_cheque IN "
+        "(SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE %s)",
+        (PREFIJO,),
+    )
+    if ids:
+        cur.execute("DELETE FROM scintela.chequextransaccion WHERE id_transaccion = ANY(%s)", (ids,))
+        cur.execute("DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,))
+    cur.execute("DELETE FROM scintela.chequesxfact WHERE codigo_cli = %s", (CLI,))
+    cur.execute("DELETE FROM scintela.cheque WHERE no_cheque LIKE %s", (PREFIJO,))
+    cur.execute("DELETE FROM scintela.factura WHERE codigo_cli = %s", (CLI,))
+    if ids:
+        import bank_helpers
+
+        bank_helpers.recompute_saldos_desde(conn, no_banco=BANCO_PRUEBA, ancla_fecha=desde)
+    conn.commit()
+
+
 @pytest.fixture
 def setup(real_db_conn, migrated_db):
-    cur = real_db_conn.cursor()
-    # Aislamiento: las funciones commitean, limpiar corridas anteriores.
-    cur.execute("DELETE FROM scintela.transacciones_bancarias WHERE concepto LIKE '%%R000%%' "
-                "OR numreferencia IN (SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE 'R000%%')")
-    cur.execute("DELETE FROM scintela.chequextransaccion WHERE id_cheque IN "
-                "(SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE 'R000%%')")
-    cur.execute("DELETE FROM scintela.chequesxfact WHERE codigo_cli='REB'")
-    cur.execute("DELETE FROM scintela.cheque WHERE no_cheque LIKE 'R000%%'")
-    cur.execute("DELETE FROM scintela.factura WHERE codigo_cli='REB'")
-    _seed_cliente(real_db_conn, "REB")
-    _seed_banco(real_db_conn, 1, "PICHINCHA")
+    _limpiar(real_db_conn)
+    _seed_cliente(real_db_conn, CLI)
+    _seed_banco(real_db_conn, BANCO_PRUEBA, "PICHINCHA")
     _seed_banco(real_db_conn, 2, "INTERNACIONAL")
     real_db_conn.commit()
     return real_db_conn

@@ -13,6 +13,13 @@ import pytest
 
 HOY = date.today()
 
+# ── Lo que este archivo llama "lo propio" ──────────────────────────────
+# El banco es COMPARTIDO con los demás archivos de cheques: `assert_cadena_intacta`
+# revisa la cadena de saldos del banco ENTERA antes de aceptar un alta.
+CLI = "UIU"          # el cliente que siembra este archivo
+PREFIJO = "U000%"    # sus cheques: U0001..U0008
+BANCO_PRUEBA = 1     # PICHINCHA
+
 
 @pytest.fixture
 def real_app(migrated_db):
@@ -123,16 +130,64 @@ def _de_movs(no_cheque, doc):
     )
 
 
+def _mis_movimientos_de_banco():
+    """Los movimientos bancarios que dejó una corrida ANTERIOR de este archivo.
+
+    TMT 2026-08-14 — acá se filtraba por `concepto LIKE '%U000%'`, que deja afuera
+    dos filas que estas rutas SÍ crean: el depósito en lote consolidado ("dep.N ch.",
+    sin número de cheque adentro) y el gasto del protesto ("GS. cheq. UIU"). Los dos
+    vínculos firmes son `chequextransaccion` y `numreferencia`, que lleva el id del
+    cheque.
+
+    Devuelve (ids, fecha_más_vieja): la fecha es el ancla del re-encadenado.
+    """
+    filas = _db().fetch_all(
+        """
+        SELECT t.id_transaccion, t.fecha
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s
+           AND (t.numreferencia IN (SELECT id_cheque FROM scintela.cheque
+                                     WHERE no_cheque LIKE %s)
+                OR t.id_transaccion IN (SELECT id_transaccion
+                                          FROM scintela.chequextransaccion
+                                         WHERE id_cheque IN (
+                                               SELECT id_cheque FROM scintela.cheque
+                                                WHERE no_cheque LIKE %s)))
+        """,
+        (BANCO_PRUEBA, PREFIJO, PREFIJO),
+    )
+    ids = [f["id_transaccion"] for f in filas]
+    return ids, (min(f["fecha"] for f in filas) if filas else None)
+
+
 @pytest.fixture(autouse=True)
 def _limpiar(migrated_db):
+    """Siembra el escenario y borra lo que dejó la corrida anterior de ESTE archivo.
+
+    Las rutas commitean, así que lo de la corrida anterior sigue ahí. Lo que no se
+    puede hacer es borrar "todo lo que se parezca": el saldo del banco es una cadena
+    compartida con los otros archivos de cheques y sacarle una fila del medio a
+    cualquiera de ellos lo deja con el saldo partido — y a partir de ahí
+    `assert_cadena_intacta` rebota todo depósito posterior (ver la nota de
+    test_cheques_state_machine_edge.py).
+    """
     _seed_cliente_banco()
     db = _db()
-    db.execute("DELETE FROM scintela.transacciones_bancarias WHERE concepto LIKE '%%U000%%'")
+    ids, desde = _mis_movimientos_de_banco()
     db.execute("DELETE FROM scintela.chequextransaccion WHERE id_cheque IN "
-               "(SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE 'U000%%')")
-    db.execute("DELETE FROM scintela.chequesxfact WHERE codigo_cli='UIU'")
-    db.execute("DELETE FROM scintela.cheque WHERE no_cheque LIKE 'U000%%'")
-    db.execute("DELETE FROM scintela.factura WHERE codigo_cli='UIU'")
+               "(SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE %s)", (PREFIJO,))
+    if ids:
+        db.execute("DELETE FROM scintela.chequextransaccion WHERE id_transaccion = ANY(%s)", (ids,))
+        db.execute("DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,))
+    db.execute("DELETE FROM scintela.chequesxfact WHERE codigo_cli = %s", (CLI,))
+    db.execute("DELETE FROM scintela.cheque WHERE no_cheque LIKE %s", (PREFIJO,))
+    db.execute("DELETE FROM scintela.factura WHERE codigo_cli = %s", (CLI,))
+    if ids:
+        # Borrar del medio deja a las filas de abajo con el saldo del estado
+        # viejo: re-encadenar es lo que hace la app al eliminar un movimiento.
+        import bank_helpers
+
+        bank_helpers.recompute_saldos_desde(None, no_banco=BANCO_PRUEBA, ancla_fecha=desde)
 
 
 # ── 1. Depositar (dropdown → transicionar stat_destino=B) ───────────────

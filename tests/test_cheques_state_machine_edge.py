@@ -53,16 +53,87 @@ def _stat(conn, id_cheque):
     return cur.fetchone()[0]
 
 
+# ── Lo que este archivo llama "lo propio" ──────────────────────────────
+# El banco es COMPARTIDO con los demás archivos de cheques: `assert_cadena_intacta`
+# revisa la cadena de saldos del banco ENTERA antes de aceptar cualquier alta, así
+# que una limpieza que borre de más (o de menos) no ensucia sólo a este archivo:
+# le bloquea el depósito a todos los que corran después.
+CLI = "SME"          # el cliente que siembra este archivo
+PREFIJO = "S00%"     # sus cheques: S000Z1, S000D1, S00XB, S00C1, S00BC, S00VB, S0031
+BANCO_PRUEBA = 1     # PICHINCHA
+
+
+def _mis_movimientos_de_banco(cur):
+    """Los movimientos bancarios que dejó una corrida ANTERIOR de este archivo.
+
+    TMT 2026-08-14 — no se los puede reconocer por el TEXTO. El depósito en lote
+    consolida N cheques en UNA fila cuyo concepto es "dep.N ch.", sin número de
+    cheque ni cliente adentro: cualquier `LIKE` lo bastante ancho para atraparla
+    atrapa también la de los otros archivos. Los dos vínculos firmes son
+    `chequextransaccion` (los depósitos) y `numreferencia`, que lleva el id del
+    cheque (la ND del rebote y el GS del protesto).
+
+    Devuelve (ids, fecha_más_vieja): la fecha es el ancla del re-encadenado.
+    """
+    cur.execute(
+        """
+        SELECT t.id_transaccion, t.fecha
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s
+           AND (t.numreferencia IN (SELECT id_cheque FROM scintela.cheque
+                                     WHERE no_cheque LIKE %s)
+                OR t.id_transaccion IN (SELECT id_transaccion
+                                          FROM scintela.chequextransaccion
+                                         WHERE id_cheque IN (
+                                               SELECT id_cheque FROM scintela.cheque
+                                                WHERE no_cheque LIKE %s)))
+        """,
+        (BANCO_PRUEBA, PREFIJO, PREFIJO),
+    )
+    filas = cur.fetchall()
+    return [f[0] for f in filas], (min(f[1] for f in filas) if filas else None)
+
+
+def _limpiar(conn) -> None:
+    """Borra lo que sembró ESTE archivo y deja la cadena del banco sana.
+
+    ⭐ TMT 2026-08-14 — POR QUÉ ESTO NO ES UN DETALLE. Acá decía
+    `DELETE ... WHERE concepto LIKE 'dep.% ch.%'`, que no es una marca propia:
+    se comía el depósito de `test_cheques_rebote_edge.py` ("dep.1 ch. R0002 REB")
+    y le dejaba la ND huérfana. Con el DE borrado y la ND viva el saldo de
+    Pichincha quedaba partido, y a partir de ahí `assert_cadena_intacta` rebotaba
+    TODO depósito posterior: 9 tests en rojo apenas la suite se corría dos veces
+    contra la misma base. En la primera corrida no se veía porque esa ND huérfana
+    era la PRIMERA fila del banco, y una fila sin predecesora no puede mostrar un
+    salto de saldo.
+    """
+    cur = conn.cursor()
+    ids, desde = _mis_movimientos_de_banco(cur)
+    cur.execute(
+        "DELETE FROM scintela.chequextransaccion WHERE id_cheque IN "
+        "(SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE %s)",
+        (PREFIJO,),
+    )
+    if ids:
+        cur.execute("DELETE FROM scintela.chequextransaccion WHERE id_transaccion = ANY(%s)", (ids,))
+        cur.execute("DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s)", (ids,))
+    cur.execute("DELETE FROM scintela.cheque WHERE no_cheque LIKE %s", (PREFIJO,))
+    if ids:
+        # Sacar una fila del MEDIO deja a las de abajo con el saldo del estado
+        # viejo. Re-encadenar es lo que hace la app cuando se elimina un
+        # movimiento (modules/bancos/queries.py); si el test borra a mano y no
+        # re-encadena, el próximo depósito muere en el candado de commit.
+        import bank_helpers
+
+        bank_helpers.recompute_saldos_desde(conn, no_banco=BANCO_PRUEBA, ancla_fecha=desde)
+    conn.commit()
+
+
 @pytest.fixture
 def setup(real_db_conn, migrated_db):
-    cur = real_db_conn.cursor()
-    cur.execute("DELETE FROM scintela.chequextransaccion WHERE id_cheque IN "
-                "(SELECT id_cheque FROM scintela.cheque WHERE no_cheque LIKE 'S000%%')")
-    cur.execute("DELETE FROM scintela.transacciones_bancarias WHERE concepto LIKE '%%S000%%' "
-                "OR concepto LIKE 'dep.%% ch.%%' AND concepto NOT LIKE '%%::%%'")
-    cur.execute("DELETE FROM scintela.cheque WHERE no_cheque LIKE 'S000%%'")
-    _seed_cliente(real_db_conn, "SME")
-    _seed_banco(real_db_conn, 1, "PICHINCHA")
+    _limpiar(real_db_conn)
+    _seed_cliente(real_db_conn, CLI)
+    _seed_banco(real_db_conn, BANCO_PRUEBA, "PICHINCHA")
     _seed_banco(real_db_conn, 2, "INTERNACIONAL")
     real_db_conn.commit()
     return real_db_conn

@@ -260,3 +260,80 @@ def test_tipo_gasto_postdatado_xgast_saldo_pendiente(stub):
     params = insert_xgast[1]
     assert 150.0 in params  # saldo == importe
     assert "P" in params  # pendiente
+
+
+# ---------------------------------------------------------------------------
+# anticipo_usd: el código de cuenta dólares son 2 letras
+# ---------------------------------------------------------------------------
+# TMT 2026-08-14 — apareció barriendo `/bancos/emitir-cheque` con el POST smoke:
+# `emitir_cheque(tipo="anticipo_usd", beneficiario="PROVEEDOR SMOKE")` moría con
+#
+#     psycopg2.errors.StringDataRightTruncation: value too long for
+#     type character varying(3)
+#
+# porque el código hacía `(beneficiario or "")[:5]` contra
+# `scintela.dolares.cta`, que es VARCHAR(3). El usuario veía "No pude emitir el
+# cheque: …" y ninguna pista de qué había escrito mal.
+#
+# Lo que estos tests fijan NO es el largo del truncado sino la regla: un código
+# de más de 3 letras se RECHAZA con el motivo a la vista, no se recorta.
+# Recortarlo sería peor que el error — «PROVEEDOR SMOKE» se volvería la cuenta
+# «PRO», el anticipo quedaría imputado a una cuenta que no existe, y nadie se
+# enteraría. Las 3.205 filas del histórico tienen la cta de 2 letras (26
+# cuentas: MH, AI, AC, KX, GP, TN…).
+
+
+def test_anticipo_usd_el_nombre_del_proveedor_no_es_una_cuenta(stub):
+    """El caso que reventaba: el proveedor escrito en el campo de la cuenta.
+
+    Tiene que rebotar con un ValueError que diga QUÉ se escribió y qué se
+    esperaba — no con un error de Postgres sobre `character varying(3)`.
+    """
+    from modules.bancos import queries as q
+
+    with pytest.raises(ValueError) as e:
+        q.emitir_cheque(
+            tipo="anticipo_usd", no_banco=1, importe=100, fecha=date.today(),
+            beneficiario="PROVEEDOR SMOKE",
+        )
+    msg = str(e.value)
+    assert "PROVEEDOR SMOKE" in msg
+    assert "2 letras" in msg
+    assert "character varying" not in msg
+    # y no llegó a escribir nada en dólares
+    assert "insert into scintela.dolares" not in _sql_text(stub.executes)
+
+
+def test_anticipo_usd_sin_cuenta_sigue_pidiendola(stub):
+    """La validación vieja no se perdió al agregar la nueva."""
+    from modules.bancos import queries as q
+
+    with pytest.raises(ValueError, match="requiere código de cuenta"):
+        q.emitir_cheque(
+            tipo="anticipo_usd", no_banco=1, importe=100, fecha=date.today(),
+            beneficiario="   ",
+        )
+
+
+@pytest.mark.parametrize(("entrada", "guardado"), [
+    ("MP", "MP"),
+    ("mp", "MP"),      # se normaliza a mayúscula
+    ("  MH  ", "MH"),  # el espacio del formulario no es parte de la cuenta
+    ("AIX", "AIX"),    # 3 entra en la columna: no lo cerramos en 2
+])
+def test_anticipo_usd_guarda_la_cuenta_tal_como_entra_en_la_columna(stub, entrada, guardado):
+    """El límite lo pone `VARCHAR(3)`, no las 26 cuentas que existen hoy.
+
+    Si mañana aparece una cuenta de 3 letras tiene que poder cargarse sin tocar
+    código; lo que no puede pasar es que un valor más largo llegue al INSERT.
+    """
+    from modules.bancos import queries as q
+
+    q.emitir_cheque(
+        tipo="anticipo_usd", no_banco=1, importe=100, fecha=date.today(),
+        beneficiario=entrada,
+    )
+    insert = next(e for e in stub.executes
+                  if "insert into scintela.dolares" in e[0].lower())
+    assert guardado in insert[1]
+    assert all(len(str(p)) <= 3 for p in insert[1] if p == guardado)
