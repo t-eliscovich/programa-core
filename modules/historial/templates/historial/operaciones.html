@@ -31,6 +31,22 @@
        entiende bien esto… todo pegado, separá, o uno abajo del otro o ponele %
        a lo facturado"*. Quedó una fila por número, con el % del facturado
        sobre el despachado en la línea de abajo. #}
+    {# TMT 2026-08-14 (dueña): la barra va ARRIBA DE TODO y mide lo
+       DESPACHADO —los kilos que salieron— contra los 20.000 del día. Estaba
+       debajo de "Facturado" y se leía como si fuera de esa cifra. #}
+    {% set _kg_barra = ventas_hoy.despachado.kg or 0 %}
+    <div class="ventas-hoy-barra">
+      <div class="ventas-hoy-lleno" data-campo="barra"
+           style="width: {{ [ (_kg_barra / 20000 * 100) | round(1), 100 ] | min }}%"></div>
+      {% for _m in [5000, 10000, 15000] %}
+        <span class="ventas-hoy-marca" style="left: {{ (_m / 20000 * 100) | round(1) }}%"></span>
+      {% endfor %}
+    </div>
+    <div class="ventas-hoy-escala">
+      {% for _m, _t in [(5000, '5.000'), (10000, '10.000'), (15000, '15.000'), (20000, '20.000')] %}
+        <span style="left: {{ (_m / 20000 * 100) | round(1) }}%">{{ _t }}</span>
+      {% endfor %}
+    </div>
     <div class="ventas-hoy-fila">
       <span class="ventas-hoy-rot">Despachado</span>
       {# El número y su unidad van JUNTOS en el span: el despachado lo escribe
@@ -50,7 +66,7 @@
       <span class="ventas-hoy-rot">Facturado</span>
       <span class="ventas-hoy-kg"><span data-campo="kg">{{ ventas_hoy.kg | kg_es }}</span> kg</span>
     </div>
-    <div class="ventas-hoy-pie">
+    <div class="ventas-hoy-pie ventas-hoy-pie-fact">
       <span data-campo="pct">{{ ventas_hoy.pct ~ ' % de lo despachado · ' if ventas_hoy.pct is not none }}</span>$ <span data-campo="importe">{{ ventas_hoy.importe | num_es(2) }}</span>
       · <span data-campo="n">{{ ventas_hoy.n }}</span>
       <span data-campo="n_lab">factura{{ '' if ventas_hoy.n == 1 else 's' }}</span>
@@ -65,21 +81,6 @@
       <span class="ventas-hoy-devol-kg" data-campo="devol">−{{ ventas_hoy.devoluciones.kg | kg_es }} kg · {{ ventas_hoy.devoluciones.n }}</span>
     </div>
 
-    {# La barra sigue lo DESPACHADO, que es lo que dispara los avisos de la
-       campanita (5.000 / 10.000 / 15.000 / 20.000 kg). #}
-    {% set _kg_barra = ventas_hoy.despachado.kg or 0 %}
-    <div class="ventas-hoy-barra">
-      <div class="ventas-hoy-lleno" data-campo="barra"
-           style="width: {{ [ (_kg_barra / 20000 * 100) | round(1), 100 ] | min }}%"></div>
-      {% for _m in [5000, 10000, 15000] %}
-        <span class="ventas-hoy-marca" style="left: {{ (_m / 20000 * 100) | round(1) }}%"></span>
-      {% endfor %}
-    </div>
-    <div class="ventas-hoy-escala">
-      {% for _m, _t in [(5000, '5.000'), (10000, '10.000'), (15000, '15.000'), (20000, '20.000')] %}
-        <span style="left: {{ (_m / 20000 * 100) | round(1) }}%">{{ _t }}</span>
-      {% endfor %}
-    </div>
   </a>
   {% endif %}
   {% if aviso_migracion %}
@@ -147,25 +148,36 @@
     font-variant-numeric: tabular-nums; color: rgb(15 23 42);
   }
   .dark .ventas-hoy-kg { color: rgb(241 245 249); }
+  /* TMT 2026-08-14 (dueña): el detalle del facturado —el %, la plata y las
+     facturas— es lo que más mira, así que va más grande que el resto. */
+  .ventas-hoy-pie-fact { font-size: 0.9rem; color: rgb(100 116 139); }
+  .dark .ventas-hoy-pie-fact { color: rgb(148 163 184); }
   .ventas-hoy-pie {
     font-size: 0.75rem; color: rgb(148 163 184); text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* TMT 2026-08-14 (dueña): *"devoluciones ponelo menos grande, quizás más
+     gris también, y más naranjita la letra"*. Es un dato de contexto, no uno
+     de los dos números del día. */
   .ventas-hoy-devol {
-    margin-top: 0.55rem; padding-top: 0.45rem;
+    margin-top: 0.6rem; padding-top: 0.45rem;
     border-top: 1px dashed rgb(226 232 240);
   }
   .dark .ventas-hoy-devol { border-top-color: rgb(71 85 105); }
-  .ventas-hoy-devol-kg {
-    font-size: 0.95rem; font-variant-numeric: tabular-nums; color: rgb(180 83 9);
+  .ventas-hoy-devol .ventas-hoy-rot {
+    font-size: 0.72rem; color: rgb(148 163 184);
   }
-  .dark .ventas-hoy-devol-kg { color: rgb(251 191 36); }
+  .ventas-hoy-devol-kg {
+    font-size: 0.8rem; font-variant-numeric: tabular-nums;
+    color: rgb(156 91 91);   /* rojo apagado, tirando a gris (dueña 14/08) */
+  }
+  .dark .ventas-hoy-devol-kg { color: rgb(200 138 138); }
   .ventas-hoy-sep {
     height: 1px; background: rgb(226 232 240); margin: 0.7rem 0 0.5rem;
   }
   .dark .ventas-hoy-sep { background: rgb(71 85 105); }
   .ventas-hoy-barra {
-    position: relative; height: 0.5rem; margin-top: 1.25rem;
+    position: relative; height: 0.5rem; margin-top: 0.55rem;
     background: rgb(226 232 240); border-radius: 999px; overflow: hidden;
   }
   .dark .ventas-hoy-barra { background: rgb(51 65 85); }
@@ -225,7 +237,7 @@
     q('kg_despachado').textContent = typeof dsp.kg === 'number' ? fmt(dsp.kg, 2) + ' kg' : '—';
     q('desp_pie').textContent = dsp.kg === null || dsp.kg === undefined
       ? 'sin dato de Asinfo'
-      : (dsp.fresco ? 'salió de la fábrica' : 'medido ' + (dsp.hora || ''));
+      : (dsp.fresco ? '' : 'medido ' + (dsp.hora || ''));
     q('pct').textContent = typeof d.pct === 'number' ? d.pct + ' % de lo despachado · ' : '';
     var dev = d.devoluciones || {};
     q('devol_fila').style.display = dev.kg ? '' : 'none';
