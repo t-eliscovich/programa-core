@@ -2969,6 +2969,120 @@ def unificar_tipos():
     )
 
 
+@facturas_bp.route("/facturas/tipos-desde-asinfo", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def tipos_desde_asinfo():
+    """Le pone tipo a las facturas que quedaron SIN clasificar, preguntandole
+    a Asinfo, que es donde existen todas.
+
+    TMT 2026-08-14 (duena): *"no podemos tener sin clasificar"* y *"podes
+    volver a Asinfo y traertelas, ahi existen todas"*.
+
+    Son 4.720 filas que entraron por el sync del dBase, que traia cliente, kg
+    e importe pero NI el numero del SRI NI el tipo. Se cortan clavadas el
+    10/07/2026, el dia que el sync se paro. **No estan saldadas**: 2.465 siguen
+    vivas con ~2,6 millones de saldo, asi que no es arqueologia.
+
+    Por que NO se deduce del numero: las bandas de numeracion separan bien
+    (F vive >=143.000, NCNT <=1.148...), pero entre las sin clasificar hay
+    documentos numerados 12.000-18.000 que en las YA clasificadas no existen.
+    Ahi la banda no dice nada y habria que adivinar por el signo de los kilos,
+    que no distingue F de NTEN ni D de NCNT. Con la fuente al lado, adivinar
+    es la opcion equivocada.
+
+    El cruce es por NUMERO EXACTO: Asinfo emite `001-099-000175661` y el
+    sufijo numerico de eso (175661) es literalmente nuestro `numf`. Es el
+    mismo cruce que ya usa el enriquecimiento de la pantalla. **Sin fallback
+    difuso a proposito**: si dos documentos de Asinfo comparten sufijo, la
+    fila queda sin tocar y a la vista, en vez de clasificada a la suerte.
+    """
+    import db as _db
+    from modules.asinfo import service as asinfo_service
+
+    filas = _db.fetch_all(
+        """
+        SELECT id_factura, numf, fecha, codigo_cli, kg, importe
+          FROM scintela.factura
+         WHERE (NULLIF(TRIM(COALESCE(tipo,'')),'') IS NULL OR TRIM(tipo) = '1')
+           AND numf IS NOT NULL
+           AND fecha >= %s
+         ORDER BY fecha
+        """,
+        (tipo_doc.ASINFO_DESDE.isoformat(),),
+    ) or []
+
+    plan: dict[str, int] = {}
+    sin_match: list[dict] = []
+    ambiguas = 0
+    asignaciones: list[tuple[int, str]] = []
+    error = None
+
+    if filas:
+        try:
+            mn = min(f["fecha"] for f in filas)
+            mx = max(f["fecha"] for f in filas)
+            por_sufijo: dict[int, list[dict]] = {}
+            for r in asinfo_service.facturas_periodo(mn, mx) or []:
+                numero = (r.get("numero") or "").strip()
+                if not numero:
+                    continue
+                suf = numero.split("-")[-1]
+                try:
+                    por_sufijo.setdefault(int(suf), []).append(r)
+                except (TypeError, ValueError):
+                    continue
+            for f in filas:
+                cands = por_sufijo.get(int(f["numf"]), [])
+                tipos = {tipo_doc.normalizar(c.get("tipo")) for c in cands}
+                tipos.discard(None)
+                if len(tipos) == 1:
+                    cod = tipos.pop()
+                    asignaciones.append((int(f["id_factura"]), cod))
+                    plan[cod] = plan.get(cod, 0) + 1
+                elif len(tipos) > 1:
+                    ambiguas += 1          # mismo numero, dos tipos: no tocar
+                else:
+                    sin_match.append(f)
+        except Exception as e:  # noqa: BLE001
+            error = str(e)
+
+    if request.method == "POST" and asignaciones and not error:
+        try:
+            with _db.tx() as conn:
+                antes = _db.fetch_one(_SQL_HUELLA, conn=conn) or {}
+                for id_factura, cod in asignaciones:
+                    _db.execute(
+                        "UPDATE scintela.factura SET tipo = %s "
+                        " WHERE id_factura = %s "
+                        "   AND (NULLIF(TRIM(COALESCE(tipo,'')),'') IS NULL "
+                        "        OR TRIM(tipo) = '1')",
+                        (cod, id_factura), conn=conn,
+                    )
+                despues = _db.fetch_one(_SQL_HUELLA, conn=conn) or {}
+                if antes.get("huella") != despues.get("huella"):
+                    raise RuntimeError(
+                        "La huella del cuadro por cliente CAMBIO. Se deshizo "
+                        "todo: poner un tipo no puede mover un importe."
+                    )
+            flash(
+                f"{len(asignaciones)} facturas clasificadas con el tipo que "
+                f"tiene Asinfo. Los totales por cliente quedaron identicos.",
+                "ok",
+            )
+            return redirect(url_for("facturas.lista"))
+        except Exception as e:
+            flash_exc("No pude traer los tipos de Asinfo", e)
+
+    return render_template(
+        "facturas/tipos_desde_asinfo.html",
+        n_candidatas=len(filas), plan=sorted(plan.items()),
+        total=len(asignaciones), sin_match=sin_match[:50],
+        n_sin_match=len(sin_match), ambiguas=ambiguas, error=error,
+        tipo_doc=tipo_doc,
+    )
+
+
 @facturas_bp.route("/facturas/backfill-asinfo", methods=["GET"])
 @requiere_login
 @requiere_permiso("facturas.editar")

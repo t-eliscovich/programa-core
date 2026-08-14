@@ -39,6 +39,11 @@ La `X` que usaba el idioma viejo para NCNT se retiró a propósito: se lee como
 """
 from __future__ import annotations
 
+from datetime import date
+
+# Asinfo solo tiene data limpia desde aca: antes no hay a quien preguntarle.
+ASINFO_DESDE = date(2025, 1, 1)
+
 FACTURA = "F"
 DEVOLUCION = "D"
 NTEN = "N"
