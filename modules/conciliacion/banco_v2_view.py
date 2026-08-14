@@ -819,18 +819,6 @@ def banco_crear_sesion():
         extracto_nombre=f.filename,
     )
 
-    # TMT 2026-08-13: si no había sesión abierta Y todas las filas se
-    # dedupearon, `crear_sesion` devuelve sid=0 (no crea sesión fantasma con
-    # payload vacío). Cortamos acá con un flash amigable en vez de seguir a
-    # `banco_post_procesar`, que reventaba 500.
-    if not sesion_id:
-        flash(
-            f"El archivo ya estaba cargado ({n_skipped} filas) — nada nuevo "
-            "para agregar. No se abrió sesión nueva.",
-            "info",
-        )
-        return redirect(url_for("conciliacion.hub"))
-
     # TMT 2026-06-26 (dueña: el saldo objetivo tomaba un valor del medio del
     # día / de un día viejo). Capturamos el saldo REAL del extracto = saldo de
     # la fila MÁS NUEVA, calculado del archivo COMPLETO (antes del dedup, que
@@ -858,8 +846,13 @@ def banco_crear_sesion():
         msg = f"Sesión #{sesion_id}: agregadas {n_added} filas nuevas."
         cat = "ok"
     elif n_skipped:
-        msg = f"Sesión #{sesion_id}: las {n_skipped} filas del archivo ya estaban cargadas — nada nuevo para agregar."
-        cat = "info"
+        # TMT 2026-08-13 (Alex): antes esto sonaba a "no pasó nada" y encima
+        # la pantalla reventaba. Ahora la sesión SÍ se abre y se puede
+        # arrancar a conciliar el backlog que ya estaba cargado.
+        msg = (f"Sesión #{sesion_id}: las {n_skipped} filas del archivo ya "
+               "estaban cargadas. Abrí la conciliación igual, con los "
+               "pendientes que ya tenías.")
+        cat = "ok"
     else:
         msg = f"Sesión #{sesion_id}: el archivo no trajo movimientos procesables."
         cat = "warn"

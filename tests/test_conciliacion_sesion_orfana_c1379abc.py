@@ -1,37 +1,97 @@
-"""Bug reportado por Alex Velastegui vía Instagram, 13/08/2026 18:13 EC.
+"""El 500 de la conciliación que reportó Alex el 13/08/2026 (id `c1379abc`).
 
-Contexto: Alex re-subió `mov-12-08-202634XXXX6004.xlsx` (28 filas ya
-cargadas la sesión anterior #63, que se había cerrado). El toast decía
-"Sesión #64: las 28 filas del archivo ya estaban cargadas — nada nuevo para
-agregar", y a continuación la pantalla /conciliacion/banco-v2 tiraba 500
-con error id `c1379abc`.
+Qué pasó. Alex re-subió `mov-12-08-202634XXXX6004.xlsx`, cuyas 28 filas ya
+estaban todas cargadas. `crear_sesion` las dedupeó todas (`nuevos == []`) y,
+como no había sesión abierta, abrió una con `extracto_payload = []`. El GET
+siguiente a `/conciliacion/banco-v2` reventaba con 500.
 
-Causa raíz: `crear_sesion(sesion.py)` dedupeaba las 28 filas contra los
-historicos y matches, quedando `nuevos == []`. Como no había sesión abierta
-(la #63 estaba cerrada) el bloque "No hay sesión abierta → crear una"
-insertaba una sesión NUEVA con `extracto_payload = []`. El GET siguiente a
-`/conciliacion/banco-v2` levantaba esa sesión huérfana y `banco_post_procesar`
-reventaba al no encontrar movs.
+La sesión sin extracto NO era el problema — es un flujo previsto:
+`estado_sesion` tiene una rama entera para ella (comentario de la dueña del
+29/05: *"cuando se abre sesión sin extracto"*) y es la única puerta que
+tiene el operador para arrancar a conciliar el backlog de pendientes cuando
+el banco todavía no publicó movimientos nuevos.
 
-Fix:
-  1. `crear_sesion`: si no hay sesión abierta Y `nuevos == []`, devolver
-     `(0, 0, skipped)` sin INSERT.
-  2. `banco_crear_sesion` (view): si sid==0, flash + redirect al hub.
+La causa real, del traceback:
+
+    _banco_v2_tab_manual.html, línea 88
+    {% set _n_extracto = (_banco|length) - _n_pend %}
+    jinja2.exceptions.UndefinedError:
+        'dict object' has no attribute 'n_historicos_pendientes'
+
+Las DOS ramas de `estado_sesion` armaban el dict por separado y la de "sin
+extracto" devolvía una clave menos. El template ya tenía un guard escrito
+para ese caso —
+
+    buckets.n_historicos_pendientes if buckets.n_historicos_pendientes
+        is not none else (_banco|length)
+
+— pero `is not none` NO caza una clave ausente: Jinja devuelve `Undefined`,
+que no es `None`, y la resta de la línea siguiente explota. Familia de
+[[project_2026_08_11_estados_cheque_definiciones_paralelas]]: dos lugares
+armando la misma forma, uno se quedó atrás.
+
+Se arregla en los dos lados y cada uno tiene su test acá:
+  · el modelo: las dos ramas devuelven las MISMAS claves.
+  · la pantalla: renderiza de verdad con una sesión sin extracto.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 
-@pytest.fixture
-def app_logueada(app):
-    """La app real con sesión de Accionista (wildcard de permisos).
+def _hist(**kw):
+    base = {"id": 1, "fecha": date(2026, 8, 11), "concepto": "DEPOSITO",
+            "documento": "41508270", "monto": 590.27, "tipo": "C",
+            "oficina": "AG. NORTE"}
+    base.update(kw)
+    return base
 
-    Mismo patrón que `tests/test_bancos_filtro_por_id.py`: el hook se
-    registra DESPUÉS de create_app() porque `app.py` importa
-    `load_logged_in_user` en el import."""
+
+# ── El modelo: las dos ramas devuelven la MISMA forma ─────────────────
+
+def test_estado_sesion_mismas_claves_con_y_sin_extracto(monkeypatch):
+    """El invariante que faltaba: mismo contrato salga o no el extracto.
+
+    Si mañana alguien agrega una clave a una rama y se olvida de la otra,
+    la pantalla vuelve a reventar con Undefined. Este test lo caza antes.
+    """
+    from modules.conciliacion import sesion as _sesion
+
+    monkeypatch.setattr(_sesion, "_cargar_historicos_pendientes",
+                        lambda no_banco: [_hist()])
+    monkeypatch.setattr(_sesion, "_cargar_programa_pendiente",
+                        lambda no_banco: [])
+
+    # (a) sesión SIN extracto
+    monkeypatch.setattr(_sesion, "cargar_movs", lambda s: [])
+    sin_extracto = _sesion.estado_sesion({"id": 64}, 10)
+
+    # (b) sesión CON extracto: el matcher no nos importa acá, sólo la forma.
+    mov = _sesion.MovBanco(
+        fecha=date(2026, 8, 12), concepto="TRANSFERENCIA", documento="23202626",
+        monto=1405.98, saldo=1875978.8, codigo="001045", tipo="C",
+        oficina="AG. NORTE",
+    )
+    monkeypatch.setattr(_sesion, "cargar_movs", lambda s: [mov])
+    con_extracto = _sesion.estado_sesion({"id": 65}, 10)
+
+    faltantes = set(con_extracto) - set(sin_extracto)
+    assert not faltantes, (
+        "la rama 'sin extracto' se quedó sin estas claves y el template las "
+        f"lee: {sorted(faltantes)}"
+    )
+    assert sin_extracto["n_historicos_pendientes"] == 1
+
+
+# ── La pantalla: renderiza de verdad, sin extracto ────────────────────
+
+@pytest.fixture
+def app_logueada():
+    from tests.test_routes_smoke import build_app
+    app, deshacer = build_app()
+
     @app.before_request
     def _login_falso():  # pragma: no cover - infra de test
         from flask import g, session
@@ -40,77 +100,46 @@ def app_logueada(app):
                   "nombre_rol": "Accionista", "activo": True}
         g.permisos = {"*"}
 
-    return app
+    try:
+        yield app
+    finally:
+        deshacer()
 
 
-# ── (1) modelo: `crear_sesion` no crea sesión huérfana ────────────────
+def test_la_pantalla_renderea_con_sesion_sin_extracto(app_logueada, monkeypatch):
+    """El test que habría cazado el 500: rama real + template real.
 
-def test_crear_sesion_no_crea_orfana_cuando_todo_se_dedupea(monkeypatch):
-    from datetime import date as _date
-
-    from modules.conciliacion import sesion as _sesion
-
-    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
-    sig_a = _sesion._firma_mov("A1", "", "C", "500", _date(2026, 5, 28))
-    sig_b = _sesion._firma_mov("A2", "", "C", "500", _date(2026, 5, 28))
-    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
-                        lambda no_banco: {sig_a, sig_b})
-
-    calls = {"ins": 0}
-    def fake_execute_returning(sql, params=None, conn=None):
-        calls["ins"] += 1
-        return {"id": 999}
-    monkeypatch.setattr(_sesion.db, "execute_returning", fake_execute_returning)
-
-    class _M:
-        def __init__(self, doc):
-            self.documento = doc
-            self.codigo = ""
-            self.tipo = "C"
-            self.monto = "500"
-            self.fecha = _date(2026, 5, 28)
-            self.saldo = None
-            self.concepto = ""
-            self.numreferencia = ""
-
-    sid, n_added, n_skipped = _sesion.crear_sesion(
-        no_banco=10, usuario="alex",
-        movs=[_M("A1"), _M("A2")],
-        extracto_nombre="mov-12-08-202634XXXX6004.xlsx",
-    )
-    assert sid == 0, "no debe crear sesión huérfana"
-    assert n_added == 0
-    assert n_skipped == 2
-    assert calls["ins"] == 0, "no debe correr INSERT"
-
-
-# ── (2) view: banco_crear_sesion traduce sid=0 en flash + redirect ────
-
-def test_banco_crear_sesion_view_redirect_al_hub_si_todo_dedup(app_logueada, monkeypatch):
+    A propósito NO se mockea `estado_sesion` — es justo el dict que arma esa
+    función el que le faltaba la clave. Se mockean sus fuentes de datos.
+    """
     from modules.conciliacion import banco_v2_view as v
+    from modules.conciliacion import sesion as _s
 
-    # Payload xlsx que el parser va a devolver.
-    monkeypatch.setattr(v, "parse_banco_xlsx", lambda raw: [
-        type("MB", (), {"documento": "A1", "codigo": "", "tipo": "C",
-                        "monto": 500.0, "fecha": date(2026, 8, 12),
-                        "saldo": None, "concepto": "", "numreferencia": ""})(),
-    ])
-    # Simular que `_sesion.crear_sesion` devuelve el resultado del fix.
-    monkeypatch.setattr(v._sesion, "crear_sesion",
-                        lambda **kw: (0, 0, 28))
+    monkeypatch.setattr(v._sesion, "sesion_abierta", lambda nb, usuario=None: {
+        "id": 64, "no_banco": 10, "abierta_en": datetime(2026, 8, 13, 18, 13),
+        "cerrada_en": None, "extracto_nombre": "mov-12-08-202634XXXX6004.xlsx",
+        "matches_hechos": 0, "saldo_banco_objetivo": None,
+        "saldo_banco_detectado": 1875978.8,
+    })
+    # Sesión SIN extracto, con backlog de pendientes para conciliar.
+    monkeypatch.setattr(_s, "cargar_movs", lambda s: [])
+    monkeypatch.setattr(_s, "_cargar_historicos_pendientes",
+                        lambda no_banco: [_hist(), _hist(id=2, monto=2300)])
+    monkeypatch.setattr(_s, "_cargar_programa_pendiente", lambda no_banco: [])
+    monkeypatch.setattr(v._sesion, "matches_de_sesion", lambda s: [])
+    monkeypatch.setattr(v._sesion, "deshechos_de_sesion", lambda s: [])
+    monkeypatch.setattr(v._bp, "calcular", lambda nb: {
+        "saldo": 0.0, "saldo_si_concilio_todo": 0.0, "neto_pendientes": 0.0,
+        "pendientes_banco_creditos": 0.0, "pendientes_banco_debitos": 0.0,
+        "n_pendientes": 0,
+    })
+    monkeypatch.setattr(v._db, "fetch_one", lambda *a, **k: {"n": 0})
+    monkeypatch.setattr(v._db, "fetch_all", lambda *a, **k: [])
 
-    # Ninguna migración pendiente.
-    monkeypatch.setattr(v, "_migracion_lista_o_redirect", lambda: None)
-
-    import io
-    data = {"archivo": (io.BytesIO(b"xlsx-bytes"), "mov.xlsx")}
-    rv = app_logueada.test_client().post(
-        "/conciliacion/banco-v2/crear-sesion",
-        data=data, content_type="multipart/form-data",
-        follow_redirects=False,
+    rv = app_logueada.test_client().get("/conciliacion/banco-v2")
+    assert rv.status_code == 200, (
+        "la pantalla revienta con una sesión sin extracto — es el 500 c1379abc"
     )
-    assert rv.status_code == 302, "debería redirect, no 500"
-    # Al HUB, NO a banco-v2/post-procesar: ahí es donde reventaba el 500.
-    destino = rv.headers["Location"]
-    assert "/conciliacion" in destino
-    assert "banco-v2" not in destino, f"mandó a la pantalla que revienta: {destino}"
+    body = rv.get_data(as_text=True)
+    assert "pendientes" in body
+    assert "2" in body, "el pill tiene que contar los 2 históricos pendientes"

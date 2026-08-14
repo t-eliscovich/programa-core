@@ -547,16 +547,13 @@ def crear_sesion(
         )
         return (int(abierta["id"]), len(nuevos), skipped)
 
-    # TMT 2026-08-13 (Alex reportó 500 al re-subir un extracto ya cargado):
-    # si no hay sesión abierta Y todas las filas del archivo se dedupearon
-    # contra históricos/matches (nuevos == []), NO crear una sesión nueva
-    # con payload=[] — esa sesión queda huérfana y hace explotar
-    # `banco_post_procesar` al levantarla. Retornamos (0, 0, skipped) y el
-    # view muestra un flash amigable + redirect al hub.
-    if not nuevos:
-        return (0, 0, skipped)
-
     # No hay sesión abierta → crear una.
+    # TMT 2026-08-13: se crea IGUAL aunque `nuevos` esté vacío (todas las
+    # filas del archivo ya cargadas). Una sesión sin extracto NO es basura:
+    # `estado_sesion` tiene una rama entera para ella y es la única forma
+    # que tiene el operador de arrancar a conciliar el backlog de pendientes
+    # cuando el banco todavía no publicó movimientos nuevos. Lo que estaba
+    # roto era la PANTALLA (le faltaba una clave al dict), no esta sesión.
     payload = json.dumps([_mov_to_dict(m) for m in nuevos])
     row = db.execute_returning(
         """
@@ -1050,11 +1047,18 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
         # (~1000+ filas) — mostraba demasiados. TMT 2026-05-29 segunda
         # iteración: 'aca hay demasiados movimientos para conciliar'.
         manual_programa = _cargar_programa_pendiente(no_banco)
+        # TMT 2026-08-13 (500 c1379abc): esta rama devolvía UNA CLAVE MENOS
+        # que la de abajo — faltaba `n_historicos_pendientes`, que el tab
+        # Manual usa para el pill "N pendientes". En Jinja una clave que no
+        # está no da None: da Undefined, y la resta de la línea siguiente
+        # reventaba la pantalla ENTERA. Las dos ramas devuelven la MISMA
+        # forma; lo cuida test_estado_sesion_mismas_claves_con_y_sin_extracto.
         ret = {
             "manual_banco": manual_banco_hist,
             "manual_programa": manual_programa,
             "impuestos": impuestos_hist, "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
+            "n_historicos_pendientes": len(historicos),
         }
         _cruzar_historicos_por_doc(ret)  # TMT 2026-06-23: doc-match del backlog histórico
         _reordenar_por_match_monto(ret)

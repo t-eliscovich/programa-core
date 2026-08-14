@@ -262,16 +262,18 @@ def test_crear_sesion_dedupe_por_firma_completa(monkeypatch):
     assert n_skipped == 1  # A1 se omitió por firma
 
 
-def test_crear_sesion_no_crea_sesion_si_todo_se_dedupea(monkeypatch):
-    """TMT 2026-08-13 — bug reportado por Alex vía Instagram (13/08/2026,
-    error id c1379abc). Al re-subir un extracto cuyas 28 filas ya estaban
-    todas cargadas (dedupeadas contra históricos/matches) Y sin sesión
-    abierta, crear_sesion insertaba una sesión NUEVA con extracto_payload
-    vacío. Después /conciliacion/banco-v2 la levantaba y reventaba 500.
+def test_crear_sesion_abre_igual_aunque_todo_se_dedupee(monkeypatch):
+    """TMT 2026-08-13 — el 500 de Alex (error id c1379abc) NO era esta sesión.
 
-    Regla nueva: sin sesión abierta + nuevos == [] → devolver sid=0 sin
-    INSERT. La caller (view) traduce sid=0 en un flash amigable + redirect
-    al hub.
+    Al re-subir un extracto cuyas 28 filas ya estaban todas cargadas y sin
+    sesión abierta, `crear_sesion` inserta una sesión con extracto_payload
+    vacío. Eso está BIEN y es la única puerta que tiene el operador para
+    arrancar a conciliar el backlog de pendientes cuando el banco todavía no
+    publicó movimientos nuevos: `estado_sesion` tiene una rama entera para
+    la sesión sin extracto.
+
+    Lo que reventaba era la PANTALLA (le faltaba `n_historicos_pendientes`
+    al dict de esa rama). Ver test_estado_sesion_mismas_claves_con_y_sin_extracto.
     """
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
     # TODAS las firmas del upload ya son conocidas → nuevos == [].
@@ -280,11 +282,9 @@ def test_crear_sesion_no_crea_sesion_si_todo_se_dedupea(monkeypatch):
     monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
                         lambda no_banco: {sig_a1, sig_a2})
 
-    # Guardia: si el fix falla, execute_returning se llamaría con INSERT y
-    # dejaría rastro visible.
-    called = {"n": 0}
+    insertados = []
     def fake_execute_returning(sql, params=None, conn=None):
-        called["n"] += 1
+        insertados.append((sql, params))
         return {"id": 999}
     monkeypatch.setattr(_sesion.db, "execute_returning", fake_execute_returning)
 
@@ -293,10 +293,11 @@ def test_crear_sesion_no_crea_sesion_si_todo_se_dedupea(monkeypatch):
         movs=[_mov(documento="A1"), _mov(documento="A2")],
         extracto_nombre="mov-12-08-202634XXXX6004.xlsx",
     )
-    assert sid == 0, "no debe crear sesión huérfana con payload vacío"
+    assert sid == 999, "la sesión se abre igual: es la puerta al backlog"
     assert n_added == 0
     assert n_skipped == 2
-    assert called["n"] == 0, "no se debe insertar la sesión"
+    assert len(insertados) == 1
+    assert "[]" in (insertados[0][1] or ())[4], "payload vacío, sin filas nuevas"
 
 
 def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
