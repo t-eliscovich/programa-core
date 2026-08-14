@@ -6,7 +6,7 @@ from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
-from parsers import parse_date, parse_int, parse_monto
+from parsers import monto_rango, parse_date, parse_int, parse_monto
 
 from . import queries
 
@@ -737,7 +737,14 @@ def movimientos(no_banco):
     cliente_filtro = (request.args.get("cliente") or "").strip()
     doc_num_filtro = (request.args.get("doc_num") or "").strip()
     monto_raw = (request.args.get("monto") or "").strip()
-    monto_filtro = parse_monto(monto_raw) if monto_raw else None
+    # TMT 2026-08-14 (dueña): *"que monto se busque igual que en cheques, no
+    # el exacto"*. Entero → el dólar entero (500 → 500,00-500,99); con
+    # centavos → exacto. Y como acá el importe es SIGNADO: sin signo trae los
+    # dos lados, con "-" adelante SÓLO las salidas.
+    _rango = monto_rango(monto_raw)
+    monto_min = float(_rango[0]) if _rango else None
+    monto_max = float(_rango[1]) if _rango else None
+    monto_neg = bool(_rango[2]) if _rango else False
     # TMT 2026-08-07 (dueña, sobre los links del historial): *"si al clickear
     # hay que buscar la fila a ojo, el link no está terminado"*. El Historial
     # tiene ~1.862 movimientos que apuntan a transacciones_bancarias y hasta
@@ -773,7 +780,9 @@ def movimientos(no_banco):
             desde,
             hasta,
             cliente=cliente_filtro or None,
-            monto=float(monto_filtro) if monto_filtro is not None else None,
+            monto_min=monto_min,
+            monto_max=monto_max,
+            monto_negativo=monto_neg,
             doc_num=doc_num_filtro or None,
             id_transaccion=id_tx,
         )
@@ -956,9 +965,17 @@ def movimientos(no_banco):
             if hasta:
                 where_filt.append("t.fecha <= %(hasta)s::date")
                 params["hasta"] = hasta
-            if monto_filtro is not None:
-                where_filt.append("t.importe = %(monto)s::numeric")
-                params["monto"] = float(monto_filtro)
+            if monto_min is not None:
+                # El MISMO rango que la lista — si no, el encabezado
+                # ("Mostrando N de M", "Total filtrado") contaba otra cosa.
+                where_filt.append(
+                    "(CASE WHEN %(monto_neg)s::boolean THEN -t.importe "
+                    "ELSE ABS(t.importe) END) "
+                    "BETWEEN %(monto_min)s::numeric AND %(monto_max)s::numeric"
+                )
+                params["monto_min"] = monto_min
+                params["monto_max"] = monto_max
+                params["monto_neg"] = monto_neg
             if doc_num_filtro:
                 where_filt.append(
                     "UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s"
@@ -1057,7 +1074,7 @@ def movimientos(no_banco):
 
     hay_filtro = bool(
         desde or hasta or conciliado_filtro
-        or cliente_filtro or doc_num_filtro or monto_filtro is not None
+        or cliente_filtro or doc_num_filtro or monto_min is not None
         # El ?id= también es un filtro: prende el "Total filtrado" (que ahora
         # es el importe de ESE movimiento) y el link "Limpiar", que es la
         # forma de volver al libro completo. Nada de carteles nuevos —

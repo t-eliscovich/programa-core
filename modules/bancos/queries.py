@@ -414,7 +414,9 @@ def movimientos(
     hasta: str | None = None,
     limite: int = 500,
     cliente: str | None = None,
-    monto: float | None = None,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
+    monto_negativo: bool = False,
     doc_num: str | None = None,
     id_transaccion: int | None = None,
 ) -> list[dict]:
@@ -430,7 +432,13 @@ def movimientos(
       - cliente: busca substring en el cliente emisor del cheque
         (vía chequextransaccion → cheque.codigo_cli → cliente.nombre).
         Naturalmente acota a filas DE (depósitos de cheques de cliente).
-      - monto: importe exacto (match contra t.importe).
+      - monto_min/monto_max: RANGO de importe (ver parsers.monto_rango).
+        TMT 2026-08-14 (dueña): antes era match EXACTO y tipear "500" no
+        encontraba el movimiento de 500,32. Ahora un entero trae el dólar
+        entero y con centavos sigue siendo exacto — igual que en cheques.
+        El importe del banco es SIGNADO: sin signo se compara contra el
+        ABSOLUTO (trae lo que entró y lo que salió); con "-" adelante
+        (monto_negativo) trae SÓLO las salidas.
       - doc_num: substring en t.numreferencia (número del cheque emitido
         o del documento que el banco asignó).
 
@@ -500,7 +508,10 @@ def movimientos(
           AND (%(id_transaccion)s::int IS NOT NULL
                OR %(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
           AND (%(id_transaccion)s::int IS NOT NULL
-               OR %(monto)s::numeric IS NULL OR t.importe = %(monto)s::numeric)
+               OR %(monto_min)s::numeric IS NULL
+               OR (CASE WHEN %(monto_neg)s::boolean THEN -t.importe
+                        ELSE ABS(t.importe) END)
+                  BETWEEN %(monto_min)s::numeric AND %(monto_max)s::numeric)
           AND (%(id_transaccion)s::int IS NOT NULL
                OR %(doc_like)s IS NULL OR
                UPPER(COALESCE(NULLIF(TRIM(t.numreferencia_manual),''), t.numreferencia::text, '')) LIKE %(doc_like)s)
@@ -527,7 +538,9 @@ def movimientos(
             "desde": desde or None,
             "hasta": hasta or None,
             "limite": limite,
-            "monto": monto,
+            "monto_min": monto_min,
+            "monto_max": monto_max,
+            "monto_neg": bool(monto_negativo),
             "doc_like": doc_like,
             "cliente_like": cliente_like,
             "id_transaccion": id_tx,

@@ -67,6 +67,46 @@ def parse_monto(s) -> Decimal | None:
         return None
 
 
+def monto_rango(s) -> tuple[Decimal, Decimal, bool] | None:
+    """Convierte un monto TIPEADO en el RANGO que hay que buscar.
+
+    Semántica única de la casa (dueña 2026-07-12 sobre facturas y cheques;
+    extendida a los movimientos de banco el 2026-08-14 — *"que monto se
+    busque igual que en cheques, no el exacto"*):
+
+      · entero    "500"    → el DÓLAR ENTERO: 500,00 … 500,99.
+      · centavos  "500,51" → exacto (banda de ±medio centavo, para no pelear
+        con el redondeo del numeric).
+
+    El tercer elemento dice si el usuario tipeó un MENOS adelante. Donde el
+    importe es SIGNADO (transacciones_bancarias: los débitos van en negativo)
+    eso decide el lado: sin signo trae los dos (entró o salió), con "-" trae
+    SÓLO las salidas. Decisión de la dueña 2026-08-14.
+
+    Devuelve None si el texto no es un monto.
+    """
+    if s is None:
+        return None
+    crudo = str(s).strip()
+    if crudo == "":
+        return None
+    val = parse_monto(crudo)
+    if val is None:
+        return None
+    negativo = crudo.startswith("-")
+    val = abs(val)
+    # ¿Escribió centavos? Hay un separador decimal con al menos un dígito
+    # detrás. Ojo: parse_monto trata "1.000" como 1,0 (punto = decimal
+    # cuando viene solo), y acá pasa lo mismo — es la MISMA regla que ya
+    # corre en cheques y facturas, no una nueva.
+    dec_pos = max(crudo.rfind(","), crudo.rfind("."))
+    tiene_centavos = dec_pos > -1 and crudo[dec_pos + 1:dec_pos + 2].isdigit()
+    if tiene_centavos:
+        return (val - Decimal("0.005"), val + Decimal("0.005"), negativo)
+    base = Decimal(int(val))
+    return (base, base + Decimal("0.999999"), negativo)
+
+
 def parse_int(s) -> int | None:
     if s is None:
         return None

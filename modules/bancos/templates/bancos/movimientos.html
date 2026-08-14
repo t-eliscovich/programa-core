@@ -78,7 +78,7 @@
       </select>
     </div>
     {# TMT 2026-05-28 dueña: filtros para encontrar cheques de cliente
-       específicos por nombre/código, monto exacto, o número de doc. #}
+       específicos por nombre/código, monto, o número de doc. #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cliente (cheque)</label>
       <input type="text" name="cliente" value="{{ cliente_filtro or '' }}"
@@ -87,8 +87,12 @@
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Monto</label>
+      {# TMT 2026-08-14 (dueña): mismo campo que en cheques — entero = el dólar
+         entero, con centavos = exacto. Y como acá el importe es signado: sin
+         signo trae los dos lados, con "-" adelante sólo las salidas. #}
       <input type="text" name="monto" inputmode="decimal" value="{{ monto_filtro_raw or '' }}"
-             placeholder="exacto"
+             placeholder="500 ó 500,51"
+             title="Entero = el dólar entero (500 → 500,00-500,99). Con centavos = exacto (500,51). Sin signo trae entradas y salidas; con - adelante, sólo salidas."
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm w-28 text-right tabular-nums">
     </div>
     <div>

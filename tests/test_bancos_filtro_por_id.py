@@ -102,13 +102,13 @@ def test_pedir_por_id_apaga_los_filtros_que_esconderian_la_fila(cap):
     formulario cargado de la búsqueda anterior. Un movimiento de mayo con el
     rango puesto en agosto no puede desaparecer."""
     bq.movimientos(NO_BANCO, desde="2026-08-01", hasta="2026-08-07",
-                   monto=1.0, doc_num="777", cliente="MSS",
-                   id_transaccion=ID_TX)
+                   monto_min=1.0, monto_max=1.999999, doc_num="777",
+                   cliente="MSS", id_transaccion=ID_TX)
     sql, _ = cap.principal()
     for apagado in (
         "%(id_transaccion)s::int IS NOT NULL OR %(desde)s::date IS NULL",
         "%(id_transaccion)s::int IS NOT NULL OR %(hasta)s::date IS NULL",
-        "%(id_transaccion)s::int IS NOT NULL OR %(monto)s::numeric IS NULL",
+        "%(id_transaccion)s::int IS NOT NULL OR %(monto_min)s::numeric IS NULL",
         "%(id_transaccion)s::int IS NOT NULL OR %(doc_like)s IS NULL",
         "%(id_transaccion)s::int IS NOT NULL OR %(cliente_like)s IS NULL",
     ):
