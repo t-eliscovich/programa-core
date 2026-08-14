@@ -1,4 +1,10 @@
--- 0064_histos_codigo.sql
+-- 0190_histos_codigo.sql
+-- ⚠ RENUMERADA el 2026-08-13. Nació como `0064_histos_codigo` y NUNCA CORRIÓ:
+-- producción ya tenía el número 0064 tomado por
+-- `0064_reset_importes_yy_snapshot_original`. Sin esta columna, "Restaurar
+-- borradas" de la papelera insertaba `codigo` en una tabla que no lo tiene y
+-- fallaba. El contenido es el original, sin tocar.
+
 -- Agregar columna `codigo` a banco_historicos_pendientes — TMT 2026-06-02.
 --
 -- Dueña: 'y codigo importa tambien'. El codigo del extracto Pichincha

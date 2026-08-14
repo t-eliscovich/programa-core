@@ -114,6 +114,39 @@ def applied_set() -> set[str]:
     return {r["version"] for r in rows}
 
 
+def applied_names() -> dict[str, str]:
+    """version → nombre registrado. Para cazar números pisados."""
+    rows = db.fetch_all(
+        "SELECT version, nombre FROM seguridad.migraciones_aplicadas")
+    return {r["version"]: (r["nombre"] or "") for r in rows}
+
+
+def colisiones_de_numero(aplicadas: dict[str, str], archivos) -> list[tuple]:
+    """Archivos cuyo NÚMERO ya está aplicado, pero con OTRO nombre.
+
+    TMT 2026-08-13. El migrador lleva la cuenta por número. Si dos ramas
+    eligen el mismo, la segunda queda dada por aplicada sin haber corrido
+    nunca — y no se entera nadie. Pasó dos veces y las dos tardaron meses en
+    aparecer:
+
+      · `0062_conciliacion_no_cierre` (el número lo tenía
+        `0062_fix_yy_baseline_zona_ec`): el índice único de sesiones de
+        conciliación quedó en `(no_banco, usuario)` en vez de `(no_banco)`,
+        así que dos usuarios podían abrir cada uno su conciliación del mismo
+        banco.
+      · `0064_histos_codigo` (lo tenía `0064_reset_importes_yy_snapshot_original`):
+        sin la columna `codigo`, "Restaurar borradas" de la papelera fallaba.
+
+    Devuelve [(version, nombre_del_archivo, nombre_registrado), ...].
+    """
+    out = []
+    for version, name, _path in archivos:
+        registrado = aplicadas.get(version)
+        if registrado is not None and registrado != name:
+            out.append((version, name, registrado))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Runners — one per migration type
 # ---------------------------------------------------------------------------
@@ -340,8 +373,25 @@ def _apply_one(version: str, name: str, path: Path, *, dry: bool) -> None:
 # ---------------------------------------------------------------------------
 def cmd_apply(dry: bool) -> int:
     _ensure_tracker()
+    archivos = discover()
+
+    # TMT 2026-08-13: cortar ANTES de aplicar nada si algún archivo tiene un
+    # número que ya se usó para otra migración. Sin esto el migrador la saltea
+    # en silencio y el bug aparece meses después. Se arregla renumerando el
+    # archivo al final de la fila.
+    choques = colisiones_de_numero(applied_names(), archivos)
+    if choques:
+        print("\n[X] NUMEROS DE MIGRACION PISADOS — no aplico nada:")
+        for version, archivo, registrado in choques:
+            print(f"    {version}: el repo trae '{archivo}' pero en esta base "
+                  f"ese numero ya lo uso '{registrado}'.")
+        print("    Renumera el archivo del repo al final de la fila y volve a "
+              "correr. (Si el numero es el mismo migracion con otro nombre, "
+              "renombrala igual: la cuenta va por numero.)")
+        return 1
+
     already = applied_set()
-    todo = [t for t in discover() if t[0] not in already]
+    todo = [t for t in archivos if t[0] not in already]
     if not todo:
         print("Todas las migraciones están aplicadas. Nada que hacer.")
         return 0

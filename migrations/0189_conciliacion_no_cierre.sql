@@ -1,4 +1,14 @@
--- 0062_conciliacion_no_cierre.sql
+-- 0189_conciliacion_no_cierre.sql
+-- ⚠ RENUMERADA el 2026-08-13. Nació como `0062_conciliacion_no_cierre` y
+-- NUNCA CORRIÓ: producción ya tenía el número 0062 tomado por
+-- `0062_fix_yy_baseline_zona_ec`, y el migrador lleva la cuenta por NÚMERO,
+-- así que la dio por aplicada y la salteó en silencio durante ~2 meses.
+-- Verificado el 13/08 contra la base: el índice único seguía siendo el viejo
+-- `(no_banco, usuario)`, o sea que dos usuarios podían tener cada uno su
+-- conciliación abierta del mismo banco al mismo tiempo. El contenido es el
+-- original, sin tocar. Ver `scripts/migrate.py`, que desde hoy corta el deploy
+-- si vuelve a pasar.
+
 -- Eliminar el concepto de "cerrar sesión" de conciliación bancaria — 2026-06-02.
 --
 -- TMT 2026-06-02 dueña: 'no quiero cerrar la sesion, quiero dejar seguir

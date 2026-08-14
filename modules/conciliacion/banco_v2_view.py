@@ -841,6 +841,14 @@ def banco_crear_sesion():
                 )
     except Exception as e:
         _LOG.warning("no pude detectar saldo del extracto: %s", e)
+    # TMT 2026-08-13 (dueña: "necesito que me pongas oficina"): el extracto
+    # recién subido ya quedó guardado en la sesión, así que este barrido le
+    # completa la oficina a los pendientes viejos que ese archivo alcance.
+    try:
+        _sesion.completar_oficinas_pendientes(no_banco)
+    except Exception as e:
+        _LOG.warning("completar oficinas tras subir extracto: %s", e)
+
     if n_added and n_skipped:
         msg = f"Sesión #{sesion_id}: agregadas {n_added} filas nuevas, omitidas {n_skipped} duplicadas."
         cat = "ok"

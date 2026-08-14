@@ -959,6 +959,65 @@ def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
     return out
 
 
+def completar_oficinas_pendientes(no_banco: int) -> int:
+    """Le pone la OFICINA a los pendientes que no la tienen, sacándola de los
+    extractos del banco que ya están guardados.
+
+    TMT 2026-08-13 (dueña: *"necesito que me pongas oficina, no lo veo en la
+    conciliación actual"*). Los pendientes que vienen de la hoja FEB2023 no
+    traen oficina — esa hoja nunca tuvo la columna. Pero el MISMO movimiento
+    sí aparece con su oficina en los extractos del Pichincha que se subieron
+    en sesiones anteriores, guardados en `extracto_payload`.
+
+    Se cruza por fecha + documento + monto + tipo, que es la misma firma con
+    la que `estado_sesion` ya decide que un renglón del extracto y un
+    pendiente son el MISMO movimiento — así que no inventa nada nuevo.
+
+    Sólo completa las vacías (nunca pisa una oficina cargada) y sólo cuando
+    el cruce es inequívoco: si dos filas del extracto comparten la firma pero
+    dicen oficinas distintas, esa se saltea en vez de elegir cualquiera.
+
+    Returns: cuántos pendientes quedaron completados.
+    """
+    no_banco = int(no_banco)
+    try:
+        n = db.execute(
+            """
+            WITH ex AS (
+                SELECT (m->>'fecha')::date                       AS fecha,
+                       TRIM(m->>'documento')                     AS documento,
+                       ROUND((m->>'monto')::numeric, 2)          AS monto,
+                       UPPER(LEFT(COALESCE(m->>'tipo', 'C'), 1)) AS tipo,
+                       MIN(TRIM(m->>'oficina'))                  AS oficina
+                  FROM scintela.banco_conciliacion_sesion s,
+                       jsonb_array_elements(s.extracto_payload) AS m
+                 WHERE s.no_banco = %s
+                   AND jsonb_typeof(s.extracto_payload) = 'array'
+                   AND NULLIF(TRIM(COALESCE(m->>'oficina', '')), '') IS NOT NULL
+                   AND NULLIF(TRIM(COALESCE(m->>'documento', '')), '') IS NOT NULL
+                 GROUP BY 1, 2, 3, 4
+                HAVING COUNT(DISTINCT TRIM(m->>'oficina')) = 1
+            )
+            UPDATE scintela.banco_historicos_pendientes h
+               SET oficina = ex.oficina
+              FROM ex
+             WHERE h.no_banco = %s
+               AND NULLIF(TRIM(COALESCE(h.oficina, '')), '') IS NULL
+               AND h.fecha = ex.fecha
+               AND TRIM(h.documento) = ex.documento
+               AND ROUND(h.monto, 2) = ex.monto
+               AND UPPER(LEFT(COALESCE(h.tipo, 'C'), 1)) = ex.tipo
+            """,
+            (no_banco, no_banco),
+        ) or 0
+    except Exception as e:
+        _LOG.warning("completar_oficinas_pendientes falló: %s", e)
+        return 0
+    if n:
+        _LOG.info("oficinas completadas en pendientes banco %s: %s", no_banco, n)
+    return int(n)
+
+
 def eliminar_mov_extracto(sesion_id: int, firma: str) -> dict | None:
     """Saca UNA fila del extracto cargado en la sesión (la primera que matchea).
 
