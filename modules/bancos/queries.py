@@ -8,6 +8,7 @@ el saldo derivado (suma corrida). Durante la migración sirve como sanity check.
 import re
 
 import db
+from bank_helpers import DOCS_ENTRADA
 from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
@@ -408,6 +409,19 @@ def bancos_operativos() -> list[dict]:
     ) or []
 
 
+# TMT 2026-08-14 — El signo de un movimiento NO está en la columna. `importe`
+# viene POSITIVO por convención (y a veces negativo en las filas legacy del
+# dBase, donde un "ND −44.091" es un reverso que SUBE el saldo); el que decide
+# si suma o resta es el DOCUMENTO. La definición canónica —la que mueve el
+# saldo de verdad— es `bank_helpers.DOCS_ENTRADA`, así que el SQL se arma DESDE
+# esa tupla en vez de repetir la lista a mano (ya hay tres copias distintas
+# dando vueltas en este módulo y en views.py).
+SIGNED_IMPORTE_SQL = (
+    "(CASE WHEN UPPER(TRIM(COALESCE(t.documento,''))) IN ({})"
+    " THEN t.importe ELSE -t.importe END)"
+).format(", ".join(f"'{d}'" for d in DOCS_ENTRADA))
+
+
 def movimientos(
     no_banco: int,
     desde: str | None = None,
@@ -509,9 +523,14 @@ def movimientos(
                OR %(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
           AND (%(id_transaccion)s::int IS NOT NULL
                OR %(monto_min)s::numeric IS NULL
-               OR (CASE WHEN %(monto_neg)s::boolean THEN -t.importe
-                        ELSE ABS(t.importe) END)
+               OR ABS(t.importe)
                   BETWEEN %(monto_min)s::numeric AND %(monto_max)s::numeric)
+          -- El "-" adelante pide SÓLO las salidas. No se mira el signo de la
+          -- columna (siempre viene positiva): se mira si el movimiento BAJA
+          -- el saldo, que es lo que la dueña ve en rojo en la pantalla.
+          AND (%(id_transaccion)s::int IS NOT NULL
+               OR %(monto_neg)s::boolean IS NOT TRUE
+               OR """ + SIGNED_IMPORTE_SQL + """ < 0)
           AND (%(id_transaccion)s::int IS NOT NULL
                OR %(doc_like)s IS NULL OR
                UPPER(COALESCE(NULLIF(TRIM(t.numreferencia_manual),''), t.numreferencia::text, '')) LIKE %(doc_like)s)

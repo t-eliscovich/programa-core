@@ -12,11 +12,14 @@ lo volvían inútil:
    cheques: entero = el DÓLAR ENTERO, con centavos = exacto. Acá se reusa esa
    misma regla, ahora en `parsers.monto_rango`, para que las tres pantallas no
    puedan volver a divergir.
-2. **El signo.** En `transacciones_bancarias` el importe es SIGNADO: los
-   débitos van en negativo. Con match exacto, buscar el cheque de 500 que
-   SALIÓ exigía tipear `-500` — y nadie lo hace. Ahora sin signo se compara
-   contra el ABSOLUTO (entró o salió, da igual) y el menos adelante queda como
-   el filtro explícito de salidas.
+2. **El signo.** ⚠ OJO, esto se modeló MAL la primera vez y lo desmintió la
+   pantalla en vivo: `t.importe` **NO trae el signo**, se guarda positivo. El
+   que decide si el movimiento suma o resta es el **DOCUMENTO**
+   (`bank_helpers.DOCS_ENTRADA`: DE/TR/XX/NC/IN suman, el resto resta) — por
+   eso un `?monto=-1000` comparando `-t.importe` daba CERO filas aunque la
+   pantalla mostrara seis `-1.000,00` en rojo. Ahora el rango se compara
+   siempre contra `ABS(importe)` y el menos adelante filtra por lo que la
+   dueña ve: los movimientos que BAJAN el saldo.
 
 Lo que NO cambia: el saldo del banco (plata real, no depende del filtro) y el
 resto de los filtros.
@@ -75,7 +78,8 @@ def test_los_miles_estilo_ecuador_no_se_rompen():
 def test_el_menos_adelante_pide_SOLO_SALIDAS():
     lo, hi, negativo = monto_rango("-500")
     assert negativo is True
-    # el rango se sigue expresando en positivo: el SQL lo da vuelta
+    # el rango se sigue expresando en POSITIVO: el signo no es del número,
+    # es una pregunta aparte que el SQL le hace al documento.
     assert (lo, hi) == (Decimal("500"), Decimal("500.999999"))
 
 
@@ -135,25 +139,41 @@ def cap(monkeypatch):
 def test_el_where_compara_por_RANGO_y_no_por_igual(cap):
     bq.movimientos(NO_BANCO, monto_min=500.0, monto_max=500.999999)
     sql, params = cap.principal()
-    assert "BETWEEN %(monto_min)s::numeric AND %(monto_max)s::numeric" in sql
+    assert ("ABS(t.importe) BETWEEN %(monto_min)s::numeric "
+            "AND %(monto_max)s::numeric") in sql
     assert "t.importe = %(monto)s::numeric" not in sql   # el viejo, muerto
     assert params["monto_min"] == 500.0
 
 
-def test_sin_signo_el_where_usa_el_ABSOLUTO(cap):
-    """El débito de −500 tiene que aparecer buscando 500."""
+def test_el_rango_se_mide_SIEMPRE_sobre_el_absoluto(cap):
+    """El cheque de 500 que SALIÓ tiene el mismo `importe` 500 que el
+    depósito: buscar 500 los trae a los dos, sin pedirle el signo a nadie."""
     bq.movimientos(NO_BANCO, monto_min=500.0, monto_max=500.999999)
     sql, params = cap.principal()
     assert "ABS(t.importe)" in sql
     assert params["monto_neg"] is False
 
 
-def test_con_menos_el_where_da_vuelta_el_importe(cap):
+def test_el_menos_filtra_por_DOCUMENTO_no_por_el_signo_de_la_columna(cap):
+    """EL BUG QUE ESTE TEST CUIDA (visto en vivo el 2026-08-14): comparar
+    `-t.importe` devolvía CERO filas con `?monto=-1000` aunque la pantalla
+    mostrara seis `-1.000,00`, porque el importe se guarda POSITIVO. Lo que
+    hace bajar el saldo es el documento."""
     bq.movimientos(NO_BANCO, monto_min=500.0, monto_max=500.999999,
                    monto_negativo=True)
     sql, params = cap.principal()
-    assert "THEN -t.importe" in sql
+    assert f"{bq.SIGNED_IMPORTE_SQL} < 0" in sql
     assert params["monto_neg"] is True
+
+
+def test_la_lista_de_documentos_que_SUMAN_no_se_escribe_a_mano(cap):
+    """Sale de `bank_helpers.DOCS_ENTRADA`, que es la que mueve el saldo de
+    verdad (`_signed_delta`). Ya hay tres copias distintas de esta lista en el
+    repo; que no nazca una cuarta."""
+    from bank_helpers import DOCS_ENTRADA
+    for doc in DOCS_ENTRADA:
+        assert f"'{doc}'" in bq.SIGNED_IMPORTE_SQL
+    assert "'CH'" not in bq.SIGNED_IMPORTE_SQL   # es whitelist, no blacklist
 
 
 def test_sin_monto_no_hay_filtro(cap):
@@ -245,9 +265,19 @@ def test_el_encabezado_cuenta_CON_EL_MISMO_rango(pantalla):
     client, _, fake = pantalla
     client.get(f"/bancos/{NO_BANCO}?monto=500")
     sql_agg, params_agg = fake.agg
-    assert "BETWEEN %(monto_min)s::numeric AND %(monto_max)s::numeric" in sql_agg
+    assert ("ABS(t.importe) BETWEEN %(monto_min)s::numeric "
+            "AND %(monto_max)s::numeric") in sql_agg
     assert params_agg["monto_min"] == 500.0
-    assert params_agg["monto_neg"] is False
+    assert "< 0" not in sql_agg          # sin menos, no se filtra por lado
+
+
+def test_el_encabezado_tambien_respeta_el_menos(pantalla):
+    """Si el agregado se olvidara del signo, la pantalla decía "3 de 3" arriba
+    de una sola fila."""
+    client, _, fake = pantalla
+    client.get(f"/bancos/{NO_BANCO}?monto=-500")
+    sql_agg, _ = fake.agg
+    assert f"{bq.SIGNED_IMPORTE_SQL} < 0" in sql_agg
 
 
 def test_un_monto_ilegible_no_rompe_la_pantalla(pantalla):

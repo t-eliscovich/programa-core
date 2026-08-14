@@ -966,16 +966,17 @@ def movimientos(no_banco):
                 where_filt.append("t.fecha <= %(hasta)s::date")
                 params["hasta"] = hasta
             if monto_min is not None:
-                # El MISMO rango que la lista — si no, el encabezado
-                # ("Mostrando N de M", "Total filtrado") contaba otra cosa.
+                # El MISMO rango (y la MISMA definición de "salida") que la
+                # lista — si no, el encabezado ("Mostrando N de M", "Total
+                # filtrado") contaba otra cosa que las filas de abajo.
                 where_filt.append(
-                    "(CASE WHEN %(monto_neg)s::boolean THEN -t.importe "
-                    "ELSE ABS(t.importe) END) "
+                    "ABS(t.importe) "
                     "BETWEEN %(monto_min)s::numeric AND %(monto_max)s::numeric"
                 )
                 params["monto_min"] = monto_min
                 params["monto_max"] = monto_max
-                params["monto_neg"] = monto_neg
+                if monto_neg:
+                    where_filt.append(f"{queries.SIGNED_IMPORTE_SQL} < 0")
             if doc_num_filtro:
                 where_filt.append(
                     "UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s"
