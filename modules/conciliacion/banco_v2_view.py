@@ -500,8 +500,10 @@ def _enriquecer_clientes_depositos(items: list[dict]) -> None:
             nom = (r0.get("nombre") or "").strip()
             # TMT 2026-08-13 (dueña: "acá falta que diga 25 cheques"). El
             # cliente ya se ve en el chip de al lado; el texto se queda con
-            # lo que el chip NO dice. Así el dato entra en la celda.
-            it["dep_display"] = f"ch. {no_ch}" if no_ch else (cli or "")
+            # lo que el chip NO dice. Si no hay número de cheque no queda
+            # nada para decir: el chip solo alcanza (si acá repitiéramos el
+            # código se leería "VCL VCL").
+            it["dep_display"] = f"ch. {no_ch}" if no_ch else ""
             partes = [x for x in (f"ch. {no_ch}" if no_ch else "", cli, nom) if x]
             it["dep_titulo"] = " · ".join(partes) or None
         else:

@@ -125,10 +125,22 @@ jobs:
           (New-Object System.Net.WebClient).DownloadFile(\$url, 'C:\tmp\deploy.tar.gz')
           Write-Output "Downloaded \$((Get-Item C:\tmp\deploy.tar.gz).Length) bytes"
 
-          # 3. Extraer en sitio. tar -xzf overwrites pero no borra archivos sueltos —
-          #    pero como excluímos .git/.env/etc del tarball, lo importante (.env)
-          #    no se pisa.
+          # 3. Extraer en sitio. tar -xzf overwrites pero NO BORRA archivos que
+          #    ya no están en el repo — y eso nos mordió el 2026-08-13: al
+          #    renumerar dos migraciones, las viejas quedaron en el server al
+          #    lado de las nuevas, y el candado de números pisados frenó el
+          #    deploy. Había además TRES fantasmas de renumeraciones anteriores
+          #    (0094, 0120, 0185) que nadie había visto nunca.
+          #
+          #    `migrations/` es 100% del repo (no se genera nada ahí adentro),
+          #    así que se borra entera antes de extraer y queda igual al repo.
+          #    El resto del árbol se sigue pisando encima a propósito: ahí sí
+          #    viven archivos del server (.env, .deps_hash, data/).
           if (-not (Test-Path C:\programa-core)) { New-Item -ItemType Directory -Path C:\programa-core | Out-Null }
+          if (Test-Path C:\programa-core\migrations) {
+              Remove-Item -Recurse -Force C:\programa-core\migrations
+              Write-Output "migrations/ borrada antes de extraer (queda igual al repo)"
+          }
           tar -xzf C:\tmp\deploy.tar.gz -C C:\programa-core
           if (\$LASTEXITCODE -ne 0) { Write-Output "ERROR: tar exit \$LASTEXITCODE"; exit 1 }
 
