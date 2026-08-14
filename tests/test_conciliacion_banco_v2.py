@@ -262,6 +262,43 @@ def test_crear_sesion_dedupe_por_firma_completa(monkeypatch):
     assert n_skipped == 1  # A1 se omitió por firma
 
 
+def test_crear_sesion_no_crea_sesion_si_todo_se_dedupea(monkeypatch):
+    """TMT 2026-08-13 — bug reportado por Alex vía Instagram (13/08/2026,
+    error id c1379abc). Al re-subir un extracto cuyas 28 filas ya estaban
+    todas cargadas (dedupeadas contra históricos/matches) Y sin sesión
+    abierta, crear_sesion insertaba una sesión NUEVA con extracto_payload
+    vacío. Después /conciliacion/banco-v2 la levantaba y reventaba 500.
+
+    Regla nueva: sin sesión abierta + nuevos == [] → devolver sid=0 sin
+    INSERT. La caller (view) traduce sid=0 en un flash amigable + redirect
+    al hub.
+    """
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    # TODAS las firmas del upload ya son conocidas → nuevos == [].
+    sig_a1 = _sesion._firma_mov("A1", "", "C", "500", date(2026, 5, 28))
+    sig_a2 = _sesion._firma_mov("A2", "", "C", "500", date(2026, 5, 28))
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
+                        lambda no_banco: {sig_a1, sig_a2})
+
+    # Guardia: si el fix falla, execute_returning se llamaría con INSERT y
+    # dejaría rastro visible.
+    called = {"n": 0}
+    def fake_execute_returning(sql, params=None, conn=None):
+        called["n"] += 1
+        return {"id": 999}
+    monkeypatch.setattr(_sesion.db, "execute_returning", fake_execute_returning)
+
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="alex",
+        movs=[_mov(documento="A1"), _mov(documento="A2")],
+        extracto_nombre="mov-12-08-202634XXXX6004.xlsx",
+    )
+    assert sid == 0, "no debe crear sesión huérfana con payload vacío"
+    assert n_added == 0
+    assert n_skipped == 2
+    assert called["n"] == 0, "no se debe insertar la sesión"
+
+
 def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
     """Si ya hay sesión abierta, mergea en su payload (UPDATE, no INSERT)."""
     sesion_existente = {

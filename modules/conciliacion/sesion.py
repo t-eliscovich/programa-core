@@ -547,6 +547,15 @@ def crear_sesion(
         )
         return (int(abierta["id"]), len(nuevos), skipped)
 
+    # TMT 2026-08-13 (Alex reportó 500 al re-subir un extracto ya cargado):
+    # si no hay sesión abierta Y todas las filas del archivo se dedupearon
+    # contra históricos/matches (nuevos == []), NO crear una sesión nueva
+    # con payload=[] — esa sesión queda huérfana y hace explotar
+    # `banco_post_procesar` al levantarla. Retornamos (0, 0, skipped) y el
+    # view muestra un flash amigable + redirect al hub.
+    if not nuevos:
+        return (0, 0, skipped)
+
     # No hay sesión abierta → crear una.
     payload = json.dumps([_mov_to_dict(m) for m in nuevos])
     row = db.execute_returning(
