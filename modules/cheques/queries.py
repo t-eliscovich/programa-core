@@ -1154,14 +1154,31 @@ def transicionar_stat(
             # del matcher de conciliación bancaria. Se lee del cheque row
             # (la dueña lo carga al ingresar el cheque o al depositar).
             num_ref = (ch.get("doc_banco") or "").strip() or str(id_cheque)
+            # TMT 2026-08-14 (dueña, cheque 102251 de BED por −1.000): un
+            # cheque de importe NEGATIVO —el espejo de una devolución o de un
+            # saldo a favor— no se puede depositar. Depositar SUMA, y esto
+            # resta: `insert_movimiento_bancario` lo rechazaba con "importe
+            # debe ser positivo (abs)... el signo lo determina el documento
+            # ('DE')" y el cheque quedaba trabado en cartera para siempre, sin
+            # poder llegar nunca a la conciliación.
+            #
+            # Lo que el banco hace con una devolución es cargarla: es una NOTA
+            # DE DÉBITO, no un depósito. Así que el signo lo lleva el
+            # documento (ND resta, DE suma) y el importe va en magnitud, que
+            # es la convención que pide bank_helpers. Del otro lado del
+            # extracto esto se cruza con el "CHEQUE DEVUELTO" del banco.
+            _imp = float(importe or 0)
+            _es_debito = _imp < 0
+            _doc = "ND" if _es_debito else "DE"
+            _pref = "Devol. cheque" if _es_debito else "Dep cheque"
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=banco_destino,
                 no_cta=None,
                 fecha=fecha,
-                documento="DE",
-                importe=importe,
-                concepto=f"Dep cheque {ch.get('no_cheque') or ''} {ch.get('codigo_cli') or ''}".strip(),
+                documento=_doc,
+                importe=abs(_imp),
+                concepto=f"{_pref} {ch.get('no_cheque') or ''} {ch.get('codigo_cli') or ''}".strip(),
                 prov=ch.get("codigo_cli"),
                 numreferencia=num_ref,
                 usuario=usuario,
