@@ -144,7 +144,10 @@ def test_la_vista_es_fail_soft_si_el_modulo_de_asinfo_explota():
 
 def _resumen(kg_fact, desp, *, n=53, importe=95833.45):
     with patch("modules.facturas.aviso_ventas.totales_dia",
-               return_value={"n": n, "importe": importe, "kg": kg_fact}), \
+               return_value={"n": n, "importe": importe, "kg": kg_fact,
+                             "n_fact": n, "importe_fact": importe,
+                             "kg_fact": kg_fact,
+                             "n_devol": 0, "kg_devuelto": 0.0}), \
          patch.object(fviews, "_despachado_hoy", return_value=desp):
         return fviews.resumen_hoy(DIA)
 
@@ -192,7 +195,9 @@ def test_el_modo_render_no_toca_asinfo():
     """El pin va en base.html (TODAS las pantallas): si el render pidiera el
     despacho, un Metabase lento haría esperar a la app entera."""
     with patch("modules.facturas.aviso_ventas.totales_dia",
-               return_value={"n": 3, "importe": 10.0, "kg": 5.0}), \
+               return_value={"n": 3, "importe": 10.0, "kg": 5.0,
+                             "n_fact": 3, "importe_fact": 10.0, "kg_fact": 5.0,
+                             "n_devol": 0, "kg_devuelto": 0.0}), \
          patch.object(fviews, "_despachado_hoy") as desp:
         out = fviews.resumen_hoy(DIA, con_despacho=False)
     desp.assert_not_called()
@@ -223,51 +228,67 @@ def test_el_despachado_muestra_su_unidad_junto_al_numero():
     assert "fmt(dsp.kg, 2) + ' kg'" in html
 
 
-# ── Las devoluciones se restan de los DOS lados ─────────────────────────────
+# ── Las devoluciones son un hecho APARTE ───────────────────────────────────
 
-def test_la_devolucion_tambien_baja_el_despachado():
-    """TMT 2026-08-13: los 228 kg que no cerraban eran 7 devoluciones. El
-    facturado es venta NETA (ya las resta); si el despachado quedara bruto,
-    los dos números nunca se podrían comparar de frente. Decisión de la dueña:
-    restarlas también del despacho."""
+def _resumen_con(kg_fact, kg_devuelto, desp_kg, *, n_fact=87, n_devol=7):
     with patch("modules.facturas.aviso_ventas.totales_dia",
-               return_value={"n": 108, "importe": 145687.86, "kg": 17458.0,
-                             "kg_devuelto": 228.0}), \
+               return_value={"n": n_fact + n_devol, "importe": 0.0,
+                             "kg": kg_fact - kg_devuelto,
+                             "n_fact": n_fact, "importe_fact": 145687.86,
+                             "kg_fact": kg_fact,
+                             "n_devol": n_devol, "kg_devuelto": kg_devuelto}), \
          patch.object(fviews, "_despachado_hoy",
-                      return_value={"kg": 17686.0, "hora": None, "fresco": True}):
-        out = fviews.resumen_hoy(DIA)
-    assert out["despachado"]["kg"] == 17458.0     # 17.686 − 228
-    assert out["kg"] == 17458.0
-    assert out["pct"] == 100                      # y el % cierra
-    assert out["kg_devuelto"] == 228.0
+                      return_value={"kg": desp_kg, "hora": None, "fresco": True}):
+        return fviews.resumen_hoy(DIA)
 
 
-def test_sin_devoluciones_el_despachado_queda_como_vino():
-    with patch("modules.facturas.aviso_ventas.totales_dia",
-               return_value={"n": 10, "importe": 100.0, "kg": 900.0,
-                             "kg_devuelto": 0.0}), \
-         patch.object(fviews, "_despachado_hoy",
-                      return_value={"kg": 1000.0, "hora": None, "fresco": True}):
-        out = fviews.resumen_hoy(DIA)
-    assert out["despachado"]["kg"] == 1000.0
+def test_una_mañana_de_puras_devoluciones_no_muestra_negativos():
+    """TMT 2026-08-14, 08:29: lo único cargado eran 2 devoluciones y el
+    recuadro decía *"Facturado −64,90 kg · −4 %"* — se lee como un error del
+    programa. La devolución no es una venta con signo: es otro hecho."""
+    out = _resumen_con(kg_fact=0.0, kg_devuelto=64.9, desp_kg=1711.8,
+                       n_fact=0, n_devol=2)
+    assert out["kg"] == 0.0
+    assert out["pct"] == 0
+    assert out["devoluciones"] == {"kg": 64.9, "n": 2}
+
+
+def test_el_facturado_y_el_despachado_van_los_dos_en_BRUTO():
+    """13/08 medido en Asinfo: FACTURA+NTEN 17.686 = despacho físico 17.686,
+    y las 7 devoluciones (228) explicaban el hueco del neto."""
+    out = _resumen_con(kg_fact=17686.0, kg_devuelto=228.0, desp_kg=17686.0)
+    assert out["kg"] == 17686.0
+    assert out["despachado"]["kg"] == 17686.0   # el despacho NO se netea
+    assert out["pct"] == 100
+    assert out["devoluciones"]["kg"] == 228.0
+
+
+def test_un_dia_sin_devoluciones_no_tiene_ese_renglon():
+    out = _resumen_con(kg_fact=900.0, kg_devuelto=0.0, desp_kg=1000.0,
+                       n_devol=0)
+    assert out["devoluciones"] == {"kg": 0.0, "n": 0}
     assert out["pct"] == 90
 
 
-def test_sin_dato_de_despacho_la_devolucion_no_inventa_un_numero():
-    with patch("modules.facturas.aviso_ventas.totales_dia",
-               return_value={"n": 10, "importe": 100.0, "kg": 900.0,
-                             "kg_devuelto": 228.0}), \
-         patch.object(fviews, "_despachado_hoy",
-                      return_value={"kg": None, "hora": None, "fresco": False}):
-        out = fviews.resumen_hoy(DIA)
-    assert out["despachado"]["kg"] is None and out["pct"] is None
+def test_el_renglon_de_devoluciones_se_esconde_cuando_no_hay():
+    from pathlib import Path
+
+    html = Path(
+        "modules/historial/templates/historial/operaciones.html").read_text()
+    assert "data-campo=\"devol_fila\"" in html
+    assert "'' if ventas_hoy.devoluciones.kg else 'display:none'" in html
+    # …y el fetch la prende/apaga sola cuando cambia el día.
+    assert "dev.kg ? '' : 'none'" in html
 
 
-def test_totales_dia_devuelve_los_kilos_devueltos_en_positivo():
+def test_totales_dia_separa_las_dos_poblaciones_en_UNA_query():
     from modules.facturas import aviso_ventas as av
     with patch.object(av.db, "fetch_one",
-                      return_value={"n": 3, "importe": 10.0, "kg": 772.0,
-                                    "kg_devuelto": 228.0}) as f:
+                      return_value={"n": 10, "importe": 1.0, "kg": 772.0,
+                                    "n_fact": 8, "importe_fact": 900.0,
+                                    "kg_fact": 1000.0,
+                                    "n_devol": 2, "kg_devuelto": 228.0}) as f:
         out = av.totales_dia(DIA)
-    assert out["kg_devuelto"] == 228.0
-    assert "WHEN kg < 0 THEN -kg" in f.call_args[0][0]
+    assert out["kg_fact"] == 1000.0 and out["kg_devuelto"] == 228.0
+    sql = f.call_args[0][0]
+    assert "FILTER (WHERE kg > 0)" in sql and "FILTER (WHERE kg < 0)" in sql

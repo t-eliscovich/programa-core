@@ -56,6 +56,15 @@
       <span data-campo="n_lab">factura{{ '' if ventas_hoy.n == 1 else 's' }}</span>
     </div>
 
+    {# TMT 2026-08-14 (dueña, viendo "Facturado −22,25 kg · −103 %"): la
+       devolución es un hecho DISTINTO de la venta. Los dos números de arriba
+       van en bruto y ella va acá, en su propio renglón y sólo si hubo. #}
+    <div class="ventas-hoy-fila ventas-hoy-devol" data-campo="devol_fila"
+         style="{{ '' if ventas_hoy.devoluciones.kg else 'display:none' }}">
+      <span class="ventas-hoy-rot">Devoluciones</span>
+      <span class="ventas-hoy-devol-kg" data-campo="devol">−{{ ventas_hoy.devoluciones.kg | kg_es }} kg · {{ ventas_hoy.devoluciones.n }}</span>
+    </div>
+
     {# La barra sigue lo DESPACHADO, que es lo que dispara los avisos de la
        campanita (5.000 / 10.000 / 15.000 / 20.000 kg). #}
     {% set _kg_barra = ventas_hoy.despachado.kg or 0 %}
@@ -142,6 +151,15 @@
     font-size: 0.75rem; color: rgb(148 163 184); text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  .ventas-hoy-devol {
+    margin-top: 0.55rem; padding-top: 0.45rem;
+    border-top: 1px dashed rgb(226 232 240);
+  }
+  .dark .ventas-hoy-devol { border-top-color: rgb(71 85 105); }
+  .ventas-hoy-devol-kg {
+    font-size: 0.95rem; font-variant-numeric: tabular-nums; color: rgb(180 83 9);
+  }
+  .dark .ventas-hoy-devol-kg { color: rgb(251 191 36); }
   .ventas-hoy-sep {
     height: 1px; background: rgb(226 232 240); margin: 0.7rem 0 0.5rem;
   }
@@ -209,6 +227,9 @@
       ? 'sin dato de Asinfo'
       : (dsp.fresco ? 'salió de la fábrica' : 'medido ' + (dsp.hora || ''));
     q('pct').textContent = typeof d.pct === 'number' ? d.pct + ' % de lo despachado · ' : '';
+    var dev = d.devoluciones || {};
+    q('devol_fila').style.display = dev.kg ? '' : 'none';
+    if (dev.kg) { q('devol').textContent = '−' + fmt(dev.kg, 2) + ' kg · ' + dev.n; }
     q('barra').style.width = Math.min(100, (dsp.kg || 0) / 20000 * 100).toFixed(1) + '%';
     q('n_lab').textContent = d.n === 1 ? 'factura' : 'facturas';
 

@@ -854,23 +854,18 @@ def resumen_hoy(fecha=None, con_despacho: bool = True) -> dict:
     t = totales_dia(hoy)
     desp = (_despachado_hoy(hoy) if con_despacho
             else {"kg": None, "hora": None, "fresco": False})
-    # ⭐ TMT 2026-08-13 (dueña, sobre los 228 kg que no cerraban): las
-    # DEVOLUCIONES se le restan también al despachado, para que los dos números
-    # se puedan comparar de frente. Ella eligió esto sobre mostrarlas en un
-    # renglón aparte, sabiendo que una devolución de hoy puede ser de
-    # mercadería que salió la semana pasada. Sin esto, el facturado (que es
-    # venta NETA) siempre parece quedarse corto contra el despacho bruto.
-    if desp.get("kg") is not None and t.get("kg_devuelto"):
-        desp = dict(desp, kg=round(desp["kg"] - t["kg_devuelto"], 2))
     kg_desp = desp.get("kg")
     return {
         "fecha": hoy.isoformat(),
-        "kg": round(t["kg"], 2),
-        "importe": round(t["importe"], 2),
-        "n": t["n"],
+        # Los kilos que SUMAN (facturas y NTEN). Las devoluciones van aparte:
+        # netearlas acá hacía que una mañana con una devolución y sin facturas
+        # mostrara "−64,90 kg · −4 %" (TMT 2026-08-14).
+        "kg": round(t["kg_fact"], 2),
+        "importe": round(t["importe_fact"], 2),
+        "n": t["n_fact"],
         "despachado": desp,
-        "kg_devuelto": round(t.get("kg_devuelto", 0.0), 2),
-        "pct": round(t["kg"] / kg_desp * 100) if kg_desp else None,
+        "devoluciones": {"kg": round(t["kg_devuelto"], 2), "n": t["n_devol"]},
+        "pct": round(t["kg_fact"] / kg_desp * 100) if kg_desp else None,
     }
 
 

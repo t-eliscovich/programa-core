@@ -1236,6 +1236,10 @@
                 <div style="font-size:10.5px;color:rgb(148 163 184);text-align:right;margin-top:1px;">
                   <span id="pin-pct"></span>$ {{ _vp.importe | num_es(2) }} · {{ _vp.n }} factura{{ '' if _vp.n == 1 else 's' }}
                 </div>
+                {# TMT 2026-08-14: las devoluciones, aparte de la venta. #}
+                <div id="pin-devol" style="display:{{ '' if _vp.devoluciones.kg else 'none' }};font-size:10.5px;color:rgb(180 83 9);text-align:right;">
+                  Devoluciones −{{ _vp.devoluciones.kg | kg_es }} kg · {{ _vp.devoluciones.n }}
+                </div>
               </a>
               {% endif %}
               <div style="max-height:19rem;overflow-y:auto;">

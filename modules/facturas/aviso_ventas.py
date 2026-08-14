@@ -70,21 +70,36 @@ def _hora_aviso() -> int:
 
 
 def totales_dia(fecha) -> dict:
-    """{n, importe, kg, kg_devuelto} de lo facturado ese día. Fail-soft: ceros.
+    """Lo facturado ese día, con las devoluciones APARTE. Fail-soft: ceros.
 
-    `kg` es la venta NETA: las devoluciones y las NC del día vienen con kilos
-    NEGATIVOS y ya están restadas. `kg_devuelto` es esa parte negativa dicha en
-    positivo — el 13/08/2026 hicieron falta para explicar por qué el despachado
-    no coincidía con el facturado (eran 228 kg de 7 devoluciones).
+    Devuelve:
+        n, importe, kg      — la venta NETA del día (las devoluciones y las NC
+                              ya restadas). Es lo que manda el cierre de las 19.
+        n_fact, importe_fact, kg_fact
+                            — sólo los documentos que SUMAN kilos (facturas y
+                              NTEN). Es lo que muestra el recuadro de "Hoy".
+        n_devol, kg_devuelto — las devoluciones, dichas en positivo.
+
+    ⭐ **Por qué separadas** (TMT 2026-08-14): con el neto, un día que arranca
+    con una devolución y todavía sin facturas mostraba *"Facturado −64,90 kg ·
+    −4 %"*, que se lee como un error del programa. La devolución es un hecho
+    distinto de la venta y se cuenta aparte. Las NC financieras (kg = 0) no
+    entran en ninguno de los dos: este recuadro habla de kilos.
     """
+    vacio = {"n": 0, "importe": 0.0, "kg": 0.0,
+             "n_fact": 0, "importe_fact": 0.0, "kg_fact": 0.0,
+             "n_devol": 0, "kg_devuelto": 0.0}
     try:
         row = db.fetch_one(
             """
-            SELECT COUNT(*)                    AS n,
-                   COALESCE(SUM(importe), 0)   AS importe,
-                   COALESCE(SUM(kg), 0)        AS kg,
-                   COALESCE(SUM(CASE WHEN kg < 0 THEN -kg ELSE 0 END), 0)
-                                               AS kg_devuelto
+            SELECT COUNT(*)                                       AS n,
+                   COALESCE(SUM(importe), 0)                      AS importe,
+                   COALESCE(SUM(kg), 0)                           AS kg,
+                   COUNT(*) FILTER (WHERE kg > 0)                 AS n_fact,
+                   COALESCE(SUM(importe) FILTER (WHERE kg > 0), 0) AS importe_fact,
+                   COALESCE(SUM(kg) FILTER (WHERE kg > 0), 0)     AS kg_fact,
+                   COUNT(*) FILTER (WHERE kg < 0)                 AS n_devol,
+                   COALESCE(SUM(-kg) FILTER (WHERE kg < 0), 0)    AS kg_devuelto
               FROM scintela.factura
              WHERE fecha = %s
                AND COALESCE(stat, '') <> 'X'
@@ -93,11 +108,15 @@ def totales_dia(fecha) -> dict:
         ) or {}
     except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
         _LOG.warning("no pude calcular las ventas del día: %s", e)
-        return {"n": 0, "importe": 0.0, "kg": 0.0, "kg_devuelto": 0.0}
+        return vacio
     return {
         "n": int(row.get("n") or 0),
         "importe": float(row.get("importe") or 0),
         "kg": float(row.get("kg") or 0),
+        "n_fact": int(row.get("n_fact") or 0),
+        "importe_fact": float(row.get("importe_fact") or 0),
+        "kg_fact": float(row.get("kg_fact") or 0),
+        "n_devol": int(row.get("n_devol") or 0),
         "kg_devuelto": float(row.get("kg_devuelto") or 0),
     }
 
