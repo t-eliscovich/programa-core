@@ -3065,8 +3065,9 @@ def gastos():
         from modules.gastos import queries as _gq
 
         sin_num_resumen = _gq.xgast_sin_num_resumen()
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "gap", _e)
 
     # Tamara 2026-07-22 — gastos proyectados por rubro, guardados en la base
     # (compartidos por todos los usuarios). Reemplaza el localStorage anterior.
@@ -3640,8 +3641,9 @@ def estado_cuenta(codigo_cli):
             codigo_up,
             etiqueta=f"{codigo_up} — {cli.get('nombre') or ''}",
         )
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "estado_cuenta", _e)
     # Lista de clientes para el cargador "Nuevo estado de cuenta" (autocomplete).
     try:
         from modules.autocomplete.queries import clientes_para_datalist

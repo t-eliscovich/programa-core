@@ -111,8 +111,9 @@ def _auto_cargar_facturas_hoy() -> dict:
             try:
                 if r.get("numf") is not None:
                     pc_numf.add(int(r["numf"]))
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _e:
+                from modules._lib.silencios import avisar
+                avisar(__name__, "_auto_cargar_facturas_hoy", _e, nivel="debug")
         for r in asinfo_rows:
             tipo = (r.get("tipo") or "").upper()
             # TMT 2026-07-26 (dueña): auto-cargar también DEVOLUCION/NCNT de
@@ -190,8 +191,9 @@ def _auto_cargar_facturas_hoy() -> dict:
             from modules.retenciones import queries as _ret_q
             rr = _ret_q.aplicar_retenciones_asinfo(hoy, hoy, usuario="asinfo-auto-ret")
             res["ret"] = int(rr.get("n_aplicadas") or 0)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_auto_cargar_facturas_hoy", _e)
         # TMT 2026-07-28 (dueña, caso 180441): el paso SIMÉTRICO de la carga.
         # Cargar mira Asinfo→PC; el vigía mira PC→Asinfo y anula (stat='X')
         # lo que Asinfo ya no reporta vivo. Así una factura anulada DESPUÉS
@@ -201,16 +203,18 @@ def _auto_cargar_facturas_hoy() -> dict:
             vr = _vig.correr_si_toca()
             res["anuladas"] = int(vr.get("anuladas") or 0)
             res["anuladas_bloqueadas"] = int(vr.get("bloqueadas") or 0)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_auto_cargar_facturas_hoy", _e)
         return res
     except Exception:
         return res
     finally:
         try:
             _AUTO_CARGA_LOCK.release()
-        except RuntimeError:
-            pass
+        except RuntimeError as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_auto_cargar_facturas_hoy", _e, nivel="debug")
 
 
 @facturas_bp.route("/facturas/nueva", methods=["GET", "POST"])
@@ -790,8 +794,9 @@ def detalle(id_factura: int):
             "factura", id_factura,
             etiqueta=f"Factura {fact.get('numf_completo') or fact.get('numf')} · {fact.get('cliente') or fact.get('codigo_cli','')}",
         )
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "detalle", _e)
     return render_template(
         "facturas/detalle.html",
         fact=fact,
@@ -1152,8 +1157,9 @@ def desde_asinfo():
             if f_iso:
                 for cli_k in cli_keys:
                     pc_by_cli_fecha_importe.add((cli_k, f_iso, int(round(imp * 100))))
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_extract_numf_local", _e)
         # Match 4: indexar por (cli, importe_cents, kg_cents) — sin fecha.
         try:
             kg_pc = float(r.get("kg") or 0)
@@ -1163,8 +1169,9 @@ def desde_asinfo():
                     pc_by_cli_importe_kg.add(
                         (cli_k, int(round(imp_pc * 100)), int(round(kg_pc * 100)))
                     )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_extract_numf_local", _e)
         # Match 5: indexar por (numf, importe_cents) — SIN cliente.
         try:
             imp_pc5 = float(r.get("importe") or 0)
@@ -1173,8 +1180,9 @@ def desde_asinfo():
                 for cand in (n, n_completo):
                     if cand is not None:
                         pc_by_numf_importe.add((cand, cents5))
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_extract_numf_local", _e)
 
     # ── TMT 2026-06-13 dueña "no puede haber 151, no tiene sentido": las
     # ~150 que sobraban son facturas viejas (mayo) que SÍ existen en PC pero
@@ -1222,8 +1230,9 @@ def desde_asinfo():
             if f_iso:
                 for cli_k in cli_keys:
                     pc_bf_by_cli_fecha_importe.add((cli_k, f_iso, int(round(imp * 100))))
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_extract_numf_local", _e)
         try:
             kg_pc = float(r.get("kg") or 0)
             imp_pc = float(r.get("importe") or 0)
@@ -1232,8 +1241,9 @@ def desde_asinfo():
                     pc_bf_by_cli_importe_kg.add(
                         (cli_k, int(round(imp_pc * 100)), int(round(kg_pc * 100)))
                     )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_extract_numf_local", _e)
 
     def _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a, kg_a=0.0):
         """¿Esta factura Asinfo existe en PC SOLO como backfill?
@@ -1427,8 +1437,9 @@ def desde_asinfo():
         ret_n = len(_ret_map)
         ret_total = round(
             sum(float((v or {}).get("ret_total") or 0) for v in _ret_map.values()), 2)
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "_extract_numf", _e)
 
     return render_template(
         "facturas/desde_asinfo.html",
@@ -1983,8 +1994,9 @@ def cargar_desde_asinfo_bulk():
                     ret_msg = (
                         f" Retenciones aplicadas: {_rr['n_aplicadas']} "
                         f"({_rr['total_aplicado']:,.2f}).")
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "cargar_desde_asinfo_bulk", _e)
 
     if ok:
         msg = f"Cargadas {ok} facturas desde Asinfo." + ret_msg
@@ -2582,8 +2594,9 @@ def lista():
                         sufijo_int = int(sufijo)
                         if sufijo_int not in n_idx:
                             n_idx[sufijo_int] = r
-                    except (ValueError, TypeError):
-                        pass
+                    except (ValueError, TypeError) as _e:
+                        from modules._lib.silencios import avisar
+                        avisar(__name__, "_parse_num", _e, nivel="debug")
                 # TMT 2026-05-22 — índice por (cliente, fecha, kg redondeado).
                 # Muchas filas PC tienen numf=0 (sin número Asinfo cargado) y
                 # el match por número no funciona. Pero los importes USD coinciden
@@ -2648,8 +2661,9 @@ def lista():
                     if r_ai is None and f.get("numf"):
                         try:
                             r_ai = n_idx.get(int(f["numf"]))
-                        except (ValueError, TypeError):
-                            pass
+                        except (ValueError, TypeError) as _e:
+                            from modules._lib.silencios import avisar
+                            avisar(__name__, "_parse_num", _e, nivel="debug")
                     # TMT 2026-05-22 — Fallback heurístico para PC sin numf:
                     # match por (codigo_cli + fecha + kg exacto) y validar
                     # que los importes coincidan.
@@ -2930,8 +2944,9 @@ def backfill_asinfo():
         try:
             from modules.asinfo import service as asinfo_service
             asinfo_service.reset_facturas_cache()
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "backfill_asinfo", _e)
 
     return {
         "modo": "apply" if apply else "preview",
@@ -3371,8 +3386,9 @@ def fix_huerfanas_con_aliases():
         ch = min(last, hasta)
         try:
             asinfo_rows.extend(asinfo_service.facturas_periodo(cd, ch) or [])
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "fix_huerfanas_con_aliases", _e)
         cm += 1
         if cm > 12:
             cm = 1

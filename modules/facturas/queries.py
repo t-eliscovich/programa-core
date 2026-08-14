@@ -569,8 +569,9 @@ def editar_numf(
                 "SELECT pg_advisory_xact_lock(4242)",
                 (), conn=conn,
             )
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "editar_numf", _e, nivel="debug")
         dup = db.fetch_one(
             "SELECT id_factura, COALESCE(stat,'') AS stat, codigo_cli, fecha, saldo "
             "FROM scintela.factura "

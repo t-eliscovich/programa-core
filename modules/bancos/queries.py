@@ -167,8 +167,9 @@ def _routear_mov_simple(
         ) or []
         proveedores = {r["cod"] for r in rows}
         tipos_prov = {r["cod"]: r["tipo"] for r in rows}
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "_routear_mov_simple", _e)
 
     es_compra = (p and p in proveedores and p != "IN") or (
         documento == "ND" and "KK" in c

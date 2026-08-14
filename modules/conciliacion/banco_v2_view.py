@@ -557,8 +557,9 @@ def banco_post_procesar():
         ) or {}
         sesion = dict(sesion)
         sesion["matches_hechos"] = int(_real_matches.get("n") or 0)
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "banco_post_procesar", _e)
 
     tab = (request.args.get("tab") or "manual").lower()
     if tab not in ("manual", "impuestos", "transferencias", "conciliados"):
@@ -645,8 +646,9 @@ def banco_post_procesar():
                 v = float(getattr(movs_s[-1], "saldo", None) or 0)
                 balance["saldo_banco_real"] = v if v else None
             balance["saldo_banco_real_origen"] = "auto"
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_post_procesar", _e)
 
     # Diferencia esperado vs real (si tenemos ambos).
     if balance.get("saldo_banco_real") is not None and balance.get("saldo_banco_esperado") is not None:
@@ -711,8 +713,9 @@ def banco_post_procesar():
                     m["prog_firma_signed"] = _signed_delta(
                         (_fp[1] or "").upper(), float(_fp[2]), "")
                     m["tiene_prog_firma"] = True
-                except (TypeError, ValueError):
-                    pass
+                except (TypeError, ValueError) as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "banco_post_procesar", _e, nivel="debug")
 
     # Totales agregados por lado.
     # TMT 2026-06-03 dueña: 'mira los totales'. Bug: el agrupado de impuestos
@@ -1381,8 +1384,9 @@ def banco_auditar():
             if con_fecha:
                 ult = max(con_fecha, key=lambda m: m.fecha)
                 saldo_banco_real = float(ult.saldo)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_auditar", _e)
     diferencia_objetivo = None
     if saldo_banco_real is not None and balance.get("saldo_banco_esperado") is not None:
         diferencia_objetivo = round(
@@ -1826,8 +1830,9 @@ def banco_descartar_programa():
                AND column_name='metodo'
             """,
         ))
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "_fmt", _e)
 
     n_ok = 0
     err_msg = None
@@ -3552,8 +3557,9 @@ def banco_borrar_sesion():
                     path = Path.cwd() / path
                 if path.exists():
                     path.unlink()
-            except Exception:
-                pass
+            except Exception as _e:
+                from modules._lib.silencios import avisar
+                avisar(__name__, "banco_borrar_sesion", _e)
 
         _LOG.warning("BORRAR SESIÓN #%s por %s: %s", sesion_id, usuario, counts)
         flash(
@@ -3725,8 +3731,9 @@ def banco_reset_all():
                 evento_ref="reset", usuario=usuario,
                 descripcion=f"reset total: {counts}",
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_reset_all", _e)
 
         _LOG.warning("RESET TOTAL por %s: %s", usuario, counts)
         flash(
@@ -4021,8 +4028,9 @@ def banco_eliminar_pendiente():
             _ss.snapshot(_BANCO_PICHINCHA, "pendiente_eliminado",
                          evento_ref=hist_id, usuario=_usuario_actual(),
                          descripcion=f"eliminar pendiente #{hist_id}")
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_eliminar_pendiente", _e)
     else:
         flash("No pude eliminar el pendiente.", "error")
     return redirect(_back)
@@ -4603,8 +4611,9 @@ def banco_anular_grupo():
                 """,
                 (int(n_matches), _BANCO_PICHINCHA, usuario[:50]),
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_anular_grupo", _e)
 
     # 5) Snapshot del nuevo saldo a conciliar.
     try:
@@ -4614,8 +4623,9 @@ def banco_anular_grupo():
             evento_ref=str(id_tx), usuario=usuario,
             descripcion=f"anulada tx agrupada #{id_tx} ({n_matches} matches deshechos)",
         )
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "banco_anular_grupo", _e)
 
     # 6) Validación post-anular: el saldo debe haber cambiado en el monto
     # esperado (delta_esperado). Si la diferencia con la realidad es
@@ -4760,8 +4770,9 @@ def relink_matches_huerfanos(no_banco: int = _BANCO_PICHINCHA, dry_run: bool = T
         g["n_matches"] += 1
         try:
             g["importe"] = round(float(r.get("real_monto") or 0), 2)
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "relink_matches_huerfanos", _e, nivel="debug")
         g["fecha"] = r.get("real_fecha")
         g["documento"] = r.get("real_documento")
         g["concepto"] = (r.get("real_concepto") or "")[:48]

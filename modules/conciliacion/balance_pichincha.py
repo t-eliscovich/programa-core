@@ -183,8 +183,9 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                             round(float(r.get("real_monto") or 0), 2),
                             (r.get("real_tipo") or "").strip(),
                         ))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "calcular", _e)
                 # TMT 2026-06-03 dueña: 'no se deberian duplicar los extractos
                 # del banco si estamos comparandolos para que no haya duplicados'.
                 # Filas del payload que ya existen como histo pendiente NO se
@@ -210,8 +211,9 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                             round(float(r.get("monto") or 0), 2),
                             (r.get("tipo") or "").strip().upper()[:1],
                         ))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "calcular", _e)
 
                 # ─── DEDUP NUCLEAR vs scintela.transacciones_bancarias ───────
                 # TMT decisión 2026-06-03 (dueña, literal): "no podemos tener

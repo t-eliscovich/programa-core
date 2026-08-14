@@ -3441,8 +3441,9 @@ def lista():
             )
             if row_eg:
                 conteos_por_bucket["devueltos_en_gestion"] = dict(row_eg)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_parse_num", _e)
         # TMT 2026-07-22 (dueña) — el tab "Cartera" ahora agrupa Z + P + 1 + 2
         # (ver STATS["cartera"] en queries.py). El CASE de arriba solo cuenta Z
         # en el bucket 'cartera' (cada fila cae en un único bucket), así que el
@@ -3458,8 +3459,9 @@ def lista():
             )
             if row_cart:
                 conteos_por_bucket["cartera"] = dict(row_cart)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_parse_num", _e)
         # TMT 2026-05-19 v2 — Cartera total = Z + P + 1/2/3 + D (los 4
         # buckets visibles arriba). Sin B (depositados ya están en el
         # banco). Pedido Tamara — antes incluía B, fue revertido.
@@ -3473,8 +3475,9 @@ def lista():
             )
             if row_tot:
                 conteos_por_bucket["cartera_total"] = dict(row_tot)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_parse_num", _e)
     except Exception:
         conteos_por_bucket = {}
 
@@ -3709,8 +3712,9 @@ def diag_depositados_sin_movimiento():
                 from decimal import Decimal
                 if isinstance(v, Decimal):
                     return float(v)
-            except Exception:
-                pass
+            except Exception as _e:
+                from modules._lib.silencios import avisar
+                avisar(__name__, "_ser", _e)
             return v
         cheques = [{k: _ser(v) for k, v in dict(r).items()} for r in filas]
         return jsonify({"n": len(cheques), "error": error, "cheques": cheques})
@@ -3770,8 +3774,9 @@ def diag_cliente_cheques():
             from decimal import Decimal
             if isinstance(v, Decimal):
                 return float(v)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_ser", _e)
         return v
     cheques = [{k: _ser(v) for k, v in dict(r).items()} for r in filas]
     return jsonify({"cliente": codigo, "n": len(cheques), "error": error,
@@ -3833,8 +3838,9 @@ def diag_efectivos_stat():
             from decimal import Decimal
             if isinstance(v, Decimal):
                 return float(v)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_ser", _e)
         return v
 
     return jsonify({

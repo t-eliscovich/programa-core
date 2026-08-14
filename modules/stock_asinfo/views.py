@@ -411,8 +411,9 @@ def en_proceso():
     if paso_filtro:
         try:
             ofts = [o for o in ofts if o.get("id_bodega") == int(paso_filtro)]
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "en_proceso", _e, nivel="debug")
 
     if request.args.get("export") == "csv":
         return csv_response(

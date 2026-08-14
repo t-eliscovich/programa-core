@@ -133,8 +133,9 @@ def editar(codigo_prov: str):
                 "proveedor", prov["codigo_prov"],
                 etiqueta=f"{prov['codigo_prov']} — {prov.get('nombre') or ''}",
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "editar", _e)
         form = {
             "codigo_prov": prov["codigo_prov"],
             "nombre": prov.get("nombre") or "",

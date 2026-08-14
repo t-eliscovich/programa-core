@@ -614,5 +614,6 @@ def correr_si_toca() -> dict:
     finally:
         try:
             _LOCK.release()
-        except RuntimeError:
-            pass
+        except RuntimeError as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "correr_si_toca", _e, nivel="debug")

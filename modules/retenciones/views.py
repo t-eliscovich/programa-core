@@ -124,8 +124,9 @@ def confirmar_anulacion(id_retencion: int):
             f"{r.get('numf_completo') or r.get('numf') or ''}"
         )[:200]
         rec.registrar("retencion", id_retencion, etiqueta=etiqueta)
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "confirmar_anulacion", _e)
     detalle = {
         "N° retención": r.get("id_retencion"),
         "Factura": r.get("numf_completo") or r.get("numf"),

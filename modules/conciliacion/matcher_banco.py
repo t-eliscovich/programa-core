@@ -355,8 +355,9 @@ def codigos_validos_set() -> set[str]:
                 c = (a.get("codigo_asinfo") or "").strip().upper()
                 if c:
                     out.add(c)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "codigos_validos_set", _e)
     except Exception:
         out = set()
     if out:
@@ -2023,8 +2024,9 @@ def romper_match(
                 (int(match_id),),
                 conn=conn,
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "romper_match", _e)
 
         # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
         try:
@@ -2155,8 +2157,9 @@ def rehacer_match(
                 (int(match_id),),
                 conn=conn,
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "rehacer_match", _e)
 
         # 1) Reactivar el match (sólo si estaba deshecho).
         n = db.execute(

@@ -635,8 +635,9 @@ def _mes_arg():
         try:
             dt = datetime.strptime(arg, "%Y-%m")
             return dt.year, dt.month
-        except ValueError:
-            pass
+        except ValueError as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_mes_arg", _e, nivel="debug")
     h = today_ec()
     return h.year, h.month
 

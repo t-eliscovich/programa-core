@@ -312,8 +312,9 @@ def lista():
             _sa = queries.saldo_actual()
             if abs(_su - _sa) > 0.01:
                 queries.recomputar_saldos()
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "lista", _e)
         filas = queries.movimientos(
             desde, hasta, q, limite=limite + 1, offset=offset, id_caja=id_caja,
         )

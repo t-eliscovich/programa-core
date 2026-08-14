@@ -199,8 +199,9 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
         from modules.conciliacion.matcher_banco import _tiene_migration_47
         if _tiene_migration_47():
             filtro_undo = "AND m.deshecho_en IS NULL"
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "matches_de_sesion", _e)
 
     # TMT 2026-06-03: se había removido el filtro de fecha para no perder
     # matches. TMT 2026-07-24 (dueña eligió "solo esta sesión"): mostrar TODO
@@ -429,8 +430,9 @@ def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
             from modules.conciliacion.matcher_banco import _tiene_migration_47
             if _tiene_migration_47():
                 filtro_undo = "AND deshecho_en IS NULL"
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_firmas_ya_conocidas", _e)
         rows = db.fetch_all(
             f"""
             SELECT real_documento, real_fecha, real_tipo, real_monto
@@ -460,8 +462,9 @@ def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
                         m.documento, getattr(m, "codigo", ""),
                         m.tipo, m.monto, m.fecha,
                     ))
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_firmas_ya_conocidas", _e)
 
     # NOTA: NO agregamos transacciones_bancarias acá. Si lo hiciéramos,
     # las filas del extracto que coinciden con una tx PC (las que JUSTO
@@ -935,8 +938,9 @@ def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
                     (r["cod"] or "").strip().upper(): (r.get("nombre") or "").strip()
                     for r in rows_cli
                 }
-            except Exception:
-                pass
+            except Exception as _e:
+                from modules._lib.silencios import avisar
+                avisar(__name__, "_cargar_programa_pendiente", _e)
         for i, r in enumerate(rows_pc):
             prov = (r.get("prov") or "").strip().upper()
             bk = _MovBk(

@@ -1506,8 +1506,9 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
             cs_prod_us_ant = ucom_ant + utej_ant + utin_ant + cs_col_us_ant
             cs_prod_kg_ant = ktin_ant or ktej_ant or kvent_ant
             cs_prod_ukg_ant = _safe_div(cs_prod_us_ant, cs_prod_kg_ant)
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "_safe_div", _e)
 
     # _gs_tin (Gs. Tintorería para COSTOS UNITARIOS = V4+V5+V6 + DCC) y
     # _gs_tej ya se calcularon más arriba, junto con la tabla Producción
@@ -5506,8 +5507,9 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
             _comp["totl"] = totl
             _comp["patr"] = patr
             _comp["utilidad"] = utilidad
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "_mov_stock_kg", _e)
 
     # Tabla RESULTADOS rediseñada (Federico 2026-05-21) — definida fila por
     # fila con el dueño. Reemplaza en balance.html el viejo bloque VENTA +
@@ -9590,8 +9592,9 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
                 (periodo_clave,),
                 conn=conn,
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_existe_cierre", _e)
 
     return {
         "aplicado": True,
@@ -10041,8 +10044,9 @@ def fuentes_y_usos(
             _bal_live = informe_balance() or {}
             if _bal_live and not _bal_live.get("error"):
                 h_fin = _row_desde_informe_balance(_bal_live)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_g", _e)
     else:
         h_fin = _historia_en_mes(yy, mm)
 
@@ -10055,8 +10059,9 @@ def fuentes_y_usos(
             comp_ini = balance_components_as_of(fecha_ini) or {}
             if comp_ini:
                 h_ini = _row_desde_componentes(comp_ini, fecha_ini)
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_g", _e)
 
     # Federico 2026-05-22 — emparejar la convención de caja entre los dos
     # extremos. Snapshots viejos guardaban `banco` SIN la caja mientras que

@@ -87,8 +87,9 @@ def saldo_pc_anterior(no_banco: int, antes_de: date) -> float:
         )
         net = _fmt(row_net.get("net") if row_net else 0)
         return round(saldo_actual - net, 2)
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "saldo_pc_anterior", _e)
     # Fallback: lookup directo del saldo running (comportamiento viejo).
     row = _db.fetch_one(
         """
@@ -130,8 +131,9 @@ def saldo_a_conciliar_anterior(no_banco: int, antes_de: date) -> tuple[float, st
         )
         if row and row.get("saldo_conc") is not None:
             return _fmt(row["saldo_conc"]), "snapshot"
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "saldo_a_conciliar_anterior", _e)
     return saldo_pc_anterior(no_banco, antes_de), "pc_libros"
 
 

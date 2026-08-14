@@ -151,8 +151,9 @@ def recomputar_saldos() -> dict:
                 "SELECT pg_advisory_xact_lock(hashtext('scintela.caja.running'))",
                 (), conn=conn,
             )
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "recomputar_saldos", _e, nivel="debug")
         filas = db.fetch_all(
             """
             SELECT id_caja, tipo, importe, saldo
@@ -288,8 +289,9 @@ def crear(
                 "SELECT pg_advisory_xact_lock(hashtext('scintela.caja.running'))",
                 (), conn=conn,
             )
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "crear", _e, nivel="debug")
         # 1) Computar saldo_prev DENTRO de la tx + del lock.
         sp_row = db.fetch_one(
             """

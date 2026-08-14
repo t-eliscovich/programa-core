@@ -588,8 +588,9 @@ def factor_iva_producto(num) -> float:
     try:
         if int(num) in PRODUCTOS_IVA_CERO:
             return 1.0
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "factor_iva_producto", _e, nivel="debug")
     return 1.0 + IVA_QUIMICOS
 
 

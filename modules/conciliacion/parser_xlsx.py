@@ -237,22 +237,25 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
             if col_map.get("concepto") is not None:
                 try:
                     concepto = str(row_list[col_map["concepto"]] or "").strip()
-                except IndexError:
-                    pass
+                except IndexError as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "parse_xlsx", _e, nivel="debug")
             codigo = ""
             if col_map.get("codigo") is not None:
                 try:
                     codigo = str(row_list[col_map["codigo"]] or "").strip()
                     if codigo.endswith(".0"):  # openpyxl puede dar floats como '15289222.0'
                         codigo = codigo[:-2]
-                except IndexError:
-                    pass
+                except IndexError as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "parse_xlsx", _e, nivel="debug")
             nota = ""
             if col_map.get("nota") is not None:
                 try:
                     nota = str(row_list[col_map["nota"]] or "").strip()
-                except IndexError:
-                    pass
+                except IndexError as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "parse_xlsx", _e, nivel="debug")
 
             # TMT decisión 2026-06-03: si el row es agregado (TOTAL/SALDO/SUMA/
             # SUBTOTAL) en concepto/detalle, lo skippeamos — son ruido. Pero si

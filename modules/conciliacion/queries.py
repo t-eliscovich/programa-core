@@ -120,8 +120,9 @@ def _bootstrap_upload_tabla() -> None:
         return
     try:
         db.execute(_BOOTSTRAP_UPLOAD_SQL)
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "_bootstrap_upload_tabla", _e)
     _upload_tabla_bootstrapped = True
 
 

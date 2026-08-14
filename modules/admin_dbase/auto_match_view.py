@@ -83,8 +83,9 @@ def run():
     no_banco = 10
     try:
         no_banco = int(request.form.get("no_banco") or 10)
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "run", _e, nivel="debug")
     dry_run = request.form.get("dry_run") in ("1", "on", "true")
 
     content = f.read()
@@ -101,8 +102,9 @@ def run():
     try:
         from flask import g
         usuario = (g.user or {}).get("username", usuario) if g.user else usuario
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "run", _e)
 
     def generate():
         yield f"Extracto: {len(movs)} movs · banco={no_banco}\n"

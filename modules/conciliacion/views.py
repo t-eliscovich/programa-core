@@ -1427,8 +1427,9 @@ def marcar_depositos_dia_conciliados():
     for f in fechas_raw:
         try:
             fechas.append(_date.fromisoformat(str(f)))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "marcar_depositos_dia_conciliados", _e, nivel="debug")
     if not fechas:
         flash("No seleccionaste ningún día.", "warn")
         return redirect(url_for("conciliacion.hub"))
@@ -1917,8 +1918,9 @@ def banco_deshacer():
             _ss.snapshot(_BANCO_PICHINCHA, "match_deshecho",
                          evento_ref=match_id, usuario=_usuario_actual(),
                          descripcion=f"deshacer match #{match_id}")
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_deshacer", _e)
         # Decrementar matches_hechos de la sesión abierta (counter UX).
         try:
             import db as _db
@@ -1932,8 +1934,9 @@ def banco_deshacer():
                 """,
                 (_BANCO_PICHINCHA, _usuario_actual()[:50]),
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_deshacer", _e)
     else:
         flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
     return redirect(back)
@@ -1982,8 +1985,9 @@ def banco_rehacer():
                          evento_ref=match_id, usuario=_usuario_actual(),
                          descripcion=f"rehacer match #{match_id}"
                                      + (f" (grupo {batch_id}, {n} matches)" if batch_id and n > 1 else ""))
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_rehacer", _e)
         # Incrementar matches_hechos de la sesión abierta (counter UX, espejo
         # del decremento en banco_deshacer).
         try:
@@ -1998,8 +2002,9 @@ def banco_rehacer():
                 """,
                 (int(n), _BANCO_PICHINCHA, _usuario_actual()[:50]),
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "banco_rehacer", _e)
     else:
         flash(f"No rehíce nada para el match #{match_id} (¿ya estaba activo?).", "warn")
     return redirect(back)

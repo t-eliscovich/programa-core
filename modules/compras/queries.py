@@ -216,8 +216,9 @@ def crear(
                 "SELECT pg_advisory_xact_lock(4243)",
                 (), conn=conn,
             )
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "crear", _e, nivel="debug")
         if numero is None:
             np_row = db.fetch_one(
                 "SELECT COALESCE(MAX(numero), 0) + 1 AS siguiente FROM scintela.compra",

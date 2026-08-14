@@ -184,8 +184,9 @@ def detectar(dias: int | None = None) -> dict:
         try:
             if numf is not None and int(numf) in vivas_numf:
                 continue
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "detectar", _e, nivel="debug")
         fila = {
             "id_factura": f.get("id_factura"),
             "numf": numf,
@@ -259,6 +260,7 @@ def correr_si_toca() -> dict:
     finally:
         try:
             _LOCK.release()
-        except RuntimeError:
-            pass
+        except RuntimeError as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "correr_si_toca", _e, nivel="debug")
     return salida

@@ -1544,8 +1544,9 @@ def _rmtree_robusto(path: Path) -> None:
         try:
             os.chmod(p, stat.S_IWRITE)
             func(p)
-        except OSError:
-            pass
+        except OSError as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_on_error", _e, nivel="debug")
 
     shutil.rmtree(path, onerror=_on_error)
 

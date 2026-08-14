@@ -195,8 +195,9 @@ def index() -> Response:
                         f"SET usuario_crea = 'asinfo-backfill' WHERE {where}",
                         (), conn=conn,
                     )
-                except Exception:
-                    pass
+                except Exception as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "index", _e)
             # Counts after update
             for table, key in (
                 ("factura", "n_aplicado_factura"),
@@ -216,8 +217,9 @@ def index() -> Response:
                         n_aplicado_compra = int(row["n"] or 0) if row else 0
                     elif key == "n_aplicado_dolares":
                         n_aplicado_dolares = int(row["n"] or 0) if row else 0
-                except Exception:
-                    pass
+                except Exception as _e:
+                    from modules._lib.silencios import avisar
+                    avisar(__name__, "index", _e)
         aplicado = True
 
     # After update (if any), candidates should be 0

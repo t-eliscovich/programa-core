@@ -182,8 +182,9 @@ def auditar_huerfanas(top_k: int = 3, limite: int = 500) -> list[dict]:
                             rf_d = rf
                         if ventana_mn <= rf_d <= ventana_mx:
                             candidatos_pool.append(r)
-                    except (ValueError, TypeError):
-                        pass
+                    except (ValueError, TypeError) as _e:
+                        from modules._lib.silencios import avisar
+                        avisar(__name__, "auditar_huerfanas", _e, nivel="debug")
 
         scored: list[tuple[float, dict]] = []
         for c in candidatos_pool:

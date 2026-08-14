@@ -375,8 +375,9 @@ def _leer_dbf_fechad(dbf_path):
         try:
             if int(r.get("NUM") or 0) == 9999:
                 continue
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_leer_dbf_fechad", _e, nivel="debug")
         fd = r.get("FECHAD")
         if not fd:
             continue
@@ -806,8 +807,9 @@ def _leer_dbf_full(dbf_path):
         try:
             if int(r.get("NUM") or 0) == 9999:
                 continue
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_leer_dbf_full", _e, nivel="debug")
         out.append({
             "fecha": r.get("FECHA"),
             "fechad": r.get("FECHAD"),

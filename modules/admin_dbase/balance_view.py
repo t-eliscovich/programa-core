@@ -102,8 +102,9 @@ def balance():
     no_banco = 10
     try:
         no_banco = int(request.form.get("no_banco") or 10)
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "balance", _e, nivel="debug")
 
     content = f.read()
     if len(content) > 10 * 1024 * 1024:

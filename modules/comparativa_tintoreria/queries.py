@@ -241,8 +241,9 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
         dcc = _amortizacion_dcc_por_mes(desde, hasta)
         for k, v in dcc.items():
             out[k] = out.get(k, 0.0) + v
-    except Exception:
-        pass
+    except Exception as _e:
+        from modules._lib.silencios import avisar
+        avisar(__name__, "gs_produccion_tintoreria_por_mes", _e)
 
     return out
 
