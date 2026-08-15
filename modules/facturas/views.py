@@ -3058,8 +3058,31 @@ def tipos_desde_asinfo():
                 tipos.discard(None)
                 return tipos.pop() if len(tipos) == 1 else (False if tipos else None)
 
+            def _afina(cands, f):
+                """Cuando el numero trae MAS DE UN documento, se afina con lo
+                que la fila ya dice: mismos kilos y mismos dolares.
+
+                TMT 2026-08-14 (duena: "poneles el tipo"). El numero corto se
+                repite entre series distintas —la FACTURA 175661 y la NTEN
+                175661 son documentos diferentes con el mismo sufijo—, y por eso
+                122 filas quedaban "ambiguas". Pero de esas filas conocemos los
+                kilos y el importe, que es justamente lo que las separa. Esto no
+                adivina: usa evidencia que ya estaba sobre la mesa."""
+                if len(cands) <= 1:
+                    return cands
+                pc_kg = round(abs(float(f.get("kg") or 0)), 2)
+                pc_usd = abs(float(f.get("importe") or 0))
+                finos = [
+                    c for c in cands
+                    if round(abs(float(c.get("kg") or 0)), 2) == pc_kg
+                    and abs(abs(float(c.get("usd") or 0)) - pc_usd)
+                    <= max(pc_usd * 0.15, 5.0)
+                ]
+                return finos or cands
+
             for f in filas:
                 cands = por_sufijo.get(int(f["numf"]), []) if f["numf"] else []
+                cands = _afina(cands, f)
                 via = "numero"
                 if not cands:
                     cli = (f.get("codigo_cli") or "").strip().upper()
@@ -3074,6 +3097,7 @@ def tipos_desde_asinfo():
                         if abs(abs(float(c.get("usd") or 0)) - pc_usd)
                         <= max(pc_usd * 0.15, 5.0)
                     ]
+                    cands = _afina(cands, f)
                     via = "cliente+fecha+kg+importe"
                 cod = _tipo_unico(cands)
                 if cod:
