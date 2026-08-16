@@ -300,7 +300,7 @@
     {# TMT 2026-07-15 (dueña "que la fila de los filtros y el filtrar ocupe solo
        una linea"): nowrap + overflow-x auto → nunca cae a un segundo renglón;
        si no entra, scrollea horizontal en vez de apilar. #}
-    <div class="flex items-end gap-2" style="flex:1 1 auto; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+    <div class="flex items-end gap-1.5" style="flex:1 1 auto; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
     {# Grupo 0: Estado (dropdown) — TMT 2026-07-14 (dueña). Antes era un hidden
        manejado por las pestañas; ahora es un filtro visible. Al dejarlo en
        "Cartera total" (default) y filtrar un cliente se muestran TODOS sus
@@ -318,8 +318,15 @@
         ('eliminados',    'Eliminados'),
         ('todos',         'Todos los estados'),
       ] %}
-      <select name="estado"
-              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      {# 🚨 TMT 2026-08-16, Federico: *"achica algún campo de estos de filtrado
+         para que no sea necesaria una barra de scrolear (puede ser Estado y
+         Vendedor que están muy anchos)"*. El select se auto-dimensionaba con la
+         opción MÁS LARGA ("Todos los estados" → 169px) aunque el valor visible
+         sea corto. Ancho fijo + padding chico: entra "Cartera total" (el label
+         más largo que se muestra por defecto) y el resto lo trunca el browser
+         en el desplegable, que se abre a ancho completo igual. #}
+      <select name="estado" style="width:132px;"
+              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         {% for val, lbl in estado_opciones %}
           <option value="{{ val }}" {% if (estado_barra or estado) == val %}selected{% endif %}>{{ lbl }}</option>
         {% endfor %}
@@ -328,8 +335,8 @@
     {# Grupo 1: Cliente (3 letras = match exacto) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cliente</label>
-      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras: PUE"
-             maxlength="20" autocomplete="off" style="text-transform:uppercase; width:96px;"
+      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="PUE"
+             maxlength="20" autocomplete="off" style="text-transform:uppercase; width:80px;"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
     </div>
     {# Grupo 1b: Vendedor (dropdown) — TMT 2026-07-15 (dueña "un filtro por
@@ -337,7 +344,7 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Vendedor</label>
       <select name="vendedor"
-              style="width:130px;"
+              style="width:96px;"
               class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
         {% for v in (vendedores or []) %}
@@ -350,7 +357,7 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Monto USD</label>
       <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
-             placeholder="500 ó 500,51" style="width:104px;"
+             placeholder="500 ó 500,51" style="width:92px;"
              title="Entero = el dólar entero (500 → 500,00–500,99). Con centavos = exacto (500,51)."
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
@@ -367,13 +374,13 @@
     {% set _rot_fecha = 'Depositado' if _es_bucket_banco else 'A depositar' %}
     <div>
       <label class="block text-xs text-slate-500 mb-1">{{ _rot_fecha }} desde</label>
-      <input type="date" name="desde" value="{{ desde or '' }}" style="width:140px;"
+      <input type="date" name="desde" value="{{ desde or '' }}" style="width:130px;"
              title="{{ 'Día en que el cheque pasó por el banco.' if _es_bucket_banco else 'Fecha AGENDADA de depósito (fechad), no el depósito real.' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">{{ _rot_fecha }} hasta</label>
-      <input type="date" name="hasta" value="{{ hasta or '' }}" style="width:140px;"
+      <input type="date" name="hasta" value="{{ hasta or '' }}" style="width:130px;"
              title="{{ 'Día en que el cheque pasó por el banco.' if _es_bucket_banco else 'Fecha AGENDADA de depósito (fechad), no el depósito real.' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
@@ -403,8 +410,8 @@
        cheque; también matchea nombre, pero el uso es el número). #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Cheque</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="N° cheque"
-             class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      <input type="text" name="q" value="{{ q }}" placeholder="N°"
+             class="w-20 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     </div>{# /campos #}
 
