@@ -554,11 +554,16 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
                             if (r.get("stat") or "").upper() != "Y")
         total_kg = sum(float(r["kg"] or 0) for r in filas
                        if (r.get("stat") or "").upper() != "Y")
+    # 🚨 TMT 2026-08-16, pedido de Federico: *"además de kg y $ indicame a
+    # continuación el valor de $/kg"*. Se calcula acá (server-side, LEY del
+    # proyecto) y no en Jinja, así el header no tiene que dividir ni
+    # preocuparse por el kg = 0 (compras de servicios / notas sin kilos).
+    total_pkg = (float(total_importe or 0) / float(total_kg)) if total_kg else None
     return render_template(
         "compras/lista.html",
         filas=filas, q=q, codigo=codigo or None,
         desde=desde, hasta=hasta, tipo=tipo,
-        total_importe=total_importe, total_kg=total_kg,
+        total_importe=total_importe, total_kg=total_kg, total_pkg=total_pkg,
         incluir_anuladas=incluir_anuladas,
         vista=vista,
         titulo=titulo,

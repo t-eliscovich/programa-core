@@ -25,6 +25,7 @@
         kpi_valor='$ ' ~ (total_importe | num_es(0)),
         kpi_extra='· ' ~ (filas | length | string) ~ ' filas en pantalla'
                    ~ ' · ' ~ (total_kg | num_es(0)) ~ ' kg'
+                   ~ (' · $ ' ~ (total_pkg | num_es(2)) ~ '/kg' if total_pkg else '')
     ) }}
 
     <div class="no-print flex items-center gap-2 shrink-0">
