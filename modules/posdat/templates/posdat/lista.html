@@ -206,7 +206,39 @@
               <span class="text-slate-300">—</span>
             {%- endif -%}
           </td>
-          <td class="px-2 py-1 whitespace-nowrap">{{ f.fechad | fecha_es }}</td>
+          {# 🚨 TMT 2026-08-16, Federico: *"en posdat no es editable el
+             vencimiento"*. Era cierto: el único editor de `fechad` vivía en el
+             modal de /informes/flujo/grafico y en el form /posdat/<id>/editar,
+             al que NINGUNA pantalla linkea (sólo el panel de Recientes) — o
+             sea, inalcanzable desde acá. Ahora la celda es un input date
+             inline, mismo patrón que concepto/importe: postea {fechad} a
+             /posdat/_api/<id>/editar, que ya lo aceptaba. #}
+          {# `fechad` a veces viene `date` y a veces string ISO (Asinfo lo
+             manda ya formateado) → `| string` cubre los dos y el [:10]
+             recorta la hora si fuese datetime.
+             `data-sort-value`: sortable-tables.js ordena por textContent y un
+             <td> con sólo un <input> adentro tiene textContent vacío → sin
+             esto, ordenar por Venc. deja todas las filas iguales. #}
+          {% set _fd_iso = (f.fechad | string)[:10] if f.fechad else '' %}
+          {% set _fd_es = f.fechad | fecha_es %}
+          <td class="px-2 py-1 whitespace-nowrap" data-stop="1"
+              data-sort-value="{{ _fd_iso }}">
+            {% if tiene_permiso('posdat.editar') %}
+              {# type="text" y NO type="date" a propósito: el input date muestra
+                 el formato del navegador (mm/dd/aaaa) — la dueña ya lo rebotó
+                 en el flujo gráfico ("la fecha está en gringo, poné día mes
+                 año"). Mismo patrón que .gf-edit-fechad: se tipea dd/mm/aaaa y
+                 el JS lo pasa a ISO antes de postear. #}
+              <input type="text" inputmode="numeric" maxlength="10"
+                     placeholder="dd/mm/aaaa"
+                     class="posdat-fechad-edit w-24 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-xs tabular-nums"
+                     value="{{ _fd_es }}"
+                     data-orig="{{ _fd_es }}"
+                     title="Vencimiento — editable directo en la lista (dd/mm/aaaa)">
+            {% else %}
+              {{ _fd_es }}
+            {% endif %}
+          </td>
           <td class="px-2 py-1 font-mono">{{ f.prov }}</td>
           <td class="px-2 py-1" data-stop="1">
             {# TMT 2026-05-20 — concepto editable inline. Postea a
@@ -627,6 +659,42 @@
               return;
             }
             postEditar(idPosdat, { importe: n }, inpImp,
+                       'posdat-importe-saved', 'posdat-importe-error');
+          });
+        }
+        // 🚨 TMT 2026-08-16, Federico: *"en posdat no es editable el
+        // vencimiento"*. Editor de VENC. (fechad) inline. `api_editar` ya
+        // parsea `fechad`, no hizo falta backend nuevo. Si el input queda
+        // vacío revertimos: borrar el vencimiento desde acá sería
+        // ambiguo (parse_date('') → None = "no tocar" para la API).
+        const inpFd = tr.querySelector('.posdat-fechad-edit');
+        if (inpFd) {
+          // dd/mm/aaaa → aaaa-mm-dd. Copiado de _gfDdmmToIso (flujo gráfico).
+          function _ddmmAIso(s) {
+            const m = (s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (!m) return null;
+            const dd = m[1].padStart(2, '0'), mm = m[2].padStart(2, '0');
+            if (+mm < 1 || +mm > 12 || +dd < 1 || +dd > 31) return null;
+            const iso = m[3] + '-' + mm + '-' + dd;
+            // Rebota 31/02: el Date reconstruido tiene que dar la misma fecha.
+            const d = new Date(iso + 'T00:00:00');
+            return (d.getFullYear() === +m[3] && d.getMonth() + 1 === +mm
+                    && d.getDate() === +dd) ? iso : null;
+          }
+          inpFd.addEventListener('change', () => {
+            const v = (inpFd.value || '').trim();
+            if (!v) {
+              alert('Vencimiento vacío. Para borrarlo hay que ir al editor completo.');
+              inpFd.value = inpFd.dataset.orig;
+              return;
+            }
+            const iso = _ddmmAIso(v);
+            if (!iso) {
+              alert('Fecha inválida. Usá el formato dd/mm/aaaa (ej: 01/08/2026).');
+              inpFd.value = inpFd.dataset.orig;
+              return;
+            }
+            postEditar(idPosdat, { fechad: iso }, inpFd,
                        'posdat-importe-saved', 'posdat-importe-error');
           });
         }
