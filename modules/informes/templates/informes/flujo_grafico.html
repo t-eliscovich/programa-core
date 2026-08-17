@@ -572,7 +572,49 @@
           }
           .gf-edit-saved { background: rgba(34,197,94,0.15) !important; }
           .gf-edit-error { background: rgba(248,113,113,0.20) !important; }
+          /* 🚨 TMT 2026-08-16, Federico: *"quiero que el gráfico de arriba se
+             redibuje automáticamente al cambiar cualquier fecha"*. Toast que
+             avisa mientras se recarga (ver window.gfAvisarRedibujo). */
+          #gf-toast-redibujo {
+            position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+            background: rgb(15 23 42); color: #fff; font-size: 12px; font-weight: 500;
+            padding: 8px 14px; border-radius: 999px; z-index: 9999;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+          }
         </style>
+
+        {# 🚨 TMT 2026-08-16, Federico: *"quiero que el gráfico de arriba se
+           redibuje automáticamente al cambiar cualquier fecha de gastos
+           forzados o posdatados"*.
+           Por qué RECARGA y no un redibujo en el cliente: `buildChart()` corre
+           sobre el array DATOS que renderiza el server (saldo/gastos día a día,
+           ya con los posdat aplicados a su vencimiento). Los forzados MANUALES
+           (scintela.gasto_forzado) sí se aplican en el cliente —`gfApplyToData`—
+           y por eso ésos ya redibujaban solos con gfRebuildChart(). Pero las
+           filas posdat (banc=9 forzados y banc=0 contabilizados) viven en DATOS:
+           mover su vencimiento cambia QUÉ DÍA baja el saldo, y eso sólo lo sabe
+           recalcular el server. Recargar es la única forma correcta; Chrome
+           restaura el scroll, así que la vista vuelve al mismo panel. #}
+        <script>
+          window.gfAvisarRedibujo = function() {
+            if (window.__gfRecargando) return;   // un solo reload aunque se dispare 2 veces
+            window.__gfRecargando = true;
+            let t = document.getElementById('gf-toast-redibujo');
+            if (!t) {
+              t = document.createElement('div');
+              t.id = 'gf-toast-redibujo';
+              document.body.appendChild(t);
+            }
+            t.textContent = 'Guardado — redibujando el gráfico…';
+            // Conservar la agrupación del zoom (vive sólo en el DOM) para que
+            // la recarga no vuelva siempre a "3 días".
+            const onBtn = document.querySelector('.flujo-wrap .zoom button.on');
+            const url = new URL(window.location.href);
+            if (onBtn && onBtn.dataset.q) url.searchParams.set('zoom', onBtn.dataset.q);
+            // Delay corto: deja ver el flash verde del campo antes de recargar.
+            setTimeout(() => window.location.assign(url.toString()), 550);
+          };
+        </script>
 
         {# JS: enviar updates al endpoint /posdat/_api/<id>/editar onchange. #}
         <script>
@@ -588,7 +630,10 @@
               if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
               return m[3] + '-' + mo + '-' + d;
             }
-            function postUpdate(id_posdat, payload, inputEl) {
+            // `redibujar`: true sólo cuando cambió la FECHA — mover el
+            // vencimiento cambia el día en que el gráfico resta, y eso lo
+            // recalcula el server (ver comentario del bloque de arriba).
+            function postUpdate(id_posdat, payload, inputEl, redibujar) {
               fetch('/posdat/_api/' + id_posdat + '/editar', {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -604,6 +649,7 @@
                   inputEl.classList.add('gf-edit-saved');
                   inputEl.dataset.orig = inputEl.value;
                   setTimeout(() => inputEl.classList.remove('gf-edit-saved'), 1200);
+                  if (redibujar) window.gfAvisarRedibujo();
                 } else {
                   inputEl.classList.add('gf-edit-error');
                   alert('No se pudo guardar: ' + (j.error || 'error'));
@@ -642,7 +688,7 @@
                   fechaInput.value = fechaInput.dataset.orig;
                   return;
                 }
-                postUpdate(idPd, payload(), fechaInput);
+                postUpdate(idPd, payload(), fechaInput, true);   // fecha → redibuja
               });
               if (impInput) impInput.addEventListener('change', () => {
                 const n = parseFloat(impInput.value);
@@ -715,8 +761,12 @@
       {# ── Posdatados (deudas a proveedor) contabilizados en el flujo
          (dueña 2026-07-08: "mostrame los posdatados siendo contabilizados así
          entiendo de dónde sale cada número"). banc=0 = deuda real; de acá sale
-         cada BAJADA del gráfico, a su vencimiento. Read-only; se editan en
-         /posdat. Fechas DD/MM/AAAA (slicing del ISO, sin type=date gringo). #}
+         cada BAJADA del gráfico, a su vencimiento. Fechas DD/MM/AAAA (slicing
+         del ISO, sin type=date gringo).
+         🚨 TMT 2026-08-16, Federico: *"los gastos forzados tienen fecha
+         editable y los posdatados contabilizados fecha fija — hazlo editable
+         igualito que los forzados"*. La columna VENCE dejó de ser read-only:
+         mismo input .gf-edit-fechad y mismo POST a /posdat/_api/<id>/editar. #}
       {# Ordenados por fecha de vencimiento (dueña 2026-07-09). #}
       {% set _pd_filas = posdat_filas or [] %}
       {# TMT 2026-08-06 (dueña: "dice 0 arriba de todo"): mismo bug de scoping
@@ -729,7 +779,8 @@
           <h3>Posdatados contabilizados</h3>
           <span class="gf-sub">
             <span class="gf-sub-txt">Deudas a proveedor (<code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=0</code>)
-            que el flujo va restando a su vencimiento — de acá sale cada bajada del gráfico. Editables desde
+            que el flujo va restando a su vencimiento — de acá sale cada bajada del gráfico.
+            {% if tiene_permiso('posdat.editar') %}La fecha se edita acá mismo; el resto, desde{% else %}Se editan desde{% endif %}
             {% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>{% else %}/posdat{% endif %}.</span>
             <strong>$ {{ _ns_pd0.total | num_es(0) }}</strong>
           </span>
@@ -744,11 +795,23 @@
                 <th style="text-align:right;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Importe USD</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="pd-tabla-body">
               {% for e in _pd_filas %}
               {% set _fd = e.fechad or (e.fecha_efectiva[:10] if e.fecha_efectiva else '') %}
-              <tr style="border-bottom:1px dotted var(--grid);">
-                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap;">{% if _fd %}{{ _fd[8:10] }}/{{ _fd[5:7] }}/{{ _fd[0:4] }}{% else %}—{% endif %}</td>
+              {% set _fd_es = (_fd[8:10] ~ '/' ~ _fd[5:7] ~ '/' ~ _fd[0:4]) if _fd else '' %}
+              <tr data-id-posdat="{{ e.id_posdat }}" style="border-bottom:1px dotted var(--grid);">
+                <td style="padding:4px 10px;white-space:nowrap;">
+                  {% if e.id_posdat and tiene_permiso('posdat.editar') %}
+                    <input type="text" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa"
+                           value="{{ _fd_es }}"
+                           class="gf-edit-fechad pd-edit-fechad"
+                           data-orig="{{ _fd_es }}"
+                           title="Vencimiento — editable (dd/mm/aaaa)"
+                           style="font-family:ui-monospace,monospace;font-size:12px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:100px;">
+                  {% else %}
+                    <span style="font-family:ui-monospace,monospace;font-size:12px;">{% if _fd %}{{ _fd_es }}{% else %}—{% endif %}</span>
+                  {% endif %}
+                </td>
                 <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:12px;">{{ e.prov or '—' }}</td>
                 <td style="padding:5px 10px;font-size:12px;color:var(--text);">{{ e.concepto or '—' }}</td>
                 <td style="padding:5px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:400;font-size:12px;">$ {{ e.importe | num_es(2) }}</td>
@@ -759,6 +822,64 @@
             </tbody>
           </table>
         </div>
+        {% if tiene_permiso('posdat.editar') %}
+        {# Editor de la fecha de vencimiento — clon del handler de Gastos
+           forzados (que vive en su propio IIFE, así que _gfDdmmToIso no es
+           visible desde acá y se repite). Sólo manda `fechad`: api_editar
+           acepta updates parciales y conserva importe/concepto/prov. #}
+        <script>
+          (function() {
+            function _pdDdmmToIso(s) {
+              const m = (s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+              if (!m) return null;
+              const dd = m[1].padStart(2, '0'), mm = m[2].padStart(2, '0');
+              if (+mm < 1 || +mm > 12 || +dd < 1 || +dd > 31) return null;
+              const iso = m[3] + '-' + mm + '-' + dd;
+              const d = new Date(iso + 'T00:00:00');
+              return (d.getFullYear() === +m[3] && d.getMonth() + 1 === +mm
+                      && d.getDate() === +dd) ? iso : null;
+            }
+            const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                      || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+            document.querySelectorAll('#pd-tabla-body tr[data-id-posdat]').forEach(tr => {
+              const idPd = tr.dataset.idPosdat;
+              const inp = tr.querySelector('.pd-edit-fechad');
+              if (!inp || !idPd) return;
+              inp.addEventListener('change', () => {
+                const iso = _pdDdmmToIso(inp.value);
+                if (!iso) {
+                  alert('Fecha inválida. Usá el formato dd/mm/aaaa.');
+                  inp.value = inp.dataset.orig;
+                  return;
+                }
+                fetch('/posdat/_api/' + idPd + '/editar', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                  body: JSON.stringify({ fechad: iso }),
+                }).then(r => r.json()).then(j => {
+                  if (j && j.ok) {
+                    inp.classList.remove('gf-edit-error');
+                    inp.classList.add('gf-edit-saved');
+                    inp.dataset.orig = inp.value;
+                    setTimeout(() => inp.classList.remove('gf-edit-saved'), 1200);
+                    // Mover el vencimiento cambia el día de la bajada → recargar.
+                    if (window.gfAvisarRedibujo) window.gfAvisarRedibujo();
+                  } else {
+                    inp.classList.add('gf-edit-error');
+                    alert('No se pudo guardar: ' + ((j && j.error) || 'error'));
+                    inp.value = inp.dataset.orig;
+                  }
+                }).catch(e => {
+                  inp.classList.add('gf-edit-error');
+                  alert('Error de red: ' + e.message);
+                  inp.value = inp.dataset.orig;
+                });
+              });
+            });
+          })();
+        </script>
+        {% endif %}
       </section>
 
       {# Inyectar filas manuales (scintela.gasto_forzado) en la MISMA tabla de
@@ -1719,6 +1840,18 @@ document.querySelectorAll('.flujo-wrap .zoom button').forEach(b => {
     }
   });
 });
+
+/* 🚨 TMT 2026-08-16 — el redibujo automático tras editar una fecha
+   (window.gfAvisarRedibujo) recarga la página, y la agrupación del zoom vive
+   sólo en el DOM: sin esto volvía siempre a "3 días". gfAvisarRedibujo mete
+   ?zoom=<q> en la URL y acá lo reponemos. No se persiste nada en el navegador
+   (LEY del proyecto): es un parámetro de la propia URL. */
+(function() {
+  const z = new URLSearchParams(window.location.search).get('zoom');
+  if (!z) return;
+  const b = document.querySelector('.flujo-wrap .zoom button[data-q="' + z + '"]');
+  if (b && !b.classList.contains('on')) b.click();
+})();
 
 /* ============================================================ *
  *   Egresos: search + sort
