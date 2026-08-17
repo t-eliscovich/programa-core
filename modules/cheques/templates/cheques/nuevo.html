@@ -945,12 +945,29 @@
         // marcó la siguiente"). Congelando todo, lo liberado va directo al
         // sobrante → nota de crédito, sin re-marcar a nadie. Mismo patrón que
         // la tabla de anticipos (manualCancel).
-        tbody.querySelectorAll('input.aplic-input').forEach(o => {
-          const oid = o.dataset.id;
-          if (manualValues[oid] === undefined) {
-            manualValues[oid] = parseMonto(o.value) || 0;
-          }
-        });
+        // TMT 2026-08-17 (dueña, caso Alex sobre AJ2): congelar SÓLO cuando
+        // la fila que se toca es una factura. Tildar una NOTA DE CRÉDITO no
+        // le saca plata a nadie: la DEVUELVE, y lo que se espera es que ese
+        // excedente cubra más facturas (es lo que dice el comentario de
+        // Alex del 02/07, acá abajo). Con todo congelado no quedaba una sola
+        // fila libre para redistribuir y el excedente moría como "Restante".
+        // Reproducido con jsdom sobre AJ2, cheque $4.000 y una NC de 171,03
+        // al fondo de la lista:
+        //     antes de tildarla -> Aplicado 4.000,00 · Restante 0,00
+        //     al tildarla       -> Aplicado 3.828,97 · Restante 171,03
+        // Textual de él: "hasta que no aplico y desaplico facturas no se
+        // empezaba a contar esa nota de crédito". Es también el origen del
+        // "Restante $31,42" del caso anterior: la factura parcial quedaba
+        // clavada en 1.349,64 en vez de subir a sus 1.381,06.
+        const _esCreditoLaFila = saldo < -0.005;
+        if (!_esCreditoLaFila) {
+          tbody.querySelectorAll('input.aplic-input').forEach(o => {
+            const oid = o.dataset.id;
+            if (manualValues[oid] === undefined) {
+              manualValues[oid] = parseMonto(o.value) || 0;
+            }
+          });
+        }
         // TMT 2026-07-06 (dueña): "deseleccioné una factura pero el monto no
         // se borró". Una fila con monto PARCIAL muestra el checkbox en
         // estado intermedio (rayita); clickearlo BORRA el monto (deselección),
