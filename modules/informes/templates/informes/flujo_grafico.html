@@ -630,9 +630,10 @@
               if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
               return m[3] + '-' + mo + '-' + d;
             }
-            // `redibujar`: true sólo cuando cambió la FECHA — mover el
-            // vencimiento cambia el día en que el gráfico resta, y eso lo
-            // recalcula el server (ver comentario del bloque de arriba).
+            // `redibujar`: true cuando el cambio mueve el gráfico — FECHA
+            // (cambia el día de la bajada) o IMPORTE (cambia su altura). Los
+            // dos los recalcula el server (ver comentario del bloque de
+            // arriba). Concepto y PR no tocan el gráfico → no recargan.
             function postUpdate(id_posdat, payload, inputEl, redibujar) {
               fetch('/posdat/_api/' + id_posdat + '/editar', {
                 method: 'POST',
@@ -697,7 +698,9 @@
                   impInput.value = impInput.dataset.orig;
                   return;
                 }
-                postUpdate(idPd, payload(), impInput);
+                // TMT 2026-08-16 (Federico, segunda pasada): el importe también
+                // redibuja — cambia la altura de la bajada, no sólo el día.
+                postUpdate(idPd, payload(), impInput, true);
               });
               if (conceptoInput) conceptoInput.addEventListener('change', () => {
                 if (!(conceptoInput.value || '').trim()) {
@@ -728,6 +731,9 @@
                     tr.style.transition = 'opacity .3s';
                     tr.style.opacity = '0';
                     setTimeout(() => tr.remove(), 300);
+                    // Borrar un forzado banc=9 saca una bajada entera del
+                    // gráfico: mismo caso que editar la fecha o el importe.
+                    window.gfAvisarRedibujo();
                   } else {
                     alert('No se pudo eliminar: ' + (j.error || 'error'));
                   }
