@@ -363,6 +363,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(stock_bp)
 
+    # TMT 2026-08-17 — sección Análisis: su propio menú, aparte del programa
+    # del día a día. Gate `analisis.ver`, que sólo tienen los roles wildcard
+    # (Accionista / Administrador) — el resto recibe 404 y ni ve el link.
+    from modules.analisis.views import analisis_bp
+
+    app.register_blueprint(analisis_bp)
+
     # TMT 2026-05-22 — blueprint nuevo /stock/asinfo (cantidad stock desde
     # ERP via Metabase). Aislado del stock_bp para no tocar modules/stock/.
     from modules.stock_asinfo.views import stock_asinfo_bp

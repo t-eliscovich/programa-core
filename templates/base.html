@@ -899,6 +899,16 @@
          menú el 2026-05-20: la cuota mensual se edita inline en
          /posdat — columna "Cuota mensual"). #}
 
+      {# TMT 2026-08-17 dueña: "hacé como un link que nos lleve a todo un menú
+         nuevo". Análisis NO es una sección más de este sidebar: es un link
+         suelto que abre un área con su propio cascarón y su propio menú
+         (mismo criterio que /mi-cartera). Sólo lo ven los roles wildcard
+         —Tamara y Andrés—; para el resto la ruta da 404, así que el link
+         también se esconde: dar un link que 404ea es peor que no darlo. #}
+      {% if tiene_permiso('analisis.ver') %}
+      <a href="/analisis" class="sidebar-section-link">Análisis</a>
+      {% endif %}
+
       {# TMT 2026-05-22 dueña: si el rol no tiene `informes.ver`, ocultar
          la sección entera del menú (antes mostraba "Informes" vacío
          para Alex). #}

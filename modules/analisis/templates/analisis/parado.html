@@ -1,0 +1,139 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Lo parado{% endblock %}
+{% block contenido %}
+
+<h1>Lo parado — y a quién llamar</h1>
+<p class="sub">
+{% if estado.actualizado %}
+  Datos de Asinfo al {{ estado.actualizado.strftime('%d/%m/%Y %H:%M') }}
+{% else %}
+  Todavía no se trajeron los datos — tocá «Actualizar»
+{% endif %}
+</p>
+
+<div class="cards">
+  <div class="card"><p class="k">Parado hoy</p>
+    <p class="v">{{ resumen.kg | num_es(0) }}</p>
+    <p class="s">kg en {{ resumen.items }} telas × color</p></div>
+  <div class="card"><p class="k">Vendido desde que se marcó</p>
+    <p class="v">{{ resumen.kg_vendidos | num_es(0) }}</p>
+    <p class="s">{{ resumen.movidos }} ítems se empezaron a mover</p></div>
+  <div class="card"><p class="k">Clientes a llamar</p>
+    <p class="v">{{ llamados.values() | map('length') | sum }}</p>
+    <p class="s">candidatos en total</p></div>
+  <div class="card"><p class="k">Sin nadie a quién llamar</p>
+    <p class="v">{{ resumen.sin_pista }}</p>
+    <p class="s">{{ resumen.kg_sin_pista | num_es(0) }} kg — no es una lista, es una decisión</p></div>
+</div>
+
+<div class="nota"><b>La lista no se depura sola.</b> Cada fila guarda los kilos que
+tenía el día que se marcó, así que cuando se vende algo la fila <b>se queda</b> y
+lo que cambia es la columna «vendidos». Si desapareciera, no habría forma de
+saber si lo que hicimos funcionó.</div>
+
+<div class="barra">
+  <input id="q" placeholder="Buscar tela, color, cliente, provincia…" oninput="filtrar()">
+  <select id="vend" onchange="filtrar()">
+    <option value="">Todos los vendedores</option>
+    {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+  </select>
+  <span class="sub" id="cuenta" style="margin:0"></span>
+  <form method="post" action="/analisis/parado/actualizar" style="margin-left:auto">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Actualizar desde Asinfo</button>
+  </form>
+</div>
+
+<table>
+<thead><tr><th>Tela</th><th>Color</th><th class="n">Kg parados</th>
+<th class="n">Vendidos</th><th class="n">Clientes</th><th>Estado</th>
+<th class="n">Última venta</th></tr></thead>
+<tbody>
+{% for f in filas %}
+  {% set cand = llamados.get(f.subcategoria, []) %}
+  <tr class="item" onclick="abrir(this)"
+      data-kg="{{ '%.2f' | format(f.stock_kg) }}"
+      data-vend="{{ cand | map(attribute='vend_pc') | select | unique | join(' ') }}"
+      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~
+                       (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
+                       (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
+                       (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
+    <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}</td>
+    <td>{{ f.color }}</td>
+    <td class="n">{{ f.stock_kg | num_es(0) }}</td>
+    <td class="n">{% if f.kg_vendidos %}{{ f.kg_vendidos | num_es(0) }}{% else %}—{% endif %}</td>
+    <td class="n">{{ f.clientes }}</td>
+    <td>
+      {% if f.estado == 'resuelto' %}<span class="pill mov">resuelto</span>
+      {% elif f.estado == 'empezó a moverse' %}<span class="pill mov">se movió</span>
+      {% elif f.anio_pista and f.anio_pista < ahora_anio %}<span class="pill viejo">sólo {{ f.anio_pista }}</span>
+      {% else %}<span class="pill quieto">quieto</span>{% endif %}
+    </td>
+    <td class="g n">{{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
+  </tr>
+  <tr class="det"><td colspan="7">
+    {% if cand %}
+    <table>
+      <thead><tr><th>Código</th><th>Cliente</th><th>Provincia</th><th>Vend.</th>
+      <th class="n">Kg de esta tela</th><th class="n">Última</th></tr></thead>
+      <tbody>
+      {% for c in cand %}
+        <tr data-v="{{ c.vend_pc or '' }}">
+          <td class="cod">{{ c.codigo_cli }}{% if c.codigo_cli in codigos_ambiguos %}
+            <span class="pill ojo">código repetido</span>{% endif %}</td>
+          <td>{{ c.nombre }}</td>
+          <td class="g">{{ c.provincia }}</td>
+          <td class="g">{{ c.vend_pc or 'mostrador' }}</td>
+          <td class="n">{{ c.kg | num_es(0) }}</td>
+          <td class="g n">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="sub" style="margin:10px 0 0">Nadie compró esta tela — en ningún
+      color — ni este año ni el anterior. No se resuelve con una llamada: o la
+      tela salió de catálogo, o el saldo es un error de inventario.</p>
+    {% endif %}
+  </td></tr>
+{% endfor %}
+</tbody>
+</table>
+
+<footer>
+Parado = producto terminado (bodega 53) con stock ≥ 20 kg y menos de 1 kg vendido
+en 12 meses. Los candidatos son los clientes que compraron esa TELA —
+cualquier color— este año; si este año no la compró nadie, los del anterior.
+El código es el mismo <code>codigo_cli</code> del resto del programa.
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrar(){
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const v = document.getElementById('vend').value;
+  let vistos = 0, kg = 0;
+  document.querySelectorAll('tr.item').forEach(tr => {
+    const det = tr.nextElementSibling;
+    const ok = (!q || tr.dataset.buscar.includes(q)) &&
+               (!v || tr.dataset.vend.split(' ').includes(v));
+    tr.classList.toggle('oculta', !ok);
+    if (!ok) det.classList.remove('abierta');
+    det.classList.toggle('oculta', !ok);
+    if (ok) { vistos++; kg += parseFloat(tr.dataset.kg || 0); }
+    det.querySelectorAll('tr[data-v]').forEach(f =>
+      f.classList.toggle('oculta', !!v && f.dataset.v !== v));
+  });
+  document.getElementById('cuenta').textContent =
+    vistos + (vistos === 1 ? ' tela' : ' telas') + ' · ' +
+    kg.toLocaleString('es-EC', {maximumFractionDigits: 0}) + ' kg';
+}
+function abrir(tr){
+  const d = tr.nextElementSibling;
+  d.classList.toggle('abierta');
+  tr.querySelector('.flecha').textContent = d.classList.contains('abierta') ? '▾' : '▸';
+}
+document.addEventListener('DOMContentLoaded', filtrar);
+</script>
+{% endblock %}

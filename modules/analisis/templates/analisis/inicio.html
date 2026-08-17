@@ -1,0 +1,15 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Análisis{% endblock %}
+{% block contenido %}
+<h1>Análisis</h1>
+<p class="sub">Las pantallas que miran el negocio, aparte del programa del día a día.</p>
+
+<div class="tarjetas">
+{% for m in menu %}
+  <a class="tarjeta {{ '' if m.listo else 'pronto' }}" href="{{ m.url if m.listo else '#' }}">
+    <h3>{{ m.titulo }}{% if not m.listo %} <span class="pill quieto">en camino</span>{% endif %}</h3>
+    <p>{{ m.bajada }}</p>
+  </a>
+{% endfor %}
+</div>
+{% endblock %}

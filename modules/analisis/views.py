@@ -1,0 +1,89 @@
+"""Sección Análisis — su propio menú, aparte del programa del día a día."""
+
+from __future__ import annotations
+
+import logging
+
+from flask import Blueprint, flash, redirect, render_template, url_for
+
+from auth import requiere_login, requiere_permiso
+from filters import today_ec
+
+from . import queries
+
+analisis_bp = Blueprint("analisis", __name__, template_folder="templates")
+
+_LOG = logging.getLogger("programa_core.analisis")
+
+# El menú de la sección. Vive acá y no en el template para que agregar una
+# pantalla sea una línea y no un copy-paste de HTML en dos lugares.
+# Los 7 códigos que en Programa Core apuntan a DOS empresas distintas
+# (migración 0155, lista abierta). Ahí el código no identifica a nadie y hay que
+# mirar el RUC antes de llamar.
+CODIGOS_AMBIGUOS = {"BLP", "BRC", "JQS", "LEC", "YMO", "JRP", "MTE"}
+
+MENU = [
+    {
+        "url": "/analisis/parado",
+        "titulo": "Lo parado",
+        "bajada": "Qué está quieto en bodega y a qué cliente llamarle por eso.",
+        "listo": True,
+    },
+    {
+        "url": "/analisis/clientes",
+        "titulo": "Clientes",
+        "bajada": "Quién se movió, quién dejó de comprar, quién se está enfriando.",
+        "listo": False,
+    },
+]
+
+
+@analisis_bp.context_processor
+def _menu():
+    """El menú de arriba lo ve todo template de la sección.
+
+    Sólo las pantallas listas: un link a algo que todavía no existe da 404, y
+    en esta app los links son strings hardcodeados — no se ve desde el código.
+    """
+    return {"menu_global": [m for m in MENU if m["listo"]]}
+
+
+@analisis_bp.route("/analisis")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def inicio():
+    return render_template("analisis/inicio.html", menu=MENU)
+
+
+@analisis_bp.route("/analisis/parado")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def parado():
+    filas = queries.items()
+    return render_template(
+        "analisis/parado.html",
+        filas=filas,
+        llamados=queries.llamados_por_tela(),
+        resumen=queries.resumen(filas),
+        estado=queries.estado(),
+        codigos_ambiguos=CODIGOS_AMBIGUOS,
+        ahora_anio=today_ec().year,
+    )
+
+
+@analisis_bp.route("/analisis/parado/actualizar", methods=["POST"])
+@requiere_login
+@requiere_permiso("analisis.ver")
+def parado_actualizar():
+    """Trae todo de Asinfo. Tarda ~10 s: por eso es un botón y no pasa al abrir."""
+    try:
+        r = queries.actualizar()
+        flash(f"Actualizado: {r['items']} telas en la lista, "
+              f"{r['llamados']} candidatos.", "success")
+    except Exception as e:                       # noqa: BLE001
+        # Fail-closed: si Asinfo no contesta, la pantalla sigue mostrando la
+        # foto vieja CON su fecha, que es información. Vaciarla no lo es.
+        _LOG.warning("Análisis/parado: no se pudo actualizar: %s", e)
+        flash(f"No se pudo actualizar: {e}. Se sigue viendo la foto anterior.",
+              "error")
+    return redirect(url_for("analisis.parado"))

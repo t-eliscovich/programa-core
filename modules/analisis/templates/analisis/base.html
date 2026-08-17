@@ -1,0 +1,105 @@
+{#
+  Cascarón propio de la sección Análisis.
+
+  ⭐ NO extiende `templates/base.html` a propósito. Tamara, 17/08/2026: "hacé
+  como un link que nos lleve a todo un menú nuevo" — la idea es entrar a un
+  lugar aparte, no agregar otro ítem al menú de siempre. Mismo criterio que
+  /mi-cartera, que también tiene su cascarón.
+
+  ⚠ `static/tailwind.css` es un build JIT CONGELADO: las clases nuevas de
+  Tailwind no renderizan. Por eso el CSS va acá, plano.
+#}
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block titulo %}Análisis{% endblock %} · Intela</title>
+<style>
+:root{--t:#111827;--g:#6b7280;--l:#e5e7eb;--az:#2563eb;--rj:#b91c1c;--vd:#15803d}
+*{box-sizing:border-box}
+body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+color:var(--t);margin:0;background:#fff}
+header.top{border-bottom:1px solid var(--l);padding:14px 24px;display:flex;
+gap:22px;align-items:baseline;position:sticky;top:0;background:#fff;z-index:5}
+header.top .marca{font-weight:600}
+header.top a{color:var(--g);text-decoration:none;font-size:14px}
+header.top a:hover,header.top a.act{color:var(--t)}
+header.top .der{margin-left:auto}
+main{max-width:1060px;margin:0 auto;padding:28px 24px 80px}
+h1{font-size:24px;margin:0 0 4px}
+h2{font-size:18px;margin:40px 0 4px}
+.sub{color:var(--g);font-size:13px;margin:0 0 14px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+color:var(--g);border-bottom:2px solid var(--l);padding:8px 10px}
+th.n{text-align:right}
+td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+td.g{color:var(--g);font-size:13px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+gap:12px;margin:20px 0}
+.card{background:#f8fafc;border-radius:8px;padding:14px 16px}
+.card .k{font-size:12px;color:var(--g);margin:0}
+.card .v{font-size:26px;font-weight:600;line-height:1.15;margin:4px 0 0}
+.card .s{font-size:12px;color:var(--g);margin:2px 0 0}
+.nota{background:#f0fdf4;border-left:4px solid var(--vd);padding:14px 18px;
+margin:16px 0;border-radius:0 8px 8px 0;font-size:14px}
+.alerta{background:#fffbeb;border-left:4px solid #d97706;padding:14px 18px;
+margin:16px 0;border-radius:0 8px 8px 0;font-size:14px}
+.error{background:#fef2f2;border-left:4px solid var(--rj);padding:14px 18px;
+margin:16px 0;border-radius:0 8px 8px 0;font-size:14px}
+.barra{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0}
+input,select,button{padding:7px 11px;border:1px solid var(--l);border-radius:6px;
+font-size:15px;font-family:inherit;color:inherit;background:#fff}
+input{width:250px}
+button{cursor:pointer}
+button:hover{border-color:var(--g)}
+tr.item{cursor:pointer}
+tr.item:hover td{background:#f8fafc}
+tr.item td.tela{font-weight:600}
+.flecha{display:inline-block;width:12px;color:var(--g);font-size:11px}
+tr.det{display:none}
+tr.det>td{background:#f8fafc;padding:0 10px 14px 34px}
+tr.det.abierta{display:table-row}
+tr.det table{font-size:13px;background:#fff;border:1px solid var(--l);border-radius:6px}
+tr.det th{padding:6px 9px;font-size:10px}
+tr.det td{padding:5px 9px}
+.pill{font-size:11px;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.pill.mov{background:#dcfce7;color:#166534}
+.pill.quieto{background:#f1f5f9;color:#475569}
+.pill.viejo{background:#fef3c7;color:#854d0e}
+.pill.ojo{background:#fee2e2;color:#991b1b}
+.cod{font-weight:600;letter-spacing:.4px}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.tarjeta{border:1px solid var(--l);border-radius:10px;padding:18px 20px;
+text-decoration:none;color:inherit;display:block}
+.tarjeta:hover{border-color:var(--g)}
+.tarjeta h3{margin:0 0 4px;font-size:16px}
+.tarjeta p{margin:0;color:var(--g);font-size:13px}
+.tarjeta.pronto{opacity:.55;pointer-events:none}
+tr.oculta{display:none!important}
+[hidden]{display:none!important}
+footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--l);
+font-size:12px;color:var(--g)}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="marca">Análisis</span>
+  {% for m in menu_global %}
+    <a href="{{ m.url }}" {% if request.path == m.url %}class="act"{% endif %}>{{ m.titulo }}</a>
+  {% endfor %}
+  <a class="der" href="/">← Volver al programa</a>
+</header>
+<main>
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+  {% for categoria, texto in mensajes %}
+    <div class="{{ 'error' if categoria == 'error' else 'nota' }}">{{ texto }}</div>
+  {% endfor %}
+{% endwith %}
+{% block contenido %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>
