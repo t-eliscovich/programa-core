@@ -50,6 +50,8 @@
     {% endfor %}
   </select>
   <button onclick="window.print()">Imprimir</button>
+  <a href="/analisis/parado/clientes.csv?orden={{ orden }}{% if vend %}&vend={{ vend }}{% endif %}"
+     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">Bajar a Excel</a>
   <a href="/analisis/parado" style="margin-left:auto;color:var(--g);font-size:14px">
     ← Ver por tela</a>
 </div>
@@ -103,6 +105,8 @@
 
 <footer>
 <span class="noimp">
+El botón «Bajar a Excel» baja lo mismo que estás viendo — con este vendedor y
+este orden.<br>
 ⚠ Los «kg parados en telas que compra» <b>no se suman entre clientes</b>: una
 misma tela parada aparece en la lista de todos los que la compran, así que la
 columna sirve para ordenar, no para prometer.<br>

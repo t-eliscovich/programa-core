@@ -486,3 +486,58 @@ def test_las_columnas_numericas_ordenan_por_el_numero_y_no_por_el_texto():
     # toda columna marcada numérica tiene que tener data-v en sus celdas
     assert html.count('data-v="') >= len(numericas), (
         "una columna numérica sin data-v ordena por el texto formateado")
+
+
+# ── Excel desde la hoja del vendedor ────────────────────────────────────────
+
+def test_el_excel_de_la_hoja_sale_de_la_misma_funcion_que_la_pantalla(monkeypatch):
+    """Si fueran dos caminos, el archivo y el papel podrían decir cosas
+    distintas del mismo día."""
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    plano = queries.por_cliente_plano()
+    pantalla = queries.por_cliente()
+    assert {f["codigo"] for f in plano} == (
+        {c["codigo"] for c in pantalla["clientes"]}
+        | {c["codigo"] for c in pantalla["improbables"]})
+
+
+def test_el_excel_de_la_hoja_distingue_candidatos_de_improbables(monkeypatch):
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    plano = queries.por_cliente_plano()
+    tipos = {f["codigo"]: f["tipo"] for f in plano}
+    assert tipos["AAA"] == "candidato" and tipos["CCC"] == "improbable", (
+        "aplanado a Excel, un improbable mezclado con los buenos es "
+        "indistinguible — y el orden de las filas no lo dice")
+
+
+def test_el_excel_de_la_hoja_respeta_el_vendedor_elegido(monkeypatch):
+    """A diferencia del CSV de «Lo parado», acá el filtro NO es de JavaScript:
+    viaja en la URL y lo aplica la misma función que dibuja la pantalla, así que
+    puede y debe viajar al archivo."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.parado_clientes_csv)
+    assert 'request.args.get("vend")' in fuente
+    assert "queries.por_cliente_plano(vend, orden)" in fuente
+
+
+def test_las_telas_de_cada_cliente_salen_de_mayor_a_menor(monkeypatch):
+    filas = _filas_falsas()
+    for f in filas:
+        f["codigo_cli"], f["nombre"] = "AAA", "Uno"
+    filas[0]["kg_parado"], filas[1]["kg_parado"], filas[2]["kg_parado"] = 10, 900, 50
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: filas)
+    telas = queries.por_cliente()["clientes"][0]["telas"]
+    assert [float(t["kg_parado"]) for t in telas] == [900, 50, 10]
+
+
+def test_las_dos_pantallas_tienen_su_boton_de_excel():
+    """Dueña 17/08/2026: "de todos lados deberia poder bajar a excel"."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for archivo, texto in (("parado.html", "Bajar TODO a Excel"),
+                           ("parado_clientes.html", "Bajar a Excel")):
+        html = (carpeta / archivo).read_text(encoding="utf-8")
+        assert texto in html, f"{archivo} no ofrece bajar a Excel"

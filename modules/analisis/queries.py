@@ -172,6 +172,9 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
         if f["anio"] >= anio - 1:
             c["improbable"] = False
 
+    for c in clientes.values():
+        c["telas"].sort(key=lambda t: -float(t["kg_parado"] or 0))
+
     vivos = [c for c in clientes.values() if not c["improbable"]]
     dudosos = [c for c in clientes.values() if c["improbable"]]
 
@@ -184,6 +187,39 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
     vivos.sort(key=clave)
     dudosos.sort(key=clave)
     return {"clientes": vivos, "improbables": dudosos, "orden": orden}
+
+
+def por_cliente_plano(vend: str | None = None, orden: str = "oportunidad") -> list[dict]:
+    """
+    La misma hoja, aplanada a una fila por CLIENTE × TELA, para Excel.
+
+    Sale de `por_cliente()` y no de una consulta propia: si fueran dos caminos,
+    el archivo y la pantalla podrían decir cosas distintas del mismo día.
+
+    ⚠ `kg_parado` se repite en cada fila del mismo cliente y entre clientes:
+    sumar esa columna en Excel da mucho más que el stock real. Va una columna
+    `orden_en_la_hoja` para poder reconstruir el ranking sin sumar nada.
+    """
+    filas = []
+    r = por_cliente(vend, orden)
+    for grupo, dudoso in (("candidato", False), ("improbable", True)):
+        for i, c in enumerate(r["improbables"] if dudoso else r["clientes"], 1):
+            for t in c["telas"]:
+                filas.append({
+                    "tipo": grupo,
+                    "orden_en_la_hoja": i,
+                    "codigo": c["codigo"], "nombre": c["nombre"],
+                    "provincia": c["provincia"],
+                    "vendedor": c["vend_pc"] or "mostrador",
+                    "kg_potencial": c["kg_potencial"],
+                    "subcategoria": t["subcategoria"],
+                    "colores_parados": t["colores_parados"],
+                    "kg_parado": t["kg_parado"],
+                    "kg_cliente": t["kg_cliente"],
+                    "ultima_compra": t["ultima_compra"],
+                    "anio": t["anio"],
+                })
+    return filas
 
 
 # ── Refresh ─────────────────────────────────────────────────────────────────

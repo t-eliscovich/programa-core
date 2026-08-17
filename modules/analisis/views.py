@@ -152,6 +152,43 @@ def parado_clientes():
     )
 
 
+@analisis_bp.route("/analisis/parado/clientes.csv")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def parado_clientes_csv():
+    """
+    La hoja del vendedor a Excel — una fila por cliente × tela.
+
+    Acá el filtro por vendedor SÍ viaja, porque no es un filtro de JavaScript:
+    ya está en la URL de la pantalla y lo aplica la misma función que la dibuja
+    (`por_cliente`). El orden también, para que el archivo salga en el mismo
+    orden que el papel.
+    """
+    vend = (request.args.get("vend") or "").strip().upper() or None
+    orden = request.args.get("orden") or "oportunidad"
+    if orden not in queries.ORDENES:
+        orden = "oportunidad"
+    return csv_response(
+        queries.por_cliente_plano(vend, orden),
+        columnas=[
+            ("tipo", "Candidato o improbable"),
+            ("orden_en_la_hoja", "Orden en la hoja"),
+            ("codigo", "Código"),
+            ("nombre", "Cliente"),
+            ("provincia", "Provincia"),
+            ("vendedor", "Vendedor"),
+            ("kg_potencial", "Kg parados en telas que compra"),
+            ("subcategoria", "Tela"),
+            ("colores_parados", "Colores parados"),
+            ("kg_parado", "Kg parados de esa tela"),
+            ("kg_cliente", "Kg que le vendimos"),
+            ("ultima_compra", "Última compra"),
+            ("anio", "Año"),
+        ],
+        filename=f"a_quien_ofrecerle_que{'_' + vend if vend else ''}.csv",
+    )
+
+
 @analisis_bp.route("/analisis/parado/actualizar", methods=["POST"])
 @requiere_login
 @requiere_permiso("analisis.ver")
