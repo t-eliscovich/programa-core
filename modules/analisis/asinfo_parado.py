@@ -57,9 +57,16 @@ _LOG = logging.getLogger("programa_core.analisis")
 
 DB_ASINFO = 2
 
-# Categorías que no son tela vendible.
+# Categorías que no van en esta pantalla.
+#
+# ⚠ `TELA CRUDA` se excluye aunque HAYA kilos suyos en la bodega de producto
+# terminado (2 productos, 37 kg al 17/08/2026). Dueña: "tela cruda no debería
+# estar.. es producto terminado". Estar en la bodega 53 no la convierte en
+# producto terminado: es tela sin teñir que pasó por ahí, y ofrecérsela a un
+# cliente de la lista no tiene sentido. El filtro por bodega no alcanza —
+# también hace falta el de categoría.
 _CATS = ("'AUXILIARES'", "'COLORANTES'", "'SERVICIOS'", "'COMPRAS'",
-         "'PRODUCTO TERMINADO ND'")
+         "'PRODUCTO TERMINADO ND'", "'TELA CRUDA'")
 CATS = ", ".join(_CATS)
 
 BODEGA_TERMINADO = 53

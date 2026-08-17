@@ -548,3 +548,13 @@ def test_las_dos_pantallas_tienen_su_boton_de_excel():
                            ("parado_clientes.html", "Bajar a Excel")):
         html = (carpeta / archivo).read_text(encoding="utf-8")
         assert texto in html, f"{archivo} no ofrece bajar a Excel"
+
+
+def test_la_tela_cruda_no_entra_aunque_este_en_la_bodega_de_terminado():
+    """Dueña 17/08/2026: "tela cruda no debería estar.. es producto terminado".
+    Hay 2 productos de categoría TELA CRUDA con saldo en la bodega 53 (37 kg):
+    estar ahí no los convierte en producto terminado, y el filtro por bodega
+    solo no los saca."""
+    for sql in (asinfo_parado.SQL_PARADOS, asinfo_parado.SQL_LLAMADOS):
+        assert "'TELA CRUDA'" in sql
+    assert "'TELA CRUDA'" in asinfo_parado.CATS
