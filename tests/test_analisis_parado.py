@@ -292,3 +292,39 @@ def test_la_hoja_se_imprime_con_la_misma_plantilla():
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado_clientes.html").read_text(encoding="utf-8")
     assert "@media print" in html and "window.print()" in html
+
+
+# ── El % del parado ─────────────────────────────────────────────────────────
+
+def test_el_porcentaje_se_calcula_sobre_las_filas_que_se_muestran(monkeypatch):
+    """⭐ El total del % sale de un SUM() OVER () sobre el mismo conjunto de
+    filas que se dibuja. Traer el total por separado es cómo dos números del
+    mismo cuadro terminan sin sumar 100."""
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.items()
+    s = visto["sql"]
+    assert "OVER ()" in s, "el total tiene que ser el de la misma consulta"
+    assert "OVER (PARTITION BY c.subcategoria)" in s, (
+        "el % por TELA suma los colores de esa tela")
+    assert "NULLIF(SUM(COALESCE(f.stock_kg, 0)) OVER (), 0)" in s, (
+        "sin el NULLIF, una lista vacía divide por cero")
+
+
+def test_la_tabla_no_queda_desalineada_al_agregar_la_columna():
+    """La fila de detalle usa colspan: si no acompaña a las columnas de arriba,
+    la tabla se desarma y no da ningún error."""
+    import re
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    encabezado = re.search(r"<thead><tr>(.*?)</tr></thead>", html, re.S).group(1)
+    columnas = len(re.findall(r"<th", encabezado))
+    colspan = int(re.search(r'colspan="(\d+)"', html).group(1))
+    assert colspan == columnas, (
+        f"el detalle abarca {colspan} columnas y la tabla tiene {columnas}")

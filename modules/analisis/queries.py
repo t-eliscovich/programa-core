@@ -37,6 +37,17 @@ def items() -> list[dict]:
                f.ultima_venta,
                COALESCE(f.clientes, 0)    AS clientes,
                f.anio_pista,
+               -- ⭐ El % se calcula EN LA QUERY, sobre el mismo conjunto de
+               -- filas que se muestra. Calcularlo en el template contra un
+               -- total traído aparte es cómo dos números del mismo cuadro
+               -- terminan sin sumar 100.
+               100 * COALESCE(f.stock_kg, 0)
+                   / NULLIF(SUM(COALESCE(f.stock_kg, 0)) OVER (), 0) AS pct_total,
+               SUM(COALESCE(f.stock_kg, 0))
+                   OVER (PARTITION BY c.subcategoria)                 AS kg_tela,
+               100 * SUM(COALESCE(f.stock_kg, 0)) OVER (PARTITION BY c.subcategoria)
+                   / NULLIF(SUM(COALESCE(f.stock_kg, 0)) OVER (), 0) AS pct_tela,
+               COUNT(*) OVER (PARTITION BY c.subcategoria)            AS colores_tela,
                CASE WHEN COALESCE(f.kg_vendidos, 0) > 0
                      AND COALESCE(f.stock_kg, 0) < 20      THEN 'resuelto'
                     WHEN COALESCE(f.kg_vendidos, 0) > 0    THEN 'empezó a moverse'

@@ -48,6 +48,7 @@ saber si lo que hicimos funcionó.</div>
 
 <table>
 <thead><tr><th>Tela</th><th>Color</th><th class="n">Kg parados</th>
+<th class="n">% del parado</th>
 <th class="n">Vendidos</th><th class="n">Clientes</th><th>Estado</th>
 <th class="n">Última venta</th></tr></thead>
 <tbody>
@@ -63,6 +64,7 @@ saber si lo que hicimos funcionó.</div>
     <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}</td>
     <td>{{ f.color }}</td>
     <td class="n">{{ f.stock_kg | num_es(0) }}</td>
+    <td class="n g">{{ f.pct_total | num_es(1) }}%</td>
     <td class="n">{% if f.kg_vendidos %}{{ f.kg_vendidos | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n">{{ f.clientes }}</td>
     <td>
@@ -74,7 +76,13 @@ saber si lo que hicimos funcionó.</div>
     </td>
     <td class="g n">{{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
-  <tr class="det"><td colspan="7">
+  <tr class="det"><td colspan="8">
+    <p class="sub" style="margin:10px 0 6px">
+      <b>{{ f.subcategoria }}</b> en total tiene {{ f.kg_tela | num_es(0) }} kg
+      parados repartidos en {{ f.colores_tela }}
+      {{ 'color' if f.colores_tela == 1 else 'colores' }} —
+      <b>{{ f.pct_tela | num_es(1) }}%</b> de todo lo parado de la fábrica.
+    </p>
     {% if cand %}
     <table>
       <thead><tr><th>Código</th><th>Cliente</th><th>Provincia</th><th>Vend.</th>
