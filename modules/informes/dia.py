@@ -226,6 +226,12 @@ def correr_si_toca() -> dict:
                           m, hoy, r.get("movimientos"))
                 break
             res["motivo"] = r.get("motivo") or ""
+        # El fin de semana se manda APARTE y no colgado de la captura: si el
+        # lunes la foto de la mañana ya estaba hecha (el server reinició),
+        # el `continue` de arriba se lo habría comido y el mail no salía
+        # nunca. El sello en la base es el que evita que se repita.
+        if hoy.weekday() == 0 and "manana" in pendientes:
+            res["finde"] = enviar_nota_finde(hoy)
     except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
         _LOG.warning("dia: correr_si_toca (%s)", e)
         res["motivo"] = str(e)[:150]
@@ -282,6 +288,42 @@ def compras_del_dia(fecha) -> dict:
         """, (fecha,))
     d = r[0] if r else {}
     return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
+
+
+def _dias(desde, hasta) -> list:
+    """Los días del tramo, ambas puntas incluidas."""
+    from datetime import timedelta
+
+    out, d = [], desde
+    while d <= hasta:
+        out.append(d)
+        d = d + timedelta(days=1)
+    return out
+
+
+def _sumar_dias(fn, desde, hasta) -> dict:
+    """`fn` día por día, sumada. Existe por la nota del FIN DE SEMANA, que
+    cuenta sábado y domingo juntos.
+
+    ⭐ NO se escribe una consulta con `BETWEEN`: se llama la función del día y
+    se suma. Así el criterio de qué factura (o qué compra) cuenta sigue
+    estando en UN solo lugar y no puede separarse en dos con el tiempo — la
+    misma regla que ya tiene la producción.
+    """
+    partes = [fn(d) for d in _dias(desde, hasta)]
+    return {"n": sum(int(p["n"]) for p in partes),
+            "kg": round(sum(_f(p["kg"]) for p in partes), 2),
+            "us": round(sum(_f(p["us"]) for p in partes), 2)}
+
+
+def ventas_entre(desde, hasta) -> dict:
+    """Lo facturado entre dos días, ambos inclusive."""
+    return _sumar_dias(ventas_del_dia, desde, hasta)
+
+
+def compras_entre(desde, hasta) -> dict:
+    """Lo comprado entre dos días, ambos inclusive."""
+    return _sumar_dias(compras_del_dia, desde, hasta)
 
 
 def produccion_del_dia(fecha) -> dict:
@@ -348,6 +390,38 @@ def produccion_del_dia(fecha) -> dict:
         "otros": hoy.get("otros"),
         "mes": mes, "promedio_dia": prom,
         "dias_con_produccion": len(con_prod),
+    }
+
+
+def produccion_entre(desde, hasta) -> dict:
+    """La producción de varios días seguidos, sumada.
+
+    Existe por la nota del FIN DE SEMANA. NO se escribe una consulta propia:
+    se llama `produccion_del_dia` una vez por día y se suma, para que el
+    criterio de qué kilo cuenta (la fila de `terminado_asinfo`, con el
+    desperdicio al costado) siga estando en UN solo lugar.
+
+    ⚠ El acumulado del MES y el promedio salen del ÚLTIMO día del tramo, no de
+    la suma: son datos del mes, no del tramo, y sumarlos los duplicaría.
+    """
+    dias = [produccion_del_dia(d) for d in _dias(desde, hasta)]
+    vivos = [x for x in dias if x.get("disponible")]
+    if not vivos:
+        return {"disponible": False}
+    con_fila = [x for x in vivos if not x.get("sin_fila")]
+    ult = vivos[-1]
+    if not con_fila:
+        return {"disponible": True, "sin_fila": True, "mes": ult.get("mes"),
+                "promedio_dia": ult.get("promedio_dia"),
+                "dias_con_produccion": ult.get("dias_con_produccion")}
+    return {
+        "disponible": True, "sin_fila": False,
+        "producido": round(sum(_f(x.get("producido")) for x in con_fila), 2),
+        "despachado": round(sum(_f(x.get("despachado")) for x in con_fila), 2),
+        "desperdicio_kg": round(sum(_f(x.get("desperdicio_kg")) for x in con_fila), 2),
+        "n_ofs": sum(int(x.get("n_ofs") or 0) for x in con_fila),
+        "mes": ult.get("mes"), "promedio_dia": ult.get("promedio_dia"),
+        "dias_con_produccion": ult.get("dias_con_produccion"),
     }
 
 
@@ -427,12 +501,44 @@ def resumen(fecha=None) -> dict:
     mismo día `dia_parcial` daba True SIEMPRE.
     """
     fecha = fecha or hoy_ec()
-    out = {"fecha": fecha, "ok": False, "dia_parcial": False,
-           "etapas": [], "frases": []}
-    d, h = ventana(fecha)
+    return _resumen_rango(fecha, fecha)
+
+
+def resumen_finde(lunes=None) -> dict:
+    """El FIN DE SEMANA entero (sábado + domingo) contado como un solo tramo.
+
+    TMT 2026-08-17: *"una sola, sáb+dom juntos"*. El 14/08 se apagó la nota de
+    sábado y domingo (nadie mira el mail el fin de semana), pero la fábrica
+    produce igual: sin esto, el lunes a la mañana esos dos días no los cuenta
+    nadie y la nota del lunes a la noche arranca desde el cierre del domingo
+    como si el finde no hubiera existido.
+
+    La ventana son las 48 h **cierre del viernes → cierre del domingo**. Las
+    dos fotos existen siempre: el 14/08 se apagó el MAIL, no la captura, que
+    se sigue tomando los siete días justamente para esto.
+    """
+    from datetime import timedelta
+
+    lunes = lunes or lunes_del_finde()
+    return _resumen_rango(lunes - timedelta(days=2), lunes - timedelta(days=1))
+
+
+def _resumen_rango(dia0, dia1) -> dict:
+    """El cuerpo de `resumen`, sobre un tramo de uno o más días.
+
+    `dia0`/`dia1` son el PRIMER y el ÚLTIMO día contados, ambos inclusive. La
+    ventana de balance va desde el último cierre ANTERIOR a `dia0` hasta el
+    cierre de `dia1`; las ventas, compras y producción se suman por los días
+    del tramo. Un día suelto es `(f, f)` y da exactamente lo de siempre.
+    """
+    fecha = dia1
+    out = {"fecha": fecha, "desde_dia": dia0, "hasta_dia": dia1,
+           "dias": (dia1 - dia0).days + 1,
+           "ok": False, "dia_parcial": False, "etapas": [], "frases": []}
+    d, h = ventana_rango(dia0, dia1)
     if not d or not h:
         return out
-    v, c = ventas_del_dia(fecha), compras_del_dia(fecha)
+    v, c = ventas_entre(dia0, dia1), compras_entre(dia0, dia1)
 
     etapas = {}
     for et, rot in ETAPAS:
@@ -450,7 +556,7 @@ def resumen(fecha=None) -> dict:
     d_util = round(_f(h.get("utilidad")) - _f(d.get("utilidad")), 2)
 
     hil = etapas.get("hilado") or {}
-    prod = produccion_del_dia(fecha)
+    prod = produccion_entre(dia0, dia1)
     out.update({
         "ok": True, "desde": d, "hasta": h,
         # Lo setea `ventana()`: si el arranque es del mismo día, el tramo es
@@ -724,19 +830,84 @@ def mensaje_whatsapp(fecha=None, con_motores: bool = True) -> str:
     entero — ahí el detalle es justamente el punto.
     """
     fecha = fecha or hoy_ec()
-    r = resumen(fecha)
+    rot = f"{_DIAS[fecha.weekday()]} {fecha.day} {_MESES[fecha.month - 1]}"
+    return _mensaje(resumen(fecha), fecha, rot, "Hoy",
+                    motores_del_dia(fecha) if con_motores else [],
+                    ventanas_sin_cerrar(fecha))
+
+
+def lunes_del_finde(hoy=None):
+    """El lunes que le corresponde al último fin de semana ya terminado.
+
+    Un lunes es él mismo; un miércoles, el lunes de esa semana; un domingo, el
+    lunes anterior — porque el domingo todavía no cerró y ese fin de semana no
+    se puede contar. Sirve para la vista previa y para el botón de prueba, que
+    tienen que funcionar cualquier día.
+    """
+    from datetime import timedelta
+
+    hoy = hoy or hoy_ec()
+    return hoy - timedelta(days=hoy.weekday())
+
+
+def rotulo_finde(lunes) -> tuple[str, str]:
+    """Los dos rótulos del fin de semana: corto (WhatsApp) y largo (mail)."""
+    from datetime import timedelta
+
+    sab, dom = lunes - timedelta(days=2), lunes - timedelta(days=1)
+    corto = (f"finde {sab.day}–{dom.day} {_MESES[dom.month - 1]}"
+             if sab.month == dom.month
+             else f"finde {sab.day} {_MESES[sab.month - 1]}–"
+                  f"{dom.day} {_MESES[dom.month - 1]}")
+    largo = (f"sábado {sab.day} y domingo {dom.day} de {MESES_LARGOS[dom.month]}"
+             if sab.month == dom.month
+             else f"sábado {sab.day} de {MESES_LARGOS[sab.month]} y "
+                  f"domingo {dom.day} de {MESES_LARGOS[dom.month]}")
+    return corto, largo
+
+
+def _sin_cerrar_finde(lunes) -> dict:
+    """Lo que quedó sin explicar en los DOS días del fin de semana."""
+    from datetime import timedelta
+
+    a = ventanas_sin_cerrar(lunes - timedelta(days=2))
+    b = ventanas_sin_cerrar(lunes - timedelta(days=1))
+    return {"n": a["n"] + b["n"], "monto": round(a["monto"] + b["monto"], 2)}
+
+
+def mensaje_finde(lunes=None) -> str:
+    """El fin de semana en texto plano (es la alternativa del mail del lunes).
+
+    Sin el bloque *Lo movió hoy*: por mail no va desde el 13/08 (*"la parte de
+    lo movió hoy, yo no la preciso"*).
+    """
+    from datetime import timedelta
+
+    lunes = lunes or lunes_del_finde()
+    corto, _ = rotulo_finde(lunes)
+    return _mensaje(resumen_finde(lunes), lunes - timedelta(days=1), corto,
+                    "El finde", [], _sin_cerrar_finde(lunes))
+
+
+def _mensaje(r: dict, fecha, rot: str, cuando: str, motores: list[dict],
+             sc: dict) -> str:
+    """El cuerpo del mensaje, igual para un día que para el fin de semana.
+
+    `cuando` es el rótulo del aporte del tramo ("Hoy" / "El finde"): la única
+    diferencia real entre los dos, porque el resto de los datos ya vienen
+    calculados sobre el tramo que sea.
+    """
     if not r.get("ok"):
         return ""
 
     h = r["hasta"]
-    rot = f"{_DIAS[fecha.weekday()]} {fecha.day} {_MESES[fecha.month - 1]}"
     L = [f"*INTELA · {rot}*", ""]
 
-    # El titular es el ACUMULADO del mes; el día, su aporte.
+    # El titular es el ACUMULADO del mes; el tramo, su aporte.
     L.append(f"*Utilidad de {_MESES[fecha.month - 1]}: "
              f"$ {_n(h.get('utilidad'), 0)}*")
     d = r["d_utilidad"]
-    L.append(f"{'Hoy +' if d >= 0 else 'Hoy −'}$ {_n(abs(d), 0)}")
+    L.append(f"{cuando} {'+' if d >= 0 else '−'}$ {_n(abs(d), 0)}")
     if r.get("dia_parcial"):
         L.append("_(tramo corto, no son 24 h)_")
     L.append("")
@@ -745,7 +916,6 @@ def mensaje_whatsapp(fecha=None, con_motores: bool = True) -> str:
     # apenas ve el número, y el que lee en el celular corta a la tercera
     # línea. Si el día no movió nada explicable, el bloque entero no va —
     # misma regla que el resto: un título con nada abajo no dice nada.
-    motores = motores_del_dia(fecha) if con_motores else []
     if motores:
         L.append("*Lo movió hoy*")
         L.extend(_lineas_motores(motores))
@@ -774,7 +944,6 @@ def mensaje_whatsapp(fecha=None, con_motores: bool = True) -> str:
 
     # Lo que no se pudo explicar por documento. Va al final y sólo si lo hay:
     # una línea que aparece todos los días entrena a no leerla.
-    sc = ventanas_sin_cerrar(fecha)
     if sc["n"]:
         L.append("")
         L.append(f"_{sc['n']} ventana{'' if sc['n'] == 1 else 's'} sin explicar "
@@ -821,14 +990,28 @@ def nota_html(fecha=None) -> str:
     Devuelve `""` si no hay resumen — el que llama manda igual el texto plano.
     """
     fecha = fecha or hoy_ec()
-    r = resumen(fecha)
+    rot = (f"{_DIAS_LARGOS[fecha.weekday()]} {fecha.day} "
+           f"de {MESES_LARGOS[fecha.month]}")
+    return _nota_html(resumen(fecha), fecha, rot, "hoy")
+
+
+def nota_finde_html(lunes=None) -> str:
+    """La nota del FIN DE SEMANA en HTML: sábado y domingo en un solo mail."""
+    from datetime import timedelta
+
+    lunes = lunes or lunes_del_finde()
+    _, largo = rotulo_finde(lunes)
+    return _nota_html(resumen_finde(lunes), lunes - timedelta(days=1),
+                      largo, "el fin de semana")
+
+
+def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
+    """El cuerpo del HTML, igual para un día que para el fin de semana."""
     if not r.get("ok"):
         return ""
 
     h = r["hasta"]
     mes = MESES_LARGOS[fecha.month]
-    rot = (f"{_DIAS_LARGOS[fecha.weekday()]} {fecha.day} "
-           f"de {MESES_LARGOS[fecha.month]}")
     d = r["d_utilidad"]
     signo = "▲" if d >= 0 else "▼"
     color = _VERDE if d >= 0 else _ROJO
@@ -863,7 +1046,7 @@ def nota_html(fecha=None) -> str:
         f'{MESES_LARGOS[fecha.month]}</div>',
         f'<div style="font-size:26px;padding:2px 0">$ {_n(h.get("utilidad"), 0)}</div>',
         f'<div style="font-size:14px;color:{color};padding-bottom:14px">'
-        f'{signo} hoy {mas}$ {_n(abs(d), 0)}</div>',
+        f'{signo} {cuando} {mas}$ {_n(abs(d), 0)}</div>',
     ]
     if r.get("dia_parcial"):
         L.append(f'<div style="font-size:12px;color:{_GRIS};padding-bottom:10px">'
@@ -988,6 +1171,83 @@ def enviar_nota(fecha=None, forzar: bool = False) -> dict:
     return res
 
 
+def enviar_nota_finde(lunes=None, forzar: bool = False) -> dict:
+    """Manda por mail el fin de semana entero, el LUNES a la mañana.
+
+    TMT 2026-08-17: *"una sola, sáb+dom juntos"*. El 14/08 se apagó la nota de
+    sábado y domingo; esto es lo que cierra ese agujero, sin agregar dos mails
+    a un lunes a la mañana.
+
+    🚨 **La idempotencia la da la BASE**, igual que en `enviar_nota`: el sello
+    va en la captura de la MAÑANA del lunes (`momento='manana'`), que es la
+    foto con la que sale. Ese sello es lo único que impide que el hilo de
+    fondo, que pasa cada dos minutos, mande el mismo mail cien veces.
+
+    A diferencia de la nota del cierre, esto NO cuelga de que la captura se
+    acabe de tomar: se intenta en cada vuelta del hilo mientras el sello esté
+    vacío. Si el lunes a las 07:00 SES está caído, sale a las 07:02.
+    """
+    from modules._lib import mailer
+
+    lunes = lunes or lunes_del_finde()
+    res = {"ok": False, "motivo": "", "destinatarios": 0, "id": ""}
+    if not forzar and lunes.weekday() != 0:
+        res["motivo"] = "la nota del fin de semana sale los lunes"
+        return res
+    try:
+        cap = _rows(
+            "SELECT id_captura, nota_enviada_en FROM scintela.dia_captura "
+            " WHERE fecha_ec = %s AND momento = 'manana' LIMIT 1", (lunes,))
+        if not cap:
+            res["motivo"] = "todavía no hay captura de la mañana"
+            return res
+        idc = cap[0]["id_captura"]
+        if cap[0].get("nota_enviada_en") and not forzar:
+            res["motivo"] = "la nota del fin de semana ya se mandó"
+            return res
+
+        texto = mensaje_finde(lunes)
+        if not texto:
+            # Sin cierre del viernes o del domingo no hay tramo que contar. No
+            # se sella nada: la vuelta siguiente vuelve a intentar.
+            res["motivo"] = "no hay con qué comparar el fin de semana"
+            return res
+
+        correos = [d["correo"] for d in destinatarios() if d.get("activo")]
+        if not correos:
+            res["motivo"] = "no hay destinatarios activos"
+            return res
+        if not mailer.habilitado():
+            res["motivo"] = mailer.motivo_no_disponible()
+            return res
+
+        if not forzar:
+            tomada = db.execute(
+                "UPDATE scintela.dia_captura SET nota_enviada_en = CURRENT_TIMESTAMP "
+                " WHERE id_captura = %s AND nota_enviada_en IS NULL", (idc,))
+            if not tomada:
+                res["motivo"] = "la nota del fin de semana ya se mandó"
+                return res
+
+        corto, _largo = rotulo_finde(lunes)
+        env = mailer.enviar(f"INTELA · {corto}", texto, correos,
+                            html=nota_finde_html(lunes))
+        if not env.get("ok"):
+            if not forzar:
+                db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = NULL "
+                           " WHERE id_captura = %s", (idc,))
+            res["motivo"] = env.get("motivo") or "no se pudo mandar"
+            return res
+        if forzar:
+            db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = "
+                       "CURRENT_TIMESTAMP WHERE id_captura = %s", (idc,))
+        res.update(ok=True, destinatarios=len(correos), id=env.get("id") or "")
+    except Exception as e:  # noqa: BLE001 -- cuelga del hilo de fondo
+        _LOG.warning("dia: no pude mandar la nota del finde (%s)", e)
+        res["motivo"] = str(e)[:150]
+    return res
+
+
 def capturas(fecha) -> list[dict]:
     return _rows(
         """
@@ -1014,20 +1274,31 @@ def ventana(fecha) -> tuple[dict | None, dict | None]:
     caído), cae en la primera de hoy y se avisa, porque ese tramo es más corto
     y los números no son comparables contra los de otros días.
     """
-    hoy = capturas(fecha)
-    if not hoy:
+    return ventana_rango(fecha, fecha)
+
+
+def ventana_rango(dia0, dia1) -> tuple[dict | None, dict | None]:
+    """Las dos puntas de un tramo: el último cierre ANTES de `dia0` contra el
+    último de `dia1`. Con `dia0 == dia1` son las 24 h de un día.
+
+    Si no hay captura anterior (el primer día, o el server estuvo caído), cae
+    en la primera del último día y se avisa: ese tramo es más corto y los
+    números no son comparables contra los de otros días.
+    """
+    fin = capturas(dia1)
+    if not fin:
         return None, None
-    ayer = _rows(
+    previa = _rows(
         """
         SELECT *, TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil', 'HH24:MI') AS hora
           FROM scintela.dia_captura
          WHERE fecha_ec < %s
          ORDER BY creado_en DESC
          LIMIT 1
-        """, (fecha,))
-    if ayer:
-        return ayer[0], hoy[-1]
-    return (hoy[0], hoy[-1]) if len(hoy) > 1 else (None, None)
+        """, (dia0,))
+    if previa:
+        return previa[0], fin[-1]
+    return (fin[0], fin[-1]) if len(fin) > 1 else (None, None)
 
 
 def _movimientos_ventana(desde: dict, hasta: dict) -> list[dict]:

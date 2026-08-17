@@ -1603,3 +1603,91 @@ def test_si_el_agrupado_falla_la_nota_sale_igual():
 
     with patch.object(ev.db, "fetch_all", side_effect=RuntimeError("boom")):
         assert d._renglones([], {"creado_en": "a"}, {"creado_en": "b"}) == []
+
+
+# ── El fin de semana como UN tramo ──────────────────────────────────────────
+# TMT 2026-08-17: *"una sola, sáb+dom juntos"*.
+
+def test_el_finde_compara_el_cierre_del_viernes_contra_el_del_domingo():
+    """48 h de una sola pieza. Si comparara contra el sábado, el domingo se
+    contaría dos veces o ninguna, según de qué punta se agarrara."""
+    viernes = _cap(100.0, fecha_ec=date(2026, 8, 14))
+    domingo = [_cap(160.0, fecha_ec=date(2026, 8, 16))]
+    pedidos = {}
+
+    def _rows_fake(sql, args=None):
+        pedidos["args"] = args
+        return [viernes]
+
+    with patch.object(dia, "capturas", return_value=domingo) as caps, \
+         patch.object(dia, "_rows", side_effect=_rows_fake), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
+         patch.object(dia, "ventas_del_dia", return_value={"n": 1, "kg": 10.0, "us": 500.0}), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen_finde(date(2026, 8, 17))   # lunes
+
+    assert r["ok"] is True and r["d_utilidad"] == 60.0
+    assert r["dias"] == 2 and r["dia_parcial"] is False
+    # La punta de arranque se busca ANTES del sábado (= el cierre del viernes).
+    assert pedidos["args"] == (date(2026, 8, 15),)
+    caps.assert_called_once_with(date(2026, 8, 16))
+    # Y las ventas son las de los DOS días, no las de uno.
+    assert r["ventas"] == {"n": 2, "kg": 20.0, "us": 1000.0}
+
+
+def test_la_produccion_del_finde_suma_los_dias_pero_no_el_mes():
+    """El acumulado del mes es del MES: sumarlo dos veces lo duplicaría."""
+    def _uno(f):
+        return {"disponible": True, "sin_fila": False, "producido": 1000.0,
+                "despachado": 500.0, "desperdicio_kg": 50.0, "n_ofs": 4,
+                "mes": {"producido": 140884.0}, "promedio_dia": 12000.0,
+                "dias_con_produccion": 11}
+
+    with patch.object(dia, "produccion_del_dia", side_effect=_uno):
+        p = dia.produccion_entre(date(2026, 8, 15), date(2026, 8, 16))
+    assert p["producido"] == 2000.0 and p["n_ofs"] == 8
+    assert p["mes"]["producido"] == 140884.0
+
+
+def test_un_finde_sin_datos_de_asinfo_no_inventa_un_cero():
+    with patch.object(dia, "produccion_del_dia", return_value={"disponible": False}):
+        assert dia.produccion_entre(date(2026, 8, 15),
+                                    date(2026, 8, 16)) == {"disponible": False}
+
+
+def test_el_lunes_a_la_manana_sale_la_nota_del_finde():
+    with patch.object(dia, "ahora_ec") as a, \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 17)), \
+         patch.object(dia, "_rows", return_value=[]), \
+         patch.object(dia, "capturar", return_value={"ok": True, "movimientos": 3}), \
+         patch.object(dia, "enviar_nota_finde",
+                      return_value={"ok": True}) as fin:
+        a.return_value.hour = 8
+        dia.correr_si_toca()
+    fin.assert_called_once_with(date(2026, 8, 17))
+
+
+def test_el_martes_no_sale_la_del_finde():
+    with patch.object(dia, "ahora_ec") as a, \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 18)), \
+         patch.object(dia, "_rows", return_value=[]), \
+         patch.object(dia, "capturar", return_value={"ok": True, "movimientos": 3}), \
+         patch.object(dia, "enviar_nota_finde") as fin:
+        a.return_value.hour = 8
+        dia.correr_si_toca()
+    fin.assert_not_called()
+
+
+def test_la_del_finde_se_intenta_aunque_la_foto_ya_estuviera_hecha():
+    """🚨 El caso que se comía el mail: el server reinicia a las 07:05, la
+    captura de la mañana ya está, el `continue` la saltea y —si el envío
+    colgara de la captura— la nota del fin de semana no salía nunca."""
+    with patch.object(dia, "ahora_ec") as a, \
+         patch.object(dia, "hoy_ec", return_value=date(2026, 8, 17)), \
+         patch.object(dia, "_rows", return_value=[{"momento": "manana"}]), \
+         patch.object(dia, "capturar") as cap, \
+         patch.object(dia, "enviar_nota_finde", return_value={"ok": True}) as fin:
+        a.return_value.hour = 10
+        dia.correr_si_toca()
+    cap.assert_not_called()
+    fin.assert_called_once()

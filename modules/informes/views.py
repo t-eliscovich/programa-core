@@ -1358,9 +1358,12 @@ def dia_nota_destinatarios():
         elif accion == "remitente":
             ok, msg = mailer.guardar_remitente(request.form.get("correo"))
             flash(msg, "success" if ok else "error")
-        elif accion == "probar":
-            # `forzar` saltea la idempotencia: es a pedido, no la automática.
-            r = _dia.enviar_nota(forzar=True)
+        elif accion in ("probar", "probar_finde"):
+            # `forzar` saltea la idempotencia Y el freno del día: es a pedido,
+            # no la automática, así que la del fin de semana se puede probar un
+            # miércoles y la del día un sábado.
+            r = (_dia.enviar_nota_finde(forzar=True) if accion == "probar_finde"
+                 else _dia.enviar_nota(forzar=True))
             flash(f"Nota mandada a {r['destinatarios']} destinatario(s)."
                   if r.get("ok") else f"No salió: {r.get('motivo')}",
                   "success" if r.get("ok") else "error")
@@ -1370,6 +1373,7 @@ def dia_nota_destinatarios():
         "informes/dia_nota.html",
         destinatarios=_dia.destinatarios(),
         vista_html=_dia.nota_html(),
+        vista_finde_html=_dia.nota_finde_html(_dia.lunes_del_finde()),
         hora_cierre=_dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),
         remitente=mailer.remitente(),
         motivo=mailer.motivo_no_disponible(),

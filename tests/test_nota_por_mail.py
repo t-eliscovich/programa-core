@@ -283,3 +283,118 @@ def test_el_boton_de_prueba_manda_igual_un_sabado():
         r = dia.enviar_nota(_SABADO, forzar=True)
     assert r["ok"] is True
     env.assert_called_once()
+
+
+# ── El fin de semana, en un solo mail el lunes ──────────────────────────────
+# TMT 2026-08-17: *"una sola, sáb+dom juntos"*. El 14/08 se apagó el mail del
+# sábado y del domingo; sin esto la fábrica produce dos días que no cuenta
+# nadie, porque la nota del lunes a la noche arranca del cierre del domingo.
+
+_LUNES = date(2026, 8, 17)
+
+
+def _manana(enviada=None):
+    return [{"id_captura": 21, "nota_enviada_en": enviada}]
+
+
+def test_la_nota_del_finde_sale_el_lunes_y_una_sola_vez():
+    """Mismo sello en la BASE que la del cierre, pero en la captura de la
+    MAÑANA del lunes: es la foto con la que sale."""
+    with patch.object(dia, "_rows", return_value=_manana()) as rows, \
+         patch.object(dia, "destinatarios",
+                      return_value=[{"correo": "a@b.com", "activo": True}]), \
+         patch.object(mailer, "habilitado", return_value=True), \
+         patch.object(dia, "mensaje_finde", return_value="hola"), \
+         patch.object(dia, "nota_finde_html", return_value="<p>hola</p>"), \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(dia.db, "execute", return_value=1) as ex:
+        r = dia.enviar_nota_finde(_LUNES)
+    assert r["ok"] is True and r["destinatarios"] == 1
+    env.assert_called_once()
+    assert "momento = 'manana'" in rows.call_args[0][0]
+    assert "nota_enviada_en IS NULL" in ex.call_args_list[0][0][0]
+    # El asunto lo dice: no es "el cierre del lunes".
+    assert "finde 15–16 ago" in env.call_args[0][0]
+
+
+def test_la_del_finde_no_sale_los_otros_dias():
+    for d in (date(2026, 8, 18), date(2026, 8, 21), date(2026, 8, 16)):
+        with patch.object(dia, "_rows") as rows, patch.object(mailer, "enviar") as env:
+            r = dia.enviar_nota_finde(d)
+        assert r["ok"] is False and "los lunes" in r["motivo"], d
+        rows.assert_not_called()
+        env.assert_not_called()
+
+
+def test_si_la_del_finde_ya_se_mando_no_se_repite():
+    with patch.object(dia, "_rows", return_value=_manana(enviada="2026-08-17")), \
+         patch.object(mailer, "enviar") as env:
+        r = dia.enviar_nota_finde(_LUNES)
+    assert r["ok"] is False and "ya se mandó" in r["motivo"]
+    env.assert_not_called()
+
+
+def test_sin_cierre_del_viernes_no_se_sella_nada():
+    """Un lunes sin tramo que contar no puede quemar el sello: si se sellara,
+    el mail no saldría nunca aunque el cierre apareciera dos minutos después."""
+    with patch.object(dia, "_rows", return_value=_manana()), \
+         patch.object(dia, "mensaje_finde", return_value=""), \
+         patch.object(dia.db, "execute") as ex, \
+         patch.object(mailer, "enviar") as env:
+        r = dia.enviar_nota_finde(_LUNES)
+    assert r["ok"] is False and "comparar" in r["motivo"]
+    ex.assert_not_called()
+    env.assert_not_called()
+
+
+def test_si_falla_el_envio_del_finde_se_libera():
+    ejecutadas = []
+    with patch.object(dia, "_rows", return_value=_manana()), \
+         patch.object(dia, "destinatarios",
+                      return_value=[{"correo": "a@b.com", "activo": True}]), \
+         patch.object(mailer, "habilitado", return_value=True), \
+         patch.object(dia, "mensaje_finde", return_value="hola"), \
+         patch.object(dia, "nota_finde_html", return_value="<p>h</p>"), \
+         patch.object(mailer, "enviar", return_value={"ok": False, "motivo": "red"}), \
+         patch.object(dia.db, "execute",
+                      side_effect=lambda sql, *a, **k: ejecutadas.append(sql) or 1):
+        r = dia.enviar_nota_finde(_LUNES)
+    assert r["ok"] is False
+    assert "nota_enviada_en = NULL" in ejecutadas[-1]
+
+
+def test_el_boton_de_prueba_del_finde_anda_cualquier_dia():
+    """La vista previa y el botón tienen que funcionar un miércoles: si sólo se
+    pudieran probar un lunes a la mañana, se revisarían el día que sale mal."""
+    with patch.object(dia, "hoy_ec", return_value=date(2026, 8, 19)), \
+         patch.object(dia, "_rows", return_value=_manana()), \
+         patch.object(dia, "destinatarios",
+                      return_value=[{"correo": "a@b.com", "activo": True}]), \
+         patch.object(mailer, "habilitado", return_value=True), \
+         patch.object(dia, "mensaje_finde", return_value="hola"), \
+         patch.object(dia, "nota_finde_html", return_value="<p>h</p>"), \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(dia.db, "execute", return_value=1):
+        r = dia.enviar_nota_finde(forzar=True)
+    assert r["ok"] is True
+    # Un miércoles, el finde que cuenta es el de ESA semana (15 y 16).
+    assert "finde 15–16 ago" in env.call_args[0][0]
+
+
+def test_el_lunes_del_finde_es_el_de_la_semana_y_el_domingo_no_cuenta_el_suyo():
+    assert dia.lunes_del_finde(date(2026, 8, 17)) == date(2026, 8, 17)   # lunes
+    assert dia.lunes_del_finde(date(2026, 8, 19)) == date(2026, 8, 17)   # miércoles
+    # Un domingo, su propio fin de semana todavía no cerró: cuenta el anterior.
+    assert dia.lunes_del_finde(date(2026, 8, 16)) == date(2026, 8, 10)
+
+
+def test_el_rotulo_del_finde_a_caballo_de_dos_meses():
+    """Un finde puede empezar en un mes y terminar en otro: "31–1 oct" sería
+    mentira. Lunes 02/11/2026 = sábado 31/10 + domingo 01/11."""
+    corto, largo = dia.rotulo_finde(date(2026, 11, 2))
+    assert corto == "finde 31 oct–1 nov"
+    assert largo == "sábado 31 de octubre y domingo 1 de noviembre"
+
+    corto, largo = dia.rotulo_finde(date(2026, 8, 31))  # lunes 31/08
+    assert corto == "finde 29–30 ago"
+    assert largo == "sábado 29 y domingo 30 de agosto"

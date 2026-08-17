@@ -7,7 +7,7 @@
 <div style="max-width:760px;">
   {{ page_hero(
       'Nota del cierre por mail',
-      descripcion='Sale sola de lunes a viernes, con la foto de las ' ~ ('%02d' | format(hora_cierre)) ~ ':00 de Ecuador, a los destinatarios activos.',
+      descripcion='Sale sola de lunes a viernes, con la foto de las ' ~ ('%02d' | format(hora_cierre)) ~ ':00 de Ecuador, a los destinatarios activos. El lunes a la mañana sale además el fin de semana, sábado y domingo en un solo mail.',
       kpi_valor=(destinatarios | selectattr('activo') | list | length) ~ ' activos'
   ) }}
 
@@ -67,19 +67,29 @@
     <span class="text-xs text-slate-500">Tiene que estar verificado en SES.</span>
   </form>
 
-  <form method="post" class="my-3">
+  <form method="post" class="my-3 flex items-center gap-2 flex-wrap">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="accion" value="probar">
-    <button class="text-sm px-3 py-1.5 rounded border"
-            style="border-color:rgb(148 163 184);">Mandarla ahora (prueba)</button>
-
+    <button name="accion" value="probar" class="text-sm px-3 py-1.5 rounded border"
+            style="border-color:rgb(148 163 184);">Mandar la del día ahora (prueba)</button>
+    <button name="accion" value="probar_finde" class="text-sm px-3 py-1.5 rounded border"
+            style="border-color:rgb(203 213 225);">Mandar la del fin de semana (prueba)</button>
   </form>
 
   <div class="my-4">
-    <div class="text-xs text-slate-500" style="margin-bottom:.25rem;">Así se ve hoy:</div>
+    <div class="text-xs text-slate-500" style="margin-bottom:.25rem;">La del día, así se ve hoy:</div>
     {# El mail sale en HTML: la vista previa tiene que mostrar ESO, no el texto
        plano, o el día que el formato se rompa nadie se entera hasta que sale. #}
     <div class="border border-slate-200 rounded bg-white px-3 py-2">{{ vista_html|safe }}</div>
+  </div>
+
+  {# La del fin de semana se ve todos los días, no sólo el lunes: si sólo se
+     pudiera mirar un lunes a la mañana, se revisaría el día que sale mal. #}
+  <div class="my-4">
+    <div class="text-xs text-slate-500" style="margin-bottom:.25rem;">La del último fin de semana:</div>
+    <div class="border border-slate-200 rounded bg-white px-3 py-2">
+      {% if vista_finde_html %}{{ vista_finde_html|safe }}
+      {% else %}<span class="text-sm text-slate-500">Todavía no hay con qué compararlo.</span>{% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}
