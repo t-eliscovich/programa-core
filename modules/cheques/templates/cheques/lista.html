@@ -699,9 +699,15 @@
               {# TMT 2026-08-17 (dueña): en los estados editables el N° es un
                  <input>, así que el link va al lado — una flechita que ES un
                  <a href> de verdad (se puede abrir en pestaña nueva). #}
-              <a href="{{ _url_cheque }}" class="text-slate-400 hover:text-sky-600"
+              {# TMT 2026-08-17 (dueña): "el arrow no abre otro tab". La flechita ↗
+                 es el ícono universal de "esto se abre afuera", así que tiene
+                 que cumplirlo con un click común — un <a> pelado abre en la
+                 MISMA pestaña. El link de la fecha, en cambio, sigue navegando
+                 acá: es el que reemplaza al click de la fila. #}
+              <a href="{{ _url_cheque }}" target="_blank" rel="noopener"
+                 class="text-slate-400 hover:text-sky-600"
                  style="text-decoration: none;"
-                 title="Abrir el cheque (botón derecho → abrir en pestaña nueva)">↗</a>
+                 title="Abrir el cheque en una pestaña nueva">↗</a>
               </form>
             {% else %}
               <a href="{{ _url_cheque }}" class="hover:underline" style="color: inherit;">

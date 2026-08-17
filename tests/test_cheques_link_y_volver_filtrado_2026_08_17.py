@@ -102,6 +102,27 @@ def test_cada_fila_tiene_al_menos_dos_anchors_reales():
     assert len(anchors) >= 2, f"esperaba ≥2 <a href> por fila, encontré {len(anchors)}"
 
 
+def test_la_flechita_abre_en_pestania_nueva():
+    """La ↗ es el ícono de "se abre afuera": con un click común, pestaña nueva.
+
+    Dueña 17/08: *"el arrow no abre otro tab"*. Un `<a>` pelado abre en la
+    misma, así que el ícono prometía algo que no cumplía. El link de la FECHA
+    no lleva target: ese es el que reemplaza al click de la fila y tiene que
+    navegar en la pestaña actual.
+    """
+    i = LISTA.index("↗</a>")
+    j = LISTA.rindex("<a href=", 0, i)
+    flecha = LISTA[j:i]
+    assert 'target="_blank"' in flecha
+    assert 'rel="noopener"' in flecha, "sin noopener la pestaña nueva puede tocar la original"
+
+    # el de la fecha NO abre pestaña nueva
+    k = LISTA.index('title="Abrir el cheque (botón derecho → abrir en pestaña nueva)"')
+    ini = LISTA.rindex("<a href=", 0, k)
+    fecha = LISTA[ini:LISTA.index("</a>", k)]
+    assert "target=" not in fecha
+
+
 def test_el_detalle_vuelve_por_volver_url_y_no_al_listado_pelado():
     """El `volver_url` sigue mandando, ahora envuelto en el helper compartido.
 
