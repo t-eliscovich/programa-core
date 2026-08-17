@@ -2161,6 +2161,17 @@ def flujo_grafico():
     reciente + proyección a 365 días (postdatados, provisiones, pagos
     programados ya cargados en scintela.flujo).
     """
+    # 🚨 TMT 2026-08-16, Federico: *"¿por qué arrancás el flujo el 5 de agosto
+    # y no el 15?"* — eran 14 días de contexto hacia atrás, y como el zoom
+    # agrupa de a 3 y etiqueta el bucket con su ÚLTIMO día, el primer punto
+    # caía todavía más lejos. Además ese tramo NO es historia real: es el saldo
+    # de hoy dibujado como línea recta (ver flujo_calculado). Federico pidió
+    # "2 días antes de la fecha actual". Ojo: este número tiene que ir de la
+    # mano con el FECHA_INICIO del JS en flujo_grafico.html — el template
+    # recorta la serie por su cuenta, así que si acá se agranda y allá no, los
+    # días de más nunca se ven.
+    DIAS_ATRAS_GRAFICO = 2
+
     # Default 70d para matchear el rango del chart dBase (May 11 → Jul 20).
     # El MIN del flujo cae a los 68-70 días.
     ventana = request.args.get("ventana", default=90, type=int)
@@ -2182,13 +2193,13 @@ def flujo_grafico():
     ignorar_cheques = request.args.get("ignorar_cheques") in ("1", "true", "yes", "on")
     if fuente == "tabla":
         filas, error = _safe(
-            lambda: queries.flujo_proyeccion(dias_atras=14, dias_adelante=365),
+            lambda: queries.flujo_proyeccion(dias_atras=DIAS_ATRAS_GRAFICO, dias_adelante=365),
             [],
         )
     else:
         filas, error = _safe(
             lambda: queries.flujo_calculado(
-                dias_atras=14,
+                dias_atras=DIAS_ATRAS_GRAFICO,
                 dias_adelante=365,
                 ignorar_cheques=ignorar_cheques,
             ),

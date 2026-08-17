@@ -1080,9 +1080,12 @@ function _parseISO(s) {
 
 const HOY          = _parseISO(HOY_ISO);
 const FECHA_FIN    = new Date(HOY); FECHA_FIN.setDate(HOY.getDate() + VENTANA_DIAS);
-// Historia reciente (hasta 14 días atrás) para dar contexto al ojo. Si la
-// base no tiene nada >= HOY, igual mostramos lo que hay.
-const FECHA_INICIO = new Date(HOY); FECHA_INICIO.setDate(HOY.getDate() - 14);
+// Contexto hacia atrás. 🚨 TMT 2026-08-16 (Federico): eran 14 días y pidió
+// "2 días antes de la fecha actual". Tiene que coincidir con
+// DIAS_ATRAS_GRAFICO de informes/views.py::flujo_grafico — el que manda es el
+// MENOR de los dos, porque este filtro recorta lo que mandó el server.
+const DIAS_ATRAS = 2;
+const FECHA_INICIO = new Date(HOY); FECHA_INICIO.setDate(HOY.getDate() - DIAS_ATRAS);
 
 const data = FLUJO_REAL
   .map(r => {
