@@ -334,6 +334,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(compras_bp)
 
+    # TMT 2026-08-17 (dueña): /pedidos — lo que los clientes pidieron y todavía
+    # no se despachó, cruzado con bodega y tinturado. Todo desde Asinfo; PC no
+    # guarda pedidos. Va en el menú debajo de Factura Proforma.
+    from modules.pedidos.views import pedidos_bp
+
+    app.register_blueprint(pedidos_bp)
+
     from modules.tejeduria_asinfo.views import tejeduria_asinfo_bp
 
     app.register_blueprint(tejeduria_asinfo_bp)

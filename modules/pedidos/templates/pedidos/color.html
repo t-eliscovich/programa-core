@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Pedidos {{ codigo }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('pedidos.lista') }}" class="hover:underline">Pedidos pendientes</a> /
+  <strong>{{ codigo }}</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .pc table{width:100%;border-collapse:collapse;font-size:13px;margin:2px 0 16px}
+  .pc th,.pc td{padding:7px 10px;border-bottom:1px solid #eef2f6;text-align:right;
+    font-variant-numeric:tabular-nums}
+  .pc th:first-child,.pc td:first-child{text-align:left}
+  .pc thead th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1}
+  .pc tbody tr:hover td{background:#f8fafc}
+  .pc .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .pc .cli{color:#1d4ed8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  .pc .muted{color:#94a3b8;font-size:11px}
+  .pc .viejo{color:#b45309}
+  .pc h3{font-size:14px;font-weight:700;color:#334155;margin:18px 0 0;
+    text-transform:uppercase;letter-spacing:.04em;font-size:11px}
+  .pc .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0 4px}
+  .pc .card{background:#f8fafc;border-radius:8px;padding:10px 12px}
+  .pc .card .lbl{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+  .pc .card .val{font-size:19px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums}
+  /* Igual que la lista: rojo en el NÚMERO, no en la tarjeta entera. */
+  .pc .card.rojo .val{color:#b91c1c}
+  .pc .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;
+    padding:10px 12px;border-radius:8px;font-size:13px;margin:10px 0}
+  .pc .vacio{color:#64748b;font-size:13px;padding:12px 2px;border-top:1px solid #eef2f6}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pc">
+  <h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:0">
+    <span class="cod">{{ codigo }}</span>
+    {% if ficha %}<span style="font-weight:400;color:#475569">· {{ ficha.tela }} {{ ficha.color }}</span>{% endif %}
+  </h1>
+
+  {% if not disponible %}
+    <div class="aviso">
+      No se pudo consultar Asinfo en este momento. Lo que se ve abajo puede estar
+      incompleto.
+    </div>
+  {% endif %}
+
+  {% if ficha %}
+    <div class="cards">
+      <div class="card">
+        <div class="lbl">Pedido</div>
+        {% if ficha.en_unidades %}
+          <div class="val">{{ ficha.pedido_un|num_es(0) }} un</div>
+        {% else %}
+          <div class="val">{{ ficha.pedido_kg|num_es(0) }} kg</div>
+        {% endif %}
+        <div class="muted">
+          {% if ficha.en_unidades %}{{ ficha.pedido_kg|num_es(0) }} kg
+          {% elif ficha.pedido_rollos %}{{ ficha.pedido_rollos|num_es(0) }} rollos{% endif %}
+          · {{ ficha.n_clientes }} cliente{{ '' if ficha.n_clientes == 1 else 's' }}
+        </div>
+      </div>
+      <div class="card">
+        <div class="lbl">En bodega</div>
+        <div class="val">{{ ficha.inventario_kg|num_es(0) }} kg</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Tinturándose</div>
+        <div class="val">{{ ficha.produccion_kg|num_es(0) }} kg</div>
+        <div class="muted">{{ ficha.n_ordenes }} {{ 'orden' if ficha.n_ordenes == 1 else 'órdenes' }}</div>
+      </div>
+      <div class="card{{ ' rojo' if ficha.faltan_kg > 0 }}">
+        <div class="lbl">{{ 'Faltan' if ficha.faltan_kg > 0 else 'Sobran' }}</div>
+        <div class="val">{{ (ficha.faltan_kg if ficha.faltan_kg > 0 else -ficha.faltan_kg)|num_es(0) }} kg</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <h3>Quién lo pidió</h3>
+  {% if pedidos %}
+    <table>
+      <thead>
+        <tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th>Cantidad</th></tr>
+      </thead>
+      <tbody>
+        {% for p in pedidos %}
+          <tr>
+            <td class="cod">{{ p.numero }}</td>
+            <td>
+              {{ p.cliente }}
+              {% if p.codigo_cliente %}<span class="cli">{{ p.codigo_cliente }}</span>{% endif %}
+            </td>
+            <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }} · {{ p.dias }}d</td>
+            <td>
+              <strong>{{ p.cantidad|num_es(0) }}</strong>
+              <span class="muted">{% if p.es_rollo %}roll{% elif p.es_unidad %}un{% else %}kg{% endif %}</span>
+              {% if p.kg is not none and p.es_rollo %}<span class="muted">· {{ p.kg|num_es(0) }} kg</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if repetidos %}
+      <div class="aviso">
+        {{ repetidos|join(', ') }} pidió este color más de una vez sin haber recibido
+        el primero. Puede ser un pedido atrasado.
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="vacio">Este color no tiene pedidos pendientes.</div>
+  {% endif %}
+
+  <h3>Qué se está tinturando</h3>
+  {% if ordenes %}
+    <table>
+      <thead>
+        <tr><th>Orden</th><th>Lanzada</th><th>Kilos</th><th>Avance</th></tr>
+      </thead>
+      <tbody>
+        {% for o in ordenes %}
+          <tr>
+            <td class="cod">{{ o.numero }}</td>
+            <td class="muted">{{ o.fecha_es }} · {{ o.dias }}d</td>
+            <td>{{ o.cantidad|num_es(0) }}</td>
+            <td>
+              {% if o.avance %}<span style="color:#15803d">{{ o.avance }}%</span>
+                <span class="muted">{{ o.fabricada|num_es(0) }} kg</span>
+              {% else %}<span class="muted">sin arrancar</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="vacio">
+      Ninguna orden de fabricación lanzada en los últimos días para este color.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

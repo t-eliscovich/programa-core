@@ -1,0 +1,445 @@
+"""Pedidos de cliente pendientes (Asinfo) cruzados con inventario y producción.
+
+Contesta la pregunta que la dueña hace todos los días: *de lo que los clientes
+pidieron y todavía no se despachó, ¿qué tenemos, qué se está tinturando y qué
+falta?* — abierto por familia de tela, tela y color.
+
+Fuente única: Asinfo vía Metabase (db 2). Programa Core no guarda pedidos.
+
+    v_saldos_comprometidos_detallado  → lo pedido y no despachado
+    saldo_producto (bodega 53)        → lo que hay en bodega
+    orden_fabricacion (bodega 53)     → lo que se está tinturando
+
+Todo fail-soft: si Metabase no contesta, las funciones devuelven listas vacías
+con `disponible=False` y la pantalla muestra un cartel. Nunca levanta.
+
+## Las tres trampas de la fuente (verificadas 2026-08-17)
+
+1. **Las órdenes de fabricación se cuentan DOBLE.** Cada orden vive en dos
+   capas: un PADRE con el total y `id_producto` NULL, e HIJAS con el detalle
+   por color. `SUM(cantidad)` sobre la tabla cruda suma las dos. Nos quedamos
+   con las HOJAS (las que no son padre de nadie) y que tengan producto — que
+   incluye a las órdenes "solas", sin hijas.
+
+2. **`estado_produccion = 0` no es "programado", es abandonado.** Las 894
+   hijas en estado 0 cuelgan todas de un padre también en 0, promedian 660
+   días de antigüedad y NINGUNA tiene un solo kilo fabricado. Son 209.516 kg
+   de +60 días. Si entran a la cuenta, nunca falta nada. Contamos sólo estado
+   2 (lanzada) con menos de `DIAS_PRODUCCION_VIVA` días — y aún así el estado 2
+   arrastra 216 hojas de +180 días (23.121 kg) que el filtro de edad saca.
+
+   El contraste que lo decidió: formulas_app (donde los operarios cargan los
+   baños de verdad) dice 80.913 kg sin terminar de ≤15 días, contra los 73.801
+   de Asinfo estado 2 ≤15 días. Coinciden dentro del 9%, y formulas_app no
+   tiene NADA sin terminar de +60 días.
+
+3. **El pedido y la factura no están en la misma unidad.** El pedido se toma
+   en rollos, kilos o unidades; la factura sale SIEMPRE en kilos.
+   `detalle_factura_cliente.peso` existe pero está en 0 siempre — no sirve.
+   Ver `KG_POR_ROLLO` abajo.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import date
+
+from modules._lib import metabase_client
+
+_LOG = logging.getLogger("programa_core.pedidos")
+
+ASINFO_DB = 2
+
+#: Bodega de Producto Terminado en Asinfo. Los pedidos de cliente salen todos
+#: de acá (verificado: 1.218 de 1.218 líneas pendientes).
+BODEGA_TERMINADO = 53
+
+#: Un rollo son 23,5 kg. `detalle_pedido_cliente.valor_conversion` trae
+#: 1/23,5 en 111.221 de 111.720 líneas, pero tiene 7 valores distintos y en 72
+#: filas viene INVERTIDO (23,5 en vez de 1/23,5). Por eso el plano, y por eso
+#: la pantalla dice que el kilo del pedido es estimado: el peso real recién
+#: existe cuando se pesa el rollo al despacharlo.
+KG_POR_ROLLO = 23.5
+
+#: Unidades de medida de Asinfo (tabla `unidad`).
+UNIDAD_UN, UNIDAD_KG, UNIDAD_ROLLO = 1, 2, 51
+
+#: "Ahora" en hora de Ecuador. En Asinfo `GETDATE()` devuelve UTC mientras las
+#: fechas se graban en hora local: usarlo pelado adelanta el día cinco horas y
+#: a partir de las 19:00 EC toda la antigüedad se corre un día. Mismo patrón
+#: que `_AHORA_EC` en modules/asinfo/despacho_sin_factura.py.
+AHORA_EC = "DATEADD(hour, -5, GETDATE())"
+
+#: Pedidos más viejos que esto no entran al total (decisión dueña 2026-08-17:
+#: al 17/08 eran 6 pedidos / 1.774 kg, de los cuales 1.596 kg de uno solo).
+#: Siguen consultables por la ruta de detalle.
+DIAS_PEDIDO_MAX = 90
+
+#: Una orden de fabricación lanzada hace más que esto no cuenta como "en
+#: producción". Ver la trampa 2 del docstring.
+DIAS_PRODUCCION_VIVA = 30
+
+#: Familias que son tela vendible. El resto de `nombre_categoria_producto`
+#: (TELA CRUDA, HILO, COLORANTES, AUXILIARES, COMPRAS, SERVICIOS) son insumos
+#: y no se piden.
+CATEGORIAS = (
+    "Jersey", "Fleece", "Rib", "Poliester", "Pique",
+    "Lycra", "Toper", "Franela", "Boston", "Cuellos", "Puños",
+)
+
+#: Las que se piden por unidad y no por peso. La pantalla las muestra en
+#: unidades como número principal.
+CATEGORIAS_EN_UNIDADES = ("Cuellos", "Puños")
+
+
+# `conv`: cuántas unidades entran en un kilo, por producto. Sale del valor más
+# repetido de `valor_conversion` en las líneas de pedido en unidad — 33,33 para
+# cuellos, 50 para puños. Se saca de la data y no se hardcodea porque es una
+# propiedad del producto (un cuello 40 pesa distinto que un cuello 34) y al
+# 17/08 cubre el 100% de las líneas pendientes en unidades.
+_SQL_PENDIENTES = """
+WITH conv AS (
+    SELECT id_producto, valor_conversion,
+           ROW_NUMBER() OVER (PARTITION BY id_producto
+                              ORDER BY COUNT(*) DESC, valor_conversion DESC) AS rn
+      FROM detalle_pedido_cliente
+     WHERE id_unidad_venta = {un} AND valor_conversion > 1
+     GROUP BY id_producto, valor_conversion
+),
+ped AS (
+    SELECT v.id_producto,
+           SUM(CASE WHEN v.id_unidad_pedido = {rollo}
+                    THEN v.saldo_comprometido * {kg_rollo}
+                    WHEN v.id_unidad_pedido = {kg} THEN v.saldo_comprometido
+                    ELSE 0 END)                                    AS ped_kg,
+           SUM(CASE WHEN v.id_unidad_pedido = {rollo}
+                    THEN v.saldo_comprometido ELSE 0 END)          AS ped_rollos,
+           SUM(CASE WHEN v.id_unidad_pedido = {un}
+                    THEN v.saldo_comprometido ELSE 0 END)          AS ped_un,
+           COUNT(DISTINCT v.numero)                                AS n_pedidos,
+           COUNT(DISTINCT v.cliente)                               AS n_clientes,
+           MIN(v.fecha)                                            AS mas_viejo
+      FROM v_saldos_comprometidos_detallado v
+     WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias_ped}
+     GROUP BY v.id_producto
+),
+inv AS (
+    SELECT id_producto, SUM(saldo) AS inv_kg
+      FROM (SELECT id_producto, saldo,
+                   ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega
+                                      ORDER BY fecha DESC, id_saldo_producto DESC) AS rn
+              FROM saldo_producto
+             WHERE id_bodega = {bod}) u
+     WHERE u.rn = 1 AND u.saldo > 0
+     GROUP BY id_producto
+),
+padres AS (
+    SELECT DISTINCT id_orden_fabricacion_padre AS p
+      FROM orden_fabricacion
+     WHERE id_orden_fabricacion_padre IS NOT NULL
+),
+prod AS (
+    SELECT o.id_producto,
+           SUM(o.cantidad - ISNULL(o.cantidad_fabricada, 0)) AS prod_kg,
+           COUNT(*)                                          AS n_ordenes
+      FROM orden_fabricacion o
+      LEFT JOIN padres h ON h.p = o.id_orden_fabricacion
+     WHERE o.id_bodega = {bod}
+       AND o.estado_produccion = 2
+       AND h.p IS NULL
+       AND o.id_producto IS NOT NULL
+       AND DATEDIFF(day, o.fecha, {ahora}) <= {dias_prod}
+     GROUP BY o.id_producto
+)
+SELECT pr.nombre_categoria_producto                    AS categoria,
+       ISNULL(sub.nombre, 'Sin tela')                  AS tela,
+       pr.codigo                                       AS codigo,
+       LTRIM(REPLACE(ISNULL(pr.nombre, pr.codigo),
+                     ISNULL(sub.nombre, ''), ''))      AS color,
+       ped.ped_kg, ped.ped_rollos, ped.ped_un,
+       c.valor_conversion                              AS un_por_kg,
+       ped.n_pedidos, ped.n_clientes, ped.mas_viejo,
+       ISNULL(inv.inv_kg, 0)                           AS inv_kg,
+       ISNULL(prod.prod_kg, 0)                         AS prod_kg,
+       ISNULL(prod.n_ordenes, 0)                       AS n_ordenes
+  FROM ped
+  JOIN producto pr ON pr.id_producto = ped.id_producto
+  LEFT JOIN subcategoria_producto sub
+         ON sub.id_subcategoria_producto = pr.id_subcategoria_producto
+  LEFT JOIN conv c ON c.id_producto = ped.id_producto AND c.rn = 1
+  LEFT JOIN inv  ON inv.id_producto = ped.id_producto
+  LEFT JOIN prod ON prod.id_producto = ped.id_producto
+"""
+
+
+def _sql_pendientes() -> str:
+    return _SQL_PENDIENTES.format(
+        un=UNIDAD_UN, kg=UNIDAD_KG, rollo=UNIDAD_ROLLO,
+        kg_rollo=KG_POR_ROLLO, bod=BODEGA_TERMINADO,
+        dias_ped=DIAS_PEDIDO_MAX, dias_prod=DIAS_PRODUCCION_VIVA,
+        ahora=AHORA_EC,
+    )
+
+
+_MESES = ("ene", "feb", "mar", "abr", "may", "jun",
+          "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def _fecha_corta(iso: str) -> str:
+    """'2026-08-05' → '5 ago'. La dueña lee la fecha, no el ISO."""
+    try:
+        d = date.fromisoformat(iso[:10])
+    except (TypeError, ValueError):
+        return ""
+    return f"{d.day} {_MESES[d.month - 1]}"
+
+
+def _dias_desde(iso: str, hoy: date | None = None) -> int:
+    """Días entre una fecha ISO y hoy en Ecuador. 0 si la fecha no se entiende."""
+    try:
+        d = date.fromisoformat(iso[:10])
+    except (TypeError, ValueError):
+        return 0
+    from filters import today_ec
+    return max(0, ((hoy or today_ec()) - d).days)
+
+
+def _f(valor) -> float:
+    try:
+        return float(valor or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fila(row: dict) -> dict:
+    """Una fila cruda de Asinfo → el dict que consume el template.
+
+    `pedido_kg` unifica las tres unidades a kilos para que la resta tenga
+    sentido: los rollos ya vienen multiplicados por {KG_POR_ROLLO} desde el
+    SQL, y las unidades se dividen acá por las unidades-por-kilo del producto.
+    """
+    categoria = str(row.get("categoria") or "").strip()
+    ped_un = _f(row.get("ped_un"))
+    un_por_kg = _f(row.get("un_por_kg"))
+    kg_de_unidades = ped_un / un_por_kg if (ped_un and un_por_kg) else 0.0
+
+    mas_viejo = str(row.get("mas_viejo") or "")[:10]
+    pedido_kg = _f(row.get("ped_kg")) + kg_de_unidades
+    inv_kg = _f(row.get("inv_kg"))
+    prod_kg = _f(row.get("prod_kg"))
+    return {
+        "categoria": categoria,
+        "tela": str(row.get("tela") or "").strip(),
+        "codigo": str(row.get("codigo") or "").strip(),
+        "color": str(row.get("color") or "").strip(),
+        "pedido_kg": round(pedido_kg, 1),
+        "pedido_rollos": round(_f(row.get("ped_rollos")), 1),
+        "pedido_un": round(ped_un, 1),
+        "un_por_kg": round(un_por_kg, 4),
+        "en_unidades": categoria in CATEGORIAS_EN_UNIDADES,
+        "n_pedidos": int(_f(row.get("n_pedidos"))),
+        "n_clientes": int(_f(row.get("n_clientes"))),
+        "mas_viejo": mas_viejo,
+        "mas_viejo_es": _fecha_corta(mas_viejo),
+        "dias_espera": _dias_desde(mas_viejo),
+        "inventario_kg": round(inv_kg, 1),
+        "produccion_kg": round(prod_kg, 1),
+        "n_ordenes": int(_f(row.get("n_ordenes"))),
+        "faltan_kg": round(pedido_kg - inv_kg - prod_kg, 1),
+    }
+
+
+def pendientes() -> tuple[list[dict], bool]:
+    """Todos los colores con pedido pendiente. Devuelve `(filas, disponible)`.
+
+    `disponible=False` significa que Metabase no contestó — distinto de que no
+    haya pedidos. La pantalla necesita distinguirlos para no mostrar "no falta
+    nada" cuando en realidad no pudo preguntar.
+    """
+    filas, ok = metabase_client.fetch_dataset_estado(ASINFO_DB, _sql_pendientes())
+    if not ok:
+        _LOG.warning("pedidos: Asinfo no contestó")
+        return [], False
+    out = [_fila(r) for r in filas]
+    return [f for f in out if f["categoria"] in CATEGORIAS], True
+
+
+def por_categoria(filas: list[dict]) -> list[dict]:
+    """Resumen por familia de tela, para las pestañas. Ordenado por faltante."""
+    acc: dict[str, dict] = {}
+    for f in filas:
+        b = acc.setdefault(f["categoria"], {
+            "categoria": f["categoria"], "colores": 0, "pedido_kg": 0.0,
+            "inventario_kg": 0.0, "produccion_kg": 0.0,
+            "faltan_kg": 0.0, "colores_faltan": 0, "pedido_un": 0.0,
+            "en_unidades": f["en_unidades"],
+        })
+        b["colores"] += 1
+        b["pedido_kg"] += f["pedido_kg"]
+        b["pedido_un"] += f["pedido_un"]
+        b["inventario_kg"] += f["inventario_kg"]
+        b["produccion_kg"] += f["produccion_kg"]
+        if f["faltan_kg"] > 0:
+            b["faltan_kg"] += f["faltan_kg"]
+            b["colores_faltan"] += 1
+    for b in acc.values():
+        for k in ("pedido_kg", "pedido_un", "inventario_kg",
+                  "produccion_kg", "faltan_kg"):
+            b[k] = round(b[k], 1)
+    return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
+
+
+def por_tela(filas: list[dict], categoria: str) -> list[dict]:
+    """Las filas de una familia, agrupadas por tela.
+
+    Adentro de cada tela, los colores van ordenados por faltante descendente:
+    lo que falta arriba. Es el orden que pidió la dueña para /informes/traza —
+    la pantalla ordena por lo que MOVIÓ, no alfabéticamente.
+    """
+    acc: dict[str, dict] = {}
+    for f in filas:
+        if f["categoria"] != categoria:
+            continue
+        b = acc.setdefault(f["tela"], {
+            "tela": f["tela"], "filas": [], "pedido_kg": 0.0,
+            "pedido_rollos": 0.0, "pedido_un": 0.0, "faltan_kg": 0.0,
+        })
+        b["filas"].append(f)
+        b["pedido_kg"] += f["pedido_kg"]
+        b["pedido_rollos"] += f["pedido_rollos"]
+        b["pedido_un"] += f["pedido_un"]
+        if f["faltan_kg"] > 0:
+            b["faltan_kg"] += f["faltan_kg"]
+    for b in acc.values():
+        b["filas"].sort(key=lambda f: -f["faltan_kg"])
+        for k in ("pedido_kg", "pedido_rollos", "pedido_un", "faltan_kg"):
+            b[k] = round(b[k], 1)
+    return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
+
+
+# El detalle usa el CÓDIGO de producto y no el id interno porque es lo que la
+# dueña lee y lo que va en la URL. Se sanitiza a [A-Z0-9-] antes de interpolar:
+# `fetch_dataset` no toma parámetros posicionales en el resto del código y no
+# vamos a estrenar acá una firma que los fakes de los tests no declaran.
+_SQL_DETALLE_PEDIDOS = """
+SELECT v.numero, v.cliente, ISNULL(e.nombre_comercial, '') AS codigo_cliente,
+       v.fecha, v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad,
+       p.estado
+  FROM v_saldos_comprometidos_detallado v
+  JOIN producto pr ON pr.id_producto = v.id_producto
+  JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
+  LEFT JOIN empresa e ON e.id_empresa = p.id_empresa
+ WHERE pr.codigo = '{codigo}'
+ ORDER BY v.fecha
+"""
+
+_SQL_DETALLE_ORDENES = """
+WITH padres AS (
+    SELECT DISTINCT id_orden_fabricacion_padre AS p
+      FROM orden_fabricacion
+     WHERE id_orden_fabricacion_padre IS NOT NULL
+)
+SELECT o.numero, o.fecha, o.cantidad,
+       ISNULL(o.cantidad_fabricada, 0) AS fabricada,
+       DATEDIFF(day, o.fecha, {ahora}) AS dias
+  FROM orden_fabricacion o
+  LEFT JOIN padres h ON h.p = o.id_orden_fabricacion
+  JOIN producto pr ON pr.id_producto = o.id_producto
+ WHERE pr.codigo = '{codigo}'
+   AND o.id_bodega = {bod}
+   AND o.estado_produccion = 2
+   AND h.p IS NULL
+   AND DATEDIFF(day, o.fecha, {ahora}) <= {dias_prod}
+ ORDER BY o.fecha DESC
+"""
+
+
+def codigo_seguro(codigo: str) -> str:
+    """Deja sólo lo que puede ser un código de producto de Asinfo.
+
+    Los códigos son alfanuméricos con guiones (`FE96CAF`, `TC-JE-3.8-AB`). Todo
+    lo demás se cae: es lo único que separa la URL de una inyección, porque el
+    código se interpola en la SQL.
+    """
+    return "".join(
+        c for c in (codigo or "").strip().upper()
+        if c.isalnum() or c in "-."
+    )[:40]
+
+
+def detalle_color(codigo: str) -> tuple[dict | None, list[dict], list[dict], bool]:
+    """`(ficha, pedidos, órdenes, disponible)` de un color.
+
+    `ficha` es la fila de `pendientes()` de ese código — None si el color no
+    tiene pedido pendiente (se puede llegar por URL a cualquier código).
+    """
+    seguro = codigo_seguro(codigo)
+    if not seguro:
+        return None, [], [], True
+
+    filas, ok = pendientes()
+    ficha = next((f for f in filas if f["codigo"] == seguro), None)
+
+    peds, ok_ped = metabase_client.fetch_dataset_estado(
+        ASINFO_DB, _SQL_DETALLE_PEDIDOS.format(codigo=seguro))
+    ords, ok_ord = metabase_client.fetch_dataset_estado(
+        ASINFO_DB, _SQL_DETALLE_ORDENES.format(
+            codigo=seguro, bod=BODEGA_TERMINADO,
+            dias_prod=DIAS_PRODUCCION_VIVA, ahora=AHORA_EC))
+
+    return (
+        ficha,
+        [_fila_pedido(r) for r in peds],
+        [_fila_orden(r) for r in ords],
+        bool(ok and ok_ped and ok_ord),
+    )
+
+
+def _fila_pedido(row: dict) -> dict:
+    unidad = int(_f(row.get("unidad")))
+    cantidad = _f(row.get("cantidad"))
+    fecha = str(row.get("fecha") or "")[:10]
+    return {
+        "numero": str(row.get("numero") or "").strip(),
+        "cliente": str(row.get("cliente") or "").strip(),
+        "codigo_cliente": str(row.get("codigo_cliente") or "").strip(),
+        "fecha": fecha,
+        "fecha_es": _fecha_corta(fecha),
+        "dias": _dias_desde(fecha),
+        "cantidad": round(cantidad, 1),
+        "unidad": unidad,
+        "es_rollo": unidad == UNIDAD_ROLLO,
+        "es_unidad": unidad == UNIDAD_UN,
+        "kg": round(cantidad * KG_POR_ROLLO, 1) if unidad == UNIDAD_ROLLO
+             else (round(cantidad, 1) if unidad == UNIDAD_KG else None),
+    }
+
+
+def _fila_orden(row: dict) -> dict:
+    cantidad = _f(row.get("cantidad"))
+    fabricada = _f(row.get("fabricada"))
+    fecha = str(row.get("fecha") or "")[:10]
+    return {
+        "numero": str(row.get("numero") or "").strip(),
+        "fecha": fecha,
+        "fecha_es": _fecha_corta(fecha),
+        "cantidad": round(cantidad, 1),
+        "fabricada": round(fabricada, 1),
+        "dias": int(_f(row.get("dias"))),
+        "avance": round(fabricada / cantidad * 100) if cantidad else 0,
+    }
+
+
+def repetidos(pedidos: list[dict]) -> list[str]:
+    """Códigos de cliente que pidieron ESTE color más de una vez sin recibirlo.
+
+    Señal de pedido atrasado que no cuesta nada calcular: si el mismo cliente
+    volvió a pedir lo mismo y las dos veces siguen pendientes, lo más probable
+    es que el primero nunca haya salido. Al 17/08 el caso testigo es KAM, que
+    pidió FE96CAF el 05 y el 14 de agosto.
+    """
+    vistos: dict[str, int] = {}
+    for p in pedidos:
+        clave = p["codigo_cliente"] or p["cliente"]
+        if clave:
+            vistos[clave] = vistos.get(clave, 0) + 1
+    return sorted(k for k, n in vistos.items() if n > 1)
