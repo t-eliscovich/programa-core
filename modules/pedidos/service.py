@@ -153,8 +153,7 @@ prod AS (
 SELECT pr.nombre_categoria_producto                    AS categoria,
        ISNULL(sub.nombre, 'Sin tela')                  AS tela,
        pr.codigo                                       AS codigo,
-       LTRIM(REPLACE(ISNULL(pr.nombre, pr.codigo),
-                     ISNULL(sub.nombre, ''), ''))      AS color,
+       {color}                                         AS color,
        ped.ped_kg, ped.ped_rollos, ped.ped_un,
        c.valor_conversion                              AS un_por_kg,
        ped.n_pedidos, ped.n_clientes, ped.mas_viejo,
@@ -171,12 +170,24 @@ SELECT pr.nombre_categoria_producto                    AS categoria,
 """
 
 
+#: El color es el ÚLTIMO token del nombre del producto, no "el nombre menos
+#: el de la subcategoría": ese REPLACE fallaba cada vez que las dos etiquetas
+#: no coincidían, que pasa seguido. `JE23RML` se llama "Jersey 1.2x2.3 RML"
+#: pero su subcategoría es "Jersey 2.3" (no matcheaba nada → salía el nombre
+#: entero), y `JE30CIR` es "Jersey 3.0 CIR" contra "Jersey 3" (matcheaba de
+#: más → salía ".0 CIR"). Verificado sobre 10 productos de 8 telas distintas.
+SQL_COLOR = (
+    "REVERSE(LEFT(REVERSE(LTRIM(RTRIM(pr.nombre))), "
+    "CHARINDEX(' ', REVERSE(LTRIM(RTRIM(pr.nombre))) + ' ') - 1))"
+)
+
+
 def _sql_pendientes() -> str:
     return _SQL_PENDIENTES.format(
         un=UNIDAD_UN, kg=UNIDAD_KG, rollo=UNIDAD_ROLLO,
         kg_rollo=KG_POR_ROLLO, bod=BODEGA_TERMINADO,
         dias_ped=DIAS_PEDIDO_MAX, dias_prod=DIAS_PRODUCCION_VIVA,
-        ahora=AHORA_EC,
+        ahora=AHORA_EC, color=SQL_COLOR,
     )
 
 

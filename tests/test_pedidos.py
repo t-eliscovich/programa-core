@@ -388,3 +388,16 @@ def test_el_link_del_menu_apunta_a_una_pantalla_que_existe(app, fake_db):
                       return_value=([], True)):
         r = c.get("/pedidos")
     assert 'href="/pedidos"' in r.get_data(as_text=True)
+
+
+def test_el_color_sale_del_ultimo_token_y_no_de_restarle_el_nombre_de_la_tela():
+    """La etiqueta de la subcategoría y la del producto NO siempre coinciden.
+
+    `JE23RML` se llama "Jersey 1.2x2.3 RML" y su subcategoría es "Jersey 2.3":
+    restarle el nombre de la tela no matcheaba nada y el color salía siendo el
+    nombre entero. `JE30CIR` es "Jersey 3.0 CIR" contra "Jersey 3": matcheaba
+    de más y salía ".0 CIR". Las dos se vieron en producción el 17/08.
+    """
+    sql = service._sql_pendientes()
+    assert service.SQL_COLOR in sql
+    assert "REPLACE(ISNULL(pr.nombre" not in sql
