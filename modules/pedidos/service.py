@@ -480,3 +480,77 @@ def telas_sin_faltante(filas: list[dict], categoria: str) -> list[str]:
             continue
         (con if f["faltan_kg"] > 0 else sin).add(f["tela"])
     return sorted(sin - con)
+
+
+#: Las dos unidades en que se puede leer la pantalla. `alt` es la unidad en que
+#: el cliente PIDE: rollos para las telas, unidades para cuellos y puños.
+UNIDADES = ("kg", "alt")
+
+
+def etiqueta_unidad(unidad: str, en_unidades: bool) -> str:
+    if unidad != "alt":
+        return "kg"
+    return "un" if en_unidades else "roll"
+
+
+def _factor(fila: dict, unidad: str) -> float | None:
+    """Cuánto multiplicar un kilo para leerlo en la unidad pedida.
+
+    None = ese producto no se puede expresar en la unidad alternativa (un
+    cuello sin factor de conversión cargado). El template lo muestra en kg
+    antes que inventar un número.
+    """
+    if unidad != "alt":
+        return 1.0
+    if fila["en_unidades"]:
+        return fila["un_por_kg"] or None
+    return 1.0 / KG_POR_ROLLO
+
+
+def en_unidad(filas: list[dict], unidad: str) -> list[dict]:
+    """Agrega a cada fila los cuatro números ya convertidos y su etiqueta.
+
+    La conversión se hace acá y no en el template para que sea testeable y
+    para que la pantalla no haga aritmética. Los kilos siguen estando en la
+    fila: la unidad alternativa es una LECTURA del mismo dato, no otro dato.
+
+    ⭐ El PEDIDO no se reconvierte: se muestra el número original que vino de
+    Asinfo (`pedido_rollos` / `pedido_un`). Pasar por kilos y volver arrastra
+    el redondeo — 212 unidades de C34BLA volvían como 213,3 porque sus 6,36 kg
+    se habían guardado como 6,4. Bodega y producción sí se convierten, porque
+    de esas sólo existen los kilos.
+    """
+    for f in filas:
+        k = _factor(f, unidad)
+        usa_alt = k is not None and unidad == "alt"
+        k = k or 1.0
+        # Rollos con un decimal: "0 rollos" para 12 kg de tela sería mentira.
+        # Unidades y kilos, enteros: son cosas que se cuentan de a una.
+        dec = 1 if (usa_alt and not f["en_unidades"]) else 0
+        for campo, destino in (("inventario_kg", "inventario_d"),
+                               ("produccion_kg", "produccion_d"),
+                               ("faltan_kg", "faltan_d")):
+            f[destino] = round(f[campo] * k, dec)
+        if usa_alt:
+            f["pedido_d"] = f["pedido_un"] if f["en_unidades"] else f["pedido_rollos"]
+        else:
+            f["pedido_d"] = round(f["pedido_kg"])
+        f["u"] = etiqueta_unidad(unidad if usa_alt else "kg", f["en_unidades"])
+        f["decimales"] = dec
+    return filas
+
+
+def total_en_unidad(kilos: float, unidad: str, en_unidades: bool,
+                    un_por_kg: float = 0.0) -> tuple[float, int, str]:
+    """Un total en kilos leído en la unidad pedida.
+
+    Devuelve `(valor, decimales, etiqueta)`. Para los subtotales de tela y de
+    familia, que sólo existen en kilos y por eso sí se convierten.
+    """
+    if unidad != "alt":
+        return round(kilos), 0, "kg"
+    if en_unidades:
+        if not un_por_kg:
+            return round(kilos), 0, "kg"
+        return round(kilos * un_por_kg), 0, "un"
+    return round(kilos / KG_POR_ROLLO, 1), 1, "roll"

@@ -51,6 +51,11 @@
      que ir a mirar. */
   .pd .card.rojo .val{color:#b91c1c}
   .pd .nota{color:#64748b;font-size:12px;margin:2px 0 12px;max-width:900px}
+  .pd .unid{font-size:12px;color:#64748b;margin:0 0 10px;display:flex;gap:6px;align-items:center}
+  .pd .unid a{color:#475569;text-decoration:none;border:1px solid #e2e8f0;border-radius:6px;
+    padding:3px 10px;background:#fff}
+  .pd .unid a:hover{border-color:#94a3b8}
+  .pd .unid a.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
   .pd .nota a{color:#1d4ed8;text-decoration:none}
   .pd .nota a:hover{text-decoration:underline}
   .pd .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;
@@ -102,9 +107,17 @@
     {% endfor %}
   </div>
 
+  <div class="unid">
+    Ver en
+    <a class="{{ 'on' if unidad == 'kg' }}"
+       href="{{ url_for('pedidos.lista', cat=activa, falta=1 if solo_faltan) }}">kg</a>
+    <a class="{{ 'on' if unidad == 'alt' }}"
+       href="{{ url_for('pedidos.lista', cat=activa, u='alt', falta=1 if solo_faltan) }}">{{ 'unidades' if u_alt == 'un' else 'rollos' }}</a>
+  </div>
+
   {% if resumen %}
     <p class="nota" style="margin-bottom:4px">
-      Hay que hacer <strong>{{ resumen.faltan_kg|num_es(0) }} kg</strong> de
+      Hay que hacer <strong>{{ resumen_falta[0]|num_es(resumen_falta[1]) }} {{ resumen_falta[2] }}</strong> de
       {{ resumen.colores_faltan }} de {{ resumen.colores }}
       {{ 'color' if resumen.colores == 1 else 'colores' }} de {{ resumen.categoria }}.
       {% if solo_faltan %}
@@ -115,12 +128,13 @@
     </p>
   {% endif %}
 
+  {% set u_col = 'kg' if unidad == 'kg' else ('un' if u_alt == 'un' else 'roll') %}
   {% for t in telas %}
     <h3>
       <span>{{ t.tela }}</span>
       <span class="muted">
         {{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }}{% if t.faltan_kg %} ·
-        <span style="color:#b91c1c">faltan {{ t.faltan_kg|num_es(0) }} kg</span>{% endif %}
+        <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }} {{ t.u }}</span>{% endif %}
       </span>
     </h3>
     <table>
@@ -132,10 +146,10 @@
         <tr>
           <th>Color</th>
           <th>Desde</th>
-          <th>Pedido</th>
-          <th>En bodega</th>
-          <th>Tinturándose</th>
-          <th>Falta</th>
+          <th>Pedido {{ u_col }}</th>
+          <th>En bodega {{ u_col }}</th>
+          <th>Tinturándose {{ u_col }}</th>
+          <th>Falta {{ u_col }}</th>
         </tr>
       </thead>
       <tbody>
@@ -148,14 +162,11 @@
               </a>
             </td>
             <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
-            <td>
-              {% if f.en_unidades %}{{ f.pedido_un|num_es(0) }} <span class="muted">un</span>
-              {% else %}{{ f.pedido_kg|num_es(0) }}{% endif %}
-            </td>
-            <td>{% if f.inventario_kg %}{{ f.inventario_kg|num_es(0) }}{% else %}—{% endif %}</td>
-            <td>{% if f.produccion_kg %}{{ f.produccion_kg|num_es(0) }}{% else %}—{% endif %}</td>
+            <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
+            <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
+            <td>{% if f.produccion_kg %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
             <td class="{{ 'falta' if f.faltan_kg > 0 else 'ok' }}">
-              {% if f.faltan_kg > 0 %}{{ f.faltan_kg|num_es(0) }}{% else %}ok{% endif %}
+              {% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}
             </td>
           </tr>
         {% endfor %}

@@ -481,3 +481,88 @@ def test_bodega_y_tinturandose_son_dos_columnas_con_el_nombre_entero(app, fake_d
     assert "En bodega" in body and "Tinturándose" in body
     assert "tint." not in body
     assert "Tenemos" not in body
+
+
+# ── el conversor kg ↔ rollos / unidades ─────────────────────────────────────
+
+def test_en_rollos_el_pedido_usa_el_numero_original_y_no_la_ida_y_vuelta():
+    """⭐ Reconvertir arrastra el redondeo: 212 unidades de C34BLA volvían como
+    213,3 porque sus 6,36 kg se habían guardado como 6,4."""
+    f = service._fila(_fila(categoria="Cuellos", codigo="C34BLA", ped_kg=0,
+                            ped_rollos=0, ped_un=212, un_por_kg=33.33333333))
+    (out,) = service.en_unidad([f], "alt")
+    assert out["pedido_d"] == 212
+    assert out["u"] == "un"
+
+
+def test_en_rollos_el_pedido_sale_del_rollo_original():
+    (out,) = service.en_unidad([service._fila(_fila())], "alt")
+    assert out["pedido_d"] == 19.0
+    assert out["u"] == "roll"
+
+
+def test_bodega_y_produccion_si_se_convierten_porque_solo_existen_en_kilos():
+    f = service._fila(_fila(inv_kg=470.0, prod_kg=235.0))
+    (out,) = service.en_unidad([f], "alt")
+    assert out["inventario_d"] == 20.0        # 470 / 23,5
+    assert out["produccion_d"] == 10.0
+
+
+def test_los_rollos_llevan_un_decimal_y_las_unidades_ninguno():
+    """"0 rollos" para 12 kg de tela sería mentira; medio cuello no existe."""
+    (tela,) = service.en_unidad([service._fila(_fila(inv_kg=12.0))], "alt")
+    assert tela["inventario_d"] == 0.5 and tela["decimales"] == 1
+    (cuello,) = service.en_unidad(
+        [service._fila(_fila(categoria="Cuellos", ped_un=150,
+                             un_por_kg=33.33333333, inv_kg=0.7))], "alt")
+    assert cuello["inventario_d"] == 23 and cuello["decimales"] == 0
+
+
+def test_en_kg_no_convierte_nada():
+    (out,) = service.en_unidad([service._fila(_fila(inv_kg=470.0))], "kg")
+    assert (out["pedido_d"], out["inventario_d"], out["u"]) == (447, 470.0, "kg")
+
+
+def test_un_cuello_sin_factor_cargado_se_muestra_en_kilos_y_no_inventa():
+    f = service._fila(_fila(categoria="Cuellos", ped_kg=0, ped_un=150,
+                            un_por_kg=None, inv_kg=10.0))
+    (out,) = service.en_unidad([f], "alt")
+    assert out["u"] == "kg"
+    assert out["inventario_d"] == 10
+
+
+def test_el_subtotal_de_una_tela_tambien_se_convierte():
+    assert service.total_en_unidad(470.0, "alt", False) == (20.0, 1, "roll")
+    assert service.total_en_unidad(470.0, "kg", False) == (470, 0, "kg")
+    assert service.total_en_unidad(15.0, "alt", True, 33.33333333) == (500, 0, "un")
+    assert service.total_en_unidad(15.0, "alt", True, 0) == (15, 0, "kg")
+
+
+def test_el_toggle_esta_arriba_y_convierte_la_tabla(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([_fila()], True)):
+        kg = c.get("/pedidos").get_data(as_text=True)
+        roll = c.get("/pedidos?u=alt").get_data(as_text=True)
+    assert "Pedido kg" in kg and "447" in kg
+    assert "Pedido roll" in roll and "19,0" in roll
+    assert ">rollos</a>" in kg     # el link a la otra unidad está en las dos
+
+
+def test_en_cuellos_la_otra_unidad_se_llama_unidades(app, fake_db):
+    c = _login(app, fake_db)
+    filas = [_fila(categoria="Cuellos", tela="Cuellos T34", codigo="C34ARV",
+                   ped_kg=0, ped_rollos=0, ped_un=150, un_por_kg=33.33333333)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert ">unidades</a>" in body
+    assert ">rollos</a>" not in body
+
+
+def test_una_unidad_inventada_en_la_url_cae_a_kilos(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([_fila()], True)):
+        body = c.get("/pedidos?u=varas").get_data(as_text=True)
+    assert "Pedido kg" in body
