@@ -325,9 +325,13 @@ def test_la_tabla_no_queda_desalineada_al_agregar_la_columna():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    encabezado = re.search(r"<thead><tr>(.*?)</tr></thead>", html, re.S).group(1)
+    # ⚠ Apuntado a la tabla PRINCIPAL por su id: la pantalla tiene otra tabla
+    # (el resumen por grupo) y agarrar su encabezado hacía fallar el test por
+    # el motivo equivocado.
+    principal = html[html.index('<table id="tabla">'):]
+    encabezado = re.search(r"<thead><tr>(.*?)</tr></thead>", principal, re.S).group(1)
     columnas = len(re.findall(r"<th", encabezado))
-    colspan = int(re.search(r'colspan="(\d+)"', html).group(1))
+    colspan = int(re.search(r'colspan="(\d+)"', principal).group(1))
     assert colspan == columnas, (
         f"el detalle abarca {colspan} columnas y la tabla tiene {columnas}")
 
@@ -421,3 +425,64 @@ def test_el_csv_lleva_grupo_y_subgrupo_como_columnas():
     fuente = inspect.getsource(views.parado_csv)
     for col in ('"Grupo"', '"Subgrupo (tela)"', '"Kg de segunda"', '"% del parado"'):
         assert col in fuente, f"falta la columna {col} en el Excel"
+
+
+# ── El resumen por grupo y el ordenar por columna ───────────────────────────
+
+def test_el_resumen_por_grupo_suma_100(monkeypatch):
+    filas = [
+        {"categoria": "Jersey", "subcategoria": "Jersey 3", "stock_kg": 60,
+         "kg_segunda": 0},
+        {"categoria": "Jersey", "subcategoria": "Jersey 3.5", "stock_kg": 20,
+         "kg_segunda": 5},
+        {"categoria": "Fleece", "subcategoria": "Fleece 102", "stock_kg": 20,
+         "kg_segunda": 0},
+    ]
+    g = queries.por_grupo(filas)
+    assert [x["grupo"] for x in g] == ["Jersey", "Fleece"], "de mayor a menor"
+    assert round(sum(x["pct"] for x in g), 6) == 100
+    assert g[0]["items"] == 2 and g[0]["subgrupos"] == 2
+    assert g[0]["kg_segunda"] == 5
+
+
+def test_el_resumen_sale_de_las_mismas_filas_que_la_tabla():
+    """Si fuera una consulta aparte, el resumen y la tabla podrían dejar de
+    coincidir el día que una cambie de criterio, y no habría síntoma."""
+    import inspect
+    fuente = inspect.getsource(queries.por_grupo)
+    assert "db.fetch" not in fuente, "por_grupo recibe las filas, no las consulta"
+
+
+def test_sin_grupo_no_desaparece_del_resumen():
+    """Una fila sin categoría cargada tiene que sumar igual: si se cayera del
+    resumen, los porcentajes seguirían dando 100 y faltarían kilos."""
+    g = queries.por_grupo([{"categoria": None, "subcategoria": "X",
+                            "stock_kg": 10, "kg_segunda": 0}])
+    assert g[0]["grupo"] == "(sin grupo)" and g[0]["kg"] == 10
+
+
+def test_ordenar_mueve_la_fila_con_su_detalle():
+    """⚠ Cada tela son DOS <tr>: la fila y su detalle escondido. Un ordenador
+    que mueva filas sueltas deja los detalles pegados a la tela equivocada, y
+    como están cerrados no se nota hasta que alguien abre uno."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "pares.push([tr, tr.nextElementSibling])" in html
+    assert "frag.appendChild(fila); frag.appendChild(det);" in html
+
+
+def test_las_columnas_numericas_ordenan_por_el_numero_y_no_por_el_texto():
+    """"1.779" y "580" como texto ordenan al revés: "1" < "5"."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert 'parseFloat(td.dataset.v ?? \'0\')' in html
+    import re
+    principal = html[html.index('<table id="tabla">'):]
+    encabezado = re.search(r'<thead><tr>\n(.*?)</tr></thead>', principal, re.S).group(1)
+    numericas = re.findall(r'data-i="(\d+)" data-num="1"', encabezado)
+    assert numericas, "alguna columna tiene que estar marcada como numérica"
+    # toda columna marcada numérica tiene que tener data-v en sus celdas
+    assert html.count('data-v="') >= len(numericas), (
+        "una columna numérica sin data-v ordena por el texto formateado")

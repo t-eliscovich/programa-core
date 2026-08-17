@@ -92,6 +92,30 @@ def resumen(filas: list[dict]) -> dict:
     }
 
 
+def por_grupo(filas: list[dict]) -> list[dict]:
+    """
+    El resumen de arriba: cuánto pesa cada grupo de producto.
+
+    Se calcula sobre las MISMAS filas que se dibujan abajo, no con una consulta
+    aparte. Si fueran dos consultas, el resumen y la tabla podrían no coincidir
+    el día que una de las dos cambie de criterio, y no habría ningún síntoma.
+    """
+    tot = sum(float(f["stock_kg"]) for f in filas) or 1
+    g: dict[str, dict] = {}
+    for f in filas:
+        d = g.setdefault(f["categoria"] or "(sin grupo)", {
+            "grupo": f["categoria"] or "(sin grupo)",
+            "items": 0, "kg": 0.0, "kg_segunda": 0.0, "subgrupos": set()})
+        d["items"] += 1
+        d["kg"] += float(f["stock_kg"])
+        d["kg_segunda"] += float(f["kg_segunda"])
+        d["subgrupos"].add(f["subcategoria"])
+    for d in g.values():
+        d["pct"] = 100 * d["kg"] / tot
+        d["subgrupos"] = len(d["subgrupos"])
+    return sorted(g.values(), key=lambda d: -d["kg"])
+
+
 # ── Por CLIENTE: la hoja que se lleva el vendedor ───────────────────────────
 
 #: Los órdenes posibles de la hoja. El default es `oportunidad` porque la hoja

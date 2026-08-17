@@ -81,6 +81,7 @@ def parado():
         subgrupos=[{"sub": s, "cat": c} for s, c in subgrupos],
         llamados=queries.llamados_por_tela(),
         resumen=queries.resumen(filas),
+        grupos_resumen=queries.por_grupo(filas),
         estado=queries.estado(),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,

@@ -1,6 +1,15 @@
 {% extends "analisis/base.html" %}
 {% block titulo %}Lo parado{% endblock %}
 {% block contenido %}
+<style>
+table.resumen{margin-bottom:8px}
+table.resumen tfoot td{border-top:2px solid var(--l);border-bottom:0;padding-top:8px}
+th.ord{cursor:pointer;user-select:none;white-space:nowrap}
+th.ord:hover{color:var(--t)}
+th.ord::after{content:" ⇅";opacity:.35;font-size:10px}
+th.ord.asc::after{content:" ↑";opacity:1}
+th.ord.desc::after{content:" ↓";opacity:1}
+</style>
 
 <h1>Lo parado — y a quién llamar</h1>
 <p class="sub">
@@ -34,6 +43,30 @@ tenía el día que se marcó, así que cuando se vende algo la fila <b>se queda<
 lo que cambia es la columna «vendidos». Si desapareciera, no habría forma de
 saber si lo que hicimos funcionó.</div>
 
+<h2 style="margin-top:28px">Por grupo de producto</h2>
+<p class="sub">Los mismos kilos de abajo, agrupados. Suma 100%.</p>
+<table class="resumen">
+<thead><tr><th>Grupo</th><th class="n">Subgrupos</th><th class="n">Ítems</th>
+<th class="n">Kg parados</th><th class="n">% del total</th>
+<th class="n">De 2ª</th></tr></thead>
+<tbody>
+{% for g in grupos_resumen %}
+  <tr><td class="tela">{{ g.grupo }}</td>
+  <td class="n g">{{ g.subgrupos }}</td>
+  <td class="n g">{{ g.items }}</td>
+  <td class="n">{{ g.kg | num_es(0) }}</td>
+  <td class="n">{{ g.pct | num_es(1) }}%</td>
+  <td class="n g">{% if g.kg_segunda %}{{ g.kg_segunda | num_es(0) }}{% else %}—{% endif %}</td></tr>
+{% endfor %}
+</tbody>
+<tfoot><tr><td><b>Total</b></td><td></td>
+<td class="n"><b>{{ resumen.n_items }}</b></td>
+<td class="n"><b>{{ resumen.kg | num_es(0) }}</b></td>
+<td class="n"><b>100,0%</b></td>
+<td class="n"><b>{{ resumen.kg_segunda | num_es(0) }}</b></td></tr></tfoot>
+</table>
+
+<h2>Tela por tela</h2>
 <div class="barra">
   <input id="q" placeholder="Buscar tela, color, cliente, provincia…" oninput="filtrar()">
   <select id="grupo" onchange="grupoCambio()">
@@ -59,12 +92,19 @@ saber si lo que hicimos funcionó.</div>
   </form>
 </div>
 
-<table>
-<thead><tr><th>Tela</th><th>Color</th><th class="n">Kg parados</th>
-<th class="n">% del parado</th>
-<th class="n">De 2ª</th>
-<th class="n">Vendidos</th><th class="n">Clientes</th><th>Estado</th>
-<th class="n">Última venta</th></tr></thead>
+<table id="tabla">
+<thead><tr>
+<th class="ord" data-i="0">Grupo</th>
+<th class="ord" data-i="1">Tela</th>
+<th class="ord" data-i="2">Color</th>
+<th class="ord n" data-i="3" data-num="1">Kg parados</th>
+<th class="ord n" data-i="4" data-num="1">% del parado</th>
+<th class="ord n" data-i="5" data-num="1">De 2ª</th>
+<th class="ord n" data-i="6" data-num="1">Vendidos</th>
+<th class="ord n" data-i="7" data-num="1">Clientes</th>
+<th class="ord" data-i="8">Estado</th>
+<th class="ord n" data-i="9" data-num="1">Última venta</th>
+</tr></thead>
 <tbody>
 {% for f in filas %}
   {% set cand = llamados.get(f.subcategoria, []) %}
@@ -76,13 +116,14 @@ saber si lo que hicimos funcionó.</div>
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
                        (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
+    <td class="g">{{ f.categoria or '—' }}</td>
     <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}</td>
     <td>{{ f.color }}</td>
-    <td class="n">{{ f.stock_kg | num_es(0) }}</td>
-    <td class="n g">{{ f.pct_total | num_es(1) }}%</td>
-    <td class="n">{% if f.kg_segunda %}<span class="pill viejo">{{ f.kg_segunda | num_es(0) }} kg</span>{% else %}—{% endif %}</td>
-    <td class="n">{% if f.kg_vendidos %}{{ f.kg_vendidos | num_es(0) }}{% else %}—{% endif %}</td>
-    <td class="n">{{ f.clientes }}</td>
+    <td class="n" data-v="{{ f.stock_kg }}">{{ f.stock_kg | num_es(0) }}</td>
+    <td class="n g" data-v="{{ f.pct_total }}">{{ f.pct_total | num_es(1) }}%</td>
+    <td class="n" data-v="{{ f.kg_segunda }}">{% if f.kg_segunda %}<span class="pill viejo">{{ f.kg_segunda | num_es(0) }} kg</span>{% else %}—{% endif %}</td>
+    <td class="n" data-v="{{ f.kg_vendidos }}">{% if f.kg_vendidos %}{{ f.kg_vendidos | num_es(0) }}{% else %}—{% endif %}</td>
+    <td class="n" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
     <td>
       {% if f.estado == 'resuelto' %}<span class="pill mov">resuelto</span>
       {% elif f.estado == 'empezó a moverse' %}<span class="pill mov">se movió</span>
@@ -90,9 +131,10 @@ saber si lo que hicimos funcionó.</div>
       {% elif f.anio_pista and f.anio_pista < ahora_anio %}<span class="pill viejo">sólo {{ f.anio_pista }}</span>
       {% else %}<span class="pill quieto">quieto</span>{% endif %}
     </td>
-    <td class="g n">{{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
+    <td class="g n" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
+      {{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
-  <tr class="det"><td colspan="9">
+  <tr class="det"><td colspan="10">
     <p class="sub" style="margin:10px 0 6px">
       <b>{{ f.subcategoria }}</b> en total tiene {{ f.kg_tela | num_es(0) }} kg
       parados repartidos en {{ f.colores_tela }}
@@ -181,6 +223,41 @@ function grupoCambio(){
   if (!sigueValiendo) sel.value = '';
   filtrar();
 }
+// ⚠ Cada tela son DOS <tr>: la fila y su detalle escondido. Ordenar moviendo
+// filas sueltas deja los detalles pegados a la tela equivocada — y como están
+// cerrados, no se nota hasta que alguien abre uno y ve los clientes de otra
+// tela. Por eso se ordenan PARES.
+function ordenar(th){
+  const tabla = document.getElementById('tabla');
+  const cuerpo = tabla.tBodies[0];
+  const i = +th.dataset.i, num = !!th.dataset.num;
+  const desc = !th.classList.contains('desc');
+  tabla.querySelectorAll('th.ord').forEach(o => o.classList.remove('asc','desc'));
+  th.classList.add(desc ? 'desc' : 'asc');
+
+  const pares = [];
+  for (const tr of Array.from(cuerpo.children)) {
+    if (tr.classList.contains('item')) pares.push([tr, tr.nextElementSibling]);
+  }
+  const clave = tr => {
+    const td = tr.children[i];
+    if (num) return parseFloat(td.dataset.v ?? '0') || 0;
+    return (td.textContent || '').trim().toLowerCase();
+  };
+  pares.sort((a, b) => {
+    const x = clave(a[0]), y = clave(b[0]);
+    if (x < y) return desc ? 1 : -1;
+    if (x > y) return desc ? -1 : 1;
+    return 0;
+  });
+  const frag = document.createDocumentFragment();
+  pares.forEach(([fila, det]) => { frag.appendChild(fila); frag.appendChild(det); });
+  cuerpo.appendChild(frag);
+}
+document.addEventListener('DOMContentLoaded', () =>
+  document.querySelectorAll('#tabla th.ord').forEach(th =>
+    th.addEventListener('click', () => ordenar(th))));
+
 function abrir(tr){
   const d = tr.nextElementSibling;
   d.classList.toggle('abierta');
