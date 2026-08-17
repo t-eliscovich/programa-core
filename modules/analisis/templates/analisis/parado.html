@@ -21,7 +21,10 @@
   <div class="card"><p class="k">Clientes a llamar</p>
     <p class="v">{{ llamados.values() | map('length') | sum }}</p>
     <p class="s">candidatos en total</p></div>
-  <div class="card"><p class="k">Sin nadie a quién llamar</p>
+  <div class="card"><p class="k">De segunda</p>
+  <p class="v">{{ resumen.kg_segunda | num_es(0) }}</p>
+  <p class="s">kg en {{ resumen.n_segunda }} ítems — el resto es de primera</p></div>
+<div class="card"><p class="k">Sin nadie a quién llamar</p>
     <p class="v">{{ resumen.sin_pista }}</p>
     <p class="s">{{ resumen.kg_sin_pista | num_es(0) }} kg — no es una lista, es una decisión</p></div>
 </div>
@@ -49,6 +52,7 @@ saber si lo que hicimos funcionó.</div>
 <table>
 <thead><tr><th>Tela</th><th>Color</th><th class="n">Kg parados</th>
 <th class="n">% del parado</th>
+<th class="n">De 2ª</th>
 <th class="n">Vendidos</th><th class="n">Clientes</th><th>Estado</th>
 <th class="n">Última venta</th></tr></thead>
 <tbody>
@@ -65,6 +69,7 @@ saber si lo que hicimos funcionó.</div>
     <td>{{ f.color }}</td>
     <td class="n">{{ f.stock_kg | num_es(0) }}</td>
     <td class="n g">{{ f.pct_total | num_es(1) }}%</td>
+    <td class="n">{% if f.kg_segunda %}<span class="pill viejo">{{ f.kg_segunda | num_es(0) }} kg</span>{% else %}—{% endif %}</td>
     <td class="n">{% if f.kg_vendidos %}{{ f.kg_vendidos | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n">{{ f.clientes }}</td>
     <td>
@@ -76,12 +81,14 @@ saber si lo que hicimos funcionó.</div>
     </td>
     <td class="g n">{{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
-  <tr class="det"><td colspan="8">
+  <tr class="det"><td colspan="9">
     <p class="sub" style="margin:10px 0 6px">
       <b>{{ f.subcategoria }}</b> en total tiene {{ f.kg_tela | num_es(0) }} kg
       parados repartidos en {{ f.colores_tela }}
       {{ 'color' if f.colores_tela == 1 else 'colores' }} —
       <b>{{ f.pct_tela | num_es(1) }}%</b> de todo lo parado de la fábrica.
+      {% if f.kg_segunda %}De esta fila, {{ f.kg_segunda | num_es(0) }} kg son de
+      <b>segunda</b> y {{ f.kg_primera | num_es(0) }} de primera.{% endif %}
     </p>
     {% if cand %}
     <table>
@@ -118,6 +125,8 @@ en 12 meses. Los candidatos son los clientes que compraron esa TELA —cualquier
 anterior, la fila va marcada como <b>improbable</b> con su fecha: un cliente de
 2023 no es un buen candidato, pero es el único que alguna vez quiso esa tela.
 El código es el mismo <code>codigo_cli</code> del resto del programa.
+Primera y segunda salen del atributo de calidad del LOTE en Asinfo, no del
+producto: por eso un mismo tela × color puede tener kilos de las dos.
 </footer>
 {% endblock %}
 

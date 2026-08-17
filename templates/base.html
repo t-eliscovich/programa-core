@@ -1405,6 +1405,14 @@
               <a href="{{ url_for('clientes.contactos') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Contactos</a>
             {% endif %}
 
+            {# TMT 2026-08-17 dueña: "poneme el link a analisis aca". El link
+               del sidebar sigue estando; éste es el segundo camino, en el menú
+               donde ella ya entra a lo suyo. Mismo gate: quien no tiene el
+               permiso no ve ninguno de los dos. #}
+            {% if tiene_permiso('analisis.ver') %}
+              <a href="/analisis" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Análisis</a>
+            {% endif %}
+
             {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
             {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') %}
             <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>

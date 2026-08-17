@@ -3,7 +3,7 @@
 Dos consultas y un remate:
 
     parados()   ~2 s — producto terminado (bodega 53) con stock ≥ 20 kg y menos
-                de 1 kg vendido en 12 meses.
+                de 1 kg vendido en 12 meses, abierto en primera y segunda.
     llamados()  ~5 s — por cada TELA parada, los 12 clientes de más kilos del
                 ÚLTIMO año en que alguien la compró. Normalmente es el
                 corriente; si no, el anterior; y si tampoco, 2024 o 2023.
@@ -106,11 +106,44 @@ ven AS (
     GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3)
 )"""
 
-SQL_PARADOS = _STOCK + f"""
+# Primera / segunda calidad. En Asinfo NO es una propiedad del producto: es el
+# ATRIBUTO 2 del LOTE (`valor_atributo`: PRI = PRIMERA, SEG = SEGUNDA). Por eso
+# un mismo tela × color puede tener kilos de las dos, y por eso son dos columnas
+# y no una — 26 de los ítems parados tienen de las dos.
+#
+# ⚠ Sale de `saldo_producto_lote`, otra tabla que la del resto de la pantalla.
+# Las dos cierran (333.634 vs 333.613 kg en la bodega 53, 0,006%), pero si un
+# día se despegan, los kilos por calidad van a dejar de sumar el total de la
+# fila. Ese es el síntoma a mirar.
+_CALIDAD = f"""
+, lote_ult AS (
+    SELECT s.id_producto, s.id_lote, s.saldo,
+           ROW_NUMBER() OVER (PARTITION BY s.id_producto, s.id_lote
+                              ORDER BY s.fecha DESC) rn
+    FROM saldo_producto_lote s WHERE s.id_bodega = {BODEGA_TERMINADO}
+),
+cal AS (
+    SELECT p.nombre_subcategoria_producto AS subcategoria,
+           RIGHT(RTRIM(p.codigo), 3)      AS color,
+           SUM(CASE WHEN v.codigo = 'SEG' THEN 0 ELSE lu.saldo END) AS kg_primera,
+           SUM(CASE WHEN v.codigo = 'SEG' THEN lu.saldo ELSE 0 END) AS kg_segunda
+    FROM lote_ult lu
+    JOIN producto p ON p.id_producto = lu.id_producto
+    JOIN lote l     ON l.id_lote     = lu.id_lote
+    LEFT JOIN valor_atributo v ON v.id_valor_atributo = l.id_valor_atributo_2
+    WHERE lu.rn = 1 AND lu.saldo > 0
+    GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
+)"""
+
+SQL_PARADOS = _STOCK + _CALIDAD + f"""
 SELECT stk.subcategoria, stk.color, stk.stock_kg,
-       ven.ultima_venta, ISNULL(ven.kg_12m, 0) AS kg_12m
+       ven.ultima_venta, ISNULL(ven.kg_12m, 0) AS kg_12m,
+       ISNULL(cal.kg_primera, 0) AS kg_primera,
+       ISNULL(cal.kg_segunda, 0) AS kg_segunda
 FROM stk LEFT JOIN ven
   ON ven.subcategoria = stk.subcategoria AND ven.color = stk.color
+LEFT JOIN cal
+  ON cal.subcategoria = stk.subcategoria AND cal.color = stk.color
 WHERE stk.stock_kg >= {MIN_KG} AND ISNULL(ven.kg_12m, 0) < 1
 ORDER BY stk.stock_kg DESC
 """

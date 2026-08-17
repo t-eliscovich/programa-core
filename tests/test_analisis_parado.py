@@ -41,9 +41,9 @@ def test_estado_marca_lo_que_se_movio(monkeypatch):
     """resuelto / empezó a moverse / sigue parado salen del SQL; acá se fija
     que el resumen los cuente bien."""
     filas = [
-        {"stock_kg": 100, "kg_vendidos": 0, "clientes": 3},
-        {"stock_kg": 50, "kg_vendidos": 20, "clientes": 5},
-        {"stock_kg": 0, "kg_vendidos": 80, "clientes": 0},
+        {"stock_kg": 100, "kg_vendidos": 0, "clientes": 3, "kg_segunda": 0},
+        {"stock_kg": 50, "kg_vendidos": 20, "clientes": 5, "kg_segunda": 12},
+        {"stock_kg": 0, "kg_vendidos": 80, "clientes": 0, "kg_segunda": 0},
     ]
     r = queries.resumen(filas)
     assert r["n_items"] == 3
@@ -52,6 +52,8 @@ def test_estado_marca_lo_que_se_movio(monkeypatch):
     assert r["movidos"] == 2
     assert r["sin_pista"] == 1
     assert r["kg_sin_pista"] == 0
+    assert r["kg_segunda"] == 12
+    assert r["n_segunda"] == 1
 
 
 # ── Fail-closed contra Metabase ─────────────────────────────────────────────
@@ -328,3 +330,36 @@ def test_la_tabla_no_queda_desalineada_al_agregar_la_columna():
     colspan = int(re.search(r'colspan="(\d+)"', html).group(1))
     assert colspan == columnas, (
         f"el detalle abarca {colspan} columnas y la tabla tiene {columnas}")
+
+
+# ── Primera y segunda calidad ───────────────────────────────────────────────
+
+def test_la_calidad_sale_del_lote_y_no_del_producto():
+    """⭐ En Asinfo la calidad es el ATRIBUTO 2 del LOTE (PRI/SEG), no una
+    propiedad del producto. Por eso un mismo tela × color puede tener kilos de
+    las dos y hacen falta DOS columnas: 26 de los ítems parados tienen de las
+    dos, y una sola columna obligaría a elegir y perdería la mitad del dato."""
+    s = asinfo_parado.SQL_PARADOS
+    assert "saldo_producto_lote" in s
+    assert "l.id_valor_atributo_2" in s
+    assert "v.codigo = 'SEG'" in s
+    assert "AS kg_primera" in s and "AS kg_segunda" in s
+
+
+def test_lo_que_no_esta_marcado_cuenta_como_primera():
+    """585.011 lotes no tienen el atributo cargado. Tratarlos como "sin
+    calidad" dejaría la mayoría del stock en una tercera categoría que no
+    existe para nadie; tratarlos como SEGUNDA sería peor. El CASE los manda a
+    primera y la pantalla lo dice."""
+    assert "CASE WHEN v.codigo = 'SEG' THEN 0 ELSE lu.saldo END" in \
+        asinfo_parado.SQL_PARADOS
+
+
+def test_los_kilos_por_calidad_suman_el_total_de_la_fila(monkeypatch):
+    """Si `saldo_producto` y `saldo_producto_lote` se despegan, primera + segunda
+    deja de dar el stock de la fila. Hoy cierran (0,006% en la bodega 53)."""
+    filas = [{"stock_kg": 100, "kg_primera": 88, "kg_segunda": 12,
+              "kg_vendidos": 0, "clientes": 1}]
+    r = queries.resumen(filas)
+    assert r["kg_segunda"] == 12
+    assert filas[0]["kg_primera"] + filas[0]["kg_segunda"] == filas[0]["stock_kg"]

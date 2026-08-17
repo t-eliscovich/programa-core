@@ -37,6 +37,8 @@ def items() -> list[dict]:
                f.ultima_venta,
                COALESCE(f.clientes, 0)    AS clientes,
                f.anio_pista,
+               COALESCE(f.kg_primera, 0) AS kg_primera,
+               COALESCE(f.kg_segunda, 0) AS kg_segunda,
                -- ⭐ El % se calcula EN LA QUERY, sobre el mismo conjunto de
                -- filas que se muestra. Calcularlo en el template contra un
                -- total traído aparte es cómo dos números del mismo cuadro
@@ -85,6 +87,8 @@ def resumen(filas: list[dict]) -> dict:
         "movidos": sum(1 for f in filas if float(f["kg_vendidos"]) > 0),
         "sin_pista": sum(1 for f in filas if not f["clientes"]),
         "kg_sin_pista": sum(float(f["stock_kg"]) for f in filas if not f["clientes"]),
+        "kg_segunda": sum(float(f["kg_segunda"]) for f in filas),
+        "n_segunda": sum(1 for f in filas if float(f["kg_segunda"]) > 0),
     }
 
 
@@ -214,11 +218,12 @@ def actualizar() -> dict:
             db.execute(
                 """INSERT INTO scintela.parado_foto
                        (subcategoria, color, stock_kg, kg_vendidos, ultima_venta,
-                        clientes, anio_pista)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                        clientes, anio_pista, kg_primera, kg_segunda)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
                  (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
-                 anio_de.get(k[0])), conn=conn)
+                 anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
+                 (p or {}).get("kg_segunda") or 0), conn=conn)
 
         # 4 · los llamados también
         db.execute("DELETE FROM scintela.parado_llamado", conn=conn)
