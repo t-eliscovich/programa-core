@@ -13,7 +13,7 @@
 
    Ahora tiene las mismas columnas, en el mismo orden y con los mismos
    rótulos que `informes/_estado_cuenta_impreso.html`:
-       Fecha · Número · Importe · Abonado · Saldo · Acum. · Días
+       Fecha · Número · Importe · Retención · Abonado · Saldo · Acum. · Días
    y cierra con los tres renglones del dBase (CUENTA.PRG L365-392):
        Cheques a depositar / + Cheques protestados / TOTAL.
 
@@ -32,6 +32,16 @@
        del otro. Un renglón debajo se lee como una nota al pie.
        Cuando no hay abono va un guión, no "0,00": diecisiete ceros alineados
        piden la misma atención que una cifra y no dicen nada.
+     · "Retención" también ES una columna, y va en el mismo lugar que en la
+       oficina: Importe · Retención · Abonado (orden pedido por Andrés el
+       07/08). Faltaba, y esa falta no se leía como "falta una columna": se
+       leía como que las CIFRAS estaban mal. Con MYU el vendedor veía importe
+       5.678,68, abonado en guión y saldo 5.579,92, y no había forma de
+       explicar los 98,76 de diferencia mirando la pantalla — los mismos
+       números en la hoja impresa, que sí trae la columna, cerraban. Una
+       columna invisible que RESTA del saldo es peor que no tener el dato:
+       rompe la única aritmética que el vendedor verifica a ojo delante del
+       cliente.
      · "Días" va bajo la fecha, en la misma celda.
      · "Tipo" y "Stat" no van: Stat es un control de edición de la oficina, y
        Tipo se dice con el color y el signo (una nota de crédito se ve roja y
@@ -199,6 +209,7 @@
           <th class="l">Fecha</th>
           <th class="l">Número</th>
           <th>Importe</th>
+          <th title="Retención en la fuente que nos retuvo el cliente. Descuenta del saldo igual que un pago, pero no es plata cobrada.">Retenc.</th>
           <th>Abonado</th>
           <th>Saldo</th>
           <th title="Saldo acumulado leído de arriba hacia abajo">Acum.</th>
@@ -217,8 +228,15 @@
           {% set vence = f.vencimiento or f.fecha %}
           {% set vencida = f.saldo and f.saldo > 0 and vence and vence < hoy %}
           <tr class="{{ 'pagada' if not f.saldo or f.saldo == 0 }}">
+            {# La fecha va dd/mm/AA. Los dos dígitos del siglo son los mismos
+               en las 4.000 filas del programa y acá cuestan 8 px de ancho —
+               justo los que necesita la columna Retención para que la tabla
+               entre en un iPhone de 390 px (medido: 366 con el año largo,
+               358 con el corto, contra 362 disponibles). En la hoja impresa,
+               que no tiene ese apremio, el año sigue entero. #}
+            {% set _fec = f.fecha|fecha_es %}
             <td class="l nowrap">
-              {{ f.fecha|fecha_es }}
+              {{ _fec[:6] }}{{ _fec[8:] }}
               <small class="{{ 'venc' if vencida }}">{{ f.fecha|dias_desde }} d</small>
             </td>
             <td class="l mono nowrap">
@@ -228,8 +246,10 @@
               {% elif vencida %}<small class="venc">Vencida</small>{% endif %}
             </td>
             <td class="mono">{{ f.importe|money_es }}</td>
-            {# Sin abono va un guión: un "0,00" ocupa el mismo lugar visual que
-               una cifra real y obliga a leerlo para descubrir que no dice nada. #}
+            {# Sin retención y sin abono va un guión: un "0,00" ocupa el mismo
+               lugar visual que una cifra real y obliga a leerlo para descubrir
+               que no dice nada. #}
+            <td class="mono ret">{% if f.retencion and f.retencion != 0 %}{{ f.retencion|money_es }}{% else %}—{% endif %}</td>
             <td class="mono ab">{% if f.abono and f.abono != 0 %}{{ f.abono|money_es }}{% else %}—{% endif %}</td>
             <td class="mono fuerte">{{ f.saldo|money_es }}</td>
             <td class="mono {{ 'venc' if acum.s < 0 }}">{{ acum.s|money_es }}</td>
@@ -240,6 +260,7 @@
         <tr>
           <td class="l" colspan="2">Totales ({{ facturas|length }})</td>
           <td class="mono">{{ t.importe|money_es }}</td>
+          <td class="mono ret">{% if t.retencion and t.retencion != 0 %}{{ t.retencion|money_es }}{% else %}—{% endif %}</td>
           <td class="mono ab">{% if t.abono and t.abono != 0 %}{{ t.abono|money_es }}{% else %}—{% endif %}</td>
           <td class="mono fuerte">{{ t.saldo|money_es }}</td>
           <td></td>
@@ -368,7 +389,7 @@
 {% endif %}
 
 <style>
-  /* Tabla de estado de cuenta. Las cinco columnas entran en 390 px sin
+  /* Tabla de estado de cuenta. Las columnas entran en 390 px sin
      scroll horizontal: los números van con `tabular-nums` para que se lean
      hacia abajo como una columna —que es TODO el punto de un estado de
      cuenta— y las etiquetas secundarias (días, "vencida", el banco) van
@@ -376,14 +397,22 @@
   .ec{width:100%;border-collapse:collapse;font-size:10.4px;
       font-variant-numeric:tabular-nums}
   .ec th{font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
-         color:var(--ink-3);text-align:right;padding:0 0 6px 4px;
+         color:var(--ink-3);text-align:right;padding:0 0 6px 3px;
          border-bottom:1px solid var(--line);white-space:nowrap}
   .ec th.l,.ec td.l{text-align:left;padding-left:0}
-  .ec td{text-align:right;padding:7px 0 7px 4px;border-bottom:1px solid var(--line);
+  /* Fecha y Número son las dos columnas de la izquierda, y `.l` les saca el
+     padding: con el padding general en 3 px quedaban pegadas y se leían como
+     un solo número ("30/06/26178496"). El aire va SÓLO entre ellas dos. */
+  .ec .l + .l{padding-left:7px}
+  .ec td{text-align:right;padding:7px 0 7px 3px;border-bottom:1px solid var(--line);
          vertical-align:top;line-height:1.25}
   /* Abonado es un dato de CONTRASTE, no un protagonista: se lee contra el
      importe de al lado. Va en gris, como en la hoja de la oficina. */
   .ec td.ab{color:var(--ink-2)}
+  /* Retención: descuenta del saldo igual que un pago pero NO es plata que
+     entró. Va en violeta, el mismo color que la usa la hoja de la oficina,
+     para que no se lea como un abono más. */
+  .ec td.ret{color:#6D28D9}
   .ec tbody tr:last-child td{border-bottom:0}
   .ec .mono{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .ec .fuerte{font-weight:700}
@@ -460,7 +489,8 @@
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
   @media (max-width: 374px){
     .ec{font-size:9.6px}
-    .ec td,.ec th{padding-left:3px}
+    .ec td,.ec th{padding-left:2px}
+    .ec .l + .l{padding-left:5px}
   }
 </style>
 {% endblock %}

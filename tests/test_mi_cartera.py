@@ -425,6 +425,56 @@ def test_el_acumulado_corre_y_la_ultima_fila_da_el_saldo(ficha):
     assert "1.750,00" in ficha
 
 
+def test_la_retencion_es_una_columna_y_cierra_la_aritmetica(vendedor_logueado, monkeypatch):
+    """Tamara 2026-08-17: *"la aplicacion de los vendedores no muestra ...
+    retenciones de los clientes"* → *"te falta la columna de retenciones"*.
+
+    La retención tiene columna propia desde la mig 0179 (07/08) y baja el
+    saldo sin sumarse al abono: `saldo = importe − abono − retencion`. La
+    oficina y la hoja impresa ya la mostraban; la ficha del portal no, y esa
+    falta NO se leía como "falta una columna" — se leía como que las CIFRAS
+    estaban mal. Con MYU el vendedor veía importe 5.678,68, abonado en guión
+    y saldo 5.579,92, y no había forma de explicar los 98,76 de diferencia
+    mirando la pantalla.
+
+    Por eso el test no se conforma con que el rótulo exista: exige que la
+    fila CIERRE. Un test que sólo busca la palabra "Retenc." pasa igual con
+    la columna dibujada y vacía, que es justo el bug de al lado.
+
+    Va entre Importe y Abonado, el orden que pidió Andrés el 07/08 y el que
+    ya usa `informes/_estado_cuenta_impreso.html`.
+    """
+    import re
+
+    from modules.mi_cartera import views
+
+    def _ec(cod):
+        d = _ec_con_facturas(cod)
+        # La 101: 500 − 200 de abono − 98,76 de retención = 201,24.
+        d["facturas"][1]["retencion"] = 98.76
+        d["facturas"][1]["saldo"] = 201.24
+        d["totales"].update(retencion=98.76, saldo=451.24, saldo_neto=451.24)
+        return d
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _ec)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert "Retenc." in ficha, "falta la columna de retención"
+
+    filas = re.findall(r"<tr[^>]*>(.*?)</tr>", ficha, re.S)
+    rets = [re.search(r'class="mono ret">(.*?)</td>', f).group(1).strip()
+            for f in filas if 'class="mono ret"' in f]
+    # Tres facturas + el pie. Sin retención va un guión, igual que el abono:
+    # un "0,00" alineado con las cifras pide la misma atención y no dice nada.
+    assert rets == ["—", "98,76", "—", "98,76"]
+
+    # Y la fila cierra: importe − retención − abono = saldo.
+    fila_101 = next(f for f in filas if "500,00" in f)
+    numeros = re.findall(r">\s*([\d.]+,\d\d)\s*</td>", fila_101)
+    assert numeros[:4] == ["500,00", "98,76", "200,00", "201,24"]
+
+
 def test_el_abonado_es_una_columna_y_sin_abono_va_un_guion(ficha):
     """Dueña 2026-08-05: *"agregar la columna de abono"*.
 
