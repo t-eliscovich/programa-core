@@ -7,6 +7,7 @@ import logging
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
+from exports import csv_response
 from filters import today_ec
 
 from . import queries
@@ -67,14 +68,58 @@ def inicio():
 @requiere_permiso("analisis.ver")
 def parado():
     filas = queries.items()
+    # Los desplegables salen de las filas que se van a dibujar, no de una lista
+    # aparte: si un grupo no tiene nada parado, no tiene por qué estar.
+    grupos = sorted({f["categoria"] for f in filas if f["categoria"]})
+    subgrupos = sorted(
+        {(f["subcategoria"], f["categoria"] or "") for f in filas},
+        key=lambda x: x[0])
     return render_template(
         "analisis/parado.html",
         filas=filas,
+        grupos=grupos,
+        subgrupos=[{"sub": s, "cat": c} for s, c in subgrupos],
         llamados=queries.llamados_por_tela(),
         resumen=queries.resumen(filas),
         estado=queries.estado(),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
+    )
+
+
+@analisis_bp.route("/analisis/parado.csv")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def parado_csv():
+    """
+    La lista entera a Excel.
+
+    ⭐ Baja SIEMPRE todo, sin aplicar los filtros de la pantalla. Los filtros de
+    arriba son de JavaScript: replicarlos acá sería escribir la misma regla dos
+    veces en dos lenguajes, y el día que una cambie el archivo va a decir algo
+    distinto de la pantalla sin que nadie se entere. Además, el motivo por el
+    que uno baja algo a Excel es justamente filtrarlo y pivotearlo ahí — el
+    archivo trae GRUPO y SUBGRUPO como columnas para eso. El botón lo dice.
+    """
+    return csv_response(
+        queries.items(),
+        columnas=[
+            ("categoria", "Grupo"),
+            ("subcategoria", "Subgrupo (tela)"),
+            ("color", "Color"),
+            ("stock_kg", "Kg parados"),
+            ("pct_total", "% del parado"),
+            ("kg_primera", "Kg de primera"),
+            ("kg_segunda", "Kg de segunda"),
+            ("kg_al_marcar", "Kg al marcarlo"),
+            ("kg_vendidos", "Kg vendidos desde entonces"),
+            ("estado", "Estado"),
+            ("clientes", "Clientes que compran esta tela"),
+            ("anio_pista", "Año de esos clientes"),
+            ("ultima_venta", "Última venta"),
+            ("fecha_marcado", "Marcado el"),
+        ],
+        filename="lo_parado.csv",
     )
 
 

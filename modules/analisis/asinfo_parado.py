@@ -84,8 +84,11 @@ WITH ult AS (
     FROM saldo_producto s WHERE s.id_bodega = {BODEGA_TERMINADO}
 ),
 stk AS (
+    -- `categoria` es el GRUPO de producto (Fleece, Jersey, Poliester) y
+    -- `subcategoria` el SUBGRUPO, que en la pantalla se llama "tela".
     SELECT p.nombre_subcategoria_producto AS subcategoria,
            RIGHT(RTRIM(p.codigo), 3)      AS color,
+           MIN(p.nombre_categoria_producto) AS categoria,
            SUM(u.saldo)                   AS stock_kg
     FROM ult u JOIN producto p ON p.id_producto = u.id_producto
     WHERE u.rn = 1 AND p.nombre_categoria_producto NOT IN ({CATS})
@@ -136,7 +139,7 @@ cal AS (
 )"""
 
 SQL_PARADOS = _STOCK + _CALIDAD + f"""
-SELECT stk.subcategoria, stk.color, stk.stock_kg,
+SELECT stk.subcategoria, stk.color, stk.categoria, stk.stock_kg,
        ven.ultima_venta, ISNULL(ven.kg_12m, 0) AS kg_12m,
        ISNULL(cal.kg_primera, 0) AS kg_primera,
        ISNULL(cal.kg_segunda, 0) AS kg_segunda

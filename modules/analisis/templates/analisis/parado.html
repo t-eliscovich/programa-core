@@ -36,11 +36,21 @@ saber si lo que hicimos funcionó.</div>
 
 <div class="barra">
   <input id="q" placeholder="Buscar tela, color, cliente, provincia…" oninput="filtrar()">
+  <select id="grupo" onchange="grupoCambio()">
+    <option value="">Todos los grupos</option>
+    {% for g in grupos %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+  </select>
+  <select id="subgrupo" onchange="filtrar()">
+    <option value="">Todos los subgrupos</option>
+    {% for s in subgrupos %}<option value="{{ s.sub }}" data-g="{{ s.cat }}">{{ s.sub }}</option>{% endfor %}
+  </select>
   <select id="vend" onchange="filtrar()">
     <option value="">Todos los vendedores</option>
     {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
   </select>
   <span class="sub" id="cuenta" style="margin:0"></span>
+  <a href="/analisis/parado.csv" style="align-self:center;color:var(--az);
+     font-size:14px;text-decoration:none">Bajar TODO a Excel</a>
   <a href="/analisis/parado/clientes" style="margin-left:auto;align-self:center;
      color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
   <form method="post" action="/analisis/parado/actualizar">
@@ -60,6 +70,7 @@ saber si lo que hicimos funcionó.</div>
   {% set cand = llamados.get(f.subcategoria, []) %}
   <tr class="item" onclick="abrir(this)"
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
+      data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-vend="{{ cand | map(attribute='vend_pc') | select | unique | join(' ') }}"
       data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
@@ -135,11 +146,15 @@ producto: por eso un mismo tela × color puede tener kilos de las dos.
 function filtrar(){
   const q = document.getElementById('q').value.trim().toLowerCase();
   const v = document.getElementById('vend').value;
+  const g = document.getElementById('grupo').value;
+  const sg = document.getElementById('subgrupo').value;
   let vistos = 0, kg = 0;
   document.querySelectorAll('tr.item').forEach(tr => {
     const det = tr.nextElementSibling;
     const ok = (!q || tr.dataset.buscar.includes(q)) &&
-               (!v || tr.dataset.vend.split(' ').includes(v));
+               (!v || tr.dataset.vend.split(' ').includes(v)) &&
+               (!g || tr.dataset.grupo === g) &&
+               (!sg || tr.dataset.sub === sg);
     tr.classList.toggle('oculta', !ok);
     if (!ok) det.classList.remove('abierta');
     det.classList.toggle('oculta', !ok);
@@ -150,6 +165,21 @@ function filtrar(){
   document.getElementById('cuenta').textContent =
     vistos + (vistos === 1 ? ' tela' : ' telas') + ' · ' +
     kg.toLocaleString('es-EC', {maximumFractionDigits: 0}) + ' kg';
+}
+// Elegir un grupo deja SÓLO sus subgrupos en el segundo desplegable. Sin esto
+// se puede pedir "Fleece" + "Jersey 3.5" y la tabla queda vacía sin decir por
+// qué — parece que no hay datos, y lo que hay es una combinación imposible.
+function grupoCambio(){
+  const g = document.getElementById('grupo').value;
+  const sel = document.getElementById('subgrupo');
+  let sigueValiendo = false;
+  Array.from(sel.options).forEach(o => {
+    const visible = !o.value || !g || o.dataset.g === g;
+    o.hidden = !visible;
+    if (o.selected && !visible) o.selected = false; else if (o.selected) sigueValiendo = true;
+  });
+  if (!sigueValiendo) sel.value = '';
+  filtrar();
 }
 function abrir(tr){
   const d = tr.nextElementSibling;

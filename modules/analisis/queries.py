@@ -31,7 +31,7 @@ def items() -> list[dict]:
     """
     return db.fetch_all(
         """
-        SELECT c.subcategoria, c.color, c.fecha_marcado, c.kg_al_marcar,
+        SELECT c.subcategoria, c.color, f.categoria, c.fecha_marcado, c.kg_al_marcar,
                COALESCE(f.stock_kg, 0)    AS stock_kg,
                COALESCE(f.kg_vendidos, 0) AS kg_vendidos,
                f.ultima_venta,
@@ -218,12 +218,13 @@ def actualizar() -> dict:
             db.execute(
                 """INSERT INTO scintela.parado_foto
                        (subcategoria, color, stock_kg, kg_vendidos, ultima_venta,
-                        clientes, anio_pista, kg_primera, kg_segunda)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        clientes, anio_pista, kg_primera, kg_segunda, categoria)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
                  (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
                  anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
-                 (p or {}).get("kg_segunda") or 0), conn=conn)
+                 (p or {}).get("kg_segunda") or 0, (p or {}).get("categoria")),
+                conn=conn)
 
         # 4 · los llamados también
         db.execute("DELETE FROM scintela.parado_llamado", conn=conn)

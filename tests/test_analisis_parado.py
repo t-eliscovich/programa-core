@@ -363,3 +363,61 @@ def test_los_kilos_por_calidad_suman_el_total_de_la_fila(monkeypatch):
     r = queries.resumen(filas)
     assert r["kg_segunda"] == 12
     assert filas[0]["kg_primera"] + filas[0]["kg_segunda"] == filas[0]["stock_kg"]
+
+
+# ── Grupo / subgrupo y Excel ────────────────────────────────────────────────
+
+def test_el_grupo_de_producto_llega_desde_asinfo():
+    """En Asinfo el GRUPO es nombre_categoria_producto y el SUBGRUPO es
+    nombre_subcategoria_producto — lo que la pantalla llamaba "tela"."""
+    assert "MIN(p.nombre_categoria_producto) AS categoria" in \
+        asinfo_parado.SQL_PARADOS
+    assert "stk.categoria" in asinfo_parado.SQL_PARADOS
+
+
+def test_la_pantalla_ofrece_los_dos_desplegables():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert 'id="grupo"' in html and 'id="subgrupo"' in html
+    assert "data-grupo=" in html and "data-sub=" in html
+
+
+def test_elegir_un_grupo_recorta_los_subgrupos():
+    """Sin esto se puede pedir "Fleece" + "Jersey 3.5": la tabla queda vacía y
+    parece que no hay datos, cuando lo que hay es una combinación imposible."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "function grupoCambio()" in html
+    assert "o.dataset.g === g" in html
+
+
+def test_el_csv_baja_todo_y_no_lo_que_esta_filtrado():
+    """⭐ Los filtros de la pantalla son de JavaScript. Replicarlos del lado del
+    servidor sería escribir la misma regla dos veces en dos lenguajes, y el día
+    que una cambie el archivo diría algo distinto de la pantalla sin síntoma. El
+    archivo trae Grupo y Subgrupo como columnas justamente para filtrar en
+    Excel, y el botón dice "Bajar TODO"."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.parado_csv)
+    assert "queries.items()" in fuente
+    assert "request.args" not in fuente, (
+        "si el CSV empieza a leer filtros, hay dos reglas de filtrado que "
+        "pueden divergir")
+
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "Bajar TODO a Excel" in html
+
+
+def test_el_csv_lleva_grupo_y_subgrupo_como_columnas():
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.parado_csv)
+    for col in ('"Grupo"', '"Subgrupo (tela)"', '"Kg de segunda"', '"% del parado"'):
+        assert col in fuente, f"falta la columna {col} en el Excel"
