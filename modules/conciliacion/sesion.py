@@ -698,6 +698,46 @@ def firma_mov(mov) -> str:
     ])
 
 
+def historicos_como_movs(no_banco: int) -> list:
+    """Los pendientes HISTÓRICOS del banco, con la forma de un MovBanco.
+
+    ⚠ POR QUÉ EXISTE (17/08/2026, Alex: "con negativos sí funciona y con
+    positivos no"): el tab Impuestos muestra JUNTOS los renglones del
+    extracto de la sesión y los pendientes históricos que arrastra de
+    sesiones anteriores (`estado_sesion` los mezcla en el bucket). Pero el
+    POST los resolvía SÓLO contra `cargar_movs(sesion)` — el extracto —, así
+    que cualquier histórico tildado rebotaba con "ya no están como
+    pendientes" y no había forma de agruparlo. No tenía nada que ver con el
+    signo: los cuatro que no entraban (REV IVA+COMIS, IVA CAUSADO SERVICIO)
+    eran del 17/06 y del 12/08, fuera de la ventana del extracto.
+
+    Devolverlos como MovBanco (monto Decimal, igual que el tab Manual) los
+    hace resolubles POR FIRMA, que es la garantía que no se negocia: la
+    firma no se corre aunque la lista cambie de largo.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from modules.conciliacion.parser_banco import MovBanco
+
+    out = []
+    for h in _cargar_historicos_pendientes(no_banco):
+        try:
+            monto = Decimal(str(h.get("monto") or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        out.append(MovBanco(
+            fecha=h.get("fecha"),
+            concepto=str(h.get("concepto") or ""),
+            documento=str(h.get("documento") or ""),
+            monto=monto,
+            saldo=Decimal("0"),
+            codigo=str(h.get("oficina") or "")[:10],
+            tipo=str(h.get("tipo") or "C").upper(),
+            oficina=str(h.get("oficina") or ""),
+        ))
+    return out
+
+
 def resolver_por_firmas(movs, sigs) -> tuple[list, list]:
     """Resuelve firmas contra el payload CRUDO de la sesión.
 

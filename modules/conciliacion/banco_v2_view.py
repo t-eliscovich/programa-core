@@ -2499,10 +2499,20 @@ def _resolver_reals_impuestos(movs, real_sigs, real_idxs, *, etapa: str):
         (subset, faltantes)
     """
     if real_sigs:
-        subset, faltantes = _sesion.resolver_por_firmas(movs, real_sigs)
+        # TMT 2026-08-17 (Alex: "con negativos sí funciona y con positivos
+        # no"): el tab muestra el extracto Y los pendientes HISTÓRICOS, pero
+        # acá sólo se buscaba en el extracto → todo histórico tildado rebotaba
+        # con "ya no están como pendientes". No era el signo: los cuatro que
+        # no entraban eran de junio y del 12/08, fuera de la ventana del
+        # extracto. Los históricos van DESPUÉS para que, si una firma está en
+        # los dos lados, gane el histórico — que es la fila que la pantalla
+        # muestra (`estado_sesion` dedupea a favor del histórico).
+        movs_ampliados = list(movs or []) + _sesion.historicos_como_movs(_BANCO_PICHINCHA)
+        subset, faltantes = _sesion.resolver_por_firmas(movs_ampliados, real_sigs)
         _LOG.info(
-            "impuestos %s: resolución por firma %d/%d",
+            "impuestos %s: resolución por firma %d/%d (extracto %d + históricos %d)",
             etapa, len(subset), len(real_sigs),
+            len(movs or []), len(movs_ampliados) - len(movs or []),
         )
         return subset, faltantes
 
