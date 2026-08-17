@@ -333,7 +333,7 @@ def test_se_puede_elegir_la_pestana(app, fake_db):
         r = c.get("/pedidos?cat=Fleece")
     body = r.get_data(as_text=True)
     assert "FE96CAF" in body and "JE32AZS" not in body
-    assert "447" in body                          # el faltante
+    assert "19,0" in body                         # el faltante, en rollos
     assert "ok" in body                           # el NEG que sobra
 
 
@@ -441,7 +441,8 @@ def test_una_familia_con_un_solo_color_no_dice_1_colores(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
         body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
-    assert "1 de 1 color de Fleece" in body
+    assert "1 color ·" in body      # el encabezado de la tela
+    assert "en 1 color" in body     # la tarjeta del faltante
     assert "1 colores" not in body
 
 
@@ -538,31 +539,131 @@ def test_el_subtotal_de_una_tela_tambien_se_convierte():
     assert service.total_en_unidad(15.0, "alt", True, 0) == (15, 0, "kg")
 
 
-def test_el_toggle_esta_arriba_y_convierte_la_tabla(app, fake_db):
+def test_no_queda_un_solo_kilo_en_la_pantalla(app, fake_db):
+    """⚠ Dueña 17/08: "todo rollos, no pongamos kg". Hubo un toggle kg/rollos
+    unas horas y lo sacó. Los kilos se siguen calculando —son la única forma de
+    restar bodega y producción contra el pedido— pero no se muestran."""
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
-        kg = c.get("/pedidos").get_data(as_text=True)
-        roll = c.get("/pedidos?u=alt").get_data(as_text=True)
-    assert "Pedido kg" in kg and "447" in kg
-    assert "Pedido roll" in roll and "19,0" in roll
-    assert ">rollos</a>" in kg     # el link a la otra unidad está en las dos
+        body = c.get("/pedidos").get_data(as_text=True)
+    tabla = body[body.index('class="pd"'):]
+    assert "en rollos" in tabla          # la unidad se dice UNA vez, en la tela
+    assert " kg" not in tabla.replace("kg cada uno", "").replace("en kilos", "")
+    assert "19,0" in tabla
 
 
-def test_en_cuellos_la_otra_unidad_se_llama_unidades(app, fake_db):
+def test_en_cuellos_todo_se_lee_en_unidades(app, fake_db):
     c = _login(app, fake_db)
     filas = [_fila(categoria="Cuellos", tela="Cuellos T34", codigo="C34ARV",
-                   ped_kg=0, ped_rollos=0, ped_un=150, un_por_kg=33.33333333)]
+                   ped_kg=4.5, ped_rollos=0, ped_un=150, un_por_kg=33.33333333)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
         body = c.get("/pedidos").get_data(as_text=True)
-    assert ">unidades</a>" in body
-    assert ">rollos</a>" not in body
+    assert "en unidades" in body and "en rollos" not in body
+    assert "150" in body
 
 
-def test_una_unidad_inventada_en_la_url_cae_a_kilos(app, fake_db):
+def test_la_flechita_despliega_el_pedido_y_el_cliente_sin_cambiar_de_pagina(app, fake_db):
+    """Dueña 17/08: "en vez de ir a otra página, una flechita para abajo para
+    que muestre el número de pedido y cliente"."""
     c = _login(app, fake_db)
+    peds = [{"codigo": "FE96CAF", "numero": "PDCL-29712",
+             "cliente": "MALDONADO ANA KARINA", "codigo_cliente": "KAM",
+             "fecha": "2026-08-05", "cantidad": 9, "unidad": 51}]
+
+    def fake(_db, sql, **_kw):
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return peds, True
+        return [_fila()], True
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos").get_data(as_text=True)
+
+    assert 'data-fila="d-FE96CAF"' in body
+    assert 'data-grupo="d-FE96CAF"' in body
+    assert "PDCL-29712" in body and ">KAM<" in body
+    # el nombre completo no se imprime, pero queda al pasar el mouse
+    assert 'title="MALDONADO ANA KARINA"' in body
+
+
+def test_un_color_sin_pedidos_en_el_desplegable_lo_dice(app, fake_db):
+    c = _login(app, fake_db)
+
+    def fake(_db, sql, **_kw):
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return [], True
+        return [_fila()], True
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "no tiene pedidos cargados" in body
+
+
+def test_si_asinfo_no_contesta_los_desplegables_quedan_vacios_sin_romper():
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=([_fila()], True)):
-        body = c.get("/pedidos?u=varas").get_data(as_text=True)
-    assert "Pedido kg" in body
+                      return_value=([], False)):
+        assert service.pedidos_por_color() == {}
+
+
+def test_los_pedidos_se_agrupan_por_codigo_de_producto():
+    filas = [{"codigo": "FE96CAF", "numero": "A", "cliente": "X",
+              "codigo_cliente": "K", "fecha": "2026-08-05", "cantidad": 9,
+              "unidad": 51},
+             {"codigo": "FE96CAF", "numero": "B", "cliente": "Y",
+              "codigo_cliente": "L", "fecha": "2026-08-14", "cantidad": 9,
+              "unidad": 51},
+             {"codigo": "FE96NEG", "numero": "C", "cliente": "Z",
+              "codigo_cliente": "M", "fecha": "2026-08-12", "cantidad": 1,
+              "unidad": 51}]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)):
+        out = service.pedidos_por_color()
+    assert [p["numero"] for p in out["FE96CAF"]] == ["A", "B"]
+    assert len(out["FE96NEG"]) == 1
+
+
+def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
+    """Dueña 17/08: "que esté encolumnado bien, fecha debajo de desde, pedido
+    rollo debajo de pedido. El diseño es importante". Por eso el detalle son
+    filas de LA MISMA tabla y no una tabla anidada con su propio ancho."""
+    c = _login(app, fake_db)
+    peds = [{"codigo": "FE96CAF", "numero": "PDCL-29712",
+             "cliente": "MALDONADO MALDONADO ANA KARINA", "codigo_cliente": "KAM",
+             "fecha": "2026-08-05", "cantidad": 9, "unidad": 51}]
+
+    def fake(_db, sql, **_kw):
+        return (peds, True) if "ORDER BY pr.codigo, v.fecha" in sql else ([_fila()], True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos").get_data(as_text=True)
+
+    assert "<table class=\"sub\"" not in body        # nada de tablas anidadas
+    fila = body[body.index('data-grupo="d-FE96CAF"'):]
+    fila = fila[:fila.index("</tr>")]
+    assert fila.count("<td") == 4                   # 3 columnas + un colspan de 3
+    assert 'colspan="3"' in fila
+    # un solo renglón: va el CÓDIGO del cliente, no el nombre fiscal entero
+    assert ">KAM<" in fila
+    assert "MALDONADO MALDONADO ANA KARINA<" not in fila
+    assert 'title="MALDONADO MALDONADO ANA KARINA"' in fila
+
+
+def test_el_link_dice_a_donde_lleva(app, fake_db):
+    """"Ver la ficha completa" no decía nada. Ahora nombra lo que hay del otro
+    lado, y sólo aparece si de verdad hay órdenes que mirar."""
+    c = _login(app, fake_db)
+
+    def fake(_db, sql, **_kw):
+        return ([], True) if "ORDER BY pr.codigo, v.fecha" in sql else (filas, True)
+
+    filas = [_fila(prod_kg=490.0, n_ordenes=2)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        con = c.get("/pedidos").get_data(as_text=True)
+    filas = [_fila(prod_kg=0.0, n_ordenes=0)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        sin = c.get("/pedidos").get_data(as_text=True)
+
+    assert "Ver las 2 órdenes de tinturado" in " ".join(con.split())
+    assert "ficha completa" not in con
+    assert "tinturado de este color" not in sin

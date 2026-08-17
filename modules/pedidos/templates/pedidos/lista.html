@@ -12,17 +12,38 @@
   .pd col.c-fec{width:12%}
   .pd col.c-ped{width:15%}
   .pd col.c-num{width:17.33%}
-  .pd th,.pd td{padding:7px 10px;border-bottom:1px solid #eef2f6;text-align:right;
-    font-variant-numeric:tabular-nums}
+  .pd th,.pd td{padding:5px 10px;border-bottom:1px solid #f1f5f9;text-align:right;
+    font-variant-numeric:tabular-nums;line-height:1.45}
   .pd th:first-child,.pd td:first-child{text-align:left}
   .pd thead th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;
     text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1}
   .pd tbody tr:hover td{background:#f8fafc}
   .pd .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .pd .cod a{color:#0f172a;text-decoration:none;display:block}
-  .pd .cod a:hover .color{text-decoration:underline}
-  .pd .cod .color{font-size:16px;font-weight:700;letter-spacing:.02em;display:block}
-  .pd .cod .prod{font-size:11px;color:#94a3b8;display:block;margin-top:-1px}
+  .pd .cod .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;
+    color:#0f172a;font-family:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
+  .pd .cod .abrir:hover .color{text-decoration:underline}
+  .pd .cod .chev{color:#cbd5e1;font-size:9px;line-height:1;flex:0 0 9px;
+    transition:transform .12s;align-self:center}
+  .pd .cod .abrir[aria-expanded="true"] .chev{transform:rotate(90deg);color:#475569}
+  /* `[hidden]` lo pisa cualquier `display:` heredado, así que la fila de
+     detalle se apaga por CLASE. Ver la memoria del 2026-08. */
+  .pd tr.det{display:none}
+  .pd tr.det.open{display:table-row}
+  .pd tr.det > td{background:#f8fafc;border-bottom:1px solid #f1f5f9;font-size:12px;
+    color:#475569;padding-top:5px;padding-bottom:5px}
+  /* La primera celda arranca corrida para que se lea como hija de la fila de
+     arriba, sin dejar de estar en la misma columna. */
+  .pd tr.det > td:first-child{padding-left:32px;font-family:inherit}
+  .pd .npd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;font-size:11px}
+  /* El cliente es su código de tres letras, que es como se lo nombra en todo
+     el programa. El nombre fiscal completo vive en el `title`. */
+  .pd .cli{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+    font-weight:700;color:#1d4ed8;cursor:help}
+  .pd td.masinfo{text-align:left;padding-left:32px}
+  .pd td.masinfo a{font-size:11px;color:#1d4ed8;text-decoration:none}
+  .pd td.masinfo a:hover{text-decoration:underline}
+  .pd .cod .color{font-size:14px;font-weight:700;letter-spacing:.02em}
+  .pd .cod .prod{font-size:10px;color:#cbd5e1}
   .pd .muted{color:#94a3b8;font-size:11px;font-weight:400}
   /* Lo que falta es LO QUE HAY QUE MIRAR: rojo. Lo que sobra queda en gris —
      no es un hallazgo, es el caso normal (se produce en lotes más grandes que
@@ -30,9 +51,8 @@
   .pd .falta{color:#b91c1c;font-weight:700}
   .pd .ok{color:#94a3b8}
   .pd .viejo{color:#b45309}
-  .pd h3{font-size:15px;font-weight:700;color:#0f172a;margin:16px 0 0;max-width:900px;
-    padding-bottom:5px;border-bottom:1px solid #cbd5e1;
-    display:flex;justify-content:space-between;align-items:baseline}
+  .pd h3{font-size:14px;font-weight:700;color:#0f172a;margin:22px 0 5px;max-width:900px;
+    display:flex;justify-content:space-between;align-items:baseline;gap:12px}
   .pd .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
   .pd .tab{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;
     color:#475569;text-decoration:none;background:#fff}
@@ -81,60 +101,51 @@
     <div class="aviso">No hay pedidos pendientes de menos de {{ dias_pedido_max }} días.</div>
   {% else %}
 
+  {% if resumen %}
   <div class="cards">
     <div class="card">
       <div class="lbl">Colores pedidos</div>
-      <div class="val">{{ categorias|sum(attribute='colores') }}</div>
+      <div class="val">{{ resumen.colores }}</div>
+      <div class="sub">de {{ resumen.categoria }}</div>
     </div>
     <div class="card">
       <div class="lbl">Pedido</div>
-      <div class="val">{{ categorias|sum(attribute='pedido_kg')|num_es(0) }} kg</div>
+      <div class="val">{{ resumen.pedido_d|num_es(resumen.dec) }} {{ resumen.u }}</div>
     </div>
     <div class="card rojo">
       <div class="lbl">Faltan</div>
-      <div class="val">{{ total_faltan|num_es(0) }} kg</div>
-      <div class="sub">en {{ total_colores_faltan }} {{ 'color' if total_colores_faltan == 1 else 'colores' }}</div>
+      <div class="val">{{ resumen.faltan_d|num_es(resumen.dec) }} {{ resumen.u }}</div>
+      <div class="sub">en {{ resumen.colores_faltan }} {{ 'color' if resumen.colores_faltan == 1 else 'colores' }}</div>
     </div>
   </div>
+  <p class="nota">
+    {% if solo_faltan %}
+      Mostrando sólo los colores que necesitan tela.
+      <a href="{{ url_for('pedidos.lista', cat=activa) }}">Ver todos los pedidos</a>
+    {% else %}
+      <a href="{{ url_for('pedidos.lista', cat=activa, falta=1) }}">Ver sólo lo que falta</a>
+    {% endif %}
+  </p>
+  {% endif %}
 
   <div class="tabs">
     {% for c in categorias %}
       <a class="tab{% if c.categoria == activa %} on{% endif %}"
          href="{{ url_for('pedidos.lista', cat=c.categoria) }}">
         <b>{{ c.categoria }}</b>
-        {% if c.faltan_kg > 0 %}<span class="n">{{ c.faltan_kg|num_es(0) }}</span>{% endif %}
+        {% if c.faltan_kg > 0 %}<span class="n">{{ c.faltan_d|num_es(c.dec) }} {{ c.u }}</span>{% endif %}
       </a>
     {% endfor %}
   </div>
 
-  <div class="unid">
-    Ver en
-    <a class="{{ 'on' if unidad == 'kg' }}"
-       href="{{ url_for('pedidos.lista', cat=activa, falta=1 if solo_faltan) }}">kg</a>
-    <a class="{{ 'on' if unidad == 'alt' }}"
-       href="{{ url_for('pedidos.lista', cat=activa, u='alt', falta=1 if solo_faltan) }}">{{ 'unidades' if u_alt == 'un' else 'rollos' }}</a>
-  </div>
-
-  {% if resumen %}
-    <p class="nota" style="margin-bottom:4px">
-      Hay que hacer <strong>{{ resumen_falta[0]|num_es(resumen_falta[1]) }} {{ resumen_falta[2] }}</strong> de
-      {{ resumen.colores_faltan }} de {{ resumen.colores }}
-      {{ 'color' if resumen.colores == 1 else 'colores' }} de {{ resumen.categoria }}.
-      {% if solo_faltan %}
-        <a href="{{ url_for('pedidos.lista', cat=activa) }}">Ver todos los pedidos</a>
-      {% else %}
-        <a href="{{ url_for('pedidos.lista', cat=activa, falta=1) }}">Ver sólo lo que falta</a>
-      {% endif %}
-    </p>
-  {% endif %}
-
-  {% set u_col = 'kg' if unidad == 'kg' else ('un' if u_alt == 'un' else 'roll') %}
+  {% set u_col = u_alt %}
   {% for t in telas %}
     <h3>
       <span>{{ t.tela }}</span>
       <span class="muted">
-        {{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }}{% if t.faltan_kg %} ·
-        <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }} {{ t.u }}</span>{% endif %}
+        {{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
+        en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.faltan_kg %} ·
+        <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }}</span>{% endif %}
       </span>
     </h3>
     <table>
@@ -146,20 +157,23 @@
         <tr>
           <th>Color</th>
           <th>Desde</th>
-          <th>Pedido {{ u_col }}</th>
-          <th>En bodega {{ u_col }}</th>
-          <th>Tinturándose {{ u_col }}</th>
-          <th>Falta {{ u_col }}</th>
+          <th>Pedido</th>
+          <th>En bodega</th>
+          <th>Tinturándose</th>
+          <th>Falta</th>
         </tr>
       </thead>
       <tbody>
         {% for f in t.filas %}
           <tr>
             <td class="cod">
-              <a href="{{ url_for('pedidos.color', codigo=f.codigo) }}">
+              <button type="button" class="abrir" aria-expanded="false"
+                      aria-controls="d-{{ f.codigo }}"
+                      data-fila="d-{{ f.codigo }}">
+                <span class="chev" aria-hidden="true">▶</span>
                 <span class="color">{{ f.color }}</span>
                 <span class="prod">{{ f.codigo }}</span>
-              </a>
+              </button>
             </td>
             <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
             <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
@@ -169,6 +183,32 @@
               {% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}
             </td>
           </tr>
+          {% set peds = pedidos_por_color.get(f.codigo, []) %}
+          {% for p in peds %}
+            <tr class="det" data-grupo="d-{{ f.codigo }}">
+              <td class="cod">
+                <span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span>
+              </td>
+              <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</td>
+              <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
+              <td colspan="3" class="npd">{{ p.numero }}</td>
+            </tr>
+          {% endfor %}
+          {% if not peds %}
+            <tr class="det" data-grupo="d-{{ f.codigo }}">
+              <td colspan="6" class="muted">Este color no tiene pedidos cargados.</td>
+            </tr>
+          {% endif %}
+          {% if f.n_ordenes %}
+            <tr class="det" data-grupo="d-{{ f.codigo }}">
+              <td colspan="6" class="masinfo">
+                <a href="{{ url_for('pedidos.color', codigo=f.codigo) }}">
+                  Ver las {{ f.n_ordenes }} {{ 'orden' if f.n_ordenes == 1 else 'órdenes' }}
+                  de tinturado de este color
+                </a>
+              </td>
+            </tr>
+          {% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -181,10 +221,24 @@
   {% endif %}
 
   <p class="nota">
-    Un rollo son {{ kg_por_rollo|num_es(1) }} kg estimados — el kilo real se pesa
-    al despachar. Los pedidos de más de {{ dias_pedido_max }} días y las órdenes de
-    fabricación lanzadas hace más de {{ dias_produccion_viva }} no entran a la cuenta.
+    Bodega y tinturándose se pasan a rollos a {{ kg_por_rollo|num_es(1) }} kg cada uno:
+    ahí el dato nace en kilos. El pedido es el número tal cual lo cargó Asinfo.
+    Los pedidos de más de {{ dias_pedido_max }} días y las órdenes de fabricación
+    lanzadas hace más de {{ dias_produccion_viva }} no entran a la cuenta.
   </p>
   {% endif %}
 </div>
+<script>
+  (function () {
+    document.querySelectorAll('.pd .cod .abrir').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var filas = document.querySelectorAll('[data-grupo="' + b.dataset.fila + '"]');
+        if (!filas.length) { return; }
+        var abierta = !filas[0].classList.contains('open');
+        filas.forEach(function (f) { f.classList.toggle('open', abierta); });
+        b.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+      });
+    });
+  })();
+</script>
 {% endblock %}

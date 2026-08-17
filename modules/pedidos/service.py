@@ -274,6 +274,22 @@ def pendientes() -> tuple[list[dict], bool]:
     return [f for f in out if f["categoria"] in CATEGORIAS], True
 
 
+def total_en_unidad(kilos: float, unidad: str, en_unidades: bool,
+                    un_por_kg: float = 0.0) -> tuple[float, int, str]:
+    """Un total en kilos leído en la unidad pedida.
+
+    Devuelve `(valor, decimales, etiqueta)`. Para los subtotales de tela y de
+    familia, que sólo existen en kilos y por eso sí se convierten.
+    """
+    if unidad != "alt":
+        return round(kilos), 0, "kg"
+    if en_unidades:
+        if not un_por_kg:
+            return round(kilos), 0, "kg"
+        return round(kilos * un_por_kg), 0, "un"
+    return round(kilos / KG_POR_ROLLO, 1), 1, "roll"
+
+
 def por_categoria(filas: list[dict]) -> list[dict]:
     """Resumen por familia de tela, para las pestañas. Ordenado por faltante."""
     acc: dict[str, dict] = {}
@@ -281,21 +297,33 @@ def por_categoria(filas: list[dict]) -> list[dict]:
         b = acc.setdefault(f["categoria"], {
             "categoria": f["categoria"], "colores": 0, "pedido_kg": 0.0,
             "inventario_kg": 0.0, "produccion_kg": 0.0,
-            "faltan_kg": 0.0, "colores_faltan": 0, "pedido_un": 0.0,
-            "en_unidades": f["en_unidades"],
+            "faltan_kg": 0.0, "colores_faltan": 0,
+            "pedido_un": 0.0, "pedido_rollos": 0.0,
+            "en_unidades": f["en_unidades"], "un_por_kg": 0.0,
         })
         b["colores"] += 1
         b["pedido_kg"] += f["pedido_kg"]
         b["pedido_un"] += f["pedido_un"]
+        b["pedido_rollos"] += f["pedido_rollos"]
+        # El factor un/kg de la familia sale de un producto, no de dividir los
+        # totales: los totales están redondeados y el cociente se corre lo
+        # justo para que el subtotal de la tela y el de la familia difieran en
+        # una unidad (459 vs 460).
+        b["un_por_kg"] = b["un_por_kg"] or f["un_por_kg"]
         b["inventario_kg"] += f["inventario_kg"]
         b["produccion_kg"] += f["produccion_kg"]
         if f["faltan_kg"] > 0:
             b["faltan_kg"] += f["faltan_kg"]
             b["colores_faltan"] += 1
     for b in acc.values():
-        for k in ("pedido_kg", "pedido_un", "inventario_kg",
+        for k in ("pedido_kg", "pedido_un", "pedido_rollos", "inventario_kg",
                   "produccion_kg", "faltan_kg"):
             b[k] = round(b[k], 1)
+        # El faltante de la familia, leído en la unidad en que se pide. El
+        # PEDIDO no se convierte: ya lo tenemos en rollos/unidades desde Asinfo.
+        b["faltan_d"], b["dec"], b["u"] = total_en_unidad(
+            b["faltan_kg"], "alt", b["en_unidades"], b["un_por_kg"])
+        b["pedido_d"] = b["pedido_un"] if b["en_unidades"] else b["pedido_rollos"]
     return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
 
 
@@ -482,9 +510,12 @@ def telas_sin_faltante(filas: list[dict], categoria: str) -> list[str]:
     return sorted(sin - con)
 
 
-#: Las dos unidades en que se puede leer la pantalla. `alt` es la unidad en que
-#: el cliente PIDE: rollos para las telas, unidades para cuellos y puños.
-UNIDADES = ("kg", "alt")
+#: ⚠ La pantalla se lee SIEMPRE en la unidad en que el cliente pide — rollos
+#: para las telas, unidades para cuellos y puños. Hubo un toggle kg/rollos y la
+#: dueña lo sacó el mismo día: *"todo rollos, no pongamos kg"*. Los kilos se
+#: siguen calculando (son la única forma de restar bodega y producción contra
+#: el pedido, que vienen en kg) pero no se muestran en ningún lado.
+UNIDADES = ("alt",)
 
 
 def etiqueta_unidad(unidad: str, en_unidades: bool) -> str:
@@ -540,17 +571,32 @@ def en_unidad(filas: list[dict], unidad: str) -> list[dict]:
     return filas
 
 
-def total_en_unidad(kilos: float, unidad: str, en_unidades: bool,
-                    un_por_kg: float = 0.0) -> tuple[float, int, str]:
-    """Un total en kilos leído en la unidad pedida.
+# Los pedidos de TODOS los colores en una sola consulta. Son ~1.200 líneas al
+# 17/08: traerlas juntas y agruparlas en memoria sale más barato que una
+# consulta por fila desplegada, y hace que la flechita abra al instante sin
+# pegarle a Asinfo de nuevo.
+_SQL_PEDIDOS_TODOS = """
+SELECT pr.codigo, v.numero, v.cliente,
+       ISNULL(e.nombre_comercial, '') AS codigo_cliente,
+       v.fecha, v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad
+  FROM v_saldos_comprometidos_detallado v
+  JOIN producto pr ON pr.id_producto = v.id_producto
+  JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
+  LEFT JOIN empresa e ON e.id_empresa = p.id_empresa
+ WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias}
+ ORDER BY pr.codigo, v.fecha
+"""
 
-    Devuelve `(valor, decimales, etiqueta)`. Para los subtotales de tela y de
-    familia, que sólo existen en kilos y por eso sí se convierten.
-    """
-    if unidad != "alt":
-        return round(kilos), 0, "kg"
-    if en_unidades:
-        if not un_por_kg:
-            return round(kilos), 0, "kg"
-        return round(kilos * un_por_kg), 0, "un"
-    return round(kilos / KG_POR_ROLLO, 1), 1, "roll"
+
+def pedidos_por_color() -> dict[str, list[dict]]:
+    """`{codigo de producto: [pedidos]}` de todo lo pendiente. {} si falla."""
+    filas, ok = metabase_client.fetch_dataset_estado(
+        ASINFO_DB, _SQL_PEDIDOS_TODOS.format(ahora=AHORA_EC, dias=DIAS_PEDIDO_MAX))
+    if not ok:
+        return {}
+    out: dict[str, list[dict]] = {}
+    for r in filas:
+        cod = str(r.get("codigo") or "").strip()
+        if cod:
+            out.setdefault(cod, []).append(_fila_pedido(r))
+    return out
