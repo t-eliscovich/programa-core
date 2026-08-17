@@ -568,7 +568,12 @@
   // el JS de aplicaciones inline asume "un cheque" (se aplica al primero).
   // Si hay más de un cheque, ocultamos el panel de aplicaciones (ver
   // actualizarVisibilidadMultiCheques abajo).
-  const importeInput  = document.querySelector('input.cheque-imp');
+  // TMT 2026-08-17: `let`, no `const` — si se borra el bloque que este
+  // input representa, hay que reapuntarlo al que sobrevive (ver
+  // refrescarPorCambioDeCheques). Con la referencia colgando, el
+  // autocompletado del importe desde las facturas escribía en un nodo
+  // que ya no está en la pantalla y no se veía nada.
+  let importeInput    = document.querySelector('input.cheque-imp');
   const anticipoChk   = document.getElementById('es-anticipo-chk');
   const panel         = document.getElementById('aplicacion-facturas');
   const tbody         = document.getElementById('aplic-tbody');
@@ -1498,7 +1503,7 @@
     } else {
       const bloques = document.querySelectorAll('.cheque-imp');
       const esSingleCheque = bloques.length === 1;
-      const editedByUser = importeInput.dataset.userEdited === '1';
+      const editedByUser = !!importeInput && importeInput.dataset.userEdited === "1";
       if (esSingleCheque && !editedByUser && nSel > 0 && Math.abs(asignado) > 0.005) {
         importeInput.value = asignado.toFixed(2);
         importeCheque = asignado;
@@ -1688,6 +1693,15 @@
         actualizarVisibilidad();
         actualizarMultiHint();
         renderAnticipoCheques();  // TMT 2026-07-06: pudo irse el bloque 97
+        // TMT 2026-08-17 (dueña): "cuando elimino un cheque del proceso de
+        // carga se me queda igual el monto — había cargado uno de 200,
+        // después lo borré y abajo sigue diciendo Aplicado 200".
+        // Sacar un bloque cambia la plata disponible EXACTAMENTE igual que
+        // tipear otro importe, pero acá faltaba rehacer el reparto a
+        // facturas: el pie (Total / Aplicado / Restante) y los montos de la
+        // tabla quedaban con el cheque que ya no existe. Es el mismo trío
+        // que corre el listener de `input` sobre .cheque-imp.
+        refrescarPorCambioDeCheques();
       });
       header.appendChild(btnRemove);
     });
@@ -1720,15 +1734,26 @@
     totalN.textContent = `(${imps.length})`;
   }
 
+  // TMT 2026-08-17: UNA sola función para "cambió la plata de los cheques".
+  // La llaman el listener de `input` sobre .cheque-imp Y el "× quitar" de un
+  // bloque — antes el quitar hacía la mitad y el pie quedaba mintiendo.
+  function refrescarPorCambioDeCheques() {
+    if (importeInput && !importeInput.isConnected) {
+      importeInput = document.querySelector('input.cheque-imp');
+    }
+    actualizarTotalCheques();
+    // Re-renderizar facturas para que el FIFO use la suma actualizada.
+    // Si no hay facturas cargadas igual hay que refrescar el pie.
+    if (facturas.length > 0) { render(buscar.value); } else { updateSummary(); }
+    // TMT 2026-07-06 (dueña): el panel de cheques en cartera re-FIFOa con
+    // el nuevo importe del anticipo.
+    renderAnticipoCheques();
+  }
+
   // Wire up: cualquier cambio en un .cheque-imp recalcula total + FIFO.
   chequesList.addEventListener('input', (e) => {
     if (e.target.classList.contains('cheque-imp')) {
-      actualizarTotalCheques();
-      // Re-renderizar facturas para que el FIFO use la suma actualizada.
-      if (facturas.length > 0) render(buscar.value);
-      // TMT 2026-07-06 (dueña): el panel de cheques en cartera re-FIFOa con
-      // el nuevo importe del anticipo.
-      renderAnticipoCheques();
+      refrescarPorCambioDeCheques();
     }
   });
 

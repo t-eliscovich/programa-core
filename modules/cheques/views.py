@@ -1,6 +1,7 @@
 """Listado, detalle y altas de cheques."""
 
 from datetime import date, datetime
+from urllib.parse import urlparse
 
 from flask import (
     Blueprint,
@@ -2592,6 +2593,29 @@ def reemplazar(id_cheque: int):
         return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
+def _volver_a_lista(raw: str | None) -> str:
+    """URL del boton 'Volver a Cheques', preservando el filtro de origen.
+
+    TMT 2026-08-17 (duena): "si filtre por un cliente ejemplo BED ... cuando
+    pongo volver a cheques o flechita para atras me lleve de vuelta a lo
+    filtrado, o sea BED, no todos los cheques". El listado se manda a si mismo
+    en ?volver=; aca lo validamos (relativa, sin host, y que sea el propio
+    listado) y si no sirve caemos al listado pelado. Hace falta de verdad
+    cuando el cheque se abre en una PESTANA NUEVA: ahi no hay historial que
+    la flechita del navegador pueda desandar.
+    """
+    if raw:
+        raw = raw.strip()
+        if (
+            raw.startswith("/")
+            and not raw.startswith("//")
+            and "://" not in raw
+            and urlparse(raw).path == "/cheques"
+        ):
+            return raw
+    return url_for("cheques.lista")
+
+
 @cheques_bp.route("/cheques/<int:id_cheque>")
 @requiere_login
 @requiere_permiso("cheques.ver")
@@ -2639,6 +2663,9 @@ def detalle(id_cheque: int):
         # cuenta, no en el listado de movimientos.
         id_mov_protesto=queries.protesto_deshacible(
             id_cheque, ch.get("stat")),
+        # TMT 2026-08-17 (duena): volver al listado CON el filtro con el que
+        # se abrio el cheque (ej. cliente=BED), no a los ~20k cheques.
+        volver_url=_volver_a_lista(request.args.get("volver")),
     )
 
 

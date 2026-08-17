@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row %}
 {% block title %}Cheque {{ ch.no_cheque or ('#' ~ ch.id_cheque) }}{% endblock %}
+{# TMT 2026-08-17 (duena): `volver_url` es el listado CON el filtro con el que
+   se abrio este cheque (ej. ?cliente=BED). `_self` es esta misma pantalla
+   arrastrando ese filtro, para que guardar una edicion no lo pierda. #}
+{% set _self = url_for('cheques.detalle', id_cheque=ch.id_cheque, volver=request.args.get('volver') or None) %}
 {% block breadcrumb %}
-  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
+  <a href="{{ volver_url }}" class="hover:underline">Cheques</a> /
   <strong>{{ ch.no_cheque or ch.id_cheque }}</strong>
 {% endblock %}
 
@@ -25,7 +29,7 @@
       action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
       class="hidden">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="next" value="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">
+  <input type="hidden" name="next" value="{{ _self }}">
 </form>
 <div class="max-w-5xl" id="cheque-page">
   <div class="flex items-center justify-between mb-6">
@@ -100,7 +104,7 @@
     <div class="no-print flex items-center gap-2 justify-end ch-actions-readonly">
       {# TMT 2026-05-18 — botón Volver canónico (Regla R2 pero también aplica
          a pantallas de detalle: la dueña quiere volver siempre con 1 click). #}
-      <a href="{{ url_for('cheques.lista') }}"
+      <a href="{{ volver_url }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
         ← Volver a Cheques
       </a>
@@ -368,7 +372,7 @@
     <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
           class="space-y-2" data-testid="ch-nota-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">
+      <input type="hidden" name="next" value="{{ _self }}">
       <label class="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
         <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
         Observación

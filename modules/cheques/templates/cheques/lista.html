@@ -587,11 +587,20 @@
         </tr>
       </thead>
       <tbody>
+        {# TMT 2026-08-17 (dueña): el cheque tiene que ser un LINK de verdad
+           (<a href>), no sólo una fila que reacciona al click por JS — así
+           anda el botón del medio, el "abrir en pestaña nueva" del menú
+           derecho y el "copiar dirección del enlace". Y le colgamos ?volver=
+           con la URL FILTRADA de este listado (ej. ?cliente=BED) para que el
+           "← Volver a Cheques" del detalle devuelva al mismo filtro, incluso
+           abierto en una pestaña nueva donde no hay historial. #}
+        {% set _volver = request.full_path.rstrip('?') %}
         {% for c in filas %}
+        {% set _url_cheque = url_for('cheques.detalle', id_cheque=c.id_cheque, volver=_volver) %}
         {# Fila clickeable entera → /cheques/<id>. Los <a> internos siguen
            funcionando porque les ponemos data-stop=1 + JS abajo. TMT 2026-05-13. #}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
-            data-href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
+            data-href="{{ _url_cheque }}"
             data-id-cheque="{{ c.id_cheque }}"
             data-importe="{{ c.importe or 0 }}">
           {# TMT 2026-05-18 — fecha en col 1, cliente en col 2 #}
@@ -632,7 +641,11 @@
               {% endif %}
             </td>
           {% endif %}
-          <td class="px-1.5 py-1.5" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
+          <td class="px-1.5 py-1.5" style="white-space: nowrap;">
+            <a href="{{ _url_cheque }}" class="hover:underline"
+               title="Abrir el cheque (botón derecho → abrir en pestaña nueva)"
+               style="color: inherit; text-decoration: none;">{{ fecha_cargado | fecha_es }}</a>
+          </td>
           {# TMT 2026-07-23 (dueña): con filtro de cliente, Cliente+Vend van en el
              banner de arriba una sola vez → se ocultan estas dos celdas. #}
           {% if not cliente %}
@@ -683,9 +696,17 @@
                        style="width: 52px;"
                        title="Editar N° cheque (Enter para guardar)">
                 <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
+              {# TMT 2026-08-17 (dueña): en los estados editables el N° es un
+                 <input>, así que el link va al lado — una flechita que ES un
+                 <a href> de verdad (se puede abrir en pestaña nueva). #}
+              <a href="{{ _url_cheque }}" class="text-slate-400 hover:text-sky-600"
+                 style="text-decoration: none;"
+                 title="Abrir el cheque (botón derecho → abrir en pestaña nueva)">↗</a>
               </form>
             {% else %}
-              {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">{{ c.id_cheque }}</span>{% endif %}
+              <a href="{{ _url_cheque }}" class="hover:underline" style="color: inherit;">
+                {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">{{ c.id_cheque }}</span>{% endif %}
+              </a>
             {% endif %}
           </td>
           {# F. DEP. = fecha ORIGINAL de depósito. Prioridad:
