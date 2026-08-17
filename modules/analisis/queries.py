@@ -103,10 +103,15 @@ def por_grupo(filas: list[dict]) -> list[dict]:
     tot = sum(float(f["stock_kg"]) for f in filas) or 1
     g: dict[str, dict] = {}
     for f in filas:
+        # ⚠ `n_items` y NO `items`: en Jinja `g.items` resuelve el MÉTODO del
+        # diccionario antes que la clave, y la tabla imprime
+        # "<built-in method items of dict object at 0x…>" donde va el número.
+        # Ya pasó una vez en la tarjeta de arriba; esto es la segunda. El test
+        # ahora recorre TODOS los diccionarios que van a un template.
         d = g.setdefault(f["categoria"] or "(sin grupo)", {
             "grupo": f["categoria"] or "(sin grupo)",
-            "items": 0, "kg": 0.0, "kg_segunda": 0.0, "subgrupos": set()})
-        d["items"] += 1
+            "n_items": 0, "kg": 0.0, "kg_segunda": 0.0, "subgrupos": set()})
+        d["n_items"] += 1
         d["kg"] += float(f["stock_kg"])
         d["kg_segunda"] += float(f["kg_segunda"])
         d["subgrupos"].add(f["subcategoria"])

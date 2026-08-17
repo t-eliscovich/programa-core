@@ -173,16 +173,23 @@ def test_todos_los_links_internos_de_las_plantillas_existen(app):
 
 # ── Lo que se rompió en producción y no puede volver a pasar ────────────────
 
-def test_el_resumen_no_usa_una_clave_que_jinja_confunde():
-    """⚠ En Jinja `resumen.items` devuelve el MÉTODO del diccionario, no el
-    dato: la tarjeta imprimió "<built-in method items of dict object at 0x…>"
-    en producción. No dio error — renderizó 200 con un texto absurdo donde iba
-    la cifra. Ninguna clave del resumen puede chocar con un método de dict."""
-    r = queries.resumen([])
-    for clave in r:
-        assert not hasattr({}, clave), (
-            f"la clave '{clave}' choca con dict.{clave} y Jinja va a resolver "
-            f"el método antes que el dato")
+def test_ningun_diccionario_que_va_a_un_template_usa_claves_de_dict():
+    """⚠ En Jinja `x.items` devuelve el MÉTODO del diccionario, no el dato: la
+    pantalla imprime "<built-in method items of dict object at 0x…>" donde va
+    la cifra. No da error — renderiza 200 con un texto absurdo.
+
+    Pasó DOS veces: primero en la tarjeta "Parado hoy" y después, con el test
+    ya escrito pero mirando sólo `resumen()`, en el resumen por grupo. Por eso
+    ahora el test recorre todas las funciones que arman diccionarios para un
+    template, y hay que agregarlas acá al crearlas."""
+    filas = [{"stock_kg": 10, "kg_vendidos": 0, "clientes": 1, "kg_segunda": 0,
+              "categoria": "Jersey", "subcategoria": "Jersey 3"}]
+    candidatos = [queries.resumen(filas)] + queries.por_grupo(filas)
+    for d in candidatos:
+        for clave in d:
+            assert not hasattr({}, clave), (
+                f"la clave '{clave}' choca con dict.{clave} y Jinja va a "
+                f"resolver el método antes que el dato")
 
 
 def test_la_plantilla_no_pide_claves_que_el_resumen_no_tiene():
@@ -441,7 +448,7 @@ def test_el_resumen_por_grupo_suma_100(monkeypatch):
     g = queries.por_grupo(filas)
     assert [x["grupo"] for x in g] == ["Jersey", "Fleece"], "de mayor a menor"
     assert round(sum(x["pct"] for x in g), 6) == 100
-    assert g[0]["items"] == 2 and g[0]["subgrupos"] == 2
+    assert g[0]["n_items"] == 2 and g[0]["subgrupos"] == 2
     assert g[0]["kg_segunda"] == 5
 
 

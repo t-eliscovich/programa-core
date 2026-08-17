@@ -53,7 +53,7 @@ saber si lo que hicimos funcionó.</div>
 {% for g in grupos_resumen %}
   <tr><td class="tela">{{ g.grupo }}</td>
   <td class="n g">{{ g.subgrupos }}</td>
-  <td class="n g">{{ g.items }}</td>
+  <td class="n g">{{ g.n_items }}</td>
   <td class="n">{{ g.kg | num_es(0) }}</td>
   <td class="n">{{ g.pct | num_es(1) }}%</td>
   <td class="n g">{% if g.kg_segunda %}{{ g.kg_segunda | num_es(0) }}{% else %}—{% endif %}</td></tr>
