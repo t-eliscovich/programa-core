@@ -193,6 +193,14 @@ def create_app() -> Flask:
 
     app.jinja_env.globals["L"] = L
 
+    # "← Volver" = la pantalla ANTERIOR con su filtro, no la lista pelada.
+    # TMT 2026-08-17 (dueña): *"cuando arme un filtro y clickeo en algo, cuando
+    # regreso debería volver a la pantalla anterior con el filtro incluido"*.
+    # Ver volver.py — el destino fijo de cada botón queda como respaldo.
+    import volver as _volver
+
+    _volver.register(app)
+
     # --- request-id + timing middleware ------------------------------------
     # request_id: UUID v4 generado en before_request, expuesto como header
     # X-Request-Id y escrito en scintela.bitacora_acciones.request_id. Sirve

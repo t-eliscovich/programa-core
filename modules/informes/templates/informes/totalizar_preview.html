@@ -52,8 +52,8 @@
 <div class="no-print max-w-5xl mx-auto mt-2 flex items-center justify-between gap-3 flex-wrap">
   <h1 class="text-xl font-semibold">Totalizar estado de cuenta <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
   <div class="flex items-center gap-2">
-    <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}"
-       class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">← Volver al estado de cuenta</a>
+    <a href="{{ volver_a(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli)) }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli), '← Volver al estado de cuenta') }}</a>
     <button type="button" onclick="window.print()"
             class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Imprimir</button>
   </div>

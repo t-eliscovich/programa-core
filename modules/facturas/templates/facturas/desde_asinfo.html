@@ -16,9 +16,7 @@
       <a href="{{ url_for('facturas.sucursal_recode') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
         Sucursales bajo la matriz
       </a>
-      <a href="{{ url_for('facturas.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-        ← Volver a Facturas
-      </a>
+      <a href="{{ volver_a(url_for('facturas.lista')) }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">{{ volver_texto(url_for('facturas.lista'), '← Volver a Facturas') }}</a>
     </div>
   </div>
 

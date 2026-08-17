@@ -109,8 +109,8 @@
 
   {# ═══════════════════ MODE: LIST (clientes de un vendedor/provincia) ═════ #}
   {% elif mode == 'list' %}
-    <a href="{{ url_for('informes.estado_cuenta_grupos', por=por) }}"
-       class="no-print inline-block mb-3 text-sm text-sky-700 dark:text-sky-400 hover:underline">← Volver a la lista</a>
+    <a href="{{ volver_a(url_for('informes.estado_cuenta_grupos', por=por)) }}"
+       class="no-print inline-block mb-3 text-sm text-sky-700 dark:text-sky-400 hover:underline">{{ volver_texto(url_for('informes.estado_cuenta_grupos', por=por), '← Volver a la lista') }}</a>
 
     <div class="mb-3">
       <div class="print-only" style="font-size:11pt;font-weight:bold;">

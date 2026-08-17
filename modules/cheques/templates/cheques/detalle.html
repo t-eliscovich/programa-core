@@ -6,7 +6,7 @@
    arrastrando ese filtro, para que guardar una edicion no lo pierda. #}
 {% set _self = url_for('cheques.detalle', id_cheque=ch.id_cheque, volver=request.args.get('volver') or None) %}
 {% block breadcrumb %}
-  <a href="{{ volver_url }}" class="hover:underline">Cheques</a> /
+  <a href="{{ volver_a(volver_url) }}" class="hover:underline">Cheques</a> /
   <strong>{{ ch.no_cheque or ch.id_cheque }}</strong>
 {% endblock %}
 
@@ -104,10 +104,8 @@
     <div class="no-print flex items-center gap-2 justify-end ch-actions-readonly">
       {# TMT 2026-05-18 — botón Volver canónico (Regla R2 pero también aplica
          a pantallas de detalle: la dueña quiere volver siempre con 1 click). #}
-      <a href="{{ volver_url }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
-        ← Volver a Cheques
-      </a>
+      <a href="{{ volver_a(volver_url) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(volver_url, '← Volver a Cheques') }}</a>
       {# === CAMBIAR ESTADO === #}
       {# Calculamos qué transiciones son válidas según el stat actual. #}
       {% set puede_depositar    = (ch.stat == 'Z' and tiene_permiso('cheques.transicionar')) %}

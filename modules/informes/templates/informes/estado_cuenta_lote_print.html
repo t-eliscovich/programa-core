@@ -69,7 +69,7 @@
       <p class="text-sm text-slate-500">{{ titulo }} · {{ n }} cliente(s) · estado completo de cada uno (idéntico al individual).</p>
     </div>
     <div class="flex gap-2">
-      <a href="{{ request.referrer or url_for('informes.estado_cuenta_landing') }}"
+      <a href="{{ volver_a(url_for('informes.estado_cuenta_landing')) }}"
          class="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">← Volver</a>
       {# TMT 2026-08-03 (dueña: "cuando quiero imprimir la cartera por vendedor,
          provincias o grupos igual debería poder elegir sólo factura sólo

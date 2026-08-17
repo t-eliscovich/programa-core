@@ -17,7 +17,7 @@
         Mientras están acá NO cuentan en el balance ni en el listado.
       </p>
     </div>
-    <a href="{{ url_for('activos.lista') }}" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded">← Volver a activos</a>
+    <a href="{{ volver_a(url_for('activos.lista')) }}" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded">{{ volver_texto(url_for('activos.lista'), '← Volver a activos') }}</a>
   </div>
 
   {% if error %}

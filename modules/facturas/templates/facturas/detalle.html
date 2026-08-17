@@ -36,7 +36,7 @@
        y "Volver a Facturas" se partía en dos renglones. #}
     {% set _btn = "inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition" %}
     <div class="flex items-center gap-2 no-print flex-wrap justify-end">
-      <a href="{{ url_for('facturas.lista') }}" style="white-space:nowrap" class="{{ _btn }}">← Volver</a>
+      <a href="{{ volver_a(url_for('facturas.lista')) }}" style="white-space:nowrap" class="{{ _btn }}">{{ volver_texto(url_for('facturas.lista'), '← Volver') }}</a>
       <button onclick="window.print()" style="white-space:nowrap" class="{{ _btn }}">Imprimir</button>
       {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat != 'X' %}
         <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"

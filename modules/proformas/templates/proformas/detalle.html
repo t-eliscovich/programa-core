@@ -18,10 +18,8 @@
     </div>
     <div class="no-print flex items-center gap-2">
       {# TMT 2026-05-18 — botón Volver canónico #}
-      <a href="{{ url_for('proformas.lista') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
-        ← Volver a Proformas
-      </a>
+      <a href="{{ volver_a(url_for('proformas.lista')) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(url_for('proformas.lista'), '← Volver a Proformas') }}</a>
       {# TMT 2026-08-11 (Alex): el cliente pide agregar o sacar algo. Se abre
          en el mismo formulario donde se armó y al guardar sale una versión
          nueva; ésta queda como está. #}

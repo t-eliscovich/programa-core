@@ -131,10 +131,8 @@
       <p class="text-sm text-slate-500">
         Cuando recibas cheques los vas a ver acá listos para depositar.
       </p>
-      <a href="{{ url_for('cheques.lista', estado='cartera') }}"
-         class="inline-block mt-5 text-sm text-sky-600 hover:text-sky-700 hover:underline">
-        ← Volver a cheques
-      </a>
+      <a href="{{ volver_a(url_for('cheques.lista', estado='cartera')) }}"
+         class="inline-block mt-5 text-sm text-sky-600 hover:text-sky-700 hover:underline">{{ volver_texto(url_for('cheques.lista', estado='cartera'), '← Volver a cheques') }}</a>
     </div>
   {% else %}
 

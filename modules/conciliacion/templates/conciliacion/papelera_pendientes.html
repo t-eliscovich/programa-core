@@ -10,8 +10,8 @@
 
   <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <h1 class="text-lg font-semibold">Papelera de pendientes del banco</h1>
-    <a href="{{ url_for('conciliacion.banco_post_procesar') }}"
-       class="text-xs underline text-slate-500">← Volver a la conciliación</a>
+    <a href="{{ volver_a(url_for('conciliacion.banco_post_procesar')) }}"
+       class="text-xs underline text-slate-500">{{ volver_texto(url_for('conciliacion.banco_post_procesar'), '← Volver a la conciliación') }}</a>
   </div>
 
   <p class="text-xs text-slate-500 mt-1 mb-3" style="max-width:62rem;">

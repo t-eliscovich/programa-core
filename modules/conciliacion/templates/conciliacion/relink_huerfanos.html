@@ -2,8 +2,8 @@
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 py-6">
   <div class="mb-4">
-    <a href="{{ url_for('conciliacion.banco_post_procesar', tab='conciliados') }}"
-       class="text-sm text-sky-600 hover:underline">&larr; Volver a Conciliar</a>
+    <a href="{{ volver_a(url_for('conciliacion.banco_post_procesar', tab='conciliados')) }}"
+       class="text-sm text-sky-600 hover:underline">{{ volver_texto(url_for('conciliacion.banco_post_procesar', tab='conciliados'), '← Volver a Conciliar') }}</a>
   </div>
 
   <h1 class="text-xl font-bold mb-1">Reenganchar conciliados huérfanos</h1>

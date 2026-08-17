@@ -90,8 +90,8 @@ Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Ga
     </div>
 
     <div class="mt-4 flex items-center justify-between">
-      <a href="{{ url_for('informes.gastos') }}"
-         class="text-sm text-slate-500 hover:underline">← Volver a Gastos</a>
+      <a href="{{ volver_a(url_for('informes.gastos')) }}"
+         class="text-sm text-slate-500 hover:underline">{{ volver_texto(url_for('informes.gastos'), '← Volver a Gastos') }}</a>
       <button type="submit"
               class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium">
         Aplicar reclasificación a los conceptos elegidos
@@ -101,10 +101,8 @@ Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Ga
   {% else %}
     <div class="bg-emerald-50 border border-emerald-300 rounded p-5 text-center">
       <p class="text-emerald-800 font-medium">No hay gastos sin clasificar.</p>
-      <a href="{{ url_for('informes.gastos') }}"
-         class="text-sm text-emerald-700 underline mt-2 inline-block">
-        ← Volver a Gastos
-      </a>
+      <a href="{{ volver_a(url_for('informes.gastos')) }}"
+         class="text-sm text-emerald-700 underline mt-2 inline-block">{{ volver_texto(url_for('informes.gastos'), '← Volver a Gastos') }}</a>
     </div>
   {% endif %}
 </div>

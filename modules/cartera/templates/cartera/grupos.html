@@ -32,10 +32,8 @@
        class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
       Imprimir
     </button>
-    <a href="{{ url_for('cartera.aging') }}"
-       class="text-xs text-slate-500 hover:underline self-center ml-2">
-      ← Volver a aging por cliente
-    </a>
+    <a href="{{ volver_a(url_for('cartera.aging')) }}"
+       class="text-xs text-slate-500 hover:underline self-center ml-2">{{ volver_texto(url_for('cartera.aging'), '← Volver a aging por cliente') }}</a>
   </div>
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">

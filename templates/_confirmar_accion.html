@@ -146,7 +146,11 @@ Variables:
         {% endif %}
 
         <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
-          <a href="{{ volver_url }}"
+          {# TMT 2026-08-17 (dueña): Cancelar devuelve a la pantalla de la que
+             VINISTE, con su filtro. Éste es el "Cancelar" de los ↺ del
+             Historial: si el ↺ salió de /historial?q=bed, cancelar tiene que
+             devolver ahí y no al Historial entero. Ver volver.py. #}
+          <a href="{{ volver_a(volver_url) }}"
              class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
             Cancelar
           </a>

@@ -38,8 +38,8 @@
            emite DESDE un posdatado, así que en la práctica el que llegó acá
            tiene el permiso — pero el link no puede depender de eso. #}
         {% if tiene_permiso('posdat.ver') %}
-        <a href="{{ url_for('posdat.lista', prov=posdat_target.prov or '') }}"
-           class="text-xs text-slate-600 dark:text-slate-400 hover:underline">← Volver a posdat</a>
+        <a href="{{ volver_a(url_for('posdat.lista', prov=posdat_target.prov or '')) }}"
+           class="text-xs text-slate-600 dark:text-slate-400 hover:underline">{{ volver_texto(url_for('posdat.lista', prov=posdat_target.prov or ''), '← Volver a posdat') }}</a>
         {% endif %}
       </div>
     </div>

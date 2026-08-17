@@ -103,8 +103,23 @@ def test_cada_fila_tiene_al_menos_dos_anchors_reales():
 
 
 def test_el_detalle_vuelve_por_volver_url_y_no_al_listado_pelado():
-    assert '<a href="{{ volver_url }}" class="hover:underline">Cheques</a>' in DETALLE
-    assert 'href="{{ volver_url }}"' in DETALLE
+    """El `volver_url` sigue mandando, ahora envuelto en el helper compartido.
+
+    ⚠ ACTUALIZADO el 2026-08-17 más tarde el mismo día. La regla de acá era
+    "volver siempre al LISTADO DE CHEQUES, con su filtro" — `_volver_a_lista()`
+    rechazaba cualquier `?volver=` que no fuera `/cheques`. La dueña amplió la
+    regla a toda la app: *"en TODAS las pantallas... debería volver a la
+    pantalla anterior con el filtro incluido"*, y eligió explícitamente que
+    gane de dónde venís por sobre el destino fijo. O sea: si el cheque se abrió
+    desde el Historial filtrado por "bed", Volver devuelve al Historial, no a
+    /cheques.
+
+    `volver_a()` valida igual o más que `_volver_a_lista()` (relativa, mismo
+    host, y además que la ruta EXISTA y acepte GET) — lo único que se soltó es
+    la restricción de que el destino fuera el propio listado. Ver volver.py.
+    """
+    assert '<a href="{{ volver_a(volver_url) }}" class="hover:underline">Cheques</a>' in DETALLE
+    assert 'href="{{ volver_a(volver_url) }}"' in DETALLE
     # Ningún link de "volver" puede seguir apuntando al listado sin filtro.
     assert "url_for('cheques.lista')" not in DETALLE
 

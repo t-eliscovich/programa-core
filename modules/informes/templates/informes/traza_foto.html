@@ -35,7 +35,7 @@
     </table>
   </div>
   <p class="mt-4 text-xs">
-    <a href="{{ url_for('informes.traza') }}" style="color:rgb(30 64 175);">← Volver a la traza</a>
+    <a href="{{ volver_a(url_for('informes.traza')) }}" style="color:rgb(30 64 175);">{{ volver_texto(url_for('informes.traza'), '← Volver a la traza') }}</a>
   </p>
 </div>
 {% endblock %}

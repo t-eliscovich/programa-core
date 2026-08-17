@@ -105,10 +105,8 @@
   </div>
 
   <div class="mt-6">
-    <a href="{{ url_for('informes.flujo_grafico') }}"
-       class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
-      ← Volver al gráfico
-    </a>
+    <a href="{{ volver_a(url_for('informes.flujo_grafico')) }}"
+       class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">{{ volver_texto(url_for('informes.flujo_grafico'), '← Volver al gráfico') }}</a>
   </div>
 </div>
 {% endblock %}

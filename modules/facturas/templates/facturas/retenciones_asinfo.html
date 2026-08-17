@@ -11,9 +11,7 @@
        descripcion='Detalle de cada retención (IVA+Fuente) del período: a qué factura de PC iría y qué pasaría. No cambia nada — para aplicarlas usá el botón de la pantalla anterior.'
     ) }}
     <div class="flex items-center gap-2 shrink-0 mt-1">
-      <a href="{{ url_for('facturas.desde_asinfo', desde=desde, hasta=hasta) }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-        ← Volver
-      </a>
+      <a href="{{ volver_a(url_for('facturas.desde_asinfo', desde=desde, hasta=hasta)) }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">{{ volver_texto(url_for('facturas.desde_asinfo', desde=desde, hasta=hasta), '← Volver') }}</a>
     </div>
   </div>
 
