@@ -773,6 +773,35 @@
       //    usuario (una NC tildada a mano es negativa → AGRANDA el pool).
       const fixedNet = Object.values(userValues).reduce((a, b) => a + (b || 0), 0);
       let pool = libres.reduce((a, b) => a + b, 0) - fixedNet;
+      // 2.5) TMT 2026-08-17 (dueña, el caso que reportaba Alex): las NOTAS DE
+      //      CRÉDITO de verdad —las de importe NEGATIVO— se absorben SIEMPRE,
+      //      antes del FIFO, aunque el cheque no llegue hasta ellas.
+      //      Por qué hacía falta: el listado va por fecha y las NC son lo más
+      //      nuevo del cliente, así que quedan al fondo. Medido sobre BED el
+      //      17/08: sus 4 NC caían en las posiciones 157, 163, 164 y 165 de
+      //      169, y un cheque de $12.000 sólo alcanzaba hasta la posición 9.
+      //      Por el recorrido no se tildaban NUNCA — había que ir a mano.
+      //      No le sacan lugar a ninguna factura: una NC no consume plata, la
+      //      DEVUELVE (agranda el pool), y el neto sigue dando exactamente el
+      //      importe del cheque.
+      //      OJO — sólo `importe < 0`. Una factura de importe POSITIVO con
+      //      saldo negativo NO es una NC: es una sobre-aplicación tipeada a
+      //      mano (regla del 06/07) y sigue entrando por el recorrido normal.
+      //      Meterlas a todas llevaba a BED de 1 fila tildada a 19 con un
+      //      cheque de $200 — la dueña lo descartó el 17/08.
+      //      Sin ningún cheque cargado no se toca nada: elegir el cliente no
+      //      tiene que tildar solo.
+      if (chequeImps.length) {
+        for (const f of porFecha) {
+          if (asignadas.has(f.id_factura)) continue;
+          if ((parseFloat(f.importe) || 0) >= 0) continue;
+          const s = parseFloat(f.saldo) || 0;
+          if (s >= -0.005) continue;
+          distribucion[f.id_factura] = s;
+          asignadas.add(f.id_factura);
+          pool -= s;  // s < 0 → el pool CRECE
+        }
+      }
       // 3) FIFO POR FECHA con el pool. TMT 2026-07-06 (dueña): las NC vuelven
       //    al recorrido (revierte el "NC 100% manuales" del 02/07): una NC en
       //    el camino se absorbe entera — monto negativo agranda el pool y
