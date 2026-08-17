@@ -47,7 +47,7 @@ def test_estado_marca_lo_que_se_movio(monkeypatch):
         {"stock_kg": 0, "kg_vendidos": 80, "clientes": 0},
     ]
     r = queries.resumen(filas)
-    assert r["items"] == 3
+    assert r["n_items"] == 3
     assert r["kg"] == 150
     assert r["kg_vendidos"] == 100
     assert r["movidos"] == 2
@@ -145,3 +145,50 @@ def test_el_menu_no_ofrece_pantallas_que_no_existen():
     from modules.analisis import views
     listos = [m for m in views.MENU if m["listo"]]
     assert [m["url"] for m in listos] == ["/analisis/parado"]
+
+
+# ── Lo que se rompió en producción y no puede volver a pasar ────────────────
+
+def test_el_resumen_no_usa_una_clave_que_jinja_confunde():
+    """⚠ En Jinja `resumen.items` devuelve el MÉTODO del diccionario, no el
+    dato: la tarjeta imprimió "<built-in method items of dict object at 0x…>"
+    en producción. No dio error — renderizó 200 con un texto absurdo donde iba
+    la cifra. Ninguna clave del resumen puede chocar con un método de dict."""
+    r = queries.resumen([])
+    for clave in r:
+        assert not hasattr({}, clave), (
+            f"la clave '{clave}' choca con dict.{clave} y Jinja va a resolver "
+            f"el método antes que el dato")
+
+
+def test_la_plantilla_no_pide_claves_que_el_resumen_no_tiene():
+    import re
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    pedidas = set(re.findall(r"resumen\.(\w+)", html))
+    assert pedidas <= set(queries.resumen([])), (
+        f"la plantilla pide {pedidas - set(queries.resumen([]))}, que no existe")
+
+
+# ── El tercer escalón: improbable ───────────────────────────────────────────
+
+def test_los_candidatos_no_se_cortan_en_dos_anios():
+    """Dueña 17/08/2026: "ponemelos como improbable pero la última fecha aunque
+    sea de 2024". Un cliente de 2023 no es un buen candidato, pero es más que
+    un renglón vacío."""
+    assert "YEAR(GETDATE()) - 1" not in asinfo_parado.SQL_LLAMADOS, (
+        "el corte de dos años dejaba 7 telas sin una sola pista teniendo el "
+        "dato a mano")
+    assert "MAX(anio) AS anio FROM compras" in asinfo_parado.SQL_LLAMADOS, (
+        "el año que manda es el ÚLTIMO con compras, sea cual sea")
+
+
+def test_improbable_se_marca_distinto_de_solo_el_anio_pasado():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "improbable · {{ f.anio_pista }}" in html
+    assert "ahora_anio - 1" in html, (
+        "sin el -1, el año pasado y 2023 se pintan igual y la palabra "
+        "'improbable' deja de querer decir algo")

@@ -63,8 +63,12 @@ def llamados_por_tela() -> dict[str, list[dict]]:
 def resumen(filas: list[dict]) -> dict:
     """Los números de las tarjetas. Se calculan sobre las filas ya leídas para
     que la tarjeta y la tabla no puedan decir cosas distintas."""
+    # ⚠ La clave NO se puede llamar `items`: en Jinja `resumen.items` resuelve
+    # primero el MÉTODO del diccionario, así que la tarjeta imprimía
+    # "<built-in method items of dict object at 0x…>" en vez del número. No da
+    # error — renderiza 200 y queda un texto absurdo donde va una cifra.
     return {
-        "items": len(filas),
+        "n_items": len(filas),
         "kg": sum(float(f["stock_kg"]) for f in filas),
         "kg_vendidos": sum(float(f["kg_vendidos"]) for f in filas),
         "movidos": sum(1 for f in filas if float(f["kg_vendidos"]) > 0),

@@ -5,7 +5,8 @@ Dos consultas y un remate:
     parados()   ~2 s — producto terminado (bodega 53) con stock ≥ 20 kg y menos
                 de 1 kg vendido en 12 meses.
     llamados()  ~5 s — por cada TELA parada, los 12 clientes de más kilos del
-                año; si en el año no la compró nadie, los del año anterior.
+                ÚLTIMO año en que alguien la compró. Normalmente es el
+                corriente; si no, el anterior; y si tampoco, 2024 o 2023.
     vendido_desde() — cuánto se vendió de cada tela × color desde que se marcó.
 
 Definiciones que NO son obvias y que hay que respetar para que la pantalla no
@@ -31,6 +32,14 @@ puede llamar. Sin excluirlo, tres de las telas más paradas mostraban un único
 `codigo`, que es el RUC. Ese código es el mismo `codigo_cli` con el que Programa
 Core joinea todo, y por eso la lista se entrega por código: se puede pegar
 contra cualquier otra pantalla del programa.
+
+⭐ **No hay corte de años.** `anio_ok` toma el último año con compras de cada
+tela, sea cual sea. Dueña 17/08/2026, sobre las telas sin candidatos: "ponemelos
+como improbable pero la última fecha aunque sea de 2024". Un cliente que compró
+esa tela en 2023 no es un buen candidato, pero es MÁS que un renglón vacío: es
+el único que alguna vez la quiso. La pantalla lo marca como improbable con su
+fecha, y quien llama decide. Cortar en dos años dejaba 7 telas sin una sola
+pista teniendo el dato a mano.
 
 ⚠ **El código NO queda guardado en la factura**: sale de la ficha del cliente al
 consultar. Si a un cliente le cambiaron el código, toda su historia aparece con
@@ -129,7 +138,6 @@ compras AS (
     JOIN telas t     ON t.subcategoria = pr.nombre_subcategoria_producto
     WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
       AND dfc.cantidad > 0
-      AND YEAR(fc.fecha) >= YEAR(GETDATE()) - 1
       AND RTRIM(e.nombre_comercial) <> 'VPM'
     GROUP BY pr.nombre_subcategoria_producto, YEAR(fc.fecha), fc.id_empresa
 ),
@@ -149,7 +157,6 @@ ctx AS (
                ON vv.id_factura_cliente = fc.id_factura_cliente
         LEFT JOIN v_vendedor ve ON ve.id_vendedor = vv.id_vendedor
         WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
-          AND YEAR(fc.fecha) >= YEAR(GETDATE()) - 1
     ) x
 ),
 anio_ok AS (SELECT subcategoria, MAX(anio) AS anio FROM compras GROUP BY subcategoria),

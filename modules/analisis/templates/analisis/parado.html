@@ -14,7 +14,7 @@
 <div class="cards">
   <div class="card"><p class="k">Parado hoy</p>
     <p class="v">{{ resumen.kg | num_es(0) }}</p>
-    <p class="s">kg en {{ resumen.items }} telas × color</p></div>
+    <p class="s">kg en {{ resumen.n_items }} telas × color</p></div>
   <div class="card"><p class="k">Vendido desde que se marcó</p>
     <p class="v">{{ resumen.kg_vendidos | num_es(0) }}</p>
     <p class="s">{{ resumen.movidos }} ítems se empezaron a mover</p></div>
@@ -66,6 +66,7 @@ saber si lo que hicimos funcionó.</div>
     <td>
       {% if f.estado == 'resuelto' %}<span class="pill mov">resuelto</span>
       {% elif f.estado == 'empezó a moverse' %}<span class="pill mov">se movió</span>
+      {% elif f.anio_pista and f.anio_pista < ahora_anio - 1 %}<span class="pill ojo">improbable · {{ f.anio_pista }}</span>
       {% elif f.anio_pista and f.anio_pista < ahora_anio %}<span class="pill viejo">sólo {{ f.anio_pista }}</span>
       {% else %}<span class="pill quieto">quieto</span>{% endif %}
     </td>
@@ -91,9 +92,9 @@ saber si lo que hicimos funcionó.</div>
       </tbody>
     </table>
     {% else %}
-      <p class="sub" style="margin:10px 0 0">Nadie compró esta tela — en ningún
-      color — ni este año ni el anterior. No se resuelve con una llamada: o la
-      tela salió de catálogo, o el saldo es un error de inventario.</p>
+      <p class="sub" style="margin:10px 0 0">Nadie compró esta tela nunca — en
+      ningún color, en ningún año. No se resuelve con una llamada: o la tela
+      salió de catálogo, o el saldo es un error de inventario.</p>
     {% endif %}
   </td></tr>
 {% endfor %}
@@ -102,8 +103,10 @@ saber si lo que hicimos funcionó.</div>
 
 <footer>
 Parado = producto terminado (bodega 53) con stock ≥ 20 kg y menos de 1 kg vendido
-en 12 meses. Los candidatos son los clientes que compraron esa TELA —
-cualquier color— este año; si este año no la compró nadie, los del anterior.
+en 12 meses. Los candidatos son los clientes que compraron esa TELA —cualquier color— en el
+último año en que alguien la compró. Si ese año no es el corriente ni el
+anterior, la fila va marcada como <b>improbable</b> con su fecha: un cliente de
+2023 no es un buen candidato, pero es el único que alguna vez quiso esa tela.
 El código es el mismo <code>codigo_cli</code> del resto del programa.
 </footer>
 {% endblock %}
