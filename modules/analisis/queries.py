@@ -77,6 +77,76 @@ def resumen(filas: list[dict]) -> dict:
     }
 
 
+# ── Por CLIENTE: la hoja que se lleva el vendedor ───────────────────────────
+
+#: Los órdenes posibles de la hoja. El default es `oportunidad` porque la hoja
+#: existe para decidir POR QUIÉN EMPEZAR: si el vendedor corta a la mitad, que
+#: haya cortado por lo chico. Alfabético sirve para ENCONTRAR a alguien, que es
+#: otra tarea y la resuelve el buscador.
+ORDENES = {
+    "oportunidad": "los kilos parados de las telas que compra",
+    "codigo": "alfabético por código",
+    "provincia": "agrupado por provincia",
+}
+
+
+def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
+    """
+    Da vuelta la pantalla: en vez de tela → clientes, cliente → telas.
+
+    ⚠ `kg_potencial` NO es aditivo entre clientes. Una misma tela parada aparece
+    en la lista de todos los que la compran, así que sumar la columna da mucho
+    más que el stock real. Sirve para ORDENAR, no para prometer. La hoja lo dice.
+
+    Los "improbables" (el último que compró esa tela lo hizo hace dos años o
+    más) van aparte y al final: mezclados, ensucian una lista que el vendedor
+    tiene que poder creer.
+    """
+    filas = db.fetch_all(
+        """
+        SELECT l.codigo_cli, l.nombre, l.provincia, l.vend_pc, l.subcategoria,
+               l.kg AS kg_cliente, l.ultima_compra, l.anio,
+               f.kg_parado, f.colores_parados
+          FROM scintela.parado_llamado l
+          JOIN (SELECT subcategoria, SUM(stock_kg) AS kg_parado,
+                       STRING_AGG(color, ', ' ORDER BY stock_kg DESC) AS colores_parados
+                  FROM scintela.parado_foto
+                 WHERE stock_kg > 0
+                 GROUP BY subcategoria) f
+            ON f.subcategoria = l.subcategoria
+         WHERE (%s IS NULL OR l.vend_pc = %s)
+         ORDER BY l.codigo_cli, f.kg_parado DESC
+        """,
+        (vend or None, vend or None),
+    )
+
+    anio = today_ec().year
+    clientes: dict[str, dict] = {}
+    for f in filas:
+        c = clientes.setdefault(f["codigo_cli"], {
+            "codigo": f["codigo_cli"], "nombre": f["nombre"],
+            "provincia": f["provincia"], "vend_pc": f["vend_pc"],
+            "telas": [], "kg_potencial": 0.0, "improbable": True,
+        })
+        c["telas"].append(f)
+        c["kg_potencial"] += float(f["kg_parado"] or 0)
+        if f["anio"] >= anio - 1:
+            c["improbable"] = False
+
+    vivos = [c for c in clientes.values() if not c["improbable"]]
+    dudosos = [c for c in clientes.values() if c["improbable"]]
+
+    llaves = {
+        "oportunidad": lambda c: -c["kg_potencial"],
+        "codigo": lambda c: c["codigo"],
+        "provincia": lambda c: (c["provincia"] or "", -c["kg_potencial"]),
+    }
+    clave = llaves.get(orden, llaves["oportunidad"])
+    vivos.sort(key=clave)
+    dudosos.sort(key=clave)
+    return {"clientes": vivos, "improbables": dudosos, "orden": orden}
+
+
 # ── Refresh ─────────────────────────────────────────────────────────────────
 
 def actualizar() -> dict:

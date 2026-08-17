@@ -16,7 +16,6 @@ import pytest
 
 from modules.analisis import asinfo_parado, queries
 
-
 # ── El invariante que pidió la dueña ────────────────────────────────────────
 
 def test_un_item_vendido_sigue_en_la_lista(monkeypatch):
@@ -139,12 +138,35 @@ def test_todas_las_rutas_piden_el_permiso():
             f"para cualquiera que sepa la URL")
 
 
-def test_el_menu_no_ofrece_pantallas_que_no_existen():
-    """Los links de esta app son strings hardcodeados: un link a una ruta que
-    no existe no se ve desde el código, sólo como 404 al clickear."""
+def test_el_menu_no_ofrece_pantallas_que_no_existen(app):
+    """Los links de esta app son strings hardcodeados: un link a una ruta que no
+    existe NO se ve desde el código, sólo como 404 al clickear. Por eso el test
+    no compara contra una lista escrita a mano —que se desactualiza igual— sino
+    contra el `url_map` real."""
     from modules.analisis import views
-    listos = [m for m in views.MENU if m["listo"]]
-    assert [m["url"] for m in listos] == ["/analisis/parado"]
+
+    rutas = {r.rule for r in app.url_map.iter_rules()}
+    for m in views.MENU:
+        if m["listo"]:
+            assert m["url"] in rutas, (
+                f"el menú ofrece {m['url']} y esa ruta no existe: es un 404 "
+                f"que no se ve leyendo el código")
+
+
+def test_todos_los_links_internos_de_las_plantillas_existen(app):
+    """Ídem para los links escritos a mano DENTRO de las pantallas de la
+    sección — el botón «Ver por cliente», el «← Ver por tela», el form de
+    actualizar."""
+    import re
+    from pathlib import Path
+
+    rutas = {r.rule for r in app.url_map.iter_rules()}
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for archivo in carpeta.glob("*.html"):
+        html = archivo.read_text(encoding="utf-8")
+        for url in re.findall(r'(?:href|action)="(/analisis[^"?{]*)', html):
+            assert url in rutas, f"{archivo.name} linkea a {url}, que no existe"
 
 
 # ── Lo que se rompió en producción y no puede volver a pasar ────────────────
@@ -192,3 +214,81 @@ def test_improbable_se_marca_distinto_de_solo_el_anio_pasado():
     assert "ahora_anio - 1" in html, (
         "sin el -1, el año pasado y 2023 se pintan igual y la palabra "
         "'improbable' deja de querer decir algo")
+
+
+# ── La hoja del vendedor ────────────────────────────────────────────────────
+
+def _filas_falsas():
+    return [
+        {"codigo_cli": "AAA", "nombre": "Cliente Grande", "provincia": "GUAYAS",
+         "vend_pc": "FL1", "subcategoria": "Kiana", "kg_cliente": 100,
+         "ultima_compra": None, "anio": 2026, "kg_parado": 900,
+         "colores_parados": "CAR"},
+        {"codigo_cli": "BBB", "nombre": "Cliente Chico", "provincia": "AZUAY",
+         "vend_pc": "FL1", "subcategoria": "Microfibra", "kg_cliente": 10,
+         "ultima_compra": None, "anio": 2026, "kg_parado": 100,
+         "colores_parados": "FRE"},
+        {"codigo_cli": "CCC", "nombre": "Cliente Viejo", "provincia": "AZUAY",
+         "vend_pc": "FL1", "subcategoria": "Jersey Fancy", "kg_cliente": 50,
+         "ultima_compra": None, "anio": 2023, "kg_parado": 500,
+         "colores_parados": "FNB"},
+    ]
+
+
+def test_la_hoja_ordena_por_oportunidad_por_defecto(monkeypatch):
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    r = queries.por_cliente()
+    assert [c["codigo"] for c in r["clientes"]] == ["AAA", "BBB"], (
+        "la hoja existe para decidir por quién empezar: si el vendedor corta a "
+        "la mitad, que haya cortado por lo chico")
+
+
+def test_los_improbables_van_al_final_y_aparte(monkeypatch):
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    r = queries.por_cliente()
+    assert [c["codigo"] for c in r["improbables"]] == ["CCC"]
+    assert "CCC" not in [c["codigo"] for c in r["clientes"]], (
+        "mezclado ensucia una lista que el vendedor tiene que poder creer")
+
+
+def test_un_cliente_con_una_tela_vieja_y_una_nueva_no_es_improbable(monkeypatch):
+    filas = _filas_falsas()
+    filas[2]["codigo_cli"] = "AAA"          # la vieja es del cliente grande
+    filas[2]["nombre"] = "Cliente Grande"
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: filas)
+    r = queries.por_cliente()
+    assert [c["codigo"] for c in r["improbables"]] == []
+    grande = next(c for c in r["clientes"] if c["codigo"] == "AAA")
+    assert len(grande["telas"]) == 2
+
+
+def test_el_orden_alfabetico_y_el_de_provincia_existen(monkeypatch):
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    assert [c["codigo"] for c in queries.por_cliente(orden="codigo")["clientes"]] \
+        == ["AAA", "BBB"]
+    assert [c["provincia"] for c in queries.por_cliente(orden="provincia")["clientes"]] \
+        == ["AZUAY", "GUAYAS"]
+
+
+def test_un_orden_inventado_no_rompe_la_pantalla(monkeypatch):
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    r = queries.por_cliente(orden="loquesea")
+    assert [c["codigo"] for c in r["clientes"]] == ["AAA", "BBB"]
+
+
+def test_la_hoja_avisa_que_los_kg_no_se_suman():
+    """Una misma tela parada aparece en la lista de todos los que la compran:
+    sumar la columna entre clientes da mucho más que el stock real."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado_clientes.html").read_text(encoding="utf-8")
+    assert "no se suman entre clientes" in html
+
+
+def test_la_hoja_se_imprime_con_la_misma_plantilla():
+    """⚠ En /mi-cartera la oficina y el portal imprimieron órdenes distintos
+    ocho días sin síntoma, por tener dos caminos para el mismo papel."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado_clientes.html").read_text(encoding="utf-8")
+    assert "@media print" in html and "window.print()" in html

@@ -38,7 +38,9 @@ saber si lo que hicimos funcionó.</div>
     {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
   </select>
   <span class="sub" id="cuenta" style="margin:0"></span>
-  <form method="post" action="/analisis/parado/actualizar" style="margin-left:auto">
+  <a href="/analisis/parado/clientes" style="margin-left:auto;align-self:center;
+     color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
+  <form method="post" action="/analisis/parado/actualizar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit">Actualizar desde Asinfo</button>
   </form>

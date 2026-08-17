@@ -1,0 +1,113 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}A quién ofrecerle qué{% endblock %}
+{% block contenido %}
+
+{#
+  ⭐ La MISMA página en pantalla y en papel. `@media print` esconde el cascarón.
+  Dos plantillas para el mismo documento divergen a la primera corrección que se
+  le hace a una sola.
+#}
+<style>
+.cli{border:1px solid var(--l);border-radius:10px;padding:14px 18px;margin:0 0 12px}
+.cli h3{margin:0;font-size:15px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.cli h3 .cod{font-size:13px;color:var(--g);letter-spacing:.4px}
+.cli h3 .kg{margin-left:auto;font-weight:400;font-size:13px;color:var(--g)}
+.cli .meta{color:var(--g);font-size:12px;margin:2px 0 8px}
+.cli table{font-size:13px}
+.cli th{padding:5px 8px;font-size:10px}
+.cli td{padding:4px 8px}
+@media print{
+  header.top,.barra,.nota,footer .noimp{display:none!important}
+  body{padding:0} main{max-width:none;padding:0}
+  .cli{break-inside:avoid;page-break-inside:avoid;border:0;border-bottom:1px solid #ccc;
+       border-radius:0;padding:8px 0;margin:0}
+  h1{font-size:17px} .cabecera-imp{display:block!important}
+  @page{margin:14mm}
+}
+.cabecera-imp{display:none;font-size:12px;color:var(--g);margin:0 0 10px}
+</style>
+
+<h1>A quién ofrecerle qué</h1>
+<p class="sub">
+  {% if vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
+  {{ clientes | length }} clientes{% if improbables %} + {{ improbables | length }} improbables{% endif %} ·
+  ordenado por {{ ordenes[orden] }}
+  {% if estado.actualizado %}· datos al {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}
+</p>
+
+<div class="barra">
+  <select onchange="location.href=this.value">
+    {% for c in ['','PPR','FL1','RMY','JQU','EDG','SEP'] %}
+      <option value="/analisis/parado/clientes?orden={{ orden }}{% if c %}&vend={{ c }}{% endif %}"
+        {% if (vend or '') == c %}selected{% endif %}>
+        {{ c if c else 'Todos los vendedores' }}</option>
+    {% endfor %}
+  </select>
+  <select onchange="location.href=this.value">
+    {% for k, etiqueta in ordenes.items() %}
+      <option value="/analisis/parado/clientes?orden={{ k }}{% if vend %}&vend={{ vend }}{% endif %}"
+        {% if orden == k %}selected{% endif %}>Ordenar por {{ etiqueta }}</option>
+    {% endfor %}
+  </select>
+  <button onclick="window.print()">Imprimir</button>
+  <a href="/analisis/parado" style="margin-left:auto;color:var(--g);font-size:14px">
+    ← Ver por tela</a>
+</div>
+
+<p class="cabecera-imp">Intela · telas paradas para ofrecer
+  {% if vend %}— {{ vend }}{% endif %}
+  {% if estado.actualizado %}· {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}</p>
+
+{% macro ficha(c, dudoso=false) %}
+<div class="cli">
+  <h3>
+    <span>{{ c.nombre }}</span>
+    <span class="cod">{{ c.codigo }}{% if c.codigo in codigos_ambiguos %}
+      · ⚠ código repetido{% endif %}</span>
+    <span class="kg">{{ c.kg_potencial | num_es(0) }} kg parados en telas que compra</span>
+  </h3>
+  <p class="meta">{{ c.provincia }} · {{ c.vend_pc or 'mostrador' }}</p>
+  <table>
+    <thead><tr><th>Tela</th><th>Colores parados</th><th class="n">Kg parados</th>
+    <th class="n">Le vendimos</th><th class="n">Última vez</th></tr></thead>
+    <tbody>
+    {% for t in c.telas %}
+      <tr>
+        <td>{{ t.subcategoria }}</td>
+        <td class="g">{{ t.colores_parados }}</td>
+        <td class="n">{{ t.kg_parado | num_es(0) }}</td>
+        <td class="n">{{ t.kg_cliente | num_es(0) }}</td>
+        <td class="n g">{{ t.ultima_compra.strftime('%d/%m/%y') if t.ultima_compra else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% for c in clientes %}{{ ficha(c) }}{% endfor %}
+
+{% if improbables %}
+  <h2>Improbables</h2>
+  <p class="sub">La última vez que compraron esa tela fue hace dos años o más.
+  Van al final a propósito: mezclados, ensucian una lista que tiene que poder
+  creerse. Igual va la fecha — son los únicos que alguna vez la quisieron.</p>
+  {% for c in improbables %}{{ ficha(c, true) }}{% endfor %}
+{% endif %}
+
+{% if not clientes and not improbables %}
+  <div class="alerta">No hay nada para ofrecer con este filtro. Si la lista está
+  vacía entera, todavía no se trajeron los datos: andá a
+  <a href="/analisis/parado">Lo parado</a> y tocá «Actualizar desde Asinfo».</div>
+{% endif %}
+
+<footer>
+<span class="noimp">
+⚠ Los «kg parados en telas que compra» <b>no se suman entre clientes</b>: una
+misma tela parada aparece en la lista de todos los que la compran, así que la
+columna sirve para ordenar, no para prometer.<br>
+</span>
+Kg parados = producto terminado quieto hace 12 meses o más. «Le vendimos» son
+los kilos de esa tela que ese cliente compró la última vez que la compró.
+</footer>
+{% endblock %}

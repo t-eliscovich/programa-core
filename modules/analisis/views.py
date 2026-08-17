@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, flash, redirect, render_template, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from filters import today_ec
@@ -27,6 +27,13 @@ MENU = [
         "url": "/analisis/parado",
         "titulo": "Lo parado",
         "bajada": "Qué está quieto en bodega y a qué cliente llamarle por eso.",
+        "listo": True,
+    },
+    {
+        "url": "/analisis/parado/clientes",
+        "titulo": "A quién ofrecerle qué",
+        "bajada": "La hoja del vendedor: cliente por cliente, qué telas paradas "
+                  "puede llevarse. Se imprime.",
         "listo": True,
     },
     {
@@ -68,6 +75,34 @@ def parado():
         estado=queries.estado(),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
+    )
+
+
+@analisis_bp.route("/analisis/parado/clientes")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def parado_clientes():
+    """
+    La hoja del vendedor: qué telas ofrecerle a qué cliente.
+
+    ⭐ Es la MISMA página en pantalla y en papel. `@media print` esconde el
+    cascarón y listo. Dos plantillas para el mismo documento divergen a la
+    primera corrección que se le hace a una sola — ya pasó en /mi-cartera, donde
+    la oficina y el portal imprimieron órdenes distintos durante ocho días sin
+    que nadie lo notara.
+
+    ⭐ Y por eso el ORDEN viaja en la URL: lo que se ve es lo que se imprime.
+    """
+    vend = (request.args.get("vend") or "").strip().upper() or None
+    orden = request.args.get("orden") or "oportunidad"
+    if orden not in queries.ORDENES:
+        orden = "oportunidad"
+    return render_template(
+        "analisis/parado_clientes.html",
+        vend=vend, ordenes=queries.ORDENES,
+        estado=queries.estado(),
+        codigos_ambiguos=CODIGOS_AMBIGUOS,
+        **queries.por_cliente(vend, orden),
     )
 
 
