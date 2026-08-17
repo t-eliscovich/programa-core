@@ -299,16 +299,27 @@ def por_categoria(filas: list[dict]) -> list[dict]:
     return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
 
 
-def por_tela(filas: list[dict], categoria: str) -> list[dict]:
+def por_tela(filas: list[dict], categoria: str,
+             solo_faltan: bool = False) -> list[dict]:
     """Las filas de una familia, agrupadas por tela.
 
     Adentro de cada tela, los colores van ordenados por faltante descendente:
     lo que falta arriba. Es el orden que pidió la dueña para /informes/traza —
     la pantalla ordena por lo que MOVIÓ, no alfabéticamente.
+
+    ⚠ `solo_faltan` va APAGADO por defecto y así tiene que quedarse. Probamos
+    encenderlo —de 649 colores pedidos sólo 232 necesitan tela, y los otros 417
+    llenaban la pantalla de filas que dicen "ok"— y la dueña lo revirtió el
+    mismo día: *"tenés que mostrar todos los pedidos, no escondas los ok"*. La
+    pantalla es el estado de TODO lo pedido, no una lista de tareas: ver que un
+    color está cubierto es parte de lo que se viene a mirar. El filtro queda
+    disponible como opción explícita (`?falta=1`), nunca como default.
     """
     acc: dict[str, dict] = {}
     for f in filas:
         if f["categoria"] != categoria:
+            continue
+        if solo_faltan and f["faltan_kg"] <= 0:
             continue
         b = acc.setdefault(f["tela"], {
             "tela": f["tela"], "filas": [], "pedido_kg": 0.0,
@@ -454,3 +465,18 @@ def repetidos(pedidos: list[dict]) -> list[str]:
         if clave:
             vistos[clave] = vistos.get(clave, 0) + 1
     return sorted(k for k, n in vistos.items() if n > 1)
+
+
+def telas_sin_faltante(filas: list[dict], categoria: str) -> list[str]:
+    """Telas de la familia donde ningún color necesita tela.
+
+    Sólo se usa cuando el usuario pidió expresamente ver únicamente lo que
+    falta (`?falta=1`): ahí las telas enteras cubiertas se nombran en una línea
+    para que se sepa que existen y no parezca que desaparecieron.
+    """
+    con, sin = set(), set()
+    for f in filas:
+        if f["categoria"] != categoria:
+            continue
+        (con if f["faltan_kg"] > 0 else sin).add(f["tela"])
+    return sorted(sin - con)

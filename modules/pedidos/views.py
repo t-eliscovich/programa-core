@@ -35,7 +35,13 @@ def lista():
     nombres = [c["categoria"] for c in categorias]
     activa = pedida if pedida in nombres else (nombres[0] if nombres else "")
 
-    telas = service.por_tela(filas, activa) if activa else []
+    # ⚠ Por defecto se ven TODOS los colores pedidos, con "ok" en los que ya
+    # están cubiertos. Esconder los "ok" se probó y la dueña lo revirtió el
+    # mismo día (17/08): la pantalla es el estado de todo lo pedido, no una
+    # lista de tareas. Filtrar es una acción explícita del usuario: `?falta=1`.
+    solo_faltan = request.args.get("falta") == "1"
+    telas = service.por_tela(filas, activa, solo_faltan=solo_faltan) if activa else []
+    cubiertas = service.telas_sin_faltante(filas, activa) if solo_faltan else []
     resumen = next((c for c in categorias if c["categoria"] == activa), None)
 
     return render_template(
@@ -44,6 +50,8 @@ def lista():
         categorias=categorias,
         activa=activa,
         telas=telas,
+        cubiertas=cubiertas,
+        solo_faltan=solo_faltan,
         resumen=resumen,
         total_faltan=round(sum(c["faltan_kg"] for c in categorias), 1),
         total_colores_faltan=sum(c["colores_faltan"] for c in categorias),

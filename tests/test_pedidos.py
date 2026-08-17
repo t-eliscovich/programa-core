@@ -149,10 +149,43 @@ def test_las_familias_se_ordenan_por_lo_que_falta():
 
 
 def test_adentro_de_la_tela_lo_que_falta_va_arriba():
-    filas = [service._fila(_fila(codigo="A", ped_kg=10, inv_kg=900)),
+    filas = [service._fila(_fila(codigo="A", ped_kg=100, inv_kg=0)),
              service._fila(_fila(codigo="B", ped_kg=900, inv_kg=0))]
     (tela,) = service.por_tela(filas, "Fleece")
     assert [f["codigo"] for f in tela["filas"]] == ["B", "A"]
+
+
+def test_por_defecto_los_colores_cubiertos_TAMBIEN_se_listan():
+    """⚠ Esconder los "ok" se probó el 17/08 y la dueña lo revirtió el mismo
+    día: "tenés que mostrar todos los pedidos, no escondas los ok". La pantalla
+    es el estado de TODO lo pedido, no una lista de tareas."""
+    filas = [service._fila(_fila(codigo="FALTA", ped_kg=900, inv_kg=0)),
+             service._fila(_fila(codigo="CUBIERTO", ped_kg=10, inv_kg=900))]
+    (tela,) = service.por_tela(filas, "Fleece")
+    assert [f["codigo"] for f in tela["filas"]] == ["FALTA", "CUBIERTO"]
+
+
+def test_filtrar_es_una_accion_explicita_del_usuario():
+    filas = [service._fila(_fila(codigo="FALTA", ped_kg=900, inv_kg=0)),
+             service._fila(_fila(codigo="CUBIERTO", ped_kg=10, inv_kg=900))]
+    (tela,) = service.por_tela(filas, "Fleece", solo_faltan=True)
+    assert [f["codigo"] for f in tela["filas"]] == ["FALTA"]
+
+
+def test_una_tela_entera_cubierta_igual_se_dibuja():
+    filas = [service._fila(_fila(tela="Fleece 102", ped_kg=900, inv_kg=0)),
+             service._fila(_fila(tela="Fleece 2.2", codigo="X", ped_kg=10,
+                                 inv_kg=900))]
+    assert sorted(t["tela"] for t in service.por_tela(filas, "Fleece")) == [
+        "Fleece 102", "Fleece 2.2"]
+    assert service.telas_sin_faltante(filas, "Fleece") == ["Fleece 2.2"]
+
+
+def test_una_tela_con_faltante_no_entra_en_las_cubiertas():
+    """Aunque tenga colores cubiertos: alcanza con que UNO falte."""
+    filas = [service._fila(_fila(ped_kg=900, inv_kg=0)),
+             service._fila(_fila(codigo="OTRO", ped_kg=10, inv_kg=900))]
+    assert service.telas_sin_faltante(filas, "Fleece") == []
 
 
 def test_por_tela_ignora_las_otras_familias():
@@ -403,10 +436,48 @@ def test_el_color_sale_del_ultimo_token_y_no_de_restarle_el_nombre_de_la_tela():
     assert "REPLACE(ISNULL(pr.nombre" not in sql
 
 
-def test_una_tela_con_un_solo_color_no_dice_1_colores(app, fake_db):
+def test_una_familia_con_un_solo_color_no_dice_1_colores(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
-        body = c.get("/pedidos").get_data(as_text=True)
-    assert "1 color ·" in body
+        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+    assert "1 de 1 color de Fleece" in body
     assert "1 colores" not in body
+
+
+def test_la_pantalla_arranca_mostrando_TODOS_con_su_ok(app, fake_db):
+    """El "ok" de un color cubierto es información, no ruido (dueña 17/08)."""
+    c = _login(app, fake_db)
+    filas = [_fila(codigo="FE96CAF"),
+             _fila(codigo="FE96NEG", ped_kg=10.0, inv_kg=9000.0)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "FE96CAF" in body and "FE96NEG" in body
+    assert ">ok<" in body.replace("\n", "").replace(" ", "")
+    assert "Ver sólo lo que falta" in body
+
+
+def test_con_falta_1_el_usuario_puede_filtrar(app, fake_db):
+    c = _login(app, fake_db)
+    filas = [_fila(codigo="FE96CAF"),
+             _fila(codigo="FE96NEG", ped_kg=10.0, inv_kg=9000.0)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)):
+        body = c.get("/pedidos?falta=1").get_data(as_text=True)
+    assert "FE96CAF" in body and "FE96NEG" not in body
+    assert "Ver todos los pedidos" in body
+
+
+def test_bodega_y_tinturandose_son_dos_columnas_con_el_nombre_entero(app, fake_db):
+    """Juntarlas en una sola "Tenemos" con la parte tinturándose abreviada
+    ("717 tint. 466") le hizo preguntar a la dueña qué era el "tint" — y encima
+    no se sabía si el 466 estaba adentro del 717 o aparte."""
+    c = _login(app, fake_db)
+    filas = [_fila(inv_kg=169.0, prod_kg=18.0, n_ordenes=1)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "En bodega" in body and "Tinturándose" in body
+    assert "tint." not in body
+    assert "Tenemos" not in body
