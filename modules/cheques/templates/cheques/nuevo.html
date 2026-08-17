@@ -853,14 +853,26 @@
 
 
     // Render filas
+    // TMT 2026-08-17 (dueña): el buscador ESCONDE filas, ya no las saca.
+    // Antes filtraba acá y el `<input name="aplicar[...]">` de las que no
+    // coincidían desaparecía del DOM — o sea del FORMULARIO. Medido sobre
+    // AJ2: un cheque de $3.000 repartido en 13 facturas, con el buscador en
+    // "175020" mandaba UNA sola aplicación de $1.330,61 y perdía las otras
+    // doce; y el pie mostraba "Aplicado 1.330,61 · Restante 1.669,39" cuando
+    // en la pantalla estaba todo cuadrado. `updateSummary` y el submit
+    // recorren el tbody, así que lo que no está renderizado no existe para
+    // ninguno de los dos.
+    const _coincide = (f) => {
+      if (!q) return true;
+      const num = String(f.numf || '').toLowerCase();
+      const saldo = String(f.saldo.toFixed(2));
+      return num.includes(q) || saldo.includes(q);
+    };
+    let _visibles = 0;
     const rowsHtml = facturas
-      .filter(f => {
-        if (!q) return true;
-        const num = String(f.numf || '').toLowerCase();
-        const saldo = String(f.saldo.toFixed(2));
-        return num.includes(q) || saldo.includes(q);
-      })
       .map(f => {
+        const _oculta = !_coincide(f);
+        if (!_oculta) _visibles++;
         const sugerido = userValues[f.id_factura] != null
           ? userValues[f.id_factura]
           : (distribucion[f.id_factura] || 0);
@@ -882,7 +894,7 @@
           ? ' <span class="text-amber-700 text-[10px]">⚠ crédito</span>'
           : '';
         return `
-          <tr class="border-t ${rowClass}">
+          <tr class="border-t ${rowClass}"${_oculta ? ' style="display:none"' : ''}>
             <td class="px-2 py-1.5 text-center">
               <input type="checkbox" class="aplic-cancel" data-id="${f.id_factura}"
                      data-saldo="${f.saldo}" ${cancelaEntera ? 'checked' : ''}
@@ -920,7 +932,13 @@
         `;
       }).join('');
 
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="11" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+    // Ahora rowsHtml SIEMPRE trae todas las filas (las que no coinciden van
+    // con display:none), así que el cartel de "sin coincidencias" se decide
+    // por el contador de visibles, no por el string vacío.
+    tbody.innerHTML = rowsHtml
+      + (q && _visibles === 0
+          ? '<tr><td colspan="11" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>'
+          : '');
 
     // Wire-up para tracking de "usuario editó" (input de monto)
     tbody.querySelectorAll('input.aplic-input').forEach(inp => {
@@ -2289,7 +2307,13 @@
   const factScroll = document.querySelector('.cobranza-fact-scroll');
   let factCursorId = null;
   function filasFact() {
-    return [...tbody.querySelectorAll('input.aplic-cancel')].map(c => c.closest('tr'));
+    // TMT 2026-08-17: con el buscador activo las filas que no coinciden siguen
+    // en el DOM (ocultas, para no perder sus montos del formulario), así que
+    // acá hay que saltearlas — el cursor de las flechas ↑↓ no puede pararse
+    // sobre una fila que no se ve.
+    return [...tbody.querySelectorAll('input.aplic-cancel')]
+      .map(c => c.closest('tr'))
+      .filter(tr => tr && tr.style.display !== 'none');
   }
   function refrescarCursorFacturas() {
     const filas = filasFact();
