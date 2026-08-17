@@ -873,7 +873,8 @@
             Tablero · Cheques · Facturas · Compras y producción
          + bloque cartera/caja/posdat — accesos directos al día a día
          + "Más ▾" con 6 ítems (sin sub-secciones, plano)
-         BASES DE DATOS y ADMIN viven en el menú del nombre arriba a la derecha.
+         ADMIN vive en el menú del nombre arriba a la derecha (BASES DE DATOS
+         se sacó de ahí el 2026-08-17: repetía el sidebar).
          BORRADOS: cartera por grupo, calendario, cobros recibidos, estado cuenta link,
          resultados/balance link, historia, metas, proformas, retenciones del sidebar,
          conciliación del sidebar, emitir cheque del sidebar, bitácora del UI,
@@ -1015,6 +1016,13 @@
       <details class="sidebar-section" data-key="datos">
         <summary>Clientes y proveedores</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
+        {# TMT 2026-08-17 — Contactos bajó acá desde el menú del nombre. El
+           menú del nombre tenía "Bases de datos" repitiendo lo que ya estaba
+           en el sidebar (Clientes, Proveedores, Lista de precios, Bancos), y
+           la dueña lo sacó; pero ese era el ÚNICO link a /clientes/contactos
+           en toda la app, así que la pantalla quedaba sin puerta. Va donde
+           corresponde: es el directorio de teléfonos/mails de los clientes. #}
+        {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.contactos', 'Contactos', 'users') }}{% endif %}
         {# TMT 2026-07-09 (dueña): estado de cuenta visible para todos. #}
         {{ nav_link('informes.estado_cuenta_landing', 'Estados de cuenta', 'receipt') }}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
@@ -1347,7 +1355,7 @@
           </div>
         {% endif %}
 
-        {# ---- Menú del nombre — Bases de datos / Admin / Salir ---- #}
+        {# ---- Menú del nombre — Admin / Salir ---- #}
         <div class="relative" id="user-menu-wrap">
           <button id="user-menu-btn" type="button"
                   onclick="document.getElementById('user-menu-pop').classList.toggle('hidden')"
@@ -1360,23 +1368,12 @@
           <div id="user-menu-pop"
                class="hidden absolute right-0 mt-1 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50 py-1 text-sm">
 
-            {# --- Bases de datos --- #}
-            {% if tiene_permiso('clientes.ver') or tiene_permiso('proveedores.ver') or tiene_permiso('bancos.ver') %}
-            <div class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Bases de datos</div>
-            {% if tiene_permiso('clientes.ver') %}
-              <a href="{{ url_for('clientes.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Clientes</a>
-            {% endif %}
-            {% if tiene_permiso('proveedores.ver') %}
-              <a href="{{ url_for('proveedores.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Proveedores</a>
-            {% endif %}
-            <a href="{{ url_for('precios.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Lista de precios</a>
-            {% if tiene_permiso('bancos.ver') %}
-              <a href="{{ url_for('bancos.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Bancos</a>
-            {% endif %}
-            {% if tiene_permiso('clientes.ver') %}
-              <a href="{{ url_for('clientes.contactos') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Contactos</a>
-            {% endif %}
-            {% endif %}
+            {# TMT 2026-08-17 (dueña): *"no hace falta estas bases de datos
+               dentro de mi usuario"*. Acá vivía una sección "Bases de datos"
+               con Clientes / Proveedores / Lista de precios / Bancos /
+               Contactos: las cuatro primeras ya estaban en el sidebar (era
+               puro duplicado) y Contactos se mudó al sidebar, al lado de
+               Clientes, porque este era su único link. #}
 
             {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
             {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') %}
