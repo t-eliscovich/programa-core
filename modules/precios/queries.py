@@ -482,9 +482,17 @@ def tabla_descuentos(
 # de qué fila de la matriz sacarle el precio) y por eso NO APARECE. De 692
 # colores del catálogo, 374 están así.
 #
-# La clase vivía sólo en COSTOS.DBF, que se retiró el 05/08. Asinfo no tiene
-# una columna "clase" y la `categoria` de formulas_app tampoco sirve: no
-# distingue MEDIOS (COCOA figura ahí como "Color Bajo" y se vende como MEDIO).
+# La clase vivía sólo en COSTOS.DBF, que se retiró el 05/08. La `categoria` de
+# formulas_app no sirve: no distingue MEDIOS (COCOA figura ahí como "Color
+# Bajo" y se vende como MEDIO).
+#
+# 🚨 DESDE EL 17/08/2026 LA FUENTE ES OTRA: el atributo Color de Asinfo trae la
+# clase en su PADRE (BLANCOS/BAJOS/MEDIOS/JASPEADOS/FUERTES) y eso lo
+# sincroniza `modules/precios/colores_asinfo.py` — el camino normal para que un
+# color nuevo se pueda cotizar. Lo de acá abajo (deducir la clase del precio
+# facturado) queda como CONTRASTE: es lo que llena el bloque de /precios y
+# sirve para cazar un color cargado en una clase a la que no se factura. Los
+# dos coinciden en 309 de 313 comparables.
 #
 # 🚨 Lo que SÍ tiene Asinfo es el PRECIO: cada producto es tela + color y trae
 # `precio_ultima_venta`, que es el precio de LISTA de esa tela para la clase
