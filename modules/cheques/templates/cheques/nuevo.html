@@ -746,6 +746,20 @@
     //      "varios cheques en una misma factura para dejar abonado".
     // Es sólo SUGERENCIA: la dueña puede editar/destildar (se respeta vía
     // userValues más abajo).
+    // TMT 2026-05-19 — item 4: running total de saldos a lo largo del orden
+    // visual (facturas ya vienen ordenadas por fecha asc desde el backend).
+    // Lo computamos ANTES de filtrar por búsqueda para que el acumulado
+    // refleje el universo completo, no sólo lo visible.
+    // TMT 2026-08-17: y ANTES del reparto, porque el corte por acumulado lo
+    // usa. Es la MISMA cuenta que se pinta en la columna ACUM. SALDO — si
+    // fueran dos, el corte podría no caer donde el usuario lo lee.
+    const acumPorFactura = {};
+    let _acum = 0;
+    for (const f of facturas) {
+      _acum += parseFloat(f.saldo) || 0;
+      acumPorFactura[f.id_factura] = _acum;
+    }
+
     if (!_hayAnticipo && !sinAplicar) {
       // Las filas editadas a mano quedan afuera del FIFO (userValues manda).
       const _editada = f => userValues[String(f.id_factura)] != null;
@@ -773,6 +787,43 @@
       //    usuario (una NC tildada a mano es negativa → AGRANDA el pool).
       const fixedNet = Object.values(userValues).reduce((a, b) => a + (b || 0), 0);
       let pool = libres.reduce((a, b) => a + b, 0) - fixedNet;
+      // 2.5) CORTE POR ACUMULADO. TMT 2026-08-17 (dueña, caso AJ2).
+      //      Alex elige el importe del cheque mirando la columna ACUM. SALDO:
+      //      busca la fila donde el acumulado da justo ese número y espera que
+      //      se tilde hasta ahí, con las facturas ENTERAS.
+      //      El acumulado sube con las facturas y BAJA con las notas de
+      //      crédito, así que el mismo número puede aparecer en varios puntos.
+      //      El FIFO corta en cuanto se agota la plata —el primer punto que lo
+      //      alcanza— y ahí casi siempre queda una factura partida: en AJ2 con
+      //      $4.098,68 cortaba en la fila 13 dejando 1.349,64 sobre una de
+      //      1.381,06, cuando el acumulado volvía a dar 4.098,68 EXACTO en la
+      //      fila 23. Mismo total aplicado, pero sin ninguna factura a medias.
+      //      Tomamos el PRIMER corte exacto, no el último: es el que el usuario
+      //      está mirando, y tildar hasta un corte más lejano por casualidad
+      //      numérica sería peor que no hacer nada.
+      //      Sólo corre cuando el pool ES el cheque tal cual —ningún match
+      //      exacto por saldo y nada tipeado a mano—. Si el usuario ya metió
+      //      mano, el acumulado de la pantalla dejó de describir lo que se va a
+      //      aplicar y el corte estaría mintiendo.
+      let cortePorAcum = -1;
+      if (chequeImps.length && pool > 0.005
+          && exactSet.size === 0 && Math.abs(fixedNet) < 0.005) {
+        for (let i = 0; i < facturas.length; i++) {
+          const _a = acumPorFactura[facturas[i].id_factura];
+          if (_a != null && Math.abs(_a - pool) < 0.005) { cortePorAcum = i; break; }
+        }
+      }
+      if (cortePorAcum > -1) {
+        for (let i = 0; i <= cortePorAcum; i++) {
+          const f = facturas[i];
+          const s = parseFloat(f.saldo) || 0;
+          if (Math.abs(s) <= 0.005) continue;
+          distribucion[f.id_factura] = s;   // entera, nunca parcial
+          asignadas.add(f.id_factura);
+          pool -= s;
+        }
+        // El pool queda en ~0, así que el FIFO de abajo no agrega nada.
+      }
       // 3) FIFO POR FECHA con el pool. TMT 2026-07-06 (dueña): las NC vuelven
       //    al recorrido (revierte el "NC 100% manuales" del 02/07): una NC en
       //    el camino se absorbe entera — monto negativo agranda el pool y
@@ -788,16 +839,6 @@
       }
     }
 
-    // TMT 2026-05-19 — item 4: running total de saldos a lo largo del orden
-    // visual (facturas ya vienen ordenadas por fecha asc desde el backend).
-    // Lo computamos ANTES de filtrar por búsqueda para que el acumulado
-    // refleje el universo completo, no sólo lo visible.
-    const acumPorFactura = {};
-    let _acum = 0;
-    for (const f of facturas) {
-      _acum += parseFloat(f.saldo) || 0;
-      acumPorFactura[f.id_factura] = _acum;
-    }
 
     // Render filas
     const rowsHtml = facturas
