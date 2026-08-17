@@ -178,6 +178,13 @@
 
   cont.querySelectorAll('.carga-linea').forEach(wire);
   updTotal();
+
+  // TMT 2026-08-17 — dueña: "que el mouse ya esté en el importe, así no tengo
+  // que clickear". Foco inicial en el importe de la primera línea (la fecha ya
+  // viene en hoy). Se hace por JS y no con autofocus porque "+ línea" clona la
+  // fila y el atributo se arrastraría a las copias.
+  var primerImporte = cont.querySelector('.carga-importe');
+  if (primerImporte) primerImporte.focus();
 })();
 </script>
 {% endblock %}

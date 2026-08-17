@@ -43,8 +43,12 @@
 
       <label class="flex flex-col">
         <span class="text-sm text-slate-600">Importe <span class="text-red-500">*</span></span>
-        <input type="text" name="importe" value="{{ form.importe or '' }}"
+        {# TMT 2026-08-17 — dueña: "que el mouse ya esté en el importe, así no
+           tengo que clickear". El foco arranca en Importe: la Fecha ya viene
+           puesta y el Tipo tiene default, el importe es lo primero que tipea. #}
+        <input type="text" name="importe" id="importe-input" value="{{ form.importe or '' }}"
                class="border rounded px-2 py-1 mt-1 text-right" required
+               inputmode="decimal" autofocus
                placeholder="1.234,56">
       </label>
 
@@ -346,6 +350,15 @@
           });
           // Render inicial (si viene del form re-renderizado con error)
           actualizarPreview();
+
+          // TMT 2026-08-17 — foco inicial en Importe (además del autofocus del
+          // input, por si algún navegador lo ignora). Si el form vuelve con un
+          // valor cargado, se selecciona para poder tipear encima.
+          const impInp = document.getElementById('importe-input');
+          if (impInp) {
+            impInp.focus();
+            if (impInp.value) impInp.select();
+          }
         })();
       </script>
     </div>
