@@ -3490,11 +3490,19 @@ def estado_cuenta_grupos():
     """Estado de cuenta de TODOS los clientes con saldo, AGRUPADO para imprimir.
 
     Dimensión elegible por ?por= : vendedor (quién atiende), grupo (grupo de
-    clientes) o provincia. Pedido dueña 2026-07-09 ("imprimir por grupos: por
-    vendedor, grupo clientes y por provincia"). Reemplaza la PROCEDURE GRUPOS.
+    clientes), provincia, o TODOS (sin agrupar). Pedido dueña 2026-07-09
+    ("imprimir por grupos: por vendedor, grupo clientes y por provincia").
+    Reemplaza la PROCEDURE GRUPOS.
+
+    TMT 2026-08-17 (dueña): *"estados de cuenta, podes dejar imprimir todos, un
+    ultimo que diga todos"*. Hasta acá sólo se podía imprimir el lote DENTRO de
+    una agrupación: un vendedor, una provincia, o los grupos de 2+ clientes
+    (que deja afuera a los clientes sin grupo). No había forma de imprimir a
+    TODOS los que deben de una sola vez. La pestaña "Todos" es esa: la lista
+    completa de clientes con saldo, sin agrupar.
     """
     por = (request.args.get("por") or "vendedor").strip().lower()
-    if por not in ("vendedor", "grupo", "provincia"):
+    if por not in ("vendedor", "grupo", "provincia", "todos"):
         por = "vendedor"
     sel = (request.args.get("sel") or "").strip()
     filas, error = _safe(queries.estado_cuenta_clientes_saldos, [])
@@ -3504,6 +3512,24 @@ def estado_cuenta_grupos():
         return _ec_group_key(por, r)
 
     ctx = {"por": por, "error": error, "sel": sel}
+
+    # TODOS: sin agrupar, todos los clientes con saldo. Orden ALFABÉTICO por
+    # código — el mismo criterio que ya pidió Alex para las impresiones por
+    # vendedor/provincia (ver estado_cuenta_lote_imprimir), así la hoja sale
+    # siempre ordenada igual sin importar por dónde se entró.
+    if por == "todos":
+        # TMT 2026-08-17 (dueña): probamos traerle al renglón las cifras del
+        # encabezado de la ficha (facturas / cheques / total / cupo / % usado)
+        # y lo bajó: *"mejor solo saldo. como todo el resto"*. El renglón de
+        # "Todos" es EL MISMO que el de Vendedor/Provincia/Grupos — código,
+        # cliente y saldo. Para el desglose está la ficha del cliente.
+        clientes = sorted(filas, key=lambda r: (r.get("codigo_cli") or "").upper())
+        ctx.update(
+            mode="todos",
+            clientes=clientes,
+            total=sum(float(r.get("saldo") or 0) for r in clientes),
+        )
+        return render_template("informes/estado_cuenta_grupos.html", **ctx)
 
     # GRUPOS: mostrar SOLO grupos reales (2+ clientes); los que están solos no
     # se muestran. Todos los grupos juntos, uno debajo del otro.
@@ -3569,7 +3595,7 @@ def estado_cuenta_lote_imprimir():
     sean todos los estados de cuenta completos, no el total. uno por uno".
     """
     por = (request.args.get("por") or "vendedor").strip().lower()
-    if por not in ("vendedor", "grupo", "provincia"):
+    if por not in ("vendedor", "grupo", "provincia", "todos"):
         por = "vendedor"
     sel = (request.args.get("sel") or "").strip()
     filas, _err = _safe(queries.estado_cuenta_clientes_saldos, [])
@@ -3578,7 +3604,13 @@ def estado_cuenta_lote_imprimir():
     # Códigos de la selección, en orden de impresión.
     codes: list[str] = []
     titulo = ""
-    if por == "grupo":
+    if por == "todos":
+        # TMT 2026-08-17 (dueña, pestaña "Todos"): todos los que deben, sin
+        # agrupar y en orden alfabético por código.
+        sub = sorted(filas, key=lambda r: (r.get("codigo_cli") or "").upper())
+        codes = [r["codigo_cli"] for r in sub]
+        titulo = "Todos los clientes con saldo"
+    elif por == "grupo":
         gmap: dict = {}
         for r in filas:
             k, label = _ec_group_key("grupo", r)

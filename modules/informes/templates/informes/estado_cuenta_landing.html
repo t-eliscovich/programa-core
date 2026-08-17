@@ -7,14 +7,15 @@
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 <div class="max-w-5xl">
   <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
-    {{ page_hero('Estados de cuenta', descripcion='Buscá un cliente, o mirá/imprimí por vendedor, provincia o grupo.') }}
+    {{ page_hero('Estados de cuenta', descripcion='Buscá un cliente, o mirá/imprimí por vendedor, provincia, grupo o todos.') }}
   </div>
 
   {# ── Tabs (misma barra que estado_cuenta_grupos) ─────────────────────── #}
   <div class="mb-6 flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 flex-wrap">
     <a href="{{ url_for('informes.estado_cuenta_landing') }}"
        class="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-sky-600 text-sky-700 dark:text-sky-400">Por cliente</a>
-    {% for key, label in [('vendedor','Vendedor'), ('provincia','Provincia'), ('grupo','Grupos')] %}
+    {# TMT 2026-08-17 (dueña): "Todos" última — misma barra que estado_cuenta_grupos. #}
+    {% for key, label in [('vendedor','Vendedor'), ('provincia','Provincia'), ('grupo','Grupos'), ('todos','Todos')] %}
       <a href="{{ url_for('informes.estado_cuenta_grupos', por=key) }}"
          class="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">{{ label }}</a>
     {% endfor %}

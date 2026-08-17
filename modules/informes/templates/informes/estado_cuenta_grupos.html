@@ -22,7 +22,7 @@
 
 <div class="max-w-4xl">
   <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
-    {{ page_hero('Estados de cuenta', descripcion='Saldo de clientes con deuda — por cliente, vendedor, provincia o grupo.') }}
+    {{ page_hero('Estados de cuenta', descripcion='Saldo de clientes con deuda — por cliente, vendedor, provincia, grupo o todos.') }}
     {% if mode == 'list' %}
       <a href="{{ url_for('informes.estado_cuenta_lote_imprimir', por=por, sel=sel) }}"
          class="no-print rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
@@ -33,12 +33,19 @@
          class="no-print rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
         Imprimir estados completos
       </a>
+    {% elif mode == 'todos' %}
+      <a href="{{ url_for('informes.estado_cuenta_lote_imprimir', por='todos') }}"
+         class="no-print rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
+        Imprimir estados completos
+      </a>
     {% endif %}
   </div>
 
   {# ── Tabs ─────────────────────────────────────────────────────────────── #}
   <div class="no-print mb-4 flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 flex-wrap">
-    {% set tabs = [('cliente','Por cliente'), ('vendedor','Vendedor'), ('provincia','Provincia'), ('grupo','Grupos')] %}
+    {# TMT 2026-08-17 (dueña): "Todos" va ÚLTIMA — todos los clientes con deuda,
+       sin agrupar, para imprimir el lote completo de una. #}
+    {% set tabs = [('cliente','Por cliente'), ('vendedor','Vendedor'), ('provincia','Provincia'), ('grupo','Grupos'), ('todos','Todos')] %}
     {% for key, label in tabs %}
       {% if key == 'cliente' %}
         {% set href = url_for('informes.estado_cuenta_landing') %}
@@ -118,6 +125,57 @@
 
     {% if not clientes %}
       <p class="text-slate-500 text-sm">No hay clientes con saldo para esta selección.</p>
+    {% else %}
+    <table class="ec-grp w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
+          <th class="text-left py-2 px-2">Código</th>
+          <th class="text-left py-2 px-2">Cliente</th>
+          <th class="text-right py-2 px-2">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clientes %}
+          <tr class="border-b border-slate-100 dark:border-slate-800/60">
+            <td class="py-1 px-2 font-mono text-xs">
+              <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
+                 class="hover:underline text-sky-700 dark:text-sky-400">{{ c.codigo_cli }}</a>
+            </td>
+            <td class="py-1 px-2">{{ c.nombre }}</td>
+            <td class="py-1 px-2 text-right tabular-nums">{{ c.saldo | money_es }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
+          <td class="py-2 px-2" colspan="2">TOTAL</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% endif %}
+
+  {# ═══════════════════ MODE: TODOS (sin agrupar) ══════════════════════════ #}
+  {# TMT 2026-08-17 (dueña): el renglón es EL MISMO que el de las otras
+     pestañas — código, cliente, saldo. Probamos traerle acá las cifras del
+     encabezado de la ficha (cheques, total, cupo, % usado) y lo bajó:
+     *"mejor solo saldo. como todo el resto"*. Para el desglose de un cliente
+     está su ficha, que es adonde lleva el link del código. #}
+  {% elif mode == 'todos' %}
+    <p class="no-print text-sm text-slate-500 mb-3">
+      Todos los clientes con saldo, en orden alfabético por código.
+    </p>
+    <div class="print-only mb-2">
+      <div style="font-size:11pt;font-weight:bold;">Estado de cuenta — todos los clientes</div>
+      <div style="font-size:8pt;">Impreso {{ g.now | fecha_es }} · {{ clientes|length }} clientes · total {{ total | money_es }}</div>
+    </div>
+    <h2 class="no-print text-lg font-semibold mb-3">
+      Todos
+      <span class="text-sm font-normal text-slate-500">· {{ clientes|length }} clientes · {{ total | money_es }}</span>
+    </h2>
+
+    {% if not clientes %}
+      <p class="text-slate-500 text-sm">No hay clientes con saldo.</p>
     {% else %}
     <table class="ec-grp w-full text-sm border-collapse">
       <thead>
