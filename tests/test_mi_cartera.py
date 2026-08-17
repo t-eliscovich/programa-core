@@ -397,11 +397,97 @@ def ficha(vendedor_logueado, monkeypatch):
     return r.data.decode()
 
 
+def _tabla(html: str) -> str:
+    """El `<table class="ec">` de facturas, sin el CSS ni el resto del cascarón.
+
+    Buscar una palabra en el HTML entero engaña: el `<style>` del template
+    viaja al navegador con sus comentarios, y ahí aparecen "Abonado" y
+    "Vencida" aunque la tabla no los dibuje. Un test que dice "esta columna ya
+    no está" tiene que mirar la tabla.
+    """
+    import re
+
+    m = re.search(r'<table class="ec">.*?</table>', html, re.S)
+    assert m, "no está la tabla del estado de cuenta"
+    return m.group(0)
+
+
+def _encabezados(html: str) -> list[str]:
+    """Los rótulos de las columnas, en orden."""
+    import re
+
+    return [re.sub(r"<[^>]+>", "", th).strip()
+            for th in re.findall(r"<th[^>]*>(.*?)</th>", _tabla(html), re.S)]
+
+
 def test_la_ficha_tiene_las_columnas_del_estado_de_cuenta(ficha):
-    """Los mismos rótulos que `informes/_estado_cuenta_impreso.html`."""
-    for rotulo in ("Fecha", "Número", "Importe", "Abonado", "Saldo", "Acum.",
-                   "Totales"):
-        assert rotulo in ficha, f"falta la columna «{rotulo}»"
+    """Las mismas COLUMNAS que la oficina, reacomodadas para 390 px.
+
+    Fecha y Número no son dos columnas sino una, «Factura»: eran las dos más
+    anchas de la tabla para decir dos cosas que se leen juntas (cuál es la
+    factura). Apiladas liberan 33 px, que es lo que hacía falta para que las
+    cifras entren cómodas. Ningún dato se pierde — se reacomodan.
+    """
+    assert _encabezados(ficha) == ["Factura", "Importe", "Abonado", "Saldo",
+                                   "Acum."]
+    assert "Totales (3)" in ficha
+
+    # La fecha sigue estando, adentro de la celda de la factura, con los días.
+    assert "15/01/26" in ficha
+    # Y la palabra "Vencida" ya no va: la fecha en rojo lo dice, y decirlo dos
+    # veces costaba un renglón por fila. (Se busca en el CUERPO: los
+    # comentarios del CSS del template también viajan al navegador.)
+    assert "Vencida" not in _tabla(ficha)
+
+
+def test_una_columna_vacia_en_todas_las_filas_no_se_dibuja(vendedor_logueado,
+                                                           monkeypatch):
+    """Tamara 2026-08-17: *"se ve bastante feo en el celu"*.
+
+    AGU no tiene una sola retención: la columna eran veinte guiones en fila
+    robándole ancho a las cifras que sí dicen algo. Con 390 px, una columna que
+    no aporta ningún dato es la más cara de todas.
+
+    Mismo criterio que el resto del portal: sin meta no hay anillo, con una
+    sola semana no hay barras, los meses sin comisión no se listan.
+
+    Se decide por CLIENTE, no por fila: con UNA retención la columna aparece
+    entera, con guiones en las filas sin — si no, la aritmética no se podría
+    seguir hacia abajo.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+
+    def _ficha(ec):
+        monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", ec)
+        return vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    # Sin ninguna retención: la columna no está.
+    sin_ret = _encabezados(_ficha(_ec_con_facturas))
+    assert "Retenc." not in sin_ret
+    assert "Abonado" in sin_ret, "sí hay abonos, esa columna tiene que estar"
+
+    # Con UNA sola: aparece, y las otras dos filas llevan guión.
+    def _con_una(cod):
+        d = _ec_con_facturas(cod)
+        d["facturas"][1]["retencion"] = 98.76
+        d["totales"]["retencion"] = 98.76
+        return d
+
+    con_ret = _ficha(_con_una)
+    assert "Retenc." in _encabezados(con_ret)
+    assert con_ret.count('class="mono ret"') == 4, "3 filas + el pie"
+
+    # Y una cartera sin un solo abono tampoco paga esa columna.
+    def _sin_abonos(cod):
+        d = _ec_con_facturas(cod)
+        for f in d["facturas"]:
+            f["abono"] = 0.0
+        d["totales"]["abono"] = 0.0
+        return d
+
+    assert "Abonado" not in _encabezados(_ficha(_sin_abonos))
 
 
 def test_el_acumulado_corre_y_la_ultima_fila_da_el_saldo(ficha):
