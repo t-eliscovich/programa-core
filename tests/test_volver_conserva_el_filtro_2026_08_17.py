@@ -86,12 +86,18 @@ def test_el_querystring_del_referrer_se_conserva_entero(app):
 # ─────────────────── qué RECHAZA (entrada no confiable) ───────────────────
 
 @pytest.mark.parametrize("hostil", [
-    "//evil.com/phishing",          # protocol-relative: el clásico open-redirect
-    "https://evil.com/phishing",    # host ajeno
-    "http://localhost.evil.com/x",  # host que sólo se PARECE al nuestro
-    "javascript:alert(1)",          # esquema ejecutable
+    # ⭐ Todos con un path que SÍ resuelve (/historial). Con un path inventado
+    # los rechazaría `_resuelve_por_get` y este test no probaría nada: la
+    # prueba por mutación mostró que rompiendo `_es_relativa` seguían pasando.
+    # El peligroso de verdad es justamente éste — el navegador lee
+    # `//evil.com/historial` como otro HOST, no como una ruta nuestra.
+    "//evil.com/historial",           # protocol-relative: el open-redirect clásico
+    "https://evil.com/historial",     # host ajeno
+    "http://localhost.evil.com/historial",  # host que sólo se PARECE al nuestro
+    "javascript:alert(1)",            # esquema ejecutable
     "/historial\r\nSet-Cookie: a=b",  # inyección de header
-    "facturas",                     # relativa sin barra
+    "historial",                      # relativa sin barra
+    "\\\\evil.com\\historial",           # backslashes: algunos navegadores los normalizan a /
     "",
     None,
 ])
@@ -194,7 +200,15 @@ def _anclas_volver():
             continue
         for m in ANCLA_VOLVER.finditer(txt):
             label = re.sub(r"\s+", " ", m.group("label")).strip()
-            if not re.match(r"^(?:&larr;|←)\s*Volver\b", label):
+            # Dos formas de ser un botón "Volver": el texto plano (los que
+            # todavía no se migraron) y la llamada a volver_texto() (los ya
+            # migrados). Mirar sólo la primera dejaba un agujero: revertir el
+            # href de una pantalla ya migrada la sacaba del barrido, porque su
+            # etiqueta ya no es texto sino una expresión. Lo encontró la prueba
+            # por mutación.
+            es_texto = bool(re.match(r"^(?:&larr;|←)\s*Volver\b", label))
+            es_helper = "volver_texto(" in label
+            if not (es_texto or es_helper):
                 continue
             yield f, m.group("href"), label
 
