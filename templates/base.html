@@ -1016,13 +1016,6 @@
       <details class="sidebar-section" data-key="datos">
         <summary>Clientes y proveedores</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
-        {# TMT 2026-08-17 — Contactos bajó acá desde el menú del nombre. El
-           menú del nombre tenía "Bases de datos" repitiendo lo que ya estaba
-           en el sidebar (Clientes, Proveedores, Lista de precios, Bancos), y
-           la dueña lo sacó; pero ese era el ÚNICO link a /clientes/contactos
-           en toda la app, así que la pantalla quedaba sin puerta. Va donde
-           corresponde: es el directorio de teléfonos/mails de los clientes. #}
-        {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.contactos', 'Contactos', 'users') }}{% endif %}
         {# TMT 2026-07-09 (dueña): estado de cuenta visible para todos. #}
         {{ nav_link('informes.estado_cuenta_landing', 'Estados de cuenta', 'receipt') }}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
@@ -1371,9 +1364,20 @@
             {# TMT 2026-08-17 (dueña): *"no hace falta estas bases de datos
                dentro de mi usuario"*. Acá vivía una sección "Bases de datos"
                con Clientes / Proveedores / Lista de precios / Bancos /
-               Contactos: las cuatro primeras ya estaban en el sidebar (era
-               puro duplicado) y Contactos se mudó al sidebar, al lado de
-               Clientes, porque este era su único link. #}
+               Contactos: las cuatro primeras ya estaban en el sidebar, era
+               puro duplicado.
+
+               Contactos se queda, solo y sin encabezado. Se probó bajarlo al
+               sidebar y la dueña lo bajó de ahí: *"los contactos estan dentro
+               de los clientes... si no volve a meter esto dentro de mi usuario
+               como estaba antes"*. Verificado en vivo el 17/08: /clientes NO
+               linkea a /clientes/contactos, así que este sigue siendo el
+               ÚNICO link a esa pantalla en toda la app — si se saca, el
+               directorio queda sin puerta (no da 404: simplemente deja de
+               existir para quien lo usa). No sacarlo sin poner otro. #}
+            {% if tiene_permiso('clientes.ver') %}
+              <a href="{{ url_for('clientes.contactos') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Contactos</a>
+            {% endif %}
 
             {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
             {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') %}
