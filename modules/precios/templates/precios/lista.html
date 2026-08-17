@@ -357,6 +357,23 @@
       despues se cobra. Confirmala o corregila.
     </p>
 
+    {% if puede_editar %}
+    {# TMT 2026-08-17 (Tamara): el catálogo de colores y su clase se traen del
+       atributo Color de Asinfo. Corre solo a las 11:00 y 16:00; el botón es
+       para no esperar la ventana cuando acaban de cargar un color allá. #}
+    <form method="post" action="{{ url_for('precios.colores_sync') }}" class="mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit"
+              class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+        Traer colores de Asinfo
+      </button>
+      <span class="ml-2 text-xs text-slate-500 dark:text-slate-400">
+        completa la clase de precio con la categor&iacute;a de Asinfo (bajo, medio, fuerte&hellip;).
+        Los ESPECIALES (tie dye, jean, drill, ray&oacute;n) quedan afuera: esa clase no est&aacute; en la lista.
+      </span>
+    </form>
+    {% endif %}
+
     <div id="colores-asinfo-estado" class="text-xs text-slate-400">Buscando en Asinfo&hellip;</div>
     <div id="colores-asinfo-tabla" class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800" style="display:none;">
       <table class="w-full text-sm" style="border-collapse:collapse;">

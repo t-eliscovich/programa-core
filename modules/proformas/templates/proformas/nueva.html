@@ -183,12 +183,33 @@
     if (c.cod && !COLORES_MAP[c.cod.toUpperCase()]) COLORES_MAP[c.cod.toUpperCase()] = c;
   });
 
-  // Datalist de colores para el autocompletado de la columna Color.
+  // Datalist de colores: el VALOR es el CÓDIGO de 3 letras y el nombre queda
+  // de etiqueta (COA → COCOA). TMT 2026-08-17 (Tamara): *"hace la proforma por
+  // codigo y no por nombre de color, ejemplo COA en vez de COCOA"* — el código
+  // es lo que la fábrica y Asinfo usan para nombrar un color, y el nombre
+  // largo entra igual por el buscador del datalist (tipear COCOA encuentra COA).
   (function () {
     const dl = document.createElement('datalist'); dl.id = 'colores-datalist';
-    COLORES.forEach(c => { const o = document.createElement('option'); o.value = c.color; dl.appendChild(o); });
+    COLORES.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.cod || c.color;
+      if (c.color && c.color.toUpperCase() !== (c.cod || '').toUpperCase()) o.textContent = c.color;
+      dl.appendChild(o);
+    });
     document.body.appendChild(dl);
   })();
+
+  // El texto que va al PAPEL: "COA COCOA" (Tamara 2026-08-17: código en
+  // pantalla, código + nombre en la hoja que recibe el cliente). Si el color
+  // no está en el catálogo sale tal cual se tipeó.
+  function colorPapel(v) {
+    const k = (v || '').trim().toUpperCase();
+    const info = COLORES_MAP[k];
+    if (!info) return k;
+    const cod = (info.cod || k).toUpperCase();
+    const nom = (info.color || '').toUpperCase();
+    return (nom && nom !== cod) ? (cod + ' ' + nom) : cod;
+  }
 
   // ── Tipos de tela + regla de conversión CANTIDAD → KG ─────────────
   // col   = columna de precio en la matriz (puños usa 'cuellos').
@@ -311,6 +332,7 @@
     inColor.type = 'text'; inColor.maxLength = 60;
     inColor.setAttribute('list', 'colores-datalist');
     inColor.autocomplete = 'off';
+    inColor.placeholder = 'cód.';
     inColor.className = 'border rounded px-2 py-1 text-sm w-full uppercase js-color';
     tdColor.appendChild(inColor);
 
@@ -434,10 +456,12 @@
     });
     inColor.addEventListener('input', () => { inColor.value = inColor.value.toUpperCase(); setClaseDesdeColor(); autoPrecio(); });
     inColor.addEventListener('change', () => {
-      // Si tipeó un CÓDIGO (ej. NEG), lo expande al nombre (NEGRO) — como el dBase.
+      // Se queda con el CÓDIGO (Tamara 2026-08-17). Si tipeó el nombre entero
+      // —o si es una proforma vieja, guardada cuando la columna llevaba el
+      // nombre— se reemplaza por su código: NEGRO → NEG, COCOA → COA.
       const v = (inColor.value || '').trim().toUpperCase();
       const info = COLORES_MAP[v];
-      if (info && info.color && v !== info.color.toUpperCase()) inColor.value = info.color;
+      if (info && info.cod && v !== info.cod.toUpperCase()) inColor.value = info.cod.toUpperCase();
       setClaseDesdeColor(); autoPrecio();
     });
     inPiezas.addEventListener('input', autoKgDesdePiezas);
@@ -719,14 +743,15 @@
       const t = tipoObjDe(tr.querySelector('.js-tipo').value);
       const tipo = t ? t.label : (tr.querySelector('.js-tipo').value || '').trim();
       const unidad = t ? t.unidad : '';
-      const color = tr.querySelector('.js-color').value.trim();
+      const color = tr.querySelector('.js-color').value.trim().toUpperCase();
+      const colorTxt = colorPapel(color);
       const cant = parseNum(tr.querySelector('.js-cant').value);
       const kg = kgDe(t, cant);
       const pu = parseNum(tr.querySelector('.js-precio').value);
       if (cant === 0 && pu === 0) return;
       const imp = kg * pu;
       subtotal += imp;
-      rows.push({tipo, color, cant, unidad, kg, pu, imp});
+      rows.push({tipo, color, colorTxt, cant, unidad, kg, pu, imp});
     });
     if (rows.length === 0) {
       const f = body.querySelector('.js-tipo'); if (f) f.focus();
@@ -762,7 +787,9 @@
         const g = porTipo.get(r.tipo);
         g.kg += r.kg; g.imp += r.imp;
         if (!g.porColor.has(r.color)) {
-          const c = {color: r.color, filas: [], kg: 0, imp: 0};
+          // Se AGRUPA por código (la clave canónica) y se IMPRIME el
+          // "COA COCOA" — dos filas del mismo color siguen siendo un subbloque.
+          const c = {color: r.color, colorTxt: r.colorTxt, filas: [], kg: 0, imp: 0};
           g.porColor.set(r.color, c); g.colores.push(c);
         }
         const c = g.porColor.get(r.color);
@@ -776,7 +803,7 @@
     const filasHtml = agruparParaHoja(rows).map(g => {
       const cuerpo = g.colores.map((c, ci) => c.filas.map((r, ri) =>
         `<tr${(ri === 0 && ci > 0) ? ' class="sep"' : ''}>` +
-        `<td class="c">${ri === 0 ? esc(c.color) : ''}</td>` +
+        `<td class="c">${ri === 0 ? esc(c.colorTxt || c.color) : ''}</td>` +
         (ES_PEDIDO ? '' : `<td class="r">${r.cant ? fmtCant(r.cant) + ' ' + esc(r.unidad) : ''}</td>`) +
         `<td class="r">${fmt(r.kg)}</td><td class="r">${fmt(r.pu)}</td>` +
         `<td class="r">${fmt(r.imp)}</td></tr>`

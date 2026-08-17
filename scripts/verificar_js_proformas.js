@@ -45,6 +45,8 @@ function set(el, v) { el.value = v; el.dispatchEvent(new w.Event('input', {bubbl
 set(d.getElementById('codigo-cli-input'), 'ZQX');
 const fila = d.querySelector('#lineas-body tr');
 set(fila.querySelector('.js-tipo'), 'JERSEY');
+// Se tipea el NOMBRE entero: la pantalla lo tiene que dejar en su CÓDIGO
+// (Tamara 2026-08-17: "hace la proforma por codigo y no por nombre de color").
 set(fila.querySelector('.js-color'), 'NEGRO');
 set(fila.querySelector('.js-piezas'), '100');
 set(fila.querySelector('.js-cant'), '2200');
@@ -61,6 +63,9 @@ setTimeout(() => {
   if (p.url && !String(p.url).includes('/proformas/guardar')) err.push('POST a otra ruta: ' + p.url);
   if (!p.csrf) err.push('el POST fue sin CSRF');
   const b = p.body || {};
+  // ── el COLOR va por código ──────────────────────────────────────────
+  if (fila.querySelector('.js-color').value !== 'NEG')
+    err.push('la pantalla no dejó el código: ' + fila.querySelector('.js-color').value);
   if (b.codigo_cli !== 'ZQX') err.push('cliente mal: ' + b.codigo_cli);
   if (!b.lineas || b.lineas.length !== 1) err.push('líneas: ' + JSON.stringify(b.lineas));
   else {
@@ -69,11 +74,14 @@ setTimeout(() => {
     if (l.cantidad !== 100) err.push('piezas mal: ' + l.cantidad);
     if (l.cantidad_kilos !== 2200) err.push('kg mal: ' + l.cantidad_kilos);
     if (l.precio_unitario !== 9.12) err.push('precio mal: ' + l.precio_unitario);
+    if (l.color !== 'NEG') err.push('se guardó el nombre y no el código: ' + l.color);
   }
   if (b.es_pedido !== true) err.push('es_pedido mal');
   if (!escrito.includes('Guardando…')) err.push('la ventana no mostró "Guardando…" mientras tanto');
   if (!escrito.includes('N° 4242')) err.push('la hoja salió SIN el N° de proforma');
   if (!escrito.includes('Factura Proforma')) err.push('la hoja no dice Factura Proforma');
+  // El papel que recibe el cliente lleva CÓDIGO + NOMBRE.
+  if (!escrito.includes('NEG NEGRO')) err.push('la hoja no dice "NEG NEGRO" (código + nombre)');
   const estado = d.getElementById('prof-estado').textContent;
   if (!estado.includes('4242')) err.push('la pantalla no muestra el N°: ' + estado);
 

@@ -371,6 +371,23 @@ def colores_asinfo():
     })
 
 
+@precios_bp.route("/precios/colores-sync", methods=["POST"])
+@requiere_login
+@requiere_permiso("precios.editar")
+def colores_sync():
+    """Trae del atributo Color de Asinfo los colores y su CLASE de precio.
+
+    El mismo pase que corre solo dos veces por día; el botón existe para no
+    tener que esperar a la ventana cuando en Asinfo acaban de cargar un color
+    (Tamara 2026-08-17).
+    """
+    from modules.precios import colores_asinfo
+
+    rep = colores_asinfo.sincronizar((g.user or {}).get("username", "web"))
+    flash(colores_asinfo.frase(rep), "success" if rep.get("ok") else "error")
+    return redirect(url_for("precios.lista", _anchor="colores-asinfo"))
+
+
 @precios_bp.route("/precios/color-clase", methods=["POST"])
 @requiere_login
 @requiere_permiso("precios.editar")

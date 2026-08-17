@@ -104,6 +104,25 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("sync clientes (fondo): %s", e)
+            # TMT 2026-08-17 (Tamara: "hay colores que siguen sin mostrarse
+            # en facturas proforma… asinfo tambien tiene la categoria"). El
+            # catálogo de COLORES y su clase de precio se sincronizan con el
+            # atributo Color de Asinfo en las MISMAS ventanas que los clientes
+            # (11:00 y 16:00 EC). SYNC_COLORES_AUTO=0 lo apaga.
+            try:
+                from modules.precios import colores_asinfo as _sync_col
+                sk = _sync_col.correr_si_toca()
+                if sk.get("corrio"):
+                    rep = sk.get("reporte") or {}
+                    _LOG.info(
+                        "sync colores (fondo): %s altas, %s con clase nueva, "
+                        "%s reclasificados",
+                        len(rep.get("altas") or []),
+                        len(rep.get("con_clase") or []),
+                        len(rep.get("reclasificados") or []),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("sync colores (fondo): %s", e)
             # TMT 2026-07-30 (dueña): las COMPRAS LOCALES de hilo (HY, EP) se
             # cargan solas cuando Asinfo marca la recepción — no tienen anticipo,
             # así que el pasivo nace al recibir. Mismo patrón que tejeduría: kg de
