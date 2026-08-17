@@ -79,7 +79,7 @@
     <div class="card rojo">
       <div class="lbl">Faltan</div>
       <div class="val">{{ total_faltan|num_es(0) }} kg</div>
-      <div class="sub">en {{ total_colores_faltan }} colores</div>
+      <div class="sub">en {{ total_colores_faltan }} {{ 'color' if total_colores_faltan == 1 else 'colores' }}</div>
     </div>
   </div>
 
@@ -101,7 +101,7 @@
       {{ resumen.inventario_kg|num_es(0) }} en bodega ·
       {{ resumen.produccion_kg|num_es(0) }} tinturándose ·
       <strong style="color:#b91c1c">faltan {{ resumen.faltan_kg|num_es(0) }} kg</strong>
-      en {{ resumen.colores_faltan }} de {{ resumen.colores }} colores.
+      en {{ resumen.colores_faltan }} de {{ resumen.colores }} {{ 'color' if resumen.colores == 1 else 'colores' }}.
     </p>
   {% endif %}
 
@@ -109,7 +109,7 @@
     <h3>
       <span>{{ t.tela }}</span>
       <span class="muted">
-        {{ t.filas|length }} colores ·
+        {{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
         {% if t.pedido_rollos %}{{ t.pedido_rollos|num_es(0) }} roll · {% endif %}
         {% if t.pedido_un %}{{ t.pedido_un|num_es(0) }} un · {% endif %}
         {{ t.pedido_kg|num_es(0) }} kg

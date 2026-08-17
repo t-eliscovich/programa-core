@@ -401,3 +401,12 @@ def test_el_color_sale_del_ultimo_token_y_no_de_restarle_el_nombre_de_la_tela():
     sql = service._sql_pendientes()
     assert service.SQL_COLOR in sql
     assert "REPLACE(ISNULL(pr.nombre" not in sql
+
+
+def test_una_tela_con_un_solo_color_no_dice_1_colores(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([_fila()], True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "1 color ·" in body
+    assert "1 colores" not in body
