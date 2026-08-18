@@ -287,7 +287,12 @@ def total_en_unidad(kilos: float, unidad: str, en_unidades: bool,
         if not un_por_kg:
             return round(kilos), 0, "kg"
         return round(kilos * un_por_kg), 0, "un"
-    return round(kilos / KG_POR_ROLLO, 1), 1, "roll"
+    # Rollos ENTEROS (dueña 2026-08-18: "no puede haber medios"). Un pedido o
+    # faltante positivo nunca se muestra como 0 rollos: medio rollo sube a 1.
+    r = round(kilos / KG_POR_ROLLO)
+    if kilos > 0 and r == 0:
+        r = 1
+    return int(r), 0, "roll"
 
 
 def por_categoria(filas: list[dict]) -> list[dict]:
@@ -323,7 +328,11 @@ def por_categoria(filas: list[dict]) -> list[dict]:
         # PEDIDO no se convierte: ya lo tenemos en rollos/unidades desde Asinfo.
         b["faltan_d"], b["dec"], b["u"] = total_en_unidad(
             b["faltan_kg"], "alt", b["en_unidades"], b["un_por_kg"])
-        b["pedido_d"] = b["pedido_un"] if b["en_unidades"] else b["pedido_rollos"]
+        if b["en_unidades"]:
+            b["pedido_d"] = round(b["pedido_un"])
+        else:
+            b["pedido_d"] = (round(b["pedido_rollos"]) if b["pedido_rollos"]
+                             else round(b["pedido_kg"] / KG_POR_ROLLO))
     return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
 
 
@@ -555,19 +564,31 @@ def en_unidad(filas: list[dict], unidad: str) -> list[dict]:
         k = _factor(f, unidad)
         usa_alt = k is not None and unidad == "alt"
         k = k or 1.0
-        # Rollos con un decimal: "0 rollos" para 12 kg de tela sería mentira.
-        # Unidades y kilos, enteros: son cosas que se cuentan de a una.
-        dec = 1 if (usa_alt and not f["en_unidades"]) else 0
+        # Rollos ENTEROS (dueña 2026-08-18): nada de medios. Cuellos y puños en
+        # unidades enteras; kilos enteros.
         for campo, destino in (("inventario_kg", "inventario_d"),
-                               ("produccion_kg", "produccion_d"),
-                               ("faltan_kg", "faltan_d")):
-            f[destino] = round(f[campo] * k, dec)
-        if usa_alt:
-            f["pedido_d"] = f["pedido_un"] if f["en_unidades"] else f["pedido_rollos"]
+                               ("produccion_kg", "produccion_d")):
+            f[destino] = round(f[campo] * k)
+        # El faltante POSITIVO nunca se muestra como 0 (medio rollo sube a 1),
+        # o diría "ok" sobre algo que falta.
+        fk = round(f["faltan_kg"] * k)
+        if f["faltan_kg"] > 0 and fk == 0:
+            fk = 1
+        f["faltan_d"] = fk
+        if usa_alt and f["en_unidades"]:
+            f["pedido_d"] = round(f["pedido_un"])
+        elif usa_alt:
+            # Rollos nativos si los hay; si el pedido vino en kg (p.ej. Rib, que
+            # se pide por peso) se pasa a rollos, que si no mostraría 0.
+            pr = (round(f["pedido_rollos"]) if f["pedido_rollos"]
+                  else round(f["pedido_kg"] / KG_POR_ROLLO))
+            if f["pedido_kg"] > 0 and pr == 0:
+                pr = 1
+            f["pedido_d"] = pr
         else:
             f["pedido_d"] = round(f["pedido_kg"])
         f["u"] = etiqueta_unidad(unidad if usa_alt else "kg", f["en_unidades"])
-        f["decimales"] = dec
+        f["decimales"] = 0
     return filas
 
 
@@ -600,3 +621,84 @@ def pedidos_por_color() -> dict[str, list[dict]]:
         if cod:
             out.setdefault(cod, []).append(_fila_pedido(r))
     return out
+
+
+# ── Cortes nuevos (2026-08-18): color, cliente, categoría ────────────────────
+# La dueña pidió mirar lo mismo por cinco cortes, en el orden de su Excel
+# "Detalle de Pedidos": Color, Tipo de tela, Acabado, Cliente, Categoría. El
+# acabado no tiene fuente limpia a nivel producto en Asinfo (es atributo de
+# LOTE y el pedido no tiene lote), así que queda afuera por ahora.
+
+def nombres_color() -> dict[str, str]:
+    """`{código de color de 3 letras: nombre}` del catálogo local.
+
+    Sale de `scintela.tinto_costos` (`cod` → `color`), que el sync de colores
+    de Asinfo ya mantiene. NO se le pega a Asinfo: es una lectura local barata.
+    Fail-soft: `{}` si la tabla no está o la consulta falla (p.ej. vista_local
+    sin catálogo cargado) — ahí el color se muestra por su código pelado.
+    """
+    try:
+        import db
+        rows = db.fetch_all(
+            "SELECT UPPER(TRIM(cod)) AS cod, color FROM scintela.tinto_costos "
+            "WHERE cod IS NOT NULL AND TRIM(cod) <> ''"
+        )
+        return {r["cod"]: (r.get("color") or "").strip()
+                for r in (rows or []) if r.get("cod")}
+    except Exception:  # noqa: BLE001 — fail-soft: sin catálogo, código pelado
+        _LOG.warning("pedidos: no pude leer el catálogo de colores", exc_info=True)
+        return {}
+
+
+def por_color(filas: list[dict]) -> list[dict]:
+    """Los pedidos agrupados por COLOR (código de 3 letras + nombre).
+
+    Cada color trae sus variantes (una por producto/tela) ya con pedido, stock,
+    producción y faltante en la unidad en que se pide, y el color entero se
+    ordena por lo que más falta. El código es el grande y el nombre el chico
+    (pedido de la dueña 2026-08-18).
+    """
+    nombres = nombres_color()
+    acc: dict[str, list[dict]] = {}
+    for f in filas:
+        acc.setdefault(f["color"], []).append(f)
+    out = []
+    for cod, fs in acc.items():
+        en_unidad(fs, "alt")
+        fs.sort(key=lambda x: -x["faltan_kg"])
+        out.append({
+            "codigo": cod,
+            "nombre": nombres.get(cod.upper(), ""),
+            "u": fs[0]["u"],
+            "variants": fs,
+            "pedido": sum(x["pedido_d"] for x in fs),
+            "stock": sum(x["inventario_d"] for x in fs),
+            "prod": sum(x["produccion_d"] for x in fs),
+            "falta": sum(x["faltan_d"] for x in fs),
+        })
+    # Lo que más falta arriba; desempate por código para que el orden sea estable.
+    return sorted(out, key=lambda g: (-g["falta"], g["codigo"]))
+
+
+def por_cliente() -> list[dict]:
+    """Total pedido por CLIENTE (código), de todo lo pendiente, mayor primero.
+
+    ⚠ El total MEZCLA unidades (rollos, kilos y unidades de cuellos/puños) tal
+    como viene de Asinfo — igual que el Excel de la dueña. No se puede unificar
+    en una sola cifra sin bajar a producto, que es lo que hace el corte Color.
+    """
+    acc: dict[str, dict] = {}
+    for peds in pedidos_por_color().values():
+        for p in peds:
+            clave = p["codigo_cliente"] or p["cliente"]
+            if not clave:
+                continue
+            g = acc.setdefault(clave, {
+                "cliente": clave, "nombre": p["cliente"],
+                "pedido": 0.0, "lineas": 0,
+            })
+            g["pedido"] += p["cantidad"]
+            g["lineas"] += 1
+    for g in acc.values():
+        g["pedido"] = round(g["pedido"], 1)
+    return sorted(acc.values(), key=lambda g: (-g["pedido"], g["cliente"]))

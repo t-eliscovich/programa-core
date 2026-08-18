@@ -4,92 +4,78 @@
 
 {% block head_extra %}
 <style>
-  /* Todo inline/<style>: static/tailwind.css es un build JIT congelado y una
-     clase nueva no renderiza. Mismo lenguaje visual que Terminado Asinfo. */
-  .pd table{width:100%;max-width:900px;table-layout:fixed;border-collapse:collapse;
-    font-size:13px;margin:2px 0 18px}
-  .pd col.c-cod{width:21%}
-  .pd col.c-fec{width:12%}
-  .pd col.c-ped{width:15%}
-  .pd col.c-num{width:17.33%}
-  .pd th,.pd td{padding:5px 10px;border-bottom:1px solid #f1f5f9;text-align:right;
-    font-variant-numeric:tabular-nums;line-height:1.45}
-  .pd th:first-child,.pd td:first-child{text-align:left}
-  .pd thead th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;
-    text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1}
-  .pd tbody tr:hover td{background:#f8fafc}
-  .pd .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .pd .cod .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;
-    color:#0f172a;font-family:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
-  .pd .cod .abrir:hover .color{text-decoration:underline}
-  .pd .cod .chev{color:#cbd5e1;font-size:9px;line-height:1;flex:0 0 9px;
-    transition:transform .12s;align-self:center}
-  .pd .cod .abrir[aria-expanded="true"] .chev{transform:rotate(90deg);color:#475569}
-  /* `[hidden]` lo pisa cualquier `display:` heredado, así que la fila de
-     detalle se apaga por CLASE. Ver la memoria del 2026-08. */
-  .pd tr.det{display:none}
-  .pd tr.det.open{display:table-row}
-  .pd tr.det > td{background:#f8fafc;border-bottom:1px solid #f1f5f9;font-size:12px;
-    color:#475569;padding-top:5px;padding-bottom:5px}
-  /* La primera celda arranca corrida para que se lea como hija de la fila de
-     arriba, sin dejar de estar en la misma columna. */
-  .pd tr.det > td:first-child{padding-left:32px;font-family:inherit}
-  .pd .npd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;font-size:11px}
-  /* El cliente es su código de tres letras, que es como se lo nombra en todo
-     el programa. El nombre fiscal completo vive en el `title`. */
-  .pd .cli{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
-    font-weight:700;color:#1d4ed8;cursor:help}
-  .pd td.masinfo{text-align:left;padding-left:32px}
-  .pd td.masinfo a{font-size:11px;color:#1d4ed8;text-decoration:none}
-  .pd td.masinfo a:hover{text-decoration:underline}
-  .pd .cod .color{font-size:14px;font-weight:700;letter-spacing:.02em}
-  .pd .cod .prod{font-size:10px;color:#cbd5e1}
-  .pd .muted{color:#94a3b8;font-size:11px;font-weight:400}
-  /* Lo que falta es LO QUE HAY QUE MIRAR: rojo. Lo que sobra queda en gris —
-     no es un hallazgo, es el caso normal (se produce en lotes más grandes que
-     el pedido). Ver el deep dive del 17/08. */
-  .pd .falta{color:#b91c1c;font-weight:700}
-  .pd .ok{color:#94a3b8}
-  .pd .viejo{color:#b45309}
-  .pd h3{font-size:14px;font-weight:700;color:#0f172a;margin:22px 0 5px;max-width:900px;
-    display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-  .pd .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
-  .pd .tab{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;
-    color:#475569;text-decoration:none;background:#fff}
-  .pd .tab:hover{border-color:#94a3b8}
-  .pd .tab.on{background:#0f172a;border-color:#0f172a;color:#fff}
-  .pd .tab b{font-weight:700}
-  .pd .tab .n{color:#b91c1c;font-weight:700}
-  .pd .tab.on .n{color:#fca5a5}
-  .pd .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 6px;max-width:900px}
+  /* Todo inline/<style>: static/tailwind.css es un build JIT congelado. */
+  .pd{--rojo:#b91c1c}
+  .pd h1{font-size:20px;font-weight:700;color:#0f172a;margin:0}
+  .pd .nota{color:#64748b;font-size:12px;margin:6px 0 12px;max-width:900px;line-height:1.5}
+  .pd .nota a{color:#1d4ed8;text-decoration:none}
+  .pd .nota a:hover{text-decoration:underline}
+  .pd .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:10px 12px;border-radius:8px;font-size:13px;margin:10px 0;max-width:900px;line-height:1.5}
+  .pd .ver{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px;align-items:center}
+  .pd .ver .cap{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+  .pd .ver a{font-size:13px;padding:6px 14px;border-radius:7px;border:1px solid #e2e8f0;color:#475569;background:#fff;text-decoration:none}
+  .pd .ver a:hover{border-color:#94a3b8}
+  .pd .ver a.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
+  .pd .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 8px;max-width:900px}
   .pd .card{background:#f8fafc;border-radius:8px;padding:10px 12px}
   .pd .card .lbl{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
   .pd .card .val{font-size:19px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums}
   .pd .card .sub{font-size:11px;color:#64748b;margin-top:1px}
-  /* La tarjeta del faltante NO se pinta entera: sólo el número va en rojo.
-     El fondo rojo compite con las alertas de la tabla, que son las que hay
-     que ir a mirar. */
-  .pd .card.rojo .val{color:#b91c1c}
-  .pd .nota{color:#64748b;font-size:12px;margin:2px 0 12px;max-width:900px}
-  .pd .unid{font-size:12px;color:#64748b;margin:0 0 10px;display:flex;gap:6px;align-items:center}
-  .pd .unid a{color:#475569;text-decoration:none;border:1px solid #e2e8f0;border-radius:6px;
-    padding:3px 10px;background:#fff}
-  .pd .unid a:hover{border-color:#94a3b8}
-  .pd .unid a.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
-  .pd .nota a{color:#1d4ed8;text-decoration:none}
-  .pd .nota a:hover{text-decoration:underline}
-  .pd .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;
-    padding:10px 12px;border-radius:8px;font-size:13px;margin:10px 0}
+  .pd .card.rojo .val{color:var(--rojo)}
+  .pd .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
+  .pd .tab{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;color:#475569;text-decoration:none;background:#fff}
+  .pd .tab:hover{border-color:#94a3b8}
+  .pd .tab.on{background:#0f172a;border-color:#0f172a;color:#fff}
+  .pd .tab .n{color:var(--rojo);font-weight:700}
+  .pd .tab.on .n{color:#fca5a5}
+  .pd table{width:100%;max-width:900px;table-layout:fixed;border-collapse:collapse;font-size:13px;margin:6px 0 18px}
+  .pd th,.pd td{padding:5px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-variant-numeric:tabular-nums;line-height:1.45;overflow:hidden;text-overflow:ellipsis}
+  .pd th:first-child,.pd td:first-child{text-align:left}
+  .pd thead th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1;white-space:normal}
+  .pd tbody tr:hover td{background:#f8fafc}
+  .pd .muted{color:#94a3b8;font-size:11px;font-weight:400}
+  .pd .u{font-size:11px;color:#64748b;font-weight:600}
+  .pd .falta{color:var(--rojo);font-weight:700}
+  .pd .okc{color:#94a3b8}
+  .pd .viejo{color:#b45309}
+  .pd h3{font-size:14px;font-weight:700;color:#0f172a;margin:20px 0 4px;max-width:900px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .pd .cli{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;color:#1d4ed8;cursor:help}
+  .pd .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .pd .color{font-size:14px;font-weight:700;letter-spacing:.02em}
+  .pd .prod{font-size:10px;color:#cbd5e1}
+  .pd .bar{height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden;min-width:60px}
+  .pd .bar>i{display:block;height:100%;background:#0f172a}
+  .pd .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;color:#0f172a;font:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
+  .pd .abrir:hover .color,.pd .abrir:hover .telaname{text-decoration:underline}
+  .pd .chev{color:#cbd5e1;font-size:9px;line-height:1;transition:transform .12s;align-self:center;flex:0 0 9px}
+  .pd .abrir[aria-expanded="true"] .chev{transform:rotate(90deg);color:#475569}
+  /* desplegables: se apagan por CLASE ([hidden] lo pisa cualquier display heredado) */
+  .pd tr.det{display:none}
+  .pd tr.det.open{display:table-row}
+  .pd tr.vr{display:none}
+  .pd tr.vr.open{display:table-row}
+  .pd tr.det>td{background:#f8fafc;font-size:12px;color:#475569}
+  .pd td.masinfo{text-align:left;padding-left:32px}
+  .pd td.masinfo a{font-size:11px;color:#1d4ed8;text-decoration:none}
+  .pd td.masinfo a:hover{text-decoration:underline}
+  .pd .npd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;font-size:11px}
+  /* corte color: fila-cabecera del color */
+  .pd tr.ghead>td{background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:700;padding:8px 10px;cursor:pointer}
+  .pd tr.ghead:hover>td{background:#eef2f7}
+  .pd tr.ghead .ccode{font-size:15px;font-weight:700;letter-spacing:.03em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .pd tr.ghead .cname{font-size:11px;color:#64748b;font-weight:600;margin-left:8px}
+  .pd tr.vr>td:first-child{padding-left:26px}
+  .pd .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .pd .chip{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:1px 8px;font-size:11px}
+  .pd .chip b{color:#1d4ed8;font-family:ui-monospace,monospace}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="pd">
-  <h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:0">Pedidos pendientes</h1>
-  <p class="nota">
-    Lo que los clientes pidieron y todavía no se despachó, contra lo que hay en bodega
-    y lo que se está tinturando. Fuente: Asinfo.
-  </p>
+  <h1>Pedidos pendientes</h1>
+  <p class="nota">Lo que los clientes pidieron y todavía no se despachó, contra lo que hay en bodega
+  y lo que se está produciendo. Rollos enteros; cuellos y puños en unidades. Fuente: Asinfo.</p>
 
   {% if not disponible %}
     <div class="aviso">
@@ -101,142 +87,214 @@
     <div class="aviso">No hay pedidos pendientes de menos de {{ dias_pedido_max }} días.</div>
   {% else %}
 
-  {% if resumen %}
-  <div class="cards">
-    <div class="card">
-      <div class="lbl">Colores pedidos</div>
-      <div class="val">{{ resumen.colores }}</div>
-      <div class="sub">de {{ resumen.categoria }}</div>
-    </div>
-    <div class="card">
-      <div class="lbl">Pedido</div>
-      <div class="val">{{ resumen.pedido_d|num_es(resumen.dec) }} {{ resumen.u }}</div>
-    </div>
-    <div class="card rojo">
-      <div class="lbl">Faltan</div>
-      <div class="val">{{ resumen.faltan_d|num_es(resumen.dec) }} {{ resumen.u }}</div>
-      <div class="sub">en {{ resumen.colores_faltan }} {{ 'color' if resumen.colores_faltan == 1 else 'colores' }}</div>
-    </div>
-  </div>
-  <p class="nota">
-    {% if solo_faltan %}
-      Mostrando sólo los colores que necesitan tela.
-      <a href="{{ url_for('pedidos.lista', cat=activa) }}">Ver todos los pedidos</a>
-    {% else %}
-      <a href="{{ url_for('pedidos.lista', cat=activa, falta=1) }}">Ver sólo lo que falta</a>
-    {% endif %}
-  </p>
-  {% endif %}
-
-  <div class="tabs">
-    {% for c in categorias %}
-      <a class="tab{% if c.categoria == activa %} on{% endif %}"
-         href="{{ url_for('pedidos.lista', cat=c.categoria) }}">
-        <b>{{ c.categoria }}</b>
-        {% if c.faltan_kg > 0 %}<span class="n">{{ c.faltan_d|num_es(c.dec) }} {{ c.u }}</span>{% endif %}
-      </a>
+  <div class="ver">
+    <span class="cap">Ver por</span>
+    {% for c in cortes %}
+      <a class="{{ 'on' if c == corte else '' }}" href="{{ url_for('pedidos.lista', corte=c) }}">{{ cortes_lbl[c] }}</a>
     {% endfor %}
   </div>
 
-  {% set u_col = u_alt %}
-  {% for t in telas %}
-    <h3>
-      <span>{{ t.tela }}</span>
-      <span class="muted">
-        {{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
-        en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.faltan_kg %} ·
-        <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }}</span>{% endif %}
-      </span>
-    </h3>
+  {# ═══════════ COLOR ═══════════ #}
+  {% if corte == 'color' %}
+    <p class="nota">Agrupado por color: el código grande, el nombre al lado. Abrí un color para ver
+      sus telas y qué cliente pidió cada una. <span class="muted">Stock y producción salen de Asinfo.</span></p>
     <table>
-      <colgroup>
-        <col class="c-cod"><col class="c-fec"><col class="c-ped">
-        <col class="c-num"><col class="c-num"><col class="c-num">
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Color</th>
-          <th>Desde</th>
-          <th>Pedido</th>
-          <th>En bodega</th>
-          <th>Tinturándose</th>
-          <th>Falta</th>
-        </tr>
-      </thead>
+      <colgroup><col style="width:40%"><col style="width:16%"><col style="width:13%"><col style="width:17%"><col style="width:14%"></colgroup>
+      <thead><tr><th>Color / Tela</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta</th></tr></thead>
       <tbody>
-        {% for f in t.filas %}
-          <tr>
-            <td class="cod">
-              <button type="button" class="abrir" aria-expanded="false"
-                      aria-controls="d-{{ f.codigo }}"
-                      data-fila="d-{{ f.codigo }}">
-                <span class="chev" aria-hidden="true">▶</span>
-                <span class="color">{{ f.color }}</span>
-                <span class="prod">{{ f.codigo }}</span>
-              </button>
+        {% for g in colores %}
+          {% set gi = loop.index %}
+          <tr class="ghead" data-col="{{ gi }}" role="button" tabindex="0" aria-expanded="false">
+            <td>
+              <span class="chev" aria-hidden="true">▶</span>
+              <span class="ccode">{{ g.codigo }}</span>{% if g.nombre %}<span class="cname">{{ g.nombre }}</span>{% endif %}
+              <span class="muted"> · {{ g.variants|length }} var</span>
             </td>
-            <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
-            <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
-            <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
-            <td>{% if f.produccion_kg %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
-            <td class="{{ 'falta' if f.faltan_kg > 0 else 'ok' }}">
-              {% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}
-            </td>
+            <td>{{ g.pedido|num_es(0) }} <span class="u">{{ g.u }}</span></td>
+            <td>{{ g.stock|num_es(0) if g.stock else '—' }}</td>
+            <td>{{ g.prod|num_es(0) if g.prod else '—' }}</td>
+            <td class="{{ 'falta' if g.falta > 0 else 'okc' }}">{{ g.falta|num_es(0) if g.falta > 0 else 'ok' }}</td>
           </tr>
-          {% set peds = pedidos_por_color.get(f.codigo, []) %}
-          {% for p in peds %}
-            <tr class="det" data-grupo="d-{{ f.codigo }}">
-              <td class="cod">
-                <span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span>
+          {% for f in g.variants %}
+            {% set peds = pedidos_por_color.get(f.codigo, []) %}
+            <tr class="vr colv-{{ gi }}">
+              <td>
+                {% if peds %}
+                  <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
+                    <span class="chev" aria-hidden="true">▶</span>
+                    <span><span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span></span>
+                  </button>
+                {% else %}
+                  <span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span>
+                {% endif %}
               </td>
-              <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</td>
-              <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
-              <td colspan="3" class="npd">{{ p.numero }}</td>
+              <td>{{ f.pedido_d|num_es(0) }} <span class="u">{{ f.u }}</span></td>
+              <td>{{ f.inventario_d|num_es(0) if f.inventario_kg else '—' }}</td>
+              <td>{{ f.produccion_d|num_es(0) if f.produccion_kg else '—' }}</td>
+              <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{{ f.faltan_d|num_es(0) if f.faltan_kg > 0 else 'ok' }}</td>
             </tr>
+            {% if peds %}
+              <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.codigo }}">
+                <td colspan="5"><div class="chips">
+                  {% for p in peds %}
+                    <span class="chip"><b title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</b>
+                      {{ p.cantidad|num_es(0) }} {{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span>
+                  {% endfor %}
+                </div></td>
+              </tr>
+            {% endif %}
           {% endfor %}
-          {% if not peds %}
-            <tr class="det" data-grupo="d-{{ f.codigo }}">
-              <td colspan="6" class="muted">Este color no tiene pedidos cargados.</td>
-            </tr>
-          {% endif %}
-          {% if f.n_ordenes %}
-            <tr class="det" data-grupo="d-{{ f.codigo }}">
-              <td colspan="6" class="masinfo">
-                <a href="{{ url_for('pedidos.color', codigo=f.codigo) }}">
-                  Ver las {{ f.n_ordenes }} {{ 'orden' if f.n_ordenes == 1 else 'órdenes' }}
-                  de tinturado de este color
-                </a>
-              </td>
-            </tr>
-          {% endif %}
         {% endfor %}
       </tbody>
     </table>
-  {% endfor %}
 
-  {% if cubiertas %}
-    <p class="nota" style="margin-top:16px">
-      Cubiertas, sin nada que hacer: {{ cubiertas|join(', ') }}.
+  {# ═══════════ TIPO DE TELA ═══════════ #}
+  {% elif corte == 'tela' %}
+    {% if resumen %}
+    <div class="cards">
+      <div class="card"><div class="lbl">Colores pedidos</div><div class="val">{{ resumen.colores }}</div><div class="sub">de {{ resumen.categoria }}</div></div>
+      <div class="card"><div class="lbl">Pedido</div><div class="val">{{ resumen.pedido_d|num_es(0) }} {{ resumen.u }}</div></div>
+      <div class="card rojo"><div class="lbl">Faltan</div><div class="val">{{ resumen.faltan_d|num_es(0) }} {{ resumen.u }}</div>
+        <div class="sub">en {{ resumen.colores_faltan }} {{ 'color' if resumen.colores_faltan == 1 else 'colores' }}</div></div>
+    </div>
+    <p class="nota">
+      {% if solo_faltan %}Mostrando sólo los colores que necesitan tela.
+        <a href="{{ url_for('pedidos.lista', corte='tela', cat=activa) }}">Ver todos los pedidos</a>
+      {% else %}<a href="{{ url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">Ver sólo lo que falta</a>{% endif %}
     </p>
+    {% endif %}
+    <div class="tabs">
+      {% for c in categorias %}
+        <a class="tab{% if c.categoria == activa %} on{% endif %}" href="{{ url_for('pedidos.lista', corte='tela', cat=c.categoria) }}">
+          <b>{{ c.categoria }}</b>{% if c.faltan_kg > 0 %}<span class="n"> {{ c.faltan_d|num_es(0) }} {{ c.u }}</span>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+    {% for t in telas %}
+      <h3><span>{{ t.tela }}</span>
+        <span class="muted">{{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
+          en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.faltan_kg %} · <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }}</span>{% endif %}</span>
+      </h3>
+      <table>
+        <colgroup><col style="width:22%"><col style="width:12%"><col style="width:15%"><col style="width:17%"><col style="width:17.33%"><col style="width:16.67%"></colgroup>
+        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>En bodega</th><th>Tinturándose</th><th>Falta</th></tr></thead>
+        <tbody>
+          {% for f in t.filas %}
+            {% set peds = pedidos_por_color.get(f.codigo, []) %}
+            <tr>
+              <td class="cod">
+                <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
+                  <span class="chev" aria-hidden="true">▶</span>
+                  <span class="color">{{ f.color }}</span>
+                  <span class="prod">{{ f.codigo }}</span>
+                </button>
+              </td>
+              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
+              <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
+              <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
+              <td>{% if f.produccion_kg %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
+              <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
+            </tr>
+            {% for p in peds %}
+              <tr class="det" data-grupo="d-{{ f.codigo }}">
+                <td class="cod"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
+                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</td>
+                <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
+                <td colspan="3" class="npd">{{ p.numero }}</td>
+              </tr>
+            {% endfor %}
+            {% if not peds %}
+              <tr class="det" data-grupo="d-{{ f.codigo }}"><td colspan="6" class="muted">Este color no tiene pedidos cargados.</td></tr>
+            {% endif %}
+            {% if f.n_ordenes %}
+              <tr class="det" data-grupo="d-{{ f.codigo }}">
+                <td colspan="6" class="masinfo">
+                  <a href="{{ url_for('pedidos.color', codigo=f.codigo) }}">
+                    Ver las {{ f.n_ordenes }} {{ 'orden' if f.n_ordenes == 1 else 'órdenes' }} de tinturado de este color</a>
+                </td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+    {% if cubiertas %}<p class="nota">Cubiertas, sin nada que hacer: {{ cubiertas|join(', ') }}.</p>{% endif %}
+
+  {# ═══════════ CLIENTE ═══════════ #}
+  {% elif corte == 'cliente' %}
+    <div class="aviso">El total por cliente <b>mezcla unidades</b> (rollos, kilos y unidades de cuellos/puños)
+      tal como viene de Asinfo. Para el detalle en su unidad, mirá el corte por Color.</div>
+    <table>
+      <colgroup><col style="width:30%"><col style="width:25%"><col style="width:45%"></colgroup>
+      <thead><tr><th>Cliente</th><th>Pedido</th><th></th></tr></thead>
+      <tbody>
+        {% set mx = clientes[0].pedido if clientes else 1 %}
+        {% for g in clientes %}
+          <tr>
+            <td><span class="cli" title="{{ g.nombre }}">{{ g.cliente }}</span></td>
+            <td>{{ g.pedido|num_es(0) }}</td>
+            <td><div class="bar"><i style="width:{{ (100 * g.pedido / mx)|round(0, 'ceil') if mx else 0 }}%"></i></div></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  {# ═══════════ CATEGORÍA ═══════════ #}
+  {% elif corte == 'categoria' %}
+    <div class="aviso">Cada familia en su unidad: cuellos y puños en unidades, las telas en rollos.
+      No se suman entre sí en una sola cifra.</div>
+    <table>
+      <colgroup><col style="width:35%"><col style="width:25%"><col style="width:40%"></colgroup>
+      <thead><tr><th>Familia</th><th>Pedido</th><th></th></tr></thead>
+      <tbody>
+        {% set cats = categorias|sort(attribute='pedido_d', reverse=true) %}
+        {% set mx = (cats[0].pedido_d if cats else 1) or 1 %}
+        {% for c in cats %}
+          <tr>
+            <td><b>{{ c.categoria }}</b></td>
+            <td>{{ c.pedido_d|num_es(0) }} <span class="u">{{ c.u }}</span></td>
+            <td><div class="bar"><i style="width:{{ (100 * c.pedido_d / mx)|round(0, 'ceil') }}%"></i></div></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   {% endif %}
 
   <p class="nota">
-    Bodega y tinturándose se pasan a rollos a {{ kg_por_rollo|num_es(1) }} kg cada uno:
-    ahí el dato nace en kilos. El pedido es el número tal cual lo cargó Asinfo.
-    Los pedidos de más de {{ dias_pedido_max }} días y las órdenes de fabricación
-    lanzadas hace más de {{ dias_produccion_viva }} no entran a la cuenta.
+    Bodega y producción se pasan a rollos a {{ kg_por_rollo|num_es(1) }} kg cada uno (ahí el dato nace en kilos).
+    Los pedidos de más de {{ dias_pedido_max }} días y las órdenes lanzadas hace más de
+    {{ dias_produccion_viva }} no entran a la cuenta.
   </p>
   {% endif %}
 </div>
+
 <script>
   (function () {
-    document.querySelectorAll('.pd .cod .abrir').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var filas = document.querySelectorAll('[data-grupo="' + b.dataset.fila + '"]');
+    // Corte color: abrir/cerrar un color muestra sus variantes.
+    document.querySelectorAll('.pd tr.ghead').forEach(function (h) {
+      function toggle() {
+        var col = h.dataset.col;
+        var abierta = h.getAttribute('aria-expanded') !== 'true';
+        h.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+        document.querySelectorAll('.pd tr.colv-' + col).forEach(function (r) {
+          if (r.classList.contains('det')) { r.classList.remove('open'); }
+          else { r.classList.toggle('open', abierta); }
+        });
+      }
+      h.addEventListener('click', toggle);
+      h.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
+    // Flechita de una fila: despliega su detalle (clientes / pedidos), sin recargar.
+    document.querySelectorAll('.pd .abrir').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var filas = document.querySelectorAll('.pd [data-grupo="' + b.dataset.fila + '"]');
         if (!filas.length) { return; }
-        var abierta = !filas[0].classList.contains('open');
-        filas.forEach(function (f) { f.classList.toggle('open', abierta); });
+        var abierta = b.getAttribute('aria-expanded') !== 'true';
         b.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+        filas.forEach(function (f) { f.classList.toggle('open', abierta); });
       });
     });
   })();

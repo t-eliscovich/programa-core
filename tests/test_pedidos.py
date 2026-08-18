@@ -318,7 +318,7 @@ def test_la_pantalla_abre_en_la_familia_que_mas_falta(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(_FILAS_PANTALLA, True)):
-        r = c.get("/pedidos")
+        r = c.get("/pedidos?corte=tela")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "Jersey 3.2" in body
@@ -330,10 +330,10 @@ def test_se_puede_elegir_la_pestana(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(_FILAS_PANTALLA, True)):
-        r = c.get("/pedidos?cat=Fleece")
+        r = c.get("/pedidos?corte=tela&cat=Fleece")
     body = r.get_data(as_text=True)
     assert "FE96CAF" in body and "JE32AZS" not in body
-    assert "19,0" in body                         # el faltante, en rollos
+    assert "19" in body                         # el faltante, en rollos
     assert "ok" in body                           # el NEG que sobra
 
 
@@ -341,7 +341,7 @@ def test_una_pestana_inventada_cae_a_la_primera_y_no_rompe(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(_FILAS_PANTALLA, True)):
-        r = c.get("/pedidos?cat=Terciopelo")
+        r = c.get("/pedidos?corte=tela&cat=Terciopelo")
     assert r.status_code == 200
     assert "Jersey 3.2" in r.get_data(as_text=True)
 
@@ -440,7 +440,7 @@ def test_una_familia_con_un_solo_color_no_dice_1_colores(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
-        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+        body = " ".join(c.get("/pedidos?corte=tela").get_data(as_text=True).split())
     assert "1 color ·" in body      # el encabezado de la tela
     assert "en 1 color" in body     # la tarjeta del faltante
     assert "1 colores" not in body
@@ -453,7 +453,7 @@ def test_la_pantalla_arranca_mostrando_TODOS_con_su_ok(app, fake_db):
              _fila(codigo="FE96NEG", ped_kg=10.0, inv_kg=9000.0)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert "FE96CAF" in body and "FE96NEG" in body
     assert ">ok<" in body.replace("\n", "").replace(" ", "")
     assert "Ver sólo lo que falta" in body
@@ -465,7 +465,7 @@ def test_con_falta_1_el_usuario_puede_filtrar(app, fake_db):
              _fila(codigo="FE96NEG", ped_kg=10.0, inv_kg=9000.0)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
-        body = c.get("/pedidos?falta=1").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela&falta=1").get_data(as_text=True)
     assert "FE96CAF" in body and "FE96NEG" not in body
     assert "Ver todos los pedidos" in body
 
@@ -478,7 +478,7 @@ def test_bodega_y_tinturandose_son_dos_columnas_con_el_nombre_entero(app, fake_d
     filas = [_fila(inv_kg=169.0, prod_kg=18.0, n_ordenes=1)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert "En bodega" in body and "Tinturándose" in body
     assert "tint." not in body
     assert "Tenemos" not in body
@@ -509,10 +509,11 @@ def test_bodega_y_produccion_si_se_convierten_porque_solo_existen_en_kilos():
     assert out["produccion_d"] == 10.0
 
 
-def test_los_rollos_llevan_un_decimal_y_las_unidades_ninguno():
-    """"0 rollos" para 12 kg de tela sería mentira; medio cuello no existe."""
+def test_los_rollos_son_enteros_y_un_positivo_nunca_es_cero():
+    """Dueña 2026-08-18: no puede haber medios rollos. 12 kg no es "0 rollos"
+    (sería mentira) ni "0,5": sube a 1. Medio cuello tampoco existe."""
     (tela,) = service.en_unidad([service._fila(_fila(inv_kg=12.0))], "alt")
-    assert tela["inventario_d"] == 0.5 and tela["decimales"] == 1
+    assert tela["inventario_d"] == 1 and tela["decimales"] == 0   # 12/23,5 sube a 1
     (cuello,) = service.en_unidad(
         [service._fila(_fila(categoria="Cuellos", ped_un=150,
                              un_por_kg=33.33333333, inv_kg=0.7))], "alt")
@@ -533,7 +534,7 @@ def test_un_cuello_sin_factor_cargado_se_muestra_en_kilos_y_no_inventa():
 
 
 def test_el_subtotal_de_una_tela_tambien_se_convierte():
-    assert service.total_en_unidad(470.0, "alt", False) == (20.0, 1, "roll")
+    assert service.total_en_unidad(470.0, "alt", False) == (20, 0, "roll")
     assert service.total_en_unidad(470.0, "kg", False) == (470, 0, "kg")
     assert service.total_en_unidad(15.0, "alt", True, 33.33333333) == (500, 0, "un")
     assert service.total_en_unidad(15.0, "alt", True, 0) == (15, 0, "kg")
@@ -546,11 +547,11 @@ def test_no_queda_un_solo_kilo_en_la_pantalla(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     tabla = body[body.index('class="pd"'):]
     assert "en rollos" in tabla          # la unidad se dice UNA vez, en la tela
     assert " kg" not in tabla.replace("kg cada uno", "").replace("en kilos", "")
-    assert "19,0" in tabla
+    assert "19" in tabla
 
 
 def test_en_cuellos_todo_se_lee_en_unidades(app, fake_db):
@@ -559,7 +560,7 @@ def test_en_cuellos_todo_se_lee_en_unidades(app, fake_db):
                    ped_kg=4.5, ped_rollos=0, ped_un=150, un_por_kg=33.33333333)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert "en unidades" in body and "en rollos" not in body
     assert "150" in body
 
@@ -578,7 +579,7 @@ def test_la_flechita_despliega_el_pedido_y_el_cliente_sin_cambiar_de_pagina(app,
         return [_fila()], True
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
 
     assert 'data-fila="d-FE96CAF"' in body
     assert 'data-grupo="d-FE96CAF"' in body
@@ -596,7 +597,7 @@ def test_un_color_sin_pedidos_en_el_desplegable_lo_dice(app, fake_db):
         return [_fila()], True
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert "no tiene pedidos cargados" in body
 
 
@@ -636,7 +637,7 @@ def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
         return (peds, True) if "ORDER BY pr.codigo, v.fecha" in sql else ([_fila()], True)
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
 
     assert "<table class=\"sub\"" not in body        # nada de tablas anidadas
     fila = body[body.index('data-grupo="d-FE96CAF"'):]
@@ -659,11 +660,86 @@ def test_el_link_dice_a_donde_lleva(app, fake_db):
 
     filas = [_fila(prod_kg=490.0, n_ordenes=2)]
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        con = c.get("/pedidos").get_data(as_text=True)
+        con = c.get("/pedidos?corte=tela").get_data(as_text=True)
     filas = [_fila(prod_kg=0.0, n_ordenes=0)]
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        sin = c.get("/pedidos").get_data(as_text=True)
+        sin = c.get("/pedidos?corte=tela").get_data(as_text=True)
 
     assert "Ver las 2 órdenes de tinturado" in " ".join(con.split())
     assert "ficha completa" not in con
     assert "tinturado de este color" not in sin
+
+
+# ── cortes nuevos: color, cliente, categoría (2026-08-18) ────────────────────
+
+def test_la_pantalla_abre_por_defecto_en_el_corte_color(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS_PANTALLA, True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert 'class="ver"' in body               # el selector de cortes
+    assert 'class="ccode"' in body             # la fila-cabecera de un color
+    assert ">CAF<" in body or "CAF</span>" in body
+
+
+def test_por_color_agrupa_por_codigo_y_ordena_por_lo_que_mas_falta():
+    filas = [service._fila(_fila(color="CAF")),                         # falta 447
+             service._fila(_fila(codigo="FE96NEG", color="NEG",
+                                 ped_kg=10.0, ped_rollos=1.0, inv_kg=9000.0))]  # ok
+    gs = service.por_color(filas)
+    assert [g["codigo"] for g in gs][0] == "CAF"       # lo que falta, arriba
+    assert gs[0]["u"] == "roll"
+    assert gs[0]["pedido"] == 19                        # rollos ENTEROS
+
+
+def test_el_corte_color_pasa_el_pedido_de_rib_de_kilos_a_rollos():
+    """Rib se pide en kilos (no en rollos). Igual se muestra en rollos, o
+    mostraría 0."""
+    (g,) = service.por_color([service._fila(_fila(
+        categoria="Rib", tela="Rib Acanalado", codigo="RIBACE", color="ACE",
+        ped_kg=70.5, ped_rollos=0.0))])
+    assert g["u"] == "roll" and g["pedido"] == 3       # 70,5 / 23,5
+
+
+def test_por_cliente_suma_por_cliente_y_ordena_de_mayor_a_menor():
+    rows = [{"codigo": "FE96CAF", "numero": "P1", "cliente": "Empresa A",
+             "codigo_cliente": "AAM", "fecha": "2026-08-01", "cantidad": 10, "unidad": 51},
+            {"codigo": "JE32AZS", "numero": "P2", "cliente": "Empresa B",
+             "codigo_cliente": "ATR", "fecha": "2026-08-02", "cantidad": 5, "unidad": 51},
+            {"codigo": "FE96NEG", "numero": "P3", "cliente": "Empresa A",
+             "codigo_cliente": "AAM", "fecha": "2026-08-03", "cantidad": 8, "unidad": 51}]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(rows, True)):
+        out = service.por_cliente()
+    assert out[0]["cliente"] == "AAM" and out[0]["pedido"] == 18.0
+    assert out[1]["cliente"] == "ATR" and out[1]["pedido"] == 5.0
+
+
+def test_el_corte_cliente_avisa_que_mezcla_unidades(app, fake_db):
+    c = _login(app, fake_db)
+    rows = [{"codigo": "FE96CAF", "numero": "P1", "cliente": "Empresa A",
+             "codigo_cliente": "AAM", "fecha": "2026-08-01", "cantidad": 10, "unidad": 51}]
+
+    def fake(_db, sql, **_kw):
+        return (rows, True) if "ORDER BY pr.codigo, v.fecha" in sql else (_FILAS_PANTALLA, True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos?corte=cliente").get_data(as_text=True)
+    assert "mezcla unidades" in body
+    assert ">AAM<" in body
+
+
+def test_el_corte_categoria_muestra_cada_familia_en_su_unidad(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS_PANTALLA, True)):
+        body = c.get("/pedidos?corte=categoria").get_data(as_text=True)
+    assert "Fleece" in body and "Jersey" in body
+    assert "No se suman entre sí" in body
+
+
+def test_nombres_color_es_fail_soft_sin_catalogo():
+    """Sin catálogo (o si la consulta falla) el color va por su código pelado,
+    la pantalla no se cae."""
+    # sin app/DB real la lectura falla y devuelve {} — nunca levanta.
+    assert service.nombres_color() == {}
