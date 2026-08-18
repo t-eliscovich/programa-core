@@ -1472,7 +1472,7 @@ def test_el_encabezado_queda_fijo_al_scrollear():
     from pathlib import Path
     css = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
            "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
-    assert "#tabla thead th{position:sticky;top:0" in css
+    assert "#tabla thead th{position:sticky;top:var(--alto-barra)" in css
     assert "background:#fff" in css, "sin fondo sólido las filas se ven por atrás"
     # sin comentarios: ahí se explica justamente cuál es el error a evitar
     import re as _re
@@ -1492,3 +1492,18 @@ def test_las_filas_alternadas_van_de_a_cuatro():
 def test_abrir_una_fila_cierra_la_anterior():
     html = _html_parado()
     assert "#tabla tr.det.abierta" in html and "o.classList.remove('abierta')" in html
+
+
+def test_el_encabezado_se_pega_debajo_de_la_barra_y_no_atras():
+    """🐛 La barra de arriba también es sticky (top:0, z-index 5) y mide 52 px:
+    con el encabezado en top:0 quedaba ESCONDIDO detrás de ella. Se veía sólo
+    scrolleando en la pantalla real — el sticky "funcionaba", pero abajo de
+    otra cosa."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+           "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
+    assert "#tabla thead th{position:sticky;top:var(--alto-barra)" in css
+    assert "--alto-barra:52px" in css
+    i = css.index("@media (max-width: 780px)")
+    assert "--alto-barra:84px" in css[i:], (
+        "en el celular la barra se parte en dos líneas y tapa el encabezado")
