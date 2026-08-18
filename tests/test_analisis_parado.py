@@ -1223,11 +1223,17 @@ def test_en_el_celular_no_se_esconde_lo_que_identifica_la_fila():
 
 def test_las_columnas_se_esconden_por_clase_y_no_por_posicion():
     """Escondiendo `td:nth-child(5)`, una columna nueva en el medio correría
-    todas y el que desaparecería sería otro — sin ningún error."""
+    todas y el que desaparecería sería otro — sin ningún error.
+
+    ⚠ `nth-child` SÍ se usa para el rayado de filas, que no depende de qué
+    columna es: por eso el test mira sólo las reglas que esconden algo."""
+    import re
     from pathlib import Path
     base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
-    assert "nth-child" not in base
+    for regla in re.findall(r"([^{}]+)\{([^}]*display\s*:\s*none[^}]*)\}", base):
+        assert "nth-child" not in regla[0], (
+            f"esconde por posición: {regla[0].strip()}")
 
 
 def test_las_pantallas_tratan_de_usted():
@@ -1424,3 +1430,65 @@ def test_la_foto_no_pierde_el_grupo_al_liquidarse_un_item():
     fuente = inspect.getsource(queries.actualizar)
     assert "grupo_previo" in fuente
     assert '(p or {}).get("categoria") or grupo_previo.get(k)' in fuente
+
+
+# ── Las mejoras de la tabla ─────────────────────────────────────────────────
+
+def _html_parado():
+    from pathlib import Path
+    return (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+
+
+def test_los_indices_de_orden_coinciden_con_las_columnas():
+    """⚠ Cada `th` ordena por su `data-i`. Al sacar una columna del medio, si
+    los índices no se renumeran, tocar "Clientes" ordena por otra cosa — y no
+    da ningún error: sólo ordena mal."""
+    import re
+    html = _html_parado()
+    enc = re.search(r"<thead><tr>\n(.*?)</tr></thead>", html, re.S).group(1)
+    idx = [int(x) for x in re.findall(r'data-i="(\d+)"', enc)]
+    assert idx == list(range(len(idx))), f"índices salteados o repetidos: {idx}"
+    assert len(idx) == int(re.search(r'colspan="(\d+)"', html).group(1))
+
+
+def test_lo_vendido_ya_no_es_una_columna_vacia():
+    """Como columna propia estaba en "—" en las 711 filas y se llevaba una
+    novena parte del ancho para no decir nada."""
+    html = _html_parado()
+    assert ">Vendidos</th>" not in html
+    assert 'class="vendido"' in html and "{% if f.kg_vendidos %}" in html
+
+
+def test_el_cero_de_clientes_se_marca():
+    """Es la señal más accionable de la tabla —"no hay a quién llamar"— y era
+    un cero gris como cualquier otro."""
+    assert "'sincli' if not f.clientes" in _html_parado()
+
+
+def test_el_encabezado_queda_fijo_al_scrollear():
+    """⚠ Un sticky muere si un ancestro fija la altura: es el mismo error que
+    tuvo el appbar de /mi-cartera durante meses, sin dar ningún síntoma."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+           "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
+    assert "#tabla thead th{position:sticky;top:0" in css
+    assert "background:#fff" in css, "sin fondo sólido las filas se ven por atrás"
+    # sin comentarios: ahí se explica justamente cuál es el error a evitar
+    import re as _re
+    reglas = _re.sub(r"/\*.*?\*/", " ", css, flags=_re.S)
+    assert "height:100%" not in reglas, "un ancestro con altura fija mataría el sticky"
+
+
+def test_las_filas_alternadas_van_de_a_cuatro():
+    """Cada tela son DOS filas (la visible y su detalle), así que el ciclo del
+    rayado es de 4 y no de 2: con nth-child(2n) se pintarían los detalles."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+           "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
+    assert "#tabla tbody tr:nth-child(4n+1) td" in css
+
+
+def test_abrir_una_fila_cierra_la_anterior():
+    html = _html_parado()
+    assert "#tabla tr.det.abierta" in html and "o.classList.remove('abierta')" in html

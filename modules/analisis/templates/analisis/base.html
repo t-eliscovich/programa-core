@@ -84,6 +84,20 @@ text-decoration:none;color:inherit;display:block}
    porque las columnas de números son angostas. En el celular vuelve a
    partirse, que ahí es lo correcto — no entra de otra forma. */
 #tabla td.tela{white-space:nowrap}
+/* Encabezado fijo: con 711 filas, a la fila cincuenta ya no se sabe si la
+   columna que uno mira es "Kg en saldo" o "De 2ª".
+   ⚠ Un sticky muere si algún ancestro fija la altura (`height:100%`) — el mismo
+   error que tuvo el appbar de /mi-cartera durante meses. Acá el body crece con
+   el contenido, así que agarra. Necesita fondo sólido o las filas se ven
+   pasar por atrás. */
+#tabla thead th{position:sticky;top:0;background:#fff;z-index:2;
+box-shadow:inset 0 -2px 0 var(--l)}
+/* Filas alternadas. Van de a DOS (fila + su detalle escondido), así que el
+   ciclo es de 4 y no de 2. */
+#tabla tbody tr:nth-child(4n+1) td{background:#fafafa}
+#tabla tbody tr.item:hover td{background:#f1f5f9}
+td.sincli{color:var(--rj);font-weight:600}
+.vendido{font-size:11px;color:var(--vd);font-weight:500}
 tr.oculta{display:none!important}
 [hidden]{display:none!important}
 footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--l);
