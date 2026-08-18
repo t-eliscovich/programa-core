@@ -425,3 +425,18 @@ def test_la_unidad_va_en_una_columna_y_no_pegada_a_cada_numero(app, fake_db):
     assert '<td class="un">roll</td>' in tabla
     assert tabla.count("roll") == 1         # una sola vez por fila, no seis
     assert 'class="u"' not in tabla         # el sufijo por celda ya no existe
+
+
+def test_el_link_del_menu_va_debajo_de_pedidos_pendientes(app, fake_db):
+    """Dueña 2026-08-18: "debajo de pedidos ponelo esto".
+
+    Y gateado por `stock.ver`, el permiso de SU pantalla: con el de la sección
+    (`facturas.ver`) le aparecería el link a quien después se come un 404.
+    """
+    base = (Path(app.root_path) / "templates" / "base.html").read_text(encoding="utf-8")
+    i_ped = base.index("pedidos.lista")
+    i_inv = base.index("inventario_rotativo.lista")
+    i_compras = base.index("compras.lista")
+    assert i_ped < i_inv < i_compras
+    linea = base[base.rindex("{%", 0, i_inv):i_inv]
+    assert "stock.ver" in linea

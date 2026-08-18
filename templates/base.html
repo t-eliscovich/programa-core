@@ -956,6 +956,13 @@
            cada pedido y qué le falta— y no un informe de stock, así que va acá
            y no en "Producción y stocks". Mismo gate que Facturas y Anticipos. #}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('pedidos.lista', 'Pedidos pendientes', 'file') }}{% endif %}
+        {# TMT 2026-08-18 (dueña): "debajo de pedidos ponelo esto" — Inventario
+           rotativo va acá y no en "Producción y stocks": se lee junto con los
+           pedidos (qué pidieron / qué hay que tener), no con el catálogo de
+           stock. El link se gatea con el permiso de SU pantalla (stock.ver) y
+           no con el de la sección: si no, a quien tiene facturas.ver y no
+           stock.ver le aparece el link y le da 404 al clickearlo. #}
+        {% if tiene_permiso('stock.ver') %}{{ nav_link('inventario_rotativo.lista', 'Inventario rotativo', 'box') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
         {# TMT 2026-07-17 (Federico): "Producción Tejeduría" y "Tejeduría Asinfo"
            movidos a la sección "Producción y stocks". #}
@@ -1013,11 +1020,6 @@
         {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → UNA sola "Inventario"
            (la página tiene el toggle TC/PT adentro). "Importaciones" →
            "Ingreso de hilado" (pantalla de solo lectura). #}
-        {# TMT 2026-08-18 (dueña): Inventario rotativo — lo que se vende
-           todas las semanas y hay que tener siempre. Va ARRIBA de Inventario:
-           es la lista corta y accionable, Inventario es el catálogo entero.
-           Mismo gate (stock.ver) que sus hermanas de la sección. #}
-        {{ nav_link('inventario_rotativo.lista', 'Inventario rotativo', 'box') }}
         {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box') }}
         {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
         {# TMT 2026-07-09 (dueña): Stock químicos movido a Stock (última posición) desde Tintorería. #}
