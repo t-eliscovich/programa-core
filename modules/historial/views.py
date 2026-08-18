@@ -299,6 +299,14 @@ def lista():
     # /cheques/<no> y un "Dep. Pich." en una URL es un 404.
     cheque_etiquetas: dict[int, str] = {}
     cheque_nos_reales: dict[int, str] = {}
+    # 🚨 TMT 2026-08-18 (dueña, mirando /historial?pagina=3): *"nunca veo los
+    # clientes en cheques y facturas, ponelos en algún lado"*. El cliente
+    # estaba sólo como código metido adentro del concepto ("Factura 182101
+    # HOM", "Cheque 4839 de IIA") — y en las 6.066 filas de aplicación a
+    # factura el concepto va vacío a propósito (repetía las dos columnas de al
+    # lado), así que ahí no estaba en ningún lado. Ahora tiene columna propia.
+    cliente_de_cheque: dict[int, str] = {}
+    cliente_de_factura: dict[int, str] = {}
     # 🚨 TMT 2026-08-10: la columna TIPO decía "Cheque: alta" al lado de un
     # origen que decía "Dep. Pich." — la fila se contradecía sola. La
     # partición es la que ya usa la cobranza (`SQL_ES_CHEQUE`): NB 90/91 es
@@ -311,6 +319,7 @@ def lista():
             db.fetch_all(
                 f"SELECT c.id_cheque, COALESCE(c.no_cheque::text, '') AS no_cheque, "
                 f"       COALESCE(c.no_banco, 0) AS no_banco, "
+                f"       COALESCE(c.codigo_cli, '') AS codigo_cli, "
                 f"       COALESCE(b.nombre, '') AS banco_nombre "
                 f"  FROM scintela.cheque c "
                 f"  LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco "
@@ -321,6 +330,9 @@ def lista():
         )
         for rc in rows_ch:
             idc = int(rc["id_cheque"])
+            _cli = (rc.get("codigo_cli") or "").strip().upper()
+            if _cli:
+                cliente_de_cheque[idc] = _cli
             no = (rc.get("no_cheque") or "").strip()
             if no and no != "0":
                 cheque_nos_reales[idc] = no
@@ -335,13 +347,17 @@ def lista():
         placeholder = ",".join(["%s"] * len(id_facturas))
         rows_f = (
             db.fetch_all(
-                f"SELECT id_factura, COALESCE(numf::text, '') AS numf "
+                f"SELECT id_factura, COALESCE(numf::text, '') AS numf, "
+                f"COALESCE(codigo_cli, '') AS codigo_cli "
                 f"FROM scintela.factura WHERE id_factura IN ({placeholder})",
                 tuple(id_facturas),
             )
             or []
         )
         for rf in rows_f:
+            _cli = (rf.get("codigo_cli") or "").strip().upper()
+            if _cli:
+                cliente_de_factura[int(rf["id_factura"])] = _cli
             num = (rf.get("numf") or "").strip()
             # 🚨 538 facturas importadas del dBase tienen `numf = 0`: escribir
             # "Factura 0" es mostrar un número que no existe (el chequeo del
@@ -516,6 +532,42 @@ def lista():
             if de:
                 retiro_etiquetas[int(rr["id_retiro"])] = f"Retiro {de}"
 
+    # El nombre del cliente, en un solo viaje para toda la página. La columna
+    # muestra el CÓDIGO; el nombre es el tooltip.
+    cliente_nombres: dict[str, str] = {}
+    _codigos_cli = {c for c in
+                    list(cliente_de_cheque.values()) + list(cliente_de_factura.values())
+                    if c}
+    if _codigos_cli:
+        for rn in (db.fetch_all(
+                "SELECT UPPER(TRIM(codigo_cli)) AS cod, COALESCE(nombre, '') AS nombre "
+                "  FROM scintela.cliente "
+                " WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)",
+                (sorted(_codigos_cli),)) or []):
+            nombre = (rn.get("nombre") or "").strip()
+            if nombre:
+                cliente_nombres[rn["cod"]] = nombre
+
+    def _cliente_de(r: dict) -> str:
+        """Código de cliente de la fila, mirando origen y después destino.
+
+        Un `cheque_aplicado_a_factura` lo tiene de los dos lados y es el
+        mismo; un `cheque_creado` sólo en el origen; una `factura_emitida`, en
+        los dos porque es self-ref. El orden importa únicamente para el cobro
+        aplicado a una factura de OTRO código (los 7 pares de códigos
+        duplicados abiertos): ahí manda el del cheque, que es con quien se
+        hizo la operación.
+        """
+        for tabla, rid in ((r.get("origen_table"), r.get("origen_id")),
+                           (r.get("destino_table"), r.get("destino_id"))):
+            if not rid:
+                continue
+            if tabla == "cheque" and int(rid) in cliente_de_cheque:
+                return cliente_de_cheque[int(rid)]
+            if tabla == "factura" and int(rid) in cliente_de_factura:
+                return cliente_de_factura[int(rid)]
+        return ""
+
     def _override_label(t: str | None, rid, default_label: str) -> str:
         if t == "cheque" and rid and int(rid) in cheque_etiquetas:
             return cheque_etiquetas[int(rid)]
@@ -576,6 +628,13 @@ def lista():
         # row_url = a dónde va el click de la fila entera. Preferimos
         # origen_url; si no hay, destino_url.
         r["row_url"] = r["origen_url"] or r["destino_url"]
+        # Columna CLIENTE: el CÓDIGO de 3 letras, que es como la dueña los
+        # nombra y lo que se lee en el resto de las pantallas — *"nono codigo
+        # del cliente nada mas no nombre entero"*. El nombre va en el tooltip.
+        _cod_cli = _cliente_de(r)
+        r["cliente_codigo"] = _cod_cli
+        r["cliente_label"] = cliente_nombres.get(_cod_cli, "")
+        r["cliente_url"] = f"/clientes/{_cod_cli}/cuenta" if _cod_cli else None
         # TMT 2026-07-09 (dueña): si el movimiento consolidó >1 item
         # (p.ej. "6 anticipo(s) → compra"), traer cada uno para poder
         # desplegarlos uno por uno en el historial.
@@ -793,6 +852,8 @@ def lista():
                 ("origen_id", "Origen id"),
                 ("destino_table", "Destino tabla"),
                 ("destino_id", "Destino id"),
+                ("cliente_codigo", "Cliente"),
+                ("cliente_label", "Cliente nombre"),
                 ("importe", "Importe"),
                 ("concepto", "Concepto"),
                 ("estado", "Estado"),

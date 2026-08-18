@@ -8,7 +8,7 @@
 {% macro detalle_expandible(r) %}
   {% if r.detalle %}
     <tr class="bg-slate-50/40 no-print">
-      <td colspan="8" style="padding:2px 8px 8px 34px;">
+      <td colspan="9" style="padding:2px 8px 8px 34px;">
         <details style="font-size:12px;">
           <summary class="cursor-pointer text-sky-700 hover:underline" style="user-select:none;">
             Ver los {{ r.detalle|length }} uno por uno
@@ -37,7 +37,7 @@
 {% macro segunda_pata_bloque(r) %}
   {% if r.segunda_pata %}
     <tr class="no-print" style="background:#fffbeb;">
-      <td colspan="8" style="padding:3px 8px 6px 34px;font-size:12px;">
+      <td colspan="9" style="padding:3px 8px 6px 34px;font-size:12px;">
         <div style="display:flex;flex-wrap:wrap;gap:3px 14px;align-items:baseline;">
           <span title="El ↺ revierte ambas patas"
                 style="font-weight:600;color:#92400e;white-space:nowrap;">↺ 2ª pata</span>
@@ -155,11 +155,17 @@
        no incluye esa utility), asi que el navegador caia en auto layout
        y la tabla expandia con el contenido del batch header. #}
     <table class="w-full text-xs" style="table-layout: fixed; max-width: 100%;">
+      {# TMT 2026-08-18 (dueña): entra la columna CLIENTE con el CÓDIGO de 3
+         letras — *"nono codigo del cliente nada mas no nombre entero"*. Le
+         alcanza con 6%: el ancho sale de Tipo y de Origen/Destino, no de
+         Concepto, porque la tabla tiene que seguir entrando SIN scroll
+         horizontal (pedido del 23/05, no se negocia). #}
       <colgroup>
         <col style="width: 9%">   <!-- Fecha -->
-        <col style="width: 17%">  <!-- Tipo (+ estado chip) -->
-        <col style="width: 12%">  <!-- Origen -->
-        <col style="width: 12%">  <!-- Destino -->
+        <col style="width: 16%">  <!-- Tipo (+ estado chip) -->
+        <col style="width: 11%">  <!-- Origen -->
+        <col style="width: 11%">  <!-- Destino -->
+        <col style="width: 6%">   <!-- Cliente -->
         <col style="width: 9%">   <!-- Importe -->
         <col>                     <!-- Concepto: el resto -->
         <col style="width: 9%">   <!-- Usuario -->
@@ -171,6 +177,7 @@
           <th class="px-2 py-1 text-left font-medium">Tipo</th>
           <th class="px-2 py-1 text-left font-medium">Origen</th>
           <th class="px-2 py-1 text-left font-medium">Destino</th>
+          <th class="px-2 py-1 text-left font-medium">Cliente</th>
           <th class="px-2 py-1 text-right font-medium">Importe</th>
           <th class="px-2 py-1 text-left font-medium">Concepto</th>
           <th class="px-2 py-1 text-left font-medium">Usuario</th>
@@ -207,7 +214,7 @@
           <tbody class="batch-card">
             {# Header del batch: spanning row con resumen + reverso. #}
             <tr class="border-l-4 border-violet-400 bg-violet-100/80">
-              <td colspan="8" class="px-4 py-2.5 overflow-hidden">
+              <td colspan="9" class="px-4 py-2.5 overflow-hidden">
                 <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-w-0">
                   <div class="flex items-center gap-x-3 gap-y-1 flex-wrap min-w-0">
                     <span class="text-violet-900 font-semibold text-sm">
@@ -281,6 +288,10 @@
                   {% elif r.destino_url %}<a href="{{ r.destino_url | con_volver }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                   {% else %}{{ r.destino_label }}{% endif %}
                 </td>
+                <td class="px-2 py-0.5 text-xs truncate" title="{{ r.cliente_label or r.cliente_codigo }}">
+                  {% if r.cliente_url %}<a href="{{ r.cliente_url }}" class="font-mono text-sky-700 hover:underline">{{ r.cliente_codigo }}</a>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
                 <td class="px-2 py-0.5 text-right tabular-nums font-mono whitespace-nowrap">
                   {{ r.importe | money_es }}
                 </td>
@@ -340,6 +351,10 @@
                 {% if r.destino_repetido %}
                 {% elif r.destino_url %}<a href="{{ r.destino_url | con_volver }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                 {% else %}{{ r.destino_label }}{% endif %}
+              </td>
+              <td class="px-2 py-0.5 text-xs truncate" title="{{ r.cliente_label or r.cliente_codigo }}">
+                {% if r.cliente_url %}<a href="{{ r.cliente_url }}" class="font-mono text-sky-700 hover:underline">{{ r.cliente_codigo }}</a>
+                {% else %}<span class="text-slate-300">—</span>{% endif %}
               </td>
               <td class="px-2 py-0.5 text-right tabular-nums font-mono whitespace-nowrap">
                 {{ r.importe | money_es }}
@@ -403,7 +418,7 @@
         {% endif %}
       {% else %}
         <tbody>
-          {{ empty_row(8, 'Sin movimientos en este filtro.',
+          {{ empty_row(9, 'Sin movimientos en este filtro.',
                        'Probá ampliar fechas o limpiar filtros.') }}
         </tbody>
       {% endfor %}
