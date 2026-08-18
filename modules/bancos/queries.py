@@ -1171,6 +1171,7 @@ def emitir_cheque(
     return {
         "id_transaccion":  id_transaccion,
         "no_banco":        no_banco,
+        "no_cheque":       (no_cheque or "").strip(),
         "banco_nombre":    banco_row.get("nombre") or "",
         "tipo":            tipo,
         "importe":         importe_f,

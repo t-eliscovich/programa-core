@@ -390,12 +390,29 @@ def emitir_cheque():
                 usuario=usuario,
                 xgast_num=xgast_num_val,
             )
+            # TMT 2026-08-17 (dueña): *"cuando emitís el cheque, también que
+            # vuelva a pantalla de emitir"*. Antes caía en /bancos/<n>, que es
+            # bueno para CONTROLAR uno pero pésimo para pagar una tanda de
+            # posdatados: había que volver al wizard a mano por cada cheque.
+            #
+            # Se arrastran `no_banco` y `fecha` para no volver a elegirlos. El
+            # N° de cheque NO hace falta pasarlo: el form lo recalcula como
+            # MAX(numreferencia)+1 del banco, y el cheque que se acaba de
+            # emitir ya está insertado con documento='CH', así que la sugerencia
+            # sale sola en el siguiente.
+            #
+            # ⚠ `id_posdat` NO se arrastra a propósito: esa posdat se acaba de
+            # pagar, y volver con ella pre-cargada invita a pagarla dos veces.
+            _num = f" N° {r['no_cheque']}" if r.get("no_cheque") else ""
             flash(
-                f"Cheque emitido OK desde {r['banco_nombre']} por $ {r['importe']:.2f}. "
-                f"Side-effect: {r['side_effect']}.",
+                f"Cheque{_num} emitido OK desde {r['banco_nombre']} por "
+                f"$ {r['importe']:.2f}. Side-effect: {r['side_effect']}. "
+                f"Podés cargar el siguiente.",
                 "ok",
             )
-            return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
+            return redirect(url_for("bancos.emitir_cheque",
+                                    no_banco=r["no_banco"],
+                                    fecha=fecha.isoformat() if fecha else None))
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:
@@ -505,7 +522,10 @@ def emitir_cheque():
         tipo_inicial=tipo_inicial,
         no_banco_inicial=no_banco_inicial,
         no_cheque_sugerido=no_cheque_sugerido,
-        hoy=today_ec().isoformat(),
+        # `?fecha=` la manda el redirect de después de emitir: si la tanda es
+        # de otro día, no se pierde al cargar el segundo cheque. Sin el
+        # parámetro (entrada normal) sigue siendo hoy.
+        hoy=(parse_date(request.args.get("fecha")) or today_ec()).isoformat(),
         conceptos=conceptos,
         proveedores=proveedores,
         posdat_target=posdat_target,
