@@ -160,7 +160,7 @@ def por_grupo(filas: list[dict]) -> list[dict]:
 #: haya cortado por lo chico. Alfabético sirve para ENCONTRAR a alguien, que es
 #: otra tarea y la resuelve el buscador.
 ORDENES = {
-    "oportunidad": "los kilos parados de las telas que compra",
+    "oportunidad": "los kilos en saldo de las telas que compra",
     "codigo": "alfabético por código",
     "provincia": "agrupado por provincia",
 }

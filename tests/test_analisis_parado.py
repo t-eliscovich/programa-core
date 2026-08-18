@@ -430,7 +430,7 @@ def test_el_csv_lleva_grupo_y_subgrupo_como_columnas():
 
     from modules.analisis import views
     fuente = inspect.getsource(views.parado_csv)
-    for col in ('"Grupo"', '"Subgrupo (tela)"', '"Kg de segunda"', '"% del parado"'):
+    for col in (chr(34)+"Grupo"+chr(34), chr(34)+"Subgrupo (tela)"+chr(34), chr(34)+"Kg de segunda"+chr(34), chr(34)+"% del saldo"+chr(34)):
         assert col in fuente, f"falta la columna {col} en el Excel"
 
 
