@@ -33,15 +33,16 @@ def items() -> list[dict]:
     return db.fetch_all(
         """
         SELECT c.subcategoria, c.color,
-               -- ⭐ Los tres grupos chicos van juntos. Dueña 17/08/2026: "los
-               -- ultimos y mas chicos unilos todos en una categoria franela
-               -- cuellos y punos". Entre los tres son 361 kg — menos del 1% —
+               -- ⭐ Los tres grupos chicos van juntos, con la sigla FCP (dueña
+               -- 18/08/2026: "franela cuellos y punos poneles FCP o algo asi").
+               -- El nombre entero ocupaba tres renglones en la columna Grupo y
+               -- desalineaba toda la fila. Entre los tres son 773 kg —el 1,5%—
                -- y como grupos sueltos ocupaban tres renglones del resumen
                -- para decir casi nada. Se unen ACÁ, en la lectura, y no en el
                -- refresh: así el dato crudo de Asinfo queda intacto y el día
                -- que uno crezca se separa cambiando una línea.
                CASE WHEN f.categoria IN ('Franela', 'Cuellos', 'Puños')
-                    THEN 'Franela, cuellos y puños' ELSE f.categoria END AS categoria,
+                    THEN 'FCP' ELSE f.categoria END AS categoria,
                c.fecha_marcado, c.kg_al_marcar,
                COALESCE(f.stock_kg, 0)    AS stock_kg,
                COALESCE(f.kg_vendidos, 0) AS kg_vendidos,

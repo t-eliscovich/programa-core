@@ -571,7 +571,7 @@ def test_los_tres_grupos_chicos_van_juntos(monkeypatch):
     queries.items()
     s = visto["sql"]
     assert "'Franela', 'Cuellos', 'Puños'" in s
-    assert "'Franela, cuellos y puños'" in s
+    assert "'FCP'" in s, "la sigla, que es lo que entra en la columna"
 
 
 def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
