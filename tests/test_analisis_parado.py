@@ -1052,17 +1052,23 @@ def test_el_ranking_ordena_por_lo_contado_y_no_por_los_kilos(monkeypatch):
 def test_la_pantalla_explica_las_reglas():
     """Dueña: "escribamos las reglas del juego. facil". Una competencia cuyas
     reglas hay que preguntar no la juega nadie."""
+    # ⚠ Dos cuidados para que el test mire lo que se VE:
+    #   · se sacan los comentarios Jinja ({# … #}), donde justamente se explica
+    #     por qué NO se dice cierta frase — si no, el test se engancha con su
+    #     propia explicación;
+    #   · se normalizan los espacios, porque el texto viene cortado en varias
+    #     líneas y si no falla por el formato del HTML y no por lo que dice.
+    import re as _re
     from pathlib import Path
-    # ⚠ El texto de la plantilla viene cortado en varias líneas: se normalizan
-    # los espacios antes de buscar, si no el test falla por el formato del HTML
-    # y no por lo que dice.
-    html = " ".join((Path(__file__).resolve().parent.parent / "modules" /
-                     "analisis" / "templates" / "analisis" /
-                     "competencia.html").read_text(encoding="utf-8").split())
+    crudo = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
+    html = " ".join(_re.sub(r"\{#.*?#\}", " ", crudo, flags=_re.S).split())
     assert "Las reglas" in html
     assert "no te</b> <b>suma" in html or "no te suma" in html, (
         "la regla del tope tiene que estar escrita")
-    assert "% de tu propia meta" in html
+    assert "qué parte de tu meta" in html
+    assert "no por kilos" not in html, (
+        "todo se mide EN kilos; decir que no, confunde (dueña 17/08/2026)")
 
 
 def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():
