@@ -1451,12 +1451,17 @@ def test_los_indices_de_orden_coinciden_con_las_columnas():
     assert len(idx) == int(re.search(r'colspan="(\d+)"', html).group(1))
 
 
-def test_lo_vendido_ya_no_es_una_columna_vacia():
-    """Como columna propia estaba en "—" en las 711 filas y se llevaba una
-    novena parte del ancho para no decir nada."""
+def test_lo_vendido_no_va_apilado_en_la_celda_de_los_kilos():
+    """Primero fue una columna vacía ("—" en las 711 filas); después la puse
+    debajo del stock como "−43 vendidos" y tampoco se entendía: dos números de
+    kilos apilados sin decir qué era cada uno. Dueña 18/08/2026: "que quiere
+    decir x vendidos? deja de ponerme cosas raras".
+
+    Se cuenta igual y se muestra al ABRIR la fila, con la frase entera."""
     html = _html_parado()
     assert ">Vendidos</th>" not in html
-    assert 'class="vendido"' in html and "{% if f.kg_vendidos %}" in html
+    assert "vendidos</div>" not in html
+    assert "Desde que arrancó la competencia se vendieron" in html
 
 
 def test_el_cero_de_clientes_se_marca():
@@ -1520,7 +1525,7 @@ def test_se_puede_filtrar_por_calidad():
     assert "tr.dataset.cal.split(' ').includes(cal)" in html, (
         "una fila puede ser PRI y SEG a la vez: el filtro tiene que mirar la "
         "lista, no comparar el string entero")
-    assert "Sólo segunda" in html
+    assert "Sólo SEG" in html
 
 
 def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
@@ -1531,7 +1536,7 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     # sólo la tabla principal: el resumen por grupo SÍ tiene una columna con
     # los kilos de segunda de cada grupo, y ahí está bien
     html = todo[todo.index('<table id="tabla">'):]
-    assert ">Calidad</th>" in html
+    assert ">Categoría</th>" in html
     assert ">De 2ª</th>" not in html
     assert 'class="q pri">PRI' in html and 'class="q seg">SEG' in html
     assert "Hay dos motivos para estar acá" in todo, (
@@ -1587,7 +1592,6 @@ def test_la_pantalla_dice_desde_cuando_cuenta():
     generó la confusión."""
     html = _html_parado()
     assert "Vendido desde el 25/08" in html
-    assert "desde el 25/08</div>" in html
 
 
 # ── Intela como una cartera más ─────────────────────────────────────────────
@@ -1657,3 +1661,16 @@ def test_las_fichas_encolumnan_todas_igual():
     import re
     anchos = [int(x) for x in re.findall(r"\.cli col\.c\d\{width:(\d+)%\}", html)]
     assert sum(anchos) == 100, f"los anchos suman {sum(anchos)}%"
+
+
+def test_una_sola_palabra_para_la_categoria():
+    """Dueña 18/08/2026: "otra columna que diga categoria y pones PRI SEG, no
+    repetir con segunda". Convivían "calidad", "segunda", "de 2ª" y "SEG" para
+    la misma cosa: cuatro nombres obligan a traducir mentalmente en cada
+    columna."""
+    import re
+    html = _html_parado()
+    visible = re.sub(r"(\{#.*?#\}|<!--.*?-->|//[^\n]*)", " ", html, flags=re.S)
+    for palabra in ("De 2ª", "de segunda", "segunda calidad", "Primera y segunda"):
+        assert palabra not in visible, f"quedó «{palabra}» conviviendo con SEG"
+    assert ">Categoría</th>" in visible

@@ -31,9 +31,9 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <div class="card"><p class="k">Clientes a llamar</p>
     <p class="v">{{ llamados.values() | map('length') | sum }}</p>
     <p class="s">candidatos en total</p></div>
-  <div class="card"><p class="k">De segunda</p>
+  <div class="card"><p class="k">Categoría SEG</p>
   <p class="v">{{ resumen.kg_segunda | num_es(0) }}</p>
-  <p class="s">kg en {{ resumen.n_segunda }} ítems — el resto es de primera</p></div>
+  <p class="s">kg en {{ resumen.n_segunda }} ítems — el resto es PRI</p></div>
 <div class="card"><p class="k">Sin nadie a quién llamar</p>
     <p class="v">{{ resumen.sin_pista }}</p>
     <p class="s">{{ resumen.kg_sin_pista | num_es(0) }} kg — no es una lista, es una decisión</p></div>
@@ -49,7 +49,7 @@ saber si lo que hicimos funcionó.</div>
 <table class="resumen">
 <thead><tr><th>Grupo</th><th class="n">Subgrupos</th><th class="n">Ítems</th>
 <th class="n">Kg en saldo</th><th class="n">% del total</th>
-<th class="n">De 2ª</th></tr></thead>
+<th class="n">Kg SEG</th></tr></thead>
 <tbody>
 {% for g in grupos_resumen %}
   <tr><td class="tela">{{ g.grupo }}</td>
@@ -69,8 +69,8 @@ saber si lo que hicimos funcionó.</div>
 
 <h2>Tela por tela</h2>
 <p class="sub">Hay dos motivos para estar acá: la tela entera está parada, o la
-tela se vende bien pero le quedan kilos de <b>segunda</b> —por eso algunas
-figuran con una venta reciente—. La columna Calidad los separa, y se filtra.
+tela se vende bien pero le quedan kilos <b>SEG</b> —por eso algunas figuran con
+una venta reciente—. La columna Categoría los separa, y se filtra.
 Toque una fila para ver a quién ofrecérsela.</p>
 
 <div class="barra">
@@ -89,10 +89,13 @@ Toque una fila para ver a quién ofrecérsela.</p>
      de las 307 filas con venta reciente entraron por sus kilos de SEGUNDA, no
      por estar paradas: la tela se vende bien, lo que no sale es la segunda.
      Mezcladas no se entiende, así que se pueden separar. #}
+  {# ⚠ Una sola palabra para esto en toda la pantalla: CATEGORÍA, con PRI y
+     SEG. Antes convivían "calidad", "segunda", "de 2ª" y "SEG" para la misma
+     cosa — dueña 18/08/2026: "no repetir con segunda". #}
   <select id="calidad" onchange="filtrar()">
-    <option value="">Primera y segunda</option>
-    <option value="PRI">Sólo primera</option>
-    <option value="SEG">Sólo segunda</option>
+    <option value="">Toda categoría</option>
+    <option value="PRI">Sólo PRI</option>
+    <option value="SEG">Sólo SEG</option>
   </select>
   <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
     <option value="">Todos los vendedores</option>
@@ -117,7 +120,7 @@ Toque una fila para ver a quién ofrecérsela.</p>
 <th class="ord opt" data-i="0">Grupo</th>
 <th class="ord" data-i="1">Tela</th>
 <th class="ord" data-i="2">Color</th>
-<th class="ord" data-i="3">Calidad</th>
+<th class="ord" data-i="3">Categoría</th>
 <th class="ord n" data-i="4" data-num="1">Kg en saldo</th>
 <th class="ord n opt" data-i="5" data-num="1">% del saldo</th>
 <th class="ord n" data-i="6" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
@@ -142,9 +145,9 @@ Toque una fila para ver a quién ofrecérsela.</p>
     <td class="g opt">{{ f.categoria or '—' }}</td>
     <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}</td>
     <td>{{ f.color }}</td>
-    {# ⭐ Calidad como COLUMNA y no como píldora suelta: se ordena, se filtra y
-       se lee en vertical. Dueña 18/08/2026: "tiene que haber columna PRI SEG y
-       que se pueda filtrar".
+    {# ⭐ La categoría como COLUMNA y no como píldora suelta: se ordena, se
+       filtra y se lee en vertical. Dueña 18/08/2026: "tiene que haber columna
+       PRI SEG y que se pueda filtrar".
        Una fila puede tener kilos de las dos —un parado con lotes mezclados—,
        así que hay tres valores y el filtro los toma por separado. #}
     <td class="cal">{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>
@@ -152,12 +155,13 @@ Toque una fila para ver a quién ofrecérsela.</p>
       {% else %}<span class="q pri">PRI</span>{% endif %}</td>
     {# ⚠ Un ítem de 0,4 kg mostrado como "0" parece un error de la pantalla: la
        dueña preguntó por qué había cosas en 0 kg. Abajo de 1 kg va con decimal. #}
-    {# Lo vendido va DEBAJO de los kilos y sólo cuando hay algo: como columna
-       propia estaba en "—" en las 711 filas y se llevaba una novena parte del
-       ancho para no decir nada. #}
+    {# ⚠ Acá abajo estuvo un "−43 vendidos" que no se entendía: dos números de
+       kilos apilados en la misma celda sin decir qué era cada uno. Dueña
+       18/08/2026: "que quiere decir x vendidos? deja de ponerme cosas raras".
+       Lo vendido se cuenta igual y se muestra al abrir la fila, con la frase
+       entera. En la celda va UN número: los kilos que hay. #}
     <td class="n" data-v="{{ f.stock_kg }}">
-      {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}
-      {% if f.kg_vendidos %}<div class="vendido">−{{ f.kg_vendidos | num_es(0) }} desde el 25/08</div>{% endif %}</td>
+      {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>
     <td class="n g opt" data-v="{{ f.pct_total }}">{{ f.pct_total | num_es(1) }}%</td>
     <td class="n {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
     <td class="g n opt" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
@@ -169,11 +173,14 @@ Toque una fila para ver a quién ofrecérsela.</p>
       en saldo repartidos en {{ f.colores_tela }}
       {{ 'color' if f.colores_tela == 1 else 'colores' }} —
       <b>{{ f.pct_tela | num_es(1) }}%</b> de todos los saldos de la fábrica.
-      {% if f.kg_segunda %}De esta fila, {{ f.kg_segunda | num_es(1) if f.kg_segunda < 1 else f.kg_segunda | num_es(0) }} kg son de
-      <b>segunda</b> y {{ f.kg_primera | num_es(0) }} de primera.{% endif %}
+      {% if f.kg_segunda %}De esta fila,
+      <b>{{ f.kg_segunda | num_es(1) if f.kg_segunda < 1 else f.kg_segunda | num_es(0) }} kg son SEG</b>
+      y {{ f.kg_primera | num_es(0) }} kg PRI.{% endif %}
       {# La columna Estado se fue, pero de qué año son los candidatos importa:
          no es lo mismo llamar a alguien que compró en julio que a uno que la
          compró en 2023. Va acá, que es donde están esos clientes. #}
+      {% if f.kg_vendidos %}Desde que arrancó la competencia se vendieron
+      <b>{{ f.kg_vendidos | num_es(0) }} kg</b> de esta tela y este color.{% endif %}
       {% if f.anio_pista and f.anio_pista < ahora_anio %}
         <b>Ojo:</b> los de abajo la compraron por última vez en {{ f.anio_pista }}.{% endif %}
     </p>
@@ -210,14 +217,14 @@ Toque una fila para ver a quién ofrecérsela.</p>
 
 <footer>
 Saldo = producto terminado (bodega 53) quieto hace 12 meses o más (con stock ≥
-20 kg), MÁS los kilos de segunda calidad de cualquier tela, se venda o no. De
-una tela que se vende bien entran sólo sus kilos de segunda. Los candidatos son los clientes que compraron esa TELA —cualquier color— en el
+20 kg), MÁS los kilos de categoría SEG de cualquier tela, se venda o no. De una
+tela que se vende bien entran sólo sus kilos SEG. Los candidatos son los clientes que compraron esa TELA —cualquier color— en el
 último año en que alguien la compró. Si ese año no es el corriente ni el
 anterior, la fila va marcada como <b>improbable</b> con su fecha: un cliente de
 2023 no es un buen candidato, pero es el único que alguna vez quiso esa tela.
 El código es el mismo <code>codigo_cli</code> del resto del programa.
-Primera y segunda salen del atributo de calidad del LOTE en Asinfo, no del
-producto: por eso un mismo tela × color puede tener kilos de las dos.
+PRI y SEG salen del atributo del LOTE en Asinfo, no del producto: por eso una
+misma tela × color puede tener kilos de las dos.
 </footer>
 {% endblock %}
 
