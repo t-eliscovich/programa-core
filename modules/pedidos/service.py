@@ -707,3 +707,55 @@ def por_cliente() -> list[dict]:
     for g in acc.values():
         g["pedido"] = round(g["pedido"], 1)
     return sorted(acc.values(), key=lambda g: (-g["pedido"], g["cliente"]))
+
+
+# ── Acabado (TUB/ABI) por producto (2026-08-18) ──────────────────────────────
+# La dueña necesita ver si el pedido es abierto o tubular. El acabado NO está en
+# la línea de pedido, pero SÍ es un atributo del producto terminado: se resuelve
+# igual que en stock_asinfo_lote (EAV del lote, `id_atributo = 1`), agrupado por
+# producto (todos los lotes de un producto comparten su acabado). Consulta
+# APARTE y fail-soft: si Asinfo no contesta o la SQL falla, se devuelve {} y la
+# pantalla simplemente no muestra el punto — nunca se cae. Estampado queda
+# afuera a pedido de la dueña.
+_SQL_ACABADO = """
+SELECT pr.codigo,
+       MAX(CASE WHEN va.id_atributo = 1 THEN va.nombre END) AS acabado
+  FROM saldo_producto_lote spl
+  JOIN producto pr ON pr.id_producto = spl.id_producto
+  JOIN lote l ON l.id_lote = spl.id_lote
+  UNPIVOT (idv FOR slot IN (
+      id_valor_atributo_1, id_valor_atributo_2, id_valor_atributo_3,
+      id_valor_atributo_4, id_valor_atributo_5, id_valor_atributo_6,
+      id_valor_atributo_7, id_valor_atributo_8, id_valor_atributo_9,
+      id_valor_atributo_10)) u
+  JOIN valor_atributo va ON va.id_valor_atributo = u.idv
+ WHERE spl.id_bodega = {bod}
+ GROUP BY pr.codigo
+"""
+
+
+def acabados_por_producto() -> dict[str, str]:
+    """`{código de producto: 'TUB' | 'ABI' | ...}`. `{}` si falla (fail-soft)."""
+    try:
+        filas, ok = metabase_client.fetch_dataset_estado(
+            ASINFO_DB, _SQL_ACABADO.format(bod=BODEGA_TERMINADO))
+        if not ok:
+            return {}
+        out = {}
+        for r in filas:
+            cod = str(r.get("codigo") or "").strip()
+            aca = str(r.get("acabado") or "").strip().upper()
+            if cod and aca:
+                out[cod] = aca
+        return out
+    except Exception:  # noqa: BLE001 — sin acabado, la pantalla sigue andando
+        _LOG.warning("pedidos: no pude traer el acabado", exc_info=True)
+        return {}
+
+
+def marcar_acabado(filas: list[dict]) -> list[dict]:
+    """Agrega `acabado` a cada fila (vacío si no se pudo resolver)."""
+    m = acabados_por_producto()
+    for f in filas:
+        f["acabado"] = m.get(f["codigo"], "")
+    return filas

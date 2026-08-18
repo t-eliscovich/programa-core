@@ -770,3 +770,35 @@ def test_el_desplegable_del_corte_color_muestra_cliente_y_fecha(app, fake_db):
     assert ">KAM<" in body
     assert "5 ago" in body               # la fecha del pedido
     assert "PDCL-29712" in body          # y el número
+
+
+def test_marcar_acabado_pega_el_acabado_por_codigo_de_producto():
+    filas = [service._fila(_fila(codigo="FE96CAF"))]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([{"codigo": "FE96CAF", "acabado": "TUB"}], True)):
+        service.marcar_acabado(filas)
+    assert filas[0]["acabado"] == "TUB"
+
+
+def test_si_asinfo_no_da_el_acabado_la_pantalla_sigue_sin_punto():
+    filas = [service._fila(_fila(codigo="FE96CAF"))]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([], False)):
+        service.marcar_acabado(filas)
+    assert filas[0]["acabado"] == ""
+
+
+def test_el_corte_color_muestra_el_punto_de_acabado_tub_abi(app, fake_db):
+    c = _login(app, fake_db)
+
+    def fake(_db, sql, **_kw):
+        if "saldo_producto_lote" in sql and "id_atributo = 1" in sql:
+            return ([{"codigo": "FE96CAF", "acabado": "TUB"}], True)
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return ([], True)
+        return ([_fila()], True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert 'class="dot tub"' in body       # el punto tubular en la fila
+    assert "tubular" in body and "abierto" in body   # la leyenda

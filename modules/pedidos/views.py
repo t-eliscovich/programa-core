@@ -70,6 +70,9 @@ def lista():
     if not disponible or not categorias:
         return render_template("pedidos/lista.html", **ctx)
 
+    if corte in ("color", "tela"):
+        service.marcar_acabado(filas)   # el punto TUB/ABI; fail-soft
+
     if corte == "color":
         ctx["colores"] = service.por_color(filas)
         ctx["pedidos_por_color"] = service.pedidos_por_color()
