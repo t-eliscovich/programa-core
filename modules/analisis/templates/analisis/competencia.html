@@ -42,7 +42,10 @@ tr.yo td{background:#f0fdf4}
 </style>
 
 <h1>Competencia — liquidar lo parado</h1>
-<p class="sub">Quién saca más de lo que está quieto en bodega.</p>
+<p class="sub">Quién saca más de lo que está quieto en bodega.
+{% if dias_para_el_cierre > 0 %}Faltan <b>{{ dias_para_el_cierre }} días</b>
+para el {{ cierre.strftime('%d/%m/%Y') }}.
+{% else %}Terminó el {{ cierre.strftime('%d/%m/%Y') }}.{% endif %}</p>
 
 <div class="term">
   <div class="tres">
@@ -73,8 +76,9 @@ tr.yo td{background:#f0fdf4}
 <div class="reglas">
 <ol>
   <li>Se compite por <b>sacar la tela parada</b>: la que hace 12 meses o más que
-      no se vende. Arrancamos el {{ largada.strftime('%d/%m/%Y') }} con
-      <b>{{ kg_al_largar | num_es(0) }} kg</b>.</li>
+      no se vende. Del <b>{{ largada.strftime('%d/%m/%Y') }}</b> al
+      <b>{{ cierre.strftime('%d/%m/%Y') }}</b>, arrancando con
+      {{ kg_al_largar | num_es(0) }} kg.</li>
   <li><b>Todos tenemos la misma meta</b>, sin importar el tamaño de la cartera:
       {{ (meta_kg / (competidores | length)) | num_es(0) }} kg cada uno.</li>
   <li>Esa meta está <b>repartida en los {{ grupos | length }} grupos</b>. Los de

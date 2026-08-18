@@ -607,9 +607,12 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
     def fake_one(sql, params=None, conn=None):
         s = " ".join(sql.split())
         if "parado_config" in s:
-            clave = (params or ("",))[0]
-            return {"valor": total_pct} if clave == "meta_total_pct" else \
-                   {"valor": "2026-08-17"}
+            # ⚠ Devolver lo mismo para toda clave hacía que `cierre` valiera la
+            # fecha de largada y el test de la fecha de cierre pasara por el
+            # motivo equivocado.
+            return {"valor": {"meta_total_pct": total_pct,
+                              "largada": "2026-08-17",
+                              "cierre": "2026-12-31"}[(params or ("",))[0]]}
         return None
 
     monkeypatch.setattr(queries.db, "fetch_all", fake)
@@ -1152,3 +1155,22 @@ def test_un_item_vendido_entero_SI_sigue_en_el_resumen():
         {"categoria": "Jersey", "subcategoria": "Y", "stock_kg": 0,
          "kg_segunda": 0}])
     assert [x["grupo"] for x in g] == ["Jersey"] and g[0]["n_items"] == 1
+
+
+def test_la_competencia_tiene_fecha_de_cierre(monkeypatch):
+    """Dueña 17/08/2026: "es una competencia hasta fin de año". La fecha vive en
+    `parado_config` y no hardcodeada, porque la presentación que se les da a los
+    vendedores dice la misma: si un día se corre, tiene que cambiar en UN lugar
+    y no en dos que se olvidan de coincidir."""
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch)
+    assert c["cierre"] == _d(2026, 12, 31)
+    assert c["dias_para_el_cierre"] == (_d(2026, 12, 31) - c["hoy"]).days
+
+
+def test_la_pantalla_dice_cuanto_falta_para_el_cierre():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
+    assert "dias_para_el_cierre" in html
+    assert "Terminó el" in html, "cuando pase la fecha tiene que decirlo"

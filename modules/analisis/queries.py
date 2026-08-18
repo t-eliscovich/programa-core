@@ -469,6 +469,7 @@ def competencia() -> dict:
         "SELECT categoria, pct FROM scintela.parado_meta")}
     total_pct = float(config("meta_total_pct", "100"))
     largada = date.fromisoformat(config("largada", "2026-08-17"))
+    cierre = date.fromisoformat(config("cierre", "2026-12-31"))
     _meta_pct(grupos, override, total_pct)
 
     # ⭐ Sólo cuentan las ventas desde la LARGADA. La cohorte se marcó el 13/08
@@ -558,6 +559,8 @@ def competencia() -> dict:
     return {
         "hoy": today_ec(),
         "largada": largada,
+        "cierre": cierre,
+        "dias_para_el_cierre": (cierre - today_ec()).days,
         "total_pct": total_pct,
         "grupos": grupos,
         "ranking": ranking,
