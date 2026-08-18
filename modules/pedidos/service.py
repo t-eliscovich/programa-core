@@ -718,18 +718,23 @@ def por_cliente() -> list[dict]:
 # pantalla simplemente no muestra el punto — nunca se cae. Estampado queda
 # afuera a pedido de la dueña.
 _SQL_ACABADO = """
-SELECT pr.codigo,
-       MAX(CASE WHEN va.id_atributo = 1 THEN va.nombre END) AS acabado
+WITH attr AS (
+    SELECT u.id_lote,
+           MAX(CASE WHEN va.id_atributo = 1 THEN va.nombre END) AS acabado
+      FROM lote l
+      UNPIVOT (idv FOR slot IN (
+          id_valor_atributo_1, id_valor_atributo_2, id_valor_atributo_3,
+          id_valor_atributo_4, id_valor_atributo_5, id_valor_atributo_6,
+          id_valor_atributo_7, id_valor_atributo_8, id_valor_atributo_9,
+          id_valor_atributo_10)) u
+      JOIN valor_atributo va ON va.id_valor_atributo = u.idv
+     GROUP BY u.id_lote
+)
+SELECT pr.codigo, MAX(a.acabado) AS acabado
   FROM saldo_producto_lote spl
   JOIN producto pr ON pr.id_producto = spl.id_producto
-  JOIN lote l ON l.id_lote = spl.id_lote
-  UNPIVOT (idv FOR slot IN (
-      id_valor_atributo_1, id_valor_atributo_2, id_valor_atributo_3,
-      id_valor_atributo_4, id_valor_atributo_5, id_valor_atributo_6,
-      id_valor_atributo_7, id_valor_atributo_8, id_valor_atributo_9,
-      id_valor_atributo_10)) u
-  JOIN valor_atributo va ON va.id_valor_atributo = u.idv
- WHERE spl.id_bodega = {bod}
+  JOIN attr a ON a.id_lote = spl.id_lote
+ WHERE spl.id_bodega = {bod} AND a.acabado IS NOT NULL
  GROUP BY pr.codigo
 """
 
