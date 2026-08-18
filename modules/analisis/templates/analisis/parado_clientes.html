@@ -65,7 +65,7 @@
     {{ '← Volver a la competencia' if mia else '← Ver por tela' }}</a>
 </div>
 
-<p class="cabecera-imp">Intela · telas paradas para ofrecer
+<p class="cabecera-imp">Intela · saldos para ofrecer
   {% if vend %}— {{ vend }}{% endif %}
   {% if estado.actualizado %}· {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}</p>
 
@@ -75,11 +75,11 @@
     <span>{{ c.nombre }}</span>
     <span class="cod">{{ c.codigo }}{% if c.codigo in codigos_ambiguos %}
       · ⚠ código repetido{% endif %}</span>
-    <span class="kg">{{ c.kg_potencial | num_es(0) }} kg parados en telas que compra</span>
+    <span class="kg">{{ c.kg_potencial | num_es(0) }} kg en saldo de telas que compra</span>
   </h3>
   <p class="meta">{{ c.provincia }} · {{ c.vend_pc or 'mostrador' }}</p>
   <table>
-    <thead><tr><th>Tela</th><th>Colores parados</th><th class="n">Kg parados</th>
+    <thead><tr><th>Tela</th><th>Colores parados</th><th class="n">Kg en saldo</th>
     <th class="n">Le vendimos</th><th class="n">Última vez</th></tr></thead>
     <tbody>
     {% for t in c.telas %}
@@ -109,18 +109,18 @@
 {% if not clientes and not improbables %}
   <div class="alerta">No hay nada para ofrecer con este filtro. Si la lista está
   vacía entera, todavía no se trajeron los datos: andá a
-  <a href="/analisis/parado">Lo parado</a> y toque «Actualizar desde Asinfo».</div>
+  <a href="/analisis/parado">Saldos</a> y toque «Actualizar desde Asinfo».</div>
 {% endif %}
 
 <footer>
 <span class="noimp">
 El botón «Bajar a Excel» baja lo mismo que está viendo — con este vendedor y
 este orden.<br>
-⚠ Los «kg parados en telas que compra» <b>no se suman entre clientes</b>: una
-misma tela parada aparece en la lista de todos los que la compran, así que la
+⚠ Los «kg en saldo de telas que compra» <b>no se suman entre clientes</b>: una
+mismo saldo aparece en la lista de todos los que la compran, así que la
 columna sirve para ordenar, no para prometer.<br>
 </span>
-Kg parados = producto terminado quieto hace 12 meses o más. «Le vendimos» son
+Kg en saldo = producto terminado quieto hace 12 meses o más. «Le vendimos» son
 los kilos de esa tela que ese cliente compró la última vez que la compró.
 </footer>
 {% endblock %}

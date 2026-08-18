@@ -27,14 +27,14 @@ CODIGOS_AMBIGUOS = {"BLP", "BRC", "JQS", "LEC", "YMO", "JRP", "MTE"}
 MENU = [
     {
         "url": "/analisis/parado",
-        "titulo": "Lo parado",
+        "titulo": "Saldos",
         "bajada": "Qué está quieto en bodega y a qué cliente llamarle por eso.",
         "listo": True,
     },
     {
         "url": "/analisis/parado/clientes",
         "titulo": "A quién ofrecerle qué",
-        "bajada": "La hoja del vendedor: cliente por cliente, qué telas paradas "
+        "bajada": "La hoja del vendedor: cliente por cliente, qué saldos "
                   "puede llevarse. Se imprime.",
         "listo": True,
     },
@@ -59,7 +59,7 @@ MENU = [
 #: de la oficina sería darle tres links que le dan 404.
 MENU_VENDEDOR = [
     {"url": "/analisis/competencia", "titulo": "Competencia", "listo": True},
-    {"url": "/analisis/competencia/telas", "titulo": "Qué hay que sacar",
+    {"url": "/analisis/competencia/telas", "titulo": "Saldos",
      "listo": True},
     {"url": "/analisis/competencia/mi-hoja", "titulo": "Tu hoja", "listo": True},
 ]
@@ -141,7 +141,7 @@ def parado_csv():
             ("ultima_venta", "Última venta"),
             ("fecha_marcado", "Marcado el"),
         ],
-        filename="lo_parado.csv",
+        filename="saldos.csv",
     )
 
 
@@ -189,7 +189,7 @@ def mis_telas_csv():
             ("kg_segunda", "Kg de segunda"),
             ("ultima_venta", "Última venta"),
         ],
-        filename="que_hay_que_sacar.csv",
+        filename="saldos.csv",
     )
 
 

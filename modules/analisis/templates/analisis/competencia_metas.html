@@ -2,7 +2,7 @@
 {% block titulo %}Metas{% endblock %}
 {% block contenido %}
 <h1>Metas de la competencia</h1>
-<p class="sub">Se pone cuánto hay que sacar en total y se reparte entre los
+<p class="sub">Se pone cuánto hay que vender en total y se reparte entre los
 grupos según lo que pesa cada uno — o sea, todos con la misma exigencia. Después
 se puede pisar el % de un grupo puntual; para volver al automático, dejar el
 campo vacío.</p>
@@ -11,13 +11,13 @@ campo vacío.</p>
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 <div class="nota">
-  <b>Hay que sacar</b>
+  <b>Hay que vender</b>
   <input name="meta_total_pct" value="{{ total_pct | num_es(1) }}"
-         style="width:80px;text-align:right"> % de lo parado
+         style="width:80px;text-align:right"> % de los saldos
   — hoy son <b>{{ meta_kg | num_es(0) }} kg</b> de {{ kg_parado | num_es(0) }}.
 </div>
 <table>
-<thead><tr><th>Grupo</th><th class="n">Parado</th><th class="n">Peso</th>
+<thead><tr><th>Grupo</th><th class="n">En saldo</th><th class="n">Peso</th>
 <th class="n">Meta % (vacío = el total)</th><th class="n">Son</th></tr></thead>
 <tbody>
 {% for g in grupos %}

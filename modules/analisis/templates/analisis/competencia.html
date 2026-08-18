@@ -45,8 +45,8 @@ td.puesto{font-weight:600;color:var(--g);width:34px}
 tr.yo td{background:#f0fdf4}
 </style>
 
-<h1>Competencia — liquidar lo parado</h1>
-<p class="sub">Quién saca más de lo que está quieto en bodega.
+<h1>Competencia — vender los saldos</h1>
+<p class="sub">Quién vende más de lo que está quieto en bodega.
 {% if dias_para_el_cierre > 0 %}Faltan <b>{{ dias_para_el_cierre }} días</b>
 para el {{ cierre.strftime('%d/%m/%Y') }}.
 {% else %}Terminó el {{ cierre.strftime('%d/%m/%Y') }}.{% endif %}</p>
@@ -79,7 +79,7 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
 <h2>Las reglas</h2>
 <div class="reglas">
 <ol>
-  <li>Se compite por <b>sacar la tela parada</b>: la que hace 12 meses o más que
+  <li>Se compite por <b>vender los saldos</b>: la tela que hace 12 meses o más que
       no se vende. Del <b>{{ largada.strftime('%d/%m/%Y') }}</b> al
       <b>{{ cierre.strftime('%d/%m/%Y') }}</b>, arrancando con
       {{ kg_al_largar | num_es(0) }} kg.</li>
@@ -170,13 +170,13 @@ grupos fuertes y flojos, así que se compara parejo.
 </tbody>
 </table>
 {% else %}
-<p class="sub">Todavía no se vendió nada de lo parado desde el
+<p class="sub">Todavía no se vendió ningún saldo desde el
 {{ largada.strftime('%d/%m/%Y') }}. La primera semana cierra el domingo.</p>
 {% endif %}
 
 <h2>Por grupo</h2>
 <p class="sub">La meta de cada grupo es su propio peso en el parado: si Jersey es
-el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
+el 31% de lo que está quieto, hay que vender el 31% de sus kilos.</p>
 <table>
 <thead><tr><th>Grupo</th><th class="n">Parado</th><th class="n">Meta</th>
 <th class="n opt">Liquidado</th><th class="n">% de la meta</th>
@@ -198,9 +198,9 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 
 
 
-<h2>Qué hay que sacar</h2>
-<p class="sub">{{ telas | length }} telas paradas.
-<a href="/analisis/competencia/telas">Verlas todas, con sus clientes al lado →</a></p>
+<h2>Los saldos</h2>
+<p class="sub">{{ telas | length }} telas en saldo.
+<a href="/analisis/competencia/telas">Ver todos los saldos, con sus clientes al lado →</a></p>
 <table>
 <thead><tr><th>Tela</th><th class="opt">Grupo</th><th class="n">Kg</th><th class="opt">Colores</th></tr></thead>
 <tbody>
@@ -211,12 +211,12 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 </tbody>
 </table>
 <p class="sub">Éstas son las ocho más grandes.
-<a href="/analisis/competencia/telas">Ver las {{ telas | length }} →</a></p>
+<a href="/analisis/competencia/telas">Ver los {{ telas | length }} →</a></p>
 
 {% if vend %}
-<h2>Lo suyo — sus clientes que ya compraron estas telas</h2>
+<h2>Lo suyo — sus clientes que ya compraron estos saldos</h2>
 <p class="sub">De su cartera. {{ mis_clientes | length }} clientes compraron
-alguna de las telas que hoy están paradas.
+alguno de los saldos de hoy.
 <a href="/analisis/competencia/mi-hoja">Ver su hoja completa e imprimirla →</a></p>
 {% if mis_clientes %}
 <table>
@@ -232,12 +232,12 @@ alguna de las telas que hoy están paradas.
 </tbody>
 </table>
 {% else %}
-<p class="sub">Ninguno de sus clientes compró estas telas todavía.</p>
+<p class="sub">Ninguno de sus clientes compró estos saldos todavía.</p>
 {% endif %}
 {% endif %}
 
 <footer>
-Parado = producto terminado quieto hace 12 meses o más, congelado el día que se
+Saldo = producto terminado quieto hace 12 meses o más, congelado el día que se
 marcó. Un kilo cuenta para el que figura como vendedor en la factura; «Intela»
 junta el mostrador y las facturas sin vendedor asignado.
 {% if kg_fuera_del_ranking %}

@@ -1249,3 +1249,29 @@ def test_las_pantallas_tratan_de_usted():
         for m in voseo.finditer(texto):
             malas.append(f"{archivo.name}: {m.group(0)}")
     assert not malas, f"voseo en pantallas que ven los vendedores: {malas}"
+
+
+def test_las_pantallas_hablan_de_saldos_y_no_de_sacar():
+    """Dueña 18/08/2026: "que hay que sacar, lo podemos llamar distinto en todos
+    lados" → eligió SALDOS. "Sacar" suena a que la fábrica se lo quiere sacar de
+    encima, y a ellos se les está pidiendo que lo ofrezcan; "saldos" es además
+    la palabra que el cliente ya usa cuando pregunta."""
+    import re
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    prohibido = re.compile(r"(hay que sacar|Lo parado|liquidar lo parado)", re.I)
+    malas = []
+    for archivo in carpeta.glob("*.html"):
+        # sin comentarios: ahí se explica el cambio y puede nombrar lo viejo
+        texto = re.sub(r"(\{#.*?#\}|/\*.*?\*/|//[^\n]*)", " ",
+                       archivo.read_text(encoding="utf-8"), flags=re.S)
+        for m in prohibido.finditer(texto):
+            malas.append(f"{archivo.name}: {m.group(0)}")
+    assert not malas, f"quedó el nombre viejo: {malas}"
+
+
+def test_el_menu_dice_saldos():
+    from modules.analisis import views
+    assert any(m["titulo"] == "Saldos" for m in views.MENU)
+    assert any(m["titulo"] == "Saldos" for m in views.MENU_VENDEDOR)
