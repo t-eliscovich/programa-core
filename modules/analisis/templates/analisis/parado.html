@@ -99,9 +99,7 @@ Toque una fila para ver a quién ofrecérsela.</p>
     {% if not mia %}{% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}{% endif %}
   </select>
   <span class="sub" id="cuenta" style="margin:0"></span>
-  <a href="{{ '/analisis/competencia/telas.csv' if mia else '/analisis/parado.csv' }}"
-     style="align-self:center;color:var(--az);
-     font-size:14px;text-decoration:none">Bajar TODO a Excel</a>
+  <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
   <a href="{{ '/analisis/competencia/mi-hoja' if mia else '/analisis/parado/clientes' }}"
      style="margin-left:auto;align-self:center;
      color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
@@ -244,6 +242,8 @@ function filtrar(){
   document.getElementById('cuenta').textContent =
     vistos + (vistos === 1 ? ' tela' : ' telas') + ' · ' +
     kg.toLocaleString('es-EC', {maximumFractionDigits: 0}) + ' kg';
+  document.getElementById('excel').textContent = 'Bajar a Excel (' + vistos + ')';
+  guardarFiltros();
 }
 // Elegir un grupo deja SÓLO sus subgrupos en el segundo desplegable. Sin esto
 // se puede pedir "Fleece" + "Jersey 3.5" y la tabla queda vacía sin decir por
@@ -308,6 +308,60 @@ function abrir(tr){
     tr.querySelector('.flecha').textContent = '▾';
   }
 }
-document.addEventListener('DOMContentLoaded', filtrar);
+// ── Los filtros viven en la DIRECCIÓN y se recuerdan ───────────────────────
+// Dueña 18/08/2026: filtrar, mirar una fila, volver y tener que rearmar todo.
+// En la URL además se pueden mandar por WhatsApp y el otro abre exactamente lo
+// mismo. Se guardan también en el navegador para el que vuelve al día
+// siguiente; la URL gana sobre lo guardado, porque si alguien te mandó un link
+// es porque quiere que veas ESO.
+const CAMPOS = ['q', 'grupo', 'subgrupo', 'calidad', 'vend'];
+const LLAVE = 'saldos-filtros';
+
+function guardarFiltros(){
+  const v = {};
+  CAMPOS.forEach(c => { const e = document.getElementById(c); if (e && e.value) v[c] = e.value; });
+  const qs = new URLSearchParams(v).toString();
+  history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  try { localStorage.setItem(LLAVE, JSON.stringify(v)); } catch (e) { /* modo privado */ }
+}
+
+function ponerFiltros(){
+  const url = new URLSearchParams(location.search);
+  let v = {};
+  if ([...url.keys()].some(k => CAMPOS.includes(k))) {
+    CAMPOS.forEach(c => { if (url.get(c)) v[c] = url.get(c); });
+  } else {
+    try { v = JSON.parse(localStorage.getItem(LLAVE) || '{}'); } catch (e) { v = {}; }
+  }
+  CAMPOS.forEach(c => {
+    const e = document.getElementById(c);
+    if (!e || !v[c]) return;
+    // ⚠ El subgrupo depende del grupo: si se pone antes, grupoCambio() lo
+    // borra por "no válido". Por eso el grupo se aplica primero y recién
+    // después el resto.
+    if (c === 'grupo') { e.value = v[c]; grupoCambio(); } else { e.value = v[c]; }
+  });
+}
+
+// ── El Excel baja LO QUE SE VE ─────────────────────────────────────────────
+// Se arma en el navegador desde las filas visibles y no en el servidor: los
+// filtros son del navegador, así que replicarlos allá serían dos reglas que un
+// día se despegan. Leyendo la misma tabla, el archivo no puede decir otra cosa
+// que la pantalla.
+function bajarExcel(){
+  const enc = [...document.querySelectorAll('#tabla thead th')].map(th => th.textContent.trim());
+  const filas = [...document.querySelectorAll('#tabla tr.item')].filter(tr => !tr.classList.contains('oculta'));
+  const limpia = t => '"' + t.replace(/\s+/g, ' ').replace(/"/g, '""').trim() + '"';
+  const lineas = [enc.map(limpia).join(';')];
+  filas.forEach(tr => lineas.push([...tr.children].map(td => limpia(td.textContent.replace('▸', ''))).join(';')));
+  const blob = new Blob(['\ufeff' + lineas.join('\n')], {type: 'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'saldos_' + filas.length + '_filas.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.addEventListener('DOMContentLoaded', () => { ponerFiltros(); filtrar(); });
 </script>
 {% endblock %}

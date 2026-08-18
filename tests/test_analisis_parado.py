@@ -405,25 +405,24 @@ def test_elegir_un_grupo_recorta_los_subgrupos():
     assert "o.dataset.g === g" in html
 
 
-def test_el_csv_baja_todo_y_no_lo_que_esta_filtrado():
-    """⭐ Los filtros de la pantalla son de JavaScript. Replicarlos del lado del
-    servidor sería escribir la misma regla dos veces en dos lenguajes, y el día
-    que una cambie el archivo diría algo distinto de la pantalla sin síntoma. El
-    archivo trae Grupo y Subgrupo como columnas justamente para filtrar en
-    Excel, y el botón dice "Bajar TODO"."""
+def test_el_excel_baja_lo_que_se_ve_y_se_arma_en_el_navegador():
+    """Dueña 18/08/2026: "que el Excel baje lo filtrado".
+
+    ⭐ Se arma leyendo la MISMA tabla que se está mirando, no consultando de
+    nuevo al servidor. Los filtros son de JavaScript: replicarlos allá serían
+    dos reglas que un día se despegan y el archivo diría algo distinto de la
+    pantalla sin ningún síntoma. Leyendo el DOM eso no puede pasar."""
+    html = _html_parado()
+    assert "function bajarExcel()" in html
+    assert "tr.classList.contains('oculta')" in html, (
+        "tiene que saltear justamente las filas que el filtro escondió")
+    assert "ufeff" in html, "sin BOM, Excel abre los acentos rotos"
+
+    # la ruta del servidor sigue existiendo y sigue sin leer filtros
     import inspect
 
     from modules.analisis import views
-    fuente = inspect.getsource(views.parado_csv)
-    assert "queries.items()" in fuente
-    assert "request.args" not in fuente, (
-        "si el CSV empieza a leer filtros, hay dos reglas de filtrado que "
-        "pueden divergir")
-
-    from pathlib import Path
-    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "Bajar TODO a Excel" in html
+    assert "request.args" not in inspect.getsource(views.parado_csv)
 
 
 def test_el_csv_lleva_grupo_y_subgrupo_como_columnas():
@@ -545,7 +544,7 @@ def test_las_dos_pantallas_tienen_su_boton_de_excel():
     from pathlib import Path
     carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
                "templates" / "analisis")
-    for archivo, texto in (("parado.html", "Bajar TODO a Excel"),
+    for archivo, texto in (("parado.html", "Bajar a Excel"),
                            ("parado_clientes.html", "Bajar a Excel")):
         html = (carpeta / archivo).read_text(encoding="utf-8")
         assert texto in html, f"{archivo} no ofrece bajar a Excel"
@@ -1537,3 +1536,31 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     assert 'class="q pri">PRI' in html and 'class="q seg">SEG' in html
     assert "Hay dos motivos para estar acá" in todo, (
         "la bajada explica por qué hay filas con venta reciente")
+
+
+def test_los_filtros_viven_en_la_direccion_y_se_recuerdan():
+    """Dueña 18/08/2026: filtrar, mirar una fila, volver y tener que rearmar
+    todo. En la URL además se pueden mandar por WhatsApp."""
+    html = _html_parado()
+    assert "history.replaceState" in html
+    assert "localStorage.setItem" in html
+    assert "new URLSearchParams(location.search)" in html
+
+
+def test_la_direccion_le_gana_a_lo_guardado():
+    """Si alguien te mandó un link es porque quiere que veas ESO, no lo que vos
+    tenías filtrado ayer."""
+    import re
+    html = " ".join(_html_parado().split())
+    i = html.index("function ponerFiltros()")
+    cuerpo = html[i:i + 700]
+    assert re.search(r"if \(\[\.\.\.url\.keys\(\)\].*?\) \{.*?url\.get", cuerpo), (
+        "primero la URL; el localStorage sólo si la URL no trae nada")
+
+
+def test_el_grupo_se_aplica_antes_que_el_subgrupo():
+    """⚠ `grupoCambio()` borra el subgrupo que no pertenece al grupo elegido.
+    Si se restauran en orden alfabético, el subgrupo se pone y el grupo lo
+    borra — el link compartido abre a medias y nadie sabe por qué."""
+    html = " ".join(_html_parado().split())
+    assert "if (c === 'grupo') { e.value = v[c]; grupoCambio(); }" in html
