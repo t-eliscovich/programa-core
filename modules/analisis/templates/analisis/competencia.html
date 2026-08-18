@@ -83,13 +83,13 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
       no se vende. Del <b>{{ largada.strftime('%d/%m/%Y') }}</b> al
       <b>{{ cierre.strftime('%d/%m/%Y') }}</b>, arrancando con
       {{ kg_al_largar | num_es(0) }} kg.</li>
-  <li><b>Todos tenemos la misma meta</b>, sin importar el tamaño de la cartera:
+  <li><b>Todos tienen la misma meta</b>, sin importar el tamaño de la cartera:
       {{ (meta_kg / (competidores | length)) | num_es(0) }} kg cada uno.</li>
   <li>Esa meta está <b>repartida en los {{ grupos | length }} grupos</b>. Los de
       abajo dicen cuánto le toca a cada uno de cada grupo.</li>
-  <li>⭐ <b>Cuando llegás a tu meta en un grupo, lo que vendas de más ahí no te
+  <li>⭐ <b>Cuando llega a su meta en un grupo, lo que venda de más ahí no le
       suma.</b> Para llegar al 100% hay que tocar todos los grupos, no llenarlo
-      con uno solo. (El kilo se vendió igual: le suma a la fábrica, no a tu
+      con uno solo. (El kilo se vendió igual: le suma a la fábrica, no a su
       puntaje.)</li>
   <li>Un kilo cuenta para <b>el vendedor que figura en la factura</b>. Intela
       —el mostrador— compite como uno más.</li>
@@ -97,8 +97,8 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
      razón: TODO se mide en kilos —la meta, lo vendido, el tope—; lo único que
      cambia es contra qué se compara. Decir "no por kilos" hacía sonar que los
      kilos no importan, que es lo contrario de lo que pasa. #}
-  <li>Todo se cuenta <b>en kilos</b>. El puesto sale de <b>qué parte de tu meta
-      llevás cumplida</b>, así compite parejo el de cartera grande con el de
+  <li>Todo se cuenta <b>en kilos</b>. El puesto sale de <b>qué parte de su meta
+      lleva cumplida</b>, así compite parejo el de cartera grande con el de
       cartera chica.</li>
   <li>Se mide <b>semana a semana</b>, de lunes a domingo.</li>
 </ol>
@@ -107,7 +107,7 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
 <h2>Quién va ganando</h2>
 <p class="sub">La meta de cada grupo se reparte en partes iguales. Todos tienen
 grupos fuertes y flojos, así que se compara parejo.
-<b>Tocá una fila para ver tu avance en cada tipo de tela.</b></p>
+<b>Toque una fila para ver su avance en cada tipo de tela.</b></p>
 <table>
 <thead><tr><th></th><th></th><th>Vendedor</th><th class="n opt">Meta</th>
 <th class="n opt">Liquidado</th><th class="n">% de su meta</th><th class="opt">Avance</th>
@@ -122,7 +122,7 @@ grupos fuertes y flojos, así que se compara parejo.
     <td class="puesto">{{ r.puesto }}
       {% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
       {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
-    <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · vos{% endif %}</td>
+    <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · usted{% endif %}</td>
     <td class="n g opt">{{ r.meta | num_es(0) }}</td>
     <td class="n opt">{{ r.kg | num_es(0) }}{% if r.excedente %}
       <div class="tope">cuentan {{ r.contado | num_es(0) }}</div>{% endif %}</td>
@@ -200,7 +200,7 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 
 <h2>Qué hay que sacar</h2>
 <p class="sub">{{ telas | length }} telas paradas.
-<a href="/analisis/competencia/telas">Verlas todas, con tus clientes al lado →</a></p>
+<a href="/analisis/competencia/telas">Verlas todas, con sus clientes al lado →</a></p>
 <table>
 <thead><tr><th>Tela</th><th class="opt">Grupo</th><th class="n">Kg</th><th class="opt">Colores</th></tr></thead>
 <tbody>
@@ -214,10 +214,10 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 <a href="/analisis/competencia/telas">Ver las {{ telas | length }} →</a></p>
 
 {% if vend %}
-<h2>Lo tuyo — tus clientes que ya compraron estas telas</h2>
-<p class="sub">De tu cartera. {{ mis_clientes | length }} clientes compraron
+<h2>Lo suyo — sus clientes que ya compraron estas telas</h2>
+<p class="sub">De su cartera. {{ mis_clientes | length }} clientes compraron
 alguna de las telas que hoy están paradas.
-<a href="/analisis/competencia/mi-hoja">Ver tu hoja completa e imprimirla →</a></p>
+<a href="/analisis/competencia/mi-hoja">Ver su hoja completa e imprimirla →</a></p>
 {% if mis_clientes %}
 <table>
 <thead><tr><th>Código</th><th>Cliente</th><th class="opt">Provincia</th>
@@ -232,7 +232,7 @@ alguna de las telas que hoy están paradas.
 </tbody>
 </table>
 {% else %}
-<p class="sub">Ninguno de tus clientes compró estas telas todavía.</p>
+<p class="sub">Ninguno de sus clientes compró estas telas todavía.</p>
 {% endif %}
 {% endif %}
 

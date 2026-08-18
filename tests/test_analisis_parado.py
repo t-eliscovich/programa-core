@@ -1067,9 +1067,9 @@ def test_la_pantalla_explica_las_reglas():
              "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     html = " ".join(_re.sub(r"\{#.*?#\}", " ", crudo, flags=_re.S).split())
     assert "Las reglas" in html
-    assert "no te</b> <b>suma" in html or "no te suma" in html, (
+    assert "no le suma" in html or "no le</b> suma" in html, (
         "la regla del tope tiene que estar escrita")
-    assert "qué parte de tu meta" in html
+    assert "qué parte de su meta" in html
     assert "no por kilos" not in html, (
         "todo se mide EN kilos; decir que no, confunde (dueña 17/08/2026)")
 
@@ -1225,3 +1225,27 @@ def test_las_columnas_se_esconden_por_clase_y_no_por_posicion():
     base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
     assert "nth-child" not in base
+
+
+def test_las_pantallas_tratan_de_usted():
+    """Dueña 18/08/2026: "en ecuador se trata de usted". El voseo se cuela de a
+    una palabra por vez, así que el test lo caza en cualquier plantilla nueva de
+    la sección."""
+    import re
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    # ⚠ Los imperativos van SÓLO con tilde: "toca", "baja" y "deja" sin tilde
+    # son formas de usted o de tercera persona y son correctas. Sin esa
+    # distinción el test marcaba "le toca" y "Bajar a Excel" como voseo.
+    voseo = re.compile(
+        r"\b(toc[áí]|baj[áí]|entrás|eleg[íi]|volvé|fijate|tenés|pod[ée]s|"
+        r"querés|vos|tuyo|tuyos|tus|llevás|ponés|dejá|mirá)\b", re.I)
+    malas = []
+    for archivo in carpeta.glob("*.html"):
+        # sin comentarios Jinja: ahí se explica el porqué y puede nombrarlo
+        texto = re.sub(r"\{#.*?#\}", " ", archivo.read_text(encoding="utf-8"),
+                       flags=re.S)
+        for m in voseo.finditer(texto):
+            malas.append(f"{archivo.name}: {m.group(0)}")
+    assert not malas, f"voseo en pantallas que ven los vendedores: {malas}"

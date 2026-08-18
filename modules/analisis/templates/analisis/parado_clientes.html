@@ -27,9 +27,9 @@
 .cabecera-imp{display:none;font-size:12px;color:var(--g);margin:0 0 10px}
 </style>
 
-<h1>{% if mia %}Tu hoja — a quién ofrecerle qué{% else %}A quién ofrecerle qué{% endif %}</h1>
+<h1>{% if mia %}Su hoja — a quién ofrecerle qué{% else %}A quién ofrecerle qué{% endif %}</h1>
 <p class="sub">
-  {% if mia %}Tus clientes{% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
+  {% if mia %}Sus clientes{% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
   {{ clientes | length }} clientes{% if improbables %} + {{ improbables | length }} improbables{% endif %} ·
   ordenado por {{ ordenes[orden] }}
   {% if estado.actualizado %}· datos al {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}
@@ -109,12 +109,12 @@
 {% if not clientes and not improbables %}
   <div class="alerta">No hay nada para ofrecer con este filtro. Si la lista está
   vacía entera, todavía no se trajeron los datos: andá a
-  <a href="/analisis/parado">Lo parado</a> y tocá «Actualizar desde Asinfo».</div>
+  <a href="/analisis/parado">Lo parado</a> y toque «Actualizar desde Asinfo».</div>
 {% endif %}
 
 <footer>
 <span class="noimp">
-El botón «Bajar a Excel» baja lo mismo que estás viendo — con este vendedor y
+El botón «Bajar a Excel» baja lo mismo que está viendo — con este vendedor y
 este orden.<br>
 ⚠ Los «kg parados en telas que compra» <b>no se suman entre clientes</b>: una
 misma tela parada aparece en la lista de todos los que la compran, así que la

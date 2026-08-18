@@ -11,13 +11,13 @@ th.ord.asc::after{content:" ↑";opacity:1}
 th.ord.desc::after{content:" ↓";opacity:1}
 </style>
 
-<h1>{% if mia %}Qué hay que sacar — y a quién de los tuyos ofrecérselo
+<h1>{% if mia %}Qué hay que sacar — y a quién de los suyos ofrecérselo
 {% else %}Lo parado — y a quién llamar{% endif %}</h1>
 <p class="sub">
 {% if estado.actualizado %}
   Datos de Asinfo al {{ estado.actualizado.strftime('%d/%m/%Y %H:%M') }}
 {% else %}
-  Todavía no se trajeron los datos — tocá «Actualizar»
+  Todavía no se trajeron los datos — toque «Actualizar»
 {% endif %}
 </p>
 
@@ -108,7 +108,7 @@ saber si lo que hicimos funcionó.</div>
 <th class="ord n opt" data-i="4" data-num="1">% del parado</th>
 <th class="ord n opt" data-i="5" data-num="1">De 2ª</th>
 <th class="ord n opt" data-i="6" data-num="1">Vendidos</th>
-<th class="ord n" data-i="7" data-num="1">{{ 'Tus clientes' if mia else 'Clientes' }}</th>
+<th class="ord n" data-i="7" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
 <th class="ord" data-i="8">Estado</th>
 <th class="ord n opt" data-i="9" data-num="1">Última venta</th>
 </tr></thead>
@@ -170,7 +170,7 @@ saber si lo que hicimos funcionó.</div>
     </table>
     {% else %}
       <p class="sub" style="margin:10px 0 0">
-      {% if mia %}Ninguno de <b>tus</b> clientes compró esta tela. Puede que sí
+      {% if mia %}Ninguno de <b>sus</b> clientes compró esta tela. Puede que sí
       la compre alguno de otro vendedor — o que no la compre nadie.
       {% else %}Nadie compró esta tela nunca — en ningún color, en ningún año. No
       se resuelve con una llamada: o la tela salió de catálogo, o el saldo es un

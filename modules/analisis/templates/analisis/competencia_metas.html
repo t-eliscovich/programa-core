@@ -2,9 +2,10 @@
 {% block titulo %}Metas{% endblock %}
 {% block contenido %}
 <h1>Metas de la competencia</h1>
-<p class="sub">Ponés cuánto hay que sacar en total y se reparte entre los grupos
-según lo que pesa cada uno — o sea, todos con la misma exigencia. Después podés
-pisar el % de un grupo puntual; para volver al automático, dejá el campo vacío.</p>
+<p class="sub">Se pone cuánto hay que sacar en total y se reparte entre los
+grupos según lo que pesa cada uno — o sea, todos con la misma exigencia. Después
+se puede pisar el % de un grupo puntual; para volver al automático, dejar el
+campo vacío.</p>
 
 <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
