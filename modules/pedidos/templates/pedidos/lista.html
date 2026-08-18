@@ -135,18 +135,14 @@
               <td>{{ f.produccion_d|num_es(0) if f.produccion_kg else '—' }}</td>
               <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{{ f.faltan_d|num_es(0) if f.faltan_kg > 0 else 'ok' }}</td>
             </tr>
-            {% if peds %}
+            {% for p in peds %}
               <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.codigo }}">
-                <td colspan="6"><div class="chips">
-                  {% for p in peds %}
-                    <span class="chip"><b title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</b>
-                      <span class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</span>
-                      · {{ p.cantidad|num_es(0) }} {{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}
-                      <span class="npd">{{ p.numero }}</span></span>
-                  {% endfor %}
-                </div></td>
+                <td class="cod"><span class="cli" title="{{ p.cliente }}" style="margin-left:40px">{{ p.codigo_cliente or p.cliente }}</span></td>
+                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</td>
+                <td>{{ p.cantidad|num_es(0) }} <span class="u">{{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span></td>
+                <td colspan="3" class="npd" style="text-align:left">{{ p.numero }}</td>
               </tr>
-            {% endif %}
+            {% endfor %}
           {% endfor %}
         {% endfor %}
       </tbody>
