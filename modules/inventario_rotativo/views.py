@@ -105,12 +105,16 @@ def lista():
 
 
 #: Las columnas del Excel, en el mismo orden que la pantalla.
+#: Una sola columna de faltante, en la unidad de la fila (dueña 2026-08-18:
+#: "falta tiene que ser en rollos o en kg pero no dos columnas, cuando hay
+#: unidades ya está"). La de kilos era para poder sumar la planilla entera,
+#: pero un total que mezcla telas con cuellos no se usa para nada.
 COLUMNAS = ("Color", "Tela", "Familia", "Acabado", "Un.", "Por semana",
             "En bodega", "Pedido (informativo)", "En proceso", "Alcanza (sem)",
-            "Falta", "Falta kg")
+            "Falta")
 
 #: Ancho de cada columna, en el orden de COLUMNAS.
-_ANCHOS = (10, 26, 13, 8, 6, 11, 11, 18, 11, 13, 9, 11)
+_ANCHOS = (10, 26, 13, 8, 6, 11, 11, 18, 11, 13, 9)
 
 
 def _valores(f: dict) -> list:
@@ -122,7 +126,7 @@ def _valores(f: dict) -> list:
         # negativo en una columna de semanas se lee como un dato, no como
         # un hueco.
         None if f["alcanza"] < 0 else f["alcanza"],
-        f["falta"], f["falta_kg"],
+        f["falta"],
     ]
 
 
@@ -199,7 +203,7 @@ def excel():
     for i, ancho in enumerate(_ANCHOS, 1):
         ws.column_dimensions[get_column_letter(i)].width = ancho
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:L{max(len(ordenadas) + 1, 2)}"
+    ws.auto_filter.ref = f"A1:K{max(len(ordenadas) + 1, 2)}"
 
     buf = io.BytesIO()
     wb.save(buf)

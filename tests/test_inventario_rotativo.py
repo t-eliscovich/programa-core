@@ -700,3 +700,22 @@ def test_la_pantalla_dice_de_cuantas_semanas_es_el_promedio(app, fake_db):
                       side_effect=_fake_asinfo()):
         body = c.get("/inventario-rotativo").get_data(as_text=True)
     assert f"promedio de las últimas {service.SEMANAS_CORTA}" in body
+
+
+def test_el_excel_trae_UNA_columna_de_faltante(app, fake_db):
+    """Dueña 2026-08-18: "falta tiene que ser en rollos o en kg pero no dos
+    columnas, cuando hay unidades ya está".
+
+    La de kilos servía para sumar la planilla entera, pero un total que mezcla
+    telas con cuellos no se usa para nada.
+    """
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()), \
+         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+        ws = _bajar(c)
+    cabecera = [c.value for c in ws[1]]
+    assert cabecera.count("Falta") == 1
+    assert "Falta kg" not in cabecera
+    assert cabecera[-1] == "Falta"
