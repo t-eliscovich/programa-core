@@ -78,6 +78,12 @@ text-decoration:none;color:inherit;display:block}
 .tarjeta h3{margin:0 0 4px;font-size:16px}
 .tarjeta p{margin:0;color:var(--g);font-size:13px}
 .tarjeta.pronto{opacity:.55;pointer-events:none}
+/* ⚠ El nombre de la tela en UNA sola fila. Con 10 columnas la tabla aprieta esa
+   celda y "Jersey Fancy" se parte en dos renglones, que duplica el alto de la
+   fila y hace que la lista se lea a saltos. nowrap la deja crecer: hay lugar
+   porque las columnas de números son angostas. En el celular vuelve a
+   partirse, que ahí es lo correcto — no entra de otra forma. */
+#tabla td.tela{white-space:nowrap}
 tr.oculta{display:none!important}
 [hidden]{display:none!important}
 footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--l);
@@ -116,6 +122,7 @@ font-size:12px;color:var(--g)}
   .reglas{padding:6px 16px 12px}
   .reglas li{font-size:13px}
   .opt{display:none!important}          /* columnas de contexto */
+  #tabla td.tela{white-space:normal}    /* en 390 px no entra de otra forma */
 }
 </style>
 </head>

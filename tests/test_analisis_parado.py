@@ -1367,3 +1367,18 @@ def test_la_tabla_semana_a_semana_no_se_dibuja():
             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     assert "<h2>Semana a semana</h2>" not in html
     assert "Esta semana" in html, "la columna del ranking se queda"
+
+
+def test_el_nombre_de_la_tela_no_se_parte_en_dos_renglones():
+    """Dueña 18/08/2026: "intenta que el nombre no ocupa mas de una fila". Con
+    10 columnas la tabla aprieta esa celda y "Jersey Fancy" se parte en dos, lo
+    que duplica el alto de la fila y hace que la lista se lea a saltos.
+
+    ⚠ En el celular vuelve a partirse a propósito: a 390 px no entra de otra
+    forma, y ahí el mal menor es la fila alta."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+           "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
+    assert "#tabla td.tela{white-space:nowrap}" in css
+    i = css.index("@media (max-width: 780px)")
+    assert "#tabla td.tela{white-space:normal}" in css[i:]
