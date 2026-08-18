@@ -69,9 +69,9 @@ saber si lo que hicimos funcionó.</div>
 
 <h2>Tela por tela</h2>
 <p class="sub">Hay dos motivos para estar acá: la tela entera está parada, o la
-tela se vende bien pero tiene kilos de <b>segunda</b> —ésas llevan la marca
-<span class="seg2">2ª</span> y por eso figuran con una venta reciente—. El
-primer filtro los separa. Toque una fila para ver a quién ofrecérsela.</p>
+tela se vende bien pero le quedan kilos de <b>segunda</b> —por eso algunas
+figuran con una venta reciente—. La columna Calidad los separa, y se filtra.
+Toque una fila para ver a quién ofrecérsela.</p>
 
 <div class="barra">
   <input id="q" placeholder="Buscar tela, color, cliente, provincia…" oninput="filtrar()">
@@ -89,10 +89,10 @@ primer filtro los separa. Toque una fila para ver a quién ofrecérsela.</p>
      de las 307 filas con venta reciente entraron por sus kilos de SEGUNDA, no
      por estar paradas: la tela se vende bien, lo que no sale es la segunda.
      Mezcladas no se entiende, así que se pueden separar. #}
-  <select id="motivo" onchange="filtrar()">
-    <option value="">Parados y de segunda</option>
-    <option value="parado">Sólo los parados</option>
-    <option value="segunda">Sólo los de segunda</option>
+  <select id="calidad" onchange="filtrar()">
+    <option value="">Primera y segunda</option>
+    <option value="PRI">Sólo primera</option>
+    <option value="SEG">Sólo segunda</option>
   </select>
   <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
     <option value="">Todos los vendedores</option>
@@ -118,9 +118,9 @@ primer filtro los separa. Toque una fila para ver a quién ofrecérsela.</p>
 <th class="ord opt" data-i="0">Grupo</th>
 <th class="ord" data-i="1">Tela</th>
 <th class="ord" data-i="2">Color</th>
-<th class="ord n" data-i="3" data-num="1">Kg en saldo</th>
-<th class="ord n opt" data-i="4" data-num="1">% del saldo</th>
-<th class="ord n opt" data-i="5" data-num="1">De 2ª</th>
+<th class="ord" data-i="3">Calidad</th>
+<th class="ord n" data-i="4" data-num="1">Kg en saldo</th>
+<th class="ord n opt" data-i="5" data-num="1">% del saldo</th>
 <th class="ord n" data-i="6" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
 <th class="ord n opt" data-i="7" data-num="1">Última venta</th>
 </tr></thead>
@@ -130,20 +130,23 @@ primer filtro los separa. Toque una fila para ver a quién ofrecérsela.</p>
   <tr class="item" onclick="abrir(this)"
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
-      data-motivo="{{ f.motivo or 'parado' }}"
+      data-cal="{% if f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
       data-vend="{{ cand | map(attribute='vend_pc') | select | unique | join(' ') }}"
       data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
                        (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
     <td class="g opt">{{ f.categoria or '—' }}</td>
-    {# Dueña 18/08/2026: "pique especial blanco, entonces pone bien que es de
-       segunda". Con la columna De 2ª sola no se leía: Pique Especial BLA se
-       vende todas las semanas y aparecía en una lista de saldos sin decir por
-       qué. La marca va PEGADA AL NOMBRE, que es lo que uno lee. #}
-    <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}{% if f.motivo == 'segunda' %}
-      <span class="seg2">2ª</span>{% endif %}</td>
+    <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}</td>
     <td>{{ f.color }}</td>
+    {# ⭐ Calidad como COLUMNA y no como píldora suelta: se ordena, se filtra y
+       se lee en vertical. Dueña 18/08/2026: "tiene que haber columna PRI SEG y
+       que se pueda filtrar".
+       Una fila puede tener kilos de las dos —un parado con lotes mezclados—,
+       así que hay tres valores y el filtro los toma por separado. #}
+    <td class="cal">{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>
+      {% elif f.kg_segunda %}<span class="q seg">SEG</span>
+      {% else %}<span class="q pri">PRI</span>{% endif %}</td>
     {# ⚠ Un ítem de 0,4 kg mostrado como "0" parece un error de la pantalla: la
        dueña preguntó por qué había cosas en 0 kg. Abajo de 1 kg va con decimal. #}
     {# Lo vendido va DEBAJO de los kilos y sólo cuando hay algo: como columna
@@ -153,7 +156,6 @@ primer filtro los separa. Toque una fila para ver a quién ofrecérsela.</p>
       {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}
       {% if f.kg_vendidos %}<div class="vendido">−{{ f.kg_vendidos | num_es(0) }} vendidos</div>{% endif %}</td>
     <td class="n g opt" data-v="{{ f.pct_total }}">{{ f.pct_total | num_es(1) }}%</td>
-    <td class="n opt" data-v="{{ f.kg_segunda }}">{% if f.kg_segunda %}<span class="pill viejo">{{ f.kg_segunda | num_es(1) if f.kg_segunda < 1 else f.kg_segunda | num_es(0) }} kg</span>{% else %}—{% endif %}</td>
     <td class="n {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
     <td class="g n opt" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
       {{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
@@ -223,7 +225,7 @@ function filtrar(){
   const v = document.getElementById('vend').value;
   const g = document.getElementById('grupo').value;
   const sg = document.getElementById('subgrupo').value;
-  const mo = document.getElementById('motivo').value;
+  const cal = document.getElementById('calidad').value;
   let vistos = 0, kg = 0;
   document.querySelectorAll('tr.item').forEach(tr => {
     const det = tr.nextElementSibling;
@@ -231,7 +233,7 @@ function filtrar(){
                (!v || tr.dataset.vend.split(' ').includes(v)) &&
                (!g || tr.dataset.grupo === g) &&
                (!sg || tr.dataset.sub === sg) &&
-               (!mo || tr.dataset.motivo === mo);
+               (!cal || tr.dataset.cal.split(' ').includes(cal));
     tr.classList.toggle('oculta', !ok);
     if (!ok) det.classList.remove('abierta');
     det.classList.toggle('oculta', !ok);
