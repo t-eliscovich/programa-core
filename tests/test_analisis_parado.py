@@ -785,10 +785,18 @@ def test_la_cartera_del_vendedor_sale_de_programa_core_y_no_de_asinfo():
     assert "vend_pc" not in fuente, "vend_pc es el de Asinfo, no la cartera de PC"
 
 
-def test_el_predicado_de_pertenencia_es_el_mismo_que_el_del_portal():
+def test_el_predicado_de_pertenencia_se_importa_del_portal():
+    """⭐ No se compara: se IMPORTA. Escrito a mano acá, el día que en
+    /mi-cartera cambien el criterio las dos pantallas le mostrarían al vendedor
+    carteras distintas y nadie se enteraría."""
+    import inspect
+
     from modules.mi_cartera import queries as mc
-    assert queries._ES_MI_CLIENTE == mc._ES_MI_CLIENTE, (
-        "dos definiciones de 'este cliente es mío' divergen en silencio")
+    assert mc._ES_MI_CLIENTE.replace(
+        "%(vend)s", "%(cartera)s") == queries._ES_MI_CLIENTE
+    fuente = inspect.getsource(queries)
+    assert "from modules.mi_cartera.queries import" in fuente, (
+        "tiene que venir por import, no copiado")
 
 
 def test_sin_vendedor_no_devuelve_la_lista_entera(monkeypatch):
@@ -808,13 +816,15 @@ def test_sin_vendedor_no_devuelve_la_lista_entera(monkeypatch):
 
 def test_el_vendedor_del_bloque_sale_del_usuario_y_no_de_la_url():
     """Si viniera del querystring, cualquiera vería la cartera de cualquiera
-    cambiando tres letras."""
+    cambiando tres letras. La vista lo pide por `_vend_actual()`, que sólo mira
+    la URL cuando el usuario es wildcard (preview de la dueña)."""
     import inspect
 
     from modules.analisis import views
     fuente = inspect.getsource(views.competencia)
-    assert '(g.user or {}).get("vend")' in fuente
-    assert "request.args" not in fuente
+    assert "_vend_actual()" in fuente
+    assert "request.args" not in fuente, (
+        "la vista no lee la URL: eso lo decide _vend_actual")
 
 
 # ── Semana a semana ─────────────────────────────────────────────────────────
@@ -895,3 +905,90 @@ def test_un_porcentaje_que_no_se_entiende_se_avisa(monkeypatch):
     assert malos == []
     assert views._numero("cuarenta", malos, "Jersey") is None
     assert malos == ["Jersey"]
+
+
+# ── Lo que necesita el vendedor para poder ofrecer ──────────────────────────
+
+def test_las_telas_a_sacar_no_llevan_un_solo_cliente_adentro():
+    """Es lo que le faltaba al vendedor: la pantalla le decía quién le compró
+    qué, pero no cuántos kilos hay ni de qué colores. Sin clientes adentro, la
+    lista es información de fábrica y la puede ver cualquiera."""
+    t = queries.telas_a_sacar([
+        {"subcategoria": "Kiana", "categoria": "Poliester", "color": "CAR",
+         "stock_kg": 100},
+        {"subcategoria": "Kiana", "categoria": "Poliester", "color": "LIF",
+         "stock_kg": 300},
+        {"subcategoria": "Jersey 3", "categoria": "Jersey", "color": "NEG",
+         "stock_kg": 50},
+    ])
+    assert [x["tela"] for x in t] == ["Kiana", "Jersey 3"], "de mayor a menor"
+    assert t[0]["kg"] == 400 and t[0]["n_colores"] == 2
+    assert t[0]["colores"] == "LIF, CAR", "los colores van por kilos"
+    assert all("cliente" not in k for x in t for k in x)
+
+
+def test_las_telas_sin_stock_no_se_listan():
+    assert queries.telas_a_sacar([
+        {"subcategoria": "X", "categoria": "Y", "color": "Z", "stock_kg": 0}]) == []
+
+
+def test_la_hoja_del_vendedor_usa_la_plantilla_de_la_oficina():
+    """⚠ Dos plantillas para el mismo papel divergen a la primera corrección
+    que se le hace a una sola. Ya pasó en /mi-cartera: ocho días imprimiendo
+    órdenes distintos sin síntoma."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.mi_hoja)
+    assert '"analisis/parado_clientes.html"' in fuente
+    assert "cartera_de=vend" in fuente, (
+        "la hoja propia se acota por la cartera de Programa Core")
+
+
+def test_la_hoja_propia_no_ofrece_el_selector_de_otros_vendedores():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado_clientes.html").read_text(encoding="utf-8")
+    assert "{% if not mia %}" in html
+
+
+def test_un_vendedor_no_puede_pedir_la_cartera_de_otro_por_la_url():
+    """`?vend=` sólo lo respeta un usuario wildcard, para previsualizar. Si el
+    que lo manda ES vendedor, gana el suyo."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views._vend_actual)
+    assert 'propio = (g.user or {}).get("vend")' in fuente
+    assert "if propio:" in fuente and "return propio" in fuente
+    assert '"*" in (g.get("permisos")' in fuente
+
+
+def test_la_hoja_general_no_se_le_abre_nunca_al_vendedor():
+    """/analisis/parado/clientes tiene los clientes de TODOS. La hoja del
+    vendedor cuelga de /analisis/competencia/ justamente para no tener que
+    abrirle esa."""
+    import scope_vendedor
+    for p in scope_vendedor.PREFIJOS_PERMITIDOS:
+        assert not p.startswith("/analisis/parado")
+
+
+def test_la_hoja_propia_baja_a_excel_por_su_propia_ruta():
+    """Dueña: "de todos lados deberia poder bajar a excel". El CSV de la hoja
+    propia cuelga del MISMO camino que la pantalla (…/mi-hoja.csv) para que
+    quede dentro del mismo permiso del allowlist, y va recortado por cartera."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.mi_hoja_csv)
+    assert "cartera_de=vend" in fuente
+    assert "/analisis/competencia/mi-hoja.csv" in inspect.getsource(views)
+
+
+def test_el_csv_de_la_hoja_propia_no_lleva_la_columna_del_vendedor():
+    """En la hoja propia son todos suyos: una columna "Vendedor" con el mismo
+    valor repetido no dice nada y ocupa lugar."""
+    import inspect
+
+    from modules.analisis import views
+    assert '"Vendedor"' not in inspect.getsource(views.mi_hoja_csv)

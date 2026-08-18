@@ -160,6 +160,32 @@ def parado_clientes():
     )
 
 
+@analisis_bp.route("/analisis/competencia/mi-hoja.csv")
+@requiere_login
+def mi_hoja_csv():
+    """La hoja propia a Excel. Mismo recorte por cartera que la pantalla."""
+    vend = _vend_actual()
+    orden = request.args.get("orden") or "oportunidad"
+    if orden not in queries.ORDENES:
+        orden = "oportunidad"
+    return csv_response(
+        queries.por_cliente_plano(None, orden, cartera_de=vend),
+        columnas=[
+            ("tipo", "Candidato o improbable"),
+            ("orden_en_la_hoja", "Orden en la hoja"),
+            ("codigo", "Código"),
+            ("nombre", "Cliente"),
+            ("provincia", "Provincia"),
+            ("subcategoria", "Tela"),
+            ("colores_parados", "Colores parados"),
+            ("kg_parado", "Kg parados de esa tela"),
+            ("kg_cliente", "Kg que le vendimos"),
+            ("ultima_compra", "Última compra"),
+        ],
+        filename=f"mi_hoja{'_' + vend if vend else ''}.csv",
+    )
+
+
 @analisis_bp.route("/analisis/parado/clientes.csv")
 @requiere_login
 @requiere_permiso("analisis.ver")
@@ -216,12 +242,60 @@ def competencia():
     # ⭐ El bloque "lo tuyo" sale del vendedor del USUARIO LOGUEADO, nunca del
     # querystring: si viniera de la URL, cualquiera vería la cartera de
     # cualquiera cambiando tres letras. Mismo criterio que /mi-cartera.
-    vend = (g.user or {}).get("vend")
+    vend = _vend_actual()
+    datos = queries.competencia()
     return render_template(
         "analisis/competencia.html",
         vend=vend,
+        telas=queries.telas_a_sacar(queries.items()),
         mis_clientes=queries.mis_clientes_parado(vend) if vend else [],
-        **queries.competencia())
+        **datos)
+
+
+@analisis_bp.route("/analisis/competencia/mi-hoja")
+@requiere_login
+def mi_hoja():
+    """
+    La hoja del vendedor: sus clientes y las telas paradas que puede ofrecerles.
+
+    ⭐ Es LA MISMA plantilla que usa la oficina en /analisis/parado/clientes,
+    con los datos recortados a su cartera. Dos plantillas para el mismo papel
+    divergen a la primera corrección que se le hace a una sola — ya pasó en
+    /mi-cartera, donde la oficina y el portal imprimieron órdenes distintos ocho
+    días sin que nadie lo notara.
+
+    ⚠ Cuelga de /analisis/competencia/ para que entre en el mismo permiso del
+    allowlist el día que se les habilite. La ruta general de la hoja
+    (/analisis/parado/clientes) NO se abre nunca: tiene los clientes de todos.
+    """
+    vend = _vend_actual()
+    orden = request.args.get("orden") or "oportunidad"
+    if orden not in queries.ORDENES:
+        orden = "oportunidad"
+    return render_template(
+        "analisis/parado_clientes.html",
+        vend=vend, mia=True, ordenes=queries.ORDENES,
+        estado=queries.estado(),
+        codigos_ambiguos=CODIGOS_AMBIGUOS,
+        **queries.por_cliente(None, orden, cartera_de=vend))
+
+
+def _vend_actual() -> str | None:
+    """
+    El código de vendedor del usuario logueado.
+
+    ⭐ Nunca del querystring: si viniera de la URL, cualquiera vería la cartera
+    de cualquiera cambiando tres letras. La ÚNICA excepción es un usuario
+    wildcard (la dueña, Andrés), que puede pasar `?vend=` para previsualizar lo
+    que ve un vendedor sin pedirle la contraseña a nadie — mismo mecanismo que
+    /mi-cartera. Si el que lo manda ES vendedor, gana el suyo.
+    """
+    propio = (g.user or {}).get("vend")
+    if propio:
+        return propio
+    if "*" in (g.get("permisos") or set()):
+        return (request.args.get("vend") or "").strip().upper() or None
+    return None
 
 
 def _numero(texto: str | None, malos: list[str], donde: str) -> float | None:

@@ -11,6 +11,7 @@ from datetime import date
 
 import db
 from filters import today_ec
+from modules.mi_cartera.queries import _ES_MI_CLIENTE as _mc_es_mi_cliente
 
 from . import asinfo_parado
 
@@ -144,9 +145,17 @@ ORDENES = {
 }
 
 
-def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
+def por_cliente(vend: str | None = None, orden: str = "oportunidad",
+                cartera_de: str | None = None) -> dict:
     """
     Da vuelta la pantalla: en vez de tela → clientes, cliente → telas.
+
+    `cartera_de` acota a la cartera de un vendedor SEGÚN PROGRAMA CORE
+    (`cliente.vend`), que es lo que tiene que usar la hoja del propio vendedor.
+    `vend` acota por el vendedor de la última factura de ASINFO, que es lo que
+    usa la oficina para repartir. ⚠ No son lo mismo y por eso son dos
+    parámetros: si la hoja del vendedor usara el de Asinfo, un cliente podría
+    salirle a él acá y a otro en /mi-cartera.
 
     ⚠ `kg_potencial` NO es aditivo entre clientes. Una misma tela parada aparece
     en la lista de todos los que la compran, así que sumar la columna da mucho
@@ -157,7 +166,7 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
     tiene que poder creer.
     """
     filas = db.fetch_all(
-        """
+        f"""
         SELECT l.codigo_cli, l.nombre, l.provincia, l.vend_pc, l.subcategoria,
                l.kg AS kg_cliente, l.ultima_compra, l.anio,
                f.kg_parado, f.colores_parados
@@ -168,10 +177,13 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
                  WHERE stock_kg > 0
                  GROUP BY subcategoria) f
             ON f.subcategoria = l.subcategoria
-         WHERE (%s IS NULL OR l.vend_pc = %s)
+          LEFT JOIN scintela.cliente c
+            ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(l.codigo_cli))
+         WHERE (%(vend)s IS NULL OR l.vend_pc = %(vend)s)
+           AND (%(cartera)s IS NULL OR {_ES_MI_CLIENTE})
          ORDER BY l.codigo_cli, f.kg_parado DESC
         """,
-        (vend or None, vend or None),
+        {"vend": vend or None, "cartera": cartera_de or None},
     )
 
     anio = today_ec().year
@@ -204,7 +216,8 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad") -> dict:
     return {"clientes": vivos, "improbables": dudosos, "orden": orden}
 
 
-def por_cliente_plano(vend: str | None = None, orden: str = "oportunidad") -> list[dict]:
+def por_cliente_plano(vend: str | None = None, orden: str = "oportunidad",
+                      cartera_de: str | None = None) -> list[dict]:
     """
     La misma hoja, aplanada a una fila por CLIENTE × TELA, para Excel.
 
@@ -216,7 +229,7 @@ def por_cliente_plano(vend: str | None = None, orden: str = "oportunidad") -> li
     `orden_en_la_hoja` para poder reconstruir el ranking sin sumar nada.
     """
     filas = []
-    r = por_cliente(vend, orden)
+    r = por_cliente(vend, orden, cartera_de=cartera_de)
     for grupo, dudoso in (("candidato", False), ("improbable", True)):
         for i, c in enumerate(r["improbables"] if dudoso else r["clientes"], 1):
             for t in c["telas"]:
@@ -353,6 +366,30 @@ def _fecha(v):
     if isinstance(v, date):
         return v
     return date.fromisoformat(str(v)[:10])
+
+
+def telas_a_sacar(filas: list[dict]) -> list[dict]:
+    """
+    Qué hay que sacar, tela por tela, sin un solo cliente adentro.
+
+    Es lo que le faltaba al vendedor para poder ofrecer: la pantalla le decía
+    quién le compró qué, pero no cuántos kilos hay ni de qué colores. Sin
+    clientes, esta lista es información de fábrica y la puede ver cualquiera.
+    """
+    g: dict[str, dict] = {}
+    for f in filas:
+        if float(f["stock_kg"]) <= 0:
+            continue
+        d = g.setdefault(f["subcategoria"], {
+            "tela": f["subcategoria"], "grupo": f["categoria"],
+            "kg": 0.0, "colores": []})
+        d["kg"] += float(f["stock_kg"])
+        d["colores"].append((f["color"], float(f["stock_kg"])))
+    for d in g.values():
+        d["colores"].sort(key=lambda c: -c[1])
+        d["n_colores"] = len(d["colores"])
+        d["colores"] = ", ".join(c for c, _ in d["colores"])
+    return sorted(g.values(), key=lambda d: -d["kg"])
 
 
 # ── La COMPETENCIA ──────────────────────────────────────────────────────────
@@ -555,11 +592,14 @@ def _movimiento(ranking: list[dict], por_vendedor: dict) -> None:
         r["movimiento"] = puesto_antes[r["vendedor"]] - r["puesto"]
 
 
-#: Predicado canónico de pertenencia cliente→vendedor. Es EL MISMO de
-#: `mi_cartera.queries`, a propósito: si acá se usara otro, un cliente podría
-#: aparecerle a un vendedor en una pantalla y a otro en la otra, y eso no hay
-#: forma de explicárselo a nadie.
-_ES_MI_CLIENTE = "UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))"
+#: Predicado canónico de pertenencia cliente→vendedor.
+#:
+#: ⭐ Se IMPORTA de `mi_cartera.queries` en vez de copiarse. Escrito a mano acá,
+#: el día que allá cambien el criterio —un TRIM, un COALESCE, lo que sea— las
+#: dos pantallas le mostrarían al vendedor carteras distintas y nadie se
+#: enteraría. Lo único que se cambia es el nombre del parámetro, porque acá la
+#: query ya usa %(vend)s para otra cosa (el vendedor de Asinfo).
+_ES_MI_CLIENTE = _mc_es_mi_cliente.replace("%(vend)s", "%(cartera)s")
 
 
 def mis_clientes_parado(vend: str) -> list[dict]:
@@ -594,5 +634,5 @@ def mis_clientes_parado(vend: str) -> list[dict]:
          GROUP BY l.codigo_cli
          ORDER BY SUM(l.kg) DESC
         """,
-        {"vend": vend},
+        {"cartera": vend},
     )

@@ -27,15 +27,19 @@
 .cabecera-imp{display:none;font-size:12px;color:var(--g);margin:0 0 10px}
 </style>
 
-<h1>A quién ofrecerle qué</h1>
+<h1>{% if mia %}Tu hoja — a quién ofrecerle qué{% else %}A quién ofrecerle qué{% endif %}</h1>
 <p class="sub">
-  {% if vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
+  {% if mia %}Tus clientes{% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
   {{ clientes | length }} clientes{% if improbables %} + {{ improbables | length }} improbables{% endif %} ·
   ordenado por {{ ordenes[orden] }}
   {% if estado.actualizado %}· datos al {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}
 </p>
 
+{# ⚠ El selector de vendedor NO va en la hoja propia: para un vendedor sería un
+   desplegable con las carteras de los otros seis, aunque el backend las
+   ignore. Un control que no puede hacer lo que promete confunde igual. #}
 <div class="barra">
+  {% if not mia %}
   <select onchange="location.href=this.value">
     {% for c in ['','PPR','FL1','RMY','JQU','EDG','SEP'] %}
       <option value="/analisis/parado/clientes?orden={{ orden }}{% if c %}&vend={{ c }}{% endif %}"
@@ -43,17 +47,22 @@
         {{ c if c else 'Todos los vendedores' }}</option>
     {% endfor %}
   </select>
+  {% endif %}
+  {% set base = '/analisis/competencia/mi-hoja' if mia else '/analisis/parado/clientes' %}
+  {# el CSV cuelga del mismo camino que la pantalla: /…/mi-hoja.csv o
+     /…/clientes.csv. Un solo `base` y no puede quedar uno apuntando a otro. #}
   <select onchange="location.href=this.value">
     {% for k, etiqueta in ordenes.items() %}
-      <option value="/analisis/parado/clientes?orden={{ k }}{% if vend %}&vend={{ vend }}{% endif %}"
+      <option value="{{ base }}?orden={{ k }}{% if vend and not mia %}&vend={{ vend }}{% endif %}"
         {% if orden == k %}selected{% endif %}>Ordenar por {{ etiqueta }}</option>
     {% endfor %}
   </select>
   <button onclick="window.print()">Imprimir</button>
-  <a href="/analisis/parado/clientes.csv?orden={{ orden }}{% if vend %}&vend={{ vend }}{% endif %}"
+  <a href="{{ base }}{{ '.csv' if mia else '.csv' }}?orden={{ orden }}{% if vend and not mia %}&vend={{ vend }}{% endif %}"
      style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">Bajar a Excel</a>
-  <a href="/analisis/parado" style="margin-left:auto;color:var(--g);font-size:14px">
-    ← Ver por tela</a>
+  <a href="{{ '/analisis/competencia' if mia else '/analisis/parado' }}"
+     style="margin-left:auto;color:var(--g);font-size:14px">
+    {{ '← Volver a la competencia' if mia else '← Ver por tela' }}</a>
 </div>
 
 <p class="cabecera-imp">Intela · telas paradas para ofrecer
