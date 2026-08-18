@@ -753,3 +753,20 @@ def test_el_corte_color_trae_el_desde_del_pedido_mas_viejo():
     (g,) = service.por_color(filas)
     assert g["mas_viejo_es"] == "1 ago"      # el más viejo, no el más nuevo
     assert g["dias_espera"] >= 1
+
+
+def test_el_desplegable_del_corte_color_muestra_cliente_y_fecha(app, fake_db):
+    """En el corte Color, al abrir una tela se ve QUIÉN pidió y CUÁNDO, no sólo
+    el código y la cantidad."""
+    c = _login(app, fake_db)
+    peds = [{"codigo": "FE96CAF", "numero": "PDCL-29712", "cliente": "MALDONADO ANA",
+             "codigo_cliente": "KAM", "fecha": "2026-08-05", "cantidad": 9, "unidad": 51}]
+
+    def fake(_db, sql, **_kw):
+        return (peds, True) if "ORDER BY pr.codigo, v.fecha" in sql else ([_fila()], True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert ">KAM<" in body
+    assert "5 ago" in body               # la fecha del pedido
+    assert "PDCL-29712" in body          # y el número

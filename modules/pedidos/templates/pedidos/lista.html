@@ -140,7 +140,9 @@
                 <td colspan="6"><div class="chips">
                   {% for p in peds %}
                     <span class="chip"><b title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</b>
-                      {{ p.cantidad|num_es(0) }} {{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span>
+                      <span class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</span>
+                      · {{ p.cantidad|num_es(0) }} {{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}
+                      <span class="npd">{{ p.numero }}</span></span>
                   {% endfor %}
                 </div></td>
               </tr>
