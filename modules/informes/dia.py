@@ -262,19 +262,48 @@ ETAPAS = (("hilado", "Hilado"), ("tejido", "Tejido crudo"),
 
 
 def ventas_del_dia(fecha) -> dict:
-    """Lo facturado ESE día: {n, kg, us}. Por `fecha` del documento, no por
-    `fecha_crea` (que el sync del dBase pisa). Las anuladas no cuentan, así que
-    un resumen que se vuelve a mirar meses después dice la verdad de hoy."""
+    """Lo facturado ESE día, con las devoluciones APARTE.
+
+    Por `fecha` del documento, no por `fecha_crea` (que el sync del dBase
+    pisa). Las anuladas no cuentan, así que un resumen que se vuelve a mirar
+    meses después dice la verdad de hoy.
+
+        n, kg, us                    la venta NETA (devoluciones y NC ya
+                                     restadas). Es lo que alimenta *lo
+                                     cobrado*, porque una devolución sí baja
+                                     la cartera sin que entre plata.
+        n_fact, kg_fact, us_fact     sólo lo que SUMA kilos — facturas y NTEN.
+                                     Es lo que se MUESTRA.
+        n_devol, kg_devol, us_devol  las devoluciones, dichas en positivo.
+
+    ⭐ TMT 2026-08-17: *"el mail llega lo facturado menos devoluciones,
+    podemos mandar solo facturado"*. Es la misma decisión que ya se había
+    tomado el 14/08 para el recuadro *Hoy* de la pantalla (que separa las dos
+    poblaciones con un `FILTER`): la devolución es un hecho distinto de la
+    venta y netearla hace que el número del día no sea "lo que facturamos".
+    Las NC financieras (kg = 0) no entran en ninguna de las dos puntas: son
+    plata pura, y siguen contando sólo en el neto.
+    """
     r = _rows(
         """
         SELECT COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg,
-               COALESCE(SUM(importe), 0) AS us
+               COALESCE(SUM(importe), 0) AS us,
+               COUNT(*) FILTER (WHERE kg > 0)                       AS n_fact,
+               COALESCE(SUM(kg) FILTER (WHERE kg > 0), 0)           AS kg_fact,
+               COALESCE(SUM(importe) FILTER (WHERE kg > 0), 0)      AS us_fact,
+               COUNT(*) FILTER (WHERE kg < 0)                       AS n_devol,
+               COALESCE(SUM(-kg) FILTER (WHERE kg < 0), 0)          AS kg_devol,
+               COALESCE(SUM(-importe) FILTER (WHERE kg < 0), 0)     AS us_devol
           FROM scintela.factura
          WHERE fecha = %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
         """, (fecha,))
     d = r[0] if r else {}
-    return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
+    return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us")),
+            "n_fact": int(d.get("n_fact") or 0), "kg_fact": _f(d.get("kg_fact")),
+            "us_fact": _f(d.get("us_fact")),
+            "n_devol": int(d.get("n_devol") or 0), "kg_devol": _f(d.get("kg_devol")),
+            "us_devol": _f(d.get("us_devol"))}
 
 
 def compras_del_dia(fecha) -> dict:
@@ -311,9 +340,10 @@ def _sumar_dias(fn, desde, hasta) -> dict:
     misma regla que ya tiene la producción.
     """
     partes = [fn(d) for d in _dias(desde, hasta)]
-    return {"n": sum(int(p["n"]) for p in partes),
-            "kg": round(sum(_f(p["kg"]) for p in partes), 2),
-            "us": round(sum(_f(p["us"]) for p in partes), 2)}
+    claves = {k for p in partes for k in p}
+    return {k: (sum(int(p.get(k) or 0) for p in partes) if k.startswith("n")
+                else round(sum(_f(p.get(k)) for p in partes), 2))
+            for k in claves}
 
 
 def ventas_entre(desde, hasta) -> dict:
@@ -538,7 +568,16 @@ def _resumen_rango(dia0, dia1) -> dict:
     d, h = ventana_rango(dia0, dia1)
     if not d or not h:
         return out
-    v, c = ventas_entre(dia0, dia1), compras_entre(dia0, dia1)
+    c = compras_entre(dia0, dia1)
+    # ⭐ TMT 2026-08-17: lo que se MUESTRA es lo FACTURADO en bruto; el neto
+    # queda para *lo cobrado*, que sí siente la devolución (baja la cartera
+    # sin que entre plata). Las dos cifras salen de la misma consulta, así que
+    # no pueden separarse: ver `ventas_del_dia`.
+    vn = ventas_entre(dia0, dia1)
+    v = {"n": vn.get("n_fact", vn["n"]), "kg": vn.get("kg_fact", vn["kg"]),
+         "us": vn.get("us_fact", vn["us"])}
+    devol = {"n": vn.get("n_devol", 0), "kg": vn.get("kg_devol", 0.0),
+             "us": vn.get("us_devol", 0.0)}
 
     etapas = {}
     for et, rot in ETAPAS:
@@ -564,7 +603,8 @@ def _resumen_rango(dia0, dia1) -> dict:
         # se manda un número que no se puede comparar contra otros días sin
         # que nadie lo sepa.
         "dia_parcial": bool(d.get("fecha_ec") == h.get("fecha_ec")),
-        "d_utilidad": d_util, "ventas": v, "compras": c,
+        "d_utilidad": d_util, "ventas": v, "ventas_netas": vn,
+        "devoluciones": devol, "compras": c,
         "d_stock": d_stock, "por_kilos": por_kilos, "por_tarifa": por_tarifa,
         "d_cartera": d_cartera, "d_deuda": d_deuda,
         "produccion": prod,
@@ -573,7 +613,7 @@ def _resumen_rango(dia0, dia1) -> dict:
         # que entró a bancos+caja+cheques y dio $292 de diferencia sobre
         # $61.847. La producción, en cambio, ya NO se deriva: ver
         # `produccion_del_dia`.
-        "cobrado": round(v["us"] - d_cartera, 2),
+        "cobrado": round(_f(vn.get("us")) - d_cartera, 2),
         "tarifa_quieta": abs(_f(hil.get("d_p"))) < 0.00005 if hil else None,
         # Precio realizado y margen: los dos números con los que se dirige una
         # fábrica. El costo de lo despachado se valúa a la tarifa de terminado.
@@ -628,7 +668,12 @@ MESES_LARGOS = {1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo",
 
 
 def ventas_del_mes(fecha) -> dict:
-    """Lo facturado en el mes hasta `fecha` inclusive."""
+    """Lo FACTURADO en el mes hasta `fecha` inclusive, en bruto.
+
+    Mismo criterio que `ventas_del_dia`: sólo los documentos que suman kilos
+    (facturas y NTEN). Si el día va en bruto y el mes en neto, el pie del mail
+    contradice al renglón de arriba.
+    """
     r = _rows(
         """
         SELECT COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg,
@@ -636,6 +681,7 @@ def ventas_del_mes(fecha) -> dict:
           FROM scintela.factura
          WHERE fecha >= date_trunc('month', %s::date)::date
            AND fecha <= %s
+           AND kg > 0
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
         """, (fecha, fecha))
     d = r[0] if r else {}
@@ -942,6 +988,13 @@ def _mensaje(r: dict, fecha, rot: str, cuando: str, motores: list[dict],
     if r.get("cobrado"):
         L.append(f"Cobrado     $ {_n(r['cobrado'])}")
 
+    # La devolución va aparte y sólo si la hubo: netearla hacía que "Ventas"
+    # no fuera lo que facturamos (TMT 17/08). Un renglón que aparece todos los
+    # días entrena a no leerlo.
+    dv = r.get("devoluciones") or {}
+    if dv.get("n"):
+        L.append(f"Devoluciones −$ {_n(dv['us'])} · {dv['n']}")
+
     # Lo que no se pudo explicar por documento. Va al final y sólo si lo hay:
     # una línea que aparece todos los días entrena a no leerla.
     if sc["n"]:
@@ -1028,6 +1081,14 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
         filas.append(_fila_html("Margen", f"{_n(r['margen_pct'], 1)} %"))
     if r.get("cobrado"):
         filas.append(_fila_html("Cobrado", f"$ {_n(r['cobrado'])}"))
+    dv = r.get("devoluciones") or {}
+    if dv.get("n"):
+        # Apagada a propósito: es un dato del día, no una alarma.
+        filas.append(
+            f'<tr><td style="padding:7px 0;color:{_GRIS};font-size:12px">'
+            f'Devoluciones</td><td style="padding:7px 0;text-align:right;'
+            f'font-size:12px;color:{_GRIS}">−$ {_n(dv["us"])} · '
+            f'{dv["n"]} documento{"" if dv["n"] == 1 else "s"}</td></tr>')
 
     vm = ventas_del_mes(fecha)
     pie = []

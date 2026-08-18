@@ -797,7 +797,10 @@ def test_resumen_estima_lo_cobrado():
     caps = [_cap(0.0, facturas=1000000.0), _cap(0.0, facturas=1040000.0)]
     with patch.object(dia, "capturas", return_value=caps), \
          patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
-         patch.object(dia, "ventas_del_dia", return_value={"n": 5, "kg": 0.0, "us": 100000.0}), \
+         patch.object(dia, "ventas_del_dia",
+                      return_value={"n": 5, "kg": 0.0, "us": 100000.0,
+                                    "n_fact": 5, "kg_fact": 0.0, "us_fact": 100000.0,
+                                    "n_devol": 0, "kg_devol": 0.0, "us_devol": 0.0}), \
          patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
         r = dia.resumen(date(2026, 8, 4))
     assert r["cobrado"] == 60000.0
@@ -919,7 +922,44 @@ def test_las_ventas_del_dia_excluyen_anuladas():
     assert "NOT IN ('X', 'Y')" in sql
     # Por fecha del DOCUMENTO: `fecha_crea` la pisa el sync del dBase.
     assert "WHERE fecha = %s" in sql and "fecha_crea" not in sql
-    assert v == {"n": 3, "kg": 10.0, "us": 100.0}
+    assert (v["n"], v["kg"], v["us"]) == (3, 10.0, 100.0)
+
+
+def test_la_devolucion_sale_de_la_venta_y_va_aparte():
+    """⭐ TMT 2026-08-17: *"el mail llega lo facturado menos devoluciones,
+    podemos mandar solo facturado"*. Las dos poblaciones salen de la MISMA
+    consulta —un `FILTER` por el signo de los kilos—, así que no pueden
+    separarse: lo bruto, lo devuelto y el neto siempre cuadran entre sí."""
+    fila = {"n": 4, "kg": 90.0, "us": 900.0,
+            "n_fact": 3, "kg_fact": 100.0, "us_fact": 1000.0,
+            "n_devol": 1, "kg_devol": 10.0, "us_devol": 100.0}
+    with patch.object(dia, "_rows", return_value=[fila]) as rows:
+        v = dia.ventas_del_dia(date(2026, 8, 4))
+    sql = rows.call_args[0][0]
+    assert "FILTER (WHERE kg > 0)" in sql and "FILTER (WHERE kg < 0)" in sql
+    assert v["us_fact"] == 1000.0 and v["us_devol"] == 100.0
+    assert v["us"] == 900.0                      # el neto sigue estando
+    assert v["us_fact"] - v["us_devol"] == v["us"]
+
+
+def test_el_resumen_muestra_el_bruto_pero_cobra_con_el_neto():
+    """Se facturaron 1.000, volvieron 100 y la cartera no se movió: se muestra
+    1.000 (eso facturamos) pero lo cobrado son 900, porque la devolución bajó
+    la cartera sin que entrara plata. Netear las dos puntas decía que
+    facturamos 900, que es otra cosa."""
+    caps = [_cap(0.0, facturas=1000.0), _cap(0.0, facturas=1000.0)]
+    ventas = {"n": 4, "kg": 90.0, "us": 900.0,
+              "n_fact": 3, "kg_fact": 100.0, "us_fact": 1000.0,
+              "n_devol": 1, "kg_devol": 10.0, "us_devol": 100.0}
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "_rows", return_value=[]), \
+         patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
+         patch.object(dia, "ventas_del_dia", return_value=ventas), \
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+        r = dia.resumen(date(2026, 8, 4))
+    assert r["ventas"] == {"n": 3, "kg": 100.0, "us": 1000.0}
+    assert r["devoluciones"] == {"n": 1, "kg": 10.0, "us": 100.0}
+    assert r["cobrado"] == 900.0
 
 
 def test_la_pantalla_muestra_el_resumen(app, fake_db):

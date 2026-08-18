@@ -398,3 +398,51 @@ def test_el_rotulo_del_finde_a_caballo_de_dos_meses():
     corto, largo = dia.rotulo_finde(date(2026, 8, 31))  # lunes 31/08
     assert corto == "finde 29–30 ago"
     assert largo == "sábado 29 y domingo 30 de agosto"
+
+
+# ── Lo facturado va en BRUTO ────────────────────────────────────────────────
+# TMT 2026-08-17: *"el mail llega lo facturado menos devoluciones, podemos
+# mandar solo facturado"*.
+
+def _res(devol_n=0, devol_us=0.0):
+    return {"ok": True, "fecha": date(2026, 8, 17), "dia_parcial": False,
+            "hasta": {"utilidad": 300000.0}, "d_utilidad": 1000.0,
+            "ventas": {"n": 113, "kg": 14781.0, "us": 127267.0},
+            "devoluciones": {"n": devol_n, "kg": 0.0, "us": devol_us},
+            "produccion": {"disponible": False}, "cobrado": 5000.0,
+            "margen_pct": 40.4}
+
+
+def test_la_devolucion_tiene_su_renglon_y_no_se_come_la_venta():
+    with patch.object(dia, "resumen", return_value=_res(6, 3772.0)), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "ventanas_sin_cerrar", return_value={"n": 0, "monto": 0.0}), \
+         patch.object(dia, "motores_del_dia", return_value=[]):
+        html = dia.nota_html(date(2026, 8, 17))
+        txt = dia.mensaje_whatsapp(date(2026, 8, 17))
+    # La venta se dice entera, no neteada.
+    assert "127.267" in html and "127.267" in txt
+    for cuerpo in (html, txt):
+        assert "Devoluciones" in cuerpo
+        assert "3.772" in cuerpo
+
+
+def test_sin_devoluciones_el_renglon_no_aparece():
+    """Un renglón que sale todos los días entrena a no leerlo."""
+    with patch.object(dia, "resumen", return_value=_res()), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "ventanas_sin_cerrar", return_value={"n": 0, "monto": 0.0}), \
+         patch.object(dia, "motores_del_dia", return_value=[]):
+        html = dia.nota_html(date(2026, 8, 17))
+        txt = dia.mensaje_whatsapp(date(2026, 8, 17))
+    assert "Devoluciones" not in html and "Devoluciones" not in txt
+
+
+def test_el_mes_del_pie_tambien_va_en_bruto():
+    """Si el día va en bruto y el mes en neto, el pie contradice al renglón de
+    arriba."""
+    with patch.object(dia, "_rows", return_value=[{"n": 9, "kg": 1.0, "us": 2.0}]) as rows:
+        dia.ventas_del_mes(date(2026, 8, 17))
+    assert "kg > 0" in rows.call_args[0][0]
