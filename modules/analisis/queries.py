@@ -286,9 +286,15 @@ def actualizar() -> dict:
     par = asinfo_parado.parados()
     lla = asinfo_parado.llamados()
 
-    desde = db.fetch_one(
-        "SELECT MIN(fecha_marcado) AS f FROM scintela.parado_cohorte") or {}
-    desde_f: date = desde.get("f") or hoy
+    # ⭐ TODO se cuenta desde la LARGADA, no desde que cada fila entró a la
+    # lista. Dueña 18/08/2026: "hace todo desde 25/08".
+    #
+    # Antes cada fila medía desde su propia `fecha_marcado`, así que la pantalla
+    # de Saldos contaba desde el 13/08 y la competencia desde el 25: dos números
+    # distintos para "lo vendido", y el primero que los comparara iba a
+    # preguntar cuál era el bueno. `fecha_marcado` sigue guardada — es cuándo
+    # entró cada tela— pero ya no manda sobre la cuenta.
+    desde_f: date = date.fromisoformat(config("largada", "2026-08-25"))
     ventas = asinfo_parado.vendido_desde(desde_f.isoformat())
 
     # clientes por tela y de qué año salieron
@@ -316,8 +322,7 @@ def actualizar() -> dict:
         marcado = {(c["subcategoria"], c["color"]): c["fecha_marcado"] for c in cohorte}
         for v in ventas:
             k = (v["subcategoria"], v["color"])
-            f = marcado.get(k)
-            if f and _fecha(v["fecha"]) >= f:
+            if k in marcado and _fecha(v["fecha"]) >= desde_f:
                 vendido[k] += float(v["kg"] or 0)   # ya viene abierto por vendedor
 
         # 3 · la foto se rehace entera
@@ -365,8 +370,7 @@ def actualizar() -> dict:
         db.execute("DELETE FROM scintela.parado_venta", conn=conn)
         for v in ventas:
             k = (v["subcategoria"], v["color"])
-            f = marcado.get(k)
-            if f and _fecha(v["fecha"]) >= f:
+            if k in marcado and _fecha(v["fecha"]) >= desde_f:
                 db.execute(
                     """INSERT INTO scintela.parado_venta
                            (subcategoria, color, vend_pc, vendedor, fecha, kg)

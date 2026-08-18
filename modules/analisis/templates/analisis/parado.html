@@ -25,7 +25,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <div class="card"><p class="k">En saldo hoy</p>
     <p class="v">{{ resumen.kg | num_es(0) }}</p>
     <p class="s">kg en {{ resumen.n_items }} telas × color</p></div>
-  <div class="card"><p class="k">Vendido desde que se marcó</p>
+  <div class="card"><p class="k">Vendido desde el 25/08</p>
     <p class="v">{{ resumen.kg_vendidos | num_es(0) }}</p>
     <p class="s">{{ resumen.movidos }} ítems se empezaron a mover</p></div>
   <div class="card"><p class="k">Clientes a llamar</p>
@@ -152,7 +152,7 @@ Toque una fila para ver a quién ofrecérsela.</p>
        ancho para no decir nada. #}
     <td class="n" data-v="{{ f.stock_kg }}">
       {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}
-      {% if f.kg_vendidos %}<div class="vendido">−{{ f.kg_vendidos | num_es(0) }} vendidos</div>{% endif %}</td>
+      {% if f.kg_vendidos %}<div class="vendido">−{{ f.kg_vendidos | num_es(0) }} desde el 25/08</div>{% endif %}</td>
     <td class="n g opt" data-v="{{ f.pct_total }}">{{ f.pct_total | num_es(1) }}%</td>
     <td class="n {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
     <td class="g n opt" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">

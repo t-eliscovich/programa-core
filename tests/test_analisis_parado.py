@@ -1564,3 +1564,27 @@ def test_el_grupo_se_aplica_antes_que_el_subgrupo():
     borra — el link compartido abre a medias y nadie sabe por qué."""
     html = " ".join(_html_parado().split())
     assert "if (c === 'grupo') { e.value = v[c]; grupoCambio(); }" in html
+
+
+def test_todo_se_cuenta_desde_la_largada_y_no_desde_que_entro_cada_fila():
+    """Dueña 18/08/2026: "hace todo desde 25/08".
+
+    Antes cada fila medía desde su propia `fecha_marcado` (13/08), así que la
+    pantalla de Saldos y la de Competencia daban dos números distintos para "lo
+    vendido" y el primero que los comparara no iba a saber cuál creer.
+    `fecha_marcado` sigue guardada —es cuándo entró cada tela— pero ya no manda
+    sobre la cuenta."""
+    import inspect
+    fuente = inspect.getsource(queries.actualizar)
+    assert 'config("largada"' in fuente
+    assert "_fecha(v[\"fecha\"]) >= desde_f" in fuente
+    assert "MIN(fecha_marcado)" not in fuente, (
+        "ya no se arranca desde la fila más vieja de la cohorte")
+
+
+def test_la_pantalla_dice_desde_cuando_cuenta():
+    """Un "vendido" sin fecha al lado invita justamente a la comparación que
+    generó la confusión."""
+    html = _html_parado()
+    assert "Vendido desde el 25/08" in html
+    assert "desde el 25/08</div>" in html
