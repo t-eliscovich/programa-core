@@ -916,3 +916,22 @@ def test_sin_pedidos_de_mas_de_90_dias_no_muestra_la_linea(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         body = c.get("/pedidos").get_data(as_text=True)
     assert "que no entran a la cuenta" not in body
+
+
+def test_en_produccion_nunca_es_negativo_aunque_se_haya_sobreproducido():
+    """Una orden sobreproducida no puede dejar "en producción" negativo."""
+    f = service._fila(_fila(prod_kg=-97.0, inv_kg=3950.0, ped_kg=2000.0))
+    assert f["produccion_kg"] == 0.0
+    assert f["faltan_kg"] == round(2000.0 - 3950.0 - 0.0, 1)
+
+
+def test_la_sql_de_produccion_no_cuenta_las_ordenes_sobreproducidas():
+    assert "ELSE 0 END)                              AS prod_kg" in service._sql_pendientes()
+
+
+def test_los_titulos_de_la_tabla_quedan_fijos_al_scrollear(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS_PANTALLA, True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "position:sticky" in body       # el thead pegado arriba

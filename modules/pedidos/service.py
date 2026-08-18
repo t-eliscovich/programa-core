@@ -139,7 +139,9 @@ padres AS (
 ),
 prod AS (
     SELECT o.id_producto,
-           SUM(o.cantidad - ISNULL(o.cantidad_fabricada, 0)) AS prod_kg,
+           SUM(CASE WHEN o.cantidad > ISNULL(o.cantidad_fabricada, 0)
+                    THEN o.cantidad - ISNULL(o.cantidad_fabricada, 0)
+                    ELSE 0 END)                              AS prod_kg,
            COUNT(*)                                          AS n_ordenes
       FROM orden_fabricacion o
       LEFT JOIN padres h ON h.p = o.id_orden_fabricacion
@@ -236,7 +238,8 @@ def _fila(row: dict) -> dict:
     mas_viejo = str(row.get("mas_viejo") or "")[:10]
     pedido_kg = _f(row.get("ped_kg")) + kg_de_unidades
     inv_kg = _f(row.get("inv_kg"))
-    prod_kg = _f(row.get("prod_kg"))
+    # "En producción" nunca negativo: una orden sobreproducida no resta.
+    prod_kg = max(0.0, _f(row.get("prod_kg")))
     return {
         "categoria": categoria,
         "tela": str(row.get("tela") or "").strip(),
