@@ -719,3 +719,52 @@ def test_el_excel_trae_UNA_columna_de_faltante(app, fake_db):
     assert cabecera.count("Falta") == 1
     assert "Falta kg" not in cabecera
     assert cabecera[-1] == "Falta"
+
+
+# ── el diseño de los controles ──────────────────────────────────────────────
+
+def _tpl() -> str:
+    return (Path(service.__file__).parent / "templates" / "inventario_rotativo"
+            / "lista.html").read_text(encoding="utf-8")
+
+
+def test_los_titulos_quedan_fijos_al_scrollear():
+    """Dueña 2026-08-18: "que se mantengan los títulos cuando scrolleo".
+
+    El sticky va en el `th` y no en el `thead` —Safari no pega un thead— y en
+    papel se apaga: ahí la cabecera se repite por `table-header-group`.
+    """
+    tpl = _tpl()
+    assert "position:sticky;top:0" in tpl.replace(" ", "")
+    assert ".iv thead th{" in tpl
+    assert ".iv.hoja thead th{position:static}" in tpl
+
+
+def test_los_controles_no_son_todos_el_mismo_boton(app, fake_db):
+    """Dueña 2026-08-18: "está todo con demasiado botón que no se diferencia".
+
+    Tres cosas distintas, tres formas distintas: elegir vista y filtrar son
+    segmentados (opciones excluyentes, pegadas), imprimir y bajar el Excel son
+    acciones y viven a la derecha, y las familias son pestañas subrayadas.
+    """
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert 'class="seg"' in body                 # vista y filtros
+    assert 'class="acciones"' in body            # imprimir / excel aparte
+    assert 'class="acc"' in body
+    assert 'class="tab' in body                  # familias como pestañas
+    assert "chip" not in body.split('class="iv')[1][:4000]   # ya no son todos iguales
+
+
+def test_el_filtro_que_alarma_lleva_su_punto_rojo(app, fake_db):
+    """Dentro de un segmentado gris, el que abre la alarma se distingue sin
+    gritar: un punto, no un botón rojo entero."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert '<i class="punto"></i>Hay que teñir' in body
