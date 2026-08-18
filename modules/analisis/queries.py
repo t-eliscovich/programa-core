@@ -320,6 +320,16 @@ def actualizar() -> dict:
                 vendido[k] += float(v["kg"] or 0)   # ya viene abierto por vendedor
 
         # 3 · la foto se rehace entera
+        #
+        # ⚠ Antes de borrarla se guarda la CATEGORÍA de cada fila. Un ítem que
+        # se vendió entero ya no viene en `parados`, así que su grupo quedaba en
+        # NULL y en la pantalla aparecía como "—": justo las filas "resuelto",
+        # que son las que uno quiere mirar para ver si la competencia funciona.
+        grupo_previo = {(r["subcategoria"], r["color"]): r["categoria"]
+                        for r in db.fetch_all(
+                            "SELECT subcategoria, color, categoria "
+                            "FROM scintela.parado_foto WHERE categoria IS NOT NULL",
+                            conn=conn)}
         stock = {(p["subcategoria"], p["color"]): p for p in par}
         db.execute("DELETE FROM scintela.parado_foto", conn=conn)
         for k in marcado:
@@ -333,7 +343,8 @@ def actualizar() -> dict:
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
                  (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
                  anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
-                 (p or {}).get("kg_segunda") or 0, (p or {}).get("categoria"),
+                 (p or {}).get("kg_segunda") or 0,
+                 (p or {}).get("categoria") or grupo_previo.get(k),
                  (p or {}).get("motivo")), conn=conn)
 
         # 4 · los llamados también

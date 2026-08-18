@@ -215,14 +215,15 @@ def test_los_candidatos_no_se_cortan_en_dos_anios():
         "el año que manda es el ÚLTIMO con compras, sea cual sea")
 
 
-def test_improbable_se_marca_distinto_de_solo_el_anio_pasado():
+def test_el_anio_de_los_candidatos_sigue_a_la_vista():
+    """La columna Estado se sacó el 18/08/2026 ("el estado tampoco importa
+    mucho"), pero de qué año son los candidatos SÍ importa: es la diferencia
+    entre llamar a alguien que compró en julio y a uno que compró en 2023. Vive
+    en el detalle que se abre."""
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "improbable · {{ f.anio_pista }}" in html
-    assert "ahora_anio - 1" in html, (
-        "sin el -1, el año pasado y 2023 se pintan igual y la palabra "
-        "'improbable' deja de querer decir algo")
+    assert "f.pista" in html or "anio_pista" in html
 
 
 # ── La hoja del vendedor ────────────────────────────────────────────────────
@@ -1305,7 +1306,9 @@ def test_cada_fila_guarda_por_que_entro():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "de segunda</span>" in html
+    # el motivo se ve por la columna "De 2ª": si tiene kilos ahí, entró por
+    # segunda. La píldora que lo decía se fue con la columna Estado.
+    assert "f.kg_segunda" in html
 
 
 # ── El premio del mes ───────────────────────────────────────────────────────
@@ -1381,8 +1384,43 @@ def test_el_nombre_de_la_tela_no_se_parte_en_dos_renglones():
            "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
     assert "#tabla td.tela{white-space:nowrap}" in css
     i = css.index("@media (max-width: 780px)")
-    # ⭐ En el celular NO vuelve a partirse: para que entre, ahí se va también
-    # la columna Estado. La píldora come 85 px y es contexto; el nombre es lo
-    # que identifica la fila.
+    # ⭐ En el celular NO vuelve a partirse: entra porque la columna Estado ya
+    # no existe.
     assert "#tabla td.tela{white-space:normal}" not in css[i:]
-    assert "#tabla th.estado, #tabla td.estado{display:none!important}" in css[i:]
+    from pathlib import Path as _P
+    html = (_P(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert ">Estado</th>" not in html
+
+
+def test_una_fila_sin_nada_se_va_pero_la_liquidada_se_queda():
+    """Dueña 18/08/2026: "más de 0, si no hay nada para qué están?".
+
+    ⚠ La condición lleva las DOS cosas: 0 kg Y 0 vendidos. Una fila con 0 kg
+    que SÍ vendió algo es un ítem liquidado entero, y ésa se queda — es la que
+    muestra que la competencia funcionó. Confundirlas borraría la buena
+    noticia."""
+    from pathlib import Path
+    sql = (Path(__file__).resolve().parent.parent / "migrations" /
+           "0203_saldos_limpieza.sql").read_text(encoding="utf-8")
+    assert "stock_kg <= 0 AND kg_vendidos <= 0" in sql
+    assert sql.count("kg_vendidos <= 0") == 2, "las dos tablas con la misma regla"
+
+
+def test_los_kilos_chicos_no_se_muestran_como_cero():
+    """Un ítem de 0,4 kg mostrado como "0" parece un error de la pantalla — fue
+    literalmente la pregunta de la dueña."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "f.stock_kg | num_es(1) if f.stock_kg < 1" in html
+
+
+def test_la_foto_no_pierde_el_grupo_al_liquidarse_un_item():
+    """Un ítem vendido entero ya no viene de Asinfo, así que su grupo quedaba
+    en NULL y la fila aparecía con "—" justo en las filas "resuelto", que son
+    las que uno mira para ver si esto funciona."""
+    import inspect
+    fuente = inspect.getsource(queries.actualizar)
+    assert "grupo_previo" in fuente
+    assert '(p or {}).get("categoria") or grupo_previo.get(k)' in fuente
