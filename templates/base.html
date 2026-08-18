@@ -899,26 +899,11 @@
          menú el 2026-05-20: la cuota mensual se edita inline en
          /posdat — columna "Cuota mensual"). #}
 
-      {# TMT 2026-08-17 dueña: "hacé como un link que nos lleve a todo un menú
-         nuevo". Análisis NO es una sección más de este sidebar: es un link
-         suelto que abre un área con su propio cascarón y su propio menú
-         (mismo criterio que /mi-cartera). Sólo lo ven los roles wildcard
-         —Tamara y Andrés—; para el resto la ruta da 404, así que el link
-         también se esconde: dar un link que 404ea es peor que no darlo. #}
-      {% if tiene_permiso('analisis.ver') %}
-      {# ⚠ Con la clase `sidebar-section-link` quedaba con la MISMA pinta que
-         los títulos COBRANZA / MODIFICAR y no parecía clickeable: la dueña lo
-         tuvo delante y preguntó "desde dónde está el link". Un link que se lee
-         como encabezado es un link que no existe. Va con el mismo formato que
-         las entradas reales del menú, más la flechita. #}
-      <a href="/analisis" class="flex items-center gap-2 px-3 py-1 rounded-md text-[13px]
-         transition-colors hover:bg-slate-100 dark:hover:bg-slate-800
-         text-slate-700 dark:text-slate-300
-         {% if request.path.startswith('/analisis') %}bg-sky-50 text-sky-700
-         dark:bg-sky-900/30 dark:text-sky-300 font-medium{% endif %}">
-        <span aria-hidden="true">📊</span> Análisis
-      </a>
-      {% endif %}
+      {# TMT 2026-08-17 dueña: "saca analisis del costado, solo dentro del
+         usuario mas facil". El link vive SÓLO en el menú del usuario (arriba a
+         la derecha, junto a Contactos). Si algún día se saca de ahí, la sección
+         queda sin ninguna puerta: no da 404, simplemente deja de existir para
+         quien la usa. #}
 
       {# TMT 2026-05-22 dueña: si el rol no tiene `informes.ver`, ocultar
          la sección entera del menú (antes mostraba "Informes" vacío

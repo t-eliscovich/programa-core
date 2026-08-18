@@ -558,3 +558,24 @@ def test_la_tela_cruda_no_entra_aunque_este_en_la_bodega_de_terminado():
     for sql in (asinfo_parado.SQL_PARADOS, asinfo_parado.SQL_LLAMADOS):
         assert "'TELA CRUDA'" in sql
     assert "'TELA CRUDA'" in asinfo_parado.CATS
+
+
+def test_los_tres_grupos_chicos_van_juntos(monkeypatch):
+    """Dueña 17/08/2026: "los ultimos y mas chicos unilos todos en una
+    categoria franela cuellos y punos". Entre los tres son 361 kg — menos del
+    1% — y ocupaban tres renglones del resumen para decir casi nada."""
+    visto = {}
+    monkeypatch.setattr(queries.db, "fetch_all",
+                        lambda sql, *a, **k: visto.setdefault("sql", " ".join(sql.split())) and [])
+    queries.items()
+    s = visto["sql"]
+    assert "'Franela', 'Cuellos', 'Puños'" in s
+    assert "'Franela, cuellos y puños'" in s
+
+
+def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
+    """Unirlos en el refresh perdería el dato crudo de Asinfo. Uniéndolos en la
+    lectura, el día que uno crezca se separa cambiando una línea."""
+    import inspect
+    assert "Franela" not in inspect.getsource(queries.actualizar)
+    assert "Franela" in inspect.getsource(queries.items)
