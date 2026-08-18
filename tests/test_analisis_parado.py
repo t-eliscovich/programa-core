@@ -1127,3 +1127,22 @@ def test_la_pantalla_del_vendedor_no_ofrece_actualizar_desde_asinfo():
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
     i = html.index("/analisis/parado/actualizar")
     assert "{% if not mia %}" in html[i - 400:i]
+
+
+def test_la_fila_sin_stock_y_sin_grupo_no_ensucia_el_resumen():
+    """Restos que ya no existen sumaban un renglón "(sin grupo) · 0 kg"."""
+    g = queries.por_grupo([
+        {"categoria": None, "subcategoria": "X", "stock_kg": 0, "kg_segunda": 0},
+        {"categoria": "Jersey", "subcategoria": "Y", "stock_kg": 100,
+         "kg_segunda": 0},
+    ])
+    assert [x["grupo"] for x in g] == ["Jersey"]
+
+
+def test_un_item_vendido_entero_SI_sigue_en_el_resumen():
+    """⚠ 0 kg y CON grupo es un ítem que se vendió entero: es justamente lo que
+    la dueña pidió que no desaparezca."""
+    g = queries.por_grupo([
+        {"categoria": "Jersey", "subcategoria": "Y", "stock_kg": 0,
+         "kg_segunda": 0}])
+    assert [x["grupo"] for x in g] == ["Jersey"] and g[0]["n_items"] == 1

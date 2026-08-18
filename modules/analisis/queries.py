@@ -126,6 +126,11 @@ def por_grupo(filas: list[dict]) -> list[dict]:
     aparte. Si fueran dos consultas, el resumen y la tabla podrían no coincidir
     el día que una de las dos cambie de criterio, y no habría ningún síntoma.
     """
+    # ⚠ Fuera las filas sin stock Y sin grupo: son restos que ya no existen y
+    # sumaban un renglón "(sin grupo) · 0 kg". Una fila con 0 kg y CON grupo sí
+    # entra: es un ítem que se vendió entero y tiene que seguir a la vista.
+    filas = [f for f in filas
+             if float(f["stock_kg"]) > 0 or f.get("categoria")]
     tot = sum(float(f["stock_kg"]) for f in filas) or 1
     g: dict[str, dict] = {}
     for f in filas:
