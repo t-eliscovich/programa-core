@@ -49,8 +49,8 @@
   .pd .bar>i{display:block;height:100%;background:#0f172a}
   .pd .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;color:#0f172a;font:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
   .pd .abrir:hover .color,.pd .abrir:hover .telaname{text-decoration:underline}
-  .pd .chev{color:#cbd5e1;font-size:9px;line-height:1;transition:transform .12s;align-self:center;flex:0 0 9px}
-  .pd .abrir[aria-expanded="true"] .chev{transform:rotate(90deg);color:#475569}
+  .pd .chev{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid #94a3b8;display:inline-block;vertical-align:middle;transition:transform .12s;flex:0 0 auto;margin-right:4px}
+  .pd .abrir[aria-expanded="true"] .chev,.pd tr.ghead[aria-expanded="true"] .chev{transform:rotate(90deg);border-left-color:#475569}
   /* desplegables: se apagan por CLASE ([hidden] lo pisa cualquier display heredado) */
   .pd tr.det{display:none}
   .pd tr.det.open{display:table-row}
@@ -76,8 +76,6 @@
   .pd .acciones{display:flex;gap:8px;margin:10px 0 2px}
   .pd .btn{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;text-decoration:none;cursor:pointer}
   .pd .btn:hover{border-color:#94a3b8}
-  .pd .viejos{background:#fffbeb;border-left:3px solid #f59e0b;padding:7px 11px;color:#92400e;font-size:12px;border-radius:0 6px 6px 0;margin:10px 0 4px;max-width:900px;line-height:1.5}
-  .pd .viejos b{font-weight:700}
 </style>
 {% endblock %}
 
@@ -108,13 +106,6 @@
     {% endfor %}
   </div>
 
-  {% if muy_viejos %}
-    <p class="viejos">Además hay <b>{{ muy_viejos.n_pedidos }}</b>
-      {{ 'pedido' if muy_viejos.n_pedidos == 1 else 'pedidos' }} de <b>más de {{ dias_pedido_max }} días</b>
-      ({{ muy_viejos.kg|num_es(0) }} kg · {{ muy_viejos.n_clientes }} {{ 'cliente' if muy_viejos.n_clientes == 1 else 'clientes' }} ·
-      el más viejo del {{ muy_viejos.mas_viejo_es }}) que no entran a la cuenta.</p>
-  {% endif %}
-
   {# ═══════════ COLOR ═══════════ #}
   {% if corte == 'color' %}
     {% macro celda(roll, un, cero) -%}
@@ -134,7 +125,7 @@
           {% set gi = loop.index %}
           <tr class="ghead" data-col="{{ gi }}" data-k="{{ (g.codigo ~ ' ' ~ g.nombre)|lower }}" role="button" tabindex="0" aria-expanded="false">
             <td>
-              <span class="chev" aria-hidden="true">▶</span>
+              <span class="chev" aria-hidden="true"></span>
               <span class="ccode">{{ g.codigo }}</span>{% if g.nombre %}<span class="cname">{{ g.nombre }}</span>{% endif %}
               <span class="muted"> · {{ g.variants|length }} var</span>
             </td>
@@ -150,7 +141,7 @@
               <td>
                 {% if peds %}
                   <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
-                    <span class="chev" aria-hidden="true">▶</span>
+                    <span class="chev" aria-hidden="true"></span>
                     {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
                     <span><span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span></span>
                   </button>
@@ -214,7 +205,7 @@
             <tr>
               <td class="cod">
                 <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
-                  <span class="chev" aria-hidden="true">▶</span>
+                  <span class="chev" aria-hidden="true"></span>
                   {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
                   <span class="color">{{ f.color }}</span>
                   <span class="prod">{{ f.codigo }}</span>

@@ -74,14 +74,11 @@ def lista():
         # se completan según el corte
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
-        pedidos_por_color={}, muy_viejos={},
+        pedidos_por_color={},
     )
 
     if not disponible or not categorias:
         return render_template("pedidos/lista.html", **ctx)
-
-    # Los pedidos de +90 días no entran al total, pero se AVISA cuántos hay.
-    ctx["muy_viejos"] = service.pedidos_muy_viejos()
 
     if corte in ("color", "tela"):
         service.marcar_acabado(filas)   # el punto TUB/ABI; fail-soft
