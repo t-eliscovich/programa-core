@@ -753,6 +753,43 @@
       .fp .blk table { table-layout: auto !important; max-width: none !important;
                        width: auto !important; min-width: 100%; }
       .fp .blk .hil-titles { min-width: 100%; }
+
+      /* — CAMPANITA (el panel de novedades con el pin de ventas arriba).
+         TMT 2026-08-18 (dueña): *"podés hacer que la campanita se vea mejor
+         en mobile"*. El panel es de 26rem = 416px y en un teléfono de 390px
+         se salía por la IZQUIERDA (va anclado al borde derecho del botón):
+         los rótulos quedaban pegados al borde y las cifras cortadas.
+
+         En el celu deja de ser un dropdown pegado al botón y pasa a ser una
+         hoja fija de ancho completo debajo del header: entra siempre, sin
+         importar el ancho del teléfono. Y como el dedo no es el mouse, el pin
+         y las filas crecen (números legibles, filas de ~44px de alto).
+
+         OJO: `.hidden` de Tailwind es UNA clase y esto es un #id → el
+         `display:flex` de acá le GANA y el panel quedaría siempre abierto.
+         Por eso la regla `#campanita-pop.hidden`, que va después. — */
+      #campanita-pop {
+        position: fixed !important;
+        top: 60px; left: 8px; right: 8px; width: auto !important;
+        max-height: calc(100vh - 72px);
+        display: flex; flex-direction: column;
+        border-radius: 12px !important;
+      }
+      #campanita-pop.hidden { display: none !important; }
+      .campanita-pin { padding: 11px 14px !important; }
+      .campanita-pin .pin-rot { font-size: 13px !important; }
+      .campanita-pin .pin-val { font-size: 16px !important; }
+      .campanita-pin .pin-sub { font-size: 12px !important; }
+      /* el scroll pasa al panel entero: con el alto del teléfono, dos cajas
+         que scrollean una adentro de la otra se pelean el dedo */
+      .campanita-lista { max-height: none !important; flex: 1 1 auto;
+                         -webkit-overflow-scrolling: touch; }
+      .campanita-item { padding: 12px 14px !important; align-items: center !important; }
+      .campanita-item .aviso-titulo { font-size: 13.5px !important; }
+      .campanita-item .aviso-detalle { font-size: 12.5px !important; }
+      .campanita-item .aviso-cuando { font-size: 11px !important; }
+      .campanita-pie { padding: 11px 14px !important; }
+      .campanita-pie span, .campanita-pie a { font-size: 13px !important; }
     }
     /* ══════════════════ CELULAR — fin ═════════════════════════════════ */
   </style>
@@ -1244,24 +1281,25 @@
               {% set _vp = ventas_hoy_pin() %}
               {% if _vp %}
               <a href="/facturas?desde={{ _vp.fecha }}&hasta={{ _vp.fecha }}"
+                 class="campanita-pin"
                  style="display:block;padding:8px 12px;text-decoration:none;border-bottom:1px solid rgb(226 232 240);background:rgb(248 250 252);"
                  onmouseover="this.style.background='rgb(241 245 249)'"
                  onmouseout="this.style.background='rgb(248 250 252)'">
                 {# Sin el rótulo "Hoy" ni el 📌: la dueña vio esta versión y
                    dijo que sí. Son dos renglones y el detalle en chico. #}
                 <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">
-                  <span style="font-size:11.5px;color:rgb(100 116 139);">Despachado</span>
-                  <span id="pin-desp" style="font-size:13px;font-weight:600;color:rgb(30 41 59);">—</span>
+                  <span class="pin-rot" style="font-size:11.5px;color:rgb(100 116 139);">Despachado</span>
+                  <span id="pin-desp" class="pin-val" style="font-size:13px;font-weight:600;color:rgb(30 41 59);">—</span>
                 </div>
                 <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">
-                  <span style="font-size:11.5px;color:rgb(100 116 139);">Facturado</span>
-                  <span style="font-size:13px;font-weight:600;color:rgb(30 41 59);">{{ _vp.kg | kg_es }} kg</span>
+                  <span class="pin-rot" style="font-size:11.5px;color:rgb(100 116 139);">Facturado</span>
+                  <span class="pin-val" style="font-size:13px;font-weight:600;color:rgb(30 41 59);">{{ _vp.kg | kg_es }} kg</span>
                 </div>
-                <div style="font-size:10.5px;color:rgb(148 163 184);text-align:right;margin-top:1px;">
+                <div class="pin-sub" style="font-size:10.5px;color:rgb(148 163 184);text-align:right;margin-top:1px;">
                   <span id="pin-pct"></span>$ {{ _vp.importe | num_es(2) }} · {{ _vp.n }} factura{{ '' if _vp.n == 1 else 's' }}
                 </div>
                 {# TMT 2026-08-14: las devoluciones, aparte de la venta. #}
-                <div id="pin-devol" style="display:{{ '' if _vp.devoluciones.kg else 'none' }};font-size:10.5px;color:rgb(180 83 9);text-align:right;">
+                <div id="pin-devol" class="pin-sub" style="display:{{ '' if _vp.devoluciones.kg else 'none' }};font-size:10.5px;color:rgb(180 83 9);text-align:right;">
                   {# TMT 2026-08-14: *"esto que diga 8 devoluciones, no el 8 al
                      final"*. El número suelto al final no decía de qué era, y con
                      la palabra al lado el rótulo "Devoluciones" de adelante sobra. #}
@@ -1269,7 +1307,7 @@
                 </div>
               </a>
               {% endif %}
-              <div style="max-height:19rem;overflow-y:auto;">
+              <div class="campanita-lista" style="max-height:19rem;overflow-y:auto;">
                 {% for a in _ab['items'] %}
                 {# TMT 2026-08-06 (dueña): si el aviso trae url, el item ES el
                    link — como el "ver →" de la pantalla Novedades, pero acá
@@ -1278,23 +1316,23 @@
                    Tailwind congelado → hover por onmouseover, no clase. #}
                 {% set _fila = 'padding:9px 12px;display:flex;align-items:flex-start;gap:8px;' ~ ('' if loop.last else 'border-bottom:1px solid rgb(241 245 249);') %}
                 {% if a.url %}
-                <a href="{{ a.url }}"
+                <a href="{{ a.url }}" class="campanita-item"
                    style="{{ _fila }}text-decoration:none;cursor:pointer;"
                    onmouseover="this.style.background='rgb(248 250 252)'"
                    onmouseout="this.style.background=''">
                 {% else %}
-                <div style="{{ _fila }}">
+                <div class="campanita-item" style="{{ _fila }}">
                 {% endif %}
                   <span style="font-size:13px;line-height:1.3;">{{ a.icono }}</span>
                   <div style="flex:1 1 auto;min-width:0;">
                     {# TMT 2026-08-06 (dueña): "que ocupe menos lugar" — sin la
                        línea "ver →": el TÍTULO se pinta de link cuando hay url. #}
-                    <div style="font-size:12.5px;font-weight:600;color:rgb({{ '3 105 161' if a.url else '30 41 59' }});line-height:1.35;">{{ a.titulo }}</div>
+                    <div class="aviso-titulo" style="font-size:12.5px;font-weight:600;color:rgb({{ '3 105 161' if a.url else '30 41 59' }});line-height:1.35;">{{ a.titulo }}</div>
                     {% if a.detalle %}
-                    <div style="font-size:11.5px;color:rgb(100 116 139);line-height:1.35;margin-top:1px;">{{ a.detalle }}</div>
+                    <div class="aviso-detalle" style="font-size:11.5px;color:rgb(100 116 139);line-height:1.35;margin-top:1px;">{{ a.detalle }}</div>
                     {% endif %}
                   </div>
-                  <span style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;">{{ a.cuando or a.creado_en }}</span>
+                  <span class="aviso-cuando" style="font-size:10.5px;color:rgb(148 163 184);white-space:nowrap;">{{ a.cuando or a.creado_en }}</span>
                 {% if a.url %}</a>{% else %}</div>{% endif %}
                 {% endfor %}
               </div>
@@ -1302,7 +1340,7 @@
                  y el «ver todo» podría decir ver últimas novedades, y lo
                  hacemos todo un renglón"*. Sin avisos, el texto y el link
                  comparten UNA fila; con avisos, queda sólo el link. #}
-              <div style="padding:7px 12px;border-top:1px solid rgb(241 245 249);background:rgb(248 250 252);display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <div class="campanita-pie" style="padding:7px 12px;border-top:1px solid rgb(241 245 249);background:rgb(248 250 252);display:flex;align-items:center;justify-content:space-between;gap:8px;">
                 {% if not _ab['items'] %}
                   <span style="font-size:11.5px;color:rgb(100 116 139);">Sin novedades</span>
                 {% endif %}
