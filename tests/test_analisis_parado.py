@@ -584,7 +584,7 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
 # ── La competencia ──────────────────────────────────────────────────────────
 
 def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100",
-                       semanas=None):
+                       semanas=None, meses=None):
     filas = [
         {"categoria": "Jersey", "subcategoria": "Jersey 3", "color": "NEG",
          "stock_kg": 6000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
@@ -598,6 +598,8 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
             return [{"categoria": k, "pct": v} for k, v in (override or {}).items()]
         if "date_trunc('week'" in s:
             return semanas or []
+        if "date_trunc('month'" in s:
+            return meses or []
         if "parado_venta" in s:
             return vendido or []
         if "parado_share" in s:
@@ -1304,3 +1306,50 @@ def test_cada_fila_guarda_por_que_entro():
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
     assert "de segunda</span>" in html
+
+
+# ── El premio del mes ───────────────────────────────────────────────────────
+
+def test_el_premio_del_mes_va_por_kilos_y_sin_tope(monkeypatch):
+    """Dueña 18/08/2026: "un premio mensual por kg totales quizás?". Es a
+    propósito la carrera contraria a la del año: aquélla premia repartir entre
+    tipos de tela, ésta premia sacar kilos, y le da algo para ganar al que viene
+    último en el porcentaje. Sin eso, el que se descuelga en octubre no vuelve
+    a mirar la pantalla."""
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch, meses=[
+        {"mes": _d(2026, 10, 1), "vendedor": "Quintero Jose", "kg": 400},
+        {"mes": _d(2026, 10, 1), "vendedor": "Intela", "kg": 900},
+    ])
+    oct_ = next(m for m in c["meses"] if m["mes"] == _d(2026, 10, 1))
+    assert oct_["ganador"] == "Intela", "gana por kilos, no por % de meta"
+    assert oct_["kg"] == 1300
+    assert [x["vendedor"] for x in oct_["podio"]] == ["Intela", "Quintero Jose"]
+
+
+def test_agosto_y_septiembre_cuentan_juntos(monkeypatch):
+    """⚠ Del 25 al 31 de agosto hay cinco días hábiles: un "premio del mes" por
+    esa semana no es un mes."""
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch, meses=[
+        {"mes": _d(2026, 8, 1), "vendedor": "Intela", "kg": 100},
+        {"mes": _d(2026, 9, 1), "vendedor": "Intela", "kg": 250},
+    ])
+    assert [m["mes"] for m in c["meses"]] == [_d(2026, 9, 1)]
+    assert c["meses"][0]["kg"] == 350
+
+
+def test_el_mes_en_curso_se_marca_como_en_juego(monkeypatch):
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch, meses=[
+        {"mes": _d(2026, 9, 1), "vendedor": "Intela", "kg": 100}])
+    assert c["meses"][0]["cerrado"] is False
+
+
+def test_la_pantalla_explica_las_dos_carreras():
+    from pathlib import Path
+    html = " ".join((Path(__file__).resolve().parent.parent / "modules" /
+                     "analisis" / "templates" / "analisis" /
+                     "competencia.html").read_text(encoding="utf-8").split())
+    assert "El premio del mes" in html
+    assert "kilos totales" in html and "sin tope" in html

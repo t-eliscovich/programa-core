@@ -556,6 +556,7 @@ def competencia() -> dict:
             key=lambda s: -float(s["pct"] or 0))[:4]
 
     _movimiento(ranking, semanas["por_vendedor"])
+    meses = _meses(largada, cierre)
     hay_hoy = sum(g["kg"] for g in grupos)
     liquidado = sum(g["liquidado"] for g in grupos)
     return {
@@ -575,6 +576,7 @@ def competencia() -> dict:
         "liquidado": liquidado,
         "kg_fuera_del_ranking": fuera,
         "semanas": semanas["filas"],
+        "meses": meses,
         "competidores": COMPETIDORES,
     }
 
@@ -610,6 +612,54 @@ def _semanas(largada: date) -> dict:
         s["acumulado"] = acum
         acum -= s["kg"]
     return {"filas": orden, "por_vendedor": por_vendedor}
+
+
+def _meses(largada: date, cierre: date) -> list[dict]:
+    """
+    El premio del MES, por kilos totales. Dueña 18/08/2026: "un premio mensual
+    por kg totales quizás?".
+
+    ⭐ Va por KILOS y sin tope, al revés del ranking grande. Es a propósito: son
+    dos carreras distintas. La del año premia repartir entre tipos de tela; la
+    del mes premia sacar kilos, y le da algo para ganar al que viene último en
+    el porcentaje. Sin eso, el que se descuelga en octubre no vuelve a mirar la
+    pantalla.
+
+    ⚠ Agosto y septiembre cuentan JUNTOS: del 25 al 31 de agosto hay cinco días
+    hábiles, y un "premio del mes" por esa semana no es un mes.
+    """
+    filas = db.fetch_all(
+        """SELECT date_trunc('month', v.fecha)::date AS mes,
+                  v.vendedor, SUM(v.kg) AS kg
+             FROM scintela.parado_venta v
+            WHERE v.fecha >= %s
+            GROUP BY 1, 2""", (largada,))
+    if not filas:
+        return []
+
+    primer_mes = date(largada.year, largada.month, 1)
+    def bucket(m):
+        return date(largada.year, largada.month + 1, 1) if m == primer_mes else m
+
+    por_mes: dict = {}
+    for f in filas:
+        m = bucket(f["mes"])
+        d = por_mes.setdefault(m, {"mes": m, "kg": 0.0, "tabla": {}})
+        kg = float(f["kg"] or 0)
+        d["kg"] += kg
+        d["tabla"][f["vendedor"]] = d["tabla"].get(f["vendedor"], 0.0) + kg
+
+    hoy = today_ec()
+    mes_actual = bucket(date(hoy.year, hoy.month, 1))
+    salida = []
+    for m in sorted(por_mes, reverse=True):
+        d = por_mes[m]
+        orden = sorted(d["tabla"].items(), key=lambda x: (-x[1], x[0]))
+        d["podio"] = [{"vendedor": v, "kg": kg} for v, kg in orden[:3]]
+        d["ganador"] = orden[0][0] if orden else None
+        d["cerrado"] = m < mes_actual and m <= cierre
+        salida.append(d)
+    return salida
 
 
 def _movimiento(ranking: list[dict], por_vendedor: dict) -> None:

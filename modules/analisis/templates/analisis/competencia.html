@@ -101,6 +101,9 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
       lleva cumplida</b>, así compite parejo el de cartera grande con el de
       cartera chica.</li>
   <li>Se mide <b>semana a semana</b>, de lunes a domingo.</li>
+  <li>Hay un <b>premio del mes</b> aparte, por <b>kilos totales y sin tope</b>:
+      ahí gana quien más kilos saque en el mes, vaya donde vaya en el
+      porcentaje. Agosto y septiembre cuentan juntos.</li>
 </ol>
 </div>
 
@@ -150,6 +153,33 @@ grupos fuertes y flojos, así que se compara parejo.
 {% endfor %}
 </tbody>
 </table>
+
+<h2>El premio del mes</h2>
+<p class="sub">Ésta es la otra carrera: va por <b>kilos totales</b>, sin tope.
+Gana quien más kilos saque en el mes, aunque vaya último en el porcentaje.</p>
+{% if meses %}
+<table>
+<thead><tr><th>Mes</th><th>Va ganando</th><th class="n">Kg</th>
+<th class="opt">Después</th><th class="n opt">Total del mes</th></tr></thead>
+<tbody>
+{% for m in meses %}
+  <tr>
+    <td class="tela">{{ m.mes.strftime('%m/%Y') }}
+      {% if not m.cerrado %}<span class="pill quieto">en juego</span>{% endif %}</td>
+    <td class="tela">{{ m.ganador }}</td>
+    <td class="n">{{ m.podio[0].kg | num_es(0) }}</td>
+    <td class="g opt">{% for x in m.podio[1:] %}{{ x.vendedor }}
+      {{ x.kg | num_es(0) }} kg{% if not loop.last %} · {% endif %}{% endfor %}</td>
+    <td class="n g opt">{{ m.kg | num_es(0) }}</td>
+  </tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<p class="sub">Todavía no se vendió nada. El primer premio del mes se define a
+fin de septiembre — agosto y septiembre cuentan juntos, porque del 25 al 31 de
+agosto hay cinco días hábiles.</p>
+{% endif %}
 
 <h2>Semana a semana</h2>
 {% if semanas %}
