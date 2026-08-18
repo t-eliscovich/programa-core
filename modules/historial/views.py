@@ -16,6 +16,7 @@ from flask import (
 import db
 import labels as _LBL
 from auth import requiere_login, tiene_permiso
+from concepto_parser import parse_ref_anticipo
 from error_messages import flash_exc
 from exports import csv_response
 from filters import money_es
@@ -27,6 +28,25 @@ from modules.posdat import queries as _posdat_q
 from . import queries
 
 historial_bp = Blueprint("historial", __name__, template_folder="templates")
+
+
+def _ref_anticipo(concepto: str | None) -> str:
+    """Sufijo con el número de importación del anticipo: `" 44/26"`, `" 44"`, `""`.
+
+    Sale del MISMO concepto que muestra /dolares (`parse_ref_anticipo`), así
+    que la celda del historial y la de la pantalla de anticipos dicen el mismo
+    número. El año se abrevia a dos dígitos porque así lo escribe la persona
+    que carga (`44/26`). Sin número reconocible devuelve "" y la etiqueta
+    queda como estaba (`USD AI`).
+    """
+    ref = parse_ref_anticipo(concepto)
+    numero = ref.get("numero")
+    if numero is None:
+        return ""
+    anio = ref.get("anio")
+    if anio:
+        return f" {numero}/{int(anio) % 100:02d}"
+    return f" {numero}"
 
 
 @historial_bp.route("/operaciones")
@@ -468,15 +488,24 @@ def lista():
     # El anticipo en dólares se identifica por su CUENTA (la columna `cta`,
     # que es por la que filtra /dolares); el retiro, por el Cód. de 2 letras
     # de /retiros.
+    # 🚨 TMT 2026-08-18 (dueña, mirando tres filas seguidas del mismo día):
+    # *"poner el numero de AI"*. Las tres decían `USD AI` en Origen — la misma
+    # celda para tres anticipos DISTINTOS (44/26, 33/26, 28), y la única forma
+    # de distinguirlos era leer el concepto. El número de importación va
+    # pegado a la cuenta, tal cual está escrito en el concepto del anticipo
+    # (`44/26`, o sólo `44` si ese concepto todavía no tiene el año).
     dolares_etiquetas: dict[int, str] = {}
     if id_dolares:
         placeholder = ",".join(["%s"] * len(id_dolares))
         for rd in (db.fetch_all(
-                f"SELECT id_dolares, COALESCE(cta, '') AS cta FROM scintela.dolares "
+                f"SELECT id_dolares, COALESCE(cta, '') AS cta, "
+                f"COALESCE(concepto, '') AS concepto FROM scintela.dolares "
                 f"WHERE id_dolares IN ({placeholder})", tuple(id_dolares)) or []):
             cta = (rd.get("cta") or "").strip().upper()
             if cta:
-                dolares_etiquetas[int(rd["id_dolares"])] = f"USD {cta}"
+                dolares_etiquetas[int(rd["id_dolares"])] = (
+                    f"USD {cta}{_ref_anticipo(rd.get('concepto'))}"
+                )
     retiro_etiquetas: dict[int, str] = {}
     if id_retiros:
         placeholder = ",".join(["%s"] * len(id_retiros))
