@@ -66,10 +66,10 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
     <td class="tela">{{ g.grupo }}</td>
     <td class="n">{{ g.kg | num_es(0) }}</td>
     <td class="n g">{{ g.meta_kg | num_es(0) }}
-      <span class="pill quieto">{{ g.meta_pct | num_es(0) }}%{% if g.meta_es_manual %} ✎{% endif %}</span></td>
+      <span class="pill quieto">{{ g.meta_pct | num_es(1) }}%{% if g.meta_es_manual %} ✎{% endif %}</span></td>
     <td class="n">{{ g.liquidado | num_es(0) }}</td>
     <td class="n">{{ g.pct_meta | num_es(1) }}%</td>
-    <td class="g">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(0) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
+    <td class="g">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(1) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
   </tr>
 {% endfor %}
 </tbody>

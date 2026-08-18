@@ -734,3 +734,18 @@ def test_ningun_porcentaje_sale_con_quince_decimales():
                 assert antes_del_filtro.strip().startswith("("), (
                     f"{archivo.name}: '{expr.strip()}' — el filtro se aplica "
                     f"sólo a la última rama del if; faltan paréntesis")
+
+
+def test_todos_los_porcentajes_llevan_un_decimal():
+    """Dueña 17/08/2026: "un decimal". Con enteros, un grupo del 0,4% se lee
+    como 0% y parece que no existe; con dos, la columna deja de leerse de un
+    vistazo."""
+    import re
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for archivo in carpeta.glob("*.html"):
+        html = archivo.read_text(encoding="utf-8")
+        for decimales in re.findall(r"num_es\((\d)\)\s*\}\}%", html):
+            assert decimales == "1", (
+                f"{archivo.name}: un porcentaje con {decimales} decimales")
