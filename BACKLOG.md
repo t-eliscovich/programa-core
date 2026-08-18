@@ -255,13 +255,6 @@ BLP BRC JQS LEC YMO JRP MTE — la mig 0155 prohíbe nuevos; estos quedaron.
 Cada par necesita decisión (mismo cliente ×2 vs dos empresas reales).
 Pantallas: `/admin/clientes-asinfo`, `cambiar-codigo`.
 
-### [XS] `/pedidos` — el corte por Acabado (TUB/ABI) quedó afuera
-Los 5 cortes del Excel de la dueña se implementaron el 18/08 salvo **Acabado**:
-el acabado es atributo de LOTE en Asinfo (`valor_atributo`, `id_atributo=1`) y
-el pedido de cliente no tiene lote asociado — no hay fuente limpia a nivel
-producto. Decisión de la dueña (18/08): sacarlo por ahora. Si aparece la
-fuente, se agrega la pestaña y el puntito de color de la variante.
-
 ### [S] Cupo de crédito cargado en ~10% de los clientes
 La ficha muestra cupo y descuento (38f900bb) pero el dato está casi vacío.
 Cargar los cupos reales o la columna es decoración.
