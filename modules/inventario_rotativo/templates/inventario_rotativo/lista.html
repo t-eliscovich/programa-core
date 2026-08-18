@@ -113,7 +113,8 @@
       <span class="sep"></span>
       {# La hoja es ESTA pantalla con otro ancho, no otra plantilla: si fueran
          dos, lo que se lleva a planta dejaría de ser lo que se mira. #}
-      <a class="chip" href="{{ url_for('inventario_rotativo.lista', ver=corte, imprimir=1) }}"
+      <a class="chip" id="iv-imprimir"
+         href="{{ url_for('inventario_rotativo.lista', ver=corte, imprimir=1) }}"
          target="_blank" rel="noopener">Imprimir</a>
       <a class="chip" href="{{ url_for('inventario_rotativo.excel') }}">Excel</a>
     </div>
@@ -173,13 +174,18 @@
       despacha.</p>
     {% if imprimir %}
       <p class="pie">Inventario rotativo · {{ hoy.strftime('%d/%m/%Y') }} ·
-        Fuente: Asinfo</p>
+        Fuente: Asinfo
+        {%- if filtros.est == 'rojo' %} · sólo lo que hay que teñir
+        {%- elif filtros.est == 'sobra' %} · sólo lo que sobra{% endif %}
+        {%- if filtros.fam %} · {{ filtros.fam }}{% endif %}
+        {%- if filtros.q %} · "{{ filtros.q }}"{% endif %}</p>
     {% endif %}
   {% endif %}
 </div>
 
 <script>
 (function () {
+  var VER = {{ corte | tojson }};
   var est = 'todo', fam = '', q = '';
 
   function pinta(sel, attr, val) {
@@ -204,6 +210,17 @@
     });
     var vacio = document.getElementById('iv-vacio');
     if (vacio) { vacio.classList.toggle('oculta', vivos > 0); }
+
+    // Imprimir se lleva el filtro puesto: el servidor lo aplica de nuevo, así
+    // el papel sale igual aunque el JS no haya corrido en la pestaña nueva.
+    var imp = document.getElementById('iv-imprimir');
+    if (imp) {
+      var p = new URLSearchParams({ ver: VER, imprimir: '1' });
+      if (est !== 'todo') { p.set('est', est); }
+      if (fam) { p.set('fam', fam); }
+      if (q) { p.set('q', q); }
+      imp.href = '?' + p.toString();
+    }
   }
 
   document.querySelectorAll('.iv .chip[data-est]').forEach(function (c) {

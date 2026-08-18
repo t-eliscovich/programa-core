@@ -518,3 +518,69 @@ def test_cuellos_y_punos_comparten_el_termino_en_unidades():
     ]
     (b,) = service.agrupar(filas, "color")
     assert b["unidad"] == "un"
+
+
+# ── la hoja respeta el filtro ───────────────────────────────────────────────
+
+def _dos_filas():
+    """Un rojo (sin stock) y un tranquilo (con stock de sobra)."""
+    return [_ficha(color="JOS"),
+            _ficha(id_producto=2, color="NEG", codigo="FE102NEG", inv_kg=9000.0)]
+
+
+def test_la_hoja_imprime_solo_lo_filtrado(app, fake_db):
+    """Dueña 2026-08-18. Pedir "las que hay que teñir" imprimía las 289 —
+    trece páginas para tirar."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    serie = _serie(1) + _serie(2)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(_dos_filas(), serie)):
+        todo = c.get("/inventario-rotativo?imprimir=1").get_data(as_text=True)
+        rojo = c.get("/inventario-rotativo?imprimir=1&est=rojo").get_data(as_text=True)
+    assert ">JOS<" in todo and ">NEG<" in todo
+    assert ">JOS<" in rojo and ">NEG<" not in rojo
+
+
+def test_la_hoja_filtrada_dice_en_el_pie_qué_filtro_tiene(app, fake_db):
+    """Una hoja de 62 filas de 289 tiene que decir por qué, o el que la lee
+    piensa que eso es todo el inventario."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo?imprimir=1&est=rojo&fam=Fleece").get_data(as_text=True)
+    assert "sólo lo que hay que teñir" in body
+    assert "Fleece" in body
+
+
+def test_el_filtro_de_la_pantalla_no_recorta_lo_que_se_ve(app, fake_db):
+    """Sin `imprimir=1` filtra el JS: si el servidor recortara, al apretar
+    "Todo" no habría forma de volver a ver el resto."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    serie = _serie(1) + _serie(2)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(_dos_filas(), serie)):
+        body = c.get("/inventario-rotativo?est=rojo").get_data(as_text=True)
+    assert ">JOS<" in body and ">NEG<" in body
+
+
+def test_un_filtro_que_no_existe_no_vacia_la_hoja(app, fake_db):
+    """`?est=cualquiera` imprime todo, no una hoja en blanco."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo?imprimir=1&est=cualquiera").get_data(as_text=True)
+    assert ">JOS<" in body
+
+
+def test_el_buscador_de_la_hoja_mira_color_y_tela(app, fake_db):
+    service._cache.clear()
+    c = _login(app, fake_db)
+    serie = _serie(1) + _serie(2)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(_dos_filas(), serie)):
+        body = c.get("/inventario-rotativo?imprimir=1&q=neg").get_data(as_text=True)
+    assert ">NEG<" in body and ">JOS<" not in body

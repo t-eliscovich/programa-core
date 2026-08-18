@@ -13,6 +13,13 @@ La hoja impresa sale de la MISMA pantalla (`?imprimir=1`): si fuera otra
 plantilla, las dos se irían separando y lo que se lleva a planta dejaría de
 ser lo que se mira. Mismo criterio que la hoja del portal de vendedores.
 
+Y respeta el filtro que haya en pantalla (dueña 2026-08-18): el botón le
+cuelga `est`/`fam`/`q` a la URL y ACÁ se filtran las filas, no en el
+navegador. Sin eso, pedir "las 62 que hay que teñir" imprimía las 289 —
+trece páginas para tirar. El filtro se aplica en el servidor y no por JS
+porque la hoja tiene que salir igual aunque el JS no haya corrido todavía
+cuando el navegador arma el papel.
+
 Va en el menú "Producción y stocks", arriba de Inventario.
 """
 from __future__ import annotations
@@ -35,6 +42,33 @@ CORTES = ("color", "tela")
 CORTES_LBL = {"color": "Color", "tela": "Tela"}
 
 
+def _filtros() -> dict:
+    """Los filtros de la URL, normalizados. Lo que no se entiende no filtra."""
+    est = (request.args.get("est") or "").strip().lower()
+    return {
+        "est": est if est in ("rojo", "ambar", "ok", "sobra") else "",
+        "fam": (request.args.get("fam") or "").strip(),
+        "q": (request.args.get("q") or "").strip().lower(),
+    }
+
+
+def _aplicar(filas: list[dict], f: dict) -> list[dict]:
+    """Las mismas tres condiciones que el JS de la pantalla.
+
+    Si esto y el JS se separan, la hoja deja de ser lo que se ve — por eso son
+    tres líneas y no una máquina de filtros.
+    """
+    out = filas
+    if f["est"]:
+        out = [x for x in out if x["estado"] == f["est"]]
+    if f["fam"]:
+        out = [x for x in out if x["familia"] == f["fam"]]
+    if f["q"]:
+        out = [x for x in out
+               if f["q"] in f"{x['color']} {x['tela']}".lower()]
+    return out
+
+
 @inventario_rotativo_bp.route("/inventario-rotativo")
 @requiere_login
 @requiere_permiso("stock.ver")
@@ -45,11 +79,19 @@ def lista():
     if corte not in CORTES:
         corte = CORTES[0]
 
+    imprimir = request.args.get("imprimir") == "1"
+    filtros = _filtros()
+    # En pantalla filtra el JS (instantáneo, sin recargar). En el papel filtra
+    # el servidor: no hay dónde clickear después.
+    if imprimir:
+        filas = _aplicar(filas, filtros)
+
     return render_template(
         "inventario_rotativo/lista.html",
         disponible=disponible,
         corte=corte,
-        imprimir=request.args.get("imprimir") == "1",
+        imprimir=imprimir,
+        filtros=filtros,
         hoy=today_ec(),
         cortes=CORTES,
         cortes_lbl=CORTES_LBL,
