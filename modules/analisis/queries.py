@@ -468,7 +468,7 @@ def competencia() -> dict:
     override = {r["categoria"]: float(r["pct"]) for r in db.fetch_all(
         "SELECT categoria, pct FROM scintela.parado_meta")}
     total_pct = float(config("meta_total_pct", "100"))
-    largada = date.fromisoformat(config("largada", "2026-08-17"))
+    largada = date.fromisoformat(config("largada", "2026-08-25"))
     cierre = date.fromisoformat(config("cierre", "2026-12-31"))
     _meta_pct(grupos, override, total_pct)
 

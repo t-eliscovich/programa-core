@@ -611,7 +611,7 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
             # fecha de largada y el test de la fecha de cierre pasara por el
             # motivo equivocado.
             return {"valor": {"meta_total_pct": total_pct,
-                              "largada": "2026-08-17",
+                              "largada": "2026-08-25",
                               "cierre": "2026-12-31"}[(params or ("",))[0]]}
         return None
 
@@ -1174,3 +1174,12 @@ def test_la_pantalla_dice_cuanto_falta_para_el_cierre():
             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     assert "dias_para_el_cierre" in html
     assert "Terminó el" in html, "cuando pase la fecha tiene que decirlo"
+
+
+def test_la_largada_es_el_martes_25(monkeypatch):
+    """Dueña 18/08/2026: "la vamos a empezar el martes que viene". Antes decía
+    17/08 y habría contado kilos de una semana antes de que los vendedores
+    supieran que la competencia existía."""
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch)
+    assert c["largada"] == _d(2026, 8, 25)
