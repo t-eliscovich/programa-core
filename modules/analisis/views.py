@@ -213,7 +213,28 @@ def competencia():
     /mi-cartera por `scope_vendedor.py` y cualquier otra ruta le da 404. La
     apertura de verdad está allá, en PREFIJOS_PERMITIDOS.
     """
-    return render_template("analisis/competencia.html", **queries.competencia())
+    # ⭐ El bloque "lo tuyo" sale del vendedor del USUARIO LOGUEADO, nunca del
+    # querystring: si viniera de la URL, cualquiera vería la cartera de
+    # cualquiera cambiando tres letras. Mismo criterio que /mi-cartera.
+    vend = (g.user or {}).get("vend")
+    return render_template(
+        "analisis/competencia.html",
+        vend=vend,
+        mis_clientes=queries.mis_clientes_parado(vend) if vend else [],
+        **queries.competencia())
+
+
+def _numero(texto: str | None, malos: list[str], donde: str) -> float | None:
+    """Un % escrito a mano. Devuelve None si está vacío o no se entiende, y en
+    el segundo caso lo anota en `malos` para que la pantalla lo diga."""
+    t = (texto or "").strip().replace(",", ".")
+    if not t:
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        malos.append(donde)
+        return None
 
 
 @analisis_bp.route("/analisis/metas", methods=["GET", "POST"])
@@ -230,20 +251,34 @@ def competencia_metas():
     permiso. Con la ruta afuera son dos cierres en vez de uno.
     """
     if request.method == "POST":
+        quien = (g.user or {}).get("username")
+        # ⚠ Lo que no se entiende NO se ignora en silencio: se junta y se avisa.
+        # Un "Metas guardadas" sobre un campo que se descartó es la peor de las
+        # respuestas — la dueña se va convencida de que cambió algo.
+        malos: list[str] = []
+
+        total = _numero(request.form.get("meta_total_pct"), malos, "el total")
+        if total is not None:
+            db.execute(
+                """INSERT INTO scintela.parado_config (clave, valor, quien)
+                   VALUES ('meta_total_pct', %s, %s)
+                   ON CONFLICT (clave) DO UPDATE
+                      SET valor = excluded.valor, actualizado = NOW(),
+                          quien = excluded.quien""",
+                (str(total), quien))
+
         for clave, valor in request.form.items():
-            if not clave.startswith("meta_"):
+            if not clave.startswith("meta_") or clave == "meta_total_pct":
                 continue
             grupo = clave[5:]
-            texto = (valor or "").strip().replace(",", ".")
-            if not texto:
+            if not (valor or "").strip():
                 # vacío = volver al automático. Guardar un 0 sería otra cosa:
                 # "este grupo no tiene meta", que no es lo que quiso decir.
                 db.execute("DELETE FROM scintela.parado_meta WHERE categoria = %s",
                            (grupo,))
                 continue
-            try:
-                pct = float(texto)
-            except ValueError:
+            pct = _numero(valor, malos, grupo)
+            if pct is None:
                 continue
             db.execute(
                 """INSERT INTO scintela.parado_meta (categoria, pct, quien)
@@ -251,8 +286,13 @@ def competencia_metas():
                    ON CONFLICT (categoria) DO UPDATE
                       SET pct = excluded.pct, actualizado = NOW(),
                           quien = excluded.quien""",
-                (grupo, pct, (g.user or {}).get("username")))
-        flash("Metas guardadas.", "success")
+                (grupo, pct, quien))
+
+        if malos:
+            flash("Guardé lo demás, pero no entendí lo que pusiste en: "
+                  + ", ".join(malos) + ".", "error")
+        else:
+            flash("Metas guardadas.", "success")
         return redirect(url_for("analisis.competencia"))
     return render_template("analisis/competencia_metas.html", **queries.competencia())
 

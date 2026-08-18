@@ -583,7 +583,8 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
 
 # ── La competencia ──────────────────────────────────────────────────────────
 
-def _competencia_falsa(monkeypatch, vendido=None, override=None):
+def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100",
+                       semanas=None):
     filas = [
         {"categoria": "Jersey", "subcategoria": "Jersey 3", "color": "NEG",
          "stock_kg": 6000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
@@ -595,25 +596,45 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None):
         s = " ".join(sql.split())
         if "parado_meta" in s:
             return [{"categoria": k, "pct": v} for k, v in (override or {}).items()]
+        if "date_trunc('week'" in s:
+            return semanas or []
         if "parado_venta" in s:
             return vendido or []
         if "parado_share" in s:
             return []
         return filas
 
+    def fake_one(sql, params=None, conn=None):
+        s = " ".join(sql.split())
+        if "parado_config" in s:
+            clave = (params or ("",))[0]
+            return {"valor": total_pct} if clave == "meta_total_pct" else \
+                   {"valor": "2026-08-17"}
+        return None
+
     monkeypatch.setattr(queries.db, "fetch_all", fake)
+    monkeypatch.setattr(queries.db, "fetch_one", fake_one)
     return queries.competencia()
 
 
-def test_la_meta_de_un_grupo_es_su_peso_en_el_parado(monkeypatch):
-    """Dueña: "meta segun cantidad de ese grupo % en el total del stock".
-    Jersey es 6.000 de 10.000 = 60% → su meta es sacar el 60% de sus 6.000."""
-    c = _competencia_falsa(monkeypatch)
+def test_la_dueña_pone_el_total_y_todos_los_grupos_tienen_la_misma_exigencia(monkeypatch):
+    """⭐ La primera versión le ponía a cada grupo SU PROPIO PESO como meta
+    (Jersey 31,5% → sacarle el 31,5%). Daba un total de 21,7% que no decidió
+    nadie y una meta de 4 kg para el grupo más chico: una fórmula que se muerde
+    la cola. Ahora la dueña pone el total y se reparte por tamaño, o sea que
+    todos los grupos quedan con la misma exigencia."""
+    c = _competencia_falsa(monkeypatch, total_pct="40")
+    for g in c["grupos"]:
+        assert g["meta_pct"] == 40
     jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
-    assert jersey["meta_pct"] == 60
-    assert jersey["meta_kg"] == 3600
-    fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
-    assert fleece["meta_pct"] == 40 and fleece["meta_kg"] == 1600
+    assert jersey["meta_kg"] == 2400          # 40% de 6.000
+    assert c["meta_kg"] == 4000               # 40% de 10.000
+
+
+def test_con_la_meta_en_todo_cada_grupo_despeja_sus_kilos(monkeypatch):
+    """Dueña 17/08/2026, cuánto hay que sacar: "todo"."""
+    c = _competencia_falsa(monkeypatch)
+    assert c["meta_kg"] == c["kg_parado"] == 10000
 
 
 def test_la_meta_se_reparte_en_partes_iguales(monkeypatch):
@@ -656,8 +677,8 @@ def test_un_vendedor_que_ya_no_esta_suma_al_grupo_pero_no_al_ranking(monkeypatch
         "el kilo salió de la bodega igual: tiene que contar para el grupo")
 
 
-def test_la_meta_a_mano_pisa_la_automatica(monkeypatch):
-    c = _competencia_falsa(monkeypatch, override={"Jersey": 10})
+def test_la_meta_a_mano_pisa_la_del_total(monkeypatch):
+    c = _competencia_falsa(monkeypatch, override={"Jersey": 10}, total_pct="40")
     jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
     assert jersey["meta_pct"] == 10 and jersey["meta_es_manual"]
     fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
@@ -749,3 +770,128 @@ def test_todos_los_porcentajes_llevan_un_decimal():
         for decimales in re.findall(r"num_es\((\d)\)\s*\}\}%", html):
             assert decimales == "1", (
                 f"{archivo.name}: un porcentaje con {decimales} decimales")
+
+
+# ── Lo que ve un vendedor ───────────────────────────────────────────────────
+
+def test_la_cartera_del_vendedor_sale_de_programa_core_y_no_de_asinfo():
+    """⚠ `cliente.vend` (Programa Core) y el vendedor de la última factura de
+    Asinfo no siempre coinciden. Si acá usara el de Asinfo, un cliente podría
+    salirle a uno en esta pantalla y a otro en /mi-cartera, y eso no hay forma
+    de explicárselo a nadie."""
+    import inspect
+    fuente = inspect.getsource(queries.mis_clientes_parado)
+    assert "scintela.cliente" in fuente and "c.vend" in queries._ES_MI_CLIENTE
+    assert "vend_pc" not in fuente, "vend_pc es el de Asinfo, no la cartera de PC"
+
+
+def test_el_predicado_de_pertenencia_es_el_mismo_que_el_del_portal():
+    from modules.mi_cartera import queries as mc
+    assert queries._ES_MI_CLIENTE == mc._ES_MI_CLIENTE, (
+        "dos definiciones de 'este cliente es mío' divergen en silencio")
+
+
+def test_sin_vendedor_no_devuelve_la_lista_entera(monkeypatch):
+    """⚠ Un scope que falla ABIERTO no da error: muestra de más y nadie se
+    entera. Con `vend` vacío tiene que devolver [], no todo."""
+    llamado = {"veces": 0}
+
+    def fake(*a, **k):
+        llamado["veces"] += 1
+        return [{"codigo_cli": "AAA"}]
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    assert queries.mis_clientes_parado("") == []
+    assert queries.mis_clientes_parado(None) == []
+    assert llamado["veces"] == 0, "ni siquiera tiene que consultar"
+
+
+def test_el_vendedor_del_bloque_sale_del_usuario_y_no_de_la_url():
+    """Si viniera del querystring, cualquiera vería la cartera de cualquiera
+    cambiando tres letras."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.competencia)
+    assert '(g.user or {}).get("vend")' in fuente
+    assert "request.args" not in fuente
+
+
+# ── Semana a semana ─────────────────────────────────────────────────────────
+
+def test_el_acumulado_de_la_semana_mas_nueva_es_el_total(monkeypatch):
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch, semanas=[
+        {"semana": _d(2026, 8, 17), "vendedor": "Intela", "kg": 100},
+        {"semana": _d(2026, 8, 10), "vendedor": "Intela", "kg": 40},
+    ])
+    filas = c["semanas"]
+    assert [f["semana"] for f in filas] == [_d(2026, 8, 17), _d(2026, 8, 10)], \
+        "la semana más nueva va arriba"
+    assert filas[0]["acumulado"] == 140 and filas[1]["acumulado"] == 40
+
+
+def test_el_movimiento_del_ranking_se_recalcula_sin_guardar_nada(monkeypatch):
+    """El puesto de la semana pasada sale de descontar lo de esta semana. Sin
+    esto habría que guardar un ranking por semana para poder decir "subió"."""
+    from datetime import date as _d
+    c = _competencia_falsa(
+        monkeypatch,
+        vendido=[{"vendedor": "Quintero Jose", "categoria": "Jersey", "kg": 500,
+                  "ultima": None}],
+        semanas=[{"semana": _d(2026, 8, 17), "vendedor": "Quintero Jose",
+                  "kg": 500}])
+    quintero = next(r for r in c["ranking"] if r["vendedor"] == "Quintero Jose")
+    assert quintero["puesto"] == 1
+    assert quintero["kg_semana"] == 500
+    assert quintero["movimiento"] > 0, "venía último y pasó a primero"
+
+
+def test_los_tres_numeros_de_arriba_cierran_entre_ellos(monkeypatch):
+    """"Había" no se guarda: se reconstruye como lo que hay más lo que se
+    vendió. Así los tres números cierran siempre, que es lo primero que alguien
+    va a chequear de un vistazo."""
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Intela", "categoria": "Jersey", "kg": 250, "ultima": None}])
+    assert c["kg_al_largar"] == c["kg_parado"] + c["liquidado"]
+
+
+def test_no_se_cuentan_las_ventas_anteriores_a_la_largada():
+    """La cohorte se marcó el 13/08 y la competencia arranca el 17: sin el
+    corte, esos cuatro días le regalarían kilos a quien justo vendió algo."""
+    import inspect
+    fuente = inspect.getsource(queries.competencia)
+    assert "WHERE v.fecha >= %s" in fuente
+    assert 'config("largada"' in fuente
+
+
+def test_la_fila_fantasma_sin_grupo_no_se_dibuja(monkeypatch):
+    """Restos de la cohorte que ya no están en la foto (la tela cruda que se
+    sacó) sumaban un renglón "(sin grupo) · 0 kg" que sólo confunde."""
+    import inspect
+    assert 'if float(f["stock_kg"]) > 0 or f["categoria"]' in \
+        inspect.getsource(queries.competencia)
+
+
+def test_el_total_no_se_guarda_como_si_fuera_un_grupo():
+    """El campo del total se llama `meta_total_pct` y el bucle que guarda los
+    grupos toma todo lo que empiece con `meta_`: sin la excepción, se crearía un
+    grupo fantasma llamado "total_pct" con su propia meta."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.competencia_metas)
+    assert 'clave == "meta_total_pct"' in fuente
+
+
+def test_un_porcentaje_que_no_se_entiende_se_avisa(monkeypatch):
+    """⚠ Tragarse el error y contestar "Metas guardadas" es la peor respuesta:
+    la dueña se va convencida de que cambió algo. Hay un test del repo que
+    prohíbe los `except: pass` mudos y cazó justamente éste."""
+    from modules.analisis import views
+    malos: list[str] = []
+    assert views._numero("40,5", malos, "x") == 40.5
+    assert views._numero("", malos, "x") is None
+    assert malos == []
+    assert views._numero("cuarenta", malos, "Jersey") is None
+    assert malos == ["Jersey"]

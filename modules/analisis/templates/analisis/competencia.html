@@ -3,7 +3,12 @@
 {% block contenido %}
 <style>
 .term{background:#f8fafc;border-radius:12px;padding:22px 24px;margin:18px 0}
-.term .grande{font-size:44px;font-weight:600;line-height:1.05}
+.term .tres{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px}
+.term .tres .k{font-size:12px;color:var(--g);margin:0}
+.term .tres .v{font-size:34px;font-weight:600;line-height:1.1;margin:2px 0 0}
+.term .tres .v.vd{color:var(--vd)}
+.term .tres .s{font-size:12px;color:var(--g);margin:2px 0 0}
+.mov{font-size:11px}.mov.sube{color:var(--vd)}.mov.baja{color:var(--rj)}
 .term .chico{color:var(--g);font-size:13px;margin-top:4px}
 .barra-fondo{height:12px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:14px}
 .barra-fondo > div{height:100%;background:var(--vd);border-radius:99px}
@@ -17,9 +22,19 @@ tr.yo td{background:#f0fdf4}
 <p class="sub">Quién saca más de lo que está quieto en bodega.</p>
 
 <div class="term">
-  <div class="grande">{{ kg_parado | num_es(0) }} kg</div>
-  <div class="chico">es lo que queda parado hoy, {{ hoy.strftime('%d/%m/%Y') }}
-    — de eso hay que sacar <b>{{ meta_kg | num_es(0) }} kg</b></div>
+  <div class="tres">
+    <div><p class="k">Había al arrancar</p>
+      <p class="v">{{ kg_al_largar | num_es(0) }}</p>
+      <p class="s">kg, al {{ largada.strftime('%d/%m/%Y') }}</p></div>
+    <div><p class="k">Hay hoy</p>
+      <p class="v">{{ kg_parado | num_es(0) }}</p>
+      <p class="s">kg, al {{ hoy.strftime('%d/%m/%Y') }}</p></div>
+    <div><p class="k">Se vendió</p>
+      <p class="v vd">{{ liquidado | num_es(0) }}</p>
+      <p class="s">kg desde que arrancó</p></div>
+  </div>
+  <div class="chico">la meta es sacar <b>{{ meta_kg | num_es(0) }} kg</b>
+    — el {{ total_pct | num_es(1) }}% de lo que había</div>
   <div class="barra-fondo">
     <div style="width:{{ [100, (100 * liquidado / meta_kg) if meta_kg else 0] | min }}%"></div>
   </div>
@@ -37,21 +52,47 @@ grupos fuertes y flojos, así que se compara parejo.</p>
 <table>
 <thead><tr><th></th><th>Vendedor</th><th class="n">Meta</th>
 <th class="n">Liquidado</th><th class="n">% de su meta</th><th>Avance</th>
-<th class="n">Último</th></tr></thead>
+<th class="n">Esta semana</th><th class="n">Último</th></tr></thead>
 <tbody>
 {% for r in ranking %}
   <tr>
-    <td class="puesto">{{ r.puesto }}</td>
-    <td class="tela">{{ r.vendedor }}</td>
+    <td class="puesto">{{ r.puesto }}
+      {% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
+      {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
+    <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · vos{% endif %}</td>
     <td class="n g">{{ r.meta | num_es(0) }}</td>
     <td class="n">{{ r.kg | num_es(0) }}</td>
     <td class="n">{{ r.pct | num_es(1) }}%</td>
     <td><div class="mini"><div style="width:{{ [100, r.pct] | min }}%"></div></div></td>
+    <td class="n">{% if r.kg_semana %}{{ r.kg_semana | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n g">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
   </tr>
 {% endfor %}
 </tbody>
 </table>
+
+<h2>Semana a semana</h2>
+{% if semanas %}
+<p class="sub">De lunes a domingo, la más nueva arriba.</p>
+<table>
+<thead><tr><th>Semana</th><th class="n">Kg liquidados</th><th class="n">Acumulado</th>
+<th class="n">Falta</th><th>Quién vendió</th></tr></thead>
+<tbody>
+{% for s in semanas %}
+  <tr>
+    <td class="tela">{{ s.semana.strftime('%d/%m') }}</td>
+    <td class="n">{{ s.kg | num_es(0) }}</td>
+    <td class="n">{{ s.acumulado | num_es(0) }}</td>
+    <td class="n g">{{ (meta_kg - s.acumulado) | num_es(0) }}</td>
+    <td class="g">{% for v, kg in s.detalle.items() %}{{ v }} {{ kg | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+  </tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<p class="sub">Todavía no se vendió nada de lo parado desde el
+{{ largada.strftime('%d/%m/%Y') }}. La primera semana cierra el domingo.</p>
+{% endif %}
 
 <h2>Por grupo</h2>
 <p class="sub">La meta de cada grupo es su propio peso en el parado: si Jersey es
@@ -76,6 +117,28 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 </table>
 
 
+
+{% if vend %}
+<h2>Lo tuyo — tus clientes que ya compraron estas telas</h2>
+<p class="sub">De tu cartera. {{ mis_clientes | length }} clientes compraron
+alguna de las telas que hoy están paradas.</p>
+{% if mis_clientes %}
+<table>
+<thead><tr><th>Código</th><th>Cliente</th><th>Provincia</th>
+<th class="n">Telas</th><th>Cuáles</th><th class="n">Última compra</th></tr></thead>
+<tbody>
+{% for c in mis_clientes %}
+  <tr><td class="cod">{{ c.codigo_cli }}</td><td>{{ c.nombre }}</td>
+  <td class="g">{{ c.provincia }}</td><td class="n">{{ c.telas }}</td>
+  <td class="g">{{ c.lista_telas }}</td>
+  <td class="n g">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<p class="sub">Ninguno de tus clientes compró estas telas todavía.</p>
+{% endif %}
+{% endif %}
 
 <footer>
 Parado = producto terminado quieto hace 12 meses o más, congelado el día que se

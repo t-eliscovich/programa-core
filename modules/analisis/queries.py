@@ -367,20 +367,29 @@ COMPETIDORES = ["Intela", "Proaño Patricio", "Lopez Felipe", "Miranda Roberto",
                 "Quintero Jose", "Ramirez Edgar", "Proaño Sebastián"]
 
 
-def _meta_pct(grupos: list[dict], override: dict[str, float]) -> None:
+def config(clave: str, default: str) -> str:
+    r = db.fetch_one(
+        "SELECT valor FROM scintela.parado_config WHERE clave = %s", (clave,))
+    return (r or {}).get("valor") or default
+
+
+def _meta_pct(grupos: list[dict], override: dict[str, float], total_pct: float) -> None:
     """
     La meta de cada grupo, en %.
 
-    ⭐ Sale del PESO del grupo en el stock parado. Dueña: "meta segun cantidad
-    de ese grupo % en el total del stock". O sea: Jersey es el 31,5% de lo
-    parado, así que la meta de Jersey es sacar el 31,5% de sus propios kilos.
-    Los grupos gordos tienen que despejar proporcionalmente más, que es donde
-    está el problema.
+    ⭐ La dueña pone el TOTAL y ese total se reparte entre los grupos según lo
+    que pesa cada uno — o sea, todos con la misma exigencia. Con el total en
+    100%, cada grupo despeja sus propios kilos.
 
-    `override` (tabla `parado_meta`) pisa el automático cuando hace falta.
+    La primera versión hacía otra cosa: le ponía a cada grupo su propio peso
+    como meta (Jersey 31,5% → sacarle el 31,5%). Daba un total de 21,7% que
+    nadie decidió y una meta de 4 kg para el grupo más chico. Era una fórmula
+    que se muerde la cola.
+
+    `override` (tabla `parado_meta`) pisa el % de un grupo puntual.
     """
     for g in grupos:
-        g["meta_pct"] = float(override.get(g["grupo"], g["pct"]))
+        g["meta_pct"] = float(override.get(g["grupo"], total_pct))
         g["meta_es_manual"] = g["grupo"] in override
         g["meta_kg"] = g["kg"] * g["meta_pct"] / 100
 
@@ -394,18 +403,29 @@ def competencia() -> dict:
     de allá podrían no coincidir el mismo día.
     """
     filas = items()
+    # ⚠ Fuera las filas de 0 kg sin grupo: son restos de la cohorte que ya no
+    # están en la foto (p. ej. la tela cruda que se sacó). Sumaban un renglón
+    # "(sin grupo) · 0 kg" que sólo confunde.
+    filas = [f for f in filas if float(f["stock_kg"]) > 0 or f["categoria"]]
     grupos = por_grupo(filas)
     override = {r["categoria"]: float(r["pct"]) for r in db.fetch_all(
         "SELECT categoria, pct FROM scintela.parado_meta")}
-    _meta_pct(grupos, override)
+    total_pct = float(config("meta_total_pct", "100"))
+    largada = date.fromisoformat(config("largada", "2026-08-17"))
+    _meta_pct(grupos, override, total_pct)
 
+    # ⭐ Sólo cuentan las ventas desde la LARGADA. La cohorte se marcó el 13/08
+    # y la competencia arranca el 17: sin el corte, esos cuatro días le
+    # regalarían kilos a quien justo vendió algo.
     vendido = db.fetch_all(
         """SELECT v.vendedor, f.categoria, SUM(v.kg) AS kg,
                   MAX(v.fecha) AS ultima
              FROM scintela.parado_venta v
              JOIN scintela.parado_foto f
                ON f.subcategoria = v.subcategoria AND f.color = v.color
-            GROUP BY v.vendedor, f.categoria""")
+            WHERE v.fecha >= %s
+            GROUP BY v.vendedor, f.categoria""", (largada,))
+    semanas = _semanas(largada)
     share = db.fetch_all("SELECT * FROM scintela.parado_share")
 
     # ⭐ La meta del grupo se parte en PARTES IGUALES entre los competidores.
@@ -434,10 +454,16 @@ def competencia() -> dict:
         if r["ultima"] and (not tabla[v]["ultima"] or r["ultima"] > tabla[v]["ultima"]):
             tabla[v]["ultima"] = r["ultima"]
 
+    # ⚠ El desempate por NOMBRE no es cosmético: al arrancar están todos en
+    # cero, y sin un criterio fijo el orden de los empatados lo decide el
+    # diccionario. Entonces "subió dos puestos" sería ruido, porque el puesto de
+    # la semana pasada se recalcula con el mismo sort.
     ranking = sorted(tabla.values(),
-                     key=lambda d: -(d["kg"] / d["meta"] if d["meta"] else 0))
+                     key=lambda d: (-(d["kg"] / d["meta"] if d["meta"] else 0),
+                                    d["vendedor"]))
     for i, d in enumerate(ranking, 1):
         d["puesto"] = i
+        d["vend_yo"] = False
         d["pct"] = 100 * d["kg"] / d["meta"] if d["meta"] else 0
 
     liquidado = {}
@@ -450,13 +476,123 @@ def competencia() -> dict:
             [s for s in share if s["categoria"] == g["grupo"]],
             key=lambda s: -float(s["pct"] or 0))[:4]
 
+    _movimiento(ranking, semanas["por_vendedor"])
+    hay_hoy = sum(g["kg"] for g in grupos)
+    liquidado = sum(g["liquidado"] for g in grupos)
     return {
         "hoy": today_ec(),
+        "largada": largada,
+        "total_pct": total_pct,
         "grupos": grupos,
         "ranking": ranking,
-        "kg_parado": sum(g["kg"] for g in grupos),
+        "kg_parado": hay_hoy,
+        # "Había" no se guarda: se reconstruye. Lo que hay hoy más lo que se
+        # vendió ES lo que había — y así los tres números cierran siempre entre
+        # ellos, que es lo que alguien va a chequear de un vistazo.
+        "kg_al_largar": hay_hoy + liquidado,
         "meta_kg": sum(g["meta_kg"] for g in grupos),
-        "liquidado": sum(g["liquidado"] for g in grupos),
+        "liquidado": liquidado,
         "kg_fuera_del_ranking": fuera,
-        "sin_tocar": [g for g in grupos if not g["liquidado"]],
+        "semanas": semanas["filas"],
+        "competidores": COMPETIDORES,
     }
+
+
+def _semanas(largada: date) -> dict:
+    """
+    Semana a semana desde la largada. Dueña: "esto vamos a ir midiendo semana a
+    semana".
+
+    Las semanas van de LUNES a domingo (`date_trunc('week')` de Postgres) y se
+    listan de la más nueva a la más vieja: la que importa es la de arriba.
+    """
+    filas = db.fetch_all(
+        """SELECT date_trunc('week', v.fecha)::date AS semana,
+                  v.vendedor, SUM(v.kg) AS kg
+             FROM scintela.parado_venta v
+            WHERE v.fecha >= %s
+            GROUP BY 1, 2
+            ORDER BY 1 DESC""", (largada,))
+    por_semana: dict = {}
+    por_vendedor: dict = {}
+    for f in filas:
+        s = por_semana.setdefault(f["semana"], {"semana": f["semana"], "kg": 0.0,
+                                                "detalle": {}})
+        kg = float(f["kg"] or 0)
+        s["kg"] += kg
+        s["detalle"][f["vendedor"]] = kg
+        por_vendedor.setdefault(f["vendedor"], {})[f["semana"]] = kg
+
+    orden = sorted(por_semana.values(), key=lambda s: s["semana"], reverse=True)
+    acum = sum(s["kg"] for s in orden)
+    for s in orden:                      # acumulado hasta el final de esa semana
+        s["acumulado"] = acum
+        acum -= s["kg"]
+    return {"filas": orden, "por_vendedor": por_vendedor}
+
+
+def _movimiento(ranking: list[dict], por_vendedor: dict) -> None:
+    """
+    Cuánto subió o bajó cada uno respecto de la semana pasada.
+
+    ⭐ Sin esto, el que va cuarto no tiene ningún motivo para volver a abrir la
+    pantalla. El puesto de la semana pasada se recalcula descontando lo que cada
+    uno vendió ESTA semana — no hace falta guardar el ranking viejo.
+    """
+    if not por_vendedor:
+        for r in ranking:
+            r["movimiento"] = 0
+            r["kg_semana"] = 0.0
+        return
+    ultima = max(s for v in por_vendedor.values() for s in v)
+    antes = sorted(
+        ranking,
+        key=lambda r: (-((r["kg"] - por_vendedor.get(r["vendedor"], {}).get(ultima, 0))
+                         / r["meta"] if r["meta"] else 0), r["vendedor"]))
+    puesto_antes = {r["vendedor"]: i for i, r in enumerate(antes, 1)}
+    for r in ranking:
+        r["kg_semana"] = por_vendedor.get(r["vendedor"], {}).get(ultima, 0.0)
+        r["movimiento"] = puesto_antes[r["vendedor"]] - r["puesto"]
+
+
+#: Predicado canónico de pertenencia cliente→vendedor. Es EL MISMO de
+#: `mi_cartera.queries`, a propósito: si acá se usara otro, un cliente podría
+#: aparecerle a un vendedor en una pantalla y a otro en la otra, y eso no hay
+#: forma de explicárselo a nadie.
+_ES_MI_CLIENTE = "UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(%(vend)s))"
+
+
+def mis_clientes_parado(vend: str) -> list[dict]:
+    """
+    Los clientes DEL VENDEDOR que alguna vez compraron alguna de las telas
+    paradas. Dueña 17/08/2026: "podríamos mostrarles de sus clientes cuales
+    compraron de estas telas en el pasado" · "cada vendedor tiene sus clientes".
+
+    ⚠ La cartera sale de `scintela.cliente.vend` —la de Programa Core— y NO del
+    vendedor que figura en la última factura de Asinfo. Son cosas distintas y a
+    veces no coinciden: usando la de Asinfo, un cliente podría salirle a uno acá
+    y a otro en /mi-cartera.
+
+    ⚠ Devuelve [] con `vend` vacío, nunca la lista entera. Un scope que falla
+    abierto no da error: muestra de más y nadie se entera.
+    """
+    if not vend:
+        return []
+    return db.fetch_all(
+        f"""
+        SELECT l.codigo_cli,
+               MAX(l.nombre)                         AS nombre,
+               MAX(l.provincia)                      AS provincia,
+               COUNT(DISTINCT l.subcategoria)        AS telas,
+               STRING_AGG(DISTINCT l.subcategoria, ', ') AS lista_telas,
+               MAX(l.ultima_compra)                  AS ultima_compra,
+               SUM(l.kg)                             AS kg
+          FROM scintela.parado_llamado l
+          JOIN scintela.cliente c
+            ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(l.codigo_cli))
+         WHERE {_ES_MI_CLIENTE}
+         GROUP BY l.codigo_cli
+         ORDER BY SUM(l.kg) DESC
+        """,
+        {"vend": vend},
+    )
