@@ -45,10 +45,22 @@
      repiten al pie de la tabla. Ahora es una franja de un renglón: los mismos
      tres números, sin robarle la pantalla a la tabla, que es lo que se viene
      a mirar. La comisión sigue destacada porque es la que se paga. #}
-  <div class="flex flex-wrap items-baseline gap-x-8 gap-y-1 mb-3 px-1">
+  {# TMT 2026-08-18 (dueña): *"en ventas y en cobranzas puedes poner los kg
+     abajo"*. Las metas de venta se miden EN KILOS, así que la venta lleva su
+     equivalente en kilos en chiquito, debajo del importe.
+
+     COBRANZAS quedó sin kilos, decisión de ella el mismo día: la cobranza es
+     plata y los kilos habría que sacarlos de la factura que pagó cada cheque
+     — y el 43% de lo cobrado en agosto son cheques del dBase que nunca
+     tuvieron factura vinculada, así que el número salía 45% corto. Ver el
+     comentario largo en modules/comisiones/queries.py::lista. #}
+  <div class="flex flex-wrap items-start gap-x-8 gap-y-1 mb-3 px-1">
     <div>
       <span class="text-xs uppercase tracking-wider text-slate-500">Ventas</span>
       <span class="text-base font-semibold tabular-nums ml-2">$ {{ totales.ventas | num_es(0) }}</span>
+      <div class="text-xs text-slate-500 tabular-nums cm-kg" title="Kilos facturados en el mes">
+        {{ totales.ventas_kg | num_es(0) }} kg
+      </div>
     </div>
     <div>
       <span class="text-xs uppercase tracking-wider text-slate-500">Cobranzas</span>
@@ -138,7 +150,10 @@
           </td>
           <td class="cm-td px-3 text-right tabular-nums text-slate-500"
               title="Clientes distintos que cobraron este mes (sumando a la comisión)">{{ f.n_clientes or '—' }}</td>
-          <td class="cm-td px-3 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
+          <td class="cm-td px-3 text-right tabular-nums">
+            {{ (f.ventas_mes or 0) | num_es(0) }}
+            <div class="text-xs text-slate-500 cm-kg" title="Kilos facturados en el mes">{{ (f.ventas_kg or 0) | num_es(0) }} kg</div>
+          </td>
           <td class="cm-td px-3 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
           <td class="cm-td px-3 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
             {{ (f.comision_mes or 0) | num_es(2) }}
@@ -156,7 +171,10 @@
             <span class="text-sm font-bold">Total</span>
             <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} vendedores)</span>
           </td>
-          <td class="px-3 py-2 text-right tabular-nums text-sm font-semibold">{{ totales.ventas | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-sm font-semibold">
+            {{ totales.ventas | num_es(0) }}
+            <div class="text-xs text-slate-500 font-normal cm-kg">{{ totales.ventas_kg | num_es(0) }} kg</div>
+          </td>
           <td class="px-3 py-2 text-right tabular-nums text-sm font-semibold">{{ totales.cobranzas | num_es(0) }}</td>
           <td class="px-3 py-2 text-right tabular-nums text-base font-bold text-emerald-800 dark:text-emerald-200">{{ totales.comision | num_es(2) }}</td>
         </tr>
@@ -175,6 +193,8 @@
   .cm-nom{padding-top:2px;padding-bottom:2px;width:190px}
   .cm-btn{padding-top:6px;padding-bottom:6px}
   .cm-f{margin-top:2px}
+  /* El renglón de kilos: pegado al importe de arriba, no un segundo dato. */
+  .cm-kg{margin-top:1px;line-height:1.1;font-variant-numeric:tabular-nums}
 </style>
 
 {% endblock %}

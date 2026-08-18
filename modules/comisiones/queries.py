@@ -183,7 +183,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
 
     Cada fila incluye:
         codigo, nombre, pct_comision, activo,
-        n_clientes, cobranzas_mes, ventas_mes, comision_mes
+        n_clientes, cobranzas_mes, ventas_mes, comision_mes,
+        ventas_kg (kilos facturados del mes).
     """
     hoy = today_ec()
     yy = int(anio) if anio else hoy.year
@@ -282,8 +283,28 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
         ),
         ventas_mes AS (
             -- Bonus PC: facturas emitidas del mes por vendedor (no del PRG).
+            --
+            -- TMT 2026-08-18 dueña: *"en ventas y en cobranzas puedes
+            -- poner los kg abajo"*. Las metas de venta se miden EN KILOS
+            -- (ver mi_cartera.queries), así que la pantalla habla esa
+            -- unidad: `factura.kg` del mes, exacto.
+            --
+            -- ⚠ COBRANZAS quedó SIN kilos, a propósito. La cobranza es
+            -- plata y no tiene kilos propios: habría que imputarle los
+            -- de la factura que pagó, prorrateando por `chequesxfact`.
+            -- Medido el 18/08 sobre agosto: de los $602.828 cobrados,
+            -- $259.971 (165 de 476 cheques) son cheques del
+            -- `dbf-import` que nunca tuvieron factura vinculada — el
+            -- dBase no guardaba ese vínculo. El prorrateo daba 36.640 kg
+            -- contra 82.000 kg vendidos: menos de la mitad, al lado de
+            -- una cobranza que casi iguala a la venta. Se le ofreció a
+            -- la dueña estimar el hueco al $/kg del mes (66.280 kg) y
+            -- decidió que **no**: kilos sólo donde el dato es exacto.
+            -- Si algún día se vinculan esos cheques (ver
+            -- /admin/dbase/abonos-historicos), volver a proponerlo.
             SELECT UPPER(TRIM(c.vend))            AS codigo,
-                   COALESCE(SUM(f.importe), 0)    AS total
+                   COALESCE(SUM(f.importe), 0)    AS total,
+                   COALESCE(SUM(f.kg), 0)         AS kg
               FROM scintela.factura f
               JOIN cli c ON c.codigo_cli = f.codigo_cli
              WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
@@ -299,6 +320,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                COALESCE(cv.n_clientes, 0)                                    AS n_clientes,
                COALESCE(co.total, 0)                                         AS cobranzas_mes,
                COALESCE(ve.total, 0)                                         AS ventas_mes,
+               COALESCE(ve.kg, 0)                                            AS ventas_kg,
                ROUND(COALESCE(co.total, 0)
                      * COALESCE(v.pct_comision, 0) / 100.0, 2)::numeric      AS comision_mes
           FROM scintela.vendedor v

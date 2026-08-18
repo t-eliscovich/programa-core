@@ -68,6 +68,7 @@ def lista():
                 ("pct_comision", "% comisión"),
                 ("n_clientes", "N° clientes"),
                 ("ventas_mes", "Ventas mes"),
+                ("ventas_kg", "Ventas mes (kg)"),
                 ("cobranzas_mes", "Cobranzas mes"),
                 ("comision_mes", "Comisión mes"),
             ],
@@ -78,6 +79,10 @@ def lista():
         "cobranzas": sum(float(f.get("cobranzas_mes") or 0) for f in filas),
         "ventas": sum(float(f.get("ventas_mes") or 0) for f in filas),
         "comision": sum(float(f.get("comision_mes") or 0) for f in filas),
+        # TMT 2026-08-18 dueña: los kilos debajo de las ventas. Las
+        # metas de venta se miden en kilos. Cobranzas queda sin kilos
+        # a propósito — ver el comentario en queries.lista().
+        "ventas_kg": sum(float(f.get("ventas_kg") or 0) for f in filas),
     }
 
     return render_template(
