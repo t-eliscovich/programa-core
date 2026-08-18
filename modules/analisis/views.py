@@ -54,6 +54,17 @@ MENU = [
 ]
 
 
+#: El menú que ve un VENDEDOR. Es otro, y no un subconjunto del de la oficina:
+#: sus pantallas son otras rutas (las de /analisis/competencia/…). Mostrarle el
+#: de la oficina sería darle tres links que le dan 404.
+MENU_VENDEDOR = [
+    {"url": "/analisis/competencia", "titulo": "Competencia", "listo": True},
+    {"url": "/analisis/competencia/telas", "titulo": "Qué hay que sacar",
+     "listo": True},
+    {"url": "/analisis/competencia/mi-hoja", "titulo": "Tu hoja", "listo": True},
+]
+
+
 @analisis_bp.context_processor
 def _menu():
     """El menú de arriba lo ve todo template de la sección.
@@ -61,6 +72,8 @@ def _menu():
     Sólo las pantallas listas: un link a algo que todavía no existe da 404, y
     en esta app los links son strings hardcodeados — no se ve desde el código.
     """
+    if (g.get("user") or {}).get("vend"):
+        return {"menu_global": MENU_VENDEDOR}
     return {"menu_global": [m for m in MENU if m["listo"]]}
 
 
@@ -160,6 +173,26 @@ def parado_clientes():
     )
 
 
+@analisis_bp.route("/analisis/competencia/telas.csv")
+@requiere_login
+def mis_telas_csv():
+    """Las telas paradas a Excel. Sin clientes: es la lista de la fábrica."""
+    return csv_response(
+        queries.items(),
+        columnas=[
+            ("categoria", "Grupo"),
+            ("subcategoria", "Subgrupo (tela)"),
+            ("color", "Color"),
+            ("stock_kg", "Kg parados"),
+            ("pct_total", "% del parado"),
+            ("kg_primera", "Kg de primera"),
+            ("kg_segunda", "Kg de segunda"),
+            ("ultima_venta", "Última venta"),
+        ],
+        filename="que_hay_que_sacar.csv",
+    )
+
+
 @analisis_bp.route("/analisis/competencia/mi-hoja.csv")
 @requiere_login
 def mi_hoja_csv():
@@ -250,6 +283,41 @@ def competencia():
         telas=queries.telas_a_sacar(queries.items()),
         mis_clientes=queries.mis_clientes_parado(vend) if vend else [],
         **datos)
+
+
+@analisis_bp.route("/analisis/competencia/telas")
+@requiere_login
+def mis_telas():
+    """
+    "Lo parado" para el vendedor: LA MISMA pantalla, con sus clientes adentro.
+
+    Dueña 17/08/2026: "la tab de que hay que sacar copiala para ellos. y que
+    vean con sus clientes… estaba linda diseñada".
+
+    ⭐ Es el mismo template que /analisis/parado. Lo único que cambia es de
+    dónde salen los candidatos —su cartera en vez de todas— y la columna
+    "clientes", que pasa a contar los SUYOS: dejarla con el total de la fábrica
+    diría "137 clientes" y al abrir la fila aparecerían tres.
+    """
+    vend = _vend_actual()
+    filas = queries.items()
+    llamados = queries.llamados_por_tela(cartera_de=vend)
+    for f in filas:
+        f["clientes"] = len(llamados.get(f["subcategoria"], []))
+    grupos = sorted({f["categoria"] for f in filas if f["categoria"]})
+    subgrupos = sorted({(f["subcategoria"], f["categoria"] or "") for f in filas},
+                       key=lambda x: x[0])
+    return render_template(
+        "analisis/parado.html",
+        filas=filas, llamados=llamados, mia=True, vend=vend,
+        grupos=grupos,
+        subgrupos=[{"sub": x, "cat": c} for x, c in subgrupos],
+        resumen=queries.resumen(filas),
+        grupos_resumen=queries.por_grupo(filas),
+        estado=queries.estado(),
+        codigos_ambiguos=CODIGOS_AMBIGUOS,
+        ahora_anio=today_ec().year,
+    )
 
 
 @analisis_bp.route("/analisis/competencia/mi-hoja")

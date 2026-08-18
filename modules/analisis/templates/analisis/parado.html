@@ -11,7 +11,8 @@ th.ord.asc::after{content:" ↑";opacity:1}
 th.ord.desc::after{content:" ↓";opacity:1}
 </style>
 
-<h1>Lo parado — y a quién llamar</h1>
+<h1>{% if mia %}Qué hay que sacar — y a quién de los tuyos ofrecérselo
+{% else %}Lo parado — y a quién llamar{% endif %}</h1>
 <p class="sub">
 {% if estado.actualizado %}
   Datos de Asinfo al {{ estado.actualizado.strftime('%d/%m/%Y %H:%M') }}
@@ -77,19 +78,25 @@ saber si lo que hicimos funcionó.</div>
     <option value="">Todos los subgrupos</option>
     {% for s in subgrupos %}<option value="{{ s.sub }}" data-g="{{ s.cat }}">{{ s.sub }}</option>{% endfor %}
   </select>
-  <select id="vend" onchange="filtrar()">
+  {# El filtro por vendedor no va en la copia del vendedor: serían las
+     carteras de los otros seis en un desplegable, y adentro no hay ninguna. #}
+  <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
     <option value="">Todos los vendedores</option>
-    {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+    {% if not mia %}{% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}{% endif %}
   </select>
   <span class="sub" id="cuenta" style="margin:0"></span>
-  <a href="/analisis/parado.csv" style="align-self:center;color:var(--az);
+  <a href="{{ '/analisis/competencia/telas.csv' if mia else '/analisis/parado.csv' }}"
+     style="align-self:center;color:var(--az);
      font-size:14px;text-decoration:none">Bajar TODO a Excel</a>
-  <a href="/analisis/parado/clientes" style="margin-left:auto;align-self:center;
+  <a href="{{ '/analisis/competencia/mi-hoja' if mia else '/analisis/parado/clientes' }}"
+     style="margin-left:auto;align-self:center;
      color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
+  {% if not mia %}
   <form method="post" action="/analisis/parado/actualizar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit">Actualizar desde Asinfo</button>
   </form>
+  {% endif %}
 </div>
 
 <table id="tabla">
@@ -101,7 +108,7 @@ saber si lo que hicimos funcionó.</div>
 <th class="ord n" data-i="4" data-num="1">% del parado</th>
 <th class="ord n" data-i="5" data-num="1">De 2ª</th>
 <th class="ord n" data-i="6" data-num="1">Vendidos</th>
-<th class="ord n" data-i="7" data-num="1">Clientes</th>
+<th class="ord n" data-i="7" data-num="1">{{ 'Tus clientes' if mia else 'Clientes' }}</th>
 <th class="ord" data-i="8">Estado</th>
 <th class="ord n" data-i="9" data-num="1">Última venta</th>
 </tr></thead>
@@ -162,9 +169,12 @@ saber si lo que hicimos funcionó.</div>
       </tbody>
     </table>
     {% else %}
-      <p class="sub" style="margin:10px 0 0">Nadie compró esta tela nunca — en
-      ningún color, en ningún año. No se resuelve con una llamada: o la tela
-      salió de catálogo, o el saldo es un error de inventario.</p>
+      <p class="sub" style="margin:10px 0 0">
+      {% if mia %}Ninguno de <b>tus</b> clientes compró esta tela. Puede que sí
+      la compre alguno de otro vendedor — o que no la compre nadie.
+      {% else %}Nadie compró esta tela nunca — en ningún color, en ningún año. No
+      se resuelve con una llamada: o la tela salió de catálogo, o el saldo es un
+      error de inventario.{% endif %}</p>
     {% endif %}
   </td></tr>
 {% endfor %}

@@ -180,21 +180,20 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 
 
 
-<h2>Las telas que hay que sacar</h2>
-<p class="sub">{{ telas | length }} telas, de mayor a menor. Los colores están
-ordenados por kilos: el primero es el que más pesa.</p>
+<h2>Qué hay que sacar</h2>
+<p class="sub">{{ telas | length }} telas paradas.
+<a href="/analisis/competencia/telas">Verlas todas, con tus clientes al lado →</a></p>
 <table>
-<thead><tr><th>Tela</th><th>Grupo</th><th class="n">Kg</th>
-<th class="n">Colores</th><th>Cuáles</th></tr></thead>
+<thead><tr><th>Tela</th><th>Grupo</th><th class="n">Kg</th><th>Colores</th></tr></thead>
 <tbody>
-{% for t in telas %}
+{% for t in telas[:8] %}
   <tr><td class="tela">{{ t.tela }}</td><td class="g">{{ t.grupo }}</td>
-  <td class="n">{{ t.kg | num_es(0) }}</td>
-  <td class="n g">{{ t.n_colores }}</td>
-  <td class="g">{{ t.colores }}</td></tr>
+  <td class="n">{{ t.kg | num_es(0) }}</td><td class="g">{{ t.colores }}</td></tr>
 {% endfor %}
 </tbody>
 </table>
+<p class="sub">Éstas son las ocho más grandes.
+<a href="/analisis/competencia/telas">Ver las {{ telas | length }} →</a></p>
 
 {% if vend %}
 <h2>Lo tuyo — tus clientes que ya compraron estas telas</h2>

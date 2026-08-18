@@ -73,13 +73,28 @@ def items() -> list[dict]:
     )
 
 
-def llamados_por_tela() -> dict[str, list[dict]]:
-    """Los candidatos, agrupados por TELA (no por tela × color: el color no
-    entra en la llamada)."""
+def llamados_por_tela(cartera_de: str | None = None) -> dict[str, list[dict]]:
+    """
+    Los candidatos, agrupados por TELA (no por tela × color: el color no entra
+    en la llamada).
+
+    `cartera_de` deja SÓLO los clientes de ese vendedor, según Programa Core.
+    Es lo que hace que la misma pantalla sirva para la oficina y para el
+    vendedor sin ser dos pantallas.
+    """
+    if cartera_de:
+        filas = db.fetch_all(
+            f"""SELECT l.* FROM scintela.parado_llamado l
+                  JOIN scintela.cliente c
+                    ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(l.codigo_cli))
+                 WHERE {_ES_MI_CLIENTE}
+                 ORDER BY l.subcategoria, l.kg DESC""",
+            {"cartera": cartera_de})
+    else:
+        filas = db.fetch_all(
+            "SELECT * FROM scintela.parado_llamado ORDER BY subcategoria, kg DESC")
     out: dict[str, list[dict]] = defaultdict(list)
-    for f in db.fetch_all(
-        "SELECT * FROM scintela.parado_llamado ORDER BY subcategoria, kg DESC"
-    ):
+    for f in filas:
         out[f["subcategoria"]].append(f)
     return dict(out)
 

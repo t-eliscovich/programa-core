@@ -1072,3 +1072,58 @@ def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():
     assert "abrirVend" in html and 'class="vdet"' in html
     for col in ("Su meta", "Vendió", "Le cuenta"):
         assert col in html
+
+
+# ── La copia de "Lo parado" para el vendedor ────────────────────────────────
+
+def test_el_vendedor_ve_la_misma_pantalla_con_sus_clientes():
+    """Dueña 17/08/2026: "la tab de que hay que sacar copiala para ellos. y que
+    vean con sus clientes… estaba linda diseñada". Es el MISMO template: lo
+    único que cambia es de dónde salen los candidatos."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.mis_telas)
+    assert '"analisis/parado.html"' in fuente
+    assert "cartera_de=vend" in fuente
+    assert 'f["clientes"] = len(llamados.get(f["subcategoria"], []))' in fuente, (
+        "la columna tiene que contar SUS clientes: con el total de la fábrica "
+        "diría 137 y al abrir la fila aparecerían tres")
+
+
+def test_los_candidatos_se_pueden_acotar_a_una_cartera(monkeypatch):
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        visto["params"] = params
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.llamados_por_tela(cartera_de="FL1")
+    assert "scintela.cliente" in visto["sql"] and "c.vend" in visto["sql"]
+    assert visto["params"] == {"cartera": "FL1"}
+
+    queries.llamados_por_tela()
+    assert "scintela.cliente" not in visto["sql"], (
+        "sin cartera no se filtra: es la pantalla de la oficina")
+
+
+def test_el_menu_del_vendedor_no_tiene_links_que_le_dan_404(app):
+    """Sus pantallas son OTRAS rutas, no un subconjunto de las de la oficina:
+    mostrarle el menú de la oficina serían tres links a 404."""
+    from modules.analisis import views
+    rutas = {r.rule for r in app.url_map.iter_rules()}
+    for m in views.MENU_VENDEDOR:
+        assert m["url"] in rutas
+        assert m["url"].startswith("/analisis/competencia"), (
+            f"{m['url']} queda fuera del prefijo que se le habilita")
+
+
+def test_la_pantalla_del_vendedor_no_ofrece_actualizar_desde_asinfo():
+    """El refresh toca la base de todos y tarda 10 s: no es del vendedor."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    i = html.index("/analisis/parado/actualizar")
+    assert "{% if not mia %}" in html[i - 400:i]
