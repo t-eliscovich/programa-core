@@ -218,6 +218,23 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
+### [S] Las notas de Alex que el Excel de pendientes ya se comió
+
+Hasta el 18/08/2026 la quinta columna del Excel de conciliación se mapeaba y se
+tiraba al piso al re-importar, y "Hacer prevalecer" borraba y re-insertaba las
+filas sin nota. Todo lo que Alex escribió a mano entre la carga inicial y esa
+fecha **no está en la base**: la única nota viva es `TTY` (5060382), y viene de
+la migración 0055, no del ciclo del Excel.
+
+El código ya no las pierde. Lo que falta es recuperarlas, si aparecen: la única
+copia posible es un Excel viejo en la compu de Tamara o de Alex. **Ojo**:
+volver a subir un archivo viejo por "Hacer prevalecer" también haría prevalecer
+su lista de pendientes (borra las filas que no estén en él). Para recuperar
+sólo las notas hace falta un camino aparte — subir el archivo y escribir
+ÚNICAMENTE la columna NOTA, sin tocar altas ni bajas. Hacerlo cuando haya un
+archivo viejo a mano; si no aparece ninguno, cerrar este item.
+
+
 ### [S] `STATS_VIVOS` está definido dos veces, con miembros distintos
 `modules/cheques/queries.py` L2818 (`Z,B,1,2,3,D,P,A`) y L4092
 (`Z,1,2,3,P,D`): gana el de abajo, que es el que quisieron los dos únicos usos
