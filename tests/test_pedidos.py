@@ -1,3 +1,4 @@
+import io
 """Pedidos pendientes (Asinfo) — service y pantalla.
 
 Los fakes devuelven filas con la forma de la FUENTE (los nombres de columna que
@@ -677,7 +678,7 @@ def test_la_pantalla_abre_por_defecto_en_el_corte_color(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(_FILAS_PANTALLA, True)):
         body = c.get("/pedidos").get_data(as_text=True)
-    assert 'class="ver"' in body               # el selector de cortes
+    assert 'class="ver no-print"' in body               # el selector de cortes
     assert 'class="ccode"' in body             # la fila-cabecera de un color
     assert ">CAF<" in body or "CAF</span>" in body
 
@@ -842,3 +843,42 @@ def test_un_sobrante_en_una_tela_no_hace_faltante_negativo_en_el_color():
              service._fila(_fila(color="NAR", codigo="B", ped_kg=470.0, ped_rollos=20.0))]  # falta 20
     (g,) = service.por_color(filas)
     assert g["falta_roll"] == 20        # sólo el que falta, sin el negativo
+
+
+def test_el_excel_devuelve_un_xlsx_con_las_cuatro_hojas(app, fake_db):
+    c = _login(app, fake_db)
+
+    def fake(_db, sql, **_kw):
+        if "saldo_producto_lote" in sql and "id_atributo = 1" in sql:
+            return ([{"codigo": "FE96CAF", "acabado": "TUB"}], True)
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return ([{"codigo": "FE96CAF", "numero": "P1", "cliente": "Emp A",
+                      "codigo_cliente": "AAM", "fecha": "2026-08-01",
+                      "cantidad": 10, "unidad": 51}], True)
+        return (_FILAS_PANTALLA, True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        r = c.get("/pedidos/excel")
+    assert r.status_code == 200
+    assert "spreadsheetml.sheet" in r.headers["Content-Type"]
+    assert "pedidos_pendientes_" in r.headers["Content-Disposition"]
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(r.data))
+    assert wb.sheetnames == ["Color", "Tipo de tela", "Cliente", "Categoría"]
+
+
+def test_el_excel_avisa_si_asinfo_no_contesta(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([], False)):
+        r = c.get("/pedidos/excel")
+    assert r.status_code == 302        # redirige con flash, no rompe
+
+
+def test_la_pantalla_tiene_botones_de_excel_e_imprimir(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS_PANTALLA, True)):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "Descargar Excel" in body and 'href="/pedidos/excel"' in body
+    assert "window.print()" in body

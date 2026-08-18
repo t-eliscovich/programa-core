@@ -73,6 +73,9 @@
   .pd .buscar{margin:8px 0 4px;display:flex;gap:8px;align-items:center}
   .pd .buscar input{border:1px solid #e2e8f0;border-radius:7px;padding:6px 10px;font-size:13px;width:260px}
   .pd .buscar input:focus{outline:none;border-color:#94a3b8}
+  .pd .acciones{display:flex;gap:8px;margin:10px 0 2px}
+  .pd .btn{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;text-decoration:none;cursor:pointer}
+  .pd .btn:hover{border-color:#94a3b8}
 </style>
 {% endblock %}
 
@@ -92,7 +95,11 @@
     <div class="aviso">No hay pedidos pendientes de menos de {{ dias_pedido_max }} días.</div>
   {% else %}
 
-  <div class="ver">
+  <div class="acciones no-print">
+    <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
+    <button type="button" class="btn" onclick="window.print()">Imprimir</button>
+  </div>
+  <div class="ver no-print">
     <span class="cap">Ver por</span>
     {% for c in cortes %}
       <a class="{{ 'on' if c == corte else '' }}" href="{{ url_for('pedidos.lista', corte=c) }}">{{ cortes_lbl[c] }}</a>

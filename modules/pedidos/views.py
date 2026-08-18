@@ -22,7 +22,17 @@ Va en el menú debajo de Factura Proforma (dueña 2026-08-17).
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request
+import io
+
+from flask import (
+    Blueprint,
+    Response,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from auth import requiere_login, requiere_permiso
 
@@ -100,6 +110,113 @@ def lista():
     # corte == "categoria" usa `categorias`, ya calculado.
 
     return render_template("pedidos/lista.html", **ctx)
+
+
+@pedidos_bp.route("/pedidos/excel")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def excel():
+    """Todo lo que se ve en pantalla, en un xlsx con una hoja por corte.
+
+    Color (a nivel color + tela), Tipo de tela, Cliente y Categoría — el mismo
+    dato de las cuatro pestañas, para ordenar y filtrar en Excel.
+    """
+    filas, disponible = service.pendientes()
+    if not disponible:
+        flash("No pude consultar Asinfo, así que no armé el Excel. "
+              "Probá de nuevo en un minuto.", "error")
+        return redirect(url_for("pedidos.lista"))
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        flash("openpyxl no instalado en el server — pedí al admin que lo instale.", "error")
+        return redirect(url_for("pedidos.lista"))
+
+    from filters import today_ec
+
+    service.marcar_acabado(filas)
+    colores = service.por_color(filas)          # variants ya traen pedido_d, etc.
+    categorias = service.por_categoria(filas)
+    clientes = service.por_cliente()
+
+    wb = Workbook()
+    bold = Font(bold=True)
+    relleno = PatternFill("solid", fgColor="E2E8F0")
+
+    def encabezado(ws, cols):
+        for i, h in enumerate(cols, 1):
+            c = ws.cell(row=1, column=i, value=h)
+            c.font = bold
+            c.fill = relleno
+            c.alignment = Alignment(horizontal="left")
+
+    def cerrar(ws, anchos, nfilas):
+        for i, ancho in enumerate(anchos, 1):
+            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = ancho
+        ws.freeze_panes = "A2"
+        ncol = ws.cell(row=1, column=len(anchos)).column_letter
+        ws.auto_filter.ref = f"A1:{ncol}{max(nfilas + 1, 2)}"
+
+    def falta(v):
+        return v if v > 0 else 0
+
+    # ── Hoja Color (color + tela) ──
+    ws = wb.active
+    ws.title = "Color"
+    encabezado(ws, ["Código", "Color", "Tela", "Acabado", "Unidad",
+                    "Pedido", "Stock", "En produc.", "Falta"])
+    r = 1
+    for g in colores:
+        nombre = f"{g['codigo']} {g['nombre']}".strip()
+        for f in g["variants"]:
+            r += 1
+            for i, v in enumerate([f["codigo"], nombre, f["tela"], f.get("acabado", ""),
+                                   f["u"], f["pedido_d"], f["inventario_d"],
+                                   f["produccion_d"], falta(f["faltan_d"])], 1):
+                ws.cell(row=r, column=i, value=v)
+    cerrar(ws, (12, 24, 22, 8, 8, 10, 10, 12, 10), r)
+
+    # ── Hoja Tipo de tela (familia · tela · color) ──
+    ws = wb.create_sheet("Tipo de tela")
+    encabezado(ws, ["Familia", "Tela", "Color", "Código", "Acabado", "Unidad",
+                    "Pedido", "Stock", "En produc.", "Falta"])
+    r = 1
+    for f in sorted(filas, key=lambda x: (x["categoria"], x["tela"], x["color"])):
+        r += 1
+        for i, v in enumerate([f["categoria"], f["tela"], f["color"], f["codigo"],
+                               f.get("acabado", ""), f["u"], f["pedido_d"],
+                               f["inventario_d"], f["produccion_d"], falta(f["faltan_d"])], 1):
+            ws.cell(row=r, column=i, value=v)
+    cerrar(ws, (12, 22, 10, 12, 8, 8, 10, 10, 12, 10), r)
+
+    # ── Hoja Cliente ──
+    ws = wb.create_sheet("Cliente")
+    encabezado(ws, ["Cliente", "Pedido"])
+    for r, cl in enumerate(clientes, 2):
+        ws.cell(row=r, column=1, value=cl["cliente"])
+        ws.cell(row=r, column=2, value=cl["pedido"])
+    cerrar(ws, (14, 12), len(clientes))
+
+    # ── Hoja Categoría ──
+    ws = wb.create_sheet("Categoría")
+    encabezado(ws, ["Familia", "Pedido", "Unidad"])
+    cats = sorted(categorias, key=lambda c: -c["pedido_d"])
+    for r, c in enumerate(cats, 2):
+        ws.cell(row=r, column=1, value=c["categoria"])
+        ws.cell(row=r, column=2, value=c["pedido_d"])
+        ws.cell(row=r, column=3, value=c["u"])
+    cerrar(ws, (16, 12, 8), len(cats))
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre = f"pedidos_pendientes_{today_ec():%Y_%m_%d}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
 
 
 @pedidos_bp.route("/pedidos/color/<codigo>")
