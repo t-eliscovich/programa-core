@@ -1381,4 +1381,8 @@ def test_el_nombre_de_la_tela_no_se_parte_en_dos_renglones():
            "templates" / "analisis" / "base.html").read_text(encoding="utf-8")
     assert "#tabla td.tela{white-space:nowrap}" in css
     i = css.index("@media (max-width: 780px)")
-    assert "#tabla td.tela{white-space:normal}" in css[i:]
+    # ⭐ En el celular NO vuelve a partirse: para que entre, ahí se va también
+    # la columna Estado. La píldora come 85 px y es contexto; el nombre es lo
+    # que identifica la fila.
+    assert "#tabla td.tela{white-space:normal}" not in css[i:]
+    assert "#tabla th.estado, #tabla td.estado{display:none!important}" in css[i:]

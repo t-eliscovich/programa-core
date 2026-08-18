@@ -109,7 +109,7 @@ saber si lo que hicimos funcionó.</div>
 <th class="ord n opt" data-i="5" data-num="1">De 2ª</th>
 <th class="ord n opt" data-i="6" data-num="1">Vendidos</th>
 <th class="ord n" data-i="7" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
-<th class="ord" data-i="8">Estado</th>
+<th class="ord estado" data-i="8">Estado</th>
 <th class="ord n opt" data-i="9" data-num="1">Última venta</th>
 </tr></thead>
 <tbody>
@@ -131,7 +131,7 @@ saber si lo que hicimos funcionó.</div>
     <td class="n opt" data-v="{{ f.kg_segunda }}">{% if f.kg_segunda %}<span class="pill viejo">{{ f.kg_segunda | num_es(0) }} kg</span>{% else %}—{% endif %}</td>
     <td class="n opt" data-v="{{ f.kg_vendidos }}">{% if f.kg_vendidos %}{{ f.kg_vendidos | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
-    <td>
+    <td class="estado">
       {% if f.estado == 'resuelto' %}<span class="pill mov">resuelto</span>
       {% elif f.estado == 'empezó a moverse' %}<span class="pill mov">se movió</span>
       {% elif f.motivo == 'segunda' %}<span class="pill viejo">de segunda</span>

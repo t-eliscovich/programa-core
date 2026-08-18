@@ -122,7 +122,13 @@ font-size:12px;color:var(--g)}
   .reglas{padding:6px 16px 12px}
   .reglas li{font-size:13px}
   .opt{display:none!important}          /* columnas de contexto */
-  #tabla td.tela{white-space:normal}    /* en 390 px no entra de otra forma */
+  /* ⭐ El nombre de la tela sigue en UNA fila también acá. Para que entre, en
+     el celular se va TAMBIÉN la columna Estado: la píldora ("improbable ·
+     2023") come 85 px y es contexto, mientras que el nombre es lo que
+     identifica la fila. Medido a 390 px: el nombre más largo que existe
+     —"Jersey Lycra Poliviscosa"— ocupa 147 px y entra con las cuatro columnas
+     que quedan (tela, color, kg, clientes). */
+  #tabla th.estado, #tabla td.estado{display:none!important}
 }
 </style>
 </head>
