@@ -1013,6 +1013,11 @@
         {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → UNA sola "Inventario"
            (la página tiene el toggle TC/PT adentro). "Importaciones" →
            "Ingreso de hilado" (pantalla de solo lectura). #}
+        {# TMT 2026-08-18 (dueña): Inventario rotativo — lo que se vende
+           todas las semanas y hay que tener siempre. Va ARRIBA de Inventario:
+           es la lista corta y accionable, Inventario es el catálogo entero.
+           Mismo gate (stock.ver) que sus hermanas de la sección. #}
+        {{ nav_link('inventario_rotativo.lista', 'Inventario rotativo', 'box') }}
         {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box') }}
         {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
         {# TMT 2026-07-09 (dueña): Stock químicos movido a Stock (última posición) desde Tintorería. #}

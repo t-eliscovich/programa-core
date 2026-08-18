@@ -349,6 +349,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(pedidos_bp)
 
+    # TMT 2026-08-18 (dueña): /inventario-rotativo — las telas y colores que se
+    # venden casi todas las semanas, con lo que hay en bodega, lo que se está
+    # tinturando y para cuántas semanas alcanza. Vive de Asinfo; no guarda nada
+    # propio. Va en "Producción y stocks", con el mismo gate que Inventario.
+    from modules.inventario_rotativo.views import inventario_rotativo_bp
+
+    app.register_blueprint(inventario_rotativo_bp)
+
     from modules.tejeduria_asinfo.views import tejeduria_asinfo_bp
 
     app.register_blueprint(tejeduria_asinfo_bp)
