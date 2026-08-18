@@ -13,7 +13,14 @@
 .cli h3 .cod{font-size:13px;color:var(--g);letter-spacing:.4px}
 .cli h3 .kg{margin-left:auto;font-weight:400;font-size:13px;color:var(--g)}
 .cli .meta{color:var(--g);font-size:12px;margin:2px 0 8px}
-.cli table{font-size:13px}
+/* ⚠ Sin `table-layout:fixed` cada ficha arma sus columnas según el largo de
+   SU contenido: un cliente con "Fleece 96 Sin Perchar" y otro con "Naty"
+   quedaban con las cifras en lugares distintos, y la hoja se lee saltando de
+   un lado al otro. Con anchos fijos, todas las fichas encolumnan igual. */
+.cli table{font-size:13px;table-layout:fixed;width:100%}
+.cli col.c1{width:26%} .cli col.c2{width:34%} .cli col.c3{width:15%}
+.cli col.c4{width:15%} .cli col.c5{width:10%}
+.cli .anio{color:var(--g);font-size:11px;margin-left:3px}
 .cli th{padding:5px 8px;font-size:10px}
 .cli td{padding:4px 8px}
 @media print{
@@ -77,19 +84,25 @@
     <span>{{ c.nombre }}</span>
     <span class="cod">{{ c.codigo }}{% if c.codigo in codigos_ambiguos %}
       · ⚠ código repetido{% endif %}</span>
-    <span class="kg">{{ c.kg_potencial | num_es(0) }} kg en saldo de telas que compra</span>
+    <span class="kg">hay {{ c.kg_potencial | num_es(0) }} kg para ofrecerle</span>
   </h3>
   <p class="meta">{{ c.provincia }} · {{ c.vend_pc or 'mostrador' }}</p>
   <table>
-    <thead><tr><th>Tela</th><th>Colores en saldo</th><th class="n">Kg en saldo</th>
-    <th class="n">Le vendimos</th><th class="n">Última vez</th></tr></thead>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
+    {# ⚠ Los encabezados decían "Kg en saldo" y "Le vendimos": dos cifras de
+       kilos, una al lado de la otra, sin decir de QUIÉN era cada una. Dueña
+       18/08/2026: "no se que quiere decir le vendimos / kg en saldo". #}
+    <thead><tr><th>Tela</th><th>Colores disponibles</th>
+    <th class="n">Hay para ofrecerle</th>
+    <th class="n">Él ya compró</th><th class="n">Última vez</th></tr></thead>
     <tbody>
     {% for t in c.telas %}
       <tr>
         <td>{{ t.subcategoria }}</td>
         <td class="g">{{ t.colores_parados }}</td>
         <td class="n">{{ t.kg_parado | num_es(0) }}</td>
-        <td class="n">{{ t.kg_cliente | num_es(0) }}</td>
+        <td class="n">{{ t.kg_cliente | num_es(0) }}
+          <span class="anio">en {{ t.anio }}</span></td>
         <td class="n g">{{ t.ultima_compra.strftime('%d/%m/%y') if t.ultima_compra else '—' }}</td>
       </tr>
     {% endfor %}

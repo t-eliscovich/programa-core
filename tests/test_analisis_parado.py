@@ -1628,3 +1628,32 @@ def test_una_tela_cuyos_clientes_son_del_mostrador_aparece_con_INTELA():
     fuera de todos los filtros por vendedor."""
     html = " ".join(_html_parado().split())
     assert "rejectattr('vend_pc')" in html and "['INTELA']" in html
+
+
+def _html_hoja():
+    from pathlib import Path
+    return (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado_clientes.html").read_text(encoding="utf-8")
+
+
+def test_los_dos_kilos_de_la_hoja_dicen_de_quien_son():
+    """Dueña 18/08/2026: "no se que quiere decir le vendimos / kg en saldo".
+    Eran dos cifras de kilos una al lado de la otra sin decir de quién era cada
+    una: una es lo que HAY en bodega y la otra lo que ese cliente COMPRÓ."""
+    html = _html_hoja()
+    assert "Hay para ofrecerle" in html and "Él ya compró" in html
+    assert "Kg en saldo</th>" not in html and "Le vendimos</th>" not in html
+    assert 'class="anio">en {{ t.anio }}' in html, (
+        "sin el año, 'ya compró' no dice si fue en julio o en 2023")
+
+
+def test_las_fichas_encolumnan_todas_igual():
+    """⚠ Sin `table-layout:fixed` cada ficha arma sus columnas según el largo
+    de SU contenido: un cliente con "Fleece 96 Sin Perchar" y otro con "Naty"
+    quedaban con las cifras en lugares distintos y la hoja se lee saltando."""
+    html = _html_hoja()
+    assert "table-layout:fixed" in html
+    assert "<colgroup>" in html
+    import re
+    anchos = [int(x) for x in re.findall(r"\.cli col\.c\d\{width:(\d+)%\}", html)]
+    assert sum(anchos) == 100, f"los anchos suman {sum(anchos)}%"
