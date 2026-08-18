@@ -43,8 +43,8 @@
   .pd .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .pd .color{font-size:14px;font-weight:700;letter-spacing:.02em}
   .pd .prod{font-size:10px;color:#cbd5e1}
-  .pd .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:0 0 8px}
-  .pd .dot.tub{background:#6366f1}.pd .dot.abi{background:#f59e0b}.pd .dot.otro{background:#94a3b8}
+  .pd .aca{display:inline-block;font-size:10px;font-weight:700;padding:0 5px;border-radius:4px;margin-right:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;flex:0 0 auto}
+  .pd .aca.tub{background:#eef2ff;color:#3730a3}.pd .aca.abi{background:#fef3c7;color:#92400e}.pd .aca.otro{background:#f1f5f9;color:#475569}
   .pd .bar{height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden;min-width:60px}
   .pd .bar>i{display:block;height:100%;background:#0f172a}
   .pd .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;color:#0f172a;font:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
@@ -115,7 +115,7 @@
       {%- else -%}{{ cero }}{%- endif -%}
     {%- endmacro %}
     <p class="nota">Agrupado por color: el código grande, el nombre al lado. Abrí un color para ver
-      sus telas y qué cliente pidió cada una. <span class="muted">Stock y producción salen de Asinfo.</span><br><span class="dot tub"></span> tubular · <span class="dot abi"></span> abierto</p>
+      sus telas y qué cliente pidió cada una. <span class="muted">Stock y producción salen de Asinfo.</span><br><span class="aca tub">TUB</span> tubular · <span class="aca abi">ABI</span> abierto</p>
     <div class="buscar"><input id="fcolor" type="search" placeholder="Filtrar color…" autocomplete="off"><span class="muted" id="fcount"></span></div>
     <table>
       <colgroup><col style="width:34%"><col style="width:12%"><col style="width:15%"><col style="width:11%"><col style="width:15%"><col style="width:13%"></colgroup>
@@ -142,11 +142,11 @@
                 {% if peds %}
                   <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
                     <span class="chev" aria-hidden="true">▶</span>
-                    {% if f.acabado %}<span class="dot {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}" title="{{ f.acabado }}"></span>{% endif %}
+                    {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
                     <span><span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span></span>
                   </button>
                 {% else %}
-                  {% if f.acabado %}<span class="dot {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}" title="{{ f.acabado }}"></span>{% endif %}
+                  {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
                   <span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span>
                 {% endif %}
               </td>
@@ -206,7 +206,7 @@
               <td class="cod">
                 <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
                   <span class="chev" aria-hidden="true">▶</span>
-                  {% if f.acabado %}<span class="dot {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}" title="{{ f.acabado }}"></span>{% endif %}
+                  {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
                   <span class="color">{{ f.color }}</span>
                   <span class="prod">{{ f.codigo }}</span>
                 </button>

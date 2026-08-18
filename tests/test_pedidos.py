@@ -1,10 +1,10 @@
-import io
 """Pedidos pendientes (Asinfo) — service y pantalla.
 
 Los fakes devuelven filas con la forma de la FUENTE (los nombres de columna que
 escribe el SQL contra Asinfo), no la del helper: un fake con la forma equivocada
 pasa en verde mientras producción no resuelve nada.
 """
+import io
 from datetime import date
 from unittest.mock import patch
 
@@ -801,7 +801,8 @@ def test_el_corte_color_muestra_el_punto_de_acabado_tub_abi(app, fake_db):
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         body = c.get("/pedidos").get_data(as_text=True)
-    assert 'class="dot tub"' in body       # el punto tubular en la fila
+    assert 'class="aca tub"' in body       # la etiqueta TUB en la fila
+    assert ">TUB<" in body
     assert "tubular" in body and "abierto" in body   # la leyenda
 
 
