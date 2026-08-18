@@ -832,3 +832,13 @@ def test_el_corte_color_muestra_el_total_partido_en_la_pantalla(app, fake_db):
     assert "2 <span class=\"u\">roll</span>" in body
     assert "3.450 <span class=\"u\">un</span>" in body
     assert 'id="fcolor"' in body           # el buscador de color
+
+
+def test_un_sobrante_en_una_tela_no_hace_faltante_negativo_en_el_color():
+    """Regla de por_categoria: sólo cuentan los faltantes positivos. Una tela
+    con stock de sobra (faltante negativo) no resta del faltante del color."""
+    filas = [service._fila(_fila(color="NAR", codigo="A", ped_kg=47.0, ped_rollos=2.0,
+                                 inv_kg=9000.0)),   # sobra: faltante negativo
+             service._fila(_fila(color="NAR", codigo="B", ped_kg=470.0, ped_rollos=20.0))]  # falta 20
+    (g,) = service.por_color(filas)
+    assert g["falta_roll"] == 20        # sólo el que falta, sin el negativo

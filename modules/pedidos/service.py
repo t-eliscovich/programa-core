@@ -678,6 +678,11 @@ def por_color(filas: list[dict]) -> list[dict]:
         def _s(metric: str, grupo: list[dict]) -> int:
             return int(sum(x[metric] for x in grupo))
 
+        def _falta(grupo: list[dict]) -> int:
+            # Sólo los faltantes POSITIVOS: una tela con stock de sobra (faltante
+            # negativo) no tapa un faltante de otra. Misma regla que por_categoria.
+            return int(sum(x["faltan_d"] for x in grupo if x["faltan_d"] > 0))
+
         out.append({
             "codigo": cod,
             "nombre": nombres.get(cod.upper(), ""),
@@ -688,7 +693,7 @@ def por_color(filas: list[dict]) -> list[dict]:
             "pedido_roll": _s("pedido_d", rollos), "pedido_un": _s("pedido_d", unidades),
             "stock_roll": _s("inventario_d", rollos), "stock_un": _s("inventario_d", unidades),
             "prod_roll": _s("produccion_d", rollos), "prod_un": _s("produccion_d", unidades),
-            "falta_roll": _s("faltan_d", rollos), "falta_un": _s("faltan_d", unidades),
+            "falta_roll": _falta(rollos), "falta_un": _falta(unidades),
         })
     for g in out:
         g["falta_total"] = g["falta_roll"] + g["falta_un"]
