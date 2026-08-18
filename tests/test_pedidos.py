@@ -743,3 +743,13 @@ def test_nombres_color_es_fail_soft_sin_catalogo():
     la pantalla no se cae."""
     # sin app/DB real la lectura falla y devuelve {} — nunca levanta.
     assert service.nombres_color() == {}
+
+
+def test_el_corte_color_trae_el_desde_del_pedido_mas_viejo():
+    """Como el corte por tela, el color muestra "Desde": el pedido que más
+    espera entre sus telas."""
+    filas = [service._fila(_fila(color="CAF", codigo="FE96CAF", mas_viejo="2026-08-14")),
+             service._fila(_fila(color="CAF", codigo="FE96X", tela="Otra", mas_viejo="2026-08-01"))]
+    (g,) = service.por_color(filas)
+    assert g["mas_viejo_es"] == "1 ago"      # el más viejo, no el más nuevo
+    assert g["dias_espera"] >= 1

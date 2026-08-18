@@ -99,8 +99,8 @@
     <p class="nota">Agrupado por color: el código grande, el nombre al lado. Abrí un color para ver
       sus telas y qué cliente pidió cada una. <span class="muted">Stock y producción salen de Asinfo.</span></p>
     <table>
-      <colgroup><col style="width:40%"><col style="width:16%"><col style="width:13%"><col style="width:17%"><col style="width:14%"></colgroup>
-      <thead><tr><th>Color / Tela</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta</th></tr></thead>
+      <colgroup><col style="width:34%"><col style="width:12%"><col style="width:15%"><col style="width:11%"><col style="width:15%"><col style="width:13%"></colgroup>
+      <thead><tr><th>Color / Tela</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta</th></tr></thead>
       <tbody>
         {% for g in colores %}
           {% set gi = loop.index %}
@@ -110,6 +110,7 @@
               <span class="ccode">{{ g.codigo }}</span>{% if g.nombre %}<span class="cname">{{ g.nombre }}</span>{% endif %}
               <span class="muted"> · {{ g.variants|length }} var</span>
             </td>
+            <td class="{{ 'viejo' if g.dias_espera > 10 else 'muted' }}">{{ g.mas_viejo_es }}</td>
             <td>{{ g.pedido|num_es(0) }} <span class="u">{{ g.u }}</span></td>
             <td>{{ g.stock|num_es(0) if g.stock else '—' }}</td>
             <td>{{ g.prod|num_es(0) if g.prod else '—' }}</td>
@@ -128,6 +129,7 @@
                   <span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span>
                 {% endif %}
               </td>
+              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
               <td>{{ f.pedido_d|num_es(0) }} <span class="u">{{ f.u }}</span></td>
               <td>{{ f.inventario_d|num_es(0) if f.inventario_kg else '—' }}</td>
               <td>{{ f.produccion_d|num_es(0) if f.produccion_kg else '—' }}</td>
@@ -135,7 +137,7 @@
             </tr>
             {% if peds %}
               <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.codigo }}">
-                <td colspan="5"><div class="chips">
+                <td colspan="6"><div class="chips">
                   {% for p in peds %}
                     <span class="chip"><b title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</b>
                       {{ p.cantidad|num_es(0) }} {{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span>

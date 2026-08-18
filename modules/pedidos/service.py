@@ -666,11 +666,16 @@ def por_color(filas: list[dict]) -> list[dict]:
     for cod, fs in acc.items():
         en_unidad(fs, "alt")
         fs.sort(key=lambda x: -x["faltan_kg"])
+        # "Desde" del color = el pedido que MÁS espera entre sus telas (igual que
+        # la columna Desde del corte por tela).
+        viejo = max(fs, key=lambda x: x["dias_espera"])
         out.append({
             "codigo": cod,
             "nombre": nombres.get(cod.upper(), ""),
             "u": fs[0]["u"],
             "variants": fs,
+            "mas_viejo_es": viejo["mas_viejo_es"],
+            "dias_espera": viejo["dias_espera"],
             "pedido": sum(x["pedido_d"] for x in fs),
             "stock": sum(x["inventario_d"] for x in fs),
             "prod": sum(x["produccion_d"] for x in fs),
