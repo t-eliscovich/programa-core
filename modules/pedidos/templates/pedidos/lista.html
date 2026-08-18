@@ -70,6 +70,9 @@
   .pd .chips{display:flex;flex-wrap:wrap;gap:6px}
   .pd .chip{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:1px 8px;font-size:11px}
   .pd .chip b{color:#1d4ed8;font-family:ui-monospace,monospace}
+  .pd .buscar{margin:8px 0 4px;display:flex;gap:8px;align-items:center}
+  .pd .buscar input{border:1px solid #e2e8f0;border-radius:7px;padding:6px 10px;font-size:13px;width:260px}
+  .pd .buscar input:focus{outline:none;border-color:#94a3b8}
 </style>
 {% endblock %}
 
@@ -98,25 +101,32 @@
 
   {# ═══════════ COLOR ═══════════ #}
   {% if corte == 'color' %}
+    {% macro celda(roll, un, cero) -%}
+      {%- if roll and un -%}{{ roll|num_es(0) }} <span class="u">roll</span><br>{{ un|num_es(0) }} <span class="u">un</span>
+      {%- elif un -%}{{ un|num_es(0) }} <span class="u">un</span>
+      {%- elif roll -%}{{ roll|num_es(0) }} <span class="u">roll</span>
+      {%- else -%}{{ cero }}{%- endif -%}
+    {%- endmacro %}
     <p class="nota">Agrupado por color: el código grande, el nombre al lado. Abrí un color para ver
       sus telas y qué cliente pidió cada una. <span class="muted">Stock y producción salen de Asinfo.</span><br><span class="dot tub"></span> tubular · <span class="dot abi"></span> abierto</p>
+    <div class="buscar"><input id="fcolor" type="search" placeholder="Filtrar color…" autocomplete="off"><span class="muted" id="fcount"></span></div>
     <table>
       <colgroup><col style="width:34%"><col style="width:12%"><col style="width:15%"><col style="width:11%"><col style="width:15%"><col style="width:13%"></colgroup>
       <thead><tr><th>Color / Tela</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta</th></tr></thead>
       <tbody>
         {% for g in colores %}
           {% set gi = loop.index %}
-          <tr class="ghead" data-col="{{ gi }}" role="button" tabindex="0" aria-expanded="false">
+          <tr class="ghead" data-col="{{ gi }}" data-k="{{ (g.codigo ~ ' ' ~ g.nombre)|lower }}" role="button" tabindex="0" aria-expanded="false">
             <td>
               <span class="chev" aria-hidden="true">▶</span>
               <span class="ccode">{{ g.codigo }}</span>{% if g.nombre %}<span class="cname">{{ g.nombre }}</span>{% endif %}
               <span class="muted"> · {{ g.variants|length }} var</span>
             </td>
             <td class="{{ 'viejo' if g.dias_espera > 10 else 'muted' }}">{{ g.mas_viejo_es }}</td>
-            <td>{{ g.pedido|num_es(0) }} <span class="u">{{ g.u }}</span></td>
-            <td>{{ g.stock|num_es(0) if g.stock else '—' }}</td>
-            <td>{{ g.prod|num_es(0) if g.prod else '—' }}</td>
-            <td class="{{ 'falta' if g.falta > 0 else 'okc' }}">{{ g.falta|num_es(0) if g.falta > 0 else 'ok' }}</td>
+            <td>{{ celda(g.pedido_roll, g.pedido_un, '—') }}</td>
+            <td>{{ celda(g.stock_roll, g.stock_un, '—') }}</td>
+            <td>{{ celda(g.prod_roll, g.prod_un, '—') }}</td>
+            <td class="{{ 'falta' if g.falta_total > 0 else 'okc' }}">{% if g.falta_total > 0 %}{{ celda(g.falta_roll, g.falta_un, '') }}{% else %}ok{% endif %}</td>
           </tr>
           {% for f in g.variants %}
             {% set peds = pedidos_por_color.get(f.codigo, []) %}
@@ -181,7 +191,7 @@
       </h3>
       <table>
         <colgroup><col style="width:22%"><col style="width:12%"><col style="width:15%"><col style="width:17%"><col style="width:17.33%"><col style="width:16.67%"></colgroup>
-        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>En bodega</th><th>Tinturándose</th><th>Falta</th></tr></thead>
+        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta</th></tr></thead>
         <tbody>
           {% for f in t.filas %}
             {% set peds = pedidos_por_color.get(f.codigo, []) %}
@@ -291,6 +301,23 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
       });
     });
+    var fcolor = document.getElementById('fcolor');
+    if (fcolor) {
+      fcolor.addEventListener('input', function () {
+        var q = fcolor.value.trim().toLowerCase(), n = 0;
+        document.querySelectorAll('.pd tr.ghead').forEach(function (h) {
+          var m = (h.dataset.k || '').indexOf(q) >= 0;
+          h.style.display = m ? '' : 'none';
+          if (m) { n++; }
+          document.querySelectorAll('.pd tr.colv-' + h.dataset.col).forEach(function (r) {
+            if (!m) { r.style.display = 'none'; r.classList.remove('open'); }
+            else { r.style.display = ''; }
+          });
+        });
+        var fc = document.getElementById('fcount');
+        if (fc) { fc.textContent = q ? (n + ' colores') : ''; }
+      });
+    }
     // Flechita de una fila: despliega su detalle (clientes / pedidos), sin recargar.
     document.querySelectorAll('.pd .abrir').forEach(function (b) {
       b.addEventListener('click', function (e) {

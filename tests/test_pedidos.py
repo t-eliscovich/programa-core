@@ -479,7 +479,7 @@ def test_bodega_y_tinturandose_son_dos_columnas_con_el_nombre_entero(app, fake_d
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
-    assert "En bodega" in body and "Tinturándose" in body
+    assert "Stock" in body and "En produc." in body
     assert "tint." not in body
     assert "Tenemos" not in body
 
@@ -688,8 +688,8 @@ def test_por_color_agrupa_por_codigo_y_ordena_por_lo_que_mas_falta():
                                  ped_kg=10.0, ped_rollos=1.0, inv_kg=9000.0))]  # ok
     gs = service.por_color(filas)
     assert [g["codigo"] for g in gs][0] == "CAF"       # lo que falta, arriba
-    assert gs[0]["u"] == "roll"
-    assert gs[0]["pedido"] == 19                        # rollos ENTEROS
+    assert gs[0]["pedido_roll"] == 19 and gs[0]["pedido_un"] == 0   # rollos ENTEROS
+    assert gs[0]["mixto"] is False
 
 
 def test_el_corte_color_pasa_el_pedido_de_rib_de_kilos_a_rollos():
@@ -698,7 +698,7 @@ def test_el_corte_color_pasa_el_pedido_de_rib_de_kilos_a_rollos():
     (g,) = service.por_color([service._fila(_fila(
         categoria="Rib", tela="Rib Acanalado", codigo="RIBACE", color="ACE",
         ped_kg=70.5, ped_rollos=0.0))])
-    assert g["u"] == "roll" and g["pedido"] == 3       # 70,5 / 23,5
+    assert g["pedido_roll"] == 3 and g["pedido_un"] == 0   # 70,5 / 23,5
 
 
 def test_por_cliente_suma_por_cliente_y_ordena_de_mayor_a_menor():
@@ -802,3 +802,33 @@ def test_el_corte_color_muestra_el_punto_de_acabado_tub_abi(app, fake_db):
         body = c.get("/pedidos").get_data(as_text=True)
     assert 'class="dot tub"' in body       # el punto tubular en la fila
     assert "tubular" in body and "abierto" in body   # la leyenda
+
+
+def test_un_color_mixto_separa_rollos_y_unidades_no_los_suma():
+    """Un color que va en telas (rollos) Y en cuellos/puños (unidades) NO suma
+    las dos en una cifra: el subtotal se separa."""
+    filas = [service._fila(_fila(color="NAR", codigo="FE10NAR", ped_kg=47.0, ped_rollos=2.0)),
+             service._fila(_fila(color="NAR", codigo="PUNAR", categoria="Puños",
+                                 tela="Puños", ped_kg=0.0, ped_rollos=0.0,
+                                 ped_un=3450, un_por_kg=50.0))]
+    (g,) = service.por_color(filas)
+    assert g["mixto"] is True
+    assert g["pedido_roll"] == 2 and g["pedido_un"] == 3450
+
+
+def test_el_corte_color_muestra_el_total_partido_en_la_pantalla(app, fake_db):
+    c = _login(app, fake_db)
+    filas = [_fila(color="NAR", codigo="FE10NAR", ped_kg=47.0, ped_rollos=2.0),
+             _fila(color="NAR", codigo="PUNAR", categoria="Puños", tela="Puños",
+                   ped_kg=0.0, ped_rollos=0.0, ped_un=3450, un_por_kg=50.0)]
+
+    def fake(_db, sql, **_kw):
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return ([], True)
+        return (filas, True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+    assert "2 <span class=\"u\">roll</span>" in body
+    assert "3.450 <span class=\"u\">un</span>" in body
+    assert 'id="fcolor"' in body           # el buscador de color

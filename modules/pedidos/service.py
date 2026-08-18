@@ -669,20 +669,31 @@ def por_color(filas: list[dict]) -> list[dict]:
         # "Desde" del color = el pedido que MÁS espera entre sus telas (igual que
         # la columna Desde del corte por tela).
         viejo = max(fs, key=lambda x: x["dias_espera"])
+        # Un color puede ir en telas (rollos) Y en cuellos/puños (unidades). El
+        # subtotal NO se mezcla en una cifra: se separa por unidad ("X roll ·
+        # Y un"), o sumaría peras con manzanas (decisión dueña 2026-08-18).
+        rollos = [x for x in fs if x["u"] != "un"]
+        unidades = [x for x in fs if x["u"] == "un"]
+
+        def _s(metric: str, grupo: list[dict]) -> int:
+            return int(sum(x[metric] for x in grupo))
+
         out.append({
             "codigo": cod,
             "nombre": nombres.get(cod.upper(), ""),
-            "u": fs[0]["u"],
             "variants": fs,
             "mas_viejo_es": viejo["mas_viejo_es"],
             "dias_espera": viejo["dias_espera"],
-            "pedido": sum(x["pedido_d"] for x in fs),
-            "stock": sum(x["inventario_d"] for x in fs),
-            "prod": sum(x["produccion_d"] for x in fs),
-            "falta": sum(x["faltan_d"] for x in fs),
+            "mixto": bool(rollos) and bool(unidades),
+            "pedido_roll": _s("pedido_d", rollos), "pedido_un": _s("pedido_d", unidades),
+            "stock_roll": _s("inventario_d", rollos), "stock_un": _s("inventario_d", unidades),
+            "prod_roll": _s("produccion_d", rollos), "prod_un": _s("produccion_d", unidades),
+            "falta_roll": _s("faltan_d", rollos), "falta_un": _s("faltan_d", unidades),
         })
+    for g in out:
+        g["falta_total"] = g["falta_roll"] + g["falta_un"]
     # Lo que más falta arriba; desempate por código para que el orden sea estable.
-    return sorted(out, key=lambda g: (-g["falta"], g["codigo"]))
+    return sorted(out, key=lambda g: (-g["falta_total"], g["codigo"]))
 
 
 def por_cliente() -> list[dict]:
