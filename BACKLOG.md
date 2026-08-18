@@ -299,6 +299,38 @@ son uno solo, casi seguro es una sola causa. Lista completa y cómo reproducir:
 
 ---
 
+## Inventario rotativo (18/08/2026)
+
+### [M] Verificar el acabado: 287 TUB contra 2 ABI
+La columna sale de los atributos del LOTE (`id_atributo = 1`, vía
+`pedidos.service.acabados_por_producto`). De los 289 productos que rotan,
+sólo 2 dan ABI. Si en la fábrica hay más tela abierta que eso, el atributo no
+se está cargando en los lotes y la columna miente por omisión — que es peor
+que no tenerla. Preguntar en planta antes de tocar código.
+
+### [S] Puños NAR y Cuellos T40 NAR: más pedido que stock
+3.450 unidades pedidas contra 22 en bodega (Puños), 1.084 contra 93 (Cuellos
+T40). Puede ser real o un pedido viejo que quedó abierto en Asinfo. El corte
+de la pantalla es 90 días, igual que /pedidos.
+
+### [S] La fila no lleva a ningún lado
+En /pedidos el color se abre y muestra quién pidió y qué se está tinturando.
+Acá, cuando algo está en rojo, no hay adónde ir a ver el detalle. El destino
+natural es `/pedidos/color/<codigo>`, que ya existe.
+
+### [M] Nadie mira la pantalla sola
+Hoy hay que acordarse de entrar. Lo que entra en rojo podría avisar por la
+campanita o por la nota diaria. Ojo con el ruido: 62 en rojo hoy es
+demasiado para un aviso — tendría que avisar sólo lo que CAMBIÓ de estado.
+
+### [L] El percentil 90 es una convención, no un cálculo de costos
+Anotado por el propio análisis (`Predicción de ventas/PLAN_ML.md`, etapa 4):
+*"el P90 que uso hoy lo puse yo a ojo"*. Si sobrar cuesta 3× lo que faltar, el
+cuantil correcto sería más bajo y todo el plan de teñido cambiaría. Sale de
+medir el costo real de un sobrante contra el de un faltante.
+
+---
+
 ## Proceso
 
 ### [S] Checks de drift en /admin/health/all
