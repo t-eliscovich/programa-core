@@ -1674,3 +1674,27 @@ def test_una_sola_palabra_para_la_categoria():
     for palabra in ("De 2ª", "de segunda", "segunda calidad", "Primera y segunda"):
         assert palabra not in visible, f"quedó «{palabra}» conviviendo con SEG"
     assert ">Categoría</th>" in visible
+
+
+def test_la_hoja_sale_alfabetica_por_codigo():
+    """Dueña 18/08/2026: "cuando es 'a quien ofrecerle que' ordena
+    alfabeticamente".
+
+    ⭐ Por CÓDIGO y no por nombre, aunque la ficha muestre el nombre grande: es
+    el mismo orden con el que salen la hoja de estado de cuenta de la oficina y
+    la de /mi-cartera, y el vendedor tiene el papel y el celular delante a la
+    vez. Dos alfabéticos distintos para el mismo cliente son peor que uno."""
+    import inspect
+
+    from modules.analisis import views
+    for vista in (views.parado_clientes, views.mi_hoja, views.mi_hoja_csv,
+                  views.parado_clientes_csv):
+        fuente = inspect.getsource(vista)
+        assert 'request.args.get("orden") or "codigo"' in fuente, (
+            f"{vista.__name__} sigue arrancando por oportunidad")
+
+
+def test_ordenar_por_oportunidad_sigue_disponible():
+    """Se cambia el DEFAULT, no se saca la opción: para decidir por quién
+    empezar sigue siendo la mejor."""
+    assert "oportunidad" in queries.ORDENES

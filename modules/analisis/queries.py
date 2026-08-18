@@ -156,10 +156,14 @@ def por_grupo(filas: list[dict]) -> list[dict]:
 
 # ── Por CLIENTE: la hoja que se lleva el vendedor ───────────────────────────
 
-#: Los órdenes posibles de la hoja. El default es `oportunidad` porque la hoja
-#: existe para decidir POR QUIÉN EMPEZAR: si el vendedor corta a la mitad, que
-#: haya cortado por lo chico. Alfabético sirve para ENCONTRAR a alguien, que es
-#: otra tarea y la resuelve el buscador.
+#: Los órdenes posibles de la hoja. El default es ALFABÉTICO POR CÓDIGO (dueña
+#: 18/08/2026: "cuando es 'a quien ofrecerle que' ordena alfabeticamente").
+#:
+#: ⭐ Por código y no por nombre, aunque la ficha muestre el nombre grande: es
+#: el mismo orden con el que sale la hoja de estado de cuenta de la oficina y
+#: la de /mi-cartera, y el vendedor tiene el papel y el celular delante a la
+#: vez. Dos alfabéticos distintos para el mismo cliente son peor que uno solo.
+#: Ordenar por oportunidad sigue estando en el desplegable.
 ORDENES = {
     "oportunidad": "los kilos en saldo de las telas que compra",
     "codigo": "alfabético por código",
@@ -167,7 +171,7 @@ ORDENES = {
 }
 
 
-def por_cliente(vend: str | None = None, orden: str = "oportunidad",
+def por_cliente(vend: str | None = None, orden: str = "codigo",
                 cartera_de: str | None = None) -> dict:
     """
     Da vuelta la pantalla: en vez de tela → clientes, cliente → telas.
@@ -247,7 +251,7 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad",
     return {"clientes": vivos, "improbables": dudosos, "orden": orden}
 
 
-def por_cliente_plano(vend: str | None = None, orden: str = "oportunidad",
+def por_cliente_plano(vend: str | None = None, orden: str = "codigo",
                       cartera_de: str | None = None) -> list[dict]:
     """
     La misma hoja, aplanada a una fila por CLIENTE × TELA, para Excel.

@@ -161,7 +161,7 @@ def parado_clientes():
     ⭐ Y por eso el ORDEN viaja en la URL: lo que se ve es lo que se imprime.
     """
     vend = (request.args.get("vend") or "").strip().upper() or None
-    orden = request.args.get("orden") or "oportunidad"
+    orden = request.args.get("orden") or "codigo"
     if orden not in queries.ORDENES:
         orden = "oportunidad"
     return render_template(
@@ -198,7 +198,7 @@ def mis_telas_csv():
 def mi_hoja_csv():
     """La hoja propia a Excel. Mismo recorte por cartera que la pantalla."""
     vend = _vend_actual()
-    orden = request.args.get("orden") or "oportunidad"
+    orden = request.args.get("orden") or "codigo"
     if orden not in queries.ORDENES:
         orden = "oportunidad"
     return csv_response(
@@ -232,7 +232,7 @@ def parado_clientes_csv():
     orden que el papel.
     """
     vend = (request.args.get("vend") or "").strip().upper() or None
-    orden = request.args.get("orden") or "oportunidad"
+    orden = request.args.get("orden") or "codigo"
     if orden not in queries.ORDENES:
         orden = "oportunidad"
     return csv_response(
@@ -337,7 +337,7 @@ def mi_hoja():
     (/analisis/parado/clientes) NO se abre nunca: tiene los clientes de todos.
     """
     vend = _vend_actual()
-    orden = request.args.get("orden") or "oportunidad"
+    orden = request.args.get("orden") or "codigo"
     if orden not in queries.ORDENES:
         orden = "oportunidad"
     return render_template(
