@@ -53,79 +53,120 @@
   .iv .ambar{color:#b45309}
   .iv .ok,.iv .sobra{color:#94a3b8}
   .iv td .rojo,.iv td .ambar{font-weight:700}
-  .iv .cero{color:#cbd5e1}
-  /* Lo pedido es CONTEXTO, no parte de la cuenta: gris y con asterisco para
-     que no se lea como una columna que suma (dueña 2026-08-18). */
   .iv .info{color:#64748b}
   .iv .ast{color:#cbd5e1;font-size:10px;vertical-align:2px}
+  .iv .cero{color:#cbd5e1}
   .iv .oculta{display:none}
   .iv .vacio{color:#94a3b8;font-size:13px;padding:18px 0}
-  .iv .pie{margin:18px 0 0;font-size:11px;color:#94a3b8}
+  .iv .pie{margin:14px 0 0;font-size:11px;color:#94a3b8;max-width:900px}
 
-  /* Hoja impresa. `@media all` y no `@media print`: con `print` el navegador
-     ignora las reglas hasta el diálogo y no se puede verificar la hoja sin
-     imprimir. El ancho fijo es el de una A4 vertical a 96 dpi. */
-  .iv.hoja{width:816px;padding:0}
+  /* ── La hoja ──────────────────────────────────────────────────────────────
+     `@media all` y no `@media print`: con `print` el navegador ignora las
+     reglas hasta el diálogo y no se puede verificar la hoja sin imprimir.
+     El ancho fijo es el de una A4 vertical a 96 dpi. */
+  .iv.hoja{width:816px;padding:0;font-size:12px}
   .iv.hoja .barra,.iv.hoja .tabs,.iv.hoja .noprint{display:none}
-  .iv.hoja h3{margin:14px 0 4px;page-break-after:avoid}
-  .iv.hoja table{max-width:100%;font-size:12px;page-break-inside:auto}
-  .iv.hoja tr{page-break-inside:avoid}
-  .iv.hoja .bloque{page-break-inside:avoid}
+  .iv.hoja .cabeza{display:flex;justify-content:space-between;align-items:flex-start;
+    border-bottom:2px solid #0f172a;padding-bottom:6px;margin-bottom:4px}
+  .iv.hoja .cabeza .sub{font-size:11px;color:#64748b;margin:2px 0 0}
+  .iv.hoja .cabeza .der{text-align:right}
+  .iv.hoja .cabeza .fecha{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+  .iv.hoja h3{margin:12px 0 3px;font-size:13px;page-break-after:avoid;break-after:avoid}
+  .iv.hoja table{max-width:100%;font-size:11px}
+  .iv.hoja th{padding:4px 6px;font-size:10px;border-bottom:1px solid #cbd5e1}
+  .iv.hoja td{padding:3px 6px}
+  /* El bloque NO se corta entero a la fuerza: un color de 34 telas no entra en
+     una página y forzarlo dejaría media hoja en blanco. Se cuidan las filas y
+     que el título no quede huérfano al pie. */
+  .iv.hoja tr{page-break-inside:avoid;break-inside:avoid}
+  .iv.hoja thead{display:table-header-group}   /* la cabecera se repite */
+  .iv.hoja .pie{margin-top:10px;border-top:1px solid #e2e8f0;padding-top:6px}
   @media print{
     .iv .barra,.iv .tabs,.iv .noprint{display:none}
-    body{padding:0}
+    body{padding:0;margin:0}
+    @page{margin:12mm 10mm}
   }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="iv{% if imprimir %} hoja{% endif %}">
-  <h1>Inventario rotativo</h1>
+
+  {% if imprimir %}
+    {# El papel se lee sin la pantalla al lado: dice qué es, de cuándo y qué
+       recorte tiene — arriba, no sólo al pie. #}
+    <div class="cabeza">
+      <div>
+        <h1>Inventario rotativo</h1>
+        <p class="sub">
+          {%- if filtros.est == 'rojo' %}Sólo lo que hay que teñir
+          {%- elif filtros.est == 'sobra' %}Sólo lo que sobra
+          {%- elif filtros.est %}Sólo lo que está en {{ filtros.est }}
+          {%- else %}Todo lo que rota{% endif %}
+          {%- if filtros.fam %} · {{ filtros.fam }}{% endif %}
+          {%- if filtros.q %} · «{{ filtros.q }}»{% endif %}
+          · por {{ cortes_lbl[corte] | lower }}</p>
+      </div>
+      <div class="der">
+        <div class="fecha">{{ hoy.strftime('%d/%m/%Y') }}</div>
+        <div class="sub">{{ resumen.n }} tela{{ '' if resumen.n == 1 else 's' }} × color</div>
+      </div>
+    </div>
+  {% else %}
+    <h1>Inventario rotativo</h1>
+  {% endif %}
 
   {% if not disponible %}
     <div class="caido">No pude consultar Asinfo, así que esta pantalla está
       vacía. <b>No quiere decir que no falte nada</b> — quiere decir que no pude
       preguntar. Volvé a cargar en un minuto.</div>
   {% else %}
-    <p class="nota">Los {{ resumen.n }} colores y telas que se venden
-      casi todas las semanas ({{ semanas_minimas }} o más de las últimas 52).
-      En rojo, lo que alcanza para menos de {{ sem_rojo | int }} semanas — lo
-      que tarda una tintura. Fuente: Asinfo.</p>
 
-    {% if resumen.n_alerta %}
-      <div class="aviso"><b>{{ resumen.n_alerta }}</b> hay que teñir ya
-        · faltan {{ resumen.kg_falta | num_es(0) }} kg</div>
+    {% if not imprimir %}
+      <p class="nota">Los {{ resumen.n }} colores y telas que se venden casi
+        todas las semanas ({{ semanas_minimas }} o más de las últimas 52).
+        <b>Por semana</b> es el promedio de las últimas {{ semanas_corta }}
+        (tres meses). En rojo, lo que alcanza para menos de
+        {{ sem_rojo | int }} semanas — lo que tarda una tintura.
+        Fuente: Asinfo.</p>
+
+      {% if resumen.n_alerta %}
+        <div class="aviso"><b>{{ resumen.n_alerta }}</b> hay que teñir ya
+          · faltan {{ resumen.kg_falta | num_es(0) }} kg</div>
+      {% endif %}
+
+      <div class="barra">
+        <span class="cap">Ver por</span>
+        {% for c in cortes %}
+          <a class="chip{% if c == corte %} on{% endif %}"
+             href="{{ url_for('inventario_rotativo.lista', ver=c) }}">{{ cortes_lbl[c] }}</a>
+        {% endfor %}
+        <span class="sep"></span>
+        <span class="chip on" data-est="todo">Todo</span>
+        <span class="chip alarma" data-est="rojo">Hay que teñir ({{ resumen.n_alerta }})</span>
+        <span class="chip" data-est="sobra">De sobra</span>
+        <span class="sep"></span>
+        <input type="search" id="iv-q" placeholder="Buscar color o tela…"
+               aria-label="Buscar color o tela">
+        <span class="sep"></span>
+        {# La hoja es ESTA pantalla con otro ancho, no otra plantilla: si fueran
+           dos, lo que se lleva a planta dejaría de ser lo que se mira. El JS le
+           cuelga el filtro que esté puesto. #}
+        <a class="chip" id="iv-imprimir"
+           href="{{ url_for('inventario_rotativo.lista', ver=corte, imprimir=1) }}"
+           target="_blank" rel="noopener">Imprimir</a>
+        <a class="chip" id="iv-excel"
+           href="{{ url_for('inventario_rotativo.excel', ver=corte) }}">Excel</a>
+      </div>
+
+      <div class="tabs" id="iv-tabs">
+        <span class="tab on" data-fam=""><b>Todas</b>
+          <span class="n">{{ resumen.n }}</span></span>
+        {% for fam in resumen.familias %}
+          <span class="tab" data-fam="{{ fam }}"><b>{{ fam }}</b></span>
+        {% endfor %}
+      </div>
     {% endif %}
-
-    <div class="barra">
-      <span class="cap">Ver por</span>
-      {% for c in cortes %}
-        <a class="chip{% if c == corte %} on{% endif %}"
-           href="{{ url_for('inventario_rotativo.lista', ver=c) }}">{{ cortes_lbl[c] }}</a>
-      {% endfor %}
-      <span class="sep"></span>
-      <span class="chip on" data-est="todo">Todo</span>
-      <span class="chip alarma" data-est="rojo">Hay que teñir ({{ resumen.n_alerta }})</span>
-      <span class="chip" data-est="sobra">De sobra</span>
-      <span class="sep"></span>
-      <input type="search" id="iv-q" placeholder="Buscar color o tela…"
-             aria-label="Buscar color o tela">
-      <span class="sep"></span>
-      {# La hoja es ESTA pantalla con otro ancho, no otra plantilla: si fueran
-         dos, lo que se lleva a planta dejaría de ser lo que se mira. #}
-      <a class="chip" id="iv-imprimir"
-         href="{{ url_for('inventario_rotativo.lista', ver=corte, imprimir=1) }}"
-         target="_blank" rel="noopener">Imprimir</a>
-      <a class="chip" href="{{ url_for('inventario_rotativo.excel') }}">Excel</a>
-    </div>
-
-    <div class="tabs" id="iv-tabs">
-      <span class="tab on" data-fam=""><b>Todas</b>
-        <span class="n">{{ resumen.n }}</span></span>
-      {% for fam in resumen.familias %}
-        <span class="tab" data-fam="{{ fam }}"><b>{{ fam }}</b></span>
-      {% endfor %}
-    </div>
 
     {% for b in bloques %}
       <div class="bloque" data-k="{{ b.nombre | lower }}">
@@ -138,13 +179,16 @@
           <colgroup><col class="c-col"><col class="c-ac"><col class="c-un">
             <col class="c-num"><col class="c-num"><col class="c-num">
             <col class="c-num"><col class="c-num"><col class="c-num"></colgroup>
-          <tr>
-            <th>{{ 'Tela' if b.etiqueta == 'tela' else 'Color' }}</th>
-            <th style="text-align:left">Acab.</th>
-            <th style="text-align:left">Un.</th>
-            <th>Por semana</th><th>En bodega</th><th>Pedido<span class="ast">*</span></th>
-            <th>En proceso</th><th>Alcanza</th><th>Falta</th>
-          </tr>
+          <thead>
+            <tr>
+              <th>{{ 'Tela' if b.etiqueta == 'tela' else 'Color' }}</th>
+              <th style="text-align:left">Acab.</th>
+              <th style="text-align:left">Un.</th>
+              <th>Por semana</th><th>En bodega</th><th>Pedido<span class="ast">*</span></th>
+              <th>En proceso</th><th>Alcanza</th><th>Falta</th>
+            </tr>
+          </thead>
+          <tbody>
           {% for f in b.filas %}
             <tr class="fila" data-est="{{ f.estado }}" data-fam="{{ f.familia }}"
                 data-t="{{ (f.color ~ ' ' ~ f.tela) | lower }}">
@@ -165,33 +209,46 @@
                   {% else %}<span class="cero">—</span>{% endif %}</td>
             </tr>
           {% endfor %}
+          </tbody>
         </table>
       </div>
     {% endfor %}
+
     <div class="vacio oculta" id="iv-vacio">No hay nada con ese filtro.</div>
+
     <p class="pie">* Lo pedido es informativo: no se resta de lo que hay ni
       entra en la cobertura — la mercadería sigue en bodega hasta que se
-      despacha.</p>
-    {% if imprimir %}
-      <p class="pie">Inventario rotativo · {{ hoy.strftime('%d/%m/%Y') }} ·
-        Fuente: Asinfo
-        {%- if filtros.est == 'rojo' %} · sólo lo que hay que teñir
-        {%- elif filtros.est == 'sobra' %} · sólo lo que sobra{% endif %}
-        {%- if filtros.fam %} · {{ filtros.fam }}{% endif %}
-        {%- if filtros.q %} · "{{ filtros.q }}"{% endif %}</p>
-    {% endif %}
+      despacha.{% if imprimir %} · Por semana es el promedio de las últimas
+      {{ semanas_corta }} semanas · Fuente: Asinfo{% endif %}</p>
   {% endif %}
 </div>
 
 <script>
 (function () {
   var VER = {{ corte | tojson }};
+
+  // La hoja abre el diálogo de impresión sola (dueña 2026-08-18: "puse
+  // imprimir y me llevó acá, no a imprimir"). Un `?imprimir=1` que sólo
+  // cambia el ancho deja al usuario a mitad de camino.
+  if ({{ imprimir | tojson }}) {
+    window.addEventListener('load', function () { window.print(); });
+    return;
+  }
+
   var est = 'todo', fam = '', q = '';
 
   function pinta(sel, attr, val) {
     document.querySelectorAll(sel).forEach(function (c) {
       c.classList.toggle('on', c.dataset[attr] === val);
     });
+  }
+
+  function params() {
+    var p = new URLSearchParams({ ver: VER });
+    if (est !== 'todo') { p.set('est', est); }
+    if (fam) { p.set('fam', fam); }
+    if (q) { p.set('q', q); }
+    return p;
   }
 
   function aplicar() {
@@ -211,16 +268,16 @@
     var vacio = document.getElementById('iv-vacio');
     if (vacio) { vacio.classList.toggle('oculta', vivos > 0); }
 
-    // Imprimir se lleva el filtro puesto: el servidor lo aplica de nuevo, así
-    // el papel sale igual aunque el JS no haya corrido en la pestaña nueva.
+    // Imprimir y Excel se llevan el filtro puesto. El servidor lo aplica de
+    // nuevo, así el papel y la planilla salen igual aunque el JS no haya
+    // corrido en la pestaña nueva.
     var imp = document.getElementById('iv-imprimir');
     if (imp) {
-      var p = new URLSearchParams({ ver: VER, imprimir: '1' });
-      if (est !== 'todo') { p.set('est', est); }
-      if (fam) { p.set('fam', fam); }
-      if (q) { p.set('q', q); }
+      var p = params(); p.set('imprimir', '1');
       imp.href = '?' + p.toString();
     }
+    var xls = document.getElementById('iv-excel');
+    if (xls) { xls.href = '/inventario-rotativo/excel?' + params().toString(); }
   }
 
   document.querySelectorAll('.iv .chip[data-est]').forEach(function (c) {
@@ -239,6 +296,7 @@
       q = e.target.value.trim().toLowerCase(); aplicar();
     });
   }
+  aplicar();
 })();
 </script>
 {% endblock %}

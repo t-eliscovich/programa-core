@@ -88,6 +88,7 @@ def lista():
 
     return render_template(
         "inventario_rotativo/lista.html",
+        semanas_corta=service.SEMANAS_CORTA,
         disponible=disponible,
         corte=corte,
         imprimir=imprimir,
@@ -103,17 +104,20 @@ def lista():
     )
 
 
-#: Las columnas de la hoja y del Excel, en el mismo orden que la pantalla.
-COLUMNAS = ("Color", "Tela", "Familia", "Acabado", "Por semana", "En bodega",
-            "Pedido (informativo)", "En proceso", "Unidad", "Alcanza (sem)",
+#: Las columnas del Excel, en el mismo orden que la pantalla.
+COLUMNAS = ("Color", "Tela", "Familia", "Acabado", "Un.", "Por semana",
+            "En bodega", "Pedido (informativo)", "En proceso", "Alcanza (sem)",
             "Falta", "Falta kg")
+
+#: Ancho de cada columna, en el orden de COLUMNAS.
+_ANCHOS = (10, 26, 13, 8, 6, 11, 11, 18, 11, 13, 9, 11)
 
 
 def _valores(f: dict) -> list:
     """Una fila del service → la fila del Excel, en la unidad que se lee."""
     return [
-        f["color"], f["tela"], f["familia"], f.get("acabado") or "",
-        f["sem"], f["stock"], f["pedido"], f["proceso"], f["unidad"],
+        f["color"], f["tela"], f["familia"], f.get("acabado") or "", f["unidad"],
+        f["sem"], f["stock"], f["pedido"], f["proceso"],
         # "no sé" (sin venta reciente) va vacío y no como -1: un número
         # negativo en una columna de semanas se lee como un dato, no como
         # un hueco.
@@ -126,10 +130,17 @@ def _valores(f: dict) -> list:
 @requiere_login
 @requiere_permiso("stock.ver")
 def excel():
-    """La misma tabla, en un xlsx. Una hoja por corte no: una sola, plana.
+    """La misma tabla, en un xlsx.
 
-    Con las dos vistas mezcladas en un archivo habría que elegir cuál filtrar;
-    plana se ordena y se filtra en Excel, que es lo que se hace con ella.
+    Sale EN EL MISMO ORDEN QUE LA PANTALLA (dueña 2026-08-18: "cuando bajo el
+    excel aparece en otro orden") y con el mismo filtro: se agrupa por el corte
+    que se esté mirando, los bloques van por faltante y dentro de cada uno las
+    filas por urgencia. Una planilla ordenada distinto obliga a buscar de nuevo
+    lo que ya se tenía en pantalla.
+
+    Plana y con una sola hoja: se filtra y se ordena en Excel, que es lo que se
+    hace con ella. La columna de grupo va primero para que agrupar sea ordenar
+    por la columna A.
     """
     filas, disponible = service.rotativo()
     if not disponible:
@@ -137,9 +148,18 @@ def excel():
               "Probá de nuevo en un minuto.", "error")
         return redirect(url_for("inventario_rotativo.lista"))
 
+    corte = (request.args.get("ver") or "").strip()
+    if corte not in CORTES:
+        corte = CORTES[0]
+    filtros = _filtros()
+    filas = _aplicar(filas, filtros)
+    # El mismo agrupado de la pantalla, aplanado: bloque por bloque, en orden.
+    ordenadas = [f for b in service.agrupar(filas, corte) for f in b["filas"]]
+
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
     except ImportError:
         flash("openpyxl no instalado en el server — pedí al admin que lo instale.",
               "error")
@@ -148,24 +168,38 @@ def excel():
     wb = Workbook()
     ws = wb.active
     ws.title = "Inventario rotativo"
-    bold = Font(bold=True)
-    relleno = PatternFill("solid", fgColor="E2E8F0")
+
+    encabezado = Font(bold=True, color="FFFFFF", size=10)
+    relleno = PatternFill("solid", fgColor="0F172A")
+    rojo = Font(bold=True, color="B91C1C")
+    ambar = Font(bold=True, color="B45309")
+    gris = Font(color="94A3B8")
+    linea = Border(bottom=Side(style="thin", color="E2E8F0"))
+
     for i, h in enumerate(COLUMNAS, 1):
         c = ws.cell(row=1, column=i, value=h)
-        c.font = bold
+        c.font = encabezado
         c.fill = relleno
-        c.alignment = Alignment(horizontal="left")
+        c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 26
 
-    for fila, f in enumerate(filas, 2):
+    # Las tres primeras columnas son texto; de la 6 en adelante, números.
+    for fila, f in enumerate(ordenadas, 2):
+        pinta = {"rojo": rojo, "ambar": ambar}.get(f["estado"], gris)
         for i, v in enumerate(_valores(f), 1):
-            ws.cell(row=fila, column=i, value=v)
+            c = ws.cell(row=fila, column=i, value=v)
+            c.border = linea
+            if i >= 6:
+                c.number_format = "#,##0" if i != 10 else "#,##0.0"
+                c.alignment = Alignment(horizontal="right")
+            # El semáforo de la pantalla, en las dos columnas que lo llevan.
+            if i in (10, 11):
+                c.font = pinta
 
-    for col, ancho in zip("ABCDEFGHIJKL",
-                          (10, 26, 14, 9, 12, 12, 18, 12, 9, 14, 10, 12),
-                          strict=True):
-        ws.column_dimensions[col].width = ancho
+    for i, ancho in enumerate(_ANCHOS, 1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:L{max(len(filas) + 1, 2)}"
+    ws.auto_filter.ref = f"A1:L{max(len(ordenadas) + 1, 2)}"
 
     buf = io.BytesIO()
     wb.save(buf)

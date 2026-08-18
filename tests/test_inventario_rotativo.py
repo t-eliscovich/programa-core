@@ -5,6 +5,7 @@ escriben las dos SQL contra Asinfo), no la del helper: un fake con la forma
 equivocada pasa en verde mientras producción no resuelve nada.
 """
 import io
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -542,16 +543,19 @@ def test_la_hoja_imprime_solo_lo_filtrado(app, fake_db):
     assert ">JOS<" in rojo and ">NEG<" not in rojo
 
 
-def test_la_hoja_filtrada_dice_en_el_pie_qué_filtro_tiene(app, fake_db):
+def test_la_hoja_filtrada_dice_ARRIBA_qué_filtro_tiene(app, fake_db):
     """Una hoja de 62 filas de 289 tiene que decir por qué, o el que la lee
-    piensa que eso es todo el inventario."""
+    piensa que eso es todo el inventario. Y va en la cabecera, no al pie: el
+    recorte se lee ANTES de la tabla, no después."""
     service._cache.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
         body = c.get("/inventario-rotativo?imprimir=1&est=rojo&fam=Fleece").get_data(as_text=True)
-    assert "sólo lo que hay que teñir" in body
+    assert "Sólo lo que hay que teñir" in body
     assert "Fleece" in body
+    cabeza = body.split('class="cabeza"')[1].split("</div>")[0]
+    assert "Inventario rotativo" in body[:body.index('class="cabeza"')] or cabeza
 
 
 def test_el_filtro_de_la_pantalla_no_recorta_lo_que_se_ve(app, fake_db):
@@ -584,3 +588,115 @@ def test_el_buscador_de_la_hoja_mira_color_y_tela(app, fake_db):
                       side_effect=_fake_asinfo(_dos_filas(), serie)):
         body = c.get("/inventario-rotativo?imprimir=1&q=neg").get_data(as_text=True)
     assert ">NEG<" in body and ">JOS<" not in body
+
+
+# ── el Excel sale como la pantalla ──────────────────────────────────────────
+
+def _bajar(c, url="/inventario-rotativo/excel"):
+    from openpyxl import load_workbook
+    r = c.get(url)
+    assert r.status_code == 200, r.status_code
+    return load_workbook(io.BytesIO(r.data)).active
+
+
+def test_el_excel_sale_en_el_mismo_orden_que_la_pantalla(app, fake_db):
+    """Dueña 2026-08-18: "cuando bajo el excel aparece en otro orden".
+
+    Una planilla ordenada distinto obliga a buscar de nuevo lo que ya estaba
+    en pantalla. Se aplana el MISMO agrupado: bloques por faltante, filas por
+    urgencia.
+    """
+    service._cache.clear()
+    c = _login(app, fake_db)
+    fichas = [_ficha(color="JOS", tela="Fleece 102"),
+              _ficha(id_producto=2, color="NEG", tela="Pique Especial",
+                     codigo="PENEG", inv_kg=9000.0)]
+    serie = _serie(1) + _serie(2)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(fichas, serie)), \
+         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+        ws = _bajar(c)
+
+    en_pantalla = re.findall(r'<h3>(\w+)<', body)
+    en_excel = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
+    assert en_excel == en_pantalla          # mismo orden de colores
+
+
+def test_el_excel_respeta_el_filtro_de_la_pantalla(app, fake_db):
+    """El botón le cuelga est/fam/q, igual que Imprimir: bajar todo cuando en
+    pantalla se ve el recorte es la misma trampa que la hoja de 13 páginas."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    fichas = [_ficha(color="JOS"),
+              _ficha(id_producto=2, color="NEG", codigo="FE102NEG", inv_kg=9000.0)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(fichas, _serie(1) + _serie(2))), \
+         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+        todo = _bajar(c)
+        rojo = _bajar(c, "/inventario-rotativo/excel?est=rojo")
+    assert todo.max_row == 3
+    assert rojo.max_row == 2
+    assert rojo["A2"].value == "JOS"
+
+
+def test_el_excel_sigue_el_corte_que_se_esta_mirando(app, fake_db):
+    """Por tela, la columna que agrupa es la tela; por color, el color."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()), \
+         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+        ws = _bajar(c, "/inventario-rotativo/excel?ver=tela")
+    assert [c.value for c in ws[1]][:2] == ["Color", "Tela"]
+    assert ws["A2"].value == "JOS" and ws["B2"].value == "Fleece 102"
+
+
+def test_el_excel_lleva_la_unidad_y_el_acabado(app, fake_db):
+    """Los mismos datos que la pantalla, no un subconjunto."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()), \
+         patch("modules.pedidos.service.acabados_por_producto",
+               return_value={"FE102JOS": "TUB"}):
+        ws = _bajar(c)
+    fila = {h: ws.cell(row=2, column=i).value
+            for i, h in enumerate(views.COLUMNAS, 1)}
+    assert fila["Acabado"] == "TUB"
+    assert fila["Un."] == "roll"
+
+
+def test_la_hoja_se_manda_a_imprimir_sola(app, fake_db):
+    """Dueña 2026-08-18: "puse imprimir y me llevó acá, no a imprimir".
+
+    Un `?imprimir=1` que sólo cambia el ancho deja al usuario a mitad de
+    camino, buscando el Ctrl+P.
+    """
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        hoja = c.get("/inventario-rotativo?imprimir=1").get_data(as_text=True)
+        pantalla = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert "window.print()" in hoja
+    assert "window.print()" not in pantalla.split("<script>")[-1]
+
+
+def test_la_cabecera_de_la_tabla_se_repite_en_cada_pagina():
+    """Trece páginas sin encabezado son trece páginas de números sueltos."""
+    tpl = (Path(service.__file__).parent / "templates" / "inventario_rotativo"
+           / "lista.html").read_text(encoding="utf-8")
+    assert "<thead>" in tpl
+    assert "display:table-header-group" in tpl
+
+
+def test_la_pantalla_dice_de_cuantas_semanas_es_el_promedio(app, fake_db):
+    """Dueña 2026-08-18: "por semana es un promedio de las últimas cuántas
+    semanas?". Si hay que preguntarlo, la pantalla no lo estaba diciendo."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert f"promedio de las últimas {service.SEMANAS_CORTA}" in body
