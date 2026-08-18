@@ -992,3 +992,83 @@ def test_el_csv_de_la_hoja_propia_no_lleva_la_columna_del_vendedor():
 
     from modules.analisis import views
     assert '"Vendedor"' not in inspect.getsource(views.mi_hoja_csv)
+
+
+# ── El tope por grupo ───────────────────────────────────────────────────────
+
+def test_lo_que_pasa_del_tope_no_le_suma_al_vendedor(monkeypatch):
+    """⭐ Dueña 17/08/2026: "cada vendedor tiene que hacer x% de cada grupo…
+    una vez que llega al 31% deja de sumar". Sin el tope, el que tiene un
+    cliente grande de Jersey llega al 100% sin tocar los otros grupos, y la
+    competencia deja de servir para lo que se armó."""
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000, "ultima": None}])
+    intela = next(r for r in c["ranking"] if r["vendedor"] == "Intela")
+    jersey = next(d for d in intela["detalle"] if d["grupo"] == "Jersey")
+    assert jersey["meta"] == 6000 / 7
+    assert jersey["kg"] == 5000
+    assert round(jersey["contado"], 2) == round(6000 / 7, 2), "se corta en su meta"
+    assert round(jersey["excedente"], 2) == round(5000 - 6000 / 7, 2)
+    assert jersey["pct"] == 100
+    assert intela["pct"] < 100, (
+        "con un solo grupo lleno no puede estar al 100% del total")
+
+
+def test_el_kilo_excedente_igual_sale_de_la_bodega(monkeypatch):
+    """El kilo se vendió: cuenta para el grupo y para el termómetro de la
+    fábrica. Lo único que no hace es subirle el % al vendedor."""
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000, "ultima": None}])
+    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
+    assert jersey["liquidado"] == 5000
+    assert c["liquidado"] == 5000
+
+
+def test_llegar_al_100_exige_tocar_todos_los_grupos(monkeypatch):
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Intela", "categoria": "Jersey", "kg": 6000 / 7,
+         "ultima": None},
+        {"vendedor": "Intela", "categoria": "Fleece", "kg": 4000 / 7,
+         "ultima": None},
+    ])
+    intela = next(r for r in c["ranking"] if r["vendedor"] == "Intela")
+    assert round(intela["pct"], 1) == 100.0
+
+
+def test_el_ranking_ordena_por_lo_contado_y_no_por_los_kilos(monkeypatch):
+    """Uno con 5.000 kg de un solo grupo tiene que ir DETRÁS de otro con menos
+    kilos pero repartidos."""
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000, "ultima": None},
+        {"vendedor": "Lopez Felipe", "categoria": "Jersey", "kg": 800,
+         "ultima": None},
+        {"vendedor": "Lopez Felipe", "categoria": "Fleece", "kg": 500,
+         "ultima": None},
+    ])
+    puestos = {r["vendedor"]: r["puesto"] for r in c["ranking"]}
+    assert puestos["Lopez Felipe"] < puestos["Intela"]
+
+
+def test_la_pantalla_explica_las_reglas():
+    """Dueña: "escribamos las reglas del juego. facil". Una competencia cuyas
+    reglas hay que preguntar no la juega nadie."""
+    from pathlib import Path
+    # ⚠ El texto de la plantilla viene cortado en varias líneas: se normalizan
+    # los espacios antes de buscar, si no el test falla por el formato del HTML
+    # y no por lo que dice.
+    html = " ".join((Path(__file__).resolve().parent.parent / "modules" /
+                     "analisis" / "templates" / "analisis" /
+                     "competencia.html").read_text(encoding="utf-8").split())
+    assert "Las reglas" in html
+    assert "no te</b> <b>suma" in html or "no te suma" in html, (
+        "la regla del tope tiene que estar escrita")
+    assert "% de tu propia meta" in html
+
+
+def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
+    assert "abrirVend" in html and 'class="vdet"' in html
+    for col in ("Su meta", "Vendió", "Le cuenta"):
+        assert col in html

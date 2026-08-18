@@ -1,5 +1,18 @@
 {% extends "analisis/base.html" %}
 {% block titulo %}Competencia{% endblock %}
+
+{% block scripts %}
+<script>
+// Cada vendedor son DOS filas: la del ranking y su desglose por grupo. Mismo
+// cuidado que en Lo parado — si un día esto se ordena, se ordenan de a pares.
+function abrirVend(tr){
+  const d = tr.nextElementSibling;
+  d.classList.toggle('abierta');
+  tr.querySelector('.flecha').textContent =
+    d.classList.contains('abierta') ? '▾' : '▸';
+}
+</script>
+{% endblock %}
 {% block contenido %}
 <style>
 .term{background:#f8fafc;border-radius:12px;padding:22px 24px;margin:18px 0}
@@ -9,6 +22,16 @@
 .term .tres .v.vd{color:var(--vd)}
 .term .tres .s{font-size:12px;color:var(--g);margin:2px 0 0}
 .mov{font-size:11px}.mov.sube{color:var(--vd)}.mov.baja{color:var(--rj)}
+.reglas{background:#f8fafc;border-radius:10px;padding:8px 24px 14px;margin:14px 0}
+.reglas ol{margin:8px 0;padding-left:20px}
+.reglas li{margin:6px 0;font-size:14px}
+tr.vend{cursor:pointer}
+tr.vend:hover td{background:#f8fafc}
+tr.vdet{display:none}
+tr.vdet.abierta{display:table-row}
+tr.vdet>td{background:#f8fafc;padding:0 10px 14px 40px}
+tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-radius:6px}
+.tope{font-size:11px;color:var(--g)}
 .term .chico{color:var(--g);font-size:13px;margin-top:4px}
 .barra-fondo{height:12px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:14px}
 .barra-fondo > div{height:100%;background:var(--vd);border-radius:99px}
@@ -46,6 +69,28 @@ tr.yo td{background:#f0fdf4}
     ({{ ((100 * liquidado / meta_kg) if meta_kg else 0) | num_es(1) }}% de la meta)</div>
 </div>
 
+<h2>Las reglas</h2>
+<div class="reglas">
+<ol>
+  <li>Se compite por <b>sacar la tela parada</b>: la que hace 12 meses o más que
+      no se vende. Arrancamos el {{ largada.strftime('%d/%m/%Y') }} con
+      <b>{{ kg_al_largar | num_es(0) }} kg</b>.</li>
+  <li><b>Todos tenemos la misma meta</b>, sin importar el tamaño de la cartera:
+      {{ (meta_kg / (competidores | length)) | num_es(0) }} kg cada uno.</li>
+  <li>Esa meta está <b>repartida en los {{ grupos | length }} grupos</b>. Los de
+      abajo dicen cuánto le toca a cada uno de cada grupo.</li>
+  <li>⭐ <b>Cuando llegás a tu meta en un grupo, lo que vendas de más ahí no te
+      suma.</b> Para llegar al 100% hay que tocar todos los grupos, no llenarlo
+      con uno solo. (El kilo se vendió igual: le suma a la fábrica, no a tu
+      puntaje.)</li>
+  <li>Un kilo cuenta para <b>el vendedor que figura en la factura</b>. Intela
+      —el mostrador— compite como uno más.</li>
+  <li>El puesto se mide por <b>% de tu propia meta</b>, no por kilos: así compite
+      parejo el de cartera grande con el de cartera chica.</li>
+  <li>Se mide <b>semana a semana</b>, de lunes a domingo.</li>
+</ol>
+</div>
+
 <h2>Quién va ganando</h2>
 <p class="sub">La meta de cada grupo se reparte en partes iguales. Todos tienen
 grupos fuertes y flojos, así que se compara parejo.</p>
@@ -55,18 +100,35 @@ grupos fuertes y flojos, así que se compara parejo.</p>
 <th class="n">Esta semana</th><th class="n">Último</th></tr></thead>
 <tbody>
 {% for r in ranking %}
-  <tr>
-    <td class="puesto">{{ r.puesto }}
+  <tr class="vend" onclick="abrirVend(this)">
+    <td class="puesto"><span class="flecha">▸</span> {{ r.puesto }}
       {% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
       {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
     <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · vos{% endif %}</td>
     <td class="n g">{{ r.meta | num_es(0) }}</td>
-    <td class="n">{{ r.kg | num_es(0) }}</td>
+    <td class="n">{{ r.kg | num_es(0) }}{% if r.excedente %}
+      <div class="tope">cuentan {{ r.contado | num_es(0) }}</div>{% endif %}</td>
     <td class="n">{{ r.pct | num_es(1) }}%</td>
     <td><div class="mini"><div style="width:{{ [100, r.pct] | min }}%"></div></div></td>
     <td class="n">{% if r.kg_semana %}{{ r.kg_semana | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n g">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
   </tr>
+  <tr class="vdet"><td colspan="8">
+    <table>
+    <thead><tr><th>Grupo</th><th class="n">Su meta</th><th class="n">Vendió</th>
+    <th class="n">Le cuenta</th><th class="n">%</th></tr></thead>
+    <tbody>
+    {% for d in r.detalle %}
+      <tr><td>{{ d.grupo }}</td>
+      <td class="n g">{{ d.meta | num_es(0) }}</td>
+      <td class="n">{{ d.kg | num_es(0) }}</td>
+      <td class="n">{{ d.contado | num_es(0) }}{% if d.excedente %}
+        <span class="tope">(+{{ d.excedente | num_es(0) }} de más)</span>{% endif %}</td>
+      <td class="n">{{ d.pct | num_es(1) }}%</td></tr>
+    {% endfor %}
+    </tbody>
+    </table>
+  </td></tr>
 {% endfor %}
 </tbody>
 </table>

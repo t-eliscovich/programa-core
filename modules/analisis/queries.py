@@ -477,7 +477,7 @@ def competencia() -> dict:
         for v in COMPETIDORES:
             tabla[v]["meta"] += por_grupo_meta[g["grupo"]]
             tabla[v]["grupos"][g["grupo"]] = {
-                "meta": por_grupo_meta[g["grupo"]], "kg": 0.0}
+                "grupo": g["grupo"], "meta": por_grupo_meta[g["grupo"]], "kg": 0.0}
 
     fuera = 0.0
     for r in vendido:
@@ -495,13 +495,32 @@ def competencia() -> dict:
     # cero, y sin un criterio fijo el orden de los empatados lo decide el
     # diccionario. Entonces "subió dos puestos" sería ruido, porque el puesto de
     # la semana pasada se recalcula con el mismo sort.
+    # ⭐ EL TOPE POR GRUPO. Dueña 17/08/2026: "cada vendedor tiene que hacer x%
+    # de cada grupo… una vez que llega al 31% deja de sumar". O sea: lo que pasa
+    # de su parte en un grupo NO le suma al puntaje. Sin el tope, el que tiene
+    # un cliente grande de Jersey llega al 100% sin tocar los otros siete
+    # grupos, y la competencia deja de servir para lo que se armó — que es
+    # despejar TODO, no lo más fácil.
+    #
+    # ⚠ El kilo excedente igual salió de la bodega: cuenta para el grupo y para
+    # el termómetro de la fábrica. Lo que no hace es subirle el %.
+    for d in tabla.values():
+        d["contado"] = 0.0
+        for gr in d["grupos"].values():
+            gr["contado"] = min(gr["kg"], gr["meta"])
+            gr["excedente"] = max(0.0, gr["kg"] - gr["meta"])
+            gr["pct"] = 100 * gr["contado"] / gr["meta"] if gr["meta"] else 0
+            d["contado"] += gr["contado"]
+        d["excedente"] = d["kg"] - d["contado"]
+
     ranking = sorted(tabla.values(),
-                     key=lambda d: (-(d["kg"] / d["meta"] if d["meta"] else 0),
+                     key=lambda d: (-(d["contado"] / d["meta"] if d["meta"] else 0),
                                     d["vendedor"]))
     for i, d in enumerate(ranking, 1):
         d["puesto"] = i
         d["vend_yo"] = False
-        d["pct"] = 100 * d["kg"] / d["meta"] if d["meta"] else 0
+        d["pct"] = 100 * d["contado"] / d["meta"] if d["meta"] else 0
+        d["detalle"] = sorted(d["grupos"].values(), key=lambda x: -x["meta"])
 
     liquidado = {}
     for r in vendido:
@@ -582,9 +601,13 @@ def _movimiento(ranking: list[dict], por_vendedor: dict) -> None:
             r["kg_semana"] = 0.0
         return
     ultima = max(s for v in por_vendedor.values() for s in v)
+    # ⚠ Se descuenta de lo CONTADO, no de los kilos crudos: si lo de esta semana
+    # ya estaba por encima del tope, el puesto de la semana pasada era el mismo
+    # y decir que "subió" sería mentira.
     antes = sorted(
         ranking,
-        key=lambda r: (-((r["kg"] - por_vendedor.get(r["vendedor"], {}).get(ultima, 0))
+        key=lambda r: (-(max(0.0, r["contado"]
+                             - por_vendedor.get(r["vendedor"], {}).get(ultima, 0))
                          / r["meta"] if r["meta"] else 0), r["vendedor"]))
     puesto_antes = {r["vendedor"]: i for i, r in enumerate(antes, 1)}
     for r in ranking:
