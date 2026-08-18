@@ -49,8 +49,10 @@
   .pd .bar>i{display:block;height:100%;background:#0f172a}
   .pd .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;color:#0f172a;font:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
   .pd .abrir:hover .color,.pd .abrir:hover .telaname{text-decoration:underline}
-  .pd .chev{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid #94a3b8;display:inline-block;vertical-align:middle;transition:transform .12s;flex:0 0 auto;margin-right:4px}
-  .pd .abrir[aria-expanded="true"] .chev,.pd tr.ghead[aria-expanded="true"] .chev{transform:rotate(90deg);border-left-color:#475569}
+  .pd .chev{display:inline-block;width:11px;text-align:center;color:#94a3b8;font-size:11px;line-height:1;vertical-align:middle;flex:0 0 auto;margin-right:3px}
+  .pd .chev::after{content:"\25B8"}
+  .pd .abrir[aria-expanded="true"] .chev,.pd tr.ghead[aria-expanded="true"] .chev{color:#475569}
+  .pd .abrir[aria-expanded="true"] .chev::after,.pd tr.ghead[aria-expanded="true"] .chev::after{content:"\25BE"}
   /* desplegables: se apagan por CLASE ([hidden] lo pisa cualquier display heredado) */
   .pd tr.det{display:none}
   .pd tr.det.open{display:table-row}
