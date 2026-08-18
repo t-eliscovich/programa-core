@@ -181,28 +181,11 @@ fin de septiembre — agosto y septiembre cuentan juntos, porque del 25 al 31 de
 agosto hay cinco días hábiles.</p>
 {% endif %}
 
-<h2>Semana a semana</h2>
-{% if semanas %}
-<p class="sub">De lunes a domingo, la más nueva arriba.</p>
-<table>
-<thead><tr><th>Semana</th><th class="n">Kg liquidados</th><th class="n opt">Acumulado</th>
-<th class="n opt">Falta</th><th class="opt">Quién vendió</th></tr></thead>
-<tbody>
-{% for s in semanas %}
-  <tr>
-    <td class="tela">{{ s.semana.strftime('%d/%m') }}</td>
-    <td class="n">{{ s.kg | num_es(0) }}</td>
-    <td class="n opt">{{ s.acumulado | num_es(0) }}</td>
-    <td class="n g opt">{{ (meta_kg - s.acumulado) | num_es(0) }}</td>
-    <td class="g opt">{% for v, kg in s.detalle.items() %}{{ v }} {{ kg | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
-  </tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}
-<p class="sub">Todavía no se vendió ningún saldo desde el
-{{ largada.strftime('%d/%m/%Y') }}. La primera semana cierra el domingo.</p>
-{% endif %}
+{# ⚠ La tabla "Semana a semana" se sacó el 18/08/2026: con el premio del mes
+   arriba, era demasiada tabla para el vendedor. El CÁLCULO por semana se
+   sigue haciendo —de ahí salen la columna "Esta semana" del ranking y las
+   flechas de subió/bajó—, así que `semanas` sigue viniendo en el contexto.
+   Si algún día se quiere de vuelta, es sólo volver a dibujarla. #}
 
 <h2>Por grupo</h2>
 <p class="sub">La meta de cada grupo es su propio peso en el parado: si Jersey es

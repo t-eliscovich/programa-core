@@ -1353,3 +1353,17 @@ def test_la_pantalla_explica_las_dos_carreras():
                      "competencia.html").read_text(encoding="utf-8").split())
     assert "El premio del mes" in html
     assert "kilos totales" in html and "sin tope" in html
+
+
+def test_la_tabla_semana_a_semana_no_se_dibuja():
+    """Dueña 18/08/2026: "ok saca semana a semana". Con el premio del mes
+    arriba era demasiada tabla para el vendedor.
+
+    ⚠ El CÁLCULO por semana se sigue haciendo: de ahí salen la columna "Esta
+    semana" del ranking y las flechas de subió/bajó. Lo que se saca es el
+    dibujo, no el dato."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
+    assert "<h2>Semana a semana</h2>" not in html
+    assert "Esta semana" in html, "la columna del ranking se queda"
