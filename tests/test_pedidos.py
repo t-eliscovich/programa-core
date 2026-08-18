@@ -891,3 +891,21 @@ def test_los_titulos_de_la_tabla_quedan_fijos_al_scrollear(app, fake_db):
                       return_value=(_FILAS_PANTALLA, True)):
         body = c.get("/pedidos").get_data(as_text=True)
     assert "position:sticky" in body       # el thead pegado arriba
+
+
+def test_en_el_corte_color_cada_numero_de_la_variante_lleva_su_unidad(app, fake_db):
+    """Dueña: "me pierdo que todo es rollo". Cada celda de la fila (stock,
+    producción, falta) lleva su unidad, no sólo el pedido."""
+    c = _login(app, fake_db)
+    filas = [_fila(color="CAF", codigo="FE96CAF", ped_kg=447.0, ped_rollos=19.0,
+                   inv_kg=235.0, prod_kg=141.0)]
+
+    def fake(_db, sql, **_kw):
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return ([], True)
+        return (filas, True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+    # el pedido (19), el stock (10) y la producción (6) llevan "roll"
+    assert body.count('<span class="u">roll</span>') >= 4

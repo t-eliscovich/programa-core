@@ -154,9 +154,9 @@
               </td>
               <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
               <td>{{ f.pedido_d|num_es(0) }} <span class="u">{{ f.u }}</span></td>
-              <td>{{ f.inventario_d|num_es(0) if f.inventario_kg else '—' }}</td>
-              <td>{{ f.produccion_d|num_es(0) if f.produccion_kg else '—' }}</td>
-              <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{{ f.faltan_d|num_es(0) if f.faltan_kg > 0 else 'ok' }}</td>
+              <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}—{% endif %}</td>
+              <td>{% if f.produccion_kg %}{{ f.produccion_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}—{% endif %}</td>
+              <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}ok{% endif %}</td>
             </tr>
             {% for p in peds %}
               <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.codigo }}">
