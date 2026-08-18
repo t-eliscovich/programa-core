@@ -38,6 +38,14 @@ from flask import g, redirect, render_template, request
 # "/mi-cartera".
 PREFIJOS_PERMITIDOS: tuple[str, ...] = (
     "/mi-cartera",  # el portal del vendedor (todas sus sub-rutas)
+    # TMT 2026-08-17 — la Competencia (/analisis/competencia) está hecha para
+    # que la vean los vendedores, pero TODAVÍA NO se les habilita: dueña, "esto
+    # es para que lo visualicen vendedores e intela. todavia igual no se las
+    # habilites". Hasta que ella diga, la ruta les da 404 como cualquier otra.
+    #
+    # Para habilitarla: agregar "/analisis/competencia" acá. ⚠ El matcheo es por
+    # segmento, así que TODO lo que cuelgue de ese prefijo les queda abierto —
+    # por eso la pantalla de metas vive en /analisis/metas y no ahí abajo.
 )
 
 # Infraestructura: login/logout, estáticos, health. Sin esto el vendedor no

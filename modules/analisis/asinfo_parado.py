@@ -83,6 +83,22 @@ VEND_PC = {
     "Quintero Jose": "JQU", "Ramirez Edgar": "EDG", "Proaño Sebastián": "SEP",
 }
 
+# ⭐ "Intela" en vez de "mostrador". Dueña 17/08/2026: "intela/mostrador como un
+# vendedor extra. llamalo Intela mas que mostrador". Se juntan los dos casos que
+# significan lo mismo —la venta la hizo la casa—: la factura con vendedor
+# "Cía. Ltda. Intela" y la que no tiene vendedor asignado. Dejarlos separados
+# partía el 51,3% de las ventas en dos filas que nadie sabe leer.
+_VENDEDOR = ("CASE WHEN vv.nombre_vendedor IS NULL "
+             "OR RTRIM(vv.nombre_vendedor) IN ('Cía. Ltda. Intela', '') "
+             "THEN 'Intela' ELSE RTRIM(vv.nombre_vendedor) END")
+
+_JOIN_VENDEDOR = """
+LEFT JOIN (SELECT id_factura_cliente, MIN(id_vendedor) AS id_vendedor
+           FROM v_ventas GROUP BY id_factura_cliente) vx
+       ON vx.id_factura_cliente = fc.id_factura_cliente
+LEFT JOIN v_vendedor vv ON vv.id_vendedor = vx.id_vendedor"""
+
+
 # El stock actual de cada producto: la última foto de `saldo_producto`.
 _STOCK = f"""
 WITH ult AS (
@@ -231,15 +247,37 @@ def _sql_vendido(desde: str) -> str:
 SELECT pr.nombre_subcategoria_producto AS subcategoria,
        RIGHT(RTRIM(pr.codigo), 3)      AS color,
        CAST(fc.fecha AS date)          AS fecha,
+       {_VENDEDOR}                     AS vendedor,
        SUM(dfc.cantidad)               AS kg
 FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
+{_JOIN_VENDEDOR}
 WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
   AND dfc.cantidad > 0 AND fc.fecha >= '{desde}'
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3),
-         CAST(fc.fecha AS date)
+         CAST(fc.fecha AS date), {_VENDEDOR}
+"""
+
+
+SQL_SHARE = f"""
+-- Cuánto vende cada vendedor de cada GRUPO. Es lo que reparte la meta: sin
+-- esto, el ranking lo gana el de cartera más grande todos los meses.
+-- Ventana: los últimos 12 meses. Más atrás mezcla carteras que ya cambiaron de
+-- dueño; menos, y un mes flojo desfigura el reparto.
+SELECT pr.nombre_categoria_producto AS categoria,
+       {_VENDEDOR}                  AS vendedor,
+       SUM(dfc.cantidad)            AS kg
+FROM factura_cliente fc
+JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
+JOIN producto pr ON pr.id_producto = dfc.id_producto
+{_JOIN_VENDEDOR}
+WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
+  AND dfc.cantidad > 0
+  AND fc.fecha >= DATEADD(month, -12, GETDATE())
+  AND pr.nombre_categoria_producto NOT IN ({CATS})
+GROUP BY pr.nombre_categoria_producto, {_VENDEDOR}
 """
 
 
@@ -265,4 +303,20 @@ def llamados() -> list[dict]:
 
 
 def vendido_desde(desde: str) -> list[dict]:
-    return _filas(_sql_vendido(desde))
+    filas = _filas(_sql_vendido(desde))
+    for f in filas:
+        f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
+    return filas
+
+
+def share_por_grupo() -> list[dict]:
+    """El % que cada vendedor pesa dentro de cada grupo. Suma 100 por grupo."""
+    filas = _filas(SQL_SHARE)
+    tot: dict[str, float] = {}
+    for f in filas:
+        tot[f["categoria"]] = tot.get(f["categoria"], 0) + float(f["kg"] or 0)
+    for f in filas:
+        t = tot.get(f["categoria"]) or 1
+        f["pct"] = 100 * float(f["kg"] or 0) / t
+        f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
+    return filas

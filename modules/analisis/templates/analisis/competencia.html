@@ -1,0 +1,92 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Competencia{% endblock %}
+{% block contenido %}
+<style>
+.term{background:#f8fafc;border-radius:12px;padding:22px 24px;margin:18px 0}
+.term .grande{font-size:44px;font-weight:600;line-height:1.05}
+.term .chico{color:var(--g);font-size:13px;margin-top:4px}
+.barra-fondo{height:12px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:14px}
+.barra-fondo > div{height:100%;background:var(--vd);border-radius:99px}
+.mini{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;min-width:90px}
+.mini > div{height:100%;background:var(--az);border-radius:99px}
+td.puesto{font-weight:600;color:var(--g);width:34px}
+tr.yo td{background:#f0fdf4}
+</style>
+
+<h1>Competencia — liquidar lo parado</h1>
+<p class="sub">Quién saca más de lo que está quieto en bodega.</p>
+
+<div class="term">
+  <div class="grande">{{ kg_parado | num_es(0) }} kg</div>
+  <div class="chico">es lo que queda parado hoy, {{ hoy.strftime('%d/%m/%Y') }}
+    — de eso hay que sacar <b>{{ meta_kg | num_es(0) }} kg</b></div>
+  <div class="barra-fondo">
+    <div style="width:{{ [100, (100 * liquidado / meta_kg) if meta_kg else 0] | min }}%"></div>
+  </div>
+  {# ⚠ `x if y else 0 | round(1)` aplica el filtro SÓLO al 0: salía
+     "17.284974824441832%", con punto decimal además. Los paréntesis y num_es
+     no son cosmética — un porcentaje con 15 decimales dice "esto no lo miró
+     nadie". #}
+  <div class="chico">llevamos <b>{{ liquidado | num_es(0) }} kg</b>
+    ({{ ((100 * liquidado / meta_kg) if meta_kg else 0) | num_es(1) }}% de la meta)</div>
+</div>
+
+<h2>Quién va ganando</h2>
+<p class="sub">La meta de cada grupo se reparte en partes iguales. Todos tienen
+grupos fuertes y flojos, así que se compara parejo.</p>
+<table>
+<thead><tr><th></th><th>Vendedor</th><th class="n">Meta</th>
+<th class="n">Liquidado</th><th class="n">% de su meta</th><th>Avance</th>
+<th class="n">Último</th></tr></thead>
+<tbody>
+{% for r in ranking %}
+  <tr>
+    <td class="puesto">{{ r.puesto }}</td>
+    <td class="tela">{{ r.vendedor }}</td>
+    <td class="n g">{{ r.meta | num_es(0) }}</td>
+    <td class="n">{{ r.kg | num_es(0) }}</td>
+    <td class="n">{{ r.pct | num_es(1) }}%</td>
+    <td><div class="mini"><div style="width:{{ [100, r.pct] | min }}%"></div></div></td>
+    <td class="n g">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
+  </tr>
+{% endfor %}
+</tbody>
+</table>
+
+<h2>Por grupo</h2>
+<p class="sub">La meta de cada grupo es su propio peso en el parado: si Jersey es
+el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
+<table>
+<thead><tr><th>Grupo</th><th class="n">Parado</th><th class="n">Meta</th>
+<th class="n">Liquidado</th><th class="n">% de la meta</th>
+<th>Quién vende este grupo</th></tr></thead>
+<tbody>
+{% for g in grupos %}
+  <tr>
+    <td class="tela">{{ g.grupo }}</td>
+    <td class="n">{{ g.kg | num_es(0) }}</td>
+    <td class="n g">{{ g.meta_kg | num_es(0) }}
+      <span class="pill quieto">{{ g.meta_pct | num_es(0) }}%{% if g.meta_es_manual %} ✎{% endif %}</span></td>
+    <td class="n">{{ g.liquidado | num_es(0) }}</td>
+    <td class="n">{{ g.pct_meta | num_es(1) }}%</td>
+    <td class="g">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(0) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
+  </tr>
+{% endfor %}
+</tbody>
+</table>
+
+
+
+<footer>
+Parado = producto terminado quieto hace 12 meses o más, congelado el día que se
+marcó. Un kilo cuenta para el que figura como vendedor en la factura; «Intela»
+junta el mostrador y las facturas sin vendedor asignado.
+{% if kg_fuera_del_ranking %}
+{{ kg_fuera_del_ranking | num_es(0) }} kg los vendió alguien que no está en la
+competencia (bajas viejas): suman al grupo, no al ranking.
+{% endif %}
+{% if tiene_permiso('analisis.ver') %}
+<br><a href="/analisis/metas">Cambiar las metas</a>
+{% endif %}
+</footer>
+{% endblock %}

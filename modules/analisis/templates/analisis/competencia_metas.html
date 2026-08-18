@@ -1,0 +1,31 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Metas{% endblock %}
+{% block contenido %}
+<h1>Metas de la competencia</h1>
+<p class="sub">Cada grupo arranca con una meta automática: su propio peso en el
+stock parado. Cambiala sólo si hace falta — y para volver al automático, dejá el
+campo vacío.</p>
+
+<form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<table>
+<thead><tr><th>Grupo</th><th class="n">Parado</th><th class="n">Automática</th>
+<th class="n">Meta %</th><th class="n">Son</th></tr></thead>
+<tbody>
+{% for g in grupos %}
+  <tr>
+    <td class="tela">{{ g.grupo }}</td>
+    <td class="n">{{ g.kg | num_es(0) }} kg</td>
+    <td class="n g">{{ g.pct | num_es(1) }}%</td>
+    <td class="n"><input name="meta_{{ g.grupo }}" style="width:90px;text-align:right"
+        value="{{ g.meta_pct | num_es(1) if g.meta_es_manual else '' }}"
+        placeholder="{{ g.pct | num_es(1) }}"></td>
+    <td class="n g">{{ g.meta_kg | num_es(0) }} kg</td>
+  </tr>
+{% endfor %}
+</tbody>
+</table>
+<p style="margin-top:16px"><button type="submit">Guardar</button>
+<a href="/analisis/competencia" style="margin-left:14px;color:var(--g)">Volver</a></p>
+</form>
+{% endblock %}

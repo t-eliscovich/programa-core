@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
+import db
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
 from filters import today_ec
@@ -35,6 +36,13 @@ MENU = [
         "titulo": "A quién ofrecerle qué",
         "bajada": "La hoja del vendedor: cliente por cliente, qué telas paradas "
                   "puede llevarse. Se imprime.",
+        "listo": True,
+    },
+    {
+        "url": "/analisis/competencia",
+        "titulo": "Competencia",
+        "bajada": "Cuánto queda de lo parado y quién va ganando. La ven todos, "
+                  "vendedores incluidos.",
         "listo": True,
     },
     {
@@ -187,6 +195,66 @@ def parado_clientes_csv():
         ],
         filename=f"a_quien_ofrecerle_que{'_' + vend if vend else ''}.csv",
     )
+
+
+@analisis_bp.route("/analisis/competencia")
+@requiere_login
+def competencia():
+    """
+    El tablero de la competencia. Dueña 17/08/2026: "aca tienen acceso todos,
+    vendedores sobre todo incluidos".
+
+    ⭐ SIN `@requiere_permiso` a propósito: "todos" acá quiere decir cualquiera
+    que entre al programa. Es la única ruta de la sección sin gate, y es
+    deliberado — no un descuido. Sólo lee y no muestra plata: kilos, metas y
+    puestos.
+
+    ⚠ No alcanza con sacar el gate: un usuario VENDEDOR está encerrado en
+    /mi-cartera por `scope_vendedor.py` y cualquier otra ruta le da 404. La
+    apertura de verdad está allá, en PREFIJOS_PERMITIDOS.
+    """
+    return render_template("analisis/competencia.html", **queries.competencia())
+
+
+@analisis_bp.route("/analisis/metas", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("analisis.ver")
+def competencia_metas():
+    """
+    Pisar a mano la meta automática de un grupo. Sólo la dueña y Andrés.
+
+    ⭐ Cuelga de `/analisis/metas` y NO de `/analisis/competencia/metas` a
+    propósito. El allowlist de vendedores matchea por segmento
+    (`path == p or path.startswith(p + "/")`), así que cualquier cosa colgada de
+    `/analisis/competencia/` les quedaría abierta y la única defensa sería el
+    permiso. Con la ruta afuera son dos cierres en vez de uno.
+    """
+    if request.method == "POST":
+        for clave, valor in request.form.items():
+            if not clave.startswith("meta_"):
+                continue
+            grupo = clave[5:]
+            texto = (valor or "").strip().replace(",", ".")
+            if not texto:
+                # vacío = volver al automático. Guardar un 0 sería otra cosa:
+                # "este grupo no tiene meta", que no es lo que quiso decir.
+                db.execute("DELETE FROM scintela.parado_meta WHERE categoria = %s",
+                           (grupo,))
+                continue
+            try:
+                pct = float(texto)
+            except ValueError:
+                continue
+            db.execute(
+                """INSERT INTO scintela.parado_meta (categoria, pct, quien)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (categoria) DO UPDATE
+                      SET pct = excluded.pct, actualizado = NOW(),
+                          quien = excluded.quien""",
+                (grupo, pct, (g.user or {}).get("username")))
+        flash("Metas guardadas.", "success")
+        return redirect(url_for("analisis.competencia"))
+    return render_template("analisis/competencia_metas.html", **queries.competencia())
 
 
 @analisis_bp.route("/analisis/parado/actualizar", methods=["POST"])

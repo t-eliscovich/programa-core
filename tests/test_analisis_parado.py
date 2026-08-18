@@ -579,3 +579,158 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
     import inspect
     assert "Franela" not in inspect.getsource(queries.actualizar)
     assert "Franela" in inspect.getsource(queries.items)
+
+
+# ── La competencia ──────────────────────────────────────────────────────────
+
+def _competencia_falsa(monkeypatch, vendido=None, override=None):
+    filas = [
+        {"categoria": "Jersey", "subcategoria": "Jersey 3", "color": "NEG",
+         "stock_kg": 6000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
+        {"categoria": "Fleece", "subcategoria": "Fleece 102", "color": "BLA",
+         "stock_kg": 4000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
+    ]
+
+    def fake(sql, params=None, conn=None):
+        s = " ".join(sql.split())
+        if "parado_meta" in s:
+            return [{"categoria": k, "pct": v} for k, v in (override or {}).items()]
+        if "parado_venta" in s:
+            return vendido or []
+        if "parado_share" in s:
+            return []
+        return filas
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    return queries.competencia()
+
+
+def test_la_meta_de_un_grupo_es_su_peso_en_el_parado(monkeypatch):
+    """Dueña: "meta segun cantidad de ese grupo % en el total del stock".
+    Jersey es 6.000 de 10.000 = 60% → su meta es sacar el 60% de sus 6.000."""
+    c = _competencia_falsa(monkeypatch)
+    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
+    assert jersey["meta_pct"] == 60
+    assert jersey["meta_kg"] == 3600
+    fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
+    assert fleece["meta_pct"] == 40 and fleece["meta_kg"] == 1600
+
+
+def test_la_meta_se_reparte_en_partes_iguales(monkeypatch):
+    """⭐ Dueña 17/08/2026: "nono igual para todos. todos deberian tener lugares
+    fuertes y debiles asumo". Repartir por lo que cada uno ya vende premiaría
+    quedarse en lo de siempre — lo contrario de lo que busca la competencia."""
+    c = _competencia_falsa(monkeypatch)
+    metas = {r["vendedor"]: r["meta"] for r in c["ranking"]}
+    assert len(set(round(m, 6) for m in metas.values())) == 1, (
+        "todos tienen que tener la misma meta")
+    assert round(sum(metas.values()), 2) == round(c["meta_kg"], 2)
+
+
+def test_el_ranking_va_por_porcentaje_y_no_por_kilos(monkeypatch):
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Quintero Jose", "categoria": "Jersey", "kg": 100,
+         "ultima": None},
+        {"vendedor": "Intela", "categoria": "Jersey", "kg": 50, "ultima": None},
+    ])
+    assert c["ranking"][0]["vendedor"] == "Quintero Jose"
+    assert c["ranking"][0]["puesto"] == 1
+
+
+def test_intela_compite_como_uno_mas(monkeypatch):
+    """Decisión de la dueña con el dato a la vista: Intela es el 51,3% de las
+    ventas de estas telas. "Compite como uno mas porque hay una vendedora
+    dedicada"."""
+    c = _competencia_falsa(monkeypatch)
+    assert "Intela" in [r["vendedor"] for r in c["ranking"]]
+    assert len(c["ranking"]) == 7
+
+
+def test_un_vendedor_que_ya_no_esta_suma_al_grupo_pero_no_al_ranking(monkeypatch):
+    c = _competencia_falsa(monkeypatch, vendido=[
+        {"vendedor": "Bedon Hector", "categoria": "Jersey", "kg": 80, "ultima": None}])
+    assert c["kg_fuera_del_ranking"] == 80
+    assert all(r["kg"] == 0 for r in c["ranking"])
+    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
+    assert jersey["liquidado"] == 80, (
+        "el kilo salió de la bodega igual: tiene que contar para el grupo")
+
+
+def test_la_meta_a_mano_pisa_la_automatica(monkeypatch):
+    c = _competencia_falsa(monkeypatch, override={"Jersey": 10})
+    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
+    assert jersey["meta_pct"] == 10 and jersey["meta_es_manual"]
+    fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
+    assert fleece["meta_pct"] == 40 and not fleece["meta_es_manual"]
+
+
+def test_la_competencia_sale_de_las_mismas_filas_que_lo_parado():
+    """Si saliera de otra consulta, el termómetro de acá y el total de allá
+    podrían no coincidir el mismo día."""
+    import inspect
+    assert "items()" in inspect.getsource(queries.competencia)
+
+
+# ── El candado, con una ruta nueva abierta ──────────────────────────────────
+
+def test_la_competencia_esta_abierta_a_todos():
+    """Dueña: "aca tienen acceso todos, vendedores sobre todo incluidos"."""
+    from modules.analisis import views
+    assert getattr(views.competencia, "_permiso", None) is None, (
+        "la competencia no lleva gate de permiso a propósito")
+
+
+def test_las_metas_siguen_cerradas():
+    from modules.analisis import views
+    assert getattr(views.competencia_metas, "_permiso", None) == "analisis.ver"
+
+
+def test_las_metas_no_cuelgan_del_prefijo_abierto(app):
+    """⚠ El allowlist de vendedores matchea por segmento: todo lo que cuelgue de
+    `/analisis/competencia/` les queda abierto. La pantalla de metas vive
+    afuera para que sean dos cierres y no uno."""
+    import scope_vendedor
+    rutas = {r.rule for r in app.url_map.iter_rules()}
+    assert "/analisis/metas" in rutas
+    assert "/analisis/competencia/metas" not in rutas
+    assert not any(p.startswith("/analisis") for p in scope_vendedor.PREFIJOS_PERMITIDOS)
+
+
+def test_al_vendedor_todavia_no_se_le_habilito_la_competencia():
+    """La pantalla está hecha para ellos, pero la dueña la quiere ver primero:
+    "todavia igual no se las habilites". Cuando lo diga, se agrega
+    "/analisis/competencia" a PREFIJOS_PERMITIDOS y este test se da vuelta.
+
+    ⚠ Lo que NO puede pasar nunca es que se abra /analisis a secas o
+    /analisis/parado: ahí está la cartera de TODOS los vendedores."""
+    import scope_vendedor
+    abiertos = [p for p in scope_vendedor.PREFIJOS_PERMITIDOS
+                if p.startswith("/analisis")]
+    assert abiertos == [], f"todavía no había que habilitar nada: {abiertos}"
+
+
+def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():
+    """El guard del guard: el día que se habilite, que no se cuele /analisis
+    entero de un copy-paste."""
+    import scope_vendedor
+    for p in scope_vendedor.PREFIJOS_PERMITIDOS:
+        assert p not in ("/analisis", "/analisis/parado"), (
+            f"{p} le abre al vendedor la cartera de los otros cinco")
+
+
+def test_ningun_porcentaje_sale_con_quince_decimales():
+    """⚠ En Jinja `x if y else 0 | round(1)` aplica el filtro SÓLO al 0: el
+    termómetro mostraba "17.284974824441832%". Además con punto decimal, que en
+    esta app es separador de miles."""
+    import re
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for archivo in carpeta.glob("*.html"):
+        html = archivo.read_text(encoding="utf-8")
+        for expr in re.findall(r"\{\{([^}]*%)", html):
+            if "if" in expr and "|" in expr:
+                antes_del_filtro = expr.split("|")[0]
+                assert antes_del_filtro.strip().startswith("("), (
+                    f"{archivo.name}: '{expr.strip()}' — el filtro se aplica "
+                    f"sólo a la última rama del if; faltan paréntesis")

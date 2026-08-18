@@ -283,7 +283,7 @@ def actualizar() -> dict:
             k = (v["subcategoria"], v["color"])
             f = marcado.get(k)
             if f and _fecha(v["fecha"]) >= f:
-                vendido[k] += float(v["kg"] or 0)
+                vendido[k] += float(v["kg"] or 0)   # ya viene abierto por vendedor
 
         # 3 · la foto se rehace entera
         stock = {(p["subcategoria"], p["color"]): p for p in par}
@@ -314,6 +314,29 @@ def actualizar() -> dict:
                  (f.get("vendedor") or "").strip(), f.get("vend_pc"), f.get("kg") or 0,
                  f.get("ultima_compra"), f.get("colores") or 0, f["anio"]), conn=conn)
 
+        # ── la competencia ──
+        db.execute("DELETE FROM scintela.parado_venta", conn=conn)
+        for v in ventas:
+            k = (v["subcategoria"], v["color"])
+            f = marcado.get(k)
+            if f and _fecha(v["fecha"]) >= f:
+                db.execute(
+                    """INSERT INTO scintela.parado_venta
+                           (subcategoria, color, vend_pc, vendedor, fecha, kg)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (k[0], k[1], v.get("vend_pc"), v.get("vendedor") or "Intela",
+                     _fecha(v["fecha"]), v.get("kg") or 0), conn=conn)
+
+        db.execute("DELETE FROM scintela.parado_share", conn=conn)
+        for s in asinfo_parado.share_por_grupo():
+            db.execute(
+                """INSERT INTO scintela.parado_share
+                       (categoria, vend_pc, vendedor, kg, pct)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (categoria, vendedor) DO NOTHING""",
+                (s["categoria"], s.get("vend_pc"), s["vendedor"],
+                 s.get("kg") or 0, round(s.get("pct") or 0, 2)), conn=conn)
+
         db.execute(
             """UPDATE scintela.parado_refresh
                   SET actualizado = NOW(), items = %s, llamados = %s,
@@ -330,3 +353,110 @@ def _fecha(v):
     if isinstance(v, date):
         return v
     return date.fromisoformat(str(v)[:10])
+
+
+# ── La COMPETENCIA ──────────────────────────────────────────────────────────
+
+#: Los que compiten. Los seis vendedores de `scintela.vendedor` más Intela —el
+#: mostrador—, que compite como uno más por decisión de la dueña ("hay una
+#: vendedora dedicada"). ⚠ Intela es el 51,3% de las ventas de estas telas, así
+#: que va a estar arriba: es una decisión tomada con el dato a la vista.
+#: Cualquier otro vendedor que aparezca en una venta suma al grupo pero no al
+#: ranking — son bajas históricas con kilos residuales.
+COMPETIDORES = ["Intela", "Proaño Patricio", "Lopez Felipe", "Miranda Roberto",
+                "Quintero Jose", "Ramirez Edgar", "Proaño Sebastián"]
+
+
+def _meta_pct(grupos: list[dict], override: dict[str, float]) -> None:
+    """
+    La meta de cada grupo, en %.
+
+    ⭐ Sale del PESO del grupo en el stock parado. Dueña: "meta segun cantidad
+    de ese grupo % en el total del stock". O sea: Jersey es el 31,5% de lo
+    parado, así que la meta de Jersey es sacar el 31,5% de sus propios kilos.
+    Los grupos gordos tienen que despejar proporcionalmente más, que es donde
+    está el problema.
+
+    `override` (tabla `parado_meta`) pisa el automático cuando hace falta.
+    """
+    for g in grupos:
+        g["meta_pct"] = float(override.get(g["grupo"], g["pct"]))
+        g["meta_es_manual"] = g["grupo"] in override
+        g["meta_kg"] = g["kg"] * g["meta_pct"] / 100
+
+
+def competencia() -> dict:
+    """
+    El tablero de la competencia: quién va ganando y cuánto falta.
+
+    Todo se calcula sobre las MISMAS filas de `items()` que muestra la pantalla
+    de Lo parado. Si saliera de otra consulta, el termómetro de acá y el total
+    de allá podrían no coincidir el mismo día.
+    """
+    filas = items()
+    grupos = por_grupo(filas)
+    override = {r["categoria"]: float(r["pct"]) for r in db.fetch_all(
+        "SELECT categoria, pct FROM scintela.parado_meta")}
+    _meta_pct(grupos, override)
+
+    vendido = db.fetch_all(
+        """SELECT v.vendedor, f.categoria, SUM(v.kg) AS kg,
+                  MAX(v.fecha) AS ultima
+             FROM scintela.parado_venta v
+             JOIN scintela.parado_foto f
+               ON f.subcategoria = v.subcategoria AND f.color = v.color
+            GROUP BY v.vendedor, f.categoria""")
+    share = db.fetch_all("SELECT * FROM scintela.parado_share")
+
+    # ⭐ La meta del grupo se parte en PARTES IGUALES entre los competidores.
+    # Repartirla por lo que cada uno ya vende premiaría quedarse en lo de
+    # siempre, que es lo contrario de lo que busca la competencia.
+    n = len(COMPETIDORES) or 1
+    por_grupo_meta = {g["grupo"]: g["meta_kg"] / n for g in grupos}
+
+    tabla = {v: {"vendedor": v, "meta": 0.0, "kg": 0.0, "ultima": None,
+                 "grupos": {}} for v in COMPETIDORES}
+    for g in grupos:
+        for v in COMPETIDORES:
+            tabla[v]["meta"] += por_grupo_meta[g["grupo"]]
+            tabla[v]["grupos"][g["grupo"]] = {
+                "meta": por_grupo_meta[g["grupo"]], "kg": 0.0}
+
+    fuera = 0.0
+    for r in vendido:
+        v, cat, kg = r["vendedor"], r["categoria"], float(r["kg"] or 0)
+        if v not in tabla:
+            fuera += kg          # bajas históricas: suman al grupo, no al ranking
+            continue
+        tabla[v]["kg"] += kg
+        if cat in tabla[v]["grupos"]:
+            tabla[v]["grupos"][cat]["kg"] += kg
+        if r["ultima"] and (not tabla[v]["ultima"] or r["ultima"] > tabla[v]["ultima"]):
+            tabla[v]["ultima"] = r["ultima"]
+
+    ranking = sorted(tabla.values(),
+                     key=lambda d: -(d["kg"] / d["meta"] if d["meta"] else 0))
+    for i, d in enumerate(ranking, 1):
+        d["puesto"] = i
+        d["pct"] = 100 * d["kg"] / d["meta"] if d["meta"] else 0
+
+    liquidado = {}
+    for r in vendido:
+        liquidado[r["categoria"]] = liquidado.get(r["categoria"], 0) + float(r["kg"] or 0)
+    for g in grupos:
+        g["liquidado"] = liquidado.get(g["grupo"], 0)
+        g["pct_meta"] = 100 * g["liquidado"] / g["meta_kg"] if g["meta_kg"] else 0
+        g["share"] = sorted(
+            [s for s in share if s["categoria"] == g["grupo"]],
+            key=lambda s: -float(s["pct"] or 0))[:4]
+
+    return {
+        "hoy": today_ec(),
+        "grupos": grupos,
+        "ranking": ranking,
+        "kg_parado": sum(g["kg"] for g in grupos),
+        "meta_kg": sum(g["meta_kg"] for g in grupos),
+        "liquidado": sum(g["liquidado"] for g in grupos),
+        "kg_fuera_del_ranking": fuera,
+        "sin_tocar": [g for g in grupos if not g["liquidado"]],
+    }
