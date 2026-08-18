@@ -40,6 +40,7 @@ import db as _db
 from auth import requiere_login, requiere_permiso
 from modules.conciliacion import balance_pichincha as _bp
 from modules.conciliacion import sesion as _sesion
+from modules.conciliacion.hoja_parser import BADGE_NO_IDENT as _BADGE_NO_IDENT
 from modules.conciliacion.hoja_parser import MARCADOR_RESUMEN as _MARCADOR_RESUMEN
 from modules.conciliacion.matcher_banco import (
     confirmar_match,
@@ -2923,7 +2924,10 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
                     "monto": _mo,
                     "tipo": _tp,
                     "oficina": getattr(_mv, "oficina", "") or "",
-                    "detalle": getattr(_mv, "oficina", "") or "",
+                    # El extracto del banco no trae notas: `detalle` vacío.
+                    # Antes acá se copiaba la oficina y salía impresa como si
+                    # fuera un detalle escrito por alguien (TMT 2026-08-18).
+                    "detalle": "",
                 }
                 rows_reales.append(_row_ext)
                 if _tp == "C":
@@ -2968,7 +2972,14 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     )
     ws.merge_cells("A2:E2")
 
-    headers = ["FECHA", "DETALLE", "CODIGO", "VALOR", "DETALLE"]
+    # ⭐ TMT 2026-08-18 (dueña: *"me imprime cualquier cosa en el detalle...
+    # y me borra detalles que alex si habia escrito"*). La quinta columna se
+    # llamaba DETALLE igual que la segunda y mostraba `detalle or oficina`:
+    # como casi ninguna fila tenía nota, lo que se imprimía era la OFICINA del
+    # banco. Un mismo rótulo con dos contenidos distintos según la fila.
+    # Ahora la columna es NOTA y trae SÓLO lo que escribe Alex. La oficina se
+    # mira en la pantalla (panel Banco), no en este archivo.
+    headers = ["FECHA", "DETALLE", "CODIGO", "VALOR", "NOTA"]
     for col, h in enumerate(headers, start=1):
         c = ws.cell(row=4, column=col, value=h)
         c.font = bold
@@ -3001,9 +3012,13 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         # TMT 2026-06-17: badge "⚠ NO IDENT." en la columna E para filas
         # con "DEPOSITO NO IDENTIFICADO" — Tamara los identificó como
         # parte de la diferencia y quiere distinguirlos a simple vista.
-        det_extra = row.get("detalle") or row.get("oficina") or ""
+        # Sin fallback a `oficina`: esta columna es la NOTA de Alex y viaja de
+        # ida y vuelta (el importador la lee y la guarda). Si acá cayera la
+        # oficina, al re-subir el archivo la oficina quedaría guardada COMO
+        # nota. Ver `_BADGE_NO_IDENT`.
+        det_extra = row.get("detalle") or ""
         if "NO IDENTIFICADO" in concepto.upper():
-            det_extra = (det_extra + " ⚠ NO IDENT.").strip()
+            det_extra = (det_extra + " " + _BADGE_NO_IDENT).strip()
             n_no_identif += 1
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
         ws.cell(row=r, column=2, value=_safe_cell(concepto)[:100])
@@ -3864,7 +3879,7 @@ def banco_cruzar_pendientes():
 # TMT 2026-06-03 duena: 'no me hace falta chequear, asegurate que
     # prevalezcan y arranque desde ahi yo'. Aplicamos directo: el archivo
     # FEB2023 prevalece -> el backlog del sistema queda igual a el.
-    n_del = n_add = n_upd = 0
+    n_del = n_add = n_upd = n_notas = 0
     try:
         with _db.tx() as conn:
             sobran_ids = [s["id"] for s in sobran if s.get("id")]
@@ -3884,11 +3899,14 @@ def banco_cruzar_pendientes():
                 # existía). Ahora contamos lo REAL y avisamos lo saltado.
                 ins = _db.execute(
                     "INSERT INTO scintela.banco_historicos_pendientes "
-                    "(no_banco, fecha, concepto, documento, monto, tipo, fuente, creado_en) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, 'cruce-feb2023', CURRENT_TIMESTAMP) "
+                    "(no_banco, fecha, concepto, documento, monto, tipo, detalle, "
+                    " fuente, creado_en) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, 'cruce-feb2023', "
+                    "        CURRENT_TIMESTAMP) "
                     "ON CONFLICT DO NOTHING",
                     (_BANCO_PICHINCHA, it.get("fecha"), (it.get("detalle") or "")[:200],
-                     it["doc"], abs(it["monto"]), tipo), conn=conn,
+                     it["doc"], abs(it["monto"]), tipo,
+                     (it.get("nota") or "").strip()[:200] or None), conn=conn,
                 ) or 0
                 if ins:
                     n_add += 1
@@ -3901,6 +3919,24 @@ def banco_cruzar_pendientes():
                     "WHERE documento = %s AND no_banco = %s AND conciliado_en IS NULL",
                     (abs(it["monto"]), tipo, it["doc"], _BANCO_PICHINCHA), conn=conn,
                 ) or 0
+            # ⭐ TMT 2026-08-18 (dueña: *"me borra detalles que alex si habia
+            # escrito"*). Las filas que YA estaban en el backlog no pasan por
+            # el INSERT de arriba, así que su nota se escribe en esta pasada.
+            # Sólo se escribe cuando el archivo TRAE algo: una celda vacía no
+            # pisa una nota que ya está guardada. Borrar una nota se hace por
+            # la pantalla, nunca por omisión en un Excel.
+            for it in items:
+                _nota = (it.get("nota") or "").strip()
+                if not _nota or not it.get("doc"):
+                    continue
+                n_notas += _db.execute(
+                    "UPDATE scintela.banco_historicos_pendientes SET detalle = %s "
+                    " WHERE documento = %s AND no_banco = %s "
+                    "   AND conciliado_en IS NULL "
+                    "   AND COALESCE(detalle, '') IS DISTINCT FROM %s",
+                    (_nota[:200], it["doc"], _BANCO_PICHINCHA, _nota[:200]),
+                    conn=conn,
+                ) or 0
     except Exception as e:
         _LOG.exception("aplicar cruce fallo: %s", e)
         flash(f"Error al aplicar el cruce: {e}", "error")
@@ -3908,7 +3944,8 @@ def banco_cruzar_pendientes():
 
     flash(
         f"Pendientes actualizados desde {hoja}: {n_del} borrado(s), {n_add} agregado(s), "
-        f"{n_upd} corregido(s). El backlog ahora coincide con tu archivo ({len(items)} items).",
+        f"{n_upd} corregido(s), {n_notas} nota(s) guardada(s). "
+        f"El backlog ahora coincide con tu archivo ({len(items)} items).",
         "ok",
     )
     # Avisar lo que el archivo traía como NUEVO pero NO entró (firma ya

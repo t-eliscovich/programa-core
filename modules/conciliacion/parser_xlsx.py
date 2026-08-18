@@ -327,6 +327,10 @@ def parse_pendientes_cruce(raw: bytes, *, return_dropped: bool = False):
             "monto": round(signed, 2),
             "fecha": r.get("fecha"),          # None = sin fecha (se suma igual)
             "detalle": r.get("concepto") or "",
+            # ⭐ TMT 2026-08-18: `nota` es la columna NOTA (la que escribe
+            # Alex), distinta de `detalle`, que es el CONCEPTO del banco.
+            # Se llamaban igual y por eso la nota nunca llegaba a la base.
+            "nota": r.get("nota") or "",
         })
     if return_dropped:
         return hoja, items, dropped, ignoradas

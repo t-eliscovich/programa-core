@@ -84,6 +84,24 @@ _FILAS_CIERRE = {
 # resumen mañana queda tapado igual.
 MARCADOR_RESUMEN = "RESUMEN CONTABLE"
 
+# ⭐ TMT 2026-08-18 — la columna NOTA del export lleva la nota de Alex y
+# vuelve a entrar por acá. A las filas "DEPOSITO NO IDENTIFICADO" el export
+# les cuelga este badge (pedido de la dueña 2026-06-17) para verlas de un
+# golpe. Si no lo sacáramos al leer, el badge se guardaría COMO nota y en la
+# vuelta siguiente saldría duplicado. El que lo escribe y el que lo saca
+# comparten esta constante — nunca dos strings paralelos.
+BADGE_NO_IDENT = "⚠ NO IDENT."
+
+
+def limpiar_badge(nota: str) -> str:
+    """Saca el badge del export de una nota leída del archivo."""
+    s = (nota or "").strip()
+    if not s:
+        return ""
+    while s.endswith(BADGE_NO_IDENT):
+        s = s[: -len(BADGE_NO_IDENT)].strip()
+    return s
+
 
 def _norm_rotulo(t) -> str:
     """MAYÚSCULAS, sin acentos, sin signos ni paréntesis, espacios colapsados."""
@@ -224,6 +242,12 @@ def _localizar_columnas(ws) -> tuple[int, dict]:
                     cols["documento"] = j
                 elif c == "DETALLE":
                     detalle_cols.append(j)
+                elif c in ("NOTA", "OBSERVACION", "OBSERVACIONES", "OBS"):
+                    # ⭐ TMT 2026-08-18: el export nuevo rotula la quinta
+                    # columna NOTA (antes era un segundo DETALLE, ambiguo).
+                    # Se aceptan los dos: los archivos que Alex ya tiene
+                    # bajados siguen teniendo DETALLE repetido.
+                    cols["detalle2"] = j
             if detalle_cols:
                 cols["concepto"] = detalle_cols[0]
                 if len(detalle_cols) > 1:
@@ -271,6 +295,12 @@ def parse_hoja_pendientes(
     c_concepto = cols["concepto"]
     c_doc = cols["documento"]
     c_valor = cols["valor"]
+    # ⭐ TMT 2026-08-18 (dueña: *"me borra detalles que alex si habia
+    # escrito"*). `cols["detalle2"]` se venía calculando desde siempre y NO
+    # se leía nunca: la nota de la quinta columna se mapeaba y se tiraba al
+    # piso. Después `banco_cruzar_pendientes` borraba y re-insertaba las
+    # filas sin nota → cada viaje del Excel se comía lo escrito a mano.
+    c_nota = cols.get("detalle2")
 
     out: list[dict] = []
     dropped: list[dict] = []
@@ -332,12 +362,16 @@ def parse_hoja_pendientes(
         monto = round(abs(valor), 2)
         fecha = _parse_fecha(_cell(c_fecha))
 
+        _nota_raw = _cell(c_nota) if c_nota is not None else None
+        nota = limpiar_badge(str(_nota_raw) if _nota_raw is not None else "")
+
         out.append({
             "fecha": fecha,
             "concepto": concepto[:120],
             "documento": documento[:40],
             "monto": monto,
             "tipo": tipo,
+            "nota": nota[:200],
             "fila": i,
         })
     if return_dropped:
@@ -385,13 +419,18 @@ def reemplazar_historicos_desde_hoja(
                 """
                 INSERT INTO scintela.banco_historicos_pendientes
                     (no_banco, fecha, concepto, documento, monto, tipo,
-                     fuente, creado_por)
-                VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s)
+                     detalle, fuente, creado_por)
+                VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s)
                 """,
                 (
                     no_banco, r.get("fecha"), (r.get("concepto") or "")[:120],
                     (r.get("documento") or "")[:40], str(r.get("monto") or 0),
                     (r.get("tipo") or "C")[:1],
+                    # La nota de la columna NOTA viaja con la fila. Este INSERT
+                    # va después de un DELETE de TODO el banco: si no la
+                    # escribiéramos acá, subir la hoja borraría lo escrito a
+                    # mano (TMT 2026-08-18).
+                    (r.get("nota") or "")[:200] or None,
                     f"{fuente}:fila{r.get('fila','')}"[:60], usuario[:50],
                 ),
                 conn=c,
