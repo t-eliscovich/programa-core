@@ -1275,3 +1275,32 @@ def test_el_menu_dice_saldos():
     from modules.analisis import views
     assert any(m["titulo"] == "Saldos" for m in views.MENU)
     assert any(m["titulo"] == "Saldos" for m in views.MENU_VENDEDOR)
+
+
+# ── Toda la segunda entra a la competencia ──────────────────────────────────
+
+def test_entra_toda_la_segunda_y_no_solo_la_parada():
+    """Dueña 18/08/2026: "agreguemos toda la tela de segunda a la competencia"."""
+    s = asinfo_parado.SQL_PARADOS
+    assert "OR ISNULL(cal.kg_segunda, 0) > 0" in s
+
+
+def test_de_una_tela_que_se_vende_entran_SOLO_los_kilos_de_segunda():
+    """⚠ Esos ítems tienen 61.272 kg de primera que salen solos. Sumarlos
+    habría inflado la competencia con tela que ya se vende y la meta dejaría de
+    significar algo."""
+    s = asinfo_parado.SQL_PARADOS
+    assert "ELSE ISNULL(cal.kg_segunda, 0) END      AS stock_kg" in s
+    assert "ELSE 0 END                              AS kg_primera" in s
+
+
+def test_cada_fila_guarda_por_que_entro():
+    """Sin `motivo`, en la pantalla no hay forma de distinguir 300 kg parados de
+    300 kg de segunda de una tela que se vende todas las semanas."""
+    assert "'parado' ELSE 'segunda' END AS motivo" in asinfo_parado.SQL_PARADOS
+    import inspect
+    assert "motivo" in inspect.getsource(queries.actualizar)
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "de segunda</span>" in html

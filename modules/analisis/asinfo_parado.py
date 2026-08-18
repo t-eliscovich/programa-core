@@ -2,8 +2,9 @@
 
 Dos consultas y un remate:
 
-    parados()   ~2 s — producto terminado (bodega 53) con stock ≥ 20 kg y menos
-                de 1 kg vendido en 12 meses, abierto en primera y segunda.
+    parados()   ~2 s — lo que entra a la lista: el producto terminado quieto
+                hace 12 meses (todos sus kilos) MÁS los kilos de segunda de
+                cualquier tela, se venda o no.
     llamados()  ~5 s — por cada TELA parada, los 12 clientes de más kilos del
                 ÚLTIMO año en que alguien la compró. Normalmente es el
                 corriente; si no, el anterior; y si tampoco, 2024 o 2023.
@@ -161,17 +162,36 @@ cal AS (
     GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
 )"""
 
+# ⭐ QUÉ ENTRA A LA LISTA. Dos motivos distintos, y conviene no confundirlos:
+#
+#   parado  — la tela × color entera está quieta hace 12 meses. Entran TODOS sus
+#             kilos, de primera y de segunda.
+#   segunda — la tela se vende bien, pero tiene kilos de SEGUNDA calidad. Dueña
+#             18/08/2026: "agreguemos toda la tela de segunda a la competencia".
+#             ⚠ Entran SÓLO los kilos de segunda. Esos mismos ítems tienen
+#             61.272 kg de primera que salen solos: meterlos sería inflar la
+#             competencia con tela que ya se vende, y la meta dejaría de
+#             significar nada.
+#
+# Medido al 18/08/2026: 344 parados (36.720 kg) + 363 con segunda suelta
+# (15.709 kg) = 707 ítems y 52.428 kg.
+_ES_PARADO = f"(stk.stock_kg >= {MIN_KG} AND ISNULL(ven.kg_12m, 0) < 1)"
+
 SQL_PARADOS = _STOCK + _CALIDAD + f"""
-SELECT stk.subcategoria, stk.color, stk.categoria, stk.stock_kg,
-       ven.ultima_venta, ISNULL(ven.kg_12m, 0) AS kg_12m,
-       ISNULL(cal.kg_primera, 0) AS kg_primera,
-       ISNULL(cal.kg_segunda, 0) AS kg_segunda
+SELECT stk.subcategoria, stk.color, stk.categoria,
+       CASE WHEN {_ES_PARADO} THEN stk.stock_kg
+            ELSE ISNULL(cal.kg_segunda, 0) END      AS stock_kg,
+       ven.ultima_venta, ISNULL(ven.kg_12m, 0)      AS kg_12m,
+       CASE WHEN {_ES_PARADO} THEN ISNULL(cal.kg_primera, 0)
+            ELSE 0 END                              AS kg_primera,
+       ISNULL(cal.kg_segunda, 0)                    AS kg_segunda,
+       CASE WHEN {_ES_PARADO} THEN 'parado' ELSE 'segunda' END AS motivo
 FROM stk LEFT JOIN ven
   ON ven.subcategoria = stk.subcategoria AND ven.color = stk.color
 LEFT JOIN cal
   ON cal.subcategoria = stk.subcategoria AND cal.color = stk.color
-WHERE stk.stock_kg >= {MIN_KG} AND ISNULL(ven.kg_12m, 0) < 1
-ORDER BY stk.stock_kg DESC
+WHERE {_ES_PARADO} OR ISNULL(cal.kg_segunda, 0) > 0
+ORDER BY 4 DESC
 """
 
 SQL_LLAMADOS = _STOCK + f"""
