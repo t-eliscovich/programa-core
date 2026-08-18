@@ -883,3 +883,36 @@ def test_la_pantalla_tiene_botones_de_excel_e_imprimir(app, fake_db):
         body = c.get("/pedidos").get_data(as_text=True)
     assert "Descargar Excel" in body and 'href="/pedidos/excel"' in body
     assert "window.print()" in body
+
+
+def test_avisa_cuantos_pedidos_hay_de_mas_de_90_dias(app, fake_db):
+    c = _login(app, fake_db)
+
+    def fake(_db, sql, **_kw):
+        if "nombre_categoria_producto IN" in sql:
+            return ([{"n_pedidos": 6, "n_clientes": 5, "kg": 1774,
+                      "mas_viejo": "2025-09-08"}], True)
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return ([], True)
+        return (_FILAS_PANTALLA, True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+    assert "<b>6</b>" in body and "más de 90 días" in body
+    assert "1.774 kg" in body
+    assert "que no entran a la cuenta" in body
+
+
+def test_sin_pedidos_de_mas_de_90_dias_no_muestra_la_linea(app, fake_db):
+    c = _login(app, fake_db)
+
+    def fake(_db, sql, **_kw):
+        if "nombre_categoria_producto IN" in sql:
+            return ([{"n_pedidos": 0, "n_clientes": 0, "kg": 0, "mas_viejo": None}], True)
+        if "ORDER BY pr.codigo, v.fecha" in sql:
+            return ([], True)
+        return (_FILAS_PANTALLA, True)
+
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
+        body = c.get("/pedidos").get_data(as_text=True)
+    assert "que no entran a la cuenta" not in body

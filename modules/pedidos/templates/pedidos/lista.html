@@ -76,6 +76,8 @@
   .pd .acciones{display:flex;gap:8px;margin:10px 0 2px}
   .pd .btn{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;text-decoration:none;cursor:pointer}
   .pd .btn:hover{border-color:#94a3b8}
+  .pd .viejos{background:#fffbeb;border-left:3px solid #f59e0b;padding:7px 11px;color:#92400e;font-size:12px;border-radius:0 6px 6px 0;margin:10px 0 4px;max-width:900px;line-height:1.5}
+  .pd .viejos b{font-weight:700}
 </style>
 {% endblock %}
 
@@ -105,6 +107,13 @@
       <a class="{{ 'on' if c == corte else '' }}" href="{{ url_for('pedidos.lista', corte=c) }}">{{ cortes_lbl[c] }}</a>
     {% endfor %}
   </div>
+
+  {% if muy_viejos %}
+    <p class="viejos">Además hay <b>{{ muy_viejos.n_pedidos }}</b>
+      {{ 'pedido' if muy_viejos.n_pedidos == 1 else 'pedidos' }} de <b>más de {{ dias_pedido_max }} días</b>
+      ({{ muy_viejos.kg|num_es(0) }} kg · {{ muy_viejos.n_clientes }} {{ 'cliente' if muy_viejos.n_clientes == 1 else 'clientes' }} ·
+      el más viejo del {{ muy_viejos.mas_viejo_es }}) que no entran a la cuenta.</p>
+  {% endif %}
 
   {# ═══════════ COLOR ═══════════ #}
   {% if corte == 'color' %}
