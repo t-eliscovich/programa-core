@@ -1588,3 +1588,43 @@ def test_la_pantalla_dice_desde_cuando_cuenta():
     html = _html_parado()
     assert "Vendido desde el 25/08" in html
     assert "desde el 25/08</div>" in html
+
+
+# ── Intela como una cartera más ─────────────────────────────────────────────
+
+def test_se_puede_mirar_intela_por_separado(monkeypatch):
+    """Dueña 18/08/2026: "me haces uno para intela? osea mostrador y todo lo
+    que no sea vendedores". Es el 51,3% de las ventas de estas telas y no se
+    podía aislar.
+
+    ⚠ Se resuelve con `vend_pc IS NULL` y no inventándole un código: Intela no
+    está en `scintela.vendedor` y no debería estarlo, porque no es una
+    persona."""
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        visto["params"] = params
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.por_cliente("INTELA")
+    assert "%(vend)s = 'INTELA' AND l.vend_pc IS NULL" in visto["sql"]
+    assert visto["params"]["vend"] == "INTELA"
+
+
+def test_intela_esta_en_los_dos_desplegables():
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for archivo in ("parado.html", "parado_clientes.html"):
+        html = (carpeta / archivo).read_text(encoding="utf-8")
+        assert "Intela (mostrador)" in html, f"falta en {archivo}"
+
+
+def test_una_tela_cuyos_clientes_son_del_mostrador_aparece_con_INTELA():
+    """El filtro de la pantalla de saldos arma `data-vend` salteando los nulos:
+    sin agregar INTELA a mano, una tela que sólo compra el mostrador quedaba
+    fuera de todos los filtros por vendedor."""
+    html = " ".join(_html_parado().split())
+    assert "rejectattr('vend_pc')" in html and "['INTELA']" in html

@@ -172,6 +172,13 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad",
     """
     Da vuelta la pantalla: en vez de tela → clientes, cliente → telas.
 
+    ⭐ `vend='INTELA'` trae lo que NO es de ningún vendedor: el mostrador y las
+    facturas sin vendedor asignado. Es el 51,3% de las ventas de estas telas y
+    hasta ahora no se podía mirar por separado (dueña 18/08/2026: "me haces uno
+    para intela? osea mostrador y todo lo que no sea vendedores"). Se resuelve
+    con `vend_pc IS NULL` y no inventándole un código: Intela no está en
+    `scintela.vendedor` y no debería estarlo, porque no es una persona.
+
     `cartera_de` acota a la cartera de un vendedor SEGÚN PROGRAMA CORE
     (`cliente.vend`), que es lo que tiene que usar la hoja del propio vendedor.
     `vend` acota por el vendedor de la última factura de ASINFO, que es lo que
@@ -201,7 +208,9 @@ def por_cliente(vend: str | None = None, orden: str = "oportunidad",
             ON f.subcategoria = l.subcategoria
           LEFT JOIN scintela.cliente c
             ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(l.codigo_cli))
-         WHERE (%(vend)s IS NULL OR l.vend_pc = %(vend)s)
+         WHERE (%(vend)s IS NULL
+                OR (%(vend)s = 'INTELA' AND l.vend_pc IS NULL)
+                OR l.vend_pc = %(vend)s)
            AND (%(cartera)s IS NULL OR {_ES_MI_CLIENTE})
          ORDER BY l.codigo_cli, f.kg_parado DESC
         """,

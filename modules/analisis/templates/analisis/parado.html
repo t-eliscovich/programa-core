@@ -96,7 +96,8 @@ Toque una fila para ver a quién ofrecérsela.</p>
   </select>
   <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
     <option value="">Todos los vendedores</option>
-    {% if not mia %}{% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}{% endif %}
+    {% if not mia %}<option value="INTELA">Intela (mostrador)</option>
+    {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}{% endif %}
   </select>
   <span class="sub" id="cuenta" style="margin:0"></span>
   <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
@@ -129,7 +130,11 @@ Toque una fila para ver a quién ofrecérsela.</p>
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-cal="{% if f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
-      data-vend="{{ cand | map(attribute='vend_pc') | select | unique | join(' ') }}"
+      {# INTELA entra al filtro como uno más: sus clientes son los que no
+         tienen vend_pc. Sin esto no había forma de aislar el mostrador, que es
+         la mitad de las ventas de estas telas. #}
+      data-vend="{{ (cand | map(attribute='vend_pc') | select | unique | list
+                     + (['INTELA'] if cand | rejectattr('vend_pc') | list else [])) | join(' ') }}"
       data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~

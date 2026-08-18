@@ -29,7 +29,8 @@
 
 <h1>{% if mia %}Su hoja — a quién ofrecerle qué{% else %}A quién ofrecerle qué{% endif %}</h1>
 <p class="sub">
-  {% if mia %}Sus clientes{% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
+  {% if mia %}Sus clientes{% elif vend == 'INTELA' %}Intela — mostrador y facturas sin vendedor
+  {% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
   {{ clientes | length }} clientes{% if improbables %} + {{ improbables | length }} improbables{% endif %} ·
   ordenado por {{ ordenes[orden] }}
   {% if estado.actualizado %}· datos al {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}
@@ -41,10 +42,11 @@
 <div class="barra">
   {% if not mia %}
   <select onchange="location.href=this.value">
-    {% for c in ['','PPR','FL1','RMY','JQU','EDG','SEP'] %}
+    {% for c, etiqueta in [('', 'Todos los vendedores'), ('INTELA', 'Intela (mostrador)'),
+                           ('PPR', 'PPR'), ('FL1', 'FL1'), ('RMY', 'RMY'),
+                           ('JQU', 'JQU'), ('EDG', 'EDG'), ('SEP', 'SEP')] %}
       <option value="/analisis/parado/clientes?orden={{ orden }}{% if c %}&vend={{ c }}{% endif %}"
-        {% if (vend or '') == c %}selected{% endif %}>
-        {{ c if c else 'Todos los vendedores' }}</option>
+        {% if (vend or '') == c %}selected{% endif %}>{{ etiqueta }}</option>
     {% endfor %}
   </select>
   {% endif %}
