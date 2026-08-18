@@ -1183,3 +1183,45 @@ def test_la_largada_es_el_martes_25(monkeypatch):
     from datetime import date as _d
     c = _competencia_falsa(monkeypatch)
     assert c["largada"] == _d(2026, 8, 25)
+
+
+# ── Que se pueda mirar en el celular ────────────────────────────────────────
+
+def test_las_pantallas_esconden_columnas_en_el_celular():
+    """Dueña 18/08/2026: "los vendedores tienen un distinto portal, tmb lo ven
+    asi?". No: ellos andan en el teléfono, y esto nació como tablas anchas de
+    escritorio. En pantalla chica hay que SACAR columnas, no achicarlas: una
+    tabla de diez columnas a 390 px no se lee ni con lupa."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    base = (carpeta / "base.html").read_text(encoding="utf-8")
+    assert "@media (max-width: 780px)" in base
+    assert ".opt{display:none!important}" in base, (
+        "sin !important pierde contra cualquier display del cascarón")
+    for archivo in ("competencia.html", "parado.html"):
+        assert 'opt' in (carpeta / archivo).read_text(encoding="utf-8")
+
+
+def test_en_el_celular_no_se_esconde_lo_que_identifica_la_fila():
+    """Las columnas que se sacan son las de CONTEXTO. Si desapareciera el
+    vendedor, la tela o el %, la tabla dejaría de decir nada."""
+    import re
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    comp = " ".join((carpeta / "competencia.html").read_text(encoding="utf-8").split())
+    for imprescindible in (">Vendedor<", ">% de su meta<", ">Cliente<"):
+        col = re.search(r'<th[^>]*' + re.escape(imprescindible), comp)
+        assert col, f"falta la columna {imprescindible}"
+        assert "opt" not in col.group(0), (
+            f"{imprescindible} no puede esconderse en el celular")
+
+
+def test_las_columnas_se_esconden_por_clase_y_no_por_posicion():
+    """Escondiendo `td:nth-child(5)`, una columna nueva en el medio correría
+    todas y el que desaparecería sería otro — sin ningún error."""
+    from pathlib import Path
+    base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
+    assert "nth-child" not in base

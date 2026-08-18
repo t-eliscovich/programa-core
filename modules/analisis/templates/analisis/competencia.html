@@ -109,9 +109,9 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
 grupos fuertes y flojos, así que se compara parejo.
 <b>Tocá una fila para ver tu avance en cada tipo de tela.</b></p>
 <table>
-<thead><tr><th></th><th></th><th>Vendedor</th><th class="n">Meta</th>
-<th class="n">Liquidado</th><th class="n">% de su meta</th><th>Avance</th>
-<th class="n">Esta semana</th><th class="n">Último</th></tr></thead>
+<thead><tr><th></th><th></th><th>Vendedor</th><th class="n opt">Meta</th>
+<th class="n opt">Liquidado</th><th class="n">% de su meta</th><th class="opt">Avance</th>
+<th class="n opt">Esta semana</th><th class="n opt">Último</th></tr></thead>
 <tbody>
 {% for r in ranking %}
   <tr class="vend" onclick="abrirVend(this)">
@@ -123,13 +123,13 @@ grupos fuertes y flojos, así que se compara parejo.
       {% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
       {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
     <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · vos{% endif %}</td>
-    <td class="n g">{{ r.meta | num_es(0) }}</td>
-    <td class="n">{{ r.kg | num_es(0) }}{% if r.excedente %}
+    <td class="n g opt">{{ r.meta | num_es(0) }}</td>
+    <td class="n opt">{{ r.kg | num_es(0) }}{% if r.excedente %}
       <div class="tope">cuentan {{ r.contado | num_es(0) }}</div>{% endif %}</td>
     <td class="n">{{ r.pct | num_es(1) }}%</td>
-    <td><div class="mini"><div style="width:{{ [100, r.pct] | min }}%"></div></div></td>
-    <td class="n">{% if r.kg_semana %}{{ r.kg_semana | num_es(0) }}{% else %}—{% endif %}</td>
-    <td class="n g">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
+    <td class="opt"><div class="mini"><div style="width:{{ [100, r.pct] | min }}%"></div></div></td>
+    <td class="n opt">{% if r.kg_semana %}{{ r.kg_semana | num_es(0) }}{% else %}—{% endif %}</td>
+    <td class="n g opt">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
   </tr>
   <tr class="vdet"><td colspan="9">
     <table>
@@ -155,16 +155,16 @@ grupos fuertes y flojos, así que se compara parejo.
 {% if semanas %}
 <p class="sub">De lunes a domingo, la más nueva arriba.</p>
 <table>
-<thead><tr><th>Semana</th><th class="n">Kg liquidados</th><th class="n">Acumulado</th>
-<th class="n">Falta</th><th>Quién vendió</th></tr></thead>
+<thead><tr><th>Semana</th><th class="n">Kg liquidados</th><th class="n opt">Acumulado</th>
+<th class="n opt">Falta</th><th class="opt">Quién vendió</th></tr></thead>
 <tbody>
 {% for s in semanas %}
   <tr>
     <td class="tela">{{ s.semana.strftime('%d/%m') }}</td>
     <td class="n">{{ s.kg | num_es(0) }}</td>
-    <td class="n">{{ s.acumulado | num_es(0) }}</td>
-    <td class="n g">{{ (meta_kg - s.acumulado) | num_es(0) }}</td>
-    <td class="g">{% for v, kg in s.detalle.items() %}{{ v }} {{ kg | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+    <td class="n opt">{{ s.acumulado | num_es(0) }}</td>
+    <td class="n g opt">{{ (meta_kg - s.acumulado) | num_es(0) }}</td>
+    <td class="g opt">{% for v, kg in s.detalle.items() %}{{ v }} {{ kg | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
   </tr>
 {% endfor %}
 </tbody>
@@ -179,8 +179,8 @@ grupos fuertes y flojos, así que se compara parejo.
 el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 <table>
 <thead><tr><th>Grupo</th><th class="n">Parado</th><th class="n">Meta</th>
-<th class="n">Liquidado</th><th class="n">% de la meta</th>
-<th>Quién vende este grupo</th></tr></thead>
+<th class="n opt">Liquidado</th><th class="n">% de la meta</th>
+<th class="opt">Quién vende este grupo</th></tr></thead>
 <tbody>
 {% for g in grupos %}
   <tr>
@@ -188,9 +188,9 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
     <td class="n">{{ g.kg | num_es(0) }}</td>
     <td class="n g">{{ g.meta_kg | num_es(0) }}
       <span class="pill quieto">{{ g.meta_pct | num_es(1) }}%{% if g.meta_es_manual %} ✎{% endif %}</span></td>
-    <td class="n">{{ g.liquidado | num_es(0) }}</td>
+    <td class="n opt">{{ g.liquidado | num_es(0) }}</td>
     <td class="n">{{ g.pct_meta | num_es(1) }}%</td>
-    <td class="g">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(1) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
+    <td class="g opt">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(1) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
   </tr>
 {% endfor %}
 </tbody>
@@ -202,11 +202,11 @@ el 31% de lo que está quieto, hay que sacarle el 31% de sus kilos.</p>
 <p class="sub">{{ telas | length }} telas paradas.
 <a href="/analisis/competencia/telas">Verlas todas, con tus clientes al lado →</a></p>
 <table>
-<thead><tr><th>Tela</th><th>Grupo</th><th class="n">Kg</th><th>Colores</th></tr></thead>
+<thead><tr><th>Tela</th><th class="opt">Grupo</th><th class="n">Kg</th><th class="opt">Colores</th></tr></thead>
 <tbody>
 {% for t in telas[:8] %}
-  <tr><td class="tela">{{ t.tela }}</td><td class="g">{{ t.grupo }}</td>
-  <td class="n">{{ t.kg | num_es(0) }}</td><td class="g">{{ t.colores }}</td></tr>
+  <tr><td class="tela">{{ t.tela }}</td><td class="g opt">{{ t.grupo }}</td>
+  <td class="n">{{ t.kg | num_es(0) }}</td><td class="g opt">{{ t.colores }}</td></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -220,14 +220,14 @@ alguna de las telas que hoy están paradas.
 <a href="/analisis/competencia/mi-hoja">Ver tu hoja completa e imprimirla →</a></p>
 {% if mis_clientes %}
 <table>
-<thead><tr><th>Código</th><th>Cliente</th><th>Provincia</th>
-<th class="n">Telas</th><th>Cuáles</th><th class="n">Última compra</th></tr></thead>
+<thead><tr><th>Código</th><th>Cliente</th><th class="opt">Provincia</th>
+<th class="n">Telas</th><th class="opt">Cuáles</th><th class="n opt">Última compra</th></tr></thead>
 <tbody>
 {% for c in mis_clientes %}
   <tr><td class="cod">{{ c.codigo_cli }}</td><td>{{ c.nombre }}</td>
-  <td class="g">{{ c.provincia }}</td><td class="n">{{ c.telas }}</td>
-  <td class="g">{{ c.lista_telas }}</td>
-  <td class="n g">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td></tr>
+  <td class="g opt">{{ c.provincia }}</td><td class="n">{{ c.telas }}</td>
+  <td class="g opt">{{ c.lista_telas }}</td>
+  <td class="n g opt">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td></tr>
 {% endfor %}
 </tbody>
 </table>

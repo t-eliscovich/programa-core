@@ -82,6 +82,41 @@ tr.oculta{display:none!important}
 [hidden]{display:none!important}
 footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--l);
 font-size:12px;color:var(--g)}
+
+/* ── Celular ───────────────────────────────────────────────────────────────
+   Dueña 18/08/2026: "los vendedores tienen un distinto portal, tmb lo ven
+   asi?". No: ellos andan en el teléfono. Estas pantallas nacieron como tablas
+   anchas de escritorio, así que en pantalla chica hay que sacar columnas, no
+   achicarlas — una tabla de diez columnas a 390 px no se lee ni con lupa.
+
+   ⚠ Las columnas que se esconden son las de CONTEXTO, nunca la que identifica
+   la fila ni el número por el que se entró a mirar. Y se esconden con una
+   clase, no por posición: una columna nueva en el medio correría todas las
+   demás y el que desaparecería sería otro.
+   ⚠ `[hidden]` pierde contra cualquier `display` del cascarón, así que va con
+   !important — mismo problema que ya mordió en /mi-cartera. */
+@media (max-width: 780px) {
+  body{padding:0}
+  header.top{padding:12px 14px;gap:14px;flex-wrap:wrap;font-size:13px}
+  header.top .der{margin-left:0}
+  main{padding:16px 14px 60px}
+  h1{font-size:21px} h2{font-size:17px;margin-top:28px}
+  .cards{grid-template-columns:1fr 1fr;gap:8px}
+  .card{padding:10px 12px}
+  .card .v{font-size:21px}
+  .term .tres{grid-template-columns:1fr;gap:10px}
+  .term .tres .v{font-size:28px}
+  .barra{gap:8px}
+  .barra input,.barra select,.barra button{width:100%;max-width:none;font-size:16px}
+  .barra a{width:100%}
+  table{font-size:13px}
+  th,td{padding:6px 5px}
+  tr.det>td{padding-left:10px}
+  .tarjetas{grid-template-columns:1fr}
+  .reglas{padding:6px 16px 12px}
+  .reglas li{font-size:13px}
+  .opt{display:none!important}          /* columnas de contexto */
+}
 </style>
 </head>
 <body>
