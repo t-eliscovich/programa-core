@@ -1507,3 +1507,26 @@ def test_el_encabezado_se_pega_debajo_de_la_barra_y_no_atras():
     i = css.index("@media (max-width: 780px)")
     assert "--alto-barra:84px" in css[i:], (
         "en el celular la barra se parte en dos líneas y tapa el encabezado")
+
+
+def test_se_pueden_separar_los_parados_de_los_de_segunda():
+    """Dueña 18/08/2026: "porque hay cosas que se vendieron recien?". Porque 305
+    de las 307 filas con venta reciente entraron por sus kilos de SEGUNDA: la
+    tela se vende bien, lo que no sale es la segunda. Mezcladas la lista se
+    contradice sola —dice "hace 12 meses que no se vende" al lado de una venta
+    de la semana pasada—, así que se pueden separar."""
+    html = _html_parado()
+    assert 'id="motivo"' in html
+    assert 'data-motivo=' in html
+    assert "tr.dataset.motivo === mo" in html
+    assert "Sólo los de segunda" in html
+
+
+def test_la_fila_de_segunda_lo_dice_al_lado_del_nombre():
+    """Dueña 18/08/2026: "pique especial blanco, entonces pone bien que es de
+    segunda". Con la columna "De 2ª" sola no se leía: Pique Especial BLA se
+    vende todas las semanas y aparecía en una lista de saldos sin decir por
+    qué. La marca va pegada al NOMBRE, que es lo que uno mira."""
+    html = " ".join(_html_parado().split())
+    assert "{% if f.motivo == 'segunda' %} <span class=\"seg2\">2ª</span>" in html
+    assert "Hay dos motivos para estar acá" in html
