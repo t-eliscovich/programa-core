@@ -351,7 +351,7 @@ def test_el_excel_deja_vacia_la_cobertura_que_no_se_puede_calcular():
     Un -1 en una columna de semanas se ordena y se suma como si fuera un dato.
     """
     f = service._fila(_ficha(), {w: 100.0 for w in range(1338, 1377)}, 1389)
-    assert views._valores(f)[8] is None
+    assert views._valores(f)[views.COLUMNAS.index("Alcanza (sem)")] is None
 
 
 def test_con_asinfo_caido_el_excel_no_baja_una_planilla_vacia(app, fake_db):
@@ -440,3 +440,81 @@ def test_el_link_del_menu_va_debajo_de_pedidos_pendientes(app, fake_db):
     assert i_ped < i_inv < i_compras
     linea = base[base.rindex("{%", 0, i_inv):i_inv]
     assert "stock.ver" in linea
+
+
+# ── acabado ─────────────────────────────────────────────────────────────────
+
+def test_el_acabado_sale_de_pedidos_y_no_de_una_sql_propia(app, fake_db):
+    """Dueña 2026-08-18: "pone columna de acabado".
+
+    Se importa `pedidos.service.acabados_por_producto` en vez de copiar la SQL:
+    dos consultas paralelas se desincronizan sin que nadie se entere hasta que
+    las dos pantallas dicen acabados distintos del mismo producto.
+    """
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch("modules.pedidos.service.acabados_por_producto",
+               return_value={"FE102JOS": "TUB"}), \
+         patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert "<th style=\"text-align:left\">Acab.</th>" in body
+    assert '<td class="ac">TUB</td>' in body
+
+
+def test_sin_acabado_la_celda_queda_vacia_y_la_pantalla_no_se_cae(app, fake_db):
+    """No se inventa un acabado: un producto sin lote con atributo no tiene."""
+    service._cache.clear()
+    c = _login(app, fake_db)
+    with patch("modules.pedidos.service.acabados_por_producto",
+               side_effect=RuntimeError("Asinfo se cayó")), \
+         patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo()):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert '<td class="ac"></td>' in body
+    assert "JOS" in body
+
+
+# ── subtotales del bloque ───────────────────────────────────────────────────
+
+def test_el_subtotal_va_en_rollos_cuando_todo_el_bloque_son_rollos():
+    """Dueña 2026-08-18: "poneme todo en rollos salvo los cuellos, rib y puños".
+
+    El encabezado del color era el único lugar que seguía hablando en kilos.
+    """
+    filas = [service._fila(_ficha(color="BLA", tela="Fleece 102"),
+                           {w: 235.0 for w in range(1338, 1390)}, 1389)]
+    (b,) = service.agrupar(filas, "color")
+    assert (b["unidad"], b["sem"]) == ("roll", 10.0)   # 235 kg = 10 rollos
+
+
+def test_un_bloque_mixto_usa_la_unidad_que_pesa_mas():
+    """Dueña 2026-08-18: "o en rollo o en kg, no me conviertas ambos".
+
+    Un color que junta Fleece con Rib se lee en la unidad que manda por peso:
+    dos términos en un encabezado son dos números donde alcanza uno.
+    """
+    filas = [
+        service._fila(_ficha(color="BLA", tela="Fleece 102"),
+                      {w: 235.0 for w in range(1338, 1390)}, 1389),
+        service._fila(_ficha(id_producto=2, categoria="Rib", color="BLA",
+                             tela="Rib Normal"),
+                      {w: 100.0 for w in range(1338, 1390)}, 1389),
+    ]
+    (b,) = service.agrupar(filas, "color")
+    # 235 kg de Fleece contra 100 de Rib: mandan los rollos
+    assert (b["unidad"], b["sem"]) == ("roll", 14.0)
+
+
+def test_cuellos_y_punos_comparten_el_termino_en_unidades():
+    """Los dos se leen "un", así que van en el mismo término — ya convertidos
+    fila por fila con el factor de su familia (33,33 y 50 un/kg)."""
+    filas = [
+        service._fila(_ficha(categoria="Cuellos", color="BLA", tela="Cuellos T40"),
+                      {w: 10.0 for w in range(1338, 1390)}, 1389),
+        service._fila(_ficha(id_producto=2, categoria="Puños", color="BLA",
+                             tela="Puños"),
+                      {w: 10.0 for w in range(1338, 1390)}, 1389),
+    ]
+    (b,) = service.agrupar(filas, "color")
+    assert b["unidad"] == "un"

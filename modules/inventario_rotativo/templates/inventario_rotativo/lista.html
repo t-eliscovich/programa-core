@@ -39,11 +39,14 @@
   .iv td{padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right;
     font-variant-numeric:tabular-nums}
   .iv td:first-child{text-align:left}
-  .iv .c-col{width:22%}.iv .c-un{width:7%}.iv .c-num{width:11.83%}
+  .iv .c-col{width:20%}.iv .c-ac{width:7%}.iv .c-un{width:6%}.iv .c-num{width:11.4%}
   .iv .fuerte{font-size:14px;font-weight:700;letter-spacing:.02em}
   /* La unidad va en UNA columna y no repetida en cada celda (dueña
      2026-08-18: "como hace Asinfo, no repetirlo tantas veces"). */
   .iv td.un{text-align:left;color:#94a3b8;font-size:11px}
+  /* Acabado: TUB o ABI. Vacío cuando el producto no tiene lote con atributo
+     —no se inventa—, y en gris porque es una etiqueta, no una cifra. */
+  .iv td.ac{text-align:left;color:#475569;font-size:11px;letter-spacing:.03em}
   /* El faltante va del MISMO color que "Alcanza": dos rojos distintos en una
      fila se leen como dos alarmas donde hay una sola (dueña 2026-08-18). */
   .iv .rojo{color:#b91c1c}
@@ -127,15 +130,16 @@
       <div class="bloque" data-k="{{ b.nombre | lower }}">
         <h3>{{ b.nombre }}<span class="muted">{{ b.n }}
           {{ 'telas' if b.etiqueta == 'tela' else 'colores' }} ·
-          {{ b.sem_kg | num_es(0) }} kg por semana{% if b.falta_kg > 0 %}
-          · <span class="rojo">faltan {{ b.falta_kg | num_es(0) }} kg</span>
+          {{ b.sem | num_es(0) }} {{ b.unidad }} por semana{% if b.falta > 0 %}
+          · <span class="rojo">faltan {{ b.falta | num_es(0) }} {{ b.unidad }}</span>
           {% endif %}</span></h3>
         <table>
-          <colgroup><col class="c-col"><col class="c-un"><col class="c-num">
+          <colgroup><col class="c-col"><col class="c-ac"><col class="c-un">
             <col class="c-num"><col class="c-num"><col class="c-num">
-            <col class="c-num"><col class="c-num"></colgroup>
+            <col class="c-num"><col class="c-num"><col class="c-num"></colgroup>
           <tr>
             <th>{{ 'Tela' if b.etiqueta == 'tela' else 'Color' }}</th>
+            <th style="text-align:left">Acab.</th>
             <th style="text-align:left">Un.</th>
             <th>Por semana</th><th>En bodega</th><th>Pedido<span class="ast">*</span></th>
             <th>En proceso</th><th>Alcanza</th><th>Falta</th>
@@ -144,6 +148,7 @@
             <tr class="fila" data-est="{{ f.estado }}" data-fam="{{ f.familia }}"
                 data-t="{{ (f.color ~ ' ' ~ f.tela) | lower }}">
               <td><span class="fuerte">{{ f[b.etiqueta] }}</span></td>
+              <td class="ac">{{ f.acabado or '' }}</td>
               <td class="un">{{ f.unidad }}</td>
               <td>{{ f.sem | num_es(0) }}</td>
               <td>{{ f.stock | num_es(0) }}</td>

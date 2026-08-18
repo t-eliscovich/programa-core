@@ -10,6 +10,7 @@ Fuente única: Asinfo vía Metabase (db 2), igual que /pedidos.
     saldo_producto (bodega 53)       → lo que hay en bodega
     v_saldos_comprometidos_detallado → lo pedido y todavía sin despachar
     orden_fabricacion (bodega 53)    → lo que se está tinturando
+    saldo_producto_lote + lote       → el acabado (TUB/ABI) de cada producto
 
 Fail-soft: si Metabase no contesta, devuelve `([], False)` y la pantalla
 muestra el cartel. Nunca levanta.
@@ -43,6 +44,11 @@ quedar sin.
 y sale inflado. Armar esa grilla en SQL Server (52 × productos, con
 PERCENTILE_CONT por ventana) tardaba más de tres minutos; traer la serie
 cruda y completarla en Python tarda 1,5 s.
+
+**El acabado (TUB/ABI)** se pide prestado a `modules.pedidos.service`: es
+atributo del LOTE en Asinfo y se resuelve por producto (todos los lotes de un
+producto comparten su acabado). Se importa en vez de copiar la SQL para que
+las dos pantallas no puedan decir acabados distintos del mismo producto.
 
 **Las trampas de la fuente** son las mismas tres que documenta
 `modules/pedidos/service.py` — las órdenes de fabricación que se cuentan
@@ -348,6 +354,25 @@ def _fila(ficha: dict, semanas: dict[int, float], ultima: int) -> dict:
     }
 
 
+def _marcar_acabado(filas: list[dict]) -> None:
+    """Le pega el acabado a cada fila. Fail-soft: sin acabado, columna vacía.
+
+    La fuente es `modules.pedidos.service`, no una SQL propia: el acabado ya
+    está resuelto ahí y dos consultas paralelas se desincronizan sin que nadie
+    se entere hasta que las dos pantallas dicen cosas distintas del mismo
+    producto.
+    """
+    try:
+        from modules.pedidos.service import acabados_por_producto
+
+        mapa = acabados_por_producto()
+    except Exception:  # noqa: BLE001 — el acabado es una columna, no la pantalla
+        _LOG.warning("inventario rotativo: no pude traer el acabado", exc_info=True)
+        mapa = {}
+    for f in filas:
+        f["acabado"] = mapa.get(f["codigo"], "")
+
+
 def rotativo(_ahora=time.monotonic) -> tuple[list[dict], bool]:
     """Los productos que rotan, con stock y producción. `(filas, disponible)`.
 
@@ -382,18 +407,41 @@ def rotativo(_ahora=time.monotonic) -> tuple[list[dict], bool]:
         for f in fichas
         if str(f.get("categoria") or "").strip() in CATEGORIAS
     ]
+    _marcar_acabado(filas)
     filas.sort(key=lambda x: (x["alcanza"] < 0, x["alcanza"]))
     _cache.update(filas=filas, t=ahora)
     return filas, True
+
+
+def unidad_del_grupo(grupo: list[dict]) -> tuple[str, str]:
+    """La unidad en que se lee el subtotal, y la familia con que convertirlo.
+
+    Manda la que pesa más: un color que es casi todo Fleece se lee en rollos
+    aunque traiga un Rib colgando. Empates a favor de los rollos, que es la
+    unidad de casi todo.
+    """
+    peso: dict[str, float] = {}
+    fam: dict[str, str] = {}
+    for f in grupo:
+        peso[f["unidad"]] = peso.get(f["unidad"], 0.0) + f["sem_kg"]
+        fam.setdefault(f["unidad"], f["familia"])
+    if not peso:
+        return UNIDAD_DEFECTO, ""
+    u = max(peso, key=lambda k: (peso[k], k == UNIDAD_DEFECTO))
+    return u, fam[u]
 
 
 def agrupar(filas: list[dict], por: str) -> list[dict]:
     """Bloques por color (default) o por tela.
 
     El bloque con más faltante va primero: es por donde hay que empezar a
-    teñir. Los subtotales van en KILOS aunque las filas se lean en rollos —
-    un color agrupa telas de distinta unidad y sumar rollos con unidades daría
-    un número que no significa nada.
+    teñir.
+
+    El subtotal va en UNA sola unidad (dueña 2026-08-18: "poneme todo en
+    rollos salvo los cuellos, rib y puños" · "o en rollo o en kg, no me
+    conviertas ambos"). Cuando el bloque mezcla —un color que junta Fleece con
+    Rib— se usa la unidad que manda por peso, no las dos: dos términos en un
+    encabezado son dos números para leer donde alcanza uno.
     """
     clave = "color" if por == "color" else "tela"
     dentro = "tela" if por == "color" else "color"
@@ -404,13 +452,19 @@ def agrupar(filas: list[dict], por: str) -> list[dict]:
     bloques = []
     for nombre, grupo in grupos.items():
         grupo = sorted(grupo, key=lambda x: (x["alcanza"] < 0, x["alcanza"]))
+        sem_kg = round(sum(x["sem_kg"] for x in grupo), 1)
+        falta_kg = round(sum(x["falta_kg"] for x in grupo), 1)
+        u, fam = unidad_del_grupo(grupo)
         bloques.append({
             "nombre": nombre,
             "etiqueta": dentro,
             "filas": grupo,
             "n": len(grupo),
-            "sem_kg": round(sum(x["sem_kg"] for x in grupo), 1),
-            "falta_kg": round(sum(x["falta_kg"] for x in grupo), 1),
+            "unidad": u,
+            "sem": a_unidad(sem_kg, u, fam),
+            "falta": a_unidad(falta_kg, u, fam),
+            "sem_kg": sem_kg,
+            "falta_kg": falta_kg,
             "familias": sorted({x["familia"] for x in grupo}),
         })
     bloques.sort(key=lambda b: (-b["falta_kg"], -b["sem_kg"]))

@@ -62,7 +62,7 @@ def lista():
 
 
 #: Las columnas de la hoja y del Excel, en el mismo orden que la pantalla.
-COLUMNAS = ("Color", "Tela", "Familia", "Por semana", "En bodega",
+COLUMNAS = ("Color", "Tela", "Familia", "Acabado", "Por semana", "En bodega",
             "Pedido (informativo)", "En proceso", "Unidad", "Alcanza (sem)",
             "Falta", "Falta kg")
 
@@ -70,7 +70,7 @@ COLUMNAS = ("Color", "Tela", "Familia", "Por semana", "En bodega",
 def _valores(f: dict) -> list:
     """Una fila del service → la fila del Excel, en la unidad que se lee."""
     return [
-        f["color"], f["tela"], f["familia"],
+        f["color"], f["tela"], f["familia"], f.get("acabado") or "",
         f["sem"], f["stock"], f["pedido"], f["proceso"], f["unidad"],
         # "no sé" (sin venta reciente) va vacío y no como -1: un número
         # negativo en una columna de semanas se lee como un dato, no como
@@ -118,12 +118,12 @@ def excel():
         for i, v in enumerate(_valores(f), 1):
             ws.cell(row=fila, column=i, value=v)
 
-    for col, ancho in zip("ABCDEFGHIJK",
-                          (10, 26, 14, 12, 12, 18, 12, 9, 14, 10, 12),
+    for col, ancho in zip("ABCDEFGHIJKL",
+                          (10, 26, 14, 9, 12, 12, 18, 12, 9, 14, 10, 12),
                           strict=True):
         ws.column_dimensions[col].width = ancho
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:K{max(len(filas) + 1, 2)}"
+    ws.auto_filter.ref = f"A1:L{max(len(filas) + 1, 2)}"
 
     buf = io.BytesIO()
     wb.save(buf)
