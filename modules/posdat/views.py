@@ -550,6 +550,9 @@ def lista():
                 ("fechad", "Venc."),
                 ("prov", "Prov"),
                 ("concepto", "Concepto"),
+                # TMT 2026-08-19 — la columna Kg de la pantalla también en el
+                # CSV: el papel/exportado dice lo mismo que se ve.
+                ("kg", "Kg"),
                 ("importe", "Importe"),
                 ("cuota_mensual", "Cuota mensual"),
                 ("cuota_diaria", "Cuota diaria"),

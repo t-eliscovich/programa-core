@@ -836,9 +836,35 @@ def buscar(
         f"""
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave{baseline_col},
-               COALESCE(p.nombre, '') AS proveedor
+               COALESCE(p.nombre, '') AS proveedor,
+               -- 🚨 TMT 2026-08-19 (dueña, mirando /posdat): *"agregar después
+               -- de concepto una columna que diga KG y traiga los KGs"*. El
+               -- posdat NO tiene kilos: es una deuda en $. Los kilos viven en
+               -- la COMPRA que generó esa deuda, y el vínculo ya existe — el
+               -- mov_doble `compra_a_posdat` / `compra_saldo_a_posdat` que
+               -- escribe compras.crear(). Se lee de ahí y no por concepto:
+               -- matchear texto ("OFT-000038931 …") daría falsos positivos y
+               -- se rompería el día que alguien edite el concepto inline.
+               -- Queda vacío, a propósito, en las filas que no vienen de una
+               -- compra de PC: las heredadas del dBase (no tienen mov_doble) y
+               -- las compras sin kilos (servicios, químicos). Medido el
+               -- 19/08 sobre los 129 posdatados abiertos: 65 tienen compra
+               -- detrás y 18 traen kg > 0.
+               kgc.kg AS kg
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
+        LEFT JOIN LATERAL (
+            SELECT c.kg
+              FROM scintela.mov_doble md
+              JOIN scintela.compra c ON c.id_compra = md.origen_id
+             WHERE md.destino_table = 'posdat'
+               AND md.destino_id = pd.id_posdat
+               AND md.origen_table = 'compra'
+               AND md.estado = 'activo'
+               AND COALESCE(c.kg, 0) <> 0
+             ORDER BY md.id_mov_doble
+             LIMIT 1
+        ) kgc ON TRUE
         WHERE (%(id_posdat)s IS NULL OR pd.id_posdat = %(id_posdat)s)
           AND (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
           AND (%(q)s IS NULL
