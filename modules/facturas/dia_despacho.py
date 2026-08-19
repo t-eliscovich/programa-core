@@ -136,6 +136,41 @@ def _kg_con_guia_de_hoy(dia: str) -> dict[str, float]:
     return out
 
 
+def _doc_por_guia(dia: str) -> dict[str, set[str]]:
+    """{número de guía → números de los documentos de Asinfo que la consumen}.
+
+    Es la pieza que faltaba para que la cuenta cierre. Antes se preguntaba sólo
+    `indicador_generado_factura`, que dice "esta guía YA tiene documento **en
+    Asinfo**" — y eso no es lo mismo que "está cargado en Programa Core". El
+    19/08 a las 08:28 salió la guía DES-000095927 (AJO, 12,90 kg), Asinfo la
+    facturó a las 08:30 con la 001-099-000182106… y PC todavía no la había
+    importado. Esos 12,90 kg no caían en ningún balde y aparecían como residuo.
+    """
+    from modules._lib import metabase_client
+
+    sql = f"""
+        SELECT dc.numero AS guia, fc.numero AS doc
+          FROM despacho_cliente dc
+          JOIN detalle_despacho_cliente ddc
+            ON ddc.id_despacho_cliente = dc.id_despacho_cliente
+          JOIN detalle_factura_cliente dfc
+            ON dfc.id_detalle_despacho_cliente = ddc.id_detalle_despacho_cliente
+          JOIN factura_cliente fc
+            ON fc.id_factura_cliente = dfc.id_factura_cliente
+         WHERE dc.fecha = '{dia}'
+           AND dc.fecha_anulacion IS NULL
+           AND fc.estado <> 0
+         GROUP BY dc.numero, fc.numero
+    """
+    out: dict[str, set[str]] = {}
+    for r in metabase_client.fetch_dataset(2, sql, max_results=2000) or []:
+        guia = str(r.get("guia") or "").strip()
+        doc = str(r.get("doc") or "").strip()
+        if guia and doc:
+            out.setdefault(guia, set()).add(doc)
+    return out
+
+
 def _documentos_pc(dia: str) -> list[dict]:
     """Los documentos del día que SUMAN kilos, tal como los cuenta el pin."""
     filas = db.fetch_all(
@@ -159,17 +194,22 @@ def _documentos_pc(dia: str) -> list[dict]:
 
 
 def cuadre(fecha) -> dict:
-    """El día entero: los dos totales, los dos detalles y el residuo."""
+    """El día entero: los dos totales, los tres detalles y lo que no cierra."""
     dia = _dia(fecha)
     docs = _documentos_pc(dia)
     facturado = round(sum(d["kg"] for d in docs), 2)
+    docs_pc = {d["doc"] for d in docs}
+    kg_nten_pc = round(sum(d["kg"] for d in docs
+                           if d["doc"].upper().startswith("NTEN")), 2)
 
     guias: list[dict] = []
     ligado: dict[str, float] = {}
+    por_guia: dict[str, set[str]] = {}
     asinfo_ok = True
     try:
         guias = _guias(dia)
         ligado = _kg_con_guia_de_hoy(dia)
+        por_guia = _doc_por_guia(dia)
     except Exception as e:  # noqa: BLE001 -- el ERP nunca tumba la pantalla
         _LOG.warning("no pude leer los despachos del %s: %s", dia, e)
         asinfo_ok = False
@@ -190,13 +230,36 @@ def cuadre(fecha) -> dict:
         sin_guia.sort(key=lambda x: -x["kg_sin_guia"])
     kg_sin_guia = round(sum(d["kg_sin_guia"] for d in sin_guia), 2)
 
-    # (B) Lo que salió y todavía no tiene documento.
-    sin_factura = [g for g in guias if not g["facturada"]]
+    # (B) y (C) — lo que salió y todavía no está en NUESTRA base. Son dos cosas
+    # distintas y se dicen distinto, porque lo que hay que hacer es distinto:
+    #   · sin factura todavía  → falta que Asinfo la emita;
+    #   · facturada en Asinfo  → ya existe el documento, falta IMPORTARLO acá.
+    # Mirar sólo `indicador_generado_factura` mezclaba las dos y dejaba la
+    # segunda afuera de la cuenta (era el residuo del 19/08).
+    sin_factura, sin_cargar = [], []
+    kg_nten_esperado = 0.0
+    for g in guias:
+        suyos = por_guia.get(g["guia"]) or set()
+        if suyos:
+            faltan = sorted(x for x in suyos if x not in docs_pc)
+            if faltan:
+                sin_cargar.append({**g, "doc": faltan[0]})
+        elif not g["facturada"]:
+            sin_factura.append(g)
+        else:
+            # Facturada en Asinfo pero sin `factura_cliente` que la consuma:
+            # su documento es una NOTA DE ENTREGA. No hay número con el que
+            # casarla una por una, así que se compara el TOTAL contra las NTEN
+            # que PC tiene cargadas del día.
+            kg_nten_esperado += g["kg"]
     kg_sin_factura = round(sum(g["kg"] for g in sin_factura), 2)
+    kg_nten_falta = round(max(0.0, kg_nten_esperado - kg_nten_pc), 2)
+    kg_sin_cargar = round(sum(g["kg"] for g in sin_cargar) + kg_nten_falta, 2)
 
     diferencia = round(facturado - despachado, 2) if despachado is not None else None
-    residuo = (round(diferencia - kg_sin_guia + kg_sin_factura, 2)
-               if diferencia is not None else None)
+    residuo = (round(facturado - (despachado - kg_sin_factura - kg_sin_cargar
+                                  + kg_sin_guia), 2)
+               if despachado is not None else None)
 
     return {
         "fecha": dia,
@@ -207,6 +270,8 @@ def cuadre(fecha) -> dict:
         "diferencia": diferencia,
         "sin_guia": {"kg": kg_sin_guia, "items": sin_guia},
         "sin_factura": {"kg": kg_sin_factura, "items": sin_factura},
+        "sin_cargar": {"kg": kg_sin_cargar, "items": sin_cargar,
+                       "kg_nten": kg_nten_falta},
         "residuo": residuo,
         "guias": guias,
     }

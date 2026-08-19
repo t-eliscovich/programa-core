@@ -69,7 +69,7 @@ def _login(app, fake_db, perms=("facturas.ver",)):
     return c
 
 
-def _cuadre(guias=None, ligado=None, docs=None):
+def _cuadre(guias=None, ligado=None, docs=None, por_guia=None):
     """`cuadre()` con las dos puntas falseadas: PC por un lado, Asinfo por otro."""
     with patch.object(dd, "_documentos_pc",
                       return_value=_pc(docs if docs is not None else _DOCS)), \
@@ -77,7 +77,10 @@ def _cuadre(guias=None, ligado=None, docs=None):
                       return_value=guias if guias is not None else _GUIAS), \
          patch.object(dd, "_kg_con_guia_de_hoy",
                       return_value=ligado if ligado is not None else
-                      {"001-099-000182010": 612.35}):
+                      {"001-099-000182010": 612.35}), \
+         patch.object(dd, "_doc_por_guia",
+                      return_value=por_guia if por_guia is not None else
+                      {"DES-95512": {"001-099-000182010"}}):
         return dd.cuadre(DIA)
 
 
@@ -121,6 +124,49 @@ def test_lo_despachado_sin_facturar_sale_con_su_guia_y_su_hora():
     assert d["sin_factura"]["kg"] == 204.15
 
 
+# ── El agujero del 19/08: facturada en Asinfo, sin cargar acá ───────────────
+
+def test_la_guia_facturada_en_asinfo_que_falta_importar_no_es_residuo():
+    """El caso real del 19/08 08:28: salieron 272,25 kg en dos guías y PC
+    todavía no tenía NINGÚN documento. Una de las dos (12,90 kg de AJO) ya
+    estaba facturada en Asinfo con la 182106. Mirando sólo
+    `indicador_generado_factura`, esos 12,90 no caían en ningún balde y salían
+    por la fila de "sin identificar" — que es justo lo que esa fila NO tiene
+    que mostrar cuando la respuesta se sabe."""
+    guias = [
+        {"guia": "DES-95926", "hora": "07:54", "cliente": "SEF",
+         "facturada": False, "kg": 259.35},
+        {"guia": "DES-95927", "hora": "08:28", "cliente": "AJO",
+         "facturada": True, "kg": 12.90},
+    ]
+    d = _cuadre(guias=guias, docs=[], ligado={},
+                por_guia={"DES-95927": {"001-099-000182106"}})
+    assert d["despachado"]["kg"] == 272.25
+    assert d["facturado"]["kg"] == 0.0
+    assert d["sin_factura"]["kg"] == 259.35          # nadie la facturó todavía
+    assert d["sin_cargar"]["kg"] == 12.90            # existe en Asinfo, falta acá
+    (g,) = d["sin_cargar"]["items"]
+    assert g["doc"] == "001-099-000182106" and g["cliente"] == "AJO"
+    assert d["residuo"] == 0.0                       # ya no queda nada sin nombre
+
+
+def test_la_guia_cuyo_documento_YA_esta_en_pc_no_resta():
+    """Si el documento está cargado, la guía no le baja nada al cuadre."""
+    d = _cuadre()
+    assert all(g["guia"] != "DES-95512" for g in d["sin_cargar"]["items"])
+
+
+def test_las_notas_de_entrega_que_faltan_van_en_un_solo_renglon():
+    """Una NTEN no tiene número con el que casarla contra su guía, así que se
+    compara el TOTAL: lo que falta se dice agrupado, no se esconde."""
+    guias = [{"guia": "DES-95513", "hora": "08:31", "cliente": "AJO",
+              "facturada": True, "kg": 318.90}]
+    d = _cuadre(guias=guias, docs=[], ligado={}, por_guia={})
+    assert d["sin_cargar"]["kg_nten"] == 318.90
+    assert d["sin_cargar"]["items"] == []
+    assert d["residuo"] == 0.0
+
+
 def test_un_resto_de_redondeo_no_arma_un_renglon():
     """Los renglones de unidades sueltas de Asinfo dejan diferencias de
     centésimas: eso es ruido, no un caso."""
@@ -148,13 +194,15 @@ def test_si_asinfo_no_contesta_queda_el_lado_nuestro():
     with patch.object(dd, "_documentos_pc", return_value=[
             {"numf": 1, "doc": "001-099-000181963", "cliente": "POS",
              "kg": 83.45, "importe": 612.40}]), \
-         patch.object(dd, "_guias", side_effect=RuntimeError("Metabase caído")):
+         patch.object(dd, "_guias", side_effect=RuntimeError("Metabase caído")), \
+         patch.object(dd, "_doc_por_guia", return_value={}):
         d = dd.cuadre(DIA)
     assert d["asinfo_ok"] is False
     assert d["facturado"]["kg"] == 83.45      # lo nuestro se muestra igual
     assert d["despachado"]["kg"] is None      # un cero se leería como "no salió nada"
     assert d["diferencia"] is None and d["residuo"] is None
     assert d["sin_guia"]["items"] == [] and d["sin_factura"]["items"] == []
+    assert d["sin_cargar"]["items"] == [] and d["sin_cargar"]["kg"] == 0.0
 
 
 # ── Las queries que le vamos a mandar a Asinfo ──────────────────────────────
@@ -205,7 +253,8 @@ def test_la_pantalla_abre_y_muestra_el_cuadre(app, fake_db):
             {"numf": 181963, "doc": "001-099-000181963", "cliente": "POS",
              "kg": 83.45, "importe": 612.40}]), \
          patch.object(dd, "_guias", return_value=_GUIAS), \
-         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}):
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia", return_value={}):
         r = c.get("/facturas/dia?fecha=2026-08-18")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
@@ -217,7 +266,8 @@ def test_una_fecha_basura_en_la_url_cae_en_hoy_y_no_revienta(app, fake_db):
     c = _login(app, fake_db)
     with patch.object(dd, "_documentos_pc", return_value=[]), \
          patch.object(dd, "_guias", return_value=[]), \
-         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}):
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia", return_value={}):
         r = c.get("/facturas/dia?fecha=cualquier-cosa")
     assert r.status_code == 200
 
@@ -226,3 +276,14 @@ def test_sin_permiso_de_facturas_la_pantalla_no_existe(app, fake_db):
     """Mismo criterio que el resto: sin el permiso, 404 (no "no tenés acceso")."""
     c = _login(app, fake_db, perms=["compras.ver"])
     assert c.get("/facturas/dia").status_code == 404
+
+
+def test_la_query_del_documento_por_guia_ata_por_renglon_y_saltea_anuladas():
+    from modules._lib import metabase_client
+    with patch.object(metabase_client, "fetch_dataset", return_value=[]) as m:
+        dd._doc_por_guia("2026-08-19")
+    sql = m.call_args[0][1]
+    assert "'2026-08-19'" in sql
+    assert "id_detalle_despacho_cliente" in sql   # por RENGLÓN, no por cabecera
+    assert "fc.estado <> 0" in sql
+    assert "dc.fecha_anulacion IS NULL" in sql

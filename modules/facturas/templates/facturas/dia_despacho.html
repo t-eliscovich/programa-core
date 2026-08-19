@@ -72,12 +72,20 @@
           <td class="px-3 py-2 text-right font-medium">{{ d.sin_guia.kg | kg_es }} kg</td>
         </tr>
         <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-slate-600">− despachado hoy que todavía no se facturó</td>
+          <td class="px-3 py-2 text-slate-600">− salió hoy y todavía no se facturó</td>
           <td class="px-3 py-2 text-right font-medium">{{ d.sin_factura.kg | kg_es }} kg</td>
+        </tr>
+        {# TMT 2026-08-19: este renglón faltaba y era el "residuo". Una guía
+           puede estar facturada EN ASINFO y todavía no importada acá: el
+           documento existe, lo que falta es cargarlo. Es otra cosa que "nadie
+           la facturó", y lo que hay que hacer es otro. #}
+        <tr class="border-b border-slate-100">
+          <td class="px-3 py-2 text-slate-600">− ya facturado en Asinfo, falta cargarlo acá</td>
+          <td class="px-3 py-2 text-right font-medium">{{ d.sin_cargar.kg | kg_es }} kg</td>
         </tr>
         {% if d.residuo %}
         <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-amber-800">± lo que no supe explicar</td>
+          <td class="px-3 py-2 text-amber-800">± sin identificar</td>
           <td class="px-3 py-2 text-right font-medium text-amber-800">{{ d.residuo | kg_es }} kg</td>
         </tr>
         {% endif %}
@@ -117,7 +125,7 @@
   {% endif %}
 
   {# ───── (B) lo despachado todavía sin documento ───── #}
-  <h2 class="text-base font-medium mb-2">Despachado hoy todavía sin facturar · {{ d.sin_factura.kg | kg_es }} kg</h2>
+  <h2 class="text-base font-medium mb-2">Salió hoy y todavía no se facturó · {{ d.sin_factura.kg | kg_es }} kg</h2>
   {% if d.sin_factura['items'] %}
   <div class="rounded border border-slate-200 bg-white mb-5 overflow-hidden">
     <table class="w-full text-sm">
@@ -140,7 +148,44 @@
     </table>
   </div>
   {% else %}
-  <p class="text-sm text-slate-500 mb-5">Nada: todas las guías de hoy ya tienen su documento.</p>
+  <p class="text-sm text-slate-500 mb-5">Nada: todas las guías de hoy ya tienen su documento en Asinfo.</p>
+  {% endif %}
+
+  {# ───── (C) el documento ya existe en Asinfo, falta importarlo ───── #}
+  <h2 class="text-base font-medium mb-2">Ya facturado en Asinfo, falta cargarlo acá · {{ d.sin_cargar.kg | kg_es }} kg</h2>
+  {% if d.sin_cargar['items'] or d.sin_cargar.kg_nten %}
+  <div class="rounded border border-slate-200 bg-white mb-5 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs text-slate-500">
+        <tr><th class="px-3 py-2 text-left">Guía</th>
+            <th class="px-3 py-2 text-left">Hora</th>
+            <th class="px-3 py-2 text-left">Cliente</th>
+            <th class="px-3 py-2 text-left">Documento en Asinfo</th>
+            <th class="px-3 py-2 text-right">Kilos</th></tr>
+      </thead>
+      <tbody>
+        {% for g in d.sin_cargar['items'] %}
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2">{{ g.guia }}</td>
+          <td class="px-3 py-2 text-slate-500">{{ g.hora }}</td>
+          <td class="px-3 py-2">{{ g.cliente }}</td>
+          <td class="px-3 py-2 text-slate-600">{{ g.doc }}</td>
+          <td class="px-3 py-2 text-right font-medium">{{ g.kg | kg_es }}</td>
+        </tr>
+        {% endfor %}
+        {# Las notas de entrega no tienen número con el que casarlas una por
+           una, así que van sumadas en un solo renglón. #}
+        {% if d.sin_cargar.kg_nten %}
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2 text-slate-500" colspan="4">Notas de entrega del día que todavía no están acá</td>
+          <td class="px-3 py-2 text-right font-medium">{{ d.sin_cargar.kg_nten | kg_es }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-500 mb-5">Nada: todo lo que Asinfo facturó hoy ya está cargado acá.</p>
   {% endif %}
 
   {# ───── Todas las guías del día, al final: es el respaldo del número
