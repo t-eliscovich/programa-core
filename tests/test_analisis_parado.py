@@ -1347,6 +1347,30 @@ def test_la_base_se_fija_una_sola_vez_y_recien_desde_la_largada(monkeypatch):
     assert escritos == []
 
 
+def test_el_desplegable_de_clientes_se_lee_en_el_celular():
+    """El desplegable son 6 columnas: en el teléfono el nombre del cliente se
+    partía en cuatro renglones y la fecha quedaba cortada afuera (402 px de
+    tabla contra 390 de pantalla). Apilado se lee como una ficha: código y
+    nombre arriba, y debajo «GUAYAS · FL1 · 825 kg · 03/08/26»."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    base = (carpeta / "base.html").read_text(encoding="utf-8")
+    parado = (carpeta / "parado.html").read_text(encoding="utf-8")
+
+    # las celdas se agarran por CLASE, no por posición: si un día se agrega una
+    # columna al desplegable, la ficha del celular no se desarma sola
+    for clase in ("cod", "cli", "prov", "vnd", "kgt", "ult"):
+        assert f'"{clase}"' in parado or f' {clase}"' in parado, (
+            f"la celda {clase} no tiene clase en el desplegable")
+    assert "tr.det tbody tr{display:block" in base.replace(" ", "") or \
+           "tr.det table,tr.det tbody,tr.det tbody tr{display:block" in base
+    assert 'tr.det td.cli::after{content:"\\A"' in base, (
+        "sin el salto después del nombre, la ficha queda en tres renglones")
+    assert 'tr.det td.kgt::after{content:" kg"}' in base, (
+        "el número de kilos queda sin unidad")
+
+
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
     """`actualizado` se guarda con NOW() y el servidor corre en UTC. Sin el
     filtro, a las 19:41 del 18 en la fábrica la pantalla decía "datos al

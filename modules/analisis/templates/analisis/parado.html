@@ -197,11 +197,14 @@ Toque una fila para ver a quién ofrecérsela.</p>
         <tr data-v="{{ c.vend_pc or '' }}">
           <td class="cod">{{ c.codigo_cli }}{% if c.codigo_cli in codigos_ambiguos %}
             <span class="pill ojo">código repetido</span>{% endif %}</td>
-          <td>{{ c.nombre }}</td>
-          <td class="g">{{ c.provincia }}</td>
-          <td class="g">{{ c.vend_pc or 'mostrador' }}</td>
-          <td class="n">{{ c.kg | num_es(0) }}</td>
-          <td class="g n">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td>
+          {# las clases son para el celular: ahí la fila se apila en dos
+             renglones (código + nombre / provincia · vend · kg · fecha) y hay
+             que poder agarrar cada celda por nombre, no por posición. #}
+          <td class="cli">{{ c.nombre }}</td>
+          <td class="g prov">{{ c.provincia }}</td>
+          <td class="g vnd">{{ c.vend_pc or 'mostrador' }}</td>
+          <td class="n kgt">{{ c.kg | num_es(0) }}</td>
+          <td class="g n ult">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td>
         </tr>
       {% endfor %}
       </tbody>
