@@ -106,7 +106,8 @@
       · ⚠ código repetido{% endif %}</span>
     <span class="kg">hay {{ c.kg_potencial | num_es(0) }} kg para ofrecerle</span>
   </h3>
-  <p class="meta">{{ c.provincia }} · {{ c.vend_pc or 'mostrador' }}</p>
+  {# en su propia hoja el vendedor no necesita leer su código en cada ficha #}
+  <p class="meta">{{ c.provincia }}{% if not mia %} · {{ c.vend_pc or 'mostrador' }}{% endif %}</p>
   <table>
     <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
     {# ⚠ Los encabezados decían "Kg en saldo" y "Le vendimos": dos cifras de

@@ -1374,6 +1374,27 @@ def test_el_desplegable_va_por_codigo_y_el_nombre_no_se_pierde():
     assert "{{ c.nombre }}" in hoja
 
 
+def test_en_la_app_del_vendedor_no_se_repite_su_propio_codigo():
+    """Dueña 19/08/2026: "el vendedor ya sabe quién es". En `/mi-cartera` de
+    saldos sólo ve SUS clientes, así que la columna Vend. decía FL1 en todas
+    las filas — una columna entera para no decir nada. En la oficina se queda:
+    ahí se mezclan los seis y el mostrador."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    parado = (carpeta / "parado.html").read_text(encoding="utf-8")
+    i = parado.index("<th>Provincia</th>")
+    assert "{% if not mia %}<th>Vend.</th>{% endif %}" in parado[i:i + 120], (
+        "la columna Vend. no está condicionada al modo oficina")
+    assert "{% if not mia %}<td class=\"g vnd\">" in parado, (
+        "el encabezado se esconde pero la celda no: la fila se corre")
+
+    hoja = (carpeta / "parado_clientes.html").read_text(encoding="utf-8")
+    j = hoja.index('<p class="meta">')
+    assert "{% if not mia %}" in hoja[j:j + 160], (
+        "la hoja propia sigue repitiendo el código del vendedor")
+
+
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
     """`actualizado` se guarda con NOW() y el servidor corre en UTC. Sin el
     filtro, a las 19:41 del 18 en la fábrica la pantalla decía "datos al

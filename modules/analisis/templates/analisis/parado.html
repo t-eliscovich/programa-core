@@ -197,7 +197,10 @@ Toque una fila para ver a quién ofrecérsela.</p>
          va en el `title` del código y el buscador lo sigue encontrando
          (`data-buscar` lo lleva). La hoja «A quién ofrecerle qué» sí va con el
          nombre grande — ahí la unidad es el cliente, no la tela. #}
-      <thead><tr><th>Código</th><th>Provincia</th><th>Vend.</th>
+      {# ⭐ En la app del vendedor NO va la columna Vend.: son sus clientes, así
+         que dice su propio código en las cinco filas. Dueña 19/08/2026: "el
+         vendedor ya sabe quién es". En la oficina sí, que ahí se mezclan. #}
+      <thead><tr><th>Código</th><th>Provincia</th>{% if not mia %}<th>Vend.</th>{% endif %}
       <th class="n">Kg</th><th class="n">Última</th></tr></thead>
       <tbody>
       {% for c in cand %}
@@ -205,7 +208,7 @@ Toque una fila para ver a quién ofrecérsela.</p>
           <td class="cod" title="{{ c.nombre }}">{{ c.codigo_cli }}{% if c.codigo_cli in codigos_ambiguos %}
             <span class="pill ojo">código repetido</span>{% endif %}</td>
           <td class="g prov">{{ c.provincia }}</td>
-          <td class="g vnd">{{ c.vend_pc or 'mostrador' }}</td>
+          {% if not mia %}<td class="g vnd">{{ c.vend_pc or 'mostrador' }}</td>{% endif %}
           <td class="n kgt">{{ c.kg | num_es(0) }}</td>
           <td class="g n ult">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td>
         </tr>
