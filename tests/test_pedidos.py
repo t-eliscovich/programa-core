@@ -741,9 +741,32 @@ def test_el_corte_categoria_muestra_cada_familia_en_su_unidad(app, fake_db):
 
 def test_nombres_color_es_fail_soft_sin_catalogo():
     """Sin catálogo (o si la consulta falla) el color va por su código pelado,
-    la pantalla no se cae."""
-    # sin app/DB real la lectura falla y devuelve {} — nunca levanta.
-    assert service.nombres_color() == {}
+    la pantalla no se cae.
+
+    ⭐ TMT 2026-08-18 — el fracaso se PROVOCA, no se espera del ambiente. La
+    primera versión no pateaba nada y confiaba en que sin app ni DB la lectura
+    fallara sola: en el CI las variables de la base están puestas para todo el
+    job, así que `fetch_all` contestaba de verdad y el test se caía con 319
+    colores. Rojo intermitente según qué worker de pytest-xdist lo agarrara
+    (CI #2187 y #2189 en rojo, #2188 y #2190 en verde, mismo código) — y con el
+    CI rojo el deploy se frena solo, así que dos deploys quedaron "bloqueado".
+    """
+    import db as _db
+
+    with patch.object(_db, "fetch_all", side_effect=RuntimeError("sin catálogo")):
+        assert service.nombres_color() == {}
+
+
+def test_nombres_color_limpia_el_nombre_y_saltea_lo_que_no_tiene_codigo():
+    """El caso bueno. El código lo normaliza el SQL (UPPER/TRIM); acá se
+    verifica lo que hace Python: limpiar el nombre y no inventar una entrada
+    para una fila sin código."""
+    import db as _db
+
+    filas = [{"cod": "CAF", "color": "  CAFE "}, {"cod": "AZU", "color": None},
+             {"cod": None, "color": "NEGRO"}]
+    with patch.object(_db, "fetch_all", return_value=filas):
+        assert service.nombres_color() == {"CAF": "CAFE", "AZU": ""}
 
 
 def test_el_corte_color_trae_el_desde_del_pedido_mas_viejo():

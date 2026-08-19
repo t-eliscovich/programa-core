@@ -85,11 +85,40 @@ def _restaurar(previos_db, loader_previo):
 
 
 def build_app():
-    """Devuelve (app, deshacer). `deshacer()` restaura los globals pisados."""
+    """Devuelve (app, deshacer). `deshacer()` restaura los globals pisados.
+
+    🚨 **`app.py` se importa ACÁ, ANTES de pisar el loader, y ese orden es el
+    arreglo.** `app.py` hace `from auth import load_logged_in_user` en el
+    import, o sea que se queda con UNA COPIA del nombre. Si el PRIMER import de
+    `app.py` de todo el proceso ocurría acá —con el loader ya pisado—, `app.py`
+    guardaba el `fake_loader` **para siempre**: `deshacer()` devuelve el de
+    `auth`, que a esa altura ya no es el que la app registró. A partir de ahí
+    toda app nueva nacía con un usuario logueado y wildcard de permisos, y los
+    tests que verifican al ANÓNIMO (`test_requiere_login_redirects`, los 404
+    por falta de permiso) fallaban… pero sólo si este archivo corría antes.
+
+    Eso es lo que ponía el CI rojo sin que nadie tocara nada: con `-n auto` el
+    reparto de archivos entre workers cambia en cada corrida (CI #2187 y #2189
+    rojos, #2188 y #2190 verdes, mismo código), y con el CI rojo el deploy se
+    frena solo y queda "bloqueado" — dos deploys del 18/08 quedaron así.
+    Importando primero, la copia de `app.py` ya está tomada y el pisotón no la
+    alcanza. TMT 2026-08-18.
+
+    ⚠ Ojo con "arreglarlo" pisando también `app_mod.load_logged_in_user`: se
+    probó, y ahí el smoke SÍ entra con wildcard a todas las rutas… y
+    `/admin/health/simulacro-cierre` devuelve 500. O sea que este smoke hoy
+    recorre las rutas como ANÓNIMO (302 al login, que no es 500 y pasa). Es una
+    debilidad real del test, pero se anota aparte: no se tapa un 500 de
+    producción adentro de un arreglo de flakiness.
+    """
     import auth as real_auth
 
     previos_db = _apply_db_stubs(_make_db_stub())
     sys.modules["scripts.sync_stat_from_xlsx_boot"] = types.SimpleNamespace(maybe_run_once=lambda: None)
+
+    # ⭐ El import de `app.py` va ACÁ: después de los stubs de la base (como
+    # siempre fue) y ANTES de pisar el loader (lo nuevo). Ver el docstring.
+    import app as app_mod
 
     # Patch auth.load_logged_in_user so request_ctx always has our fake user.
     loader_previo = real_auth.load_logged_in_user
@@ -102,8 +131,7 @@ def build_app():
 
     real_auth.load_logged_in_user = fake_loader
 
-    from app import create_app
-    app = create_app()
+    app = app_mod.create_app()
     app.config["TESTING"] = True
     return app, lambda: _restaurar(previos_db, loader_previo)
 
@@ -177,3 +205,34 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_build_app_no_deja_pisado_el_loader_de_app_py():
+    """El candado del flaky: `build_app()` no puede dejar a `app.py` con el
+    login falso pegado.
+
+    `app.py` hace `from auth import load_logged_in_user`, así que se queda con
+    una COPIA del nombre. Si su primer import del proceso pasara con el loader
+    ya pisado, esa copia quedaría con el `fake_loader` para siempre —
+    `deshacer()` devuelve el de `auth`, no el de `app`— y toda app posterior
+    nacería logueada y con wildcard. Eso ponía el CI rojo una corrida sí y otra
+    no según cómo `-n auto` repartiera los archivos (18/08/2026).
+
+    Por eso el test SACA `app` de `sys.modules` antes: es la única forma de
+    reproducir "todavía no estaba importado", que es el único caso en que el
+    orden adentro de `build_app()` cambia algo.
+    """
+    import sys
+
+    import auth as real_auth
+
+    loader_real = real_auth.load_logged_in_user
+    modulo_previo = sys.modules.pop("app", None)
+    try:
+        _, deshacer = build_app()
+        deshacer()
+        import app as app_mod
+        assert app_mod.load_logged_in_user is loader_real
+    finally:
+        if modulo_previo is not None:
+            sys.modules["app"] = modulo_previo
