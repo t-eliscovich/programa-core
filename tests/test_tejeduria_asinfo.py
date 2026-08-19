@@ -1352,3 +1352,53 @@ def test_el_corte_es_agosto_2026():
     assert tsvc._cuentan_las_abiertas(2027, 1) is True
     assert tsvc._cuentan_las_abiertas(2026, 7) is False
     assert tsvc._cuentan_las_abiertas(2026, 6) is False
+
+
+def test_los_desconocidos_se_ven_en_la_pantalla(app, fake_db):
+    """TMT 2026-08-19 (dueña: *"y acá no me mostrás los desconocidos"*). La
+    campanita avisaba de tejedores que el programa no reconoce y mandaba a esta
+    pantalla, donde no figuraban en ninguna parte: sus OFs se cuentan como
+    producción propia y desaparecen dentro de INTELA."""
+    c = _cliente_solo_ver(app, fake_db, "vedesconocidos")
+    filas = [*_ROWS, {"numero": "OFT-7", "dia": "2026-07-09", "kg": 891.72,
+                      "descripcion": "GUALILAHUA KW22"}]
+    with _asinfo_estable(), patch.object(metabase_client, "fetch_dataset",
+                                         return_value=filas):
+        asvc.reset_prod_tejeduria_cache()   # el warmup del app fixture ya cacheó
+        r = c.get("/produccion-tejeduria-asinfo?anio=2026&mes=7")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "no reconoce" in body        # el cartel de arriba de la tabla
+    assert "GUALILAHUA" in body, "el tejedor sin mapear tiene que estar a la vista"
+    assert "891,72" in body, "y con sus kilos, que hoy se cuentan como propios"
+
+
+def test_no_avisa_por_una_diferencia_de_gramos():
+    """TMT 2026-08-19 (dueña: *"si vos las cargás, ¿cómo puede ser que esté
+    cargado de más?"*). Las tres del estreno eran OFs viejas a las que Asinfo
+    les ajustó el kilaje unos gramos después de cargadas: 3,22 kg sobre 807,30
+    es 0,4%. Sólo se avisa arriba de la tolerancia (0,5%)."""
+    of = {**_ABIERTA_RY, "kg": 807.30}
+    out = _run_resumen(compras={}, estampadas={"OFT-9": _estampada(1633.0, 810.52)},
+                       tarifas=_TARIFAS, abiertas=_con_abiertas(of))
+    fila = {o["numero"]: o for o in out["tercerizado_ofs"]}["OFT-9"]
+    assert fila["kg_saldo"] == pytest.approx(-3.22)
+    assert fila["sobrecargada"] is False, "0,4% no es un error de carga"
+    # una diferencia de verdad (20%) sí se marca
+    out2 = _run_resumen(compras={}, estampadas={"OFT-9": _estampada(2415.0, 1200.0)},
+                        tarifas=_TARIFAS, abiertas=_con_abiertas(of))
+    assert {o["numero"]: o for o in out2["tercerizado_ofs"]}["OFT-9"]["sobrecargada"] is True
+
+
+def test_q02_sin_la_eme_es_maquina_propia():
+    """TMT 2026-08-19. `Q02 SUT5 20` salía como "tejedor sin reconocer" y
+    disparaba un aviso: es MQ02 mal tipeado (una sola vez en toda la historia
+    desde 2025, OFT-000040738). Confirmado por la dueña."""
+    assert asvc._clasificar_tejedor("Q02 SUT5 20 R/N")[:1] == ("KK",)
+    assert asvc._clasificar_tejedor("Q02 SUT5 20 R/N")[2] is True
+    # y las formas de siempre siguen andando
+    for d in ("MQ02 ABY", "MQ 11 X", "MAQ 21 X", "M07 X", "M15 X"):
+        assert asvc._clasificar_tejedor(d)[2] is True, d
+    # sin tocar a los tejedores: después de la inicial va un apellido
+    assert asvc._clasificar_tejedor("M REYES KW22")[0] == "RY"
+    assert asvc._clasificar_tejedor("R UNDA KW30")[0] == "UN"

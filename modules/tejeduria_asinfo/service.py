@@ -456,7 +456,18 @@ def resumen_mes(anio: int, mes: int) -> dict:
         kg_saldo = round(kg_of - kg_cargado, 2)
         # Saldo NEGATIVO = se cargó más kg de los que Asinfo reconoce (la OF
         # bajó, o la compra se tipeó de más). No se resta solo: se avisa.
-        sobrecargada = kg_saldo < -0.01
+        #
+        # ⚠ Pero sólo si la diferencia es MATERIAL. TMT 2026-08-19 (dueña,
+        # viendo tres avisos el día del estreno: *"si vos las cargás, ¿cómo
+        # puede ser que esté cargado de más?"*). Tenía razón en desconfiar: las
+        # tres eran OFs de junio/julio que el motor cargó cuando cerraron y a
+        # las que Asinfo después les ajustó el kilaje unos gramos — 3,22 kg
+        # sobre 807,30 · 0,14 sobre 811,00 · 0,28 sobre 314,75. Nada que
+        # corregir y tres avisos por nada. Se usa la MISMA tolerancia que el
+        # match contra lo tipeado a mano (0,5%): ahí ya está medido que un
+        # rollo pesado dos veces da 0,06% de diferencia.
+        sobrecargada = kg_saldo < 0 and abs(kg_saldo) > TOLERANCIA_KG * max(
+            kg_of, kg_cargado, 1.0)
         if kg_saldo <= 0.01:
             estado = "compra" if monto is not None else "cargado"
         elif es_mes_pasado and not of.get("abierta"):

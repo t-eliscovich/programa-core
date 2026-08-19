@@ -2955,10 +2955,17 @@ def _clasificar_tejedor(descripcion: str) -> tuple[str, str, bool]:
     import re as _re
     d = (descripcion or "").strip()
     du = d.upper()
-    # Máquina propia. El `M(A?Q)?\s*\d` cubre las 5 formas que aparecen en
-    # Asinfo — MQ02 · MQ 11 · MAQ 21 · M07 · M15 — sin tocar a los tejedores,
-    # que después de la inicial llevan una LETRA, no un dígito.
-    if _re.match(r"^M(?:A?Q)?\s*\d", du):
+    # Máquina propia. Cubre las formas que aparecen en Asinfo — MQ02 · MQ 11 ·
+    # MAQ 21 · M07 · M15 — sin tocar a los tejedores, que después de la inicial
+    # llevan una LETRA, no un dígito.
+    #
+    # ⭐ `Q02` (sin la M) es un TIPEO, no una forma: aparece UNA sola vez en
+    # toda la historia desde 2025 (OFT-000040738, 450,18 kg) y en agosto salió
+    # por la campanita como "tejedor sin reconocer", contándose como producción
+    # propia igual pero con un aviso al pedo. Dueña 2026-08-19: confirmado que
+    # es máquina. Es seguro aceptarlo: ningún tejedor puede colisionar, porque
+    # después de la inicial suelta va un APELLIDO, nunca un dígito.
+    if _re.match(r"^(?:M(?:A?Q)?|Q)\s*\d", du):
         return (INTELA_COD, "INTELA", True)
     # Los anclados primero: son los que necesitan estar al arranque para no
     # confundirse con otra palabra o con una nota al pie.

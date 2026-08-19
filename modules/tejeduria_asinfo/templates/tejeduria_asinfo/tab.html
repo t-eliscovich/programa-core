@@ -238,6 +238,47 @@
     <div class="warnbox">Asinfo no está disponible en este momento — no se pudo traer la producción de tejeduría. (La pantalla no rompe; reintentá en un rato.)</div>
   {% else %}
 
+    {# ⚠ TEJEDORES QUE EL PROGRAMA NO RECONOCE (TMT 2026-08-19, dueña: *"y acá
+       no me mostrás los desconocidos"*). La campanita ya avisaba de ellos, pero
+       la pantalla a la que mandaba el aviso no los tenía en ninguna parte: sus
+       OFs se cuentan como producción propia y desaparecen adentro de INTELA.
+       Va ARRIBA de la tabla de tercerizados, porque es justamente lo que
+       DEBERÍA estar en esa tabla y no está. #}
+    {% if data.desconocidos %}
+      <div style="margin:0 0 12px;padding:9px 12px;border-radius:6px;
+                  background:rgb(255 251 235);border:1px solid rgb(252 211 77);
+                  font-size:12.5px;line-height:1.5;color:rgb(120 53 15)">
+        <b style="font-weight:600">Asinfo trae {{ data.desconocidos|length }}
+        tejedor{{ '' if data.desconocidos|length == 1 else 'es' }} que el
+        programa no reconoce.</b>
+        Su producción se está contando como propia (INTELA) y no se le puede
+        cargar la compra a nadie.
+        <table style="margin:7px 0 0;background:transparent">
+          <thead><tr>
+            <th style="color:rgb(146 64 14)">Como figura en Asinfo</th>
+            <th style="color:rgb(146 64 14)">Órdenes</th>
+            <th style="color:rgb(146 64 14)">Kg</th>
+            <th style="color:rgb(146 64 14)">Ejemplo</th>
+          </tr></thead>
+          <tbody>
+            {% for d in data.desconocidos %}
+              <tr>
+                <td style="color:rgb(120 53 15)">{{ d.label }}</td>
+                <td style="color:rgb(120 53 15)">{{ d.ofs }}</td>
+                <td style="color:rgb(120 53 15)">{{ d.kg|num_es }}</td>
+                <td class="muted">{{ d.ejemplo }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div style="margin-top:6px;color:rgb(146 64 14)">
+          Si alguno es un tejedor de verdad, avisá para darlo de alta — el
+          nombre con el que Asinfo lo escribe vive en el código, no en esta
+          pantalla.
+        </div>
+      </div>
+    {% endif %}
+
     {# Abre sola SÓLO si hay algo que hacer. Si dice «0 para cargar» queda
        plegada: el número del título ya te dice todo. #}
     <details {% if data.pendientes %}open{% endif %}>
