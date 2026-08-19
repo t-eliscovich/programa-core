@@ -287,3 +287,43 @@ def test_la_query_del_documento_por_guia_ata_por_renglon_y_saltea_anuladas():
     assert "id_detalle_despacho_cliente" in sql   # por RENGLÓN, no por cabecera
     assert "fc.estado <> 0" in sql
     assert "dc.fecha_anulacion IS NULL" in sql
+
+
+def test_cada_guia_lleva_el_numero_de_su_factura():
+    """TMT 19/08: *"poneme cada factura de cada despacho así lo pueden usar"*.
+    La columna decía "facturada"/"sin factura" —el estado, no el dato—, así que
+    la tabla se miraba pero no se podía trabajar con ella."""
+    guias = [
+        {"guia": "DES-95512", "hora": "08:14", "cliente": "TJC",
+         "facturada": True, "kg": 612.35},
+        {"guia": "DES-95927", "hora": "08:28", "cliente": "AJO",
+         "facturada": True, "kg": 12.90},
+        {"guia": "DES-95926", "hora": "07:54", "cliente": "SEF",
+         "facturada": False, "kg": 259.35},
+    ]
+    d = _cuadre(guias=guias,
+                por_guia={"DES-95512": {"001-099-000182010"},
+                          "DES-95927": {"001-099-000182106"}})
+    por = {g["guia"]: g for g in d["guias"]}
+    # la que está cargada acá: número y marcada como presente
+    assert por["DES-95512"]["docs"] == ["001-099-000182010"]
+    assert por["DES-95512"]["en_pc"] == ["001-099-000182010"]
+    # la que existe en Asinfo pero todavía no se importó: número igual, sin en_pc
+    assert por["DES-95927"]["docs"] == ["001-099-000182106"]
+    assert por["DES-95927"]["en_pc"] == []
+    # la que nadie facturó todavía: sin número que mostrar
+    assert por["DES-95926"]["docs"] == []
+
+
+def test_la_tabla_del_dia_imprime_el_numero_y_no_la_palabra_facturada(app, fake_db):
+    c = _login(app, fake_db)
+    guias = [{"guia": "DES-95927", "hora": "08:28", "cliente": "AJO",
+              "facturada": True, "kg": 12.90}]
+    with patch.object(dd, "_documentos_pc", return_value=[]), \
+         patch.object(dd, "_guias", return_value=guias), \
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia",
+                      return_value={"DES-95927": {"001-099-000182106"}}):
+        body = c.get("/facturas/dia?fecha=2026-08-19").get_data(as_text=True)
+    assert "001-099-000182106" in body
+    assert "falta cargarla acá" in body

@@ -208,7 +208,21 @@
             <td class="px-3 py-2 text-slate-500">{{ g.hora }}</td>
             <td class="px-3 py-2">{{ g.cliente }}</td>
             <td class="px-3 py-2 text-right">{{ g.kg | kg_es }}</td>
-            <td class="px-3 py-2 {{ 'text-slate-500' if g.facturada else 'text-amber-800' }}">{{ 'facturada' if g.facturada else 'sin factura' }}</td>
+            {# El NÚMERO, no el estado: con "facturada" a secas la tabla se mira,
+             con el número se usa. Si Asinfo la facturó y todavía no está acá,
+             se dice al lado — es lo que hay que hacer con esa fila. #}
+          <td class="px-3 py-2">
+            {% if g.docs %}
+              {% for doc in g.docs %}
+                <span class="{{ 'text-slate-700' if doc in g.en_pc else 'text-amber-800' }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}
+              {% endfor %}
+              {% if g.docs != g.en_pc %}<span class="text-xs text-amber-800">· falta cargarla acá</span>{% endif %}
+            {% elif g.facturada %}
+              <span class="text-slate-500">nota de entrega</span>
+            {% else %}
+              <span class="text-amber-800">sin factura</span>
+            {% endif %}
+          </td>
           </tr>
           {% endfor %}
         </tbody>

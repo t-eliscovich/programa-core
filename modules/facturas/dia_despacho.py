@@ -239,9 +239,16 @@ def cuadre(fecha) -> dict:
     sin_factura, sin_cargar = [], []
     kg_nten_esperado = 0.0
     for g in guias:
-        suyos = por_guia.get(g["guia"]) or set()
+        suyos = sorted(por_guia.get(g["guia"]) or ())
+        # TMT 2026-08-19: *"acá también poneme cada factura de cada despacho
+        # así lo pueden pueden usar"* — la columna decía "facturada" / "sin
+        # factura", que es el estado pero no el dato: con el NÚMERO al lado, la
+        # tabla del día sirve para trabajar (buscar la factura, reclamarla,
+        # cruzarla) y no sólo para mirar.
+        g["docs"] = suyos
+        g["en_pc"] = [x for x in suyos if x in docs_pc]
         if suyos:
-            faltan = sorted(x for x in suyos if x not in docs_pc)
+            faltan = [x for x in suyos if x not in docs_pc]
             if faltan:
                 sin_cargar.append({**g, "doc": faltan[0]})
         elif not g["facturada"]:

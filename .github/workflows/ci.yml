@@ -47,11 +47,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ⭐ SIN `cache: pip`. Las dependencias se instalan con `uv` (abajo), así
+      # que `~/.cache/pip` NUNCA existe — y el paso *Post Set up Python*, que
+      # corre al final y quiere guardar ese cache, terminaba con
+      # "Cache folder path is retrieved for pip but doesn't exist on disk" y
+      # **daba el job por FALLADO con todos los tests en verde**. Rojo
+      # intermitente (aparece sólo cuando toca guardar el cache), y con el CI
+      # rojo el deploy se frena solo y queda "bloqueado": así se quedó afuera
+      # el arreglo del cuadre del 19/08. El cache que sí sirve es el de `uv`
+      # (`enable-cache: true` en el paso de abajo). TMT 2026-08-19.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       # TMT 2026-08-13: `uv` en vez de `pip`. Resuelve e instala lo mismo (lee
       # el requirements.txt tal cual) pero tarda ~3 s en vez de ~10 s.
