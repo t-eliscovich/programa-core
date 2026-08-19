@@ -59,6 +59,32 @@ ORDEN_COLUMNAS_DIARIO = ("RY", "AP", "UN")
 LABEL_TERCERIZADO = {"RY": "Reyes", "AP": "Ponce", "UN": "Unda"}
 
 
+#: Desde cuándo cuentan las OFs ABIERTAS. Antes de esta fecha la pantalla
+#: sigue mostrando SÓLO lo cerrado, exactamente como estaba.
+#:
+#: TMT 2026-08-19 (dueña, mirando el dry-run del barrido: *"junio seguro que no
+#: se toca. ¿No se cargaron ya? Quizás no montos exactos — hacelo para
+#: agosto"*). El barrido hacia atrás llegaba a junio y julio: junio salía en
+#: cero solo (sus abiertas ya estaban cubiertas por facturas cargadas a mano),
+#: pero julio proponía 11 compras por $ 17.205,24 y en julio hay 5 facturas
+#: tipeadas a mano que no matchean con ninguna orden por kilos — o sea que el
+#: pasivo de julio probablemente YA esté cargado, con otros montos. Cargar de
+#: nuevo esos kilos era duplicar plata para arreglar una foto.
+#:
+#: Con el corte, julio y junio quedan como estaban y el mecanismo arranca
+#: limpio en agosto, que no tiene NINGUNA compra K de tercerizados.
+#: Correr el mecanismo sobre un mes viejo = mover esta fecha a mano.
+ABIERTAS_DESDE = (2026, 8)
+
+
+def _cuentan_las_abiertas(anio: int, mes: int) -> bool:
+    """¿El mes es del corte para acá? (ver ABIERTAS_DESDE)"""
+    try:
+        return (int(anio), int(mes)) >= ABIERTAS_DESDE
+    except (TypeError, ValueError):
+        return False
+
+
 def _compras_k_por_prov(anio: int, mes: int) -> dict:
     """{codigo_prov: {kg, importe, n}} de scintela.compra tipo K del mes
     (kg>0, no anuladas)."""
@@ -154,18 +180,23 @@ def falta_acumulada(anio: int, mes: int, meses: int = MESES_VENTANA_TOPE) -> dic
 
 
 def _ofts_estampadas() -> dict:
-    """{OFT: $ compra} — OFT que figuran en el concepto de alguna compra tipo K
-    (match fino: las cargadas desde esta tab), con el IMPORTE de la compra.
+    """{OFT: {"importe": $, "kg": kg, "n": compras}} — lo YA CARGADO por OFT.
 
-    Si una compra estampa varios OFT, se reparte el importe en partes iguales
-    (en la práctica la tab crea 1 compra por OFT, así que es el importe entero).
-    Sirve para mostrar la columna 'Compra $' en la lista por OF. Membership
-    (`oft in estampadas`) sigue andando igual que antes (chequea las claves).
+    Suma TODAS las compras tipo K vivas que estampan ese OFT en el concepto.
+    Si una compra estampa varios OFT, se reparte en partes iguales (en la
+    práctica la tab crea 1 compra por OFT, así que va entera).
+
+    ⭐ TMT 2026-08-19: antes devolvía sólo el importe y se usaba como un sí/no
+    ("esta OF ya tiene compra, no la ofrezcas más"). Con las OFs ABIERTAS eso
+    ya no alcanza: el maquilero factura mientras la orden sigue abierta y los
+    kilos SIGUEN SUBIENDO, así que hay que saber cuántos kg de esa OF están
+    pagados para poder cargar sólo el SALDO. Por eso ahora también viaja el kg.
     """
     try:
         rows = db.fetch_all(
             """
-            SELECT concepto, COALESCE(importe, 0) AS importe
+            SELECT concepto, COALESCE(importe, 0) AS importe,
+                   COALESCE(kg, 0) AS kg
               FROM scintela.compra
              WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
                AND COALESCE(stat, '') <> 'Y'
@@ -179,10 +210,26 @@ def _ofts_estampadas() -> dict:
         ofts = [m.upper() for m in _OFT_RE.findall(r.get("concepto") or "")]
         if not ofts:
             continue
-        parte = float(r.get("importe") or 0) / len(ofts)
+        parte_imp = float(r.get("importe") or 0) / len(ofts)
+        parte_kg = float(r.get("kg") or 0) / len(ofts)
         for k in ofts:
-            out[k] = round(out.get(k, 0.0) + parte, 2)
+            acc = out.setdefault(k, {"importe": 0.0, "kg": 0.0, "n": 0})
+            acc["importe"] = round(acc["importe"] + parte_imp, 2)
+            acc["kg"] = round(acc["kg"] + parte_kg, 2)
+            acc["n"] += 1
     return out
+
+
+def _sumar_estampada(estampadas: dict, oft: str, importe, kg) -> None:
+    """Acumula en el mapa de `_ofts_estampadas` lo que este lote acaba de crear.
+
+    Sin esto, dos OFs del mismo lote (o dos corridas seguidas del hilo de
+    fondo) volverían a ver saldo entero y cargarían dos veces.
+    """
+    acc = estampadas.setdefault(oft, {"importe": 0.0, "kg": 0.0, "n": 0})
+    acc["importe"] = round(acc["importe"] + float(importe or 0), 2)
+    acc["kg"] = round(acc["kg"] + float(kg or 0), 2)
+    acc["n"] += 1
 
 
 def _key(of: dict) -> str:
@@ -202,7 +249,28 @@ def resumen_mes(anio: int, mes: int) -> dict:
     """
     prod = asinfo_service.produccion_tejeduria_mes(anio, mes)
     disponible = bool(prod.get("disponible"))
-    ofs = prod.get("ofs", [])
+    ofs = list(prod.get("ofs", []))
+
+    # ⭐ TMT 2026-08-19 (dueña: *"nos facturan con la factura abierta, así que
+    # apenas entren kg hay que pagar; esos kg tienen que figurar entrados en
+    # tejeduría y aparecer el pasivo"*).
+    #
+    # `produccion_tejeduria_mes` sólo trae OFs CERRADAS, y en Asinfo el cierre
+    # llega con 11-27 días de retraso: al 19/08 la última OF tercerizada
+    # cerrada era del 28/07 y la pantalla mostraba tercerizado CERO en agosto,
+    # mientras Reyes, Ponce y Unda ya habían entregado. Los kilos entraban a
+    # bodega igual (el ingreso se mide por saldo, no por la OF), así que se
+    # escondían dentro del residuo INTELA y nadie generaba el pasivo.
+    #
+    # Sumamos las ABIERTAS con kg ya fabricado, imputadas por su fecha de
+    # creación. Sólo las TERCERIZADAS: INTELA no factura y su kg sale del plug
+    # contra el ingreso a bodega, así que agregarle OFs abiertas no cambiaría
+    # nada y sí ensuciaría `total_kg_of`.
+    abiertas = (asinfo_service.produccion_tejeduria_abiertas(anio, mes)
+                if (disponible and _cuentan_las_abiertas(anio, mes)) else {})
+    for _o in (abiertas.get("ofs") or []):
+        if not _o.get("es_intela"):
+            ofs.append(_o)
 
     # TMT 2026-07-16 (dueña): en tercerizados SOLO Reyes (RY) y Ponce (AP).
     # Cualquier otro no-INTELA (R UNDA, GENERICA PRUEBAS, OFs sin código "?")
@@ -363,32 +431,70 @@ def resumen_mes(anio: int, mes: int) -> dict:
     es_mes_pasado = (int(anio), int(mes)) < (_hoy.year, _hoy.month)
     falta_por_cod = {t["cod"]: (t.get("falta_kg") or 0.0)
                      for t in tejedores if t.get("cod")}
+    # Compras tipeadas a mano (sin OFT en el concepto) de la ventana: sirven
+    # para no marcar "pendiente" una OF que en realidad YA se pagó. Se consume
+    # el match, así que se recorre en orden estable (día, OFT).
+    _desde_v, _hasta_v = _rango_ventana(anio, mes)
+    a_mano_estado = _compras_k_a_mano(_desde_v, _hasta_v) if disponible else {}
     tercerizado_ofs = []
-    for of in ofs:
+    for of in sorted(ofs, key=lambda o: (str(o.get("dia") or ""),
+                                         str(o.get("numero") or ""))):
         if of["es_intela"]:
             continue
         numero = (of.get("numero") or "").upper()
-        monto = estampadas.get(numero)  # $ de la compra si hay match fino
-        if monto is not None:
-            estado = "compra"          # encontrada → muestra $
-        elif es_mes_pasado:
-            estado = "cargado"         # mes viejo → no se recarga
-        elif falta_por_cod.get(of.get("cod"), 0.0) > 0.01:
-            estado = "pendiente"       # falta y sin match → botón Cargar
+        cargado = estampadas.get(numero) or {}
+        monto = cargado.get("importe")   # $ de la compra si hay match fino
+        kg_of = round(float(of.get("kg") or 0), 2)
+        # ⭐ SALDO por OF (TMT 2026-08-19). El pasivo nace con los kilos, no
+        # con el cierre, y una OF abierta sigue sumando: lo que falta cargar es
+        # kg de la OF − kg ya cargado con ese OFT. Cuando la orden suma más
+        # kilos, el saldo vuelve a ser > 0 y se carga UNA COMPRA NUEVA por la
+        # diferencia (dueña: "una compra por el saldo nuevo") — nunca se toca
+        # la que ya existe, para no pisar el importe si ella lo ajustó con la
+        # factura real.
+        kg_cargado = round(float(cargado.get("kg") or 0.0), 2)
+        kg_saldo = round(kg_of - kg_cargado, 2)
+        # Saldo NEGATIVO = se cargó más kg de los que Asinfo reconoce (la OF
+        # bajó, o la compra se tipeó de más). No se resta solo: se avisa.
+        sobrecargada = kg_saldo < -0.01
+        if kg_saldo <= 0.01:
+            estado = "compra" if monto is not None else "cargado"
+        elif es_mes_pasado and not of.get("abierta"):
+            # Mes viejo y orden CERRADA: cuando ese mes fue el mes en curso el
+            # motor ya la vio y decidió. No volvemos atrás a cargar junio.
+            # Las ABIERTAS no entran acá a propósito: son justo las que el
+            # programa NUNCA pudo ver (sólo miraba cerradas), así que su pasivo
+            # sigue faltando por viejo que sea el mes. TMT 2026-08-19.
+            #
+            # Va ANTES del match a mano a propósito: el match se CONSUME (una
+            # factura tapa una sola OF), y si lo gastara una orden vieja que ya
+            # estaba resuelta, la abierta que sí está en juego se quedaría sin
+            # su cobertura y se cargaría dos veces.
+            estado = "cargado"
+        elif _match_a_mano(a_mano_estado, of.get("cod"), kg_of, of.get("dia")):
+            estado = "cargado"         # la pagaron a mano, sin estampar el OFT
+        elif kg_cargado > 0 or falta_por_cod.get(of.get("cod"), 0.0) > 0.01:
+            estado = "pendiente"       # falta cargar (todo, o el saldo nuevo)
         else:
-            estado = "cargado"         # cubierto por match viejo del tejedor
+            estado = "cargado"         # el tejedor ya está cubierto en el mes
         # Tarifa e importe sugerido (TMT 2026-07-26): el $/kg sale de la tabla
         # de tarifas según el PRODUCTO de la OF (Ponce cobra distinto los HUF).
         # Sin tarifa → importe_sugerido None y NO se ofrece carga automática:
-        # nunca inventamos un precio.
+        # nunca inventamos un precio. El importe va sobre el SALDO, no sobre el
+        # kg total: si ya se pagó una parte, sólo se carga lo que falta.
         _tar = _tarifas.resolver(tarifas, of.get("cod"), of.get("descripcion"))
+        _kg_cobrable = kg_saldo if kg_saldo > 0.01 else 0.0
         tercerifa = {
             **of,
             "compra_monto": monto,
             "estado": estado,
             "tarifa": _tar,
-            "importe_sugerido": (round(float(of.get("kg") or 0) * _tar, 2)
-                                 if _tar else None),
+            "kg_cargado": kg_cargado,
+            "kg_saldo": kg_saldo,
+            "sobrecargada": sobrecargada,
+            "abierta": bool(of.get("abierta")),
+            "importe_sugerido": (round(_kg_cobrable * _tar, 2)
+                                 if (_tar and _kg_cobrable) else None),
         }
         tercerizado_ofs.append(tercerifa)
     # TMT 2026-07-30 (dueña: "ordenalo por dia esto"). Antes agrupaba por tejedor
@@ -620,7 +726,8 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     `_ofts_estampadas` la reconozca de acá en adelante.
 
     GUARDAS (en este orden — la carga ciega duplicaba):
-      1. sólo OFs en estado 'pendiente' (ya excluye mes pasado y OFT estampado);
+      1. sólo OFs en estado 'pendiente', y por el SALDO (kg de Asinfo − kg ya
+         cargado con ese OFT), nunca por el kg entero;
       2. **tarifa resuelta o se saltea** — nunca inventamos un precio;
       3. ~~tope acumulado por kg~~ — **SACADO el 2026-07-30** (dueña: "dejá de
          poner muchos topes que entorpece más que ayudar"). Era difuso y frenaba
@@ -674,22 +781,28 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
     for of in pendientes:
         cod = (of.get("cod") or "").upper().strip()
         numero = (of.get("numero") or "").upper()
-        kg = round(float(of.get("kg") or 0), 2)
         tarifa = of.get("tarifa")
-        importe = of.get("importe_sugerido")
+        # Se carga el SALDO, no el kg total de la OF: lo que ya está pagado con
+        # ese OFT no se vuelve a facturar. Se recalcula acá contra `estampadas`
+        # fresco (y contra lo que este mismo lote va creando) para que dos
+        # corridas seguidas no dupliquen. Ver el comentario de `_ofts_estampadas`.
+        kg_of = round(float(of.get("kg") or 0), 2)
+        kg_ya = round(float((estampadas.get(numero) or {}).get("kg") or 0.0), 2)
+        kg = round(kg_of - kg_ya, 2)
+        importe = round(kg * tarifa, 2) if (tarifa and kg > 0.01) else None
         base = {"oft": numero, "cod": cod, "label": of.get("label") or "",
                 "dia": of.get("dia"), "descripcion": of.get("descripcion") or "",
-                "kg": kg, "tarifa": tarifa, "importe": importe}
+                "kg": kg, "kg_of": kg_of, "kg_cargado": kg_ya,
+                "abierta": bool(of.get("abierta")),
+                "tarifa": tarifa, "importe": importe}
 
-        if numero in estampadas:
-            detalle.append({**base, "ok": False, "motivo": "ya tiene compra"})
+        if kg <= 0.01:
+            detalle.append({**base, "ok": False, "motivo": (
+                "ya tiene compra" if kg_ya else "OF sin kg")})
             continue
         if not tarifa or not importe:
             detalle.append({**base, "ok": False,
                             "motivo": f"sin tarifa para {cod or '?'}"})
-            continue
-        if kg <= 0:
-            detalle.append({**base, "ok": False, "motivo": "OF sin kg"})
             continue
         # ¿Ya la cargaron a mano desde la factura, sin estampar el OFT? Se
         # reconoce por los KG (huella fuerte) dentro de ±15 días. NO es un tope:
@@ -710,7 +823,7 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
             creadas += 1
             importe_total += float(importe)
             restante[cod] = round(restante.get(cod, 0.0) - kg, 2)
-            estampadas[numero] = float(importe)
+            _sumar_estampada(estampadas, numero, importe, kg)
             existentes.setdefault(cod, []).append(float(importe))
             detalle.append({**base, "ok": True, "dup_warn": dup})
             continue
@@ -734,7 +847,7 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         creadas += 1
         importe_total += float(importe)
         restante[cod] = round(restante.get(cod, 0.0) - kg, 2)
-        estampadas[numero] = float(importe)
+        _sumar_estampada(estampadas, numero, importe, kg)
         existentes.setdefault(cod, []).append(float(importe))
         detalle.append({**base, "ok": True, "dup_warn": dup,
                         "numero_compra": res.get("numero")})
@@ -901,7 +1014,48 @@ def avisar_tejedores_nuevos(anio: int, mes: int) -> int:
             url="/produccion-tejeduria-asinfo#tarifas",
             clave=f"tejeduria:sin-tarifa:{anio}-{mes:02d}:{f['cod']}:{f['ofs']}"[:400],
         ))
+
+    # 3) OFs donde se cargó MÁS kg de los que Asinfo reconoce.
+    #
+    # ⭐ TMT 2026-08-19. Desde que la compra se crea con la OF ABIERTA, el kg
+    # que se factura es el del momento y la orden todavía puede corregirse
+    # hacia abajo. Si eso pasa, el saldo queda NEGATIVO: pagamos de más. El
+    # programa NO lo arregla solo (una compra ya creada no se toca: puede
+    # tener el importe ajustado a mano con la factura real) — avisa para que
+    # se corrija por la pantalla de compras.
+    for of in data.get("tercerizado_ofs") or []:
+        if not of.get("sobrecargada"):
+            continue
+        _sobra = abs(float(of.get("kg_saldo") or 0.0))
+        puestos += bool(_avisar(
+            fuente="tejeduria",
+            nivel="alerta",
+            titulo=f"{of.get('label') or of.get('cod') or '?'} · cargado de más",
+            detalle=(f"La {of.get('numero')} tiene "
+                     f"{num_es(float(of.get('kg') or 0), 2)} kg en Asinfo y "
+                     f"{num_es(float(of.get('kg_cargado') or 0), 2)} kg "
+                     f"cargados en compras: {num_es(_sobra, 2)} kg de más. "
+                     f"Ajustalo desde Editar en /compras."),
+            cantidad=1,
+            url="/produccion-tejeduria-asinfo",
+            clave=(f"tejeduria:sobrecarga:{of.get('numero')}:"
+                   f"{of.get('kg_saldo')}")[:400],
+        ))
     return puestos
+
+
+def _meses_a_barrer(hoy, meses: int = MESES_VENTANA_TOPE) -> list[tuple]:
+    """[(anio, mes)] del mes en curso hacia atrás, del más viejo al más nuevo.
+
+    Del más viejo al más nuevo para que el saldo de una orden se consuma en
+    orden cronológico si la misma OF apareciera en dos ventanas.
+    """
+    out = []
+    a, m = hoy.year, hoy.month
+    for _ in range(max(1, int(meses))):
+        out.append((a, m))
+        a, m = (a - 1, 12) if m == 1 else (a, m - 1)
+    return list(reversed(out))
 
 
 def correr_si_toca() -> dict:
@@ -925,14 +1079,26 @@ def correr_si_toca() -> dict:
 
         hoy = today_ec()
         res["corrio"] = True
+        # ⭐ BARRIDO HACIA ATRÁS (TMT 2026-08-19, dueña: *"se debería cargar
+        # solo, no quiero un botón; como pasivos, igual que hacemos con
+        # compras"*). El mes en curso no alcanza: una orden abierta en julio
+        # que entregó kilos en julio nunca fue vista por el motor —sólo miraba
+        # cerradas— y su pasivo no aparece por más que hoy sea agosto. Se
+        # barren los mismos MESES_VENTANA_TOPE meses que usa el resto del
+        # módulo. Lo que frena el duplicado NO es el mes: son las guardas de
+        # `cargar_pendientes` (OFT estampado, saldo por OF, match por kg contra
+        # lo tipeado a mano) más la regla de que en un mes cerrado sólo se
+        # cargan las ÓRDENES ABIERTAS.
         # `cargar_pendientes` ya deja el aviso de lo que cargó (avisa igual si
         # lo dispara la pantalla), así que acá no se repite.
-        carga = cargar_pendientes(hoy.year, hoy.month, usuario=MARCADOR_CARGA)
-        res["creadas"] = carga.get("creadas") or 0
-        res["importe"] = carga.get("importe") or 0.0
-        # Lo que NO se pudo cargar también se avisa: un tejedor nuevo o sin
-        # tarifa se quedaba esperando sin que nadie se enterara.
-        res["avisos_alta"] = avisar_tejedores_nuevos(hoy.year, hoy.month)
+        res["avisos_alta"] = 0
+        for _a, _m in _meses_a_barrer(hoy):
+            carga = cargar_pendientes(_a, _m, usuario=MARCADOR_CARGA)
+            res["creadas"] += carga.get("creadas") or 0
+            res["importe"] = round(res["importe"] + (carga.get("importe") or 0.0), 2)
+            # Lo que NO se pudo cargar también se avisa: un tejedor nuevo o sin
+            # tarifa se quedaba esperando sin que nadie se enterara.
+            res["avisos_alta"] += avisar_tejedores_nuevos(_a, _m)
     except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
         _LOG.warning("tejeduría (fondo): %s", e)
     return res

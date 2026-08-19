@@ -3056,6 +3056,100 @@ def produccion_tejeduria_mes(anio: int, mes: int) -> dict:
     return out
 
 
+def produccion_tejeduria_abiertas(anio: int, mes: int) -> dict:
+    """OFs de tela cruda TODAVÍA ABIERTAS, imputadas por fecha de CREACIÓN.
+
+    ⭐ TMT 2026-08-19 (dueña: *"no están entrando a tejeduría Asinfo los de
+    Unda, Ponce y Reyes"*). `produccion_tejeduria_mes` sólo mira OFs CERRADAS
+    (`estado_produccion=5`), que es lo correcto para el kg definitivo. Pero en
+    Asinfo el cierre llega con 11-27 días de retraso y a veces no llega nunca:
+    al 19/08 la última OF tercerizada cerrada era del 28/07 mientras 11 OFs de
+    agosto y 13 de julio seguían abiertas con ~21.000 kg ya fabricados. Esos
+    kilos SÍ entraron a bodega 52 (el ingreso se mide por `saldo_producto_lote`,
+    no por la OF), así que quedaban escondidos adentro del residuo INTELA y el
+    maquilero no tenía ni compra ni pasivo. Mismo agujero que el caso UN, por
+    otra puerta.
+
+    Los tres estados que existen en bodega 52 (verificado sobre 2.383 OFs desde
+    2025): **0** = anulada (nunca tiene kg), **2** = en proceso, **5** =
+    cerrada. Acá van las de estado 2 con kg ya cargado.
+
+    ⚠ El kg NO es definitivo: sigue subiendo mientras la orden esté abierta.
+    Por eso quien facture contra esto carga el SALDO (kg de la OF − kg ya
+    cargado con ese OFT), nunca el kg entero — ver `_ofts_estampadas` en
+    `modules.tejeduria_asinfo.service`.
+
+    Misma forma que `produccion_tejeduria_mes`, con `abierta=True` en cada OF.
+    Fail-soft: si Asinfo cae, `disponible=False` y listas vacías.
+    """
+    vacio = {"disponible": False, "anio": anio, "mes": mes,
+             "ofs": [], "por_tejedor": [], "total_kg": 0.0}
+    try:
+        anio = int(anio)
+        mes = int(mes)
+    except (TypeError, ValueError):
+        return dict(vacio)
+    cache_key = ("abiertas", anio, mes)
+    now = _time.time()
+    cached = _PROD_TEJ_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _PROD_TEJ_TTL_SECS:
+        return cached[1]
+    d1 = f"{anio:04d}-{mes:02d}-01"
+    ny, nm = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+    d2 = f"{ny:04d}-{nm:02d}-01"
+    sql = f"""
+        SELECT numero,
+               CONVERT(varchar(10), fecha_creacion, 23) AS dia,
+               ISNULL(cantidad_fabricada, 0)            AS kg,
+               descripcion
+          FROM orden_fabricacion
+         WHERE id_bodega = 52
+           AND indicador_hoja = 1
+           AND estado_produccion = 2
+           AND fecha_cierre IS NULL
+           AND ISNULL(cantidad_fabricada, 0) > 0
+           AND fecha_creacion >= '{d1}' AND fecha_creacion < '{d2}'
+         ORDER BY fecha_creacion
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=2000)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return dict(vacio)
+    ofs = []
+    agg: dict = {}
+    total = 0.0
+    for r in rows or []:
+        kg = float(r.get("kg") or 0.0)
+        desc = str(r.get("descripcion") or "")
+        cod, label, es_intela = _clasificar_tejedor(desc)
+        ofs.append({
+            "numero": str(r.get("numero") or "").strip(),
+            "dia": str(r.get("dia") or "")[:10],
+            "kg": round(kg, 2),
+            "descripcion": desc.strip(),
+            "cod": cod,
+            "label": label,
+            "es_intela": es_intela,
+            "abierta": True,
+        })
+        k = cod or ("?" + label)
+        a = agg.setdefault(k, {"cod": cod, "label": label,
+                               "es_intela": es_intela, "ofs": 0, "kg": 0.0})
+        a["ofs"] += 1
+        a["kg"] += kg
+        total += kg
+    por_tejedor = sorted(agg.values(), key=lambda x: -x["kg"])
+    for a in por_tejedor:
+        a["kg"] = round(a["kg"], 2)
+    # `disponible=True` aunque no haya filas: "Asinfo contestó y no hay OFs
+    # abiertas" es un estado legítimo y distinto de "Asinfo no contestó" (el
+    # gotcha del caché que costó $495.000 el 29/07 — ver la skill).
+    out = {"disponible": True, "anio": anio, "mes": mes,
+           "ofs": ofs, "por_tejedor": por_tejedor, "total_kg": round(total, 2)}
+    _PROD_TEJ_CACHE[cache_key] = (now, out)
+    return out
+
+
 def produccion_tejeduria_rango(d1: str, d2: str) -> dict:
     """Igual que `produccion_tejeduria_mes` pero sobre un RANGO de fechas de
     cierre [d1, d2), agregado por tejedor (sin el detalle de OFs).

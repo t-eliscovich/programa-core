@@ -12,17 +12,28 @@ from unittest.mock import patch
 from modules.tejeduria_asinfo import service as tej
 
 
-def test_correr_si_toca_carga_el_mes_y_respeta_el_freno(monkeypatch):
+def test_correr_si_toca_carga_la_ventana_y_respeta_el_freno(monkeypatch):
     monkeypatch.setattr(tej, "_auto_ultimo_ts", 0.0)
     with patch.object(tej, "cargar_pendientes",
                       return_value={"creadas": 2, "importe": 1630.0}) as cp:
         r1 = tej.correr_si_toca()
         r2 = tej.correr_si_toca()   # enseguida: la frena el intervalo de 30 min
-    assert r1["corrio"] is True and r1["creadas"] == 2
+    assert r1["corrio"] is True
     assert r2["corrio"] is False
-    assert cp.call_count == 1
-    # Corre sobre el mes EN CURSO y se marca como carga automática.
+    # Barre la ventana entera, no sólo el mes en curso (TMT 2026-08-19: la
+    # orden abierta en julio nunca fue vista y su pasivo sigue faltando).
+    assert cp.call_count == tej.MESES_VENTANA_TOPE
+    assert r1["creadas"] == 2 * tej.MESES_VENTANA_TOPE
     assert cp.call_args.kwargs["usuario"] == tej.MARCADOR_CARGA
+
+
+def test_la_ventana_va_del_mas_viejo_al_mas_nuevo():
+    import datetime as _dt
+    assert tej._meses_a_barrer(_dt.date(2026, 8, 19), meses=3) == [
+        (2026, 6), (2026, 7), (2026, 8)]
+    # y cruza el año sin romperse
+    assert tej._meses_a_barrer(_dt.date(2026, 1, 15), meses=3) == [
+        (2025, 11), (2025, 12), (2026, 1)]
 
 
 def test_correr_si_toca_se_puede_apagar_por_ambiente(monkeypatch):

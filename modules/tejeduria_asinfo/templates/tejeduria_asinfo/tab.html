@@ -76,6 +76,11 @@
     transition:transform .12s ease}
   .ta details[open]>summary::before{transform:rotate(180deg)}
   .ta details>summary:hover{background:#e2e8f0}
+  /* OF todavía abierta en Asinfo (TMT 2026-08-19). */
+  .ta .sincerrar{display:inline-block;margin-left:5px;padding:1px 5px;
+    border-radius:4px;background:#fef3c7;border:1px solid #fcd34d;
+    color:#92400e;font-size:10px;font-weight:600;letter-spacing:.02em;
+    text-transform:uppercase;vertical-align:middle}
   /* Pista de estado en palabras, no sólo la flecha. */
   .ta details>summary::after{content:"abrir";margin-left:auto;font-size:10px;
     font-weight:600;letter-spacing:.04em;color:#475569;text-transform:uppercase}
@@ -274,15 +279,29 @@
     {% set filas = data.pendientes if solo_pendientes else data.tercerizado_ofs %}
     {% if filas %}
     <table>
-      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>$/kg</th><th>Compra $</th></tr></thead>
+      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Falta cargar (kg)</th><th>$/kg</th><th>Compra $</th></tr></thead>
       <tbody>
         {% for of in filas %}
           <tr>
-            <td>{{ of.numero }}</td>
+            <td>{{ of.numero }}{% if of.abierta %}
+              {# TMT 2026-08-19: la OF sigue abierta en Asinfo. Los kilos ya
+                 entraron y ya se facturan, pero el número todavía puede subir
+                 (y por eso se carga por saldo, no de una). #}
+              <span class="sincerrar" title="La orden sigue abierta en Asinfo: los kilos ya entraron pero el total todavía puede subir">sin cerrar</span>
+            {% endif %}</td>
             <td class="muted">{{ of.dia|fecha_es }}</td>
             <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
             <td class="muted">{{ of.descripcion }}</td>
             <td>{{ of.kg|num_es }}</td>
+            <td>
+              {% if of.sobrecargada %}
+                <span class="falta" title="Se cargaron más kilos de los que Asinfo reconoce: ajustalo desde Editar en /compras">{{ of.kg_saldo|num_es }} de más</span>
+              {% elif of.kg_saldo > 0.01 %}
+                {{ of.kg_saldo|num_es }}{% if of.kg_cargado %} <span class="muted">(ya {{ of.kg_cargado|num_es }})</span>{% endif %}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
             <td class="tar">{% if of.tarifa %}{{ of.tarifa|num_es(4) }}{% else %}<span class="falta">sin tarifa</span>{% endif %}</td>
             <td>
               {% if of.estado == 'compra' %}
@@ -290,7 +309,7 @@
               {% elif of.estado == 'pendiente' %}
                 {# El importe va PRECARGADO con kg × tarifa (y la fecha de la OF)
                    — el humano lo revisa y confirma. Sin tarifa no se precarga. #}
-                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg, tipo='K',
+                <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg_saldo, tipo='K',
                                                 importe=of.importe_sugerido if of.importe_sugerido else None,
                                                 fecha=of.dia|fecha_es,
                                                 concepto=of.numero ~ ' ' ~ of.descripcion) }}">
@@ -316,7 +335,7 @@
     {% elif solo_pendientes %}
       <p class="note ok">No queda ninguna OF pendiente en el mes — todas ya tienen su compra y su pasivo.</p>
     {% else %}
-      <p class="note ok">No hay producción tercerizada (Reyes/Ponce/Unda) este mes.</p>
+      <p class="note ok">No hay producción tercerizada (Reyes/Ponce/Unda) este mes — ni cerrada ni en curso.</p>
     {% endif %}
     </details>
 
