@@ -1445,6 +1445,7 @@ def anular_por_error_de_carga(
     id_reemplazo: int | None = None,
     usuario: str = "web",
     sin_compensacion_bancaria: bool = False,
+    _en_cascada: bool = False,
     conn=None,
 ) -> dict:
     """Anular un cheque mal cargado, con compensaciones automáticas.
@@ -1466,6 +1467,7 @@ def anular_por_error_de_carga(
         | C                    | INSERT TIPO='S' en caja                     |
         | con chequesxfact     | reverse de aplicaciones (factura.abono -=)  |
         | con posdat hermana   | DELETE posdat (banc=0, num=id_cheque)       |
+        | con espejo NB=97/98  | se anula el espejo también (cascada)        |
 
     Después la persona usa "Nuevo cheque" para cargar el correcto.
     `id_reemplazo` (opcional) se appendea a la observacion para enlazar.
@@ -1476,6 +1478,22 @@ def anular_por_error_de_carga(
     ND movería el saldo dos veces y dejaría un renglón hablando de un depósito
     que ya no está. El freno de conciliado sigue corriendo igual — es el que
     impide anular algo que el banco ya explicó.
+
+    ⭐ CASCADA AL ESPEJO (TMT 2026-08-19, caso HOM ch#102672). Un cheque de
+    ANTICIPO no viene solo: `crear()` le cuelga un cheque ESPEJO negativo
+    NB=98 (`id_cheque_padre` = el anticipo) que es la contrapartida del saldo
+    a favor del cliente. Anular el padre sin anular el espejo deja ese
+    negativo VIVO en cartera sin nada que lo compense: el cliente queda con un
+    saldo a favor que nadie le debe y la utilidad baja por su importe, de una
+    sola punta. Pasó el 19/08: Alex cargó $2.626,27 en vez de $2.626,67,
+    anuló, recargó bien — y el espejo de la carga mala quedó solo.
+
+    (El `continue` que saltea los `cheque_anticipo_espejo` al reversar un batch
+    en /historial decía desde siempre "anular_por_error_de_carga ya cascadea".
+    Recién ahora es verdad.)
+
+    `_en_cascada` es privado: marca la llamada que anula al espejo, para que
+    ésa no vuelva a buscar hijos.
 
     Todo en una sola transacción.
     """
@@ -1508,6 +1526,24 @@ def anular_por_error_de_carga(
 
         importe = float(ch["importe"] or 0)
         compensacion = None
+
+        # --- El espejo NB=97/98 que cuelga de este cheque (ver docstring) ---
+        # Sólo los espejos: `id_cheque_padre` lo usa también el cheque de
+        # REEMPLAZO (anular + recargar), y ése no se toca — es el bueno.
+        ids_espejo: list[int] = []
+        if not _en_cascada:
+            ids_espejo = [
+                int(r["id_cheque"])
+                for r in (db.fetch_all(
+                    "SELECT id_cheque FROM scintela.cheque "
+                    " WHERE id_cheque_padre = %s AND no_banco IN (97, 98) "
+                    "   AND COALESCE(importe, 0) < 0 "
+                    "   AND TRIM(COALESCE(stat, '')) NOT IN ('X', 'T', 'R') "
+                    " ORDER BY id_cheque",
+                    (id_cheque,),
+                    conn=conn,
+                ) or [])
+            ]
 
         # ── FRENO 2 (TMT 2026-08-05, caso MSS 1.100,93): si el movimiento
         # bancario de este cheque ya está CONCILIADO (contra el extracto o
@@ -1804,6 +1840,10 @@ def anular_por_error_de_carga(
                     for a in (aplic or [])
                 ],
                 "compensacion": compensacion,
+                # TMT 2026-08-19: qué espejos se llevó la cascada. Sin esto,
+                # deshacer la anulación revive el anticipo y deja el espejo
+                # muerto — el mismo desbalance con el signo al revés.
+                "espejos_anulados": ids_espejo,
                 "motivo": motivo or "",
             },
             id_original=md_orig_cheque["id_mov_doble"] if md_orig_cheque else None,
@@ -1830,12 +1870,29 @@ def anular_por_error_de_carga(
                SET estado='reversado', id_reverso=%s
              WHERE origen_table='cheque' AND origen_id=%s
                AND tipo IN ('cheque_aplicado_a_factura',
-                            'cheque_efectivo_to_caja')
+                            'cheque_efectivo_to_caja',
+                            'cheque_anticipo_espejo')
                AND estado='activo'
             """,
             (_id_reverso, id_cheque),
             conn=conn,
         )
+
+        # --- CASCADA: el espejo se anula con el padre ---
+        # Va al final, con el padre ya en 'X': el espejo se anula por este
+        # mismo camino (reversa sus aplicaciones, borra su posdat, deja su
+        # propio mov_doble), así que sigue siendo deshacible por separado.
+        for _id_esp in ids_espejo:
+            anular_por_error_de_carga(
+                _id_esp,
+                motivo=(
+                    f"espejo del cheque {ch.get('no_cheque') or id_cheque} "
+                    f"anulado por error de carga"
+                ),
+                usuario=usuario,
+                conn=conn,
+                _en_cascada=True,
+            )
 
     return {
         "id_cheque": id_cheque,
@@ -1845,6 +1902,7 @@ def anular_por_error_de_carga(
         "id_reemplazo": id_reemplazo,
         "compensacion": compensacion,
         "aplicaciones_reversadas": len(aplic),
+        "espejos_anulados": ids_espejo,
     }
 
 
@@ -7074,7 +7132,7 @@ def eliminar_residuos_retencion(
 
 
 def deshacer_anulacion_error_carga(
-    id_mov_doble: int, *, usuario: str = "web", motivo: str = ""
+    id_mov_doble: int, *, usuario: str = "web", motivo: str = "", conn=None
 ) -> dict:
     """Devuelve a la vida un cheque anulado por "error de carga".
 
@@ -7104,6 +7162,14 @@ def deshacer_anulacion_error_carga(
     aplicaciones: ésas se deshacen igual (el cheque vuelve y el banco se
     compensa) pero las facturas hay que re-aplicarlas a mano desde la ficha.
     `aplicaciones_pendientes` en el resultado lo dice con el número.
+
+    ⭐ Y vuelve con su ESPEJO (TMT 2026-08-19). Si la anulación se llevó el
+    espejo NB=98 del anticipo (`espejos_anulados` en la metadata), deshacerla
+    tiene que devolverlo: un anticipo vivo sin su espejo es plata que entró
+    sin la contrapartida del saldo a favor — la utilidad sube de una sola
+    punta, que es el mismo desbalance que la cascada vino a arreglar, con el
+    signo al revés. Si el espejo ya no está en 'X' (alguien lo movió), NO se
+    deshace nada: mejor un error claro que medio cheque restaurado.
     """
     import json as _json
 
@@ -7143,7 +7209,10 @@ def deshacer_anulacion_error_carga(
     fecha = today_ec()
     asegurar_fecha_abierta(fecha)
 
-    with db.tx() as conn:
+    import contextlib as _ctx
+
+    _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
+    with _tx as conn:
         ch = db.fetch_one(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, no_banco "
             "  FROM scintela.cheque WHERE id_cheque = %s FOR UPDATE",
@@ -7229,6 +7298,47 @@ def deshacer_anulacion_error_carga(
             )
             n_aplic = len(snap_aplic)
 
+        # 4. el espejo vuelve con el padre (ver docstring)
+        espejos_revividos: list[int] = []
+        for _id_esp in [int(x) for x in (meta.get("espejos_anulados") or [])]:
+            _mv_esp = db.fetch_one(
+                """
+                SELECT id_mov_doble FROM scintela.mov_doble
+                 WHERE tipo='reverso_cheque_administrativo'
+                   AND origen_table='cheque' AND origen_id=%s
+                   AND estado='activo'
+                 ORDER BY id_mov_doble DESC LIMIT 1
+                """,
+                (_id_esp,), conn=conn,
+            )
+            if not _mv_esp:
+                continue
+            try:
+                deshacer_anulacion_error_carga(
+                    int(_mv_esp["id_mov_doble"]),
+                    usuario=usuario,
+                    motivo=f"vuelve con el cheque {ch.get('no_cheque') or id_cheque}",
+                    conn=conn,
+                )
+            except ValueError as e:
+                raise ValueError(
+                    f"No deshago la anulación: el espejo de anticipo #{_id_esp} "
+                    f"no se puede devolver ({e}). Resolvelo primero desde su "
+                    "ficha — el anticipo sin su espejo deja al cliente con un "
+                    "saldo a favor que no existe."
+                ) from e
+            espejos_revividos.append(_id_esp)
+
+        # y su renglón del historial vuelve a estar vivo
+        if espejos_revividos:
+            db.execute(
+                "UPDATE scintela.mov_doble SET estado='activo', id_reverso=NULL "
+                " WHERE tipo='cheque_anticipo_espejo' AND origen_table='cheque' "
+                "   AND origen_id=%s AND id_reverso=%s",
+                (id_cheque, id_mov_doble),
+                conn=conn,
+            )
+
         _md.registrar(
             conn=conn,
             tipo="reverso_anulacion_error_carga",
@@ -7251,6 +7361,7 @@ def deshacer_anulacion_error_carga(
                     int(meta.get("n_aplicaciones_reversadas") or 0)
                     if sin_snapshot_aplic else 0),
                 "compensacion": compensacion_nueva,
+                "espejos_revividos": espejos_revividos,
                 "motivo": motivo or "",
             },
             id_original=id_mov_doble,
@@ -7260,6 +7371,7 @@ def deshacer_anulacion_error_carga(
         "id_cheque": id_cheque,
         "no_cheque": (ch.get("no_cheque") or "").strip(),
         "stat_restaurado": stat_destino,
+        "espejos_revividos": espejos_revividos,
         "aplicaciones_reaplicadas": n_aplic,
         "aplicaciones_pendientes": (
             int(meta.get("n_aplicaciones_reversadas") or 0)
