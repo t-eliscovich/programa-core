@@ -33,7 +33,8 @@ def lista():
     )
     return render_template(
         "avisos/lista.html", items=items, fuente=fuente, nivel=nivel,
-        todos=todos, fuentes=visibilidad.fuentes_visibles(queries.FUENTES),
+        todos=todos,
+        fuentes=visibilidad.fuentes_visibles(queries.FUENTES, items, fuente),
         n_no_leidos=queries.n_no_leidos(),
         archivados=archivados,
         # El deploy no corre migraciones: hasta que se aplique la 0145 la

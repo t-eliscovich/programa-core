@@ -123,6 +123,24 @@ def test_el_filtro_por_tema_de_novedades_esconde_lo_que_no_puede_abrir(como_int)
     assert "importaciones" not in visibles and "hilo-local" not in visibles
 
 
+def test_el_chip_de_un_tema_sin_avisos_visibles_no_se_muestra(como_int):
+    """Químicos pasa por su permiso (`tintura.ver`) pero sus avisos llevan a
+    /compras: el chip filtraba a una lista siempre vacía."""
+    items = [{"fuente": "ventas", "url": "/facturas/dia"}]
+    visibles = vis.fuentes_visibles(queries.FUENTES, items)
+    assert list(visibles) == ["ventas"]
+    # …y el tema que estoy mirando queda, para poder volver a "Todo".
+    assert "tejeduria" in vis.fuentes_visibles(queries.FUENTES, [], "tejeduria")
+
+
+def test_las_retenciones_de_asinfo_van_con_facturas_no_con_el_modulo_retenciones(app):
+    """`retenciones.ver` es EMITIR retenciones (INT no lo tiene). Estos avisos
+    son las de clientes que llegan de Asinfo y se aplican a las facturas."""
+    with app.test_request_context("/"):
+        assert vis.permisos_del_aviso(
+            "retenciones", "/facturas/retenciones-asinfo") == {"facturas.crear"}
+
+
 def test_listar_pide_mas_filas_cuando_va_a_filtrar(como_int):
     """El LIMIT corta ANTES del filtro: sin margen, quedaban 3 de 15.
 

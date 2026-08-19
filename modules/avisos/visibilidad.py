@@ -38,7 +38,11 @@ FUENTE_PERMISO: dict[str, str] = {
     "quimicos": "tintura.ver",
     "importaciones": "compras.ver",
     "hilo-local": "compras.ver",
-    "retenciones": "retenciones.ver",
+    # OJO: NO es `retenciones.ver` (ese es el módulo de EMITIR retenciones,
+    # que INT no tiene). Estos avisos son las retenciones de CLIENTES que
+    # llegan de Asinfo y se aplican a las facturas: viven en
+    # /facturas/retenciones-asinfo y son parte de la carga de facturas.
+    "retenciones": "facturas.crear",
     "clientes": "clientes.ver",
     "stock": "stock.ver",
     "traza": "informes.ver",
@@ -127,11 +131,23 @@ def filtrar(items: list[dict]) -> list[dict]:
         return items
 
 
-def fuentes_visibles(fuentes: dict[str, str]) -> dict[str, str]:
-    """El filtro por tema de /novedades, sin los temas que no puede abrir."""
+def fuentes_visibles(fuentes: dict[str, str], items: list[dict] | None = None,
+                    fuente_actual: str | None = None) -> dict[str, str]:
+    """El filtro por tema de /novedades, sin los temas que no puede abrir.
+
+    Con `items` se arma de lo que la persona REALMENTE está viendo: un tema
+    puede pasar el filtro por su permiso propio y no tener ni un aviso visible
+    (químicos pide `tintura.ver`, pero sus avisos llevan a /compras). Un chip
+    que no filtra nada es una pestaña que miente.
+    """
     try:
         if not hay_que_filtrar():
             return fuentes
-        return {k: v for k, v in fuentes.items() if puede_ver(k, None)}
+        if items is None:
+            return {k: v for k, v in fuentes.items() if puede_ver(k, None)}
+        vistos = {(a.get("fuente") or "") for a in items}
+        if fuente_actual:
+            vistos.add(fuente_actual)   # para poder volver a "Todo" desde acá
+        return {k: v for k, v in fuentes.items() if k in vistos}
     except Exception:  # noqa: BLE001
         return fuentes
