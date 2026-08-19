@@ -52,22 +52,22 @@ def test_toda_fuente_conocida_tiene_permiso_de_respaldo():
     assert not faltan, f"fuentes sin permiso de respaldo: {sorted(faltan)}"
 
 
-def test_el_permiso_sale_de_la_ruta_y_le_gana_a_la_fuente(app):
+def test_hacen_falta_LAS_DOS_llaves_la_pantalla_y_el_tema(app):
     """Dos avisos de la MISMA fuente pueden pedir permisos distintos."""
     with app.test_request_context("/"):
-        # El cuadre del día pide facturas.ver…
-        assert vis.permiso_del_aviso("ventas",
-                                     "/facturas/dia?fecha=2026-08-18") == "facturas.ver"
-        # …y la explicación de la utilidad, informes.ver — aunque la fuente
-        # sea la misma "ventas" y el fallback diga facturas.ver.
-        assert vis.permiso_del_aviso("ventas", "/informes/dia") == "informes.ver"
+        # El cuadre del día pide facturas.ver, igual que el tema ventas.
+        assert vis.permisos_del_aviso(
+            "ventas", "/facturas/dia?fecha=2026-08-18") == {"facturas.ver"}
+        # La explicación de la utilidad pide informes.ver ADEMÁS del tema.
+        assert vis.permisos_del_aviso(
+            "ventas", "/informes/dia") == {"informes.ver", "facturas.ver"}
 
 
 def test_url_que_no_resuelve_cae_en_la_fuente(app):
     with app.test_request_context("/"):
-        assert vis.permiso_del_aviso(
-            "importaciones", "/pantalla-que-ya-no-existe") == "compras.ver"
-        assert vis.permiso_del_aviso("importaciones", None) == "compras.ver"
+        assert vis.permisos_del_aviso(
+            "importaciones", "/pantalla-que-ya-no-existe") == {"compras.ver"}
+        assert vis.permisos_del_aviso("importaciones", None) == {"compras.ver"}
 
 
 def test_int_ve_despachos_y_facturas_y_no_ve_importaciones(como_int):
@@ -75,12 +75,15 @@ def test_int_ve_despachos_y_facturas_y_no_ve_importaciones(como_int):
         {"fuente": "ventas", "url": "/facturas/dia?fecha=2026-08-18"},
         {"fuente": "ventas", "url": "/facturas?desde=2026-08-18&hasta=2026-08-18"},
         {"fuente": "tejeduria", "url": "/produccion-tejeduria-asinfo"},
-        # /importaciones pide `stock.ver`, que INT SÍ tiene: la lista no la
-        # arma el tema del aviso sino la pantalla a la que lleva.
-        {"fuente": "importaciones", "url": "/importaciones"},
         {"fuente": "quimicos", "url": "/compras"},
-        # /dolares no tiene decorador (se controla adentro): ahí no hay señal
-        # en la ruta y manda la fuente, que es importaciones → compras.ver.
+        # ⭐ El caso que reportó la dueña el 19/08 mirando la campanita de
+        # Maribel: un aviso de HILO LOCAL ("se cargó a compras") cuyo url es
+        # /importaciones, que pide `stock.ver` — un permiso que INT sí tiene.
+        # La pantalla sola lo dejaba pasar; el tema es el que lo frena.
+        {"fuente": "hilo-local", "url": "/importaciones"},
+        {"fuente": "importaciones", "url": "/importaciones"},
+        # /dolares no tiene decorador (se controla adentro): ahí la única
+        # llave es el tema, importaciones → compras.ver.
         {"fuente": "importaciones", "url": "/dolares"},
     ]
     quedan = [a["url"] for a in vis.filtrar(items)]
@@ -88,7 +91,6 @@ def test_int_ve_despachos_y_facturas_y_no_ve_importaciones(como_int):
         "/facturas/dia?fecha=2026-08-18",
         "/facturas?desde=2026-08-18&hasta=2026-08-18",
         "/produccion-tejeduria-asinfo",
-        "/importaciones",
     ]
 
 

@@ -24,10 +24,14 @@ la campanita; uno de menos lo ve igual la dueña, que ve todo.
 """
 from __future__ import annotations
 
-#: Red de contención para los avisos SIN url (o con un url que no resuelve).
-#: El url MANDA: esto es sólo el fallback, y existe para que una fuente nueva
-#: no desaparezca en silencio. `tests/test_avisos_visibilidad.py` valida que
-#: toda fuente conocida esté acá.
+#: El permiso del TEMA. Se pide ADEMÁS del de la pantalla, no en su lugar.
+#:
+#: TMT 2026-08-19 (dueña, mirando la campanita de Maribel): *"por ej, esto ve
+#: maribel y no debería"* — un aviso de **hilo local** ("se cargó a compras"),
+#: visible porque su `url` es `/importaciones`, que pide `stock.ver`. La
+#: pantalla a la que lleva no alcanza para decidir: dice a dónde va el link,
+#: no de qué es el aviso. Hacen falta las dos llaves.
+#: `tests/test_avisos_visibilidad.py` valida que toda fuente conocida esté acá.
 FUENTE_PERMISO: dict[str, str] = {
     "ventas": "facturas.ver",
     "tejeduria": "tejeduria.ver",
@@ -69,22 +73,20 @@ def _permiso_de_ruta(path: str):
     return getattr(vista, "_permiso", None)
 
 
-def permiso_del_aviso(fuente: str | None, url: str | None):
-    """Qué permiso hace falta para este aviso.
+def permisos_del_aviso(fuente: str | None, url: str | None):
+    """Los permisos que hacen falta para este aviso — hay que tenerlos TODOS.
 
-    None = ninguno (la pantalla está abierta a cualquier logueado).
-    `_NO_RESUELVE` = no se pudo saber → sólo wildcard.
+    `set()` = ninguno (pantalla abierta y tema conocido sin permiso propio).
+    `_NO_RESUELVE` = no se pudo saber nada → sólo wildcard.
     """
-    p = _permiso_de_ruta(_path(url))
-    if p is not _NO_RESUELVE and p is not None:
-        return p
-    # La pantalla no resolvió, o resolvió y no pide permiso (se controla sola
-    # adentro, como /dolares). En los dos casos la ruta no da señal y manda la
-    # fuente. Si tampoco está mapeada, `_NO_RESUELVE` → sólo wildcard.
-    por_fuente = FUENTE_PERMISO.get((fuente or "").strip(), _NO_RESUELVE)
-    if por_fuente is _NO_RESUELVE and p is None:
-        return None          # ruta abierta a propósito y fuente desconocida
-    return por_fuente
+    de_ruta = _permiso_de_ruta(_path(url))
+    de_fuente = FUENTE_PERMISO.get((fuente or "").strip())
+    if de_ruta is _NO_RESUELVE and de_fuente is None:
+        # Ni la pantalla ni el tema dicen nada: no hay con qué decidir.
+        return _NO_RESUELVE
+    pedidos = {p for p in (None if de_ruta is _NO_RESUELVE else de_ruta,
+                           de_fuente) if p}
+    return pedidos
 
 
 def hay_que_filtrar() -> bool:
@@ -102,15 +104,15 @@ def hay_que_filtrar() -> bool:
 def puede_ver(fuente: str | None, url: str | None) -> bool:
     if not hay_que_filtrar():
         return True
-    permiso = permiso_del_aviso(fuente, url)
-    if permiso is None:
-        return True
-    if permiso is _NO_RESUELVE:
+    pedidos = permisos_del_aviso(fuente, url)
+    if pedidos is _NO_RESUELVE:
         return False
+    if not pedidos:
+        return True
     try:
         from flask import g
 
-        return permiso in (g.get("permisos") or set())
+        return pedidos <= (g.get("permisos") or set())
     except Exception:  # noqa: BLE001
         return False
 
