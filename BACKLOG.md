@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-13._
+_Última actualización: 2026-08-18._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -47,6 +47,20 @@ Los otros grandes descubiertos, para cuando toque: `facturas/views.py` (24%,
 ---
 
 ## Barrido de "cosas que nadie miraba"
+
+### [S] El smoke de rutas recorre la app como ANÓNIMO
+Destapado el 18/08 arreglando el CI flaky. `tests/test_routes_smoke.py` parece
+recorrer las ~2.500 rutas con un usuario logueado y wildcard, pero el
+`fake_loader` que arma se le pisa a `auth` y **no a la copia que `app.py` tiene
+del nombre** (`from auth import load_logged_in_user`). O sea que las rutas
+contestan 302 al login — que no es 500 y pasa el assert.
+
+Medido: si se le pisan las DOS copias, el smoke entra de verdad… y
+**`/admin/health/simulacro-cierre` devuelve 500**. Hay que (a) mirar ese 500,
+(b) decidir si el smoke debe entrar logueado —ojo que `/admin/health/all` ES el
+cron y hacer GET tiene efectos—, y (c) recién ahí endurecerlo.
+No se tocó en el mismo commit que el arreglo de flakiness a propósito.
+
 
 ### [M] Seguir buscando lo que falla en silencio
 Pedido de la dueña el 13/08, después de una tarde en que casi todo lo que

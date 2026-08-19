@@ -23,9 +23,13 @@
   {% if ventas_hoy %}
   {# TMT 2026-08-13 (dueña): los kilos del día a la vista, sin esperar la
      campanita. Se refresca solo cada minuto (y al volver a la pestaña). #}
-  <a class="ventas-hoy" id="ventas-hoy"
-     href="/facturas?desde={{ ventas_hoy.fecha }}&hasta={{ ventas_hoy.fecha }}"
-     data-url="{{ url_for('facturas.totales_hoy_json') }}">
+  {# TMT 2026-08-18 (dueña): *"¿por qué hay más facturado que despachado?"* →
+     cada número lleva a lo suyo. Despachado abre el cuadre del día
+     (/facturas/dia), que descompone la diferencia; Facturado sigue yendo a
+     las facturas del día. El recuadro dejó de ser UN link: un <a> adentro de
+     otro <a> es HTML inválido y el navegador lo parte en pedazos. #}
+  <div class="ventas-hoy" id="ventas-hoy"
+       data-url="{{ url_for('facturas.totales_hoy_json') }}">
     <div class="ventas-hoy-tit">Hoy</div>
     {# TMT 2026-08-13 (dueña), sobre la primera versión en dos columnas: *"no se
        entiende bien esto… todo pegado, separá, o uno abajo del otro o ponele %
@@ -47,6 +51,8 @@
         <span style="left: {{ (_m / 20000 * 100) | round(1) }}%">{{ _t }}</span>
       {% endfor %}
     </div>
+    <a class="ventas-hoy-link" href="/facturas/dia?fecha={{ ventas_hoy.fecha }}"
+       title="Por qué no coinciden">
     <div class="ventas-hoy-fila">
       <span class="ventas-hoy-rot">Despachado</span>
       {# El número y su unidad van JUNTOS en el span: el despachado lo escribe
@@ -59,9 +65,11 @@
        apenas carga. Si Asinfo no contesta se muestra la última lectura buena
        con su hora (dueña 13/08): un cero se leería como "no salió nada". #}
     <div class="ventas-hoy-pie" data-campo="desp_pie">buscando en Asinfo…</div>
+    </a>
 
     <div class="ventas-hoy-sep"></div>
 
+    <a class="ventas-hoy-link" href="/facturas?desde={{ ventas_hoy.fecha }}&hasta={{ ventas_hoy.fecha }}">
     <div class="ventas-hoy-fila">
       <span class="ventas-hoy-rot">Facturado</span>
       <span class="ventas-hoy-kg"><span data-campo="kg">{{ ventas_hoy.kg | kg_es }}</span> kg</span>
@@ -83,8 +91,9 @@
       <span class="ventas-hoy-rot" data-campo="devol_rot">{{ ventas_hoy.devoluciones.n }} devoluci{{ 'ón' if ventas_hoy.devoluciones.n == 1 else 'ones' }}</span>
       <span class="ventas-hoy-devol-kg" data-campo="devol">−{{ ventas_hoy.devoluciones.kg | kg_es }} kg</span>
     </div>
+    </a>
 
-  </a>
+  </div>
   {% endif %}
   {% if aviso_migracion %}
     <div class="landing-warn">{{ aviso_migracion }}</div>
@@ -136,6 +145,14 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
   .ventas-hoy:hover { border-color: rgb(148 163 184); }
+  /* TMT 2026-08-18: cada número es su propio link. El bloque se pinta al
+     pasar por encima para que se vea que son DOS destinos y no uno. */
+  .ventas-hoy-link {
+    display: block; text-decoration: none; color: inherit;
+    margin: 0 -0.5rem; padding: 0.15rem 0.5rem 0.25rem; border-radius: 0.5rem;
+  }
+  .ventas-hoy-link:hover { background: rgb(248 250 252); }
+  .dark .ventas-hoy-link:hover { background: rgb(51 65 85); }
   .dark .ventas-hoy { background: rgb(30 41 59); border-color: rgb(71 85 105); }
   .ventas-hoy-tit {
     font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;

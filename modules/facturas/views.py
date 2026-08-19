@@ -889,6 +889,28 @@ def totales_hoy_json():
     return jsonify(resumen_hoy())
 
 
+@facturas_bp.route("/facturas/dia")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def dia_despacho_view():
+    """El cuadre del día: lo despachado contra lo facturado, y por qué difieren.
+
+    TMT 2026-08-18 (dueña): *"¿por qué hay más facturado que despachado?"*, y
+    después *"dejalo accesible en algún lugar… no quiero más tabs al costado"*.
+    No hay entrada en el menú: se llega clickeando el renglón **Despachado**,
+    en la campanita y en el recuadro del inicio. Ahí está el número, ahí está
+    la puerta.
+    """
+    from modules.facturas.dia_despacho import cuadre
+
+    f = (request.args.get("fecha") or "").strip()
+    try:
+        datos = cuadre(f or today_ec())
+    except ValueError:
+        datos = cuadre(today_ec())
+    return render_template("facturas/dia_despacho.html", d=datos)
+
+
 @facturas_bp.route("/facturas/diag-cartera")
 @requiere_login
 @requiere_permiso("facturas.ver")

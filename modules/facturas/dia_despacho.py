@@ -1,0 +1,212 @@
+"""El cuadre del día: lo que SALIÓ por la puerta contra lo que se FACTURÓ.
+
+TMT 2026-08-18 (dueña), mirando el pin de la campanita: *"¿por qué hay más
+facturado que despachado?"*. Los dos números viven uno al lado del otro desde
+el 13/08 y no cierran casi nunca — porque son dos hechos distintos:
+
+  · **Despachado** = kilos de las GUÍAS de despacho a cliente con fecha de hoy
+    (bodega 53 = Producto Terminado, sin anular). Es Asinfo, la mercadería.
+  · **Facturado**  = kilos de los DOCUMENTOS de hoy cargados en Programa Core
+    (facturas + notas de entrega, kg > 0). Es nuestra base, el papel.
+
+La mercadería va adelante del documento, así que la diferencia es normal. Esta
+pantalla no la disimula: la **descompone**, y el cuadre cierra por aritmética:
+
+    Despachado
+      + facturado hoy que NO salió por una guía de hoy      (A)
+      − despachado hoy que TODAVÍA no se facturó            (B)
+      = Facturado
+
+Medido el 18/08/2026: despachado 19.469,06 kg en 131 guías; facturado
+19.552,51 kg en 118 documentos; A = 83,45 kg (UNA factura, la 181963 de POS,
+tres telas Alemania 1.2 sin guía asociada); B = 0. El residuo dio 0,00.
+
+⭐ **Los kilos de cada documento salen de NUESTRA base, no de Asinfo.** El
+detalle de Asinfo trae renglones que no son kilos (unidades sueltas que suman
+1,00 en `cantidad`): sumarlos daba 21.791,41 kg contra los 19.552,51 del pin, y
+dos pantallas de la misma app diciendo cosas distintas es peor que no tener la
+pantalla. A Asinfo se le pregunta sólo lo que sólo él sabe: **de qué guía viene
+cada kilo**. El reparto por documento es `kg de PC − kg ligados a una guía de
+hoy`, así que los totales no pueden despegarse del recuadro del inicio.
+
+Fail-soft: si Asinfo no contesta, el lado propio se muestra igual y el cuadre
+se marca incompleto. Nunca levanta.
+"""
+from __future__ import annotations
+
+import logging
+import re
+
+import db
+
+_LOG = logging.getLogger("programa_core.facturas.dia_despacho")
+
+#: Producto Terminado. El mismo de `despacho_fisico_dia_info`, para que el
+#: total de esta pantalla sea EL número del pin y no un primo lejano.
+BODEGA_PT = 53
+
+#: Debajo de esto un renglón es ruido de redondeo, no un caso.
+UMBRAL_KG = 0.05
+
+
+def _dia(fecha) -> str:
+    """'YYYY-MM-DD' o ValueError. La fecha va como LITERAL en el SQL de Asinfo
+    (ver `despacho_fisico_dia_info`: `GETDATE()` está en UTC y correría el día
+    cinco horas), así que se valida ACÁ y no se confía en el que llama.
+
+    ⭐ El texto se valida ENTERO, no recortado a 10. Con un `[:10]` previo,
+    `"2026-08-18'; DROP…"` pasaba el filtro —el recorte se comía la cola— y la
+    función devolvía una fecha buena sin decir que le habían mandado basura.
+    No llegaba a ser inyección, pero un validador que acepta lo que no entiende
+    no es un validador.
+    """
+    if hasattr(fecha, "isoformat"):        # date / datetime
+        return fecha.isoformat()[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(fecha)):
+        raise ValueError(f"fecha inválida: {fecha!r}")
+    return str(fecha)
+
+
+def _guias(dia: str) -> list[dict]:
+    """Las guías de despacho del día, con su cliente y si ya se facturaron."""
+    from modules._lib import metabase_client
+
+    sql = f"""
+        SELECT dc.numero                                     AS guia,
+               CONVERT(varchar(16), dc.fecha_creacion, 120)  AS creado,
+               ISNULL(e.nombre_comercial, '')                AS cliente,
+               dc.indicador_generado_factura                 AS facturada,
+               ROUND(SUM(ISNULL(dd.cantidad, 0)), 2)         AS kg
+          FROM despacho_cliente dc
+          JOIN detalle_despacho_cliente dd
+            ON dd.id_despacho_cliente = dc.id_despacho_cliente
+          LEFT JOIN empresa e ON e.id_empresa = dc.id_empresa
+         WHERE dc.fecha = '{dia}'
+           AND dc.fecha_anulacion IS NULL
+           AND dd.id_bodega = {BODEGA_PT}
+         GROUP BY dc.numero, CONVERT(varchar(16), dc.fecha_creacion, 120),
+                  e.nombre_comercial, dc.indicador_generado_factura
+         ORDER BY 2
+    """
+    out = []
+    for r in metabase_client.fetch_dataset(2, sql, max_results=1000) or []:
+        try:
+            kg = round(float(r.get("kg") or 0), 2)
+        except (TypeError, ValueError):
+            continue
+        fact = str(r.get("facturada"))
+        out.append({
+            "guia": str(r.get("guia") or "").strip(),
+            "hora": str(r.get("creado") or "").strip()[-5:],
+            "cliente": str(r.get("cliente") or "").strip(),
+            "kg": kg,
+            "facturada": fact.lower() in ("true", "1", "1.0"),
+        })
+    return out
+
+
+def _kg_con_guia_de_hoy(dia: str) -> dict[str, float]:
+    """{número de factura → kilos que vienen de una guía DE ESE DÍA}.
+
+    Lo único que Asinfo sabe y nosotros no. El resto de la cuenta es de PC.
+    """
+    from modules._lib import metabase_client
+
+    sql = f"""
+        SELECT fc.numero AS doc,
+               ROUND(SUM(CASE WHEN dc.fecha = '{dia}'
+                              THEN ISNULL(dfc.cantidad, 0) ELSE 0 END), 2) AS kg
+          FROM factura_cliente fc
+          JOIN detalle_factura_cliente dfc
+            ON dfc.id_factura_cliente = fc.id_factura_cliente
+          LEFT JOIN detalle_despacho_cliente ddc
+            ON ddc.id_detalle_despacho_cliente = dfc.id_detalle_despacho_cliente
+          LEFT JOIN despacho_cliente dc
+            ON dc.id_despacho_cliente = ddc.id_despacho_cliente
+         WHERE fc.fecha = '{dia}'
+           AND fc.estado <> 0
+         GROUP BY fc.numero
+    """
+    out: dict[str, float] = {}
+    for r in metabase_client.fetch_dataset(2, sql, max_results=2000) or []:
+        try:
+            out[str(r.get("doc") or "").strip()] = round(float(r.get("kg") or 0), 2)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _documentos_pc(dia: str) -> list[dict]:
+    """Los documentos del día que SUMAN kilos, tal como los cuenta el pin."""
+    filas = db.fetch_all(
+        """
+        SELECT numf, numf_completo, codigo_cli, kg, importe
+          FROM scintela.factura
+         WHERE fecha = %s
+           AND COALESCE(stat, '') <> 'X'
+           AND kg > 0
+         ORDER BY numf_completo, id_factura
+        """,
+        (dia,),
+    ) or []
+    return [{
+        "numf": r.get("numf"),
+        "doc": (r.get("numf_completo") or "").strip(),
+        "cliente": (r.get("codigo_cli") or "").strip(),
+        "kg": round(float(r.get("kg") or 0), 2),
+        "importe": round(float(r.get("importe") or 0), 2),
+    } for r in filas]
+
+
+def cuadre(fecha) -> dict:
+    """El día entero: los dos totales, los dos detalles y el residuo."""
+    dia = _dia(fecha)
+    docs = _documentos_pc(dia)
+    facturado = round(sum(d["kg"] for d in docs), 2)
+
+    guias: list[dict] = []
+    ligado: dict[str, float] = {}
+    asinfo_ok = True
+    try:
+        guias = _guias(dia)
+        ligado = _kg_con_guia_de_hoy(dia)
+    except Exception as e:  # noqa: BLE001 -- el ERP nunca tumba la pantalla
+        _LOG.warning("no pude leer los despachos del %s: %s", dia, e)
+        asinfo_ok = False
+
+    despachado = round(sum(g["kg"] for g in guias), 2) if asinfo_ok else None
+
+    # (A) Lo facturado hoy que no salió por una guía de hoy. Una NOTA DE
+    # ENTREGA es la guía misma documentada, así que nunca cae acá: no existe
+    # en `factura_cliente` y buscarla ahí la contaría entera como "sin guía".
+    sin_guia = []
+    if asinfo_ok:
+        for d in docs:
+            if d["doc"].upper().startswith("NTEN"):
+                continue
+            resto = round(d["kg"] - ligado.get(d["doc"], 0.0), 2)
+            if resto > UMBRAL_KG:
+                sin_guia.append({**d, "kg_sin_guia": resto})
+        sin_guia.sort(key=lambda x: -x["kg_sin_guia"])
+    kg_sin_guia = round(sum(d["kg_sin_guia"] for d in sin_guia), 2)
+
+    # (B) Lo que salió y todavía no tiene documento.
+    sin_factura = [g for g in guias if not g["facturada"]]
+    kg_sin_factura = round(sum(g["kg"] for g in sin_factura), 2)
+
+    diferencia = round(facturado - despachado, 2) if despachado is not None else None
+    residuo = (round(diferencia - kg_sin_guia + kg_sin_factura, 2)
+               if diferencia is not None else None)
+
+    return {
+        "fecha": dia,
+        "asinfo_ok": asinfo_ok,
+        "despachado": {"kg": despachado, "n": len(guias)},
+        "facturado": {"kg": facturado, "n": len(docs),
+                      "importe": round(sum(d["importe"] for d in docs), 2)},
+        "diferencia": diferencia,
+        "sin_guia": {"kg": kg_sin_guia, "items": sin_guia},
+        "sin_factura": {"kg": kg_sin_factura, "items": sin_factura},
+        "residuo": residuo,
+        "guias": guias,
+    }

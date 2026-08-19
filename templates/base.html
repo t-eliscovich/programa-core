@@ -1280,32 +1280,42 @@
                  recuadro del inicio. #}
               {% set _vp = ventas_hoy_pin() %}
               {% if _vp %}
-              <a href="/facturas?desde={{ _vp.fecha }}&hasta={{ _vp.fecha }}"
-                 class="campanita-pin"
-                 style="display:block;padding:8px 12px;text-decoration:none;border-bottom:1px solid rgb(226 232 240);background:rgb(248 250 252);"
-                 onmouseover="this.style.background='rgb(241 245 249)'"
-                 onmouseout="this.style.background='rgb(248 250 252)'">
-                {# Sin el rótulo "Hoy" ni el 📌: la dueña vio esta versión y
-                   dijo que sí. Son dos renglones y el detalle en chico. #}
-                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">
+              {# TMT 2026-08-18 (dueña): *"¿por qué hay más facturado que
+                 despachado?"* y después *"dejalo accesible… no quiero más tabs
+                 al costado"*. El pin dejó de ser UN link: cada número lleva a
+                 lo suyo — Despachado al cuadre del día (/facturas/dia, que
+                 descompone la diferencia), Facturado a las facturas del día.
+                 Por eso el bloque es un <div>: un <a> adentro de otro <a> es
+                 HTML inválido y el navegador parte el bloque en pedazos. #}
+              <div class="campanita-pin"
+                   style="padding:8px 12px;border-bottom:1px solid rgb(226 232 240);background:rgb(248 250 252);">
+                <a href="/facturas/dia?fecha={{ _vp.fecha }}" title="Por qué no coinciden"
+                   style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;text-decoration:none;"
+                   onmouseover="this.style.textDecoration='underline'"
+                   onmouseout="this.style.textDecoration='none'">
                   <span class="pin-rot" style="font-size:11.5px;color:rgb(100 116 139);">Despachado</span>
                   <span id="pin-desp" class="pin-val" style="font-size:13px;font-weight:600;color:rgb(30 41 59);">—</span>
-                </div>
-                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">
-                  <span class="pin-rot" style="font-size:11.5px;color:rgb(100 116 139);">Facturado</span>
-                  <span class="pin-val" style="font-size:13px;font-weight:600;color:rgb(30 41 59);">{{ _vp.kg | kg_es }} kg</span>
-                </div>
-                <div class="pin-sub" style="font-size:10.5px;color:rgb(148 163 184);text-align:right;margin-top:1px;">
-                  <span id="pin-pct"></span>$ {{ _vp.importe | num_es(2) }} · {{ _vp.n }} factura{{ '' if _vp.n == 1 else 's' }}
-                </div>
-                {# TMT 2026-08-14: las devoluciones, aparte de la venta. #}
-                <div id="pin-devol" class="pin-sub" style="display:{{ '' if _vp.devoluciones.kg else 'none' }};font-size:10.5px;color:rgb(180 83 9);text-align:right;">
-                  {# TMT 2026-08-14: *"esto que diga 8 devoluciones, no el 8 al
-                     final"*. El número suelto al final no decía de qué era, y con
-                     la palabra al lado el rótulo "Devoluciones" de adelante sobra. #}
-                  {{ _vp.devoluciones.n }} devoluci{{ 'ón' if _vp.devoluciones.n == 1 else 'ones' }} · −{{ _vp.devoluciones.kg | kg_es }} kg
-                </div>
-              </a>
+                </a>
+                <a href="/facturas?desde={{ _vp.fecha }}&hasta={{ _vp.fecha }}"
+                   style="display:block;text-decoration:none;"
+                   onmouseover="this.style.textDecoration='underline'"
+                   onmouseout="this.style.textDecoration='none'">
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">
+                    <span class="pin-rot" style="font-size:11.5px;color:rgb(100 116 139);">Facturado</span>
+                    <span class="pin-val" style="font-size:13px;font-weight:600;color:rgb(30 41 59);">{{ _vp.kg | kg_es }} kg</span>
+                  </div>
+                  <div class="pin-sub" style="font-size:10.5px;color:rgb(148 163 184);text-align:right;margin-top:1px;">
+                    <span id="pin-pct"></span>$ {{ _vp.importe | num_es(2) }} · {{ _vp.n }} factura{{ '' if _vp.n == 1 else 's' }}
+                  </div>
+                  {# TMT 2026-08-14: las devoluciones, aparte de la venta. #}
+                  <div id="pin-devol" class="pin-sub" style="display:{{ '' if _vp.devoluciones.kg else 'none' }};font-size:10.5px;color:rgb(180 83 9);text-align:right;">
+                    {# TMT 2026-08-14: *"esto que diga 8 devoluciones, no el 8 al
+                       final"*. El número suelto al final no decía de qué era, y con
+                       la palabra al lado el rótulo "Devoluciones" de adelante sobra. #}
+                    {{ _vp.devoluciones.n }} devoluci{{ 'ón' if _vp.devoluciones.n == 1 else 'ones' }} · −{{ _vp.devoluciones.kg | kg_es }} kg
+                  </div>
+                </a>
+              </div>
               {% endif %}
               <div class="campanita-lista" style="max-height:19rem;overflow-y:auto;">
                 {% for a in _ab['items'] %}
