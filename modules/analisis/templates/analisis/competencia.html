@@ -53,9 +53,14 @@ para el {{ cierre.strftime('%d/%m/%Y') }}.
 
 <div class="term">
   <div class="tres">
+    {# ⚠ Hasta la largada esto es una PREVISUALIZACIÓN: la meta todavía se
+       mueve con los ajustes de bodega (el 18/08 bajó 753 kg sin una sola
+       venta). El día de la largada se congela y ya no se toca. Decirlo acá y
+       no en una nota al pie: es el número contra el que se van a medir. #}
     <div><p class="k">Había al arrancar</p>
       <p class="v">{{ kg_al_largar | num_es(0) }}</p>
-      <p class="s">kg, al {{ largada.strftime('%d/%m/%Y') }}</p></div>
+      <p class="s">{% if meta_fijada_el %}kg, al {{ meta_fijada_el.strftime('%d/%m/%Y') }} — la meta ya está fija
+        {% else %}kg de hoy — la meta se fija el {{ largada.strftime('%d/%m/%Y') }}{% endif %}</p></div>
     <div><p class="k">Hay hoy</p>
       <p class="v">{{ kg_parado | num_es(0) }}</p>
       <p class="s">kg, al {{ hoy.strftime('%d/%m/%Y') }}</p></div>

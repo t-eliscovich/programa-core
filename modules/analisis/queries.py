@@ -120,6 +120,45 @@ def resumen(filas: list[dict]) -> dict:
     }
 
 
+def _fijar_base(conn=None) -> dict[str, float] | None:
+    """
+    Los kilos por grupo del día de la largada. Se escriben una sola vez.
+
+    ⚠ Se calcula con `stock_kg + kg_vendidos`, no con el stock pelado: si el
+    25 nadie aprieta «Actualizar» y el primero en apretarlo es el 27, los
+    kilos que se vendieron esos dos días ya no están en bodega y la meta
+    saldría más chica de lo que había el día de la largada.
+    """
+    largada = date.fromisoformat(config("largada", "2026-08-25"))
+    if today_ec() < largada:
+        return None
+    ya = db.fetch_all("SELECT categoria FROM scintela.parado_base", conn=conn)
+    if ya:
+        return None
+    base: dict[str, float] = defaultdict(float)
+    for f in items():
+        if f["categoria"]:
+            base[f["categoria"]] += (float(f["stock_kg"] or 0)
+                                     + float(f["kg_vendidos"] or 0))
+    for categoria, kg in base.items():
+        db.execute(
+            """INSERT INTO scintela.parado_base (categoria, kg, fijada_el)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (categoria) DO NOTHING""",
+            (categoria, round(kg, 2), today_ec()), conn=conn)
+    return dict(base)
+
+
+def base_fijada() -> tuple[dict[str, float], date | None]:
+    """Los kilos congelados por grupo y el día en que se fijaron."""
+    filas = db.fetch_all(
+        "SELECT categoria, kg, fijada_el FROM scintela.parado_base")
+    if not filas:
+        return {}, None
+    return ({f["categoria"]: float(f["kg"]) for f in filas},
+            min(f["fijada_el"] for f in filas))
+
+
 def por_grupo(filas: list[dict]) -> list[dict]:
     """
     El resumen de arriba: cuánto pesa cada grupo de producto.
@@ -401,6 +440,13 @@ def actualizar() -> dict:
                 (s["categoria"], s.get("vend_pc"), s["vendedor"],
                  s.get("kg") or 0, round(s.get("pct") or 0, 2)), conn=conn)
 
+        # ⭐ LA META SE CONGELA el día de la largada. Antes se reconstruía en
+        # cada lectura ("lo que hay hoy + lo vendido"), y el 18/08 —sin una
+        # sola venta— bajó de 52.407 a 51.654 kg por ajustes de bodega: el
+        # porcentaje de los siete se movía sin que nadie vendiera. Se escribe
+        # UNA vez, en el primer refresco del día de la largada o después.
+        _fijar_base(conn)
+
         db.execute(
             """UPDATE scintela.parado_refresh
                   SET actualizado = NOW(), items = %s, llamados = %s,
@@ -479,7 +525,9 @@ def _meta_pct(grupos: list[dict], override: dict[str, float], total_pct: float) 
     for g in grupos:
         g["meta_pct"] = float(override.get(g["grupo"], total_pct))
         g["meta_es_manual"] = g["grupo"] in override
-        g["meta_kg"] = g["kg"] * g["meta_pct"] / 100
+        # ⭐ Sobre los kilos CONGELADOS del día de la largada, no sobre los de
+        # hoy: si no, un ajuste de bodega le mueve el puntaje a los siete.
+        g["meta_kg"] = g.get("kg_base", g["kg"]) * g["meta_pct"] / 100
 
 
 def competencia() -> dict:
@@ -501,6 +549,21 @@ def competencia() -> dict:
     total_pct = float(config("meta_total_pct", "100"))
     largada = date.fromisoformat(config("largada", "2026-08-25"))
     cierre = date.fromisoformat(config("cierre", "2026-12-31"))
+    # ⭐ Si la meta ya está congelada, manda ella; antes de la largada la
+    # pantalla es una previsualización y se calcula con lo que hay hoy.
+    congelada, fijada_el = base_fijada()
+    if congelada:
+        vistos = {g["grupo"] for g in grupos}
+        for grupo, kg in congelada.items():
+            if grupo not in vistos:
+                # un grupo que se despejó entero sigue teniendo meta
+                grupos.append({"grupo": grupo, "n_items": 0, "kg": 0.0,
+                               "kg_segunda": 0.0, "subgrupos": 0, "pct": 0.0})
+        for g in grupos:
+            g["kg_base"] = congelada.get(g["grupo"], 0.0)
+    else:
+        for g in grupos:
+            g["kg_base"] = g["kg"]
     _meta_pct(grupos, override, total_pct)
 
     # ⭐ Sólo cuentan las ventas desde la LARGADA. La cohorte se marcó el 13/08
@@ -600,7 +663,11 @@ def competencia() -> dict:
         # "Había" no se guarda: se reconstruye. Lo que hay hoy más lo que se
         # vendió ES lo que había — y así los tres números cierran siempre entre
         # ellos, que es lo que alguien va a chequear de un vistazo.
-        "kg_al_largar": hay_hoy + liquidado,
+        # Congelada: los kilos del día de la largada. Sin congelar (previa a la
+        # largada): lo que hay hoy más lo que se vendió, que ES lo que había.
+        "kg_al_largar": (sum(congelada.values()) if congelada
+                         else hay_hoy + liquidado),
+        "meta_fijada_el": fijada_el,
         "meta_kg": sum(g["meta_kg"] for g in grupos),
         "liquidado": liquidado,
         "kg_fuera_del_ranking": fuera,

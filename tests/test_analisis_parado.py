@@ -584,7 +584,7 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
 # ── La competencia ──────────────────────────────────────────────────────────
 
 def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100",
-                       semanas=None, meses=None):
+                       semanas=None, meses=None, base=None):
     filas = [
         {"categoria": "Jersey", "subcategoria": "Jersey 3", "color": "NEG",
          "stock_kg": 6000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
@@ -604,6 +604,10 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
             return vendido or []
         if "parado_share" in s:
             return []
+        if "parado_base" in s:
+            # la meta congelada del día de la largada; vacía = todavía no largó
+            return [{"categoria": k, "kg": v, "fijada_el": date(2026, 8, 25)}
+                    for k, v in (base or {}).items()]
         return filas
 
     def fake_one(sql, params=None, conn=None):
@@ -1267,6 +1271,80 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     assert "return texto(td).trim().toLowerCase();" in parado
     assert "limpia(texto(td).replace" in parado
     assert "limpia(td.textContent" not in parado, "el Excel se lleva la píldora"
+
+
+def test_la_meta_congelada_no_se_mueve_cuando_se_mueve_el_stock(monkeypatch):
+    """Dueña 18/08/2026, después de ver el número moverse solo: el mismo día,
+    sin una sola venta, «había al arrancar» pasó de 52.407 a 51.654 kg —753 kg
+    de ajustes de bodega—. Con la meta congelada, el stock de hoy puede hacer
+    lo que quiera: la meta y el % de cada uno salen de los kilos del día de la
+    largada."""
+    congelada = {"Jersey": 6000, "Fleece": 4000}
+    c = _competencia_falsa(monkeypatch, base=congelada)
+    assert c["kg_al_largar"] == 10000
+    assert c["meta_kg"] == 10000            # 100% de lo congelado
+    assert c["meta_fijada_el"] == date(2026, 8, 25)
+
+    # ahora la bodega dice otra cosa —un ajuste, no una venta— y la meta NO se
+    # entera: sigue valiendo lo mismo
+    c2 = _competencia_falsa(monkeypatch, base={"Jersey": 6000, "Fleece": 3000})
+    assert c2["meta_kg"] == 9000            # sólo cambia si cambia la BASE
+    assert c["meta_kg"] != c2["meta_kg"]
+    # …y sin base, la pantalla es una previa que se calcula con lo de hoy
+    previa = _competencia_falsa(monkeypatch)
+    assert previa["meta_fijada_el"] is None
+    assert previa["kg_al_largar"] == 10000
+
+
+def test_un_grupo_despejado_entero_conserva_su_meta(monkeypatch):
+    """Si un grupo se vende del todo deja de estar en la foto. Sin esto se
+    caía de la tabla y la meta total se achicaba justo cuando alguien había
+    hecho bien el trabajo — el que lo despejó perdía el puntaje."""
+    c = _competencia_falsa(monkeypatch,
+                           base={"Jersey": 6000, "Fleece": 4000, "Lycra": 2000})
+    grupos = {g["grupo"]: g for g in c["grupos"]}
+    assert "Lycra" in grupos, "el grupo despejado se cayó de la tabla"
+    assert grupos["Lycra"]["meta_kg"] == 2000
+    assert grupos["Lycra"]["kg"] == 0
+    assert c["meta_kg"] == 12000
+
+
+def test_la_base_se_fija_una_sola_vez_y_recien_desde_la_largada(monkeypatch):
+    """Se escribe en el primer refresco del día de la largada o después. Si se
+    escribiera antes, congelaría kilos de una semana en la que nadie estaba
+    compitiendo; si se reescribiera, la meta volvería a moverse —que es
+    justamente lo que se vino a arreglar."""
+    escritos = []
+
+    def fake_execute(sql, params=None, conn=None):
+        if "parado_base" in " ".join(sql.split()):
+            escritos.append(params)
+
+    monkeypatch.setattr(queries.db, "execute", fake_execute)
+    monkeypatch.setattr(queries, "config", lambda k, d=None: "2026-08-25")
+    monkeypatch.setattr(queries, "items", lambda: [
+        {"categoria": "Jersey", "stock_kg": 100, "kg_vendidos": 40},
+        {"categoria": "Jersey", "stock_kg": 10, "kg_vendidos": 0},
+        {"categoria": None, "stock_kg": 5, "kg_vendidos": 0}])
+
+    # antes de la largada no escribe nada
+    monkeypatch.setattr(queries, "today_ec", lambda: date(2026, 8, 24))
+    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: [])
+    assert queries._fijar_base() is None
+    assert escritos == []
+
+    # el día de la largada sí, y con stock + lo ya vendido (110 + 40)
+    monkeypatch.setattr(queries, "today_ec", lambda: date(2026, 8, 25))
+    base = queries._fijar_base()
+    assert base == {"Jersey": 150}, base
+    assert escritos == [("Jersey", 150.0, date(2026, 8, 25))]
+
+    # ya fijada: no la vuelve a tocar
+    escritos.clear()
+    monkeypatch.setattr(queries.db, "fetch_all",
+                        lambda *a, **k: [{"categoria": "Jersey"}])
+    assert queries._fijar_base() is None
+    assert escritos == []
 
 
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
