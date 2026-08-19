@@ -508,6 +508,54 @@ def editar_campo(id_factura: int):
         return jsonify(ok=False, error=humanize(e)), 500
 
 
+@facturas_bp.route("/facturas/<int:id_factura>/retencion", methods=["POST"])
+@requiere_login
+@requiere_permiso("retenciones.emitir")
+def cargar_retencion(id_factura: int):
+    """Carga a mano la retención de UNA factura, desde el lapicito de /facturas.
+
+    Tamara 2026-08-19: *"quiero en la pantalla de facturas a retenciones poder
+    editar el 0 a un numero y que se guarde… si que aplique de verdad"*.
+
+    No cuelga de `/facturas/<id>/campo` (la edición inline genérica) porque no
+    es escribir un campo: registra el comprobante, baja el saldo, recalcula el
+    estado y deja el mov_doble reversible. Toda esa aritmética vive en
+    `retenciones.queries.aplicar_manual`, que comparte el escritor con la
+    aplicación automática de Asinfo.
+
+    El permiso es `retenciones.emitir` y no `facturas.editar` a propósito:
+    quien carga retenciones es Cobranzas, que NO edita facturas. Gatear por la
+    operación, no por la pantalla.
+
+    Body: ``valor=<monto>``. Devuelve JSON
+    ``{ok, retencion, saldo, stat, error?}``.
+    """
+    valor = (request.form.get("valor") or "").strip()
+    if not valor:
+        return jsonify(ok=False, error="Valor vacío."), 400
+    monto = _parse_monto(valor)
+    if monto is None:
+        return jsonify(ok=False, error=f"No entiendo el monto {valor!r}."), 400
+    try:
+        from modules.retenciones import queries as ret_q
+        usuario = (g.user or {}).get("username", "web")
+        res = ret_q.aplicar_manual(id_factura, monto, usuario=usuario)
+        return jsonify(
+            ok=True,
+            retencion=float(res["retencion"]),
+            saldo=float(res["saldo"]),
+            stat=res["stat"],
+        )
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger("programa_core.facturas").exception(
+            "facturas.cargar_retencion falló id=%s", id_factura
+        )
+        return jsonify(ok=False, error=humanize(e)), 500
+
+
 @facturas_bp.route("/facturas/<int:id_factura>/numf", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.editar")

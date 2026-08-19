@@ -450,8 +450,38 @@
             <span class="{{ tipo_doc.color(_cod) }}">{{ _cod or '—' }}</span>
           </td>
           {# Retención: en gris apagado cuando es 0, para que las que SÍ tienen
-             salten a la vista al recorrer la columna. #}
-          <td class="px-2 py-1.5 text-right text-mono {{ 'text-violet-700 dark:text-violet-300' if (f.retencion or 0) > 0 else 'text-slate-300 dark:text-slate-600' }}">{{ f.retencion | money_es }}</td>
+             salten a la vista al recorrer la columna.
+
+             TMT 2026-08-19 (dueña): *"quiero en la pantalla de facturas a
+             retenciones poder editar el 0 a un numero y que se guarde. las que
+             ya vinieron de asinfo no se editan. si que aplique de verdad"*.
+             El lapicito aparece SÓLO cuando la retención está en 0: una vez
+             cargada (por Asinfo o a mano) la celda vuelve a ser texto, y para
+             cambiarla hay que deshacerla desde el Historial. Guardar acá no
+             escribe un campo: aplica la retención de verdad (baja el saldo,
+             recalcula el estado, deja el ↺), por eso va a su propia ruta
+             `/facturas/<id>/retencion` y no a la edición inline genérica. #}
+          {% if (f.retencion or 0) > 0 %}
+          <td class="px-2 py-1.5 text-right text-mono text-violet-700 dark:text-violet-300"
+              title="Retención ya cargada. Para cambiarla, deshacela desde el Historial.">{{ f.retencion | money_es }}</td>
+          {% elif tiene_permiso('retenciones.emitir') and f.id_factura %}
+          <td class="px-2 py-1.5 text-right text-mono editable-cell"
+              data-id="{{ f.id_factura }}" data-campo="retencion" data-valor=""
+              data-url="/facturas/{{ f.id_factura }}/retencion">
+            <span class="ec-view inline-flex items-center gap-1.5">
+              <span class="ec-display text-slate-300 dark:text-slate-600">{{ f.retencion | money_es }}</span>
+              <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
+                      title="Cargar retención (baja el saldo de la factura)">&#9998;</button>
+            </span>
+            <span class="ec-edit hidden inline-flex items-center gap-1 justify-end">
+              <input type="text" inputmode="decimal" class="ec-input w-20 border rounded px-1 py-0.5 text-xs text-right font-mono" placeholder="0,00" value="">
+              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
+              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
+            </span>
+          </td>
+          {% else %}
+          <td class="px-2 py-1.5 text-right text-mono text-slate-300 dark:text-slate-600">{{ f.retencion | money_es }}</td>
+          {% endif %}
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
@@ -649,6 +679,7 @@
         if (campo === 'fecha') disp.textContent = fmtFechaES(String(valorNuevo));
         else if (campo === 'importe') disp.textContent = fmtMoney(parseFloat(valorNuevo));
         else if (campo === 'kg') disp.textContent = fmtMoney(parseFloat(valorNuevo));
+        else if (campo === 'retencion') disp.textContent = fmtMoney(parseFloat(valorNuevo));
         else disp.textContent = String(valorNuevo);
       }
     }
@@ -676,7 +707,11 @@
       fd.append('campo', campo);
       fd.append('valor', valor);
       fd.append('csrf_token', CSRF);
-      const resp = await fetch(`/facturas/${id}/campo`, {
+      // `data-url` deja que una celda postee a su propia ruta. La retención
+      // la usa: guardarla no es escribir un campo, es APLICARLA (registra el
+      // comprobante, baja el saldo, recalcula el estado y deja el ↺).
+      const url = cell.dataset.url || `/facturas/${id}/campo`;
+      const resp = await fetch(url, {
         method: 'POST', body: fd, credentials: 'same-origin',
       });
       const data = await resp.json().catch(() => ({ok: false, error: 'Respuesta inválida.'}));
@@ -684,10 +719,10 @@
         alert(data.error || 'No se pudo guardar.');
         inp.disabled = false; inp.focus(); return;
       }
-      ecToView(cell, data.valor_nuevo);
-      // Si fue importe, recargar la página para que se actualice el saldo
-      // (más simple que actualizar la celda saldo inline).
-      if (campo === 'importe') setTimeout(() => location.reload(), 400);
+      ecToView(cell, campo === 'retencion' ? data.retencion : data.valor_nuevo);
+      // Si fue importe o retención, recargar la página para que se actualicen
+      // el saldo y el estado (más simple que actualizar esas celdas inline).
+      if (campo === 'importe' || campo === 'retencion') setTimeout(() => location.reload(), 400);
     } catch (e) {
       alert('Error de red: ' + e.message); inp.disabled = false;
     }

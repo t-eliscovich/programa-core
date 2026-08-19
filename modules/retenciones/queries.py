@@ -285,6 +285,104 @@ def _stat_tras_retencion(saldo: float, abono: float, stat_previo: str = "") -> s
     return "Z"
 
 
+def _grabar_retencion(conn, f: dict, rete: float, a_registrar: float,
+                      usuario: str, *, numero: str | None = None,
+                      batch_id: str | None = None,
+                      origen: str = "asinfo") -> dict:
+    """Escribe una retención YA VALIDADA sobre la factura `f`, dentro de `conn`.
+
+    Es el único lugar que mueve la plata de una retención: inserta el
+    comprobante en `scintela.retencion`, sube `factura.retencion`, baja el
+    saldo con `saldo_de`, recalcula el estado con `_stat_tras_retencion` y deja
+    el `mov_doble` con el snapshot que después necesita el reverso.
+
+    Lo comparten la aplicación automática de Asinfo (`_aplicar_una_por_numero`)
+    y la carga MANUAL del lapicito de /facturas (`aplicar_manual`). Compartirlo
+    no es prolijidad: si la carga manual escribiera su propia copia, el día que
+    cambie la regla del saldo o la del estado una de las dos se queda vieja en
+    silencio — que es exactamente lo que le pasó al preview el 03/08, mintiendo
+    con un número 22× más grande sin que nada lo cazara.
+
+    El `tipo` del mov_doble es el MISMO para las dos
+    (`retencion_asinfo_aplicada`) a propósito: de ese string cuelgan el ↺ del
+    historial, la etiqueta, el permiso del reverso, el link de origen y la
+    atribución de la traza. Un tipo nuevo habría que enseñárselo a los seis
+    lugares, y el que se olvide deja una retención que no se puede deshacer. De
+    dónde vino se lee en `metadata.origen`.
+
+    Validaciones NO: las hace el que llama (cada uno tiene las suyas).
+    """
+    importe = round(float(f["importe"] or 0), 2)
+    abono = round(float(f["abono"] or 0), 2)
+    retencion = round(float(f["retencion"] or 0), 2)
+    saldo = round(float(f["saldo"] or 0), 2)
+    stat_prev = (f["stat"] or "").strip()
+    id_ret = None
+    if a_registrar > 0.005:
+        rrow = db.execute_returning(
+            "INSERT INTO scintela.retencion "
+            "  (codigo_cli, numf, rete, fecha, usuario_crea) "
+            "VALUES (%s, %s, %s, CURRENT_DATE, %s) "
+            "RETURNING id_retencion",
+            (f["codigo_cli"], f["numf"], a_registrar, usuario),
+            conn=conn,
+        ) or {}
+        id_ret = rrow.get("id_retencion")
+    # TMT 2026-08-07 (dueña): la retención BAJA el saldo igual que antes,
+    # pero YA NO se suma al abono — va a su propia columna
+    # `factura.retencion` (migración 0179), así el estado de cuenta puede
+    # mostrar "abonado" y "retención" separados, que es lo que el cliente
+    # necesita para cuadrar. Matiza (no revierte) la regla del 06/08
+    # (commit 8ed70dd): aquella decidió que la retención SIEMPRE cuenta
+    # contra la deuda aunque ya hubiera un abono manual — eso sigue igual;
+    # lo único que cambia es DÓNDE se guarda. Abono manual 10 + retención
+    # 15 sobre una factura de 25 sigue dando saldo 0, pero ahora se lee
+    # "abonado 10 · retención 15" en vez de "abonado 25".
+    retencion_new = round(retencion + rete, 2)
+    saldo_new = _fact_q.saldo_de(importe, abono, retencion_new)
+    stat_new = _stat_tras_retencion(saldo_new, abono, stat_prev)
+    db.execute(
+        "UPDATE scintela.factura "
+        "   SET retencion = %s, saldo = %s, stat = %s, "
+        "       usuario_modifica = %s "
+        " WHERE id_factura = %s",
+        (retencion_new, saldo_new, stat_new, usuario, f["id_factura"]),
+        conn=conn,
+    )
+    concepto = (
+        f"Retención $ {_money(rete)} a la factura {f['numf']} "
+        f"{f['codigo_cli']} — saldo $ {_money(saldo)} → $ {_money(saldo_new)}"
+    )
+    if origen == "manual":
+        concepto += " (carga manual)"
+    _md.registrar(
+        conn=conn,
+        tipo="retencion_asinfo_aplicada",
+        origen_table="factura", origen_id=f["id_factura"],
+        destino_table="factura", destino_id=f["id_factura"],
+        importe=rete,
+        fecha=today_ec(),
+        concepto=concepto[:200],
+        usuario=usuario,
+        batch_id=batch_id,
+        metadata={
+            "id_retencion": id_ret, "numero": numero,
+            "codigo_cli": f["codigo_cli"], "numf": f["numf"],
+            "rete": rete, "abono_previo": abono,
+            "retencion_previa": retencion, "saldo_previo": saldo,
+            "stat_previo": stat_prev, "aplicado": True,
+            "origen": origen,
+        },
+    )
+    return {
+        "id_retencion": id_ret,
+        "retencion": retencion_new,
+        "saldo": saldo_new,
+        "stat": stat_new,
+        "saldo_previo": saldo,
+    }
+
+
 def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
                             batch_id: str | None = None,
                             solo_sin_abono: bool = False,
@@ -367,67 +465,112 @@ def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
             return "rete_gt_saldo"
         if solo_sin_abono and abono > 0.005:
             return "tiene_abono"
-        stat_prev = (f["stat"] or "").strip()
         # `falta_fila` sólo tiene valor cuando se está completando una
         # parcial: es lo que le falta a la TABLA, que puede ser 0 aunque a la
         # columna le falte plata. Sin completar, la fila entera es nueva.
         a_registrar = rete if falta_fila is None else falta_fila
-        id_ret = None
-        if a_registrar > 0.005:
-            rrow = db.execute_returning(
-                "INSERT INTO scintela.retencion "
-                "  (codigo_cli, numf, rete, fecha, usuario_crea) "
-                "VALUES (%s, %s, %s, CURRENT_DATE, %s) "
-                "RETURNING id_retencion",
-                (f["codigo_cli"], f["numf"], a_registrar, usuario),
-                conn=conn,
-            ) or {}
-            id_ret = rrow.get("id_retencion")
-        # TMT 2026-08-07 (dueña): la retención BAJA el saldo igual que antes,
-        # pero YA NO se suma al abono — va a su propia columna
-        # `factura.retencion` (migración 0179), así el estado de cuenta puede
-        # mostrar "abonado" y "retención" separados, que es lo que el cliente
-        # necesita para cuadrar. Matiza (no revierte) la regla del 06/08
-        # (commit 8ed70dd): aquella decidió que la retención SIEMPRE cuenta
-        # contra la deuda aunque ya hubiera un abono manual — eso sigue igual;
-        # lo único que cambia es DÓNDE se guarda. Abono manual 10 + retención
-        # 15 sobre una factura de 25 sigue dando saldo 0, pero ahora se lee
-        # "abonado 10 · retención 15" en vez de "abonado 25".
-        retencion_new = round(retencion + rete, 2)
-        saldo_new = _fact_q.saldo_de(importe, abono, retencion_new)
-        stat_new = _stat_tras_retencion(saldo_new, abono, stat_prev)
-        db.execute(
-            "UPDATE scintela.factura "
-            "   SET retencion = %s, saldo = %s, stat = %s, "
-            "       usuario_modifica = %s "
-            " WHERE id_factura = %s",
-            (retencion_new, saldo_new, stat_new, usuario, f["id_factura"]),
-            conn=conn,
+        _grabar_retencion(conn, f, rete, a_registrar, usuario,
+                          numero=numero, batch_id=batch_id, origen="asinfo")
+    return "aplicada"
+
+
+def aplicar_manual(id_factura: int, rete, usuario: str = "web") -> dict:
+    """Carga A MANO una retención sobre UNA factura (lapicito de /facturas).
+
+    Tamara 2026-08-19: *"quiero en la pantalla de facturas a retenciones poder
+    editar el 0 a un numero y que se guarde. las que ya vinieron de asinfo no
+    se editan. si que aplique de verdad"*.
+
+    ⭐ "Que aplique de verdad" es lo importante. La pantalla vieja
+    (`/retenciones/emitir` → `emitir()`) sólo insertaba la fila en
+    `scintela.retencion`: no llenaba `factura.retencion`, no bajaba el saldo, no
+    recalculaba el estado y no dejaba rastro reversible. O sea, dejaba al
+    cliente debiendo de más y a la base con la divergencia que el health
+    reporta como `falta_en_la_factura`. Acá se aplica con el MISMO escritor que
+    las de Asinfo (`_grabar_retencion`), así el ↺ del historial la deshace
+    igual y el saldo cierra a la primera.
+
+    ⚖️ **Bloquea si la factura ya tiene retención** (dueña 19/08: *"las que ya
+    vinieron de asinfo no se editan"*, opción "Bloquear"). La segunda retención
+    sobre la misma factura existe de verdad — fuente e IVA vienen en dos
+    comprobantes — pero no entra por acá: se completa por
+    `/facturas/retenciones-asinfo`, que muestra cuánto falta contra Asinfo
+    antes de tocar nada. Mira las DOS fuentes, la columna y la tabla, porque
+    una puede estar cargada y la otra no (el caso AL1 177629 del 07/08).
+
+    Devuelve `{retencion, saldo, stat, id_retencion}`. Levanta `ValueError` con
+    el texto que va derecho a la pantalla.
+    """
+    rete_f = round(float(rete or 0), 2)
+    if rete_f <= 0.005:
+        raise ValueError("El valor retenido tiene que ser mayor que cero.")
+    # El cierre de período manda igual que en cualquier otra escritura.
+    asegurar_fecha_abierta(today_ec())
+
+    with db.tx() as conn:
+        f = db.fetch_one(
+            """
+            SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
+                   retencion, saldo, stat
+              FROM scintela.factura
+             WHERE id_factura = %s
+             FOR UPDATE
+            """,
+            (id_factura,), conn=conn,
         )
-        aplicado = True
-        concepto = (
-            f"Retención $ {_money(rete)} a la factura {f['numf']} "
-            f"{f['codigo_cli']} — saldo $ {_money(saldo)} → $ {_money(saldo_new)}"
+        if not f:
+            raise ValueError("Esa factura ya no existe.")
+        if (f["stat"] or "").strip() == "X":
+            raise ValueError(
+                f"La factura {f['numf']} está anulada: no se le carga retención."
+            )
+        importe = round(float(f["importe"] or 0), 2)
+        retencion = round(float(f["retencion"] or 0), 2)
+        saldo = round(float(f["saldo"] or 0), 2)
+
+        if retencion > 0.005:
+            raise ValueError(
+                f"La factura {f['numf']} ya tiene una retención de "
+                f"$ {_money(retencion)}. Si está mal, deshacela desde el "
+                f"Historial y volvé a cargarla."
+            )
+        # El segundo faltante: puede haber comprobante cargado con la columna
+        # todavía en 0 (retención de la época del dBase, o una `parcial`).
+        # Volver a cargarla acá duplicaría el comprobante.
+        ya = db.fetch_one(
+            "SELECT COALESCE(SUM(rete), 0) AS s FROM scintela.retencion "
+            " WHERE codigo_cli = %s AND numf = %s",
+            (f["codigo_cli"], f["numf"]), conn=conn,
+        ) or {}
+        if float(ya.get("s") or 0) > 0.005:
+            raise ValueError(
+                f"Ya hay un comprobante de retención cargado para la factura "
+                f"{f['numf']} de {f['codigo_cli']} por $ "
+                f"{_money(float(ya['s']))}, aunque el saldo no lo muestre. "
+                f"Miralo en Facturas → Retenciones de Asinfo antes de cargar "
+                f"otro."
+            )
+        if rete_f > importe + 0.01:
+            raise ValueError(
+                f"La retención ($ {_money(rete_f)}) no puede superar el "
+                f"importe de la factura ($ {_money(importe)})."
+            )
+        # Mismo freno que el aplicador automático (dueña 06/08): una retención
+        # más grande que lo que queda por cobrar deja el saldo negativo.
+        if rete_f > saldo + 0.01:
+            raise ValueError(
+                f"La retención ($ {_money(rete_f)}) es mayor que el saldo "
+                f"pendiente ($ {_money(saldo)}). Revisá el abono de la factura."
+            )
+
+        res = _grabar_retencion(
+            conn, f, rete_f, rete_f, usuario,
+            numero=f.get("numf_completo") or str(f["numf"]),
+            origen="manual",
         )
-        _md.registrar(
-            conn=conn,
-            tipo="retencion_asinfo_aplicada",
-            origen_table="factura", origen_id=f["id_factura"],
-            destino_table="factura", destino_id=f["id_factura"],
-            importe=rete,
-            fecha=today_ec(),
-            concepto=concepto[:200],
-            usuario=usuario,
-            batch_id=batch_id,
-            metadata={
-                "id_retencion": id_ret, "numero": numero,
-                "codigo_cli": f["codigo_cli"], "numf": f["numf"],
-                "rete": rete, "abono_previo": abono,
-                "retencion_previa": retencion, "saldo_previo": saldo,
-                "stat_previo": stat_prev, "aplicado": aplicado,
-            },
-        )
-    return "aplicada" if aplicado else "registrada"
+    res["numf"] = f["numf"]
+    res["codigo_cli"] = f["codigo_cli"]
+    return res
 
 
 def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web",
