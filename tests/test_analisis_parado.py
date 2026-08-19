@@ -1235,6 +1235,35 @@ def test_las_columnas_se_esconden_por_clase_y_no_por_posicion():
             f"esconde por posición: {regla[0].strip()}")
 
 
+def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
+    """Con la columna Categoría la tabla mide 563 px y el teléfono 390: los
+    kilos se cortaban afuera. Abajo de 560 la columna se esconde y la píldora
+    va al lado del nombre. Y la copia NO puede ensuciar ni el orden ni el
+    Excel — la columna Tela decía "Jersey Fancy PRI"."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    base = (carpeta / "base.html").read_text(encoding="utf-8")
+    parado = (carpeta / "parado.html").read_text(encoding="utf-8")
+
+    assert ".qm{display:none}" in base, "la copia se ve también en la pantalla grande"
+    assert "#tabla .cal{display:none!important}" in base, (
+        "la columna Categoría no se esconde en el celular")
+    assert ".qm{display:inline" in base, "en el celular la píldora no aparece"
+
+    assert 'class="ord cal" data-i="3"' in parado, (
+        "el encabezado de Categoría no se esconde con su columna")
+    assert '<span class="qm">{{ calidad }}</span></td>' in parado
+    # una sola vez se decide PRI/SEG: dos copias del if se despegan
+    assert parado.count('<span class="q seg">SEG</span>') == 2, (
+        "las píldoras se arman en más de un lugar")
+    # el orden y el Excel leen el texto sin la copia
+    assert "c.querySelectorAll('.qm').forEach(e => e.remove())" in parado
+    assert "return texto(td).trim().toLowerCase();" in parado
+    assert "limpia(texto(td).replace" in parado
+    assert "limpia(td.textContent" not in parado, "el Excel se lleva la píldora"
+
+
 def test_la_hoja_del_vendedor_se_apila_en_el_celular():
     """La hoja es la pantalla que el vendedor abre en la calle, con el teléfono
     en la mano. La tabla de 5 columnas no entra en 390 px: se apila. Y apilada,

@@ -120,7 +120,7 @@ Toque una fila para ver a quién ofrecérsela.</p>
 <th class="ord opt" data-i="0">Grupo</th>
 <th class="ord" data-i="1">Tela</th>
 <th class="ord" data-i="2">Color</th>
-<th class="ord" data-i="3">Categoría</th>
+<th class="ord cal" data-i="3">Categoría</th>
 <th class="ord n" data-i="4" data-num="1">Kg en saldo</th>
 <th class="ord n opt" data-i="5" data-num="1">% del saldo</th>
 <th class="ord n" data-i="6" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
@@ -143,16 +143,20 @@ Toque una fila para ver a quién ofrecérsela.</p>
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
                        (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
     <td class="g opt">{{ f.categoria or '—' }}</td>
-    <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}</td>
+    {# ⚠ En el celular la columna Categoría no entra: con ella la tabla mide
+       563 px y la pantalla 390, así que los kilos —la cifra que se viene a
+       ver— quedaban cortados afuera. Abajo de 560 px la columna se esconde y
+       la píldora viaja pegada al nombre de la tela. Se arma UNA sola vez: dos
+       copias del mismo `if` se despegan a la primera corrección. #}
+    {% set calidad %}{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>{% else %}<span class="q pri">PRI</span>{% endif %}{% endset %}
+    <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}<span class="qm">{{ calidad }}</span></td>
     <td>{{ f.color }}</td>
     {# ⭐ La categoría como COLUMNA y no como píldora suelta: se ordena, se
        filtra y se lee en vertical. Dueña 18/08/2026: "tiene que haber columna
        PRI SEG y que se pueda filtrar".
        Una fila puede tener kilos de las dos —un parado con lotes mezclados—,
        así que hay tres valores y el filtro los toma por separado. #}
-    <td class="cal">{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>
-      {% elif f.kg_segunda %}<span class="q seg">SEG</span>
-      {% else %}<span class="q pri">PRI</span>{% endif %}</td>
+    <td class="cal">{{ calidad }}</td>
     {# ⚠ Un ítem de 0,4 kg mostrado como "0" parece un error de la pantalla: la
        dueña preguntó por qué había cosas en 0 kg. Abajo de 1 kg va con decimal. #}
     {# ⚠ Acá abajo estuvo un "−43 vendidos" que no se entendía: dos números de
@@ -276,6 +280,15 @@ function grupoCambio(){
 // filas sueltas deja los detalles pegados a la tela equivocada — y como están
 // cerrados, no se nota hasta que alguien abre uno y ve los clientes de otra
 // tela. Por eso se ordenan PARES.
+// ⚠ La píldora PRI/SEG está DOS veces en la fila: en su columna y —para el
+// celular— pegada al nombre de la tela. La copia es decorativa: no ordena ni
+// baja al Excel. Sin esto, el Excel decía "Jersey Fancy PRI" en la columna Tela.
+function texto(td){
+  const c = td.cloneNode(true);
+  c.querySelectorAll('.qm').forEach(e => e.remove());
+  return c.textContent || '';
+}
+
 function ordenar(th){
   const tabla = document.getElementById('tabla');
   const cuerpo = tabla.tBodies[0];
@@ -291,7 +304,7 @@ function ordenar(th){
   const clave = tr => {
     const td = tr.children[i];
     if (num) return parseFloat(td.dataset.v ?? '0') || 0;
-    return (td.textContent || '').trim().toLowerCase();
+    return texto(td).trim().toLowerCase();
   };
   pares.sort((a, b) => {
     const x = clave(a[0]), y = clave(b[0]);
@@ -365,7 +378,7 @@ function bajarExcel(){
   const filas = [...document.querySelectorAll('#tabla tr.item')].filter(tr => !tr.classList.contains('oculta'));
   const limpia = t => '"' + t.replace(/\s+/g, ' ').replace(/"/g, '""').trim() + '"';
   const lineas = [enc.map(limpia).join(';')];
-  filas.forEach(tr => lineas.push([...tr.children].map(td => limpia(td.textContent.replace('▸', ''))).join(';')));
+  filas.forEach(tr => lineas.push([...tr.children].map(td => limpia(texto(td).replace('▸', ''))).join(';')));
   const blob = new Blob(['\ufeff' + lineas.join('\n')], {type: 'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
