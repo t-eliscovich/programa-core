@@ -1269,6 +1269,20 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     assert "limpia(td.textContent" not in parado, "el Excel se lleva la píldora"
 
 
+def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
+    """`actualizado` se guarda con NOW() y el servidor corre en UTC. Sin el
+    filtro, a las 19:41 del 18 en la fábrica la pantalla decía "datos al
+    19/08/2026 00:42": mañana. Lo vio la dueña el mismo día que se estrenó."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for nombre in ("parado.html", "parado_clientes.html"):
+        html = (carpeta / nombre).read_text(encoding="utf-8")
+        assert "estado.actualizado.strftime" not in html, (
+            f"{nombre} muestra la hora del servidor, no la de Ecuador")
+        assert "estado.actualizado | hora_ec" in html
+
+
 def test_la_hoja_del_vendedor_se_apila_en_el_celular():
     """La hoja es la pantalla que el vendedor abre en la calle, con el teléfono
     en la mano. La tabla de 5 columnas no entra en 390 px: se apila. Y apilada,

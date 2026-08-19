@@ -60,7 +60,7 @@
   {% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
   {{ clientes | length }} clientes{% if improbables %} + {{ improbables | length }} improbables{% endif %} ·
   ordenado por {{ ordenes[orden] }}
-  {% if estado.actualizado %}· datos al {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}
+  {% if estado.actualizado %}· datos al {{ estado.actualizado | hora_ec('%d/%m/%Y') }}{% endif %}
 </p>
 
 {# ⚠ El selector de vendedor NO va en la hoja propia: para un vendedor sería un
@@ -96,7 +96,7 @@
 
 <p class="cabecera-imp">Intela · saldos para ofrecer
   {% if vend %}— {{ vend }}{% endif %}
-  {% if estado.actualizado %}· {{ estado.actualizado.strftime('%d/%m/%Y') }}{% endif %}</p>
+  {% if estado.actualizado %}· {{ estado.actualizado | hora_ec('%d/%m/%Y') }}{% endif %}</p>
 
 {% macro ficha(c, dudoso=false) %}
 <div class="cli">

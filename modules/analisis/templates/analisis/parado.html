@@ -15,7 +15,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
 {% else %}Saldos — y a quién llamar{% endif %}</h1>
 <p class="sub">
 {% if estado.actualizado %}
-  Datos de Asinfo al {{ estado.actualizado.strftime('%d/%m/%Y %H:%M') }}
+  Datos de Asinfo al {{ estado.actualizado | hora_ec('%d/%m/%Y %H:%M') }}
 {% else %}
   Todavía no se trajeron los datos — toque «Actualizar»
 {% endif %}
