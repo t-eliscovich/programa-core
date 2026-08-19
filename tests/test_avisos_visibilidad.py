@@ -188,3 +188,20 @@ def test_novedades_ya_no_pide_compras_ver(app, monkeypatch):
     monkeypatch.setattr(queries, "_tiene_archivado", lambda: False)
     r = app.test_client().get("/novedades")
     assert r.status_code == 200
+
+
+def test_la_carga_de_tejeduria_ahora_pide_compras_ver(app, como_int):
+    """TMT 2026-08-19: el aviso de carga lleva a /compras, y eso lo saca de la
+    campanita de INT (dueña: *"estos avisos son de compras"*).
+
+    Vale también como prueba de que el path del link RESUELVE contra el url_map:
+    si no resolviera, `permisos_del_aviso` caería en el fail-closed y el aviso
+    lo verían sólo los wildcard — sin que nadie se entere.
+    """
+    url = "/compras?codigo=RY&desde=2026-08-01&hasta=2026-08-31"
+    assert vis.permisos_del_aviso("tejeduria", url) == {"compras.ver",
+                                                       "tejeduria.ver"}
+    assert vis.puede_ver("tejeduria", url) is False
+    # Los OTROS avisos de tejeduría (tejedor nuevo, sin tarifa, cargado de más)
+    # siguen llevando a la pantalla de producción: esos INT los sigue viendo.
+    assert vis.puede_ver("tejeduria", "/produccion-tejeduria-asinfo") is True

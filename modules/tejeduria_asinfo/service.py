@@ -18,7 +18,7 @@ import os
 import re
 import threading
 import time as _time
-from datetime import date
+from datetime import date, timedelta
 
 import db
 from filters import num_es
@@ -921,6 +921,37 @@ _AUTO_LOCK = threading.Lock()
 _auto_ultimo_ts = 0.0
 _AUTO_INTERVALO_MIN = 1800.0  # 30 min entre corridas de fondo
 
+def _url_compras(cod: str, dias: list[str]) -> str:
+    """El "ver →" del aviso: /compras filtrado por ESE tejedor y ESE mes.
+
+    TMT 2026-08-19 (dueña): *"acá cuando pongo ver, mandame a compras filtrado
+    por ese código de proveedor"*. Antes el link volvía a la pantalla de
+    Producción Tejeduría, que muestra las OFs de Asinfo — no las compras que el
+    aviso acaba de crear, que es lo que se quiere revisar.
+
+    El rango va del día 1 del mes de la compra MÁS VIEJA al último día del mes
+    de la MÁS NUEVA (la `fecha` de la compra es el día de la OF, no el de la
+    carga): así el filtro contiene siempre todo lo cargado, aunque el lote
+    quede a caballo de dos meses, y muestra el mes entero de contexto.
+
+    ⚠ El link decide QUIÉN VE EL AVISO: la campanita muestra sólo lo que la
+    persona puede abrir (modules/avisos/visibilidad.py). Al apuntar a /compras
+    estos avisos pasan a pedir `compras.ver`, que INT no tiene desde el 05/08 —
+    decisión de la dueña el 19/08: *"estos avisos son de compras"*. Los otros
+    avisos de tejeduría (tejedor nuevo, sin tarifa, cargado de más) siguen
+    apuntando a la pantalla de tejeduría, y esos INT los sigue viendo.
+    """
+    base = f"/compras?codigo={cod}"
+    dias = sorted(d for d in (dias or []) if d)
+    if not dias:
+        return base
+    d0 = date.fromisoformat(dias[0]).replace(day=1)
+    d1 = date.fromisoformat(dias[-1])
+    fin = (date(d1.year + 1, 1, 1) if d1.month == 12
+           else date(d1.year, d1.month + 1, 1)) - timedelta(days=1)
+    return f"{base}&desde={d0.isoformat()}&hasta={fin.isoformat()}"
+
+
 def _avisar_carga(res: dict) -> int:
     """Un aviso por PROVEEDOR con lo que se acaba de cargar. Devuelve cuántos."""
     from modules.avisos import avisar as _avisar
@@ -932,11 +963,14 @@ def _avisar_carga(res: dict) -> int:
         cod = (d.get("cod") or "?").upper()
         acc = porprov.setdefault(
             cod, {"n": 0, "kg": 0.0, "importe": 0.0,
-                  "label": d.get("label") or cod, "ofts": []})
+                  "label": d.get("label") or cod, "ofts": [], "dias": []})
         acc["n"] += 1
         acc["kg"] += float(d.get("kg") or 0)
         acc["importe"] += float(d.get("importe") or 0)
         acc["ofts"].append(str(d.get("oft") or ""))
+        _d = str(d.get("dia") or "")[:10]
+        if len(_d) == 10:
+            acc["dias"].append(_d)
 
     puestos = 0
     for cod, a in porprov.items():
@@ -950,7 +984,7 @@ def _avisar_carga(res: dict) -> int:
                      f"{'' if a['n'] == 1 else 's'} · "
                      f"{num_es(a['kg'], 2)} kg"),
             importe=round(a["importe"], 2), cantidad=a["n"],
-            url="/produccion-tejeduria-asinfo", clave=clave[:400],
+            url=_url_compras(cod, a["dias"]), clave=clave[:400],
         ))
     return puestos
 

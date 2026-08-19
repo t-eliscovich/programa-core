@@ -200,9 +200,9 @@ def test_tejeduria_avisa_una_linea_por_proveedor():
 
     carga = {"detalle": [
         {"ok": True, "cod": "RY", "label": "REYES", "kg": 809.0,
-         "importe": 815.0, "oft": "OFT-1"},
+         "importe": 815.0, "oft": "OFT-1", "dia": "2026-08-03"},
         {"ok": True, "cod": "RY", "label": "REYES", "kg": 809.0,
-         "importe": 815.0, "oft": "OFT-2"},
+         "importe": 815.0, "oft": "OFT-2", "dia": "2026-08-19"},
         {"ok": False, "cod": "AP", "label": "PONCE", "motivo": "sin tarifa"},
     ]}
     puestos = []
@@ -216,6 +216,39 @@ def test_tejeduria_avisa_una_linea_por_proveedor():
     assert a["detalle"] == "Se cargaron 2 compras · 1.618,00 kg"
     assert a["clave"] == "tejeduria:RY:OFT-1,OFT-2"     # anti-repetido por OFs
     assert "OFT" not in a["titulo"] + a["detalle"]      # sin siglas internas
+    # TMT 2026-08-19: el "ver →" lleva a las COMPRAS de ese tejedor, no a la
+    # pantalla de producción, y acotadas al mes de lo cargado.
+    assert a["url"] == "/compras?codigo=RY&desde=2026-08-01&hasta=2026-08-31"
+
+
+def test_tejeduria_el_link_cubre_el_lote_a_caballo_de_dos_meses():
+    """Dos OFs de meses distintos → el rango va del 1° del primero al fin del
+    último: el filtro tiene que contener SIEMPRE todo lo que se acaba de cargar."""
+    from modules.tejeduria_asinfo import service as tej
+
+    carga = {"detalle": [
+        {"ok": True, "cod": "AP", "label": "PONCE", "kg": 10.0,
+         "importe": 20.0, "oft": "OFT-9", "dia": "2026-07-28"},
+        {"ok": True, "cod": "AP", "label": "PONCE", "kg": 10.0,
+         "importe": 20.0, "oft": "OFT-10", "dia": "2026-08-02"},
+    ]}
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        tej._avisar_carga(carga)
+    assert puestos[0]["url"] == "/compras?codigo=AP&desde=2026-07-01&hasta=2026-08-31"
+
+
+def test_tejeduria_sin_fecha_el_link_filtra_solo_por_proveedor():
+    from modules.tejeduria_asinfo import service as tej
+
+    carga = {"detalle": [{"ok": True, "cod": "UN", "label": "UNDA", "kg": 5.0,
+                          "importe": 7.0, "oft": "OFT-3"}]}
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        tej._avisar_carga(carga)
+    assert puestos[0]["url"] == "/compras?codigo=UN"
 
 
 def test_quimicos_avisa_el_total_y_los_proveedores():
