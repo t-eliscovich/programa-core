@@ -1457,6 +1457,70 @@ def _evaluar_fechaout(*, n_con_mov, filas_con_mov, n_nace_afuera,
     }
 
 
+# ---------------------------------------------------------------------------
+# Un espejo de anticipo no puede quedar vivo sin su padre
+# ---------------------------------------------------------------------------
+#
+# TMT 2026-08-19 (dueña, mirando /informes/traza: *"me suena raro que el espejo
+# no sea + y -"*). Un anticipo son DOS filas: el cheque con la plata y un
+# cheque-espejo NB=98 negativo, que es el saldo a favor del cliente. Si el
+# padre se anula y el espejo queda vivo, el negativo no tiene contrapartida:
+# el cliente figura con plata a favor que nadie le debe y la utilidad baja por
+# ese importe, de una sola punta.
+#
+# Pasó tres veces sin que nadie se enterara —HOM $2.626,27 (19/08), ADI $500
+# (21/07) y FES $2.223,96 (11/08)— porque la anulación no se llevaba al
+# espejo. Las dos rutas ya cascadean; esto vigila el ESTADO, no el camino: si
+# mañana aparece una tercera forma de cerrar un cheque, salta al día siguiente
+# en vez de descubrirse mirando un renglón raro un mes después.
+#
+# Los espejos SIN padre (72 filas de 2022 a julio 2026) no entran: son los
+# saldos a favor que vinieron del dBase sin el vínculo, y son deuda real.
+
+
+def _evaluar_espejos_huerfanos(filas: list[dict]) -> tuple[list[dict], dict]:
+    """Parte pura — sin base, para poder testear el aviso."""
+    alerts: list[dict] = []
+    total = round(sum(abs(float(f.get("importe") or 0)) for f in filas), 2)
+    if filas:
+        alerts.append({
+            "nivel": "HIGH",
+            "que": (f"{len(filas)} espejo(s) de anticipo vivos con el cheque "
+                    f"padre anulado — ${total:,.2f} de utilidad de una sola punta"),
+            "por_que": "el espejo NB=98 es la contrapartida del saldo a favor. "
+                       "Sin su padre no compensa nada: el cliente figura con "
+                       "plata a favor que no existe. Se anula por "
+                       "/cheques/<id>/anular-error-carga.",
+            "donde_mirar": sorted({str(f.get("codigo_cli") or "?") for f in filas}),
+            "filas": filas,
+        })
+    return alerts, {"n_espejos_huerfanos": len(filas), "total_us": total}
+
+
+@bp.route("/espejo-huerfano", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def espejo_huerfano():
+    """¿Quedó algún espejo de anticipo vivo con el padre muerto?"""
+    filas = db.fetch_all(
+        """
+        SELECT e.id_cheque, e.fecha::text AS fecha, e.codigo_cli, e.importe,
+               e.stat, e.id_cheque_padre, p.stat AS stat_padre,
+               COALESCE(e.usuario_crea, '') AS usuario_crea
+          FROM scintela.cheque e
+          JOIN scintela.cheque p ON p.id_cheque = e.id_cheque_padre
+         WHERE e.no_banco IN (97, 98)
+           AND COALESCE(e.importe, 0) < 0
+           AND TRIM(COALESCE(e.stat, '')) IN ('Z','P','D','1','2','3')
+           AND TRIM(COALESCE(p.stat, '')) IN ('X','T','R')
+         ORDER BY e.fecha, e.id_cheque
+         LIMIT 50
+        """,
+    ) or []
+    alerts, stats = _evaluar_espejos_huerfanos(filas)
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -1778,6 +1842,7 @@ def health_all():
     resp10 = hilado_ukg_reconstruible()
     resp11 = traza_fresca()
     resp12 = permisos_drift()
+    resp14 = espejo_huerfano()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -1788,6 +1853,7 @@ def health_all():
     data10 = json.loads(resp10.get_data(as_text=True))
     data11 = json.loads(resp11.get_data(as_text=True))
     data12 = json.loads(resp12.get_data(as_text=True))
+    data14 = json.loads(resp14.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -1808,7 +1874,8 @@ def health_all():
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
-               and data10["ok"] and data11["ok"] and data12["ok"]),
+               and data10["ok"] and data11["ok"] and data12["ok"]
+               and data14["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -1822,6 +1889,7 @@ def health_all():
         "traza_fresca": data11,
         "permisos_drift": data12,
         "proformas_purga": data13,
+        "espejo_huerfano": data14,
     })
 
 

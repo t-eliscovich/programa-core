@@ -188,3 +188,42 @@ def test_no_se_lleva_puesto_al_cheque_de_REEMPLAZO(setup):
 
     assert _stat(conn, id_reemplazo) == "Z", (
         "el cheque bueno (el que reemplaza al mal cargado) se anuló solo")
+
+
+@pytest.mark.db
+def test_reversar_desde_cartera_tambien_se_lleva_el_espejo(setup):
+    """La otra puerta: el ↺ de la ficha (Z→X) es la MISMA anulación."""
+    from modules.cheques import queries as chq
+
+    conn = setup
+    id_padre, id_espejo = _anticipo_con_espejo(conn)
+
+    res = chq.reversar(id_cheque=id_padre, motivo="me confundi", usuario="test")
+    conn.commit()
+
+    assert res["stat_nuevo"] == "X" and res["es_rebote_real"] is False
+    assert _stat(conn, id_espejo) == "X", (
+        "reversar dejaba vivo el espejo: el mismo agujero que la anulación, "
+        "por otra puerta"
+    )
+    assert res["espejos_anulados"] == [id_espejo]
+    assert _cartera(conn) == 0.0
+
+
+def test_el_vigia_avisa_del_espejo_huerfano():
+    """Sin base: el aviso tiene que decir cuántos y cuánta plata."""
+    from modules.admin_dbase.health_audit_view import _evaluar_espejos_huerfanos
+
+    sin_nada, stats = _evaluar_espejos_huerfanos([])
+    assert sin_nada == [] and stats["n_espejos_huerfanos"] == 0
+
+    alerts, stats = _evaluar_espejos_huerfanos([
+        {"id_cheque": 102673, "codigo_cli": "HOM", "importe": -2626.27},
+        {"id_cheque": 100906, "codigo_cli": "ADI", "importe": -500},
+    ])
+    assert len(alerts) == 1 and alerts[0]["nivel"] == "HIGH"
+    assert stats["total_us"] == 3126.27, "el vigía tiene que sumar la plata"
+    assert alerts[0]["donde_mirar"] == ["ADI", "HOM"]
+    assert "anular-error-carga" in alerts[0]["por_que"], (
+        "un aviso sin la salida obliga a buscarla"
+    )

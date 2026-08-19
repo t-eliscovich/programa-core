@@ -1438,6 +1438,31 @@ def transicionar_stat(
     }
 
 
+def espejos_vivos_de(id_cheque: int, conn=None) -> list[int]:
+    """Los cheques-ESPEJO NB=97/98 vivos que cuelgan de este cheque.
+
+    El espejo negativo es la contrapartida del saldo a favor que deja un
+    anticipo: si el padre se va, el espejo tiene que irse con él o la utilidad
+    se mueve de una sola punta (caso HOM 19/08/2026).
+
+    Filtra por `no_banco IN (97, 98)` a propósito: `id_cheque_padre` lo usa
+    TAMBIÉN el cheque de REEMPLAZO (anular + recargar, `reemplazar()`), y ése
+    no se toca — es el bueno.
+    """
+    return [
+        int(r["id_cheque"])
+        for r in (db.fetch_all(
+            "SELECT id_cheque FROM scintela.cheque "
+            " WHERE id_cheque_padre = %s AND no_banco IN (97, 98) "
+            "   AND COALESCE(importe, 0) < 0 "
+            "   AND TRIM(COALESCE(stat, '')) NOT IN ('X', 'T', 'R') "
+            " ORDER BY id_cheque",
+            (id_cheque,),
+            conn=conn,
+        ) or [])
+    ]
+
+
 def anular_por_error_de_carga(
     id_cheque: int,
     *,
@@ -1528,22 +1553,8 @@ def anular_por_error_de_carga(
         compensacion = None
 
         # --- El espejo NB=97/98 que cuelga de este cheque (ver docstring) ---
-        # Sólo los espejos: `id_cheque_padre` lo usa también el cheque de
-        # REEMPLAZO (anular + recargar), y ése no se toca — es el bueno.
-        ids_espejo: list[int] = []
-        if not _en_cascada:
-            ids_espejo = [
-                int(r["id_cheque"])
-                for r in (db.fetch_all(
-                    "SELECT id_cheque FROM scintela.cheque "
-                    " WHERE id_cheque_padre = %s AND no_banco IN (97, 98) "
-                    "   AND COALESCE(importe, 0) < 0 "
-                    "   AND TRIM(COALESCE(stat, '')) NOT IN ('X', 'T', 'R') "
-                    " ORDER BY id_cheque",
-                    (id_cheque,),
-                    conn=conn,
-                ) or [])
-            ]
+        ids_espejo: list[int] = [] if _en_cascada else espejos_vivos_de(
+            id_cheque, conn=conn)
 
         # ── FRENO 2 (TMT 2026-08-05, caso MSS 1.100,93): si el movimiento
         # bancario de este cheque ya está CONCILIADO (contra el extracto o
@@ -5562,6 +5573,28 @@ def reversar(
                 conn=conn,
             )
 
+        # --- El espejo se va con el padre (TMT 2026-08-19) ---
+        # Z/D/P/V → X es la MISMA anulación administrativa que "anular por
+        # error de carga" ("me confundí al cargarlo"), así que tiene que
+        # llevarse el espejo NB=98 del anticipo igual que aquélla: si no, el
+        # cliente queda con un saldo a favor que nadie le debe y la utilidad
+        # baja de una sola punta. Un REBOTE real no: ahí el cheque sigue vivo
+        # como devuelto y el par cheque/espejo se sigue neteando.
+        espejos_anulados: list[int] = []
+        if not es_rebote_real:
+            for _id_esp in espejos_vivos_de(id_cheque, conn=conn):
+                anular_por_error_de_carga(
+                    _id_esp,
+                    motivo=(
+                        f"espejo del cheque {ch.get('no_cheque') or id_cheque} "
+                        f"reversado"
+                    ),
+                    usuario=usuario,
+                    conn=conn,
+                    _en_cascada=True,
+                )
+                espejos_anulados.append(_id_esp)
+
         # TMT 2026-05-21 dueña: el STOP es SOLO MANUAL. No marcar
         # automáticamente al rebotar. La obs sí queda anotada para que
         # vea quién rebotó y decida si pone STOP manualmente.
@@ -5662,6 +5695,7 @@ def reversar(
         "stat_nuevo": stat_nuevo,
         "es_rebote_real": es_rebote_real,
         "stop_aplicado": stop_aplicado,
+        "espejos_anulados": espejos_anulados,
     }
 
 
