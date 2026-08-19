@@ -1250,7 +1250,14 @@
              la campanita del automático de importaciones y lee el buzón único
              `scintela.aviso` (modules/avisos), donde escriben tejeduría,
              químicos e importaciones. #}
-        {% if tiene_permiso('compras.ver') %}
+        {# TMT 2026-08-19 (dueña): *"¿podés habilitar la campanita para INT?…
+             y que vean de cualquier notificación que sea páginas que ellos
+             están habilitados"*. La campanita colgaba de `compras.ver`, que
+             INT perdió el 05/08 → el rol que más opera era el único sin
+             novedades. Ahora la ve cualquiera que esté logueado y el control
+             es POR AVISO: sólo aparecen los que llevan a una pantalla que esa
+             persona puede abrir (modules/avisos/visibilidad.py). #}
+        {% if g.user %}
           {% set _ab = novedades() %}
           {# TMT 2026-07-30 (dueña): "hagamos notificaciones más lindas, están
              muy wordy — y una vez que lo abro que se marque leído solo".

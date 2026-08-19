@@ -346,7 +346,10 @@ def test_cuando_la_cuenta_cierra_la_pantalla_se_calla(app, fake_db):
          patch.object(dd, "_doc_por_guia",
                       return_value={"DES-95512": {"001-099-000182010": 612.35}}):
         body = c.get("/facturas/dia?fecha=2026-08-18").get_data(as_text=True)
-    assert "Por qué no coinciden" not in body
+    # El `<summary>` de la explicación, no el texto suelto: desde el 19/08 la
+    # campanita (que está en TODAS las pantallas) usa la misma frase como
+    # tooltip del renglón Despachado.
+    assert "cursor-pointer\">Por qué no coinciden" not in body
     assert "Nada:" not in body
     # …pero la guía, que es lo que se viene a ver, sigue estando
     assert "DES-95512" in body and "001-099-000182010" in body

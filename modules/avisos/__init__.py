@@ -32,3 +32,4 @@ from .queries import (  # noqa: F401
     n_no_leidos,
     resolver,
 )
+from .visibilidad import filtrar, puede_ver  # noqa: F401

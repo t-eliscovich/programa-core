@@ -188,7 +188,12 @@ def revisar_si_toca() -> dict:
                 titulo=_titulo(c)[:200],
                 detalle=_detalle(c),
                 cantidad=1,
-                url="/informes/dia",
+                # TMT 2026-08-19 (dueña): el aviso llevaba a /informes/dia
+                # (la explicación de la utilidad), que pide `informes.ver` —
+                # justo lo que NO tiene el rol que carga las facturas. Va al
+                # cuadre del día, que es donde se ve el despacho sin factura
+                # y donde se resuelve.
+                url=f"/facturas/dia?fecha={c['dia']}",
                 clave=f"desp-sin-factura:{c['numero']}",
             ):
                 res["avisados"] += 1

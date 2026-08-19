@@ -126,7 +126,8 @@ def _env() -> dict:
     return env
 
 
-def render(ruta: str, salida: Path) -> int:
+def render(ruta: str, salida: Path, permisos: str = "*",
+           rol: str = "Accionista") -> int:
     os.environ.update(_env())
     sys.path.insert(0, str(ROOT))
     from flask import g
@@ -141,9 +142,9 @@ def render(ruta: str, salida: Path) -> int:
     def _login_local():  # corre DESPUÉS de load_logged_in_user → pisa
         g.user = {
             "id_usuario": 0, "username": "local", "id_rol": 0,
-            "nombre_rol": "Accionista", "activo": True, "vend": None,
+            "nombre_rol": rol, "activo": True, "vend": None,
         }
-        g.permisos = {"*"}
+        g.permisos = {x.strip() for x in permisos.split(",") if x.strip()}
 
     client = app.test_client()
     resp = client.get(ruta, follow_redirects=True)
@@ -159,10 +160,17 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("ruta", help="p.ej. /informes/balance")
     p.add_argument("-o", "--out", default="/tmp/vista.html", type=Path)
+    # TMT 2026-08-19: la pantalla puede verse distinta según QUIÉN mira (la
+    # campanita, los links gateados por `tiene_permiso`). Sin esto, la única
+    # forma de ver lo que ve un INT era deployar y usar "👁 Ver como".
+    #   --permisos "facturas.ver,cheques.ver,stock.ver" --rol INT
+    p.add_argument("--permisos", default="*",
+                   help='permisos separados por coma ("*" = wildcard)')
+    p.add_argument("--rol", default="Accionista", help="nombre del rol a simular")
     a = p.parse_args()
     asegurar_postgres()
     asegurar_db()
-    return render(a.ruta, a.out)
+    return render(a.ruta, a.out, a.permisos, a.rol)
 
 
 if __name__ == "__main__":

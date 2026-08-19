@@ -288,6 +288,15 @@
          class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-slate-600 dark:text-slate-300 text-xs">
         🔍 PC sin match Asinfo
       </a>
+      {# TMT 2026-08-19 (dueña): *"y quizás poneme un click más que sea
+         despachos"*. El cuadre del día se llegaba SÓLO por el renglón
+         Despachado de la campanita y del inicio; acá, al lado de las otras
+         puertas a Asinfo, es donde se lo busca cuando ya se está mirando
+         facturas. #}
+      <a href="{{ url_for('facturas.dia_despacho_view') }}"
+         class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 text-slate-600 dark:text-slate-300 text-xs">
+        🚚 Despachos del día
+      </a>
       <a href="{{ url_for('facturas.desde_asinfo') }}"
          class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 text-slate-600 dark:text-slate-300 text-xs">
         📥 Asinfo sin cargar en PC

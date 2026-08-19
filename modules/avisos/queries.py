@@ -6,6 +6,8 @@ import time as _time
 
 import db
 
+from . import visibilidad as _vis
+
 _LOG = logging.getLogger("programa_core.avisos")
 
 # Nombre lindo de cada fuente — es lo que se ve en la pantalla y en el filtro.
@@ -21,6 +23,12 @@ FUENTES = {
     # Asinfo. Sin esta entrada el buzón mostraba la clave cruda y el filtro
     # por fuente no las listaba.
     "retenciones": "Retenciones",
+    # TMT 2026-08-19: estas tres ya escribían en el buzón pero no estaban acá,
+    # así que la pantalla mostraba la clave cruda ("clientes", "traza") y el
+    # filtro por tema no las listaba.
+    "clientes": "Clientes",
+    "stock": "Stock",
+    "traza": "Utilidad",
 }
 
 NIVELES = ("ok", "alerta", "error")
@@ -191,7 +199,12 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
     if nivel:
         where.append("nivel = %s")
         params.append(nivel)
-    params.append(int(limite))
+    # TMT 2026-08-19: cuando hay que filtrar por permiso (todos menos los
+    # roles wildcard) se piden MÁS filas de las que se van a mostrar. El LIMIT
+    # corta ANTES del filtro: sin el margen, a un INT le quedaban 3 novedades
+    # cuando le tocaban 15 porque las 12 primeras eran de importaciones.
+    filtra = _vis.hay_que_filtrar()
+    params.append(min(int(limite) * 4, 200) if filtra else int(limite))
     col_id = "aviso.id_aviso" if usr else "id_aviso"
     try:
         filas = db.fetch_all(
@@ -225,6 +238,10 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
     for f in filas:
         f["icono"] = ICONOS.get(f.get("nivel"), "•")
         f["fuente_label"] = FUENTES.get(f.get("fuente"), f.get("fuente") or "")
+    if filtra:
+        # Sólo los avisos cuya pantalla esta persona puede abrir. Ver
+        # `visibilidad.py`: el permiso sale del `url_map`, no de una lista.
+        filas = _vis.filtrar(filas)[:int(limite)]
     return filas
 
 
@@ -263,6 +280,13 @@ def marcar_leidos(fuente: str | None = None) -> int:
 
 
 def n_no_leidos() -> int:
+    """Cuántas sin leer — de las que ESTA persona puede abrir.
+
+    TMT 2026-08-19: si contara todas, /novedades diría "8 sin leer" arriba de
+    una lista de 2, y el número más grande es siempre el que se cree.
+    """
+    if _vis.hay_que_filtrar():
+        return len(listar(solo_no_leidos=True, limite=200))
     usr = usuario_actual() if _tiene_leido_por_usuario() else ""
     try:
         if usr:
@@ -283,6 +307,16 @@ def n_no_leidos() -> int:
         return int((row or {}).get("n") or 0)
     except Exception:  # noqa: BLE001
         return 0
+
+
+def obtener(id_aviso: int) -> dict | None:
+    """Fuente y destino de UN aviso — para saber si esta persona puede tocarlo."""
+    try:
+        return db.fetch_one(
+            "SELECT id_aviso, fuente, url FROM scintela.aviso WHERE id_aviso = %s",
+            (int(id_aviso),))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def resolver(id_aviso: int, *, titulo: str, detalle: str | None = None) -> bool:
