@@ -48,11 +48,15 @@
   <div class="rounded border border-slate-200 bg-white overflow-hidden mb-4">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 text-xs text-slate-500">
+        {# TMT 2026-08-19: *"poné kg de despacho y kg de factura"*. Una guía
+           puede facturarse por un peso distinto del que salió, y con una sola
+           columna de kilos eso no se veía. #}
         <tr><th class="px-3 py-1.5 text-left">Guía</th>
             <th class="px-3 py-1.5 text-left">Hora</th>
             <th class="px-3 py-1.5 text-left">Cliente</th>
-            <th class="px-3 py-1.5 text-right">Kilos</th>
-            <th class="px-3 py-1.5 text-left">Factura</th></tr>
+            <th class="px-3 py-1.5 text-right">Kg despacho</th>
+            <th class="px-3 py-1.5 text-left">Factura</th>
+            <th class="px-3 py-1.5 text-right">Kg factura</th></tr>
       </thead>
       <tbody>
         {% for g in d.guias %}
@@ -69,6 +73,9 @@
               {% if g.docs != g.en_pc %}<span class="text-xs text-amber-800"> · falta cargarla</span>{% endif %}
             {% elif g.facturada %}<span class="text-slate-400">nota de entrega</span>
             {% else %}<span class="text-amber-800">sin factura</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right {{ 'text-amber-800 font-medium' if g.difiere }}">
+            {% if g.kg_fact is not none %}{{ g.kg_fact | kg_es }}{% else %}—{% endif %}
           </td>
         </tr>
         {% endfor %}

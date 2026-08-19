@@ -80,7 +80,7 @@ def _cuadre(guias=None, ligado=None, docs=None, por_guia=None):
                       {"001-099-000182010": 612.35}), \
          patch.object(dd, "_doc_por_guia",
                       return_value=por_guia if por_guia is not None else
-                      {"DES-95512": {"001-099-000182010"}}):
+                      {"DES-95512": {"001-099-000182010": 612.35}}):
         return dd.cuadre(DIA)
 
 
@@ -140,7 +140,7 @@ def test_la_guia_facturada_en_asinfo_que_falta_importar_no_es_residuo():
          "facturada": True, "kg": 12.90},
     ]
     d = _cuadre(guias=guias, docs=[], ligado={},
-                por_guia={"DES-95927": {"001-099-000182106"}})
+                por_guia={"DES-95927": {"001-099-000182106": 12.90}})
     assert d["despachado"]["kg"] == 272.25
     assert d["facturado"]["kg"] == 0.0
     assert d["sin_factura"]["kg"] == 259.35          # nadie la facturó todavía
@@ -303,8 +303,8 @@ def test_cada_guia_lleva_el_numero_de_su_factura():
          "facturada": False, "kg": 259.35},
     ]
     d = _cuadre(guias=guias,
-                por_guia={"DES-95512": {"001-099-000182010"},
-                          "DES-95927": {"001-099-000182106"}})
+                por_guia={"DES-95512": {"001-099-000182010": 612.35},
+                          "DES-95927": {"001-099-000182106": 12.90}})
     por = {g["guia"]: g for g in d["guias"]}
     # la que está cargada acá: número y marcada como presente
     assert por["DES-95512"]["docs"] == ["001-099-000182010"]
@@ -324,7 +324,7 @@ def test_la_tabla_del_dia_imprime_el_numero_y_no_la_palabra_facturada(app, fake_
          patch.object(dd, "_guias", return_value=guias), \
          patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
          patch.object(dd, "_doc_por_guia",
-                      return_value={"DES-95927": {"001-099-000182106"}}):
+                      return_value={"DES-95927": {"001-099-000182106": 12.90}}):
         body = c.get("/facturas/dia?fecha=2026-08-19").get_data(as_text=True)
     assert "001-099-000182106" in body
     assert "falta cargarla" in body
@@ -344,7 +344,7 @@ def test_cuando_la_cuenta_cierra_la_pantalla_se_calla(app, fake_db):
          patch.object(dd, "_kg_con_guia_de_hoy",
                       return_value={"001-099-000182010": 612.35}), \
          patch.object(dd, "_doc_por_guia",
-                      return_value={"DES-95512": {"001-099-000182010"}}):
+                      return_value={"DES-95512": {"001-099-000182010": 612.35}}):
         body = c.get("/facturas/dia?fecha=2026-08-18").get_data(as_text=True)
     assert "Por qué no coinciden" not in body
     assert "Nada:" not in body
@@ -368,3 +368,26 @@ def test_la_guia_va_arriba_y_no_adentro_de_un_desplegable(app, fake_db):
     i_tabla = cuerpo.index("DES-95512")
     i_details = cuerpo.find("<details")
     assert i_details == -1 or i_tabla < i_details
+
+
+def test_la_tabla_compara_kg_de_despacho_contra_kg_de_factura():
+    """TMT 19/08: *"poné kg de despacho y kg de factura"*. Una guía puede
+    facturarse por un peso distinto del que salió; con una sola columna de
+    kilos eso no se veía."""
+    guias = [
+        {"guia": "DES-A", "hora": "08:14", "cliente": "TJC",
+         "facturada": True, "kg": 612.35},
+        {"guia": "DES-B", "hora": "09:01", "cliente": "AJO",
+         "facturada": True, "kg": 100.00},
+        {"guia": "DES-C", "hora": "10:00", "cliente": "SEF",
+         "facturada": False, "kg": 50.00},
+    ]
+    d = _cuadre(guias=guias, docs=[], ligado={},
+                por_guia={"DES-A": {"001-099-000182010": 612.35},
+                          "DES-B": {"001-099-000182011": 97.50}})
+    por = {g["guia"]: g for g in d["guias"]}
+    assert por["DES-A"]["kg_fact"] == 612.35 and por["DES-A"]["difiere"] is False
+    # facturó 2,50 kg menos de lo que salió: eso tiene que saltar
+    assert por["DES-B"]["kg_fact"] == 97.50 and por["DES-B"]["difiere"] is True
+    # sin factura todavía: no hay con qué comparar, y no se inventa un cero
+    assert por["DES-C"]["kg_fact"] is None and por["DES-C"]["difiere"] is False

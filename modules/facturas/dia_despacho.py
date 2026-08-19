@@ -136,8 +136,13 @@ def _kg_con_guia_de_hoy(dia: str) -> dict[str, float]:
     return out
 
 
-def _doc_por_guia(dia: str) -> dict[str, set[str]]:
-    """{número de guía → números de los documentos de Asinfo que la consumen}.
+def _doc_por_guia(dia: str) -> dict[str, dict[str, float]]:
+    """{número de guía → {número de documento: kilos facturados de esa guía}}.
+
+    Los KILOS van acá y no en otra query porque salen del mismo join: TMT
+    2026-08-19 pidió ver *"kg de despacho y kg de factura"* uno al lado del
+    otro, que es la comparación que la tabla no podía hacer — una guía puede
+    facturarse por un peso distinto del que salió, y eso hasta ahora no se veía.
 
     Es la pieza que faltaba para que la cuenta cierre. Antes se preguntaba sólo
     `indicador_generado_factura`, que dice "esta guía YA tiene documento **en
@@ -149,7 +154,8 @@ def _doc_por_guia(dia: str) -> dict[str, set[str]]:
     from modules._lib import metabase_client
 
     sql = f"""
-        SELECT dc.numero AS guia, fc.numero AS doc
+        SELECT dc.numero AS guia, fc.numero AS doc,
+               ROUND(SUM(ISNULL(dfc.cantidad, 0)), 2) AS kg
           FROM despacho_cliente dc
           JOIN detalle_despacho_cliente ddc
             ON ddc.id_despacho_cliente = dc.id_despacho_cliente
@@ -162,12 +168,17 @@ def _doc_por_guia(dia: str) -> dict[str, set[str]]:
            AND fc.estado <> 0
          GROUP BY dc.numero, fc.numero
     """
-    out: dict[str, set[str]] = {}
+    out: dict[str, dict[str, float]] = {}
     for r in metabase_client.fetch_dataset(2, sql, max_results=2000) or []:
         guia = str(r.get("guia") or "").strip()
         doc = str(r.get("doc") or "").strip()
-        if guia and doc:
-            out.setdefault(guia, set()).add(doc)
+        if not (guia and doc):
+            continue
+        try:
+            kg = round(float(r.get("kg") or 0), 2)
+        except (TypeError, ValueError):
+            kg = 0.0
+        out.setdefault(guia, {})[doc] = kg
     return out
 
 
@@ -204,7 +215,7 @@ def cuadre(fecha) -> dict:
 
     guias: list[dict] = []
     ligado: dict[str, float] = {}
-    por_guia: dict[str, set[str]] = {}
+    por_guia: dict[str, dict[str, float]] = {}
     asinfo_ok = True
     try:
         guias = _guias(dia)
@@ -239,7 +250,8 @@ def cuadre(fecha) -> dict:
     sin_factura, sin_cargar = [], []
     kg_nten_esperado = 0.0
     for g in guias:
-        suyos = sorted(por_guia.get(g["guia"]) or ())
+        kg_de = por_guia.get(g["guia"]) or {}
+        suyos = sorted(kg_de)
         # TMT 2026-08-19: *"acá también poneme cada factura de cada despacho
         # así lo pueden pueden usar"* — la columna decía "facturada" / "sin
         # factura", que es el estado pero no el dato: con el NÚMERO al lado, la
@@ -247,6 +259,9 @@ def cuadre(fecha) -> dict:
         # cruzarla) y no sólo para mirar.
         g["docs"] = suyos
         g["en_pc"] = [x for x in suyos if x in docs_pc]
+        # Los kilos que la factura dice, contra los que salieron por la puerta.
+        g["kg_fact"] = round(sum(kg_de.values()), 2) if suyos else None
+        g["difiere"] = bool(suyos and abs(g["kg_fact"] - g["kg"]) > UMBRAL_KG)
         if suyos:
             faltan = [x for x in suyos if x not in docs_pc]
             if faltan:
