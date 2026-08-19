@@ -190,17 +190,20 @@ Toque una fila para ver a quién ofrecérsela.</p>
     </p>
     {% if cand %}
     <table>
-      <thead><tr><th>Código</th><th>Cliente</th><th>Provincia</th><th>Vend.</th>
+      {# ⭐ SIN la columna Cliente. Dueña 19/08/2026: "cliente podemos poner
+         solo codigo, no hace falta el nombre?". Con el nombre, una fila
+         ocupaba cuatro renglones en el celular y la tabla no entraba; el
+         vendedor los conoce por el código de 3 letras. El nombre no se pierde:
+         va en el `title` del código y el buscador lo sigue encontrando
+         (`data-buscar` lo lleva). La hoja «A quién ofrecerle qué» sí va con el
+         nombre grande — ahí la unidad es el cliente, no la tela. #}
+      <thead><tr><th>Código</th><th>Provincia</th><th>Vend.</th>
       <th class="n">Kg</th><th class="n">Última</th></tr></thead>
       <tbody>
       {% for c in cand %}
         <tr data-v="{{ c.vend_pc or '' }}">
-          <td class="cod">{{ c.codigo_cli }}{% if c.codigo_cli in codigos_ambiguos %}
+          <td class="cod" title="{{ c.nombre }}">{{ c.codigo_cli }}{% if c.codigo_cli in codigos_ambiguos %}
             <span class="pill ojo">código repetido</span>{% endif %}</td>
-          {# las clases son para el celular: ahí la fila se apila en dos
-             renglones (código + nombre / provincia · vend · kg · fecha) y hay
-             que poder agarrar cada celda por nombre, no por posición. #}
-          <td class="cli">{{ c.nombre }}</td>
           <td class="g prov">{{ c.provincia }}</td>
           <td class="g vnd">{{ c.vend_pc or 'mostrador' }}</td>
           <td class="n kgt">{{ c.kg | num_es(0) }}</td>

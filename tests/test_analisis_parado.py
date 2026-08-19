@@ -1347,28 +1347,31 @@ def test_la_base_se_fija_una_sola_vez_y_recien_desde_la_largada(monkeypatch):
     assert escritos == []
 
 
-def test_el_desplegable_de_clientes_se_lee_en_el_celular():
-    """El desplegable son 6 columnas: en el teléfono el nombre del cliente se
-    partía en cuatro renglones y la fecha quedaba cortada afuera (402 px de
-    tabla contra 390 de pantalla). Apilado se lee como una ficha: código y
-    nombre arriba, y debajo «GUAYAS · FL1 · 825 kg · 03/08/26»."""
-    from pathlib import Path
-    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-               "templates" / "analisis")
-    base = (carpeta / "base.html").read_text(encoding="utf-8")
-    parado = (carpeta / "parado.html").read_text(encoding="utf-8")
+def test_el_desplegable_va_por_codigo_y_el_nombre_no_se_pierde():
+    """Dueña 19/08/2026: "cliente podemos poner solo codigo, no hace falta el
+    nombre?". Con el nombre, una fila del desplegable ocupaba cuatro renglones
+    en el celular y la tabla no entraba en 390 px.
 
-    # las celdas se agarran por CLASE, no por posición: si un día se agrega una
-    # columna al desplegable, la ficha del celular no se desarma sola
-    for clase in ("cod", "cli", "prov", "vnd", "kgt", "ult"):
-        assert f'"{clase}"' in parado or f' {clase}"' in parado, (
-            f"la celda {clase} no tiene clase en el desplegable")
-    assert "tr.det tbody tr{display:block" in base.replace(" ", "") or \
-           "tr.det table,tr.det tbody,tr.det tbody tr{display:block" in base
-    assert 'tr.det td.cli::after{content:"\\A"' in base, (
-        "sin el salto después del nombre, la ficha queda en tres renglones")
-    assert 'tr.det td.kgt::after{content:" kg"}' in base, (
-        "el número de kilos queda sin unidad")
+    Lo que NO puede pasar es que el nombre desaparezca del todo: sigue en el
+    `title` del código y en `data-buscar`, así que buscar "ARELLANO" sigue
+    encontrando la fila aunque en pantalla diga WFA."""
+    from pathlib import Path
+    parado = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis" / "parado.html")
+              .read_text(encoding="utf-8"))
+    detalle = parado[parado.index("{% if cand %}"):]
+    assert "<th>Cliente</th>" not in detalle, "el desplegable volvió a traer el nombre"
+    assert "{{ c.nombre }}" not in detalle.replace('title="{{ c.nombre }}"', ""), (
+        "el nombre se imprime como columna")
+    assert 'title="{{ c.nombre }}"' in detalle, "el nombre se perdió del todo"
+    # el buscador lo sigue teniendo: es lo que hace que se pueda buscar por nombre
+    assert "map(attribute='nombre')" in parado
+
+    # la hoja del vendedor SÍ lleva el nombre grande: ahí la unidad es el cliente
+    hoja = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "parado_clientes.html")
+            .read_text(encoding="utf-8"))
+    assert "{{ c.nombre }}" in hoja
 
 
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():

@@ -164,24 +164,10 @@ font-size:12px;color:var(--g)}
      teléfono de 360. */
   .resumen{font-size:12px}
   .resumen th,.resumen td{padding:6px 4px;white-space:normal}
-  /* ⚠ El desplegable de clientes son 6 columnas: en el teléfono el nombre se
-     partía en cuatro renglones y la fecha quedaba cortada afuera (402 px de
-     tabla contra 390 de pantalla). Acá la fila se lee como una ficha:
-     «WFA ARELLANO ESPINOSA…» y debajo «GUAYAS · FL1 · 825 kg · 03/08/26». */
-  tr.det table,tr.det tbody,tr.det tbody tr{display:block;width:auto}
-  tr.det thead{display:none}
-  tr.det tbody tr{padding:7px 2px;border-top:1px solid var(--l)}
-  tr.det tbody tr:first-child{border-top:0}
-  /* sin fondo: la cebra de la tabla, apilada, pintaba media ficha */
-  tr.det tbody td{display:inline;padding:0;text-align:left;font-size:12px;background:none}
-  tr.det td.cod{font-weight:600;margin-right:5px}
-  /* ⚠ El salto lo da el NOMBRE, no un `display:block` en la provincia: con
-     block, provincia se quedaba sola en un renglón y el resto caía a un
-     tercero, que empezaba con un "·" suelto. */
-  tr.det td.cli::after{content:"\A";white-space:pre}
-  tr.det td.prov,tr.det td.vnd,tr.det td.kgt,tr.det td.ult{font-size:11px;color:var(--g)}
-  tr.det td.vnd::before,tr.det td.kgt::before,tr.det td.ult::before{content:" · "}
-  tr.det td.kgt::after{content:" kg"}
+  /* El desplegable de clientes: sin la columna del nombre son cinco columnas
+     cortas y entra como tabla en 390 px (mide 354). Antes, con el nombre, la
+     fila se apilaba en una ficha y aun así se salía. */
+  tr.det table{font-size:11px}
   /* ⭐ El nombre de la tela sigue en UNA fila también acá: entra porque la
      columna Estado ya no existe (la dueña: "el estado tampoco importa
      mucho"). Medido a 390 px: el nombre más largo —"Jersey Lycra
