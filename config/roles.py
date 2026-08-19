@@ -136,6 +136,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "bancos.conciliar",
             "retenciones.ver",
             "retenciones.emitir",
+            "retenciones.cargar_en_factura",
             "retenciones.anular",
             "caja.ver",
             "caja.crear",
@@ -190,6 +191,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "cheques.anular",
             "retenciones.ver",
             "retenciones.emitir",
+            "retenciones.cargar_en_factura",
             "cobranza.ver",
             "cobranza.registrar",
             "cartera.ver",
@@ -294,6 +296,16 @@ ROLES: list[tuple[str, list[str]]] = [
             "facturas.editar",
             "facturas.anular",
             "deudas.ver",
+            # TMT 2026-08-19 (dueña): *"pero siempre tuvieron acceso, ¿por
+            # qué no se los das?"*. Permiso PROPIO del lapicito de la columna
+            # Retención en /facturas — cargar a mano la retención de UNA
+            # factura que estás mirando. NO es `retenciones.emitir`: ése abre
+            # el módulo Retenciones entero (el listado y /retenciones/emitir,
+            # que registra el comprobante pero NO baja el saldo), y la mig
+            # 0166 se lo sacó a INT a propósito el 05/08. Separados, Alex,
+            # Irene y Maribel cargan la retención donde la necesitan sin que
+            # les vuelva lo que ella cerró.
+            "retenciones.cargar_en_factura",
             # SRI / proformas (operativas).
             "sri.ver",
             "sri.emitir",

@@ -2631,13 +2631,26 @@ def test_int_pierde_activos_compras_gastos_iniciales_provisiones_retenciones():
     operativa (compras.crear/editar/anular, gastos.*, activos.crear, etc.).
     Al rol le quedan 34: cobranza, cheques, facturas, bancos, caja, clientes,
     proveedores y tintorería.
+
+    ⚠ TMT 2026-08-19: la ÚNICA excepción es
+    `retenciones.cargar_en_factura` (mig 0205), que a pesar del prefijo NO es
+    el módulo Retenciones: es el lapicito de la columna Retención en
+    /facturas, o sea la retención de la factura que Alex tiene delante. La
+    dueña lo pidió explícito (*"pero siempre tuvieron acceso, ¿por qué no se
+    los das?"*). El módulo sigue cerrado para INT — eso es lo que este test
+    cuida, y por eso la lista de abajo es nominal en vez de por prefijo.
     """
     from config.roles import ROLES
 
     d = dict(ROLES)
     fuera = ("activos.", "compras.", "gastos.", "iniciales.",
              "provisiones.", "retenciones.")
-    assert not [p for p in d["INT"] if p.startswith(fuera)]
+    excepciones = {"retenciones.cargar_en_factura"}
+    assert not [p for p in d["INT"]
+                if p.startswith(fuera) and p not in excepciones]
+    # El MÓDULO Retenciones sigue cerrado: ni el listado, ni emitir, ni anular.
+    for cerrado in ("retenciones.ver", "retenciones.emitir", "retenciones.anular"):
+        assert cerrado not in d["INT"], f"a INT le volvió {cerrado}"
     # Lo que NO se tocó: sigue siendo el rol operativo de cobranza.
     for queda in ("cheques.ver", "facturas.ver", "bancos.ver", "caja.ver",
                   "clientes.ver"):

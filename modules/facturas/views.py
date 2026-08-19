@@ -510,7 +510,7 @@ def editar_campo(id_factura: int):
 
 @facturas_bp.route("/facturas/<int:id_factura>/retencion", methods=["POST"])
 @requiere_login
-@requiere_permiso("retenciones.emitir")
+@requiere_permiso("retenciones.cargar_en_factura")
 def cargar_retencion(id_factura: int):
     """Carga a mano la retención de UNA factura, desde el lapicito de /facturas.
 
@@ -523,9 +523,14 @@ def cargar_retencion(id_factura: int):
     `retenciones.queries.aplicar_manual`, que comparte el escritor con la
     aplicación automática de Asinfo.
 
-    El permiso es `retenciones.emitir` y no `facturas.editar` a propósito:
-    quien carga retenciones es Cobranzas, que NO edita facturas. Gatear por la
-    operación, no por la pantalla.
+    El permiso es **`retenciones.cargar_en_factura`** (mig 0205), propio de
+    esta operación. No `facturas.editar`, porque Cobranzas carga retenciones y
+    no edita facturas. Y no `retenciones.emitir`, porque ése abre el módulo
+    Retenciones entero y la mig 0166 se lo sacó a INT a propósito el 05/08 —
+    con lo cual Alex, Irene y Maribel se quedaban sin poder cargar la
+    retención de la factura que tienen delante (dueña 19/08: *"pero siempre
+    tuvieron acceso, ¿por qué no se los das?"*). Gatear por la OPERACIÓN, no
+    por la pantalla ni por el rol.
 
     Body: ``valor=<monto>``. Devuelve JSON
     ``{ok, retencion, saldo, stat, error?}``.

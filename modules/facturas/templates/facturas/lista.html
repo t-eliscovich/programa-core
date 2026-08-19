@@ -473,7 +473,7 @@
           {% if (f.retencion or 0) > 0 %}
           <td class="px-2 py-1.5 text-right text-mono text-violet-700 dark:text-violet-300"
               title="Retención ya cargada. Para cambiarla, deshacela desde el Historial.">{{ f.retencion | money_es }}</td>
-          {% elif tiene_permiso('retenciones.emitir') and f.id_factura %}
+          {% elif tiene_permiso('retenciones.cargar_en_factura') and f.id_factura %}
           <td class="px-2 py-1.5 text-right text-mono editable-cell"
               data-id="{{ f.id_factura }}" data-campo="retencion" data-valor=""
               data-url="/facturas/{{ f.id_factura }}/retencion">

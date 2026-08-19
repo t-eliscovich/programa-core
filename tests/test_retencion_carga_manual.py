@@ -240,24 +240,60 @@ def test_la_carga_manual_y_la_de_asinfo_usan_el_mismo_escritor():
 
 # ── la ruta y la pantalla ──────────────────────────────────────────────────
 
-def test_la_ruta_existe_y_pide_permiso_de_retenciones(app):
-    """Gatea por OPERACIÓN, no por pantalla: quien carga retenciones es
-    Cobranzas, que NO tiene `facturas.editar`."""
+def test_la_ruta_existe_y_pide_su_permiso_propio(app):
+    """Gatea por OPERACIÓN, no por pantalla ni por rol."""
     regla = next((r for r in app.url_map.iter_rules()
                   if str(r) == "/facturas/<int:id_factura>/retencion"), None)
     assert regla is not None, "la ruta del lapicito no está registrada"
     assert "POST" in regla.methods
     vista = app.view_functions[regla.endpoint]
-    assert getattr(vista, "_permiso", None) == "retenciones.emitir"
+    assert getattr(vista, "_permiso", None) == "retenciones.cargar_en_factura"
 
 
-def test_cobranzas_puede_cargar_retenciones_sin_poder_editar_facturas():
+def _permisos(rol):
     from config.roles import ROLES
-    permisos = dict(ROLES)["Cobranzas"] if isinstance(ROLES, list) else ROLES["Cobranzas"]
-    assert "retenciones.emitir" in permisos
-    assert "facturas.editar" not in permisos, (
-        "si Cobranzas ganara facturas.editar, este test sobra — pero entonces "
-        "hay que decidir de nuevo por qué permiso gatea el lapicito")
+    d = dict(ROLES) if isinstance(ROLES, list) else ROLES
+    return d[rol]
+
+
+@pytest.mark.parametrize("rol", ["INT", "Cobranzas", "Contabilidad"])
+def test_los_tres_roles_que_cargan_retenciones_lo_tienen(rol):
+    """Dueña 19/08: *"pero siempre tuvieron acceso, ¿por qué no se los das?"*
+    — INT es Alex, Irene y Maribel."""
+    assert "retenciones.cargar_en_factura" in _permisos(rol)
+
+
+def test_no_es_retenciones_emitir_y_a_INT_no_se_le_devolvio_el_modulo():
+    """El permiso del lapicito es PROPIO a propósito. `retenciones.emitir`
+    abre el módulo Retenciones entero (listado + /retenciones/emitir, la
+    pantalla que registra pero NO baja el saldo), y la mig 0166 se lo sacó a
+    INT el 05/08 por decisión de la dueña: *"quitá retenciones de INT"*. Este
+    test avisa si alguien intenta arreglar el lapicito por el atajo de
+    devolverle el módulo entero."""
+    int_perms = _permisos("INT")
+    assert "retenciones.emitir" not in int_perms
+    assert "retenciones.anular" not in int_perms
+    assert "retenciones.ver" not in int_perms
+
+
+def test_cobranzas_lo_tiene_sin_poder_editar_facturas():
+    """Por eso el lapicito no puede colgar de `facturas.editar`."""
+    permisos = _permisos("Cobranzas")
+    assert "retenciones.cargar_en_factura" in permisos
+    assert "facturas.editar" not in permisos
+
+
+def test_hay_migracion_que_lo_mete_en_la_base():
+    """`config/roles.py` es la fuente canónica, pero el que manda en runtime es
+    `seguridad.permiso`: sin migración el permiso existe sólo en el repo y
+    producción queda igual, con los tests en verde (migs 0164/0165, 0182)."""
+    from pathlib import Path
+    migs = [m for m in Path("migrations").glob("*.py")
+            if "retenciones.cargar_en_factura" in m.read_text(encoding="utf-8")]
+    assert migs, "el permiso nuevo no tiene migración: no llega a producción"
+    texto = migs[0].read_text(encoding="utf-8")
+    for rol in ("INT", "Cobranzas", "Contabilidad"):
+        assert rol in texto, f"la migración no le da el permiso a {rol}"
 
 
 def test_el_lapicito_no_aparece_si_la_retencion_ya_esta_cargada():
@@ -268,7 +304,7 @@ def test_el_lapicito_no_aparece_si_la_retencion_ya_esta_cargada():
     i = tpl.index('data-campo="retencion"')
     bloque = tpl[max(0, i - 1500):i]
     assert "{% if (f.retencion or 0) > 0 %}" in bloque
-    assert "{% elif tiene_permiso('retenciones.emitir')" in bloque
+    assert "{% elif tiene_permiso('retenciones.cargar_en_factura')" in bloque
 
 
 def test_la_celda_de_retencion_postea_a_su_propia_ruta():
