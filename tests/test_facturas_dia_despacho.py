@@ -258,8 +258,9 @@ def test_la_pantalla_abre_y_muestra_el_cuadre(app, fake_db):
         r = c.get("/facturas/dia?fecha=2026-08-18")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "001-099-000181963" in body and ">POS<" in body
-    assert "Facturado hoy sin guía de despacho de hoy" in body
+    assert "001-099-000181963" in body and "POS" in body
+    # la cuenta NO cierra en este caso, así que el porqué tiene que estar
+    assert "Por qué no coinciden" in body
 
 
 def test_una_fecha_basura_en_la_url_cae_en_hoy_y_no_revienta(app, fake_db):
@@ -326,4 +327,44 @@ def test_la_tabla_del_dia_imprime_el_numero_y_no_la_palabra_facturada(app, fake_
                       return_value={"DES-95927": {"001-099-000182106"}}):
         body = c.get("/facturas/dia?fecha=2026-08-19").get_data(as_text=True)
     assert "001-099-000182106" in body
-    assert "falta cargarla acá" in body
+    assert "falta cargarla" in body
+
+
+def test_cuando_la_cuenta_cierra_la_pantalla_se_calla(app, fake_db):
+    """TMT 19/08: *"todo esto mucho más chico y sacar datos no importantes"*.
+    Tres secciones diciendo "Nada: …" son media pantalla para informar que no
+    pasó nada. Si despachado y facturado coinciden, sólo va la tabla."""
+    c = _login(app, fake_db)
+    guias = [{"guia": "DES-95512", "hora": "08:14", "cliente": "TJC",
+              "facturada": True, "kg": 612.35}]
+    docs = [{"numf": 182010, "numf_completo": "001-099-000182010",
+             "codigo_cli": "TJC", "kg": 612.35, "importe": 4000.0}]
+    with patch.object(dd, "_documentos_pc", return_value=_pc(docs)), \
+         patch.object(dd, "_guias", return_value=guias), \
+         patch.object(dd, "_kg_con_guia_de_hoy",
+                      return_value={"001-099-000182010": 612.35}), \
+         patch.object(dd, "_doc_por_guia",
+                      return_value={"DES-95512": {"001-099-000182010"}}):
+        body = c.get("/facturas/dia?fecha=2026-08-18").get_data(as_text=True)
+    assert "Por qué no coinciden" not in body
+    assert "Nada:" not in body
+    # …pero la guía, que es lo que se viene a ver, sigue estando
+    assert "DES-95512" in body and "001-099-000182010" in body
+
+
+def test_la_guia_va_arriba_y_no_adentro_de_un_desplegable(app, fake_db):
+    """La tabla de guías es la pantalla: si vuelve a quedar detrás de un
+    `<details>`, hay que abrirla para ver lo único que se viene a ver."""
+    c = _login(app, fake_db)
+    guias = [{"guia": "DES-95512", "hora": "08:14", "cliente": "TJC",
+              "facturada": False, "kg": 612.35}]
+    with patch.object(dd, "_documentos_pc", return_value=[]), \
+         patch.object(dd, "_guias", return_value=guias), \
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia", return_value={}):
+        body = c.get("/facturas/dia?fecha=2026-08-18").get_data(as_text=True)
+    # sólo el contenido de ESTA pantalla: base.html tiene sus propios <details>
+    cuerpo = body[body.index("Guías del día"):]
+    i_tabla = cuerpo.index("DES-95512")
+    i_details = cuerpo.find("<details")
+    assert i_details == -1 or i_tabla < i_details

@@ -1,233 +1,152 @@
 {% extends "base.html" %}
-{% from "_ui.html" import page_hero %}
 {% block title %}Despachado y facturado del día{% endblock %}
 
 {% block content %}
-{# TMT 2026-08-18 (dueña): *"¿por qué hay más facturado que despachado?"*. Los
-   dos números conviven en el pin desde el 13/08 y casi nunca cierran, porque
-   son dos hechos distintos: la mercadería sale y el papel va atrás. Esta
-   pantalla no explica la diferencia con una frase — la DESCOMPONE, y la
-   cuenta cierra sola. Se llega clickeando el renglón Despachado; no tiene
-   entrada en el menú. #}
-<div class="max-w-6xl mx-auto px-4 py-5 info-page">
+{# TMT 2026-08-18: *"¿por qué hay más facturado que despachado?"*. Son dos
+   hechos distintos y la pantalla descompone la diferencia.
 
-  <div class="flex items-start justify-between gap-4 mb-4">
-    {{ page_hero(
-       'Despachado y facturado · ' ~ d.fecha,
-       descripcion='Lo que salió por la puerta contra lo que se facturó. Son dos hechos distintos: la mercadería va adelante del documento.'
-    ) }}
-    <div class="flex items-center gap-2 shrink-0 mt-1 acciones-pantalla">
-      <form method="GET" class="flex items-center gap-2">
-        <input type="date" name="fecha" value="{{ d.fecha }}"
-               class="text-sm px-2 py-1 rounded border border-slate-300 bg-white">
-        <button class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver</button>
-      </form>
+   TMT 2026-08-19, segunda pasada: *"todo esto mucho más chico y sacar datos no
+   importantes, lo más importante es la guía"*. Antes había tres cajas grandes,
+   el cuadre entero y TRES secciones que decían "Nada: …" — media pantalla para
+   informar que no pasaba nada, y la tabla de guías al fondo adentro de un
+   desplegable. Ahora:
+     · el resumen es UN renglón;
+     · el cuadre y las tablas de excepción sólo aparecen si hay algo que
+       explicar (diferencia ≠ 0). Cuando cierra, no se dice nada;
+     · las GUÍAS del día son la pantalla: van arriba, abiertas y completas.
+   Es sacar RUIDO, no filas. #}
+<div class="max-w-6xl mx-auto px-4 py-3 info-page">
+
+  <div class="flex items-center justify-between gap-3 mb-2 flex-wrap">
+    <div class="flex items-baseline gap-2 min-w-0">
+      <h1 class="text-base font-semibold text-slate-800">Guías del día</h1>
+      <span class="text-sm text-slate-500">{{ d.fecha }}</span>
+    </div>
+    <form method="GET" class="flex items-center gap-2">
+      <input type="date" name="fecha" value="{{ d.fecha }}"
+             class="text-xs px-2 py-1 rounded border border-slate-300 bg-white">
+      <button class="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-100">Ver</button>
       <a href="/facturas?desde={{ d.fecha }}&hasta={{ d.fecha }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Las facturas del día →</a>
-    </div>
+         class="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-100">Facturas →</a>
+    </form>
   </div>
 
-  {% if not d.asinfo_ok %}
-  <div class="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-    Asinfo no contestó, así que sólo está el lado nuestro: lo facturado. El
-    despacho y el cuadre vuelven en cuanto el ERP responda.
-  </div>
-  {% endif %}
-
-  {# ───── Los dos números y la diferencia ───── #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-    <div class="rounded border border-slate-200 bg-white p-3">
-      <div class="text-xs text-slate-500">Despachado</div>
-      <div class="text-2xl font-semibold text-slate-800">
-        {{ (d.despachado.kg | kg_es ~ ' kg') if d.despachado.kg is not none else '—' }}
-      </div>
-      <div class="text-xs text-slate-500 mt-1">{{ d.despachado.n }} guía{{ '' if d.despachado.n == 1 else 's' }} de despacho · bodega Producto Terminado</div>
-    </div>
-    <div class="rounded border border-slate-200 bg-white p-3">
-      <div class="text-xs text-slate-500">Facturado</div>
-      <div class="text-2xl font-semibold text-slate-800">{{ d.facturado.kg | kg_es }} kg</div>
-      <div class="text-xs text-slate-500 mt-1">{{ d.facturado.n }} documento{{ '' if d.facturado.n == 1 else 's' }} · $ {{ d.facturado.importe | num_es(2) }}</div>
-    </div>
-    <div class="rounded border {{ 'border-amber-300 bg-amber-50/60' if d.diferencia else 'border-slate-200 bg-white' }} p-3">
-      <div class="text-xs text-slate-500">Diferencia</div>
-      <div class="text-2xl font-semibold {{ 'text-amber-800' if d.diferencia else 'text-slate-800' }}">
-        {% if d.diferencia is none %}—{% else %}{{ '+' if d.diferencia > 0 }}{{ d.diferencia | kg_es }} kg{% endif %}
-      </div>
-      <div class="text-xs text-slate-500 mt-1">facturado − despachado</div>
-    </div>
+  {# ───── El resumen, en un renglón ───── #}
+  <div class="text-sm text-slate-600 mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+    <span>Despachado <b class="text-slate-900">{{ (d.despachado.kg | kg_es ~ ' kg') if d.despachado.kg is not none else '—' }}</b>
+      <span class="text-xs text-slate-400">· {{ d.despachado.n }} guía{{ '' if d.despachado.n == 1 else 's' }}</span></span>
+    <span>Facturado <b class="text-slate-900">{{ d.facturado.kg | kg_es }} kg</b>
+      <span class="text-xs text-slate-400">· {{ d.facturado.n }} doc{{ '' if d.facturado.n == 1 else 's' }} · $ {{ d.facturado.importe | num_es(2) }}</span></span>
+    {% if d.diferencia %}
+    <span class="text-amber-800">Diferencia <b>{{ '+' if d.diferencia > 0 }}{{ d.diferencia | kg_es }} kg</b></span>
+    {% endif %}
+    {% if not d.asinfo_ok %}<span class="text-amber-800 text-xs">Asinfo no contestó: falta el despacho</span>{% endif %}
   </div>
 
-  {# ───── El cuadre, renglón por renglón. Que la cuenta CIERRE es el punto de
-     la pantalla: sin esto son dos números y una hipótesis. ───── #}
-  {% if d.asinfo_ok %}
-  <div class="rounded border border-slate-200 bg-white mb-5 overflow-hidden">
-    <table class="w-full text-sm">
-      <tbody>
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-slate-600">Despachado</td>
-          <td class="px-3 py-2 text-right font-medium">{{ d.despachado.kg | kg_es }} kg</td>
-        </tr>
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-slate-600">+ facturado hoy que no salió por una guía de hoy</td>
-          <td class="px-3 py-2 text-right font-medium">{{ d.sin_guia.kg | kg_es }} kg</td>
-        </tr>
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-slate-600">− salió hoy y todavía no se facturó</td>
-          <td class="px-3 py-2 text-right font-medium">{{ d.sin_factura.kg | kg_es }} kg</td>
-        </tr>
-        {# TMT 2026-08-19: este renglón faltaba y era el "residuo". Una guía
-           puede estar facturada EN ASINFO y todavía no importada acá: el
-           documento existe, lo que falta es cargarlo. Es otra cosa que "nadie
-           la facturó", y lo que hay que hacer es otro. #}
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-slate-600">− ya facturado en Asinfo, falta cargarlo acá</td>
-          <td class="px-3 py-2 text-right font-medium">{{ d.sin_cargar.kg | kg_es }} kg</td>
-        </tr>
-        {% if d.residuo %}
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-2 text-amber-800">± sin identificar</td>
-          <td class="px-3 py-2 text-right font-medium text-amber-800">{{ d.residuo | kg_es }} kg</td>
-        </tr>
-        {% endif %}
-        <tr class="bg-slate-50">
-          <td class="px-3 py-2 font-medium">= Facturado</td>
-          <td class="px-3 py-2 text-right font-semibold">{{ d.facturado.kg | kg_es }} kg</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  {# ───── (A) lo facturado sin guía del día ───── #}
-  <h2 class="text-base font-medium mb-2">Facturado hoy sin guía de despacho de hoy · {{ d.sin_guia.kg | kg_es }} kg</h2>
-  {% if d.sin_guia['items'] %}
-  <div class="rounded border border-slate-200 bg-white mb-5 overflow-hidden">
+  {# ───── LA TABLA. Es la pantalla. ───── #}
+  {% if d.guias %}
+  <div class="rounded border border-slate-200 bg-white overflow-hidden mb-4">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 text-xs text-slate-500">
-        <tr><th class="px-3 py-2 text-left">Documento</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-right">Kilos sin guía</th>
-            <th class="px-3 py-2 text-right">Kilos del documento</th></tr>
+        <tr><th class="px-3 py-1.5 text-left">Guía</th>
+            <th class="px-3 py-1.5 text-left">Hora</th>
+            <th class="px-3 py-1.5 text-left">Cliente</th>
+            <th class="px-3 py-1.5 text-right">Kilos</th>
+            <th class="px-3 py-1.5 text-left">Factura</th></tr>
       </thead>
       <tbody>
-        {% for f in d.sin_guia['items'] %}
+        {% for g in d.guias %}
         <tr class="border-t border-slate-100">
-          <td class="px-3 py-2"><a class="text-sky-700" href="/facturas/{{ f.numf }}">{{ f.doc }}</a></td>
-          <td class="px-3 py-2" title="{{ f.cliente }}">{{ f.cliente }}</td>
-          <td class="px-3 py-2 text-right font-medium">{{ f.kg_sin_guia | kg_es }}</td>
-          <td class="px-3 py-2 text-right text-slate-500">{{ f.kg | kg_es }}</td>
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ g.guia }}</td>
+          <td class="px-3 py-1.5 text-slate-500">{{ g.hora }}</td>
+          <td class="px-3 py-1.5">{{ g.cliente }}</td>
+          <td class="px-3 py-1.5 text-right">{{ g.kg | kg_es }}</td>
+          {# El NÚMERO, no el estado: con "facturada" a secas la tabla se mira,
+             con el número se usa. En ámbar lo que todavía no está acá. #}
+          <td class="px-3 py-1.5 whitespace-nowrap">
+            {% if g.docs %}
+              {% for doc in g.docs %}<span class="{{ 'text-slate-700' if doc in g.en_pc else 'text-amber-800' }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              {% if g.docs != g.en_pc %}<span class="text-xs text-amber-800"> · falta cargarla</span>{% endif %}
+            {% elif g.facturada %}<span class="text-slate-400">nota de entrega</span>
+            {% else %}<span class="text-amber-800">sin factura</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% else %}
-  <p class="text-sm text-slate-500 mb-5">Nada: todo lo facturado hoy salió por una guía de hoy.</p>
+  {% elif d.asinfo_ok %}
+  <p class="text-sm text-slate-500 mb-4">Todavía no salió ninguna guía.</p>
   {% endif %}
 
-  {# ───── (B) lo despachado todavía sin documento ───── #}
-  <h2 class="text-base font-medium mb-2">Salió hoy y todavía no se facturó · {{ d.sin_factura.kg | kg_es }} kg</h2>
-  {% if d.sin_factura['items'] %}
-  <div class="rounded border border-slate-200 bg-white mb-5 overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-xs text-slate-500">
-        <tr><th class="px-3 py-2 text-left">Guía</th>
-            <th class="px-3 py-2 text-left">Hora</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-right">Kilos</th></tr>
-      </thead>
-      <tbody>
-        {% for g in d.sin_factura['items'] %}
-        <tr class="border-t border-slate-100">
-          <td class="px-3 py-2">{{ g.guia }}</td>
-          <td class="px-3 py-2 text-slate-500">{{ g.hora }}</td>
-          <td class="px-3 py-2">{{ g.cliente }}</td>
-          <td class="px-3 py-2 text-right font-medium">{{ g.kg | kg_es }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="text-sm text-slate-500 mb-5">Nada: todas las guías de hoy ya tienen su documento en Asinfo.</p>
-  {% endif %}
+  {# ───── Y sólo si la cuenta NO cierra, por qué. Cuando cierra, se calla. ───── #}
+  {% if d.diferencia %}
+  <details class="mb-3" open>
+    <summary class="text-sm text-sky-700 cursor-pointer">Por qué no coinciden</summary>
+    <div class="rounded border border-slate-200 bg-white overflow-hidden mt-2">
+      <table class="w-full text-sm">
+        <tbody>
+          <tr class="border-b border-slate-100">
+            <td class="px-3 py-1.5 text-slate-600">Despachado</td>
+            <td class="px-3 py-1.5 text-right">{{ d.despachado.kg | kg_es }} kg</td>
+          </tr>
+          {% if d.sin_guia.kg %}
+          <tr class="border-b border-slate-100">
+            <td class="px-3 py-1.5 text-slate-600">+ facturado hoy que no salió por una guía de hoy</td>
+            <td class="px-3 py-1.5 text-right">{{ d.sin_guia.kg | kg_es }} kg</td>
+          </tr>
+          {% endif %}
+          {% if d.sin_factura.kg %}
+          <tr class="border-b border-slate-100">
+            <td class="px-3 py-1.5 text-slate-600">− salió hoy y todavía no se facturó</td>
+            <td class="px-3 py-1.5 text-right">{{ d.sin_factura.kg | kg_es }} kg</td>
+          </tr>
+          {% endif %}
+          {% if d.sin_cargar.kg %}
+          <tr class="border-b border-slate-100">
+            <td class="px-3 py-1.5 text-slate-600">− ya facturado en Asinfo, falta cargarlo acá</td>
+            <td class="px-3 py-1.5 text-right">{{ d.sin_cargar.kg | kg_es }} kg</td>
+          </tr>
+          {% endif %}
+          {% if d.residuo %}
+          <tr class="border-b border-slate-100">
+            <td class="px-3 py-1.5 text-amber-800">± sin identificar</td>
+            <td class="px-3 py-1.5 text-right text-amber-800">{{ d.residuo | kg_es }} kg</td>
+          </tr>
+          {% endif %}
+          <tr class="bg-slate-50">
+            <td class="px-3 py-1.5 font-medium">= Facturado</td>
+            <td class="px-3 py-1.5 text-right font-semibold">{{ d.facturado.kg | kg_es }} kg</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-  {# ───── (C) el documento ya existe en Asinfo, falta importarlo ───── #}
-  <h2 class="text-base font-medium mb-2">Ya facturado en Asinfo, falta cargarlo acá · {{ d.sin_cargar.kg | kg_es }} kg</h2>
-  {% if d.sin_cargar['items'] or d.sin_cargar.kg_nten %}
-  <div class="rounded border border-slate-200 bg-white mb-5 overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-xs text-slate-500">
-        <tr><th class="px-3 py-2 text-left">Guía</th>
-            <th class="px-3 py-2 text-left">Hora</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-left">Documento en Asinfo</th>
-            <th class="px-3 py-2 text-right">Kilos</th></tr>
-      </thead>
-      <tbody>
-        {% for g in d.sin_cargar['items'] %}
-        <tr class="border-t border-slate-100">
-          <td class="px-3 py-2">{{ g.guia }}</td>
-          <td class="px-3 py-2 text-slate-500">{{ g.hora }}</td>
-          <td class="px-3 py-2">{{ g.cliente }}</td>
-          <td class="px-3 py-2 text-slate-600">{{ g.doc }}</td>
-          <td class="px-3 py-2 text-right font-medium">{{ g.kg | kg_es }}</td>
-        </tr>
-        {% endfor %}
-        {# Las notas de entrega no tienen número con el que casarlas una por
-           una, así que van sumadas en un solo renglón. #}
-        {% if d.sin_cargar.kg_nten %}
-        <tr class="border-t border-slate-100">
-          <td class="px-3 py-2 text-slate-500" colspan="4">Notas de entrega del día que todavía no están acá</td>
-          <td class="px-3 py-2 text-right font-medium">{{ d.sin_cargar.kg_nten | kg_es }}</td>
-        </tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="text-sm text-slate-500 mb-5">Nada: todo lo que Asinfo facturó hoy ya está cargado acá.</p>
-  {% endif %}
-
-  {# ───── Todas las guías del día, al final: es el respaldo del número
-     grande, no lo que se viene a mirar. ───── #}
-  <details class="mb-4">
-    <summary class="text-sm text-sky-700 cursor-pointer">Ver las {{ d.despachado.n }} guías del día</summary>
-    <div class="rounded border border-slate-200 bg-white mt-2 overflow-hidden">
+    {# El único detalle que la tabla de arriba no puede mostrar: lo facturado
+       hoy que NO salió por una guía de hoy (no tiene guía en esta lista). #}
+    {% if d.sin_guia['items'] %}
+    <div class="rounded border border-slate-200 bg-white overflow-hidden mt-2">
       <table class="w-full text-sm">
         <thead class="bg-slate-50 text-xs text-slate-500">
-          <tr><th class="px-3 py-2 text-left">Guía</th>
-              <th class="px-3 py-2 text-left">Hora</th>
-              <th class="px-3 py-2 text-left">Cliente</th>
-              <th class="px-3 py-2 text-right">Kilos</th>
-              <th class="px-3 py-2 text-left">Documento</th></tr>
+          <tr><th class="px-3 py-1.5 text-left">Facturado sin guía de hoy</th>
+              <th class="px-3 py-1.5 text-left">Cliente</th>
+              <th class="px-3 py-1.5 text-right">Kilos</th></tr>
         </thead>
         <tbody>
-          {% for g in d.guias %}
+          {% for f in d.sin_guia['items'] %}
           <tr class="border-t border-slate-100">
-            <td class="px-3 py-2">{{ g.guia }}</td>
-            <td class="px-3 py-2 text-slate-500">{{ g.hora }}</td>
-            <td class="px-3 py-2">{{ g.cliente }}</td>
-            <td class="px-3 py-2 text-right">{{ g.kg | kg_es }}</td>
-            {# El NÚMERO, no el estado: con "facturada" a secas la tabla se mira,
-             con el número se usa. Si Asinfo la facturó y todavía no está acá,
-             se dice al lado — es lo que hay que hacer con esa fila. #}
-          <td class="px-3 py-2">
-            {% if g.docs %}
-              {% for doc in g.docs %}
-                <span class="{{ 'text-slate-700' if doc in g.en_pc else 'text-amber-800' }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}
-              {% endfor %}
-              {% if g.docs != g.en_pc %}<span class="text-xs text-amber-800">· falta cargarla acá</span>{% endif %}
-            {% elif g.facturada %}
-              <span class="text-slate-500">nota de entrega</span>
-            {% else %}
-              <span class="text-amber-800">sin factura</span>
-            {% endif %}
-          </td>
+            <td class="px-3 py-1.5"><a class="text-sky-700" href="/facturas/{{ f.numf }}">{{ f.doc }}</a></td>
+            <td class="px-3 py-1.5">{{ f.cliente }}</td>
+            <td class="px-3 py-1.5 text-right">{{ f.kg_sin_guia | kg_es }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% endif %}
+    {% if d.sin_cargar.kg_nten %}
+    <p class="text-xs text-slate-500 mt-2">Incluye {{ d.sin_cargar.kg_nten | kg_es }} kg de notas de entrega del día que todavía no están acá.</p>
+    {% endif %}
   </details>
   {% endif %}
 
