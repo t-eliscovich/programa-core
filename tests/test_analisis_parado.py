@@ -1252,6 +1252,9 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     # ⚠ `block`, no `inline`: al lado del nombre la columna medía 244 px y la
     # tabla se salía igual de la pantalla. Debajo, vale lo que el nombre.
     assert ".qm{display:block" in base, "en el celular la píldora no aparece"
+    # en el teléfono chico se achica la letra, NO se parte el nombre
+    assert "@media (max-width: 380px)" in base
+    assert "#tabla{font-size:11px}" in base
 
     assert 'class="ord cal" data-i="3"' in parado, (
         "el encabezado de Categoría no se esconde con su columna")

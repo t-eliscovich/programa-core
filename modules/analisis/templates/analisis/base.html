@@ -160,10 +160,23 @@ font-size:12px;color:var(--g)}
   #tabla th,#tabla td{padding:6px 4px}
   #tabla thead th{white-space:normal}
   .qm{display:block;margin:2px 0 0 14px}
+  /* El resumen por grupo son 6 columnas: medía 375 px y se salía en un
+     teléfono de 360. */
+  .resumen{font-size:12px}
+  .resumen th,.resumen td{padding:6px 4px;white-space:normal}
   /* ⭐ El nombre de la tela sigue en UNA fila también acá: entra porque la
      columna Estado ya no existe (la dueña: "el estado tampoco importa
      mucho"). Medido a 390 px: el nombre más largo —"Jersey Lycra
      Poliviscosa"— ocupa 147 px y entra con tela, color, kg y clientes. */
+}
+/* ⚠ Teléfonos de 320-360 px. Se achica la letra en vez de partir el nombre de
+   la tela: la dueña lo pidió en una sola línea y en una sola línea entra.
+   Medido a 320 px: la tabla mide 308 y el resumen 312 — nada se sale. */
+@media (max-width: 380px) {
+  #tabla{font-size:11px}
+  #tabla th,#tabla td{padding:6px 2px}
+  .resumen{font-size:11px}
+  .resumen th,.resumen td{padding:6px 2px}
 }
 </style>
 </head>
