@@ -391,3 +391,35 @@ def test_la_tabla_compara_kg_de_despacho_contra_kg_de_factura():
     assert por["DES-B"]["kg_fact"] == 97.50 and por["DES-B"]["difiere"] is True
     # sin factura todavía: no hay con qué comparar, y no se inventa un cero
     assert por["DES-C"]["kg_fact"] is None and por["DES-C"]["difiere"] is False
+
+
+def test_la_fila_con_los_kilos_distintos_sale_en_rojo(app, fake_db):
+    """TMT 19/08: *"si hay alguna diferencia entre kg despachados y facturados,
+    que se ponga en rojo"*. Y va la fila entera: un solo color por fila."""
+    c = _login(app, fake_db)
+    guias = [{"guia": "DES-B", "hora": "09:01", "cliente": "AJO",
+              "facturada": True, "kg": 100.00}]
+    with patch.object(dd, "_documentos_pc", return_value=[]), \
+         patch.object(dd, "_guias", return_value=guias), \
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia",
+                      return_value={"DES-B": {"001-099-000182011": 97.50}}):
+        body = c.get("/facturas/dia?fecha=2026-08-19").get_data(as_text=True)
+    fila = body[body.index("DES-B") - 400:body.index("97,50") + 120]
+    assert "bg-red-50" in fila and "text-red-700" in fila
+    assert "-2,50" in fila          # cuánto es la diferencia, no sólo que la hay
+
+
+def test_la_fila_que_coincide_no_se_pinta(app, fake_db):
+    """El color tiene que significar algo: si se pintara siempre, no diría nada."""
+    c = _login(app, fake_db)
+    guias = [{"guia": "DES-A", "hora": "08:14", "cliente": "TJC",
+              "facturada": True, "kg": 612.35}]
+    with patch.object(dd, "_documentos_pc", return_value=[]), \
+         patch.object(dd, "_guias", return_value=guias), \
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia",
+                      return_value={"DES-A": {"001-099-000182010": 612.35}}):
+        body = c.get("/facturas/dia?fecha=2026-08-19").get_data(as_text=True)
+    cuerpo = body[body.index("Guías del día"):]
+    assert "bg-red-50" not in cuerpo

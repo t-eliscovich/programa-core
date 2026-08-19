@@ -60,22 +60,30 @@
       </thead>
       <tbody>
         {% for g in d.guias %}
-        <tr class="border-t border-slate-100">
+        {# TMT 2026-08-19: *"si hay alguna diferencia entre kg despachados y
+           facturados, que se ponga en rojo"*. La fila ENTERA se pinta, no sólo
+           la celda: un solo color por fila, como el resto del programa. El
+           rojo es para el peso que no coincide —el problema de verdad—; el
+           ámbar sigue siendo "falta cargarla acá", que es otra cosa. Si pasan
+           las dos, manda el rojo. #}
+        {% set _rojo = g.difiere %}
+        <tr class="border-t border-slate-100 {{ 'bg-red-50 text-red-700' if _rojo }}">
           <td class="px-3 py-1.5 whitespace-nowrap">{{ g.guia }}</td>
-          <td class="px-3 py-1.5 text-slate-500">{{ g.hora }}</td>
+          <td class="px-3 py-1.5 {{ 'text-red-700' if _rojo else 'text-slate-500' }}">{{ g.hora }}</td>
           <td class="px-3 py-1.5">{{ g.cliente }}</td>
-          <td class="px-3 py-1.5 text-right">{{ g.kg | kg_es }}</td>
+          <td class="px-3 py-1.5 text-right {{ 'font-medium' if _rojo }}">{{ g.kg | kg_es }}</td>
           {# El NÚMERO, no el estado: con "facturada" a secas la tabla se mira,
              con el número se usa. En ámbar lo que todavía no está acá. #}
           <td class="px-3 py-1.5 whitespace-nowrap">
             {% if g.docs %}
-              {% for doc in g.docs %}<span class="{{ 'text-slate-700' if doc in g.en_pc else 'text-amber-800' }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
-              {% if g.docs != g.en_pc %}<span class="text-xs text-amber-800"> · falta cargarla</span>{% endif %}
+              {% for doc in g.docs %}<span class="{{ 'text-red-700' if _rojo else ('text-slate-700' if doc in g.en_pc else 'text-amber-800') }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              {% if g.docs != g.en_pc %}<span class="text-xs {{ 'text-red-700' if _rojo else 'text-amber-800' }}"> · falta cargarla</span>{% endif %}
             {% elif g.facturada %}<span class="text-slate-400">nota de entrega</span>
             {% else %}<span class="text-amber-800">sin factura</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right {{ 'text-amber-800 font-medium' if g.difiere }}">
+          <td class="px-3 py-1.5 text-right {{ 'text-red-700 font-medium' if _rojo }}">
             {% if g.kg_fact is not none %}{{ g.kg_fact | kg_es }}{% else %}—{% endif %}
+            {% if _rojo %}<span class="text-xs"> · {{ '+' if (g.kg_fact - g.kg) > 0 }}{{ (g.kg_fact - g.kg) | kg_es }}</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
