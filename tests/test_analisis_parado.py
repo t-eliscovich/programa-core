@@ -1249,7 +1249,9 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     assert ".qm{display:none}" in base, "la copia se ve también en la pantalla grande"
     assert "#tabla .cal{display:none!important}" in base, (
         "la columna Categoría no se esconde en el celular")
-    assert ".qm{display:inline" in base, "en el celular la píldora no aparece"
+    # ⚠ `block`, no `inline`: al lado del nombre la columna medía 244 px y la
+    # tabla se salía igual de la pantalla. Debajo, vale lo que el nombre.
+    assert ".qm{display:block" in base, "en el celular la píldora no aparece"
 
     assert 'class="ord cal" data-i="3"' in parado, (
         "el encabezado de Categoría no se esconde con su columna")

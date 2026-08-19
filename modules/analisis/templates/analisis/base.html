@@ -152,7 +152,14 @@ font-size:12px;color:var(--g)}
      la píldora aparece al lado del nombre — la calidad se sigue viendo y se
      sigue filtrando por el desplegable. */
   #tabla .cal{display:none!important}
-  .qm{display:inline;margin-left:6px}
+  /* ⚠ La píldora va DEBAJO del nombre, no al lado: al lado, la columna Tela
+     medía 244 px —el nombre y la píldora en una sola línea— y la tabla volvía
+     a salirse (532 px contra 390). Debajo, la columna vale lo que el nombre.
+     Medido a 390 px: la tabla entera mide 362 px. */
+  #tabla{font-size:12px}
+  #tabla th,#tabla td{padding:6px 4px}
+  #tabla thead th{white-space:normal}
+  .qm{display:block;margin:2px 0 0 14px}
   /* ⭐ El nombre de la tela sigue en UNA fila también acá: entra porque la
      columna Estado ya no existe (la dueña: "el estado tampoco importa
      mucho"). Medido a 390 px: el nombre más largo —"Jersey Lycra
