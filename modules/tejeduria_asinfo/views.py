@@ -209,7 +209,7 @@ def cargar_pendientes():
         )
     if res["salteadas"]:
         motivos = "; ".join(
-            f"{d['oft']}: {d['motivo']}" for d in res["detalle"] if not d["ok"]
+            f"{d['doc']}: {d['motivo']}" for d in res["detalle"] if not d["ok"]
         )[:400]
         flash(f"Salteé {res['salteadas']} OF — {motivos}", "warn")
     if not res["creadas"] and not res["salteadas"]:

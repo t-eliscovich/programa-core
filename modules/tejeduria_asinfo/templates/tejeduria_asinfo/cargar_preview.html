@@ -30,20 +30,20 @@
     Esto es una PREVISUALIZACIÓN — todavía no se creó nada. Sale del mismo cálculo que
     después ejecuta, así que lo que ves acá es exactamente lo que se va a crear.
     El importe es kg de Asinfo × la tarifa del proveedor, y cada compra estampa su
-    OFT en el concepto para que no se vuelva a ofrecer.
+    documento (IFT) en el concepto para que no se vuelva a ofrecer.
   </p>
 
   {% if plan.creadas %}
     <h2>Se van a crear {{ plan.creadas }} compra(s) · $ {{ plan.importe|num_es(2) }}</h2>
     <table>
       <thead><tr>
-        <th class="l">OFT</th><th class="l">Día</th><th class="l">Tejedor</th>
+        <th class="l">Ingreso</th><th class="l">Día</th><th class="l">Tejedor</th>
         <th class="l">Producto</th><th>Kg</th><th>$/kg</th><th>Importe</th><th class="l">Aviso</th>
       </tr></thead>
       <tbody>
         {% for d in plan.detalle if d.ok %}
           <tr>
-            <td class="l">{{ d.oft }}</td>
+            <td class="l">{{ d.doc }}{% if d.orden %} <span class="muted">· {{ d.orden }}</span>{% endif %}</td>
             <td class="l muted">{{ d.dia|fecha_es }}</td>
             <td class="l">{{ d.label }}{% if d.cod %} · {{ d.cod }}{% endif %}</td>
             <td class="l muted">{{ d.descripcion }}</td>
@@ -76,12 +76,12 @@
     <h2>Se saltean {{ plan.salteadas }}</h2>
     <table>
       <thead><tr>
-        <th class="l">OFT</th><th class="l">Tejedor</th><th>Kg</th><th>Importe</th><th class="l">Motivo</th>
+        <th class="l">Ingreso</th><th class="l">Tejedor</th><th>Kg</th><th>Importe</th><th class="l">Motivo</th>
       </tr></thead>
       <tbody>
         {% for d in plan.detalle if not d.ok %}
           <tr>
-            <td class="l">{{ d.oft }}</td>
+            <td class="l">{{ d.doc }}{% if d.orden %} <span class="muted">· {{ d.orden }}</span>{% endif %}</td>
             <td class="l">{{ d.label }}{% if d.cod %} · {{ d.cod }}{% endif %}</td>
             <td>{% if d.kg %}{{ d.kg|num_es }}{% else %}—{% endif %}</td>
             <td>{% if d.importe %}{{ d.importe|num_es(2) }}{% else %}—{% endif %}</td>

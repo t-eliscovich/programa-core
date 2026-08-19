@@ -76,11 +76,6 @@
     transition:transform .12s ease}
   .ta details[open]>summary::before{transform:rotate(180deg)}
   .ta details>summary:hover{background:#e2e8f0}
-  /* OF todavía abierta en Asinfo (TMT 2026-08-19). */
-  .ta .sincerrar{display:inline-block;margin-left:5px;padding:1px 5px;
-    border-radius:4px;background:#fef3c7;border:1px solid #fcd34d;
-    color:#92400e;font-size:10px;font-weight:600;letter-spacing:.02em;
-    text-transform:uppercase;vertical-align:middle}
   /* Pista de estado en palabras, no sólo la flecha. */
   .ta details>summary::after{content:"abrir";margin-left:auto;font-size:10px;
     font-weight:600;letter-spacing:.04em;color:#475569;text-transform:uppercase}
@@ -320,16 +315,12 @@
     {% set filas = data.pendientes if solo_pendientes else data.tercerizado_ofs %}
     {% if filas %}
     <table>
-      <thead><tr><th>OFT</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Falta cargar (kg)</th><th>$/kg</th><th>Compra $</th></tr></thead>
+      <thead><tr><th>Ingreso</th><th>Orden</th><th>Día</th><th>Tejedor</th><th>Producto</th><th>Kg</th><th>Falta cargar (kg)</th><th>$/kg</th><th>Compra $</th></tr></thead>
       <tbody>
         {% for of in filas %}
           <tr>
-            <td>{{ of.numero }}{% if of.abierta %}
-              {# TMT 2026-08-19: la OF sigue abierta en Asinfo. Los kilos ya
-                 entraron y ya se facturan, pero el número todavía puede subir
-                 (y por eso se carga por saldo, no de una). #}
-              <span class="sincerrar" title="La orden sigue abierta en Asinfo: los kilos ya entraron pero el total todavía puede subir">sin cerrar</span>
-            {% endif %}</td>
+            <td>{{ of.numero }}</td>
+            <td class="muted">{{ of.oft }}</td>
             <td class="muted">{{ of.dia|fecha_es }}</td>
             <td class="terc">{{ of.label }}{% if of.cod %} · {{ of.cod }}{% endif %}</td>
             <td class="muted">{{ of.descripcion }}</td>
@@ -353,7 +344,7 @@
                 <a class="btn" href="{{ url_for('compras.nueva', codigo_prov=of.cod, kg=of.kg_saldo, tipo='K',
                                                 importe=of.importe_sugerido if of.importe_sugerido else None,
                                                 fecha=of.dia|fecha_es,
-                                                concepto=of.numero ~ ' ' ~ of.descripcion) }}">
+                                                concepto=of.numero ~ ' ' ~ of.oft ~ ' ' ~ of.descripcion) }}">
                   {% if of.importe_sugerido %}Cargar $ {{ of.importe_sugerido|num_es(2) }}{% else %}Cargar ${% endif %}
                 </a>
               {% else %}

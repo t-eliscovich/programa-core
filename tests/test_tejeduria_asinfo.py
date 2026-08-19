@@ -99,66 +99,6 @@ def test_produccion_cachea():
 
 
 # ---------------------------------------------------------------------------
-# produccion_tejeduria_abiertas — TMT 2026-08-19
-# ---------------------------------------------------------------------------
-
-_ROWS_ABIERTAS = [
-    {"numero": "OFT-40412", "dia": "2026-08-06", "kg": 1046.40,
-     "descripcion": "M REYES KW22 C-T40"},
-    {"numero": "OFT-40282", "dia": "2026-08-04", "kg": 1012.55,
-     "descripcion": "R UNDA HY2 20 HUF40 R/A 2%"},
-]
-
-
-def test_abiertas_sql_pide_estado_2_sin_cierre_y_con_kg():
-    """Los tres estados que existen en bodega 52 (verificado sobre 2.383 OFs):
-    0 = anulada, 2 = en proceso, 5 = cerrada. Acá van las de estado 2 con kg,
-    imputadas por fecha de CREACIÓN (la abierta no tiene fecha de cierre)."""
-    with patch.object(metabase_client, "fetch_dataset",
-                      return_value=_ROWS_ABIERTAS) as m:
-        out = asvc.produccion_tejeduria_abiertas(2026, 8)
-    sql = m.call_args[0][1]
-    assert "estado_produccion = 2" in sql
-    assert "fecha_cierre IS NULL" in sql
-    assert "ISNULL(cantidad_fabricada, 0) > 0" in sql
-    assert "fecha_creacion >= '2026-08-01'" in sql
-    assert "fecha_creacion < '2026-09-01'" in sql
-    assert out["disponible"] is True
-    assert {o["numero"] for o in out["ofs"]} == {"OFT-40412", "OFT-40282"}
-    assert all(o["abierta"] is True for o in out["ofs"])
-    port = {t["cod"]: t for t in out["por_tejedor"]}
-    assert port["RY"]["kg"] == pytest.approx(1046.40)
-    assert port["UN"]["kg"] == pytest.approx(1012.55)
-
-
-def test_abiertas_sin_filas_es_disponible_igual():
-    """"Asinfo contestó y no hay OFs abiertas" NO es lo mismo que "Asinfo no
-    contestó" — la distinción que costó $495.000 el 29/07."""
-    with patch.object(metabase_client, "fetch_dataset", return_value=[]):
-        out = asvc.produccion_tejeduria_abiertas(2026, 8)
-    assert out["disponible"] is True and out["ofs"] == []
-
-
-def test_abiertas_fail_soft_si_asinfo_cae():
-    with patch.object(metabase_client, "fetch_dataset",
-                      side_effect=RuntimeError("x")):
-        out = asvc.produccion_tejeduria_abiertas(2026, 8)
-    assert out["disponible"] is False and out["ofs"] == []
-
-
-def test_abiertas_no_pisan_el_cache_de_las_cerradas():
-    """Las dos funciones comparten `_PROD_TEJ_CACHE`: si la clave no las
-    distinguiera, pedir las abiertas de 08/2026 devolvería las cerradas."""
-    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS):
-        cerradas = asvc.produccion_tejeduria_mes(2026, 8)
-    with patch.object(metabase_client, "fetch_dataset",
-                      return_value=_ROWS_ABIERTAS):
-        abiertas = asvc.produccion_tejeduria_abiertas(2026, 8)
-    assert {o["numero"] for o in cerradas["ofs"]} != {
-        o["numero"] for o in abiertas["ofs"]}
-
-
-# ---------------------------------------------------------------------------
 # resumen_mes (match)
 # ---------------------------------------------------------------------------
 
@@ -176,12 +116,12 @@ _PROD = {
 }
 
 
-#: La muestra de estos tests es de JULIO/2026, anterior a `ABIERTAS_DESDE`. El
-#: corte tiene su propio test (`test_las_abiertas_no_cuentan_antes_del_corte`);
+#: La muestra de estos tests es de JULIO/2026, anterior a `INGRESOS_DESDE`. El
+#: corte tiene su propio test (`test_los_ingresos_no_cuentan_antes_del_corte`);
 #: acá se corre para atrás para poder ejercitar el resto con la misma muestra.
 _CORTE_TEST = (2026, 1)
 
-_SIN_ABIERTAS = {"disponible": True, "anio": 2026, "mes": 7,
+_SIN_INGRESOS = {"disponible": True, "anio": 2026, "mes": 7,
                  "ofs": [], "por_tejedor": [], "total_kg": 0.0}
 
 
@@ -190,21 +130,31 @@ def _estampada(importe, kg, n=1):
     return {"importe": importe, "kg": kg, "n": n}
 
 
-def _run_resumen(compras, estampadas, tarifas=None, abiertas=None):
+def _run_resumen(compras, estampadas, tarifas=None, ingresos=None):
     # today_ec fijo en julio 2026 → mes 7 es "el mes actual" (no pasado), así
     # el gate "meses viejos = todo cargado" no dispara y los tests son
     # deterministas (resumen_mes importa today_ec desde filters en runtime).
     import datetime as _dt
-    with patch.object(tsvc, "ABIERTAS_DESDE", _CORTE_TEST), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_abiertas",
-                      return_value=(abiertas or _SIN_ABIERTAS)), \
-         patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
-         patch.object(tsvc, "_ofts_estampadas", return_value=estampadas), \
-         patch.object(tsvc, "_compras_k_a_mano", return_value={}), \
-         patch.object(tsvc._tarifas, "listar_tarifas", return_value=(tarifas or [])), \
-         patch.object(tsvc, "falta_acumulada", return_value={}), \
-         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
+    with contextlib.ExitStack() as st:
+        # El corte se corre para atrás SÓLO cuando el test trae ingresos: si no,
+        # julio (la muestra) tiene que seguir leyéndose por OFs cerradas.
+        if ingresos is not None:
+            st.enter_context(patch.object(tsvc, "INGRESOS_DESDE", _CORTE_TEST))
+        st.enter_context(patch.object(
+            tsvc.asinfo_service, "produccion_tejeduria_mes", return_value=_PROD))
+        st.enter_context(patch.object(
+            tsvc.asinfo_service, "ingresos_fabricacion_mes",
+            return_value=(ingresos or _SIN_INGRESOS)))
+        st.enter_context(patch.object(
+            tsvc, "_compras_k_por_prov", return_value=compras))
+        st.enter_context(patch.object(
+            tsvc, "_ofts_estampadas", return_value=estampadas))
+        st.enter_context(patch.object(tsvc, "_compras_k_a_mano", return_value={}))
+        st.enter_context(patch.object(
+            tsvc._tarifas, "listar_tarifas", return_value=(tarifas or [])))
+        st.enter_context(patch.object(tsvc, "falta_acumulada", return_value={}))
+        st.enter_context(patch(
+            "filters.today_ec", return_value=_dt.date(2026, 7, 15)))
         return tsvc.resumen_mes(2026, 7)
 
 
@@ -427,7 +377,7 @@ def test_sin_tarifa_no_sugiere_importe():
 
 
 def _run_cargar(compras, estampadas, tarifas, falta_acum=None, prod=None,
-                abiertas=None):
+                ingresos=None):
     """`falta_acum` ya NO frena nada (el tope se sacó el 30/07): es sólo dato.
 
     `prod` permite simular a Asinfo mudo (disponible=False).
@@ -441,18 +391,28 @@ def _run_cargar(compras, estampadas, tarifas, falta_acum=None, prod=None,
 
     if falta_acum is None:
         falta_acum = {"AP": 99999.0, "RY": 99999.0}
-    with patch.object(tsvc, "ABIERTAS_DESDE", _CORTE_TEST), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
-                      return_value=(_PROD if prod is None else prod)), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_abiertas",
-                      return_value=(abiertas or _SIN_ABIERTAS)), \
-         patch.object(tsvc, "_compras_k_por_prov", return_value=compras), \
-         patch.object(tsvc, "_ofts_estampadas", return_value=dict(estampadas)), \
-         patch.object(tsvc, "_compras_k_a_mano", return_value={}), \
-         patch.object(tsvc._tarifas, "listar_tarifas", return_value=tarifas), \
-         patch.object(tsvc, "falta_acumulada", return_value=dict(falta_acum)), \
-         patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)), \
-         patch("modules.compras.queries.crear", side_effect=_fake_crear):
+    with contextlib.ExitStack() as st:
+        if ingresos is not None:
+            st.enter_context(patch.object(tsvc, "INGRESOS_DESDE", _CORTE_TEST))
+        st.enter_context(patch.object(
+            tsvc.asinfo_service, "produccion_tejeduria_mes",
+            return_value=(_PROD if prod is None else prod)))
+        st.enter_context(patch.object(
+            tsvc.asinfo_service, "ingresos_fabricacion_mes",
+            return_value=(ingresos or _SIN_INGRESOS)))
+        st.enter_context(patch.object(
+            tsvc, "_compras_k_por_prov", return_value=compras))
+        st.enter_context(patch.object(
+            tsvc, "_ofts_estampadas", return_value=dict(estampadas)))
+        st.enter_context(patch.object(tsvc, "_compras_k_a_mano", return_value={}))
+        st.enter_context(patch.object(
+            tsvc._tarifas, "listar_tarifas", return_value=tarifas))
+        st.enter_context(patch.object(
+            tsvc, "falta_acumulada", return_value=dict(falta_acum)))
+        st.enter_context(patch(
+            "filters.today_ec", return_value=_dt.date(2026, 7, 15)))
+        st.enter_context(patch(
+            "modules.compras.queries.crear", side_effect=_fake_crear))
         res = tsvc.cargar_pendientes(2026, 7, usuario="tester", clave="TST")
     return res, creadas
 
@@ -600,7 +560,7 @@ def test_dry_run_no_escribe_y_devuelve_el_mismo_plan():
     assert plan["importe"] == pytest.approx(1633.04 + 932.22, abs=0.02)
     # el detalle trae todo lo que la pantalla necesita mostrar
     ok = [d for d in plan["detalle"] if d["ok"]]
-    assert {d["oft"] for d in ok} == {"OFT-2", "OFT-4"}
+    assert {d["doc"] for d in ok} == {"OFT-2", "OFT-4"}
     assert all(d["tarifa"] and d["kg"] and d["descripcion"] is not None for d in ok)
 
 
@@ -618,8 +578,8 @@ def test_dry_run_y_ejecucion_dan_el_mismo_conjunto():
         prev = tsvc.cargar_pendientes(2026, 7, usuario="t", dry_run=True)
     assert prev["creadas"] == plan["creadas"]
     assert prev["importe"] == pytest.approx(plan["importe"])
-    assert ({d["oft"] for d in prev["detalle"] if d["ok"]}
-            == {d["oft"] for d in plan["detalle"] if d["ok"]})
+    assert ({d["doc"] for d in prev["detalle"] if d["ok"]}
+            == {d["doc"] for d in plan["detalle"] if d["ok"]})
 
 
 def test_avisa_duplicado_por_importe_pero_no_bloquea():
@@ -636,8 +596,8 @@ def test_avisa_duplicado_por_importe_pero_no_bloquea():
                       return_value={"RY": [1633.04]}), \
          patch("filters.today_ec", return_value=_dt.date(2026, 7, 15)):
         plan = tsvc.cargar_pendientes(2026, 7, usuario="t", dry_run=True)
-    ry = next(d for d in plan["detalle"] if d["oft"] == "OFT-4")
-    ap = next(d for d in plan["detalle"] if d["oft"] == "OFT-2")
+    ry = next(d for d in plan["detalle"] if d["doc"] == "OFT-4")
+    ap = next(d for d in plan["detalle"] if d["doc"] == "OFT-2")
     assert ry["ok"] is True and ry["dup_warn"] is True
     assert ap["dup_warn"] is False
     assert plan["avisos_dup"] == 1
@@ -1169,191 +1129,6 @@ def test_el_form_de_compra_avisa_que_el_tejedor_se_carga_solo():
         assert f"{cod}:" in html
 
 
-# ---------------------------------------------------------------------------
-# OFs ABIERTAS — TMT 2026-08-19
-#
-# Dueña: *"no están entrando a tejeduría Asinfo los de Unda, Ponce y Reyes"* y
-# *"nos facturan con la factura abierta, así que apenas entren kg hay que pagar
-# las facturas que nos llegan; esos kg entrados nos tienen que figurar entrados
-# en tejeduría y aparecer el pasivo"*.
-#
-# El agujero real (verificado en Asinfo el 19/08): la última OF tercerizada
-# CERRADA era del 28/07, mientras 11 OFs de agosto y 13 de julio seguían
-# abiertas con ~21.000 kg ya fabricados. La pantalla mostraba tercerizado CERO.
-# ---------------------------------------------------------------------------
-
-_ABIERTA_RY = {"numero": "OFT-9", "dia": "2026-07-17", "kg": 1000.0,
-               "descripcion": "M REYES KW22 C-T40", "cod": "RY",
-               "label": "Reyes", "es_intela": False, "abierta": True}
-_ABIERTA_INTELA = {"numero": "OFT-8", "dia": "2026-07-17", "kg": 5000.0,
-                   "descripcion": "MQ11 F-96", "cod": "KK", "label": "INTELA",
-                   "es_intela": True, "abierta": True}
-
-
-def _con_abiertas(*ofs):
-    return {"disponible": True, "anio": 2026, "mes": 7, "ofs": list(ofs),
-            "por_tejedor": [], "total_kg": sum(o["kg"] for o in ofs)}
-
-
-def test_of_abierta_entra_a_la_pantalla_y_queda_pendiente():
-    """El caso que rompió: la OF sin cerrar no figuraba en ningún lado."""
-    out = _run_resumen(compras={}, estampadas={}, tarifas=_TARIFAS,
-                       abiertas=_con_abiertas(_ABIERTA_RY))
-    porof = {of["numero"]: of for of in out["tercerizado_ofs"]}
-    assert "OFT-9" in porof, "la OF abierta tiene que figurar en tejeduría"
-    assert porof["OFT-9"]["abierta"] is True
-    assert porof["OFT-9"]["estado"] == "pendiente"
-    assert porof["OFT-9"]["kg_saldo"] == pytest.approx(1000.0)
-    # y suma a los kilos del tejedor, que antes caían dentro de INTELA
-    tj = {t["cod"]: t for t in out["tejedores"]}
-    assert tj["RY"]["kg"] == pytest.approx(811.45 + 1000.0)
-
-
-def test_of_abierta_de_intela_no_se_agrega():
-    """INTELA no factura y su kg sale del plug contra el ingreso a bodega:
-    agregarle OFs abiertas sólo ensuciaría `total_kg_of`."""
-    out = _run_resumen(compras={}, estampadas={}, tarifas=_TARIFAS,
-                       abiertas=_con_abiertas(_ABIERTA_RY, _ABIERTA_INTELA))
-    assert "OFT-8" not in {o["numero"] for o in out["tercerizado_ofs"]}
-    assert out["total_kg_of"] == pytest.approx(_PROD["total_kg"])
-
-
-def test_of_abierta_que_suma_kilos_se_carga_por_el_saldo():
-    """Dueña: *"una compra por el saldo nuevo"*. La OF entró con 600 kg ya
-    facturados y ahora Asinfo dice 1.000: se cobran los 400 nuevos, no 1.000."""
-    out = _run_resumen(
-        compras={}, estampadas={"OFT-9": _estampada(1207.50, 600.0)},
-        tarifas=_TARIFAS, abiertas=_con_abiertas(_ABIERTA_RY))
-    of = {o["numero"]: o for o in out["tercerizado_ofs"]}["OFT-9"]
-    assert of["estado"] == "pendiente"
-    assert of["kg_cargado"] == pytest.approx(600.0)
-    assert of["kg_saldo"] == pytest.approx(400.0)
-    # el importe sugerido va sobre el SALDO: 400 × 2,0125
-    assert of["importe_sugerido"] == pytest.approx(805.0, abs=0.01)
-
-
-def test_carga_crea_la_compra_por_el_saldo_con_la_fecha_de_la_of():
-    res, creadas = _run_cargar(
-        {}, {"OFT-9": _estampada(1207.50, 600.0)}, _TARIFAS,
-        abiertas=_con_abiertas(_ABIERTA_RY))
-    por_oft = {c["concepto"].split()[0]: c for c in creadas}
-    assert por_oft["OFT-9"]["kg"] == pytest.approx(400.0)
-    assert por_oft["OFT-9"]["importe"] == pytest.approx(805.0, abs=0.01)
-    # dueña: la compra va con la fecha de la OF, no con la del día que se detecta
-    assert por_oft["OFT-9"]["fecha"].isoformat() == "2026-07-17"
-    assert res["creadas"] == 3
-
-
-def test_dos_ofs_del_mismo_lote_no_se_pisan_el_saldo():
-    """El acumulador `_sumar_estampada`: sin él, la segunda OF del lote vería
-    el saldo entero de nuevo (y el hilo de fondo cargaría dos veces)."""
-    estampadas = {}
-    tsvc._sumar_estampada(estampadas, "OFT-9", 805.0, 400.0)
-    tsvc._sumar_estampada(estampadas, "OFT-9", 100.0, 50.0)
-    assert estampadas["OFT-9"]["kg"] == pytest.approx(450.0)
-    assert estampadas["OFT-9"]["importe"] == pytest.approx(905.0)
-    assert estampadas["OFT-9"]["n"] == 2
-
-
-def test_saldo_negativo_se_marca_y_no_se_carga():
-    """Si la OF baja de kilos después de facturada, el saldo da NEGATIVO. No se
-    resta solo (la compra pudo ajustarse a mano con la factura real): se marca
-    para avisar."""
-    out = _run_resumen(
-        compras={}, estampadas={"OFT-9": _estampada(2415.0, 1200.0)},
-        tarifas=_TARIFAS, abiertas=_con_abiertas(_ABIERTA_RY))
-    of = {o["numero"]: o for o in out["tercerizado_ofs"]}["OFT-9"]
-    assert of["sobrecargada"] is True
-    assert of["kg_saldo"] == pytest.approx(-200.0)
-    assert of["estado"] == "compra"          # no vuelve a ofrecerse
-    assert of["importe_sugerido"] is None    # ni se sugiere un importe
-    assert "OFT-9" not in {o["numero"] for o in out["pendientes"]}
-
-
-def test_avisa_cuando_se_cargo_de_mas():
-    avisos = []
-    with patch("modules.avisos.avisar", side_effect=lambda **kw: avisos.append(kw)), \
-         patch.object(tsvc, "resumen_mes", return_value={
-             "desconocidos": [], "pendientes": [],
-             "tercerizado_ofs": [{"numero": "OFT-9", "cod": "RY", "label": "Reyes",
-                                  "kg": 1000.0, "kg_cargado": 1200.0,
-                                  "kg_saldo": -200.0, "sobrecargada": True}]}):
-        tsvc.avisar_tejedores_nuevos(2026, 7)
-    assert len(avisos) == 1
-    assert "cargado de más" in avisos[0]["titulo"]
-    assert "200,00 kg de más" in avisos[0]["detalle"]
-    assert avisos[0]["nivel"] == "alerta"
-
-
-def test_asinfo_mudo_no_trae_abiertas():
-    """Fail-closed: sin Asinfo no se inventan OFs abiertas."""
-    prod_off = {"disponible": False, "anio": 2026, "mes": 7, "total_kg": 0.0,
-                "ofs": [], "por_tejedor": []}
-    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
-                      return_value=prod_off), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_abiertas") as ma, \
-         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
-         patch.object(tsvc._tarifas, "listar_tarifas", return_value=[]), \
-         patch.object(tsvc, "_ofts_estampadas", return_value={}):
-        out = tsvc.resumen_mes(2026, 7)
-    ma.assert_not_called()
-    assert out["disponible"] is False and out["tercerizado_ofs"] == []
-
-
-def test_mes_pasado_no_recarga_cerradas_pero_si_las_abiertas():
-    """TMT 2026-08-19. En un mes ya cerrado no volvemos atrás a cargar las OFs
-    CERRADAS (cuando ese mes fue el mes en curso el motor ya las vio). Pero las
-    ABIERTAS nunca las vio nadie —el motor sólo miraba cerradas— así que su
-    pasivo sigue faltando por viejo que sea el mes."""
-    import datetime as _dt
-    with patch.object(tsvc, "ABIERTAS_DESDE", _CORTE_TEST), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
-                      return_value=_PROD), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_abiertas",
-                      return_value=_con_abiertas(_ABIERTA_RY)), \
-         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
-         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
-         patch.object(tsvc, "_compras_k_a_mano", return_value={}), \
-         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
-         patch.object(tsvc, "falta_acumulada", return_value={}), \
-         patch("filters.today_ec", return_value=_dt.date(2026, 8, 19)):
-        out = tsvc.resumen_mes(2026, 7)      # julio, con agosto en curso
-    porof = {o["numero"]: o for o in out["tercerizado_ofs"]}
-    assert porof["OFT-9"]["estado"] == "pendiente"   # abierta → sí
-    assert porof["OFT-4"]["estado"] == "cargado"     # cerrada y mes viejo → no
-    assert {o["numero"] for o in out["pendientes"]} == {"OFT-9"}
-
-
-def test_las_abiertas_no_cuentan_antes_del_corte():
-    """TMT 2026-08-19 (dueña: *"junio seguro que no se toca... hacelo para
-    agosto"*). Julio tenía 11 órdenes abiertas por $ 17.205,24, pero también 5
-    facturas tipeadas a mano que no matchean por kilos: el pasivo viejo ya está
-    cargado, con otros montos. Antes del corte la pantalla muestra sólo lo
-    cerrado, igual que siempre."""
-    import datetime as _dt
-    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
-                      return_value=_PROD), \
-         patch.object(tsvc.asinfo_service, "produccion_tejeduria_abiertas") as ma, \
-         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
-         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
-         patch.object(tsvc, "_compras_k_a_mano", return_value={}), \
-         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
-         patch.object(tsvc, "falta_acumulada", return_value={}), \
-         patch("filters.today_ec", return_value=_dt.date(2026, 8, 19)):
-        out = tsvc.resumen_mes(2026, 7)
-    ma.assert_not_called()
-    assert out["pendientes"] == []
-
-
-def test_el_corte_es_agosto_2026():
-    assert tsvc.ABIERTAS_DESDE == (2026, 8)
-    assert tsvc._cuentan_las_abiertas(2026, 8) is True
-    assert tsvc._cuentan_las_abiertas(2026, 9) is True
-    assert tsvc._cuentan_las_abiertas(2027, 1) is True
-    assert tsvc._cuentan_las_abiertas(2026, 7) is False
-    assert tsvc._cuentan_las_abiertas(2026, 6) is False
-
-
 def test_los_desconocidos_se_ven_en_la_pantalla(app, fake_db):
     """TMT 2026-08-19 (dueña: *"y acá no me mostrás los desconocidos"*). La
     campanita avisaba de tejedores que el programa no reconoce y mandaba a esta
@@ -1373,23 +1148,6 @@ def test_los_desconocidos_se_ven_en_la_pantalla(app, fake_db):
     assert "891,72" in body, "y con sus kilos, que hoy se cuentan como propios"
 
 
-def test_no_avisa_por_una_diferencia_de_gramos():
-    """TMT 2026-08-19 (dueña: *"si vos las cargás, ¿cómo puede ser que esté
-    cargado de más?"*). Las tres del estreno eran OFs viejas a las que Asinfo
-    les ajustó el kilaje unos gramos después de cargadas: 3,22 kg sobre 807,30
-    es 0,4%. Sólo se avisa arriba de la tolerancia (0,5%)."""
-    of = {**_ABIERTA_RY, "kg": 807.30}
-    out = _run_resumen(compras={}, estampadas={"OFT-9": _estampada(1633.0, 810.52)},
-                       tarifas=_TARIFAS, abiertas=_con_abiertas(of))
-    fila = {o["numero"]: o for o in out["tercerizado_ofs"]}["OFT-9"]
-    assert fila["kg_saldo"] == pytest.approx(-3.22)
-    assert fila["sobrecargada"] is False, "0,4% no es un error de carga"
-    # una diferencia de verdad (20%) sí se marca
-    out2 = _run_resumen(compras={}, estampadas={"OFT-9": _estampada(2415.0, 1200.0)},
-                        tarifas=_TARIFAS, abiertas=_con_abiertas(of))
-    assert {o["numero"]: o for o in out2["tercerizado_ofs"]}["OFT-9"]["sobrecargada"] is True
-
-
 def test_q02_sin_la_eme_es_maquina_propia():
     """TMT 2026-08-19. `Q02 SUT5 20` salía como "tejedor sin reconocer" y
     disparaba un aviso: es MQ02 mal tipeado (una sola vez en toda la historia
@@ -1402,3 +1160,212 @@ def test_q02_sin_la_eme_es_maquina_propia():
     # sin tocar a los tejedores: después de la inicial va un apellido
     assert asvc._clasificar_tejedor("M REYES KW22")[0] == "RY"
     assert asvc._clasificar_tejedor("R UNDA KW30")[0] == "UN"
+
+
+# ---------------------------------------------------------------------------
+# INGRESOS DE FABRICACIÓN (IFT) — TMT 2026-08-19
+#
+# Andrés, vía la dueña: *"existe una IFT, ingreso de orden de fabricación, y ese
+# es un mejor documento"*. Tenía razón y el dato lo probó: mirando el acumulado
+# de la ORDEN, agosto/2026 cargaba 3.411,35 kg cuando por IFT habían entrado
+# 17.416,85 — Ponce entregó 8 veces en agosto, TODAS contra órdenes de julio, y
+# quedaba en CERO.
+# ---------------------------------------------------------------------------
+
+_ROWS_IFT = [
+    {"ift": "IFT-000111422", "dia": "2026-08-03", "oft": "OFT-000039929",
+     "kg": 1499.10, "descripcion": "A PONCE KW20 R/N"},
+    {"ift": "IFT-000111732", "dia": "2026-08-06", "oft": "OFT-000039909",
+     "kg": 1880.40, "descripcion": "A PONCE KW22 HUF40 R/A"},
+    {"ift": "IFT-000112938", "dia": "2026-08-19", "oft": "OFT-000039929",
+     "kg": 355.70, "descripcion": "A PONCE KW20 R/N"},
+]
+
+
+def test_ingresos_sql_pide_ift_procesados_de_la_bodega():
+    with patch.object(metabase_client, "fetch_dataset",
+                      return_value=_ROWS_IFT) as m:
+        out = asvc.ingresos_fabricacion_mes(2026, 8)
+    sql = m.call_args[0][1]
+    assert "movimiento_inventario" in sql
+    assert "detalle_movimiento_inventario" in sql
+    assert "'IFT-%'" in sql
+    assert "m.estado = 5" in sql            # 0 = anulado, 4 = sin procesar
+    assert "d.id_bodega_destino = 52" in sql
+    assert "m.fecha >= '2026-08-01'" in sql and "m.fecha < '2026-09-01'" in sql
+    assert out["disponible"] is True
+    assert out["total_kg"] == pytest.approx(1499.10 + 1880.40 + 355.70)
+    # cada ingreso trae SU fecha y SU orden
+    uno = {o["numero"]: o for o in out["ofs"]}["IFT-000112938"]
+    assert uno["dia"] == "2026-08-19" and uno["oft"] == "OFT-000039929"
+    assert uno["cod"] == "AP" and uno["es_intela"] is False
+
+
+def test_dos_ingresos_de_la_misma_orden_no_se_pisan():
+    """Es el caso que rompía todo: una orden entrega varias veces."""
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS_IFT):
+        out = asvc.ingresos_fabricacion_mes(2026, 8)
+    de_la_39929 = [o for o in out["ofs"] if o["oft"] == "OFT-000039929"]
+    assert len(de_la_39929) == 2
+    assert {o["dia"] for o in de_la_39929} == {"2026-08-03", "2026-08-19"}
+
+
+def test_ingresos_fail_soft_y_vacio_disponible():
+    with patch.object(metabase_client, "fetch_dataset", return_value=[]):
+        assert asvc.ingresos_fabricacion_mes(2026, 8)["disponible"] is True
+    asvc.reset_prod_tejeduria_cache()   # si no, la segunda lee el cache
+    with patch.object(metabase_client, "fetch_dataset",
+                      side_effect=RuntimeError("x")):
+        out = asvc.ingresos_fabricacion_mes(2026, 8)
+    assert out["disponible"] is False and out["ofs"] == []
+
+
+def test_los_ingresos_no_se_confunden_con_las_ordenes_en_el_cache():
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS):
+        cerradas = asvc.produccion_tejeduria_mes(2026, 8)
+    with patch.object(metabase_client, "fetch_dataset", return_value=_ROWS_IFT):
+        ingresos = asvc.ingresos_fabricacion_mes(2026, 8)
+    assert {o["numero"] for o in cerradas["ofs"]} != {
+        o["numero"] for o in ingresos["ofs"]}
+
+
+_ING_RY = {"numero": "IFT-500", "oft": "OFT-000039743", "dia": "2026-07-17",
+           "kg": 1000.0, "descripcion": "M REYES KW22 C-T40", "cod": "RY",
+           "label": "Reyes", "es_intela": False}
+
+
+def _con_ingresos(*ofs):
+    return {"disponible": True, "anio": 2026, "mes": 7, "ofs": list(ofs),
+            "por_tejedor": [], "total_kg": sum(o["kg"] for o in ofs)}
+
+
+def test_el_ingreso_reemplaza_a_las_ordenes_cerradas_del_tercerizado():
+    """El IFT ya cubre TODO lo que entró, esté la orden cerrada o no: si se
+    sumaran las dos fuentes, cada kilo contaría dos veces."""
+    out = _run_resumen(compras={}, estampadas={}, tarifas=_TARIFAS,
+                       ingresos=_con_ingresos(_ING_RY))
+    nums = {o["numero"] for o in out["tercerizado_ofs"]}
+    assert nums == {"IFT-500"}                 # y NO las OFT-2 / OFT-4 cerradas
+    tj = {t["cod"]: t for t in out["tejedores"]}
+    assert tj["RY"]["kg"] == pytest.approx(1000.0)
+    assert "AP" not in tj                      # sin ingresos, no hay Ponce
+    # INTELA sigue viniendo de las órdenes: no factura, su kg es el plug.
+    assert any(t["es_intela"] for t in out["tejedores"])
+
+
+def test_el_ingreso_se_imputa_a_SU_dia():
+    """La orden es de julio pero la tela entró el 03/08: el pasivo va al 03/08.
+
+    Es exactamente lo que dejaba a Ponce en cero — sus 8 entregas de agosto
+    eran todas contra órdenes de julio.
+    """
+    tarde = {**_ING_RY, "numero": "IFT-501", "dia": "2026-07-31"}
+    out = _run_resumen(compras={}, estampadas={}, tarifas=_TARIFAS,
+                       ingresos=_con_ingresos(tarde))
+    fila = {o["numero"]: o for o in out["tercerizado_ofs"]}["IFT-501"]
+    assert fila["dia"] == "2026-07-31"
+    assert fila["oft"] == "OFT-000039743"      # la orden viaja para rastrear
+
+
+def test_la_compra_del_ingreso_estampa_los_dos_documentos():
+    res, creadas = _run_cargar({}, {}, _TARIFAS, ingresos=_con_ingresos(_ING_RY))
+    assert res["creadas"] == 1
+    c = creadas[0]
+    assert c["kg"] == pytest.approx(1000.0)
+    assert c["fecha"].isoformat() == "2026-07-17"
+    assert c["concepto"].startswith("IFT-500 OFT-000039743")
+    assert res["detalle"][0]["doc"] == "IFT-500"
+    assert res["detalle"][0]["orden"] == "OFT-000039743"
+
+
+def test_un_ingreso_ya_cargado_no_se_repite():
+    """La guarda fina pasa a ser el IFT."""
+    out = _run_resumen(compras={}, estampadas={"IFT-500": _estampada(2012.5, 1000.0)},
+                       tarifas=_TARIFAS, ingresos=_con_ingresos(_ING_RY))
+    fila = {o["numero"]: o for o in out["tercerizado_ofs"]}["IFT-500"]
+    assert fila["estado"] == "compra"
+    assert out["pendientes"] == []
+
+
+def test_el_ift_manda_sobre_el_oft_en_el_concepto():
+    """La compra nueva estampa «IFT-… OFT-… producto». Si el reparto tomara los
+    dos documentos, cada uno se llevaría la mitad de los kg y el ingreso
+    quedaría eternamente a medio cargar."""
+    filas = [{"concepto": "IFT-500 OFT-000039743 M REYES KW22",
+              "importe": 2012.50, "kg": 1000.0}]
+    with patch("db.fetch_all", return_value=filas):
+        out = tsvc._ofts_estampadas()
+    assert out["IFT-500"]["kg"] == pytest.approx(1000.0)   # entero, no la mitad
+    assert "OFT-000039743" not in out
+    # y las compras viejas, que sólo llevan el OFT, se siguen reconociendo
+    with patch("db.fetch_all", return_value=[
+            {"concepto": "OFT-000039743 M REYES", "importe": 100.0, "kg": 50.0}]):
+        viejo = tsvc._ofts_estampadas()
+    assert viejo["OFT-000039743"]["kg"] == pytest.approx(50.0)
+
+
+def test_un_ingreso_viejo_sigue_siendo_pasivo():
+    """Un IFT que llega tarde no se perdona por ser de un mes cerrado: el
+    barrido de la ventana existe justamente para alcanzarlo. Lo que NO se
+    recarga es una ORDEN cerrada de un mes viejo."""
+    import datetime as _dt
+    with patch.object(tsvc, "INGRESOS_DESDE", _CORTE_TEST), \
+         patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
+                      return_value=_PROD), \
+         patch.object(tsvc.asinfo_service, "ingresos_fabricacion_mes",
+                      return_value=_con_ingresos(_ING_RY)), \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc, "_compras_k_a_mano", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada", return_value={}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 8, 19)):
+        out = tsvc.resumen_mes(2026, 7)       # julio, con agosto en curso
+    assert {o["numero"] for o in out["pendientes"]} == {"IFT-500"}
+
+
+def test_los_ingresos_no_cuentan_antes_del_corte():
+    """TMT 2026-08-19 (dueña: *"junio seguro que no se toca... hacelo para
+    agosto"*). Antes del corte la pantalla se lee por órdenes, igual que
+    siempre: el pasivo viejo ya está cargado, con otros montos."""
+    import datetime as _dt
+    with patch.object(tsvc.asinfo_service, "produccion_tejeduria_mes",
+                      return_value=_PROD), \
+         patch.object(tsvc.asinfo_service, "ingresos_fabricacion_mes") as mi, \
+         patch.object(tsvc, "_compras_k_por_prov", return_value={}), \
+         patch.object(tsvc, "_ofts_estampadas", return_value={}), \
+         patch.object(tsvc, "_compras_k_a_mano", return_value={}), \
+         patch.object(tsvc._tarifas, "listar_tarifas", return_value=_TARIFAS), \
+         patch.object(tsvc, "falta_acumulada", return_value={}), \
+         patch("filters.today_ec", return_value=_dt.date(2026, 8, 19)):
+        out = tsvc.resumen_mes(2026, 7)
+    mi.assert_not_called()
+    assert out["pendientes"] == []
+
+
+def test_el_corte_es_agosto_2026():
+    assert tsvc.INGRESOS_DESDE == (2026, 8)
+    assert tsvc._cuentan_los_ingresos(2026, 8) is True
+    assert tsvc._cuentan_los_ingresos(2026, 9) is True
+    assert tsvc._cuentan_los_ingresos(2027, 1) is True
+    assert tsvc._cuentan_los_ingresos(2026, 7) is False
+    assert tsvc._cuentan_los_ingresos(2026, 6) is False
+
+
+def test_no_avisa_por_una_diferencia_de_gramos():
+    """TMT 2026-08-19 (dueña: *"si vos las cargás, ¿cómo puede ser que esté
+    cargado de más?"*). Las tres del estreno eran órdenes viejas a las que
+    Asinfo les ajustó el kilaje unos gramos después de cargadas: 3,22 kg sobre
+    807,30 es 0,4%. Sólo se avisa arriba de la tolerancia (0,5%)."""
+    ing = {**_ING_RY, "kg": 807.30}
+    out = _run_resumen(compras={},
+                       estampadas={"IFT-500": _estampada(1633.0, 810.52)},
+                       tarifas=_TARIFAS, ingresos=_con_ingresos(ing))
+    fila = {o["numero"]: o for o in out["tercerizado_ofs"]}["IFT-500"]
+    assert fila["kg_saldo"] == pytest.approx(-3.22)
+    assert fila["sobrecargada"] is False, "0,4% no es un error de carga"
+    out2 = _run_resumen(compras={},
+                        estampadas={"IFT-500": _estampada(2415.0, 1200.0)},
+                        tarifas=_TARIFAS, ingresos=_con_ingresos(ing))
+    assert {o["numero"]: o for o in out2["tercerizado_ofs"]}[
+        "IFT-500"]["sobrecargada"] is True

@@ -28,6 +28,9 @@ from modules.tejeduria_asinfo import queries as _tarifas
 _LOG = logging.getLogger("programa_core.tejeduria")
 
 _OFT_RE = re.compile(r"OFT-\d+", re.IGNORECASE)
+#: El documento con el que se estampa la compra. Desde 2026-08-19 es el INGRESO
+#: (IFT); las compras viejas llevan la ORDEN (OFT) y se siguen reconociendo.
+_IFT_RE = re.compile(r"IFT-\d+", re.IGNORECASE)
 
 # usuario_crea de las compras que crea la carga automática. `scripts/import_dbf.py`
 # lo PRESERVA en el sync del dBase — igual que el puente formulas ('formulas-%'):
@@ -59,8 +62,8 @@ ORDEN_COLUMNAS_DIARIO = ("RY", "AP", "UN")
 LABEL_TERCERIZADO = {"RY": "Reyes", "AP": "Ponce", "UN": "Unda"}
 
 
-#: Desde cuándo cuentan las OFs ABIERTAS. Antes de esta fecha la pantalla
-#: sigue mostrando SÓLO lo cerrado, exactamente como estaba.
+#: Desde cuándo el pasivo se arma con los INGRESOS (IFT). Antes de esta fecha
+#: la pantalla sigue mostrando las OFs CERRADAS, exactamente como estaba.
 #:
 #: TMT 2026-08-19 (dueña, mirando el dry-run del barrido: *"junio seguro que no
 #: se toca. ¿No se cargaron ya? Quizás no montos exactos — hacelo para
@@ -74,13 +77,13 @@ LABEL_TERCERIZADO = {"RY": "Reyes", "AP": "Ponce", "UN": "Unda"}
 #: Con el corte, julio y junio quedan como estaban y el mecanismo arranca
 #: limpio en agosto, que no tiene NINGUNA compra K de tercerizados.
 #: Correr el mecanismo sobre un mes viejo = mover esta fecha a mano.
-ABIERTAS_DESDE = (2026, 8)
+INGRESOS_DESDE = (2026, 8)
 
 
-def _cuentan_las_abiertas(anio: int, mes: int) -> bool:
-    """¿El mes es del corte para acá? (ver ABIERTAS_DESDE)"""
+def _cuentan_los_ingresos(anio: int, mes: int) -> bool:
+    """¿El mes es del corte para acá? (ver INGRESOS_DESDE)"""
     try:
-        return (int(anio), int(mes)) >= ABIERTAS_DESDE
+        return (int(anio), int(mes)) >= INGRESOS_DESDE
     except (TypeError, ValueError):
         return False
 
@@ -207,7 +210,14 @@ def _ofts_estampadas() -> dict:
         return {}
     out: dict = {}
     for r in rows:
-        ofts = [m.upper() for m in _OFT_RE.findall(r.get("concepto") or "")]
+        concepto = r.get("concepto") or ""
+        # La compra nueva estampa "IFT-… OFT-… <producto>": el documento que
+        # IDENTIFICA el ingreso es el IFT, el OFT viaja sólo para poder rastrear
+        # la orden. Si se repartiera entre los dos, cada uno se llevaría la
+        # mitad de los kg y el ingreso quedaría eternamente a medio cargar.
+        ofts = [m.upper() for m in _IFT_RE.findall(concepto)]
+        if not ofts:
+            ofts = [m.upper() for m in _OFT_RE.findall(concepto)]
         if not ofts:
             continue
         parte_imp = float(r.get("importe") or 0) / len(ofts)
@@ -253,7 +263,8 @@ def resumen_mes(anio: int, mes: int) -> dict:
 
     # ⭐ TMT 2026-08-19 (dueña: *"nos facturan con la factura abierta, así que
     # apenas entren kg hay que pagar; esos kg tienen que figurar entrados en
-    # tejeduría y aparecer el pasivo"*).
+    # tejeduría y aparecer el pasivo"*; y Andrés: *"existe una IFT, ingreso de
+    # orden de fabricación, y ese es un mejor documento"*).
     #
     # `produccion_tejeduria_mes` sólo trae OFs CERRADAS, y en Asinfo el cierre
     # llega con 11-27 días de retraso: al 19/08 la última OF tercerizada
@@ -262,15 +273,21 @@ def resumen_mes(anio: int, mes: int) -> dict:
     # bodega igual (el ingreso se mide por saldo, no por la OF), así que se
     # escondían dentro del residuo INTELA y nadie generaba el pasivo.
     #
-    # Sumamos las ABIERTAS con kg ya fabricado, imputadas por su fecha de
-    # creación. Sólo las TERCERIZADAS: INTELA no factura y su kg sale del plug
-    # contra el ingreso a bodega, así que agregarle OFs abiertas no cambiaría
-    # nada y sí ensuciaría `total_kg_of`.
-    abiertas = (asinfo_service.produccion_tejeduria_abiertas(anio, mes)
-                if (disponible and _cuentan_las_abiertas(anio, mes)) else {})
-    for _o in (abiertas.get("ofs") or []):
-        if not _o.get("es_intela"):
-            ofs.append(_o)
+    # La unidad correcta es el INGRESO (IFT), no la orden: tiene fecha propia y
+    # kilos propios. Mirando la orden, todo lo que un maquilero entrega este
+    # mes contra una orden abierta el mes pasado se imputaba al mes pasado —
+    # Ponce entregó 8 veces en agosto, TODAS contra órdenes de julio, y quedaba
+    # en CERO. Ver `asinfo_service.ingresos_fabricacion_mes`.
+    ingresos = (asinfo_service.ingresos_fabricacion_mes(anio, mes)
+                if (disponible and _cuentan_los_ingresos(anio, mes)) else {})
+    if ingresos.get("disponible"):
+        # Los tercerizados pasan a salir de los IFT. Se SACAN de la lista de
+        # OFs cerradas para no contarlos dos veces: el IFT ya cubre todo lo que
+        # entró, esté la orden cerrada o no. INTELA sigue viniendo de las OFs
+        # (no factura: su kg es el plug contra el ingreso a bodega).
+        ofs = [o for o in ofs if o.get("es_intela")]
+        ofs += [o for o in (ingresos.get("ofs") or [])
+                if not o.get("es_intela")]
 
     # TMT 2026-07-16 (dueña): en tercerizados SOLO Reyes (RY) y Ponce (AP).
     # Cualquier otro no-INTELA (R UNDA, GENERICA PRUEBAS, OFs sin código "?")
@@ -470,12 +487,13 @@ def resumen_mes(anio: int, mes: int) -> dict:
             kg_of, kg_cargado, 1.0)
         if kg_saldo <= 0.01:
             estado = "compra" if monto is not None else "cargado"
-        elif es_mes_pasado and not of.get("abierta"):
-            # Mes viejo y orden CERRADA: cuando ese mes fue el mes en curso el
-            # motor ya la vio y decidió. No volvemos atrás a cargar junio.
-            # Las ABIERTAS no entran acá a propósito: son justo las que el
-            # programa NUNCA pudo ver (sólo miraba cerradas), así que su pasivo
-            # sigue faltando por viejo que sea el mes. TMT 2026-08-19.
+        elif es_mes_pasado and not of.get("oft"):
+            # Mes viejo y fila que viene de una ORDEN cerrada (las de INGRESO
+            # traen `oft`): cuando ese mes fue el mes en curso el motor ya la
+            # vio y decidió. No volvemos atrás a cargar junio.
+            # Los INGRESOS no entran acá a propósito: un IFT que llega tarde
+            # sigue siendo un pasivo impago por viejo que sea el mes, y el
+            # barrido de la ventana existe justamente para alcanzarlo.
             #
             # Va ANTES del match a mano a propósito: el match se CONSUME (una
             # factura tapa una sola OF), y si lo gastara una orden vieja que ya
@@ -503,7 +521,7 @@ def resumen_mes(anio: int, mes: int) -> dict:
             "kg_cargado": kg_cargado,
             "kg_saldo": kg_saldo,
             "sobrecargada": sobrecargada,
-            "abierta": bool(of.get("abierta")),
+            "oft": of.get("oft") or "",
             "importe_sugerido": (round(_kg_cobrable * _tar, 2)
                                  if (_tar and _kg_cobrable) else None),
         }
@@ -801,10 +819,13 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
         kg_ya = round(float((estampadas.get(numero) or {}).get("kg") or 0.0), 2)
         kg = round(kg_of - kg_ya, 2)
         importe = round(kg * tarifa, 2) if (tarifa and kg > 0.01) else None
-        base = {"oft": numero, "cod": cod, "label": of.get("label") or "",
+        # `doc` = el documento con el que se estampa la compra (desde el
+        # 2026-08-19 el INGRESO, IFT-…; antes la orden, OFT-…). `orden` viaja
+        # aparte para poder rastrear de qué orden salió ese ingreso.
+        base = {"doc": numero, "orden": of.get("oft") or "",
+                "cod": cod, "label": of.get("label") or "",
                 "dia": of.get("dia"), "descripcion": of.get("descripcion") or "",
                 "kg": kg, "kg_of": kg_of, "kg_cargado": kg_ya,
-                "abierta": bool(of.get("abierta")),
                 "tarifa": tarifa, "importe": importe}
 
         if kg <= 0.01:
@@ -847,7 +868,9 @@ def cargar_pendientes(anio: int, mes: int, *, usuario: str = "web",
                 importe=importe,
                 kg=kg,
                 tipo="K",
-                concepto=f"{numero} {(of.get('descripcion') or '').strip()}"[:200],
+                concepto=(f"{numero} {of.get('oft') or ''} "
+                          f"{(of.get('descripcion') or '').strip()}"
+                          ).replace("  ", " ").strip()[:200],
                 clave=clave,
                 usuario=MARCADOR_CARGA,
             )
@@ -967,7 +990,7 @@ def _avisar_carga(res: dict) -> int:
         acc["n"] += 1
         acc["kg"] += float(d.get("kg") or 0)
         acc["importe"] += float(d.get("importe") or 0)
-        acc["ofts"].append(str(d.get("oft") or ""))
+        acc["ofts"].append(str(d.get("doc") or ""))
         _d = str(d.get("dia") or "")[:10]
         if len(_d) == 10:
             acc["dias"].append(_d)

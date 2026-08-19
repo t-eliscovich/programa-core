@@ -3063,40 +3063,42 @@ def produccion_tejeduria_mes(anio: int, mes: int) -> dict:
     return out
 
 
-def produccion_tejeduria_abiertas(anio: int, mes: int) -> dict:
-    """OFs de tela cruda TODAVÍA ABIERTAS, imputadas por fecha de CREACIÓN.
+def ingresos_fabricacion_mes(anio: int, mes: int, id_bodega: int = 52) -> dict:
+    """INGRESOS DE FABRICACIÓN (documento IFT) del mes a una bodega.
 
-    ⭐ TMT 2026-08-19 (dueña: *"no están entrando a tejeduría Asinfo los de
-    Unda, Ponce y Reyes"*). `produccion_tejeduria_mes` sólo mira OFs CERRADAS
-    (`estado_produccion=5`), que es lo correcto para el kg definitivo. Pero en
-    Asinfo el cierre llega con 11-27 días de retraso y a veces no llega nunca:
-    al 19/08 la última OF tercerizada cerrada era del 28/07 mientras 11 OFs de
-    agosto y 13 de julio seguían abiertas con ~21.000 kg ya fabricados. Esos
-    kilos SÍ entraron a bodega 52 (el ingreso se mide por `saldo_producto_lote`,
-    no por la OF), así que quedaban escondidos adentro del residuo INTELA y el
-    maquilero no tenía ni compra ni pasivo. Mismo agujero que el caso UN, por
-    otra puerta.
+    ⭐ TMT 2026-08-19 (Andrés, vía la dueña: *"existe una IFT, ingreso de orden
+    de fabricación, y ese es un mejor documento"*). Tenía razón, y el dato lo
+    probó: la orden NO es el hecho económico, la ENTREGA sí.
 
-    Los tres estados que existen en bodega 52 (verificado sobre 2.383 OFs desde
-    2025): **0** = anulada (nunca tiene kg), **2** = en proceso, **5** =
-    cerrada. Acá van las de estado 2 con kg ya cargado.
+    Mirando el acumulado de la orden (`cantidad_fabricada`) pasaban dos cosas
+    malas: (a) no hay fecha del ingreso, sólo la de la orden, así que todo lo
+    que un maquilero entrega este mes contra una orden abierta el mes pasado se
+    imputaba al mes pasado; (b) el número cambia hasta que la orden cierra. Con
+    eso, agosto/2026 cargaba 3.411,35 kg cuando por IFT habían entrado
+    17.416,85 — Ponce entregó 8 veces en agosto, TODAS contra órdenes de julio,
+    y quedaba en cero.
 
-    ⚠ El kg NO es definitivo: sigue subiendo mientras la orden esté abierta.
-    Por eso quien facture contra esto carga el SALDO (kg de la OF − kg ya
-    cargado con ese OFT), nunca el kg entero — ver `_ofts_estampadas` en
-    `modules.tejeduria_asinfo.service`.
+    Cada IFT es un ingreso consumado: fecha propia, kilos propios, ligado a la
+    orden (de ahí sale el tejedor) y a la bodega destino. Verificado sobre los
+    112.965 IFT de Asinfo: ninguno sin orden, ninguno con cantidad negativa.
+    Los estados son 0 (anulado), 4 y 5; se toma **sólo el 5** (procesado) — los
+    44 en estado 4 son todos de máquinas propias, nunca de tercerizados.
 
-    Misma forma que `produccion_tejeduria_mes`, con `abierta=True` en cada OF.
-    Fail-soft: si Asinfo cae, `disponible=False` y listas vacías.
+    Devuelve (fail-soft, misma forma que `produccion_tejeduria_mes` para que la
+    tab los trate igual):
+        {disponible, anio, mes,
+         ofs:[{numero (IFT), oft, dia, kg, descripcion, cod, label, es_intela}],
+         por_tejedor, total_kg}
     """
     vacio = {"disponible": False, "anio": anio, "mes": mes,
              "ofs": [], "por_tejedor": [], "total_kg": 0.0}
     try:
         anio = int(anio)
         mes = int(mes)
+        id_bodega = int(id_bodega)
     except (TypeError, ValueError):
         return dict(vacio)
-    cache_key = ("abiertas", anio, mes)
+    cache_key = ("ift", anio, mes, id_bodega)
     now = _time.time()
     cached = _PROD_TEJ_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _PROD_TEJ_TTL_SECS:
@@ -3105,21 +3107,26 @@ def produccion_tejeduria_abiertas(anio: int, mes: int) -> dict:
     ny, nm = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
     d2 = f"{ny:04d}-{nm:02d}-01"
     sql = f"""
-        SELECT numero,
-               CONVERT(varchar(10), fecha_creacion, 23) AS dia,
-               ISNULL(cantidad_fabricada, 0)            AS kg,
-               descripcion
-          FROM orden_fabricacion
-         WHERE id_bodega = 52
-           AND indicador_hoja = 1
-           AND estado_produccion = 2
-           AND fecha_cierre IS NULL
-           AND ISNULL(cantidad_fabricada, 0) > 0
-           AND fecha_creacion >= '{d1}' AND fecha_creacion < '{d2}'
-         ORDER BY fecha_creacion
+        SELECT m.numero                              AS ift,
+               CONVERT(varchar(10), m.fecha, 23)     AS dia,
+               o.numero                              AS oft,
+               SUM(d.cantidad)                       AS kg,
+               MAX(o.descripcion)                    AS descripcion
+          FROM movimiento_inventario m
+          JOIN orden_fabricacion o
+            ON o.id_orden_fabricacion = m.id_orden_fabricacion
+          JOIN detalle_movimiento_inventario d
+            ON d.id_movimiento_inventario = m.id_movimiento_inventario
+         WHERE m.numero LIKE 'IFT-%'
+           AND m.estado = 5
+           AND d.id_bodega_destino = {id_bodega}
+           AND m.fecha >= '{d1}' AND m.fecha < '{d2}'
+         GROUP BY m.numero, m.fecha, o.numero
+        HAVING SUM(d.cantidad) > 0
+         ORDER BY m.fecha
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=2000)
+        rows = metabase_client.fetch_dataset(2, sql, max_results=5000)
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(vacio)
     ofs = []
@@ -3130,14 +3137,14 @@ def produccion_tejeduria_abiertas(anio: int, mes: int) -> dict:
         desc = str(r.get("descripcion") or "")
         cod, label, es_intela = _clasificar_tejedor(desc)
         ofs.append({
-            "numero": str(r.get("numero") or "").strip(),
+            "numero": str(r.get("ift") or "").strip(),
+            "oft": str(r.get("oft") or "").strip(),
             "dia": str(r.get("dia") or "")[:10],
             "kg": round(kg, 2),
             "descripcion": desc.strip(),
             "cod": cod,
             "label": label,
             "es_intela": es_intela,
-            "abierta": True,
         })
         k = cod or ("?" + label)
         a = agg.setdefault(k, {"cod": cod, "label": label,
@@ -3148,9 +3155,9 @@ def produccion_tejeduria_abiertas(anio: int, mes: int) -> dict:
     por_tejedor = sorted(agg.values(), key=lambda x: -x["kg"])
     for a in por_tejedor:
         a["kg"] = round(a["kg"], 2)
-    # `disponible=True` aunque no haya filas: "Asinfo contestó y no hay OFs
-    # abiertas" es un estado legítimo y distinto de "Asinfo no contestó" (el
-    # gotcha del caché que costó $495.000 el 29/07 — ver la skill).
+    # `disponible=True` aunque no haya filas: "Asinfo contestó y no hubo
+    # ingresos" es distinto de "Asinfo no contestó" (el gotcha del caché del
+    # 29/07 — ver la skill).
     out = {"disponible": True, "anio": anio, "mes": mes,
            "ofs": ofs, "por_tejedor": por_tejedor, "total_kg": round(total, 2)}
     _PROD_TEJ_CACHE[cache_key] = (now, out)
