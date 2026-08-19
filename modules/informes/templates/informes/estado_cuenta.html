@@ -217,6 +217,9 @@
                 font-size: .875rem; line-height: 1.625; color: #334155; }
     .ec-datos > div { min-width: 0; }
     .ec-lbl { color: #94a3b8; }
+    .ec-grupo-cod { font-family: ui-monospace, monospace; font-weight: 600; }
+    .ec-grupo-hnos { color: #64748b; }
+    .ec-grupo-hnos a { font-family: ui-monospace, monospace; }
     .ec-vacio { color: #cbd5e1; }
     .ec-ok { color: #047857; }
     .ec-bloq { color: #b91c1c; font-weight: 600; }
@@ -338,6 +341,23 @@
           {% if _ciudad %}{{ _ciudad }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
         <div><span class="ec-lbl">RUC:</span>
           {% if _ruc %}{{ _ruc }}{% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        {# GRUPO — TMT 2026-08-19 (dueña): *"En la pantalla de cliente abajo del
+           RUC dice grupo: y todos los codigos que son de su mismo grupo"*.
+           Se muestra el código del grupo (el cliente CABEZA) y al lado los
+           hermanos, cada uno linkeado a SU estado de cuenta: desde la ficha de
+           uno se salta a la del hermano sin pasar por el buscador, que es el
+           movimiento real cuando el que paga no es el mismo que compra.
+           Va SIEMPRE, con "—" cuando no tiene grupo: un campo que desaparece
+           cuando está vacío no se distingue de uno que no existe (misma regla
+           que el resto del bloque, ver el comentario de arriba). #}
+        <div><span class="ec-lbl">Grupo:</span>
+          {% if grupo_codigo %}<span class="ec-grupo-cod">{{ grupo_codigo }}</span>
+            {% if grupo_hermanos %}
+              <span class="ec-grupo-hnos">· con
+              {% for h in grupo_hermanos %}<a href="{{ url_for('informes.estado_cuenta', codigo_cli=h) }}">{{ h }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+              </span>
+            {% endif %}
+          {% else %}<span class="ec-vacio">—</span>{% endif %}</div>
       </div>
       <div>
         <div><span class="ec-lbl">Tel:</span>

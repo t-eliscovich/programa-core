@@ -3697,10 +3697,25 @@ def estado_cuenta(codigo_cli):
         _clientes_dl = clientes_para_datalist()
     except Exception:  # noqa: BLE001
         _clientes_dl = []
+    # GRUPO del cliente + sus hermanos (TMT 2026-08-19, dueña: *"abajo del RUC
+    # dice grupo: y todos los codigos que son de su mismo grupo"*). Best-effort
+    # a propósito: `scintela.grupo_cliente` recién ahora tiene migración
+    # (0206), así que contra una base vieja el estado de cuenta tiene que
+    # abrirse igual, sin la línea, en vez de tirar 500.
+    try:
+        from modules.clientes import grupos as _grupos
+        _grupo_codigo = _grupos.grupo_de(codigo_up) or ""
+        _grupo_hermanos = _grupos.hermanos_de(codigo_up)
+    except Exception as _e:  # noqa: BLE001
+        from modules._lib.silencios import avisar
+        avisar(__name__, "estado_cuenta_grupo", _e)
+        _grupo_codigo, _grupo_hermanos = "", []
     return render_template(
         "informes/estado_cuenta.html",
         data=data,
         error=error,
+        grupo_codigo=_grupo_codigo,
+        grupo_hermanos=_grupo_hermanos,
         clientes_datalist=_clientes_dl,
         # TMT 2026-07-09 (dueña): facturas totalizadas (T), para poder
         # REABRIRLAS desde el panel A↔T. Solo en la vista individual.

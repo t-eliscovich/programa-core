@@ -23,6 +23,7 @@ from error_messages import flash_exc
 from exports import csv_response
 from parsers import parse_int
 
+from . import grupos as grupos_mod
 from . import queries
 
 clientes_bp = Blueprint("clientes", __name__, template_folder="templates")
@@ -46,6 +47,7 @@ def _form_from_request() -> dict:
         "descuento": (request.form.get("descuento") or "").strip(),
         "vend": (request.form.get("vend") or "").strip(),
         "observacion": (request.form.get("observacion") or "").strip(),
+        "grupo": (request.form.get("grupo") or "").strip().upper(),
     }
 
 
@@ -194,6 +196,9 @@ def editar(codigo_cli: str):
             "descuento": ("" if cli.get("descuento") is None else cli.get("descuento")),
             "vend": cli.get("vend") or "",
             "observacion": cli.get("observacion") or "",
+            # El grupo NO vive en scintela.cliente sino en su tabla propia
+            # (un cliente puede ser padre sin tener fila). Ver grupos.py.
+            "grupo": grupos_mod.grupo_de(cli["codigo_cli"]) or "",
             "stop": cli.get("stop") or "N",
             "activo": cli.get("activo", True),
             # Para el link a "Cambiar código", que va por PK (el código puede
@@ -256,6 +261,13 @@ def editar(codigo_cli: str):
                 "(los datos ya estaban así).",
                 "warn",
             )
+        # El GRUPO se guarda aparte: no es una columna de `cliente` sino una
+        # fila en `grupo_cliente`, y tiene permiso propio (`grupos.editar`).
+        # Va DESPUES del UPDATE y con su propio flash para que un error de
+        # grupo -- "el codigo XXX no es un cliente" -- no haga perder los
+        # cambios de nombre/telefono que si eran validos.
+        if tiene_permiso("grupos.editar"):
+            _aplicar_grupo_del_form(cli["codigo_cli"], form.get("grupo", ""), usuario)
         if next_url:
             return redirect(next_url)
         return redirect(url_for("clientes.lista"))
@@ -571,6 +583,31 @@ def contactos():
     )
 
 
+def _con_grupo(filas: list[dict]) -> list[dict]:
+    """Agrega la clave `grupo` a cada fila del listado. Una sola query.
+
+    El grupo de un cliente es el código de su PADRE; y si el cliente ES el
+    padre de un grupo, es su propio código — así el grupo ECH se ve igual en la
+    fila de ECH que en las de sus hijos, que es como está escrito el cuaderno.
+    Sin grupo, cadena vacía (nunca "None": ver el fix del nombre del 2026-06-10).
+    """
+    try:
+        padres = grupos_mod.mapa_padres()
+    except Exception:
+        # La lista de clientes NO depende de los grupos: si `grupo_cliente` no
+        # está (base vieja, fixture mínima), la pantalla sale igual sin la
+        # columna llena en vez de tirar 500.
+        padres = {}
+    cabezas = set(padres.values())
+    salida = []
+    for fila in filas:
+        fila = dict(fila)
+        cod = (fila.get("codigo_cli") or "").strip().upper()
+        fila["grupo"] = padres.get(cod) or (cod if cod in cabezas else "")
+        salida.append(fila)
+    return salida
+
+
 @clientes_bp.route("/clientes")
 @requiere_login
 @requiere_permiso("clientes.ver")
@@ -593,12 +630,17 @@ def lista():
         error = None
     except Exception as e:
         filas, total, error = [], 0, str(e)
+    # Columna GRUPO (TMT 2026-08-19, dueña). Se resuelve con UNA query para
+    # toda la tabla, no una por fila: `grupo_cliente` tiene 24 filas hoy y ~130
+    # después de cargar el cuaderno, así que el mapa entero entra en memoria y
+    # sale más barato que joinearlo en la query grande de `buscar`.
+    filas = _con_grupo(filas)
     total_pag = max(1, (total + POR_PAG - 1) // POR_PAG)
 
     if request.args.get("export") == "csv":
         # CSV trae todo, sin paginación.
         try:
-            todos = queries.buscar(q, incluir_inactivos=True, limite=100000, offset=0)
+            todos = _con_grupo(queries.buscar(q, incluir_inactivos=True, limite=100000, offset=0))
         except Exception:
             todos = filas
         return csv_response(
@@ -615,6 +657,7 @@ def lista():
                 ("parroquia", "Parroquia"),
                 ("pago", "Pago"),
                 ("vend", "Vend"),
+                ("grupo", "Grupo"),
                 ("stop", "Stop"),
                 ("cupo", "Cupo"),
                 ("saldo_total", "Saldo"),
@@ -803,4 +846,168 @@ def cupos_carga_aplicar():
         f"Cupos cargados: {cambiados} ficha(s) actualizadas de {len(items)} filas del archivo.",
         "ok",
     )
+    return redirect(url_for("clientes.lista"))
+
+
+# ---------------------------------------------------------------------------
+# GRUPOS DE CLIENTES
+#
+# TMT 2026-08-19 (duena, con las fotos del cuaderno de la oficina): *"Estos
+# clientes son de un mismo grupo. en clientes una columna mas que diga grupo y
+# ponemos el primero codigo que aparece en lista. Esto tiene que ser editable.
+# (...) Usar tambien para impresion por grupos, estos clientes juntos"*.
+#
+# La tabla `scintela.grupo_cliente` existia desde mayo y ya la leian la cartera
+# por grupo y el estado de cuenta agrupado -- pero se cargaba por SQL a mano,
+# que es justo lo que prohibe la regla `operar-por-la-ui`. Esto es la UI que
+# faltaba: el lapicito de la columna Grupo, el campo de la ficha y la carga
+# masiva por Excel. La logica vive en `grupos.py`.
+# ---------------------------------------------------------------------------
+
+
+def _aplicar_grupo_del_form(codigo_cli: str, pedido: str, usuario: str) -> None:
+    """Aplica el campo Grupo de la ficha. Vacio = sacarlo del grupo.
+
+    No devuelve nada: avisa por flash, porque los dos caminos (lapicito de la
+    lista y ficha) terminan en un redirect.
+    """
+    pedido = (pedido or "").strip().upper()
+    actual = grupos_mod.grupo_de(codigo_cli) or ""
+    if pedido == actual:
+        return
+    if not pedido:
+        ok, msg = grupos_mod.quitar(codigo_cli, usuario=usuario)
+    elif pedido == (codigo_cli or "").strip().upper():
+        # Escribirse a si mismo es "que este grupo se llame como yo". Si el
+        # cliente ya es cabeza no hay nada que hacer; si estaba adentro de otro
+        # grupo, es sacarlo para que arme el suyo.
+        ok, msg = grupos_mod.quitar(codigo_cli, usuario=usuario)
+    else:
+        ok, msg = grupos_mod.asignar(codigo_cli, pedido, usuario=usuario)
+    flash(msg, "ok" if ok else "error")
+    if ok:
+        registrar_bitacora(
+            modulo="clientes", accion="grupo_editar",
+            payload={"codigo_cli": codigo_cli, "grupo": pedido or None},
+        )
+
+
+@clientes_bp.route("/clientes/<codigo_cli>/grupo", methods=["POST"])
+@requiere_login
+@requiere_permiso("grupos.editar")
+def editar_grupo(codigo_cli: str):
+    """El lapicito de la columna Grupo de /clientes."""
+    if not queries.por_codigo(codigo_cli):
+        abort(404)
+    usuario = (g.user or {}).get("username", "web")
+    _aplicar_grupo_del_form(codigo_cli, request.form.get("grupo") or "", usuario)
+    destino = _safe_next_url(request.form.get("next"))
+    return redirect(destino or url_for("clientes.lista"))
+
+
+@clientes_bp.route("/clientes/grupos-carga", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("grupos.editar")
+def grupos_carga():
+    """Sube el Excel de grupos -> PREVIEW -> Confirmar.
+
+    Mismo flujo en dos pasos que la carga de cupos: nada se escribe hasta el
+    Confirmar, y el preview dice fila por fila que va a pasar.
+    """
+    from .grupos_xlsx import parse_grupos_xlsx
+
+    if request.method == "GET":
+        return render_template("clientes/grupos_carga.html", paso="subir", avisos=[])
+
+    f = request.files.get("archivo")
+    if f is None or not f.filename:
+        return render_template(
+            "clientes/grupos_carga.html", paso="subir",
+            avisos=["Elegí un archivo .xlsx antes de subir."],
+        ), 400
+    filas, avisos = parse_grupos_xlsx(f.read())
+    if not filas:
+        return render_template(
+            "clientes/grupos_carga.html", paso="subir", avisos=avisos,
+        ), 400
+
+    codigos = sorted({x.codigo for x in filas} | {x.grupo for x in filas})
+    fichas = db.fetch_all(
+        "SELECT UPPER(TRIM(codigo_cli)) AS cod, nombre FROM scintela.cliente "
+        "WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)",
+        (codigos,),
+    ) or []
+    nombre_de = {ficha["cod"]: ficha["nombre"] for ficha in fichas}
+    actual = grupos_mod.mapa_padres()
+
+    preview = []
+    for x in filas:
+        if x.codigo not in nombre_de:
+            estado = "no_existe"
+        elif x.grupo not in nombre_de:
+            estado = "grupo_no_existe"
+        elif actual.get(x.codigo) == x.grupo:
+            estado = "igual"
+        elif x.codigo in actual:
+            estado = "cambia"
+        else:
+            estado = "nuevo"
+        preview.append({
+            "codigo": x.codigo, "grupo": x.grupo, "fila": x.fila,
+            "nombre": nombre_de.get(x.codigo),
+            "nombre_grupo": nombre_de.get(x.grupo),
+            "grupo_actual": actual.get(x.codigo),
+            "estado": estado,
+        })
+    orden = {"no_existe": 0, "grupo_no_existe": 1, "cambia": 2, "nuevo": 3, "igual": 4}
+    preview.sort(key=lambda p: (orden[p["estado"]], p["grupo"], p["codigo"]))
+    resumen = {k: sum(1 for p in preview if p["estado"] == k) for k in orden}
+    resumen["grupos"] = len({
+        p["grupo"] for p in preview if p["estado"] in ("nuevo", "cambia", "igual")
+    })
+    payload = "\n".join(
+        f"{p['codigo']}={p['grupo']}" for p in preview
+        if p["estado"] in ("nuevo", "cambia")
+    )
+    return render_template(
+        "clientes/grupos_carga.html", paso="confirmar", avisos=avisos,
+        preview=preview, resumen=resumen, payload=payload, archivo=f.filename,
+    )
+
+
+@clientes_bp.route("/clientes/grupos-carga/aplicar", methods=["POST"])
+@requiere_login
+@requiere_permiso("grupos.editar")
+def grupos_carga_aplicar():
+    import re as _re
+
+    lineas = [ln.strip() for ln in (request.form.get("payload") or "").splitlines() if ln.strip()]
+    items: list[tuple[str, str]] = []
+    for ln in lineas:
+        m = _re.fullmatch(r"([A-Z0-9]{1,10})=([A-Z0-9]{1,10})", ln)
+        if not m:
+            abort(400)
+        items.append((m.group(1), m.group(2)))
+    if not items:
+        flash("No había nada para aplicar.", "warn")
+        return redirect(url_for("clientes.grupos_carga"))
+
+    usuario = (g.user or {}).get("username", "web")
+    aplicados, fallados = 0, []
+    for codigo, grupo in items:
+        ok, msg = grupos_mod.asignar(codigo, grupo, usuario=usuario)
+        if ok:
+            aplicados += 1
+        else:
+            fallados.append(msg)
+    registrar_bitacora(
+        modulo="clientes", accion="grupos_carga_masiva",
+        payload={"filas": len(items), "aplicados": aplicados},
+    )
+    flash(f"Grupos cargados: {aplicados} cliente(s) de {len(items)} filas.", "ok")
+    # Los que fallaron se muestran uno por uno: son pocos y cada uno dice por
+    # que. Un "hubo 3 errores" sin decir cuales obliga a rehacer el Excel a
+    # ciegas.
+    for msg in fallados[:20]:
+        flash(msg, "error")
     return redirect(url_for("clientes.lista"))

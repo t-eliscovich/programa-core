@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Carga masiva de grupos{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('clientes.lista') }}" class="hover:underline">Clientes</a> › <strong>Carga masiva de grupos</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-08-19 (dueña): los grupos viven en un cuaderno de la oficina, una
+   fila por grupo. Son ~45 grupos y ~130 clientes — cargarlos de a uno por el
+   lapicito de /clientes es una tarde. Mismo flujo en dos pasos que la carga de
+   cupos de agosto: subir → PREVIEW → Confirmar, y nada se escribe hasta el
+   Confirmar. #}
+<div class="max-w-4xl">
+  {{ page_hero('Carga masiva de grupos de clientes', 'Subí el Excel con las columnas GRUPO y CÓDIGO') }}
+
+  {% for a in avisos %}
+    <div class="mt-4 px-4 py-3 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 text-sm">⚠ {{ a }}</div>
+  {% endfor %}
+
+  {% if paso == 'subir' %}
+  <form method="post" enctype="multipart/form-data" class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="text-sm text-slate-600 dark:text-slate-300 mb-2">
+      Una fila por cliente. En <strong>GRUPO</strong> va el código del cliente
+      <strong>cabeza</strong> del grupo, repetido en todas las filas del grupo;
+      en <strong>CÓDIGO</strong>, el cliente que entra.
+    </p>
+    <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">
+      La fila del propio cabeza (GRUPO igual a CÓDIGO) se acepta y se ignora, así
+      el Excel se lee como el cuaderno. Antes de escribir nada vas a ver una
+      vista previa.
+    </p>
+    <table class="text-xs mb-4 border border-slate-200 dark:border-slate-700">
+      <tr class="bg-slate-50 dark:bg-slate-800/50"><th class="px-3 py-1 text-left">GRUPO</th><th class="px-3 py-1 text-left">CÓDIGO</th><th class="px-3 py-1 text-left">CLIENTE</th></tr>
+      <tr><td class="px-3 py-1 font-mono">ECH</td><td class="px-3 py-1 font-mono">ECH</td><td class="px-3 py-1 text-slate-400">(el cabeza — se ignora)</td></tr>
+      <tr><td class="px-3 py-1 font-mono">ECH</td><td class="px-3 py-1 font-mono">ALX</td><td class="px-3 py-1 text-slate-400">…</td></tr>
+      <tr><td class="px-3 py-1 font-mono">ECH</td><td class="px-3 py-1 font-mono">BRO</td><td class="px-3 py-1 text-slate-400">…</td></tr>
+    </table>
+    <input type="file" name="archivo" accept=".xlsx" required
+           class="text-sm mb-4 block">
+    <button class="text-sm px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white">Subir y ver vista previa</button>
+  </form>
+
+  {% else %}
+  <div class="mt-6 mb-4 flex gap-3 flex-wrap text-sm">
+    <div class="px-4 py-2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"><strong>{{ resumen.nuevo }}</strong> entran a un grupo</div>
+    <div class="px-4 py-2 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"><strong>{{ resumen.cambia }}</strong> cambian de grupo</div>
+    <div class="px-4 py-2 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><strong>{{ resumen.igual }}</strong> ya estaban así</div>
+    <div class="px-4 py-2 rounded {% if resumen.no_existe or resumen.grupo_no_existe %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200{% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300{% endif %}"><strong>{{ resumen.no_existe + resumen.grupo_no_existe }}</strong> con código inexistente (no se tocan)</div>
+  </div>
+
+  <form method="post" action="{{ url_for('clientes.grupos_carga_aplicar') }}" class="mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <textarea name="payload" class="hidden" hidden>{{ payload }}</textarea>
+    <button class="text-sm px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
+            {% if not (resumen.nuevo + resumen.cambia) %}disabled{% endif %}>
+      Confirmar y cargar {{ resumen.nuevo + resumen.cambia }} cliente(s)
+    </button>
+    <a href="{{ url_for('clientes.grupos_carga') }}" class="ml-2 text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-block">Cancelar</a>
+    <span class="ml-3 text-xs text-slate-400">{{ archivo }} · {{ resumen.grupos }} grupos</span>
+  </form>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Grupo</th>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Cliente</th>
+          <th class="px-4 py-3 text-left font-medium">Grupo actual</th>
+          <th class="px-4 py-3 text-left font-medium">Qué pasa</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in preview %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if p.estado in ('no_existe', 'grupo_no_existe') %}bg-red-50 dark:bg-red-900/20{% endif %}">
+          <td class="px-4 py-2 font-mono">{{ p.grupo }}
+            {% if p.nombre_grupo %}<div class="text-xs text-slate-400">{{ p.nombre_grupo }}</div>{% endif %}</td>
+          <td class="px-4 py-2 font-mono">{{ p.codigo }}</td>
+          <td class="px-4 py-2">{{ p.nombre or '—' }}</td>
+          <td class="px-4 py-2 font-mono text-xs">{{ p.grupo_actual or '—' }}</td>
+          <td class="px-4 py-2">
+            {% if p.estado == 'nuevo' %}<span class="text-emerald-700 dark:text-emerald-300">entra al grupo</span>
+            {% elif p.estado == 'cambia' %}<span class="text-sky-700 dark:text-sky-300">cambia de {{ p.grupo_actual }} a {{ p.grupo }}</span>
+            {% elif p.estado == 'igual' %}<span class="text-slate-400">ya estaba así</span>
+            {% elif p.estado == 'grupo_no_existe' %}<span class="text-red-700 dark:text-red-300">el código de grupo {{ p.grupo }} no es un cliente</span>
+            {% else %}<span class="text-red-700 dark:text-red-300">sin ficha en Programa Core</span>{% endif %}
+            <span class="text-xs text-slate-300 dark:text-slate-600">· fila {{ p.fila }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

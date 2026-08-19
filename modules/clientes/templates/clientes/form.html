@@ -130,6 +130,26 @@
                class="border rounded px-2 py-1 mt-1" maxlength="50">
       </label>
 
+      {# GRUPO (TMT 2026-08-19, dueña). Sólo al EDITAR: en el alta el cliente
+         todavía no existe y `grupo_cliente` guarda códigos, no ids — un grupo
+         cargado antes de que exista la ficha quedaría apuntando al vacío.
+         Se pide el código del cliente CABEZA del grupo; dejarlo vacío lo saca
+         del grupo. Sin permiso `grupos.editar` se ve pero no se toca: esconder
+         el campo haría creer que el cliente no tiene grupo. #}
+      {% if modo == 'editar' %}
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Grupo</span>
+        <input type="text" name="grupo" value="{{ form.grupo or '' }}"
+               class="border rounded px-2 py-1 mt-1 font-mono{{ ' bg-slate-100 text-slate-500 cursor-not-allowed' if not tiene_permiso('grupos.editar') }}"
+               maxlength="10" style="text-transform: uppercase;"
+               placeholder="{{ form.codigo_cli }}"
+               {% if not tiene_permiso('grupos.editar') %}readonly title="No tenés permiso para cambiar el grupo"{% endif %}>
+        <span class="text-xs text-slate-400 mt-1">
+          Código del cliente cabeza del grupo. Vacío = sin grupo.
+        </span>
+      </label>
+      {% endif %}
+
       <label class="flex flex-col md:col-span-2">
         <span class="text-sm text-slate-600">Observación</span>
         <textarea name="observacion" class="border rounded px-2 py-1 mt-1"

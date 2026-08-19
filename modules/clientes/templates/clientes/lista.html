@@ -4,6 +4,35 @@
 {% block breadcrumb %}<strong>Clientes</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-08-19 (dueña): columna GRUPO editable. Estilos inline y no clases
+   Tailwind nuevas — `static/tailwind.css` es un build JIT CONGELADO y las
+   clases que no estén ya adentro no renderizan (ver skill programa-core). #}
+{% if tiene_permiso('grupos.editar') %}
+<style>
+  .cli-grupo { display: inline-block; position: relative; }
+  .cli-grupo > summary { list-style: none; cursor: pointer; }
+  .cli-grupo > summary::-webkit-details-marker { display: none; }
+  .cli-grupo .cli-lapiz { opacity: 0; font-size: 10px; margin-left: 2px; }
+  tr:hover .cli-grupo .cli-lapiz { opacity: .55; }
+  .cli-grupo[open] .cli-lapiz { opacity: 1; }
+  .cli-grupo-form {
+    position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 2px;
+    display: flex; gap: 4px; align-items: center; white-space: nowrap;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
+    padding: 6px; box-shadow: 0 6px 18px rgba(15,23,42,.14);
+  }
+  .cli-grupo-form input[type=text] {
+    width: 5.5rem; text-transform: uppercase; font-family: ui-monospace, monospace;
+    border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px;
+  }
+  .cli-grupo-form button {
+    border-radius: 4px; padding: 2px 8px; font-size: 12px;
+    background: #0284c7; color: #fff; border: 0;
+  }
+  .cli-grupo-form .cli-grupo-ayuda { font-size: 10px; color: #64748b; }
+  @media print { .cli-grupo .cli-lapiz, .cli-grupo-form { display: none !important; } }
+</style>
+{% endif %}
 <div class="max-w-6xl">
   <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
     {{ page_hero('Clientes', 'Listado con saldo pendiente') }}
@@ -21,6 +50,10 @@
       {% if tiene_permiso('cupos.editar') %}
       <a href="{{ url_for('clientes.cupos_carga') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Carga masiva de cupos</a>
+      {% endif %}
+      {% if tiene_permiso('grupos.editar') %}
+      <a href="{{ url_for('clientes.grupos_carga') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Carga masiva de grupos</a>
       {% endif %}
       {% if tiene_permiso('clientes.crear') %}
       <a href="{{ url_for('clientes.nuevo') }}"
@@ -47,6 +80,7 @@
           <th class="px-4 py-3 text-left font-medium">Tel</th>
           <th class="px-4 py-3 text-left font-medium">Pago</th>
           <th class="px-4 py-3 text-left font-medium">Vend</th>
+          <th class="px-4 py-3 text-left font-medium">Grupo</th>
           <th class="px-4 py-3 text-left font-medium">Estado</th>
           <th class="px-4 py-3 text-right font-medium" data-sort-type="number">Cupo</th>
           {# TMT 2026-05-20 — columna 'Saldo' eliminada (pedido dueña:
@@ -94,6 +128,32 @@
             {% else %}
               <span class="text-slate-300">—</span>
             {% endif %}
+          </td>
+          {# GRUPO (TMT 2026-08-19, dueña: *"en clientes una columna mas que diga
+             grupo y ponemos el primero codigo que aparece en lista. Esto tiene
+             que ser editable"*). El valor es el código del cliente CABEZA del
+             grupo; el propio cabeza se muestra a sí mismo. Vacío = sin grupo.
+             El lapicito abre un campito sin salir de la lista — cargar los ~45
+             grupos del cuaderno entrando a cada ficha es una tarde. #}
+          <td class="px-4 py-2 text-xs font-mono" style="white-space: nowrap;">
+            {% if tiene_permiso('grupos.editar') %}
+            <details class="cli-grupo">
+              <summary title="Grupo de {{ c.codigo_cli }} — clic para cambiarlo">
+                {% if c.grupo %}{{ c.grupo }}{% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}<span class="cli-lapiz">✏️</span>
+              </summary>
+              <form method="post" class="cli-grupo-form"
+                    action="{{ url_for('clientes.editar_grupo', codigo_cli=c.codigo_cli) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="text" name="grupo" value="{{ c.grupo }}" maxlength="10"
+                       autocomplete="off" placeholder="{{ c.codigo_cli }}"
+                       title="Código del cliente cabeza del grupo. Vacío = sacarlo del grupo.">
+                <button type="submit">Guardar</button>
+                <span class="cli-grupo-ayuda">vacío = sin grupo</span>
+              </form>
+            </details>
+            {% elif c.grupo %}{{ c.grupo }}
+            {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
           </td>
           <td class="px-4 py-2 text-xs space-x-1">
             {# TMT 2026-05-21 dueña: si está en STOP, agregamos botón inline
@@ -149,7 +209,7 @@
           {% endif %}
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin clientes.') }}
+        {{ empty_row(10, 'Sin clientes.') }}
         {% endfor %}
       </tbody>
     </table>
