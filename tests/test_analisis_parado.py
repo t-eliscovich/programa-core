@@ -1409,11 +1409,12 @@ def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
         assert "estado.actualizado | hora_ec" in html
 
 
-def test_la_hoja_del_vendedor_se_apila_en_el_celular():
-    """La hoja es la pantalla que el vendedor abre en la calle, con el teléfono
-    en la mano. La tabla de 5 columnas no entra en 390 px: se apila. Y apilada,
-    cada cifra tiene que decir QUÉ es — si no, quedan tres números sueltos uno
-    abajo del otro."""
+def test_la_hoja_en_el_celular_deja_solo_la_tela_y_la_fecha():
+    """Dueña 19/08/2026, mirando una ficha en el teléfono: "acá solo el cliente
+    y último día que compró, más no hace falta" — y "y chiquito". En la mano,
+    la hoja sirve para saber a quién llamar y hace cuánto no compra; los
+    colores y las dos cifras de kilos son para armar la recorrida en el
+    escritorio o en el papel, y ahí siguen estando."""
     import re
     from pathlib import Path
     hoja = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
@@ -1423,12 +1424,18 @@ def test_la_hoja_del_vendedor_se_apila_en_el_celular():
                       hoja, re.S)
     assert movil, "la hoja no tiene bloque de celular"
     css = movil.group(1)
-    assert "display:block" in css.replace(" ", ""), "las filas no se apilan"
-    for etiqueta in ("Hay para ofrecerle: ", "Él ya compró: ", "Última vez: "):
-        assert f'content:"{etiqueta}"' in css.replace(" ;", ";"), (
-            f"apilada, la cifra «{etiqueta.strip(': ')}» queda sin nombre")
-    # en papel la tabla sigue siendo tabla: el bloque es `screen`, no general
+    assert ".cli .col,.cli .hay,.cli .compro{display:none}" in css, (
+        "en el celular siguen los colores y los kilos")
+    assert ".cli h3 .kg{display:none}" in css, "los kilos siguen en el encabezado"
+    # las celdas se agarran por clase, no por posición
+    for clase in ("col", "hay", "compro", "ult"):
+        assert f'{clase}"' in hoja, f"la celda {clase} no tiene clase"
+    # en papel NO cambia nada: el bloque es `screen`
     assert "@media screen and (max-width" in hoja
+    imp = hoja[hoja.index("@media print{"):]
+    for clase in (".col", ".hay", ".compro"):
+        assert f"{clase}{{display:none" not in imp, (
+            f"el papel también se está comiendo {clase}")
 
 
 def test_las_pantallas_tratan_de_usted():

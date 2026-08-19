@@ -23,25 +23,25 @@
 .cli .anio{color:var(--g);font-size:11px;margin-left:3px}
 .cli th{padding:5px 8px;font-size:10px}
 .cli td{padding:4px 8px}
-/* ⚠ En el celular esta tabla de 5 columnas se rompe: los tres encabezados
-   numéricos se pisan entre sí ("Él ya compró" y "Última vez" quedaban
-   encimados) y la lista de colores arma una torre de quince líneas que deja
-   cada fila de 200 px de alto. Abajo de 560 px la fila se apila y cada cifra
-   dice qué es. Va en `@media screen` a propósito: en papel sigue siendo tabla. */
+/* ⚠ En el celular la hoja se lee de a una mano: queda la TELA y la ÚLTIMA VEZ
+   que la compró, nada más. Dueña 19/08/2026, mirando la ficha en el teléfono:
+   "acá solo el cliente y último día que compró, más no hace falta". Los
+   colores y las dos cifras de kilos siguen estando en el papel y en la
+   pantalla grande, que es donde se arma la recorrida.
+   Va en `@media screen` a propósito: impreso no cambia nada. */
 @media screen and (max-width:560px){
-  .cli{padding:12px 14px}
-  .cli h3 .kg{margin-left:0;flex-basis:100%}
-  .cli table,.cli tbody,.cli tr,.cli td{display:block;width:auto}
-  .cli colgroup,.cli thead{display:none}
-  .cli tr{padding:9px 0;border-top:1px solid var(--l)}
-  .cli tbody tr:first-child{border-top:0}
-  .cli td{padding:1px 0;text-align:left}
-  .cli td:nth-child(1){font-weight:600}
-  .cli td:nth-child(2),.cli td:nth-child(3),
-  .cli td:nth-child(4),.cli td:nth-child(5){font-size:12px}
-  .cli td:nth-child(3)::before{content:"Hay para ofrecerle: ";color:var(--g)}
-  .cli td:nth-child(4)::before{content:"Él ya compró: ";color:var(--g)}
-  .cli td:nth-child(5)::before{content:"Última vez: ";color:var(--g)}
+  /* «y chiquito» (misma charla): con dos columnas la ficha entera se achica y
+     entran varios clientes de un vistazo, que es como se usa la hoja. */
+  .cli{padding:9px 12px;margin:0 0 8px}
+  .cli h3{font-size:13px;gap:6px}
+  .cli h3 .cod{font-size:11px}
+  .cli h3 .kg{display:none}
+  .cli .meta{font-size:11px;margin:1px 0 5px}
+  .cli table{table-layout:auto;font-size:12px}
+  .cli .col,.cli .hay,.cli .compro{display:none}
+  .cli th{font-size:9px;padding:3px 0}
+  .cli td{padding:3px 0}
+  .cli td.ult,.cli th.ult{text-align:right}
 }
 @media print{
   header.top,.barra,.nota,footer .noimp{display:none!important}
@@ -113,18 +113,19 @@
     {# ⚠ Los encabezados decían "Kg en saldo" y "Le vendimos": dos cifras de
        kilos, una al lado de la otra, sin decir de QUIÉN era cada una. Dueña
        18/08/2026: "no se que quiere decir le vendimos / kg en saldo". #}
-    <thead><tr><th>Tela</th><th>Colores disponibles</th>
-    <th class="n">Hay para ofrecerle</th>
-    <th class="n">Él ya compró</th><th class="n">Última vez</th></tr></thead>
+    <thead><tr><th>Tela</th><th class="col">Colores disponibles</th>
+    <th class="n hay">Hay para ofrecerle</th>
+    <th class="n compro">Él ya compró</th><th class="n ult">Última vez</th></tr></thead>
     <tbody>
     {% for t in c.telas %}
+      {# las clases están para el celular: ahí quedan sólo la tela y la fecha #}
       <tr>
         <td>{{ t.subcategoria }}</td>
-        <td class="g">{{ t.colores_parados }}</td>
-        <td class="n">{{ t.kg_parado | num_es(0) }}</td>
-        <td class="n">{{ t.kg_cliente | num_es(0) }}
+        <td class="g col">{{ t.colores_parados }}</td>
+        <td class="n hay">{{ t.kg_parado | num_es(0) }}</td>
+        <td class="n compro">{{ t.kg_cliente | num_es(0) }}
           <span class="anio">en {{ t.anio }}</span></td>
-        <td class="n g">{{ t.ultima_compra.strftime('%d/%m/%y') if t.ultima_compra else '—' }}</td>
+        <td class="n g ult">{{ t.ultima_compra.strftime('%d/%m/%y') if t.ultima_compra else '—' }}</td>
       </tr>
     {% endfor %}
     </tbody>
