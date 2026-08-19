@@ -1235,6 +1235,28 @@ def test_las_columnas_se_esconden_por_clase_y_no_por_posicion():
             f"esconde por posición: {regla[0].strip()}")
 
 
+def test_la_hoja_del_vendedor_se_apila_en_el_celular():
+    """La hoja es la pantalla que el vendedor abre en la calle, con el teléfono
+    en la mano. La tabla de 5 columnas no entra en 390 px: se apila. Y apilada,
+    cada cifra tiene que decir QUÉ es — si no, quedan tres números sueltos uno
+    abajo del otro."""
+    import re
+    from pathlib import Path
+    hoja = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "parado_clientes.html")
+            .read_text(encoding="utf-8"))
+    movil = re.search(r"@media screen and \(max-width:\s*\d+px\)\s*\{(.+?)\n\}",
+                      hoja, re.S)
+    assert movil, "la hoja no tiene bloque de celular"
+    css = movil.group(1)
+    assert "display:block" in css.replace(" ", ""), "las filas no se apilan"
+    for etiqueta in ("Hay para ofrecerle: ", "Él ya compró: ", "Última vez: "):
+        assert f'content:"{etiqueta}"' in css.replace(" ;", ";"), (
+            f"apilada, la cifra «{etiqueta.strip(': ')}» queda sin nombre")
+    # en papel la tabla sigue siendo tabla: el bloque es `screen`, no general
+    assert "@media screen and (max-width" in hoja
+
+
 def test_las_pantallas_tratan_de_usted():
     """Dueña 18/08/2026: "en ecuador se trata de usted". El voseo se cuela de a
     una palabra por vez, así que el test lo caza en cualquier plantilla nueva de
@@ -1248,7 +1270,8 @@ def test_las_pantallas_tratan_de_usted():
     # distinción el test marcaba "le toca" y "Bajar a Excel" como voseo.
     voseo = re.compile(
         r"\b(toc[áí]|baj[áí]|entrás|eleg[íi]|volvé|fijate|tenés|pod[ée]s|"
-        r"querés|vos|tuyo|tuyos|tus|llevás|ponés|dejá|mirá)\b", re.I)
+        r"querés|vos|tuyo|tuyos|tus|llevás|ponés|dejá|mirá|andá|hacé|sacá|"
+        r"apretá|revisá|escribí|abrí|and[áa]te)\b", re.I)
     malas = []
     for archivo in carpeta.glob("*.html"):
         # sin comentarios Jinja: ahí se explica el porqué y puede nombrarlo
