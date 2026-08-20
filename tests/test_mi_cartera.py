@@ -1859,6 +1859,49 @@ def test_la_ficha_muestra_cupo_usado_y_descuento(ficha):
     assert "3 % del cupo" in ficha    # 630 / 20.000 = 3,15 %
 
 
+def test_el_boton_de_whatsapp_dice_lo_que_hace_y_no_es_una_flechita(
+        app, vendedor_logueado, monkeypatch):
+    """⭐ TMT 2026-08-20: *"los vendedores no tienen el botón de enviar por
+    whatsapp"*.
+
+    Lo tenían desde el 04/08: era un cuadradito verde con un "⤴" arriba a la
+    derecha, apretado contra el de imprimir. La dueña —que sabía que el botón
+    se había hecho— miró la pantalla y lo dio por faltante. **Un ícono que
+    nadie reconoce es un botón que no existe.**
+
+    Así que baja al cuerpo, debajo de los saldos, con el nombre entero. El
+    test fija las dos mitades de lo que lo hace reconocible: el rótulo y que
+    ya NO sea la flechita.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    # El botón sólo se dibuja si el servidor puede generar PDFs; en la suite no
+    # hay navegador instalado, así que se dice que sí.
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert "Enviar por WhatsApp" in ficha
+    assert "⤴" not in ficha, "volvió el ícono que nadie entiende"
+    assert 'class="btn-wa"' in ficha
+    # Imprimir también sale de la barra y dice su nombre: el vendedor tiene
+    # las dos cosas que hace con una ficha, a la vista y rotuladas.
+    assert "Imprimir" in ficha
+
+
+def test_la_ficha_no_muestra_la_forma_de_pago(ficha):
+    """TMT 2026-08-20: *"no hace falta la C"*.
+
+    `cliente.pago` dice "C" en 3.516 de los 3.900 clientes y está vacío en casi
+    todo el resto: no distingue a nadie. Ocupaba uno de los cuatro lugares de
+    la tarjeta de Crédito —el lugar más caro de la ficha, al lado del cupo— para
+    mostrar siempre la misma letra.
+    """
+    assert "Forma de pago" not in ficha
+
+
 def test_los_cheques_en_cartera_OCUPAN_cupo(vendedor_logueado, monkeypatch):
     """⭐ Un cheque en cartera todavía no se cobró: ocupa cupo.
 

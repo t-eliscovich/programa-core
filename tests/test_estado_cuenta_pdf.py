@@ -380,8 +380,56 @@ def test_la_pestania_de_whatsapp_se_abre_en_el_click_y_no_despues(app):
     `await`. Si se abriera después de generar el PDF, el botón bajaría el
     archivo sin abrir nada — medio botón, y encima en silencio."""
     html = _boton(app)
-    antes_del_fetch = html.split("await fetch")[0]
-    assert "window.open('', '_blank')" in antes_del_fetch
+    # El ancla es el pedido del PDF: la ventana tiene que abrirse ANTES.
+    antes_del_pdf = html.split("prepararPdf(btn).then")[0]
+    assert "prepararPdf(btn).then" in html, "cambió el nombre del ancla"
+    assert "window.open('', '_blank')" in antes_del_pdf
+
+
+# ---------------------------------------------------------------------------
+# 🚨 El bug de Android del 20/08: "abrió el PDF, no WhatsApp"
+# ---------------------------------------------------------------------------
+
+
+def test_el_pdf_se_empieza_a_preparar_cuando_el_dedo_APOYA(app):
+    """⭐ TMT 2026-08-20, probándolo en un Android: *"pero no abre bien whatsapp
+    lo probe"* → abrió el visor de PDF.
+
+    El menú de compartir del sistema sólo se abre con el permiso que deja el
+    toque, y ese permiso dura unos segundos. Este PDF tarda entre 3 y 4,7 s en
+    generarse (medido en producción): el permiso se vence MIENTRAS se genera,
+    `navigator.share` explota y el código caía al plan B de escritorio, que
+    baja el archivo — el teléfono lo abre en el visor y de WhatsApp, nada.
+
+    El arreglo no es reintentar: es no tener nada que esperar en el momento del
+    toque. Por eso el PDF arranca en `pointerdown`, que pasa antes del click.
+    """
+    html = _boton(app)
+    assert "pointerdown" in html, "el PDF no se adelanta al toque"
+    apoyar = html.split("addEventListener('pointerdown'")[1].split("}")[0]
+    assert "prepararPdf" in apoyar
+
+
+def test_con_el_pdf_ya_hecho_el_compartir_sale_sin_esperar_NADA(app):
+    """El candado del bug: entre el click y `navigator.share` no puede haber
+    una sola espera, o se pierde el permiso del toque otra vez."""
+    html = _boton(app)
+    compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
+    assert "navigator.share" in compartir
+    assert "await" not in compartir, "volvió a esperar antes de compartir"
+    # Y el click usa ese camino cuando el PDF ya está en memoria.
+    assert "if (porMenu && btn.__listo) { compartirYa(btn, btn.__listo); return; }" in html
+
+
+def test_si_el_permiso_se_vencio_el_boton_pide_UN_SEGUNDO_TOQUE(app):
+    """Cuando la generación tardó de más, el PDF igual quedó en memoria: el
+    botón lo dice y el toque siguiente abre el menú al instante. Nunca se cae
+    al camino de escritorio, que en un teléfono termina en el visor de PDF."""
+    html = _boton(app)
+    assert "'Enviar ahora'" in html
+    # El fallback de escritorio (bajar + WhatsApp Web) queda para el escritorio.
+    telefono = html.split("function compartirYa")[1].split("function largo")[0]
+    assert "web.whatsapp.com" not in telefono
 
 
 def test_el_destinatario_lo_elige_ella_en_whatsapp_y_no_el_programa(app):

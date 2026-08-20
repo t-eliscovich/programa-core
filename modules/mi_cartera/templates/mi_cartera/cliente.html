@@ -61,22 +61,6 @@
       <h1 style="margin-top:3px">{{ cliente.nombre }}</h1>
       <div class="sub">{{ cliente.codigo_cli }}{% if cliente.provincia %} · {{ cliente.provincia }}{% endif %}</div>
     </div>
-    <div style="display:flex;gap:8px;flex:0 0 auto">
-      {# El mismo botón que usa la oficina, con el mismo PDF detrás — dueña
-         2026-08-04: "que Alex le pueda mandar al cliente también".
-
-         `wa_label_cargando`: acá el botón es un cuadradito y, mientras
-         genera, el ancho queda clavado — "Generando…" no entra. #}
-      {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
-              wa_nombre = cliente.nombre,
-              wa_clase = 'iconbtn wa',
-              wa_label = '⤴',
-              wa_label_cargando = '···' %}
-        {% include "informes/_ec_boton_whatsapp.html" %}
-      {% endwith %}
-      <a class="iconbtn" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
-         href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙</a>
-    </div>
   </div>
 {% endblock %}
 
@@ -98,6 +82,25 @@
     <div><small>Cheques por cobrar</small><b>$ {{ t.cheques_por_cobrar|money_es }}</b></div>
     <div><small>Total</small><b>$ {{ (saldo_neto + t.cheques_por_cobrar)|money_es }}</b></div>
   </div>
+</div>
+
+{# ⭐ Las dos acciones de la ficha, a la vista y con NOMBRE.
+
+   TMT 2026-08-20: *"los vendedores no tienen el botón de enviar por
+   whatsapp"*. Lo tenían: era un cuadradito verde con una flechita "⤴" en la
+   barra de arriba, al lado del de imprimir. Un ícono que nadie reconoce es un
+   botón que no existe — la dueña lo dio por faltante mirando la pantalla, y
+   ella sabía que el botón se había hecho. Así que salen de la barra, donde no
+   entra el rótulo, y bajan al cuerpo con el nombre entero. El verde es el de
+   WhatsApp, que es la otra mitad de lo que hace reconocible un botón. #}
+<div class="acciones">
+  {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
+          wa_nombre = cliente.nombre,
+          wa_clase = 'btn-wa' %}
+    {% include "informes/_ec_boton_whatsapp.html" %}
+  {% endwith %}
+  <a class="btn-pr" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
+     href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙ Imprimir</a>
 </div>
 
 <div class="kpis">
@@ -157,10 +160,6 @@
     <div>
       <small>Descuento</small>
       {% if _desc %}<b>{{ _desc|num_es(1) }} %</b>{% else %}<b class="na">—</b>{% endif %}
-    </div>
-    <div>
-      <small>Forma de pago</small>
-      {% if cliente.pago %}<b>{{ cliente.pago|cleanstr }}</b>{% else %}<b class="na">—</b>{% endif %}
     </div>
   </div>
   {% if _cupo > 0 %}
@@ -487,15 +486,18 @@
   .franja b{display:block;font-size:12.5px;color:var(--ink);margin-top:1px;
             font-variant-numeric:tabular-nums}
 
-  /* Crédito: cuatro datos en dos columnas, que es como se leen de a pares
-     (cupo↔usado, descuento↔forma de pago). */
-  .cred{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
-  .cred small{display:block;font-size:9.5px;font-weight:700;letter-spacing:.05em;
-              text-transform:uppercase;color:var(--ink-3)}
-  .cred b{display:block;font-size:15px;letter-spacing:-.02em;margin-top:2px;
+  /* Crédito: en dos columnas, que es como se leen de a pares (cupo↔usado).
+     ⭐ TMT 2026-08-20: *"cupo, % usado muy chiquito"*. Estaba a 9,5 px el
+     rótulo y 15 el número, mientras el saldo de arriba va a 30: el dato con
+     el que el vendedor decide si le carga más mercadería o no se leía como
+     una nota al pie de la pantalla. Rótulo 11, número 18, porcentaje 13. */
+  .cred{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cred small{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;
+              text-transform:uppercase;color:var(--ink-2)}
+  .cred b{display:block;font-size:18px;letter-spacing:-.02em;margin-top:3px;
           font-variant-numeric:tabular-nums}
-  .cred b.na{font-size:12.5px;font-weight:500;color:var(--ink-3);letter-spacing:0}
-  .cred i{display:block;font-style:normal;font-size:11px;font-weight:700;margin-top:2px}
+  .cred b.na{font-size:15px;font-weight:500;color:var(--ink-3);letter-spacing:0}
+  .cred i{display:block;font-style:normal;font-size:13px;font-weight:700;margin-top:3px}
   .cred i.bien,.barra i.bien{color:var(--good)}
   .cred i.ojo,.barra i.ojo{color:var(--warn)}
   .cred i.mal,.barra i.mal{color:var(--bad)}
@@ -517,14 +519,23 @@
   .ficha .lnk{color:var(--accent);font-weight:600}
   .ficha .brk{word-break:break-all}
 
-  /* El botón de WhatsApp en el appbar: verde, del mismo tamaño que el de
-     imprimir. Mientras genera el PDF el texto cambia a "Generando…", así que
-     la caja no puede tener ancho fijo. */
-  .iconbtn.wa{border-color:#BFE7CD;color:#15803D;background:#EFFBF3;
-              font:inherit;font-size:16px;cursor:pointer;width:auto;
-              min-width:36px;padding:0 9px;white-space:nowrap}
-  .iconbtn.wa:disabled{opacity:.6}
-  .iconbtn.wa span{display:block;overflow:hidden;white-space:nowrap}
+  /* Las dos acciones, con el nombre entero. El de WhatsApp lleva el verde y
+     el globito de WhatsApp: el rótulo dice qué hace y el color lo confirma
+     de un vistazo. El ícono va como máscara SVG —no como emoji— porque el
+     emoji no existe en Android y salía un cuadradito vacío. */
+  .acciones{display:flex;gap:8px;margin:11px 0;
+    --ico-wa:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 14.4c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5 0-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.5.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.5-.4z'/><path d='M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2z'/></svg>")}
+  .btn-wa{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+          background:#25D366;color:#fff;border:0;border-radius:12px;
+          padding:12px 10px;font:inherit;font-size:14.5px;font-weight:700;
+          cursor:pointer;white-space:nowrap}
+  .btn-wa::before{content:'';width:19px;height:19px;flex:0 0 19px;background:#fff;
+    -webkit-mask:center/contain no-repeat var(--ico-wa);mask:center/contain no-repeat var(--ico-wa)}
+  .btn-wa:disabled{opacity:.65}
+  .btn-wa span{overflow:hidden;white-space:nowrap}
+  .btn-pr{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
+          border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+          font-size:14.5px;font-weight:600;color:var(--ink)}
 
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
   @media (max-width: 374px){

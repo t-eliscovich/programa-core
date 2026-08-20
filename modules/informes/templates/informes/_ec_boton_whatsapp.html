@@ -11,8 +11,7 @@
      · `wa_nombre` — nombre del cliente, para el nombre del archivo
      · `wa_clase`  — clases CSS del botón (el portal y la oficina no comparten
                      hoja de estilos)
-     · `wa_label`  — opcional; en el celular el appbar no tiene lugar para
-                     "Enviar por WhatsApp" y va sólo el ícono
+     · `wa_label`  — opcional; el rótulo del botón
      · `wa_label_cargando` — opcional; lo que dice mientras genera. El ancho
                      del botón queda CLAVADO durante la espera, así que en un
                      botón-ícono este texto tiene que ser corto o se corta
@@ -43,7 +42,26 @@
    que promete algo que no hace.
 
    El nombre del archivo lo pone el servidor ("Estado de cuenta - CLIENTE.pdf")
-   y acá se respeta: es lo primero que ve quien lo recibe en el chat. #}
+   y acá se respeta: es lo primero que ve quien lo recibe en el chat.
+
+   🚨 TMT 2026-08-20, probándolo en un Android: *"pero no abre bien whatsapp lo
+   probe"* → **"abrió el PDF, no WhatsApp"**.
+
+   El menú de compartir del sistema sólo se puede abrir con el permiso que deja
+   el TOQUE, y ese permiso dura unos pocos segundos. Este PDF tarda entre 3 y
+   4,7 segundos en generarse (medido en producción, cliente de 13 facturas), o
+   sea que el permiso se vence MIENTRAS se genera: `navigator.share` explota y
+   el código caía al plan B de escritorio, que baja el archivo — el teléfono lo
+   abre en el visor de PDF y de WhatsApp ni noticias. El botón hacía algo,
+   hacía lo que no era, y no avisaba nada.
+
+   El arreglo NO es reintentar: es no tener nada que esperar en el momento del
+   toque. El PDF se empieza a preparar cuando el dedo APOYA (`pointerdown`), se
+   guarda en memoria, y si ya está listo el compartir sale DERECHO desde el
+   click, sin un solo `await` en el medio. Cuando no llegó a tiempo, el botón
+   pasa a decir **"Enviar ahora"** y el segundo toque —que ya encuentra el PDF
+   hecho— abre el menú al instante. Un toque cuando la conexión acompaña, dos
+   cuando no; nunca el visor de PDF por sorpresa. #}
 {# Sin motor de PDF en el servidor no se dibuja: un botón que siempre falla
    es peor que no tenerlo. Quien llegue igual por la URL recibe un 503 que
    explica qué falta. #}
@@ -98,13 +116,70 @@
   // eso salta directo a una conversación y le saca la elección de las manos.
   var WHATSAPP = 'https://web.whatsapp.com/';
 
-  document.addEventListener('click', async function (ev) {
-    var btn = ev.target.closest('[data-wa-pdf]');
-    if (!btn) return;
-    var txt = btn.querySelector('[data-wa-txt]');
-    var original = txt.textContent;
-    var porMenu = esTelefono() && !!navigator.canShare;
+  function rotulo(btn) {
+    if (!btn.dataset.rotulo) {
+      btn.dataset.rotulo = btn.querySelector('[data-wa-txt]').textContent;
+    }
+    return btn.dataset.rotulo;
+  }
 
+  function decir(btn, texto) { btn.querySelector('[data-wa-txt]').textContent = texto; }
+
+  // ⭐ El PDF se prepara UNA vez por botón y queda en memoria. Es lo que
+  // permite que el compartir salga sin esperar nada: ver el comentario de
+  // cabecera (Android, 20/08).
+  function prepararPdf(btn) {
+    if (btn.__pdf) return btn.__pdf;
+    btn.__pdf = fetch(btn.dataset.url, { credentials: 'same-origin' })
+      .then(function (resp) {
+        if (!resp.ok) {
+          // El 503 del servidor trae un mensaje que explica qué falta; se
+          // muestra tal cual en vez de un "error" genérico.
+          return resp.status === 503
+            ? resp.text().then(function (t) { throw new Error(t); })
+            : Promise.reject(new Error('No se pudo generar el PDF (error ' + resp.status + ').'));
+        }
+        return resp.blob().then(function (blob) {
+          btn.__listo = { blob: blob, nombre: nombreDe(resp, btn.dataset.nombre || 'cliente') };
+          return btn.__listo;
+        });
+      })
+      .catch(function (e) { btn.__pdf = null; throw e; });   // que el próximo toque reintente
+    return btn.__pdf;
+  }
+
+  // El dedo APOYADO ya arranca la preparación. Son los milisegundos que van
+  // del apoyar al soltar, pero además deja el PDF encaminado para el segundo
+  // toque, que es el que termina abriendo WhatsApp cuando la red está lenta.
+  document.addEventListener('pointerdown', function (ev) {
+    var btn = ev.target.closest && ev.target.closest('[data-wa-pdf]');
+    if (btn && !btn.disabled) prepararPdf(btn).catch(function () {});
+  });
+
+  // ⭐ SIN `await` adentro: el permiso que deja el toque para abrir el menú de
+  // compartir se pierde en la primera espera.
+  function compartirYa(btn, listo) {
+    var file = new File([listo.blob], listo.nombre, { type: 'application/pdf' });
+    if (!navigator.canShare({ files: [file] })) {
+      // Este teléfono no deja adjuntar el PDF desde el navegador. Se lo baja y
+      // se lo dice, en vez de abrir el visor de PDF sin explicación.
+      descargar(listo.blob, listo.nombre);
+      alert('Este teléfono no deja mandar el PDF directo desde el programa. '
+          + 'Se descargó "' + listo.nombre + '": adjuntalo desde WhatsApp.');
+      return;
+    }
+    decir(btn, rotulo(btn));
+    navigator.share({ files: [file], title: listo.nombre }).catch(function (e) {
+      // Cerró el menú a propósito: no es un error y no hay que insistirle.
+      if (e && e.name === 'AbortError') return;
+      // Se venció el permiso del toque (la generación tardó). El PDF YA está
+      // en memoria: el próximo toque abre el menú al instante.
+      decir(btn, 'Enviar ahora');
+    });
+  }
+
+  function largo(btn, porMenu) {
+    var original = rotulo(btn);
     // La pestaña de WhatsApp se abre ACÁ, en el click. Si se abriera después
     // del `await`, Safari la bloquea por popup y el botón baja el PDF sin
     // abrir nada — que es medio botón.
@@ -116,61 +191,48 @@
     // largo o más corto que el original según la pantalla.
     btn.style.width = btn.getBoundingClientRect().width + 'px';
     btn.disabled = true;
-    txt.textContent = btn.dataset.cargando || 'Generando…';
-    try {
-      var resp = await fetch(btn.dataset.url, { credentials: 'same-origin' });
-      if (!resp.ok) {
-        // El 503 del servidor trae un mensaje que explica qué falta; se
-        // muestra tal cual en vez de un "error" genérico.
-        var msg = resp.status === 503
-          ? (await resp.text())
-          : ('No se pudo generar el PDF (error ' + resp.status + ').');
-        if (ventana) ventana.close();
-        alert(msg);
-        return;
-      }
-      var blob = await resp.blob();
-      var nombre = nombreDe(resp, btn.dataset.nombre || 'cliente');
+    decir(btn, btn.dataset.cargando || 'Generando…');
 
-      // El PDF ya está: el botón vuelve a su texto ANTES de abrir el menú de
+    prepararPdf(btn).then(function (listo) {
+      // El PDF ya está: el botón se suelta ANTES de abrir el menú de
       // compartir. Si no, queda "Generando…" mientras el menú está abierto y
       // parece colgado.
       btn.disabled = false;
-      txt.textContent = original;
+      decir(btn, original);
       btn.style.width = '';
 
-      if (porMenu) {
-        var file = new File([blob], nombre, { type: 'application/pdf' });
-        if (navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({ files: [file], title: nombre });
-            return;
-          } catch (e) {
-            // Cerró el menú a propósito: no es un error y no hay que bajarle
-            // el archivo por las dudas.
-            if (e && e.name === 'AbortError') return;
-          }
-        }
-      }
+      if (porMenu) { compartirYa(btn, listo); return; }
 
       // Escritorio: el PDF a la carpeta de descargas y WhatsApp Web abierto al
       // lado en la lista de chats, para que elija la conversación y lo
       // arrastre. `wa.me` sólo acepta texto, así que adjuntarlo por link no se
       // puede — y un botón que dijera que sí estaría mintiendo.
-      descargar(blob, nombre);
-      if (ventana) {
-        ventana.location = WHATSAPP;
-      } else {
-        window.open(WHATSAPP, '_blank', 'noopener');
-      }
-    } catch (e) {
+      descargar(listo.blob, listo.nombre);
+      if (ventana) { ventana.location = WHATSAPP; }
+      else { window.open(WHATSAPP, '_blank', 'noopener'); }
+    }).catch(function (e) {
       if (ventana) ventana.close();
-      alert('No se pudo generar el PDF: ' + e);
-    } finally {
+      alert(e && e.message ? e.message : ('No se pudo generar el PDF: ' + e));
+    }).finally(function () {
       btn.disabled = false;
-      txt.textContent = original;
       btn.style.width = '';
-    }
+      // Un botón clavado en "Generando…" es peor que el salto de ancho que
+      // estamos evitando; el "Enviar ahora" sí se respeta, es un estado.
+      if (btn.querySelector('[data-wa-txt]').textContent === (btn.dataset.cargando || 'Generando…')) {
+        decir(btn, original);
+      }
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-wa-pdf]');
+    if (!btn) return;
+    var porMenu = esTelefono() && !!navigator.canShare;
+    rotulo(btn);
+    // El camino bueno: el PDF ya está en memoria y el menú de compartir se
+    // abre en el mismo toque, sin esperar nada.
+    if (porMenu && btn.__listo) { compartirYa(btn, btn.__listo); return; }
+    largo(btn, porMenu);
   });
 })();
 </script>
