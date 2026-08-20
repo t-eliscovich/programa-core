@@ -232,6 +232,21 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
+### [S] Los aportes y retiros de socio no guardan `no_banco` en la metadata
+
+`capital.retirar()` y `capital.aportar()` escriben el `mov_doble` con
+`metadata={"socio": ...}`, sin el `no_banco` de la cuenta que movieron — aunque
+el `destino_id` sí apunte a la transacción bancaria. Todo lo que quiera saber
+"¿qué cuenta tocó este hecho?" tiene que resolverlo por la transacción.
+
+La traza ya lo hace (`eventos._no_banco_de_la_transaccion`, 20/08/2026: sin eso
+el Δ del banco se le colgaba a otro hecho, con un nombre falso), así que **no
+hay nada roto hoy**. Lo que queda es el dato faltante en el ORIGEN: el próximo
+consumidor de `mov_doble` que agrupe por cuenta va a tropezar con lo mismo.
+Agregar `no_banco` al `metadata` de las dos funciones; las filas viejas siguen
+cubiertas por el fallback, así que no hace falta backfill.
+
+
 ### [S] Las notas de Alex que el Excel de pendientes ya se comió
 
 Hasta el 18/08/2026 la quinta columna del Excel de conciliación se mapeaba y se
