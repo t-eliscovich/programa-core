@@ -32,17 +32,24 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 
-def _redistribuir(importes, pool):
+def _redistribuir(importes, pool, retenciones=None):
     from modules.informes import queries as q
-    return q.totalizar_redistribuir_fifo(importes, pool)
+    return q.totalizar_redistribuir_fifo(importes, pool, retenciones)
 
 
-def _check_invariante(importes, pool, res):
-    """Σabono == pool y Σsaldo == Σimporte − pool (±0.01)."""
+def _check_invariante(importes, pool, res, retenciones=None):
+    """Σabono == pool y Σsaldo == Σimporte − pool − Σretencion (±0.01).
+
+    La retención entra en el invariante desde el 2026-08-20: baja el saldo
+    igual que el abono (mig 0179) pero no se reparte.
+    """
+    rets = list(retenciones or [])
+    rets += [0.0] * (len(importes) - len(rets))
     sum_abono = round(sum(r["abono"] for r in res), 2)
     sum_saldo = round(sum(r["saldo"] for r in res), 2)
     assert abs(sum_abono - round(pool, 2)) <= 0.01, (sum_abono, pool)
-    esperado = round(sum(round(float(i), 2) for i in importes) - pool, 2)
+    esperado = round(sum(round(float(i), 2) for i in importes)
+                     - pool - sum(round(float(r), 2) for r in rets), 2)
     assert abs(sum_saldo - esperado) <= 0.01, (sum_saldo, esperado)
 
 
@@ -125,6 +132,94 @@ def test_invariante_sigma_saldo_y_abono(importes, pool):
     _check_invariante(importes, pool, res)
 
 
+# ───────────────────────── retenciones (2026-08-20) ───────────────────────
+# TMT: "fijate porque estas totalizaciones no se pueden". El invariante
+# abortaba en TODO cliente con retenciones porque el reparto ignoraba la
+# columna `factura.retencion` (mig 0179) y devolvía Σretencion de saldo de
+# más. La retención ya bajó la deuda y NO se reparte.
+
+def test_el_pool_cubre_importe_menos_retencion():
+    # Factura de 100 con 15 de retención: al abono le tocan 85, no 100.
+    res = _redistribuir([100.0, 100.0], 85.0, [15.0, 0.0])
+    assert res[0] == {"stat": "T", "abono": 85.0, "saldo": 0.0}
+    assert res[1] == {"stat": "Z", "abono": 0.0, "saldo": 100.0}
+    _check_invariante([100.0, 100.0], 85.0, res, [15.0, 0.0])
+
+
+def test_una_retencion_sola_no_mueve_de_z_a_a():
+    # Sin un peso de abono, la factura debe menos pero sigue en 'Z'
+    # (regla dueña 2026-08-07: la retención no abona).
+    res = _redistribuir([100.0], 0.0, [15.0])
+    assert res[0] == {"stat": "Z", "abono": 0.0, "saldo": 85.0}
+
+
+def test_retencion_que_cubre_toda_la_factura_totaliza_sin_abono():
+    res = _redistribuir([100.0], 0.0, [100.0])
+    assert res[0] == {"stat": "T", "abono": 0.0, "saldo": 0.0}
+
+
+def test_abono_parcial_con_retencion_deja_el_resto():
+    # 100 − 20 de retención = 80 a cubrir; el pool trae 30.
+    res = _redistribuir([100.0], 30.0, [20.0])
+    assert res[0] == {"stat": "A", "abono": 30.0, "saldo": 50.0}
+
+
+def test_sobra_pool_con_retencion_el_credito_va_a_la_ultima():
+    res = _redistribuir([100.0, 100.0], 200.0, [0.0, 10.0])
+    assert res[1]["stat"] == "A"
+    assert res[1]["saldo"] == -10.0
+    _check_invariante([100.0, 100.0], 200.0, res, [0.0, 10.0])
+
+
+@pytest.mark.parametrize("importes,pool,rets", [
+    ([100.0, 100.0, 100.0], 250.0, [5.0, 0.0, 12.34]),
+    ([100.0, -30.0, 100.0, 100.0], 40.0, [0.0, 0.0, 7.5, 0.0]),
+    ([10.5, 20.25, -5.75, 33.33], 40.0, [1.11, 0.0, 0.0, 2.22]),
+    ([467455.79], 75253.73, [54.64]),          # BED, el caso que lo destapó
+])
+def test_invariante_se_sostiene_con_retenciones(importes, pool, rets):
+    res = _redistribuir(importes, pool, rets)
+    _check_invariante(importes, pool, res, rets)
+
+
+def test_ejecutar_no_aborta_con_retenciones(monkeypatch):
+    """El bug de BED: el invariante mataba el totalizar y no cambiaba nada."""
+    from modules.informes import queries as q
+    stub = _DBStub([
+        _fact(1, 100.0, 60.0, 25.0, "A", retencion=15.0),
+        _fact(2, 100.0, 90.0, 10.0, "A"),
+        _fact(3, 100.0, 0.0, 100.0, "Z"),
+    ])
+    _patch_db(monkeypatch, stub)
+    res = q.totalizar_estado_cuenta_ejecutar("bed", usuario="tester")
+    assert res["codigo_cli"] == "BED"
+    assert stub.updates, "no tocó ninguna factura"
+    # 150 de pool sobre 85 + 100 + 100 → T(85) + A(65) + Z(100).
+    nuevos = {u[-1]: u[:3] for u in stub.updates}
+    assert nuevos[1] == (85.0, 0.0, "T")
+    assert nuevos[2] == (65.0, 35.0, "A")
+    # la 3 queda igual que como estaba (Z, 0, 100) → no se toca.
+    assert 3 not in nuevos
+
+
+def test_preview_muestra_la_retencion(monkeypatch):
+    from modules.informes import queries as q
+    stub = _DBStub([_fact(1, 100.0, 60.0, 25.0, "A", retencion=15.0)])
+    monkeypatch.setattr(
+        q.db, "fetch_one",
+        lambda sql, params=None, conn=None: (
+            {"codigo_cli": "BED", "nombre": "X"}
+            if "from scintela.cliente" in " ".join(sql.split()).lower()
+            else {"n": 0}))
+    monkeypatch.setattr(
+        q.db, "fetch_all",
+        lambda sql, params=None, conn=None: [dict(f) for f in stub.facturas])
+    data = q.totalizar_estado_cuenta_preview("BED")
+    assert data["sum_retencion"] == 15.0
+    assert data["filas"][0]["retencion"] == 15.0
+    assert data["sum_saldo_antes"] == data["sum_saldo_despues"]
+
+
 # ─────────────────── totalizar_estado_cuenta_ejecutar ─────────────────────
 
 class _DBStub:
@@ -180,11 +275,11 @@ def _patch_db(monkeypatch, stub):
     monkeypatch.setattr(db, "tx", stub.tx)
 
 
-def _fact(id_, importe, abono, saldo, stat, fecha=None):
+def _fact(id_, importe, abono, saldo, stat, fecha=None, retencion=0.0):
     return {
         "id_factura": id_, "numf": id_, "numf_completo": f"001-001-{id_:09d}",
         "fecha": fecha or date(2026, 6, id_), "importe": importe,
-        "abono": abono, "saldo": saldo, "stat": stat,
+        "abono": abono, "retencion": retencion, "saldo": saldo, "stat": stat,
     }
 
 

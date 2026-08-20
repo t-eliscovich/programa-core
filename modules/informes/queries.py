@@ -10668,7 +10668,8 @@ _SQL_FACTURAS_TOTALIZAR = """
 """
 
 
-def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
+def totalizar_redistribuir_fifo(importes: list, pool: float,
+                                retenciones: list | None = None) -> list[dict]:
     """Núcleo puro del TOTALIZAR: redistribuye `pool` sobre `importes` (FIFO).
 
     Devuelve, por factura y en el mismo orden, {"stat", "abono", "saldo"}.
@@ -10679,11 +10680,23 @@ def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
     Σabono==pool / Σsaldo constante: el crédito de la NC vuelve al pool y se
     aplica hacia ADELANTE (FIFO — nunca reabre una factura ya recorrida).
 
+    ⚖️ TMT 2026-08-20 (dueña: "estas totalizaciones no se pueden"): lo que el
+    pool tiene que cubrir NO es el importe, es `importe − retencion`. La
+    retención ya bajó la deuda (mig 0179) y **no se redistribuye**: el
+    comprobante es de ESA factura y no se puede mudar a otra. Sin esto el
+    reparto devolvía Σsaldo = Σimporte − Σabono — o sea Σretencion de más — y
+    el invariante abortaba el totalizar de TODO cliente con retenciones
+    (75 de 494 clientes vivos, $35.400,79 al 20/08). El saldo sale de
+    `saldo_de`, nunca de una resta a mano.
+
       · imp < 0 (NC/devolución) → stat 'T', abono=imp, saldo=0; el crédito
         |imp| se suma al restante (decisión dueña #2 — el dBase las salteaba).
-      · restante cubre imp      → stat 'T', abono=imp, saldo=0.
+      · restante cubre imp−ret  → stat 'T', abono=imp−ret, saldo=0.
       · restante parcial        → stat 'A', abono=restante, saldo=resto.
-      · restante agotado        → stat 'Z', abono=0, saldo=imp.
+      · restante agotado        → stat 'Z', abono=0, saldo=imp−ret.
+
+    Una retención sola NO mueve de Z a A (regla 2026-08-07): con el pool
+    agotado la factura queda en 'Z' debiendo menos, y sin abono.
 
     Si al final sobra pool (Σabonos > Σimportes cubiertos) el excedente se
     vuelca a la ÚLTIMA factura del recorrido: abono += sobrante, saldo
@@ -10692,6 +10705,8 @@ def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
     Tolerancia de redondeo: medio centavo (0.005), igual que cobranza.
     """
     pool = round(float(pool or 0), 2)
+    rets = [round(float(r or 0), 2) for r in (retenciones or [])]
+    rets += [0.0] * (len(importes) - len(rets))
     # TMT 2026-07-07 (dueña "KAG totalizar no funcionó"): el crédito de las NC
     # ahora entra al pool DESDE EL ARRANQUE (no solo hacia adelante desde la
     # fecha de la NC). Así todo el crédito se aplica FIFO a las facturas más
@@ -10701,21 +10716,25 @@ def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
                            for i in importes if float(i or 0) < 0), 2)
     restante = round(pool + nc_credito, 2)
     out: list[dict] = []
-    for imp_raw in importes:
+    for imp_raw, ret in zip(importes, rets, strict=True):
         imp = round(float(imp_raw or 0), 2)
+        # Lo que le toca cubrir al ABONO: la retención ya descontó.
+        cubrir = round(imp - ret, 2)
         if imp < 0:
             # NC / devolución: su crédito YA está en el pool (arriba). Se
             # totaliza con saldo=0; no vuelve a tocar el restante.
             out.append({"stat": "T", "abono": imp, "saldo": 0.0})
-        elif restante >= imp - 0.005:
-            out.append({"stat": "T", "abono": imp, "saldo": 0.0})
-            restante = round(restante - imp, 2)
+        elif restante >= cubrir - 0.005:
+            out.append({"stat": "T", "abono": cubrir, "saldo": 0.0})
+            restante = round(restante - cubrir, 2)
         elif restante > 0.005:
             ab = round(restante, 2)
-            out.append({"stat": "A", "abono": ab, "saldo": round(imp - ab, 2)})
+            out.append({"stat": "A", "abono": ab,
+                        "saldo": _fact_q.saldo_de(imp, ab, ret)})
             restante = 0.0
         else:
-            out.append({"stat": "Z", "abono": 0.0, "saldo": imp})
+            out.append({"stat": "Z", "abono": 0.0,
+                        "saldo": _fact_q.saldo_de(imp, 0.0, ret)})
     # Sobró pool → crédito (saldo negativo) en la ÚLTIMA factura viva.
     # abs(): si el pool vino NEGATIVO (data patológica) también se vuelca,
     # así el invariante Σabono==pool se sostiene siempre.
@@ -10723,7 +10742,7 @@ def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
         imp_last = round(float(importes[-1] or 0), 2)
         last = out[-1]
         last["abono"] = round(last["abono"] + restante, 2)
-        last["saldo"] = round(imp_last - last["abono"], 2)
+        last["saldo"] = _fact_q.saldo_de(imp_last, last["abono"], rets[-1])
         last["stat"] = "A"
     return out
 
@@ -10731,9 +10750,10 @@ def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
 def _totalizar_armar(facturas: list[dict]) -> dict:
     """Común a preview y ejecutar: pool, redistribución y contadores."""
     importes = [float(f["importe"] or 0) for f in facturas]
+    retenciones = [float(f["retencion"] or 0) for f in facturas]
     pool = round(sum(float(f["abono"] or 0) for f in facturas), 2)
     hay_nc = any(i < 0 for i in importes)
-    nuevos = totalizar_redistribuir_fifo(importes, pool)
+    nuevos = totalizar_redistribuir_fifo(importes, pool, retenciones)
     return {
         "pool": pool,
         "hay_nc": hay_nc,
@@ -10743,6 +10763,7 @@ def _totalizar_armar(facturas: list[dict]) -> dict:
         "n_A": sum(1 for n in nuevos if n["stat"] == "A"),
         "n_Z": sum(1 for n in nuevos if n["stat"] == "Z"),
         "sum_importe": round(sum(importes), 2),
+        "sum_retencion": round(sum(retenciones), 2),
         "sum_saldo_antes": round(sum(float(f["saldo"] or 0) for f in facturas), 2),
         "sum_abono_despues": round(sum(n["abono"] for n in nuevos), 2),
         "sum_saldo_despues": round(sum(n["saldo"] for n in nuevos), 2),
@@ -10778,6 +10799,7 @@ def totalizar_estado_cuenta_preview(codigo_cli: str, hasta=None) -> dict:
             "numf_completo": f["numf_completo"],
             "fecha": f["fecha"],
             "importe": round(float(f["importe"] or 0), 2),
+            "retencion": round(float(f["retencion"] or 0), 2),
             "abono_actual": round(float(f["abono"] or 0), 2),
             "saldo_actual": round(float(f["saldo"] or 0), 2),
             "stat_actual": (f["stat"] or "").strip(),
@@ -10796,8 +10818,8 @@ def totalizar_estado_cuenta_preview(codigo_cli: str, hasta=None) -> dict:
         "n_links": n_links,
         **{k: calc[k] for k in (
             "pool", "hay_nc", "nada_que_hacer", "n_T", "n_A", "n_Z",
-            "sum_importe", "sum_saldo_antes", "sum_abono_despues",
-            "sum_saldo_despues",
+            "sum_importe", "sum_retencion", "sum_saldo_antes",
+            "sum_abono_despues", "sum_saldo_despues",
         )},
     }
 
@@ -10841,8 +10863,9 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                 f"{codigo_cli}: invariante roto — Σsaldo "
                 f"{calc['sum_saldo_antes']:.2f}→{calc['sum_saldo_despues']:.2f}, "
                 f"Σabono {calc['pool']:.2f}→{calc['sum_abono_despues']:.2f}. "
-                "Abortado: no se cambió nada (¿saldo≠importe−abono en alguna "
-                "factura? Revisar la cuenta antes de totalizar)."
+                "Abortado: no se cambió nada — lo que da el reparto no "
+                "coincide con lo guardado. Revisar la cuenta antes de "
+                "totalizar."
             )
         n_upd = 0
         for f, n in zip(facturas, calc["nuevos"], strict=True):

@@ -40,11 +40,11 @@ if _REPO_ROOT not in sys.path:
 _MD_IDX = 11  # posición de `metadata` en el INSERT de mov_doble.registrar
 
 
-def _fact(id_, importe, abono, saldo, stat):
+def _fact(id_, importe, abono, saldo, stat, retencion=0.0):
     return {
         "id_factura": id_, "numf": id_, "numf_completo": f"001-001-{id_:09d}",
         "fecha": date(2026, 6, id_), "importe": importe, "abono": abono,
-        "saldo": saldo, "stat": stat,
+        "retencion": retencion, "saldo": saldo, "stat": stat,
     }
 
 

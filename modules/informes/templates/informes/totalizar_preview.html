@@ -83,6 +83,7 @@
     <h1>Totalización estado de cuenta — {{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }}) — {{ hoy | fecha_es }}</h1>
     <div class="kpis">
       <div class="kpi">Σ Importe <b>{{ data.sum_importe | money_es }}</b></div>
+      {% if data.sum_retencion > 0.005 %}<div class="kpi">Σ Retención (no se reparte) <b>{{ data.sum_retencion | money_es }}</b></div>{% endif %}
       <div class="kpi">Σ Abonos (pool) <b>{{ data.pool | money_es }}</b></div>
       <div class="kpi">Σ Saldo (no cambia) <b>{{ data.sum_saldo_antes | money_es }}</b></div>
       <div class="kpi">Queda <b>{{ data.n_T }} T · {{ data.n_A }} A · {{ data.n_Z }} Z</b></div>
@@ -94,6 +95,7 @@
           <th>Fecha</th>
           <th>N°</th>
           <th class="num">Importe</th>
+          {% if data.sum_retencion > 0.005 %}<th class="num">Retención</th>{% endif %}
           <th class="num">Abono</th>
           <th class="num">Saldo</th>
           <th style="text-align:center">Stat</th>
@@ -112,6 +114,7 @@
             {% if f.importe < 0 %}<span style="color:#b45309; font-weight:600">NC</span>{% endif %}
           </td>
           <td class="num">{{ f.importe | money_es }}</td>
+          {% if data.sum_retencion > 0.005 %}<td class="num" style="color:#7c3aed">{{ f.retencion | money_es }}</td>{% endif %}
           <td class="num" style="color:#64748b">{{ f.abono_actual | money_es }}</td>
           <td class="num" style="color:#64748b">{{ f.saldo_actual | money_es }}</td>
           <td style="text-align:center">{{ stat_badge(f.stat_actual) }}</td>
@@ -126,6 +129,7 @@
         <tr>
           <td colspan="2">Totales ({{ data.filas | length }} factura{{ '' if data.filas|length == 1 else 's' }})</td>
           <td class="num">{{ data.sum_importe | money_es }}</td>
+          {% if data.sum_retencion > 0.005 %}<td class="num">{{ data.sum_retencion | money_es }}</td>{% endif %}
           <td class="num">{{ data.pool | money_es }}</td>
           <td class="num">{{ data.sum_saldo_antes | money_es }}</td>
           <td></td>
@@ -137,7 +141,9 @@
       </tfoot>
     </table>
     <div style="margin-top:8px; font-size:11px; color:#64748b">
-      Las T (totalizadas) dejan de mostrarse en el estado de cuenta. El saldo total del cliente no cambia:
+      Las T (totalizadas) dejan de mostrarse en el estado de cuenta.
+      {% if data.sum_retencion > 0.005 %}La retención de cada factura queda donde está: no se reparte, porque el comprobante es de esa factura.{% endif %}
+      El saldo total del cliente no cambia:
       {{ data.sum_saldo_antes | money_es }} antes = {{ data.sum_saldo_despues | money_es }} después.
       {% if (data.sum_saldo_despues - data.sum_saldo_antes) | abs > 0.01 %}<strong style="color:#b91c1c">⚠ No cuadra — no confirmar, avisar.</strong>{% endif %}
     </div>
