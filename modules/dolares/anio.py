@@ -167,11 +167,19 @@ def adjuntar_anio_por_fecha(filas: list[dict], index_importaciones=None) -> None
 
     "Sin dudas" = el número NO se reusa alrededor de este anticipo:
 
-      1. todas las importaciones con ese (cta, nº) son del MISMO año — si la
-         AC 43 existe en 2026 y en 2024, la decide ella;
-      2. y la fecha no deja más de un GRUPO plausible — el mismo criterio del
-         freno 9 de la conversión automática, para no aflojarlo: si el
-         automático se frenaba pidiendo el año, se sigue frenando.
+      1. entre las importaciones que la FECHA no descartó ya
+         (`candidatas_plausibles`) hay un solo año;
+      2. y hay un solo GRUPO — el mismo criterio del freno 9 de la conversión
+         automática, para no aflojarlo: si el automático se frenaba pidiendo el
+         año, se sigue frenando.
+
+    La cuenta va sobre las PLAUSIBLES y no sobre todas las homónimas de la
+    historia — misma lección que la dueña dejó el 30/07 para el freno del
+    automático. Una AC 43 de 2024, recibida hace dos años, no vuelve ambiguo un
+    anticipo de 2026: *"nadie va a cargar un anticipo para algo que ya llegó"*
+    (Tamara, 20/08). Ambigüedad de verdad es la del AC 58: dos importaciones a
+    tiro del mismo anticipo. Con el criterio viejo —contar TODOS los años—
+    quedaban 55 anticipos sin año que eran todos 2026.
 
     Sin Asinfo no se deduce nada: no se puede saber si hay dudas. El año queda
     en `anio_ref` (el que MANDA para elegir la importación) con
@@ -208,21 +216,23 @@ def adjuntar_anio_por_fecha(filas: list[dict], index_importaciones=None) -> None
         if cta and ref is not None:
             cands = index_importaciones.get((cta, int(ref))) or []
         if cands:
-            anios = set()
-            for c in cands:
+            try:
+                plausibles = _imp.candidatas_plausibles(cands, f.get("fecha"))
+            except Exception:  # noqa: BLE001
+                continue
+            anios, grupos = set(), set()
+            for c in plausibles:
                 try:
                     a = _imp._anio_de(c).get("anio")
                 except Exception:  # noqa: BLE001
                     a = None
                 if a:
                     anios.add(int(a))
+                grupos.add(str(c.get("grupo_id") or c.get("im_numero") or ""))
             if len(anios) > 1:
-                continue  # el número se reusa entre campañas: la decide ella
-            try:
-                if len(_imp.grupos_plausibles(cands, f.get("fecha"))) > 1:
-                    continue  # mismo freno que el automático
-            except Exception:  # noqa: BLE001
-                continue
+                continue  # dos campañas a tiro del anticipo: la decide ella
+            if len(grupos) > 1:
+                continue  # mismo freno que el automático
         f["anio_ref"] = anio
         f["anio_origen"] = "fecha"
 

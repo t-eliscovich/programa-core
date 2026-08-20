@@ -14,12 +14,15 @@ Lo que estos tests fijan:
   1. sin año y con el número usado por una sola campaña → el año de la fecha;
   2. el caso AC 77: la única importación es de 2025 y el anticipo de 2026 →
      manda la FECHA (2026), que es lo que rompía la sugerencia vieja;
-  3. si el número existe en DOS campañas, no se adivina;
-  4. si la fecha deja más de un grupo plausible tampoco — es el mismo freno de
-     la conversión automática, que no se afloja;
-  5. no se pisa el año ya puesto (columna o `58/26` del concepto);
-  6. los anticipos ya APLICADOS no se tocan;
-  7. con Asinfo caído (índice vacío) no se deduce nada.
+  3. si hay DOS campañas a tiro del anticipo, no se adivina;
+  4. pero una campaña vieja que la fecha ya descartó NO cuenta como duda —
+     *"nadie va a cargar un anticipo para algo que ya llegó"*. Eran 55
+     anticipos frenados por una AC/AI de 2024 recibida hace dos años;
+  5. dos grupos plausibles tampoco se adivinan — mismo freno que la conversión
+     automática, que no se afloja;
+  6. no se pisa el año ya puesto (columna o `58/26` del concepto);
+  7. los anticipos ya APLICADOS no se tocan;
+  8. con Asinfo caído (índice vacío) no se deduce nada.
 """
 
 from __future__ import annotations
@@ -43,9 +46,13 @@ def _anticipo(**kw):
     return f
 
 
-def _correr(filas, index, grupos=1):
-    with patch.object(imp_service, "grupos_plausibles",
-                      lambda cands, fecha: ["g%d" % i for i in range(grupos)]):
+def _correr(filas, index, plausibles=None):
+    """`plausibles=None` deja correr la ventana de fechas de verdad."""
+    if plausibles is None:
+        anio_mod.adjuntar_anio_por_fecha(filas, index_importaciones=index)
+        return filas
+    with patch.object(imp_service, "candidatas_plausibles",
+                      lambda cands, fecha: plausibles):
         anio_mod.adjuntar_anio_por_fecha(filas, index_importaciones=index)
     return filas
 
@@ -64,22 +71,46 @@ def test_el_caso_ac_77_manda_la_fecha_no_la_importacion():
     assert f["anio_ref"] == 2026
 
 
-def test_numero_repetido_entre_campanas_no_se_adivina():
-    f = _anticipo(concepto="43 INI")
-    _correr([f], {("AC", 43): [_im("IM-0000641", 2026, "2026-08-19"),
-                               _im("IM-0000248", 2024, "2024-03-21")]})
+def test_dos_campanas_a_tiro_del_anticipo_no_se_adivinan():
+    """Un anticipo de enero con una importación de octubre-2025 y otra de
+    febrero-2026: las dos son posibles, la decide ella."""
+    f = _anticipo(fecha="2026-01-15", concepto="58 SALDO")
+    _correr([f], {("AC", 58): [_im("IM-0000495", 2025, "2025-10-13"),
+                               _im("IM-0000527", 2026, "2026-02-11")]})
     assert f["anio_ref"] is None
     assert f["anio_origen"] is None
 
 
+def test_la_campana_vieja_que_ya_llego_no_es_una_duda():
+    """El caso de los 55: la AC 43 existe en 2024 y en 2026, pero la de 2024 se
+    recibió dos años antes del anticipo — la ventana de fechas ya la descartó y
+    contarla dejaba la celda vacía de gusto."""
+    f = _anticipo(fecha="2026-04-06", concepto="43 INI")
+    _correr([f], {("AC", 43): [_im("IM-0000641", 2026, "2026-08-19"),
+                               _im("IM-0000248", 2024, "2024-03-21")]})
+    assert f["anio_ref"] == 2026
+    assert f["anio_origen"] == "fecha"
+
+
 def test_dos_grupos_plausibles_tampoco():
     """Mismo freno que la conversión automática (guard 9): si el automático
-    pedía el año, sigue pidiéndolo."""
+    pedía el año, sigue pidiéndolo. Las dos son de 2026 — lo que no se sabe no
+    es el año sino CUÁL, y poner el año no lo resuelve."""
+    dos = [_im("IM-0000622", 2026, "2026-07-20"), _im("IM-0000527", 2026, "2026-02-11")]
     f = _anticipo(concepto="58 SALDO")
-    _correr([f], {("AC", 58): [_im("IM-0000622", 2026, "2026-07-20"),
-                               _im("IM-0000527", 2026, "2026-02-11")]},
-            grupos=2)
+    _correr([f], {("AC", 58): dos}, plausibles=dos)
     assert f["anio_ref"] is None
+
+
+def test_las_dos_mitades_de_una_partida_no_son_dos_grupos():
+    """Una importación partida en ---1/---2 es la misma mercadería: comparten
+    `grupo_id` y no tienen por qué frenar la deducción."""
+    a = _im("IM-0000550", 2026, "2026-04-16")
+    b = _im("IM-0000551", 2026, "2026-04-16")
+    a["grupo_id"] = b["grupo_id"] = "IM-0000550"
+    f = _anticipo(concepto="19 SALDO")
+    _correr([f], {("AC", 19): [a, b]}, plausibles=[a, b])
+    assert f["anio_ref"] == 2026
 
 
 def test_no_pisa_el_anio_ya_puesto():
