@@ -437,13 +437,14 @@ def test_el_link_del_menu_va_debajo_de_inventario_en_produccion_y_stocks(app, fa
     """
     base = (Path(app.root_path) / "templates" / "base.html").read_text(encoding="utf-8")
     i_stock = base.index('data-key="stock"')
+    i_mod = base.index('data-key="modificar"')
     i_fab = base.index("stock_asinfo.fabricacion_tc")
     i_inv = base.index("inventario_rotativo.lista")
     i_imp = base.index("importaciones.lista")
     # dentro de la sección, y justo entre "Inventario" e "Ingreso de hilado"
     assert i_stock < i_fab < i_inv < i_imp
-    # y ya no cuelga de Pedidos pendientes (sección Modificar, más arriba)
-    assert base.index("pedidos.lista") < i_stock
+    # y ya no está en "Modificar", que arranca antes
+    assert i_mod < i_stock
 
 
 # ── acabado ─────────────────────────────────────────────────────────────────

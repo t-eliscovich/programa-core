@@ -5,6 +5,7 @@ escribe el SQL contra Asinfo), no la del helper: un fake con la forma equivocada
 pasa en verde mientras producción no resuelve nada.
 """
 import io
+from pathlib import Path
 from datetime import date
 from unittest.mock import patch
 
@@ -297,7 +298,10 @@ def test_un_cliente_por_pedido_no_es_repetido():
 # ── la pantalla ─────────────────────────────────────────────────────────────
 
 def _login(app, fake_db):
-    rid = fake_db.add_role("Tester", ["facturas.ver"])
+    # `stock.ver` desde 2026-08-20: el link del menú se mudó a la sección
+    # "Producción y stocks", que se abre con ese permiso (ver el test del link
+    # más abajo). Sin él, el sidebar del tester no dibuja la sección entera.
+    rid = fake_db.add_role("Tester", ["facturas.ver", "stock.ver"])
     uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
     c = app.test_client()
     with c.session_transaction() as s:
@@ -422,6 +426,31 @@ def test_el_link_del_menu_apunta_a_una_pantalla_que_existe(app, fake_db):
                       return_value=([], True)):
         r = c.get("/pedidos")
     assert 'href="/pedidos"' in r.get_data(as_text=True)
+
+
+def test_el_link_del_menu_va_arriba_de_inventario_en_produccion_y_stocks(app):
+    """Federico 2026-08-20: "mover Pedidos a Stocks, arriba de Inventario"."""
+    base = (Path(app.root_path) / "templates" / "base.html").read_text(encoding="utf-8")
+    i_mod = base.index('data-key="modificar"')
+    i_stock = base.index('data-key="stock"')
+    i_ped = base.index("pedidos.lista")
+    i_fab = base.index("stock_asinfo.fabricacion_tc")
+    assert i_mod < i_stock < i_ped < i_fab      # ya no está en "Modificar"
+    # conserva su gate propio: la sección abre con stock.ver, la pantalla pide
+    # facturas.ver — sin el gate el link le aparece a quien se come un 404.
+    assert "facturas.ver" in base[base.rindex("{%", 0, i_ped):i_ped]
+
+
+def test_ningun_rol_tiene_facturas_ver_sin_stock_ver():
+    """El link de Pedidos vive dentro de una sección gateada con `stock.ver`.
+
+    Un rol con `facturas.ver` y sin `stock.ver` puede ENTRAR a /pedidos pero no
+    ve la sección que lo contiene: se queda sin link en el menú. Hoy no existe
+    ese rol; este test avisa el día que alguien lo cree.
+    """
+    from config.roles import ROLES
+    huerfanos = [n for n, p in ROLES if "facturas.ver" in p and "stock.ver" not in p]
+    assert huerfanos == []
 
 
 def test_el_color_sale_del_ultimo_token_y_no_de_restarle_el_nombre_de_la_tela():

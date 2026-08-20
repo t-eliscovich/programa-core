@@ -988,15 +988,11 @@
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
         {# TMT 2026-07-09 (dueña): Factura Proforma (ex "Nuevo pedido") movida a Modificar, debajo de Facturas. #}
         {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Factura Proforma', 'file') }}{% endif %}
-        {# TMT 2026-08-17 (dueña): "esta pagina deberia estar debajo de factura
-           proforma". Pedidos pendientes es información COMERCIAL —de quién es
-           cada pedido y qué le falta— y no un informe de stock, así que va acá
-           y no en "Producción y stocks". Mismo gate que Facturas y Anticipos. #}
-        {% if tiene_permiso('facturas.ver') %}{{ nav_link('pedidos.lista', 'Pedidos pendientes', 'file') }}{% endif %}
-        {# TMT 2026-08-18 (dueña): "Inventario rotativo" vivía acá, debajo de
-           Pedidos pendientes. Federico 2026-08-20: pasa a "Producción y
-           stocks", debajo de "Inventario", ya renombrado "Rotación del
-           inventario" — se lee con el catálogo de stock. #}
+        {# TMT 2026-08-17 (dueña): "Pedidos pendientes" y "Inventario rotativo"
+           vivían acá, debajo de Factura Proforma. Federico 2026-08-20: los dos
+           pasan a "Producción y stocks" —Pedidos arriba de "Inventario" y
+           "Rotación del inventario" (ex "Inventario rotativo") abajo—, que es
+           donde se leen: qué falta tener vs. qué hay. #}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
         {# TMT 2026-07-17 (Federico): "Producción Tejeduría" y "Tejeduría Asinfo"
            movidos a la sección "Producción y stocks". #}
@@ -1054,6 +1050,11 @@
         {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → UNA sola "Inventario"
            (la página tiene el toggle TC/PT adentro). "Importaciones" →
            "Ingreso de hilado" (pantalla de solo lectura). #}
+        {# Federico 2026-08-20: "Pedidos pendientes" (venía de Modificar) va
+           justo ARRIBA de Inventario. Conserva su gate propio (facturas.ver,
+           el permiso de SU pantalla): la sección se abre con stock.ver, y sin
+           el gate le aparecería el link a quien después se come un 404. #}
+        {% if tiene_permiso('facturas.ver') %}{{ nav_link('pedidos.lista', 'Pedidos pendientes', 'file') }}{% endif %}
         {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box') }}
         {# Federico 2026-08-20: "Rotación del inventario" (ex "Inventario
            rotativo", venía de Modificar) va justo debajo de Inventario. La
