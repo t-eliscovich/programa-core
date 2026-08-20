@@ -222,6 +222,8 @@
     const m = (concepto.value || '').match(/\d+/);
     const buscado = m ? String(parseInt(m[0], 10)) : null;
     const chips = Array.from(list.querySelectorAll('button[data-num]'));
+    const top = chips.reduce((a, b) => Math.max(a, +(b.dataset.anio || 0)), 0);
+    const viejas = chips.filter(b => +(b.dataset.anio || 0) < top).length;
     const empiezan = buscado
       ? chips.filter(b => b.dataset.num.indexOf(buscado) === 0) : [];
     let match = null;
@@ -230,16 +232,22 @@
       b.style.border = hit ? '2px solid #059669' : '1px solid #bae6fd';
       b.style.background = hit ? '#d1fae5' : '';
       b.style.fontWeight = hit ? '600' : '';
-      b.style.display = (!buscado || !empiezan.length || empiezan.indexOf(b) >= 0)
-        ? '' : 'none';
+      const ver = buscado
+        ? (!empiezan.length || empiezan.indexOf(b) >= 0)
+        : +(b.dataset.anio || 0) === top;
+      b.style.display = ver ? '' : 'none';
       if (hit && !match) match = b;
     });
     if (aviso) {
-      const nada = buscado && !empiezan.length;
-      aviso.textContent = nada
-        ? 'No hay ninguna importación ' + buscado + ' abierta de este proveedor — están todas abajo.'
-        : '';
-      aviso.classList.toggle('hidden', !nada);
+      let txt = '';
+      if (buscado && !empiezan.length) {
+        txt = 'No hay ninguna importación ' + buscado + ' de este proveedor — están todas abajo.';
+      } else if (!buscado && viejas) {
+        txt = 'Mostrando las de ' + top + '. Escribí el número y busca también en las '
+              + viejas + ' de años anteriores.';
+      }
+      aviso.textContent = txt;
+      aviso.classList.toggle('hidden', !txt);
     }
     if (match && list.firstChild !== match) list.insertBefore(match, list.firstChild);
   }
@@ -259,6 +267,7 @@
           b.className = 'block text-left px-2 py-1 rounded hover:bg-sky-100';
           b.style.border = '1px solid #bae6fd';
           if (im.numero != null) b.dataset.num = String(im.numero);
+          if (im.anio) b.dataset.anio = String(im.anio);
           const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '') + ' $ ' + Number(im.compras_usd).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
