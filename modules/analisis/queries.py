@@ -753,6 +753,16 @@ def _meses(largada: date, cierre: date) -> list[dict]:
         orden = sorted(d["tabla"].items(), key=lambda x: (-x[1], x[0]))
         d["podio"] = [{"vendedor": v, "kg": kg} for v, kg in orden[:3]]
         d["ganador"] = orden[0][0] if orden else None
+        # ⭐ Dueña 20/08/2026: "acá me gustaría tener a todos ordenados por kg".
+        # El podio de tres dejaba afuera a la mitad de la tabla, y justo el que
+        # va último es el que más necesita ver dónde está parado. Van los SIETE,
+        # también los que todavía no vendieron nada: un cero en la lista dice
+        # más que no figurar.
+        d["ranking"] = [
+            {"puesto": i, "vendedor": v, "kg": d["tabla"].get(v, 0.0)}
+            for i, v in enumerate(
+                sorted(COMPETIDORES,
+                       key=lambda v: (-d["tabla"].get(v, 0.0), v)), 1)]
         d["cerrado"] = m < mes_actual and m <= cierre
         salida.append(d)
     return salida

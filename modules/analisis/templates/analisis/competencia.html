@@ -42,6 +42,8 @@ tr.vend.abierta td.abrir .flecha{transform:rotate(180deg)}
 .mini{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;min-width:90px}
 .mini > div{height:100%;background:var(--az);border-radius:99px}
 td.puesto{font-weight:600;color:var(--g);width:34px}
+.mes-tit{font-size:15px;margin:18px 0 6px;display:flex;align-items:center;gap:8px}
+.mes-kg{font-weight:400;color:var(--g);font-size:13px}
 tr.yo td{background:#f0fdf4}
 </style>
 
@@ -163,23 +165,29 @@ grupos fuertes y flojos, así que se compara parejo.
 <p class="sub">Ésta es la otra carrera: va por <b>kilos totales</b>, sin tope.
 Gana quien más kilos saque en el mes, aunque vaya último en el porcentaje.</p>
 {% if meses %}
-<table>
-<thead><tr><th>Mes</th><th>Va ganando</th><th class="n">Kg</th>
-<th class="opt">Después</th><th class="n opt">Total del mes</th></tr></thead>
-<tbody>
+{# ⭐ Dueña 20/08/2026: "acá me gustaría tener a todos ordenados por kg". Antes
+   era una fila por mes con el ganador y el podio de tres: la mitad de la tabla
+   no aparecía, y encima las dos columnas de la derecha se escondían en el
+   teléfono, así que del premio del mes se veía UN nombre. Ahora va la lista
+   entera, mes por mes. #}
 {% for m in meses %}
+<h3 class="mes-tit">{{ m.mes.strftime('%m/%Y') }}
+  {% if m.cerrado %}<span class="pill quieto">cerrado</span>
+  {% else %}<span class="pill mov">en juego</span>{% endif %}
+  <span class="mes-kg">{{ m.kg | num_es(0) }} kg entre todos</span></h3>
+<table>
+<thead><tr><th></th><th>Vendedor</th><th class="n">Kg del mes</th></tr></thead>
+<tbody>
+{% for r in m.ranking %}
   <tr>
-    <td class="tela">{{ m.mes.strftime('%m/%Y') }}
-      {% if not m.cerrado %}<span class="pill quieto">en juego</span>{% endif %}</td>
-    <td class="tela">{{ m.ganador }}</td>
-    <td class="n">{{ m.podio[0].kg | num_es(0) }}</td>
-    <td class="g opt">{% for x in m.podio[1:] %}{{ x.vendedor }}
-      {{ x.kg | num_es(0) }} kg{% if not loop.last %} · {% endif %}{% endfor %}</td>
-    <td class="n g opt">{{ m.kg | num_es(0) }}</td>
+    <td class="puesto">{{ r.puesto }}</td>
+    <td class="tela">{{ r.vendedor }}</td>
+    <td class="n">{{ r.kg | num_es(0) }}</td>
   </tr>
 {% endfor %}
 </tbody>
 </table>
+{% endfor %}
 {% else %}
 <p class="sub">Todavía no se vendió nada. El primer premio del mes se define a
 fin de septiembre — agosto y septiembre cuentan juntos, porque del 25 al 31 de

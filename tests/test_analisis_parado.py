@@ -1932,3 +1932,33 @@ def test_el_titulo_de_saldos_no_promete_lo_mismo_que_la_otra_pantalla():
     titulo = html.split("<h1>")[1].split("</h1>")[0]
     assert titulo == "Saldos, tela por tela"
     assert "llamar" not in titulo and "ofrec" not in titulo
+
+
+def test_el_premio_del_mes_lista_a_los_siete_ordenados_por_kilos(monkeypatch):
+    """Dueña 20/08/2026: "acá me gustaría tener a todos ordenados por kg".
+
+    El podio de tres dejaba afuera a la mitad de la tabla —y en el teléfono se
+    veía UN nombre, porque las columnas de la derecha se esconden—. Van los
+    siete, también los que todavía no vendieron: un cero en la lista dice más
+    que no figurar."""
+    from datetime import date as _d
+    c = _competencia_falsa(monkeypatch, meses=[
+        {"mes": _d(2026, 10, 1), "vendedor": "Quintero Jose", "kg": 400},
+        {"mes": _d(2026, 10, 1), "vendedor": "Intela", "kg": 900},
+    ])
+    r = next(m for m in c["meses"] if m["mes"] == _d(2026, 10, 1))["ranking"]
+    assert len(r) == len(queries.COMPETIDORES) == 7
+    assert [x["vendedor"] for x in r[:2]] == ["Intela", "Quintero Jose"]
+    assert [x["kg"] for x in r[:2]] == [900, 400]
+    assert [x["puesto"] for x in r] == [1, 2, 3, 4, 5, 6, 7]
+    assert all(x["kg"] == 0 for x in r[2:]), "los que no vendieron van con cero"
+    # el orden de los empatados en cero lo fija el nombre, no el diccionario
+    assert [x["vendedor"] for x in r[2:]] == sorted(x["vendedor"] for x in r[2:])
+
+
+def test_la_pantalla_dibuja_la_lista_entera_del_mes():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
+    assert "m.ranking" in html, "sin esto la pantalla sigue mostrando sólo el podio"
+    assert "Kg del mes" in html
