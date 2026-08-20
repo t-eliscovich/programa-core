@@ -22,9 +22,21 @@
           padding:1.5rem 1.75rem; margin:1rem auto; max-width:980px; border-radius:4px; }
   .hoja h1 { font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#0f172a; }
   .hoja table { width:100%; border-collapse:collapse; }
-  .hoja th { border-bottom:2px solid #1e293b; padding:6px 4px; text-align:left; font-size:10px;
-             text-transform:uppercase; letter-spacing:.04em; color:#475569; }
-  .hoja td { padding:5px 4px; border-bottom:1px solid #e2e8f0; font-size:12px; vertical-align:top; }
+  /* TMT 2026-08-20: con la columna Retención la tabla pasó a 11 columnas y se
+     iba de la hoja. La culpa no es del ancho propio: base.html tiene
+     `main table thead th { font-size:.78rem !important; padding: 0 .75rem
+     !important }`, que le mete 24 px de aire POR COLUMNA y le gana a estas
+     reglas. Acá va con !important a propósito — la hoja es compacta por
+     diseño, es una vista para imprimir. Y por si igual no entra (ventana
+     angosta), `.tabla-scroll` la deja correr en vez de desbordar la hoja. */
+  .hoja th, .hoja td { padding-left:4px !important; padding-right:4px !important; }
+  .hoja thead th { font-size:10px !important; }
+  .hoja th { border-bottom:2px solid #1e293b; padding-top:6px; padding-bottom:6px; text-align:left;
+             text-transform:uppercase; letter-spacing:.02em; color:#475569; }
+  .hoja td { padding-top:5px; padding-bottom:5px; border-bottom:1px solid #e2e8f0; font-size:11.5px;
+             vertical-align:top; }
+  .tabla-scroll { overflow-x:auto; }
+  @media print { .tabla-scroll { overflow:visible; } }
   .hoja td.num { text-align:right; font-family:ui-monospace,monospace; white-space:nowrap; }
   .hoja th.num { text-align:right; }
   .hoja tfoot td { border-top:2px solid #1e293b; font-weight:600; font-size:13px; padding-top:8px; }
@@ -68,14 +80,16 @@
   {# TMT 2026-08-07: decía "Esta operación no tiene deshacer". Dejó de ser
      cierto: el movimiento guarda el estado previo y se deshace con el ↺ del
      Historial mientras nadie toque las facturas después. #}
-  <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-amber-50 border-2 border-amber-400 text-amber-900 px-4 py-3">
-    <div class="font-semibold mb-1">⚠ Antes de confirmar</div>
-    <ul class="text-sm list-disc ml-5 space-y-0.5">
-      <li>Se juntan <strong>todos los abonos</strong> ({{ data.pool | money_es }}) de las {{ data.filas | length }} facturas vivas y se redistribuyen de la más vieja a la más nueva (FIFO). El total adeudado <strong>no cambia</strong>.</li>
-      <li>Se pierden <strong>{{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura</strong>: después no se va a poder ver qué cheque pagó qué factura (los cheques quedan intactos).</li>
-      <li><strong>Se puede deshacer</strong> desde el ↺ del Historial: vuelve todo como está ahora, vínculos incluidos. Deja de poderse en cuanto alguien cobre o cambie el estado de alguna de estas facturas.</li>
-      {% if data.hay_nc %}<li>Las notas de crédito / devoluciones <strong>entran</strong> a la redistribución (mejora sobre el dBase): su crédito cubre facturas siguientes.</li>{% endif %}
-    </ul>
+  {# TMT 2026-08-20 (dueña: "este aviso podría ser mucho más chico"): tres
+     renglones corridos en vez de cuatro viñetas con marco grueso. Dice lo
+     mismo. #}
+  <div class="no-print max-w-5xl mx-auto mt-3 rounded bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2"
+       style="font-size:12px; line-height:1.5">
+    <strong>Antes de confirmar:</strong>
+    se juntan los abonos ({{ data.pool | money_es }}) de {{ data.filas | length }} factura{{ '' if data.filas|length == 1 else 's' }} y se reparten de la más vieja a la más nueva; el total adeudado no cambia.
+    Se pierden {{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura (los cheques quedan intactos).
+    {% if data.hay_nc %}Las notas de crédito entran al reparto.{% endif %}
+    Se deshace desde el ↺ del Historial, mientras nadie cobre ni cambie el estado de estas facturas.
   </div>
 
   <div class="hoja">
@@ -89,6 +103,7 @@
       <div class="kpi">Queda <b>{{ data.n_T }} T · {{ data.n_A }} A · {{ data.n_Z }} Z</b></div>
     </div>
 
+    <div class="tabla-scroll">
     <table class="mt-2">
       <thead>
         <tr>
@@ -140,6 +155,7 @@
         </tr>
       </tfoot>
     </table>
+    </div>
     <div style="margin-top:8px; font-size:11px; color:#64748b">
       Las T (totalizadas) dejan de mostrarse en el estado de cuenta.
       {% if data.sum_retencion > 0.005 %}La retención de cada factura queda donde está: no se reparte, porque el comprobante es de esa factura.{% endif %}
