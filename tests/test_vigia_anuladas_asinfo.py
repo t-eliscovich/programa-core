@@ -110,7 +110,7 @@ def test_otro_origen_se_sugiere_pero_no_se_anula(monkeypatch):
 
 
 def test_sin_numero_sri_se_ignora(monkeypatch):
-    """Guard 5: sin N° SRI no hay con qué comparar."""
+    """Guard 5: sin número completo no hay con qué comparar."""
     fila = _pc(180441)
     fila["numf_completo"] = None
     _stub(monkeypatch, [_asinfo(180449)], [fila])
@@ -118,6 +118,53 @@ def test_sin_numero_sri_se_ignora(monkeypatch):
     res = vig.correr()
 
     assert res["para_anular"] == []
+
+
+def test_una_nota_de_entrega_anulada_tambien_se_da_de_baja(monkeypatch):
+    """🚨 TMT 2026-08-20 (dueña, caso NTEN-10879): *"esta fue anulada"*.
+
+    La nota de entrega de BED (265,50 kg) se cargó sola el 19/08 y después
+    desapareció de Asinfo, pero el vigía la salteaba porque el guard 5 pedía
+    formato SRI. Seguía sumando en la venta del día. Las NTEN salen de la
+    MISMA card 199 con su número entero, así que se comparan igual."""
+    nten = _pc(10879)
+    nten["numf_completo"] = "NTEN-10879"
+    viva = {"numero": "NTEN-10883", "tipo": "NTEN", "cliente_codigo": "BED",
+            "kg": 265.5, "usd": 2053.11, "fecha": today_ec().isoformat()}
+    otra = _pc(10883)
+    otra["numf_completo"] = "NTEN-10883"
+    _stub(monkeypatch, [viva], [nten, otra])
+    anuladas = []
+    monkeypatch.setattr(
+        fq, "anular",
+        lambda idf, motivo=None, usuario=None: anuladas.append(idf) or 1,
+    )
+
+    res = vig.correr()
+
+    assert [f["numf_completo"] for f in res["para_anular"]] == ["NTEN-10879"]
+    assert anuladas == [10879]
+
+
+def test_una_nten_no_se_salva_por_el_numero_suelto_de_otra_factura(monkeypatch):
+    """El `numf` de una NTEN es corto y CHOCA: 10879 es también una factura
+    vieja de otro cliente. Si el fallback por número suelto valiera para las
+    NTEN, ninguna se anularía nunca."""
+    nten = _pc(10879)
+    nten["numf_completo"] = "NTEN-10879"
+    # Asinfo trae viva una factura SRI que termina en 010879 — otro documento.
+    viva = _asinfo(10879)
+    _stub(monkeypatch, [viva], [nten])
+    anuladas = []
+    monkeypatch.setattr(
+        fq, "anular",
+        lambda idf, motivo=None, usuario=None: anuladas.append(idf) or 1,
+    )
+
+    res = vig.correr()
+
+    assert [f["numf_completo"] for f in res["para_anular"]] == ["NTEN-10879"]
+    assert anuladas == [10879]
 
 
 def test_bloqueada_si_tiene_cobranza(monkeypatch):

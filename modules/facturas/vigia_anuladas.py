@@ -38,7 +38,16 @@ FAIL-CLOSED (a propósito — anular de más es peor que anular de menos)
 4. `queries.anular` ya bloquea las que tienen cheques aplicados vivos o
    retenciones emitidas; esas quedan listadas como `bloqueadas` para que las
    mire una persona.
-5. Sólo N° con formato SRI (`001-099-000180441`).
+5. Sólo números comparables: N° SRI (`001-099-000180441`) y las notas de
+   entrega / notas de crédito de mercadería (`NTEN-10879`, `NCNT-…`), que
+   salen de la MISMA card 199 con su número propio. Lo que no tiene número
+   completo (las filas viejas del dBase) no se toca.
+
+TMT 2026-08-20 (dueña, caso NTEN-10879): *"esta fue anulada"*. La nota de
+entrega de BED (265,50 kg) se cargó sola el 19/08 a las 16:17 y después
+desapareció de Asinfo. El vigía la miraba y la salteaba, porque el guard 5
+pedía formato SRI y una NTEN no lo tiene. Quedó viva en PC sumando en la
+venta del día — el mismo agujero del caso 180441, en la puerta de al lado.
 """
 from __future__ import annotations
 
@@ -64,6 +73,10 @@ USUARIO_VIGIA = "asinfo-vigia"
 MOTIVO = "Anulada en Asinfo (fc.estado=0) — detectada por el vigía"
 
 _NUM_SRI_RE = re.compile(r"^\d{3}-\d{3}-\d{6,9}$")
+#: Notas de entrega y notas de crédito de mercadería. Vienen de la MISMA
+#: card 199 que las facturas, con su número propio ('NTEN-10879'), así que
+#: se pueden comparar igual de bien. TMT 2026-08-20.
+_NUM_OTRO_RE = re.compile(r"^(NTEN|NCNT)-\d+$", re.I)
 
 # Throttle propio: la auto-carga corre cada 120 s, pero re-preguntar 7 días a
 # Metabase tan seguido no aporta (el cache de facturas_periodo es 5 min).
@@ -173,8 +186,9 @@ def detectar(dias: int | None = None) -> dict:
 
     for f in pc_rows:
         numero = (f.get("numf_completo") or "").strip()
-        if not _NUM_SRI_RE.match(numero):
-            continue  # Guard 5: sin N° SRI no hay con qué comparar
+        es_sri = bool(_NUM_SRI_RE.match(numero))
+        if not (es_sri or _NUM_OTRO_RE.match(numero)):
+            continue  # Guard 5: sin número comparable no se concluye nada
         fecha = _fecha_de(f.get("fecha"))
         if fecha not in dias_con_datos:
             continue  # Guard 3: ese día Asinfo no trajo nada → no concluir
@@ -182,7 +196,11 @@ def detectar(dias: int | None = None) -> dict:
             continue
         numf = f.get("numf")
         try:
-            if numf is not None and int(numf) in vivas_numf:
+            # El fallback por N° suelto es sólo para las SRI: el `numf` de una
+            # NTEN es corto y se repite (el 10879 es también una factura vieja
+            # de otro cliente), así que compararlas por ahí las daría vivas
+            # para siempre. Con N° completo alcanza: la card las trae enteras.
+            if es_sri and numf is not None and int(numf) in vivas_numf:
                 continue
         except (TypeError, ValueError) as _e:
             from modules._lib.silencios import avisar
