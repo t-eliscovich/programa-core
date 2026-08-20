@@ -148,9 +148,14 @@
               <th class="px-3 py-1.5 text-right">Kilos</th></tr>
         </thead>
         <tbody>
+          {# 🚨 El `numf` de una NOTA DE ENTREGA se repite: el 10879 es una NTEN
+             de BED del 19/08 y también una factura vieja de otro cliente, así
+             que `/facturas/10879` abre la que no es. La NTEN se linkea al
+             listado del día filtrado por su cliente, que siempre da bien. #}
           {% for f in d.sin_guia['items'] %}
           <tr class="border-t border-slate-100">
-            <td class="px-3 py-1.5"><a class="text-sky-700" href="/facturas/{{ f.numf }}">{{ f.doc }}</a></td>
+            <td class="px-3 py-1.5"><a class="text-sky-700"
+               href="{% if f.doc.upper().startswith('NTEN') %}/facturas?desde={{ d.fecha }}&hasta={{ d.fecha }}&cliente={{ f.cliente }}{% else %}/facturas/{{ f.numf }}{% endif %}">{{ f.doc }}</a></td>
             <td class="px-3 py-1.5">{{ f.cliente }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.kg_sin_guia | kg_es }}</td>
           </tr>

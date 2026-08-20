@@ -16,8 +16,8 @@ Lo que estos tests protegen:
   que no son kilos (unidades sueltas que suman 1,00): sumarlos daba 21.791,41
   contra los 19.552,51 del pin. A Asinfo se le pregunta sólo de qué guía viene
   cada kilo.
-· **Una NOTA DE ENTREGA no es una factura sin guía**: no existe en
-  `factura_cliente`, así que buscarla ahí la contaría entera como faltante.
+· **Una NOTA DE ENTREGA ligada a su guía no es una factura sin guía** — pero
+  la que NO tiene guía del día se nombra, no se va al residuo (19/08).
 · **La fecha se valida antes de entrar al SQL**: va como literal (el
   `GETDATE()` de Asinfo está en UTC y correría el día cinco horas).
 · **Asinfo nunca tumba la pantalla.**
@@ -107,12 +107,36 @@ def test_el_faltante_es_la_factura_sin_guia_con_su_cliente():
     assert f["kg_sin_guia"] == 83.45
 
 
-def test_una_nota_de_entrega_no_cuenta_como_facturado_sin_guia():
-    """La NTEN es la guía misma documentada: no vive en `factura_cliente`, así
-    que preguntar por ella ahí la daría entera como faltante (318,90 kg de
-    diferencia inventada)."""
+def test_una_nota_de_entrega_con_su_guia_no_cuenta_como_facturado_sin_guia():
+    """La NTEN que ES una guía del día no es un faltante: si se contara, la
+    pantalla inventaría 318,90 kg de diferencia."""
     d = _cuadre()
     assert all(not f["doc"].startswith("NTEN") for f in d["sin_guia"]["items"])
+
+
+def test_la_nota_de_entrega_sin_guia_del_dia_sale_CON_NOMBRE():
+    """🚨 TMT 2026-08-19: *"no me dice cuál es la factura extra"*.
+
+    El caso real: las seis NTEN del 19/08 estaban ligadas a su guía menos una,
+    la NTEN-10879 (BED, 265,50 kg). Como el código salteaba toda NTEN al armar
+    "facturado sin guía de hoy", esos 265,50 kg salían por la fila "± sin
+    identificar": el número justo y ningún nombre. La fila de residuo es la red,
+    no el lugar donde termina un documento que sabemos cuál es."""
+    docs = [
+        {"numf": 10883, "numf_completo": "NTEN-10883", "codigo_cli": "BED",
+         "kg": 265.50, "importe": 2053.11},
+        {"numf": 10879, "numf_completo": "NTEN-10879", "codigo_cli": "BED",
+         "kg": 265.50, "importe": 2176.56},
+    ]
+    guias = [{"guia": "DES-95942", "hora": "11:05", "cliente": "BED",
+              "facturada": True, "kg": 265.50}]
+    d = _cuadre(guias=guias, docs=docs, ligado={"NTEN-10883": 265.50},
+                por_guia={"DES-95942": {"NTEN-10883": 265.50}})
+    assert d["diferencia"] == 265.50
+    (f,) = d["sin_guia"]["items"]
+    assert f["doc"] == "NTEN-10879"
+    assert f["cliente"] == "BED" and f["kg_sin_guia"] == 265.50
+    assert d["residuo"] == 0.0        # ya no queda nada sin nombre
 
 
 def test_lo_despachado_sin_facturar_sale_con_su_guia_y_su_hora():
@@ -164,6 +188,22 @@ def test_las_notas_de_entrega_que_faltan_van_en_un_solo_renglon():
     d = _cuadre(guias=guias, docs=[], ligado={}, por_guia={})
     assert d["sin_cargar"]["kg_nten"] == 318.90
     assert d["sin_cargar"]["items"] == []
+    assert d["residuo"] == 0.0
+
+
+def test_si_faltan_dos_ntens_y_una_ya_esta_cargada_solo_falta_la_otra():
+    """El total de NTEN esperado se tapa con las NTEN que PC ya tiene sin guía:
+    lo que sobra del total es lo que falta, y lo que sobra de las NTEN se sigue
+    nombrando. Sin este reparto, la misma nota se contaba de los dos lados."""
+    guias = [{"guia": "DES-95513", "hora": "08:31", "cliente": "AJO",
+              "facturada": True, "kg": 318.90},
+             {"guia": "DES-95514", "hora": "08:40", "cliente": "AJO",
+              "facturada": True, "kg": 100.00}]
+    docs = [{"numf": 10869, "numf_completo": "NTEN-10869", "codigo_cli": "AJO",
+             "kg": 318.90, "importe": 0.0}]
+    d = _cuadre(guias=guias, docs=docs, ligado={}, por_guia={})
+    assert d["sin_guia"]["items"] == []          # la 10869 tapa su guía
+    assert d["sin_cargar"]["kg_nten"] == 100.00  # la otra guía sigue faltando
     assert d["residuo"] == 0.0
 
 

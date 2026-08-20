@@ -29,6 +29,12 @@ pantalla. A Asinfo se le pregunta sólo lo que sólo él sabe: **de qué guía v
 cada kilo**. El reparto por documento es `kg de PC − kg ligados a una guía de
 hoy`, así que los totales no pueden despegarse del recuadro del inicio.
 
+⭐ **Una NOTA DE ENTREGA también se nombra.** Hasta el 19/08 la pantalla las
+salteaba enteras al armar "facturado sin guía de hoy", porque se creía que una
+NTEN no vivía en `factura_cliente`. Vive. La que no tenía guía de ese día (la
+NTEN-10879 de BED, 265,50 kg) salía por la fila "± sin identificar" — el número
+correcto y ningún nombre, que es justo lo que esa fila no tiene que hacer.
+
 Fail-soft: si Asinfo no contesta, el lado propio se muestra igual y el cuadre
 se marca incompleto. Nunca levanta.
 """
@@ -210,8 +216,6 @@ def cuadre(fecha) -> dict:
     docs = _documentos_pc(dia)
     facturado = round(sum(d["kg"] for d in docs), 2)
     docs_pc = {d["doc"] for d in docs}
-    kg_nten_pc = round(sum(d["kg"] for d in docs
-                           if d["doc"].upper().startswith("NTEN")), 2)
 
     guias: list[dict] = []
     ligado: dict[str, float] = {}
@@ -227,19 +231,23 @@ def cuadre(fecha) -> dict:
 
     despachado = round(sum(g["kg"] for g in guias), 2) if asinfo_ok else None
 
-    # (A) Lo facturado hoy que no salió por una guía de hoy. Una NOTA DE
-    # ENTREGA es la guía misma documentada, así que nunca cae acá: no existe
-    # en `factura_cliente` y buscarla ahí la contaría entera como "sin guía".
+    # (A) Lo facturado hoy que no salió por una guía de hoy.
+    #
+    # ⭐ TMT 2026-08-19: *"no me dice cuál es la factura extra"*. Acá había un
+    # `continue` que salteaba TODA nota de entrega, con la idea de que una NTEN
+    # es la guía misma documentada y no vive en `factura_cliente`. Vive: el
+    # 19/08 las seis NTEN del día salieron por el join de `_doc_por_guia` con
+    # su guía al lado. Con el salteo, la NTEN-10879 (BED, 265,50 kg) —que no
+    # tenía guía de ese día— no caía en ningún balde y aparecía como "± sin
+    # identificar": el número estaba, el nombre no. Ahora entra como cualquier
+    # otro documento y la pantalla la nombra.
     sin_guia = []
     if asinfo_ok:
         for d in docs:
-            if d["doc"].upper().startswith("NTEN"):
-                continue
             resto = round(d["kg"] - ligado.get(d["doc"], 0.0), 2)
             if resto > UMBRAL_KG:
                 sin_guia.append({**d, "kg_sin_guia": resto})
         sin_guia.sort(key=lambda x: -x["kg_sin_guia"])
-    kg_sin_guia = round(sum(d["kg_sin_guia"] for d in sin_guia), 2)
 
     # (B) y (C) — lo que salió y todavía no está en NUESTRA base. Son dos cosas
     # distintas y se dicen distinto, porque lo que hay que hacer es distinto:
@@ -270,13 +278,28 @@ def cuadre(fecha) -> dict:
             sin_factura.append(g)
         else:
             # Facturada en Asinfo pero sin `factura_cliente` que la consuma:
-            # su documento es una NOTA DE ENTREGA. No hay número con el que
-            # casarla una por una, así que se compara el TOTAL contra las NTEN
-            # que PC tiene cargadas del día.
+            # su documento es una NOTA DE ENTREGA que el join no alcanza. No
+            # hay número con el que casarla una por una, así que se compara el
+            # TOTAL contra las NTEN del día que quedaron sin guía.
             kg_nten_esperado += g["kg"]
     kg_sin_factura = round(sum(g["kg"] for g in sin_factura), 2)
-    kg_nten_falta = round(max(0.0, kg_nten_esperado - kg_nten_pc), 2)
+
+    # Las NTEN sin guía se ofrecen para tapar ese total, de mayor a menor: la
+    # que entra ES la guía documentada y sale de la lista de "sin guía de hoy".
+    # Las que sobran se quedan CON NOMBRE, que es lo que se venía perdiendo.
+    resto_nten = kg_nten_esperado
+    if resto_nten > UMBRAL_KG:
+        quedan = []
+        for f in sin_guia:
+            if (f["doc"].upper().startswith("NTEN")
+                    and resto_nten >= f["kg_sin_guia"] - UMBRAL_KG):
+                resto_nten -= f["kg_sin_guia"]
+            else:
+                quedan.append(f)
+        sin_guia = quedan
+    kg_nten_falta = round(max(0.0, resto_nten), 2)
     kg_sin_cargar = round(sum(g["kg"] for g in sin_cargar) + kg_nten_falta, 2)
+    kg_sin_guia = round(sum(d["kg_sin_guia"] for d in sin_guia), 2)
 
     diferencia = round(facturado - despachado, 2) if despachado is not None else None
     residuo = (round(facturado - (despachado - kg_sin_factura - kg_sin_cargar
