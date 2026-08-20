@@ -727,15 +727,22 @@ def api_importaciones_abiertas(prov):
             "compras_n": int(_comp.get("n") or 0),
             "compras_usd": float(_comp.get("importe_total") or 0),
         })
-    # TMT 2026-07-23 (dueña): "mostrar en orden numérico, está difícil de
-    # encontrar" — se ordenan por número de AC ascendente para escanear la
-    # lista.
-    #
     # Federico 2026-08-20: acá había un `out = out[:30]` ("las 30 más
     # recientes"). AC ya tiene 31 importaciones abiertas, así que la más vieja
     # —AC 39, IM-0000584, con 3 anticipos encima— se caía de la lista y el
     # picker "no la encontraba". El corte por antigüedad escondía justo las que
-    # llevan más tiempo abiertas, que son las que más se siguen pagando: se
-    # listan TODAS las del proveedor y el panel scrollea.
+    # llevan más tiempo abiertas, que son las que más se siguen pagando.
+    #
+    # Lo que sí corta es la CAMPAÑA: sólo las del año más alto que tenga el
+    # proveedor. Tamara 2026-08-20: *"no debería buscar en años anteriores,
+    # nadie va a cargar un anticipo para algo que ya llegó"*. Va por el año más
+    # alto de los DATOS y no por el reloj: en enero el año del calendario
+    # todavía no tiene ninguna importación. Sin el corte quedaban ~120 de AC
+    # con campañas de 2024 y 2025 mezcladas.
+    top = max((r["anio"] for r in out if r.get("anio")), default=None)
+    if top is not None:
+        out = [r for r in out if r.get("anio") == top]
+    # TMT 2026-07-23 (dueña): "mostrar en orden numérico, está difícil de
+    # encontrar" — se ordenan por número de AC ascendente para escanear.
     out.sort(key=lambda x: (x.get("numero") is None, x.get("numero") or 0))
-    return {"prov": prov, "importaciones": out}
+    return {"prov": prov, "anio": top, "importaciones": out}

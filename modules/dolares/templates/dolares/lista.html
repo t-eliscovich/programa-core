@@ -800,44 +800,25 @@ document.addEventListener('click', function (ev) {
     const m = (concepto.value || '').match(/\d+/);
     const buscado = m ? String(parseInt(m[0], 10)) : null;
     const chips = Array.from(list.querySelectorAll('button[data-num]'));
-    // Campaña en curso = el año más alto que trajo la lista (no el reloj: en
-    // enero el año del calendario todavía no tiene importaciones).
-    const top = chips.reduce((a, b) => Math.max(a, +(b.dataset.anio || 0)), 0);
-    const viejas = chips.filter(b => +(b.dataset.anio || 0) < top).length;
     const empiezan = buscado
       ? chips.filter(b => b.dataset.num.indexOf(buscado) === 0) : [];
-    let match = null;
     chips.forEach(b => {
       const hit = buscado != null && b.dataset.num === buscado;
       b.style.border = hit ? '2px solid #059669' : '1px solid #bae6fd';
       b.style.background = hit ? '#d1fae5' : '';
       b.style.fontWeight = hit ? '600' : '';
-      // Sin número escrito: sólo la campaña en curso (el mismo nº se reusa
-      // todos los años y las viejas son cientos). Con número escrito: se busca
-      // en TODAS, para poder cargarle algo a una campaña anterior.
-      const ver = buscado
-        ? (!empiezan.length || empiezan.indexOf(b) >= 0)
-        : +(b.dataset.anio || 0) === top;
       // `display` inline: la clase .hidden de tailwind no le gana a un style=
       // propio (ver el chip que se re-muestra al borrar el número).
-      b.style.display = ver ? '' : 'none';
-      if (hit && !match) match = b;
+      b.style.display = (!buscado || !empiezan.length || empiezan.indexOf(b) >= 0)
+        ? '' : 'none';
     });
     if (aviso) {
-      let txt = '';
-      if (buscado && !empiezan.length) {
-        txt = 'No hay ninguna importación ' + buscado + ' de este proveedor — están todas abajo.';
-      } else if (!buscado && viejas) {
-        txt = 'Mostrando las de ' + top + '. Escribí el número y busca también en las '
-              + viejas + ' de años anteriores.';
-      }
-      aviso.textContent = txt;
-      aviso.classList.toggle('hidden', !txt);
+      const nada = buscado && !empiezan.length;
+      aviso.textContent = nada
+        ? 'No hay ninguna importación ' + buscado + ' abierta de este proveedor — están todas abajo.'
+        : '';
+      aviso.classList.toggle('hidden', !nada);
     }
-    // El chip que matchea exacto salta al PRIMER lugar, para que aparezca de
-    // una sin tener que buscarlo en la grilla.
-    if (match && list.firstChild !== match) list.insertBefore(match, list.firstChild);
-    if (match) match.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }
   ['input', 'change', 'blur'].forEach(ev => cta.addEventListener(ev, () => {
     clearTimeout(timer); timer = setTimeout(cargar, 450);

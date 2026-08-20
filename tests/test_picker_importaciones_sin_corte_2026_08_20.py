@@ -12,7 +12,10 @@ lleva más tiempo abierta, que es exactamente la que se sigue pagando.
 Lo que estos tests fijan:
   1. con 31 importaciones del proveedor vuelven las 31 (nada de corte);
   2. la más vieja —la que el corte se comía— está entre ellas;
-  3. sigue saliendo ordenada por número de AC ascendente (TMT 2026-07-23).
+  3. sigue saliendo ordenada por número de AC ascendente (TMT 2026-07-23);
+  4. las campañas ANTERIORES no se listan — *"nadie va a cargar un anticipo
+     para algo que ya llegó"* (Tamara, el mismo día, cuando al sacar el corte
+     aparecieron ~120 con 2024 y 2025 mezcladas).
 """
 
 from __future__ import annotations
@@ -69,9 +72,15 @@ def _filas():
     return filas
 
 
-def _pedir(cliente):
-    with patch.object(service, "importaciones_con_cruce", return_value=_filas()), \
-            patch.object(service, "_anio_de", return_value={"anio": 2026}):
+def _pedir(cliente, filas=None, anios=None):
+    """`anios` = {im_numero: año}; por defecto todas de la campaña 2026."""
+    filas = _filas() if filas is None else filas
+
+    def _anio(row):
+        return {"anio": (anios or {}).get(row.get("im_numero"), 2026)}
+
+    with patch.object(service, "importaciones_con_cruce", return_value=filas), \
+            patch.object(service, "_anio_de", _anio):
         r = cliente.get("/importaciones/_api/abiertas/AC")
     assert r.status_code == 200
     return r.get_json()["importaciones"]
@@ -93,3 +102,31 @@ def test_sigue_en_orden_numerico(cliente):
     nums = [i["numero"] for i in _pedir(cliente)]
     assert nums == sorted(nums)
     assert nums[1] == 36 and nums[2] == 37 and nums[3] == 39
+
+
+def test_las_campanas_viejas_no_se_listan(cliente):
+    """El nº de AC se reusa cada año: la AC 43 de 2024 no tiene por qué estar."""
+    filas = _filas() + [{
+        "im_numero": "IM-0000248",
+        "codigo": "AC 43",
+        "prov": "AC",
+        "numero": 43,
+        "nota": "ACMT/EXP/2024-25/5150 AC 43",
+        "fecha": "2024-03-21",
+        "kg": 22992.64,
+        "anticipo_aplicado": 0.0,
+        "compra": {"n": 0, "importe_total": 0.0},
+    }]
+    ims = _pedir(cliente, filas, {"IM-0000248": 2024})
+    assert len(ims) == 31
+    assert all(i["anio"] == 2026 for i in ims)
+    assert [i["im_numero"] for i in ims if i["numero"] == 43] == ["IM-0000606"]
+
+
+def test_la_campana_sale_de_los_datos_no_del_reloj(cliente):
+    """Un proveedor cuya última importación es de 2024 sigue listando 2024 —
+    si fuera por el año del calendario quedaría en cero."""
+    filas = _filas()[:3]
+    ims = _pedir(cliente, filas, {f["im_numero"]: 2024 for f in filas})
+    assert len(ims) == 3
+    assert {i["anio"] for i in ims} == {2024}
