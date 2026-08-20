@@ -2247,6 +2247,22 @@ def test_el_link_del_menu_se_gatea_con_su_propio_permiso():
     assert "'comisiones.ver'" in tabs and "'metas.editar'" in tabs
 
 
+def test_el_link_del_menu_va_debajo_de_estados_de_cuenta():
+    """Federico 2026-08-20: "Comisiones sale de Modificar y va a Clientes y
+    proveedores, debajo de Estados de cuenta"."""
+    from pathlib import Path
+
+    menu = Path("templates/base.html").read_text()
+    i_datos = menu.index('data-key="datos"')
+    i_edc = menu.index("informes.estado_cuenta_landing")
+    i_com = menu.index("comisiones.lista")
+    i_prov = menu.index("proveedores.lista")
+    # dentro de la sección, entre Estados de cuenta y Proveedores
+    assert i_datos < i_edc < i_com < i_prov
+    # y ya no en "Modificar", que arranca antes
+    assert menu.index('data-key="modificar"') < i_datos
+
+
 
 def test_hay_migracion_que_saca_los_permisos_de_la_BASE():
     """🚨 `config/roles.py` es la fuente canónica, pero el que manda en runtime

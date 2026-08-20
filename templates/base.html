@@ -1002,13 +1002,9 @@
            — el menú apunta a la pantalla completa; alta + cancelar viven ahí.
            Mismo gate de siempre (facturas.ver); dolares.lista lo acepta. #}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('dolares.lista', 'Anticipos', 'money') }}{% endif %}
-        {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
-           (pedido dueña: "no debe estar colgada de informes"). #}
-        {# El link se gatea con el permiso de SU pantalla, no con informes.ver:
-           si no, a quien tiene informes.ver y no comisiones.ver le aparece el
-           link y le da 404 al clickearlo. Mordió el 2026-08-05 al cerrarle
-           Comisiones a los roles operativos. #}
-        {% if tiene_permiso('comisiones.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
+        {# TMT 2026-05-20 — Comisiones vino de Informes a Modificar (dueña: "no
+           debe estar colgada de informes"). Federico 2026-08-20: sigue viaje a
+           "Clientes y proveedores", debajo de Estados de cuenta. #}
 
         {# TMT 2026-07-09 (dueña): Lista de precios movida a Modificar (última posición), desde Datos base. #}
         {{ nav_link('precios.lista', 'Lista de precios', 'money') }}
@@ -1076,6 +1072,12 @@
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
         {# TMT 2026-07-09 (dueña): estado de cuenta visible para todos. #}
         {{ nav_link('informes.estado_cuenta_landing', 'Estados de cuenta', 'receipt') }}
+        {# Federico 2026-08-20: Comisiones (venía de Modificar) va debajo de
+           Estados de cuenta. Se gatea con el permiso de SU pantalla y no con
+           el de la sección —que no tiene—: `informes.ver` le ponía el link a
+           quien después se comía un 404 (mordió el 2026-08-05 al cerrarle
+           Comisiones a los roles operativos). #}
+        {% if tiene_permiso('comisiones.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
         {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La
            cuota mensual se edita inline desde /posdat (columna nueva
