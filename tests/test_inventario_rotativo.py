@@ -428,19 +428,22 @@ def test_la_unidad_va_en_una_columna_y_no_pegada_a_cada_numero(app, fake_db):
     assert 'class="u"' not in tabla         # el sufijo por celda ya no existe
 
 
-def test_el_link_del_menu_va_debajo_de_pedidos_pendientes(app, fake_db):
-    """Dueña 2026-08-18: "debajo de pedidos ponelo esto".
+def test_el_link_del_menu_va_debajo_de_inventario_en_produccion_y_stocks(app, fake_db):
+    """Federico 2026-08-20: "pasarlo a la sección de Stock, debajo de Inventario".
 
-    Y gateado por `stock.ver`, el permiso de SU pantalla: con el de la sección
-    (`facturas.ver`) le aparecería el link a quien después se come un 404.
+    Antes vivía en "Modificar", debajo de Pedidos pendientes (dueña 2026-08-18).
+    La sección "Producción y stocks" ya está gateada con `stock.ver` —el mismo
+    permiso de SU pantalla—, así que el link no necesita gate propio.
     """
     base = (Path(app.root_path) / "templates" / "base.html").read_text(encoding="utf-8")
-    i_ped = base.index("pedidos.lista")
+    i_stock = base.index('data-key="stock"')
+    i_fab = base.index("stock_asinfo.fabricacion_tc")
     i_inv = base.index("inventario_rotativo.lista")
-    i_compras = base.index("compras.lista")
-    assert i_ped < i_inv < i_compras
-    linea = base[base.rindex("{%", 0, i_inv):i_inv]
-    assert "stock.ver" in linea
+    i_imp = base.index("importaciones.lista")
+    # dentro de la sección, y justo entre "Inventario" e "Ingreso de hilado"
+    assert i_stock < i_fab < i_inv < i_imp
+    # y ya no cuelga de Pedidos pendientes (sección Modificar, más arriba)
+    assert base.index("pedidos.lista") < i_stock
 
 
 # ── acabado ─────────────────────────────────────────────────────────────────
