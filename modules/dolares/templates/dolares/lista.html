@@ -310,17 +310,6 @@
         <p class="text-[11px] text-slate-500"
            style="position:absolute;top:100%;left:0;margin-top:.25rem;white-space:nowrap;">nº <strong>/ año</strong> de la importación: <code class="font-mono">58/26</code></p>
       </div>
-      {# TMT 2026-07-07 (dueña): el picker va DEBAJO/APARTE del campo Concepto
-         (antes aparecía "antes" del campo, y grid-column no aplica en flex).
-         Toma el ancho completo del form (flex-basis 100%) y lista en grilla
-         de 3 columnas inline (grid-cols-3 responsive NO está en el tailwind
-         congelado). #}
-      <div id="dol-imp-panel" class="hidden rounded border border-sky-300 p-2 text-xs"
-           style="background:#f0f9ff;flex-basis:100%;width:100%;">
-        <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor — elegí con cuál matchea:</p>
-        <div id="dol-imp-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.375rem;"></div>
-        <p id="dol-imp-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
-      </div>
       <div>
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Importe USD</label>
         {# texto (no type=number) para aceptar formato EU: 1.234,56 #}
@@ -330,6 +319,23 @@
       <button class="px-4 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">+ Anticipo</button>
       <button type="button" class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               onclick="document.getElementById('panel-nuevo-anticipo').classList.add('hidden')">Cerrar</button>
+      {# TMT 2026-07-07 (dueña): el picker va DEBAJO/APARTE del campo Concepto.
+         Federico 2026-08-20: va al FINAL del form, después de los botones —
+         antes se metía entre Concepto e Importe y (a) empujaba Importe y
+         «+ Anticipo» abajo de la grilla, (b) se comía la ayudita `58/26` del
+         Concepto, que desde hoy va en `position:absolute`. El margen de arriba
+         es justo el alto de esa ayudita.
+         Toma el ancho completo del form (flex-basis 100%) y lista en grilla
+         inline (grid-cols-N responsive NO está en el tailwind congelado). #}
+      <div id="dol-imp-panel" class="hidden rounded border border-sky-300 p-2 text-xs"
+           style="background:#f0f9ff;flex-basis:100%;width:100%;margin-top:1.1rem;">
+        <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor — elegí con cuál matchea:</p>
+        <p id="dol-imp-aviso" class="hidden mb-1 text-amber-700"></p>
+        {# El alto máximo evita que 30+ importaciones tapen la pantalla; el chip
+           que matchea el concepto se trae solo a la vista (ver resaltar()). #}
+        <div id="dol-imp-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.375rem;max-height:13rem;overflow:auto;"></div>
+        <p id="dol-imp-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
+      </div>
     </form>
   </div>
   {% endif %}
@@ -742,6 +748,7 @@ document.addEventListener('click', function (ev) {
   const panel = document.getElementById('dol-imp-panel');
   const list = document.getElementById('dol-imp-list');
   const elegida = document.getElementById('dol-imp-elegida');
+  const aviso = document.getElementById('dol-imp-aviso');
   if (!cta || !concepto || !panel) return;
   let timer = null;
   function cargar() {
@@ -782,21 +789,39 @@ document.addEventListener('click', function (ev) {
       })
       .catch(() => panel.classList.add('hidden'));
   }
-  // TMT 2026-07-23 (dueña): "si busco AC 55 debería mostrar el 55" — resalta
-  // el chip cuyo nº de AC coincide con el primer número del concepto.
+  // TMT 2026-07-23 (dueña): "si busco AC 55 debería mostrar el 55".
+  // Tamara 2026-08-20: "si ya pongo 39 me deberías mostrar la 39" — no
+  // alcanzaba con resaltar: mientras se tipea, la lista se queda SÓLO con las
+  // que empiezan con esos dígitos (39 → AC 39; 3 → AC 3, 36, 37, 39...).
+  // Si el número tipeado no es de ninguna, se vuelven a mostrar todas y se
+  // avisa, para no dejar el cuadro vacío.
   function resaltar() {
     const m = (concepto.value || '').match(/\d+/);
     const buscado = m ? String(parseInt(m[0], 10)) : null;
+    const chips = Array.from(list.querySelectorAll('button[data-num]'));
+    const empiezan = buscado
+      ? chips.filter(b => b.dataset.num.indexOf(buscado) === 0) : [];
     let match = null;
-    list.querySelectorAll('button[data-num]').forEach(b => {
+    chips.forEach(b => {
       const hit = buscado != null && b.dataset.num === buscado;
       b.style.border = hit ? '2px solid #059669' : '1px solid #bae6fd';
       b.style.background = hit ? '#d1fae5' : '';
       b.style.fontWeight = hit ? '600' : '';
+      // `display` inline: la clase .hidden de tailwind no le gana a un
+      // style= propio (ver el chip que se re-muestra al borrar el número).
+      b.style.display = (!buscado || !empiezan.length || empiezan.indexOf(b) >= 0)
+        ? '' : 'none';
       if (hit && !match) match = b;
     });
-    // Si el concepto matchea un AC, ese chip salta al PRIMER lugar (además del
-    // resaltado) para que aparezca de una, sin tener que buscarlo en la grilla.
+    if (aviso) {
+      const nada = buscado && !empiezan.length;
+      aviso.textContent = nada
+        ? 'No hay ninguna importación ' + buscado + ' abierta de este proveedor — están todas abajo.'
+        : '';
+      aviso.classList.toggle('hidden', !nada);
+    }
+    // El chip que matchea exacto salta al PRIMER lugar, para que aparezca de
+    // una sin tener que buscarlo en la grilla.
     if (match && list.firstChild !== match) list.insertBefore(match, list.firstChild);
     if (match) match.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }

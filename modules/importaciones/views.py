@@ -728,8 +728,14 @@ def api_importaciones_abiertas(prov):
             "compras_usd": float(_comp.get("importe_total") or 0),
         })
     # TMT 2026-07-23 (dueña): "mostrar en orden numérico, está difícil de
-    # encontrar". Se conservan las 30 más recientes (relevancia) pero se
-    # ordenan por número de AC ascendente para poder escanear la lista.
-    out = out[:30]
+    # encontrar" — se ordenan por número de AC ascendente para escanear la
+    # lista.
+    #
+    # Federico 2026-08-20: acá había un `out = out[:30]` ("las 30 más
+    # recientes"). AC ya tiene 31 importaciones abiertas, así que la más vieja
+    # —AC 39, IM-0000584, con 3 anticipos encima— se caía de la lista y el
+    # picker "no la encontraba". El corte por antigüedad escondía justo las que
+    # llevan más tiempo abiertas, que son las que más se siguen pagando: se
+    # listan TODAS las del proveedor y el panel scrollea.
     out.sort(key=lambda x: (x.get("numero") is None, x.get("numero") or 0))
     return {"prov": prov, "importaciones": out}
