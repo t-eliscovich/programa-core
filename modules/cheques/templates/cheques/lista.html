@@ -307,6 +307,9 @@
        cheques; elegí un estado puntual para acotar. #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Estado</label>
+      {# Federico 2026-08-20: "Endosados" sale del desplegable — no se usa más.
+         El filtro `?estado=endosados` sigue vivo en el backend (los cheques en
+         E existen y hay links viejos), sólo deja de ofrecerse acá. #}
       {% set estado_opciones = [
         ('cartera_total', 'Cartera total'),
         ('cartera',       'Cartera'),
@@ -314,7 +317,6 @@
         ('daniela',       'Daniela'),
         ('devueltos',     'Devueltos'),
         ('depositados',   'Depositados'),
-        ('endosados',     'Endosados'),
         ('eliminados',    'Eliminados'),
         ('todos',         'Todos los estados'),
       ] %}

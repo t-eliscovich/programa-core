@@ -1176,7 +1176,7 @@ def buscar(
              -- "Venta del mes" de Resultados (ventas_mes_corriente_resultado):
              -- todas las facturas menos eliminadas (stat X) y menos backfill
              -- Asinfo, sin filtro de saldo (cobradas + pendientes + canceladas).
-             -- Usada por el botón "Este mes" para que el total cuadre con Resultados.
+             -- Usada por el botón "Mes actual" de /facturas para que el total cuadre con Resultados.
              OR (%(vista)s = 'facturado'
                  AND (f.stat IS NULL OR f.stat <> 'X')
                  AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')

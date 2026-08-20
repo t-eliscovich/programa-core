@@ -658,7 +658,7 @@ def imprimir(resultados: list[dict], solo_errores: bool) -> None:
         ("/bancos/emitir-cheque",              "auto-detect del tipo desde concepto (banner 🤖 'Detecté')"),
         ("/bancos/<no>/movimientos",           "fila CH tiene botón ↺ reversar"),
         ("/bancos/cheque-emitido/<id>/reversar","wizard pide motivo y crea ND + reversa side-effect"),
-        ("/cheques",                           "tab Endosados aparece; estado E con badge violeta"),
+        ("/cheques",                           "estado E con badge violeta (el filtro Endosados salió del desplegable 2026-08-20)"),
         ("/cheques/<id>/endosar",              "wizard con datalist proveedores; crea compra y baja cheque a E"),
         ("/cheques/depositar-lote",            "filtros y checkboxes funcionan"),
         ("/compras/nueva",                     "dropdown tipo: H — Hilado / K — Tejido / etc; pago parcial colapsable"),
