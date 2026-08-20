@@ -127,3 +127,46 @@ def test_si_la_base_no_contesta_la_pantalla_sigue_andando():
         cuentas = ev._cuentas(evs)
     assert cuentas["b10"]["tipo"] == "cheque_emitido_otro"
 
+
+
+# ── 3. Dos aportes juntados siguen siendo aportes ──────────────────────────
+
+def _aporte(id_md, id_ret, id_tx, importe, quien):
+    return dict(_APORTE, id_mov_doble=id_md, origen_id=id_ret,
+                destino_id=id_tx, importe=importe, concepto=quien)
+
+
+def test_dos_aportes_en_un_renglon_no_vuelven_a_llamarse_retiro():
+    """El renglón juntado decía "2 Retiro socio ← Pichincha · RR" para los dos
+    aportes de las 12:33 (UNITECH 128.625 + LAFER 34.860)."""
+    evs = _con_label([_aporte(26709, 1131, 46125, -128625.0, "UNITECH"),
+                      _aporte(26710, 1132, 46126, -34860.0, "LAFER")])
+    movs = [{"doc_id": "r1131", "componente": "uret", "aporte": -128625.0,
+             "regla": "Retiro de dividendos", "etiqueta": "Retiro RR · UNITECH",
+             "familia": "traspaso", "tipo": "alta"},
+            {"doc_id": "r1132", "componente": "uret", "aporte": -34860.0,
+             "regla": "Retiro de dividendos", "etiqueta": "Retiro RR · LAFER",
+             "familia": "traspaso", "tipo": "alta"}]
+    with _base([]):
+        idx = ev.indice(evs)
+    g = t.resumir(movs, -163485.0, idx)[0]
+    assert g["texto"] == "2 Aporte socio → Pichincha · RR", g["texto"]
+    assert g["regla"] == "Aporte socio → Pichincha", g["regla"]
+
+
+def test_un_retiro_y_un_aporte_juntos_no_se_llaman_ni_una_cosa_ni_la_otra():
+    """🚨 El tipo es el mismo para los dos: si el grupo mezcla signos, ningún
+    nombre es cierto para todos. Un nombre FALSO es peor que uno pobre."""
+    evs = _con_label([_aporte(26709, 1131, 46125, -128625.0, "UNITECH"),
+                      _aporte(26711, 1133, 46127, 30300.0, "RICKY KON")])
+    movs = [{"doc_id": "r1131", "componente": "uret", "aporte": -128625.0,
+             "regla": "Retiro de dividendos", "etiqueta": "Retiro RR · UNITECH",
+             "familia": "traspaso", "tipo": "alta"},
+            {"doc_id": "r1133", "componente": "uret", "aporte": 30300.0,
+             "regla": "Retiro de dividendos", "etiqueta": "Retiro RR · RICKY KON",
+             "familia": "traspaso", "tipo": "alta"}]
+    with _base([]):
+        idx = ev.indice(evs)
+    g = t.resumir(movs, -98325.0, idx)[0]
+    assert "Aporte" not in g["texto"], g["texto"]
+    assert g["texto"] == "2 Retiro socio ← Pichincha · RR", g["texto"]

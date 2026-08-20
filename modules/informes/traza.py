@@ -1324,6 +1324,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                   "cuantos": {},
                                   "evento": ev,
                                   "hechos": set(),
+                                  "signos": set(),
                                   "familia": m.get("familia")})
         # 🚨 Cuántos HECHOS hay en el grupo, no cuántos documentos. Un cheque
         # aplicado a una factura toca dos documentos y es UN hecho: salía
@@ -1331,6 +1332,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # ocho cheques y una cuenta y son ocho hechos, uno por cheque.
         if ev and ev.get("id_mov_doble"):
             g["hechos"].add(ev["id_mov_doble"])
+            # 🚨 El tipo `retiro_socio_de_*` sirve para el retiro Y para el
+            # aporte (lo distingue el signo), así que un grupo puede tener los
+            # dos. Ahí ningún nombre es cierto para todos: se guarda el signo
+            # de cada hecho y sólo se renombra si TODOS coinciden.
+            try:
+                g["signos"].add(float(ev.get("importe") or 0) < 0)
+            except (TypeError, ValueError):
+                g["signos"].add(None)
         if g["col"] != m.get("componente"):
             g["col"] = None                    # el grupo cruza componentes
         ap = float(m.get("aporte") or 0)
@@ -1382,8 +1391,11 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             continue
         if ev:
             from modules.historial.queries import corto as _corto
+            from modules.historial.queries import label as _label
 
-            g["regla"] = ev["label"]
+            # El signo sólo puede nombrar al grupo si el grupo tiene UN signo.
+            _imp = ev.get("importe") if len(g.get("signos") or ()) == 1 else None
+            g["regla"] = _label(ev["tipo"], _imp)
             md = ev.get("meta") or {}
             quienes = sorted(g["quienes"], key=lambda k: abs(g["quienes"][k]),
                              reverse=True)
@@ -1395,7 +1407,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 # El rótulo sale de `corto()` salvo que el tipo se diga de otra
                 # manera; SIN la contraparte, que acá son varias.
                 rotulo, unidad = ROTULO_JUNTADO.get(
-                    ev["tipo"], (_corto(ev["tipo"]), ""))
+                    ev["tipo"], (_corto(ev["tipo"], "", _imp), ""))
                 if unidad:
                     g["texto"] = f"{rotulo} · {len(g['hechos'])} {unidad}"
                 else:
@@ -1456,7 +1468,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 g["texto"] = ((ev.get("concepto") or "").strip()
                               or _corto(ev["tipo"], quien))
             else:
-                g["texto"] = _corto(ev["tipo"], quien, ev.get("importe"))
+                g["texto"] = _corto(ev["tipo"], quien, _imp)
             # El destino, cuando el evento lo sabe: "AN AI → CP 10130" dice a
             # qué compra fueron, que es lo que /historial muestra y acá faltaba.
             # …salvo en un renglón juntado: el número de UNA de las compras al
