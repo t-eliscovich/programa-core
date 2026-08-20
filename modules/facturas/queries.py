@@ -52,20 +52,45 @@ def saldo_de(importe, abono, retencion=0) -> float:
     )
 
 
-def _stat_desde_saldo(importe: float, abono: float) -> str:
-    """Devuelve el stat correspondiente según el flujo de cobranza.
+def stat_de(saldo, abono, stat_previo: str = "", tol: float = 0.005) -> str:
+    """El ESTADO de una factura a partir de sus números. UNA sola regla.
 
-    - importe = saldo (abono=0)  → 'Z' (emitida, sin abono)
-    - 0 < abono < importe        → 'A' (abonada parcial)
-    - abono >= importe           → 'T' (cancelada total)
+        |saldo| ≈ 0      → 'T' (cancelada)
+        saldo NEGATIVO   → 'A' (crédito a favor VIVO — no está cancelada)
+        hay abono        → 'A' (abonada parcialmente)
+        sin abono        → 'Z' (emitida, sin abono)
+
+    Devuelve lo que los números DICEN, no lo que la factura traía; `stat_previo`
+    no se usa para decidir, queda por compatibilidad con los llamadores.
+
+    🚨 **El saldo negativo va por VALOR ABSOLUTO a propósito.** Con
+    `saldo <= 0` un sobrepago cae en 'T' y el crédito del cliente DESAPARECE
+    de la cartera y del estado de cuenta, porque las T no se listan. Una
+    factura con saldo a favor está VIVA. Es el bug que la dueña hizo arreglar
+    el 01/07/2026 en la aplicación de cheques (*"el crédito −42,08 se iba a
+    'T' y desaparecía"*) y que volvió a entrar el 07/08 por las retenciones.
+
+    ⚖️ TMT 2026-08-20: aquel arreglo se había hecho en UN lugar. La resta ya
+    vivía en `saldo_de`, pero el ESTADO seguía copiado a mano en cinco:
+    `cheques.anular_por_error_de_carga`, `cheques.desaplicar_factura`,
+    `cheques.reemplazar`, `cheques.deshacer_neteo` y el preview de
+    `facturas.reversar_abono_manual`. Los cinco tenían la fórmula vieja
+    `saldo <= 0.01 → 'T'`. Si mañana aparece otra regla de estado, se agrega
+    acá y no en los cinco.
+
+    `tol` existe porque no todos toleran lo mismo: la cobranza
+    (`cheques.aplicar_a_factura`) da por cancelado un residuo de hasta $0,50
+    —decisión propia, con su toggle "olvidar saldo"— y los reversos cortan en
+    el centavo. La tolerancia es del llamador; la regla del signo, no.
     """
-    abono = float(abono or 0)
-    importe = float(importe or 0)
-    if abono <= 0.01:
-        return "Z"
-    if abono >= importe - 0.01:
+    s = float(saldo or 0)
+    if abs(s) <= tol:
         return "T"
-    return "A"
+    if s < 0:
+        return "A"
+    if float(abono or 0) > 0.005:
+        return "A"
+    return "Z"
 
 
 #: Plazo default de vencimiento cuando el cliente no tiene `pago` numérico.
@@ -275,14 +300,9 @@ def editar(
 
     saldo_nuevo = saldo_de(importe_nuevo, abono_nuevo, retencion_actual)
 
-    # Stat recompute — paridad MODIFICA.PRG L443.
-    if saldo_nuevo <= 0.01:
-        stat_nuevo = "T"
-    elif abono_nuevo > 0.01:
-        stat_nuevo = "A"
-    else:
-        # importe modificado por condic, pero abono=0 → vuelve a Z (emitida).
-        stat_nuevo = "Z"
+    # Stat recompute — paridad MODIFICA.PRG L443, con la regla del signo
+    # (ver stat_de): un saldo a FAVOR queda 'A', no 'T'.
+    stat_nuevo = stat_de(saldo_nuevo, abono_nuevo, tol=0.01)
 
     # Primera vez stat='T' → stampa vencim=CURRENT_DATE (paridad
     # MODIFICA.PRG L425-426).
@@ -457,16 +477,9 @@ def reversar_abono_manual(
 
         retencion_hoy = round(float(fact.get("retencion") or 0), 2)
         saldo_nuevo = saldo_de(importe_hoy, abono_prev, retencion_hoy)
-        # MISMA regla que `editar()` (paridad MODIFICA.PRG L443), no
-        # `_stat_desde_saldo`: con importe=0 las dos difieren (editar da 'T',
-        # la otra 'Z') y el reverso tiene que dejar la factura igual a como
-        # la habría dejado la edición inversa, no parecida.
-        if saldo_nuevo <= 0.01:
-            stat_nuevo = "T"
-        elif abono_prev > 0.01:
-            stat_nuevo = "A"
-        else:
-            stat_nuevo = "Z"
+        # MISMA regla que `editar()`: el reverso tiene que dejar la factura
+        # igual a como la habría dejado la edición inversa, no parecida.
+        stat_nuevo = stat_de(saldo_nuevo, abono_prev, tol=0.01)
 
         db.execute(
             "UPDATE scintela.factura "
@@ -660,13 +673,19 @@ def editar_campo(
         if nuevo <= 0:
             raise ValueError("El importe debe ser > 0.")
         abono = float(fact.get("abono") or 0)
-        if abono > nuevo + 0.01:
+        # TMT 2026-08-20: la retención no estaba en ninguna de las dos
+        # cuentas. `nuevo - abono` se escapó del candado de `saldo_de`
+        # porque la variable no se llama `importe`, y bajar el importe de
+        # una factura con retención le borraba el descuento del saldo.
+        retencion = float(fact.get("retencion") or 0)
+        if abono + retencion > nuevo + 0.01:
+            _ret = f" + retención ({retencion:.2f})" if retencion > 0.005 else ""
             raise ValueError(
                 f"El nuevo importe ({nuevo:.2f}) es menor al abono ya cobrado "
-                f"({abono:.2f}). Anulá la factura para corregir."
+                f"({abono:.2f}){_ret}. Anulá la factura para corregir."
             )
-        saldo_nuevo = round(nuevo - abono, 2)
-        stat_nuevo = _stat_desde_saldo(nuevo, abono)
+        saldo_nuevo = saldo_de(nuevo, abono, retencion)
+        stat_nuevo = stat_de(saldo_nuevo, abono, tol=0.01)
         db.execute(
             "UPDATE scintela.factura "
             "SET importe = %s, saldo = %s, stat = %s, usuario_modifica = %s "

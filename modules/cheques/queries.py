@@ -1627,12 +1627,10 @@ def anular_por_error_de_carga(
                 continue
             nuevo_abono = max(float(f["abono"] or 0) - imp, 0)
             nuevo_saldo = _fact_q.saldo_de(f["importe"], nuevo_abono, f["retencion"])
-            if nuevo_abono <= 0.01:
-                nuevo_stat_f = "Z"
-            elif nuevo_saldo <= 0.01:
-                nuevo_stat_f = "T"
-            else:
-                nuevo_stat_f = "A"
+            # La regla del estado vive en UN lugar (ver _fact_q.stat_de).
+            # Decía `nuevo_saldo <= 0.01 → T`, que mandaba un saldo a FAVOR a
+            # cancelada y le hacía desaparecer el crédito al cliente.
+            nuevo_stat_f = _fact_q.stat_de(nuevo_saldo, nuevo_abono, tol=0.01)
             db.execute(
                 "UPDATE scintela.factura "
                 "SET abono=%s, saldo=%s, stat=%s, usuario_modifica=%s "
@@ -2519,15 +2517,11 @@ def reemplazar(
             nuevo_saldo = _fact_q.saldo_de(
                 importe_f, nuevo_abono, f.get("retencion")
             )
-            # Criterio estricto: T sólo si saldo ≤ 0. Si la dueña quiere
-            # "olvidar" un saldo residual de la aplicación, usa el toggle
-            # explícito "olvidar saldo" en el form.
-            if nuevo_saldo <= 0.01:
-                nuevo_stat_f = "T"
-            elif nuevo_abono > 0.01:
-                nuevo_stat_f = "A"
-            else:
-                nuevo_stat_f = "Z"
+            # Criterio estricto: acá NO vale el "olvidar saldo" de $0,50 de
+            # la cobranza; si la dueña quiere olvidar un residuo, usa el
+            # toggle explícito del form. La regla del signo es la de siempre
+            # (ver _fact_q.stat_de): un saldo a favor NO totaliza.
+            nuevo_stat_f = _fact_q.stat_de(nuevo_saldo, nuevo_abono, tol=0.01)
             # INSERT por aplicación (preservamos granularidad histórica).
             for ap in aps:
                 imp_ap = float(ap.get("importe") or 0)
@@ -4821,12 +4815,7 @@ def desaplicar_factura(
         nuevo_saldo = _fact_q.saldo_de(
             f.get("importe"), nuevo_abono, f.get("retencion")
         )
-        if nuevo_abono <= 0.01:
-            nuevo_stat = "Z"
-        elif nuevo_saldo <= 0.01:
-            nuevo_stat = "T"
-        else:
-            nuevo_stat = "A"
+        nuevo_stat = _fact_q.stat_de(nuevo_saldo, nuevo_abono, tol=0.01)
         db.execute(
             "UPDATE scintela.factura "
             "SET abono=%s, saldo=%s, stat=%s, usuario_modifica=%s "
@@ -5529,17 +5518,10 @@ def reversar(
             nuevo_abono = max(float(f["abono"] or 0) - imp, 0)
             nuevo_saldo = _fact_q.saldo_de(f["importe"], nuevo_abono, f.get("retencion"))
             # Vocabulario canónico (2026-04-29) — al reversar, restamos el
-            # abono. El stat se recalcula:
-            #   abono = 0    → 'Z' (factura back to emitida)
-            #   abono > 0    → 'A' (abonada parcial)
-            #   saldo = 0    → 'T' (no debería pasar reduciendo abono;
-            #                       sólo si ya estaba cancelada y queda así)
-            if nuevo_abono <= 0.01:
-                nuevo_stat = "Z"
-            elif nuevo_saldo <= 0.01:
-                nuevo_stat = "T"
-            else:
-                nuevo_stat = "A"
+            # abono. El estado sale de la regla única (ver _fact_q.stat_de):
+            #   |saldo| ≈ 0  → 'T'   ·   saldo a FAVOR → 'A' (viva)
+            #   hay abono    → 'A'   ·   sin abono     → 'Z'
+            nuevo_stat = _fact_q.stat_de(nuevo_saldo, nuevo_abono, tol=0.01)
             db.execute(
                 "UPDATE scintela.factura "
                 "SET abono=%s, saldo=%s, stat=%s, usuario_modifica=%s "
@@ -7031,7 +7013,7 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
                 nuevo_saldo = _fact_q.saldo_de(
                     f.get("importe"), nuevo_abono, f.get("retencion")
                 )
-                nuevo_stat = "T" if nuevo_saldo <= 0.01 else "A"
+                nuevo_stat = _fact_q.stat_de(nuevo_saldo, nuevo_abono, tol=0.01)
                 db.execute(
                     "UPDATE scintela.factura SET abono=%s, saldo=%s, stat=%s, "
                     "  usuario_modifica=%s WHERE id_factura=%s",

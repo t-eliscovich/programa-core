@@ -659,8 +659,11 @@ def reversar_abono_manual(id_mov_doble: int):
     fact = queries.por_id_interno(int(mv.get("origen_id") or 0)) or {}
     _prev = float(meta.get("abono_prev") or 0)
     _imp = float(fact.get("importe") or 0)
-    _saldo = round(_imp - _prev, 2)
-    _stat = "T" if _saldo <= 0.01 else ("A" if _prev > 0.01 else "Z")
+    # Con las MISMAS funciones que el escritor: la cuenta se olvidaba la
+    # retención y el estado mandaba un saldo a favor a 'T'. Es sólo el texto
+    # de la confirmación, pero un preview que miente es peor que ninguno.
+    _saldo = queries.saldo_de(_imp, _prev, fact.get("retencion"))
+    _stat = queries.stat_de(_saldo, _prev, tol=0.01)
     detalle = {
         "N° factura": fact.get("numf_completo") or fact.get("numf") or "—",
         "Cliente": fact.get("codigo_cli", "") or "—",

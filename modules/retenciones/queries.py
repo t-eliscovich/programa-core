@@ -276,13 +276,7 @@ def _stat_tras_retencion(saldo: float, abono: float, stat_previo: str = "") -> s
     acá el 07/08: 4 facturas de DSN y JEB con $886,44 a favor se marcaron
     canceladas. Una factura con saldo a favor está VIVA.
     """
-    if abs(saldo) <= 0.005:
-        return "T"
-    if saldo < 0:
-        return "A"
-    if abono > 0.005:
-        return "A"
-    return "Z"
+    return _fact_q.stat_de(saldo, abono, stat_previo)
 
 
 def _grabar_retencion(conn, f: dict, rete: float, a_registrar: float,
