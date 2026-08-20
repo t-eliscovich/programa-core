@@ -496,10 +496,15 @@
         </tr>
         {# Federico 2026-07-14: "Dividendos" en un solo renglón — mes: y año:
            en la misma fila, con el acumulado del año encolumnado (num-cell,
-           right-aligned) con las Utilidades del año de abajo. #}
+           right-aligned) con las Utilidades del año de abajo.
+           Federico 2026-08-20: *"prefiero pinchar en la palabra DIVIDENDOS"*.
+           El link pasa del par de cifras a la etiqueta —igual que "Ventas del
+           año" acá arriba— y las cifras quedan como texto. No se pierde el
+           acceso al año: /retiros muestra SIEMPRE los dos KPIs (mes y año) y
+           tiene el switcher de tabs, así que un solo destino alcanza. #}
         <tr class="fila-dato">
-          <td class="label-cell">Dividendos<span class="text-slate-500" style="margin-left:1.5em">mes:</span> <a href="{{ url_for('informes.retiros', tab='mes') }}" class="hover:text-blue-600 hover:underline">{{ b.uret | num_es(0) }}</a></td>
-          <td class="num-cell"><span class="text-slate-500">año:</span> <a href="{{ url_for('informes.retiros', tab='anio') }}" class="hover:text-blue-600 hover:underline">{{ b.uret_anio | num_es(0) }}</a></td>
+          <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos</a><span class="text-slate-500" style="margin-left:1.5em">mes:</span> {{ b.uret | num_es(0) }}</td>
+          <td class="num-cell"><span class="text-slate-500">año:</span> {{ b.uret_anio | num_es(0) }}</td>
         </tr>
         <tr class="fila-dato">
           <td class="label-cell">Utilidades {{ b.anio_actual }}</td>
