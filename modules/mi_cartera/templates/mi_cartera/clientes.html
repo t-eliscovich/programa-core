@@ -92,6 +92,27 @@
            al cuadradito. Sin provincia no se dibuja el renglón — un <span>
            vacío deja un hueco que no se entiende. #}
         {% if c.provincia %}<span>{{ c.provincia }}</span>{% endif %}
+        {# ⭐ El cupo y cuánto lleva usado, EN LA LISTA — TMT 2026-08-20.
+           Estaban sólo adentro de la ficha: para saber a quién le puede
+           cargar más mercadería, el vendedor tenía que entrar cliente por
+           cliente. Es el dato con el que decide parado en el local.
+
+           El % es el MISMO de la ficha (`usado` = saldo neto + cheques por
+           cobrar, sobre el cupo) con los mismos cortes 80/100. Dos
+           porcentajes distintos del mismo cliente en dos pantallas del mismo
+           programa y el vendedor deja de creerle a los dos.
+
+           ⚠ Sin cupo cargado NO se dibuja el renglón: 57 de los 93 clientes
+           de PPR no tienen, y "sin cupo asignado" repetido 57 veces es ruido
+           que empuja la lista para abajo. El aviso vive en la ficha, que es
+           donde se va a mirar ese cliente en particular. #}
+        {% set _cupo = (c.cupo or 0)|float %}
+        {% if _cupo > 0 %}
+          {% set _pct = (c.usado or 0)|float * 100 / _cupo %}
+          <span class="cupo">Cupo $ {{ _cupo|num_es(0) }} ·
+            <b class="{{ 'mal' if _pct >= 100 else ('ojo' if _pct >= 80 else 'bien') }}"
+               >{{ _pct|num_es(0) }} %</b></span>
+        {% endif %}
       </div>
       <div class="amt">
         <b>$ {{ c.saldo|money_es }}</b>
@@ -118,6 +139,18 @@
 {% endif %}
 
 <style>
+  /* El cupo bajo la provincia. El % lleva tamaño PROPIO: `.nm b` es el
+     nombre del cliente —grande y bold— y sin esto el porcentaje salía con
+     ese cuerpo y partía el renglón en dos. Medido a 390 y a 320 px: entra
+     entero en una sola línea. */
+  .rowitem .nm .cupo{display:block;font-size:11.5px;color:var(--ink-2);
+                     margin-top:3px;white-space:nowrap}
+  .rowitem .nm .cupo b{display:inline;font-size:11.5px;font-weight:800;
+                       letter-spacing:0}
+  .rowitem .nm .cupo .bien{color:var(--good)}
+  .rowitem .nm .cupo .ojo{color:var(--warn)}
+  .rowitem .nm .cupo .mal{color:var(--bad)}
+
   /* El buscador vive en el appbar: separado del título y a todo el ancho. */
   .appbar .search{margin:10px 0 0}
   /* 15px y no 14: por debajo de 16px iOS hace zoom al enfocar un input. 15 es

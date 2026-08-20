@@ -23,6 +23,10 @@ import time
 from datetime import date, timedelta
 
 import db
+from modules.informes.queries import (
+    STATS_CHEQUE_POR_COBRAR,
+    _sql_stat_in,
+)
 
 # Predicado canónico de pertenencia cliente→vendedor. Se interpola en las
 # queries de abajo; el valor SIEMPRE va como parámetro %(vend)s.
@@ -35,6 +39,33 @@ _FACTURA_VIVA = """
   AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
   AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
 """
+
+# ⭐ Lo USADO del cupo, con la MISMA cuenta que la ficha (`_usado` de
+# `cliente.html` = saldo neto + cheques por cobrar):
+#
+#   saldo de facturas vivas  +  Σ espejos de anticipo NB=98 (negativos, bajan
+#   el saldo)  +  cheques que el cliente todavía nos debe.
+#
+# Un cheque en cartera todavía no se cobró: ocupa cupo. Si la LISTA y la FICHA
+# mostraran dos porcentajes distintos del mismo cliente, el vendedor deja de
+# creerle a los dos — y con razón, uno está mal. Los dos criterios de cheque
+# salen de `informes.queries`, que es donde viven los stats canónicos: acá no
+# se vuelve a escribir a mano ninguna lista de estados.
+#
+# Las subconsultas van SIN alias a propósito, para que el SQL de los stats
+# —que nombra `stat` pelado— entre tal cual, sin retoques.
+_USADO_DEL_CUPO = """
+      COALESCE(SUM(f.saldo), 0)
+    + COALESCE((SELECT SUM(importe) FROM scintela.cheque
+                 WHERE codigo_cli = c.codigo_cli
+                   AND COALESCE(no_banco, 0) = 98
+                   AND COALESCE(stat, '') <> 'X'), 0)
+    + COALESCE((SELECT SUM(importe) FROM scintela.cheque
+                 WHERE codigo_cli = c.codigo_cli
+                   AND COALESCE(no_banco, 0) <> 98
+                   AND COALESCE(stat, '') <> 'X'
+                   AND __POR_COBRAR__), 0)
+""".replace("__POR_COBRAR__", _sql_stat_in(STATS_CHEQUE_POR_COBRAR))
 
 
 # ---------------------------------------------------------------------------
@@ -115,10 +146,15 @@ def avance_esperado(desde: date, hasta: date, hoy: date) -> float:
 
 
 def mis_clientes(vend: str) -> list[dict]:
-    """Clientes del vendedor CON saldo vivo, con su vencido.
+    """Clientes del vendedor CON saldo vivo, con su vencido, cupo y usado.
 
     Mismo criterio de saldo que `informes.queries.estado_cuenta_clientes_saldos`
     — si divergen, el vendedor y la dueña discuten sobre números distintos.
+
+    `usado` sale de `_USADO_DEL_CUPO`, que es la MISMA cuenta que la ficha del
+    cliente: saldo neto (facturas menos anticipos) más los cheques que todavía
+    nos debe. El % del cupo de la lista y el de la ficha tienen que ser el
+    mismo número.
 
     ⚠ El ORDER BY de acá (más vencido primero) NO es el orden de ninguna
     pantalla: cada una pide el suyo — la lista de clientes por nombre, la hoja
@@ -136,12 +172,14 @@ def mis_clientes(vend: str) -> list[dict]:
                                  THEN f.saldo ELSE 0 END), 0)     AS vencido,
                MIN(CASE WHEN COALESCE(f.vencimiento, f.fecha) < CURRENT_DATE
                         THEN COALESCE(f.vencimiento, f.fecha) END) AS vence_mas_viejo,
-               COUNT(*)                                           AS n_facturas
+               COUNT(*)                                           AS n_facturas,
+               COALESCE(c.cupo, 0)                                AS cupo,
+               ROUND(({_USADO_DEL_CUPO})::numeric, 2)             AS usado
           FROM scintela.factura f
           JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
          WHERE {_ES_MI_CLIENTE}
            AND {_FACTURA_VIVA}
-         GROUP BY c.codigo_cli, c.nombre, c.provincia
+         GROUP BY c.codigo_cli, c.nombre, c.provincia, c.cupo
         HAVING COALESCE(SUM(f.saldo), 0) <> 0
          ORDER BY COALESCE(SUM(CASE WHEN COALESCE(f.vencimiento, f.fecha)
                                          < CURRENT_DATE

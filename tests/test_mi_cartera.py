@@ -1603,6 +1603,77 @@ _CLIENTES_DEMO = [
 ]
 
 
+def test_la_lista_muestra_el_cupo_y_el_porcentaje_usado(vendedor_logueado,
+                                                        monkeypatch):
+    """⭐ TMT 2026-08-20: el cupo y lo usado, EN LA LISTA.
+
+    Estaban sólo adentro de la ficha: para saber a quién le puede cargar más
+    mercadería, el vendedor tenía que entrar cliente por cliente. Es el dato
+    con el que decide parado en el local, así que va en la fila.
+
+    El % es el MISMO de la ficha —`usado` = saldo neto + cheques por cobrar,
+    sobre el cupo— con los mismos cortes 80/100.
+    """
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [
+        {"codigo_cli": "ATE", "nombre": "TENESACA", "provincia": "TUNGURAHUA",
+         "saldo": 14465.13, "vencido": 0.0, "vence_mas_viejo": None,
+         "n_facturas": 13, "cupo": 10000, "usado": 14465.13},
+        {"codigo_cli": "AVE", "nombre": "VERDUGO", "provincia": "PICHINCHA",
+         "saldo": 10440.33, "vencido": 0.0, "vence_mas_viejo": None,
+         "n_facturas": 4, "cupo": 25000, "usado": 10440.33},
+        {"codigo_cli": "DJB", "nombre": "JUSTO", "provincia": "PICHINCHA",
+         "saldo": 9900.0, "vencido": 0.0, "vence_mas_viejo": None,
+         "n_facturas": 2, "cupo": 10000, "usado": 9900.0},
+    ])
+    html = vendedor_logueado.get("/mi-cartera/clientes").data.decode()
+
+    assert "Cupo $ 10.000" in html and "Cupo $ 25.000" in html
+    # Pasado de cupo: rojo. Holgado: verde. Entre 80 y 100: ámbar.
+    assert '"mal"' in html and "145 %" in html      # 14.465 / 10.000
+    assert '"bien"' in html and "42 %" in html      # 10.440 / 25.000
+    assert '"ojo"' in html and "99 %" in html       # 9.900 / 10.000
+
+
+def test_sin_cupo_cargado_la_fila_no_dice_nada(vendedor_logueado, monkeypatch):
+    """⚠ 57 de los 93 clientes de PPR no tienen cupo cargado.
+
+    "Sin cupo asignado" repetido 57 veces es ruido que empuja para abajo las
+    filas que sí dicen algo. El aviso vive en la FICHA, que es donde se va a
+    mirar ese cliente en particular. Mismo criterio que el resto del portal:
+    sin meta no hay anillo, con una sola semana no hay barras.
+    """
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [
+        {"codigo_cli": "BAC", "nombre": "ACHIG", "provincia": "COTOPAXI",
+         "saldo": 2061.78, "vencido": 0.0, "vence_mas_viejo": None,
+         "n_facturas": 1, "cupo": 0, "usado": 2061.78},
+    ])
+    html = vendedor_logueado.get("/mi-cartera/clientes").data.decode()
+    assert "ACHIG" in html
+    assert 'class="cupo"' not in html
+    assert "sin cupo" not in html.lower().split("<style")[0]
+
+
+def test_lo_usado_de_la_lista_se_cuenta_IGUAL_que_en_la_ficha():
+    """⭐ El candado del número: la lista y la ficha tienen que dar el MISMO
+    porcentaje del mismo cliente.
+
+    `_USADO_DEL_CUPO` no puede tener su propia lista de estados de cheque
+    escrita a mano — sale de `informes.queries`, que es donde viven los stats
+    canónicos. Y tiene que restar los espejos de anticipo NB=98: un cliente
+    con saldo a favor debe MENOS, no lo mismo.
+    """
+    from modules.informes.queries import STATS_CHEQUE_POR_COBRAR, _sql_stat_in
+    from modules.mi_cartera.queries import _USADO_DEL_CUPO
+
+    assert _sql_stat_in(STATS_CHEQUE_POR_COBRAR) in _USADO_DEL_CUPO
+    assert "COALESCE(no_banco, 0) = 98" in _USADO_DEL_CUPO
+    # Y los anticipos NO se cuentan dos veces: el bloque de cheques reales los
+    # excluye, igual que hace `estado_cuenta_cliente`.
+    assert "COALESCE(no_banco, 0) <> 98" in _USADO_DEL_CUPO
+
+
 def _clientes_html(vendedor_logueado, monkeypatch, url="/mi-cartera/clientes"):
     monkeypatch.setattr(q, "mis_clientes", lambda vend: _CLIENTES_DEMO)
     monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Patricio Proaño")
