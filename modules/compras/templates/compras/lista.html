@@ -135,7 +135,6 @@
         {% endfor %}
       </select>
     </div>
-    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
     {# TMT 2026-05-21 dueña: botón Mes actual debe combinar con TODOS los
        filtros activos (q, kg, vista, tipo). Antes perdía vista. #}
     {% set _hoy = g.now.date() if g.now else None %}
@@ -156,6 +155,10 @@
        class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium{% if q == 'KK' %} bg-sky-100 dark:bg-sky-900/30{% endif %}"
        title="Muestra solo la produccion de tejido propia de INTELA (proveedor KK).">Solo INTELA</a>
     {% endif %}
+    {# Federico 2026-08-20: "Filtrar" va ÚLTIMO de la fila (antes iba pegado al
+       Tipo, delante de los atajos). Sigue siendo el único <button> del form,
+       así que Enter en cualquier campo lo sigue disparando. #}
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
   </form>
 
   {% if error %}
