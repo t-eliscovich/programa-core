@@ -86,11 +86,15 @@
         <tr>
           <th class="px-3 py-2 text-left font-medium">Código</th>
           <th class="px-3 py-2 text-left font-medium">Nombre</th>
+          {# TMT 2026-08-19 (dueña): *"grupo despues del nombre y despues
+             vendedor, despues ruc tel etc"*. Lo que dice a QUIÉN pertenece el
+             cliente (su grupo, su vendedor) va pegado al nombre; los datos de
+             contacto, después. #}
+          <th class="px-3 py-2 text-left font-medium">Grupo</th>
+          <th class="px-3 py-2 text-left font-medium">Vend</th>
           <th class="px-3 py-2 text-left font-medium">RUC</th>
           <th class="px-3 py-2 text-left font-medium">Tel</th>
           <th class="px-3 py-2 text-left font-medium">Pago</th>
-          <th class="px-3 py-2 text-left font-medium">Vend</th>
-          <th class="px-3 py-2 text-left font-medium">Grupo</th>
           <th class="px-3 py-2 text-left font-medium">Estado</th>
           <th class="px-3 py-2 text-right font-medium" data-sort-type="number">Cupo</th>
           {# TMT 2026-05-20 — columna 'Saldo' eliminada (pedido dueña:
@@ -128,20 +132,6 @@
                el CSV, que es donde se la mira de verdad. La dirección entró el
                2026-06-06 y estuvo dos meses y medio acá. #}
           </td>
-          <td class="px-3 py-1 text-xs text-slate-500" style="white-space: nowrap;">{{ c.ruc | cleanstr }}</td>
-          <td class="px-3 py-1 text-xs text-slate-500">{{ c.telefono | cleanstr }}</td>
-          <td class="px-3 py-1 text-xs">{{ c.pago if c.pago and c.pago != 'None' else '' }}</td>
-          {# TMT 2026-05-19 v8 — dueña: solo 6 vendedores oficiales cobran
-             comisión (PPR/EDG/SEP/JQU/FL1/RMY). El resto son códigos
-             legacy o sin vendedor — los mostramos vacíos para que
-             visualmente quede claro que no hay vendedor real asignado. #}
-          <td class="px-3 py-1 text-xs">
-            {% if (c.vend or '')|upper|trim in ('PPR','EDG','SEP','JQU','FL1','RMY') %}
-              <span class="font-mono">{{ c.vend }}</span>
-            {% else %}
-              <span class="text-slate-300">—</span>
-            {% endif %}
-          </td>
           {# GRUPO (TMT 2026-08-19, dueña: *"en clientes una columna mas que diga
              grupo y ponemos el primero codigo que aparece en lista. Esto tiene
              que ser editable"*). El valor es el código del cliente CABEZA del
@@ -168,6 +158,20 @@
             {% elif c.grupo %}{{ c.grupo }}
             {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
           </td>
+          {# TMT 2026-05-19 v8 — dueña: solo 6 vendedores oficiales cobran
+             comisión (PPR/EDG/SEP/JQU/FL1/RMY). El resto son códigos
+             legacy o sin vendedor — los mostramos vacíos para que
+             visualmente quede claro que no hay vendedor real asignado. #}
+          <td class="px-3 py-1 text-xs">
+            {% if (c.vend or '')|upper|trim in ('PPR','EDG','SEP','JQU','FL1','RMY') %}
+              <span class="font-mono">{{ c.vend }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-1 text-xs text-slate-500" style="white-space: nowrap;">{{ c.ruc | cleanstr }}</td>
+          <td class="px-3 py-1 text-xs text-slate-500">{{ c.telefono | cleanstr }}</td>
+          <td class="px-3 py-1 text-xs">{{ c.pago if c.pago and c.pago != 'None' else '' }}</td>
           <td class="px-3 py-1 text-xs space-x-1">
             {# TMT 2026-05-21 dueña: si está en STOP, agregamos botón inline
                para sacarlo sin tener que entrar a la ficha del cliente. #}

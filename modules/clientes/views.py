@@ -648,6 +648,10 @@ def lista():
             columnas=[
                 ("codigo_cli", "Código"),
                 ("nombre", "Cliente"),
+                # Mismo orden que la pantalla (TMT 2026-08-19): grupo y
+                # vendedor pegados al nombre. El CSV es la pantalla, exportada.
+                ("grupo", "Grupo"),
+                ("vend", "Vend"),
                 ("ruc", "RUC"),
                 ("telefono", "Teléfono"),
                 ("direccion1", "Dirección"),
@@ -656,8 +660,6 @@ def lista():
                 ("canton", "Cantón"),
                 ("parroquia", "Parroquia"),
                 ("pago", "Pago"),
-                ("vend", "Vend"),
-                ("grupo", "Grupo"),
                 ("stop", "Stop"),
                 ("cupo", "Cupo"),
                 ("saldo_total", "Saldo"),
