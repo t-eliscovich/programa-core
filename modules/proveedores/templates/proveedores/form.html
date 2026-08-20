@@ -7,7 +7,7 @@
 <div class="max-w-3xl">
   {{ page_hero(
       'Nuevo proveedor' if modo == 'crear' else 'Editar proveedor ' ~ (form.codigo_prov or ''),
-      'Datos del proveedor + tipo (U/H/Q/B/Y) + reglas de retención y plazo.'
+      'Datos del proveedor + tipo (' ~ tipos_codigos|join('/') ~ ') + reglas de retención y plazo.'
   ) }}
 
   {% if errores %}
@@ -63,11 +63,21 @@
 
       <label class="flex flex-col">
         <span class="text-sm text-slate-600">Tipo</span>
-        <select name="tipo" class="border rounded px-2 py-1 mt-1">
+        {# TMT 2026-08-20 — las opciones salen de modules/proveedores/tipos.py.
+           Antes esta pantalla ofrecía B/S/M/I: tres letras que no tenía ningún
+           proveedor, y le faltaban las que el sistema realmente usa. #}
+        {% set _t = (form.tipo or '').upper() %}
+        <select name="tipo" class="border rounded px-2 py-1 mt-1"
+                title="Tipo: {{ tipos_ayuda }}">
           <option value="">—</option>
-          {% for t in ['B','S','M','I'] %}
-            <option value="{{ t }}" {% if form.tipo==t %}selected{% endif %}>{{ t }}</option>
+          {% for code, lbl in tipos_opciones %}
+            <option value="{{ code }}" {% if _t == code %}selected{% endif %}>{{ lbl }}</option>
           {% endfor %}
+          {# Tipo viejo ya cargado (por ejemplo M): se ofrece tal cual para que
+             editar otro campo no le cambie la clasificación. #}
+          {% if _t and _t not in tipos_codigos %}
+            <option value="{{ _t }}" selected>{{ _t }} · tipo viejo</option>
+          {% endif %}
         </select>
       </label>
 

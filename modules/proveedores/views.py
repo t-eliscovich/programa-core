@@ -17,9 +17,20 @@ from error_messages import flash_exc
 from exports import csv_response
 from parsers import parse_int, parse_monto
 
-from . import queries
+from . import queries, tipos
 
 proveedores_bp = Blueprint("proveedores", __name__, template_folder="templates")
+
+
+@proveedores_bp.context_processor
+def _tipos_al_template() -> dict:
+    """TMT 2026-08-20 — las tres pantallas de proveedores (alta, filtro y el
+    lapicito de la columna Tipo) leen la MISMA lista, la de tipos.py."""
+    return {
+        "tipos_opciones": tipos.OPCIONES,
+        "tipos_codigos": tipos.CODIGOS,
+        "tipos_ayuda": tipos.AYUDA,
+    }
 
 
 def _form_from_request() -> dict:
@@ -71,6 +82,8 @@ def nuevo():
         errores.append("Código requerido.")
     if not form["nombre"]:
         errores.append("Nombre requerido.")
+    if not tipos.es_valido(form["tipo"]):
+        errores.append(f"El tipo {form['tipo']} no está en la lista ({tipos.AYUDA}).")
 
     if errores:
         return (
@@ -161,6 +174,10 @@ def editar(codigo_prov: str):
 
     if not form["nombre"]:
         errores.append("Nombre requerido.")
+    # El tipo viejo que ya tenía cargado (por ejemplo M) se puede volver a
+    # guardar: editarle el teléfono no le cambia la clasificación.
+    if not tipos.es_valido(form["tipo"]) and form["tipo"] != (prov.get("tipo") or "").strip().upper():
+        errores.append(f"El tipo {form['tipo']} no está en la lista ({tipos.AYUDA}).")
     if errores:
         form["codigo_prov"] = prov["codigo_prov"]
         return (

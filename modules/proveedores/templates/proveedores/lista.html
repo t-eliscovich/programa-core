@@ -20,7 +20,7 @@
         <select name="tipo" onchange="this.form.submit()"
                 class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
           <option value="">Todos los tipos</option>
-          {% for code, lbl in [('U','U · Máquina'),('H','H · Hilado'),('Q','Q · Químicos'),('B','B · Bancos'),('Y','Y · Otro'),('K','K · Tejido')] %}
+          {% for code, lbl in tipos_opciones %}
             <option value="{{ code }}" {% if tipo_sel == code %}selected{% endif %}>{{ lbl }}</option>
           {% endfor %}
           <option value="SIN" {% if tipo_sel == 'SIN' %}selected{% endif %}>Sin tipo</option>
@@ -50,11 +50,11 @@
         <tr>
           <th class="px-3 py-2 text-left font-medium">Código</th>
           <th class="px-3 py-2 text-left font-medium">Nombre</th>
-          {# TMT 2026-05-20 — columna Tipo (U=máquina, H=hilado, Q=químicos, Y=otro).
+          {# TMT 2026-05-20 — columna Tipo (las letras salen de modules/proveedores/tipos.py).
              Editable inline para que la dueña pueda categorizar los
              proveedores. Filtra los wizards de Activar Maquinaria (U) y
              Convertir hilado (H). #}
-          <th class="px-1 py-2 text-center font-medium" style="width:48px;" title="U=Máquina · H=Hilado · Q=Químicos · Y=Otro">Tipo</th>
+          <th class="px-1 py-2 text-center font-medium" style="width:48px;" title="Tipo: {{ tipos_ayuda }}">Tipo</th>
           <th class="px-3 py-2 text-left font-medium">RUC</th>
           <th class="px-3 py-2 text-left font-medium">Tel</th>
           <th class="px-3 py-2 text-left font-medium">Representante</th>
@@ -87,14 +87,15 @@
             {% if _edit %}
               <select class="prov-inline prov-tipo-edit" data-campo="tipo"
                       style="width:44px;text-align:center;"
-                      title="Tipo: U=Máquina · H=Hilado · Q=Químicos · B=Bancos · Y=Otro">
+                      title="Tipo: {{ tipos_ayuda }}">
                 <option value="">—</option>
                 {% set _t = (p.tipo or '').upper() %}
-                {% for code, lbl in [('U','U · Máquina'),('H','H · Hilado'),('Q','Q · Químicos'),('B','B · Bancos'),('Y','Y · Otro')] %}
-                  <option value="{{ code }}" {% if code == _t %}selected{% endif %}>{{ code }}</option>
+                {% for code, lbl in tipos_opciones %}
+                  <option value="{{ code }}" {% if code == _t %}selected{% endif %} title="{{ lbl }}">{{ code }}</option>
                 {% endfor %}
-                {# Si el tipo actual no está en los canónicos, lo mostramos como legacy. #}
-                {% if _t and _t not in ['U','H','Q','B','Y'] %}
+                {# Si el tipo actual no es uno de los que ofrece la pantalla, lo
+                   mostramos tal cual para no pisarlo. #}
+                {% if _t and _t not in tipos_codigos %}
                   <option value="{{ _t }}" selected>{{ _t }}</option>
                 {% endif %}
               </select>
