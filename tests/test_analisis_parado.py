@@ -1395,6 +1395,21 @@ def test_en_la_app_del_vendedor_no_se_repite_su_propio_codigo():
         "la hoja propia sigue repitiendo el código del vendedor")
 
 
+def test_la_pantalla_no_explica_la_formula_vieja_de_metas():
+    """La bajada de «Por grupo» quedó describiendo la PRIMERA fórmula —«la meta
+    de cada grupo es su propio peso en el parado»—, la que la dueña cazó con
+    "¿por qué 8k kilos?". Se cambió el cálculo y el texto se quedó: contradecía
+    a la columna Meta de la misma tabla, que dice 100% en todas las filas."""
+    from pathlib import Path
+    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "competencia.html")
+            .read_text(encoding="utf-8"))
+    import re
+    texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
+    assert "su propio peso en el parado" not in texto
+    assert "misma exigencia" in texto
+
+
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
     """`actualizado` se guarda con NOW() y el servidor corre en UTC. Sin el
     filtro, a las 19:41 del 18 en la fábrica la pantalla decía "datos al

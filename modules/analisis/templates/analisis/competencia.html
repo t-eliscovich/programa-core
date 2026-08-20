@@ -193,8 +193,9 @@ agosto hay cinco días hábiles.</p>
    Si algún día se quiere de vuelta, es sólo volver a dibujarla. #}
 
 <h2>Por grupo</h2>
-<p class="sub">La meta de cada grupo es su propio peso en el parado: si Jersey es
-el 31% de lo que está quieto, hay que vender el 31% de sus kilos.</p>
+<p class="sub">Todos los grupos tienen la <b>misma exigencia</b>: hay que vender
+el {{ total_pct | num_es(1) }}% de los kilos que hay parados en cada uno. La meta de la
+fila se reparte en partes iguales entre los {{ competidores | length }}.</p>
 <table>
 <thead><tr><th>Grupo</th><th class="n">Parado</th><th class="n">Meta</th>
 <th class="n opt">Liquidado</th><th class="n">% de la meta</th>
