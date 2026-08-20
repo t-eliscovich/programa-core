@@ -21,6 +21,9 @@
  *   - date:   "16/05/2026"  (dd/mm/yyyy)
  *   - text:   cualquier otra cosa (case-insensitive comparison)
  *
+ *   5. Filas de DETALLE (las que abre un "+"): class="acc-detail-row" o
+ *      data-fila-hija — viajan pegadas a la fila de arriba al ordenar.
+ *
  * Caveat: las columnas "Acum." (corrido por fecha) pierden sentido al
  * sortear por otra cosa. El header de Acum suele tener data-no-sort para
  * no engañar. Las filas con class="no-sort" se quedan al final
@@ -89,13 +92,25 @@
     return 'text';
   }
 
+  // ── Filas de DETALLE (las que abre un "+") ────────────────────────────────
+  // TMT 2026-08-20 (dueña: "no me anda el + en ingreso de hilado"). En
+  // /importaciones el desglose de una compra/anticipo son filas HERMANAS de su
+  // fila madre, y el "+" las busca con `nextElementSibling`. Al ordenar, cada
+  // fila viajaba suelta: el detalle quedaba colgado de OTRA importación y 94 de
+  // 115 "+" dejaban de abrir. Regla: la fila madre viaja con sus hijas pegadas,
+  // y las hijas no se ordenan ni cuentan para detectar el tipo de la columna.
+  function esFilaHija(row) {
+    return row.classList.contains('acc-detail-row') ||
+           row.hasAttribute('data-fila-hija');
+  }
+
   function detectColumnType(tbodies, colIdx) {
     // Muestreamos hasta 5 celdas con contenido para decidir.
     let n = 0;
     const counts = { number: 0, date: 0, text: 0 };
     for (const tb of tbodies) {
       for (const row of tb.rows) {
-        if (row.classList.contains('no-sort')) continue;
+        if (row.classList.contains('no-sort') || esFilaHija(row)) continue;
         const cell = row.cells[colIdx];
         if (!cell) continue;
         // data-sort-value gana — si existe, asumimos tipo de su contenido.
@@ -175,17 +190,26 @@
       : detectColumnType(table.tBodies, colIdx);
 
     for (const tb of table.tBodies) {
-      const rows = Array.from(tb.rows);
-      const sortable = rows.filter(r => !r.classList.contains('no-sort'));
-      const fixed    = rows.filter(r =>  r.classList.contains('no-sort'));
+      // Se ordenan BLOQUES (fila madre + sus filas de detalle), no filas
+      // sueltas: así el detalle nunca se despega de su madre.
+      const bloques = [];
+      const fixed = [];
+      let destino = null;
+      for (const r of Array.from(tb.rows)) {
+        if (esFilaHija(r) && destino) { destino.push(r); continue; }
+        if (r.classList.contains('no-sort')) { fixed.push(r); destino = fixed; continue; }
+        const b = [r];
+        bloques.push(b);
+        destino = b;
+      }
       const cmpFn = comparadorFilas(type, dir);
-      sortable.sort((a, b) => cmpFn(
-        cellSortValue(a.cells[colIdx], type),
-        cellSortValue(b.cells[colIdx], type)
+      bloques.sort((a, b) => cmpFn(
+        cellSortValue(a[0].cells[colIdx], type),
+        cellSortValue(b[0].cells[colIdx], type)
       ));
-      // Re-inyectar en orden: sortable primero, fixed (totales/footer) al final.
+      // Re-inyectar en orden: bloques primero, fixed (totales/footer) al final.
       const frag = document.createDocumentFragment();
-      sortable.forEach(r => frag.appendChild(r));
+      bloques.forEach(b => b.forEach(r => frag.appendChild(r)));
       fixed.forEach(r => frag.appendChild(r));
       tb.appendChild(frag);
     }
@@ -315,6 +339,7 @@
 
   // Export SOLO para los tests (node). En el browser `module` no existe.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { parseNumber, parseDate, compareValues, comparadorFilas, esVacio };
+    module.exports = { parseNumber, parseDate, compareValues, comparadorFilas, esVacio,
+                       esFilaHija, sortTable };
   }
 })();
