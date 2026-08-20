@@ -236,6 +236,18 @@ def _loop() -> None:
                 _dia.correr_si_toca()
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("explicación del día (fondo): %s", e)
+            # TMT 2026-08-20 (dueña): la foto de SALDOS (y con ella la
+            # competencia entera: kilos vendidos, ranking, premio del mes y el
+            # congelamiento de la meta del día de la largada) sólo se movía si
+            # alguien entraba a /analisis/parado y apretaba «Actualizar». Cinco
+            # días antes de la largada la foto era del 18/08 19:42. Freno
+            # propio de 3 h contra `parado_refresh.actualizado`, ANALISIS_AUTO=0
+            # lo apaga.
+            try:
+                from modules.analisis import auto_refresco as _saldos
+                _saldos.correr_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("saldos (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)
