@@ -961,6 +961,60 @@ def grupo_agregar(codigo_grupo: str):
     return redirect(destino or url_for("clientes.grupos"))
 
 
+@clientes_bp.route("/clientes/grupos/nuevo", methods=["POST"])
+@requiere_login
+@requiere_permiso("grupos.editar")
+def grupo_nuevo():
+    """Armar un grupo nuevo desde /clientes/grupos.
+
+    TMT 2026-08-20 (dueña): *"dejar cargar nuevos grupos manualmente para
+    Alex... tiene que elegir la cabeza de grupo él"*. Hasta hoy un grupo nuevo
+    sólo nacía por el lapicito de /clientes (había que ir a buscar al cliente
+    en la lista) o por la carga masiva por Excel, que se le sacó de la barra a
+    propósito. Acá se escriben los dos códigos y listo.
+
+    Quién es la CABEZA lo elige la persona, no el programa: la cabeza le da el
+    nombre al grupo y es el renglón que encabeza la hoja impresa, y eso lo sabe
+    quien cobra. Por eso son dos campos y no "juntar estos dos".
+
+    Escribe por el mismo camino que todo lo demás (`_aplicar_grupo_del_form` →
+    `grupos.asignar`), así valida igual: que los dos códigos existan y que el
+    grupo no crie nietos.
+    """
+    cabeza = (request.form.get("cabeza") or "").strip().upper()
+    cod = (request.form.get("cod") or "").strip().upper()
+    ya = grupos_mod.grupo_de(cabeza) if cabeza else None
+    if not cabeza or not cod:
+        flash("Escribí el código de la cabeza y el del cliente que entra.", "warn")
+    elif cabeza == cod:
+        flash(
+            f"La cabeza y el cliente que entra son el mismo código ({cabeza}). "
+            f"Un grupo necesita por lo menos dos clientes.",
+            "error",
+        )
+    elif ya == cabeza:
+        # TMT 2026-08-20 (dueña): *"si pongo cabeza que exista me diga, este ya
+        # existe"*. Sin esto el alta lo agregaba callada al grupo que ya
+        # estaba, y ella creía haber armado uno nuevo. Es el mismo pedido de
+        # siempre: el programa no adivina, avisa.
+        flash(
+            f"El grupo {cabeza} ya existe. Para meter a {cod} usá el campito "
+            f"«+ código» del grupo {cabeza}, más abajo.",
+            "error",
+        )
+    elif ya:
+        flash(
+            f"{cabeza} no puede ser cabeza: ya está adentro del grupo {ya}. "
+            f"O sacalo de ese grupo primero, o armá el grupo con {ya}.",
+            "error",
+        )
+    else:
+        usuario = (g.user or {}).get("username", "web")
+        _aplicar_grupo_del_form(cod, cabeza, usuario)
+    destino = _safe_next_url(request.form.get("next"))
+    return redirect(destino or url_for("clientes.grupos"))
+
+
 @clientes_bp.route("/clientes/grupos-carga", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("grupos.editar")

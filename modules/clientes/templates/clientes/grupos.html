@@ -31,6 +31,16 @@
                    border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
   .grp-add button { border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px;
                     font-size: 12px; background: #f8fafc; color: #334155; cursor: pointer; }
+  .grp-nuevo { border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc;
+               padding: 10px 14px; margin-bottom: 14px; display: flex; gap: 10px;
+               align-items: flex-end; flex-wrap: wrap; }
+  .grp-nuevo label { display: block; font-size: 11px; color: #64748b; }
+  .grp-nuevo input { display: block; width: 6rem; text-transform: uppercase;
+                     font-family: ui-monospace, monospace; border: 1px solid #cbd5e1;
+                     border-radius: 4px; padding: 3px 6px; font-size: 13px; margin-top: 2px; }
+  .grp-nuevo button { border: 0; border-radius: 4px; padding: 4px 12px; font-size: 13px;
+                      background: #0284c7; color: #fff; cursor: pointer; }
+  .grp-nuevo .ayuda { font-size: 11px; color: #64748b; flex: 1; min-width: 12rem; }
   @media (min-width: 768px) { .grp-cols { column-count: 2; column-gap: 14px; } }
   @media print { .no-print { display: none !important; } .grp-cols { column-count: 2; }
                  .grp-x, .grp-add { display: none !important; } }
@@ -69,10 +79,37 @@
     {% endif %}
   </div>
 
+  {% if tiene_permiso('grupos.editar') %}
+  {# TMT 2026-08-20 (dueña): *"dejar cargar nuevos grupos manualmente para
+     Alex... tiene que elegir la cabeza de grupo él"*. Un grupo nuevo antes
+     sólo nacía yendo a buscar el cliente a /clientes; acá se escriben los dos
+     códigos. La cabeza la elige la persona: es la que le da el nombre al grupo
+     y encabeza la hoja impresa. #}
+  <form method="post" class="grp-nuevo no-print"
+        action="{{ url_for('clientes.grupo_nuevo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <label>Cabeza del grupo
+      <input type="text" name="cabeza" maxlength="10" required autocomplete="off"
+             placeholder="código" title="Código del cliente que encabeza el grupo.">
+    </label>
+    <label>Cliente que entra
+      <input type="text" name="cod" maxlength="10" required autocomplete="off"
+             placeholder="código" title="Código del primer cliente que va con la cabeza.">
+    </label>
+    <button type="submit">Armar el grupo</button>
+    <span class="ayuda">La cabeza es el cliente que le da el nombre al grupo.
+      Los demás se agregan después con el campito de cada grupo.</span>
+  </form>
+  {% endif %}
+
   {% if not grupos %}
     <div class="px-5 py-10 text-center text-slate-500 border border-slate-200 dark:border-slate-800 rounded">
       {% if q %}Ningún grupo tiene un cliente que coincida con «{{ q }}».
-      {% else %}Todavía no hay grupos armados. Se arman desde la columna <strong>Grupo</strong> de Clientes.{% endif %}
+      {% else %}Todavía no hay grupos armados.
+        {% if tiene_permiso('grupos.editar') %}Armá el primero acá arriba: la cabeza y el cliente que va con ella.
+        {% else %}Se arman desde la columna <strong>Grupo</strong> de Clientes.{% endif %}
+      {% endif %}
     </div>
   {% endif %}
 

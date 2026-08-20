@@ -222,8 +222,11 @@ def todos_los_grupos(q: str = "") -> list[dict]:
     ENTERO -- buscar "ZURITA" y que aparezca medio grupo seria peor que no
     buscar: la pantalla existe justamente para ver quien esta con quien.
 
-    Orden: alfabetico por codigo de grupo, y los integrantes tambien por
-    codigo (mismo criterio que la lista de clientes y las hojas impresas).
+    Orden: alfabetico por codigo de grupo. Adentro de cada grupo la CABEZA va
+    siempre primera (TMT 2026-08-20: *"ordena tambien la cabeza siempre arriba
+    en los grupos"*) y despues los demas por codigo -- la cabeza es la que le
+    da el nombre al grupo, leerla en el medio de la lista obliga a buscar la
+    etiqueta para saber quien manda.
     """
     filas = db.fetch_all(
         """
@@ -259,7 +262,8 @@ def todos_los_grupos(q: str = "") -> list[dict]:
             "nombre": grp["nombre"],
             "integrantes": [
                 {"codigo": c, "nombre": grp["integrantes"][c], "es_padre": c == grp["codigo"]}
-                for c in sorted(grp["integrantes"])
+                # False < True: la cabeza primero, el resto alfabetico.
+                for c in sorted(grp["integrantes"], key=lambda cod: (cod != grp["codigo"], cod))
             ],
         })
     salida.sort(key=lambda g: g["codigo"])

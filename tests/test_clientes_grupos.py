@@ -242,3 +242,198 @@ def test_aplicar_payload_invalido_es_400(monkeypatch):
         assert r.status_code == 400
     finally:
         deshacer()
+
+
+# ---------------------------------------------------------------------------
+# TMT 2026-08-20 (dueña), tres pedidos sobre lo cargado el 19:
+#   1. *"no puedo editar cuando es solo un cliente"*  -> el recuadro recortaba
+#   2. *"dejar cargar nuevos grupos manualmente... elige la cabeza él"*
+#   3. *"ordena tambien la cabeza siempre arriba en los grupos"*
+# ---------------------------------------------------------------------------
+
+
+def _app_wildcard():
+    from tests.test_routes_smoke import build_app
+
+    app, deshacer = build_app()
+    app.config["WTF_CSRF_ENABLED"] = False
+
+    @app.before_request
+    def _login_wildcard_20():
+        from flask import g
+        g.user = {"id_usuario": 1, "username": "test", "id_rol": 1,
+                  "nombre_rol": "Dueño", "activo": True}
+        g.permisos = {"*"}
+
+    return app, deshacer
+
+
+def test_la_tabla_de_clientes_no_recorta_el_campito_del_lapicito():
+    """Con UNA sola fila el campito quedaba cortado por la mitad.
+
+    El form del lapicito se abre `position:absolute` DEBAJO de la fila. El
+    recuadro de la tabla tenía `overflow-hidden`: con muchas filas el campito
+    caía sobre las de abajo y se veía igual, pero buscando un cliente por su
+    código —que es como se usa la pantalla— la tabla mide una fila y el
+    recuadro le cortaba la mitad. El test mira el recuadro que envuelve a la
+    tabla, no la pantalla entera: el sidebar también tiene `overflow-hidden` y
+    ese sí va.
+    """
+    import re
+
+    app, deshacer = _app_wildcard()
+    try:
+        html = app.test_client().get("/clientes").data.decode()
+        m = re.search(r'<div class="([^"]*)">\s*<table class="[^"]*cli-tabla', html)
+        assert m, "no encontré el recuadro que envuelve la tabla de clientes"
+        assert "overflow-hidden" not in m.group(1)
+    finally:
+        deshacer()
+
+
+def test_el_campito_del_lapicito_no_flota():
+    """*"se sigue sin ver el editar (no quiero scrollear)"* (dueña, 20/08).
+
+    Flotando (`position:absolute`) el campito depende de que nada lo recorte y
+    de que la fila no esté contra el borde de la pantalla. Ahora abre al lado
+    del código, en el flujo normal de la celda: no hay forma de que quede
+    afuera de la vista.
+    """
+    app, deshacer = _app_wildcard()
+    try:
+        html = app.test_client().get("/clientes").data.decode()
+        bloque = html.split(".cli-grupo-form {")[1].split("}")[0]
+        assert "position: absolute" not in bloque
+        assert "inline-flex" in bloque
+    finally:
+        deshacer()
+
+
+def test_la_cabeza_va_siempre_primera(monkeypatch):
+    """Aunque su código sea el último del abecedario.
+
+    ZUR es la cabeza y AZU un integrante: por código puro AZU iba primero y la
+    etiqueta «cabeza» quedaba en el medio de la lista.
+    """
+    from modules.clientes import grupos as grupos_mod
+
+    monkeypatch.setattr(grupos_mod.db, "fetch_all", lambda *a, **k: [
+        {"padre": "ZUR", "hijo": "AZU", "nombre_padre": "ZURITA MARIA",
+         "nombre_hijo": "ZURITA ANDRADE"},
+        {"padre": "ZUR", "hijo": "ZUB", "nombre_padre": "ZURITA MARIA",
+         "nombre_hijo": "ZURITA BENITEZ"},
+    ])
+    (grupo,) = grupos_mod.todos_los_grupos()
+    assert [i["codigo"] for i in grupo["integrantes"]] == ["ZUR", "AZU", "ZUB"]
+    assert grupo["integrantes"][0]["es_padre"] is True
+
+
+def test_grupo_nuevo_escribe_por_el_mismo_camino(monkeypatch):
+    """El alta de un grupo nuevo pega contra `asignar`, no contra la tabla.
+
+    Así hereda las validaciones (los dos códigos existen, sin nietos) en vez de
+    tener las suyas propias, que es como se desincronizan.
+    """
+    from modules.clientes import views
+
+    escrito = []
+    monkeypatch.setattr(views.grupos_mod, "grupo_de", lambda cod: None)
+    monkeypatch.setattr(
+        views.grupos_mod, "asignar",
+        lambda hijo, padre, usuario="web": (escrito.append((hijo, padre)), (True, "ok"))[1],
+    )
+    app, deshacer = _app_wildcard()
+    try:
+        c = app.test_client()
+        r = c.post("/clientes/grupos/nuevo", data={"cabeza": "zur", "cod": "azu"})
+        assert r.status_code == 302
+        assert escrito == [("AZU", "ZUR")]
+    finally:
+        deshacer()
+
+
+def test_grupo_nuevo_avisa_si_el_grupo_ya_existe(monkeypatch):
+    """*"si pongo cabeza que exista me diga, este ya existe"* (dueña, 20/08).
+
+    Antes lo agregaba callada al grupo que ya estaba: la pantalla no mentía
+    —el cliente quedaba bien— pero ella creía haber armado un grupo nuevo. Y
+    si la cabeza que escribe está ADENTRO de otro grupo, tampoco se escribe:
+    `asignar` lo aplanaría a la raíz y el grupo terminaría llamándose distinto
+    de lo que ella tipeó.
+    """
+    from modules.clientes import views
+
+    monkeypatch.setattr(
+        views.grupos_mod, "asignar",
+        lambda *a, **k: pytest.fail("no tiene que escribir"),
+    )
+    app, deshacer = _app_wildcard()
+    try:
+        c = app.test_client()
+        monkeypatch.setattr(views.grupos_mod, "grupo_de", lambda cod: "PUE")
+        with c:
+            r = c.post("/clientes/grupos/nuevo",
+                       data={"cabeza": "PUE", "cod": "JN1"},
+                       follow_redirects=False)
+            from flask import get_flashed_messages
+            msgs = " ".join(get_flashed_messages())
+        assert r.status_code == 302
+        assert "ya existe" in msgs
+
+        monkeypatch.setattr(views.grupos_mod, "grupo_de", lambda cod: "ZUR")
+        with c:
+            c.post("/clientes/grupos/nuevo", data={"cabeza": "AZU", "cod": "JN1"})
+            from flask import get_flashed_messages
+            msgs2 = " ".join(get_flashed_messages())
+        assert "ya está adentro del grupo ZUR" in msgs2
+    finally:
+        deshacer()
+
+
+def test_grupo_nuevo_con_la_misma_cabeza_y_cliente_no_escribe(monkeypatch):
+    """Un grupo de uno solo no es un grupo — y `asignar` lo rebotaría igual,
+    pero con un mensaje que habla de padres e hijos."""
+    from modules.clientes import views
+
+    monkeypatch.setattr(
+        views.grupos_mod, "asignar",
+        lambda *a, **k: pytest.fail("no tiene que escribir"),
+    )
+    monkeypatch.setattr(
+        views.grupos_mod, "quitar",
+        lambda *a, **k: pytest.fail("no tiene que escribir"),
+    )
+    monkeypatch.setattr(views.grupos_mod, "grupo_de", lambda cod: None)
+    app, deshacer = _app_wildcard()
+    try:
+        c = app.test_client()
+        assert c.post("/clientes/grupos/nuevo",
+                      data={"cabeza": "ABC", "cod": "abc"}).status_code == 302
+        assert c.post("/clientes/grupos/nuevo",
+                      data={"cabeza": "", "cod": "ABC"}).status_code == 302
+        assert c.post("/clientes/grupos/nuevo",
+                      data={"cabeza": "ABC", "cod": ""}).status_code == 302
+    finally:
+        deshacer()
+
+
+def test_grupo_nuevo_sin_permiso_es_404():
+    from tests.test_routes_smoke import build_app
+
+    app, deshacer = build_app()
+    app.config["WTF_CSRF_ENABLED"] = False
+    try:
+        @app.before_request
+        def _como_int_sin_grupos_20():
+            from flask import g
+            g.user = {"id_usuario": 2, "username": "int", "id_rol": 3,
+                      "nombre_rol": "INT", "activo": True}
+            g.permisos = {"clientes.ver"}
+
+        c = app.test_client()
+        assert c.post("/clientes/grupos/nuevo",
+                      data={"cabeza": "ABC", "cod": "DEF"}).status_code == 404
+        # Y el form tampoco se le ofrece.
+        assert "grupos/nuevo" not in c.get("/clientes/grupos").data.decode()
+    finally:
+        deshacer()

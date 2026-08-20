@@ -9,17 +9,23 @@
    clases que no estén ya adentro no renderizan (ver skill programa-core). #}
 {% if tiene_permiso('grupos.editar') %}
 <style>
-  .cli-grupo { display: inline-block; position: relative; }
+  /* TMT 2026-08-20 (dueña): *"se sigue sin ver el editar (no quiero
+     scrollear)"*. El campito se abría FLOTANDO debajo de la fila
+     (`position:absolute`): cualquier recuadro que recorte, cualquier fila que
+     caiga cerca del borde de la pantalla y el campito queda afuera. Ahora se
+     abre AL LADO del código, dentro de la misma celda y en el flujo normal:
+     no puede quedar tapado ni fuera de la vista, porque no flota. Se ensancha
+     la columna mientras editás y vuelve sola al cerrar. */
+  .cli-grupo { display: inline-flex; align-items: center; gap: 6px; }
   .cli-grupo > summary { list-style: none; cursor: pointer; }
   .cli-grupo > summary::-webkit-details-marker { display: none; }
   .cli-grupo .cli-lapiz { opacity: 0; font-size: 10px; margin-left: 2px; }
   tr:hover .cli-grupo .cli-lapiz { opacity: .55; }
   .cli-grupo[open] .cli-lapiz { opacity: 1; }
   .cli-grupo-form {
-    position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 2px;
-    display: flex; gap: 4px; align-items: center; white-space: nowrap;
+    display: inline-flex; gap: 4px; align-items: center; white-space: nowrap;
     background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
-    padding: 6px; box-shadow: 0 6px 18px rgba(15,23,42,.14);
+    padding: 3px 6px;
   }
   .cli-grupo-form input[type=text] {
     width: 5.5rem; text-transform: uppercase; font-family: ui-monospace, monospace;
@@ -29,10 +35,15 @@
     border-radius: 4px; padding: 2px 8px; font-size: 12px;
     background: #0284c7; color: #fff; border: 0;
   }
-  .cli-grupo-form .cli-grupo-ayuda { font-size: 10px; color: #64748b; }
   @media print { .cli-grupo .cli-lapiz, .cli-grupo-form { display: none !important; } }
 </style>
 {% endif %}
+<style>
+  /* El recuadro de la tabla ya no recorta (ver el comentario de abajo), asi
+     que las esquinas de arriba las redondea el encabezado. */
+  .cli-tabla thead th:first-child { border-top-left-radius: 3px; }
+  .cli-tabla thead th:last-child  { border-top-right-radius: 3px; }
+</style>
 <div class="max-w-6xl">
   {# TMT 2026-08-19 (dueña): *"arregla la pagina de clientes. muy extensa, nadie
      la usa. un buscador y mas chiquito con los codigos en negrita y finito"*.
@@ -80,8 +91,15 @@
     </div>
   {% endif %}
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-xs sortable">
+  {# TMT 2026-08-20 (dueña): *"no puedo editar cuando es solo un cliente"*. El
+     campito del lapicito se abre DEBAJO de la fila (position:absolute) y este
+     recuadro lo recortaba (`overflow-hidden`): con muchas filas el campito
+     caía encima de las de abajo y se veía igual, pero con UNA sola fila el
+     recuadro termina ahí mismo y le cortaba la mitad —justo el caso de buscar
+     un cliente por su código, que es como se usa la pantalla—. Sin recorte;
+     las esquinas de arriba las redondea el propio encabezado. #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <table class="w-full text-xs sortable cli-tabla">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-3 py-2 text-left font-medium">Código</th>
@@ -152,7 +170,6 @@
                        autocomplete="off" placeholder="{{ c.codigo_cli }}"
                        title="Código del cliente cabeza del grupo. Vacío = sacarlo del grupo.">
                 <button type="submit">Guardar</button>
-                <span class="cli-grupo-ayuda">vacío = sin grupo</span>
               </form>
             </details>
             {% elif c.grupo %}{{ c.grupo }}
