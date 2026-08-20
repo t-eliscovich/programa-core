@@ -1456,7 +1456,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 g["texto"] = ((ev.get("concepto") or "").strip()
                               or _corto(ev["tipo"], quien))
             else:
-                g["texto"] = _corto(ev["tipo"], quien)
+                g["texto"] = _corto(ev["tipo"], quien, ev.get("importe"))
             # El destino, cuando el evento lo sabe: "AN AI → CP 10130" dice a
             # qué compra fueron, que es lo que /historial muestra y acá faltaba.
             # …salvo en un renglón juntado: el número de UNA de las compras al

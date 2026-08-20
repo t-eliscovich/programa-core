@@ -61,9 +61,10 @@ def de_la_ventana(desde, hasta) -> list[dict]:
     if not desde or not hasta:
         return []
     try:
-        from modules.historial.queries import TIPOS_LABEL
+        from modules.historial.queries import label as _label
     except Exception:  # noqa: BLE001
-        TIPOS_LABEL = {}
+        def _label(tipo, importe=None):
+            return (tipo or "").replace("_", " ")
     try:
         filas = db.fetch_all(
             """
@@ -84,8 +85,8 @@ def de_la_ventana(desde, hasta) -> list[dict]:
         if (r.get("tipo") or "") in TIPOS_OCULTOS:
             continue
         r = dict(r)
-        r["label"] = TIPOS_LABEL.get(r.get("tipo"), (r.get("tipo") or "").replace("_", " "))
-        r["label"] = r["label"]
+        # El signo puede dar vuelta el nombre: un retiro NEGATIVO es un aporte.
+        r["label"] = _label(r.get("tipo") or "", r.get("importe"))
         docs = [_doc(r.get("origen_table"), r.get("origen_id")),
                 _doc(r.get("destino_table"), r.get("destino_id"))]
         # 🚨 Una conversión de anticipos registra UNA sola `mov_doble` con
@@ -243,6 +244,47 @@ def _prefijo_comun(textos: list[str]) -> str:
     return comun if len(comun) >= MIN_PREFIJO else ""
 
 
+def _id_bancario(ev: dict):
+    """El `id_transaccion` del lado banco del movimiento."""
+    for lado in ("destino", "origen"):
+        if ev.get(f"{lado}_table") == "transacciones_bancarias":
+            try:
+                return int(ev.get(f"{lado}_id"))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _no_banco_de_la_transaccion(evs: list[dict]) -> dict[int, int]:
+    """`id_transaccion` → `no_banco`, para los hechos que no lo traen encima.
+
+    🚨 TMT 2026-08-20, sobre el aporte de 128.625 de LAFER: el renglón del banco
+    decía "Cheque emitido → otro · 102.973" y ese cheque era de 25.651,68. Los
+    otros 128.625 eran el depósito del aporte, que en la misma ventana movió la
+    MISMA cuenta — pero `capital.retirar()` y `capital.aportar()` guardan
+    `metadata` sin `no_banco`, así que acá quedaban invisibles y la cuenta
+    parecía tener un solo hecho: el Δ entero se le colgaba al que quedó, con un
+    nombre FALSO. El `no_banco` que la metadata no trae lo sabe la transacción.
+
+    Fail-soft: si la consulta falla se sigue como antes (nombres más pobres,
+    nunca una pantalla caída).
+    """
+    faltan = sorted({i for ev in evs
+                     if (ev.get("meta") or {}).get("no_banco") is None
+                     and (i := _id_bancario(ev)) is not None})
+    if not faltan:
+        return {}
+    try:
+        filas = db.fetch_all(
+            "SELECT id_transaccion, no_banco FROM scintela.transacciones_bancarias "
+            " WHERE id_transaccion = ANY(%s)", (faltan,)) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("eventos: no pude resolver el no_banco (%s)", e)
+        return {}
+    return {int(f["id_transaccion"]): int(f["no_banco"]) for f in filas
+            if f.get("no_banco") is not None}
+
+
 def _cuentas(evs: list[dict]) -> dict[str, dict]:
     """`b<no_banco>` → el hecho que movió esa cuenta en la ventana.
 
@@ -253,8 +295,9 @@ def _cuentas(evs: list[dict]) -> dict[str, dict]:
     el "documento" del diff es la cuenta y su nombre es todo lo que se sabía.
 
     `mov_doble` sí sabe qué pasó, pero su lado banco es `transacciones_
-    bancarias`, que no tiene prefijo en la foto — el puente es el `no_banco`
-    de la metadata.
+    bancarias`, que no tiene prefijo en la foto — el puente es el `no_banco`,
+    que sale de la metadata o, cuando el hecho no lo guardó, de la transacción
+    misma (`_no_banco_de_la_transaccion`).
 
     ⭐ Cuando el único hecho de la cuenta es también el del otro lado (un
     depósito de cheques, una nota de débito contra un posdat), se devuelve EL
@@ -263,12 +306,15 @@ def _cuentas(evs: list[dict]) -> dict[str, dict]:
     hechos distintos no se elige uno —sería atribuirle el Δ entero al que
     quedó— y el renglón dice cuántos fueron.
     """
+    bancarios = [ev for ev in evs or []
+                 if "transacciones_bancarias" in (ev.get("origen_table"),
+                                                  ev.get("destino_table"))]
+    de_la_transaccion = _no_banco_de_la_transaccion(bancarios)
     por_cuenta: dict[str, list[dict]] = {}
-    for ev in evs or []:
-        if "transacciones_bancarias" not in (ev.get("origen_table"),
-                                             ev.get("destino_table")):
-            continue
+    for ev in bancarios:
         nb = (ev.get("meta") or {}).get("no_banco")
+        if nb is None:
+            nb = de_la_transaccion.get(_id_bancario(ev))
         try:
             doc = f"b{int(nb)}"
         except (TypeError, ValueError):

@@ -138,9 +138,46 @@ TIPOS_LABEL = {
 }
 
 
-def label(tipo: str) -> str:
-    """Etiqueta legible para un tipo de mov_doble."""
-    return TIPOS_LABEL.get(tipo, tipo.replace("_", " ").title())
+#: El tipo dice "retiro" pero el SIGNO dice lo contrario: un retiro cargado en
+#: NEGATIVO es un APORTE del socio (paridad dBase, TMT 2026-07-20: *"tenemos
+#: que poder cargar aportes que no tengan que ver con OP"*). `capital.retirar()`
+#: usa el MISMO tipo para los dos, así que el renglón salía "Retiro socio ←
+#: Pichincha" para plata que ENTRÓ a Pichincha: la palabra y la flecha, las dos
+#: al revés. TMT 2026-08-20, sobre el aporte de 128.625 de UNITECH.
+APORTE_SI_NEGATIVO = {
+    "retiro_socio_de_caja":               "Aporte socio → Caja",
+    "retiro_socio_de_pichincha":          "Aporte socio → Pichincha",
+    "retiro_socio_de_internacional":      "Aporte socio → Internacional",
+    "reverso_retiro_socio_caja":          "Reverso: aporte → Caja",
+    "reverso_retiro_socio_pichincha":     "Reverso: aporte → Pichincha",
+    "reverso_retiro_socio_internacional": "Reverso: aporte → Internacional",
+}
+
+
+def dado_vuelta_por_el_signo(tipo: str, importe) -> str:
+    """El nombre corregido por el SIGNO, o "" si el signo no cambia nada.
+
+    Un solo lugar para los dos que preguntan: el Historial (`label`) y la traza
+    (`corto`). Dos tablas separadas se desincronizan.
+    """
+    if importe is None:
+        return ""
+    try:
+        if float(importe) >= 0:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    return APORTE_SI_NEGATIVO.get((tipo or "").strip(), "")
+
+
+def label(tipo: str, importe=None) -> str:
+    """Etiqueta legible para un tipo de mov_doble.
+
+    Con `importe` se corrigen los tipos donde el signo da vuelta el sentido
+    (ver `APORTE_SI_NEGATIVO`). Sin él, el label es el de siempre.
+    """
+    return (dado_vuelta_por_el_signo(tipo, importe)
+            or TIPOS_LABEL.get(tipo, tipo.replace("_", " ").title()))
 
 
 def listar(
@@ -627,15 +664,21 @@ TIPOS_CORTO = {
 }
 
 
-def corto(tipo: str, quien: str = "") -> str:
+def corto(tipo: str, quien: str = "", importe=None) -> str:
     """El nombre corto de un tipo, con el código de la contraparte en el medio.
 
     "cheque_cancelado_por_anticipo" + "BED"  →  "CH BED → cancela AN"
 
     Un reverso lleva ↩ adelante y hereda el corto del tipo original. Si el tipo
     no está mapeado cae al nombre largo, que es feo pero nunca miente.
+
+    Con `importe`, los tipos que el signo da vuelta salen con su nombre de
+    verdad (un retiro negativo es un aporte).
     """
     tipo = (tipo or "").strip()
+    dado_vuelta = dado_vuelta_por_el_signo(tipo, importe)
+    if dado_vuelta:
+        return dado_vuelta
     vuelta = ""
     if tipo.startswith("reverso_"):
         vuelta, tipo = "↩ ", tipo[len("reverso_"):]

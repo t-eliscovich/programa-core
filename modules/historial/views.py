@@ -606,7 +606,7 @@ def lista():
         [r.get("origen_id") for r in filas if (r.get("tipo") or "") == "retiro_op"]
     )
     for r in filas:
-        r["label"] = queries.label(r.get("tipo") or "")
+        r["label"] = queries.label(r.get("tipo") or "", r.get("importe"))
         # El TIPO no puede decir "Cheque" de algo que no lo es: el medio
         # exacto lo dice la columna Origen ("Dep. Pich.", "Efectivo"), así que
         # acá va la palabra genérica. "Cheque: alta" → "Cobro: alta".
