@@ -168,11 +168,22 @@ def test_sin_permiso_grupos_editar_es_404():
         html = c.get("/clientes").data.decode()
         assert "grupos-carga" not in html
         assert "cli-grupo-form" not in html
+        # La pantalla de grupos SÍ se ve (es `clientes.ver`): saber quién está
+        # con quién es parte de mirar la cartera. Lo que no aparece es cómo
+        # tocarlo.
+        html_g = c.get("/clientes/grupos").data.decode()
+        # Se chequea el ACTION del form, no la clase CSS: el `<style>` de la
+        # pantalla define `.grp-add` para todos (es una hoja sola) y buscar la
+        # clase daría un falso positivo — el test pasaría a medir el CSS en vez
+        # de medir quién puede escribir.
+        assert "/agregar" not in html_g
+        assert "/grupo\"" not in html_g
+        assert c.post("/clientes/grupos/ECH/agregar", data={"cod": "ALX"}).status_code == 404
     finally:
         deshacer()
 
 
-def test_con_permiso_la_carga_masiva_abre_y_el_listado_la_linkea():
+def test_el_listado_linkea_la_pantalla_de_grupos_y_no_la_carga_masiva():
     from tests.test_routes_smoke import build_app
 
     app, deshacer = build_app()
@@ -188,11 +199,17 @@ def test_con_permiso_la_carga_masiva_abre_y_el_listado_la_linkea():
         c = app.test_client()
         assert c.get("/clientes/grupos-carga").status_code == 200
         html = c.get("/clientes").data.decode()
-        assert "grupos-carga" in html
+        # TMT 2026-08-19 (dueña): *"¿podés eliminar carga masiva de grupos? que
+        # sirva solo para vos eso"*. La ruta sigue viva —es como se cargó el
+        # cuaderno entero— pero NO se ofrece en la pantalla ni siquiera a quien
+        # tiene el permiso. Lo que se linkea es la pantalla de grupos.
+        assert "grupos-carga" not in html
+        assert "/clientes/grupos" in html
         # La columna existe SIEMPRE, aunque la lista venga vacía: si el
         # encabezado dependiera de que haya filas, la pantalla sin resultados
         # parecería no tener la columna.
         assert ">Grupo</th>" in html
+        assert c.get("/clientes/grupos").status_code == 200
     finally:
         deshacer()
 

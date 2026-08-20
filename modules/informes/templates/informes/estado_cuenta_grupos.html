@@ -230,8 +230,15 @@
       <tbody>
         {% for grp in grupos %}
           <tr class="grp-head bg-slate-100 dark:bg-slate-800/60 border-t border-slate-300 dark:border-slate-700">
+            {# TMT 2026-08-19 (dueña): el renglón del grupo va por CÓDIGO, no por
+               el nombre del cliente cabeza — *"o mejor solo codigo, abajo
+               vemos el nombre"*. Y es cierto: el nombre del cabeza ya está en
+               la primera fila del propio grupo, así que repetirlo arriba
+               ocupaba media hoja y hacía parecer que el encabezado era otro
+               cliente más. Mismo criterio que el resto de las grillas: el
+               cliente se nombra por su código de 3 letras. #}
             <td class="py-1.5 px-2 font-semibold" colspan="2">
-              {{ grp.label }}
+              <span style="font-family: ui-monospace, monospace;">{{ grp.codigo }}</span>
               <span class="text-xs font-normal text-slate-500">· {{ grp.clientes | length }} clientes</span>
             </td>
             <td class="py-1.5 px-2 text-right font-bold tabular-nums">{{ grp.saldo | money_es }}</td>

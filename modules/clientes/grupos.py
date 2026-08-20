@@ -210,3 +210,57 @@ def quitar(codigo_cli: str, usuario: str = "web") -> tuple[bool, str]:
     if n_self:
         return True, f"{cod} quedo sin grupo."
     return True, f"{cod} ya no estaba en ningun grupo."
+
+
+def todos_los_grupos(q: str = "") -> list[dict]:
+    """Todos los grupos con sus integrantes y el nombre de cada uno.
+
+    Una sola query: la tabla es chica (112 filas / 57 grupos el 19/08) y el
+    armado en Python evita el `string_agg` + segundo join por nombre.
+
+    `q` filtra por codigo o nombre de CUALQUIER integrante y devuelve el grupo
+    ENTERO -- buscar "ZURITA" y que aparezca medio grupo seria peor que no
+    buscar: la pantalla existe justamente para ver quien esta con quien.
+
+    Orden: alfabetico por codigo de grupo, y los integrantes tambien por
+    codigo (mismo criterio que la lista de clientes y las hojas impresas).
+    """
+    filas = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(g.codigo_padre)) AS padre,
+               UPPER(TRIM(g.codigo_hijo))  AS hijo,
+               COALESCE(cp.nombre, '')     AS nombre_padre,
+               COALESCE(ch.nombre, '')     AS nombre_hijo
+        FROM scintela.grupo_cliente g
+        LEFT JOIN scintela.cliente cp ON UPPER(TRIM(cp.codigo_cli)) = UPPER(TRIM(g.codigo_padre))
+        LEFT JOIN scintela.cliente ch ON UPPER(TRIM(ch.codigo_cli)) = UPPER(TRIM(g.codigo_hijo))
+        """
+    ) or []
+
+    grupos: dict[str, dict] = {}
+    for f in filas:
+        grp = grupos.setdefault(f["padre"], {
+            "codigo": f["padre"],
+            "nombre": f["nombre_padre"],
+            "integrantes": {f["padre"]: f["nombre_padre"]},
+        })
+        grp["integrantes"][f["hijo"]] = f["nombre_hijo"]
+
+    termino = _norm(q)
+    salida = []
+    for grp in grupos.values():
+        if termino and not any(
+            termino in cod or termino in (nom or "").upper()
+            for cod, nom in grp["integrantes"].items()
+        ):
+            continue
+        salida.append({
+            "codigo": grp["codigo"],
+            "nombre": grp["nombre"],
+            "integrantes": [
+                {"codigo": c, "nombre": grp["integrantes"][c], "es_padre": c == grp["codigo"]}
+                for c in sorted(grp["integrantes"])
+            ],
+        })
+    salida.sort(key=lambda g: g["codigo"])
+    return salida

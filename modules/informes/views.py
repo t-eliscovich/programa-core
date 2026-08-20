@@ -3541,7 +3541,9 @@ def estado_cuenta_grupos():
         gmap: dict = {}
         for r in filas:
             k, label = _keylabel(r)
-            grp = gmap.setdefault(k, {"label": label, "clientes": [], "saldo": 0.0})
+            grp = gmap.setdefault(
+                k, {"codigo": k, "label": label, "clientes": [], "saldo": 0.0}
+            )
             grp["clientes"].append(r)
             grp["saldo"] += float(r.get("saldo") or 0)
         grupos = [g for g in gmap.values() if len(g["clientes"]) >= 2]

@@ -905,6 +905,60 @@ def editar_grupo(codigo_cli: str):
     return redirect(destino or url_for("clientes.lista"))
 
 
+@clientes_bp.route("/clientes/grupos", methods=["GET"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def grupos():
+    """La pantalla de los grupos: quién está con quién, y editarlo ahí mismo.
+
+    TMT 2026-08-19 (dueña, después de la carga del cuaderno): *"¿dónde puedo
+    ver los grupos y editar?"*. La columna Grupo de /clientes contesta "¿de qué
+    grupo es ESTE cliente?" pero no "¿quiénes son los 57 grupos?" — para eso
+    había que ir cliente por cliente. `/cartera/grupos` tampoco: ésa es la
+    cartera consolidada y **sólo muestra los grupos con saldo**, así que un
+    grupo recién cargado que no debe nada no aparece.
+
+    Ver es `clientes.ver`; editar pide `grupos.editar` (los botones se gatean
+    solos en el template). Los formularios de sacar/agregar pegan contra
+    `clientes.editar_grupo`, la MISMA ruta que el lapicito de la lista: una
+    sola forma de escribir un grupo, un solo lugar donde arreglarla.
+    """
+    q = (request.args.get("q") or "").strip()
+    try:
+        grupos_lista = grupos_mod.todos_los_grupos(q)
+        error = None
+    except Exception as e:  # noqa: BLE001
+        grupos_lista, error = [], str(e)
+    return render_template(
+        "clientes/grupos.html",
+        grupos=grupos_lista,
+        q=q,
+        error=error,
+        n_clientes=sum(len(g["integrantes"]) for g in grupos_lista),
+    )
+
+
+@clientes_bp.route("/clientes/grupos/<codigo_grupo>/agregar", methods=["POST"])
+@requiere_login
+@requiere_permiso("grupos.editar")
+def grupo_agregar(codigo_grupo: str):
+    """El campito "+ código" al pie de cada grupo en /clientes/grupos.
+
+    Existe como ruta propia porque el cliente que ENTRA lo escribe la persona:
+    con `clientes.editar_grupo` el código va en la URL, así que el form tendría
+    que armarse el `action` con JS. Acá el grupo va en la URL (lo sabe el
+    template) y el código entra por el campo. Un form HTML pelado, sin JS.
+    """
+    cod = (request.form.get("cod") or "").strip().upper()
+    if not cod:
+        flash("Escribí el código del cliente que entra al grupo.", "warn")
+    else:
+        usuario = (g.user or {}).get("username", "web")
+        _aplicar_grupo_del_form(cod, codigo_grupo, usuario)
+    destino = _safe_next_url(request.form.get("next"))
+    return redirect(destino or url_for("clientes.grupos"))
+
+
 @clientes_bp.route("/clientes/grupos-carga", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("grupos.editar")

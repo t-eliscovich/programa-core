@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Grupos de clientes{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('clientes.lista') }}" class="hover:underline">Clientes</a> › <strong>Grupos</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-08-19 (dueña): *"¿dónde puedo ver los grupos y editar?"*. Un bloque
+   por grupo, el cabeza marcado, y cada integrante con su ✕ para sacarlo. El
+   alta va por el campito al pie de cada grupo. Todo pega contra
+   `clientes.editar_grupo` — la misma ruta que el lapicito de la lista.
+   Estilos inline: `static/tailwind.css` es un build JIT CONGELADO y las clases
+   que no estén ya adentro no renderizan (ver skill programa-core). #}
+<style>
+  .grp-card { border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
+              padding: 10px 14px; margin-bottom: 10px; break-inside: avoid; }
+  .grp-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+              border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 6px; }
+  .grp-cod  { font-family: ui-monospace, monospace; font-weight: 700; font-size: 15px; }
+  .grp-nom  { color: #475569; font-size: 13px; }
+  .grp-n    { color: #94a3b8; font-size: 11px; margin-left: auto; }
+  .grp-int  { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
+  .grp-int a.cod { font-family: ui-monospace, monospace; font-weight: 600; width: 3.2rem;
+                   display: inline-block; color: #0369a1; }
+  .grp-int .nom { color: #475569; }
+  .grp-cabeza { font-size: 10px; color: #b45309; background: #fef3c7;
+                border-radius: 999px; padding: 0 6px; }
+  .grp-x { color: #cbd5e1; border: 0; background: none; cursor: pointer; font-size: 13px; }
+  .grp-int:hover .grp-x { color: #dc2626; }
+  .grp-add { margin-top: 6px; display: flex; gap: 5px; align-items: center; }
+  .grp-add input { width: 5rem; text-transform: uppercase; font-family: ui-monospace, monospace;
+                   border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+  .grp-add button { border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px;
+                    font-size: 12px; background: #f8fafc; color: #334155; cursor: pointer; }
+  @media (min-width: 768px) { .grp-cols { column-count: 2; column-gap: 14px; } }
+  @media print { .no-print { display: none !important; } .grp-cols { column-count: 2; }
+                 .grp-x, .grp-add { display: none !important; } }
+</style>
+
+<div class="max-w-5xl">
+  <div class="flex items-start justify-between gap-4 mb-5 flex-wrap">
+    {{ page_hero('Grupos de clientes', 'Clientes de una misma casa: se cobran y se imprimen juntos') }}
+    <div class="no-print flex items-center gap-2">
+      <form class="flex items-center gap-2">
+        <input type="text" name="q" value="{{ q }}" placeholder="Código o nombre…" autofocus
+               class="w-56 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Buscar</button>
+      </form>
+      <button onclick="window.print()"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+      <a href="{{ url_for('clientes.lista') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">← Clientes</a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-5 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="mb-4 text-sm text-slate-500">
+    {{ grupos | length }} grupo{{ '' if grupos|length == 1 else 's' }} ·
+    {{ n_clientes }} cliente{{ '' if n_clientes == 1 else 's' }}
+    {%- if q %} que coinciden con «{{ q }}»{% endif %}.
+    {# La búsqueda trae el grupo ENTERO: buscar un apellido y ver medio grupo
+       sería peor que no buscar — la pantalla existe para ver quién está con quién. #}
+    {% if tiene_permiso('grupos.editar') %}
+      <span class="no-print text-slate-400">· La ✕ saca al cliente del grupo; el campito de abajo agrega uno por su código.</span>
+    {% endif %}
+  </div>
+
+  {% if not grupos %}
+    <div class="px-5 py-10 text-center text-slate-500 border border-slate-200 dark:border-slate-800 rounded">
+      {% if q %}Ningún grupo tiene un cliente que coincida con «{{ q }}».
+      {% else %}Todavía no hay grupos armados. Se arman desde la columna <strong>Grupo</strong> de Clientes.{% endif %}
+    </div>
+  {% endif %}
+
+  <div class="grp-cols">
+    {% for g in grupos %}
+    <div class="grp-card">
+      <div class="grp-head">
+        <span class="grp-cod">{{ g.codigo }}</span>
+        <span class="grp-nom">{{ g.nombre or '—' }}</span>
+        <span class="grp-n">{{ g.integrantes | length }} clientes</span>
+      </div>
+      {% for i in g.integrantes %}
+      <div class="grp-int">
+        <a class="cod" href="{{ url_for('informes.estado_cuenta', codigo_cli=i.codigo) }}">{{ i.codigo }}</a>
+        <span class="nom">{{ i.nombre or '—' }}</span>
+        {% if i.es_padre %}<span class="grp-cabeza">cabeza</span>{% endif %}
+        {% if tiene_permiso('grupos.editar') and not i.es_padre %}
+        <form method="post" class="no-print" style="margin-left:auto"
+              action="{{ url_for('clientes.editar_grupo', codigo_cli=i.codigo) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <input type="hidden" name="grupo" value="">
+          <button type="submit" class="grp-x" title="Sacar a {{ i.codigo }} del grupo {{ g.codigo }}">✕</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% if tiene_permiso('grupos.editar') %}
+      {# Sacar al CABEZA disuelve el grupo entero, así que no va acá: para eso
+         está el lapicito de /clientes, donde se ve a quién le estás cambiando
+         qué. Acá sólo se suma o se saca gente del grupo. #}
+      <form method="post" class="grp-add no-print"
+            action="{{ url_for('clientes.grupo_agregar', codigo_grupo=g.codigo) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path }}">
+        <input type="text" name="cod" placeholder="+ código" maxlength="10" required
+               title="Código del cliente que entra al grupo {{ g.codigo }}">
+        <button type="submit">Agregar</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

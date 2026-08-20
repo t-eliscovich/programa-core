@@ -51,10 +51,12 @@
       <a href="{{ url_for('clientes.cupos_carga') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Carga masiva de cupos</a>
       {% endif %}
-      {% if tiene_permiso('grupos.editar') %}
-      <a href="{{ url_for('clientes.grupos_carga') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Carga masiva de grupos</a>
-      {% endif %}
+      {# TMT 2026-08-19 (dueña): *"¿podés eliminar carga masiva de grupos? que
+         sirva solo para vos eso"*. La ruta /clientes/grupos-carga sigue viva
+         (es como se cargó el cuaderno entero), pero no se ofrece en la
+         pantalla: los grupos del día a día se tocan de a uno, por acá. #}
+      <a href="{{ url_for('clientes.grupos') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Grupos</a>
       {% if tiene_permiso('clientes.crear') %}
       <a href="{{ url_for('clientes.nuevo') }}"
          class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
