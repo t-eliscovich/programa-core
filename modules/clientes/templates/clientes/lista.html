@@ -34,36 +34,44 @@
 </style>
 {% endif %}
 <div class="max-w-6xl">
-  <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
+  {# TMT 2026-08-19 (dueña): *"arregla la pagina de clientes. muy extensa, nadie
+     la usa. un buscador y mas chiquito con los codigos en negrita y finito"*.
+     El buscador sube a un renglón propio y ancho —es lo primero que se usa acá,
+     y estaba escondido entre cuatro botones— y las filas bajan de ~46px a ~24px
+     sacándoles la segunda línea de dirección. #}
+  <div class="mb-4">
     {{ page_hero('Clientes', 'Listado con saldo pendiente') }}
-    <div class="no-print flex items-center gap-2">
-      {# TMT 2026-05-21 dueña: "no hace falta dividir entre clientes activos e
-         inactivos". Toggle "ver/ocultar inactivos" removido — la lista muestra
-         siempre todos los clientes (filtra solo por búsqueda). #}
-      <form class="flex items-center gap-2">
-        <input type="text" name="q" value="{{ q }}" placeholder="Código, nombre o RUC…" autofocus
-               class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
-        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Buscar</button>
-      </form>
-      <a href="{{ url_for('clientes.lista', q=q, export='csv') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
-      {% if tiene_permiso('cupos.editar') %}
-      <a href="{{ url_for('clientes.cupos_carga') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Carga masiva de cupos</a>
+  </div>
+
+  <div class="no-print flex items-center gap-2 mb-4 flex-wrap">
+    {# TMT 2026-05-21 dueña: "no hace falta dividir entre clientes activos e
+       inactivos". Toggle "ver/ocultar inactivos" removido — la lista muestra
+       siempre todos los clientes (filtra solo por búsqueda). #}
+    <form class="flex items-center gap-2 flex-1" style="min-width:20rem;">
+      <input type="text" name="q" value="{{ q }}" placeholder="Buscá por código, nombre o RUC…" autofocus
+             class="flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-4 py-2 text-base">
+      <button class="text-sm px-4 py-2 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Buscar</button>
+      {% if q %}
+      <a href="{{ url_for('clientes.lista') }}"
+         class="text-xs text-slate-400 hover:text-slate-600 hover:underline">limpiar</a>
       {% endif %}
-      {# TMT 2026-08-19 (dueña): *"¿podés eliminar carga masiva de grupos? que
-         sirva solo para vos eso"*. La ruta /clientes/grupos-carga sigue viva
-         (es como se cargó el cuaderno entero), pero no se ofrece en la
-         pantalla: los grupos del día a día se tocan de a uno, por acá. #}
-      <a href="{{ url_for('clientes.grupos') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Grupos</a>
-      {% if tiene_permiso('clientes.crear') %}
-      <a href="{{ url_for('clientes.nuevo') }}"
-         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
-        + Nuevo cliente
-      </a>
-      {% endif %}
-    </div>
+    </form>
+    <a href="{{ url_for('clientes.lista', q=q, export='csv') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+    {% if tiene_permiso('cupos.editar') %}
+    <a href="{{ url_for('clientes.cupos_carga') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cupos</a>
+    {% endif %}
+    {# TMT 2026-08-19 (dueña): *"¿podés eliminar carga masiva de grupos? que
+       sirva solo para vos eso"*. La ruta /clientes/grupos-carga sigue viva
+       (es como se cargó el cuaderno entero), pero no se ofrece en la
+       pantalla: los grupos del día a día se tocan de a uno, por acá. #}
+    <a href="{{ url_for('clientes.grupos') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Grupos</a>
+    {% if tiene_permiso('clientes.crear') %}
+    <a href="{{ url_for('clientes.nuevo') }}"
+       class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">+ Nuevo cliente</a>
+    {% endif %}
   </div>
 
   {% if error %}
@@ -73,23 +81,23 @@
   {% endif %}
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm sortable">
+    <table class="w-full text-xs sortable">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3 text-left font-medium">Código</th>
-          <th class="px-4 py-3 text-left font-medium">Nombre</th>
-          <th class="px-4 py-3 text-left font-medium">RUC</th>
-          <th class="px-4 py-3 text-left font-medium">Tel</th>
-          <th class="px-4 py-3 text-left font-medium">Pago</th>
-          <th class="px-4 py-3 text-left font-medium">Vend</th>
-          <th class="px-4 py-3 text-left font-medium">Grupo</th>
-          <th class="px-4 py-3 text-left font-medium">Estado</th>
-          <th class="px-4 py-3 text-right font-medium" data-sort-type="number">Cupo</th>
+          <th class="px-3 py-2 text-left font-medium">Código</th>
+          <th class="px-3 py-2 text-left font-medium">Nombre</th>
+          <th class="px-3 py-2 text-left font-medium">RUC</th>
+          <th class="px-3 py-2 text-left font-medium">Tel</th>
+          <th class="px-3 py-2 text-left font-medium">Pago</th>
+          <th class="px-3 py-2 text-left font-medium">Vend</th>
+          <th class="px-3 py-2 text-left font-medium">Grupo</th>
+          <th class="px-3 py-2 text-left font-medium">Estado</th>
+          <th class="px-3 py-2 text-right font-medium" data-sort-type="number">Cupo</th>
           {# TMT 2026-05-20 — columna 'Saldo' eliminada (pedido dueña:
              "en base de datos clientes, no mostrar deuda"). La info
              de saldo por cliente se ve en /informes/estado-cuenta. #}
           {% if tiene_permiso('clientes.editar') %}
-          <th class="px-1 py-3 no-print" style="width:80px;" data-no-sort></th>
+          <th class="px-1 py-2 no-print" style="width:80px;" data-no-sort></th>
           {% endif %}
         </tr>
       </thead>
@@ -98,10 +106,13 @@
         {# TMT 2026-05-21 dueña: ya no diferenciamos activos/inactivos en la
            pantalla (sin opacity, sin badge INACTIVO). #}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">
+          {# TMT 2026-08-19 (dueña): *"los codigos en negrita"*. Es por dónde se
+             busca y por dónde se nombra al cliente en toda la app; en una fila
+             finita, el código tiene que ser lo único que salte. #}
+          <td class="px-3 py-1 font-mono font-bold text-slate-900 dark:text-slate-100" style="white-space: nowrap;">
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}" class="hover:text-blue-600">{{ c.codigo_cli }}</a>
           </td>
-          <td class="px-4 py-2">
+          <td class="px-3 py-1">
             {# TMT 2026-06-10 dueña '"None" es lo mismo que nada': nombre NULL
                (cliente auto-creado al cargar factura Asinfo, ficha pendiente
                del próximo CLIENTES.DBF) se renderizaba como "None" literal. #}
@@ -111,20 +122,20 @@
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}" class="hover:text-blue-600 text-slate-400 italic"
                title="Cliente creado automáticamente al cargar su factura desde Asinfo — la ficha (nombre/RUC/dirección) llega sola con el próximo sync del dBase.">(ficha pendiente del dBase)</a>
             {% endif %}
-            {# Dirección (TMT 2026-06-06) como línea secundaria bajo el nombre. #}
-            {% set _dir = ((c.direccion1 ~ ' ' ~ c.direccion2) if c.direccion2 else c.direccion1) | cleanstr %}
-            {% if _dir and _dir | trim %}
-              <div class="text-xs text-slate-400 dark:text-slate-500">{{ _dir }}{% if c.canton or c.provincia %} · {{ [c.canton, c.provincia] | select | join(', ') }}{% endif %}</div>
-            {% endif %}
+            {# TMT 2026-08-19 (dueña): la dirección como segunda línea bajo el
+               nombre SE SACÓ — era lo que hacía el doble de alto cada fila
+               (*"muy extensa... y finito"*). Sigue en la ficha del cliente y en
+               el CSV, que es donde se la mira de verdad. La dirección entró el
+               2026-06-06 y estuvo dos meses y medio acá. #}
           </td>
-          <td class="px-4 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ c.ruc | cleanstr }}</td>
-          <td class="px-4 py-2 text-xs text-slate-500">{{ c.telefono | cleanstr }}</td>
-          <td class="px-4 py-2 text-xs">{{ c.pago if c.pago and c.pago != 'None' else '' }}</td>
+          <td class="px-3 py-1 text-xs text-slate-500" style="white-space: nowrap;">{{ c.ruc | cleanstr }}</td>
+          <td class="px-3 py-1 text-xs text-slate-500">{{ c.telefono | cleanstr }}</td>
+          <td class="px-3 py-1 text-xs">{{ c.pago if c.pago and c.pago != 'None' else '' }}</td>
           {# TMT 2026-05-19 v8 — dueña: solo 6 vendedores oficiales cobran
              comisión (PPR/EDG/SEP/JQU/FL1/RMY). El resto son códigos
              legacy o sin vendedor — los mostramos vacíos para que
              visualmente quede claro que no hay vendedor real asignado. #}
-          <td class="px-4 py-2 text-xs">
+          <td class="px-3 py-1 text-xs">
             {% if (c.vend or '')|upper|trim in ('PPR','EDG','SEP','JQU','FL1','RMY') %}
               <span class="font-mono">{{ c.vend }}</span>
             {% else %}
@@ -137,7 +148,7 @@
              grupo; el propio cabeza se muestra a sí mismo. Vacío = sin grupo.
              El lapicito abre un campito sin salir de la lista — cargar los ~45
              grupos del cuaderno entrando a cada ficha es una tarde. #}
-          <td class="px-4 py-2 text-xs font-mono" style="white-space: nowrap;">
+          <td class="px-3 py-1 text-xs font-mono" style="white-space: nowrap;">
             {% if tiene_permiso('grupos.editar') %}
             <details class="cli-grupo">
               <summary title="Grupo de {{ c.codigo_cli }} — clic para cambiarlo">
@@ -157,7 +168,7 @@
             {% elif c.grupo %}{{ c.grupo }}
             {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
           </td>
-          <td class="px-4 py-2 text-xs space-x-1">
+          <td class="px-3 py-1 text-xs space-x-1">
             {# TMT 2026-05-21 dueña: si está en STOP, agregamos botón inline
                para sacarlo sin tener que entrar a la ficha del cliente. #}
             {% if c.stop == 'S' %}
@@ -176,9 +187,9 @@
               {% endif %}
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
+          <td class="px-3 py-1 text-right text-mono">{{ c.cupo | money_es }}</td>
           {% if tiene_permiso('clientes.editar') and c.id_cliente %}
-          <td class="px-1 py-2 no-print text-center" style="white-space: nowrap;">
+          <td class="px-1 py-1 no-print text-center" style="white-space: nowrap;">
             {# TMT 2026-08-04 — cambiar el CÓDIGO de la ficha. Va por
                id_cliente (PK) igual que eliminar: con 20 códigos duplicados,
                el código no señala una ficha concreta. Es la única entrada
@@ -207,7 +218,7 @@
             </form>
           </td>
           {% elif tiene_permiso('clientes.editar') %}
-          <td class="px-1 py-2 no-print text-center"></td>
+          <td class="px-1 py-1 no-print text-center"></td>
           {% endif %}
         </tr>
         {% else %}
