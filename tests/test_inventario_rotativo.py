@@ -241,7 +241,7 @@ def test_la_pantalla_abre_por_color(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
         body = c.get("/inventario-rotativo").get_data(as_text=True)
-    assert "Inventario rotativo" in body
+    assert "Rotación del inventario" in body
     assert "JOS" in body
     # el encabezado de la tabla dice Tela: las filas de un color SON telas
     assert "<th>Tela</th>" in body
@@ -555,7 +555,7 @@ def test_la_hoja_filtrada_dice_ARRIBA_qué_filtro_tiene(app, fake_db):
     assert "Sólo lo que hay que teñir" in body
     assert "Fleece" in body
     cabeza = body.split('class="cabeza"')[1].split("</div>")[0]
-    assert "Inventario rotativo" in body[:body.index('class="cabeza"')] or cabeza
+    assert "Rotación del inventario" in body[:body.index('class="cabeza"')] or cabeza
 
 
 def test_el_filtro_de_la_pantalla_no_recorta_lo_que_se_ve(app, fake_db):

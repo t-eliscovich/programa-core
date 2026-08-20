@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Inventario rotativo{% endblock %}
-{% block breadcrumb %}<strong>Inventario rotativo</strong>{% endblock %}
+{% block title %}Rotación del inventario{% endblock %}
+{% block breadcrumb %}<strong>Rotación del inventario</strong>{% endblock %}
 
 {% block head_extra %}
 <style>
@@ -131,7 +131,7 @@
        recorte tiene — arriba, no sólo al pie. #}
     <div class="cabeza">
       <div>
-        <h1>Inventario rotativo</h1>
+        <h1>Rotación del inventario</h1>
         <p class="sub">
           {%- if filtros.est == 'rojo' %}Sólo lo que hay que teñir
           {%- elif filtros.est == 'sobra' %}Sólo lo que sobra
@@ -147,7 +147,7 @@
       </div>
     </div>
   {% else %}
-    <h1>Inventario rotativo</h1>
+    <h1>Rotación del inventario</h1>
   {% endif %}
 
   {% if not disponible %}

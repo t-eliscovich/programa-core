@@ -230,7 +230,7 @@
        TMT 2026-05-17: ancho expandido de 15→18rem y tipografía +2pts
        a pedido de la dueña ("agrandar el sidebar, letras más grandes"). */
     aside#sidebar {
-      width: 13rem;                           /* Federico 2026-08-07: -15% adicional (era 15.3rem) */
+      width: 14.5rem;                         /* Federico 2026-08-20: +1.5rem para que "Rotación del inventario" entre en una línea (era 13rem) */
       transition: width 180ms ease;
     }
     aside#sidebar[data-collapsed="1"] {
@@ -999,7 +999,7 @@
            stock. El link se gatea con el permiso de SU pantalla (stock.ver) y
            no con el de la sección: si no, a quien tiene facturas.ver y no
            stock.ver le aparece el link y le da 404 al clickearlo. #}
-        {% if tiene_permiso('stock.ver') %}{{ nav_link('inventario_rotativo.lista', 'Inventario rotativo', 'box') }}{% endif %}
+        {% if tiene_permiso('stock.ver') %}{{ nav_link('inventario_rotativo.lista', 'Rotación del inventario', 'box') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
         {# TMT 2026-07-17 (Federico): "Producción Tejeduría" y "Tejeduría Asinfo"
            movidos a la sección "Producción y stocks". #}

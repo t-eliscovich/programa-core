@@ -171,7 +171,7 @@ def excel():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Inventario rotativo"
+    ws.title = "Rotación del inventario"
 
     encabezado = Font(bold=True, color="FFFFFF", size=10)
     relleno = PatternFill("solid", fgColor="0F172A")
