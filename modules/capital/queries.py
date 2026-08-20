@@ -66,6 +66,26 @@ def crear(
 CUENTAS_APORTE = ("caja", "pichincha", "internacional")
 
 
+def _metadata_del_hecho(base: dict, side: dict) -> dict:
+    """La metadata del `mov_doble`, con la cuenta bancaria cuando la hay.
+
+    🚨 `aportar()` y `retirar()` guardaban sólo el socio, así que el hecho no
+    decía qué cuenta había movido —aunque su `destino_id` apuntara a la fila
+    del banco—. Todo lo que agrupa `mov_doble` POR CUENTA mira la metadata:
+    el 20/08/2026 la traza no veía el aporte de 128.625 en Pichincha y le
+    colgaba el Δ entero del banco al único hecho que sí reconocía, un cheque
+    de 25.651,68. La traza ya lo resuelve por la transacción (eso cubre las
+    filas viejas); esto es para que el dato esté donde tiene que estar.
+
+    En caja no hay `no_banco` y la clave NO se escribe: un `null` se lee como
+    "cuenta desconocida", que es distinto de "no fue por banco".
+    """
+    md = dict(base)
+    if side.get("no_banco") is not None:
+        md["no_banco"] = int(side["no_banco"])
+    return md
+
+
 def aportar(
     *,
     fecha: date,
@@ -197,7 +217,12 @@ def aportar(
             fecha=fecha,
             concepto=concepto_full,
             usuario=usuario,
-            metadata={"socio": socio, "doc": doc},
+            # 🚨 El `no_banco` va SIEMPRE que haya cuenta: quien agrupe estos
+            # hechos por cuenta bancaria lo busca acá. Sin él, la traza le
+            # colgaba el Δ del banco a otro hecho, con un nombre falso
+            # (20/08/2026, el aporte de 128.625 que salía como un cheque de
+            # 25.651,68). En caja no hay banco y la clave no va.
+            metadata=_metadata_del_hecho({"socio": socio, "doc": doc}, side),
         )
 
     return {
@@ -336,7 +361,8 @@ def retirar(
             fecha=fecha,
             concepto=concepto_full,
             usuario=usuario,
-            metadata={"socio": socio},
+            # Ver la nota de `aportar()`: la cuenta va en la metadata.
+            metadata=_metadata_del_hecho({"socio": socio}, side),
         )
 
     return {
@@ -450,7 +476,7 @@ def reversar_aporte(
         ) or {}
 
         # 2) Side-effect inverso según cuenta.
-        side_rev_id = None
+        side_rev_id, side_rev = None, {}
         if cuenta == "caja":
             res = caja_helpers.insert_movimiento_caja(
                 conn,
@@ -477,6 +503,7 @@ def reversar_aporte(
             )
             if not match:
                 raise ValueError(f"No encontré banco {cuenta!r}.")
+            side_rev["no_banco"] = int(match["no_banco"])
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=int(match["no_banco"]),
@@ -504,10 +531,11 @@ def reversar_aporte(
             concepto=(f"REVERSO aporte id={id_capital}"
                       + (f" — {motivo}" if motivo else ""))[:200],
             usuario=usuario,
-            metadata={"id_capital_original": id_capital,
-                      "id_capital_compensacion": cap_rev.get("id_capital"),
-                      "cuenta": cuenta,
-                      "motivo": motivo or ""},
+            metadata=_metadata_del_hecho(
+                {"id_capital_original": id_capital,
+                 "id_capital_compensacion": cap_rev.get("id_capital"),
+                 "cuenta": cuenta,
+                 "motivo": motivo or ""}, side_rev),
             id_original=md_orig["id_mov_doble"],
         )
 
@@ -664,7 +692,7 @@ def reversar_retiro(
         ) or {}
 
         # 2) Side-effect inverso.
-        side_rev_id = None
+        side_rev_id, side_rev = None, {}
         if cuenta == "caja":
             res = caja_helpers.insert_movimiento_caja(
                 conn,
@@ -695,6 +723,7 @@ def reversar_retiro(
                 if not match:
                     raise ValueError(f"No encontré banco {cuenta!r}.")
                 no_banco = int(match["no_banco"])
+            side_rev["no_banco"] = int(no_banco)
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=int(no_banco),
@@ -723,11 +752,12 @@ def reversar_retiro(
             concepto=(f"REVERSO retiro socio {socio} id={id_retiro}"
                       + (f" — {motivo}" if motivo else ""))[:200],
             usuario=usuario,
-            metadata={"id_retiro_original":     id_retiro,
-                      "id_retiro_compensacion": ret_rev.get("id_retiro"),
-                      "socio": socio,
-                      "cuenta": cuenta,
-                      "motivo": motivo or ""},
+            metadata=_metadata_del_hecho(
+                {"id_retiro_original":     id_retiro,
+                 "id_retiro_compensacion": ret_rev.get("id_retiro"),
+                 "socio": socio,
+                 "cuenta": cuenta,
+                 "motivo": motivo or ""}, side_rev),
             id_original=md_orig["id_mov_doble"],
         )
 
