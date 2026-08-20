@@ -1542,6 +1542,9 @@ def anular_por_error_de_carga(
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
+        # Antes de tocar nada: si un TOTALIZAR se llevó los vínculos, esta
+        # anulación compensaría el banco y dejaría el abono puesto.
+        _freno_si_el_totalizar_se_llevo_los_vinculos(id_cheque, conn=conn)
         stat_prev = (ch.get("stat") or "").upper()
         if stat_prev in ("X", "T", "R"):
             raise ValueError(
@@ -5367,6 +5370,62 @@ def aplicar_a_factura(
     return {"id_cheque": id_cheque, "total_aplicado": total_aplicado, "n": len(aplicaciones)}
 
 
+def _freno_si_el_totalizar_se_llevo_los_vinculos(id_cheque: int, conn=None) -> None:
+    """Frena la vuelta atrás de un cheque cuyos vínculos borró un TOTALIZAR.
+
+    TMT 2026-08-20. `anular_por_error_de_carga` y la anulación administrativa
+    de `reversar` arman qué desabonar leyendo `scintela.chequesxfact`. Y
+    `totalizar_estado_cuenta_ejecutar` **borra esa tabla a propósito** para
+    las facturas del cliente (decisión dueña #1: con el abono redistribuido
+    el vínculo 1-a-1 dejó de ser cierto).
+
+    Combinados: el `SELECT` vuelve vacío, el `for` no itera, **la factura se
+    queda con el abono puesto** — y el cheque igual pasa a 'X' con su
+    compensación en el banco. La plata sale de un lado y no del otro, sin que
+    nada avise. Medido el 20/08: 114 cheques por $103.002,62 en 10 clientes
+    están en ese estado, los 114 explicados por un totalizar del mismo
+    cliente (cero falsos positivos).
+
+    El detector es el mismo que ya usa `concepto_cobro`: aplicación ACTIVA en
+    `mov_doble` y ni una fila en `chequesxfact`.
+
+    ⚖️ NO frena el REBOTE REAL (B→1, V→2, 1/2→3): ahí la factura no se toca
+    (decisión 2026-07-25, copiar el dBase), así que el vínculo borrado no
+    cambia nada — y frenar un rebote sería absurdo, la plata ya se fue del
+    banco. Sólo frena los dos caminos administrativos, que son errores de
+    carga y por lo tanto se pueden posponer hasta deshacer el totalizar.
+    """
+    fila = db.fetch_one(
+        """
+        SELECT c.no_cheque, c.codigo_cli,
+               (SELECT MAX(m2.fecha_creacion) FROM scintela.mov_doble m2
+                 WHERE m2.tipo = 'totalizar_estado_cuenta' AND m2.estado = 'activo'
+                   AND m2.metadata ->> 'codigo_cli' = c.codigo_cli) AS totalizado_el
+          FROM scintela.cheque c
+         WHERE c.id_cheque = %s
+           AND EXISTS (SELECT 1 FROM scintela.mov_doble m
+                        WHERE m.tipo = 'cheque_aplicado_a_factura'
+                          AND m.origen_id = c.id_cheque AND m.estado = 'activo')
+           AND NOT EXISTS (SELECT 1 FROM scintela.chequesxfact x
+                            WHERE x.id_cheque = c.id_cheque)
+        """,
+        (id_cheque,), conn=conn,
+    )
+    if not fila:
+        return
+    cuando = fila.get("totalizado_el")
+    cuando_txt = f" ({cuando.strftime('%d/%m/%Y')})" if cuando else ""
+    raise ValueError(
+        f"El cheque {str(fila.get('no_cheque') or '').strip()} se aplicó a "
+        f"facturas de {fila.get('codigo_cli')}, y después se totalizó ese "
+        f"estado de cuenta{cuando_txt}: el vínculo con las facturas ya no "
+        "está. Anularlo ahora sacaría la plata del banco y dejaría el abono "
+        "puesto en las facturas. Deshacé el totalizar desde el ↺ del "
+        "Historial y volvé a intentar. Si ya no se puede deshacer, corregí "
+        "el abono a mano desde la ficha de la factura."
+    )
+
+
 def _stat_destino_reversa(stat_prev: str) -> tuple[str, bool]:
     """Devuelve (stat_destino, es_rebote_real) según el vocabulario nuevo.
 
@@ -5473,6 +5532,10 @@ def reversar(
         stat_prev = (ch["stat"] or "").upper()
         # _stat_destino_reversa levanta si stat_prev es terminal (X/R/3).
         stat_nuevo, es_rebote_real = _stat_destino_reversa(stat_prev)
+        # Sólo la anulación administrativa revierte las facturas; el rebote
+        # real no las toca, así que el vínculo borrado no le cambia nada.
+        if not es_rebote_real:
+            _freno_si_el_totalizar_se_llevo_los_vinculos(id_cheque, conn=conn)
 
         # TMT 2026-07-23 (dueña): si el cheque estaba DEPOSITADO, el rebote debe
         # descontar el importe del banco (nota de débito) — sino queda contado

@@ -10751,6 +10751,18 @@ def _totalizar_armar(facturas: list[dict]) -> dict:
     """Común a preview y ejecutar: pool, redistribución y contadores."""
     importes = [float(f["importe"] or 0) for f in facturas]
     retenciones = [float(f["retencion"] or 0) for f in facturas]
+    # Una retención MAYOR al importe dejaría un abono negativo y le mudaría el
+    # sobrante a la factura siguiente — justo lo que la retención no puede
+    # hacer, porque el comprobante es de ESA factura. El invariante cerraría
+    # igual y nadie se enteraría. Medido el 20/08: 0 casos; esto es para que
+    # siga siendo 0.
+    for f, imp, ret in zip(facturas, importes, retenciones, strict=True):
+        if imp >= 0 and ret > imp + 0.005:
+            raise ValueError(
+                f"La factura {f.get('numf') or f.get('id_factura')} tiene una "
+                f"retención ({ret:,.2f}) mayor que su importe ({imp:,.2f}). "
+                "Corregila antes de totalizar."
+            )
     pool = round(sum(float(f["abono"] or 0) for f in facturas), 2)
     hay_nc = any(i < 0 for i in importes)
     nuevos = totalizar_redistribuir_fifo(importes, pool, retenciones)
@@ -10841,6 +10853,8 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
     Devuelve el resumen {n_facturas, pool, n_T, n_A, n_Z, n_links_borrados}.
     """
     codigo_cli = (codigo_cli or "").strip().upper()
+    from periodo_guard import asegurar_fecha_abierta
+    asegurar_fecha_abierta(today_ec())
     with db.tx() as conn:
         facturas = db.fetch_all(
             _SQL_FACTURAS_TOTALIZAR + " FOR UPDATE",
@@ -11002,7 +11016,8 @@ def _md_dict(mov: dict) -> dict:
     return md if isinstance(md, dict) else {}
 
 
-def totalizar_reverso_preview(id_mov_doble: int) -> dict:
+def totalizar_reverso_preview(id_mov_doble: int, conn=None,
+                              lock: bool = False) -> dict:
     """Qué pasa si se deshace ESE totalizar. No escribe nada.
 
     Devuelve {id_mov_doble, codigo_cli, filas[], n_links, n_cambian,
@@ -11035,13 +11050,40 @@ def totalizar_reverso_preview(id_mov_doble: int) -> dict:
             f"Ese totalizar ya está {mov.get('estado')} — no se puede deshacer "
             "dos veces.")
         return out
+    # ⚖️ TMT 2026-08-20: si DESPUÉS hubo otro totalizar del mismo cliente, el
+    # candado de más abajo puede pasar igual (el primero ya había dejado las
+    # facturas normalizadas) y deshacer éste restauraría un pedazo mientras el
+    # otro sigue vivo: el Σabono del cliente deja de cuadrar y el segundo se
+    # vuelve imposible de deshacer. Se deshace del último al primero.
+    posterior = db.fetch_one(
+        """
+        SELECT id_mov_doble, fecha_creacion
+          FROM scintela.mov_doble
+         WHERE tipo = 'totalizar_estado_cuenta'
+           AND estado = 'activo'
+           AND id_mov_doble > %s
+           AND metadata ->> 'codigo_cli' = %s
+         ORDER BY id_mov_doble
+         LIMIT 1
+        """,
+        (id_mov_doble, out["codigo_cli"]), conn=conn,
+    )
+    if posterior:
+        _f = posterior.get("fecha_creacion")
+        _f_txt = f" del {_f.strftime('%d/%m/%Y')}" if _f else ""
+        out["bloqueo"] = (
+            f"Después de este totalizar hubo otro de {out['codigo_cli']}"
+            f"{_f_txt}. Deshacé primero el más nuevo."
+        )
+        return out
     ids = [int(a["id"]) for a in antes]
     vivas = {
         int(f["id_factura"]): f
         for f in (db.fetch_all(
             "SELECT id_factura, numf, numf_completo, abono, saldo, stat "
-            "  FROM scintela.factura WHERE id_factura = ANY(%s)",
-            (ids,)) or [])
+            "  FROM scintela.factura WHERE id_factura = ANY(%s)"
+            + (" ORDER BY id_factura FOR UPDATE" if lock else ""),
+            (ids,), conn=conn) or [])
     }
     for a in antes:
         fid = int(a["id"])
@@ -11093,21 +11135,30 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
 
     Todo en UNA transacción. Marca el mov original como reversado (vía
     `id_original`) para que el ↺ no se ofrezca dos veces.
+
+    ⚖️ TMT 2026-08-20: el candado se evalúa ADENTRO de la transacción y con
+    las facturas lockeadas. Antes se miraba afuera y adentro no se releía
+    nada, así que una cobranza que entrara entre el clic y el UPDATE se
+    perdía, pisada con los valores del preview. Es la misma disciplina que
+    `totalizar_estado_cuenta_ejecutar`, que ya decía "no confía en la
+    preview".
     """
-    prev = totalizar_reverso_preview(id_mov_doble)
-    if not prev:
-        raise ValueError(
-            f"El movimiento #{id_mov_doble} no es un totalizar de estado de "
-            "cuenta.")
-    if prev.get("bloqueo"):
-        raise ValueError(prev["bloqueo"])
-    mov = db.fetch_one(
-        "SELECT metadata FROM scintela.mov_doble WHERE id_mov_doble = %s",
-        (id_mov_doble,))
-    links = (_md_dict(mov or {}).get("links") or [])
+    from periodo_guard import asegurar_fecha_abierta
+    asegurar_fecha_abierta(today_ec())
     n_upd = 0
     n_links = 0
     with db.tx() as conn:
+        prev = totalizar_reverso_preview(id_mov_doble, conn=conn, lock=True)
+        if not prev:
+            raise ValueError(
+                f"El movimiento #{id_mov_doble} no es un totalizar de estado "
+                "de cuenta.")
+        if prev.get("bloqueo"):
+            raise ValueError(prev["bloqueo"])
+        mov = db.fetch_one(
+            "SELECT metadata FROM scintela.mov_doble WHERE id_mov_doble = %s",
+            (id_mov_doble,), conn=conn)
+        links = (_md_dict(mov or {}).get("links") or [])
         for f in prev["filas"]:
             if not f["cambia"]:
                 continue  # sin cambios — no ensuciar usuario_modifica
@@ -11120,20 +11171,35 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
                 conn=conn,
             )
             n_upd += 1
+        # TMT 2026-08-20 — dos arreglos acá:
+        #  · La deduplicación era por PAR (id_cheque, id_fact) con EXISTS, y
+        #    `aplicar_a_factura` inserta UNA FILA POR APLICACIÓN. Un cheque
+        #    aplicado dos veces a la misma factura (parcial + resto) dejaba
+        #    dos filas en el snapshot: se reponía la primera y la segunda se
+        #    perdía para siempre, con `n_links_repuestos` mintiendo. Ahora se
+        #    cuenta cuántas hay y se reponen las que falten.
+        #  · `hay_cheque` sólo miraba que el cheque EXISTIERA. Reponerle un
+        #    vínculo a un cheque anulado es justo lo que el "Bug G fix" de
+        #    cheques llama aplicaciones fantasma: el abono deja de cuadrar y
+        #    bloquea futuras anulaciones con un falso "cheque vivo".
+        _repuestos: dict[tuple, int] = {}
         for lk in links:
-            # El cheque puede haberse anulado, o el link puede haber vuelto a
-            # existir (re-aplicación posterior): en los dos casos NO se repone.
-            existe = db.fetch_one(
-                "SELECT 1 AS x FROM scintela.chequesxfact "
-                " WHERE id_cheque = %s AND id_fact = %s",
-                (lk.get("id_cheque"), lk.get("id_fact")), conn=conn)
-            if existe:
+            par = (lk.get("id_cheque"), lk.get("id_fact"))
+            fila = db.fetch_one(
+                "SELECT COUNT(*) AS n FROM scintela.chequesxfact "
+                " WHERE id_cheque = %s AND id_fact = %s", par, conn=conn)
+            ya = int((fila or {}).get("n") or 0) + _repuestos.get(par, 0)
+            cuantas = sum(1 for o in links
+                          if (o.get("id_cheque"), o.get("id_fact")) == par)
+            if ya >= cuantas:
                 continue
             hay_cheque = db.fetch_one(
-                "SELECT 1 AS x FROM scintela.cheque WHERE id_cheque = %s",
+                "SELECT 1 AS x FROM scintela.cheque "
+                " WHERE id_cheque = %s AND COALESCE(stat, '') <> 'X'",
                 (lk.get("id_cheque"),), conn=conn)
             if not hay_cheque:
                 continue
+            _repuestos[par] = _repuestos.get(par, 0) + 1
             db.execute(
                 "INSERT INTO scintela.chequesxfact "
                 "  (id_cheque, id_fact, fechaing, codigo_cli, importe, "

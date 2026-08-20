@@ -4047,7 +4047,7 @@ def totalizar_reverso_confirmar(id_mov_doble: int):
 @informes_bp.route("/estado-cuenta/totalizar/<int:id_mov_doble>/deshacer",
                    methods=["POST"])
 @requiere_login
-@requiere_permiso("clientes.ver")
+@requiere_permiso("estado_cuenta.totalizar")
 def totalizar_reverso_deshacer(id_mov_doble: int):
     usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
     codigo_up = ""
@@ -4124,6 +4124,15 @@ def estado_cuenta_totalizar(codigo_cli):
             flash("Fecha 'hasta' inválida — se ignora el corte.", "warn")
             _hasta = None
     if request.method == "POST":
+        # ⚖️ TMT 2026-08-20: la RUTA se gatea con `clientes.ver` porque el GET
+        # es la pantalla de confirmación y la ve cualquiera que vea la cuenta.
+        # Pero `clientes.ver` es un permiso de LECTURA — lo tienen Lectura y
+        # Ventas — y el POST redistribuye los abonos del cliente y borra sus
+        # vínculos cheque↔factura. Confirmar pide permiso propio.
+        if not tiene_permiso("estado_cuenta.totalizar"):
+            flash("No tenés permiso para totalizar estados de cuenta.", "warn")
+            return redirect(url_for("informes.estado_cuenta_totalizar",
+                                    codigo_cli=codigo_up))
         usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
         try:
             res = queries.totalizar_estado_cuenta_ejecutar(

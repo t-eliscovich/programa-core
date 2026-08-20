@@ -178,7 +178,16 @@
   </form>
 
   {# ─── Confirmar / Cancelar — sin confirm() nativo (congela Chrome):
-        checkbox que arma el botón = confirmación de 2 clicks en pantalla. #}
+        checkbox que arma el botón = confirmación de 2 clicks en pantalla.
+        TMT 2026-08-20: la pantalla la ve cualquiera que vea la cuenta, pero
+        el botón pide `estado_cuenta.totalizar`. Sin el permiso no se muestra
+        un botón que después va a rebotar. #}
+  {% if not tiene_permiso('estado_cuenta.totalizar') %}
+  <div class="no-print max-w-5xl mx-auto mt-2 mb-8 rounded bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-600">
+    Esto es una vista previa: no tenés permiso para totalizar estados de cuenta.
+    <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}" class="text-blue-600 hover:underline">Volver</a>
+  </div>
+  {% else %}
   <div class="no-print max-w-5xl mx-auto mt-2 mb-8 bg-white border border-slate-200 rounded-lg p-4">
     <form method="post" action="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -197,6 +206,7 @@
       </div>
     </form>
   </div>
+  {% endif %}
   <script>
     (function () {
       var chk = document.getElementById('chk-entiendo');

@@ -80,6 +80,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "tintura.ver",
             "bitacora.ver",
             "clientes.ver",
+            "estado_cuenta.totalizar",
             "proveedores.ver",
             "facturas.ver",
             "cheques.ver",
@@ -118,6 +119,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "informes.ver",
             "tintura.ver",
             "clientes.ver",
+            "estado_cuenta.totalizar",
             "proveedores.ver",
             "facturas.ver",
             "facturas.crear",
@@ -182,6 +184,7 @@ ROLES: list[tuple[str, list[str]]] = [
         [
             "stock.ver",
             "clientes.ver",
+            "estado_cuenta.totalizar",
             "clientes.editar",
             "grupos.editar",
             "stop_cliente.editar",
@@ -283,6 +286,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "cartera.ver",
             # Clientes / proveedores / cobranza.
             "clientes.ver",
+            "estado_cuenta.totalizar",
             "clientes.crear",
             "clientes.editar",
             "grupos.editar",

@@ -140,15 +140,22 @@ class _DBStubPreview:
         self.mov_dobles: list[tuple] = []
         self.existentes: set = set()
         self.cheques: set = {900, 901}
+        #: TMT 2026-08-20 — un totalizar POSTERIOR del mismo cliente bloquea.
+        self.posterior = None
+        #: cheques anulados: existen, pero no se les repone ningún vínculo.
+        self.anulados: set = set()
 
     def fetch_one(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
+        if "id_mov_doble > %s" in s:          # ¿hubo otro totalizar después?
+            return dict(self.posterior) if self.posterior else None
         if "from scintela.mov_doble" in s:
             return dict(self.mov) if self.mov else None
-        if "from scintela.chequesxfact" in s:
-            return {"x": 1} if tuple(params) in self.existentes else None
+        if "from scintela.chequesxfact" in s:  # COUNT(*) de ese par
+            return {"n": sum(1 for e in self.existentes if e == tuple(params))}
         if "from scintela.cheque " in s:
-            return {"x": 1} if params[0] in self.cheques else None
+            vivo = params[0] in self.cheques and params[0] not in self.anulados
+            return {"x": 1} if vivo else None
         return None
 
     def fetch_all(self, sql, params=None, conn=None):
@@ -407,3 +414,71 @@ def test_resumir_sin_evento_es_el_renglon_partido_de_antes():
     out = traza.resumir(movs, None, {})
     assert len(out) == 2                       # se agrupan por REGLA, no por hecho
     assert any("facturas nuevas" in g["texto"] for g in out)
+
+
+# ─────────── los frenos del deshacer (TMT 2026-08-20) ───────────
+
+_LINK = {
+    "id_chequexfact": 5, "id_cheque": 900, "id_fact": 1,
+    "fechaing": date(2026, 8, 7), "codigo_cli": "AAA",
+    "importe": Decimal("60.00"), "no_banco": 90, "tipo": None,
+    "stat_f": "A", "fecha_venci_f": None, "abono_f": Decimal("60.00"),
+    "saldo_f": Decimal("40.00"), "usuario_crea": "andres",
+}
+
+
+def _mov_reversable(links=None):
+    return _mov({"codigo_cli": "AAA", "antes": _ANTES, "despues": _DESPUES,
+                 "links": [dict(x) for x in (links or [_LINK])]})
+
+
+def test_un_totalizar_posterior_del_mismo_cliente_bloquea(monkeypatch):
+    """Se deshace del más nuevo al más viejo, o el Σabono deja de cuadrar."""
+    from datetime import datetime
+
+    from modules.informes import queries as q
+    stub = _DBStubPreview(_mov_reversable(), _VIVAS_INTACTAS)
+    stub.posterior = {"id_mov_doble": 99999,
+                      "fecha_creacion": datetime(2026, 8, 19, 10, 0)}
+    _patch(monkeypatch, stub)
+    prev = q.totalizar_reverso_preview(22176)
+    assert prev["bloqueo"], "no bloqueó"
+    assert "19/08/2026" in prev["bloqueo"]
+    assert "más nuevo" in prev["bloqueo"]
+
+
+def test_no_le_repone_vinculos_a_un_cheque_anulado(monkeypatch):
+    from modules.informes import queries as q
+    stub = _DBStubPreview(_mov_reversable(), _VIVAS_INTACTAS)
+    stub.anulados = {900}
+    _patch(monkeypatch, stub)
+    res = q.totalizar_reverso_ejecutar(22176, usuario="tester")
+    assert res["n_links_repuestos"] == 0
+    assert not stub.inserts
+
+
+def test_repone_las_dos_filas_de_un_cheque_aplicado_dos_veces(monkeypatch):
+    """La dedup era por PAR: la segunda aplicación se perdía para siempre."""
+    from modules.informes import queries as q
+    stub = _DBStubPreview(_mov_reversable([_LINK, _LINK]), _VIVAS_INTACTAS)
+    _patch(monkeypatch, stub)
+    res = q.totalizar_reverso_ejecutar(22176, usuario="tester")
+    assert res["n_links_repuestos"] == 2, "se perdió la segunda aplicación"
+    assert len(stub.inserts) == 2
+
+
+def test_el_candado_se_relee_lockeado_adentro_de_la_transaccion(monkeypatch):
+    """El SELECT de facturas del reverso tiene que pedir FOR UPDATE."""
+    from modules.informes import queries as q
+    stub = _DBStubPreview(_mov_reversable(), _VIVAS_INTACTAS)
+    vistos: list[str] = []
+    orig = stub.fetch_all
+
+    def espia(sql, params=None, conn=None):
+        vistos.append(" ".join(sql.split()).lower())
+        return orig(sql, params, conn)
+
+    stub.fetch_all = espia
+    _patch(monkeypatch, stub)
+    q.totalizar_reverso_ejecutar(22176, usuario="tester")
+    assert any("for update" in v for v in vistos), vistos

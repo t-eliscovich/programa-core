@@ -117,13 +117,13 @@ def _comparaciones_sospechosas(src: str) -> list[str]:
     for node in ast.walk(ast.parse(src)):
         if not isinstance(node, ast.Compare) or len(node.ops) != 1:
             continue
-        if not isinstance(node.ops[0], (ast.Lt, ast.LtE)):
+        if not isinstance(node.ops[0], ast.Lt | ast.LtE):
             continue
         izq, der = node.left, node.comparators[0]
         if _llamada_a(izq, "abs") or not _es_saldo(izq):
             continue
         if not (isinstance(der, ast.Constant)
-                and isinstance(der.value, (int, float))
+                and isinstance(der.value, int | float)
                 and not isinstance(der.value, bool)):
             continue
         if 0 <= der.value < 1:
@@ -134,7 +134,8 @@ def _comparaciones_sospechosas(src: str) -> list[str]:
 @pytest.mark.parametrize("rel", _ARCHIVOS)
 def test_nadie_vuelve_a_decidir_el_estado_con_el_saldo_sin_signo(rel):
     ruta = os.path.join(_REPO_ROOT, rel)
-    malas = _comparaciones_sospechosas(open(ruta, encoding="utf-8").read())
+    with open(ruta, encoding="utf-8") as fh:
+        malas = _comparaciones_sospechosas(fh.read())
     assert not malas, (
         f"{rel}: el saldo se compara contra cero sin mirarle el signo. Un "
         f"saldo a FAVOR quedaría del lado del cancelado y el crédito del "
