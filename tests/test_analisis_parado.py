@@ -1917,3 +1917,18 @@ def test_ordenar_por_oportunidad_sigue_disponible():
     """Se cambia el DEFAULT, no se saca la opción: para decidir por quién
     empezar sigue siendo la mejor."""
     assert "oportunidad" in queries.ORDENES
+
+
+def test_el_titulo_de_saldos_no_promete_lo_mismo_que_la_otra_pantalla():
+    """Dueña 20/08/2026: "¿por qué Saldos se llama 'y a quién llamar', si ya hay
+    otra página que dice 'A quién ofrecerle qué'?".
+
+    Las dos muestran los mismos clientes; lo que cambia es el EJE (por tela vs.
+    por cliente). Con los dos títulos prometiendo clientes, el que entra no sabe
+    cuál abrir."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    titulo = html.split("<h1>")[1].split("</h1>")[0]
+    assert titulo == "Saldos, tela por tela"
+    assert "llamar" not in titulo and "ofrec" not in titulo

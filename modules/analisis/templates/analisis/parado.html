@@ -11,8 +11,12 @@ th.ord.asc::after{content:" ↑";opacity:1}
 th.ord.desc::after{content:" ↓";opacity:1}
 </style>
 
-<h1>{% if mia %}Saldos — y a quién de los suyos ofrecérselo
-{% else %}Saldos — y a quién llamar{% endif %}</h1>
+{# ⚠ El título NO nombra clientes (dueña 20/08/2026: "¿por qué Saldos se llama
+   'y a quién llamar' si ya hay otra página que dice 'A quién ofrecerle qué'?").
+   Las dos pantallas muestran los mismos clientes: la diferencia es el EJE —
+   ésta va por tela, la otra por cliente. Si las dos prometen lo mismo en el
+   título, el que entra no sabe cuál abrir. #}
+<h1>Saldos, tela por tela</h1>
 <p class="sub">
 {% if estado.actualizado %}
   Datos de Asinfo al {{ estado.actualizado | hora_ec('%d/%m/%Y %H:%M') }} · se actualiza sola
