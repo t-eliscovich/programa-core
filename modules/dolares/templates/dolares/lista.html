@@ -164,8 +164,8 @@
      columna, pero es el que el programa usa — así que se lee, no se esconde.
      Gris medio (no negro) para que se distinga del que está fijado a mano.
      TMT 2026-07-31. */
-  .anio-cell.anio-del-concepto::placeholder { color: rgb(148 163 184); }
-  .dark .anio-cell.anio-del-concepto::placeholder { color: rgb(100 116 139); }
+  .anio-cell.anio-deducido::placeholder { color: rgb(148 163 184); }
+  .dark .anio-cell.anio-deducido::placeholder { color: rgb(100 116 139); }
   /* La regla de base.html es `:root:not(.dark) input` = MÁS específica que una
      clase sola, así que con !important no alcanzaba: hay que igualarle el peso
      (por eso `:root:not(.dark) input.anio-cell`). Verificado en vivo: con
@@ -567,13 +567,13 @@
                 <input name="anio" value="{{ d.anio_col or '' }}" maxlength="4"
                        inputmode="numeric"
                        placeholder="{% if not d.anio_col and d.anio_ref %}{{ d.anio_ref }}{% else %}—{% endif %}"
-                       title="{% if not d.anio_col and d.anio_ref %}Año {{ d.anio_ref }} — sale del concepto «{{ d.concepto | cleanstr }}» y es el que se está usando. Escribilo acá si querés fijarlo aparte. · {% endif %}{{ d.anio_evidencia or 'Año de la importación' }}"
+                       title="{% if not d.anio_col and d.anio_ref %}Año {{ d.anio_ref }} — {% if d.anio_origen == 'fecha' %}es el de la fecha del anticipo, y ninguna otra campaña usa el mismo número{% else %}sale del concepto «{{ d.concepto | cleanstr }}»{% endif %} — y es el que se está usando. Escribilo acá si querés fijarlo aparte. · {% endif %}{{ d.anio_evidencia or 'Año de la importación' }}"
                        onchange="this.form.requestSubmit()"
-                       class="anio-cell{% if not d.anio_col and d.anio_ref %} anio-del-concepto{% endif %}">
+                       class="anio-cell{% if not d.anio_col and d.anio_ref %} anio-deducido{% endif %}">
               </form>
               {% elif d.anio_col %}<span class="text-slate-500">{{ d.anio_col }}</span>
               {% elif d.anio_ref %}<span class="text-slate-400 dark:text-slate-500"
-                    title="Año {{ d.anio_ref }} — sale del concepto «{{ d.concepto | cleanstr }}».">{{ d.anio_ref }}</span>
+                    title="Año {{ d.anio_ref }} — {% if d.anio_origen == 'fecha' %}es el de la fecha del anticipo, y ninguna otra campaña usa el mismo número.{% else %}sale del concepto «{{ d.concepto | cleanstr }}».{% endif %}">{{ d.anio_ref }}</span>
               {% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
             </td>
             <td class="px-4 py-1.5 text-xs text-slate-500 dark:text-slate-400" style="white-space: nowrap;">

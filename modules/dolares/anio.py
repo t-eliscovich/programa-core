@@ -151,6 +151,91 @@ def adjuntar_anio(filas: list[dict]) -> None:
                   a, clave, cands[0]["concepto_norm"], _norm(f.get("concepto")))
 
 
+def adjuntar_anio_por_fecha(filas: list[dict], index_importaciones=None) -> None:
+    """Completa el año de los anticipos VIVOS que no lo tienen, con el año de su
+    propia FECHA — pero SÓLO cuando no hay ninguna duda posible.
+
+    Tamara 2026-08-20: *"hay algunos que nos falta poner de qué año son; fijate
+    si podés ir identificando los de 2026: si fue creado en 2026 entonces es de
+    2026"*. Eran 82 de 117 anticipos vivos sin año.
+
+    Por qué el año de la FECHA y no el de la importación que matchea: en el
+    caso AC 77 (el que hizo bajar la sugerencia el 29/07) Asinfo sólo tenía la
+    importación de la campaña 2025-26 y el correcto era 2026 — mirar las
+    importaciones daba justo el número equivocado; la fecha del anticipo daba
+    el bueno.
+
+    "Sin dudas" = el número NO se reusa alrededor de este anticipo:
+
+      1. todas las importaciones con ese (cta, nº) son del MISMO año — si la
+         AC 43 existe en 2026 y en 2024, la decide ella;
+      2. y la fecha no deja más de un GRUPO plausible — el mismo criterio del
+         freno 9 de la conversión automática, para no aflojarlo: si el
+         automático se frenaba pidiendo el año, se sigue frenando.
+
+    Sin Asinfo no se deduce nada: no se puede saber si hay dudas. El año queda
+    en `anio_ref` (el que MANDA para elegir la importación) con
+    `anio_origen='fecha'`, NO en la columna: nada se guarda solo, y basta con
+    escribirlo a mano para pisarlo.
+    """
+    pendientes = [
+        f for f in (filas or [])
+        if not f.get("anio_ref") and (f.get("st") or "").strip() == ""
+    ]
+    if not pendientes:
+        return
+    from modules.importaciones import service as _imp
+
+    if index_importaciones is None:
+        try:
+            index_importaciones = _imp._index_importaciones_por_codigo()
+        except Exception as e:  # noqa: BLE001 -- Asinfo caído: no se deduce nada
+            _LOG.warning("sin importaciones para deducir el año: %s", e)
+            return
+    if not index_importaciones:
+        # El índice vacío es Asinfo caído (es fail-soft y devuelve {}), no "este
+        # número no existe": sin él no se puede saber si hay dudas.
+        return
+    for f in pendientes:
+        anio = _anio_de_fecha(f.get("fecha"))
+        if not anio:
+            continue
+        cta = (f.get("cta") or "").strip().upper()
+        ref = f.get("ref")
+        if ref is None:
+            ref = parse_ref_anticipo(f.get("concepto")).get("numero")
+        cands = []
+        if cta and ref is not None:
+            cands = index_importaciones.get((cta, int(ref))) or []
+        if cands:
+            anios = set()
+            for c in cands:
+                try:
+                    a = _imp._anio_de(c).get("anio")
+                except Exception:  # noqa: BLE001
+                    a = None
+                if a:
+                    anios.add(int(a))
+            if len(anios) > 1:
+                continue  # el número se reusa entre campañas: la decide ella
+            try:
+                if len(_imp.grupos_plausibles(cands, f.get("fecha"))) > 1:
+                    continue  # mismo freno que el automático
+            except Exception:  # noqa: BLE001
+                continue
+        f["anio_ref"] = anio
+        f["anio_origen"] = "fecha"
+
+
+def _anio_de_fecha(fecha) -> int | None:
+    """El año de una fecha que puede venir como date o como texto."""
+    a = getattr(fecha, "year", None)
+    if a:
+        return int(a)
+    txt = str(fecha or "")[:4]
+    return int(txt) if txt.isdigit() else None
+
+
 def fila_por_id(id_dolares: int) -> dict:
     """Trae un anticipo con su `_orden` ya calculado contra sus gemelos.
 

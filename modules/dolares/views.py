@@ -123,6 +123,14 @@ def lista():
         _anio_mod.adjuntar_anio(filas)
     except Exception:  # noqa: BLE001
         pass
+    # Los que NO tienen año por ningún lado: el de su propia FECHA, y sólo
+    # cuando el número no se reusa alrededor (Tamara 2026-08-20). Va también
+    # ANTES del cruce, por lo mismo. Fail-soft: sin Asinfo no deduce nada.
+    try:
+        from . import anio as _anio_mod
+        _anio_mod.adjuntar_anio_por_fecha(filas)
+    except Exception:  # noqa: BLE001
+        pass
     # Colgar a cada anticipo la RECEPCIÓN de su importación Asinfo (im_numero,
     # fecha_recepcion_im, kg_im). Fail-soft e independiente del _safe de arriba:
     # si Asinfo cae, la lista igual se muestra (las columnas quedan en blanco).
