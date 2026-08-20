@@ -13,8 +13,15 @@ correctos y medían cosas distintas, pero la pantalla afirmaba que eran el mismo
     /balance   2.138.525
     diferencia    17.900      ← media hora buscando un descalce inexistente
 
-La regla que fijan estos tests: **la pantalla muestra la resta entera**, y el
+La regla que fijaban estos tests: **la pantalla muestra la resta entera**, y el
 resultado de esa resta ES el número del balance. Nada que deducir a mano.
+
+Federico 2026-08-20 sacó la tira de 4 KPIs de /dolares ("todos estos cuadrados
+no los necesitamos"): la pantalla ya no habla del balance, así que tampoco
+puede mentir sobre él. Lo que queda protegido acá es el invariante de fondo
+—`iq.anticipos()` == total vivo − ya en bodega—, que es de donde sale el número
+del balance, y la regla de que si la pantalla vuelve a mencionarlo tiene que
+mostrar la resta completa.
 """
 from unittest.mock import patch
 
@@ -60,18 +67,21 @@ def _pantalla(client):
 
 
 def test_la_pantalla_ya_no_miente_sobre_el_balance(app, fake_db):
+    """Lo que NO puede volver: la pantalla afirmando la igualdad falsa.
+
+    Federico 2026-08-20 sacó la tira de 4 KPIs entera, así que hoy /dolares no
+    dice nada sobre el balance — y ésa es una forma válida de no mentir. Lo que
+    este test impide es el estado viejo: el "Total vivo" con el cartel
+    "= ANTICIPOS del balance" pegado, sin la resta del medio.
+    """
     rv = _pantalla(_cliente(app, fake_db))
     html = rv.get_data(as_text=True)
-    # La frase vieja NO puede volver: era la que afirmaba la igualdad falsa.
-    assert "Total vivo</div>" not in html or "= ANTICIPOS del balance" not in html
-
-
-def test_las_tres_partes_de_la_resta_estan_a_la_vista(app, fake_db):
-    rv = _pantalla(_cliente(app, fake_db))
-    html = rv.get_data(as_text=True)
-    assert "Ya en bodega" in html
-    assert "Va al balance" in html
-    assert "2.138.525" in html      # 2.156.425 − 17.900, escrito
+    if "= ANTICIPOS del balance" in html:
+        # Si la pantalla vuelve a hablar del balance, tiene que mostrar la
+        # resta ENTERA: total vivo − ya en bodega = va al balance.
+        assert "Ya en bodega" in html
+        assert "Va al balance" in html
+        assert "2.138.525" in html      # 2.156.425 − 17.900, escrito
 
 
 def test_la_resta_da_exactamente_el_anticipos_del_balance():

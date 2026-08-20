@@ -275,7 +275,12 @@
   {% if tiene_permiso('facturas.crear') %}
   <div id="panel-nuevo-anticipo" class="hidden mb-6 border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 p-4">
     <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-3">Nuevo anticipo</h2>
+    {# El padding-bottom reserva el alto de la ayudita de Concepto, que desde
+       2026-08-20 va en `position:absolute` para no desalinear los inputs (ver
+       el bloque Concepto): al salirse del flujo ya no empuja el panel, así que
+       sin esto se comería el borde de abajo. #}
     <form method="post" action="{{ url_for('dolares.nuevo_anticipo') }}"
+          style="padding-bottom:1.1rem;"
           class="flex flex-wrap items-end gap-3 text-sm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div>
@@ -288,7 +293,13 @@
         <input name="cta" maxlength="3" required placeholder="ABC"
                class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm uppercase font-mono">
       </div>
-      <div>
+      {# Federico 2026-08-20: "alineá el input de CONCEPTO con los demás".
+         El form es `items-end`: la ayudita de abajo hacía este bloque más alto
+         que los otros, así que su input quedaba una línea más arriba. Con
+         `position:relative` + la <p> en `absolute` el bloque mide lo mismo que
+         Fecha/Cliente/Importe —los inputs quedan a la misma altura— y el texto
+         se sigue dibujando debajo. #}
+      <div style="position:relative;">
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Concepto</label>
         {# TMT 2026-07-06 (dueña): picker de importación a matchear (igual que
            /compras/nueva) — elegir llena el concepto con el nº de la Nota. #}
@@ -296,7 +307,8 @@
                class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
         {# TMT 2026-07-29 (dueña): el AÑO va en el concepto — el número de
            importación se reusa cada campaña. Elegir del picker lo escribe solo. #}
-        <p class="text-[11px] text-slate-500 mt-1">nº <strong>/ año</strong> de la importación: <code class="font-mono">58/26</code></p>
+        <p class="text-[11px] text-slate-500"
+           style="position:absolute;top:100%;left:0;margin-top:.25rem;white-space:nowrap;">nº <strong>/ año</strong> de la importación: <code class="font-mono">58/26</code></p>
       </div>
       {# TMT 2026-07-07 (dueña): el picker va DEBAJO/APARTE del campo Concepto
          (antes aparecía "antes" del campo, y grid-column no aplica en flex).
@@ -328,45 +340,16 @@
   </div>
   {% endif %}
 
-  {# ----- KPI hero — 4 tarjetas ----- #}
-  {% if resumen %}
-  {# TMT 2026-07-06 (dueña: "pantalla demasiado larga, cards más chicas"):
-     sm:grid-cols-3 NO existe en el tailwind congelado → las cards se
-     apilaban a lo ancho. Grid inline (gotcha 2026-06-30). #}
-  {# TMT 2026-07-08 (dueña: "se ve horrible, debería tener un mini-resumen"):
-     tira compacta de 4 KPIs = total vivo (=ANTICIPOS del balance) + partidas
-     + cuentas + aplicados/consumidos. Grid inline (sm:grid-cols-* no existe en
-     el tailwind congelado). #}
-  <div class="mb-4" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;">
-    {# TMT 2026-07-31 (dueña: "esencial, y que nunca más vuelva a pasar que
-       esto nos va a mover la utilidad por 20k"). Acá decía "Total vivo =
-       ANTICIPOS del balance" y desde el 31/07 dejó de ser cierto: el balance
-       descuenta los anticipos cuya mercadería YA está en la bodega, porque
-       esos kilos ya están contados en el stock. Los dos números eran
-       correctos; lo que faltaba era la resta escrita. Ahora está entera y no
-       hay nada que deducir. #}
-    <div class="kpi-card">
-      <div class="kpi-label">Total vivo</div>
-      <div class="kpi-value">$ {{ resumen.total_vivos | num_es(0) }}</div>
-      <div class="kpi-meta">{{ resumen.n_vivos | num_es(0) }} anticipos sin aplicar</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">− Ya en bodega</div>
-      <div class="kpi-value" style="color:rgb(180 83 9);">$ {{ (conciliacion_balance.ya_en_bodega if conciliacion_balance else 0) | num_es(0) }}</div>
-      <div class="kpi-meta">su mercadería ya llegó: esos kilos están en el stock</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">= Va al balance</div>
-      <div class="kpi-value kpi-accent">$ {{ (conciliacion_balance.al_balance if conciliacion_balance else resumen.total_vivos) | num_es(0) }}</div>
-      <div class="kpi-meta">éste es el ANTICIPOS del balance</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Aplicados</div>
-      <div class="kpi-value">$ {{ resumen.total_aplicados | num_es(0) }}</div>
-      <div class="kpi-meta">{{ resumen.n_aplicados | num_es(0) }} consumidos / cancelados</div>
-    </div>
-  </div>
-  {% endif %}
+  {# ----- KPI hero — REMOVIDO. Federico 2026-08-20: "todos estos cuadrados no
+     los necesitamos". Era la tira de 4 tarjetas: Total vivo · − Ya en bodega ·
+     = Va al balance · Aplicados.
+     Ojo si alguien la pide de vuelta: la resta escrita ("total vivo − ya en
+     bodega = va al balance") salió del descalce de 17.900 del 31/07 (dueña:
+     "que nunca más vuelva a pasar que esto nos va a mover la utilidad por
+     20k") — el balance descuenta los anticipos cuya mercadería YA está en la
+     bodega, porque esos kilos ya están contados en el stock. El markup entero
+     y el cálculo de `conciliacion_balance` (views.py) están en el git del
+     commit que los borró. #}
 
   {# ----- Cards por cuenta — top 12, ranked por saldo -----
      TMT 2026-07-08 (dueña "pantalla demasiado larga"): colapsable, cerrado

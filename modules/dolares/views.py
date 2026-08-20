@@ -178,13 +178,12 @@ def lista():
     #     por id la dejaría en una card de una cuenta con un saldo que no es
     #     el saldo de esa cuenta: peor que no tocarla.
     #
-    #   · `resumen()` (y el `conciliacion_balance` que se calcula abajo con su
-    #     total) es la CONCILIACIÓN CONTRA EL BALANCE — la tira dice, con esas
-    #     palabras, «éste es el ANTICIPOS del balance». Si la filtrara por id,
-    #     esa card mostraría el importe de un anticipo suelto afirmando que es
-    #     el ANTICIPOS del balance. Eso es exactamente el descalce de 17.900
-    #     del 31/07 (*"que nunca más vuelva a pasar que esto nos va a mover la
-    #     utilidad por 20k"*). Se queda con el universo, siempre.
+    #   · `resumen()` es el total del UNIVERSO de anticipos vivos: lo usa el
+    #     pie del bloque "Por cuenta" ("N cuentas con anticipo vivo · US$ …").
+    #     Si lo filtrara por id, ese pie mostraría el importe de un anticipo
+    #     suelto haciéndolo pasar por el total. Se queda con el universo,
+    #     siempre. (Hasta el 2026-08-20 alimentaba también la tira de 4 KPIs
+    #     que conciliaba contra el balance — ver el bloque REMOVIDO abajo.)
     #
     # El que SÍ se acomoda es el hero grande de la pantalla (`page_hero`), que
     # ya muestra el subtotal de lo filtrado cuando hay filtro activo: el id
@@ -193,29 +192,19 @@ def lista():
     cuentas, _ = _safe(lambda: queries.por_cuenta(solo_vivos=True), [])
     res, _ = _safe(queries.resumen, {})
 
-    # ── EL NÚMERO QUE VA AL BALANCE ────────────────────────────────────────
-    # TMT 2026-07-31 (dueña): *"esencial, y que nunca más vuelva a pasar que
-    # esto nos va a mover la utilidad por 20k"*.
+    # ── EL NÚMERO QUE VA AL BALANCE — REMOVIDO ─────────────────────────────
+    # Federico 2026-08-20 sacó la tira de 4 KPIs de la pantalla ("todos estos
+    # cuadrados no los necesitamos"), y `conciliacion_balance` no lo consumía
+    # nadie más: dejarlo calculado era una query extra por carga de /dolares
+    # (`anticipos_con_mercaderia_recibida()`) a cambio de nada.
     #
-    # Esta tira decía "Total vivo · = ANTICIPOS del balance", y el 31/07 dejó
-    # de ser cierto: el balance descuenta los anticipos cuya mercadería YA
-    # está en la bodega, porque esos kilos ya están contados en el stock. Los
-    # dos números son correctos y miden cosas distintas — pero la pantalla
-    # afirmaba que eran el mismo. Costó media hora buscar un descalce de
-    # 17.900 que no existía.
-    #
-    # Ahora la pantalla muestra la resta entera y no hay nada que deducir.
-    try:
-        from modules.informes import queries as _iq
-        _ya_en_bodega = float(_iq.anticipos_con_mercaderia_recibida() or 0)
-        _total_vivo = float((res or {}).get("total_vivos") or 0)
-        conciliacion_balance = {
-            "total_vivo": round(_total_vivo, 2),
-            "ya_en_bodega": round(_ya_en_bodega, 2),
-            "al_balance": round(_total_vivo - _ya_en_bodega, 2),
-        }
-    except Exception:  # noqa: BLE001 -- nunca romper la pantalla por un KPI
-        conciliacion_balance = None
+    # Contexto por si vuelve (TMT 2026-07-31, dueña: *"esencial, y que nunca
+    # más vuelva a pasar que esto nos va a mover la utilidad por 20k"*): la
+    # tira decía "Total vivo = ANTICIPOS del balance" y el 31/07 dejó de ser
+    # cierto — el balance descuenta los anticipos cuya mercadería YA está en
+    # bodega, porque esos kilos ya están contados en el stock. Los dos números
+    # eran correctos y medían cosas distintas; lo que faltaba era la resta
+    # escrita. El cálculo entero está en el git del commit que lo borró.
 
     # Enriquecer cuentas con nombre del cliente (una sola query, no N+1).
     nombres = _nombres_clientes([c["cta"] for c in cuentas])
@@ -246,7 +235,6 @@ def lista():
     return render_template(
         "dolares/lista.html",
         filas=filas, cuentas=cuentas, resumen=res,
-        conciliacion_balance=conciliacion_balance,
         desde=desde, hasta=hasta, cta=cta, q=q,
         codigo=codigo or None, recibido_mes=recibido_mes,
         anio_filtro=anio_filtro, n_sin_anio=n_sin_anio,

@@ -2518,6 +2518,26 @@ def lista():
         vista = "estado"
     if vista not in ("cartera", "estado", "canceladas", "eliminadas", "facturado"):
         vista = "cartera"
+    # Federico 2026-08-20: entrar a /facturas PELADO (sin un solo parámetro en
+    # la URL — el link del menú) abre el MES ACTUAL, igual que apretar el botón
+    # "Mes actual": vista 'facturado' + del día 1 al último del mes. Así los
+    # cuadrados de arriba (Kilos / Precio / Facturado) muestran el mes en curso
+    # y no el acumulado histórico de la cartera.
+    #   · La condición es `not request.args`: cualquier ?param (los tabs, el
+    #     Filtrar, la paginación, el export CSV) cae al comportamiento de
+    #     siempre, así que desde adentro se sigue navegando normal y el default
+    #     no se re-aplica pisando lo que el usuario eligió.
+    #   · El mes se calcula en hora Ecuador (UTC-5): el server corre en UTC y
+    #     entre las 19:00 y medianoche EC del último día del mes `now()` ya
+    #     está en el mes siguiente. Mismo criterio que _periodo_actual_ec().
+    if not request.args:
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        import calendar as _cal
+        _hoy_ec = (_dt.now(_tz.utc) - _td(hours=5)).date()
+        vista = "facturado"
+        desde = _hoy_ec.replace(day=1).isoformat()
+        hasta = _hoy_ec.replace(
+            day=_cal.monthrange(_hoy_ec.year, _hoy_ec.month)[1]).isoformat()
     # Filtro de estado (solo aplica en vista='estado'). Acepta los stats
     # canónicos: Z (cartera), A (parcial), T (cancelada), X (eliminada).
     # TMT 2026-05-19 v8 — multi-checkbox. Stat 'Y' fue retirado (la dueña:
@@ -2620,8 +2640,12 @@ def lista():
     #   - vista != cartera (histórico, legacy)
     # Triggers para FORZAR aunque vista sea histórica:
     #   - ?asinfo=1, ?solo_huerfanas=1, export=csv
+    # Federico 2026-08-20: 'facturado' entra también. Desde hoy es la vista con
+    # la que ABRE la pantalla (mes en curso), y es data fresca —no legacy—, así
+    # que las columnas KG AI / USD AI tienen que estar igual que en cartera. El
+    # rango es un mes (~400 filas), lejos del tope de 6000 de acá abajo.
     _necesita_asinfo = (
-        vista == 'cartera'
+        vista in ('cartera', 'facturado')
         or solo_huerfanas
         or request.args.get("asinfo") == "1"
         or is_export
