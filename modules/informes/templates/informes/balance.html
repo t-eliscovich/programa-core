@@ -249,19 +249,28 @@
   /* TMT 2026-06-29 — fix layout superpuesto: la tabla RESULTADOS (5 columnas)
      desbordaba sobre el panel ACTIVO. Le damos más ancho a la izquierda, y
      min-width:0 + overflow-x:auto como backstop para que NUNCA se pisen.
-     Federico 2026-08-20 — 1.45 → 1.35 ("puedes comprimir un poco el cuadro de
-     la izquierda de Resultados donde sobran unos espacios"). Los números salen
-     de medir en el navegador, no de la intuición: la fila de stock de la
-     DERECHA necesita 480px para entrar en un renglón y la IZQUIERDA 664px para
-     que no se parta "Utilidad Esperada" ni el "mes:" de Dividendos. 1,35 es el
-     único reparto que le da a los dos con ~1160px de ancho útil (el de una
-     laptop de 1440 con el sidebar abierto), que es donde a Federico se le
-     partía en dos renglones. Comprimir MÁS (1,20) arregla la derecha pero
-     rompe la izquierda: no bajar de 1,35 sin volver a medir. */
+
+     Federico 2026-08-21 — con `grid-template-columns: 1.35fr 1fr` los dos
+     paneles se repartían el ancho SIEMPRE en esa proporción, hubiera o no
+     lugar: en su pantalla la izquierda quedaba más angosta de lo que necesita
+     y su contenido se recortaba contra el panel de la derecha ("los cuadros se
+     están encimando"). El reparto proporcional no puede decir "hasta acá y no
+     más".
+     Solución: FLEX con `flex-wrap`. Cada panel declara el ancho que de verdad
+     necesita como `flex-basis` (medido en el navegador: 660px la izquierda para
+     no partir "Utilidad Esperada" ni el "mes:" de Dividendos, 480px la derecha
+     para que cada rubro de stock entre en un renglón) y crece con la misma
+     proporción de antes, 1.35 / 1. Cuando NO entran los dos, en vez de
+     recortarse se van uno abajo del otro — que es lo que ya hace el celular. */
   @media (min-width: 1024px) {
     .informe-balance .balance-grid {
-      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) !important;
+      display: flex !important;
+      flex-wrap: wrap;
     }
+    .informe-balance .balance-grid > .balance-col:first-child { flex: 1.35 1 660px; }
+    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 480px; }
+    /* apilados, el borde vertical entre paneles no tiene sentido */
+    .informe-balance .balance-grid > .balance-col:first-child:last-child { border-right: 0; }
   }
   .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
   /* Federico 2026-07-22 — kg de venta proyectada editable (fila Proyección). */
@@ -494,7 +503,7 @@
              crear subtotal cartera: esto tiene un link que lleva a
              cartera". #}
           <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
-            <td class="label-cell pl-6"><a href="{{ url_for('cartera.aging') }}" class="hover:text-blue-600 hover:underline">↳ Subtotal Cartera</a></td>
+            <td class="label-cell"><a href="{{ url_for('cartera.aging') }}" class="hover:text-blue-600 hover:underline">Subtotal Cartera</a></td>
             <td class="num-cell">{{ (b.totc + b.totf) | num_es(0) }}</td>
           </tr>
           <tr class="fila-total">
@@ -551,7 +560,7 @@
           {# TMT 2026-05-20 — Subtotal Terreno + Maquinaria (pedido dueña:
              "Tambien un subtotal Terreno+Maquinaria para ver en Activos"). #}
           <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
-            <td class="label-cell pl-6"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">↳ Subtotal Activos Fijos</a></td>
+            <td class="label-cell"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">Subtotal Activos Fijos</a></td>
             <td class="num-cell">{{ (b.umaq + b.uact) | num_es(0) }}</td>
           </tr>
           <tr class="fila-total">
