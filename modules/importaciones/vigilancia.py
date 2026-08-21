@@ -104,32 +104,45 @@ def _d(s):
         return None
 
 
-def importaciones_fuera_de_banda(dias: int | None = None,
-                                 limite: int = 1000,
-                                 techo: int | None = None) -> list[dict]:
-    """Grupos recibidos hace más de `dias` cuyo US$/kg sigue fuera de banda.
+def _dist_banda(ukg: float, lo: float, hi: float) -> float:
+    """Cuán lejos está un US$/kg de la banda razonable (0 = adentro)."""
+    if lo <= ukg <= hi:
+        return 0.0
+    return min(abs(ukg - lo), abs(ukg - hi))
 
-    Se mira por GRUPO (las dos mitades de una partida son una sola mercadería) y
-    se junta TODA la plata: compras + anticipos. Fail-soft: [] si Asinfo no
-    contesta — una alarma que no puede leer no inventa.
+
+def _leer_importaciones(limite: int = 1000) -> list[dict] | None:
+    """Las importaciones cruzadas, o **None** si no se pudieron leer.
+
+    None y [] no son lo mismo: sin datos no se avisa nada (una alarma que no
+    puede leer no inventa), y con esta forma los dos chequeos comparten UNA
+    sola lectura por corrida.
     """
-    from filters import today_ec
-
     from . import service as svc
-
-    dias = int(dias if dias is not None else _dias_umbral())
-    # techo=0 → sin techo (para mirar el histórico a mano; la alarma nunca lo usa)
-    techo = _techo_dias() if techo is None else int(techo)
     try:
-        rows = svc.importaciones_con_cruce(limite=limite)
+        return svc.importaciones_con_cruce(limite=limite)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("no pude leer las importaciones: %s", e)
-        return []
-    lo, hi = svc.BANDA_USD_KG
-    hoy = today_ec()
+        return None
+
+
+def _grupos_recibidos(rows: list[dict]) -> dict[str, dict]:
+    """Las importaciones RECIBIDAS juntadas por GRUPO de partidas, con toda su
+    plata (compras + anticipos) sumada una sola vez.
+
+    Es la base de los dos chequeos de este módulo, y por eso vive aparte: el
+    US$/kg fuera de banda y la factura del proveedor cuya plata quedó colgada
+    de una sola importación miran los mismos grupos.
+
+    Cada grupo lleva además su `factura` = (código del proveedor en Asinfo +
+    nota base). Los miembros de un grupo comparten la nota por construcción
+    (es parte de la clave con la que se agrupan), así que alcanza con la del
+    primero.
+    """
+    from . import service as svc
 
     grupos: dict[str, dict] = {}
-    for r in rows:
+    for r in rows or []:
         if not r.get("recibida"):
             continue
         frec = _d(r.get("fecha_recepcion"))
@@ -142,6 +155,8 @@ def importaciones_fuera_de_banda(dias: int | None = None,
             "grupo_id": gid,
             "codigo": (f"{r.get('prov')} {r.get('numero')}"
                        + (f"-{r.get('numero_hasta')}" if r.get("numero_hasta") else "")),
+            "factura": (str(r.get("prov_cod_asinfo") or "").strip().upper(),
+                        svc._nota_base(r.get("nota"))),
             "ims": r.get("grupo_ims") or [r.get("im_numero")],
             "kg": float(r.get("grupo_kg") or r.get("kg") or 0),
             "recepcion": frec,
@@ -161,6 +176,34 @@ def importaciones_fuera_de_banda(dias: int | None = None,
         if not (r.get("compra") or {}).get("items"):
             for it in ((r.get("anticipo") or {}).get("items") or []):
                 g["importe"] += float(it.get("importe") or 0)
+    return grupos
+
+
+def importaciones_fuera_de_banda(dias: int | None = None,
+                                 limite: int = 1000,
+                                 techo: int | None = None,
+                                 rows: list[dict] | None = None) -> list[dict]:
+    """Grupos recibidos hace más de `dias` cuyo US$/kg sigue fuera de banda.
+
+    Se mira por GRUPO (las dos mitades de una partida son una sola mercadería) y
+    se junta TODA la plata: compras + anticipos. Fail-soft: [] si Asinfo no
+    contesta — una alarma que no puede leer no inventa.
+    """
+    from filters import today_ec
+
+    from . import service as svc
+
+    dias = int(dias if dias is not None else _dias_umbral())
+    # techo=0 → sin techo (para mirar el histórico a mano; la alarma nunca lo usa)
+    techo = _techo_dias() if techo is None else int(techo)
+    if rows is None:
+        rows = _leer_importaciones(limite=limite)
+    if rows is None:
+        return []
+    lo, hi = svc.BANDA_USD_KG
+    hoy = today_ec()
+
+    grupos = _grupos_recibidos(rows)
 
     out = []
     for g in grupos.values():
@@ -192,8 +235,125 @@ def importaciones_fuera_de_banda(dias: int | None = None,
     return out
 
 
+# ── La MISMA factura repartida en varias importaciones ──────────────────────
+# TMT 2026-08-21 (dueña, sobre MH 68/69/70): *"llegaron varias importaciones
+# 68, 69, 70; el pago de 160k era de todo ese hilo. Se registra que llegó pero
+# no que valía eso"*.
+#
+# Asinfo mandó una sola factura del proveedor ("INV HY3821-26") repartida en
+# TRES importaciones, cada una con su propio código del programa ( MH 68 ),
+# ( MH 69 ) y ( MH 70 ). La compra se carga con el número en el concepto, así
+# que los 160.400,78 quedaron colgados de MH 68 sola:
+#
+#     MH 68   24.300 kg   160.400,78 US$   →  6,6009 US$/kg
+#     MH 69   23.430 kg   sin cargar       →  0
+#     MH 70   24.150 kg   sin cargar       →  0
+#     los tres juntos: 71.880 kg           →  2,2315 US$/kg
+#
+# Y no es sólo la pantalla. Los 47.580 kg de MH 69 y MH 70 están en la bodega
+# SIN plata, y `mov_hilado_valuacion` los saca del divisor a propósito (para
+# que un kilo sin dólar no diluya la tarifa): el promedio ponderado toma los
+# 160.400,78 enteros contra 24.300 kg. Con ~1,85 millones de kg en stock eso
+# levanta la tarifa unos 0,07 US$/kg y revalúa TODO el hilado — del orden de
+# 140.000 US$ de utilidad que no son reales, hasta que la plata se acomode.
+#
+# El caso NO lo agarra la alarma de arriba: recién a los 30 días, y partido en
+# tres avisos sueltos que no dicen que son la misma factura.
+#
+# La regla, y por qué cada pieza está:
+#
+#   · misma factura del proveedor (`prov_cod_asinfo` + nota base) y todas
+#     RECIBIDAS EN EL MISMO MES — es una sola llegada, no dos campañas que
+#     reusan el número de factura;
+#   · al menos una CON plata y al menos una en CERO — si todas tienen algo, no
+#     hay nada mal atribuido; si ninguna tiene, es la alarma de arriba (o PC
+#     nunca tuvo el dato) y avisar acá sería el ruido de siempre;
+#   · y repartir esos dólares entre los kilos de TODA la factura ACERCA el
+#     US$/kg a la banda. Esta sola condición dice las dos cosas que importan:
+#     que la plata quedó ARRIBA de la banda para los kilos que tiene colgados
+#     (repartir siempre BAJA el US$/kg, así que una que ya está adentro o
+#     abajo sólo puede empeorar, y queda afuera sola), y que la mala
+#     atribución explica el número. Sin ella saltaría AC 57 —3,55 US$/kg,
+#     apenas arriba de la banda pero bien cargada—: repartirla la mandaría a
+#     1,77, o sea más lejos, y eso dice que el número alto no es plata de otra.
+#
+# Por eso NO lleva umbral de días como la alarma de arriba: no está mirando
+# "todavía no cargaron la plata" (eso es maduración normal y tarda 10 días de
+# mediana), sino "la plata que YA está cargada no le corresponde a esos kilos".
+# El techo de antigüedad sí va, por el mismo motivo de siempre: que el día que
+# esto se estrene no aparezca un inventario de casos de 2024.
+def facturas_con_plata_en_una_sola(limite: int = 1000,
+                                   rows: list[dict] | None = None,
+                                   techo: int | None = None) -> list[dict]:
+    """Facturas del proveedor que llegaron en varias importaciones y tienen
+    toda la plata colgada de una sola. Fail-soft: [] si no se puede leer."""
+    from filters import today_ec
+
+    from . import service as svc
+
+    if rows is None:
+        rows = _leer_importaciones(limite=limite)
+    if rows is None:
+        return []
+    lo, hi = svc.BANDA_USD_KG
+    techo = _techo_dias() if techo is None else int(techo)
+    hoy = today_ec()
+
+    facturas: dict[tuple, list[dict]] = {}
+    for g in _grupos_recibidos(rows).values():
+        if g["kg"] <= 0 or not g["factura"][1]:
+            continue
+        facturas.setdefault(g["factura"], []).append(g)
+
+    out = []
+    for (_prov_asinfo, base), miembros in facturas.items():
+        if len(miembros) < 2:
+            continue                     # una sola importación: no hay reparto
+        if len({str(m["recepcion"])[:7] for m in miembros}) > 1:
+            continue                     # llegadas de meses distintos
+        con = [m for m in miembros if m["importe"] > 0]
+        sin = [m for m in miembros if m["importe"] <= 0]
+        if not con or not sin:
+            continue
+        kg_con = sum(m["kg"] for m in con)
+        kg_total = sum(m["kg"] for m in miembros)
+        us = sum(m["importe"] for m in con)
+        if kg_con <= 0 or kg_total <= 0:
+            continue
+        recepcion = max(m["recepcion"] for m in miembros)
+        edad = (hoy - recepcion).days
+        if techo and edad > techo:
+            continue                     # historia, no una tarea pendiente
+        ukg = us / kg_con
+        ukg_repartido = us / kg_total
+        if _dist_banda(ukg_repartido, lo, hi) >= _dist_banda(ukg, lo, hi):
+            # Repartirla no explica mejor el número. Acá caen las que están en
+            # banda o abajo: repartir sólo baja el US$/kg, nunca las acerca.
+            continue
+        orden = sorted(miembros, key=lambda m: m["codigo"])
+        out.append({
+            "factura": base,
+            "codigos": [m["codigo"] for m in orden],
+            "con_plata": sorted(m["codigo"] for m in con),
+            "sin_plata": sorted(m["codigo"] for m in sin),
+            "ims": [i for m in orden for i in (m["ims"] or [])],
+            "grupo_ids": sorted(m["grupo_id"] for m in miembros),
+            "kg": round(kg_total, 2),
+            "kg_con_plata": round(kg_con, 2),
+            "kg_sin_plata": round(kg_total - kg_con, 2),
+            "importe": round(us, 2),
+            "usd_kg": round(ukg, 4),
+            "usd_kg_repartido": round(ukg_repartido, 4),
+            "recepcion": str(recepcion),
+            "dias": edad,
+        })
+    out.sort(key=lambda x: -x["kg_sin_plata"])
+    return out
+
+
 def revisar_si_toca() -> dict:
-    """Corre cada `_FRENO_SECS` y deja un aviso por grupo. Fail-soft."""
+    """Corre cada `_FRENO_SECS` y deja los avisos de los dos chequeos: uno por
+    grupo fuera de banda y uno por factura repartida. Fail-soft."""
     global _ultima_corrida
     if os.environ.get("IMPORT_SIN_PLATA") == "0":
         return {"corrio": False, "motivo": "apagado"}
@@ -204,8 +364,11 @@ def revisar_si_toca() -> dict:
         _ultima_corrida = ahora
 
     dias = _dias_umbral()
+    # UNA sola lectura por corrida para los dos chequeos.
+    _rows = _leer_importaciones()
     try:
-        casos = importaciones_fuera_de_banda(dias)
+        casos = importaciones_fuera_de_banda(dias, rows=_rows)
+        facturas = facturas_con_plata_en_una_sola(rows=_rows)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("revisión falló: %s", e)
         return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
@@ -254,7 +417,42 @@ def revisar_si_toca() -> dict:
             clave=f"import-sin-plata:{c['grupo_id']}",
         ):
             n += 1
+    for f in facturas:
+        codigos = ", ".join(f["codigos"])
+        titulo = (f"{codigos} · la misma factura llegó en {len(f['codigos'])} "
+                  "importaciones y la plata quedó en una sola")
+        detalle = (
+            f"La factura {f['factura']} del proveedor llegó en "
+            f"{len(f['codigos'])} importaciones ({codigos}): {f['kg']:,.0f} kg "
+            f"en total, recibidas el {f['recepcion']}.\n\n"
+            f"Los US$ {f['importe']:,.2f} que hay cargados están colgados de "
+            f"{', '.join(f['con_plata'])} sola: {f['kg_con_plata']:,.0f} kg = "
+            f"{f['usd_kg']:,.4f} US$/kg, contra una banda normal de "
+            f"{lo:,.1f}–{hi:,.1f}. Repartidos entre los {f['kg']:,.0f} kg de "
+            f"toda la factura darían {f['usd_kg_repartido']:,.4f}.\n\n"
+            f"Los {f['kg_sin_plata']:,.0f} kg de {', '.join(f['sin_plata'])} "
+            "están en la bodega sin plata, y esos kilos NO diluyen la tarifa "
+            "del hilado: el promedio ponderado toma los dólares enteros contra "
+            "los kilos que sí la tienen, así que la tarifa —y con ella el "
+            "stock— quedan altos hasta que esto se acomode.\n\n"
+            "Se acomoda de dos maneras: que la nota de Asinfo diga el código "
+            f"con el rango en las {len(f['codigos'])} (como ya pasa con "
+            "MH 64-65, y el programa las junta solas), o cargar la plata que "
+            "le toca a cada una.\n\n"
+            f"Importación {', '.join(str(i) for i in f['ims'])}."
+        )
+        if avisos.avisar(
+            fuente="importaciones",
+            nivel="alerta",
+            titulo=titulo[:200],
+            detalle=detalle,
+            url="/importaciones",
+            # Idempotente por FACTURA: se dice una vez, no una por importación.
+            clave=f"import-factura-en-una:{f['factura']}",
+        ):
+            n += 1
     if n:
-        _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s)",
-                  n, len(casos))
-    return {"corrio": True, "casos": len(casos), "avisados": n, "dias": dias}
+        _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s) "
+                  "y %s factura(s) repartida(s)", n, len(casos), len(facturas))
+    return {"corrio": True, "casos": len(casos), "facturas": len(facturas),
+            "avisados": n, "dias": dias}

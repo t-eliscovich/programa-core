@@ -132,7 +132,8 @@ def test_avisa_una_vez_por_grupo_y_a_la_campanita():
             "recepcion": "2026-06-01", "dias": 60, "falta_plata": True,
             "faltarian_us": 18432.38}
     vistos = []
-    with patch.object(vig, "importaciones_fuera_de_banda", return_value=[caso]), \
+    with patch.object(vig, "_leer_importaciones", return_value=[]), \
+         patch.object(vig, "importaciones_fuera_de_banda", return_value=[caso]), \
          patch("modules.avisos.queries.avisar",
                side_effect=lambda **kw: vistos.append(kw) or True):
         out = vig.revisar_si_toca()
@@ -147,7 +148,8 @@ def test_avisa_una_vez_por_grupo_y_a_la_campanita():
 
 def test_el_freno_evita_repetir_en_cada_ciclo():
     vig._ultima_corrida = 0.0
-    with patch.object(vig, "importaciones_fuera_de_banda", return_value=[]), \
+    with patch.object(vig, "_leer_importaciones", return_value=[]), \
+         patch.object(vig, "importaciones_fuera_de_banda", return_value=[]), \
          patch("modules.avisos.queries.avisar", return_value=True):
         assert vig.revisar_si_toca()["corrio"] is True
         assert vig.revisar_si_toca()["corrio"] is False
