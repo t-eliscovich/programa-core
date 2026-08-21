@@ -111,6 +111,40 @@
     color: rgb(100 116 139) !important;  /* slate-500 — más oscuro */
   }
   .dark .informe-balance td.num-cell--sumando { color: rgb(148 163 184); }
+  /* Federico 2026-08-20 — kg y U$/kg de las etapas de stock (y de su total)
+     al lado del nombre, no en columnas propias: el panel tiene 2 columnas y
+     así sigue. Mismo gris que un sumando, un punto más chico. */
+  .informe-balance .stock-det {
+    font-size: 12.5px;
+    color: rgb(100 116 139);
+    white-space: nowrap;
+  }
+  .dark .informe-balance .stock-det { color: rgb(148 163 184); }
+  /* Federico 2026-08-20 — "alinealos: kg con kg, precios con precios".
+     Sin columnas de tabla no hay alineación automática, así que se arma a mano:
+     el NOMBRE ocupa un ancho fijo (todas las filas arrancan el detalle en la
+     misma x) y cada cifra va en una caja de ancho fijo alineada a la derecha.
+     Los anchos están en `em` para que sigan al font-size de la celda. */
+  .informe-balance .stock-lbl {
+    display: inline-block;
+    min-width: 8.6em;
+  }
+  .informe-balance .det-kg,
+  .informe-balance .det-ukg {
+    display: inline-block;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .informe-balance .det-kg  { width: 5.6em; }
+  /* el margen hace de espacio antes de "$/kg": un espacio normal se lo
+     come el ancho fijo del span. */
+  .informe-balance .det-ukg { width: 2.6em; margin-right: .35em; }
+  /* En celular la celda se angosta y el ancho fijo la desborda: se apaga. */
+  @media (max-width: 767px) {
+    .informe-balance .stock-lbl { min-width: 0; }
+    .informe-balance .det-kg,
+    .informe-balance .det-ukg { width: auto; }
+  }
   .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
   /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
@@ -344,27 +378,40 @@
             {% endif %}
           {% endfor %}
 
-          {# ─── STOCK ─── link al dashboard de flujo de producción. #}
+          {# ─── MOVIMIENTOS DEL AÑO ───
+             Federico 2026-08-20: era una tabla suelta al pie de la columna
+             DERECHA. Es resultado, no activo, así que se muda acá — y como
+             ahora es una sección MÁS de esta tabla hereda sus columnas: los
+             acumulados del año quedan bajo U$ y el dividendo del mes bajo
+             U$/kg (antes colgaban de la columna Proyecciones). En el mismo
+             viaje, al revés, el cuadro STOCK que estaba acá pasó al panel
+             ACTIVO como el detalle de "Stock MP+Prod.". #}
           <tr>
-            <th class="seccion-header" colspan="5" style="text-align:left">
-              <a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">STOCK</a>
-            </th>
+            <th class="seccion-header" colspan="5" style="text-align:left">MOVIMIENTOS DEL AÑO</th>
           </tr>
-          {% for etapa, label in [('hilado','Hilado'),('tejido','Tejido'),('terminado','Terminado')] %}
-          {% set s = r.stock[etapa] %}
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">{{ label }}</a></td>
-            <td class="num-cell">{{ s.kg | num_es(0) }}</td>
-            <td class="num-cell">{{ s.ukg | num_es(3) }}</td>
-            <td class="num-cell">{{ s.us | num_es(0) }}</td>
+            <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
+            <td class="num-cell"></td>
+            <td class="num-cell"></td>
+            <td class="num-cell">{{ b.ventas_anio | num_es(0) }}</td>
             <td class="num-cell"></td>
           </tr>
-          {% endfor %}
-          <tr class="fila-total">
-            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">Total</a></td>
-            <td class="num-cell">{{ r.stock.total.kg | num_es(0) }}</td>
-            <td class="num-cell">{{ r.stock.total.ukg | num_es(3) }}</td>
-            <td class="num-cell">{{ r.stock.total.us | num_es(0) }}</td>
+          {# Federico 2026-08-20: *"prefiero pinchar en la palabra DIVIDENDOS"*.
+             El link es la etiqueta y las cifras quedan como texto. Un solo
+             destino alcanza: /retiros muestra SIEMPRE los dos KPIs (mes y año)
+             y tiene el switcher de tabs. #}
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos</a></td>
+            <td class="num-cell"></td>
+            <td class="num-cell"><span class="text-slate-500">mes:</span> {{ b.uret | num_es(0) }}</td>
+            <td class="num-cell"><span class="text-slate-500">año:</span> {{ b.uret_anio | num_es(0) }}</td>
+            <td class="num-cell"></td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell">Utilidades {{ b.anio_actual }}</td>
+            <td class="num-cell"></td>
+            <td class="num-cell"></td>
+            <td class="num-cell">{{ b.utilidades_anio | num_es(0) }}</td>
             <td class="num-cell"></td>
           </tr>
         </tbody>
@@ -427,8 +474,30 @@
              antes era /informes/historia (sólo tabla de cierres); ahora
              muestra el flujo completo del mes con movimientos, compras
              por proveedor, producción, tintorería y costos unitarios. #}
+          {# ─── STOCK por etapa ───
+             Federico 2026-08-20: venía como cuadro propio en la columna de
+             RESULTADOS. `b.vsto` ES el total de ese cuadro (queries.py:
+             `vsto = stock_total_us`), así que las tres etapas son literalmente
+             los sumandos de "Stock MP+Prod.": entran arriba con el mismo
+             tratamiento que Cheques/Facturas (`num-cell--sumando`) y el total
+             queda EXACTAMENTE donde estaba.
+             Los kg y el U$/kg de cada etapa viajaron con el cuadro, pero NO
+             como columnas nuevas: van al lado del nombre, en gris chico
+             (`stock-det`). Agregar dos columnas al panel obligaba a ensanchar
+             la mitad derecha ~160px y Federico lo rebotó (2026-08-20): "tiene
+             que ser lo más parecido a lo que está ahora". Acá la tabla sigue
+             siendo de 2 columnas y no se movió ninguna medida. #}
+          {% if b.resultados and b.resultados.stock %}
+          {% for etapa, label in [('hilado','Hilado'),('tejido','Tejido'),('terminado','Terminado')] %}
+          {% set s = b.resultados.stock[etapa] %}
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">Stock MP+Prod.</a></td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline stock-lbl">{{ label }}</a><span class="stock-det"><span class="det-kg">{{ s.kg | num_es(0) }}</span> kg · <span class="det-ukg">{{ s.ukg | num_es(3) }}</span> $/kg</span></td>
+            <td class="num-cell num-cell--sumando">{{ s.us | num_es(0) }}</td>
+          </tr>
+          {% endfor %}
+          {% endif %}
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline stock-lbl">Stock MP+Prod.</a>{% if b.resultados and b.resultados.stock %}<span class="stock-det"><span class="det-kg">{{ b.resultados.stock.total.kg | num_es(0) }}</span> kg · <span class="det-ukg">{{ b.resultados.stock.total.ukg | num_es(3) }}</span> $/kg</span>{% endif %}</td>
             <td class="num-cell">{{ b.vsto | num_es(0) }}</td>
           </tr>
           <tr class="fila-dato">
@@ -446,7 +515,7 @@
           {# TMT 2026-05-20 — Subtotal Terreno + Maquinaria (pedido dueña:
              "Tambien un subtotal Terreno+Maquinaria para ver en Activos"). #}
           <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
-            <td class="label-cell pl-6"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">↳ Subtotal Terreno + Maquinaria</a></td>
+            <td class="label-cell pl-6"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">↳ Subtotal Activos Fijos</a></td>
             <td class="num-cell">{{ (b.umaq + b.uact) | num_es(0) }}</td>
           </tr>
           <tr class="fila-total">
@@ -479,42 +548,9 @@
        item 16). El detalle por banco vive en /bancos; acá en el balance
        el dato consolidado ya aparece en la fila ACTIVO → Bancos. #}
 
-    {# TMT 2026-05-20 v3 — Movimientos del año dentro de la col derecha
-       (pedido dueña: "la pantalla de resultados no esta tan linda, falta
-       ubicar los recuadros parejos. un lado temina antes que el otro").
-       Antes estaba debajo del grid en el lado izquierdo, dejaba un
-       hueco grande a la derecha. Ahora cuelga al pie de la col 2
-       y los dos paneles terminan en líneas cercanas. #}
-    <table data-no-sort-table class="balance-table mt-2">
-      <thead>
-        <tr>
-          <th class="seccion-header" style="text-align:left">MOVIMIENTOS DEL AÑO</th>
-          <th class="col-header seccion-cap" style="text-align:right">U$</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr class="fila-dato">
-          <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
-          <td class="num-cell">{{ b.ventas_anio | num_es(0) }}</td>
-        </tr>
-        {# Federico 2026-07-14: "Dividendos" en un solo renglón — mes: y año:
-           en la misma fila, con el acumulado del año encolumnado (num-cell,
-           right-aligned) con las Utilidades del año de abajo.
-           Federico 2026-08-20: *"prefiero pinchar en la palabra DIVIDENDOS"*.
-           El link pasa del par de cifras a la etiqueta —igual que "Ventas del
-           año" acá arriba— y las cifras quedan como texto. No se pierde el
-           acceso al año: /retiros muestra SIEMPRE los dos KPIs (mes y año) y
-           tiene el switcher de tabs, así que un solo destino alcanza. #}
-        <tr class="fila-dato">
-          <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos</a><span class="text-slate-500" style="margin-left:1.5em">mes:</span> {{ b.uret | num_es(0) }}</td>
-          <td class="num-cell"><span class="text-slate-500">año:</span> {{ b.uret_anio | num_es(0) }}</td>
-        </tr>
-        <tr class="fila-dato">
-          <td class="label-cell">Utilidades {{ b.anio_actual }}</td>
-          <td class="num-cell">{{ b.utilidades_anio | num_es(0) }}</td>
-        </tr>
-      </tbody>
-    </table>
+    {# TMT 2026-05-20 v3 — "MOVIMIENTOS DEL AÑO" colgaba acá al pie de la
+       columna derecha. Federico 2026-08-20: se mudó a la tabla de RESULTADOS
+       (es resultado, no activo) y de paso quedó encolumnado con ella. #}
 
     </div>{# fin wrapper col derecha #}
 
