@@ -265,12 +265,17 @@
   @media (min-width: 1024px) {
     .informe-balance .balance-grid {
       display: flex !important;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
-    .informe-balance .balance-grid > .balance-col:first-child { flex: 1.35 1 660px; }
-    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 480px; }
-    /* apilados, el borde vertical entre paneles no tiene sentido */
-    .informe-balance .balance-grid > .balance-col:first-child:last-child { border-right: 0; }
+    /* `flex-shrink: 0`: ningún panel baja del ancho que necesita. Crecen con la
+       proporción de siempre (1.35 / 1) cuando sobra lugar. */
+    .informe-balance .balance-grid > .balance-col:first-child { flex: 1.35 0 660px; }
+    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 0 480px; }
+    /* y el panel deja de recortar por su cuenta: si algo no entra, scrollea el
+       marco entero (los dos paneles a la vez), que es lo que Federico quiere
+       ver — los cuadros lado a lado, nunca uno recortado contra el otro. */
+    .informe-balance .balance-col { overflow-x: visible; }
+    .informe-balance .balance-marco { overflow-x: auto; }
   }
   .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
   /* Federico 2026-07-22 — kg de venta proyectada editable (fila Proyección). */
@@ -358,7 +363,10 @@
     </div>
   {% endfor %}
   {# Frame único, plano. Sin gradientes ni "TV ochentosa". #}
-  <div class="border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 overflow-hidden">
+  {# `balance-marco`: el scroll horizontal, cuando hace falta, es de ESTE
+     marco (los dos paneles juntos) y no de cada panel por separado. Ver el
+     bloque flex del <style>. #}
+  <div class="balance-marco border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 overflow-hidden">
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 balance-grid">
     {# -------- I N F O R M E   D E   R E S U L T A D O S  (mes / proyección) --------
