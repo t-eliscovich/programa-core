@@ -124,15 +124,17 @@ def test_costo_total_subtotal_mas_admin():
     assert ct["kg"] is None
 
 
-def test_utilidad_calculada_actual_ventas_menos_costo():
-    """Utilidad Calculada Actual = Ventas − Costo Total; kg = kg vendidos;
-    u$/kg = utilidad / kg vendidos. Va arriba de Utilidad Real. Federico 2026-07-27."""
-    tab = _tabla(factor_desperdicio=1.045)
-    ct = _row(tab, "Costo Total")
-    uca = _row(tab, "Utilidad Calculada Actual")
-    assert abs(uca["kg"] - 200000.0) < 1e-6
-    assert abs(uca["us"] - (1000000.0 - ct["us"])) < 1e-6
-    assert abs(uca["ukg"] - (1000000.0 - ct["us"]) / 200000.0) < 1e-9
+def test_la_utilidad_calculada_actual_ya_no_esta():
+    """Federico 2026-08-20: "elimina estos datos" — la fila "Utilidad Calculada
+    Actual" (Ventas − Costo Total, agregada el 2026-07-27) sale de la tabla.
+
+    Se mira por etiqueta y no por conteo: una fila nueva más abajo no debe dar
+    verde a esta prueba por casualidad.
+    """
+    labels = [r["label"] for r in _tabla(factor_desperdicio=1.045)]
+    assert "Utilidad Calculada Actual" not in labels
+    # las otras dos utilidades siguen, en orden Esperada → Real
+    assert labels.index("Utilidad Esperada") < labels.index("Utilidad Real")
 
 
 def test_utilidad_real_delta_patrimonio_mas_dividendos():
@@ -146,10 +148,9 @@ def test_sin_ventas_no_rompe():
     """venta_kg = 0 no debe lanzar ZeroDivisionError."""
     tab = _tabla(venta_kg=0.0, venta_us=0.0)
     assert _row(tab, "Venta")["ukg"] == 0.0
-    # 13 filas: se agregó "Utilidad Calculada Actual" (Ventas − Costo Total)
-    # arriba de Utilidad Real. Federico 2026-07-27. (Antes 12: se había quitado
-    # "Utilidad no estandarizada", commit 55fd9f2.)
-    assert len(tab) == 13
+    # 12 filas: Federico 2026-08-20 sacó "Utilidad Calculada Actual" (la había
+    # pedido el 2026-07-27, que las llevó de 12 a 13).
+    assert len(tab) == 12
 
 
 def test_seccion_costos_presente():

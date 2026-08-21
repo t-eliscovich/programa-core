@@ -4443,16 +4443,11 @@ def resultados_costos_tabla(
          "ayuda": ("Subtotal +4.5% + Administración. $/kg = Tejeduría + Tintorería "
                    "+ 1.045*(MP + Colorantes) + Admin. $ = 1.045*(MP + Col) + "
                    "Tejeduría + Tintorería + Admin (los mismos renglones, en pesos).")},
-        {"label": "Utilidad Calculada Actual", "kg": venta_kg,
-         "ukg": _div(float(venta_us or 0) - ct_us, venta_kg),
-         # Federico 2026-07-27: las 3 filas de utilidad son filas normales
-         # ("dato") con el MISMO font; lo ÚNICO distinto es el fondo celeste de
-         # Utilidad Real (clase extra 'fila-celeste' que se agrega en el template).
-         "us": float(venta_us or 0) - ct_us, "clase": "dato",
-         "ayuda": ("Ventas − Costo Total. Utilidad contable del mes: las ventas "
-                   "del período menos el Costo Total (Subtotal +4.5% + "
-                   "Administración). kg = kg vendidos; $/kg = utilidad / kg vendidos.")},
-        # Federico 2026-07-27: orden Calculada Actual → Esperada → Real.
+        # Federico 2026-08-20: se ELIMINÓ la fila "Utilidad Calculada Actual"
+        # (Ventas − Costo Total, agregada el 2026-07-27). Quedan Esperada y
+        # Real: filas normales ("dato") con el MISMO font, y lo ÚNICO distinto
+        # sigue siendo el fondo celeste de Utilidad Real (clase extra
+        # 'fila-celeste' que agrega el template).
         {"label": "Utilidad Esperada", "kg": up_kg, "ukg": up_ukg,
          "us": up_us, "clase": "dato",
          "ayuda": ("Réplica dBase (UT.PROY): utilidad real del mes (PATR−PATANT) "

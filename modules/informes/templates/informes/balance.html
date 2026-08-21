@@ -225,7 +225,10 @@
 
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
-{% set _desc %}Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>{% if b and b.snapshot_historia_fecha %} · Último cierre <span class="text-slate-700 dark:text-slate-300">{{ b.snapshot_historia_fecha | fecha_es }}</span>{% endif %}{% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}{% endset %}
+{# Federico 2026-08-20: fuera "· Último cierre <fecha> · Proyección <mes>" del
+   subtítulo. Los datos siguen vivos en el contexto (b.snapshot_historia_fecha y
+   b.resultados.iniciales_mes): sólo dejan de leerse acá. #}
+{% set _desc %}Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>{% endset %}
 <div class="max-w-full informe-balance info-page">
   {{ nav_resultados('balance') }}
   <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
