@@ -4267,7 +4267,7 @@ def resultados_costos_tabla(
     Las filas 'seccion' solo traen {label, clase}.
 
     Formulas (mes en curso):
-      Venta          kg/us live de scintela.factura; u$/kg = us / kg.
+      Ventas         kg/us live de scintela.factura; u$/kg = us / kg.
       Proyeccion     regla de 3 al dia 30 con el mismo precio promedio.
       Materia Prima  kg = kg VENDIDOS; us = kg vendidos * tarifa hilado.
       Tejeduria      us = V1+V2+V3 + amort.tejeduria; u$/kg = us / kg tejidos.
@@ -4395,7 +4395,7 @@ def resultados_costos_tabla(
     up_ukg = _div(up_us, up_kg)
 
     return [
-        {"label": "Venta", "kg": venta_kg, "ukg": precio, "us": venta_us,
+        {"label": "Ventas", "kg": venta_kg, "ukg": precio, "us": venta_us,
          "clase": "dato",
          "ayuda": "Facturas del mes en curso (stat != X). U$/kg = U$ / Kg."},
         {"label": "Proyección", "kg": proy_kg, "ukg": precio, "us": proy_us,
@@ -4408,7 +4408,7 @@ def resultados_costos_tabla(
          "ukg": mp_ukg,
          "us": (float(mp_us) if mp_us else None),
          "clase": "dato",
-         "ayuda": ("kg = kg VENDIDOS del mes (mismos que la fila Venta). "
+         "ayuda": ("kg = kg VENDIDOS del mes (mismos que la fila Ventas). "
                    "$ = kg vendidos × tarifa del hilado del STOCK. Es el costo "
                    "de la materia prima contenida en lo vendido.")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,

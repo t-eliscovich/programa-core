@@ -977,11 +977,11 @@ def balance():
                 _ult = _hoy.replace(day=monthrange(_hoy.year, _hoy.month)[1])
                 _hab_mes = dias_habiles_ec(_prim, _ult)
                 _hab_transc = dias_habiles_ec(_prim, _hoy)
-                _venta_kg = _cell("Venta", "kg")
+                _venta_kg = _cell("Ventas", "kg")
                 if _hab_transc > 0 and _venta_kg > 0:
                     _ritmo_kg = _venta_kg * _hab_mes / _hab_transc
                     for _r in _tabla:
-                        if _r.get("label") == "Venta":
+                        if _r.get("label") == "Ventas":
                             _r["proy"] = _ritmo_kg
                             _r["proy_ayuda"] = (
                                 "Kg de venta proyectada al ritmo actual: kg "

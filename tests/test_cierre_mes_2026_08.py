@@ -361,7 +361,7 @@ def test_el_cierre_guarda_LO_QUE_MUESTRA_LA_PANTALLA():
     """
     res = {
         "tabla": [
-            {"label": "Venta", "kg": 332_305.0, "us": 2_832_519.0},
+            {"label": "Ventas", "kg": 332_305.0, "us": 2_832_519.0},
             {"label": "Materia Prima", "kg": 332_305.0, "us": 1_003_590.0},
             {"label": "Tejeduría", "kg": 286_305.0, "us": 139_004.0},
             {"label": "Tintorería", "kg": 273_914.0, "us": 381_612.0},

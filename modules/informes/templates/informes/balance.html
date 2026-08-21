@@ -181,6 +181,13 @@
   @media (min-width: 768px) {
     .informe-balance td.mov-num { white-space: nowrap; }
   }
+  /* Renglón en blanco (Federico 2026-08-21). Alto fijo y sin hover: es un
+     separador, no una fila de datos. `line-height:0` para que no herede el
+     alto de la tipografía. */
+  .informe-balance tr.fila-espacio td {
+    height: 14px; padding: 0 !important; line-height: 0; font-size: 0;
+    border: 0;
+  }
   .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
   /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
@@ -280,10 +287,16 @@
       display: flex !important;
       flex-wrap: nowrap;
     }
-    /* `flex-shrink: 0`: ningún panel baja del ancho que necesita. Crecen con la
-       proporción de siempre (1.35 / 1) cuando sobra lugar. */
-    .informe-balance .balance-grid > .balance-col:first-child { flex: 1.35 0 590px; }
-    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 0 390px; }
+    /* Federico 2026-08-21: *"la izquierda es más ancha que la derecha cuando
+       podrían ser similares"*. Con `flex-basis: 0` y el mismo `grow`, el ancho
+       disponible se parte MITAD Y MITAD, sin importar cuánto ocupa el contenido
+       de cada uno. El `min-width` es el piso medido de cada panel: la izquierda
+       nunca baja de 590px (ahí se le parte "Utilidad Esperada" y el "mes:" de
+       Dividendos) ni la derecha de 390px (ahí se parte cada rubro de stock). Si
+       el 50% cae por debajo de ese piso, el min-width manda y el otro panel
+       cede — recién cuando NINGUNO de los dos entra scrollea el marco. */
+    .informe-balance .balance-grid > .balance-col:first-child { flex: 1 1 0; min-width: 590px; }
+    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 0; min-width: 390px; }
     /* y el panel deja de recortar por su cuenta: si algo no entra, scrollea el
        marco entero (los dos paneles a la vez), que es lo que Federico quiere
        ver — los cuadros lado a lado, nunca uno recortado contra el otro. */
@@ -389,7 +402,7 @@
     {% set r = b.resultados %}
     {# Links de drill-down de la tabla RESULTADOS — Federico 2026-05-21. #}
     {% set _row_links = {
-      'Venta':            url_for('informes.ventas'),
+      'Ventas':           url_for('informes.ventas'),
       'Materia Prima':    url_for('informes.flujo_produccion'),
       'Tejeduría':        url_for('compras.produccion_tejeduria'),
       'Tintorería':       url_for('informes.flujo_produccion'),
@@ -436,7 +449,7 @@
             <td class="num-cell">{% if row.label == 'Proyección' %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span>{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
-            <td class="num-cell" style="color:#64748b"{% if row.proy_ayuda %} title="{{ row.proy_ayuda }}"{% endif %}>{% if row.proy %}{% if row.label == 'Venta' %}kg. {% endif %}{{ row.proy | num_es(0) }}{% endif %}</td>
+            <td class="num-cell" style="color:#64748b"{% if row.proy_ayuda %} title="{{ row.proy_ayuda }}"{% endif %}>{% if row.proy %}{% if row.label == 'Ventas' %}kg. {% endif %}{{ row.proy | num_es(0) }}{% endif %}</td>
           </tr>
             {% endif %}
           {% endfor %}
@@ -453,7 +466,11 @@
              filas dicen solas de qué hablan ("del año", "Utilidades 2026") y el
              renglón de sección era espacio puro. Queda una línea divisoria para
              que no se peguen a Utilidad Real. #}
-          <tr class="fila-dato" style="border-top:1px solid rgb(226 232 240)">
+          {# Federico 2026-08-21: un renglón libre separa la última fila de
+             RESULTADOS (Utilidad Real) del bloque anual. Es una fila vacía y no
+             un margen porque en una tabla el margen entre filas no existe. #}
+          <tr class="fila-espacio"><td colspan="5"></td></tr>
+          <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
             <td class="num-cell"></td>
             <td class="num-cell"></td>
