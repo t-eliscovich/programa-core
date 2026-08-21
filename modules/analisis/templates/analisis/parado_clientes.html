@@ -137,28 +137,24 @@
 
 {% if improbables %}
   <h2>Improbables</h2>
-  <p class="sub">La última vez que compraron esa tela fue hace dos años o más.
-  Van al final a propósito: mezclados, ensucian una lista que tiene que poder
-  creerse. Igual va la fecha — son los únicos que alguna vez la quisieron.</p>
+  <p class="sub">Compraron esa tela hace dos años o más. Van al final para no
+  ensuciar la lista, pero con su fecha: son los únicos que alguna vez la
+  quisieron.</p>
   {% for c in improbables %}{{ ficha(c, true) }}{% endfor %}
 {% endif %}
 
 {% if not clientes and not improbables %}
-  <div class="alerta">No hay nada para ofrecer con este filtro. Si la lista está
-  vacía entera, todavía no se trajeron los datos: abra
-  <a href="/analisis/parado">Saldos</a> y toque «Actualizar desde Asinfo».</div>
+  <div class="alerta">No hay nada para ofrecer con este filtro.</div>
 {% endif %}
 
 <footer>
 <span class="noimp">
-El botón «Bajar a Excel» baja lo mismo que está viendo — con este vendedor y
-este orden.<br>
-⚠ Los «kg en saldo de telas que compra» <b>no se suman entre clientes</b>: una
-mismo saldo aparece en la lista de todos los que la compran, así que la
-columna sirve para ordenar, no para prometer.<br>
+«Bajar a Excel» baja lo que está viendo.<br>
+⚠ Los kilos <b>no se suman entre clientes</b>: el mismo saldo aparece en la
+lista de todos los que compran esa tela. Sirve para ordenar, no para
+prometer.<br>
 </span>
-«Hay para ofrecerle» son los kilos de esa tela que están quietos en bodega hace
-12 meses o más. «Él ya compró» son los kilos que ese cliente le compró de esa
-tela, en el último año en que se la compró.
+«Hay para ofrecerle»: kilos de esa tela quietos hace 12 meses o más.
+«Él ya compró»: lo que le compró, el último año que se la compró.
 </footer>
 {% endblock %}

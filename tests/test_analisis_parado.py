@@ -1758,7 +1758,11 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     assert ">Categoría</th>" in html
     assert ">De 2ª</th>" not in html
     assert 'class="q pri">PRI' in html and 'class="q seg">SEG' in html
-    assert "Hay dos motivos para estar acá" in todo, (
+    # ⚠ Se chequea la IDEA, no la frase: los textos se acortaron el 20/08/2026
+    # (dueña: "todo muy wordy") y un test pegado a la redacción obliga a elegir
+    # entre el test y la copia. Lo que no puede faltar es que la bajada explique
+    # por qué hay filas con una venta reciente: son los kilos SEG.
+    assert "dos motivos" in todo and "SEG</b>" in todo, (
         "la bajada explica por qué hay filas con venta reciente")
 
 

@@ -204,9 +204,9 @@ def por_grupo(filas: list[dict]) -> list[dict]:
 #: vez. Dos alfabéticos distintos para el mismo cliente son peor que uno solo.
 #: Ordenar por oportunidad sigue estando en el desplegable.
 ORDENES = {
-    "oportunidad": "los kilos en saldo de las telas que compra",
-    "codigo": "alfabético por código",
-    "provincia": "agrupado por provincia",
+    "oportunidad": "kilos para ofrecerle",
+    "codigo": "código",
+    "provincia": "provincia",
 }
 
 

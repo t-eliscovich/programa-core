@@ -31,25 +31,24 @@ th.ord.desc::after{content:" ↓";opacity:1}
     <p class="s">kg en {{ resumen.n_items }} telas × color</p></div>
   <div class="card"><p class="k">Vendido desde el 25/08</p>
     <p class="v">{{ resumen.kg_vendidos | num_es(0) }}</p>
-    <p class="s">{{ resumen.movidos }} ítems se empezaron a mover</p></div>
+    <p class="s">{{ resumen.movidos }} ítems se movieron</p></div>
   <div class="card"><p class="k">Clientes a llamar</p>
     <p class="v">{{ llamados.values() | map('length') | sum }}</p>
-    <p class="s">candidatos en total</p></div>
+    <p class="s">en total</p></div>
   <div class="card"><p class="k">Categoría SEG</p>
   <p class="v">{{ resumen.kg_segunda | num_es(0) }}</p>
-  <p class="s">kg en {{ resumen.n_segunda }} ítems — el resto es PRI</p></div>
+  <p class="s">kg en {{ resumen.n_segunda }} ítems · el resto es PRI</p></div>
 <div class="card"><p class="k">Sin nadie a quién llamar</p>
     <p class="v">{{ resumen.sin_pista }}</p>
-    <p class="s">{{ resumen.kg_sin_pista | num_es(0) }} kg — no es una lista, es una decisión</p></div>
+    <p class="s">{{ resumen.kg_sin_pista | num_es(0) }} kg</p></div>
 </div>
 
-<div class="nota"><b>La lista no se depura sola.</b> Cada fila guarda los kilos que
-tenía el día que se marcó, así que cuando se vende algo la fila <b>se queda</b> y
-lo que cambia es la columna «vendidos». Si desapareciera, no habría forma de
-saber si lo que hicimos funcionó.</div>
+<div class="nota"><b>La lista no se depura sola.</b> Lo que se vende
+<b>se queda</b> en la lista: cambia lo vendido, no la fila. Si desapareciera, no
+habría forma de saber si funcionó.</div>
 
 <h2 style="margin-top:28px">Por grupo de producto</h2>
-<p class="sub">Los mismos kilos de abajo, agrupados. Suma 100%.</p>
+<p class="sub">Los mismos kilos de abajo, agrupados.</p>
 <table class="resumen">
 <thead><tr><th>Grupo</th><th class="n">Subgrupos</th><th class="n">Ítems</th>
 <th class="n">Kg en saldo</th><th class="n">% del total</th>
@@ -72,10 +71,9 @@ saber si lo que hicimos funcionó.</div>
 </table>
 
 <h2>Tela por tela</h2>
-<p class="sub">Hay dos motivos para estar acá: la tela entera está parada, o la
-tela se vende bien pero le quedan kilos <b>SEG</b> —por eso algunas figuran con
-una venta reciente—. La columna Categoría los separa, y se filtra.
-Toque una fila para ver a quién ofrecérsela.</p>
+<p class="sub">Se entra por dos motivos: la tela entera parada, o kilos
+<b>SEG</b> de una que se vende bien. Se separan por Categoría.
+<b>Toque una fila</b> para ver a quién ofrecérsela.</p>
 
 <div class="barra">
   <input id="q" placeholder="Buscar tela, color, cliente, provincia…" oninput="filtrar()">
@@ -177,20 +175,19 @@ Toque una fila para ver a quién ofrecérsela.</p>
   </tr>
   <tr class="det"><td colspan="8">
     <p class="sub" style="margin:10px 0 6px">
-      <b>{{ f.subcategoria }}</b> en total tiene {{ f.kg_tela | num_es(0) }} kg
-      en saldo repartidos en {{ f.colores_tela }}
-      {{ 'color' if f.colores_tela == 1 else 'colores' }} —
-      <b>{{ f.pct_tela | num_es(1) }}%</b> de todos los saldos de la fábrica.
+      <b>{{ f.subcategoria }}</b>: {{ f.kg_tela | num_es(0) }} kg en
+      {{ f.colores_tela }} {{ 'color' if f.colores_tela == 1 else 'colores' }} ·
+      <b>{{ f.pct_tela | num_es(1) }}%</b> de los saldos.
       {% if f.kg_segunda %}De esta fila,
-      <b>{{ f.kg_segunda | num_es(1) if f.kg_segunda < 1 else f.kg_segunda | num_es(0) }} kg son SEG</b>
-      y {{ f.kg_primera | num_es(0) }} kg PRI.{% endif %}
+      <b>{{ f.kg_segunda | num_es(1) if f.kg_segunda < 1 else f.kg_segunda | num_es(0) }} kg SEG</b>
+      y {{ f.kg_primera | num_es(0) }} PRI.{% endif %}
       {# La columna Estado se fue, pero de qué año son los candidatos importa:
          no es lo mismo llamar a alguien que compró en julio que a uno que la
          compró en 2023. Va acá, que es donde están esos clientes. #}
       {% if f.kg_vendidos %}Desde que arrancó la competencia se vendieron
-      <b>{{ f.kg_vendidos | num_es(0) }} kg</b> de esta tela y este color.{% endif %}
+      <b>{{ f.kg_vendidos | num_es(0) }} kg</b> de este color.{% endif %}
       {% if f.anio_pista and f.anio_pista < ahora_anio %}
-        <b>Ojo:</b> los de abajo la compraron por última vez en {{ f.anio_pista }}.{% endif %}
+        <b>Ojo:</b> los de abajo la compraron en {{ f.anio_pista }}.{% endif %}
     </p>
     {% if cand %}
     <table>
@@ -221,11 +218,9 @@ Toque una fila para ver a quién ofrecérsela.</p>
     </table>
     {% else %}
       <p class="sub" style="margin:10px 0 0">
-      {% if mia %}Ninguno de <b>sus</b> clientes compró esta tela. Puede que sí
-      la compre alguno de otro vendedor — o que no la compre nadie.
-      {% else %}Nadie compró esta tela nunca — en ningún color, en ningún año. No
-      se resuelve con una llamada: o la tela salió de catálogo, o el saldo es un
-      error de inventario.{% endif %}</p>
+      {% if mia %}Ninguno de <b>sus</b> clientes compró esta tela.
+      {% else %}Nadie compró esta tela nunca, en ningún color ni año. No se
+      arregla con una llamada: o salió de catálogo, o el saldo está mal.{% endif %}</p>
     {% endif %}
   </td></tr>
 {% endfor %}
@@ -233,15 +228,13 @@ Toque una fila para ver a quién ofrecérsela.</p>
 </table>
 
 <footer>
-Saldo = producto terminado (bodega 53) quieto hace 12 meses o más (con stock ≥
-20 kg), MÁS los kilos de categoría SEG de cualquier tela, se venda o no. De una
-tela que se vende bien entran sólo sus kilos SEG. Los candidatos son los clientes que compraron esa TELA —cualquier color— en el
-último año en que alguien la compró. Si ese año no es el corriente ni el
-anterior, la fila va marcada como <b>improbable</b> con su fecha: un cliente de
-2023 no es un buen candidato, pero es el único que alguna vez quiso esa tela.
-El código es el mismo <code>codigo_cli</code> del resto del programa.
-PRI y SEG salen del atributo del LOTE en Asinfo, no del producto: por eso una
-misma tela × color puede tener kilos de las dos.
+Saldo = tela terminada (bodega 53) quieta hace 12 meses o más con 20 kg o más,
+MÁS los kilos SEG de cualquier tela, se venda o no.
+Candidato = el que compró esa tela, en cualquier color, el último año que
+alguien la compró. Si ese año no es éste ni el pasado, va marcado
+<b>improbable</b> con su fecha.
+PRI y SEG salen del LOTE en Asinfo, no del producto: por eso una misma tela ×
+color puede tener de las dos.
 </footer>
 {% endblock %}
 
