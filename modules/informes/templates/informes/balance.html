@@ -37,12 +37,19 @@
     vertical-align: baseline;
   }
   .informe-balance th.col-header {
-    font-size: 8.5px;
+    /* Federico 2026-08-21 — el rótulo de las columnas al MISMO cuerpo que
+       "RESULTADOS"/"ACTIVO" (11px), para que "PROYECCIONES" —que es el que fija
+       el ancho de su columna— ocupe menos y entre todo sin scroll.
+       El !important es obligatorio: base.html pisa TODO thead th de esta
+       pantalla con `main .informe-balance table thead th { font-size: 13px
+       !important }`. Sin !important acá, el 8.5px de abajo nunca se aplicó —
+       la columna venía rindiendo 13px. Ver [[css-tablas-globales]]. */
+    font-size: 11px !important;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-weight: 600;
     color: rgb(100 116 139);
-    padding: 2px 10px 1px;
+    padding: 2px 3px 1px;
   }
   .dark .informe-balance th.col-header { color: rgb(148 163 184); }
   /* TMT 2026-05-25 — dueña: "COSTOS quedo muy chico la letra".
@@ -55,7 +62,7 @@
     color: rgb(71 85 105);
     /* Federico 2026-07-22 — menos padding vertical en los encabezados de
        sección para que el cuadro entre sin scroll (sin achicar la letra). */
-    padding: 2px 12px 2px;
+    padding: 2px 5px 2px;
     background: rgb(248 250 252);
     border-top: 1px solid rgb(226 232 240);
     border-bottom: 1px solid rgb(226 232 240);
@@ -77,7 +84,12 @@
     background: rgb(30 41 59 / 0.4);
     border-color: rgb(51 65 85);
   }
-  .informe-balance td.label-cell { padding: 1px 12px; }
+  /* Federico 2026-08-21 — *"no quiero scrolear"*: marcó con rayas el aire
+     entre columnas del panel izquierdo. Los paddings horizontales bajan de
+     12/10px a 5/3px, y el corrimiento gris de los sumandos de 100 a 70px.
+     Medido: el ancho mínimo de los dos paneles juntos pasó de 1104px a ~975px.
+     El vertical no se toca (el alto de fila no estaba en discusión). */
+  .informe-balance td.label-cell { padding: 1px 5px; }
   /* Marca de "cifra parcial del mes en curso" — TMT 2026-07-11 (bug #5).
      PATR−PATANT sólo cuadra al cierre; a principio de mes la Utilidad Real
      sale negativa y confunde. El badge lo deja explícito. */
@@ -96,7 +108,7 @@
   }
   @media print { .badge-parcial { display: none; } }
   .informe-balance td.num-cell {
-    text-align: right; padding: 1px 10px;
+    text-align: right; padding: 1px 3px;
   }
   /* TMT 2026-05-20 v2 — sumandos (cheques+facturas, maquinaria+terrenos)
      corren MÁS a la izquierda. 100px de padding-right para visualizar
@@ -106,7 +118,7 @@
      a la izquierda". Igualo font al tbody (15px), gris a slate-500
      (más oscuro que el slate-400 anterior), y padding-right 80→100px. */
   .informe-balance td.num-cell--sumando {
-    padding-right: 100px !important;
+    padding-right: 70px !important;
     font-size: 14px !important;
     color: rgb(100 116 139) !important;  /* slate-500 — más oscuro */
   }
@@ -136,7 +148,7 @@
     display: inline-block;
     /* 119px mide "Stock MP+Prod.", el rótulo más largo, + 5 de aire. Medido en
        el navegador: bajar de acá lo pega al número de al lado. */
-    min-width: 124px;
+    min-width: 122px;
   }
   .informe-balance .det-kg,
   .informe-balance .det-ukg {
@@ -149,8 +161,8 @@
      filo del ancho de la celda: en su pantalla se partía en dos. Ajustadas al
      texto real medido — "1.980.501" son 64px y "5,260" son 36px — quedan 240px
      de contenido, ~28px de aire ganados sin mover ninguna otra columna. */
-  .informe-balance .det-kg  { width: 72px; }
-  .informe-balance .det-ukg { width: 44px; }
+  .informe-balance .det-kg  { width: 68px; }
+  .informe-balance .det-ukg { width: 40px; }
   /* Y que no se parta NUNCA: si algún día no entra, que scrollee el panel (que
      se ve) en vez de partir el renglón en silencio (que no se ve). */
   @media (min-width: 768px) {
@@ -219,7 +231,7 @@
     font-size: 14px !important;
     color: rgb(15 23 42);  /* slate-900 */
     font-weight: 400 !important;
-    padding: 1px 12px;
+    padding: 1px 5px;
   }
   .dark .informe-balance tr.fila-aux td { color: rgb(241 245 249); }
   /* El link interno (a Cartera, a Activos) hereda el color del padre.  */
@@ -257,9 +269,10 @@
      están encimando"). El reparto proporcional no puede decir "hasta acá y no
      más".
      Solución: FLEX con `flex-wrap`. Cada panel declara el ancho que de verdad
-     necesita como `flex-basis` (medido en el navegador: 660px la izquierda para
-     no partir "Utilidad Esperada" ni el "mes:" de Dividendos, 480px la derecha
-     para que cada rubro de stock entre en un renglón) y crece con la misma
+     necesita como `flex-basis` (medido en el navegador con los paddings
+     actuales: 590px la izquierda para no partir "Utilidad Esperada" ni el
+     "mes:" de Dividendos, 390px la derecha para que cada rubro de stock entre
+     en un renglón — si se tocan los paddings hay que volver a medirlos) y crece con la misma
      proporción de antes, 1.35 / 1. Cuando NO entran los dos, en vez de
      recortarse se van uno abajo del otro — que es lo que ya hace el celular. */
   @media (min-width: 1024px) {
@@ -269,8 +282,8 @@
     }
     /* `flex-shrink: 0`: ningún panel baja del ancho que necesita. Crecen con la
        proporción de siempre (1.35 / 1) cuando sobra lugar. */
-    .informe-balance .balance-grid > .balance-col:first-child { flex: 1.35 0 660px; }
-    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 0 480px; }
+    .informe-balance .balance-grid > .balance-col:first-child { flex: 1.35 0 590px; }
+    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 0 390px; }
     /* y el panel deja de recortar por su cuenta: si algo no entra, scrollea el
        marco entero (los dos paneles a la vez), que es lo que Federico quiere
        ver — los cuadros lado a lado, nunca uno recortado contra el otro. */
@@ -436,10 +449,11 @@
              U$/kg (antes colgaban de la columna Proyecciones). En el mismo
              viaje, al revés, el cuadro STOCK que estaba acá pasó al panel
              ACTIVO como el detalle de "Stock MP+Prod.". #}
-          <tr>
-            <th class="seccion-header" colspan="5" style="text-align:left">MOVIMIENTOS DEL AÑO</th>
-          </tr>
-          <tr class="fila-dato">
+          {# Federico 2026-08-21: fuera el rótulo "MOVIMIENTOS DEL AÑO" — las tres
+             filas dicen solas de qué hablan ("del año", "Utilidades 2026") y el
+             renglón de sección era espacio puro. Queda una línea divisoria para
+             que no se peguen a Utilidad Real. #}
+          <tr class="fila-dato" style="border-top:1px solid rgb(226 232 240)">
             <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
             <td class="num-cell"></td>
             <td class="num-cell"></td>
