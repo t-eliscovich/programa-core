@@ -188,6 +188,17 @@
     height: 14px; padding: 0 !important; line-height: 0; font-size: 0;
     border: 0;
   }
+  /* El rótulo PASIVO es un `th.seccion-header` dentro de una `tr.fila-total`:
+     sin esto quedaban dos grises distintos en la misma fila (el de la sección,
+     #f8fafc, y el del total, #f1f5f9) y se veía una costura al medio. */
+  .informe-balance tr.fila-total th.seccion-header {
+    background: rgb(241 245 249);
+    border-top-color: rgb(203 213 225);
+  }
+  .dark .informe-balance tr.fila-total th.seccion-header {
+    background: rgb(30 41 59 / 0.55);
+    border-top-color: rgb(71 85 105);
+  }
   .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
   /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
@@ -612,10 +623,16 @@
              aux '↳ Posdatas (total)' era el mismo número 2 veces
              seguidas — ruido. Link de Pasivos sigue yendo a /posdat
              para drill-down. #}
+          {# Federico 2026-08-21: *"la etiqueta Pasivos debe decir PASIVO en el
+             mismo font que ACTIVO"*. SÓLO el rótulo cambia: pasa a ser un
+             `th.seccion-header`, las mismas clases del encabezado ACTIVO. La
+             fila sigue siendo `fila-total`, así que el importe conserva su
+             cuerpo y su fondo — el override de base.html que los fija apunta a
+             `tr.fila-total td`, y el rótulo ahora es `th`, por eso no lo pisa. #}
           <tr class="fila-total">
             {# Sin `posdat.ver` el drill-down es un 404: queda el rótulo sin
                link, que sigue diciendo lo mismo. #}
-            <td class="label-cell">{% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a>{% else %}Pasivos{% endif %}</td>
+            <th class="seccion-header activo-lbl" style="text-align:left">{% if tiene_permiso('posdat.ver') %}<a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">PASIVO</a>{% else %}PASIVO{% endif %}</th>
             <td class="num-cell neg">{{ b.totp | num_es(0) }}</td>
           </tr>
 
