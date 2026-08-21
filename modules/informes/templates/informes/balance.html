@@ -124,10 +124,12 @@
      Sin columnas de tabla no hay alineación automática, así que se arma a mano:
      el NOMBRE ocupa un ancho fijo (todas las filas arrancan el detalle en la
      misma x) y cada cifra va en una caja de ancho fijo alineada a la derecha.
-     Los anchos están en `em` para que sigan al font-size de la celda. */
+     Los anchos van en PX y no en `em` a propósito: el encabezado del panel usa
+     estas mismas cajas y tiene otro font-size (11px vs 15px) — en `em` cada uno
+     mediría distinto y no encolumnarían. */
   .informe-balance .stock-lbl {
     display: inline-block;
-    min-width: 8.6em;
+    min-width: 128px;
   }
   .informe-balance .det-kg,
   .informe-balance .det-ukg {
@@ -135,15 +137,20 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .informe-balance .det-kg  { width: 5.6em; }
-  /* el margen hace de espacio antes de "$/kg": un espacio normal se lo
-     come el ancho fijo del span. */
-  .informe-balance .det-ukg { width: 2.6em; margin-right: .35em; }
+  .informe-balance .det-kg  { width: 84px; }
+  .informe-balance .det-ukg { width: 56px; }
   /* En celular la celda se angosta y el ancho fijo la desborda: se apaga. */
   @media (max-width: 767px) {
     .informe-balance .stock-lbl { min-width: 0; }
     .informe-balance .det-kg,
-    .informe-balance .det-ukg { width: auto; }
+    .informe-balance .det-ukg { width: auto; padding-left: .5em; }
+  }
+  /* Federico 2026-08-20 — "Dividendos mes X año Y" tiene que entrar en UNA
+     fila. Son las dos únicas celdas de la página con rótulo + cifra adentro
+     ("mes: -14.067"), y en una ventana angosta el navegador cortaba justo en
+     ese espacio. En celular sí puede partirse: ahí la tabla es de 360px. */
+  @media (min-width: 768px) {
+    .informe-balance td.mov-num { white-space: nowrap; }
   }
   .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
@@ -224,10 +231,19 @@
 
   /* TMT 2026-06-29 — fix layout superpuesto: la tabla RESULTADOS (5 columnas)
      desbordaba sobre el panel ACTIVO. Le damos más ancho a la izquierda, y
-     min-width:0 + overflow-x:auto como backstop para que NUNCA se pisen. */
+     min-width:0 + overflow-x:auto como backstop para que NUNCA se pisen.
+     Federico 2026-08-20 — 1.45 → 1.35 ("puedes comprimir un poco el cuadro de
+     la izquierda de Resultados donde sobran unos espacios"). Los números salen
+     de medir en el navegador, no de la intuición: la fila de stock de la
+     DERECHA necesita 480px para entrar en un renglón y la IZQUIERDA 664px para
+     que no se parta "Utilidad Esperada" ni el "mes:" de Dividendos. 1,35 es el
+     único reparto que le da a los dos con ~1160px de ancho útil (el de una
+     laptop de 1440 con el sidebar abierto), que es donde a Federico se le
+     partía en dos renglones. Comprimir MÁS (1,20) arregla la derecha pero
+     rompe la izquierda: no bajar de 1,35 sin volver a medir. */
   @media (min-width: 1024px) {
     .informe-balance .balance-grid {
-      grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) !important;
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) !important;
     }
   }
   .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
@@ -403,8 +419,8 @@
           <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos</a></td>
             <td class="num-cell"></td>
-            <td class="num-cell"><span class="text-slate-500">mes:</span> {{ b.uret | num_es(0) }}</td>
-            <td class="num-cell"><span class="text-slate-500">año:</span> {{ b.uret_anio | num_es(0) }}</td>
+            <td class="num-cell mov-num"><span class="text-slate-500">mes:</span> {{ b.uret | num_es(0) }}</td>
+            <td class="num-cell mov-num"><span class="text-slate-500">año:</span> {{ b.uret_anio | num_es(0) }}</td>
             <td class="num-cell"></td>
           </tr>
           <tr class="fila-dato">
@@ -432,7 +448,10 @@
       <table data-no-sort-table class="balance-table">
         <thead>
           <tr>
-            <th class="seccion-header" style="text-align:left">ACTIVO</th>
+            {# Federico 2026-08-20: "kg" y "$/kg" una sola vez, acá arriba, en
+               las MISMAS cajas de ancho fijo que usan las filas de stock — así
+               encabezan su columna y cada fila entra en un solo renglón. #}
+            <th class="seccion-header" style="text-align:left"><span class="stock-lbl">ACTIVO</span><span class="stock-det"><span class="det-kg">kg</span><span class="det-ukg">$/kg</span></span></th>
             <th class="col-header" style="text-align:right">U$</th>
           </tr>
         </thead>
@@ -491,13 +510,13 @@
           {% for etapa, label in [('hilado','Hilado'),('tejido','Tejido'),('terminado','Terminado')] %}
           {% set s = b.resultados.stock[etapa] %}
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline stock-lbl">{{ label }}</a><span class="stock-det"><span class="det-kg">{{ s.kg | num_es(0) }}</span> kg · <span class="det-ukg">{{ s.ukg | num_es(3) }}</span> $/kg</span></td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline stock-lbl">{{ label }}</a><span class="stock-det"><span class="det-kg">{{ s.kg | num_es(0) }}</span><span class="det-ukg">{{ s.ukg | num_es(3) }}</span></span></td>
             <td class="num-cell num-cell--sumando">{{ s.us | num_es(0) }}</td>
           </tr>
           {% endfor %}
           {% endif %}
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline stock-lbl">Stock MP+Prod.</a>{% if b.resultados and b.resultados.stock %}<span class="stock-det"><span class="det-kg">{{ b.resultados.stock.total.kg | num_es(0) }}</span> kg · <span class="det-ukg">{{ b.resultados.stock.total.ukg | num_es(3) }}</span> $/kg</span>{% endif %}</td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline stock-lbl">Stock MP+Prod.</a>{% if b.resultados and b.resultados.stock %}<span class="stock-det"><span class="det-kg">{{ b.resultados.stock.total.kg | num_es(0) }}</span><span class="det-ukg">{{ b.resultados.stock.total.ukg | num_es(3) }}</span></span>{% endif %}</td>
             <td class="num-cell">{{ b.vsto | num_es(0) }}</td>
           </tr>
           <tr class="fila-dato">
