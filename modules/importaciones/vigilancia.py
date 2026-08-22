@@ -351,6 +351,181 @@ def facturas_con_plata_en_una_sola(limite: int = 1000,
     return out
 
 
+# ── Kilos que entraron a la bodega sin su plata ─────────────────────────────
+# TMT 2026-08-21, después de MH 68/69/70: *"cómo hacemos por si algo no se unió
+# e identifica que entraron sin costo o las importaciones no estaban unidas"*.
+#
+# `kg_sin_costo` ya se calculaba —está en cada foto de la traza y en las
+# estadísticas de /admin/health/hilado-ukg— y no lo miraba nadie. Es el número
+# que dice, con nombre y apellido, que la tarifa del hilado se está armando con
+# un divisor incompleto: los dólares del mes divididos entre los kilos que SÍ
+# tienen plata, mientras los otros están igual en la bodega.
+#
+# Lo que eso cuesta, medido el 21/08 con MH 69 y 70 (47.580 kg afuera del
+# divisor): la tarifa quedó en 3,0013 en vez de 2,9270 y la utilidad del mes
+# 172.881 US$ arriba. No es un error de pantalla: el tejido vale hilado + 0,50 y
+# el terminado hilado + 2,20, así que la tarifa del hilado revalúa las TRES
+# etapas — unos 2,3 millones de kilos.
+#
+# El umbral es de kilos y de días, y cada uno está por un motivo:
+#   · DÍAS — los kilos entran a Asinfo con la recepción y la plata la crea la
+#     conversión después (medido el 31/07: 8, 27 y 76 minutos). Avisar dentro
+#     del día sería avisar del estado normal de una importación que acaba de
+#     llegar. Un día después ya no se está cargando: quedó así.
+#   · KILOS — 5.000 kg movían la tarifa unos 0,008 y el stock ~18.000 US$. Por
+#     debajo de eso el aviso cuesta más atención de la que ahorra.
+#
+# No necesita techo de antigüedad: `costo_hilado_recibido_mes` mira SOLO las
+# recibidas del mes en curso, así que no hay backlog viejo que pueda entrar.
+DIAS_SIN_COSTO_DEFAULT = 1
+KG_SIN_COSTO_DEFAULT = 5000
+
+
+def _int_env(nombre: str, defecto: int) -> int:
+    try:
+        v = int(os.environ.get(nombre, defecto))
+        return v if v >= 0 else defecto
+    except (TypeError, ValueError):
+        return defecto
+
+
+def _efecto_en_el_stock(kg_sin_costo: float) -> dict | None:
+    """Cuánta plata está apoyada en la tarifa incompleta, del orden.
+
+    Sale de la última foto BUENA de la traza (la que ya usa el balance cuando
+    Asinfo no contesta), así no hay una segunda lectura del ERP:
+
+        efecto ≈ (kg hilado + crudo + terminado) × tarifa × kg_sin_costo / kg hilado
+
+    Es una estimación y se dice como tal: el divisor exacto de la tarifa es
+    `stock inicial + compras del mes`, y acá se usa el stock de hilado de hoy,
+    que se le parece salvo por lo consumido. Contra el caso medido del 21/08 da
+    171.400 contra los 172.881 reales — 0,9 % de error, de sobra para decidir
+    si hay que ir a mirar. Devuelve None si no hay foto con qué calcularlo.
+    """
+    try:
+        from modules.informes.traza import foto_stock_buena
+        f = foto_stock_buena() or {}
+    except Exception:  # noqa: BLE001 -- sin foto el aviso igual sale, sin el $
+        return None
+    hil = float(f.get("hilado_kg") or 0)
+    ukg = float(f.get("hilado_ukg") or 0)
+    if hil <= 0 or ukg <= 0:
+        return None
+    total = hil + float(f.get("tejido_kg") or 0) + float(f.get("terminado_kg") or 0)
+    d_ukg = ukg * float(kg_sin_costo) / hil
+    return {
+        "tarifa": round(ukg, 4),
+        "tarifa_si_entraran": round(ukg - d_ukg, 4),
+        "kg_stock": round(total, 2),
+        "us": round(total * d_ukg, 2),
+    }
+
+
+def kilos_sin_plata(rows: list[dict] | None = None, limite: int = 1000,
+                    dias: int | None = None,
+                    kg_min: int | None = None) -> dict | None:
+    """Kilos de hilado recibidos este mes que todavía no tienen plata atribuida.
+
+    Devuelve None cuando no hay nada que decir. Fail-soft en todo.
+    """
+    from filters import today_ec
+
+    from . import service as svc
+
+    if rows is None:
+        rows = _leer_importaciones(limite=limite)
+    if rows is None:
+        return None
+    dias = _int_env("HILADO_SIN_COSTO_DIAS", DIAS_SIN_COSTO_DEFAULT) \
+        if dias is None else int(dias)
+    kg_min = _int_env("HILADO_SIN_COSTO_KG", KG_SIN_COSTO_DEFAULT) \
+        if kg_min is None else int(kg_min)
+
+    hoy = today_ec()
+    hil = svc.costo_hilado_recibido_mes(hoy.year, hoy.month, rows=rows)
+    sueltas = [x for x in (hil.get("sin_costo") or []) if float(x.get("kg") or 0) > 0]
+    kg_sin = round(sum(float(x["kg"]) for x in sueltas), 2)
+    if kg_sin < kg_min or not sueltas:
+        return None
+
+    # La más VIEJA manda: es la que dice hace cuánto que la tarifa está corta.
+    edades = [(hoy - d).days for d in
+              (_d(x.get("recepcion")) for x in sueltas) if d]
+    if not edades or max(edades) < dias:
+        return None
+
+    return {
+        "kg_sin_costo": kg_sin,
+        "kg_con_costo": float(hil.get("kg_con_costo") or 0),
+        "kg_recibidos": float(hil.get("kg") or 0),
+        "us_cargados": float(hil.get("us") or 0),
+        "usd_kg": hil.get("usd_kg"),
+        "dias": max(edades),
+        "mes": f"{hoy.year:04d}-{hoy.month:02d}",
+        "importaciones": sorted(
+            sueltas, key=lambda x: -float(x.get("kg") or 0)),
+        "efecto": _efecto_en_el_stock(kg_sin),
+    }
+
+
+# ── El programa quiso unir dos importaciones y no pudo ──────────────────────
+# `adjuntar_grupo_partidas` descarta un grupo cuando algo no cierra (más de 3
+# partidas, a una le falta el kg, están a más de 120 días, se recibieron en
+# meses distintos) y deja el motivo escrito en `grupo_aviso`. Hasta hoy ese
+# motivo sólo se veía entrando a mano a /admin/debug-grupos-partidas: en la
+# pantalla las importaciones salen separadas y nada dice que el programa
+# INTENTÓ unirlas. Son justo las que después aparecen con el US$/kg al doble o
+# con los kilos por la mitad.
+def grupos_que_no_se_pudieron_unir(rows: list[dict] | None = None,
+                                   limite: int = 1000,
+                                   techo: int | None = None) -> list[dict]:
+    """Grupos de partidas descartados, con el motivo. Sólo los recibidos hace
+    poco (mismo techo que el resto: esto es una tarea de hoy, no un inventario
+    histórico). Fail-soft: []."""
+    from filters import today_ec
+
+    if rows is None:
+        rows = _leer_importaciones(limite=limite)
+    if rows is None:
+        return []
+    techo = _techo_dias() if techo is None else int(techo)
+    hoy = today_ec()
+
+    juntos: dict[tuple, dict] = {}
+    for r in rows or []:
+        if not r.get("grupo_aviso") or not r.get("recibida"):
+            continue
+        frec = _d(r.get("fecha_recepcion"))
+        if not frec:
+            continue
+        clave = (str(r.get("prov_cod_asinfo") or "").strip().upper(),
+                 str(r.get("codigo") or "").strip().upper(),
+                 str(r.get("grupo_aviso")))
+        g = juntos.setdefault(clave, {
+            "codigo": r.get("codigo") or "",
+            "motivo": str(r.get("grupo_aviso")),
+            "ims": [], "kg": 0.0, "recepcion": frec,
+        })
+        g["ims"].append(str(r.get("im_numero") or ""))
+        g["kg"] += float(r.get("kg") or 0)
+        if frec > g["recepcion"]:
+            g["recepcion"] = frec
+
+    out = []
+    for g in juntos.values():
+        edad = (hoy - g["recepcion"]).days
+        if techo and edad > techo:
+            continue
+        g["ims"] = sorted(g["ims"])
+        g["kg"] = round(g["kg"], 2)
+        g["dias"] = edad
+        g["recepcion"] = str(g["recepcion"])
+        out.append(g)
+    out.sort(key=lambda x: -x["kg"])
+    return out
+
+
 def revisar_si_toca() -> dict:
     """Corre cada `_FRENO_SECS` y deja los avisos de los dos chequeos: uno por
     grupo fuera de banda y uno por factura repartida. Fail-soft."""
@@ -369,6 +544,8 @@ def revisar_si_toca() -> dict:
     try:
         casos = importaciones_fuera_de_banda(dias, rows=_rows)
         facturas = facturas_con_plata_en_una_sola(rows=_rows)
+        sin_costo = kilos_sin_plata(rows=_rows)
+        sin_unir = grupos_que_no_se_pudieron_unir(rows=_rows)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("revisión falló: %s", e)
         return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
@@ -451,8 +628,78 @@ def revisar_si_toca() -> dict:
             clave=f"import-factura-en-una:{f['factura']}",
         ):
             n += 1
+    if sin_costo:
+        c = sin_costo
+        titulo = (f"{c['kg_sin_costo']:,.0f} kg de hilado en la bodega sin su "
+                  f"plata cargada (hace {c['dias']} día"
+                  f"{'s' if c['dias'] != 1 else ''})")
+        _quienes = "; ".join(
+            f"{i['codigo'] or i['im']} ({i['im']}, {i['kg']:,.0f} kg, "
+            f"recibida el {i['recepcion']})"
+            for i in c["importaciones"][:6]
+        )
+        _ef = c.get("efecto") or {}
+        _parrafo_ef = (
+            (f"Mientras estén así, la tarifa del hilado sale de dividir los "
+             f"US$ {c['us_cargados']:,.2f} cargados entre "
+             f"{c['kg_con_costo']:,.0f} kg. Con esos kilos adentro pasaría de "
+             f"{_ef['tarifa']:,.4f} a {_ef['tarifa_si_entraran']:,.4f}, y como "
+             "el crudo vale hilado + 0,50 y el terminado hilado + 2,20, esa "
+             f"tarifa valúa {_ef['kg_stock']:,.0f} kg de stock: del orden de "
+             f"US$ {_ef['us']:,.0f} de stock —y de utilidad— apoyados en un "
+             "divisor incompleto.\n\n")
+            if _ef else
+            (f"Mientras estén así, la tarifa del hilado sale de dividir los "
+             f"US$ {c['us_cargados']:,.2f} cargados entre "
+             f"{c['kg_con_costo']:,.0f} kg en vez de {c['kg_recibidos']:,.0f}, "
+             "y esa tarifa valúa todo el stock de la fábrica.\n\n")
+        )
+        detalle = (
+            f"Este mes entraron {c['kg_recibidos']:,.0f} kg de hilado y sólo "
+            f"{c['kg_con_costo']:,.0f} tienen su plata cargada. Los otros "
+            f"{c['kg_sin_costo']:,.0f} kg están en la bodega igual, pero "
+            "afuera del divisor de la tarifa.\n\n"
+            + _parrafo_ef +
+            f"Sin plata: {_quienes}.\n\n"
+            "Puede ser que la plata todavía no se haya cargado, o que esté "
+            "cargada en otra importación de la misma factura y el programa no "
+            "se la esté atribuyendo. Las dos se arreglan en /importaciones."
+        )
+        _ims = "+".join(sorted(i["im"] for i in c["importaciones"]))
+        if avisos.avisar(
+            fuente="importaciones", nivel="alerta", titulo=titulo[:200],
+            detalle=detalle, url="/importaciones",
+            # Por MES + quiénes están afuera: si mañana se suma otra, es un
+            # aviso nuevo; si se carga la plata de una, también.
+            clave=f"hilado-sin-costo:{c['mes']}:{_ims}",
+        ):
+            n += 1
+
+    for g in sin_unir:
+        titulo = (f"{g['codigo']} · el programa no pudo unir sus "
+                  f"{len(g['ims'])} partidas")
+        detalle = (
+            f"{', '.join(g['ims'])} comparten el código {g['codigo']} y la "
+            f"misma factura, pero quedaron separadas: {g['motivo']}.\n\n"
+            f"Son {g['kg']:,.0f} kg en total, recibidas el {g['recepcion']}. "
+            "Separadas, cada una lleva sus kilos por su lado y la plata queda "
+            "colgada de una sola: es lo que después se ve como el US$/kg al "
+            "doble en una y 'sin cargar' en la otra.\n\n"
+            "Se destraba en Asinfo, corrigiendo lo que dice el motivo (el kg "
+            "que falta, la fecha o el mes de recepción)."
+        )
+        if avisos.avisar(
+            fuente="importaciones", nivel="alerta", titulo=titulo[:200],
+            detalle=detalle, url="/importaciones",
+            clave=f"import-no-unidas:{'+'.join(g['ims'])}",
+        ):
+            n += 1
+
     if n:
-        _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s) "
-                  "y %s factura(s) repartida(s)", n, len(casos), len(facturas))
+        _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s), "
+                  "%s factura(s) repartida(s), %s sin unir y kilos sin costo=%s",
+                  n, len(casos), len(facturas), len(sin_unir), bool(sin_costo))
     return {"corrio": True, "casos": len(casos), "facturas": len(facturas),
+            "sin_unir": len(sin_unir),
+            "kg_sin_costo": (sin_costo or {}).get("kg_sin_costo", 0),
             "avisados": n, "dias": dias}

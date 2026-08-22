@@ -1,9 +1,14 @@
 """/admin/importaciones-sin-plata — qué importaciones llegaron y quedaron sin
 toda su plata cargada, y forzar la revisión sin esperar el ciclo de fondo.
 
-Muestra los DOS chequeos de la vigilancia: el US$/kg fuera de banda a los 30
-días (`casos`) y la factura del proveedor repartida en varias importaciones con
-la plata en una sola (`facturas_repartidas`).
+Muestra los CUATRO chequeos de la vigilancia:
+  · `casos`                — US$/kg fuera de banda a los 30 días;
+  · `facturas_repartidas`  — una factura en varias importaciones, con la plata
+                             colgada de una sola;
+  · `kilos_sin_plata`      — kilos de hilado en la bodega afuera del divisor de
+                             la tarifa, con lo que eso vale;
+  · `no_se_pudieron_unir`  — grupos de partidas que el programa descartó, y por
+                             qué.
 
 TMT 2026-07-31. La vigilancia corre sola cada 6 h colgada del ciclo de fondo,
 pero el freno vive en memoria: después de borrar avisos (o de cambiar el umbral
@@ -57,6 +62,10 @@ def run():
     # varias importaciones con toda la plata colgada de una sola (MH 68/69/70,
     # 21/08/2026). No lleva umbral de días — ver la vigilancia.
     facturas = vig.facturas_con_plata_en_una_sola()
+    # Los kilos que entraron a la bodega sin su plata (el divisor de la tarifa
+    # del hilado) y los grupos que el programa quiso unir y no pudo.
+    sin_costo = vig.kilos_sin_plata()
+    sin_unir = vig.grupos_que_no_se_pudieron_unir()
     corrida = None
     if (request.args.get("correr") or "").strip() == "1":
         vig._ultima_corrida = 0.0        # saltear el freno: es un pedido humano
@@ -71,6 +80,7 @@ def run():
             "banda": [lo, hi],
             "n": len(casos),
             "n_facturas": len(facturas),
+            "n_sin_unir": len(sin_unir),
             "nota": ("Sólo entran las recibidas hace más del umbral, con al menos "
                      "UN movimiento atribuido y dentro del techo de antigüedad. "
                      "Sin esos dos filtros la alarma prende sobre toda la "
@@ -86,6 +96,8 @@ def run():
                               "importación cara que comparta factura con una "
                               "que todavía no se cargó."),
             "facturas_repartidas": facturas,
+            "kilos_sin_plata": sin_costo,
+            "no_se_pudieron_unir": sin_unir,
             "corrida": corrida,
         }, indent=2, default=str, ensure_ascii=False),
         mimetype="application/json",

@@ -619,7 +619,8 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     return rows
 
 
-def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
+def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000,
+                              rows: list[dict] | None = None) -> dict:
     """Costo-a-la-fecha en USD del hilado RECIBIDO en el mes (yy, mm), tomado de
     NUESTRA base: anticipos (`scintela.dolares`) + compras (`scintela.compra`),
     cruzados por código+concepto y ATRIBUIDOS por año (fecha más cercana) para no
@@ -637,15 +638,23 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     TODO el stock hacia abajo, para rebotar cuando la plata aparece. Por eso la
     valuación usa `kg_con_costo` y no `kg`. TMT 2026-07-31.
 
+    `rows`: las importaciones ya cruzadas, para no leerlas de nuevo. La
+    vigilancia se lo pasa así el número que dice el aviso es EXACTAMENTE el que
+    usa el balance — dos lecturas distintas del mismo minuto pueden diferir (el
+    caché de Asinfo dura 5 minutos) y un aviso que no coincide con la pantalla
+    no se le cree más.
+
     Returns:
-        {"us": float, "kg": float, "kg_con_costo": float, "usd_kg": float|None}.
-        Fail-soft: ceros.
+        {"us": float, "kg": float, "kg_con_costo": float, "usd_kg": float|None,
+         "sin_costo": [{"im","codigo","kg","recepcion"}]}. Fail-soft: ceros.
     """
-    _vacio = {"us": 0.0, "kg": 0.0, "kg_con_costo": 0.0, "usd_kg": None}
-    try:
-        rows = importaciones_con_cruce(limite=limite)
-    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista
-        return dict(_vacio)
+    _vacio = {"us": 0.0, "kg": 0.0, "kg_con_costo": 0.0, "usd_kg": None,
+              "sin_costo": []}
+    if rows is None:
+        try:
+            rows = importaciones_con_cruce(limite=limite)
+        except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista
+            return dict(_vacio)
     pref = f"{int(yy):04d}-{int(mm):02d}-"
     # Una pasada para juntar las filas del mes con su clave de grupo; el importe
     # vive a nivel (prov, nº, año) y las partidas ---1/---2 lo COMPARTEN, así que
@@ -661,15 +670,15 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
             r.get("numero"),
             str(r.get("fecha") or "")[:4],
         )
-        filas.append((clave, float(r.get("kg") or 0.0), r.get("importe_programa")))
+        filas.append((clave, float(r.get("kg") or 0.0), r.get("importe_programa"), r))
 
-    grupos_con_costo = {c for c, _kg, imp in filas if imp}
-    total_kg = sum(kg for _c, kg, _i in filas)
-    kg_con_costo = sum(kg for c, kg, _i in filas if c in grupos_con_costo)
+    grupos_con_costo = {c for c, _kg, imp, _r in filas if imp}
+    total_kg = sum(kg for _c, kg, _i, _r in filas)
+    kg_con_costo = sum(kg for c, kg, _i, _r in filas if c in grupos_con_costo)
 
     total_us = 0.0
     vistos: set[tuple] = set()
-    for clave, _kg, imp in filas:
+    for clave, _kg, imp, _r in filas:
         if not imp or clave in vistos:
             continue
         vistos.add(clave)
@@ -681,6 +690,15 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
         "kg": round(total_kg, 2),
         "kg_con_costo": round(kg_con_costo, 2),
         "usd_kg": usd_kg,
+        # QUIÉNES son los kilos que están afuera del divisor. El total solo no
+        # alcanza para hacer nada: la vigilancia necesita nombrarlos.
+        "sin_costo": [
+            {"im": str(r.get("im_numero") or ""),
+             "codigo": r.get("codigo") or "",
+             "kg": round(kg, 2),
+             "recepcion": str(r.get("fecha_recepcion") or "")[:10]}
+            for c, kg, _i, r in filas if c not in grupos_con_costo
+        ],
     }
 
 
