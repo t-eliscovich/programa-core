@@ -691,6 +691,12 @@ def desde_formulas_sincronizar():
         n, e = len(rep["creadas"]), len(rep["errores"])
         tono = "ok" if e == 0 else "warn"
         msg = f"Cargadas {n} compras de formulas (pasivo generado)."
+        if rep.get("proveedores"):
+            codigos = ", ".join(x.get("codigo", "") for x in rep["proveedores"])
+            msg += (f" Se dio de alta {len(rep['proveedores'])} proveedor"
+                    f"{'' if len(rep['proveedores']) == 1 else 'es'} nuevo"
+                    f"{'' if len(rep['proveedores']) == 1 else 's'} "
+                    f"({codigos}): ponele el nombre en Proveedores.")
         if rep.get("ajustadas"):
             msg += (f" {len(rep['ajustadas'])} ya cargada(s) cambiaron en"
                     " formulas y se les corrigió el importe.")

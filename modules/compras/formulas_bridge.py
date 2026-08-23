@@ -7,9 +7,13 @@ proveedor, factura, cantidad, precio_us SIN IVA). Este módulo las trae a
 pasivo (`scintela.posdat` banc=0) — con:
 
     - mapping de proveedores formulas → PC (SEY→SY, AVQ→AQ, PRO→PO, NQ→NQ,
-      EMP→ES, QSI→QI). COLO (COLOURTEX) se EXCLUYE: es importación y entra
-      por otro circuito (banc=9, con gastos de importación que formulas no
-      conoce).
+      EMP→ES, QSI→QI). Un código que no está en el mapping YA NO FRENA la
+      compra: si ese mismo código existe en el maestro de proveedores se usa
+      ése, y si no existe se da de alta el proveedor con ese código y ese
+      nombre, se carga la compra y la campanita pide completarle el nombre
+      real (ver `resolver_prov`). COLO (COLOURTEX) se EXCLUYE: es importación
+      y entra por otro circuito (banc=9, con gastos de importación que
+      formulas no conoce).
     - Nº de factura normalizado a la convención del programa: sin ceros a la
       izquierda ('0085' → '85'); el campo `factura` de formulas tiene 4
       caracteres, así que los proveedores con numeración más larga pierden el
@@ -67,8 +71,8 @@ log = logging.getLogger("programa_core.compras.formulas_bridge")
 # ── Configuración del puente ────────────────────────────────────────────────
 
 # formulas_app → codigo_prov de scintela.proveedor. Verificado por montos
-# (julio 2026). Si formulas agrega un proveedor nuevo, aparece como
-# 'sin_mapear' en la pantalla hasta que se agregue acá.
+# (julio 2026). Es el mapping de los que NO se llaman igual en los dos lados:
+# un código nuevo que no esté acá ya no se traba, lo resuelve `resolver_prov`.
 PROV_MAP = {
     "SEY": "SY",   # SEYQUIN CIA.LTDA.
     "AVQ": "AQ",   # MAYRA ROSERO (AV Química)
@@ -143,6 +147,8 @@ class FilaPuente:
     importe_con_iva: float
     estado: str                    # cargada | pendiente | excluida | sin_mapear | sin_numero
     detalle_match: str | None = None
+    prov_origen: str = "mapeado"      # mapeado | maestro | nuevo | sin_codigo
+    prov_nombre_pc: str | None = None  # nombre del proveedor en el maestro
     id_compra_pc: int | None = None   # la compra de PC que la matcheó
     importe_pc: float | None = None   # importe con el que quedó cargada
     ajustable: bool = False           # formulas cambió → hay que corregirla
@@ -151,6 +157,53 @@ class FilaPuente:
         d = asdict(self)
         d["fecha"] = self.fecha.isoformat() if self.fecha else None
         return d
+
+
+# ── Proveedor: del código de formulas al del programa ───────────────────────
+
+def proveedores_pc() -> dict[str, str]:
+    """El maestro de proveedores: código → nombre."""
+    out: dict[str, str] = {}
+    for f in db.fetch_all(
+        "SELECT codigo_prov, COALESCE(nombre, '') AS nombre "
+        "  FROM scintela.proveedor"
+    ):
+        cod = (f.get("codigo_prov") or "").strip().upper()
+        if cod:
+            out.setdefault(cod, (f.get("nombre") or "").strip())
+    return out
+
+
+def resolver_prov(prov_formulas: str, maestro: dict[str, str]) -> tuple[str | None, str]:
+    """Código de PC para un proveedor de formulas. Devuelve (código, origen).
+
+    ⭐ TMT 2026-08-23 (dueña, mirando el aviso "Proveedor de químicos sin
+    reconocer: NSQ"): *"se debería cargar la compra igual y pedir después
+    cargar el proveedor, ponerle el nombre con el que viene"*. Antes, un
+    código que no estuviera en `PROV_MAP` dejaba la compra AFUERA — el pasivo
+    quedaba de menos hasta que alguien tocara el código. Ahora frenar es la
+    excepción, no la regla:
+
+    · `mapeado` — está en `PROV_MAP` (se llaman distinto en cada lado).
+    · `maestro` — el mismo código ya existe en scintela.proveedor: es ése
+      (es el caso NQ→NQ). El aviso dice bajo cuál quedó, por si no lo fuera.
+    · `nuevo`   — no existe en ningún lado y entra en los 3 caracteres de
+      `codigo_prov`: se da de alta con ese código y ese nombre, se carga la
+      compra, y la campanita pide completarle el nombre real.
+    · `sin_codigo` — el código de formulas no entra en 3 caracteres (COLO y
+      compañía): no hay forma de elegir el código de PC sin adivinar, así que
+      ahí sí se frena y se avisa.
+    """
+    p = (prov_formulas or "").strip().upper()
+    if not p:
+        return None, "sin_codigo"
+    if p in PROV_MAP:
+        return PROV_MAP[p], "mapeado"
+    if p in maestro:
+        return p, "maestro"
+    if len(p) <= 3:
+        return p, "nuevo"
+    return None, "sin_codigo"
 
 
 # ── Normalización ───────────────────────────────────────────────────────────
@@ -318,6 +371,7 @@ def estado_mes(anio: int, mes: int) -> dict:
                 "total_pendiente": 0.0}
     grupos = grupos_formulas(anio, mes)
     compras_pc = _compras_pc_mes(anio, mes)
+    maestro = proveedores_pc()
     filas: list[FilaPuente] = []
     for g in grupos:
         prov_f = (g.get("proveedor") or "").strip().upper()
@@ -330,12 +384,16 @@ def estado_mes(anio: int, mes: int) -> dict:
                                     siva, 0.0, siva, "excluida",
                                     "importación — entra por su propio circuito"))
             continue
-        prov_pc = PROV_MAP.get(prov_f)
+        prov_pc, origen = resolver_prov(prov_f, maestro)
         if not prov_pc:
-            filas.append(FilaPuente(prov_f, None, factura_f, None, fecha, kg,
-                                    siva, 0.0, siva, "sin_mapear",
-                                    "proveedor de formulas sin mapping a PC"))
+            filas.append(FilaPuente(
+                prov_f, None, factura_f, None, fecha, kg, siva, 0.0, siva,
+                "sin_mapear",
+                "el código del programa de tintorería no entra en 3 letras: "
+                "hay que dar de alta el proveedor a mano",
+                prov_origen=origen))
             continue
+        prov_nombre = maestro.get(prov_pc)
         if not factura_f:
             # SIN N° DE FACTURA: el puente identifica cada compra por su
             # número — sin él no la puede reconocer en la corrida siguiente y
@@ -345,7 +403,8 @@ def estado_mes(anio: int, mes: int) -> dict:
             filas.append(FilaPuente(
                 prov_f, prov_pc, factura_f, None, fecha, kg, siva, iva0,
                 round(siva * (1 + iva0), 2), "sin_numero",
-                "la compra no tiene N° de factura en el programa de tintorería"))
+                "la compra no tiene N° de factura en el programa de tintorería",
+                prov_origen=origen, prov_nombre_pc=prov_nombre))
             continue
         iva = IVA_POR_PROV.get(prov_pc, IVA_DEFAULT)
         civa = round(siva * (1 + iva), 2)
@@ -368,6 +427,7 @@ def estado_mes(anio: int, mes: int) -> dict:
         filas.append(FilaPuente(
             prov_f, prov_pc, factura_f, factura_pc, fecha, kg, siva, iva,
             civa, "cargada" if hit else "pendiente", detalle,
+            prov_origen=origen, prov_nombre_pc=prov_nombre,
             id_compra_pc=(compra_pc or {}).get("id_compra"),
             importe_pc=importe_pc, ajustable=ajustable,
         ))
@@ -377,6 +437,9 @@ def estado_mes(anio: int, mes: int) -> dict:
     return {
         "disponible": True,
         "filas": filas,
+        "proveedores_nuevos": sorted({f.proveedor_pc for f in filas
+                                      if f.prov_origen == "nuevo"
+                                      and f.proveedor_pc}),
         "pendientes": len(pendientes),
         "total_pendiente": round(sum(f.importe_con_iva for f in pendientes), 2),
         "ajustables": len(ajustables),
@@ -414,8 +477,8 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
     est = estado_mes(anio, mes)
     if not est.get("disponible"):
         return {"disponible": False, "creadas": [], "errores": [],
-                "ya_cargadas": 0, "ajustadas": []}
-    creadas, errores, ajustadas = [], [], []
+                "ya_cargadas": 0, "ajustadas": [], "proveedores": []}
+    creadas, errores, ajustadas, provs_dados_de_alta = [], [], [], []
     for f in est["filas"]:
         if f.ajustable and f.id_compra_pc:
             try:
@@ -444,6 +507,9 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
             continue
         if f.estado != "pendiente":
             continue
+        if f.prov_origen == "nuevo" and not _dar_de_alta_prov(
+                f, provs_dados_de_alta, errores, usuario):
+            continue
         try:
             res = compras_queries.crear(
                 fecha=f.fecha or date(anio, mes, 1),
@@ -461,6 +527,9 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                 "factura": f.factura_pc,
                 "importe": f.importe_con_iva,
                 "numero": (res or {}).get("numero"),
+                "prov_origen": f.prov_origen,
+                "prov_formulas": f.proveedor_formulas,
+                "prov_nombre_pc": f.prov_nombre_pc,
             })
             log.info("puente formulas: cargada %s %s por %.2f",
                      f.proveedor_pc, f.factura_pc, f.importe_con_iva)
@@ -473,14 +542,123 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                 "error": str(e),
             })
     _avisar_novedades(creadas, errores, ajustadas)
+    avisar_proveedores(provs_dados_de_alta, creadas)
     avisar_trabadas(est)
     return {
         "disponible": True,
         "creadas": creadas,
         "errores": errores,
         "ajustadas": ajustadas,
+        "proveedores": provs_dados_de_alta,
         "ya_cargadas": sum(1 for f in est["filas"] if f.estado == "cargada"),
     }
+
+
+def _dar_de_alta_prov(f: FilaPuente, dados_de_alta: list, errores: list,
+                      usuario: str) -> bool:
+    """Da de alta el proveedor nuevo para poder cargarle la compra.
+
+    El nombre es el código con el que viene del programa de tintorería, que es
+    lo único que ese programa guarda del proveedor (no tiene maestro: Andrés
+    escribe el código a mano). Después la campanita pide completarlo.
+    Devuelve False sólo si el alta falló: ahí la compra no se carga y el error
+    queda en la lista.
+    """
+    from modules.proveedores import queries as prov_queries
+
+    cod = f.proveedor_pc or ""
+    if any(p.get("codigo") == cod for p in dados_de_alta):
+        return True
+    try:
+        prov_queries.crear(codigo_prov=cod, nombre=cod, usuario=usuario)
+        log.info("puente formulas: proveedor nuevo dado de alta %s", cod)
+    except ValueError:
+        # lo creó otra corrida entremedio: no es un error, se sigue
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("puente formulas: no pude dar de alta el proveedor %s: %s",
+                    cod, e)
+        errores.append({"proveedor": cod, "factura": f.factura_pc,
+                        "error": f"no se pudo dar de alta el proveedor: {e}"})
+        return False
+    dados_de_alta.append({"codigo": cod,
+                          "prov_formulas": f.proveedor_formulas})
+    return True
+
+
+def avisar_proveedores(dados_de_alta: list, creadas: list) -> int:
+    """Campanita de los proveedores que el puente resolvió solo. Nunca levanta.
+
+    Dos avisos distintos, porque piden dos cosas distintas:
+
+    · **dado de alta** — el proveedor no existía. La compra YA está cargada
+      (con su pasivo) y lo único que falta es ponerle el nombre de verdad,
+      que el programa de tintorería no conoce.
+    · **cargado bajo uno que ya existía** — el código de tintorería coincidía
+      con uno del maestro. Se usó ése, y el aviso dice cuál para poder
+      desarmarlo si no era.
+    """
+    puestos = 0
+    try:
+        from filters import num_es
+        from modules.avisos import avisar
+
+        por_prov: dict = {}
+        for c in creadas or []:
+            cod = c.get("proveedor") or ""
+            acc = por_prov.setdefault(cod, {"n": 0, "importe": 0.0})
+            acc["n"] += 1
+            acc["importe"] += float(c.get("importe") or 0)
+
+        for p in dados_de_alta or []:
+            cod = p.get("codigo") or ""
+            acc = por_prov.get(cod) or {"n": 0, "importe": 0.0}
+            puestos += bool(avisar(
+                fuente="quimicos", nivel="alerta",
+                titulo=f"Proveedor de químicos nuevo: {cod}",
+                detalle=(f"Vino del programa de tintorería y no estaba acá. "
+                         f"Se dio de alta con el código {cod} y se "
+                         f"{'cargó' if acc['n'] == 1 else 'cargaron'} "
+                         f"{acc['n']} factura{'' if acc['n'] == 1 else 's'} "
+                         f"por $ {num_es(acc['importe'], 2)}. "
+                         f"Ponele el nombre y los datos."),
+                importe=round(acc["importe"], 2), cantidad=acc["n"] or 1,
+                url=f"/proveedores/{cod}/editar",
+                clave=f"quimicos:prov-nuevo:{cod}"[:400],
+            ))
+
+        vistos = {p.get("codigo") for p in dados_de_alta or []}
+        de_maestro: dict = {}
+        for c in creadas or []:
+            if c.get("prov_origen") != "maestro":
+                continue
+            cod = c.get("proveedor") or ""
+            if cod in vistos:
+                continue
+            acc = de_maestro.setdefault(
+                cod, {"n": 0, "importe": 0.0,
+                      "nombre": c.get("prov_nombre_pc") or "",
+                      "formulas": c.get("prov_formulas") or ""})
+            acc["n"] += 1
+            acc["importe"] += float(c.get("importe") or 0)
+        for cod, acc in sorted(de_maestro.items()):
+            puestos += bool(avisar(
+                fuente="quimicos", nivel="alerta",
+                titulo=f"Químicos: {acc['formulas']} se cargó como {cod}",
+                detalle=(f"El programa de tintorería lo llama "
+                         f"{acc['formulas']} y acá hay un proveedor con ese "
+                         f"mismo código: {acc['nombre'] or cod}. Se le "
+                         f"{'cargó' if acc['n'] == 1 else 'cargaron'} "
+                         f"{acc['n']} factura{'' if acc['n'] == 1 else 's'} "
+                         f"por $ {num_es(acc['importe'], 2)}. Si no era ése, "
+                         f"avisá."),
+                importe=round(acc["importe"], 2), cantidad=acc["n"],
+                url="/compras/desde-formulas",
+                clave=f"quimicos:prov-maestro:{cod}:{acc['n']}"[:400],
+            ))
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe la carga
+        log.warning("puente formulas: no pude avisar los proveedores: %s", e)
+    return puestos
 
 
 def _avisar_novedades(creadas: list, errores: list, ajustadas: list | None = None) -> None:
@@ -642,15 +820,15 @@ def avisar_trabadas(est: dict) -> int:
     invisible: *"ídem debería avisar, hay compra de fórmulas no sabemos cuál
     es"* — mismo formato que el aviso de tejedor sin reconocer.
 
-    Dos situaciones, y la diferencia importa porque una la arregla ella y la
-    otra no:
+    Dos situaciones, y las dos son ahora la EXCEPCIÓN: un proveedor nuevo ya
+    no traba nada (se da de alta solo, ver `resolver_prov`), y lo que queda
+    acá es lo que de verdad no se puede resolver sin una persona:
 
-    · **PROVEEDOR SIN RECONOCER** — formulas trae un código que el programa no
-      tiene mapeado. Vive en el CÓDIGO (`PROV_MAP`), así que ella no lo puede
-      arreglar sola y el aviso lo dice.
+    · **CÓDIGO QUE NO ENTRA** — el código del programa de tintorería tiene más
+      de 3 letras y acá los códigos son de 3: elegirlo sería adivinar.
     · **SIN N° DE FACTURA** — la compra se cargó en tintorería sin número. Eso
-      SÍ se arregla allá, y hasta entonces el puente no la toca (sin número no
-      la puede reconocer después y la duplicaría en cada corrida).
+      se arregla allá, y hasta entonces el puente no la toca (sin número no la
+      puede reconocer después y la duplicaría en cada corrida).
 
     Idempotente por `clave`, que incluye el conteo de facturas: si aparece una
     más del mismo proveedor, vuelve a avisar. Nunca levanta.
@@ -662,9 +840,10 @@ def avisar_trabadas(est: dict) -> int:
 
         for estado, titulo, que_hacer in (
             ("sin_mapear",
-             "Proveedor de químicos sin reconocer",
-             "no se está cargando ninguna de sus compras. Hay que darlo de "
-             "alta en el programa para poder cargarlas."),
+             "Proveedor de químicos con un código que no entra",
+             "en el programa de tintorería tiene más de 3 letras y acá los "
+             "códigos son de 3, así que no se puede dar de alta solo. Dalo de "
+             "alta a mano y avisá para engancharlo."),
             ("sin_numero",
              "Compra de químicos sin N° de factura",
              "sin el número no se puede cargar (no habría cómo reconocerla "
@@ -731,11 +910,12 @@ def sincronizar_mes_actual(usuario: str = "formulas-auto") -> dict:
     try:
         if not autosync_habilitado():
             return {"disponible": False, "creadas": [], "errores": [],
-                    "ajustadas": [], "ya_cargadas": 0, "apagado": True}
+                    "ajustadas": [], "proveedores": [], "ya_cargadas": 0,
+                    "apagado": True}
         from filters import today_ec
         h = today_ec()
         return sincronizar_mes(h.year, h.month, usuario=usuario)
     except Exception as e:  # noqa: BLE001
         log.exception("sincronizar_mes_actual falló: %s", e)
         return {"disponible": False, "creadas": [], "errores": [{"error": str(e)}],
-                "ajustadas": [], "ya_cargadas": 0}
+                "ajustadas": [], "proveedores": [], "ya_cargadas": 0}

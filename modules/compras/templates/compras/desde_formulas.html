@@ -47,9 +47,22 @@
         <strong>{{ est.trabadas }} compra{{ '' if est.trabadas == 1 else 's' }}
         de este mes no se {{ 'puede' if est.trabadas == 1 else 'pueden' }} cargar</strong>
         ({{ est.total_trabado | money_es }}) — mirá la columna ESTADO abajo.
-        <em>Sin mapear</em> = el programa no sabe qué proveedor es (lo agrega el
-        sistema, avisá). <em>Sin N° de factura</em> = ponele el número en el
+        <em>Código que no entra</em> = el proveedor tiene más de 3 letras en el
+        programa de tintorería y acá los códigos son de 3: hay que darlo de alta
+        a mano. <em>Sin N° de factura</em> = ponele el número en el
         programa de tintorería y entra sola.
+      </p>
+    </div>
+  {% endif %}
+
+  {% if est.disponible and est.proveedores_nuevos %}
+    <div class="page-card mb-4" style="border-left:4px solid #0284c7">
+      <p class="text-sm" style="color:#075985">
+        <strong>Proveedor nuevo:
+        {{ est.proveedores_nuevos | join(', ') }}</strong> — no está en el
+        programa. Al cargar sus compras se da de alta solo con ese código y ese
+        nombre; después ponele el nombre de verdad en
+        {% if tiene_permiso('proveedores.ver') %}<a class="underline" href="{{ url_for('proveedores.lista') }}">Proveedores</a>{% else %}Proveedores{% endif %}.
       </p>
     </div>
   {% endif %}
@@ -80,7 +93,13 @@
           <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% elif f.estado in ('sin_mapear', 'sin_numero') %}bg-rose-50{% elif f.ajustable %}bg-sky-50{% endif %}">
             <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
             <td class="py-1.5 pr-3">{{ f.proveedor_formulas }}</td>
-            <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or '—' }}</td>
+            <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or '—' }}
+              {% if f.prov_origen == 'nuevo' %}
+                <span class="text-xs font-normal text-sky-700">(nuevo)</span>
+              {% elif f.prov_origen == 'maestro' and f.prov_nombre_pc %}
+                <span class="text-xs font-normal text-slate-400">{{ f.prov_nombre_pc }}</span>
+              {% endif %}
+            </td>
             <td class="py-1.5 pr-3">{{ f.factura_pc or f.factura_formulas }}
               {% if f.factura_pc and f.factura_pc != f.factura_formulas %}
                 <span class="text-xs text-slate-400">(formulas: {{ f.factura_formulas }})</span>
@@ -107,7 +126,7 @@
                       title="{{ f.detalle_match or '' }}">excluida</span>
               {% else %}
                 <span class="inline-block px-2 py-0.5 rounded text-xs bg-rose-100 text-rose-800"
-                      title="{{ f.detalle_match or '' }}">sin mapear</span>
+                      title="{{ f.detalle_match or '' }}">código que no entra</span>
               {% endif %}
             </td>
           </tr>

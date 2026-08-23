@@ -81,7 +81,7 @@ GRUPOS = [
     # excluida (importación)
     {"proveedor": "COLO", "factura": "26-27/125", "fecha": "2026-07-09",
      "kg": 9000, "importe_siva": 228863.50},
-    # sin mapear
+    # el código no entra en 3 letras: se traba
     {"proveedor": "NUEVO", "factura": "1", "fecha": "2026-07-02",
      "kg": 10, "importe_siva": 100.0},
     # EMP → ES con IVA 0%
@@ -470,7 +470,8 @@ def test_contar_pendientes_ok():
 _SIN_NUM = [
     {"proveedor": "SEY", "factura": "", "fecha": "2026-07-23",
      "kg": 500, "importe_siva": 1550.0},
-    {"proveedor": "QQQ", "factura": "77", "fecha": "2026-07-24",
+    # código de más de 3 letras: no hay cómo elegir el código de PC
+    {"proveedor": "QQQQ", "factura": "77", "fecha": "2026-07-24",
      "kg": 10, "importe_siva": 100.0},
 ]
 
@@ -488,7 +489,7 @@ def test_factura_sin_numero_no_se_carga():
     est = _estado_sin_num()
     por = {f.proveedor_formulas: f for f in est["filas"]}
     assert por["SEY"].estado == "sin_numero"
-    assert por["QQQ"].estado == "sin_mapear"
+    assert por["QQQQ"].estado == "sin_mapear"
     assert est["trabadas"] == 2
     assert est["pendientes"] == 0
 
@@ -512,7 +513,7 @@ def test_avisar_trabadas_un_aviso_por_proveedor():
     assert n == 2
     titulos = sorted(a["titulo"] for a in puestos)
     assert titulos == ["Compra de químicos sin N° de factura: SEY",
-                       "Proveedor de químicos sin reconocer: QQQ"]
+                       "Proveedor de químicos con un código que no entra: QQQQ"]
     assert all(a["url"] == "/compras/desde-formulas" for a in puestos)
     assert all(a["nivel"] == "alerta" for a in puestos)
     # la clave lleva el conteo → si aparece otra factura, vuelve a avisar
@@ -660,3 +661,157 @@ def test_avisar_historico_nunca_levanta():
     with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
         assert fb.avisar_historico({"facturas": 1, "importe": 1.0,
                                     "meses": [{"mes_str": "2026-04"}]}) == 0
+
+
+# ── proveedor nuevo: la compra se carga igual ───────────────────────────────
+# TMT 2026-08-23 (dueña, mirando el aviso "Proveedor de químicos sin
+# reconocer: NSQ"): *"se debería cargar la compra igual y pedir después cargar
+# el proveedor, ponerle el nombre con el que viene"*.
+
+_NSQ = [
+    {"proveedor": "NSQ", "factura": "0032", "fecha": "2026-08-22",
+     "kg": 1000, "importe_siva": 3470.0},
+]
+
+
+def _estado_nsq(maestro=None):
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_NSQ), \
+         patch.object(fb.db, "fetch_all", return_value=[]), \
+         patch.object(fb, "proveedores_pc", return_value=maestro or {}):
+        return fb.estado_mes(2026, 8)
+
+
+def test_resolver_prov_los_cuatro_caminos():
+    maestro = {"NQ": "ANDESCHEMIE"}
+    assert fb.resolver_prov("SEY", maestro) == ("SY", "mapeado")
+    assert fb.resolver_prov("NQ", maestro) == ("NQ", "mapeado")
+    # no está en el mapping pero el mismo código existe en el maestro
+    assert fb.resolver_prov("PQ", {"PQ": "PROQUIMSA"}) == ("PQ", "maestro")
+    # no está en ningún lado y entra en 3 letras → se da de alta
+    assert fb.resolver_prov("NSQ", maestro) == ("NSQ", "nuevo")
+    # más de 3 letras: codigo_prov es varchar(3), elegirlo sería adivinar
+    assert fb.resolver_prov("NUEVO", maestro) == (None, "sin_codigo")
+    assert fb.resolver_prov("", maestro) == (None, "sin_codigo")
+
+
+def test_proveedor_nuevo_ya_no_traba_la_compra():
+    """Antes salía 'sin mapear' y el pasivo quedaba de menos hasta que alguien
+    tocara el código."""
+    est = _estado_nsq()
+    fila = est["filas"][0]
+    assert fila.estado == "pendiente"
+    assert fila.proveedor_pc == "NSQ"
+    assert fila.prov_origen == "nuevo"
+    assert est["trabadas"] == 0
+    assert est["proveedores_nuevos"] == ["NSQ"]
+    # y con el IVA que le toca, no el 0% que mostraba la fila trabada
+    assert fila.iva_pct == 0.15
+    assert fila.importe_con_iva == pytest.approx(3990.50, abs=0.01)
+
+
+def test_proveedor_nuevo_se_da_de_alta_con_el_nombre_con_el_que_viene():
+    creadas, altas = [], []
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_NSQ), \
+         patch.object(fb.db, "fetch_all", return_value=[]), \
+         patch.object(fb, "proveedores_pc", return_value={}), \
+         patch("modules.proveedores.queries.crear",
+               side_effect=lambda **kw: altas.append(kw)), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw) or {"numero": 9}), \
+         patch("modules.avisos.avisar", return_value=True):
+        rep = fb.sincronizar_mes(2026, 8)
+    assert altas == [{"codigo_prov": "NSQ", "nombre": "NSQ",
+                      "usuario": "formulas-auto"}]
+    assert len(creadas) == 1
+    assert creadas[0]["codigo_prov"] == "NSQ"
+    assert creadas[0]["tipo"] == "Q"
+    assert creadas[0]["importe"] == pytest.approx(3990.50, abs=0.01)
+    assert rep["proveedores"] == [{"codigo": "NSQ", "prov_formulas": "NSQ"}]
+
+
+def test_dos_facturas_del_mismo_proveedor_nuevo_lo_dan_de_alta_una_sola_vez():
+    dos = _NSQ + [{"proveedor": "NSQ", "factura": "0033", "fecha": "2026-08-23",
+                   "kg": 500, "importe_siva": 1735.0}]
+    altas, creadas = [], []
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=dos), \
+         patch.object(fb.db, "fetch_all", return_value=[]), \
+         patch.object(fb, "proveedores_pc", return_value={}), \
+         patch("modules.proveedores.queries.crear",
+               side_effect=lambda **kw: altas.append(kw)), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw)), \
+         patch("modules.avisos.avisar", return_value=True):
+        fb.sincronizar_mes(2026, 8)
+    assert len(altas) == 1
+    assert len(creadas) == 2
+
+
+def test_si_el_alta_del_proveedor_falla_la_compra_no_se_carga():
+    """Cargarla con un código que no existe dejaría una compra huérfana."""
+    creadas = []
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_NSQ), \
+         patch.object(fb.db, "fetch_all", return_value=[]), \
+         patch.object(fb, "proveedores_pc", return_value={}), \
+         patch("modules.proveedores.queries.crear",
+               side_effect=RuntimeError("la base dijo que no")), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw)), \
+         patch("modules.avisos.avisar", return_value=True):
+        rep = fb.sincronizar_mes(2026, 8)
+    assert creadas == []
+    assert rep["proveedores"] == []
+    assert "no se pudo dar de alta el proveedor" in rep["errores"][0]["error"]
+
+
+def test_el_codigo_que_ya_existe_en_el_maestro_se_usa():
+    """Dueña 2026-08-23: si el código ya está, es ése — y el aviso dice cuál."""
+    est = _estado_nsq(maestro={"NSQ": "NUEVA SOLUCION QUIMICA"})
+    fila = est["filas"][0]
+    assert fila.proveedor_pc == "NSQ"
+    assert fila.prov_origen == "maestro"
+    assert fila.prov_nombre_pc == "NUEVA SOLUCION QUIMICA"
+    assert est["proveedores_nuevos"] == []
+
+
+def test_aviso_del_proveedor_nuevo_manda_a_ponerle_el_nombre():
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        n = fb.avisar_proveedores(
+            [{"codigo": "NSQ", "prov_formulas": "NSQ"}],
+            [{"proveedor": "NSQ", "factura": "32", "importe": 3990.50,
+              "prov_origen": "nuevo", "prov_formulas": "NSQ"}])
+    assert n == 1
+    assert puestos[0]["titulo"] == "Proveedor de químicos nuevo: NSQ"
+    assert puestos[0]["url"] == "/proveedores/NSQ/editar"
+    assert "3.990,50" in puestos[0]["detalle"]
+    assert "nombre" in puestos[0]["detalle"]
+
+
+def test_aviso_del_proveedor_que_ya_existia_dice_bajo_cual_quedo():
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        n = fb.avisar_proveedores(
+            [],
+            [{"proveedor": "PQ", "factura": "5", "importe": 115.0,
+              "prov_origen": "maestro", "prov_formulas": "PQ",
+              "prov_nombre_pc": "PROQUIMSA"}])
+    assert n == 1
+    assert puestos[0]["titulo"] == "Químicos: PQ se cargó como PQ"
+    assert "PROQUIMSA" in puestos[0]["detalle"]
+
+
+def test_avisar_proveedores_sin_nada_no_avisa():
+    with patch("modules.avisos.avisar") as av:
+        assert fb.avisar_proveedores([], []) == 0
+    av.assert_not_called()
+
+
+def test_avisar_proveedores_nunca_levanta():
+    with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
+        assert fb.avisar_proveedores([{"codigo": "NSQ"}], []) == 0
