@@ -49,7 +49,9 @@
     letter-spacing: 0.06em;
     font-weight: 600;
     color: rgb(100 116 139);
-    padding: 2px 3px 1px;
+    /* !important por lo mismo que las celdas: base.html fija
+       `main table thead th { padding-left/right: .75rem !important }`. */
+    padding: 5px 3px !important;
   }
   .dark .informe-balance th.col-header { color: rgb(148 163 184); }
   /* TMT 2026-05-25 — dueña: "COSTOS quedo muy chico la letra".
@@ -62,7 +64,7 @@
     color: rgb(71 85 105);
     /* Federico 2026-07-22 — menos padding vertical en los encabezados de
        sección para que el cuadro entre sin scroll (sin achicar la letra). */
-    padding: 2px 5px 2px;
+    padding: 5px 5px !important;
     background: rgb(248 250 252);
     border-top: 1px solid rgb(226 232 240);
     border-bottom: 1px solid rgb(226 232 240);
@@ -89,7 +91,15 @@
      12/10px a 5/3px, y el corrimiento gris de los sumandos de 100 a 70px.
      Medido: el ancho mínimo de los dos paneles juntos pasó de 1104px a ~975px.
      El vertical no se toca (el alto de fila no estaba en discusión). */
-  .informe-balance td.label-cell { padding: 1px 5px; }
+  /* Federico 2026-08-24 — el `!important` NO es decorativo: base.html pisa
+     TODA celda de `<main>` con `main table tbody td { padding: .55rem .75rem
+     !important }` (≈4px 12px) y `main table thead th { padding-left/right:
+     .75rem !important }`. Sin `!important` acá, los 5/3px de arriba NUNCA se
+     aplicaron: seguían rindiendo 12px por lado. Ése era exactamente el aire
+     que Federico marcó con óvalos entre las columnas del panel izquierdo.
+     Medido: ponerles `!important` bajó el mínimo de la tabla RESULTADOS de
+     647px a 579px. Ver [[css-tablas-globales]] — mismo error, tercera vez. */
+  .informe-balance td.label-cell { padding: 4px 5px !important; }
   /* Marca de "cifra parcial del mes en curso" — TMT 2026-07-11 (bug #5).
      PATR−PATANT sólo cuadra al cierre; a principio de mes la Utilidad Real
      sale negativa y confunde. El badge lo deja explícito. */
@@ -108,7 +118,7 @@
   }
   @media print { .badge-parcial { display: none; } }
   .informe-balance td.num-cell {
-    text-align: right; padding: 1px 3px;
+    text-align: right; padding: 4px 3px !important;   /* !important: ver nota en label-cell */
   }
   /* TMT 2026-05-20 v2 — sumandos (cheques+facturas, maquinaria+terrenos)
      corren MÁS a la izquierda. 100px de padding-right para visualizar
@@ -317,8 +327,18 @@
        590px era MENOS de lo que la tabla necesita (medido en el navegador con
        su data: 623px), así que la quinta columna quedaba tapada por el panel
        ACTIVO. Sube a 632px = los 623 medidos + aire. */
-    .informe-balance .balance-grid > .balance-col:first-child { flex: 1 1 0; min-width: 632px; }
-    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 0; min-width: 390px; }
+    /* Federico 2026-08-24 — *"las 2 secciones deberían tener aproximadamente el
+       mismo ancho"* + óvalos sobre el aire entre columnas. La causa del
+       desbalance NO era el reparto (ya es 50/50): era el piso de la izquierda,
+       inflado porque sus paddings de celda nunca se aplicaban (base.html los
+       pisaba con !important — ver la nota de `label-cell`) y porque el input
+       de Kg medía 92px. Corregido eso, los pisos MEDIDOS bajan a 545px la
+       izquierda (ahí se parte "Utilidad Esperada") y 385px la derecha (ahí se
+       parten Hilado/Tejido/Terminado). Van con unos px de aire.
+       Antes: 632 + 390 = 1022px y la izquierda se comía todo el sobrante.
+       Ahora: 552 + 395 = 947px, y a ~1030px de marco quedan 552 / 478. */
+    .informe-balance .balance-grid > .balance-col:first-child { flex: 1 1 0; min-width: 552px; }
+    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 0; min-width: 395px; }
     /* y el panel deja de recortar por su cuenta: si algo no entra, scrollea el
        marco entero (los dos paneles a la vez), que es lo que Federico quiere
        ver — los cuadros lado a lado, nunca uno recortado contra el otro. */
@@ -327,7 +347,12 @@
   }
   /* Federico 2026-07-22 — kg de venta proyectada editable (fila Proyección). */
   .informe-balance input.vp-input {
-    width: 92px; text-align: right; font-variant-numeric: tabular-nums;
+    /* Federico 2026-08-24 — 92 → 58px. El input es el que fijaba el ancho
+       MÍNIMO de la columna Kg (92 + bordes vs 66px del número más largo):
+       la columna medía 109px para mostrar cifras de 67. Con 58px entra
+       "320.000" holgado (66px es el número más largo de la columna) y la
+       columna baja a su contenido real. */
+    width: 72px; text-align: right; font-variant-numeric: tabular-nums;
     padding: 2px 6px; border: 1px solid rgb(203 213 225); border-radius: 6px;
     background: rgb(255 255 255); color: rgb(15 23 42);
     font-size: inherit; font-family: inherit;
