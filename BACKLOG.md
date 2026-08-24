@@ -279,9 +279,25 @@ Pantallas: `/admin/clientes-asinfo`, `cambiar-codigo`.
 La ficha muestra cupo y descuento (38f900bb) pero el dato está casi vacío.
 Cargar los cupos reales o la columna es decoración.
 
-### [S] Comisiones: `scintela.cobro` vacía
-La rama de "cobros no-cheque" suma contra una tabla que nadie escribe
-(1 fila, de 2024). O se llena o se saca.
+### [XS] Comisiones: la rama muerta de `scintela.cobro`
+⚠ Este item estuvo MAL REDACTADO hasta el 24/08 ("la rama de cobros no-cheque
+suma contra una tabla que nadie escribe"), y se leía como si los cobros que no
+son cheque no se estuvieran contando. **No falta nada.** La cobranza del mes
+suma tres ramas y los cobros no-cheque entran por las otras dos:
+
+- depósitos y efectivo viven en `scintela.cheque` con `no_banco` 90/91/99
+  (en agosto: 639 filas de DEP.PICH. y 85 de efectivo) y entran por la rama de
+  cheques acreditados. Que el 24/08 hayan salido de la PANTALLA `/cheques` no
+  los sacó de la tabla;
+- los cobros que entraron a caja sin fila de cheque entran por la rama de
+  `scintela.caja` (`_CAJA_COBRO_FROM`; en agosto 95 entradas, $140.473,95).
+
+Lo que queda es sólo código muerto: `scintela.cobro` tiene **una** fila, del
+14/03/2024, así que su rama aporta $0 a cualquier mes. El propio comentario de
+`modules/comisiones/queries.py` lo dice: *"la rama que `scintela.cobro`
+prometía y nunca cumplió"*. Sacar la rama de los cuatro queries que la
+nombran (`cobranza_periodo`, la del detalle, la de `views.py` y la de
+`mi_cartera`) y la tabla. Va con la limpieza de septiembre.
 
 ### [S] Comisiones: cheque que rebota en el mes siguiente (PENDIENTE, dueña 05/08)
 La comisión se pagó sobre plata que no entró. Inclinación de la dueña
