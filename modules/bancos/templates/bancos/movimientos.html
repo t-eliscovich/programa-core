@@ -534,7 +534,14 @@
                  del deposito, dejando el resto CONCILIADO. Distinto de "a cartera"
                  (= no se deposito, reduce el deposito → bloqueado si concilado). #}
               <td class="px-3 py-1 no-print text-right whitespace-nowrap">
-                {% if tiene_permiso('cheques.transicionar') and (c.stat or '')|upper in ['B','I','A','V','W','J','K'] %}
+                {# 🚨 TMT 2026-08-24 — "a cartera" no se le ofrece a un DEPÓSITO
+                   DIRECTO (DEP.PICH. / DEP. INTER., no_banco 90/91): no hay
+                   papel que volver al cajón, la plata ya está en el banco.
+                   `queries.deshacer_deposito_cheque` ahora lo frena; sin
+                   esconder el link, el botón lleva a un error. Al cerrar una
+                   operación hay que cerrar también el link que lleva a ella. #}
+                {% set _es_dep_directo = (c.no_banco or 0) in [90, 91] %}
+                {% if tiene_permiso('cheques.transicionar') and not _es_dep_directo and (c.stat or '')|upper in ['B','I','A','V','W','J','K'] %}
                 <a href="{{ url_for('cheques.deshacer_deposito', id_cheque=c.id_cheque, next=request.full_path) }}"
                    class="text-[11px] text-amber-700 dark:text-amber-400 hover:underline"
                    title="El cheque NO se depositó (error de carga): lo devuelve a cartera y lo saca del depósito. Si el depósito está conciliado, hay que desconciliar primero.">&#8617; a cartera</a>

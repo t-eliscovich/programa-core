@@ -150,6 +150,22 @@ def etiqueta_cobro(row: dict | None) -> str:
 # resumen NO puedan dar números distintos para el mismo día.
 SQL_ES_CHEQUE = "COALESCE(c.no_banco, 0) NOT IN (90, 91, 99)"
 
+#: Los MEDIOS de cobro del filtro de /cheques. La partición es la misma de
+#: `SQL_ES_CHEQUE` (90/91 = depósito directo, 99 = efectivo) escrita como
+#: condición por opción, para que el dropdown y el resumen del día no puedan
+#: contestar cosas distintas. 🚨 El corte va por CÓDIGO enumerado y no por
+#: `>= 90` a propósito: el 98 (espejo del saldo a favor) y el 97 (anticipo)
+#: SON cobros con cheque detrás y tienen que seguir cayendo en "Cheques".
+SQL_POR_MEDIO = {
+    "cheques": SQL_ES_CHEQUE,
+    "depositos": "COALESCE(c.no_banco, 0) IN (90, 91)",
+    "efectivo": "COALESCE(c.no_banco, 0) = 99",
+}
+
+#: Filas que NUNCA van a tener un número de cheque escrito: no hay papel.
+#: Se usa para no ofrecer el campo "N°" en el listado (ver `buscar`).
+MEDIOS_SIN_NUMERO = (90, 91, 98, 99)
+
 # Día en que el cheque SALIÓ de cartera (depósito, cobro en efectivo, endoso,
 # anulación). UNA definición, importada — no copiada — igual que
 # SQL_DIA_INGRESO. `fechaout` primero porque es la columna correcta en los dos
@@ -1313,7 +1329,11 @@ def compensar_deposito_devuelto(
     12/08 se hicieron sin esto y hubo que reconocerlos por el concepto.
     """
     imp = float(importe or 0)
-    if imp <= 0:
+    # TMT 2026-08-24: `abs` — un cobro negativo (mudanza de plata entre
+    # facturas, devolución) ya deja su 'DE' en negativo, así que reversarlo
+    # tiene que descontarlo igual. Antes salía por acá sin compensar Y sin
+    # desagrupar, dejando el cheque colgado del depósito.
+    if abs(imp) <= 0.005:
         return 0.0
     # Links vivos a un depósito 'DE'. Si no hay, no hay nada que compensar
     # (nunca se depositó, o ya se compensó y se desagrupó) → idempotente.
@@ -1389,6 +1409,9 @@ def compensar_deposito_devuelto(
         fecha=fecha,
         documento="ND",
         importe=imp,
+        # El signo viaja con el importe: una 'ND' negativa SUBE el saldo, que
+        # es justo lo que compensa un 'DE' negativo.
+        permitir_signed=True,
         concepto=(
             f"ch.devuelto {no_cheque or id_cheque} {codigo_cli or ''}"
         ).strip()[:50],
@@ -1401,15 +1424,19 @@ def compensar_deposito_devuelto(
         registro["importe_nd"] = imp
         registro["no_banco"] = banco_orig
     # …y la comisión que el banco cobra por el protesto, como el dBase.
-    _insertar_gs_protesto(
-        conn,
-        no_banco=banco_orig,
-        codigo_cli=codigo_cli,
-        fecha=fecha,
-        id_cheque=id_cheque,
-        usuario=usuario,
-        registro=registro,
-    )
+    # TMT 2026-08-24: sólo cuando había plata de verdad. Un cobro NEGATIVO no
+    # es un cheque que rebota — no hay papel, no hay protesto y el banco no
+    # cobra nada; cargarle la comisión sería inventar un gasto.
+    if imp > 0:
+        _insertar_gs_protesto(
+            conn,
+            no_banco=banco_orig,
+            codigo_cli=codigo_cli,
+            fecha=fecha,
+            id_cheque=id_cheque,
+            usuario=usuario,
+            registro=registro,
+        )
     # Desagrupar: borrar los links del cheque a su(s) depósito(s) 'DE'.
     for lk in links:
         db.execute(
@@ -2130,6 +2157,12 @@ def anular_por_error_de_carga(
                 fecha=fecha,
                 documento="ND",  # nota de débito compensatoria
                 importe=importe,
+                # TMT 2026-08-24: desde hoy un cobro NEGATIVO también deja su
+                # asiento ('DE' en negativo), así que anularlo tiene que poder
+                # devolver la plata: una 'ND' en negativo SUBE el saldo. Sin
+                # esto la anulación de un cobro negativo reventaba con
+                # "importe debe ser positivo" y no se podía deshacer.
+                permitir_signed=True,
                 concepto=f"ANUL ch{ch.get('no_cheque') or id_cheque} err carga",
                 prov=ch.get("codigo_cli"),
                 numreferencia=id_cheque,
@@ -4070,12 +4103,26 @@ def deshacer_deposito_cheque(
     if stat_destino == "P" and nueva_fechad is None:
         raise ValueError("Para volver a postergado (P) hay que elegir la nueva fecha de depósito.")
     ch = db.fetch_one(
-        "SELECT id_cheque, no_cheque, codigo_cli, importe, stat "
+        "SELECT id_cheque, no_cheque, codigo_cli, importe, stat, no_banco "
         "FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
         raise ValueError("El cheque no existe.")
+    # 🚨 TMT 2026-08-24 — "Volver a cartera" no aplica a un depósito directo.
+    # Un cheque vuelve a cartera porque el papel sigue en el cajón; un
+    # DEP.PICH. no tiene papel: la plata YA está en Pichincha. Mandarlo a
+    # cartera dejaba una fila esperando un depósito que no existe —y que
+    # después alguien posterga para sacársela de encima— sumando a la cartera
+    # del balance algo que ya está contado en el banco. Es el mismo estado
+    # imposible que ahora `crear()` no deja nacer; cerrarlo en un solo lado
+    # sería dejar la puerta de al lado abierta.
+    if int(ch.get("no_banco") or 0) in (90, 91):
+        raise ValueError(
+            "Este cobro es un depósito directo: la plata ya está en el banco y "
+            "no hay cheque que volver a cartera. Si el depósito no existió, "
+            "anulalo por error de carga."
+        )
     stat_prev = (ch.get("stat") or "").upper()
     if stat_prev not in STATS_DEPOSITADO:
         raise ValueError(
@@ -4345,12 +4392,6 @@ def crear(
     # contaba en comisiones ni en el flujo real. BED (HECTOR BEDON) es el
     # caso testigo: $341k de débito, 0 cobrado en sistema porque "paga
     # mucho en efectivo" y entraba como banco=99 sin side-effect.
-    # TMT 2026-06-07: SOLO auto-flip a 'B' (depositado) para importes
-    # POSITIVOS. Un importe NEGATIVO (reversa/crédito) que se marcaba 'B'
-    # quedaba "depositado" SIN movimiento de banco/caja (el insert de banco
-    # y el de caja tienen gate importe>0) → se tragaba el negativo en
-    # silencio y el saldo bancario/caja quedaba inflado. Dejándolo en 'Z'
-    # (cartera) el negativo queda VISIBLE como nota de crédito y consistente.
     #
     # TMT 2026-06-11 paridad ALTAS.PRG (pedido dueña: "fijate que hace el
     # dbase y hagamos lo mismo, con todos los codigos"):
@@ -4361,7 +4402,20 @@ def crear(
     #   99    → stat 'C' (cobrado en caja, PASOCAJA L870-893) + entrada en
     #           CAJA "CH.CLI". Antes PC usaba 'B', que no es lo que tipea
     #           el dBase en CHEQUES.DBF (C) y los escondía de la vista.
-    if no_banco in (90, 91) and (stat or "").upper() == "Z" and float(importe or 0) > 0:
+    # TMT 2026-08-24 (dueña, mirando el −500 de RAR postergado al 30/08:
+    # *"igual −500 también debería crear negativo en el banco, no?"*). SÍ: el
+    # gate `> 0` era la mitad de un problema con dos caras. Un cobro negativo
+    # (mudar plata de una factura a otra, devolverle al cliente) no generaba
+    # movimiento de banco Y no salía de cartera, así que un −500 + un +500
+    # se compensaban en la factura pero en Pichincha dejaban +500 —los $500
+    # fantasma del 19/08— y el negativo quedaba colgado esperando un depósito
+    # que no existe (lo postergaron dos veces). Ahora es simétrico: el
+    # negativo emite su 'DE' en negativo (convención del dBase, ver
+    # `permitir_signed` en bank_helpers) y queda depositado igual que el
+    # positivo. El comentario viejo decía que marcarlo 'B' lo dejaba
+    # "depositado SIN movimiento" — cierto entonces, porque el insert del
+    # banco tenía el mismo gate `> 0`; se arreglan LOS DOS o ninguno.
+    if no_banco in (90, 91) and (stat or "").upper() == "Z" and abs(float(importe or 0)) > 0.005:
         stat = "B"
     # TMT 2026-07-30 (dueña: "es una entrada en negativo a la caja que se
     # convierte en salida... necesito que se registre el abono en negativo en
@@ -4387,7 +4441,29 @@ def crear(
     # cartera (Z) y depositarlo con "Depositar lote", o elegir banco 90/91
     # (DEP.PICH / DEP.INTER) para el depósito directo — ambos SÍ crean el mov.
     _stat_final = (stat or "").upper()
-    _genera_mov_banco = (no_banco in (90, 91)) and float(importe or 0) > 0
+    # TMT 2026-08-24: `abs` — el negativo TAMBIÉN genera su movimiento ahora.
+    _genera_mov_banco = (no_banco in (90, 91)) and abs(float(importe or 0)) > 0.005
+    # 🚨 TMT 2026-08-24 — LA PUERTA POR DONDE ENTRÓ EL CHEQUE 102080.
+    # El auto-flip de arriba pregunta por `stat == 'Z'`, así que alcanza con
+    # elegir DEP.PICH. **y** "Postdatado" en el mismo renglón de Cobranza para
+    # que el depósito NAZCA en cartera y SIN movimiento de banco. Así se cargó
+    # el 07/08 el cobro de MTM por 536,30: la transferencia ya estaba en
+    # Pichincha (la trajo la carga del 12/08, conciliada), pero esta fila
+    # quedó viva, se postergó dos veces y cobró la factura por segunda vez.
+    # El guard de abajo no lo veía porque mira los estados DEPOSITADOS, y
+    # "postergado" no es uno — otra vez el error de preguntar por el camino y
+    # no por el estado.
+    # Un depósito directo no se puede postdatar: o la plata entró, o no es un
+    # depósito. Se avisa en vez de corregir en silencio, porque las dos
+    # lecturas posibles ("me equivoqué de medio" / "me equivoqué de estado")
+    # las tiene que resolver quien está cargando.
+    if (no_banco in (90, 91)) and _stat_final in STATS_EN_CARTERA:
+        raise ValueError(
+            "Un depósito directo (DEP.PICH. / DEP. INTER.) no puede quedar en "
+            f"cartera ni postdatado — llegó en estado '{_stat_final}'. Si la "
+            "plata ya está en el banco, dejá el estado en Depositado. Si "
+            "todavía no entró, no es un depósito: elegí el banco del cheque."
+        )
     if _stat_final in STATS_DEPOSITADO and not _genera_mov_banco:
         raise ValueError(
             f"No se puede crear un cheque directamente en estado '{_stat_final}' "
@@ -4524,7 +4600,13 @@ def crear(
             no_banco in (90, 91)
             and (stat or "").upper() == "B"
             and row.get("id_cheque")
-            and importe_principal > 0
+            # TMT 2026-08-24: el cobro NEGATIVO también deja su asiento. Va
+            # como 'DE' con el importe en negativo —la convención del dBase
+            # (`permitir_signed`)— y no como una 'ND' aparte, para que todo lo
+            # que busca el depósito de un cheque por `documento='DE'`
+            # (compensar_deposito_devuelto, deshacer_deposito_cheque, el
+            # matcher de conciliación) lo siga encontrando.
+            and abs(importe_principal) > 0.005
         ):
             import bank_helpers
 
@@ -4544,6 +4626,7 @@ def crear(
                 # TMT 2026-06-12 hotfix: faltaba importe= (TypeError en prod
                 # al cargar cobranza 90/91 — el stub del test lo tapaba).
                 importe=importe_principal,
+                permitir_signed=True,
                 # Concepto paridad dBase: "1 ch.CLI" (el extractor de prov
                 # de conciliacion ya parsea este formato).
                 concepto=f"1 ch.{cli_u}"[:50],
@@ -4892,13 +4975,26 @@ def postergar(
 
     with db.tx() as conn:
         ch = db.fetch_one(
-            "SELECT id_cheque, no_cheque, stat, codigo_cli, fechad, importe "
+            "SELECT id_cheque, no_cheque, stat, codigo_cli, fechad, importe, no_banco "
             "FROM scintela.cheque WHERE id_cheque = %s",
             (id_cheque,),
             conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
+        # 🚨 TMT 2026-08-24 — postergar es "el cliente pide más tiempo antes de
+        # que llevemos el papel al banco". Un depósito directo no tiene papel
+        # ni fecha que correr: la plata entró el día que entró. Andrés
+        # postergó dos de ellos (MTM 536,30 el 21 y el 24/08, RAR −500 el
+        # 20/08) para sacarlos de la lista de "a depositar" donde no tenían
+        # que estar — y eso fue lo que dejó a un cobro duplicado vivo cinco
+        # días más y cobrando una factura de mayo por segunda vez.
+        if int(ch.get("no_banco") or 0) in (90, 91):
+            raise ValueError(
+                "Este cobro es un depósito directo: la plata ya está en el "
+                "banco, no hay fecha de depósito que postergar. Si el depósito "
+                "no existió, anulalo por error de carga."
+            )
         stat_prev = (ch["stat"] or "").upper()
         # Permitimos postergar desde Z (primer postergación) y desde P
         # (postergaciones encadenadas — "ya está postergado, pero el
@@ -6347,12 +6443,18 @@ def total_buscar(
     monto_min: float | None = None,
     monto_max: float | None = None,
     vendedor: str | None = None,
+    medio: str = "",
 ) -> dict:
     """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
 
     Útil para mostrar "Total" en el listado: el total visible está limitado
     a `limite` filas, pero el total real del filtro lo sacamos en una query
     aparte con la misma cláusula WHERE.
+
+    🚨 `medio` tiene que llegar con LO MISMO que recibió `buscar()`. Este total
+    es el que se muestra arriba del listado: si acá entra un universo más
+    grande que el de las filas, el número de arriba no cierra con la suma de
+    abajo — que es exactamente la clase de diferencia que se lee como bug.
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -6392,6 +6494,7 @@ def total_buscar(
           AND (%(desde)s::date IS NULL OR COALESCE(c.fechad, c.fecha) >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR COALESCE(c.fechad, c.fecha) <= %(hasta)s::date)
           AND (%(stats)s::text[] IS NULL OR c.stat = ANY(%(stats)s::text[]))
+          __COND_MEDIO__
           -- TMT 2026-05-20 PASADA 6 Federico #8 — total_buscar ahora
           -- recibe cliente/monto_min/monto_max para que el hero KPI
           -- refleje el subset real cuando se filtra por cliente.
@@ -6406,7 +6509,13 @@ def total_buscar(
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(c.importe, 0) <= %(monto_max)s)
           -- Excluir reversados del total. Pedido TMT 2026-05-14.
           AND COALESCE(c.stat, '') <> 'X'
-        """.replace("__NOMBRE_CLI__", _nom_cli or "FALSE"),
+        """.replace("__NOMBRE_CLI__", _nom_cli or "FALSE")
+             .replace(
+                 "__COND_MEDIO__",
+                 (lambda _c: f"AND ({_c})" if _c else "")(
+                     SQL_POR_MEDIO.get((medio or "").strip().lower())
+                 ),
+             ),
         {
             **_p_cli,
             "q": q or None,
@@ -6464,6 +6573,7 @@ def buscar(
     offset: int = 0,
     orden: str = "",
     vendedor: str = "",
+    medio: str = "",
 ) -> list[dict]:
     """Filtros (mismas reglas que /facturas):
     cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
@@ -6475,6 +6585,14 @@ def buscar(
     ver_eliminados — si False (default), excluye stat='X' del listado
                      cuando estado='todos'. Tab "Eliminados" siempre los
                      muestra. Pedido TMT 2026-05-14 (#40 audit).
+    medio          — 'cheques' | 'depositos' | 'efectivo'. Vacío = todos.
+                     TMT 2026-08-24 (dueña, mirando la ficha de MMQ llena de
+                     DEP.PICH.: *"cuando son depósitos debería ir directo al
+                     banco, no pasar por cheques de clientes"*). La plata SÍ
+                     va directo al banco —el depósito arma su movimiento en
+                     Pichincha en el mismo momento—; lo que no era cierto era
+                     el RÓTULO: 1.577 de las 4.584 filas de esta tabla no son
+                     cheques. Ver `SQL_POR_MEDIO`.
     """
     # TMT 2026-08-06: `nota_usuario` es columna nueva y el deploy no corre
     # migraciones — bootstrap en caliente antes de SELECTearla en la lista.
@@ -6636,6 +6754,8 @@ def buscar(
           AND (%(desde)s::date IS NULL OR __FECHA_COL__ >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR __FECHA_COL__ <= %(hasta)s::date)
           AND (%(stats)s::text[] IS NULL OR c.stat = ANY(%(stats)s::text[]))
+          -- Filtro por MEDIO de cobro (cheque / depósito directo / efectivo).
+          __COND_MEDIO__
           -- Excluir eliminados (stat='X') cuando el filtro es "todos".
           AND (NOT %(excluir_eliminados)s OR COALESCE(c.stat, '') <> 'X')
         )
@@ -6692,6 +6812,11 @@ def buscar(
     sql_buscar_cheques = sql_buscar_cheques.replace(
         "__NOMBRE_PRV__", _nom_prv or "FALSE")
     sql_buscar_cheques = sql_buscar_cheques.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
+    # El medio es un enum controlado: sale del diccionario o no se filtra. No
+    # entra texto de la usuaria al SQL.
+    _cond_medio = SQL_POR_MEDIO.get((medio or "").strip().lower())
+    sql_buscar_cheques = sql_buscar_cheques.replace(
+        "__COND_MEDIO__", f"AND ({_cond_medio})" if _cond_medio else "")
     rows = (
         db.fetch_all(
             sql_buscar_cheques,
@@ -6722,6 +6847,23 @@ def buscar(
     rows_out = list(rows)
     for r in rows_out:
         r["saldo_acumulado"] = float(r.get("saldo_acumulado") or 0)
+        # 🚨 TMT 2026-08-24 — cómo se llama esta fila cuando NO es un cheque.
+        # La columna N° del listado mostraba el ID INTERNO como placeholder de
+        # un campo editable ("99600", "100455"), o sea le ofrecía a la usuaria
+        # escribir el número de un cheque que no existe: los 1.577 depósitos
+        # directos y los 182 cobros en efectivo no tienen papel ni número.
+        # Es el mismo arreglo que ya se hizo en el Historial el 09/08
+        # (*"poné dep pich más que cheque #x"*); acá había quedado.
+        # `etiqueta_cobro` es la ÚNICA dueña de la regla — se llama con el
+        # número en blanco a propósito, porque en estos medios cualquier cosa
+        # tipeada ahí es un error de carga, no un número de cheque.
+        _medio = ""
+        try:
+            if int(r.get("no_banco") or 0) in MEDIOS_SIN_NUMERO:
+                _medio = etiqueta_cobro({**r, "no_cheque": ""})
+        except (TypeError, ValueError):
+            _medio = ""
+        r["medio"] = _medio
     return rows_out
 
 

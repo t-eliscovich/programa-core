@@ -505,6 +505,21 @@
         table.chq-table th.chq-print-hide, table.chq-table td.chq-print-hide { display: none !important; }
       }
     </style>
+    {# 🚨 TMT 2026-08-24 (dueña): *"dep pichincha no debería aparecer en cheques,
+       solo en el banco"*. Esta pantalla lista SÓLO cheques. El renglón de abajo
+       existe para que nadie los busque acá y crea que se perdieron: dice dónde
+       están y lleva. No trae contadores a propósito —contarlos exigiría repetir
+       todos los filtros de la barra en una segunda consulta, y un número que se
+       calcula distinto termina diciendo otra cosa. #}
+    <div class="no-print px-3 py-1.5 border-b border-slate-200 dark:border-slate-800
+                bg-slate-50 dark:bg-slate-800/40 text-xs text-slate-500">
+      Acá van sólo los cheques. Los depósitos y el efectivo no tienen papel:
+      su plata está en el banco y en la caja.
+      <a href="/bancos/10{% if cliente %}?cliente={{ cliente }}{% endif %}"
+         class="text-sky-600 hover:underline">Ver los depósitos en Pichincha →</a>
+      <span class="text-slate-300 px-1">·</span>
+      <a href="/caja" class="text-sky-600 hover:underline">Ver la caja →</a>
+    </div>
     {# TMT 2026-07-23 (dueña): al filtrar por un cliente, su nombre y vendedor
        van UNA sola vez acá (en vez de repetirse en cada fila). #}
     {# TMT 2026-08-13 (dueña: *"no llego a ver todos los cheques acá"*). La lista
@@ -685,7 +700,18 @@
           <td class="px-1.5 py-1.5 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
             {% set no_ch = c.no_cheque %}
             {% if no_ch in (None, '', 'None', 'NONE', 'none') %}{% set no_ch = None %}{% endif %}
-            {% if _no_ch_editable %}
+            {# 🚨 TMT 2026-08-24 — un depósito directo o un cobro en efectivo NO
+               tiene número de cheque y nunca lo va a tener. Antes esta celda
+               mostraba el ID INTERNO como placeholder de un campo editable
+               ("99600"), o sea invitaba a escribir el número de un papel que
+               no existe. Ahora dice el MEDIO. El rótulo lo arma
+               `queries.etiqueta_cobro`, la misma función que nombra la fila en
+               el Historial: la regla vive en un solo lado. #}
+            {% if c.medio %}
+              <a href="{{ _url_cheque }}" class="hover:underline text-slate-500"
+                 style="text-decoration: none;"
+                 title="{{ c.medio }} — no lleva número de cheque">{{ c.medio }}</a>
+            {% elif _no_ch_editable %}
               <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
                     class="inline-flex items-center gap-1 ch-inline-form" style="margin:0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

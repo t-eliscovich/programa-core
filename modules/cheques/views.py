@@ -3359,6 +3359,25 @@ def lista():
     cliente = request.args.get("cliente", "").strip()
     # TMT 2026-07-15 (dueña): filtro por vendedor (dropdown arriba del listado).
     vendedor = request.args.get("vendedor", "").strip().upper()
+    # 🚨 TMT 2026-08-24 (dueña, dos veces): *"cuando son depósitos debería ir
+    # directo al banco, no pasar por cheques de clientes"* y después *"dep
+    # pichincha no debería aparecer en cheques. solo en el banco"*.
+    #
+    # Esta pantalla lista SÓLO CHEQUES. Los depósitos directos (DEP.PICH. /
+    # DEP. INTER., 1.579 filas) y el efectivo (99, 182 filas) son cobros sin
+    # papel: su plata ya está en Pichincha y en la caja, y ahí se mira —
+    # `/bancos/10?cliente=XXX` ya los lista con saldo corrido y estado de
+    # conciliación, y cada movimiento linkea a la ficha del cobro.
+    #
+    # NO es un filtro con default: es lo que la pantalla ES. Por eso va
+    # hardcodeado y no sale de `request.args` — un dropdown que ofrezca
+    # "Depósitos" acá vuelve a poner en Cheques lo que se decidió sacar.
+    #
+    # ⭐ Medido antes de sacarlos: de esas 1.761 filas, 1.760 están FUERA de
+    # cartera (ya depositadas o cobradas), así que esconderlas no mueve un
+    # solo número —ni la cartera, ni el balance, ni TOTC—. La única que
+    # contaba era el RAR −500 del 19/08, que estaba mal.
+    medio = "cheques"
 
     # TMT 2026-05-29 (pedido dueña): "el filtro del cheque no funciona si no
     # esta en la pagina, me tiene que buscar todos". Cuando hay búsqueda
@@ -3449,6 +3468,7 @@ def lista():
             offset=page_offset,
             orden=(request.args.get("orden") or ""),
             vendedor=vendedor,
+            medio=medio,
         )
         error = None
     except Exception as e:
@@ -3494,7 +3514,13 @@ def lista():
               END                            AS bucket,
               COUNT(*)                       AS n,
               COALESCE(SUM(importe), 0)      AS total
-            FROM scintela.cheque
+            FROM scintela.cheque c
+            -- 🚨 TMT 2026-08-24: los badges cuentan LO MISMO que el listado.
+            -- Desde hoy la pantalla lista sólo cheques; si el conteo siguiera
+            -- sumando los depósitos y el efectivo, la pestaña "Depositados"
+            -- diría 3.000 y mostraría 1.400 — y una diferencia sin explicar
+            -- se lee como bug. Misma condición, importada, no copiada.
+            WHERE """ + queries.SQL_ES_CHEQUE + """
             GROUP BY 1
             """
             )
@@ -3507,8 +3533,9 @@ def lista():
             row_eg = db.fetch_one(
                 """
                 SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
-                  FROM scintela.cheque
+                  FROM scintela.cheque c
                  WHERE stat IN ('1', '2', '3')
+                   AND """ + queries.SQL_ES_CHEQUE + """
                 """
             )
             if row_eg:
@@ -3525,8 +3552,9 @@ def lista():
             row_cart = db.fetch_one(
                 """
                 SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
-                  FROM scintela.cheque
+                  FROM scintela.cheque c
                  WHERE stat IN ('Z', 'P', '1', '2')
+                   AND """ + queries.SQL_ES_CHEQUE + """
                 """
             )
             if row_cart:
@@ -3541,8 +3569,9 @@ def lista():
             row_tot = db.fetch_one(
                 """
                 SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
-                  FROM scintela.cheque
+                  FROM scintela.cheque c
                  WHERE stat IN ('Z', 'P', '1', '2', '3', 'D')
+                   AND """ + queries.SQL_ES_CHEQUE + """
                 """
             )
             if row_tot:
@@ -3568,6 +3597,9 @@ def lista():
             monto_min=monto_min,
             monto_max=monto_max,
             vendedor=vendedor,
+            # El total de arriba tiene que salir del MISMO universo que las
+            # filas de abajo (ver el docstring de total_buscar).
+            medio=medio,
         )
         total = agg["total"]
         n_total = agg["n"]
@@ -3587,6 +3619,7 @@ def lista():
         cliente=cliente,
         vendedor=vendedor,
         vendedores=queries.vendedores_para_filtro(),
+        medio=medio,
         monto_min=monto_min,
         monto_max=monto_max,
         monto=monto_raw,

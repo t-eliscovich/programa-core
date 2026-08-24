@@ -125,14 +125,57 @@ def test_90_crea_mov_banco_de_con_referencia_y_link(env):
     assert r.get("id_transaccion_deposito") == 555
 
 
-def test_90_negativo_queda_z_sin_mov_banco(env):
+def test_90_negativo_deja_su_mov_en_negativo_y_sale_de_cartera(env):
+    """TMT 2026-08-24 (dueña): *"igual −500 también debería crear negativo en el
+    banco, no?"*.
+
+    Este test decía lo contrario hasta hoy (`test_90_negativo_queda_z_sin_mov_banco`)
+    y el cambio es DELIBERADO. El gate `> 0` hacía que un cobro negativo —mudar
+    plata de una factura a otra, devolverle al cliente— no dejara asiento en el
+    banco Y quedara en cartera. Las dos mitades se pagaron el 19/08: un −500 y
+    un +500 de RAR se compensaron en la factura pero dejaron +500 en Pichincha
+    (el único movimiento que no concilió ese día), y el −500 quedó colgado en
+    cartera hasta que lo postergaron al 30/08.
+
+    El asiento va como 'DE' con el importe en NEGATIVO —la convención del
+    dBase, `permitir_signed`— y no como una 'ND' aparte, para que todo lo que
+    busca el depósito de un cheque por `documento='DE'` lo siga encontrando.
+    """
     cq, stub, bank_calls = env()
     cq.crear(
         fecha=date(2026, 6, 11), codigo_cli="PIB", no_cheque="",
         importe=-177.17, no_banco=90,
     )
-    assert "Z" in _params_cheque_insert(stub)
-    assert bank_calls == []
+    params = _params_cheque_insert(stub)
+    assert "B" in params and "Z" not in params
+    assert len(bank_calls) == 1
+    mv = bank_calls[0]
+    assert mv["documento"] == "DE"
+    assert mv["no_banco"] == 10
+    assert abs(mv["importe"] - (-177.17)) < 0.01, "el importe viaja CON su signo"
+    assert mv.get("permitir_signed") is True, (
+        "sin permitir_signed bank_helpers rechaza el negativo y revienta la cobranza"
+    )
+
+
+def test_90_postdatado_no_se_puede_cargar(env):
+    """La puerta por la que entró el cheque 102080 (MTM 536,30 del 07/08).
+
+    El auto-flip a 'B' pregunta por `stat == 'Z'`, así que elegir DEP.PICH. y
+    "Postdatado" en el mismo renglón de Cobranza dejaba nacer un depósito EN
+    CARTERA y SIN movimiento de banco. Esa fila cobró una factura de mayo por
+    segunda vez (la transferencia real ya estaba cargada, con papeleta y
+    conciliada) y sobrevivió dos postergaciones.
+    """
+    import pytest as _pytest
+    cq, stub, bank_calls = env()
+    with _pytest.raises(ValueError) as exc:
+        cq.crear(
+            fecha=date(2026, 6, 11), codigo_cli="MTM", no_cheque="",
+            importe=536.30, no_banco=90, stat="P",
+        )
+    assert "depósito directo" in str(exc.value)
+    assert bank_calls == [], "no se graba nada a medias"
 
 
 def test_99_efectivo_stat_c_y_caja_ch_cliente(env):

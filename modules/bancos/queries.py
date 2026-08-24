@@ -642,7 +642,7 @@ def movimientos(
                 """
                 SELECT cxt.id_transaccion,
                        c.id_cheque, c.no_cheque, c.importe, c.codigo_cli,
-                       c.doc_banco, c.fechad, c.stat,
+                       c.doc_banco, c.fechad, c.stat, c.no_banco,
                        COALESCE(cli.nombre, '') AS cliente
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque
