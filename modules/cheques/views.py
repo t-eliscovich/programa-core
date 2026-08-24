@@ -2832,6 +2832,13 @@ def actualizar(id_cheque: int):
                 f" Se le sacaron $ {plata} a {n} "
                 f"factura{'s' if n != 1 else ''}."
             )
+        if aj.get("anticipo"):
+            from filters import num_es as _num_es2
+
+            msg += (
+                f" Los $ {_num_es2(aj['anticipo'], 2)} que sobraron quedaron "
+                f"como anticipo de {ch.get('codigo_cli') or 'el cliente'}."
+            )
         flash(msg, "ok")
     except ValueError as e:
         flash(str(e), "error")

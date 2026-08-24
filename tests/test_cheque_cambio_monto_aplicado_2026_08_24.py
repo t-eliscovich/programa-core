@@ -84,6 +84,8 @@ class _FakeDB:
         self.cheque = dict(cheque)
         self.aplic = [dict(a) for a in aplic]
         self.facturas = {k: dict(v) for k, v in facturas.items()}
+        self.espejos: list[dict] = []
+        self.espejos_creados: list[tuple[str, tuple]] = []
         self.executes: list[tuple[str, tuple]] = []
 
     def fetch_one(self, sql, params=None, conn=None):
@@ -106,9 +108,13 @@ class _FakeDB:
             return None
         return None
 
+    # espejos_vivos() — por defecto el cheque no tiene anticipo colgando.
+
     def fetch_all(self, sql, params=None, conn=None):
         s = " ".join((sql or "").split()).lower()
         p = tuple(params or ())
+        if "id_cheque_padre" in s and "no_banco = 98" in s:
+            return [dict(e) for e in self.espejos]
         if "from scintela.chequesxfact cxf" in s:
             if not p or p[0] != self.cheque["id_cheque"]:
                 return []
@@ -147,6 +153,10 @@ class _FakeDB:
         return 1
 
     def execute_returning(self, sql, params=None, conn=None):
+        s = " ".join((sql or "").split()).lower()
+        if "insert into scintela.cheque" in s:
+            self.espejos_creados.append((s, tuple(params or ())))
+            return {"id_cheque": 777001}
         return {"id_mov_doble": 1}
 
     @contextlib.contextmanager
@@ -379,3 +389,93 @@ def test_sin_aplicaciones_el_post_guarda_de_una(app, monkeypatch):
     r = cli.post("/cheques/102656/actualizar", data={"importe": "1035,07"})
     assert r.status_code == 302
     assert any("update scintela.cheque" in s for s, _ in fake.executes)
+
+
+# ── el sobrante va a ANTICIPO, no se queda flotando ─────────────────────────
+# TMT 2026-08-24 (dueña): *"quise cambiar ese cheque de 1200 a 1364,93 ... me
+# debería quedar como anticipo la diferencia ... no sé dónde se van esos 164
+# de dif"*. No iban a ningún lado.
+
+
+def test_subir_el_monto_deja_la_diferencia_como_anticipo(monkeypatch):
+    import db as db_mod
+    import mov_doble as md_mod
+    from modules.cheques import queries
+
+    fake = _fake_basico()  # 1.200,00 aplicados enteros
+    fake.apply_to(monkeypatch, db_mod)
+    monkeypatch.setattr(md_mod, "registrar", lambda **kw: 1)
+
+    res = queries.editar(
+        102656, importe=1364.93, ajustar_aplicaciones=True, usuario="tamara"
+    )
+    assert res["ajuste"]["facturas_tocadas"] == 0
+    assert res["ajuste"]["anticipo"] == pytest.approx(164.93)
+    assert res["ajuste"]["id_cheque_anticipo"] == 777001
+    # El espejo es NEGATIVO y de banco 98 — la misma puerta que la cobranza.
+    assert len(fake.espejos_creados) == 1
+    sql, params = fake.espejos_creados[0]
+    assert "insert into scintela.cheque" in sql
+    assert float(params[5]) == pytest.approx(-164.93)
+    assert params[6] == 98
+    # Y la factura no se movió ni un centavo.
+    assert fake.facturas[279246]["stat"] == "T"
+
+
+def test_no_duplica_el_anticipo_que_el_cheque_ya_tenia(monkeypatch):
+    """Si el sobrante ya estaba anticipado, sólo se agrega la diferencia."""
+    import db as db_mod
+    import mov_doble as md_mod
+    from modules.cheques import queries
+
+    fake = _fake_basico()
+    fake.espejos = [{"id_cheque": 500, "no_cheque": "4885", "importe": -100, "stat": "Z"}]
+    fake.apply_to(monkeypatch, db_mod)
+    monkeypatch.setattr(md_mod, "registrar", lambda **kw: 1)
+
+    res = queries.editar(
+        102656, importe=1364.93, ajustar_aplicaciones=True, usuario="tamara"
+    )
+    assert res["ajuste"]["anticipo"] == pytest.approx(64.93)  # 164,93 − 100
+
+
+def test_bajar_el_monto_con_anticipo_hecho_se_frena(monkeypatch):
+    """Achicar un anticipo ya hecho es cirugía aparte — se frena y se explica."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _fake_basico()
+    fake.cheque["importe"] = 1364.93
+    fake.espejos = [{"id_cheque": 500, "no_cheque": "4885", "importe": -164.93, "stat": "Z"}]
+    fake.apply_to(monkeypatch, db_mod)
+
+    with pytest.raises(ValueError, match="anticipo"):
+        queries.editar(
+            102656, importe=1250, ajustar_aplicaciones=True, usuario="tamara"
+        )
+
+
+def test_el_plan_nombra_el_anticipo(monkeypatch):
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _fake_basico()
+    fake.apply_to(monkeypatch, db_mod)
+
+    plan = queries.plan_cambio_importe(102656, 1364.93)
+    assert plan["toca_facturas"] is False
+    assert plan["anticipo_nuevo"] == pytest.approx(164.93)
+    assert plan["anticipo_ya_hecho"] == 0
+
+
+def test_la_pantalla_dice_a_donde_van_los_que_sobran(app, monkeypatch):
+    fake = _fake_basico()
+    cli = _client_logueado(app, monkeypatch, fake)
+
+    r = cli.post("/cheques/102656/actualizar", data={"importe": "1364,93"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "anticipo" in html.lower()
+    assert "164,93" in html
+    # Y sigue sin guardarse nada hasta que confirme.
+    assert not fake.espejos_creados

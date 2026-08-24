@@ -1,9 +1,17 @@
 {# TMT 2026-08-24 (dueña): cambiarle el monto a un cheque que YA está aplicado
-   a facturas le mueve la cuenta al cliente. Ella eligió que el programa
-   ajuste solo la aplicación "y que explique qué es lo que va a hacer": esta
-   pantalla es esa explicación. Se muestra SIEMPRE que el cheque tenga
-   facturas aplicadas, incluso cuando no haya que tocar ninguna — que no haya
-   que hacer nada también es una respuesta. #}
+   a facturas le mueve la cuenta al cliente. Ella eligió que el programa ajuste
+   solo "y que explique qué es lo que va a hacer".
+
+   ⭐ UNA sola pantalla, con el MISMO formato suba o baje el monto (dueña:
+   *"por qué son dos pantallas, mostrame todo consolidado en una"*). La primera
+   versión tenía dos redacciones distintas y escondía la tabla de facturas
+   cuando el monto subía "porque no cambiaba nada" — el mismo error del 17/08
+   con /pedidos: aliviar una pantalla sacando información sale mal. Ver ahí que
+   la factura NO se mueve es parte de lo que se viene a mirar.
+
+   El cuadro de arriba es la cuenta completa: el monto del cheque SIEMPRE es lo
+   aplicado a facturas más el anticipo. Las tres filas cierran, y se ve de un
+   vistazo cuál absorbe la diferencia. #}
 {% extends "base.html" %}
 {% block title %}Cambiar el monto del cheque{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('cheques.lista') }}">Cheques</a> /
@@ -11,6 +19,8 @@
   <strong>Cambiar el monto</strong>{% endblock %}
 
 {% block content %}
+{% set _anticipo_antes = plan.anticipo_ya_hecho %}
+{% set _anticipo_despues = plan.anticipo_ya_hecho + plan.anticipo_nuevo %}
 <div class="max-w-4xl">
   <div class="mb-6">
     <h1 class="text-2xl font-semibold">Cambiar el monto del cheque</h1>
@@ -21,34 +31,55 @@
     </p>
   </div>
 
-  <div class="mb-6 px-4 py-3 rounded
-    {% if plan.toca_facturas %}bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700
-    {% else %}bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800{% endif %} text-sm">
-    {% if plan.toca_facturas %}
-      <strong class="text-amber-700 dark:text-amber-300">Esto también le cambia la cuenta al cliente:</strong>
-      <ul class="list-disc list-inside mt-1 space-y-0.5 text-amber-900 dark:text-amber-100">
-        <li>Este cheque está aplicado a {{ plan.n_facturas }}
-          factura{{ 's' if plan.n_facturas != 1 else '' }} por
-          $ {{ plan.total_aplicado | num_es(2) }}, y con el monto nuevo no alcanza.</li>
-        <li>Se le van a sacar <strong>$ {{ plan.total_recorte | abs | num_es(2) }}</strong>
-          a la{{ 's' if plan.facturas | selectattr('toca') | list | length != 1 else '' }}
-          factura{{ 's' if plan.facturas | selectattr('toca') | list | length != 1 else '' }}
-          de abajo, empezando por la última que se pagó.</li>
-        {% if plan.sobrante | abs >= 0.005 %}
-          <li>Del cheque quedan $ {{ plan.sobrante | abs | num_es(2) }} sin aplicar.</li>
-        {% endif %}
-      </ul>
-    {% else %}
-      <strong>No hay que tocar ninguna factura.</strong>
-      Este cheque está aplicado a {{ plan.n_facturas }}
-      factura{{ 's' if plan.n_facturas != 1 else '' }} por
-      $ {{ plan.total_aplicado | num_es(2) }}, y el monto nuevo alcanza.
-      {% if plan.sobrante | abs >= 0.005 %}
-        Del cheque quedan <strong>$ {{ plan.sobrante | abs | num_es(2) }}</strong> sin aplicar.
+  <div class="mb-6 px-4 py-3 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-sm">
+    <strong class="text-amber-700 dark:text-amber-300">
+      {% if plan.toca_facturas %}
+        La diferencia sale de la última factura que se pagó.
+      {% elif plan.anticipo_nuevo >= 0.005 %}
+        La diferencia queda como anticipo de {{ plan.codigo_cli }}.
+      {% else %}
+        La plata del cheque queda repartida igual que ahora.
       {% endif %}
-    {% endif %}
+    </strong>
+    <span class="text-amber-900 dark:text-amber-100">
+      El monto del cheque siempre es lo aplicado a facturas más el anticipo.
+    </span>
   </div>
 
+  {# Dónde está la plata del cheque, antes y después. Las tres filas cierran. #}
+  <div class="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg mb-6">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-900 text-xs text-slate-500 uppercase">
+        <tr>
+          <th class="px-3 py-2 text-left">La plata del cheque</th>
+          <th class="px-3 py-2 text-right">Ahora</th>
+          <th class="px-3 py-2 text-right">Después</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        <tr>
+          <td class="px-3 py-2">Aplicado a facturas</td>
+          <td class="px-3 py-2 text-right font-mono">{{ plan.total_aplicado | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right font-mono {% if plan.toca_facturas %}font-semibold{% endif %}">
+            {{ plan.aplicado_despues | num_es(2) }}</td>
+        </tr>
+        <tr>
+          <td class="px-3 py-2">Anticipo de {{ plan.codigo_cli }}</td>
+          <td class="px-3 py-2 text-right font-mono">{{ _anticipo_antes | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right font-mono {% if plan.anticipo_nuevo >= 0.005 %}font-semibold{% endif %}">
+            {{ _anticipo_despues | num_es(2) }}</td>
+        </tr>
+        <tr class="bg-slate-50 dark:bg-slate-900 font-medium">
+          <td class="px-3 py-2">Monto del cheque</td>
+          <td class="px-3 py-2 text-right font-mono">{{ plan.importe_antes | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right font-mono">{{ plan.importe_despues | num_es(2) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Las facturas van SIEMPRE, cambien o no. Que una no se mueva es parte de lo
+     que se viene a mirar. #}
   <div class="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg mb-6">
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-900 text-xs text-slate-500 uppercase">
@@ -86,6 +117,14 @@
       </tbody>
     </table>
   </div>
+
+  {% if plan.anticipo_nuevo >= 0.005 %}
+    <p class="text-xs text-slate-500 mb-6">
+      El anticipo se guarda como el cheque espejo en negativo, el mismo que arma
+      la cobranza cuando sobra plata. Queda colgando de este cheque y lo aplicás
+      a la factura que quieras cuando quieras.
+    </p>
+  {% endif %}
 
   <form method="POST" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
         class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">

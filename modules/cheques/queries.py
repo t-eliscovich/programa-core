@@ -446,6 +446,30 @@ def aplicaciones_vivas(id_cheque: int, conn=None) -> list[dict]:
     )
 
 
+def espejos_vivos(id_cheque: int, conn=None) -> list[dict]:
+    """Los espejos de anticipo (NB=98, negativos) que cuelgan de este cheque.
+
+    Son la contrapartida del sobrante: la parte del cheque que no fue a
+    ninguna factura y quedó como saldo a favor del cliente. Los terminales
+    (X/T/R) no cuentan — ya no netean nada.
+    """
+    return (
+        db.fetch_all(
+            """
+            SELECT id_cheque, no_cheque, importe, stat
+              FROM scintela.cheque
+             WHERE id_cheque_padre = %s
+               AND no_banco = 98
+               AND UPPER(TRIM(COALESCE(stat, ''))) NOT IN ('X', 'T', 'R')
+             ORDER BY id_cheque
+            """,
+            (id_cheque,),
+            conn=conn,
+        )
+        or []
+    )
+
+
 def _plan_recorte(importe_nuevo, aplicaciones: list[dict]) -> list[dict]:
     """Cuánto hay que recortarle a cada aplicación para que entre en el monto nuevo.
 
@@ -551,6 +575,16 @@ def plan_cambio_importe(id_cheque: int, importe_nuevo) -> dict | None:
 
     total_recorte = sum(r["recorte"] for r in recortes) if recortes else _D(0)
     aplicado_despues = total_aplicado - total_recorte
+    sobrante = nuevo - aplicado_despues
+    # TMT 2026-08-24 (dueña): *"me debería quedar como anticipo la diferencia,
+    # no sé dónde se van esos 164 de dif"*. El sobrante NO puede quedar
+    # flotando adentro del cheque: engorda "Cheques a depositar" sin
+    # contrapartida y la cuenta del cliente sube sin motivo. Va al mismo lugar
+    # que el sobrante de la cobranza — el espejo NB=98 negativo.
+    ya_en_espejos = sum(
+        abs(_D(str(e.get("importe") or 0))) for e in espejos_vivos(id_cheque)
+    )
+    anticipo_nuevo = abs(sobrante) - ya_en_espejos if sobrante > 0 else _D(0)
     return {
         "id_cheque": id_cheque,
         "no_cheque": ch.get("no_cheque"),
@@ -560,7 +594,9 @@ def plan_cambio_importe(id_cheque: int, importe_nuevo) -> dict | None:
         "total_aplicado": float(total_aplicado),
         "total_recorte": float(total_recorte),
         "aplicado_despues": float(aplicado_despues),
-        "sobrante": float(nuevo - aplicado_despues),
+        "sobrante": float(sobrante),
+        "anticipo_ya_hecho": float(ya_en_espejos),
+        "anticipo_nuevo": float(anticipo_nuevo if anticipo_nuevo > _D("0.005") else 0),
         "facturas": filas,
         "n_facturas": len(filas),
         "toca_facturas": bool(recortes),
@@ -579,8 +615,12 @@ def _ajustar_aplicaciones_al_importe(*, id_cheque, importe_nuevo, usuario, conn)
 
     aplic = aplicaciones_vivas(id_cheque, conn=conn)
     recortes = _plan_recorte(importe_nuevo, aplic)
+    salida = {"facturas_tocadas": 0, "total_recortado": 0.0, "anticipo": 0.0,
+              "id_cheque_anticipo": None}
     if not recortes:
-        return {"facturas_tocadas": 0, "total_recortado": 0.0}
+        return {**salida, **_anticipar_sobrante(
+            id_cheque=id_cheque, importe_nuevo=importe_nuevo,
+            aplicaciones=aplic, usuario=usuario, conn=conn)}
 
     por_fact: dict = {}
     for r in recortes:
@@ -675,7 +715,63 @@ def _ajustar_aplicaciones_al_importe(*, id_cheque, importe_nuevo, usuario, conn)
             id_original=(md_orig["id_mov_doble"] if (md_orig and not queda) else None),
         )
 
-    return {"facturas_tocadas": tocadas, "total_recortado": float(total_recortado)}
+    # Si se recortó, el cheque quedó justo: sobrante 0 y nada que anticipar.
+    # Igual pasa por acá para que la regla viva en UN solo lugar.
+    return {
+        "facturas_tocadas": tocadas,
+        "total_recortado": float(total_recortado),
+        **_anticipar_sobrante(
+            id_cheque=id_cheque, importe_nuevo=importe_nuevo,
+            aplicaciones=aplicaciones_vivas(id_cheque, conn=conn),
+            usuario=usuario, conn=conn),
+    }
+
+
+def _anticipar_sobrante(*, id_cheque, importe_nuevo, aplicaciones, usuario, conn) -> dict:
+    """Lo que el cheque no aplicó a ninguna factura va a ANTICIPO del cliente.
+
+    TMT 2026-08-24 (dueña): *"quise cambiar ese cheque de 1200 a 1364,93. El
+    problema es que me debería quedar como anticipo la diferencia... no sé
+    dónde se van esos 164 de dif"*. Y no iban a ningún lado: el sobrante
+    quedaba flotando adentro del cheque, engordando "Cheques a depositar" sin
+    contrapartida. Ahora sale por la MISMA puerta que el sobrante de la
+    cobranza — el cheque espejo NB=98 negativo (`crear_espejo_anticipo`).
+
+    Sólo crea el espejo por lo que FALTA: si el cheque ya tenía uno (porque el
+    sobrante venía de la carga original), se le suma la diferencia, no se
+    duplica el anticipo entero.
+    """
+    from decimal import Decimal as _D
+
+    aplicado = sum(_D(str(a.get("importe") or 0)) for a in aplicaciones)
+    sobrante = _D(str(importe_nuevo)) - aplicado
+    if sobrante <= _D("0.005"):
+        return {"anticipo": 0.0, "id_cheque_anticipo": None}
+    ya = sum(abs(_D(str(e.get("importe") or 0))) for e in espejos_vivos(id_cheque, conn=conn))
+    falta = sobrante - ya
+    if falta <= _D("0.005"):
+        return {"anticipo": 0.0, "id_cheque_anticipo": None}
+
+    ch = db.fetch_one(
+        "SELECT no_cheque, codigo_cli, fecha, fechad, fecha_recibido, prov, clave "
+        "  FROM scintela.cheque WHERE id_cheque = %s",
+        (id_cheque,),
+        conn=conn,
+    ) or {}
+    espejo = crear_espejo_anticipo(
+        conn=conn,
+        id_cheque_padre=id_cheque,
+        no_cheque=ch.get("no_cheque") or "",
+        fecha=ch.get("fecha") or today_ec(),
+        fechad=ch.get("fechad"),
+        fecha_recibido=ch.get("fecha_recibido"),
+        codigo_cli=(ch.get("codigo_cli") or ""),
+        importe_espejo=float(falta),
+        prov=ch.get("prov"),
+        clave=ch.get("clave"),
+        usuario=usuario,
+    )
+    return {"anticipo": float(falta), "id_cheque_anticipo": espejo.get("id_cheque")}
 
 
 def editar(
@@ -853,6 +949,19 @@ def editar(
                     "Este cheque está aplicado a facturas y el monto nuevo "
                     "cambia de signo. Desaplicalo primero desde la ficha del "
                     "cheque y volvé a aplicarlo."
+                )
+            # Si el cheque ya tiene un anticipo por su sobrante y el monto
+            # nuevo lo deja corto, achicar ese anticipo es cirugía aparte
+            # (puede estar aplicado a otra factura). Se frena y se dice cómo.
+            _ya = sum(
+                abs(_Dec(str(e.get("importe") or 0)))
+                for e in espejos_vivos(id_cheque)
+            )
+            if _ya > 0 and (imp_dec - _tot_ap) < _ya - _Dec("0.005"):
+                raise ValueError(
+                    "Este cheque ya tiene un anticipo por su sobrante. "
+                    "Deshacé el anticipo desde la ficha del cheque antes de "
+                    "bajarle el monto."
                 )
             if not ajustar_aplicaciones:
                 # Freno para cualquier camino que no pase por la pantalla de
