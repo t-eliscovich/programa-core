@@ -92,6 +92,16 @@ def test_wa_tel(crudo, esperado):
         # ...y un fijo de 7, escrito sin el código de área, no salía.
         ("3284800", ["3284800"]),
         ("0999999999 3284800", ["0999999999", "3284800"]),
+        # ⭐ El GUIÓN va ADENTRO del número, no separa. Partir por "todo lo
+        # que no es dígito" dejaba 2609 / 990 / 0986632533 y el celular se
+        # perdía: la ficha ofrecía "260999009" para llamar, que no es de
+        # nadie. Nueve clientes con saldo estaban así.
+        ("2609-990 0986632533", ["2609990", "0986632533"]),
+        ("2665-082 2647-267", ["2665082", "2647267"]),
+        # La barra y la coma SÍ separan.
+        ("032823944 /032821-888", ["032823944", "032821888"]),
+        # Y lo que no es número se ignora sin llevarse el que sí lo es.
+        ("072831997      EXT 4", ["072831997"]),
         # Basura: ningún link. Un botón que marca mal es peor que no tenerlo.
         ("", []), (None, []), ("s/n", []), ("123", []), ("0" * 20, []),
         # Cola incompleta: se queda con lo que SÍ es un número.
