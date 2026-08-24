@@ -418,7 +418,9 @@
         {# TMT 2026-06-30 (dueña, fix #4): tabla más compacta y más ALTA — la
            dueña pidió "no hace falta tanto espacio para todo". Sacamos Fecha,
            Total, Abonado y Acum. saldo; quedan N°, Vence, Saldo, A aplicar y
-           Resta. Filas finas + contenedor alto para ver más facturas. #}
+           Resta. Filas finas + contenedor alto para ver más facturas.
+           TMT 2026-08-24 (dueña): se sacó Vence y se agregó Retenciones entre
+           Total y Abonado. #}
         <div class="cobranza-fact-scroll" tabindex="0" title="↑↓ moverse · Espacio tildar · T todas · H hasta acá">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
@@ -428,13 +430,15 @@
                 </th>
                 <th class="px-3 py-2 text-left font-medium">N°</th>
                 <th class="px-3 py-2 text-left font-medium">Fecha</th>
-                <th class="px-3 py-2 text-left font-medium">Vence</th>
                 {# TMT 2026-05-17 — saldo de la factura en 3 columnas separadas (pedido cobranza):
                    TOTAL = importe original; ABONADO = lo ya cobrado antes; SALDO = lo que queda vivo.
                    TMT 2026-05-19 — agregada columna "Acum. saldo" (item 4): running total
                    de saldos para que la dueña vea de un vistazo si X facturas acumulan
                    el monto que está cobrando. #}
                 <th class="px-3 py-2 text-right font-medium" title="Importe total de la factura (cara).">Total</th>
+                {# TMT 2026-08-24 (dueña): la retención del cliente a la vista, al lado
+                   del total. Baja el saldo pero NO es abono (ver factura.retencion). #}
+                <th class="px-3 py-2 text-right font-medium" title="Retención del cliente ya cargada en la factura. Baja el saldo, pero no es un abono.">Retenciones</th>
                 <th class="px-3 py-2 text-right font-medium" title="Lo que ya se cobró antes de esta operación.">Abonado</th>
                 <th class="px-3 py-2 text-right font-medium" title="Saldo vivo = total − abonado. Lo que queda por cobrar.">Saldo</th>
                 <th class="px-3 py-2 text-right font-medium" title="Saldo acumulado corrido de arriba hasta esta fila (suma de saldos de todas las facturas anteriores + esta).">Acum. saldo</th>
@@ -457,9 +461,9 @@
                    nth-child y el colspan las desalineaba. #}
                 <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">facturas selecc.</td>
                 <td></td>{# col Fecha #}
-                <td></td>{# col Vence #}
                 {# 3 totales — Total/Abonado/Saldo de las facturas seleccionadas. TMT 2026-05-17. #}
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-total">—</td>
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-retencion">—</td>
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-abonado">—</td>
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
                 <td></td>{# col Acum. saldo — vacía en footer #}
@@ -592,6 +596,7 @@
   // TMT 2026-05-17 — 3 totales por columna (Total/Abonado/Saldo).
   const footTotal     = document.getElementById('aplic-foot-total');
   const footAbonado   = document.getElementById('aplic-foot-abonado');
+  const footRetencion = document.getElementById('aplic-foot-retencion');
   const footSaldo     = document.getElementById('aplic-foot-saldo');
   const footAplicado  = document.getElementById('aplic-foot-aplicado');
   const footAcum      = document.getElementById('aplic-foot-acum');
@@ -904,9 +909,10 @@
             </td>
             <td class="px-3 py-1.5 font-mono text-xs">${shortNum(f)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
             <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.fecha)}</td>
-            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.vencimiento)}</td>
             {# TMT 2026-05-17 — 3 columnas separadas: Total / Abonado / Saldo. #}
             <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(f.importe)}</td>
+            {# TMT 2026-08-24 — Retenciones (columna propia factura.retencion). #}
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${f.retencion && Math.abs(f.retencion) > 0.005 ? fmt(f.retencion) : '—'}</td>
             <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${f.abono && Math.abs(f.abono) > 0.005 ? fmt(f.abono) : '—'}</td>
             <td class="px-3 py-1.5 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
             {# TMT 2026-05-19 — Acum. saldo (item 4): running total de saldos. #}
@@ -1557,6 +1563,7 @@
     // abono previo de las facturas seleccionadas. Se muestran en el footer.
     let totalSel = 0;
     let abonadoSel = 0;
+    let retencionSel = 0;
     // TMT 2026-05-15: capturamos (fecha, importe_aplicado) para calcular
     // el plazo ponderado por monto (no promedio simple). Una factura de
     // $10.000 a 60 días pesa más que una de $100 a 10 días.
@@ -1574,6 +1581,7 @@
       if (f) {
         totalSel   += parseFloat(f.importe || 0);
         abonadoSel += parseFloat(f.abono   || 0);
+        retencionSel += parseFloat(f.retencion || 0);
         if (f.fecha) {
           fechasYMontosSel.push({ fecha: f.fecha, monto: Math.abs(v) });
         }
@@ -1647,6 +1655,7 @@
       // TMT 2026-06-30 (fix #4): columnas Total/Abonado del footer removidas;
       // guardamos por si los elementos no existen.
       if (footTotal)   footTotal.textContent   = fmt(totalSel);
+      if (footRetencion) footRetencion.textContent = Math.abs(retencionSel) > 0.005 ? fmt(retencionSel) : '—';
       if (footAbonado) footAbonado.textContent = Math.abs(abonadoSel) > 0.005 ? fmt(abonadoSel) : '—';
       footSaldo.textContent   = fmt(saldoSel);
       footAplicado.textContent = '$ ' + fmt(asignado);

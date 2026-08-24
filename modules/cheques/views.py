@@ -1527,7 +1527,7 @@ def api_facturas_pendientes(codigo_cli: str):
     del form de nuevo cheque.
 
     Devuelve sólo lo que la UI necesita: id, numf, fecha, vencimiento,
-    importe, saldo. Ordenado FIFO (vencimiento ascendente).
+    importe, retención, saldo. Ordenado FIFO (vencimiento ascendente).
     """
     codigo_cli = (codigo_cli or "").strip().upper()
     if not codigo_cli:
@@ -1567,6 +1567,9 @@ def api_facturas_pendientes(codigo_cli: str):
                 "vencimiento": r["vencimiento"].isoformat() if r.get("vencimiento") else None,
                 "importe": float(r.get("importe") or 0),
                 "abono": float(r.get("abono") or 0),
+                # TMT 2026-08-24 (dueña): la grilla de cobranza muestra la
+                # retención ya cargada en la factura (columna propia, mig 0179).
+                "retencion": float(r.get("retencion") or 0),
                 "saldo": float(r.get("saldo") or 0),
                 "stat": r.get("stat") or "",
             }
