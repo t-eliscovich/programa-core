@@ -243,6 +243,35 @@ jobs:
           if (\$still) { Write-Output "ERROR: puerto 5002 sigue tomado por PID(s) \$(\$still.OwningProcess -join ',') — no se pudo liberar"; exit 1 }
           Start-ScheduledTask -TaskName ProgramaCoreApp
 
+          # 5.b El PORTAL DEL CLIENTE — el mismo código en otro proceso y otro
+          #     puerto (5004, run_portal.py). Comparte carpeta con el programa
+          #     de la oficina, así que este deploy también le cambió los
+          #     archivos abajo de los pies: hay que reiniciarlo o queda
+          #     sirviendo el código viejo.
+          #     Es FAIL-SOFT a propósito: si la tarea todavía no existe en el
+          #     server —o si el portal se cae— eso NO puede frenar el deploy
+          #     del programa con el que trabaja la oficina todo el día.
+          if (Get-ScheduledTask -TaskName PortalClienteApp -ErrorAction SilentlyContinue) {
+              Write-Output "--- Reiniciando el portal del cliente ---"
+              Stop-ScheduledTask -TaskName PortalClienteApp -ErrorAction SilentlyContinue
+              Start-Sleep 2
+              Get-NetTCPConnection -LocalPort 5004 -State Listen -ErrorAction SilentlyContinue |
+                  Select-Object -ExpandProperty OwningProcess -Unique |
+                  ForEach-Object { Stop-Process -Id \$_ -Force -ErrorAction SilentlyContinue }
+              Start-Sleep 1
+              Start-ScheduledTask -TaskName PortalClienteApp -ErrorAction SilentlyContinue
+              \$pcode = 0
+              for (\$i = 1; \$i -le 30; \$i++) {
+                  Start-Sleep 1
+                  try { \$pcode = (Invoke-WebRequest -UseBasicParsing http://localhost:5004/ -TimeoutSec 5).StatusCode } catch { \$pcode = 0 }
+                  if (\$pcode -eq 200) { break }
+              }
+              Write-Output "Portal: HTTP \$pcode"
+              if (\$pcode -ne 200) { Write-Output "AVISO: el portal no contesto 200 — el programa de la oficina NO se toca por esto" }
+          } else {
+              Write-Output "Portal del cliente: la tarea PortalClienteApp no existe todavia — salteado"
+          }
+
           # 6. Health check. TMT 2026-08-13 (dueña: *"necesito todavía más
           #    corto"*): acá había un `Start-Sleep 15` fijo y RECIÉN DESPUÉS se
           #    preguntaba. Los 15 s salieron del 2026-06-07 porque con 6 s el
