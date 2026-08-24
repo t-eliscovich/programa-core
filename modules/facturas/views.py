@@ -89,7 +89,11 @@ def _auto_cargar_facturas_hoy() -> dict:
         hoy = today_ec()
         try:
             from modules.asinfo import service as asinfo_service
-            asinfo_rows = asinfo_service.facturas_periodo(hoy, hoy) or []
+            # `max_edad_secs`: la carga corre cada 2 min y el cache de
+            # `facturas_periodo` dura 5 — sin esto, dos de cada tres corridas
+            # le preguntaban al cache y la factura recién emitida no aparecía.
+            asinfo_rows = asinfo_service.facturas_periodo(
+                hoy, hoy, max_edad_secs=45) or []
         except Exception:
             asinfo_rows = []
         # TMT 2026-07-28: antes acá había `return res` cuando Asinfo no traía
@@ -2442,9 +2446,16 @@ def lista():
     # Asinfo — sin cron y sin ir a /facturas/desde-asinfo. Corre acá, al abrir
     # la pantalla, y SOLO si el usuario puede crear facturas. Idempotente y
     # fail-soft (throttle interno). El backlog de días previos NO se toca.
+    # TMT 2026-08-24 (dueña): *"cargar la página facturas es un poco lento"*.
+    # Si el hilo de fondo está vivo, las facturas del día YA entran solas y la
+    # pantalla no tiene por qué esperar a Asinfo para dibujarse. Sólo la carga
+    # acá cuando ese hilo no está (AUTOCARGA_FACTURAS=0, o un proceso donde no
+    # arrancó): así nadie se queda sin la carga.
+    _ac = {}
     if request.args.get("export") != "csv":
         from auth import tiene_permiso as _tp
-        if _tp("facturas.crear"):
+        from modules._lib.autocarga_facturas import hilo_de_facturas_vivo
+        if _tp("facturas.crear") and not hilo_de_facturas_vivo():
             _ac = _auto_cargar_facturas_hoy()
             if _ac.get("cargadas"):
                 _m = f"Se cargaron solas {_ac['cargadas']} facturas de hoy desde Asinfo."

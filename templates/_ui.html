@@ -370,29 +370,19 @@
 {# ===================================================================== #}
 {% macro stat_select(stat, codigo_cli, id_factura, numf) %}
   {% set _st = (stat or '').strip().upper() %}
-  <form method="POST" class="inline"
-        action="{{ url_for('informes.estado_cuenta_factura_set_stat', codigo_cli=codigo_cli, id_factura=id_factura) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="next" value="{{ request.full_path }}">
-    {# TMT 2026-08-03 (dueña: "muevo factura de A a T y no funciona"): el numf
-       venía interpolado con `|tojson` DENTRO de un atributo delimitado por
-       comillas dobles. `tojson` es Markup (no se escapa) y emite "175737" con
-       comillas dobles → el parser HTML CERRABA el atributo onchange en la
-       primera comilla: el handler quedaba en 90 caracteres ("…'Anular la
-       factura '+") y el resto se leía como atributos sueltos. onchange no
-       compilaba → `select.onchange === null` → cambiar el dropdown no hacía
-       NADA, ni acá ni en la Cartera, desde que se agregó el 2026-07-21.
-       El número va ahora por `data-numf` (Jinja sí escapa los atributos
-       normales) y el handler lo lee del dataset. Regla: NUNCA `|tojson` dentro
-       de un atributo con comillas dobles — o `data-*`, o `|forceescape`. #}
-    <select name="stat" data-cur="{{ _st }}" data-numf="{{ numf }}"
-            title="Cambiar estado (Z/A/T/X)"
-            class="font-mono rounded border border-slate-300 dark:border-slate-700 bg-transparent dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-1 py-0.5"
-            style="font-size:11px;"
-            onchange="var v=this.value,c=this.dataset.cur,n=this.dataset.numf;if(v===c)return;var m=(v==='X')?('Anular la factura '+n+' (→X)? Reversible desde el Historial.'):('Cambiar la factura '+n+' a estado '+v+'?');if(confirm(m)){this.form.requestSubmit();}else{this.value=c;}">
-      {% for s in ['Z','A','T','X'] %}
-      <option value="{{ s }}" {{ 'selected' if _st==s }}>{{ s }}</option>
-      {% endfor %}
-    </select>
-  </form>
+  {# TMT 2026-08-24: el <form> y el handler salieron de acá. El formulario se
+     arma en el momento y el handler vive UNA vez en base.html (ver el bloque
+     "El dropdown de estado de una factura"): con 500 filas eran 540 KB de
+     pantalla repitiendo lo mismo. La fila lleva sólo el select y sus datos. #}
+  {# El número y la URL van por `data-*`, nunca interpolados adentro de un
+     handler. TMT 2026-08-03 (dueña: "muevo factura de A a T y no funciona"):
+     el numf venía con `|tojson` dentro del atributo onchange y las comillas
+     CERRABAN el atributo — el dropdown no hacía nada desde el 21/07. Regla:
+     NUNCA `|tojson` dentro de un atributo con comillas dobles. #}
+  <select name="stat" class="stat-select font-mono rounded border border-slate-300 dark:border-slate-700 bg-transparent dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-1 py-0.5"
+          data-cur="{{ _st }}" data-numf="{{ numf }}"
+          data-action="{{ url_for('informes.estado_cuenta_factura_set_stat', codigo_cli=codigo_cli, id_factura=id_factura) }}"
+          title="Cambiar estado (Z/A/T/X)" style="font-size:11px;">
+    {% for s in ['Z','A','T','X'] %}<option value="{{ s }}"{{ ' selected' if _st==s }}>{{ s }}</option>{% endfor %}
+  </select>
 {% endmacro %}

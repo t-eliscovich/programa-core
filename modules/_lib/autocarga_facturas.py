@@ -39,8 +39,21 @@ def _intervalo_secs() -> int:
         return 120
 
 
-def _loop() -> None:
-    time.sleep(10)  # dejar terminar el arranque de la app (y que el warmup arranque)
+def _loop_facturas() -> None:
+    """El hilo RÁPIDO: sólo las facturas del día. Nada más.
+
+    TMT 2026-08-24 (dueña): *"fijate si el resto se puede acelerar"*, mirando
+    la pantalla del día con varias facturas en ámbar a la vez. La carga vivía
+    en el mismo ciclo que el sync de clientes, el de colores, los químicos, la
+    tejeduría, la traza y la foto del día: el `sleep` era de 120 s, pero con
+    todo eso en fila el ciclo REAL medido ese día daba ~6 minutos, y la demora
+    entre "Asinfo la emitió" y "está en el programa" tenía mediana de 8,8 min,
+    9 de cada 10 dentro de 14 min y la peor en 29,5 min.
+
+    Ahora las facturas corren solas en su propio hilo, con su propio reloj, sin
+    esperar a nadie. El resto del ciclo queda igual, en `_loop`.
+    """
+    time.sleep(8)  # dejar terminar el arranque de la app
     intervalo = _intervalo_secs()
     while True:
         try:
@@ -56,6 +69,16 @@ def _loop() -> None:
                     res.get("cargadas", 0), res.get("ret", 0),
                     res.get("anuladas", 0),
                 )
+        except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
+            _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
+        time.sleep(intervalo)
+
+
+def _loop() -> None:
+    time.sleep(10)  # dejar terminar el arranque de la app (y que el warmup arranque)
+    intervalo = _intervalo_secs()
+    while True:
+        try:
             # TMT 2026-07-29 (dueña): conversión automática anticipo → compra
             # BAP cuando Asinfo marca recibida la importación. Se cuelga de
             # ESTE ciclo (no se agrega un hilo más) y trae su propio freno de
@@ -253,6 +276,20 @@ def _loop() -> None:
         time.sleep(intervalo)
 
 
+def hilo_de_facturas_vivo() -> bool:
+    """¿Está corriendo el hilo que carga las facturas del día?
+
+    TMT 2026-08-24 (dueña): *"cargar la página facturas es un poco lento"*.
+    Abrir /facturas disparaba la carga EN LA REQUEST: la pantalla esperaba a
+    Asinfo (medido: ~1 s de más cada vez que le tocaba correr). Con el hilo
+    andando eso no hace falta — las facturas ya entran solas. Si el hilo está
+    apagado (AUTOCARGA_FACTURAS=0) o no arrancó, la pantalla vuelve a cargarlas
+    ella misma: nadie se queda sin la carga.
+    """
+    return any(t.name == "auto-carga-facturas" and t.is_alive()
+               for t in threading.enumerate())
+
+
 def start_auto_carga_thread() -> bool:
     """Arranca el hilo (una sola vez). Devuelve True si arrancó."""
     global _started
@@ -264,8 +301,14 @@ def start_auto_carga_thread() -> bool:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return False
     _started = True
+    # DOS hilos: el de facturas con su propio reloj (que es el que la dueña
+    # mira), y el lento con todo lo demás. Antes era uno solo y las facturas
+    # esperaban en la fila detrás de la traza y los syncs.
     threading.Thread(
-        target=_loop, name="auto-carga-facturas", daemon=True
+        target=_loop_facturas, name="auto-carga-facturas", daemon=True
+    ).start()
+    threading.Thread(
+        target=_loop, name="ciclo-de-fondo", daemon=True
     ).start()
     _LOG.info("auto-carga facturas (fondo) iniciada (cada %ss)", _intervalo_secs())
     return True

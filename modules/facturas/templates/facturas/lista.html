@@ -383,14 +383,6 @@
               <button type="button" class="numf-edit-btn text-sm text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
                       title="Editar N° factura">&#9998;</button>
             </span>
-            <span class="numf-edit hidden inline-flex items-center gap-1">
-              <input type="text" inputmode="numeric" class="numf-input w-24 border rounded px-1 py-0.5 text-xs font-mono"
-                     value="{{ f.numf or '' }}" maxlength="10">
-              <button type="button" class="numf-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1"
-                      title="Guardar (Enter)">&#10003;</button>
-              <button type="button" class="numf-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1"
-                      title="Cancelar (Esc)">&#10005;</button>
-            </span>
           </td>
           <td class="px-2 py-1.5 editable-cell" style="white-space: nowrap;"
               data-id="{{ f.id_factura }}" data-campo="fecha"
@@ -399,12 +391,6 @@
               <span class="ec-display">{{ f.fecha | fecha_es }}</span>
               <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
                       title="Editar fecha">&#9998;</button>
-            </span>
-            <span class="ec-edit hidden inline-flex items-center gap-1">
-              <input type="date" class="ec-input w-32 border rounded px-1 py-0.5 text-xs font-mono"
-                     value="{{ f.fecha.isoformat() if f.fecha else '' }}">
-              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
-              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
             </span>
           </td>
           <td class="px-2 py-1.5 truncate editable-cell" title="{{ f.codigo_cli }}"
@@ -415,12 +401,6 @@
               <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
                       title="Editar cliente">&#9998;</button>
             </span>
-            <span class="ec-edit hidden inline-flex items-center gap-1">
-              <input type="text" class="ec-input w-20 border rounded px-1 py-0.5 text-xs font-mono uppercase"
-                     value="{{ f.codigo_cli or '' }}" maxlength="10">
-              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
-              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
-            </span>
           </td>
           <td class="px-2 py-1.5 text-right text-mono editable-cell"
               data-id="{{ f.id_factura }}" data-campo="kg" data-valor="{{ f.kg or 0 }}">
@@ -429,11 +409,6 @@
               <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
                       title="Editar Kg">&#9998;</button>
             </span>
-            <span class="ec-edit hidden inline-flex items-center gap-1 justify-end">
-              <input type="text" inputmode="decimal" class="ec-input w-20 border rounded px-1 py-0.5 text-xs text-right font-mono" value="{{ f.kg or '' }}">
-              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
-              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
-            </span>
           </td>
           <td class="px-2 py-1.5 text-right text-mono editable-cell"
               data-id="{{ f.id_factura }}" data-campo="importe" data-valor="{{ f.importe or 0 }}">
@@ -441,11 +416,6 @@
               <span class="ec-display">{{ f.importe | money_es }}</span>
               <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
                       title="Editar Importe (recalcula saldo)">&#9998;</button>
-            </span>
-            <span class="ec-edit hidden inline-flex items-center gap-1 justify-end">
-              <input type="text" inputmode="decimal" class="ec-input w-24 border rounded px-1 py-0.5 text-xs text-right font-mono" value="{{ f.importe or '' }}">
-              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
-              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
             </span>
           </td>
           {# TMT 2026-08-14 (dueña): esto adivinaba el tipo comparando las
@@ -482,11 +452,6 @@
               <span class="ec-display text-slate-300 dark:text-slate-600">{{ f.retencion | money_es }}</span>
               <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
                       title="Cargar retención (baja el saldo de la factura)">&#9998;</button>
-            </span>
-            <span class="ec-edit hidden inline-flex items-center gap-1 justify-end">
-              <input type="text" inputmode="decimal" class="ec-input w-20 border rounded px-1 py-0.5 text-xs text-right font-mono" placeholder="0,00" value="">
-              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
-              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
             </span>
           </td>
           {% else %}
@@ -596,12 +561,46 @@
       }
     }
     cell.querySelector('.numf-view').classList.remove('hidden');
-    cell.querySelector('.numf-edit').classList.add('hidden');
+    const _e = cell.querySelector('.numf-edit');
+    if (_e) _e.classList.add('hidden');
+  }
+
+  // TMT 2026-08-24 (dueña): *"cargar la página facturas es un poco lento"*.
+  // Cada fila traía SEIS editores escondidos (N°, fecha, cliente, kg, importe,
+  // retención) que casi nunca se abren: 9 KB de HTML por fila, 4,5 MB de
+  // pantalla con 500 filas. Ahora el editor se arma recién cuando se toca el
+  // lapicito. Las clases van escritas ENTERAS a propósito: Tailwind lee este
+  // archivo como texto para saber qué clases existen, y una armada con `+` no
+  // la ve.
+  function armarEditorNumf(cell) {
+    let box = cell.querySelector('.numf-edit');
+    if (box) return box;
+    box = document.createElement('span');
+    box.className = 'numf-edit inline-flex items-center gap-1';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.inputMode = 'numeric';
+    inp.maxLength = 10;
+    inp.className = 'numf-input w-24 border rounded px-1 py-0.5 text-xs font-mono';
+    const ok = document.createElement('button');
+    ok.type = 'button';
+    ok.className = 'numf-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1';
+    ok.title = 'Guardar (Enter)';
+    ok.innerHTML = '&#10003;';
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'numf-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1';
+    no.title = 'Cancelar (Esc)';
+    no.innerHTML = '&#10005;';
+    box.append(inp, ok, no);
+    cell.appendChild(box);
+    return box;
   }
 
   function toEdit(cell) {
     cell.querySelector('.numf-view').classList.add('hidden');
-    cell.querySelector('.numf-edit').classList.remove('hidden');
+    const box = armarEditorNumf(cell);
+    box.classList.remove('hidden');
     const inp = cell.querySelector('.numf-input');
     inp.value = cell.dataset.numf || '';
     inp.focus();
@@ -694,11 +693,54 @@
       }
     }
     cell.querySelector('.ec-view').classList.remove('hidden');
-    cell.querySelector('.ec-edit').classList.add('hidden');
+    const _e = cell.querySelector('.ec-edit');
+    if (_e) _e.classList.add('hidden');
+  }
+  // Mismo criterio que armarEditorNumf: el editor nace al tocar el lapicito.
+  function armarEditor(cell) {
+    let box = cell.querySelector('.ec-edit');
+    if (box) return box;
+    const campo = cell.dataset.campo;
+    const derecha = (campo === 'kg' || campo === 'importe' || campo === 'retencion');
+    box = document.createElement('span');
+    box.className = derecha
+      ? 'ec-edit inline-flex items-center gap-1 justify-end'
+      : 'ec-edit inline-flex items-center gap-1';
+    const inp = document.createElement('input');
+    if (campo === 'fecha') {
+      inp.type = 'date';
+      inp.className = 'ec-input w-32 border rounded px-1 py-0.5 text-xs font-mono';
+    } else if (campo === 'codigo_cli') {
+      inp.type = 'text';
+      inp.maxLength = 10;
+      inp.className = 'ec-input w-20 border rounded px-1 py-0.5 text-xs font-mono uppercase';
+    } else if (campo === 'importe') {
+      inp.type = 'text';
+      inp.inputMode = 'decimal';
+      inp.className = 'ec-input w-24 border rounded px-1 py-0.5 text-xs text-right font-mono';
+    } else {
+      inp.type = 'text';
+      inp.inputMode = 'decimal';
+      inp.className = 'ec-input w-20 border rounded px-1 py-0.5 text-xs text-right font-mono';
+      if (campo === 'retencion') inp.placeholder = '0,00';
+    }
+    const ok = document.createElement('button');
+    ok.type = 'button';
+    ok.className = 'ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1';
+    ok.title = 'Guardar (Enter)';
+    ok.innerHTML = '&#10003;';
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1';
+    no.title = 'Cancelar (Esc)';
+    no.innerHTML = '&#10005;';
+    box.append(inp, ok, no);
+    cell.appendChild(box);
+    return box;
   }
   function ecToEdit(cell) {
     cell.querySelector('.ec-view').classList.add('hidden');
-    cell.querySelector('.ec-edit').classList.remove('hidden');
+    armarEditor(cell).classList.remove('hidden');
     const inp = cell.querySelector('.ec-input');
     inp.value = cell.dataset.valor || '';
     inp.focus();

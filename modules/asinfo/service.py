@@ -401,7 +401,7 @@ def _aplicar_sucursales(rows: list[dict], desde, hasta) -> list[dict]:
     return rows
 
 
-def facturas_periodo(desde, hasta) -> list[dict]:
+def facturas_periodo(desde, hasta, max_edad_secs: float | None = None) -> list[dict]:
     """Facturas + NC financieras + Devoluciones + NTEN en el rango [desde, hasta].
 
     Cada fila es un documento individual con:
@@ -434,8 +434,13 @@ def facturas_periodo(desde, hasta) -> list[dict]:
 
     key = (desde, hasta)
     now = _time.time()
+    # TMT 2026-08-24: el que carga las facturas del día puede pedir data
+    # FRESCA. Con el TTL de 5 min a secas, un ciclo de carga cada 2 min se
+    # comía dos de cada tres corridas contra el cache: la factura seguía en
+    # ámbar aunque Asinfo ya la tuviera, y la demora nunca bajaba de 5 min.
+    ttl = _FACTURAS_TTL_SECS if max_edad_secs is None else float(max_edad_secs)
     cached = _FACTURAS_CACHE.get(key)
-    if cached and (now - cached[0]) < _FACTURAS_TTL_SECS:
+    if cached and (now - cached[0]) < ttl:
         return cached[1]
 
     params = [

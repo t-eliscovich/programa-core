@@ -34,7 +34,8 @@ def test_auto_carga_no_duplica_ni_carga_dias_previos(monkeypatch):
          "kg": 30, "usd": 300.0, "fecha": "2026-07-01"},
     ]
     from modules.asinfo import service as svc
-    monkeypatch.setattr(svc, "facturas_periodo", lambda d, h: asinfo_rows)
+    monkeypatch.setattr(svc, "facturas_periodo",
+                        lambda d, h, **kw: asinfo_rows)
 
     # PC de hoy: ya tiene la 500 (bajo cliente 'KM', distinto de Asinfo 'KAM',
     # numf_completo NULL — el caso que ANTES se duplicaba).
@@ -102,7 +103,8 @@ def test_auto_carga_trae_nc_financiera(monkeypatch):
          "kg": 0, "usd": -12.52, "fecha": hoy.isoformat()},
     ]
     from modules.asinfo import service as svc
-    monkeypatch.setattr(svc, "facturas_periodo", lambda d, h: asinfo_rows)
+    monkeypatch.setattr(svc, "facturas_periodo",
+                        lambda d, h, **kw: asinfo_rows)
     monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [
         {"numf_completo": None, "numf": 11480},
     ])

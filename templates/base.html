@@ -1606,5 +1606,41 @@
     });
   })();
 </script>
+
+{# ===================================================================== #}
+{# El dropdown de estado de una factura (macro stat_select de _ui.html).  #}
+{# TMT 2026-08-24 (dueña): *"cargar la página facturas es un poco lento"*. #}
+{# Antes cada fila traía su propio <form> con dos campos ocultos y el     #}
+{# handler entero escrito en el atributo onchange: 1,1 KB por fila, 540 KB #}
+{# en la Cartera con 500 filas. El handler vive UNA vez acá y el formulario #}
+{# se arma en el momento; la fila sólo lleva el <select> y sus datos.      #}
+{# ===================================================================== #}
+<script>
+  (function () {
+    document.addEventListener('change', function (ev) {
+      var sel = ev.target;
+      if (!sel.classList || !sel.classList.contains('stat-select')) return;
+      var v = sel.value, cur = sel.dataset.cur || '', n = sel.dataset.numf || '';
+      if (v === cur) return;
+      var msg = (v === 'X')
+        ? 'Anular la factura ' + n + ' (\u2192X)? Reversible desde el Historial.'
+        : 'Cambiar la factura ' + n + ' a estado ' + v + '?';
+      if (!confirm(msg)) { sel.value = cur; return; }
+      var f = document.createElement('form');
+      f.method = 'POST';
+      f.action = sel.dataset.action;
+      f.style.display = 'none';
+      [['csrf_token', '{{ csrf_token() }}'],
+       ['next', location.pathname + location.search],
+       ['stat', v]].forEach(function (par) {
+        var i = document.createElement('input');
+        i.type = 'hidden'; i.name = par[0]; i.value = par[1];
+        f.appendChild(i);
+      });
+      document.body.appendChild(f);
+      f.submit();
+    });
+  })();
+</script>
 </body>
 </html>

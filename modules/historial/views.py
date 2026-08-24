@@ -67,8 +67,12 @@ def operaciones():
     # fail-soft y con throttle interno (una corrida/minuto/proceso), así que no
     # encima ni pesa aunque también se abra /facturas. Sólo si puede crear facturas.
     try:
+        # TMT 2026-08-24: con el hilo de fondo vivo la landing NO espera a
+        # Asinfo — las facturas ya entran solas. Ver hilo_de_facturas_vivo().
         from auth import tiene_permiso as _tp
-        if _tp("facturas.crear"):
+        from modules._lib.autocarga_facturas import hilo_de_facturas_vivo
+
+        if _tp("facturas.crear") and not hilo_de_facturas_vivo():
             from modules.facturas.views import _auto_cargar_facturas_hoy
             _ac = _auto_cargar_facturas_hoy()
             if _ac.get("cargadas") or _ac.get("ret"):
