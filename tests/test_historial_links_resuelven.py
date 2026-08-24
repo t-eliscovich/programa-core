@@ -224,3 +224,59 @@ def test_ningun_link_manda_a_la_pantalla_entera():
         if url and "473" not in url:
             pelados.append((tabla, url))
     assert pelados == [], f"links que caen en la pantalla entera: {pelados}"
+
+
+# ---------------------------------------------------------------------------
+# El NÚMERO visible no siempre sirve como pedazo de URL.
+# TMT 2026-08-24 (dueña: *"el link acá no anda"*, sobre "Factura s/n"). Desde el
+# 09/08 las 538 facturas con `numf = 0` se rotulan "s/n", y esa misma etiqueta
+# se estaba usando para armar el path: `/facturas/s/n`. La barra parte el path y
+# ninguna ruta lo recibe. Mismo bug que "Dep. Pich." en cheques.
+# ---------------------------------------------------------------------------
+
+#: (mapa que arma la vista, url esperada). Lo que no sirve para el path tiene
+#: que caer al id interno, que SÍ resuelve.
+NUMEROS_QUE_NO_VAN_EN_LA_URL = [
+    "s/n",          # factura sin número (numf = 0)
+    "Dep. Pich.",   # etiqueta con espacios y puntos
+    "12/3",         # cualquier cosa con barra
+    "#473",         # el fallback del id
+    "0",            # el numf del legacy dBase
+    "",
+    None,
+]
+
+
+@pytest.mark.parametrize("numf", NUMEROS_QUE_NO_VAN_EN_LA_URL)
+def test_factura_sin_numero_usable_cae_al_id(app, numf):
+    from modules.historial import queries as hq
+
+    url, _ = hq.link_origen(
+        {"origen_table": "factura", "origen_id": 473}, factura_numfs={473: numf})
+    assert url == "/facturas/473", f"numf {numf!r} armó {url!r}"
+    app.url_map.bind("localhost").match(url, method="GET")  # no levanta NotFound
+
+
+@pytest.mark.parametrize("no_cheque", NUMEROS_QUE_NO_VAN_EN_LA_URL)
+def test_cheque_sin_numero_usable_cae_al_id(app, no_cheque):
+    from modules.historial import queries as hq
+
+    url, _ = hq.link_origen(
+        {"origen_table": "cheque", "origen_id": 473}, cheque_nos={473: no_cheque})
+    assert url == "/cheques/473", f"no_cheque {no_cheque!r} armó {url!r}"
+    app.url_map.bind("localhost").match(url, method="GET")
+
+
+@pytest.mark.parametrize("numero,esperado", [
+    ("10894", "/facturas/10894"),
+    (10894, "/facturas/10894"),
+    ("  10894  ", "/facturas/10894"),
+    ("A-12", "/facturas/A-12"),
+])
+def test_el_numero_bueno_sigue_yendo_en_la_url(numero, esperado):
+    from modules.historial import queries as hq
+
+    url, etiqueta = hq.link_origen(
+        {"origen_table": "factura", "origen_id": 473}, factura_numfs={473: numero})
+    assert url == esperado
+    assert etiqueta == "Factura " + esperado.rsplit("/", 1)[1]

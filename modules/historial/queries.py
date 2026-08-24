@@ -5,6 +5,8 @@ para que el timeline muestre nombres legibles (banco "Pichincha" en vez de
 "transacciones_bancarias #12345").
 """
 
+import re
+
 import db
 
 # Etiquetas legibles de tipos — uno por línea para que sea fácil agregar.
@@ -135,6 +137,9 @@ TIPOS_LABEL = {
     "reverso_retiro_op":        "Reverso: retiro OP",
     "reverso_retiro_dbase":     "Reverso: retiro",
     "reverso_cheque_emitido":   "Reverso: cheque emitido",
+    # Sin esto caía al nombre técnico con .title(): "Totalizar Estado Cuenta".
+    "totalizar_estado_cuenta":  "Totalizar estado de cuenta",
+    "reverso_totalizar_estado_cuenta": "Reverso: totalizar estado de cuenta",
 }
 
 
@@ -689,6 +694,24 @@ def corto(tipo: str, quien: str = "", importe=None) -> str:
     return vuelta + " ".join(x for x in (objeto, quien, accion) if x)
 
 
+#: Un número que va a ir DENTRO del path de la URL sólo puede tener letras,
+#: dígitos, punto, guión y guión bajo. Todo lo demás (una barra, un espacio)
+#: arma un path que no existe.
+#: 🚨 TMT 2026-08-24 (dueña: *"el link acá no anda"*, sobre "Factura s/n" en el
+#: Historial). El 09/08 la etiqueta de las 538 facturas con `numf = 0` pasó a
+#: ser "s/n" — y esa MISMA etiqueta se usaba para armar la URL, o sea
+#: `/facturas/s/n`: la barra del medio parte el path y ninguna ruta lo recibe.
+#: Es el primo del bug de "Dep. Pich." en cheques. Con el filtro cae al
+#: fallback por id interno, que sí resuelve (`/facturas/<id>` redirige al numf).
+_URL_SEGURO = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def va_en_el_path(valor) -> bool:
+    """True si `valor` se puede pegar tal cual adentro de una URL."""
+    v = str(valor or "").strip()
+    return bool(v) and v != "0" and bool(_URL_SEGURO.match(v))
+
+
 def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None,
                 posdat_etiquetas: dict | None = None,
                 banco_nos: dict | None = None) -> tuple[str | None, str]:
@@ -732,7 +755,8 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
     if t == "cheque":
         # Si conocemos el no_cheque, lo usamos como path (más human-readable).
         nch = (cheque_nos or {}).get(int(rid)) if rid else None
-        if nch and str(nch).strip():
+        if va_en_el_path(nch):
+            nch = str(nch).strip()
             return f"/cheques/{nch}", f"Cheque {nch}"
         return f"/cheques/{rid}", f"Cheque #{rid}"
     if t == "compra":
@@ -740,7 +764,8 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
     if t == "factura":
         # Si conocemos el numf, lo usamos en la URL.
         nfact = (factura_numfs or {}).get(int(rid)) if rid else None
-        if nfact and str(nfact).strip() and str(nfact).strip() != "0":
+        if va_en_el_path(nfact):
+            nfact = str(nfact).strip()
             return f"/facturas/{nfact}", f"Factura {nfact}"
         return f"/facturas/{rid}", f"Factura #{rid}"
     # `capital` NO tiene rama a propósito (TMT 2026-08-07). Medido contra

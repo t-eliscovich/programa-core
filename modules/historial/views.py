@@ -594,10 +594,13 @@ def lista():
     # Mapeo id_factura → numf (solo si tiene numf válido) y id_cheque → no_cheque.
     # Estos diccionarios se pasan a link_origen/link_destino para que las URLs
     # usen el número real (visible al usuario) en lugar del id interno.
+    # Sólo los numf que se pueden pegar adentro de un path. El fallback "#id" y
+    # el "s/n" de las facturas sin número quedan afuera: con ellos la URL salía
+    # rota (ver `queries.va_en_el_path`, TMT 2026-08-24).
     factura_numfs = {
         k: v.lstrip("#")
         for k, v in factura_labels.items()
-        if v and not v.startswith("#")  # solo cuando es numf real, no fallback "#id"
+        if queries.va_en_el_path(v.lstrip("#"))
     }
     # Antes esto se deducía de la etiqueta ("si no empieza con # es un
     # número"): con "Dep. Pich." adentro, esa heurística armaba /cheques/Dep.
