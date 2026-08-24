@@ -248,8 +248,11 @@ def test_las_migraciones_borran_los_avisos_de_esta_clave():
 def test_el_endpoint_esta_registrado():
     import inspect
 
-    import app as _app
-    src = inspect.getsource(_app)
+    # TMT 2026-08-24: los blueprints del ERP se mudaron de `app.py` a
+    # `registro_erp.py`, para que el proceso del portal del cliente pueda no
+    # registrarlos. Ver modo.py.
+    import registro_erp
+    src = inspect.getsource(registro_erp)
     assert "import_sin_plata_view" in src
     assert "/admin/importaciones-sin-plata" in inspect.getsource(
         __import__("modules.admin_dbase.import_sin_plata_view",
