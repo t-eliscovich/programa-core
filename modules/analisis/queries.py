@@ -6,6 +6,7 @@ Asinfo, y es explícito: un botón.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import date
 
@@ -14,6 +15,8 @@ from filters import today_ec
 from modules.mi_cartera.queries import _ES_MI_CLIENTE as _mc_es_mi_cliente
 
 from . import asinfo_parado
+
+_LOG = logging.getLogger("programa_core.analisis")
 
 # ── Lectura ─────────────────────────────────────────────────────────────────
 
@@ -157,6 +160,152 @@ def base_fijada() -> tuple[dict[str, float], date | None]:
         return {}, None
     return ({f["categoria"]: float(f["kg"]) for f in filas},
             min(f["fijada_el"] for f in filas))
+
+
+# ── LOS PUNTOS: cuánto vale un kilo de cada tela ────────────────────────────
+
+#: Puntos por kilo según el NIVEL de la tela. Decidido por la dueña el
+#: 24/08/2026 sobre la medición de las 98 telas de la lista.
+#:
+#: ⭐ El nivel es por TELA y no por grupo. Los 8 grupos venden mucho más por mes
+#: de lo que tienen parado —entre 0,1 y 0,9 meses— así que a nivel grupo no hay
+#: ninguna señal: Poliester y Fleece dan casi igual. A nivel tela el abanico va
+#: de 0,0 meses (Fleece 102 vende 54 t por mes y tiene 1.163 kg parados) a telas
+#: que no vendieron un kilo en todo el año.
+#:
+#: ⭐ Tampoco por tela × color, y es a propósito: serían 732 números que ningún
+#: vendedor puede recordar, y un color raro de una tela que sale bien quedaría
+#: marcado como imposible. Dueña: "no está bien con fleece aunque sea color
+#: raro, si no muy complicado".
+#:
+#: ⚠ El 1/4/10 no es una escala cualquiera: paga MÁS de lo que cuesta. Las
+#: telas fáciles tienen 181 clientes que ya las compraron este año y las
+#: difíciles 5. Con 1/2/3 al vendedor le seguía conviniendo lo fácil y de los
+#: 18.496 kg clavados salían 356. El canje es real: cuanto más se paga lo
+#: difícil, menos kilos totales salen y más de los que están de verdad clavados.
+PUNTOS = {1: 1, 2: 4, 3: 10}
+
+#: Cómo se llama cada nivel en la pantalla.
+NIVELES = {1: "Fácil", 2: "Medio", 3: "Difícil"}
+
+#: Los cortes, en MESES DE VENTA PARADOS = kilos en saldo ÷ kilos que la fábrica
+#: vende de esa tela por mes.
+MESES_FACIL = 1
+MESES_MEDIO = 12
+
+
+def _nivel(kg_base: float, kg_12m: float) -> tuple[int, float | None]:
+    """El nivel de una tela y cuántos meses de venta tiene parados.
+
+    ⚠ Sin venta en 12 meses NO es "cero meses parados", es el peor caso: no hay
+    con qué dividir. Va derecho al nivel difícil y `meses` queda en None para
+    que la pantalla diga "no se vendió" en vez de un número inventado.
+    """
+    if kg_12m < 1:
+        return 3, None
+    meses = kg_base / (kg_12m / 12)
+    if meses < MESES_FACIL:
+        return 1, meses
+    if meses < MESES_MEDIO:
+        return 2, meses
+    return 3, meses
+
+
+def _fijar_puntos(conn=None) -> None:
+    """
+    Escribe los puntos de cada tela. Congelados el día de la largada.
+
+    ⭐ Antes de la largada se reescriben en cada refresco: la pantalla es una
+    previsualización. Desde la largada se escriben UNA vez y no se tocan más.
+    Si el nivel se recalculara solo, un vendedor que saca 500 kg de una tela le
+    baja los meses parados a esa tela, la tela cae de nivel, y él mismo se
+    recorta los puntos a mitad de camino.
+
+    ⚠ `kg_base` es `stock + ya vendido`, igual que la meta en kilos: si nadie
+    entra el día de la largada y el primer refresco es dos días después, los
+    kilos que salieron en el medio ya no están en bodega y el puntaje saldría
+    calculado sobre menos tela de la que había.
+    """
+    largada = date.fromisoformat(config("largada", "2026-08-25"))
+    fila = db.fetch_one(
+        "SELECT MIN(fijado_el) AS f FROM scintela.parado_punto", conn=conn)
+    if fila and fila["f"] and fila["f"] >= largada:
+        return                       # ya está congelado
+    kg_12m = asinfo_parado.venta_por_tela()
+    if not kg_12m:
+        # fail-CLOSED: sin el dato de ventas TODAS las telas darían "difícil"
+        # y la bolsa de puntos se triplicaría en silencio.
+        return
+    agg: dict[str, dict] = {}
+    for f in items():
+        d = agg.setdefault(f["subcategoria"], {"cat": None, "kg": 0.0})
+        d["kg"] += float(f["stock_kg"] or 0) + float(f["kg_vendidos"] or 0)
+        if f["categoria"]:
+            d["cat"] = f["categoria"]
+    db.execute("DELETE FROM scintela.parado_punto", conn=conn)
+    hoy = today_ec()
+    for sub, d in agg.items():
+        k12 = kg_12m.get(sub, 0.0)
+        nivel, meses = _nivel(d["kg"], k12)
+        db.execute(
+            """INSERT INTO scintela.parado_punto
+                   (subcategoria, categoria, kg_base, kg_12m, meses,
+                    nivel, puntos, fijado_el)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (sub, d["cat"], round(d["kg"], 2), round(k12, 2),
+             round(meses, 2) if meses is not None else None,
+             nivel, PUNTOS[nivel], hoy), conn=conn)
+
+
+def _puntos_provisorios() -> dict[str, dict]:
+    """Todas las telas a 1 punto: la competencia de kilos de siempre.
+
+    ⚠ Es la red, no el plan. Se usa sólo si la tabla está vacía Y tampoco se
+    pudo llenar (Asinfo caído justo en ese momento). Con la tabla vacía la meta
+    daría 0 puntos y la pantalla mostraría a los siete al 0% para siempre; con
+    un 500 no mostraría nada. Un punto por kilo es una degradación que se
+    entiende sola y que se corrige sin tocar nada apenas Asinfo conteste.
+    """
+    agg: dict[str, dict] = {}
+    for f in items():
+        d = agg.setdefault(f["subcategoria"], {
+            "categoria": f["categoria"], "kg_base": 0.0, "kg_12m": 0.0,
+            "meses": None, "nivel": 1, "nivel_nombre": NIVELES[1], "puntos": 1})
+        d["kg_base"] += float(f["stock_kg"] or 0) + float(f["kg_vendidos"] or 0)
+        if f["categoria"]:
+            d["categoria"] = f["categoria"]
+    return agg
+
+
+def puntos_por_tela() -> dict[str, dict]:
+    """Los puntos congelados, por tela.
+
+    ⚠ Si la tabla está vacía (recién deployado, sin ningún refresco todavía) se
+    llena acá mismo: sin esto la pantalla mostraría meta 0 hasta que corriera el
+    refresco automático, que puede tardar tres horas.
+
+    ⚠ Y si tampoco se puede llenar —Asinfo caído— la pantalla NO se cae: se
+    degrada a un punto por kilo. Una pantalla que devuelve 500 el día de la
+    largada es peor que una que muestra la competencia vieja.
+    """
+    filas = db.fetch_all("SELECT * FROM scintela.parado_punto")
+    if not filas:
+        try:
+            _fijar_puntos()
+        except Exception:
+            _LOG.exception("no se pudieron fijar los puntos de las telas")
+        filas = db.fetch_all("SELECT * FROM scintela.parado_punto")
+    if not filas:
+        return _puntos_provisorios()
+    return {f["subcategoria"]: {
+        "categoria": f["categoria"],
+        "kg_base": float(f["kg_base"] or 0),
+        "kg_12m": float(f["kg_12m"] or 0),
+        "meses": float(f["meses"]) if f["meses"] is not None else None,
+        "nivel": int(f["nivel"]),
+        "nivel_nombre": NIVELES.get(int(f["nivel"]), ""),
+        "puntos": int(f["puntos"]),
+    } for f in filas}
 
 
 def por_grupo(filas: list[dict]) -> list[dict]:
@@ -446,6 +595,10 @@ def actualizar() -> dict:
         # porcentaje de los siete se movía sin que nadie vendiera. Se escribe
         # UNA vez, en el primer refresco del día de la largada o después.
         _fijar_base(conn)
+        # ⭐ Y los PUNTOS de cada tela, con la misma regla: antes de la
+        # largada se reescriben en cada refresco (es una previsualización),
+        # desde la largada se escriben una vez y no se tocan más.
+        _fijar_puntos(conn)
 
         db.execute(
             """UPDATE scintela.parado_refresh
@@ -465,7 +618,7 @@ def _fecha(v):
     return date.fromisoformat(str(v)[:10])
 
 
-def telas_a_sacar(filas: list[dict]) -> list[dict]:
+def telas_a_sacar(filas: list[dict], puntos: dict[str, dict] | None = None) -> list[dict]:
     """
     Qué hay que sacar, tela por tela, sin un solo cliente adentro.
 
@@ -473,20 +626,34 @@ def telas_a_sacar(filas: list[dict]) -> list[dict]:
     quién le compró qué, pero no cuántos kilos hay ni de qué colores. Sin
     clientes, esta lista es información de fábrica y la puede ver cualquiera.
     """
+    # ⭐ El puntaje va al lado. Es la única lista donde el vendedor ve la tela y
+    # lo que vale un kilo de ella en el mismo renglón: sin eso, para saber si
+    # conviene ir a buscarla tendría que acordarse de memoria de 98 números.
+    #
+    # ⚠ Los puntos entran por parámetro y no se leen acá adentro: la pantalla
+    # ya los tiene y buscarlos de nuevo sería una segunda lectura que puede
+    # contradecir a la primera.
+    puntos = puntos or {}
     g: dict[str, dict] = {}
     for f in filas:
         if float(f["stock_kg"]) <= 0:
             continue
+        p = puntos.get(f["subcategoria"], {})
         d = g.setdefault(f["subcategoria"], {
             "tela": f["subcategoria"], "grupo": f["categoria"],
-            "kg": 0.0, "colores": []})
+            "kg": 0.0, "colores": [],
+            "puntos": int(p.get("puntos", 1)),
+            "nivel": p.get("nivel_nombre", "")})
         d["kg"] += float(f["stock_kg"])
         d["colores"].append((f["color"], float(f["stock_kg"])))
     for d in g.values():
         d["colores"].sort(key=lambda c: -c[1])
         d["n_colores"] = len(d["colores"])
         d["colores"] = ", ".join(c for c, _ in d["colores"])
-    return sorted(g.values(), key=lambda d: -d["kg"])
+        d["puntos_total"] = d["kg"] * d["puntos"]
+    # ⚠ Ordenada por PUNTOS y no por kilos: es la lista de qué conviene ir a
+    # buscar, y una tela de 4.329 kg a 10 puntos vale más que una de 3.442 a 1.
+    return sorted(g.values(), key=lambda d: -d["puntos_total"])
 
 
 # ── La COMPETENCIA ──────────────────────────────────────────────────────────
@@ -535,8 +702,13 @@ def competencia() -> dict:
     El tablero de la competencia: quién va ganando y cuánto falta.
 
     Todo se calcula sobre las MISMAS filas de `items()` que muestra la pantalla
-    de Lo parado. Si saliera de otra consulta, el termómetro de acá y el total
-    de allá podrían no coincidir el mismo día.
+    de Saldos. Si saliera de otra consulta, el termómetro de acá y el total de
+    allá podrían no coincidir el mismo día.
+
+    ⭐ Desde el 24/08/2026 el puesto sale de los PUNTOS y no de los kilos: un
+    kilo vale 1, 4 o 10 según lo difícil que sea colocar esa tela (ver `PUNTOS`).
+    Los kilos siguen a la vista y el premio del mes se sigue corriendo en kilos,
+    pero la carrera del año se corre en puntos.
     """
     filas = items()
     # ⚠ Fuera las filas de 0 kg sin grupo: son restos de la cohorte que ya no
@@ -554,7 +726,7 @@ def competencia() -> dict:
     congelada, fijada_el = base_fijada()
     if congelada:
         vistos = {g["grupo"] for g in grupos}
-        for grupo, kg in congelada.items():
+        for grupo in congelada:
             if grupo not in vistos:
                 # un grupo que se despejó entero sigue teniendo meta
                 grupos.append({"grupo": grupo, "n_items": 0, "kg": 0.0,
@@ -566,17 +738,32 @@ def competencia() -> dict:
             g["kg_base"] = g["kg"]
     _meta_pct(grupos, override, total_pct)
 
+    # ⭐ La bolsa de puntos de cada grupo sale de sus TELAS, una por una. No se
+    # puede sacar del total de kilos del grupo: adentro de Poliester conviven
+    # Kiana Mundial (1 punto) y Microfibra (10), y son el mismo grupo.
+    puntos = puntos_por_tela()
+    cat_de = {sub: (p["categoria"] or "(sin grupo)") for sub, p in puntos.items()}
+    pts_base: dict[str, float] = defaultdict(float)
+    for sub, p in puntos.items():
+        pts_base[cat_de[sub]] += p["kg_base"] * p["puntos"]
+    for g in grupos:
+        g["puntos_base"] = pts_base.get(g["grupo"], 0.0)
+        g["meta_pts"] = g["puntos_base"] * g["meta_pct"] / 100
+
     # ⭐ Sólo cuentan las ventas desde la LARGADA. La cohorte se marcó el 13/08
-    # y la competencia arranca el 17: sin el corte, esos cuatro días le
-    # regalarían kilos a quien justo vendió algo.
+    # y la competencia arranca el 25: sin el corte, esos días le regalarían
+    # kilos a quien justo vendió algo.
+    #
+    # ⚠ Se agrupa por TELA y no por grupo porque el puntaje es de la tela. El
+    # grupo sale de `parado_punto`, que está congelado y completo: si saliera de
+    # `parado_foto`, una tela vendida entera desaparecería de la foto y sus
+    # kilos se caerían del ranking.
     vendido = db.fetch_all(
-        """SELECT v.vendedor, f.categoria, SUM(v.kg) AS kg,
+        """SELECT v.vendedor, v.subcategoria, SUM(v.kg) AS kg,
                   MAX(v.fecha) AS ultima
              FROM scintela.parado_venta v
-             JOIN scintela.parado_foto f
-               ON f.subcategoria = v.subcategoria AND f.color = v.color
             WHERE v.fecha >= %s
-            GROUP BY v.vendedor, f.categoria""", (largada,))
+            GROUP BY v.vendedor, v.subcategoria""", (largada,))
     semanas = _semanas(largada)
     share = db.fetch_all("SELECT * FROM scintela.parado_share")
 
@@ -584,70 +771,73 @@ def competencia() -> dict:
     # Repartirla por lo que cada uno ya vende premiaría quedarse en lo de
     # siempre, que es lo contrario de lo que busca la competencia.
     n = len(COMPETIDORES) or 1
-    por_grupo_meta = {g["grupo"]: g["meta_kg"] / n for g in grupos}
+    por_grupo_meta = {g["grupo"]: g["meta_pts"] / n for g in grupos}
 
-    tabla = {v: {"vendedor": v, "meta": 0.0, "kg": 0.0, "ultima": None,
-                 "grupos": {}} for v in COMPETIDORES}
+    tabla = {v: {"vendedor": v, "meta": 0.0, "kg": 0.0, "puntos": 0.0,
+                 "ultima": None, "grupos": {}} for v in COMPETIDORES}
     for g in grupos:
         for v in COMPETIDORES:
             tabla[v]["meta"] += por_grupo_meta[g["grupo"]]
             tabla[v]["grupos"][g["grupo"]] = {
-                "grupo": g["grupo"], "meta": por_grupo_meta[g["grupo"]], "kg": 0.0}
+                "grupo": g["grupo"], "meta": por_grupo_meta[g["grupo"]],
+                "kg": 0.0, "puntos": 0.0}
 
     fuera = 0.0
+    liq_kg: dict[str, float] = defaultdict(float)
+    liq_pts: dict[str, float] = defaultdict(float)
     for r in vendido:
-        v, cat, kg = r["vendedor"], r["categoria"], float(r["kg"] or 0)
+        v, sub, kg = r["vendedor"], r["subcategoria"], float(r["kg"] or 0)
+        cat = cat_de.get(sub, "(sin grupo)")
+        # ⚠ Una tela sin puntaje vale 1, no 0: un kilo vendido nunca puede
+        # contar cero. Sólo pasa si la cohorte creció después de congelar.
+        pts = kg * int(puntos.get(sub, {}).get("puntos", 1))
+        liq_kg[cat] += kg
+        liq_pts[cat] += pts
         if v not in tabla:
             fuera += kg          # bajas históricas: suman al grupo, no al ranking
             continue
         tabla[v]["kg"] += kg
+        tabla[v]["puntos"] += pts
         if cat in tabla[v]["grupos"]:
             tabla[v]["grupos"][cat]["kg"] += kg
+            tabla[v]["grupos"][cat]["puntos"] += pts
         if r["ultima"] and (not tabla[v]["ultima"] or r["ultima"] > tabla[v]["ultima"]):
             tabla[v]["ultima"] = r["ultima"]
 
+    # ⭐ SE FUE EL TOPE POR GRUPO (24/08/2026). Existía para obligar a tocar los
+    # ocho grupos: sin él, el que tenía un cliente grande de Jersey llegaba al
+    # 100% sin mirar el resto. Los puntos hacen el mismo trabajo sin necesidad
+    # de explicar un tope, y lo hacen mejor: el tope igualaba a todas las telas
+    # de un grupo, y adentro de un grupo hay telas que salen solas y telas que
+    # no salió una en un año.
+    #
     # ⚠ El desempate por NOMBRE no es cosmético: al arrancar están todos en
     # cero, y sin un criterio fijo el orden de los empatados lo decide el
     # diccionario. Entonces "subió dos puestos" sería ruido, porque el puesto de
     # la semana pasada se recalcula con el mismo sort.
-    # ⭐ EL TOPE POR GRUPO. Dueña 17/08/2026: "cada vendedor tiene que hacer x%
-    # de cada grupo… una vez que llega al 31% deja de sumar". O sea: lo que pasa
-    # de su parte en un grupo NO le suma al puntaje. Sin el tope, el que tiene
-    # un cliente grande de Jersey llega al 100% sin tocar los otros siete
-    # grupos, y la competencia deja de servir para lo que se armó — que es
-    # despejar TODO, no lo más fácil.
-    #
-    # ⚠ El kilo excedente igual salió de la bodega: cuenta para el grupo y para
-    # el termómetro de la fábrica. Lo que no hace es subirle el %.
     for d in tabla.values():
-        d["contado"] = 0.0
         for gr in d["grupos"].values():
-            gr["contado"] = min(gr["kg"], gr["meta"])
-            gr["excedente"] = max(0.0, gr["kg"] - gr["meta"])
-            gr["pct"] = 100 * gr["contado"] / gr["meta"] if gr["meta"] else 0
-            d["contado"] += gr["contado"]
-        d["excedente"] = d["kg"] - d["contado"]
+            gr["pct"] = 100 * gr["puntos"] / gr["meta"] if gr["meta"] else 0
 
     ranking = sorted(tabla.values(),
-                     key=lambda d: (-(d["contado"] / d["meta"] if d["meta"] else 0),
+                     key=lambda d: (-(d["puntos"] / d["meta"] if d["meta"] else 0),
                                     d["vendedor"]))
     for i, d in enumerate(ranking, 1):
         d["puesto"] = i
         d["vend_yo"] = False
-        d["pct"] = 100 * d["contado"] / d["meta"] if d["meta"] else 0
+        d["pct"] = 100 * d["puntos"] / d["meta"] if d["meta"] else 0
         d["detalle"] = sorted(d["grupos"].values(), key=lambda x: -x["meta"])
 
-    liquidado = {}
-    for r in vendido:
-        liquidado[r["categoria"]] = liquidado.get(r["categoria"], 0) + float(r["kg"] or 0)
     for g in grupos:
-        g["liquidado"] = liquidado.get(g["grupo"], 0)
-        g["pct_meta"] = 100 * g["liquidado"] / g["meta_kg"] if g["meta_kg"] else 0
+        g["liquidado"] = liq_kg.get(g["grupo"], 0.0)
+        g["liquidado_pts"] = liq_pts.get(g["grupo"], 0.0)
+        g["pct_meta"] = (100 * g["liquidado_pts"] / g["meta_pts"]
+                         if g["meta_pts"] else 0)
         g["share"] = sorted(
             [s for s in share if s["categoria"] == g["grupo"]],
             key=lambda s: -float(s["pct"] or 0))[:4]
 
-    _movimiento(ranking, semanas["por_vendedor"])
+    _movimiento(ranking, semanas["por_vendedor"], semanas["puntos_por_vendedor"])
     meses = _meses(largada, cierre)
     hay_hoy = sum(g["kg"] for g in grupos)
     liquidado = sum(g["liquidado"] for g in grupos)
@@ -669,7 +859,10 @@ def competencia() -> dict:
                          else hay_hoy + liquidado),
         "meta_fijada_el": fijada_el,
         "meta_kg": sum(g["meta_kg"] for g in grupos),
+        "meta_pts": sum(g["meta_pts"] for g in grupos),
         "liquidado": liquidado,
+        "liquidado_pts": sum(g["liquidado_pts"] for g in grupos),
+        "puntos_valor": PUNTOS,
         "kg_fuera_del_ranking": fuera,
         "semanas": semanas["filas"],
         "meses": meses,
@@ -685,15 +878,22 @@ def _semanas(largada: date) -> dict:
     Las semanas van de LUNES a domingo (`date_trunc('week')` de Postgres) y se
     listan de la más nueva a la más vieja: la que importa es la de arriba.
     """
+    # ⚠ Los PUNTOS de la semana también salen de acá: `_movimiento` compara el
+    # puesto de hoy contra el de la semana pasada, y el puesto se decide por
+    # puntos. Descontando kilos se calcularía un puesto viejo que nunca existió.
     filas = db.fetch_all(
         """SELECT date_trunc('week', v.fecha)::date AS semana,
-                  v.vendedor, SUM(v.kg) AS kg
+                  v.vendedor, SUM(v.kg) AS kg,
+                  SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos
              FROM scintela.parado_venta v
+             LEFT JOIN scintela.parado_punto p
+                    ON p.subcategoria = v.subcategoria
             WHERE v.fecha >= %s
             GROUP BY 1, 2
             ORDER BY 1 DESC""", (largada,))
     por_semana: dict = {}
     por_vendedor: dict = {}
+    puntos_por_vendedor: dict = {}
     for f in filas:
         s = por_semana.setdefault(f["semana"], {"semana": f["semana"], "kg": 0.0,
                                                 "detalle": {}})
@@ -701,13 +901,16 @@ def _semanas(largada: date) -> dict:
         s["kg"] += kg
         s["detalle"][f["vendedor"]] = kg
         por_vendedor.setdefault(f["vendedor"], {})[f["semana"]] = kg
+        puntos_por_vendedor.setdefault(f["vendedor"], {})[f["semana"]] = float(
+            f.get("puntos") or 0)
 
     orden = sorted(por_semana.values(), key=lambda s: s["semana"], reverse=True)
     acum = sum(s["kg"] for s in orden)
     for s in orden:                      # acumulado hasta el final de esa semana
         s["acumulado"] = acum
         acum -= s["kg"]
-    return {"filas": orden, "por_vendedor": por_vendedor}
+    return {"filas": orden, "por_vendedor": por_vendedor,
+            "puntos_por_vendedor": puntos_por_vendedor}
 
 
 def _meses(largada: date, cierre: date) -> list[dict]:
@@ -768,7 +971,8 @@ def _meses(largada: date, cierre: date) -> list[dict]:
     return salida
 
 
-def _movimiento(ranking: list[dict], por_vendedor: dict) -> None:
+def _movimiento(ranking: list[dict], por_vendedor: dict,
+                puntos_por_vendedor: dict | None = None) -> None:
     """
     Cuánto subió o bajó cada uno respecto de la semana pasada.
 
@@ -782,13 +986,14 @@ def _movimiento(ranking: list[dict], por_vendedor: dict) -> None:
             r["kg_semana"] = 0.0
         return
     ultima = max(s for v in por_vendedor.values() for s in v)
-    # ⚠ Se descuenta de lo CONTADO, no de los kilos crudos: si lo de esta semana
-    # ya estaba por encima del tope, el puesto de la semana pasada era el mismo
-    # y decir que "subió" sería mentira.
+    pts_semana = puntos_por_vendedor or {}
+    # ⚠ Se descuentan PUNTOS, no kilos: el puesto se decide por puntos, así que
+    # restar kilos daría un puesto de la semana pasada que nunca existió — y el
+    # "subió dos puestos" sería inventado.
     antes = sorted(
         ranking,
-        key=lambda r: (-(max(0.0, r["contado"]
-                             - por_vendedor.get(r["vendedor"], {}).get(ultima, 0))
+        key=lambda r: (-(max(0.0, r["puntos"]
+                             - pts_semana.get(r["vendedor"], {}).get(ultima, 0))
                          / r["meta"] if r["meta"] else 0), r["vendedor"]))
     puesto_antes = {r["vendedor"]: i for i, r in enumerate(antes, 1)}
     for r in ranking:

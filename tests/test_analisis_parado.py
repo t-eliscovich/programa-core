@@ -583,14 +583,36 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
 
 # ── La competencia ──────────────────────────────────────────────────────────
 
+#: Qué tela representa a cada grupo en los datos falsos. Los tests hablan en
+#: grupos (Jersey, Fleece) porque así se lee la regla, pero el puntaje vive en
+#: la TELA: el helper traduce.
+_TELA_DE = {"Jersey": "Jersey 3", "Fleece": "Fleece 102"}
+
+
 def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100",
-                       semanas=None, meses=None, base=None):
+                       semanas=None, meses=None, base=None, puntos=None):
     filas = [
         {"categoria": "Jersey", "subcategoria": "Jersey 3", "color": "NEG",
          "stock_kg": 6000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
         {"categoria": "Fleece", "subcategoria": "Fleece 102", "color": "BLA",
          "stock_kg": 4000, "kg_segunda": 0, "kg_vendidos": 0, "clientes": 1},
     ]
+    # ⭐ Por defecto TODA tela vale 1 punto: así los tests que hablan de kilos
+    # siguen midiendo lo que decían medir (un punto = un kilo) y los que hablan
+    # de puntos pasan un `puntos` distinto y sólo cambia eso.
+    puntos = puntos or {}
+    pfilas = [{"subcategoria": f["subcategoria"], "categoria": f["categoria"],
+               "kg_base": f["stock_kg"] + f["kg_vendidos"], "kg_12m": 1000,
+               "meses": 1, "nivel": 1,
+               "puntos": puntos.get(f["subcategoria"], 1)} for f in filas]
+
+    def _con_tela(filas_v):
+        salida = []
+        for r in filas_v or []:
+            r = dict(r)
+            r.setdefault("subcategoria", _TELA_DE.get(r.get("categoria"), ""))
+            salida.append(r)
+        return salida
 
     def fake(sql, params=None, conn=None):
         s = " ".join(sql.split())
@@ -600,8 +622,10 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
             return semanas or []
         if "date_trunc('month'" in s:
             return meses or []
+        if "parado_punto" in s:
+            return pfilas
         if "parado_venta" in s:
-            return vendido or []
+            return _con_tela(vendido)
         if "parado_share" in s:
             return []
         if "parado_base" in s:
@@ -859,7 +883,7 @@ def test_el_movimiento_del_ranking_se_recalcula_sin_guardar_nada(monkeypatch):
         vendido=[{"vendedor": "Quintero Jose", "categoria": "Jersey", "kg": 500,
                   "ultima": None}],
         semanas=[{"semana": _d(2026, 8, 17), "vendedor": "Quintero Jose",
-                  "kg": 500}])
+                  "kg": 500, "puntos": 500}])
     quintero = next(r for r in c["ranking"] if r["vendedor"] == "Quintero Jose")
     assert quintero["puesto"] == 1
     assert quintero["kg_semana"] == 500
@@ -1005,27 +1029,59 @@ def test_el_csv_de_la_hoja_propia_no_lleva_la_columna_del_vendedor():
 
 # ── El tope por grupo ───────────────────────────────────────────────────────
 
-def test_lo_que_pasa_del_tope_no_le_suma_al_vendedor(monkeypatch):
-    """⭐ Dueña 17/08/2026: "cada vendedor tiene que hacer x% de cada grupo…
-    una vez que llega al 31% deja de sumar". Sin el tope, el que tiene un
-    cliente grande de Jersey llega al 100% sin tocar los otros grupos, y la
-    competencia deja de servir para lo que se armó."""
+def test_un_kilo_dificil_vale_mas_que_uno_facil(monkeypatch):
+    """⭐ Dueña 24/08/2026, después de medir las 98 telas: "si una tela es
+    fácil de vender deberíamos dar menos puntos". Dos vendedores que sacan los
+    MISMOS kilos no van empatados si uno sacó lo que sale solo y el otro lo que
+    no salió en un año."""
+    c = _competencia_falsa(
+        monkeypatch,
+        puntos={"Jersey 3": 10, "Fleece 102": 1},
+        vendido=[
+            {"vendedor": "Intela", "categoria": "Jersey", "kg": 500,
+             "ultima": None},
+            {"vendedor": "Lopez Felipe", "categoria": "Fleece", "kg": 500,
+             "ultima": None},
+        ])
+    intela = next(r for r in c["ranking"] if r["vendedor"] == "Intela")
+    lopez = next(r for r in c["ranking"] if r["vendedor"] == "Lopez Felipe")
+    assert intela["kg"] == lopez["kg"] == 500, "los mismos kilos"
+    assert intela["puntos"] == 5000 and lopez["puntos"] == 500
+    assert intela["puesto"] < lopez["puesto"], (
+        "el que sacó lo difícil tiene que ir adelante")
+
+
+def test_la_meta_en_puntos_sale_de_las_telas_y_no_del_grupo(monkeypatch):
+    """⚠ La bolsa de un grupo NO se puede sacar de sus kilos: adentro de un
+    mismo grupo conviven telas de 1 punto y de 10."""
+    c = _competencia_falsa(monkeypatch,
+                           puntos={"Jersey 3": 10, "Fleece 102": 1})
+    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
+    fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
+    assert jersey["meta_pts"] == 60000       # 6.000 kg × 10
+    assert fleece["meta_pts"] == 4000        # 4.000 kg × 1
+    assert c["meta_pts"] == 64000
+    assert jersey["kg"] < fleece["kg"] * 2 < jersey["meta_pts"], (
+        "un grupo puede tener pocos kilos y muchos puntos")
+
+
+def test_ya_no_hay_tope_por_grupo(monkeypatch):
+    """⭐ El tope existía para obligar a tocar los ocho grupos. Los puntos hacen
+    ese trabajo sin tener que explicar un tope: adentro de un grupo hay telas
+    que salen solas y telas que no salió una en un año, y el tope las igualaba
+    a todas. Dueña 24/08/2026."""
     c = _competencia_falsa(monkeypatch, vendido=[
         {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000, "ultima": None}])
     intela = next(r for r in c["ranking"] if r["vendedor"] == "Intela")
     jersey = next(d for d in intela["detalle"] if d["grupo"] == "Jersey")
-    assert jersey["meta"] == 6000 / 7
-    assert jersey["kg"] == 5000
-    assert round(jersey["contado"], 2) == round(6000 / 7, 2), "se corta en su meta"
-    assert round(jersey["excedente"], 2) == round(5000 - 6000 / 7, 2)
-    assert jersey["pct"] == 100
-    assert intela["pct"] < 100, (
-        "con un solo grupo lleno no puede estar al 100% del total")
+    assert jersey["puntos"] == 5000, "el kilo cuenta entero, no cortado"
+    assert jersey["pct"] > 100, "puede pasarse de la meta de un grupo"
+    assert "contado" not in intela, "no queda rastro del tope"
 
 
-def test_el_kilo_excedente_igual_sale_de_la_bodega(monkeypatch):
-    """El kilo se vendió: cuenta para el grupo y para el termómetro de la
-    fábrica. Lo único que no hace es subirle el % al vendedor."""
+def test_el_kilo_igual_sale_de_la_bodega(monkeypatch):
+    """El termómetro de la fábrica sigue siendo de KILOS: es la bodega, no el
+    marcador."""
     c = _competencia_falsa(monkeypatch, vendido=[
         {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000, "ultima": None}])
     jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
@@ -1033,7 +1089,7 @@ def test_el_kilo_excedente_igual_sale_de_la_bodega(monkeypatch):
     assert c["liquidado"] == 5000
 
 
-def test_llegar_al_100_exige_tocar_todos_los_grupos(monkeypatch):
+def test_llegar_al_100_es_hacer_todos_sus_puntos(monkeypatch):
     c = _competencia_falsa(monkeypatch, vendido=[
         {"vendedor": "Intela", "categoria": "Jersey", "kg": 6000 / 7,
          "ultima": None},
@@ -1044,16 +1100,18 @@ def test_llegar_al_100_exige_tocar_todos_los_grupos(monkeypatch):
     assert round(intela["pct"], 1) == 100.0
 
 
-def test_el_ranking_ordena_por_lo_contado_y_no_por_los_kilos(monkeypatch):
-    """Uno con 5.000 kg de un solo grupo tiene que ir DETRÁS de otro con menos
-    kilos pero repartidos."""
-    c = _competencia_falsa(monkeypatch, vendido=[
-        {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000, "ultima": None},
-        {"vendedor": "Lopez Felipe", "categoria": "Jersey", "kg": 800,
-         "ultima": None},
-        {"vendedor": "Lopez Felipe", "categoria": "Fleece", "kg": 500,
-         "ultima": None},
-    ])
+def test_el_ranking_ordena_por_puntos_y_no_por_kilos(monkeypatch):
+    """Uno con 5.000 kg de tela fácil tiene que ir DETRÁS de otro con menos
+    kilos pero de la difícil."""
+    c = _competencia_falsa(
+        monkeypatch,
+        puntos={"Jersey 3": 1, "Fleece 102": 10},
+        vendido=[
+            {"vendedor": "Intela", "categoria": "Jersey", "kg": 5000,
+             "ultima": None},
+            {"vendedor": "Lopez Felipe", "categoria": "Fleece", "kg": 800,
+             "ultima": None},
+        ])
     puestos = {r["vendedor"]: r["puesto"] for r in c["ranking"]}
     assert puestos["Lopez Felipe"] < puestos["Intela"]
 
@@ -1073,9 +1131,11 @@ def test_la_pantalla_explica_las_reglas():
              "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     html = " ".join(_re.sub(r"\{#.*?#\}", " ", crudo, flags=_re.S).split())
     assert "Las reglas" in html
-    assert "no le suma" in html or "no le</b> suma" in html, (
-        "la regla del tope tiene que estar escrita")
-    assert "qué parte de su meta" in html
+    assert "No todos los kilos valen igual" in html, (
+        "la regla del puntaje tiene que estar escrita")
+    assert "meses de venta hay" in html, (
+        "y con qué se mide difícil, o el puntaje parece arbitrario")
+    assert "qué parte de sus puntos lleva hecha" in html
     assert "no por kilos" not in html, (
         "todo se mide EN kilos; decir que no, confunde (dueña 17/08/2026)")
 
@@ -1085,8 +1145,31 @@ def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     assert "abrirVend" in html and 'class="vdet"' in html
-    for col in ("Su meta", "Vendió", "Le cuenta"):
+    for col in ("Su meta", "Vendió", "Puntos"):
         assert col in html
+
+
+def test_la_lista_de_telas_muestra_lo_que_vale_cada_una():
+    """⚠ `telas_a_sacar` recibe los puntos por parámetro: si los buscara sola,
+    sería una segunda lectura que puede contradecir a la del tablero. La
+    pantalla tiene que pasárselos."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.competencia)
+    assert "puntos_por_tela()" in fuente, (
+        "la pantalla tiene que pasarle los puntos a la lista de telas")
+    t = queries.telas_a_sacar(
+        [{"subcategoria": "Kiana", "categoria": "Poliester", "color": "CAR",
+          "stock_kg": 100},
+         {"subcategoria": "Jersey 3", "categoria": "Jersey", "color": "NEG",
+          "stock_kg": 300}],
+        {"Kiana": {"puntos": 10, "nivel_nombre": "Difícil"},
+         "Jersey 3": {"puntos": 1, "nivel_nombre": "Fácil"}})
+    assert [x["tela"] for x in t] == ["Kiana", "Jersey 3"], (
+        "ordena por puntos: 100 kg × 10 vale más que 300 × 1")
+    assert t[0]["puntos"] == 10 and t[0]["puntos_total"] == 1000
+    assert t[1]["puntos_total"] == 300
 
 
 # ── La copia de "Lo parado" para el vendedor ────────────────────────────────

@@ -280,7 +280,7 @@ def competencia():
     return render_template(
         "analisis/competencia.html",
         vend=vend,
-        telas=queries.telas_a_sacar(queries.items()),
+        telas=queries.telas_a_sacar(queries.items(), queries.puntos_por_tela()),
         mis_clientes=queries.mis_clientes_parado(vend) if vend else [],
         **datos)
 

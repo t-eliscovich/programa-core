@@ -281,6 +281,29 @@ GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3),
 """
 
 
+SQL_VENTA_TELA = f"""
+-- Cuántos kilos vendió la fábrica de cada TELA en los últimos 12 meses. Es lo
+-- único que hace falta para saber si esa tela es fácil o difícil de colocar:
+-- los kilos parados divididos por lo que se vende al mes dan "cuántos meses de
+-- venta hay quietos", y de ahí sale el puntaje.
+--
+-- ⚠ Por TELA, sin color, igual que los candidatos. El color se negocia; medir
+-- la dificultad por tela × color daría 732 números que nadie puede recordar y
+-- un color raro de una tela que sale bien quedaría marcado como imposible.
+SELECT pr.nombre_subcategoria_producto AS subcategoria,
+       SUM(dfc.cantidad)               AS kg_12m,
+       COUNT(DISTINCT fc.id_empresa)   AS clientes_12m
+FROM factura_cliente fc
+JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
+JOIN producto pr ON pr.id_producto = dfc.id_producto
+WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
+  AND dfc.cantidad > 0 AND RTRIM(pr.codigo) <> 'SRLG'
+  AND fc.fecha >= DATEADD(month, -12, GETDATE())
+  AND pr.nombre_categoria_producto NOT IN ({CATS})
+GROUP BY pr.nombre_subcategoria_producto
+"""
+
+
 SQL_SHARE = f"""
 -- Cuánto vende cada vendedor de cada GRUPO. Es lo que reparte la meta: sin
 -- esto, el ranking lo gana el de cartera más grande todos los meses.
@@ -327,6 +350,12 @@ def vendido_desde(desde: str) -> list[dict]:
     for f in filas:
         f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
     return filas
+
+
+def venta_por_tela() -> dict[str, float]:
+    """Kilos vendidos en los últimos 12 meses, por tela."""
+    return {f["subcategoria"]: float(f["kg_12m"] or 0)
+            for f in _filas(SQL_VENTA_TELA) if f.get("subcategoria")}
 
 
 def share_por_grupo() -> list[dict]:
