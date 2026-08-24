@@ -63,10 +63,10 @@ function fechaValidar(el) {
           <div id="__gs_tips" style="padding:10px 16px;font-size:12px;color:#6b7280;line-height:1.6">
             <div><b>Atajos:</b></div>
             <div><code>c:</code> seguido de texto → buscar cliente por nombre o código</div>
-            <div><code>f:</code> seguido de número → abrir factura por numf</div>
+            <div><code>f:</code> seguido de número → la factura y de qué cliente es</div>
             <div><code>p:</code> seguido de texto → buscar proveedor</div>
             <div><code>ch:</code> seguido de número → buscar cheque por n°</div>
-            <div>Sin prefijo → va al estado de cuenta del cliente</div>
+            <div>Sin prefijo → abre el estado de cuenta del cliente</div>
           </div>
         </div>
       </div>`;
@@ -89,7 +89,13 @@ function fechaValidar(el) {
         if (kind.toLowerCase() === 'c') {
           url = '/informes/estado-cuenta?q=' + encodeURIComponent(rest);
         } else if (kind.toLowerCase() === 'f') {
-          url = '/facturas?q=' + encodeURIComponent(rest);
+          // TMT 2026-08-24 (dueña): "factura me podría mostrar clientes con
+          // esa factura". Iba a /facturas?q=N pelado, y ahí la vista por
+          // defecto es la CARTERA (sólo las vivas del mes), así que buscar
+          // una factura ya cobrada o de meses atrás contestaba "0 facturas".
+          // `vista=estado` mira todos los estados y todas las fechas, y la
+          // lista trae la columna Cliente — que es lo que se quiere ver.
+          url = '/facturas?vista=estado&q=' + encodeURIComponent(rest);
         } else if (kind.toLowerCase() === 'p') {
           url = '/proveedores?q=' + encodeURIComponent(rest);
         } else if (kind.toLowerCase() === 'ch') {

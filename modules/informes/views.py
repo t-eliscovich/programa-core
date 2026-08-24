@@ -3418,6 +3418,29 @@ def estado_cuenta_landing():
     matches: list[dict] = []
     if busqueda:
         matches, _ = _safe(lambda: queries.buscar_clientes(busqueda), [])
+        # TMT 2026-08-24 (dueña, desde el buscador de arriba): *"acá me
+        # gustaría que vaya directo al cliente"*. Tipear IIA y caer en una
+        # lista de un solo renglón para volver a clickearlo es un paso de
+        # más. Si lo que escribió no deja lugar a dudas, la abrimos:
+        #
+        #   · es el CÓDIGO exacto de un cliente, o
+        #   · la búsqueda devolvió UN solo cliente.
+        #
+        # Con dos o más matches sigue apareciendo la lista — ahí sí hay que
+        # elegir. Las filas aproximadas (el "¿quisiste decir?") NUNCA abren
+        # solas: son una sugerencia, no una certeza.
+        exactos = [
+            m for m in matches
+            if not m.get("aprox")
+            and (m.get("codigo_cli") or "").strip().upper() == busqueda.upper()
+        ]
+        ciertos = [m for m in matches if not m.get("aprox")]
+        directo = exactos[0] if len(exactos) == 1 else (
+            ciertos[0] if len(ciertos) == 1 else None)
+        if directo and not request.args.get("lista"):
+            return redirect(url_for(
+                "informes.estado_cuenta",
+                codigo_cli=(directo.get("codigo_cli") or "").strip()))
 
     top, error = _safe(queries.cartera_por_cliente, [])
     # top 10 deudores como atajos
