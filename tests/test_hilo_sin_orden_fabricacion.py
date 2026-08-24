@@ -30,6 +30,9 @@ def _sin_freno(monkeypatch):
     monkeypatch.delenv("HILO_SIN_OF", raising=False)
     monkeypatch.delenv("HILO_SIN_OF_BODEGAS", raising=False)
     monkeypatch.delenv("HILO_SIN_OF_MIN_KG", raising=False)
+    # Y el cache de 120 s de `despachos_sin_of` (TMT 24/08) es de proceso
+    # igual: sin limpiarlo, el test que sigue lee la respuesta del anterior.
+    hs.reset_cache()
 
 
 def _correr(casos, vivos=(), ofts=None):

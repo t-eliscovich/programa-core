@@ -22,6 +22,9 @@ def _caso(bodega=51, kg=4860.0, num="OSM-000010458"):
 def _limpio(monkeypatch):
     monkeypatch.delenv("HILO_PLACEHOLDER", raising=False)
     monkeypatch.delenv("HILO_PLACEHOLDER_CORTE", raising=False)
+    # `despachos_sin_of` cachea 120 s (TMT 24/08): sin esto, el segundo caso
+    # de un mismo test leería la respuesta del primero.
+    hs.reset_cache()
 
 
 def _kg(hora_ec, casos, encendido=True, monkeypatch=None):

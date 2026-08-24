@@ -130,6 +130,32 @@ def _bodegas() -> tuple[int, ...]:
     return tuple(sorted(set(vals))) if vals else BODEGAS_DEFAULT
 
 
+#: Cache corto de `despachos_sin_of`. TMT 2026-08-24 (dueña: *"qué más
+#: podemos hacer más rápido?"*): esta consulta no tenía cache y la pagaban
+#: TRES pantallas en cada visita —Inventario en proceso (/stock/fabricacion-tc,
+#: 1,7 s medidos, casi todos de acá), el Balance y Tejeduría—. No es un dato
+#: que cambie por segundo: son despachos de hilo que alguien tiene que ir a
+#: cargar. Con 120 s, lo peor que puede pasar es ver un despacho dos minutos
+#: tarde; el vigía de la campanita corre cada 15 min, así que ni lo nota.
+_CACHE: dict[tuple, tuple[float, list[dict]]] = {}
+_CACHE_TTL_DEFAULT = 120.0
+
+
+def _cache_ttl() -> float:
+    """Segundos que vale la respuesta. `HILO_SIN_OF_CACHE_SECS=0` lo apaga."""
+    try:
+        return float(os.environ.get("HILO_SIN_OF_CACHE_SECS",
+                                    _CACHE_TTL_DEFAULT))
+    except (TypeError, ValueError):
+        return _CACHE_TTL_DEFAULT
+
+
+def reset_cache() -> None:
+    """Olvida lo cacheado. La usan los tests y cualquiera que quiera el dato
+    fresco sin esperar los 120 s."""
+    _CACHE.clear()
+
+
 def despachos_sin_of(dias: int | None = None,
                      min_kg: float | None = None) -> list[dict]:
     """Despachos de hilo/tela cruda sin NINGUNA orden de fabricación colgada.
@@ -142,6 +168,13 @@ def despachos_sin_of(dias: int | None = None,
     dias = int(dias if dias is not None else _dias())
     min_kg = float(min_kg if min_kg is not None else _min_kg())
     bodegas = ", ".join(str(b) for b in _bodegas())
+
+    clave = (dias, min_kg, bodegas)
+    ttl = _cache_ttl()
+    ahora = _t.monotonic()
+    guardado = _CACHE.get(clave)
+    if ttl > 0 and guardado and (ahora - guardado[0]) < ttl:
+        return guardado[1]
 
     # Las dos junctions: `orden_fabricacion_orden_salida_material` es la que
     # alimenta el balance (fabricacion_proceso); la de detalle es la que usa
@@ -201,6 +234,11 @@ def despachos_sin_of(dias: int | None = None,
             "descripcion": _limpiar(r.get("descripcion")),
             "creado": str(r.get("creado") or "").strip(),
         })
+    # Sólo se guarda si Asinfo CONTESTÓ. Si no contestó (`rows` vacío por
+    # error de red) la lista también sale vacía, y cachear eso 2 minutos
+    # sería sostener un "no hay nada" que en realidad es "no pude preguntar".
+    if ttl > 0 and rows:
+        _CACHE[clave] = (ahora, out)
     return out
 
 

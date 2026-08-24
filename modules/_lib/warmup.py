@@ -66,7 +66,32 @@ def _warm_once() -> None:
         # ~3s vivos en el flujo (medido 18/07: mov_asinfo_quimicos 3,1s que en
         # realidad eran la card de facturas fría).
         ("ventas_facturado", lambda: asvc.ventas_facturado_kg(yy, mm)),
+        # TMT 2026-08-24 (dueña: *"qué más podemos hacer más rápido?"*).
+        # Medidas las 33 pantallas del menú en producción, las tres peores NO
+        # eran lentas: eran FRÍAS. Primera visita contra visita siguiente:
+        #   · /produccion-terminado-asinfo   9,8 s  →  14 ms
+        #   · /inventario-rotativo           5,1 s  →  33 ms
+        #   · /stock/fabricacion-tc          1,7 s (las dos veces: le faltaba
+        #     cache a `despachos_sin_of`, ver hilo_sin_of._CACHE)
+        # O sea que el que entraba justo después de que vencía el cache pagaba
+        # la carga entera. Se calientan por la función de la PANTALLA y no por
+        # cada consulta suelta: si mañana la pantalla pide una más, se calienta
+        # sola.
+        ("stock_lote_totales", lambda: asvc.stock_asinfo_lote_totales()),
+        ("fabricacion_proceso_52", lambda: asvc.fabricacion_proceso(52)),
+        ("fabricacion_proceso_53", lambda: asvc.fabricacion_proceso(53)),
     ]
+    try:
+        from modules.asinfo import hilo_sin_of as _hso
+        from modules.inventario_rotativo import service as _rot
+        from modules.terminado_asinfo import service as _term
+        pasos += [
+            ("hilo_esperando_orden", lambda: _hso.despachos_sin_of(dias=0)),
+            ("inventario_rotativo", lambda: _rot.rotativo()),
+            ("produccion_terminado", lambda: _term.resumen(yy, mm)),
+        ]
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("warmup pantallas de stock: %s", e)
     # Químicos del flujo (formulas) — los 7,4s medidos de mov_asinfo_quimicos.
     try:
         import calendar as _cal
