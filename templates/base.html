@@ -715,11 +715,16 @@
       main .informe-balance tr.fila-total td { font-size: 12.5px !important; }
       main .informe-balance tr.fila-key td { font-size: 14px !important; }
       .informe-balance td.label-cell { padding: 4px 2px !important; overflow-wrap: anywhere; }
-      .informe-balance td.num-cell { padding: 4px 2px !important; }
+      /* Federico 2026-08-24 — el rótulo dice "las 5 columnas entran en 360px" y
+         ya no era cierto: medido, la tabla pedía 375px y Proyecciones quedaba
+         afuera. 1px de padding en las cifras (y el campito de la proyección
+         6px más angosto) la devuelven a 361px. */
+      .informe-balance td.num-cell { padding: 4px 1px !important; }
+      .informe-balance th.col-header { padding: 3px 1px !important; }
       /* el sangrado de 100px de los sumandos es para una pantalla ancha */
       .informe-balance td.num-cell--sumando { padding-right: 12px !important; font-size: 12px !important; }
       .informe-balance .seccion-header { padding: 3px 3px !important; font-size: 10px !important; }
-      .informe-balance input.vp-input { width: 58px; margin-right: 0 !important; padding: 1px 3px; }
+      .informe-balance input.vp-input { width: 52px; margin-right: 0 !important; padding: 1px 3px; }
       /* los dos paneles quedan apilados: una línea los separa */
       .informe-balance .balance-col + .balance-col { border-top: 3px solid rgb(203 213 225); }
 

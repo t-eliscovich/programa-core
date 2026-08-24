@@ -276,6 +276,13 @@
   /* Compactar también el sub-padding del frame principal y la barra footer */
   .informe-balance .px-5.py-3 { padding-top: 4px !important; padding-bottom: 4px !important; }
 
+  /* Fallback para pantallas < 1024px (los dos paneles apilados): cada panel
+     panea de costado si su tabla no entra. VA ANTES del @media de escritorio a
+     propósito — misma especificidad, así que si va después lo pisa y el panel
+     recorta la última columna en vez de dejar scrollear el marco entero.
+     Federico 2026-08-24. */
+  .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
+
   /* TMT 2026-06-29 — fix layout superpuesto: la tabla RESULTADOS (5 columnas)
      desbordaba sobre el panel ACTIVO. Le damos más ancho a la izquierda, y
      min-width:0 + overflow-x:auto como backstop para que NUNCA se pisen.
@@ -306,7 +313,11 @@
        Dividendos) ni la derecha de 390px (ahí se parte cada rubro de stock). Si
        el 50% cae por debajo de ese piso, el min-width manda y el otro panel
        cede — recién cuando NINGUNO de los dos entra scrollea el marco. */
-    .informe-balance .balance-grid > .balance-col:first-child { flex: 1 1 0; min-width: 590px; }
+    /* Federico 2026-08-24 — dueña: *"y proyecciones se corta"*. El piso de
+       590px era MENOS de lo que la tabla necesita (medido en el navegador con
+       su data: 623px), así que la quinta columna quedaba tapada por el panel
+       ACTIVO. Sube a 632px = los 623 medidos + aire. */
+    .informe-balance .balance-grid > .balance-col:first-child { flex: 1 1 0; min-width: 632px; }
     .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 0; min-width: 390px; }
     /* y el panel deja de recortar por su cuenta: si algo no entra, scrollea el
        marco entero (los dos paneles a la vez), que es lo que Federico quiere
@@ -314,7 +325,6 @@
     .informe-balance .balance-col { overflow-x: visible; }
     .informe-balance .balance-marco { overflow-x: auto; }
   }
-  .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
   /* Federico 2026-07-22 — kg de venta proyectada editable (fila Proyección). */
   .informe-balance input.vp-input {
     width: 92px; text-align: right; font-variant-numeric: tabular-nums;
