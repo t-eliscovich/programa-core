@@ -86,3 +86,57 @@ def test_las_celdas_siguen_diciendo_que_campo_son():
     filas = _fuente()
     for campo in ("fecha", "codigo_cli", "kg", "importe", "retencion"):
         assert f'data-campo="{campo}"' in filas
+
+
+# ── Segunda pasada (24/08, tarde): las clases repetidas fila por fila ───────
+# Quedaba en 2.568 KB, 5 KB por fila, y la mitad eran las MISMAS listas de
+# clases copiadas 500 veces. Ahora van una vez, en el <style> de la pantalla.
+
+def test_los_lapicitos_no_repiten_su_lista_de_clases():
+    """130 caracteres × 6 lapicitos × 500 filas = 400 KB de lo mismo."""
+    texto = _fuente()
+    filas = texto[texto.index("{% for f in filas %}"):texto.index("</table>")]
+    assert 'class="ec-edit-btn lapiz"' in filas
+    assert 'class="numf-edit-btn lapiz lapiz-oscuro"' in filas
+    assert "hover:bg-sky-50" not in filas, (
+        "volvieron las clases de Tailwind al lapicito: van en `.lapiz`"
+    )
+
+
+def test_las_vistas_y_la_fila_van_por_clase_propia():
+    texto = _fuente()
+    filas = texto[texto.index("{% for f in filas %}"):texto.index("</table>")]
+    assert 'class="ec-view"' in filas and 'class="numf-view"' in filas
+    assert "ec-view inline-flex" not in filas
+    assert '<tr class="fila">' in filas
+
+
+def test_el_estilo_de_la_pantalla_define_lo_que_saco_del_markup():
+    """Si el bloque se borra, la Cartera se ve rota."""
+    texto = _fuente()
+    estilo = texto[texto.index("<style>"):texto.index("</style>")]
+    for regla in (".lapiz ", ".lapiz-oscuro", ".lapiz:hover",
+                  ".ec-view:not(.hidden)", ".fila:hover"):
+        assert regla in estilo, f"falta la regla {regla}"
+
+
+def test_la_fila_conserva_el_separador_NEGRO():
+    """Pedido de la dueña (19/05): *"las líneas en negro, mi papá no las ve"*.
+
+    El negro venía de rebote: la fila traía `border-slate-100` y eso
+    enganchaba el override `!important` de base.html. Al sacar la clase hay
+    que ponerlo a mano o el separador queda gris clarito.
+    """
+    estilo = _fuente()
+    assert ".fila { border-bottom-color: rgb(15 23 42); }" in estilo
+
+
+def test_el_dropdown_de_estado_no_repite_sus_clases():
+    ui = (RAIZ / "templates" / "_ui.html").read_text(encoding="utf-8")
+    macro = ui[ui.index("{% macro stat_select"):ui.index("{% endmacro %}",
+                                                        ui.index("{% macro stat_select"))]
+    assert 'class="stat-select"' in macro
+    assert "border-slate-300" not in macro
+    assert "font-size:11px" not in macro
+    base = (RAIZ / "templates" / "base.html").read_text(encoding="utf-8")
+    assert ".stat-select {" in base, "la clase tiene que existir en base.html"

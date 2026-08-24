@@ -379,10 +379,12 @@
      el numf venía con `|tojson` dentro del atributo onchange y las comillas
      CERRABAN el atributo — el dropdown no hacía nada desde el 21/07. Regla:
      NUNCA `|tojson` dentro de un atributo con comillas dobles. #}
-  <select name="stat" class="stat-select font-mono rounded border border-slate-300 dark:border-slate-700 bg-transparent dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-1 py-0.5"
+  {# El aspecto va por la clase `.stat-select` (definida en base.html): es la
+     misma lista de clases repetida en cada fila de la Cartera. TMT 24/08. #}
+  <select name="stat" class="stat-select"
           data-cur="{{ _st }}" data-numf="{{ numf }}"
           data-action="{{ url_for('informes.estado_cuenta_factura_set_stat', codigo_cli=codigo_cli, id_factura=id_factura) }}"
-          title="Cambiar estado (Z/A/T/X)" style="font-size:11px;">
+          title="Cambiar estado (Z/A/T/X)">
     {% for s in ['Z','A','T','X'] %}<option value="{{ s }}"{{ ' selected' if _st==s }}>{{ s }}</option>{% endfor %}
   </select>
 {% endmacro %}

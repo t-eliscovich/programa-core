@@ -68,11 +68,12 @@ def test_el_select_llega_con_todo_lo_que_necesita_para_postear(app):
 def test_el_select_no_tiene_atributos_basura(app):
     """Un atributo cortado deja los pedazos del JS como atributos sueltos.
 
-    En producción el select tenía 18 atributos; los legítimos son 6.
+    En producción el select tenía 18 atributos; los legítimos son 6 (el
+    `style` con el font-size se fue a la clase `.stat-select`, 24/08).
     """
     sel = _render_stat_select(app)
     esperados = {"name", "data-cur", "data-numf", "data-action", "title",
-                 "class", "style"}
+                 "class"}
     assert set(sel) == esperados, (
         "atributos inesperados en el <select> — casi seguro es un atributo "
         f"que se cerró antes de tiempo y el parser leyó el resto como "

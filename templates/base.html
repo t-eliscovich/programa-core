@@ -797,6 +797,22 @@
       .campanita-pie span, .campanita-pie a { font-size: 13px !important; }
     }
     /* ══════════════════ CELULAR — fin ═════════════════════════════════ */
+
+    /* El dropdown de estado (macro stat_select). Antes esta lista de clases
+       viajaba en CADA fila: 500 veces en la Cartera, 90 KB de pantalla. Los
+       valores salen tal cual de static/tailwind.css — font-mono, rounded,
+       border-slate-300, bg-transparent, text-slate-600, px-1 py-0.5 — así que
+       se ve igual. Sin variantes `dark:`: el programa quedó siempre en claro.
+       TMT 2026-08-24. */
+    .stat-select {
+      border-radius: .25rem;
+      border: 1px solid rgb(203 213 225);
+      background-color: transparent;
+      color: rgb(71 85 105);
+      padding: .125rem .25rem;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
   </style>
   {# Child templates can add extra <link>/<script>/<style> tags here. #}
   {% block head_extra %}{% endblock %}
