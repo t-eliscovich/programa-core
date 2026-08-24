@@ -41,11 +41,53 @@ con `disponible=False` y la pantalla muestra un cartel. Nunca levanta.
 from __future__ import annotations
 
 import logging
+import os
+import time as _time
 from datetime import date
 
 from modules._lib import metabase_client
 
 _LOG = logging.getLogger("programa_core.pedidos")
+
+# ─── Cache corto de las tres consultas a Asinfo ────────────────────────────
+# TMT 2026-08-24 (dueña: *"qué más podemos hacer más rápido?"*). Medida en
+# producción, /pedidos tardaba 3,6 s SIEMPRE — no era la primera vez, era cada
+# vez: las tres consultas iban a Asinfo sin cache. Los pedidos pendientes no
+# cambian de un segundo al otro, y el warmup refresca cada minuto, así que en
+# la práctica la pantalla abre con el dato ya traído.
+# `PEDIDOS_CACHE_SECS=0` lo apaga sin deploy.
+_CACHE: dict[str, tuple[float, object]] = {}
+_CACHE_TTL_DEFAULT = 300.0
+
+
+def _cache_ttl() -> float:
+    try:
+        return float(os.environ.get("PEDIDOS_CACHE_SECS", _CACHE_TTL_DEFAULT))
+    except (TypeError, ValueError):
+        return _CACHE_TTL_DEFAULT
+
+
+def reset_cache() -> None:
+    """Olvida lo cacheado (tests, y cualquiera que quiera el dato fresco)."""
+    _CACHE.clear()
+
+
+def _cacheado(clave: str, traer):
+    """`traer()` devuelve `(valor, ok)`. Sólo se guarda si `ok`.
+
+    Cachear un fracaso sería sostener cinco minutos un "no hay pedidos" que en
+    realidad es "no pude preguntarle a Asinfo" — que es justo la distinción
+    que esta pantalla cuida con `disponible`.
+    """
+    ttl = _cache_ttl()
+    ahora = _time.monotonic()
+    guardado = _CACHE.get(clave)
+    if ttl > 0 and guardado and (ahora - guardado[0]) < ttl:
+        return guardado[1], True
+    valor, ok = traer()
+    if ttl > 0 and ok:
+        _CACHE[clave] = (ahora, valor)
+    return valor, ok
 
 ASINFO_DB = 2
 
@@ -269,12 +311,19 @@ def pendientes() -> tuple[list[dict], bool]:
     haya pedidos. La pantalla necesita distinguirlos para no mostrar "no falta
     nada" cuando en realidad no pudo preguntar.
     """
-    filas, ok = metabase_client.fetch_dataset_estado(ASINFO_DB, _sql_pendientes())
-    if not ok:
-        _LOG.warning("pedidos: Asinfo no contestó")
-        return [], False
-    out = [_fila(r) for r in filas]
-    return [f for f in out if f["categoria"] in CATEGORIAS], True
+    def _traer():
+        filas, ok = metabase_client.fetch_dataset_estado(
+            ASINFO_DB, _sql_pendientes())
+        if not ok:
+            _LOG.warning("pedidos: Asinfo no contestó")
+            return [], False
+        out = [_fila(r) for r in filas]
+        return [f for f in out if f["categoria"] in CATEGORIAS], True
+
+    filas, ok = _cacheado("pendientes", _traer)
+    # Las filas se devuelven COPIADAS: `marcar_acabado` les escribe encima y
+    # sin la copia la segunda visita encontraría las de la primera ya pintadas.
+    return ([dict(f) for f in filas] if ok else []), ok
 
 
 def total_en_unidad(kilos: float, unidad: str, en_unidades: bool,
@@ -614,8 +663,12 @@ SELECT pr.codigo, v.numero, v.cliente,
 
 def pedidos_por_color() -> dict[str, list[dict]]:
     """`{codigo de producto: [pedidos]}` de todo lo pendiente. {} si falla."""
-    filas, ok = metabase_client.fetch_dataset_estado(
-        ASINFO_DB, _SQL_PEDIDOS_TODOS.format(ahora=AHORA_EC, dias=DIAS_PEDIDO_MAX))
+    def _traer():
+        return metabase_client.fetch_dataset_estado(
+            ASINFO_DB,
+            _SQL_PEDIDOS_TODOS.format(ahora=AHORA_EC, dias=DIAS_PEDIDO_MAX))
+
+    filas, ok = _cacheado("pedidos_todos", _traer)
     if not ok:
         return {}
     out: dict[str, list[dict]] = {}
@@ -761,8 +814,11 @@ SELECT pr.codigo, MAX(a.acabado) AS acabado
 def acabados_por_producto() -> dict[str, str]:
     """`{código de producto: 'TUB' | 'ABI' | ...}`. `{}` si falla (fail-soft)."""
     try:
-        filas, ok = metabase_client.fetch_dataset_estado(
-            ASINFO_DB, _SQL_ACABADO.format(bod=BODEGA_TERMINADO))
+        def _traer():
+            return metabase_client.fetch_dataset_estado(
+                ASINFO_DB, _SQL_ACABADO.format(bod=BODEGA_TERMINADO))
+
+        filas, ok = _cacheado("acabados", _traer)
         if not ok:
             return {}
         out = {}

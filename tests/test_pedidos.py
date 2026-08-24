@@ -14,6 +14,15 @@ import pytest
 from modules.pedidos import service
 
 
+@pytest.fixture(autouse=True)
+def _sin_cache():
+    """Las tres consultas a Asinfo cachean 5 min (TMT 24/08): sin limpiarlo,
+    el segundo test leería la respuesta que preparó el primero."""
+    service.reset_cache()
+    yield
+    service.reset_cache()
+
+
 def _fila(**kw):
     """Fila cruda de `_SQL_PENDIENTES`, con los defaults de un color de tela."""
     base = {
@@ -692,6 +701,7 @@ def test_el_link_dice_a_donde_lleva(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         con = c.get("/pedidos?corte=tela").get_data(as_text=True)
     filas = [_fila(prod_kg=0.0, n_ordenes=0)]
+    service.reset_cache()          # si no, la 2ª visita ve lo de la 1ª
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         sin = c.get("/pedidos?corte=tela").get_data(as_text=True)
 
