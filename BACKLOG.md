@@ -105,13 +105,6 @@ callándose. Pistas concretas todavía sin mirar:
 
 ## Urgente / destapado por el retiro del dBase
 
-### [M] Tintura del mes en curso sin fuente
-`scintela.tinto` se alimentaba de TINTO.DBF por el sync. Sin sync, agosto en
-adelante debe salir del puente a formulas_app. Verificar que
-`_build_tintoreria_mensual` cubra el mes corriente; si "COSTOS DE TINTORERÍA"
-da $0 en el mes en curso, es esto. `modules/comparativa_tintoreria/`,
-`modules/tintura/service.py`.
-
 ### [S] Primer cierre 100% PC (31/08/2026)
 El FoxPro ya no corre su devengo POSDAT ni su cuota de amortización ni la fila
 de INICIALE. PC tiene equivalentes (cron del EC2 día 1, procs SQL) — verificar
@@ -319,10 +312,6 @@ La comisión se pagó sobre plata que no entró. Inclinación de la dueña
 (05/08, preliminar): **descontar el día/mes en que rebota** — confirmar con
 ella el detalle antes de implementar (¿resta de la cobranza del mes del
 rebote? ¿y si vuelve a cobrarse después?).
-
-### [S] Capturas 07:00/19:00 de /informes/dia
-Verificar en unos días que las capturas programadas corren solas en producción
-(la tabla arrancó el 04/08).
 
 ### [M] 50 tests dependen del orden en que corren
 Medido el 13/08 con la suite en orden aleatorio (4 semillas): 50 tests pasan o
