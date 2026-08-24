@@ -54,6 +54,18 @@ BODEGA_PT = 53
 #: Debajo de esto un renglón es ruido de redondeo, no un caso.
 UMBRAL_KG = 0.05
 
+#: Los estados de `factura_cliente` que el programa SÍ importa. Es la misma
+#: lista que el WHERE de la card 199 de Metabase (`fc.estado IN (1, 4, 16)`),
+#: escrita acá para poder DECIRLO en la pantalla.
+#:
+#: 🚨 TMT 2026-08-24 (dueña): *"me suena raro porque van más de 5 mins"*, con
+#: la 001-099-000182519 en ámbar. No era la carga: Asinfo la tenía en estado
+#: **15**, que no está en esa lista, así que el programa ni la ve. Decirle
+#: "falta cargarla" era acusar a la carga de algo que no hizo. De las seis
+#: facturas que estuvieron alguna vez en estado 15, cuatro son del 16/01/2025
+#: y NUNCA salieron de ahí: puede destrabarse solo, y puede quedarse trabado.
+ESTADOS_IMPORTABLES = (1, 4, 16)
+
 
 def _dia(fecha) -> str:
     """'YYYY-MM-DD' o ValueError. La fecha va como LITERAL en el SQL de Asinfo
@@ -188,6 +200,31 @@ def _doc_por_guia(dia: str) -> dict[str, dict[str, float]]:
     return out
 
 
+def _docs_sin_autorizar(dia: str) -> set[str]:
+    """Los documentos del día que Asinfo tiene en un estado que NO se importa.
+
+    Existen, tienen número y salieron por una guía, pero el programa no los va
+    a levantar mientras sigan así. La pantalla los nombra distinto para no
+    mandar a nadie a buscar un problema de carga que no existe.
+    """
+    from modules._lib import metabase_client
+
+    lista = ", ".join(str(e) for e in ESTADOS_IMPORTABLES)
+    sql = f"""
+        SELECT fc.numero AS doc
+          FROM factura_cliente fc
+         WHERE fc.fecha = '{dia}'
+           AND fc.estado <> 0
+           AND fc.estado NOT IN ({lista})
+    """
+    out = set()
+    for r in metabase_client.fetch_dataset(2, sql, max_results=500) or []:
+        doc = str(r.get("doc") or "").strip()
+        if doc:
+            out.add(doc)
+    return out
+
+
 def _documentos_pc(dia: str) -> list[dict]:
     """Los documentos del día que SUMAN kilos, tal como los cuenta el pin."""
     filas = db.fetch_all(
@@ -220,11 +257,13 @@ def cuadre(fecha) -> dict:
     guias: list[dict] = []
     ligado: dict[str, float] = {}
     por_guia: dict[str, dict[str, float]] = {}
+    sin_autorizar_docs: set[str] = set()
     asinfo_ok = True
     try:
         guias = _guias(dia)
         ligado = _kg_con_guia_de_hoy(dia)
         por_guia = _doc_por_guia(dia)
+        sin_autorizar_docs = _docs_sin_autorizar(dia)
     except Exception as e:  # noqa: BLE001 -- el ERP nunca tumba la pantalla
         _LOG.warning("no pude leer los despachos del %s: %s", dia, e)
         asinfo_ok = False
@@ -255,7 +294,7 @@ def cuadre(fecha) -> dict:
     #   · facturada en Asinfo  → ya existe el documento, falta IMPORTARLO acá.
     # Mirar sólo `indicador_generado_factura` mezclaba las dos y dejaba la
     # segunda afuera de la cuenta (era el residuo del 19/08).
-    sin_factura, sin_cargar = [], []
+    sin_factura, sin_cargar, sin_autorizar = [], [], []
     kg_nten_esperado = 0.0
     for g in guias:
         kg_de = por_guia.get(g["guia"]) or {}
@@ -267,13 +306,22 @@ def cuadre(fecha) -> dict:
         # cruzarla) y no sólo para mirar.
         g["docs"] = suyos
         g["en_pc"] = [x for x in suyos if x in docs_pc]
+        # Los que Asinfo todavía no autoriza: existen, pero el programa no los
+        # puede levantar. Se nombran distinto (ver ESTADOS_IMPORTABLES).
+        g["sin_autorizar"] = [x for x in suyos if x in sin_autorizar_docs]
         # Los kilos que la factura dice, contra los que salieron por la puerta.
         g["kg_fact"] = round(sum(kg_de.values()), 2) if suyos else None
         g["difiere"] = bool(suyos and abs(g["kg_fact"] - g["kg"]) > UMBRAL_KG)
         if suyos:
             faltan = [x for x in suyos if x not in docs_pc]
             if faltan:
-                sin_cargar.append({**g, "doc": faltan[0]})
+                # Dos causas distintas y dos arreglos distintos: una la
+                # resuelve la carga sola en dos minutos, la otra la tiene que
+                # destrabar quien factura.
+                destino = (sin_autorizar if all(x in sin_autorizar_docs
+                                                for x in faltan)
+                           else sin_cargar)
+                destino.append({**g, "doc": faltan[0]})
         elif not g["facturada"]:
             sin_factura.append(g)
         else:
@@ -299,11 +347,12 @@ def cuadre(fecha) -> dict:
         sin_guia = quedan
     kg_nten_falta = round(max(0.0, resto_nten), 2)
     kg_sin_cargar = round(sum(g["kg"] for g in sin_cargar) + kg_nten_falta, 2)
+    kg_sin_autorizar = round(sum(g["kg"] for g in sin_autorizar), 2)
     kg_sin_guia = round(sum(d["kg_sin_guia"] for d in sin_guia), 2)
 
     diferencia = round(facturado - despachado, 2) if despachado is not None else None
     residuo = (round(facturado - (despachado - kg_sin_factura - kg_sin_cargar
-                                  + kg_sin_guia), 2)
+                                  - kg_sin_autorizar + kg_sin_guia), 2)
                if despachado is not None else None)
 
     return {
@@ -317,6 +366,7 @@ def cuadre(fecha) -> dict:
         "sin_factura": {"kg": kg_sin_factura, "items": sin_factura},
         "sin_cargar": {"kg": kg_sin_cargar, "items": sin_cargar,
                        "kg_nten": kg_nten_falta},
+        "sin_autorizar": {"kg": kg_sin_autorizar, "items": sin_autorizar},
         "residuo": residuo,
         "guias": guias,
     }

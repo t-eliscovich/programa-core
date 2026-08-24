@@ -77,7 +77,12 @@
           <td class="px-3 py-1.5 whitespace-nowrap">
             {% if g.docs %}
               {% for doc in g.docs %}<span class="{{ 'text-red-700' if _rojo else ('text-slate-700' if doc in g.en_pc else 'text-amber-800') }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
-              {% if g.docs != g.en_pc %}<span class="text-xs {{ 'text-red-700' if _rojo else 'text-amber-800' }}"> · falta cargarla</span>{% endif %}
+              {# TMT 2026-08-24 (dueña): *"me suena raro porque van más de 5
+                 mins"*. Decían las dos cosas "falta cargarla", pero son
+                 distintas: una entra sola en dos minutos y la otra no va a
+                 entrar nunca hasta que la autoricen. Ver ESTADOS_IMPORTABLES. #}
+              {% if g.sin_autorizar %}<span class="text-xs {{ 'text-red-700' if _rojo else 'text-amber-800' }}"> · todavía sin autorizar</span>
+              {% elif g.docs != g.en_pc %}<span class="text-xs {{ 'text-red-700' if _rojo else 'text-amber-800' }}"> · falta cargarla</span>{% endif %}
             {% elif g.facturada %}<span class="text-slate-400">nota de entrega</span>
             {% else %}<span class="text-amber-800">sin factura</span>{% endif %}
           </td>
@@ -115,6 +120,12 @@
           <tr class="border-b border-slate-100">
             <td class="px-3 py-1.5 text-slate-600">− salió hoy y todavía no se facturó</td>
             <td class="px-3 py-1.5 text-right">{{ d.sin_factura.kg | kg_es }} kg</td>
+          </tr>
+          {% endif %}
+          {% if d.sin_autorizar.kg %}
+          <tr class="border-b border-slate-100">
+            <td class="px-3 py-1.5 text-slate-600">− todavía sin autorizar en Asinfo</td>
+            <td class="px-3 py-1.5 text-right">{{ d.sin_autorizar.kg | kg_es }} kg</td>
           </tr>
           {% endif %}
           {% if d.sin_cargar.kg %}
