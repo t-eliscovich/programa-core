@@ -41,6 +41,7 @@ _started = False
 
 
 def _warm_once() -> None:
+    import calendar as _cal_mod
     from datetime import date
 
     from filters import today_ec
@@ -77,6 +78,14 @@ def _warm_once() -> None:
         # la carga entera. Se calientan por la función de la PANTALLA y no por
         # cada consulta suelta: si mañana la pantalla pide una más, se calienta
         # sola.
+        # El rango ANCHO que usa /facturas cuando se filtra por cliente:
+        # 2025-01-01 → fin del mes en curso (ver facturas/views.py, el
+        # redondeo a meses enteros). Sin esto, el primero que filtra un
+        # cliente después de que vence el cache espera 5 segundos.
+        ("facturas_rango_ancho",
+         lambda: asvc.facturas_periodo(
+             date(2025, 1, 1),
+             date(yy, mm, _cal_mod.monthrange(yy, mm)[1]))),
         ("stock_lote_totales", lambda: asvc.stock_asinfo_lote_totales()),
         ("fabricacion_proceso_52", lambda: asvc.fabricacion_proceso(52)),
         ("fabricacion_proceso_53", lambda: asvc.fabricacion_proceso(53)),

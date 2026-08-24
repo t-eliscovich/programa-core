@@ -2662,6 +2662,7 @@ def lista():
         or is_export
     )
     if 0 < len(filas) <= 6000 and _necesita_asinfo:
+        import calendar as _cal
         from datetime import date as _date
 
         # Asinfo solo tiene data limpia desde 2025-01-01. Recortamos el rango
@@ -2679,6 +2680,21 @@ def lista():
                 _asinfo_intentado = True
                 mn = max(min(fechas_2025_plus), ASINFO_DESDE_EFECTIVO)
                 mx = max(fechas_2025_plus)
+                # ⭐ TMT 2026-08-24 (dueña: *"qué más podemos hacer más
+                # rápido?"*). El rango se redondea a MESES ENTEROS antes de
+                # preguntarle a Asinfo. Medido en producción: filtrar por un
+                # cliente tardaba ~5 SEGUNDOS la primera vez y ~250 ms las
+                # siguientes — porque cada filtro nuevo daba un rango de
+                # fechas distinto (el de SUS facturas), y `facturas_periodo`
+                # cachea por (desde, hasta): con la fecha exacta, cada cliente
+                # estrenaba su propia clave y pagaba los 20 meses de Asinfo de
+                # nuevo. Redondeando, casi todos caen en la MISMA clave
+                # —2025-01-01 → fin del mes en curso—, que además el warmup
+                # mantiene caliente. La data no cambia: pedir de más al borde
+                # del mes sólo agrega filas que no matchean con nada.
+                mn = mn.replace(day=1)
+                mx = mx.replace(
+                    day=_cal.monthrange(mx.year, mx.month)[1])
                 asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
                 # TMT 2026-05-22 — extendido: muchos clientes (BED, EDU, BAN…)
                 # facturan via NTEN (nota de entrega) en lugar de FACTURA común.
