@@ -11412,13 +11412,23 @@ def factura_cambiar_stat_a_t(
 
 def _reactivar_factura_anulada(id_factura: int, *, conn) -> None:
     """Re-activa la emisión de una factura anulada (X → viva): marca el
-    'reverso_factura_anulada' activo como reversado y vuelve la emisión a
+    'reverso_factura_anulada' como reversado y vuelve la emisión a
     'activo', para que la factura vuelva a contar en flujo/utilidad. TMT
-    2026-07-21."""
+    2026-07-21.
+
+    TMT 2026-08-24 (caso 182254 KJG / 182327 VGA): esta función NUNCA corrió.
+    Buscaba el reverso con `estado='activo'`, y en `mov_doble.reversar` un
+    reverso nace SIEMPRE con `estado='reverso'` (`"reverso" if id_original
+    else "activo"`, mov_doble.py) — la condición no podía cumplirse ni una
+    vez. Resultado: la factura volvía a cartera pero su `factura_emitida`
+    quedaba en 'reversado', y el Historial y la traza la mostraban como una
+    emisión dada de baja aunque estuviera viva y sumando. Cuatro facturas
+    quedaron así, una de $41.024,53. El estado correcto es 'reverso'.
+    """
     rev = db.fetch_one(
         "SELECT id_mov_doble, id_original FROM scintela.mov_doble "
         " WHERE tipo='reverso_factura_anulada' AND origen_id=%s "
-        "   AND estado='activo' ORDER BY id_mov_doble DESC LIMIT 1",
+        "   AND estado='reverso' ORDER BY id_mov_doble DESC LIMIT 1",
         (id_factura,), conn=conn)
     if rev:
         db.execute(
