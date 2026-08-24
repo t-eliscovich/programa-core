@@ -26,6 +26,7 @@ Migración 0013 remapea las filas legacy `stat='D'` (depositado genérico)
 a `stat='B'`. Después de esa migración, 'D' es unambiguamente Daniela.
 """
 
+import logging
 from datetime import date, timedelta
 
 import db
@@ -39,6 +40,8 @@ from periodo_guard import asegurar_fecha_abierta
 
 from . import concepto_cobro as _concepto_cobro
 from . import nota_usuario as _nota_usuario
+
+_LOG = logging.getLogger(__name__)
 
 # Día de INGRESO de un cobro — la fecha con la que el dBase arma sus listados
 # del día (`FECHING`). Es UNA sola definición porque hay DOS pantallas que la
@@ -7968,17 +7971,38 @@ def deshacer_anulacion_error_carga(
         # 4. el espejo vuelve con el padre (ver docstring)
         espejos_revividos: list[int] = []
         for _id_esp in [int(x) for x in (meta.get("espejos_anulados") or [])]:
+            # TMT 2026-08-24: pedía `estado='activo'` y así se saltaba más de
+            # la mitad de los casos. Una anulación por error de carga nace
+            # 'activo' o 'reverso' según haya encontrado el `cheque_creado`
+            # del cheque para linkearlo (`id_original=… if md_orig_cheque else
+            # None`, más arriba en `anular_por_error_carga`): en producción hay
+            # 34 'activo' y 47 'reverso'. Con el filtro viejo, deshacer la
+            # anulación del padre revivía el anticipo y dejaba el espejo NB=98
+            # muerto en 47 de cada 81 casos — el desbalance que el arreglo del
+            # 19/08 vino justamente a tapar, con el signo al revés, y el
+            # `continue` de abajo lo hacía en silencio. Lo que importa acá es
+            # que la anulación del espejo NO esté ya deshecha.
             _mv_esp = db.fetch_one(
                 """
                 SELECT id_mov_doble FROM scintela.mov_doble
                  WHERE tipo='reverso_cheque_administrativo'
                    AND origen_table='cheque' AND origen_id=%s
-                   AND estado='activo'
+                   AND estado <> 'reversado'
                  ORDER BY id_mov_doble DESC LIMIT 1
                 """,
                 (_id_esp,), conn=conn,
             )
             if not _mv_esp:
+                # No debería pasar: el espejo se anuló en cascada con este
+                # mismo cheque, así que su anulación tiene que estar. Si no
+                # está, el espejo NO vuelve y el cliente queda con un saldo a
+                # favor que no existe — que eso pase sin dejar rastro es cómo
+                # se pierden días hasta que alguien mira el número.
+                _LOG.warning(
+                    "deshacer_anulacion_error_carga: el espejo %s no vuelve — "
+                    "no encontré su anulación sin deshacer (cheque padre %s)",
+                    _id_esp, id_cheque,
+                )
                 continue
             try:
                 deshacer_anulacion_error_carga(
