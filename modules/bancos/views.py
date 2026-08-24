@@ -324,24 +324,67 @@ def transferir():
     )
 
 
+class _Preguntar(Exception):
+    """Corta el POST para volver a preguntar. Nada se grabó todavía."""
+
+
+def _campos_ocultos(form, pisar: dict | None = None) -> list[tuple[str, str]]:
+    """Todo lo tipeado, listo para colgarlo de la pantalla de confirmación.
+
+    Se saca el csrf (lo pone el template de nuevo) y los botones de la
+    pregunta anterior, que los vuelve a poner el botón que la persona apriete.
+
+    `pisar` reemplaza un campo por el valor que la vista ya calculó — hace
+    falta para la fecha: si apretaron "No, ponele la de hoy" y DESPUÉS salta la
+    pregunta de repetido, el hidden tiene que llevar la fecha nueva, no la
+    vieja que se acaba de descartar.
+    """
+    fuera = {"csrf_token", "usar_hoy", "confirmar_fecha", "permitir_duplicado"}
+    pisar = pisar or {}
+    campos = [(k, v) for k in form
+              if k not in fuera and k not in pisar
+              for v in form.getlist(k)]
+    campos.extend((k, v) for k, v in pisar.items())
+    return campos
+
+
 @bancos_bp.route("/bancos/emitir-cheque", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def emitir_cheque():
-    """Wizard para emitir un cheque propio (chequera).
+    """Wizard para emitir un cheque propio (chequera) o una nota de débito.
 
     El legacy `BANCOS.PRG::CHEQUERA` infería el tipo de movimiento del
     proveedor + concepto. Este wizard pide el tipo EXPLÍCITO (proveedor /
-    retiro / caja / gasto / otro) y aplica el side-effect correspondiente
-    en una sola transacción.
+    retiro / caja / gasto / posdato / otro) y aplica el side-effect
+    correspondiente en una sola transacción.
+
+    ⭐ TMT 2026-08-24 (dueña): *"cuando emitimos nota de débito, tiene que ser
+    igual que emitir cheque, misma pantalla. sin numero de cheque"*. La nota de
+    débito tenía pantalla propia (`/bancos/nuevo-movimiento?doc=ND`), donde los
+    destinos se pedían tipeando el concepto en formato mágico ("INOP AI 11",
+    "RR TM"). Es el MISMO acto —sale plata del banco y va a algún lado—, así
+    que ahora se carga acá con `?doc=ND`: mismas tarjetas, sin N° de cheque.
     """
+    doc = (request.form.get("documento")
+           or request.args.get("doc") or "CH").strip().upper()
+    if doc not in queries.DOCS_EMITIBLES:
+        doc = "CH"
+    label = "cheque" if doc == "CH" else "nota de débito"
     bancos = queries.bancos_operativos() or []
+    pregunta_fecha = None     # fecha anterior a hoy pendiente de confirmar
+    pregunta_repetido = None  # movimiento igual cargado recién
 
     if request.method == "POST":
         tipo = (request.form.get("tipo") or "").strip().lower()
         no_banco = parse_int(request.form.get("no_banco"))
         importe = parse_monto(request.form.get("importe"))
         fecha = parse_date(request.form.get("fecha")) or today_ec()
+        # El botón "No, ponele la de hoy" del bloque ¿FECHA VIEJA?. Lleva
+        # nombre propio: si se llamara `fecha` como el input, `form.get()`
+        # devolvería el PRIMERO y el botón no pisaría nada.
+        if (request.form.get("usar_hoy") or "") == "1":
+            fecha = today_ec()
         no_cheque = (request.form.get("no_cheque") or "").strip()
         beneficiario = (request.form.get("beneficiario") or "").strip().upper()
         concepto = (request.form.get("concepto") or "").strip()
@@ -372,10 +415,29 @@ def emitir_cheque():
             except (TypeError, ValueError):
                 xgast_num_val = None
 
+        # ⭐ Freno de FECHA VIEJA (traído de la pantalla de nota de débito,
+        # TMT 2026-08-10): cargarlo con fecha anterior a hoy tiene que ser
+        # deliberado — mueve la plata de hoy pero queda archivado en ese día y
+        # después no se lo encuentra buscando por el día del salto. No se
+        # bloquea, se pregunta. Nada se graba hasta confirmar.
+        #
+        # La confirmación vale para ESA fecha: puede llegar como "1" (el botón
+        # de la pregunta) o como la fecha misma (el hidden que arrastra la
+        # tanda, para no re-preguntar cheque por cheque). Si cambian la fecha
+        # por otra vieja, el hidden ya no coincide y vuelve a preguntar.
+        _conf = (request.form.get("confirmar_fecha") or "").strip()
+        if fecha < today_ec() and _conf not in ("1", fecha.isoformat()):
+            pregunta_fecha = fecha
         try:
             usuario = (g.user or {}).get("username", "web")
+            if pregunta_fecha is not None:
+                raise _Preguntar
             r = queries.emitir_cheque(
                 tipo=tipo,
+                documento=doc,
+                permitir_duplicado=(
+                    (request.form.get("permitir_duplicado") or "") == "1"
+                ),
                 no_banco=no_banco,
                 importe=importe,
                 fecha=fecha,
@@ -404,19 +466,49 @@ def emitir_cheque():
             # ⚠ `id_posdat` NO se arrastra a propósito: esa posdat se acaba de
             # pagar, y volver con ella pre-cargada invita a pagarla dos veces.
             _num = f" N° {r['no_cheque']}" if r.get("no_cheque") else ""
+            _que = "Cheque" if doc == "CH" else "Nota de débito"
             flash(
-                f"Cheque{_num} emitido OK desde {r['banco_nombre']} por "
+                f"{_que}{_num} de {r['banco_nombre']} por "
                 f"$ {r['importe']:.2f}. Side-effect: {r['side_effect']}. "
                 f"Podés cargar el siguiente.",
                 "ok",
             )
-            return redirect(url_for("bancos.emitir_cheque",
-                                    no_banco=r["no_banco"],
-                                    fecha=fecha.isoformat() if fecha else None))
+            return redirect(url_for(
+                "bancos.emitir_cheque",
+                doc=doc,
+                no_banco=r["no_banco"],
+                fecha=fecha.isoformat() if fecha else None,
+                # Si la tanda es de una fecha vieja YA confirmada, el form
+                # vuelve con esa confirmación puesta — se pregunta una vez por
+                # tanda, no una vez por cheque.
+                fecha_ok=(fecha.isoformat()
+                          if fecha and fecha < today_ec() else None),
+            ))
+        except _Preguntar:
+            pass  # ¿FECHA VIEJA? — se re-pregunta más abajo, nada se grabó.
+        except queries.MovimientoRepetido as e:
+            pregunta_repetido = e
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:
-            flash_exc("No pude emitir el cheque", e)
+            flash_exc(f"No pude emitir la {label}" if doc == "ND"
+                      else "No pude emitir el cheque", e)
+
+    # Si hay algo que confirmar, nada se grabó: se muestra la pregunta con
+    # todo lo tipeado colgando en hidden, para que el "Sí" lo mande igual.
+    if pregunta_fecha is not None or pregunta_repetido is not None:
+        return render_template(
+            "bancos/emitir_confirmar.html",
+            doc=doc,
+            label=label,
+            pregunta_fecha=pregunta_fecha,
+            pregunta_repetido=pregunta_repetido,
+            hoy_es=today_ec().strftime("%d/%m/%Y"),
+            campos=_campos_ocultos(
+                request.form,
+                {"fecha": fecha.isoformat() if fecha else ""},
+            ),
+        )
 
     # GET o POST con error
     import contextlib
@@ -497,7 +589,7 @@ def emitir_cheque():
     # que viene despues del ultimo que tenemos cargado". Calculamos
     # MAX(numreferencia)+1 del banco pre-seleccionado.
     no_cheque_sugerido = None
-    if no_banco_inicial:
+    if no_banco_inicial and doc == "CH":
         with contextlib.suppress(Exception):
             row = _db.fetch_one(
                 """
@@ -514,8 +606,21 @@ def emitir_cheque():
             if row and row.get("ultimo"):
                 no_cheque_sugerido = int(row["ultimo"]) + 1
 
+    # ?fecha_ok= lo manda el redirect de después de emitir: la fecha vieja de
+    # esta tanda ya se confirmó (ver arriba). Sólo vale si es la MISMA fecha
+    # que trae el form.
+    _fecha_form = parse_date(request.args.get("fecha")) or today_ec()
+    fecha_confirmada = (
+        request.args.get("fecha_ok")
+        if (request.args.get("fecha_ok") or "") == _fecha_form.isoformat()
+        else ""
+    )
+
     return render_template(
         "bancos/emitir_cheque.html",
+        doc=doc,
+        label=label,
+        fecha_confirmada=fecha_confirmada,
         bancos=bancos,
         posdats=posdats,
         prov_filter=prov_filter,
@@ -1961,7 +2066,6 @@ def clasificar_gasto(no_banco: int, id_transaccion: int):
 _LABELS_DOC = {
     "DE": ("Depósito", "Suma al saldo del banco"),
     "NC": ("Nota de crédito", "Suma al saldo (devolución, intereses, reverso de cargo)"),
-    "ND": ("Nota de débito", "Resta del saldo (cargo del banco, comisión, ISI)"),
 }
 
 
@@ -1975,8 +2079,18 @@ def nuevo_movimiento():
     `documento` (POST). Comparte template `bancos/nuevo_movimiento.html`.
     """
     doc = (request.args.get("doc") or request.form.get("documento") or "").upper().strip()
+    # ⭐ TMT 2026-08-24 (dueña): *"cuando emitimos nota de débito, tiene que ser
+    # igual que emitir cheque, misma pantalla. sin numero de cheque"*. La ND se
+    # carga ahora en /bancos/emitir-cheque?doc=ND, que tiene las mismas
+    # tarjetas de destino en vez de los conceptos mágicos ("INOP AI 11"). Este
+    # redirect queda para los links viejos y los favoritos.
+    if doc == "ND":
+        return redirect(url_for(
+            "bancos.emitir_cheque", doc="ND",
+            no_banco=request.args.get("no_banco") or None,
+        ))
     if doc not in _LABELS_DOC:
-        flash("Documento inválido (debe ser DE, NC o ND).", "warn")
+        flash("Documento inválido (debe ser DE o NC).", "warn")
         return redirect(url_for("bancos.lista"))
     label, ayuda = _LABELS_DOC[doc]
 

@@ -89,7 +89,9 @@
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
       Nota de crédito
     </a>
-    <a href="{{ url_for('bancos.nuevo_movimiento', doc='ND', no_banco=banco_actual.no_banco) }}"
+    {# TMT 2026-08-24 (dueña): la nota de débito se carga en la MISMA pantalla
+       que el cheque, sin número de cheque. #}
+    <a href="{{ url_for('bancos.emitir_cheque', doc='ND', no_banco=banco_actual.no_banco) }}"
        class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-rose-400 text-rose-700 hover:bg-rose-50 font-medium">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
       Nota de débito

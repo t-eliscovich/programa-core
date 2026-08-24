@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+
+{# TMT 2026-08-24 — Pantalla de confirmación de los dos frenos que la nota de
+   débito traía de su pantalla vieja y ahora valen también para el cheque:
+   ¿fecha vieja? y ¿repetido?. Nada se grabó todavía: todo lo tipeado viaja en
+   los hidden de abajo y se manda de nuevo con el botón que aprieten. #}
+
+{% block title %}Confirmar {{ label }}{% endblock %}
+{% block breadcrumb %}
+<a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
+<strong>Confirmar {{ label }}</strong>
+{% endblock %}
+
+{% block content %}
+  {{ page_header("Falta confirmar", "Todavía no se grabó nada.") }}
+
+  <form method="post" action="{{ url_for('bancos.emitir_cheque') }}"
+        class="max-w-3xl space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for nombre, valor in campos %}
+      <input type="hidden" name="{{ nombre }}" value="{{ valor }}">
+    {% endfor %}
+    {% if pregunta_fecha is none %}
+      {# La fecha ya se confirmó en el paso anterior; no volver a preguntarla. #}
+      <input type="hidden" name="confirmar_fecha" value="1">
+    {% endif %}
+
+    {% if pregunta_fecha %}
+    <div class="rounded-lg border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 p-4">
+      <div class="font-mono font-semibold text-amber-800 dark:text-amber-300 mb-1">¿FECHA VIEJA?</div>
+      <p class="text-sm text-amber-800 dark:text-amber-200 mb-3">
+        Lo estás cargando con fecha <strong class="font-mono">{{ pregunta_fecha.strftime('%d/%m/%Y') }}</strong>
+        y hoy es <strong class="font-mono">{{ hoy_es }}</strong>.
+        <span class="text-amber-700/80 dark:text-amber-300/80">
+          Va a quedar archivado en ese día, no en el de hoy — quien lo busque por
+          la fecha en que se movió la plata no lo va a encontrar.
+        </span>
+      </p>
+      <div class="flex gap-3">
+        <button type="submit" name="confirmar_fecha" value="1"
+                class="text-sm px-5 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-semibold">
+          Sí, es de esa fecha
+        </button>
+        {# OJO: el botón NO puede llamarse `fecha` — ese name ya viaja en los
+           hidden de arriba y `request.form.get()` devuelve el PRIMERO. #}
+        <button type="submit" name="usar_hoy" value="1"
+                class="text-sm px-5 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-semibold">
+          No, ponele la de hoy
+        </button>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if pregunta_repetido %}
+    <div class="rounded-lg border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 p-4">
+      <div class="font-mono font-semibold text-amber-800 dark:text-amber-300 mb-1">¿REPETIDO?</div>
+      <p class="text-sm text-amber-800 dark:text-amber-200 mb-3">
+        Hace un rato se cargó en este banco un movimiento igual —misma fecha y
+        mismo importe— con el concepto
+        <strong>{{ pregunta_repetido.concepto or '(sin concepto)' }}</strong>.
+        Si es el mismo, ya está cargado y no hay que volver a cargarlo.
+      </p>
+      <div class="flex gap-3 items-center">
+        <button type="submit" name="permitir_duplicado" value="1"
+                class="text-sm px-5 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-semibold">
+          Son dos, cargalo igual
+        </button>
+        <a href="{{ url_for('bancos.lista') }}"
+           class="text-sm px-4 py-1.5 rounded border border-slate-300 hover:bg-slate-50">
+          Ya estaba, no lo cargues
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+    <a href="{{ url_for('bancos.emitir_cheque', doc=doc) }}"
+       class="inline-block text-sm text-slate-600 hover:underline">← Cargarlo de nuevo</a>
+  </form>
+{% endblock %}

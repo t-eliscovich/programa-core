@@ -27,6 +27,25 @@ class ActivaRequerida(Exception):
         super().__init__(f"ACTIVA? — candidato a anticipo USD cuenta {cta}")
 
 
+class MovimientoRepetido(Exception):
+    """Ya hay un movimiento igual, recién cargado — falta confirmar que va igual.
+
+    ⭐ TMT 2026-08-24 — freno traído de la pantalla vieja de nota de débito al
+    unificarla con la de emitir (dueña: *"cuando emitimos nota de débito, tiene
+    que ser igual que emitir cheque, misma pantalla"*). Allá el duplicado se
+    resolvía SOLO —se completaba o se devolvía la fila anterior—, que está bien
+    para un cargo del banco pero no para un cheque: dos cheques del mismo
+    importe el mismo día son moneda corriente. Acá se pregunta y no se graba
+    nada hasta que contesten (la tx todavía no arrancó).
+    """
+
+    def __init__(self, id_transaccion: int, concepto: str = "", fecha=None):
+        self.id_transaccion = id_transaccion
+        self.concepto = concepto
+        self.fecha = fecha
+        super().__init__(f"Movimiento repetido — ya existe el #{id_transaccion}")
+
+
 def _detectar_cta_usd(concepto: str, prov: str | None) -> tuple[str | None, str]:
     """Detecta si un ND manual es un anticipo USD — paridad dBase BANCOS.PRG.
 
@@ -751,7 +770,19 @@ def banco_info(no_banco: int) -> dict | None:
 #
 # TODOS comparten: INSERT en transacciones_bancarias con documento='CH'.
 
-TIPOS_CHEQUE_EMITIDO = ("proveedor", "retiro", "caja", "gasto", "anticipo_usd", "otro")
+# TMT 2026-08-24 (dueña): la pantalla de emitir emite AHORA los dos documentos
+# —cheque y nota de débito—, así que acá viven también los destinos que antes
+# sólo existían en la pantalla vieja de ND, donde se pedían tipeando el concepto
+# en formato mágico ("INOP AI 11"):
+#   posdato → posdat nueva en negativo, vence a 120 días (el viejo INOP).
+# El "anticipo a proveedor" NO necesita tipo nuevo: es el mismo `anticipo_usd`
+# (los dos escriben la misma fila en scintela.dolares con la cuenta de 2 letras).
+TIPOS_CHEQUE_EMITIDO = ("proveedor", "retiro", "caja", "gasto", "anticipo_usd",
+                        "posdato", "otro")
+
+# Documentos que puede emitir la pantalla. CH baja el saldo y lleva número de
+# chequera; ND baja el saldo igual pero NO tiene número (lo pone el banco).
+DOCS_EMITIBLES = ("CH", "ND")
 
 
 def clasificar_tx_como_gasto(
@@ -840,6 +871,8 @@ def emitir_cheque(
     *,
     tipo: str,
     no_banco: int,
+    documento: str = "CH",   # 'CH' cheque de chequera | 'ND' nota de débito
+    permitir_duplicado: bool = False,
     importe,
     fecha,
     no_cheque: str = "",
@@ -858,14 +891,30 @@ def emitir_cheque(
                                           # cuando tipo='gasto'. Sin esto el xgast quedaba
                                           # con num=NULL → invisible en /informes/gastos.
 ) -> dict:
-    """Emite un cheque propio en el banco `no_banco`.
+    """Emite un cheque propio (o una nota de débito) en el banco `no_banco`.
 
     Devuelve `{id_transaccion, side_effect: <descripción>}`.
 
-    Lanza ValueError si los datos son inválidos para el tipo elegido.
+    `documento`:
+      'CH' → cheque de chequera: sale con número de cheque (numreferencia).
+      'ND' → nota de débito: el banco debita directo, NO hay número que poner.
+             TMT 2026-08-24 (dueña): *"cuando emitimos nota de débito, tiene que
+             ser igual que emitir cheque, misma pantalla. sin numero de cheque"*.
+             Los dos restan del saldo y tienen los MISMOS destinos, así que la
+             única diferencia real es el número — y el mov_doble, que para la ND
+             sigue la convención vieja ('nota_debito') para que el reverso de
+             siempre la siga entendiendo.
+
+    Lanza ValueError si los datos son inválidos para el tipo elegido, y
+    MovimientoRepetido si hace minutos se cargó uno igual sin confirmar.
     """
     if tipo not in TIPOS_CHEQUE_EMITIDO:
         raise ValueError(f"Tipo inválido: {tipo!r}. Usá: {', '.join(TIPOS_CHEQUE_EMITIDO)}")
+    documento = (documento or "CH").strip().upper()
+    if documento not in DOCS_EMITIBLES:
+        raise ValueError(
+            f"Documento inválido: {documento!r}. Usá: {', '.join(DOCS_EMITIBLES)}"
+        )
     if not no_banco:
         raise ValueError("Banco origen requerido.")
     importe_f = float(importe or 0)
@@ -879,6 +928,38 @@ def emitir_cheque(
     )
     if not banco_row:
         raise ValueError(f"Banco no_banco={no_banco} no existe.")
+
+    # ⭐ Freno de REPETIDO (TMT 2026-08-24, ver MovimientoRepetido). Mismo
+    # criterio de 15 minutos que la pantalla vieja de ND: mismo banco, mismo
+    # documento, misma fecha, mismo importe y el MISMO usuario. Un cheque con
+    # número propio distinto NO es repetido — el número es la firma de la fila.
+    if not permitir_duplicado:
+        prev = db.fetch_one(
+            """
+            SELECT id_transaccion, TRIM(COALESCE(concepto,'')) AS concepto, fecha,
+                   COALESCE(numreferencia::text, '') AS numref
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+               AND UPPER(TRIM(COALESCE(documento,''))) = %s
+               AND fecha = %s
+               AND ROUND(importe::numeric, 2) = ROUND(%s::numeric, 2)
+               AND TRIM(COALESCE(usuario_crea,'')) = %s
+               AND COALESCE(fecha_crea, NOW()) > NOW() - INTERVAL '15 minutes'
+             ORDER BY id_transaccion DESC
+             LIMIT 1
+            """,
+            (no_banco, documento, fecha, importe_f, (usuario or "").strip()),
+        )
+        if prev and not (
+            documento == "CH"
+            and (no_cheque or "").strip()
+            and (prev.get("numref") or "").strip() != (no_cheque or "").strip()
+        ):
+            raise MovimientoRepetido(
+                id_transaccion=prev["id_transaccion"],
+                concepto=prev.get("concepto") or "",
+                fecha=prev.get("fecha"),
+            )
 
     side_effect = "ninguno"
     extras: dict = {}
@@ -894,11 +975,16 @@ def emitir_cheque(
             no_banco=no_banco,
             no_cta=None,
             fecha=fecha,
-            documento="CH",
+            documento=documento,
             importe=importe_f,  # bank_helpers espera ABS, el signo lo aplica internamente
-            concepto=(concepto or beneficiario or f"Cheque {no_cheque}").strip()[:50],
+            concepto=(concepto or beneficiario or (
+                f"Cheque {no_cheque}" if documento == "CH" else "Nota de débito"
+            )).strip()[:50],
             prov=(beneficiario or "")[:5].upper() if beneficiario else None,
-            numreferencia=(int(no_cheque) if (no_cheque or "").strip().isdigit() else None),
+            # La nota de débito no tiene número de cheque: lo pone el banco.
+            numreferencia=(int(no_cheque)
+                           if documento == "CH" and (no_cheque or "").strip().isdigit()
+                           else None),
             usuario=usuario[:50],
             fechad=(fechad if (es_postdatado and fechad) else None),
             stat="A",
@@ -988,7 +1074,95 @@ def emitir_cheque(
                 # Backward compat — primer id para callers que esperan singular.
                 extras["id_posdat"] = posdats_a_cerrar[0]
             else:
-                side_effect = "Sin posdat asociada — sólo movimiento bancario"
+                # ⭐ TMT 2026-08-24 (dueña, al unificar la pantalla con la de
+                # nota de débito): acá antes la plata salía del banco y NO
+                # quedaba registrada en ningún otro lado — "sólo movimiento
+                # bancario". La pantalla vieja de ND sí grababa la COMPRA (pago
+                # directo, réplica de BANCOS.PRG ~195), así que al unificar
+                # había que elegir: o la ND perdía la compra, o el cheque la
+                # ganaba. Decisión de la dueña: la gana el cheque.
+                #
+                # Con posdat seleccionada esto NO corre: la obligación ya
+                # existía y lo que corresponde es cerrarla, no crear otra.
+                prov_cod = (beneficiario or "").strip().upper()
+                id_compra = None
+                if prov_cod:
+                    cur.execute(
+                        """
+                        SELECT UPPER(TRIM(COALESCE(tipo,''))) AS tipo
+                          FROM scintela.proveedor
+                         WHERE UPPER(TRIM(codigo_prov)) = %s
+                           AND COALESCE(activo, '1') NOT IN ('0', 'N')
+                         LIMIT 1
+                        """,
+                        (prov_cod,),
+                    )
+                    _pr = cur.fetchone()
+                    if _pr is not None:
+                        _tipo_prov = (
+                            _pr[0] if isinstance(_pr, list | tuple)
+                            else (_pr.get("tipo") or "")
+                        ) or ""
+                        # TYP del dBase: H hilos / T tintorería / Q químicos /
+                        # K todo lo demás.
+                        tipo_compra = (_tipo_prov[:1]
+                                       if _tipo_prov[:1] in ("H", "T", "Q") else "K")
+                        # `compra.no_banco` es la CTA del dBase (1 Pichincha,
+                        # 2 el resto), no el no_banco real.
+                        cta_banco = 1 if int(no_banco or 0) == 10 else 2
+                        cur.execute(
+                            """
+                            INSERT INTO scintela.compra
+                                (fecha, fechad, codigo_prov, tipo, importe,
+                                 concepto, no_banco, usuario_crea)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            RETURNING id_compra
+                            """,
+                            (today_ec(), fecha, prov_cod[:3], tipo_compra,
+                             importe_f, (concepto or f"PAGO {prov_cod}")[:200],
+                             cta_banco, usuario[:50]),
+                        )
+                        _cr = cur.fetchone()
+                        id_compra = (_cr[0] if isinstance(_cr, list | tuple)
+                                     else (_cr.get("id_compra") if _cr else None))
+                if id_compra:
+                    extras["id_compra"] = id_compra
+                    side_effect = (
+                        f"Compra #{id_compra} a {prov_cod} registrada "
+                        f"(pago directo, sin posdat previa)"
+                    )
+                else:
+                    side_effect = "Sin posdat asociada — sólo movimiento bancario"
+
+        elif tipo == "posdato":
+            # ⭐ TMT 2026-08-24 — el viejo "INOP" de la pantalla de ND: la plata
+            # sale del banco y le queda a favor del proveedor, así que nace una
+            # posdat NEGATIVA (deuda viva al revés) que vence a 120 días. Antes
+            # se pedía tipeando el concepto "INOP AI 11"; ahora es una tarjeta.
+            from datetime import timedelta
+            prov_pd = (beneficiario or "").strip().upper()[:2]
+            if not prov_pd:
+                raise ValueError(
+                    "Posdato requiere el código de proveedor (2 letras, ej. AI)."
+                )
+            cur.execute(
+                """
+                INSERT INTO scintela.posdat
+                    (fecha, fechad, prov, importe, concepto, banc, usuario_crea)
+                VALUES (%s, %s, %s, %s, %s, 0, %s)
+                RETURNING id_posdat
+                """,
+                (today_ec(), today_ec() + timedelta(days=120), prov_pd,
+                 -importe_f, (concepto or f"INOP {prov_pd}")[:100], usuario[:50]),
+            )
+            _pd = cur.fetchone()
+            id_pd_inop = (_pd[0] if isinstance(_pd, list | tuple)
+                          else (_pd.get("id_posdat") if _pd else None))
+            side_effect = (
+                f"Posdat #{id_pd_inop} creada a favor de {prov_pd} "
+                f"(−$ {importe_f:,.2f}, vence en 120 días)"
+            )
+            extras["id_posdat_inop"] = id_pd_inop
 
         elif tipo == "retiro":
             cur.execute(
@@ -1134,6 +1308,10 @@ def emitir_cheque(
             destino_table, destino_id = None, None
             if tipo == "proveedor" and extras.get("id_posdat"):
                 destino_table, destino_id = "posdat", extras["id_posdat"]
+            elif tipo == "proveedor" and extras.get("id_compra"):
+                destino_table, destino_id = "compra", extras["id_compra"]
+            elif tipo == "posdato" and extras.get("id_posdat_inop"):
+                destino_table, destino_id = "posdat", extras["id_posdat_inop"]
             elif tipo == "retiro" and extras.get("id_retiro"):
                 destino_table, destino_id = "retiros", extras["id_retiro"]
             elif tipo == "caja" and extras.get("id_caja"):
@@ -1152,9 +1330,25 @@ def emitir_cheque(
             if not destino_table:
                 destino_table, destino_id = "transacciones_bancarias", id_transaccion
             import mov_doble as _md
+            # El tipo del mov_doble manda quién sabe reversarlo:
+            #   CH → `cheque_emitido_<tipo>`  (bancos.reversar_cheque_emitido)
+            #   ND → `nota_debito`            (reversar_movimiento_simple, el
+            #        mismo que ya reversaba las ND de la pantalla vieja; deshace
+            #        la contraparte leyendo las claves de `metadata`).
+            # Por eso metadata lleva los ids de la contraparte para los dos.
+            _meta = {"no_banco": no_banco,
+                     "no_cheque": no_cheque,
+                     "beneficiario": beneficiario,
+                     "documento": documento,
+                     "tipo_emision": tipo}
+            for _k in ("id_compra", "id_retiro", "id_caja", "id_xgast",
+                       "id_dolares", "id_posdat_inop", "id_posdats"):
+                if extras.get(_k):
+                    _meta[_k] = extras[_k]
             id_mov_doble = _md.registrar(
                 conn=conn,
-                tipo=f"cheque_emitido_{tipo}",
+                tipo=(f"cheque_emitido_{tipo}" if documento == "CH"
+                      else "nota_debito"),
                 origen_table="transacciones_bancarias",
                 origen_id=id_transaccion,
                 destino_table=destino_table,
@@ -1163,16 +1357,15 @@ def emitir_cheque(
                 fecha=fecha,
                 concepto=(concepto or beneficiario or "")[:200],
                 usuario=usuario,
-                metadata={"no_banco": no_banco,
-                          "no_cheque": no_cheque,
-                          "beneficiario": beneficiario},
+                metadata=_meta,
             )
 
     return {
         "id_transaccion":  id_transaccion,
         "no_banco":        no_banco,
-        "no_cheque":       (no_cheque or "").strip(),
+        "no_cheque":       (no_cheque or "").strip() if documento == "CH" else "",
         "banco_nombre":    banco_row.get("nombre") or "",
+        "documento":       documento,
         "tipo":            tipo,
         "importe":         importe_f,
         "side_effect":     side_effect,
@@ -1914,6 +2107,32 @@ def reversar_movimiento_simple(
                  usuario[:50], id_pd_inop), conn=conn,
             )
 
+        # ⭐ TMT 2026-08-24 — destinos que la nota de débito ganó al pasar a
+        # emitirse por la pantalla del cheque. Sin esto el reverso devolvía la
+        # plata al banco y dejaba viva la contraparte.
+        # Gasto → anulado (stat='Y'), igual que en el reverso del cheque.
+        id_xgast_nd = meta.get("id_xgast")
+        if id_xgast_nd:
+            db.execute(
+                "UPDATE scintela.xgast SET stat='Y', usuario_modifica=%s "
+                "WHERE id_xgast=%s",
+                (usuario[:50], id_xgast_nd), conn=conn,
+            )
+
+        # Posdats cerradas por la ND → vuelven a ser deuda viva (banc=0).
+        ids_pd = meta.get("id_posdats") or []
+        if ids_pd:
+            db.execute(
+                """
+                UPDATE scintela.posdat
+                   SET banc = 0,
+                       fecha_modifica = CURRENT_TIMESTAMP,
+                       usuario_modifica = %s
+                 WHERE id_posdat = ANY(%s)
+                """,
+                (usuario[:50], [int(x) for x in ids_pd]), conn=conn,
+            )
+
         # Caja → borrar la entrada + walk-forward de saldos de caja.
         id_caja = meta.get("id_caja")
         if id_caja:
@@ -2610,6 +2829,34 @@ def reversar_cheque_emitido(
                     conn=conn,
                 )
                 side_revertido = {"tipo": "posdat_reabierta", "id_posdat": dest_id}
+
+            elif tipo_orig == "cheque_emitido_proveedor" and dest_table == "compra":
+                # TMT 2026-08-24 — cheque a proveedor SIN posdat: grabó la
+                # compra (pago directo), así que el reverso la borra.
+                db.execute(
+                    "DELETE FROM scintela.compra WHERE id_compra=%s",
+                    (dest_id,), conn=conn,
+                )
+                side_revertido = {"tipo": "compra_borrada", "id_compra": dest_id}
+
+            elif tipo_orig == "cheque_emitido_posdato" and dest_table == "posdat":
+                # TMT 2026-08-24 — el posdato (INOP) nació de este cheque:
+                # se anula (soft-delete, recuperable), igual que hace el
+                # reverso de la nota de débito.
+                db.execute(
+                    """
+                    UPDATE scintela.posdat
+                       SET anulada = TRUE,
+                           motivo_anulacion = %s,
+                           fecha_anulacion = CURRENT_TIMESTAMP,
+                           usuario_modifica = %s
+                     WHERE id_posdat = %s
+                    """,
+                    (f"Reverso del cheque tx#{id_transaccion}"[:100],
+                     usuario[:50], dest_id),
+                    conn=conn,
+                )
+                side_revertido = {"tipo": "posdat_inop_anulada", "id_posdat": dest_id}
 
             elif tipo_orig == "cheque_emitido_retiro" and dest_table == "retiros":
                 # INSERT retiro con importe negativo (compensación contable).

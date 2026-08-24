@@ -397,13 +397,45 @@ def _variantes_emitir_cheque(ids: dict) -> list[tuple[dict, str]]:
          "cheque POSTDATADO (fechad futura)"),
         ({**base, "tipo": "otro", "importe": "0", "no_cheque": "5009"},
          "importe cero — tiene que rebotar con flash, no explotar"),
+        # ⭐ TMT 2026-08-24 — la NOTA DE DÉBITO se emite por esta misma
+        # pantalla, sin N° de cheque (dueña). Mismos destinos que el cheque.
+        ({**base, "tipo": "otro", "importe": "31,00", "documento": "ND",
+          "concepto": "ND SMOKE"},
+         "documento=ND sin número → nota de débito, mismo camino que el cheque"),
+        ({**base, "tipo": "gasto", "importe": "18,00", "documento": "ND",
+          "concepto": "COMISIONES", "xgast_num": "9"},
+         "ND + gasto V9 (dueña 30/07: 'si hago ND no puedo mandar a gasto')"),
+        ({**base, "tipo": "retiro", "importe": "40,00", "documento": "ND",
+          "de_socio": "TM", "concepto": "RETIRO SMOKE"},
+         "ND ruteada a RETIRO"),
+        ({**base, "tipo": "anticipo_usd", "importe": "88,00", "documento": "ND",
+          "beneficiario": "MP", "concepto": "ANTICIPO SMOKE"},
+         "ND como anticipo a proveedor (la fila en dolares, cuenta de 2 letras)"),
+        ({**base, "tipo": "posdato", "importe": "35,00", "documento": "ND",
+          "beneficiario": "SM", "concepto": "A POSDATO"},
+         "tipo=posdato → posdat negativa a 120 días (el viejo INOP)"),
+        ({**base, "tipo": "proveedor", "importe": "55,00", "no_cheque": "5010",
+          "beneficiario": "SMK"},
+         "tipo=proveedor SIN posdat → graba la compra (pago directo)"),
+        ({**base, "tipo": "otro", "importe": "31,00", "documento": "ND",
+          "concepto": "ND SMOKE"},
+         "la misma ND de nuevo → freno de repetido, pregunta y no graba"),
+        ({**base, "tipo": "otro", "importe": "31,00", "documento": "ND",
+          "concepto": "ND SMOKE", "permitir_duplicado": "1"},
+         "la misma ND confirmada → son dos de verdad, entra"),
     ]
 
 
 def _variantes_nuevo_movimiento() -> list[tuple[str, dict, str]]:
-    """193 líneas: tres documentos, el prompt ACTIVA?, la re-pregunta de fecha
-    vieja (07/08: los movimientos de Alex cargados con fecha de anteayer), el
-    override de duplicado y los destinos especiales retiro/caja/posdat."""
+    """Depósito y nota de crédito, la re-pregunta de fecha vieja (07/08: los
+    movimientos de Alex cargados con fecha de anteayer) y el override de
+    duplicado.
+
+    TMT 2026-08-24 — la NOTA DE DÉBITO se fue de esta pantalla a la de emitir
+    (dueña: *"tiene que ser igual que emitir cheque, misma pantalla"*), así que
+    sus destinos (retiro / caja / posdato / anticipo) se ejercitan ahora en
+    `_variantes_emitir_cheque`. Acá queda una sola ND, para que el redirect que
+    cubre los links viejos no se despinte."""
     base = {"no_banco": str(NB_PICHINCHA), "importe": "123,45",
             "fecha": HOY.isoformat(), "concepto": "MOV SMOKE"}
     vieja = (HOY - timedelta(days=6)).isoformat()
@@ -411,9 +443,6 @@ def _variantes_nuevo_movimiento() -> list[tuple[str, dict, str]]:
         ("DE", {**base, "documento": "DE"}, "depósito del día"),
         ("NC", {**base, "documento": "NC", "importe": "77,00",
                 "concepto": "NC SMOKE"}, "nota de crédito"),
-        ("ND", {**base, "documento": "ND", "importe": "31,00",
-                "concepto": "ND SMOKE", "gasto_num": "4"},
-         "ND + gasto V4 en el mismo POST (dueña 30/07: 'si hago ND no puedo mandar a gasto')"),
         ("DE", {**base, "documento": "DE", "fecha": vieja,
                 "concepto": "DE FECHA VIEJA"},
          "fecha vieja SIN confirmar → re-pregunta, no graba"),
@@ -429,21 +458,10 @@ def _variantes_nuevo_movimiento() -> list[tuple[str, dict, str]]:
                 "concepto": "DE CON USAR HOY", "usar_hoy": "1"},
          "botón 'No, ponele la de hoy' (name propio: con `fecha` el form.get "
          "devolvería el primero) [[feedback_name_repetido_get_devuelve_el_primero]]"),
-        ("ND", {**base, "documento": "ND", "importe": "88,00",
-                "concepto": "ANTICIPO SMOKE", "anticipo_prov": "SMK",
-                "activa": "S"},
-         "ND como anticipo a proveedor, con la respuesta ACTIVA?=S"),
-        ("ND", {**base, "documento": "ND", "importe": "40,00",
-                "concepto": "RETIRO SMOKE", "mov_destino": "retiro",
-                "mov_destino_param": "TM"},
-         "ND ruteada a RETIRO (el código de 2 letras va en posición fija)"),
-        ("ND", {**base, "documento": "ND", "importe": "25,00",
-                "concepto": "A CAJA", "mov_destino": "caja"},
-         "ND ruteada a CAJA"),
-        ("ND", {**base, "documento": "ND", "importe": "35,00",
-                "concepto": "A POSDATO", "mov_destino": "posdat",
-                "mov_destino_param": "SM"},
-         "ND ruteada a POSDATO (INOP)"),
+        ("ND", {**base, "documento": "ND", "importe": "31,00",
+                "concepto": "ND SMOKE"},
+         "la ND ya no se carga acá: redirige a /bancos/emitir-cheque?doc=ND "
+         "(TMT 2026-08-24, misma pantalla que el cheque)"),
         ("XX", {**base, "documento": "XX"},
          "documento inválido → redirect a /bancos"),
     ]
@@ -686,7 +704,7 @@ def test_pantallas_de_bancos_con_datos(escenario):
              "wizard entrado desde el botón Pagar de /posdat"),
             ("/bancos/emitir-cheque?tipo=anticipo_usd&no_banco=%d" % NB_PICHINCHA,
              "wizard con tipo y banco pre-seleccionados"),
-            ("/bancos/nuevo-movimiento?doc=ND", "form de nota de débito"),
+            ("/bancos/emitir-cheque?doc=ND", "form de nota de débito"),
             ("/bancos/reencadenar", "dry-run vacío"),
             ("/bancos/cheque-imprimible?importe=1234.56&beneficiario=SMOKE",
              "impresión del cheque con el monto EN LETRAS"),

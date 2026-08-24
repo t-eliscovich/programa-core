@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-18._
+_Última actualización: 2026-08-24._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -259,6 +259,19 @@ correcto — pero el de arriba, con su comentario explicando por qué incluye la
 archivo. Consolidar en UNA con nombre que diga qué pregunta responde, o dejar
 las dos con nombres distintos. Detectado 10/08 auditando `00d11d9`; no es
 urgente porque no cambia ningún número hoy.
+
+### [XS] Los pedazos de nota de débito que quedaron en /bancos/nuevo-movimiento
+Desde el 2026-08-24 la nota de débito se emite en `/bancos/emitir-cheque?doc=ND`
+(dueña: *"tiene que ser igual que emitir cheque, misma pantalla"*) y
+`/bancos/nuevo-movimiento?doc=ND` sólo redirige. En esa pantalla quedaron sin
+uso los bloques `{% if doc == 'ND' %}` del template y, en la vista, el parseo de
+`mov_destino` / `anticipo_prov` / `gasto_num` / `cuentas_op`: `doc` ahí sólo
+puede ser DE o NC. No molestan (no se renderizan), pero confunden al que lea.
+
+⚠ El ruteo por concepto mágico de `_routear_mov_simple` (RR / CAJA / INOP /
+anticipo) **NO se toca**: lo sigue usando `/bancos/cargar` (la carga
+multi-línea) y la conciliación. Lo que se borra es la UI que ya nadie ve.
+Va con la limpieza de septiembre.
 
 ### [S] `autobap_log` global → por persona
 Las novedades de proveedores son por persona desde el 31/07 (mig 0147), pero

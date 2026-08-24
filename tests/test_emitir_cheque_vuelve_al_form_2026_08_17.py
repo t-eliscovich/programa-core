@@ -77,8 +77,12 @@ def emitir_fake(monkeypatch):
 
 
 def _emitir(client, **extra):
+    # `confirmar_fecha` va desde el 2026-08-24: la pantalla pregunta cuando la
+    # fecha es anterior a hoy (freno que vino de la nota de débito) y este test
+    # es sobre el REDIRECT, no sobre esa pregunta. La fecha del caso es fija
+    # porque el test mira que el redirect la arrastre.
     datos = {"tipo": "otro", "no_banco": "1", "importe": "1.500,00",
-             "fecha": "2026-08-14", "no_cheque": "100501",
+             "fecha": "2026-08-14", "no_cheque": "100501", "confirmar_fecha": "1",
              "beneficiario": "HILTEXPOY", "concepto": "PAGO FACTURA"}
     datos.update(extra)
     return client.post("/bancos/emitir-cheque", data=datos)
