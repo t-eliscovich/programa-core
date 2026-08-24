@@ -230,7 +230,11 @@
        TMT 2026-05-17: ancho expandido de 15→18rem y tipografía +2pts
        a pedido de la dueña ("agrandar el sidebar, letras más grandes"). */
     aside#sidebar {
-      width: 14.5rem;                         /* Federico 2026-08-20: +1.5rem para que "Rotación del inventario" entre en una línea (era 13rem) */
+      width: 13.05rem;                        /* Federico 2026-08-24: -10% (era 14.5rem, puesto el 2026-08-20 para que
+                                                 "Rotación del inventario" entrara en una línea). Para NO perder eso al
+                                                 encoger, se compensó achicando el padding horizontal del #nav-list y de
+                                                 sus links (regla abajo). Verificado headless: con esos paddings 13.05rem
+                                                 es el mínimo donde ningún nombre del menú se parte en dos renglones. */
       transition: width 180ms ease;
     }
     aside#sidebar[data-collapsed="1"] {
@@ -244,6 +248,14 @@
       font-size: 0.85rem !important;          /* 13.6px */
       padding-top: 0.3rem;
       padding-bottom: 0.3rem;
+      padding-left: 0.5rem;                   /* Federico 2026-08-24: era px-3 (0.75rem). Se achicó junto con el */
+      padding-right: 0.375rem;                /* ancho del sidebar (-10%) para que los nombres largos no se partan. */
+      gap: 0.375rem;                          /* era gap-2 (0.5rem) */
+    }
+    /* Mismo motivo: el <nav> también aporta padding lateral. */
+    aside#sidebar #nav-list {
+      padding-left: 0.5rem;
+      padding-right: 0.375rem;
     }
     aside#sidebar #nav-list a svg,
     aside#sidebar #nav-list summary svg {
