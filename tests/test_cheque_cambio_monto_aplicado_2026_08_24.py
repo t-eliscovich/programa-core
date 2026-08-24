@@ -479,3 +479,17 @@ def test_la_pantalla_dice_a_donde_van_los_que_sobran(app, monkeypatch):
     assert "164,93" in html
     # Y sigue sin guardarse nada hasta que confirme.
     assert not fake.espejos_creados
+
+
+def test_una_factura_cancelada_no_muestra_menos_cero(monkeypatch):
+    """`round(4037.54 - 3967.32 - 70.22, 2)` da -0.0 y salía "−0,00" en pantalla."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _fake_basico()
+    fake.apply_to(monkeypatch, db_mod)
+
+    plan = queries.plan_cambio_importe(102656, 1364.93)
+    saldo = plan["facturas"][0]["saldo_despues"]
+    assert saldo == 0
+    assert not str(saldo).startswith("-")

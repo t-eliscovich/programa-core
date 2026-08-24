@@ -446,6 +446,15 @@ def aplicaciones_vivas(id_cheque: int, conn=None) -> list[dict]:
     )
 
 
+def _sin_cero_negativo(x: float) -> float:
+    """`-0.0` es cero, y en pantalla "−0,00" se lee como un error.
+
+    Sale de `round(4037.54 - 3967.32 - 70.22, 2)` — una factura cancelada al
+    centavo. TMT 2026-08-24, visto en producción.
+    """
+    return 0.0 if abs(x) < 0.005 else x
+
+
 def espejos_vivos(id_cheque: int, conn=None) -> list[dict]:
     """Los espejos de anticipo (NB=98, negativos) que cuelgan de este cheque.
 
@@ -551,9 +560,13 @@ def plan_cambio_importe(id_cheque: int, importe_nuevo) -> dict | None:
             _D(str(x.get("importe") or 0)) for x in aplic if x.get("id_fact") == idf
         )
         abono_antes = float(a.get("fact_abono") or 0)
-        abono_despues = round(abono_antes - float(recorte), 2)
-        saldo_despues = _fact_q.saldo_de(
-            a.get("fact_importe"), abono_despues, a.get("fact_retencion")
+        abono_despues = _sin_cero_negativo(round(abono_antes - float(recorte), 2))
+        # `round(-0.0, 2)` es -0.0 y la pantalla lo mostraba como "−0,00" en una
+        # factura cancelada. Es cero: se muestra como cero.
+        saldo_despues = _sin_cero_negativo(
+            _fact_q.saldo_de(
+                a.get("fact_importe"), abono_despues, a.get("fact_retencion")
+            )
         )
         filas.append(
             {
@@ -565,7 +578,7 @@ def plan_cambio_importe(id_cheque: int, importe_nuevo) -> dict | None:
                 "recorte": float(recorte),
                 "abono_antes": abono_antes,
                 "abono_despues": abono_despues,
-                "saldo_antes": float(a.get("fact_saldo") or 0),
+                "saldo_antes": _sin_cero_negativo(float(a.get("fact_saldo") or 0)),
                 "saldo_despues": saldo_despues,
                 "stat_antes": (a.get("fact_stat") or "").strip().upper(),
                 "stat_despues": _fact_q.stat_de(saldo_despues, abono_despues, tol=0.01),
