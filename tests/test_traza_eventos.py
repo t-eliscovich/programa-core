@@ -65,12 +65,49 @@ def test_un_deposito_toca_el_cheque_y_por_eso_los_une():
     assert idx["c102023"]["label"] == TIPOS_LABEL["cheque_depositado"]
 
 
-def test_las_tablas_sin_fila_propia_en_la_foto_no_entran_al_indice():
-    """`transacciones_bancarias` y `compra` no tienen documento en la foto: el
-    diff las ve dentro del saldo del componente, no como fila."""
+def test_las_tablas_sin_fila_propia_no_tienen_documento_propio():
+    """`transacciones_bancarias`, `compra` y `xgast` no tienen fila en la foto.
+
+    El diff las ve dentro del saldo del componente, así que `_doc` no les da
+    prefijo y no pueden entrar al índice con un documento propio (`t5`).
+    """
+    assert ev._doc("transacciones_bancarias", 5) == ""
+    assert ev._doc("compra", 5) == ""
+    assert ev._doc("cheque", 5) == "c5", "el control: una tabla que SÍ tiene fila"
+
+
+def test_sin_saber_la_cuenta_el_movimiento_bancario_no_entra_al_indice():
+    """🚨 24/08/2026 — este test decía `indice(...) == {}` a secas y pasaba
+    **porque no había base**.
+
+    `indice` → `_cuentas` → `_no_banco_de_la_transaccion` hace su PROPIA
+    consulta, que el `patch` de `_con_label` no cubre: sin Postgres fallaba
+    soft y devolvía {}. Apenas la base estuvo disponible, la transacción 5 de
+    la fixture (que es del banco 1) apareció y el índice trajo `b1`.
+
+    Un test que depende de que el ambiente NO tenga base pasa por el motivo
+    equivocado y se da vuelta el día que alguien arregla el ambiente. Ahora la
+    condición se PROVOCA: la cuenta no se puede resolver, punto.
+    """
     evs = _con_label([_ev("banco_de_directo", "transacciones_bancarias", 5,
                           "transacciones_bancarias", 5)])
-    assert ev.indice(evs) == {}
+    with patch.object(ev, "_no_banco_de_la_transaccion", return_value={}):
+        assert ev.indice(evs) == {}
+
+
+def test_sabiendo_la_cuenta_el_movimiento_bancario_entra_COMO_LA_CUENTA():
+    """La otra mitad, que el test viejo escondía.
+
+    La foto guarda los bancos por CUENTA, no por transacción: el puente del
+    07/08 mete el hecho bajo `b<no_banco>`. Que no tenga documento propio no
+    significa que se pierda — significa que se lo cuelga a su cuenta.
+    """
+    evs = _con_label([_ev("banco_de_directo", "transacciones_bancarias", 5,
+                          "transacciones_bancarias", 5)])
+    with patch.object(ev, "_no_banco_de_la_transaccion", return_value={5: 10}):
+        idx = ev.indice(evs)
+    assert list(idx) == ["b10"]
+    assert idx["b10"]["tipo"] == "banco_de_directo"
 
 
 def test_sin_ventana_no_consulta_nada():
