@@ -2281,7 +2281,14 @@ def mover_aplicacion(id_cheque: int, id_factura: int):
         # importe aplicado como float — sumarlos en la plantilla revienta con
         # "unsupported operand type(s) for +".
         saldo_origen_post=float(origen.get("saldo") or 0) + total_aplicado,
-        etiqueta=queries.etiqueta_cobro(ch) or f"Cobro #{id_cheque}",
+        # 🚨 `por_id` devuelve el nombre del banco como `banco_texto`, no como
+        # `banco_nombre`, que es la llave que lee `etiqueta_cobro`. Sin
+        # traducirla, un depósito directo se presentaba como "Cobro #102758"
+        # —el ID interno otra vez— en la pantalla que justamente salió de
+        # sacar los depósitos de donde se leían como cheques.
+        etiqueta=queries.etiqueta_cobro(
+            {**ch, "banco_nombre": ch.get("banco_texto") or ""}
+        ) or f"Cobro #{id_cheque}",
     )
 
 

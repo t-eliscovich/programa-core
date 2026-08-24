@@ -231,6 +231,19 @@ def test_la_ruta_existe_de_verdad_en_el_url_map(app):
     )
 
 
+def test_la_pantalla_nombra_el_medio_y_no_el_id_interno():
+    """Un depósito se presenta como "Dep. Pich.", no como "Cobro #102758".
+
+    `por_id` devuelve el nombre del banco en `banco_texto` y `etiqueta_cobro`
+    lo lee de `banco_nombre`: sin traducir la llave, la etiqueta caía al id
+    interno — el mismo pecado que esta sesión fue a corregir.
+    """
+    assert 'ch.get("banco_texto")' in VISTAS
+    assert cq.etiqueta_cobro(
+        {"no_cheque": "", "no_banco": 90, "banco_nombre": "DEP.PICH."}
+    ) == "Dep. Pich."
+
+
 def test_la_pantalla_dice_que_la_plata_no_se_mueve():
     """Es lo que la gente teme al leer "mover un cobro"."""
     assert "La plata no se mueve" in PANTALLA
