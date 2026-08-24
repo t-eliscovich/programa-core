@@ -285,11 +285,27 @@ def telefonos(value) -> list[str]:
     separados por un espacio. Lo único que distingue un número de dos es
     cuántos dígitos hay.
 
+    ⭐ Primero se mira si los PEDAZOS ya son números por sí solos. Cortar sólo
+    por el largo alcanza para el caso que lo motivó, pero se come dos:
+    "2975005007" (10 dígitos que empiezan en 2) salía como "297500500" —un
+    dígito menos, o sea un link que marca mal— y "3284800" (un fijo de 7,
+    escrito sin el código de área) no salía. Medido sobre los 476 clientes con
+    saldo y teléfono cargado: 14 casos, 1 de ellos marcando mal.
+
+    Así que: si al partir por los signos TODOS los pedazos miden entre 7 y 12
+    dígitos, se respetan tal cual —el que cargó el campo ya los separó—. Si
+    alguno no llega, es que los espacios están adentro de un número
+    ("0989 506 447"), se pegan todos y ahí sí se corta por el largo.
+
     Devuelve los números en dígitos pelados, que es lo que entiende `tel:` y
     lo que se muestra. Lo que no llega a número completo se descarta: un
     "s/n" o un campo con cuatro dígitos sueltos no es un teléfono al que
     llamar, y un link que marca mal es peor que no tener link.
     """
+    pedazos = re.findall(r"\d+", cleanstr(value))
+    if pedazos and all(7 <= len(x) <= 12 for x in pedazos):
+        return [x for x in pedazos if x.strip("0")]
+
     resto = re.sub(r"\D", "", cleanstr(value))
     if resto.startswith("00"):
         resto = resto[2:]

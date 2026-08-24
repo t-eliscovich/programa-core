@@ -85,6 +85,13 @@ def test_wa_tel(crudo, esperado):
         ("099 123 4567", ["0991234567"]),
         ("0989506447", ["0989506447"]),
         ("032745123", ["032745123"]),
+        # ⭐ Los dos que se comía cortar SÓLO por el largo (medidos sobre los
+        # 476 clientes con saldo y teléfono: 14 casos, 1 marcando mal):
+        # un número de 10 dígitos que no empieza en 09 salía con uno menos...
+        ("2975005007", ["2975005007"]),
+        # ...y un fijo de 7, escrito sin el código de área, no salía.
+        ("3284800", ["3284800"]),
+        ("0999999999 3284800", ["0999999999", "3284800"]),
         # Basura: ningún link. Un botón que marca mal es peor que no tenerlo.
         ("", []), (None, []), ("s/n", []), ("123", []), ("0" * 20, []),
         # Cola incompleta: se queda con lo que SÍ es un número.
