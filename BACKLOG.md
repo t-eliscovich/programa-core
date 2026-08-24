@@ -114,30 +114,6 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 
 ## Aprobado por la dueña, pendiente de ejecutar
 
-### [M] Falta la pantalla "Mover el cobro a otra factura" (24/08/2026)
-
-Se puede DESAPLICAR un cheque de una factura (`/cheques/<id>/desaplicar/<fac>`),
-pero **no hay forma de aplicar un cobro YA cargado a otra factura**: la pantalla
-`/cheques/<id>/aplicar` se borró el 20/07 por huérfana y el único camino que
-queda es volver a cargarlo por Cobranza.
-
-Y eso tiene precio: **toda carga con DEP.PICH. acuña un movimiento de banco
-nuevo.** El 19/08 Alex necesitó mudar $500 de RAR de la factura 178202 a la
-179364 y lo hizo con un −500 y un +500. Las facturas quedaron bien, pero como
-hasta hoy el negativo no dejaba asiento y el positivo sí, Pichincha quedó $500
-arriba — los dos únicos movimientos sin conciliar de ese día. Se compensó a
-mano con la ND `COMPENSA cobro negativo ch102750 RAR` (tx 46221).
-
-El asiento negativo ya se arregló (`crear()` lo emite en negativo, 24/08), así
-que el par −/+ ahora se compensa solo. Pero sigue siendo un rodeo: la operación
-que Alex quiere hacer es "este cobro va a esta otra factura", en un paso, sin
-inventar dos cobranzas. Y desde el 24/08 los depósitos ya no se listan en
-`/cheques`, así que el rodeo tampoco se ve desde ahí.
-
-Forma acordada: botón en la ficha del cheque, al lado de Desaplicar, que pida
-la factura destino y haga desaplicar + aplicar en la misma transacción. **No es
-revivir la pantalla huérfana** (aquélla era pre-FIFO y aplicaba a mano).
-
 ### [S] `/retiros` quedó huérfana del menú
 `/informes/retiros` ("Dividendos", TMT 2026-05-20) dice explícitamente que
 *"reemplaza la antigua /capital + /retiros"*, y ninguna pantalla ni el menú

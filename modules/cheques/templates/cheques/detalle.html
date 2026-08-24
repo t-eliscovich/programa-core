@@ -468,6 +468,21 @@
           {% if tiene_permiso('cheques.aplicar') %}
           <td class="px-3 py-2 text-right no-print">
             {% if a.id_fact %}
+            {# 🚨 TMT 2026-08-24 — "Mover" al lado de "Desaplicar", en la misma
+               fila. Quien está mirando la aplicación equivocada tiene ahí las
+               DOS salidas: sacarla, o mandarla a la factura que corresponde.
+               Hasta hoy sólo estaba la primera: la pantalla de aplicar un
+               cobro ya cargado se borró el 20/07 por huérfana, y el único
+               camino era recargarlo por Cobranza — que con DEP.PICH. acuña un
+               movimiento de banco nuevo (los $500 de más del 19/08). #}
+            <a href="{{ url_for('cheques.mover_aplicacion', id_cheque=ch.id_cheque, id_factura=a.id_fact) }}"
+               class="text-xs px-2 py-1 rounded border border-sky-300 text-sky-700 hover:bg-sky-50 inline-flex items-center gap-1 mr-1"
+               title="Pasar este cobro a otra factura del mismo cliente, sin tocar el banco">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14"/><polyline points="12 5 19 12 12 19"/>
+              </svg>
+              Mover
+            </a>
             <a href="{{ url_for('cheques.confirmar_desaplicar', id_cheque=ch.id_cheque, id_factura=a.id_fact) }}"
                class="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
                title="Deshacer esta aplicación específica (deja el cheque en cartera para re-aplicar a otra factura)">

@@ -5445,6 +5445,124 @@ def desaplicar_factura(
     }
 
 
+def facturas_destino_para_mover(codigo_cli: str, id_fact_origen: int) -> list[dict]:
+    """Facturas del cliente a las que se puede mudar un cobro.
+
+    Vivas (les queda saldo) y distintas de la de origen. Ordenadas de la más
+    vieja a la más nueva, que es como la dueña las nombra y el mismo criterio
+    del FIFO de la cobranza.
+    """
+    return db.fetch_all(
+        """
+        SELECT id_factura, numf, numf_completo, fecha, importe, abono,
+               COALESCE(retencion, 0) AS retencion, saldo, stat
+          FROM scintela.factura
+         WHERE codigo_cli = %s
+           AND id_factura <> %s
+           AND ABS(COALESCE(saldo, 0)) > 0.005
+           AND UPPER(TRIM(COALESCE(stat, ''))) <> 'Y'
+         ORDER BY fecha ASC, id_factura ASC
+        """,
+        ((codigo_cli or "").strip().upper(), int(id_fact_origen)),
+    ) or []
+
+
+def mover_aplicacion(
+    *,
+    id_cheque: int,
+    id_fact_origen: int,
+    id_fact_destino: int,
+    motivo: str = "",
+    usuario: str = "web",
+) -> dict:
+    """Mueve un cobro de una factura a otra, en UN paso y una transacción.
+
+    🚨 POR QUÉ EXISTE (TMT 2026-08-24). Hasta hoy esto no se podía hacer: hay
+    pantalla para DESAPLICAR, pero la de aplicar un cobro YA cargado se borró
+    el 20/07 por huérfana. El único camino era volver a cargarlo por Cobranza
+    — y toda carga con DEP.PICH. acuña un movimiento de banco nuevo.
+
+    El 19/08 Alex necesitó mudar $500 de RAR de una factura a otra y lo hizo
+    con un −500 y un +500. Las facturas quedaron bien, pero el negativo no
+    dejaba asiento y el positivo sí: Pichincha quedó $500 arriba, y fueron los
+    dos únicos movimientos que no conciliaron ese día. **No fue un descuido:
+    era la única salida que le dejábamos.**
+
+    Mover NO toca el banco ni el estado del cheque: la plata ya entró y sigue
+    donde estaba. Lo único que cambia es a qué factura se le imputa.
+
+    ⭐ Se apoya en `desaplicar_factura` + `aplicar_a_factura` compartiendo
+    `conn`, en vez de reescribir la aritmética de la factura. Las dos ya saben
+    recalcular abono, saldo y stat con `facturas.queries`; una tercera copia
+    de esa cuenta es cómo se llega a dos pantallas que dicen números distintos
+    de la misma factura.
+    """
+    cli_dest = db.fetch_one(
+        "SELECT id_factura, numf, codigo_cli FROM scintela.factura WHERE id_factura = %s",
+        (int(id_fact_destino),),
+    )
+    if not cli_dest:
+        raise ValueError("La factura de destino no existe.")
+    if int(id_fact_origen) == int(id_fact_destino):
+        raise ValueError("La factura de destino es la misma que la de origen.")
+    ch = db.fetch_one(
+        "SELECT id_cheque, no_cheque, codigo_cli FROM scintela.cheque WHERE id_cheque = %s",
+        (int(id_cheque),),
+    )
+    if not ch:
+        raise ValueError(f"Cheque {id_cheque} no existe.")
+    # 🚨 El cobro no cambia de dueño. Sin esto, un cobro de un cliente podría
+    # terminar cancelando la factura de otro y el estado de cuenta de los dos
+    # quedaría mal, cada uno por su lado y sin nada que los relacione.
+    if (ch.get("codigo_cli") or "").strip().upper() != (
+        cli_dest.get("codigo_cli") or ""
+    ).strip().upper():
+        raise ValueError(
+            "La factura de destino es de otro cliente. Un cobro sólo se puede "
+            "mover entre facturas del mismo cliente."
+        )
+
+    with db.tx() as conn:
+        r_des = desaplicar_factura(
+            id_cheque=int(id_cheque),
+            id_factura=int(id_fact_origen),
+            motivo=(f"Mover a factura #{cli_dest.get('numf') or id_fact_destino}"
+                    + (f" — {motivo}" if motivo else ""))[:200],
+            usuario=usuario,
+            conn=conn,
+        )
+        importe = float(r_des.get("importe_desaplicado") or 0)
+        if importe <= 0:
+            # Una aplicación NEGATIVA es una corrección contable, no un cobro
+            # que se pueda mudar: moverla dejaría a las dos facturas mal.
+            raise ValueError(
+                "Esta aplicación es negativa (una corrección), no un cobro. "
+                "No se puede mover: desaplicala y volvé a cargar lo que "
+                "corresponda."
+            )
+        # `permitir_depositado`: el cobro que se mueve casi siempre está
+        # DEPOSITADO —es plata que ya entró—, y ése es justo el caso que hay
+        # que resolver. El guard estricto sigue valiendo para el resto.
+        r_apl = aplicar_a_factura(
+            id_cheque=int(id_cheque),
+            aplicaciones=[{"id_fact": int(id_fact_destino), "importe": importe}],
+            usuario=usuario,
+            conn=conn,
+            permitir_depositado=True,
+        )
+
+    return {
+        "id_cheque": int(id_cheque),
+        "importe": importe,
+        "id_fact_origen": int(id_fact_origen),
+        "id_fact_destino": int(id_fact_destino),
+        "numf_destino": cli_dest.get("numf"),
+        "saldo_origen_post": r_des.get("saldo_factura_post"),
+        "stat_origen_post": r_des.get("stat_factura_post"),
+        "aplicado": r_apl,
+    }
+
+
 def reversar_endoso(
     *,
     id_cheque: int,

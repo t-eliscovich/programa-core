@@ -2202,6 +2202,89 @@ def desaplicar(id_cheque: int, id_factura: int):
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
+@cheques_bp.route("/cheques/<int:id_cheque>/mover/<int:id_factura>",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.aplicar")
+def mover_aplicacion(id_cheque: int, id_factura: int):
+    """Mover un cobro de una factura a otra — la pantalla que faltaba.
+
+    🚨 TMT 2026-08-24. Había Desaplicar, pero no había con qué volver a
+    aplicar: la pantalla vieja (`/cheques/<id>/aplicar`) se borró el 20/07 por
+    huérfana. El único camino era recargar el cobro por Cobranza, y toda carga
+    con DEP.PICH. acuña un movimiento de banco nuevo — por eso el 19/08 la
+    mudanza de $500 de RAR terminó dejando $500 de más en Pichincha.
+
+    Va al lado de Desaplicar, en la misma fila de la ficha del cheque: quien
+    está mirando la aplicación equivocada tiene ahí las dos salidas.
+    """
+    ch = queries.por_id(id_cheque)
+    if not ch:
+        abort(404)
+    origen = db.fetch_one(
+        "SELECT id_factura, numf, numf_completo, importe, abono, saldo, "
+        "       codigo_cli, stat "
+        "  FROM scintela.factura WHERE id_factura = %s",
+        (id_factura,),
+    )
+    if not origen:
+        abort(404)
+    aplicado = db.fetch_one(
+        "SELECT COALESCE(SUM(importe), 0) AS total FROM scintela.chequesxfact "
+        " WHERE id_cheque = %s AND id_fact = %s",
+        (id_cheque, id_factura),
+    ) or {}
+    total_aplicado = float(aplicado.get("total") or 0)
+    if abs(total_aplicado) <= 0.005:
+        flash(
+            f"El cobro #{id_cheque} no está aplicado a la factura "
+            f"#{origen.get('numf') or id_factura}.", "warn",
+        )
+        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+
+    destinos = queries.facturas_destino_para_mover(
+        origen.get("codigo_cli") or "", id_factura,
+    )
+
+    if request.method == "POST":
+        id_destino = parse_int(request.form.get("id_fact_destino"))
+        motivo = (request.form.get("motivo") or "").strip()
+        if not id_destino:
+            flash("Elegí la factura a la que va el cobro.", "warn")
+        else:
+            try:
+                r = queries.mover_aplicacion(
+                    id_cheque=id_cheque,
+                    id_fact_origen=id_factura,
+                    id_fact_destino=id_destino,
+                    motivo=motivo,
+                    usuario=(g.user or {}).get("username", "web"),
+                )
+                flash(
+                    f"Moví $ {r['importe']:,.2f} de la factura "
+                    f"#{origen.get('numf') or id_factura} a la "
+                    f"#{r.get('numf_destino') or id_destino}.", "ok",
+                )
+                return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+            except ValueError as e:
+                flash(str(e), "warn")
+            except Exception as e:
+                flash_exc("No pude mover el cobro", e)
+
+    return render_template(
+        "cheques/mover_aplicacion.html",
+        ch=ch,
+        origen=origen,
+        destinos=destinos,
+        total_aplicado=total_aplicado,
+        # La cuenta va en Python: `factura.saldo` viene como Decimal y el
+        # importe aplicado como float — sumarlos en la plantilla revienta con
+        # "unsupported operand type(s) for +".
+        saldo_origen_post=float(origen.get("saldo") or 0) + total_aplicado,
+        etiqueta=queries.etiqueta_cobro(ch) or f"Cobro #{id_cheque}",
+    )
+
+
 @cheques_bp.route("/cheques/<int:id_cheque>/confirmar-reverso-endoso", methods=["GET"])
 @requiere_login
 @requiere_permiso("cheques.aplicar")

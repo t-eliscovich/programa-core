@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Mover el cobro a otra factura{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a>
+  <span class="text-slate-400">/</span>
+  <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}" class="hover:underline">{{ ch.id_cheque }}</a>
+  <span class="text-slate-400">/</span> <strong>Mover el cobro</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+
+  <h1 class="text-2xl font-semibold mb-1">Mover el cobro a otra factura</h1>
+  {# El texto explica QUÉ NO pasa, porque es lo que la gente teme: que mover
+     un cobro mueva plata. No se toca ni el banco ni la caja. #}
+  <p class="text-sm text-slate-500 mb-5">
+    Sacamos este cobro de una factura y lo ponemos en otra del mismo cliente.
+    La plata no se mueve: sigue donde entró, y el cobro queda en su mismo estado.
+  </p>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 mb-5">
+    <div class="grid grid-cols-2 gap-y-2 gap-x-6 text-sm">
+      <div>
+        <div class="text-xs uppercase tracking-wider text-slate-500 mb-0.5">Cobro</div>
+        <div class="font-medium">{{ etiqueta }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-slate-500 mb-0.5">Cliente</div>
+        <div class="font-medium font-mono">{{ origen.codigo_cli }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-slate-500 mb-0.5">Sale de la factura</div>
+        <div class="font-medium font-mono">{{ origen.numf_completo or origen.numf }}</div>
+        <div class="text-xs text-slate-500">
+          saldo hoy {{ origen.saldo | money_es }} · queda en {{ saldo_origen_post | money_es }}
+        </div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-slate-500 mb-0.5">Monto que se mueve</div>
+        <div class="font-medium text-mono">{{ total_aplicado | money_es }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if destinos %}
+  <form method="post" action="{{ request.full_path }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block text-sm font-medium mb-1" for="id_fact_destino">Va a la factura</label>
+    {# Sólo facturas del MISMO cliente con saldo, de la más vieja a la más
+       nueva — el mismo orden con que la dueña las nombra y con el que reparte
+       la cobranza. #}
+    <select name="id_fact_destino" id="id_fact_destino" required
+            class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm mb-1">
+      <option value="">— Elegí la factura —</option>
+      {% for f in destinos %}
+        <option value="{{ f.id_factura }}">
+          {{ f.numf_completo or f.numf }} · {{ f.fecha | fecha_es }} · importe {{ f.importe | money_es }} · saldo {{ f.saldo | money_es }}
+        </option>
+      {% endfor %}
+    </select>
+    <p class="text-xs text-slate-500 mb-4">
+      Facturas de {{ origen.codigo_cli }} a las que todavía les queda saldo.
+      Si el monto que se mueve es mayor que el saldo de la factura que elijas,
+      no se graba nada y te lo avisa.
+    </p>
+
+    <label class="block text-sm font-medium mb-1" for="motivo">Motivo <span class="text-slate-400 font-normal">(opcional)</span></label>
+    <input type="text" name="motivo" id="motivo" maxlength="120"
+           placeholder="p.ej. el cliente pidió que se aplique a la factura de julio"
+           class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm mb-1">
+    <p class="text-xs text-slate-500 mb-5">Queda en la bitácora junto con tu usuario.</p>
+
+    <div class="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-4">
+      <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+         class="px-4 py-2 rounded border border-slate-300 dark:border-slate-700 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+        Cancelar
+      </a>
+      <button type="submit"
+              class="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium">
+        Mover el cobro
+      </button>
+    </div>
+  </form>
+  {% else %}
+  {# Sin destinos posibles la pantalla no se queda muda: dice por qué y qué
+     hacer. Un formulario vacío se lee como que la pantalla está rota. #}
+  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded p-4 text-sm">
+    <p class="mb-2">
+      <strong>{{ origen.codigo_cli }}</strong> no tiene otra factura con saldo, así que
+      no hay adónde mover el cobro.
+    </p>
+    <p class="text-slate-600 dark:text-slate-400">
+      Si lo que querés es sacarlo de esta factura y nada más, usá Desaplicar en la
+      ficha del cobro.
+    </p>
+    <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+       class="inline-block mt-3 px-4 py-2 rounded border border-slate-300 dark:border-slate-700 text-sm hover:bg-white">
+      Volver al cobro
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
