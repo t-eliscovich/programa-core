@@ -69,19 +69,61 @@
 {% set t = totales %}
 {% set saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
 
-{# Los tres tiles con los que abre la hoja de la oficina, en el mismo orden:
-   SALDO FACTURAS · CHEQUES POR COBRAR · TOTAL (FACTURAS + CHEQUES). #}
+{# 🚨 TMT 2026-08-24, con la ficha abierta en un Android: *"la aplicación de
+   vendedores ... se ve mal, ocupa más de una pantalla"* → *"el resumen del
+   cliente"*.
+
+   Medido a 390 px con la cartera real de ATE: el resumen ocupaba 750 px y la
+   PRIMERA FACTURA empezaba en el píxel 833 — o sea, en la segunda pantalla.
+   El vendedor abría la ficha de un cliente para ver qué le debe y lo primero
+   que tenía que hacer era scrollear. Repartido: hero 164 · acciones 44 ·
+   vencido/por vencer 61 · Crédito 174 · Contacto 189.
+
+   ⭐ No se sacó UN SOLO DATO. Se sacaron los renglones que REPETÍAN un número
+   que ya estaba a la vista:
+     · "Cheques por cobrar $ 0,00" y "Total", cuando el cliente no tiene
+       ningún cheque en cartera: ahí el Total ES el saldo grande de arriba,
+       dicho por segunda vez.
+     · "Vencido $ 0,00" y "Por vencer", cuando no hay nada vencido: "Por
+       vencer" es otra vez el saldo entero.
+   Cuando el cliente SÍ tiene vencido o SÍ tiene cheques, las cuatro celdas
+   salen enteras y en una sola fila: ahí cada una dice algo distinto.
+
+   Es el mismo criterio que el portal ya usa en otras cuatro partes: sin meta
+   no se dibuja el anillo, con una sola semana no se dibujan las barras, los
+   meses sin comisión no se listan, y una columna vacía en todas las filas no
+   se dibuja. Y es lo que Tamara pidió el 17/08 para /pedidos: cuando algo es
+   "mucha cosa", se saca peso VISUAL, no datos.
+
+   Lo que el hero dejó de callar, en cambio, se dice en la bajada: "sin
+   cheques en cartera" y "ninguna vencida" son la información que antes daban
+   esos ceros, en un renglón en vez de cuatro cajas.
+
+   Resultado medido, mismo cliente: la primera factura pasó de empezar en el
+   píxel 833 a empezar en el 555. #}
+{% set _hay_ven = (t.saldo_vencido or 0) > 0 %}
+{% set _hay_ch = (t.cheques_por_cobrar or 0) > 0 %}
 <div class="hero">
   <div class="lbl">Saldo facturas</div>
   <div class="val">$ {{ t.saldo|money_es }}</div>
   <div class="sub">
     {{ facturas|length }} factura{{ '' if facturas|length == 1 else 's' }} ·
-    {{ t.n_vencidas }} vencida{{ '' if t.n_vencidas == 1 else 's' }}
+    {% if t.n_vencidas %}{{ t.n_vencidas }} vencida{{ '' if t.n_vencidas == 1 else 's' }}
+    {% else %}ninguna vencida{% endif %}
+    {% if not _hay_ch %} · sin cheques en cartera{% endif %}
   </div>
+  {% if _hay_ven or _hay_ch %}
   <div class="split">
+    {% if _hay_ven %}
+    <div><small>Vencido</small><b>$ {{ t.saldo_vencido|money_es }}</b></div>
+    <div><small>Por vencer</small><b>$ {{ (t.saldo - t.saldo_vencido)|money_es }}</b></div>
+    {% endif %}
+    {% if _hay_ch %}
     <div><small>Cheques por cobrar</small><b>$ {{ t.cheques_por_cobrar|money_es }}</b></div>
     <div><small>Total</small><b>$ {{ (saldo_neto + t.cheques_por_cobrar)|money_es }}</b></div>
+    {% endif %}
   </div>
+  {% endif %}
 </div>
 
 {# ⭐ Las dos acciones de la ficha, a la vista y con NOMBRE.
@@ -100,14 +142,9 @@
     {% include "informes/_ec_boton_whatsapp.html" %}
   {% endwith %}
   <a class="btn-pr" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
-     href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">⎙ Imprimir</a>
+     href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
 </div>
 
-<div class="kpis">
-  <div class="kpi"><small>Vencido</small><b>$ {{ t.saldo_vencido|money_es }}</b></div>
-  <div class="kpi"><small>Por vencer</small>
-    <b>$ {{ (t.saldo - t.saldo_vencido)|money_es }}</b></div>
-</div>
 
 {# CRÉDITO — cupo, descuento, forma de pago y bloqueo.
 
@@ -135,10 +172,15 @@
 {% set _desc = (cliente.descuento or 0)|float %}
 {% set _bloq = (cliente.stop|cleanstr|upper) == 'S' %}
 <div class="card">
-  <div class="card-t">Crédito</div>
   {% if _bloq %}
     <div class="bloq">⛔ Cliente bloqueado — no despachar sin autorización</div>
   {% endif %}
+  {# Las tres cifras de crédito en UNA fila, no en dos.
+
+     ⚠ Los TAMAÑOS no se tocaron: el 20/08 Tamara pidió justo lo contrario
+     (*"cupo, % usado muy chiquito"*) y se subieron a rótulo 11 / número 18.
+     Lo que se sacó es el renglón vacío: con dos columnas, "Descuento" caía
+     solo en una segunda fila y se llevaba 55 px para decir "12,0 %". #}
   <div class="cred">
     <div>
       <small>Cupo</small>
@@ -167,11 +209,24 @@
     <div class="barra"><i class="{{ 'mal' if _pct >= 100 else ('ojo' if _pct >= 80 else 'bien') }}"
                           style="width:{{ [_pct, 100]|min|round(1) }}%"></i></div>
   {% endif %}
-</div>
 
 {# Contacto — dueña 2026-08-04. Es lo que la hoja de la oficina tiene en el
    encabezado y lo que un vendedor necesita para ir a ver al cliente. El
-   teléfono y el mail son tocables: desde el celular, llamar es un toque. #}
+   teléfono y el mail son tocables: desde el celular, llamar es un toque.
+
+   Va DENTRO de la misma tarjeta que el crédito, separado por una línea. Eran
+   dos tarjetas de 174 y 189 px con un título en versalitas cada una; los dos
+   títulos y los dos marcos costaban ~90 px para separar dos bloques que ya se
+   distinguen solos —uno tiene cifras grandes, el otro rótulos y links— y que
+   se leen de corrido: cuánto debe → cuánto puede deber → cómo ubicarlo.
+
+   Dirección y ciudad van en el mismo renglón: son una sola cosa (dónde
+   queda), y separadas ocupaban dos filas de la ficha.
+
+   🐞 Y de paso, el teléfono: `tel:{{ telefono|replace(' ','') }}` pegaba los
+   DOS números del cliente en uno solo — con ATE marcaba
+   "0325116760990010980", que no es el teléfono de nadie. Ahora cada número es
+   su propio link. #}
 {% set _tel = cliente.telefono|cleanstr %}
 {# `cliente.mail` NO es un string: `estado_cuenta_cliente` guarda ahí el dict
    que devuelve `clientes.mail_asinfo.resolver()` (mail + origen + etiqueta +
@@ -181,18 +236,28 @@
 {% set _mail = ((cliente.mail or {}).mail if cliente.mail is mapping else cliente.mail)|cleanstr %}
 {% set _dir = [cliente.direccion1|cleanstr, cliente.direccion2|cleanstr]|select|join(' ') %}
 {% set _ciudad = [cliente.canton|cleanstr, cliente.provincia|cleanstr]|select|join(', ') %}
-{% if _dir or _ciudad or cliente.ruc or _tel or _mail %}
-<div class="card">
-  <div class="card-t">Contacto</div>
+{% set _donde = [_dir, _ciudad]|select|join(' · ') %}
+{% if _donde or cliente.ruc or _tel or _mail %}
   <div class="ficha">
-    {% if _dir %}<div><small>Dirección</small><span>{{ _dir }}</span></div>{% endif %}
-    {% if _ciudad %}<div><small>Ciudad</small><span>{{ _ciudad }}</span></div>{% endif %}
+    {% if _donde %}<div class="full"><small>Dirección</small><span>{{ _donde }}</span></div>{% endif %}
+    {% set _tels = _tel|telefonos %}
+    {% if _tels %}
+    <div><small>Teléfono</small><span>
+      {%- for n in _tels -%}
+        {% if not loop.first %} · {% endif %}<a href="tel:{{ n }}" class="lnk">{{ n }}</a>
+      {%- endfor -%}
+    </span></div>
+    {% elif _tel %}
+    {# Hay algo cargado pero no es un número al que llamar ("s/n", un campo de
+       ceros): se muestra tal cual y sin link, en vez de un botón que marca
+       mal. #}
+    <div><small>Teléfono</small><span>{{ _tel }}</span></div>
+    {% endif %}
     {% if cliente.ruc %}<div><small>RUC</small><span class="mono">{{ cliente.ruc|cleanstr }}</span></div>{% endif %}
-    {% if _tel %}<div><small>Teléfono</small><a href="tel:{{ _tel|replace(' ', '') }}" class="lnk">{{ _tel }}</a></div>{% endif %}
-    {% if _mail %}<div><small>Mail</small><a href="mailto:{{ _mail }}" class="lnk brk">{{ _mail }}</a></div>{% endif %}
+    {% if _mail %}<div class="full"><small>Mail</small><a href="mailto:{{ _mail }}" class="lnk brk">{{ _mail }}</a></div>{% endif %}
   </div>
-</div>
 {% endif %}
+</div>
 
 <div class="card">
   <div class="tabs">
@@ -491,17 +556,20 @@
      rótulo y 15 el número, mientras el saldo de arriba va a 30: el dato con
      el que el vendedor decide si le carga más mercadería o no se leía como
      una nota al pie de la pantalla. Rótulo 11, número 18, porcentaje 13. */
-  .cred{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .cred small{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;
+  /* Las tres en UNA fila. La del medio ("Usado") lleva la cifra más larga y
+     el porcentaje debajo, así que se lleva más ancho; "Descuento" es la más
+     corta y se achica hasta lo que necesita. */
+  .cred{display:grid;grid-template-columns:1fr 1.25fr .8fr;gap:10px}
+  .cred small{display:block;font-size:10.5px;font-weight:700;letter-spacing:.04em;
               text-transform:uppercase;color:var(--ink-2)}
-  .cred b{display:block;font-size:18px;letter-spacing:-.02em;margin-top:3px;
+  .cred b{display:block;font-size:17px;letter-spacing:-.02em;margin-top:3px;
           font-variant-numeric:tabular-nums}
   .cred b.na{font-size:15px;font-weight:500;color:var(--ink-3);letter-spacing:0}
   .cred i{display:block;font-style:normal;font-size:13px;font-weight:700;margin-top:3px}
   .cred i.bien,.barra i.bien{color:var(--good)}
   .cred i.ojo,.barra i.ojo{color:var(--warn)}
   .cred i.mal,.barra i.mal{color:var(--bad)}
-  .barra{height:5px;border-radius:99px;background:#EDEFF4;margin-top:11px;overflow:hidden}
+  .barra{height:5px;border-radius:99px;background:#EDEFF4;margin-top:9px;overflow:hidden}
   .barra i{display:block;height:100%;border-radius:99px}
   .barra i.bien{background:var(--good)}
   .barra i.ojo{background:var(--warn)}
@@ -509,12 +577,16 @@
   .bloq{background:var(--bad-soft);color:var(--bad);font-size:12px;font-weight:700;
         border-radius:9px;padding:8px 10px;margin-bottom:11px}
 
-  .ficha div{display:flex;gap:10px;padding:5px 0;font-size:12.5px;
-             border-bottom:1px solid var(--line)}
-  .ficha div:last-child{border-bottom:0;padding-bottom:0}
-  .ficha small{flex:0 0 74px;font-size:10px;font-weight:700;letter-spacing:.05em;
-               text-transform:uppercase;color:var(--ink-3);padding-top:2px}
-  .ficha span,.ficha a{flex:1;min-width:0}
+  /* Dos columnas y el rótulo ARRIBA del dato, no al lado. Con el rótulo al
+     lado se iban 74 px fijos por renglón para decir "RUC" o "MAIL", y cada
+     dato quedaba solo en su fila: cinco filas para cuatro datos cortos. Los
+     largos (dirección, mail) toman el ancho entero con `.full`. */
+  .ficha{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;
+         margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+  .ficha .full{grid-column:1/-1}
+  .ficha small{display:block;font-size:9.5px;font-weight:700;letter-spacing:.05em;
+               text-transform:uppercase;color:var(--ink-3);margin-bottom:1px}
+  .ficha span,.ficha a{font-size:12.5px;min-width:0}
   .ficha .mono{font-variant-numeric:tabular-nums}
   .ficha .lnk{color:var(--accent);font-weight:600}
   .ficha .brk{word-break:break-all}
@@ -523,18 +595,27 @@
      el globito de WhatsApp: el rótulo dice qué hace y el color lo confirma
      de un vistazo. El ícono va como máscara SVG —no como emoji— porque el
      emoji no existe en Android y salía un cuadradito vacío. */
-  .acciones{display:flex;gap:8px;margin:11px 0;
+  /* 🐞 TMT 2026-08-24: el ícono de imprimir era el carácter "⎙" (U+2399), que
+     Android NO tiene en ninguna de sus tipografías — en el celular del
+     vendedor salía el cuadradito vacío del glifo que falta, al lado de la
+     palabra "Imprimir". Es EXACTAMENTE lo que ya había pasado el 20/08 con el
+     emoji de WhatsApp, y se arregla igual: máscara SVG, que se dibuja siempre
+     y toma el color del botón. Regla para el portal: en un botón no va un
+     carácter especial, va un SVG. */
+  .acciones{display:flex;gap:8px;margin:10px 0;
     --ico-wa:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 14.4c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5 0-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.5.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.5-.4z'/><path d='M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2z'/></svg>")}
   .btn-wa{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
           background:#25D366;color:#fff;border:0;border-radius:12px;
-          padding:12px 10px;font:inherit;font-size:14.5px;font-weight:700;
+          padding:11px 10px;font:inherit;font-size:14.5px;font-weight:700;
           cursor:pointer;white-space:nowrap}
   .btn-wa::before{content:'';width:19px;height:19px;flex:0 0 19px;background:#fff;
     -webkit-mask:center/contain no-repeat var(--ico-wa);mask:center/contain no-repeat var(--ico-wa)}
   .btn-wa:disabled{opacity:.65}
   .btn-wa span{overflow:hidden;white-space:nowrap}
+  .btn-pr::before{content:'';width:17px;height:17px;flex:0 0 17px;background:var(--ink);
+    -webkit-mask:center/contain no-repeat var(--ico-pr);mask:center/contain no-repeat var(--ico-pr)}
   .btn-pr{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
-          border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+          border:1px solid var(--line);border-radius:12px;padding:11px 14px;
           font-size:14.5px;font-weight:600;color:var(--ink)}
 
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */

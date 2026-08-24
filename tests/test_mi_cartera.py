@@ -604,6 +604,100 @@ def test_la_ficha_cierra_como_el_dbase(ficha):
     assert "630,00" in ficha
 
 
+def test_la_ficha_llama_a_cada_numero_por_separado(vendedor_logueado, monkeypatch):
+    """🐞 TMT 2026-08-24. El campo teléfono de ATE trae DOS números separados
+    por un espacio ("032511676 0990010980") y la ficha armaba un solo link
+    pegándolos: el celular marcaba "0325116760990010980".
+
+    El caso de al lado —"0989 506 447", que es UN número escrito con
+    espacios— es el que prohíbe arreglarlo cortando por el espacio; lo cubre
+    `test_el_vendedor_ve_como_contactar_al_cliente`.
+    """
+    from modules.mi_cartera import views
+
+    def _dos_numeros(cod):
+        d = _ec_con_facturas(cod)
+        d["cliente"]["telefono"] = "032511676 0990010980"
+        return d
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _dos_numeros)
+    html = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+    assert 'href="tel:032511676"' in html
+    assert 'href="tel:0990010980"' in html
+    assert "0325116760990010980" not in html
+
+
+# ---------------------------------------------------------------------------
+# El resumen entra en UNA pantalla — TMT 2026-08-24, en un Android:
+# *"se ve mal, ocupa más de una pantalla"* → *"el resumen del cliente"*.
+#
+# La regla: no se saca un dato, se saca el renglón que REPITE un número que ya
+# está a la vista. Estos tests fijan las dos mitades de esa regla, porque la
+# mitad fácil de romper es la segunda (que con datos reales SÍ salga todo).
+# ---------------------------------------------------------------------------
+
+
+def _sin_vencido_ni_cheques(cod):
+    d = _ec_con_facturas(cod)
+    t = d["totales"]
+    t.update(saldo_vencido=0.0, n_vencidas=0, cheques_por_cobrar=0.0,
+             cheques_a_depositar=0.0)
+    for f in d["facturas"]:
+        f["vencimiento"] = date(2099, 1, 1)
+    return d
+
+
+def _hero(html: str) -> str:
+    """Sólo el recuadro violeta, desde el hero hasta los botones.
+
+    ⚠ Las aserciones NO pueden mirar la página entera: los comentarios del CSS
+    del portal nombran los mismos rótulos ("Cheques por cobrar", "Total") y un
+    `not in html` daba verde/rojo por un comentario."""
+    i = html.index('<div class="hero">')
+    return html[i:html.index('<div class="acciones">', i)]
+
+
+def _ficha_de(cliente_client, monkeypatch, datos):
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", datos)
+    r = cliente_client.get("/mi-cartera/cliente/TDV")
+    assert r.status_code == 200
+    return r.data.decode()
+
+
+def test_sin_vencido_ni_cheques_el_hero_no_repite_el_saldo(
+        vendedor_logueado, monkeypatch):
+    """"Por vencer" y "Total" son, en ese caso, el mismo saldo grande de
+    arriba dicho por segunda y tercera vez. Se dicen en la bajada."""
+    hero = _hero(_ficha_de(vendedor_logueado, monkeypatch, _sin_vencido_ni_cheques))
+    assert "Por vencer" not in hero
+    assert "Cheques por cobrar" not in hero
+    assert "Total" not in hero
+    # Pero el dato NO se pierde: se dice con palabras.
+    assert "ninguna vencida" in hero
+    assert "sin cheques en cartera" in hero
+
+
+def test_con_vencido_y_cheques_salen_las_cuatro_celdas(ficha):
+    """Y acá cada una dice algo distinto, así que salen enteras."""
+    hero = _hero(ficha)
+    for rotulo in ("Vencido", "Por vencer", "Cheques por cobrar", "Total"):
+        assert rotulo in hero
+    assert "sin cheques en cartera" not in hero
+
+
+def test_el_boton_de_imprimir_no_es_un_caracter_raro(ficha):
+    """El "⎙" (U+2399) no existe en las tipografías de Android: en el celular
+    del vendedor el botón salía con el cuadradito del glifo que falta. Mismo
+    problema que el emoji de WhatsApp el 20/08, mismo arreglo: máscara SVG."""
+    i = ficha.index('<div class="acciones">')
+    assert "\u2399" not in ficha[i:i + 900]
+    assert "--ico-pr" in ficha
+
+
 def test_el_vendedor_ve_como_contactar_al_cliente(ficha):
     """Dueña 2026-08-04: el contacto sí, va a visitarlo."""
     assert "AV. AMAZONAS N32-14" in ficha

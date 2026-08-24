@@ -19,7 +19,7 @@ from datetime import date
 import bcrypt
 import pytest
 
-from filters import wa_tel
+from filters import telefonos, wa_tel
 from modules._lib import pdf_motor
 from modules.informes import estado_cuenta_pdf
 from modules.mi_cartera import queries as q
@@ -66,24 +66,76 @@ def test_wa_tel(crudo, esperado):
 
 
 # ---------------------------------------------------------------------------
+# El botón de LLAMAR de la ficha — un campo puede traer más de un número
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "crudo, esperado",
+    [
+        # 🐞 El bug del 24/08: ATE tiene fijo y celular separados por un
+        # espacio, y la ficha armaba UN link con los dos pegados
+        # ("0325116760990010980"), que no es el número de nadie.
+        ("032511676 0990010980", ["032511676", "0990010980"]),
+        ("0991271637 0993391393", ["0991271637", "0993391393"]),
+        # ⚠ Y el caso que prohíbe cortar por el espacio: UN número escrito
+        # con espacios. Si esto se rompiera, la ficha ofrecería tres links
+        # que marcan "0989", "506" y "447".
+        ("0989 506 447", ["0989506447"]),
+        ("099 123 4567", ["0991234567"]),
+        ("0989506447", ["0989506447"]),
+        ("032745123", ["032745123"]),
+        # Basura: ningún link. Un botón que marca mal es peor que no tenerlo.
+        ("", []), (None, []), ("s/n", []), ("123", []), ("0" * 20, []),
+        # Cola incompleta: se queda con lo que SÍ es un número.
+        ("0989506447 123", ["0989506447"]),
+    ],
+)
+def test_telefonos(crudo, esperado):
+    assert telefonos(crudo) == esperado
+
+
+# ---------------------------------------------------------------------------
 # El nombre del archivo — es lo primero que ve el cliente en el chat
 # ---------------------------------------------------------------------------
 
 
-def test_el_archivo_se_llama_como_el_cliente():
-    assert estado_cuenta_pdf.nombre_archivo("MARIO W INNOVANOVENTA S.A", "MWI") == \
-        "Estado de cuenta - MARIO W INNOVANOVENTA S.A.pdf"
+def test_el_archivo_es_codigo_y_dia_y_nada_mas(monkeypatch):
+    """TMT 2026-08-24: *"que el archivo que mando sea cod de cliente y día"*.
+
+    El nombre largo del cliente NO va: con él adentro el archivo pasa de 30 a
+    60 caracteres y WhatsApp lo muestra cortado justo por el final, que es
+    donde está la fecha."""
+    monkeypatch.setattr(estado_cuenta_pdf, "today_ec",
+                        lambda: date(2026, 8, 24))
+    assert estado_cuenta_pdf.nombre_archivo("MARIO W INNOVANOVENTA S.A", "mwi") == \
+        "Estado de cuenta MWI 24-08-2026.pdf"
 
 
-def test_el_nombre_del_archivo_aguanta_cualquier_cosa():
+def test_la_fecha_del_archivo_va_sin_barras(monkeypatch):
+    """Una barra en el nombre es un separador de carpetas: rompe el archivo en
+    Android, en Windows y en el mail. Por eso dd-mm-aaaa y no dd/mm/aaaa."""
+    monkeypatch.setattr(estado_cuenta_pdf, "today_ec",
+                        lambda: date(2026, 1, 5))
+    n = estado_cuenta_pdf.nombre_archivo("TDV", "TDV")
+    assert "05-01-2026" in n and "/" not in n
+
+
+def test_el_nombre_del_archivo_aguanta_cualquier_cosa(monkeypatch):
     """Pasa por WhatsApp, por mail y por el disco de quien lo reciba."""
-    # Tildes y ñ: fuera, no todos los sistemas las bancan en un nombre.
-    assert "Nunez" in estado_cuenta_pdf.nombre_archivo("Núñez", "NUN")
-    # Barras y dos puntos romperían la ruta al guardarlo.
-    assert "/" not in estado_cuenta_pdf.nombre_archivo("A/B: C", "ABC")
-    # Sin nombre cae al código: nunca un archivo sin identificar.
-    assert estado_cuenta_pdf.nombre_archivo("", "tdv") == "Estado de cuenta - TDV.pdf"
-    assert estado_cuenta_pdf.nombre_archivo("!!!", "tdv") == "Estado de cuenta - TDV.pdf"
+    monkeypatch.setattr(estado_cuenta_pdf, "today_ec",
+                        lambda: date(2026, 8, 24))
+    # El nombre del cliente no entra, ni siquiera si viene con basura.
+    assert estado_cuenta_pdf.nombre_archivo("Núñez & Hijos S.A", "NUN") == \
+        "Estado de cuenta NUN 24-08-2026.pdf"
+    # Tildes y signos del CÓDIGO: fuera, no todos los sistemas los bancan en
+    # un nombre de archivo, y una barra rompería la ruta al guardarlo.
+    assert estado_cuenta_pdf.nombre_archivo("", "a/b") == \
+        "Estado de cuenta AB 24-08-2026.pdf"
+    assert "/" not in estado_cuenta_pdf.nombre_archivo("A/B: C", "a/b")
+    # Sin código tampoco queda anónimo.
+    assert estado_cuenta_pdf.nombre_archivo("", "") == \
+        "Estado de cuenta CLIENTE 24-08-2026.pdf"
     # Y siempre termina en .pdf.
     assert estado_cuenta_pdf.nombre_archivo("X" * 200, "TDV").endswith(".pdf")
 
@@ -315,10 +367,15 @@ def test_las_dos_puertas_devuelven_EL_MISMO_archivo(vendedor, oficina, monkeypat
     assert a.status_code == b.status_code == 200
     assert a.data == b.data
     assert a.mimetype == b.mimetype == "application/pdf"
-    # Y el archivo llega con el nombre del cliente, que es lo que el cliente
-    # ve en el chat antes de abrirlo.
+    # Y el archivo llega con el código, el nombre del cliente y el día: el
+    # nombre es lo que el cliente ve en el chat antes de abrirlo, y el código
+    # y la fecha son lo que lo distingue de los otros cuatro que se mandaron
+    # esa tarde.
     for r in (a, b):
-        assert "MARIO W INNOVANOVENTA S.A.pdf" in r.headers["Content-Disposition"]
+        cd = r.headers["Content-Disposition"]
+        assert "MWI" in cd and cd.endswith('.pdf"')
+        # El nombre largo del cliente NO: TMT 2026-08-24.
+        assert "MARIO W INNOVANOVENTA" not in cd
 
 
 def test_sin_motor_el_servidor_explica_en_vez_de_dar_500(oficina, monkeypatch):

@@ -31,6 +31,12 @@
     --good:#15803D; --good-soft:#E9F7EE;
     --warn:#B45309; --warn-soft:#FDF3E3;
     --bad:#B91C1C;  --bad-soft:#FCEDED;
+    /* El ícono de imprimir, como dibujo y no como carácter: el U+2399,
+       que no existe en las tipografías de Android y en el celular
+       del vendedor salía el cuadradito del glifo que falta. Mismo
+       arreglo que el ícono de WhatsApp del 20/08. Vive acá porque lo
+       usan la ficha del cliente y la lista. */
+    --ico-pr:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M7 3h10a1 1 0 0 1 1 1v4H6V4a1 1 0 0 1 1-1z'/><path d='M5 9h14a3 3 0 0 1 3 3v5a2 2 0 0 1-2 2h-2v-4H6v4H4a2 2 0 0 1-2-2v-5a3 3 0 0 1 3-3zm13 1.6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z'/><path d='M7 16h10v5H7z'/></svg>");
   }
   *{box-sizing:border-box;margin:0;padding:0}
   /* ⭐ min-height y NO height. `height:100%` deja el <body> con el alto de UNA
@@ -152,19 +158,32 @@
                 font-family:inherit}
 
   .hero{background:linear-gradient(160deg,#4338CA,#5B4FE0);color:#fff;border-radius:16px;
-        padding:16px;margin-bottom:11px}
+        padding:15px 16px 14px;margin-bottom:10px}
   .hero .lbl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;
              opacity:.72;font-weight:700}
-  .hero .val{font-size:31px;letter-spacing:-.035em;margin-top:5px;
+  .hero .val{font-size:26px;letter-spacing:-.035em;margin-top:4px;
              font-variant-numeric:tabular-nums}
-  .hero .sub{font-size:12px;opacity:.82;margin-top:5px}
-  .hero .split{display:flex;gap:10px;margin-top:13px;padding-top:12px;
+  .hero .sub{font-size:12px;opacity:.82;margin-top:4px;line-height:1.35}
+  /* Reparte en columnas iguales: la ficha del cliente manda DOS celdas
+     (vencido/por vencer o cheques/total) o las CUATRO, según lo que el
+     cliente tenga. Con grid las cuatro entran en una sola fila de 390 px;
+     con flex, el rótulo largo de "Cheques por cobrar" empujaba a las de al
+     lado y las cifras quedaban de anchos distintos. */
+  /* ⚠ Los rótulos NO miden todos lo mismo: "Cheques por cobrar" ocupa dos
+     renglones y "Total" uno, así que con cada celda armada por su cuenta las
+     CIFRAS quedaban a distinta altura — una al lado de la otra pero
+     desalineadas, que es lo contrario de lo que hace comparable una fila de
+     números. Con `display:contents` en la celda, los rótulos caen todos en la
+     primera fila de la grilla y las cifras todas en la segunda: la fila alta
+     la fija el rótulo más largo y los números arrancan parejos. */
+  .hero .split{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
+               grid-template-rows:auto auto;gap:3px 9px;margin-top:12px;padding-top:11px;
                border-top:1px solid rgba(255,255,255,.22)}
-  .hero .split div{flex:1}
-  .hero .split small{display:block;font-size:10.5px;opacity:.72;text-transform:uppercase;
-                     letter-spacing:.05em;font-weight:700}
-  .hero .split b{display:block;font-size:15px;margin-top:3px;letter-spacing:-.02em;
-                 font-variant-numeric:tabular-nums}
+  .hero .split div{display:contents}
+  .hero .split small{display:block;font-size:9.5px;line-height:1.15;opacity:.72;
+                     text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  .hero .split b{display:block;font-size:13.5px;letter-spacing:-.02em;
+                 align-self:end;font-variant-numeric:tabular-nums}
 
   .kpis{display:flex;gap:9px;margin-bottom:11px}
   .kpi{flex:1;background:var(--surface);border:1px solid var(--line);

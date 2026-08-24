@@ -270,6 +270,49 @@ def wa_tel(value) -> str:
     return _COD_PAIS_EC + nacional
 
 
+def telefonos(value) -> list[str]:
+    """Un campo de teléfono → la LISTA de números que trae adentro.
+
+    🐞 TMT 2026-08-24. La ficha del cliente en el portal armaba el link de
+    llamar con `tel:{{ telefono|replace(' ', '') }}`, o sea pegando todo lo
+    que hubiera en el campo. Con ATE, que tiene "032511676 0990010980" (fijo y
+    celular), el vendedor tocaba "llamar" y el teléfono marcaba
+    "0325116760990010980" — que no es el número de nadie.
+
+    Se corta por el LARGO, no por el separador, exactamente igual que
+    `wa_tel`: cortar por espacios rompe "0989 506 447", que es UN número, y
+    cortar por "/" o "," se pierde el caso más común, que es dos números
+    separados por un espacio. Lo único que distingue un número de dos es
+    cuántos dígitos hay.
+
+    Devuelve los números en dígitos pelados, que es lo que entiende `tel:` y
+    lo que se muestra. Lo que no llega a número completo se descarta: un
+    "s/n" o un campo con cuatro dígitos sueltos no es un teléfono al que
+    llamar, y un link que marca mal es peor que no tener link.
+    """
+    resto = re.sub(r"\D", "", cleanstr(value))
+    if resto.startswith("00"):
+        resto = resto[2:]
+    fuera = []
+    while resto:
+        if resto.startswith(_COD_PAIS_EC):
+            largo = 12
+        elif resto.startswith("09"):
+            largo = 10
+        elif resto.startswith("0"):
+            largo = 9
+        else:
+            largo = 9
+        n, resto = resto[:largo], resto[largo:]
+        # El corte es por largo, así que la cola puede quedar incompleta; y un
+        # campo de ceros ("000000000") no es un teléfono.
+        if len(n) == largo and n.strip("0"):
+            fuera.append(n)
+        else:
+            break
+    return fuera
+
+
 def _pdf_disponible() -> bool:
     """¿Este servidor puede generar PDFs? Lo pregunta el botón de WhatsApp.
 
@@ -286,6 +329,7 @@ def _pdf_disponible() -> bool:
 def register(app):
     app.jinja_env.globals["pdf_disponible"] = _pdf_disponible
     app.jinja_env.filters["wa_tel"] = wa_tel
+    app.jinja_env.filters["telefonos"] = telefonos
     app.jinja_env.filters["num_es"] = num_es
     app.jinja_env.filters["delta_es"] = delta_es
     app.jinja_env.filters["kg_es"] = kg_es

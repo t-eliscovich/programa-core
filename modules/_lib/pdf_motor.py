@@ -65,6 +65,48 @@ _CANDIDATOS_POSIX = (
 #: worker de la app.
 TIMEOUT_S = 30.0
 
+#: Cuánto tiempo (de reloj de la página, no de reloj de pared) se le da al
+#: navegador antes de imprimir.
+#:
+#: 🚨 TMT 2026-08-24: *"el botón mandar por whatsapp tarda mucho"*. Medido en
+#: producción sobre /mi-cartera/cliente/ATE/pdf (13 facturas, 88 kB): **3,5 a
+#: 5,2 segundos**. De eso, traer los datos y armar el HTML son **170 ms** — o
+#: sea que TODO el tiempo es el navegador.
+#:
+#: Estaba en 5000. La hoja que se imprime no tiene ni una imagen, ni una
+#: llamada de red (los `<script src="https://…">` se sacan antes, ver
+#: `_para_imprimir_offline`), ni un `setTimeout`: son datos y CSS. Nada de eso
+#: necesita cinco segundos de reloj virtual, y `--run-all-compositor-stages-
+#: before-draw` hace que el proceso se quede esperando a que el presupuesto se
+#: agote en vez de salir apenas la página está quieta.
+#:
+#: ⚠ Es un TECHO, no una espera fija: si la página termina antes, imprime
+#: antes. Bajarlo no puede cortar una hoja a la mitad; lo que podría hacer, si
+#: algún día la hoja incorporara algo lento, es imprimirla incompleta. Por eso
+#: 2000 y no 500: sigue siendo diez veces lo que tarda en asentarse.
+PRESUPUESTO_MS = 2000
+
+#: Lo que el navegador hace al arrancar y que acá no sirve para nada: buscar
+#: actualizaciones, sincronizar, mandar métricas, preguntar si quiere ser el
+#: navegador por omisión. En un headless que vive tres segundos y se muere,
+#: cada una de esas cosas es tiempo de arranque puro.
+ARRANQUE_CALLADO = (
+    "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-breakpad",
+    "--disable-client-side-phishing-detection",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-dev-shm-usage",
+    "--disable-search-engine-choice-screen",
+    "--disable-sync",
+    "--metrics-recording-only",
+    "--mute-audio",
+    "--no-default-browser-check",
+    "--no-pings",
+    "--disable-features=Translate,MediaRouter,OptimizationHints,AcceptCHFrame",
+)
+
 # La misma lección que la caché de la columna `vend` (2026-08-03) y que la del
 # fracaso de Metabase (2026-07-29): un NO no puede vivir tanto como un SÍ. Si
 # alguien instala Edge en el servidor, la app tiene que enterarse sola; si ya
@@ -177,8 +219,9 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
             # archivo temporal en la hoja que ve el cliente.
             "--no-pdf-header-footer",
             "--run-all-compositor-stages-before-draw",
-            "--virtual-time-budget=5000",
+            f"--virtual-time-budget={PRESUPUESTO_MS}",
             f"--print-to-pdf={salida}",
+            *ARRANQUE_CALLADO,
             entrada.resolve().as_uri(),
         ]
         try:
