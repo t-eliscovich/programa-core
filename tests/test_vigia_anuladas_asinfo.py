@@ -3,6 +3,11 @@
 Propiedad crítica: es FAIL-CLOSED. Si Asinfo no contesta, o si el día no tiene
 datos, o si la fila no la trajo la auto-carga, NO se anula nada. Anular de más
 (borrar una venta real de la cartera) es mucho peor que anular de menos.
+
+El guard 6 —Asinfo tiene que CONFIRMAR la anulación por número antes de que se
+toque nada— vive en test_vigia_ausencia_no_es_anulacion_2026_08_24.py. Acá se
+lo da por confirmado (`_stub` responde `estado = 0`) para poder seguir
+probando los guards 1 a 5 sin ruido.
 """
 from datetime import timedelta
 
@@ -33,9 +38,18 @@ def _asinfo(numf, fecha=None):
             "fecha": (fecha or today_ec()).isoformat()}
 
 
-def _stub(monkeypatch, asinfo_rows, pc_rows):
+def _stub(monkeypatch, asinfo_rows, pc_rows, *, confirma=True):
     monkeypatch.setattr(svc, "facturas_periodo", lambda d, h: asinfo_rows)
     monkeypatch.setattr(db, "fetch_all", lambda *a, **k: pc_rows)
+    # Guard 6 (2026-08-24): antes de anular, el vigía le pregunta a Asinfo por
+    # el número. Acá el ERP confirma la anulación (`estado = 0`) para que los
+    # guards 1-5 se puedan probar solos. `confirma=False` simula al ERP
+    # diciendo que la factura sigue viva.
+    monkeypatch.setattr(
+        svc, "estado_de_documentos",
+        lambda nums: {n: {"estado": 0 if confirma else 4, "motivo": ""}
+                      for n in nums},
+    )
 
 
 def test_anula_la_que_asinfo_ya_no_reporta(monkeypatch):
@@ -198,7 +212,8 @@ def test_correr_si_toca_respeta_throttle_y_apagado(monkeypatch):
     monkeypatch.setattr(fq, "anular", lambda *a, **k: 1)
 
     monkeypatch.setenv("VIGIA_ANULADAS", "0")
-    assert vig.correr_si_toca() == {"corrio": False, "anuladas": 0, "bloqueadas": 0}
+    assert vig.correr_si_toca() == {"corrio": False, "anuladas": 0,
+                                    "bloqueadas": 0, "frenadas": 0}
 
     monkeypatch.setenv("VIGIA_ANULADAS", "1")
     # _ultimo_ts MUY en el pasado (no 0.0). El throttle usa time.monotonic();

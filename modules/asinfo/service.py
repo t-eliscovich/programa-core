@@ -178,6 +178,79 @@ SELECT fc.numero AS numero, e2.nombre_comercial AS sucursal
 """
 
 
+#: Un documento ANULADO en Asinfo no desaparece de `factura_cliente`: se queda
+#: con `estado = 0` (y casi siempre una `descripcion_anulacion`). Ese es el
+#: ÚNICO estado que significa "lo anularon". Cualquier otra cosa —vivo, un
+#: estado que no conocemos, la fila que no aparece, la consulta que falla— NO
+#: es una anulación y no habilita a tocar nada. TMT 2026-08-24.
+ESTADO_ANULADO = 0
+
+_NUMERO_DOC_RE = r"^[A-Z0-9][A-Z0-9\-]{2,29}$"
+
+
+def estado_de_documentos(numeros) -> dict[str, dict] | None:
+    """Le pregunta a Asinfo, POR NÚMERO, en qué estado está cada documento.
+
+    TMT 2026-08-24. El vigía de anuladas concluía "la anularon" por AUSENCIA:
+    si el documento no venía en la card del período, se daba de baja en PC.
+    Pero ausencia no es anulación — el 21/08 la card contestó incompleta y se
+    llevó puestas dos facturas VIVAS (182254 KJG y 182327 VGA, las dos con
+    `fc.estado = 4` y sin motivo de anulación). Esta función es la pregunta
+    directa que faltaba, y sirve igual para las facturas SRI
+    ('001-099-000182254') que para las notas de entrega ('NTEN-10879'): las
+    dos son filas de `factura_cliente` y las dos guardan su número completo
+    en `fc.numero`.
+
+    Devuelve ``{numero: {"estado": int, "motivo": str, "id_documento": int}}``
+    con las que ENCONTRÓ — un número que no está en el dict es un número que
+    Asinfo no reconoce.
+
+    Devuelve **None** si no se pudo preguntar (Metabase caído, sin token, sin
+    números válidos). None significa "no sé", que es distinto de "no está", y
+    el llamador tiene que tratarlo como "no toques nada".
+    """
+    import re as _re
+
+    limpios = sorted({
+        str(n).strip().upper() for n in (numeros or []) if str(n or "").strip()
+    })
+    limpios = [n for n in limpios if _re.fullmatch(_NUMERO_DOC_RE, n)]
+    if not limpios:
+        return None
+    # La SQL se interpola (no hay binds acá), así que el filtro de arriba es
+    # la única puerta: sólo letras, números y guiones, nada de comillas.
+    in_list = ", ".join("'" + n + "'" for n in limpios)
+    sql = f"""
+SELECT fc.numero AS numero, fc.estado AS estado, fc.id_documento AS id_documento,
+       fc.descripcion_anulacion AS motivo
+  FROM factura_cliente fc
+ WHERE fc.numero IN ({in_list})
+"""
+    try:
+        rows, ok = metabase_client.fetch_dataset_estado(
+            2, sql, max_results=max(100, len(limpios) * 2))
+    except Exception as e:  # noqa: BLE001 — fail-soft, igual que las cards
+        _LOG.warning("estado_de_documentos falló: %s", e)
+        return None
+    if not ok:
+        return None
+    out: dict[str, dict] = {}
+    for r in rows or []:
+        num = str(r.get("numero") or "").strip()
+        if not num:
+            continue
+        try:
+            estado = int(r.get("estado"))
+        except (TypeError, ValueError):
+            continue
+        out[num] = {
+            "estado": estado,
+            "motivo": str(r.get("motivo") or "").strip(),
+            "id_documento": r.get("id_documento"),
+        }
+    return out
+
+
 def sucursal_por_numero(desde, hasta) -> dict[str, str]:
     """`{numero SRI: código de la SUCURSAL}` para las facturas del rango.
 
