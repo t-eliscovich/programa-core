@@ -374,7 +374,11 @@ def direcciones_difieren(ficha: dict, asinfo: dict | None) -> bool:
 
 @bp.route("/<codigo>", methods=["GET"])
 @requiere_login
-@requiere_permiso("admin_dbase.ver")
+# TMT 2026-08-24 (dueña): permiso PROPIO, no `admin_dbase.ver` (mig 0210).
+# El aviso de los códigos repetidos lleva acá, y el que tiene que resolverlos
+# es Alex, que es INT. Darle `admin_dbase.ver` le abriría el panel de
+# administración entero; esto le abre esta pantalla y nada más.
+@requiere_permiso("clientes.duplicados")
 def detalle(codigo: str):
     """Pantalla de diagnóstico de UN código repetido. GET y nada más."""
     cod = re.sub(r"[^0-9A-Za-z]", "", str(codigo or ""))[:3].upper()

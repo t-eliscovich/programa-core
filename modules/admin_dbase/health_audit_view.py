@@ -18,6 +18,7 @@ TMT 2026-06-10.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date as _dt_date
 
 from flask import Blueprint, jsonify, request
@@ -26,6 +27,8 @@ import db
 from auth import requiere_login, requiere_permiso
 
 bp = Blueprint("health_audit", __name__, url_prefix="/admin/health")
+
+_LOG_REPETIDOS = logging.getLogger("programa_core.health.codigos_repetidos")
 
 
 # Whitelist de usuario_crea conocidos. Cualquier otro es sospechoso.
@@ -1821,6 +1824,128 @@ def permisos_drift():
 
 
 # ---------------------------------------------------------------------------
+# Codigos de cliente repetidos
+# ---------------------------------------------------------------------------
+
+#: Los codigos de 3 letras que tienen mas de una ficha, con la plata que cuelga
+#: de ellos. Es la MISMA definicion que usa /admin/clientes-asinfo: normalizada
+#: con UPPER(TRIM(...)) porque asi JOINea todo el sistema.
+SQL_CODIGOS_REPETIDOS = """
+WITH dup AS (
+    SELECT UPPER(TRIM(codigo_cli)) AS cod, COUNT(*) AS n_fichas
+      FROM scintela.cliente
+     WHERE COALESCE(TRIM(codigo_cli), '') <> ''
+     GROUP BY UPPER(TRIM(codigo_cli))
+    HAVING COUNT(*) > 1
+),
+fact AS (
+    SELECT UPPER(TRIM(codigo_cli)) AS cod, COUNT(*) AS n
+      FROM scintela.factura
+     GROUP BY UPPER(TRIM(codigo_cli))
+),
+chq AS (
+    SELECT UPPER(TRIM(codigo_cli)) AS cod, COUNT(*) AS n
+      FROM scintela.cheque
+     GROUP BY UPPER(TRIM(codigo_cli))
+)
+SELECT dup.cod                 AS codigo_cli,
+       dup.n_fichas            AS n_fichas,
+       COALESCE(fact.n, 0)     AS n_facturas,
+       COALESCE(chq.n, 0)      AS n_cheques
+  FROM dup
+  LEFT JOIN fact ON fact.cod = dup.cod
+  LEFT JOIN chq  ON chq.cod  = dup.cod
+ ORDER BY dup.cod
+"""
+
+
+def _texto_repetidos(filas: list[dict]) -> tuple[str, str]:
+    """El titulo y el detalle del aviso, en castellano y sin siglas."""
+    n_cod = len(filas)
+    n_fichas = sum(int(f.get("n_fichas") or 0) for f in filas)
+    n_mov = sum(int(f.get("n_facturas") or 0) + int(f.get("n_cheques") or 0)
+                for f in filas)
+    codigos = ", ".join(str(f.get("codigo_cli") or "") for f in filas)
+    titulo = (f"{n_cod} codigo de cliente repetido" if n_cod == 1
+              else f"{n_cod} codigos de cliente repetidos")
+    partes = [f"{n_fichas} fichas", codigos]
+    if n_mov:
+        partes.insert(1, f"{n_mov} facturas y cheques mezclados")
+    return titulo, " - ".join(p for p in partes if p)
+
+
+def _avisar_repetidos(filas: list[dict]) -> None:
+    """Deja el aviso en la campanita. Nunca rompe el health.
+
+    La `clave` lleva los codigos, no la fecha: mientras la lista sea la misma
+    el aviso NO se repite (es una deuda, no una novedad diaria), y en cuanto se
+    resuelve uno vuelve a avisar diciendo cuantos quedan. Que es justamente la
+    unica noticia que hay para dar.
+    """
+    if not filas:
+        return
+    try:
+        from modules.avisos import avisar
+
+        codigos = "|".join(sorted(str(f.get("codigo_cli") or "") for f in filas))
+        titulo, detalle = _texto_repetidos(filas)
+        avisar(fuente="clientes", nivel="alerta", titulo=titulo,
+               detalle=detalle, cantidad=len(filas),
+               # 🚨 La BARRA FINAL no es cosmética: el blueprint monta la
+               # pantalla en "/admin/clientes-asinfo/", y sin ella el
+               # `url_map` NO resuelve (tira RequestRedirect). La campanita
+               # decide quién ve el aviso resolviendo este path contra el
+               # url_map: sin resolver, se cae al permiso del TEMA
+               # (`clientes.ver`) y se lo mostraría a gente que no puede abrir
+               # la pantalla. En el navegador el link anda igual —redirige—
+               # así que el error no se ve clickeando ni leyendo el código.
+               url="/admin/clientes-asinfo/",
+               clave=f"clientes:codigo-repetido:{codigos}")
+    except Exception as exc:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+        _LOG_REPETIDOS.warning("no pude avisar los codigos repetidos: %s", exc)
+
+
+@bp.route("/codigos-duplicados", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def codigos_duplicados():
+    """Codigos de cliente repetidos: dos empresas bajo el mismo string.
+
+    TMT 2026-08-24 (duena): *"resolver los 7 codigos de cliente duplicados por
+    las pantallas. ponelo como alarma"*. Un codigo repetido **duplica la
+    plata**, porque todo el sistema JOINea por `codigo_cli` y no por
+    `id_cliente`: la comision de un vendedor se inflo $ 4.341,86 y el estado de
+    cuenta de GUF mostro el mismo saldo dos veces. La migracion 0155 puso un
+    indice unico que impide crear repetidos NUEVOS, pero dejo 7 exceptuados
+    porque cada uno necesita una decision que no la toma el programa.
+
+    Este bloque no arregla nada: se asegura de que la deuda **no se olvide**
+    mientras siga abierta, y deja el aviso en la campanita con el link a la
+    pantalla que la resuelve.
+    """
+    filas = [dict(r) for r in (db.fetch_all(SQL_CODIGOS_REPETIDOS) or [])]
+    alerts: list = []
+    if filas:
+        titulo, detalle = _texto_repetidos(filas)
+        alerts.append({
+            "severity": "high", "category": "codigo_cliente_repetido",
+            "msg": (f"{titulo}. {detalle}. Mientras esten repetidos, la plata "
+                    f"de las dos empresas se suma bajo el mismo codigo. Se "
+                    f"resuelven en /admin/clientes-asinfo/.")})
+        _avisar_repetidos(filas)
+    return jsonify({
+        "ok": not filas,
+        "alerts": alerts,
+        "stats": {
+            "n_codigos": len(filas),
+            "n_fichas": sum(int(f.get("n_fichas") or 0) for f in filas),
+            "codigos": [f.get("codigo_cli") for f in filas],
+            "detalle": filas,
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -1843,6 +1968,7 @@ def health_all():
     resp11 = traza_fresca()
     resp12 = permisos_drift()
     resp14 = espejo_huerfano()
+    resp15 = codigos_duplicados()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -1854,6 +1980,7 @@ def health_all():
     data11 = json.loads(resp11.get_data(as_text=True))
     data12 = json.loads(resp12.get_data(as_text=True))
     data14 = json.loads(resp14.get_data(as_text=True))
+    data15 = json.loads(resp15.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -1875,7 +2002,7 @@ def health_all():
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
                and data10["ok"] and data11["ok"] and data12["ok"]
-               and data14["ok"]),
+               and data14["ok"] and data15["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -1890,6 +2017,7 @@ def health_all():
         "permisos_drift": data12,
         "proformas_purga": data13,
         "espejo_huerfano": data14,
+        "codigos_duplicados": data15,
     })
 
 

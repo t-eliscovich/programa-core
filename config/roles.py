@@ -290,6 +290,12 @@ ROLES: list[tuple[str, list[str]]] = [
             "clientes.crear",
             "clientes.editar",
             "grupos.editar",
+            # TMT 2026-08-24 (dueña): los códigos de cliente repetidos los
+            # resuelve Alex, así que tiene que poder abrir la pantalla que dice
+            # qué hacer con cada par (/admin/clientes-asinfo/). Permiso propio y
+            # no `admin_dbase.ver`: esto abre esa pantalla, no el panel de
+            # administración entero. Ver mig 0210.
+            "clientes.duplicados",
             "stop_cliente.editar",
             "proveedores.ver",
             "proveedores.crear",

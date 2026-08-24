@@ -559,7 +559,11 @@ def resumen(grupos: list[dict]) -> dict:
 
 @bp.route("/", methods=["GET"])
 @requiere_login
-@requiere_permiso("admin_dbase.ver")
+# TMT 2026-08-24 (dueña): permiso PROPIO, no `admin_dbase.ver` (mig 0210).
+# El aviso de los códigos repetidos lleva acá, y el que tiene que resolverlos
+# es Alex, que es INT. Darle `admin_dbase.ver` le abriría el panel de
+# administración entero; esto le abre esta pantalla y nada más.
+@requiere_permiso("clientes.duplicados")
 def run():
     """Pantalla de diagnóstico. GET y nada más: no hay POST en este módulo."""
     fichas = fichas_duplicadas()

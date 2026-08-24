@@ -362,9 +362,15 @@ def test_la_ruta_es_solo_GET_y_esta_gateada(app):
     from modules.admin_dbase import clientes_asinfo_view as v
     src = inspect.getsource(v)
     assert "@requiere_login" in src
-    assert '@requiere_permiso("admin_dbase.ver")' in src, (
-        "las otras pantallas de diagnóstico de admin_dbase gatean con "
-        "admin_dbase.ver — esta también"
+    # TMT 2026-08-24 (dueña): antes gateaba con `admin_dbase.ver`, como el
+    # resto del panel de diagnóstico. Dejó de hacerlo cuando el health empezó
+    # a avisar los códigos repetidos: el aviso lleva acá y el que los resuelve
+    # es Alex, que es INT y no tiene ese permiso. Permiso PROPIO (mig 0210)
+    # para abrirle esta pantalla y no el panel entero. Nadie perdió acceso:
+    # `admin_dbase.ver` no lo tenía ningún rol, sólo los wildcard.
+    assert '@requiere_permiso("clientes.duplicados")' in src, (
+        "esta pantalla tiene permiso propio desde la mig 0210 — si vuelve a "
+        "colgar de admin_dbase.ver, Alex deja de ver el aviso de la campanita"
     )
 
 
