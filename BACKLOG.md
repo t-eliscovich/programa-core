@@ -225,22 +225,26 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
-### [S] La Cartera todavía pesa 2,5 MB
+### [M] El piso de /facturas ahora es el SERVIDOR, no el HTML
 
-24/08: /facturas devolvía **4.528 KB** con 500 filas (9 KB por fila). Se le
-sacaron los seis editores escondidos de cada fila (se arman al tocar el
-lapicito) y el `<form>` del dropdown de estado repetido 500 veces: quedó en
-**2.568 KB, 5 KB por fila**. El servidor tarda 0,7 s; el resto lo pone el
-browser parseando.
+24/08, medido en producción con 500 filas después de las dos pasadas de peso
+(4.528 KB → 2.568 → **2.042 KB**, 4 KB por fila; por la red viajan 103 KB
+porque va gzipeada):
 
-Lo que queda es repetición de clases: cinco lapicitos por fila con 130
-caracteres de clases cada uno (~950 B), los `<td class="px-2 py-1.5 …">`, los
-`<span class="ec-view inline-flex …">` y el `<select>` de estado con su lista
-larga. Con un bloque `<style>` propio en la pantalla (CSS común, NO clases
-nuevas de Tailwind, que está congelado) la fila baja a ~2 KB y la pantalla a
-~1,1 MB. El otro camino, más barato pero visible, es bajar las filas por
-página de 500: **eso lo decide la dueña**, no se toca de oficio.
+| | ms |
+|---|---|
+| respuesta del servidor | **590-880** |
+| parseo del HTML en el browser | 206 |
+| total hasta que está lista | ~1.100-1.360 |
 
+O sea que **lo que queda es el servidor**, y no depende de las filas: con
+`?por_pagina=100` la respuesta sigue en ~480 ms. Es la query + los totales del
+universo filtrado, no el render. Antes de tocar nada hay que medir QUÉ query
+—la de las filas, la de los conteos por vista, o el saldo acumulado— y recién
+ahí decidir.
+
+El otro camino, más barato pero VISIBLE, es mostrar menos de 500 filas por
+página: eso lo decide la dueña, no se toca de oficio.
 
 ### [S] Las notas de Alex que el Excel de pendientes ya se comió
 
