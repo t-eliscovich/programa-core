@@ -78,6 +78,26 @@ def items() -> list[dict]:
     )
 
 
+def con_puntos(filas: list[dict]) -> list[dict]:
+    """Le pega a cada fila lo que vale su tela, y ordena por eso.
+
+    ⭐ Ordenada por PUNTOS y no por kilos (dueña 24/08/2026, "idem para la
+    pantalla de saldos"): la pregunta que se hace el que abre esta lista es a
+    qué tela conviene ir, y 300 kg de una tela de 10 puntos valen más que 3.000
+    de una de 1. El orden por kilos ponía arriba justo lo que sale solo.
+
+    ⚠ Una tela sin puntaje vale 1, no 0: un kilo vendido nunca puede contar
+    cero. Sólo pasa si la cohorte creció después de congelar los puntos.
+    """
+    puntos = puntos_por_tela()
+    for f in filas:
+        p = puntos.get(f["subcategoria"], {})
+        f["puntos"] = int(p.get("puntos", 1))
+        f["nivel"] = p.get("nivel_nombre", "")
+        f["puntos_fila"] = float(f["stock_kg"] or 0) * f["puntos"]
+    return sorted(filas, key=lambda f: -f["puntos_fila"])
+
+
 def llamados_por_tela(cartera_de: str | None = None) -> dict[str, list[dict]]:
     """
     Los candidatos, agrupados por TELA (no por tela × color: el color no entra
@@ -120,6 +140,7 @@ def resumen(filas: list[dict]) -> dict:
         "kg_sin_pista": sum(float(f["stock_kg"]) for f in filas if not f["clientes"]),
         "kg_segunda": sum(float(f["kg_segunda"]) for f in filas),
         "n_segunda": sum(1 for f in filas if float(f["kg_segunda"]) > 0),
+        "puntos": sum(float(f.get("puntos_fila") or 0) for f in filas),
     }
 
 
@@ -331,10 +352,12 @@ def por_grupo(filas: list[dict]) -> list[dict]:
         # ahora recorre TODOS los diccionarios que van a un template.
         d = g.setdefault(f["categoria"] or "(sin grupo)", {
             "grupo": f["categoria"] or "(sin grupo)",
-            "n_items": 0, "kg": 0.0, "kg_segunda": 0.0, "subgrupos": set()})
+            "n_items": 0, "kg": 0.0, "kg_segunda": 0.0, "puntos": 0.0,
+            "subgrupos": set()})
         d["n_items"] += 1
         d["kg"] += float(f["stock_kg"])
         d["kg_segunda"] += float(f["kg_segunda"])
+        d["puntos"] += float(f.get("puntos_fila") or 0)
         d["subgrupos"].add(f["subcategoria"])
     for d in g.values():
         d["pct"] = 100 * d["kg"] / tot

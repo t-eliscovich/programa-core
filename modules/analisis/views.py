@@ -88,7 +88,7 @@ def inicio():
 @requiere_login
 @requiere_permiso("analisis.ver")
 def parado():
-    filas = queries.items()
+    filas = queries.con_puntos(queries.items())
     # Los desplegables salen de las filas que se van a dibujar, no de una lista
     # aparte: si un grupo no tiene nada parado, no tiene por qué estar.
     grupos = sorted({f["categoria"] for f in filas if f["categoria"]})
@@ -124,12 +124,15 @@ def parado_csv():
     archivo trae GRUPO y SUBGRUPO como columnas para eso. El botón lo dice.
     """
     return csv_response(
-        queries.items(),
+        queries.con_puntos(queries.items()),
         columnas=[
             ("categoria", "Grupo"),
             ("subcategoria", "Subgrupo (tela)"),
             ("color", "Color"),
             ("stock_kg", "Kg en saldo"),
+            ("nivel", "Nivel"),
+            ("puntos", "Puntos por kilo"),
+            ("puntos_fila", "Puntos de la fila"),
             ("pct_total", "% del saldo"),
             ("kg_primera", "Kg de primera"),
             ("kg_segunda", "Kg de segunda"),
@@ -300,7 +303,7 @@ def mis_telas():
     diría "137 clientes" y al abrir la fila aparecerían tres.
     """
     vend = _vend_actual()
-    filas = queries.items()
+    filas = queries.con_puntos(queries.items())
     llamados = queries.llamados_por_tela(cartera_de=vend)
     for f in filas:
         f["clientes"] = len(llamados.get(f["subcategoria"], []))

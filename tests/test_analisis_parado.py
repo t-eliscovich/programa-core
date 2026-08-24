@@ -14,7 +14,7 @@ from datetime import date
 
 import pytest
 
-from modules.analisis import asinfo_parado, queries
+from modules.analisis import asinfo_parado, queries, views
 
 # ── El invariante que pidió la dueña ────────────────────────────────────────
 
@@ -579,6 +579,52 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
     import inspect
     assert "Franela" not in inspect.getsource(queries.actualizar)
     assert "Franela" in inspect.getsource(queries.items)
+
+
+def test_la_pantalla_de_saldos_ordena_por_puntos(monkeypatch):
+    """⭐ Dueña 24/08/2026: "idem para la pantalla de saldos". La pregunta que
+    se hace el que abre esta lista es a qué tela conviene ir, y 300 kg de una
+    tela de 10 puntos valen más que 3.000 de una de 1. Ordenada por kilos ponía
+    arriba justo lo que sale solo."""
+    monkeypatch.setattr(
+        queries, "puntos_por_tela",
+        lambda: {"Microfibra": {"puntos": 10, "nivel_nombre": "Difícil"},
+                 "Fleece 102": {"puntos": 1, "nivel_nombre": "Fácil"}})
+    filas = queries.con_puntos([
+        {"subcategoria": "Fleece 102", "categoria": "Fleece", "stock_kg": 2900,
+         "kg_segunda": 0},
+        {"subcategoria": "Microfibra", "categoria": "Poliester", "stock_kg": 300,
+         "kg_segunda": 0},
+    ])
+    assert [f["subcategoria"] for f in filas] == ["Microfibra", "Fleece 102"], (
+        "300 kg a 10 puntos van ARRIBA de 2.900 kg a 1")
+    assert filas[0]["puntos_fila"] == 3000 and filas[1]["puntos_fila"] == 2900
+    assert filas[0]["puntos"] == 10 and filas[0]["nivel"] == "Difícil"
+
+
+def test_una_tela_sin_puntaje_vale_uno_y_no_cero(monkeypatch):
+    """⚠ Un kilo vendido nunca puede contar cero. Pasa sólo si la cohorte
+    creció después de congelar los puntos."""
+    monkeypatch.setattr(queries, "puntos_por_tela", dict)
+    filas = queries.con_puntos([
+        {"subcategoria": "Tela nueva", "categoria": "Jersey", "stock_kg": 100,
+         "kg_segunda": 0}])
+    assert filas[0]["puntos"] == 1 and filas[0]["puntos_fila"] == 100
+
+
+def test_la_pantalla_de_saldos_muestra_lo_que_vale_cada_tela():
+    import inspect
+    from pathlib import Path
+    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8"))
+    assert ">Vale<" in html and ">Puntos<" in html
+    # ⚠ "Vale" no puede esconderse en el celular: es la columna que decide.
+    import re
+    col = re.search(r'<th[^>]*>Vale<', " ".join(html.split()))
+    assert col and "opt" not in col.group(0)
+    for vista in (views.parado, views.mis_telas, views.parado_csv):
+        assert "con_puntos" in inspect.getsource(vista), (
+            f"{vista.__name__} tiene que traer los puntos")
 
 
 # ── La competencia ──────────────────────────────────────────────────────────
