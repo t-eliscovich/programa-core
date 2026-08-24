@@ -1364,9 +1364,16 @@ def dia_nota_destinatarios():
             # miércoles y la del día un sábado.
             r = (_dia.enviar_nota_finde(forzar=True) if accion == "probar_finde"
                  else _dia.enviar_nota(forzar=True))
-            flash(f"Nota mandada a {r['destinatarios']} destinatario(s)."
-                  if r.get("ok") else f"No salió: {r.get('motivo')}",
-                  "success" if r.get("ok") else "error")
+            if not r.get("ok"):
+                flash(f"No salió: {r.get('motivo')}", "error")
+            elif r.get("fallidos"):
+                # Salió, pero no a todos. Si esto se mostrara como éxito a
+                # secas, el que quedó afuera no se entera nunca.
+                flash(f"Nota mandada a {r['destinatarios']} destinatario(s), "
+                      f"pero {r.get('motivo')}.", "error")
+            else:
+                flash(f"Nota mandada a {r['destinatarios']} destinatario(s).",
+                      "success")
         return redirect(url_for("informes.dia_nota_destinatarios"))
 
     return render_template(

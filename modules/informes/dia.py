@@ -1174,7 +1174,8 @@ def enviar_nota(fecha=None, forzar: bool = False) -> dict:
     from modules._lib import mailer
 
     fecha = fecha or hoy_ec()
-    res = {"ok": False, "motivo": "", "destinatarios": 0, "id": ""}
+    res = {"ok": False, "motivo": "", "destinatarios": 0,
+           "fallidos": 0, "id": ""}
     # TMT 2026-08-14: *"solo lun-viernes mandar mail diario"*. El freno va acá
     # y no en `correr_si_toca` para que valga para CUALQUIER llamador
     # automático; el botón "Mandarla ahora (prueba)" pasa `forzar=True` y sigue
@@ -1225,7 +1226,13 @@ def enviar_nota(fecha=None, forzar: bool = False) -> dict:
         if forzar:
             db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = "
                        "CURRENT_TIMESTAMP WHERE id_captura = %s", (idc,))
-        res.update(ok=True, destinatarios=len(correos), id=env.get("id") or "")
+        # `destinatarios` es a cuántos les LLEGÓ, no a cuántos se intentó:
+        # el mailer manda uno por cabeza y alguno puede rebotar solo. El
+        # motivo se arrastra aunque haya salido, para que un fallo parcial no
+        # quede escondido detrás de un "ok".
+        res.update(ok=True, destinatarios=int(env.get("enviados") or 0),
+                   fallidos=int(env.get("fallidos") or 0),
+                   motivo=env.get("motivo") or "", id=env.get("id") or "")
     except Exception as e:  # noqa: BLE001 -- cuelga del hilo de fondo
         _LOG.warning("dia: no pude mandar la nota (%s)", e)
         res["motivo"] = str(e)[:150]
@@ -1251,7 +1258,8 @@ def enviar_nota_finde(lunes=None, forzar: bool = False) -> dict:
     from modules._lib import mailer
 
     lunes = lunes or lunes_del_finde()
-    res = {"ok": False, "motivo": "", "destinatarios": 0, "id": ""}
+    res = {"ok": False, "motivo": "", "destinatarios": 0,
+           "fallidos": 0, "id": ""}
     if not forzar and lunes.weekday() != 0:
         res["motivo"] = "la nota del fin de semana sale los lunes"
         return res
@@ -1302,7 +1310,13 @@ def enviar_nota_finde(lunes=None, forzar: bool = False) -> dict:
         if forzar:
             db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = "
                        "CURRENT_TIMESTAMP WHERE id_captura = %s", (idc,))
-        res.update(ok=True, destinatarios=len(correos), id=env.get("id") or "")
+        # `destinatarios` es a cuántos les LLEGÓ, no a cuántos se intentó:
+        # el mailer manda uno por cabeza y alguno puede rebotar solo. El
+        # motivo se arrastra aunque haya salido, para que un fallo parcial no
+        # quede escondido detrás de un "ok".
+        res.update(ok=True, destinatarios=int(env.get("enviados") or 0),
+                   fallidos=int(env.get("fallidos") or 0),
+                   motivo=env.get("motivo") or "", id=env.get("id") or "")
     except Exception as e:  # noqa: BLE001 -- cuelga del hilo de fondo
         _LOG.warning("dia: no pude mandar la nota del finde (%s)", e)
         res["motivo"] = str(e)[:150]

@@ -67,7 +67,8 @@ def test_la_nota_sale_una_sola_vez_por_dia():
                       return_value=[{"correo": "teliscovich@gmail.com", "activo": True}]), \
          patch.object(mailer, "habilitado", return_value=True), \
          patch.object(dia, "mensaje_whatsapp", return_value="hola"), \
-         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1", "enviados": 1,
+                                     "fallidos": 0, "motivo": ""}) as env, \
          patch.object(dia.db, "execute", return_value=1) as ex:
         r = dia.enviar_nota(_JUEVES)
     assert r["ok"] is True and r["destinatarios"] == 1
@@ -278,7 +279,8 @@ def test_el_boton_de_prueba_manda_igual_un_sabado():
          patch.object(mailer, "habilitado", return_value=True), \
          patch.object(dia, "mensaje_whatsapp", return_value="hola"), \
          patch.object(dia, "nota_html", return_value="<p>hola</p>"), \
-         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1", "enviados": 1,
+                                     "fallidos": 0, "motivo": ""}) as env, \
          patch.object(dia.db, "execute", return_value=1):
         r = dia.enviar_nota(_SABADO, forzar=True)
     assert r["ok"] is True
@@ -306,7 +308,8 @@ def test_la_nota_del_finde_sale_el_lunes_y_una_sola_vez():
          patch.object(mailer, "habilitado", return_value=True), \
          patch.object(dia, "mensaje_finde", return_value="hola"), \
          patch.object(dia, "nota_finde_html", return_value="<p>hola</p>"), \
-         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1", "enviados": 1,
+                                     "fallidos": 0, "motivo": ""}) as env, \
          patch.object(dia.db, "execute", return_value=1) as ex:
         r = dia.enviar_nota_finde(_LUNES)
     assert r["ok"] is True and r["destinatarios"] == 1
@@ -373,7 +376,8 @@ def test_el_boton_de_prueba_del_finde_anda_cualquier_dia():
          patch.object(mailer, "habilitado", return_value=True), \
          patch.object(dia, "mensaje_finde", return_value="hola"), \
          patch.object(dia, "nota_finde_html", return_value="<p>h</p>"), \
-         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1"}) as env, \
+         patch.object(mailer, "enviar", return_value={"ok": True, "id": "m1", "enviados": 1,
+                                     "fallidos": 0, "motivo": ""}) as env, \
          patch.object(dia.db, "execute", return_value=1):
         r = dia.enviar_nota_finde(forzar=True)
     assert r["ok"] is True

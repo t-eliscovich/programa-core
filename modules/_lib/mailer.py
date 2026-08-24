@@ -98,18 +98,45 @@ def motivo_no_disponible() -> str:
 
 def enviar(asunto: str, texto: str, destinatarios: list[str],
            html: str = "") -> dict:
-    """Manda UN mail. Nunca lanza.
+    """Manda el mail: **UNO POR DESTINATARIO**. Nunca lanza.
+
+    🚨 TMT 2026-08-12: antes mandaba UN SOLO mail con todos los destinatarios
+    juntos en el `To`, y una dirección sin verificar en SES hacía rebotar el
+    envío ENTERO (`MessageRejected ... Email address is not verified ...`):
+    esa noche nadie recibió la nota por culpa de una sola dirección. Ahora cada
+    uno tiene su envío: el que falla se cae solo.
+
+    Y de paso deja de ser una lista de correos a la vista de todos, que para
+    mandarle algo a un cliente no era una opción.
 
     Si viene `html`, el mail va en las DOS versiones: el cliente moderno pinta
     el HTML y el viejo —o el que tiene las imágenes y el formato apagados— lee
     el texto plano. Nunca se manda HTML solo: un mail sin alternativa de texto
     puntúa peor en los filtros de spam, y este mail ya tuvo ese problema.
 
-    Devuelve `{"ok": bool, "motivo": str, "id": str}` — el `id` es el
-    MessageId de SES, que es lo único que sirve si después hay que rastrear
-    por qué un mail no llegó.
+    Devuelve::
+
+        {"ok": bool, "motivo": str, "id": str,
+         "enviados": int, "fallidos": int,
+         "detalle": [{"correo": str, "ok": bool, "motivo": str, "id": str}]}
+
+    ⭐ `ok` es **"salió al menos uno"**, no "salieron todos". Es a propósito:
+    el que llama marca la nota como mandada y, si `ok` es False, la libera para
+    reintentar — y reintentar le mandaría el mail DE NUEVO a los que ya lo
+    recibieron. Un fallo parcial no se esconde: va en `motivo` con el nombre de
+    quien no lo recibió, y en `fallidos`.
+
+    El `id` es el MessageId de SES del primer envío que salió, que es lo único
+    que sirve si después hay que rastrear por qué un mail no llegó; los de cada
+    uno están en `detalle`.
+
+    Nota sobre volumen: esto es un `for` sin freno. Alcanza de sobra para la
+    nota del cierre (un puñado de direcciones). El día que haya que mandarle a
+    los cientos de clientes hace falta mirar el límite de envío de SES, que en
+    producción arranca en unos pocos mensajes por segundo.
     """
-    res = {"ok": False, "motivo": "", "id": ""}
+    res = {"ok": False, "motivo": "", "id": "",
+           "enviados": 0, "fallidos": 0, "detalle": []}
     destinos = [d.strip() for d in (destinatarios or []) if (d or "").strip()]
     if not destinos:
         res["motivo"] = "sin destinatarios"
@@ -117,22 +144,49 @@ def enviar(asunto: str, texto: str, destinatarios: list[str],
     if not habilitado():
         res["motivo"] = motivo_no_disponible() or "envío no disponible"
         return res
+
+    cuerpo = {"Text": {"Data": texto, "Charset": "UTF-8"}}
+    if (html or "").strip():
+        cuerpo["Html"] = {"Data": html, "Charset": "UTF-8"}
+    mensaje = {"Subject": {"Data": asunto[:200], "Charset": "UTF-8"},
+               "Body": cuerpo}
+
     try:
         import boto3
 
-        cuerpo = {"Text": {"Data": texto, "Charset": "UTF-8"}}
-        if (html or "").strip():
-            cuerpo["Html"] = {"Data": html, "Charset": "UTF-8"}
-        r = boto3.client("ses", region_name=_region()).send_email(
-            Source=remitente(),
-            Destination={"ToAddresses": destinos},
-            Message={
-                "Subject": {"Data": asunto[:200], "Charset": "UTF-8"},
-                "Body": cuerpo,
-            },
-        )
-        res.update(ok=True, id=str(r.get("MessageId") or ""))
+        cliente = boto3.client("ses", region_name=_region())
+        de = remitente()
     except Exception as e:  # noqa: BLE001 -- cuelga del hilo de fondo
-        _LOG.warning("mailer: no se pudo mandar (%s)", e)
+        _LOG.warning("mailer: no se pudo abrir SES (%s)", e)
         res["motivo"] = str(e)[:200]
+        return res
+
+    fallaron = []
+    for correo in destinos:
+        una = {"correo": correo, "ok": False, "motivo": "", "id": ""}
+        try:
+            r = cliente.send_email(
+                Source=de,
+                Destination={"ToAddresses": [correo]},
+                Message=mensaje,
+            )
+            una.update(ok=True, id=str(r.get("MessageId") or ""))
+            res["enviados"] += 1
+            if not res["id"]:
+                res["id"] = una["id"]
+        except Exception as e:  # noqa: BLE001 -- uno que falla no frena al resto
+            _LOG.warning("mailer: no se pudo mandar a %s (%s)", correo, e)
+            una["motivo"] = str(e)[:200]
+            res["fallidos"] += 1
+            fallaron.append(correo)
+        res["detalle"].append(una)
+
+    res["ok"] = res["enviados"] > 0
+    if fallaron:
+        # El motivo NO se pisa cuando salió alguno: es la única forma de que un
+        # fallo parcial se vea. Ver el docstring.
+        primero = next(d["motivo"] for d in res["detalle"] if not d["ok"])
+        res["motivo"] = (f"no le llegó a {', '.join(fallaron[:5])}"
+                         + (f" y {len(fallaron) - 5} más" if len(fallaron) > 5 else "")
+                         + (f" ({primero})" if primero else ""))
     return res
