@@ -53,14 +53,30 @@ def test_arrancan_los_dos_hilos():
 
 
 def test_la_carga_le_pide_a_asinfo_data_fresca():
-    """Con el cache de 5 min, correr cada 2 no sirve de nada."""
+    """Con el cache de 5 min, correr cada 2 no sirve de nada.
+
+    Va por AST y no por texto: un comentario que NOMBRA `max_edad_secs` no es
+    lo mismo que pasárselo, y un candado de texto se lo come igual.
+    """
+    import ast
+    import textwrap
+
     from modules.facturas import views
 
-    src = inspect.getsource(views._auto_cargar_facturas_hoy)
-    assert "max_edad_secs" in src, (
-        "sin `max_edad_secs` la carga le pregunta al cache de 5 minutos y la "
-        "factura recién emitida no aparece hasta que el cache venza"
-    )
+    arbol = ast.parse(textwrap.dedent(
+        inspect.getsource(views._auto_cargar_facturas_hoy)))
+    llamadas = [
+        n for n in ast.walk(arbol)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "facturas_periodo"
+    ]
+    assert llamadas, "la carga ya no le pregunta a Asinfo por las facturas"
+    for c in llamadas:
+        assert any(k.arg == "max_edad_secs" for k in c.keywords), (
+            "sin `max_edad_secs` la carga le pregunta al cache de 5 minutos y "
+            "la factura recién emitida no aparece hasta que el cache venza"
+        )
 
 
 def test_facturas_periodo_respeta_la_edad_pedida(monkeypatch):
