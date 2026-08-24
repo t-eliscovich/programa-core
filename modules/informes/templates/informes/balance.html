@@ -473,14 +473,19 @@
              U$/kg (antes colgaban de la columna Proyecciones). En el mismo
              viaje, al revés, el cuadro STOCK que estaba acá pasó al panel
              ACTIVO como el detalle de "Stock MP+Prod.". #}
-          {# Federico 2026-08-21: fuera el rótulo "MOVIMIENTOS DEL AÑO" — las tres
-             filas dicen solas de qué hablan ("del año", "Utilidades 2026") y el
-             renglón de sección era espacio puro. Queda una línea divisoria para
-             que no se peguen a Utilidad Real. #}
           {# Federico 2026-08-21: un renglón libre separa la última fila de
              RESULTADOS (Utilidad Real) del bloque anual. Es una fila vacía y no
              un margen porque en una tabla el margen entre filas no existe. #}
           <tr class="fila-espacio"><td colspan="5"></td></tr>
+          {# Dueña 2026-08-24: "esto es lo que le falta, o una raya o un título"
+             — el bloque anual arrancaba sin nada que lo dividiera. El 21/08 se
+             había sacado el rótulo "MOVIMIENTOS DEL AÑO" dejando (en teoría) una
+             línea divisoria, pero `tr.fila-espacio td` lleva `border: 0` y la
+             línea nunca se dibujó. Vuelve la banda, con el rótulo corto: eligió
+             el título por sobre la raya sola. #}
+          <tr>
+            <th class="seccion-header" style="text-align:left" colspan="5">Del año</th>
+          </tr>
           <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
             <td class="num-cell"></td>
