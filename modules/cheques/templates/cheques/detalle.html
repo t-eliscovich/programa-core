@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
 {% block title %}Cheque {{ ch.no_cheque or ('#' ~ ch.id_cheque) }}{% endblock %}
 {# TMT 2026-08-17 (duena): `volver_url` es el listado CON el filtro con el que
    se abrio este cheque (ej. ?cliente=BED). `_self` es esta misma pantalla
@@ -365,32 +364,79 @@
      "quiero dejar una observación en el cheque". Form propio con solo
      nota_usuario para no arrastrar el resto del edit form. Gateado por el
      MISMO permiso `cheques.editar` que ya cubre `actualizar`. #}
-  {% if tiene_permiso('cheques.editar') %}
-  <div class="mb-6 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-md p-3">
-    <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
-          class="space-y-2" data-testid="ch-nota-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ _self }}">
-      <label class="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
-        <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
-        Observación
+  {# ─────────────────────────────────────────────────────────────────────
+     TMT 2026-08-24 (dueña): *"el cheque debería entrar en una pantalla.
+     demasiada info toda distendida"* y después *"muy desalineado todavía"*.
+
+     Antes: una caja para la observación (146 px con el cuadro de texto
+     VACÍO), otra caja para el cliente (99 px) y dos tablas de ocho columnas
+     que sólo decían "no hay nada" (230 px). 819 px de alto para un cheque
+     sin aplicar.
+
+     Ahora: los datos van en UNA rejilla de dos columnas —rótulo a la
+     izquierda, dato a la derecha— así que todo cae sobre la misma línea
+     vertical en vez de quedar como frases sueltas. Las tablas aparecen sólo
+     cuando tienen filas. #}
+  <dl class="mt-4 mb-4 grid gap-x-4 gap-y-2 text-sm items-baseline"
+      style="grid-template-columns: 132px minmax(0, 1fr);">
+
+    <dt class="text-xs uppercase tracking-wider text-slate-500">Lo entregó</dt>
+    <dd class="m-0">
+      {% if ch.codigo_cli %}
+        <a href="{{ url_for('informes.estado_cuenta', codigo_cli=ch.codigo_cli) }}" class="hover:text-blue-600">
+          {# El CÓDIGO primero: es por donde la dueña lee al cliente en todas
+             las grillas del programa (TMT 2026-08-24). #}
+          <span class="font-mono font-semibold">{{ ch.codigo_cli }}</span>
+          <span class="font-semibold">· {{ ch.cliente or '' }}</span>
+          <span class="text-xs text-slate-500">
+            {% if ch.ruc | cleanstr %} · {{ ch.ruc | cleanstr }}{% endif %}
+            {% if ch.telefono | cleanstr %} · {{ ch.telefono | cleanstr }}{% endif %}
+          </span>
+        </a>
+      {% else %}<span class="text-slate-400">—</span>{% endif %}
+    </dd>
+
+    {% if tiene_permiso('cheques.editar') %}
+    <dt class="text-xs uppercase tracking-wider text-slate-500">Observación</dt>
+    <dd class="m-0" data-testid="ch-nota">
+      <div class="ch-nota-vista flex items-baseline gap-2">
         {% if ch.nota_usuario %}
           <span class="text-red-600 font-bold" title="Este cheque tiene una observación cargada — se marca con * rojo en la lista y se imprime en las hojas.">*</span>
+          <span>{{ ch.nota_usuario }}</span>
+        {% else %}
+          <span class="text-slate-400">—</span>
         {% endif %}
-      </label>
-      <textarea name="nota_usuario" rows="2"
-                placeholder="Notas del cliente / motivo del postergado / recordatorio…"
-                class="w-full rounded border border-slate-300 dark:border-slate-600 px-2 py-1 text-sm bg-white dark:bg-slate-900"
-                style="min-height: 44px; resize: vertical;">{{ ch.nota_usuario or '' }}</textarea>
-      <div class="flex items-center justify-between">
-        <p class="text-[11px] text-slate-500 dark:text-slate-400">
-          Se muestra como <span class="text-red-600 font-bold">*</span> rojo en /cheques y se imprime en la hoja de "cheques ingresados" y en el resumen de cobranza del día.
-        </p>
-        <button type="submit" class="text-xs px-3 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white">Guardar observación</button>
+        <button type="button" class="ch-nota-abrir text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded px-1 py-0.5 leading-none no-print"
+                title="Escribir una observación">&#9998;</button>
       </div>
-    </form>
-  </div>
-  {% endif %}
+      <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
+            class="ch-nota-form hidden space-y-1" data-testid="ch-nota-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ _self }}">
+        <textarea name="nota_usuario" rows="2"
+                  placeholder="Notas del cliente / motivo del postergado / recordatorio…"
+                  class="w-full rounded border border-slate-300 dark:border-slate-600 px-2 py-1 text-sm bg-white dark:bg-slate-900"
+                  style="min-height: 44px; resize: vertical;">{{ ch.nota_usuario or '' }}</textarea>
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">
+            Se muestra como <span class="text-red-600 font-bold">*</span> rojo en /cheques y se imprime en la hoja de "cheques ingresados" y en el resumen de cobranza del día.
+          </p>
+          <button type="submit" class="shrink-0 text-xs px-3 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white">Guardar</button>
+        </div>
+      </form>
+    </dd>
+    {% endif %}
+
+    {% if not aplicaciones %}
+    <dt class="text-xs uppercase tracking-wider text-slate-500">Facturas</dt>
+    <dd class="m-0 text-slate-500">Todavía no se aplicó a ninguna factura.</dd>
+    {% endif %}
+
+    {% if not depositos %}
+    <dt class="text-xs uppercase tracking-wider text-slate-500">Depósitos</dt>
+    <dd class="m-0 text-slate-500">Sin depósitos registrados.</dd>
+    {% endif %}
+  </dl>
 
   {# Banner de postergación — sólo si está postergado o tiene historia de postergación #}
   {% if ch.fecha_postergacion or ch.fechad_original %}
@@ -414,40 +460,26 @@
   </div>
   {% endif %}
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 mb-6">
-    <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Cliente que lo entregó</div>
-    {% if ch.codigo_cli %}
-      <a href="{{ url_for('informes.estado_cuenta', codigo_cli=ch.codigo_cli) }}" class="block hover:text-blue-600">
-        <div class="font-semibold">{{ ch.cliente or ch.codigo_cli }}</div>
-        <div class="text-xs text-slate-500">
-          <span class="font-mono">{{ ch.codigo_cli }}</span>
-          {% if ch.ruc | cleanstr %} · {{ ch.ruc | cleanstr }}{% endif %}
-          {% if ch.telefono | cleanstr %} · {{ ch.telefono | cleanstr }}{% endif %}
-        </div>
-      </a>
-    {% else %}
-      <div class="text-sm text-slate-500">—</div>
-    {% endif %}
-  </div>
-
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+  {# La tabla sólo cuando tiene filas: vacía, el renglón ya lo dice arriba. #}
+  {% if aplicaciones %}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
     Aplicado a facturas ({{ aplicaciones | length }} · total aplicado {{ total_aplicado | money_es }})
   </h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-6">
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-4">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-3 py-3 text-left font-medium">F. aplic.</th>
-          <th class="px-3 py-3 text-left font-medium">Factura</th>
-          <th class="px-3 py-3 text-right font-medium">Importe fact.</th>
-          <th class="px-3 py-3 text-right font-medium">Aplicado</th>
-          <th class="px-3 py-3 text-right font-medium">Abono fact.</th>
-          <th class="px-3 py-3 text-right font-medium">Saldo fact.</th>
-          <th class="px-3 py-3 text-left font-medium">Stat</th>
+          <th class="px-3 py-2 text-left font-medium">F. aplic.</th>
+          <th class="px-3 py-2 text-left font-medium">Factura</th>
+          <th class="px-3 py-2 text-right font-medium">Importe fact.</th>
+          <th class="px-3 py-2 text-right font-medium">Aplicado</th>
+          <th class="px-3 py-2 text-right font-medium">Abono fact.</th>
+          <th class="px-3 py-2 text-right font-medium">Saldo fact.</th>
+          <th class="px-3 py-2 text-left font-medium">Stat</th>
           {# TMT 2026-05-21 (H-3): botón Desaplicar inline. Antes había que adivinar
              la URL /cheques/<id>/desaplicar/<id_factura>. La dueña lo pidió visible. #}
           {% if tiene_permiso('cheques.aplicar') %}
-          <th class="px-3 py-3 text-right font-medium no-print">Acción</th>
+          <th class="px-3 py-2 text-right font-medium no-print">Acción</th>
           {% endif %}
         </tr>
       </thead>
@@ -495,26 +527,26 @@
           </td>
           {% endif %}
         </tr>
-        {% else %}
-        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="{% if tiene_permiso('cheques.aplicar') %}8{% else %}7{% endif %}">Cheque aún no aplicado a facturas.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% endif %}
 
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+  {% if depositos %}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
     Depósitos / movimientos bancarios ({{ depositos | length }})
   </h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-3 py-3 text-left font-medium">Fecha</th>
-          <th class="px-3 py-3 text-left font-medium">Banco</th>
-          <th class="px-3 py-3 text-left font-medium">Doc</th>
-          <th class="px-3 py-3 text-left font-medium">Concepto</th>
-          <th class="px-3 py-3 text-right font-medium">Importe</th>
-          <th class="px-3 py-3 text-left font-medium">Stat</th>
+          <th class="px-3 py-2 text-left font-medium">Fecha</th>
+          <th class="px-3 py-2 text-left font-medium">Banco</th>
+          <th class="px-3 py-2 text-left font-medium">Doc</th>
+          <th class="px-3 py-2 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2 text-right font-medium">Importe</th>
+          <th class="px-3 py-2 text-left font-medium">Stat</th>
         </tr>
       </thead>
       <tbody>
@@ -527,13 +559,29 @@
           <td class="px-3 py-2 text-right text-mono">{{ d.t_importe | money_es }}</td>
           <td class="px-3 py-2 font-mono text-xs">{{ d.stat_ch }}</td>
         </tr>
-        {% else %}
-        {{ empty_row(6, 'Sin depósitos registrados.') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% endif %}
 </div>
+
+{# El lapicito de la observación: el cuadro de texto se abre al tocarlo. #}
+<script>
+  (function () {
+    var caja = document.querySelector('[data-testid="ch-nota"]');
+    if (!caja) return;
+    var boton = caja.querySelector('.ch-nota-abrir');
+    var form = caja.querySelector('.ch-nota-form');
+    if (!boton || !form) return;
+    boton.addEventListener('click', function () {
+      caja.querySelector('.ch-nota-vista').classList.add('hidden');
+      form.classList.remove('hidden');
+      var t = form.querySelector('textarea');
+      if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+    });
+  })();
+</script>
 
 {# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
 {% include "_reverso_modal.html" %}
