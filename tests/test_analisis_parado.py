@@ -670,18 +670,23 @@ def test_con_la_meta_en_todo_cada_grupo_despeja_sus_kilos(monkeypatch):
     assert c["meta_kg"] == c["kg_parado"] == 10000
 
 
-def test_la_meta_se_reparte_en_partes_iguales(monkeypatch):
-    """⭐ Dueña 17/08/2026: "nono igual para todos. todos deberian tener lugares
-    fuertes y debiles asumo". Repartir por lo que cada uno ya vende premiaría
-    quedarse en lo de siempre — lo contrario de lo que busca la competencia."""
-    c = _competencia_falsa(monkeypatch)
-    metas = {r["vendedor"]: r["meta"] for r in c["ranking"]}
-    assert len(set(round(m, 6) for m in metas.values())) == 1, (
-        "todos tienen que tener la misma meta")
-    assert round(sum(metas.values()), 2) == round(c["meta_kg"], 2)
+def test_no_hay_meta_por_vendedor(monkeypatch):
+    """⭐ Dueña 24/08/2026: "ya que es por puntos, saquemos la meta, ideal es +
+    puntos gana".
+
+    ⚠ Y no era sólo simplificar: la meta ya no decidía NADA. Los siete tenían
+    la misma (los puntos totales sobre 7), así que ordenar por "% de su meta"
+    era dividir a todos por la misma constante — exactamente el mismo orden que
+    ordenar por puntos. Era una cuenta de más en la pantalla."""
+    c = _competencia_falsa(monkeypatch, puntos={"Jersey 3": 10, "Fleece 102": 1})
+    for r in c["ranking"]:
+        assert "meta" not in r, "no puede quedar una meta por vendedor"
+        assert "pct" not in r, "ni un % contra una meta"
+    assert c["puntos_en_juego"] == 64000, (
+        "lo que sí queda es cuántos puntos hay en juego, como referencia")
 
 
-def test_el_ranking_va_por_porcentaje_y_no_por_kilos(monkeypatch):
+def test_el_ranking_va_por_puntos(monkeypatch):
     c = _competencia_falsa(monkeypatch, vendido=[
         {"vendedor": "Quintero Jose", "categoria": "Jersey", "kg": 100,
          "ultima": None},
@@ -689,6 +694,8 @@ def test_el_ranking_va_por_porcentaje_y_no_por_kilos(monkeypatch):
     ])
     assert c["ranking"][0]["vendedor"] == "Quintero Jose"
     assert c["ranking"][0]["puesto"] == 1
+    assert c["ranking"][0]["pct_lider"] == 100, "el primero es la vara"
+    assert c["ranking"][1]["pct_lider"] == 50, "y el resto, contra él"
 
 
 def test_intela_compite_como_uno_mas(monkeypatch):
@@ -1058,10 +1065,10 @@ def test_la_meta_en_puntos_sale_de_las_telas_y_no_del_grupo(monkeypatch):
                            puntos={"Jersey 3": 10, "Fleece 102": 1})
     jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
     fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
-    assert jersey["meta_pts"] == 60000       # 6.000 kg × 10
-    assert fleece["meta_pts"] == 4000        # 4.000 kg × 1
-    assert c["meta_pts"] == 64000
-    assert jersey["kg"] < fleece["kg"] * 2 < jersey["meta_pts"], (
+    assert jersey["puntos_base"] == 60000    # 6.000 kg × 10
+    assert fleece["puntos_base"] == 4000     # 4.000 kg × 1
+    assert c["puntos_en_juego"] == 64000
+    assert jersey["kg"] < fleece["kg"] * 2 < jersey["puntos_base"], (
         "un grupo puede tener pocos kilos y muchos puntos")
 
 
@@ -1075,8 +1082,8 @@ def test_ya_no_hay_tope_por_grupo(monkeypatch):
     intela = next(r for r in c["ranking"] if r["vendedor"] == "Intela")
     jersey = next(d for d in intela["detalle"] if d["grupo"] == "Jersey")
     assert jersey["puntos"] == 5000, "el kilo cuenta entero, no cortado"
-    assert jersey["pct"] > 100, "puede pasarse de la meta de un grupo"
     assert "contado" not in intela, "no queda rastro del tope"
+    assert "meta" not in jersey, "ni de la meta por grupo"
 
 
 def test_el_kilo_igual_sale_de_la_bodega(monkeypatch):
@@ -1089,15 +1096,20 @@ def test_el_kilo_igual_sale_de_la_bodega(monkeypatch):
     assert c["liquidado"] == 5000
 
 
-def test_llegar_al_100_es_hacer_todos_sus_puntos(monkeypatch):
-    c = _competencia_falsa(monkeypatch, vendido=[
-        {"vendedor": "Intela", "categoria": "Jersey", "kg": 6000 / 7,
-         "ultima": None},
-        {"vendedor": "Intela", "categoria": "Fleece", "kg": 4000 / 7,
-         "ultima": None},
-    ])
+def test_los_puntos_de_un_vendedor_son_la_suma_de_sus_grupos(monkeypatch):
+    c = _competencia_falsa(
+        monkeypatch,
+        puntos={"Jersey 3": 10, "Fleece 102": 1},
+        vendido=[
+            {"vendedor": "Intela", "categoria": "Jersey", "kg": 100,
+             "ultima": None},
+            {"vendedor": "Intela", "categoria": "Fleece", "kg": 200,
+             "ultima": None},
+        ])
     intela = next(r for r in c["ranking"] if r["vendedor"] == "Intela")
-    assert round(intela["pct"], 1) == 100.0
+    assert intela["kg"] == 300
+    assert intela["puntos"] == 1200          # 100×10 + 200×1
+    assert sum(d["puntos"] for d in intela["detalle"]) == intela["puntos"]
 
 
 def test_el_ranking_ordena_por_puntos_y_no_por_kilos(monkeypatch):
@@ -1135,7 +1147,9 @@ def test_la_pantalla_explica_las_reglas():
         "la regla del puntaje tiene que estar escrita")
     assert "meses de venta hay" in html, (
         "y con qué se mide difícil, o el puntaje parece arbitrario")
-    assert "qué parte de sus puntos lleva hecha" in html
+    assert "el que más puntos hace" in html
+    assert "No hay meta" in html, (
+        "que no haya meta es una regla, no una omisión (dueña 24/08/2026)")
     assert "no por kilos" not in html, (
         "todo se mide EN kilos; decir que no, confunde (dueña 17/08/2026)")
 
@@ -1145,8 +1159,9 @@ def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     assert "abrirVend" in html and 'class="vdet"' in html
-    for col in ("Su meta", "Vendió", "Puntos"):
+    for col in ("Vendió", "Puntos"):
         assert col in html
+    assert "Su meta" not in html, "la meta se fue de la pantalla"
 
 
 def test_la_lista_de_telas_muestra_lo_que_vale_cada_una():
@@ -1300,7 +1315,7 @@ def test_en_el_celular_no_se_esconde_lo_que_identifica_la_fila():
     carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
                "templates" / "analisis")
     comp = " ".join((carpeta / "competencia.html").read_text(encoding="utf-8").split())
-    for imprescindible in (">Vendedor<", ">% de su meta<", ">Cliente<"):
+    for imprescindible in (">Vendedor<", ">Puntos<", ">Cliente<"):
         col = re.search(r'<th[^>]*' + re.escape(imprescindible), comp)
         assert col, f"falta la columna {imprescindible}"
         assert "opt" not in col.group(0), (
@@ -1490,7 +1505,7 @@ def test_la_pantalla_no_explica_la_formula_vieja_de_metas():
     import re
     texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
     assert "su propio peso en el parado" not in texto
-    assert "misma exigencia" in texto
+    assert "Dónde están los puntos" in texto
 
 
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():

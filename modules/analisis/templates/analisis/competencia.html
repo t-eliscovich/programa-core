@@ -70,19 +70,20 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
       <p class="v vd">{{ liquidado | num_es(0) }}</p>
       <p class="s">kg</p></div>
   </div>
-  {# ⭐ El termómetro va en PUNTOS, que es lo que decide el puesto. Los kilos
-     quedan arriba en las tarjetas: son la foto de la bodega, no el marcador. #}
-  <div class="chico">Meta: <b>{{ meta_pts | num_es(0) }} puntos</b>
-    ({{ meta_kg | num_es(0) }} kg, {{ total_pct | num_es(1) }}% de lo que había)</div>
+  {# ⭐ El termómetro es de la FÁBRICA y va en kilos: la pregunta de acá es
+     cuánta tela salió de la bodega, no quién va ganando. Los puntos en juego
+     se dicen al lado como referencia de tamaño, no como meta de nadie. #}
+  <div class="chico">Hay <b>{{ puntos_en_juego | num_es(0) }} puntos</b> en juego,
+    en {{ kg_al_largar | num_es(0) }} kg.</div>
   <div class="barra-fondo">
-    <div style="width:{{ [100, (100 * liquidado_pts / meta_pts) if meta_pts else 0] | min }}%"></div>
+    <div style="width:{{ [100, (100 * liquidado / kg_al_largar) if kg_al_largar else 0] | min }}%"></div>
   </div>
   {# ⚠ `x if y else 0 | round(1)` aplica el filtro SÓLO al 0: salía
      "17.284974824441832%", con punto decimal además. Los paréntesis y num_es
      no son cosmética — un porcentaje con 15 decimales dice "esto no lo miró
      nadie". #}
-  <div class="chico">Llevamos <b>{{ liquidado_pts | num_es(0) }} puntos</b> ·
-    {{ ((100 * liquidado_pts / meta_pts) if meta_pts else 0) | num_es(1) }}%</div>
+  <div class="chico">Salieron <b>{{ liquidado | num_es(0) }} kg</b>
+    ({{ liquidado_pts | num_es(0) }} puntos).</div>
 </div>
 
 <h2>Las reglas</h2>
@@ -97,19 +98,16 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
   <li>Difícil se mide con un solo número: <b>cuántos meses de venta hay
       parados</b>. Menos de uno, {{ puntos_valor[1] }} punto; hasta doce,
       {{ puntos_valor[2] }}; más de un año o cero venta, {{ puntos_valor[3] }}.</li>
-  <li><b>La misma meta para todos</b>:
-      {{ (meta_pts / (competidores | length)) | num_es(0) }} puntos cada uno.</li>
+  {# ⚠ NO volver a poner una meta. Dueña 24/08/2026: "ya que es por puntos,
+     saquemos la meta, ideal es + puntos gana". Y además la meta no decidía
+     nada: los siete tenían la misma, así que el % de la meta ordenaba igual
+     que los puntos pelados. #}
+  <li><b>Gana el que más puntos hace.</b> No hay meta.</li>
   <li>El puntaje es <b>de la tela, no del color</b>: sale de lo que la fábrica
-      vende de esa tela.</li>
+      vende de esa tela, y se fija el {{ largada.strftime('%d/%m') }}.</li>
   <li>El kilo es del <b>vendedor de la factura</b>. Intela compite como uno
       más.</li>
-  {# ⚠ NO decir "no por kilos". Dueña 17/08/2026: "no por kilos. no". Y tiene
-     razón: todo lo que se vende se cuenta en kilos; lo que cambia es cuánto
-     vale cada uno. Decir "no por kilos" hacía sonar que los kilos no importan,
-     que es lo contrario de lo que pasa. #}
-  <li>El puesto sale de <b>qué parte de sus puntos lleva hecha</b>, así compite
-      parejo el chico con el grande. Se mide <b>por semana</b>, de lunes a
-      domingo.</li>
+  <li>Se mide <b>por semana</b>, de lunes a domingo.</li>
   <li>Aparte hay un <b>premio del mes</b>, ése sí por kilos y sin puntaje.
       Agosto y septiembre cuentan juntos.</li>
 </ol>
@@ -118,9 +116,8 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
 <h2>Quién va ganando</h2>
 <p class="sub"><b>Toque una fila</b> para ver su avance grupo por grupo.</p>
 <table>
-<thead><tr><th></th><th></th><th>Vendedor</th><th class="n opt">Meta</th>
-<th class="n opt">Kilos</th><th class="n opt">Puntos</th>
-<th class="n">% de su meta</th><th class="opt">Avance</th>
+<thead><tr><th></th><th></th><th>Vendedor</th>
+<th class="n opt">Kilos</th><th class="n">Puntos</th><th class="opt">Avance</th>
 <th class="n opt">Esta semana</th><th class="n opt">Último</th></tr></thead>
 <tbody>
 {% for r in ranking %}
@@ -133,25 +130,23 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
       {% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
       {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
     <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · usted{% endif %}</td>
-    <td class="n g opt">{{ r.meta | num_es(0) }}</td>
     <td class="n g opt">{{ r.kg | num_es(0) }}</td>
-    <td class="n opt">{{ r.puntos | num_es(0) }}</td>
-    <td class="n">{{ r.pct | num_es(1) }}%</td>
-    <td class="opt"><div class="mini"><div style="width:{{ [100, r.pct] | min }}%"></div></div></td>
+    <td class="n">{{ r.puntos | num_es(0) }}</td>
+    {# La barrita mide contra el PRIMERO, no contra una meta: lo que se quiere
+       ver de un vistazo es cuánto falta para alcanzarlo. #}
+    <td class="opt"><div class="mini"><div style="width:{{ [100, r.pct_lider] | min }}%"></div></div></td>
     <td class="n opt">{% if r.kg_semana %}{{ r.kg_semana | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n g opt">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
   </tr>
-  <tr class="vdet"><td colspan="10">
+  <tr class="vdet"><td colspan="8">
     <table>
-    <thead><tr><th>Tipo de tela</th><th class="n">Su meta</th><th class="n">Vendió</th>
-    <th class="n">Puntos</th><th class="n">%</th></tr></thead>
+    <thead><tr><th>Tipo de tela</th><th class="n">Vendió</th>
+    <th class="n">Puntos</th></tr></thead>
     <tbody>
     {% for d in r.detalle %}
       <tr><td>{{ d.grupo }}</td>
-      <td class="n g">{{ d.meta | num_es(0) }}</td>
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
-      <td class="n">{{ d.puntos | num_es(0) }}</td>
-      <td class="n">{{ d.pct | num_es(1) }}%</td></tr>
+      <td class="n">{{ d.puntos | num_es(0) }}</td></tr>
     {% endfor %}
     </tbody>
     </table>
@@ -199,25 +194,21 @@ septiembre.</p>
    Si algún día se quiere de vuelta, es sólo volver a dibujarla. #}
 
 <h2>Por grupo</h2>
-<p class="sub">La <b>misma exigencia</b> en todos: el
-{{ total_pct | num_es(1) }}% de cada grupo. La meta de la fila se parte entre los
-{{ competidores | length }}. Un grupo puede tener pocos kilos y muchos puntos:
-depende de qué telas tenga adentro.</p>
+<p class="sub">Dónde están los puntos. Un grupo puede tener pocos kilos y
+muchos puntos: depende de qué telas tenga adentro.</p>
 <table>
-<thead><tr><th>Grupo</th><th class="n">Kg parados</th><th class="n opt">Meta en kg</th>
-<th class="n">Meta en puntos</th><th class="n opt">Liquidado</th>
-<th class="n">% de la meta</th>
+<thead><tr><th>Grupo</th><th class="n">Kg parados</th>
+<th class="n">Puntos en juego</th><th class="n opt">Salió</th>
+<th class="n">Puntos hechos</th>
 <th class="opt">Quién lo vende</th></tr></thead>
 <tbody>
 {% for g in grupos %}
   <tr>
     <td class="tela">{{ g.grupo }}</td>
     <td class="n">{{ g.kg | num_es(0) }}</td>
-    <td class="n g opt">{{ g.meta_kg | num_es(0) }}
-      <span class="pill quieto">{{ g.meta_pct | num_es(1) }}%{% if g.meta_es_manual %} ✎{% endif %}</span></td>
-    <td class="n g">{{ g.meta_pts | num_es(0) }}</td>
+    <td class="n g">{{ g.puntos_base | num_es(0) }}</td>
     <td class="n opt">{{ g.liquidado | num_es(0) }} kg</td>
-    <td class="n">{{ g.pct_meta | num_es(1) }}%</td>
+    <td class="n">{{ g.liquidado_pts | num_es(0) }}</td>
     <td class="g opt">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(1) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
   </tr>
 {% endfor %}

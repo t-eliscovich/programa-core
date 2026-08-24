@@ -767,20 +767,15 @@ def competencia() -> dict:
     semanas = _semanas(largada)
     share = db.fetch_all("SELECT * FROM scintela.parado_share")
 
-    # ⭐ La meta del grupo se parte en PARTES IGUALES entre los competidores.
-    # Repartirla por lo que cada uno ya vende premiaría quedarse en lo de
-    # siempre, que es lo contrario de lo que busca la competencia.
-    n = len(COMPETIDORES) or 1
-    por_grupo_meta = {g["grupo"]: g["meta_pts"] / n for g in grupos}
-
-    tabla = {v: {"vendedor": v, "meta": 0.0, "kg": 0.0, "puntos": 0.0,
+    # ⚠ Los ocho grupos se crean para TODOS aunque nadie haya vendido nada de
+    # uno: la fila que se abre tiene que mostrar los ocho, también con cero.
+    # Un grupo que falta se lee como "no existe", no como "no vendí".
+    tabla = {v: {"vendedor": v, "kg": 0.0, "puntos": 0.0,
                  "ultima": None, "grupos": {}} for v in COMPETIDORES}
     for g in grupos:
         for v in COMPETIDORES:
-            tabla[v]["meta"] += por_grupo_meta[g["grupo"]]
             tabla[v]["grupos"][g["grupo"]] = {
-                "grupo": g["grupo"], "meta": por_grupo_meta[g["grupo"]],
-                "kg": 0.0, "puntos": 0.0}
+                "grupo": g["grupo"], "kg": 0.0, "puntos": 0.0}
 
     fuera = 0.0
     liq_kg: dict[str, float] = defaultdict(float)
@@ -811,28 +806,36 @@ def competencia() -> dict:
     # de un grupo, y adentro de un grupo hay telas que salen solas y telas que
     # no salió una en un año.
     #
+    # ⭐ Y SE FUE LA META DEL RANKING (24/08/2026). Dueña: "ya que es por
+    # puntos, saquemos la meta, ideal es + puntos gana". Tiene razón, y de
+    # hecho la meta ya no decidía nada: los siete tenían la MISMA (los puntos
+    # totales sobre 7), así que ordenar por "% de su meta" era dividir a todos
+    # por la misma constante y daba exactamente el mismo orden que ordenar por
+    # puntos. Era una cuenta de más en la pantalla que no movía a nadie de
+    # puesto. Los puntos en juego se siguen mostrando como referencia —cuánto
+    # hay— pero no como vara de nadie.
+    #
     # ⚠ El desempate por NOMBRE no es cosmético: al arrancar están todos en
     # cero, y sin un criterio fijo el orden de los empatados lo decide el
     # diccionario. Entonces "subió dos puestos" sería ruido, porque el puesto de
     # la semana pasada se recalcula con el mismo sort.
-    for d in tabla.values():
-        for gr in d["grupos"].values():
-            gr["pct"] = 100 * gr["puntos"] / gr["meta"] if gr["meta"] else 0
-
     ranking = sorted(tabla.values(),
-                     key=lambda d: (-(d["puntos"] / d["meta"] if d["meta"] else 0),
-                                    d["vendedor"]))
+                     key=lambda d: (-d["puntos"], d["vendedor"]))
+    lider = ranking[0]["puntos"] if ranking else 0
     for i, d in enumerate(ranking, 1):
         d["puesto"] = i
         d["vend_yo"] = False
-        d["pct"] = 100 * d["puntos"] / d["meta"] if d["meta"] else 0
-        d["detalle"] = sorted(d["grupos"].values(), key=lambda x: -x["meta"])
+        # La barrita compara contra el primero, no contra una meta: es la
+        # distancia que hay que remontar, que es la pregunta que se hace el que
+        # va cuarto.
+        d["pct_lider"] = 100 * d["puntos"] / lider if lider else 0
+        d["detalle"] = sorted(d["grupos"].values(), key=lambda x: -x["puntos"])
 
     for g in grupos:
         g["liquidado"] = liq_kg.get(g["grupo"], 0.0)
         g["liquidado_pts"] = liq_pts.get(g["grupo"], 0.0)
-        g["pct_meta"] = (100 * g["liquidado_pts"] / g["meta_pts"]
-                         if g["meta_pts"] else 0)
+        g["pct_meta"] = (100 * g["liquidado_pts"] / g["puntos_base"]
+                         if g["puntos_base"] else 0)
         g["share"] = sorted(
             [s for s in share if s["categoria"] == g["grupo"]],
             key=lambda s: -float(s["pct"] or 0))[:4]
@@ -859,7 +862,9 @@ def competencia() -> dict:
                          else hay_hoy + liquidado),
         "meta_fijada_el": fijada_el,
         "meta_kg": sum(g["meta_kg"] for g in grupos),
-        "meta_pts": sum(g["meta_pts"] for g in grupos),
+        # Los puntos que hay en juego. No es la meta de nadie: es el tamaño
+        # de la bolsa, para saber contra qué se lee un 6.700.
+        "puntos_en_juego": sum(g["puntos_base"] for g in grupos),
         "liquidado": liquidado,
         "liquidado_pts": sum(g["liquidado_pts"] for g in grupos),
         "puntos_valor": PUNTOS,
@@ -992,9 +997,9 @@ def _movimiento(ranking: list[dict], por_vendedor: dict,
     # "subió dos puestos" sería inventado.
     antes = sorted(
         ranking,
-        key=lambda r: (-(max(0.0, r["puntos"]
-                             - pts_semana.get(r["vendedor"], {}).get(ultima, 0))
-                         / r["meta"] if r["meta"] else 0), r["vendedor"]))
+        key=lambda r: (-max(0.0, r["puntos"]
+                            - pts_semana.get(r["vendedor"], {}).get(ultima, 0)),
+                       r["vendedor"]))
     puesto_antes = {r["vendedor"]: i for i, r in enumerate(antes, 1)}
     for r in ranking:
         r["kg_semana"] = por_vendedor.get(r["vendedor"], {}).get(ultima, 0.0)
