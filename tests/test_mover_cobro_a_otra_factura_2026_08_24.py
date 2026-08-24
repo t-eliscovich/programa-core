@@ -232,16 +232,40 @@ def test_la_ruta_existe_de_verdad_en_el_url_map(app):
 
 
 def test_la_pantalla_nombra_el_medio_y_no_el_id_interno():
-    """Un depósito se presenta como "Dep. Pich.", no como "Cobro #102758".
+    """Un depósito se presenta como "Dep. Pich.", no como "Cobro #102758"."""
+    assert "queries.etiqueta_cobro_fila(ch)" in VISTAS
 
-    `por_id` devuelve el nombre del banco en `banco_texto` y `etiqueta_cobro`
-    lo lee de `banco_nombre`: sin traducir la llave, la etiqueta caía al id
-    interno — el mismo pecado que esta sesión fue a corregir.
+
+def test_el_nombre_del_medio_sale_del_CATALOGO_y_no_de_la_columna_del_cheque(monkeypatch):
+    """🚨 `cheque.banco` está VACÍA en 1.386 de las 1.762 filas de depósito y
+    efectivo — el alta la escribe sólo si el caller la pasa.
+
+    La primera versión de este arreglo leía esa columna y no cambió nada en
+    producción: la pantalla siguió diciendo "Cobro #102758". El nombre del
+    medio vive en `scintela.banco`, indexado por `no_banco`.
     """
-    assert 'ch.get("banco_texto")' in VISTAS
-    assert cq.etiqueta_cobro(
-        {"no_cheque": "", "no_banco": 90, "banco_nombre": "DEP.PICH."}
-    ) == "Dep. Pich."
+    consultado = {}
+
+    def _fake_nombre(no_banco, conn=None):
+        consultado["no_banco"] = no_banco
+        return "DEP.PICH."
+
+    monkeypatch.setattr(cq, "_nombre_banco", _fake_nombre)
+    fila = {"id_cheque": 102758, "no_cheque": "", "no_banco": 90,
+            "banco_texto": None}   # <- como viene de `por_id` en producción
+    assert cq.etiqueta_cobro_fila(fila) == "Dep. Pich."
+    assert consultado["no_banco"] == 90, "tiene que ir al catálogo"
+
+
+def test_si_la_fila_YA_trae_el_nombre_no_va_a_la_base(monkeypatch):
+    """Los listados lo traen por JOIN: no hay que pegarle a la base por fila."""
+    def _explota(*a, **k):
+        raise AssertionError("no debería consultar el catálogo")
+
+    monkeypatch.setattr(cq, "_nombre_banco", _explota)
+    assert cq.etiqueta_cobro_fila(
+        {"no_cheque": "", "no_banco": 99, "banco_nombre": "EFECTIVO"}
+    ) == "Efectivo"
 
 
 def test_la_pantalla_dice_que_la_plata_no_se_mueve():

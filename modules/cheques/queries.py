@@ -146,6 +146,28 @@ def etiqueta_cobro(row: dict | None) -> str:
     return _prolijo(nombre)
 
 
+def etiqueta_cobro_fila(row: dict | None, conn=None) -> str:
+    """`etiqueta_cobro` para una fila que NO trae el nombre del banco.
+
+    🚨 TMT 2026-08-24. `etiqueta_cobro` es pura a propósito: lee
+    `banco_nombre` de la fila y no toca la base, porque la llaman los listados
+    que ya lo traen por JOIN. Pero `por_id` devuelve la columna
+    `cheque.banco` (como `banco_texto`) y **esa columna está VACÍA en 1.386 de
+    las 1.762 filas de depósito/efectivo**: el alta la escribe sólo si el
+    caller la pasa. Confiar en ella dejaba la etiqueta en blanco y el que
+    llamaba caía al "#id interno" — el mismo pecado que se fue a corregir.
+
+    El nombre del medio vive en el catálogo `scintela.banco`, indexado por
+    `no_banco`. Acá se resuelve por ahí y `banco_texto` queda de respaldo.
+    """
+    if not row:
+        return ""
+    nombre = (row.get("banco_nombre") or row.get("banco_texto") or "").strip()
+    if not nombre:
+        nombre = _nombre_banco(row.get("no_banco"), conn=conn)
+    return etiqueta_cobro({**row, "banco_nombre": nombre})
+
+
 # Qué cuenta como CHEQUE — la misma partición por medio que usa el resumen de
 # cobranza (réplica de FINAL, ALTAS.PRG): NB 90/91 = depósito directo, NB 99 =
 # efectivo, todo lo demás (banco emisor real, y el 98 = espejo de anticipo) es
