@@ -395,6 +395,289 @@ def _migrar_deposito_directo(*, ch: dict, nuevo_nb: int, banco_nombre: str, usua
         )
 
 
+# ── Cambiar el MONTO de un cheque que YA está aplicado a facturas ───────────
+# TMT 2026-08-24 (dueña): *"Cuando edito un cheque pero que ya fue aplicado a
+# una factura, creo que no está funcionando bien. Cambié el monto"*. Era
+# cierto: `editar()` cambiaba `cheque.importe` y NO tocaba ni `chequesxfact`
+# ni `factura.abono/saldo/stat` (el comentario de 2026-05-27 lo decía como al
+# pasar: *"chequesxfact y otras tablas relacionadas NO se ajustan
+# automáticamente"*). El caso que ella pisó —cheque 4885 de IIA, id 102656,
+# 1.200,00 aplicados enteros a la factura 001-099-000180286—: al bajarle el
+# monto a 1.035,07 la factura seguía diciendo que le habían pagado 1.200,00.
+# La cuenta del cliente perdía 164,93 sin que entrara ni saliera plata.
+#
+# Decisión de la dueña (24/08): que el programa AJUSTE SOLO la aplicación, y
+# que ANTES muestre en pantalla qué va a hacer. De ahí las tres piezas:
+#   1. `_plan_recorte`  — la cuenta pura, sin base de datos (testeable sola).
+#   2. `plan_cambio_importe` — la misma cuenta con los datos de las facturas,
+#      para la pantalla de confirmación.
+#   3. `editar(..., ajustar_aplicaciones=True)` — la ejecuta, en la MISMA
+#      transacción que el UPDATE del cheque.
+#
+# La regla del recorte: se recorta desde la ÚLTIMA aplicación hacia atrás. Si
+# el cheque alcanzaba para tres facturas y ahora alcanza para dos, la que
+# vuelve a quedar con saldo es la última que se pagó — no un prorrateo entre
+# las tres, que dejaría a las tres a medio pagar.
+# Si el monto SUBE no se toca ninguna factura: la diferencia queda como
+# sobrante del cheque, para aplicar cuando ella quiera.
+
+
+def aplicaciones_vivas(id_cheque: int, conn=None) -> list[dict]:
+    """Las filas de `chequesxfact` del cheque, en orden de aplicación."""
+    return (
+        db.fetch_all(
+            """
+            SELECT cxf.id_chequexfact, cxf.id_fact, cxf.importe,
+                   f.numf, f.numf_completo,
+                   f.importe   AS fact_importe,
+                   f.abono     AS fact_abono,
+                   f.retencion AS fact_retencion,
+                   f.saldo     AS fact_saldo,
+                   f.stat      AS fact_stat
+              FROM scintela.chequesxfact cxf
+              LEFT JOIN scintela.factura f ON f.id_factura = cxf.id_fact
+             WHERE cxf.id_cheque = %s
+             ORDER BY cxf.fechaing, cxf.id_chequexfact
+            """,
+            (id_cheque,),
+            conn=conn,
+        )
+        or []
+    )
+
+
+def _plan_recorte(importe_nuevo, aplicaciones: list[dict]) -> list[dict]:
+    """Cuánto hay que recortarle a cada aplicación para que entre en el monto nuevo.
+
+    `aplicaciones` viene en ORDEN DE APLICACIÓN (la más vieja primero) y se
+    recorta desde el final. Devuelve una fila por aplicación TOCADA.
+
+    Trabaja en valor absoluto y le devuelve el signo del original: un cheque
+    puede ser negativo (nota de crédito) y ahí "recortar" es subir hacia cero.
+    Función PURA — no toca la base, se testea sola.
+    """
+    from decimal import Decimal as _D
+
+    total = sum(_D(str(a.get("importe") or 0)) for a in aplicaciones)
+    if total == 0:
+        return []
+    signo = _D(1) if total > 0 else _D(-1)
+    falta = abs(total) - abs(_D(str(importe_nuevo)))
+    if falta <= _D("0.005"):
+        return []
+    recortes: list[dict] = []
+    for a in reversed(aplicaciones):
+        if falta <= _D("0.005"):
+            break
+        ap = abs(_D(str(a.get("importe") or 0)))
+        recorte = ap if ap < falta else falta
+        queda = ap - recorte
+        recortes.append(
+            {
+                "id_chequexfact": a.get("id_chequexfact"),
+                "id_fact": a.get("id_fact"),
+                "aplicado_antes": signo * ap,
+                "aplicado_despues": signo * queda,
+                "recorte": signo * recorte,
+                "se_borra": queda < _D("0.005"),
+            }
+        )
+        falta -= recorte
+    return recortes
+
+
+def plan_cambio_importe(id_cheque: int, importe_nuevo) -> dict | None:
+    """Qué les pasa a las facturas si a este cheque le cambio el monto.
+
+    Devuelve `None` si el cheque no tiene aplicaciones: ahí cambiarle el monto
+    no le mueve nada a nadie y no hay nada que confirmar.
+    """
+    from decimal import Decimal as _D
+
+    ch = db.fetch_one(
+        "SELECT id_cheque, no_cheque, codigo_cli, importe, stat "
+        "  FROM scintela.cheque WHERE id_cheque = %s",
+        (id_cheque,),
+    )
+    if not ch:
+        raise ValueError(f"Cheque {id_cheque} no existe.")
+    aplic = aplicaciones_vivas(id_cheque)
+    if not aplic:
+        return None
+
+    nuevo = _D(str(importe_nuevo))
+    total_aplicado = sum(_D(str(a.get("importe") or 0)) for a in aplic)
+    recortes = _plan_recorte(nuevo, aplic)
+
+    # Una factura puede tener MÁS DE UNA aplicación del mismo cheque: los
+    # recortes se suman POR FACTURA antes de recalcular su saldo.
+    por_fact: dict = {}
+    for r in recortes:
+        por_fact[r["id_fact"]] = por_fact.get(r["id_fact"], _D(0)) + r["recorte"]
+
+    filas: list[dict] = []
+    vistas: set = set()
+    for a in aplic:
+        idf = a.get("id_fact")
+        if idf in vistas:
+            continue
+        vistas.add(idf)
+        recorte = por_fact.get(idf, _D(0))
+        aplicado = sum(
+            _D(str(x.get("importe") or 0)) for x in aplic if x.get("id_fact") == idf
+        )
+        abono_antes = float(a.get("fact_abono") or 0)
+        abono_despues = round(abono_antes - float(recorte), 2)
+        saldo_despues = _fact_q.saldo_de(
+            a.get("fact_importe"), abono_despues, a.get("fact_retencion")
+        )
+        filas.append(
+            {
+                "id_fact": idf,
+                "numf": a.get("numf"),
+                "numf_completo": a.get("numf_completo") or a.get("numf"),
+                "aplicado_antes": float(aplicado),
+                "aplicado_despues": float(aplicado - recorte),
+                "recorte": float(recorte),
+                "abono_antes": abono_antes,
+                "abono_despues": abono_despues,
+                "saldo_antes": float(a.get("fact_saldo") or 0),
+                "saldo_despues": saldo_despues,
+                "stat_antes": (a.get("fact_stat") or "").strip().upper(),
+                "stat_despues": _fact_q.stat_de(saldo_despues, abono_despues, tol=0.01),
+                "toca": abs(float(recorte)) >= 0.005,
+            }
+        )
+
+    total_recorte = sum(r["recorte"] for r in recortes) if recortes else _D(0)
+    aplicado_despues = total_aplicado - total_recorte
+    return {
+        "id_cheque": id_cheque,
+        "no_cheque": ch.get("no_cheque"),
+        "codigo_cli": ch.get("codigo_cli"),
+        "importe_antes": float(ch.get("importe") or 0),
+        "importe_despues": float(nuevo),
+        "total_aplicado": float(total_aplicado),
+        "total_recorte": float(total_recorte),
+        "aplicado_despues": float(aplicado_despues),
+        "sobrante": float(nuevo - aplicado_despues),
+        "facturas": filas,
+        "n_facturas": len(filas),
+        "toca_facturas": bool(recortes),
+    }
+
+
+def _ajustar_aplicaciones_al_importe(*, id_cheque, importe_nuevo, usuario, conn) -> dict:
+    """Recorta las aplicaciones a facturas para que entren en el monto nuevo.
+
+    Corre DENTRO de la transacción del `editar()` que cambió el importe: o
+    quedan las dos cosas o no queda ninguna.
+    """
+    from decimal import Decimal as _D
+
+    import mov_doble as _md
+
+    aplic = aplicaciones_vivas(id_cheque, conn=conn)
+    recortes = _plan_recorte(importe_nuevo, aplic)
+    if not recortes:
+        return {"facturas_tocadas": 0, "total_recortado": 0.0}
+
+    por_fact: dict = {}
+    for r in recortes:
+        if r["se_borra"]:
+            db.execute(
+                "DELETE FROM scintela.chequesxfact WHERE id_chequexfact = %s",
+                (r["id_chequexfact"],),
+                conn=conn,
+            )
+        else:
+            db.execute(
+                "UPDATE scintela.chequesxfact SET importe = %s, "
+                "usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
+                "WHERE id_chequexfact = %s",
+                (r["aplicado_despues"], usuario, r["id_chequexfact"]),
+                conn=conn,
+            )
+        por_fact[r["id_fact"]] = por_fact.get(r["id_fact"], _D(0)) + r["recorte"]
+
+    total_recortado = _D(0)
+    tocadas = 0
+    for idf, recorte in por_fact.items():
+        if abs(recorte) < _D("0.005"):
+            continue
+        f = db.fetch_one(
+            "SELECT id_factura, numf, importe, abono, retencion "
+            "  FROM scintela.factura WHERE id_factura = %s",
+            (idf,),
+            conn=conn,
+        )
+        if not f:
+            continue
+        total_recortado += recorte
+        tocadas += 1
+        nuevo_abono = round(float(f.get("abono") or 0) - float(recorte), 2)
+        nuevo_saldo = _fact_q.saldo_de(f.get("importe"), nuevo_abono, f.get("retencion"))
+        nuevo_stat = _fact_q.stat_de(nuevo_saldo, nuevo_abono, tol=0.01)
+        db.execute(
+            "UPDATE scintela.factura "
+            "SET abono=%s, saldo=%s, stat=%s, usuario_modifica=%s "
+            "WHERE id_factura=%s",
+            (nuevo_abono, nuevo_saldo, nuevo_stat, usuario, idf),
+            conn=conn,
+        )
+        # El mov original se marca 'reversado' SÓLO si la aplicación
+        # desapareció entera; si quedó recortada, el reverso parcial se suma
+        # al original y la cuenta cierra igual (mismo criterio que usa
+        # `desaplicar_factura`, que siempre borra la fila entera).
+        queda = db.fetch_one(
+            "SELECT 1 AS x FROM scintela.chequesxfact "
+            " WHERE id_cheque = %s AND id_fact = %s LIMIT 1",
+            (id_cheque, idf),
+            conn=conn,
+        )
+        md_orig = db.fetch_one(
+            """
+            SELECT id_mov_doble FROM scintela.mov_doble
+             WHERE origen_table  = 'cheque'
+               AND origen_id     = %s
+               AND destino_table = 'factura'
+               AND destino_id    = %s
+               AND tipo          = 'cheque_aplicado_a_factura'
+               AND estado        = 'activo'
+             ORDER BY id_mov_doble DESC LIMIT 1
+            """,
+            (id_cheque, idf),
+            conn=conn,
+        )
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_cheque_aplicacion",
+            origen_table="cheque",
+            origen_id=id_cheque,
+            destino_table="factura",
+            destino_id=idf,
+            importe=float(recorte),
+            fecha=today_ec(),
+            concepto=(
+                f"AJUSTE por cambio de monto del cheque #{id_cheque} — "
+                f"factura #{f.get('numf') or idf}"
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_cheque": id_cheque,
+                "id_factura": idf,
+                "numf": f.get("numf"),
+                "importe_recortado": float(recorte),
+                "importe_nuevo_cheque": float(_D(str(importe_nuevo))),
+                "saldo_factura_post": nuevo_saldo,
+                "stat_factura_post": nuevo_stat,
+            },
+            id_original=(md_orig["id_mov_doble"] if (md_orig and not queda) else None),
+        )
+
+    return {"facturas_tocadas": tocadas, "total_recortado": float(total_recortado)}
+
+
 def editar(
     id_cheque: int,
     *,
@@ -406,6 +689,7 @@ def editar(
     no_cheque: str | None = None,
     doc_banco: str | None = None,
     no_banco: int | None = None,
+    ajustar_aplicaciones: bool = False,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de un cheque.
@@ -462,6 +746,9 @@ def editar(
             "Para corregir, anular por error de carga y crear uno nuevo."
         )
 
+    #: Monto nuevo que además tiene que arrastrar a las facturas aplicadas.
+    ajuste_pendiente = None
+
     fechad_nueva = ch["fechad"]
     fechad_shifted = False
     if fechad is not None:
@@ -507,9 +794,11 @@ def editar(
         params.append(obs_marca)
     # TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'. Antes el
     # importe estaba lockeado y requería anular+reemitir. Permitido edit
-    # directo. Heads up: chequesxfact y otras tablas relacionadas NO se
-    # ajustan automáticamente — esto solo modifica el importe del cheque.
-    # Para corregir las relacionadas anular+reemitir sigue siendo el flow.
+    # directo.
+    # TMT 2026-08-24 dueña: y desde hoy el monto nuevo ARRASTRA a las
+    # facturas aplicadas (`ajustar_aplicaciones=True`, que pide la pantalla
+    # de confirmación). Hasta ayer no las tocaba y la factura quedaba
+    # diciendo que le habían pagado una plata que el cheque ya no valía.
     if importe is not None:
         from decimal import Decimal as _Dec
         # TMT 2026-08-03 (bug A): si el cheque está DENTRO de un depósito
@@ -552,6 +841,29 @@ def editar(
         # NumericValueOutOfRange como 500.
         if imp_dec >= _Dec("10000000"):
             raise ValueError("Importe excede el máximo permitido (9.999.999,99).")
+        # TMT 2026-08-24 (dueña): si el cheque YA está aplicado a facturas, el
+        # monto nuevo tiene que arrastrar a la aplicación. Si no, la factura
+        # queda diciendo que le pagaron una plata que el cheque ya no vale —
+        # y la cuenta del cliente cambia sin que entre ni salga plata.
+        _aplic = aplicaciones_vivas(id_cheque)
+        if _aplic:
+            _tot_ap = sum(_Dec(str(a.get("importe") or 0)) for a in _aplic)
+            if _tot_ap != 0 and (_tot_ap > 0) != (imp_dec > 0):
+                raise ValueError(
+                    "Este cheque está aplicado a facturas y el monto nuevo "
+                    "cambia de signo. Desaplicalo primero desde la ficha del "
+                    "cheque y volvé a aplicarlo."
+                )
+            if not ajustar_aplicaciones:
+                # Freno para cualquier camino que no pase por la pantalla de
+                # confirmación: el ajuste se acepta mirando qué factura queda
+                # con saldo, no a ciegas.
+                raise ValueError(
+                    "Este cheque ya está aplicado a facturas — el cambio de "
+                    "monto se confirma desde la pantalla, que muestra qué "
+                    "factura vuelve a quedar con saldo."
+                )
+            ajuste_pendiente = imp_dec
         sql_set.append("importe=%s")
         params.append(imp_dec)
     # TMT 2026-05-27 dueña: 'tambien se tiene que ver el numero de documento
@@ -643,15 +955,27 @@ def editar(
             )
     params.append(id_cheque)
 
-    db.execute(
-        f"UPDATE scintela.cheque SET {', '.join(sql_set)} WHERE id_cheque=%s",
-        tuple(params),
-    )
+    sql_update = f"UPDATE scintela.cheque SET {', '.join(sql_set)} WHERE id_cheque=%s"
+    ajuste = None
+    if ajuste_pendiente is not None:
+        # El monto del cheque y el recorte de las facturas van en la MISMA
+        # transacción: o quedan los dos, o no queda ninguno.
+        with db.tx() as _conn:
+            db.execute(sql_update, tuple(params), conn=_conn)
+            ajuste = _ajustar_aplicaciones_al_importe(
+                id_cheque=id_cheque,
+                importe_nuevo=ajuste_pendiente,
+                usuario=usuario,
+                conn=_conn,
+            )
+    else:
+        db.execute(sql_update, tuple(params))
     return {
         "id_cheque": id_cheque,
         "fechad_nueva": fechad_nueva,
         "fechad_shifted_lunes": fechad_shifted,
         "stat_actual": stat,
+        "ajuste": ajuste,
     }
 
 

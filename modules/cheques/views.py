@@ -2780,10 +2780,32 @@ def actualizar(id_cheque: int):
             flash(e, "error")
         return redirect(next_url)
 
+    # TMT 2026-08-24 (dueña): *"cuando edito un cheque que ya fue aplicado a
+    # una factura no está funcionando bien, cambié el monto"*. El monto de un
+    # cheque aplicado ARRASTRA a la factura, así que antes de tocar nada le
+    # mostramos en pantalla qué factura vuelve a quedar con saldo. Ella eligió
+    # que el programa ajuste solo, "y que explique qué es lo que va a hacer".
+    if importe_nuevo is not None and not request.form.get("ajuste_confirmado"):
+        plan = queries.plan_cambio_importe(id_cheque, importe_nuevo)
+        if plan:
+            campos = [
+                (k, v)
+                for k, v in request.form.items()
+                if k not in ("csrf_token", "ajuste_confirmado")
+            ]
+            return render_template(
+                "cheques/confirmar_monto.html",
+                ch=ch,
+                plan=plan,
+                campos=campos,
+                next_url=next_url,
+            )
+
     try:
         usuario = (g.user or {}).get("username", "web")
         res = queries.editar(
             id_cheque,
+            ajustar_aplicaciones=True,
             concepto=concepto,
             observacion=observacion,
             nota_usuario=nota_usuario if nota_usuario_changed else None,
@@ -2797,6 +2819,19 @@ def actualizar(id_cheque: int):
         msg = "Cheque editado."
         if res.get("fechad_shifted_lunes"):
             msg += f" Fecha movida al lunes ({res['fechad_nueva']:%d/%m/%Y})."
+        # Que el aviso diga QUÉ se movió: si sólo se cambió el monto, la
+        # frase "Cheque editado" no deja ver que además volvió a abrirse una
+        # factura.
+        aj = res.get("ajuste") or {}
+        if aj.get("facturas_tocadas"):
+            from filters import num_es as _num_es
+
+            n = aj["facturas_tocadas"]
+            plata = _num_es(abs(aj["total_recortado"]), 2)
+            msg += (
+                f" Se le sacaron $ {plata} a {n} "
+                f"factura{'s' if n != 1 else ''}."
+            )
         flash(msg, "ok")
     except ValueError as e:
         flash(str(e), "error")

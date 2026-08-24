@@ -1,0 +1,105 @@
+{# TMT 2026-08-24 (dueña): cambiarle el monto a un cheque que YA está aplicado
+   a facturas le mueve la cuenta al cliente. Ella eligió que el programa
+   ajuste solo la aplicación "y que explique qué es lo que va a hacer": esta
+   pantalla es esa explicación. Se muestra SIEMPRE que el cheque tenga
+   facturas aplicadas, incluso cuando no haya que tocar ninguna — que no haya
+   que hacer nada también es una respuesta. #}
+{% extends "base.html" %}
+{% block title %}Cambiar el monto del cheque{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('cheques.lista') }}">Cheques</a> /
+  <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">{{ ch.no_cheque or ch.id_cheque }}</a> /
+  <strong>Cambiar el monto</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Cambiar el monto del cheque</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Cheque {{ ch.no_cheque or '#' ~ ch.id_cheque }} de {{ plan.codigo_cli }} —
+      el monto pasa de <strong>$ {{ plan.importe_antes | num_es(2) }}</strong> a
+      <strong>$ {{ plan.importe_despues | num_es(2) }}</strong>.
+    </p>
+  </div>
+
+  <div class="mb-6 px-4 py-3 rounded
+    {% if plan.toca_facturas %}bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700
+    {% else %}bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800{% endif %} text-sm">
+    {% if plan.toca_facturas %}
+      <strong class="text-amber-700 dark:text-amber-300">Esto también le cambia la cuenta al cliente:</strong>
+      <ul class="list-disc list-inside mt-1 space-y-0.5 text-amber-900 dark:text-amber-100">
+        <li>Este cheque está aplicado a {{ plan.n_facturas }}
+          factura{{ 's' if plan.n_facturas != 1 else '' }} por
+          $ {{ plan.total_aplicado | num_es(2) }}, y con el monto nuevo no alcanza.</li>
+        <li>Se le van a sacar <strong>$ {{ plan.total_recorte | abs | num_es(2) }}</strong>
+          a la{{ 's' if plan.facturas | selectattr('toca') | list | length != 1 else '' }}
+          factura{{ 's' if plan.facturas | selectattr('toca') | list | length != 1 else '' }}
+          de abajo, empezando por la última que se pagó.</li>
+        {% if plan.sobrante | abs >= 0.005 %}
+          <li>Del cheque quedan $ {{ plan.sobrante | abs | num_es(2) }} sin aplicar.</li>
+        {% endif %}
+      </ul>
+    {% else %}
+      <strong>No hay que tocar ninguna factura.</strong>
+      Este cheque está aplicado a {{ plan.n_facturas }}
+      factura{{ 's' if plan.n_facturas != 1 else '' }} por
+      $ {{ plan.total_aplicado | num_es(2) }}, y el monto nuevo alcanza.
+      {% if plan.sobrante | abs >= 0.005 %}
+        Del cheque quedan <strong>$ {{ plan.sobrante | abs | num_es(2) }}</strong> sin aplicar.
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg mb-6">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-900 text-xs text-slate-500 uppercase">
+        <tr>
+          <th class="px-3 py-2 text-left">Factura</th>
+          <th class="px-3 py-2 text-right">Aplicado ahora</th>
+          <th class="px-3 py-2 text-right">Aplicado después</th>
+          <th class="px-3 py-2 text-right">Saldo ahora</th>
+          <th class="px-3 py-2 text-right">Saldo después</th>
+          <th class="px-3 py-2 text-center">Estado</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for f in plan.facturas %}
+        <tr class="{% if f.toca %}bg-amber-50 dark:bg-amber-900/10{% endif %}">
+          <td class="px-3 py-2 font-mono">
+            <a href="{{ url_for('facturas.detalle', id_factura=(f.numf or f.id_fact)) }}" class="text-sky-700 hover:underline">
+              {{ f.numf_completo or f.numf }}</a>
+          </td>
+          <td class="px-3 py-2 text-right font-mono">{{ f.aplicado_antes | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right font-mono {% if f.toca %}font-semibold{% endif %}">
+            {{ f.aplicado_despues | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right font-mono">{{ f.saldo_antes | num_es(2) }}</td>
+          <td class="px-3 py-2 text-right font-mono {% if f.toca %}font-semibold{% endif %}">
+            {{ f.saldo_despues | num_es(2) }}</td>
+          <td class="px-3 py-2 text-center font-mono">
+            {% if f.toca and f.stat_despues != f.stat_antes %}
+              {{ f.stat_antes or '—' }} → <strong>{{ f.stat_despues }}</strong>
+            {% else %}
+              {{ f.stat_antes or '—' }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="POST" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
+        class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="ajuste_confirmado" value="1">
+    {# Se reenvía TAL CUAL lo que ella mandó, para no perder ningún campo del
+       form de origen (la lista manda sólo el importe; la ficha manda más). #}
+    {% for k, v in campos %}
+      <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {% endfor %}
+    <a href="{{ next_url }}" class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
+    <button type="submit" class="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium">
+      Cambiar el monto
+    </button>
+  </form>
+</div>
+{% endblock %}

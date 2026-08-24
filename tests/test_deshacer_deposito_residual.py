@@ -219,6 +219,13 @@ class _RecEditar:
             }
         return None
 
+    def fetch_all(self, sql, params=None, conn=None):
+        # TMT 2026-08-24: `editar()` ahora también pregunta a qué facturas
+        # está aplicado el cheque (el monto nuevo las arrastra). Estos casos
+        # son de un cheque SIN aplicar — pero el stub tiene que contestar, o
+        # la consulta se va a la base de verdad y el test deja de ser unitario.
+        return []
+
     def execute(self, sql, params=None, conn=None):
         self.executes.append(" ".join(sql.split()))
         return 1
@@ -229,6 +236,7 @@ def _editar(monkeypatch, rec, **kw):
     from modules.cheques import queries as q
 
     monkeypatch.setattr(db, "fetch_one", rec.fetch_one)
+    monkeypatch.setattr(db, "fetch_all", rec.fetch_all)
     monkeypatch.setattr(db, "execute", rec.execute)
     return q.editar(1, usuario="test", **kw)
 
