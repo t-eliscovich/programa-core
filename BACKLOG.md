@@ -225,6 +225,23 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
+### [S] La Cartera todavía pesa 2,5 MB
+
+24/08: /facturas devolvía **4.528 KB** con 500 filas (9 KB por fila). Se le
+sacaron los seis editores escondidos de cada fila (se arman al tocar el
+lapicito) y el `<form>` del dropdown de estado repetido 500 veces: quedó en
+**2.568 KB, 5 KB por fila**. El servidor tarda 0,7 s; el resto lo pone el
+browser parseando.
+
+Lo que queda es repetición de clases: cinco lapicitos por fila con 130
+caracteres de clases cada uno (~950 B), los `<td class="px-2 py-1.5 …">`, los
+`<span class="ec-view inline-flex …">` y el `<select>` de estado con su lista
+larga. Con un bloque `<style>` propio en la pantalla (CSS común, NO clases
+nuevas de Tailwind, que está congelado) la fila baja a ~2 KB y la pantalla a
+~1,1 MB. El otro camino, más barato pero visible, es bajar las filas por
+página de 500: **eso lo decide la dueña**, no se toca de oficio.
+
+
 ### [S] Las notas de Alex que el Excel de pendientes ya se comió
 
 Hasta el 18/08/2026 la quinta columna del Excel de conciliación se mapeaba y se
@@ -326,6 +343,11 @@ son uno solo, casi seguro es una sola causa. Lista completa y cómo reproducir:
   demás viven en `modules/usuarios/accesos.py::ACEPTADAS` con el motivo
   escrito, y un test impide que esa lista se pudra. La lista roja de
   `/usuarios/accesos` ahora significa "esto apareció y nadie lo miró".
+- Las **Facturas Almacenadas** de Asinfo (documento FCCD, `id_documento` 252)
+  NO entran al programa — dueña, 24/08: *"almacenada no queremos pasar"*. Son
+  unas 15-28 por día ($22k el 24/08, $25k el 13/08) y nunca estuvieron: la
+  card 199 de Metabase trae `id_documento IN (7, 17, 20, 251, 451, 501, 652)`
+  y el 252 no está en esa lista. No es un agujero: es la decisión.
 - Compras con kg=0 desde Asinfo: aceptado. Activos sin tipo (~$655k): aceptado.
 - No se cargan más aliases cliente Asinfo↔PC: sucursales por dirección.
 
