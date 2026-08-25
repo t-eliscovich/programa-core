@@ -911,12 +911,30 @@ def actualizar() -> dict:
         tope = {}
         for p in todas:
             if p.get("kg_antes") is None:
-                continue          # sin dato de Asinfo no hay tope (fail-open)
+                continue          # sin dato de Asinfo no hay tope de antigüedad
             k = (p["subcategoria"], p["color"])
             topes = [float(p["kg_antes"])]
             if k in marcado_kg:
                 topes.append(float(marcado_kg[k]))
             tope[k] = min(topes)
+        # ⚠⚠ EL ÍTEM QUE ASINFO YA NO DEVUELVE TAMBIÉN TIENE TOPE, y es el que
+        # le pusimos nosotros el día que entró.
+        #
+        # `todas` es lo que hay HOY en la bodega: el ítem que se vendió entero
+        # —o que salió de la bodega— desaparece de esa consulta. Sin esta
+        # línea se quedaba sin tope, y "sin tope" significaba contar TODO lo
+        # que se venda de esa tela × color de acá al cierre: si mañana se teje
+        # de nuevo, esos kilos nuevos puntúan como si hubieran estado clavados.
+        # Es el mismo agujero de Jersey 3 BLA (554 puntos de una venta de tela
+        # recién hecha) pero por la puerta de atrás. Medidos el 25/08/2026: 9
+        # ítems, 1.129 kg al marcar.
+        #
+        # `kg_al_marcar` no es un dato que falte: es NUESTRO número congelado
+        # el día que el ítem entró a la lista, y la regla de la dueña es
+        # exactamente ésa — "tiene que contar solo kgs que estaban en la
+        # competencia para empezar".
+        for k, kg in marcado_kg.items():
+            tope.setdefault(k, float(kg))
 
         # Los renglones que van a la competencia, EN ORDEN DE FECHA y con el
         # tope ya aplicado. Se arman una sola vez: la cuenta del resumen y la

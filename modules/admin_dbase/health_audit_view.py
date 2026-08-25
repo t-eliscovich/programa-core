@@ -1946,6 +1946,120 @@ def codigos_duplicados():
 
 
 # ---------------------------------------------------------------------------
+# La competencia de saldos cuenta lo que tiene que contar
+# ---------------------------------------------------------------------------
+
+SQL_COMPETENCIA = """
+WITH pv AS (SELECT * FROM scintela.parado_venta WHERE cuenta),
+     co AS (SELECT * FROM scintela.parado_cohorte WHERE NOT fuera)
+SELECT
+  (SELECT COALESCE(ROUND(SUM(kg)::numeric, 2), 0) FROM pv)                AS kg_venta,
+  (SELECT COALESCE(ROUND(SUM(kg_vendidos)::numeric, 2), 0)
+     FROM scintela.parado_foto)                                           AS kg_foto,
+  (SELECT COUNT(*) FROM pv WHERE vendedor <> ALL(%s))                     AS n_ajenos,
+  (SELECT COALESCE(ROUND(SUM(kg)::numeric, 2), 0)
+     FROM pv WHERE vendedor <> ALL(%s))                                   AS kg_ajenos,
+  (SELECT COUNT(*) FROM (
+      SELECT pv.subcategoria, pv.color
+        FROM pv JOIN co ON co.subcategoria = pv.subcategoria
+                       AND co.color = pv.color
+       GROUP BY 1, 2
+      HAVING SUM(pv.kg) > MIN(co.kg_al_marcar) + 0.01) x)                 AS n_pasados,
+  (SELECT COUNT(DISTINCT pv.subcategoria)
+     FROM pv LEFT JOIN scintela.parado_punto pp
+            ON pp.subcategoria = pv.subcategoria
+    WHERE pp.subcategoria IS NULL)                                        AS n_sin_puntaje,
+  (SELECT COUNT(*) FROM co WHERE motivo IS NULL)                          AS n_sin_motivo,
+  (SELECT COUNT(*) FROM co WHERE kg_al_marcar IS NULL)                    AS n_sin_tope
+"""
+
+
+@bp.route("/competencia", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def competencia_coherente():
+    """Que la competencia de saldos siga contando lo que tiene que contar.
+
+    TMT 2026-08-25 (dueña): *"que la contabilización a futuro no se dañe"*. La
+    competencia se corre hasta el 31/12 y su cuenta se REHACE entera en cada
+    refresco desde Asinfo: nadie la mira renglón por renglón, así que un cambio
+    de datos allá se convierte en puntos de más acá sin que suene nada. Los
+    cinco chequeos son los cinco agujeros que ya se taparon una vez —cada uno
+    costó que la dueña mirara la pantalla y dijera "esto está mal"—, puestos a
+    vigilar que no vuelvan.
+
+    · el encabezado y el ranking miden lo MISMO (los kilos de `parado_venta`
+      contra los de la foto). El 25/08 decían 381 y 230: la diferencia eran
+      152 kg firmados por alguien que no compite;
+    · nadie fuera de los siete escribe kilos que puntúan;
+    · ningún ítem sacó más kilos de los que tenía el día que entró (el tope);
+    · ninguna tela vendida se quedó sin su puntaje congelado — sin él vale 1
+      punto por kilo en silencio, que para una tela difícil es diez veces
+      menos;
+    · ningún ítem de la cohorte quedó sin `motivo` ni sin `kg_al_marcar`: sin
+      motivo cuenta también la primera, y sin kilos al marcar no tiene tope.
+    """
+    from modules.analisis.queries import COMPETIDORES
+    fila = db.fetch_one(SQL_COMPETENCIA, (COMPETIDORES, COMPETIDORES)) or {}
+    return jsonify(competencia_alertas(fila))
+
+
+def competencia_alertas(fila: dict) -> dict:
+    """Las alarmas de una fila de números, sin base ni request.
+
+    Va aparte de la ruta a propósito: la ruta está detrás de `@requiere_login`
+    y `@requiere_permiso`, y un test que las tenga que atravesar termina
+    levantando la app entera contra un Postgres. Lo que hay que probar son las
+    cinco reglas, no el candado."""
+    kg_venta = float(fila.get("kg_venta") or 0)
+    kg_foto = float(fila.get("kg_foto") or 0)
+    n_ajenos = int(fila.get("n_ajenos") or 0)
+    n_pasados = int(fila.get("n_pasados") or 0)
+    n_sin_puntaje = int(fila.get("n_sin_puntaje") or 0)
+    n_sin_motivo = int(fila.get("n_sin_motivo") or 0)
+    n_sin_tope = int(fila.get("n_sin_tope") or 0)
+    alerts: list = []
+    if abs(kg_venta - kg_foto) > 0.01:
+        alerts.append({
+            "severity": "high", "category": "competencia_descuadrada",
+            "msg": (f"La competencia no cierra: los renglones suman "
+                    f"{kg_venta:,.2f} kg y la foto {kg_foto:,.2f}. El "
+                    f"encabezado y el ranking van a decir números distintos.")})
+    if n_ajenos:
+        alerts.append({
+            "severity": "high", "category": "competencia_vendedor_ajeno",
+            "msg": (f"{n_ajenos} ventas por {float(fila.get('kg_ajenos') or 0):,.2f} kg "
+                    f"las firmó alguien que no está entre los siete: suman al "
+                    f"total y no le suman a nadie en el ranking.")})
+    if n_pasados:
+        alerts.append({
+            "severity": "high", "category": "competencia_sin_tope",
+            "msg": (f"{n_pasados} ítems puntuaron más kilos de los que tenían "
+                    f"el día que entraron a la lista: son kilos tejidos "
+                    f"después, no saldo destrabado.")})
+    if n_sin_puntaje:
+        alerts.append({
+            "severity": "medium", "category": "competencia_sin_puntaje",
+            "msg": (f"{n_sin_puntaje} telas vendidas no tienen puntaje "
+                    f"congelado: están valiendo 1 punto por kilo sin que nadie "
+                    f"lo haya decidido.")})
+    if n_sin_motivo or n_sin_tope:
+        alerts.append({
+            "severity": "medium", "category": "competencia_cohorte_incompleta",
+            "msg": (f"{n_sin_motivo} ítems de la lista no tienen motivo y "
+                    f"{n_sin_tope} no tienen kilos al marcar: los primeros "
+                    f"cuentan también la primera, los segundos no tienen tope.")})
+    return {
+        "ok": not alerts,
+        "alerts": alerts,
+        "stats": {"kg_venta": kg_venta, "kg_foto": kg_foto,
+                  "n_ajenos": n_ajenos, "n_pasados": n_pasados,
+                  "n_sin_puntaje": n_sin_puntaje,
+                  "n_sin_motivo": n_sin_motivo, "n_sin_tope": n_sin_tope},
+    }
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -1969,6 +2083,7 @@ def health_all():
     resp12 = permisos_drift()
     resp14 = espejo_huerfano()
     resp15 = codigos_duplicados()
+    resp16 = competencia_coherente()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -1981,6 +2096,7 @@ def health_all():
     data12 = json.loads(resp12.get_data(as_text=True))
     data14 = json.loads(resp14.get_data(as_text=True))
     data15 = json.loads(resp15.get_data(as_text=True))
+    data16 = json.loads(resp16.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2002,7 +2118,8 @@ def health_all():
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
                and data10["ok"] and data11["ok"] and data12["ok"]
-               and data14["ok"] and data15["ok"]),
+               and data14["ok"] and data15["ok"]
+               and data16["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2018,6 +2135,7 @@ def health_all():
         "proformas_purga": data13,
         "espejo_huerfano": data14,
         "codigos_duplicados": data15,
+        "competencia": data16,
     })
 
 

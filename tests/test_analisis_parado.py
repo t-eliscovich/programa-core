@@ -3088,6 +3088,25 @@ def test_la_devolucion_resta_aunque_el_tope_este_gastado(monkeypatch):
     assert filas == [("COA", 50.0, True), ("COA", -20.0, True)]
 
 
+def test_el_item_que_asinfo_ya_no_devuelve_conserva_su_tope(monkeypatch):
+    """El ítem que se vendió entero —o que salió de la bodega— desaparece de la
+    consulta de parados: `todas` es lo que hay HOY. Sin tope propio, contaba
+    TODO lo que se vendiera de esa tela × color hasta el cierre, así que el día
+    que se teje de nuevo esos kilos nuevos puntúan como si hubieran estado
+    clavados. Es el agujero de Jersey 3 BLA por la puerta de atrás.
+
+    El tope existe igual y es nuestro: los kilos que el ítem tenía el día que
+    entró a la lista. Medidos el 25/08/2026: 9 ítems, 1.129 kg al marcar."""
+    cohorte = [{"subcategoria": "Toper", "color": "COA",
+                "fecha_marcado": date(2026, 8, 13), "motivo": "parado",
+                "kg_al_marcar": 40}]
+    filas = _refresco_con_ventas(
+        monkeypatch, parados=[], cohorte=cohorte,
+        ventas=[_venta("Toper", "COA", 400)])
+    assert ("COA", 40.0, True) in filas, "perdió el tope que le pusimos nosotros"
+    assert ("COA", 360.0, False) in filas
+
+
 def test_sin_dato_de_asinfo_no_hay_tope(monkeypatch):
     """Fail-open a propósito: un ítem que falte en la consulta dejaría a alguien
     sin sus puntos y nadie sabría por qué."""
