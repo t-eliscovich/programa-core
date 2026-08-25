@@ -78,7 +78,7 @@
             <td class="px-3 py-2 text-right text-mono">{{ det.totales.bruto | money_es }}</td>
           </tr>
           <tr>
-            <td class="px-3 py-1 text-slate-500" colspan="7">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% endif %}</td>
+            <td class="px-3 py-1 text-slate-500" colspan="7">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% elif det.totales.pct_efectivo %} {{ det.totales.pct_efectivo | num_es(1) }}%{% endif %}</td>
             <td class="px-3 py-1 text-right text-mono">−{{ det.totales.descuento | money_es }}</td>
           </tr>
           <tr>

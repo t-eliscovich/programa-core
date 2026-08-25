@@ -74,6 +74,13 @@ CATEGORIA_SERVICIOS = "SERVICIOS"
 #: IVA vigente. El mismo 15% que usa la lista de precios.
 IVA = 0.15
 
+#: La forma de lo que se guarda en `scintela.factura_detalle`. Se sube cuando
+#: `_agrupar` empieza a devolver algo nuevo: las filas viejas dejan de leerse y
+#: se reescriben solas la próxima vez que alguien mire esa factura. Sale más
+#: barato que acordarse de vaciar la tabla en cada deploy — y olvidarse deja
+#: pantallas mostrando la mitad de los datos sin que nada falle.
+FORMATO = 2
+
 #: Cuánto vale la foto. Una factura vieja no cambia nunca; una de hoy puede
 #: recibir un renglón más en los minutos siguientes a emitirse.
 _TTL_SEGS = 600.0
@@ -116,7 +123,9 @@ def _de_la_base(numero: str) -> dict | None:
         _LOG.warning("leyendo la caché de %s: %s", numero, e)
         return None
     datos = (fila or {}).get("datos")
-    return datos if isinstance(datos, dict) and datos.get("estado") == "ok" else None
+    if not isinstance(datos, dict) or datos.get("estado") != "ok":
+        return None
+    return datos if datos.get("formato") == FORMATO else None
 
 
 def _guardar(numero: str, res: dict) -> None:
@@ -182,7 +191,7 @@ def precargar(dias: int = 3, cada_secs: float = 1800.0) -> int:
     for numero, suyas in por_numero.items():
         if not _NUMERO_RE.match(numero):
             continue
-        res = {"estado": "ok", **_agrupar(suyas)}
+        res = {"estado": "ok", "formato": FORMATO, **_agrupar(suyas)}
         _guardar(numero, res)
         with _CANDADO:
             if len(_CACHE) < _TOPE_CACHE:
@@ -284,9 +293,6 @@ def _agrupar(filas: list[dict]) -> dict:
         d = _num(f.get("descuento"))
         bruto += b
         descuento += d
-        par = (_num(f.get("pct1")), _num(f.get("pct2")))
-        if par not in pcts:
-            pcts.append(par)
 
         if (f.get("categoria") or "").strip().upper() == CATEGORIA_SERVICIOS:
             servicios.append({
@@ -295,6 +301,14 @@ def _agrupar(filas: list[dict]) -> dict:
                 "total": round(b - d, 2),
             })
             continue
+
+        # ⭐ Los tramos se miran SÓLO en la mercadería. El flete entra como un
+        # renglón más y no lleva el descuento del cliente: con él adentro había
+        # dos pares distintos, la regla de abajo se callaba y el renglón decía
+        # "Descuento" a secas. TMT 2026-08-25 (dueña): *"poner % de descuento"*.
+        par = (_num(f.get("pct1")), _num(f.get("pct2")))
+        if par not in pcts:
+            pcts.append(par)
 
         tela = (f.get("tela") or "").strip() or (f.get("producto") or "").strip()
         clave = (tela, (f.get("codigo") or "").strip(),
@@ -335,6 +349,11 @@ def _agrupar(filas: list[dict]) -> dict:
             # mentiría — mejor no decir nada que decir el de una fila sola.
             "pct1": pcts[0][0] if len(pcts) == 1 else None,
             "pct2": pcts[0][1] if len(pcts) == 1 else None,
+            # El que DIO, sobre el bruto. Es la red: con dos escalones
+            # distintos en la misma factura no hay un par que nombrar, y un
+            # renglón que dice "Descuento" y nada más obliga a sacar la cuenta
+            # a mano. Éste siempre se puede decir.
+            "pct_efectivo": round(descuento / bruto * 100, 1) if bruto else 0.0,
         },
     }
 
@@ -388,7 +407,7 @@ def que_se_llevo(numero) -> dict:
     if not filas:
         return {"estado": "sin-datos", **vacio}
 
-    res = {"estado": "ok", **_agrupar(filas)}
+    res = {"estado": "ok", "formato": FORMATO, **_agrupar(filas)}
     _guardar(num, res)
     with _CANDADO:
         if len(_CACHE) >= _TOPE_CACHE:

@@ -83,7 +83,7 @@
         <td>{{ det.totales.bruto | money_es }}</td>
       </tr>
       <tr>
-        <td class="l" colspan="4">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% endif %}</td>
+        <td class="l" colspan="4">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% elif det.totales.pct_efectivo %} {{ det.totales.pct_efectivo | num_es(1) }}%{% endif %}</td>
         <td>−{{ det.totales.descuento | money_es }}</td>
       </tr>
       <tr>
