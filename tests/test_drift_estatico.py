@@ -139,35 +139,76 @@ def test_no_hay_clases_de_tailwind_que_no_esten_compiladas():
     )
 
 
+def _links_rotos(app, plantillas) -> dict:
+    """Los `href="/..."` de esas plantillas que no resuelven en ESE url_map."""
+    adapter = app.url_map.bind("localhost")
+
+    def resuelve(u: str) -> bool:
+        try:
+            adapter.match(u, method="GET")
+            return True
+        except Exception as e:  # noqa: BLE001
+            # Existe pero no acepta GET: la ruta está, el link también.
+            return e.__class__.__name__ == "MethodNotAllowed"
+
+    rotos: dict[str, str] = {}
+    for p in plantillas:
+        s = p.read_text(encoding="utf-8", errors="ignore")
+        for href in re.findall(r'href="(/[^"{}]*)"', s):
+            u = href.split("?")[0].split("#")[0]
+            if not u or u.startswith("/static"):
+                continue
+            if not resuelve(u):
+                rotos.setdefault(u, str(p.relative_to(RAIZ)))
+    return rotos
+
+
+def _es_del_portal(p) -> bool:
+    return "modules/portal/templates" in str(p).replace("\\", "/")
+
+
+def test_los_links_del_portal_apuntan_a_pantallas_que_existen():
+    """⭐ Las plantillas del portal se miran contra el url_map DEL PORTAL.
+
+    TMT 2026-08-24: el proceso del portal no registra las pantallas del ERP, y
+    el ERP no registra las del portal. Mirar las del portal contra el mapa de
+    la oficina daba dos falsos positivos (`/salir`) y, peor, habría tapado el
+    de verdad — `/olvide-la-clave`, que estaba linkeado y no existía.
+    """
+    import os
+    from unittest.mock import patch
+
+    from tests.test_routes_smoke import build_app
+
+    entorno = dict(os.environ)
+    entorno["MODO"] = "portal"
+    with patch.dict(os.environ, entorno, clear=True):
+        app, deshacer = build_app()
+    try:
+        rotos = _links_rotos(app, [p for p in _templates() if _es_del_portal(p)])
+    finally:
+        deshacer()
+
+    assert not rotos, (
+        f"{len(rotos)} link(s) del portal apuntan a una ruta que no existe: "
+        + ", ".join(f"{u} (en {t})" for u, t in sorted(rotos.items())[:8])
+    )
+
+
 def test_los_links_literales_apuntan_a_pantallas_que_existen():
     """Un `href="/lo-que-sea"` escrito a mano tiene que resolver en el url_map.
 
     Generaliza `test_historial_links_resuelven`, que sólo cubría el mapeo del
     historial: los 404 aparecían recién cuando alguien clickeaba.
+
+    Las del portal van aparte, contra su propio url_map.
     """
     from tests.test_routes_smoke import build_app
 
     app, deshacer = build_app()
     try:
-        adapter = app.url_map.bind("localhost")
-
-        def resuelve(u: str) -> bool:
-            try:
-                adapter.match(u, method="GET")
-                return True
-            except Exception as e:  # noqa: BLE001
-                # Existe pero no acepta GET: la ruta está, el link también.
-                return e.__class__.__name__ == "MethodNotAllowed"
-
-        rotos: dict[str, str] = {}
-        for p in _templates():
-            s = p.read_text(encoding="utf-8", errors="ignore")
-            for href in re.findall(r'href="(/[^"{}]*)"', s):
-                u = href.split("?")[0].split("#")[0]
-                if not u or u.startswith("/static"):
-                    continue
-                if not resuelve(u):
-                    rotos.setdefault(u, str(p.relative_to(RAIZ)))
+        rotos = _links_rotos(
+            app, [p for p in _templates() if not _es_del_portal(p)])
     finally:
         deshacer()
 

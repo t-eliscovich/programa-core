@@ -165,3 +165,21 @@ def test_el_script_no_toca_lo_de_la_oficina():
     tocan_la_oficina = [ln for ln in codigo
                         if "programa.intela.com.ec" in ln.replace("portal.intela.com.ec", "")]
     assert tocan_la_oficina == [], tocan_la_oficina
+
+
+def test_el_script_no_usa_here_strings():
+    """🚨 El 24/08 el script entero no compiló por esto. En PowerShell el
+    cierre de un here-string (`"@`) tiene que ir PEGADO al margen izquierdo, y
+    adentro de un bloque indentado eso no se ve venir. Un array de líneas con
+    `-join` hace lo mismo sin la trampa.
+
+    Y no es un detalle de estilo: acá no hay forma de correr PowerShell antes
+    de mandarlo al server, así que lo que no se puede probar se evita.
+    """
+    cuerpo = BOOTSTRAP.split("#>", 1)[1]
+    # Sólo las líneas de código: el comentario de arriba nombra el here-string
+    # justamente para explicar por qué no se usa.
+    codigo = "\n".join(ln for ln in cuerpo.split("\n")
+                        if not ln.strip().startswith("#"))
+    assert '@"' not in codigo
+    assert "'@" not in codigo

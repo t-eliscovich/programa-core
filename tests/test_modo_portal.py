@@ -30,7 +30,10 @@ from tests.test_routes_smoke import build_app  # noqa: E402
 
 #: Lo único que puede existir en el proceso del portal. Todo lo demás que
 #: aparezca en el `url_map` es una pantalla del ERP que se coló.
-PREFIJOS_PERMITIDOS = ("portal.", "static", "auth.", "auth_google.")
+#: TMT 2026-08-24: el login de EMPLEADOS tampoco va. El portal no lo necesita
+#: y dejarlo le regalaba a internet un formulario donde probar usuarios y
+#: contraseñas del ERP. Los empleados entran por programa.intela.com.ec.
+PREFIJOS_PERMITIDOS = ("portal.", "static")
 
 #: `healthz` (/_healthz) es la excepción, y a propósito: es el chequeo que
 #: mira el monitoreo para saber si el proceso está vivo. No pide login
@@ -89,7 +92,7 @@ def test_el_modo_normal_registra_todo_lo_de_siempre():
         assert len(eps) > 400, f"faltan pantallas: quedaron {len(eps)}"
         for esperado in ("informes.balance", "cheques.lista", "clientes.lista",
                          "posdat.lista", "compras.lista", "sql_console.consola",
-                         "index"):
+                         "index", "auth.login"):
             assert esperado in eps, f"se perdió {esperado} al mover los blueprints"
     finally:
         deshacer()
@@ -118,6 +121,19 @@ def test_en_modo_portal_no_queda_ni_una_ruta_del_erp():
         deshacer()
 
 
+def test_el_login_de_empleados_no_existe_en_el_portal():
+    """🚨 Un formulario de login del ERP publicado en internet es un lugar
+    donde probar usuarios y contraseñas todo el día. Los empleados entran por
+    programa.intela.com.ec, que es otro proceso."""
+    app, deshacer = _app_en_modo("portal")
+    try:
+        c = app.test_client()
+        for url in ("/login", "/logout", "/auth/google", "/oauth2/callback"):
+            assert c.get(url).status_code == 404, f"{url} existe en el portal"
+    finally:
+        deshacer()
+
+
 def test_las_pantallas_de_la_plata_dan_404_en_el_portal():
     """La otra mitad: no alcanza con que el endpoint no esté en el mapa, el
     pedido de verdad tiene que morir. Estas son las que mueven plata."""
@@ -134,11 +150,29 @@ def test_las_pantallas_de_la_plata_dan_404_en_el_portal():
 
 
 def test_el_portal_si_contesta_en_su_puerta():
+    """Sin sesión, la `/` manda a la pantalla de ingreso — no a un 404 ni a un
+    error: el cliente que escribe portal.intela.com.ec tiene que ver la puerta."""
     app, deshacer = _app_en_modo("portal")
     try:
-        r = app.test_client().get("/")
-        assert r.status_code == 200
-        assert r.get_json()["programa"] == "Portal Intela"
+        c = app.test_client()
+        r = c.get("/")
+        assert r.status_code == 302
+        assert r.headers["Location"].endswith("/ingresar")
+        assert c.get("/ingresar").status_code == 200
+    finally:
+        deshacer()
+
+
+def test_un_404_del_portal_no_se_convierte_en_500():
+    """🚨 `404.html` extiende el chrome de la oficina y llama a
+    `url_for('historial.operaciones')` y `url_for('auth.logout')`, que en este
+    proceso NO existen: renderizarla tira BuildError. El portal está en
+    internet y se va a comer 404 de robots todo el día."""
+    app, deshacer = _app_en_modo("portal")
+    try:
+        r = app.test_client().get("/wp-login.php")
+        assert r.status_code == 404
+        assert "Intela" in r.get_data(as_text=True)
     finally:
         deshacer()
 

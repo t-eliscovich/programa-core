@@ -1,0 +1,10 @@
+{% extends "portal/base.html" %}
+{% block titulo %}Algo falló — Intela{% endblock %}
+{% block contenido %}
+<div class="caja">
+  <h1>Algo falló de nuestro lado</h1>
+  <p class="bajada">Probá de nuevo en un rato. Si sigue igual, llamanos.</p>
+  {% if g.request_id %}<p class="ayuda">Código del error: {{ g.request_id[:8] }}</p>{% endif %}
+  <p class="ayuda"><a href="/">Ir al inicio</a></p>
+</div>
+{% endblock %}

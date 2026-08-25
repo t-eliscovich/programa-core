@@ -122,13 +122,17 @@ if ($texto -match [regex]::Escape($HOSTNAME_WEB)) {
     Copy-Item $CADDYFILE $copia -Force
     Write-Output "Copia del Caddyfile en $copia"
 
-    $bloque = @"
-
-$HOSTNAME_WEB {
-    reverse_proxy localhost:$PUERTO
-    encode gzip
-}
-"@
+    # OJO: nada de here-strings (@" ... "@). El cierre tiene que ir pegado al
+    # margen izquierdo, y adentro de un bloque indentado eso no se ve venir:
+    # el 24/08 el script entero no compilo por eso. Un array de lineas no
+    # tiene esa trampa.
+    $bloque = @(
+        "",
+        "$HOSTNAME_WEB {",
+        "    reverse_proxy localhost:$PUERTO",
+        "    encode gzip",
+        "}"
+    ) -join "`r`n"
     Add-Content -Path $CADDYFILE -Value $bloque
 
     Push-Location (Split-Path $CADDY_EXE)

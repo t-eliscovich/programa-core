@@ -1,0 +1,34 @@
+{% extends "portal/base.html" %}
+{% block titulo %}Entrar — Intela{% endblock %}
+{% block contenido %}
+<div class="caja">
+  <h1>Su estado de cuenta</h1>
+  <p class="bajada">Entre con el código de cliente que figura en su factura.</p>
+
+  <form method="post" autocomplete="on">
+    {{ csrf_token_input | safe }}
+
+    <div class="campo">
+      <label for="codigo">Código de cliente</label>
+      <input class="codigo" type="text" id="codigo" name="codigo" maxlength="3"
+             value="{{ codigo or '' }}" autocapitalize="characters"
+             autocomplete="username" spellcheck="false" required autofocus>
+    </div>
+
+    <div class="campo">
+      <label for="secreto">Clave</label>
+      <input type="password" id="secreto" name="secreto"
+             placeholder="La primera vez, su RUC"
+             autocomplete="current-password" required>
+    </div>
+
+    <button type="submit">Entrar</button>
+  </form>
+
+  <div class="separador"></div>
+  <p class="ayuda">
+    ¿Entra por primera vez? Escriba su <b>RUC</b> donde dice Clave.<br>
+    <a href="/olvide-la-clave">Olvidé mi clave</a>
+  </p>
+</div>
+{% endblock %}

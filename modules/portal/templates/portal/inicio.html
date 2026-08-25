@@ -1,0 +1,10 @@
+{% extends "portal/base.html" %}
+{% block titulo %}Intela{% endblock %}
+{% block contenido %}
+<div class="caja">
+  <h1>Hola, {{ nombre }}</h1>
+  <p class="bajada">Cliente {{ codigo }}</p>
+  <p>Acá va a ver su estado de cuenta, sus pagos y sus despachos.</p>
+  <p class="ayuda"><a href="/salir">Salir</a></p>
+</div>
+{% endblock %}

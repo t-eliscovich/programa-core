@@ -419,16 +419,9 @@ def por_cliente(vend: str | None = None, orden: str = "codigo",
         f"""
         SELECT l.codigo_cli, l.nombre, l.provincia, l.vend_pc, l.subcategoria,
                l.kg AS kg_cliente, l.ultima_compra, l.anio,
-               f.kg_parado, f.colores_parados, f.kg_primera, f.kg_segunda
+               f.kg_parado, f.colores_parados
           FROM scintela.parado_llamado l
-          -- ⭐ Primera y segunda también: la hoja se usa para OFRECER, y el
-          -- precio no es el mismo. Dueña 24/08/2026, mirando la hoja: "acá
-          -- falta si es de primera o segunda".
-          -- ⚠ Acá se suma por TELA (todos los colores), así que una misma tela
-          -- puede tener kilos de las dos: son dos columnas, no una.
           JOIN (SELECT subcategoria, SUM(stock_kg) AS kg_parado,
-                       SUM(COALESCE(kg_primera, 0)) AS kg_primera,
-                       SUM(COALESCE(kg_segunda, 0)) AS kg_segunda,
                        STRING_AGG(color, ', ' ORDER BY stock_kg DESC) AS colores_parados
                   FROM scintela.parado_foto
                  WHERE stock_kg > 0
@@ -514,8 +507,6 @@ def por_cliente_plano(vend: str | None = None, orden: str = "codigo",
                     "subcategoria": t["subcategoria"],
                     "colores_parados": t["colores_parados"],
                     "kg_parado": t["kg_parado"],
-                    "kg_primera": t["kg_primera"],
-                    "kg_segunda": t["kg_segunda"],
                     "puntos": t["puntos"],
                     "puntos_parado": t["puntos_parado"],
                     "kg_cliente": t["kg_cliente"],

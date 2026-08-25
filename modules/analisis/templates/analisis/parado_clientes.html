@@ -120,22 +120,15 @@
     <thead><tr><th>Tela</th><th class="col">Colores disponibles</th>
     <th class="n">Vale</th>
     <th class="n hay">Hay para ofrecerle</th>
-    <th class="n compro">Él ya compró</th><th class="n ult">Él, última vez</th></tr></thead>
+    <th class="n compro">Él ya compró</th><th class="n ult">Última vez</th></tr></thead>
     <tbody>
     {% for t in c.telas %}
       {# las clases están para el celular: ahí quedan sólo la tela y la fecha #}
-      {# ⭐ La calidad va DEBAJO del nombre de la tela y no en una columna
-         propia: la hoja ya tiene seis columnas y en el papel no entra una
-         séptima. Mismas píldoras que la pantalla de Saldos. #}
-      {% set calidad %}{% if t.kg_segunda and t.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>{% elif t.kg_segunda %}<span class="q seg">SEG</span>{% else %}<span class="q pri">PRI</span>{% endif %}{% endset %}
       <tr>
-        <td>{{ t.subcategoria }}<br>{{ calidad }}</td>
+        <td>{{ t.subcategoria }}</td>
         <td class="g col">{{ t.colores_parados }}</td>
         <td class="n vale">{{ t.puntos }} × kg</td>
-        <td class="n hay">{{ t.kg_parado | num_es(0) }}
-          {% if t.kg_segunda and t.kg_primera %}
-            <div class="anio">{{ t.kg_segunda | num_es(0) }} de segunda</div>
-          {% endif %}</td>
+        <td class="n hay">{{ t.kg_parado | num_es(0) }}</td>
         <td class="n compro">{{ t.kg_cliente | num_es(0) }}
           <span class="anio">en {{ t.anio }}</span></td>
         <td class="n g ult">{{ t.ultima_compra.strftime('%d/%m/%y') if t.ultima_compra else '—' }}</td>
@@ -167,7 +160,7 @@
 lista de todos los que compran esa tela. Sirve para ordenar, no para
 prometer.<br>
 </span>
-«Vale»: cuántos puntos da cada kilo de esa tela en la competencia. PRI y SEG son primera y segunda calidad: una misma tela puede tener de las dos. «Hay para ofrecerle»: los kilos de esa tela que están en la lista de saldos. La lista entra por COLOR: puede estar parado el negro y seguir vendiéndose otro color de la misma tela. «Él, última vez» es la última compra DEL CLIENTE, en cualquier color — no la última venta de la tela.
+«Vale»: cuántos puntos da cada kilo de esa tela en la competencia. «Hay para ofrecerle»: kilos de esa tela quietos hace 12 meses o más.
 «Él ya compró»: lo que le compró, el último año que se la compró.
 </footer>
 {% endblock %}

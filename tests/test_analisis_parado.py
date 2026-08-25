@@ -252,15 +252,15 @@ def _filas_falsas():
         {"codigo_cli": "AAA", "nombre": "Cliente Grande", "provincia": "GUAYAS",
          "vend_pc": "FL1", "subcategoria": "Kiana", "kg_cliente": 100,
          "ultima_compra": None, "anio": 2026, "kg_parado": 900,
-         "kg_primera": 900, "kg_segunda": 0, "colores_parados": "CAR"},
+         "colores_parados": "CAR"},
         {"codigo_cli": "BBB", "nombre": "Cliente Chico", "provincia": "AZUAY",
          "vend_pc": "FL1", "subcategoria": "Microfibra", "kg_cliente": 10,
          "ultima_compra": None, "anio": 2026, "kg_parado": 100,
-         "kg_primera": 60, "kg_segunda": 40, "colores_parados": "FRE"},
+         "colores_parados": "FRE"},
         {"codigo_cli": "CCC", "nombre": "Cliente Viejo", "provincia": "AZUAY",
          "vend_pc": "FL1", "subcategoria": "Jersey Fancy", "kg_cliente": 50,
          "ultima_compra": None, "anio": 2023, "kg_parado": 500,
-         "kg_primera": 0, "kg_segunda": 500, "colores_parados": "FNB"},
+         "colores_parados": "FNB"},
     ]
 
 
@@ -655,13 +655,11 @@ def test_la_hoja_del_vendedor_dice_lo_que_vale_cada_tela(monkeypatch):
         {"codigo_cli": "AAA", "nombre": "Cliente", "provincia": "Guayas",
          "vend_pc": "RMY", "subcategoria": "Fleece 102", "kg_cliente": 10,
          "ultima_compra": None, "anio": date.today().year, "colores": 1,
-         "kg_parado": 2900, "kg_primera": 2900, "kg_segunda": 0,
-         "colores_parados": "BLA"},
+         "kg_parado": 2900, "colores_parados": "BLA"},
         {"codigo_cli": "AAA", "nombre": "Cliente", "provincia": "Guayas",
          "vend_pc": "RMY", "subcategoria": "Microfibra", "kg_cliente": 10,
          "ultima_compra": None, "anio": date.today().year, "colores": 1,
-         "kg_parado": 300, "kg_primera": 0, "kg_segunda": 300,
-         "colores_parados": "NEG"},
+         "kg_parado": 300, "colores_parados": "NEG"},
     ]
     monkeypatch.setattr(
         queries.db, "fetch_all",
@@ -681,42 +679,6 @@ def test_la_hoja_del_vendedor_dice_lo_que_vale_cada_tela(monkeypatch):
     assert col, "la hoja tiene que traer la columna Vale"
     # ⚠ Ni en el celular ni en el papel: es la cifra que decide.
     assert "opt" not in col.group(0) and "col" not in col.group(0)
-
-
-def test_la_hoja_aclara_de_quien_es_la_fecha():
-    """⭐ Dueña 24/08/2026: "cómo puede ser que algo de 2026 esté acá y no es de
-    segunda". No era un error: la fecha de la hoja es la última compra DEL
-    CLIENTE en cualquier color, y lo parado era un color que nunca salió. Pero
-    la columna decía "Última vez" al lado de kilos "quietos hace 12 meses", y
-    las dos cosas se leían como una sola."""
-    from pathlib import Path
-    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-             "templates" / "analisis" / "parado_clientes.html")
-            .read_text(encoding="utf-8"))
-    assert "Él, última vez" in html, "la fecha es del cliente, hay que decirlo"
-    assert "La lista entra por COLOR" in html, (
-        "y que un color parado no quiere decir que la tela no se venda")
-
-
-def test_la_hoja_dice_si_la_tela_es_de_primera_o_de_segunda(monkeypatch):
-    """⭐ Dueña 24/08/2026, mirando la hoja: "acá falta si es de primera o
-    segunda". Se ofrece con precio distinto, así que sin eso el vendedor sale a
-    la calle con media información."""
-    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
-    telas = {t["subcategoria"]: t
-             for c in queries.por_cliente()["clientes"] for t in c["telas"]}
-    assert telas["Kiana"]["kg_segunda"] == 0
-    # ⚠ Una misma tela puede tener de las dos: son dos cifras, no una etiqueta.
-    assert telas["Microfibra"]["kg_primera"] == 60
-    assert telas["Microfibra"]["kg_segunda"] == 40
-
-    from pathlib import Path
-    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-             "templates" / "analisis" / "parado_clientes.html")
-            .read_text(encoding="utf-8"))
-    assert 'class="q seg">SEG' in html and 'class="q pri">PRI' in html
-    assert "de segunda" in html, (
-        "y cuántos kilos son de segunda cuando la tela tiene de las dos")
 
 
 # ── La competencia ──────────────────────────────────────────────────────────

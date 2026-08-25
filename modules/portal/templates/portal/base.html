@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#e30613">
+<title>{% block titulo %}Intela{% endblock %}</title>
+<link rel="icon" href="/static/intela-logo.png">
+{#
+  CSS propio y a mano, a propósito: `static/tailwind.css` es un build congelado
+  y las clases nuevas no renderizan. Son cuatro pantallas.
+
+  El rojo es el del logo, muestreado del PNG: #e30613. El negro también
+  (#1d1d1b, que no es negro puro).
+#}
+<style>
+  :root {
+    --rojo:      #e30613;
+    --rojo-hover:#c00510;
+    --tinta:     #1d1d1b;
+    --suave:     #6b7280;
+    --borde:     #e5e7eb;
+    --papel:     #ffffff;
+    --fondo:     #f6f5f4;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    color: var(--tinta);
+    background:
+      radial-gradient(1100px 520px at 50% -160px, #fff 0%, rgba(255,255,255,0) 62%),
+      var(--fondo);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+  }
+  .hoja {
+    width: 100%; max-width: 400px;
+    margin: auto; padding: 40px 22px 32px;
+  }
+
+  /* ---- marca ---- */
+  .marca { text-align: center; margin-bottom: 26px; }
+  .marca img {
+    width: 172px; max-width: 62%; height: auto; display: inline-block;
+  }
+
+  /* ---- tarjeta ---- */
+  .caja {
+    background: var(--papel);
+    border: 1px solid var(--borde);
+    border-radius: 16px;
+    padding: 30px 26px 28px;
+    box-shadow: 0 1px 2px rgba(29,29,27,.04),
+                0 12px 32px -12px rgba(29,29,27,.14);
+  }
+  h1 { font-size: 21px; font-weight: 650; margin: 0 0 6px; letter-spacing: -.01em; }
+  .bajada { color: var(--suave); font-size: 14.5px; margin: 0 0 26px; }
+
+  /* ---- campos ---- */
+  label {
+    display: block; font-size: 12.5px; font-weight: 600; color: var(--suave);
+    letter-spacing: .04em; text-transform: uppercase; margin: 0 0 7px;
+  }
+  .campo + .campo { margin-top: 18px; }
+  input[type=text], input[type=password], input[type=email] {
+    width: 100%; padding: 13px 14px;
+    font-size: 16px;              /* menos de 16 y el iPhone hace zoom al tocar */
+    font-family: inherit; color: var(--tinta);
+    background: #fcfcfc;
+    border: 1px solid var(--borde); border-radius: 10px;
+    transition: border-color .12s, background .12s, box-shadow .12s;
+  }
+  input::placeholder { color: #b6b6b6; }
+  input:focus {
+    outline: none; background: #fff;
+    border-color: var(--rojo);
+    box-shadow: 0 0 0 3px rgba(227,6,19,.11);
+  }
+  .codigo {
+    text-transform: uppercase; letter-spacing: .42em; text-indent: .42em;
+    font-size: 22px; font-weight: 650; text-align: center;
+  }
+
+  /* ---- botón ---- */
+  button {
+    width: 100%; margin-top: 26px; padding: 14px;
+    font-family: inherit; font-size: 16px; font-weight: 650; letter-spacing: .01em;
+    color: #fff; background: var(--rojo);
+    border: 0; border-radius: 10px; cursor: pointer;
+    transition: background .12s, transform .06s;
+  }
+  button:hover { background: var(--rojo-hover); }
+  button:active { transform: translateY(1px); }
+
+  /* ---- avisos ---- */
+  .aviso {
+    display: flex; gap: 9px; align-items: flex-start;
+    border-radius: 10px; padding: 12px 14px;
+    font-size: 14px; margin-bottom: 18px;
+  }
+  .aviso b { flex: none; font-weight: 700; }
+  .aviso.mal  { background: #fdeceb; color: #9b1c17; }
+  .aviso.bien { background: #e7f5ee; color: #0b6b3f; }
+
+  /* ---- pie ---- */
+  .ayuda {
+    font-size: 13.5px; color: var(--suave); margin: 22px 0 0;
+    text-align: center; line-height: 1.7;
+  }
+  .ayuda a { color: var(--tinta); text-decoration: none; border-bottom: 1px solid #d8d8d8; }
+  .ayuda a:hover { border-bottom-color: var(--rojo); color: var(--rojo); }
+  .separador {
+    height: 1px; background: var(--borde); margin: 22px 0 0;
+  }
+  .pie {
+    text-align: center; color: #a3a3a3; font-size: 12px;
+    margin-top: 26px; letter-spacing: .02em;
+  }
+</style>
+</head>
+<body>
+  <div class="hoja">
+    <div class="marca">
+      <img src="/static/intela-logo.png" alt="Intela · Industria Textil Latinoamericana">
+    </div>
+
+    {% with mensajes = get_flashed_messages(with_categories=true) %}
+      {% for categoria, texto in mensajes %}
+        <div class="aviso {{ 'mal' if categoria == 'error' else 'bien' }}">
+          <b>{{ '!' if categoria == 'error' else '✓' }}</b><span>{{ texto }}</span>
+        </div>
+      {% endfor %}
+    {% endwith %}
+
+    {% block contenido %}{% endblock %}
+
+    <div class="pie">Intela · Industria Textil Latinoamericana C. Ltda.</div>
+  </div>
+</body>
+</html>

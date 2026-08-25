@@ -1,0 +1,25 @@
+{% extends "portal/base.html" %}
+{% block titulo %}Olvidé mi clave — Intela{% endblock %}
+{% block contenido %}
+<div class="caja">
+  <h1>Olvidé mi clave</h1>
+  <p class="bajada">Le mandamos un código de 6 números a su correo.</p>
+
+  <form method="post">
+    {{ csrf_token_input | safe }}
+    <div class="campo">
+      <label for="codigo">Código de cliente</label>
+      <input class="codigo" type="text" id="codigo" name="codigo" maxlength="3"
+             value="{{ codigo or '' }}" autocapitalize="characters"
+             spellcheck="false" required autofocus>
+    </div>
+    <button type="submit">Mandarme el código</button>
+  </form>
+
+  <div class="separador"></div>
+  <p class="ayuda">
+    ¿No tiene correo cargado? Llámenos y le abrimos el acceso.<br>
+    <a href="/ingresar">Volver</a>
+  </p>
+</div>
+{% endblock %}

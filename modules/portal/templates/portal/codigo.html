@@ -1,0 +1,26 @@
+{% extends "portal/base.html" %}
+{% block titulo %}El código que le mandamos — Intela{% endblock %}
+{% block contenido %}
+<div class="caja">
+  <h1>Escriba el código</h1>
+  <p class="bajada">Se lo mandamos por correo. Vale por {{ minutos }} minutos.</p>
+
+  <form method="post">
+    {{ csrf_token_input | safe }}
+    <input type="hidden" name="codigo" value="{{ codigo }}">
+    <div class="campo">
+      <label for="seis">Código de 6 números</label>
+      <input class="codigo" type="text" id="seis" name="seis" maxlength="6"
+             inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code"
+             required autofocus>
+    </div>
+    <button type="submit">Continuar</button>
+  </form>
+
+  <div class="separador"></div>
+  <p class="ayuda">
+    ¿No le llegó? Revise el correo no deseado.<br>
+    <a href="/olvide-la-clave">Pedir otro</a>
+  </p>
+</div>
+{% endblock %}

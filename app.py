@@ -276,32 +276,31 @@ def create_app() -> Flask:
     # entradas que él no puede abrir) a un vendedor.
     app.jinja_env.globals["es_vendedor"] = es_vendedor
 
-    # Blueprints
-    app.register_blueprint(auth_bp)
-
-    # Google OAuth — activo sólo si GOOGLE_CLIENT_ID está en env.
-    # init_oauth() es no-op si la env var falta (útil para dev local
-    # sin OAuth configurado). Cuando está activo, el template del login
-    # muestra el botón Google y `auth.login` POST devuelve 410 Gone.
-    from modules.auth_google.views import (
-        auth_google_bp,
-        google_oauth_enabled,
-        init_oauth,
-    )
-
-    init_oauth(app)
-    app.register_blueprint(auth_google_bp)
-    app.jinja_env.globals["google_oauth_enabled"] = google_oauth_enabled
-
-    # TMT 2026-07-20 (dueña): módulo 2FA BORRADO — pantallas huérfanas (nadie
-    # podía llegar a activarlo) y tenía un bug latente en el login.
-
-    # TMT 2026-08-24 — las pantallas se registran por MODO. En modo portal
-    # las del ERP NO se registran: no existen, así que no hay candado que
-    # pueda fallar. Ver modo.py, registro_erp.py y registro_portal.py.
+    # Blueprints — TMT 2026-08-24: se registran por MODO. En modo portal las
+    # del ERP NO se registran: no existen, así que no hay candado que pueda
+    # fallar. Ver modo.py, registro_erp.py y registro_portal.py.
     if modo.es_portal():
         registro_portal.registrar(app)
     else:
+        app.register_blueprint(auth_bp)
+
+        # Google OAuth — activo sólo si GOOGLE_CLIENT_ID está en env.
+        # init_oauth() es no-op si la env var falta (útil para dev local
+        # sin OAuth configurado). Cuando está activo, el template del login
+        # muestra el botón Google y `auth.login` POST devuelve 410 Gone.
+        from modules.auth_google.views import (
+            auth_google_bp,
+            google_oauth_enabled,
+            init_oauth,
+        )
+
+        init_oauth(app)
+        app.register_blueprint(auth_google_bp)
+        app.jinja_env.globals["google_oauth_enabled"] = google_oauth_enabled
+
+        # TMT 2026-07-20 (dueña): módulo 2FA BORRADO — pantallas huérfanas
+        # (nadie podía llegar a activarlo) y tenía un bug latente en el login.
+
         registro_erp.registrar(app)
 
     # Bitácora — after_request hook. Best-effort audit log for every write
@@ -417,9 +416,17 @@ def create_app() -> Flask:
     # + @requiere_permiso (renderizan su propio 403.html); no lo sobreescribimos.
     from flask import render_template as _render
 
+    # TMT 2026-08-24 — las páginas de error también van por MODO. `404.html`
+    # extiende `base.html`, que es el chrome de la oficina: en el proceso del
+    # portal ni `historial.operaciones` ni `auth.logout` existen, así que
+    # renderizarla tira BuildError y un 404 se convierte en un 500. Y el
+    # portal, que está en internet, va a comerse 404 de robots todo el día.
+    _P404 = "portal/404.html" if modo.es_portal() else "404.html"
+    _P500 = "portal/500.html" if modo.es_portal() else "500.html"
+
     @app.errorhandler(404)
     def _not_found(_exc):
-        return _render("404.html"), 404
+        return _render(_P404), 404
 
     # CSRF vencido — TMT 2026-08-05 (patricio: *"Bad Request. The CSRF tokens
     # do not match"* al intentar entrar). Sin este handler, Flask-WTF devuelve
@@ -469,7 +476,7 @@ def create_app() -> Flask:
             request.method,
             request.path,
         )
-        return _render("500.html"), 500
+        return _render(_P500), 500
 
     @app.teardown_appcontext
     def _noop(exc):  # pool handles its own lifecycle

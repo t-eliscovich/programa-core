@@ -1,0 +1,43 @@
+{% extends "portal/base.html" %}
+{% block titulo %}Elegir la clave — Intela{% endblock %}
+{% block contenido %}
+<div class="caja">
+  <h1>Hola, {{ nombre|title }}</h1>
+  <p class="bajada">Elija una clave. La próxima vez entra con ella y no con el RUC.</p>
+
+  <form method="post">
+    {{ csrf_token_input | safe }}
+
+    <div class="campo">
+      <label for="clave">Clave nueva</label>
+      <input type="password" id="clave" name="clave" autocomplete="new-password"
+             placeholder="Al menos 8 letras o números" required autofocus>
+    </div>
+
+    <div class="campo">
+      <label for="repetir">Repetirla</label>
+      <input type="password" id="repetir" name="repetir"
+             autocomplete="new-password" required>
+    </div>
+
+    <div class="campo">
+      <label for="mail">Su correo</label>
+      <input type="email" id="mail" name="mail" value="{{ mail or '' }}"
+             placeholder="Para mandarle la clave si la olvida"
+             autocomplete="email" spellcheck="false">
+    </div>
+
+    {# El correo se pide DOS veces a propósito: es por donde le llega la clave
+       si la olvida, así que una letra mal tipeada acá lo deja afuera para
+       siempre y sin forma de darse cuenta. #}
+    <div class="campo">
+      <label for="mail2">Repita el correo</label>
+      <input type="email" id="mail2" name="mail2" value="{{ mail or '' }}"
+             placeholder="Para estar seguros de que está bien escrito"
+             autocomplete="email" spellcheck="false">
+    </div>
+
+    <button type="submit">Guardar y entrar</button>
+  </form>
+</div>
+{% endblock %}
