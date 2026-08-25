@@ -571,11 +571,15 @@ def prueba_envio():
         abort(404)
     cod = mios[0]["codigo_cli"]
     pdf_url = url_for("mi_cartera.pdf", codigo_cli=cod)
+    img_url = url_for("mi_cartera.imagen", codigo_cli=cod)
     if request.args.get("vend"):
-        pdf_url += "?vend=" + (request.args.get("vend") or "").strip().upper()
+        cola = "?vend=" + (request.args.get("vend") or "").strip().upper()
+        pdf_url += cola
+        img_url += cola
     return render_template(
         "mi_cartera/prueba_envio.html",
         pdf_url=pdf_url,
+        img_url=img_url,
         seccion="",
         **_ctx_base(vend),
     )

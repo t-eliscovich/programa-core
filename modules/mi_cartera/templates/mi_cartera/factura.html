@@ -37,6 +37,7 @@
    ícono que nadie reconoce es un botón que no existe (20/08). #}
 <div class="acciones">
   {% with pdf_url = url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ (('?vend=' ~ vend) if preview else ''),
+          img_url = url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ (('?vend=' ~ vend) if preview else ''),
           wa_nombre = cliente.nombre,
           wa_clase = 'btn-wa' %}
     {% include "informes/_ec_boton_whatsapp.html" %}
@@ -61,12 +62,12 @@
    como una cartera. #}
 {% if pdf_disponible() %}
 {% set _q = ('?vend=' ~ vend) if preview else '' %}
-<a class="ver-img" target="_blank" rel="noopener"
+<a class="ver-img" data-wa-img target="_blank" rel="noopener"
    href="{{ url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ _q }}">
   Mandar como imagen
   <small>Mantené apretada la foto y elegí WhatsApp</small>
 </a>
-<a class="ver-pdf" data-wa-ver target="_blank" rel="noopener"
+<a class="ver-pdf" target="_blank" rel="noopener"
    href="{{ url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ _q }}">o mandá el PDF</a>
 {% endif %}
 {% endblock %}

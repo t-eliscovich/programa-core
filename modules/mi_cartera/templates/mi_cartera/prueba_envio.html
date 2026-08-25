@@ -22,12 +22,15 @@
 {% block content %}
 <div class="card">
   <p style="margin:0 0 10px;font-size:14px;line-height:1.45">
-    Tocá <b>1 · Preparar</b>, esperá a que diga listo, y después tocá
-    <b>2 · Enviar</b>. Sacale una foto a esta pantalla y mandámela.
+    Tocá <b>1 · Preparar</b> y esperá a que diga listo. Después tocá
+    <b>2 · Probar PDF</b>, y cuando termine <b>3 · Probar foto</b>.
+    Si se abre el menú de compartir, cerralo y seguí.
+    Al final sacale una foto a esta pantalla y mandámela.
   </p>
-  <div style="display:flex;gap:8px">
-    <button type="button" id="p1" class="btn-wa" style="flex:1">1 · Preparar</button>
-    <button type="button" id="p2" class="btn-pr" style="flex:1" disabled>2 · Enviar</button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button type="button" id="p1" class="btn-wa" style="flex:1 0 100%">1 · Preparar</button>
+    <button type="button" id="p2" class="btn-pr" style="flex:1" disabled>2 · Probar PDF</button>
+    <button type="button" id="p3" class="btn-pr" style="flex:1" disabled>3 · Probar foto</button>
   </div>
 </div>
 
@@ -44,6 +47,17 @@
 <script>
 (function () {
   var URL_PDF = {{ pdf_url | tojson }};
+  var URL_IMG = {{ img_url | tojson }};
+
+  // ⭐ TMT 2026-08-25: el teléfono de Patricio contestó "Puede compartir
+  // archivos: sí" y IGUAL falló el compartir. Probar sólo con el PDF no
+  // distingue "este aparato no comparte" de "este aparato no comparte PDFs",
+  // que son dos problemas con dos arreglos distintos. Ahora prueba los dos
+  // formatos y la respuesta sale sola.
+  var FORMATOS = [
+    { clave: 'pdf', rotulo: 'PDF', url: URL_PDF, archivo: 'Estado de cuenta.pdf' },
+    { clave: 'img', rotulo: 'foto', url: URL_IMG, archivo: 'Estado de cuenta.png' }
+  ];
   var pasos = document.getElementById('pasos');
   var listo = null;
 
@@ -90,54 +104,69 @@
     datos.appendChild(d);
   }
 
+  function preparar(f) {
+    var t0 = Date.now();
+    return fetch(f.url, { credentials: 'same-origin' }).then(function (r) {
+      anotar(f.rotulo + ' · el servidor contestó ' + r.status +
+             ' en ' + (Date.now() - t0) + ' ms');
+      if (!r.ok) { throw new Error('el servidor no lo generó'); }
+      return r.blob();
+    }).then(function (blob) {
+      anotar(f.rotulo + ' · llegó: ' + Math.round(blob.size / 1024) + ' kB');
+      try {
+        f.file = new File([blob], f.archivo,
+                          { type: blob.type || 'application/octet-stream' });
+      } catch (e) {
+        f.file = null;
+        anotar(f.rotulo + ' · armar el archivo: FALLÓ — ' + comoFalla(e));
+        return;
+      }
+      try {
+        anotar(f.rotulo + ' · ¿lo puede compartir?: ' +
+               (navigator.canShare && navigator.canShare({ files: [f.file] })
+                ? 'sí' : 'NO'));
+      } catch (e) {
+        anotar(f.rotulo + ' · ¿lo puede compartir?: FALLÓ — ' + comoFalla(e));
+      }
+    }).catch(function (e) {
+      anotar(f.rotulo + ' · se cortó: ' + comoFalla(e));
+    });
+  }
+
   document.getElementById('p1').addEventListener('click', function () {
     var b = this;
     b.disabled = true;
     b.textContent = 'Preparando…';
-    var t0 = Date.now();
-    fetch(URL_PDF, { credentials: 'same-origin' }).then(function (r) {
-      anotar('1 · Pedir el PDF: respondió ' + r.status + ' en ' + (Date.now() - t0) + ' ms');
-      if (!r.ok) { throw new Error('el servidor no lo generó'); }
-      return r.blob();
-    }).then(function (blob) {
-      anotar('2 · El archivo llegó: ' + Math.round(blob.size / 1024) + ' kB');
-      try {
-        listo = new File([blob], 'Estado de cuenta.pdf', { type: 'application/pdf' });
-        anotar('3 · Armar el archivo: bien');
-      } catch (e) {
-        listo = null;
-        anotar('3 · Armar el archivo: FALLÓ — ' + comoFalla(e));
-        return;
-      }
-      try {
-        anotar('4 · ¿Lo puede compartir?: ' +
-               (navigator.canShare && navigator.canShare({ files: [listo] }) ? 'sí' : 'no'));
-      } catch (e) {
-        anotar('4 · ¿Lo puede compartir?: FALLÓ — ' + comoFalla(e));
-      }
-      document.getElementById('p2').disabled = false;
+    Promise.all(FORMATOS.map(preparar)).then(function () {
       b.textContent = '1 · Listo';
-    }).catch(function (e) {
-      anotar('✗ Se cortó acá: ' + comoFalla(e));
-      b.disabled = false;
-      b.textContent = '1 · Preparar';
+      document.getElementById('p2').disabled = false;
+      document.getElementById('p3').disabled = false;
     });
   });
 
-  document.getElementById('p2').addEventListener('click', function () {
-    if (!listo) { anotar('5 · Enviar: no hay archivo preparado'); return; }
+  // ⭐ El toque que importa. `canShare` puede decir que sí y `share` fallar
+  // igual —le pasó a Patricio— así que lo que se anota es el ERROR EXACTO.
+  function probarEnvio(f) {
+    if (!f.file) { anotar(f.rotulo + ' · enviar: no hay archivo preparado'); return; }
     try {
-      var p = navigator.share({ files: [listo], title: 'Estado de cuenta' });
-      anotar('5 · Se pidió abrir el menú de compartir');
-      if (p && p.then) {
-        p.then(function () { anotar('6 · El menú se abrió y se envió'); })
-         .catch(function (e) { anotar('6 · El menú NO se abrió — ' + comoFalla(e)); });
-      } else {
-        anotar('6 · No devolvió respuesta (este navegador no lo soporta)');
+      var p = navigator.share({ files: [f.file], title: 'Estado de cuenta' });
+      if (!p || !p.then) {
+        anotar(f.rotulo + ' · enviar: no devolvió respuesta (este navegador no lo soporta)');
+        return;
       }
+      anotar(f.rotulo + ' · se pidió abrir el menú…');
+      p.then(function () { anotar(f.rotulo + ' · ✓ EL MENÚ SE ABRIÓ'); })
+       .catch(function (e) { anotar(f.rotulo + ' · ✗ NO se abrió — ' + comoFalla(e)); });
     } catch (e) {
-      anotar('5 · Enviar: FALLÓ de entrada — ' + comoFalla(e));
+      anotar(f.rotulo + ' · enviar: FALLÓ de entrada — ' + comoFalla(e));
     }
+  }
+
+  document.getElementById('p2').addEventListener('click', function () {
+    probarEnvio(FORMATOS[0]);
+  });
+  document.getElementById('p3').addEventListener('click', function () {
+    probarEnvio(FORMATOS[1]);
   });
 })();
 </script>

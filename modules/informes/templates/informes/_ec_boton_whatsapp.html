@@ -137,6 +137,7 @@
 {% if pdf_disponible() %}
 <button type="button" class="{{ wa_clase }}" data-wa-pdf
         data-url="{{ pdf_url }}"
+        {% if img_url is defined and img_url %}data-img="{{ img_url }}"{% endif %}
         data-nombre="{{ wa_nombre }}"
         data-cargando="{{ wa_label_cargando | default('Generando…', true) }}"
         title="Genera el estado de cuenta en PDF y abre WhatsApp para que elijas a quién mandárselo">
@@ -211,19 +212,43 @@
     else { delete btn.dataset.waListo; decir(btn, rotulo(btn)); }
   }
 
-  // ⭐ El PDF se prepara UNA vez por botón y queda en memoria. Es lo que
+  // ⭐ QUÉ ARCHIVO SE MANDA: en el teléfono la FOTO, en la computadora el PDF.
+  //
+  // 🚨 TMT 2026-08-25, con la captura del teléfono de Patricio. Su pantalla de
+  // prueba contestó *"Puede compartir archivos: sí"* y aun así el compartir
+  // falló — y el cartel que vio sólo puede salir de ADENTRO del intento. O sea
+  // que `navigator.share()` con un PDF se cayó en un aparato que dice que
+  // puede compartir archivos. Es Samsung Internet.
+  //
+  // No se sabe todavía con qué error exacto (falta que alguien toque el "2 ·
+  // Enviar" de /mi-cartera/prueba-envio). Pero mandar la FOTO no es una
+  // apuesta a esa causa: es lo que corresponde igual. Una imagen es el tipo de
+  // archivo que TODOS los teléfonos saben compartir, es lo que el cliente ve
+  // dentro del chat sin abrir nada, y es la conclusión a la que ya se llegó
+  // hoy por el otro camino —*"foto y compartir como imagen"*—. Si además la
+  // causa era el PDF, queda arreglado de raíz; si no, no se pierde nada,
+  // porque el plan B ahora señala la foto igual.
+  //
+  // En la computadora sigue yendo el PDF: ahí se baja a una carpeta y se
+  // arrastra a WhatsApp Web, y un PDF con texto de verdad le gana a una
+  // imagen.
+  function urlDelArchivo(btn) {
+    return (esTelefono() && btn.dataset.img) ? btn.dataset.img : btn.dataset.url;
+  }
+
+  // ⭐ El archivo se prepara UNA vez por botón y queda en memoria. Es lo que
   // permite que el compartir salga sin esperar nada: ver el comentario de
   // cabecera (Android, 20/08).
   function prepararPdf(btn) {
     if (btn.__pdf) return btn.__pdf;
-    btn.__pdf = fetch(btn.dataset.url, { credentials: 'same-origin' })
+    btn.__pdf = fetch(urlDelArchivo(btn), { credentials: 'same-origin' })
       .then(function (resp) {
         if (!resp.ok) {
           // El 503 del servidor trae un mensaje que explica qué falta; se
           // muestra tal cual en vez de un "error" genérico.
           return resp.status === 503
             ? resp.text().then(function (t) { throw new Error(t); })
-            : Promise.reject(new Error('No se pudo generar el PDF (error ' + resp.status + ').'));
+            : Promise.reject(new Error('No se pudo generar el archivo (error ' + resp.status + ').'));
         }
         return resp.blob().then(function (blob) {
           btn.__listo = { blob: blob, nombre: nombreDe(resp, btn.dataset.nombre || 'cliente') };
@@ -244,29 +269,44 @@
 
   // ⭐ SIN `await` adentro: el permiso que deja el toque para abrir el menú de
   // compartir se pierde en la primera espera.
-  // El plan B honesto: el archivo a las descargas y una frase que diga qué
-  // pasó. Nunca dejar el botón mudo — ver el bug del 25/08 en la cabecera.
-  function bajarYExplicar(listo) {
+  //
+  // 🚨 TMT 2026-08-25, con la captura del teléfono de Patricio al lado. El
+  // mensaje de acá decía DOS cosas y las dos estaban mal:
+  //
+  //   1. *"Este teléfono no deja mandar el PDF directo desde el programa"*.
+  //      FALSO, y verificado: la pantalla de prueba en ESE MISMO aparato
+  //      contestó *"Puede compartir archivos: sí"*. Sí puede; lo que falló fue
+  //      el intento, por otra razón. El programa no está en condiciones de
+  //      diagnosticar el teléfono desde acá, así que ya no lo hace: cuenta lo
+  //      que PASÓ, que es lo único que sabe.
+  //   2. *"También lo podés abrir con «Ver el PDF», acá abajo"*. Ese botón
+  //      había dejado de llamarse así una hora antes, en el mismo cambio que
+  //      trajo la foto. Mandaba a buscar algo que no estaba.
+  //
+  // ⭐ Y el fondo del asunto: bajarle un PDF es JUSTO lo que no le sirve —es
+  // el reclamo de Alex, *"desde el pdf q genera no permite enviar por wsp"*—.
+  // Cuando la pantalla tiene la foto (que es el camino que anda), el plan B es
+  // señalarla, no dejarle un archivo en una carpeta que no va a abrir.
+  function planB(listo) {
+    var foto = document.querySelector('[data-wa-img]');
+    if (foto) {
+      alert('No se pudo abrir WhatsApp desde el programa.\n\n'
+          + 'Mandalo como foto: tocá "Mandar como imagen" acá abajo, '
+          + 'mantené apretada la foto y elegí WhatsApp.');
+      // En un teléfono el link puede haber quedado fuera de la pantalla: se lo
+      // acerca, que es la diferencia entre nombrarlo y mostrarlo.
+      try { foto.scrollIntoView({ block: 'center' }); } catch (e) { /* da igual */ }
+      return;
+    }
+    // Sin foto en esta pantalla (la de la oficina), el archivo y los pasos —
+    // que son los mismos en todos los teléfonos.
     descargar(listo.blob, listo.nombre);
-    // 🚨 Alex Velastegui, 25/08, mirando el PDF ya generado en su teléfono:
-    // *"desde el pdf q genera no permite enviar por wsp"*. El mensaje decía
-    // "adjuntalo desde WhatsApp" y lo daba por obvio — y no lo es: el vendedor
-    // se queda parado con el archivo en la mano sin saber por dónde sigue.
-    // Ahora se nombran los PASOS, que son los mismos en todos los teléfonos:
-    // el archivo queda en Descargas y se manda con el botón de compartir del
-    // aparato, que no es el del programa y sí anda siempre.
-    //
-    // La ficha del vendedor tiene abajo el link "Ver el PDF"; la pantalla de
-    // la oficina, no. Se nombra sólo donde existe: mandar a buscar un botón
-    // que no está es la manera más rápida de que dejen de leer los mensajes.
-    var hayLink = !!document.querySelector('[data-wa-ver]');
-    alert('Este teléfono no deja mandar el PDF directo desde el programa.\n\n'
+    alert('No se pudo abrir WhatsApp desde el programa.\n\n'
         + 'Se descargó "' + listo.nombre + '".\n\n'
         + 'Para mandarlo:\n'
         + '1. Abrí Descargas en el teléfono.\n'
         + '2. Tocá el archivo y después el botón de compartir.\n'
-        + '3. Elegí WhatsApp y el contacto.'
-        + (hayLink ? '\n\nTambién lo podés abrir con "Ver el PDF", acá abajo.' : ''));
+        + '3. Elegí WhatsApp y el contacto.');
   }
 
   // Devuelve `true` si se hizo cargo del toque (compartió, o bajó el archivo y
@@ -278,17 +318,21 @@
       // Android, y donde no existen TIRAN. Sin este try el toque moría acá
       // mismo, antes de cambiar el rótulo: el botón no hacía nada, ni siquiera
       // decir "Generando…".
-      file = new File([listo.blob], listo.nombre, { type: 'application/pdf' });
+      // ⚠ El tipo sale del BLOB, no clavado en 'application/pdf': en el
+      // teléfono esto es un PNG, y anunciarlo como PDF es la manera de que el
+      // menú de compartir lo rechace o WhatsApp lo mande como documento.
+      file = new File([listo.blob], listo.nombre,
+                      { type: listo.blob.type || 'application/octet-stream' });
       if (!navigator.canShare({ files: [file] })) { file = null; }
     } catch (e) { file = null; }
-    if (!file) { bajarYExplicar(listo); return true; }
+    if (!file) { planB(listo); return true; }
 
     armado(btn, false);
     try {
       var p = navigator.share({ files: [file], title: listo.nombre });
       // 🚨 Algunos navegadores de Android devuelven `undefined` en vez de una
       // promesa: `.catch` sobre eso TIRA y el toque muere sin decir nada.
-      if (!p || !p.then) { bajarYExplicar(listo); return true; }
+      if (!p || !p.then) { planB(listo); return true; }
       p.then(function () { armado(btn, false); }).catch(function (e) {
         // Cerró el menú a propósito: no es un error y no hay que insistirle.
         // El PDF sigue en memoria, así que el botón queda pidiendo el toque.
@@ -297,13 +341,14 @@
         // NADA MÁS — para siempre. El vendedor tocaba, tocaba y tocaba, y el
         // programa fallaba callado en cada vuelta: es el *"no abre el otro
         // programa, aunque esté generado"*. Este teléfono NO comparte
-        // archivos: se baja el PDF y se dice por qué, que es lo único cierto.
-        bajarYExplicar(listo);
+        // archivos: se le muestra el camino que sí anda, o se baja el PDF.
+        planB(listo);
       });
     } catch (e) {
-      // `share` explotó de entrada, antes de devolver nada: este aparato no
-      // comparte archivos. Se baja y se avisa, que es lo único cierto.
-      bajarYExplicar(listo);
+      // `share` explotó de entrada, antes de devolver nada. Sea lo que sea
+      // que pasó, no se abrió WhatsApp: eso es lo que se cuenta, y se le
+      // muestra el camino que sí anda.
+      planB(listo);
     }
     return true;
   }
@@ -345,7 +390,7 @@
       // Teléfono sin menú de compartir: el archivo a las descargas y una
       // frase que lo explique. Mandarlo a WhatsApp Web sería mandarlo a una
       // pared.
-      if (esTel) { bajarYExplicar(listo); return; }
+      if (esTel) { planB(listo); return; }
 
       // Escritorio: el PDF a la carpeta de descargas y WhatsApp Web abierto al
       // lado en la lista de chats, para que elija la conversación y lo
@@ -356,7 +401,7 @@
       else { window.open(WHATSAPP, '_blank', 'noopener'); }
     }).catch(function (e) {
       if (ventana) ventana.close();
-      alert(e && e.message ? e.message : ('No se pudo generar el PDF: ' + e));
+      alert(e && e.message ? e.message : ('No se pudo generar el archivo: ' + e));
     }).finally(function () {
       btn.disabled = false;
       btn.style.width = '';
