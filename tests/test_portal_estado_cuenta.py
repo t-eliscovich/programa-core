@@ -107,3 +107,22 @@ def test_la_pantalla_compara_vencimientos_contra_una_FECHA():
     con un string no da False: LEVANTA, y se cae la pantalla entera."""
     assert '"hoy_iso": date.today(),' in VISTAS
     assert "hoy_iso" in PANTALLA
+
+
+def test_los_numeros_van_en_formato_de_ecuador():
+    """🔢 Punto de miles, coma de decimales: `2.812,86`, no `2812.86`.
+
+    Los filtros de la casa (`money_es`, `fecha_es`) se registran en
+    `create_app` ANTES de elegir el modo, así que el portal los tiene. Formatear
+    a mano con `'%.2f'|format` sale en formato yanqui — y salió, en la primera
+    corrida contra producción."""
+    assert "'%.2f'|format" not in PANTALLA, (
+        "hay un número formateado a mano: va a salir en formato yanqui")
+    assert "money_es" in PANTALLA
+
+
+def test_las_fechas_van_por_el_filtro_de_la_casa():
+    """`strftime` se cae con un `None` y con un texto ISO. `fecha_es` aguanta
+    los tres casos, que es justamente por lo que existe."""
+    assert "strftime" not in PANTALLA
+    assert "fecha_es" in PANTALLA
