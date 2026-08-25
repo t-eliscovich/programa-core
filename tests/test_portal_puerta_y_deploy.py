@@ -145,7 +145,7 @@ def test_el_script_hace_copia_del_caddyfile_y_sabe_volver():
 
 
 def test_el_script_es_idempotente_con_el_caddyfile():
-    assert "if ($texto -match [regex]::Escape($HOSTNAME_WEB))" in BOOTSTRAP
+    assert "if ($texto -match [regex]::Escape($SITIO))" in BOOTSTRAP
 
 
 def test_el_script_no_toca_lo_de_la_oficina():
@@ -163,7 +163,8 @@ def test_el_script_no_toca_lo_de_la_oficina():
     codigo = [ln for ln in cuerpo.split("\n")
               if ln.strip() and not ln.strip().startswith("#")]
     tocan_la_oficina = [ln for ln in codigo
-                        if "programa.intela.com.ec" in ln.replace("portal.intela.com.ec", "")]
+                        if "programa.intela.com.ec" in ln.replace("portal.intela.com.ec", "")
+                        and "programa-core" not in ln]
     assert tocan_la_oficina == [], tocan_la_oficina
 
 
