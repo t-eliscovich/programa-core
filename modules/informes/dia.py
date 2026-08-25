@@ -688,6 +688,30 @@ def ventas_del_mes(fecha) -> dict:
     return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
 
 
+#: Los kilos facturados en un día que merecen festejo.
+#: TMT 2026-08-25: *"poné emojis de fiestita por haber vendido más de 20k
+#: kilos (y siempre que eso pase)"*. Es el mismo tope de 20.000 kg que tenía
+#: la escalera de avisos de la campanita hasta el 13/08.
+KG_FIESTA = 20_000
+
+
+def fiesta_kilos(r: dict) -> float:
+    """Los kilos facturados del día si llegaron a `KG_FIESTA`; si no, 0.
+
+    🚨 Vale sólo para un tramo de UN día: en la nota del fin de semana los
+    kilos son la suma de sábado y domingo, y dos días sumados no son el día
+    de 20.000 kg que ella quiere festejar.
+
+    Los kilos son los FACTURADOS en bruto — los mismos del renglón *Ventas*
+    de la nota. Si el festejo saliera de otro número, el mail diría 19.800 kg
+    arriba y festejaría abajo.
+    """
+    if (r.get("dias") or 1) != 1:
+        return 0.0
+    kg = _f((r.get("ventas") or {}).get("kg"))
+    return kg if kg >= KG_FIESTA else 0.0
+
+
 def _n(v, dec: int = 0) -> str:
     from filters import num_es
     return num_es(round(_f(v), dec), dec)
@@ -1015,6 +1039,8 @@ _GRIS = "#6b6b66"
 _LINEA = "#e4e2dc"
 _VERDE = "#3b6d11"
 _ROJO = "#a32d2d"
+_FIESTA_FONDO = "#fbf6e6"
+_FIESTA_BORDE = "#e8dcb5"
 
 
 def _fila_html(rot: str, val: str) -> str:
@@ -1112,6 +1138,18 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
     if r.get("dia_parcial"):
         L.append(f'<div style="font-size:12px;color:{_GRIS};padding-bottom:10px">'
                  '<i>tramo corto, no son 24 h</i></div>')
+
+    # 🎉 El día de 20.000 kg. TMT 2026-08-25: *"poné emojis de fiestita por
+    # haber vendido más de 20k kilos (y siempre que eso pase) mencionalo"*.
+    # Va ARRIBA de la tabla porque es la noticia del día, y sólo el día que
+    # pasa: un festejo que sale todos los días deja de ser un festejo.
+    kg_fiesta = fiesta_kilos(r)
+    if kg_fiesta:
+        L.append(f'<div style="background:{_FIESTA_FONDO};border:1px solid '
+                 f'{_FIESTA_BORDE};border-radius:10px;padding:10px 12px;'
+                 f'margin-bottom:14px;font-size:14px;color:{_TINTA}">'
+                 f'🎉🥳 ¡Día de más de {_n(KG_FIESTA)} kg! Hoy se facturaron '
+                 f'<b>{_n(kg_fiesta)} kg</b>.</div>')
     if filas:
         L.append(f'<table style="width:100%;border-collapse:collapse;'
                  f'border-top:1px solid {_LINEA}">{"".join(filas)}</table>')

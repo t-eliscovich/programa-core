@@ -1464,10 +1464,13 @@ def dia():
     except ValueError:
         fecha = _dia.hoy_ec()
     _e = _dia.explicar(fecha)
+    _r = _dia.resumen(fecha)
     return render_template(
         "informes/dia.html",
         e=_e,
-        r=_dia.resumen(fecha),
+        r=_r,
+        fiesta_kg=_dia.fiesta_kilos(_r),
+        kg_fiesta=_dia.KG_FIESTA,
         wa=_dia.mensaje_whatsapp(fecha),
         deuda=_dia.deuda_hoy(fecha),
         tejido=_dia.tejido_del_dia(fecha),
