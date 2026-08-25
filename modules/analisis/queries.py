@@ -919,11 +919,16 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
     fila que se abre lo partía por grupo; qué tela y qué color no estaba en
     ninguna pantalla.
 
-    ⭐ Van TAMBIÉN los kilos que NO puntúan, con el motivo. Es lo que evita la
-    conversación de la semana que viene: un vendedor que facturó 512 kg de una
-    tela de la lista y ve 0 puntos necesita leer POR QUÉ en la misma pantalla.
-    Son kilos de PRIMERA de un ítem que entró sólo por su segunda (ver
-    `cuenta_el_kilo`).
+    ⚠ SÓLO lo que puntúa. La primera versión mostraba también los kilos que no
+    suman, en gris y con el motivo, para que nadie tuviera que preguntar por qué
+    512 kg dieron 0 puntos. Dueña 25/08/2026: *"lo que no cuenta para puntos ni
+    lo muestres"* — en una pantalla de competencia, una lista donde la mayoría
+    de los renglones no cuenta se lee como un error del programa, no como una
+    explicación.
+
+    ⚠ Consecuencia asumida: el que facturó una tela de la lista y no la ve acá
+    va a preguntar. La respuesta es la regla de `cuenta_el_kilo` — eran kilos de
+    PRIMERA de un ítem que entró sólo por su segunda.
     """
     filas = db.fetch_all(
         """SELECT v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
@@ -931,10 +936,10 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos
              FROM scintela.parado_venta v
              LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
-            WHERE v.fecha >= %s
+            WHERE v.fecha >= %s AND v.cuenta
             GROUP BY v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
                      v.fecha
-            ORDER BY v.cuenta DESC, SUM(v.kg) DESC""", (desde,)) or []
+            ORDER BY SUM(v.kg) DESC""", (desde,)) or []
     out: dict[str, list[dict]] = defaultdict(list)
     for f in filas:
         f["puntos"] = float(f.get("puntos") or 0) if f.get("cuenta") else 0.0

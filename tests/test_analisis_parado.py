@@ -2590,5 +2590,8 @@ def test_la_fila_del_vendedor_abre_QUE_vendio_no_solo_el_grupo():
     assert "Qué vendió" in t
     assert "{% for v in r.vendido %}" in t
     assert "v.subcategoria" in t and "v.color" in t
-    # y los kilos que no puntúan, con el motivo
-    assert "nocuenta" in t and "no suma" in t
+    # ⚠ SÓLO lo que puntúa (dueña 25/08/2026: "lo que no cuenta para puntos ni
+    # lo muestres"). La consulta ya filtra por la bandera; acá se fija que la
+    # plantilla no vuelva a dibujar los que no suman.
+    cuerpo = re.sub(r"\{#.*?#\}", "", t, flags=re.S)   # sin los comentarios
+    assert "no suma" not in cuerpo and "nocuenta" not in cuerpo
