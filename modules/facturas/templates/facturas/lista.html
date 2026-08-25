@@ -420,7 +420,7 @@
            pocas y así no hay que pelear con la especificidad del hover. #}
         <tr class="fila">
         {% endif %}
-          <td class="px-2 py-1.5 font-mono truncate numf-cell" style="white-space: nowrap;"
+          <td class="px-2 py-1.5 font-mono overflow-hidden numf-cell" style="white-space: nowrap;"
               data-id="{{ f.id_factura }}"
               data-numf="{{ f.numf or '' }}"
               data-numf-completo="{{ f.numf_completo or '' }}">
