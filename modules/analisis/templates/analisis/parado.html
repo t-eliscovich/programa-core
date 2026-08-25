@@ -66,18 +66,22 @@ th.ord.desc::after{content:" ↓";opacity:1}
    que se piensa es que el programa se rompió.
    ⚠ Las dos razones van separadas a propósito: la reciente se arregla sola con
    el tiempo, la pedida cuando salga el pedido. #}
-{% if estado.nuevas or estado.pedidas %}
+{% if estado.nuevas or estado.produciendo or estado.pedidas %}
   <br>
   Afuera de la lista:
   {%- if estado.nuevas %}
     {{ estado.nuevas }} tela{{ 's' if estado.nuevas != 1 }} × color
     ({{ estado.nuevas_kg | num_es(0) }} kg) que se hicieron hace menos de
-    {{ dias_quieto }} días{{ ' · ' if estado.pedidas else '.' }}
+    {{ dias_quieto }} días ·
+  {%- endif %}
+  {%- if estado.produciendo %}
+    {{ estado.produciendo }} ({{ estado.produciendo_kg | num_es(0) }} kg) que se
+    siguen tejiendo ·
   {%- endif %}
   {%- if estado.pedidas %}
     {{ estado.pedidas }} ({{ estado.pedidas_kg | num_es(0) }} kg) con un pedido
-    esperando.
-  {%- endif %}
+    esperando
+  {%- endif %}.
 {% endif %}
 </p>
 

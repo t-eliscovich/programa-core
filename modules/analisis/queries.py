@@ -124,6 +124,16 @@ def items(conn=None) -> list[dict]:
          -- lista ni en la competencia, y vuelve sola el día que la tela cumpla
          -- los días o el pedido salga.
          WHERE NOT c.fuera
+           -- ⭐ Y tampoco las que están en CERO (dueña 25/08/2026: "sacar las
+           -- que están en 0 también"): sin kilos en bodega y sin un kilo
+           -- vendido no hay nada que ofrecer ni nada que mostrar — la tela se
+           -- fue de la bodega por un ajuste, un traslado o un recuento.
+           --
+           -- ⚠ La que se vendió SÍ se queda, aunque hoy tenga 0 kg: ésa es la
+           -- que hay que ver ("si empezamos a venderlas, que no se nos vayan de
+           -- la lista"), y es la única forma de saber si la competencia
+           -- funcionó.
+           AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0)
          ORDER BY COALESCE(f.stock_kg, 0) DESC, c.subcategoria, c.color
         """, conn=conn
     )
@@ -720,7 +730,9 @@ def actualizar() -> dict:
     todas = asinfo_parado.parados()
     lla = asinfo_parado.llamados()
 
-    # ⭐ NI LA RECIÉN HECHA NI LA PEDIDA SON TELA PARADA (dueña 25/08/2026).
+    # ⭐ NI LA RECIÉN HECHA, NI LA PEDIDA, NI LA QUE SE SIGUE TEJIENDO SON TELA
+    # PARADA (dueña 25/08/2026: "no es saldo si se seguía produciendo ese color
+    # x tela").
     # Asinfo ya las viene marcando; acá se parten en dos y cada mitad tiene su
     # destino: las que entran, a la lista; las que no, apagadas en la cohorte.
     # Las dos razones se cuentan por separado — en la pantalla no significan lo
@@ -731,7 +743,8 @@ def actualizar() -> dict:
     # tiene que quedarse: vender lo parado es exactamente lo que la competencia
     # premia. La que se saca es la que no debió entrar nunca.
     fuera = [p for p in todas
-             if not p.get("entra", True) and (p.get("nueva") or p.get("pedida"))]
+             if not p.get("entra", True)
+             and (p.get("nueva") or p.get("pedida") or p.get("produciendo"))]
 
     def kg_en_bodega(fs) -> float:
         """Los kilos que esas telas tienen HOY en la bodega.
@@ -744,6 +757,7 @@ def actualizar() -> dict:
 
     nuevas = [p for p in fuera if p.get("nueva")]
     pedidas = [p for p in fuera if p.get("pedida")]
+    produciendo = [p for p in fuera if p.get("produciendo")]
 
     # ⭐ TODO se cuenta desde la LARGADA, no desde que cada fila entró a la
     # lista. Dueña 18/08/2026: "hace todo desde 25/08".
@@ -784,7 +798,8 @@ def actualizar() -> dict:
                       AND (motivo IS NULL
                            OR (%s AND motivo = 'parado'))""",
                 (p.get("motivo"), p["subcategoria"], p["color"],
-                 bool(p.get("nueva") or p.get("pedida"))), conn=conn)
+                 bool(p.get("nueva") or p.get("pedida")
+                      or p.get("produciendo"))), conn=conn)
             # ⭐ Y se vuelve a encender la que había quedado afuera: cumplió
             # los días en bodega, o su pedido ya salió (o envejeció). Hoy sí
             # está parada.
@@ -962,17 +977,22 @@ def actualizar() -> dict:
             """UPDATE scintela.parado_refresh
                   SET actualizado = NOW(), items = %s, llamados = %s,
                       ok = TRUE, detalle = %s, nuevas = %s, nuevas_kg = %s,
-                      pedidas = %s, pedidas_kg = %s
+                      pedidas = %s, pedidas_kg = %s,
+                      produciendo = %s, produciendo_kg = %s
                 WHERE id = 1""",
             (len(marcado), len(lla),
-             f"{len(par)} parados hoy · {len(lla)} candidatos "
-             f"· {len(nuevas)} recientes y {len(pedidas)} pedidas afuera",
+             f"{len(par)} parados hoy · {len(lla)} candidatos · afuera "
+             f"{len(nuevas)} recientes, {len(produciendo)} en producción "
+             f"y {len(pedidas)} pedidas",
              len(nuevas), kg_en_bodega(nuevas),
-             len(pedidas), kg_en_bodega(pedidas)), conn=conn)
+             len(pedidas), kg_en_bodega(pedidas),
+             len(produciendo), kg_en_bodega(produciendo)), conn=conn)
 
     return {"items": len(marcado), "llamados": len(lla), "parados_hoy": len(par),
             "nuevas": len(nuevas), "nuevas_kg": kg_en_bodega(nuevas),
-            "pedidas": len(pedidas), "pedidas_kg": kg_en_bodega(pedidas)}
+            "pedidas": len(pedidas), "pedidas_kg": kg_en_bodega(pedidas),
+            "produciendo": len(produciendo),
+            "produciendo_kg": kg_en_bodega(produciendo)}
 
 
 def _fecha(v):

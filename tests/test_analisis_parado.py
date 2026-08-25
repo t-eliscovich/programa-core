@@ -2866,7 +2866,8 @@ def test_la_pantalla_dice_cuanta_tela_quedo_afuera_y_por_que():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "{% if estado.nuevas or estado.pedidas %}" in html
+    assert ("{% if estado.nuevas or estado.produciendo or estado.pedidas %}"
+            in html)
     assert "{{ estado.nuevas_kg | num_es(0) }}" in html
     assert "{{ estado.pedidas_kg | num_es(0) }}" in html
     assert "{{ dias_quieto }} días" in html
@@ -3070,3 +3071,72 @@ def test_sin_dato_de_asinfo_no_hay_tope(monkeypatch):
         monkeypatch, parados=[item], cohorte=_cohorte("Toper", "COA"),
         ventas=[_venta("Toper", "COA", 400)])
     assert filas == [("COA", 400.0, True)]
+
+
+def test_la_tela_que_se_sigue_tejiendo_no_es_un_saldo():
+    """Dueña 25/08/2026, sobre Jersey 3 BLA —kilos viejos de blanco en bodega y
+    una orden del 17/07—: *"pero no es saldo si se seguía produciendo ese color x
+    tela"*. Que haya kilos viejos no lo convierte en saldo si la fábrica sigue
+    tejiéndolo: es un producto vivo, y pagar puntos por venderlo es pagar por una
+    venta normal."""
+    assert "NOT " + asinfo_parado._EN_PRODUCCION in asinfo_parado._ES_PARADO
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert "FROM orden_fabricacion o" in sql
+    assert (f"DATEADD(day, -{asinfo_parado.DIAS_PRODUCCION}, GETDATE())"
+            in asinfo_parado._EN_PRODUCCION)
+
+
+def test_la_orden_abandonada_no_cuenta_como_produccion():
+    """⚠ `estado_produccion = 0` no es "programada", es ABANDONADA: 894 órdenes
+    que cuelgan de un padre también en 0 y promedian 660 días. Contarlas dejaría
+    media fábrica marcada como viva."""
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert "o.estado_produccion <> 0" in sql
+
+
+def test_la_tela_sin_ninguna_orden_sigue_compitiendo():
+    """El mismo NULL que en los pedidos: sin ISNULL, la tela que nunca se tejió
+    contesta NULL y arrastra toda la regla."""
+    assert "ISNULL(fab.ultima_orden, '19000101')" in asinfo_parado._EN_PRODUCCION
+
+
+def test_el_refresco_apaga_tambien_la_que_se_sigue_tejiendo(monkeypatch):
+    db, res = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Jersey 3", "color": "BLA", "stock_kg": 0,
+                  "stock_bodega": 0, "motivo": "segunda", "nueva": False,
+                  "pedida": False, "produciendo": True, "entra": False}],
+        cohorte=[{"subcategoria": "Jersey 3", "color": "BLA",
+                  "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}])
+    assert [p for _, p in db.sql_con("SET fuera = TRUE")] == [("Jersey 3", "BLA")]
+    assert res["produciendo"] == 1 and res["nuevas"] == 0
+
+
+def test_la_pantalla_cuenta_los_tres_motivos_por_separado():
+    """No significan lo mismo: la reciente vuelve sola con el tiempo, la que se
+    teje cuando la fábrica pare, la pedida cuando salga el pedido."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "{% if estado.nuevas or estado.produciendo or estado.pedidas %}" in html
+    assert "{{ estado.produciendo_kg | num_es(0) }}" in html
+    assert "que se\n    siguen tejiendo" in html
+
+
+def test_la_fila_en_cero_que_nunca_se_movio_no_se_muestra(monkeypatch):
+    """Dueña 25/08/2026: *"sacar las que están en 0 también"*. Sin kilos en
+    bodega y sin un kilo vendido no hay nada que ofrecer ni nada que mostrar: la
+    tela se fue por un ajuste, un traslado o un recuento.
+
+    ⚠ Pero la que se VENDIÓ se queda aunque esté en 0: es la que muestra que la
+    competencia funcionó."""
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.items()
+    assert ("AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0)"
+            in visto["sql"])

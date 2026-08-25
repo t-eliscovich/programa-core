@@ -104,6 +104,14 @@ DIAS_QUIETO = 90
 # significa que quedó ahí, y entonces sí es tela para la competencia.
 DIAS_PEDIDO = 90
 
+# ⭐ Y cuánto hace que no se teje. Dueña 25/08/2026, sobre Jersey 3 BLA —que
+# tenía kilos viejos en la bodega y una orden del 17/07—: *"pero no es saldo si
+# se seguía produciendo ese color x tela"*. Tiene razón y es más fuerte que las
+# otras dos reglas: una tela que la fábrica sigue haciendo es un producto vivo,
+# no un saldo. Nadie necesita una competencia para colocar lo que se está
+# tejiendo, y pagar puntos por eso es pagar por una venta normal.
+DIAS_PRODUCCION = 90
+
 # Nombre del vendedor en Asinfo → código de `scintela.vendedor`. En Asinfo el
 # vendedor viene con nombre y apellido; en Programa Core la cartera se reparte
 # por estas 3 letras (`cliente.vend`). ⚠ Los nombres vienen con espacios al
@@ -321,6 +329,21 @@ ped AS (
     JOIN producto p ON p.id_producto = v.id_producto
     GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
 ),
+-- ⭐ LO QUE SE SIGUE TEJIENDO. La última orden de fabricación de cada tela ×
+-- color que entra a la bodega de terminado.
+--
+-- ⚠ `estado_produccion = 0` NO es "programada", es ABANDONADA: son 894 órdenes
+-- que cuelgan de un padre también en 0 y promedian 660 días (medido por el
+-- módulo de pedidos). Contarlas marcaría como viva a media fábrica.
+fab AS (
+    SELECT p.nombre_subcategoria_producto AS subcategoria,
+           RIGHT(RTRIM(p.codigo), 3)      AS color,
+           MAX(CAST(o.fecha AS date))     AS ultima_orden
+    FROM orden_fabricacion o
+    JOIN producto p ON p.id_producto = o.id_producto
+    WHERE o.id_bodega = {BODEGA_TERMINADO} AND o.estado_produccion <> 0
+    GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
+),
 -- ⭐ EL UNIVERSO de la consulta. No alcanza con "lo que hay hoy en la bodega":
 -- la tela que se vendió entera no tiene stock y aun así hay que poder decir si
 -- estaba parada o era producción fresca — es justo la que se llevó los puntos.
@@ -382,9 +405,17 @@ _QUIETO = (f"(hist.desde > DATEADD(day, -{DIAS_QUIETO}, GETDATE())"
 _PEDIDA = (f"(ISNULL(ped.ultimo_pedido, '19000101') >= "
            f"DATEADD(day, -{DIAS_PEDIDO}, GETDATE()))")
 
+# ⭐ EN PRODUCCIÓN: la fábrica la tejió en los últimos {DIAS_PRODUCCION} días.
+# No es un saldo, es un producto vivo — el mismo ISNULL que en `_PEDIDA`, y por
+# el mismo motivo: sin él, la tela que nunca se tejió contesta NULL y arrastra
+# toda la regla.
+_EN_PRODUCCION = (f"(ISNULL(fab.ultima_orden, '19000101') >= "
+                  f"DATEADD(day, -{DIAS_PRODUCCION}, GETDATE()))")
+
 _SIN_VENTA = (f"(ISNULL(stk.stock_kg, 0) >= {MIN_KG} "
               f"AND ISNULL(ven.kg_12m, 0) < 1)")
-_ES_PARADO = f"({_SIN_VENTA} AND {_QUIETO} AND NOT {_PEDIDA})"
+_ES_PARADO = (f"({_SIN_VENTA} AND {_QUIETO}"
+              f" AND NOT {_PEDIDA} AND NOT {_EN_PRODUCCION})")
 
 # ⚠ Las dos razones por las que una tela puede no ser tela parada. Salen
 # marcadas —y no filtradas en el WHERE— porque el refresco necesita verlas para
@@ -400,6 +431,10 @@ _ES_PARADO = f"({_SIN_VENTA} AND {_QUIETO} AND NOT {_PEDIDA})"
 # lo tenemos que sacar").
 _ES_NUEVA = f"(CASE WHEN NOT {_QUIETO} THEN 1 ELSE 0 END)"
 _ES_PEDIDA = f"(CASE WHEN {_QUIETO} AND {_PEDIDA} THEN 1 ELSE 0 END)"
+# ⚠ El orden importa sólo para no contar dos veces en la pantalla: la que se
+# sigue tejiendo Y además es reciente se cuenta como reciente.
+_ES_PRODUCIENDO = (f"(CASE WHEN {_QUIETO} AND NOT {_PEDIDA} "
+                   f"AND {_EN_PRODUCCION} THEN 1 ELSE 0 END)")
 
 SQL_PARADOS = _STOCK + _CALIDAD + _QUIETUD + f"""
 SELECT base.subcategoria, base.color, stk.categoria,
@@ -434,6 +469,8 @@ SELECT base.subcategoria, base.color, stk.categoria,
        -- `stock_kg` da 0 y el refresco las deja afuera.
        {_ES_NUEVA}                                  AS nueva,
        {_ES_PEDIDA}                                 AS pedida,
+       {_ES_PRODUCIENDO}                            AS produciendo,
+       fab.ultima_orden,
        ISNULL(antes.kg_antes, 0)                    AS kg_antes,
        ped.ultimo_pedido,
        -- Lo que hay en la bodega, sin importar por qué motivo entró ni si
@@ -452,6 +489,8 @@ LEFT JOIN antes
   ON antes.subcategoria = base.subcategoria AND antes.color = base.color
 LEFT JOIN ped
   ON ped.subcategoria = base.subcategoria AND ped.color = base.color
+LEFT JOIN fab
+  ON fab.subcategoria = base.subcategoria AND fab.color = base.color
 -- ⚠ SIN WHERE: la consulta contesta por toda la bodega y no sólo por lo que
 -- entra a la lista. El refresco necesita las banderas de la tela que ya se
 -- vendió para poder sacarle los puntos, y esa tela no cumple ningún filtro de
@@ -624,6 +663,8 @@ def parados() -> list[dict]:
                existe. No es tela estancada, es tela que recién se hizo.
     `pedida` — tiene un pedido de menos de `DIAS_PEDIDO` días esperando. Tampoco
                es un saldo: ya tiene dueño.
+    `produciendo` — la fábrica la tejió en los últimos `DIAS_PRODUCCION` días.
+               Es un producto vivo, no un saldo.
     `entra`  — si va a la lista. Una tela nueva o pedida CON kilos de segunda
                entra por esos kilos (`motivo = 'segunda'`); sin ellos no entra, y
                sale con `stock_kg` en 0 porque no tiene un kilo que mostrar.
@@ -636,6 +677,7 @@ def parados() -> list[dict]:
     for f in filas:
         f["nueva"] = bool(int(f.get("nueva") or 0))
         f["pedida"] = bool(int(f.get("pedida") or 0))
+        f["produciendo"] = bool(int(f.get("produciendo") or 0))
         f["entra"] = float(f.get("stock_kg") or 0) > 0
     return filas
 
