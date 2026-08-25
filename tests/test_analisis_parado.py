@@ -1992,13 +1992,21 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     """Dueña 18/08/2026: "no asi. no es eficiente. tiene que haber columna PRI
     SEG y que se pueda filtrar". Una píldora con kilos al costado no se ordena
     ni se filtra; una columna sí, y se lee en vertical."""
+    from pathlib import Path
     todo = " ".join(_html_parado().split())
     # sólo la tabla principal: el resumen por grupo SÍ tiene una columna con
     # los kilos de segunda de cada grupo, y ahí está bien
     html = todo[todo.index('<table id="tabla">'):]
     assert ">Categoría</th>" in html
     assert ">De 2ª</th>" not in html
-    assert 'class="q pri">PRI' in html and 'class="q seg">SEG' in html
+    # ⚠ Desde el 25/08/2026 la píldora se dibuja en el macro compartido —la usan
+    # la lista, los vendidos y la hoja impresa—, así que el markup se chequea
+    # ahí; en la tabla lo que tiene que estar es la COLUMNA que la muestra.
+    assert "{% set calidad %}{{ fm.cal(f) }}{% endset %}" in html
+    assert 'class="cal">{{ calidad }}' in html
+    macro = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "_forma.html").read_text(encoding="utf-8")
+    assert 'class="q pri">PRI' in macro and 'class="q seg">SEG' in macro
     # ⚠ Se chequea la IDEA, no la frase: los textos se acortaron el 20/08/2026
     # (dueña: "todo muy wordy") y un test pegado a la redacción obliga a elegir
     # entre el test y la copia. Lo que no puede faltar es que la bajada explique
@@ -3163,18 +3171,62 @@ def test_la_tabla_de_vendidos_dice_dia_y_vendedor(monkeypatch):
 
 
 def test_la_pantalla_dibuja_la_tabla_de_vendidos():
+    """Dueña 25/08/2026: *"mantené el orden y formato de las de arriba, podés
+    reemplazar clientes por vendedor"*. Dos tablas que muestran lo mismo con
+    otro orden se leen como dos cosas distintas: las columnas van iguales y en
+    el mismo orden, y sólo cambian las dos últimas, que acá significan otra cosa
+    (Clientes → Vendedor, Última venta → Día)."""
     import inspect as _i
+    import re as _re
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
     assert "<h2>Vendidos</h2>" in html
-    for col in ("Día", "Vendedor", "Grupo", "Tela", "Color", "Calidad"):
-        assert f"<th>{col}</th>" in html or f'<th class="n">{col}</th>' in html
-    assert "{{ v.fecha | fecha_es }}" in html and "{{ v.vendedor }}" in html
-    # la forma va con el MISMO macro que la lista de arriba: dos copias del
-    # mismo `if` se despegan a la primera corrección
-    assert "<th>Forma</th>" in html
+
+    def cabeceras(tabla: str) -> list[str]:
+        trozo = html[html.index(tabla):]
+        cab = trozo[trozo.index("<thead>"):trozo.index("</thead>")]
+        # ⚠ `<th(?:\s[^>]*)?>` y no `<th[^>]*>`: el segundo matchea `<thead>`
+        # y la primera columna sale con media etiqueta adentro.
+        return [" ".join(t.split())
+                for t in _re.findall(r"<th(?:\s[^>]*)?>(.*?)</th>", cab, _re.S)]
+
+    arriba = cabeceras('<table id="tabla">')
+    abajo = cabeceras('<table class="resumen" id="vendidos">')
+    assert len(arriba) == len(abajo), "las dos tablas tienen las mismas columnas"
+    assert arriba[:5] == abajo[:5], (
+        f"el orden de las cinco primeras no coincide: {arriba[:5]} vs {abajo[:5]}")
+    assert abajo[5:8] == ["Kg", "Vale", "Puntos"]
+    assert abajo[8:] == ["Vendedor", "Día"], "las dos últimas son las que cambian"
+
+    # el día con el mismo formato que la fecha de arriba, y el vendedor
+    assert "{{ v.fecha.strftime('%d/%m/%y') }}" in html
+    assert "{{ v.vendedor }}" in html
+    # forma y calidad salen de los MISMOS macros que la lista de arriba
     assert html.count('<td class="forma">{{ fm.forma(') == 2
+    assert "{{ fm.cal(v) }}" in html
     # las dos pantallas que dibujan esta plantilla tienen que pasarle la tabla
-    fuente = _i.getsource(views)
-    assert fuente.count("vendidos=queries.vendidos(") == 2
+    assert _i.getsource(views).count("vendidos=queries.vendidos(") == 2
+
+
+def test_el_renglon_vendido_lleva_a_su_tela_arriba():
+    """Dueña 25/08/2026: *"si clickeo en poliester me muestre alemania, no otra
+    tabla más abajo"*. Un segundo detalle abajo sería la misma tela contada en
+    dos lugares de la misma pantalla; lo que hace falta es ir a la fila que ya
+    existe.
+
+    ⚠ Y si un filtro la tiene escondida, se limpian los filtros: llevar a
+    alguien a una fila invisible es peor que no llevarlo."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert 'onclick="verTela(this)"' in html
+    assert "function verTela(tr){" in html
+    # busca por tela Y color: la tela sola llevaría al primer color de la lista
+    assert "x.dataset.sub === tr.dataset.sub && x.dataset.color === tr.dataset.color" in html
+    assert 'data-color="{{ f.color }}"' in html, (
+        "la fila de arriba tiene que poder encontrarse por su color")
+    assert "fila.offsetParent === null" in html, "el caso de la fila filtrada"
+    assert "fila.scrollIntoView" in html and "marcada" in html
+    assert "tr.item.marcada>td{background:" in html, (
+        "sin la marca, el salto deja buscando cuál de las 700 filas era")

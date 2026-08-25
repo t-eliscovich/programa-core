@@ -42,6 +42,10 @@ td.forma{white-space:nowrap}
   /* Con ancho fijo, un nombre largo tiene que cortarse en vez de empujar. */
   #tabla td.tela{overflow:hidden;text-overflow:ellipsis}
 }
+/* La fila a la que se acaba de saltar: se apaga sola en dos segundos. Sin
+   esto, el salto deja al que mira buscando cuál de las 700 filas era. */
+tr.item.marcada>td{background:#fef3c7;transition:background .5s}
+#vendidos tr.item{cursor:pointer}
 th.ord{cursor:pointer;user-select:none;white-space:nowrap}
 th.ord:hover{color:var(--t)}
 th.ord::after{content:" ⇅";opacity:.35;font-size:10px}
@@ -242,6 +246,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   <tr class="item" onclick="abrir(this)"
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
+      data-color="{{ f.color }}"
       data-cal="{% if f.cal_fila is defined %}{{ f.cal_fila or 'PRI SEG' }}{% elif f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
       {# INTELA entra al filtro como uno más: sus clientes son los que no
          tienen vend_pc. Sin esto no había forma de aislar el mostrador, que es
@@ -261,7 +266,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
     {# La calidad de ESTA línea: cuando un color viene de primera y de segunda
        la fila se abrió en dos, y cada una dice la suya (dueña 25/08/2026: "pri
        y seg las sigo viendo juntas. tienen que ser por separado"). #}
-    {% set calidad %}{% if f.cal_fila is defined %}{% if f.cal_fila == 'SEG' %}<span class="q seg">SEG</span>{% elif f.cal_fila == 'PRI' %}<span class="q pri">PRI</span>{% else %}<span class="g">—</span>{% endif %}{% elif f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>{% else %}<span class="q pri">PRI</span>{% endif %}{% endset %}
+    {% set calidad %}{{ fm.cal(f) }}{% endset %}
     <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}<span class="qm">{{ calidad }}</span></td>
     {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. El código es el que
        está en el producto y en Asinfo; el nombre es el que usa el cliente por
@@ -353,25 +358,34 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
    ⚠ Mismas columnas que la lista de arriba, para leerlas juntas. #}
 <h2>Vendidos</h2>
 <p class="sub">Lo que salió de la lista desde que arrancó la competencia. Sólo
-lo que suma puntos.</p>
+lo que suma puntos. Toque una fila para ver esa tela arriba.</p>
 {% if vendidos %}
-<div class="caja"><table class="resumen">
-<thead><tr><th>Grupo</th><th>Tela</th><th>Color</th><th>Forma</th>
-<th>Calidad</th><th>Día</th><th>Vendedor</th>
-<th class="n">Kg</th><th class="n">Puntos</th></tr></thead>
+{# ⭐ Las MISMAS columnas que la lista de arriba y en el mismo orden (dueña
+   25/08/2026: "mantené el orden y formato de las de arriba, podés reemplazar
+   clientes por vendedor"). Dos tablas que muestran lo mismo con otro orden se
+   leen como dos cosas distintas. Cambian sólo las dos últimas, que son las que
+   acá significan otra cosa: Clientes → Vendedor y Última venta → Día. #}
+<div class="caja"><table class="resumen" id="vendidos">
+<thead><tr>
+<th class="opt">Grupo</th><th>Tela</th><th>Color</th><th class="forma">Forma</th>
+<th class="cal">Categoría</th><th class="n">Kg</th><th class="n">Vale</th>
+<th class="n opt">Puntos</th><th>Vendedor</th><th class="n opt">Día</th>
+</tr></thead>
 <tbody>
 {% for v in vendidos %}
-  <tr>
-    <td>{{ v.categoria or '—' }}</td>
-    <td class="tela">{{ v.subcategoria }}</td>
-    <td><b>{{ v.color }}</b>{% if v.color_nombre %}
-      <span class="mini">{{ v.color_nombre }}</span>{% endif %}</td>
+  <tr class="item" onclick="verTela(this)"
+      data-sub="{{ v.subcategoria }}" data-color="{{ v.color }}">
+    <td class="g opt">{{ v.categoria or '—' }}</td>
+    <td class="tela">{{ v.subcategoria }}<span class="qm">{{ fm.cal(v) }}</span></td>
+    <td class="col2"><b>{{ v.color }}</b>{% if v.color_nombre %}
+      <span class="g">{{ v.color_nombre }}</span>{% endif %}</td>
     <td class="forma">{{ fm.forma(v) }}</td>
-    <td>{{ v.calidad or 'PRI' }}</td>
-    <td>{{ v.fecha | fecha_es }}</td>
+    <td class="cal">{{ fm.cal(v) }}</td>
+    <td class="n">{{ v.kg | num_es(1) if v.kg < 1 else v.kg | num_es(0) }}</td>
+    <td class="n vale"><span class="pt p{{ v.puntos }}">{{ v.puntos }} × kg</span></td>
+    <td class="n pts opt">{{ v.puntos_fila | num_es(0) }}</td>
     <td>{{ v.vendedor }}</td>
-    <td class="n">{{ v.kg | num_es(0) }}</td>
-    <td class="n pts">{{ v.puntos_fila | num_es(0) }}</td>
+    <td class="g n opt">{{ v.fecha.strftime('%d/%m/%y') }}</td>
   </tr>
 {% endfor %}
 </tbody>
@@ -478,6 +492,30 @@ function ordenar(th){
 document.addEventListener('DOMContentLoaded', () =>
   document.querySelectorAll('#tabla th.ord').forEach(th =>
     th.addEventListener('click', () => ordenar(th))));
+
+// ⭐ De un renglón de VENDIDOS a su tela en la lista de arriba (dueña
+// 25/08/2026: "si clickeo en poliester me muestre alemania, no otra tabla más
+// abajo"). Abrir un segundo detalle acá abajo sería tener la misma tela contada
+// en dos lugares de la misma pantalla; lo que hace falta es ir a la fila que ya
+// existe.
+//
+// ⚠ Si un filtro la tiene escondida, primero se limpian los filtros: llevar a
+// alguien a una fila invisible es peor que no llevarlo.
+function verTela(tr){
+  const fila = [...document.querySelectorAll('#tabla tr.item')].find(
+    x => x.dataset.sub === tr.dataset.sub && x.dataset.color === tr.dataset.color);
+  if (!fila) return;
+  if (fila.offsetParent === null) {
+    ['q', 'grupo', 'subgrupo', 'calidad', 'vend'].forEach(id => {
+      const e = document.getElementById(id); if (e) e.value = '';
+    });
+    filtrar();
+  }
+  if (!fila.nextElementSibling.classList.contains('abierta')) abrir(fila);
+  fila.scrollIntoView({behavior: 'smooth', block: 'center'});
+  fila.classList.add('marcada');
+  setTimeout(() => fila.classList.remove('marcada'), 2000);
+}
 
 function abrir(tr){
   const d = tr.nextElementSibling, abierta = d.classList.contains('abierta');

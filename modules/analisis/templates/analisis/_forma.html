@@ -1,4 +1,9 @@
-{# La FORMA de una tela × color: tubular, abierta, o las dos con sus kilos.
+{# Las dos PÍLDORAS de una fila: la FORMA (tubular/abierta) y la CALIDAD
+   (PRI/SEG). Viven juntas porque se dibujan juntas —en la lista de saldos, en
+   la de vendidos y en la hoja impresa— y porque el motivo de que sean un macro
+   es el mismo: dos copias del mismo `if` se despegan a la primera corrección.
+
+   La FORMA de una tela × color: tubular, abierta, o las dos con sus kilos.
 
    ⭐ Dueña 25/08/2026: *"si hay tubular y abierta, quiero saber cuantas de
    tubular y cuantos de abierta. no es lo mismo"*. Cuando hay una sola forma
@@ -26,5 +31,30 @@
   <span class="fm">ABI</span>
 {%- else -%}
   <span class="g">—</span>
+{%- endif -%}
+{%- endmacro %}
+
+{# La CALIDAD de la fila. Tres casos, y el orden importa:
+
+   · la línea ya viene abierta por calidad (`cal_fila`) — dice la suya;
+   · la fila tiene kilos de las dos — muestra las dos;
+   · o tiene una sola, y por defecto es PRI (lo que el lote no marca es
+     primera).
+
+   ⚠ Un renglón de VENDIDOS siempre trae `calidad`: es el atributo de la línea
+   de factura, no del lote. Cae en el primer caso.
+#}
+{% macro cal(f) -%}
+{%- set c = f.cal_fila if f.cal_fila is defined else f.calidad if f.calidad is defined else none -%}
+{%- if c is not none -%}
+  {%- if c == 'SEG' -%}<span class="q seg">SEG</span>
+  {%- elif c == 'PRI' -%}<span class="q pri">PRI</span>
+  {%- else -%}<span class="g">—</span>{%- endif -%}
+{%- elif f.kg_segunda and f.kg_primera -%}
+  <span class="q pri">PRI</span><span class="q seg">SEG</span>
+{%- elif f.kg_segunda -%}
+  <span class="q seg">SEG</span>
+{%- else -%}
+  <span class="q pri">PRI</span>
 {%- endif -%}
 {%- endmacro %}
