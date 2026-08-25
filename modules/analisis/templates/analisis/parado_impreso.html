@@ -1,0 +1,88 @@
+{# La lista de saldos para IMPRIMIR: una fila por tela × color.
+
+   ⭐ Dueña 25/08/2026: *"quiero una lista en pdf para imprimir todas las
+   telas"*, y eligió tela y color, no sólo tela.
+
+   ⚠ Página propia y no `@media print` sobre la pantalla: la pantalla es una
+   tabla de nueve columnas con filtros, buscador y filas que se abren, y en
+   papel eso no es una lista — es una captura de una herramienta. Acá van seis
+   columnas y nada más. El PDF sale de ESTE mismo HTML (ver `pdf_motor`), así
+   que lo que se ve en pantalla al imprimir es exactamente el archivo.
+#}
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Saldos, tela por tela</title>
+<style>
+*{box-sizing:border-box}
+body{font:11px/1.35 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+color:#111827;margin:0;padding:14px}
+h1{font-size:17px;font-weight:600;letter-spacing:-.02em;margin:0 0 3px}
+.sub{color:#6b7280;font-size:11px;margin:0 0 10px}
+table{width:100%;border-collapse:collapse}
+thead th{font-size:9px;font-weight:500;color:#6b7280;text-align:left;
+padding:0 6px 4px;border-bottom:1px solid #9ca3af;text-transform:none}
+td{padding:3px 6px;border-bottom:1px solid #eceef1}
+.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.g{color:#6b7280}
+/* La tela se escribe UNA vez por bloque: repetirla en cada renglón llena la
+   hoja de la misma palabra y esconde dónde empieza la siguiente. */
+tr.primera td{border-top:1px solid #d1d5db}
+tr.primera td.tela{font-weight:600}
+td.tela{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q{font-size:9px;font-weight:600;border-radius:3px;padding:0 4px}
+.q.seg{color:#854d0e;background:#fef3c7}
+.q.pri{color:#475569;background:#f1f5f9}
+tfoot td{border-top:1px solid #9ca3af;border-bottom:0;font-weight:600;padding-top:5px}
+/* ⚠ Los bloques de una tela no se parten entre dos hojas si entran enteros. */
+tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
+@page{margin:12mm;size:A4 portrait}
+@media print{body{padding:0}}
+</style>
+</head>
+<body>
+<h1>Saldos, tela por tela</h1>
+<p class="sub">{{ filas | length }} telas × color · {{ kg_total | num_es(0) }} kg ·
+{{ puntos_total | num_es(0) }} puntos en juego · un kilo vale 1, 4 o 10
+{% if estado.actualizado %}· datos de Asinfo al
+{{ estado.actualizado | hora_ec('%d/%m/%Y %H:%M') }}{% endif %}</p>
+
+<table>
+<thead><tr>
+  <th style="width:24%">Tela</th>
+  <th style="width:7%">Color</th>
+  <th style="width:18%">Nombre del color</th>
+  <th style="width:9%">Forma</th>
+  <th style="width:9%">Categoría</th>
+  <th class="n" style="width:12%">Kg en saldo</th>
+  <th class="n" style="width:10%">Vale</th>
+  <th class="n" style="width:14%">Puntos</th>
+</tr></thead>
+{% for tela, items in bloques %}
+<tbody class="tela-bloque">
+{% for f in items %}
+  <tr {% if loop.first %}class="primera"{% endif %}>
+    <td class="tela">{% if loop.first %}{{ tela }}{% endif %}</td>
+    <td><b>{{ f.color }}</b></td>
+    <td class="g">{{ f.color_nombre }}</td>
+    <td>{% if f.forma %}<span class="q pri">{{ f.forma }}</span>{% else %}<span class="g">—</span>{% endif %}</td>
+    <td>{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span>
+        <span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>
+        {% else %}<span class="q pri">PRI</span>{% endif %}</td>
+    <td class="n">{{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>
+    <td class="n">{{ f.puntos }} × kg</td>
+    <td class="n">{{ f.puntos_fila | num_es(0) }}</td>
+  </tr>
+{% endfor %}
+</tbody>
+{% endfor %}
+<tfoot><tr>
+  <td colspan="5">Total · {{ bloques | length }} telas</td>
+  <td class="n">{{ kg_total | num_es(0) }}</td>
+  <td></td>
+  <td class="n">{{ puntos_total | num_es(0) }}</td>
+</tr></tfoot>
+</table>
+</body>
+</html>

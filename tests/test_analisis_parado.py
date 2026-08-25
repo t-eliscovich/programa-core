@@ -10,6 +10,7 @@ Lo que se prueba es lo que se puede romper sin síntoma:
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 import pytest
@@ -1472,8 +1473,14 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     assert "@media (max-width: 380px)" in base
     assert "#tabla{font-size:11px}" in base
 
-    assert 'class="ord cal" data-i="3"' in parado, (
+    # ⚠ Se chequea la CLASE, no el número de columna: el 25/08/2026 entró la
+    # columna Forma antes que Categoría y el data-i corrió. Lo que importa es
+    # que el encabezado lleve `cal`, que es lo que lo esconde en el celular
+    # junto con sus celdas.
+    assert re.search(r'class="ord cal" data-i="\d+"', parado), (
         "el encabezado de Categoría no se esconde con su columna")
+    assert re.search(r'class="ord forma" data-i="\d+"', parado), (
+        "y la Forma tiene la suya")
     assert '<span class="qm">{{ calidad }}</span></td>' in parado
     # una sola vez se decide PRI/SEG: dos copias del if se despegan
     assert parado.count('<span class="q seg">SEG</span>') == 2, (
@@ -2345,3 +2352,89 @@ def test_hay_un_solo_numero_de_puntos_en_juego(monkeypatch):
     import inspect as _i
     fuente = _i.getsource(views.parado) + _i.getsource(views.mis_telas)
     assert fuente.count("bolsa=queries.bolsa_congelada()") == 2
+
+
+def test_la_lista_para_imprimir_va_por_tela_y_color(app, monkeypatch):
+    """⭐ Dueña 25/08/2026: "quiero una lista en pdf para imprimir todas las
+    telas", tela y color.
+
+    ⚠ En papel va ALFABÉTICA, no por puntos como la pantalla: en una hoja no se
+    filtra ni se busca, se busca con el dedo. Y los ítems sin kilos no van: son
+    los que ya se vendieron, que en la pantalla se quedan a propósito para ver
+    si la competencia funcionó, pero en una lista para salir a ofrecer sobran.
+    """
+    filas = [
+        {"subcategoria": "Zeta", "color": "NEG", "stock_kg": 100, "puntos": 10},
+        {"subcategoria": "Alfa", "color": "BLA", "stock_kg": 10, "puntos": 1},
+        {"subcategoria": "Alfa", "color": "ROJ", "stock_kg": 50, "puntos": 1},
+        {"subcategoria": "Alfa", "color": "VER", "stock_kg": 0, "puntos": 1},
+    ]
+    for f in filas:
+        f["puntos_fila"] = f["stock_kg"] * f["puntos"]
+    monkeypatch.setattr(views.queries, "items", lambda: filas)
+    monkeypatch.setattr(views.queries, "con_puntos", lambda f: f)
+    monkeypatch.setattr(views.queries, "estado", lambda: {})
+
+    with app.test_request_context():
+        d = views._hoja_saldos()
+
+    assert [t for t, _ in d["bloques"]] == ["Alfa", "Zeta"], "alfabética"
+    assert [f["color"] for f in d["bloques"][0][1]] == ["ROJ", "BLA"], (
+        "adentro de una tela, por kilos")
+    assert d["kg_total"] == 160 and d["puntos_total"] == 1060
+    assert all(float(f["stock_kg"]) > 0 for f in d["filas"]), (
+        "lo que ya no está en bodega no se sale a ofrecer")
+
+
+def test_el_pdf_de_saldos_sale_del_mismo_html_que_la_pantalla():
+    """Dos plantillas para el mismo papel divergen a la primera corrección que
+    se le hace a una sola. Y si el servidor no tiene navegador, el PDF avisa en
+    vez de romper — la pantalla de imprimir sigue andando."""
+    import inspect as _i
+    fuente = _i.getsource(views.saldos_imprimir_pdf)
+    assert 'render_template("analisis/parado_impreso.html"' in fuente
+    assert "pdf_motor.desde_html" in fuente
+    assert "SinMotor" in fuente and "503" in fuente
+    assert 'render_template("analisis/parado_impreso.html"' in _i.getsource(
+        views.saldos_imprimir), "la pantalla y el PDF, el mismo template"
+
+
+def test_la_lista_impresa_la_pueden_ver_los_vendedores():
+    """Cuelga de /analisis/competencia, el prefijo que tienen abierto. No lleva
+    un solo cliente adentro: son telas, colores y kilos de la fábrica."""
+    from scope_vendedor import PREFIJOS_PERMITIDOS, _path_permitido
+    for ruta in ("/analisis/competencia/telas/imprimir",
+                 "/analisis/competencia/telas/imprimir.pdf"):
+        assert _path_permitido(ruta, PREFIJOS_PERMITIDOS), ruta
+
+
+def test_la_forma_sale_del_lote_y_no_separa_los_kilos():
+    """⭐ Dueña 25/08/2026: "sumar tubular y abierta" y, enseguida, "agregar si
+    es tubular o abierta". Las dos cosas a la vez: los kilos siguen en UNA fila
+    por tela × color, y la fila dice de qué forma son.
+
+    ⚠ En Asinfo la forma es un atributo del LOTE y sus slots no siguen el
+    número del atributo: la calidad (atributo 2) está en `id_valor_atributo_2`
+    pero la forma (atributo 1) está en el `_3`, y el color en el `_1`. Por eso
+    se filtra por el CÓDIGO del valor: si mañana el slot cambia, la consulta da
+    0 en vez de confundir un color con una forma.
+    """
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert "t.codigo = 'TUB'" in sql and "t.codigo = 'ABI'" in sql
+    assert "valor_atributo t ON t.id_valor_atributo = l.id_valor_atributo_3" in sql
+    # los kilos de la fila NO se abren por forma: sigue habiendo un stock_kg
+    assert "AS kg_tubular" in sql and "AS kg_abierta" in sql
+    # Las dos agrupaciones —la del stock y la de la calidad— van por tela y
+    # color y nada más: ni el GROUP BY ni el SELECT abren la fila por forma.
+    for g in re.findall(r"GROUP BY [^)]*", sql):
+        assert "atributo" not in g and "codigo = 'TUB'" not in g, g
+
+
+def test_la_forma_se_resuelve_una_sola_vez_en_la_consulta():
+    """TUB, ABI, las dos o vacío. Se arma en el SQL y no en cada plantilla: la
+    pantalla y la hoja impresa tienen que decir lo mismo."""
+    import inspect as _i
+    fuente = " ".join(_i.getsource(queries.items).split())
+    assert "THEN 'TUB ABI'" in fuente
+    assert "THEN 'TUB'" in fuente and "THEN 'ABI'" in fuente
+    assert "AS forma" in fuente

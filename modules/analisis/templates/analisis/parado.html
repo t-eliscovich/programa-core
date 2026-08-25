@@ -14,6 +14,11 @@ td.col2 b{font-weight:600}
 td.col2 .g{font-size:12px;margin-left:6px}
 /* Lo que vale un kilo, con color: 10 ámbar, 4 azul, el resto gris. Es la única
    columna con color de la tabla — si se pinta otra, deja de saltar. */
+/* La forma va gris: es un dato de la ficha, no una decisión. El color de la
+   tabla está reservado para los puntos. */
+.fm{font-size:10px;font-weight:600;color:#475569;background:#f1f5f9;
+    border-radius:5px;padding:1px 5px;white-space:nowrap}
+td.forma{white-space:nowrap}
 .pt{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;
     font-weight:600;background:#f1f0ec;color:#5a5955}
 .p10{background:#fdf0d5;color:#8a5200}
@@ -27,11 +32,11 @@ td.col2 .g{font-size:12px;margin-left:6px}
    porcentajes se reparten entre las que quedan, que es justo lo que se busca. */
 @media (min-width:781px){
   #tabla{table-layout:fixed}
-  #tabla th:nth-child(1){width:9%}   #tabla th:nth-child(2){width:19%}
-  #tabla th:nth-child(3){width:16%}  #tabla th:nth-child(4){width:9%}
-  #tabla th:nth-child(5){width:11%}  #tabla th:nth-child(6){width:9%}
-  #tabla th:nth-child(7){width:9%}   #tabla th:nth-child(8){width:8%}
-  #tabla th:nth-child(9){width:10%}
+  #tabla th:nth-child(1){width:8%}   #tabla th:nth-child(2){width:18%}
+  #tabla th:nth-child(3){width:15%}  #tabla th:nth-child(4){width:8%}
+  #tabla th:nth-child(5){width:9%}   #tabla th:nth-child(6){width:10%}
+  #tabla th:nth-child(7){width:8%}   #tabla th:nth-child(8){width:8%}
+  #tabla th:nth-child(9){width:7%}   #tabla th:nth-child(10){width:9%}
   /* Con ancho fijo, un nombre largo tiene que cortarse en vez de empujar. */
   #tabla td.tela{overflow:hidden;text-overflow:ellipsis}
 }
@@ -150,6 +155,12 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   </select>
   <span class="sub" id="cuenta" style="margin:0"></span>
   <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
+  {# La lista entera para imprimir o bajar en PDF. Es la MISMA hoja: el PDF
+     sale de ese HTML, no de una segunda plantilla. #}
+  <a href="/analisis/competencia/telas/imprimir" target="_blank"
+     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">Imprimir la lista</a>
+  <a href="/analisis/competencia/telas/imprimir.pdf" target="_blank"
+     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">PDF</a>
   <a href="{{ '/analisis/competencia/mi-hoja' if mia else '/analisis/parado/clientes' }}"
      style="margin-left:auto;align-self:center;
      color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
@@ -166,19 +177,22 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 <th class="ord opt" data-i="0">Grupo</th>
 <th class="ord" data-i="1">Tela</th>
 <th class="ord" data-i="2">Color</th>
-<th class="ord cal" data-i="3">Categoría</th>
-<th class="ord n" data-i="4" data-num="1">Kg en saldo</th>
+{# ⭐ Dueña 25/08/2026: "agregar si es tubular o abierta". Es lo primero que
+   pregunta el cliente por teléfono, y hasta ahora no estaba en ningún lado. #}
+<th class="ord forma" data-i="3">Forma</th>
+<th class="ord cal" data-i="4">Categoría</th>
+<th class="ord n" data-i="5" data-num="1">Kg en saldo</th>
 {# ⭐ "Vale" queda VISIBLE en el celular y "Puntos" se esconde: la que decide a
    qué tela ir es cuánto vale un kilo; el total de la fila es la consecuencia y
    se puede sacar mirando los kilos de al lado. #}
-<th class="ord n" data-i="5" data-num="1">Vale</th>
-<th class="ord n opt" data-i="6" data-num="1">Puntos</th>
+<th class="ord n" data-i="6" data-num="1">Vale</th>
+<th class="ord n opt" data-i="7" data-num="1">Puntos</th>
 {# El "% del saldo" de UNA fila entre 734 es siempre 0,x% y no decide nada;
    el que sirve —el de la tela entera— ya está en el detalle que se abre al
    tocar la fila. Se va del cuadro para que las diez columnas entren en la
    caja en vez de desbordarse a la derecha. #}
-<th class="ord n" data-i="7" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
-<th class="ord n opt" data-i="8" data-num="1">Última venta</th>
+<th class="ord n" data-i="8" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
+<th class="ord n opt" data-i="9" data-num="1">Última venta</th>
 </tr></thead>
 <tbody>
 {% for f in filas %}
@@ -192,7 +206,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
          la mitad de las ventas de estas telas. #}
       data-vend="{{ (cand | map(attribute='vend_pc') | select | unique | list
                      + (['INTELA'] if cand | rejectattr('vend_pc') | list else [])) | join(' ') }}"
-      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~ f.color_nombre ~ ' ' ~
+      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~ f.color_nombre ~ ' ' ~ f.forma ~ ' ' ~
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
                        (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
@@ -215,6 +229,8 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
        PRI SEG y que se pueda filtrar".
        Una fila puede tener kilos de las dos —un parado con lotes mezclados—,
        así que hay tres valores y el filtro los toma por separado. #}
+    <td class="forma">{% if f.forma %}<span class="fm">{{ f.forma }}</span>
+      {% else %}<span class="g">—</span>{% endif %}</td>
     <td class="cal">{{ calidad }}</td>
     {# ⚠ Un ítem de 0,4 kg mostrado como "0" parece un error de la pantalla: la
        dueña preguntó por qué había cosas en 0 kg. Abajo de 1 kg va con decimal. #}
@@ -232,7 +248,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
     <td class="g n opt" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
       {{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
-  <tr class="det"><td colspan="9">
+  <tr class="det"><td colspan="10">
     <p class="sub" style="margin:10px 0 6px">
       <b>{{ f.subcategoria }}</b>: {{ f.kg_tela | num_es(0) }} kg en
       {{ f.colores_tela }} {{ 'color' if f.colores_tela == 1 else 'colores' }} ·

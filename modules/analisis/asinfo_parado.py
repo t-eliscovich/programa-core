@@ -208,11 +208,24 @@ cal AS (
     SELECT p.nombre_subcategoria_producto AS subcategoria,
            RIGHT(RTRIM(p.codigo), 3)      AS color,
            SUM(CASE WHEN v.codigo = 'SEG' THEN 0 ELSE lu.saldo END) AS kg_primera,
-           SUM(CASE WHEN v.codigo = 'SEG' THEN lu.saldo ELSE 0 END) AS kg_segunda
+           SUM(CASE WHEN v.codigo = 'SEG' THEN lu.saldo ELSE 0 END) AS kg_segunda,
+           -- ⭐ TUBULAR o ABIERTA (dueña 25/08/2026: "agregar si es tubular o
+           -- abierta"). Los kilos NO se separan —siguen sumados en una sola
+           -- fila— pero la hoja tiene que decir de qué forma es, que es lo
+           -- primero que pregunta el cliente por teléfono.
+           SUM(CASE WHEN t.codigo = 'TUB' THEN lu.saldo ELSE 0 END) AS kg_tubular,
+           SUM(CASE WHEN t.codigo = 'ABI' THEN lu.saldo ELSE 0 END) AS kg_abierta
     FROM lote_ult lu
     JOIN producto p ON p.id_producto = lu.id_producto
     JOIN lote l     ON l.id_lote     = lu.id_lote
     LEFT JOIN valor_atributo v ON v.id_valor_atributo = l.id_valor_atributo_2
+    -- ⚠ Los slots del LOTE no siguen el número del atributo: la calidad
+    -- (atributo 2) está en `id_valor_atributo_2`, pero la forma (atributo 1,
+    -- TUB/ABI) está en `id_valor_atributo_3` y el COLOR (atributo 3) en el
+    -- `_1`. Medido el 25/08/2026 sobre lotes de cinco telas. Por eso se filtra
+    -- por el CÓDIGO del valor y no por su id: si mañana el slot cambia, la
+    -- consulta deja de encontrarlo y da 0 — no confunde una cosa con otra.
+    LEFT JOIN valor_atributo t ON t.id_valor_atributo = l.id_valor_atributo_3
     WHERE lu.rn = 1 AND lu.saldo > 0
     GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
 )"""
@@ -240,6 +253,8 @@ SELECT stk.subcategoria, stk.color, stk.categoria,
        CASE WHEN {_ES_PARADO} THEN ISNULL(cal.kg_primera, 0)
             ELSE 0 END                              AS kg_primera,
        ISNULL(cal.kg_segunda, 0)                    AS kg_segunda,
+       ISNULL(cal.kg_tubular, 0)                    AS kg_tubular,
+       ISNULL(cal.kg_abierta, 0)                    AS kg_abierta,
        CASE WHEN {_ES_PARADO} THEN 'parado' ELSE 'segunda' END AS motivo
 FROM stk LEFT JOIN ven
   ON ven.subcategoria = stk.subcategoria AND ven.color = stk.color

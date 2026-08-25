@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, flash, g, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 import db
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
 from filters import today_ec
+from modules._lib import pdf_motor
 
 from . import queries
 
@@ -326,6 +337,70 @@ def mis_telas():
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
     )
+
+
+def _hoja_saldos() -> dict:
+    """Los datos de la lista impresa: una fila por tela × color, con stock.
+
+    ⭐ Dueña 25/08/2026: *"quiero una lista en pdf para imprimir todas las
+    telas"*, tela y color.
+
+    Va ordenada por TELA y adentro por kilos, y no por puntos como la pantalla:
+    en papel no se filtra ni se busca — se busca con el dedo, y para eso el
+    orden tiene que ser alfabético. La pantalla sigue ordenada por puntos, que
+    es donde sí se decide a qué ir.
+    """
+    filas = [f for f in queries.con_puntos(queries.items())
+             if float(f["stock_kg"] or 0) > 0]
+    filas.sort(key=lambda f: (f["subcategoria"].lower(), -float(f["stock_kg"] or 0)))
+    bloques: list[tuple[str, list[dict]]] = []
+    for f in filas:
+        if not bloques or bloques[-1][0] != f["subcategoria"]:
+            bloques.append((f["subcategoria"], []))
+        bloques[-1][1].append(f)
+    return {
+        "filas": filas,
+        "bloques": bloques,
+        "kg_total": sum(float(f["stock_kg"] or 0) for f in filas),
+        "puntos_total": sum(float(f.get("puntos_fila") or 0) for f in filas),
+        "estado": queries.estado(),
+    }
+
+
+@analisis_bp.route("/analisis/competencia/telas/imprimir")
+@requiere_login
+def saldos_imprimir():
+    """La lista entera, lista para imprimir. La misma hoja que sale en PDF.
+
+    ⚠ Cuelga de /analisis/competencia a propósito: así la ven también los
+    vendedores, que tienen ese prefijo abierto. No lleva un solo cliente
+    adentro — son telas, colores y kilos de la fábrica.
+    """
+    return render_template("analisis/parado_impreso.html", **_hoja_saldos())
+
+
+@analisis_bp.route("/analisis/competencia/telas/imprimir.pdf")
+@requiere_login
+def saldos_imprimir_pdf():
+    """La misma hoja, en PDF, para mandarla o guardarla.
+
+    Sale del MISMO HTML que la pantalla de arriba (ver `pdf_motor`): no hay una
+    segunda plantilla que se despegue a la primera corrección.
+    """
+    html = render_template("analisis/parado_impreso.html", **_hoja_saldos())
+    try:
+        blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("PDF de saldos: %s", e)
+        return Response(
+            "No se puede generar el PDF: el servidor no tiene un navegador "
+            "instalado para imprimirlo. La pantalla de impresión sigue "
+            "funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8")
+    nombre = f"Saldos {today_ec().strftime('%d-%m-%Y')}.pdf"
+    return Response(blob, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{nombre}"',
+        "Cache-Control": "no-store"})
 
 
 @analisis_bp.route("/analisis/competencia/mi-hoja")

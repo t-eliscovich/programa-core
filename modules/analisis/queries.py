@@ -71,6 +71,16 @@ def items() -> list[dict]:
                f.anio_pista,
                COALESCE(f.kg_primera, 0) AS kg_primera,
                COALESCE(f.kg_segunda, 0) AS kg_segunda,
+               COALESCE(f.kg_tubular, 0) AS kg_tubular,
+               COALESCE(f.kg_abierta, 0) AS kg_abierta,
+               -- ⭐ La forma, ya resuelta acá: TUB, ABI, las dos, o vacío
+               -- cuando el lote no lo dice. La pantalla y la hoja impresa
+               -- muestran lo mismo sin repetir el `if` en dos plantillas.
+               CASE WHEN COALESCE(f.kg_tubular, 0) > 0
+                     AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
+                    WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+                    WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
+                    ELSE '' END                        AS forma,
                f.motivo,
                -- ⭐ El % se calcula EN LA QUERY, sobre el mismo conjunto de
                -- filas que se muestra. Calcularlo en el template contra un
@@ -681,14 +691,16 @@ def actualizar() -> dict:
                 """INSERT INTO scintela.parado_foto
                        (subcategoria, color, stock_kg, kg_vendidos, ultima_venta,
                         clientes, anio_pista, kg_primera, kg_segunda, categoria,
-                        motivo)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        motivo, kg_tubular, kg_abierta)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
                  (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
                  anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
                  (p or {}).get("kg_segunda") or 0,
                  (p or {}).get("categoria") or grupo_previo.get(k),
-                 (p or {}).get("motivo")), conn=conn)
+                 (p or {}).get("motivo"),
+                 (p or {}).get("kg_tubular") or 0,
+                 (p or {}).get("kg_abierta") or 0), conn=conn)
 
         # 4 · los llamados también
         db.execute("DELETE FROM scintela.parado_llamado", conn=conn)
