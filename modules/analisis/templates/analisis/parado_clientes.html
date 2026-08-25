@@ -18,8 +18,9 @@
    quedaban con las cifras en lugares distintos, y la hoja se lee saltando de
    un lado al otro. Con anchos fijos, todas las fichas encolumnan igual. */
 .cli table{font-size:13px;table-layout:fixed;width:100%}
-.cli col.c1{width:26%} .cli col.c2{width:34%} .cli col.c3{width:15%}
-.cli col.c4{width:15%} .cli col.c5{width:10%}
+.cli col.c1{width:24%} .cli col.c2{width:28%} .cli col.c3{width:10%}
+.cli col.c4{width:14%} .cli col.c5{width:14%} .cli col.c6{width:10%}
+.cli td.vale{white-space:nowrap}
 .cli .anio{color:var(--g);font-size:11px;margin-left:3px}
 .cli th{padding:5px 8px;font-size:10px}
 .cli td{padding:4px 8px}
@@ -104,16 +105,20 @@
     <span>{{ c.nombre }}</span>
     <span class="cod">{{ c.codigo }}{% if c.codigo in codigos_ambiguos %}
       · ⚠ código repetido{% endif %}</span>
-    <span class="kg">hay {{ c.kg_potencial | num_es(0) }} kg para ofrecerle</span>
+    <span class="kg">hay {{ c.kg_potencial | num_es(0) }} kg para ofrecerle · {{ c.puntos_potencial | num_es(0) }} puntos</span>
   </h3>
   {# en su propia hoja el vendedor no necesita leer su código en cada ficha #}
   <p class="meta">{{ c.provincia }}{% if not mia %} · {{ c.vend_pc or 'mostrador' }}{% endif %}</p>
   <table>
-    <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"></colgroup>
     {# ⚠ Los encabezados decían "Kg en saldo" y "Le vendimos": dos cifras de
        kilos, una al lado de la otra, sin decir de QUIÉN era cada una. Dueña
        18/08/2026: "no se que quiere decir le vendimos / kg en saldo". #}
+    {# ⭐ "Vale" NO se esconde en el celular ni al imprimir: es la única cifra
+       que le dice al que sale a la calle por cuál de estas telas conviene
+       empezar. Los colores y los kilos son contexto; ésta es la decisión. #}
     <thead><tr><th>Tela</th><th class="col">Colores disponibles</th>
+    <th class="n">Vale</th>
     <th class="n hay">Hay para ofrecerle</th>
     <th class="n compro">Él ya compró</th><th class="n ult">Última vez</th></tr></thead>
     <tbody>
@@ -122,6 +127,7 @@
       <tr>
         <td>{{ t.subcategoria }}</td>
         <td class="g col">{{ t.colores_parados }}</td>
+        <td class="n vale">{{ t.puntos }} × kg</td>
         <td class="n hay">{{ t.kg_parado | num_es(0) }}</td>
         <td class="n compro">{{ t.kg_cliente | num_es(0) }}
           <span class="anio">en {{ t.anio }}</span></td>
@@ -154,7 +160,7 @@
 lista de todos los que compran esa tela. Sirve para ordenar, no para
 prometer.<br>
 </span>
-«Hay para ofrecerle»: kilos de esa tela quietos hace 12 meses o más.
+«Vale»: cuántos puntos da cada kilo de esa tela en la competencia. «Hay para ofrecerle»: kilos de esa tela quietos hace 12 meses o más.
 «Él ya compró»: lo que le compró, el último año que se la compró.
 </footer>
 {% endblock %}

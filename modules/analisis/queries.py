@@ -247,11 +247,17 @@ def _fijar_puntos(conn=None) -> None:
     kilos que salieron en el medio ya no están en bodega y el puntaje saldría
     calculado sobre menos tela de la que había.
     """
-    largada = date.fromisoformat(config("largada", "2026-08-25"))
     fila = db.fetch_one(
         "SELECT MIN(fijado_el) AS f FROM scintela.parado_punto", conn=conn)
-    if fila and fila["f"] and fila["f"] >= largada:
-        return                       # ya está congelado
+    if fila and fila["f"]:
+        # ⭐ CONGELADOS DESDE LA PRIMERA ESCRITURA (dueña 24/08/2026: "hacelo
+        # ahora que no va a cambiar para mañana"). Antes se reescribían en cada
+        # refresco hasta el día de la largada, y eso los movía: la ventana de
+        # 12 meses de Asinfo corre todos los días, y Jersey Forro Spun estaba
+        # clavada en 12,0 meses —justo en la línea entre 4 y 10 puntos—, así
+        # que sola movía la bolsa un 6%. Con la presentación ya impresa, el
+        # puntaje no puede seguir cambiando abajo.
+        return
     kg_12m = asinfo_parado.venta_por_tela()
     if not kg_12m:
         # fail-CLOSED: sin el dato de ventas TODAS las telas darían "difícil"
@@ -433,20 +439,31 @@ def por_cliente(vend: str | None = None, orden: str = "codigo",
     )
 
     anio = today_ec().year
+    # ⭐ La hoja del vendedor también lleva los PUNTOS (dueña 24/08/2026: "es el
+    # único papel que se lleva a la calle y es justo donde falta"). Sin esto,
+    # el que sale a vender con el papel en la mano no sabe cuál de las telas de
+    # ese cliente vale diez veces más que la de al lado.
+    puntos = puntos_por_tela()
     clientes: dict[str, dict] = {}
     for f in filas:
         c = clientes.setdefault(f["codigo_cli"], {
             "codigo": f["codigo_cli"], "nombre": f["nombre"],
             "provincia": f["provincia"], "vend_pc": f["vend_pc"],
-            "telas": [], "kg_potencial": 0.0, "improbable": True,
+            "telas": [], "kg_potencial": 0.0, "puntos_potencial": 0.0,
+            "improbable": True,
         })
+        f["puntos"] = int(puntos.get(f["subcategoria"], {}).get("puntos", 1))
+        f["puntos_parado"] = float(f["kg_parado"] or 0) * f["puntos"]
         c["telas"].append(f)
         c["kg_potencial"] += float(f["kg_parado"] or 0)
+        c["puntos_potencial"] += f["puntos_parado"]
         if f["anio"] >= anio - 1:
             c["improbable"] = False
 
+    # ⚠ Las telas de cada cliente van por PUNTOS, no por kilos: arriba de la
+    # ficha tiene que estar la que más conviene ofrecerle, no la más pesada.
     for c in clientes.values():
-        c["telas"].sort(key=lambda t: -float(t["kg_parado"] or 0))
+        c["telas"].sort(key=lambda t: -t["puntos_parado"])
 
     vivos = [c for c in clientes.values() if not c["improbable"]]
     dudosos = [c for c in clientes.values() if c["improbable"]]
@@ -486,9 +503,12 @@ def por_cliente_plano(vend: str | None = None, orden: str = "codigo",
                     "provincia": c["provincia"],
                     "vendedor": c["vend_pc"] or "mostrador",
                     "kg_potencial": c["kg_potencial"],
+                    "puntos_potencial": c["puntos_potencial"],
                     "subcategoria": t["subcategoria"],
                     "colores_parados": t["colores_parados"],
                     "kg_parado": t["kg_parado"],
+                    "puntos": t["puntos"],
+                    "puntos_parado": t["puntos_parado"],
                     "kg_cliente": t["kg_cliente"],
                     "ultima_compra": t["ultima_compra"],
                     "anio": t["anio"],

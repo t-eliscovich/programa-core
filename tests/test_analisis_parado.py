@@ -228,6 +228,25 @@ def test_el_anio_de_los_candidatos_sigue_a_la_vista():
 
 # ── La hoja del vendedor ────────────────────────────────────────────────────
 
+def _con_puntos(filas, puntos=None):
+    """Un `db.fetch_all` falso que también sabe contestar por los PUNTOS.
+
+    ⚠ El stub de antes devolvía las mismas filas para TODA consulta, así que
+    `puntos_por_tela()` recibía filas de clientes y reventaba. Devuelve siempre
+    al menos una fila de puntaje para que no se dispare el camino de "tabla
+    vacía", que sale a buscar a Asinfo.
+    """
+    pfilas = [{"subcategoria": sub, "categoria": None, "kg_base": 0,
+               "kg_12m": 0, "meses": None, "nivel": 1, "puntos": pk}
+              for sub, pk in (puntos or {"—": 1}).items()]
+
+    def fetch(sql, params=None, conn=None):
+        if "parado_punto" in " ".join(str(sql).split()):
+            return pfilas
+        return filas
+    return fetch
+
+
 def _filas_falsas():
     return [
         {"codigo_cli": "AAA", "nombre": "Cliente Grande", "provincia": "GUAYAS",
@@ -246,7 +265,7 @@ def _filas_falsas():
 
 
 def test_la_hoja_ordena_por_oportunidad_por_defecto(monkeypatch):
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
     r = queries.por_cliente()
     assert [c["codigo"] for c in r["clientes"]] == ["AAA", "BBB"], (
         "la hoja existe para decidir por quién empezar: si el vendedor corta a "
@@ -254,7 +273,7 @@ def test_la_hoja_ordena_por_oportunidad_por_defecto(monkeypatch):
 
 
 def test_los_improbables_van_al_final_y_aparte(monkeypatch):
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
     r = queries.por_cliente()
     assert [c["codigo"] for c in r["improbables"]] == ["CCC"]
     assert "CCC" not in [c["codigo"] for c in r["clientes"]], (
@@ -265,7 +284,7 @@ def test_un_cliente_con_una_tela_vieja_y_una_nueva_no_es_improbable(monkeypatch)
     filas = _filas_falsas()
     filas[2]["codigo_cli"] = "AAA"          # la vieja es del cliente grande
     filas[2]["nombre"] = "Cliente Grande"
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: filas)
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(filas))
     r = queries.por_cliente()
     assert [c["codigo"] for c in r["improbables"]] == []
     grande = next(c for c in r["clientes"] if c["codigo"] == "AAA")
@@ -273,7 +292,7 @@ def test_un_cliente_con_una_tela_vieja_y_una_nueva_no_es_improbable(monkeypatch)
 
 
 def test_el_orden_alfabetico_y_el_de_provincia_existen(monkeypatch):
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
     assert [c["codigo"] for c in queries.por_cliente(orden="codigo")["clientes"]] \
         == ["AAA", "BBB"]
     assert [c["provincia"] for c in queries.por_cliente(orden="provincia")["clientes"]] \
@@ -281,7 +300,7 @@ def test_el_orden_alfabetico_y_el_de_provincia_existen(monkeypatch):
 
 
 def test_un_orden_inventado_no_rompe_la_pantalla(monkeypatch):
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
     r = queries.por_cliente(orden="loquesea")
     assert [c["codigo"] for c in r["clientes"]] == ["AAA", "BBB"]
 
@@ -500,7 +519,7 @@ def test_las_columnas_numericas_ordenan_por_el_numero_y_no_por_el_texto():
 def test_el_excel_de_la_hoja_sale_de_la_misma_funcion_que_la_pantalla(monkeypatch):
     """Si fueran dos caminos, el archivo y el papel podrían decir cosas
     distintas del mismo día."""
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
     plano = queries.por_cliente_plano()
     pantalla = queries.por_cliente()
     assert {f["codigo"] for f in plano} == (
@@ -509,7 +528,7 @@ def test_el_excel_de_la_hoja_sale_de_la_misma_funcion_que_la_pantalla(monkeypatc
 
 
 def test_el_excel_de_la_hoja_distingue_candidatos_de_improbables(monkeypatch):
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: _filas_falsas())
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(_filas_falsas()))
     plano = queries.por_cliente_plano()
     tipos = {f["codigo"]: f["tipo"] for f in plano}
     assert tipos["AAA"] == "candidato" and tipos["CCC"] == "improbable", (
@@ -534,7 +553,7 @@ def test_las_telas_de_cada_cliente_salen_de_mayor_a_menor(monkeypatch):
     for f in filas:
         f["codigo_cli"], f["nombre"] = "AAA", "Uno"
     filas[0]["kg_parado"], filas[1]["kg_parado"], filas[2]["kg_parado"] = 10, 900, 50
-    monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: filas)
+    monkeypatch.setattr(queries.db, "fetch_all", _con_puntos(filas))
     telas = queries.por_cliente()["clientes"][0]["telas"]
     assert [float(t["kg_parado"]) for t in telas] == [900, 50, 10]
 
@@ -625,6 +644,41 @@ def test_la_pantalla_de_saldos_muestra_lo_que_vale_cada_tela():
     for vista in (views.parado, views.mis_telas, views.parado_csv):
         assert "con_puntos" in inspect.getsource(vista), (
             f"{vista.__name__} tiene que traer los puntos")
+
+
+def test_la_hoja_del_vendedor_dice_lo_que_vale_cada_tela(monkeypatch):
+    """⭐ Dueña 24/08/2026: "es el único papel que se lleva a la calle y es
+    justo donde falta". Sin los puntos, el que sale con la hoja en la mano no
+    sabe cuál de las telas de ese cliente vale diez veces más que la de al
+    lado."""
+    filas = [
+        {"codigo_cli": "AAA", "nombre": "Cliente", "provincia": "Guayas",
+         "vend_pc": "RMY", "subcategoria": "Fleece 102", "kg_cliente": 10,
+         "ultima_compra": None, "anio": date.today().year, "colores": 1,
+         "kg_parado": 2900, "colores_parados": "BLA"},
+        {"codigo_cli": "AAA", "nombre": "Cliente", "provincia": "Guayas",
+         "vend_pc": "RMY", "subcategoria": "Microfibra", "kg_cliente": 10,
+         "ultima_compra": None, "anio": date.today().year, "colores": 1,
+         "kg_parado": 300, "colores_parados": "NEG"},
+    ]
+    monkeypatch.setattr(
+        queries.db, "fetch_all",
+        _con_puntos(filas, {"Fleece 102": 1, "Microfibra": 10}))
+    c = queries.por_cliente()["clientes"][0]
+    assert [t["subcategoria"] for t in c["telas"]] == ["Microfibra", "Fleece 102"], (
+        "primero la que más puntos da, no la que más pesa")
+    assert c["telas"][0]["puntos"] == 10
+    assert c["puntos_potencial"] == 300 * 10 + 2900 * 1
+
+    from pathlib import Path
+    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "parado_clientes.html")
+            .read_text(encoding="utf-8"))
+    import re
+    col = re.search(r"<th[^>]*>Vale<", " ".join(html.split()))
+    assert col, "la hoja tiene que traer la columna Vale"
+    # ⚠ Ni en el celular ni en el papel: es la cifra que decide.
+    assert "opt" not in col.group(0) and "col" not in col.group(0)
 
 
 # ── La competencia ──────────────────────────────────────────────────────────
@@ -1974,11 +2028,20 @@ def test_se_puede_mirar_intela_por_separado(monkeypatch):
     visto = {}
 
     def fake(sql, params=None, conn=None):
-        visto["sql"] = " ".join(sql.split())
-        visto["params"] = params
+        # ⚠ Se guarda SÓLO la primera consulta —la de la hoja—: `por_cliente`
+        # después pide los puntos, y si se pisara `visto` el test terminaría
+        # mirando otra query y pasando o fallando por el motivo equivocado.
+        if "sql" not in visto:
+            visto["sql"] = " ".join(sql.split())
+            visto["params"] = params
+        # Una fila de puntaje para que no salga a buscar a Asinfo.
+        if "parado_punto" in " ".join(sql.split()):
+            return [{"subcategoria": "—", "categoria": None, "kg_base": 0,
+                     "kg_12m": 0, "meses": None, "nivel": 1, "puntos": 1}]
         return []
 
     monkeypatch.setattr(queries.db, "fetch_all", fake)
+    monkeypatch.setattr(queries.db, "fetch_one", lambda *a, **k: None)
     queries.por_cliente("INTELA")
     assert "%(vend)s = 'INTELA' AND l.vend_pc IS NULL" in visto["sql"]
     assert visto["params"]["vend"] == "INTELA"
