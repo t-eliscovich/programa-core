@@ -3791,15 +3791,21 @@ def responder_pdf(data: dict, codigo_up: str):
     El 503 no es decorativo: el front esconde el botón cuando no hay motor,
     pero alguien puede llegar por la URL. Un mensaje que dice qué falta es lo
     que evita el reporte de "no anda el botón".
+
+    🐞 TMT 2026-08-25: el mensaje era SIEMPRE el mismo — "el servidor no tiene
+    un navegador instalado"— y `SinMotor` se levanta por tres motivos
+    distintos: no hay navegador, el navegador tardó más que `TIMEOUT_S` (30 s),
+    o no devolvió ningún archivo. Los dos últimos son los que le pasan al
+    vendedor con un cliente grande, y contestarle que falta instalar algo manda
+    a buscar el problema al lugar equivocado. Ahora cada motivo dice lo suyo.
     """
     try:
         blob = estado_cuenta_pdf.generar(data)
     except pdf_motor.SinMotor as e:
         current_app.logger.error("PDF de %s: %s", codigo_up, e)
         return Response(
-            "No se puede generar el PDF: el servidor no tiene un navegador "
-            "instalado para imprimirlo. La pantalla de impresión sigue "
-            "funcionando normalmente.",
+            f"No se pudo generar el PDF. {e} "
+            "La pantalla de impresión sigue funcionando normalmente.",
             status=503, mimetype="text/plain; charset=utf-8",
         )
     nombre = estado_cuenta_pdf.nombre_archivo(

@@ -2060,6 +2060,54 @@ def test_el_boton_de_whatsapp_dice_lo_que_hace_y_no_es_una_flechita(
     assert "Imprimir" in ficha
 
 
+def test_la_ficha_tiene_el_PDF_por_un_link_comun(app, vendedor_logueado, monkeypatch):
+    """⭐ TMT 2026-08-25: *"el botón enviar por WhatsApp no le sirve a ciertos
+    vendedores. Generando y luego no abre el pdf"*.
+
+    Van tres arreglos del botón verde. El camino corto depende de tres cosas
+    que no están en todos los teléfonos —el permiso que deja el toque, saber
+    armar un `File`, tener menú de compartir— y donde falta alguna, el vendedor
+    se queda sin el archivo.
+
+    Este link no depende de ninguna: es una navegación común a la misma URL del
+    PDF, que el servidor manda `inline`. El teléfono lo abre en su visor y
+    desde ahí el botón de compartir DEL APARATO lo manda a WhatsApp. Un paso
+    más, y anda siempre: *"hacemos más inclusivo para que a cualquiera le
+    funcione"*.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert "Ver el PDF" in ficha
+    assert '/mi-cartera/cliente/TDV/pdf"' in ficha, "el link no apunta al PDF"
+    # Dice PARA QUÉ está: sin eso es un tercer botón que nadie toca.
+    assert "Si WhatsApp no se abre" in ficha
+
+
+def test_sin_motor_de_pdf_la_ficha_no_ofrece_ni_el_boton_ni_el_link(
+        app, vendedor_logueado, monkeypatch):
+    """Los dos caminos terminan en la misma URL, así que los dos se esconden
+    con el mismo `pdf_disponible()`. Un link que siempre da 503 es peor que no
+    tenerlo — y era el argumento del botón desde el 04/08."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: False)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert "Ver el PDF" not in ficha
+    assert "Enviar por WhatsApp" not in ficha
+    # Imprimir no pasa por el motor: sigue estando.
+    assert "Imprimir" in ficha
+
+
 def test_la_ficha_no_muestra_la_forma_de_pago(ficha):
     """TMT 2026-08-20: *"no hace falta la C"*.
 

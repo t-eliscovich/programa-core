@@ -145,6 +145,31 @@
      href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
 </div>
 
+{# ⭐ EL PISO: el PDF, sin depender de nada.
+
+   TMT 2026-08-25: *"el botón enviar por WhatsApp no le sirve a ciertos
+   vendedores. Generando y luego no abre el pdf"*. Van tres arreglos del botón
+   verde y sigue habiendo teléfonos donde el menú de compartir del sistema no
+   sale — el camino corto depende del permiso que deja el toque, de que el
+   navegador sepa armar un `File` y de que el aparato tenga menú de compartir,
+   y esas tres cosas no están en todos lados.
+
+   Esto no depende de ninguna: es un link común a la misma URL del PDF, que el
+   servidor manda `inline`. El teléfono lo abre en su visor, y desde ahí el
+   botón de compartir DEL APARATO lo manda a WhatsApp. Es un paso más y anda
+   siempre, que es exactamente lo que pidió *"hacemos más inclusivo para que a
+   cualquiera le funcione"*.
+
+   Va abajo y en gris: el camino bueno sigue siendo el botón verde. Éste es la
+   red, y una red que se ve tranquiliza al que se cayó una vez. #}
+{% if pdf_disponible() %}
+<a class="ver-pdf" data-wa-ver target="_blank" rel="noopener"
+   href="{{ url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
+  Ver el PDF
+  <small>Si WhatsApp no se abre, abrilo acá y mandalo vos</small>
+</a>
+{% endif %}
+
 
 {# CRÉDITO — cupo, descuento, forma de pago y bloqueo.
 

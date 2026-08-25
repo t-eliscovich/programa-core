@@ -147,6 +147,19 @@
           border:1px solid var(--line);border-radius:12px;padding:11px 14px;
           font-size:14.5px;font-weight:600;color:var(--ink)}
 
+  /* ⭐ El botón ARMADO: el PDF ya está y falta el toque que abre WhatsApp.
+     TMT 2026-08-25 *"generando y luego no abre el pdf"* — el rótulo cambiaba
+     y el vendedor no lo registraba. El aro verde claro se ve sin leer. */
+  .btn-wa[data-wa-listo]{box-shadow:0 0 0 3px rgba(37,211,102,.45)}
+
+  /* La red: el PDF por un link común, para el teléfono al que el menú de
+     compartir no le sale. Gris y abajo — el camino bueno es el botón verde. */
+  .ver-pdf{display:block;margin:-2px 0 10px;padding:9px 12px;background:#fff;
+    border:1px solid var(--line);border-radius:12px;text-align:center;
+    font-size:13.5px;font-weight:600;color:var(--ink)}
+  .ver-pdf small{display:block;margin-top:2px;font-size:11.5px;font-weight:500;
+    color:#6b7280;line-height:1.35}
+
 
   /* El portal del cliente. Discreto a propósito: es información de fondo, no
      lo que el vendedor vino a mirar. Se pone rojo sólo cuando está cortado,
