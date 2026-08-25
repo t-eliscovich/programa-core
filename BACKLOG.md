@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-24._
+_Última actualización: 2026-08-25._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -113,6 +113,17 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 ---
 
 ## Aprobado por la dueña, pendiente de ejecutar
+
+### [?] Cambio en amortizaciones y depreciaciones — FALTA DEFINIR
+Tamara, 25/08/2026: *"hacer un cambio en amortizaciones y depreciaciones"*.
+Todavía no dijo cuál. Preguntarle qué hay que cambiar antes de tocar nada.
+
+Dónde vive hoy, para cuando se defina:
+- La cuota mensual la corre el cron del EC2 el día 1 (`scintela.actualizar_amortizacion()`,
+  con `ult_mes_amortizado` de freno) — ver el skill `cierre-de-mes`.
+- La amortización diaria es uno de los movimientos que mueven la utilidad todos
+  los días — ver el skill `leer-la-utilidad-de-intela`.
+- Pantalla de activos: `/activos` (alta, tipo, vida útil).
 
 ### [S] `/retiros` quedó huérfana del menú
 `/informes/retiros` ("Dividendos", TMT 2026-05-20) dice explícitamente que
