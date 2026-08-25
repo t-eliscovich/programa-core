@@ -60,7 +60,9 @@ def test_el_parcial_viaja_con_su_css():
 def test_el_telefono_apila_tela_codigo_color_y_calidad():
     """Ocho columnas no entran en 390 px; cuatro cifras sí."""
     t = QSL.read_text(encoding="utf-8")
-    assert t.count("<th") == 5
+    # `<th ` y `<th>` por separado: `t.count("<th")` a secas cuenta también el
+    # `<thead>` y daba 6 donde hay 5 columnas.
+    assert t.count("<th>") + t.count("<th ") == 5
     assert "l.codigo" in t and "l.color" in t and "l.calidad" in t
 
 
