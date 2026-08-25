@@ -16,14 +16,14 @@
 <title>Saldos, tela por tela</title>
 <style>
 *{box-sizing:border-box}
-body{font:11px/1.35 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-color:#111827;margin:0;padding:14px}
-h1{font-size:17px;font-weight:600;letter-spacing:-.02em;margin:0 0 3px}
-.sub{color:#6b7280;font-size:11px;margin:0 0 10px}
+body{font:10px/1.25 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+color:#111827;margin:0;padding:10px}
+h1{font-size:15px;font-weight:600;letter-spacing:-.02em;margin:0 0 2px}
+.sub{color:#6b7280;font-size:10px;margin:0 0 7px}
 table{width:100%;border-collapse:collapse}
-thead th{font-size:9px;font-weight:500;color:#6b7280;text-align:left;
-padding:0 6px 4px;border-bottom:1px solid #9ca3af;text-transform:none}
-td{padding:3px 6px;border-bottom:1px solid #eceef1}
+thead th{font-size:8.5px;font-weight:500;color:#6b7280;text-align:left;
+padding:2px 6px 3px;border-bottom:1px solid #9ca3af;background:#fff}
+td{padding:1.5px 6px;border-bottom:1px solid #f0f1f3}
 .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .g{color:#6b7280}
 /* La tela se escribe UNA vez por bloque: repetirla en cada renglón llena la
@@ -31,16 +31,22 @@ td{padding:3px 6px;border-bottom:1px solid #eceef1}
 tr.primera td{border-top:1px solid #d1d5db}
 tr.primera td.tela{font-weight:600}
 td.tela{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.q{font-size:9px;font-weight:600;border-radius:3px;padding:0 4px}
+.q{font-size:8.5px;font-weight:600;border-radius:3px;padding:0 3px}
 .q.seg{color:#854d0e;background:#fef3c7}
 .q.pri{color:#475569;background:#f1f5f9}
-.fm{display:inline-block;font-size:9px;font-weight:600;color:#475569;
-    background:#f1f5f9;border-radius:3px;padding:0 4px;margin:0 2px 1px 0;
-    white-space:nowrap}
-tfoot td{border-top:1px solid #9ca3af;border-bottom:0;font-weight:600;padding-top:5px}
-/* ⚠ Los bloques de una tela no se parten entre dos hojas si entran enteros. */
-tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
-@page{margin:12mm;size:A4 portrait}
+.fm{display:inline-block;font-size:8.5px;font-weight:600;color:#475569;
+    background:#f1f5f9;border-radius:3px;padding:0 3px;white-space:nowrap}
+.total{border-top:1px solid #9ca3af;margin:6px 0 0;padding-top:4px;
+font-weight:600;font-size:11px}
+/* ⚠ NADA de `break-inside: avoid`. Cada tela era un bloque que no se podía
+   partir, así que una tela de treinta colores no entraba en lo que quedaba de
+   hoja, se iba entera a la siguiente y dejaba media página en blanco — y con
+   734 renglones el navegador terminaba cortando la lista a las tres páginas
+   (dueña 25/08/2026: "que no tenga white space que me hace mucho mas largo
+   para imprimir"). Las filas corren de largo; lo único que se repite arriba de
+   cada hoja es el encabezado. */
+thead{display:table-header-group}
+@page{margin:9mm;size:A4 portrait}
 @media print{body{padding:0}}
 </style>
 </head>
@@ -62,8 +68,8 @@ tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
   <th class="n" style="width:10%">Vale</th>
   <th class="n" style="width:14%">Puntos</th>
 </tr></thead>
+<tbody>
 {% for tela, items in bloques %}
-<tbody class="tela-bloque">
 {% for f in items %}
   <tr {% if loop.first %}class="primera"{% endif %}>
     <td class="tela">{% if loop.first %}{{ tela }}{% endif %}</td>
@@ -84,14 +90,15 @@ tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
     <td class="n">{{ f.puntos_fila | num_es(0) }}</td>
   </tr>
 {% endfor %}
-</tbody>
 {% endfor %}
-<tfoot><tr>
-  <td colspan="5">Total · {{ bloques | length }} telas</td>
-  <td class="n">{{ kg_total | num_es(0) }}</td>
-  <td></td>
-  <td class="n">{{ puntos_total | num_es(0) }}</td>
-</tr></tfoot>
+</tbody>
+
 </table>
+{# ⚠ El total va AFUERA de la tabla. Adentro, como `tfoot`, el navegador lo
+   repite al pie de cada hoja impresa (dueña 25/08/2026: "no me pongas espacio
+   cada 98 telas y sumas. imprimi todo un una"). Afuera aparece una sola vez,
+   al final de todo. #}
+<p class="total">Total · {{ bloques | length }} telas ·
+  {{ kg_total | num_es(0) }} kg · {{ puntos_total | num_es(0) }} puntos</p>
 </body>
 </html>
