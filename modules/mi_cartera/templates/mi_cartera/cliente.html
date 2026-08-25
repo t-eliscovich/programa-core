@@ -145,29 +145,55 @@
      href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
 </div>
 
-{# ⭐ EL PISO: el PDF, sin depender de nada.
+{# ⭐ EL PISO: mandarlo como FOTO.
 
-   TMT 2026-08-25: *"el botón enviar por WhatsApp no le sirve a ciertos
-   vendedores. Generando y luego no abre el pdf"*. Van tres arreglos del botón
-   verde y sigue habiendo teléfonos donde el menú de compartir del sistema no
-   sale — el camino corto depende del permiso que deja el toque, de que el
-   navegador sepa armar un `File` y de que el aparato tenga menú de compartir,
-   y esas tres cosas no están en todos lados.
+   TMT 2026-08-25, por WhatsApp con Alex Velastegui:
+       Alex   — *"desde el pdf q genera no permite enviar por wsp"*
+       Tamara — *"creo que foto y compartir como imagen si no?"*
+       Alex   — *"es una opción sólo q la imagen es muy pequeña"*
+       Tamara — *"agrando la imagen"*
 
-   Esto no depende de ninguna: es un link común a la misma URL del PDF, que el
-   servidor manda `inline`. El teléfono lo abre en su visor, y desde ahí el
-   botón de compartir DEL APARATO lo manda a WhatsApp. Es un paso más y anda
-   siempre, que es exactamente lo que pidió *"hacemos más inclusivo para que a
-   cualquiera le funcione"*.
+   Van tres arreglos del botón verde y seguía habiendo teléfonos donde el menú
+   de compartir no sale. Alex marcó el punto exacto: NO es que el programa
+   falle al generar —el PDF está— es que el paso siguiente no existe para él.
+   En un teléfono, mandar una FOTO lo sabe hacer cualquiera; mandar un
+   DOCUMENTO hay que saber que existe Descargas y encontrar el "adjuntar
+   documento" de WhatsApp.
 
-   Va abajo y en gris: el camino bueno sigue siendo el botón verde. Éste es la
-   red, y una red que se ve tranquiliza al que se cayó una vez. #}
+   Así que la salida de abajo ya no es el PDF: es la MISMA hoja sacada como
+   imagen. Se abre, se mantiene apretada y se elige WhatsApp — el gesto que el
+   vendedor ya usa todos los días, sin permisos del navegador, sin menú de
+   compartir del programa y sin carpeta que buscar.
+
+   Y lo de *"muy pequeña"* tiene arreglo del lado del servidor: la captura de
+   Tamara salía de la pantalla del teléfono, que tiene 390 px de ancho. Ésta se
+   dibuja a 1100 y nace grande. (El techo, en `imagen_motor`: WhatsApp achica
+   el lado largo a ~1600, así que hasta ~40 facturas llega entera.)
+
+   El PDF no se saca —el que lo prefiere lo tiene— pero baja a un renglón: es
+   el camino que ya sabemos que a algunos no les sirve. #}
 {% if pdf_disponible() %}
-<a class="ver-pdf" data-wa-ver target="_blank" rel="noopener"
-   href="{{ url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">
-  Ver el PDF
-  <small>Bajalo y mandalo desde Descargas, con el botón de compartir del teléfono</small>
+{% set _q = ('?vend=' ~ vend) if preview else '' %}
+{# ⚠ EL TECHO, dicho donde importa. WhatsApp recomprime las fotos y le achica
+   el lado largo a ~1600 px: medido, un estado de cuenta de hasta ~40 facturas
+   entra entero y más largo que eso la letra se aprieta (con 60 facturas la
+   foto sale al 58% y ya cuesta leerla).
+
+   Para esos clientes el PDF es mejor, y el vendedor no tiene manera de saberlo
+   mirando la pantalla — así que se lo dice la pantalla. Es la misma regla que
+   el botón verde: puede no poder, pero no puede quedarse callado. #}
+{% set _muchas = (facturas|length) > 40 %}
+<a class="ver-img {{ 'flojo' if _muchas }}" target="_blank" rel="noopener"
+   href="{{ url_for('mi_cartera.imagen', codigo_cli=cliente.codigo_cli) }}{{ _q }}">
+  Mandar como imagen
+  {% if _muchas %}
+    <small>Este cliente tiene muchas facturas: la foto sale chica, mejor mandá el PDF</small>
+  {% else %}
+    <small>Mantené apretada la foto y elegí WhatsApp</small>
+  {% endif %}
 </a>
+<a class="ver-pdf" data-wa-ver target="_blank" rel="noopener"
+   href="{{ url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) }}{{ _q }}">o mandá el PDF</a>
 {% endif %}
 
 

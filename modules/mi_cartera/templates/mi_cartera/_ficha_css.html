@@ -152,13 +152,21 @@
      y el vendedor no lo registraba. El aro verde claro se ve sin leer. */
   .btn-wa[data-wa-listo]{box-shadow:0 0 0 3px rgba(37,211,102,.45)}
 
-  /* La red: el PDF por un link común, para el teléfono al que el menú de
-     compartir no le sale. Gris y abajo — el camino bueno es el botón verde. */
-  .ver-pdf{display:block;margin:-2px 0 10px;padding:9px 12px;background:#fff;
-    border:1px solid var(--line);border-radius:12px;text-align:center;
-    font-size:13.5px;font-weight:600;color:var(--ink)}
-  .ver-pdf small{display:block;margin-top:2px;font-size:11.5px;font-weight:500;
+  /* La red que SÍ anda en todos los teléfonos: la hoja como foto. Tiene
+     marco propio y no es gris: después de tres vueltas del botón verde, éste
+     es el camino que hay que ver, no el que hay que descubrir. */
+  .ver-img{display:block;margin:-2px 0 6px;padding:10px 12px;background:#fff;
+    border:1.5px solid #25D366;border-radius:12px;text-align:center;
+    font-size:14px;font-weight:700;color:var(--ink)}
+  .ver-img small{display:block;margin-top:2px;font-size:11.5px;font-weight:500;
     color:#6b7280;line-height:1.35}
+  /* Con muchas facturas la foto sale chica y el PDF es mejor: el marco verde
+     se apaga para no empujar al camino que en ESE cliente no es el bueno. */
+  .ver-img.flojo{border-color:var(--line)}
+  /* El PDF, en un renglón: el que lo prefiere lo tiene, pero ya sabemos que a
+     algunos teléfonos no les sirve, así que no compite con la foto. */
+  .ver-pdf{display:block;margin:0 0 10px;text-align:center;
+    font-size:12.5px;font-weight:600;color:#6b7280;text-decoration:underline}
 
 
   /* El portal del cliente. Discreto a propósito: es información de fondo, no

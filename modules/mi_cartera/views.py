@@ -384,6 +384,29 @@ def pdf(codigo_cli: str):
     return informes_views.responder_pdf(data, (codigo_cli or "").upper())
 
 
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/imagen")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def imagen(codigo_cli: str):
+    """El estado de cuenta como IMAGEN, para mandarlo como foto por WhatsApp.
+
+    TMT 2026-08-25, con Alex Velastegui: *"desde el pdf q genera no permite
+    enviar por wsp"* → Tamara: *"creo que foto y compartir como imagen si
+    no?"*.
+
+    En un teléfono, mandar una FOTO lo sabe hacer cualquiera y lo permite
+    cualquier aparato; mandar un DOCUMENTO, no. Por eso el vendedor llegaba al
+    PDF y se quedaba ahí. Ver `imagen_motor` para el razonamiento entero.
+
+    Es LA MISMA hoja que el PDF y que el papel, sacada como foto — misma
+    plantilla, mismos números. Y el mismo guard que las otras dos rutas:
+    `_cargar_cliente` 404ea si el cliente no es de este vendedor.
+    """
+    vend = _vend_actual()
+    data = _cargar_cliente(vend, codigo_cli)
+    return informes_views.responder_imagen(data, (codigo_cli or "").upper())
+
+
 @mi_cartera_bp.route("/mi-cartera/prueba-envio")
 @requiere_login
 @requiere_permiso("micartera.ver")

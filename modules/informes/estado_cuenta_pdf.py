@@ -30,7 +30,7 @@ from modules._lib import pdf_motor
 _PREFIJO = "Estado de cuenta"
 
 
-def nombre_archivo(nombre_cliente: str, codigo_cli: str) -> str:
+def nombre_archivo(nombre_cliente: str, codigo_cli: str, ext: str = "pdf") -> str:
     """'Estado de cuenta MWI 24-08-2026.pdf'.
 
     ⭐ TMT 2026-08-24: *"cuando descargan el archivo tiene que tener de nombre
@@ -65,7 +65,10 @@ def nombre_archivo(nombre_cliente: str, codigo_cli: str) -> str:
     # (una barra en el nombre de un archivo es un separador de carpetas).
     cod = re.sub(r"[^A-Za-z0-9]", "", _limpiar(codigo_cli)).upper() or "CLIENTE"
     dia = today_ec().strftime("%d-%m-%Y")
-    return f"{_PREFIJO} {cod} {dia}.pdf"
+    # `ext` la usa `estado_cuenta_imagen` para el PNG. El criterio del nombre
+    # —código y día, sin el nombre largo— es el mismo para los dos formatos y
+    # por el mismo motivo, así que vive en una sola función.
+    return f"{_PREFIJO} {cod} {dia}.{ext}"
 
 
 def _limpiar(texto: str) -> str:
