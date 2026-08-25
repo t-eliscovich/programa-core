@@ -480,3 +480,85 @@ def resumen(filas: list[dict]) -> dict:
         "kg_falta": round(sum(f["falta_kg"] for f in alerta)),
         "familias": sorted({f["familia"] for f in filas}),
     }
+
+
+# ── Las que todavía no entran ────────────────────────────────────────────────
+#
+# La lista pide vender en 40 de las últimas 52 semanas. Un producto que
+# empezó a venderse hace menos de medio año no puede llegar a 40 ni vendiendo
+# todas las semanas: queda afuera por aritmética, no porque no rote. Sin este
+# renglón la pantalla parece decir "esto es todo lo que hay" cuando en
+# realidad hay stock que no está mirando.
+
+#: Medio año en semanas. Ver arriba: 26 < 40, así que "primera venta dentro de
+#: las últimas 26 semanas" implica "no está en la lista", sin tener que
+#: cruzarlo contra ella.
+SEMANAS_NUEVO = 26
+
+_CAT_SQL = ", ".join(f"'{c}'" for c in CATEGORIAS)
+
+#: Productos CON stock en bodega 53 cuya PRIMERA venta de la historia cae
+#: dentro de las últimas `SEMANAS_NUEVO` semanas. El `MIN` se calcula sólo
+#: sobre los que tienen stock (el `IN (SELECT ...)`), que son unos cientos:
+#: agrupar la tabla de detalle entera no hace falta y no termina más.
+_SQL_NUEVOS = """
+WITH inv AS (
+    SELECT id_producto, SUM(saldo) AS inv_kg
+      FROM (SELECT id_producto, saldo,
+                   ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega
+                                      ORDER BY fecha DESC,
+                                               id_saldo_producto DESC) AS rn
+              FROM saldo_producto
+             WHERE id_bodega = {bod}) u
+     WHERE u.rn = 1 AND u.saldo > 0
+     GROUP BY id_producto
+),
+vta AS (
+    SELECT dfc.id_producto,
+           MIN(COALESCE(pad.fecha, fc.fecha)) AS primera
+      FROM factura_cliente fc
+      JOIN detalle_factura_cliente dfc
+        ON dfc.id_factura_cliente = fc.id_factura_cliente
+      LEFT JOIN factura_cliente pad
+        ON pad.id_factura_cliente = fc.id_factura_cliente_padre
+     WHERE fc.id_documento IN (7, 251)
+       AND fc.estado NOT IN (0, 1)
+       AND dfc.id_producto IN (SELECT id_producto FROM inv)
+     GROUP BY dfc.id_producto
+)
+SELECT COUNT(*) AS n, SUM(inv.inv_kg) AS kg
+  FROM inv
+  JOIN vta ON vta.id_producto = inv.id_producto
+  JOIN producto pr ON pr.id_producto = inv.id_producto
+ WHERE LTRIM(RTRIM(pr.nombre_categoria_producto)) IN ({cats})
+   AND vta.primera >= DATEADD(week, -{nuevo}, CAST({ahora} AS date))
+"""
+
+_cache_nuevos: dict = {}
+
+
+def _sql_nuevos() -> str:
+    return _SQL_NUEVOS.format(
+        bod=BODEGA_TERMINADO, cats=_CAT_SQL, nuevo=SEMANAS_NUEVO, ahora=AHORA_EC
+    )
+
+
+def nuevos(_ahora=time.monotonic) -> dict:
+    """Cuántas telas × color quedan afuera por ser nuevas, y cuántos kilos.
+
+    `{"n": 0, "kg": 0.0}` cuando no hay ninguna, y `{}` cuando Asinfo no
+    contestó: la pantalla no puede decir "no falta nada" si no pudo preguntar.
+    """
+    ahora = _ahora()
+    if _cache_nuevos.get("dato") is not None and ahora - _cache_nuevos.get("t", 0) < _TTL_SECS:
+        return _cache_nuevos["dato"]
+
+    filas, ok = metabase_client.fetch_dataset_estado(ASINFO_DB, _sql_nuevos())
+    if not ok:
+        _LOG.warning("inventario rotativo: Asinfo no contestó (nuevos)")
+        return {}
+
+    fila = filas[0] if filas else {}
+    dato = {"n": int(_f(fila.get("n"))), "kg": round(_f(fila.get("kg")), 1)}
+    _cache_nuevos.update(dato=dato, t=ahora)
+    return dato
