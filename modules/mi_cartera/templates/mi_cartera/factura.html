@@ -1,0 +1,46 @@
+{# La factura de un cliente, vista por su VENDEDOR.
+
+   TMT 2026-08-25 (dueña): *"en estado de cuenta si clickean en factura que
+   también vaya. Hacerlo también para vendedores y que puedan compartir"*.
+
+   El vendedor está parado en el local con el cliente al lado: la pregunta que
+   le hacen es "¿qué me mandaron en esta factura?", y hasta hoy la respuesta
+   estaba en el papel de la guía. #}
+{% extends "mi_cartera/base.html" %}
+
+{% block title %}Factura {{ numero }}{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <a class="back" href="{{ url_for('mi_cartera.cliente', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">‹ {{ cliente.nombre }}</a>
+      <h1 style="margin-top:3px">Factura {{ numero }}</h1>
+      <div class="sub">{{ f.fecha | fecha_es }} · {{ f.importe | money_es }}{% if f.saldo and f.saldo > 0 %} · debe {{ f.saldo | money_es }}{% endif %}</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 style="margin:0 0 8px;font-size:15px;">Qué se llevó
+    {% if det.estado == 'ok' %}
+      <span style="font-weight:400;color:#64748b;font-size:13px;">·
+        {{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }} ·
+        {{ det.totales.kg | kg_es }} kg</span>
+    {% endif %}
+  </h2>
+  {% include "mi_cartera/_que_se_llevo.html" %}
+</div>
+
+{# Las dos acciones, con NOMBRE — mismo criterio que la ficha del cliente: un
+   ícono que nadie reconoce es un botón que no existe (20/08). #}
+<div class="acciones">
+  {% with pdf_url = url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ (('?vend=' ~ vend) if preview else ''),
+          wa_nombre = cliente.nombre,
+          wa_clase = 'btn-wa' %}
+    {% include "informes/_ec_boton_whatsapp.html" %}
+  {% endwith %}
+  <a class="btn-pr" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
+     href="{{ url_for('mi_cartera.factura_hoja', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
+</div>
+{% endblock %}

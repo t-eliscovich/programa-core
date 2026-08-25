@@ -248,7 +248,45 @@ def estado_cuenta():
     data = _cargar_estado_cuenta(cod)
     return render_template("portal/estado_cuenta.html",
                            data=data, t=data.get("totales") or {},
-                           codigo=cod)
+                           codigo=cod,
+                           # A dónde lleva el número (ver _movimientos.html).
+                           factura_endpoint="portal.factura",
+                           factura_args={})
+
+
+@portal_bp.route("/factura/<int:numf>", methods=["GET"])
+def factura(numf: int):
+    """Qué se llevó el cliente en una de SUS facturas.
+
+    TMT 2026-08-25 (dueña). El cuerpo es el mismo parcial que ve su vendedor:
+    mismos números y mismas columnas. Si el cliente y el vendedor vieran dos
+    detalles distintos de la misma factura, la discusión no se puede tener.
+
+    El scope es el de siempre en el portal: la factura se busca DENTRO del
+    estado de cuenta del cliente que está adentro. Un número ajeno da 404.
+    """
+    from flask import abort
+
+    from modules.asinfo import factura_lineas
+
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    elegida = None
+    for f in (data.get("facturas") or []):
+        try:
+            if int(f.get("numf") or 0) == int(numf):
+                elegida = f
+                break
+        except (TypeError, ValueError):
+            continue
+    if elegida is None:
+        abort(404)
+    numero = (elegida.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
+    return render_template(
+        "portal/factura.html", f=elegida, numero=numero, codigo=cod,
+        det=factura_lineas.que_se_llevo(elegida.get("numf_completo")))
 
 
 @portal_bp.route("/estado-de-cuenta/imprimir", methods=["GET"])

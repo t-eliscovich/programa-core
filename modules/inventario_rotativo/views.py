@@ -89,6 +89,11 @@ def lista():
     return render_template(
         "inventario_rotativo/lista.html",
         semanas_corta=service.SEMANAS_CORTA,
+        # Las que no entran por nuevas. Va arriba de la lista porque es lo que
+        # la pantalla NO está mostrando: sin el renglón, las 291 se leen como
+        # "esto es todo".
+        nuevos=service.nuevos() if disponible else {},
+        semanas_nuevo=service.SEMANAS_NUEVO,
         disponible=disponible,
         corte=corte,
         imprimir=imprimir,

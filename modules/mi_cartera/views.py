@@ -297,6 +297,9 @@ def cliente(codigo_cli: str):
     return render_template(
         "mi_cartera/cliente.html",
         hoy=today_ec(),
+        # A dónde lleva el número de factura de la tabla (ver _movimientos).
+        factura_endpoint="mi_cartera.factura",
+        factura_args={"codigo_cli": codigo_cli},
         tab=(request.args.get("tab") or "facturas").strip().lower(),
         # El acceso de ESTE cliente al portal. Va acá, donde el vendedor ya
         # está parado, y no en una pantalla nueva que nadie abre.
@@ -383,6 +386,101 @@ def pdf(codigo_cli: str):
     data = _cargar_cliente(vend, codigo_cli)
     return informes_views.responder_pdf(data, (codigo_cli or "").upper())
 
+
+def _factura_de(data: dict, numf: int) -> dict:
+    """La factura `numf` DENTRO del estado de cuenta de este cliente.
+
+    El scope no es un chequeo aparte: si la factura no está en la cuenta del
+    cliente que `_cargar_cliente` ya autorizó, no existe para esta pantalla.
+    Tipear el número de una factura ajena en la barra de direcciones da 404
+    porque el número se busca en una lista que ya viene acotada.
+    """
+    facturas = (data.get("facturas") or []) + (data.get("facturas_totalizadas") or [])
+    for f in facturas:
+        try:
+            if int(f.get("numf") or 0) == int(numf):
+                return f
+        except (TypeError, ValueError):
+            continue
+    abort(404)
+    return {}  # pragma: no cover - abort() corta
+
+
+def _factura_ctx(codigo_cli: str, numf: int):
+    """(vend, cliente, factura, detalle, número) — o 404 por el camino."""
+    from modules.asinfo import factura_lineas
+
+    vend = _vend_actual()
+    data = _cargar_cliente(vend, codigo_cli)
+    f = _factura_de(data, numf)
+    numero = (f.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
+    return vend, data.get("cliente") or {}, f, factura_lineas.que_se_llevo(
+        f.get("numf_completo")), numero
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura(codigo_cli: str, numf: int):
+    """Qué se llevó el cliente en esta factura.
+
+    TMT 2026-08-25 (dueña): *"hacerlo también para vendedores y que puedan
+    compartir"*. El vendedor está parado en el local y lo que le preguntan es
+    qué mandaron en esa factura; hasta hoy eso sólo estaba en el papel.
+    """
+    vend, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    return render_template("mi_cartera/factura.html", cliente=cliente, f=f,
+                           det=det, numero=numero, seccion="clientes",
+                           **_ctx_base(vend))
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/hoja")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura_hoja(codigo_cli: str, numf: int):
+    """La hoja para imprimir. Es la MISMA que se manda por WhatsApp."""
+    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    return render_template("mi_cartera/factura_hoja.html", cliente=cliente,
+                           f=f, det=det, numero=numero)
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/pdf")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura_pdf(codigo_cli: str, numf: int):
+    """La misma hoja, como archivo, para mandársela al cliente.
+
+    El 503 no es decorativo: el botón se esconde cuando no hay motor, pero
+    alguien puede llegar por la URL, y un mensaje que dice qué falta es lo que
+    evita el reporte de "no anda el botón".
+    """
+    import re
+
+    from flask import Response, current_app
+
+    from modules._lib import pdf_motor
+
+    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    html = render_template("mi_cartera/factura_hoja.html", cliente=cliente,
+                           f=f, det=det, numero=numero)
+    try:
+        blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("PDF de la factura %s: %s", numero, e)
+        return Response(
+            "No se puede generar el PDF: el servidor no tiene un navegador "
+            "instalado para imprimirlo. La pantalla de impresión sigue "
+            "funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8",
+        )
+    # Mismo criterio que el estado de cuenta: código y fecha, sin tildes ni
+    # barras. Quien lo recibe junta varios en el chat y los ordena solos.
+    cod = re.sub(r"[^A-Za-z0-9]", "", (codigo_cli or "")).upper() or "CLIENTE"
+    nombre = f"Factura {numero} {cod} {today_ec().strftime('%d-%m-%Y')}.pdf"
+    return Response(blob, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{nombre}"',
+        "Cache-Control": "no-store",
+    })
 
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/imagen")
 @requiere_login
