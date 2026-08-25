@@ -85,7 +85,25 @@
    que abre WhatsApp Web — en un celular, una pantalla que dice "abrilo en la
    computadora". Ahora en el teléfono el plan B es bajar el PDF y explicarlo.
 
-   ⭐ La regla: **el botón puede no poder, pero no puede quedarse callado.** #}
+   ⭐ La regla: **el botón puede no poder, pero no puede quedarse callado.**
+
+   🚨 TMT 2026-08-25, segunda vuelta: *"no anda, dice generando y luego se
+   pierde"*, *"no se llega a generar"*, *"quiero el pdf del estado de cuenta,
+   cuando pongo enviar por whatsapp se traba"* → *"hacemos más inclusivo para
+   que a cualquiera le funcione"*.
+
+   El PDF sí se generaba: medido en producción ese mismo día contra
+   `/mi-cartera/cliente/ATE/pdf`, 3,1 · 3,8 · 3,1 s, 88 kB, las tres veces 200.
+   Lo que fallaba era **abrir el menú de compartir DESPUÉS de esa espera**: el
+   permiso que deja el toque dura menos, así que `share()` sale o no sale según
+   el teléfono, y cuando no sale no se ve nada — el botón vuelve a su rótulo y
+   listo. Un toque que anda a veces es peor que dos que andan siempre.
+
+   Así que **en el teléfono ya no se comparte después de esperar**: el primer
+   toque prepara el PDF y el botón pasa a decir *"Tocá para enviar"*; el
+   segundo encuentra el archivo hecho y abre el menú SIN una sola espera en el
+   medio, que es el único caso en que el permiso del toque no se vence nunca.
+   El archivo ADJUNTO se mantiene — *"nunca el link que no sirve"*. #}
 {# Sin motor de PDF en el servidor no se dibuja: un botón que siempre falla
    es peor que no tenerlo. Quien llegue igual por la URL recibe un 503 que
    explica qué falta. #}
@@ -149,6 +167,13 @@
 
   function decir(btn, texto) { btn.querySelector('[data-wa-txt]').textContent = texto; }
 
+  // ⭐ El rótulo del SEGUNDO toque. Dice QUÉ HACER y no en qué estado está:
+  // "Enviar ahora" se lee como un cartel y el vendedor se queda esperando.
+  // ⚠ Corto a propósito: comparte la fila con "Imprimir" y el span recorta lo
+  // que no entra (`overflow:hidden`), así que a 390 px un texto largo sale
+  // cortado por la mitad.
+  var LISTO = 'Tocá para enviar';
+
   // ⭐ El PDF se prepara UNA vez por botón y queda en memoria. Es lo que
   // permite que el compartir salga sin esperar nada: ver el comentario de
   // cabecera (Android, 20/08).
@@ -209,9 +234,9 @@
       navigator.share({ files: [file], title: listo.nombre }).catch(function (e) {
         // Cerró el menú a propósito: no es un error y no hay que insistirle.
         if (e && e.name === 'AbortError') return;
-        // Se venció el permiso del toque (la generación tardó). El PDF YA está
-        // en memoria: el próximo toque abre el menú al instante.
-        decir(btn, 'Enviar ahora');
+        // Se venció el permiso del toque. El PDF YA está en memoria: el
+        // próximo toque abre el menú al instante.
+        decir(btn, LISTO);
       });
     } catch (e) {
       // `share` explotó de entrada (no devolvió promesa): este aparato no
@@ -247,7 +272,13 @@
       decir(btn, original);
       btn.style.width = '';
 
-      if (porMenu) { compartirYa(btn, listo); return; }
+      // ⭐ EN EL TELÉFONO NO SE COMPARTE ACÁ. Generar el PDF tarda 3 a 4,7
+      // segundos y el permiso que deja el toque dura menos: abrir el menú
+      // después de esa espera sale o no sale según el aparato, y cuando no
+      // sale NO SE VE NADA. Así que el primer toque prepara y el botón pasa a
+      // pedir el segundo, que llega con el permiso fresco y el PDF ya hecho.
+      // Dos toques que andan siempre, en vez de uno que anda a veces.
+      if (porMenu) { decir(btn, LISTO); return; }
 
       // Teléfono sin menú de compartir: el archivo a las descargas y una
       // frase que lo explique. Mandarlo a WhatsApp Web sería mandarlo a una

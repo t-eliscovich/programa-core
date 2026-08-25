@@ -500,7 +500,7 @@ def test_si_el_permiso_se_vencio_el_boton_pide_UN_SEGUNDO_TOQUE(app):
     botón lo dice y el toque siguiente abre el menú al instante. Nunca se cae
     al camino de escritorio, que en un teléfono termina en el visor de PDF."""
     html = _boton(app)
-    assert "'Enviar ahora'" in html
+    assert "var LISTO = 'Tocá para enviar'" in html
     # El fallback de escritorio (bajar + WhatsApp Web) queda para el escritorio.
     telefono = html.split("function compartirYa")[1].split("function largo")[0]
     assert "web.whatsapp.com" not in telefono
@@ -817,3 +817,33 @@ def test_un_telefono_sin_menu_de_compartir_no_va_a_whatsapp_web(app):
     largo = html.split("function largo")[1].split("addEventListener('click'")[0]
     assert "if (esTel) { bajarYExplicar(listo); return; }" in largo
     assert "var ventana = (porMenu || esTel) ? null : window.open" in largo
+
+
+def test_en_el_telefono_no_se_comparte_DESPUES_de_esperar(app):
+    """⭐ TMT 2026-08-25: *"no anda, dice generando y luego se pierde"* →
+    *"hacemos más inclusivo para que a cualquiera le funcione"*.
+
+    El PDF se genera bien (3,1 · 3,8 · 3,1 s medidos en producción ese día).
+    Lo que fallaba era abrir el menú de compartir DESPUÉS de esa espera: el
+    permiso que deja el toque dura menos, así que sale o no sale según el
+    teléfono, y cuando no sale no se ve nada.
+
+    El candado: en el camino largo, con `porMenu`, el botón pide el segundo
+    toque y NO llama a compartir. Compartir sale sólo del click, con el PDF ya
+    en memoria y sin una espera en el medio.
+    """
+    html = _boton(app)
+    largo = html.split("function largo")[1].split("addEventListener('click'")[0]
+    assert "if (porMenu) { decir(btn, LISTO); return; }" in largo
+    assert "compartirYa" not in largo, "volvió a compartir después de esperar"
+    clic = html.split("addEventListener('click'")[1]
+    assert "if (porMenu && btn.__listo) { if (compartirYa(btn, btn.__listo)) return; }" in clic
+
+
+def test_el_rotulo_del_segundo_toque_dice_QUE_HACER(app):
+    """"Enviar ahora" se lee como un cartel de estado y el vendedor se queda
+    esperando. Y tiene que entrar en la fila con "Imprimir": el span recorta lo
+    que no entra, así que largo no puede ser."""
+    html = _boton(app)
+    assert "var LISTO = 'Tocá para enviar'" in html
+    assert len("Tocá para enviar") <= 18
