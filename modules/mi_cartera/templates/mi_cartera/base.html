@@ -66,6 +66,27 @@
      ⚠ Sale del portal hacia la sección Análisis, que tiene su propio cascarón:
      allá arriba a la derecha hay un "← Mi Cartera" para volver. #}
   <a href="/analisis/competencia{{ qp }}"><em>◈</em>Competencia</a>
+  {# ⭐ La quinta pestaña, 25/08/2026 (dueña): las FICHAS TÉCNICAS de las telas.
+     Van al tabbar y no adentro de otra pantalla por el mismo motivo que la
+     Competencia: el vendedor las abre delante del cliente.
+
+     ⚠ Abre en OTRA pestaña. Es un programa aparte, con su propio "Salir" y sin
+     un "← volver": si abriera encima, el vendedor queda afuera de Mi Cartera y
+     la única salida sería el botón de atrás del celular.
+
+     ⚠ `rel="noopener"`: sin eso la pestaña nueva puede manotear el
+     `window.opener` de ésta.
+
+     ⚠ Está en el plan gratis de Render: se duerme sola y la PRIMERA visita del
+     día tarda ~40 s mostrando una pantalla negra que dice "SERVICE WAKING UP".
+     Medido el 25/08/2026. Si algún día molesta, se arregla del lado de las
+     fichas (plan pago o un ping), no acá.
+
+     Medido a 390 px con la cartera real de PPR: las cinco pestañas quedan de
+     76 px y "Ficha técnica" ocupa 69 px de texto — entra en un renglón, igual
+     que "Competencia". Una sexta ya no entraría. #}
+  <a href="https://fichas-tecnicas-czvd.onrender.com/" target="_blank"
+     rel="noopener"><em>▣</em>Ficha técnica</a>
 </nav>
 
 </body>

@@ -2583,6 +2583,37 @@ def test_el_vendedor_puede_cerrar_sesion(vendedor_logueado, monkeypatch):
     assert "csrf_token" in cuenta
 
 
+def test_la_ficha_tecnica_abre_en_otra_pestana(vendedor_logueado, monkeypatch):
+    """La quinta pestaña (dueña 2026-08-25) lleva a un programa APARTE.
+
+    ⚠ Tiene que abrir en otra pestaña: las fichas técnicas viven fuera de
+    Programa Core, con su propio "Salir" y sin un "← volver". Abriendo encima,
+    el vendedor queda afuera de Mi Cartera sin más salida que el botón de atrás
+    del celular — el mismo bug que el candado del 2026-08-03, por otro camino.
+
+    Y `rel="noopener"`, que es lo que impide que la pestaña nueva toque el
+    `window.opener` de ésta.
+    """
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
+    monkeypatch.setattr(q, "ventas_kg", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "meta_periodo", lambda *a, **k: None)
+    monkeypatch.setattr(q, "ventas_kg_por_semana", lambda *a, **k: [])
+    monkeypatch.setattr(q, "cobrado", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "comision_mes", lambda *a, **k: 0.0)
+    monkeypatch.setattr(q, "por_cobrar",
+                        lambda vend: {"saldo": 0, "vencido": 0, "n_clientes": 0})
+
+    html = vendedor_logueado.get("/mi-cartera").data.decode()
+    tabbar = html.split('<nav class="tabbar">')[1].split("</nav>")[0]
+
+    assert "Ficha técnica" in tabbar
+    tags = [x for x in tabbar.split("<a ") if "fichas-tecnicas" in x]
+    assert len(tags) == 1, "la ficha técnica es UN link del tabbar"
+    assert 'target="_blank"' in tags[0]
+    assert "noopener" in tags[0]
+
+
 def test_la_ruta_de_salida_no_esta_bloqueada_por_el_allowlist():
     """Un botón que da 404 es peor que no tener botón. `/logout` tiene que
     seguir en PREFIJOS_INFRA — si alguien lo saca, el vendedor queda
