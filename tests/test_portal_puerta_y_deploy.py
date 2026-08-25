@@ -103,3 +103,65 @@ def test_el_portal_no_toca_el_puerto_de_la_oficina():
     bloque = DEPLOY[DEPLOY.index("5.b El PORTAL"):DEPLOY.index("# 6. Health check")]
     assert "LocalPort 5004" in bloque
     assert "5002" not in bloque, "el bloque del portal está mirando el puerto de la oficina"
+
+
+# ---------------------------------------------------------------------------
+# El script que lo pone en el aire
+# ---------------------------------------------------------------------------
+
+BOOTSTRAP = (ROOT / "scripts" / "crear_servicio_portal.ps1").read_text(encoding="utf-8")
+
+
+def test_el_script_deriva_el_arranque_del_que_ya_funciona():
+    """No escribe la línea de arranque a mano: la copia de la tarea de la
+    oficina y le cambia la puerta y el puerto. Si mañana cambia la forma de
+    arrancar —otra versión de Waitress, otro python— el portal la hereda."""
+    assert "Get-ScheduledTask -TaskName $TAREA_BASE" in BOOTSTRAP
+    assert "-replace 'run:app', 'run_portal:app'" in BOOTSTRAP
+
+
+def test_el_script_frena_si_no_pudo_derivar_el_arranque():
+    """🚨 Si el `-replace` no encontró nada, los argumentos quedarían IGUALES a
+    los de la oficina: sería un segundo proceso del ERP escuchando en otro
+    puerto, o sea el ERP entero servido donde va el portal."""
+    assert "if ($argumentos -eq $accionBase.Arguments)" in BOOTSTRAP
+    assert "$argumentos -notmatch 'run_portal:app'" in BOOTSTRAP
+
+
+def test_el_script_no_pide_certificado_para_un_sitio_caido():
+    """Let's Encrypt da pocos intentos por semana. Primero se comprueba que el
+    portal contesta en localhost; recién ahí se toca el Caddyfile."""
+    i_health = BOOTSTRAP.index("El portal en localhost")
+    i_caddy = BOOTSTRAP.index("2. El Caddyfile")
+    assert i_health < i_caddy
+
+
+def test_el_script_hace_copia_del_caddyfile_y_sabe_volver():
+    """El Caddyfile es el que sirve el ERP entero por HTTPS. Se toca con copia
+    al lado y con vuelta atrás si Caddy rechaza la configuración nueva."""
+    assert "Copy-Item $CADDYFILE $copia -Force" in BOOTSTRAP
+    assert "Copy-Item $copia $CADDYFILE -Force" in BOOTSTRAP, (
+        "no sabe volver atrás si Caddy rechaza la config")
+
+
+def test_el_script_es_idempotente_con_el_caddyfile():
+    assert "if ($texto -match [regex]::Escape($HOSTNAME_WEB))" in BOOTSTRAP
+
+
+def test_el_script_no_toca_lo_de_la_oficina():
+    """Agrega al FINAL del Caddyfile, nunca lo reescribe: el bloque de
+    programa.intela.com.ec sigue donde estaba.
+
+    El assert mira las líneas de CÓDIGO, no el archivo entero: el sitio de la
+    oficina se nombra en el comentario de arriba justamente para decir que no
+    se toca, y buscar el texto suelto daba un falso positivo por eso.
+    """
+    assert "Add-Content -Path $CADDYFILE" in BOOTSTRAP
+    assert "Set-Content -Path $CADDYFILE" not in BOOTSTRAP
+    # Fuera el bloque de ayuda de arriba (<# ... #>) y los comentarios de línea.
+    cuerpo = BOOTSTRAP.split("#>", 1)[1]
+    codigo = [ln for ln in cuerpo.split("\n")
+              if ln.strip() and not ln.strip().startswith("#")]
+    tocan_la_oficina = [ln for ln in codigo
+                        if "programa.intela.com.ec" in ln.replace("portal.intela.com.ec", "")]
+    assert tocan_la_oficina == [], tocan_la_oficina
