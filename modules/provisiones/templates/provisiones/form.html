@@ -7,7 +7,7 @@
 <div class="max-w-2xl">
   {{ page_hero(
       'Nueva provisión' if modo == 'crear' else 'Editar provisión',
-      'Cuota mensual recurrente que se autopopula como posdatado YY cada mes.'
+      'Cuota del mes de un gasto que se repite. Se reparte entre los días del mes y engorda la deuda YY todos los días.'
   ) }}
 
   {% if errores %}
@@ -28,7 +28,7 @@
       </label>
 
       <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Importe <span class="text-red-500">*</span></span>
+        <span class="text-sm text-slate-600">Cuota mensual <span class="text-red-500">*</span></span>
         <input type="text" name="importe" value="{{ form.importe or '' }}"
                class="border rounded px-2 py-1 mt-1 text-right" required
                placeholder="1.234,56">

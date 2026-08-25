@@ -28,6 +28,7 @@ from datetime import date
 from decimal import Decimal
 
 import db
+import reparto_mensual as rm
 from filters import today_ec
 from modules._lib import busqueda
 from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
@@ -2131,8 +2132,9 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
     Si `ult_fecha >= hoy`, no hace nada. Si no, aplica un día por cada día
     hábil pendiente y avanza el marker a hoy.
 
-    Excluye domingos (`weekday() == 6`). Si hoy es domingo, el marker
-    igual avanza pero ese día NO suma — igual que dBase legacy.
+    Desde el 01/09/2026 corre TODOS los días, sábados y domingos incluidos,
+    y cada día suma la cuota mensual dividida por los días de ese mes. Antes
+    de esa fecha sólo corría de lunes a viernes (ver reparto_mensual.py).
 
     Cada día aplicado afecta UN solo posdat por categoría (primer match
     por id_posdat). Si no hay match, se saltea (igual que dBase).
@@ -2201,7 +2203,9 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
         # no se abre los sábados, así que en la práctica es L-V. Mantener L-V.
         cursor_d = ult_fecha + _td(days=1)
         while cursor_d <= hoy:
-            if cursor_d.weekday() < 5:  # 0=L .. 4=V (sin S/D)
+            # Desde el 01/09/2026 corren todos los días, sábados y domingos
+            # incluidos (ver reparto_mensual.py). Antes, sólo L-V.
+            if rm.provision_corre(cursor_d):
                 dias_a_aplicar.append(cursor_d)
             cursor_d += _td(days=1)
 
@@ -2224,9 +2228,10 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
                         f"≥ hoy {hoy_iso}. No permitimos doble-aplicar."
                     ),
                 }
-            # Forzar: agregar último día hábil (L-V); si hoy es S/D, retroceder.
+            # Forzar: agregar el último día que corre; si hoy no corre
+            # (sábado o domingo antes del corte), retroceder hasta uno que sí.
             _f = hoy
-            while _f.weekday() >= 5:
+            while not rm.provision_corre(_f):
                 _f -= _td(days=1)
             dias_a_aplicar = [_f]
 
@@ -2248,15 +2253,15 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
         # PROVISIONES_DIARIAS). Para cada provisión:
         #   1. Buscar la posdat YY que matchea por concepto (starts-with
         #      bidireccional case-insensitive, longitud ≥ 3).
-        #   2. Si existe → importe += pr.importe (cuota diaria, tal cual).
+        #   2. Si existe → importe += la cuota del día (el mensual de la
+        #      provisión repartido entre los días de ese mes).
         #   3. Si no existe → se saltea (no toca ese día — la dueña puede
         #      crear el posdat YY manualmente o dejar la provisión sola).
         #
-        # TMT 2026-05-28 dueña: 'en vez de mensual hagamos cuota diaria'.
-        # ANTES: importe += cuota_mensual / 30. AHORA: importe += pr.importe
-        # tal cual. La tabla provisiones ahora guarda la cuota DIARIA
-        # directamente. La dueña va a actualizar los valores manualmente
-        # desde la pantalla de provisiones (label cambiado a 'Cuota diaria').
+        # TMT 2026-08-25 dueña: 'hagamos un total mensual de lo que se viene
+        # pasando, y luego dividimos por los días'. `provisiones.importe`
+        # volvió a guardar la cuota MENSUAL (migración 0223) y acá se divide
+        # por los días del mes. Desde el 01/09/2026 corre todos los días.
         #
         # La lista hardcoded queda como FALLBACK SOLO para provisiones
         # legacy que todavía no están en `scintela.provisiones`. Una vez
@@ -2278,9 +2283,12 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
                 concepto = (pr.get("concepto") or "").strip()
                 if len(concepto) < 3:
                     continue
-                diario = float(pr.get("importe") or 0)
-                if diario <= 0:
+                mensual = float(pr.get("importe") or 0)
+                if mensual <= 0:
                     continue
+                # La cuota del día = el mensual repartido entre los días del
+                # mes de ESE día (migración 0223 + reparto_mensual.py).
+                diario = round(rm.cuota_del_dia(mensual, _dia), 2)
                 # Match aproximado contra el concepto del posdat YY.
                 # Mismo criterio que el LATERAL JOIN viejo: starts-with
                 # bidireccional, case-insensitive.

@@ -3,6 +3,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 
 import db
+import reparto_mensual as rm
 from filters import money_es, today_ec
 from modules._lib import busqueda
 from periodo_guard import asegurar_fecha_abierta
@@ -50,6 +51,24 @@ def _dias_habiles_entre(desde: date, hasta: date) -> int:
     while d < hasta:
         d = d + timedelta(days=1)
         if d.weekday() < 5:  # 0=L .. 4=V (sin S/D)
+            n += 1
+    return n
+
+
+def _dias_corridos(desde: date, hasta: date) -> int:
+    """Días en que la provisión suma, entre (desde, hasta].
+
+    Desde el 01/09/2026 son todos los días; antes, sólo lunes a viernes.
+    Es sólo para mostrar cuántos días lleva corridos — la plata la calcula
+    `reparto_mensual.acumulado_entre()`.
+    """
+    if hasta is None or desde is None or hasta <= desde:
+        return 0
+    n = 0
+    d = desde
+    while d < hasta:
+        d = d + timedelta(days=1)
+        if rm.provision_corre(d):
             n += 1
     return n
 
@@ -111,16 +130,16 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
         base_date = r.get("baseline_date")
         if not base_date:
             continue
-        cd = float(r.get("cuota_diaria") or 0)
-        if cd <= 0:
+        mensual = float(r.get("cuota_mensual") or 0)
+        if mensual <= 0:
             r["importe_base"] = float(r.get("importe") or 0)
             r["dias_offset"] = 0
             continue
         importe_pers = float(r.get("importe") or 0)
-        offset = _dias_habiles_entre(base_date, hoy)
+        devengado = rm.acumulado_entre(mensual, base_date, hoy)
         r["importe_base"] = round(importe_pers, 2)
-        r["importe"] = round(importe_pers + cd * offset, 2)
-        r["dias_offset"] = offset
+        r["importe"] = round(importe_pers + devengado, 2)
+        r["dias_offset"] = _dias_corridos(base_date, hoy)
 
 
 def persistir_acumulacion_yy(hoy: date | None = None) -> int:
@@ -179,13 +198,13 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
     _resolver_cuotas(rows)  # misma resolución que el display
     n = 0
     for r in rows:
-        cd = float(r.get("cuota_diaria") or 0)
-        if cd <= 0:
+        mensual = float(r.get("cuota_mensual") or 0)
+        if mensual <= 0:
             continue
-        off = _dias_habiles_entre(r["baseline_date"], hoy)
-        if off <= 0:
+        devengado = rm.acumulado_entre(mensual, r["baseline_date"], hoy)
+        if devengado <= 0:
             continue
-        nuevo = float(r["importe"] or 0) + cd * off
+        nuevo = float(r["importe"] or 0) + devengado
         db.execute(
             "UPDATE scintela.posdat SET importe = %s, baseline_date = %s "
             "WHERE id_posdat = %s",
@@ -778,28 +797,29 @@ def _resolver_cuotas(rows: list[dict]) -> None:
     for r in rows:
         match = _match_provision(r.get("concepto") or "")
         if match:
-            # TMT 2026-05-28 dueña: 'en vez de mensual hagamos cuota diaria'
-            # La tabla scintela.provisiones.importe ahora guarda la cuota
-            # DIARIA directamente (antes era mensual). NO dividir por 30.
-            # cuota_mensual queda como estimación visual (× 30).
-            diaria = float(match.get("importe") or 0)
+            # TMT 2026-08-25 dueña: 'mismo monto mensual, repartido entre los
+            # días del mes'. `scintela.provisiones.importe` volvió a guardar la
+            # cuota MENSUAL (migración 0223) y la diaria sale de dividirla por
+            # los días del mes — cambia con el mes, así que se calcula, no se
+            # guarda. Ver reparto_mensual.py.
+            mensual = float(match.get("importe") or 0)
             r["id_provisiones"]    = match.get("id_provisiones")
-            r["cuota_diaria"]      = diaria
-            r["cuota_mensual"]     = diaria  # legacy: el template/JS leen cuota_mensual; mantenemos el valor diario que la dueña ve y edita
+            r["cuota_mensual"]     = mensual
+            r["cuota_diaria"]      = round(rm.cuota_del_dia(mensual, _hoy_ec()), 2)
             r["provision_periodo"] = match.get("periodo_aplica")
         else:
-            # TMT 2026-05-29 dueña: RT (IVA) suma 8400/día hábil según
-            # dBase MENU.PRG L333 (REPLA IMPORTE+8400). Hardcoded acá
-            # porque RT no está en scintela.provisiones. Otros posdat
-            # sin match en provisiones quedan sin cuota.
+            # RT (IVA) venía 8.400/día hábil del dBase (MENU.PRG L333).
+            # En mensual son 8.400 × 21,75 = 182.700. Es un FALLBACK: RT ya
+            # está cargada en scintela.provisiones; esto cubre el caso de que
+            # alguien la borre. Otros posdat sin match quedan sin cuota.
             r["id_provisiones"]    = None
             r["provision_periodo"] = None
             r["cuota_diaria"]      = None
             r["cuota_mensual"]     = None
             prov_upper = (r.get("prov") or "").strip().upper()
             if prov_upper == "RT":
-                r["cuota_diaria"]  = 8400.0
-                r["cuota_mensual"] = 8400.0
+                r["cuota_mensual"] = 182700.0
+                r["cuota_diaria"]  = round(rm.cuota_del_dia(182700.0, _hoy_ec()), 2)
 
 
 

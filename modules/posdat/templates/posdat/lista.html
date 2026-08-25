@@ -84,18 +84,18 @@
   {# TMT 2026-05-27 dueña: 'mostrame cuanto subiste de ayer a hoy o algo
      para poder llevar la cuenta'. Solo aparece en tab=yy donde hay
      provisiones con cuota diaria. 2 KPIs: subió hoy (= delta_dia_hoy)
-     y acumulado del mes hasta hoy (día actual × cuota_diaria). #}
+     y lo que suman en un mes completo (la suma de las cuotas mensuales). #}
   {% if tab == 'yy' and (delta_dia_hoy or 0) > 0 %}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
     <div class="rounded-lg bg-rose-50 border border-rose-200 px-5 py-4">
       <div class="text-xs uppercase tracking-wider text-rose-700">Cuota diaria total</div>
       <div class="mt-2 text-2xl font-semibold text-rose-900 text-mono">{{ delta_dia_hoy | money_es }}</div>
-      <div class="mt-1 text-xs text-rose-700">se suma al saldo cada día hábil (L-V)</div>
+      <div class="mt-1 text-xs text-rose-700">{% if reparte_por_dias %}se suma al saldo todos los días{% else %}se suma al saldo de lunes a viernes (desde el 1 de septiembre, todos los días){% endif %}</div>
     </div>
     <div class="rounded-lg bg-rose-50 border border-rose-200 px-5 py-4">
-      <div class="text-xs uppercase tracking-wider text-rose-700">Acumulación del mes</div>
+      <div class="text-xs uppercase tracking-wider text-rose-700">Lo que suman en el mes</div>
       <div class="mt-2 text-2xl font-semibold text-rose-900 text-mono">{{ acum_mes_hasta_hoy | money_es }}</div>
-      <div class="mt-1 text-xs text-rose-700">cuota × 25 días hábiles — cuánto crecería el saldo en un mes sin pagos</div>
+      <div class="mt-1 text-xs text-rose-700">cuánto crece el saldo en un mes sin pagos</div>
     </div>
   </div>
   {% endif %}
@@ -174,10 +174,10 @@
           <th class="px-2 py-1 text-right" title="Importe acumulado del día — fracción de la cuota mensual cuando es provisión">Importe</th>
           <th class="px-2 py-1" title="Detalle de la cuenta (retiros OP)">Detalle</th>
           {% if _show_mensual %}
-            <th class="px-2 py-1 text-right" title="Cuota diaria de la provisión origen (se suma a la posdat YY cada L-V) — editable inline">Cuota diaria</th>
+            <th class="px-2 py-1 text-right" title="Cuota del mes de la provisión — se reparte entre los días del mes. Editable acá mismo">Cuota mensual</th>
           {% endif %}
           {% if _show_diaria %}
-            <th class="px-2 py-1 text-right" title="Cuota diaria = mensual ÷ 30. Editable (recalcula la mensual)">Cuota diaria</th>
+            <th class="px-2 py-1 text-right" title="La cuota del mes repartida entre los días del mes">Cuota diaria</th>
           {% endif %}
           {% if _show_acum %}
             <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
@@ -422,7 +422,7 @@
                      class="posdat-cuota-edit posdat-cuota-mensual w-28 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
                      value="{{ f.cuota_mensual }}"
                      data-orig="{{ f.cuota_mensual }}"
-                     title="Cuota mensual de la provisión — editable inline">
+                     title="Cuota del mes de la provisión — se reparte entre los días del mes">
             {% elif f.cuota_mensual is not none and tiene_permiso('posdat.editar') %}
               <input type="number" step="0.01" min="0"
                      class="posdat-cuota-derivada-mensual w-28 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"

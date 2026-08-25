@@ -7,7 +7,7 @@ Cubre:
       · Aplica a filas prov IN ('YY','RT') con baseline_date + cuota > 0.
       · No toca filas con prov fuera de (YY,RT).
       · No toca YY/RT sin baseline_date.
-      · No toca YY/RT con cuota_diaria=0.
+      · No toca YY/RT con cuota mensual = 0.
       · Acumula PERPETUO (sin cierre mensual lazy): el offset crece
         sin reset al cruzar mes — comportamiento dBase MENU.PRG L283-333.
       · Saltea fines de semana.
@@ -93,12 +93,19 @@ class TestUltimoDiaDelMes:
 
 def _fila_yy(*, importe=1000, baseline=date(2026, 5, 28), cuota=100,
              id_posdat=42, concepto="SUELDOS", prov="YY"):
-    """Construye una fila estilo `buscar()` para los tests."""
+    """Construye una fila estilo `buscar()` para los tests.
+
+    `cuota` es la cuota DIARIA que la fila devengaba antes del 01/09/2026.
+    Desde la migración 0223 la fila lleva el monto MENSUAL (= diaria × 21,75,
+    los días hábiles promedio del mes), y el programa lo vuelve a dividir —
+    por eso estos números no se movieron ni un centavo.
+    """
     return {
         "id_posdat": id_posdat,
         "prov": prov,
         "importe": importe,
         "baseline_date": baseline,
+        "cuota_mensual": cuota * 21.75,
         "cuota_diaria": cuota,
         "concepto": concepto,
     }
@@ -108,12 +115,13 @@ class TestAplicarDisplayTimeYY:
     def test_no_toca_filas_otras_provs(self):
         # provedor regular (EM, BP, etc) no devenga
         f = {"prov": "EM", "importe": 500, "baseline_date": date(2026, 5, 28),
-             "cuota_diaria": 50}
+             "cuota_mensual": 1087.5, "cuota_diaria": 50}
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 29))
         assert f["importe"] == 500
 
     def test_no_toca_yy_sin_baseline(self):
-        f = {"prov": "YY", "importe": 500, "baseline_date": None, "cuota_diaria": 50}
+        f = {"prov": "YY", "importe": 500, "baseline_date": None,
+             "cuota_mensual": 1087.5, "cuota_diaria": 50}
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 29))
         assert f["importe"] == 500
 
@@ -191,13 +199,13 @@ class TestRTtambienAcumula:
 
     def test_rt_sin_baseline_intacto(self):
         f = {"prov": "RT", "importe": 100000, "baseline_date": None,
-             "cuota_diaria": 8400}
+             "cuota_mensual": 182700, "cuota_diaria": 8400}
         q._aplicar_display_time_yy([f], hoy=date(2026, 6, 3))
         assert f["importe"] == 100000  # sin baseline, no se toca
 
 
 class TestEjemploSueldosCompletoSinCierre:
-    """End-to-end de SUELDOS cuota_diaria=5000, baseline=jue 28/05/2026.
+    """End-to-end de SUELDOS 5.000 por día hábil, baseline=jue 28/05/2026.
 
     Comportamiento NUEVO (perpetuo, sin cierre):
     | Día | importe esperado |

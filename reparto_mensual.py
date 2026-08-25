@@ -37,7 +37,7 @@ que hace la misma cuenta para los activos.
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
 #: Desde este día se reparte por los días reales del mes.
 CORTE_DIAS_REALES = date(2026, 9, 1)
@@ -105,3 +105,21 @@ def cuota_del_dia(cuota_mensual, fecha: date) -> float:
     """
     divisor = dias_del_mes(fecha) if fecha >= CORTE_DIAS_REALES else DIAS_HABILES_PROMEDIO
     return float(cuota_mensual or 0) / divisor
+
+
+def acumulado_entre(cuota_mensual, desde: date, hasta: date) -> float:
+    """Lo que devengó una provisión entre `desde` y `hasta`.
+
+    Excluye `desde`, incluye `hasta` — igual que el conteo de días hábiles que
+    reemplaza. Suma día por día porque la cuota diaria cambia con el mes: en
+    octubre es el mensual ÷ 31 y en noviembre ÷ 30.
+    """
+    if not desde or not hasta or hasta <= desde:
+        return 0.0
+    total = 0.0
+    d = desde
+    while d < hasta:
+        d = d + timedelta(days=1)
+        if provision_corre(d):
+            total += cuota_del_dia(cuota_mensual, d)
+    return total

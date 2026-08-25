@@ -6,7 +6,7 @@ silencioso (callers con except:pass) → el persist nunca corrió y el Balance
 Pasivos quedaba congelado en el último pin del reconcile (~32k/día de drift),
 "arreglándose" con cada sync y rompiéndose después. Estos tests garantizan:
   1. el persist NO depende de columnas inexistentes (usa _resolver_cuotas),
-  2. acumula cuota × días hábiles y avanza baseline (idempotente),
+  2. acumula lo que corresponde al período y avanza baseline (idempotente),
   3. la clave canónica YY sobrevive ediciones de concepto,
   4. la suma de cuotas espejo del PRG da 32.000/día (MENU.PRG L283-333).
 """
@@ -63,8 +63,11 @@ def test_persist_acumula_cuota_por_dias_habiles(monkeypatch):
         monkeypatch,
         rows=[{"id_posdat": 132, "prov": "YY", "concepto": "A,E,C AG,EN,CMB",
                "importe": -17300.0, "baseline_date": date(2026, 6, 8)}],
-        provisiones=[{"id_provisiones": 1, "concepto": "A,E,C", "importe": 7700.0,
-                      "periodo_aplica": None}],
+        # `provisiones.importe` guarda el monto MENSUAL desde la migración
+        # 0223: 7.700 por día hábil son 7.700 × 21,75 al mes. El programa lo
+        # vuelve a dividir, así que el resultado es el mismo de siempre.
+        provisiones=[{"id_provisiones": 1, "concepto": "A,E,C",
+                      "importe": 7700.0 * 21.75, "periodo_aplica": None}],
     )
     n = pq.persistir_acumulacion_yy(hoy=date(2026, 6, 10))
     assert n == 1
@@ -79,7 +82,7 @@ def test_persist_rt_usa_cuota_hardcodeada_8400(monkeypatch):
         monkeypatch,
         rows=[{"id_posdat": 141, "prov": "RT", "concepto": "",
                "importe": -24850.0, "baseline_date": date(2026, 6, 9)}],
-        provisiones=[],  # RT no está en provisiones — fallback 8400
+        provisiones=[],  # RT no está en provisiones — fallback 182.700/mes = 8.400/día
     )
     n = pq.persistir_acumulacion_yy(hoy=date(2026, 6, 10))
     assert n == 1
@@ -92,7 +95,7 @@ def test_persist_idempotente_baseline_hoy(monkeypatch):
         rows=[{"id_posdat": 1, "prov": "YY", "concepto": "SUELDOS",
                "importe": 100.0, "baseline_date": date(2026, 6, 10)}],
         provisiones=[{"id_provisiones": 2, "concepto": "SUELDOS",
-                      "importe": 6000.0, "periodo_aplica": None}],
+                      "importe": 6000.0 * 21.75, "periodo_aplica": None}],
     )
     n = pq.persistir_acumulacion_yy(hoy=date(2026, 6, 10))
     assert n == 0 and updates == []
@@ -105,7 +108,7 @@ def test_persist_fin_de_semana_no_suma(monkeypatch):
         rows=[{"id_posdat": 1, "prov": "YY", "concepto": "SUELDOS",
                "importe": 100.0, "baseline_date": date(2026, 6, 12)}],
         provisiones=[{"id_provisiones": 2, "concepto": "SUELDOS",
-                      "importe": 6000.0, "periodo_aplica": None}],
+                      "importe": 6000.0 * 21.75, "periodo_aplica": None}],
     )
     n = pq.persistir_acumulacion_yy(hoy=date(2026, 6, 14))
     assert n == 0 and updates == []

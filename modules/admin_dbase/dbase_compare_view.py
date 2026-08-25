@@ -1622,18 +1622,26 @@ def cuotas_del_prg() -> list[tuple[str, float]]:
 
 
 def cuotas_de_pc() -> dict[str, float]:
-    """Cuota diaria que PC usa HOY: scintela.provisiones + el RT hardcodeado
-    en modules/posdat/queries._resolver_cuotas (RT no vive en esa tabla)."""
+    """Cuota DIARIA que PC usa HOY: scintela.provisiones + el RT de fallback
+    en modules/posdat/queries._resolver_cuotas (RT no vive en esa tabla).
+
+    TMT 2026-08-25: `provisiones.importe` guarda el monto MENSUAL desde la
+    migración 0223, así que acá hay que repartirlo entre los días del mes
+    para poder compararlo con la cuota diaria del PRG viejo.
+    """
+    import reparto_mensual as _rm
+    from filters import today_ec as _hoy
+    hoy = _hoy()
     out: dict[str, float] = {}
     try:
         from db import fetch_all as _fa
         for r in _fa("SELECT concepto, importe FROM scintela.provisiones") or []:
             c = (r.get("concepto") or "").strip().upper()
             if c:
-                out[c] = float(r.get("importe") or 0)
+                out[c] = round(_rm.cuota_del_dia(r.get("importe") or 0, hoy), 2)
     except Exception:  # noqa: BLE001
         pass
-    out.setdefault("RT", 8400.0)
+    out.setdefault("RT", round(_rm.cuota_del_dia(182700.0, hoy), 2))
     return out
 
 

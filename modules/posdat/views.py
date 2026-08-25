@@ -15,6 +15,7 @@ from flask import (
 )
 
 import db
+import reparto_mensual as rm
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
@@ -581,13 +582,17 @@ def lista():
     total_importe = _tot["importe"]
     total_cuota_mensual = _tot["cuota_mensual"]
     total_cuota_diaria = _tot["cuota_diaria"]
-    # TMT 2026-05-28 sesión replanear: el KPI ahora es la PROYECCIÓN del
-    # mes completo (25 días hábiles × cuota total), no el día_calendario
-    # × cuota que daba números inflados (29 × 29539 = 856k cuando la
-    # dueña esperaba ~600k). Con 25 días la proyección ≈ total YY actual.
-    _dia_hoy = today_ec().day
+    # TMT 2026-08-25: el mes completo ya no se estima (era cuota diaria × 25
+    # días hábiles, un número inventado). Ahora las provisiones GUARDAN el
+    # monto mensual, así que el mes completo es la suma de las cuotas
+    # mensuales, exacta. Ver reparto_mensual.py y la migración 0223.
+    _hoy_ec = today_ec()
+    _dia_hoy = _hoy_ec.day
     delta_dia_hoy = round(total_cuota_diaria, 2)
-    acum_mes_hasta_hoy = round(total_cuota_diaria * 25, 2)
+    acum_mes_hasta_hoy = round(total_cuota_mensual, 2)
+    # Para el texto de la pantalla: ¿ya reparte por días del mes o todavía
+    # corre sólo de lunes a viernes?
+    reparte_por_dias = _hoy_ec >= rm.CORTE_DIAS_REALES
 
     # Saldo OP (over-price/aporte) para el panel + botón de retiro a accionistas.
     # Sólo se muestra en el tab posdatados. Best-effort: si falla, no rompe.
@@ -655,6 +660,7 @@ def lista():
         total_cuota_diaria=total_cuota_diaria,
         delta_dia_hoy=delta_dia_hoy,
         acum_mes_hasta_hoy=acum_mes_hasta_hoy,
+        reparte_por_dias=reparte_por_dias,
         dia_del_mes=_dia_hoy,
         saldo_op=saldo_op,
         today_iso=today_ec().isoformat(),

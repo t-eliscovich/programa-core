@@ -114,27 +114,6 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 
 ## Aprobado por la dueña, pendiente de ejecutar
 
-### [M] Provisiones: repartirlas entre los días del mes (activos ya está)
-Tamara, 25/08/2026: *"que se calcule y se incremente todos los días. Mismo
-monto mensual, pero si es 100 entonces cada día de un mes de 31 se sube
-100/31, si es 30 entonces 100/30, contando sábados y domingos"*.
-
-**Hecho** (migración 0221 + `reparto_mensual.py`): la depreciación de activos.
-Desde el 01/09/2026 la cuota se reparte entre los días reales del mes en vez
-de dividir siempre por 30. Antes del corte no cambia nada.
-
-**Falta**: las 12 provisiones de `scintela.provisiones` (33.300/día), que hoy
-sólo corren de lunes a viernes — así el gasto del mes depende de cuántos días
-hábiles caigan (21 en agosto, 23 en julio). Decidido con Tamara: se toma el
-total mensual que se viene gastando y se divide por los días del mes.
-
-- La columna `provisiones.importe` pasa a guardar la cuota MENSUAL
-  (= la diaria de hoy × 21,75, los días hábiles promedio del año), y la
-  pantalla pide el mensual en vez de la diaria.
-- El cron diario suma todos los días, sábados y domingos incluidos, con
-  `reparto_mensual.cuota_del_dia()`.
-- Mismo corte 01/09/2026: antes de esa fecha el reparto viejo queda igual.
-
 ### [S] `/retiros` quedó huérfana del menú
 `/informes/retiros` ("Dividendos", TMT 2026-05-20) dice explícitamente que
 *"reemplaza la antigua /capital + /retiros"*, y ninguna pantalla ni el menú

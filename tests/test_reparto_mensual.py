@@ -131,3 +131,51 @@ def test_el_mes_de_provisiones_da_igual_en_un_mes_de_31():
 
 def test_cuota_del_dia_tolera_none():
     assert rm.cuota_del_dia(None, date(2026, 9, 5)) == 0.0
+
+
+# ------------------------------------- lo que devengó entre dos fechas
+
+def test_acumulado_antes_del_corte_es_la_cuota_por_dias_habiles():
+    """Tiene que dar EXACTO lo mismo que hoy: cuota diaria × días hábiles."""
+    # 195.750/mes = 9.000/día. Del lunes 24/08 al viernes 28/08: 4 días.
+    assert rm.acumulado_entre(195750, date(2026, 8, 24), date(2026, 8, 28)) == \
+        pytest.approx(9000 * 4)
+    # el fin de semana no suma
+    assert rm.acumulado_entre(195750, date(2026, 8, 28), date(2026, 8, 30)) == 0.0
+
+
+def test_acumulado_desde_el_corte_cuenta_sabados_y_domingos():
+    # 1/9 al 8/9: 7 días corridos, mes de 30
+    assert rm.acumulado_entre(195750, date(2026, 9, 1), date(2026, 9, 8)) == \
+        pytest.approx(195750 / 30 * 7)
+
+
+def test_acumulado_de_un_mes_entero_da_el_mensual():
+    assert rm.acumulado_entre(724275, date(2026, 8, 31), date(2026, 9, 30)) == \
+        pytest.approx(724275)
+    assert rm.acumulado_entre(724275, date(2026, 9, 30), date(2026, 10, 31)) == \
+        pytest.approx(724275)
+
+
+def test_acumulado_cruza_el_mes_con_la_cuota_de_cada_mes():
+    """Octubre divide por 31 y noviembre por 30 — no se puede usar una sola."""
+    esperado = 724275 / 31 + 724275 / 30
+    assert rm.acumulado_entre(724275, date(2026, 10, 30), date(2026, 11, 1)) == \
+        pytest.approx(esperado)
+
+
+def test_acumulado_cruza_el_corte_sin_perder_ni_repetir_dias():
+    """Del 30/08 al 02/09: 31/08 con la regla vieja, 01 y 02/09 con la nueva."""
+    esperado = 9000 + 195750 / 30 * 2
+    assert rm.acumulado_entre(195750, date(2026, 8, 30), date(2026, 9, 2)) == \
+        pytest.approx(esperado)
+
+
+@pytest.mark.parametrize("desde, hasta", [
+    (date(2026, 9, 10), date(2026, 9, 10)),   # mismo día
+    (date(2026, 9, 10), date(2026, 9, 9)),    # al revés
+    (None, date(2026, 9, 10)),
+    (date(2026, 9, 10), None),
+])
+def test_acumulado_sin_ventana_es_cero(desde, hasta):
+    assert rm.acumulado_entre(195750, desde, hasta) == 0.0

@@ -7,7 +7,7 @@
 {# TMT 2026-05-20 PASADA 2 cierre — page_hero con descripcion_safe. #}
 <div class="max-w-5xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Provisiones', descripcion_safe='Cuota mensual de gastos recurrentes (alquileres, servicios, sueldos provisionados, etc.).<br><span class="text-xs">Valor del mes actual = valor_inicio_mes + (día/30) × cuota mensual. A fin de mes ajusta a valor_inicio + cuota. Editá el valor real del posdat en ' ~ ('<a href="' ~ url_for('posdat.lista') ~ '" class="text-sky-700 hover:underline">Posdatados</a>' if tiene_permiso('posdat.ver') else 'Posdatados') ~ '.</span>') }}
+    {{ page_hero('Provisiones', descripcion_safe='Cuota del mes de los gastos que se repiten (alquileres, servicios, sueldos provisionados, etc.).<br><span class="text-xs">La cuota del mes se reparte entre los días del mes y se suma al saldo todos los días, sábados y domingos incluidos. Editá el valor real del posdat en ' ~ ('<a href="' ~ url_for('posdat.lista') ~ '" class="text-sky-700 hover:underline">Posdatados</a>' if tiene_permiso('posdat.ver') else 'Posdatados') ~ '.</span>') }}
     <div class="no-print flex items-center gap-2">
       <a href="{{ url_for('provisiones.lista', q=q, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
@@ -54,7 +54,7 @@
       <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3 text-left font-medium">Concepto</th>
-          <th class="px-4 py-3 text-right font-medium">Importe</th>
+          <th class="px-4 py-3 text-right font-medium" title="Lo que la provisión suma en un mes. El programa la reparte entre los días del mes.">Cuota mensual</th>
           <th class="px-4 py-3 text-left font-medium">Período</th>
           <th class="px-4 py-3 text-left font-medium" style="white-space: nowrap;">Última actualización</th>
           {% if tiene_permiso('provisiones.editar') %}
