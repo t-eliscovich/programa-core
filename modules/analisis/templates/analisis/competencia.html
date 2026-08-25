@@ -94,7 +94,10 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
    se vendió contra lo que había, la barra, y abajo el resto en gris.
    ⚠ `x if y else 0 | round(1)` aplica el filtro SÓLO al 0: salía
    "17.284974824441832%". Los paréntesis y num_es no son cosmética. #}
-{% set avance = [100, (100 * liquidado / kg_al_largar) if kg_al_largar else 0] | min %}
+{# ⚠ Entre 0 y 100. Con las devoluciones restando, una semana en rojo da un
+   porcentaje NEGATIVO, y un `width` negativo no achica la barra: la hace
+   desaparecer sin decir por qué. #}
+{% set avance = [[100, (100 * liquidado / kg_al_largar) if kg_al_largar else 0] | min, 0] | max %}
 <div class="term">
   <div class="term-tope">
     <div>
@@ -166,7 +169,7 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     <td class="n pts" style="font-weight:600">{{ r.puntos | num_es(0) }}</td>
     {# La barrita mide contra el PRIMERO, no contra una meta: lo que se quiere
        ver de un vistazo es cuánto falta para alcanzarlo. #}
-    <td class="opt"><div class="mini"><div style="width:{{ [100, r.pct_lider] | min }}%"></div></div></td>
+    <td class="opt"><div class="mini"><div style="width:{{ [[100, r.pct_lider] | min, 0] | max }}%"></div></div></td>
     <td class="n opt">{% if r.kg_semana %}{{ r.kg_semana | num_es(0) }}{% else %}—{% endif %}</td>
     <td class="n g opt">{{ r.ultima.strftime('%d/%m') if r.ultima else '—' }}</td>
   </tr>

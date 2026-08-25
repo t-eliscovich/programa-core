@@ -2176,3 +2176,114 @@ def test_la_pantalla_dibuja_la_lista_entera_del_mes():
             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     assert "m.ranking" in html, "sin esto la pantalla sigue mostrando sólo el podio"
     assert "Kg del mes" in html
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Qué kilo puntúa · migración 0212
+# ──────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("motivo", "calidad", "cuenta"),
+    [
+        # La tela × color entera está parada: todos sus kilos entraron a la
+        # lista, así que todos puntúan.
+        ("parado", "PRI", True),
+        ("parado", "SEG", True),
+        # ⭐ Entró SÓLO por sus kilos de segunda: la primera de esa misma tela
+        # se vende sola y no puede dar puntos. Dueña 24/08/2026: "solo tiene
+        # que ponerse la de segunda en la competencia, la de primera no cuenta".
+        ("segunda", "SEG", True),
+        ("segunda", "PRI", False),
+        # Sin calidad en la línea de factura, un ítem de segunda no regala el
+        # beneficio de la duda.
+        ("segunda", None, False),
+        # Cohorte vieja, sin motivo guardado: cuenta todo, como venía.
+        (None, "PRI", True),
+    ],
+)
+def test_solo_puntua_el_kilo_de_la_clase_por_la_que_entro(motivo, calidad, cuenta):
+    assert queries.cuenta_el_kilo(motivo, calidad) is cuenta
+
+
+def test_las_devoluciones_restan_en_lo_que_puntua():
+    """⭐ Dueña 24/08/2026: "dale contemos devoluciones". La nota de crédito es
+    el documento 20 o 451 y hay que RESTARLA: sin esto un vendedor facturaba un
+    saldo, sumaba los puntos, el cliente devolvía la tela y los puntos quedaban.
+
+    ⚠ Se imputa al día de la factura MADRE, no al suyo: una devolución de
+    octubre de una venta de agosto tiene que caer en agosto."""
+    sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
+    assert "fc.id_documento IN (7, 251, 20, 451)" in sql
+    assert "THEN -dfc.cantidad ELSE dfc.cantidad END" in sql
+    assert "COALESCE(pad.fecha, fc.fecha)" in sql
+    assert "id_factura_cliente_padre" in sql
+
+
+def test_la_dificultad_de_la_tela_tambien_es_neta():
+    """Con la devolución adentro la tela parece más fácil de colocar de lo que
+    es, y se le da MENOS puntaje del que corresponde."""
+    sql = " ".join(asinfo_parado.SQL_VENTA_TELA.split())
+    assert "fc.id_documento IN (7, 251, 20, 451)" in sql
+    assert "THEN -dfc.cantidad ELSE dfc.cantidad END" in sql
+    # y trae la SEG aparte, para poder ponerle puntaje propio
+    assert "kg_seg_12m" in sql
+
+
+def test_lo_vendido_trae_la_calidad_de_la_linea_y_no_del_lote():
+    """En las líneas de factura `dfc.id_lote` viene en NULL: la calidad está en
+    el atributo 2 de la LÍNEA (3 = PRI, 4 = SEG). Verificado contra
+    `valor_atributo` el 24/08/2026."""
+    sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
+    assert "COALESCE(dfc.id_valor_atributo_2, mad.va2) = 4 THEN 'SEG'" in sql
+    assert "dfc.id_lote" not in sql
+
+
+def test_la_devolucion_hereda_la_calidad_y_el_vendedor_de_la_factura_madre():
+    """⚠ En las líneas de nota de crédito el atributo de calidad viene en NULL
+    (17 de 17, verificado el 24/08/2026) y `v_ventas` no tiene la NC.
+
+    Sin heredar los dos de la madre: la devolución de un kilo SEG se etiquetaba
+    PRI y en un ítem de segunda quedaba sin contar —la venta sumaba los puntos y
+    la devolución no los restaba—, y el kilo negativo se le restaba a 'Intela',
+    que también compite, en vez de al vendedor que lo facturó.
+
+    ⚠ TOP 1 y no un JOIN: la madre puede repetir el mismo producto en dos
+    renglones y un JOIN duplicaría los kilos de la devolución.
+    """
+    sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
+    assert "OUTER APPLY (SELECT TOP 1 m.id_valor_atributo_2" in sql
+    assert ("ON vx.id_factura_cliente = COALESCE(fc.id_factura_cliente_padre, "
+            "fc.id_factura_cliente)") in sql
+
+
+def test_la_fecha_de_la_madre_es_solo_para_la_nota_de_credito():
+    """Con un COALESCE pelado, una factura común con padre cargado se mudaría a
+    la fecha del padre y podría salirse de la ventana de la competencia."""
+    sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
+    assert ("CASE WHEN fc.id_documento IN (20, 451) THEN "
+            "COALESCE(pad.fecha, fc.fecha) ELSE fc.fecha END") in sql
+
+
+def test_el_motivo_de_la_cohorte_se_escribe_una_sola_vez():
+    """El INSERT de la cohorte es ON CONFLICT DO NOTHING: sin un UPDATE, los 734
+    ítems anteriores a la migración 0212 se quedaban con el motivo en NULL —o
+    sea contando toda la primera. Y con `motivo IS NULL` en el WHERE, una vez
+    escrito no se vuelve a mover: la regla de un ítem no puede cambiar en la
+    mitad de la carrera."""
+    import inspect as _i
+    fuente = " ".join(_i.getsource(queries.actualizar).split())
+    assert "UPDATE scintela.parado_cohorte SET motivo = %s" in fuente
+    assert "AND motivo IS NULL" in fuente
+
+
+def test_las_pantallas_respetan_la_bandera_cuenta():
+    """La regla vive en UN lugar (el refresh la escribe en `parado_venta.cuenta`)
+    y las pantallas la respetan. Con tres WHERE distintos, tarde o temprano uno
+    queda sin actualizar y el ranking y el total dejan de coincidir."""
+    import inspect as _i
+    fuente = _i.getsource(queries)
+    n = fuente.count("FROM scintela.parado_venta v")
+    assert n == fuente.count("v.cuenta"), (
+        f"{n} lecturas de parado_venta y sólo "
+        f"{fuente.count('v.cuenta')} filtran por la bandera")

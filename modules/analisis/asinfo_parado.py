@@ -89,14 +89,64 @@ VEND_PC = {
 # significan lo mismo —la venta la hizo la casa—: la factura con vendedor
 # "Cía. Ltda. Intela" y la que no tiene vendedor asignado. Dejarlos separados
 # partía el 51,3% de las ventas en dos filas que nadie sabe leer.
+# ⭐ Las DEVOLUCIONES restan (dueña 24/08/2026: "dale contemos devoluciones").
+# En Asinfo la factura es el documento 7 o 251 y la nota de crédito el 20 o el
+# 451 — el módulo de inventario rotativo ya lo hacía así. Sin esto un vendedor
+# facturaba un saldo, sumaba los puntos, el cliente devolvía la tela y los
+# puntos quedaban.
+#
+# ⚠ La nota de crédito se imputa al día de la factura MADRE
+# (`id_factura_cliente_padre`), no al suyo: si no, una devolución de octubre de
+# una venta de agosto caería fuera de la ventana y no la alcanzaría a restar.
+_DOCS = "(7, 251, 20, 451)"
+_KG = ("SUM(CASE WHEN fc.id_documento IN (20, 451) "
+       "THEN -dfc.cantidad ELSE dfc.cantidad END)")
+# ⚠ La fecha de la madre se usa SÓLO para la nota de crédito. Con un
+# COALESCE pelado, una factura común que por cualquier motivo tuviera padre
+# cargado se mudaría a la fecha del padre y podría salirse de la ventana de la
+# competencia. Hoy no hay ninguna (0 de 195 el 21/08/2026), y por eso mismo
+# conviene que no dependa de que siga siendo cierto.
+_FECHA = ("CASE WHEN fc.id_documento IN (20, 451) "
+          "THEN COALESCE(pad.fecha, fc.fecha) ELSE fc.fecha END")
+_JOIN_PADRE = ("LEFT JOIN factura_cliente pad "
+               "ON pad.id_factura_cliente = fc.id_factura_cliente_padre")
+
+# ⭐ La CALIDAD de un kilo VENDIDO. Está en el atributo 2 de la LÍNEA de
+# factura: `id_valor_atributo_2` vale 3 = PRI y 4 = SEG (verificado contra
+# `valor_atributo` el 24/08/2026).
+#
+# ⚠ NO se puede sacar del lote como en el stock: en las líneas de factura
+# `dfc.id_lote` viene en NULL. Son dos caminos distintos para el mismo dato y
+# éste es el único que existe del lado de la venta.
+# ⚠ En las líneas de NOTA DE CRÉDITO el atributo viene en NULL (verificado el
+# 24/08/2026: 17 de 17). Sin buscarlo en la línea madre, la devolución de un
+# kilo SEG se etiquetaba PRI, y en un ítem que entró sólo por su segunda eso la
+# dejaba con `cuenta = false`: la venta sumaba los puntos y la devolución no los
+# restaba. El fallback quedaba para el lado equivocado.
+_JOIN_MADRE_LINEA = """
+OUTER APPLY (SELECT TOP 1 m.id_valor_atributo_2 AS va2
+               FROM detalle_factura_cliente m
+              WHERE m.id_factura_cliente = fc.id_factura_cliente_padre
+                AND m.id_producto = dfc.id_producto) mad"""
+# TOP 1 y no un JOIN: la madre puede tener el mismo producto en dos renglones
+# y un JOIN duplicaría los kilos de la devolución.
+_CALIDAD_LINEA = ("CASE WHEN COALESCE(dfc.id_valor_atributo_2, mad.va2) = 4 "
+                  "THEN 'SEG' ELSE 'PRI' END")
+
 _VENDEDOR = ("CASE WHEN vv.nombre_vendedor IS NULL "
              "OR RTRIM(vv.nombre_vendedor) IN ('Cía. Ltda. Intela', '') "
              "THEN 'Intela' ELSE RTRIM(vv.nombre_vendedor) END")
 
+# ⚠ El vendedor se busca por la factura MADRE cuando es una nota de crédito.
+# Joineando por el id de la NC, `v_ventas` no la tiene y el CASE de arriba la
+# manda a 'Intela': el kilo positivo le sumaba al vendedor que lo facturó y el
+# negativo se le restaba al mostrador, que también compite. El vendedor se
+# quedaba con los puntos de una tela que volvió.
 _JOIN_VENDEDOR = """
 LEFT JOIN (SELECT id_factura_cliente, MIN(id_vendedor) AS id_vendedor
            FROM v_ventas GROUP BY id_factura_cliente) vx
-       ON vx.id_factura_cliente = fc.id_factura_cliente
+       ON vx.id_factura_cliente = COALESCE(fc.id_factura_cliente_padre,
+                                           fc.id_factura_cliente)
 LEFT JOIN v_vendedor vv ON vv.id_vendedor = vx.id_vendedor"""
 
 
@@ -119,6 +169,11 @@ stk AS (
     GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
 ),
 ven AS (
+    -- ⚠ ACÁ las devoluciones NO netean, y es a propósito: esta consulta decide
+    -- quién ENTRA a la lista, y "no salió en 12 meses" tiene que significar que
+    -- la tela no se movió. Una que salió y volvió sí se movió. Lo que sí netea
+    -- es lo que PUNTÚA (`_sql_vendido`) y la dificultad de cada tela
+    -- (`SQL_VENTA_TELA`).
     SELECT pr.nombre_subcategoria_producto AS subcategoria,
            RIGHT(RTRIM(pr.codigo), 3)      AS color,
            MAX(CAST(fc.fecha AS date))     AS ultima_venta,
@@ -266,18 +321,20 @@ def _sql_vendido(desde: str) -> str:
     return f"""
 SELECT pr.nombre_subcategoria_producto AS subcategoria,
        RIGHT(RTRIM(pr.codigo), 3)      AS color,
-       CAST(fc.fecha AS date)          AS fecha,
+       CAST({_FECHA} AS date)          AS fecha,
        {_VENDEDOR}                     AS vendedor,
-       SUM(dfc.cantidad)               AS kg
+       {_CALIDAD_LINEA}                AS calidad,
+       {_KG}                           AS kg
 FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
+{_JOIN_PADRE}{_JOIN_MADRE_LINEA}
 {_JOIN_VENDEDOR}
-WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
-  AND dfc.cantidad > 0 AND fc.fecha >= '{desde}'
+WHERE fc.id_documento IN {_DOCS} AND fc.estado NOT IN (0, 1)
+  AND dfc.cantidad > 0 AND {_FECHA} >= '{desde}'
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3),
-         CAST(fc.fecha AS date), {_VENDEDOR}
+         CAST({_FECHA} AS date), {_VENDEDOR}, {_CALIDAD_LINEA}
 """
 
 
@@ -290,15 +347,25 @@ SQL_VENTA_TELA = f"""
 -- ⚠ Por TELA, sin color, igual que los candidatos. El color se negocia; medir
 -- la dificultad por tela × color daría 732 números que nadie puede recordar y
 -- un color raro de una tela que sale bien quedaría marcado como imposible.
+-- ⭐ Acá las devoluciones SÍ netean: si una tela se vendió y volvió, no se
+-- vendió. Con la devolución adentro la tela parece más fácil de colocar de lo
+-- que es y se le da MENOS puntaje del que corresponde.
+-- ⚠ La SEG va aparte: es lo que hace falta para saber qué tan común es vender
+-- segunda y poder ponerle puntaje propio (dueña 24/08/2026).
 SELECT pr.nombre_subcategoria_producto AS subcategoria,
-       SUM(dfc.cantidad)               AS kg_12m,
+       {_KG}                           AS kg_12m,
+       SUM(CASE WHEN COALESCE(dfc.id_valor_atributo_2, mad.va2) = 4
+                THEN CASE WHEN fc.id_documento IN (20, 451)
+                          THEN -dfc.cantidad ELSE dfc.cantidad END
+                ELSE 0 END)            AS kg_seg_12m,
        COUNT(DISTINCT fc.id_empresa)   AS clientes_12m
 FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
-WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
+{_JOIN_PADRE}{_JOIN_MADRE_LINEA}
+WHERE fc.id_documento IN {_DOCS} AND fc.estado NOT IN (0, 1)
   AND dfc.cantidad > 0 AND RTRIM(pr.codigo) <> 'SRLG'
-  AND fc.fecha >= DATEADD(month, -12, GETDATE())
+  AND {_FECHA} >= DATEADD(month, -12, GETDATE())
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto
 """
@@ -352,9 +419,14 @@ def vendido_desde(desde: str) -> list[dict]:
     return filas
 
 
-def venta_por_tela() -> dict[str, float]:
-    """Kilos vendidos en los últimos 12 meses, por tela."""
-    return {f["subcategoria"]: float(f["kg_12m"] or 0)
+def venta_por_tela() -> dict[str, dict]:
+    """Kilos vendidos en los últimos 12 meses, por tela.
+
+    `{tela: {"kg": total, "seg": kilos de SEGUNDA}}`, los dos NETOS de
+    devoluciones. La SEG va aparte para poder medir qué tan común es venderla.
+    """
+    return {f["subcategoria"]: {"kg": float(f["kg_12m"] or 0),
+                                "seg": float(f.get("kg_seg_12m") or 0)}
             for f in _filas(SQL_VENTA_TELA) if f.get("subcategoria")}
 
 

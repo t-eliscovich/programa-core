@@ -281,8 +281,8 @@ def _fijar_puntos(conn=None) -> None:
         # que sola movía la bolsa un 6%. Con la presentación ya impresa, el
         # puntaje no puede seguir cambiando abajo.
         return
-    kg_12m = asinfo_parado.venta_por_tela()
-    if not kg_12m:
+    venta12 = asinfo_parado.venta_por_tela()
+    if not venta12:
         # fail-CLOSED: sin el dato de ventas TODAS las telas darían "difícil"
         # y la bolsa de puntos se triplicaría en silencio.
         return
@@ -295,14 +295,16 @@ def _fijar_puntos(conn=None) -> None:
     db.execute("DELETE FROM scintela.parado_punto", conn=conn)
     hoy = today_ec()
     for sub, d in agg.items():
-        k12 = kg_12m.get(sub, 0.0)
+        v = venta12.get(sub) or {}
+        k12 = float(v.get("kg") or 0)
         nivel, meses = _nivel(d["kg"], k12)
         db.execute(
             """INSERT INTO scintela.parado_punto
-                   (subcategoria, categoria, kg_base, kg_12m, meses,
+                   (subcategoria, categoria, kg_base, kg_12m, kg_seg_12m, meses,
                     nivel, puntos, fijado_el)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (sub, d["cat"], round(d["kg"], 2), round(k12, 2),
+             round(float(v.get("seg") or 0), 2),
              round(meses, 2) if meses is not None else None,
              nivel, PUNTOS[nivel], hoy), conn=conn)
 
@@ -541,6 +543,28 @@ def por_cliente_plano(vend: str | None = None, orden: str = "codigo",
 
 # ── Refresh ─────────────────────────────────────────────────────────────────
 
+def cuenta_el_kilo(motivo: str | None, calidad: str | None) -> bool:
+    """Si un kilo vendido puntúa en la competencia.
+
+    ⭐ Dueña 24/08/2026: *"solo tiene que ponerse la de segunda en la
+    competencia, la de primera no cuenta"*. Un ítem entra a la lista por uno de
+    dos motivos, y el kilo tiene que ser de la misma clase que el motivo:
+
+      parado  — la tela × color entera está quieta: TODOS sus kilos entraron a
+                la lista, así que todos puntúan.
+      segunda — la tela se vende bien y lo único parado son sus kilos SEG: sólo
+                la SEG puntúa. Contar la PRI sería dar puntos por vender tela
+                que sale sola, que es exactamente lo que entrar sólo con la SEG
+                buscaba evitar (370 ítems, 16.124 kg al 24/08/2026).
+
+    ⚠ El motivo es el CONGELADO en la cohorte, no el de la foto de hoy: si
+    mañana la tela entera se para, el ítem no puede cambiar de regla en la
+    mitad de la carrera. Sin motivo guardado cuenta todo, que es como venía
+    antes de la migración 0212.
+    """
+    return motivo != "segunda" or calidad == "SEG"
+
+
 def actualizar() -> dict:
     """
     Trae todo de Asinfo y deja la caché al día. Devuelve un resumen.
@@ -575,21 +599,40 @@ def actualizar() -> dict:
         for p in par:
             db.execute(
                 """INSERT INTO scintela.parado_cohorte
-                       (subcategoria, color, fecha_marcado, kg_al_marcar)
-                   VALUES (%s, %s, %s, %s)
+                       (subcategoria, color, fecha_marcado, kg_al_marcar, motivo)
+                   VALUES (%s, %s, %s, %s, %s)
                    ON CONFLICT (subcategoria, color) DO NOTHING""",
-                (p["subcategoria"], p["color"], hoy, p["stock_kg"]), conn=conn)
+                (p["subcategoria"], p["color"], hoy, p["stock_kg"],
+                 p.get("motivo")), conn=conn)
+            # ⚠ El INSERT de arriba no toca a los que ya estaban (ON CONFLICT
+            # DO NOTHING), y sin esto los 734 ítems que entraron antes de la
+            # migración 0212 se quedaban con el motivo en NULL para siempre —
+            # o sea contando TODA la primera, que es justo lo que se vino a
+            # arreglar. Se escribe UNA vez y después no se vuelve a mover: la
+            # regla de un ítem no puede cambiar en la mitad de la carrera.
+            db.execute(
+                """UPDATE scintela.parado_cohorte SET motivo = %s
+                    WHERE subcategoria = %s AND color = %s
+                      AND motivo IS NULL""",
+                (p.get("motivo"), p["subcategoria"], p["color"]), conn=conn)
 
         cohorte = db.fetch_all(
-            "SELECT subcategoria, color, fecha_marcado FROM scintela.parado_cohorte",
-            conn=conn)
+            "SELECT subcategoria, color, fecha_marcado, motivo "
+            "FROM scintela.parado_cohorte", conn=conn)
 
         # 2 · cuánto se vendió de cada uno DESDE SU PROPIA fecha de marcado
         vendido: dict[tuple[str, str], float] = defaultdict(float)
         marcado = {(c["subcategoria"], c["color"]): c["fecha_marcado"] for c in cohorte}
+        motivo_de = {(c["subcategoria"], c["color"]): c.get("motivo")
+                     for c in cohorte}
+
+        def _cuenta(k: tuple[str, str], calidad: str | None) -> bool:
+            return cuenta_el_kilo(motivo_de.get(k), calidad)
+
         for v in ventas:
             k = (v["subcategoria"], v["color"])
-            if k in marcado and _fecha(v["fecha"]) >= desde_f:
+            if (k in marcado and _fecha(v["fecha"]) >= desde_f
+                    and _cuenta(k, v.get("calidad"))):
                 vendido[k] += float(v["kg"] or 0)   # ya viene abierto por vendedor
 
         # 3 · la foto se rehace entera
@@ -640,10 +683,12 @@ def actualizar() -> dict:
             if k in marcado and _fecha(v["fecha"]) >= desde_f:
                 db.execute(
                     """INSERT INTO scintela.parado_venta
-                           (subcategoria, color, vend_pc, vendedor, fecha, kg)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                           (subcategoria, color, vend_pc, vendedor, fecha, kg,
+                            calidad, cuenta)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (k[0], k[1], v.get("vend_pc"), v.get("vendedor") or "Intela",
-                     _fecha(v["fecha"]), v.get("kg") or 0), conn=conn)
+                     _fecha(v["fecha"]), v.get("kg") or 0,
+                     v.get("calidad"), _cuenta(k, v.get("calidad"))), conn=conn)
 
         db.execute("DELETE FROM scintela.parado_share", conn=conn)
         for s in asinfo_parado.share_por_grupo():
@@ -832,7 +877,7 @@ def competencia() -> dict:
         """SELECT v.vendedor, v.subcategoria, SUM(v.kg) AS kg,
                   MAX(v.fecha) AS ultima
              FROM scintela.parado_venta v
-            WHERE v.fecha >= %s
+            WHERE v.fecha >= %s AND v.cuenta
             GROUP BY v.vendedor, v.subcategoria""", (largada,))
     semanas = _semanas(largada)
     share = db.fetch_all("SELECT * FROM scintela.parado_share")
@@ -963,7 +1008,7 @@ def _semanas(largada: date) -> dict:
              FROM scintela.parado_venta v
              LEFT JOIN scintela.parado_punto p
                     ON p.subcategoria = v.subcategoria
-            WHERE v.fecha >= %s
+            WHERE v.fecha >= %s AND v.cuenta
             GROUP BY 1, 2
             ORDER BY 1 DESC""", (largada,))
     por_semana: dict = {}
@@ -1006,7 +1051,7 @@ def _meses(largada: date, cierre: date) -> list[dict]:
         """SELECT date_trunc('month', v.fecha)::date AS mes,
                   v.vendedor, SUM(v.kg) AS kg
              FROM scintela.parado_venta v
-            WHERE v.fecha >= %s
+            WHERE v.fecha >= %s AND v.cuenta
             GROUP BY 1, 2""", (largada,))
     if not filas:
         return []
