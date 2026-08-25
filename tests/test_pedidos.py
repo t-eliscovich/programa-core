@@ -5,8 +5,8 @@ escribe el SQL contra Asinfo), no la del helper: un fake con la forma equivocada
 pasa en verde mientras producción no resuelve nada.
 """
 import io
-from pathlib import Path
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest

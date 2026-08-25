@@ -140,7 +140,7 @@
         {% set acum.s = acum.s + (f.saldo or 0) %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
           <td class="ec-c-fecha px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
-          <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
+          <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{% set _n = (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf %}{% if interactivo|default(false) and f.numf and tiene_permiso('facturas.ver') %}<a class="hover:text-blue-600" href="{{ url_for('facturas.detalle', id_factura=f.numf) }}">{{ _n }}</a>{% else %}{{ _n }}{% endif %}</td>
           {# Tipo por SIGNO del importe — negativo = Devolución. TMT 2026-07-09
              (dueña): no-print (en la impresión la columna Tipo no va).
              TMT 2026-07-28: las NC financieras (tipo 'NC', kg=0 — descuentos) se
@@ -174,7 +174,7 @@
           {% for f in facturas_totalizadas %}
           <tr class="ec-trow no-print border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 text-slate-400" style="display:none;">
             <td class="ec-c-fecha px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
-            <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
+            <td class="ec-c-num px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{% set _n = (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf %}{% if interactivo|default(false) and f.numf and tiene_permiso('facturas.ver') %}<a class="hover:text-blue-600" href="{{ url_for('facturas.detalle', id_factura=f.numf) }}">{{ _n }}</a>{% else %}{{ _n }}{% endif %}</td>
             {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>{% endif %}
             <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
             <td class="ec-c-ret px-4 py-2 text-right text-mono">{{ f.retencion | money_es }}</td>

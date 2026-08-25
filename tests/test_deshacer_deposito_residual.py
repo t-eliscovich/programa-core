@@ -25,7 +25,6 @@ from datetime import date
 
 import pytest
 
-
 HOY = date.today()
 
 

@@ -111,6 +111,7 @@ def test_forzado_deja_aviso_en_novedades():
 def test_los_quimicos_no_pasan_por_el_guard():
     """Los anticipos de químicos no vienen de una importación con recepción."""
     import inspect
+
     from modules.dolares import views as dv
     src = inspect.getsource(dv)
     assert "permitir_sin_recibir=True" in src     # el camino de químicos

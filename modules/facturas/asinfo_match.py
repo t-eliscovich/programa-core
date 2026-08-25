@@ -19,7 +19,6 @@ de 30.000 facturas.
 """
 from __future__ import annotations
 
-from collections import defaultdict as _dd
 from datetime import date
 
 # Asinfo sólo tiene data limpia desde acá: lo anterior no va a matchear nunca

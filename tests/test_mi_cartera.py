@@ -2060,6 +2060,92 @@ def test_el_boton_de_whatsapp_dice_lo_que_hace_y_no_es_una_flechita(
     assert "Imprimir" in ficha
 
 
+def test_la_ficha_manda_el_estado_de_cuenta_como_FOTO(app, vendedor_logueado, monkeypatch):
+    """⭐ TMT 2026-08-25: *"el botón enviar por WhatsApp no le sirve a ciertos
+    vendedores. Generando y luego no abre el pdf"*.
+
+    Van tres arreglos del botón verde. El camino corto depende de tres cosas
+    que no están en todos los teléfonos —el permiso que deja el toque, saber
+    armar un `File`, tener menú de compartir— y donde falta alguna, el vendedor
+    se queda sin el archivo.
+
+    Este link no depende de ninguna: es una navegación común a la misma URL del
+    PDF, que el servidor manda `inline`. El teléfono lo abre en su visor y
+    desde ahí el botón de compartir DEL APARATO lo manda a WhatsApp. Un paso
+    más, y anda siempre: *"hacemos más inclusivo para que a cualquiera le
+    funcione"*.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    # ⭐ El camino que SÍ anda en todos los teléfonos: la hoja como foto.
+    # Alex Velastegui, 25/08, con el PDF ya generado en la mano: *"desde el pdf
+    # q genera no permite enviar por wsp"* → Tamara: *"creo que foto y
+    # compartir como imagen si no?"*. En un teléfono mandar una FOTO lo sabe
+    # hacer cualquiera; mandar un DOCUMENTO, no.
+    assert "Mandar como imagen" in ficha
+    assert '/mi-cartera/cliente/TDV/imagen"' in ficha, "no apunta a la imagen"
+    # Y dice el gesto, que es el que el vendedor ya usa todos los días.
+    assert "Mantené apretada" in ficha
+    # El PDF no se saca —el que lo prefiere lo tiene— pero baja a un renglón.
+    assert '/mi-cartera/cliente/TDV/pdf"' in ficha
+
+
+def test_con_muchas_facturas_la_ficha_manda_al_PDF(app, vendedor_logueado, monkeypatch):
+    """⚠ WhatsApp recomprime las fotos y le achica el lado largo a ~1600 px.
+    Medido con el navegador de verdad: un estado de cuenta de 60 facturas sale
+    de 1100 × 2757 y WhatsApp lo deja al 58%, o sea con la letra apretada. Para
+    esos clientes el PDF es mejor.
+
+    El vendedor no tiene manera de saber eso mirando la pantalla, así que se lo
+    dice la pantalla. Misma regla que el botón verde: puede no poder, pero no
+    puede quedarse callado.
+    """
+    import datetime
+
+    from modules.mi_cartera import views
+
+    base = _ec_con_facturas("TDV")
+    f0 = base["facturas"][0]
+    base["facturas"] = [dict(f0, id_factura=i, numf=100000 + i,
+                             fecha=datetime.date(2026, 1 + i % 7, 1 + i % 27))
+                        for i in range(60)]
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        lambda c: base)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert "mejor mandá el PDF" in ficha
+    assert "Mantené apretada" not in ficha, "sigue empujando a la foto"
+    # La foto NO se saca: se puede mandar igual, sólo deja de ser la recomendada.
+    assert "Mandar como imagen" in ficha
+
+
+def test_sin_motor_la_ficha_no_ofrece_ni_el_boton_ni_la_foto(
+        app, vendedor_logueado, monkeypatch):
+    """Los dos caminos terminan en la misma URL, así que los dos se esconden
+    con el mismo `pdf_disponible()`. Un link que siempre da 503 es peor que no
+    tenerlo — y era el argumento del botón desde el 04/08."""
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: False)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert "Mandar como imagen" not in ficha
+    assert "Enviar por WhatsApp" not in ficha
+    # Imprimir no pasa por el motor: sigue estando.
+    assert "Imprimir" in ficha
+
+
 def test_la_ficha_no_muestra_la_forma_de_pago(ficha):
     """TMT 2026-08-20: *"no hace falta la C"*.
 

@@ -1,0 +1,39 @@
+{# La hoja de UNA factura: la que se imprime y la que sale por WhatsApp.
+
+   Una sola plantilla para las dos cosas, por el mismo motivo que el estado de
+   cuenta: dos hojas distintas divergen a la primera corrección que se le hace
+   a una sola. El PDF se genera imprimiendo ESTA página con el navegador del
+   servidor (ver `modules/_lib/pdf_motor.py`). #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factura {{ numero }} — {{ cliente.nombre }}</title>
+<style>
+  @page{size:A4;margin:14mm}
+  body{font:13px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       color:#0f172a;margin:0;padding:18px;background:#fff}
+  .enc{display:flex;justify-content:space-between;align-items:flex-start;
+       gap:16px;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px}
+  .enc h1{margin:0;font-size:19px}
+  .enc .sub{color:#475569;font-size:12.5px;margin-top:3px}
+  .enc .marca{font-weight:700;letter-spacing:.12em;color:#b91c1c}
+  .pie{margin-top:18px;color:#64748b;font-size:11px}
+</style>
+</head>
+<body>
+  <div class="enc">
+    <div>
+      <h1>Factura {{ numero }}</h1>
+      <div class="sub">{{ cliente.nombre }}{% if cliente.codigo_cli %} · {{ cliente.codigo_cli }}{% endif %}</div>
+      <div class="sub">{{ f.fecha | fecha_es }} · Importe {{ f.importe | money_es }}</div>
+    </div>
+    <div class="marca">INTELA</div>
+  </div>
+
+  {% include "mi_cartera/_que_se_llevo.html" %}
+
+  <div class="pie">Qué se llevó en esta factura · Industria Textil Latinoamericana C. Ltda.</div>
+</body>
+</html>

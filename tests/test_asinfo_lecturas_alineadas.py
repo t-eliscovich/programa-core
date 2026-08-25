@@ -103,6 +103,7 @@ def test_si_algo_explota_no_tumba_el_balance():
 def test_el_balance_alinea_antes_de_calcular():
     """El enganche: si nadie la llama, la función no sirve de nada."""
     import inspect
+
     from modules.informes import queries as q
     src = inspect.getsource(q.informe_balance)
     cabeza = src[:src.index("_totf = totf()")]

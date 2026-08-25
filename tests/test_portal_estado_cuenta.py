@@ -71,8 +71,15 @@ def test_la_hoja_del_portal_usa_la_misma_css_que_la_oficina():
             / "estado_cuenta_lote_print.html").read_text(encoding="utf-8")
     portal = (TPL / "_hoja_css.html").read_text(encoding="utf-8")
 
-    de_la_oficina = re.search(r"<style>(.*?)</style>",
-                              _sin_comentarios(lote), re.S).group(1)
+    # ⚠ Desde el 25/08 la hoja de la oficina tiene DOS bloques `<style>`: el de
+    # impresión y el de `{% if imagen %}`, que sólo corre cuando la hoja se
+    # saca como foto para WhatsApp. Este test vigila el PAPEL, así que se
+    # queda con el bloque que trae `@media print` y no con "el primero" —
+    # agarrar el primero comparaba el de la imagen contra el del portal y daba
+    # rojo sin que nadie hubiera tocado la hoja impresa.
+    de_la_oficina = next(
+        b for b in re.findall(r"<style>(.*?)</style>", _sin_comentarios(lote), re.S)
+        if "@media print" in b)
     del_portal = re.search(r"<style>(.*?)</style>",
                            _sin_comentarios(portal), re.S).group(1)
     assert del_portal.strip() == de_la_oficina.strip(), (

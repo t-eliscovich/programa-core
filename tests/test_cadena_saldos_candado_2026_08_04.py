@@ -380,6 +380,7 @@ def test_la_ventana_se_calcula_ANTES_de_filtrar_por_fecha():
     fecha va en el SELECT de afuera.
     """
     import inspect
+
     import bank_helpers
 
     src = " ".join(inspect.getsource(bank_helpers.contar_quiebres).split())
@@ -397,6 +398,7 @@ def test_la_ventana_se_calcula_ANTES_de_filtrar_por_fecha():
 
 def test_el_sql_de_quiebres_usa_la_regla_firmada_unica():
     import inspect
+
     import bank_helpers
 
     src = inspect.getsource(bank_helpers.contar_quiebres)

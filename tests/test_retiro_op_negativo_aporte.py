@@ -28,8 +28,8 @@ def stub(monkeypatch):
 
 
 def test_crear_op_negativo_es_aporte(stub, monkeypatch):
-    from modules.retiros import queries as q
     import mov_doble
+    from modules.retiros import queries as q
     monkeypatch.setattr(mov_doble, "registrar", lambda *a, **k: None)
     stub.execute_returning_results.append({"id_retiro": 77})
     r = q.crear_op(monto=-1.00, usuario="t")
@@ -46,8 +46,8 @@ def test_crear_op_cero_rechaza(stub):
 
 
 def test_crear_op_positivo_sigue_siendo_rr(stub, monkeypatch):
-    from modules.retiros import queries as q
     import mov_doble
+    from modules.retiros import queries as q
     monkeypatch.setattr(mov_doble, "registrar", lambda *a, **k: None)
     stub.execute_returning_results.append({"id_retiro": 78})
     r = q.crear_op(monto=100.0, usuario="t")

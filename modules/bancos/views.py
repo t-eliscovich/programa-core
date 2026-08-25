@@ -1251,7 +1251,6 @@ def apertura_bancos():
     fila. Cuando las dos difieren, lo marca.
     """
     import db as _db
-
     from modules.bancos import apertura as _ap
 
     if request.method == "POST":
@@ -1307,8 +1306,9 @@ def reencadenar_saldos():
        alguien mira y aprieta Aplicar. Es la misma disciplina del
        simulacro de cierre.
     """
-    import db as _db
     from datetime import date as _date
+
+    import db as _db
 
     no_banco = request.values.get("no_banco", type=int)
     desde_raw = (request.values.get("desde") or "").strip()

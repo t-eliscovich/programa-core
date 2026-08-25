@@ -120,35 +120,8 @@
   .ficha .lnk{color:var(--accent);font-weight:600}
   .ficha .brk{word-break:break-all}
 
-  /* Las dos acciones, con el nombre entero. El de WhatsApp lleva el verde y
-     el globito de WhatsApp: el rótulo dice qué hace y el color lo confirma
-     de un vistazo. El ícono va como máscara SVG —no como emoji— porque el
-     emoji no existe en Android y salía un cuadradito vacío. */
-  /* 🐞 TMT 2026-08-24: el ícono de imprimir era el carácter "⎙" (U+2399), que
-     Android NO tiene en ninguna de sus tipografías — en el celular del
-     vendedor salía el cuadradito vacío del glifo que falta, al lado de la
-     palabra "Imprimir". Es EXACTAMENTE lo que ya había pasado el 20/08 con el
-     emoji de WhatsApp, y se arregla igual: máscara SVG, que se dibuja siempre
-     y toma el color del botón. Regla para el portal: en un botón no va un
-     carácter especial, va un SVG. */
-  .acciones{display:flex;gap:8px;margin:10px 0;
-    --ico-wa:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 14.4c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5 0-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.5.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.5-.4z'/><path d='M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2z'/></svg>")}
-  .btn-wa{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
-          background:#25D366;color:#fff;border:0;border-radius:12px;
-          padding:11px 10px;font:inherit;font-size:14.5px;font-weight:700;
-          cursor:pointer;white-space:nowrap}
-  .btn-wa::before{content:'';width:19px;height:19px;flex:0 0 19px;background:#fff;
-    -webkit-mask:center/contain no-repeat var(--ico-wa);mask:center/contain no-repeat var(--ico-wa)}
-  .btn-wa:disabled{opacity:.65}
-  .btn-wa span{overflow:hidden;white-space:nowrap}
-  .btn-pr::before{content:'';width:17px;height:17px;flex:0 0 17px;background:var(--ink);
-    -webkit-mask:center/contain no-repeat var(--ico-pr);mask:center/contain no-repeat var(--ico-pr)}
-  .btn-pr{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
-          border:1px solid var(--line);border-radius:12px;padding:11px 14px;
-          font-size:14.5px;font-weight:600;color:var(--ink)}
-
-
-  /* El portal del cliente. Discreto a propósito: es información de fondo, no
+  /* La fila de acciones vive en su propio parcial: la comparte la pantalla
+     de la factura. Ver `_acciones_css.html`. */
      lo que el vendedor vino a mirar. Se pone rojo sólo cuando está cortado,
      que es el único estado que pide algo. */
   .portal-caja{background:#fff;border:1px solid var(--line);border-radius:14px;

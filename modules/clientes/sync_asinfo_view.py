@@ -2,7 +2,8 @@
 
 Muestra las últimas corridas del sync (las 2 diarias del cron + las manuales),
 los CONFLICTOS que quedaron sin importar (RUC ya en PC bajo otro código,
-códigos duplicados dentro de Asinfo) y un botón "Sincronizar ahora".
+códigos duplicados dentro de Asinfo), los DESCUENTOS que no coinciden con los
+de Asinfo (manda el de PC: acá sólo se listan) y un botón "Sincronizar ahora".
 
 La lógica vive en `modules.clientes.sync_asinfo` — esta vista sólo la llama
 por el mismo camino que el cron, para que lo que hace una persona y lo que
@@ -31,6 +32,8 @@ def pantalla():
         ultima=ultima,
         conflictos=(ultima or {}).get("reporte", {}).get("conflictos", []),
         dup_asinfo=(ultima or {}).get("reporte", {}).get("dup_asinfo", []),
+        dif_descuento=(ultima or {}).get("reporte", {}).get("dif_descuento", []),
+        listas_raras=(ultima or {}).get("reporte", {}).get("listas_raras", []),
     )
 
 
@@ -46,7 +49,9 @@ def correr():
         altas = ", ".join(r.get("altas") or []) or "ninguna"
         flash(
             f"Sync OK — {r.get('actualizados', 0)} fichas actualizadas, "
-            f"altas: {altas}, {len(r.get('conflictos') or [])} conflictos.",
+            f"{r.get('descuentos_puestos', 0)} descuentos cargados, "
+            f"altas: {altas}, {len(r.get('conflictos') or [])} conflictos, "
+            f"{len(r.get('dif_descuento') or [])} descuentos distintos.",
             "ok",
         )
     return redirect(url_for("clientes_sync_asinfo.pantalla"))

@@ -28,7 +28,6 @@ if _REPO_ROOT not in sys.path:
 
 from modules.posdat import queries as q  # noqa: E402
 
-
 # TMT 2026-07-23 (dueña): switch ACUMULACION_YY_ACTIVA ELIMINADO — la
 # acumulación YY/RT está siempre activa. Estos tests validan la matemática
 # del display-time, que ahora corre siempre.

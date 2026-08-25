@@ -178,6 +178,7 @@ def test_los_subtotales_del_bloque_van_en_kilos():
 
 def test_asinfo_caido_no_es_lo_mismo_que_no_falta_nada():
     service._cache.clear()
+    service._cache_nuevos.clear()
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([], False)):
         filas, disponible = service.rotativo(_ahora=lambda: 0.0)
@@ -187,6 +188,7 @@ def test_asinfo_caido_no_es_lo_mismo_que_no_falta_nada():
 def test_solo_entran_las_familias_de_tela_vendible():
     """TELA CRUDA, HILO y los insumos no se stockean contra promedio."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     fichas = [_ficha(), _ficha(id_producto=2, categoria="HILO", tela="Hilado")]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=[(fichas, True), (_serie() + _serie(2), True)]):
@@ -224,12 +226,23 @@ def _login(app, fake_db):
     return c
 
 
-def _fake_asinfo(fichas=None, serie=None):
+def _fake_asinfo(fichas=None, serie=None, nuevos=None):
+    """Las TRES consultas de la pantalla, cada una con la forma de su fuente.
+
+    Se despacha por un pedazo del SELECT y no por orden de llamada: si mañana
+    la vista pide una antes que la otra, un fake por orden empieza a devolver
+    la respuesta equivocada sin que ningún test se ponga rojo.
+    """
     fichas = fichas if fichas is not None else [_ficha()]
     serie = serie if serie is not None else _serie()
+    nuevos = nuevos if nuevos is not None else [{"n": 0, "kg": 0.0}]
 
     def fake(_db, sql, **_kw):
-        return (serie, True) if "SELECT v.id_producto, v.w" in sql else (fichas, True)
+        if "SELECT v.id_producto, v.w" in sql:
+            return (serie, True)
+        if "SELECT COUNT(*) AS n, SUM(inv.inv_kg) AS kg" in sql:
+            return (nuevos, True)
+        return (fichas, True)
 
     return fake
 
@@ -237,6 +250,7 @@ def _fake_asinfo(fichas=None, serie=None):
 def test_la_pantalla_abre_por_color(app, fake_db):
     """Dueña 2026-08-18: "que color sea lo primero"."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -249,6 +263,7 @@ def test_la_pantalla_abre_por_color(app, fake_db):
 
 def test_el_corte_por_tela_da_vuelta_el_agrupado(app, fake_db):
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -258,6 +273,7 @@ def test_el_corte_por_tela_da_vuelta_el_agrupado(app, fake_db):
 
 def test_un_corte_que_no_existe_cae_en_color(app, fake_db):
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -268,6 +284,7 @@ def test_un_corte_que_no_existe_cae_en_color(app, fake_db):
 def test_con_asinfo_caido_la_pantalla_lo_dice_en_vez_de_mentir(app, fake_db):
     """"No pude preguntar" no es "no falta nada"."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([], False)):
@@ -291,6 +308,7 @@ def test_el_faltante_se_muestra_del_mismo_color_que_alcanza(app, fake_db):
     una sola.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     # 250 kg de stock contra 100 kg/semana: 2,5 semanas → ámbar, y como el
     # punto son 200 no falta nada... le bajamos el stock para que falte.
@@ -311,6 +329,7 @@ def test_la_hoja_impresa_es_la_misma_pantalla(app, fake_db):
     lleva a planta se iría separando de lo que se mira en la oficina.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -331,6 +350,7 @@ def test_la_hoja_esconde_los_filtros_y_fija_el_ancho_de_la_a4():
 
 def test_el_excel_trae_una_fila_por_producto_con_encabezado(app, fake_db):
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -358,6 +378,7 @@ def test_el_excel_deja_vacia_la_cobertura_que_no_se_puede_calcular():
 def test_con_asinfo_caido_el_excel_no_baja_una_planilla_vacia(app, fake_db):
     """Bajar un archivo con el encabezado solo se lee como "no falta nada"."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([], False)):
@@ -394,6 +415,7 @@ def test_los_cuellos_se_piden_por_unidad_y_el_pedido_se_pasa_a_kilos():
 def test_la_columna_pedido_lleva_asterisco_y_su_nota(app, fake_db):
     """Sin la nota, una columna en el medio de la tabla se lee como que suma."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     fichas = [_ficha(inv_kg=600.0, ped_kg=235.0)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
@@ -418,6 +440,7 @@ def test_la_unidad_va_en_una_columna_y_no_pegada_a_cada_numero(app, fake_db):
     que hay que leer.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -457,6 +480,7 @@ def test_el_acabado_sale_de_pedidos_y_no_de_una_sql_propia(app, fake_db):
     las dos pantallas dicen acabados distintos del mismo producto.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch("modules.pedidos.service.acabados_por_producto",
                return_value={"FE102JOS": "TUB"}), \
@@ -470,6 +494,7 @@ def test_el_acabado_sale_de_pedidos_y_no_de_una_sql_propia(app, fake_db):
 def test_sin_acabado_la_celda_queda_vacia_y_la_pantalla_no_se_cae(app, fake_db):
     """No se inventa un acabado: un producto sin lote con atributo no tiene."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch("modules.pedidos.service.acabados_por_producto",
                side_effect=RuntimeError("Asinfo se cayó")), \
@@ -537,6 +562,7 @@ def test_la_hoja_imprime_solo_lo_filtrado(app, fake_db):
     """Dueña 2026-08-18. Pedir "las que hay que teñir" imprimía las 289 —
     trece páginas para tirar."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     serie = _serie(1) + _serie(2)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
@@ -552,6 +578,7 @@ def test_la_hoja_filtrada_dice_ARRIBA_qué_filtro_tiene(app, fake_db):
     piensa que eso es todo el inventario. Y va en la cabecera, no al pie: el
     recorte se lee ANTES de la tabla, no después."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -566,6 +593,7 @@ def test_el_filtro_de_la_pantalla_no_recorta_lo_que_se_ve(app, fake_db):
     """Sin `imprimir=1` filtra el JS: si el servidor recortara, al apretar
     "Todo" no habría forma de volver a ver el resto."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     serie = _serie(1) + _serie(2)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
@@ -577,6 +605,7 @@ def test_el_filtro_de_la_pantalla_no_recorta_lo_que_se_ve(app, fake_db):
 def test_un_filtro_que_no_existe_no_vacia_la_hoja(app, fake_db):
     """`?est=cualquiera` imprime todo, no una hoja en blanco."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -586,6 +615,7 @@ def test_un_filtro_que_no_existe_no_vacia_la_hoja(app, fake_db):
 
 def test_el_buscador_de_la_hoja_mira_color_y_tela(app, fake_db):
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     serie = _serie(1) + _serie(2)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
@@ -611,6 +641,7 @@ def test_el_excel_sale_en_el_mismo_orden_que_la_pantalla(app, fake_db):
     urgencia.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     fichas = [_ficha(color="JOS", tela="Fleece 102"),
               _ficha(id_producto=2, color="NEG", tela="Pique Especial",
@@ -631,6 +662,7 @@ def test_el_excel_respeta_el_filtro_de_la_pantalla(app, fake_db):
     """El botón le cuelga est/fam/q, igual que Imprimir: bajar todo cuando en
     pantalla se ve el recorte es la misma trampa que la hoja de 13 páginas."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     fichas = [_ficha(color="JOS"),
               _ficha(id_producto=2, color="NEG", codigo="FE102NEG", inv_kg=9000.0)]
@@ -647,6 +679,7 @@ def test_el_excel_respeta_el_filtro_de_la_pantalla(app, fake_db):
 def test_el_excel_sigue_el_corte_que_se_esta_mirando(app, fake_db):
     """Por tela, la columna que agrupa es la tela; por color, el color."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()), \
@@ -659,6 +692,7 @@ def test_el_excel_sigue_el_corte_que_se_esta_mirando(app, fake_db):
 def test_el_excel_lleva_la_unidad_y_el_acabado(app, fake_db):
     """Los mismos datos que la pantalla, no un subconjunto."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()), \
@@ -678,6 +712,7 @@ def test_la_hoja_se_manda_a_imprimir_sola(app, fake_db):
     camino, buscando el Ctrl+P.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -699,6 +734,7 @@ def test_la_pantalla_dice_de_cuantas_semanas_es_el_promedio(app, fake_db):
     """Dueña 2026-08-18: "por semana es un promedio de las últimas cuántas
     semanas?". Si hay que preguntarlo, la pantalla no lo estaba diciendo."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -714,6 +750,7 @@ def test_el_excel_trae_UNA_columna_de_faltante(app, fake_db):
     telas con cuellos no se usa para nada.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()), \
@@ -752,6 +789,7 @@ def test_los_controles_no_son_todos_el_mismo_boton(app, fake_db):
     acciones y viven a la derecha, y las familias son pestañas subrayadas.
     """
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
@@ -767,8 +805,92 @@ def test_el_filtro_que_alarma_lleva_su_punto_rojo(app, fake_db):
     """Dentro de un segmentado gris, el que abre la alarma se distingue sin
     gritar: un punto, no un botón rojo entero."""
     service._cache.clear()
+    service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo()):
         body = c.get("/inventario-rotativo").get_data(as_text=True)
     assert '<i class="punto"></i>Hay que teñir' in body
+
+
+# ── las que todavía no entran ───────────────────────────────────────────────
+
+def test_las_nuevas_se_cuentan_con_la_hora_de_ecuador():
+    """En Asinfo `GETDATE()` devuelve UTC: pelado corre la ventana un día."""
+    assert "DATEADD(hour, -5, GETDATE())" in service._sql_nuevos()
+
+
+def test_la_ventana_de_nuevas_es_mas_corta_que_el_minimo_de_la_lista():
+    """Es la razón de ser del renglón, y tiene que seguir siendo cierta.
+
+    Con `SEMANAS_NUEVO < SEMANAS_MINIMAS`, "primera venta dentro de la
+    ventana" IMPLICA "no llega al mínimo": el contador no puede contar algo
+    que ya está en la lista, sin tener que cruzarlo contra ella. Si alguien
+    sube la ventana a 52, el renglón empieza a mentir.
+    """
+    assert service.SEMANAS_NUEVO < service.SEMANAS_MINIMAS
+
+
+def test_la_sql_de_nuevas_mira_la_bodega_de_terminado():
+    sql = service._sql_nuevos()
+    assert f"id_bodega = {service.BODEGA_TERMINADO}" in sql
+    assert f"DATEADD(week, -{service.SEMANAS_NUEVO}," in sql
+
+
+def test_nuevas_devuelve_el_conteo_y_los_kilos():
+    service._cache_nuevos.clear()
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([{"n": 7, "kg": 1234.56}], True)):
+        assert service.nuevos() == {"n": 7, "kg": 1234.6}
+
+
+def test_con_asinfo_caido_nuevas_devuelve_vacio_y_no_cero():
+    """Cero es "no hay ninguna"; vacío es "no pude preguntar". No son lo mismo:
+    con cero la pantalla diría que no falta nada mirar."""
+    service._cache_nuevos.clear()
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([], False)):
+        assert service.nuevos() == {}
+
+
+def test_sin_filas_nuevas_da_cero_sin_reventar():
+    service._cache_nuevos.clear()
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([], True)):
+        assert service.nuevos() == {"n": 0, "kg": 0.0}
+
+
+def test_la_pantalla_avisa_de_las_que_todavia_no_entran(app, fake_db):
+    """El renglón de arriba de la lista: sin él, las 291 se leen como "esto es
+    todo lo que hay"."""
+    service._cache.clear()
+    service._cache_nuevos.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(nuevos=[{"n": 12, "kg": 3400.0}])):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert "todavía no entran en la lista" in body
+    assert "<b>12</b>" in body
+    assert "3.400 kg" in body
+
+
+def test_sin_ninguna_nueva_el_renglon_no_aparece(app, fake_db):
+    """Un renglón que dice "0" es ruido: el dato es que no hay nada que mirar."""
+    service._cache.clear()
+    service._cache_nuevos.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(nuevos=[{"n": 0, "kg": 0.0}])):
+        body = c.get("/inventario-rotativo").get_data(as_text=True)
+    assert "todavía no entran en la lista" not in body
+
+
+def test_en_el_papel_el_renglon_de_nuevas_no_va(app, fake_db):
+    """La hoja es para la planta: lo que no está en la lista no se tiñe hoy."""
+    service._cache.clear()
+    service._cache_nuevos.clear()
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(nuevos=[{"n": 12, "kg": 3400.0}])):
+        body = c.get("/inventario-rotativo?imprimir=1").get_data(as_text=True)
+    assert "todavía no entran en la lista" not in body

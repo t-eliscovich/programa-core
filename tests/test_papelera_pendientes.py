@@ -106,7 +106,6 @@ FILA = {
 
 def _mod(monkeypatch, fake):
     import db as db_mod
-
     from modules.conciliacion import papelera_pendientes as pap
     fake.apply_to(monkeypatch, db_mod)
     pap._bootstrapped = True          # no correr el CREATE TABLE en el fake
@@ -132,7 +131,6 @@ def test_guardar_copia_la_fila_ENTERA(monkeypatch):
 def test_guardar_NO_puede_romper_el_borrado(monkeypatch):
     """Si la papelera falla, la ✕ tiene que seguir funcionando."""
     import db as db_mod
-
     from modules.conciliacion import papelera_pendientes as pap
     pap._bootstrapped = True
 
@@ -220,9 +218,9 @@ def test_la_papelera_no_toca_ninguna_query_de_pendientes():
     papelera empezara a filtrar o a escribir ahí fuera del restaurar, esa
     superficie volvería.
     """
-    from modules.conciliacion import papelera_pendientes as pap
-
     import re
+
+    from modules.conciliacion import papelera_pendientes as pap
 
     src = inspect.getsource(pap)
     # Sólo SQL de verdad: FROM / INTO / UPDATE / JOIN sobre la tabla.

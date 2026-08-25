@@ -16,7 +16,6 @@ import pytest
 
 from modules.posdat import queries as pq
 
-
 # TMT 2026-07-23 (dueña): switch ACUMULACION_YY_ACTIVA ELIMINADO — la
 # acumulación YY/RT corre siempre. El motor se testea directo.
 

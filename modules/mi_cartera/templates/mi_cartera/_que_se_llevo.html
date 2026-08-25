@@ -1,0 +1,99 @@
+{# QUÉ SE LLEVÓ el cliente en una factura — la versión de teléfono.
+
+   La misma pregunta que contesta el bloque de la oficina
+   (`facturas/_que_se_llevo.html`) y los MISMOS números: los dos llaman a
+   `modules.asinfo.factura_lineas.que_se_llevo`. Lo único propio de acá es
+   cómo entra en 390 px.
+
+   ⭐ El parcial viaja CON SU CSS. El portal del vendedor y el del cliente no
+   comparten hoja de estilos con el ERP, y un parcial que depende de una hoja
+   ajena renderiza sin estilo sin avisar (ya pasó el 24/08).
+
+   ⭐ Ocho columnas no entran en un teléfono. La tela, el código del color, el
+   color y la calidad se apilan en la primera celda —igual que Fecha y Número
+   en la tabla de movimientos— y quedan cuatro columnas de cifras: rollos,
+   kilos, precio y total. La calidad se dice SIEMPRE, aunque sea toda primera:
+   es lo que la dueña pidió para la oficina y no hay motivo para que acá diga
+   otra cosa.
+
+   Espera en el contexto: `det` (lo que devuelve el servicio). #}
+<style>
+  .qsl{width:100%;border-collapse:collapse;font-size:12.5px}
+  .qsl th{text-align:right;font-weight:600;color:#64748b;font-size:10.5px;
+          text-transform:uppercase;letter-spacing:.03em;padding:6px 3px;
+          border-bottom:1px solid #e2e8f0;white-space:nowrap}
+  .qsl th.l,.qsl td.l{text-align:left}
+  .qsl td{text-align:right;padding:7px 3px;border-bottom:1px solid #f1f5f9;
+          white-space:nowrap;font-variant-numeric:tabular-nums}
+  .qsl td.l b{display:block;font-weight:600;color:#0f172a;white-space:normal}
+  .qsl td.l small{display:block;color:#64748b;font-size:11px;margin-top:1px}
+  .qsl tfoot td{border-bottom:0;padding:3px;color:#64748b}
+  .qsl tfoot tr.tot td{font-weight:700;color:#0f172a;
+                       border-top:1px solid #e2e8f0;padding-top:7px}
+  .qsl-aviso{color:#64748b;font-size:13px;line-height:1.45}
+</style>
+{% if det.estado != 'ok' %}
+  <p class="qsl-aviso">
+    {% if det.estado == 'sin-numero' %}
+      Esta factura no tiene número del SRI cargado, así que no se puede buscar el detalle.
+    {% elif det.estado == 'sin-datos' %}
+      No está el detalle de esta factura.
+    {% else %}
+      Ahora no se pudo traer el detalle. Volvé a entrar en un rato.
+    {% endif %}
+  </p>
+{% else %}
+  <table class="qsl">
+    <thead>
+      <tr>
+        <th class="l">Tela</th>
+        <th>Rollos</th>
+        <th>Kilos</th>
+        <th>Precio</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in det.lineas %}
+      <tr>
+        <td class="l">
+          <b>{{ l.tela }}</b>
+          <small>{% if l.codigo %}{{ l.codigo }} · {% endif %}{{ l.color or '—' }}{% if l.calidad %} · {{ l.calidad }}{% endif %}</small>
+        </td>
+        <td>{{ l.rollos }}</td>
+        <td>{{ l.kg | kg_es }}</td>
+        <td>{{ l.precio | money_es }}</td>
+        <td>{{ l.total | money_es }}</td>
+      </tr>
+      {% endfor %}
+      {% for s in det.servicios %}
+      <tr>
+        <td class="l"><b>{{ s.nombre | capitalize }}</b></td>
+        <td>—</td><td>—</td><td>—</td>
+        <td>{{ s.total | money_es }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td class="l">Bruto</td>
+        <td>{{ det.totales.rollos }}</td>
+        <td>{{ det.totales.kg | kg_es }}</td>
+        <td></td>
+        <td>{{ det.totales.bruto | money_es }}</td>
+      </tr>
+      <tr>
+        <td class="l" colspan="4">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% endif %}</td>
+        <td>−{{ det.totales.descuento | money_es }}</td>
+      </tr>
+      <tr>
+        <td class="l" colspan="4">IVA 15%</td>
+        <td>{{ det.totales.iva | money_es }}</td>
+      </tr>
+      <tr class="tot">
+        <td class="l" colspan="4">Total</td>
+        <td>{{ det.totales.total | money_es }}</td>
+      </tr>
+    </tfoot>
+  </table>
+{% endif %}

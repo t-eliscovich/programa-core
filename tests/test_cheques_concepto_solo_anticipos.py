@@ -155,8 +155,8 @@ def test_sigue_teniendo_las_opciones_preestablecidas():
 def test_el_backend_sigue_aceptando_el_campo():
     """Esto es un cambio de PANTALLA. Si el backend dejara de leer
     `concepto[]`, los anticipos ya cargados perderían el suyo al editarse."""
-    from modules.cheques import views
-
     import inspect
+
+    from modules.cheques import views
 
     assert 'concepto[]' in inspect.getsource(views)

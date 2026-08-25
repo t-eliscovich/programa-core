@@ -297,6 +297,9 @@ def cliente(codigo_cli: str):
     return render_template(
         "mi_cartera/cliente.html",
         hoy=today_ec(),
+        # A dónde lleva el número de factura de la tabla (ver _movimientos).
+        factura_endpoint="mi_cartera.factura",
+        factura_args={"codigo_cli": codigo_cli},
         tab=(request.args.get("tab") or "facturas").strip().lower(),
         # El acceso de ESTE cliente al portal. Va acá, donde el vendedor ya
         # está parado, y no en una pantalla nueva que nadie abre.
@@ -382,6 +385,166 @@ def pdf(codigo_cli: str):
     vend = _vend_actual()
     data = _cargar_cliente(vend, codigo_cli)
     return informes_views.responder_pdf(data, (codigo_cli or "").upper())
+
+
+def _factura_de(data: dict, numf: int) -> dict:
+    """La factura `numf` DENTRO del estado de cuenta de este cliente.
+
+    El scope no es un chequeo aparte: si la factura no está en la cuenta del
+    cliente que `_cargar_cliente` ya autorizó, no existe para esta pantalla.
+    Tipear el número de una factura ajena en la barra de direcciones da 404
+    porque el número se busca en una lista que ya viene acotada.
+    """
+    facturas = (data.get("facturas") or []) + (data.get("facturas_totalizadas") or [])
+    for f in facturas:
+        try:
+            if int(f.get("numf") or 0) == int(numf):
+                return f
+        except (TypeError, ValueError):
+            continue
+    abort(404)
+    return {}  # pragma: no cover - abort() corta
+
+
+def _factura_ctx(codigo_cli: str, numf: int):
+    """(vend, cliente, factura, detalle, número) — o 404 por el camino."""
+    from modules.asinfo import factura_lineas
+
+    vend = _vend_actual()
+    data = _cargar_cliente(vend, codigo_cli)
+    f = _factura_de(data, numf)
+    numero = (f.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
+    return vend, data.get("cliente") or {}, f, factura_lineas.que_se_llevo(
+        f.get("numf_completo")), numero
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura(codigo_cli: str, numf: int):
+    """Qué se llevó el cliente en esta factura.
+
+    TMT 2026-08-25 (dueña): *"hacerlo también para vendedores y que puedan
+    compartir"*. El vendedor está parado en el local y lo que le preguntan es
+    qué mandaron en esa factura; hasta hoy eso sólo estaba en el papel.
+    """
+    vend, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    return render_template("mi_cartera/factura.html", cliente=cliente, f=f,
+                           det=det, numero=numero, seccion="clientes",
+                           **_ctx_base(vend))
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/hoja")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura_hoja(codigo_cli: str, numf: int):
+    """La hoja para imprimir. Es la MISMA que se manda por WhatsApp."""
+    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    return render_template("mi_cartera/factura_hoja.html", cliente=cliente,
+                           f=f, det=det, numero=numero)
+
+
+def _factura_archivo(codigo_cli: str, numf: int, formato: str):
+    """La hoja de UNA factura como archivo: PDF o imagen, según `formato`.
+
+    Las dos rutas de abajo son la misma respuesta con otro formato —mismo
+    guard, misma hoja, mismo nombre de archivo, mismo 503— así que comparten
+    cuerpo en vez de copiarse. Es la misma decisión que `responder_pdf` y
+    `responder_imagen` en `informes`.
+
+    🐞 TMT 2026-08-25: el 503 decía SIEMPRE *"el servidor no tiene un navegador
+    instalado"*, y `SinMotor` se levanta por tres motivos —no hay navegador, el
+    navegador tardó más que `TIMEOUT_S`, o no devolvió nada—. Los dos últimos
+    son los que le pasan al vendedor con una factura grande, y contestarle que
+    falta instalar algo manda a buscar el problema al lugar equivocado. Ahora
+    cada motivo dice lo suyo. (El mismo arreglo que en `informes.views`.)
+    """
+    import re
+
+    from flask import Response, current_app
+
+    from modules._lib import imagen_motor, pdf_motor
+
+    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    html = render_template("mi_cartera/factura_hoja.html", cliente=cliente,
+                           f=f, det=det, numero=numero)
+    es_imagen = formato == "imagen"
+    try:
+        if es_imagen:
+            # `factura_hoja.html` es una página suelta —no extiende
+            # `base.html`— así que no hay chrome del programa que esconder: no
+            # necesita el `imagen=True` que sí necesita el estado de cuenta.
+            filas = len(det.get("lineas") or []) + len(det.get("servicios") or [])
+            blob = imagen_motor.desde_html(html, filas=filas)
+        else:
+            blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("Factura %s (%s): %s", numero, formato, e)
+        return Response(
+            f"No se pudo generar {'la imagen' if es_imagen else 'el PDF'}. {e} "
+            "La pantalla de impresión sigue funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8",
+        )
+    # Mismo criterio que el estado de cuenta: código y fecha, sin tildes ni
+    # barras. Quien lo recibe junta varios en el chat y los ordena solos.
+    cod = re.sub(r"[^A-Za-z0-9]", "", (codigo_cli or "")).upper() or "CLIENTE"
+    ext = "png" if es_imagen else "pdf"
+    nombre = f"Factura {numero} {cod} {today_ec().strftime('%d-%m-%Y')}.{ext}"
+    return Response(blob, mimetype="image/png" if es_imagen else "application/pdf",
+                    headers={
+                        "Content-Disposition": f'inline; filename="{nombre}"',
+                        "Cache-Control": "no-store",
+                    })
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/pdf")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura_pdf(codigo_cli: str, numf: int):
+    """La misma hoja, como archivo, para mandársela al cliente.
+
+    El 503 no es decorativo: el botón se esconde cuando no hay motor, pero
+    alguien puede llegar por la URL, y un mensaje que dice qué falta es lo que
+    evita el reporte de "no anda el botón".
+    """
+    return _factura_archivo(codigo_cli, numf, "pdf")
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/imagen")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura_imagen(codigo_cli: str, numf: int):
+    """La misma hoja, como FOTO.
+
+    TMT 2026-08-25: *"si dale"*, después de ver que esta pantalla tenía el
+    mismo problema que el estado de cuenta. Es el mismo caso de Alex —el
+    teléfono que no comparte documentos— sobre la otra hoja que el vendedor le
+    manda al cliente. Una foto se manda con el gesto que ya usa todos los días.
+    """
+    return _factura_archivo(codigo_cli, numf, "imagen")
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/imagen")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def imagen(codigo_cli: str):
+    """El estado de cuenta como IMAGEN, para mandarlo como foto por WhatsApp.
+
+    TMT 2026-08-25, con Alex Velastegui: *"desde el pdf q genera no permite
+    enviar por wsp"* → Tamara: *"creo que foto y compartir como imagen si
+    no?"*.
+
+    En un teléfono, mandar una FOTO lo sabe hacer cualquiera y lo permite
+    cualquier aparato; mandar un DOCUMENTO, no. Por eso el vendedor llegaba al
+    PDF y se quedaba ahí. Ver `imagen_motor` para el razonamiento entero.
+
+    Es LA MISMA hoja que el PDF y que el papel, sacada como foto — misma
+    plantilla, mismos números. Y el mismo guard que las otras dos rutas:
+    `_cargar_cliente` 404ea si el cliente no es de este vendedor.
+    """
+    vend = _vend_actual()
+    data = _cargar_cliente(vend, codigo_cli)
+    return informes_views.responder_imagen(data, (codigo_cli or "").upper())
 
 
 @mi_cartera_bp.route("/mi-cartera/prueba-envio")
