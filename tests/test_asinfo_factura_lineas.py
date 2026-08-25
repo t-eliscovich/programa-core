@@ -107,11 +107,11 @@ def test_cuatro_rollos_de_la_misma_tela_son_una_fila_con_cuatro_rollos():
     ]
     res = fl._agrupar(filas)
     assert len(res["lineas"]) == 1
-    l = res["lineas"][0]
-    assert l["rollos"] == 4
-    assert l["kg"] == 85.60
-    assert l["total"] == 646.90
-    assert l["codigo"] == "FRE"
+    fila = res["lineas"][0]
+    assert fila["rollos"] == 4
+    assert fila["kg"] == 85.60
+    assert fila["total"] == 646.90
+    assert fila["codigo"] == "FRE"
     assert res["totales"]["rollos"] == 4
 
 
@@ -121,14 +121,14 @@ def test_el_mismo_color_a_dos_precios_no_se_promedia():
              _fila("Jersey 3", "MARINO", 20.0, 8.00, 150.0)]
     res = fl._agrupar(filas)
     assert len(res["lineas"]) == 2
-    assert {l["precio"] for l in res["lineas"]} == {9.82, 8.0}
+    assert {x["precio"] for x in res["lineas"]} == {9.82, 8.0}
 
 
 def test_primera_y_segunda_son_dos_filas():
     filas = [_fila("Rib", "MARINO", 13.8, 10.51, 118.5),
              _fila("Rib", "MARINO", 10.0, 10.51, 86.0, calidad="SEGUNDA")]
     res = fl._agrupar(filas)
-    assert sorted(l["calidad"] for l in res["lineas"]) == ["Primera", "Segunda"]
+    assert sorted(x["calidad"] for x in res["lineas"]) == ["Primera", "Segunda"]
 
 
 def test_el_servicio_de_logistica_no_es_un_rollo_ni_un_kilo():
