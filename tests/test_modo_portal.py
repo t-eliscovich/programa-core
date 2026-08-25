@@ -185,3 +185,41 @@ def test_el_programa_de_la_oficina_no_levanta_el_portal():
         assert "portal.inicio" not in _endpoints(app)
     finally:
         deshacer()
+
+
+# ---------------------------------------------------------------------------
+# El ciclo de fondo
+# ---------------------------------------------------------------------------
+
+
+def _arranca_el_ciclo(valor):
+    """(carga, calentador) espiados mientras se levanta la app en ese modo."""
+    with patch("modules._lib.autocarga_facturas.start_auto_carga_thread") as carga, \
+         patch("modules._lib.warmup.start_warmup_thread") as calentador:
+        _app, deshacer = _app_en_modo(valor)
+        deshacer()
+    return carga, calentador
+
+
+def test_el_portal_no_arranca_el_ciclo_de_fondo_de_la_oficina():
+    """🚨 TMT 2026-08-25: *"hay algo raro, la traza no se está moviendo"*.
+
+    No estaba parada: guardaba CADA foto dos veces, con segundos de diferencia.
+    El portal levanta este mismo código en otro proceso y arrancaba los mismos
+    hilos de fondo, así que había dos relojes distintos frenando lo mismo — y
+    todo lo que se frena con una variable de proceso, en vez de con la base,
+    corría por duplicado.
+
+    El portal no necesita ninguno de los dos: las facturas ya entran por la
+    oficina y el calentador cachea pantallas que en el portal no existen.
+    """
+    carga, calentador = _arranca_el_ciclo("portal")
+    carga.assert_not_called()
+    calentador.assert_not_called()
+
+
+def test_el_programa_de_la_oficina_si_arranca_el_ciclo_de_fondo():
+    """La contracara: sin esto, apagarlo de más pasaría desapercibido."""
+    carga, calentador = _arranca_el_ciclo(None)
+    carga.assert_called_once()
+    calentador.assert_called_once()

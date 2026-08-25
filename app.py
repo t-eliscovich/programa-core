@@ -151,25 +151,38 @@ def create_app() -> Flask:
     # silenciosamente y los módulos consumidores muestran placeholder.
     formulas_db.init_pool()
 
-    # Calentador de cachés Asinfo (dueña 2026-07-18): refresca las funciones
-    # caras al arrancar (post-deploy) y cada 4 min, para que nadie vea la
-    # carga fría de 15-21s de /balance y /flujo-produccion. Fail-soft, hilo
-    # daemon, apagable con WARMUP_ASINFO=0; no corre bajo pytest.
-    try:
-        from modules._lib.warmup import start_warmup_thread
-        start_warmup_thread()
-    except Exception:  # noqa: BLE001 -- el warmup jamás frena el arranque
-        pass
+    # 🚨 TMT 2026-08-25: el ciclo de fondo corre SÓLO en el programa de la
+    # oficina. `run_portal.py` levanta ESTE MISMO código en otro proceso
+    # (puerto 5004, misma base), y hasta hoy los dos arrancaban los mismos
+    # hilos. Se vio en la traza: guardaba cada foto DOS veces, con segundos de
+    # diferencia, porque el freno de cinco minutos era una variable de proceso
+    # y cada proceso respetaba el suyo. Lo mismo le pasa a todo lo que se frena
+    # con una variable en vez de con la base.
+    #
+    # ⭐ El portal no necesita nada de esto: las facturas ya entran por la
+    # oficina, y el calentador cachea las pantallas caras del ERP, que en el
+    # portal ni siquiera están registradas. Un proceso abierto a internet
+    # tampoco tiene por qué estar hablándole a Asinfo cada cuatro minutos.
+    if not modo.es_portal():
+        # Calentador de cachés Asinfo (dueña 2026-07-18): refresca las funciones
+        # caras al arrancar (post-deploy) y cada 4 min, para que nadie vea la
+        # carga fría de 15-21s de /balance y /flujo-produccion. Fail-soft, hilo
+        # daemon, apagable con WARMUP_ASINFO=0; no corre bajo pytest.
+        try:
+            from modules._lib.warmup import start_warmup_thread
+            start_warmup_thread()
+        except Exception:  # noqa: BLE001 -- el warmup jamás frena el arranque
+            pass
 
-    # Auto-carga de facturas+retenciones del DÍA en segundo plano (dueña
-    # 2026-07-23: "no quiero tener que ir a ninguna página"). Corre la misma
-    # carga que ya dispara /operaciones y /facturas, pero sola en el servidor
-    # cada 2 min — idempotente y fail-soft. Apagable con AUTOCARGA_FACTURAS=0.
-    try:
-        from modules._lib.autocarga_facturas import start_auto_carga_thread
-        start_auto_carga_thread()
-    except Exception:  # noqa: BLE001 -- jamás frena el arranque
-        pass
+        # Auto-carga de facturas+retenciones del DÍA en segundo plano (dueña
+        # 2026-07-23: "no quiero tener que ir a ninguna página"). Corre la misma
+        # carga que ya dispara /operaciones y /facturas, pero sola en el servidor
+        # cada 2 min — idempotente y fail-soft. Apagable con AUTOCARGA_FACTURAS=0.
+        try:
+            from modules._lib.autocarga_facturas import start_auto_carga_thread
+            start_auto_carga_thread()
+        except Exception:  # noqa: BLE001 -- jamás frena el arranque
+            pass
 
     # TMT 2026-05-28 dueña: 'no quiero usar mi compu como sincamos eso'.
     # Si hay un xlsx fresco en data/dbase_snapshots/, lo sincamos UNA VEZ
