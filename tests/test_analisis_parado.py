@@ -600,6 +600,22 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
     assert "Franela" in inspect.getsource(queries.items)
 
 
+def test_las_dos_pantallas_no_llaman_igual_a_dos_cifras_distintas():
+    """⚠ La Competencia muestra la bolsa CONGELADA del día de la largada;
+    Saldos, los puntos del stock de hoy, que baja a medida que se vende. Son
+    dos preguntas distintas y no pueden tener el mismo rótulo: la dueña vio las
+    dos cifras y preguntó cuál era la buena."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    import re
+    saldos = " ".join((carpeta / "parado.html").read_text(encoding="utf-8").split())
+    saldos = re.sub(r"\{#.*?#\}", " ", saldos)
+    assert "Puntos que quedan" in saldos
+    assert "Puntos en juego" not in saldos, (
+        "ese rótulo es el de la Competencia, y es otra cifra")
+
+
 def test_la_pantalla_de_saldos_ordena_por_puntos(monkeypatch):
     """⭐ Dueña 24/08/2026: "idem para la pantalla de saldos". La pregunta que
     se hace el que abre esta lista es a qué tela conviene ir, y 300 kg de una
