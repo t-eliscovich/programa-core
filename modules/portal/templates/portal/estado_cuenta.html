@@ -1,0 +1,95 @@
+{% extends "portal/base.html" %}
+{% block titulo %}Mi cuenta — Intela{% endblock %}
+{% block ancho %}560px{% endblock %}
+{% block contenido %}
+{% set cli = data.cliente or {} %}
+{% set _saldo = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+
+<div class="tarjeta-saldo">
+  <span class="rotulo">Su saldo con Intela</span>
+  <span class="numerote {{ 'a-favor' if _saldo < 0 else '' }}">
+    {{ '−' if _saldo < 0 else '' }}$ {{ '%.2f'|format(_saldo|abs) }}
+  </span>
+  {% if _saldo < 0 %}
+    <span class="nota">Es un saldo a favor suyo.</span>
+  {% elif t.n_vencidas %}
+    <span class="nota vencido">
+      $ {{ '%.2f'|format(t.saldo_vencido) }} de ese saldo está vencido
+      ({{ t.n_vencidas }} {{ 'factura' if t.n_vencidas == 1 else 'facturas' }}).
+    </span>
+  {% elif _saldo > 0 %}
+    <span class="nota">Ninguna factura está vencida.</span>
+  {% endif %}
+</div>
+
+{% if t.cheques_por_cobrar %}
+<div class="dato">
+  <span>Cheques suyos que todavía no cobramos</span>
+  <b>$ {{ '%.2f'|format(t.cheques_por_cobrar) }}</b>
+</div>
+{% endif %}
+
+{# ---------------- Facturas ---------------- #}
+{% set pendientes = (data.facturas or [])|selectattr('saldo')|list %}
+<h2 class="titulo-lista">Facturas pendientes</h2>
+{% if not pendientes %}
+  <div class="caja vacia">No tiene facturas pendientes.</div>
+{% else %}
+  <div class="lista">
+    {% for f in pendientes %}
+    <div class="fila {{ 'vencida' if f.vencimiento and f.vencimiento < hoy_iso else '' }}">
+      <div class="fila-arriba">
+        <b>{{ f.numf_completo or f.numf }}</b>
+        <b class="plata">$ {{ '%.2f'|format(f.saldo or 0) }}</b>
+      </div>
+      <div class="fila-abajo">
+        <span>{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '' }}</span>
+        <span>
+          {% if f.vencimiento %}
+            {% if f.vencimiento < hoy_iso %}Venció el {{ f.vencimiento.strftime('%d/%m') }}
+            {% else %}Vence el {{ f.vencimiento.strftime('%d/%m') }}{% endif %}
+          {% endif %}
+        </span>
+      </div>
+      {% if (f.abono or 0) or (f.retencion or 0) %}
+      <div class="fila-abajo detalle">
+        <span>Factura $ {{ '%.2f'|format(f.importe or 0) }}</span>
+        <span>
+          {% if f.abono %}Pagado $ {{ '%.2f'|format(f.abono) }}{% endif %}
+          {% if f.retencion %} · Retención $ {{ '%.2f'|format(f.retencion) }}{% endif %}
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{# ---------------- Cheques ---------------- #}
+{% set en_cartera = (data.cheques or [])|selectattr('stat', 'in', ['Z', 'P'])|list %}
+{% if en_cartera %}
+<h2 class="titulo-lista">Cheques que tenemos suyos</h2>
+<div class="lista">
+  {% for c in en_cartera %}
+  <div class="fila">
+    <div class="fila-arriba">
+      <b>N° {{ c.no_cheque }}</b>
+      <b class="plata">$ {{ '%.2f'|format(c.importe or 0) }}</b>
+    </div>
+    <div class="fila-abajo">
+      <span>{{ c.nombre_banco or c.banco or '' }}</span>
+      <span>{% if c.fechad %}Se cobra el {{ c.fechad.strftime('%d/%m/%Y') }}{% endif %}</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="acciones">
+  <a class="boton-lila" href="/estado-de-cuenta/imprimir" target="_blank" rel="noopener">
+    Ver la hoja para imprimir
+  </a>
+</div>
+
+<p class="ayuda"><a href="/salir">Salir</a></p>
+{% endblock %}

@@ -44,6 +44,10 @@ def _comunes():
 
     return {
         "hoy": date.today().strftime("%d/%m/%Y"),
+        # ⚠ FECHA, no texto: se compara contra `factura.vencimiento`, que la
+        # base devuelve como `date`. Comparar un date con un string no falla:
+        # levanta, y la pantalla entera se cae.
+        "hoy_iso": date.today(),
         "csrf_token_input": Markup(
             f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'),
     }
@@ -219,6 +223,53 @@ def salir():
 # ---------------------------------------------------------------------------
 
 
+def _cargar_estado_cuenta(cod: str) -> dict:
+    """El estado de cuenta del cliente.
+
+    ⭐ Sale de `informes.queries.estado_cuenta_cliente`, la MISMA función que
+    usan la oficina y el portal de vendedores. El portal no calcula ni un
+    número: si el saldo que ve el cliente saliera de otra cuenta, tarde o
+    temprano diría algo distinto que el que ve la oficina — y el que llama por
+    teléfono es él.
+
+    El blueprint de informes no se registra en este proceso, pero el módulo se
+    importa igual: lo que no existe acá son sus PANTALLAS.
+    """
+    from modules.informes import queries as _q
+
+    return _q.estado_cuenta_cliente(cod)
+
+
+@portal_bp.route("/estado-de-cuenta", methods=["GET"])
+def estado_cuenta():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    return render_template("portal/estado_cuenta.html",
+                           data=data, t=data.get("totales") or {},
+                           codigo=cod)
+
+
+@portal_bp.route("/estado-de-cuenta/imprimir", methods=["GET"])
+def estado_cuenta_imprimir():
+    """La hoja para imprimir — la MISMA que sale de la oficina.
+
+    Incluye `informes/_estado_cuenta_impreso.html`, el parcial compartido. El
+    envoltorio sí es propio: el de la oficina extiende el chrome del ERP, con
+    su menú y su breadcrumb, que acá no existen.
+    """
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    return render_template("portal/estado_cuenta_impreso.html",
+                           data=data, t=data.get("totales") or {},
+                           facturas=data.get("facturas") or [],
+                           cheques=data.get("cheques") or [],
+                           codigo=cod)
+
+
 @portal_bp.route("/", methods=["GET"])
 def inicio():
     cod = cliente_actual()
@@ -241,5 +292,6 @@ def inicio():
     if acc is not None and not acc.get("clave_hash"):
         return redirect(url_for("portal.elegir_clave"))
 
-    return render_template("portal/inicio.html",
-                           nombre=fic.get("nombre") or cod, codigo=cod)
+    # Lo que el cliente vino a ver es su cuenta: no se le pone una portada en
+    # el medio para que tenga que dar otro click.
+    return redirect(url_for("portal.estado_cuenta"))

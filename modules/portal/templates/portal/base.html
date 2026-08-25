@@ -37,7 +37,7 @@
     display: flex; flex-direction: column;
   }
   .hoja {
-    width: 100%; max-width: 400px;
+    width: 100%; max-width: {% block ancho %}400px{% endblock %};
     margin: auto; padding: 40px 22px 32px;
   }
 
@@ -119,6 +119,66 @@
     text-align: center; color: #a3a3a3; font-size: 12px;
     margin-top: 26px; letter-spacing: .02em;
   }
+
+  /* ---- la cuenta ---- */
+  .tarjeta-saldo {
+    background: var(--papel); border: 1px solid var(--borde); border-radius: 16px;
+    padding: 26px 22px; text-align: center;
+    box-shadow: 0 1px 2px rgba(29,29,27,.04), 0 12px 32px -12px rgba(29,29,27,.14);
+  }
+  .tarjeta-saldo .rotulo {
+    display: block; font-size: 12.5px; font-weight: 600; color: var(--suave);
+    letter-spacing: .05em; text-transform: uppercase;
+  }
+  .tarjeta-saldo .numerote {
+    display: block; margin: 8px 0 4px;
+    font-size: 38px; font-weight: 700; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .tarjeta-saldo .numerote.a-favor { color: #047857; }
+  .tarjeta-saldo .nota { display: block; font-size: 13.5px; color: var(--suave); }
+  .tarjeta-saldo .nota.vencido { color: #9b1c17; font-weight: 600; }
+
+  .dato {
+    display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    background: var(--papel); border: 1px solid var(--borde); border-radius: 12px;
+    padding: 14px 18px; margin-top: 12px; font-size: 14.5px; color: var(--suave);
+  }
+  .dato b { color: var(--tinta); font-variant-numeric: tabular-nums; }
+
+  .titulo-lista {
+    font-size: 12.5px; font-weight: 700; color: var(--suave);
+    letter-spacing: .06em; text-transform: uppercase;
+    margin: 30px 0 10px;
+  }
+  .lista {
+    background: var(--papel); border: 1px solid var(--borde); border-radius: 12px;
+    overflow: hidden;
+  }
+  .fila { padding: 14px 18px; }
+  .fila + .fila { border-top: 1px solid #f0efee; }
+  .fila.vencida { background: #fff7f7; box-shadow: inset 3px 0 0 var(--rojo); }
+  .fila-arriba {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    font-size: 15.5px;
+  }
+  .fila-arriba .plata { font-variant-numeric: tabular-nums; }
+  .fila-abajo {
+    display: flex; justify-content: space-between; gap: 12px;
+    font-size: 13px; color: var(--suave); margin-top: 3px;
+  }
+  .fila-abajo.detalle { font-size: 12.5px; color: #9a9a9a; }
+  .fila.vencida .fila-abajo { color: #9b1c17; }
+  .caja.vacia { text-align: center; color: var(--suave); font-size: 14.5px; }
+
+  .acciones { margin-top: 26px; }
+  .boton-lila {
+    display: block; text-align: center; padding: 13px;
+    font-size: 15.5px; font-weight: 600; text-decoration: none;
+    color: var(--tinta); background: var(--papel);
+    border: 1px solid var(--borde); border-radius: 10px;
+  }
+  .boton-lila:hover { border-color: var(--rojo); color: var(--rojo); }
 </style>
 </head>
 <body>

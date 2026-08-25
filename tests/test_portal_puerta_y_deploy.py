@@ -112,20 +112,43 @@ def test_el_portal_no_toca_el_puerto_de_la_oficina():
 BOOTSTRAP = (ROOT / "scripts" / "crear_servicio_portal.ps1").read_text(encoding="utf-8")
 
 
-def test_el_script_deriva_el_arranque_del_que_ya_funciona():
-    """No escribe la línea de arranque a mano: la copia de la tarea de la
-    oficina y le cambia la puerta y el puerto. Si mañana cambia la forma de
-    arrancar —otra versión de Waitress, otro python— el portal la hereda."""
+def test_el_script_deriva_el_launcher_del_que_ya_funciona():
+    """⭐ La tarea de la oficina no llama a waitress directo: llama a un
+    `launch_core.ps1` que exporta ocho variables de Machine, arma la carpeta de
+    logs y recién ahí arranca. Y ese archivo **no está en el repo**: vive sólo
+    en el server.
+
+    Por eso el launcher del portal se GENERA a partir de él. Escribirlo a mano
+    sería duplicar esa lista de variables y que se desactualice sola."""
     assert "Get-ScheduledTask -TaskName $TAREA_BASE" in BOOTSTRAP
+    assert "$launcherOficina" in BOOTSTRAP
     assert "-replace 'run:app', 'run_portal:app'" in BOOTSTRAP
+    assert "launch_portal.ps1" in BOOTSTRAP
 
 
 def test_el_script_frena_si_no_pudo_derivar_el_arranque():
-    """🚨 Si el `-replace` no encontró nada, los argumentos quedarían IGUALES a
-    los de la oficina: sería un segundo proceso del ERP escuchando en otro
-    puerto, o sea el ERP entero servido donde va el portal."""
+    """🚨 Si el `-replace` no encontró nada, el launcher del portal quedaría
+    IGUAL al de la oficina: un segundo proceso del ERP escuchando en otro
+    puerto, o sea el ERP entero servido donde va el portal.
+
+    Esto no es teórico: el 24/08 el script frenó acá de verdad, porque la
+    derivación asumía que la tarea llamaba a waitress directo. El freno hizo
+    exactamente su trabajo."""
+    assert "$textoOficina -notmatch 'run:app'" in BOOTSTRAP
+    assert "$textoPortal -notmatch 'run_portal:app'" in BOOTSTRAP
     assert "if ($argumentos -eq $accionBase.Arguments)" in BOOTSTRAP
-    assert "$argumentos -notmatch 'run_portal:app'" in BOOTSTRAP
+
+
+def test_el_launcher_del_portal_se_escribe_en_ASCII():
+    """Misma razón que el script: PowerShell lee un .ps1 sin BOM como
+    Windows-1252, y el que se genera acá también lo va a leer PowerShell."""
+    assert "-Encoding ASCII" in BOOTSTRAP
+
+
+def test_el_portal_escribe_su_propio_log():
+    """Si compartieran archivo de log, los dos procesos se pisarían los
+    renglones y ninguno serviría para entender qué pasó."""
+    assert "-replace 'core-', 'portal-'" in BOOTSTRAP
 
 
 def test_el_script_no_pide_certificado_para_un_sitio_caido():

@@ -67,19 +67,57 @@ Write-Output ('  Programa   : ' + $accionBase.Execute)
 Write-Output ('  Argumentos : ' + $accionBase.Arguments)
 Write-Output ('  Carpeta    : ' + $accionBase.WorkingDirectory)
 
-# La MISMA linea, con la puerta y el puerto del portal. Se deriva de la que ya
-# funciona en vez de escribirla a mano: si manana cambia la forma de arrancar
-# (otra version de Waitress, otro python), el portal la hereda sola.
-$argumentos = $accionBase.Arguments -replace 'run:app', 'run_portal:app' -replace '5002', "$PUERTO"
+# ---------------------------------------------------------------------------
+# El launcher del portal se DERIVA del de la oficina
+# ---------------------------------------------------------------------------
+#
+# La tarea de la oficina no llama a waitress directo: llama a un
+# launch_core.ps1 que exporta las variables de Machine (DATABASE_URL,
+# METABASE_*, las cards de Asinfo), arma la carpeta de logs y recien ahi
+# arranca waitress. Ese archivo NO esta en el repo: vive solo en el server.
+#
+# Por eso el del portal se genera A PARTIR de el en vez de escribirlo a mano:
+# la lista de variables de entorno es larga y se desactualiza sola. Si manana
+# alguien le agrega una variable al de la oficina, el del portal la hereda en
+# la proxima corrida de este script.
 
-if ($argumentos -eq $accionBase.Arguments) {
-    throw "No pude derivar los argumentos del portal (no encontre 'run:app' ni '5002'). Frenar aca es mejor que arrancar un segundo proceso de la OFICINA en otro puerto."
+$m = [regex]::Match($accionBase.Arguments, '-File\s+"?([^"]+\.ps1)"?')
+if (-not $m.Success) {
+    throw "No pude encontrar el launcher (.ps1) en los argumentos de $TAREA_BASE : $($accionBase.Arguments)"
 }
-if ($argumentos -notmatch 'run_portal:app') {
-    throw "Los argumentos derivados no apuntan a run_portal:app: $argumentos"
+$launcherOficina = $m.Groups[1].Value
+if (-not (Test-Path $launcherOficina)) {
+    throw "El launcher de la oficina no existe: $launcherOficina"
 }
+
+$launcherPortal = Join-Path (Split-Path $launcherOficina) 'launch_portal.ps1'
+$textoOficina = Get-Content $launcherOficina -Raw
+
+if ($textoOficina -notmatch 'run:app' -or $textoOficina -notmatch '5002') {
+    throw "El launcher de la oficina no tiene 'run:app' ni '5002'. Frenar aca es mejor que arrancar un segundo proceso de la OFICINA en otro puerto."
+}
+
+$textoPortal = $textoOficina -replace 'run:app', 'run_portal:app' -replace '5002', "$PUERTO" -replace 'core-', 'portal-'
+
+if ($textoPortal -notmatch 'run_portal:app' -or $textoPortal -notmatch "$PUERTO") {
+    throw 'El launcher derivado no quedo apuntando al portal.'
+}
+
+$cabecera = @()
+$cabecera += '# GENERADO por scripts/crear_servicio_portal.ps1 a partir de'
+$cabecera += ("# " + $launcherOficina + " -- NO editar a mano: se regenera.")
+$cabecera += '# Lo unico que cambia es la puerta (run_portal:app), el puerto y el log.'
+$cabecera += ''
+Set-Content -Path $launcherPortal -Value (($cabecera -join "`r`n") + $textoPortal) -Encoding ASCII
 
 Write-Output ''
+Write-Output ('Launcher del portal escrito en ' + $launcherPortal)
+
+$argumentos = $accionBase.Arguments.Replace($launcherOficina, $launcherPortal)
+if ($argumentos -eq $accionBase.Arguments) {
+    throw 'No pude cambiarle el launcher a los argumentos de la tarea.'
+}
+
 Write-Output 'El portal va a arrancar con:'
 Write-Output ('  Argumentos : ' + $argumentos)
 

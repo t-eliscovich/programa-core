@@ -1,0 +1,54 @@
+{# La hoja del estado de cuenta — el MISMO documento que sale de la oficina.
+
+   El cuerpo es `informes/_estado_cuenta_impreso.html`, el parcial compartido:
+   dos plantillas del mismo documento divergen a la primera corrección, y ya
+   pasó con el papel que el vendedor le deja al cliente (por eso `mi_cartera`
+   tampoco arma la suya).
+
+   El ENVOLTORIO sí es propio: el de la oficina extiende `base.html`, que trae
+   el menú del ERP y un breadcrumb con `url_for('informes.estado_cuenta_landing')`
+   — dos cosas que en el proceso del portal no existen.
+
+   ⚠ El bloque `<style>` de abajo es copia literal del de
+   `informes/estado_cuenta_lote_print.html`. No se pudo compartir porque la
+   pantalla individual tiene el suyo, distinto, y unificar los tres es una
+   sesión aparte sobre una hoja que llevó ocho vueltas de ajuste. Lo que sí
+   hay es un test que compara los dos textos: si alguien toca uno y no el
+   otro, se entera. #}
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estado de cuenta · {{ data.cliente.nombre }} ({{ codigo }})</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+{% include "portal/_hoja_css.html" %}
+<style>
+  body { background: #fff; }
+  .barra {
+    display: flex; gap: 10px; justify-content: flex-end; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background: #fafafa;
+  }
+  .barra button {
+    padding: 9px 16px; font-size: 14px; font-weight: 600; color: #fff;
+    background: #e30613; border: 0; border-radius: 8px; cursor: pointer;
+    font-family: inherit;
+  }
+  .contenido { padding: 18px 16px 40px; }
+  @media print { .barra { display: none !important; } .contenido { padding: 0; } }
+</style>
+</head>
+<body>
+  <div class="barra no-print">
+    <button type="button" onclick="window.print()">Imprimir</button>
+  </div>
+  <div class="contenido">
+    <h1 class="text-xl font-semibold mb-1">{{ data.cliente.nombre }}</h1>
+    <p class="text-sm text-slate-500 mb-6">
+      Cliente {{ codigo }}{% if data.cliente.ruc %} · RUC {{ data.cliente.ruc }}{% endif %}
+      · al {{ hoy }}
+    </p>
+    {% include "informes/_estado_cuenta_impreso.html" %}
+  </div>
+</body>
+</html>

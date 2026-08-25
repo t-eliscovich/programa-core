@@ -1,0 +1,58 @@
+{# COPIA LITERAL del bloque de estilos de `informes/estado_cuenta_lote_print.html`.
+   No se comparte el archivo porque la pantalla individual tiene el suyo,
+   distinto, y unificar los tres es una sesion aparte sobre una hoja que
+   llevo ocho vueltas de ajuste.
+
+   Lo que lo cuida es `tests/test_portal_estado_cuenta.py::test_la_hoja_del_portal_usa_la_misma_css_que_la_oficina`: compara los
+   dos textos, asi que si alguien toca uno y no el otro, se entera. #}
+<style>
+  .cli-block .print-head { display: none; }
+  @media print {
+    .no-print { display: none !important; }
+    /* NO forzar página nueva por cliente. Si el estado no llena la hoja, dejamos
+       un espacio y seguimos con el próximo en la misma hoja; el salto de página
+       ocurre solo cuando naturalmente no entra. TMT 2026-07-09 (dueña). */
+    .cli-block { margin-top: 16pt !important; padding-top: 8pt !important;
+                 border-top: 0.8pt solid #cbd5e1 !important; }
+    .cli-block:first-of-type { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+    /* No dejar el header colgado al pie sin su tabla. */
+    .cli-block .print-head { page-break-after: avoid !important; }
+    tr { page-break-inside: avoid !important; }
+    /* TMT 2026-08-04 (Alex/dueña, IJM 15 facturas): en el PDF que sale por
+       WhatsApp faltaban las dos últimas facturas y el tfoot mostraba el total
+       de las 15 igual. Dos causas: `.ec-bloque-facturas` tiene
+       `overflow: hidden` (Tailwind, para redondear las esquinas en pantalla) y
+       Chromium `--print-to-pdf` lo respeta al pie de página → las filas que
+       se pasan se recortan invisiblemente y el tfoot queda igual porque es
+       fila propia. Y encima el tfoot por default se repite en cada página
+       impresa: en `estado_cuenta.html` esto ya está resuelto con
+       `tfoot { display: table-row-group }` (ver el comentario "totales UNA
+       vez al final, no por página"). Se replican las dos reglas acá para que
+       el PDF de WhatsApp salga igual que el print de la oficina. #}
+    .ec-bloque-facturas, .ec-bloque-cheques { overflow: visible !important; }
+    thead { display: table-header-group !important; }   /* repite por página */
+    tfoot { display: table-row-group !important; }      /* totales UNA vez al final, no por página */
+    /* Header por cliente (1 línea: nombre + saldo), como el print-header del individual. */
+    .cli-block .print-head { display: block !important; border-bottom: 1.5pt solid #9ca3af !important;
+                             padding: 0 0 3pt 0 !important; margin: 4pt 0 5pt 0 !important; }
+    .cli-block .ph-nombre { font-size: 11pt !important; font-weight: bold !important; }
+    .cli-block .ph-saldo  { font-size: 9pt !important; font-weight: 600 !important; }
+    /* Tabla densa — mismas reglas que estado_cuenta.html. */
+    .max-w-6xl table { font-size: 7.5pt !important; line-height: 1.1 !important; border-collapse: collapse !important; }
+    .max-w-6xl table th, .max-w-6xl table td { padding: 0.5pt 3pt !important; font-size: 7.5pt !important; line-height: 1.1 !important; }
+    .max-w-6xl table td { border-bottom: 0.3pt solid #ccc !important; }
+    .max-w-6xl * { border-color: #d1d5db !important; }
+    .max-w-6xl table thead th { border-bottom: 0.8pt solid #9ca3af !important; font-size: 6.5pt !important; }
+    .max-w-6xl table tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; font-weight: 700 !important; }
+    .max-w-6xl h2 { font-size: 9pt !important; margin: 5pt 0 1pt 0 !important; page-break-after: avoid !important; }
+    .max-w-6xl table td span, .max-w-6xl table td div { padding: 0 !important; background: none !important;
+                                                        border: none !important; font-size: inherit !important; line-height: inherit !important; }
+  }
+  @media screen {
+    .cli-block { border-top: 3px solid #e2e8f0; margin-top: 2rem; padding-top: 1.25rem; }
+    .cli-block:first-of-type { border-top: 0; margin-top: 0; }
+    .cli-block .print-head { display: block; margin-bottom: .5rem; }
+    .cli-block .ph-nombre { font-size: 1.1rem; font-weight: 700; }
+    .cli-block .ph-saldo { font-size: .9rem; color: #64748b; }
+  }
+</style>

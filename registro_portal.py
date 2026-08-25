@@ -20,3 +20,35 @@ def registrar(app: Flask) -> None:
     from modules.portal.views import portal_bp
 
     app.register_blueprint(portal_bp)
+    _prestar_plantillas_de_informes(app)
+
+
+def _prestar_plantillas_de_informes(app: Flask) -> None:
+    """Deja que el portal RESUELVA las plantillas de informes, sin sus rutas.
+
+    ⭐ El estado de cuenta impreso tiene que salir de la MISMA hoja que usan la
+    oficina y los vendedores (`informes/_estado_cuenta_impreso.html`). Dos
+    plantillas del mismo documento divergen a la primera corrección — pasó ya
+    con el papel que el vendedor le deja al cliente, y por eso `mi_cartera`
+    tampoco arma la suya.
+
+    Esa hoja vive en la carpeta del blueprint de informes, que acá NO se
+    registra. Prestarle la CARPETA a Jinja no le abre ni una ruta: sigue sin
+    existir `/informes/*`. Es exactamente lo que queremos — el documento
+    compartido, las pantallas no.
+
+    Se hace así y no moviendo el archivo a `templates/` porque media docena de
+    tests lo referencian por su ruta actual, y mover un archivo que costó ocho
+    vueltas de ajuste para ganar comodidad no vale el riesgo.
+    """
+    from pathlib import Path
+
+    from jinja2 import ChoiceLoader, FileSystemLoader
+
+    carpeta = Path(__file__).resolve().parent / "modules" / "informes" / "templates"
+    if not carpeta.is_dir():          # pragma: no cover - sólo si se mueve el repo
+        return
+    app.jinja_loader = ChoiceLoader([
+        app.jinja_loader,
+        FileSystemLoader(str(carpeta)),
+    ])
