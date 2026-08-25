@@ -2,9 +2,10 @@
 
 Dos consultas y un remate:
 
-    parados()   ~2 s — lo que entra a la lista: el producto terminado quieto
-                hace 12 meses (todos sus kilos) MÁS los kilos de segunda de
-                cualquier tela, se venda o no.
+    parados()   ~2 s — lo que entra a la lista: el producto terminado que no
+                vendió un kilo en 12 meses y que ADEMÁS está en la bodega desde
+                hace más de 6 meses (todos sus kilos) MÁS los kilos de segunda
+                de cualquier tela, se venda o no.
     llamados()  ~5 s — por cada TELA parada, los 12 clientes de más kilos del
                 ÚLTIMO año en que alguien la compró. Normalmente es el
                 corriente; si no, el anterior; y si tampoco, 2024 o 2023.
@@ -33,6 +34,19 @@ puede llamar. Sin excluirlo, tres de las telas más paradas mostraban un único
 `codigo`, que es el RUC. Ese código es el mismo `codigo_cli` con el que Programa
 Core joinea todo, y por eso la lista se entrega por código: se puede pegar
 contra cualquier otra pantalla del programa.
+
+⭐ **Sólo la tela QUIETA, no la recién hecha.** Dueña 25/08/2026: *"que la
+competencia tenga solo tela estancada, no tela que se hizo recientemente y no se
+movió"*. "No vendió un kilo en 12 meses" se cumple solo cuando la tela recién
+salió de producción: nunca tuvo la chance de venderse. Por eso al filtro de
+ventas se le suma el de ANTIGÜEDAD — el rollo tiene que estar en la bodega desde
+hace más de `MESES_QUIETO` meses (ver `_QUIETO`).
+
+⭐ **La de SEGUNDA entra igual, se haya hecho cuando se haya hecho** (dueña
+25/08/2026, sobre la misma pregunta: *"sí, la segunda siempre entra"*). La
+antigüedad decide sólo el motivo `parado`. Un ítem cuyo stock es reciente pero
+que tiene kilos SEG entra con esos kilos y nada más, igual que cualquier tela
+que se vende bien y arrastra segunda.
 
 ⭐ **No hay corte de años.** `anio_ok` toma el último año con compras de cada
 tela, sea cual sea. Dueña 17/08/2026, sobre las telas sin candidatos: "ponemelos
@@ -73,6 +87,15 @@ CATS = ", ".join(_CATS)
 BODEGA_TERMINADO = 53
 MIN_KG = 20        # debajo de esto no vale el tiempo de revisarlo
 TOPE_CLIENTES = 12  # cuántos candidatos se guardan por tela
+
+# ⭐ Cuánto tiene que llevar un rollo en la bodega para que su tela cuente como
+# ESTANCADA. Elegido por la dueña el 25/08/2026 entre 3, 6 y 12 meses: "6
+# meses". Medio año quieto ya es tela clavada, y deja afuera la producción
+# fresca sin vaciar la lista.
+#
+# ⚠ Cambiarlo mueve la lista, la meta de la competencia y el puntaje de cada
+# tela. Es una línea, pero no es un detalle.
+MESES_QUIETO = 6
 
 # Nombre del vendedor en Asinfo → código de `scintela.vendedor`. En Asinfo el
 # vendedor viene con nombre y apellido; en Programa Core la cartera se reparte
@@ -198,7 +221,32 @@ ven AS (
 # día se despegan, los kilos por calidad van a dejar de sumar el total de la
 # fila. Ese es el síntoma a mirar.
 _CALIDAD = f"""
-, lote_ult AS (
+-- ⭐ LOS ROLLOS QUE YA ESTABAN. Un rollo es VIEJO si la bodega lo tenía en su
+-- foto antes del corte de {MESES_QUIETO} meses. `saldo_producto_lote` es una
+-- foto DIARIA por rollo, así que si el rollo existía ese día, tiene una fila
+-- ese día: no hace falta la fecha de fabricación, que en Asinfo no está en el
+-- lote.
+--
+-- ⚠ Se pregunta por EXISTENCIA antes del corte y no por `MIN(fecha)`: el MIN
+-- obliga a recorrer la historia entera de la bodega, y esto se conforma con las
+-- filas viejas. Da lo mismo si el rollo entró, salió y volvió: lo que importa
+-- es que estos kilos no son producción fresca.
+, viejo AS (
+    SELECT DISTINCT id_producto, id_lote
+    FROM saldo_producto_lote
+    WHERE id_bodega = {BODEGA_TERMINADO} AND saldo > 0
+      AND fecha < DATEADD(month, -{MESES_QUIETO}, GETDATE())
+),
+-- Desde cuándo hay foto de esta bodega. Es el CONTROL de la regla de arriba:
+-- si la foto no llega hasta el corte, "no estaba hace {MESES_QUIETO} meses" no
+-- significa que la tela sea nueva, significa que no se sabe — y en ese caso no
+-- se filtra nada (ver `_QUIETO`). Sin este control, un día que Asinfo purgue
+-- historia la lista entera se vaciaría sola y parecería una buena noticia.
+hist AS (
+    SELECT MIN(fecha) AS desde FROM saldo_producto_lote
+    WHERE id_bodega = {BODEGA_TERMINADO}
+),
+lote_ult AS (
     SELECT s.id_producto, s.id_lote, s.saldo,
            ROW_NUMBER() OVER (PARTITION BY s.id_producto, s.id_lote
                               ORDER BY s.fecha DESC) rn
@@ -224,7 +272,10 @@ cal AS (
            SUM(CASE WHEN t.codigo = 'ABI' AND ISNULL(v.codigo, '') <> 'SEG'
                     THEN lu.saldo ELSE 0 END) AS kg_abi_pri,
            SUM(CASE WHEN t.codigo = 'ABI' AND v.codigo = 'SEG'
-                    THEN lu.saldo ELSE 0 END) AS kg_abi_seg
+                    THEN lu.saldo ELSE 0 END) AS kg_abi_seg,
+           -- Los kilos que llevan más de {MESES_QUIETO} meses en la bodega.
+           SUM(CASE WHEN vj.id_lote IS NOT NULL THEN lu.saldo ELSE 0 END)
+                                                              AS kg_viejo
     FROM lote_ult lu
     JOIN producto p ON p.id_producto = lu.id_producto
     JOIN lote l     ON l.id_lote     = lu.id_lote
@@ -236,6 +287,8 @@ cal AS (
     -- por el CÓDIGO del valor y no por su id: si mañana el slot cambia, la
     -- consulta deja de encontrarlo y da 0 — no confunde una cosa con otra.
     LEFT JOIN valor_atributo t ON t.id_valor_atributo = l.id_valor_atributo_3
+    LEFT JOIN viejo vj ON vj.id_producto = lu.id_producto
+                      AND vj.id_lote    = lu.id_lote
     WHERE lu.rn = 1 AND lu.saldo > 0
     GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
 )"""
@@ -253,7 +306,35 @@ cal AS (
 #
 # Medido al 18/08/2026: 344 parados (36.720 kg) + 363 con segunda suelta
 # (15.709 kg) = 707 ítems y 52.428 kg.
-_ES_PARADO = f"(stk.stock_kg >= {MIN_KG} AND ISNULL(ven.kg_12m, 0) < 1)"
+#
+# ⭐ Y desde el 25/08/2026 el motivo `parado` pide una tercera cosa: que la tela
+# esté QUIETA hace rato. Ver `_QUIETO`.
+
+# ⭐ QUIETA: hay al menos {MIN_KG} kg de esta tela × color que ya estaban en la
+# bodega antes del corte de {MESES_QUIETO} meses.
+#
+# ⚠ Las otras dos ramas son "no se sabe", y las dos dejan pasar a propósito. Se
+# excluye sólo con PRUEBA de que la tela es reciente, nunca por falta de dato:
+#
+#   · `hist.desde > corte` — la foto de la bodega no llega hasta el corte
+#     (Asinfo purgó historia, o la bodega es nueva). Nadie puede decir qué había
+#     hace {MESES_QUIETO} meses.
+#   · `cal.subcategoria IS NULL` — el ítem no tiene ni un lote en la foto por
+#     rollo. Son los kilos que hoy separan a `saldo_producto` de
+#     `saldo_producto_lote` (0,006% al 17/08/2026): existen en el stock pero no
+#     tienen rollo con el cual fecharse.
+_QUIETO = (f"(hist.desde > DATEADD(month, -{MESES_QUIETO}, GETDATE())"
+           f" OR cal.subcategoria IS NULL"
+           f" OR ISNULL(cal.kg_viejo, 0) >= {MIN_KG})")
+
+_SIN_VENTA = f"(stk.stock_kg >= {MIN_KG} AND ISNULL(ven.kg_12m, 0) < 1)"
+_ES_PARADO = f"({_SIN_VENTA} AND {_QUIETO})"
+
+# ⚠ La tela RECIÉN HECHA que no vendió nada. No es una tela parada: nunca tuvo
+# la chance de venderse. Sale marcada —y no filtrada en el WHERE— porque el
+# refresh necesita verla para APAGAR de la lista a la que ya había entrado por
+# este motivo antes del 25/08 (ver `queries.actualizar`).
+_ES_NUEVA = f"(CASE WHEN {_SIN_VENTA} AND NOT {_QUIETO} THEN 1 ELSE 0 END)"
 
 SQL_PARADOS = _STOCK + _CALIDAD + f"""
 SELECT stk.subcategoria, stk.color, stk.categoria,
@@ -281,15 +362,31 @@ SELECT stk.subcategoria, stk.color, stk.categoria,
        ISNULL(cal.kg_tub_seg, 0)                    AS kg_tub_seg,
        CASE WHEN {_ES_PARADO} THEN ISNULL(cal.kg_abi_pri, 0) ELSE 0 END AS kg_abi_pri,
        ISNULL(cal.kg_abi_seg, 0)                    AS kg_abi_seg,
-       CASE WHEN {_ES_PARADO} THEN 'parado' ELSE 'segunda' END AS motivo
-FROM stk LEFT JOIN ven
+       CASE WHEN {_ES_PARADO} THEN 'parado' ELSE 'segunda' END AS motivo,
+       -- 1 = tela recién hecha que todavía no vendió nada. Con kilos de
+       -- segunda entra igual (por su SEG); sin ellos, `stock_kg` da 0 y el
+       -- refresh la deja afuera.
+       {_ES_NUEVA}                                  AS nueva,
+       ISNULL(cal.kg_viejo, 0)                      AS kg_viejo,
+       -- Lo que hay en la bodega, sin importar por qué motivo entró ni si
+       -- entró. Es con lo que la pantalla puede decir cuántos kilos quedaron
+       -- afuera por ser tela reciente.
+       stk.stock_kg                                 AS stock_bodega
+FROM stk
+CROSS JOIN hist
+LEFT JOIN ven
   ON ven.subcategoria = stk.subcategoria AND ven.color = stk.color
 LEFT JOIN cal
   ON cal.subcategoria = stk.subcategoria AND cal.color = stk.color
-WHERE {_ES_PARADO} OR ISNULL(cal.kg_segunda, 0) > 0
+WHERE {_SIN_VENTA} OR ISNULL(cal.kg_segunda, 0) > 0
 ORDER BY 4 DESC
 """
 
+# ⚠ Los CANDIDATOS no miran la antigüedad, y no hace falta: son clientes por
+# TELA, y una tela sólo se muestra con sus candidatos al lado si está en la
+# lista. Sumarle acá el filtro de antigüedad obligaría a traer también
+# la foto por rollo a esta consulta —la más cara de las tres— para no cambiar ni
+# un renglón de lo que se ve.
 SQL_LLAMADOS = _STOCK + f"""
 , telas AS (
     SELECT DISTINCT stk.subcategoria
@@ -443,7 +540,24 @@ def _filas(sql: str) -> list[dict]:
 
 
 def parados() -> list[dict]:
-    return _filas(SQL_PARADOS)
+    """Lo que hay en la bodega para la lista, con dos banderas ya resueltas.
+
+    `nueva`  — el stock de esa tela × color es producción reciente: no vendió
+               nada en 12 meses porque hace menos de `MESES_QUIETO` meses que
+               existe. No es tela estancada.
+    `entra`  — si va a la lista. Una tela nueva CON kilos de segunda entra por
+               esos kilos (`motivo = 'segunda'`); sin ellos no entra, y sale con
+               `stock_kg` en 0 porque no tiene ni un kilo que mostrar.
+
+    Las dos vienen marcadas y no filtradas: el refresh necesita ver también las
+    que NO entran para poder apagar de la lista a las que ya estaban antes de
+    que existiera esta regla.
+    """
+    filas = _filas(SQL_PARADOS)
+    for f in filas:
+        f["nueva"] = bool(int(f.get("nueva") or 0))
+        f["entra"] = float(f.get("stock_kg") or 0) > 0
+    return filas
 
 
 def llamados() -> list[dict]:

@@ -25,9 +25,14 @@ def estado() -> dict:
     return db.fetch_one("SELECT * FROM scintela.parado_refresh WHERE id = 1") or {}
 
 
-def items() -> list[dict]:
+def items(conn=None) -> list[dict]:
     """
     La cohorte entera, con la foto de hoy pegada al lado.
+
+    ⚠ `conn` no es un detalle: la meta y los puntos se congelan DENTRO de la
+    transacción del refresco, y sin pasarle esa misma conexión leerían la foto
+    ANTERIOR —la única que está commiteada— y se congelarían sobre un universo
+    que ya no es el que se acaba de escribir.
 
     ⭐ LEFT JOIN contra `parado_foto` a propósito: un ítem que se vendió entero
     deja de estar en la foto y aun así tiene que seguir en la lista. Ése es el
@@ -112,8 +117,15 @@ def items() -> list[dict]:
                WHERE UPPER(TRIM(tc.cod)) = UPPER(TRIM(c.color))
                  AND COALESCE(TRIM(tc.color), '') <> ''
                LIMIT 1) nom ON TRUE
+         -- ⭐ Las apagadas no se muestran. Son las que entraron a la cohorte
+         -- antes del 25/08 siendo tela RECIÉN HECHA: no vendieron nada en 12
+         -- meses porque recién se hicieron (`asinfo_parado.MESES_QUIETO`).
+         -- La fila no se borra —la
+         -- cohorte no borra nunca— pero no está en la lista ni en la
+         -- competencia, y vuelve sola el día que sus rollos cumplan los meses.
+         WHERE NOT c.fuera
          ORDER BY COALESCE(f.stock_kg, 0) DESC, c.subcategoria, c.color
-        """
+        """, conn=conn
     )
 
 
@@ -197,7 +209,7 @@ def _fijar_base(conn=None) -> dict[str, float] | None:
     if ya:
         return None
     base: dict[str, float] = defaultdict(float)
-    for f in items():
+    for f in items(conn):
         if f["categoria"]:
             base[f["categoria"]] += (float(f["stock_kg"] or 0)
                                      + float(f["kg_vendidos"] or 0))
@@ -307,7 +319,7 @@ def _fijar_puntos(conn=None) -> None:
         # y la bolsa de puntos se triplicaría en silencio.
         return
     agg: dict[str, dict] = {}
-    for f in items():
+    for f in items(conn):
         d = agg.setdefault(f["subcategoria"], {"cat": None, "kg": 0.0})
         d["kg"] += float(f["stock_kg"] or 0) + float(f["kg_vendidos"] or 0)
         if f["categoria"]:
@@ -652,6 +664,12 @@ def cuenta_el_kilo(motivo: str | None, calidad: str | None) -> bool:
     mañana la tela entera se para, el ítem no puede cambiar de regla en la
     mitad de la carrera. Sin motivo guardado cuenta todo, que es como venía
     antes de la migración 0212.
+
+    ⚠ La única excepción la escribe el refresco: a un ítem de tela RECIÉN HECHA
+    se le corrige el motivo a `segunda` aunque ya estuviera congelado en
+    `parado` — sus kilos de primera nunca debieron contar. Y no vuelve a
+    `parado` cuando la tela cumple los meses: quedarse en la regla más
+    exigente no le regala puntos a nadie, y volver sí.
     """
     return motivo != "segunda" or calidad == "SEG"
 
@@ -665,8 +683,15 @@ def actualizar() -> dict:
     escrita a medias es peor que una vieja, porque no se nota.
     """
     hoy = today_ec()
-    par = asinfo_parado.parados()
+    todas = asinfo_parado.parados()
     lla = asinfo_parado.llamados()
+
+    # ⭐ LA TELA RECIÉN HECHA NO ES TELA PARADA (dueña 25/08/2026). Asinfo ya
+    # las viene marcando; acá se parten en dos y cada mitad tiene su destino:
+    # las que entran, a la lista; las que no, apagadas en la cohorte.
+    par = [p for p in todas if p.get("entra", True)]
+    fuera = [p for p in todas if not p.get("entra", True)]
+    kg_fuera = sum(float(p.get("stock_bodega") or 0) for p in fuera)
 
     # ⭐ TODO se cuenta desde la LARGADA, no desde que cada fila entró a la
     # lista. Dueña 18/08/2026: "hace todo desde 25/08".
@@ -704,12 +729,33 @@ def actualizar() -> dict:
             db.execute(
                 """UPDATE scintela.parado_cohorte SET motivo = %s
                     WHERE subcategoria = %s AND color = %s
-                      AND motivo IS NULL""",
-                (p.get("motivo"), p["subcategoria"], p["color"]), conn=conn)
+                      AND (motivo IS NULL
+                           OR (%s AND motivo = 'parado'))""",
+                (p.get("motivo"), p["subcategoria"], p["color"],
+                 bool(p.get("nueva"))), conn=conn)
+            # ⭐ Y se vuelve a encender la que había quedado afuera por nueva:
+            # sus rollos ya cumplieron los meses, así que hoy sí está parada.
+            # Vuelve con su `fecha_marcado` original — nunca se fue de la
+            # cohorte, sólo estaba apagada.
+            db.execute(
+                """UPDATE scintela.parado_cohorte SET fuera = FALSE
+                    WHERE subcategoria = %s AND color = %s AND fuera""",
+                (p["subcategoria"], p["color"]), conn=conn)
+
+        # ⚠ Apagar, no borrar. La cohorte es deliberadamente inmutable ("si
+        # empezamos a venderlas, que no se nos vayan de la lista"), así que la
+        # que nunca debió entrar se marca y deja de contar en todos lados, pero
+        # la fila queda: el día que sus rollos cumplan los meses vuelve sola,
+        # con la fecha en que se marcó.
+        for p in fuera:
+            db.execute(
+                """UPDATE scintela.parado_cohorte SET fuera = TRUE
+                    WHERE subcategoria = %s AND color = %s""",
+                (p["subcategoria"], p["color"]), conn=conn)
 
         cohorte = db.fetch_all(
             "SELECT subcategoria, color, fecha_marcado, motivo "
-            "FROM scintela.parado_cohorte", conn=conn)
+            "FROM scintela.parado_cohorte WHERE NOT fuera", conn=conn)
 
         # 2 · cuánto se vendió de cada uno DESDE SU PROPIA fecha de marcado
         vendido: dict[tuple[str, str], float] = defaultdict(float)
@@ -813,12 +859,15 @@ def actualizar() -> dict:
         db.execute(
             """UPDATE scintela.parado_refresh
                   SET actualizado = NOW(), items = %s, llamados = %s,
-                      ok = TRUE, detalle = %s
+                      ok = TRUE, detalle = %s, nuevas = %s, nuevas_kg = %s
                 WHERE id = 1""",
             (len(marcado), len(lla),
-             f"{len(par)} parados hoy · {len(lla)} candidatos"), conn=conn)
+             f"{len(par)} parados hoy · {len(lla)} candidatos "
+             f"· {len(fuera)} afuera por recientes",
+             len(fuera), round(kg_fuera, 2)), conn=conn)
 
-    return {"items": len(marcado), "llamados": len(lla), "parados_hoy": len(par)}
+    return {"items": len(marcado), "llamados": len(lla), "parados_hoy": len(par),
+            "nuevas": len(fuera), "nuevas_kg": round(kg_fuera, 2)}
 
 
 def _fecha(v):

@@ -22,7 +22,7 @@ from exports import csv_response
 from filters import today_ec
 from modules._lib import pdf_motor
 
-from . import queries
+from . import asinfo_parado, queries
 
 analisis_bp = Blueprint("analisis", __name__, template_folder="templates")
 
@@ -122,6 +122,10 @@ def parado():
         bolsa=queries.bolsa_congelada(),
         grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
+        # ⚠ El texto de la pantalla sale de la MISMA constante que el filtro:
+        # si un día se cambian los meses, la explicación no puede quedar
+        # diciendo otra cosa.
+        meses_quieto=asinfo_parado.MESES_QUIETO,
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
     )

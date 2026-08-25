@@ -61,6 +61,16 @@ th.ord.desc::after{content:" ↓";opacity:1}
 {% else %}
   Todavía no se trajeron los datos — toque «Actualizar»
 {% endif %}
+{# ⭐ La tela que quedó afuera por RECIENTE se dice, no se esconde. Si no, el
+   día que la lista baje de 707 a 600 ítems nadie va a poder decir por qué, y
+   lo primero que se piensa es que el programa se rompió. #}
+{% if estado.nuevas %}
+  <br>
+  {{ estado.nuevas }} tela{{ 's' if estado.nuevas != 1 }} × color
+  ({{ estado.nuevas_kg | num_es(0) }} kg) no está{{ 'n' if estado.nuevas != 1 }}
+  en la lista: se hicieron hace menos de {{ meses_quieto }} meses y todavía no
+  tuvieron tiempo de venderse.
+{% endif %}
 </p>
 
 {# ⭐ Cinco tarjetas grandes eran cinco cifras compitiendo entre sí y con la

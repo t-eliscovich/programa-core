@@ -1559,7 +1559,7 @@ def test_la_base_se_fija_una_sola_vez_y_recien_desde_la_largada(monkeypatch):
 
     monkeypatch.setattr(queries.db, "execute", fake_execute)
     monkeypatch.setattr(queries, "config", lambda k, d=None: "2026-08-25")
-    monkeypatch.setattr(queries, "items", lambda: [
+    monkeypatch.setattr(queries, "items", lambda conn=None: [
         {"categoria": "Jersey", "stock_kg": 100, "kg_vendidos": 40},
         {"categoria": "Jersey", "stock_kg": 10, "kg_vendidos": 0},
         {"categoria": None, "stock_kg": 5, "kg_vendidos": 0}])
@@ -2309,11 +2309,15 @@ def test_el_motivo_de_la_cohorte_se_escribe_una_sola_vez():
     ítems anteriores a la migración 0212 se quedaban con el motivo en NULL —o
     sea contando toda la primera. Y con `motivo IS NULL` en el WHERE, una vez
     escrito no se vuelve a mover: la regla de un ítem no puede cambiar en la
-    mitad de la carrera."""
+    mitad de la carrera.
+
+    La ÚNICA excepción es la tela reciente: si el ítem entró como `parado` y hoy
+    resulta que su tela se hizo hace menos de 6 meses, sus kilos de primera
+    nunca debieron contar y el motivo se corrige a `segunda`."""
     import inspect as _i
     fuente = " ".join(_i.getsource(queries.actualizar).split())
     assert "UPDATE scintela.parado_cohorte SET motivo = %s" in fuente
-    assert "AND motivo IS NULL" in fuente
+    assert "AND (motivo IS NULL OR (%s AND motivo = 'parado'))" in fuente
 
 
 def test_las_pantallas_respetan_la_bandera_cuenta():
@@ -2595,3 +2599,233 @@ def test_la_fila_del_vendedor_abre_QUE_vendio_no_solo_el_grupo():
     # plantilla no vuelva a dibujar los que no suman.
     cuerpo = re.sub(r"\{#.*?#\}", "", t, flags=re.S)   # sin los comentarios
     assert "no suma" not in cuerpo and "nocuenta" not in cuerpo
+
+
+# ── Sólo tela ESTANCADA, no la recién hecha (dueña 25/08/2026) ──────────────
+
+def test_la_tela_recien_hecha_no_entra_como_parada():
+    """*"Que la competencia tenga solo tela estancada, no tela que se hizo
+    recientemente y no se movió"*.
+
+    "No vendió un kilo en 12 meses" lo cumple sola la tela que salió de
+    producción el mes pasado: nunca tuvo la chance de venderse. Al filtro de
+    ventas le tiene que sumar el de ANTIGÜEDAD."""
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    # el corte, en la consulta y sobre la bodega de producto terminado
+    assert (f"WHERE id_bodega = {asinfo_parado.BODEGA_TERMINADO} AND saldo > 0 "
+            f"AND fecha < DATEADD(month, -{asinfo_parado.MESES_QUIETO}, "
+            "GETDATE())") in sql
+    # y el motivo `parado` no se puede dar sin él
+    assert asinfo_parado._QUIETO in asinfo_parado._ES_PARADO
+    assert asinfo_parado._QUIETO not in asinfo_parado._SIN_VENTA
+
+
+def test_los_kilos_viejos_tienen_que_llegar_al_minimo():
+    """No alcanza con que haya UN rollo viejo: la tela tiene que tener parados
+    los mismos 20 kg que se le piden a cualquier otra. Si no, 3 kg de 2019
+    arrastrarían a la lista 800 kg hechos el mes pasado."""
+    assert (f"ISNULL(cal.kg_viejo, 0) >= {asinfo_parado.MIN_KG}"
+            in asinfo_parado._QUIETO)
+
+
+def test_sin_foto_vieja_de_la_bodega_no_se_filtra_nada():
+    """⚠ El filtro excluye sólo con PRUEBA de que la tela es reciente.
+
+    Si `saldo_producto_lote` no llega hasta el corte (Asinfo purgó historia),
+    NINGÚN rollo figuraría como viejo y la lista entera se vaciaría sola — y una
+    lista vacía se lee como "ya no queda nada parado", que es la peor manera de
+    romperse. Lo mismo con el ítem que no tiene ni un lote en la foto por rollo:
+    no se puede fechar, así que no se lo saca."""
+    q = " ".join(asinfo_parado._QUIETO.split())
+    assert (f"hist.desde > DATEADD(month, -{asinfo_parado.MESES_QUIETO}, "
+            "GETDATE())") in q
+    assert "cal.subcategoria IS NULL" in q
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert "hist AS ( SELECT MIN(fecha) AS desde FROM saldo_producto_lote" in sql
+    assert "CROSS JOIN hist" in sql
+
+
+def test_la_segunda_entra_aunque_la_tela_sea_reciente():
+    """Dueña 25/08/2026: *"sí, la segunda siempre entra"*. La antigüedad decide
+    el motivo `parado`, no el `segunda`: el WHERE de la consulta sigue trayendo
+    todo lo que tenga kilos SEG, se haya hecho cuando se haya hecho."""
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    where = sql.split("WHERE")[-1]
+    assert "ISNULL(cal.kg_segunda, 0) > 0" in where
+    assert "kg_viejo" not in where, (
+        "el filtro de antigüedad no puede estar en el WHERE: sacaría del "
+        "resultado a la tela reciente que entra por su segunda")
+
+
+def _asinfo(filas):
+    """Metabase contestando `filas` (y contestando OK, que es lo que mira el
+    fail-closed de `_filas`)."""
+    return lambda *a, **k: (filas, True)
+
+
+def test_la_reciente_sin_segunda_sale_marcada_y_no_entra(monkeypatch):
+    """`parados()` devuelve TODO —también lo que no entra— con dos banderas.
+    Tiene que devolverlo: el refresco necesita ver la tela reciente para poder
+    apagar de la lista a la que ya había entrado antes de esta regla."""
+    monkeypatch.setattr(
+        asinfo_parado.metabase_client, "fetch_dataset_estado",
+        _asinfo([
+            {"subcategoria": "Jersey Forro", "color": "NEG", "stock_kg": 0,
+             "kg_segunda": 0, "motivo": "segunda", "nueva": 1,
+             "stock_bodega": 900},
+            {"subcategoria": "Fleece 102", "color": "AZU", "stock_kg": 300,
+             "kg_segunda": 0, "motivo": "parado", "nueva": 0,
+             "stock_bodega": 300},
+        ]))
+    nueva, vieja = asinfo_parado.parados()
+    assert nueva["nueva"] is True and nueva["entra"] is False
+    assert nueva["stock_bodega"] == 900, "los kilos que quedan afuera se saben"
+    assert vieja["nueva"] is False and vieja["entra"] is True
+
+
+def test_la_reciente_con_segunda_entra_por_sus_kilos_seg(monkeypatch):
+    """Marcada como reciente, pero entra: sus kilos SEG son los que la traen, y
+    `stock_kg` ya viene con esos y sólo esos."""
+    monkeypatch.setattr(
+        asinfo_parado.metabase_client, "fetch_dataset_estado",
+        _asinfo([{"subcategoria": "Kiana", "color": "ROJ", "stock_kg": 120,
+                  "kg_segunda": 120, "motivo": "segunda", "nueva": 1,
+                  "stock_bodega": 940}]))
+    f = asinfo_parado.parados()[0]
+    assert f["nueva"] is True and f["entra"] is True
+    assert f["motivo"] == "segunda" and f["stock_kg"] == 120
+
+
+def test_la_lista_no_muestra_lo_apagado(monkeypatch):
+    """La cohorte no borra nunca: la que nunca debió entrar queda con `fuera` en
+    TRUE y la lectura la saltea. Sin el WHERE, la fila seguiría apareciendo (con
+    LEFT JOIN a la foto) en 0 kg y nadie entendería qué es."""
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.items()
+    assert "WHERE NOT c.fuera" in visto["sql"]
+
+
+class _DBFalsa:
+    """La base de datos del refresco, apuntando lo que se escribe."""
+
+    def __init__(self, cohorte):
+        self.cohorte = cohorte
+        self.escrito: list[tuple[str, tuple]] = []
+        self.leido: list[str] = []
+
+    def tx(self):
+        import contextlib
+        return contextlib.nullcontext("CONN")
+
+    def execute(self, sql, params=None, conn=None):
+        self.escrito.append((" ".join(sql.split()), params))
+
+    def fetch_all(self, sql, params=None, conn=None):
+        s = " ".join(sql.split())
+        self.leido.append(s)
+        # ⚠ Sólo la lectura del refresco. `items()` también sale de la
+        # cohorte, pero devuelve otra cosa (la foto pegada al lado).
+        if s.startswith("SELECT subcategoria, color, fecha_marcado, motivo"):
+            return self.cohorte
+        return []
+
+    def fetch_one(self, sql, params=None, conn=None):
+        return {}
+
+    def sql_con(self, texto):
+        return [(s, p) for s, p in self.escrito if texto in s]
+
+
+def _refresco(monkeypatch, parados, cohorte):
+    db = _DBFalsa(cohorte)
+    monkeypatch.setattr(queries, "db", db)
+    monkeypatch.setattr(queries, "today_ec", lambda: date(2026, 8, 25))
+    monkeypatch.setattr(asinfo_parado, "parados", lambda: parados)
+    monkeypatch.setattr(asinfo_parado, "llamados", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "vendido_desde", lambda d: [])
+    monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
+    return db, queries.actualizar()
+
+
+def test_el_refresco_apaga_la_tela_reciente_y_no_la_da_de_alta(monkeypatch):
+    """La que no está estancada no entra a la cohorte, y si ya estaba (entró el
+    13/08, antes de que existiera esta regla) se APAGA. Apagar y no borrar: la
+    cohorte es la única tabla que no se puede recalcular."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[
+            {"subcategoria": "Fleece 102", "color": "AZU", "stock_kg": 300,
+             "stock_bodega": 300, "motivo": "parado", "nueva": False,
+             "entra": True},
+            {"subcategoria": "Jersey Forro", "color": "NEG", "stock_kg": 0,
+             "stock_bodega": 900, "motivo": "segunda", "nueva": True,
+             "entra": False},
+        ],
+        cohorte=[{"subcategoria": "Fleece 102", "color": "AZU",
+                  "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}])
+
+    altas = db.sql_con("INSERT INTO scintela.parado_cohorte")
+    assert [p[0] for _, p in altas] == ["Fleece 102"], (
+        "la tela reciente no puede darse de alta en la cohorte")
+    apagadas = db.sql_con("SET fuera = TRUE")
+    assert [p for _, p in apagadas] == [("Jersey Forro", "NEG")]
+    assert res["nuevas"] == 1 and res["nuevas_kg"] == 900
+
+
+def test_la_apagada_vuelve_sola_cuando_cumple_los_meses(monkeypatch):
+    """No hace falta tocar nada: el día que sus rollos pasan los 6 meses, Asinfo
+    la devuelve como parada y el refresco la vuelve a encender — con la fecha en
+    que se marcó, porque nunca se fue de la cohorte."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Jersey Forro", "color": "NEG",
+                  "stock_kg": 900, "stock_bodega": 900, "motivo": "parado",
+                  "nueva": False, "entra": True}],
+        cohorte=[])
+    assert [p for _, p in db.sql_con("SET fuera = FALSE")] == [
+        ("Jersey Forro", "NEG")]
+    assert not db.sql_con("SET fuera = TRUE")
+
+
+def test_la_foto_y_la_competencia_no_miran_lo_apagado(monkeypatch):
+    """`parado_foto` y `parado_venta` se rehacen desde la cohorte: si la lectura
+    no filtrara, la tela apagada seguiría con foto y seguiría dando puntos."""
+    db, _ = _refresco(monkeypatch, parados=[], cohorte=[])
+    lecturas = [s for s in db.leido
+                if s.startswith("SELECT subcategoria, color, fecha_marcado")]
+    assert lecturas and all(
+        s.endswith("FROM scintela.parado_cohorte WHERE NOT fuera")
+        for s in lecturas), lecturas
+
+
+def test_la_meta_y_los_puntos_se_congelan_sobre_lo_que_se_acaba_de_escribir(
+        monkeypatch):
+    """⚠ `items()` tiene que leer con la conexión de la transacción. Sin eso, la
+    meta y el puntaje se congelan sobre la foto ANTERIOR —la única commiteada— y
+    quedan calculados sobre un universo que ya no existe: justo lo que pasaría
+    el día que se saca la tela reciente."""
+    vistas = []
+    monkeypatch.setattr(queries, "items", lambda conn=None: vistas.append(conn) or [])
+    _refresco(monkeypatch, parados=[], cohorte=[])
+    assert vistas and all(c == "CONN" for c in vistas), vistas
+
+
+def test_la_pantalla_dice_cuanta_tela_quedo_afuera_por_reciente():
+    """Si la lista baja de 707 ítems a 600 sin una palabra, lo primero que se
+    piensa es que el programa se rompió. Y los meses los dice la constante, no
+    un número escrito a mano en el HTML."""
+    import inspect as _i
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "{% if estado.nuevas %}" in html
+    assert "{{ estado.nuevas_kg | num_es(0) }}" in html
+    assert "{{ meses_quieto }} meses" in html
+    assert "meses_quieto=asinfo_parado.MESES_QUIETO" in _i.getsource(views.parado)
