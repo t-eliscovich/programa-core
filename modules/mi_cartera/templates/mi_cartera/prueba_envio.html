@@ -1,0 +1,144 @@
+{# Pantalla de PRUEBA del envío por WhatsApp.
+
+   TMT 2026-08-25, después de dos arreglos: *"sigue sin funcionar"* → *"no abre
+   el otro programa, aunque esté generado"*. El PDF se prepara bien y el
+   segundo toque no abre WhatsApp, en UN teléfono y no en los otros.
+
+   No se puede seguir adivinando desde acá: esta pantalla la abre el vendedor
+   en SU teléfono, toca los dos botones y manda una foto. Dice qué aparato es,
+   qué puede y qué no, y —lo que importa— el ERROR EXACTO con el que falla el
+   compartir, en vez de un botón que no hace nada.
+
+   Los dos botones son los dos toques del botón de verdad: preparar primero,
+   enviar después. Así se prueba el mismo camino, no otro. #}
+{% extends "mi_cartera/base.html" %}
+{% block title %}Prueba de envío{% endblock %}
+
+{% block appbar %}
+  <a class="volver" href="{{ url_for('mi_cartera.inicio') }}{{ ('?vend=' ~ vend) if preview else '' }}">←</a>
+  <div class="tit">Prueba de envío</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p style="margin:0 0 10px;font-size:14px;line-height:1.45">
+    Tocá <b>1 · Preparar</b>, esperá a que diga listo, y después tocá
+    <b>2 · Enviar</b>. Sacale una foto a esta pantalla y mandámela.
+  </p>
+  <div style="display:flex;gap:8px">
+    <button type="button" id="p1" class="btn-wa" style="flex:1">1 · Preparar</button>
+    <button type="button" id="p2" class="btn-pr" style="flex:1" disabled>2 · Enviar</button>
+  </div>
+</div>
+
+<div class="card">
+  <div style="font-weight:800;font-size:13px;margin-bottom:6px">Este aparato</div>
+  <div id="datos" style="font-size:13px;line-height:1.6"></div>
+</div>
+
+<div class="card">
+  <div style="font-weight:800;font-size:13px;margin-bottom:6px">Qué pasó</div>
+  <div id="pasos" style="font-size:13px;line-height:1.6">Todavía no probaste.</div>
+</div>
+
+<script>
+(function () {
+  var URL_PDF = {{ pdf_url | tojson }};
+  var pasos = document.getElementById('pasos');
+  var listo = null;
+
+  function anotar(texto) {
+    if (pasos.dataset.limpio !== '1') { pasos.textContent = ''; pasos.dataset.limpio = '1'; }
+    var d = document.createElement('div');
+    d.textContent = texto;
+    pasos.appendChild(d);
+  }
+
+  function comoFalla(e) {
+    if (!e) { return 'error sin nombre'; }
+    return (e.name || 'Error') + ': ' + (e.message || '(sin mensaje)');
+  }
+
+  // Lo que se puede saber SIN tocar nada. Es la mitad del diagnóstico: un
+  // teléfono que ya dice "no puedo compartir archivos" no necesita la prueba.
+  var puedeArchivos = '?';
+  try {
+    var mini = new File([new Blob(['x'])], 'x.pdf', { type: 'application/pdf' });
+    puedeArchivos = navigator.canShare && navigator.canShare({ files: [mini] }) ? 'sí' : 'no';
+  } catch (e) { puedeArchivos = 'no (' + comoFalla(e) + ')'; }
+
+  var comoAbre = 'en el navegador';
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+      comoAbre = 'como aplicación (desde la pantalla de inicio)';
+    }
+  } catch (e) { comoAbre = '?'; }
+
+  var filas = [
+    ['Se ve como teléfono', (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 'sí' : 'no'],
+    ['Puede compartir', navigator.share ? 'sí' : 'no'],
+    ['Puede compartir archivos', puedeArchivos],
+    ['Lo abre', comoAbre],
+    ['Pantalla', window.innerWidth + ' × ' + window.innerHeight],
+    ['Programa', navigator.userAgent]
+  ];
+  var datos = document.getElementById('datos');
+  for (var i = 0; i < filas.length; i++) {
+    var d = document.createElement('div');
+    d.innerHTML = '<b>' + filas[i][0] + ':</b> ';
+    d.appendChild(document.createTextNode(filas[i][1]));
+    datos.appendChild(d);
+  }
+
+  document.getElementById('p1').addEventListener('click', function () {
+    var b = this;
+    b.disabled = true;
+    b.textContent = 'Preparando…';
+    var t0 = Date.now();
+    fetch(URL_PDF, { credentials: 'same-origin' }).then(function (r) {
+      anotar('1 · Pedir el PDF: respondió ' + r.status + ' en ' + (Date.now() - t0) + ' ms');
+      if (!r.ok) { throw new Error('el servidor no lo generó'); }
+      return r.blob();
+    }).then(function (blob) {
+      anotar('2 · El archivo llegó: ' + Math.round(blob.size / 1024) + ' kB');
+      try {
+        listo = new File([blob], 'Estado de cuenta.pdf', { type: 'application/pdf' });
+        anotar('3 · Armar el archivo: bien');
+      } catch (e) {
+        listo = null;
+        anotar('3 · Armar el archivo: FALLÓ — ' + comoFalla(e));
+        return;
+      }
+      try {
+        anotar('4 · ¿Lo puede compartir?: ' +
+               (navigator.canShare && navigator.canShare({ files: [listo] }) ? 'sí' : 'no'));
+      } catch (e) {
+        anotar('4 · ¿Lo puede compartir?: FALLÓ — ' + comoFalla(e));
+      }
+      document.getElementById('p2').disabled = false;
+      b.textContent = '1 · Listo';
+    }).catch(function (e) {
+      anotar('✗ Se cortó acá: ' + comoFalla(e));
+      b.disabled = false;
+      b.textContent = '1 · Preparar';
+    });
+  });
+
+  document.getElementById('p2').addEventListener('click', function () {
+    if (!listo) { anotar('5 · Enviar: no hay archivo preparado'); return; }
+    try {
+      var p = navigator.share({ files: [listo], title: 'Estado de cuenta' });
+      anotar('5 · Se pidió abrir el menú de compartir');
+      if (p && p.then) {
+        p.then(function () { anotar('6 · El menú se abrió y se envió'); })
+         .catch(function (e) { anotar('6 · El menú NO se abrió — ' + comoFalla(e)); });
+      } else {
+        anotar('6 · No devolvió respuesta (este navegador no lo soporta)');
+      }
+    } catch (e) {
+      anotar('5 · Enviar: FALLÓ de entrada — ' + comoFalla(e));
+    }
+  });
+})();
+</script>
+{% endblock %}

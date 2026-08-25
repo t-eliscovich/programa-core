@@ -384,6 +384,40 @@ def pdf(codigo_cli: str):
     return informes_views.responder_pdf(data, (codigo_cli or "").upper())
 
 
+@mi_cartera_bp.route("/mi-cartera/prueba-envio")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def prueba_envio():
+    """Pantalla de prueba del envío por WhatsApp, para abrir en el teléfono.
+
+    TMT 2026-08-25, después de dos arreglos: *"sigue sin funcionar"* → *"no
+    abre el otro programa, aunque esté generado"*. El PDF se prepara bien y el
+    segundo toque no abre WhatsApp — en UN teléfono y no en los otros.
+
+    Adivinar desde acá ya se agotó: el vendedor abre esta pantalla en SU
+    aparato, toca los dos botones y manda una foto. La pantalla dice qué
+    teléfono es, qué puede y qué no, y el ERROR EXACTO del compartir.
+
+    Usa el PRIMER cliente del vendedor sólo para tener un PDF de verdad que
+    pedir; no muestra un solo dato del cliente.
+    """
+    vend = _vend_actual()
+    mios = sorted(queries.mis_clientes(vend),
+                  key=lambda c: (c.get("codigo_cli") or "").upper())
+    if not mios:
+        abort(404)
+    cod = mios[0]["codigo_cli"]
+    pdf_url = url_for("mi_cartera.pdf", codigo_cli=cod)
+    if request.args.get("vend"):
+        pdf_url += "?vend=" + (request.args.get("vend") or "").strip().upper()
+    return render_template(
+        "mi_cartera/prueba_envio.html",
+        pdf_url=pdf_url,
+        seccion="",
+        **_ctx_base(vend),
+    )
+
+
 @mi_cartera_bp.route("/mi-cartera/imprimir")
 @requiere_login
 @requiere_permiso("micartera.ver")
