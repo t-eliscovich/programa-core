@@ -1171,12 +1171,31 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
     filas = db.fetch_all(
         """SELECT v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
                   v.fecha, SUM(v.kg) AS kg,
-                  SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos
+                  SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos,
+                  -- ⭐ El color con su nombre y la FORMA, para que el detalle
+                  -- que se abre tenga las mismas columnas que la lista de
+                  -- saldos (dueña 25/08/2026: "color, forma, categoría, kg
+                  -- tienen que ser columnas").
+                  COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
+                                                    AS color_nombre,
+                  MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0
+                            AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
+                           WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+                           WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
+                           ELSE COALESCE(f.forma, '') END) AS forma_fila
              FROM scintela.parado_venta v
              LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
+             LEFT JOIN scintela.parado_foto f
+                    ON f.subcategoria = v.subcategoria AND f.color = v.color
+             LEFT JOIN LATERAL (
+                 SELECT SPLIT_PART(tc.color, ' · ', 1) AS n
+                   FROM scintela.tinto_costos tc
+                  WHERE UPPER(TRIM(tc.cod)) = UPPER(TRIM(v.color))
+                    AND COALESCE(TRIM(tc.color), '') <> ''
+                  LIMIT 1) nom ON TRUE
             WHERE v.fecha >= %s AND v.cuenta
             GROUP BY v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
-                     v.fecha
+                     v.fecha, nom.n
             ORDER BY SUM(v.kg) DESC""", (desde,)) or []
     out: dict[str, list[dict]] = defaultdict(list)
     for f in filas:
