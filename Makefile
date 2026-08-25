@@ -117,7 +117,7 @@ restore-test-db:
 #      solo: alguien agrega 300 lineas sin tests y nadie se entera.
 # El piso se sube A MANO cuando se gana terreno — es la unica forma de que
 # el numero signifique algo.
-COVERAGE_CORE ?= config/roles.py,csv_upload.py,error_messages.py,exports.py,extensions.py,ip_allowlist.py,modules/_lib/formulas_db.py,modules/conciliacion/matcher.py,modules/diag/views.py,modules/healthz/views.py,modules/recientes/queries.py,modules/tintura/service.py,modules/two_fa/core.py,scope_vendedor.py
+COVERAGE_CORE ?= config/roles.py,csv_upload.py,error_messages.py,exports.py,extensions.py,ip_allowlist.py,modules/_lib/formulas_db.py,modules/conciliacion/matcher.py,modules/diag/views.py,modules/healthz/views.py,modules/recientes/queries.py,modules/tintura/service.py,modules/two_fa/core.py,reparto_mensual.py,scope_vendedor.py
 COVERAGE_CONCILIACION_MIN ?= 29
 
 test-coverage:

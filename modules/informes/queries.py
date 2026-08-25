@@ -664,7 +664,7 @@ def activos_totales() -> dict:
     row = db.fetch_one(
         f"""
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
+          SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
         ),
         v AS (
           SELECT
@@ -2366,8 +2366,9 @@ def amortizaciones_mensuales(meses_atras: int = 0) -> dict:
     DCC = DEPRMAQ + DEPRACT * 0.5    → amortiz tintorería (50% inmuebles)
     DTJ = DEPRTEJ + DEPRACT * 0.5    → amortiz tejeduría (50% inmuebles)
 
-    `amortimes` se computa on-the-fly con la proración diaria de dBase
-    (MENU.PRG L275): `COEF * CUOTA` donde `COEF = min(DAY(today), 30) / 30`.
+    `amortimes` se computa on-the-fly con el reparto diario:
+    `COEF * CUOTA`, donde COEF sale de `scintela.coef_amortizacion(hoy)`
+    (ver reparto_mensual.py — desde el 01/09/2026 va por días reales del mes).
     NO leemos la columna `amortimes` stored porque sólo se refresca al
     cierre del mes — quedaría desfasada vs dBase y los costos por kg
     (VK/KK, GTIN/KR) mostrarían valores más bajos cada día del mes.
@@ -2378,7 +2379,7 @@ def amortizaciones_mensuales(meses_atras: int = 0) -> dict:
             """
         WITH coef AS (
           SELECT CASE WHEN %(off)s > 0 THEN 1.0
-                      ELSE LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0
+                      ELSE scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
                  END AS c
         )
         SELECT UPPER(TRIM(tipo)) AS tipo,
@@ -8967,7 +8968,7 @@ def balance_components_as_of(as_of) -> dict:
         db.fetch_one(
             """
             WITH coef AS (
-              SELECT LEAST(EXTRACT(DAY FROM %s::date)::numeric, 30) / 30.0 AS c
+              SELECT scintela.coef_amortizacion(%s::date) AS c
             ),
             v AS (
               SELECT tipo,

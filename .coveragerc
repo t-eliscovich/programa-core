@@ -24,6 +24,7 @@ include =
     modules/recientes/queries.py
     modules/tintura/service.py
     modules/two_fa/core.py
+    reparto_mensual.py
     scope_vendedor.py
 omit =
     .agents/*

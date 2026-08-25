@@ -175,7 +175,7 @@
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Valor libros</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">% depr.</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Cuota/mes</th>
-          <th class="px-2 py-1 text-right text-rose-700" style="white-space: nowrap;" title="Cuota mensual / 30">Dep/día</th>
+          <th class="px-2 py-1 text-right text-rose-700" style="white-space: nowrap;" title="La cuota del mes repartida entre los días del mes">Dep/día</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Vida (m)</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Últ. mes</th>
         </tr>
@@ -271,7 +271,7 @@
             {% endif %}
           </td>
           <td class="px-2 py-1 text-right tabular-nums">{{ a.cuota | num_es if a.cuota else '' }}</td>
-          <td class="px-2 py-1 text-right tabular-nums text-rose-700" title="Cuota / 30 — cuánto baja la utilidad cada día por este activo">
+          <td class="px-2 py-1 text-right tabular-nums text-rose-700" title="Cuánto baja la utilidad cada día por este activo: la cuota del mes dividida por los días del mes">
             {{ a.deprec_dia | num_es if a.deprec_dia else '' }}
           </td>
           <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.vida_util or '' }}</td>
@@ -294,7 +294,7 @@
           <td class="px-2 py-1.5 text-right tabular-nums text-sky-800 dark:text-sky-300">{{ resumen.valor_libros | num_es }}</td>
           <td></td>
           <td class="px-2 py-1.5 text-right tabular-nums text-emerald-800 dark:text-emerald-300" title="Cuota mensual total (todos los activos)">{{ resumen.deprec_mes_total | num_es }}</td>
-          <td class="px-2 py-1.5 text-right tabular-nums text-rose-800 dark:text-rose-300" title="Depreciación diaria total = cuota mensual / 30">{{ resumen.deprec_dia_total | num_es }}</td>
+          <td class="px-2 py-1.5 text-right tabular-nums text-rose-800 dark:text-rose-300" title="Lo que bajan todos los activos por día: la cuota del mes dividida por los días del mes">{{ resumen.deprec_dia_total | num_es }}</td>
           <td></td><td></td>
         </tr>
         {% endif %}

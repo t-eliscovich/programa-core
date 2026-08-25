@@ -186,7 +186,8 @@ def buscar(
     # PALABRAS sueltas y sin acentos. Ver modules/_lib/busqueda.py.
     _txt_sql, _txt_params = busqueda.condicion(
         q, ("a.concepto", "a.tipo", "p.nombre"), prefijo="bqt")
-    # COEF = min(día_del_mes, 30) / 30  →  proración diaria (MENU.PRG L275).
+    # COEF = scintela.coef_amortizacion(hoy) → qué parte de la cuota del mes
+    # ya corrió (ver reparto_mensual.py; desde el 01/09/2026 va por días reales).
     # AMORTIMES_calc = COEF × CUOTA  (lo que va corriendo este mes).
     # valor_libros = inicial - amortizac_acum - amortimes_calc.
     #
@@ -203,7 +204,7 @@ def buscar(
     borrado_where = borrado_where_sql("a")   # excluye soft-borrados
     sql = f"""
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
+          SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
         )
         SELECT a.id_activos,
                a.fecha,
@@ -215,9 +216,13 @@ def buscar(
                -- AMORTIMES calculado (no el stored): COEF × cuota
                ROUND(((SELECT c FROM coef) * COALESCE(a.cuota, 0))::numeric, 2)
                                                                      AS amortimes,
-               -- TMT 2026-05-27 dueña: depreciación diaria = cuota/30.
+               -- Depreciación de un día: la cuota repartida entre los días
+               -- del mes (ver reparto_mensual.py).
                -- Cada día corrido del mes este monto se "consume" de la utilidad.
-               ROUND((COALESCE(a.cuota, 0) / 30.0)::numeric, 2)        AS deprec_dia,
+               ROUND((COALESCE(a.cuota, 0)
+                      / scintela.divisor_amortizacion(
+                          (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date))::numeric, 2)
+                                                                     AS deprec_dia,
                -- VALOR en libros = inicial - amortizac - amortimes_calc
                GREATEST(
                  COALESCE(a.inicial, 0)
@@ -305,7 +310,7 @@ def resumen() -> dict:
     row = db.fetch_one(
         """
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
+          SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
         )
         SELECT COUNT(*)                                            AS n,
                COALESCE(SUM(inicial), 0)                           AS inicial,
@@ -315,7 +320,10 @@ def resumen() -> dict:
                                                                    AS cuota_mes,
                -- TMT 2026-05-27 dueña: total depreciación diaria
                -- (suma de cuota/30 por activo). Total mensual = SUM(cuota).
-               COALESCE(SUM(COALESCE(cuota, 0)) / 30.0, 0)         AS deprec_dia_total,
+               COALESCE(SUM(COALESCE(cuota, 0))
+                        / scintela.divisor_amortizacion(
+                            (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date), 0)
+                                                                   AS deprec_dia_total,
                COALESCE(SUM(COALESCE(cuota, 0)), 0)                AS deprec_mes_total,
                -- valor en libros con prorrateo diario
                COALESCE(SUM(GREATEST(

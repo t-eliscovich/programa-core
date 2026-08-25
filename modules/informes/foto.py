@@ -300,7 +300,7 @@ def _det_activos(cual: str) -> list[dict]:
         for r in _rows(
             f"""
             WITH coef AS (
-              SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
+              SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
             )
             SELECT id_activos, concepto,
                    GREATEST(COALESCE(inicial, 0)

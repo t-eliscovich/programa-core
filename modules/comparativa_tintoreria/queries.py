@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+import reparto_mensual
 from filters import today_ec
 
 
@@ -134,8 +135,8 @@ def _amortizacion_dcc_por_mes(desde: date, hasta: date) -> dict:
     los activos existían y depreciaban con la misma cuota durante todo el
     rango — para periodos cortos (12 meses) suele ser razonable.
 
-    Para el mes actual: prorratea por día (COEF = min(día, 30)/30), igual
-    que la función `amortizaciones_mensuales()` de informes/queries.py.
+    Para el mes actual: prorratea por día con `reparto_mensual.coef_activos()`,
+    igual que `amortizaciones_mensuales()` de informes/queries.py.
     Para meses pasados: cuota completa (COEF = 1.0).
     """
     rows = db.fetch_all(
@@ -158,7 +159,7 @@ def _amortizacion_dcc_por_mes(desde: date, hasta: date) -> dict:
     end_yy, end_mm = hasta.year, hasta.month
     while (cur_yy, cur_mm) <= (end_yy, end_mm):
         if cur_yy == hoy.year and cur_mm == hoy.month:
-            coef = min(hoy.day, 30) / 30.0
+            coef = reparto_mensual.coef_activos(hoy)
             res[(cur_yy, cur_mm)] = dcc_full * coef
         else:
             res[(cur_yy, cur_mm)] = dcc_full
