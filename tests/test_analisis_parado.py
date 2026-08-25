@@ -1922,11 +1922,15 @@ def test_lo_vendido_no_va_apilado_en_la_celda_de_los_kilos():
     kilos apilados sin decir qué era cada uno. Dueña 18/08/2026: "que quiere
     decir x vendidos? deja de ponerme cosas raras".
 
-    Se cuenta igual y se muestra al ABRIR la fila, con la frase entera."""
+    Se cuenta igual, y desde el 25/08/2026 se muestra en la tabla VENDIDOS del
+    pie —renglón por renglón, con su día y su vendedor—: la frase que estaba al
+    abrir la fila se fue con el resto de la descripción ("estas descripciones
+    tmbn borrar"). Lo que este test sigue cuidando es que no vuelva a la celda
+    de los kilos."""
     html = _html_parado()
     assert ">Vendidos</th>" not in html
     assert "vendidos</div>" not in html
-    assert "Desde que arrancó la competencia se vendieron" in html
+    assert 'id="vendidos"' in html, "la tabla de Vendidos del pie es la que cuenta ahora"
 
 
 def test_el_cero_de_clientes_se_marca():

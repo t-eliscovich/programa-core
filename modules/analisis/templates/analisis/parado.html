@@ -293,21 +293,20 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
       {{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
   <tr class="det"><td colspan="10">
-    <p class="sub" style="margin:10px 0 6px">
-      <b>{{ f.subcategoria }}</b>: {{ f.kg_tela | num_es(0) }} kg en
-      {{ f.colores_tela }} {{ 'color' if f.colores_tela == 1 else 'colores' }} ·
-      <b>{{ f.pct_tela | num_es(1) }}%</b> de los saldos.
-      {% if f.kg_segunda %}De esta fila,
-      <b>{{ f.kg_segunda | num_es(1) if f.kg_segunda < 1 else f.kg_segunda | num_es(0) }} kg SEG</b>
-      y {{ f.kg_primera | num_es(0) }} PRI.{% endif %}
-      {# La columna Estado se fue, pero de qué año son los candidatos importa:
-         no es lo mismo llamar a alguien que compró en julio que a uno que la
-         compró en 2023. Va acá, que es donde están esos clientes. #}
-      {% if f.kg_vendidos %}Desde que arrancó la competencia se vendieron
-      <b>{{ f.kg_vendidos | num_es(0) }} kg</b> de este color.{% endif %}
-      {% if f.anio_pista and f.anio_pista < ahora_anio %}
-        <b>Ojo:</b> los de abajo la compraron en {{ f.anio_pista }}.{% endif %}
-    </p>
+    {# ⚠ Acá iba una descripción —kilos de la tela, % de los saldos, cuánto es
+       SEG y cuánto PRI, lo vendido desde la largada—. La dueña la sacó el
+       25/08/2026 ("estas descripciones tmbn borrar"): todo eso ya está en las
+       columnas de la fila que se acaba de abrir, y lo que se viene a ver acá
+       son los clientes.
+
+       ⚠ De ese párrafo sobrevive UNA línea, y sólo cuando hace falta: de qué
+       año son los candidatos. No describe la tela —habla de la tabla de abajo,
+       y cambia a quién llamar: no es lo mismo el que la compró en julio que el
+       que la compró en 2023. #}
+    {% if f.anio_pista and f.anio_pista < ahora_anio %}
+    <p class="sub" style="margin:10px 0 6px"><b>Ojo:</b> los de abajo la
+      compraron en {{ f.anio_pista }}.</p>
+    {% endif %}
     {% if cand %}
     <table>
       {# ⭐ SIN la columna Cliente. Dueña 19/08/2026: "cliente podemos poner
@@ -336,10 +335,10 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
       </tbody>
     </table>
     {% else %}
+      {# Una línea: es el estado de la tabla que falta, no una explicación. #}
       <p class="sub" style="margin:10px 0 0">
       {% if mia %}Ninguno de <b>sus</b> clientes compró esta tela.
-      {% else %}Nadie compró esta tela nunca, en ningún color ni año. No se
-      arregla con una llamada: o salió de catálogo, o el saldo está mal.{% endif %}</p>
+      {% else %}Nadie compró esta tela nunca, en ningún color ni año.{% endif %}</p>
     {% endif %}
   </td></tr>
 {% endfor %}

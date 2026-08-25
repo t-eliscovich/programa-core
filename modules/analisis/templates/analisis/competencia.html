@@ -41,7 +41,8 @@ font-variant-numeric:tabular-nums;line-height:1}
 font-variant-numeric:tabular-nums}
 .term .vd{color:var(--vd)}
 .term .tres .s{font-size:12px;color:var(--g);margin:2px 0 0}
-.mov{font-size:11px}.mov.sube{color:var(--vd)}.mov.baja{color:var(--rj)}
+.mov{font-size:11px;margin-left:3px}.mov.sube{color:var(--vd)}
+.mov.baja{color:var(--rj)}
 .reglas{background:#f8fafc;border-radius:10px;padding:8px 24px 14px;margin:10px 0 0}
 /* ⭐ A la derecha y chiquito (dueña 24/08/2026: "reglas con flechita para ver
    mas y quizas a la derecha?"). No es un capítulo de la pantalla: es una ayuda
@@ -107,7 +108,12 @@ margin:14px 0 10px}
 .barra-fondo > div{height:100%;background:var(--vd);border-radius:99px}
 .mini{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;min-width:90px}
 .mini > div{height:100%;background:var(--az);border-radius:99px}
-td.puesto{font-weight:600;color:var(--g);width:34px}
+/* ⚠ El puesto y la flecha de subió/bajó, en UNA línea (dueña 25/08/2026:
+   "todas las filas del mismo alto que Intela, no me gusta que agrandes la
+   fila"). Con 34 px la flecha caía debajo del número y esa fila crecía un
+   renglón: el que subió o bajó quedaba más alto que el que se quedó igual, y
+   la tabla parecía dos tablas. */
+td.puesto{font-weight:600;color:var(--g);width:56px;white-space:nowrap}
 .mes-tit{font-size:15px;margin:18px 0 6px;display:flex;align-items:center;gap:8px}
 .mes-kg{font-weight:400;color:var(--g);font-size:13px}
 tr.yo td{background:#f0fdf4}
@@ -194,8 +200,8 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
        quedaba de 11px pegada al número: la dueña miró la pantalla y no vio que
        las filas se abrían. Un control que no se ve no existe. #}
     <td class="abrir"><span class="flecha">▾</span></td>
-    <td class="puesto">{{ r.puesto }}
-      {% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
+    <td class="puesto">{{ r.puesto }}{#
+      #}{% if r.movimiento > 0 %}<span class="mov sube">▲{{ r.movimiento }}</span>
       {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
     <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · usted{% endif %}</td>
     <td class="n g opt">{{ r.kg | num_es(0) }}</td>
