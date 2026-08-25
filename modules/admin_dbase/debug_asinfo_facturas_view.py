@@ -182,6 +182,56 @@ _ESTADO_IN_RE = re.compile(
     r"(fc\.estado\s+IN\s*\(\s*)([0-9,\s]+)(\s*\))", re.IGNORECASE
 )
 
+# ---------------------------------------------------------------------------
+# El importe de la factura: por RENGLÓN o por CABECERA
+# ---------------------------------------------------------------------------
+# TMT 2026-08-25 (dueña), mirando la 182573: el bloque "Qué se llevó" decía
+# 2.064,48 y el Importe de la ficha, en la misma pantalla, 2.064,49.
+#
+# Son dos cuentas de la misma factura. La card aplica el IVA RENGLÓN POR
+# RENGLÓN (`precio × cantidad × (1+iva) − descuento × (1+iva)`) y suma; la
+# cabecera de Asinfo —lo que dice el papel y lo que se le manda al SRI— guarda
+# `total`, `descuento` e `impuesto` por separado. Redondear doce veces y sumar
+# no da lo mismo que sumar y redondear una.
+#
+# Medido sobre 472 documentos del 19 al 25/08, de los cinco tipos que entran
+# (7, 17, 20, 251, 451): 136 difieren y NINGUNO por más de UN centavo. Las NC
+# financieras (17) coinciden en las 23. O sea que cambiar de una cuenta a la
+# otra no mueve ningún número más allá del centavo — y deja el importe igual
+# al del papel, que es lo que el cliente paga.
+#
+# El síntoma que lo destapó: 90 facturas abiertas con dos centavos o menos
+# (USD 0,94). Ver `/admin/facturas-centavos`, que barre las viejas; esto
+# arregla las que entren de acá en adelante.
+_USD_SUMA_RE = re.compile(
+    r"CAST\(\s*SUM\(\s*d\.usd_line\s*\)\s*AS\s+DECIMAL\(\s*18\s*,\s*2\s*\)\s*\)",
+    re.IGNORECASE,
+)
+_USD_LINE_FIN = "END AS usd_line"
+_USD_CAB = """,
+        -- El importe de la CABECERA: lo mismo que dice el papel. Ver el
+        -- comentario de _USD_SUMA_RE en debug_asinfo_facturas_view.py.
+        CASE WHEN fc.id_documento IN (17, 20, 451, 501, 652)
+             THEN -1 * (ISNULL(fc.total, 0) - ISNULL(fc.descuento, 0) + ISNULL(fc.impuesto, 0))
+             ELSE        ISNULL(fc.total, 0) - ISNULL(fc.descuento, 0) + ISNULL(fc.impuesto, 0)
+        END AS usd_cab"""
+_USD_CAB_OUT = "CAST(MAX(d.usd_cab) AS DECIMAL(18,2))"
+
+
+def _sql_importe_de_cabecera(sql: str):
+    """(sql_nuevo, error). `error` vacío y `sql_nuevo` None = ya estaba hecho."""
+    if not sql:
+        return None, "la card no tiene SQL"
+    if "usd_cab" in sql:
+        return None, ""
+    if _USD_LINE_FIN not in sql:
+        return None, f"no encontre `{_USD_LINE_FIN}` en la card"
+    if not _USD_SUMA_RE.search(sql):
+        return None, "no encontre el SUM(d.usd_line) del SELECT de afuera"
+    nuevo = sql.replace(_USD_LINE_FIN, _USD_LINE_FIN + _USD_CAB, 1)
+    nuevo = _USD_SUMA_RE.sub(lambda _m: _USD_CAB_OUT, nuevo, count=1)
+    return nuevo, ""
+
 
 def _card_facturas_get(card_id: str | None = None):
     """Baja una card de Metabase por API. → (card, sql, path, err).
@@ -335,5 +385,83 @@ def card_estado_fix():
         "antes": "fc.estado IN (" + ", ".join(lista) + ")",
         "despues": frag_nuevo,
         "verificado_en_card": lista_check,
+        "cache_facturas_reseteado": True,
+    })
+
+
+@bp.route("/card-importe", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def card_importe():
+    """De dónde saca la card el importe: de los renglones o de la cabecera."""
+    card, sql, path, err = _card_facturas_get()
+    if err:
+        return _json({"ok": False, "error": err})
+    ya = "usd_cab" in (sql or "")
+    _nuevo, problema = _sql_importe_de_cabecera(sql or "")
+    return _json({
+        "ok": True,
+        "card_id": (card or {}).get("id"),
+        "sql_path": path,
+        "importe_desde_la_cabecera": ya,
+        "se_puede_cambiar": bool(_nuevo),
+        "problema": problema or None,
+        "como_aplicar": "POST /admin/debug-asinfo-facturas/card-importe/fix",
+    })
+
+
+@bp.route("/card-importe/fix", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def card_importe_fix():
+    """Hace que el importe salga de la cabecera. Idempotente."""
+    import os
+
+    import requests
+
+    from modules._lib import metabase_client as mc
+
+    card, sql, path, err = _card_facturas_get()
+    if err:
+        return _json({"ok": False, "error": err}, 502)
+    nuevo, problema = _sql_importe_de_cabecera(sql or "")
+    if nuevo is None:
+        if problema:
+            return _json({"ok": False, "error": problema}, 422)
+        return _json({"ok": True, "noop": True,
+                      "msg": "el importe YA sale de la cabecera"})
+
+    dq = card.get("dataset_query") or {}
+    if path == "native.query":
+        dq["native"]["query"] = nuevo
+    else:
+        dq["stages"][0]["native"] = nuevo
+
+    url = (os.environ.get("METABASE_URL") or "").strip().rstrip("/")
+    card_id = (os.environ.get("ASINFO_CARD_FACTURAS") or "199").strip()
+    token = mc._session_token or mc._login(requests)
+    r = requests.put(
+        f"{url}/api/card/{card_id}",
+        json={
+            "name": card.get("name"),
+            "dataset_query": dq,
+            "display": card.get("display"),
+            "description": card.get("description"),
+            "visualization_settings": card.get("visualization_settings") or {},
+        },
+        headers={"X-Metabase-Session": token, "Content-Type": "application/json"},
+        timeout=20,
+    )
+    if r.status_code >= 400:
+        return _json({"ok": False, "error": f"PUT -> HTTP {r.status_code}",
+                      "body": r.text[:500]}, 502)
+
+    from modules.asinfo import service as asinfo_service
+    asinfo_service.reset_facturas_cache()
+
+    _c2, sql_check, _p2, _e2 = _card_facturas_get()
+    return _json({
+        "ok": True,
+        "verificado_en_card": "usd_cab" in (sql_check or ""),
         "cache_facturas_reseteado": True,
     })
