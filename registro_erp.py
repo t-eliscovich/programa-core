@@ -383,7 +383,12 @@ def registrar(app: Flask) -> None:
         bp as debug_terminado_otros_bp,
     )
 
+    # /admin/facturas-centavos — cerrar las facturas que quedaron abiertas por
+    # uno o dos centavos de redondeo. GET = dry-run, ?aplicar=1 escribe.
+    from modules.admin_dbase.facturas_centavos_view import bp as facturas_centavos_bp
+
     app.register_blueprint(debug_asinfo_fact_bp)
+    app.register_blueprint(facturas_centavos_bp)
     app.register_blueprint(debug_fab_wip_bp)
     app.register_blueprint(debug_terminado_otros_bp)
     app.register_blueprint(debug_import_recep_bp)
