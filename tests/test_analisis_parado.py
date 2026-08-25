@@ -2457,12 +2457,53 @@ def test_la_forma_se_resuelve_una_sola_vez_en_la_consulta():
 def _forma(**kg):
     """Renderiza el macro de la forma con los kilos que se le pasen."""
     from jinja2 import Environment, FileSystemLoader
+
     import filters as F
     env = Environment(loader=FileSystemLoader("modules/analisis/templates"))
     env.filters["num_es"] = F.num_es
     tpl = env.from_string(
         '{% import "analisis/_forma.html" as fm %}{{ fm.forma(f) }}')
     return " ".join(tpl.render(f=kg).split())
+
+
+def test_la_hoja_abre_el_color_en_dos_lineas_cuando_hay_las_dos_formas():
+    """⭐ Dueña 25/08/2026: "no, una cantidad por tubular. una cantidad por
+    abierta… dos lineas para el color cuando hay ambas telas". Tubular y
+    abierta no son la misma tela: se cortan distinto y el cliente pide una o la
+    otra."""
+    filas = [
+        {"subcategoria": "Jersey 3", "color": "ROB", "stock_kg": 129,
+         "kg_tubular": 90, "kg_abierta": 39, "puntos": 4, "puntos_fila": 516},
+        {"subcategoria": "Jersey 3", "color": "BAN", "stock_kg": 127,
+         "kg_tubular": 127, "kg_abierta": 0, "puntos": 4, "puntos_fila": 508},
+    ]
+    out = queries.abrir_por_forma(filas)
+    assert len(out) == 3, "la que tiene las dos formas se abre; la otra no"
+    dos = [f for f in out if f["color"] == "ROB"]
+    assert [f["forma_fila"] for f in dos] == ["TUB", "ABI"]
+    assert [f["stock_kg"] for f in dos] == [90, 39]
+    assert sum(f["stock_kg"] for f in dos) == 129, "las dos líneas cierran"
+    assert [f["puntos_fila"] for f in dos] == [360, 156]
+    # la que tiene una sola forma queda intacta, sin `forma_fila`
+    una = [f for f in out if f["color"] == "BAN"][0]
+    assert "forma_fila" not in una and una["stock_kg"] == 127
+
+
+def test_lo_que_no_cuadra_entre_las_dos_tablas_va_en_su_propia_linea():
+    """Los kilos por forma salen del LOTE y el total de la fila de otra tabla:
+    cierran al 0,006% pero no son la misma consulta. Lo que sobra va en una
+    línea SIN forma — un kilo inventado en la columna de la izquierda es peor
+    que un renglón que dice "no sé de qué forma es"."""
+    out = queries.abrir_por_forma([
+        {"subcategoria": "X", "color": "NEG", "stock_kg": 200,
+         "kg_tubular": 90, "kg_abierta": 39, "puntos": 1, "puntos_fila": 200}])
+    assert [f["stock_kg"] for f in out] == [90, 39, 71]
+    assert out[-1]["forma_fila"] == ""
+    # y una diferencia de menos de un kilo no ensucia la hoja con un renglón
+    chico = queries.abrir_por_forma([
+        {"subcategoria": "X", "color": "NEG", "stock_kg": 129.4,
+         "kg_tubular": 90, "kg_abierta": 39, "puntos": 1, "puntos_fila": 129}])
+    assert len(chico) == 2
 
 
 def test_cuando_hay_de_las_dos_formas_se_dicen_los_kilos_de_cada_una():

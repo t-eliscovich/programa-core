@@ -352,6 +352,7 @@ def _hoja_saldos() -> dict:
     """
     filas = [f for f in queries.con_puntos(queries.items())
              if float(f["stock_kg"] or 0) > 0]
+    filas = queries.abrir_por_forma(filas)
     filas.sort(key=lambda f: (f["subcategoria"].lower(), -float(f["stock_kg"] or 0)))
     bloques: list[tuple[str, list[dict]]] = []
     for f in filas:

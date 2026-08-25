@@ -11,7 +11,12 @@
    calidad.
 #}
 {% macro forma(f) -%}
-{%- if f.kg_tubular and f.kg_abierta -%}
+{%- if f.forma_fila is defined -%}
+  {# La hoja impresa ya abrió la fila en dos: cada una dice SU forma y lleva
+     SUS kilos en la columna de al lado. #}
+  {%- if f.forma_fila -%}<span class="fm">{{ f.forma_fila }}</span>
+  {%- else -%}<span class="g">—</span>{%- endif -%}
+{%- elif f.kg_tubular and f.kg_abierta -%}
   <span class="fm">TUB {{ f.kg_tubular | num_es(0) }}</span>
   <span class="fm">ABI {{ f.kg_abierta | num_es(0) }}</span>
 {%- elif f.kg_tubular -%}

@@ -345,6 +345,51 @@ def _puntos_provisorios() -> dict[str, dict]:
     return agg
 
 
+def abrir_por_forma(filas: list[dict]) -> list[dict]:
+    """Una fila por tela × color × FORMA, para la hoja que se sale a vender.
+
+    ⭐ Dueña 25/08/2026: *"no, una cantidad por tubular. una cantidad por
+    abierta… dos lineas para el color cuando hay ambas telas"*. Tubular y
+    abierta no son la misma tela: se cortan distinto y el cliente pide una o la
+    otra. Un renglón que dice 200 kg cuando son 90 tubulares y 110 abiertas
+    promete algo que puede no estar.
+
+    ⚠ Los kilos por forma vienen del LOTE y el total de la fila de otra tabla
+    (`saldo_producto`); las dos cierran al 0,006% pero no son la misma
+    consulta. Si sobra o falta algo, va en una tercera línea SIN forma en vez
+    de repartirse a ojo: un kilo inventado en la columna de la izquierda es
+    peor que un renglón que dice "no sé de qué forma es".
+    """
+    salida: list[dict] = []
+    for f in filas:
+        tub = float(f.get("kg_tubular") or 0)
+        abi = float(f.get("kg_abierta") or 0)
+        total = float(f.get("stock_kg") or 0)
+        if not tub or not abi:
+            salida.append(f)
+            continue
+        for forma, kg in (("TUB", tub), ("ABI", abi)):
+            if kg <= 0:
+                continue
+            g = dict(f)
+            g["stock_kg"] = kg
+            g["forma_fila"] = forma
+            g["kg_tubular"] = kg if forma == "TUB" else 0
+            g["kg_abierta"] = kg if forma == "ABI" else 0
+            g["puntos_fila"] = kg * float(f.get("puntos") or 1)
+            salida.append(g)
+        resto = round(total - tub - abi, 2)
+        if abs(resto) >= 1:
+            g = dict(f)
+            g["stock_kg"] = resto
+            g["forma_fila"] = ""
+            g["kg_tubular"] = 0
+            g["kg_abierta"] = 0
+            g["puntos_fila"] = resto * float(f.get("puntos") or 1)
+            salida.append(g)
+    return salida
+
+
 def bolsa_congelada(puntos: dict[str, dict] | None = None) -> float:
     """Los puntos que hay EN JUEGO en toda la competencia. Uno solo, y fijo.
 

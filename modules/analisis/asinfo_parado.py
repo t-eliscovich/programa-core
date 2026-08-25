@@ -213,8 +213,18 @@ cal AS (
            -- abierta"). Los kilos NO se separan —siguen sumados en una sola
            -- fila— pero la hoja tiene que decir de qué forma es, que es lo
            -- primero que pregunta el cliente por teléfono.
-           SUM(CASE WHEN t.codigo = 'TUB' THEN lu.saldo ELSE 0 END) AS kg_tubular,
-           SUM(CASE WHEN t.codigo = 'ABI' THEN lu.saldo ELSE 0 END) AS kg_abierta
+           -- ⚠ Abiertas por CALIDAD además de por forma. Un ítem que entró a
+           -- la lista sólo por su segunda muestra únicamente sus kilos SEG, así
+           -- que su forma tiene que contar sobre esos mismos kilos: sumando
+           -- todo, la fila diría "TUB 4.350" arriba de un stock de 833.
+           SUM(CASE WHEN t.codigo = 'TUB' AND ISNULL(v.codigo, '') <> 'SEG'
+                    THEN lu.saldo ELSE 0 END) AS kg_tub_pri,
+           SUM(CASE WHEN t.codigo = 'TUB' AND v.codigo = 'SEG'
+                    THEN lu.saldo ELSE 0 END) AS kg_tub_seg,
+           SUM(CASE WHEN t.codigo = 'ABI' AND ISNULL(v.codigo, '') <> 'SEG'
+                    THEN lu.saldo ELSE 0 END) AS kg_abi_pri,
+           SUM(CASE WHEN t.codigo = 'ABI' AND v.codigo = 'SEG'
+                    THEN lu.saldo ELSE 0 END) AS kg_abi_seg
     FROM lote_ult lu
     JOIN producto p ON p.id_producto = lu.id_producto
     JOIN lote l     ON l.id_lote     = lu.id_lote
@@ -253,8 +263,16 @@ SELECT stk.subcategoria, stk.color, stk.categoria,
        CASE WHEN {_ES_PARADO} THEN ISNULL(cal.kg_primera, 0)
             ELSE 0 END                              AS kg_primera,
        ISNULL(cal.kg_segunda, 0)                    AS kg_segunda,
-       ISNULL(cal.kg_tubular, 0)                    AS kg_tubular,
-       ISNULL(cal.kg_abierta, 0)                    AS kg_abierta,
+       -- Los kilos por forma van sobre el MISMO universo que `stock_kg`: todo
+       -- si la tela × color está parada entera, sólo la segunda si entró por
+       -- eso. Así kg_tubular + kg_abierta suma stock_kg y las dos líneas de la
+       -- hoja cierran con el total de la fila.
+       CASE WHEN {_ES_PARADO}
+            THEN ISNULL(cal.kg_tub_pri, 0) + ISNULL(cal.kg_tub_seg, 0)
+            ELSE ISNULL(cal.kg_tub_seg, 0) END      AS kg_tubular,
+       CASE WHEN {_ES_PARADO}
+            THEN ISNULL(cal.kg_abi_pri, 0) + ISNULL(cal.kg_abi_seg, 0)
+            ELSE ISNULL(cal.kg_abi_seg, 0) END      AS kg_abierta,
        CASE WHEN {_ES_PARADO} THEN 'parado' ELSE 'segunda' END AS motivo
 FROM stk LEFT JOIN ven
   ON ven.subcategoria = stk.subcategoria AND ven.color = stk.color
