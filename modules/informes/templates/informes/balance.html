@@ -127,8 +127,12 @@
      del mismo tamaño que los otros, un gris más oscuro y un poco más
      a la izquierda". Igualo font al tbody (15px), gris a slate-500
      (más oscuro que el slate-400 anterior), y padding-right 80→100px. */
+  /* Federico 2026-08-25 (dibujo): "mueve las cifras interiores un poco a la
+     izquierda" — sin tocar el ancho del panel ni la columna U$ de la derecha.
+     70 → 92px: los sumandos (Cheques/Facturas/Hilado/Tejido/Terminado/Maq/Terr)
+     se corren 22px, los mismos 22 que se corre el par kg/$-kg de al lado. */
   .informe-balance td.num-cell--sumando {
-    padding-right: 70px !important;
+    padding-right: 92px !important;
     font-size: 14px !important;
     color: rgb(100 116 139) !important;  /* slate-500 — más oscuro */
   }
@@ -142,6 +146,10 @@
        en vez de un ancho fijo: así se acomoda solo al ancho que haya y queda
        lo más lejos posible del nombre sin invadir la columna U$. */
     float: right;
+    /* Federico 2026-08-25 — 22px de aire contra el borde derecho de la celda:
+       el par kg/$-kg (y su encabezado) se corre a la izquierda junto con los
+       sumandos de la columna U$, sin mover el ancho del panel. */
+    margin-right: 8px;
     font-size: 12.5px;
     color: rgb(100 116 139);
     white-space: nowrap;
@@ -172,7 +180,11 @@
      texto real medido — "1.980.501" son 64px y "5,260" son 36px — quedan 240px
      de contenido, ~28px de aire ganados sin mover ninguna otra columna. */
   .informe-balance .det-kg  { width: 68px; }
-  .informe-balance .det-ukg { width: 40px; }
+  /* Federico 2026-08-25 — "separa el kg del $/kg": 14px de aire entre las dos
+     cajas (antes se tocaban: "2.008.823 3,033"). El aire sale de la sangría
+     derecha del bloque (22 → 8px), así el kg queda EXACTAMENTE donde estaba y
+     sólo se corre el unitario; el ancho total del par no cambia. */
+  .informe-balance .det-ukg { width: 40px; margin-left: 14px; }
   /* Y que no se parta NUNCA: si algún día no entra, que scrollee el panel (que
      se ve) en vez de partir el renglón en silencio (que no se ve). */
   @media (min-width: 768px) {
@@ -338,7 +350,11 @@
        Antes: 632 + 390 = 1022px y la izquierda se comía todo el sobrante.
        Ahora: 552 + 395 = 947px, y a ~1030px de marco quedan 552 / 478. */
     .informe-balance .balance-grid > .balance-col:first-child { flex: 1 1 0; min-width: 552px; }
-    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 0; min-width: 395px; }
+    /* Federico 2026-08-25 — al correr 22px a la izquierda el par kg/$-kg, el
+       piso REAL del panel derecho sube de 408 a 430px medidos (abajo de eso se
+       parte el encabezado ACTIVO | KG $/KG). A su ancho de pantalla (~1030px
+       de marco) el panel mide 444px, así que NO cambia nada de lo que ve. */
+    .informe-balance .balance-grid > .balance-col:last-child  { flex: 1 1 0; min-width: 430px; }
     /* y el panel deja de recortar por su cuenta: si algo no entra, scrollea el
        marco entero (los dos paneles a la vez), que es lo que Federico quiere
        ver — los cuadros lado a lado, nunca uno recortado contra el otro. */
