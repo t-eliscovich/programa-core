@@ -2311,3 +2311,23 @@ def test_el_redondeo_no_mueve_a_ninguna_otra_tela():
         assert nivel == 2, (kg_base, kg_12m)
     # y una que sí es fácil de verdad sigue siendo fácil
     assert queries._nivel(100, 12000)[0] == 1
+
+
+def test_hay_un_solo_numero_de_puntos_en_juego(monkeypatch):
+    """⭐ Dueña 25/08/2026: "en juego es distinto que la presentacion, puntos".
+
+    La Competencia mostraba la bolsa CONGELADA (`kg_base × puntos`, los kilos
+    del día en que se fijó el puntaje) y Saldos la suma de la foto de HOY, que
+    se mueve con la bodega. Dos números con el mismo nombre, y el de Saldos
+    nunca vuelve a coincidir con uno impreso.
+    """
+    monkeypatch.setattr(queries, "puntos_por_tela", lambda: {
+        "Jersey 3": {"kg_base": 100, "puntos": 10},
+        "Fleece 102": {"kg_base": 50, "puntos": 4},
+    })
+    assert queries.bolsa_congelada() == 1200
+
+    # y la pantalla la usa, en vez de sumar la foto de hoy
+    import inspect as _i
+    fuente = _i.getsource(views.parado) + _i.getsource(views.mis_telas)
+    assert fuente.count("bolsa=queries.bolsa_congelada()") == 2

@@ -335,6 +335,27 @@ def _puntos_provisorios() -> dict[str, dict]:
     return agg
 
 
+def bolsa_congelada(puntos: dict[str, dict] | None = None) -> float:
+    """Los puntos que hay EN JUEGO en toda la competencia. Uno solo, y fijo.
+
+    ⭐ Dueña 25/08/2026: *"en juego es distinto que la presentacion, puntos"*.
+    Había DOS números con el mismo nombre:
+
+      · el de la Competencia — `kg_base × puntos`, con los kilos CONGELADOS el
+        día que se fijó el puntaje. Es contra el que se corre la carrera.
+      · el de Saldos — los kilos de la foto de HOY por sus puntos. Ése se mueve
+        todos los días con la bodega, así que nunca vuelve a coincidir con un
+        número impreso.
+
+    Las dos pantallas usan ésta y muestran el mismo. Lo que queda por vender ya
+    se ve en los kilos y en la columna Puntos de la tabla; para eso no hace
+    falta un segundo total que compita con el primero.
+    """
+    puntos = puntos if puntos is not None else puntos_por_tela()
+    return sum(float(p.get("kg_base") or 0) * float(p.get("puntos") or 0)
+               for p in puntos.values())
+
+
 def puntos_por_tela() -> dict[str, dict]:
     """Los puntos congelados, por tela.
 

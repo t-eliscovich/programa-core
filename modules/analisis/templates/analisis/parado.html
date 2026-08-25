@@ -63,8 +63,13 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <span><span class="k">En saldo</span>
     <b>{{ resumen.kg | num_es(0) }} kg</b>
     <span class="mini">{{ resumen.n_items }} telas × color</span></span>
+  {# ⚠ La bolsa CONGELADA, la misma que muestra la Competencia. Acá salía la
+     suma de la foto de hoy, que se mueve con la bodega todos los días: dos
+     números con el mismo nombre y ninguno igual al de la presentación
+     impresa. Lo que queda por vender se ve en los kilos y en la columna
+     Puntos de la tabla. #}
   <span><span class="k">En juego</span>
-    <b class="pts">{{ resumen.puntos | num_es(0) }}</b>
+    <b class="pts">{{ bolsa | num_es(0) }}</b>
     <span class="mini">puntos · un kilo vale 1, 4 o 10</span></span>
   <span><span class="k">Vendido</span>
     <b>{{ resumen.kg_vendidos | num_es(0) }} kg</b>
