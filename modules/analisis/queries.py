@@ -733,8 +733,13 @@ def actualizar() -> dict:
     fuera = [p for p in todas
              if not p.get("entra", True) and (p.get("nueva") or p.get("pedida"))]
 
-    def kg(fs) -> float:
-        """Los kilos que esas telas tienen HOY en la bodega."""
+    def kg_en_bodega(fs) -> float:
+        """Los kilos que esas telas tienen HOY en la bodega.
+
+        ⚠ Nombre largo a propósito: se llamaba `kg` y el loop de las ventas la
+        pisó con un float. Los tests lo agarraron, pero el nombre corto en una
+        función de 150 líneas es una trampa puesta para el próximo.
+        """
         return round(sum(float(f.get("stock_bodega") or 0) for f in fs), 2)
 
     nuevas = [p for p in fuera if p.get("nueva")]
@@ -814,11 +819,51 @@ def actualizar() -> dict:
         def _cuenta(k: tuple[str, str], calidad: str | None) -> bool:
             return cuenta_el_kilo(motivo_de.get(k), calidad)
 
-        for v in ventas:
+        # ⭐ EL TOPE DE CADA ÍTEM: no se puede sacar más de lo que había parado.
+        #
+        # Dueña 25/08/2026, viendo a Intela con 554 puntos de una sola venta:
+        # *"está mal que sigue contando una tela que había 0 en saldo"*. Jersey 3
+        # BLA tenía unos kilos viejos de blanco y 490 tejidos el 17/07: la regla
+        # de la antigüedad mira el ÍTEM, así que lo dejaba entrar entero y los
+        # kilos de julio puntuaban como si hubieran estado clavados.
+        #
+        # El tope son los kilos que esa tela × color ya tenía en la bodega al
+        # corte —los únicos que estaban parados—. Lo que se venda por encima es
+        # tela que se tejió después: se vende igual, pero no destraba nada y no
+        # suma. Con el tope, además, «vendido» nunca puede ser más que «al
+        # arrancar», que es lo que hacía que las tres cifras de la pantalla no
+        # cerraran.
+        #
+        # ⚠ Sin dato de Asinfo no hay tope (None y no 0): un ítem que falte en
+        # la consulta dejaría a alguien sin sus puntos sin que nadie sepa por
+        # qué.
+        tope = {(p["subcategoria"], p["color"]): float(p["kg_antes"])
+                for p in todas if p.get("kg_antes") is not None}
+
+        # Los renglones que van a la competencia, EN ORDEN DE FECHA y con el
+        # tope ya aplicado. Se arman una sola vez: la cuenta del resumen y la
+        # tabla de «Qué vendió» tienen que salir del mismo reparto o van a decir
+        # cosas distintas.
+        usado: dict[tuple[str, str], float] = defaultdict(float)
+        renglones: list[tuple[dict, float]] = []
+        for v in sorted(ventas, key=lambda x: _fecha(x["fecha"])):
             k = (v["subcategoria"], v["color"])
-            if (k in marcado and _fecha(v["fecha"]) >= desde_f
-                    and _cuenta(k, v.get("calidad"))):
-                vendido[k] += float(v["kg"] or 0)   # ya viene abierto por vendedor
+            if k not in marcado or _fecha(v["fecha"]) < desde_f:
+                continue
+            kilos = float(v["kg"] or 0)
+            cuenta_kg = 0.0
+            if _cuenta(k, v.get("calidad")):
+                t = tope.get(k)
+                if kilos < 0 or t is None:
+                    # ⚠ La DEVOLUCIÓN resta siempre, tope o no: si no, un
+                    # vendedor factura hasta el tope, el cliente devuelve y los
+                    # puntos quedan.
+                    cuenta_kg = kilos
+                else:
+                    cuenta_kg = min(kilos, max(0.0, t - usado[k]))
+                usado[k] += cuenta_kg
+            vendido[k] += cuenta_kg
+            renglones.append((v, cuenta_kg))
 
         # 3 · la foto se rehace entera
         #
@@ -871,17 +916,26 @@ def actualizar() -> dict:
 
         # ── la competencia ──
         db.execute("DELETE FROM scintela.parado_venta", conn=conn)
-        for v in ventas:
+        for v, cuenta_kg in renglones:
             k = (v["subcategoria"], v["color"])
-            if k in marcado and _fecha(v["fecha"]) >= desde_f:
+            kilos = float(v["kg"] or 0)
+            # ⭐ Una venta puede quedar PARTIDA por el tope: los kilos que
+            # destrabaron saldo cuentan y el resto no. Van como dos renglones y
+            # no como uno a medias, para que la suma de la tabla siga siendo la
+            # suma de sus filas.
+            partes = [(cuenta_kg, True)] if abs(cuenta_kg - kilos) < 0.005 else [
+                (cuenta_kg, True), (round(kilos - cuenta_kg, 2), False)]
+            for parte, cuenta in partes:
+                if parte == 0 and cuenta:
+                    continue
                 db.execute(
                     """INSERT INTO scintela.parado_venta
                            (subcategoria, color, vend_pc, vendedor, fecha, kg,
                             calidad, cuenta)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (k[0], k[1], v.get("vend_pc"), v.get("vendedor") or "Intela",
-                     _fecha(v["fecha"]), v.get("kg") or 0,
-                     v.get("calidad"), _cuenta(k, v.get("calidad"))), conn=conn)
+                     _fecha(v["fecha"]), parte,
+                     v.get("calidad"), cuenta), conn=conn)
 
         db.execute("DELETE FROM scintela.parado_share", conn=conn)
         for s in asinfo_parado.share_por_grupo():
@@ -913,11 +967,12 @@ def actualizar() -> dict:
             (len(marcado), len(lla),
              f"{len(par)} parados hoy · {len(lla)} candidatos "
              f"· {len(nuevas)} recientes y {len(pedidas)} pedidas afuera",
-             len(nuevas), kg(nuevas), len(pedidas), kg(pedidas)), conn=conn)
+             len(nuevas), kg_en_bodega(nuevas),
+             len(pedidas), kg_en_bodega(pedidas)), conn=conn)
 
     return {"items": len(marcado), "llamados": len(lla), "parados_hoy": len(par),
-            "nuevas": len(nuevas), "nuevas_kg": kg(nuevas),
-            "pedidas": len(pedidas), "pedidas_kg": kg(pedidas)}
+            "nuevas": len(nuevas), "nuevas_kg": kg_en_bodega(nuevas),
+            "pedidas": len(pedidas), "pedidas_kg": kg_en_bodega(pedidas)}
 
 
 def _fecha(v):

@@ -2046,7 +2046,9 @@ def test_todo_se_cuenta_desde_la_largada_y_no_desde_que_entro_cada_fila():
     import inspect
     fuente = inspect.getsource(queries.actualizar)
     assert 'config("largada"' in fuente
-    assert "_fecha(v[\"fecha\"]) >= desde_f" in fuente
+    # el corte sigue estando: el renglón anterior a la largada se saltea al
+    # armar la lista de la competencia
+    assert "_fecha(v[\"fecha\"]) < desde_f" in fuente
     assert "MIN(fecha_marcado)" not in fuente, (
         "ya no se arranca desde la fila más vieja de la cohorte")
 
@@ -2973,3 +2975,98 @@ def test_la_pantalla_muestra_las_tres_cifras():
         assert f'class="k">{k}</span>' in html
     assert "{{ resumen.kg_inicial | num_es(0) }}" in html
     assert "resumen.kg_movido" in html
+
+
+def _venta(sub, col, kg, dia=25, calidad="PRI", vend="Intela"):
+    return {"subcategoria": sub, "color": col, "kg": kg, "calidad": calidad,
+            "vendedor": vend, "vend_pc": None, "fecha": date(2026, 8, dia)}
+
+
+def _refresco_con_ventas(monkeypatch, parados, cohorte, ventas):
+    db = _DBFalsa(cohorte)
+    monkeypatch.setattr(queries, "db", db)
+    monkeypatch.setattr(queries, "today_ec", lambda: date(2026, 8, 25))
+    monkeypatch.setattr(asinfo_parado, "parados", lambda: parados)
+    monkeypatch.setattr(asinfo_parado, "llamados", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "vendido_desde", lambda d: ventas)
+    monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
+    queries.actualizar()
+    return [(p[1], p[5], p[7]) for sql, p in db.escrito
+            if "INSERT INTO scintela.parado_venta" in sql]
+
+
+def _item(sub, col, kg_antes, stock=300):
+    return {"subcategoria": sub, "color": col, "stock_kg": stock,
+            "stock_bodega": stock, "motivo": "parado", "nueva": False,
+            "pedida": False, "entra": True, "kg_antes": kg_antes}
+
+
+def _cohorte(sub, col):
+    return [{"subcategoria": sub, "color": col,
+             "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}]
+
+
+def test_no_se_puede_sacar_mas_de_lo_que_habia_parado(monkeypatch):
+    """Dueña 25/08/2026: *"está mal que sigue contando una tela que había 0 en
+    saldo"*. Jersey 3 BLA tenía unos kilos viejos de blanco y 490 tejidos el
+    17/07: la regla de la antigüedad mira el ÍTEM, así que lo dejaba entrar
+    entero y los kilos de julio puntuaban como si hubieran estado clavados.
+
+    El tope son los kilos que ya estaban al corte. Lo que se vende por encima se
+    vende igual, pero no destraba nada: va como un renglón que no cuenta."""
+    filas = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Jersey 3", "BLA", kg_antes=30)],
+        cohorte=_cohorte("Jersey 3", "BLA"),
+        ventas=[_venta("Jersey 3", "BLA", 554)])
+    assert ("BLA", 30.0, True) in filas
+    assert ("BLA", 524.0, False) in filas
+
+
+def test_la_venta_que_entra_entera_en_el_tope_no_se_parte(monkeypatch):
+    filas = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Fleece 102", "AZU", kg_antes=300)],
+        cohorte=_cohorte("Fleece 102", "AZU"),
+        ventas=[_venta("Fleece 102", "AZU", 120)])
+    assert filas == [("AZU", 120.0, True)]
+
+
+def test_el_tope_se_gasta_en_orden_de_fecha(monkeypatch):
+    """Dos ventas y un tope que sólo alcanza para la primera y media: la que
+    llegó antes se lleva los kilos. Si se repartiera en el orden en que Asinfo
+    devuelve las filas, el puntaje cambiaría de un refresco a otro sin que nadie
+    hubiera vendido nada."""
+    filas = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Toper", "COA", kg_antes=100)],
+        cohorte=_cohorte("Toper", "COA"),
+        ventas=[_venta("Toper", "COA", 60, dia=26),
+                _venta("Toper", "COA", 80, dia=25)])
+    assert filas[0] == ("COA", 80.0, True)          # la del 25 entra entera
+    assert filas[1] == ("COA", 20.0, True)          # de la del 26 entran 20
+    assert filas[2] == ("COA", 40.0, False)
+
+
+def test_la_devolucion_resta_aunque_el_tope_este_gastado(monkeypatch):
+    """Si no, un vendedor factura hasta el tope, el cliente devuelve la tela y
+    los puntos le quedan puestos."""
+    filas = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Toper", "COA", kg_antes=50)],
+        cohorte=_cohorte("Toper", "COA"),
+        ventas=[_venta("Toper", "COA", 50, dia=25),
+                _venta("Toper", "COA", -20, dia=26)])
+    assert filas == [("COA", 50.0, True), ("COA", -20.0, True)]
+
+
+def test_sin_dato_de_asinfo_no_hay_tope(monkeypatch):
+    """Fail-open a propósito: un ítem que falte en la consulta dejaría a alguien
+    sin sus puntos y nadie sabría por qué."""
+    item = _item("Toper", "COA", kg_antes=0)
+    del item["kg_antes"]
+    filas = _refresco_con_ventas(
+        monkeypatch, parados=[item], cohorte=_cohorte("Toper", "COA"),
+        ventas=[_venta("Toper", "COA", 400)])
+    assert filas == [("COA", 400.0, True)]
