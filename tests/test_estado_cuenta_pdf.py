@@ -492,7 +492,7 @@ def test_con_el_pdf_ya_hecho_el_compartir_sale_sin_esperar_NADA(app):
     assert "navigator.share" in compartir
     assert "await" not in compartir, "volvió a esperar antes de compartir"
     # Y el click usa ese camino cuando el PDF ya está en memoria.
-    assert "if (porMenu && btn.__listo) { compartirYa(btn, btn.__listo); return; }" in html
+    assert "if (porMenu && btn.__listo) { if (compartirYa(btn, btn.__listo)) return; }" in html
 
 
 def test_si_el_permiso_se_vencio_el_boton_pide_UN_SEGUNDO_TOQUE(app):
@@ -530,7 +530,7 @@ def test_el_destinatario_lo_elige_ella_en_whatsapp_y_no_el_programa(app):
     assert "wa.me/{{" not in html
     assert "data-tel" not in html, "el botón ya no necesita el teléfono"
     # La ventana se abre siempre, sin condicionarla a nada.
-    assert "var ventana = porMenu ? null : window.open" in html
+    assert "var ventana = (porMenu || esTel) ? null : window.open" in html
 
 
 def test_el_boton_no_cambia_de_ancho_mientras_genera(app):
@@ -765,3 +765,55 @@ def test_el_ancho_de_facturas_va_en_el_HTML_no_solo_en_el_CSS():
     )
     # Y la proporción tiene que ser la acordada: Días es la más angosta.
     assert anchos[-1] == min(anchos)
+
+
+# ---------------------------------------------------------------------------
+# 🚨 El bug del 25/08: "el click no hace nada" (Android, usuario de Patricio)
+# ---------------------------------------------------------------------------
+
+
+def test_el_camino_rapido_no_puede_TIRAR_y_dejar_el_boton_mudo(app):
+    """⭐ TMT 2026-08-25: *"está trabado enviar por whatsapp a vendedores"* →
+    *"el click no hace nada"*.
+
+    Que el rótulo ni siquiera cambie a "Generando…" significa que el toque
+    murió antes de la primera línea visible. `new File(...)` y
+    `navigator.canShare` no existen en todos los navegadores de Android y ahí
+    TIRAN — y se llamaban sin red en el camino rápido, que es el que corre del
+    segundo toque en adelante.
+    """
+    html = _boton(app)
+    compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
+    assert "try {" in compartir, "el camino rápido volvió a quedar sin red"
+    assert "new File(" in compartir
+    # Y cuando no se puede compartir, se baja el archivo y se avisa: el botón
+    # puede no poder, pero no puede quedarse callado.
+    assert "bajarYExplicar" in compartir
+
+
+def test_si_share_explota_de_entrada_igual_avisa(app):
+    """`navigator.share` puede tirar en vez de devolver una promesa: el
+    `.catch` quedaba colgado de un `undefined` y el toque moría en silencio."""
+    html = _boton(app)
+    compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
+    despues = compartir.split("navigator.share(")[1]
+    assert "} catch (e) {" in despues
+    assert "bajarYExplicar" in despues
+
+
+def test_el_click_no_se_cae_si_el_toque_no_trae_elemento(app):
+    """El manejador de `pointerdown` guardaba `closest`; el del click no. Un
+    toque sin elemento se llevaba puesto todo el manejador."""
+    html = _boton(app)
+    clic = html.split("addEventListener('click'")[1]
+    assert "ev.target && ev.target.closest && ev.target.closest('[data-wa-pdf]')" in clic
+
+
+def test_un_telefono_sin_menu_de_compartir_no_va_a_whatsapp_web(app):
+    """WhatsApp Web en un celular es una pantalla que dice "abrilo en la
+    computadora". Si el teléfono no tiene menú de compartir, el plan B es bajar
+    el PDF y explicarlo — no mandarlo a una pared."""
+    html = _boton(app)
+    largo = html.split("function largo")[1].split("addEventListener('click'")[0]
+    assert "if (esTel) { bajarYExplicar(listo); return; }" in largo
+    assert "var ventana = (porMenu || esTel) ? null : window.open" in largo

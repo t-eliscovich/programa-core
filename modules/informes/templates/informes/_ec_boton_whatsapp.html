@@ -61,7 +61,31 @@
    click, sin un solo `await` en el medio. Cuando no llegó a tiempo, el botón
    pasa a decir **"Enviar ahora"** y el segundo toque —que ya encuentra el PDF
    hecho— abre el menú al instante. Un toque cuando la conexión acompaña, dos
-   cuando no; nunca el visor de PDF por sorpresa. #}
+   cuando no; nunca el visor de PDF por sorpresa.
+
+   🚨 TMT 2026-08-25: *"está trabado enviar por whatsapp a vendedores"* →
+   *"el click no hace nada"*, y **sólo en el usuario de Patricio**, en Android.
+
+   Que el rótulo NI SIQUIERA cambie a "Generando…" quiere decir que el toque
+   murió antes de la primera línea que se ve. Había tres maneras de que eso
+   pasara, y las tres eran mudas:
+
+   - `new File(...)` y `navigator.canShare` NO existen en todos los navegadores
+     de Android; donde no existen, TIRAN. Se llamaban sin red de contención en
+     el camino rápido (el PDF ya en memoria), que es justo el que corre en el
+     segundo toque y en adelante. Ahora van adentro de un `try` y, si no se
+     puede compartir, se baja el archivo y se lo dice.
+   - `navigator.share` puede explotar de entrada en vez de devolver una
+     promesa: el `.catch` se colgaba de un `undefined`.
+   - `ev.target.closest` en el manejador del click no tenía guarda (el de
+     `pointerdown` sí): un toque que no cae sobre un elemento se llevaba puesto
+     todo el manejador.
+
+   Y de paso: un teléfono SIN menú de compartir se caía al plan de escritorio,
+   que abre WhatsApp Web — en un celular, una pantalla que dice "abrilo en la
+   computadora". Ahora en el teléfono el plan B es bajar el PDF y explicarlo.
+
+   ⭐ La regla: **el botón puede no poder, pero no puede quedarse callado.** #}
 {# Sin motor de PDF en el servidor no se dibuja: un botón que siempre falla
    es peor que no tenerlo. Quien llegue igual por la URL recibe un 503 que
    explica qué falta. #}
@@ -158,32 +182,54 @@
 
   // ⭐ SIN `await` adentro: el permiso que deja el toque para abrir el menú de
   // compartir se pierde en la primera espera.
-  function compartirYa(btn, listo) {
-    var file = new File([listo.blob], listo.nombre, { type: 'application/pdf' });
-    if (!navigator.canShare({ files: [file] })) {
-      // Este teléfono no deja adjuntar el PDF desde el navegador. Se lo baja y
-      // se lo dice, en vez de abrir el visor de PDF sin explicación.
-      descargar(listo.blob, listo.nombre);
-      alert('Este teléfono no deja mandar el PDF directo desde el programa. '
-          + 'Se descargó "' + listo.nombre + '": adjuntalo desde WhatsApp.');
-      return;
-    }
-    decir(btn, rotulo(btn));
-    navigator.share({ files: [file], title: listo.nombre }).catch(function (e) {
-      // Cerró el menú a propósito: no es un error y no hay que insistirle.
-      if (e && e.name === 'AbortError') return;
-      // Se venció el permiso del toque (la generación tardó). El PDF YA está
-      // en memoria: el próximo toque abre el menú al instante.
-      decir(btn, 'Enviar ahora');
-    });
+  // El plan B honesto: el archivo a las descargas y una frase que diga qué
+  // pasó. Nunca dejar el botón mudo — ver el bug del 25/08 en la cabecera.
+  function bajarYExplicar(listo) {
+    descargar(listo.blob, listo.nombre);
+    alert('Este teléfono no deja mandar el PDF directo desde el programa. '
+        + 'Se descargó "' + listo.nombre + '": adjuntalo desde WhatsApp.');
   }
 
-  function largo(btn, porMenu) {
+  // Devuelve `true` si se hizo cargo del toque (compartió, o bajó el archivo y
+  // avisó). `false` significa "acá no puedo": lo sigue el camino largo.
+  function compartirYa(btn, listo) {
+    var file;
+    try {
+      // 🚨 `new File(...)` y `canShare` no existen en todos los navegadores de
+      // Android, y donde no existen TIRAN. Sin este try el toque moría acá
+      // mismo, antes de cambiar el rótulo: el botón no hacía nada, ni siquiera
+      // decir "Generando…".
+      file = new File([listo.blob], listo.nombre, { type: 'application/pdf' });
+      if (!navigator.canShare({ files: [file] })) { file = null; }
+    } catch (e) { file = null; }
+    if (!file) { bajarYExplicar(listo); return true; }
+
+    decir(btn, rotulo(btn));
+    try {
+      navigator.share({ files: [file], title: listo.nombre }).catch(function (e) {
+        // Cerró el menú a propósito: no es un error y no hay que insistirle.
+        if (e && e.name === 'AbortError') return;
+        // Se venció el permiso del toque (la generación tardó). El PDF YA está
+        // en memoria: el próximo toque abre el menú al instante.
+        decir(btn, 'Enviar ahora');
+      });
+    } catch (e) {
+      // `share` explotó de entrada (no devolvió promesa): este aparato no
+      // comparte archivos. Se baja y se avisa, que es lo único cierto.
+      bajarYExplicar(listo);
+    }
+    return true;
+  }
+
+  function largo(btn, porMenu, esTel) {
     var original = rotulo(btn);
     // La pestaña de WhatsApp se abre ACÁ, en el click. Si se abriera después
     // del `await`, Safari la bloquea por popup y el botón baja el PDF sin
     // abrir nada — que es medio botón.
-    var ventana = porMenu ? null : window.open('', '_blank');
+    // ⭐ En un TELÉFONO no se abre nunca: WhatsApp Web ahí es una pantalla que
+    // dice "abrilo en la computadora". Si el teléfono no tiene menú de
+    // compartir, el plan B es bajar el archivo y decirlo.
+    var ventana = (porMenu || esTel) ? null : window.open('', '_blank');
 
     // El texto cambia de largo y, sin clavar el ancho, se corre TODA la fila
     // de botones y hasta el nombre del cliente. Visto en producción el 04/08.
@@ -202,6 +248,11 @@
       btn.style.width = '';
 
       if (porMenu) { compartirYa(btn, listo); return; }
+
+      // Teléfono sin menú de compartir: el archivo a las descargas y una
+      // frase que lo explique. Mandarlo a WhatsApp Web sería mandarlo a una
+      // pared.
+      if (esTel) { bajarYExplicar(listo); return; }
 
       // Escritorio: el PDF a la carpeta de descargas y WhatsApp Web abierto al
       // lado en la lista de chats, para que elija la conversación y lo
@@ -225,14 +276,18 @@
   }
 
   document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest('[data-wa-pdf]');
+    // Sin la guarda de `closest`, un toque que cae en algo que no es un
+    // elemento tira acá adentro y se lleva puesto TODO el manejador: el botón
+    // queda mudo. El de `pointerdown` ya la tenía; este no.
+    var btn = ev.target && ev.target.closest && ev.target.closest('[data-wa-pdf]');
     if (!btn) return;
     var porMenu = esTelefono() && !!navigator.canShare;
     rotulo(btn);
     // El camino bueno: el PDF ya está en memoria y el menú de compartir se
-    // abre en el mismo toque, sin esperar nada.
-    if (porMenu && btn.__listo) { compartirYa(btn, btn.__listo); return; }
-    largo(btn, porMenu);
+    // abre en el mismo toque, sin esperar nada. Si ese camino no puede ni
+    // empezar, NO se termina el toque: sigue el camino largo.
+    if (porMenu && btn.__listo) { if (compartirYa(btn, btn.__listo)) return; }
+    largo(btn, porMenu, esTelefono());
   });
 })();
 </script>
