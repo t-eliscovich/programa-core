@@ -812,7 +812,7 @@ def test_el_camino_rapido_no_puede_TIRAR_y_dejar_el_boton_mudo(app):
     assert "new File(" in compartir
     # Y cuando no se puede compartir, se baja el archivo y se avisa: el botón
     # puede no poder, pero no puede quedarse callado.
-    assert "bajarYExplicar" in compartir
+    assert "planB" in compartir
 
 
 def test_si_share_explota_de_entrada_igual_avisa(app):
@@ -822,7 +822,7 @@ def test_si_share_explota_de_entrada_igual_avisa(app):
     compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
     despues = compartir.split("navigator.share(")[1]
     assert "} catch (e) {" in despues
-    assert "bajarYExplicar" in despues
+    assert "planB" in despues
 
 
 def test_el_click_no_se_cae_si_el_toque_no_trae_elemento(app):
@@ -839,7 +839,7 @@ def test_un_telefono_sin_menu_de_compartir_no_va_a_whatsapp_web(app):
     el PDF y explicarlo — no mandarlo a una pared."""
     html = _boton(app)
     largo = html.split("function largo")[1].split("addEventListener('click'")[0]
-    assert "if (esTel) { bajarYExplicar(listo); return; }" in largo
+    assert "if (esTel) { planB(listo); return; }" in largo
     assert "var ventana = (porMenu || esTel) ? null : window.open" in largo
 
 
@@ -896,7 +896,7 @@ def test_el_compartir_que_falla_NUNCA_termina_callado(app):
     compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
     fin = compartir.split(".catch(function (e)")[1]
     assert "AbortError" in fin, "dejó de distinguir el cierre a propósito"
-    assert "bajarYExplicar(listo);" in fin, "el rechazo vuelve a terminar callado"
+    assert "planB(listo);" in fin, "el rechazo vuelve a terminar callado"
 
 
 def test_un_share_que_no_devuelve_promesa_no_mata_el_toque(app):
@@ -905,7 +905,7 @@ def test_un_share_que_no_devuelve_promesa_no_mata_el_toque(app):
     el rótulo: el botón que "no hace nada" de los reportes."""
     html = _boton(app)
     compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
-    assert "if (!p || !p.then) { bajarYExplicar(listo); return true; }" in compartir
+    assert "if (!p || !p.then) { planB(listo); return true; }" in compartir
 
 
 def test_el_estado_listo_se_VE_y_no_solo_se_lee(app):
@@ -915,3 +915,106 @@ def test_el_estado_listo_se_VE_y_no_solo_se_lee(app):
     html = _boton(app)
     assert "btn.dataset.waListo = '1'" in html
     assert "delete btn.dataset.waListo" in html, "el botón queda armado para siempre"
+
+
+# ---------------------------------------------------------------------------
+# 🚨 El plan B que mentía — TMT 2026-08-25, captura del teléfono de Patricio
+# ---------------------------------------------------------------------------
+
+
+def test_el_plan_B_no_diagnostica_el_telefono(app):
+    """🚨 El mensaje decía *"Este teléfono no deja mandar el PDF directo desde
+    el programa"*, y era FALSO: la pantalla de prueba en ESE MISMO aparato
+    había contestado *"Puede compartir archivos: sí"*. El intento falló por
+    otra razón —cuál, todavía no se sabe— y el programa se puso a diagnosticar
+    el teléfono con lo único que tenía, que era una suposición.
+
+    Desde acá no se puede saber por qué falló `share()`. Lo que sí se sabe es
+    que no se abrió WhatsApp: eso, y nada más, es lo que se cuenta.
+    """
+    plan = _boton(app).split("function planB")[1].split("\n  //")[0]
+    assert "No se pudo abrir WhatsApp desde el programa." in plan
+    assert "no deja mandar" not in plan, "volvió a diagnosticar el aparato"
+    assert "no comparte" not in plan
+
+
+def test_el_plan_B_solo_nombra_botones_que_EXISTEN(app):
+    """🚨 El mismo mensaje mandaba a *"Ver el PDF, acá abajo"* — un botón que
+    había dejado de llamarse así una hora antes, en el cambio que trajo la
+    foto. Mandar a buscar algo que no está es la manera más rápida de que dejen
+    de leer los mensajes.
+
+    El candado: el nombre que dice el mensaje tiene que ser el rótulo REAL del
+    link que marca `data-wa-img`, leído de la pantalla del vendedor. Si mañana
+    se le cambia el nombre al botón, este test se cae.
+    """
+    from pathlib import Path
+
+    plan = _boton(app).split("function planB")[1].split("function compartirYa")[0]
+    assert "Ver el PDF" not in plan, "volvió a nombrar el botón viejo"
+
+    ficha = (Path(__file__).resolve().parent.parent / "modules" / "mi_cartera"
+             / "templates" / "mi_cartera" / "cliente.html").read_text(encoding="utf-8")
+    marcado = ficha.split("data-wa-img")[1]
+    rotulo = marcado.split(">", 1)[1].strip().split("\n")[0].strip()
+    assert rotulo, "el link marcado no tiene rótulo"
+    assert rotulo in plan, (
+        f"el mensaje no nombra al botón como se llama en la pantalla ({rotulo!r})")
+
+
+def test_con_la_foto_a_mano_el_plan_B_NO_baja_el_pdf(app):
+    """⭐ Bajarle un PDF es JUSTO lo que no le sirve: es el reclamo de Alex
+    —*"desde el pdf q genera no permite enviar por wsp"*—. Cuando la pantalla
+    tiene la foto, que es el camino que anda, se la señala en vez de dejarle un
+    archivo en una carpeta que no va a abrir."""
+    plan = _boton(app).split("function planB")[1].split("function compartirYa")[0]
+    con_foto, sin_foto = plan.split("// Sin foto en esta pantalla")
+    assert "descargar(" not in con_foto, "sigue bajando el PDF con la foto a mano"
+    # Y se lo acerca: en un teléfono el link puede estar fuera de la pantalla.
+    assert "scrollIntoView" in con_foto
+    # Sin foto (la pantalla de la oficina) sí baja el archivo y da los pasos.
+    assert "descargar(" in sin_foto
+    assert "Descargas" in sin_foto
+
+
+def test_en_el_TELEFONO_el_boton_manda_la_FOTO_y_no_el_pdf(app):
+    """🚨 TMT 2026-08-25, con la captura del teléfono de Patricio. Su pantalla
+    de prueba contestó *"Puede compartir archivos: sí"* y el compartir falló
+    igual — y el cartel que vio sólo puede salir de ADENTRO del intento. O sea
+    que `navigator.share()` con un PDF se cayó en un aparato que dice que puede
+    compartir archivos. Es Samsung Internet.
+
+    Mandar la FOTO no es una apuesta a esa causa: una imagen es el tipo de
+    archivo que todos los teléfonos saben compartir, es lo que el cliente ve
+    dentro del chat sin abrir nada, y es la conclusión a la que ya se había
+    llegado hoy por el otro camino. Si además la causa era el PDF, queda
+    arreglado de raíz.
+
+    En la computadora sigue yendo el PDF: ahí se baja y se arrastra a WhatsApp
+    Web, y un PDF con texto de verdad le gana a una imagen.
+    """
+    html = _boton(app, img_url="/x/imagen")
+    assert 'data-img="/x/imagen"' in html
+    elige = html.split("function urlDelArchivo")[1].split("\n  }")[0]
+    assert "esTelefono() && btn.dataset.img" in elige
+    assert "btn.dataset.url" in elige, "el escritorio dejó de recibir el PDF"
+    # Y lo que se prepara sale de esa elección, no de la URL del PDF a secas.
+    assert "fetch(urlDelArchivo(btn)" in html
+
+
+def test_el_tipo_del_archivo_sale_del_blob_y_no_esta_clavado(app):
+    """⚠ El `File` se armaba siempre como `application/pdf`. En el teléfono
+    ahora es un PNG: anunciarlo como PDF es la manera de que el menú de
+    compartir lo rechace, o de que WhatsApp lo mande como documento en vez de
+    como foto — que es justo lo que estamos tratando de evitar."""
+    html = _boton(app, img_url="/x/imagen")
+    assert "type: listo.blob.type" in html
+    assert "{ type: 'application/pdf' }" not in html
+
+
+def test_sin_img_url_el_boton_sigue_andando_como_antes(app):
+    """La pantalla que no pase `img_url` —cualquiera que quede sin migrar— no
+    se rompe: manda el PDF, que es lo que hacía."""
+    html = _boton(app)
+    assert "data-img=" not in html
+    assert 'data-url="/x/pdf"' in html

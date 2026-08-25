@@ -137,6 +137,7 @@
    WhatsApp, que es la otra mitad de lo que hace reconocible un botón. #}
 <div class="acciones">
   {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
+          img_url = url_for('mi_cartera.imagen', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
           wa_nombre = cliente.nombre,
           wa_clase = 'btn-wa' %}
     {% include "informes/_ec_boton_whatsapp.html" %}
@@ -183,7 +184,7 @@
    mirando la pantalla — así que se lo dice la pantalla. Es la misma regla que
    el botón verde: puede no poder, pero no puede quedarse callado. #}
 {% set _muchas = (facturas|length) > 40 %}
-<a class="ver-img {{ 'flojo' if _muchas }}" target="_blank" rel="noopener"
+<a class="ver-img {{ 'flojo' if _muchas }}" data-wa-img target="_blank" rel="noopener"
    href="{{ url_for('mi_cartera.imagen', codigo_cli=cliente.codigo_cli) }}{{ _q }}">
   Mandar como imagen
   {% if _muchas %}
@@ -192,7 +193,7 @@
     <small>Mantené apretada la foto y elegí WhatsApp</small>
   {% endif %}
 </a>
-<a class="ver-pdf" data-wa-ver target="_blank" rel="noopener"
+<a class="ver-pdf" target="_blank" rel="noopener"
    href="{{ url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) }}{{ _q }}">o mandá el PDF</a>
 {% endif %}
 

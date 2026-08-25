@@ -3157,3 +3157,25 @@ def test_hay_migracion_0168_que_no_deja_a_nadie_afuera():
     assert "WHERE nombre_opcion = 'compras.ver'" in mig
     assert "nombre_rol = 'INT'" in mig
     assert "ON CONFLICT" in mig
+
+
+def test_la_pantalla_de_prueba_prueba_los_DOS_formatos(app, vendedor_logueado, monkeypatch):
+    """🚨 TMT 2026-08-25: el teléfono de Patricio contestó *"Puede compartir
+    archivos: sí"* y el compartir falló igual.
+
+    Probar sólo con el PDF no distingue "este aparato no comparte" de "este
+    aparato no comparte PDFs" — dos problemas con dos arreglos distintos. Con
+    los dos formatos, una sola foto de la pantalla contesta cuál es.
+    """
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(q, "mis_clientes",
+                        lambda vend: [{"codigo_cli": "TDV", "nombre": "Textiles"}])
+    r = vendedor_logueado.get("/mi-cartera/prueba-envio")
+    assert r.status_code == 200
+    p = r.data.decode()
+
+    assert "Probar PDF" in p and "Probar foto" in p
+    assert "/pdf" in p and "/imagen" in p, "no le pasa las dos URLs"
+    # Lo que hace falta de esa pantalla es el ERROR EXACTO, no un sí/no.
+    assert "comoFalla" in p
+    assert "NO se abrió" in p
