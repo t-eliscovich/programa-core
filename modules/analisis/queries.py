@@ -851,6 +851,37 @@ def _meta_pct(grupos: list[dict], override: dict[str, float], total_pct: float) 
         g["meta_kg"] = g.get("kg_base", g["kg"]) * g["meta_pct"] / 100
 
 
+def vendido_detalle(desde) -> dict[str, list[dict]]:
+    """Qué vendió cada uno, renglón por renglón. `{vendedor: [filas]}`.
+
+    ⭐ Dueña 25/08/2026, mirando el tablero el día de la largada: *"intela ya
+    tiene 65kg. quiero ver exacto que vendio"*. El ranking decía el total y la
+    fila que se abre lo partía por grupo; qué tela y qué color no estaba en
+    ninguna pantalla.
+
+    ⭐ Van TAMBIÉN los kilos que NO puntúan, con el motivo. Es lo que evita la
+    conversación de la semana que viene: un vendedor que facturó 512 kg de una
+    tela de la lista y ve 0 puntos necesita leer POR QUÉ en la misma pantalla.
+    Son kilos de PRIMERA de un ítem que entró sólo por su segunda (ver
+    `cuenta_el_kilo`).
+    """
+    filas = db.fetch_all(
+        """SELECT v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
+                  v.fecha, SUM(v.kg) AS kg,
+                  SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos
+             FROM scintela.parado_venta v
+             LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
+            WHERE v.fecha >= %s
+            GROUP BY v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
+                     v.fecha
+            ORDER BY v.cuenta DESC, SUM(v.kg) DESC""", (desde,)) or []
+    out: dict[str, list[dict]] = defaultdict(list)
+    for f in filas:
+        f["puntos"] = float(f.get("puntos") or 0) if f.get("cuenta") else 0.0
+        out[f.get("vendedor") or "Intela"].append(f)
+    return out
+
+
 def competencia() -> dict:
     """
     El tablero de la competencia: quién va ganando y cuánto falta.
@@ -931,6 +962,7 @@ def competencia() -> dict:
             tabla[v]["grupos"][g["grupo"]] = {
                 "grupo": g["grupo"], "kg": 0.0, "puntos": 0.0}
 
+    detalle_vendido = vendido_detalle(largada)
     fuera = 0.0
     liq_kg: dict[str, float] = defaultdict(float)
     liq_pts: dict[str, float] = defaultdict(float)
@@ -984,6 +1016,7 @@ def competencia() -> dict:
         # va cuarto.
         d["pct_lider"] = 100 * d["puntos"] / lider if lider else 0
         d["detalle"] = sorted(d["grupos"].values(), key=lambda x: -x["puntos"])
+        d["vendido"] = detalle_vendido.get(d["vendedor"], [])
 
     for g in grupos:
         g["liquidado"] = liq_kg.get(g["grupo"], 0.0)

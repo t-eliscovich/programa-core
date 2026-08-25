@@ -2316,10 +2316,12 @@ def test_las_pantallas_respetan_la_bandera_cuenta():
     queda sin actualizar y el ranking y el total dejan de coincidir."""
     import inspect as _i
     fuente = _i.getsource(queries)
-    n = fuente.count("FROM scintela.parado_venta v")
-    assert n == fuente.count("v.cuenta"), (
-        f"{n} lecturas de parado_venta y sólo "
-        f"{fuente.count('v.cuenta')} filtran por la bandera")
+    # Cada lectura de parado_venta o FILTRA por la bandera (las tres que suman)
+    # o la SELECCIONA para mostrarla (el detalle de qué vendió cada uno). Lo que
+    # no puede pasar es que una lectura la ignore y sume kilos que no puntúan.
+    for m in re.finditer(r"FROM scintela\.parado_venta v", fuente):
+        trozo = fuente[m.start():m.start() + 700]
+        assert "AND v.cuenta" in trozo or "v.cuenta," in trozo, trozo[:220]
 
 
 def test_once_noventa_y_ocho_meses_es_doce():
