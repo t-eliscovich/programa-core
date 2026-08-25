@@ -83,7 +83,20 @@
                etiquetas que sí agregan algo —nota de crédito, devolución— son
                raras y se quedan. #}
             <td class="l fac">
-              <b>{{ (f.numf_completo.split('-')[-1]|int) if f.numf_completo else f.numf }}</b>
+              {# ⭐ TMT 2026-08-25 (dueña): *"en estado de cuenta si clickean en
+                 factura que también vaya"*. El número es un link a la ficha de
+                 esa factura — la del vendedor o la del cliente, según quién
+                 mire: cada pantalla pasa su `factura_endpoint`. Sin él (la
+                 hoja impresa) queda el número pelado, como estaba.
+                 Una factura sin `numf` no se puede buscar en Asinfo, así que
+                 tampoco se ofrece: un link que no sirve es peor que ninguno. #}
+              {% set _n = (f.numf_completo.split('-')[-1]|int) if f.numf_completo else f.numf %}
+              {% if factura_endpoint|default(none) and f.numf %}
+                <a href="{{ url_for(factura_endpoint, numf=f.numf, **(factura_args|default({}))) }}"
+                   style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor"><b>{{ _n }}</b></a>
+              {% else %}
+                <b>{{ _n }}</b>
+              {% endif %}
               <small class="{{ 'venc' if vencida }}">{{ _fec[:6] }}{{ _fec[8:] }} · {{ f.fecha|dias_desde }} d</small>
               {% if es_nc %}<small class="nc">Nota de crédito</small>
               {% elif neg %}<small class="nc">Devolución</small>{% endif %}

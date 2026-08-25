@@ -1,0 +1,32 @@
+{# La factura, vista por el CLIENTE en su portal.
+
+   TMT 2026-08-25 (dueña): que el cliente pueda clickear el número en su
+   estado de cuenta y ver qué se llevó. El cuerpo es el MISMO parcial que usa
+   su vendedor (`mi_cartera/_que_se_llevo.html`) — mismos números y mismas
+   columnas, que es lo que evita la discusión por teléfono. #}
+{% extends "portal/base.html" %}
+{% block titulo %}Factura {{ numero }} — Intela{% endblock %}
+{% block cuerpo %}
+<header class="appbar">
+  <div class="row">
+    <div>
+      <h1>Factura {{ numero }}</h1>
+      <div class="sub">{{ f.fecha | fecha_es }} · {{ f.importe | money_es }}</div>
+    </div>
+    <a class="iconbtn" href="{{ url_for('portal.estado_cuenta') }}" title="Volver a mi cuenta" aria-label="Volver">‹</a>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2 style="margin:0 0 8px;font-size:15px;">Qué se llevó
+      {% if det.estado == 'ok' %}
+        <span style="font-weight:400;color:#64748b;font-size:13px;">·
+          {{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }} ·
+          {{ det.totales.kg | kg_es }} kg</span>
+      {% endif %}
+    </h2>
+    {% include "mi_cartera/_que_se_llevo.html" %}
+  </div>
+</main>
+{% endblock %}
