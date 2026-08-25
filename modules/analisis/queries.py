@@ -954,6 +954,38 @@ def actualizar() -> dict:
                             "SELECT subcategoria, color, categoria "
                             "FROM scintela.parado_foto WHERE categoria IS NOT NULL",
                             conn=conn)}
+        # ⭐ LA ÚLTIMA VENTA ES LA DE ANTES DE LA COMPETENCIA (dueña 25/08/2026:
+        # "última venta tiene que tener la fecha antes de la competencia").
+        #
+        # Es la columna que justifica que el ítem sea un saldo: cuánto hace que
+        # nadie lo pedía. Refrescándola contra Asinfo, el primer kilo que se
+        # vende en la competencia la pisa con la fecha de HOY y la fila pasa a
+        # decir "última venta 25/08" — o sea, se borra sola la prueba de que
+        # estaba clavada, y encima con la venta que la competencia acaba de
+        # premiar. Lo vendido después de la largada ya se muestra aparte, en
+        # Vendidos y en la columna «vendidos» de la fila.
+        #
+        # Se congela conservando la que ya tenía la foto: mientras la fecha de
+        # Asinfo sea anterior a la largada manda Asinfo, y desde que la pisa una
+        # venta de la competencia queda la última buena. Un ítem que entra a la
+        # lista DESPUÉS de la largada trae una fecha vieja por definición —es un
+        # saldo, hace 12 meses que no se mueve—, salvo los que entran sólo por
+        # su segunda: ésos pueden no tener ninguna anterior y la fila muestra
+        # "—", que es la verdad y no una fecha inventada.
+        ultima_previa = {(r["subcategoria"], r["color"]): r["ultima_venta"]
+                         for r in db.fetch_all(
+                             "SELECT subcategoria, color, ultima_venta "
+                             "FROM scintela.parado_foto "
+                             "WHERE ultima_venta IS NOT NULL", conn=conn)}
+
+        def ultima_antes(k, hoy_asinfo):
+            """La última venta anterior a la largada, o None si no hubo."""
+            if hoy_asinfo is not None and _fecha(hoy_asinfo) < desde_f:
+                return hoy_asinfo
+            previa = ultima_previa.get(k)
+            if previa is not None and _fecha(previa) < desde_f:
+                return previa
+            return None
         stock = {(p["subcategoria"], p["color"]): p for p in par}
         db.execute("DELETE FROM scintela.parado_foto", conn=conn)
         for k in marcado:
@@ -967,7 +999,8 @@ def actualizar() -> dict:
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                            %s, %s, %s, %s, %s)""",
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
-                 (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
+                 ultima_antes(k, (p or {}).get("ultima_venta")),
+                 total_cli.get(k[0], 0),
                  anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
                  (p or {}).get("kg_segunda") or 0,
                  (p or {}).get("categoria") or grupo_previo.get(k),

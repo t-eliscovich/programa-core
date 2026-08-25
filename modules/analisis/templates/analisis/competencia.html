@@ -61,7 +61,18 @@ tr.vend:hover td{background:#f8fafc}
 tr.vdet{display:none}
 tr.vdet.abierta{display:table-row}
 tr.vdet>td{background:#f8fafc;padding:0 10px 14px 40px}
-tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-radius:6px}
+tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);
+border-radius:6px;table-layout:fixed;width:100%}
+/* ⚠ ANCHOS FIJOS y los mismos para los siete (dueña 25/08/2026: "encolumná
+   bien, se esparce por todos lados"). Cada detalle es su propia tabla: sin
+   anchos, el navegador se los da según el texto más largo de ESA tabla y las
+   columnas quedaban corridas de un vendedor al otro — el que vendió una sola
+   tela tenía la columna Color a mitad de camino de donde la tenía el de al
+   lado. */
+tr.vdet col.c1{width:26%}tr.vdet col.c2{width:20%}tr.vdet col.c3{width:9%}
+tr.vdet col.c4{width:9%}tr.vdet col.c5{width:9%}tr.vdet col.c6{width:15%}
+tr.vdet col.c7{width:12%}
+tr.vdet td,tr.vdet th{overflow:hidden;text-overflow:ellipsis}
 /* El renglón vendido cuelga de su grupo: sangría, letra chica y UNA sola línea.
    ⚠⚠ La clase se llama `vlinea` y NO `linea`: `.linea` ya existe en el CSS de
    la sección —es el renglón de tarjetas del encabezado, un flex con `b` en
@@ -75,11 +86,14 @@ tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-ra
    vertical. */
 tr.vlinea>td{font-size:12px;color:var(--g);white-space:nowrap;line-height:1.6}
 tr.vlinea>td:first-child{padding-left:26px}
-/* El color, como en la lista de saldos: el código manda y el nombre lo
-   acompaña en gris. */
+/* El color, como en la lista de saldos: el código en negro y el nombre al lado
+   en gris. */
 tr.vlinea>td b{color:var(--t);font-weight:600;margin-right:4px}
-tr.vlinea>td *{display:inline;font-size:12px}
-tr.vlinea>td b{color:var(--t);font-weight:600}
+/* ⚠ Acá vivía `tr.vlinea>td *{display:inline;font-size:12px}`, de cuando el
+   renglón entero era UNA celda de texto corrido y había que aplastar lo que
+   cayera adentro. Con cada dato en su columna esa regla se comía las píldoras
+   de forma y calidad —`.fm` y `.q` son inline-block de 10 px— y las dejaba
+   como texto suelto. */
 .tope{font-size:11px;color:var(--g)}
 td.abrir{width:26px;text-align:center;padding-right:0}
 td.abrir .flecha{display:inline-block;width:18px;height:18px;line-height:17px;
@@ -194,6 +208,8 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
   </tr>
   <tr class="vdet"><td colspan="8">
     <table>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4">
+    <col class="c5"><col class="c6"><col class="c7"></colgroup>
     {# ⭐ Las MISMAS columnas que la lista de saldos (dueña 25/08/2026: "color,
        forma, categoría, kg tienen que ser columnas"). Todo en un renglón de
        texto corrido no se lee: se compara mal y no se puede recorrer con la
@@ -204,6 +220,13 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     <th>Categoría</th><th class="opt">Día</th><th class="n">Vendió</th>
     <th class="n">Puntos</th></tr></thead>
     <tbody>
+    {# ⭐ Cada venta va DENTRO de su grupo (dueña 25/08/2026: "quería ver el
+       pique especial de lo vendido dentro de pique, no una tabla aparte").
+
+       ⚠ SÓLO lo que puntúa (dueña 25/08/2026: "lo que no cuenta para puntos ni
+       lo muestres"). Antes iban también los kilos que no suman, en gris: en una
+       pantalla de competencia una lista donde la mayoría de los renglones no
+       cuenta se lee como un error del programa. #}
     {% for d in r.detalle %}
       <tr><td colspan="5">{{ d.grupo }}</td>
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
@@ -213,8 +236,8 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
            en una tela de 1 punto por kilo es el mismo número dos veces. #}
         <tr class="vlinea">
           <td>{{ v.subcategoria }}</td>
-          <td><b>{{ v.color }}</b>{% if v.color_nombre %}
-            {{ v.color_nombre }}{% endif %}</td>
+          <td><b>{{ v.color }}</b>{% if v.color_nombre %}<span
+            class="g">{{ v.color_nombre }}</span>{% endif %}</td>
           <td>{{ fm.forma(v) }}</td>
           <td>{{ fm.cal(v) }}</td>
           <td class="opt">{{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
@@ -269,29 +292,12 @@ septiembre.</p>
    flechas de subió/bajó—, así que `semanas` sigue viniendo en el contexto.
    Si algún día se quiere de vuelta, es sólo volver a dibujarla. #}
 
-<h2>Por grupo</h2>
-<p class="sub">Dónde están los puntos. Un grupo puede tener pocos kilos y
-muchos puntos: depende de qué telas tenga adentro.</p>
-<div class="caja"><table>
-<thead><tr><th>Grupo</th><th class="n">Kg parados</th>
-<th class="n">Puntos en juego</th><th class="n opt">Salió</th>
-<th class="n">Puntos hechos</th>
-<th class="opt">Quién lo vende</th></tr></thead>
-<tbody>
-{% for g in grupos %}
-  <tr>
-    <td class="tela">{{ g.grupo }}</td>
-    <td class="n">{{ g.kg | num_es(0) }}</td>
-    <td class="n g">{{ g.puntos_base | num_es(0) }}</td>
-    <td class="n opt">{{ g.liquidado | num_es(0) }} kg</td>
-    <td class="n">{{ g.liquidado_pts | num_es(0) }}</td>
-    <td class="g opt">{% for s in g.share %}{{ s.vendedor }} {{ s.pct | num_es(1) }}%{% if not loop.last %} · {% endif %}{% endfor %}</td>
-  </tr>
-{% endfor %}
-</tbody>
-</table></div>
-
-
+{# ⚠ La tabla "Por grupo" se sacó el 25/08/2026 (dueña: "este por grupo
+   borrar"). Mostraba kilos y puntos por grupo más el reparto histórico de cada
+   vendedor: es información de fábrica, no de la carrera, y la pantalla ya dice
+   dónde están los puntos en "Los saldos", tela por tela. El CÁLCULO por grupo
+   se sigue haciendo —de ahí sale el detalle que se abre en el ranking—, así
+   que `grupos` sigue viniendo en el contexto. #}
 
 <h2>Los saldos</h2>
 <p class="sub">{{ telas | length }} telas.

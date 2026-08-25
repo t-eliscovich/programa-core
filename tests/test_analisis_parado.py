@@ -1636,7 +1636,11 @@ def test_la_pantalla_no_explica_la_formula_vieja_de_metas():
     """La bajada de «Por grupo» quedó describiendo la PRIMERA fórmula —«la meta
     de cada grupo es su propio peso en el parado»—, la que la dueña cazó con
     "¿por qué 8k kilos?". Se cambió el cálculo y el texto se quedó: contradecía
-    a la columna Meta de la misma tabla, que dice 100% en todas las filas."""
+    a la columna Meta de la misma tabla, que dice 100% en todas las filas.
+
+    ⚠ La tabla «Por grupo» se sacó entera el 25/08/2026 ("este por grupo
+    borrar"), así que el texto tampoco está. Lo que el test sigue cuidando es
+    que la frase vieja no vuelva por ningún lado."""
     from pathlib import Path
     html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "competencia.html")
@@ -1644,7 +1648,8 @@ def test_la_pantalla_no_explica_la_formula_vieja_de_metas():
     import re
     texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
     assert "su propio peso en el parado" not in texto
-    assert "Dónde están los puntos" in texto
+    assert "<h2>Por grupo</h2>" not in texto, (
+        "la tabla Por grupo volvió: la dueña la sacó el 25/08/2026")
 
 
 def test_la_fecha_del_refresco_se_muestra_en_hora_de_ecuador():
