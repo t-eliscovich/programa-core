@@ -48,6 +48,7 @@
                            padding-bottom: 6px !important; margin-bottom: 12px !important; }
   .cli-block .ph-nombre { font-size: 20px !important; font-weight: 700 !important; }
   .cli-block .ph-saldo { font-size: 15px !important; }
+  .cli-block .ph-fecha { font-size: 15px !important; color: #475569 !important; }
 </style>
 {% endif %}
 <style>
@@ -139,6 +140,7 @@
       <div class="print-head">
         <span class="ph-nombre">{{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})</span>
         · <span class="ph-saldo">Saldo: {{ _saldo_neto | money_es }}</span>
+        {%- if imagen and hoy %} · <span class="ph-fecha">Al {{ hoy | fecha_es }}</span>{% endif %}
       </div>
       {% include "informes/_estado_cuenta_impreso.html" %}
     </section>

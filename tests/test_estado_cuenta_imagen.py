@@ -372,3 +372,52 @@ def test_sin_navegador_la_factura_dice_el_motivo_REAL(vendedor, monkeypatch):  #
     assert "tardó demasiado" in texto
     assert "no tiene un navegador instalado" not in texto
     assert "la imagen" in texto, "dice PDF cuando lo que falló fue la foto"
+
+
+# ---------------------------------------------------------------------------
+# El ancho y la fecha — TMT 2026-08-25, mirando la foto al lado del papel
+# ---------------------------------------------------------------------------
+
+
+def test_la_foto_no_se_saca_mas_ancha_que_la_hoja_de_papel():
+    """⚠ TMT 2026-08-25: *"¿los anchos del pdf son así?"*.
+
+    La tabla del estado de cuenta NO tiene anchos fijos: es elástica y el
+    navegador reparte el sobrante entre las columnas. Cuanto más ancha la hoja,
+    más se abren los huecos — a 1100 px se notaba entre Número e Importe.
+
+    El papel sale a 794 px (A4). La foto se saca cerca de eso para que se
+    parezca, y bajarlo no cuesta legibilidad: la letra mide lo mismo en
+    píxeles, cambia sólo el aire al costado.
+    """
+    assert imagen_motor.ANCHO <= 950, "la foto se volvió a estirar"
+    assert imagen_motor.ANCHO >= 800, "más angosta que A4: las columnas no entran"
+
+
+def test_la_foto_lleva_el_DIA_adentro(oficina, monkeypatch):  # noqa: F811
+    """⭐ TMT 2026-08-25: *"¿el nombre es el mismo?"*.
+
+    El archivo se llama igual que el PDF —código y día, decisión del 24/08
+    porque *"el nombre es lo primero que ve quien lo recibe en el chat"*—. Pero
+    WhatsApp muestra el nombre de un DOCUMENTO y no el de una FOTO: al mandar
+    la imagen, el día deja de verse.
+
+    Así que el día va ADENTRO de la foto, donde se lee sin abrir nada. El
+    cliente y el código ya estaban en el encabezado; faltaba la fecha, que es
+    la que distingue el estado que se mandó hoy del de la semana pasada.
+    """
+    from filters import fecha_es, today_ec
+
+    # ⚠ Por la RUTA, no a mano: sin usuario logueado `base.html` no dibuja el
+    # contenido y el test pasaría mirando una página vacía (ver `_html_de`).
+    html = _html_de(oficina, monkeypatch)
+    assert 'class="ph-fecha"' in html, "la foto no dice de qué día es"
+    assert fecha_es(today_ec()) in html
+
+
+def test_el_papel_NO_lleva_esa_fecha(oficina, monkeypatch):  # noqa: F811
+    """El otro lado: la hoja impresa es la que la oficina usa todos los días y
+    no se le agrega nada. La fecha es de la FOTO, que es la que pierde el
+    nombre del archivo al mandarse."""
+    html = _html_de(oficina, monkeypatch, imagen=False)
+    assert 'class="ph-fecha"' not in html
