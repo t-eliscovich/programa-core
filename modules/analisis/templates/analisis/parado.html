@@ -354,6 +354,14 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 <p class="sub">Lo que salió de la lista desde que arrancó la competencia. Sólo
 lo que suma puntos. Toque una fila para ver esa tela arriba.</p>
 {% if vendidos %}
+{# ⭐ EL TOTAL ARRIBA DE TODO (dueña 25/08/2026: "acá poneme un total arriba de
+   todo: debería coincidir con los que dicen que vendió"). Es la comprobación:
+   si esta suma no da lo mismo que el «Se vendió» del encabezado y que el
+   ranking de la Competencia, hay un renglón contándose de más o de menos. Por
+   eso va acá y no al pie — se lee antes que la tabla, no después. #}
+<p class="sub" style="margin:0 0 10px"><b>{{ vendidos | sum(attribute='kg') | num_es(0) }} kg</b>
+en {{ vendidos | length }} renglones ·
+<b>{{ vendidos | sum(attribute='puntos_fila') | num_es(0) }} puntos</b></p>
 {# ⭐ Las MISMAS columnas que la lista de arriba y en el mismo orden (dueña
    25/08/2026: "mantené el orden y formato de las de arriba, podés reemplazar
    clientes por vendedor"). Dos tablas que muestran lo mismo con otro orden se

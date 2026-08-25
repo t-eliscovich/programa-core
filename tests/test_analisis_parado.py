@@ -3425,3 +3425,34 @@ def test_la_forma_sale_de_la_tela_cuando_el_stock_no_la_puede_decir():
     # y las dos lecturas caen a esa forma cuando los kilos no la dicen
     assert "ELSE COALESCE(f.forma, '') END     AS forma," in _i.getsource(queries.items)
     assert "ELSE COALESCE(f.forma, '') END)    AS forma_fila," in _i.getsource(queries.vendidos)
+
+
+def test_la_lista_no_dibuja_los_items_sin_un_kilo():
+    """Dueña 25/08/2026: *"los que hay 0 no tienen que estar"*. El ítem que se
+    vendió entero se queda en la COHORTE —"si empezamos a venderlas, que no se
+    nos vayan de la lista"— y sigue contando en el resumen y en la competencia,
+    que salen de `base`. Pero en la lista era un renglón de 0 kg, 0 puntos y
+    grupo "—": no hay nada que ofrecer ahí, y lo vendido tiene su propia tabla.
+
+    El filtro va sobre `filas` y NO sobre `base`: si se filtrara la base, el
+    encabezado dejaría de contar los kilos vendidos y «Se vendió» bajaría."""
+    import inspect as _i
+    fuente = _i.getsource(views.parado)
+    corte = fuente.index("filas = [f for f in filas")
+    assert 'float(f.get("stock_kg") or 0) > 0' in fuente[corte:corte + 120]
+    assert fuente.index("base = queries.con_puntos") < corte
+    assert "resumen=queries.resumen(base" in fuente, (
+        "el resumen tiene que seguir saliendo de la base, no de lo dibujado")
+
+
+def test_vendidos_lleva_su_total_arriba():
+    """Dueña 25/08/2026: *"acá poneme un total arriba de todo: debería coincidir
+    con los que dicen que vendió"*. Es la comprobación de la pantalla: si esta
+    suma no da lo mismo que el «Se vendió» del encabezado y que el ranking de la
+    Competencia, hay un renglón contándose de más o de menos."""
+    html = _html_parado()
+    i = html.index('<h2>Vendidos</h2>')
+    j = html.index('id="vendidos"')
+    arriba = html[i:j]
+    assert "vendidos | sum(attribute='kg')" in arriba, "el total no está, o está debajo de la tabla"
+    assert "vendidos | sum(attribute='puntos_fila')" in arriba
