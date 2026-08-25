@@ -444,6 +444,59 @@ def factura_hoja(codigo_cli: str, numf: int):
                            f=f, det=det, numero=numero)
 
 
+def _factura_archivo(codigo_cli: str, numf: int, formato: str):
+    """La hoja de UNA factura como archivo: PDF o imagen, según `formato`.
+
+    Las dos rutas de abajo son la misma respuesta con otro formato —mismo
+    guard, misma hoja, mismo nombre de archivo, mismo 503— así que comparten
+    cuerpo en vez de copiarse. Es la misma decisión que `responder_pdf` y
+    `responder_imagen` en `informes`.
+
+    🐞 TMT 2026-08-25: el 503 decía SIEMPRE *"el servidor no tiene un navegador
+    instalado"*, y `SinMotor` se levanta por tres motivos —no hay navegador, el
+    navegador tardó más que `TIMEOUT_S`, o no devolvió nada—. Los dos últimos
+    son los que le pasan al vendedor con una factura grande, y contestarle que
+    falta instalar algo manda a buscar el problema al lugar equivocado. Ahora
+    cada motivo dice lo suyo. (El mismo arreglo que en `informes.views`.)
+    """
+    import re
+
+    from flask import Response, current_app
+
+    from modules._lib import imagen_motor, pdf_motor
+
+    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    html = render_template("mi_cartera/factura_hoja.html", cliente=cliente,
+                           f=f, det=det, numero=numero)
+    es_imagen = formato == "imagen"
+    try:
+        if es_imagen:
+            # `factura_hoja.html` es una página suelta —no extiende
+            # `base.html`— así que no hay chrome del programa que esconder: no
+            # necesita el `imagen=True` que sí necesita el estado de cuenta.
+            filas = len(det.get("lineas") or []) + len(det.get("servicios") or [])
+            blob = imagen_motor.desde_html(html, filas=filas)
+        else:
+            blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("Factura %s (%s): %s", numero, formato, e)
+        return Response(
+            f"No se pudo generar {'la imagen' if es_imagen else 'el PDF'}. {e} "
+            "La pantalla de impresión sigue funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8",
+        )
+    # Mismo criterio que el estado de cuenta: código y fecha, sin tildes ni
+    # barras. Quien lo recibe junta varios en el chat y los ordena solos.
+    cod = re.sub(r"[^A-Za-z0-9]", "", (codigo_cli or "")).upper() or "CLIENTE"
+    ext = "png" if es_imagen else "pdf"
+    nombre = f"Factura {numero} {cod} {today_ec().strftime('%d-%m-%Y')}.{ext}"
+    return Response(blob, mimetype="image/png" if es_imagen else "application/pdf",
+                    headers={
+                        "Content-Disposition": f'inline; filename="{nombre}"',
+                        "Cache-Control": "no-store",
+                    })
+
+
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/pdf")
 @requiere_login
 @requiere_permiso("micartera.ver")
@@ -454,33 +507,22 @@ def factura_pdf(codigo_cli: str, numf: int):
     alguien puede llegar por la URL, y un mensaje que dice qué falta es lo que
     evita el reporte de "no anda el botón".
     """
-    import re
+    return _factura_archivo(codigo_cli, numf, "pdf")
 
-    from flask import Response, current_app
 
-    from modules._lib import pdf_motor
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/imagen")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def factura_imagen(codigo_cli: str, numf: int):
+    """La misma hoja, como FOTO.
 
-    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
-    html = render_template("mi_cartera/factura_hoja.html", cliente=cliente,
-                           f=f, det=det, numero=numero)
-    try:
-        blob = pdf_motor.desde_html(html)
-    except pdf_motor.SinMotor as e:
-        current_app.logger.error("PDF de la factura %s: %s", numero, e)
-        return Response(
-            "No se puede generar el PDF: el servidor no tiene un navegador "
-            "instalado para imprimirlo. La pantalla de impresión sigue "
-            "funcionando normalmente.",
-            status=503, mimetype="text/plain; charset=utf-8",
-        )
-    # Mismo criterio que el estado de cuenta: código y fecha, sin tildes ni
-    # barras. Quien lo recibe junta varios en el chat y los ordena solos.
-    cod = re.sub(r"[^A-Za-z0-9]", "", (codigo_cli or "")).upper() or "CLIENTE"
-    nombre = f"Factura {numero} {cod} {today_ec().strftime('%d-%m-%Y')}.pdf"
-    return Response(blob, mimetype="application/pdf", headers={
-        "Content-Disposition": f'inline; filename="{nombre}"',
-        "Cache-Control": "no-store",
-    })
+    TMT 2026-08-25: *"si dale"*, después de ver que esta pantalla tenía el
+    mismo problema que el estado de cuenta. Es el mismo caso de Alex —el
+    teléfono que no comparte documentos— sobre la otra hoja que el vendedor le
+    manda al cliente. Una foto se manda con el gesto que ya usa todos los días.
+    """
+    return _factura_archivo(codigo_cli, numf, "imagen")
+
 
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/imagen")
 @requiere_login

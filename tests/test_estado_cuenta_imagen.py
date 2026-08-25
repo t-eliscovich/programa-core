@@ -303,3 +303,72 @@ def test_el_estado_de_cuenta_de_la_imagen_es_de_una_fecha_real():
     """Guarda de humo: que `_datos` siga trayendo una factura con fecha, que es
     lo que hace que la hoja tenga filas que contar."""
     assert _datos()["facturas"][0]["fecha"] == date(2026, 1, 15)
+
+
+# ---------------------------------------------------------------------------
+# La hoja de UNA factura, también como foto — TMT 2026-08-25: "si dale"
+# ---------------------------------------------------------------------------
+
+
+def _factura(vendedor, monkeypatch, formato, det=None):
+    """Pide la hoja de una factura del vendedor en el formato pedido."""
+    from modules.mi_cartera import views
+    from tests.test_mi_cartera import _ec_con_facturas
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    import modules.asinfo.factura_lineas as fl
+    monkeypatch.setattr(fl, "que_se_llevo", lambda n: det if det is not None
+                        else {"estado": "sin-datos", "lineas": [], "servicios": [],
+                              "totales": {}})
+    return vendedor.get(f"/mi-cartera/cliente/TDV/factura/100/{formato}")
+
+
+def test_la_factura_sale_como_png(vendedor, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(imagen_motor, "desde_html", lambda h, **kw: b"\x89PNG")
+    r = _factura(vendedor, monkeypatch, "imagen")
+    assert r.status_code == 200
+    assert r.mimetype == "image/png"
+    cd = r.headers["Content-Disposition"]
+    assert cd.startswith("inline;") and cd.endswith('.png"')
+    assert "Factura" in cd and "TDV" in cd
+
+
+def test_el_pdf_de_la_factura_sigue_saliendo_igual(vendedor, monkeypatch):  # noqa: F811
+    """El formato viejo no se toca: comparten cuerpo, no destino."""
+    monkeypatch.setattr(pdf_motor, "desde_html", lambda h, **kw: b"%PDF-1.4")
+    r = _factura(vendedor, monkeypatch, "pdf")
+    assert r.status_code == 200
+    assert r.mimetype == "application/pdf"
+    assert r.headers["Content-Disposition"].endswith('.pdf"')
+
+
+def test_las_filas_de_la_factura_cuentan_lineas_Y_servicios(
+        vendedor, monkeypatch):  # noqa: F811
+    """El alto de la foto sale de los renglones de la hoja. Contar sólo las
+    líneas deja la ventana corta en las facturas que llevan servicios."""
+    visto = {}
+    monkeypatch.setattr(imagen_motor, "desde_html",
+                        lambda h, filas=0, **kw: visto.setdefault("f", filas) and b"x")
+    det = {"estado": "ok", "lineas": [{}, {}, {}], "servicios": [{}],
+           "totales": {"rollos": 3, "kg": 10}}
+    _factura(vendedor, monkeypatch, "imagen", det=det)
+    assert visto["f"] == 4
+
+
+def test_sin_navegador_la_factura_dice_el_motivo_REAL(vendedor, monkeypatch):  # noqa: F811
+    """🐞 El 503 de esta ruta decía SIEMPRE *"el servidor no tiene un navegador
+    instalado"*, igual que el del estado de cuenta antes del 25/08. `SinMotor`
+    se levanta por tres motivos y los otros dos son los que le pasan al
+    vendedor con una factura grande."""
+    def _explota(h, **kw):
+        raise pdf_motor.SinMotor("El navegador tardó demasiado en sacar la imagen.")
+
+    monkeypatch.setattr(imagen_motor, "desde_html", _explota)
+    r = _factura(vendedor, monkeypatch, "imagen")
+    assert r.status_code == 503
+    texto = r.data.decode()
+    assert "tardó demasiado" in texto
+    assert "no tiene un navegador instalado" not in texto
+    assert "la imagen" in texto, "dice PDF cuando lo que falló fue la foto"

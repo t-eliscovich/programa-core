@@ -32,6 +32,7 @@
   {% include "mi_cartera/_que_se_llevo.html" %}
 </div>
 
+{% include "mi_cartera/_acciones_css.html" %}
 {# Las dos acciones, con NOMBRE — mismo criterio que la ficha del cliente: un
    ícono que nadie reconoce es un botón que no existe (20/08). #}
 <div class="acciones">
@@ -43,4 +44,29 @@
   <a class="btn-pr" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
      href="{{ url_for('mi_cartera.factura_hoja', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
 </div>
+
+{# ⭐ EL PISO, el mismo que la ficha del cliente.
+
+   TMT 2026-08-25: *"si dale"*. Esta pantalla nació el mismo día con el botón
+   de WhatsApp y el PDF, así que arrastra el problema de Alex tal cual — *"desde
+   el pdf q genera no permite enviar por wsp"*. Es el mismo teléfono, el mismo
+   botón y el mismo archivo que no sabe adjuntar.
+
+   En un teléfono, mandar una FOTO lo sabe hacer cualquiera; mandar un
+   DOCUMENTO hay que saber que existe Descargas. La hoja de la factura sale
+   como imagen por el mismo motor, y se manda con el gesto de siempre.
+
+   Acá no hace falta el aviso de "muchas facturas" que sí tiene el estado de
+   cuenta: una factura tiene los renglones que tiene y no crece con el tiempo
+   como una cartera. #}
+{% if pdf_disponible() %}
+{% set _q = ('?vend=' ~ vend) if preview else '' %}
+<a class="ver-img" target="_blank" rel="noopener"
+   href="{{ url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ _q }}">
+  Mandar como imagen
+  <small>Mantené apretada la foto y elegí WhatsApp</small>
+</a>
+<a class="ver-pdf" data-wa-ver target="_blank" rel="noopener"
+   href="{{ url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ _q }}">o mandá el PDF</a>
+{% endif %}
 {% endblock %}
