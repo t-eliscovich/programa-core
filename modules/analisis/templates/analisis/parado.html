@@ -7,6 +7,18 @@ table.resumen tfoot td{border-top:2px solid var(--l);border-bottom:0;padding-top
 /* ⚠ "10 × kg" partido en dos renglones duplicaba el alto de TODAS las
    filas de la tabla. */
 td.vale{white-space:nowrap}
+/* El color va con su código al lado: el código manda (negro), el nombre
+   acompaña (gris). En el celular el nombre se esconde. */
+td.col2{white-space:nowrap}
+td.col2 b{font-weight:600}
+td.col2 .g{font-size:12px;margin-left:6px}
+/* Lo que vale un kilo, con color: 10 ámbar, 4 azul, el resto gris. Es la única
+   columna con color de la tabla — si se pinta otra, deja de saltar. */
+.pt{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;
+    font-weight:600;background:#f1f0ec;color:#5a5955}
+.p10{background:#fdf0d5;color:#8a5200}
+.p4{background:#e4eefb;color:#17538f}
+@media (max-width:560px){td.col2 .g{display:none}}
 th.ord{cursor:pointer;user-select:none;white-space:nowrap}
 th.ord:hover{color:var(--t)}
 th.ord::after{content:" ⇅";opacity:.35;font-size:10px}
@@ -44,9 +56,6 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <div class="card"><p class="k">Categoría SEG</p>
   <p class="v">{{ resumen.kg_segunda | num_es(0) }}</p>
   <p class="s">kg en {{ resumen.n_segunda }} ítems · el resto es PRI</p></div>
-<div class="card"><p class="k">Sin nadie a quién llamar</p>
-    <p class="v">{{ resumen.sin_pista }}</p>
-    <p class="s">{{ resumen.kg_sin_pista | num_es(0) }} kg</p></div>
 </div>
 
 <div class="nota"><b>La lista no se depura sola.</b> Lo que se vende
@@ -154,7 +163,7 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
          la mitad de las ventas de estas telas. #}
       data-vend="{{ (cand | map(attribute='vend_pc') | select | unique | list
                      + (['INTELA'] if cand | rejectattr('vend_pc') | list else [])) | join(' ') }}"
-      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~
+      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~ f.color_nombre ~ ' ' ~
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
                        (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
@@ -166,7 +175,12 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
        copias del mismo `if` se despegan a la primera corrección. #}
     {% set calidad %}{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>{% else %}<span class="q pri">PRI</span>{% endif %}{% endset %}
     <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}<span class="qm">{{ calidad }}</span></td>
-    <td>{{ f.color }}</td>
+    {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. El código es el que
+       está en el producto y en Asinfo; el nombre es el que usa el cliente por
+       teléfono. Los dos, no uno en vez del otro. El que no está en el catálogo
+       muestra el código solo. #}
+    <td class="col2"><b>{{ f.color }}</b>{% if f.color_nombre %}
+      <span class="g">{{ f.color_nombre }}</span>{% endif %}</td>
     {# ⭐ La categoría como COLUMNA y no como píldora suelta: se ordena, se
        filtra y se lee en vertical. Dueña 18/08/2026: "tiene que haber columna
        PRI SEG y que se pueda filtrar".
@@ -182,7 +196,8 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
        entera. En la celda va UN número: los kilos que hay. #}
     <td class="n" data-v="{{ f.stock_kg }}">
       {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>
-    <td class="n vale" data-v="{{ f.puntos }}">{{ f.puntos }} × kg</td>
+    <td class="n vale" data-v="{{ f.puntos }}">
+      <span class="pt p{{ f.puntos }}">{{ f.puntos }} × kg</span></td>
     <td class="n g opt" data-v="{{ f.puntos_fila }}">{{ f.puntos_fila | num_es(0) }}</td>
     <td class="n g opt" data-v="{{ f.pct_total }}">{{ f.pct_total | num_es(1) }}%</td>
     <td class="n {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>

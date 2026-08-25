@@ -50,8 +50,6 @@ def test_estado_marca_lo_que_se_movio(monkeypatch):
     assert r["kg"] == 150
     assert r["kg_vendidos"] == 100
     assert r["movidos"] == 2
-    assert r["sin_pista"] == 1
-    assert r["kg_sin_pista"] == 0
     assert r["kg_segunda"] == 12
     assert r["n_segunda"] == 1
 
@@ -1064,6 +1062,8 @@ def test_las_telas_a_sacar_no_llevan_un_solo_cliente_adentro():
     assert [x["tela"] for x in t] == ["Kiana", "Jersey 3"], "de mayor a menor"
     assert t[0]["kg"] == 400 and t[0]["n_colores"] == 2
     assert t[0]["colores"] == "LIF, CAR", "los colores van por kilos"
+    assert [c["cod"] for c in t[0]["colores_lista"]] == ["LIF", "CAR"], \
+        "la pantalla los recibe uno por uno, para poner el nombre al lado"
     assert all("cliente" not in k for x in t for k in x)
 
 

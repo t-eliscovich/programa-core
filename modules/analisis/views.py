@@ -129,6 +129,7 @@ def parado_csv():
             ("categoria", "Grupo"),
             ("subcategoria", "Subgrupo (tela)"),
             ("color", "Color"),
+            ("color_nombre", "Nombre del color"),
             ("stock_kg", "Kg en saldo"),
             ("nivel", "Nivel"),
             ("puntos", "Puntos por kilo"),

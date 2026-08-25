@@ -32,10 +32,27 @@ def items() -> list[dict]:
     ⭐ LEFT JOIN contra `parado_foto` a propósito: un ítem que se vendió entero
     deja de estar en la foto y aun así tiene que seguir en la lista. Ése es el
     pedido: "si empezamos a venderlas, que no se nos vayan de la lista".
+
+    Cada fila trae también `color_nombre` — vacío si el color no está en el
+    catálogo (ver `nombres_de_color`).
     """
     return db.fetch_all(
         """
         SELECT c.subcategoria, c.color,
+               -- ⭐ El NOMBRE del color al lado del código (dueña 24/08/2026:
+               -- *"pero quiero codigo y color"*). El código de 3 letras es el
+               -- del producto en Asinfo; el nombre es el que usa el cliente por
+               -- teléfono. Van los dos.
+               --
+               -- La única lista de nombres que hay es `tinto_costos` (la carga
+               -- el sync de formulas_app, que le anexa " · Categoria"). Cubre
+               -- 210 de los 222 códigos en saldo: el que no está sale con el
+               -- código solo, nunca con un nombre inventado.
+               --
+               -- ⚠ Va en ESTA consulta y no en una segunda: dos lecturas
+               -- pueden contestar cosas distintas del mismo momento.
+               COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
+                                                             AS color_nombre,
                -- ⭐ Los tres grupos chicos van juntos, con la sigla FCP (dueña
                -- 18/08/2026: "franela cuellos y punos poneles FCP o algo asi").
                -- El nombre entero ocupaba tres renglones en la columna Grupo y
@@ -73,6 +90,14 @@ def items() -> list[dict]:
           FROM scintela.parado_cohorte c
           LEFT JOIN scintela.parado_foto f
                  ON f.subcategoria = c.subcategoria AND f.color = c.color
+          -- ⚠ LATERAL con LIMIT 1: el catálogo tiene el mismo código repetido
+          -- (una fila por clase de color) y sin el tope la fila se duplicaría.
+          LEFT JOIN LATERAL (
+              SELECT SPLIT_PART(tc.color, ' · ', 1) AS n
+                FROM scintela.tinto_costos tc
+               WHERE UPPER(TRIM(tc.cod)) = UPPER(TRIM(c.color))
+                 AND COALESCE(TRIM(tc.color), '') <> ''
+               LIMIT 1) nom ON TRUE
          ORDER BY COALESCE(f.stock_kg, 0) DESC, c.subcategoria, c.color
         """
     )
@@ -136,8 +161,6 @@ def resumen(filas: list[dict]) -> dict:
         "kg": sum(float(f["stock_kg"]) for f in filas),
         "kg_vendidos": sum(float(f["kg_vendidos"]) for f in filas),
         "movidos": sum(1 for f in filas if float(f["kg_vendidos"]) > 0),
-        "sin_pista": sum(1 for f in filas if not f["clientes"]),
-        "kg_sin_pista": sum(float(f["stock_kg"]) for f in filas if not f["clientes"]),
         "kg_segunda": sum(float(f["kg_segunda"]) for f in filas),
         "n_segunda": sum(1 for f in filas if float(f["kg_segunda"]) > 0),
         "puntos": sum(float(f.get("puntos_fila") or 0) for f in filas),
@@ -688,11 +711,15 @@ def telas_a_sacar(filas: list[dict], puntos: dict[str, dict] | None = None) -> l
             "puntos": int(p.get("puntos", 1)),
             "nivel": p.get("nivel_nombre", "")})
         d["kg"] += float(f["stock_kg"])
-        d["colores"].append((f["color"], float(f["stock_kg"])))
+        d["colores"].append((f["color"], f.get("color_nombre") or "",
+                             float(f["stock_kg"])))
     for d in g.values():
-        d["colores"].sort(key=lambda c: -c[1])
+        d["colores"].sort(key=lambda c: -c[2])
         d["n_colores"] = len(d["colores"])
-        d["colores"] = ", ".join(c for c, _ in d["colores"])
+        # `lista` es la que dibuja la pantalla (código + nombre); `colores`
+        # sigue siendo el texto de siempre, que es lo que va al Excel.
+        d["colores_lista"] = [{"cod": c, "nombre": n} for c, n, _ in d["colores"]]
+        d["colores"] = ", ".join(c for c, _, _ in d["colores"])
         d["puntos_total"] = d["kg"] * d["puntos"]
     # ⚠ Ordenada por PUNTOS y no por kilos: es la lista de qué conviene ir a
     # buscar, y una tela de 4.329 kg a 10 puntos vale más que una de 3.442 a 1.

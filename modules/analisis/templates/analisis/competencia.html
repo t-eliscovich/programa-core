@@ -13,6 +13,19 @@ function abrirVend(tr){
 {% endblock %}
 {% block contenido %}
 <style>
+/* ⚠ "10 × kg" partido en dos renglones duplicaba el alto de todas las filas. */
+td.vale{white-space:nowrap}
+/* Lo que vale un kilo, con color: 10 ámbar, 4 azul, el resto gris. */
+.pt{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;
+    font-weight:600;background:#f1f0ec;color:#5a5955}
+.pt.p10{background:#fdf0d5;color:#8a5200}
+.pt.p4{background:#e4eefb;color:#17538f}
+/* Cada color, una etiqueta: el código en negro y el nombre en gris. */
+.cl{display:inline-block;padding:1px 7px;margin:0 4px 3px 0;border-radius:6px;
+    background:#f5f4f1;font-size:12px;white-space:nowrap}
+.cl b{font-weight:600}
+.cl span{color:var(--gr,#6b7280);margin-left:4px}
+.mas{font-size:12px;color:#9aa0a6}
 .term{background:#f8fafc;border-radius:12px;padding:22px 24px;margin:18px 0}
 .term .tres{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px}
 .term .tres .k{font-size:12px;color:var(--g);margin:0}
@@ -227,9 +240,12 @@ muchos puntos: depende de qué telas tenga adentro.</p>
 {% for t in telas[:8] %}
   <tr><td class="tela">{{ t.tela }}</td><td class="g opt">{{ t.grupo }}</td>
   <td class="n">{{ t.kg | num_es(0) }}</td>
-  <td class="n">{{ t.puntos }} × kg</td>
+  <td class="n vale"><span class="pt p{{ t.puntos }}">{{ t.puntos }} × kg</span></td>
   <td class="n g opt">{{ t.puntos_total | num_es(0) }}</td>
-  <td class="g opt">{{ t.colores }}</td></tr>
+  {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. Van los seis primeros
+     —los de más kilos— y el resto se cuenta: Microfibra tiene 26 y con todos
+     la fila mide media pantalla. #}
+  <td class="opt">{% for c in t.colores_lista[:6] %}<span class="cl"><b>{{ c.cod }}</b>{% if c.nombre %}<span>{{ c.nombre }}</span>{% endif %}</span>{% endfor %}{% if t.n_colores > 6 %}<span class="mas">y {{ t.n_colores - 6 }} más</span>{% endif %}</td></tr>
 {% endfor %}
 </tbody>
 </table>
