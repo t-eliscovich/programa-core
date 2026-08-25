@@ -1277,6 +1277,11 @@ def test_la_pantalla_explica_las_reglas():
         "que no haya meta es una regla, no una omisión (dueña 24/08/2026)")
     assert "no por kilos" not in html, (
         "todo se mide EN kilos; decir que no, confunde (dueña 17/08/2026)")
+    # ⚠ Esta regla se sacó por obvia el 24/08 y VOLVIÓ sola en un rebase de otra
+    # sesión, en vivo. El test es para que la próxima vez se caiga acá.
+    assert "vendedor de la factura" not in html, (
+        "esa regla se sacó por obvia (dueña 24/08/2026): quién factura el kilo "
+        "no hace falta escribirlo")
 
 
 def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():
