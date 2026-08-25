@@ -1,8 +1,7 @@
 {% extends "portal/base.html" %}
 {% block titulo %}Elegir la clave — Intela{% endblock %}
 {% block contenido %}
-<div class="caja">
-  <h1>Hola, {{ nombre|title }}</h1>
+  <div class="titulo">Hola, {{ nombre|title }}</div>
   <p class="bajada">Elija una clave. La próxima vez entra con ella y no con el RUC.</p>
 
   <form method="post">
@@ -37,7 +36,6 @@
              autocomplete="email" spellcheck="false">
     </div>
 
-    <button type="submit">Guardar y entrar</button>
+    <button type="submit" class="btn">Guardar y entrar</button>
   </form>
-</div>
 {% endblock %}

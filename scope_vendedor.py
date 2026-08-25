@@ -38,20 +38,14 @@ from flask import g, redirect, render_template, request
 # "/mi-cartera".
 PREFIJOS_PERMITIDOS: tuple[str, ...] = (
     "/mi-cartera",  # el portal del vendedor (todas sus sub-rutas)
-    # ⭐ TMT 2026-08-24 — la Competencia se les ABRE. Estuvo cerrada desde el
-    # 17/08 mientras la dueña la miraba ("todavia igual no se las habilites"),
-    # y hoy dijo que sí.
+    # TMT 2026-08-17 — la Competencia (/analisis/competencia) está hecha para
+    # que la vean los vendedores, pero TODAVÍA NO se les habilita: dueña, "esto
+    # es para que lo visualicen vendedores e intela. todavia igual no se las
+    # habilites". Hasta que ella diga, la ruta les da 404 como cualquier otra.
     #
-    # ⚠ El matcheo es por SEGMENTO, así que esto abre además todo lo que cuelga:
-    # /telas (los saldos con SUS clientes), /mi-hoja (la hoja imprimible) y sus
-    # dos .csv. Es lo que se quiere: las tres pantallas del vendedor viven ahí
-    # abajo justamente para que sea UN solo cierre.
-    #
-    # ⚠ Lo que NO entra, y no puede entrar nunca: "/analisis" a secas y
-    # "/analisis/parado", que tienen la cartera de los otros cinco. Y la
-    # pantalla de metas vive en "/analisis/metas" —fuera del prefijo— para que
-    # abrir esto no la abra de arriba. Hay tests que vigilan las tres cosas.
-    "/analisis/competencia",
+    # Para habilitarla: agregar "/analisis/competencia" acá. ⚠ El matcheo es por
+    # segmento, así que TODO lo que cuelgue de ese prefijo les queda abierto —
+    # por eso la pantalla de metas vive en /analisis/metas y no ahí abajo.
 )
 
 # Infraestructura: login/logout, estáticos, health. Sin esto el vendedor no

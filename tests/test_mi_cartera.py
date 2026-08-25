@@ -1857,7 +1857,9 @@ def test_el_appbar_queda_pegado_arriba_con_la_lista_larga():
     """
     from pathlib import Path
 
-    css = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
+    # TMT 2026-08-24: los estilos se mudaron a `_estilos.html` para que el
+    # portal del cliente use LOS MISMOS y no una copia. Ver modo.py.
+    css = Path("modules/mi_cartera/templates/mi_cartera/_estilos.html").read_text()
     assert "html,body{min-height:100%}" in css
     assert "html,body{height:100%}" not in css, \
         "height:100% en el body vuelve a romper el sticky del appbar"
@@ -1885,7 +1887,9 @@ def test_el_atributo_hidden_le_gana_al_display_del_portal():
     """
     from pathlib import Path
 
-    css = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
+    # TMT 2026-08-24: los estilos se mudaron a `_estilos.html` para que el
+    # portal del cliente use LOS MISMOS y no una copia. Ver modo.py.
+    css = Path("modules/mi_cartera/templates/mi_cartera/_estilos.html").read_text()
     assert "[hidden]{display:none!important}" in css, \
         "sin este guard, cualquier `display:` del cascarón anula los `hidden`"
 

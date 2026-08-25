@@ -1,0 +1,169 @@
+{# LOS ESTILOS DE LA FICHA DEL CLIENTE.
+
+   Vivían adentro de `mi_cartera/cliente.html`. Se sacaron acá el 24/08/2026
+   junto con `_movimientos.html`, y por una razón que se vio en la primera
+   pantalla renderizada: **el parcial se había llevado el HTML de la tabla y
+   NO sus estilos**, que estaban en este bloque. El portal del cliente mostraba
+   la misma tabla completamente cruda.
+
+   ⭐ La lección: un parcial viaja CON su CSS. Sacar el marcado a un archivo y
+   dejar las reglas en el que lo usaba es partirlo a la mitad, y no avisa —
+   renderiza igual, sólo que sin estilo.
+
+   El bloque se movió TAL CUAL, sin tocar una línea; se verificó renderizando
+   la ficha antes y después y comparando el HTML. #}
+<style>
+  /* Tabla de estado de cuenta. Las columnas entran en 390 px sin
+     scroll horizontal: los números van con `tabular-nums` para que se lean
+     hacia abajo como una columna —que es TODO el punto de un estado de
+     cuenta— y las etiquetas secundarias (días, "vencida", el banco) van
+     dentro de la celda en vez de robar una columna. */
+  /* 11 px, no 10,4: apilar Fecha y Número liberó 33 px de ancho y el primer
+     lugar donde se notan es el tamaño de las cifras. Medido con la cartera de
+     AGU: la tabla pide 332 px de los 362 que deja un iPhone de 390. */
+  .ec{width:100%;border-collapse:collapse;font-size:11px;
+      font-variant-numeric:tabular-nums}
+  .ec th{font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+         color:var(--ink-3);text-align:right;padding:0 0 6px 6px;
+         border-bottom:1px solid var(--line);white-space:nowrap}
+  .ec th.l,.ec td.l{text-align:left;padding-left:0}
+  /* La celda Factura: el NÚMERO arriba —es como el cliente nombra la factura
+     cuando discute un saldo— y debajo, chiquita, la fecha con los días. En
+     rojo las dos si está vencida: eso hacía la palabra "Vencida", que ahora
+     sobra y se llevó un renglón por fila. */
+  .ec td.fac{line-height:1.15;white-space:nowrap}
+  .ec td.fac b{font-weight:600;letter-spacing:-.01em;
+               font-variant-numeric:tabular-nums}
+  .ec td.fac small{display:block;font-size:9.5px;color:var(--ink-3);
+                   margin-top:3px;font-weight:500;letter-spacing:0}
+  .ec td.fac small.venc{color:var(--bad)}
+  .ec td{text-align:right;padding:8px 0 8px 6px;border-bottom:1px solid var(--line);
+         vertical-align:top;line-height:1.25}
+  /* Abonado es un dato de CONTRASTE, no un protagonista: se lee contra el
+     importe de al lado. Va en gris, como en la hoja de la oficina. */
+  .ec td.ab{color:var(--ink-2)}
+  /* Retención: descuenta del saldo igual que un pago pero NO es plata que
+     entró. Va en violeta, el mismo color que la usa la hoja de la oficina,
+     para que no se lea como un abono más. */
+  .ec td.ret{color:#6D28D9}
+  .ec tbody tr:last-child td{border-bottom:0}
+  .ec .mono{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .ec .fuerte{font-weight:700}
+  .ec .nowrap{white-space:nowrap}
+  .ec td small{display:block;font-size:9.5px;color:var(--ink-3);margin-top:2px;
+               font-weight:500;letter-spacing:0}
+  .ec td small.venc,.ec .venc{color:var(--bad)}
+  .ec td small.ok,.ec .ok{color:var(--good)}
+  .ec td small.post,.ec .post{color:var(--warn)}
+  .ec td small.nc{color:var(--bad);font-weight:700}
+  .ec tr.pagada{opacity:.5}
+  .ec tfoot td{border-top:2px solid var(--ink);border-bottom:0;
+               padding-top:9px;font-weight:700;font-size:11px}
+  .ec tfoot td.l{font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;
+                 color:var(--ink-3);font-weight:700}
+
+  /* Los tres renglones del cierre, alineados a la derecha como en el dBase. */
+  .cierre{margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-3);
+          font-size:12px}
+  .cierre div{display:flex;justify-content:space-between;gap:12px;padding:3px 0;
+              color:var(--ink-2)}
+  .cierre div b{font-weight:700;color:var(--ink)}
+  .cierre .tot{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;
+               font-size:11px;font-weight:700;letter-spacing:.05em;
+               text-transform:uppercase;color:var(--ink-3)}
+  .cierre .tot b{font-size:15px;letter-spacing:-.02em}
+
+  .franja{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:12px;
+          padding-top:11px;border-top:1px solid var(--line);
+          font-size:10.5px;color:var(--ink-2)}
+  .franja i{font-style:normal;color:var(--ink-3)}
+  .franja b{display:block;font-size:12.5px;color:var(--ink);margin-top:1px;
+            font-variant-numeric:tabular-nums}
+
+  /* Crédito: en dos columnas, que es como se leen de a pares (cupo↔usado).
+     ⭐ TMT 2026-08-20: *"cupo, % usado muy chiquito"*. Estaba a 9,5 px el
+     rótulo y 15 el número, mientras el saldo de arriba va a 30: el dato con
+     el que el vendedor decide si le carga más mercadería o no se leía como
+     una nota al pie de la pantalla. Rótulo 11, número 18, porcentaje 13. */
+  /* Las tres en UNA fila. La del medio ("Usado") lleva la cifra más larga y
+     el porcentaje debajo, así que se lleva más ancho; "Descuento" es la más
+     corta y se achica hasta lo que necesita. */
+  .cred{display:grid;grid-template-columns:1fr 1.25fr .8fr;gap:10px}
+  .cred small{display:block;font-size:10.5px;font-weight:700;letter-spacing:.04em;
+              text-transform:uppercase;color:var(--ink-2)}
+  .cred b{display:block;font-size:17px;letter-spacing:-.02em;margin-top:3px;
+          font-variant-numeric:tabular-nums}
+  .cred b.na{font-size:15px;font-weight:500;color:var(--ink-3);letter-spacing:0}
+  .cred i{display:block;font-style:normal;font-size:13px;font-weight:700;margin-top:3px}
+  .cred i.bien,.barra i.bien{color:var(--good)}
+  .cred i.ojo,.barra i.ojo{color:var(--warn)}
+  .cred i.mal,.barra i.mal{color:var(--bad)}
+  .barra{height:5px;border-radius:99px;background:#EDEFF4;margin-top:9px;overflow:hidden}
+  .barra i{display:block;height:100%;border-radius:99px}
+  .barra i.bien{background:var(--good)}
+  .barra i.ojo{background:var(--warn)}
+  .barra i.mal{background:var(--bad)}
+  .bloq{background:var(--bad-soft);color:var(--bad);font-size:12px;font-weight:700;
+        border-radius:9px;padding:8px 10px;margin-bottom:11px}
+
+  /* Dos columnas y el rótulo ARRIBA del dato, no al lado. Con el rótulo al
+     lado se iban 74 px fijos por renglón para decir "RUC" o "MAIL", y cada
+     dato quedaba solo en su fila: cinco filas para cuatro datos cortos. Los
+     largos (dirección, mail) toman el ancho entero con `.full`. */
+  .ficha{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;
+         margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+  .ficha .full{grid-column:1/-1}
+  .ficha small{display:block;font-size:9.5px;font-weight:700;letter-spacing:.05em;
+               text-transform:uppercase;color:var(--ink-3);margin-bottom:1px}
+  .ficha span,.ficha a{font-size:12.5px;min-width:0}
+  .ficha .mono{font-variant-numeric:tabular-nums}
+  .ficha .lnk{color:var(--accent);font-weight:600}
+  .ficha .brk{word-break:break-all}
+
+  /* Las dos acciones, con el nombre entero. El de WhatsApp lleva el verde y
+     el globito de WhatsApp: el rótulo dice qué hace y el color lo confirma
+     de un vistazo. El ícono va como máscara SVG —no como emoji— porque el
+     emoji no existe en Android y salía un cuadradito vacío. */
+  /* 🐞 TMT 2026-08-24: el ícono de imprimir era el carácter "⎙" (U+2399), que
+     Android NO tiene en ninguna de sus tipografías — en el celular del
+     vendedor salía el cuadradito vacío del glifo que falta, al lado de la
+     palabra "Imprimir". Es EXACTAMENTE lo que ya había pasado el 20/08 con el
+     emoji de WhatsApp, y se arregla igual: máscara SVG, que se dibuja siempre
+     y toma el color del botón. Regla para el portal: en un botón no va un
+     carácter especial, va un SVG. */
+  .acciones{display:flex;gap:8px;margin:10px 0;
+    --ico-wa:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 14.4c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5 0-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.5.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.5-.4z'/><path d='M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2z'/></svg>")}
+  .btn-wa{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+          background:#25D366;color:#fff;border:0;border-radius:12px;
+          padding:11px 10px;font:inherit;font-size:14.5px;font-weight:700;
+          cursor:pointer;white-space:nowrap}
+  .btn-wa::before{content:'';width:19px;height:19px;flex:0 0 19px;background:#fff;
+    -webkit-mask:center/contain no-repeat var(--ico-wa);mask:center/contain no-repeat var(--ico-wa)}
+  .btn-wa:disabled{opacity:.65}
+  .btn-wa span{overflow:hidden;white-space:nowrap}
+  .btn-pr::before{content:'';width:17px;height:17px;flex:0 0 17px;background:var(--ink);
+    -webkit-mask:center/contain no-repeat var(--ico-pr);mask:center/contain no-repeat var(--ico-pr)}
+  .btn-pr{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
+          border:1px solid var(--line);border-radius:12px;padding:11px 14px;
+          font-size:14.5px;font-weight:600;color:var(--ink)}
+
+
+  /* El portal del cliente. Discreto a propósito: es información de fondo, no
+     lo que el vendedor vino a mirar. Se pone rojo sólo cuando está cortado,
+     que es el único estado que pide algo. */
+  .portal-caja{background:#fff;border:1px solid var(--line);border-radius:14px;
+    padding:13px 15px;margin:10px 0}
+  .portal-caja.cortado{border-color:#e3a0a0;background:#fff8f8}
+  .portal-tit{font-size:13.5px;font-weight:700}
+  .portal-detalle{font-size:12.5px;color:#6b7280;margin:3px 0 10px;line-height:1.5}
+  .portal-btn{width:100%;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:10px;font:inherit;font-size:14px;font-weight:600;
+    color:var(--ink);cursor:pointer}
+  .portal-btn.cortar{color:#b91c1c;border-color:#e3a0a0}
+
+  /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
+  @media (max-width: 374px){
+    .ec{font-size:10.2px}
+    .ec td,.ec th{padding-left:4px}
+  }
+</style>

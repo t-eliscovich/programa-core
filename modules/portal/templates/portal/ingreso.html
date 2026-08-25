@@ -1,8 +1,7 @@
 {% extends "portal/base.html" %}
 {% block titulo %}Entrar — Intela{% endblock %}
 {% block contenido %}
-<div class="caja">
-  <h1>Su estado de cuenta</h1>
+  <div class="titulo">Su estado de cuenta</div>
   <p class="bajada">Entre con el código de cliente que figura en su factura.</p>
 
   <form method="post" autocomplete="on">
@@ -10,7 +9,7 @@
 
     <div class="campo">
       <label for="codigo">Código de cliente</label>
-      <input class="codigo" type="text" id="codigo" name="codigo" maxlength="3"
+      <input class="cod" type="text" id="codigo" name="codigo" maxlength="3"
              value="{{ codigo or '' }}" autocapitalize="characters"
              autocomplete="username" spellcheck="false" required autofocus>
     </div>
@@ -22,13 +21,12 @@
              autocomplete="current-password" required>
     </div>
 
-    <button type="submit">Entrar</button>
+    <button type="submit" class="btn">Entrar</button>
   </form>
 
-  <div class="separador"></div>
-  <p class="ayuda">
+  <div class="raya"></div>
+  <p class="pie-ayuda">
     ¿Entra por primera vez? Escriba su <b>RUC</b> donde dice Clave.<br>
     <a href="/olvide-la-clave">Olvidé mi clave</a>
   </p>
-</div>
 {% endblock %}

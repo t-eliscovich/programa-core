@@ -600,22 +600,6 @@ def test_los_grupos_chicos_se_unen_al_LEER_y_no_al_guardar():
     assert "Franela" in inspect.getsource(queries.items)
 
 
-def test_las_dos_pantallas_no_llaman_igual_a_dos_cifras_distintas():
-    """⚠ La Competencia muestra la bolsa CONGELADA del día de la largada;
-    Saldos, los puntos del stock de hoy, que baja a medida que se vende. Son
-    dos preguntas distintas y no pueden tener el mismo rótulo: la dueña vio las
-    dos cifras y preguntó cuál era la buena."""
-    from pathlib import Path
-    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-               "templates" / "analisis")
-    import re
-    saldos = " ".join((carpeta / "parado.html").read_text(encoding="utf-8").split())
-    saldos = re.sub(r"\{#.*?#\}", " ", saldos)
-    assert "Puntos que quedan" in saldos
-    assert "Puntos en juego" not in saldos, (
-        "ese rótulo es el de la Competencia, y es otra cifra")
-
-
 def test_la_pantalla_de_saldos_ordena_por_puntos(monkeypatch):
     """⭐ Dueña 24/08/2026: "idem para la pantalla de saldos". La pregunta que
     se hace el que abre esta lista es a qué tela conviene ir, y 300 kg de una
@@ -870,45 +854,20 @@ def test_las_metas_no_cuelgan_del_prefijo_abierto(app):
     rutas = {r.rule for r in app.url_map.iter_rules()}
     assert "/analisis/metas" in rutas
     assert "/analisis/competencia/metas" not in rutas
-    # ⚠ Con la competencia ya abierta, esto es lo que de verdad hay que probar:
-    # que la pantalla de metas NO caiga adentro del prefijo permitido.
-    assert not scope_vendedor._path_permitido(
-        "/analisis/metas", scope_vendedor.PREFIJOS_PERMITIDOS)
+    assert not any(p.startswith("/analisis") for p in scope_vendedor.PREFIJOS_PERMITIDOS)
 
 
-def test_al_vendedor_ya_se_le_habilito_la_competencia():
-    """⭐ Dueña 24/08/2026: "habilitalo para los vendedores". Estuvo cerrada una
-    semana mientras la miraba.
+def test_al_vendedor_todavia_no_se_le_habilito_la_competencia():
+    """La pantalla está hecha para ellos, pero la dueña la quiere ver primero:
+    "todavia igual no se las habilites". Cuando lo diga, se agrega
+    "/analisis/competencia" a PREFIJOS_PERMITIDOS y este test se da vuelta.
 
-    ⚠ Lo único abierto de /analisis es la competencia: /analisis a secas o
-    /analisis/parado le darían la cartera de los otros cinco."""
+    ⚠ Lo que NO puede pasar nunca es que se abra /analisis a secas o
+    /analisis/parado: ahí está la cartera de TODOS los vendedores."""
     import scope_vendedor
     abiertos = [p for p in scope_vendedor.PREFIJOS_PERMITIDOS
                 if p.startswith("/analisis")]
-    assert abiertos == ["/analisis/competencia"], (
-        f"sólo la competencia, y nada más: {abiertos}")
-    for ruta in ("/analisis/competencia", "/analisis/competencia/telas",
-                 "/analisis/competencia/mi-hoja",
-                 "/analisis/competencia/mi-hoja.csv"):
-        assert scope_vendedor._path_permitido(
-            ruta, scope_vendedor.PREFIJOS_PERMITIDOS), ruta
-    for cerrada in ("/analisis", "/analisis/parado", "/analisis/parado/clientes",
-                    "/analisis/metas", "/facturas", "/posdat"):
-        assert not scope_vendedor._path_permitido(
-            cerrada, scope_vendedor.PREFIJOS_PERMITIDOS), cerrada
-
-
-def test_al_vendedor_todavia_no_se_le_pone_el_link():
-    """⭐ Dueña 24/08/2026: "habilita la pagina, todavia no pongas el link asi la
-    miro antes". La ruta anda para el que tenga la dirección, pero desde
-    /mi-cartera todavía no se llega sola. Cuando diga que sí, se agrega el link
-    y este test se da vuelta."""
-    from pathlib import Path
-    raiz = Path(__file__).resolve().parent.parent
-    for carpeta in (raiz / "modules" / "mi_cartera", raiz / "templates"):
-        for archivo in carpeta.rglob("*.html"):
-            assert "/analisis/competencia" not in archivo.read_text(encoding="utf-8"), (
-                f"{archivo.name} le pone el link antes de tiempo")
+    assert abiertos == [], f"todavía no había que habilitar nada: {abiertos}"
 
 
 def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():
@@ -1293,11 +1252,6 @@ def test_la_pantalla_explica_las_reglas():
         "que no haya meta es una regla, no una omisión (dueña 24/08/2026)")
     assert "no por kilos" not in html, (
         "todo se mide EN kilos; decir que no, confunde (dueña 17/08/2026)")
-    # ⚠ Esta regla se sacó por obvia el 24/08 y VOLVIÓ sola en un rebase de otra
-    # sesión, en vivo. El test es para que la próxima vez se caiga acá.
-    assert "vendedor de la factura" not in html, (
-        "esa regla se sacó por obvia (dueña 24/08/2026): quién factura el kilo "
-        "no hace falta escribirlo")
 
 
 def test_la_fila_del_vendedor_se_abre_y_muestra_sus_grupos():

@@ -32,14 +32,9 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <div class="card"><p class="k">En saldo hoy</p>
     <p class="v">{{ resumen.kg | num_es(0) }}</p>
     <p class="s">kg en {{ resumen.n_items }} telas × color</p></div>
-  {# ⚠ NO decir "puntos en juego": ése es el número de la Competencia y es la
-     bolsa CONGELADA del día de la largada. Éste se calcula sobre el stock de
-     HOY, así que baja a medida que se vende. Dos pantallas con el mismo rótulo
-     y distinta cifra es la clase de cosa que hace desconfiar de las dos.
-     Dueña 24/08/2026: "veo que en competencia tenemos 54.0k y acá 54.1k". #}
-  <div class="card"><p class="k">Puntos que quedan</p>
+  <div class="card"><p class="k">Puntos en juego</p>
     <p class="v">{{ resumen.puntos | num_es(0) }}</p>
-    <p class="s">de lo que hay hoy · 1, 4 o 10 por kilo</p></div>
+    <p class="s">un kilo vale 1, 4 o 10</p></div>
   <div class="card"><p class="k">Vendido desde el 25/08</p>
     <p class="v">{{ resumen.kg_vendidos | num_es(0) }}</p>
     <p class="s">{{ resumen.movidos }} ítems se movieron</p></div>

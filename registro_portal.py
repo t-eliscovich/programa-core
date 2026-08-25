@@ -24,7 +24,10 @@ def registrar(app: Flask) -> None:
 
 
 def _prestar_plantillas_de_informes(app: Flask) -> None:
-    """Deja que el portal RESUELVA las plantillas de informes, sin sus rutas.
+    """Deja que el portal RESUELVA plantillas de otros módulos, sin sus rutas.
+
+    Son dos: la hoja impresa del estado de cuenta (`informes/`) y los estilos
+    del mobile (`mi_cartera/_estilos.html`).
 
     ⭐ El estado de cuenta impreso tiene que salir de la MISMA hoja que usan la
     oficina y los vendedores (`informes/_estado_cuenta_impreso.html`). Dos
@@ -45,10 +48,13 @@ def _prestar_plantillas_de_informes(app: Flask) -> None:
 
     from jinja2 import ChoiceLoader, FileSystemLoader
 
-    carpeta = Path(__file__).resolve().parent / "modules" / "informes" / "templates"
-    if not carpeta.is_dir():          # pragma: no cover - sólo si se mueve el repo
+    raiz = Path(__file__).resolve().parent / "modules"
+    carpetas = [raiz / "informes" / "templates",
+                # Y las del portal de VENDEDORES, por sus estilos: el del
+                # cliente tiene que verse como lo que ya existe, no inventar
+                # una estética nueva. Ver `mi_cartera/_estilos.html`.
+                raiz / "mi_cartera" / "templates"]
+    vivas = [FileSystemLoader(str(c)) for c in carpetas if c.is_dir()]
+    if not vivas:                     # pragma: no cover - sólo si se mueve el repo
         return
-    app.jinja_loader = ChoiceLoader([
-        app.jinja_loader,
-        FileSystemLoader(str(carpeta)),
-    ])
+    app.jinja_loader = ChoiceLoader([app.jinja_loader, *vivas])

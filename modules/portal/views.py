@@ -13,8 +13,6 @@ el login de empleados ni siquiera existe.
 """
 from __future__ import annotations
 
-from datetime import date
-
 from flask import (
     Blueprint,
     flash,
@@ -27,6 +25,7 @@ from flask import (
 from markupsafe import Markup
 
 from extensions import limiter
+from filters import today_ec
 from modules.portal import acceso
 
 portal_bp = Blueprint("portal", __name__, url_prefix="",
@@ -43,11 +42,12 @@ def _comunes():
     from flask_wtf.csrf import generate_csrf
 
     return {
-        "hoy": date.today().strftime("%d/%m/%Y"),
-        # ⚠ FECHA, no texto: se compara contra `factura.vencimiento`, que la
-        # base devuelve como `date`. Comparar un date con un string no falla:
-        # levanta, y la pantalla entera se cae.
-        "hoy_iso": date.today(),
+        # ⚠ `hoy` es una FECHA, no un texto, y el nombre es el mismo que usa el
+        # portal de vendedores a propósito: el parcial compartido
+        # `mi_cartera/_movimientos.html` hace `vencimiento < hoy` para pintar
+        # las vencidas. Con un string eso no da False — LEVANTA, y se cae la
+        # pantalla entera. Para mostrarla, `{{ hoy|fecha_es }}`.
+        "hoy": today_ec(),
         "csrf_token_input": Markup(
             f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'),
     }
@@ -268,6 +268,59 @@ def estado_cuenta_imprimir():
                            facturas=data.get("facturas") or [],
                            cheques=data.get("cheques") or [],
                            codigo=cod)
+
+
+@portal_bp.route("/estado-de-cuenta.pdf", methods=["GET"])
+def estado_cuenta_pdf_():
+    """El estado de cuenta como archivo, para guardarlo o mandarlo.
+
+    Es el MISMO documento que descargan la oficina y el vendedor: el cuerpo
+    sale del parcial compartido y el archivo se llama igual —
+    `Estado de cuenta ATE 24-08-2026.pdf`, con el código y el día, para que
+    cinco estados de cuenta en una carpeta se distingan sin abrirlos.
+
+    ⚠ Lo único que NO se reusa es `estado_cuenta_pdf.generar()`, y por una
+    razón concreta: esa función renderiza `informes/estado_cuenta_lote_print.html`,
+    que extiende el chrome del ERP y llama a `url_for('informes.…')` — en este
+    proceso esas rutas no existen y el PDF moriría con un BuildError. Igual que
+    la página de 404. Así que se arma con el envoltorio del portal, que incluye
+    el mismo parcial y copia la misma CSS de impresión (hay un test que compara
+    las dos).
+    """
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+
+    from flask import Response, current_app
+
+    from modules._lib import pdf_motor
+    from modules.informes import estado_cuenta_pdf
+
+    data = _cargar_estado_cuenta(cod)
+    html = render_template("portal/estado_cuenta_impreso.html",
+                           data=data, t=data.get("totales") or {},
+                           facturas=data.get("facturas") or [],
+                           cheques=data.get("cheques") or [],
+                           codigo=cod, para_pdf=True)
+    try:
+        blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor as e:
+        # El botón se esconde cuando no hay motor, pero alguien puede llegar
+        # por la URL. Un mensaje que dice qué falta evita el "no anda el botón".
+        current_app.logger.error("PDF del portal (%s): %s", cod, e)
+        return Response(
+            "No se puede generar el archivo en este momento. La hoja para "
+            "imprimir sigue funcionando.",
+            status=503, mimetype="text/plain; charset=utf-8")
+
+    nombre = estado_cuenta_pdf.nombre_archivo(
+        (data.get("cliente") or {}).get("nombre") or "", cod)
+    return Response(blob, mimetype="application/pdf", headers={
+        # `inline`: en el celular el que lo abre lo pasa al menú de compartir;
+        # si alguien entra por la URL, que lo vea en vez de bajarlo a ciegas.
+        "Content-Disposition": f'inline; filename="{nombre}"',
+        "Cache-Control": "no-store",
+    })
 
 
 @portal_bp.route("/", methods=["GET"])

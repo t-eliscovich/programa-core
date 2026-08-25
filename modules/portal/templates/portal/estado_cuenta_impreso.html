@@ -39,14 +39,16 @@
 </style>
 </head>
 <body>
+  {% if not para_pdf|default(false) %}
   <div class="barra no-print">
     <button type="button" onclick="window.print()">Imprimir</button>
   </div>
+  {% endif %}
   <div class="contenido">
     <h1 class="text-xl font-semibold mb-1">{{ data.cliente.nombre }}</h1>
     <p class="text-sm text-slate-500 mb-6">
       Cliente {{ codigo }}{% if data.cliente.ruc %} · RUC {{ data.cliente.ruc }}{% endif %}
-      · al {{ hoy }}
+      · al {{ hoy|fecha_es }}
     </p>
     {% include "informes/_estado_cuenta_impreso.html" %}
   </div>

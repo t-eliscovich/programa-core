@@ -96,17 +96,26 @@ def test_la_pantalla_avisa_lo_vencido():
 
 
 def test_el_saldo_a_favor_se_muestra_como_a_favor():
-    """Un saldo negativo con un signo menos adelante lo lee mal cualquiera. Y
-    un cliente que ve '-$ 500' de deuda llama preguntando qué pasó."""
-    assert "a-favor" in PANTALLA
-    assert "saldo a favor" in PANTALLA.lower()
+    """Un saldo negativo con un signo menos adelante lo lee mal cualquiera: un
+    cliente que ve '-$ 500' llama preguntando qué le debe.
+
+    Se resuelve cambiando el RÓTULO y mostrando el número en positivo, que es
+    como lo diría una persona: 'saldo a favor suyo, $ 500'."""
+    assert "Saldo a favor suyo" in PANTALLA
+    assert "_saldo|abs|money_es" in PANTALLA, (
+        "el número tiene que ir en positivo; el signo lo dice el rótulo")
 
 
-def test_la_pantalla_compara_vencimientos_contra_una_FECHA():
-    """🚨 `factura.vencimiento` viene como `date` de la base. Comparar un date
-    con un string no da False: LEVANTA, y se cae la pantalla entera."""
-    assert '"hoy_iso": date.today(),' in VISTAS
-    assert "hoy_iso" in PANTALLA
+def test_hoy_es_una_FECHA_y_no_un_texto():
+    """🚨 El parcial compartido hace `vencimiento < hoy` para pintar las
+    vencidas. `factura.vencimiento` viene como `date` de la base: comparar un
+    date con un string no da False, **LEVANTA**, y se cae la pantalla entera.
+
+    Y el nombre tiene que ser `hoy`, el mismo que usa el portal de vendedores,
+    porque el parcial es el mismo."""
+    assert '"hoy": today_ec(),' in VISTAS
+    assert "date.today().strftime" not in VISTAS
+    assert "vence < hoy" in MOVIMIENTOS or "< hoy %}" in MOVIMIENTOS
 
 
 def test_los_numeros_van_en_formato_de_ecuador():
@@ -121,8 +130,163 @@ def test_los_numeros_van_en_formato_de_ecuador():
     assert "money_es" in PANTALLA
 
 
+MOVIMIENTOS = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+               / "_movimientos.html").read_text(encoding="utf-8")
+
+
 def test_las_fechas_van_por_el_filtro_de_la_casa():
     """`strftime` se cae con un `None` y con un texto ISO. `fecha_es` aguanta
-    los tres casos, que es justamente por lo que existe."""
+    los tres casos, que es justamente por lo que existe.
+
+    Las fechas de las facturas viven en el parcial compartido, que ya las
+    formatea así; acá se cuida que la pantalla del portal no meta las suyas."""
     assert "strftime" not in PANTALLA
-    assert "fecha_es" in PANTALLA
+    assert "fecha_es" in MOVIMIENTOS
+
+
+BASE_PORTAL = (TPL / "base.html").read_text(encoding="utf-8")
+
+
+def test_el_portal_y_mi_cartera_comparten_los_estilos():
+    """⭐ Dueña: *"no hace falta que rediseñes, que sea consistente con lo que
+    ya hay en Programa Core"*.
+
+    El cliente y el vendedor miran el mismo producto desde el mismo teléfono.
+    Los estilos salen de UN archivo (`mi_cartera/_estilos.html`) que incluyen
+    los dos, no de dos hojas parecidas que se separan a la primera corrección.
+    """
+    assert '{% include "mi_cartera/_estilos.html" %}' in BASE_PORTAL
+    base_vend = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+                 / "base.html").read_text(encoding="utf-8")
+    assert '{% include "mi_cartera/_estilos.html" %}' in base_vend
+
+
+def test_el_portal_usa_las_variables_de_la_casa_y_no_colores_sueltos():
+    """Si el portal escribiera `#e30613` a mano, cambiar el color de la marca
+    en un lado no lo cambiaría en el otro."""
+    import re
+    for pantalla in (BASE_PORTAL, PANTALLA):
+        estilos = "\n".join(re.findall(r"<style>(.*?)</style>", pantalla, re.S))
+        sueltos = [c for c in re.findall(r"#[0-9a-fA-F]{6}\b", estilos)]
+        assert not sueltos, f"colores escritos a mano: {sueltos}"
+    assert "var(--accent)" in BASE_PORTAL
+
+
+def test_la_pantalla_de_la_cuenta_usa_el_hero_del_vendedor():
+    """El mismo bloque de arriba, con los mismos rótulos: si los dos están
+    mirando lo mismo, tienen que verlo igual."""
+    assert 'class="hero"' in PANTALLA
+    assert 'class="lbl"' in PANTALLA and 'class="val"' in PANTALLA
+    assert 'class="split"' in PANTALLA
+
+
+def test_el_cliente_ve_EL_MISMO_cuerpo_que_su_vendedor():
+    """⭐ Dueña, 24/08: *"que sea más parecido a como ve el cliente el
+    vendedor"*. No parecido: **el mismo**. Las pestañas, la tabla y los
+    rótulos salen del parcial compartido, que también incluye la ficha del
+    vendedor.
+
+    Esa tabla llevó varias vueltas de ajuste para entrar en 390 px —la columna
+    que no aporta no se dibuja, la fecha va dd/mm/AA, el acumulado corre de
+    arriba hacia abajo—. Nada de eso se rehace por segunda vez."""
+    assert '{% include "mi_cartera/_movimientos.html" %}' in PANTALLA
+    ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+             / "cliente.html").read_text(encoding="utf-8")
+    assert '{% include "mi_cartera/_movimientos.html" %}' in ficha
+
+
+def test_el_parcial_tiene_lo_que_hace_falta_para_dibujarlo():
+    """Lo que el parcial espera en el contexto. Si mañana pide algo más y el
+    portal no se lo pasa, la pantalla del cliente se cae y la del vendedor no
+    — que es la forma más fácil de romper esto sin enterarse."""
+    for nombre in ("facturas", "cheques", "saldo_neto", "qv"):
+        assert f"{{% set {nombre} =" in PANTALLA or f"set {nombre} =" in PANTALLA, nombre
+
+
+def test_el_boton_de_salir_no_es_un_caracter():
+    """🚨 Regla ya pagada dos veces en este portal (el emoji de WhatsApp el
+    20/08, el ⎙ de imprimir el 24/08): en un botón no va un carácter especial,
+    va un SVG. En Android sale el cuadradito del glifo que falta."""
+    assert "--ico-salir" in PANTALLA
+    assert "svg+xml" in PANTALLA
+    import re
+    boton = re.search(r'<a class="iconbtn salir".*?</a>', PANTALLA, re.S).group(0)
+    assert not re.search(r">[^<\s]", boton), "el botón tiene texto adentro; va vacío con máscara"
+
+
+def test_en_pantalla_grande_se_ensancha():
+    """⭐ Dueña: *"también esto puede funcionar en web y en mobile"*. Los
+    estilos compartidos están afinados para 390 px —la tabla baja a 11 px para
+    que entren siete columnas— y en un monitor eso se lee diminuto.
+
+    Ensancha SÓLO el portal del cliente: la ficha del vendedor se mira siempre
+    desde el celular, y tocarle el ancho sería cambiarle la pantalla a alguien
+    que no lo pidió."""
+    assert "@media (min-width: 700px)" in PANTALLA
+    ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+             / "cliente.html").read_text(encoding="utf-8")
+    assert "min-width: 700px" not in ficha
+
+
+# ---------------------------------------------------------------------------
+# El PDF
+# ---------------------------------------------------------------------------
+
+HOJA_PORTAL = (TPL / "estado_cuenta_impreso.html").read_text(encoding="utf-8")
+
+
+def test_el_archivo_se_llama_igual_que_el_de_la_oficina():
+    """`Estado de cuenta ATE 24-08-2026.pdf` — el código y el día. Cinco
+    estados de cuenta en una carpeta tienen que distinguirse sin abrirlos, y
+    ese nombre ya se decidió una vez: se usa la MISMA función."""
+    assert "estado_cuenta_pdf.nombre_archivo" in VISTAS
+
+
+def test_el_pdf_no_usa_la_funcion_de_la_oficina_y_esta_bien():
+    """🚨 `estado_cuenta_pdf.generar()` renderiza
+    `informes/estado_cuenta_lote_print.html`, que extiende el chrome del ERP y
+    llama a `url_for('informes.…')`. En el proceso del portal esas rutas NO
+    existen: el PDF moriría con un BuildError, igual que pasaba con la página
+    de 404.
+
+    Por eso arma el HTML con el envoltorio del portal — que incluye el mismo
+    parcial y la misma CSS de impresión (lo cuida
+    `test_la_hoja_del_portal_usa_la_misma_css_que_la_oficina`)."""
+    # 🚨 Por AST y no buscando el texto: el docstring de la vista NOMBRA
+    # `estado_cuenta_pdf.generar()` justamente para explicar por qué no se usa,
+    # así que el assert de texto se encuentra a sí mismo. Me pasó cinco veces
+    # en esta sesión; por AST no hay forma.
+    import ast
+
+    arbol = ast.parse(VISTAS)
+    llamadas = {
+        f"{n.func.value.id}.{n.func.attr}"
+        for n in ast.walk(arbol)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name)
+    }
+    assert "estado_cuenta_pdf.generar" not in llamadas, (
+        "el portal está llamando a la función de la oficina: renderiza el "
+        "chrome del ERP y muere con BuildError en este proceso")
+    assert "pdf_motor.desde_html" in llamadas
+    assert 'render_template("portal/estado_cuenta_impreso.html"' in VISTAS
+
+
+def test_sin_motor_de_pdf_contesta_algo_que_se_entiende():
+    """El botón se esconde cuando no hay motor, pero alguien puede llegar por
+    la URL. Un 503 con un mensaje que dice qué pasa evita el reporte de "no
+    anda el botón"."""
+    assert "pdf_motor.SinMotor" in VISTAS
+    assert "status=503" in VISTAS
+
+
+def test_el_boton_solo_aparece_si_hay_con_que_generarlo():
+    """Un botón que contesta 503 enseña a no confiar en los botones. Se usa el
+    mismo `pdf_disponible()` que la ficha del vendedor."""
+    assert "{% if pdf_disponible() %}" in PANTALLA
+
+
+def test_dentro_del_PDF_no_va_el_boton_de_imprimir():
+    """Nadie va a tocar un botón adentro de un archivo."""
+    assert "{% if not para_pdf|default(false) %}" in HOJA_PORTAL
+    assert "para_pdf=True" in VISTAS

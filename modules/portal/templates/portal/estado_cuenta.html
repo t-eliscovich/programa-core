@@ -1,95 +1,110 @@
 {% extends "portal/base.html" %}
 {% block titulo %}Mi cuenta — Intela{% endblock %}
-{% block ancho %}560px{% endblock %}
-{% block contenido %}
+
+{# ⭐ Dueña, 24/08: *"que sea más parecido a como ve el cliente el vendedor"*.
+   No parecido: EL MISMO. El cuerpo de esta pantalla es
+   `mi_cartera/_movimientos.html`, el parcial que también usa la ficha del
+   vendedor — las mismas pestañas, la misma tabla, los mismos rótulos. Esa
+   tabla llevó varias vueltas para entrar en 390 px y no se rehace acá.
+
+   Lo propio del cliente es sólo el encabezado (su nombre, y Salir arriba en la
+   punta) y el `hero`, que dice "su saldo" en vez de "saldo facturas". #}
+{% block cuerpo %}
 {% set cli = data.cliente or {} %}
 {% set _saldo = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+{% set _hay_ven = (t.saldo_vencido or 0) > 0 %}
+{% set _hay_ch = (t.cheques_por_cobrar or 0) > 0 %}
+{% set facturas = data.facturas or [] %}
+{% set cheques = data.cheques or [] %}
+{% set saldo_neto = _saldo %}
+{% set qv = '' %}
 
-<div class="tarjeta-saldo">
-  <span class="rotulo">Su saldo con Intela</span>
-  <span class="numerote {{ 'a-favor' if _saldo < 0 else '' }}">
-    {{ '−' if _saldo < 0 else '' }}$ {{ _saldo|abs|money_es }}
-  </span>
-  {% if _saldo < 0 %}
-    <span class="nota">Es un saldo a favor suyo.</span>
-  {% elif t.n_vencidas %}
-    <span class="nota vencido">
-      $ {{ t.saldo_vencido|money_es }} de ese saldo está vencido
-      ({{ t.n_vencidas }} {{ 'factura' if t.n_vencidas == 1 else 'facturas' }}).
-    </span>
-  {% elif _saldo > 0 %}
-    <span class="nota">Ninguna factura está vencida.</span>
-  {% endif %}
-</div>
+<header class="appbar">
+  <div class="row">
+    <div>
+      <h1>{{ cli.nombre|title }}</h1>
+      <div class="sub">Cliente {{ codigo }}{% if cli.ruc %} · RUC {{ cli.ruc }}{% endif %}</div>
+    </div>
+    {# El botón NO lleva un carácter especial: el ⏻ no existe en las
+       tipografías de Android y sale el cuadradito del glifo que falta. Mismo
+       arreglo que el ícono de imprimir y el de WhatsApp: máscara SVG. #}
+    <a class="iconbtn salir" href="/salir" title="Salir" aria-label="Salir"></a>
+  </div>
+</header>
 
-{% if t.cheques_por_cobrar %}
-<div class="dato">
-  <span>Cheques suyos que todavía no cobramos</span>
-  <b>$ {{ t.cheques_por_cobrar|money_es }}</b>
-</div>
-{% endif %}
-
-{# ---------------- Facturas ---------------- #}
-{% set pendientes = (data.facturas or [])|selectattr('saldo')|list %}
-<h2 class="titulo-lista">Facturas pendientes</h2>
-{% if not pendientes %}
-  <div class="caja vacia">No tiene facturas pendientes.</div>
-{% else %}
-  <div class="lista">
-    {% for f in pendientes %}
-    <div class="fila {{ 'vencida' if f.vencimiento and f.vencimiento < hoy_iso else '' }}">
-      <div class="fila-arriba">
-        <b>{{ f.numf_completo or f.numf }}</b>
-        <b class="plata">$ {{ (f.saldo or 0)|money_es }}</b>
-      </div>
-      <div class="fila-abajo">
-        <span>{{ f.fecha|fecha_es }}</span>
-        <span>
-          {% if f.vencimiento %}
-            {% if f.vencimiento < hoy_iso %}Venció el {{ f.vencimiento|fecha_es }}
-            {% else %}Vence el {{ f.vencimiento|fecha_es }}{% endif %}
-          {% endif %}
-        </span>
-      </div>
-      {% if (f.abono or 0) or (f.retencion or 0) %}
-      <div class="fila-abajo detalle">
-        <span>Factura $ {{ (f.importe or 0)|money_es }}</span>
-        <span>
-          {% if f.abono %}Pagado $ {{ f.abono|money_es }}{% endif %}
-          {% if f.retencion %} · Retención $ {{ f.retencion|money_es }}{% endif %}
-        </span>
-      </div>
+<main>
+  <div class="hero">
+    <div class="lbl">{{ 'Saldo a favor suyo' if _saldo < 0 else 'Su saldo con Intela' }}</div>
+    <div class="val">$ {{ _saldo|abs|money_es }}</div>
+    <div class="sub">
+      {{ facturas|length }} factura{{ '' if facturas|length == 1 else 's' }} ·
+      {% if t.n_vencidas %}{{ t.n_vencidas }} vencida{{ '' if t.n_vencidas == 1 else 's' }}
+      {% else %}ninguna vencida{% endif %}
+      {% if not _hay_ch %} · sin cheques en cartera{% endif %}
+    </div>
+    {% if _hay_ven or _hay_ch %}
+    <div class="split">
+      {% if _hay_ven %}
+      <div><small>Vencido</small><b>$ {{ t.saldo_vencido|money_es }}</b></div>
+      <div><small>Por vencer</small><b>$ {{ (t.saldo - t.saldo_vencido)|money_es }}</b></div>
+      {% endif %}
+      {% if _hay_ch %}
+      <div><small>Cheques por cobrar</small><b>$ {{ t.cheques_por_cobrar|money_es }}</b></div>
+      <div><small>Total</small><b>$ {{ (_saldo + t.cheques_por_cobrar)|money_es }}</b></div>
       {% endif %}
     </div>
-    {% endfor %}
+    {% endif %}
   </div>
-{% endif %}
 
-{# ---------------- Cheques ---------------- #}
-{% set en_cartera = (data.cheques or [])|selectattr('stat', 'in', ['Z', 'P'])|list %}
-{% if en_cartera %}
-<h2 class="titulo-lista">Cheques que tenemos suyos</h2>
-<div class="lista">
-  {% for c in en_cartera %}
-  <div class="fila">
-    <div class="fila-arriba">
-      <b>N° {{ c.no_cheque }}</b>
-      <b class="plata">$ {{ (c.importe or 0)|money_es }}</b>
-    </div>
-    <div class="fila-abajo">
-      <span>{{ c.nombre_banco or c.banco or '' }}</span>
-      <span>{% if c.fechad %}Se cobra el {{ c.fechad|fecha_es }}{% endif %}</span>
-    </div>
+  <div class="acciones-cuenta">
+    <a class="btn-pr imprimir" href="/estado-de-cuenta/imprimir"
+       target="_blank" rel="noopener">Ver la hoja para imprimir</a>
+    {# ⚠ Sólo si el servidor tiene con qué generarlo. Un botón que contesta 503
+       enseña a no confiar en los botones. Misma regla que en la ficha del
+       vendedor, que usa el mismo `pdf_disponible()`. #}
+    {% if pdf_disponible() %}
+    <a class="btn-pr" href="/estado-de-cuenta.pdf">Descargar el archivo</a>
+    {% endif %}
   </div>
-  {% endfor %}
-</div>
-{% endif %}
 
-<div class="acciones">
-  <a class="boton-lila" href="/estado-de-cuenta/imprimir" target="_blank" rel="noopener">
-    Ver la hoja para imprimir
-  </a>
-</div>
+  {% include "mi_cartera/_movimientos.html" %}
 
-<p class="ayuda"><a href="/salir">Salir</a></p>
+  <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
+</main>
+
+<style>
+  /* El ícono de salir, como dibujo y no como carácter — ver el comentario de
+     arriba y el de `--ico-pr` en los estilos compartidos. */
+  .iconbtn.salir::before{
+    content:'';width:18px;height:18px;display:block;background:var(--accent);
+    -webkit-mask:center/contain no-repeat var(--ico-salir);
+    mask:center/contain no-repeat var(--ico-salir)}
+  :root{--ico-salir:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z'/><path d='M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z'/></svg>")}
+
+  .acciones-cuenta{display:flex;gap:8px;margin-bottom:11px}
+  .acciones-cuenta .btn-pr{flex:1;justify-content:center;text-decoration:none;
+    text-align:center}
+  /* En un teléfono angosto los dos botones no entran uno al lado del otro sin
+     partir las palabras: se apilan. */
+  @media (max-width: 419px){ .acciones-cuenta{flex-direction:column} }
+
+  /* ⭐ Dueña: *"también esto puede funcionar en web y en mobile"*. Los estilos
+     compartidos están afinados para 390 px de ancho — la tabla baja a 11 px
+     de letra para que entren siete columnas. En una pantalla grande eso se lee
+     diminuto y sobra lugar por todos lados.
+
+     Sólo el portal del cliente ensancha: la ficha del vendedor se mira SIEMPRE
+     desde el celular, y tocarle el ancho sería cambiarle la pantalla a alguien
+     que no lo pidió. */
+  @media (min-width: 700px){
+    main{max-width:860px;padding:22px 24px 34px}
+    .appbar{padding:16px 24px 14px}
+    .appbar h1{font-size:22px}
+    .hero{padding:20px 22px 18px}
+    .hero .val{font-size:34px}
+    .ec{font-size:14px}
+    .ec td,.ec th{padding-top:9px;padding-bottom:9px}
+    .ec .fac b{font-size:14.5px}
+  }
+</style>
 {% endblock %}
