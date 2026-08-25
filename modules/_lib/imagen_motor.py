@@ -54,10 +54,19 @@ from modules._lib.pdf_motor import SinMotor
 
 _LOG = logging.getLogger("programa_core.imagen")
 
-#: Ancho de la hoja, en píxeles. 1100 entra la tabla de 8 columnas del estado
-#: de cuenta sin apretarla y sigue por debajo de los ~1600 que respeta WhatsApp
-#: (ver el techo en el docstring). Subirlo NO mejora nada: WhatsApp lo achica.
-ANCHO = 1100
+#: Ancho de la hoja, en píxeles.
+#:
+#: ⚠ 900, y NO más. TMT 2026-08-25, mirando la foto al lado de la hoja impresa:
+#: *"¿los anchos del pdf son así?"*. La tabla del estado de cuenta NO tiene
+#: anchos fijos —es una tabla elástica y el navegador reparte el sobrante entre
+#: las columnas— así que cuanto más ancha la hoja, más se abren los huecos
+#: entre columnas. A 1100 px se notaba entre Número e Importe; a 900 quedan
+#: apretadas y la foto se parece a la hoja de papel, que sale a 794 px (A4).
+#:
+#: Bajarlo NO cuesta legibilidad: la letra mide lo mismo en píxeles, cambia
+#: sólo cuánto aire hay al costado. Y subirlo NO mejora nada, porque WhatsApp
+#: achica el lado largo a ~1600 igual (ver el techo en el docstring).
+ANCHO = 900
 
 #: Cuánto alto se le da a la ventana por cada fila de la tabla. Las filas reales
 #: miden ~38 px; se pide de más a propósito porque lo que sobra se RECORTA y lo

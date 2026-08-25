@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from flask import render_template
 
+from filters import today_ec
 from modules._lib import imagen_motor
 from modules.informes import estado_cuenta_pdf
 
@@ -66,5 +67,14 @@ def generar(data: dict) -> bytes:
         por="vendedor",
         n=1,
         imagen=True,
+        # ⭐ El día, para el encabezado de la foto. TMT 2026-08-25: *"¿el nombre
+        # es el mismo?"*. El archivo se llama igual que el PDF —código y día—
+        # pero WhatsApp muestra el nombre de un DOCUMENTO y no el de una FOTO,
+        # así que al mandar la imagen el día deja de verse. Adentro de la foto
+        # sí se ve, y encima sin abrir nada: queda mejor que el nombre.
+        #
+        # Va sólo en la imagen. El papel no se toca: es la hoja que la oficina
+        # usa todos los días y su fecha la pone la impresora.
+        hoy=today_ec(),
     )
     return imagen_motor.desde_html(html, filas=cuantas_filas(data))
