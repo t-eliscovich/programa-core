@@ -356,8 +356,9 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 lo que suma puntos.</p>
 {% if vendidos %}
 <div class="caja"><table class="resumen">
-<thead><tr><th>Grupo</th><th>Tela</th><th>Color</th><th>Calidad</th>
-<th>Día</th><th>Vendedor</th><th class="n">Kg</th><th class="n">Puntos</th></tr></thead>
+<thead><tr><th>Grupo</th><th>Tela</th><th>Color</th><th>Forma</th>
+<th>Calidad</th><th>Día</th><th>Vendedor</th>
+<th class="n">Kg</th><th class="n">Puntos</th></tr></thead>
 <tbody>
 {% for v in vendidos %}
   <tr>
@@ -365,6 +366,7 @@ lo que suma puntos.</p>
     <td class="tela">{{ v.subcategoria }}</td>
     <td><b>{{ v.color }}</b>{% if v.color_nombre %}
       <span class="mini">{{ v.color_nombre }}</span>{% endif %}</td>
+    <td class="forma">{{ fm.forma(v) }}</td>
     <td>{{ v.calidad or 'PRI' }}</td>
     <td>{{ v.fecha | fecha_es }}</td>
     <td>{{ v.vendedor }}</td>

@@ -1147,6 +1147,20 @@ def vendidos(desde) -> list[dict]:
                                                           AS color_nombre,
                CASE WHEN f.categoria IN ('Franela', 'Cuellos', 'Puños')
                     THEN 'FCP' ELSE f.categoria END        AS categoria,
+               -- ⭐ La FORMA, igual que en la fila de arriba (dueña 25/08/2026:
+               -- "agregá forma dentro de la tabla de vendidos").
+               --
+               -- ⚠ Sale de la ficha de la tela, NO de la venta: la forma vive
+               -- en el rollo y la línea de factura no guarda el lote
+               -- (`dfc.id_lote` viene en NULL, igual que para la calidad). Así
+               -- que es la forma de lo que HAY, no la de lo que salió. Cuando
+               -- la tela se vendió entera no queda rollo que mirar y la columna
+               -- dice "—": preferible a inventar una sigla.
+               MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0
+                         AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
+                        WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+                        WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
+                        ELSE '' END)                       AS forma_fila,
                SUM(v.kg)                                   AS kg,
                MAX(COALESCE(p.puntos, 1))                  AS puntos,
                SUM(v.kg * COALESCE(p.puntos, 1))           AS puntos_fila

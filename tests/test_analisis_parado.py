@@ -3171,6 +3171,10 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     for col in ("Día", "Vendedor", "Grupo", "Tela", "Color", "Calidad"):
         assert f"<th>{col}</th>" in html or f'<th class="n">{col}</th>' in html
     assert "{{ v.fecha | fecha_es }}" in html and "{{ v.vendedor }}" in html
+    # la forma va con el MISMO macro que la lista de arriba: dos copias del
+    # mismo `if` se despegan a la primera corrección
+    assert "<th>Forma</th>" in html
+    assert html.count('<td class="forma">{{ fm.forma(') == 2
     # las dos pantallas que dibujan esta plantilla tienen que pasarle la tabla
     fuente = _i.getsource(views)
     assert fuente.count("vendidos=queries.vendidos(") == 2
