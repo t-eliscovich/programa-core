@@ -9,7 +9,7 @@
    columnas y nada más. El PDF sale de ESTE mismo HTML (ver `pdf_motor`), así
    que lo que se ve en pantalla al imprimir es exactamente el archivo.
 #}
-<!doctype html>
+{% import "analisis/_forma.html" as fm %}<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -34,6 +34,9 @@ td.tela{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .q{font-size:9px;font-weight:600;border-radius:3px;padding:0 4px}
 .q.seg{color:#854d0e;background:#fef3c7}
 .q.pri{color:#475569;background:#f1f5f9}
+.fm{display:inline-block;font-size:9px;font-weight:600;color:#475569;
+    background:#f1f5f9;border-radius:3px;padding:0 4px;margin:0 2px 1px 0;
+    white-space:nowrap}
 tfoot td{border-top:1px solid #9ca3af;border-bottom:0;font-weight:600;padding-top:5px}
 /* ⚠ Los bloques de una tela no se parten entre dos hojas si entran enteros. */
 tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
@@ -50,10 +53,10 @@ tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
 
 <table>
 <thead><tr>
-  <th style="width:24%">Tela</th>
+  <th style="width:21%">Tela</th>
   <th style="width:7%">Color</th>
-  <th style="width:18%">Nombre del color</th>
-  <th style="width:9%">Forma</th>
+  <th style="width:15%">Nombre del color</th>
+  <th style="width:15%">Forma</th>
   <th style="width:9%">Categoría</th>
   <th class="n" style="width:12%">Kg en saldo</th>
   <th class="n" style="width:10%">Vale</th>
@@ -66,7 +69,7 @@ tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
     <td class="tela">{% if loop.first %}{{ tela }}{% endif %}</td>
     <td><b>{{ f.color }}</b></td>
     <td class="g">{{ f.color_nombre }}</td>
-    <td>{% if f.forma %}<span class="q pri">{{ f.forma }}</span>{% else %}<span class="g">—</span>{% endif %}</td>
+    <td>{{ fm.forma(f) }}</td>
     <td>{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span>
         <span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>
         {% else %}<span class="q pri">PRI</span>{% endif %}</td>

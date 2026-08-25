@@ -2452,3 +2452,43 @@ def test_la_forma_se_resuelve_una_sola_vez_en_la_consulta():
     assert "THEN 'TUB ABI'" in fuente
     assert "THEN 'TUB'" in fuente and "THEN 'ABI'" in fuente
     assert "AS forma" in fuente
+
+
+def _forma(**kg):
+    """Renderiza el macro de la forma con los kilos que se le pasen."""
+    from jinja2 import Environment, FileSystemLoader
+    import filters as F
+    env = Environment(loader=FileSystemLoader("modules/analisis/templates"))
+    env.filters["num_es"] = F.num_es
+    tpl = env.from_string(
+        '{% import "analisis/_forma.html" as fm %}{{ fm.forma(f) }}')
+    return " ".join(tpl.render(f=kg).split())
+
+
+def test_cuando_hay_de_las_dos_formas_se_dicen_los_kilos_de_cada_una():
+    """⭐ Dueña 25/08/2026: "si hay tubular y abierta, quiero saber cuantas de
+    tubular y cuantos de abierta. no es lo mismo".
+
+    Con una sola forma alcanza la sigla —los kilos de la fila son todos de
+    ésa—; con las dos, el total de la fila no dice cuánto hay de cada una, y
+    salir a ofrecer 200 kg "de las dos" es prometer algo que puede no estar.
+    """
+    con_dos = _forma(kg_tubular=120, kg_abierta=51)
+    assert "TUB 120" in con_dos and "ABI 51" in con_dos
+
+    assert _forma(kg_tubular=200, kg_abierta=0) == '<span class="fm">TUB</span>'
+    assert _forma(kg_tubular=0, kg_abierta=200) == '<span class="fm">ABI</span>'
+    # el lote que no lo dice no inventa una forma
+    assert "—" in _forma(kg_tubular=0, kg_abierta=0)
+
+
+def test_la_forma_se_dibuja_con_UN_macro_en_las_dos_pantallas():
+    """Dos copias del mismo `if` se despegan a la primera corrección — ya pasó
+    con la píldora de calidad."""
+    from pathlib import Path
+    base = Path("modules/analisis/templates/analisis")
+    for hoja in ("parado.html", "parado_impreso.html"):
+        t = (base / hoja).read_text(encoding="utf-8")
+        assert '{% import "analisis/_forma.html" as fm %}' in t, hoja
+        assert "fm.forma(f)" in t, hoja
+        assert "TUB" not in t, f"{hoja} dibuja la forma por su cuenta"

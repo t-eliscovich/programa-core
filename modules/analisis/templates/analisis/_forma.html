@@ -1,0 +1,24 @@
+{# La FORMA de una tela × color: tubular, abierta, o las dos con sus kilos.
+
+   ⭐ Dueña 25/08/2026: *"si hay tubular y abierta, quiero saber cuantas de
+   tubular y cuantos de abierta. no es lo mismo"*. Cuando hay una sola forma
+   alcanza con la sigla —los kilos de la fila ya son todos de ésa—; cuando hay
+   de las dos, el total de la fila no dice cuánto hay de cada una, y salir a
+   ofrecer 200 kg "de las dos" es prometer algo que puede no estar.
+
+   ⚠ UN solo macro para la pantalla y para la hoja impresa. Dos copias del
+   mismo `if` se despegan a la primera corrección — ya pasó con la píldora de
+   calidad.
+#}
+{% macro forma(f) -%}
+{%- if f.kg_tubular and f.kg_abierta -%}
+  <span class="fm">TUB {{ f.kg_tubular | num_es(0) }}</span>
+  <span class="fm">ABI {{ f.kg_abierta | num_es(0) }}</span>
+{%- elif f.kg_tubular -%}
+  <span class="fm">TUB</span>
+{%- elif f.kg_abierta -%}
+  <span class="fm">ABI</span>
+{%- else -%}
+  <span class="g">—</span>
+{%- endif -%}
+{%- endmacro %}

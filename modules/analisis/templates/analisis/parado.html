@@ -1,4 +1,5 @@
 {% extends "analisis/base.html" %}
+{% import "analisis/_forma.html" as fm %}
 {% block titulo %}Saldos{% endblock %}
 {% block contenido %}
 <style>
@@ -16,8 +17,9 @@ td.col2 .g{font-size:12px;margin-left:6px}
    columna con color de la tabla — si se pinta otra, deja de saltar. */
 /* La forma va gris: es un dato de la ficha, no una decisión. El color de la
    tabla está reservado para los puntos. */
-.fm{font-size:10px;font-weight:600;color:#475569;background:#f1f5f9;
-    border-radius:5px;padding:1px 5px;white-space:nowrap}
+.fm{display:inline-block;font-size:10px;font-weight:600;color:#475569;
+    background:#f1f5f9;border-radius:5px;padding:1px 5px;margin:0 2px 1px 0;
+    white-space:nowrap}
 td.forma{white-space:nowrap}
 .pt{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;
     font-weight:600;background:#f1f0ec;color:#5a5955}
@@ -232,8 +234,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
        PRI SEG y que se pueda filtrar".
        Una fila puede tener kilos de las dos —un parado con lotes mezclados—,
        así que hay tres valores y el filtro los toma por separado. #}
-    <td class="forma">{% if f.forma %}<span class="fm">{{ f.forma }}</span>
-      {% else %}<span class="g">—</span>{% endif %}</td>
+    <td class="forma">{{ fm.forma(f) }}</td>
     <td class="cal">{{ calidad }}</td>
     {# ⚠ Un ítem de 0,4 kg mostrado como "0" parece un error de la pantalla: la
        dueña preguntó por qué había cosas en 0 kg. Abajo de 1 kg va con decimal. #}
