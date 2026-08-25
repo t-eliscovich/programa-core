@@ -82,11 +82,116 @@ _TOPE_CACHE = 200
 _CACHE: dict[str, tuple[float, dict]] = {}
 _CANDADO = threading.Lock()
 
+#: Cuándo corrió la última precarga (monotonic). 0 = nunca.
+_ULTIMA_PRECARGA = 0.0
+
 
 def reset_cache() -> None:
-    """Olvida lo cacheado (tests, y cualquiera que quiera el dato fresco)."""
+    """Olvida lo cacheado EN MEMORIA (la base es la caché de verdad)."""
+    global _ULTIMA_PRECARGA
     with _CANDADO:
         _CACHE.clear()
+    _ULTIMA_PRECARGA = 0.0
+
+
+# ---------------------------------------------------------------------------
+# La caché que sobrevive al deploy
+# ---------------------------------------------------------------------------
+# TMT 2026-08-25 (dueña): *"el que se llevó carga lento"*. Medido: 630-780 ms.
+# No es el SQL — la pregunta más tonta posible contra Asinfo (las columnas de
+# una tabla) tarda 590-690 ms igual. Es el peaje fijo del puente.
+#
+# Una factura emitida no cambia, así que la respuesta se guarda en la base y no
+# se vuelve a preguntar. La caché en memoria sigue adelante porque es más
+# rápida todavía y ahorra el viaje a Postgres.
+def _de_la_base(numero: str) -> dict | None:
+    """Lo guardado, o None. Nunca levanta: es una caché, no una fuente."""
+    try:
+        import db
+
+        fila = db.fetch_one(
+            "SELECT datos FROM scintela.factura_detalle WHERE numero = %s",
+            (numero,))
+    except Exception as e:  # noqa: BLE001 — sin base, se le pregunta a Asinfo
+        _LOG.warning("leyendo la caché de %s: %s", numero, e)
+        return None
+    datos = (fila or {}).get("datos")
+    return datos if isinstance(datos, dict) and datos.get("estado") == "ok" else None
+
+
+def _guardar(numero: str, res: dict) -> None:
+    """Guarda SÓLO el éxito. Un 'no pude preguntar' guardado es una mentira
+    que dura para siempre — el error que costó el balance del 29/07."""
+    if res.get("estado") != "ok":
+        return
+    try:
+        import json
+
+        import db
+
+        db.execute(
+            "INSERT INTO scintela.factura_detalle (numero, datos) "
+            "VALUES (%s, %s::jsonb) "
+            "ON CONFLICT (numero) DO UPDATE "
+            "   SET datos = EXCLUDED.datos, fecha_crea = now()",
+            (numero, json.dumps(res)))
+    except Exception as e:  # noqa: BLE001 — no poder guardar no rompe la vista
+        _LOG.warning("guardando la caché de %s: %s", numero, e)
+
+
+def precargar(dias: int = 3, cada_secs: float = 1800.0) -> int:
+    """El detalle de TODAS las facturas de los últimos días, en UNA consulta.
+
+    Lo llama el calentador (`modules/_lib/warmup.py`). Con esto, la factura que
+    alguien va a mirar hoy ya está en la base antes de que la clickee: las que
+    se miran son las de esta semana.
+
+    Se cobra el mismo peaje de 650 ms que una factura sola, así que traer 200
+    es gratis al lado de que 200 personas paguen 650 ms cada una.
+
+    Reescribe lo que ya estaba: si una factura de ayer se corrigió en Asinfo,
+    la caché se entera sola dentro de la media hora.
+    """
+    global _ULTIMA_PRECARGA
+
+    from datetime import timedelta
+
+    from filters import today_ec
+    from modules._lib import metabase_client
+
+    ahora = time.monotonic()
+    if cada_secs and _ULTIMA_PRECARGA and (ahora - _ULTIMA_PRECARGA) < cada_secs:
+        return 0
+    if not metabase_client.disponible():
+        return 0
+    desde = (today_ec() - timedelta(days=max(0, int(dias)))).isoformat()
+    try:
+        filas, ok = metabase_client.fetch_dataset_estado(
+            DB_ASINFO, _sql_where(f"fc.fecha >= '{desde}'"), max_results=20000)
+    except Exception as e:  # noqa: BLE001 — fail-soft, como todo el puente
+        _LOG.warning("precargar falló: %s", e)
+        return 0
+    if not ok or not filas:
+        return 0
+
+    por_numero: dict[str, list[dict]] = {}
+    for f in filas:
+        por_numero.setdefault((f.get("numero") or "").strip(), []).append(f)
+
+    guardadas = 0
+    for numero, suyas in por_numero.items():
+        if not _NUMERO_RE.match(numero):
+            continue
+        res = {"estado": "ok", **_agrupar(suyas)}
+        _guardar(numero, res)
+        with _CANDADO:
+            if len(_CACHE) < _TOPE_CACHE:
+                _CACHE[numero] = (ahora, res)
+        guardadas += 1
+    _ULTIMA_PRECARGA = ahora
+    _LOG.info("precarga del detalle de facturas: %s facturas desde %s",
+              guardadas, desde)
+    return guardadas
 
 
 def _slot(atributo: int) -> str:
@@ -102,9 +207,16 @@ def _slot(atributo: int) -> str:
     return f"(CASE {ramas} END)"
 
 
-def _sql(numero: str) -> str:
+def _sql_where(condicion: str) -> str:
+    """La consulta, con el WHERE que le pidan.
+
+    Una factura sola y un día entero salen de la MISMA consulta: preguntarle a
+    Asinfo cuesta 650 ms fijos, así que traer las 200 facturas de un día sale
+    lo mismo que traer una — y es exactamente lo que hace `precargar`.
+    """
     return f"""
-SELECT LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
+SELECT LTRIM(RTRIM(ISNULL(fc.numero, '')))                       AS numero,
+       LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
        ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(col.codigo, ''))), ''),
               RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3))            AS codigo,
        LTRIM(RTRIM(ISNULL(pr.nombre_comercial, '')))             AS producto,
@@ -123,10 +235,15 @@ SELECT LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
   JOIN producto pr ON pr.id_producto = dfc.id_producto
   LEFT JOIN valor_atributo col ON col.id_valor_atributo = {_slot(ATRIBUTO_COLOR)}
   LEFT JOIN valor_atributo cal ON cal.id_valor_atributo = {_slot(ATRIBUTO_CALIDAD)}
- WHERE fc.numero = '{numero}'
+ WHERE {condicion}
    AND fc.estado <> 0
- ORDER BY pr.nombre_subcategoria_producto, col.nombre
+ ORDER BY fc.numero, pr.nombre_subcategoria_producto, col.nombre
 """
+
+
+def _sql(numero: str) -> str:
+    """Una factura."""
+    return _sql_where(f"fc.numero = '{numero}'")
 
 
 def _num(v) -> float:
@@ -248,6 +365,12 @@ def que_se_llevo(numero) -> dict:
         if guardado and (ahora - guardado[0]) < _TTL_SEGS:
             return guardado[1]
 
+    guardado_base = _de_la_base(num)
+    if guardado_base is not None:
+        with _CANDADO:
+            _CACHE[num] = (ahora, guardado_base)
+        return guardado_base
+
     from modules._lib import metabase_client
 
     if not metabase_client.disponible():
@@ -266,6 +389,7 @@ def que_se_llevo(numero) -> dict:
         return {"estado": "sin-datos", **vacio}
 
     res = {"estado": "ok", **_agrupar(filas)}
+    _guardar(num, res)
     with _CANDADO:
         if len(_CACHE) >= _TOPE_CACHE:
             _CACHE.clear()

@@ -4,7 +4,8 @@ Sin Postgres ni Metabase: `traer_asinfo` y las funciones de `db` se mockean.
 Las reglas que se prueban son las decisiones de la dueña del 05/08/2026:
 pisar nombre/RUC, teléfono sólo rellena vacíos con valores reales, cupo
 jamás, alta nueva → campanita, RUC repetido → conflicto sin alta; más la del
-25/08/2026: el descuento se RELLENA (vacío o cero) y nunca se pisa.
+25/08/2026: en el descuento manda ASINFO y pisa el de la ficha, salvo cuando
+Asinfo no sabe (sin lista, o con un nombre de lista que no se entiende).
 """
 from __future__ import annotations
 
@@ -191,13 +192,16 @@ def test_descuento_de_lista_no_inventa():
     assert sa.descuento_de_lista("5%y999%") is None
 
 
-def test_descuento_a_escribir_rellena_el_hueco_y_no_pisa():
-    assert sa.descuento_a_escribir(None, 7.0) == 7.0     # vacío → rellena
-    assert sa.descuento_a_escribir(0, 7.0) == 7.0        # cero → rellena
-    assert sa.descuento_a_escribir(7.0, 4.0) is None     # cargado → no se pisa
+def test_descuento_a_escribir_manda_asinfo():
+    assert sa.descuento_a_escribir(None, 7.0) == 7.0     # vacío → se carga
+    assert sa.descuento_a_escribir(0, 7.0) == 7.0        # cero → se carga
+    assert sa.descuento_a_escribir(7.0, 4.0) == 4.0      # cargado → SE PISA
+    assert sa.descuento_a_escribir(9.0, 0.0) == 0.0      # el 0 de Asinfo vale
     assert sa.descuento_a_escribir(7.0, 7.0) is None     # igual → nada que hacer
     assert sa.descuento_a_escribir(0, 0.0) is None       # los dos en cero
-    assert sa.descuento_a_escribir(None, None) is None   # Asinfo no dice nada
+    # lo único intocable: lo que Asinfo no sabe
+    assert sa.descuento_a_escribir(7.0, None) is None
+    assert sa.descuento_a_escribir(None, None) is None
 
 
 def test_el_sync_rellena_el_descuento_vacio(monkeypatch):
@@ -213,7 +217,10 @@ def test_el_sync_rellena_el_descuento_vacio(monkeypatch):
     # no podría inferir el tipo de la columna del VALUES
     assert list(params[1:]) == ["AAA", None, None, None, "9.0"]
     assert r["descuentos_puestos"] == 1
-    assert r["dif_descuento"] == []
+    assert r["descuentos_pisados"] == 0          # estaba vacío, no se pisó nada
+    assert r["desc_cambiado"] == [
+        {"cod": "AAA", "nombre": "PEREZ JUAN", "antes": None, "ahora": 9.0}
+    ]
 
 
 def test_el_sync_rellena_el_descuento_en_cero(monkeypatch):
@@ -225,23 +232,50 @@ def test_el_sync_rellena_el_descuento_en_cero(monkeypatch):
     r = sa.sincronizar()
     assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, "12.0"]
     assert r["descuentos_puestos"] == 1
+    assert r["descuentos_pisados"] == 0     # cero cuenta como vacío, no como pisado
 
 
-def test_el_descuento_cargado_no_se_pisa_y_queda_listado(monkeypatch):
+def test_asinfo_pisa_el_descuento_cargado_y_guarda_el_anterior(monkeypatch):
+    """TMT 2026-08-25 (dueña): "el descuento que vale es el que está en Asinfo"."""
     asinfo = [{"cod": "CAL", "ruc": "", "nombre": "CALDERON SA",
                "tel1": "", "tel2": "", "lista_desc": "5%y14%"}]
     pc = [{"id_cliente": 1, "cod": "CAL", "nombre": "CALDERON SA",
            "ruc": "", "telefono": "022345678", "descuento": 12}]
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
-    assert cap["updates"] == []          # nada que escribir
-    assert r["descuentos_puestos"] == 0
-    assert r["dif_descuento"] == [
-        {"cod": "CAL", "nombre": "CALDERON SA", "pc": 12.0, "asinfo": 14.0}
+    assert list(cap["updates"][0][1][1:]) == ["CAL", None, None, None, "14.0"]
+    assert r["descuentos_pisados"] == 1
+    # el valor ANTERIOR queda registrado: es la forma de volver atrás
+    assert r["desc_cambiado"] == [
+        {"cod": "CAL", "nombre": "CALDERON SA", "antes": 12.0, "ahora": 14.0}
     ]
     # UNA campanita con el número, no una por cliente
-    difs = [a for a in cap["avisos"] if a["clave"].startswith("clientes-dif-descuento")]
-    assert len(difs) == 1 and "1 clientes con descuento distinto" in difs[0]["titulo"]
+    avisos = [a for a in cap["avisos"] if a["clave"].startswith("clientes-desc-pisados")]
+    assert len(avisos) == 1
+    assert "Asinfo cambió el descuento de 1 clientes" in avisos[0]["titulo"]
+
+
+def test_descuento_igual_no_toca_ni_avisa(monkeypatch):
+    asinfo = [{"cod": "CAL", "ruc": "", "nombre": "CALDERON SA",
+               "tel1": "", "tel2": "", "lista_desc": "5%y12%"}]
+    pc = [{"id_cliente": 1, "cod": "CAL", "nombre": "CALDERON SA",
+           "ruc": "", "telefono": "022345678", "descuento": 12}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    assert cap["updates"] == [] and cap["avisos"] == []
+    assert r["desc_cambiado"] == []
+
+
+def test_sin_lista_en_asinfo_la_ficha_no_se_toca(monkeypatch):
+    """Asinfo sin lista NO significa "sin descuento": significa que no sabe."""
+    asinfo = [{"cod": "GUI", "ruc": "", "nombre": "GUILLEN SA",
+               "tel1": "", "tel2": "", "lista_desc": ""}]
+    pc = [{"id_cliente": 1, "cod": "GUI", "nombre": "GUILLEN SA",
+           "ruc": "", "telefono": "022345678", "descuento": 9}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    assert cap["updates"] == []
+    assert r["listas_raras"] == [] and r["desc_cambiado"] == []
 
 
 def test_lista_que_no_se_entiende_no_carga_nada(monkeypatch):
@@ -253,6 +287,7 @@ def test_lista_que_no_se_entiende_no_carga_nada(monkeypatch):
     r = sa.sincronizar()
     assert cap["updates"] == []
     assert r["listas_raras"] == [{"cod": "GUI", "lista": "MAYORISTA"}]
+    assert r["desc_cambiado"] == []
     raras = [a for a in cap["avisos"] if a["clave"].startswith("clientes-listas-raras")]
     assert len(raras) == 1
 
@@ -270,10 +305,10 @@ def test_alta_nueva_ya_viene_con_el_descuento(monkeypatch):
 
 def test_el_log_recorta_listas_largas_sin_romper_el_json():
     import json
-    rep = {"ok": True, "dif_descuento": [{"cod": f"C{i}"} for i in range(400)]}
+    rep = {"ok": True, "desc_cambiado": [{"cod": f"C{i}"} for i in range(400)]}
     chico = sa._para_log(rep)
-    assert len(chico["dif_descuento"]) == 300
-    assert chico["dif_descuento_total"] == 400
+    assert len(chico["desc_cambiado"]) == 300
+    assert chico["desc_cambiado_total"] == 400
     json.loads(json.dumps(chico))     # sigue siendo JSON válido
 
 

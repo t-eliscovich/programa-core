@@ -18,15 +18,18 @@ Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
 - **Teléfono: PC gana.** 2.640 de 3.635 teléfonos de Asinfo son basura
   (`2222222` o <7 dígitos) y PC tiene 3.833 reales. Sólo se RELLENA el
   teléfono cuando PC está vacío y el de Asinfo parece real.
-- **DESCUENTO: Asinfo rellena, PC manda** (TMT 2026-08-25, dueña). Asinfo sí
-  lo tiene cargado, en una LISTA por cliente (`cliente.id_lista_descuentos` →
+- **DESCUENTO: manda ASINFO** (TMT 2026-08-25, dueña: *"el descuento que vale
+  es el que está en Asinfo, que haga override del que ya está"*). Asinfo lo
+  tiene en una LISTA por cliente (`cliente.id_lista_descuentos` →
   `lista_descuentos.nombre`, con nombres tipo `5%y7%`). El primer tramo es el
   5% de contado, igual para todos; el SEGUNDO es el descuento del cliente, y
   es el que PC guarda en `cliente.descuento`. Medido el 25/08 contra la base
   en vivo: de los 3.644 códigos que cruzan, 3.333 ya coincidían (96%), 166
-  estaban vacíos en PC y 145 difieren. Por eso: se RELLENA cuando en PC está
-  vacío o en cero, NUNCA se pisa un descuento cargado, y las diferencias se
-  listan en la pantalla del sync para que las decida una persona.
+  estaban vacíos y 145 diferían.
+  Primero se decidió rellenar-sin-pisar y listar las diferencias; con las 145
+  a la vista la dueña cambió a **pisar siempre**, el mismo día. Lo que Asinfo
+  no sabe (lista ausente o con otro formato) SIGUE sin tocarse, y cada cambio
+  queda registrado con su valor anterior en el log y en la pantalla.
 - **Cliente nuevo limpio → alta automática + campanita** para que Andrés le
   cargue el cupo (el descuento ya viene de Asinfo, si la lista se entiende).
 - **Cliente nuevo cuyo RUC YA está en PC bajo otro código → NO se importa**
@@ -137,16 +140,18 @@ def descuento_de_lista(nombre: str | None) -> float | None:
 def descuento_a_escribir(pc_val, asi_val) -> float | None:
     """El descuento que hay que GRABAR, o None si la ficha no se toca.
 
-    Rellena sólo el hueco: vacío o cero en PC. Un descuento ya cargado no se
-    pisa nunca — eso es una diferencia para que la mire una persona.
+    Manda Asinfo: si dice algo distinto de lo que hay en la ficha, se escribe.
+    Lo único que NO se toca es lo que Asinfo no sabe (sin lista, o una lista
+    con un nombre que no se entiende): ahí `asi_val` viene en None y la ficha
+    queda como está.
     """
     if asi_val is None:
         return None
     if pc_val is None:
         return float(asi_val)
-    if float(pc_val) == 0.0 and float(asi_val) != 0.0:
-        return float(asi_val)
-    return None
+    if float(pc_val) == float(asi_val):
+        return None
+    return float(asi_val)
 
 
 def _norm_nombre(s: str | None) -> str:
@@ -175,8 +180,9 @@ def sincronizar(usuario: str = "sync-asinfo") -> dict:
     """Un pase completo, idempotente. Nunca levanta: devuelve el reporte.
 
     Reporte: {ok, actualizados, altas: [cod], conflictos: [...],
-    dup_asinfo: [cod], descuentos_puestos, dif_descuento: [...],
-    listas_raras: [...], sin_tocar, leidas_de_asinfo, error?}.
+    dup_asinfo: [cod], descuentos_puestos, descuentos_pisados,
+    desc_cambiado: [...], listas_raras: [...], sin_tocar, leidas_de_asinfo,
+    error?}.
     """
     try:
         return _sincronizar(usuario)
@@ -232,7 +238,7 @@ def _sincronizar(usuario: str) -> dict:
 
     # ── Fichas existentes: pisar nombre/RUC, rellenar teléfono ─────────
     cambios: list[tuple] = []  # (cod, nombre|None, ruc|None, tel|None, desc|None)
-    dif_descuento: list[dict] = []
+    desc_cambiado: list[dict] = []
     listas_raras: list[dict] = []
     for cod, a in por_cod.items():
         p = pc_por_cod.get(cod)
@@ -249,15 +255,13 @@ def _sincronizar(usuario: str) -> dict:
         desc_nuevo = descuento_a_escribir(p.get("descuento"), a["desc"])
         if a["desc"] is None and a["lista_desc"]:
             listas_raras.append({"cod": cod, "lista": a["lista_desc"]})
-        elif (
-            a["desc"] is not None
-            and p.get("descuento") is not None
-            and float(p["descuento"]) != 0.0
-            and float(p["descuento"]) != float(a["desc"])
-        ):
-            dif_descuento.append({
+        if desc_nuevo is not None:
+            # queda el valor ANTERIOR: es la única forma de volver atrás uno
+            # que se haya pisado mal, y de leer la corrida después
+            desc_cambiado.append({
                 "cod": cod, "nombre": (p.get("nombre") or "")[:60],
-                "pc": float(p["descuento"]), "asinfo": float(a["desc"]),
+                "antes": None if p.get("descuento") is None else float(p["descuento"]),
+                "ahora": float(desc_nuevo),
             })
         if nombre_nuevo or ruc_nuevo or tel_nuevo or desc_nuevo is not None:
             cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo, desc_nuevo))
@@ -288,7 +292,7 @@ def _sincronizar(usuario: str) -> dict:
             altas.append(cod)
 
     _avisar_conflictos(conflictos, duplicados)
-    _avisar_descuentos(dif_descuento, listas_raras)
+    _avisar_descuentos(desc_cambiado, listas_raras)
 
     reporte = {
         "ok": True,
@@ -299,7 +303,10 @@ def _sincronizar(usuario: str) -> dict:
         "conflictos": conflictos,
         "dup_asinfo": sorted(duplicados),
         "descuentos_puestos": sum(1 for c in cambios if c[4] is not None),
-        "dif_descuento": sorted(dif_descuento, key=lambda d: d["cod"]),
+        # "pisado" = tenía un descuento de verdad. Vacío y CERO son huecos:
+        # llenar un cero no es pisarle el descuento a nadie.
+        "descuentos_pisados": sum(1 for d in desc_cambiado if d["antes"]),
+        "desc_cambiado": sorted(desc_cambiado, key=lambda d: d["cod"]),
         "listas_raras": sorted(listas_raras, key=lambda d: d["cod"]),
         "sin_tocar": len(por_cod) - len(cambios) - len(altas) - len(conflictos),
     }
@@ -389,24 +396,26 @@ def _avisar_conflictos(conflictos: list[dict], dup_asinfo: set[str]) -> None:
         )
 
 
-def _avisar_descuentos(dif: list[dict], raras: list[dict]) -> None:
+def _avisar_descuentos(cambiado: list[dict], raras: list[dict]) -> None:
     """UNA campanita por cada cosa, no una por cliente.
 
-    Las diferencias de descuento son ~145 al estrenar esto: una campanita por
-    cliente sería un buzón inservible. El número va en el título y el detalle
-    está en la pantalla del sync. `clave` con la cantidad adentro para que un
-    número distinto vuelva a avisar y el mismo número no repita.
+    El día que se estrenó el override fueron 145 fichas de una: una campanita
+    por cliente sería un buzón inservible. El número va en el título y el
+    detalle está en la pantalla del sync. `clave` con la fecha adentro para
+    que avise UNA vez por día y no repita en la corrida de la tarde.
     """
     from modules.avisos.queries import avisar
 
-    if dif:
-        cods = ", ".join(d["cod"] for d in sorted(dif, key=lambda d: d["cod"])[:8])
+    pisados = [d for d in cambiado if d["antes"]]
+    if pisados:
+        hoy = datetime.now(UTC).strftime("%Y%m%d")
+        cods = ", ".join(d["cod"] for d in sorted(pisados, key=lambda d: d["cod"])[:8])
         avisar(
             fuente="clientes", nivel="alerta",
-            titulo=f"{len(dif)} clientes con descuento distinto al de Asinfo",
-            detalle=f"Manda el de Programa Core. {cods}"[:200],
+            titulo=f"Asinfo cambió el descuento de {len(pisados)} clientes",
+            detalle=f"Se pisó el que tenía la ficha. {cods}"[:200],
             url="/clientes/sync-asinfo",
-            clave=f"clientes-dif-descuento-{len(dif)}",
+            clave=f"clientes-desc-pisados-{hoy}",
         )
     if raras:
         cods = ", ".join(f"{r['cod']} ({r['lista']})" for r in raras[:5])
@@ -427,7 +436,7 @@ def _para_log(reporte: dict) -> dict:
     Por eso se recortan las LISTAS largas, no el texto.
     """
     chico = dict(reporte)
-    for campo in ("dif_descuento", "listas_raras", "conflictos"):
+    for campo in ("desc_cambiado", "listas_raras", "conflictos"):
         filas = chico.get(campo)
         if isinstance(filas, list) and len(filas) > 300:
             chico[campo] = filas[:300]
