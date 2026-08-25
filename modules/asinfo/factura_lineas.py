@@ -79,7 +79,7 @@ IVA = 0.15
 #: se reescriben solas la próxima vez que alguien mire esa factura. Sale más
 #: barato que acordarse de vaciar la tabla en cada deploy — y olvidarse deja
 #: pantallas mostrando la mitad de los datos sin que nada falle.
-FORMATO = 2
+FORMATO = 4
 
 #: Cuánto vale la foto. Una factura vieja no cambia nunca; una de hoy puede
 #: recibir un renglón más en los minutos siguientes a emitirse.
@@ -332,18 +332,30 @@ def _agrupar(filas: list[dict]) -> dict:
         g["kg"] = round(g["kg"], 2)
         g["total"] = round(g["total"], 2)
 
-    neto = bruto - descuento
+    # ⭐ El pie se arma DESDE ARRIBA con las cifras ya redondeadas, en el mismo
+    # orden en que se leen. La pantalla muestra bruto, descuento e IVA con dos
+    # decimales y el que mira los suma con el ojo; si alguno de los pasos usa
+    # el número largo de adentro, la columna queda un centavo despegada de lo
+    # que se ve. Pasó dos veces el mismo día y para los dos lados: la 182382
+    # decía 174,45 donde la vista sumaba 174,44, y al arreglar sólo el último
+    # paso la 182574 pasó a decir 202,03 donde la vista sumaba 202,04 — porque
+    # el neto salía de restar los largos (175,6837 → 175,68) y no los que
+    # están a la vista (210,15 − 34,46 = 175,69).
+    bruto = round(bruto, 2)
+    descuento = round(descuento, 2)
+    neto = round(bruto - descuento, 2)
+    iva = round(neto * IVA, 2)
     return {
         "lineas": lineas,
         "servicios": servicios,
         "totales": {
             "rollos": rollos,
             "kg": round(kg, 2),
-            "bruto": round(bruto, 2),
-            "descuento": round(descuento, 2),
-            "neto": round(neto, 2),
-            "iva": round(neto * IVA, 2),
-            "total": round(neto * (1 + IVA), 2),
+            "bruto": bruto,
+            "descuento": descuento,
+            "neto": neto,
+            "iva": iva,
+            "total": round(neto + iva, 2),
             # Los dos tramos, sólo si TODOS los renglones llevan los mismos.
             # Con dos escalones distintos en la misma factura un solo par
             # mentiría — mejor no decir nada que decir el de una fila sola.

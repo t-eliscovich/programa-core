@@ -39,6 +39,12 @@
        DESPACHADO —los kilos que salieron— contra los 20.000 del día. Estaba
        debajo de "Facturado" y se leía como si fuera de esa cifra. #}
     {% set _kg_barra = ventas_hoy.despachado.kg or 0 %}
+    {# 🎉 TMT 2026-08-25: *"poné emojis de fiestita por haber vendido más de
+       20k kilos (y siempre que eso pase)"*. Mide lo mismo que la BARRA —lo
+       despachado—, así que el festejo entra justo cuando la barra se llena.
+       Nace apagado y lo prende el fetch, igual que el despachado. #}
+    <div class="ventas-hoy-fiesta" data-campo="fiesta"
+         style="{{ '' if _kg_barra >= 20000 else 'display:none' }}">🎉🥳 ¡Pasamos los 20.000 kg!</div>
     <div class="ventas-hoy-barra">
       <div class="ventas-hoy-lleno" data-campo="barra"
            style="width: {{ [ (_kg_barra / 20000 * 100) | round(1), 100 ] | min }}%"></div>
@@ -196,6 +202,15 @@
     height: 1px; background: rgb(226 232 240); margin: 0.7rem 0 0.5rem;
   }
   .dark .ventas-hoy-sep { background: rgb(71 85 105); }
+  .ventas-hoy-fiesta {
+    margin-top: 0.45rem; padding: 0.3rem 0.5rem; text-align: center;
+    background: rgb(254 249 231); border: 1px solid rgb(233 220 181);
+    border-radius: 0.5rem; font-size: 0.8rem; color: rgb(133 77 14);
+  }
+  .dark .ventas-hoy-fiesta {
+    background: rgb(66 56 24); border-color: rgb(133 108 40);
+    color: rgb(250 228 168);
+  }
   .ventas-hoy-barra {
     position: relative; height: 0.5rem; margin-top: 0.55rem;
     background: rgb(226 232 240); border-radius: 999px; overflow: hidden;
@@ -266,6 +281,7 @@
       q('devol_rot').textContent = dev.n + (dev.n === 1 ? ' devolución' : ' devoluciones');
     }
     q('barra').style.width = Math.min(100, (dsp.kg || 0) / 20000 * 100).toFixed(1) + '%';
+    q('fiesta').style.display = (dsp.kg || 0) >= 20000 ? '' : 'none';
     q('n_lab').textContent = d.n === 1 ? 'factura' : 'facturas';
 
   }

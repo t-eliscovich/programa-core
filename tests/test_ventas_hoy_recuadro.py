@@ -328,3 +328,31 @@ def test_el_logo_del_sidebar_lleva_al_inicio():
     assert 'href="{{ url_for(\'historial.operaciones\') }}"' in trozo
     assert base.index('id="sidebar-toggle"') > base.index("sidebar-brand-img")
     assert "</a>" in base[i:i + 600]
+
+
+# ── 🎉 El día de 20.000 kg ─────────────────────────────────────────────────
+# TMT 2026-08-25: *"acá también festejo"* (mirando el recuadro con la barra
+# llena: 20.525,75 kg despachados).
+
+def _landing_html() -> str:
+    from pathlib import Path
+
+    return Path(
+        "modules/historial/templates/historial/operaciones.html").read_text()
+
+
+def test_el_festejo_entra_cuando_la_barra_se_llena():
+    """Mide lo MISMO que la barra —lo despachado— contra los mismos 20.000:
+    si midiera otra cosa, la barra llegaría al tope sin festejo (o al revés)."""
+    html = _landing_html()
+    assert "🎉" in html and "🥳" in html
+    assert "_kg_barra >= 20000" in html
+    assert "(dsp.kg || 0) >= 20000" in html      # y el fetch, con el mismo tope
+
+
+def test_el_festejo_nace_apagado_y_lo_prende_el_fetch():
+    """El despachado no está en el render (vive en Asinfo): si el renglón
+    naciera visible, festejaría todos los días hasta que llegue el fetch."""
+    html = _landing_html()
+    assert "'' if _kg_barra >= 20000 else 'display:none'" in html
+    assert "q('fiesta').style.display" in html

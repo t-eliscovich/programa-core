@@ -146,8 +146,35 @@ def foto_stock_buena() -> dict | None:
         return None
 
 
+def _muy_reciente(conn, min_gap_secs: int) -> bool:
+    """¿La foto anterior es de hace menos de un intervalo?
+
+    🚨 TMT 2026-08-25 (dueña): *"hay algo raro, la traza no se está
+    moviendo"*. No era que no se movía: desde el 24/08 CADA foto se guardaba
+    DOS veces, con dos a diez segundos de diferencia (173 de las 357 fotos del
+    25/08). La segunda no tenía nada nuevo que contar, así que la mitad de los
+    renglones de la pantalla salían con Δ 0 y las columnas vacías —la grilla
+    parecía congelada— y las 200 fotos que muestra llegaban nueve horas atrás
+    en vez de dos días.
+
+    ⭐ El freno de cinco minutos era una VARIABLE DE PROCESO (`_ultimo_ts`) y
+    hay más de un proceso sirviendo la app: cada uno respetaba su propio reloj.
+    El 24/08 el ciclo de fondo se partió en dos hilos y los relojes quedaron
+    alineados, así que lo que antes se cruzaba de a ratos pasó a cruzarse
+    siempre. El freno tiene que vivir en la BASE, que es lo único que los
+    procesos comparten —igual que la explicación del día, que se frena con su
+    índice único y no con una variable—, y se pregunta ADENTRO del lock: entre
+    la pregunta y el INSERT no puede entrar nadie.
+    """
+    fila = db.fetch_one(
+        "SELECT EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MAX(creado_en)))"
+        " AS seg FROM scintela.traza_utilidad", conn=conn)
+    seg = (fila or {}).get("seg")
+    return seg is not None and float(seg) < min_gap_secs
+
+
 def registrar(origen: str = "manual", bal: dict | None = None,
-              momento: str = "foto") -> dict:
+              momento: str = "foto", min_gap_secs: int = 0) -> dict:
     """Guarda UNA foto: los totales, el detalle por documento, y el diff.
 
     Hasta la mig 0171 esto guardaba sólo los once totales, así que la pantalla
@@ -222,6 +249,9 @@ def registrar(origen: str = "manual", bal: dict | None = None,
             if not (tomado or {}).get("ok"):
                 res["motivo"] = "otra foto se está sacando ahora"
                 return res
+            if min_gap_secs and _muy_reciente(conn, min_gap_secs):
+                res["motivo"] = "ya hay una foto de hace menos de un intervalo"
+                return res
             r = db.execute_returning(
                 f"INSERT INTO scintela.traza_utilidad ({campos}) "
                 f"VALUES ({marcas}) RETURNING id_traza", fila, conn=conn)
@@ -267,7 +297,9 @@ def registrar_si_toca(origen: str = "loop") -> bool:
     if (ahora - _ultimo_ts) < _intervalo():
         return False
     _ultimo_ts = ahora
-    return bool(registrar(origen=origen).get("ok"))
+    # El reloj del proceso es sólo el filtro barato; el freno de verdad lo pone
+    # la base (`_muy_reciente`), que es la que ven todos los procesos.
+    return bool(registrar(origen=origen, min_gap_secs=_intervalo()).get("ok"))
 
 
 # ── Lectura ────────────────────────────────────────────────────────────────

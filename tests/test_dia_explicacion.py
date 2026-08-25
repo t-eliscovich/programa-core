@@ -1731,3 +1731,27 @@ def test_la_del_finde_se_intenta_aunque_la_foto_ya_estuviera_hecha():
         dia.correr_si_toca()
     cap.assert_not_called()
     fin.assert_called_once()
+
+
+def test_la_pantalla_festeja_el_dia_de_20000_kg(app, fake_db):
+    """TMT 2026-08-25: la fiestita también en la pantalla, no sólo en el mail."""
+    c = _login(app, fake_db)
+    res = {"ok": True, "d_utilidad": 100.0, "d_stock": 0.0, "d_deuda": 0.0,
+           "desde": {"vsto": 1.0}, "hasta": {"vsto": 1.0}, "cobrado": 1.0,
+           "ventas": {"n": 141, "kg": 24312.0, "us": 198420.0},
+           "compras": {"n": 0, "kg": 0.0, "us": 0.0},
+           "produccion": {"disponible": False}, "etapas": []}
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "deuda_hoy", return_value={"n": 0, "total": 0.0}), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        cuerpo = c.get("/informes/dia").data.decode()
+    assert "🎉" in cuerpo
+    assert "24.312 kg" in cuerpo
+
+    res["ventas"] = {"n": 92, "kg": 13459.0, "us": 116406.0}
+    with patch.object(dia, "explicar", return_value=_explicado()), \
+         patch.object(dia, "resumen", return_value=res), \
+         patch.object(dia, "deuda_hoy", return_value={"n": 0, "total": 0.0}), \
+         patch.object(dia, "racha_limpia", return_value=0):
+        assert "🎉" not in c.get("/informes/dia").data.decode()

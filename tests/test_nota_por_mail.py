@@ -450,3 +450,36 @@ def test_el_mes_del_pie_tambien_va_en_bruto():
     with patch.object(dia, "_rows", return_value=[{"n": 9, "kg": 1.0, "us": 2.0}]) as rows:
         dia.ventas_del_mes(date(2026, 8, 17))
     assert "kg > 0" in rows.call_args[0][0]
+
+
+# ── 🎉 El día de 20.000 kg ──────────────────────────────────────────────────
+# TMT 2026-08-25: *"poné emojis de fiestita por haber vendido más de 20k kilos
+# (y siempre que eso pase) mencionalo"*.
+
+def test_el_festejo_sale_recien_al_llegar_a_los_20000_kg():
+    assert dia.fiesta_kilos({"ventas": {"kg": 19999.0}}) == 0.0
+    assert dia.fiesta_kilos({"ventas": {"kg": 20000.0}}) == 20000.0
+    assert dia.fiesta_kilos({"ventas": {"kg": 24312.0}}) == 24312.0
+
+
+def test_el_finde_no_festeja_dos_dias_sumados():
+    """Sábado y domingo juntos no son el DÍA de 20.000 kg."""
+    assert dia.fiesta_kilos({"dias": 2, "ventas": {"kg": 31000.0}}) == 0.0
+
+
+def test_sin_ventas_no_hay_nada_que_festejar():
+    assert dia.fiesta_kilos({}) == 0.0
+    assert dia.fiesta_kilos({"ventas": {"n": 0, "kg": 0}}) == 0.0
+
+
+def test_el_mail_festeja_el_dia_de_20000_kg():
+    h = _html(ventas={"n": 141, "kg": 24312.0, "us": 198420.0})
+    assert "🎉" in h and "🥳" in h
+    assert "20.000 kg" in h                 # el tope, dicho
+    assert "24.312 kg</b>" in h             # y lo que se vendió de verdad
+
+
+def test_un_dia_normal_no_festeja_nada():
+    """Un festejo que sale todos los días deja de ser un festejo."""
+    h = _html()                              # 15.809 kg
+    assert "🎉" not in h and "🥳" not in h

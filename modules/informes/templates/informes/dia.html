@@ -43,6 +43,9 @@
   .dia-big { font-size:22px; font-weight:700; line-height:1.15; margin:6px 0 3px;
              color:rgb(15 23 42); }
   .dia-sub { color:rgb(51 65 85); font-size:14px; }
+  .dia-fiesta { margin-top:9px; padding:7px 11px; border-radius:9px;
+                background:rgb(254 249 231); border:1px solid rgb(233 220 181);
+                font-size:13.5px; color:rgb(51 65 85); }
   .dia-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px;
               margin-top:11px; padding-top:11px;
               border-top:1px solid rgb(238 242 247); }
@@ -163,6 +166,11 @@
         24 horas de fábrica, del cierre de ayer al de hoy.
       {% endif %}
     </div>
+
+    {# 🎉 El día de 20.000 kg: sale sólo el día que pasa (TMT 25/08). #}
+    {% if fiesta_kg %}
+      <div class="dia-fiesta">🎉🥳 ¡Día de más de {{ kg_fiesta | num_es(0) }} kg! Hoy se facturaron <strong>{{ fiesta_kg | num_es(0) }} kg</strong>.</div>
+    {% endif %}
 
     <div class="dia-kpis">
       <div class="dia-k"><div class="l">Del día</div>
