@@ -19,16 +19,28 @@
 {#- La sigla y NADA de kilos: los kilos de esta línea están en su columna, dos
     lugares más a la derecha. Poner "TUB 422" al lado de un renglón de 171 kg
     —que es lo que pasaba cuando la fila mostraba el stock entero y los kilos
-    de una sola calidad— es dar dos números que no cierran. -#}
+    de una sola calidad— es dar dos números que no cierran.
+
+    Tres fuentes, en este orden: la forma de esta LÍNEA si la fila viene abierta
+    por forma, la de los kilos que hay hoy, y la de la TELA.
+
+    ⚠ La última no es un adorno: toda tela terminada es tubular o abierta
+    (dueña 25/08/2026, "no hay chance que sea —, es tub o abi"). El stock de hoy
+    no siempre lo puede decir —la tela vendida entera no tiene lote con saldo—,
+    y ahí el "—" no era un dato, era una laguna. -#}
 {%- if f.forma_fila is defined -%}
-  {%- if f.forma_fila -%}<span class="fm">{{ f.forma_fila }}</span>
-  {%- else -%}<span class="g">—</span>{%- endif -%}
+  {%- set txt = f.forma_fila or f.forma | default('', true) -%}
 {%- elif f.kg_tubular and f.kg_abierta -%}
-  <span class="fm">TUB</span><span class="fm">ABI</span>
+  {%- set txt = 'TUB ABI' -%}
 {%- elif f.kg_tubular -%}
-  <span class="fm">TUB</span>
+  {%- set txt = 'TUB' -%}
 {%- elif f.kg_abierta -%}
-  <span class="fm">ABI</span>
+  {%- set txt = 'ABI' -%}
+{%- else -%}
+  {%- set txt = f.forma | default('', true) -%}
+{%- endif -%}
+{%- if txt -%}
+  {%- for x in txt.split() -%}<span class="fm">{{ x }}</span>{%- endfor -%}
 {%- else -%}
   <span class="g">—</span>
 {%- endif -%}

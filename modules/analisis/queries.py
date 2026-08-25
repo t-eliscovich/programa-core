@@ -85,11 +85,15 @@ def items(conn=None) -> list[dict]:
                -- ⭐ La forma, ya resuelta acá: TUB, ABI, las dos, o vacío
                -- cuando el lote no lo dice. La pantalla y la hoja impresa
                -- muestran lo mismo sin repetir el `if` en dos plantillas.
+               -- ⚠ El ELSE no es vacío: cae a la forma de la TELA, que sale
+               -- de todos sus lotes. Sin eso, la que se vendió entera —o la que
+               -- tiene el lote sin el atributo— mostraba "—", y toda tela
+               -- terminada es tubular o abierta (dueña 25/08/2026).
                CASE WHEN COALESCE(f.kg_tubular, 0) > 0
                      AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
                     WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
                     WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
-                    ELSE '' END                        AS forma,
+                    ELSE COALESCE(f.forma, '') END     AS forma,
                f.motivo,
                -- ⭐ El % se calcula EN LA QUERY, sobre el mismo conjunto de
                -- filas que se muestra. Calcularlo en el template contra un
@@ -747,6 +751,10 @@ def actualizar() -> dict:
     hoy = today_ec()
     todas = asinfo_parado.parados()
     lla = asinfo_parado.llamados()
+    # ⭐ La forma de cada tela × color, de TODOS sus lotes (dueña 25/08/2026:
+    # "no hay chance que sea —, es tub o abi"). La del stock de hoy no alcanza:
+    # la tela vendida entera no tiene lote con saldo que mirar.
+    forma_de = asinfo_parado.formas()
 
     # ⭐ NI LA RECIÉN HECHA, NI LA PEDIDA, NI LA QUE SE SIGUE TEJIENDO SON TELA
     # PARADA (dueña 25/08/2026: "no es saldo si se seguía produciendo ese color
@@ -861,7 +869,7 @@ def actualizar() -> dict:
                 (p["subcategoria"], p["color"]), conn=conn)
 
         cohorte = db.fetch_all(
-            "SELECT subcategoria, color, fecha_marcado, motivo "
+            "SELECT subcategoria, color, fecha_marcado, kg_al_marcar, motivo "
             "FROM scintela.parado_cohorte WHERE NOT fuera", conn=conn)
 
         # 2 · cuánto se vendió de cada uno DESDE SU PROPIA fecha de marcado
@@ -891,8 +899,24 @@ def actualizar() -> dict:
         # ⚠ Sin dato de Asinfo no hay tope (None y no 0): un ítem que falte en
         # la consulta dejaría a alguien sin sus puntos sin que nadie sepa por
         # qué.
-        tope = {(p["subcategoria"], p["color"]): float(p["kg_antes"])
-                for p in todas if p.get("kg_antes") is not None}
+        # ⚠ Y el tope se cruza con lo que el ítem tenía CUANDO ENTRÓ a la
+        # lista (dueña 25/08/2026: "tiene que contar solo kgs que estaban en la
+        # competencia para empezar"). Son dos preguntas distintas y hay que
+        # pasar las dos: `kg_antes` dice cuántos kilos estaban parados hace 90
+        # días, y `kg_al_marcar` cuántos había el día que la tela entró a la
+        # competencia. Un ítem que tenía 30 kg viejos y recibió 500 el 20/08
+        # pasa el primero y no el segundo: esos 500 nunca estuvieron en juego.
+        marcado_kg = {(c["subcategoria"], c["color"]): c["kg_al_marcar"]
+                      for c in cohorte if c.get("kg_al_marcar") is not None}
+        tope = {}
+        for p in todas:
+            if p.get("kg_antes") is None:
+                continue          # sin dato de Asinfo no hay tope (fail-open)
+            k = (p["subcategoria"], p["color"])
+            topes = [float(p["kg_antes"])]
+            if k in marcado_kg:
+                topes.append(float(marcado_kg[k]))
+            tope[k] = min(topes)
 
         # Los renglones que van a la competencia, EN ORDEN DE FECHA y con el
         # tope ya aplicado. Se arman una sola vez: la cuenta del resumen y la
@@ -939,9 +963,9 @@ def actualizar() -> dict:
                        (subcategoria, color, stock_kg, kg_vendidos, ultima_venta,
                         clientes, anio_pista, kg_primera, kg_segunda, categoria,
                         motivo, kg_tubular, kg_abierta,
-                        kg_tub_pri, kg_tub_seg, kg_abi_pri, kg_abi_seg)
+                        kg_tub_pri, kg_tub_seg, kg_abi_pri, kg_abi_seg, forma)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                           %s, %s, %s, %s)""",
+                           %s, %s, %s, %s, %s)""",
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
                  (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
                  anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
@@ -953,7 +977,8 @@ def actualizar() -> dict:
                  (p or {}).get("kg_tub_pri") or 0,
                  (p or {}).get("kg_tub_seg") or 0,
                  (p or {}).get("kg_abi_pri") or 0,
-                 (p or {}).get("kg_abi_seg") or 0), conn=conn)
+                 (p or {}).get("kg_abi_seg") or 0,
+                 forma_de.get(k)), conn=conn)
 
         # 4 · los llamados también
         db.execute("DELETE FROM scintela.parado_llamado", conn=conn)
@@ -1206,7 +1231,7 @@ def vendidos(desde) -> list[dict]:
                          AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
                         WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
                         WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
-                        ELSE '' END)                       AS forma_fila,
+                        ELSE COALESCE(f.forma, '') END)    AS forma_fila,
                SUM(v.kg)                                   AS kg,
                MAX(COALESCE(p.puntos, 1))                  AS puntos,
                SUM(v.kg * COALESCE(p.puntos, 1))           AS puntos_fila

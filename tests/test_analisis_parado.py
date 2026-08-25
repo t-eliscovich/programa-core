@@ -2784,7 +2784,7 @@ class _DBFalsa:
         self.leido.append(s)
         # ⚠ Sólo la lectura del refresco. `items()` también sale de la
         # cohorte, pero devuelve otra cosa (la foto pegada al lado).
-        if s.startswith("SELECT subcategoria, color, fecha_marcado, motivo"):
+        if s.startswith("SELECT subcategoria, color, fecha_marcado"):
             return self.cohorte
         if s.startswith("SELECT subcategoria, color, motivo"):
             return self.cohorte
@@ -2806,6 +2806,7 @@ def _refresco(monkeypatch, parados, cohorte):
     monkeypatch.setattr(asinfo_parado, "vendido_desde", lambda d: [])
     monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
     monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
+    monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
     return db, queries.actualizar()
 
 
@@ -3007,6 +3008,7 @@ def _refresco_con_ventas(monkeypatch, parados, cohorte, ventas):
     monkeypatch.setattr(asinfo_parado, "vendido_desde", lambda d: ventas)
     monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
     monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
+    monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
     queries.actualizar()
     return [(p[1], p[5], p[7]) for sql, p in db.escrito
             if "INSERT INTO scintela.parado_venta" in sql]
@@ -3284,8 +3286,12 @@ def test_el_renglon_vendido_cuelga_de_su_grupo():
     assert '"grupo": cat,' in fuente
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "tr.vlinea>td{padding:2px 10px 2px 26px" in t, (
+    assert "tr.vlinea>td:first-child{padding-left:26px}" in t, (
         "el renglón se lee colgado del grupo")
+    assert "tr.vlinea>td{font-size:12px" in t
+    assert "tr.vlinea>td{padding" not in t, (
+        "con padding en las tres celdas los kilos dejan de encolumnar con los "
+        "del grupo")
     # ⚠⚠ NO puede llamarse `linea`: esa clase ya es el renglón de tarjetas del
     # encabezado (un flex con `b` en 19 px) y se comía la fila entera.
     assert '<tr class="linea">' not in t
@@ -3339,3 +3345,55 @@ def test_el_grupo_del_vendido_sobrevive_a_la_venta(monkeypatch):
     queries.vendidos("2026-08-25")
     assert "COALESCE(f.categoria, p.categoria)" in visto["sql"]
     assert "GROUP BY" in visto["sql"] and "p.categoria" in visto["sql"]
+
+
+def test_solo_puntuan_los_kilos_que_ya_estaban_en_la_competencia(monkeypatch):
+    """Dueña 25/08/2026: *"tiene que contar solo kgs que estaban en la
+    competencia para empezar"*.
+
+    Son dos preguntas y hay que pasar las dos: `kg_antes` dice cuántos kilos
+    estaban parados hace 90 días y `kg_al_marcar` cuántos había el día que la
+    tela entró a la lista. Un ítem con 300 kg viejos que recibió producción
+    después de entrar no puede puntuar esos kilos nuevos: nunca estuvieron en
+    juego."""
+    item = _item("Toper", "COA", kg_antes=300, stock=800)
+    filas = _refresco_con_ventas(
+        monkeypatch, parados=[item],
+        cohorte=[{"subcategoria": "Toper", "color": "COA",
+                  "fecha_marcado": date(2026, 8, 13), "kg_al_marcar": 120,
+                  "motivo": "parado"}],
+        ventas=[_venta("Toper", "COA", 500)])
+    assert ("COA", 120.0, True) in filas, "el tope es el más chico de los dos"
+    assert ("COA", 380.0, False) in filas
+
+
+def test_sin_kilos_al_marcar_manda_el_saldo_viejo(monkeypatch):
+    """La cohorte anterior a esta regla puede no tener el dato; ahí el tope
+    sigue siendo el saldo de hace 90 días y no cero — dejar a alguien sin
+    puntos por una columna vacía sería peor que el problema."""
+    filas = _refresco_con_ventas(
+        monkeypatch, parados=[_item("Toper", "HAB", kg_antes=200, stock=200)],
+        cohorte=[{"subcategoria": "Toper", "color": "HAB",
+                  "fecha_marcado": date(2026, 8, 13), "kg_al_marcar": None,
+                  "motivo": "parado"}],
+        ventas=[_venta("Toper", "HAB", 150)])
+    assert filas == [("HAB", 150.0, True)]
+
+
+def test_la_forma_sale_de_la_tela_cuando_el_stock_no_la_puede_decir():
+    """Dueña 25/08/2026: *"no hay chance que sea —, es tub o abi"*. La forma se
+    sacaba de los lotes CON SALDO, así que la tela vendida entera se quedaba sin
+    nada que mostrar. Ahora se mira todo lote que pasó por la bodega."""
+    sql = " ".join(asinfo_parado.SQL_FORMA.split())
+    assert "FROM (SELECT DISTINCT id_producto, id_lote FROM saldo_producto_lote" in sql
+    assert "saldo > 0" not in sql, (
+        "si sólo mira los lotes con saldo, la tela vendida vuelve a no tener forma")
+    assert "l.id_valor_atributo_3" in sql, "la forma vive en ese slot del lote"
+
+    import inspect as _i
+    fuente = _i.getsource(queries.actualizar)
+    assert "forma_de = asinfo_parado.formas()" in fuente
+    assert "forma_de.get(k)" in fuente, "se guarda en la foto, por ítem"
+    # y las dos lecturas caen a esa forma cuando los kilos no la dicen
+    assert "ELSE COALESCE(f.forma, '') END     AS forma," in _i.getsource(queries.items)
+    assert "ELSE COALESCE(f.forma, '') END)    AS forma_fila," in _i.getsource(queries.vendidos)

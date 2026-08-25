@@ -645,6 +645,37 @@ GROUP BY pr.nombre_categoria_producto, {_VENDEDOR}
 """
 
 
+# ⭐ LA FORMA DE CADA TELA × COLOR, venga o no con stock hoy.
+#
+# Dueña 25/08/2026: *"no hay chance que sea —, es tub o abi"*. Tiene razón: toda
+# tela terminada es tubular o abierta. El "—" que mostraba la pantalla no era un
+# dato, era una laguna: la forma se sacaba de los lotes CON SALDO, así que la
+# tela vendida entera —y la que tiene un lote sin el atributo cargado— se
+# quedaba sin nada que mostrar.
+#
+# Acá se mira TODO lote que alguna vez pasó por la bodega, tenga saldo o no. Es
+# una propiedad del producto: el módulo de pedidos ya lo trata así ("todos los
+# lotes de un producto comparten su acabado").
+#
+# ⚠ La forma es el atributo 1 pero vive en el slot `id_valor_atributo_3` del
+# lote — los slots no siguen el número del atributo (medido el 25/08/2026). Se
+# filtra por el CÓDIGO del valor y no por su id: si mañana el slot cambia, esto
+# deja de encontrarlo y da vacío, no confunde una cosa con otra.
+SQL_FORMA = f"""
+SELECT p.nombre_subcategoria_producto AS subcategoria,
+       RIGHT(RTRIM(p.codigo), 3)      AS color,
+       MAX(CASE WHEN t.codigo = 'TUB' THEN 1 ELSE 0 END) AS tub,
+       MAX(CASE WHEN t.codigo = 'ABI' THEN 1 ELSE 0 END) AS abi
+FROM (SELECT DISTINCT id_producto, id_lote FROM saldo_producto_lote
+       WHERE id_bodega = {BODEGA_TERMINADO}) s
+JOIN producto p ON p.id_producto = s.id_producto
+JOIN lote l     ON l.id_lote     = s.id_lote
+LEFT JOIN valor_atributo t ON t.id_valor_atributo = l.id_valor_atributo_3
+WHERE p.nombre_categoria_producto NOT IN ({CATS})
+GROUP BY p.nombre_subcategoria_producto, RIGHT(RTRIM(p.codigo), 3)
+"""
+
+
 def _filas(sql: str) -> list[dict]:
     filas, ok = metabase_client.fetch_dataset_estado(DB_ASINFO, sql, max_results=20000)
     if not ok:
@@ -694,6 +725,26 @@ def vendido_desde(desde: str) -> list[dict]:
     for f in filas:
         f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
     return filas
+
+
+def formas() -> dict[tuple[str, str], str]:
+    """`{(tela, color): 'TUB' | 'ABI' | 'TUB ABI'}`.
+
+    Sale de todos los lotes que pasaron por la bodega, con saldo o sin él: es la
+    forma de la TELA, no la del stock de hoy. La que no tiene ni un lote con el
+    atributo cargado no entra al diccionario —y la pantalla, en vez de mentir,
+    sigue mostrando lo que sabe.
+    """
+    out: dict[tuple[str, str], str] = {}
+    for f in _filas(SQL_FORMA):
+        clave = (f.get("subcategoria"), f.get("color"))
+        if not clave[0]:
+            continue
+        forma = " ".join(x for x, hay in (("TUB", f.get("tub")),
+                                          ("ABI", f.get("abi"))) if int(hay or 0))
+        if forma:
+            out[clave] = forma
+    return out
 
 
 def venta_por_tela() -> dict[str, dict]:

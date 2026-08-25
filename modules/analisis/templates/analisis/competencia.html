@@ -68,8 +68,12 @@ tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-ra
    se acomodaban en una sola línea de texto y el color salía grande y aparte,
    tres renglones de alto por venta. Segundo choque de nombres del día, después
    de `tr.item` en la tabla de Vendidos. */
-tr.vlinea>td{padding:2px 10px 2px 26px;font-size:12px;color:var(--g);
-  white-space:nowrap;line-height:1.5}
+/* ⚠ La sangría va SÓLO en la primera celda (dueña 25/08/2026: "encolumná bien
+   acá"). Con padding en las tres, los kilos del renglón quedaban corridos
+   respecto de los del grupo de arriba y las dos columnas dejaban de leerse en
+   vertical. */
+tr.vlinea>td{font-size:12px;color:var(--g);white-space:nowrap;line-height:1.6}
+tr.vlinea>td:first-child{padding-left:26px}
 tr.vlinea>td *{display:inline;font-size:12px}
 tr.vlinea>td b{color:var(--t);font-weight:600}
 .tope{font-size:11px;color:var(--g)}

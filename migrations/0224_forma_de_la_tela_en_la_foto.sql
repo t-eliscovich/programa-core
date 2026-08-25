@@ -1,0 +1,26 @@
+-- 0224 · La forma de la tela, guardada en la foto
+--
+-- ⚠ Nació como 0223 y se renumeró: otra sesión del mismo día tomó ese número
+-- mientras esto se escribía. Con dos archivos en el mismo número el runner no
+-- aplica NADA y el deploy queda bloqueado — ya pasó hoy con el 0218.
+--
+-- Dueña 25/08/2026, mirando la columna Forma de la tabla de Vendidos: *"no hay
+-- chance que sea —, es tub o abi"*. Tiene razón: toda tela terminada es
+-- tubular o abierta. El "—" no era un dato, era una laguna.
+--
+-- La forma salía de los lotes CON SALDO de la bodega 53, así que se quedaban
+-- sin nada que mostrar justo las dos que más se miran:
+--   · la tela que se vendió entera —no le queda un lote que mirar—, que es
+--     exactamente lo que lista la tabla de Vendidos;
+--   · y la que tiene sus lotes sin el atributo cargado.
+--
+-- Ahora el refresco pregunta por TODOS los lotes que pasaron por la bodega,
+-- tengan saldo o no, y guarda acá el resultado: TUB, ABI o las dos. Es una
+-- propiedad de la tela × color, no del stock de hoy — el módulo de pedidos ya
+-- la trata así ("todos los lotes de un producto comparten su acabado").
+--
+-- Los kilos por forma (`kg_tubular` / `kg_abierta`) siguen mandando cuando hay
+-- stock: dicen cuánto hay de cada una, que es lo que se ofrece por teléfono.
+-- Esta columna es la que contesta cuando esos kilos no pueden.
+ALTER TABLE scintela.parado_foto
+    ADD COLUMN IF NOT EXISTS forma VARCHAR(10);
