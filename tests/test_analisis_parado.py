@@ -683,6 +683,21 @@ def test_la_hoja_del_vendedor_dice_lo_que_vale_cada_tela(monkeypatch):
     assert "opt" not in col.group(0) and "col" not in col.group(0)
 
 
+def test_la_hoja_aclara_de_quien_es_la_fecha():
+    """⭐ Dueña 24/08/2026: "cómo puede ser que algo de 2026 esté acá y no es de
+    segunda". No era un error: la fecha de la hoja es la última compra DEL
+    CLIENTE en cualquier color, y lo parado era un color que nunca salió. Pero
+    la columna decía "Última vez" al lado de kilos "quietos hace 12 meses", y
+    las dos cosas se leían como una sola."""
+    from pathlib import Path
+    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "parado_clientes.html")
+            .read_text(encoding="utf-8"))
+    assert "Él, última vez" in html, "la fecha es del cliente, hay que decirlo"
+    assert "La lista entra por COLOR" in html, (
+        "y que un color parado no quiere decir que la tela no se venda")
+
+
 def test_la_hoja_dice_si_la_tela_es_de_primera_o_de_segunda(monkeypatch):
     """⭐ Dueña 24/08/2026, mirando la hoja: "acá falta si es de primera o
     segunda". Se ofrece con precio distinto, así que sin eso el vendedor sale a
