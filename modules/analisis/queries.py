@@ -690,6 +690,24 @@ def por_cliente_plano(vend: str | None = None, orden: str = "codigo",
 
 # ── Refresh ─────────────────────────────────────────────────────────────────
 
+def _quien_vendio(v: dict) -> str:
+    """El vendedor de una venta, en los términos de la competencia.
+
+    ⭐ Dueña 25/08/2026, viendo "Bedon Hector" en la tabla de vendidos: *"bedón
+    no es un vendedor"*. En Asinfo firman ventas nombres que no están entre los
+    siete que compiten —bajas, gente de otra área, cargas viejas—: esas ventas
+    las hizo LA CASA. Es la misma decisión del 17/08 que juntó "Cía. Ltda.
+    Intela" y las facturas sin vendedor bajo el nombre Intela.
+
+    ⚠ Se normaliza al ESCRIBIR `parado_venta`, no al mostrar: así el ranking, el
+    cuadro por grupo y la tabla de vendidos cuentan lo mismo. Mostrarlo sólo en
+    la pantalla dejaba kilos que aparecían como de Intela y no sumaban en su
+    fila.
+    """
+    quien = (v.get("vendedor") or "").strip()
+    return quien if quien in COMPETIDORES else "Intela"
+
+
 def cuenta_el_kilo(motivo: str | None, calidad: str | None) -> bool:
     """Si un kilo vendido puntúa en la competencia.
 
@@ -969,7 +987,7 @@ def actualizar() -> dict:
                            (subcategoria, color, vend_pc, vendedor, fecha, kg,
                             calidad, cuenta)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                    (k[0], k[1], v.get("vend_pc"), v.get("vendedor") or "Intela",
+                    (k[0], k[1], v.get("vend_pc"), _quien_vendio(v),
                      _fecha(v["fecha"]), parte,
                      v.get("calidad"), cuenta), conn=conn)
 
@@ -1166,8 +1184,15 @@ def vendidos(desde) -> list[dict]:
                v.vendedor, v.vend_pc,
                COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                           AS color_nombre,
-               CASE WHEN f.categoria IN ('Franela', 'Cuellos', 'Puños')
-                    THEN 'FCP' ELSE f.categoria END        AS categoria,
+               -- ⚠ El grupo sale de la foto y, si la tela ya no tiene foto
+               -- —se vendió entera—, del PUNTAJE, que lo guarda por tela. Sin
+               -- el fallback la mayoría de los renglones decía "—": la tabla
+               -- muestra justamente lo que se vendió, que es lo que primero
+               -- deja de tener foto.
+               CASE WHEN COALESCE(f.categoria, p.categoria)
+                         IN ('Franela', 'Cuellos', 'Puños')
+                    THEN 'FCP' ELSE COALESCE(f.categoria, p.categoria) END
+                                                          AS categoria,
                -- ⭐ La FORMA, igual que en la fila de arriba (dueña 25/08/2026:
                -- "agregá forma dentro de la tabla de vendidos").
                --
@@ -1197,7 +1222,7 @@ def vendidos(desde) -> list[dict]:
                LIMIT 1) nom ON TRUE
          WHERE v.fecha >= %s AND v.cuenta
          GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
-                  v.vend_pc, nom.n, f.categoria
+                  v.vend_pc, nom.n, f.categoria, p.categoria
          -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
          ORDER BY v.fecha DESC, SUM(v.kg) DESC
         """, (desde,)) or []

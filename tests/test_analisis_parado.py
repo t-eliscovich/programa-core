@@ -3299,3 +3299,36 @@ def test_el_renglon_colgado_es_una_linea_y_no_repite_el_numero():
     assert "white-space:nowrap" in t and "tr.linea>td *{display:inline" in t
     assert "{% if v.puntos | round(0) != v.kg | round(0) %}" in t, (
         "los puntos sólo cuando dicen algo distinto de los kilos")
+
+
+def test_el_que_no_compite_es_la_casa():
+    """Dueña 25/08/2026, viendo "Bedon Hector" en la tabla de vendidos: *"bedón
+    no es un vendedor"*. En Asinfo firman ventas nombres que no están entre los
+    siete que compiten; esas ventas las hizo la casa, igual que las que vienen
+    sin vendedor o a nombre de "Cía. Ltda. Intela"."""
+    assert queries._quien_vendio({"vendedor": "Bedon Hector"}) == "Intela"
+    assert queries._quien_vendio({"vendedor": None}) == "Intela"
+    assert queries._quien_vendio({"vendedor": "  "}) == "Intela"
+    assert queries._quien_vendio({"vendedor": "Ramirez Edgar"}) == "Ramirez Edgar"
+    for c in queries.COMPETIDORES:
+        assert queries._quien_vendio({"vendedor": c}) == c
+    # ⚠ se normaliza al ESCRIBIR, no al mostrar: si no, habría kilos que se ven
+    # como de Intela y no suman en su fila del ranking
+    import inspect as _i
+    assert "_quien_vendio(v)" in _i.getsource(queries.actualizar)
+
+
+def test_el_grupo_del_vendido_sobrevive_a_la_venta(monkeypatch):
+    """La tabla muestra justamente lo que se vendió, que es lo primero que deja
+    de tener foto: sin el fallback al puntaje —que guarda el grupo por tela— la
+    mayoría de los renglones decía "—"."""
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.vendidos("2026-08-25")
+    assert "COALESCE(f.categoria, p.categoria)" in visto["sql"]
+    assert "GROUP BY" in visto["sql"] and "p.categoria" in visto["sql"]
