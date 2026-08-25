@@ -248,13 +248,25 @@
   // pasó. Nunca dejar el botón mudo — ver el bug del 25/08 en la cabecera.
   function bajarYExplicar(listo) {
     descargar(listo.blob, listo.nombre);
+    // 🚨 Alex Velastegui, 25/08, mirando el PDF ya generado en su teléfono:
+    // *"desde el pdf q genera no permite enviar por wsp"*. El mensaje decía
+    // "adjuntalo desde WhatsApp" y lo daba por obvio — y no lo es: el vendedor
+    // se queda parado con el archivo en la mano sin saber por dónde sigue.
+    // Ahora se nombran los PASOS, que son los mismos en todos los teléfonos:
+    // el archivo queda en Descargas y se manda con el botón de compartir del
+    // aparato, que no es el del programa y sí anda siempre.
+    //
     // La ficha del vendedor tiene abajo el link "Ver el PDF"; la pantalla de
     // la oficina, no. Se nombra sólo donde existe: mandar a buscar un botón
     // que no está es la manera más rápida de que dejen de leer los mensajes.
     var hayLink = !!document.querySelector('[data-wa-ver]');
     alert('Este teléfono no deja mandar el PDF directo desde el programa.\n\n'
-        + 'Se descargó "' + listo.nombre + '": adjuntalo desde WhatsApp.'
-        + (hayLink ? '\nSi no lo encontrás, tocá "Ver el PDF" acá abajo.' : ''));
+        + 'Se descargó "' + listo.nombre + '".\n\n'
+        + 'Para mandarlo:\n'
+        + '1. Abrí Descargas en el teléfono.\n'
+        + '2. Tocá el archivo y después el botón de compartir.\n'
+        + '3. Elegí WhatsApp y el contacto.'
+        + (hayLink ? '\n\nTambién lo podés abrir con "Ver el PDF", acá abajo.' : ''));
   }
 
   // Devuelve `true` si se hizo cargo del toque (compartió, o bajó el archivo y

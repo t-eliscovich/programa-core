@@ -2085,8 +2085,10 @@ def test_la_ficha_tiene_el_PDF_por_un_link_comun(app, vendedor_logueado, monkeyp
 
     assert "Ver el PDF" in ficha
     assert '/mi-cartera/cliente/TDV/pdf"' in ficha, "el link no apunta al PDF"
-    # Dice PARA QUÉ está: sin eso es un tercer botón que nadie toca.
-    assert "Si WhatsApp no se abre" in ficha
+    # ⭐ Y dice CÓMO se sigue. Alex Velastegui, 25/08, con el PDF ya generado
+    # en la mano: *"desde el pdf q genera no permite enviar por wsp"*. Dar por
+    # obvio el paso que sigue es lo que lo dejó parado.
+    assert "Descargas" in ficha and "compartir" in ficha
 
 
 def test_sin_motor_de_pdf_la_ficha_no_ofrece_ni_el_boton_ni_el_link(
