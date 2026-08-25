@@ -2,8 +2,9 @@
 
 Sin Postgres ni Metabase: `traer_asinfo` y las funciones de `db` se mockean.
 Las reglas que se prueban son las decisiones de la dueña del 05/08/2026:
-pisar nombre/RUC, teléfono sólo rellena vacíos con valores reales, cupo y
-descuento jamás, alta nueva → campanita, RUC repetido → conflicto sin alta.
+pisar nombre/RUC, teléfono sólo rellena vacíos con valores reales, cupo
+jamás, alta nueva → campanita, RUC repetido → conflicto sin alta; más la del
+25/08/2026: el descuento se RELLENA (vacío o cero) y nunca se pisa.
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ def _armar(monkeypatch, asinfo_rows, pc_rows, contesto=True):
     def fake_execute(sql, params=None, conn=None):
         if "UPDATE scintela.cliente" in sql:
             capturado["updates"].append((sql, params))
-            return len(params or []) // 4  # aprox: filas del VALUES
+            return len(params or []) // 5  # aprox: filas del VALUES
         return 1
 
     monkeypatch.setattr(db, "execute", fake_execute)
@@ -91,12 +92,13 @@ def test_pisa_nombre_y_ruc_y_rellena_telefono_vacio(monkeypatch):
     assert r["ok"] is True
     assert len(cap["updates"]) == 1
     sql, params = cap["updates"][0]
-    # cupo y descuento NUNCA aparecen en el UPDATE — es la regla madre
-    assert "cupo" not in sql and "descuento" not in sql and "vend" not in sql
+    # cupo, vendedor, correo y dirección NUNCA aparecen en el UPDATE
+    assert "cupo" not in sql and "vend" not in sql
     assert "correo" not in sql and "direccion" not in sql
-    # una sola fila cambia: AAA con nombre, ruc y teléfono
+    # una sola fila cambia: AAA con nombre, ruc y teléfono (sin lista de
+    # descuentos en Asinfo, el descuento viaja en None y COALESCE lo ignora)
     assert params[0] == "sync-asinfo"
-    assert list(params[1:]) == ["AAA", "PEREZ JUAN", "1712345678001", "0984042960"]
+    assert list(params[1:]) == ["AAA", "PEREZ JUAN", "1712345678001", "0984042960", None]
     assert r["altas"] == [] and r["conflictos"] == []
 
 
@@ -167,6 +169,112 @@ def test_codigo_largo_se_ignora(monkeypatch):
     cap = _armar(monkeypatch, asinfo, [])
     r = sa.sincronizar()
     assert r["altas"] == [] and r["conflictos"] == [] and cap["altas"] == []
+
+
+# ─── el descuento: TMT 2026-08-25 (dueña) ──────────────────────────────────
+
+def test_descuento_de_lista_lee_el_segundo_tramo():
+    # el primer tramo (5%) es el de contado, igual para todos; el segundo es
+    # el del cliente, y es el que PC guarda en cliente.descuento
+    assert sa.descuento_de_lista("5%y7%") == 7.0
+    assert sa.descuento_de_lista("5%y14%") == 14.0
+    assert sa.descuento_de_lista("5%y0%") == 0.0
+    assert sa.descuento_de_lista(" 5 % y 4,5 % ") == 4.5
+
+
+def test_descuento_de_lista_no_inventa():
+    # cualquier nombre con otra forma: no se carga nada
+    assert sa.descuento_de_lista("6%y7%") is None      # otro tramo de contado
+    assert sa.descuento_de_lista("MAYORISTA") is None
+    assert sa.descuento_de_lista("") is None
+    assert sa.descuento_de_lista(None) is None
+    assert sa.descuento_de_lista("5%y999%") is None
+
+
+def test_descuento_a_escribir_rellena_el_hueco_y_no_pisa():
+    assert sa.descuento_a_escribir(None, 7.0) == 7.0     # vacío → rellena
+    assert sa.descuento_a_escribir(0, 7.0) == 7.0        # cero → rellena
+    assert sa.descuento_a_escribir(7.0, 4.0) is None     # cargado → no se pisa
+    assert sa.descuento_a_escribir(7.0, 7.0) is None     # igual → nada que hacer
+    assert sa.descuento_a_escribir(0, 0.0) is None       # los dos en cero
+    assert sa.descuento_a_escribir(None, None) is None   # Asinfo no dice nada
+
+
+def test_el_sync_rellena_el_descuento_vacio(monkeypatch):
+    asinfo = [{"cod": "AAA", "ruc": "", "nombre": "PEREZ JUAN",
+               "tel1": "", "tel2": "", "lista_desc": "5%y9%"}]
+    pc = [{"id_cliente": 1, "cod": "AAA", "nombre": "PEREZ JUAN",
+           "ruc": "", "telefono": "022345678", "descuento": None}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    sql, params = cap["updates"][0]
+    assert "descuento = COALESCE(v.descuento::numeric, c.descuento)" in sql
+    # el descuento viaja como TEXTO: si TODAS las filas fueran NULL, Postgres
+    # no podría inferir el tipo de la columna del VALUES
+    assert list(params[1:]) == ["AAA", None, None, None, "9.0"]
+    assert r["descuentos_puestos"] == 1
+    assert r["dif_descuento"] == []
+
+
+def test_el_sync_rellena_el_descuento_en_cero(monkeypatch):
+    asinfo = [{"cod": "AAA", "ruc": "", "nombre": "PEREZ JUAN",
+               "tel1": "", "tel2": "", "lista_desc": "5%y12%"}]
+    pc = [{"id_cliente": 1, "cod": "AAA", "nombre": "PEREZ JUAN",
+           "ruc": "", "telefono": "022345678", "descuento": 0}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, "12.0"]
+    assert r["descuentos_puestos"] == 1
+
+
+def test_el_descuento_cargado_no_se_pisa_y_queda_listado(monkeypatch):
+    asinfo = [{"cod": "CAL", "ruc": "", "nombre": "CALDERON SA",
+               "tel1": "", "tel2": "", "lista_desc": "5%y14%"}]
+    pc = [{"id_cliente": 1, "cod": "CAL", "nombre": "CALDERON SA",
+           "ruc": "", "telefono": "022345678", "descuento": 12}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    assert cap["updates"] == []          # nada que escribir
+    assert r["descuentos_puestos"] == 0
+    assert r["dif_descuento"] == [
+        {"cod": "CAL", "nombre": "CALDERON SA", "pc": 12.0, "asinfo": 14.0}
+    ]
+    # UNA campanita con el número, no una por cliente
+    difs = [a for a in cap["avisos"] if a["clave"].startswith("clientes-dif-descuento")]
+    assert len(difs) == 1 and "1 clientes con descuento distinto" in difs[0]["titulo"]
+
+
+def test_lista_que_no_se_entiende_no_carga_nada(monkeypatch):
+    asinfo = [{"cod": "GUI", "ruc": "", "nombre": "GUILLEN SA",
+               "tel1": "", "tel2": "", "lista_desc": "MAYORISTA"}]
+    pc = [{"id_cliente": 1, "cod": "GUI", "nombre": "GUILLEN SA",
+           "ruc": "", "telefono": "022345678", "descuento": None}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    assert cap["updates"] == []
+    assert r["listas_raras"] == [{"cod": "GUI", "lista": "MAYORISTA"}]
+    raras = [a for a in cap["avisos"] if a["clave"].startswith("clientes-listas-raras")]
+    assert len(raras) == 1
+
+
+def test_alta_nueva_ya_viene_con_el_descuento(monkeypatch):
+    asinfo = [{"cod": "VA2", "ruc": "1721669206001", "nombre": "VELIZ LUIS",
+               "tel1": "", "tel2": "", "lista_desc": "5%y7%"}]
+    cap = _armar(monkeypatch, asinfo, [])
+    sa.sincronizar()
+    assert cap["altas"][0]["descuento"] == 7.0
+    # la campanita ya no pide el descuento: sólo falta el cupo
+    aviso = cap["avisos"][0]
+    assert aviso["titulo"] == "Cliente nuevo VA2 — cargarle cupo"
+
+
+def test_el_log_recorta_listas_largas_sin_romper_el_json():
+    import json
+    rep = {"ok": True, "dif_descuento": [{"cod": f"C{i}"} for i in range(400)]}
+    chico = sa._para_log(rep)
+    assert len(chico["dif_descuento"]) == 300
+    assert chico["dif_descuento_total"] == 400
+    json.loads(json.dumps(chico))     # sigue siendo JSON válido
 
 
 # ─── el hook del auto-create en la carga de facturas ────────────────────────

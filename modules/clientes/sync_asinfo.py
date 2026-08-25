@@ -10,7 +10,7 @@ Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
 - **"Lo nuevo vale más"**: NOMBRE y RUC se pisan con Asinfo. El nombre queda
   en formato fiscal "APELLIDO NOMBRE" (3.388 de 3.603 diferían sólo por el
   orden). Asinfo es la autoridad del RUC (68 diferían; varios eran typos PC).
-- **Cupo y descuento sólo existen en PC** → este sync NO los toca nunca.
+- **Cupo sólo existe en PC** → este sync no lo toca nunca.
   Tampoco `vend` (mueve las comisiones), ni `correo` (ya existe el espejo
   `cliente_mail_asinfo`, con su propio filtro de mails de la casa), ni la
   dirección (Asinfo no tiene texto de dirección: 0 de 3.635), ni
@@ -18,16 +18,27 @@ Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
 - **Teléfono: PC gana.** 2.640 de 3.635 teléfonos de Asinfo son basura
   (`2222222` o <7 dígitos) y PC tiene 3.833 reales. Sólo se RELLENA el
   teléfono cuando PC está vacío y el de Asinfo parece real.
+- **DESCUENTO: Asinfo rellena, PC manda** (TMT 2026-08-25, dueña). Asinfo sí
+  lo tiene cargado, en una LISTA por cliente (`cliente.id_lista_descuentos` →
+  `lista_descuentos.nombre`, con nombres tipo `5%y7%`). El primer tramo es el
+  5% de contado, igual para todos; el SEGUNDO es el descuento del cliente, y
+  es el que PC guarda en `cliente.descuento`. Medido el 25/08 contra la base
+  en vivo: de los 3.644 códigos que cruzan, 3.333 ya coincidían (96%), 166
+  estaban vacíos en PC y 145 difieren. Por eso: se RELLENA cuando en PC está
+  vacío o en cero, NUNCA se pisa un descuento cargado, y las diferencias se
+  listan en la pantalla del sync para que las decida una persona.
 - **Cliente nuevo limpio → alta automática + campanita** para que Andrés le
-  cargue cupo y descuento.
+  cargue el cupo (el descuento ya viene de Asinfo, si la lista se entiende).
 - **Cliente nuevo cuyo RUC YA está en PC bajo otro código → NO se importa**
   (patrón sucursal/recodificación: duplicaría plata). Queda como conflicto en
   /clientes/sync-asinfo con aviso, y lo decide una persona. Ídem los códigos
   que Asinfo tiene duplicados internamente (AR1, PRE al 05/08).
 
 En Asinfo el código de 3 letras vive en `empresa.nombre_comercial`
-(`empresa.codigo` ES el RUC — ver skill clientes-codigos-duplicados) y el
-teléfono en `direccion_empresa` (la fila principal activa).
+(`empresa.codigo` ES el RUC — ver skill clientes-codigos-duplicados), el
+teléfono en `direccion_empresa` (la fila principal activa) y el descuento en
+`cliente` (una fila por empresa: medido 25/08, 3.654 empresas cliente activas
+= 3.654 filas en `cliente`, ninguna repetida y ninguna faltante).
 
 Corre 2× por día (11:00 y 16:00 EC) vía `scripts/sync_clientes_asinfo.py`
 en el EC2, y a demanda desde la pantalla /clientes/sync-asinfo.
@@ -57,12 +68,17 @@ SELECT UPPER(LTRIM(RTRIM(COALESCE(e.nombre_comercial, '')))) AS cod,
        LTRIM(RTRIM(COALESCE(e.identificacion, '')))          AS ruc,
        LTRIM(RTRIM(COALESCE(e.nombre_fiscal, '')))           AS nombre,
        LTRIM(RTRIM(COALESCE(d.telefono1, '')))               AS tel1,
-       LTRIM(RTRIM(COALESCE(d.telefono2, '')))               AS tel2
+       LTRIM(RTRIM(COALESCE(d.telefono2, '')))               AS tel2,
+       LTRIM(RTRIM(COALESCE(ld.nombre, '')))                 AS lista_desc
   FROM empresa e
   LEFT JOIN direccion_empresa d
          ON d.id_empresa = e.id_empresa
         AND d.indicador_direccion_principal = 1
         AND d.activo = 1
+  LEFT JOIN cliente cl
+         ON cl.id_empresa = e.id_empresa
+  LEFT JOIN lista_descuentos ld
+         ON ld.id_lista_descuentos = cl.id_lista_descuentos
  WHERE e.indicador_cliente = 1
    AND e.activo = 1
 """
@@ -99,6 +115,40 @@ def telefono_util(tel: str | None) -> str:
     return tel[:30]
 
 
+#: `5%y7%` → 7.0. El primer tramo (5%) es el descuento de contado, igual
+#: para las 12 listas que existen; el segundo es el del cliente. Cualquier
+#: nombre con otra forma NO se interpreta: se avisa y la ficha queda como
+#: está. Preferimos no cargar nada antes que cargar un número inventado.
+_RE_LISTA_DESC = re.compile(r"^\s*5\s*%\s*y\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*%\s*$", re.I)
+
+
+def descuento_de_lista(nombre: str | None) -> float | None:
+    """El descuento del cliente que esconde el nombre de la lista de Asinfo."""
+    m = _RE_LISTA_DESC.match(nombre or "")
+    if not m:
+        return None
+    try:
+        valor = float(m.group(1).replace(",", "."))
+    except ValueError:
+        return None
+    return valor if 0 <= valor <= 99 else None
+
+
+def descuento_a_escribir(pc_val, asi_val) -> float | None:
+    """El descuento que hay que GRABAR, o None si la ficha no se toca.
+
+    Rellena sólo el hueco: vacío o cero en PC. Un descuento ya cargado no se
+    pisa nunca — eso es una diferencia para que la mire una persona.
+    """
+    if asi_val is None:
+        return None
+    if pc_val is None:
+        return float(asi_val)
+    if float(pc_val) == 0.0 and float(asi_val) != 0.0:
+        return float(asi_val)
+    return None
+
+
 def _norm_nombre(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).upper()
 
@@ -125,7 +175,8 @@ def sincronizar(usuario: str = "sync-asinfo") -> dict:
     """Un pase completo, idempotente. Nunca levanta: devuelve el reporte.
 
     Reporte: {ok, actualizados, altas: [cod], conflictos: [...],
-    dup_asinfo: [cod], sin_tocar, leidas_de_asinfo, error?}.
+    dup_asinfo: [cod], descuentos_puestos, dif_descuento: [...],
+    listas_raras: [...], sin_tocar, leidas_de_asinfo, error?}.
     """
     try:
         return _sincronizar(usuario)
@@ -158,6 +209,8 @@ def _sincronizar(usuario: str) -> dict:
             "ruc": str(f.get("ruc") or "").strip()[:16],
             "nombre": str(f.get("nombre") or "").strip()[:200],
             "tel": telefono_util(f.get("tel1")) or telefono_util(f.get("tel2")),
+            "lista_desc": str(f.get("lista_desc") or "").strip()[:60],
+            "desc": descuento_de_lista(f.get("lista_desc")),
         }
     # Un código que Asinfo tiene repetido no se puede sincronizar: no hay
     # forma de saber cuál de las dos empresas es "la" del código.
@@ -166,7 +219,8 @@ def _sincronizar(usuario: str) -> dict:
 
     # ── Lado PC ─────────────────────────────────────────────────────────
     pc_rows = db.fetch_all(
-        "SELECT id_cliente, UPPER(TRIM(codigo_cli)) AS cod, nombre, ruc, telefono "
+        "SELECT id_cliente, UPPER(TRIM(codigo_cli)) AS cod, nombre, ruc, "
+        "       telefono, descuento "
         "FROM scintela.cliente"
     ) or []
     pc_por_cod = {r["cod"]: r for r in pc_rows if r.get("cod")}
@@ -177,7 +231,9 @@ def _sincronizar(usuario: str) -> dict:
             pc_por_ruc.setdefault(clave, []).append(r["cod"])
 
     # ── Fichas existentes: pisar nombre/RUC, rellenar teléfono ─────────
-    cambios: list[tuple] = []  # (cod, nombre|None, ruc|None, tel|None)
+    cambios: list[tuple] = []  # (cod, nombre|None, ruc|None, tel|None, desc|None)
+    dif_descuento: list[dict] = []
+    listas_raras: list[dict] = []
     for cod, a in por_cod.items():
         p = pc_por_cod.get(cod)
         if p is None:
@@ -190,8 +246,21 @@ def _sincronizar(usuario: str) -> dict:
             and re.sub(r"\D", "", a["ruc"]) != re.sub(r"\D", "", p.get("ruc") or "")
         ) else None
         tel_nuevo = a["tel"] if (a["tel"] and not (p.get("telefono") or "").strip()) else None
-        if nombre_nuevo or ruc_nuevo or tel_nuevo:
-            cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo))
+        desc_nuevo = descuento_a_escribir(p.get("descuento"), a["desc"])
+        if a["desc"] is None and a["lista_desc"]:
+            listas_raras.append({"cod": cod, "lista": a["lista_desc"]})
+        elif (
+            a["desc"] is not None
+            and p.get("descuento") is not None
+            and float(p["descuento"]) != 0.0
+            and float(p["descuento"]) != float(a["desc"])
+        ):
+            dif_descuento.append({
+                "cod": cod, "nombre": (p.get("nombre") or "")[:60],
+                "pc": float(p["descuento"]), "asinfo": float(a["desc"]),
+            })
+        if nombre_nuevo or ruc_nuevo or tel_nuevo or desc_nuevo is not None:
+            cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo, desc_nuevo))
 
     actualizados = _aplicar_cambios(cambios, usuario) if cambios else 0
 
@@ -219,6 +288,7 @@ def _sincronizar(usuario: str) -> dict:
             altas.append(cod)
 
     _avisar_conflictos(conflictos, duplicados)
+    _avisar_descuentos(dif_descuento, listas_raras)
 
     reporte = {
         "ok": True,
@@ -228,6 +298,9 @@ def _sincronizar(usuario: str) -> dict:
         "altas": sorted(altas),
         "conflictos": conflictos,
         "dup_asinfo": sorted(duplicados),
+        "descuentos_puestos": sum(1 for c in cambios if c[4] is not None),
+        "dif_descuento": sorted(dif_descuento, key=lambda d: d["cod"]),
+        "listas_raras": sorted(listas_raras, key=lambda d: d["cod"]),
         "sin_tocar": len(por_cod) - len(cambios) - len(altas) - len(conflictos),
     }
     _guardar_log(usuario, reporte)
@@ -237,17 +310,21 @@ def _sincronizar(usuario: str) -> dict:
 def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
     """UN solo UPDATE con VALUES — un viaje por fila a RDS ya tiró un 502
     en el cron de mails (TMT 2026-08-03); acá el primer pase toca ~3.400."""
-    marcadores = ",".join(["(%s, %s, %s, %s)"] * len(cambios))
-    planos = [v for fila in cambios for v in fila]
+    marcadores = ",".join(["(%s, %s, %s, %s, %s)"] * len(cambios))
+    planos = [
+        (str(v) if (i == 4 and v is not None) else v)
+        for fila in cambios for i, v in enumerate(fila)
+    ]
     return db.execute(
         f"""
         UPDATE scintela.cliente c
            SET nombre   = COALESCE(v.nombre, c.nombre),
                ruc      = COALESCE(v.ruc, c.ruc),
                telefono = COALESCE(v.telefono, c.telefono),
+               descuento = COALESCE(v.descuento::numeric, c.descuento),
                fecha_modifica   = CURRENT_TIMESTAMP,
                usuario_modifica = %s
-          FROM (VALUES {marcadores}) AS v(cod, nombre, ruc, telefono)
+          FROM (VALUES {marcadores}) AS v(cod, nombre, ruc, telefono, descuento)
          WHERE UPPER(TRIM(c.codigo_cli)) = v.cod
         """,
         tuple([usuario[:60], *planos]),
@@ -255,26 +332,28 @@ def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
 
 
 def _alta(a: dict, usuario: str) -> bool:
-    """INSERT del cliente nuevo + campanita para el cupo/descuento."""
+    """INSERT del cliente nuevo + campanita para lo que Asinfo no sabe."""
     from modules.avisos.queries import avisar
     from modules.clientes import queries as cli_q
 
     try:
         cli_q.crear(
             codigo_cli=a["cod"], nombre=a["nombre"], ruc=a["ruc"] or None,
-            telefono=a["tel"] or None, usuario=usuario[:50],
+            telefono=a["tel"] or None, descuento=a.get("desc"),
+            usuario=usuario[:50],
         )
     except Exception as e:  # noqa: BLE001 — una alta rota no frena las demás
         _LOG.warning("alta de %s falló: %s", a["cod"], e)
         return False
+    falta = "cupo" if a.get("desc") is not None else "cupo y descuento"
     avisar(
         fuente="clientes",
         nivel="alerta",
-        titulo=f"Cliente nuevo {a['cod']} — cargarle cupo y descuento",
+        titulo=f"Cliente nuevo {a['cod']} — cargarle {falta}",
         detalle=(a["nombre"] or "")[:150],
-        # Directo a la pantalla de EDITAR, que es donde se cargan cupo y
-        # descuento — no a la lista filtrada. TMT 2026-08-06 (dueña): el
-        # click de la campanita te tiene que llevar derecho a cargarlos.
+        # Directo a la pantalla de EDITAR, que es donde se carga el cupo —
+        # no a la lista filtrada. TMT 2026-08-06 (dueña): el click de la
+        # campanita te tiene que llevar derecho a cargarlo.
         # quote() porque hay códigos con caracteres raros (D´J existe).
         url=f"/clientes/{_quote(a['cod'])}/editar",
         clave=f"cliente-nuevo-{a['cod']}",
@@ -310,13 +389,60 @@ def _avisar_conflictos(conflictos: list[dict], dup_asinfo: set[str]) -> None:
         )
 
 
+def _avisar_descuentos(dif: list[dict], raras: list[dict]) -> None:
+    """UNA campanita por cada cosa, no una por cliente.
+
+    Las diferencias de descuento son ~145 al estrenar esto: una campanita por
+    cliente sería un buzón inservible. El número va en el título y el detalle
+    está en la pantalla del sync. `clave` con la cantidad adentro para que un
+    número distinto vuelva a avisar y el mismo número no repita.
+    """
+    from modules.avisos.queries import avisar
+
+    if dif:
+        cods = ", ".join(d["cod"] for d in sorted(dif, key=lambda d: d["cod"])[:8])
+        avisar(
+            fuente="clientes", nivel="alerta",
+            titulo=f"{len(dif)} clientes con descuento distinto al de Asinfo",
+            detalle=f"Manda el de Programa Core. {cods}"[:200],
+            url="/clientes/sync-asinfo",
+            clave=f"clientes-dif-descuento-{len(dif)}",
+        )
+    if raras:
+        cods = ", ".join(f"{r['cod']} ({r['lista']})" for r in raras[:5])
+        avisar(
+            fuente="clientes", nivel="alerta",
+            titulo=f"{len(raras)} listas de descuento de Asinfo que no entiendo",
+            detalle=f"No se cargó nada para: {cods}"[:200],
+            url="/clientes/sync-asinfo",
+            clave=f"clientes-listas-raras-{len(raras)}",
+        )
+
+
+def _para_log(reporte: dict) -> dict:
+    """El reporte, recortado para que entre en el log SIN romper el JSON.
+
+    Se guarda como texto y se relee con `json.loads`: cortar el STRING a lo
+    bruto dejaría un JSON inválido y la corrida se vería vacía en la pantalla.
+    Por eso se recortan las LISTAS largas, no el texto.
+    """
+    chico = dict(reporte)
+    for campo in ("dif_descuento", "listas_raras", "conflictos"):
+        filas = chico.get(campo)
+        if isinstance(filas, list) and len(filas) > 300:
+            chico[campo] = filas[:300]
+            chico[f"{campo}_total"] = len(filas)
+    return chico
+
+
 def _guardar_log(usuario: str, reporte: dict) -> None:
     try:
         asegurar_tabla()
         db.execute(
             "INSERT INTO scintela.clientes_sync_asinfo_log (usuario, ok, resumen) "
             "VALUES (%s, %s, %s)",
-            (usuario[:60], bool(reporte.get("ok")), json.dumps(reporte)[:8000]),
+            (usuario[:60], bool(reporte.get("ok")),
+             json.dumps(_para_log(reporte))[:60000]),
         )
     except Exception as e:  # noqa: BLE001
         _LOG.warning("no pude guardar el log del sync: %s", e)

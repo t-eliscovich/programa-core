@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="max-w-4xl">
-  {{ page_hero('Sync de clientes con Asinfo', 'Corre solo a las 11:00 y 16:00 — nombre y RUC se pisan con Asinfo; cupo, descuento, vendedor y teléfono se conservan') }}
+  {{ page_hero('Sync de clientes con Asinfo', 'Corre solo a las 11:00 y 16:00 — nombre y RUC se pisan con Asinfo; el descuento se rellena si en la ficha está vacío; cupo, vendedor y teléfono se conservan') }}
 
   <form method="post" action="{{ url_for('clientes_sync_asinfo.correr') }}" class="mt-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -50,6 +50,67 @@
   </div>
   {% endif %}
 
+  {% if dif_descuento %}
+  <h2 class="mt-8 mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+    Descuentos que no coinciden — manda el de Programa Core
+  </h2>
+  <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+    El sync no los pisó. Si el bueno es el de Asinfo, cambialo en la ficha del cliente.
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Cliente</th>
+          <th class="px-4 py-3 text-right font-medium">En la ficha</th>
+          <th class="px-4 py-3 text-right font-medium">En Asinfo</th>
+          <th class="px-4 py-3 text-left font-medium"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dif_descuento %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-2 font-mono">{{ d.cod }}</td>
+          <td class="px-4 py-2">{{ d.nombre or '—' }}</td>
+          <td class="px-4 py-2 text-right">{{ d.pc | num_es(2) }} %</td>
+          <td class="px-4 py-2 text-right">{{ d.asinfo | num_es(2) }} %</td>
+          <td class="px-4 py-2 text-xs"><a class="underline" href="/clientes/{{ d.cod|urlencode }}/editar">Abrir la ficha</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if listas_raras %}
+  <h2 class="mt-8 mb-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
+    Listas de descuento de Asinfo que no se entienden
+  </h2>
+  <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+    Se esperan nombres como <span class="font-mono">5%y7%</span>. Con cualquier otro
+    no se carga nada, para no inventar un número.
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-amber-50 dark:bg-amber-900/20 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Nombre de la lista en Asinfo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in listas_raras %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-2 font-mono">{{ r.cod }}</td>
+          <td class="px-4 py-2 font-mono">{{ r.lista or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <h2 class="mt-8 mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Últimas corridas</h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
@@ -58,6 +119,7 @@
           <th class="px-4 py-3 text-left font-medium">Cuándo</th>
           <th class="px-4 py-3 text-left font-medium">Quién</th>
           <th class="px-4 py-3 text-right font-medium">Actualizados</th>
+          <th class="px-4 py-3 text-right font-medium">Descuentos cargados</th>
           <th class="px-4 py-3 text-left font-medium">Altas</th>
           <th class="px-4 py-3 text-right font-medium">Conflictos</th>
           <th class="px-4 py-3 text-left font-medium">Estado</th>
@@ -69,12 +131,13 @@
           <td class="px-4 py-2 whitespace-nowrap">{{ c.corrido.strftime('%d/%m %H:%M') if c.corrido else '—' }}</td>
           <td class="px-4 py-2 text-xs">{{ c.usuario or '—' }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('actualizados', '—') }}</td>
+          <td class="px-4 py-2 text-right">{{ c.reporte.get('descuentos_puestos', '—') }}</td>
           <td class="px-4 py-2 font-mono text-xs">{{ ', '.join(c.reporte.get('altas', [])) or '—' }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('conflictos', []) | length }}</td>
           <td class="px-4 py-2">{% if c.ok %}<span class="text-emerald-600 dark:text-emerald-400">✓</span>{% else %}<span class="text-red-600 dark:text-red-400" title="{{ c.reporte.get('error','') }}">✗ {{ c.reporte.get('error','')[:60] }}</span>{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="px-4 py-6 text-center text-slate-400">Todavía no corrió nunca.</td></tr>
+        <tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">Todavía no corrió nunca.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -82,9 +145,11 @@
 
   <p class="mt-4 text-xs text-slate-400">
     Qué hace: pisa <strong>nombre</strong> (formato fiscal de Asinfo) y <strong>RUC</strong>;
-    rellena <strong>teléfono</strong> sólo si PC está vacío y el de Asinfo es real.
-    Los clientes nuevos limpios se dan de alta solos y dejan campanita para cargarles
-    cupo y descuento. Nunca toca cupo, descuento, vendedor, correo ni dirección.
+    rellena <strong>teléfono</strong> sólo si en la ficha está vacío y el de Asinfo es real;
+    rellena el <strong>descuento</strong> sólo si en la ficha está vacío o en cero — el que ya
+    está cargado no se pisa nunca, y lo que no coincide se lista más arriba.
+    Los clientes nuevos limpios se dan de alta solos, ya con su descuento, y dejan
+    campanita para cargarles el cupo. Nunca toca cupo, vendedor, correo ni dirección.
   </p>
 </div>
 {% endblock %}
