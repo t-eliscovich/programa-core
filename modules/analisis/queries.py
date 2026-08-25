@@ -1121,6 +1121,53 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
     return out
 
 
+def vendidos(desde) -> list[dict]:
+    """Lo vendido de la lista, renglón por renglón, para la tabla de Saldos.
+
+    Dueña 25/08/2026: *"abajo de saldos poné una tabla que se llame vendidos, y
+    ponés la misma info + día vendido + vendedor"*. La pantalla decía cuántos
+    kilos se habían vendido —un número en una tarjeta— pero no qué, cuándo ni
+    quién: para verlo había que ir a la Competencia y abrir vendedor por
+    vendedor.
+
+    ⚠ SÓLO lo que puntúa, igual que en la Competencia (*"lo que no cuenta ni lo
+    muestres"*). Los kilos que quedaron afuera por el tope, o los de primera de
+    un ítem que entró por su segunda, no aparecen: en una pantalla de saldos,
+    una lista donde la mitad de los renglones no cuenta se lee como un error del
+    programa.
+
+    ⚠ El color y su nombre salen como en `items()` —del catálogo de tinto, con
+    LIMIT 1— para que las dos tablas escriban el mismo color igual.
+    """
+    return db.fetch_all(
+        """
+        SELECT v.subcategoria, v.color, v.calidad, v.fecha,
+               v.vendedor, v.vend_pc,
+               COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
+                                                          AS color_nombre,
+               CASE WHEN f.categoria IN ('Franela', 'Cuellos', 'Puños')
+                    THEN 'FCP' ELSE f.categoria END        AS categoria,
+               SUM(v.kg)                                   AS kg,
+               MAX(COALESCE(p.puntos, 1))                  AS puntos,
+               SUM(v.kg * COALESCE(p.puntos, 1))           AS puntos_fila
+          FROM scintela.parado_venta v
+          LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
+          LEFT JOIN scintela.parado_foto f
+                 ON f.subcategoria = v.subcategoria AND f.color = v.color
+          LEFT JOIN LATERAL (
+              SELECT SPLIT_PART(tc.color, ' · ', 1) AS n
+                FROM scintela.tinto_costos tc
+               WHERE UPPER(TRIM(tc.cod)) = UPPER(TRIM(v.color))
+                 AND COALESCE(TRIM(tc.color), '') <> ''
+               LIMIT 1) nom ON TRUE
+         WHERE v.fecha >= %s AND v.cuenta
+         GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
+                  v.vend_pc, nom.n, f.categoria
+         -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
+         ORDER BY v.fecha DESC, SUM(v.kg) DESC
+        """, (desde,)) or []
+
+
 def competencia() -> dict:
     """
     El tablero de la competencia: quién va ganando y cuánto falta.

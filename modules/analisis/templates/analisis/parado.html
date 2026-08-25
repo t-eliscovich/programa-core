@@ -346,6 +346,38 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 </tbody>
 </table></div>
 
+{# ⭐ LO VENDIDO, renglón por renglón (dueña 25/08/2026: "abajo de saldos poné
+   una tabla que se llame vendidos, y ponés la misma info + día vendido +
+   vendedor"). Arriba estaba el total en una tarjeta, pero qué se vendió, qué
+   día y quién había que ir a buscarlo a la Competencia, vendedor por vendedor.
+   ⚠ Mismas columnas que la lista de arriba, para leerlas juntas. #}
+<h2>Vendidos</h2>
+<p class="sub">Lo que salió de la lista desde que arrancó la competencia. Sólo
+lo que suma puntos.</p>
+{% if vendidos %}
+<div class="caja"><table class="resumen">
+<thead><tr><th>Grupo</th><th>Tela</th><th>Color</th><th>Calidad</th>
+<th>Día</th><th>Vendedor</th><th class="n">Kg</th><th class="n">Puntos</th></tr></thead>
+<tbody>
+{% for v in vendidos %}
+  <tr>
+    <td>{{ v.categoria or '—' }}</td>
+    <td class="tela">{{ v.subcategoria }}</td>
+    <td><b>{{ v.color }}</b>{% if v.color_nombre %}
+      <span class="mini">{{ v.color_nombre }}</span>{% endif %}</td>
+    <td>{{ v.calidad or 'PRI' }}</td>
+    <td>{{ v.fecha | fecha_es }}</td>
+    <td>{{ v.vendedor }}</td>
+    <td class="n">{{ v.kg | num_es(0) }}</td>
+    <td class="n pts">{{ v.puntos_fila | num_es(0) }}</td>
+  </tr>
+{% endfor %}
+</tbody>
+</table></div>
+{% else %}
+<p class="sub">Todavía no se vendió nada de la lista.</p>
+{% endif %}
+
 <footer>
 Saldo = tela terminada (bodega 53) quieta hace 12 meses o más con 20 kg o más,
 MÁS los kilos SEG de cualquier tela, se venda o no.

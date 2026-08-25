@@ -122,6 +122,8 @@ def parado():
         bolsa=queries.bolsa_congelada(),
         grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
+        # ⭐ La tabla de abajo: qué se vendió, qué día y quién.
+        vendidos=queries.vendidos(queries.config("largada", "2026-08-25")),
         # ⚠ El texto de la pantalla sale de la MISMA constante que el filtro:
         # si un día se cambian los días, la explicación no puede quedar
         # diciendo otra cosa.
@@ -346,6 +348,8 @@ def mis_telas():
         bolsa=queries.bolsa_congelada(),
         grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
+        # ⭐ La tabla de abajo: qué se vendió, qué día y quién.
+        vendidos=queries.vendidos(queries.config("largada", "2026-08-25")),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
     )

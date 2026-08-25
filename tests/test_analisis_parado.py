@@ -3140,3 +3140,37 @@ def test_la_fila_en_cero_que_nunca_se_movio_no_se_muestra(monkeypatch):
     queries.items()
     assert ("AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0)"
             in visto["sql"])
+
+
+def test_la_tabla_de_vendidos_dice_dia_y_vendedor(monkeypatch):
+    """Dueña 25/08/2026: *"abajo de saldos poné una tabla que se llame vendidos,
+    y ponés la misma info + día vendido + vendedor"*. El total estaba en una
+    tarjeta; qué, cuándo y quién había que ir a buscarlo a la Competencia."""
+    visto = {}
+
+    def fake(sql, params=None, conn=None):
+        visto["sql"] = " ".join(sql.split())
+        visto["params"] = params
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.vendidos("2026-08-25")
+    assert "FROM scintela.parado_venta v" in visto["sql"]
+    assert "v.fecha, v.vendedor, v.vend_pc" in visto["sql"]
+    assert "WHERE v.fecha >= %s AND v.cuenta" in visto["sql"], (
+        "sólo lo que puntúa, igual que en la Competencia")
+    assert visto["params"] == ("2026-08-25",)
+
+
+def test_la_pantalla_dibuja_la_tabla_de_vendidos():
+    import inspect as _i
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    assert "<h2>Vendidos</h2>" in html
+    for col in ("Día", "Vendedor", "Grupo", "Tela", "Color", "Calidad"):
+        assert f"<th>{col}</th>" in html or f'<th class="n">{col}</th>' in html
+    assert "{{ v.fecha | fecha_es }}" in html and "{{ v.vendedor }}" in html
+    # las dos pantallas que dibujan esta plantilla tienen que pasarle la tabla
+    fuente = _i.getsource(views)
+    assert fuente.count("vendidos=queries.vendidos(") == 2
