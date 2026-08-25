@@ -78,6 +78,13 @@ ROLES: list[tuple[str, list[str]]] = [
             "informes.ver",
             "flujo.ver",
             "tintura.ver",
+            # ⭐ TMT 2026-08-25 (dueña): *"poner esta competencia visible para
+            # todos los usuarios INT también"*. La sección Análisis —Saldos, la
+            # hoja de a quién ofrecerle qué y el tablero de la Competencia— la
+            # veían sólo los roles wildcard. Es información de fábrica: telas,
+            # colores, kilos y a qué cliente ofrecerle qué. No hay plata adentro.
+            # La pantalla de METAS no entra: sigue detrás de su propio gate.
+            "analisis.ver",
             "bitacora.ver",
             "clientes.ver",
             "estado_cuenta.totalizar",

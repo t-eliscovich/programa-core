@@ -40,16 +40,22 @@ def test_el_deploy_corre_migrate(yml):
 def test_las_migraciones_corren_antes_de_reiniciar(yml):
     """El orden ES la decisión. Después del restart, el proceso nuevo arranca
     contra el schema viejo y se cae solo."""
+    # ⚠ El marcador es el ARRANQUE, no el `Stop`. Desde el 25/08/2026 el deploy
+    # también PARA los procesos ANTES de extraer —en Windows un archivo abierto
+    # no se puede pisar y un estático que alguien estuviera bajando frenaba el
+    # deploy entero—, así que hay un `Stop-ScheduledTask` mucho antes que las
+    # migraciones. Lo que no puede pasar es que el proceso NUEVO arranque contra
+    # el schema viejo.
     i_mig = yml.index("scripts\\migrate.py")
-    i_stop = yml.index("Stop-ScheduledTask")
-    assert i_mig < i_stop, "migrate.py quedó DESPUÉS del restart"
+    i_start = yml.index("Start-ScheduledTask -TaskName ProgramaCoreApp")
+    assert i_mig < i_start, "migrate.py quedó DESPUÉS del arranque"
 
 
 def test_si_la_migracion_falla_no_se_reinicia(yml):
     """Sin este freno, una migración a medias se combina con código nuevo."""
     i_mig = yml.index("scripts\\migrate.py")
-    i_stop = yml.index("Stop-ScheduledTask")
-    entre = yml[i_mig:i_stop]
+    i_start = yml.index("Start-ScheduledTask -TaskName ProgramaCoreApp")
+    entre = yml[i_mig:i_start]
     assert "LASTEXITCODE" in entre and "exit 1" in entre
 
 

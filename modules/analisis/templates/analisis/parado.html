@@ -164,12 +164,15 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   <a href="{{ '/analisis/competencia/mi-hoja' if mia else '/analisis/parado/clientes' }}"
      style="margin-left:auto;align-self:center;
      color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
-  {% if not mia %}
-  <form method="post" action="/analisis/parado/actualizar">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit">Actualizar desde Asinfo</button>
-  </form>
-  {% endif %}
+  {# ⭐ El botón «Actualizar desde Asinfo» se fue (dueña 25/08/2026: "borra
+     tambien el boton de actualizar desde asinfo"). No hace falta: el hilo de
+     fondo la refresca sola cada 3 horas (ver `auto_refresco.py`), y la bajada
+     de arriba dice de cuándo son los datos. Un botón que casi nadie tiene que
+     apretar, al lado de los filtros, se aprieta sin querer y se lleva 40
+     segundos de espera contra Asinfo.
+     ⚠ La RUTA sigue viva a propósito (/analisis/parado/actualizar): es la
+     salida de emergencia si Asinfo estuvo caído y no se puede esperar tres
+     horas. #}
 </div>
 
 <div class="caja larga"><table id="tabla">

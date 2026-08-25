@@ -1348,13 +1348,25 @@ def test_el_menu_del_vendedor_no_tiene_links_que_le_dan_404(app):
             f"{m['url']} queda fuera del prefijo que se le habilita")
 
 
-def test_la_pantalla_del_vendedor_no_ofrece_actualizar_desde_asinfo():
-    """El refresh toca la base de todos y tarda 10 s: no es del vendedor."""
+def test_nadie_tiene_el_boton_de_actualizar_desde_asinfo():
+    """⭐ Dueña 25/08/2026: "borra tambien el boton de actualizar desde asinfo".
+
+    Ya no hace falta: el hilo de fondo refresca la foto sola cada 3 horas y la
+    bajada dice de cuándo son los datos. Un botón que casi nadie tiene que
+    apretar, metido entre los filtros, se aprieta sin querer y se lleva 40
+    segundos de espera contra Asinfo.
+
+    ⚠ La RUTA sigue viva: es la salida de emergencia si Asinfo estuvo caído y
+    no se puede esperar tres horas."""
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    i = html.index("/analisis/parado/actualizar")
-    assert "{% if not mia %}" in html[i - 400:i]
+    assert "<button type=\"submit\">Actualizar desde Asinfo" not in html
+    assert "auto_refresco" in html, "la plantilla dice quién refresca ahora"
+
+    # La salida de emergencia queda: la ruta sigue registrada.
+    import inspect as _i
+    assert '@analisis_bp.route("/analisis/parado/actualizar"' in _i.getsource(views)
 
 
 def test_la_fila_sin_stock_y_sin_grupo_no_ensucia_el_resumen():

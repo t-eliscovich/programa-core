@@ -137,11 +137,52 @@ jobs:
           #    El resto del árbol se sigue pisando encima a propósito: ahí sí
           #    viven archivos del server (.env, .deps_hash, data/).
           if (-not (Test-Path C:\programa-core)) { New-Item -ItemType Directory -Path C:\programa-core | Out-Null }
+
+          # ⭐ TMT 2026-08-25 — PARAR ANTES DE EXTRAER. El deploy del 25/08 murió
+          #    con `./static/mi-cartera/icon-180.png: Can't unlink
+          #    already-existing object: Permission denied`: en Windows un archivo
+          #    ABIERTO no se puede borrar, y tar borra antes de escribir. Los dos
+          #    procesos (la oficina en el 5002 y el portal en el 5004) estaban
+          #    sirviendo esa carpeta con el mismo ejecutable, así que cualquier
+          #    estático que un cliente estuviera bajando justo en ese segundo
+          #    frenaba el deploy entero. No es del icono: le puede tocar a
+          #    cualquier archivo, y por eso no se arregla borrando ese archivo.
+          #
+          #    ⚠ El precio es que la app queda abajo durante el extract + las
+          #    migraciones (~10 s en vez de ~2). Se paga: un deploy que falla la
+          #    deja abajo hasta que alguien lo mire.
+          Write-Output "--- Parando los procesos antes de extraer ---"
+          Stop-ScheduledTask -TaskName ProgramaCoreApp -ErrorAction SilentlyContinue
+          Stop-ScheduledTask -TaskName PortalClienteApp -ErrorAction SilentlyContinue
+          Start-Sleep 2
+          foreach (\$puerto in 5002, 5004) {
+            for (\$i = 0; \$i -lt 6; \$i++) {
+              \$owners = Get-NetTCPConnection -LocalPort \$puerto -State Listen -ErrorAction SilentlyContinue |
+                        Select-Object -ExpandProperty OwningProcess -Unique
+              if (-not \$owners) { break }
+              \$owners | ForEach-Object { Stop-Process -Id \$_ -Force -ErrorAction SilentlyContinue }
+              Start-Sleep 1
+            }
+          }
+          # Los estáticos pueden quedar de sólo lectura por una copia vieja: tar
+          # tampoco los puede pisar. Es barato y no molesta si ya estaban bien.
+          if (Test-Path C:\programa-core\static) {
+            Get-ChildItem C:\programa-core\static -Recurse -File -ErrorAction SilentlyContinue |
+              ForEach-Object { try { \$_.IsReadOnly = \$false } catch { } }
+          }
           if (Test-Path C:\programa-core\migrations) {
               Remove-Item -Recurse -Force C:\programa-core\migrations
               Write-Output "migrations/ borrada antes de extraer (queda igual al repo)"
           }
-          tar -xzf C:\tmp\deploy.tar.gz -C C:\programa-core
+          # Reintento: aunque los procesos estén parados, Windows puede tardar
+          # un segundo en soltar un handle. Tres intentos con un segundo de por
+          # medio evitan tener que volver a pushear por eso.
+          for (\$i = 1; \$i -le 3; \$i++) {
+            tar -xzf C:\tmp\deploy.tar.gz -C C:\programa-core
+            if (\$LASTEXITCODE -eq 0) { break }
+            Write-Output "tar falló (intento \$i), reintentando..."
+            Start-Sleep 2
+          }
           if (\$LASTEXITCODE -ne 0) { Write-Output "ERROR: tar exit \$LASTEXITCODE"; exit 1 }
 
           # 4. pip install. TMT 2026-08-13 (dueña: *"necesito todavía más
