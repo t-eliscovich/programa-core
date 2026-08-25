@@ -1,4 +1,5 @@
 {% extends "analisis/base.html" %}
+{% import "analisis/_forma.html" as fm %}
 {% block titulo %}Competencia{% endblock %}
 
 {% block scripts %}
@@ -74,6 +75,9 @@ tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-ra
    vertical. */
 tr.vlinea>td{font-size:12px;color:var(--g);white-space:nowrap;line-height:1.6}
 tr.vlinea>td:first-child{padding-left:26px}
+/* El color, como en la lista de saldos: el código manda y el nombre lo
+   acompaña en gris. */
+tr.vlinea>td b{color:var(--t);font-weight:600;margin-right:4px}
 tr.vlinea>td *{display:inline;font-size:12px}
 tr.vlinea>td b{color:var(--t);font-weight:600}
 .tope{font-size:11px;color:var(--g)}
@@ -190,32 +194,30 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
   </tr>
   <tr class="vdet"><td colspan="8">
     <table>
-    <thead><tr><th>Tipo de tela</th><th class="n">Vendió</th>
+    {# ⭐ Las MISMAS columnas que la lista de saldos (dueña 25/08/2026: "color,
+       forma, categoría, kg tienen que ser columnas"). Todo en un renglón de
+       texto corrido no se lee: se compara mal y no se puede recorrer con la
+       vista en vertical.
+       El renglón del GRUPO es un subtotal: ocupa las cinco primeras y deja los
+       kilos y los puntos en su columna, encolumnados con los de sus telas. #}
+    <thead><tr><th>Tipo de tela</th><th>Color</th><th>Forma</th>
+    <th>Categoría</th><th class="opt">Día</th><th class="n">Vendió</th>
     <th class="n">Puntos</th></tr></thead>
     <tbody>
-    {# ⭐ Cada venta va DENTRO de su grupo (dueña 25/08/2026: "quería ver el
-       pique especial de lo vendido dentro de pique, no una tabla aparte"). El
-       cuadro decía "Pique · 38 kg" y la tela estaba en otra tabla más abajo:
-       había que adivinar de cuál de los ocho grupos salía cada renglón.
-
-       ⚠ SÓLO lo que puntúa (dueña 25/08/2026: "lo que no cuenta para puntos ni
-       lo muestres"). Antes iban también los kilos que no suman, en gris: en una
-       pantalla de competencia una lista donde la mayoría de los renglones no
-       cuenta se lee como un error del programa. #}
     {% for d in r.detalle %}
-      <tr><td>{{ d.grupo }}</td>
+      <tr><td colspan="5">{{ d.grupo }}</td>
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
       <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
       {% for v in d.lineas %}
-        {# ⚠ UNA línea y fina (dueña 25/08/2026: "muy finito tiene que ser").
-           Todo el renglón en una sola celda de texto corrido; en tres celdas
-           con el color en negrita cada venta ocupaba tres renglones de alto.
-           ⚠ Y los puntos SÓLO si no son los kilos ("no me repitas info 64,
-           64"): en una tela de 1 punto por kilo, el número es el mismo dos
-           veces. En las de 4 y 10 sí dice algo, y ahí aparece. #}
+        {# ⚠ Los puntos SÓLO si no son los kilos ("no me repitas info 64, 64"):
+           en una tela de 1 punto por kilo es el mismo número dos veces. #}
         <tr class="vlinea">
-          <td>{{ v.subcategoria }} · <b>{{ v.color }}</b> {{ v.calidad }} ·
-            {{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
+          <td>{{ v.subcategoria }}</td>
+          <td><b>{{ v.color }}</b>{% if v.color_nombre %}
+            {{ v.color_nombre }}{% endif %}</td>
+          <td>{{ fm.forma(v) }}</td>
+          <td>{{ fm.cal(v) }}</td>
+          <td class="opt">{{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
           <td class="n">{{ v.kg | num_es(0) }} kg</td>
           <td class="n pts">{% if v.puntos | round(0) != v.kg | round(0) %}
             {{- v.puntos | num_es(0) }}{% endif %}</td>
