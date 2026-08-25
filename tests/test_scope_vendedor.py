@@ -71,6 +71,19 @@ def test_es_vendedor():
         ("/mi-cartera-admin", False),
         ("/facturas", False),
         ("/", False),
+        # ⭐ La Competencia se les abrió el 25/08/2026: las tres pantallas que
+        # cuelgan de ese prefijo, y NADA más de /analisis.
+        ("/analisis/competencia", True),
+        ("/analisis/competencia/telas", True),
+        ("/analisis/competencia/mi-hoja", True),
+        ("/analisis/competencia/mi-hoja.csv", True),
+        # ⚠ Éstas tienen los clientes de TODOS y los puntos editables: si
+        # alguna vez dan True, es un bug y no una mejora.
+        ("/analisis/parado", False),
+        ("/analisis/parado/clientes", False),
+        ("/analisis/metas", False),
+        ("/analisis", False),
+        ("/analisis/competenciax", False),
     ],
 )
 def test_path_permitido_matchea_por_segmento(path, ok):

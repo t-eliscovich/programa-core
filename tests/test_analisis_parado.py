@@ -844,6 +844,17 @@ def test_las_metas_siguen_cerradas():
     assert getattr(views.competencia_metas, "_permiso", None) == "analisis.ver"
 
 
+def test_el_vendedor_llega_a_la_competencia_desde_su_portal():
+    """El link vive en la barra de abajo de /mi-cartera, que es lo único que el
+    vendedor ve. Dice "Competencia" y lleva al tablero: el rótulo y el destino
+    son la misma cosa (dueña 25/08/2026: "que el boton diga competencia no
+    saldos"). Sin el link, la pantalla abierta no la encuentra nadie."""
+    from pathlib import Path
+    barra = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
+    assert 'href="/analisis/competencia' in barra
+    assert ">Competencia</a>" in barra
+
+
 def test_las_metas_no_cuelgan_del_prefijo_abierto(app):
     """⚠ El allowlist de vendedores matchea por segmento: todo lo que cuelgue de
     `/analisis/competencia/` les queda abierto. La pantalla de metas vive
@@ -852,20 +863,23 @@ def test_las_metas_no_cuelgan_del_prefijo_abierto(app):
     rutas = {r.rule for r in app.url_map.iter_rules()}
     assert "/analisis/metas" in rutas
     assert "/analisis/competencia/metas" not in rutas
-    assert not any(p.startswith("/analisis") for p in scope_vendedor.PREFIJOS_PERMITIDOS)
+    # ⚠ Con el prefijo ya abierto, lo que hay que fijar es que las metas NO
+    # cuelguen de él: el matcheo es por segmento y las abriría de una.
+    assert not any(p.startswith("/analisis/metas")
+                   for p in scope_vendedor.PREFIJOS_PERMITIDOS)
 
 
-def test_al_vendedor_todavia_no_se_le_habilito_la_competencia():
-    """La pantalla está hecha para ellos, pero la dueña la quiere ver primero:
-    "todavia igual no se las habilites". Cuando lo diga, se agrega
-    "/analisis/competencia" a PREFIJOS_PERMITIDOS y este test se da vuelta.
+def test_al_vendedor_se_le_abrio_la_competencia_y_nada_mas():
+    """⭐ Dueña 25/08/2026, el día de la largada: "abrilo para vendedores". La
+    pantalla estuvo hecha y frenada desde el 17/08.
 
     ⚠ Lo que NO puede pasar nunca es que se abra /analisis a secas o
     /analisis/parado: ahí está la cartera de TODOS los vendedores."""
     import scope_vendedor
     abiertos = [p for p in scope_vendedor.PREFIJOS_PERMITIDOS
                 if p.startswith("/analisis")]
-    assert abiertos == [], f"todavía no había que habilitar nada: {abiertos}"
+    assert abiertos == ["/analisis/competencia"], (
+        f"la Competencia y nada más de /analisis: {abiertos}")
 
 
 def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():

@@ -2563,10 +2563,15 @@ def test_el_vendedor_puede_cerrar_sesion(vendedor_logueado, monkeypatch):
 
     html = vendedor_logueado.get("/mi-cartera").data.decode()
 
-    # El tabbar vuelve a tener SÓLO las tres de navegar.
+    # El tabbar es SÓLO para navegar: nada de salir ahí abajo.
+    # ⚠ Antes esto contaba tres links. Se cambió por la regla de verdad —que no
+    # haya una salida en el tabbar— cuando el 25/08/2026 entró una cuarta
+    # pestaña de navegación (Competencia): contar links hacía fallar el test
+    # por agregar una pantalla, que es justo lo que el test NO quiere impedir.
     tabbar = html.split('<nav class="tabbar">')[1].split("</nav>")[0]
     assert "/logout" not in tabbar
-    assert tabbar.count("<a ") == 3
+    assert "Salir" not in tabbar
+    assert "<form" not in tabbar, "ninguna acción, sólo links de navegar"
 
     # Y la salida cuelga del avatar, en un <details> nativo (sin JS: en un
     # celular con mala señal es justo cuando uno quiere poder salir).

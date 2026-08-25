@@ -58,6 +58,14 @@
      class="{% if seccion == 'clientes' %}on{% endif %}"><em>☰</em>Clientes</a>
   <a href="{{ url_for('mi_cartera.comision') }}{{ qp }}"
      class="{% if seccion == 'comision' %}on{% endif %}"><em>◆</em>Comisión</a>
+  {# ⭐ La cuarta pestaña, 25/08/2026: la Competencia. Va acá y no adentro de
+     otra pantalla porque es una de las cuatro cosas que el vendedor hace.
+     Dice "Competencia" y no "Saldos" (dueña: "que el boton diga competencia no
+     saldos") y por eso lleva al tablero, no a la lista: el rótulo y el destino
+     tienen que ser la misma cosa.
+     ⚠ Sale del portal hacia la sección Análisis, que tiene su propio cascarón:
+     allá arriba a la derecha hay un "← Mi Cartera" para volver. #}
+  <a href="/analisis/competencia{{ qp }}"><em>◈</em>Competencia</a>
 </nav>
 
 </body>
